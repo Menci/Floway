@@ -17,22 +17,24 @@ export const fixApplyPatchTools = (payload: ResponsesPayload): void => {
   if (!Array.isArray(payload.tools)) return;
 
   payload.tools = payload.tools.map((tool) =>
-    tool.type === "function" || tool.name !== "apply_patch" ? tool : {
-      type: "function",
-      name: "apply_patch",
-      description: "Use the `apply_patch` tool to edit files",
-      parameters: {
-        type: "object",
-        properties: {
-          input: {
-            type: "string",
-            description: "The entire contents of the apply_patch command",
+    tool.type === "function" || !("name" in tool) || tool.name !== "apply_patch"
+      ? tool
+      : {
+        type: "function",
+        name: "apply_patch",
+        description: "Use the `apply_patch` tool to edit files",
+        parameters: {
+          type: "object",
+          properties: {
+            input: {
+              type: "string",
+              description: "The entire contents of the apply_patch command",
+            },
           },
+          required: ["input"],
+          additionalProperties: false,
         },
-        required: ["input"],
-        additionalProperties: false,
-      },
-      strict: false,
-    }
+        strict: false,
+      }
   ) as ResponsesPayload["tools"];
 };

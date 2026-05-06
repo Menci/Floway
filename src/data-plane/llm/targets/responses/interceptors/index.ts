@@ -9,8 +9,10 @@ import { withConnectionMismatchRetried } from "./retry-connection-mismatch.ts";
 import { withCyberPolicyRetried } from "./retry-cyber-policy.ts";
 import { withServiceTierStripped } from "./strip-service-tier.ts";
 import { withOutputItemIdsSynchronized } from "./synchronize-output-item-ids.ts";
+import { withResponsesWebSearchShim } from "./web-search-shim.ts";
 
 export const responsesTargetInterceptors = [
+  withResponsesWebSearchShim,
   withServiceTierStripped,
   withSmallMaxOutputTokensRaised,
   withConnectionMismatchRetried,

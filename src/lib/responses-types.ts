@@ -33,6 +33,7 @@ export type ResponseInputItem =
   | ResponseFunctionToolCallItem
   | ResponseFunctionCallOutputItem
   | ResponseInputReasoning
+  | ResponseInputWebSearchCall
   | ResponseItemReference;
 
 export interface ResponseInputMessage {
@@ -78,12 +79,23 @@ interface ResponseFunctionCallOutputItem {
   status?: "completed" | "incomplete";
 }
 
+export interface ResponseInputWebSearchCall {
+  type: "web_search_call";
+  id?: string;
+  status?: string;
+  action?: ResponseWebSearchAction;
+}
+
 export interface ResponseItemReference {
   type: "item_reference";
   id: string;
 }
 
-export interface ResponseTool {
+export type ResponseTool =
+  | ResponseFunctionTool
+  | ResponseWebSearchTool;
+
+export interface ResponseFunctionTool {
   type: "function";
   name: string;
   parameters: Record<string, unknown>;
@@ -91,11 +103,27 @@ export interface ResponseTool {
   description?: string;
 }
 
+export interface ResponseWebSearchTool {
+  type: "web_search";
+  external_web_access?: boolean;
+  filters?: { allowed_domains?: string[] };
+  user_location?: {
+    type: "approximate";
+    city?: string;
+    region?: string;
+    country?: string;
+    timezone?: string;
+  };
+  search_context_size?: "low" | "medium" | "high";
+  search_content_types?: string[];
+}
+
 export type ResponseToolChoice =
   | "auto"
   | "none"
   | "required"
-  | { type: "function"; name: string };
+  | { type: "function"; name: string }
+  | { type: "web_search" };
 
 // ── Response types ──
 
@@ -120,7 +148,8 @@ export interface ResponsesResult {
 export type ResponseOutputItem =
   | ResponseOutputMessage
   | ResponseOutputFunctionCall
-  | ResponseOutputReasoning;
+  | ResponseOutputReasoning
+  | ResponseOutputWebSearchCall;
 
 export interface ResponseOutputMessage {
   type: "message";
@@ -155,6 +184,19 @@ export interface ResponseOutputReasoning {
   id: string;
   summary: { type: "summary_text"; text: string }[];
   encrypted_content?: string;
+}
+
+export type ResponseWebSearchAction =
+  | { type: "search"; query?: string; queries?: string[] }
+  | { type: "open_page"; url?: string }
+  | { type: "find_in_page"; url?: string; pattern?: string }
+  | { type: string; [key: string]: unknown };
+
+export interface ResponseOutputWebSearchCall {
+  type: "web_search_call";
+  id?: string;
+  status?: string;
+  action?: ResponseWebSearchAction;
 }
 
 // ── Stream event types ──

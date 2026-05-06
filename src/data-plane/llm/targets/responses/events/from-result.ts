@@ -3,6 +3,7 @@ import type {
   ResponseOutputItem,
   ResponseOutputMessage,
   ResponseOutputReasoning,
+  ResponseOutputWebSearchCall,
   ResponsesResult,
   ResponseStreamEvent,
 } from "../../../../../lib/responses-types.ts";
@@ -217,6 +218,23 @@ const responseFunctionCallEvents = (
   return events;
 };
 
+const responseWebSearchCallEvents = (
+  item: ResponseOutputWebSearchCall,
+  outputIndex: number,
+): ResponseStreamEvent[] => [{
+  type: "response.output_item.added",
+  output_index: outputIndex,
+  item: {
+    type: "web_search_call",
+    status: "in_progress",
+    ...(item.id ? { id: item.id } : {}),
+  },
+}, {
+  type: "response.output_item.done",
+  output_index: outputIndex,
+  item,
+}];
+
 const responseOutputItemEvents = (
   item: ResponseOutputItem,
   outputIndex: number,
@@ -224,6 +242,9 @@ const responseOutputItemEvents = (
   if (item.type === "message") return responseMessageEvents(item, outputIndex);
   if (item.type === "reasoning") {
     return responseReasoningEvents(item, outputIndex);
+  }
+  if (item.type === "web_search_call") {
+    return responseWebSearchCallEvents(item, outputIndex);
   }
   return responseFunctionCallEvents(item, outputIndex);
 };

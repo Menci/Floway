@@ -3,6 +3,7 @@ import {
   type MessagesAssistantContentBlock,
   type MessagesAssistantMessage,
   type MessagesMessage,
+  type MessagesNativeWebSearchTool,
   type MessagesPayload,
   type MessagesResponse,
   type MessagesTargetPayload,
@@ -103,6 +104,8 @@ const mapOutputToMessagesContent = (
         if (text.length > 0) content.push({ type: "text", text });
         break;
       }
+      case "web_search_call":
+        break;
     }
   }
 
@@ -280,6 +283,8 @@ const translateResponsesInput = async (
             },
         );
         break;
+      case "web_search_call":
+        break;
     }
   }
 
@@ -291,12 +296,30 @@ const translateTools = (
 ): MessagesTool[] | undefined => {
   if (!tools || tools.length === 0) return undefined;
 
-  return tools.map((tool) => ({
-    name: tool.name,
-    description: tool.description,
-    input_schema: tool.parameters,
-    strict: tool.strict,
-  }));
+  const translated = tools.flatMap((tool): MessagesTool[] => {
+    if (tool.type === "web_search") {
+      const nativeTool: MessagesNativeWebSearchTool = {
+        type: "web_search_20260209",
+        name: "web_search",
+      };
+      if (tool.filters?.allowed_domains) {
+        nativeTool.allowed_domains = tool.filters.allowed_domains;
+      }
+      if (tool.user_location) nativeTool.user_location = tool.user_location;
+      return [nativeTool];
+    }
+
+    if (tool.type !== "function") return [];
+
+    return [{
+      name: tool.name,
+      description: tool.description,
+      input_schema: tool.parameters,
+      strict: tool.strict,
+    }];
+  });
+
+  return translated.length > 0 ? translated : undefined;
 };
 
 const translateToolChoice = (
@@ -317,9 +340,11 @@ const translateToolChoice = (
     }
   }
 
-  return toolChoice.type === "function" && toolChoice.name
-    ? { type: "tool", name: toolChoice.name }
-    : undefined;
+  if (toolChoice.type === "web_search") {
+    return { type: "tool", name: "web_search" };
+  }
+
+  return toolChoice.name ? { type: "tool", name: toolChoice.name } : undefined;
 };
 
 export const translateResponsesToMessagesResponse = (

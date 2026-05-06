@@ -10,6 +10,7 @@ import type {
   ToolCall,
 } from "../chat-completions-types.ts";
 import type {
+  ResponseFunctionTool,
   ResponseInputContent,
   ResponseInputItem,
   ResponseOutputItem,
@@ -168,7 +169,9 @@ const translateResponseTools = (
   tools?: ResponseTool[] | null,
 ): Tool[] | undefined =>
   tools?.length
-    ? tools.map((tool) => ({
+    ? tools.filter((tool): tool is ResponseFunctionTool =>
+      tool.type === "function"
+    ).map((tool) => ({
       type: "function",
       function: {
         name: tool.name,
@@ -186,6 +189,8 @@ const translateResponseToolChoice = (
     ? undefined
     : typeof choice === "string"
     ? choice
+    : choice.type === "web_search"
+    ? undefined
     : { type: "function", function: { name: choice.name } };
 
 const buildChatResponseFormat = (
@@ -242,6 +247,7 @@ export const translateResponsesToChatCompletions = (
       // item_reference items are connection-bound pointers with no inline
       // content to translate; skip them.
       if (item.type === "item_reference") continue;
+      if (item.type === "web_search_call") continue;
 
       if (item.role === "assistant") {
         assistant = appendAssistantText(
@@ -356,6 +362,7 @@ export const translateResponsesToChatCompletion = (
       });
       continue;
     }
+    if (item.type === "web_search_call") continue;
 
     reasoningItems.push(toChatReasoningItem(item));
     const text = item.summary.map((part) => part.text).join("");
