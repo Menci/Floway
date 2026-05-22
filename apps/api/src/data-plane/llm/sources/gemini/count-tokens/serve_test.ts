@@ -53,12 +53,12 @@ test('/v1beta/models/:model:countTokens translates Gemini request to Messages co
 
   assertExists(upstreamBody);
   assertEquals(upstreamBody.model, 'claude-count');
-  assertEquals(upstreamBody.system, 'system');
+  assertEquals(upstreamBody.system, [{ type: 'text', text: 'system', cache_control: { type: 'ephemeral' } }]);
   assertEquals(upstreamBody.max_tokens, 123);
   assertEquals(upstreamBody.messages, [
     {
       role: 'user',
-      content: [{ type: 'text', text: 'hello' }],
+      content: [{ type: 'text', text: 'hello', cache_control: { type: 'ephemeral' } }],
     },
   ]);
 });

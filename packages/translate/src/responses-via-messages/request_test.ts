@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { translateResponsesToMessages } from './request.ts';
 import { assert, assertEquals, assertFalse, assertRejects } from '../test-assert.ts';
-import { MESSAGES_FALLBACK_MAX_TOKENS } from '@floway-dev/protocols/messages';
+import { MESSAGES_FALLBACK_MAX_TOKENS, type MessagesClientTool, type MessagesToolResultBlock, type MessagesUserContentBlock } from '@floway-dev/protocols/messages';
 
 const stubRemoteImageLoader = (result: { mediaType: string | null; data: Uint8Array } | null) => () => Promise.resolve(result);
 
@@ -190,6 +190,7 @@ test('translateResponsesToMessages resolves remote input images through the shar
         media_type: 'image/png',
         data: 'AQID',
       },
+      cache_control: { type: 'ephemeral' },
     },
   ]);
 });
@@ -222,7 +223,7 @@ test('translateResponsesToMessages drops reasoning input without readable summar
     result.target.messages.map(m => ({ role: m.role, content: m.content })),
     [
       { role: 'user', content: 'hi' },
-      { role: 'user', content: 'follow up' },
+      { role: 'user', content: [{ type: 'text', text: 'follow up', cache_control: { type: 'ephemeral' } }] },
     ],
   );
 });
@@ -266,6 +267,9 @@ test('translateResponsesToMessages wraps custom tools as single-string function 
           },
         },
       },
+      // Single (only) function-tool entry receives the breakpoint as the last
+      // function tool; applyLastToolCacheBreakpoint walks right-to-left.
+      cache_control: { type: 'ephemeral' },
     },
   ]);
   assertEquals(result.target.tool_choice, { type: 'tool', name: 'apply_patch' });
@@ -318,6 +322,9 @@ test('translateResponsesToMessages projects custom_tool_call history into wrappe
         type: 'tool_result',
         tool_use_id: 'call_1',
         content: 'ok',
+        // Last block of the last message — cache_control attached by
+        // applyLastMessageCacheBreakpoint.
+        cache_control: { type: 'ephemeral' },
       },
     ],
   });
@@ -382,4 +389,39 @@ test('translateResponsesToMessages throws on a stray web_search_call input item 
     Error,
     'Responses → Messages translator does not accept web_search_call input items',
   );
+});
+
+test('translateResponsesToMessages attaches ephemeral cache breakpoints to system, last function tool, and last message block', async () => {
+  const result = await translateResponsesToMessages({
+    model: 'claude-test',
+    input: [
+      { type: 'message', role: 'user', content: 'Look up the weather.' },
+      { type: 'function_call', call_id: 'tc1', name: 'get_weather', arguments: '{"city":"Tokyo"}', status: 'completed' },
+      { type: 'function_call_output', call_id: 'tc1', output: '{"temp":20}' },
+    ],
+    instructions: 'You are helpful.',
+    temperature: null,
+    top_p: null,
+    max_output_tokens: 256,
+    tools: [
+      { type: 'function', name: 'get_time', parameters: { type: 'object', properties: {} }, strict: false },
+      { type: 'function', name: 'get_weather', parameters: { type: 'object', properties: {} }, strict: false },
+    ],
+    tool_choice: 'auto',
+    metadata: null,
+    stream: null,
+    store: false,
+    parallel_tool_calls: true,
+  });
+
+  assertEquals(result.target.system, [{ type: 'text', text: 'You are helpful.', cache_control: { type: 'ephemeral' } }]);
+
+  const tools = result.target.tools as MessagesClientTool[];
+  assertEquals(tools[0].cache_control, undefined);
+  assertEquals(tools[1].cache_control, { type: 'ephemeral' });
+
+  const lastMessage = result.target.messages[result.target.messages.length - 1];
+  const lastBlock = (lastMessage.content as MessagesUserContentBlock[]).at(-1) as MessagesToolResultBlock;
+  assertEquals(lastBlock.type, 'tool_result');
+  assertEquals(lastBlock.cache_control, { type: 'ephemeral' });
 });

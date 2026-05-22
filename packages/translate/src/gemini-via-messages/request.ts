@@ -11,12 +11,14 @@ import {
   type GeminiToolCallIds,
   geminiVisibleText,
 } from '../shared/gemini-via/gemini.ts';
+import { applyLastMessageCacheBreakpoint, applyLastToolCacheBreakpoint, EPHEMERAL_CACHE_CONTROL } from '../shared/via-messages/cache-breakpoints.ts';
 import type { GeminiContent, GeminiGenerateContentRequest, GeminiGenerationConfig, GeminiPart, GeminiThinkingConfig } from '@floway-dev/protocols/gemini';
 import {
   MESSAGES_FALLBACK_MAX_TOKENS,
   type MessagesAssistantContentBlock,
   type MessagesImageBlock,
   type MessagesPayload,
+  type MessagesTextBlock,
   type MessagesTool,
   type MessagesToolResultBlock,
   type MessagesUserContentBlock,
@@ -224,7 +226,10 @@ export const buildTargetRequest = (
   const unmatchedToolCallIds: GeminiToolCallIds = {};
 
   const system = geminiText(payload.systemInstruction);
-  if (system !== null) request.system = system;
+  if (system !== null) {
+    const systemBlock: MessagesTextBlock = { type: 'text', text: system, cache_control: EPHEMERAL_CACHE_CONTROL };
+    request.system = [systemBlock];
+  }
 
   payload.contents?.forEach((content, turnIndex) => {
     const message = content.role === 'model' ? buildAssistantMessage(content, turnIndex, unmatchedToolCallIds) : buildUserMessage(content, turnIndex, unmatchedToolCallIds);
@@ -235,6 +240,8 @@ export const buildTargetRequest = (
 
   const tools = buildTools(payload);
   if (tools) request.tools = tools;
+  applyLastToolCacheBreakpoint(request.tools);
+  applyLastMessageCacheBreakpoint(request.messages);
 
   const intent = geminiFunctionCallingIntent(payload.toolConfig?.functionCallingConfig);
   switch (intent?.type) {

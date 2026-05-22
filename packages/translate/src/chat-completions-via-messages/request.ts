@@ -1,8 +1,9 @@
 import { messagesThinkingBlockFromChatScalarReasoning } from '../shared/chat-and-messages/reasoning.ts';
 import { parseToolArgumentsObject } from '../shared/messages/tool-arguments.ts';
+import { applyLastMessageCacheBreakpoint, applyLastToolCacheBreakpoint, EPHEMERAL_CACHE_CONTROL } from '../shared/via-messages/cache-breakpoints.ts';
 import { fetchRemoteImage, type RemoteImageLoader, resolveImageUrlToMessagesImage } from '../shared/via-messages/remote-images.ts';
 import type { ChatCompletionsPayload, ContentPart, Message, Tool } from '@floway-dev/protocols/chat-completions';
-import { MESSAGES_FALLBACK_MAX_TOKENS, type MessagesAssistantContentBlock, type MessagesMessage, type MessagesPayload, type MessagesUserContentBlock } from '@floway-dev/protocols/messages';
+import { MESSAGES_FALLBACK_MAX_TOKENS, type MessagesAssistantContentBlock, type MessagesMessage, type MessagesPayload, type MessagesTextBlock, type MessagesUserContentBlock } from '@floway-dev/protocols/messages';
 
 interface TranslateChatCompletionsToMessagesOptions {
   loadRemoteImage?: RemoteImageLoader;
@@ -156,6 +157,13 @@ export const translateChatCompletionsToMessages = async (payload: ChatCompletion
   const messages = await buildMessagesInput(nonSystemMessages, options.loadRemoteImage ?? fetchRemoteImage);
 
   const maxTokens = payload.max_tokens ?? options.fallbackMaxOutputTokens ?? MESSAGES_FALLBACK_MAX_TOKENS;
+  const systemText = systemParts.length > 0 ? systemParts.join('\n\n') : '';
+  const systemBlocks: MessagesTextBlock[] | undefined = systemText
+    ? [{ type: 'text', text: systemText, cache_control: EPHEMERAL_CACHE_CONTROL }]
+    : undefined;
+  const tools = payload.tools?.length ? translateChatCompletionsTools(payload.tools) : undefined;
+  applyLastToolCacheBreakpoint(tools);
+  applyLastMessageCacheBreakpoint(messages);
 
   // Leave OpenAI `user` and generic metadata out of the Messages fallback instead
   // of treating them as a backchannel for Anthropic `metadata.user_id`.
@@ -163,7 +171,7 @@ export const translateChatCompletionsToMessages = async (payload: ChatCompletion
     model: payload.model,
     messages,
     max_tokens: maxTokens,
-    ...(systemParts.length > 0 ? { system: systemParts.join('\n\n') } : {}),
+    ...(systemBlocks ? { system: systemBlocks } : {}),
     ...(payload.temperature != null ? { temperature: payload.temperature } : {}),
     ...(payload.top_p != null ? { top_p: payload.top_p } : {}),
     ...(payload.stop != null
@@ -172,7 +180,7 @@ export const translateChatCompletionsToMessages = async (payload: ChatCompletion
         }
       : {}),
     stream: true,
-    ...(payload.tools?.length ? { tools: translateChatCompletionsTools(payload.tools) } : {}),
+    ...(tools ? { tools } : {}),
     ...(payload.tool_choice != null ? { tool_choice: translateChatCompletionsToolChoice(payload.tool_choice) } : {}),
     ...(payload.reasoning_effort && payload.reasoning_effort !== 'none' ? { output_config: { effort: payload.reasoning_effort } } : {}),
   };

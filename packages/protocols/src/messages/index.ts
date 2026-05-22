@@ -69,6 +69,7 @@ export interface MessagesTextBlock {
   type: 'text';
   text: string;
   citations?: MessagesTextCitation[];
+  cache_control?: { type: 'ephemeral' };
 }
 
 export interface MessagesImageBlock {
@@ -78,6 +79,7 @@ export interface MessagesImageBlock {
     media_type: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
     data: string;
   };
+  cache_control?: { type: 'ephemeral' };
 }
 
 export interface MessagesSearchResultBlock {
@@ -103,6 +105,7 @@ export interface MessagesToolResultBlock {
   tool_use_id: string;
   content: string | MessagesToolResultContentBlock[];
   is_error?: boolean;
+  cache_control?: { type: 'ephemeral' };
 }
 
 export interface MessagesToolUseBlock {
@@ -111,6 +114,7 @@ export interface MessagesToolUseBlock {
   name: string;
   input: Record<string, unknown>;
   caller?: { type: 'direct' };
+  cache_control?: { type: 'ephemeral' };
 }
 
 export interface MessagesServerToolUseBlock {
@@ -175,6 +179,7 @@ export interface MessagesClientTool {
   description?: string;
   input_schema: Record<string, unknown>;
   strict?: boolean;
+  cache_control?: { type: 'ephemeral' };
 }
 
 export interface MessagesNativeWebSearchTool {

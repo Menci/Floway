@@ -54,7 +54,7 @@ test('system message extracted to system field', async () => {
       ],
     }),
   );
-  assertEquals(result.system, 'You are helpful.');
+  assertEquals(result.system, [{ type: 'text', text: 'You are helpful.', cache_control: { type: 'ephemeral' } }]);
   assertEquals(result.messages.length, 1);
   assertEquals(result.messages[0].role, 'user');
 });
@@ -68,7 +68,7 @@ test('developer message treated same as system', async () => {
       ],
     }),
   );
-  assertEquals(result.system, 'Dev instructions');
+  assertEquals(result.system, [{ type: 'text', text: 'Dev instructions', cache_control: { type: 'ephemeral' } }]);
 });
 
 test('multiple system messages joined with double newline', async () => {
@@ -81,7 +81,7 @@ test('multiple system messages joined with double newline', async () => {
       ],
     }),
   );
-  assertEquals(result.system, 'First\n\nSecond');
+  assertEquals(result.system, [{ type: 'text', text: 'First\n\nSecond', cache_control: { type: 'ephemeral' } }]);
 });
 
 test('empty system content is skipped', async () => {
@@ -111,7 +111,7 @@ test('system with ContentPart array extracts text parts', async () => {
       ],
     }),
   );
-  assertEquals(result.system, 'AB');
+  assertEquals(result.system, [{ type: 'text', text: 'AB', cache_control: { type: 'ephemeral' } }]);
 });
 
 // ── Basic message mapping ──
@@ -124,7 +124,9 @@ test('simple user message → string content', async () => {
   );
   assertEquals(result.messages.length, 1);
   assertEquals(result.messages[0].role, 'user');
-  assertEquals(result.messages[0].content, 'Hello');
+  // Last message of the request gets promoted to a single text block with a
+  // cache breakpoint by applyLastMessageCacheBreakpoint.
+  assertEquals(result.messages[0].content, [{ type: 'text', text: 'Hello', cache_control: { type: 'ephemeral' } }]);
 });
 
 test('simple assistant message → text block', async () => {
@@ -974,7 +976,7 @@ test('full tool use round-trip conversation', async () => {
       ],
     }),
   );
-  assertEquals(result.system, 'You are helpful.');
+  assertEquals(result.system, [{ type: 'text', text: 'You are helpful.', cache_control: { type: 'ephemeral' } }]);
   assertEquals(result.messages.length, 4);
   assertEquals(result.messages[0].role, 'user');
   assertEquals(result.messages[1].role, 'assistant');
@@ -982,6 +984,58 @@ test('full tool use round-trip conversation', async () => {
   assertEquals(result.messages[3].role, 'assistant');
   const trBlocks = result.messages[2].content as MessagesUserContentBlock[];
   assertEquals(trBlocks[0].type, 'tool_result');
+});
+
+// ── Cache breakpoints ──
+
+test('attaches ephemeral cache breakpoints to system, last function tool, and last message block', async () => {
+  const result = await translateChatCompletionsToMessages(
+    mkPayload({
+      messages: [
+        { role: 'system', content: 'You are helpful.' },
+        { role: 'user', content: 'Look up the weather.' },
+        {
+          role: 'assistant',
+          content: null,
+          tool_calls: [{ id: 'tc1', type: 'function', function: { name: 'get_weather', arguments: '{"city":"Tokyo"}' } }],
+        },
+        { role: 'tool', content: '{"temp":20}', tool_call_id: 'tc1' },
+      ],
+      tools: [
+        { type: 'function', function: { name: 'get_time', parameters: { type: 'object', properties: {} } } },
+        { type: 'function', function: { name: 'get_weather', parameters: { type: 'object', properties: {} } } },
+      ],
+    }),
+  );
+
+  assertEquals(result.system, [{ type: 'text', text: 'You are helpful.', cache_control: { type: 'ephemeral' } }]);
+
+  const tools = result.tools as MessagesClientTool[];
+  assertEquals(tools[0].cache_control, undefined);
+  assertEquals(tools[1].cache_control, { type: 'ephemeral' });
+
+  const lastMessage = result.messages[result.messages.length - 1];
+  const lastBlock = (lastMessage.content as MessagesUserContentBlock[]).at(-1) as MessagesToolResultBlock;
+  assertEquals(lastBlock.type, 'tool_result');
+  assertEquals(lastBlock.cache_control, { type: 'ephemeral' });
+});
+
+test('attaches ephemeral cache breakpoint to the promoted text block when last message is assistant with string content', async () => {
+  // Promotion path: assistant.content === string → wrapped into a single
+  // text block carrying the breakpoint. Mirrors the user-string case but
+  // exercises the assistant branch of the message-content union.
+  const result = await translateChatCompletionsToMessages(
+    mkPayload({
+      messages: [
+        { role: 'user', content: 'Hi' },
+        { role: 'assistant', content: 'Hello!' },
+      ],
+    }),
+  );
+
+  const lastMessage = result.messages[result.messages.length - 1];
+  assertEquals(lastMessage.role, 'assistant');
+  assertEquals(lastMessage.content, [{ type: 'text', text: 'Hello!', cache_control: { type: 'ephemeral' } }]);
 });
 
 test('interleaved thinking round-trip', async () => {

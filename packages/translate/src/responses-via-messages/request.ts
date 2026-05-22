@@ -1,6 +1,7 @@
 import { parseToolArgumentsObject } from '../shared/messages/tool-arguments.ts';
 import { responsesReasoningToMessagesBlock } from '../shared/messages-and-responses/reasoning.ts';
 import { buildCustomToolInputSchema } from '../shared/responses-via/custom-tool-wrap.ts';
+import { applyLastMessageCacheBreakpoint, applyLastToolCacheBreakpoint, EPHEMERAL_CACHE_CONTROL } from '../shared/via-messages/cache-breakpoints.ts';
 import { fetchRemoteImage, type RemoteImageLoader, resolveImageUrlToMessagesImage } from '../shared/via-messages/remote-images.ts';
 import {
   MESSAGES_FALLBACK_MAX_TOKENS,
@@ -8,6 +9,7 @@ import {
   type MessagesAssistantMessage,
   type MessagesMessage,
   type MessagesPayload,
+  type MessagesTextBlock,
   type MessagesTool,
   type MessagesToolResultBlock,
   type MessagesUserContentBlock,
@@ -265,6 +267,11 @@ export const translateResponsesToMessages = async (payload: ResponsesPayload, op
   const system = [payload.instructions, ...systemParts].filter((part): part is string => Boolean(part)).join('\n\n');
   const effort = payload.reasoning?.effort;
   const maxTokens = payload.max_output_tokens ?? options.fallbackMaxOutputTokens ?? MESSAGES_FALLBACK_MAX_TOKENS;
+  const systemBlocks: MessagesTextBlock[] | undefined = system
+    ? [{ type: 'text', text: system, cache_control: EPHEMERAL_CACHE_CONTROL }]
+    : undefined;
+  applyLastToolCacheBreakpoint(tools);
+  applyLastMessageCacheBreakpoint(messages);
 
   // Responses `metadata` is intentionally omitted on the Messages
   // path; not coerced into Anthropic metadata.user_id, prompt-cache,
@@ -273,7 +280,7 @@ export const translateResponsesToMessages = async (payload: ResponsesPayload, op
     model: payload.model,
     messages,
     max_tokens: maxTokens,
-    ...(system ? { system } : {}),
+    ...(systemBlocks ? { system: systemBlocks } : {}),
     ...(payload.temperature != null ? { temperature: payload.temperature } : {}),
     ...(payload.top_p != null ? { top_p: payload.top_p } : {}),
     stream: true,
