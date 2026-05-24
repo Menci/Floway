@@ -10,7 +10,8 @@
     "./responses": { "import": "./src/responses/index.ts", "types": "./src/responses/index.ts" },
     "./messages": { "import": "./src/messages/index.ts", "types": "./src/messages/index.ts" },
     "./gemini": { "import": "./src/gemini/index.ts", "types": "./src/gemini/index.ts" },
-    "./embeddings": { "import": "./src/embeddings/index.ts", "types": "./src/embeddings/index.ts" }
+    "./embeddings": { "import": "./src/embeddings/index.ts", "types": "./src/embeddings/index.ts" },
+    "./images": { "import": "./src/images/index.ts", "types": "./src/images/index.ts" }
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
