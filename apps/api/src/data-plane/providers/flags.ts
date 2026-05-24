@@ -7,11 +7,14 @@
 // the other way. This makes "one flag drives multiple interceptors" trivial
 // and keeps the catalog free of runtime closures.
 //
-// Vendor-style flags (e.g. `vendor-deepseek`) are data-only — they have no
-// optional interceptor of their own. Other interceptors read
-// `invocation.enabledFlags` and dispatch on these flags to decide which
-// vendor-specific protocol extension to emit. With no vendor flag set,
-// behavior defaults to the OpenAI standard.
+// Vendor-style flags (`vendor-deepseek`, `vendor-qwen`, `vendor-kimi`) each
+// own a dedicated last-running interceptor under
+// `apps/api/src/data-plane/llm/targets/<api>/interceptors/vendor-<vendor>-normalize.ts`.
+// That interceptor translates the gateway's OpenAI-canonical request and
+// response shape into the vendor's wire dialect. With no vendor flag set,
+// behavior defaults to the OpenAI standard and no vendor rewrite runs.
+// Vendor flags are mutually exclusive per binding — the dashboard surfaces
+// them as a single radio rather than three independent toggles.
 
 import type { UpstreamProviderKind } from '../../repo/types.ts';
 
@@ -28,14 +31,20 @@ export interface Flag {
 export const OPTIONAL_FLAGS = [
   {
     id: 'vendor-deepseek',
-    label: 'Vendor: DeepSeek style',
-    description: 'Marks this upstream as DeepSeek-compatible. Affects some flags below.',
+    label: 'Vendor: DeepSeek',
+    description: "Pick this when the upstream serves DeepSeek's chat completions API. The gateway translates between OpenAI canonical and DeepSeek's dialect: assistant reasoning rides on `reasoning_content` instead of `reasoning_text`; disabling reasoning uses a top-level `thinking: { type: 'disabled' }` instead of `reasoning_effort: 'none'`; cache hit/miss tokens normalise to OpenAI's `prompt_tokens_details.cached_tokens`; and structured-output `json_schema` requests are downgraded to `json_object` because DeepSeek doesn't accept schemas.",
     defaultFor: [],
   },
   {
     id: 'vendor-qwen',
-    label: 'Vendor: Qwen style',
-    description: 'Marks this upstream as Qwen-compatible. Affects some flags below.',
+    label: 'Vendor: Qwen',
+    description: "Pick this when the upstream serves Qwen's (Alibaba Model Studio) chat completions API. The gateway rewrites a 'no reasoning' request to Qwen's top-level `enable_thinking: false` field instead of `reasoning_effort`.",
+    defaultFor: [],
+  },
+  {
+    id: 'vendor-kimi',
+    label: 'Vendor: Kimi',
+    description: "Pick this when the upstream serves Kimi's (Moonshot) chat completions API. The gateway normalises Kimi's flat `cached_tokens` usage field back to OpenAI's `prompt_tokens_details.cached_tokens`.",
     defaultFor: [],
   },
   {
@@ -57,15 +66,9 @@ export const OPTIONAL_FLAGS = [
     defaultFor: [],
   },
   {
-    id: 'deepseek-reasoning-dialect',
-    label: 'DeepSeek reasoning dialect',
-    description: "On Chat Completions, use DeepSeek's legacy reasoning_content field instead of OpenAI's reasoning_text.",
-    defaultFor: [],
-  },
-  {
     id: 'disable-reasoning-on-forced-tool-choice',
     label: 'Disable reasoning when caller forces a tool',
-    description: "Disable reasoning in the outbound request when the caller forces a specific tool. Combine with a vendor flag above to also emit that vendor's disable signal.",
+    description: "Disable reasoning in the outbound request when the caller forces a specific tool. Emits the gateway's canonical 'no reasoning' sentinel; the active Vendor flag (if any) translates that into the vendor's wire form.",
     defaultFor: [],
   },
 ] as const satisfies readonly Flag[];

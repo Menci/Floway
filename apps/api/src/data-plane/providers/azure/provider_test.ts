@@ -41,12 +41,12 @@ const azureRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord =>
 };
 
 test('createAzureProvider projects configured deployments into upstream models', async () => {
-  const instance = createAzureProvider(azureRecord({ flagOverrides: { 'deepseek-reasoning-dialect': true } }));
+  const instance = createAzureProvider(azureRecord({ flagOverrides: { 'vendor-kimi': true } }));
   const models = await instance.provider.getProvidedModels();
 
   assertEquals(instance.upstream, 'up_azure');
   assertEquals(instance.name, 'Azure Resource');
-  assertEquals(models[0]?.enabledFlags.has('deepseek-reasoning-dialect'), true);
+  assertEquals(models[0]?.enabledFlags.has('vendor-kimi'), true);
   assertEquals(
     models.map(model => ({ id: model.id, displayName: model.display_name, endpoints: model.upstreamEndpoints, providerData: model.providerData })),
     [
@@ -240,7 +240,7 @@ test('createAzureProvider applies per-deployment flag overrides on top of the up
           {
             deployment: 'd2',
             supportedEndpoints: ['/chat/completions'],
-            flagOverrides: { enabled: true, values: { 'vendor-deepseek': false, 'deepseek-reasoning-dialect': true } },
+            flagOverrides: { enabled: true, values: { 'vendor-deepseek': false, 'vendor-kimi': true } },
           },
         ],
       },
@@ -252,9 +252,9 @@ test('createAzureProvider applies per-deployment flag overrides on top of the up
   if (!d1 || !d2) throw new Error('expected both deployments');
 
   assertEquals(d1.enabledFlags.has('vendor-deepseek'), true);
-  assertEquals(d1.enabledFlags.has('deepseek-reasoning-dialect'), false);
+  assertEquals(d1.enabledFlags.has('vendor-kimi'), false);
   assertEquals(d2.enabledFlags.has('vendor-deepseek'), false);
-  assertEquals(d2.enabledFlags.has('deepseek-reasoning-dialect'), true);
+  assertEquals(d2.enabledFlags.has('vendor-kimi'), true);
 });
 
 test('createAzureProvider skips the per-deployment layer when flagOverrides.enabled is false', async () => {

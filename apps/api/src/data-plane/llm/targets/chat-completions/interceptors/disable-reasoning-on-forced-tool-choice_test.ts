@@ -11,7 +11,7 @@ const okEvents = () => Promise.resolve(eventResult((async function* () {})(), te
 const emitInput = (payload: ChatCompletionsPayload, enabledFlags: ReadonlySet<string> = new Set(['disable-reasoning-on-forced-tool-choice'])): ReturnType<typeof chatCompletionsInvocation> =>
   chatCompletionsInvocation(payload, enabledFlags);
 
-test('chat completions required tool_choice strips reasoning_effort', async () => {
+test('chat completions required tool_choice sets reasoning_effort to none', async () => {
   const input = emitInput({
     model: 'm',
     messages: [],
@@ -21,7 +21,7 @@ test('chat completions required tool_choice strips reasoning_effort', async () =
 
   await withReasoningDisabledOnForcedToolChoice(input, stubRequestContext, okEvents);
 
-  assertEquals(input.payload.reasoning_effort, undefined);
+  assertEquals(input.payload.reasoning_effort, 'none');
   const out = input.payload as unknown as Record<string, unknown>;
   assertEquals(out.thinking, undefined);
   assertEquals(out.enable_thinking, undefined);
@@ -37,43 +37,20 @@ test('chat completions object tool_choice is forced', async () => {
 
   await withReasoningDisabledOnForcedToolChoice(input, stubRequestContext, okEvents);
 
-  assertEquals(input.payload.reasoning_effort, undefined);
-});
-
-test('chat completions vendor flags add explicit disable fields', async () => {
-  const input = emitInput(
-    {
-      model: 'm',
-      messages: [],
-      reasoning_effort: 'high',
-      tool_choice: 'required',
-    },
-    new Set(['disable-reasoning-on-forced-tool-choice', 'vendor-deepseek', 'vendor-qwen']),
-  );
-
-  await withReasoningDisabledOnForcedToolChoice(input, stubRequestContext, okEvents);
-
-  const out = input.payload as unknown as Record<string, unknown>;
-  assertEquals(out.thinking, { type: 'disabled' });
-  assertEquals(out.enable_thinking, false);
+  assertEquals(input.payload.reasoning_effort, 'none');
 });
 
 test('chat completions non-forced tool_choice leaves reasoning untouched', async () => {
   for (const tool_choice of ['auto', 'none', null] as const) {
-    const input = emitInput(
-      {
-        model: 'm',
-        messages: [],
-        reasoning_effort: 'high',
-        tool_choice,
-      },
-      new Set(['vendor-deepseek']),
-    );
+    const input = emitInput({
+      model: 'm',
+      messages: [],
+      reasoning_effort: 'high',
+      tool_choice,
+    });
 
     await withReasoningDisabledOnForcedToolChoice(input, stubRequestContext, okEvents);
 
     assertEquals(input.payload.reasoning_effort, 'high');
-    const out = input.payload as unknown as Record<string, unknown>;
-    assertEquals(out.thinking, undefined);
   }
 });

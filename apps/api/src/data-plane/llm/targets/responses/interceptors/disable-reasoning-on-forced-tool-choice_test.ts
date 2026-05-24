@@ -36,7 +36,7 @@ const invocation = (payload: ResponsesPayload, enabledFlags: ReadonlySet<string>
   headers: {},
 });
 
-test('responses required tool_choice strips reasoning', async () => {
+test('responses required tool_choice sets reasoning.effort to none', async () => {
   const input = invocation({
     model: 'm',
     input: 'hi',
@@ -46,7 +46,7 @@ test('responses required tool_choice strips reasoning', async () => {
 
   await withReasoningDisabledOnForcedToolChoice(input, stubRequest, okEvents);
 
-  assertEquals(input.payload.reasoning, undefined);
+  assertEquals(input.payload.reasoning, { effort: 'none' });
   const out = input.payload as unknown as Record<string, unknown>;
   assertEquals(out.thinking, undefined);
   assertEquals(out.enable_thinking, undefined);
@@ -62,43 +62,20 @@ test('responses object tool_choice is forced', async () => {
 
   await withReasoningDisabledOnForcedToolChoice(input, stubRequest, okEvents);
 
-  assertEquals(input.payload.reasoning, undefined);
-});
-
-test('responses vendor flags add explicit disable fields', async () => {
-  const input = invocation(
-    {
-      model: 'm',
-      input: 'hi',
-      reasoning: { effort: 'high' },
-      tool_choice: 'required',
-    },
-    new Set(['disable-reasoning-on-forced-tool-choice', 'vendor-deepseek', 'vendor-qwen']),
-  );
-
-  await withReasoningDisabledOnForcedToolChoice(input, stubRequest, okEvents);
-
-  const out = input.payload as unknown as Record<string, unknown>;
-  assertEquals(out.thinking, { type: 'disabled' });
-  assertEquals(out.enable_thinking, false);
+  assertEquals(input.payload.reasoning, { effort: 'none' });
 });
 
 test('responses non-forced tool_choice leaves reasoning untouched', async () => {
   for (const tool_choice of ['auto', 'none'] as const) {
-    const input = invocation(
-      {
-        model: 'm',
-        input: 'hi',
-        reasoning: { effort: 'high' },
-        tool_choice,
-      },
-      new Set(['vendor-deepseek']),
-    );
+    const input = invocation({
+      model: 'm',
+      input: 'hi',
+      reasoning: { effort: 'high' },
+      tool_choice,
+    });
 
     await withReasoningDisabledOnForcedToolChoice(input, stubRequest, okEvents);
 
     assertEquals(input.payload.reasoning, { effort: 'high' });
-    const out = input.payload as unknown as Record<string, unknown>;
-    assertEquals(out.thinking, undefined);
   }
 });

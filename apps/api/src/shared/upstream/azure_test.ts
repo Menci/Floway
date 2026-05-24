@@ -383,7 +383,7 @@ test('assertAzureUpstreamRecord round-trips per-deployment flagOverrides', () =>
         {
           deployment: 'gpt-5',
           supportedEndpoints: ['/chat/completions'],
-          flagOverrides: { enabled: true, values: { 'deepseek-reasoning-dialect': true, 'vendor-deepseek': false } },
+          flagOverrides: { enabled: true, values: { 'vendor-kimi': true, 'vendor-deepseek': false } },
         },
       ],
     },
@@ -391,7 +391,7 @@ test('assertAzureUpstreamRecord round-trips per-deployment flagOverrides', () =>
 
   assertEquals(parsed.config.deployments[0].flagOverrides, {
     enabled: true,
-    values: { 'deepseek-reasoning-dialect': true, 'vendor-deepseek': false },
+    values: { 'vendor-kimi': true, 'vendor-deepseek': false },
   });
 });
 

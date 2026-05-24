@@ -53,7 +53,7 @@ test('POST /api/upstreams creates custom upstreams and redacts bearer tokens', a
   const { repo, adminKey } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
-  const resp = await requestApp('/api/upstreams', authed(adminKey, createBody({ flag_overrides: { 'deepseek-reasoning-dialect': true } })));
+  const resp = await requestApp('/api/upstreams', authed(adminKey, createBody({ flag_overrides: { 'vendor-kimi': true } })));
 
   assertEquals(resp.status, 201);
   const created = (await resp.json()) as Record<string, any>;
@@ -61,7 +61,7 @@ test('POST /api/upstreams creates custom upstreams and redacts bearer tokens', a
   assertEquals(created.config.bearerToken, undefined);
   assertEquals(created.config.bearerTokenSet, true);
   assertEquals(created.config.baseUrl, 'https://custom.example.com');
-  assertEquals(created.flag_overrides, { 'deepseek-reasoning-dialect': true });
+  assertEquals(created.flag_overrides, { 'vendor-kimi': true });
 
   const stored = await repo.upstreams.getById(created.id);
   assertEquals((stored?.config as Record<string, unknown>).bearerToken, 'sk-test');
@@ -263,11 +263,11 @@ test('GET /api/upstream-flags returns the flag catalog and requires admin auth',
   const resp = await requestApp('/api/upstream-flags', { method: 'GET', headers: { 'x-api-key': adminKey } });
   assertEquals(resp.status, 200);
   const catalog = (await resp.json()) as Array<Record<string, unknown>>;
-  const deepseek = catalog.find(e => e.id === 'deepseek-reasoning-dialect');
-  assertEquals(typeof deepseek?.label, 'string');
-  assertEquals(Array.isArray(deepseek!.defaultFor), true);
+  const sample = catalog.find(e => e.id === 'vendor-kimi');
+  assertEquals(typeof sample?.label, 'string');
+  assertEquals(Array.isArray(sample!.defaultFor), true);
   // `appliesTo` was dropped from the catalog during the Feature Flags refactor; guard against silent re-introduction.
-  assertEquals('appliesTo' in deepseek!, false);
+  assertEquals('appliesTo' in sample!, false);
 
   const forbidden = await requestApp('/api/upstream-flags', { method: 'GET', headers: { 'x-api-key': apiKey.key } });
   assertEquals(forbidden.status, 403);
