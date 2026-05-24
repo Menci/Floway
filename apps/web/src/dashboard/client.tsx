@@ -319,13 +319,14 @@ export function dashboardAssets() {
           azure: 'Azure',
           copilot: 'Copilot',
         };
-        const AZURE_DEPLOYMENT_API_TYPES = ['responses', 'responses_chat', 'chat_completions', 'messages', 'embeddings'];
+        const AZURE_DEPLOYMENT_API_TYPES = ['responses', 'responses_chat', 'chat_completions', 'messages', 'embeddings', 'images'];
         const AZURE_DEPLOYMENT_API_TYPE_LABELS = {
           responses: 'Responses',
           responses_chat: 'Responses + Chat',
           chat_completions: 'Chat',
           messages: 'Messages',
           embeddings: 'Embeddings',
+          images: 'Images',
         };
         const AZURE_DEPLOYMENT_API_TYPE_ENDPOINTS = {
           responses: ['/responses'],
@@ -333,6 +334,7 @@ export function dashboardAssets() {
           chat_completions: ['/chat/completions'],
           messages: ['/v1/messages'],
           embeddings: ['/embeddings'],
+          images: ['/v1/images/generations', '/v1/images/edits'],
         };
 
         function blankPathOverrides() {
@@ -412,6 +414,7 @@ export function dashboardAssets() {
           const set = new Set(Array.isArray(endpoints) ? endpoints : []);
           if (set.has('/v1/messages') || set.has('/messages')) return 'messages';
           if (set.has('/embeddings') || set.has('/v1/embeddings')) return 'embeddings';
+          if (set.has('/v1/images/generations') || set.has('/images/generations') || set.has('/v1/images/edits') || set.has('/images/edits')) return 'images';
           const hasResponses = set.has('/responses') || set.has('/v1/responses');
           const hasChat = set.has('/chat/completions') || set.has('/v1/chat/completions');
           if (hasResponses && hasChat) return 'responses_chat';
