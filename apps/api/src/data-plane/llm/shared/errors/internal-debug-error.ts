@@ -1,8 +1,8 @@
 import type { LlmSourceApi, LlmTargetApi } from '../../interceptors.ts';
 
-// Embeddings is not part of the LLM source-routing graph but uses the same
-// debug envelope when its handler fails; widen at this boundary only.
-type DebugSourceApi = LlmSourceApi | 'embeddings';
+// Embeddings and images are not part of the LLM source-routing graph but use
+// the same debug envelope when their handlers fail; widen at this boundary only.
+type DebugSourceApi = LlmSourceApi | 'embeddings' | 'images_generations' | 'images_edits';
 
 export interface InternalDebugError {
   type: 'internal_error';

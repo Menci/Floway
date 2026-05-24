@@ -9,7 +9,7 @@ import { internalErrorResult, type ExecuteResult, type UpstreamErrorResult } fro
 import { thrownUpstreamErrorResult } from '../shared/errors/upstream-error.ts';
 import type { ProtocolFrame } from '@copilot-gateway/protocols/common';
 
-type PerformanceLlmSourceApi = Exclude<PerformanceApiName, 'embeddings'>;
+type PerformanceLlmSourceApi = Exclude<PerformanceApiName, 'embeddings' | 'images_generations' | 'images_edits'>;
 
 export const createRequestContext = (c: Context, downstreamAbortSignal: AbortSignal | undefined, clientStream: boolean): RequestContext => {
   const apiKeyId = c.get('apiKeyId') as string | undefined;

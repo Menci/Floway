@@ -8,7 +8,7 @@ import { readUpstreamError } from '../shared/errors/upstream-error.ts';
 import { parseSSEStream } from '../shared/stream/parse-sse.ts';
 import type { SseFrame } from '@copilot-gateway/protocols/common';
 
-export type TargetEmitApiName = Exclude<PerformanceApiName, 'gemini' | 'embeddings'>;
+export type TargetEmitApiName = Exclude<PerformanceApiName, 'gemini' | 'embeddings' | 'images_generations' | 'images_edits'>;
 
 export const targetModelIdentity = (invocation: Invocation<unknown>, modelKey: string): TelemetryModelIdentity => ({
   model: invocation.model,
