@@ -18,6 +18,7 @@ import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 // (on UpstreamModel) is the precise per-protocol availability list used by
 // the planner. They are linked invariants enforced at the producer boundary:
 //   `kind === 'embedding'` ⇔ `upstreamEndpoints === ['embeddings']`
+//   `kind === 'image'`     ⇔ `upstreamEndpoints ⊂ {images_generations, images_edits}`
 //   `kind === 'chat'`      ⇒ `upstreamEndpoints ⊂ generation endpoints`.
 export interface InternalModel {
   id: string;
