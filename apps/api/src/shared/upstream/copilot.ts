@@ -16,15 +16,17 @@ export interface CopilotUpstream extends Upstream {
 
 // Copilot mounts its API at the host root and uses an Anthropic-style
 // `/v1/messages` for the Messages endpoint while keeping `/chat/completions`,
-// `/responses`, `/embeddings`, and `/models` un-prefixed. These paths are not
-// admin-configurable: they reflect Copilot's own contract, not a deployment
-// choice.
+// `/responses`, `/embeddings`, `/images/*`, and `/models` un-prefixed. These
+// paths are not admin-configurable: they reflect Copilot's own contract, not
+// a deployment choice.
 const COPILOT_PATHS: Record<EndpointKey, string> = {
   chat_completions: '/chat/completions',
   responses: '/responses',
   messages: '/v1/messages',
   messages_count_tokens: '/v1/messages/count_tokens',
   embeddings: '/embeddings',
+  images_generations: '/images/generations',
+  images_edits: '/images/edits',
   models: '/models',
 };
 

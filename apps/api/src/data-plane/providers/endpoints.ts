@@ -26,6 +26,8 @@ const ENDPOINT_TO_PUBLIC_PATH: Record<ModelEndpoint, string> = {
   messages: '/v1/messages',
   messages_count_tokens: '/v1/messages/count_tokens',
   embeddings: '/embeddings',
+  images_generations: '/images/generations',
+  images_edits: '/images/edits',
 };
 
 export const modelEndpointToPublicPath = (endpoint: ModelEndpoint): string => ENDPOINT_TO_PUBLIC_PATH[endpoint];
@@ -47,6 +49,12 @@ export const publicPathToModelEndpoint = (path: string): ModelEndpoint | undefin
   case '/embeddings':
   case '/v1/embeddings':
     return 'embeddings';
+  case '/images/generations':
+  case '/v1/images/generations':
+    return 'images_generations';
+  case '/images/edits':
+  case '/v1/images/edits':
+    return 'images_edits';
   default:
     return undefined;
   }
@@ -72,10 +80,13 @@ export const modelEndpointsToPublicPaths = (endpoints: readonly ModelEndpoint[])
 };
 
 // Derive the high-level model kind from the upstreamEndpoints list. Each
-// model belongs to exactly one kind: the presence of `'embeddings'` makes it
-// an embedding model; anything else is chat. Providers that produce mixed
-// endpoint lists (e.g. an upstream incorrectly tagging a chat model with both
-// `/embeddings` and `/chat/completions`) are not supported — that's a
-// configuration error, not a multi-kind model.
-export const kindForEndpoints = (endpoints: readonly ModelEndpoint[]): ModelKind =>
-  endpoints.includes('embeddings') ? 'embedding' : 'chat';
+// model belongs to exactly one kind. `embeddings` implies embedding,
+// `images_generations` or `images_edits` implies image, everything else
+// is chat. Mixed lists (e.g. an upstream incorrectly tagging a model with
+// both `embeddings` and `chat_completions`) are configuration errors;
+// the first matching branch wins.
+export const kindForEndpoints = (endpoints: readonly ModelEndpoint[]): ModelKind => {
+  if (endpoints.includes('embeddings')) return 'embedding';
+  if (endpoints.includes('images_generations') || endpoints.includes('images_edits')) return 'image';
+  return 'chat';
+};

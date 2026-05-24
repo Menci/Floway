@@ -138,6 +138,8 @@ const CUSTOM_DEFAULT_PATHS: Record<EndpointKey, string> = {
   messages: '/v1/messages',
   messages_count_tokens: '/v1/messages/count_tokens',
   embeddings: '/v1/embeddings',
+  images_generations: '/v1/images/generations',
+  images_edits: '/v1/images/edits',
   models: '/v1/models',
 };
 
