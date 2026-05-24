@@ -329,3 +329,90 @@ test('createAzureProvider getPricingForModelKey resolves by deployment name', ()
   assertEquals(instance.provider.getPricingForModelKey('gpt-small'), null);
   assertEquals(instance.provider.getPricingForModelKey('unknown'), null);
 });
+
+test('createAzureProvider exposes image deployments and routes generations with api-version=preview', async () => {
+  const record: UpstreamRecord = {
+    id: 'az-image',
+    provider: 'azure',
+    name: 'azure-images',
+    enabled: true,
+    sortOrder: 0,
+    createdAt: '2026-05-25T00:00:00Z',
+    updatedAt: '2026-05-25T00:00:00Z',
+    flagOverrides: {},
+    config: {
+      endpoint: 'https://example.openai.azure.com/openai/v1',
+      apiKey: 'azkey',
+      deployments: [{
+        deployment: 'gpt-image-2',
+        supportedEndpoints: ['/v1/images/generations', '/v1/images/edits'],
+      }],
+    },
+  };
+
+  let observedUrl: string | undefined;
+  let observedBody: { model?: unknown; prompt?: unknown } | undefined;
+  await withMockedFetch(
+    async request => {
+      observedUrl = request.url;
+      observedBody = await request.json() as Record<string, unknown>;
+      return new Response(JSON.stringify({ data: [{ b64_json: 'x' }], usage: { input_tokens: 1, output_tokens: 2 } }), { status: 200, headers: { 'content-type': 'application/json' } });
+    },
+    async () => {
+      const provider = createAzureProvider(record).provider;
+      const models = await provider.getProvidedModels();
+      assertEquals(models[0].kind, 'image');
+      assertEquals([...models[0].upstreamEndpoints].sort(), ['images_edits', 'images_generations']);
+      const result = await provider.callImagesGenerations(models[0], { prompt: 'hello' });
+      assertEquals(result.modelKey, 'gpt-image-2');
+      assertEquals(result.response.status, 200);
+    },
+  );
+  assertEquals(observedUrl, 'https://example.openai.azure.com/openai/v1/images/generations?api-version=preview');
+  assertEquals(observedBody?.model, 'gpt-image-2');
+  assertEquals(observedBody?.prompt, 'hello');
+});
+
+test('createAzureProvider callImagesEdits posts multipart with model replaced by deployment id and api-version=preview', async () => {
+  const record: UpstreamRecord = {
+    id: 'az-image',
+    provider: 'azure',
+    name: 'azure-images',
+    enabled: true,
+    sortOrder: 0,
+    createdAt: '2026-05-25T00:00:00Z',
+    updatedAt: '2026-05-25T00:00:00Z',
+    flagOverrides: {},
+    config: {
+      endpoint: 'https://example.openai.azure.com/openai/v1',
+      apiKey: 'azkey',
+      deployments: [{
+        deployment: 'gpt-image-2',
+        supportedEndpoints: ['/v1/images/edits'],
+      }],
+    },
+  };
+
+  let observedUrl: string | undefined;
+  let observedForm: FormData | undefined;
+  await withMockedFetch(
+    async request => {
+      observedUrl = request.url;
+      observedForm = await request.formData();
+      return new Response(JSON.stringify({ data: [{ b64_json: 'x' }], usage: { input_tokens: 3, output_tokens: 4 } }), { status: 200, headers: { 'content-type': 'application/json' } });
+    },
+    async () => {
+      const provider = createAzureProvider(record).provider;
+      const models = await provider.getProvidedModels();
+      const form = new FormData();
+      form.append('prompt', 'replace sky');
+      form.append('image', new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' }), 'photo.png');
+      const result = await provider.callImagesEdits(models[0], form);
+      assertEquals(result.modelKey, 'gpt-image-2');
+      assertEquals(result.response.status, 200);
+    },
+  );
+  assertEquals(observedUrl, 'https://example.openai.azure.com/openai/v1/images/edits?api-version=preview');
+  assertEquals(observedForm?.get('model'), 'gpt-image-2');
+  assertEquals(observedForm?.get('prompt'), 'replace sky');
+});

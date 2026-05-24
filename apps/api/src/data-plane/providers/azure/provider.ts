@@ -85,11 +85,15 @@ export const createAzureProvider = (record: UpstreamRecord): ModelProviderInstan
     callMessagesCountTokens: (model, body, signal, anthropicBeta) =>
       call('messages_count_tokens', model, body, signal, anthropicBeta && anthropicBeta.length > 0 ? { 'anthropic-beta': anthropicBeta.join(',') } : undefined),
     callEmbeddings: (model, body, signal) => call('embeddings', model, body, signal),
-    callImagesGenerations: () => {
-      throw new Error('Azure provider stub: callImagesGenerations not yet implemented');
-    },
-    callImagesEdits: () => {
-      throw new Error('Azure provider stub: callImagesEdits not yet implemented');
+    callImagesGenerations: (model, body, signal) => call('images_generations', model, body, signal),
+    callImagesEdits: async (model, body, signal) => {
+      // Azure routes by deployment name in the multipart `model` field; the
+      // runtime re-encodes the FormData with a fresh boundary and sets
+      // Content-Type itself.
+      const deployment = providerData(model).deployment;
+      body.append('model', deployment);
+      const response = await upstream.fetch('images_edits', { method: 'POST', body, signal });
+      return { response, modelKey: deployment };
     },
   };
 

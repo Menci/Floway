@@ -41,6 +41,18 @@ const AZURE_OPENAI_PATHS: Partial<Record<EndpointKey, string>> = {
   responses: '/responses',
   embeddings: '/embeddings',
   models: '/models',
+  images_generations: '/images/generations',
+  images_edits: '/images/edits',
+};
+
+// Per-endpoint query suffix appended to the resolved request URL. Image
+// endpoints on Azure's /openai/v1 surface currently require
+// ?api-version=preview because gpt-image-2 (released 2026-04-21) and the
+// gpt-image-1 family are exposed only under the preview lifecycle. We will
+// drop this entry once Azure promotes the image endpoints to the GA default.
+const AZURE_OPENAI_QUERY: Partial<Record<EndpointKey, string>> = {
+  images_generations: 'api-version=preview',
+  images_edits: 'api-version=preview',
 };
 
 const AZURE_ANTHROPIC_PATHS: Partial<Record<EndpointKey, string>> = {
@@ -48,7 +60,13 @@ const AZURE_ANTHROPIC_PATHS: Partial<Record<EndpointKey, string>> = {
   messages_count_tokens: '/v1/messages/count_tokens',
 };
 
-const OPENAI_DEPLOYMENT_ENDPOINT_PATHS = new Set(['/chat/completions', '/v1/chat/completions', '/responses', '/v1/responses', '/embeddings', '/v1/embeddings']);
+const OPENAI_DEPLOYMENT_ENDPOINT_PATHS = new Set([
+  '/chat/completions', '/v1/chat/completions',
+  '/responses', '/v1/responses',
+  '/embeddings', '/v1/embeddings',
+  '/images/generations', '/v1/images/generations',
+  '/images/edits', '/v1/images/edits',
+]);
 const ANTHROPIC_DEPLOYMENT_ENDPOINT_PATHS = new Set(['/v1/messages', '/messages']);
 const SUPPORTED_ENDPOINT_PATHS = new Set([...OPENAI_DEPLOYMENT_ENDPOINT_PATHS, ...ANTHROPIC_DEPLOYMENT_ENDPOINT_PATHS]);
 const AZURE_ENDPOINT_HOST_SUFFIXES = ['.openai.azure.com', '.services.ai.azure.com'];
@@ -297,7 +315,9 @@ const requestUrl = (openAiBaseUrl: string | undefined, anthropicBaseUrl: string 
   const openAiPath = AZURE_OPENAI_PATHS[endpoint];
   if (openAiPath) {
     if (!openAiBaseUrl) throw new Error('Azure upstream config does not include an OpenAI v1 endpoint');
-    return joinBaseAndPath(openAiBaseUrl, openAiPath);
+    const url = joinBaseAndPath(openAiBaseUrl, openAiPath);
+    const query = AZURE_OPENAI_QUERY[endpoint];
+    return query ? `${url}?${query}` : url;
   }
 
   const anthropicPath = AZURE_ANTHROPIC_PATHS[endpoint];
@@ -328,7 +348,7 @@ export const createAzureUpstream = (record: UpstreamRecord): Upstream => {
       } else {
         headers.set('api-key', config.apiKey);
       }
-      if (init.body && !headers.has('Content-Type')) {
+      if (init.body && !headers.has('Content-Type') && !(init.body instanceof FormData)) {
         headers.set('Content-Type', 'application/json');
       }
       if (options?.extraHeaders) {
