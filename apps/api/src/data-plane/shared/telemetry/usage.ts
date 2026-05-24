@@ -18,6 +18,21 @@ export const tokenUsageFromPromptTokenResponse = (value: unknown): TokenUsage | 
   return typeof usage?.prompt_tokens === 'number' ? tokenUsage(usage.prompt_tokens) : null;
 };
 
+// OpenAI Images responses report usage as
+// `{input_tokens, output_tokens, total_tokens, input_tokens_details, output_tokens_details}`.
+// We only track the totals — the per-modality split (text vs image) has
+// no column on the usage table and cost computation uses input/output
+// against the existing ModelPricing schema.
+export const tokenUsageFromImagesResponse = (value: unknown): TokenUsage | null => {
+  if (!value || typeof value !== 'object') return null;
+  const usage = (value as { usage?: { input_tokens?: unknown; output_tokens?: unknown } }).usage;
+  if (typeof usage?.input_tokens !== 'number' && typeof usage?.output_tokens !== 'number') return null;
+  return tokenUsage(
+    typeof usage.input_tokens === 'number' ? usage.input_tokens : 0,
+    typeof usage.output_tokens === 'number' ? usage.output_tokens : 0,
+  );
+};
+
 export const recordTokenUsage = async (keyId: string, modelIdentity: TelemetryModelIdentity, usage: TokenUsage): Promise<void> => {
   await Promise.all([
     getRepo().usage.record({
