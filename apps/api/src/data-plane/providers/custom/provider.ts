@@ -65,7 +65,10 @@ const finalizeCustomModels = (
   for (const rawModel of response.data) {
     if (!rawModel.id) continue;
     const kind = resolveModelKind(rawModel);
-    const upstreamEndpoints: readonly ModelEndpoint[] = kind === 'embedding' ? ['embeddings'] : configuredChatEndpoints;
+    const upstreamEndpoints: readonly ModelEndpoint[] =
+      kind === 'embedding' ? ['embeddings']
+        : kind === 'image' ? ['images_generations', 'images_edits']
+          : configuredChatEndpoints;
     models.push({
       ...customInternalModel(rawModel),
       kind,
@@ -152,11 +155,13 @@ export const createCustomProvider = (record: UpstreamRecord): ModelProviderInsta
     callMessagesCountTokens: (model, body, signal, anthropicBeta) =>
       call('messages_count_tokens', model, body, signal, anthropicBeta && anthropicBeta.length > 0 ? { 'anthropic-beta': anthropicBeta.join(',') } : undefined),
     callEmbeddings: (model, body, signal) => call('embeddings', model, body, signal),
-    callImagesGenerations: () => {
-      throw new Error('Custom provider stub: callImagesGenerations not yet implemented');
-    },
-    callImagesEdits: () => {
-      throw new Error('Custom provider stub: callImagesEdits not yet implemented');
+    callImagesGenerations: (model, body, signal) => call('images_generations', model, body, signal),
+    callImagesEdits: async (model, body, signal) => {
+      // Custom forwards the user's raw model id. The runtime auto-encodes
+      // the FormData with a fresh boundary and sets Content-Type itself.
+      body.append('model', providerData(model).rawModelId);
+      const response = await upstream.fetch('images_edits', { method: 'POST', body, signal });
+      return { response, modelKey: providerData(model).rawModelId };
     },
   };
 

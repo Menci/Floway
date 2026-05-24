@@ -169,7 +169,7 @@ export const createCustomUpstream = (record: UpstreamRecord): Upstream => {
       } else {
         headers.set('Authorization', `Bearer ${config.bearerToken}`);
       }
-      if (init.body && !headers.has('Content-Type')) {
+      if (init.body && !headers.has('Content-Type') && !(init.body instanceof FormData)) {
         headers.set('Content-Type', 'application/json');
       }
       if (options?.extraHeaders) {

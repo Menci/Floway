@@ -1,7 +1,9 @@
 import { test } from 'vitest';
 
-import { assertEquals } from '../../test-assert.ts';
-import { copilotModels, jsonResponse, requestApp, setupAppTest, withMockedFetch } from '../../test-helpers.ts';
+import { clearCopilotTokenCache } from '../../shared/copilot.ts';
+import { assertEquals, assertExists } from '../../test-assert.ts';
+import { buildCustomUpstreamRecord, copilotModels, flushAsyncWork, jsonResponse, requestApp, setupAppTest, withMockedFetch } from '../../test-helpers.ts';
+import { clearModelsStore } from '../providers/models-store.ts';
 
 test('/v1/images/generations rejects non-JSON body with 400', async () => {
   const { apiKey } = await setupAppTest();
@@ -69,4 +71,60 @@ test('/v1/images/edits rejects multipart body without model field with 400', asy
     body: form,
   });
   assertEquals(response.status, 400);
+});
+
+test('/v1/images/generations forwards a JSON request through a custom upstream and records usage', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  // setupAppTest seeds only a Copilot upstream by default; register a custom
+  // upstream whose /models response declares the requested image model.
+  clearModelsStore();
+  await clearCopilotTokenCache();
+  await repo.upstreams.save(buildCustomUpstreamRecord({
+    id: 'up_images',
+    name: 'Custom Image Provider',
+    sortOrder: 100,
+    config: {
+      baseUrl: 'https://images.example.com',
+      bearerToken: 'sk-images',
+      supportedEndpoints: [],
+    },
+  }));
+
+  let forwarded: Record<string, unknown> | undefined;
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600 });
+      }
+      if (url.hostname === 'api.githubcopilot.com' && url.pathname === '/models') {
+        return jsonResponse(copilotModels([{ id: 'copilot-chat', supported_endpoints: ['/chat/completions'] }]));
+      }
+      if (url.hostname === 'images.example.com' && url.pathname === '/v1/models') {
+        return jsonResponse({ data: [{ id: 'gpt-image-2' }] });
+      }
+      if (url.hostname === 'images.example.com' && url.pathname === '/v1/images/generations') {
+        forwarded = await request.json() as Record<string, unknown>;
+        return jsonResponse({ data: [{ b64_json: 'aGVsbG8=' }], usage: { input_tokens: 10, output_tokens: 50 } });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const response = await requestApp('/v1/images/generations', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+        body: JSON.stringify({ model: 'gpt-image-2', prompt: 'a shiba in space' }),
+      });
+      assertEquals(response.status, 200);
+      const body = await response.json() as { data: { b64_json: string }[] };
+      assertEquals(body.data[0].b64_json, 'aGVsbG8=');
+      await flushAsyncWork();
+    },
+  );
+  assertExists(forwarded);
+  assertEquals(forwarded.model, 'gpt-image-2');
+  assertEquals(forwarded.prompt, 'a shiba in space');
+  const usageRows = await repo.usage.listAll();
+  assertEquals(usageRows.some(row => row.model === 'gpt-image-2' && row.inputTokens === 10 && row.outputTokens === 50), true);
 });

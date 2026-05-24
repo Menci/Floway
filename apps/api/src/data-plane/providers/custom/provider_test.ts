@@ -2,8 +2,8 @@ import { test } from 'vitest';
 
 import { createCustomProvider } from './provider.ts';
 import type { UpstreamRecord } from '../../../repo/types.ts';
-import { assertEquals } from '../../../test-assert.ts';
-import { jsonResponse, setupAppTest, withMockedFetch } from '../../../test-helpers.ts';
+import { assertEquals, assertExists } from '../../../test-assert.ts';
+import { buildCustomUpstreamRecord, jsonResponse, setupAppTest, withMockedFetch } from '../../../test-helpers.ts';
 import { clearModelsStore, ProviderModelsUnavailableError } from '../models-store.ts';
 
 const baseRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => ({
@@ -259,4 +259,93 @@ test('Custom provider falls back to `name` when display_name is missing (loose O
       assertEquals(model.display_name, 'Named Model');
     },
   );
+});
+
+test('Custom provider projects gpt-image-* models with kind=image and both image endpoints', async () => {
+  await setupAppTest();
+  clearModelsStore();
+  const record = buildCustomUpstreamRecord({
+    config: { baseUrl: 'https://custom.example.com', bearerToken: 'sk-custom', supportedEndpoints: ['/v1/chat/completions'] },
+  });
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.pathname === '/v1/models') {
+        return jsonResponse({ data: [{ id: 'gpt-image-2-2026-04-21' }] });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const provider = createCustomProvider(record).provider;
+      const models = await provider.getProvidedModels();
+      assertEquals(models.length, 1);
+      assertEquals(models[0].id, 'gpt-image-2-2026-04-21');
+      assertEquals(models[0].kind, 'image');
+      assertEquals([...models[0].upstreamEndpoints], ['images_generations', 'images_edits']);
+    },
+  );
+});
+
+test('Custom provider callImagesGenerations posts JSON with model re-injected', async () => {
+  await setupAppTest();
+  clearModelsStore();
+  const record = buildCustomUpstreamRecord({
+    config: { baseUrl: 'https://custom.example.com', bearerToken: 'sk-custom', supportedEndpoints: ['/v1/chat/completions'] },
+  });
+  let forwarded: { url: string; body: { model?: unknown; prompt?: unknown } } | undefined;
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.pathname === '/v1/models') return jsonResponse({ data: [{ id: 'gpt-image-2' }] });
+      if (url.pathname === '/v1/images/generations') {
+        forwarded = { url: request.url, body: await request.json() as Record<string, unknown> };
+        return jsonResponse({ data: [{ b64_json: 'abc' }], usage: { input_tokens: 10, output_tokens: 50 } });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const provider = createCustomProvider(record).provider;
+      const models = await provider.getProvidedModels();
+      const result = await provider.callImagesGenerations(models[0], { prompt: 'hi' });
+      assertEquals(result.modelKey, 'gpt-image-2');
+      assertEquals(result.response.status, 200);
+    },
+  );
+  assertExists(forwarded);
+  assertEquals(forwarded.body.model, 'gpt-image-2');
+  assertEquals(forwarded.body.prompt, 'hi');
+});
+
+test('Custom provider callImagesEdits forwards multipart body with model field appended', async () => {
+  await setupAppTest();
+  clearModelsStore();
+  const record = buildCustomUpstreamRecord({
+    config: { baseUrl: 'https://custom.example.com', bearerToken: 'sk-custom', supportedEndpoints: ['/v1/chat/completions'] },
+  });
+  let forwarded: { url: string; form: FormData } | undefined;
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.pathname === '/v1/models') return jsonResponse({ data: [{ id: 'gpt-image-2' }] });
+      if (url.pathname === '/v1/images/edits') {
+        forwarded = { url: request.url, form: await request.formData() };
+        return jsonResponse({ data: [{ b64_json: 'abc' }], usage: { input_tokens: 5, output_tokens: 20 } });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const provider = createCustomProvider(record).provider;
+      const models = await provider.getProvidedModels();
+      const form = new FormData();
+      form.append('prompt', 'add a kite');
+      form.append('image', new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' }), 'photo.png');
+      const result = await provider.callImagesEdits(models[0], form);
+      assertEquals(result.modelKey, 'gpt-image-2');
+      assertEquals(result.response.status, 200);
+    },
+  );
+  assertExists(forwarded);
+  assertEquals(forwarded.form.get('model'), 'gpt-image-2');
+  assertEquals(forwarded.form.get('prompt'), 'add a kite');
+  assertEquals(forwarded.form.get('image') instanceof File, true);
 });

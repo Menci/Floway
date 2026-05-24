@@ -50,3 +50,30 @@ test('inferKindFromModelId returns chat for typical chat model ids', () => {
     assertEquals(inferKindFromModelId(id), 'chat');
   }
 });
+
+test('inferKindFromModelId returns image for the gpt-image-* family', () => {
+  for (const id of [
+    'gpt-image-1',
+    'gpt-image-1-mini',
+    'gpt-image-1.5',
+    'gpt-image-2',
+    'gpt-image-2-2026-04-21',
+  ]) {
+    assertEquals(inferKindFromModelId(id), 'image');
+  }
+});
+
+test('inferKindFromModelId returns chat for non-OpenAI image families and gpt-4o-image variants', () => {
+  for (const id of [
+    'dall-e-3',
+    'dall-e-2',
+    'flux-pro',
+    'flux.1-schnell',
+    'stable-diffusion-3.5',
+    'sdxl-turbo',
+    'imagen-4.0-generate-001',
+    'gpt-4o-image-experimental',
+  ]) {
+    assertEquals(inferKindFromModelId(id), 'chat');
+  }
+});
