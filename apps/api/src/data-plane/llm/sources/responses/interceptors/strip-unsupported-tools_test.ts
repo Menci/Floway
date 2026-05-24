@@ -55,11 +55,10 @@ test('stripUnsupportedToolsFromPayload removes required tool_choice when no tool
   assertFalse('tool_choice' in payload);
 });
 
-test('stripUnsupportedToolsFromPayload removes Codex hosted server tools that lack a name', () => {
-  // Codex emits hosted Responses entries (web_search, tool_search, namespace,
-  // image_generation) alongside ordinary function tools. None carry a top-level
-  // `name`/`parameters` pair, so leaking them into translation produces malformed
-  // Anthropic Messages tool entries (`tools.N.custom.name: Field required`).
+test('stripUnsupportedToolsFromPayload preserves non-image hosted and deferred tools', () => {
+  // Codex uses `tool_search` and `namespace` for client-executed deferred tool
+  // discovery. The source cleanup must not remove them before native Responses
+  // targets see the request.
   const payload = {
     model: 'gpt-test',
     input: 'search the web',
@@ -80,23 +79,24 @@ test('stripUnsupportedToolsFromPayload removes Codex hosted server tools that la
 
   stripUnsupportedToolsFromPayload(payload);
 
-  assertEquals(payload.tools?.length, 1);
-  assertEquals(payload.tools?.[0].type, 'function');
+  assertEquals(payload.tools?.map(tool => tool.type), ['function', 'web_search', 'tool_search', 'namespace']);
   assertEquals(payload.tool_choice, 'auto');
 });
 
-test('stripUnsupportedToolsFromPayload removes a forced web_search tool_choice', () => {
-  const payload = {
-    model: 'gpt-test',
-    input: 'search',
-    tools: [{ type: 'web_search' }],
-    tool_choice: { type: 'web_search' },
-  } as ResponsesPayload;
+test('stripUnsupportedToolsFromPayload preserves forced non-image hosted and deferred tool_choices', () => {
+  for (const type of ['web_search', 'tool_search', 'namespace'] as const) {
+    const payload = {
+      model: 'gpt-test',
+      input: 'search',
+      tools: [{ type }],
+      tool_choice: { type },
+    } as ResponsesPayload;
 
-  stripUnsupportedToolsFromPayload(payload);
+    stripUnsupportedToolsFromPayload(payload);
 
-  assertFalse('tools' in payload);
-  assertFalse('tool_choice' in payload);
+    assertEquals(payload.tools, [{ type }]);
+    assertEquals(payload.tool_choice, { type });
+  }
 });
 
 test('stripUnsupportedToolsFromPayload preserves custom Freeform tools for downstream wrapping', () => {

@@ -45,11 +45,12 @@ const appendAssistantToolCall = (
 const translateResponseTools = (tools: ResponseTool[] | null | undefined, customToolNames: Set<string>): Tool[] | undefined => {
   if (!tools || tools.length === 0) return undefined;
 
-  // Source cleanup strips hosted server tools (web_search, image_generation,
-  // ...) before we get here. Freeform `custom` tools are wrapped as
-  // single-string function tools so the Chat target can still invoke them;
-  // names are recorded in customToolNames so the events translator can
-  // recover the freeform shape on the way back.
+  // Translated Chat Completions targets do not currently have a faithful bridge
+  // for hosted/deferred Responses tools (`web_search`, `tool_search`,
+  // `namespace`, `image_generation`, and future builtin names). Native
+  // Responses targets receive those entries unchanged; this translator narrows
+  // to function and Freeform `custom` tools until the translated semantics are
+  // defined.
   const out: Tool[] = [];
   for (const tool of tools) {
     if (tool.type === 'function') {

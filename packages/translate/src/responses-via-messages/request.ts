@@ -184,11 +184,11 @@ const translateResponsesInput = async (input: string | ResponseInputItem[], load
 const translateTools = (tools: ResponseTool[] | null | undefined, customToolNames: Set<string>): MessagesTool[] | undefined => {
   if (!tools || tools.length === 0) return undefined;
 
-  // Hosted Responses tool entries (web_search, image_generation, …) have no
-  // upstream execution shim on translated targets and are stripped by the
-  // source-level cleanup before we get here. Freeform `custom` tools are
-  // wrapped as single-string function tools and tracked in customToolNames so
-  // the events translator can reverse the wrapping on the way back.
+  // Translated Messages targets do not currently have a faithful bridge for
+  // hosted/deferred Responses tools (`web_search`, `tool_search`, `namespace`,
+  // `image_generation`, and future builtin names). Native Responses targets
+  // receive those entries unchanged; this translator narrows to function and
+  // Freeform `custom` tools until the translated semantics are defined.
   const out: MessagesTool[] = [];
   for (const tool of tools) {
     if (tool.type === 'function') {

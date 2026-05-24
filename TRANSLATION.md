@@ -101,11 +101,16 @@ Copilot Messages provider target boundary:
 
 Responses source boundary:
 
-- removes unsupported hosted Responses entries (`image_generation`, `web_search`,
-  `tool_search`, `namespace`) and forced tool choices that targeted them before
-  target request construction/emission. Freeform `custom` tools are preserved:
-  native Responses targets receive them directly; translated targets wrap them
-  as single-string function tools (see "Responses Custom Tool Wrapping").
+- removes unsupported `image_generation` Responses tool entries and forced tool
+  choices that targeted them before target request construction/emission.
+  Other hosted/deferred Responses tools, including `web_search`, `tool_search`,
+  and `namespace`, remain visible to native Responses targets. Translated
+  Messages/Chat targets currently narrow tool conversion to `function` and
+  Freeform `custom` tools; the hosted/deferred translated semantics are tracked
+  separately.
+- preserves Freeform `custom` tools: native Responses targets receive them
+  directly; translated targets wrap them as single-string function tools (see
+  "Responses Custom Tool Wrapping").
 
 Gemini source boundary:
 
