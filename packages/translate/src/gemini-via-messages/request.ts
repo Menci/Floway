@@ -164,7 +164,10 @@ const applyThinkingConfig = (request: MessagesPayload, thinkingConfig?: GeminiTh
   }
 
   const effort = geminiThinkingLevelEffort(thinkingConfig);
-  if (effort !== undefined) request.output_config = { effort };
+  // Spread to merge with any output_config fields a sibling helper has
+  // already written (e.g. structured-output `format` from
+  // applyGenerationConfig).
+  if (effort !== undefined) request.output_config = { ...request.output_config, effort };
 };
 
 const applyGenerationConfig = (request: MessagesPayload, generationConfig: GeminiGenerationConfig | undefined, fallbackMaxOutputTokens: number): void => {
@@ -183,6 +186,16 @@ const applyGenerationConfig = (request: MessagesPayload, generationConfig: Gemin
   }
   if (generationConfig.stopSequences !== undefined) {
     request.stop_sequences = generationConfig.stopSequences;
+  }
+  // Gemini's `responseSchema` is the bare JSON Schema; Anthropic carries it
+  // as `output_config.format = { type: 'json_schema', schema }`. `responseMimeType:
+  // application/json` without a schema has no Anthropic equivalent and is
+  // dropped — the routing fallback degrades gracefully rather than fails.
+  if (generationConfig.responseSchema !== undefined) {
+    request.output_config = {
+      ...request.output_config,
+      format: { type: 'json_schema', schema: generationConfig.responseSchema as Record<string, unknown> },
+    };
   }
 
   applyThinkingConfig(request, generationConfig.thinkingConfig);

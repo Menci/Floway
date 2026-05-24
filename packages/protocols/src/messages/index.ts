@@ -41,7 +41,14 @@ export interface MessagesPayload {
     budget_tokens?: number;
     display?: MessagesThinkingDisplay;
   };
-  output_config?: { effort?: string };
+  output_config?: {
+    effort?: string;
+    // Anthropic structured outputs: `{ type: 'json_schema', schema }`. GA per
+    // https://platform.claude.com/docs/en/build-with-claude/structured-outputs;
+    // unlike OpenAI it has no `name` / `description` / `strict` subfields and
+    // no `json_object` variant.
+    format?: { type: 'json_schema'; schema: Record<string, unknown> };
+  };
   service_tier?: 'auto' | 'standard_only';
 }
 

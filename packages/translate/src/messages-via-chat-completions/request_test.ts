@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { translateMessagesToChatCompletions } from './request.ts';
-import { assertEquals } from '../test-assert.ts';
+import { assertEquals, assertFalse } from '../test-assert.ts';
 
 test('translateMessagesToChatCompletions maps thinking.disabled to reasoning_effort none', () => {
   const result = translateMessagesToChatCompletions({
@@ -312,4 +312,35 @@ test('translateMessagesToChatCompletions does not inject properties for non-obje
   });
 
   assertEquals(result.tools?.[0].function.parameters, { type: 'string' });
+});
+
+test('translateMessagesToChatCompletions wraps output_config.format json_schema as response_format with nested json_schema and strict', () => {
+  const schema = {
+    type: 'object',
+    properties: { test: { type: 'string' } },
+    required: ['test'],
+    additionalProperties: false,
+  };
+  const result = translateMessagesToChatCompletions({
+    model: 'gpt-test',
+    max_tokens: 256,
+    messages: [{ role: 'user', content: 'Hi' }],
+    output_config: { format: { type: 'json_schema', schema } },
+  });
+
+  assertEquals(result.response_format, {
+    type: 'json_schema',
+    json_schema: { name: 'messages_response', strict: true, schema },
+  });
+});
+
+test('translateMessagesToChatCompletions omits response_format when output_config has no format', () => {
+  const result = translateMessagesToChatCompletions({
+    model: 'gpt-test',
+    max_tokens: 256,
+    messages: [{ role: 'user', content: 'Hi' }],
+    output_config: { effort: 'high' },
+  });
+
+  assertFalse('response_format' in result);
 });

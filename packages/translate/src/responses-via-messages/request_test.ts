@@ -425,3 +425,66 @@ test('translateResponsesToMessages attaches ephemeral cache breakpoints to syste
   assertEquals(lastBlock.type, 'tool_result');
   assertEquals(lastBlock.cache_control, { type: 'ephemeral' });
 });
+
+test('translateResponsesToMessages extracts flat text.format json_schema into output_config.format and drops OpenAI-only fields', async () => {
+  const schema = { type: 'object', properties: { x: { type: 'string' } }, required: ['x'], additionalProperties: false };
+  const result = await translateResponsesToMessages({
+    model: 'claude-test',
+    input: [{ type: 'message', role: 'user', content: 'hi' }],
+    instructions: null,
+    temperature: null,
+    top_p: null,
+    max_output_tokens: 256,
+    tools: null,
+    tool_choice: 'auto',
+    metadata: null,
+    stream: null,
+    store: false,
+    parallel_tool_calls: true,
+    text: { format: { type: 'json_schema', name: 'whatever', strict: true, schema } },
+  });
+
+  assertEquals(result.target.output_config, { format: { type: 'json_schema', schema } });
+});
+
+test('translateResponsesToMessages merges reasoning.effort with structured-output format on a single output_config', async () => {
+  const schema = { type: 'object', properties: { ok: { type: 'boolean' } }, required: ['ok'], additionalProperties: false };
+  const result = await translateResponsesToMessages({
+    model: 'claude-test',
+    input: [{ type: 'message', role: 'user', content: 'hi' }],
+    instructions: null,
+    temperature: null,
+    top_p: null,
+    max_output_tokens: 256,
+    tools: null,
+    tool_choice: 'auto',
+    metadata: null,
+    stream: null,
+    store: false,
+    parallel_tool_calls: true,
+    reasoning: { effort: 'high', summary: 'detailed' },
+    text: { format: { type: 'json_schema', schema } },
+  });
+
+  assertEquals(result.target.output_config, { effort: 'high', format: { type: 'json_schema', schema } });
+});
+
+test('translateResponsesToMessages drops text.format json_object (no Anthropic equivalent)', async () => {
+  const result = await translateResponsesToMessages({
+    model: 'claude-test',
+    input: [{ type: 'message', role: 'user', content: 'hi' }],
+    instructions: null,
+    temperature: null,
+    top_p: null,
+    max_output_tokens: 256,
+    tools: null,
+    tool_choice: 'auto',
+    metadata: null,
+    stream: null,
+    store: false,
+    parallel_tool_calls: true,
+    text: { format: { type: 'json_object' } },
+  });
+
+  assertFalse('output_config' in result.target);
+});

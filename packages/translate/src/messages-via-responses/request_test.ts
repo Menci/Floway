@@ -320,3 +320,33 @@ test('translateMessagesToResponses does not inject properties for non-object inp
   const tool = result.tools?.[0] as ResponseFunctionTool;
   assertEquals(tool.parameters, { type: 'string' });
 });
+
+test('translateMessagesToResponses wraps output_config.format json_schema as text.format with synthesised name and strict', () => {
+  const schema = {
+    type: 'object',
+    properties: { test: { type: 'string' } },
+    required: ['test'],
+    additionalProperties: false,
+  };
+  const result = translateMessagesToResponses({
+    model: 'gpt-test',
+    max_tokens: 256,
+    messages: [{ role: 'user', content: 'Hi' }],
+    output_config: { format: { type: 'json_schema', schema } },
+  });
+
+  assertEquals(result.text, {
+    format: { type: 'json_schema', name: 'messages_response', strict: true, schema },
+  });
+});
+
+test('translateMessagesToResponses omits text when output_config has no format', () => {
+  const result = translateMessagesToResponses({
+    model: 'gpt-test',
+    max_tokens: 256,
+    messages: [{ role: 'user', content: 'Hi' }],
+    output_config: { effort: 'high' },
+  });
+
+  assertFalse('text' in result);
+});

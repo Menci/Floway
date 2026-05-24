@@ -1,4 +1,5 @@
 import { type ChatScalarReasoning, chatScalarReasoningFromMessagesBlock } from '../shared/chat-and-messages/reasoning.ts';
+import { openAiJsonSchemaCoreFromMessagesFormat } from '../shared/messages/structured-output.ts';
 import { normalizeMessagesToolInputSchema } from '../shared/messages-via/tool-schema.ts';
 import type { ChatCompletionsPayload, ContentPart, Message, Tool, ToolCall } from '@floway-dev/protocols/chat-completions';
 import type {
@@ -252,6 +253,8 @@ export const translateMessagesToChatCompletions = (payload: MessagesPayload): Ch
   } else if (payload.thinking?.type === 'disabled') {
     reasoningEffort = 'none';
   }
+  const jsonSchema = openAiJsonSchemaCoreFromMessagesFormat(payload.output_config?.format);
+  const responseFormat = jsonSchema ? { type: 'json_schema' as const, json_schema: jsonSchema } : undefined;
 
   return {
     model: payload.model,
@@ -264,6 +267,7 @@ export const translateMessagesToChatCompletions = (payload: MessagesPayload): Ch
     top_p: payload.top_p,
     tools: translateMessagesTools(clientTools),
     tool_choice: translateMessagesToolChoice(payload.tool_choice, clientTools),
+    ...(responseFormat ? { response_format: responseFormat } : {}),
   };
 };
 

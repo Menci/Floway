@@ -297,3 +297,21 @@ test('buildTargetRequest filters tools to multiple allowed names for ANY mode', 
 test('buildTargetRequest maps dynamic thinking budget to adaptive thinking', () => {
   assertEquals(buildTargetRequest({ generationConfig: { thinkingConfig: { thinkingBudget: -1 } } }, 'claude-test', noOptions).thinking, { type: 'adaptive' });
 });
+
+test('buildTargetRequest wraps generationConfig.responseSchema as output_config.format', () => {
+  const schema = { type: 'object', properties: { x: { type: 'string' } }, required: ['x'], additionalProperties: false };
+  const request = buildTargetRequest({ generationConfig: { responseSchema: schema } }, 'claude-test', noOptions);
+
+  assertEquals(request.output_config, { format: { type: 'json_schema', schema } });
+});
+
+test('buildTargetRequest merges thinking-level effort with responseSchema format on a single output_config', () => {
+  const schema = { type: 'object', properties: { ok: { type: 'boolean' } }, required: ['ok'], additionalProperties: false };
+  const request = buildTargetRequest(
+    { generationConfig: { responseSchema: schema, thinkingConfig: { thinkingLevel: 'high' } } },
+    'claude-test',
+    noOptions,
+  );
+
+  assertEquals(request.output_config, { effort: 'high', format: { type: 'json_schema', schema } });
+});

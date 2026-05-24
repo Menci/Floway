@@ -1076,3 +1076,39 @@ test('interleaved thinking round-trip', async () => {
   assertEquals(a2[0].type, 'thinking');
   assertEquals(a2[1].type, 'text');
 });
+
+test('translateChatCompletionsToMessages extracts nested response_format json_schema into output_config.format', async () => {
+  const schema = { type: 'object', properties: { x: { type: 'string' } }, required: ['x'], additionalProperties: false };
+  const result = await translateChatCompletionsToMessages(
+    mkPayload({
+      messages: [{ role: 'user', content: 'Hi' }],
+      response_format: { type: 'json_schema', json_schema: { name: 'whatever', strict: true, schema } },
+    }),
+  );
+
+  assertEquals(result.output_config, { format: { type: 'json_schema', schema } });
+});
+
+test('translateChatCompletionsToMessages merges reasoning_effort with structured-output format on a single output_config', async () => {
+  const schema = { type: 'object', properties: { ok: { type: 'boolean' } }, required: ['ok'], additionalProperties: false };
+  const result = await translateChatCompletionsToMessages(
+    mkPayload({
+      messages: [{ role: 'user', content: 'Hi' }],
+      reasoning_effort: 'high',
+      response_format: { type: 'json_schema', json_schema: { schema } },
+    }),
+  );
+
+  assertEquals(result.output_config, { effort: 'high', format: { type: 'json_schema', schema } });
+});
+
+test('translateChatCompletionsToMessages drops response_format json_object (no Anthropic equivalent)', async () => {
+  const result = await translateChatCompletionsToMessages(
+    mkPayload({
+      messages: [{ role: 'user', content: 'Hi' }],
+      response_format: { type: 'json_object' },
+    }),
+  );
+
+  assertEquals(result.output_config, undefined);
+});

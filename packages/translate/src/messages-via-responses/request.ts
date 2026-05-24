@@ -1,3 +1,4 @@
+import { openAiJsonSchemaCoreFromMessagesFormat } from '../shared/messages/structured-output.ts';
 import { messagesReasoningBlockToResponsesReasoning } from '../shared/messages-and-responses/reasoning.ts';
 import { normalizeMessagesToolInputSchema } from '../shared/messages-via/tool-schema.ts';
 import {
@@ -195,6 +196,8 @@ export const translateMessagesToResponses = (payload: MessagesPayload): Response
   const reasoning = effort ? { effort } : undefined;
   const clientTools = getClientTools(payload.tools);
   const instructions = translateSystemPrompt(payload.system);
+  const jsonSchema = openAiJsonSchemaCoreFromMessagesFormat(payload.output_config?.format);
+  const text = jsonSchema ? { format: { type: 'json_schema' as const, ...jsonSchema } } : undefined;
 
   // Keep fallback semantics strict: do not synthesize `temperature: 1`,
   // `store: false`, `parallel_tool_calls: true`, or `reasoning.summary` when the
@@ -211,6 +214,7 @@ export const translateMessagesToResponses = (payload: MessagesPayload): Response
     ...(payload.metadata ? { metadata: { ...payload.metadata } } : {}),
     stream: true,
     ...(reasoning ? { reasoning } : {}),
+    ...(text ? { text } : {}),
   };
 };
 

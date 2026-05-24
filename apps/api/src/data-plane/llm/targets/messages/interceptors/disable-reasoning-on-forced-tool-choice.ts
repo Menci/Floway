@@ -9,8 +9,17 @@ const hasForcedToolChoice = (payload: MessagesPayload): boolean => {
 };
 
 const disableMessagesReasoning = (payload: MessagesPayload): MessagesPayload => {
-  const { output_config: _outputConfig, ...rest } = payload;
-  return { ...rest, thinking: { type: 'disabled' as const } };
+  // Strip only the reasoning subfield (`effort`) so structured-output
+  // `output_config.format` survives — forced tool choice composes fine with
+  // structured output on these upstreams, only with thinking does it not.
+  // If output_config becomes empty after the strip, omit it entirely.
+  const { output_config, ...rest } = payload;
+  const next: MessagesPayload = { ...rest, thinking: { type: 'disabled' as const } };
+  if (output_config) {
+    const { effort: _effort, ...remaining } = output_config;
+    if (Object.keys(remaining).length > 0) next.output_config = remaining;
+  }
+  return next;
 };
 
 export const withReasoningDisabledOnForcedToolChoice: MessagesInterceptor = async (ctx, _request, run) => {

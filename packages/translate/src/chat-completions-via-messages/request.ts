@@ -165,6 +165,23 @@ export const translateChatCompletionsToMessages = async (payload: ChatCompletion
   applyLastToolCacheBreakpoint(tools);
   applyLastMessageCacheBreakpoint(messages);
 
+  // Merge Chat `reasoning_effort` + `response_format` into a single Messages
+  // `output_config` so a chat-source structured-output request survives
+  // routing through a Messages target.
+  //
+  // Chat nests json_schema details (`response_format = { type: 'json_schema',
+  // json_schema: { schema } }`); `json_object` / `text` / absent have no
+  // Messages equivalent and drop.
+  const reasoningEffort = payload.reasoning_effort && payload.reasoning_effort !== 'none' ? payload.reasoning_effort : undefined;
+  const responseFormat = payload.response_format;
+  const jsonSchema = responseFormat?.type === 'json_schema' ? (responseFormat.json_schema as Record<string, unknown> | undefined) : undefined;
+  const formatSchema =
+    jsonSchema?.schema && typeof jsonSchema.schema === 'object' && !Array.isArray(jsonSchema.schema) ? (jsonSchema.schema as Record<string, unknown>) : undefined;
+  const outputConfig: NonNullable<MessagesPayload['output_config']> = {};
+  if (reasoningEffort !== undefined) outputConfig.effort = reasoningEffort;
+  if (formatSchema) outputConfig.format = { type: 'json_schema', schema: formatSchema };
+  const hasOutputConfig = Object.keys(outputConfig).length > 0;
+
   // Leave OpenAI `user` and generic metadata out of the Messages fallback instead
   // of treating them as a backchannel for Anthropic `metadata.user_id`.
   return {
@@ -182,7 +199,7 @@ export const translateChatCompletionsToMessages = async (payload: ChatCompletion
     stream: true,
     ...(tools ? { tools } : {}),
     ...(payload.tool_choice != null ? { tool_choice: translateChatCompletionsToolChoice(payload.tool_choice) } : {}),
-    ...(payload.reasoning_effort && payload.reasoning_effort !== 'none' ? { output_config: { effort: payload.reasoning_effort } } : {}),
+    ...(hasOutputConfig ? { output_config: outputConfig } : {}),
   };
 };
 
