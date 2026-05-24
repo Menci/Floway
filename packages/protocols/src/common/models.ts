@@ -10,20 +10,39 @@ export interface ModelPricing {
 }
 
 // High-level endpoint-family discriminator. A model belongs to exactly one
-// kind; cross-cutting features (vision, function calling, structured outputs)
-// are orthogonal and modeled separately when needed.
+// kind; cross-cutting features (vision, function calling, structured
+// outputs) are orthogonal and modeled separately when needed.
 //
-// Convention borrowed from Together AI's `type` field on /models
-// (https://docs.together.ai/reference/models-1): a single string enum is
-// the cleanest signal across providers, since each model id in practice maps
-// to one endpoint family (OpenAI gpt-* vs text-embedding-*; Cohere command-*
-// vs embed-*; Voyage's catalog is all embeddings; Mistral mistral-large vs
-// mistral-embed; etc.). We renamed `type` to `kind` to avoid colliding with
+// Convention borrowed from Together AI's `type` field on /v1/models, which
+// chooses a single string enum because each model id in practice maps to
+// one endpoint family. We renamed `type` to `kind` to avoid colliding with
 // Anthropic's `type: 'model'` object discriminator already on PublicModel.
 //
-// Extend with 'audio_transcription' | 'audio_speech' | 'image_generation' |
-// 'moderation' | 'rerank' if/when the gateway routes those endpoint families.
-export type ModelKind = 'chat' | 'embedding';
+// Together AI's live /v1/models is known to emit at least these values:
+//
+//   chat        — instruction-tuned chat models (vision LLMs are also `chat`)
+//   language    — base / text-completion models
+//   code        — code-completion models
+//   image       — text-to-image AND image-to-image (one type, switched by
+//                 presence of an input image in the request)
+//   embedding   — vector embedding models
+//   moderation  — Llama-Guard-style classifiers (routed via /v1/completions)
+//   rerank      — query/document re-rankers
+//   audio       — text-to-speech models
+//   transcribe  — speech-to-text models
+//   video       — text-to-video models
+//
+// This list is open-ended and has grown reactively: Together's published
+// OpenAPI schema still lists only the first 7, but the live API has
+// emitted at least `audio`, `transcribe`, and `video` in production, each
+// landing in the official together-python SDK only after response
+// validation broke downstream (PRs #241, #341, #383). New values may
+// appear at any time.
+//
+// We adopt the same vocabulary because the names are already established
+// in the ecosystem. Add a value here only when we actually route that
+// endpoint family — do not pre-declare for future capabilities.
+export type ModelKind = 'chat' | 'embedding' | 'image';
 
 // Public DTO served at /v1/models and /models. Single superset shape — OpenAI's
 // and Anthropic's /models field names do not overlap, so one payload satisfies
