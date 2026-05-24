@@ -11,7 +11,7 @@ import {
   type GeminiToolCallIds,
   geminiVisibleText,
 } from '../shared/gemini-via/gemini.ts';
-import type { GeminiContent, GeminiGenerateContentRequest, GeminiGenerationConfig, GeminiPart, GeminiThinkingConfig } from '@copilot-gateway/protocols/gemini';
+import type { GeminiContent, GeminiGenerateContentRequest, GeminiGenerationConfig, GeminiPart, GeminiThinkingConfig } from '@floway-dev/protocols/gemini';
 import {
   MESSAGES_FALLBACK_MAX_TOKENS,
   type MessagesAssistantContentBlock,
@@ -20,7 +20,7 @@ import {
   type MessagesTool,
   type MessagesToolResultBlock,
   type MessagesUserContentBlock,
-} from '@copilot-gateway/protocols/messages';
+} from '@floway-dev/protocols/messages';
 
 const inlineDataToImageBlock = (part: GeminiPart): MessagesImageBlock | null => {
   const inlineData = geminiInlineData(part);

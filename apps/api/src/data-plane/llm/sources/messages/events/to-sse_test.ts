@@ -2,8 +2,8 @@ import { test } from 'vitest';
 
 import { messagesProtocolFrameToSSEFrame } from './to-sse.ts';
 import { assertEquals } from '../../../../../test-assert.ts';
-import { eventFrame } from '@copilot-gateway/protocols/common';
-import type { MessagesStreamEventData } from '@copilot-gateway/protocols/messages';
+import { eventFrame } from '@floway-dev/protocols/common';
+import type { MessagesStreamEventData } from '@floway-dev/protocols/messages';
 
 test('messagesProtocolFrameToSSEFrame serializes events without owning termination', () => {
   const frames = [eventFrame({ type: 'message_stop' } satisfies MessagesStreamEventData), eventFrame({ type: 'ping' } satisfies MessagesStreamEventData)].map(messagesProtocolFrameToSSEFrame);

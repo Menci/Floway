@@ -1,6 +1,6 @@
-import type { ChatCompletionChunk, ChatCompletionResponse, Delta } from '@copilot-gateway/protocols/chat-completions';
-import { doneFrame, eventFrame, type ProtocolFrame } from '@copilot-gateway/protocols/common';
-import type { MessagesResponse, MessagesStreamEventData } from '@copilot-gateway/protocols/messages';
+import type { ChatCompletionChunk, ChatCompletionResponse, Delta } from '@floway-dev/protocols/chat-completions';
+import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import type { MessagesResponse, MessagesStreamEventData } from '@floway-dev/protocols/messages';
 
 const mapMessagesStopReasonToChatCompletionsFinishReason = (stopReason: MessagesResponse['stop_reason']): ChatCompletionResponse['choices'][0]['finish_reason'] => {
   switch (stopReason) {

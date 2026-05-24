@@ -1,6 +1,6 @@
 import type { ChatCompletionsInterceptor } from '../../../interceptors.ts';
-import type { ChatCompletionChunk, ChatCompletionsPayload, ChatReasoningItem, Message } from '@copilot-gateway/protocols/chat-completions';
-import { eventFrame } from '@copilot-gateway/protocols/common';
+import type { ChatCompletionChunk, ChatCompletionsPayload, ChatReasoningItem, Message } from '@floway-dev/protocols/chat-completions';
+import { eventFrame } from '@floway-dev/protocols/common';
 
 /**
  * DeepSeek's reasoner endpoints expose thinking text through the legacy

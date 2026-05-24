@@ -5,8 +5,8 @@ import { chatCompletionsInvocation, stubRequestContext, testTelemetryModelIdenti
 import { assertEquals } from '../../../../../test-assert.ts';
 import type { ExecuteResult } from '../../../shared/errors/result.ts';
 import { eventResult } from '../../../shared/errors/result.ts';
-import type { ChatCompletionChunk, ChatCompletionsPayload } from '@copilot-gateway/protocols/chat-completions';
-import { doneFrame, eventFrame, type ProtocolFrame } from '@copilot-gateway/protocols/common';
+import type { ChatCompletionChunk, ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
+import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 
 type DeepseekReasoningDelta = ChatCompletionChunk['choices'][number]['delta'] & {
   reasoning_content?: string;

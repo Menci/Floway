@@ -1,4 +1,4 @@
-import type * as Responses from '@copilot-gateway/protocols/responses';
+import type * as Responses from '@floway-dev/protocols/responses';
 
 type ResponseOutputContentBlock = Responses.ResponseOutputContentBlock;
 type ResponseOutputCustomToolCall = Responses.ResponseOutputCustomToolCall;

@@ -1,6 +1,6 @@
 import type { EndpointKey } from '../../shared/upstream/types.ts';
 import type { LlmTargetApi } from '../llm/interceptors.ts';
-import type { ModelEndpoint, ModelKind } from '@copilot-gateway/protocols/common';
+import type { ModelEndpoint, ModelKind } from '@floway-dev/protocols/common';
 
 export const llmTargetApiToModelEndpoint = (target: LlmTargetApi): ModelEndpoint => {
   switch (target) {

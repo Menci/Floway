@@ -10,8 +10,8 @@ import type { ExecuteResult } from '../../shared/errors/result.ts';
 import { upstreamErrorToResponse } from '../../shared/errors/upstream-error.ts';
 import { type StreamCompletion, writeSSEFrames } from '../../shared/stream/proxy-sse.ts';
 import { createSourceStreamState, eventResultMetadata, recordSourcePerformance, recordSourceUsage, rememberSourceFrameUsage, sourceStreamFailed } from '../respond.ts';
-import { type ProtocolFrame, sseFrame } from '@copilot-gateway/protocols/common';
-import type { MessagesMessageDeltaEvent, MessagesStreamEventData, MessagesUsage } from '@copilot-gateway/protocols/messages';
+import { type ProtocolFrame, sseFrame } from '@floway-dev/protocols/common';
+import type { MessagesMessageDeltaEvent, MessagesStreamEventData, MessagesUsage } from '@floway-dev/protocols/messages';
 
 type MU = MessagesUsage | NonNullable<MessagesMessageDeltaEvent['usage']>;
 

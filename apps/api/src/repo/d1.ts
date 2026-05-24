@@ -21,7 +21,7 @@ import type {
 } from './types.ts';
 import { latencyBucketForMs } from '../shared/performance-histogram.ts';
 import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';
-import type { ModelPricing } from '@copilot-gateway/protocols/common';
+import type { ModelPricing } from '@floway-dev/protocols/common';
 
 // Minimal D1 type definitions (subset of @cloudflare/workers-types)
 interface D1Result<T = Record<string, unknown>> {

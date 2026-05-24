@@ -6,7 +6,7 @@ import { toInternalDebugError } from '../shared/errors/internal-debug-error.ts';
 import { eventResult, type ExecuteResult, type InternalErrorResult, internalErrorResult } from '../shared/errors/result.ts';
 import { readUpstreamError } from '../shared/errors/upstream-error.ts';
 import { parseSSEStream } from '../shared/stream/parse-sse.ts';
-import type { SseFrame } from '@copilot-gateway/protocols/common';
+import type { SseFrame } from '@floway-dev/protocols/common';
 
 export type TargetEmitApiName = Exclude<PerformanceApiName, 'gemini' | 'embeddings' | 'images_generations' | 'images_edits'>;
 

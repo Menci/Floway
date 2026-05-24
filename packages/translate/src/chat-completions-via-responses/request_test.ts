@@ -3,8 +3,8 @@ import { test } from 'vitest';
 import { translateChatCompletionsToResponses } from './request.ts';
 import { createChatCompletionsToResponsesStreamState, flushChatCompletionsToResponsesEvents, translateChatCompletionsChunkToResponsesEvents } from '../responses-via-chat-completions/events.ts';
 import { assertEquals, assertFalse, assertThrows } from '../test-assert.ts';
-import type { ChatCompletionChunk } from '@copilot-gateway/protocols/chat-completions';
-import type { ResponseInputReasoning, ResponseStreamEvent } from '@copilot-gateway/protocols/responses';
+import type { ChatCompletionChunk } from '@floway-dev/protocols/chat-completions';
+import type { ResponseInputReasoning, ResponseStreamEvent } from '@floway-dev/protocols/responses';
 
 type ResponseOutputItemDoneEvent = Extract<ResponseStreamEvent, { type: 'response.output_item.done' }>;
 

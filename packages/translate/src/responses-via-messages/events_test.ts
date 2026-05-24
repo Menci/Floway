@@ -2,8 +2,8 @@ import { test } from 'vitest';
 
 import { createMessagesToResponsesStreamState, translateMessagesEventToResponsesEvents } from './events.ts';
 import { assertEquals } from '../test-assert.ts';
-import type { MessagesStreamEventData } from '@copilot-gateway/protocols/messages';
-import type { ResponsesResult, ResponseStreamEvent } from '@copilot-gateway/protocols/responses';
+import type { MessagesStreamEventData } from '@floway-dev/protocols/messages';
+import type { ResponsesResult, ResponseStreamEvent } from '@floway-dev/protocols/responses';
 
 type ResponseOutputItemAddedEvent = Extract<ResponseStreamEvent, { type: 'response.output_item.added' }>;
 

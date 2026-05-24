@@ -1,7 +1,7 @@
 import type { MessagesInterceptor, MessagesInvocation } from '../../../../llm/interceptors.ts';
 import { copilotRawModelId } from '../../model-name.ts';
-import { eventFrame, type ProtocolFrame } from '@copilot-gateway/protocols/common';
-import type { MessagesStreamEventData, MessagesThinkingDisplay } from '@copilot-gateway/protocols/messages';
+import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import type { MessagesStreamEventData, MessagesThinkingDisplay } from '@floway-dev/protocols/messages';
 
 const CLAUDE_VERSION_PATTERN = /(?:^|-)(\d+)\.(\d+)(?=-|$)/;
 

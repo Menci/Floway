@@ -5,7 +5,7 @@ import { isStreamingEndpoint, kindForEndpoints, publicPathsToModelEndpoints } fr
 import { resolveEffectiveFlags } from '../flags-resolve.ts';
 import { defaultsForProvider } from '../flags.ts';
 import type { ModelProvider, ModelProviderInstance, ProviderCallResult, UpstreamModel } from '../types.ts';
-import type { ModelEndpoint } from '@copilot-gateway/protocols/common';
+import type { ModelEndpoint } from '@floway-dev/protocols/common';
 
 interface AzureProviderData {
   deployment: string;

@@ -2,9 +2,9 @@ import { test } from 'vitest';
 
 import { translateToSourceEvents } from './events.ts';
 import { assertEquals, assertRejects } from '../test-assert.ts';
-import { doneFrame, eventFrame, type ProtocolFrame } from '@copilot-gateway/protocols/common';
-import type { GeminiStreamEvent } from '@copilot-gateway/protocols/gemini';
-import type { MessagesResponse, MessagesStreamEventData } from '@copilot-gateway/protocols/messages';
+import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import type { GeminiStreamEvent } from '@floway-dev/protocols/gemini';
+import type { MessagesResponse, MessagesStreamEventData } from '@floway-dev/protocols/messages';
 
 const messageStart = (usage: MessagesResponse['usage'] = { input_tokens: 0, output_tokens: 0 }): MessagesStreamEventData => ({
   type: 'message_start',

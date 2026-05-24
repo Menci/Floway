@@ -1,4 +1,4 @@
-import type { MessagesImageBlock } from '@copilot-gateway/protocols/messages';
+import type { MessagesImageBlock } from '@floway-dev/protocols/messages';
 
 const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
 

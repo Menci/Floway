@@ -1,4 +1,4 @@
-import { type SseFrame, sseFrame } from '@copilot-gateway/protocols/common';
+import { type SseFrame, sseFrame } from '@floway-dev/protocols/common';
 
 interface ParseSSEStreamOptions {
   signal?: AbortSignal;

@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { buildTargetRequest } from './request.ts';
 import { assertEquals } from '../test-assert.ts';
-import type { GeminiGenerateContentRequest } from '@copilot-gateway/protocols/gemini';
+import type { GeminiGenerateContentRequest } from '@floway-dev/protocols/gemini';
 
 test('buildTargetRequest maps system instruction and multimodal user content', () => {
   const payload: GeminiGenerateContentRequest = {

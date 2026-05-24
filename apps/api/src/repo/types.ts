@@ -1,6 +1,6 @@
 import type { HistogramBucket } from '../shared/performance-histogram.ts';
 import type { WebSearchProviderName } from '../shared/web-search-providers.ts';
-import type { ModelPricing } from '@copilot-gateway/protocols/common';
+import type { ModelPricing } from '@floway-dev/protocols/common';
 
 export interface ApiKey {
   id: string;

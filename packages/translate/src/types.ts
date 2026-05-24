@@ -1,4 +1,4 @@
-import type { ProtocolFrame } from '@copilot-gateway/protocols/common';
+import type { ProtocolFrame } from '@floway-dev/protocols/common';
 
 /**
  * Per-trip context. Carries the model name plus a per-pair-declared `TCaps`

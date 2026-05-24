@@ -19,7 +19,7 @@ const adminOnlyMiddleware = async (c: Context, next: Next) => {
 };
 
 export const mountControlPlane = (app: Hono) => {
-  app.get('/api/health', c => c.json({ status: 'ok', service: 'copilot-gateway' }));
+  app.get('/api/health', c => c.json({ status: 'ok', service: 'floway' }));
 
   // Fallback while no static favicon is committed to apps/web/src/. Once
   // apps/web/src/favicon.ico lands and apps/web/build.ts copies it into dist/,

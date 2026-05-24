@@ -44,7 +44,7 @@ export function LoginPage() {
                     <path d="M2 12l10 5 10-5" />
                   </svg>
                 </div>
-                <h1 class="text-2xl font-semibold tracking-tight text-white">Copilot Gateway</h1>
+                <h1 class="text-2xl font-semibold tracking-tight text-white">Floway</h1>
                 <p class="text-sm text-gray-500 mt-2 font-light">Enter your key to continue</p>
               </div>
 
@@ -75,11 +75,6 @@ export function LoginPage() {
                 <div x-show="error" x-transition class="mt-4 p-3 rounded-lg bg-accent-rose/10 border border-accent-rose/20 text-accent-rose text-sm">
                   <span x-text="error"></span>
                 </div>
-              </div>
-
-              <!-- Footer -->
-              <div class="text-center mt-6 animate-in delay-2">
-                <p class="text-xs text-gray-600">Powered by GitHub Copilot API</p>
               </div>
             </div>
           </template>

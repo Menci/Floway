@@ -1,6 +1,6 @@
 import { parseTargetStreamFrames } from '../../events/from-stream.ts';
-import { doneFrame, type EventFrame, eventFrame, type ProtocolFrame, type SseFrame } from '@copilot-gateway/protocols/common';
-import { isResponsesTerminalEvent, type ResponsesResult, responsesResultToEvents, type ResponseStreamEvent, type SequencedResponsesStreamEvent } from '@copilot-gateway/protocols/responses';
+import { doneFrame, type EventFrame, eventFrame, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
+import { isResponsesTerminalEvent, type ResponsesResult, responsesResultToEvents, type ResponseStreamEvent, type SequencedResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 // Deny-list: anything that is not a wrapper (`response.created` /
 // `response.in_progress` / `ping`) and not terminal is treated as content-

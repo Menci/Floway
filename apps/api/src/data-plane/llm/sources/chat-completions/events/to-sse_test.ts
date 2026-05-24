@@ -2,8 +2,8 @@ import { test } from 'vitest';
 
 import { chatProtocolFrameToSSEFrame } from './to-sse.ts';
 import { assertEquals } from '../../../../../test-assert.ts';
-import type { ChatCompletionChunk } from '@copilot-gateway/protocols/chat-completions';
-import { doneFrame, eventFrame } from '@copilot-gateway/protocols/common';
+import type { ChatCompletionChunk } from '@floway-dev/protocols/chat-completions';
+import { doneFrame, eventFrame } from '@floway-dev/protocols/common';
 
 const includeUsageChunk = { includeUsageChunk: true };
 

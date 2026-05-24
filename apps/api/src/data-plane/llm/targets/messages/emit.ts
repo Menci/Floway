@@ -4,8 +4,8 @@ import { type MessagesInvocation, type RequestContext, runInterceptors } from '.
 import { eventResult, type ExecuteResult } from '../../shared/errors/result.ts';
 import { targetInternalError, targetModelIdentity, targetProviderResultToFrames } from '../emit.ts';
 import { parseTargetStreamFrames } from '../events/from-stream.ts';
-import { doneFrame, eventFrame, type ProtocolFrame, type SseFrame } from '@copilot-gateway/protocols/common';
-import type { MessagesPayload, MessagesStreamEventData } from '@copilot-gateway/protocols/messages';
+import { doneFrame, eventFrame, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
+import type { MessagesPayload, MessagesStreamEventData } from '@floway-dev/protocols/messages';
 
 const targetApi = 'messages';
 

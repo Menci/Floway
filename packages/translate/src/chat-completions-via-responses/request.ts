@@ -1,7 +1,7 @@
 import { chatContentToResponsesInputContent, chatContentToText } from '../shared/chat-and-responses/content.ts';
 import { scalarToResponseReasoningItem, translateChatReasoningItems } from '../shared/chat-and-responses/reasoning.ts';
-import type { ChatCompletionsPayload, Tool } from '@copilot-gateway/protocols/chat-completions';
-import type { ResponseInputItem, ResponseInputReasoning, ResponsesPayload, ResponseTool, ResponseToolChoice } from '@copilot-gateway/protocols/responses';
+import type { ChatCompletionsPayload, Tool } from '@floway-dev/protocols/chat-completions';
+import type { ResponseInputItem, ResponseInputReasoning, ResponsesPayload, ResponseTool, ResponseToolChoice } from '@floway-dev/protocols/responses';
 
 const translateChatTools = (tools?: Tool[] | null): ResponseTool[] | null =>
   tools?.length

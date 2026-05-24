@@ -5,7 +5,7 @@ import { stripUnsupportedPartFieldsFromPayload } from './strip-unsupported-part-
 import { stripUnsupportedToolsFromPayload } from './strip-unsupported-tools.ts';
 import { assertEquals } from '../../../../../test-assert.ts';
 import type { GeminiInvocation, RequestContext } from '../../../interceptors.ts';
-import type { GeminiGenerateContentRequest } from '@copilot-gateway/protocols/gemini';
+import type { GeminiGenerateContentRequest } from '@floway-dev/protocols/gemini';
 
 const testTelemetryModelIdentity = {
   model: 'test-model',

@@ -6,8 +6,8 @@ import { resolveModelForRequest } from '../../../../providers/registry.ts';
 import { stripUnsupportedPartFieldsFromPayload } from '../interceptors/strip-unsupported-part-fields.ts';
 import { stripUnsupportedToolsFromPayload } from '../interceptors/strip-unsupported-tools.ts';
 import { geminiInternalRpcErrorResponse, geminiRpcErrorResponse } from '../respond.ts';
-import type { GeminiContent, GeminiGenerateContentRequest } from '@copilot-gateway/protocols/gemini';
-import { translateGeminiViaMessages } from '@copilot-gateway/translate';
+import type { GeminiContent, GeminiGenerateContentRequest } from '@floway-dev/protocols/gemini';
+import { translateGeminiViaMessages } from '@floway-dev/translate';
 
 interface GeminiCountTokensRequest {
   contents?: GeminiContent[];

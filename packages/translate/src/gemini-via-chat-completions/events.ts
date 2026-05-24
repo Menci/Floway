@@ -1,8 +1,8 @@
 import { appendGeminiThoughtSignature, flushGeminiThoughtSignature, type GeminiThoughtSignatureState, parseStrictJsonObject, signGeminiPart } from '../shared/gemini-via/gemini.ts';
-import { chatCompletionsErrorPayloadMessage } from '@copilot-gateway/protocols/chat-completions';
-import type { ChatCompletionChunk, Delta } from '@copilot-gateway/protocols/chat-completions';
-import { eventFrame, type ProtocolFrame } from '@copilot-gateway/protocols/common';
-import type { GeminiCandidate, GeminiFinishReason, GeminiGenerateContentResponse, GeminiPart, GeminiStreamEvent, GeminiUsageMetadata } from '@copilot-gateway/protocols/gemini';
+import { chatCompletionsErrorPayloadMessage } from '@floway-dev/protocols/chat-completions';
+import type { ChatCompletionChunk, Delta } from '@floway-dev/protocols/chat-completions';
+import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import type { GeminiCandidate, GeminiFinishReason, GeminiGenerateContentResponse, GeminiPart, GeminiStreamEvent, GeminiUsageMetadata } from '@floway-dev/protocols/gemini';
 
 type ChatStreamChoice = ChatCompletionChunk['choices'][0];
 

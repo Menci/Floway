@@ -2,8 +2,8 @@ import { test } from 'vitest';
 
 import { collectGeminiProtocolEventsToResponse } from './to-response.ts';
 import { assertEquals, assertRejects } from '../../../../../test-assert.ts';
-import { eventFrame } from '@copilot-gateway/protocols/common';
-import type { GeminiGenerateContentResponse, GeminiStreamEvent } from '@copilot-gateway/protocols/gemini';
+import { eventFrame } from '@floway-dev/protocols/common';
+import type { GeminiGenerateContentResponse, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 
 test('collectGeminiProtocolEventsToResponse assembles candidate parts and final metadata', async () => {
   async function* events() {

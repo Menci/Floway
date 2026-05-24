@@ -17,10 +17,10 @@ import { resolveEffectiveFlags } from '../flags-resolve.ts';
 import { defaultsForProvider } from '../flags.ts';
 import { inProcessMemo, readModelsStore, writeModelsStore } from '../models-store.ts';
 import type { ModelProvider, ModelProviderInstance, ProviderCallResult, UpstreamModel } from '../types.ts';
-import type { ChatCompletionsPayload } from '@copilot-gateway/protocols/chat-completions';
-import type { ModelEndpoint } from '@copilot-gateway/protocols/common';
-import type { MessagesPayload } from '@copilot-gateway/protocols/messages';
-import type { ResponsesPayload } from '@copilot-gateway/protocols/responses';
+import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
+import type { ModelEndpoint } from '@floway-dev/protocols/common';
+import type { MessagesPayload } from '@floway-dev/protocols/messages';
+import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 
 interface CopilotProviderData {
   rawModels: CopilotRawModel[];

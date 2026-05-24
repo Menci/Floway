@@ -2,8 +2,8 @@ import { test } from 'vitest';
 
 import { translateToSourceEvents } from './events.ts';
 import { assertRejects } from '../test-assert.ts';
-import type { ChatCompletionChunk } from '@copilot-gateway/protocols/chat-completions';
-import { eventFrame } from '@copilot-gateway/protocols/common';
+import type { ChatCompletionChunk } from '@floway-dev/protocols/chat-completions';
+import { eventFrame } from '@floway-dev/protocols/common';
 
 const drain = async <T>(frames: AsyncIterable<T>): Promise<void> => {
   for await (const _frame of frames) {

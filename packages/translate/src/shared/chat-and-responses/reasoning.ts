@@ -1,5 +1,5 @@
-import type { ChatReasoningItem } from '@copilot-gateway/protocols/chat-completions';
-import type { ResponseInputItem, ResponseOutputReasoning, ResponsesReasoningItem } from '@copilot-gateway/protocols/responses';
+import type { ChatReasoningItem } from '@floway-dev/protocols/chat-completions';
+import type { ResponseInputItem, ResponseOutputReasoning, ResponsesReasoningItem } from '@floway-dev/protocols/responses';
 
 export type ChatReasoningSourceItem = Extract<ResponseInputItem, { type: 'reasoning' }> | ResponseOutputReasoning;
 

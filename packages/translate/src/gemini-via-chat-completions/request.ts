@@ -11,8 +11,8 @@ import {
   type GeminiToolCallIds,
   geminiVisibleText,
 } from '../shared/gemini-via/gemini.ts';
-import type { ChatCompletionsPayload, ContentPart, Message, Tool, ToolCall } from '@copilot-gateway/protocols/chat-completions';
-import type { GeminiContent, GeminiGenerateContentRequest, GeminiGenerationConfig, GeminiPart } from '@copilot-gateway/protocols/gemini';
+import type { ChatCompletionsPayload, ContentPart, Message, Tool, ToolCall } from '@floway-dev/protocols/chat-completions';
+import type { GeminiContent, GeminiGenerateContentRequest, GeminiGenerationConfig, GeminiPart } from '@floway-dev/protocols/gemini';
 
 const appendOpaque = (current: string | null, signature?: string): string | null => (typeof signature === 'string' ? `${current ?? ''}${signature}` : current);
 

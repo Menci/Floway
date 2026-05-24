@@ -6,8 +6,8 @@ import { stubProvider, stubUpstreamModel, testTelemetryModelIdentity } from '../
 import type { ChatCompletionsInvocation, RequestContext } from '../../../../llm/interceptors.ts';
 import { eventResult, type ExecuteResult } from '../../../../llm/shared/errors/result.ts';
 import { MAX_CONSECUTIVE_WHITESPACE } from '../shared/whitespace-overflow.ts';
-import type { ChatCompletionChunk } from '@copilot-gateway/protocols/chat-completions';
-import { doneFrame, eventFrame, type ProtocolFrame } from '@copilot-gateway/protocols/common';
+import type { ChatCompletionChunk } from '@floway-dev/protocols/chat-completions';
+import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 
 const invocation = (): ChatCompletionsInvocation => ({
   sourceApi: 'chat-completions',

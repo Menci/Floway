@@ -1,8 +1,8 @@
 import { messagesThinkingBlockFromChatScalarReasoning } from '../shared/chat-and-messages/reasoning.ts';
 import { parseToolArgumentsObject } from '../shared/messages/tool-arguments.ts';
 import { fetchRemoteImage, type RemoteImageLoader, resolveImageUrlToMessagesImage } from '../shared/via-messages/remote-images.ts';
-import type { ChatCompletionsPayload, ContentPart, Message, Tool } from '@copilot-gateway/protocols/chat-completions';
-import { MESSAGES_FALLBACK_MAX_TOKENS, type MessagesAssistantContentBlock, type MessagesMessage, type MessagesPayload, type MessagesUserContentBlock } from '@copilot-gateway/protocols/messages';
+import type { ChatCompletionsPayload, ContentPart, Message, Tool } from '@floway-dev/protocols/chat-completions';
+import { MESSAGES_FALLBACK_MAX_TOKENS, type MessagesAssistantContentBlock, type MessagesMessage, type MessagesPayload, type MessagesUserContentBlock } from '@floway-dev/protocols/messages';
 
 interface TranslateChatCompletionsToMessagesOptions {
   loadRemoteImage?: RemoteImageLoader;

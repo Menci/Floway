@@ -1,5 +1,5 @@
 import type { WebSearchProviderName } from '../../../shared/web-search-providers.ts';
-import type { MessagesWebSearchErrorCode } from '@copilot-gateway/protocols/messages';
+import type { MessagesWebSearchErrorCode } from '@floway-dev/protocols/messages';
 
 export type { WebSearchProviderName } from '../../../shared/web-search-providers.ts';
 

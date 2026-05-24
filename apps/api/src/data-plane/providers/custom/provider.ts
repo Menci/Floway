@@ -8,7 +8,7 @@ import { resolveEffectiveFlags } from '../flags-resolve.ts';
 import { defaultsForProvider } from '../flags.ts';
 import { inProcessMemo, isProviderModelsHttpStatus, readModelsStore, writeModelsStore } from '../models-store.ts';
 import type { ModelProvider, ModelProviderInstance, ProviderCallResult, UpstreamModel } from '../types.ts';
-import type { ModelEndpoint, ModelKind, ModelPricing } from '@copilot-gateway/protocols/common';
+import type { ModelEndpoint, ModelKind, ModelPricing } from '@floway-dev/protocols/common';
 
 interface CustomProviderData {
   rawModelId: string;

@@ -1,11 +1,11 @@
 import type { BackgroundScheduler } from '../../runtime/background.ts';
 import type { ModelProvider, ProviderTargetInterceptors, UpstreamModel } from '../providers/types.ts';
 import type { ExecuteResult } from './shared/errors/result.ts';
-import type { ChatCompletionChunk, ChatCompletionsPayload } from '@copilot-gateway/protocols/chat-completions';
-import type { ProtocolFrame } from '@copilot-gateway/protocols/common';
-import type { GeminiGenerateContentRequest, GeminiStreamEvent } from '@copilot-gateway/protocols/gemini';
-import type { MessagesPayload, MessagesStreamEventData } from '@copilot-gateway/protocols/messages';
-import type { ResponsesPayload, ResponsesStreamEvent } from '@copilot-gateway/protocols/responses';
+import type { ChatCompletionChunk, ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
+import type { ProtocolFrame } from '@floway-dev/protocols/common';
+import type { GeminiGenerateContentRequest, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
+import type { MessagesPayload, MessagesStreamEventData } from '@floway-dev/protocols/messages';
+import type { ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 export type LlmSourceApi = 'messages' | 'responses' | 'chat-completions' | 'gemini';
 

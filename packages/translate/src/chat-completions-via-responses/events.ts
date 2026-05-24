@@ -1,9 +1,9 @@
 import { toChatReasoningItem } from '../shared/chat-and-responses/reasoning.ts';
 import { createResponsesOutputOrderState, recordResponseOutputOrderEvent, type ResponsesOutputOrderState, shouldDeferForEarlierResponseOutput } from '../shared/via-responses/responses-stream-order.ts';
 import { type ResponseEvent, responsePartKey } from '../shared/via-responses/responses-stream.ts';
-import type { ChatCompletionChunk, ChatCompletionResponse, ChatReasoningItem, Delta } from '@copilot-gateway/protocols/chat-completions';
-import { doneFrame, eventFrame, type ProtocolFrame } from '@copilot-gateway/protocols/common';
-import type { ResponseOutputItem, ResponsesResult, ResponsesStreamEvent, ResponseStreamEvent } from '@copilot-gateway/protocols/responses';
+import type { ChatCompletionChunk, ChatCompletionResponse, ChatReasoningItem, Delta } from '@floway-dev/protocols/chat-completions';
+import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import type { ResponseOutputItem, ResponsesResult, ResponsesStreamEvent, ResponseStreamEvent } from '@floway-dev/protocols/responses';
 
 const mapResponsesFinishReasonToChatCompletionsFinishReason = (response: ResponsesResult): ChatCompletionResponse['choices'][0]['finish_reason'] =>
   response.status === 'incomplete' && response.incomplete_details?.reason === 'max_output_tokens'

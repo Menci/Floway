@@ -4,7 +4,7 @@ import { withReasoningDisabledOnForcedToolChoice } from './disable-reasoning-on-
 import { chatCompletionsInvocation, stubRequestContext, testTelemetryModelIdentity } from './test-helpers.ts';
 import { assertEquals } from '../../../../../test-assert.ts';
 import { eventResult } from '../../../shared/errors/result.ts';
-import type { ChatCompletionsPayload } from '@copilot-gateway/protocols/chat-completions';
+import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 
 const okEvents = () => Promise.resolve(eventResult((async function* () {})(), testTelemetryModelIdentity));
 

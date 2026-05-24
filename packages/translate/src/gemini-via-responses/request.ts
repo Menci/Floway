@@ -12,8 +12,8 @@ import {
   type GeminiToolCallIds,
   geminiVisibleText,
 } from '../shared/gemini-via/gemini.ts';
-import type { GeminiGenerateContentRequest, GeminiGenerationConfig, GeminiPart } from '@copilot-gateway/protocols/gemini';
-import type { ResponseInputContent, ResponseInputItem, ResponsesPayload, ResponseTool } from '@copilot-gateway/protocols/responses';
+import type { GeminiGenerateContentRequest, GeminiGenerationConfig, GeminiPart } from '@floway-dev/protocols/gemini';
+import type { ResponseInputContent, ResponseInputItem, ResponsesPayload, ResponseTool } from '@floway-dev/protocols/responses';
 
 const flushPendingContent = (input: ResponseInputItem[], pending: ResponseInputContent[], role: 'user' | 'assistant'): void => {
   if (pending.length === 0) return;

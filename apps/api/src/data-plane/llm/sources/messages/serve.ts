@@ -10,11 +10,11 @@ import { emitToChatCompletions } from '../../targets/chat-completions/emit.ts';
 import { emitToMessages } from '../../targets/messages/emit.ts';
 import { emitToResponses } from '../../targets/responses/emit.ts';
 import { createRequestContext, openAiMissingModelResult, openAiUnsupportedEndpointResult, sourceErrorResult } from '../execute.ts';
-import type { ChatCompletionsPayload } from '@copilot-gateway/protocols/chat-completions';
-import type { ModelEndpoint, ProtocolFrame } from '@copilot-gateway/protocols/common';
-import type { MessagesPayload, MessagesStreamEventData } from '@copilot-gateway/protocols/messages';
-import type { ResponsesPayload } from '@copilot-gateway/protocols/responses';
-import { type SourceEmit, translateMessagesViaChatCompletions, translateMessagesViaResponses, viaTranslation } from '@copilot-gateway/translate';
+import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
+import type { ModelEndpoint, ProtocolFrame } from '@floway-dev/protocols/common';
+import type { MessagesPayload, MessagesStreamEventData } from '@floway-dev/protocols/messages';
+import type { ResponsesPayload } from '@floway-dev/protocols/responses';
+import { type SourceEmit, translateMessagesViaChatCompletions, translateMessagesViaResponses, viaTranslation } from '@floway-dev/translate';
 
 export const parseAnthropicBeta = (raw: string | undefined): string[] | undefined => {
   if (!raw) return undefined;

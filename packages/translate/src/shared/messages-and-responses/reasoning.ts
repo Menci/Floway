@@ -1,5 +1,5 @@
-import type { MessagesRedactedThinkingBlock, MessagesThinkingBlock } from '@copilot-gateway/protocols/messages';
-import type { ResponseInputReasoning, ResponsesReasoningItem } from '@copilot-gateway/protocols/responses';
+import type { MessagesRedactedThinkingBlock, MessagesThinkingBlock } from '@floway-dev/protocols/messages';
+import type { ResponseInputReasoning, ResponsesReasoningItem } from '@floway-dev/protocols/responses';
 
 export type MessagesReasoningBlock = MessagesThinkingBlock | MessagesRedactedThinkingBlock;
 

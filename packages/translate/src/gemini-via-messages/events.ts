@@ -1,7 +1,7 @@
 import { appendGeminiThoughtSignature, flushGeminiThoughtSignature, type GeminiThoughtSignatureState, geminiResponse, parseStrictJsonObject, signGeminiPart } from '../shared/gemini-via/gemini.ts';
-import { eventFrame, type ProtocolFrame } from '@copilot-gateway/protocols/common';
-import type { GeminiFinishReason, GeminiStreamEvent, GeminiUsageMetadata } from '@copilot-gateway/protocols/gemini';
-import type { MessagesStreamEventData } from '@copilot-gateway/protocols/messages';
+import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import type { GeminiFinishReason, GeminiStreamEvent, GeminiUsageMetadata } from '@floway-dev/protocols/gemini';
+import type { MessagesStreamEventData } from '@floway-dev/protocols/messages';
 
 const messagesStopReasonToGemini = (stopReason: Extract<MessagesStreamEventData, { type: 'message_delta' }>['delta']['stop_reason']): GeminiFinishReason => {
   switch (stopReason) {

@@ -1,6 +1,6 @@
 import { getInternalModels } from '../providers/registry.ts';
 import type { InternalModel } from '../providers/types.ts';
-import type { PublicModel, PublicModelsResponse } from '@copilot-gateway/protocols/common';
+import type { PublicModel, PublicModelsResponse } from '@floway-dev/protocols/common';
 
 export const toPublicModel = (model: InternalModel): PublicModel => {
   const info: PublicModel = {

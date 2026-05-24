@@ -12,7 +12,7 @@
 //    workers.dev subdomain.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "copilot-gateway",
+  "name": "floway",
   "main": "apps/api/entry-cloudflare.ts",
   "compatibility_date": "2025-01-01",
   "assets": {
@@ -23,7 +23,7 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "copilot-gateway",
+      "database_name": "floway",
       "database_id": "<YOUR_D1_DATABASE_ID>",
       "migrations_dir": "apps/api/migrations"
     }

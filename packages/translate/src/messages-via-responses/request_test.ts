@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { translateMessagesToResponses } from './request.ts';
 import { assertEquals, assertFalse } from '../test-assert.ts';
-import type { ResponseInputReasoning } from '@copilot-gateway/protocols/responses';
+import type { ResponseInputReasoning } from '@floway-dev/protocols/responses';
 
 test('translateMessagesToResponses ignores thinking signatures and preserves readable thinking text', () => {
   const result = translateMessagesToResponses({

@@ -2,9 +2,9 @@ import { test } from 'vitest';
 
 import { translateToSourceEvents } from './events.ts';
 import { assertEquals, assertRejects } from '../test-assert.ts';
-import { eventFrame, type ProtocolFrame } from '@copilot-gateway/protocols/common';
-import type { MessagesStreamEventData } from '@copilot-gateway/protocols/messages';
-import { responsesResultToEvents, type ResponsesResult, type ResponsesStreamEvent, type ResponseStreamEvent } from '@copilot-gateway/protocols/responses';
+import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import type { MessagesStreamEventData } from '@floway-dev/protocols/messages';
+import { responsesResultToEvents, type ResponsesResult, type ResponsesStreamEvent, type ResponseStreamEvent } from '@floway-dev/protocols/responses';
 
 const makeResponse = (status: ResponsesResult['status']): ResponsesResult => ({
   id: 'resp_123',

@@ -1,9 +1,9 @@
 import { toResponseReasoningItem } from '../shared/chat-and-responses/reasoning.ts';
 import { unwrapCustomToolInput } from '../shared/responses-via/custom-tool-wrap.ts';
 import * as responses from '../shared/responses-via/responses-event-builder.ts';
-import type { ChatCompletionChunk, ChatCompletionResponse, ChatReasoningItem } from '@copilot-gateway/protocols/chat-completions';
-import { eventFrame, type ProtocolFrame } from '@copilot-gateway/protocols/common';
-import type { ResponseOutputItem, ResponseOutputReasoning, ResponsesResult, ResponsesStreamEvent, ResponseStreamEvent } from '@copilot-gateway/protocols/responses';
+import type { ChatCompletionChunk, ChatCompletionResponse, ChatReasoningItem } from '@floway-dev/protocols/chat-completions';
+import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import type { ResponseOutputItem, ResponseOutputReasoning, ResponsesResult, ResponsesStreamEvent, ResponseStreamEvent } from '@floway-dev/protocols/responses';
 
 const mapChatCompletionsUsageToResponsesUsage = (usage: ChatCompletionResponse['usage'] | undefined): ResponsesResult['usage'] | undefined =>
   usage

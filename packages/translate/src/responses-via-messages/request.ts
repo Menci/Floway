@@ -12,7 +12,7 @@ import {
   type MessagesToolResultBlock,
   type MessagesUserContentBlock,
   type MessagesUserMessage,
-} from '@copilot-gateway/protocols/messages';
+} from '@floway-dev/protocols/messages';
 import type {
   ResponseInputImage,
   ResponseInputItem,
@@ -21,7 +21,7 @@ import type {
   ResponsesPayload,
   ResponseTool,
   ResponseToolChoice,
-} from '@copilot-gateway/protocols/responses';
+} from '@floway-dev/protocols/responses';
 
 interface TranslateResponsesToMessagesOptions {
   loadRemoteImage?: RemoteImageLoader;

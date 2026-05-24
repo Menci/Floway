@@ -1,5 +1,5 @@
 import type { GeminiInterceptor } from '../../../interceptors.ts';
-import type { GeminiGenerateContentRequest, GeminiToolGroup } from '@copilot-gateway/protocols/gemini';
+import type { GeminiGenerateContentRequest, GeminiToolGroup } from '@floway-dev/protocols/gemini';
 
 /**
  * Only function declarations are currently translatable from Gemini tool

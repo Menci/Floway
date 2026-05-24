@@ -5,7 +5,7 @@ import { assertEquals, assertExists, assertFalse, assertStringIncludes } from '.
 import { buildCustomUpstreamRecord, copilotModels, jsonResponse, parseSSEText, requestApp, setupAppTest, sseMessagesResponse, sseResponse, withMockedFetch } from '../../../../test-helpers.ts';
 import { clearModelsStore } from '../../../providers/models-store.ts';
 import type { SearchConfig } from '../../../tools/web-search/types.ts';
-import type { ResponsesResult } from '@copilot-gateway/protocols/responses';
+import type { ResponsesResult } from '@floway-dev/protocols/responses';
 
 const ENABLED_SEARCH_CONFIG: SearchConfig = {
   provider: 'tavily',

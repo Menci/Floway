@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { stripUnsupportedToolsFromPayload } from './strip-unsupported-tools.ts';
 import { assertEquals, assertFalse } from '../../../../../test-assert.ts';
-import type { ResponsesPayload } from '@copilot-gateway/protocols/responses';
+import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 
 test('stripUnsupportedToolsFromPayload removes image_generation tools', () => {
   const payload = {

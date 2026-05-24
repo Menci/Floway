@@ -2,9 +2,9 @@ import { test } from 'vitest';
 
 import { translateToSourceEvents } from './events.ts';
 import { assertEquals, assertRejects } from '../test-assert.ts';
-import type { ChatCompletionChunk } from '@copilot-gateway/protocols/chat-completions';
-import { doneFrame, eventFrame, type ProtocolFrame } from '@copilot-gateway/protocols/common';
-import type { GeminiStreamEvent } from '@copilot-gateway/protocols/gemini';
+import type { ChatCompletionChunk } from '@floway-dev/protocols/chat-completions';
+import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import type { GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 
 const chunk = (
   delta: ChatCompletionChunk['choices'][0]['delta'],

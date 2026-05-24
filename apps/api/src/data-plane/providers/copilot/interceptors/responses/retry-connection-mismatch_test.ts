@@ -7,8 +7,8 @@ import { assertEquals, assertStringIncludes } from '../../../../../test-assert.t
 import { stubProvider, stubUpstreamModel, testTelemetryModelIdentity } from '../../../../../test-helpers.ts';
 import type { RequestContext, ResponsesInvocation } from '../../../../llm/interceptors.ts';
 import { eventResult } from '../../../../llm/shared/errors/result.ts';
-import { eventFrame } from '@copilot-gateway/protocols/common';
-import type { ResponsesPayload } from '@copilot-gateway/protocols/responses';
+import { eventFrame } from '@floway-dev/protocols/common';
+import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 
 const invocation = (payload: ResponsesPayload): ResponsesInvocation => ({
   sourceApi: 'responses',

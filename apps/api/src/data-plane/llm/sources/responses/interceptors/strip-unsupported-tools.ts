@@ -1,5 +1,5 @@
 import type { ResponsesInterceptor } from '../../../interceptors.ts';
-import type { ResponsesPayload } from '@copilot-gateway/protocols/responses';
+import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 
 // Hosted Responses tool entries the gateway has no execution shim for. Codex
 // emits these alongside ordinary function and Freeform `custom` tools — we

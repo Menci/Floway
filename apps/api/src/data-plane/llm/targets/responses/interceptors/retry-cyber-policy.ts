@@ -1,8 +1,8 @@
 import { isObjectLike } from '../../../../../shared/json-helpers.ts';
 import type { RequestContext, ResponsesInterceptor, ResponsesInvocation } from '../../../interceptors.ts';
 import type { ExecuteResult } from '../../../shared/errors/result.ts';
-import { eventFrame, type ProtocolFrame } from '@copilot-gateway/protocols/common';
-import type { ResponsesResult, ResponsesStreamEvent } from '@copilot-gateway/protocols/responses';
+import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 const CYBER_POLICY_ERROR_CODE = 'cyber_policy';
 const MAX_CYBER_POLICY_RETRIES = 10;

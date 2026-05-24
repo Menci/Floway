@@ -1,6 +1,6 @@
 import { getRepo } from '../../../../../repo/index.ts';
 import type { ResponsesInterceptor } from '../../../../llm/interceptors.ts';
-import type { ResponsesPayload } from '@copilot-gateway/protocols/responses';
+import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 
 /**
  * Copilot's `/responses` input items can be connection-bound in two ways:
@@ -20,7 +20,7 @@ import type { ResponsesPayload } from '@copilot-gateway/protocols/responses';
  * caches them, applies fixes, and retries exactly once.
  *
  * References:
- * - https://github.com/Menci/copilot-gateway/commit/f70e378cc18c3e0523354bfcd64691473a9aa206
+ * - https://github.com/Menci/Floway/commit/f70e378cc18c3e0523354bfcd64691473a9aa206
  * - https://github.com/san-tian/copilot-pool-gateway/blob/7703408171b8ad0413c746f30e8c19db4bcd781a/handler/proxy.go#L452-L453
  */
 

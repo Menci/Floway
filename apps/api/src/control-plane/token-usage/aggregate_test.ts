@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { aggregateUsageForDisplay } from './aggregate.ts';
 import type { UsageRecord } from '../../repo/types.ts';
 import { assertAlmostEquals, assertEquals } from '../../test-assert.ts';
-import type { ModelPricing } from '@copilot-gateway/protocols/common';
+import type { ModelPricing } from '@floway-dev/protocols/common';
 
 const opus47Pricing: ModelPricing = { input: 5, output: 25, cache_read: 0.5, cache_write: 6.25 };
 const gpt54Pricing: ModelPricing = { input: 2.5, output: 15, cache_read: 0.25 };

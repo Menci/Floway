@@ -3,7 +3,7 @@
 // dashboard is server-rendered Hono JSX. The SPA rewrite removes both this
 // import and the apps/api exports map exception that enables it.
 // eslint-disable-next-line no-restricted-imports
-import type { SearchConfig } from '@copilot-gateway/api/data-plane/tools/web-search/types';
+import type { SearchConfig } from '@floway-dev/api/data-plane/tools/web-search/types';
 
 export interface DashboardSearchConfigDraft {
   provider: SearchConfig['provider'];

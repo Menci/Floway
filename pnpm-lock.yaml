@@ -50,10 +50,10 @@ importers:
 
   apps/api:
     dependencies:
-      '@copilot-gateway/protocols':
+      '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../../packages/protocols
-      '@copilot-gateway/translate':
+      '@floway-dev/translate':
         specifier: workspace:*
         version: link:../../packages/translate
       hono:
@@ -62,7 +62,7 @@ importers:
 
   apps/web:
     devDependencies:
-      '@copilot-gateway/api':
+      '@floway-dev/api':
         specifier: workspace:*
         version: link:../api
       '@types/node':
@@ -76,7 +76,7 @@ importers:
 
   packages/translate:
     dependencies:
-      '@copilot-gateway/protocols':
+      '@floway-dev/protocols':
         specifier: workspace:*
         version: link:../protocols
 

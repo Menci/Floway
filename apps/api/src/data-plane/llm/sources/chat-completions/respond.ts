@@ -11,9 +11,9 @@ import type { ExecuteResult } from '../../shared/errors/result.ts';
 import { upstreamErrorToResponse } from '../../shared/errors/upstream-error.ts';
 import { type StreamCompletion, writeSSEFrames } from '../../shared/stream/proxy-sse.ts';
 import { createSourceStreamState, eventResultMetadata, recordSourcePerformance, recordSourceUsage, rememberSourceFrameUsage, sourceStreamFailed } from '../respond.ts';
-import type { ChatCompletionChunk, ChatCompletionResponse } from '@copilot-gateway/protocols/chat-completions';
-import { chatCompletionsErrorPayloadMessage } from '@copilot-gateway/protocols/chat-completions';
-import { type ProtocolFrame, sseCommentFrame, sseFrame } from '@copilot-gateway/protocols/common';
+import type { ChatCompletionChunk, ChatCompletionResponse } from '@floway-dev/protocols/chat-completions';
+import { chatCompletionsErrorPayloadMessage } from '@floway-dev/protocols/chat-completions';
+import { type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 
 type CC = ChatCompletionChunk;
 type CU = NonNullable<ChatCompletionResponse['usage']>;

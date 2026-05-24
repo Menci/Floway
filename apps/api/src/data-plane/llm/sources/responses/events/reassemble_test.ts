@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { reassembleResponsesEvents } from './reassemble.ts';
 import { assertEquals, assertRejects } from '../../../../../test-assert.ts';
-import type { ResponsesResult, ResponseStreamEvent } from '@copilot-gateway/protocols/responses';
+import type { ResponsesResult, ResponseStreamEvent } from '@floway-dev/protocols/responses';
 
 type ResponsesReassembleEvent =
   | ResponseStreamEvent

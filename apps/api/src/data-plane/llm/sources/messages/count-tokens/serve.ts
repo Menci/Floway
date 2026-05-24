@@ -5,7 +5,7 @@ import { httpResponseToResponse, ProviderModelsUnavailableError } from '../../..
 import { resolveModelForRequest } from '../../../../providers/registry.ts';
 import { toInternalDebugError } from '../../../shared/errors/internal-debug-error.ts';
 import { bodyAnthropicBetaResponse, bodyBetaParam, parseAnthropicBeta } from '../serve.ts';
-import type { MessagesPayload } from '@copilot-gateway/protocols/messages';
+import type { MessagesPayload } from '@floway-dev/protocols/messages';
 
 export const countTokens = async (c: Context) => {
   try {

@@ -2,8 +2,8 @@ import { test } from 'vitest';
 
 import { geminiProtocolFrameToSSEFrame } from './to-sse.ts';
 import { assertEquals } from '../../../../../test-assert.ts';
-import { doneFrame, eventFrame } from '@copilot-gateway/protocols/common';
-import type { GeminiStreamEvent } from '@copilot-gateway/protocols/gemini';
+import { doneFrame, eventFrame } from '@floway-dev/protocols/common';
+import type { GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 
 test('geminiProtocolFrameToSSEFrame emits data-only JSON chunks', () => {
   const chunk = {

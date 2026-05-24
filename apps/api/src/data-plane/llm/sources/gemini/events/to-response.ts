@@ -1,5 +1,5 @@
-import type { ProtocolFrame } from '@copilot-gateway/protocols/common';
-import type { GeminiCandidate, GeminiErrorResponse, GeminiGenerateContentResponse, GeminiPart, GeminiStreamEvent } from '@copilot-gateway/protocols/gemini';
+import type { ProtocolFrame } from '@floway-dev/protocols/common';
+import type { GeminiCandidate, GeminiErrorResponse, GeminiGenerateContentResponse, GeminiPart, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 
 export const GEMINI_MISSING_TERMINAL_MESSAGE = 'Gemini stream ended without a terminal event.';
 

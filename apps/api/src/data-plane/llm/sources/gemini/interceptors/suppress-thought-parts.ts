@@ -1,6 +1,6 @@
 import type { GeminiInterceptor } from '../../../interceptors.ts';
-import { eventFrame, type ProtocolFrame } from '@copilot-gateway/protocols/common';
-import type { GeminiStreamEvent } from '@copilot-gateway/protocols/gemini';
+import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import type { GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 
 const hasEventPayload = (event: GeminiStreamEvent): boolean => {
   if ('error' in event) return true;

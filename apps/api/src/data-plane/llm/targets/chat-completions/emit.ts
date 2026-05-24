@@ -4,9 +4,9 @@ import { type ChatCompletionsInvocation, type RequestContext, runInterceptors } 
 import { eventResult, type ExecuteResult } from '../../shared/errors/result.ts';
 import { targetInternalError, targetModelIdentity, targetProviderResultToFrames } from '../emit.ts';
 import { parseTargetStreamFrames } from '../events/from-stream.ts';
-import type { ChatCompletionChunk, ChatCompletionsPayload } from '@copilot-gateway/protocols/chat-completions';
-import { chatCompletionsErrorPayloadMessage } from '@copilot-gateway/protocols/chat-completions';
-import { doneFrame, eventFrame, type ProtocolFrame, type SseFrame } from '@copilot-gateway/protocols/common';
+import type { ChatCompletionChunk, ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
+import { chatCompletionsErrorPayloadMessage } from '@floway-dev/protocols/chat-completions';
+import { doneFrame, eventFrame, type ProtocolFrame, type SseFrame } from '@floway-dev/protocols/common';
 
 const targetApi = 'chat-completions';
 

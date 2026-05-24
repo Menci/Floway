@@ -7,7 +7,7 @@ import type { MessagesInterceptor } from '../../../../llm/interceptors.ts';
  * prompt did not change.
  *
  * References:
- * - https://github.com/Menci/copilot-gateway/issues/9
+ * - https://github.com/Menci/Floway/pull/9
  */
 const BILLING_HEADER_LINE_RE = /x-anthropic-billing-header[^\n]*/g;
 const CCH_HASH_RE = /cch=[0-9a-f]{5,};?/gi;

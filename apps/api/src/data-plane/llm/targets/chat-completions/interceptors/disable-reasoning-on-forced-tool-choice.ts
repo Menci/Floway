@@ -1,5 +1,5 @@
 import type { ChatCompletionsInterceptor } from '../../../interceptors.ts';
-import type { ChatCompletionsPayload } from '@copilot-gateway/protocols/chat-completions';
+import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 
 // Vendor flags that some non-OpenAI Chat Completions-compatible upstreams
 // understand to disable internal "thinking". Not part of the OpenAI Chat

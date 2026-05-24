@@ -1,7 +1,7 @@
 import type { ResponsesInterceptor } from '../../../../llm/interceptors.ts';
 import { checkWhitespaceOverflow } from '../shared/whitespace-overflow.ts';
-import { doneFrame, eventFrame, type ProtocolFrame } from '@copilot-gateway/protocols/common';
-import type { ResponsesStreamEvent } from '@copilot-gateway/protocols/responses';
+import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import type { ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 /**
  * Copilot has been observed to emit only whitespace (`\r`, `\n`, `\t`) inside

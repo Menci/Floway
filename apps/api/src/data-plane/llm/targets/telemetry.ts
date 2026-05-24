@@ -1,8 +1,8 @@
 import type { PerformanceApiName, TelemetryModelIdentity } from '../../../repo/types.ts';
 import { type PerformanceTelemetryContext, recordPerformanceError, recordPerformanceLatency } from '../../shared/telemetry/performance.ts';
 import type { Invocation, RequestContext } from '../interceptors.ts';
-import { chatCompletionsErrorPayloadMessage } from '@copilot-gateway/protocols/chat-completions';
-import type { SseFrame } from '@copilot-gateway/protocols/common';
+import { chatCompletionsErrorPayloadMessage } from '@floway-dev/protocols/chat-completions';
+import type { SseFrame } from '@floway-dev/protocols/common';
 
 type TerminalKind = 'success' | 'failure';
 

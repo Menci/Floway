@@ -2,8 +2,8 @@ import { test } from 'vitest';
 
 import { createMessagesStreamUsageState, tokenUsageFromMessagesFrame } from './respond.ts';
 import { assertEquals } from '../../../../test-assert.ts';
-import { eventFrame } from '@copilot-gateway/protocols/common';
-import type { MessagesStreamEventData } from '@copilot-gateway/protocols/messages';
+import { eventFrame } from '@floway-dev/protocols/common';
+import type { MessagesStreamEventData } from '@floway-dev/protocols/messages';
 
 const stop = () => eventFrame({ type: 'message_stop' } satisfies MessagesStreamEventData);
 

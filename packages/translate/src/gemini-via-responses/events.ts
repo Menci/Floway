@@ -1,7 +1,7 @@
 import { geminiResponse, parseStrictJsonObject } from '../shared/gemini-via/gemini.ts';
-import { eventFrame, type ProtocolFrame } from '@copilot-gateway/protocols/common';
-import type { GeminiFinishReason, GeminiPart, GeminiStreamEvent, GeminiUsageMetadata } from '@copilot-gateway/protocols/gemini';
-import type { ResponseOutputFunctionCall, ResponseOutputReasoning, ResponsesResult, ResponseStreamEvent } from '@copilot-gateway/protocols/responses';
+import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import type { GeminiFinishReason, GeminiPart, GeminiStreamEvent, GeminiUsageMetadata } from '@floway-dev/protocols/gemini';
+import type { ResponseOutputFunctionCall, ResponseOutputReasoning, ResponsesResult, ResponseStreamEvent } from '@floway-dev/protocols/responses';
 
 type ResponseTerminalEvent = Extract<ResponseStreamEvent, { type: 'response.completed' } | { type: 'response.incomplete' } | { type: 'response.failed' }>;
 

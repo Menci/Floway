@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { translateChatCompletionsToMessages } from './request.ts';
 import type { RemoteImageLoader } from '../shared/via-messages/remote-images.ts';
 import { assertEquals, assertExists, assertRejects } from '../test-assert.ts';
-import type { ChatCompletionsPayload } from '@copilot-gateway/protocols/chat-completions';
+import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import {
   MESSAGES_FALLBACK_MAX_TOKENS,
   type MessagesAssistantContentBlock,
@@ -15,7 +15,7 @@ import {
   type MessagesToolResultBlock,
   type MessagesToolUseBlock,
   type MessagesUserContentBlock,
-} from '@copilot-gateway/protocols/messages';
+} from '@floway-dev/protocols/messages';
 
 // ── Helpers ──
 

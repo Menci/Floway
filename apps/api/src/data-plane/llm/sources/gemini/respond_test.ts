@@ -6,9 +6,9 @@ import { assertEquals, assertExists } from '../../../../test-assert.ts';
 import type { RequestContext } from '../../interceptors.ts';
 import type { InternalDebugError } from '../../shared/errors/internal-debug-error.ts';
 import type { ExecuteResult } from '../../shared/errors/result.ts';
-import type { ProtocolFrame } from '@copilot-gateway/protocols/common';
-import { eventFrame } from '@copilot-gateway/protocols/common';
-import type { GeminiErrorResponse } from '@copilot-gateway/protocols/gemini';
+import type { ProtocolFrame } from '@floway-dev/protocols/common';
+import { eventFrame } from '@floway-dev/protocols/common';
+import type { GeminiErrorResponse } from '@floway-dev/protocols/gemini';
 
 const encoder = new TextEncoder();
 

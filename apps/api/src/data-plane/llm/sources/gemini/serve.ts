@@ -10,12 +10,12 @@ import { emitToChatCompletions } from '../../targets/chat-completions/emit.ts';
 import { emitToMessages } from '../../targets/messages/emit.ts';
 import { emitToResponses } from '../../targets/responses/emit.ts';
 import { createRequestContext, jsonUpstreamErrorResult, sourceErrorResult } from '../execute.ts';
-import type { ChatCompletionsPayload } from '@copilot-gateway/protocols/chat-completions';
-import type { ModelEndpoint, ProtocolFrame } from '@copilot-gateway/protocols/common';
-import type { GeminiGenerateContentRequest, GeminiStreamEvent } from '@copilot-gateway/protocols/gemini';
-import type { MessagesPayload } from '@copilot-gateway/protocols/messages';
-import type { ResponsesPayload } from '@copilot-gateway/protocols/responses';
-import { type SourceEmit, translateGeminiViaChatCompletions, translateGeminiViaMessages, translateGeminiViaResponses, viaTranslation } from '@copilot-gateway/translate';
+import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
+import type { ModelEndpoint, ProtocolFrame } from '@floway-dev/protocols/common';
+import type { GeminiGenerateContentRequest, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
+import type { MessagesPayload } from '@floway-dev/protocols/messages';
+import type { ResponsesPayload } from '@floway-dev/protocols/responses';
+import { type SourceEmit, translateGeminiViaChatCompletions, translateGeminiViaMessages, translateGeminiViaResponses, viaTranslation } from '@floway-dev/translate';
 
 const missingGeminiModelResult = (model: string) =>
   jsonUpstreamErrorResult(404, {

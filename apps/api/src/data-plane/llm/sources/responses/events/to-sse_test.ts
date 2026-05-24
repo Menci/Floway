@@ -2,8 +2,8 @@ import { test } from 'vitest';
 
 import { responsesProtocolFrameToSSEFrame } from './to-sse.ts';
 import { assertEquals } from '../../../../../test-assert.ts';
-import { eventFrame } from '@copilot-gateway/protocols/common';
-import type { ResponsesStreamEvent } from '@copilot-gateway/protocols/responses';
+import { eventFrame } from '@floway-dev/protocols/common';
+import type { ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 test('responsesProtocolFrameToSSEFrame serializes events without owning termination', () => {
   const frames = [

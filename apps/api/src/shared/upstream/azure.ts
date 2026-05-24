@@ -2,7 +2,7 @@ import { joinBaseAndPath } from './join.ts';
 import type { EndpointKey, Upstream, UpstreamFetchOptions } from './types.ts';
 import { isKnownFlagId } from '../../data-plane/providers/flags.ts';
 import type { UpstreamRecord } from '../../repo/types.ts';
-import type { ModelPricing } from '@copilot-gateway/protocols/common';
+import type { ModelPricing } from '@floway-dev/protocols/common';
 
 export interface AzureDeploymentConfig {
   deployment: string;

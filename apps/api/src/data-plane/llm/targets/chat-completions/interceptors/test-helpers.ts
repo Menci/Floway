@@ -1,7 +1,7 @@
 import type { TelemetryModelIdentity } from '../../../../../repo/types.ts';
 import type { ModelProvider, UpstreamModel } from '../../../../providers/types.ts';
 import type { ChatCompletionsInvocation, RequestContext } from '../../../interceptors.ts';
-import type { ChatCompletionsPayload } from '@copilot-gateway/protocols/chat-completions';
+import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 
 export const stubUpstreamModel = (overrides: Partial<UpstreamModel> = {}): UpstreamModel => ({
   id: 'test-model',

@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { translateResponsesToMessages } from './request.ts';
 import { assertEquals, assertFalse } from '../test-assert.ts';
-import { MESSAGES_FALLBACK_MAX_TOKENS } from '@copilot-gateway/protocols/messages';
+import { MESSAGES_FALLBACK_MAX_TOKENS } from '@floway-dev/protocols/messages';
 
 const stubRemoteImageLoader = (result: { mediaType: string | null; data: Uint8Array } | null) => () => Promise.resolve(result);
 

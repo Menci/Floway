@@ -69,7 +69,7 @@ export const fetchGitHubUser = async (githubToken: string) => {
     headers: {
       authorization: `token ${githubToken}`,
       accept: 'application/json',
-      'user-agent': 'copilot-gateway',
+      'user-agent': 'floway',
     },
   });
 

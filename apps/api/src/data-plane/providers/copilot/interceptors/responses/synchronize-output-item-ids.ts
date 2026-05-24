@@ -1,5 +1,5 @@
 import type { ResponsesInterceptor } from '../../../../llm/interceptors.ts';
-import type { ResponsesStreamEvent } from '@copilot-gateway/protocols/responses';
+import type { ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 /**
  * Copilot `/responses` streams have been seen to emit one `item.id` on

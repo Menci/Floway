@@ -793,19 +793,19 @@ export function dashboardAssets() {
           codexSnippet() {
             const lines = [
               'model = "' + this.codexModel + '"',
-              'model_provider = "copilot_gateway"',
+              'model_provider = "floway"',
               '',
-              '[model_providers.copilot_gateway]',
-              'name = "Copilot Gateway"',
+              '[model_providers.floway]',
+              'name = "Floway"',
               'base_url = "' + this.baseUrl + '/"',
-              'env_key = "COPILOT_GATEWAY_API_KEY"',
+              'env_key = "FLOWAY_API_KEY"',
               'wire_api = "responses"',
             ];
             return lines.join('\\n');
           },
 
           codexEnvSnippet() {
-            return 'export COPILOT_GATEWAY_API_KEY=' + this.activeKey;
+            return 'export FLOWAY_API_KEY=' + this.activeKey;
           },
 
           init() {
@@ -2760,7 +2760,7 @@ export function dashboardAssets() {
               const url = URL.createObjectURL(blob);
               const a = document.createElement('a');
               a.href = url;
-              a.download = 'copilot-export-' + new Date().toISOString().slice(0, 10) + '.json';
+              a.download = 'floway-export-' + new Date().toISOString().slice(0, 10) + '.json';
               a.click();
               URL.revokeObjectURL(url);
             } catch (e) {

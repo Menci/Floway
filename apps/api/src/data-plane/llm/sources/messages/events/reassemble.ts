@@ -10,7 +10,7 @@ import type {
   MessagesToolUseBlock,
   MessagesUsage,
   MessagesWebSearchToolResultBlock,
-} from '@copilot-gateway/protocols/messages';
+} from '@floway-dev/protocols/messages';
 
 const normalizeMessagesTextCitation = (value: unknown): MessagesTextCitation | null => {
   if (!isJsonObject(value) || typeof value.type !== 'string') {

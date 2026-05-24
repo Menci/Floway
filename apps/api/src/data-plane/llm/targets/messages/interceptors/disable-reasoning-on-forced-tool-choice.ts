@@ -1,5 +1,5 @@
 import type { MessagesInterceptor } from '../../../interceptors.ts';
-import type { MessagesPayload } from '@copilot-gateway/protocols/messages';
+import type { MessagesPayload } from '@floway-dev/protocols/messages';
 
 // Opt-in workaround for upstreams where forced `tool_choice` and enabled
 // thinking do not compose. Messages has a native `thinking: disabled` shape.

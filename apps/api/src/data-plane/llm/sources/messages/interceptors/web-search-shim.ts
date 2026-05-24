@@ -6,7 +6,7 @@ import type { WebSearchProvider, WebSearchProviderName, WebSearchProviderRequest
 import type { MessagesInterceptor } from '../../../interceptors.ts';
 import { toInternalDebugError } from '../../../shared/errors/internal-debug-error.ts';
 import { internalErrorResult } from '../../../shared/errors/result.ts';
-import { eventFrame, type ProtocolFrame } from '@copilot-gateway/protocols/common';
+import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type {
   MessagesAssistantContentBlock,
   MessagesClientTool,
@@ -23,8 +23,8 @@ import type {
   MessagesWebSearchErrorCode,
   MessagesWebSearchResultBlock,
   MessagesWebSearchToolResultError,
-} from '@copilot-gateway/protocols/messages';
-import { MESSAGES_WEB_SEARCH_ERROR_CODES } from '@copilot-gateway/protocols/messages';
+} from '@floway-dev/protocols/messages';
+import { MESSAGES_WEB_SEARCH_ERROR_CODES } from '@floway-dev/protocols/messages';
 
 const MAX_QUERY_LENGTH = 1000;
 const WEB_SEARCH_TOOL_NAME = 'web_search';

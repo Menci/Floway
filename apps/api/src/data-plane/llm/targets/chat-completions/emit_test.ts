@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { chatCompletionsStreamFramesToEvents } from './emit.ts';
 import { assertEquals, assertRejects } from '../../../../test-assert.ts';
-import { sseFrame } from '@copilot-gateway/protocols/common';
+import { sseFrame } from '@floway-dev/protocols/common';
 
 const collect = async <T>(events: AsyncIterable<T>): Promise<T[]> => {
   const collected: T[] = [];

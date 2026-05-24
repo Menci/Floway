@@ -1,8 +1,8 @@
 import { translateToSourceEvents } from './events.ts';
 import { buildTargetRequest } from './request.ts';
 import type { TranslateTrip } from '../types.ts';
-import type { MessagesPayload, MessagesStreamEventData } from '@copilot-gateway/protocols/messages';
-import type { ResponsesPayload, ResponsesStreamEvent } from '@copilot-gateway/protocols/responses';
+import type { MessagesPayload, MessagesStreamEventData } from '@floway-dev/protocols/messages';
+import type { ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 // Synthetic response id generated once per trip so that downstream events
 // referencing the response carry a stable id. Built fresh per call — never

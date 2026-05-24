@@ -28,7 +28,7 @@ const commonConfig: Linter.Config = {
 
     'no-restricted-imports': ['error', {
       patterns: [{
-        group: ['@copilot-gateway/*/src/**'],
+        group: ['@floway-dev/*/src/**'],
         message: 'Cross-package deep imports are forbidden. Use the package\'s public exports map.',
       }],
     }],
@@ -109,7 +109,7 @@ const commonConfig: Linter.Config = {
     'stylistic/jsx-quotes': ['error', 'prefer-double'],
   },
   settings: {
-    'import/internal-regex': '^@copilot-gateway/',
+    'import/internal-regex': '^@floway-dev/',
     'import/resolver': {
       typescript: {
         project: ['./apps/api/tsconfig.json', './apps/web/tsconfig.json', './packages/protocols/tsconfig.json', './packages/translate/tsconfig.json'],
@@ -143,10 +143,10 @@ const config: Linter.Config[] = [
     rules: {
       'no-restricted-imports': ['error', {
         patterns: [{
-          group: ['@copilot-gateway/api/*'],
+          group: ['@floway-dev/api/*'],
           message: 'apps/web may not import from apps/api. The single permitted exception (SearchConfig type in search-config.ts) uses `eslint-disable-next-line no-restricted-imports` on the import line.',
         }, {
-          group: ['@copilot-gateway/*/src/**'],
+          group: ['@floway-dev/*/src/**'],
           message: 'Deep cross-package imports are forbidden.',
         }],
       }],

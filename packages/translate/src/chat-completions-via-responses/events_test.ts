@@ -2,9 +2,9 @@ import { test } from 'vitest';
 
 import { translateToSourceEvents } from './events.ts';
 import { assertEquals, assertRejects } from '../test-assert.ts';
-import type { ChatCompletionChunk } from '@copilot-gateway/protocols/chat-completions';
-import { eventFrame, type ProtocolFrame, type SseFrame, sseFrame } from '@copilot-gateway/protocols/common';
-import { responsesResultToEvents, type ResponsesResult, type ResponsesStreamEvent, type ResponseStreamEvent } from '@copilot-gateway/protocols/responses';
+import type { ChatCompletionChunk } from '@floway-dev/protocols/chat-completions';
+import { eventFrame, type ProtocolFrame, type SseFrame, sseFrame } from '@floway-dev/protocols/common';
+import { responsesResultToEvents, type ResponsesResult, type ResponsesStreamEvent, type ResponseStreamEvent } from '@floway-dev/protocols/responses';
 
 // Inlined copy of apps/api's chatProtocolFrameToSSEFrame: kept here so this
 // translate-package test does not deep-import into apps/api. The behavior

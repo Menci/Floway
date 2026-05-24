@@ -12,7 +12,7 @@
 // When that page changes, mirror the new numbers here AND in
 // migrations/0011_usage_cost_snapshot.sql (its inline backfill table).
 import { copilotPublicModelId } from './model-name.ts';
-import type { ModelPricing } from '@copilot-gateway/protocols/common';
+import type { ModelPricing } from '@floway-dev/protocols/common';
 
 type PricingRule = readonly [key: string | RegExp, pricing: ModelPricing];
 

@@ -211,7 +211,7 @@ test('Custom provider uses configured supportedEndpoints regardless of per-model
   );
 });
 
-test('Custom provider projects display_name / created / limits / cost from a copilot-gateway-style /models response', async () => {
+test('Custom provider projects display_name / created / limits / cost from a floway-style /models response', async () => {
   await setupAppTest();
   clearModelsStore();
 

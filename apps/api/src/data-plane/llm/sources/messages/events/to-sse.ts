@@ -1,5 +1,5 @@
-import { type ProtocolFrame, type SseFrame, sseFrame } from '@copilot-gateway/protocols/common';
-import type { MessagesContentBlockDeltaEvent, MessagesContentBlockStartEvent, MessagesStreamEventData, MessagesTextCitation, MessagesWebSearchResultLocation } from '@copilot-gateway/protocols/messages';
+import { type ProtocolFrame, type SseFrame, sseFrame } from '@floway-dev/protocols/common';
+import type { MessagesContentBlockDeltaEvent, MessagesContentBlockStartEvent, MessagesStreamEventData, MessagesTextCitation, MessagesWebSearchResultLocation } from '@floway-dev/protocols/messages';
 
 // Anthropic's Messages SSE wire format renames `search_result_location` fields
 // (url -> source, drops the discriminator's typed fields the SDK type

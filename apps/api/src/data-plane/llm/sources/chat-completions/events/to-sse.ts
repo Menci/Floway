@@ -1,5 +1,5 @@
-import type { ChatCompletionChunk } from '@copilot-gateway/protocols/chat-completions';
-import { type ProtocolFrame, type SseFrame, sseFrame } from '@copilot-gateway/protocols/common';
+import type { ChatCompletionChunk } from '@floway-dev/protocols/chat-completions';
+import { type ProtocolFrame, type SseFrame, sseFrame } from '@floway-dev/protocols/common';
 
 interface ChatSseFrameOptions {
   includeUsageChunk: boolean;

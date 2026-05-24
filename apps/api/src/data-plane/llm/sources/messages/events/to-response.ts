@@ -1,6 +1,6 @@
 import { reassembleMessagesEvents } from './reassemble.ts';
-import type { ProtocolFrame } from '@copilot-gateway/protocols/common';
-import type { MessagesResponse, MessagesStreamEventData } from '@copilot-gateway/protocols/messages';
+import type { ProtocolFrame } from '@floway-dev/protocols/common';
+import type { MessagesResponse, MessagesStreamEventData } from '@floway-dev/protocols/messages';
 
 export const MESSAGES_MISSING_TERMINAL_MESSAGE = 'Messages stream ended without a message_stop event.';
 

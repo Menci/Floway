@@ -2,8 +2,8 @@ import { test } from 'vitest';
 
 import { buildTargetRequest } from './request.ts';
 import { assertEquals } from '../test-assert.ts';
-import type { GeminiGenerateContentRequest } from '@copilot-gateway/protocols/gemini';
-import { MESSAGES_FALLBACK_MAX_TOKENS } from '@copilot-gateway/protocols/messages';
+import type { GeminiGenerateContentRequest } from '@floway-dev/protocols/gemini';
+import { MESSAGES_FALLBACK_MAX_TOKENS } from '@floway-dev/protocols/messages';
 
 const noOptions = {};
 

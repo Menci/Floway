@@ -5,8 +5,8 @@ import { assertEquals } from '../../../../../test-assert.ts';
 import { stubProvider, stubUpstreamModel, testTelemetryModelIdentity } from '../../../../../test-helpers.ts';
 import type { RequestContext, ResponsesInvocation } from '../../../interceptors.ts';
 import { eventResult, type ExecuteResult } from '../../../shared/errors/result.ts';
-import { eventFrame, type ProtocolFrame } from '@copilot-gateway/protocols/common';
-import type { ResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@copilot-gateway/protocols/responses';
+import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import type { ResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 const makePayload = (): ResponsesPayload => ({
   model: 'gpt-test',

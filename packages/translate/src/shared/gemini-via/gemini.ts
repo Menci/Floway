@@ -1,4 +1,4 @@
-import type { GeminiContent, GeminiFinishReason, GeminiFunctionCallingConfig, GeminiFunctionDeclaration, GeminiGenerateContentRequest, GeminiPart, GeminiStreamEvent, GeminiThinkingConfig, GeminiUsageMetadata } from '@copilot-gateway/protocols/gemini';
+import type { GeminiContent, GeminiFinishReason, GeminiFunctionCallingConfig, GeminiFunctionDeclaration, GeminiGenerateContentRequest, GeminiPart, GeminiStreamEvent, GeminiThinkingConfig, GeminiUsageMetadata } from '@floway-dev/protocols/gemini';
 
 const isJsonObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 

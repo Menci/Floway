@@ -2,8 +2,8 @@ import { test } from 'vitest';
 
 import { createMessagesToChatCompletionsStreamState, translateMessagesEventToChatCompletionsChunks } from './events.ts';
 import { assertEquals } from '../test-assert.ts';
-import type { ChatCompletionChunk, Delta } from '@copilot-gateway/protocols/chat-completions';
-import type { MessagesStreamEventData } from '@copilot-gateway/protocols/messages';
+import type { ChatCompletionChunk, Delta } from '@floway-dev/protocols/chat-completions';
+import type { MessagesStreamEventData } from '@floway-dev/protocols/messages';
 
 // ── Helpers ──
 

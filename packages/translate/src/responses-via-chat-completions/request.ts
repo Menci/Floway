@@ -1,8 +1,8 @@
 import { responsesContentToChatContent, responsesContentToText } from '../shared/chat-and-responses/content.ts';
 import { addResponseReasoningToChatProjection, type ChatReasoningProjection, chatReasoningProjectionFields, createChatReasoningProjection } from '../shared/chat-and-responses/reasoning.ts';
 import { buildCustomToolInputSchema } from '../shared/responses-via/custom-tool-wrap.ts';
-import type { ChatCompletionsPayload, Message, Tool, ToolCall } from '@copilot-gateway/protocols/chat-completions';
-import type { ResponsesPayload, ResponseTool, ResponseToolChoice } from '@copilot-gateway/protocols/responses';
+import type { ChatCompletionsPayload, Message, Tool, ToolCall } from '@floway-dev/protocols/chat-completions';
+import type { ResponsesPayload, ResponseTool, ResponseToolChoice } from '@floway-dev/protocols/responses';
 
 interface AssistantAccumulator {
   message: Message;

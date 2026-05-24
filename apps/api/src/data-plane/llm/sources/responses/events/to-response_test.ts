@@ -2,8 +2,8 @@ import { test } from 'vitest';
 
 import { collectResponsesProtocolEventsToResult } from './reassemble.ts';
 import { assertEquals, assertRejects } from '../../../../../test-assert.ts';
-import { eventFrame } from '@copilot-gateway/protocols/common';
-import { responsesResultToEvents, type ResponsesResult, type ResponsesStreamEvent } from '@copilot-gateway/protocols/responses';
+import { eventFrame } from '@floway-dev/protocols/common';
+import { responsesResultToEvents, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 test('collectResponsesProtocolEventsToResult reassembles synthetic Responses events', async () => {
   const expected: ResponsesResult = {

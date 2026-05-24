@@ -1,4 +1,4 @@
-import type { SseFrame } from '@copilot-gateway/protocols/common';
+import type { SseFrame } from '@floway-dev/protocols/common';
 
 export interface ParseTargetStreamFramesOptions {
   protocol: string;

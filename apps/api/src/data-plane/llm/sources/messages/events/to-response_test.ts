@@ -2,8 +2,8 @@ import { test } from 'vitest';
 
 import { collectMessagesProtocolEventsToResponse } from './to-response.ts';
 import { assertEquals, assertRejects } from '../../../../../test-assert.ts';
-import { eventFrame } from '@copilot-gateway/protocols/common';
-import type { MessagesResponse, MessagesStreamEventData } from '@copilot-gateway/protocols/messages';
+import { eventFrame } from '@floway-dev/protocols/common';
+import type { MessagesResponse, MessagesStreamEventData } from '@floway-dev/protocols/messages';
 
 test('collectMessagesProtocolEventsToResponse reassembles synthetic Messages events', async () => {
   const expected: MessagesResponse = {

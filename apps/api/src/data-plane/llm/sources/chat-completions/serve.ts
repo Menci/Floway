@@ -10,11 +10,11 @@ import { emitToChatCompletions } from '../../targets/chat-completions/emit.ts';
 import { emitToMessages } from '../../targets/messages/emit.ts';
 import { emitToResponses } from '../../targets/responses/emit.ts';
 import { createRequestContext, openAiMissingModelResult, openAiUnsupportedEndpointResult, sourceErrorResult } from '../execute.ts';
-import type { ChatCompletionChunk, ChatCompletionsPayload } from '@copilot-gateway/protocols/chat-completions';
-import type { ModelEndpoint, ProtocolFrame } from '@copilot-gateway/protocols/common';
-import type { MessagesPayload } from '@copilot-gateway/protocols/messages';
-import type { ResponsesPayload } from '@copilot-gateway/protocols/responses';
-import { type SourceEmit, translateChatCompletionsViaMessages, translateChatCompletionsViaResponses, viaTranslation } from '@copilot-gateway/translate';
+import type { ChatCompletionChunk, ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
+import type { ModelEndpoint, ProtocolFrame } from '@floway-dev/protocols/common';
+import type { MessagesPayload } from '@floway-dev/protocols/messages';
+import type { ResponsesPayload } from '@floway-dev/protocols/responses';
+import { type SourceEmit, translateChatCompletionsViaMessages, translateChatCompletionsViaResponses, viaTranslation } from '@floway-dev/translate';
 
 const chatInvocation = <TPayload extends { model: string }>(
   binding: ProviderModelRecord,

@@ -1,6 +1,6 @@
-import type { ChatCompletionChunk } from '@copilot-gateway/protocols/chat-completions';
-import { eventFrame, type ProtocolFrame } from '@copilot-gateway/protocols/common';
-import type { MessagesContentBlockDeltaEvent, MessagesContentBlockStartEvent, MessagesResponse, MessagesStreamEventData } from '@copilot-gateway/protocols/messages';
+import type { ChatCompletionChunk } from '@floway-dev/protocols/chat-completions';
+import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import type { MessagesContentBlockDeltaEvent, MessagesContentBlockStartEvent, MessagesResponse, MessagesStreamEventData } from '@floway-dev/protocols/messages';
 
 const toMessagesId = (id: string): string => (id.startsWith('msg_') ? id : `msg_${id.replace(/^chatcmpl-/, '')}`);
 

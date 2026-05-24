@@ -6,8 +6,8 @@ import { stubProvider, stubUpstreamModel, testTelemetryModelIdentity } from '../
 import type { RequestContext, ResponsesInvocation } from '../../../../llm/interceptors.ts';
 import { eventResult, type ExecuteResult } from '../../../../llm/shared/errors/result.ts';
 import { MAX_CONSECUTIVE_WHITESPACE } from '../shared/whitespace-overflow.ts';
-import { doneFrame, eventFrame, type ProtocolFrame } from '@copilot-gateway/protocols/common';
-import type { ResponsesPayload, ResponsesStreamEvent } from '@copilot-gateway/protocols/responses';
+import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import type { ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 const invocation = (): ResponsesInvocation => ({
   sourceApi: 'responses',

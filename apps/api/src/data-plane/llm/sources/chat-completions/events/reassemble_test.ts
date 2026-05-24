@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { reassembleChatCompletionChunks } from './reassemble.ts';
 import { assertEquals, assertRejects } from '../../../../../test-assert.ts';
-import type { ChatCompletionChunk, ChatCompletionResponse } from '@copilot-gateway/protocols/chat-completions';
+import type { ChatCompletionChunk, ChatCompletionResponse } from '@floway-dev/protocols/chat-completions';
 
 function makeEvents<T = ChatCompletionChunk>(chunks: Array<{ event?: string; data: unknown }>): AsyncIterable<T> {
   return (async function* () {

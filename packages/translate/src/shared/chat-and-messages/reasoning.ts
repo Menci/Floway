@@ -1,4 +1,4 @@
-import type { MessagesAssistantContentBlock, MessagesRedactedThinkingBlock, MessagesThinkingBlock } from '@copilot-gateway/protocols/messages';
+import type { MessagesAssistantContentBlock, MessagesRedactedThinkingBlock, MessagesThinkingBlock } from '@floway-dev/protocols/messages';
 
 export interface ChatScalarReasoning {
   reasoningText: string | null;

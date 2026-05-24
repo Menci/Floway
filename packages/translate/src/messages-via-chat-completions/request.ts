@@ -1,5 +1,5 @@
 import { type ChatScalarReasoning, chatScalarReasoningFromMessagesBlock } from '../shared/chat-and-messages/reasoning.ts';
-import type { ChatCompletionsPayload, ContentPart, Message, Tool, ToolCall } from '@copilot-gateway/protocols/chat-completions';
+import type { ChatCompletionsPayload, ContentPart, Message, Tool, ToolCall } from '@floway-dev/protocols/chat-completions';
 import type {
   MessagesAssistantContentBlock,
   MessagesAssistantMessage,
@@ -12,7 +12,7 @@ import type {
   MessagesToolUseBlock,
   MessagesUserContentBlock,
   MessagesUserMessage,
-} from '@copilot-gateway/protocols/messages';
+} from '@floway-dev/protocols/messages';
 
 const toChatCompletionsContent = (content: string | MessagesUserContentBlock[] | MessagesAssistantContentBlock[]): string | ContentPart[] | null => {
   if (typeof content === 'string') return content;

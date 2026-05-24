@@ -10,8 +10,8 @@ import type { ExecuteResult, UpstreamErrorResult } from '../../shared/errors/res
 import { decodeUpstreamErrorBody } from '../../shared/errors/upstream-error.ts';
 import { type StreamCompletion, writeSSEFrames } from '../../shared/stream/proxy-sse.ts';
 import { createSourceStreamState, eventResultMetadata, recordSourcePerformance, recordSourceUsage, rememberSourceFrameUsage, sourceStreamFailed } from '../respond.ts';
-import { type ProtocolFrame, sseCommentFrame, sseFrame } from '@copilot-gateway/protocols/common';
-import type { GeminiErrorResponse, GeminiGenerateContentResponse, GeminiStreamEvent, GeminiUsageMetadata } from '@copilot-gateway/protocols/gemini';
+import { type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
+import type { GeminiErrorResponse, GeminiGenerateContentResponse, GeminiStreamEvent, GeminiUsageMetadata } from '@floway-dev/protocols/gemini';
 
 type GE = GeminiStreamEvent;
 type GR = GeminiGenerateContentResponse;

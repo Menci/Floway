@@ -1,5 +1,5 @@
 {
-  "name": "@copilot-gateway/web",
+  "name": "@floway-dev/web",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -9,7 +9,7 @@
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
-    "@copilot-gateway/api": "workspace:*",
+    "@floway-dev/api": "workspace:*",
     "@types/node": "^22",
     "hono": "^4"
   }

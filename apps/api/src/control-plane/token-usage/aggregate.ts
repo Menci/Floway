@@ -1,5 +1,5 @@
 import type { UsageRecord } from '../../repo/types.ts';
-import type { ModelPricing } from '@copilot-gateway/protocols/common';
+import type { ModelPricing } from '@floway-dev/protocols/common';
 
 export interface DisplayUsageRecord {
   keyId: string;

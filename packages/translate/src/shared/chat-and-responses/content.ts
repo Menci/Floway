@@ -1,5 +1,5 @@
-import type { ContentPart } from '@copilot-gateway/protocols/chat-completions';
-import type { ResponseInputContent } from '@copilot-gateway/protocols/responses';
+import type { ContentPart } from '@floway-dev/protocols/chat-completions';
+import type { ResponseInputContent } from '@floway-dev/protocols/responses';
 
 // Chat and Responses text arrays are transport fragments of one message, not
 // paragraph blocks. Preserve the existing no-separator flattening.

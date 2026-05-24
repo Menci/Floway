@@ -5,7 +5,7 @@ import { ProviderModelsUnavailableError } from '../../data-plane/providers/model
 import { getModels } from '../../data-plane/providers/registry.ts';
 import type { ResolvedModel } from '../../data-plane/providers/types.ts';
 import type { UpstreamProviderKind } from '../../repo/types.ts';
-import type { PublicModel, PublicModelsResponse } from '@copilot-gateway/protocols/common';
+import type { PublicModel, PublicModelsResponse } from '@floway-dev/protocols/common';
 
 // Same DTO as the public /models endpoint, plus one dashboard-only field:
 // `upstreams` lists every provider binding for this model as { kind, id, name }

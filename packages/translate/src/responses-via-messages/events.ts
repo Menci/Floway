@@ -1,6 +1,6 @@
 import { unwrapCustomToolInput } from '../shared/responses-via/custom-tool-wrap.ts';
 import * as responses from '../shared/responses-via/responses-event-builder.ts';
-import { eventFrame, type ProtocolFrame } from '@copilot-gateway/protocols/common';
+import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type {
   MessagesContentBlockDeltaEvent,
   MessagesContentBlockStartEvent,
@@ -8,8 +8,8 @@ import type {
   MessagesMessageDeltaEvent,
   MessagesMessageStartEvent,
   MessagesStreamEventData,
-} from '@copilot-gateway/protocols/messages';
-import type { ResponseOutputItem, ResponsesResult, ResponsesStreamEvent, ResponseStreamEvent } from '@copilot-gateway/protocols/responses';
+} from '@floway-dev/protocols/messages';
+import type { ResponseOutputItem, ResponsesResult, ResponsesStreamEvent, ResponseStreamEvent } from '@floway-dev/protocols/responses';
 
 const UPSTREAM_MESSAGES_MISSING_TERMINAL_MESSAGE = 'Upstream Messages stream ended without a message_stop event.';
 

@@ -2,9 +2,9 @@ import { parseToolArgumentsObject } from '../shared/messages/tool-arguments.ts';
 import { responsesReasoningToMessagesBlock } from '../shared/messages-and-responses/reasoning.ts';
 import { createResponsesOutputOrderState, recordResponseOutputOrderEvent, type ResponsesOutputOrderState, shouldDeferForEarlierResponseOutput } from '../shared/via-responses/responses-stream-order.ts';
 import { type ResponseEvent, responsePartKey } from '../shared/via-responses/responses-stream.ts';
-import { eventFrame, type ProtocolFrame } from '@copilot-gateway/protocols/common';
-import type { MessagesAssistantContentBlock, MessagesResponse, MessagesStreamEventData } from '@copilot-gateway/protocols/messages';
-import type { ResponseOutputContentBlock, ResponseOutputItem, ResponsesResult, ResponsesStreamEvent, ResponseStreamEvent } from '@copilot-gateway/protocols/responses';
+import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import type { MessagesAssistantContentBlock, MessagesResponse, MessagesStreamEventData } from '@floway-dev/protocols/messages';
+import type { ResponseOutputContentBlock, ResponseOutputItem, ResponsesResult, ResponsesStreamEvent, ResponseStreamEvent } from '@floway-dev/protocols/responses';
 
 const combineMessageTextContent = (content: ResponseOutputContentBlock[] | undefined): string => {
   if (!Array.isArray(content)) return '';

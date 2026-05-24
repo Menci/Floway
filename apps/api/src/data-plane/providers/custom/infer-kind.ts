@@ -13,7 +13,7 @@
 // despite being chat-capable (rare). Anything not matching falls back to
 // 'chat' — the overwhelming default for /models catalogs in the wild.
 
-import type { ModelKind } from '@copilot-gateway/protocols/common';
+import type { ModelKind } from '@floway-dev/protocols/common';
 
 const EMBEDDING_TOKENS = new Set([
   'embed',

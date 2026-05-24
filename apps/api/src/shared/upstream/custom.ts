@@ -2,7 +2,7 @@
 // OpenAI-shaped or Anthropic-shaped HTTP API under a single base URL with a
 // static credential. `authStyle` decides the credential header:
 //   - 'bearer'    -> Authorization: Bearer <token>   (OpenAI, OpenRouter,
-//                                                     copilot-gateway, ...)
+//                                                     floway, ...)
 //   - 'anthropic' -> x-api-key: <token> + anthropic-version: 2023-06-01
 //                                                    (api.anthropic.com)
 //

@@ -2,8 +2,8 @@ import { test } from 'vitest';
 
 import { collectChatProtocolEventsToCompletion } from './reassemble.ts';
 import { assertEquals, assertRejects } from '../../../../../test-assert.ts';
-import type { ChatCompletionChunk, ChatCompletionResponse } from '@copilot-gateway/protocols/chat-completions';
-import { doneFrame, eventFrame } from '@copilot-gateway/protocols/common';
+import type { ChatCompletionChunk, ChatCompletionResponse } from '@floway-dev/protocols/chat-completions';
+import { doneFrame, eventFrame } from '@floway-dev/protocols/common';
 
 test('collectChatProtocolEventsToCompletion reassembles synthetic Chat chunks', async () => {
   const expected: ChatCompletionResponse = {

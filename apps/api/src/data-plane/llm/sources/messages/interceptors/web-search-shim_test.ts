@@ -17,7 +17,7 @@ import { DEFAULT_SEARCH_CONFIG } from '../../../../tools/web-search/search-confi
 import type { WebSearchProvider, WebSearchProviderResult } from '../../../../tools/web-search/types.ts';
 import type { MessagesInvocation, RequestContext } from '../../../interceptors.ts';
 import { messagesProtocolFrameToSSEFrame } from '../events/to-sse.ts';
-import { type ProtocolFrame, eventFrame } from '@copilot-gateway/protocols/common';
+import { type ProtocolFrame, eventFrame } from '@floway-dev/protocols/common';
 import type {
   MessagesAssistantContentBlock,
   MessagesClientTool,
@@ -28,7 +28,7 @@ import type {
   MessagesToolResultBlock,
   MessagesToolResultContentBlock,
   MessagesUserContentBlock,
-} from '@copilot-gateway/protocols/messages';
+} from '@floway-dev/protocols/messages';
 
 const testTelemetryModelIdentity = {
   model: 'test-model',

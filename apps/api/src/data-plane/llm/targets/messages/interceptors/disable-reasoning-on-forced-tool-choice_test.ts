@@ -6,8 +6,8 @@ import { assertEquals } from '../../../../../test-assert.ts';
 import type { ModelProvider, UpstreamModel } from '../../../../providers/types.ts';
 import type { MessagesInvocation, RequestContext } from '../../../interceptors.ts';
 import { eventResult, type ExecuteResult } from '../../../shared/errors/result.ts';
-import type { ProtocolFrame } from '@copilot-gateway/protocols/common';
-import type { MessagesPayload, MessagesStreamEventData } from '@copilot-gateway/protocols/messages';
+import type { ProtocolFrame } from '@floway-dev/protocols/common';
+import type { MessagesPayload, MessagesStreamEventData } from '@floway-dev/protocols/messages';
 
 const stubProvider = (): ModelProvider => ({
   getProvidedModels: () => Promise.resolve([]),

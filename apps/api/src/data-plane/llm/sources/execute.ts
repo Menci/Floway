@@ -7,7 +7,7 @@ import type { RequestContext } from '../interceptors.ts';
 import { toInternalDebugError } from '../shared/errors/internal-debug-error.ts';
 import { internalErrorResult, type ExecuteResult, type UpstreamErrorResult } from '../shared/errors/result.ts';
 import { thrownUpstreamErrorResult } from '../shared/errors/upstream-error.ts';
-import type { ProtocolFrame } from '@copilot-gateway/protocols/common';
+import type { ProtocolFrame } from '@floway-dev/protocols/common';
 
 type PerformanceLlmSourceApi = Exclude<PerformanceApiName, 'embeddings' | 'images_generations' | 'images_edits'>;
 

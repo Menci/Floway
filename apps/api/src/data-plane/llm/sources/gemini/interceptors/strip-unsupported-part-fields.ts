@@ -1,5 +1,5 @@
 import type { GeminiInterceptor } from '../../../interceptors.ts';
-import type { GeminiGenerateContentRequest, GeminiPart } from '@copilot-gateway/protocols/gemini';
+import type { GeminiGenerateContentRequest, GeminiPart } from '@floway-dev/protocols/gemini';
 
 /**
  * Gemini file/code parts have no current equivalent in the upstream target

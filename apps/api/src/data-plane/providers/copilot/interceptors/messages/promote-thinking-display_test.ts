@@ -6,8 +6,8 @@ import { assertEquals } from '../../../../../test-assert.ts';
 import type { MessagesInvocation, RequestContext } from '../../../../llm/interceptors.ts';
 import { eventResult, type ExecuteResult } from '../../../../llm/shared/errors/result.ts';
 import type { ModelProvider, UpstreamModel } from '../../../types.ts';
-import { doneFrame, eventFrame, type ProtocolFrame } from '@copilot-gateway/protocols/common';
-import type { MessagesStreamEventData } from '@copilot-gateway/protocols/messages';
+import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import type { MessagesStreamEventData } from '@floway-dev/protocols/messages';
 
 const collect = async <T>(events: AsyncIterable<T>): Promise<T[]> => {
   const collected: T[] = [];

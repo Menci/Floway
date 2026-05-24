@@ -198,7 +198,7 @@ export function renderDashboardHeader() {
               <path d="M2 12l10 5 10-5" />
             </svg>
           </div>
-          <span class="font-semibold text-white text-sm tracking-tight">Copilot Gateway</span>
+          <span class="font-semibold text-white text-sm tracking-tight">Floway</span>
         </div>
 
         <nav class="order-3 flex w-full max-w-full gap-1 overflow-x-auto rounded-lg bg-surface-800 p-0.5 sm:order-none sm:w-fit">

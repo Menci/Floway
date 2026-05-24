@@ -1,6 +1,6 @@
 import { RESPONSES_MISSING_TERMINAL_MESSAGE } from '../errors.ts';
-import { type ProtocolFrame } from '@copilot-gateway/protocols/common';
-import { isResponsesTerminalEvent, type ResponsesResult, type ResponsesStreamEvent, type ResponseStreamEvent } from '@copilot-gateway/protocols/responses';
+import { type ProtocolFrame } from '@floway-dev/protocols/common';
+import { isResponsesTerminalEvent, type ResponsesResult, type ResponsesStreamEvent, type ResponseStreamEvent } from '@floway-dev/protocols/responses';
 
 type ResponsesReassembleEvent =
   | ResponseStreamEvent

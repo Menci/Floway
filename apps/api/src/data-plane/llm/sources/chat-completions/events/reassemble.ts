@@ -1,7 +1,7 @@
 import { CHAT_COMPLETIONS_MISSING_DONE_MESSAGE } from './protocol.ts';
-import { chatCompletionsErrorPayloadMessage } from '@copilot-gateway/protocols/chat-completions';
-import type { ChatCompletionChunk, ChatCompletionResponse, ChatReasoningItem, ChoiceNonStreaming, ToolCall } from '@copilot-gateway/protocols/chat-completions';
-import { type ProtocolFrame } from '@copilot-gateway/protocols/common';
+import { chatCompletionsErrorPayloadMessage } from '@floway-dev/protocols/chat-completions';
+import type { ChatCompletionChunk, ChatCompletionResponse, ChatReasoningItem, ChoiceNonStreaming, ToolCall } from '@floway-dev/protocols/chat-completions';
+import { type ProtocolFrame } from '@floway-dev/protocols/common';
 
 const chatCompletionEventsUntilDone = async function* (frames: AsyncIterable<ProtocolFrame<ChatCompletionChunk>>): AsyncGenerator<ChatCompletionChunk> {
   for await (const frame of frames) {

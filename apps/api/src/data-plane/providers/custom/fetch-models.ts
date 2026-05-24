@@ -3,7 +3,7 @@
 //   1. OpenAI:       { object: 'list', data: [{ id, object?, owned_by?, created? }] }
 //   2. Anthropic:    { data: [{ type: 'model', id, display_name?, created_at? }],
 //                      has_more, first_id, last_id }     (no top-level `object`)
-//   3. copilot-gateway's own /models (superset of 1+2 with display_name,
+//   3. floway's own /models (superset of 1+2 with display_name,
 //      created_at, limits, cost, kind).
 //
 // The parser is intentionally tolerant: a model is admitted if it has a string
@@ -16,7 +16,7 @@
 
 import type { Upstream } from '../../../shared/upstream/types.ts';
 import { ProviderModelsUnavailableError } from '../models-store.ts';
-import type { ModelKind, ModelPricing } from '@copilot-gateway/protocols/common';
+import type { ModelKind, ModelPricing } from '@floway-dev/protocols/common';
 
 export interface CustomRawModel {
   id: string;
@@ -30,7 +30,7 @@ export interface CustomRawModel {
   display_name?: string;
   name?: string;
   owned_by?: string;
-  // copilot-gateway-only superset fields.
+  // floway-only superset fields.
   limits?: {
     max_output_tokens?: number;
     max_context_window_tokens?: number;
@@ -38,7 +38,7 @@ export interface CustomRawModel {
   };
   cost?: ModelPricing;
   // Tier 1 embedding-vs-chat signal: present when the upstream is another
-  // copilot-gateway and emits its own ModelKind. Other OpenAI-compat providers
+  // floway and emits its own ModelKind. Other OpenAI-compat providers
   // (OpenAI, Anthropic, Groq, DeepSeek) never set this; the provider's id
   // heuristic (Tier 2) then takes over.
   kind?: ModelKind;

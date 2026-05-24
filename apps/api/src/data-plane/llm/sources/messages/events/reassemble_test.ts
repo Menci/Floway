@@ -13,7 +13,7 @@ import type {
   MessagesToolResultContentBlock,
   MessagesWebSearchResultBlock,
   MessagesWebSearchToolResultBlock,
-} from '@copilot-gateway/protocols/messages';
+} from '@floway-dev/protocols/messages';
 
 function makeEvents<T = MessagesStreamEventData>(chunks: Array<{ event?: string; data: unknown }>): AsyncIterable<T> {
   return (async function* () {

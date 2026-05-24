@@ -2,9 +2,9 @@ import { test } from 'vitest';
 
 import { createChatCompletionsToResponsesStreamState, flushChatCompletionsToResponsesEvents, translateChatCompletionsChunkToResponsesEvents, translateToSourceEvents } from './events.ts';
 import { assertEquals, assertRejects } from '../test-assert.ts';
-import type { ChatCompletionChunk } from '@copilot-gateway/protocols/chat-completions';
-import { eventFrame } from '@copilot-gateway/protocols/common';
-import type { ResponseStreamEvent } from '@copilot-gateway/protocols/responses';
+import type { ChatCompletionChunk } from '@floway-dev/protocols/chat-completions';
+import { eventFrame } from '@floway-dev/protocols/common';
+import type { ResponseStreamEvent } from '@floway-dev/protocols/responses';
 
 type ResponseCompletedEvent = Extract<ResponseStreamEvent, { type: 'response.completed' }>;
 

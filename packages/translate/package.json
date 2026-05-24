@@ -1,5 +1,5 @@
 {
-  "name": "@copilot-gateway/translate",
+  "name": "@floway-dev/translate",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -10,6 +10,6 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@copilot-gateway/protocols": "workspace:*"
+    "@floway-dev/protocols": "workspace:*"
   }
 }

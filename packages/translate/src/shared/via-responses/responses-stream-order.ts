@@ -1,4 +1,4 @@
-import type { ResponseOutputItem, ResponseStreamEvent } from '@copilot-gateway/protocols/responses';
+import type { ResponseOutputItem, ResponseStreamEvent } from '@floway-dev/protocols/responses';
 
 export interface ResponsesOutputOrderState {
   pendingOutputIndexes: Set<number>;

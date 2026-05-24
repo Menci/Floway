@@ -1,7 +1,7 @@
 import { asJsonObject, type JsonObject, readJsonNumber } from '../../../../../shared/json-helpers.ts';
 import type { ChatCompletionsInterceptor } from '../../../interceptors.ts';
-import type { ChatCompletionChunk } from '@copilot-gateway/protocols/chat-completions';
-import { eventFrame } from '@copilot-gateway/protocols/common';
+import type { ChatCompletionChunk } from '@floway-dev/protocols/chat-completions';
+import { eventFrame } from '@floway-dev/protocols/common';
 
 /**
  * Normalize OpenAI-compatible upstream `usage` into the OpenAI standard shape

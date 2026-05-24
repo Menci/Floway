@@ -4,7 +4,7 @@ import { hasTokenUsage, recordTokenUsageForApiKey } from '../../shared/telemetry
 import type { RequestContext } from '../interceptors.ts';
 import type { EventResultMetadata, ExecuteResult } from '../shared/errors/result.ts';
 import type { StreamCompletion } from '../shared/stream/proxy-sse.ts';
-import type { ProtocolFrame } from '@copilot-gateway/protocols/common';
+import type { ProtocolFrame } from '@floway-dev/protocols/common';
 
 export interface SourceStreamState {
   failed: boolean;

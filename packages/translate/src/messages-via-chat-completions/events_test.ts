@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { createChatCompletionsToMessagesStreamState, flushChatCompletionsToMessagesEvents, mapChatCompletionsUsageToMessagesUsage, translateChatCompletionsChunkToMessagesEvents } from './events.ts';
 import { assertEquals, assertFalse } from '../test-assert.ts';
-import type { ChatCompletionChunk } from '@copilot-gateway/protocols/chat-completions';
+import type { ChatCompletionChunk } from '@floway-dev/protocols/chat-completions';
 
 const chunk = (delta: ChatCompletionChunk['choices'][0]['delta'], finishReason: ChatCompletionChunk['choices'][0]['finish_reason'] = null): ChatCompletionChunk => ({
   id: 'chatcmpl_test',

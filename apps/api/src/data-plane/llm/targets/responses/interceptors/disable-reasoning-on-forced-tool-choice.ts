@@ -1,5 +1,5 @@
 import type { ResponsesInterceptor } from '../../../interceptors.ts';
-import type { ResponsesPayload } from '@copilot-gateway/protocols/responses';
+import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 
 // Vendor flags that some non-OpenAI Responses-compatible upstreams understand
 // to disable internal "thinking". Not part of the OpenAI Responses contract,

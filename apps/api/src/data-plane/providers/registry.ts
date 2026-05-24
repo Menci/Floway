@@ -5,7 +5,7 @@ import { kindForEndpoints } from './endpoints.ts';
 import type { InternalModel, ModelProviderInstance, ProviderModelRecord, ResolvedModel, UpstreamModel } from './types.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { UpstreamProviderKind, UpstreamRecord } from '../../repo/types.ts';
-import type { ModelEndpoint } from '@copilot-gateway/protocols/common';
+import type { ModelEndpoint } from '@floway-dev/protocols/common';
 
 interface ProviderModelsResult {
   models: ResolvedModel[];

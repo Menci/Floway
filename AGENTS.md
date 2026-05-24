@@ -13,13 +13,13 @@
 
 ## Project
 
-`copilot-gateway` is a Cloudflare Workers API proxy. It exposes Anthropic
+`floway` is a Cloudflare Workers API proxy. It exposes Anthropic
 Messages, OpenAI Responses, OpenAI Chat Completions, Embeddings, and Google
 Gemini-compatible APIs over unified upstream records. Supported provider kinds
 are `copilot`, `custom`, and `azure`.
 
 `custom` means a third-party LLM upstream reached over a static credential —
-either an OpenAI-shaped bearer-token API (OpenAI, OpenRouter, copilot-gateway,
+either an OpenAI-shaped bearer-token API (OpenAI, OpenRouter, floway,
 etc.) or an Anthropic-shaped `x-api-key` API (api.anthropic.com). It is not an
 OpenAI official-account concept. Azure OpenAI / Foundry OpenAI v1 deployments
 and Azure Foundry Anthropic deployments use the `azure` provider. GitHub
@@ -40,27 +40,27 @@ The repo is a pnpm workspace with four packages, two libraries under
 `packages/` and two deployables under `apps/`:
 
 ```text
-copilot-gateway/
+floway/
 ├── wrangler.example.jsonc      # committed template; copy to wrangler.jsonc
 │                               # (gitignored) and fill in account_id and
 │                               # d1 database_id locally. main ->
 │                               # apps/api/entry-cloudflare.ts, assets ->
 │                               # apps/web/dist, migrations_dir ->
 │                               # apps/api/migrations
-├── eslint.config.ts            # internal regex ^@copilot-gateway/ + a
-│                               # no-restricted-imports ban on @copilot-gateway/*/src/**
+├── eslint.config.ts            # internal regex ^@floway-dev/ + a
+│                               # no-restricted-imports ban on @floway-dev/*/src/**
 ├── vitest.config.ts            # root project list (Vitest 4 test.projects)
 ├── packages/
-│   ├── protocols/              # @copilot-gateway/protocols — pure type defs
+│   ├── protocols/              # @floway-dev/protocols — pure type defs
 │   │   └── src/{common,chat-completions,responses,messages,gemini,embeddings}/index.ts
-│   └── translate/              # @copilot-gateway/translate — translation pairs
+│   └── translate/              # @floway-dev/translate — translation pairs
 │       └── src/{<pair-dirs>,shared,types.ts,index.ts}
 └── apps/
-    ├── api/                    # @copilot-gateway/api — Worker entry + planes
+    ├── api/                    # @floway-dev/api — Worker entry + planes
     │   ├── entry-cloudflare.ts
     │   ├── migrations/
     │   └── src/{control-plane,data-plane,middleware,repo,runtime,shared,app.ts}
-    └── web/                    # @copilot-gateway/web — prerendered Hono JSX
+    └── web/                    # @floway-dev/web — prerendered Hono JSX
         ├── build.ts            # throwaway prerender; will be replaced by a
         │                       # Vue SPA bundler
         └── src/{layout,login,dashboard,dashboard/...}.tsx
@@ -75,14 +75,14 @@ Dependency direction is strict:
   Assets; the deployed Worker does not import it at runtime.
 
 Each `package.json` `exports` map is the only public surface. Deep imports
-(`@copilot-gateway/<pkg>/src/...`) are banned by ESLint `no-restricted-imports`;
+(`@floway-dev/<pkg>/src/...`) are banned by ESLint `no-restricted-imports`;
 cross-package code must consume the package's declared subpath exports.
 
 ### Cross-package exceptions
 
 There is one allowed deep import: `apps/web/src/dashboard/search-config.ts`
 type-imports `SearchConfig` from
-`@copilot-gateway/api/data-plane/tools/web-search/types`, gated by an inline
+`@floway-dev/api/data-plane/tools/web-search/types`, gated by an inline
 `// eslint-disable-next-line no-restricted-imports`. This goes away when the
 Vue SPA rewrite lands.
 
@@ -110,7 +110,7 @@ will consume control-plane data only through public HTTP endpoints.
   probing, Copilot device-flow auth, and Copilot per-upstream quota.
 - `apps/api/src/data-plane/`: client-facing compatibility APIs, model/provider
   routing, embeddings, and data-plane tools. Cross-protocol request/event
-  translation lives in `@copilot-gateway/translate` and is dispatched from the
+  translation lives in `@floway-dev/translate` and is dispatched from the
   data-plane source serves.
 - `apps/api/src/data-plane/providers/`: provider interface, provider registry,
   model merge, provider-owned alias resolution, flag catalog and
@@ -121,7 +121,7 @@ will consume control-plane data only through public HTTP endpoints.
 - `apps/api/src/data-plane/providers/custom/`: generic OpenAI-shaped or
   Anthropic-shaped provider behavior for configured static-credential
   upstreams. Owns the permissive `/models` parser that accepts OpenAI,
-  Anthropic, and copilot-gateway-own response shapes.
+  Anthropic, and floway-own response shapes.
 - `apps/api/src/data-plane/providers/azure/`: Azure OpenAI / Foundry OpenAI v1
   and Azure Foundry Anthropic provider behavior, deployment catalog projection,
   and API-key request construction.
@@ -135,16 +135,16 @@ will consume control-plane data only through public HTTP endpoints.
   LLM planning, target selection, or interceptor wiring.
 - `apps/api/src/data-plane/llm/shared/protocol/responses.ts`: re-export barrel for
   gateway-side Responses extensions (e.g. `SequencedResponsesStreamEvent`),
-  whose definitions live in `@copilot-gateway/translate/via-responses`. The
-  rest of the protocol type surface lives in `@copilot-gateway/protocols`
+  whose definitions live in `@floway-dev/translate/via-responses`. The
+  rest of the protocol type surface lives in `@floway-dev/protocols`
   (`common`, `chat-completions`, `responses`, `messages`, `gemini`,
   `embeddings`).
 - `apps/api/src/data-plane/llm/shared/stream/`: concrete SSE parser used by
   the data plane. Generic SSE shapes (`ServerSentEvent` and friends) live in
-  `@copilot-gateway/protocols/common`.
+  `@floway-dev/protocols/common`.
 
 `ModelPricing` and `ModelEndpoint` types live in
-`@copilot-gateway/protocols/common`; `apps/api/src/data-plane/providers/types.ts`
+`@floway-dev/protocols/common`; `apps/api/src/data-plane/providers/types.ts`
 re-exports both for back-compat. `ExecuteResult` and the result envelopes in
 `apps/api/src/data-plane/llm/shared/errors/result.ts` stay in apps/api because
 they couple to telemetry types.
@@ -188,7 +188,7 @@ Provider config rules:
 - `custom`: `baseUrl`, `bearerToken`, `authStyle` (`bearer` or `anthropic`),
   `supportedEndpoints`, and optional `pathOverrides`. `authStyle: 'bearer'`
   sends `Authorization: Bearer <token>` (OpenAI / OpenRouter /
-  copilot-gateway-style upstreams); `authStyle: 'anthropic'` sends
+  floway-style upstreams); `authStyle: 'anthropic'` sends
   `x-api-key: <token>` plus `anthropic-version: 2023-06-01`
   (api.anthropic.com-style upstreams). `supportedEndpoints` declares which
   chat generation protocols this upstream speaks (`/chat/completions`,
@@ -196,11 +196,11 @@ Provider config rules:
   not configurable there — embeddings routing is decided per-model from
   `kind === 'embedding'`. An upstream that only serves embedding models
   (e.g. Voyage) saves with an empty `supportedEndpoints` array. The `/models`
-  parser accepts OpenAI, Anthropic, and copilot-gateway-own container /
+  parser accepts OpenAI, Anthropic, and floway-own container /
   per-model shapes; entries are best-effort and unrecognized fields are
   ignored. Per-model `kind` resolves through a two-tier detector: Tier 1
   reads `kind` from the upstream `/models` response when present (only
-  copilot-gateway emits it today); Tier 2 falls back to an id-token
+  floway emits it today); Tier 2 falls back to an id-token
   heuristic (see `apps/api/src/data-plane/providers/custom/infer-kind.ts`)
   matching common embedding families (`embed`, `embedding`, `bge`, `e5`,
   `gte`, `nomic`, `voyage`, ...). Everything else defaults to `chat`. The
@@ -366,7 +366,7 @@ Each provider attaches pricing per upstream model and resolves
   name.
 - `custom`: pricing flows through from the upstream `/models` response when
   it publishes a `cost` block in the same `{input, output, cache_read?,
-  cache_write?}` shape (notably copilot-gateway's own /models output).
+  cache_write?}` shape (notably floway's own /models output).
   `getPricingForModelKey` resolves by raw model id against the cached list.
   Upstreams that omit `cost` are never priced — pricing returns null and
   no `cost` is attached to `UpstreamModel`. A TODO in
@@ -449,7 +449,7 @@ they must not accept target-specific callback tables or call back into target
 behavior.
 
 Request translation is direct and pairwise, and it lives in the
-`@copilot-gateway/translate` package rather than under apps/api. Do not
+`@floway-dev/translate` package rather than under apps/api. Do not
 introduce a canonical internal request IR. Each cross-protocol pair lives
 under `packages/translate/src/<source>-via-<target>/` and exposes a single
 `translateXxxViaYyy: TranslateTrip<...>` from `translate.ts`. A trip function
@@ -479,7 +479,7 @@ Workarounds belong at the owning boundary:
 - shared translation primitives belong in `packages/translate/src/shared/` only
   when multiple pair directions need the same protocol rule. Protocol-level
   shapes (event types, SSE envelopes) belong in
-  `@copilot-gateway/protocols`, not in the translate package.
+  `@floway-dev/protocols`, not in the translate package.
 
 ## Routing
 
@@ -569,9 +569,9 @@ pnpm run db:migrate:remote   # apply migrations to the remote (production) D1
 ```
 
 `dev` and `deploy` chain the `apps/web` prerender (`pnpm --filter
-@copilot-gateway/web run build`) before wrangler runs, because the Worker's
+@floway-dev/web run build`) before wrangler runs, because the Worker's
 Static Assets binding serves `apps/web/dist`. To work on a single package in
-isolation, use pnpm filters, e.g. `pnpm --filter @copilot-gateway/translate
+isolation, use pnpm filters, e.g. `pnpm --filter @floway-dev/translate
 run typecheck`.
 
 Wrangler commands should go through the local dependency with `pnpm wrangler`

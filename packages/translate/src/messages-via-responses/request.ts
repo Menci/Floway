@@ -11,8 +11,8 @@ import {
   type MessagesUserContentBlock,
   type MessagesUserMessage,
   type MessagesWebSearchToolResultBlock,
-} from '@copilot-gateway/protocols/messages';
-import type { ResponseInputContent, ResponseInputItem, ResponsesPayload, ResponseTool, ResponseToolChoice } from '@copilot-gateway/protocols/responses';
+} from '@floway-dev/protocols/messages';
+import type { ResponseInputContent, ResponseInputItem, ResponsesPayload, ResponseTool, ResponseToolChoice } from '@floway-dev/protocols/responses';
 
 const flushPendingContent = (pending: ResponseInputContent[], input: ResponseInputItem[], role: 'user' | 'assistant'): void => {
   if (pending.length === 0) return;

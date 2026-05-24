@@ -1,11 +1,11 @@
 import type { UpstreamProviderKind } from '../../repo/types.ts';
 import type { ChatCompletionsInterceptor, GeminiInterceptor, MessagesInterceptor, ResponsesInterceptor } from '../llm/interceptors.ts';
-import type { ChatCompletionsPayload } from '@copilot-gateway/protocols/chat-completions';
-import type { ModelEndpoint, ModelKind, ModelPricing } from '@copilot-gateway/protocols/common';
-import type { EmbeddingsPayload } from '@copilot-gateway/protocols/embeddings';
-import type { ImagesGenerationsPayload } from '@copilot-gateway/protocols/images';
-import type { MessagesPayload } from '@copilot-gateway/protocols/messages';
-import type { ResponsesPayload } from '@copilot-gateway/protocols/responses';
+import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
+import type { ModelEndpoint, ModelKind, ModelPricing } from '@floway-dev/protocols/common';
+import type { EmbeddingsPayload } from '@floway-dev/protocols/embeddings';
+import type { ImagesGenerationsPayload } from '@floway-dev/protocols/images';
+import type { MessagesPayload } from '@floway-dev/protocols/messages';
+import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 
 // The internal model shape: what providers produce and what the registry
 // stores. Only fields the data plane actually consumes — to expose downstream

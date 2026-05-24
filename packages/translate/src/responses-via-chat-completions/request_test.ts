@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { translateResponsesToChatCompletions } from './request.ts';
 import { createResponsesToChatCompletionsStreamState, translateResponsesEventToChatCompletionsChunks } from '../chat-completions-via-responses/events.ts';
 import { assertEquals } from '../test-assert.ts';
-import type { ResponseTool, ResponseToolChoice } from '@copilot-gateway/protocols/responses';
+import type { ResponseTool, ResponseToolChoice } from '@floway-dev/protocols/responses';
 
 test('translateResponsesToChatCompletions merges adjacent assistant reasoning text and tool calls', () => {
   const result = translateResponsesToChatCompletions({
