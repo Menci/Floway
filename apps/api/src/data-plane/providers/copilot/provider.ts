@@ -335,6 +335,12 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
     callMessages: callMessagesEndpoint('messages'),
     callMessagesCountTokens: callMessagesEndpoint('messages_count_tokens'),
     callEmbeddings: (model, body, signal) => call('embeddings', copilotEmbeddingsBody(body), signal, rawModelFor(model, 'embeddings')),
+    callImagesGenerations: () => {
+      throw new Error('Copilot provider does not implement images_generations');
+    },
+    callImagesEdits: () => {
+      throw new Error('Copilot provider does not implement images_edits');
+    },
   };
 
   return {

@@ -357,5 +357,7 @@ export const stubProvider = (overrides: Partial<ModelProvider> = {}): ModelProvi
   callMessages: () => Promise.reject(new Error('stubProvider.callMessages was called')),
   callMessagesCountTokens: () => Promise.reject(new Error('stubProvider.callMessagesCountTokens was called')),
   callEmbeddings: () => Promise.reject(new Error('stubProvider.callEmbeddings was called')),
+  callImagesGenerations: () => Promise.reject(new Error('stubProvider.callImagesGenerations was called')),
+  callImagesEdits: () => Promise.reject(new Error('stubProvider.callImagesEdits was called')),
   ...overrides,
 });

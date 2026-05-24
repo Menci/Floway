@@ -152,6 +152,12 @@ export const createCustomProvider = (record: UpstreamRecord): ModelProviderInsta
     callMessagesCountTokens: (model, body, signal, anthropicBeta) =>
       call('messages_count_tokens', model, body, signal, anthropicBeta && anthropicBeta.length > 0 ? { 'anthropic-beta': anthropicBeta.join(',') } : undefined),
     callEmbeddings: (model, body, signal) => call('embeddings', model, body, signal),
+    callImagesGenerations: () => {
+      throw new Error('Custom provider stub: callImagesGenerations not yet implemented');
+    },
+    callImagesEdits: () => {
+      throw new Error('Custom provider stub: callImagesEdits not yet implemented');
+    },
   };
 
   return {

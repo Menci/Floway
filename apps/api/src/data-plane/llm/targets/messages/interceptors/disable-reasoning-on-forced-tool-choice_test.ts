@@ -17,6 +17,8 @@ const stubProvider = (): ModelProvider => ({
   callMessages: () => Promise.reject(new Error('unexpected call')),
   callMessagesCountTokens: () => Promise.reject(new Error('unexpected call')),
   callEmbeddings: () => Promise.reject(new Error('unexpected call')),
+  callImagesGenerations: () => Promise.reject(new Error('unexpected call')),
+  callImagesEdits: () => Promise.reject(new Error('unexpected call')),
 });
 
 const stubUpstreamModel = (): UpstreamModel => ({

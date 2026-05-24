@@ -85,6 +85,12 @@ export const createAzureProvider = (record: UpstreamRecord): ModelProviderInstan
     callMessagesCountTokens: (model, body, signal, anthropicBeta) =>
       call('messages_count_tokens', model, body, signal, anthropicBeta && anthropicBeta.length > 0 ? { 'anthropic-beta': anthropicBeta.join(',') } : undefined),
     callEmbeddings: (model, body, signal) => call('embeddings', model, body, signal),
+    callImagesGenerations: () => {
+      throw new Error('Azure provider stub: callImagesGenerations not yet implemented');
+    },
+    callImagesEdits: () => {
+      throw new Error('Azure provider stub: callImagesEdits not yet implemented');
+    },
   };
 
   return {

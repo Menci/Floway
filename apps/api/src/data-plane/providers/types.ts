@@ -3,6 +3,7 @@ import type { ChatCompletionsInterceptor, GeminiInterceptor, MessagesInterceptor
 import type { ChatCompletionsPayload } from '@copilot-gateway/protocols/chat-completions';
 import type { ModelEndpoint, ModelKind, ModelPricing } from '@copilot-gateway/protocols/common';
 import type { EmbeddingsPayload } from '@copilot-gateway/protocols/embeddings';
+import type { ImagesGenerationsPayload } from '@copilot-gateway/protocols/images';
 import type { MessagesPayload } from '@copilot-gateway/protocols/messages';
 import type { ResponsesPayload } from '@copilot-gateway/protocols/responses';
 
@@ -98,4 +99,6 @@ export interface ModelProvider {
   callMessages(model: UpstreamModel, body: Omit<MessagesPayload, 'model'>, signal?: AbortSignal, anthropicBeta?: readonly string[]): Promise<ProviderCallResult>;
   callMessagesCountTokens(model: UpstreamModel, body: Omit<MessagesPayload, 'model'>, signal?: AbortSignal, anthropicBeta?: readonly string[]): Promise<ProviderCallResult>;
   callEmbeddings(model: UpstreamModel, body: Omit<EmbeddingsPayload, 'model'>, signal?: AbortSignal): Promise<ProviderCallResult>;
+  callImagesGenerations(model: UpstreamModel, body: Omit<ImagesGenerationsPayload, 'model'>, signal?: AbortSignal): Promise<ProviderCallResult>;
+  callImagesEdits(model: UpstreamModel, body: FormData, signal?: AbortSignal): Promise<ProviderCallResult>;
 }
