@@ -73,6 +73,47 @@ test('/v1/images/edits rejects multipart body without model field with 400', asy
   assertEquals(response.status, 400);
 });
 
+test('/v1/images/generations rejects model on custom upstream without /images/generations capability', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  clearModelsStore();
+  await clearCopilotTokenCache();
+
+  // Chat-only custom upstream. Its /models response advertises gpt-4o
+  // (which inferKindFromModelId resolves to 'chat'), so the model exists
+  // in the registry but no binding accepts an images_generations request.
+  await repo.upstreams.save(buildCustomUpstreamRecord({
+    id: 'up_chat_only',
+    name: 'Chat Only Provider',
+    sortOrder: 100,
+    config: {
+      baseUrl: 'https://chat.example.com',
+      bearerToken: 'sk-chat',
+      supportedEndpoints: ['/chat/completions'],
+    },
+  }));
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'chat.example.com' && url.pathname === '/v1/models') {
+        return jsonResponse({ object: 'list', data: [{ id: 'gpt-4o' }] });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const response = await requestApp('/v1/images/generations', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+        body: JSON.stringify({ model: 'gpt-4o', prompt: 'hi' }),
+      });
+      assertEquals(response.status, 400);
+      const body = await response.json() as { error: { message: string } };
+      assertEquals(body.error.message, 'Model gpt-4o does not support the /images/generations endpoint.');
+    },
+  );
+});
+
 test('/v1/images/generations forwards a JSON request through a custom upstream and records usage', async () => {
   const { apiKey, repo } = await setupAppTest();
   // setupAppTest seeds only a Copilot upstream by default; register a custom

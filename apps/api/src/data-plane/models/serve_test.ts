@@ -77,7 +77,7 @@ test('/v1/models returns merged model list from Copilot and custom upstreams', a
           object?: string;
           type?: string;
           display_name?: string;
-          kind?: 'chat' | 'embedding';
+          kind?: 'chat' | 'embedding' | 'image';
           limits?: Record<string, number>;
           capabilities?: unknown;
           provider?: unknown;
@@ -182,7 +182,20 @@ test('/v1/models returns merged model list from Copilot and custom upstreams', a
 });
 
 test('/models returns the same superset payload as /v1/models', async () => {
-  const { apiKey } = await setupAppTest();
+  const { apiKey, repo } = await setupAppTest();
+  // Register a custom upstream so we can verify image-kind projection via
+  // the Tier 2 id heuristic (gpt-image-* → 'image'). The Copilot fixture
+  // only emits chat and embedding models.
+  await repo.upstreams.save(buildCustomUpstreamRecord({
+    id: 'up_images_proj',
+    name: 'Image Provider',
+    sortOrder: 100,
+    config: {
+      baseUrl: 'https://images-proj.example.com',
+      bearerToken: 'sk-images-proj',
+      supportedEndpoints: [],
+    },
+  }));
 
   await withMockedFetch(
     request => {
@@ -198,7 +211,7 @@ test('/models returns the same superset payload as /v1/models', async () => {
           refresh_in: 3600,
         });
       }
-      if (url.pathname === '/models') {
+      if (url.pathname === '/models' && url.hostname === 'api.githubcopilot.com') {
         return jsonResponse(
           copilotModels([
             {
@@ -213,6 +226,9 @@ test('/models returns the same superset payload as /v1/models', async () => {
           ]),
         );
       }
+      if (url.hostname === 'images-proj.example.com' && url.pathname === '/v1/models') {
+        return jsonResponse({ object: 'list', data: [{ id: 'gpt-image-2' }] });
+      }
 
       throw new Error(`Unhandled fetch ${request.url}`);
     },
@@ -226,7 +242,7 @@ test('/models returns the same superset payload as /v1/models', async () => {
         object: 'list',
         has_more: false,
         first_id: 'claude-opus-4-7',
-        last_id: 'embedding-only',
+        last_id: 'gpt-image-2',
         data: [
           {
             id: 'claude-opus-4-7',
@@ -244,6 +260,14 @@ test('/models returns the same superset payload as /v1/models', async () => {
             display_name: 'embedding-only',
             limits: {},
             kind: 'embedding',
+          },
+          {
+            id: 'gpt-image-2',
+            object: 'model',
+            type: 'model',
+            display_name: 'gpt-image-2',
+            limits: {},
+            kind: 'image',
           },
         ],
       });
