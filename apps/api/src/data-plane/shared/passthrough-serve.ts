@@ -52,18 +52,15 @@ const proxyResponseHeaders = (resp: Response): Headers => {
   return headers;
 };
 
-const proxyJsonResponse = (resp: Response): Response =>
+// Forward an upstream response to the client: stream the body unchanged and
+// preserve the status, with the header allow-list applied (see
+// FORWARDED_RESPONSE_HEADER_PREFIXES / FORWARDED_RESPONSE_HEADERS). Content-
+// type falls back to application/json only when the upstream omitted it.
+const proxyUpstreamResponse = (resp: Response): Response =>
   new Response(resp.body, {
     status: resp.status,
     headers: proxyResponseHeaders(resp),
   });
-
-// hono's StatusCode union accepts the discrete numeric literals (200, 400, ...).
-// The cast widens our internal `number` callsites without losing runtime safety —
-// the helper is the only caller and the values it picks (400 / 404) are always
-// in-range.
-const apiErrorResponse = (c: Context, message: string, status: number): Response =>
-  c.json({ error: { message, type: 'api_error' } }, status as 400);
 
 const recordUpstreamPerformance = (
   scheduler: BackgroundScheduler | undefined,
@@ -155,7 +152,7 @@ export const passthroughServe = async (ctx: PassthroughServeContext): Promise<Re
   try {
     const { id: modelId, model } = await resolveModelForRequest(requestedModel, apiKeyUpstreamIdsFromContext(c));
     if (!model) {
-      return apiErrorResponse(c, `No upstream provides model ${modelId}. Configure an upstream that exposes this model in the dashboard.`, 404);
+      return passthroughApiError(c, `No upstream provides model ${modelId}. Configure an upstream that exposes this model in the dashboard.`, 404);
     }
 
     for (const binding of model.providers) {
@@ -169,7 +166,7 @@ export const passthroughServe = async (ctx: PassthroughServeContext): Promise<Re
       if (!response.ok) {
         recordUpstreamPerformance(scheduleBackground, performanceContext, true, performance.now() - upstreamStartedAt);
         recordRequestPerformanceForApiKey(apiKeyId, scheduleBackground, performanceContext, true, performance.now() - requestStartedAt);
-        return proxyJsonResponse(response);
+        return proxyUpstreamResponse(response);
       }
 
       recordUpstreamPerformance(scheduleBackground, performanceContext, false, performance.now() - upstreamStartedAt);
@@ -191,10 +188,10 @@ export const passthroughServe = async (ctx: PassthroughServeContext): Promise<Re
         );
       }
       recordRequestPerformanceForApiKey(apiKeyId, scheduleBackground, performanceContext, false, performance.now() - requestStartedAt);
-      return proxyJsonResponse(response);
+      return proxyUpstreamResponse(response);
     }
 
-    return apiErrorResponse(c, noBindingMessage(modelId), 400);
+    return passthroughApiError(c, noBindingMessage(modelId), 400);
   } catch (e) {
     if (e instanceof ProviderModelsUnavailableError) {
       const proxied = httpResponseToResponse(e.httpResponse);
@@ -208,5 +205,8 @@ export const passthroughServe = async (ctx: PassthroughServeContext): Promise<Re
 // Body-parse failures are source-specific (JSON for embeddings/generations,
 // multipart for edits), so callers need a way to return a uniformly shaped
 // 400 without depending on internal helpers.
+//
+// We narrow `number` to hono's expected `StatusCode` literal subset — the
+// only callsites pass 400 / 404, both valid `StatusCode` literals.
 export const passthroughApiError = (c: Context, message: string, status: number): Response =>
-  apiErrorResponse(c, message, status);
+  c.json({ error: { message, type: 'api_error' } }, status as 400);
