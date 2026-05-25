@@ -5,7 +5,7 @@ import { assertEquals, assertExists } from '../../test-assert.ts';
 import { buildCustomUpstreamRecord, copilotModels, flushAsyncWork, jsonResponse, requestApp, setupAppTest, withMockedFetch } from '../../test-helpers.ts';
 import { clearModelsStore } from '../providers/models-store.ts';
 
-test('/v1/images/generations rejects non-JSON body with 400', async () => {
+test('/v1/images/generations rejects malformed JSON body with 400', async () => {
   const { apiKey } = await setupAppTest();
   const response = await requestApp('/v1/images/generations', {
     method: 'POST',
