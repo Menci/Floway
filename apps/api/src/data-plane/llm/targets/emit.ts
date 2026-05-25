@@ -1,5 +1,5 @@
 import { recordUpstreamHttpFailure, targetPerformanceContext, withUpstreamTelemetry } from './telemetry.ts';
-import type { PerformanceApiName, TelemetryModelIdentity } from '../../../repo/types.ts';
+import type { NonLlmServeApiName, PerformanceApiName, TelemetryModelIdentity } from '../../../repo/types.ts';
 import type { ProviderCallResult } from '../../providers/types.ts';
 import type { Invocation, RequestContext } from '../interceptors.ts';
 import { toInternalDebugError } from '../shared/errors/internal-debug-error.ts';
@@ -8,7 +8,7 @@ import { readUpstreamError } from '../shared/errors/upstream-error.ts';
 import { parseSSEStream } from '../shared/stream/parse-sse.ts';
 import type { SseFrame } from '@floway-dev/protocols/common';
 
-export type TargetEmitApiName = Exclude<PerformanceApiName, 'gemini' | 'embeddings' | 'images_generations' | 'images_edits'>;
+export type TargetEmitApiName = Exclude<PerformanceApiName, NonLlmServeApiName | 'gemini'>;
 
 export const targetModelIdentity = (invocation: Invocation<unknown>, modelKey: string): TelemetryModelIdentity => ({
   model: invocation.model,
