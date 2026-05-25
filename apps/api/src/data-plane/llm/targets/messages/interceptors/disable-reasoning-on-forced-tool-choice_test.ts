@@ -1,39 +1,12 @@
 import { test } from 'vitest';
 
 import { withReasoningDisabledOnForcedToolChoice } from './disable-reasoning-on-forced-tool-choice.ts';
-import type { TelemetryModelIdentity } from '../../../../../repo/types.ts';
 import { assertEquals } from '../../../../../test-assert.ts';
-import type { ModelProvider, UpstreamModel } from '../../../../providers/types.ts';
+import { stubProvider, stubUpstreamModel, testTelemetryModelIdentity } from '../../../../../test-helpers.ts';
 import type { MessagesInvocation, RequestContext } from '../../../interceptors.ts';
 import { eventResult, type ExecuteResult } from '../../../shared/errors/result.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEventData } from '@floway-dev/protocols/messages';
-
-const stubProvider = (): ModelProvider => ({
-  getProvidedModels: () => Promise.resolve([]),
-  getPricingForModelKey: () => null,
-  callChatCompletions: () => Promise.reject(new Error('unexpected call')),
-  callResponses: () => Promise.reject(new Error('unexpected call')),
-  callMessages: () => Promise.reject(new Error('unexpected call')),
-  callMessagesCountTokens: () => Promise.reject(new Error('unexpected call')),
-  callEmbeddings: () => Promise.reject(new Error('unexpected call')),
-  callImagesGenerations: () => Promise.reject(new Error('unexpected call')),
-  callImagesEdits: () => Promise.reject(new Error('unexpected call')),
-});
-
-const stubUpstreamModel = (): UpstreamModel => ({
-  id: 'test-model',
-  limits: {},
-  kind: 'chat',
-  upstreamEndpoints: ['messages'],
-  enabledFlags: new Set<string>(),
-});
-
-const testTelemetryModelIdentity: TelemetryModelIdentity = {
-  model: 'test-model',
-  upstream: 'test-upstream',
-  modelKey: 'test-model-key', cost: null,
-};
 
 const okEvents = (): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEventData>>> =>
   Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<MessagesStreamEventData>> {})(), testTelemetryModelIdentity));
@@ -45,7 +18,7 @@ const invocation = (payload: MessagesPayload): MessagesInvocation => ({
   upstream: 'test-upstream',
   payload,
   provider: stubProvider(),
-  upstreamModel: stubUpstreamModel(),
+  upstreamModel: stubUpstreamModel({ upstreamEndpoints: ['messages'] }),
   enabledFlags: new Set(['disable-reasoning-on-forced-tool-choice']),
 });
 

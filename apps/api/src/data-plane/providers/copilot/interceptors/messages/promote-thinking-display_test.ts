@@ -1,11 +1,10 @@
 import { test } from 'vitest';
 
 import { resolveMessagesDownstreamThinkingDisplay, withThinkingDisplayPromoted } from './promote-thinking-display.ts';
-import type { TelemetryModelIdentity } from '../../../../../repo/types.ts';
 import { assertEquals } from '../../../../../test-assert.ts';
+import { stubProvider, stubUpstreamModel, testTelemetryModelIdentity } from '../../../../../test-helpers.ts';
 import type { MessagesInvocation, RequestContext } from '../../../../llm/interceptors.ts';
 import { eventResult, type ExecuteResult } from '../../../../llm/shared/errors/result.ts';
-import type { ModelProvider, UpstreamModel } from '../../../types.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEventData } from '@floway-dev/protocols/messages';
 
@@ -13,32 +12,6 @@ const collect = async <T>(events: AsyncIterable<T>): Promise<T[]> => {
   const collected: T[] = [];
   for await (const event of events) collected.push(event);
   return collected;
-};
-
-const stubProvider = (): ModelProvider => ({
-  getProvidedModels: () => Promise.resolve([]),
-  getPricingForModelKey: () => null,
-  callChatCompletions: () => Promise.reject(new Error('unexpected call')),
-  callResponses: () => Promise.reject(new Error('unexpected call')),
-  callMessages: () => Promise.reject(new Error('unexpected call')),
-  callMessagesCountTokens: () => Promise.reject(new Error('unexpected call')),
-  callEmbeddings: () => Promise.reject(new Error('unexpected call')),
-  callImagesGenerations: () => Promise.reject(new Error('unexpected call')),
-  callImagesEdits: () => Promise.reject(new Error('unexpected call')),
-});
-
-const stubUpstreamModel = (): UpstreamModel => ({
-  id: 'test-model',
-  limits: {},
-  kind: 'chat',
-  upstreamEndpoints: ['messages'],
-  enabledFlags: new Set<string>(),
-});
-
-const testTelemetryModelIdentity: TelemetryModelIdentity = {
-  model: 'test-model',
-  upstream: 'test-upstream',
-  modelKey: 'test-model-key', cost: null,
 };
 
 const makeCtx = (
@@ -59,7 +32,7 @@ const makeCtx = (
     ...(thinking ? { thinking } : {}),
   },
   provider: stubProvider(),
-  upstreamModel: stubUpstreamModel(),
+  upstreamModel: stubUpstreamModel({ upstreamEndpoints: ['messages'] }),
   enabledFlags: new Set<string>(),
 });
 
