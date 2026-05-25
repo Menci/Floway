@@ -23,14 +23,21 @@ export const tokenUsageFromPromptTokenResponse = (value: unknown): TokenUsage | 
 // We only track the totals — the per-modality split (text vs image) has
 // no column on the usage table and cost computation uses input/output
 // against the existing ModelPricing schema.
+//
+// Either field present as a non-number (e.g. a string "5") is treated as
+// a malformed upstream payload rather than silently coerced to 0. That
+// matches the project's anti-fallback rule in AGENTS.md: refuse to invent
+// numbers for shapes we did not expect.
 export const tokenUsageFromImagesResponse = (value: unknown): TokenUsage | null => {
   if (!value || typeof value !== 'object') return null;
   const usage = (value as { usage?: { input_tokens?: unknown; output_tokens?: unknown } }).usage;
-  if (typeof usage?.input_tokens !== 'number' && typeof usage?.output_tokens !== 'number') return null;
-  return tokenUsage(
-    typeof usage.input_tokens === 'number' ? usage.input_tokens : 0,
-    typeof usage.output_tokens === 'number' ? usage.output_tokens : 0,
-  );
+  if (!usage || typeof usage !== 'object') return null;
+  const input = usage.input_tokens;
+  const output = usage.output_tokens;
+  if (input !== undefined && typeof input !== 'number') return null;
+  if (output !== undefined && typeof output !== 'number') return null;
+  if (input === undefined && output === undefined) return null;
+  return tokenUsage(input ?? 0, output ?? 0);
 };
 
 export const recordTokenUsage = async (keyId: string, modelIdentity: TelemetryModelIdentity, usage: TokenUsage): Promise<void> => {
