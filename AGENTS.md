@@ -318,7 +318,11 @@ must stay consistent: `kind === 'embedding'` ⇔ `upstreamEndpoints ===
 images routing in `apps/api/src/data-plane/images/serve.ts` gates on
 `upstreamEndpoints.includes('images_generations')` /
 `upstreamEndpoints.includes('images_edits')`; chat planning gates on the
-`upstreamEndpoints` list directly.
+`upstreamEndpoints` list directly. The `kind` vocabulary
+(`'chat' | 'embedding' | 'image'`) is borrowed from Together AI's open
+`/v1/models` `type` enum; the full known set and the "add only when we
+actually route the family" rule live in the `ModelKind` JSDoc at
+`packages/protocols/src/common/models.ts`.
 
 The registry separates public catalog data from execution bindings:
 

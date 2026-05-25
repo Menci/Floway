@@ -335,6 +335,11 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
     callMessages: callMessagesEndpoint('messages'),
     callMessagesCountTokens: callMessagesEndpoint('messages_count_tokens'),
     callEmbeddings: (model, body, signal) => call('embeddings', copilotEmbeddingsBody(body), signal, rawModelFor(model, 'embeddings')),
+    // Copilot has no /images/... upstream. getProvidedModels never emits a
+    // kind='image' model for Copilot bindings, so the source-side dispatcher
+    // in apps/api/src/data-plane/images/serve.ts never selects this provider
+    // for image requests. These stubs satisfy the ModelProvider interface
+    // only; they are unreachable in normal operation.
     callImagesGenerations: () => {
       throw new Error('Copilot provider does not implement images_generations');
     },
