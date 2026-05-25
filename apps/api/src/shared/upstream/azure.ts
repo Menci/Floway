@@ -317,7 +317,16 @@ const requestUrl = (openAiBaseUrl: string | undefined, anthropicBaseUrl: string 
     if (!openAiBaseUrl) throw new Error('Azure upstream config does not include an OpenAI v1 endpoint');
     const url = joinBaseAndPath(openAiBaseUrl, openAiPath);
     const query = AZURE_OPENAI_QUERY[endpoint];
-    return query ? `${url}?${query}` : url;
+    if (!query) return url;
+    // Append per-endpoint query through URL.searchParams so a future path
+    // that itself carries a query suffix does not produce `path?a?b`.
+    // AZURE_OPENAI_QUERY stores already-encoded pairs (e.g. `api-version=
+    // preview`); parsing-then-appending preserves their encoding.
+    const parsed = new URL(url);
+    for (const [key, value] of new URLSearchParams(query).entries()) {
+      parsed.searchParams.append(key, value);
+    }
+    return parsed.href;
   }
 
   const anthropicPath = AZURE_ANTHROPIC_PATHS[endpoint];
