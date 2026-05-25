@@ -91,6 +91,9 @@ const geminiModelLoadError = (error: unknown): Response => {
 
 const loadGeminiModels = async (upstreamFilter?: readonly string[] | null): Promise<GeminiModel[]> => {
   const models = await getInternalModels(upstreamFilter);
+  // The Gemini /models surface represents only generative chat models;
+  // embedding and image kinds are intentionally skipped because the
+  // gateway exposes no Gemini-shaped endpoint for them.
   return models.filter(model => model.kind === 'chat').map(toGeminiModel);
 };
 

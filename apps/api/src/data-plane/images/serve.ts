@@ -62,8 +62,11 @@ export const imagesEdits = async (c: Context): Promise<Response> => {
   let form: FormData;
   try {
     form = await c.req.raw.formData();
-  } catch (e) {
-    return passthroughApiError(c, `Image edits request body must be multipart/form-data: ${e instanceof Error ? e.message : String(e)}`, 400);
+  } catch {
+    // Match the embeddings serve stance: do not surface the underlying
+    // parser's error text. The wording is enough for a client to know
+    // they sent the wrong content type or a malformed body.
+    return passthroughApiError(c, 'Image edits request body must be a valid multipart/form-data payload.', 400);
   }
 
   const modelRaw = form.get('model');

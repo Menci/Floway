@@ -53,7 +53,7 @@ floway/
 ├── vitest.config.ts            # root project list (Vitest 4 test.projects)
 ├── packages/
 │   ├── protocols/              # @floway-dev/protocols — pure type defs
-│   │   └── src/{common,chat-completions,responses,messages,gemini,embeddings}/index.ts
+│   │   └── src/{common,chat-completions,responses,messages,gemini,embeddings,images}/index.ts
 │   └── translate/              # @floway-dev/translate — translation pairs
 │       └── src/{<pair-dirs>,shared,types.ts,index.ts}
 └── apps/
