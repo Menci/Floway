@@ -189,6 +189,27 @@ const azureProbeRequest = (deployment: string, path: string): { endpoint: Endpoi
         input: 'test',
       },
     };
+  case '/images/generations':
+  case '/v1/images/generations':
+  case '/images/edits':
+  case '/v1/images/edits':
+    // Both image endpoints probe via /v1/images/generations: synthesizing a
+    // valid multipart edits body would require a real PNG and mask, which is
+    // disproportionate for a connectivity test. If the deployment's
+    // credentials and name are valid, the generations call succeeds;
+    // edits-specific failures only matter when a real client request
+    // submits real bytes. The body is intentionally minimal — we omit
+    // gpt-image-2-only fields like output_format that would 400 against a
+    // misconfigured dall-e deployment.
+    return {
+      endpoint: 'images_generations',
+      body: {
+        model: deployment,
+        prompt: 'probe',
+        n: 1,
+        size: '1024x1024',
+      },
+    };
   default:
     throw new Error(`Unsupported Azure deployment endpoint ${path}`);
   }
