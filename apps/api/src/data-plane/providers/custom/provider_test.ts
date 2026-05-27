@@ -349,3 +349,33 @@ test('Custom provider callImagesEdits forwards multipart body with model field a
   assertEquals(forwarded.form.get('prompt'), 'add a kite');
   assertEquals(forwarded.form.get('image') instanceof File, true);
 });
+
+test('Custom provider forwards the source-derived anthropicBeta slice as the anthropic-beta header', async () => {
+  const instance = createCustomProvider(baseRecord());
+  const provider = instance.provider;
+  const seen: Array<string | null> = [];
+
+  await withMockedFetch(
+    request => {
+      const path = new URL(request.url).pathname;
+      if (path === '/v1/models') return jsonResponse({ object: 'list', data: [{ id: 'echo', object: 'model' }] });
+      seen.push(request.headers.get('anthropic-beta'));
+      if (path === '/v1/messages') return jsonResponse({ id: 'm', type: 'message', role: 'assistant', content: [], model: 'echo', stop_reason: 'end_turn', stop_sequence: null, usage: {} });
+      if (path === '/v1/messages/count_tokens') return jsonResponse({ input_tokens: 1 });
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const [model] = await provider.getProvidedModels();
+      // The data plane hands the parsed beta slice as the 5th argument; custom
+      // upstreams register no filter interceptor, so the provider merges it.
+      await provider.callMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, {}, ['oauth-2025-04-20', 'interleaved-thinking-2025-05-14']);
+      await provider.callMessagesCountTokens(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, {}, ['oauth-2025-04-20']);
+      // No beta slice → no header on the wire (the regression guard for the
+      // pre-86ef9aa drop).
+      await provider.callMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, {}, []);
+      await provider.callMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] });
+    },
+  );
+
+  assertEquals(seen, ['oauth-2025-04-20,interleaved-thinking-2025-05-14', 'oauth-2025-04-20', null, null]);
+});

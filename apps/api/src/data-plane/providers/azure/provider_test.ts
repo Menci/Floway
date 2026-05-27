@@ -228,6 +228,40 @@ test('createAzureProvider supports native Azure Anthropic Messages deployments',
   ]);
 });
 
+test('createAzureProvider forwards the source-derived anthropicBeta slice as the anthropic-beta header', async () => {
+  const instance = createAzureProvider(
+    azureRecord({
+      config: {
+        endpoint: 'https://example.services.ai.azure.com/anthropic/v1',
+        apiKey: 'az-key',
+        deployments: [{ deployment: 'claude-prod', supportedEndpoints: ['/v1/messages'] }],
+      },
+    }),
+  );
+  const [model] = await instance.provider.getProvidedModels();
+  const seen: Array<string | null> = [];
+
+  await withMockedFetch(
+    request => {
+      seen.push(request.headers.get('anthropic-beta'));
+      return Promise.resolve(new Response('{}', { status: 200 }));
+    },
+    async () => {
+      // The data plane passes the parsed beta slice as the 5th argument, not
+      // pre-baked into the header bag (only Copilot's filter interceptor does
+      // that). Azure has no such interceptor, so the provider must merge it.
+      await instance.provider.callMessages(model, { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] }, undefined, {}, ['context-1m-2025-08-07', 'interleaved-thinking-2025-05-14']);
+      await instance.provider.callMessagesCountTokens(model, { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] }, undefined, {}, ['context-1m-2025-08-07']);
+      // No beta slice → no header on the wire (the regression guard for the
+      // pre-86ef9aa drop).
+      await instance.provider.callMessages(model, { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] }, undefined, {}, []);
+      await instance.provider.callMessages(model, { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] });
+    },
+  );
+
+  assertEquals(seen, ['context-1m-2025-08-07,interleaved-thinking-2025-05-14', 'context-1m-2025-08-07', null, null]);
+});
+
 test('createAzureProvider applies per-deployment flag overrides on top of the upstream layer', async () => {
   const instance = createAzureProvider(
     azureRecord({
