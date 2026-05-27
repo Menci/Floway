@@ -180,10 +180,6 @@ const modelsForSnippets = computed(() => modelsStore.models.value ?? []);
       <div class="mt-5">
         <CliSnippet :api-key="configurationKey" :models="modelsForSnippets" />
       </div>
-
-      <div v-if="!auth.isAdmin && keys[0] && !selectedKey" class="mt-5">
-        <Code :code="keys[0].key" :copyable="true" />
-      </div>
     </div>
 
     <EditKeyDialog
