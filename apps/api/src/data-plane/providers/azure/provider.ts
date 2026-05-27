@@ -42,15 +42,7 @@ export const createAzureProvider = (record: UpstreamRecord): ModelProviderInstan
     const deployment = providerData(model).deployment;
     const requestBody = isStreamingEndpoint(endpoint) ? { ...body, stream: true, model: deployment } : { ...body, model: deployment };
     return upstream
-      .fetch(
-        endpoint,
-        {
-          method: 'POST',
-          body: JSON.stringify(requestBody),
-          signal,
-        },
-        headers && Object.keys(headers).length > 0 ? { extraHeaders: headers } : undefined,
-      )
+      .fetch(endpoint, { method: 'POST', body: JSON.stringify(requestBody), signal }, { extraHeaders: headers })
       .then(response => ({
         response,
         modelKey: deployment,
@@ -90,11 +82,7 @@ export const createAzureProvider = (record: UpstreamRecord): ModelProviderInstan
       // Content-Type itself.
       const deployment = providerData(model).deployment;
       body.append('model', deployment);
-      const response = await upstream.fetch(
-        'images_edits',
-        { method: 'POST', body, signal },
-        headers && Object.keys(headers).length > 0 ? { extraHeaders: headers } : undefined,
-      );
+      const response = await upstream.fetch('images_edits', { method: 'POST', body, signal }, { extraHeaders: headers });
       return { response, modelKey: deployment };
     },
   };

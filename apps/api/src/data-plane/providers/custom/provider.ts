@@ -111,15 +111,7 @@ export const createCustomProvider = (record: UpstreamRecord): ModelProviderInsta
       ? { ...body, stream: true, model: providerData(model).rawModelId }
       : { ...body, model: providerData(model).rawModelId };
     return upstream
-      .fetch(
-        endpoint,
-        {
-          method: 'POST',
-          body: JSON.stringify(requestBody),
-          signal,
-        },
-        headers && Object.keys(headers).length > 0 ? { extraHeaders: headers } : undefined,
-      )
+      .fetch(endpoint, { method: 'POST', body: JSON.stringify(requestBody), signal }, { extraHeaders: headers })
       .then(response => ({
         response,
         modelKey: providerData(model).rawModelId,
@@ -159,11 +151,7 @@ export const createCustomProvider = (record: UpstreamRecord): ModelProviderInsta
       // Custom forwards the user's raw model id. The runtime auto-encodes
       // the FormData with a fresh boundary and sets Content-Type itself.
       body.append('model', providerData(model).rawModelId);
-      const response = await upstream.fetch(
-        'images_edits',
-        { method: 'POST', body, signal },
-        headers && Object.keys(headers).length > 0 ? { extraHeaders: headers } : undefined,
-      );
+      const response = await upstream.fetch('images_edits', { method: 'POST', body, signal }, { extraHeaders: headers });
       return { response, modelKey: providerData(model).rawModelId };
     },
   };
