@@ -1,4 +1,4 @@
-import type { NonLlmServeApiName } from '../../../../repo/types.ts';
+import type { NonLlmServeApiName } from '../../../shared/api-names.ts';
 import type { LlmSourceApi, LlmTargetApi } from '../../interceptors.ts';
 
 // Embeddings and images are not part of the LLM source-routing graph but use

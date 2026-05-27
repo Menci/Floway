@@ -1,7 +1,8 @@
 import type { Context } from 'hono';
 
-import type { NonLlmServeApiName, PerformanceApiName } from '../../../repo/types.ts';
+import type { PerformanceApiName } from '../../../repo/types.ts';
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
+import type { NonLlmServeApiName } from '../../shared/api-names.ts';
 import { type PerformanceTelemetryContext, runtimeLocationFromRequest } from '../../shared/telemetry/performance.ts';
 import type { RequestContext } from '../interceptors.ts';
 import { toInternalDebugError } from '../shared/errors/internal-debug-error.ts';

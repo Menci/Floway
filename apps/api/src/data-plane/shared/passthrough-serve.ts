@@ -16,8 +16,9 @@
 import type { Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
+import type { NonLlmServeApiName } from './api-names.ts';
 import { apiKeyUpstreamIdsFromContext } from '../../middleware/auth.ts';
-import type { NonLlmServeApiName, TokenUsage } from '../../repo/types.ts';
+import type { TokenUsage } from '../../repo/types.ts';
 import type { BackgroundScheduler } from '../../runtime/background.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { toInternalDebugError } from '../llm/shared/errors/internal-debug-error.ts';

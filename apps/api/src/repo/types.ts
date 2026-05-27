@@ -55,10 +55,6 @@ export interface SearchUsageRecord {
 
 export type PerformanceMetricScope = 'request_total' | 'upstream_success';
 export type PerformanceApiName = 'messages' | 'responses' | 'chat-completions' | 'gemini' | 'embeddings' | 'images_generations' | 'images_edits';
-// API names that bypass the LLM source-routing graph entirely. These run on
-// the shared passthrough-serve helper in apps/api/src/data-plane/shared/
-// passthrough-serve.ts; the LLM source/target executors exclude them.
-export type NonLlmServeApiName = 'embeddings' | 'images_generations' | 'images_edits';
 
 export interface PerformanceDimensions {
   hour: string;

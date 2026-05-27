@@ -1,6 +1,7 @@
 import { recordUpstreamHttpFailure, targetPerformanceContext, withUpstreamTelemetry } from './telemetry.ts';
-import type { NonLlmServeApiName, PerformanceApiName, TelemetryModelIdentity } from '../../../repo/types.ts';
+import type { PerformanceApiName, TelemetryModelIdentity } from '../../../repo/types.ts';
 import type { ProviderCallResult } from '../../providers/types.ts';
+import type { NonLlmServeApiName } from '../../shared/api-names.ts';
 import type { Invocation, RequestContext } from '../interceptors.ts';
 import { toInternalDebugError } from '../shared/errors/internal-debug-error.ts';
 import { eventResult, type ExecuteResult, type InternalErrorResult, internalErrorResult } from '../shared/errors/result.ts';
