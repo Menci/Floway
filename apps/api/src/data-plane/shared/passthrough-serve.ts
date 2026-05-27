@@ -125,11 +125,11 @@ export interface PassthroughServeContext {
   // Already-validated public model id the client requested. The helper
   // resolves it against the provider registry; if no upstream serves the
   // id, the client sees a 404 with the standard wording.
-  readonly requestedModel: string;
+  readonly model: string;
   // Selects which provider binding can serve this endpoint family. For
   // embeddings this is `kind === 'embedding'`; for images it gates on the
   // specific `upstreamEndpoints` entry.
-  readonly acceptBinding: (binding: ProviderModelRecord) => boolean;
+  readonly bindingServesEndpoint: (binding: ProviderModelRecord) => boolean;
   // Performs the upstream HTTP call for the chosen binding. Any throw here
   // is preserved and becomes a 502 with the internal-debug envelope —
   // exceptions thrown from the actual fetch must not be silently swallowed.
@@ -145,7 +145,7 @@ export interface PassthroughServeContext {
 }
 
 export const passthroughServe = async (ctx: PassthroughServeContext): Promise<Response> => {
-  const { c, sourceApi, requestedModel, acceptBinding, call, extractUsage, noBindingMessage } = ctx;
+  const { c, sourceApi, model, bindingServesEndpoint, call, extractUsage, noBindingMessage } = ctx;
   const requestStartedAt = performance.now();
   const apiKeyId = c.get('apiKeyId') as string | undefined;
   const runtimeLocation = runtimeLocationFromRequest(c.req.raw);
@@ -153,13 +153,13 @@ export const passthroughServe = async (ctx: PassthroughServeContext): Promise<Re
   let lastPerformance: PerformanceTelemetryContext | undefined;
 
   try {
-    const { id: modelId, model } = await resolveModelForRequest(requestedModel, apiKeyUpstreamIdsFromContext(c));
-    if (!model) {
+    const { id: modelId, model: resolved } = await resolveModelForRequest(model, apiKeyUpstreamIdsFromContext(c));
+    if (!resolved) {
       return passthroughApiError(c, `No upstream provides model ${modelId}. Configure an upstream that exposes this model in the dashboard.`, 404);
     }
 
-    for (const binding of model.providers) {
-      if (!acceptBinding(binding)) continue;
+    for (const binding of resolved.providers) {
+      if (!bindingServesEndpoint(binding)) continue;
 
       const upstreamStartedAt = performance.now();
       const { response, modelKey } = await call(binding);

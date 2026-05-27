@@ -48,8 +48,8 @@ export const embeddings = async (c: Context): Promise<Response> => {
   return await passthroughServe({
     c,
     sourceApi: 'embeddings',
-    requestedModel: request.model,
-    acceptBinding: binding => binding.upstreamModel.kind === 'embedding',
+    model: request.model,
+    bindingServesEndpoint: binding => binding.upstreamModel.kind === 'embedding',
     call: async binding => {
       const { model: _model, ...body } = request.body;
       return await binding.provider.callEmbeddings(binding.upstreamModel, body);

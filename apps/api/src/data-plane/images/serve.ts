@@ -47,8 +47,8 @@ export const imagesGenerations = async (c: Context): Promise<Response> => {
   return await passthroughServe({
     c,
     sourceApi: 'images_generations',
-    requestedModel: request.model,
-    acceptBinding: binding => binding.upstreamModel.upstreamEndpoints.includes('images_generations'),
+    model: request.model,
+    bindingServesEndpoint: binding => binding.upstreamModel.upstreamEndpoints.includes('images_generations'),
     call: binding => {
       const { model: _model, ...body } = request.body;
       return binding.provider.callImagesGenerations(binding.upstreamModel, body);
@@ -77,8 +77,8 @@ export const imagesEdits = async (c: Context): Promise<Response> => {
   return await passthroughServe({
     c,
     sourceApi: 'images_edits',
-    requestedModel: modelRaw,
-    acceptBinding: binding => binding.upstreamModel.upstreamEndpoints.includes('images_edits'),
+    model: modelRaw,
+    bindingServesEndpoint: binding => binding.upstreamModel.upstreamEndpoints.includes('images_edits'),
     call: binding => {
       // ModelProvider.callImagesEdits takes ownership of the FormData and
       // appends the upstream-specific model/deployment id; allocate a fresh
