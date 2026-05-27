@@ -106,7 +106,7 @@ export const createCustomProvider = (record: UpstreamRecord): ModelProviderInsta
     pricingByRawId = pricingByRawIdFromResponse(response);
   };
 
-  const call = (endpoint: EndpointKey, model: UpstreamModel, body: Record<string, unknown>, signal?: AbortSignal, extraHeaders?: Record<string, string>): Promise<ProviderCallResult> => {
+  const call = (endpoint: EndpointKey, model: UpstreamModel, body: Record<string, unknown>, signal?: AbortSignal, headers?: Record<string, string>): Promise<ProviderCallResult> => {
     const requestBody = isStreamingEndpoint(endpoint)
       ? { ...body, stream: true, model: providerData(model).rawModelId }
       : { ...body, model: providerData(model).rawModelId };
@@ -118,7 +118,7 @@ export const createCustomProvider = (record: UpstreamRecord): ModelProviderInsta
           body: JSON.stringify(requestBody),
           signal,
         },
-        extraHeaders ? { extraHeaders } : undefined,
+        headers && Object.keys(headers).length > 0 ? { extraHeaders: headers } : undefined,
       )
       .then(response => ({
         response,
@@ -149,18 +149,21 @@ export const createCustomProvider = (record: UpstreamRecord): ModelProviderInsta
         }
       }),
     getPricingForModelKey: modelKey => pricingByRawId.get(modelKey) ?? null,
-    callChatCompletions: (model, body, signal) => call('chat_completions', model, body, signal),
-    callResponses: (model, body, signal) => call('responses', model, body, signal),
-    callMessages: (model, body, signal, anthropicBeta) => call('messages', model, body, signal, anthropicBeta && anthropicBeta.length > 0 ? { 'anthropic-beta': anthropicBeta.join(',') } : undefined),
-    callMessagesCountTokens: (model, body, signal, anthropicBeta) =>
-      call('messages_count_tokens', model, body, signal, anthropicBeta && anthropicBeta.length > 0 ? { 'anthropic-beta': anthropicBeta.join(',') } : undefined),
-    callEmbeddings: (model, body, signal) => call('embeddings', model, body, signal),
-    callImagesGenerations: (model, body, signal) => call('images_generations', model, body, signal),
-    callImagesEdits: async (model, body, signal) => {
+    callChatCompletions: (model, body, signal, headers) => call('chat_completions', model, body, signal, headers),
+    callResponses: (model, body, signal, headers) => call('responses', model, body, signal, headers),
+    callMessages: (model, body, signal, headers) => call('messages', model, body, signal, headers),
+    callMessagesCountTokens: (model, body, signal, headers) => call('messages_count_tokens', model, body, signal, headers),
+    callEmbeddings: (model, body, signal, headers) => call('embeddings', model, body, signal, headers),
+    callImagesGenerations: (model, body, signal, headers) => call('images_generations', model, body, signal, headers),
+    callImagesEdits: async (model, body, signal, headers) => {
       // Custom forwards the user's raw model id. The runtime auto-encodes
       // the FormData with a fresh boundary and sets Content-Type itself.
       body.append('model', providerData(model).rawModelId);
-      const response = await upstream.fetch('images_edits', { method: 'POST', body, signal });
+      const response = await upstream.fetch(
+        'images_edits',
+        { method: 'POST', body, signal },
+        headers && Object.keys(headers).length > 0 ? { extraHeaders: headers } : undefined,
+      );
       return { response, modelKey: providerData(model).rawModelId };
     },
   };

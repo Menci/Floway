@@ -33,7 +33,7 @@ const errorEvent = (): ResponsesStreamEvent =>
     code: 'api_error',
   }) as ResponsesStreamEvent;
 
-export const withResponsesToolArgumentWhitespaceAborted: ResponsesInterceptor = async (_invocation, _request, run) => {
+export const withToolArgumentWhitespaceAborted: ResponsesInterceptor = async (_invocation, _request, run) => {
   const result = await run();
   if (result.type !== 'events') return result;
 

@@ -226,10 +226,6 @@ const makeNativeWebSearchUpstreamHandler =
     async (request: Request): Promise<Response> => {
       const url = new URL(request.url);
 
-      if (url.hostname === 'update.code.visualstudio.com') {
-        return jsonResponse(['1.110.1']);
-      }
-
       if (url.pathname === '/copilot_internal/v2/token') {
         return jsonResponse({
           token: 'copilot-access-token',
@@ -324,6 +320,72 @@ test('/v1/messages rejects body anthropic_beta', async () => {
   assertEquals(body.error.param, 'anthropic_beta');
 });
 
+test('/v1/messages does not record performance for an unresolved bracket-suffixed client model string', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  let generationFetchCalls = 0;
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+
+      if (url.hostname === 'update.code.visualstudio.com') {
+        return jsonResponse(['1.110.1']);
+      }
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({
+          token: 'copilot-access-token',
+          expires_at: 4102444800,
+          refresh_in: 3600,
+        });
+      }
+      if (url.pathname === '/models') {
+        return jsonResponse(
+          copilotModels([
+            {
+              id: 'claude-opus-4.7',
+              supported_endpoints: ['/v1/messages'],
+              maxContextWindowTokens: 1_000_000,
+            },
+          ]),
+        );
+      }
+      if (url.pathname === '/v1/messages') {
+        generationFetchCalls++;
+        return sseMessagesResponse({
+          id: 'msg_unexpected',
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'text', text: 'unexpected' }],
+          model: 'claude-opus-4.7',
+          stop_reason: 'end_turn',
+          stop_sequence: null,
+          usage: { input_tokens: 1, output_tokens: 1 },
+        });
+      }
+
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const response = await requestApp('/v1/messages', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-api-key': apiKey.key,
+        },
+        body: JSON.stringify({
+          model: 'claude-opus-4-7[1m]',
+          max_tokens: 32,
+          messages: [{ role: 'user', content: 'Hi' }],
+        }),
+      });
+
+      assertEquals(response.status, 404);
+      assertEquals(generationFetchCalls, 0);
+      assertEquals(await repo.performance.listAll(), []);
+    },
+  );
+});
+
 test('/v1/messages rejects body betas', async () => {
   const { apiKey } = await setupAppTest();
 
@@ -361,9 +423,6 @@ test('/v1/messages rewrites upstream context-window errors to Messages compact f
     request => {
       const url = new URL(request.url);
 
-      if (url.hostname === 'update.code.visualstudio.com') {
-        return jsonResponse(['1.110.1']);
-      }
       if (url.pathname === '/copilot_internal/v2/token') {
         return jsonResponse({
           token: 'copilot-access-token',
@@ -415,9 +474,6 @@ test('/messages uses the same data-plane handler as /v1/messages', async () => {
     request => {
       const url = new URL(request.url);
 
-      if (url.hostname === 'update.code.visualstudio.com') {
-        return jsonResponse(['1.110.1']);
-      }
       if (url.pathname === '/copilot_internal/v2/token') {
         return jsonResponse({
           token: 'copilot-access-token',
@@ -513,9 +569,6 @@ test('/v1/messages uses native endpoint and applies native request workarounds',
     async request => {
       const url = new URL(request.url);
 
-      if (url.hostname === 'update.code.visualstudio.com') {
-        return jsonResponse(['1.110.1']);
-      }
       if (url.pathname === '/copilot_internal/v2/token') {
         return jsonResponse({
           token: 'copilot-access-token',
@@ -653,7 +706,11 @@ test('/v1/messages uses native endpoint and applies native request workarounds',
   assertEquals(assistantContent[2].type, 'thinking');
   assertEquals(assistantContent[2].thinking, 'second thought');
   assertEquals(assistantContent[3].type, 'text');
-  assertEquals(upstreamBeta, 'context-management-2025-06-27,interleaved-thinking-2025-05-14');
+  // Caller-supplied anthropic-beta is respected exactly: the filter keeps
+  // allow-listed values and never auto-adds `interleaved-thinking-2025-05-14`
+  // on the inbound branch, even when `thinking.budget_tokens` is set. The
+  // auto-add only fires when the caller sent NO inbound header.
+  assertEquals(upstreamBeta, 'context-management-2025-06-27');
   assertEquals(githubAccount.accountType, 'individual');
 });
 
@@ -667,9 +724,6 @@ test('/v1/messages keeps caller thinking and tool_choice unchanged on native ada
     async request => {
       const url = new URL(request.url);
 
-      if (url.hostname === 'update.code.visualstudio.com') {
-        return jsonResponse(['1.110.1']);
-      }
       if (url.pathname === '/copilot_internal/v2/token') {
         return jsonResponse({
           token: 'copilot-access-token',
@@ -786,9 +840,6 @@ test('/v1/messages sends summarized thinking upstream while exposing 4.7 default
     async request => {
       const url = new URL(request.url);
 
-      if (url.hostname === 'update.code.visualstudio.com') {
-        return jsonResponse(['1.110.1']);
-      }
       if (url.pathname === '/copilot_internal/v2/token') {
         return jsonResponse({
           token: 'copilot-access-token',
@@ -887,9 +938,6 @@ test('/v1/messages streams explicit omitted without thinking_delta while preserv
     async request => {
       const url = new URL(request.url);
 
-      if (url.hostname === 'update.code.visualstudio.com') {
-        return jsonResponse(['1.110.1']);
-      }
       if (url.pathname === '/copilot_internal/v2/token') {
         return jsonResponse({
           token: 'copilot-access-token',
@@ -986,9 +1034,6 @@ test('/v1/messages resolves base Claude models to effort variants before plannin
     async request => {
       const url = new URL(request.url);
 
-      if (url.hostname === 'update.code.visualstudio.com') {
-        return jsonResponse(['1.110.1']);
-      }
       if (url.pathname === '/copilot_internal/v2/token') {
         return jsonResponse({
           token: 'copilot-access-token',
@@ -1058,9 +1103,6 @@ test('/v1/messages native streaming filters trailing DONE sentinel', async () =>
     request => {
       const url = new URL(request.url);
 
-      if (url.hostname === 'update.code.visualstudio.com') {
-        return jsonResponse(['1.110.1']);
-      }
       if (url.pathname === '/copilot_internal/v2/token') {
         return jsonResponse({
           token: 'copilot-access-token',
@@ -1131,9 +1173,6 @@ test('/v1/messages streams malformed upstream Messages SSE as an error event', a
     request => {
       const url = new URL(request.url);
 
-      if (url.hostname === 'update.code.visualstudio.com') {
-        return jsonResponse(['1.110.1']);
-      }
       if (url.pathname === '/copilot_internal/v2/token') {
         return jsonResponse({
           token: 'copilot-access-token',
@@ -1189,7 +1228,7 @@ test('/v1/messages streams malformed upstream Messages SSE as an error event', a
   );
 });
 
-test('/v1/messages forwards Messages tool strict field on native messages', async () => {
+test('/v1/messages strips Messages tool strict field on native messages (Copilot Vertex rejects structured_outputs)', async () => {
   const { apiKey } = await setupAppTest();
 
   let upstreamBody: Record<string, unknown> | undefined;
@@ -1198,9 +1237,6 @@ test('/v1/messages forwards Messages tool strict field on native messages', asyn
     async request => {
       const url = new URL(request.url);
 
-      if (url.hostname === 'update.code.visualstudio.com') {
-        return jsonResponse(['1.110.1']);
-      }
       if (url.pathname === '/copilot_internal/v2/token') {
         return jsonResponse({
           token: 'copilot-access-token',
@@ -1292,7 +1328,7 @@ test('/v1/messages forwards Messages tool strict field on native messages', asyn
 
   assertExists(upstreamBody);
   assertEquals(upstreamBody!.stream, true);
-  assertEquals((upstreamBody!.tools as Array<Record<string, unknown>>)[0].strict, true);
+  assertEquals((upstreamBody!.tools as Array<Record<string, unknown>>)[0].strict, undefined);
 });
 
 test('/v1/messages keeps strict Messages tools on native messages when both endpoints are available', async () => {
@@ -1304,9 +1340,6 @@ test('/v1/messages keeps strict Messages tools on native messages when both endp
     async request => {
       const url = new URL(request.url);
 
-      if (url.hostname === 'update.code.visualstudio.com') {
-        return jsonResponse(['1.110.1']);
-      }
       if (url.pathname === '/copilot_internal/v2/token') {
         return jsonResponse({
           token: 'copilot-access-token',
@@ -1411,7 +1444,7 @@ test('/v1/messages keeps strict Messages tools on native messages when both endp
 
   assertExists(upstreamBody);
   assertEquals(upstreamBody!.stream, true);
-  assertEquals((upstreamBody!.tools as Array<Record<string, unknown>>)[0].strict, true);
+  assertEquals((upstreamBody!.tools as Array<Record<string, unknown>>)[0].strict, undefined);
 });
 
 test('/v1/messages falls back to chat completions and translates both directions', async () => {
@@ -1423,9 +1456,6 @@ test('/v1/messages falls back to chat completions and translates both directions
     async request => {
       const url = new URL(request.url);
 
-      if (url.hostname === 'update.code.visualstudio.com') {
-        return jsonResponse(['1.110.1']);
-      }
       if (url.pathname === '/copilot_internal/v2/token') {
         return jsonResponse({
           token: 'copilot-access-token',
@@ -1508,9 +1538,16 @@ test('/v1/messages falls back to chat completions and translates both directions
       assertEquals(body.stop_reason, 'tool_use');
       assertEquals(body.usage.input_tokens, 35);
       assertEquals(body.usage.cache_read_input_tokens, 5);
+      // Block order: thinking → tool_use → text. The same chunk carried
+      // both `content` and `tool_calls`; aligning with caozhiyuan's
+      // handleContent (isToolBlockOpen || hasToolCallDelta) defers the
+      // text so it lands AFTER the tool_use block rather than around it.
+      // See:
+      // https://github.com/caozhiyuan/copilot-api/blob/main/src/routes/messages/stream-translation.ts#L240
       assertEquals(body.content[0].type, 'thinking');
-      assertEquals(body.content[1].type, 'text');
-      assertEquals(body.content[2].type, 'tool_use');
+      assertEquals(body.content[1].type, 'tool_use');
+      assertEquals(body.content[2].type, 'text');
+      assertEquals(body.content[2].text, 'Need a tool');
     },
   );
 
@@ -1560,9 +1597,6 @@ test('/v1/messages falls back to responses and preserves readable reasoning with
     async request => {
       const url = new URL(request.url);
 
-      if (url.hostname === 'update.code.visualstudio.com') {
-        return jsonResponse(['1.110.1']);
-      }
       if (url.pathname === '/copilot_internal/v2/token') {
         return jsonResponse({
           token: 'copilot-access-token',
@@ -1731,9 +1765,6 @@ test('/v1/messages preserves output_config.effort max when translating to respon
     async request => {
       const url = new URL(request.url);
 
-      if (url.hostname === 'update.code.visualstudio.com') {
-        return jsonResponse(['1.110.1']);
-      }
       if (url.pathname === '/copilot_internal/v2/token') {
         return jsonResponse({
           token: 'copilot-access-token',
@@ -1816,9 +1847,6 @@ test('/v1/messages prefers responses on dual-endpoint models when native message
     async request => {
       const url = new URL(request.url);
 
-      if (url.hostname === 'update.code.visualstudio.com') {
-        return jsonResponse(['1.110.1']);
-      }
       if (url.pathname === '/copilot_internal/v2/token') {
         return jsonResponse({
           token: 'copilot-access-token',
@@ -1903,9 +1931,6 @@ test('stripReservedKeywords removes entire billing header line from string syste
   await withMockedFetch(
     async request => {
       const url = new URL(request.url);
-      if (url.hostname === 'update.code.visualstudio.com') {
-        return jsonResponse(['1.110.1']);
-      }
       if (url.pathname === '/copilot_internal/v2/token') {
         return jsonResponse({
           token: 'tok',
@@ -2007,9 +2032,6 @@ test('stripReservedKeywords removes billing-only system block without 400 error'
   await withMockedFetch(
     async request => {
       const url = new URL(request.url);
-      if (url.hostname === 'update.code.visualstudio.com') {
-        return jsonResponse(['1.110.1']);
-      }
       if (url.pathname === '/copilot_internal/v2/token') {
         return jsonResponse({
           token: 'tok',
@@ -2120,9 +2142,6 @@ test('/v1/messages strips cache_control.scope only for Copilot Messages', async 
   await withMockedFetch(
     async request => {
       const url = new URL(request.url);
-      if (url.hostname === 'update.code.visualstudio.com') {
-        return jsonResponse(['1.110.1']);
-      }
       if (url.pathname === '/copilot_internal/v2/token') {
         return jsonResponse({
           token: 'tok',
@@ -2734,9 +2753,6 @@ test('stripReservedKeywords handles all-billing system blocks by removing system
   await withMockedFetch(
     async request => {
       const url = new URL(request.url);
-      if (url.hostname === 'update.code.visualstudio.com') {
-        return jsonResponse(['1.110.1']);
-      }
       if (url.pathname === '/copilot_internal/v2/token') {
         return jsonResponse({
           token: 'tok',
@@ -2988,9 +3004,6 @@ test('/v1/messages returns internal debug error when native web search is disabl
     request => {
       const url = new URL(request.url);
 
-      if (url.hostname === 'update.code.visualstudio.com') {
-        return jsonResponse(['1.110.1']);
-      }
       if (url.pathname === '/copilot_internal/v2/token') {
         return jsonResponse({
           token: 'copilot-access-token',
@@ -3125,9 +3138,6 @@ test('/v1/messages passes through foreign native-looking history and preserves u
     async request => {
       const url = new URL(request.url);
 
-      if (url.hostname === 'update.code.visualstudio.com') {
-        return jsonResponse(['1.110.1']);
-      }
       if (url.pathname === '/copilot_internal/v2/token') {
         return jsonResponse({
           token: 'copilot-access-token',
@@ -3177,9 +3187,6 @@ test('/v1/messages rejects duplicate native web search tools before upstream fet
     request => {
       const url = new URL(request.url);
 
-      if (url.hostname === 'update.code.visualstudio.com') {
-        return jsonResponse(['1.110.1']);
-      }
       if (url.pathname === '/copilot_internal/v2/token') {
         return jsonResponse({
           token: 'copilot-access-token',
@@ -3228,9 +3235,6 @@ test('/v1/messages rejects native web search tools whose name is not web_search'
     request => {
       const url = new URL(request.url);
 
-      if (url.hostname === 'update.code.visualstudio.com') {
-        return jsonResponse(['1.110.1']);
-      }
       if (url.pathname === '/copilot_internal/v2/token') {
         return jsonResponse({
           token: 'copilot-access-token',
@@ -3279,9 +3283,6 @@ test('/v1/messages rejects native web search tool name collisions before upstrea
     request => {
       const url = new URL(request.url);
 
-      if (url.hostname === 'update.code.visualstudio.com') {
-        return jsonResponse(['1.110.1']);
-      }
       if (url.pathname === '/copilot_internal/v2/token') {
         return jsonResponse({
           token: 'copilot-access-token',
@@ -3339,9 +3340,6 @@ test('/v1/messages routes native web search through translated /responses target
     async request => {
       const url = new URL(request.url);
 
-      if (url.hostname === 'update.code.visualstudio.com') {
-        return jsonResponse(['1.110.1']);
-      }
       if (url.pathname === '/copilot_internal/v2/token') {
         return jsonResponse({
           token: 'copilot-access-token',
@@ -3451,9 +3449,6 @@ test('/v1/messages routes native web search through translated /chat/completions
     async request => {
       const url = new URL(request.url);
 
-      if (url.hostname === 'update.code.visualstudio.com') {
-        return jsonResponse(['1.110.1']);
-      }
       if (url.pathname === '/copilot_internal/v2/token') {
         return jsonResponse({
           token: 'copilot-access-token',
@@ -3660,4 +3655,86 @@ test('/v1/messages preserves custom upstream /models HTTP errors', async () => {
       });
     },
   );
+});
+
+// Regression: when the Messages source translates to a non-Messages upstream
+// target (Responses / Chat Completions), the source-side header interceptors
+// (compact / claude-agent / interaction-id) mutate the original Messages
+// invocation's `headers` bag. Each translated emit must share that same bag
+// by reference so the upstream HTTP call observes the mutations.
+test('/v1/messages threads Claude Code messages-proxy headers through translated /chat/completions target', async () => {
+  const { apiKey } = await setupAppTest();
+  let upstreamHeaders: Headers | undefined;
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({
+          token: 'copilot-access-token',
+          expires_at: 4102444800,
+          refresh_in: 3600,
+        });
+      }
+      if (url.pathname === '/models') {
+        return jsonResponse(copilotModels([{ id: 'gpt-chat-only', supported_endpoints: ['/chat/completions'] }]));
+      }
+      if (url.pathname === '/chat/completions') {
+        upstreamHeaders = request.headers;
+        return sseResponse([
+          {
+            data: {
+              id: 'chatcmpl_header_thread',
+              object: 'chat.completion.chunk',
+              created: 1,
+              model: 'gpt-chat-only',
+              choices: [
+                {
+                  index: 0,
+                  delta: { role: 'assistant', content: 'ok' },
+                  finish_reason: 'stop',
+                },
+              ],
+              usage: { prompt_tokens: 5, completion_tokens: 1 },
+            },
+          },
+          { data: '[DONE]' },
+        ]);
+      }
+
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const response = await requestApp('/v1/messages', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-api-key': apiKey.key,
+        },
+        body: JSON.stringify({
+          model: 'gpt-chat-only',
+          max_tokens: 16,
+          stream: false,
+          // The Claude Code SDK metadata fingerprint triggers
+          // `withClaudeAgentHeadersSet` and `withInteractionIdHeaderSet`.
+          metadata: { user_id: JSON.stringify({ device_id: 'dev-1', session_id: 'sess-r1' }) },
+          messages: [{ role: 'user', content: 'hi' }],
+        }),
+      });
+
+      assertEquals(response.status, 200);
+    },
+  );
+
+  assertExists(upstreamHeaders);
+  // `messages-proxy` intent + interaction-id should reach the translated Chat
+  // Completions upstream call exactly as they would reach a native Messages
+  // call.
+  assertEquals(upstreamHeaders!.get('x-interaction-type'), 'messages-proxy');
+  assertEquals(upstreamHeaders!.get('openai-intent'), 'messages-proxy');
+  // x-interaction-id is the SHA-256 of the raw session id formatted as a
+  // UUIDv4 (matches caozhiyuan's getUUID); 'sess-r1' deterministically maps
+  // to this value.
+  assertEquals(upstreamHeaders!.get('x-interaction-id'), '382a0257-708e-4a7e-8be2-362b27fdbbbb');
 });

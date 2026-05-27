@@ -32,6 +32,7 @@ const makeInvocation = (payload: ResponsesPayload): ResponsesInvocation => ({
   provider: stubProvider(),
   upstreamModel: stubUpstreamModel(),
   enabledFlags: new Set(['retry-cyber-policy']),
+  headers: {},
 });
 
 const stubRequest = (overrides: { downstreamAbortSignal?: AbortSignal } = {}): RequestContext => ({
@@ -372,7 +373,18 @@ test('withCyberPolicyRetried does not start another streaming retry after downst
   assertEquals(frames, [cyberPolicyFrame]);
 });
 
-test('withCyberPolicyRetried streams the final HTTP cyber policy failure after a streaming policy failure', async () => {
+const drainFrames = async (events: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>): Promise<unknown> => {
+  try {
+    for await (const _frame of events) {
+      // drain only; assertions inspect the thrown error
+    }
+    return undefined;
+  } catch (error) {
+    return error;
+  }
+};
+
+test('withCyberPolicyRetried throws the final HTTP cyber policy failure body after a streaming policy failure', async () => {
   const payload = makePayload();
   let attempts = 0;
 
@@ -389,25 +401,16 @@ test('withCyberPolicyRetried streams the final HTTP cyber policy failure after a
   assertEquals(result.type, 'events');
   if (result.type !== 'events') throw new Error('expected events result');
 
-  const frames = await collectFrames(result.events);
+  const error = await drainFrames(result.events);
 
   assertEquals(attempts, 11);
-  assertEquals(frames.length, 1);
-  const finalFrame = frames[0];
-  assertEquals(finalFrame.type, 'event');
-  if (finalFrame.type !== 'event') throw new Error('expected event frame');
-  assertEquals(finalFrame.event.type, 'response.failed');
-  const finalFailure = finalFrame.event as Extract<ResponsesStreamEvent, { type: 'response.failed' }>;
-  assertEquals(finalFailure.response.status, 'failed');
-  assertEquals(finalFailure.response.model, 'gpt-test');
-  assertEquals(finalFailure.response.error as Record<string, unknown>, {
-    message: 'blocked 11',
-    type: 'invalid_request_error',
-    code: 'cyber_policy',
-  });
+  if (!(error instanceof Error)) throw new Error('expected events iteration to throw');
+  if (!error.message.includes('HTTP 400')) throw new Error(`expected status in message, got: ${error.message}`);
+  if (!error.message.includes('blocked 11')) throw new Error(`expected raw upstream body in message, got: ${error.message}`);
+  if (!error.message.includes('cyber_policy')) throw new Error(`expected upstream code preserved in body, got: ${error.message}`);
 });
 
-test('withCyberPolicyRetried streams a later HTTP upstream failure after a streaming policy failure', async () => {
+test('withCyberPolicyRetried throws a later HTTP upstream failure after a streaming policy failure', async () => {
   const payload = makePayload();
   let attempts = 0;
 
@@ -424,25 +427,26 @@ test('withCyberPolicyRetried streams a later HTTP upstream failure after a strea
   assertEquals(result.type, 'events');
   if (result.type !== 'events') throw new Error('expected events result');
 
-  const frames = await collectFrames(result.events);
+  const error = await drainFrames(result.events);
 
   assertEquals(attempts, 2);
-  assertEquals(frames.length, 1);
-  const finalFrame = frames[0];
-  assertEquals(finalFrame.type, 'event');
-  if (finalFrame.type !== 'event') throw new Error('expected event frame');
-  const finalFailure = finalFrame.event as Extract<ResponsesStreamEvent, { type: 'response.failed' }>;
-  assertEquals(finalFailure.response.status, 'failed');
-  assertEquals(finalFailure.response.error, {
-    message: 'upstream failed after retry',
-    type: 'server_error',
-    code: 'upstream_failed',
-  });
+  if (!(error instanceof Error)) throw new Error('expected events iteration to throw');
+  if (!error.message.includes('HTTP 500')) throw new Error(`expected status in message, got: ${error.message}`);
+  if (!error.message.includes('upstream failed after retry')) throw new Error(`expected raw upstream body in message, got: ${error.message}`);
 });
 
-test('withCyberPolicyRetried preserves debug fields for later internal failures after a streaming policy failure', async () => {
+test('withCyberPolicyRetried throws a later internal failure with the original error as cause', async () => {
   const payload = makePayload();
   let attempts = 0;
+  const internalError = {
+    type: 'internal_error' as const,
+    name: 'Error',
+    message: 'retry setup failed',
+    stack: 'Error: retry setup failed\n    at test',
+    cause: { message: 'nested' },
+    source_api: 'responses' as const,
+    target_api: 'responses' as const,
+  };
 
   const result = await withCyberPolicyRetried(makeInvocation(payload), stubRequest(), () => {
     attempts += 1;
@@ -454,39 +458,19 @@ test('withCyberPolicyRetried preserves debug fields for later internal failures 
     return Promise.resolve({
       type: 'internal-error' as const,
       status: 502,
-      error: {
-        type: 'internal_error' as const,
-        name: 'Error',
-        message: 'retry setup failed',
-        stack: 'Error: retry setup failed\n    at test',
-        cause: { message: 'nested' },
-        source_api: 'responses' as const,
-        target_api: 'responses' as const,
-      },
+      error: internalError,
     });
   });
 
   assertEquals(result.type, 'events');
   if (result.type !== 'events') throw new Error('expected events result');
 
-  const frames = await collectFrames(result.events);
+  const error = await drainFrames(result.events);
 
   assertEquals(attempts, 2);
-  assertEquals(frames.length, 1);
-  const finalFrame = frames[0];
-  assertEquals(finalFrame.type, 'event');
-  if (finalFrame.type !== 'event') throw new Error('expected event frame');
-  const finalFailure = finalFrame.event as Extract<ResponsesStreamEvent, { type: 'response.failed' }>;
-  assertEquals(finalFailure.response.error as Record<string, unknown>, {
-    message: 'retry setup failed',
-    type: 'internal_error',
-    code: 'internal_error',
-    name: 'Error',
-    stack: 'Error: retry setup failed\n    at test',
-    cause: { message: 'nested' },
-    source_api: 'responses',
-    target_api: 'responses',
-  });
+  if (!(error instanceof Error)) throw new Error('expected events iteration to throw');
+  if (!error.message.includes('retry setup failed')) throw new Error(`expected internal error message, got: ${error.message}`);
+  assertEquals(error.cause, internalError);
 });
 
 test('withCyberPolicyRetried returns the final cyber policy failure after exhausting retries', async () => {

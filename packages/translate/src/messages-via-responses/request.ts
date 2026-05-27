@@ -1,4 +1,5 @@
 import { messagesReasoningBlockToResponsesReasoning } from '../shared/messages-and-responses/reasoning.ts';
+import { normalizeMessagesToolInputSchema } from '../shared/messages-via/tool-schema.ts';
 import {
   type MessagesAssistantMessage,
   type MessagesClientTool,
@@ -153,7 +154,7 @@ const translateTools = (tools: MessagesClientTool[] | undefined): ResponseTool[]
   return tools.map(tool => ({
     type: 'function',
     name: tool.name,
-    parameters: tool.input_schema,
+    parameters: normalizeMessagesToolInputSchema(tool.input_schema),
     // Responses tools default stricter than Anthropic/Chat-style function tools,
     // so omitted source strictness is made explicit as false.
     strict: tool.strict ?? false,

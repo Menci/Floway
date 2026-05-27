@@ -356,3 +356,50 @@ test('/v1/messages/count_tokens preserves custom upstream /models HTTP errors', 
     },
   );
 });
+
+// Path A moved Copilot's anthropic-beta allow-list filter from the provider
+// call helper onto a Messages target interceptor. Count-tokens runs the
+// dedicated `messagesCountTokens` interceptor list so the same filter applies
+// here; the unfiltered beta is also threaded through to variant selection so
+// `context-1m-2025-08-07` still resolves to the 1m-internal raw variant even
+// though that beta value is dropped before hitting the wire.
+test('/v1/messages/count_tokens filters Copilot anthropic-beta to the allow-list on the wire', async () => {
+  const { apiKey } = await setupAppTest();
+  let upstreamBeta: string | null = null;
+
+  await withMockedFetch(
+    req => {
+      const url = new URL(req.url);
+      if (url.hostname === 'api.github.com') return copilotTokenResponse();
+      if (url.pathname === '/models') {
+        return jsonResponse(copilotModels([{ id: 'claude-sonnet-4', supported_endpoints: ['/v1/messages'] }]));
+      }
+      if (url.pathname === '/v1/messages/count_tokens') {
+        upstreamBeta = req.headers.get('anthropic-beta');
+        return jsonResponse({ input_tokens: 7 });
+      }
+      throw new Error(`Unhandled fetch ${req.url}`);
+    },
+    async () => {
+      const response = await requestApp('/v1/messages/count_tokens', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-api-key': apiKey.key,
+          'anthropic-beta': 'foo-not-in-allow-list,interleaved-thinking-2025-05-14,context-management-2025-06-27',
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4',
+          max_tokens: 64,
+          messages: [{ role: 'user', content: 'hello' }],
+        }),
+      });
+
+      assertEquals(response.status, 200);
+    },
+  );
+
+  // foo-not-in-allow-list must be stripped; only the two allow-listed values
+  // reach the upstream HTTP request, in the order the client sent them.
+  assertEquals(upstreamBeta, 'interleaved-thinking-2025-05-14,context-management-2025-06-27');
+});

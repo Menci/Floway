@@ -50,6 +50,7 @@ const geminiInvocation = <TPayload>(
   enabledFlags: binding.enabledFlags,
   ...(binding.targetInterceptors !== undefined ? { targetInterceptors: binding.targetInterceptors } : {}),
   payload,
+  headers: {} as Record<string, string>,
 });
 
 export const serveGemini = async (c: Context, model: string, wantsStream: boolean): Promise<Response> => {

@@ -31,6 +31,7 @@ const chatInvocation = <TPayload extends { model: string }>(
   enabledFlags: binding.enabledFlags,
   ...(binding.targetInterceptors !== undefined ? { targetInterceptors: binding.targetInterceptors } : {}),
   payload,
+  headers: {} as Record<string, string>,
 });
 
 export const serveChatCompletions = async (c: Context): Promise<Response> => {

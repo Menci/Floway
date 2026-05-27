@@ -54,6 +54,66 @@ test('/v1/chat/completions malformed JSON returns structured internal debug erro
   assertExists(body.error.stack);
 });
 
+test('/v1/chat/completions does not record performance for an unresolved client model string', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  let generationFetchCalls = 0;
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+
+      if (url.hostname === 'update.code.visualstudio.com') {
+        return jsonResponse(['1.110.1']);
+      }
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({
+          token: 'copilot-access-token',
+          expires_at: 4102444800,
+          refresh_in: 3600,
+        });
+      }
+      if (url.pathname === '/models') {
+        return jsonResponse(
+          copilotModels([
+            {
+              id: 'gpt-real-model',
+              supported_endpoints: ['/chat/completions'],
+            },
+          ]),
+        );
+      }
+      if (url.pathname === '/chat/completions') {
+        generationFetchCalls++;
+        return sseChatCompletionsResponse({
+          id: 'chatcmpl_unexpected',
+          model: 'gpt-real-model',
+          choices: [{ message: { role: 'assistant', content: 'unexpected' }, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+        });
+      }
+
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const response = await requestApp('/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-api-key': apiKey.key,
+        },
+        body: JSON.stringify({
+          model: 'claude-opus-4-7[1m]',
+          messages: [{ role: 'user', content: 'Hi' }],
+        }),
+      });
+
+      assertEquals(response.status, 404);
+      assertEquals(generationFetchCalls, 0);
+      assertEquals(await repo.performance.listAll(), []);
+    },
+  );
+});
+
 test('/v1/chat/completions streams malformed upstream Chat SSE as an error event', async () => {
   const { apiKey } = await setupAppTest();
 
@@ -1516,7 +1576,7 @@ test('/v1/chat/completions via responses emits requested usage-only SSE chunk', 
   );
 });
 
-test('/v1/chat/completions via responses streams final HTTP cyber policy retry failure', async () => {
+test('/v1/chat/completions via responses surfaces final HTTP cyber policy retry failure as an internal error', async () => {
   const { apiKey } = await setupAppTest();
   const model = 'gpt-responses-chat-cyber-policy';
   let responseAttempts = 0;
@@ -1576,18 +1636,18 @@ test('/v1/chat/completions via responses streams final HTTP cyber policy retry f
       const events = parseSSEText(await response.text());
       assertEquals(responseAttempts, 11);
       assertEquals(events.length, 1);
+      assertEquals(events[0].event, 'error');
 
       const payload = JSON.parse(events[0].data);
-      assertEquals(payload.error, {
-        message: 'blocked 11',
-        type: 'invalid_request_error',
-        code: 'cyber_policy',
-      });
+      assertEquals(payload.error.type, 'internal_error');
+      assertStringIncludes(payload.error.message, 'HTTP 400');
+      assertStringIncludes(payload.error.message, 'blocked 11');
+      assertStringIncludes(payload.error.message, 'cyber_policy');
     },
   );
 });
 
-test('/v1/chat/completions via responses streams later HTTP retry failure', async () => {
+test('/v1/chat/completions via responses surfaces later HTTP retry failure as an internal error', async () => {
   const { apiKey } = await setupAppTest();
   const model = 'gpt-responses-chat-server-error';
   let responseAttempts = 0;
@@ -1647,13 +1707,13 @@ test('/v1/chat/completions via responses streams later HTTP retry failure', asyn
       const events = parseSSEText(await response.text());
       assertEquals(responseAttempts, 2);
       assertEquals(events.length, 1);
+      assertEquals(events[0].event, 'error');
 
       const payload = JSON.parse(events[0].data);
-      assertEquals(payload.error, {
-        message: 'upstream failed after retry',
-        type: 'server_error',
-        code: 'upstream_failed',
-      });
+      assertEquals(payload.error.type, 'internal_error');
+      assertStringIncludes(payload.error.message, 'HTTP 500');
+      assertStringIncludes(payload.error.message, 'upstream failed after retry');
+      assertStringIncludes(payload.error.message, 'upstream_failed');
     },
   );
 });

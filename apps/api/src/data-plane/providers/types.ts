@@ -1,5 +1,5 @@
 import type { UpstreamProviderKind } from '../../repo/types.ts';
-import type { ChatCompletionsInterceptor, GeminiInterceptor, MessagesInterceptor, ResponsesInterceptor } from '../llm/interceptors.ts';
+import type { ChatCompletionsInterceptor, GeminiInterceptor, MessagesCountTokensInterceptor, MessagesInterceptor, ResponsesInterceptor } from '../llm/interceptors.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import type { ModelEndpoint, ModelKind, ModelPricing } from '@floway-dev/protocols/common';
 import type { EmbeddingsPayload } from '@floway-dev/protocols/embeddings';
@@ -70,6 +70,13 @@ export interface ProviderSourceInterceptors {
 
 export interface ProviderTargetInterceptors {
   messages?: readonly MessagesInterceptor[];
+  // Separate from `messages` because count_tokens returns a raw upstream
+  // Response (no protocol-frame translation), and only the header/payload
+  // mutators that pre-Path A applied to count_tokens (vision, initiator,
+  // anthropic-beta) belong here. Chat-only mutators like thinking-display
+  // promotion and cache_control.scope stripping never ran on count_tokens
+  // and stay on `messages`.
+  messagesCountTokens?: readonly MessagesCountTokensInterceptor[];
   responses?: readonly ResponsesInterceptor[];
   chatCompletions?: readonly ChatCompletionsInterceptor[];
 }
@@ -95,11 +102,24 @@ export interface ModelProvider {
   // id). Used by aggregation-time cost computation. Public-model-name lookups
   // happen elsewhere by reading `UpstreamModel.cost` directly.
   getPricingForModelKey(modelKey: string): ModelPricing | null;
-  callChatCompletions(model: UpstreamModel, body: Omit<ChatCompletionsPayload, 'model'>, signal?: AbortSignal): Promise<ProviderCallResult>;
-  callResponses(model: UpstreamModel, body: Omit<ResponsesPayload, 'model'>, signal?: AbortSignal): Promise<ProviderCallResult>;
-  callMessages(model: UpstreamModel, body: Omit<MessagesPayload, 'model'>, signal?: AbortSignal, anthropicBeta?: readonly string[]): Promise<ProviderCallResult>;
-  callMessagesCountTokens(model: UpstreamModel, body: Omit<MessagesPayload, 'model'>, signal?: AbortSignal, anthropicBeta?: readonly string[]): Promise<ProviderCallResult>;
-  callEmbeddings(model: UpstreamModel, body: Omit<EmbeddingsPayload, 'model'>, signal?: AbortSignal): Promise<ProviderCallResult>;
-  callImagesGenerations(model: UpstreamModel, body: Omit<ImagesGenerationsPayload, 'model'>, signal?: AbortSignal): Promise<ProviderCallResult>;
-  callImagesEdits(model: UpstreamModel, body: FormData, signal?: AbortSignal): Promise<ProviderCallResult>;
+  // `headers` is the mutable header bag attached to the invocation; target
+  // interceptors populate it (vision, initiator, anthropic-beta, ...) and the
+  // provider passes it straight through to the upstream fetch unchanged. The
+  // shape is uniform across protocols so provider implementations never branch
+  // on which protocol they are serving. Image endpoints have no target
+  // interceptor stack today, but the parameter stays for interface uniformity.
+  callChatCompletions(model: UpstreamModel, body: Omit<ChatCompletionsPayload, 'model'>, signal?: AbortSignal, headers?: Record<string, string>): Promise<ProviderCallResult>;
+  callResponses(model: UpstreamModel, body: Omit<ResponsesPayload, 'model'>, signal?: AbortSignal, headers?: Record<string, string>): Promise<ProviderCallResult>;
+  // Messages and count_tokens additionally receive the source-derived
+  // `anthropicBeta` slice as a typed read-only input separate from the wire
+  // headers. Copilot uses it to pick a raw upstream model variant
+  // (claude-*-1m-internal vs the standard variant) BEFORE the
+  // anthropic-beta target interceptor filters the wire header down to the
+  // Copilot allow-list. Variant selection must see the caller's full intent
+  // even when the beta value itself is dropped before hitting the wire.
+  callMessages(model: UpstreamModel, body: Omit<MessagesPayload, 'model'>, signal?: AbortSignal, headers?: Record<string, string>, anthropicBeta?: readonly string[]): Promise<ProviderCallResult>;
+  callMessagesCountTokens(model: UpstreamModel, body: Omit<MessagesPayload, 'model'>, signal?: AbortSignal, headers?: Record<string, string>, anthropicBeta?: readonly string[]): Promise<ProviderCallResult>;
+  callEmbeddings(model: UpstreamModel, body: Omit<EmbeddingsPayload, 'model'>, signal?: AbortSignal, headers?: Record<string, string>): Promise<ProviderCallResult>;
+  callImagesGenerations(model: UpstreamModel, body: Omit<ImagesGenerationsPayload, 'model'>, signal?: AbortSignal, headers?: Record<string, string>): Promise<ProviderCallResult>;
+  callImagesEdits(model: UpstreamModel, body: FormData, signal?: AbortSignal, headers?: Record<string, string>): Promise<ProviderCallResult>;
 }

@@ -50,7 +50,7 @@ export const copilotQuota = async (c: Context) => {
     const githubToken = githubTokenFromConfig(upstream.config);
     if (!githubToken) return c.json({ error: 'Copilot upstream is missing githubToken' }, 400);
 
-    const resp = await fetch('https://api.github.com/copilot_internal/user', { headers: await githubHeaders(githubToken) });
+    const resp = await fetch('https://api.github.com/copilot_internal/user', { headers: githubHeaders(githubToken) });
 
     if (!resp.ok) {
       const text = await resp.text();

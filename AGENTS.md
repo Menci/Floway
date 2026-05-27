@@ -296,14 +296,46 @@ Provider API shape:
 ```text
 getProvidedModels() -> UpstreamModel[]
 getPricingForModelKey(modelKey) -> ModelPricing | null
-callChatCompletions(upstreamModel, bodyWithoutModel, signal?)
-callResponses(upstreamModel, bodyWithoutModel, signal?)
-callMessages(upstreamModel, bodyWithoutModel, signal?, anthropicBeta?)
-callMessagesCountTokens(upstreamModel, bodyWithoutModel, signal?, anthropicBeta?)
-callEmbeddings(upstreamModel, bodyWithoutModel, signal?)
-callImagesGenerations(upstreamModel, bodyWithoutModel, signal?)
-callImagesEdits(upstreamModel, formDataWithoutModel, signal?)
+callChatCompletions(upstreamModel, bodyWithoutModel, signal?, headers?)
+callResponses(upstreamModel, bodyWithoutModel, signal?, headers?)
+callMessages(upstreamModel, bodyWithoutModel, signal?, headers?, anthropicBeta?)
+callMessagesCountTokens(upstreamModel, bodyWithoutModel, signal?, headers?, anthropicBeta?)
+callEmbeddings(upstreamModel, bodyWithoutModel, signal?, headers?)
+callImagesGenerations(upstreamModel, bodyWithoutModel, signal?, headers?)
+callImagesEdits(upstreamModel, formDataWithoutModel, signal?, headers?)
 ```
+
+`headers` is the per-invocation HTTP header bag that target interceptors
+populate. The source serve seeds it empty on the `Invocation`; target
+interceptors mutate `invocation.headers` to set workaround headers (e.g.
+Copilot's `copilot-vision-request`, `X-Initiator`, filtered
+`anthropic-beta`); the target emit then passes that bag through to the
+provider's call method unchanged. Provider implementations forward the bag
+straight to their upstream fetch and never branch on protocol-specific
+header semantics. Image endpoints have no target interceptor stack today
+(image sources dispatch straight to the provider call method), so the
+`headers` slot stays empty for them in practice — the parameter exists
+only for signature parity with the other call methods.
+
+The Messages and count_tokens calls additionally receive the source-derived
+`anthropicBeta` slice as a typed read-only input separate from the wire
+headers. Copilot uses it for raw variant selection (e.g. picking
+`claude-*-1m-internal` when the caller sent `context-1m-2025-08-07`)
+BEFORE the `withAnthropicBetaHeaderFiltered` target interceptor narrows
+the wire `anthropic-beta` header down to Copilot's accepted allow-list.
+Variant selection must see the caller's full intent even when the beta
+value itself is dropped before hitting the wire.
+
+`/v1/messages/count_tokens` is a one-shot, non-streaming HTTP exchange. It
+runs the provider's `targetInterceptors.messagesCountTokens` chain instead
+of the `messages` chain because the interceptor signature differs (terminal
+result is the raw upstream `Response`, not an `ExecuteResult` of protocol
+frames). The count_tokens chain contains only the header/payload mutators
+that pre-Path A applied to count_tokens via the shared provider `call`
+helper (vision, initiator, anthropic-beta). Chat-only Messages target
+interceptors (thinking-display promotion, cache_control.scope stripping,
+eager_input_streaming stripping) stay on the `messages` chain and never
+run on count_tokens.
 
 `UpstreamModel.kind` discriminates the endpoint family (`'chat'` for any
 generation protocol, `'embedding'` for `/embeddings`, `'image'` for
@@ -448,14 +480,19 @@ Per-HTTP-request invariants live on `RequestContext`: `apiKeyId`,
 `recordRequestPerformance`, `downstreamAbortSignal`, `clientStream`,
 `requestStartedAt`. Per-provider-binding-attempt request-side state lives on
 `Invocation<TPayload>`: `sourceApi`, `targetApi`, the resolved model id,
-provider/upstream/upstreamModel/enabledFlags, `targetInterceptors`, and the
-mutable source-shape `payload`. `MessagesInvocation` additionally carries
-`anthropicBeta`. Mutable per-request state (last performance row, downstream
-abort controller) is intentionally not on either context; it lives as
-serve-local `let` variables and is passed explicitly to the source
-responder. Raw upstream frames stay inside target emitters and
-raw-to-protocol converters; protocol interceptors see protocol request
-payloads and `ExecuteResult<ProtocolFrame<Event>>` envelopes only.
+provider/upstream/upstreamModel/enabledFlags, `targetInterceptors`, the
+mutable source-shape `payload`, and a mutable `headers: Record<string,
+string>` bag the source serve seeds empty and target interceptors populate
+for the upstream HTTP call. `MessagesInvocation` additionally carries
+`anthropicBeta` as a typed read-only input; the Copilot Messages target
+interceptor `withAnthropicBetaHeaderFiltered` reads that field and writes
+the filtered `anthropic-beta` value into `headers`. Mutable per-request
+state (last performance row, downstream abort controller) is intentionally
+not on either context; it lives as serve-local `let` variables and is
+passed explicitly to the source responder. Raw upstream frames stay inside
+target emitters and raw-to-protocol converters; protocol interceptors see
+protocol request payloads and `ExecuteResult<ProtocolFrame<Event>>`
+envelopes only.
 
 Source response flow is source-owned. Each concrete source responder owns its
 own upstream/internal error shaping, non-stream collection, stream terminal
@@ -467,6 +504,19 @@ must not accept source-specific callback tables or call back into source
 behavior. Protocol `events/to-sse.ts` serializers must stay pure: they convert
 source protocol frames to SSE frames and must not record usage, mutate external
 state, or accept callback listeners for accounting.
+
+LLM performance telemetry is written only after a provider binding has been
+selected and a target emitter has produced a `PerformanceTelemetryContext`.
+That context carries the resolved public model id (`model`), the upstream row
+id (`upstream`), and the provider-owned opaque execution id (`modelKey`); it
+must not be built from an unresolved client-supplied `payload.model`.
+Missing-model and unsupported-endpoint source errors have no performance
+context, so `recordRequestPerformanceForApiKey` no-ops for them. The
+performance repo keeps successful latency samples and failures separately:
+`requests` counts latency samples, `errors` counts failed attempts, and latency
+buckets exist only for successful samples. Control-plane performance display
+rows expose operator attempt counts as `requests + errors`, while `avgMs` and
+percentile fields are computed only from successful latency samples.
 
 Target emission is target-owned. Each concrete target emit file owns its forward
 order: force target-required streaming, run target interceptors, call the

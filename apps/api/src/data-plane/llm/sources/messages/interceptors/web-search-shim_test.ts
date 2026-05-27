@@ -46,6 +46,7 @@ const invocation = (payload: MessagesPayload): MessagesInvocation => ({
   provider: {} as never,
   enabledFlags: new Set(['messages-web-search-shim']),
   payload,
+  headers: {},
 });
 
 const requestContext = (apiKeyId?: string): RequestContext => ({

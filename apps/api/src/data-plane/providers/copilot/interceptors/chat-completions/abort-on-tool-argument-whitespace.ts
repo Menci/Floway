@@ -48,7 +48,7 @@ const isWhitespaceExceeded = (
   return false;
 };
 
-export const withChatToolArgumentWhitespaceAborted: ChatCompletionsInterceptor = async (_invocation, _request, run) => {
+export const withToolArgumentWhitespaceAborted: ChatCompletionsInterceptor = async (_invocation, _request, run) => {
   const result = await run();
   if (result.type !== 'events') return result;
 

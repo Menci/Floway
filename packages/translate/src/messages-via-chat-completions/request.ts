@@ -1,4 +1,5 @@
 import { type ChatScalarReasoning, chatScalarReasoningFromMessagesBlock } from '../shared/chat-and-messages/reasoning.ts';
+import { normalizeMessagesToolInputSchema } from '../shared/messages-via/tool-schema.ts';
 import type { ChatCompletionsPayload, ContentPart, Message, Tool, ToolCall } from '@floway-dev/protocols/chat-completions';
 import type {
   MessagesAssistantContentBlock,
@@ -221,7 +222,7 @@ const translateMessagesTools = (tools?: MessagesClientTool[]): Tool[] | undefine
     function: {
       name: tool.name,
       description: tool.description,
-      parameters: tool.input_schema,
+      parameters: normalizeMessagesToolInputSchema(tool.input_schema),
       ...(tool.strict !== undefined ? { strict: tool.strict } : {}),
     },
   }));

@@ -28,6 +28,7 @@ interface MutableAggregate {
   requests: number;
   errors: number;
   totalMsSum: number;
+  latencySamples: number;
   buckets: Map<string, HistogramBucket>;
 }
 
@@ -46,14 +47,16 @@ export function aggregatePerformanceForDisplay(records: readonly PerformanceTele
         requests: 0,
         errors: 0,
         totalMsSum: 0,
+        latencySamples: 0,
         buckets: new Map(),
       };
       aggregates.set(key, aggregate);
     }
 
-    aggregate.requests += record.requests;
+    aggregate.requests += record.requests + record.errors;
     aggregate.errors += record.errors;
     aggregate.totalMsSum += record.totalMsSum;
+    aggregate.latencySamples += record.requests;
     for (const bucket of record.buckets) {
       const bucketKey = `${bucket.lowerMs}\0${bucket.upperMs}`;
       const existing = aggregate.buckets.get(bucketKey);
@@ -94,7 +97,7 @@ function toDisplayRecord(aggregate: MutableAggregate): PerformanceDisplayRecord 
     requests: aggregate.requests,
     errors: aggregate.errors,
     totalMsSum: aggregate.totalMsSum,
-    avgMs: aggregate.requests > 0 ? aggregate.totalMsSum / aggregate.requests : null,
+    avgMs: aggregate.latencySamples > 0 ? aggregate.totalMsSum / aggregate.latencySamples : null,
     p50Ms: percentileFromHistogramBuckets(buckets, 0.5),
     p95Ms: percentileFromHistogramBuckets(buckets, 0.95),
     p99Ms: percentileFromHistogramBuckets(buckets, 0.99),

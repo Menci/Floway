@@ -13,9 +13,6 @@ test('/v1beta/models/:model:countTokens translates Gemini request to Messages co
     async request => {
       const url = new URL(request.url);
 
-      if (url.hostname === 'update.code.visualstudio.com') {
-        return jsonResponse(['1.110.1']);
-      }
       if (url.pathname === '/copilot_internal/v2/token') {
         return jsonResponse({
           token: 'copilot-access-token',
@@ -73,9 +70,6 @@ test('/v1beta/models/:model:countTokens supports top-level contents', async () =
     request => {
       const url = new URL(request.url);
 
-      if (url.hostname === 'update.code.visualstudio.com') {
-        return jsonResponse(['1.110.1']);
-      }
       if (url.pathname === '/copilot_internal/v2/token') {
         return jsonResponse({
           token: 'copilot-access-token',
@@ -117,9 +111,6 @@ test('/v1beta/models/:model:countTokens internal failures include debug fields',
     request => {
       const url = new URL(request.url);
 
-      if (url.hostname === 'update.code.visualstudio.com') {
-        return jsonResponse(['1.110.1']);
-      }
       if (url.pathname === '/copilot_internal/v2/token') {
         return jsonResponse({
           token: 'copilot-access-token',

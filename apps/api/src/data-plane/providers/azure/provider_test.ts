@@ -205,7 +205,7 @@ test('createAzureProvider supports native Azure Anthropic Messages deployments',
       return new Response('{}', { status: 200 });
     },
     async () => {
-      const messages = await instance.provider.callMessages(model, { max_tokens: 16, messages: [{ role: 'user', content: 'hello' }] }, undefined, ['context-1m']);
+      const messages = await instance.provider.callMessages(model, { max_tokens: 16, messages: [{ role: 'user', content: 'hello' }] }, undefined, { 'anthropic-beta': 'context-1m' });
       const count = await instance.provider.callMessagesCountTokens(model, { max_tokens: 16, messages: [{ role: 'user', content: 'hello' }] });
       assertEquals(messages.modelKey, 'claude-prod');
       assertEquals(count.modelKey, 'claude-prod');

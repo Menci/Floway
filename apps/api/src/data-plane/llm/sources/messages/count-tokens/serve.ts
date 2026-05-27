@@ -3,7 +3,9 @@ import type { Context } from 'hono';
 import { apiKeyUpstreamIdsFromContext } from '../../../../../middleware/auth.ts';
 import { httpResponseToResponse, ProviderModelsUnavailableError } from '../../../../providers/models-store.ts';
 import { resolveModelForRequest } from '../../../../providers/registry.ts';
+import { type MessagesInvocation, runInterceptors } from '../../../interceptors.ts';
 import { toInternalDebugError } from '../../../shared/errors/internal-debug-error.ts';
+import { createRequestContext } from '../../execute.ts';
 import { bodyAnthropicBetaResponse, bodyBetaParam, parseAnthropicBeta } from '../serve.ts';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
 
@@ -28,6 +30,12 @@ export const countTokens = async (c: Context) => {
       );
     }
 
+    // count_tokens is non-streaming, so there is no downstream abort signal
+    // and `clientStream` is false. The request context is still threaded
+    // through `runInterceptors` so any future RequestContext-aware
+    // count_tokens interceptor sees the same shape it would on the chat path.
+    const request = createRequestContext(c, undefined, false);
+
     let resp: Response | undefined;
     for (const binding of model.providers) {
       if (!binding.upstreamModel.upstreamEndpoints.includes('messages_count_tokens')) {
@@ -36,9 +44,31 @@ export const countTokens = async (c: Context) => {
 
       const attemptPayload = structuredClone(payload);
       attemptPayload.model = modelId;
-      const { model: _model, ...body } = attemptPayload;
-      const { response } = await binding.provider.callMessagesCountTokens(binding.upstreamModel, body, undefined, anthropicBeta);
-      resp = response;
+      // Build a MessagesInvocation matching the chat-planning shape so
+      // provider-registered count_tokens interceptors (Copilot's vision,
+      // initiator, anthropic-beta header workarounds) run against the same
+      // payload, anthropic-beta, and header bag they would on /v1/messages.
+      // targetApi is 'messages' because count_tokens hits the Messages
+      // endpoint family; there is no separate count_tokens LlmTargetApi.
+      const invocation: MessagesInvocation = {
+        sourceApi: 'messages',
+        targetApi: 'messages',
+        model: modelId,
+        upstream: binding.upstream,
+        upstreamModel: binding.upstreamModel,
+        provider: binding.provider,
+        enabledFlags: binding.enabledFlags,
+        ...(binding.targetInterceptors !== undefined ? { targetInterceptors: binding.targetInterceptors } : {}),
+        payload: attemptPayload,
+        headers: {},
+        ...(anthropicBeta !== undefined ? { anthropicBeta } : {}),
+      };
+
+      resp = await runInterceptors(invocation, request, invocation.targetInterceptors?.messagesCountTokens ?? [], async () => {
+        const { model: _model, ...body } = invocation.payload;
+        const { response } = await binding.provider.callMessagesCountTokens(invocation.upstreamModel, body, undefined, invocation.headers, invocation.anthropicBeta);
+        return response;
+      });
       break;
     }
 

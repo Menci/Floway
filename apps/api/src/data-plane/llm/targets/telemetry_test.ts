@@ -43,6 +43,7 @@ const baseInvocation = (
   provider: stubProvider(),
   upstreamModel: stubUpstreamModel(),
   enabledFlags: new Set<string>(),
+  headers: {},
 });
 
 const baseRequest = (
@@ -312,6 +313,7 @@ test('withUpstreamTelemetry skips recording when apiKeyId is absent', async () =
       provider: stubProvider(),
       upstreamModel: stubUpstreamModel(),
       enabledFlags: new Set<string>(),
+      headers: {},
     },
     {
       requestStartedAt: 0,

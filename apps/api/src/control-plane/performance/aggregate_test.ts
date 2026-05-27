@@ -55,6 +55,36 @@ test('aggregatePerformanceForDisplay groups provider model keys by public model'
   ]);
 });
 
+test('aggregatePerformanceForDisplay counts error-only rows as displayed requests without fabricating latency', () => {
+  const rows = aggregatePerformanceForDisplay(
+    [
+      record({
+        model: 'gpt-5.5-pro-2026-04-23',
+        modelKey: 'gpt-5.5-pro-2026-04-23',
+        requests: 0,
+        errors: 3,
+        totalMsSum: 0,
+        buckets: [],
+      }),
+    ],
+    { bucket: 'all', groupBy: 'model', timezoneOffsetMinutes: 0 },
+  );
+
+  assertEquals(rows, [
+    {
+      bucket: 'all',
+      group: 'gpt-5.5-pro-2026-04-23',
+      requests: 3,
+      errors: 3,
+      totalMsSum: 0,
+      avgMs: null,
+      p50Ms: null,
+      p95Ms: null,
+      p99Ms: null,
+    },
+  ]);
+});
+
 test('aggregatePerformanceForDisplay groups days using caller timezone offset', () => {
   const rows = aggregatePerformanceForDisplay([record({ hour: '2026-04-30T16' })], { bucket: 'day', groupBy: 'none', timezoneOffsetMinutes: -480 });
 

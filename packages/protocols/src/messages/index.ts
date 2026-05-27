@@ -96,7 +96,7 @@ export interface MessagesWebSearchResultBlock {
   page_age?: string;
 }
 
-export type MessagesToolResultContentBlock = MessagesTextBlock | MessagesSearchResultBlock;
+export type MessagesToolResultContentBlock = MessagesTextBlock | MessagesImageBlock | MessagesSearchResultBlock;
 
 export interface MessagesToolResultBlock {
   type: 'tool_result';

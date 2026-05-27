@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { withChatToolArgumentWhitespaceAborted } from './abort-on-tool-argument-whitespace.ts';
+import { withToolArgumentWhitespaceAborted } from './abort-on-tool-argument-whitespace.ts';
 import { assert, assertEquals, assertStringIncludes } from '../../../../../test-assert.ts';
 import { stubProvider, stubUpstreamModel, testTelemetryModelIdentity } from '../../../../../test-helpers.ts';
 import type { ChatCompletionsInvocation, RequestContext } from '../../../../llm/interceptors.ts';
@@ -18,6 +18,7 @@ const invocation = (): ChatCompletionsInvocation => ({
   provider: stubProvider(),
   upstreamModel: stubUpstreamModel(),
   enabledFlags: new Set<string>(),
+  headers: {},
 });
 
 const stubRequest: RequestContext = {
@@ -43,7 +44,7 @@ const collect = async (result: ExecuteResult<ProtocolFrame<ChatCompletionChunk>>
 };
 
 const runWith = async (frames: ProtocolFrame<ChatCompletionChunk>[]): Promise<ProtocolFrame<ChatCompletionChunk>[]> => {
-  const result = await withChatToolArgumentWhitespaceAborted(invocation(), stubRequest, () =>
+  const result = await withToolArgumentWhitespaceAborted(invocation(), stubRequest, () =>
     Promise.resolve(
       eventResult(
         (async function* () {

@@ -1,6 +1,6 @@
 import { fetchCopilotModels } from './fetch-models.ts';
 import { chatCompletionsCopilotInterceptors } from './interceptors/chat-completions/index.ts';
-import { messagesCopilotInterceptors, messagesCopilotSourceInterceptors } from './interceptors/messages/index.ts';
+import { messagesCopilotInterceptors, messagesCopilotSourceInterceptors, messagesCountTokensCopilotInterceptors } from './interceptors/messages/index.ts';
 import { responsesCopilotInterceptors } from './interceptors/responses/index.ts';
 import { emptyLedger, mergeLedger, projectLedger, type CopilotLedger } from './ledger.ts';
 import { mergeClaudeVariants } from './merge-claude-variants.ts';
@@ -43,9 +43,6 @@ type CopilotUpstreamRecord = UpstreamRecord & {
   provider: 'copilot';
   config: CopilotUpstreamConfig;
 };
-
-const ALLOWED_ANTHROPIC_BETAS = new Set(['interleaved-thinking-2025-05-14', 'context-management-2025-06-27', 'advanced-tool-use-2025-11-20']);
-const INTERLEAVED_THINKING_BETA = 'interleaved-thinking-2025-05-14';
 
 const SOFT_MS = 10 * 60 * 1000;
 const L1_TTL_MS = 120_000;
@@ -177,44 +174,13 @@ const rawModelFor = (model: UpstreamModel, endpoint: ModelEndpoint, hints: Model
   return resolveCopilotRawModel({ object: 'list', data: rawModels }, model.id, hints) ?? rawModels[0];
 };
 
-const chatHasVision = (body: Omit<ChatCompletionsPayload, 'model'>): boolean =>
-  body.messages.some(message => Array.isArray(message.content) && message.content.some(part => part.type === 'image_url'));
-
-const messagesHasVision = (body: Omit<MessagesPayload, 'model'>): boolean => body.messages.some(message => Array.isArray(message.content) && message.content.some(block => block.type === 'image'));
-
-const messagesInitiator = (body: Omit<MessagesPayload, 'model'>): 'user' | 'agent' => {
-  const lastMessage = body.messages[body.messages.length - 1];
-  if (lastMessage?.role !== 'user') return 'agent';
-  if (!Array.isArray(lastMessage.content)) return 'user';
-
-  return lastMessage.content.some(block => block.type !== 'tool_result') ? 'user' : 'agent';
-};
-
-const copilotAnthropicBetaHeader = (body: Omit<MessagesPayload, 'model'>, anthropicBeta: readonly string[] | undefined): string[] => {
-  const isAdaptiveThinking = body.thinking?.type === 'adaptive';
-  const filtered = (anthropicBeta ?? []).filter(value => ALLOWED_ANTHROPIC_BETAS.has(value)).filter(value => !(isAdaptiveThinking && value === INTERLEAVED_THINKING_BETA));
-
-  if (body.thinking?.budget_tokens && !isAdaptiveThinking && !filtered.includes(INTERLEAVED_THINKING_BETA)) {
-    filtered.push(INTERLEAVED_THINKING_BETA);
-  }
-
-  return [...new Set(filtered)];
-};
-
-const responsesHasVision = (body: Omit<ResponsesPayload, 'model'>): boolean => {
-  if (!Array.isArray(body.input)) return false;
-
-  return body.input.some(
-    item => item.type === 'message' && Array.isArray(item.content) && item.content.some(block => (block as { type?: string }).type === 'input_image' || (block as { type?: string }).type === 'image'),
-  );
-};
-
-const responsesInitiator = (body: Omit<ResponsesPayload, 'model'>): 'user' | 'agent' => {
-  if (!Array.isArray(body.input)) return 'user';
-  const lastItem = body.input[body.input.length - 1];
-  return lastItem?.type === 'function_call_output' ? 'agent' : 'user';
-};
-
+// The Messages and count_tokens call paths receive the UNFILTERED
+// anthropic-beta as a typed parameter so variant selection (e.g.
+// context-1m-2025-08-07 -> the claude-*-1m-internal variant) sees the
+// caller's full intent. The wire `anthropic-beta` header that ultimately
+// reaches the upstream is the filtered subset written by
+// withAnthropicBetaHeaderFiltered into `invocation.headers`; that header is
+// passed through unchanged by the `call` helper below.
 const copilotEmbeddingsBody = (body: Record<string, unknown>): Record<string, unknown> => {
   if (typeof body.input !== 'string') return body;
 
@@ -266,9 +232,7 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
     body: Record<string, unknown>,
     signal: AbortSignal | undefined,
     rawModel: CopilotRawModel,
-    vision?: boolean,
-    initiator?: 'user' | 'agent',
-    anthropicBeta?: readonly string[],
+    headers: Record<string, string> | undefined,
   ): Promise<ProviderCallResult> => {
     const requestBody = isStreamingEndpoint(endpoint) ? { ...body, stream: true, model: rawModel.id } : { ...body, model: rawModel.id };
     const response = await upstream.fetch(
@@ -278,26 +242,18 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
         body: JSON.stringify(requestBody),
         signal,
       },
-      {
-        ...(vision ? { vision: true } : {}),
-        ...(initiator ? { initiator } : {}),
-        ...(anthropicBeta && anthropicBeta.length > 0
-          ? {
-              extraHeaders: { 'anthropic-beta': anthropicBeta.join(',') },
-            }
-          : {}),
-      },
+      headers && Object.keys(headers).length > 0 ? { extraHeaders: headers } : undefined,
     );
     return { response, modelKey: rawModel.id };
   };
 
   const callMessagesEndpoint =
-    (endpoint: 'messages' | 'messages_count_tokens') => (model: UpstreamModel, body: Omit<MessagesPayload, 'model'>, signal?: AbortSignal, anthropicBeta?: readonly string[]) => {
+    (endpoint: 'messages' | 'messages_count_tokens') => (model: UpstreamModel, body: Omit<MessagesPayload, 'model'>, signal?: AbortSignal, headers?: Record<string, string>, anthropicBeta?: readonly string[]) => {
       const rawModel = rawModelFor(model, endpoint, {
         context1m: hasContext1mBeta(anthropicBeta),
         reasoningEffort: messagesReasoningEffort(body),
       });
-      return call(endpoint, body, signal, rawModel, messagesHasVision(body), messagesInitiator(body), copilotAnthropicBetaHeader(body, anthropicBeta));
+      return call(endpoint, body, signal, rawModel, headers);
     };
 
   const provider: ModelProvider = {
@@ -320,26 +276,28 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
         }
       }),
     getPricingForModelKey: pricingForCopilotModelKey,
-    callChatCompletions: (model, body, signal) => {
+    callChatCompletions: (model, body, signal, headers) => {
       const rawModel = rawModelFor(model, 'chat_completions', {
         reasoningEffort: chatReasoningEffort(body),
       });
-      return call('chat_completions', body, signal, rawModel, chatHasVision(body));
+      return call('chat_completions', body, signal, rawModel, headers);
     },
-    callResponses: (model, body, signal) => {
+    callResponses: (model, body, signal, headers) => {
       const rawModel = rawModelFor(model, 'responses', {
         reasoningEffort: responsesReasoningEffort(body),
       });
-      return call('responses', body, signal, rawModel, responsesHasVision(body), responsesInitiator(body));
+      return call('responses', body, signal, rawModel, headers);
     },
     callMessages: callMessagesEndpoint('messages'),
     callMessagesCountTokens: callMessagesEndpoint('messages_count_tokens'),
-    callEmbeddings: (model, body, signal) => call('embeddings', copilotEmbeddingsBody(body), signal, rawModelFor(model, 'embeddings')),
+    callEmbeddings: (model, body, signal, headers) => call('embeddings', copilotEmbeddingsBody(body), signal, rawModelFor(model, 'embeddings'), headers),
     // Copilot has no /images/... upstream. getProvidedModels never emits a
     // kind='image' model for Copilot bindings, so the source-side dispatcher
     // in apps/api/src/data-plane/images/serve.ts never selects this provider
     // for image requests. These stubs satisfy the ModelProvider interface
-    // only; they are unreachable in normal operation.
+    // only; they are unreachable in normal operation. The `headers` parameter
+    // is present for signature parity with the other call methods even
+    // though it is never consumed.
     callImagesGenerations: () => {
       throw new Error('Copilot provider does not implement images_generations');
     },
@@ -358,6 +316,7 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
     },
     targetInterceptors: {
       messages: messagesCopilotInterceptors,
+      messagesCountTokens: messagesCountTokensCopilotInterceptors,
       responses: responsesCopilotInterceptors,
       chatCompletions: chatCompletionsCopilotInterceptors,
     },

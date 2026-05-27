@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { withResponsesToolArgumentWhitespaceAborted } from './abort-on-tool-argument-whitespace.ts';
+import { withToolArgumentWhitespaceAborted } from './abort-on-tool-argument-whitespace.ts';
 import { assertEquals } from '../../../../../test-assert.ts';
 import { stubProvider, stubUpstreamModel, testTelemetryModelIdentity } from '../../../../../test-helpers.ts';
 import type { RequestContext, ResponsesInvocation } from '../../../../llm/interceptors.ts';
@@ -31,6 +31,7 @@ const invocation = (): ResponsesInvocation => ({
   provider: stubProvider(),
   upstreamModel: stubUpstreamModel(),
   enabledFlags: new Set<string>(),
+  headers: {},
 });
 
 const stubRequest: RequestContext = {
@@ -55,7 +56,7 @@ const collect = async (result: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>
 };
 
 const runWith = async (frames: ProtocolFrame<ResponsesStreamEvent>[]): Promise<ProtocolFrame<ResponsesStreamEvent>[]> => {
-  const result = await withResponsesToolArgumentWhitespaceAborted(invocation(), stubRequest, () =>
+  const result = await withToolArgumentWhitespaceAborted(invocation(), stubRequest, () =>
     Promise.resolve(
       eventResult(
         (async function* () {

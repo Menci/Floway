@@ -22,16 +22,32 @@ const mapChatCompletionsFinishReasonToMessagesStopReason = (finishReason: 'stop'
 interface ChatCompletionsUsage {
   prompt_tokens?: number;
   completion_tokens?: number;
-  prompt_tokens_details?: { cached_tokens?: number };
+  prompt_tokens_details?: { cached_tokens?: number; cache_creation_input_tokens?: number };
 }
 
+// OpenAI-shaped upstreams piggyback Anthropic-style cache buckets on
+// `prompt_tokens_details`. `prompt_tokens` already includes both
+// `cached_tokens` (reads) and `cache_creation_input_tokens` (writes); we
+// subtract both to derive Anthropic's plain-input bucket and surface the cache
+// buckets separately so downstream Messages clients see the same split they
+// would have seen on a native Messages upstream. The reverse direction at
+// packages/translate/src/chat-completions-via-messages/events.ts (state init in
+// translateMessagesEventToChatCompletionsChunks) already folds both buckets back
+// into prompt_tokens, so this closes a real asymmetry. Ref:
+// https://github.com/caozhiyuan/copilot-api/commit/a99c23551b0f3198d78dd51142dd0096cc6da049
 export const mapChatCompletionsUsageToMessagesUsage = (usage?: ChatCompletionsUsage): MessagesResponse['usage'] => {
   const cachedTokens = usage?.prompt_tokens_details?.cached_tokens;
+  const cacheCreationTokens = usage?.prompt_tokens_details?.cache_creation_input_tokens;
 
   return {
-    input_tokens: (usage?.prompt_tokens ?? 0) - (cachedTokens ?? 0),
+    // `cached_tokens` and `cache_creation_input_tokens` are disjoint subsets of
+    // `prompt_tokens`, so the subtraction cannot go negative under any
+    // standards-conforming upstream. Do NOT clamp with Math.max(0, ...) — that
+    // would mask a real upstream contract violation rather than fix anything.
+    input_tokens: (usage?.prompt_tokens ?? 0) - (cachedTokens ?? 0) - (cacheCreationTokens ?? 0),
     output_tokens: usage?.completion_tokens ?? 0,
     ...(cachedTokens !== undefined ? { cache_read_input_tokens: cachedTokens } : {}),
+    ...(cacheCreationTokens !== undefined ? { cache_creation_input_tokens: cacheCreationTokens } : {}),
   };
 };
 
@@ -51,7 +67,7 @@ type ChatStreamToolCalls = NonNullable<ChatStreamDelta['tool_calls']>;
 type MessagesContentBlock = MessagesContentBlockStartEvent['content_block'];
 type MessagesContentDelta = MessagesContentBlockDeltaEvent['delta'];
 
-type DeferredAfterThinking = { type: 'content'; content: string } | { type: 'tool_calls'; toolCalls: ChatStreamToolCalls };
+type DeferredAfterThinking = { type: 'content'; content: string; hasToolCallDelta: boolean } | { type: 'tool_calls'; toolCalls: ChatStreamToolCalls };
 
 type OpenContentBlock = 'text' | 'thinking' | 'tool_use';
 
@@ -68,6 +84,19 @@ interface ChatCompletionsToMessagesStreamState {
   pendingReasoningOpaque?: string;
   pendingThinkingSignature?: string;
   deferredAfterThinking: DeferredAfterThinking[];
+  // Some OpenAI-shaped upstreams (notably gpt-4o-2024-05-13) interleave a
+  // `content` delta in the middle of a tool_call's argument fragments, and
+  // some chunk deltas carry BOTH `content` and `tool_calls` arrays in one
+  // hit. In either case, emitting the content as a text block before /
+  // around the tool_use block would force us to close the tool_use block
+  // early — its trailing argument fragments would then land against a
+  // stopped block index and Anthropic clients would reject them. We buffer
+  // the interleaved content here and flush it as its own text block AFTER
+  // the tool_use block closes for real. Ref:
+  // https://github.com/caozhiyuan/copilot-api/commit/51675f73de7983093c857d68ddd61bcd09f1806a
+  // and the broader gating that includes same-chunk content+tool_calls:
+  // https://github.com/caozhiyuan/copilot-api/blob/main/src/routes/messages/stream-translation.ts#L240
+  deferredContent?: string;
   pendingFinishReason?: ChatCompletionChunk['choices'][0]['finish_reason'];
   pendingUsage?: ChatCompletionChunk['usage'];
   finalMessageSent?: boolean;
@@ -130,9 +159,21 @@ const emitPendingOpaqueReasoningBlock = (state: ChatCompletionsToMessagesStreamS
   state.pendingReasoningOpaque = undefined;
 };
 
-const emitContentDelta = (content: string, state: ChatCompletionsToMessagesStreamState, events: MessagesStreamEventData[]): void => {
-  if (state.openBlock === 'tool_use') {
-    closeCurrentBlock(state, events);
+const emitContentDelta = (content: string, hasToolCallDelta: boolean, state: ChatCompletionsToMessagesStreamState, events: MessagesStreamEventData[]): void => {
+  // Two distinct defer cases collapse to one buffer:
+  //   1. A tool_use block is already open and we are mid-arguments. Closing
+  //      the tool_use block on this content would orphan the trailing
+  //      argument fragments against a stopped block index.
+  //   2. The same chunk delta carries BOTH `content` and `tool_calls`. The
+  //      tool_use block is about to open right after we return; emitting
+  //      content first would force us to close it again before the tool_use
+  //      block ever held a fragment.
+  // In both cases we hold the text and flush it as its own block AFTER the
+  // tool_use block stops. Mirrors caozhiyuan's `handleContent`:
+  // https://github.com/caozhiyuan/copilot-api/blob/main/src/routes/messages/stream-translation.ts#L240
+  if (state.openBlock === 'tool_use' || hasToolCallDelta) {
+    state.deferredContent = (state.deferredContent ?? '') + content;
+    return;
   }
 
   if (state.openBlock === undefined) {
@@ -143,6 +184,17 @@ const emitContentDelta = (content: string, state: ChatCompletionsToMessagesStrea
     type: 'text_delta',
     text: content,
   });
+};
+
+const flushDeferredContent = (state: ChatCompletionsToMessagesStreamState, events: MessagesStreamEventData[]): void => {
+  if (state.deferredContent === undefined) return;
+  if (state.openBlock !== undefined) return;
+
+  const text = state.deferredContent;
+  state.deferredContent = undefined;
+  startContentBlock(state, events, 'text', { type: 'text', text: '' });
+  emitContentBlockDelta(state, events, { type: 'text_delta', text });
+  closeCurrentBlock(state, events);
 };
 
 const handleReasoningDelta = (delta: ChatStreamDelta, state: ChatCompletionsToMessagesStreamState, events: MessagesStreamEventData[]): void => {
@@ -179,6 +231,13 @@ const emitToolCallsDelta = (toolCalls: ChatStreamToolCalls, state: ChatCompletio
   for (const toolCall of toolCalls) {
     if (toolCall.id && toolCall.function?.name) {
       closeCurrentBlock(state, events);
+      // Do NOT flush deferredContent here: caozhiyuan's stream translator only
+      // flushes deferred text at message-finish so it lands as the trailing
+      // text block. Flushing on every tool_use open would either (a) emit
+      // same-chunk content+tool_calls text BEFORE the tool_use block, which
+      // is exactly the ordering bug we are guarding against, or (b) split
+      // interleaved text across tool boundaries in a way the reference
+      // implementation does not.
       const blockIndex = state.contentBlockIndex;
       state.toolCalls[toolCall.index] = {
         messagesBlockIndex: blockIndex,
@@ -228,7 +287,7 @@ const emitPendingReasoningAndDeferred = (state: ChatCompletionsToMessagesStreamS
 
   for (const item of deferred) {
     if (item.type === 'content') {
-      emitContentDelta(item.content, state, events);
+      emitContentDelta(item.content, item.hasToolCallDelta, state, events);
       continue;
     }
 
@@ -245,6 +304,7 @@ const handleFinishReason = (
   emitPendingReasoningAndDeferred(state, events);
 
   closeCurrentBlock(state, events);
+  flushDeferredContent(state, events);
 
   state.pendingFinishReason = finishReason;
   if (chunk.usage) state.pendingUsage = chunk.usage;
@@ -316,15 +376,17 @@ export const translateChatCompletionsChunkToMessagesEvents = (chunk: ChatComplet
   handleReasoningDelta(choice.delta, state, events);
 
   const content = choice.delta.content;
+  const toolCalls = choice.delta.tool_calls;
+  const hasToolCallDelta = Boolean(toolCalls?.length);
+
   if (content) {
     if (hasPendingReasoning(state)) {
-      state.deferredAfterThinking.push({ type: 'content', content });
+      state.deferredAfterThinking.push({ type: 'content', content, hasToolCallDelta });
     } else {
-      emitContentDelta(content, state, events);
+      emitContentDelta(content, hasToolCallDelta, state, events);
     }
   }
 
-  const toolCalls = choice.delta.tool_calls;
   if (toolCalls?.length) {
     if (hasPendingReasoning(state)) {
       state.deferredAfterThinking.push({ type: 'tool_calls', toolCalls });
@@ -347,6 +409,7 @@ export const flushChatCompletionsToMessagesEvents = (state: ChatCompletionsToMes
   const events: MessagesStreamEventData[] = [];
   emitPendingReasoningAndDeferred(state, events);
   closeCurrentBlock(state, events);
+  flushDeferredContent(state, events);
   emitFinalMessageIfReady(state, events);
   return events;
 };

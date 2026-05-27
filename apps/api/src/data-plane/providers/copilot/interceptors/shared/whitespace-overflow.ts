@@ -3,14 +3,12 @@
  * line breaks / tabs in function `arguments` until `max_tokens`, which keeps
  * the client hanging while never producing valid JSON.
  *
- * The same guard exists in `caozhiyuan/copilot-api`:
+ * Two interceptors (Chat Completions and Responses) share this counter and
+ * threshold so the defense fires the same way on both upstream shapes.
+ *
+ * References:
  * - https://github.com/caozhiyuan/copilot-api/commit/4c0d775e1dc6b8648c7ad5f21fb783fc3246facf
  * - https://github.com/caozhiyuan/copilot-api/commit/3cdc32c0811469da9eebec5ca3892caf068df542
- *
- * Lives under the Copilot provider because only Copilot exhibits this quirk;
- * other providers must not pay a per-delta whitespace cost. Two interceptors
- * (Chat Completions and Responses) share this counter and threshold so the
- * defense fires the same way on both upstream shapes.
  */
 export const MAX_CONSECUTIVE_WHITESPACE = 20;
 

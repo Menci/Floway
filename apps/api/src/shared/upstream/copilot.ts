@@ -5,13 +5,8 @@
 import { copilotFetch, isCopilotTokenFetchError, type CopilotAccountType } from '../copilot.ts';
 import type { EndpointKey, Upstream, UpstreamFetchOptions } from './types.ts';
 
-export interface CopilotUpstreamFetchOptions extends UpstreamFetchOptions {
-  vision?: boolean;
-  initiator?: 'user' | 'agent';
-}
-
 export interface CopilotUpstream extends Upstream {
-  fetch(endpoint: EndpointKey, init: RequestInit, options?: CopilotUpstreamFetchOptions): Promise<Response>;
+  fetch(endpoint: EndpointKey, init: RequestInit, options?: UpstreamFetchOptions): Promise<Response>;
 }
 
 // Copilot mounts its API at the host root and uses an Anthropic-style
@@ -38,9 +33,9 @@ export const createCopilotUpstream = (id: string, name: string, githubToken: str
     name,
     kind: 'copilot',
     supportedEndpoints: COPILOT_SUPPORTED_ENDPOINTS,
-    fetch: async (endpoint, init, options?: CopilotUpstreamFetchOptions) => {
+    fetch: async (endpoint, init, options) => {
       try {
-        return await copilotFetch(COPILOT_PATHS[endpoint], init, githubToken, accountType, options);
+        return await copilotFetch(COPILOT_PATHS[endpoint], init, githubToken, accountType, options?.extraHeaders ? { headers: options.extraHeaders } : undefined);
       } catch (error) {
         if (!isCopilotTokenFetchError(error)) throw error;
         return new Response(error.body, {

@@ -44,12 +44,24 @@ export const bodyAnthropicBetaResponse = (param: string): Response =>
     { status: 400 },
   );
 
+// `headers` is intentionally passed by reference: source-side Copilot
+// interceptors (compact / claude-agent / interaction-id) mutate the original
+// Messages invocation's `headers` bag, and the planner may pick a non-Messages
+// target (Responses or Chat Completions). Each translated emit closure
+// rebuilds an invocation in the target shape — without sharing the same
+// `headers` reference, those source-side mutations would land on the dropped
+// Messages invocation and never reach the upstream HTTP call.
+//
+// `anthropicBeta` deliberately does NOT cross protocols: it is an inbound
+// Messages concept, and the Responses / Chat Completions target emitters do
+// not consume it.
 const messagesInvocation = <TPayload extends { model: string }>(
   binding: ProviderModelRecord,
   targetApi: LlmTargetApi,
   model: string,
   payload: TPayload,
-  anthropicBeta?: readonly string[],
+  anthropicBeta: readonly string[] | undefined,
+  headers: Record<string, string>,
 ) => ({
   sourceApi: 'messages' as const,
   targetApi,
@@ -60,6 +72,7 @@ const messagesInvocation = <TPayload extends { model: string }>(
   enabledFlags: binding.enabledFlags,
   ...(binding.targetInterceptors !== undefined ? { targetInterceptors: binding.targetInterceptors } : {}),
   payload,
+  headers,
   ...(anthropicBeta !== undefined ? { anthropicBeta } : {}),
 });
 
@@ -96,14 +109,15 @@ export const serveMessages = async (c: Context): Promise<Response> => {
         const target = pickTarget(binding.upstreamModel.upstreamEndpoints);
         if (!target) continue;
 
-        const invocation: MessagesInvocation = messagesInvocation(binding, target, model, attemptPayload, anthropicBeta);
+        const sharedHeaders: Record<string, string> = {};
+        const invocation: MessagesInvocation = messagesInvocation(binding, target, model, attemptPayload, anthropicBeta, sharedHeaders);
 
         const emits: Record<LlmTargetApi, SourceEmit<MessagesPayload, { fallbackMaxOutputTokens?: number }, ExecuteResult<ProtocolFrame<MessagesStreamEventData>>>> = {
           messages: async srcPayload => await emitToMessages({ ...invocation, payload: srcPayload }, request),
           responses: viaTranslation(translateMessagesViaResponses, async (tgtPayload: ResponsesPayload) =>
-            await emitToResponses(messagesInvocation(binding, 'responses', model, tgtPayload), request)),
+            await emitToResponses(messagesInvocation(binding, 'responses', model, tgtPayload, undefined, sharedHeaders), request)),
           'chat-completions': viaTranslation(translateMessagesViaChatCompletions, async (tgtPayload: ChatCompletionsPayload) =>
-            await emitToChatCompletions(messagesInvocation(binding, 'chat-completions', model, tgtPayload), request)),
+            await emitToChatCompletions(messagesInvocation(binding, 'chat-completions', model, tgtPayload, undefined, sharedHeaders), request)),
         };
 
         result = await runInterceptors(invocation, request, [...messagesSourceInterceptors, ...(binding.sourceInterceptors?.messages ?? [])], () =>

@@ -1,10 +1,14 @@
 import { test } from 'vitest';
 
+import { messagesCopilotInterceptors, messagesCopilotSourceInterceptors } from './interceptors/messages/index.ts';
 import { createCopilotProvider } from './provider.ts';
 import { assertEquals, assertRejects } from '../../../test-assert.ts';
 import { copilotModels, jsonResponse, setupAppTest, withMockedFetch } from '../../../test-helpers.ts';
+import { runInterceptors, type MessagesInvocation, type RequestContext } from '../../llm/interceptors.ts';
+import { eventResult, type ExecuteResult } from '../../llm/shared/errors/result.ts';
 import { clearModelsStore, ProviderModelsUnavailableError } from '../models-store.ts';
-import { messagesCopilotSourceInterceptors } from './interceptors/messages/index.ts';
+import type { ProtocolFrame } from '@floway-dev/protocols/common';
+import type { MessagesPayload, MessagesStreamEventData } from '@floway-dev/protocols/messages';
 
 test('Copilot provider exposes the highest-priority non-Claude endpoint', async () => {
   const { copilotUpstream } = await setupAppTest();
@@ -352,6 +356,138 @@ test('Copilot provider forces stream=true for streaming endpoints and leaves cou
   assertEquals(bodies['/v1/messages'].stream, true);
   assertEquals('stream' in bodies['/v1/messages/count_tokens'], false);
   assertEquals('stream' in bodies['/embeddings'], false);
+});
+
+test('Copilot provider sets copilot-vision-request when an image is nested inside tool_result.content', async () => {
+  const { copilotUpstream } = await setupAppTest();
+  const instance = await createCopilotProvider(copilotUpstream);
+  const provider = instance.provider;
+  const visionHeaders: string[] = [];
+
+  const stubRequest: RequestContext = {
+    requestStartedAt: 0,
+    runtimeLocation: 'test',
+    clientStream: false,
+  };
+
+  const testTelemetryModelIdentity = {
+    model: 'claude-msg',
+    upstream: 'up_copilot',
+    modelKey: 'claude-msg',
+    cost: null,
+  };
+
+  // Drive a Messages payload through the full Copilot target interceptor list
+  // and on to the provider's callMessages, then observe the header that
+  // actually reached the upstream HTTP request. This exercises the integration
+  // contract — the vision-detection interceptor sets `invocation.headers`, the
+  // emit passes it to `provider.callMessages`, and the upstream sees it.
+  const driveMessages = async (model: typeof instance.provider extends never ? never : Awaited<ReturnType<typeof instance.provider.getProvidedModels>>[number], body: Omit<MessagesPayload, 'model'>): Promise<void> => {
+    const invocation: MessagesInvocation = {
+      sourceApi: 'messages',
+      targetApi: 'messages',
+      model: model.id,
+      upstream: 'up_copilot',
+      upstreamModel: model,
+      provider,
+      enabledFlags: model.enabledFlags,
+      payload: { ...body, model: model.id },
+      headers: {},
+    };
+
+    await runInterceptors<MessagesInvocation, RequestContext, ExecuteResult<ProtocolFrame<MessagesStreamEventData>>>(
+      invocation,
+      stubRequest,
+      messagesCopilotInterceptors,
+      async () => {
+        const { model: _model, ...callBody } = invocation.payload;
+        await provider.callMessages(invocation.upstreamModel, callBody, undefined, invocation.headers);
+        return eventResult((async function* () {})(), testTelemetryModelIdentity);
+      },
+    );
+  };
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+
+      if (url.hostname === 'update.code.visualstudio.com') {
+        return jsonResponse(['1.110.1']);
+      }
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({
+          token: 'copilot-access-token',
+          expires_at: 4102444800,
+          refresh_in: 3600,
+        });
+      }
+      if (url.pathname === '/models') {
+        return jsonResponse(copilotModels([{ id: 'claude-msg', supported_endpoints: ['/v1/messages'] }]));
+      }
+      if (url.pathname === '/v1/messages') {
+        visionHeaders.push(request.headers.get('copilot-vision-request') ?? '');
+        await request.text();
+        return jsonResponse({
+          id: 'm',
+          type: 'message',
+          role: 'assistant',
+          content: [],
+          model: 'claude-msg',
+          stop_reason: 'end_turn',
+          stop_sequence: null,
+          usage: {},
+        });
+      }
+
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const [model] = await provider.getProvidedModels();
+
+      // Tool result carrying an image — the only image in the conversation
+      // lives nested inside `tool_result.content`, so the vision detector must
+      // recurse into tool_result.content to discover it.
+      await driveMessages(model, {
+        max_tokens: 10,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'tool_result',
+                tool_use_id: 'toolu_image',
+                content: [
+                  {
+                    type: 'image',
+                    source: { type: 'base64', media_type: 'image/png', data: 'AAAA' },
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      });
+
+      // No image anywhere — header must not be set.
+      await driveMessages(model, {
+        max_tokens: 10,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'tool_result',
+                tool_use_id: 'toolu_text',
+                content: [{ type: 'text', text: 'plain result' }],
+              },
+            ],
+          },
+        ],
+      });
+    },
+  );
+
+  assertEquals(visionHeaders, ['true', '']);
 });
 
 const withMutableNow = async <T>(initial: number, run: (setNow: (value: number) => void) => Promise<T>): Promise<T> => {

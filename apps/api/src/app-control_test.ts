@@ -28,10 +28,6 @@ test('admin key can access playground-approved data plane routes with x-models-p
     request => {
       const url = new URL(request.url);
 
-      if (url.hostname === 'update.code.visualstudio.com') {
-        return jsonResponse(['1.110.1']);
-      }
-
       if (url.pathname === '/copilot_internal/v2/token') {
         return jsonResponse({
           token: 'copilot-access-token',
@@ -66,10 +62,6 @@ test('admin key can access playground embeddings with x-models-playground', asyn
   await withMockedFetch(
     request => {
       const url = new URL(request.url);
-
-      if (url.hostname === 'update.code.visualstudio.com') {
-        return jsonResponse(['1.110.1']);
-      }
 
       if (url.pathname === '/copilot_internal/v2/token') {
         return jsonResponse({

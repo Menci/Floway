@@ -33,6 +33,7 @@ const invocation = (payload: ResponsesPayload, enabledFlags: ReadonlySet<string>
   provider: stubProvider(),
   upstreamModel: stubUpstreamModel(),
   enabledFlags,
+  headers: {},
 });
 
 test('responses required tool_choice strips reasoning', async () => {

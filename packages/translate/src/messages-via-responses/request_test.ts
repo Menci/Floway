@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { translateMessagesToResponses } from './request.ts';
 import { assertEquals, assertFalse } from '../test-assert.ts';
-import type { ResponseInputReasoning } from '@floway-dev/protocols/responses';
+import type { ResponseFunctionTool, ResponseInputReasoning } from '@floway-dev/protocols/responses';
 
 test('translateMessagesToResponses ignores thinking signatures and preserves readable thinking text', () => {
   const result = translateMessagesToResponses({
@@ -260,4 +260,63 @@ test('translateMessagesToResponses preserves text-only thinking input', () => {
     id: 'rs_0',
     summary: [{ type: 'summary_text', text: 'trace' }],
   });
+});
+
+// OpenAI strict-mode JSON Schema validators reject {type: 'object'} without a
+// `properties` field. Anthropic accepts that shape, so the input_schema must
+// be normalized before forwarding to Responses. Ref:
+// https://github.com/caozhiyuan/copilot-api/commit/ad57069826843c5d17d7b0e5ef2f75050128893c
+test('translateMessagesToResponses defaults missing input_schema.properties to {} for object tools', () => {
+  const result = translateMessagesToResponses({
+    model: 'gpt-test',
+    max_tokens: 256,
+    tools: [{ name: 'no_args', input_schema: { type: 'object' } }],
+    messages: [{ role: 'user', content: 'hi' }],
+  });
+
+  assertEquals(result.tools, [
+    {
+      type: 'function',
+      name: 'no_args',
+      parameters: { type: 'object', properties: {} },
+      strict: false,
+    },
+  ]);
+});
+
+test('translateMessagesToResponses preserves declared input_schema.properties verbatim', () => {
+  const result = translateMessagesToResponses({
+    model: 'gpt-test',
+    max_tokens: 256,
+    tools: [
+      {
+        name: 'with_args',
+        input_schema: {
+          type: 'object',
+          properties: { q: { type: 'string' } },
+          required: ['q'],
+        },
+      },
+    ],
+    messages: [{ role: 'user', content: 'hi' }],
+  });
+
+  const tool = result.tools?.[0] as ResponseFunctionTool;
+  assertEquals(tool.parameters, {
+    type: 'object',
+    properties: { q: { type: 'string' } },
+    required: ['q'],
+  });
+});
+
+test('translateMessagesToResponses does not inject properties for non-object input_schema', () => {
+  const result = translateMessagesToResponses({
+    model: 'gpt-test',
+    max_tokens: 256,
+    tools: [{ name: 'scalar', input_schema: { type: 'string' } }],
+    messages: [{ role: 'user', content: 'hi' }],
+  });
+
+  const tool = result.tools?.[0] as ResponseFunctionTool;
+  assertEquals(tool.parameters, { type: 'string' });
 });

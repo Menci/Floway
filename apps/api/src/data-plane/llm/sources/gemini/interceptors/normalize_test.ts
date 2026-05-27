@@ -23,6 +23,7 @@ const invocation = (payload: GeminiGenerateContentRequest): GeminiInvocation => 
   provider: {} as never,
   enabledFlags: new Set(),
   payload,
+  headers: {},
 });
 
 const stubRequest: RequestContext = {

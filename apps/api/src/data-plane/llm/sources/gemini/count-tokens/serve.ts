@@ -3,6 +3,8 @@ import type { Context } from 'hono';
 import { apiKeyUpstreamIdsFromContext } from '../../../../../middleware/auth.ts';
 import { ProviderModelsUnavailableError } from '../../../../providers/models-store.ts';
 import { resolveModelForRequest } from '../../../../providers/registry.ts';
+import { type MessagesInvocation, runInterceptors } from '../../../interceptors.ts';
+import { createRequestContext } from '../../execute.ts';
 import { stripUnsupportedPartFieldsFromPayload } from '../interceptors/strip-unsupported-part-fields.ts';
 import { stripUnsupportedToolsFromPayload } from '../interceptors/strip-unsupported-tools.ts';
 import { geminiInternalRpcErrorResponse, geminiRpcErrorResponse } from '../respond.ts';
@@ -45,6 +47,8 @@ export const countGeminiTokens = async (c: Context, model: string): Promise<Resp
       return geminiRpcErrorResponse(404, `Model ${modelId} is not available on any configured upstream.`);
     }
 
+    const requestContext = createRequestContext(c, undefined, false);
+
     let response: Response | undefined;
     for (const binding of resolvedModel.providers) {
       if (!binding.upstreamModel.upstreamEndpoints.includes('messages_count_tokens')) continue;
@@ -56,9 +60,31 @@ export const countGeminiTokens = async (c: Context, model: string): Promise<Resp
       // The trip always emits `stream: true` (translation assumes streaming
       // upstream); count_tokens is non-streaming, so strip it before sending.
       const { target } = await translateGeminiViaMessages(generateContentRequest, { model: modelId, fallbackMaxOutputTokens: binding.upstreamModel.limits.max_output_tokens });
-      const { model: _model, stream: _stream, ...body } = target;
-      const result = await binding.provider.callMessagesCountTokens(binding.upstreamModel, body);
-      response = result.response;
+      const { stream: _stream, ...attemptPayload } = target;
+
+      // Wrap the call in the same MessagesInvocation shape the Messages
+      // count_tokens path uses so Copilot's vision/initiator/anthropic-beta
+      // target interceptors apply when the upstream is Copilot. Gemini does
+      // not surface an anthropic-beta header on its own, so the field is
+      // omitted; the interceptor noops in that case.
+      const invocation: MessagesInvocation = {
+        sourceApi: 'gemini',
+        targetApi: 'messages',
+        model: modelId,
+        upstream: binding.upstream,
+        upstreamModel: binding.upstreamModel,
+        provider: binding.provider,
+        enabledFlags: binding.enabledFlags,
+        ...(binding.targetInterceptors !== undefined ? { targetInterceptors: binding.targetInterceptors } : {}),
+        payload: attemptPayload,
+        headers: {},
+      };
+
+      response = await runInterceptors(invocation, requestContext, invocation.targetInterceptors?.messagesCountTokens ?? [], async () => {
+        const { model: _model, ...body } = invocation.payload;
+        const result = await binding.provider.callMessagesCountTokens(invocation.upstreamModel, body, undefined, invocation.headers);
+        return result.response;
+      });
       break;
     }
 

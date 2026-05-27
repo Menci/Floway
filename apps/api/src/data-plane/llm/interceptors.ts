@@ -54,6 +54,11 @@ export interface RequestContext {
  * - targetInterceptors: the provider-registered target interceptor table.
  * - payload: the source-shape request body, mutable so source interceptors
  *   can clean it.
+ * - headers: mutable HTTP-header bag the source serve seeds empty and target
+ *   interceptors populate. The provider's upstream call passes it through to
+ *   the wire fetch unchanged, so workarounds that only need to set or drop a
+ *   header (vision, initiator, anthropic-beta, ...) stay at the owning
+ *   interceptor boundary instead of widening the provider call signature.
  *
  * Named `Invocation` (not `Exchange`) because "exchange" implies a
  * request/response pair; this object carries only the request side plus the
@@ -74,6 +79,7 @@ export interface Invocation<TPayload> {
   readonly enabledFlags: ReadonlySet<string>;
   readonly targetInterceptors?: ProviderTargetInterceptors;
   payload: TPayload;
+  headers: Record<string, string>;
 }
 
 export interface MessagesInvocation extends Invocation<MessagesPayload> {
@@ -102,3 +108,12 @@ export type MessagesInterceptor = Interceptor<MessagesInvocation, RequestContext
 export type ResponsesInterceptor = Interceptor<ResponsesInvocation, RequestContext, ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>>;
 export type ChatCompletionsInterceptor = Interceptor<ChatCompletionsInvocation, RequestContext, ExecuteResult<ProtocolFrame<ChatCompletionChunk>>>;
 export type GeminiInterceptor = Interceptor<GeminiInvocation, RequestContext, ExecuteResult<ProtocolFrame<GeminiStreamEvent>>>;
+
+// count_tokens is a one-shot, non-streaming HTTP exchange — the terminal
+// returns the raw upstream `Response` directly, with no protocol-frame
+// translation in between. The interceptor chain still runs against a
+// `MessagesInvocation` so payload-shaped reads (vision detection, last-message
+// initiator classification, anthropic-beta filtering) match the chat path
+// exactly. Interceptors registered here MUST be pure header/payload mutators;
+// post-`run()` result inspection is not portable to this result type.
+export type MessagesCountTokensInterceptor = Interceptor<MessagesInvocation, RequestContext, Response>;

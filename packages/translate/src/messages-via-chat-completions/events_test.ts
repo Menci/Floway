@@ -303,6 +303,116 @@ test('flushChatCompletionsToMessagesEvents emits pending stop when no usage-only
   ]);
 });
 
+// Some OpenAI-shaped upstreams (notably gpt-4o-2024-05-13) interleave a
+// `content` delta in the middle of a tool_call's argument fragments. The
+// naive translation closes the tool_use block on the first content delta,
+// which then makes the trailing argument fragments land against a stopped
+// block index — Anthropic clients reject those. We defer the interleaved
+// content and flush it as a fresh text block AFTER the tool_use block
+// closes for real. Regression scenario ported from
+// https://github.com/caozhiyuan/copilot-api/commit/51675f73de7983093c857d68ddd61bcd09f1806a
+test('translateChatCompletionsChunkToMessagesEvents defers content interleaved between tool_call argument fragments', () => {
+  const state = createChatCompletionsToMessagesStreamState();
+  const events = [
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({ role: 'assistant' }), state),
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({ tool_calls: [{ index: 0, id: 'call_weather', type: 'function', function: { name: 'get_weather', arguments: '' } }] }), state),
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({ tool_calls: [{ index: 0, function: { arguments: '{"loc' } }] }), state),
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({ content: 'I will check that.' }), state),
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({ tool_calls: [{ index: 0, function: { arguments: 'ation": "Paris"}' } }] }), state),
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({}, 'tool_calls'), state),
+    ...flushChatCompletionsToMessagesEvents(state),
+  ];
+
+  assertEquals(events.slice(1), [
+    {
+      type: 'content_block_start',
+      index: 0,
+      content_block: { type: 'tool_use', id: 'call_weather', name: 'get_weather', input: {} },
+    },
+    {
+      type: 'content_block_delta',
+      index: 0,
+      delta: { type: 'input_json_delta', partial_json: '{"loc' },
+    },
+    {
+      type: 'content_block_delta',
+      index: 0,
+      delta: { type: 'input_json_delta', partial_json: 'ation": "Paris"}' },
+    },
+    { type: 'content_block_stop', index: 0 },
+    {
+      type: 'content_block_start',
+      index: 1,
+      content_block: { type: 'text', text: '' },
+    },
+    {
+      type: 'content_block_delta',
+      index: 1,
+      delta: { type: 'text_delta', text: 'I will check that.' },
+    },
+    { type: 'content_block_stop', index: 1 },
+    {
+      type: 'message_delta',
+      delta: { stop_reason: 'tool_use', stop_sequence: null },
+      usage: { input_tokens: 0, output_tokens: 0 },
+    },
+    { type: 'message_stop' },
+  ]);
+});
+
+// A single chunk delta can carry BOTH `content` and `tool_calls` arrays. If
+// we emit the content first, we open a text block, then close it immediately
+// because the tool_use block is about to open — and any trailing argument
+// fragments for the same tool_call would land against a stopped block index.
+// Mirrors caozhiyuan's gating
+// (https://github.com/caozhiyuan/copilot-api/blob/main/src/routes/messages/stream-translation.ts#L240):
+// `isToolBlockOpen(state) || hasToolCallDelta(delta)` defers the content
+// rather than emitting it before the tool_use block opens.
+test('translateChatCompletionsChunkToMessagesEvents defers content that shares a chunk with tool_calls before any tool block opens', () => {
+  const state = createChatCompletionsToMessagesStreamState();
+  const events = [
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({ role: 'assistant' }), state),
+    ...translateChatCompletionsChunkToMessagesEvents(
+      chunk({ content: 'foo', tool_calls: [{ index: 0, id: 'call_x', type: 'function', function: { name: 'f', arguments: '' } }] }),
+      state,
+    ),
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({ tool_calls: [{ index: 0, function: { arguments: '{}' } }] }), state),
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({}, 'tool_calls'), state),
+    ...flushChatCompletionsToMessagesEvents(state),
+  ];
+
+  assertEquals(events.slice(1), [
+    {
+      type: 'content_block_start',
+      index: 0,
+      content_block: { type: 'tool_use', id: 'call_x', name: 'f', input: {} },
+    },
+    {
+      type: 'content_block_delta',
+      index: 0,
+      delta: { type: 'input_json_delta', partial_json: '{}' },
+    },
+    { type: 'content_block_stop', index: 0 },
+    {
+      type: 'content_block_start',
+      index: 1,
+      content_block: { type: 'text', text: '' },
+    },
+    {
+      type: 'content_block_delta',
+      index: 1,
+      delta: { type: 'text_delta', text: 'foo' },
+    },
+    { type: 'content_block_stop', index: 1 },
+    {
+      type: 'message_delta',
+      delta: { stop_reason: 'tool_use', stop_sequence: null },
+      usage: { input_tokens: 0, output_tokens: 0 },
+    },
+    { type: 'message_stop' },
+  ]);
+});
+
 test('translateChatCompletionsChunkToMessagesEvents ignores empty tool_calls arrays', () => {
   const state = createChatCompletionsToMessagesStreamState();
   // First chunk with role: "assistant" and empty tool_calls.
@@ -346,4 +456,38 @@ test('mapChatCompletionsUsageToMessagesUsage omits cache_read_input_tokens when 
   });
   assertEquals(usage.input_tokens, 100);
   assertEquals(usage.cache_read_input_tokens, undefined);
+});
+
+// OpenAI-shaped upstreams reuse prompt_tokens_details to surface Anthropic-style
+// cache_creation_input_tokens. The Chat-side total already includes both cache
+// buckets (cached_tokens reads + cache_creation writes), mirroring how
+// prompt_tokens already includes cached_tokens. We subtract both buckets from
+// input_tokens and surface cache_creation_input_tokens on the way out so
+// Anthropic clients see the same split they would have seen on a native
+// Messages upstream. The reverse direction at
+// packages/translate/src/chat-completions-via-messages/events.ts already adds
+// cache_creation_input_tokens back into prompt_tokens, so this closes a real
+// asymmetry. Ref:
+// https://github.com/caozhiyuan/copilot-api/commit/a99c23551b0f3198d78dd51142dd0096cc6da049
+test('mapChatCompletionsUsageToMessagesUsage surfaces cache_creation_input_tokens and subtracts it from input_tokens', () => {
+  const usage = mapChatCompletionsUsageToMessagesUsage({
+    prompt_tokens: 100,
+    completion_tokens: 20,
+    prompt_tokens_details: { cached_tokens: 30, cache_creation_input_tokens: 40 },
+  });
+  assertEquals(usage.input_tokens, 30);
+  assertEquals(usage.output_tokens, 20);
+  assertEquals(usage.cache_read_input_tokens, 30);
+  assertEquals(usage.cache_creation_input_tokens, 40);
+});
+
+test('mapChatCompletionsUsageToMessagesUsage surfaces cache_creation_input_tokens alone when cached_tokens is absent', () => {
+  const usage = mapChatCompletionsUsageToMessagesUsage({
+    prompt_tokens: 80,
+    completion_tokens: 10,
+    prompt_tokens_details: { cache_creation_input_tokens: 50 },
+  });
+  assertEquals(usage.input_tokens, 30);
+  assertEquals(usage.cache_read_input_tokens, undefined);
+  assertEquals(usage.cache_creation_input_tokens, 50);
 });

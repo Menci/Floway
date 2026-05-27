@@ -42,7 +42,7 @@ export const emitToChatCompletions = async (invocation: ChatCompletionsInvocatio
     return await runInterceptors(invocation, request, [...chatCompletionsBaseInterceptors, ...(invocation.targetInterceptors?.chatCompletions ?? [])], async () => {
       const upstreamStartedAt = performance.now();
       const { model: _model, ...body }: ChatCompletionsPayload = invocation.payload;
-      const providerResult = await invocation.provider.callChatCompletions(invocation.upstreamModel, body, request.downstreamAbortSignal);
+      const providerResult = await invocation.provider.callChatCompletions(invocation.upstreamModel, body, request.downstreamAbortSignal, invocation.headers);
       modelIdentity = targetModelIdentity(invocation, providerResult.modelKey);
       const result = await targetProviderResultToFrames(invocation, request, targetApi, providerResult, modelIdentity, upstreamStartedAt);
 

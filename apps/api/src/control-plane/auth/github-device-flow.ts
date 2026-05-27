@@ -79,7 +79,7 @@ export const fetchGitHubUser = async (githubToken: string) => {
 
 export const detectAccountType = async (githubToken: string): Promise<CopilotAccountType> => {
   const resp = await fetch('https://api.github.com/copilot_internal/user', {
-    headers: await githubHeaders(githubToken),
+    headers: githubHeaders(githubToken),
   });
   if (!resp.ok) throw new Error(`GitHub Copilot account type detection failed: ${resp.status} ${await resp.text()}`);
 

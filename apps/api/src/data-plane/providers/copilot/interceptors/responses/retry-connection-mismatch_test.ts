@@ -19,6 +19,7 @@ const invocation = (payload: ResponsesPayload): ResponsesInvocation => ({
   provider: stubProvider(),
   upstreamModel: stubUpstreamModel(),
   enabledFlags: new Set<string>(),
+  headers: {},
 });
 
 const stubRequest: RequestContext = {

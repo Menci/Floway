@@ -118,6 +118,34 @@ test('/api/performance/overview returns dashboard aggregates from one repo query
   assertEquals(body.runtimeRows[0].group, 'SJC');
 });
 
+test('/api/performance/overview counts failed attempts in dashboard request totals', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  await repo.performance.recordError({
+    hour: '2026-04-30T10',
+    metricScope: 'request_total',
+    keyId: apiKey.id,
+    model: 'gpt-5.5-pro-2026-04-23',
+    upstream: 'up_copilot',
+    modelKey: 'gpt-5.5-pro-2026-04-23',
+    sourceApi: 'responses',
+    targetApi: 'responses',
+    stream: true,
+    runtimeLocation: 'SJC',
+  });
+
+  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&bucket=hour&metric_scope=request_total', { headers: { 'x-api-key': apiKey.key } });
+
+  assertEquals(response.status, 200);
+  const body = await response.json();
+  assertEquals(body.summaryRows[0].requests, 1);
+  assertEquals(body.summaryRows[0].errors, 1);
+  assertEquals(body.summaryRows[0].avgMs, null);
+  assertEquals(body.modelRows[0].group, 'gpt-5.5-pro-2026-04-23');
+  assertEquals(body.modelRows[0].requests, 1);
+  assertEquals(body.modelRows[0].errors, 1);
+  assertEquals(body.modelRows[0].p95Ms, null);
+});
+
 test('/api/performance rejects out-of-range timezone offsets', async () => {
   const { apiKey } = await setupAppTest();
 

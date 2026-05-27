@@ -102,9 +102,9 @@ const buildChatResponseFormat = (text: ResponsesPayload['text']): ChatCompletion
   // ({ type, name, strict, schema }), while Chat Completions wraps the
   // schema details under a nested `json_schema` field. Reshape only when
   // needed; pass `text`/`json_object` and already-wrapped variants through.
-  // Without this, upstreams reject the request with
+  // Without this, Chat Completions upstreams reject the request with
   // "When response_format type is 'json_schema', the 'json_schema' field
-  // must be provided", which Codex's review/guardian flow trips on.
+  // must be provided".
   // References:
   //   https://platform.openai.com/docs/api-reference/responses/create
   //   https://platform.openai.com/docs/api-reference/chat/create#chat-create-response_format

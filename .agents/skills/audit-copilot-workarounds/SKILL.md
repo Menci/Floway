@@ -22,9 +22,12 @@ Workarounds rot. Re-validate them against current Copilot upstream.
 
 ## Extra constraints
 
-- **Live probes need full-matrix evidence.** Test every applicable model
-  from `GET /models`, on every account in D1 (different account types
-  may diverge). One model is never enough to delete.
+- **Live probes follow `probing-copilot`** — credential discovery, token
+  exchange, headers, and direct upstream calls all live there. Don't ask the
+  human for credentials and don't route probes through our gateway.
+- **Full-matrix evidence.** Test every applicable model from `GET /models`,
+  on every account in D1 (different account types may diverge). One model on
+  one account is never enough to delete.
 - **One workaround per deletion commit.** Never bundle.
 - **Each deletion commit message must contain the live experiment
   conclusion** that justified it: which models tested, which values,
@@ -33,6 +36,3 @@ Workarounds rot. Re-validate them against current Copilot upstream.
 - **When a policy value (threshold, floor, retry count) has no official
   upstream basis, the comment must say so explicitly** in addition to
   citing prior-art permalinks.
-- **Token discovery is your job.** D1 holds GitHub PATs and account
-  metadata; figure out the exchange path from the codebase. Don't ask
-  the human for credentials.

@@ -80,3 +80,31 @@ test('fetchCopilotModels throws ProviderModelsUnavailableError with null httpRes
   if (!(thrown instanceof ProviderModelsUnavailableError)) throw new Error('expected ProviderModelsUnavailableError');
   assertEquals(thrown.httpResponse, null);
 });
+
+test('fetchCopilotModels tags the request with the model-access intent and omits content-type', async () => {
+  const { githubAccount } = await setupAppTest();
+  await clearCopilotTokenCache();
+  const upstream = createCopilotUpstream('up_copilot', 'GitHub Copilot', githubAccount.token, 'individual');
+
+  let observed: Headers | undefined;
+  await withMockedFetch(
+    request => {
+      const preflight = copilotTokenResponse(request);
+      if (preflight) return preflight;
+      const url = new URL(request.url);
+      if (url.pathname === '/models') {
+        observed = request.headers;
+        return jsonResponse({ object: 'list', data: [{ id: 'cm-1' }] });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      await fetchCopilotModels(upstream);
+    },
+  );
+
+  if (!observed) throw new Error('expected /models fetch to have been observed');
+  assertEquals(observed.get('openai-intent'), 'model-access');
+  assertEquals(observed.get('x-interaction-type'), 'model-access');
+  assertEquals(observed.get('content-type'), null);
+});

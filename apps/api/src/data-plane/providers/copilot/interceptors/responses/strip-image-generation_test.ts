@@ -1,10 +1,10 @@
 import { test } from 'vitest';
 
-import { stripUnsupportedToolsFromPayload } from './strip-unsupported-tools.ts';
+import { stripImageGenerationFromPayload } from './strip-image-generation.ts';
 import { assertEquals, assertFalse } from '../../../../../test-assert.ts';
 import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 
-test('stripUnsupportedToolsFromPayload removes image_generation tools', () => {
+test('stripImageGenerationFromPayload removes image_generation tools', () => {
   const payload = {
     model: 'gpt-test',
     input: 'draw this',
@@ -20,14 +20,14 @@ test('stripUnsupportedToolsFromPayload removes image_generation tools', () => {
     tool_choice: 'auto',
   } as ResponsesPayload;
 
-  stripUnsupportedToolsFromPayload(payload);
+  stripImageGenerationFromPayload(payload);
 
   assertEquals(payload.tools?.length, 1);
   assertEquals(payload.tools?.[0].type, 'function');
   assertEquals(payload.tool_choice, 'auto');
 });
 
-test('stripUnsupportedToolsFromPayload removes forced image_generation tool_choice', () => {
+test('stripImageGenerationFromPayload removes forced image_generation tool_choice', () => {
   const payload = {
     model: 'gpt-test',
     input: 'draw this',
@@ -35,13 +35,13 @@ test('stripUnsupportedToolsFromPayload removes forced image_generation tool_choi
     tool_choice: { type: 'image_generation' },
   } as ResponsesPayload;
 
-  stripUnsupportedToolsFromPayload(payload);
+  stripImageGenerationFromPayload(payload);
 
   assertFalse('tools' in payload);
   assertFalse('tool_choice' in payload);
 });
 
-test('stripUnsupportedToolsFromPayload removes required tool_choice when no tools remain', () => {
+test('stripImageGenerationFromPayload removes required tool_choice when no tools remain', () => {
   const payload = {
     model: 'gpt-test',
     input: 'draw this',
@@ -49,16 +49,16 @@ test('stripUnsupportedToolsFromPayload removes required tool_choice when no tool
     tool_choice: 'required',
   } as ResponsesPayload;
 
-  stripUnsupportedToolsFromPayload(payload);
+  stripImageGenerationFromPayload(payload);
 
   assertFalse('tools' in payload);
   assertFalse('tool_choice' in payload);
 });
 
-test('stripUnsupportedToolsFromPayload preserves non-image hosted and deferred tools', () => {
+test('stripImageGenerationFromPayload preserves Copilot-accepted hosted and deferred tools', () => {
   // Codex uses `tool_search` and `namespace` for client-executed deferred tool
-  // discovery. The source cleanup must not remove them before native Responses
-  // targets see the request.
+  // discovery and Copilot accepts `web_search`; the Copilot Responses target
+  // must still see those entries even after image_generation is dropped.
   const payload = {
     model: 'gpt-test',
     input: 'search the web',
@@ -77,13 +77,13 @@ test('stripUnsupportedToolsFromPayload preserves non-image hosted and deferred t
     tool_choice: 'auto',
   } as ResponsesPayload;
 
-  stripUnsupportedToolsFromPayload(payload);
+  stripImageGenerationFromPayload(payload);
 
   assertEquals(payload.tools?.map(tool => tool.type), ['function', 'web_search', 'tool_search', 'namespace']);
   assertEquals(payload.tool_choice, 'auto');
 });
 
-test('stripUnsupportedToolsFromPayload preserves forced non-image hosted and deferred tool_choices', () => {
+test('stripImageGenerationFromPayload preserves forced non-image hosted and deferred tool_choices', () => {
   for (const type of ['web_search', 'tool_search', 'namespace'] as const) {
     const payload = {
       model: 'gpt-test',
@@ -92,17 +92,14 @@ test('stripUnsupportedToolsFromPayload preserves forced non-image hosted and def
       tool_choice: { type },
     } as ResponsesPayload;
 
-    stripUnsupportedToolsFromPayload(payload);
+    stripImageGenerationFromPayload(payload);
 
     assertEquals(payload.tools, [{ type }]);
     assertEquals(payload.tool_choice, { type });
   }
 });
 
-test('stripUnsupportedToolsFromPayload preserves custom Freeform tools for downstream wrapping', () => {
-  // Custom tools are no longer stripped: native Responses targets accept them
-  // directly, and translated targets wrap them as single-string function tools
-  // inside the pair translator.
+test('stripImageGenerationFromPayload preserves custom Freeform tools for downstream wrapping', () => {
   const payload = {
     model: 'gpt-test',
     input: 'do x',
@@ -118,7 +115,7 @@ test('stripUnsupportedToolsFromPayload preserves custom Freeform tools for downs
     tool_choice: { type: 'custom', name: 'freeform_other' },
   } as ResponsesPayload;
 
-  stripUnsupportedToolsFromPayload(payload);
+  stripImageGenerationFromPayload(payload);
 
   assertEquals(payload.tools?.length, 2);
   assertEquals(payload.tools?.[1].type, 'custom');

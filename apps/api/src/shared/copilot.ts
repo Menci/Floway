@@ -13,17 +13,31 @@ const COPILOT_ACCOUNT_TYPES = ['individual', 'business', 'enterprise'] as const 
 export const isCopilotAccountType = (value: unknown): value is CopilotAccountType =>
   typeof value === 'string' && COPILOT_ACCOUNT_TYPES.includes(value as CopilotAccountType);
 
-const COPILOT_VERSION = '0.38.2';
+// Version constants pinned to a known-good set. GitHub Copilot rejects too-new
+// editor-plugin-version values (caozhiyuan/copilot-api@80e17dfd downgraded
+// 0.48.0 → 0.47.1 after upstream broke on the newer one); dynamically tracking
+// the latest VSCode release in a server-side gateway buys no realism and adds
+// a startup HTTP dependency, so we pin both.
+const COPILOT_VERSION = '0.47.1';
+const VSCODE_VERSION = '1.119.1';
+const EDITOR_VERSION = `vscode/${VSCODE_VERSION}`;
 const EDITOR_PLUGIN_VERSION = `copilot-chat/${COPILOT_VERSION}`;
 const USER_AGENT = `GitHubCopilotChat/${COPILOT_VERSION}`;
-const FALLBACK_EDITOR_VERSION = 'vscode/1.110.1';
-const API_VERSION = '2025-10-01';
+const COPILOT_API_VERSION = '2026-01-09';
+const GITHUB_API_VERSION = '2025-04-01';
+
+// User-agent VSCode Copilot Chat sends on its Claude Code SDK proxy path, used
+// by `withClaudeAgentHeadersSet` when we detect Claude Code traffic. Bump this
+// alongside COPILOT_VERSION when caozhiyuan/copilot-api upgrades it upstream.
+export const CLAUDE_AGENT_USER_AGENT = 'vscode_claude_code/2.1.112 (external, sdk-ts, agent-sdk/0.2.112)';
+
+// Stable per-isolate device id, like real VSCode generates once per install.
+// Initialized lazily on first use because Workers forbid crypto.randomUUID()
+// (and other async I/O / random / timers) in module-global scope.
+let editorDeviceId: string | null = null;
+const getEditorDeviceId = (): string => (editorDeviceId ??= crypto.randomUUID());
 
 const isCopilotTokenFetchTerminalStatus = (status: number): boolean => status === 403 || status === 429 || status === 500;
-
-const VSCODE_VERSION_TTL_MS = 24 * 60 * 60 * 1000; // 1 day
-let cachedVSCodeVersion: string | null = null;
-let vscodeVersionExpiresAt = 0;
 
 // Two-level Copilot token cache: in-process (60s) + KV (cross-datacenter).
 // In-process avoids KV reads on every request. KV avoids HTTP fetches on cold starts.
@@ -65,32 +79,6 @@ export async function clearCopilotTokenCache(): Promise<void> {
 
 function copilotBaseUrl(accountType: CopilotAccountType): string {
   return COPILOT_BASE_URLS[accountType];
-}
-
-async function fetchVSCodeVersion(): Promise<string> {
-  const now = Date.now();
-  if (cachedVSCodeVersion && vscodeVersionExpiresAt > now) {
-    return cachedVSCodeVersion;
-  }
-
-  try {
-    const resp = await fetch('https://update.code.visualstudio.com/api/releases/stable', { signal: AbortSignal.timeout(5000) });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const releases = (await resp.json()) as string[];
-    if (Array.isArray(releases) && releases.length > 0 && typeof releases[0] === 'string') {
-      cachedVSCodeVersion = releases[0];
-      vscodeVersionExpiresAt = now + VSCODE_VERSION_TTL_MS;
-      return cachedVSCodeVersion;
-    }
-    throw new Error('Invalid response format');
-  } catch (e) {
-    console.warn(`Failed to fetch VS Code version: ${e instanceof Error ? e.message : String(e)}, using fallback`);
-    return cachedVSCodeVersion ?? FALLBACK_EDITOR_VERSION.replace('vscode/', '');
-  }
-}
-
-async function getEditorVersion(): Promise<string> {
-  return `vscode/${await fetchVSCodeVersion()}`;
 }
 
 async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3, baseDelayMs = 1000): Promise<T> {
@@ -151,17 +139,10 @@ async function getCopilotToken(githubToken: string): Promise<string> {
 
   // Level 3: fetch from GitHub API
   return await withRetry(async () => {
-    const editorVer = await getEditorVersion();
+    // Token exchange is a GET against api.github.com (not POST); matches
+    // VSCode Copilot Chat and caozhiyuan/copilot-api. A POST returns 404.
     const resp = await fetch('https://api.github.com/copilot_internal/v2/token', {
-      headers: {
-        authorization: `token ${githubToken}`,
-        'content-type': 'application/json',
-        accept: 'application/json',
-        'editor-version': editorVer,
-        'editor-plugin-version': EDITOR_PLUGIN_VERSION,
-        'user-agent': USER_AGENT,
-        'x-github-api-version': API_VERSION,
-      },
+      headers: githubHeaders(githubToken),
     });
 
     if (!resp.ok) {
@@ -189,47 +170,64 @@ async function getCopilotToken(githubToken: string): Promise<string> {
 }
 
 export interface CopilotFetchOptions {
-  vision?: boolean;
-  initiator?: 'user' | 'agent';
-  extraHeaders?: Record<string, string>;
+  headers?: Record<string, string>;
 }
 
 export async function copilotFetch(path: string, init: RequestInit, githubToken: string, accountType: CopilotAccountType, options?: CopilotFetchOptions): Promise<Response> {
   const token = await getCopilotToken(githubToken);
   const baseUrl = copilotBaseUrl(accountType);
-  const editorVer = await getEditorVersion();
+
+  // x-request-id and x-agent-task-id share a single per-call UUID, mirroring
+  // VSCode Copilot Chat's "one id ties the request to its background task" pattern.
+  const requestId = crypto.randomUUID();
 
   const headers = new Headers(init.headers);
   headers.set('Authorization', `Bearer ${token}`);
   headers.set('Content-Type', 'application/json');
-  headers.set('editor-version', editorVer);
+  headers.set('editor-version', EDITOR_VERSION);
   headers.set('editor-plugin-version', EDITOR_PLUGIN_VERSION);
+  headers.set('editor-device-id', getEditorDeviceId());
   headers.set('user-agent', USER_AGENT);
-  headers.set('x-github-api-version', API_VERSION);
+  headers.set('x-github-api-version', COPILOT_API_VERSION);
+  headers.set('x-vscode-user-agent-library-version', 'electron-fetch');
+  headers.set('x-request-id', requestId);
+  headers.set('x-agent-task-id', requestId);
   headers.set('copilot-integration-id', 'vscode-chat');
   headers.set('openai-intent', 'conversation-agent');
   headers.set('x-interaction-type', 'conversation-agent');
 
-  if (options?.vision) headers.set('copilot-vision-request', 'true');
-  if (options?.initiator) headers.set('X-Initiator', options.initiator);
-  if (options?.extraHeaders) {
-    for (const [k, v] of Object.entries(options.extraHeaders)) {
-      headers.set(k, v);
+  // Provider-attached invocation headers (vision, initiator, anthropic-beta,
+  // ...) flow through unchanged. The provider's target interceptors decide
+  // which headers each upstream call needs; this layer only knows how to ship
+  // them. Setting them last lets workaround interceptors override the static
+  // VSCode identification block when a future workaround needs to.
+  //
+  // Convention: an empty-string value from an interceptor means "delete this
+  // base header" — the interceptor wants Copilot to NOT see a default we'd
+  // otherwise pin. An interceptor that wants to clear an arbitrary downstream
+  // header value must do so by name through this sentinel; the layer does not
+  // otherwise expose a per-header delete API.
+  if (options?.headers) {
+    for (const [name, value] of Object.entries(options.headers)) {
+      if (value === '') headers.delete(name);
+      else headers.set(name, value);
     }
   }
 
   return await fetch(`${baseUrl}${path}`, { ...init, headers });
 }
 
-export async function githubHeaders(githubToken: string): Promise<Record<string, string>> {
-  const editorVer = await getEditorVersion();
+// Headers for api.github.com calls — token exchange and /copilot_internal/user.
+// VSCode Copilot Chat (and caozhiyuan/copilot-api) deliberately omit editor-*
+// here: those headers belong on the copilot data plane, not on the GitHub
+// management plane. x-github-api-version uses GitHub's REST date, distinct
+// from the Copilot data-plane version above.
+export function githubHeaders(githubToken: string): Record<string, string> {
   return {
     authorization: `token ${githubToken}`,
-    'content-type': 'application/json',
     accept: 'application/json',
-    'editor-version': editorVer,
-    'editor-plugin-version': EDITOR_PLUGIN_VERSION,
     'user-agent': USER_AGENT,
-    'x-github-api-version': API_VERSION,
+    'x-github-api-version': GITHUB_API_VERSION,
+    'x-vscode-user-agent-library-version': 'electron-fetch',
   };
 }

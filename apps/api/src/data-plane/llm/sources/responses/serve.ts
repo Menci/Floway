@@ -99,6 +99,7 @@ const responsesInvocation = <TPayload extends { model: string }>(
   enabledFlags: binding.enabledFlags,
   ...(binding.targetInterceptors !== undefined ? { targetInterceptors: binding.targetInterceptors } : {}),
   payload,
+  headers: {} as Record<string, string>,
 });
 
 export const serveResponses = async (c: Context): Promise<Response> => {

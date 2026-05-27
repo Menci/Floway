@@ -250,3 +250,66 @@ test('translateMessagesToChatCompletions does not pair readable thinking with la
     reasoning_opaque: null,
   });
 });
+
+// OpenAI strict-mode JSON Schema validators reject {type: 'object'} without a
+// `properties` field. Anthropic accepts that shape, so the input_schema must
+// be normalized before forwarding. The reverse direction at
+// packages/translate/src/chat-completions-via-messages/request.ts already
+// defaults `parameters` to {type: 'object', properties: {}}. Ref:
+// https://github.com/caozhiyuan/copilot-api/commit/ad57069826843c5d17d7b0e5ef2f75050128893c
+test('translateMessagesToChatCompletions defaults missing input_schema.properties to {} for object tools', () => {
+  const result = translateMessagesToChatCompletions({
+    model: 'gpt-test',
+    max_tokens: 256,
+    tools: [{ name: 'no_args', input_schema: { type: 'object' } }],
+    messages: [{ role: 'user', content: 'hi' }],
+  });
+
+  assertEquals(result.tools, [
+    {
+      type: 'function',
+      function: {
+        name: 'no_args',
+        description: undefined,
+        parameters: { type: 'object', properties: {} },
+      },
+    },
+  ]);
+});
+
+test('translateMessagesToChatCompletions preserves declared input_schema.properties verbatim', () => {
+  const result = translateMessagesToChatCompletions({
+    model: 'gpt-test',
+    max_tokens: 256,
+    tools: [
+      {
+        name: 'with_args',
+        input_schema: {
+          type: 'object',
+          properties: { q: { type: 'string' } },
+          required: ['q'],
+        },
+      },
+    ],
+    messages: [{ role: 'user', content: 'hi' }],
+  });
+
+  assertEquals(result.tools?.[0].function.parameters, {
+    type: 'object',
+    properties: { q: { type: 'string' } },
+    required: ['q'],
+  });
+});
+
+test('translateMessagesToChatCompletions does not inject properties for non-object input_schema', () => {
+  const result = translateMessagesToChatCompletions({
+    model: 'gpt-test',
+    max_tokens: 256,
+    // Non-object root schemas are unusual but legal upstream; we should not
+    // synthesize properties on shapes where it is meaningless.
+    tools: [{ name: 'scalar', input_schema: { type: 'string' } }],
+    messages: [{ role: 'user', content: 'hi' }],
+  });
+
+  assertEquals(result.tools?.[0].function.parameters, { type: 'string' });
+});
