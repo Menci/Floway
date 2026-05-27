@@ -14,6 +14,7 @@
 // repo failures cannot turn a successful 200 from upstream into a 502.
 
 import type { Context } from 'hono';
+import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
 import { apiKeyUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import type { NonLlmServeApiName, TokenUsage } from '../../repo/types.ts';
@@ -207,8 +208,5 @@ export const passthroughServe = async (ctx: PassthroughServeContext): Promise<Re
 // Body-parse failures are source-specific (JSON for embeddings/generations,
 // multipart for edits), so callers need a way to return a uniformly shaped
 // 400 without depending on internal helpers.
-//
-// We narrow `number` to hono's expected `StatusCode` literal subset — the
-// only callsites pass 400 / 404, both valid `StatusCode` literals.
-export const passthroughApiError = (c: Context, message: string, status: number): Response =>
-  c.json({ error: { message, type: 'api_error' } }, status as 400);
+export const passthroughApiError = (c: Context, message: string, status: ContentfulStatusCode): Response =>
+  c.json({ error: { message, type: 'api_error' } }, status);
