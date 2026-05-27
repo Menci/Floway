@@ -1,3 +1,6 @@
 packages:
   - packages/*
   - apps/*
+
+patchedDependencies:
+  overlayscrollbars: patches/overlayscrollbars.patch

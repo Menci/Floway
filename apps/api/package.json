@@ -4,8 +4,13 @@
   "version": "0.0.0",
   "type": "module",
   "exports": {
-    ".": { "import": "./entry-cloudflare.ts", "types": "./entry-cloudflare.ts" },
-    "./data-plane/tools/web-search/types": { "import": "./src/data-plane/tools/web-search/types.ts", "types": "./src/data-plane/tools/web-search/types.ts" }
+    ".": {
+      "import": "./entry-cloudflare.ts",
+      "types": "./entry-cloudflare.ts"
+    },
+    "./app-type": {
+      "types": "./src/app.ts"
+    }
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
@@ -13,6 +18,8 @@
   "dependencies": {
     "@floway-dev/protocols": "workspace:*",
     "@floway-dev/translate": "workspace:*",
-    "hono": "^4"
+    "@hono/zod-validator": "^0.8.0",
+    "hono": "^4",
+    "zod": "^4.4.3"
   }
 }

@@ -1,0 +1,187 @@
+diff --git a/overlayscrollbars.mjs b/overlayscrollbars.mjs
+index adcab0fa7f7ee97322971b1c78b99e377d27b7fd..1a4508fdabe2a8d122781a65a821857fd3583aba 100644
+--- a/overlayscrollbars.mjs
++++ b/overlayscrollbars.mjs
+@@ -2612,7 +2612,7 @@ const createOverflowUpdateSegment = (t, s) => {
+   const [A] = createCache(S);
+   const [M, k] = createCache(y);
+   const [R] = createCache(S);
+-  const [V] = createCache({
++  const [V, getCurrentFlowDirectionStyles] = createCache({
+     i: (t, n) => equal(t, n, w),
+     o: {}
+   }, (() => hasDimensions(i) ? getStyles(i, w) : {}));
+@@ -2625,7 +2625,7 @@ const createOverflowUpdateSegment = (t, s) => {
+     const o = n ? X : Y;
+     return `${o}${capitalizeFirstLetter(t)}`;
+   };
+-  return ({zt: n, Qt: o, un: l, At: a}, {_n: u}) => {
++  return ({zt: n, Qt: o, un: l, At: a, _measureOverflow}, {_n: u}) => {
+     const {_t: f, Ht: _, xt: b, Ct: w, ft: y, Et: S} = o || {};
+     const x = P && P.R(t, s, l, e, n);
+     const {X: H, Y: E, W: D} = x || {};
+@@ -2634,6 +2634,7 @@ const createOverflowUpdateSegment = (t, s) => {
+     const Y = overflowIsVisible(j.x);
+     const W = overflowIsVisible(j.y);
+     const J = f || u || b || w || S || F;
++    const measureOverflowOnly = !!_measureOverflow && !J;
+     let G = O(a);
+     let Q = $(a);
+     let tt = I(a);
+@@ -2641,13 +2642,13 @@ const createOverflowUpdateSegment = (t, s) => {
+     if (F && v) {
+       d(K, !q);
+     }
+-    if (J) {
+-      if (hasAttrClass(c, B, N)) {
++    if (J || _measureOverflow) {
++      if (!measureOverflowOnly && hasAttrClass(c, B, N)) {
+         setMeasuringMode(true);
+       }
+-      const t = E && E();
+-      const [n] = G = m(a);
+-      const [o] = Q = C(a);
++      const t = E && E() && !measureOverflowOnly;
++      const [n] = G = m(a || _measureOverflow);
++      const [o] = Q = C(a || _measureOverflow);
+       const s = T(i);
+       const e = g && getWindowSize(p());
+       const r = {
+@@ -2662,7 +2663,7 @@ const createOverflowUpdateSegment = (t, s) => {
+         t();
+       }
+       nt = M(l);
+-      tt = z(getOverflowAmount(r, l), a);
++      tt = z(getOverflowAmount(r, l), a || _measureOverflow);
+     }
+     const [ot, st] = nt;
+     const [et, ct] = tt;
+@@ -2673,19 +2674,21 @@ const createOverflowUpdateSegment = (t, s) => {
+       y: et.h > 0
+     });
+     const _t = Y && W && (ut.x || ut.y) || Y && ut.x && !ut.y || W && ut.y && !ut.x;
+-    const dt = u || w || S || at || it || st || ct || X || F || J || _ && g;
+-    const [pt, vt] = V(a);
+-    const gt = w || y || vt || ft || a;
++    const dt = u || w || S || at || it || st || ct || X || F || J || _ && g || J;
++    const [pt, vt] = measureOverflowOnly ? getCurrentFlowDirectionStyles() : V(a);
++    const gt = !measureOverflowOnly && (w || y || vt || ft || a);
+     const [ht, bt] = gt ? L(getMeasuredScrollCoordinates(pt), a) : U();
+     let wt = getViewportOverflowStyle(ut, j);
+     setMeasuringMode(false);
+-    if (dt) {
++    if (dt && !measureOverflowOnly) {
+       setViewportOverflowStyle(wt);
+       wt = getElementOverflowStyle(i, ut);
+       if (D && H) {
+         H(wt, rt, lt);
+         setStyles(i, D(wt));
+       }
++    } else if (measureOverflowOnly) {
++      wt = s.cn;
+     }
+     const [yt, St] = R(wt);
+     addRemoveAttrClass(c, B, N, _t);
+@@ -2785,9 +2788,10 @@ const createSetups = (t, n, o, s, e) => {
+     if (o()) {
+       return false;
+     }
+-    const {dn: r, At: i, It: a, pn: u} = t;
++    const {dn: r, At: i, It: a, pn: u, _measureOverflow: rawMeasureOverflow} = t;
+     const f = r || {};
+     const _ = !!i || !c;
++    const _measureOverflow = !!rawMeasureOverflow;
+     const v = {
+       zt: createOptionCheck(n, f, _),
+       dn: f,
+@@ -2802,15 +2806,17 @@ const createSetups = (t, n, o, s, e) => {
+     }));
+     const b = l(assignDeep({}, v, {
+       un: p,
+-      Qt: h
++      Qt: h,
++      _measureOverflow
+     }));
+     g(assignDeep({}, v, {
+       Qt: h,
+-      Zt: b
++      Zt: b,
++      _measureOverflow
+     }));
+     const w = updateHintsAreTruthy(h);
+     const y = updateHintsAreTruthy(b);
+-    const S = w || y || !isEmptyObject(f) || _;
++    const S = w || y || !isEmptyObject(f) || _ || _measureOverflow;
+     c = true;
+     if (S) {
+       s(t, {
+@@ -2973,8 +2979,9 @@ const OverlayScrollbars = (t, n, o) => {
+           scrollbarVertical: translateScrollbarsSetupElement(l)
+         });
+       },
+-      update: t => h({
+-        At: t,
++      update: forceOrRequest => h({
++        At: typeof forceOrRequest === 'object' ? forceOrRequest?.force : forceOrRequest,
++        _measureOverflow: typeof forceOrRequest === 'object' ? forceOrRequest.measureOverflow : false,
+         It: true
+       }),
+       destroy: bind(destroy, false),
+diff --git a/types/overlayscrollbars.d.ts b/types/overlayscrollbars.d.ts
+index 176eca67f1ffbed1c9b0d3e573aba00c3e86d80e..e3a9be821327e35c5c830f4734ecc9d70d1105a4 100644
+--- a/types/overlayscrollbars.d.ts
++++ b/types/overlayscrollbars.d.ts
+@@ -56,7 +56,7 @@ type OptionsObjectFieldPathType<O extends OptionsObject, P extends string> = Opt
+ /**
+  * The overflow behavior of an axis.
+  */
+-type OverflowBehavior = 
++type OverflowBehavior =
+ /** No scrolling is possible and the content is clipped. */
+ 'hidden'
+ /** No scrolling is possible and the content isn't clipped. */
+@@ -76,7 +76,7 @@ type OverflowBehavior =
+ /**
+  * The scrollbars visibility behavior.
+  */
+-type ScrollbarsVisibilityBehavior = 
++type ScrollbarsVisibilityBehavior =
+ /** The scrollbars are always visible. */
+ 'visible'
+ /** The scrollbars are always hidden. */
+@@ -86,7 +86,7 @@ type ScrollbarsVisibilityBehavior =
+ /**
+  * The scrollbars auto hide behavior
+  */
+-type ScrollbarsAutoHideBehavior = 
++type ScrollbarsAutoHideBehavior =
+ /** The scrollbars are never hidden automatically. */
+ 'never'
+ /** The scrollbars are hidden unless the user scrolls. */
+@@ -334,7 +334,7 @@ type DynamicInitialization = HTMLElement | boolean | null;
+  * If an `HTMLElement` is passed the passed element will be taken as the repsective element.
+  * With `false`, `null` or `undefined` an appropriate element is generated automatically.
+  */
+-type StaticInitializationElement<Args extends any[]> = 
++type StaticInitializationElement<Args extends any[]> =
+ /** A function which returns the the StaticInitialization value. */
+ ((...args: Args) => StaticInitialization)
+ /** The StaticInitialization value. */
+@@ -345,7 +345,7 @@ type StaticInitializationElement<Args extends any[]> =
+  * With `true` an appropriate element is generated automatically.
+  * With `false`, `null` or `undefined` the element won't be in the DOM.
+  */
+-type DynamicInitializationElement<Args extends any[]> = 
++type DynamicInitializationElement<Args extends any[]> =
+ /** A function which returns the the DynamicInitialization value. */
+ ((...args: Args) => DynamicInitialization)
+ /** The DynamicInitialization value. */
+@@ -709,7 +709,7 @@ interface OverlayScrollbars {
+      * @returns A boolean which indicates whether the `update` event was triggered through this update.
+      * The update event is only triggered if something changed because of this update.
+      */
+-    update(force?: boolean): boolean;
++    update(forceOrRequest?: boolean | { force?: boolean; measureOverflow?: boolean }): boolean;
+     /** Returns the state of the instance. */
+     state(): State;
+     /** Returns the elements of the instance. */

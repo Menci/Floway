@@ -3,10 +3,12 @@ import { test } from 'vitest';
 
 import { exportData, importData } from './routes.ts';
 import { DEFAULT_SEARCH_CONFIG } from '../../data-plane/tools/web-search/search-config.ts';
+import { zValidator } from '../../middleware/zod-validator.ts';
 import { initRepo } from '../../repo/index.ts';
 import { InMemoryRepo } from '../../repo/memory.ts';
 import type { ApiKey, PerformanceTelemetryRecord, SearchUsageRecord, UpstreamRecord, UsageRecord } from '../../repo/types.ts';
 import { assertEquals } from '../../test-assert.ts';
+import { exportQuery, importBody } from '../schemas.ts';
 import { upstreamRecordToFullJson } from '../upstreams/serialize.ts';
 
 const hasOwn = (value: object, key: string) => Object.prototype.hasOwnProperty.call(value, key);
@@ -172,8 +174,8 @@ const setup = () => {
   const repo = new InMemoryRepo();
   initRepo(repo);
   const app = new Hono();
-  app.get('/export', exportData);
-  app.post('/import', importData);
+  app.get('/export', zValidator('query', exportQuery), exportData);
+  app.post('/import', zValidator('json', importBody), importData);
   return { repo, app };
 };
 

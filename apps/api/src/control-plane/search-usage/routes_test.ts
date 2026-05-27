@@ -2,10 +2,12 @@ import { Hono } from 'hono';
 import { test } from 'vitest';
 
 import { searchUsage } from './routes.ts';
+import { zValidator } from '../../middleware/zod-validator.ts';
 import { initRepo } from '../../repo/index.ts';
 import { InMemoryRepo } from '../../repo/memory.ts';
 import type { ApiKey, SearchUsageRecord } from '../../repo/types.ts';
 import { assertEquals } from '../../test-assert.ts';
+import { searchUsageQuery } from '../schemas.ts';
 
 const KEY_A: ApiKey = {
   id: 'key-aaa',
@@ -41,7 +43,7 @@ const setup = async () => {
   const repo = new InMemoryRepo();
   initRepo(repo);
   const app = new Hono();
-  app.get('/api/search-usage', searchUsage);
+  app.get('/api/search-usage', zValidator('query', searchUsageQuery), searchUsage);
 
   await repo.apiKeys.save(KEY_A);
   await repo.apiKeys.save(KEY_B);

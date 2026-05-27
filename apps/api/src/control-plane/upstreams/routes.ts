@@ -1,8 +1,9 @@
 import type { Context } from 'hono';
 
 import { upstreamRecordToJson } from './serialize.ts';
-import { getFlagCatalog, parseFlagOverridesWire } from '../../data-plane/providers/flags.ts';
+import { getFlagCatalog } from '../../data-plane/providers/flags.ts';
 import { clearModelsStore, invalidateModelsStore } from '../../data-plane/providers/models-store.ts';
+import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { UpstreamProviderKind, UpstreamRecord } from '../../repo/types.ts';
 import { clearCopilotTokenCache, isCopilotAccountType, type CopilotAccountType } from '../../shared/copilot.ts';
@@ -11,19 +12,7 @@ import { createCopilotUpstream } from '../../shared/upstream/copilot.ts';
 import { assertCustomUpstreamRecord, createCustomUpstream } from '../../shared/upstream/custom.ts';
 import type { EndpointKey, Upstream } from '../../shared/upstream/types.ts';
 import { detectAccountType, fetchGitHubUser, pollGitHubDeviceFlow, startGitHubDeviceFlow } from '../auth/github-device-flow.ts';
-
-const PROVIDERS = new Set<UpstreamProviderKind>(['custom', 'azure', 'copilot']);
-
-interface UpstreamCreateBody {
-  provider?: unknown;
-  name?: unknown;
-  enabled?: unknown;
-  sort_order?: unknown;
-  flag_overrides?: unknown;
-  config?: unknown;
-}
-
-interface UpstreamUpdateBody extends Partial<UpstreamCreateBody> {}
+import type { copilotAuthPollBody, createUpstreamBody, updateUpstreamBody } from '../schemas.ts';
 
 interface CopilotUpstreamUser {
   login: string;
@@ -44,41 +33,10 @@ const isRecord = (value: unknown): value is Record<string, unknown> => typeof va
 
 const validationError = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
-const validateString = (value: unknown, field: string): ValidationResult<string> => {
-  if (typeof value !== 'string' || value.trim() === '') {
-    return { ok: false, error: `${field} is required` };
-  }
-  return { ok: true, value: value.trim() };
-};
-
-const validateProvider = (value: unknown): ValidationResult<UpstreamProviderKind> => {
-  if (typeof value !== 'string' || !PROVIDERS.has(value as UpstreamProviderKind)) {
-    return { ok: false, error: 'provider must be one of: custom, azure, copilot' };
-  }
-  return { ok: true, value: value as UpstreamProviderKind };
-};
-
-const validateBoolean = (value: unknown, field: string): ValidationResult<boolean> => {
-  if (typeof value !== 'boolean') return { ok: false, error: `${field} must be a boolean` };
-  return { ok: true, value };
-};
-
-const validateSortOrder = (value: unknown): ValidationResult<number> => {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return { ok: false, error: 'sort_order must be a finite number' };
-  return { ok: true, value: Math.floor(value) };
-};
-
-// Validate flag_overrides against the flag catalog. Wraps the shared
-// throw-style parser to fit the local ValidationResult shape. Unknown ids
-// are hard-rejected so an admin typo surfaces at save time; endpoint
-// applicability is enforced by interceptor assembly at runtime.
-const validateFlagOverrides = (value: unknown): ValidationResult<Record<string, boolean>> => {
-  try {
-    return { ok: true, value: parseFlagOverridesWire(value) };
-  } catch (error) {
-    return { ok: false, error: validationError(error) };
-  }
-};
+// Runtime defensive parsers for upstream records read back from D1. The
+// request-time zod schemas guard incoming bodies; these parsers guard the DB
+// boundary so a manually-edited or migrated row that violates the runtime
+// invariants surfaces with an actionable message instead of crashing later.
 
 const stringField = (value: unknown, field: string): string => {
   if (typeof value !== 'string') throw new Error(`Malformed copilot upstream config: ${field} must be a string`);
@@ -240,40 +198,26 @@ export const listUpstreams = async (c: Context) => {
 
 export const listOptionalFlags = (c: Context) => c.json(getFlagCatalog());
 
-export const createUpstream = async (c: Context) => {
-  const body = await c.req.json<UpstreamCreateBody>();
-
-  const provider = validateProvider(body.provider);
-  if (!provider.ok) return c.json({ error: provider.error }, 400);
-
-  const name = validateString(body.name, 'name');
-  if (!name.ok) return c.json({ error: name.error }, 400);
-
-  if (body.config === undefined) return c.json({ error: 'config is required' }, 400);
-
-  const enabled = body.enabled === undefined ? { ok: true as const, value: true } : validateBoolean(body.enabled, 'enabled');
-  if (!enabled.ok) return c.json({ error: enabled.error }, 400);
-
-  const overrides = validateFlagOverrides(body.flag_overrides ?? {});
-  if (!overrides.ok) return c.json({ error: overrides.error }, 400);
+export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) => {
+  const body = c.req.valid('json');
 
   const existing = await getRepo().upstreams.list();
-  const sortOrder = body.sort_order === undefined ? { ok: true as const, value: nextSortOrder(existing) } : validateSortOrder(body.sort_order);
-  if (!sortOrder.ok) return c.json({ error: sortOrder.error }, 400);
-
   const now = new Date().toISOString();
   const upstream: UpstreamRecord = {
     id: newId(),
-    provider: provider.value,
-    name: name.value,
-    enabled: enabled.value,
-    sortOrder: sortOrder.value,
+    provider: body.provider,
+    name: body.name,
+    enabled: body.enabled ?? true,
+    sortOrder: body.sort_order ?? nextSortOrder(existing),
     createdAt: now,
     updatedAt: now,
-    flagOverrides: overrides.value,
+    flagOverrides: body.flag_overrides ?? {},
     config: body.config,
   };
 
+  // Schema validated shape; this catches Azure-specific URL / endpoint-mix
+  // rules and Custom-specific path-override URL parsing that live in the
+  // shared/upstream/* assertion helpers.
   const config = normalizeConfig(upstream);
   if (!config.ok) return c.json({ error: config.error }, 400);
 
@@ -283,40 +227,21 @@ export const createUpstream = async (c: Context) => {
   return c.json(upstreamRecordToJson(record), 201);
 };
 
-export const updateUpstream = async (c: Context) => {
+export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody>) => {
   const id = c.req.param('id') ?? '';
   const existing = await getRepo().upstreams.getById(id);
   if (!existing) return c.json({ error: 'Upstream not found' }, 404);
 
-  const body = await c.req.json<UpstreamUpdateBody>();
-  if (body.provider !== undefined) {
-    const provider = validateProvider(body.provider);
-    if (!provider.ok) return c.json({ error: provider.error }, 400);
-    if (provider.value !== existing.provider) return c.json({ error: 'provider cannot be changed' }, 400);
+  const body = c.req.valid('json');
+  if (body.provider !== undefined && body.provider !== existing.provider) {
+    return c.json({ error: 'provider cannot be changed' }, 400);
   }
 
   let next: UpstreamRecord = { ...existing, updatedAt: new Date().toISOString() };
-
-  if (body.name !== undefined) {
-    const name = validateString(body.name, 'name');
-    if (!name.ok) return c.json({ error: name.error }, 400);
-    next = { ...next, name: name.value };
-  }
-  if (body.enabled !== undefined) {
-    const enabled = validateBoolean(body.enabled, 'enabled');
-    if (!enabled.ok) return c.json({ error: enabled.error }, 400);
-    next = { ...next, enabled: enabled.value };
-  }
-  if (body.sort_order !== undefined) {
-    const sortOrder = validateSortOrder(body.sort_order);
-    if (!sortOrder.ok) return c.json({ error: sortOrder.error }, 400);
-    next = { ...next, sortOrder: sortOrder.value };
-  }
-  if (body.flag_overrides !== undefined) {
-    const overrides = validateFlagOverrides(body.flag_overrides);
-    if (!overrides.ok) return c.json({ error: overrides.error }, 400);
-    next = { ...next, flagOverrides: overrides.value };
-  }
+  if (body.name !== undefined) next = { ...next, name: body.name };
+  if (body.enabled !== undefined) next = { ...next, enabled: body.enabled };
+  if (body.sort_order !== undefined) next = { ...next, sortOrder: body.sort_order };
+  if (body.flag_overrides !== undefined) next = { ...next, flagOverrides: body.flag_overrides };
   if (body.config !== undefined) {
     const config = mergeConfigPatch(existing.provider, existing.config, body.config);
     if (!config.ok) return c.json({ error: config.error }, 400);
@@ -444,13 +369,11 @@ const copilotConfigUserId = (config: unknown): number | null => {
   return typeof config.user.id === 'number' && Number.isSafeInteger(config.user.id) ? config.user.id : null;
 };
 
-export const copilotAuthPoll = async (c: Context) => {
+export const copilotAuthPoll = async (c: CtxWithJson<typeof copilotAuthPollBody>) => {
   try {
-    const body = await c.req.json<{ device_code?: unknown }>();
-    const deviceCode = validateString(body.device_code, 'device_code');
-    if (!deviceCode.ok) return c.json({ error: deviceCode.error }, 400);
+    const { device_code: deviceCode } = c.req.valid('json');
 
-    const data = await pollGitHubDeviceFlow(deviceCode.value);
+    const data = await pollGitHubDeviceFlow(deviceCode);
 
     if (data.error === 'authorization_pending') return c.json({ status: 'pending' });
     if (data.error === 'slow_down') return c.json({ status: 'slow_down', interval: data.interval });

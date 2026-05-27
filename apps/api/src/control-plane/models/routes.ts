@@ -31,7 +31,15 @@ const toControlPlaneModel = (model: ResolvedModel): ControlPlaneModel => ({
 
 const modelListingFailureMessage = 'Upstream model listing failed';
 
-export const controlPlaneModels = async (c: Context): Promise<Response> => {
+const emptyResponse = (): ControlPlaneModelsResponse => ({
+  object: 'list',
+  has_more: false,
+  first_id: null,
+  last_id: null,
+  data: [],
+});
+
+export const controlPlaneModels = async (c: Context) => {
   try {
     const models = await getModels();
     const data = models.map(toControlPlaneModel);
@@ -42,12 +50,18 @@ export const controlPlaneModels = async (c: Context): Promise<Response> => {
       last_id: data[data.length - 1]?.id ?? null,
       data,
     };
-    return Response.json(response);
+    return c.json(response);
   } catch (e: unknown) {
+    // Empty-upstreams is a domain state, not an error, on the dashboard. The
+    // public /v1/models endpoint still surfaces it as a 502 to remote clients
+    // because they need to know the gateway is unconfigured — but the
+    // dashboard's Models tab should render an empty grid + the operator
+    // guidance message inline instead of flashing a 502 in devtools.
+    if (e instanceof Error && e.message.startsWith('No upstream provider configured')) {
+      return c.json(emptyResponse());
+    }
     // Genuine upstream HTTP/parse failures are squashed to a generic 502 so
-    // the control plane does not leak provider identity. Other errors
-    // (e.g. the registry's "no upstream configured" hint) carry actionable
-    // operator guidance and surface verbatim.
+    // the control plane does not leak provider identity.
     if (e instanceof ProviderModelsUnavailableError) {
       return c.json({ error: { message: modelListingFailureMessage, type: 'api_error' } }, 502);
     }

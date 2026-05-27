@@ -4,10 +4,13 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
-    "jsx": "react-jsx",
-    "jsxImportSource": "hono/jsx",
     "strict": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "noEmit": true,
+    "jsx": "preserve",
+    "isolatedModules": true,
+    "lib": ["DOM", "DOM.Iterable", "ESNext"],
+    "types": ["vite/client", "unplugin-vue-router/client"]
   },
-  "include": ["build.ts", "vitest.config.ts", "src/**/*.ts", "src/**/*.tsx"]
+  "include": ["src/**/*.ts", "src/**/*.vue", "vite.config.ts", "uno.config.ts"]
 }

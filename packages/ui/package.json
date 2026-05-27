@@ -1,0 +1,29 @@
+{
+  "name": "@floway-dev/ui",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./src/index.ts",
+      "types": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "vue-tsc --noEmit"
+  },
+  "dependencies": {
+    "@vueuse/integrations": "^14.3.0",
+    "clsx": "^2.1.1",
+    "overlayscrollbars": "2.13.0",
+    "prismjs": "^1.30.0",
+    "reka-ui": "^2.6.0",
+    "sortablejs": "^1.15.7",
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "@types/prismjs": "^1.26.6",
+    "@types/sortablejs": "^1.15.9",
+    "vue-tsc": "^2.2.0"
+  }
+}

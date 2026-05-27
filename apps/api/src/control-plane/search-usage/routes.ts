@@ -3,12 +3,12 @@
 // Usage data mirrors token usage visibility: any authenticated user can view
 // aggregate records and key metadata because the dashboard usage tab is shared.
 
-import type { Context } from 'hono';
-
 import { loadSearchConfig } from '../../data-plane/tools/web-search/search-config.ts';
 import { queryWebSearchUsage } from '../../data-plane/tools/web-search/usage.ts';
+import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { isWebSearchProviderName, type WebSearchProviderName } from '../../shared/web-search-providers.ts';
+import type { searchUsageQuery } from '../schemas.ts';
 import { USAGE_KEY_COLOR_ORDER } from '../usage-key-colors.ts';
 
 const parseProvider = (provider: string | undefined): { type: 'ok'; provider?: WebSearchProviderName } | { type: 'invalid' } => {
@@ -19,12 +19,12 @@ const parseProvider = (provider: string | undefined): { type: 'ok'; provider?: W
   return { type: 'invalid' };
 };
 
-export const searchUsage = async (c: Context) => {
-  const queryKeyId = c.req.query('key_id');
-  const keyId = queryKeyId === '' ? undefined : queryKeyId;
-  const start = c.req.query('start') ?? '';
-  const end = c.req.query('end') ?? '';
-  const includeKeyMetadata = c.req.query('include_key_metadata') === '1';
+export const searchUsage = async (c: CtxWithQuery<typeof searchUsageQuery>) => {
+  const query = c.req.valid('query');
+  const keyId = query.key_id === '' ? undefined : query.key_id;
+  const start = query.start ?? '';
+  const end = query.end ?? '';
+  const includeKeyMetadata = query.include_key_metadata === '1';
 
   if (!start || !end) {
     return c.json(
@@ -35,7 +35,7 @@ export const searchUsage = async (c: Context) => {
     );
   }
 
-  const providerResult = parseProvider(c.req.query('provider'));
+  const providerResult = parseProvider(query.provider);
   if (providerResult.type === 'invalid') {
     return c.json(
       {

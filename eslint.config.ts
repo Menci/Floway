@@ -2,6 +2,8 @@ import tsParser from '@typescript-eslint/parser';
 import tsPlugin from '@typescript-eslint/eslint-plugin';
 import importPlugin from 'eslint-plugin-import';
 import stylisticPlugin from '@stylistic/eslint-plugin';
+import vuePlugin from 'eslint-plugin-vue';
+import vueParser from 'vue-eslint-parser';
 
 import type { Linter } from 'eslint';
 
@@ -112,7 +114,7 @@ const commonConfig: Linter.Config = {
     'import/internal-regex': '^@floway-dev/',
     'import/resolver': {
       typescript: {
-        project: ['./apps/api/tsconfig.json', './apps/web/tsconfig.json', './packages/protocols/tsconfig.json', './packages/translate/tsconfig.json'],
+        project: ['./apps/api/tsconfig.json', './apps/web/tsconfig.json', './packages/protocols/tsconfig.json', './packages/translate/tsconfig.json', './packages/ui/tsconfig.json'],
         noWarnOnMultipleProjects: true,
       },
     },
@@ -123,7 +125,7 @@ const parserOptions: Linter.ParserOptions = {
   parser: tsParser,
   ecmaVersion: 'latest',
   sourceType: 'module',
-  project: ['./apps/api/tsconfig.json', './apps/web/tsconfig.json', './packages/protocols/tsconfig.json', './packages/translate/tsconfig.json'],
+  project: ['./apps/api/tsconfig.json', './apps/web/tsconfig.json', './packages/protocols/tsconfig.json', './packages/translate/tsconfig.json', './packages/ui/tsconfig.json'],
   noWarnOnMultipleProjects: true,
 };
 
@@ -139,17 +141,28 @@ const config: Linter.Config[] = [
     },
   },
   {
-    files: ['apps/web/**/*.ts', 'apps/web/**/*.tsx'],
+    ...commonConfig,
+    files: ['**/*.vue'],
+    plugins: {
+      ...commonConfig.plugins,
+      vue: vuePlugin,
+    },
+    languageOptions: {
+      parser: vueParser,
+      ecmaVersion: 'latest',
+      sourceType: 'module',
+      parserOptions: {
+        ...parserOptions,
+        parser: tsParser,
+        extraFileExtensions: ['.vue'],
+      },
+    },
     rules: {
-      'no-restricted-imports': ['error', {
-        patterns: [{
-          group: ['@floway-dev/api/*'],
-          message: 'apps/web may not import from apps/api. The single permitted exception (SearchConfig type in search-config.ts) uses `eslint-disable-next-line no-restricted-imports` on the import line.',
-        }, {
-          group: ['@floway-dev/*/src/**'],
-          message: 'Deep cross-package imports are forbidden.',
-        }],
-      }],
+      // Block-order keeps SFCs predictable; everything else flows through commonConfig.
+      'vue/block-order': ['error', { order: ['script', 'template', 'style'] }],
+      'vue/multi-word-component-names': 'off',
+      'vue/no-mutating-props': 'error',
+      'vue/require-explicit-emits': 'error',
     },
   },
   {

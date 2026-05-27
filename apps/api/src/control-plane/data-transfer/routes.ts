@@ -1,11 +1,10 @@
 // Data transfer routes — export/import all database data as JSON.
 
-import type { Context } from 'hono';
-
 import { parseFlagOverridesWire } from '../../data-plane/providers/flags.ts';
 import { invalidateModelsStore } from '../../data-plane/providers/models-store.ts';
 import { normalizeSearchConfig } from '../../data-plane/tools/web-search/search-config.ts';
 import type { SearchConfig } from '../../data-plane/tools/web-search/types.ts';
+import { type CtxWithJson, type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { ApiKey, PerformanceApiName, PerformanceMetricScope, PerformanceTelemetryRecord, SearchUsageRecord, UpstreamProviderKind, UpstreamRecord, UsageRecord } from '../../repo/types.ts';
 import { isCopilotAccountType } from '../../shared/copilot.ts';
@@ -13,6 +12,7 @@ import { assertAzureUpstreamRecord } from '../../shared/upstream/azure.ts';
 import { assertCustomUpstreamRecord } from '../../shared/upstream/custom.ts';
 import { isWebSearchProviderName } from '../../shared/web-search-providers.ts';
 import { parseUpstreamIdsValue } from '../api-keys/upstream-ids.ts';
+import type { exportQuery, importBody } from '../schemas.ts';
 import { type SerializedUpstreamRecord, upstreamRecordToFullJson } from '../upstreams/serialize.ts';
 
 interface ExportPayload {
@@ -27,12 +27,6 @@ interface ExportPayload {
     performanceIncluded: boolean;
     searchConfig: SearchConfig;
   };
-}
-
-interface ImportBody {
-  mode?: unknown;
-  version?: unknown;
-  data?: unknown;
 }
 
 const EXPORT_VERSION = 2;
@@ -381,9 +375,9 @@ const isPerformanceMetricScope = (value: unknown): value is PerformanceMetricSco
 const isPerformanceApiName = (value: unknown): value is PerformanceApiName => typeof value === 'string' && PERFORMANCE_API_NAMES.has(value as PerformanceApiName);
 
 /** GET /api/export — dump all data as JSON */
-export const exportData = async (c: Context) => {
+export const exportData = async (c: CtxWithQuery<typeof exportQuery>) => {
   const repo = getRepo();
-  const includePerformance = c.req.query('include_performance') === '1';
+  const includePerformance = c.req.valid('query').include_performance === '1';
 
   const [apiKeys, usage, searchUsage, performance, rawSearchConfig, upstreams] = await Promise.all([
     repo.apiKeys.list(),
@@ -412,12 +406,10 @@ export const exportData = async (c: Context) => {
 };
 
 /** POST /api/import — import data with merge or replace mode */
-export const importData = async (c: Context) => {
-  const body = await c.req.json<ImportBody>();
-  const { mode, version, data } = body;
+export const importData = async (c: CtxWithJson<typeof importBody>) => {
+  const body = c.req.valid('json');
+  const { mode, data } = body;
 
-  if (mode !== 'merge' && mode !== 'replace') return c.json({ error: "mode must be 'merge' or 'replace'" }, 400);
-  if (version !== EXPORT_VERSION) return c.json({ error: 'version must be 2' }, 400);
   if (!isRecord(data)) return c.json({ error: 'data is required' }, 400);
 
   const apiKeysResult = parseApiKeyRecords(data.apiKeys);

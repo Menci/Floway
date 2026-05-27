@@ -5,12 +5,42 @@
   "type": "module",
   "exports": {},
   "scripts": {
-    "build": "jiti ./build.ts",
-    "typecheck": "tsc --noEmit"
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "vue-tsc --noEmit"
+  },
+  "dependencies": {
+    "@floway-dev/ui": "workspace:*",
+    "@vueuse/core": "^14.1.0",
+    "@vueuse/integrations": "^14.3.0",
+    "chart.js": "^4.5.1",
+    "chartjs-adapter-dayjs-4": "^1.0.4",
+    "clsx": "^2.1.1",
+    "dayjs": "^1.11.21",
+    "hono": "^4",
+    "nprogress": "^0.2.0",
+    "pinia": "^3.0.4",
+    "prismjs": "^1.30.0",
+    "reka-ui": "^2.6.0",
+    "sortablejs": "^1.15.7",
+    "vue": "^3.5.13",
+    "vue-router": "^4.6.3"
   },
   "devDependencies": {
     "@floway-dev/api": "workspace:*",
-    "@types/node": "^22",
-    "hono": "^4"
+    "@iconify-json/lucide": "^1.2.73",
+    "@types/nprogress": "^0.2.3",
+    "@types/prismjs": "^1.26.6",
+    "@types/sortablejs": "^1.15.9",
+    "@unocss/preset-icons": "^66.5.10",
+    "@unocss/preset-wind3": "^66.5.10",
+    "@unocss/reset": "^66.5.10",
+    "@vitejs/plugin-vue": "^6.0.1",
+    "unocss": "^66.5.10",
+    "unocss-preset-animations": "^1.3.0",
+    "unplugin-vue-router": "^0.17.0",
+    "vite": "^7.0.0",
+    "vue-tsc": "^2.2.0"
   }
 }

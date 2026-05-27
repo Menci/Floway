@@ -1,0 +1,99 @@
+/* Global theme tokens and resets that UnoCSS cannot express. Pulls the visual
+   identity (body bg + noise + nprogress color) from the prerender dashboard's
+   layout.tsx so the SPA looks the same. */
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#app {
+  min-height: 100dvh;
+}
+
+body {
+  background: #06080a;
+  color: #e0e0e0;
+  font-family: 'DM Sans', system-ui, sans-serif;
+}
+
+/* Subtle fractal-noise texture, identical to the prerender dashboard. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* NProgress: cyan to match the brand accent. */
+#nprogress {
+  pointer-events: none;
+}
+#nprogress .bar {
+  background: #00e5ff;
+  position: fixed;
+  z-index: 9999;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 2px;
+}
+#nprogress .peg {
+  display: block;
+  position: absolute;
+  right: 0;
+  width: 100px;
+  height: 100%;
+  box-shadow: 0 0 10px #00e5ff, 0 0 5px #00e5ff;
+  opacity: 1;
+  transform: rotate(3deg) translate(0px, -4px);
+}
+
+/* SortableJS chrome — match the prerender dashboard. */
+.sortable-ghost {
+  opacity: 0.3;
+}
+.sortable-chosen {
+  background: rgba(0, 229, 255, 0.06);
+}
+.sortable-drag {
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+}
+
+/* Staggered fade-in used across the dashboard cards. The prerender stylesheet
+   defined .animate-in + .delay-N inline; UnoCSS exposes its own `animate-in`
+   from the animations preset that requires sibling utilities, so we keep the
+   bare-name version here verbatim. */
+@keyframes flowayFadeSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-in {
+  animation: flowayFadeSlideUp 0.5s ease-out forwards;
+  opacity: 0;
+}
+.delay-1 {
+  animation-delay: 0.1s;
+}
+.delay-2 {
+  animation-delay: 0.2s;
+}
+.delay-3 {
+  animation-delay: 0.3s;
+}
+.delay-4 {
+  animation-delay: 0.4s;
+}
+.delay-5 {
+  animation-delay: 0.5s;
+}

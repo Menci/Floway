@@ -37,7 +37,7 @@ production binding unless that becomes an explicit product goal.
 
 ## Workspace Layout
 
-The repo is a pnpm workspace with four packages, two libraries under
+The repo is a pnpm workspace with five packages, three libraries under
 `packages/` and two deployables under `apps/`:
 
 ```text
@@ -46,25 +46,33 @@ floway/
 │                               # (gitignored) and fill in account_id and
 │                               # d1 database_id locally. main ->
 │                               # apps/api/entry-cloudflare.ts, assets ->
-│                               # apps/web/dist, migrations_dir ->
-│                               # apps/api/migrations
+│                               # apps/web/dist (SPA fallback enabled),
+│                               # migrations_dir -> apps/api/migrations
 ├── eslint.config.ts            # internal regex ^@floway-dev/ + a
 │                               # no-restricted-imports ban on @floway-dev/*/src/**
+│                               # .vue files parsed by vue-eslint-parser
 ├── vitest.config.ts            # root project list (Vitest 4 test.projects)
 ├── packages/
 │   ├── protocols/              # @floway-dev/protocols — pure type defs
 │   │   └── src/{common,chat-completions,responses,messages,gemini,embeddings,images}/index.ts
-│   └── translate/              # @floway-dev/translate — translation pairs
-│       └── src/{<pair-dirs>,shared,types.ts,index.ts}
+│   ├── translate/              # @floway-dev/translate — translation pairs
+│   │   └── src/{<pair-dirs>,shared,types.ts,index.ts}
+│   └── ui/                     # @floway-dev/ui — internal Vue component
+│       └── src/{*.vue,utils/cn.ts,index.ts}      # library wrapping Reka UI
+│                                                  # primitives, styled with
+│                                                  # UnoCSS classes consumed
+│                                                  # by apps/web
 └── apps/
     ├── api/                    # @floway-dev/api — Worker entry + planes
     │   ├── entry-cloudflare.ts
     │   ├── migrations/
     │   └── src/{control-plane,data-plane,middleware,repo,runtime,shared,app.ts}
-    └── web/                    # @floway-dev/web — prerendered Hono JSX
-        ├── build.ts            # throwaway prerender; will be replaced by a
-        │                       # Vue SPA bundler
-        └── src/{layout,login,dashboard,dashboard/...}.tsx
+    └── web/                    # @floway-dev/web — Vue + Vite SPA served by
+        ├── vite.config.ts      # Workers Static Assets at /apps/web/dist
+        ├── uno.config.ts
+        ├── index.html
+        └── src/{main.ts,App.vue,router.ts,
+                 pages,components,composables,stores,api,styles}
 ```
 
 Dependency direction is strict:
@@ -72,34 +80,28 @@ Dependency direction is strict:
 - `protocols` depends on nothing.
 - `translate` depends only on `protocols`.
 - `api` depends on `protocols` and `translate`.
-- `web` is a build-time-only producer of static HTML served by Workers Static
-  Assets; the deployed Worker does not import it at runtime.
+- `ui` depends only on `vue` + `reka-ui` (no workspace deps).
+- `web` depends on `ui` and type-imports `@floway-dev/api/app-type` for the
+  Hono RPC client typing.
 
 Each `package.json` `exports` map is the only public surface. Deep imports
 (`@floway-dev/<pkg>/src/...`) are banned by ESLint `no-restricted-imports`;
 cross-package code must consume the package's declared subpath exports.
 
-### Cross-package exceptions
+`@floway-dev/api` exposes two entries:
 
-There is one allowed deep import: `apps/web/src/dashboard/search-config.ts`
-type-imports `SearchConfig` from
-`@floway-dev/api/data-plane/tools/web-search/types`, gated by an inline
-`// eslint-disable-next-line no-restricted-imports`. This goes away when the
-Vue SPA rewrite lands.
+- `.` — the Worker entry, used only by `wrangler.jsonc`'s `main` field.
+- `./app-type` — a type-only export pointing at `src/app.ts`, consumed by
+  `apps/web/src/api/client.ts` as `hc<AppType>(...)`'s generic. The import
+  is type-only so bundlers tree-shake the runtime code; nothing from the
+  Worker side ships in the browser bundle.
 
 ### Test layout
 
 Tests are co-located as `*_test.ts` alongside the code they cover. Each
 package has its own `vitest.config.ts`; the root `vitest.config.ts` lists them
-through Vitest 4's `test.projects`.
-
-### Future work
-
-`apps/web/build.ts` is a throwaway prerender that emits static HTML through
-Hono JSX. It will be replaced by a real Vue + Vite SPA bundler; when that
-lands, the one cross-package deep-import exception in
-`apps/web/src/dashboard/search-config.ts` goes away with it, and the dashboard
-will consume control-plane data only through public HTTP endpoints.
+through Vitest 4's `test.projects`. `apps/web` has no tests yet — the SPA is
+new and adding tests is a follow-up if and when behavior solidifies.
 
 ## Boundaries
 
@@ -647,17 +649,21 @@ Primary commands, all run from the repo root:
 pnpm run test                # vitest run over the root test.projects (all packages)
 pnpm run lint                # eslint --cache across the whole workspace
 pnpm run typecheck           # pnpm -r run typecheck (one tsc --noEmit per package)
-pnpm run dev                 # builds apps/web, then wrangler dev on apps/api
+pnpm run dev                 # parallel wrangler dev (8787) + vite dev (5173)
 pnpm run deploy              # builds apps/web, then wrangler deploy on apps/api
 pnpm run db:migrate          # apply migrations to the local D1
 pnpm run db:migrate:remote   # apply migrations to the remote (production) D1
 ```
 
-`dev` and `deploy` chain the `apps/web` prerender (`pnpm --filter
-@floway-dev/web run build`) before wrangler runs, because the Worker's
-Static Assets binding serves `apps/web/dist`. To work on a single package in
-isolation, use pnpm filters, e.g. `pnpm --filter @floway-dev/translate
-run typecheck`.
+`dev` uses `concurrently` to run `wrangler dev` (Worker on
+http://127.0.0.1:8787) and `vite` (SPA on http://localhost:5173) in the
+same shell. The SPA is the one you open: Vite proxies `/api`, `/auth`,
+`/v1`, `/v1beta`, `/embeddings`, and `/models` to the Worker, so the
+relative-URL fetch calls in `apps/web` work identically in dev and prod.
+`deploy` chains the `apps/web` build (`pnpm run build:web` → `vite build`)
+before `wrangler deploy` because the Worker's Static Assets binding serves
+`apps/web/dist`. To work on a single package in isolation, use pnpm filters,
+e.g. `pnpm --filter @floway-dev/translate run typecheck`.
 
 Wrangler commands should go through the local dependency with `pnpm wrangler`
 or package scripts. When deploying, use `pnpm run deploy` or `pnpm wrangler

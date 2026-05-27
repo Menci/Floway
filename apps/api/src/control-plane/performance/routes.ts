@@ -2,36 +2,74 @@
 // Visibility intentionally mirrors /api/token-usage: any authenticated user can
 // view shared usage/performance records for dashboard observability.
 
-import type { Context } from 'hono';
-
 import { aggregatePerformanceForDisplay, type PerformanceBucketGranularity, type PerformanceGroupBy } from './aggregate.ts';
+import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { PerformanceMetricScope } from '../../repo/types.ts';
+import type { performanceQuery } from '../schemas.ts';
 import { USAGE_KEY_COLOR_ORDER } from '../usage-key-colors.ts';
 
-const BUCKETS = new Set<PerformanceBucketGranularity>(['hour', '4h', '8h', 'day', 'all']);
-const GROUP_BYS = new Set<PerformanceGroupBy>(['none', 'keyId', 'model', 'sourceApi', 'targetApi', 'runtimeLocation']);
-const METRIC_SCOPES = new Set<PerformanceMetricScope>(['request_total', 'upstream_success']);
+type Ctx = CtxWithQuery<typeof performanceQuery>;
 
-export const performanceTelemetry = async (c: Context) => {
-  const params = readPerformanceQuery(c, {
-    bucket: 'hour',
-    groupBy: 'model',
-  });
+interface PerformanceQueryParams {
+  keyId: string | undefined;
+  start: string;
+  end: string;
+  bucket: PerformanceBucketGranularity;
+  groupBy: PerformanceGroupBy;
+  metricScope: PerformanceMetricScope;
+  timezoneOffsetMinutes: number;
+}
+
+// Schema-validated query → handler-facing params. Returns the canonical
+// "start and end query parameters are required" message rather than a generic
+// zod-shaped error to preserve the existing dashboard inline-error UX.
+const readPerformanceQuery = (
+  c: Ctx,
+  defaults: { bucket: PerformanceBucketGranularity; groupBy: PerformanceGroupBy },
+): { type: 'ok'; value: PerformanceQueryParams } | { type: 'error'; error: string } => {
+  const query = c.req.valid('query');
+  const start = query.start ?? '';
+  const end = query.end ?? '';
+  if (!start || !end) {
+    return { type: 'error', error: 'start and end query parameters are required (e.g. 2026-03-09T00)' };
+  }
+
+  const timezoneOffsetMinutes = Number(query.timezone_offset_minutes ?? '0');
+  if (!Number.isFinite(timezoneOffsetMinutes) || timezoneOffsetMinutes < -1440 || timezoneOffsetMinutes > 1440) {
+    return { type: 'error', error: 'timezone_offset_minutes must be between -1440 and 1440' };
+  }
+
+  return {
+    type: 'ok',
+    value: {
+      keyId: query.key_id === '' ? undefined : query.key_id,
+      start,
+      end,
+      bucket: query.bucket ?? defaults.bucket,
+      groupBy: query.group_by ?? defaults.groupBy,
+      metricScope: query.metric_scope ?? 'request_total',
+      timezoneOffsetMinutes,
+    },
+  };
+};
+
+export const performanceTelemetry = async (c: Ctx) => {
+  const params = readPerformanceQuery(c, { bucket: 'hour', groupBy: 'model' });
   if (params.type === 'error') return c.json({ error: params.error }, 400);
 
-  const includeKeyMetadata = c.req.query('include_key_metadata') === '1';
+  const includeKeyMetadata = c.req.valid('query').include_key_metadata === '1';
 
   const rawRecords = await getRepo().performance.query({
-    keyId: params.keyId,
-    start: params.start,
-    end: params.end,
-    metricScope: params.metricScope,
+    keyId: params.value.keyId,
+    start: params.value.start,
+    end: params.value.end,
+    metricScope: params.value.metricScope,
   });
   const records = aggregatePerformanceForDisplay(rawRecords, {
-    bucket: params.bucket,
-    groupBy: params.groupBy,
-    timezoneOffsetMinutes: params.timezoneOffsetMinutes,
+    bucket: params.value.bucket,
+    groupBy: params.value.groupBy,
+    timezoneOffsetMinutes: params.value.timezoneOffsetMinutes,
   });
 
   if (!includeKeyMetadata) return c.json({ records });
@@ -45,108 +83,22 @@ export const performanceTelemetry = async (c: Context) => {
   });
 };
 
-export const performanceOverview = async (c: Context) => {
-  const params = readPerformanceQuery(c, {
-    bucket: 'hour',
-    groupBy: 'model',
-  });
+export const performanceOverview = async (c: Ctx) => {
+  const params = readPerformanceQuery(c, { bucket: 'hour', groupBy: 'model' });
   if (params.type === 'error') return c.json({ error: params.error }, 400);
 
   const rawRecords = await getRepo().performance.query({
-    keyId: params.keyId,
-    start: params.start,
-    end: params.end,
-    metricScope: params.metricScope,
+    keyId: params.value.keyId,
+    start: params.value.start,
+    end: params.value.end,
+    metricScope: params.value.metricScope,
   });
-  const baseOptions = {
-    timezoneOffsetMinutes: params.timezoneOffsetMinutes,
-  };
+  const baseOptions = { timezoneOffsetMinutes: params.value.timezoneOffsetMinutes };
 
   return c.json({
-    series: aggregatePerformanceForDisplay(rawRecords, {
-      ...baseOptions,
-      bucket: params.bucket,
-      groupBy: 'model',
-    }),
-    summaryRows: aggregatePerformanceForDisplay(rawRecords, {
-      ...baseOptions,
-      bucket: 'all',
-      groupBy: 'none',
-    }),
-    modelRows: aggregatePerformanceForDisplay(rawRecords, {
-      ...baseOptions,
-      bucket: 'all',
-      groupBy: 'model',
-    }),
-    runtimeRows: aggregatePerformanceForDisplay(rawRecords, {
-      ...baseOptions,
-      bucket: 'all',
-      groupBy: 'runtimeLocation',
-    }),
+    series: aggregatePerformanceForDisplay(rawRecords, { ...baseOptions, bucket: params.value.bucket, groupBy: 'model' }),
+    summaryRows: aggregatePerformanceForDisplay(rawRecords, { ...baseOptions, bucket: 'all', groupBy: 'none' }),
+    modelRows: aggregatePerformanceForDisplay(rawRecords, { ...baseOptions, bucket: 'all', groupBy: 'model' }),
+    runtimeRows: aggregatePerformanceForDisplay(rawRecords, { ...baseOptions, bucket: 'all', groupBy: 'runtimeLocation' }),
   });
 };
-
-type PerformanceQueryParams =
-  | {
-    type: 'ok';
-    keyId: string | undefined;
-    start: string;
-    end: string;
-    bucket: PerformanceBucketGranularity;
-    groupBy: PerformanceGroupBy;
-    metricScope: PerformanceMetricScope;
-    timezoneOffsetMinutes: number;
-  }
-  | {
-    type: 'error';
-    error: string;
-  };
-
-function readPerformanceQuery(
-  c: Context,
-  defaults: {
-    bucket: PerformanceBucketGranularity;
-    groupBy: PerformanceGroupBy;
-  },
-): PerformanceQueryParams {
-  const queryKeyId = c.req.query('key_id');
-  const keyId = queryKeyId === '' ? undefined : queryKeyId;
-  const start = c.req.query('start') ?? '';
-  const end = c.req.query('end') ?? '';
-  const bucket = readEnum(c.req.query('bucket'), BUCKETS, defaults.bucket);
-  const groupBy = readEnum(c.req.query('group_by'), GROUP_BYS, defaults.groupBy);
-  const metricScope = readEnum(c.req.query('metric_scope'), METRIC_SCOPES, 'request_total' as PerformanceMetricScope);
-  const timezoneOffsetMinutes = Number(c.req.query('timezone_offset_minutes') ?? '0');
-
-  if (!start || !end) {
-    return {
-      type: 'error',
-      error: 'start and end query parameters are required (e.g. 2026-03-09T00)',
-    };
-  }
-  if (!Number.isFinite(timezoneOffsetMinutes) || timezoneOffsetMinutes < -1440 || timezoneOffsetMinutes > 1440) {
-    return {
-      type: 'error',
-      error: 'timezone_offset_minutes must be between -1440 and 1440',
-    };
-  }
-  if (!bucket || !groupBy || !metricScope) {
-    return { type: 'error', error: 'Invalid performance query parameter' };
-  }
-
-  return {
-    type: 'ok',
-    keyId,
-    start,
-    end,
-    bucket,
-    groupBy,
-    metricScope,
-    timezoneOffsetMinutes,
-  };
-}
-
-function readEnum<T extends string>(value: string | undefined, values: Set<T>, fallback: T): T | null {
-  if (value === undefined) return fallback;
-  return values.has(value as T) ? (value as T) : null;
-}

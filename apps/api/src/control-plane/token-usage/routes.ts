@@ -4,18 +4,18 @@
 // users (both admin and API key users), without scoping. Any authenticated user can view
 // usage records for all keys. API keys themselves are only readable by their owner.
 
-import type { Context } from 'hono';
-
-import { getRepo } from '../../repo/index.ts';
-import { USAGE_KEY_COLOR_ORDER } from '../usage-key-colors.ts';
 import { aggregateUsageForDisplay } from './aggregate.ts';
+import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
+import { getRepo } from '../../repo/index.ts';
+import type { tokenUsageQuery } from '../schemas.ts';
+import { USAGE_KEY_COLOR_ORDER } from '../usage-key-colors.ts';
 
-export const tokenUsage = async (c: Context) => {
-  const queryKeyId = c.req.query('key_id');
-  const keyId = queryKeyId === '' ? undefined : queryKeyId;
-  const start = c.req.query('start') ?? '';
-  const end = c.req.query('end') ?? '';
-  const includeKeyMetadata = c.req.query('include_key_metadata') === '1';
+export const tokenUsage = async (c: CtxWithQuery<typeof tokenUsageQuery>) => {
+  const query = c.req.valid('query');
+  const keyId = query.key_id === '' ? undefined : query.key_id;
+  const start = query.start ?? '';
+  const end = query.end ?? '';
+  const includeKeyMetadata = query.include_key_metadata === '1';
 
   if (!start || !end) {
     return c.json(

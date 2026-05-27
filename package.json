@@ -3,8 +3,11 @@
   "type": "module",
   "packageManager": "pnpm@10.24.0",
   "scripts": {
-    "dev": "pnpm --filter @floway-dev/web run build && wrangler dev",
-    "deploy": "pnpm --filter @floway-dev/web run build && wrangler deploy",
+    "dev": "concurrently -k -n api,web -c blue,magenta \"pnpm run dev:api\" \"pnpm run dev:web\"",
+    "dev:api": "wrangler dev --port 8788",
+    "dev:web": "pnpm --filter @floway-dev/web run dev",
+    "build:web": "pnpm --filter @floway-dev/web run build",
+    "deploy": "pnpm run build:web && wrangler deploy",
     "db:migrate": "wrangler d1 migrations apply $(node -p \"require('jsonc-parser').parse(require('fs').readFileSync('wrangler.jsonc','utf8')).d1_databases[0].database_name\")",
     "db:migrate:remote": "wrangler d1 migrations apply $(node -p \"require('jsonc-parser').parse(require('fs').readFileSync('wrangler.jsonc','utf8')).d1_databases[0].database_name\") --remote",
     "lint": "eslint --cache .",
@@ -17,14 +20,17 @@
     "@stylistic/eslint-plugin": "5.6.1",
     "@typescript-eslint/eslint-plugin": "8.48.1",
     "@typescript-eslint/parser": "8.48.1",
+    "concurrently": "^9.2.1",
     "eslint": "9.39.1",
     "eslint-import-resolver-typescript": "4.4.4",
     "eslint-plugin-import": "2.32.0",
+    "eslint-plugin-vue": "^10.9.1",
     "jiti": "2.6.1",
     "jsonc-parser": "^3.3.1",
     "sql.js": "^1.14.1",
     "typescript": "^5.9.3",
     "vitest": "4.0.18",
+    "vue-eslint-parser": "^10.4.0",
     "wrangler": "^4.81.0"
   }
 }
