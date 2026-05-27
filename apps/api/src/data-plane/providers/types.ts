@@ -121,5 +121,9 @@ export interface ModelProvider {
   callMessagesCountTokens(model: UpstreamModel, body: Omit<MessagesPayload, 'model'>, signal?: AbortSignal, headers?: Record<string, string>, anthropicBeta?: readonly string[]): Promise<ProviderCallResult>;
   callEmbeddings(model: UpstreamModel, body: Omit<EmbeddingsPayload, 'model'>, signal?: AbortSignal, headers?: Record<string, string>): Promise<ProviderCallResult>;
   callImagesGenerations(model: UpstreamModel, body: Omit<ImagesGenerationsPayload, 'model'>, signal?: AbortSignal, headers?: Record<string, string>): Promise<ProviderCallResult>;
+  // The provider takes ownership of `body` and may mutate it (e.g. append
+  // the upstream-specific model/deployment id). Callers must allocate a
+  // fresh FormData per call — see images/serve.ts, which builds a new
+  // FormData per binding for that reason.
   callImagesEdits(model: UpstreamModel, body: FormData, signal?: AbortSignal, headers?: Record<string, string>): Promise<ProviderCallResult>;
 }

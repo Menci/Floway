@@ -80,11 +80,11 @@ export const imagesEdits = async (c: Context): Promise<Response> => {
     requestedModel: modelRaw,
     acceptBinding: binding => binding.upstreamModel.upstreamEndpoints.includes('images_edits'),
     call: binding => {
-      // Allocate the passthrough FormData per binding. File-blob entries
-      // are passed by reference so no buffer copy happens; the per-binding
-      // allocation locks each provider's `model.append` call to its own
-      // copy, which keeps cross-binding fallback semantics correct if we
-      // ever extend the loop to try a second binding.
+      // ModelProvider.callImagesEdits takes ownership of the FormData and
+      // appends the upstream-specific model/deployment id; allocate a fresh
+      // copy per binding so the contract holds even if cross-binding
+      // fallback is ever extended to try a second binding. File-blob entries
+      // are passed by reference so no buffer copy happens.
       const passthrough = new FormData();
       for (const [name, value] of form.entries()) {
         if (name === 'model') continue;
