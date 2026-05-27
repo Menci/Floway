@@ -86,11 +86,13 @@ const scheduleUsageRecord = (scheduler: BackgroundScheduler | undefined, promise
 // Defensive JSON parse: a successful 200 with a non-JSON or unexpected body
 // (rare for these endpoints, but possible if a provider proxy starts
 // returning binary or a wrapped envelope) must not 502 the client; we
-// simply skip usage extraction in that case.
-const safeJsonClone = async (resp: Response): Promise<unknown> => {
+// simply skip usage extraction in that case, but log the parse failure so
+// operators can correlate when usage rows go missing.
+const safeJsonClone = async (resp: Response, sourceApi: NonLlmServeApiName): Promise<unknown> => {
   try {
     return await resp.clone().json();
-  } catch {
+  } catch (e) {
+    console.warn(`passthrough-serve: failed to parse 2xx upstream body for ${sourceApi}; usage row will be skipped`, e instanceof Error ? e.message : String(e));
     return undefined;
   }
 };
@@ -170,7 +172,7 @@ export const passthroughServe = async (ctx: PassthroughServeContext): Promise<Re
       }
 
       recordUpstreamPerformance(scheduleBackground, performanceContext, false, performance.now() - upstreamStartedAt);
-      const parsed = await safeJsonClone(response);
+      const parsed = await safeJsonClone(response, sourceApi);
       const usage = parsed !== undefined ? extractUsage(parsed) : null;
       if (usage) {
         scheduleUsageRecord(
