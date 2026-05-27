@@ -12,10 +12,10 @@ export const tokenUsage = (inputTokens = 0, outputTokens = 0, cacheReadTokens = 
   cacheCreationTokens,
 });
 
-export const tokenUsageFromPromptTokenResponse = (value: unknown): TokenUsage | null => {
-  if (!value || typeof value !== 'object') return null;
-  const usage = (value as { usage?: { prompt_tokens?: unknown } }).usage;
-  return typeof usage?.prompt_tokens === 'number' ? tokenUsage(usage.prompt_tokens) : null;
+export const tokenUsageFromPromptTokenResponse = (usage: unknown): TokenUsage | null => {
+  if (!usage || typeof usage !== 'object') return null;
+  const promptTokens = (usage as { prompt_tokens?: unknown }).prompt_tokens;
+  return typeof promptTokens === 'number' ? tokenUsage(promptTokens) : null;
 };
 
 // OpenAI Images responses report usage as
@@ -28,12 +28,9 @@ export const tokenUsageFromPromptTokenResponse = (value: unknown): TokenUsage | 
 // a malformed upstream payload rather than silently coerced to 0. That
 // matches the project's anti-fallback rule in AGENTS.md: refuse to invent
 // numbers for shapes we did not expect.
-export const tokenUsageFromImagesResponse = (value: unknown): TokenUsage | null => {
-  if (!value || typeof value !== 'object') return null;
-  const usage = (value as { usage?: { input_tokens?: unknown; output_tokens?: unknown } }).usage;
+export const tokenUsageFromImagesResponse = (usage: unknown): TokenUsage | null => {
   if (!usage || typeof usage !== 'object') return null;
-  const input = usage.input_tokens;
-  const output = usage.output_tokens;
+  const { input_tokens: input, output_tokens: output } = usage as { input_tokens?: unknown; output_tokens?: unknown };
   if (input !== undefined && typeof input !== 'number') return null;
   if (output !== undefined && typeof output !== 'number') return null;
   if (input === undefined && output === undefined) return null;

@@ -134,9 +134,11 @@ export interface PassthroughServeContext {
   // is preserved and becomes a 502 with the internal-debug envelope —
   // exceptions thrown from the actual fetch must not be silently swallowed.
   readonly call: (binding: ProviderModelRecord) => Promise<ProviderCallResult>;
-  // Extracts a usage row from a parsed 2xx upstream body. Return null when
-  // the body has no usage block to record.
-  readonly extractUsage: (parsed: unknown) => TokenUsage | null;
+  // Extracts a usage row from the `usage` block of a parsed 2xx upstream
+  // body. The helper does the shallow `parsed.usage` lookup so each
+  // extractor only has to validate the usage shape. Return null when the
+  // usage block is missing or malformed.
+  readonly extractUsage: (usage: unknown) => TokenUsage | null;
   // Returned as the 400 body when no provider binding matched. Phrased
   // per-endpoint so the error tells the client which capability is missing.
   // The helper interpolates the resolved model id by calling
@@ -174,7 +176,8 @@ export const passthroughServe = async (ctx: PassthroughServeContext): Promise<Re
 
       recordUpstreamPerformance(scheduleBackground, performanceContext, false, performance.now() - upstreamStartedAt);
       const parsed = await safeJsonClone(response, sourceApi);
-      const usage = parsed !== undefined ? extractUsage(parsed) : null;
+      const usageBlock = parsed && typeof parsed === 'object' ? (parsed as { usage?: unknown }).usage : undefined;
+      const usage = usageBlock !== undefined ? extractUsage(usageBlock) : null;
       if (usage) {
         scheduleUsageRecord(
           scheduleBackground,
