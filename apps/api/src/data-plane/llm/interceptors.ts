@@ -12,22 +12,15 @@ export type LlmSourceApi = 'messages' | 'responses' | 'chat-completions' | 'gemi
 export type LlmTargetApi = 'messages' | 'responses' | 'chat-completions';
 
 /**
- * Stateful per-attempt bag the Responses pipeline uses to thread server-tool
- * shim state across layers within a single provider-binding attempt.
- * `privatePayload` maps wire item id → opaque blob: seeded at the start of
- * each attempt from `prepared.references` (synthetic rows' `payload.item.id`
- * is preserved verbatim on the wire by `rewriteStoredResponsesItemsForProvider`,
- * so the lookup key matches), mutated in flight by `materializeServerToolItems`
- * as a shim synthesizes new items, and read at finalize by
- * `storeResponsesOutputItems` so the persisted row captures `payload.private`.
- * The shape is shim-specific; persistence round-trips it verbatim and never
- * inspects it. `newSyntheticIds` collects gateway-minted ids that no upstream
- * issued (e.g. a server-tool shim's `web_search_call`) so persistence stores
- * those rows with no upstream identity — non_affinity — even on a native
- * Responses upstream. Both are empty when no source interceptor opts in. The
- * whole bag is reassigned (not mutated in place) at the top of every attempt
- * so a failed attempt's shim writes don't leak into the next attempt's fresh
- * state.
+ * Per-attempt bag the Responses pipeline uses to thread server-tool shim
+ * state across layers (source serve → source interceptors → persistence)
+ * within a single provider-binding attempt. The whole bag is reassigned at
+ * the top of every attempt, so a failed attempt's writes don't leak forward.
+ *
+ * - `privatePayload`: wire item id → shim-defined opaque blob, round-tripped
+ *   verbatim by persistence as `payload.private`. The shape is shim-specific.
+ * - `newSyntheticIds`: gateway-minted item ids no upstream issued (a
+ *   server-tool shim's `web_search_call`, ...), persisted as non_affinity.
  */
 export interface StatefulResponsesContext {
   readonly privatePayload: Map<string, unknown>;
@@ -35,18 +28,16 @@ export interface StatefulResponsesContext {
 }
 
 /**
- * Per-HTTP-request scope. Constructed once when the source serve handler
- * receives `c: Context` (in `createRequestContext`) and threaded through every
- * layer (source interceptors, target emits, target interceptors, telemetry).
+ * Per-HTTP-request scope. Constructed once in `createRequestContext` and
+ * threaded through every layer (source interceptors, target emits, target
+ * interceptors, telemetry). Holds both immutable identities/adapters and
+ * mutable per-request bags that cross-layer producers and consumers share.
  *
- * Holds both immutable per-request identities/adapters (apiKeyId,
- * runtimeLocation, scheduleBackground, downstreamAbortSignal, ...) and
- * mutable per-request bags that cross-layer producers and consumers share
- * (e.g. `statefulResponsesContext`). Anything that varies per provider-binding
- * attempt belongs on `Invocation`, not here — except `statefulResponsesContext`,
- * which is reassigned per attempt because the shim's downstream readers
- * (output.ts:buildRow, source-interceptor `transformItems` callbacks) sit
- * outside any `Invocation` plumbing and only have `RequestContext` to look at.
+ * Anything that varies per provider-binding attempt belongs on `Invocation`,
+ * not here. `statefulResponsesContext` is the one exception: the serve loop
+ * reassigns it per attempt so cross-layer readers outside `Invocation`
+ * plumbing (output.ts:buildRow, source-interceptor `transformItems`) reach
+ * it via the only handle they have.
  *
  * Telemetry recording is done via global helpers that accept `apiKeyId` (and
  * `scheduleBackground` for performance) explicitly so call sites stay visible

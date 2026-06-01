@@ -130,17 +130,14 @@ const buildRow = async (
   // it lets a later turn restore the real success/failure state even when the
   // client stripped fields from the echoed wire item.
   const privatePayload = request.statefulResponsesContext.privatePayload.get(upstreamId);
+  const persistedPayload = privatePayload !== undefined ? { item: originalItem, private: privatePayload } : { item: originalItem };
   return {
     id: newId,
     apiKeyId: request.apiKeyId ?? null,
     upstreamId: upstreamOwned ? context.upstream : null,
     upstreamItemId: upstreamOwned ? upstreamId : null,
     itemType: originalItem.type,
-    payload: context.store === false
-      ? null
-      : privatePayload !== undefined
-        ? { item: originalItem, private: privatePayload }
-        : { item: originalItem },
+    payload: context.store === false ? null : persistedPayload,
     encryptedContentHash: encryptedContent === null ? null : await hashResponsesItemEncryptedContent(encryptedContent),
     createdAt: Date.now(),
   };
