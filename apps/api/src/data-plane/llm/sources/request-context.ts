@@ -16,7 +16,7 @@ export const createRequestContext = (c: Context, downstreamAbortSignal: AbortSig
     runtimeLocation: runtimeLocationFromRequest(c.req.raw),
     scheduleBackground,
     clientStream,
-    responsesSyntheticItemIds: new Set(),
+    statefulResponsesContext: { privatePayload: new Map(), newSyntheticIds: new Set() },
     ...(downstreamAbortSignal !== undefined ? { downstreamAbortSignal } : {}),
   };
 };

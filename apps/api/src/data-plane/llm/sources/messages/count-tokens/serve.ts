@@ -5,6 +5,7 @@ import { listModelProviders, resolveModelForProvider } from '../../../../provide
 import { type MessagesInvocation, runInterceptors } from '../../../interceptors.ts';
 import { toInternalDebugError } from '../../../shared/errors/internal-debug-error.ts';
 import { createRequestContext } from '../../request-context.ts';
+import { responsesItemId } from '../../responses/items/format.ts';
 import { planResponsesItemProviders, prepareStoredResponsesItemsForSource, rewriteStoredResponsesItemsForProvider } from '../../responses/items/request-plan.ts';
 import { bodyAnthropicBetaResponse, bodyBetaParam, messagesFailureEnvelope, parseAnthropicBeta } from '../traits.ts';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
@@ -48,6 +49,17 @@ export const countTokens = async (c: Context) => {
 
       const attemptPayload = structuredClone(payload);
       attemptPayload.model = resolvedModelId;
+      // Fresh stateful bag per attempt — matches the chat path's per-attempt
+      // semantics. count_tokens never reaches a shim that mutates this bag,
+      // but the seed still needs to be present so any future stateful
+      // interceptor reads consistent state.
+      request.statefulResponsesContext = {
+        privatePayload: new Map(preparedStoredItems.references.flatMap(ref => {
+          const wireId = ref.row?.payload && responsesItemId(ref.row.payload.item as { id?: unknown });
+          return wireId && ref.row?.payload?.private !== undefined ? [[wireId, ref.row.payload.private] as const] : [];
+        })),
+        newSyntheticIds: new Set(),
+      };
       attemptPayload.messages = await rewriteStoredResponsesItemsForProvider(attemptPayload.messages, preparedStoredItems, binding, messagesViaResponsesItemsView);
       // Build a MessagesInvocation matching the chat-planning shape so
       // provider-registered count_tokens interceptors (Copilot's vision,

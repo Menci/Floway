@@ -337,7 +337,7 @@ const makeInvocation = (overrides: InvocationOverrides = {}): ResponsesInvocatio
 
 const makeRequest = (apiKeyId: string | undefined = 'k1'): RequestContext => ({
   requestStartedAt: 0,
-  responsesSyntheticItemIds: new Set(),  runtimeLocation: 'test',
+  statefulResponsesContext: { privatePayload: new Map(), newSyntheticIds: new Set() },  runtimeLocation: 'test',
   clientStream: true,
   ...(apiKeyId !== undefined ? { apiKeyId } : {}),
 });
@@ -657,11 +657,11 @@ test('synthesized web_search_call ids are registered as gateway-synthetic on the
   assert(wsCallDoneIds.length > 0, 'expected a synthesized web_search_call');
   for (const id of wsCallDoneIds) {
     assert(id.startsWith('ws_gw_'));
-    assert(request.responsesSyntheticItemIds.has(id), `expected ${id} registered as synthetic`);
+    assert(request.statefulResponsesContext.newSyntheticIds.has(id), `expected ${id} registered as synthetic`);
   }
   // A genuine upstream item (the final message) is not registered.
   for (const e of doneEvents.filter(e => e.item.type === 'message')) {
-    assertFalse(request.responsesSyntheticItemIds.has(e.item.id!));
+    assertFalse(request.statefulResponsesContext.newSyntheticIds.has(e.item.id!));
   }
 });
 
@@ -4761,7 +4761,7 @@ test('downstream AbortSignal threads through to provider search / fetchPage and 
   const inv = makeInvocation();
   const request: RequestContext = {
     requestStartedAt: 0,
-    responsesSyntheticItemIds: new Set(),    runtimeLocation: 'test',
+    statefulResponsesContext: { privatePayload: new Map(), newSyntheticIds: new Set() },    runtimeLocation: 'test',
     clientStream: true,
     apiKeyId: 'k1',
     downstreamAbortSignal: controller.signal,

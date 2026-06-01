@@ -51,7 +51,7 @@ const invocation = (payload: MessagesPayload): MessagesInvocation => ({
 
 const requestContext = (apiKeyId?: string): RequestContext => ({
   requestStartedAt: 0,
-  responsesSyntheticItemIds: new Set(),  runtimeLocation: 'test',
+  statefulResponsesContext: { privatePayload: new Map(), newSyntheticIds: new Set() },  runtimeLocation: 'test',
   clientStream: false,
   ...(apiKeyId !== undefined ? { apiKeyId } : {}),
 });

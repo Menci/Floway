@@ -12,24 +12,45 @@ export type LlmSourceApi = 'messages' | 'responses' | 'chat-completions' | 'gemi
 export type LlmTargetApi = 'messages' | 'responses' | 'chat-completions';
 
 /**
- * Per-HTTP-request invariants. Constructed once when the source serve handler
+ * Stateful per-attempt bag the Responses pipeline uses to thread server-tool
+ * shim state across layers within a single provider-binding attempt.
+ * `privatePayload` maps wire item id → opaque blob: seeded at the start of
+ * each attempt from `prepared.references` (synthetic rows' `payload.item.id`
+ * is preserved verbatim on the wire by `rewriteStoredResponsesItemsForProvider`,
+ * so the lookup key matches), mutated in flight by `materializeServerToolItems`
+ * as a shim synthesizes new items, and read at finalize by
+ * `storeResponsesOutputItems` so the persisted row captures `payload.private`.
+ * The shape is shim-specific; persistence round-trips it verbatim and never
+ * inspects it. `newSyntheticIds` collects gateway-minted ids that no upstream
+ * issued (e.g. a server-tool shim's `web_search_call`) so persistence stores
+ * those rows with no upstream identity — non_affinity — even on a native
+ * Responses upstream. Both are empty when no source interceptor opts in. The
+ * whole bag is reassigned (not mutated in place) at the top of every attempt
+ * so a failed attempt's shim writes don't leak into the next attempt's fresh
+ * state.
+ */
+export interface StatefulResponsesContext {
+  readonly privatePayload: Map<string, unknown>;
+  readonly newSyntheticIds: Set<string>;
+}
+
+/**
+ * Per-HTTP-request scope. Constructed once when the source serve handler
  * receives `c: Context` (in `createRequestContext`) and threaded through every
  * layer (source interceptors, target emits, target interceptors, telemetry).
  *
- * Fields that never change across provider-binding attempts or interceptor
- * passes belong here. Fields that depend on which binding the planner is
- * trying belong on `Invocation`.
+ * Holds both immutable per-request identities/adapters (apiKeyId,
+ * runtimeLocation, scheduleBackground, downstreamAbortSignal, ...) and
+ * mutable per-request bags that cross-layer producers and consumers share
+ * (e.g. `statefulResponsesContext`). Anything that varies per provider-binding
+ * attempt belongs on `Invocation`, not here — except `statefulResponsesContext`,
+ * which is reassigned per attempt because the shim's downstream readers
+ * (output.ts:buildRow, source-interceptor `transformItems` callbacks) sit
+ * outside any `Invocation` plumbing and only have `RequestContext` to look at.
  *
- * Pure data: identities and runtime adapters only. No method-like fields,
- * no closures captured over identities. Telemetry recording is done via
- * global helpers that accept `apiKeyId` (and `scheduleBackground` for
- * performance) explicitly so call sites stay visible about the no-op when
- * the request has no API key (ADMIN_KEY playground path).
- *
- * Mutable per-request state (last performance row, downstream abort
- * controller) is intentionally NOT here. It lives as local variables in the
- * source serve function. `RequestContext` is plain read-only data and is safe
- * to share with closures and background tasks.
+ * Telemetry recording is done via global helpers that accept `apiKeyId` (and
+ * `scheduleBackground` for performance) explicitly so call sites stay visible
+ * about the no-op when the request has no API key (ADMIN_KEY playground path).
  */
 export interface RequestContext {
   readonly requestStartedAt: number;
@@ -40,11 +61,7 @@ export interface RequestContext {
   readonly scheduleBackground?: BackgroundScheduler;
   readonly downstreamAbortSignal?: AbortSignal;
   readonly clientStream: boolean;
-  // Ids of Responses output items the gateway itself synthesized this request
-  // (e.g. a server-tool shim's web_search_call), which carry a gateway-minted
-  // id no upstream issued. Persistence stores these with no upstream identity —
-  // non_affinity — even on a native Responses upstream.
-  readonly responsesSyntheticItemIds: Set<string>;
+  statefulResponsesContext: StatefulResponsesContext;
 }
 
 /**

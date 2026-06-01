@@ -123,15 +123,24 @@ const buildRow = async (
   // interceptor synthesized this request (e.g. the web-search shim's
   // web_search_call), whose gateway-minted ids the upstream never issued.
   // Those persist with no upstream identity so they stay non_affinity.
-  const upstreamOwned = context.targetApi === 'responses' && !request.responsesSyntheticItemIds.has(upstreamId);
+  const upstreamOwned = context.targetApi === 'responses' && !request.statefulResponsesContext.newSyntheticIds.has(upstreamId);
   const encryptedContent = responsesItemEncryptedContent(originalItem);
+  // Source interceptors register the per-item server-only payload under the
+  // wire id transformItems sees; the same id is `upstreamId` here. Attaching
+  // it lets a later turn restore the real success/failure state even when the
+  // client stripped fields from the echoed wire item.
+  const privatePayload = request.statefulResponsesContext.privatePayload.get(upstreamId);
   return {
     id: newId,
     apiKeyId: request.apiKeyId ?? null,
     upstreamId: upstreamOwned ? context.upstream : null,
     upstreamItemId: upstreamOwned ? upstreamId : null,
     itemType: originalItem.type,
-    payload: context.store === false ? null : { item: originalItem },
+    payload: context.store === false
+      ? null
+      : privatePayload !== undefined
+        ? { item: originalItem, private: privatePayload }
+        : { item: originalItem },
     encryptedContentHash: encryptedContent === null ? null : await hashResponsesItemEncryptedContent(encryptedContent),
     createdAt: Date.now(),
   };

@@ -10,7 +10,7 @@ import type { ResponsesPayload, RawResponsesStreamEvent } from '@floway-dev/prot
 
 const stubRequest: RequestContext = {
   requestStartedAt: 0,
-  responsesSyntheticItemIds: new Set(),  runtimeLocation: 'test',
+  statefulResponsesContext: { privatePayload: new Map(), newSyntheticIds: new Set() },  runtimeLocation: 'test',
   clientStream: false,
 };
 

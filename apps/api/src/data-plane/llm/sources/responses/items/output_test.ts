@@ -28,7 +28,7 @@ const makeRequest = (syntheticItemIds: Iterable<string> = []): RequestContext =>
   apiKeyId,
   runtimeLocation: 'test',
   clientStream: true,
-  responsesSyntheticItemIds: new Set(syntheticItemIds),
+  statefulResponsesContext: { privatePayload: new Map(), newSyntheticIds: new Set(syntheticItemIds) },
 });
 
 const messageItem = (id: string, text: string): Extract<ResponsesOutputItem, { type: 'message' }> => ({

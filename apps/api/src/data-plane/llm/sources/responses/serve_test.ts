@@ -139,7 +139,9 @@ test('/v1/responses expands stored synthetic item_reference before the upstream 
       upstreamItemId: null,
       itemType: 'message',
       encryptedContentHash: null,
-      payload: { item: { ...storedItem, id } },
+      // payload.item.id is the original wire id, distinct from the stored row
+      // id; the rewriter preserves it verbatim on the wire for synthetic rows.
+      payload: { item: storedItem },
       createdAt: Date.now(),
     },
   ]);
@@ -203,7 +205,7 @@ test('/v1/responses expands stored synthetic item_reference before the upstream 
   assertExists(upstreamBody);
   const input = upstreamBody.input as Array<Record<string, unknown>>;
   assertEquals(input[0].type, 'message');
-  assertStringIncludes(input[0].id as string, 'msg_tmp_');
+  assertEquals(input[0].id, storedItem.id);
   assertEquals(input[0].content, [{ type: 'output_text', text: 'expanded synthetic context' }]);
 });
 

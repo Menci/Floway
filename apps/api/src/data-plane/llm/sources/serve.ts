@@ -2,6 +2,7 @@ import type { Context } from 'hono';
 
 import { createRequestContext } from './request-context.ts';
 import type { RequestContext } from '../interceptors.ts';
+import { responsesItemId } from './responses/items/format.ts';
 import { type ResponsesItemsCommit, storeResponsesOutputItems } from './responses/items/output.ts';
 import { planResponsesItemProviders, type PreparedStoredResponsesItems, prepareStoredResponsesItemsForSource, rewriteStoredResponsesItemsForProvider, type StoredResponsesProviderPlan } from './responses/items/request-plan.ts';
 import { type LlmServeFailure, LlmServeFailureError, type LlmSourcePlan, type LlmSourceTraits, type Result } from './traits.ts';
@@ -85,6 +86,21 @@ const attemptProviders = async <TItems, TEvent>(
     const { binding } = resolved;
     const target = plan.pickTarget(binding.upstreamModel.upstreamEndpoints);
     if (!target) continue;
+
+    // Fresh stateful bag per attempt so a failed earlier attempt's shim
+    // writes — private payloads stashed under tmp ids that won't be minted
+    // again, new synthetic ids that no output stream will reference — don't
+    // leak into the next attempt. Seed key is the wire id the rewriter will
+    // produce: only synthetic rows carry `payload.private`, and the rewriter
+    // preserves their `payload.item.id` verbatim, so the lookup reads that
+    // id directly.
+    request.statefulResponsesContext = {
+      privatePayload: new Map(prepared.references.flatMap(ref => {
+        const wireId = ref.row?.payload && responsesItemId(ref.row.payload.item as { id?: unknown });
+        return wireId && ref.row?.payload?.private !== undefined ? [[wireId, ref.row.payload.private] as const] : [];
+      })),
+      newSyntheticIds: new Set(),
+    };
 
     const rawResult = await plan.attempt({
       binding,

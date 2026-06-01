@@ -278,7 +278,14 @@ const rewriteStoredResponsesItemForProvider = (
 
   const replacement = storedItemReplacementBase(item, row);
   if (row.upstreamId === provider.upstream && row.upstreamItemId) return itemWithId(replacement, row.upstreamItemId);
-  if (responsesItemId(replacement) !== null) return itemWithId(replacement, createTemporaryResponsesItemId(row.itemType));
+  // Cross-upstream owned items mint a tmp id so the foreign upstream's id
+  // namespace can't bleed into the new upstream's view. Synthetic (no
+  // upstream-id) rows keep `payload.item`'s gateway-namespaced id verbatim,
+  // so the wire id matches what the per-attempt `privatePayload` seed reads
+  // — source interceptors look the payload up by whatever id the rewriter
+  // puts on the wire, and that's the same id without any rewriter-side
+  // stashing.
+  if (isUpstreamOwned(row) && responsesItemId(replacement) !== null) return itemWithId(replacement, createTemporaryResponsesItemId(row.itemType));
   return replacement;
 };
 
