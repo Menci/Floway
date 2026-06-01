@@ -50,9 +50,7 @@ export const countTokens = async (c: Context) => {
       const attemptPayload = structuredClone(payload);
       attemptPayload.model = resolvedModelId;
       // Fresh stateful bag per attempt — matches the chat path's per-attempt
-      // semantics. count_tokens never reaches a shim that mutates this bag,
-      // but the seed still needs to be present so any future stateful
-      // interceptor reads consistent state.
+      // semantics.
       request.statefulResponsesContext = {
         privatePayload: new Map(preparedStoredItems.references.flatMap(ref => {
           const wireId = ref.row?.payload && responsesItemId(ref.row.payload.item as { id?: unknown });

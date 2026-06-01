@@ -265,27 +265,39 @@ const rewriteStoredResponsesItemForProvider = (
     ?? (encryptedContent !== null ? rowByEncryptedContent.get(encryptedContent) : undefined);
   if (row === undefined) return item;
 
+  // An `item_reference` whose stored row has no inline payload can only
+  // travel as a reference on the wire; a provider that doesn't support
+  // `item_reference` input has no way to expand it.
   if (item.type === 'item_reference' && row.payload === null && !provider.supportsResponsesItemReference) {
     throwLlmServeFailure({ kind: 'item-not-found', itemId: row.id });
   }
 
-  // Only upstream-owned reasoning is bound to the upstream that produced it and
-  // must be dropped when routing elsewhere. Synthetic rows have no owner, carry
-  // their full payload, and stay portable to any upstream regardless of type —
-  // they fall through to inline expansion below.
-  if (isUpstreamOwned(row) && row.itemType === 'reasoning' && row.upstreamId !== provider.upstream) return null;
-  if (item.type === 'item_reference' && row.upstreamId === provider.upstream && row.upstreamItemId && provider.supportsResponsesItemReference) return itemWithId(item, row.upstreamItemId);
+  if (!isUpstreamOwned(row)) {
+    // Synthetic rows have no owning upstream and stay portable to any
+    // provider. Inline-expand from the stored payload and preserve
+    // `payload.item.id` verbatim so the wire id matches what the per-attempt
+    // `privatePayload` seed reads — source interceptors look the payload up
+    // by whatever id the rewriter puts on the wire, no rewriter-side stash.
+    return storedItemReplacementBase(item, row);
+  }
 
+  // Owned reasoning is bound to the upstream that produced it; drop it when
+  // routing elsewhere.
+  if (row.itemType === 'reasoning' && row.upstreamId !== provider.upstream) return null;
+
+  if (row.upstreamId === provider.upstream && row.upstreamItemId) {
+    // Same upstream: substitute the original upstream-issued id. A
+    // reference-capable provider keeps the wire item as `item_reference`;
+    // others inline-expand against the stored payload.
+    return item.type === 'item_reference' && provider.supportsResponsesItemReference
+      ? itemWithId(item, row.upstreamItemId)
+      : itemWithId(storedItemReplacementBase(item, row), row.upstreamItemId);
+  }
+
+  // Cross-upstream owned: mint a tmp id so the foreign upstream's id
+  // namespace can't bleed into the new upstream's view.
   const replacement = storedItemReplacementBase(item, row);
-  if (row.upstreamId === provider.upstream && row.upstreamItemId) return itemWithId(replacement, row.upstreamItemId);
-  // Cross-upstream owned items mint a tmp id so the foreign upstream's id
-  // namespace can't bleed into the new upstream's view. Synthetic (no
-  // upstream-id) rows keep `payload.item`'s gateway-namespaced id verbatim,
-  // so the wire id matches what the per-attempt `privatePayload` seed reads
-  // — source interceptors look the payload up by whatever id the rewriter
-  // puts on the wire, and that's the same id without any rewriter-side
-  // stashing.
-  if (isUpstreamOwned(row) && responsesItemId(replacement) !== null) return itemWithId(replacement, createTemporaryResponsesItemId(row.itemType));
+  if (responsesItemId(replacement) !== null) return itemWithId(replacement, createTemporaryResponsesItemId(row.itemType));
   return replacement;
 };
 

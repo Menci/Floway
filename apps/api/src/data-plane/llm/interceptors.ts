@@ -19,8 +19,8 @@ export type LlmTargetApi = 'messages' | 'responses' | 'chat-completions';
  *
  * - `privatePayload`: wire item id → shim-defined opaque blob, round-tripped
  *   verbatim by persistence as `payload.private`. The shape is shim-specific.
- * - `newSyntheticIds`: gateway-minted item ids no upstream issued (a
- *   server-tool shim's `web_search_call`, ...), persisted as non_affinity.
+ * - `newSyntheticIds`: gateway-minted item ids no upstream issued (e.g. a
+ *   server-tool shim's `web_search_call`), persisted as non_affinity.
  */
 export interface StatefulResponsesContext {
   readonly privatePayload: Map<string, unknown>;
@@ -37,7 +37,10 @@ export interface StatefulResponsesContext {
  * not here. `statefulResponsesContext` is the one exception: the serve loop
  * reassigns it per attempt so cross-layer readers outside `Invocation`
  * plumbing (output.ts:buildRow, source-interceptor `transformItems`) reach
- * it via the only handle they have.
+ * it via the only handle they have. Read it through
+ * `request.statefulResponsesContext` at access time; never capture the
+ * inner object in a closure or background task — that snapshot belongs to
+ * one attempt only.
  *
  * Telemetry recording is done via global helpers that accept `apiKeyId` (and
  * `scheduleBackground` for performance) explicitly so call sites stay visible
