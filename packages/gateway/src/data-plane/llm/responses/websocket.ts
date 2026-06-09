@@ -17,6 +17,31 @@ interface WorkerWebSocket extends WebSocket {
   accept(): void;
 }
 
+interface ResponsesWebSocketSocket {
+  readonly readyState: number;
+  send(data: string): void;
+}
+
+export interface ResponsesWebSocketEvents {
+  onOpen?(event: Event, socket: ResponsesWebSocketSocket): void;
+  onMessage?(event: { readonly data: unknown }, socket: ResponsesWebSocketSocket): void;
+  onClose?(event: unknown, socket: ResponsesWebSocketSocket): void;
+  onError?(event: unknown, socket: ResponsesWebSocketSocket): void;
+}
+
+type ResponsesWebSocketUpgradeResolver = (
+  c: Context,
+  events: ResponsesWebSocketEvents,
+) => Response | Promise<Response>;
+
+let _responsesWebSocketUpgradeResolver: ResponsesWebSocketUpgradeResolver | null = null;
+
+export const initResponsesWebSocketUpgradeResolver = (
+  resolver: ResponsesWebSocketUpgradeResolver,
+): void => {
+  _responsesWebSocketUpgradeResolver = resolver;
+};
+
 declare const WebSocketPair: {
   new(): {
     0: WorkerWebSocket;
@@ -36,12 +61,26 @@ export const responsesWebSocket = async (c: Context): Promise<Response> => {
     return Response.json({ error: 'Expected Upgrade: websocket' }, { status: 426 });
   }
 
+  const events = createResponsesWebSocketEvents(c);
+  if (_responsesWebSocketUpgradeResolver !== null) {
+    return await _responsesWebSocketUpgradeResolver(c, events);
+  }
+
   const pair = new WebSocketPair();
   const client = pair[0];
   const server = pair[1];
   server.accept();
 
-  const session = createResponsesWsSession(c.get('apiKeyId') as string);
+  events.onOpen?.(new Event('open'), server);
+  server.addEventListener('close', event => events.onClose?.(event, server));
+  server.addEventListener('error', event => events.onError?.(event, server));
+  server.addEventListener('message', event => events.onMessage?.(event, server));
+
+  return new Response(null, { status: 101, webSocket: client } as ResponseInit & { readonly webSocket: WebSocket });
+};
+
+const createResponsesWebSocketEvents = (c: Context): ResponsesWebSocketEvents => {
+  const session = createResponsesWsSession((c.get('apiKeyId') as string | undefined) ?? null);
   let closed = false;
   let activeAbortController: AbortController | undefined;
   let queue = Promise.resolve();
@@ -50,34 +89,35 @@ export const responsesWebSocket = async (c: Context): Promise<Response> => {
     closed = true;
     activeAbortController?.abort();
   };
-  server.addEventListener('close', closeActiveRequest);
-  server.addEventListener('error', closeActiveRequest);
-  server.addEventListener('message', event => {
-    queue = queue
-      .then(async () => {
-        if (closed) return;
-        const abortController = new AbortController();
-        activeAbortController = abortController;
-        try {
-          await handleClientMessage(c, server, session, event.data, abortController, () => closed);
-        } finally {
-          if (activeAbortController === abortController) activeAbortController = undefined;
-        }
-      })
-      // WS-specific top-level: Hono's onError never runs for callbacks fired off
-      // an open socket, so we serialize the error inline as a close-frame-shaped
-      // JSON envelope. (HTTP entries let onError handle the same case.)
-      .catch(error => {
-        if (!closed) sendError(server, 500, serverErrorEnvelope(error));
-      });
-  });
 
-  return new Response(null, { status: 101, webSocket: client } as ResponseInit & { readonly webSocket: WebSocket });
+  return {
+    onClose: closeActiveRequest,
+    onError: closeActiveRequest,
+    onMessage: (event, socket) => {
+      queue = queue
+        .then(async () => {
+          if (closed) return;
+          const abortController = new AbortController();
+          activeAbortController = abortController;
+          try {
+            await handleClientMessage(c, socket, session, event.data, abortController, () => closed);
+          } finally {
+            if (activeAbortController === abortController) activeAbortController = undefined;
+          }
+        })
+        // WS-specific top-level: Hono's onError never runs for callbacks fired off
+        // an open socket, so we serialize the error inline as a close-frame-shaped
+        // JSON envelope. (HTTP entries let onError handle the same case.)
+        .catch(error => {
+          if (!closed) sendError(socket, 500, serverErrorEnvelope(error));
+        });
+    },
+  };
 };
 
 const handleClientMessage = async (
   c: Context,
-  socket: WebSocket,
+  socket: ResponsesWebSocketSocket,
   session: ReturnType<typeof createResponsesWsSession>,
   data: unknown,
   downstreamAbortController: AbortController,
@@ -104,7 +144,7 @@ const handleClientMessage = async (
       ? message.response
       : Object.fromEntries(Object.entries(message).filter(([key]) => key !== 'type' && key !== 'event_id'));
     const payload = responsesPayloadFromClientSource(source);
-    const ctx = createGatewayCtxForWs(c, socket, downstreamAbortController);
+    const ctx = createGatewayCtxForWs(c, downstreamAbortController);
     const store = session.createStore(payload.store ?? undefined);
     const snapshotMode = payload.store === false ? 'none' : 'append';
 
@@ -181,7 +221,7 @@ const responsesPayloadFromClientSource = (source: object): ResponsesPayload => {
 };
 
 const respondResponsesWebSocket = async (input: {
-  readonly socket: WebSocket;
+  readonly socket: ResponsesWebSocketSocket;
   readonly eventId: string | undefined;
   readonly signal: AbortSignal;
   readonly isClosed: () => boolean;
@@ -240,7 +280,9 @@ const respondResponsesWebSocket = async (input: {
       }
     }
 
-    if (terminalEvent === undefined) throw new Error(RESPONSES_MISSING_TERMINAL_MESSAGE);
+    if (terminalEvent === undefined) {
+      throw new Error(RESPONSES_MISSING_TERMINAL_MESSAGE);
+    }
     const done = responseDoneSummary(terminalEvent);
     if (done !== null && !sendJson(socket, { type: 'response.done', response: done }, eventId)) {
       completion = 'cancel';
@@ -335,12 +377,12 @@ const normalizeErrorBody = (body: unknown, statusCode: number): Record<string, u
   };
 };
 
-const sendError = (socket: WebSocket, statusCode: number, error: Record<string, unknown>, eventId?: string): void => {
+const sendError = (socket: ResponsesWebSocketSocket, statusCode: number, error: Record<string, unknown>, eventId?: string): void => {
   sendJson(socket, { type: 'error', status_code: statusCode, error }, eventId);
 };
 
-const sendJson = (socket: WebSocket, value: unknown, eventId?: string): boolean => {
-  if (socket.readyState !== WebSocket.OPEN) return false;
+const sendJson = (socket: ResponsesWebSocketSocket, value: unknown, eventId?: string): boolean => {
+  if (socket.readyState !== 1) return false;
   const payload = eventId === undefined || !value || typeof value !== 'object'
     ? value
     : { ...value, event_id: eventId };

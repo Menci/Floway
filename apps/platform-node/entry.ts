@@ -2,6 +2,7 @@ import { serve } from '@hono/node-server';
 
 import { bootstrapNodePlatform } from './src/bootstrap.ts';
 import { applyMigrations } from './src/migrate.ts';
+import { createNodeServeOptions, initNodeResponsesWebSocketUpgradeResolver } from './src/websocket.ts';
 import {
   app,
   initBackgroundSchedulerResolver,
@@ -17,6 +18,8 @@ import {
 initBackgroundSchedulerResolver(_c => promise => {
   promise.catch(err => console.error('[background]', err));
 });
+
+initNodeResponsesWebSocketUpgradeResolver();
 
 const dbPath = process.env.FLOWAY_DB_PATH ?? './data/floway.db';
 const filesDir = process.env.FLOWAY_FILES_DIR ?? './data/files';
@@ -41,6 +44,6 @@ const sweep = (): void => {
 setTimeout(sweep, STARTUP_DELAY_MS).unref();
 setInterval(sweep, SCHEDULED_INTERVAL_MS).unref();
 
-serve({ fetch: app.fetch, port }, info => {
+serve(createNodeServeOptions(app.fetch, port), info => {
   console.log(`floway listening on http://localhost:${info.port}`);
 });

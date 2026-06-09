@@ -181,7 +181,7 @@ describe('createGatewayCtxForWs', () => {
       c.set('apiKeyId', 'ws-key');
       c.set('apiKeyUpstreamIds', ['ws-up-1']);
       const controller = new AbortController();
-      ctx = createGatewayCtxForWs(c, {} as WebSocket, controller);
+      ctx = createGatewayCtxForWs(c, controller);
       return c.text('ok');
     });
     await app.request('/test');
@@ -195,7 +195,7 @@ describe('createGatewayCtxForWs', () => {
     let ctx: ReturnType<typeof createGatewayCtxForWs> | undefined;
     app.get('/test', c => {
       const controller = new AbortController();
-      ctx = createGatewayCtxForWs(c, {} as WebSocket, controller);
+      ctx = createGatewayCtxForWs(c, controller);
       return c.text('ok');
     });
     await app.request('/test');
@@ -209,7 +209,7 @@ describe('createGatewayCtxForWs', () => {
     let ctx: ReturnType<typeof createGatewayCtxForWs> | undefined;
     app.get('/test', c => {
       const controller = new AbortController();
-      ctx = createGatewayCtxForWs(c, {} as WebSocket, controller);
+      ctx = createGatewayCtxForWs(c, controller);
       return c.text('ok');
     });
     await app.request('/test');
@@ -223,7 +223,7 @@ describe('createGatewayCtxForWs', () => {
     let controller: AbortController | undefined;
     app.get('/test', c => {
       controller = new AbortController();
-      ctx = createGatewayCtxForWs(c, {} as WebSocket, controller);
+      ctx = createGatewayCtxForWs(c, controller);
       return c.text('ok');
     });
     await app.request('/test');
@@ -238,7 +238,7 @@ describe('createGatewayCtxForWs', () => {
     let controller: AbortController | undefined;
     app.get('/test', c => {
       controller = new AbortController();
-      ctx = createGatewayCtxForWs(c, {} as WebSocket, controller);
+      ctx = createGatewayCtxForWs(c, controller);
       return c.text('ok');
     });
     await app.request('/test');
@@ -252,7 +252,7 @@ describe('createGatewayCtxForWs', () => {
     let ctx: ReturnType<typeof createGatewayCtxForWs> | undefined;
     app.get('/test', c => {
       const controller = new AbortController();
-      ctx = createGatewayCtxForWs(c, {} as WebSocket, controller);
+      ctx = createGatewayCtxForWs(c, controller);
       return c.text('ok');
     });
     await app.request('/test');
@@ -273,7 +273,7 @@ describe('createGatewayCtxForWs', () => {
     const before = performance.now();
     app.get('/test', c => {
       const controller = new AbortController();
-      ctx = createGatewayCtxForWs(c, {} as WebSocket, controller);
+      ctx = createGatewayCtxForWs(c, controller);
       return c.text('ok');
     });
     await app.request('/test');

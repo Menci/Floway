@@ -38,7 +38,6 @@ export const createGatewayCtxFromHono = (c: Context, wantsStream: boolean): Gate
 
 export const createGatewayCtxForWs = (
   c: Context,
-  _server: WebSocket,
   downstreamAbortController: AbortController,
 ): GatewayCtx => {
   const apiKeyId = c.get('apiKeyId') as string;
