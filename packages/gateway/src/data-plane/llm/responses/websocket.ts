@@ -29,9 +29,15 @@ export interface ResponsesWebSocketEvents {
   onError?(event: unknown, socket: ResponsesWebSocketSocket): void;
 }
 
+interface ResponsesWebSocketHandlers {
+  onMessage(event: { readonly data: unknown }, socket: ResponsesWebSocketSocket): void;
+  onClose(event: unknown, socket: ResponsesWebSocketSocket): void;
+  onError(event: unknown, socket: ResponsesWebSocketSocket): void;
+}
+
 type ResponsesWebSocketUpgradeResolver = (
   c: Context,
-  events: ResponsesWebSocketEvents,
+  events: ResponsesWebSocketHandlers,
 ) => Response | Promise<Response>;
 
 let _responsesWebSocketUpgradeResolver: ResponsesWebSocketUpgradeResolver | null = null;
@@ -71,16 +77,15 @@ export const responsesWebSocket = async (c: Context): Promise<Response> => {
   const server = pair[1];
   server.accept();
 
-  events.onOpen?.(new Event('open'), server);
-  server.addEventListener('close', event => events.onClose?.(event, server));
-  server.addEventListener('error', event => events.onError?.(event, server));
-  server.addEventListener('message', event => events.onMessage?.(event, server));
+  server.addEventListener('close', event => events.onClose(event, server));
+  server.addEventListener('error', event => events.onError(event, server));
+  server.addEventListener('message', event => events.onMessage(event, server));
 
   return new Response(null, { status: 101, webSocket: client } as ResponseInit & { readonly webSocket: WebSocket });
 };
 
-const createResponsesWebSocketEvents = (c: Context): ResponsesWebSocketEvents => {
-  const session = createResponsesWsSession((c.get('apiKeyId') as string | undefined) ?? null);
+const createResponsesWebSocketEvents = (c: Context): ResponsesWebSocketHandlers => {
+  const session = createResponsesWsSession(c.get('apiKeyId') as string);
   let closed = false;
   let activeAbortController: AbortController | undefined;
   let queue = Promise.resolve();

@@ -1,11 +1,12 @@
-import { serve } from '@hono/node-server';
+import { serve, upgradeWebSocket } from '@hono/node-server';
+import { WebSocketServer } from 'ws';
 
 import { bootstrapNodePlatform } from './src/bootstrap.ts';
 import { applyMigrations } from './src/migrate.ts';
-import { createNodeServeOptions, initNodeResponsesWebSocketUpgradeResolver } from './src/websocket.ts';
 import {
   app,
   initBackgroundSchedulerResolver,
+  initResponsesWebSocketUpgradeResolver,
   initRepo,
   runScheduledMaintenance,
   SqlRepo,
@@ -19,7 +20,8 @@ initBackgroundSchedulerResolver(_c => promise => {
   promise.catch(err => console.error('[background]', err));
 });
 
-initNodeResponsesWebSocketUpgradeResolver();
+initResponsesWebSocketUpgradeResolver((c, events) =>
+  upgradeWebSocket(c, events, { onError: err => console.error('[websocket]', err) }));
 
 const dbPath = process.env.FLOWAY_DB_PATH ?? './data/floway.db';
 const filesDir = process.env.FLOWAY_FILES_DIR ?? './data/files';
@@ -44,6 +46,10 @@ const sweep = (): void => {
 setTimeout(sweep, STARTUP_DELAY_MS).unref();
 setInterval(sweep, SCHEDULED_INTERVAL_MS).unref();
 
-serve(createNodeServeOptions(app.fetch, port), info => {
+serve({
+  fetch: app.fetch,
+  port,
+  websocket: { server: new WebSocketServer({ noServer: true }) },
+}, info => {
   console.log(`floway listening on http://localhost:${info.port}`);
 });
