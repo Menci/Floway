@@ -7,7 +7,7 @@ import { responsesServe } from './serve.ts';
 import { tokenUsage } from '../../shared/telemetry/usage.ts';
 import { createGatewayCtxForWs, type GatewayCtx } from '../shared/gateway-ctx.ts';
 import { SourceStreamState, eventResultMetadata, recordPerformance, recordUsage } from '../shared/respond.ts';
-import type { StreamCompletion } from '../shared/stream/sse.ts';
+import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS, type StreamCompletion } from '../shared/stream/sse.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { isResponsesTerminalEvent, type ResponsesPayload, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { ExecuteResult } from '@floway-dev/provider';
@@ -250,38 +250,74 @@ const respondResponsesWebSocket = async (input: {
   let completion: StreamCompletion = 'error';
   try {
     let terminalEvent: ResponsesStreamEvent | undefined;
-    for await (const frame of result.events) {
-      if (signal.aborted || isClosed()) {
-        completion = 'cancel';
-        return;
-      }
-      if (frame.type !== 'event') continue;
+    const iterator = result.events[Symbol.asyncIterator]();
+    let pendingNext = pendingWsFrameResult(iterator.next());
+    let completed = false;
+    let stoppedByDownstream = false;
 
-      const event = frame.event;
-      const failed = event.type === 'error' || event.type === 'response.failed';
-      if (failed) state.failed = true;
-      state.rememberUsage('response' in event ? tokenUsageFromResponsesResult((event as { response: ResponsesResult }).response) : null);
+    const stopForDownstream = (): void => {
+      stoppedByDownstream = true;
+      completion = 'cancel';
+    };
 
-      // The upstream terminal event flushes immediately; we then drain the
-      // remainder of the generator (storage commit, any post-terminal frames)
-      // before emitting the WS-only `response.done` envelope, so the client
-      // sees `response.done` last and treats it as the stable signal that the
-      // stored response can be referenced by a follow-up message.
-      if (terminalEvent !== undefined) continue;
+    try {
+      while (true) {
+        if (signal.aborted || isClosed()) {
+          stopForDownstream();
+          return;
+        }
 
-      if (isResponsesTerminalEvent(event)) {
-        if (!sendJson(socket, event, eventId)) {
-          completion = 'cancel';
+        const next = await nextFrameOrKeepAlive(pendingNext);
+
+        if (next.type === 'keep-alive') {
+          if (!sendJson(socket, { type: 'ping' }, eventId)) {
+            stopForDownstream();
+            return;
+          }
           continue;
         }
-        if (!failed) state.completed = true;
-        terminalEvent = event;
-        continue;
-      }
+        if (next.type === 'next-error') throw next.error;
+        if (next.result.done) {
+          completed = true;
+          break;
+        }
 
-      if (!sendJson(socket, event, eventId)) {
-        completion = 'cancel';
-        return;
+        const frame = next.result.value;
+        pendingNext = pendingWsFrameResult(iterator.next());
+        if (frame.type !== 'event') continue;
+
+        const event = frame.event;
+        const failed = event.type === 'error' || event.type === 'response.failed';
+        if (failed) state.failed = true;
+        state.rememberUsage('response' in event ? tokenUsageFromResponsesResult((event as { response: ResponsesResult }).response) : null);
+
+        // The upstream terminal event flushes immediately; we then drain the
+        // remainder of the generator (storage commit, any post-terminal frames)
+        // before emitting the WS-only `response.done` envelope, so the client
+        // sees `response.done` last and treats it as the stable signal that the
+        // stored response can be referenced by a follow-up message.
+        if (terminalEvent !== undefined) continue;
+
+        if (isResponsesTerminalEvent(event)) {
+          if (!sendJson(socket, event, eventId)) {
+            completion = 'cancel';
+            continue;
+          }
+          if (!failed) state.completed = true;
+          terminalEvent = event;
+          continue;
+        }
+
+        if (!sendJson(socket, event, eventId)) {
+          stopForDownstream();
+          return;
+        }
+      }
+    } finally {
+      if (!completed) {
+        const stopped = iterator.return?.();
+        if (stoppedByDownstream) stopped?.catch(() => {});
+        else await stopped;
       }
     }
 
@@ -310,6 +346,29 @@ const respondResponsesWebSocket = async (input: {
     } finally {
       recordPerformance(ctx, metadata.performance, state.failedAfter(completion));
     }
+  }
+};
+
+type WsFrameRaceResult =
+  | { type: 'frame'; result: IteratorResult<ProtocolFrame<ResponsesStreamEvent>> }
+  | { type: 'next-error'; error: unknown }
+  | { type: 'keep-alive' };
+
+const pendingWsFrameResult = (pendingNext: Promise<IteratorResult<ProtocolFrame<ResponsesStreamEvent>>>): Promise<WsFrameRaceResult> =>
+  pendingNext.then(
+    (result): WsFrameRaceResult => ({ type: 'frame', result }),
+    (error): WsFrameRaceResult => ({ type: 'next-error', error }),
+  );
+
+const nextFrameOrKeepAlive = async (pendingFrame: Promise<WsFrameRaceResult>): Promise<WsFrameRaceResult> => {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const keepAlive = new Promise<WsFrameRaceResult>(resolve => {
+    timeoutId = setTimeout(() => resolve({ type: 'keep-alive' }), DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS);
+  });
+  try {
+    return await Promise.race([pendingFrame, keepAlive]);
+  } finally {
+    if (timeoutId !== undefined) clearTimeout(timeoutId);
   }
 };
 

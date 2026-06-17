@@ -2,7 +2,9 @@ import type { ExecutionContext } from 'hono';
 import { test } from 'vitest';
 
 import { hashResponsesItemContent, isStoredResponseId } from './items/format.ts';
+import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS } from '../shared/stream/sse.ts';
 import { app } from '../../../app.ts';
+import { FakeTime } from '../../../test-time.ts';
 import { copilotModels, setupAppTest, sseResponsesResponse } from '../../../test-helpers.ts';
 import { assert, assertEquals, assertExists, assertStringIncludes, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
@@ -75,13 +77,14 @@ const installWorkerWebSocketRuntime = (): {
 const waitForMessages = async (
   socket: TestWorkerWebSocket,
   done: (messages: readonly Record<string, unknown>[]) => boolean,
+  timeoutMs = 1_000,
 ): Promise<readonly Record<string, unknown>[]> => {
   const messages: Record<string, unknown>[] = [];
   return await new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       socket.removeEventListener('message', onMessage);
       reject(new Error(`Timed out waiting for WebSocket messages; received ${JSON.stringify(messages)}`));
-    }, 1_000);
+    }, timeoutMs);
     const onMessage = (event: Event): void => {
       const data = (event as MessageEvent<string>).data;
       messages.push(JSON.parse(data) as Record<string, unknown>);
@@ -92,6 +95,10 @@ const waitForMessages = async (
     };
     socket.addEventListener('message', onMessage);
   });
+};
+
+const waitForMicrotasks = async (): Promise<void> => {
+  for (let i = 0; i < 10; i++) await Promise.resolve();
 };
 
 const connectResponsesWebSocket = async (apiKey: string): Promise<TestWorkerWebSocket> => {
@@ -188,6 +195,112 @@ test('Responses WebSocket forwards stream events, echoes event_id, and sends res
       });
     }),
   );
+});
+
+test('Responses WebSocket keepalive during an in-flight request does not drop the pending upstream frame', async () => {
+  const { apiKey } = await setupAppTest();
+  const time = new FakeTime();
+  const encoder = new TextEncoder();
+  let upstreamController!: ReadableStreamDefaultController<Uint8Array>;
+  let resolveUpstreamReadStarted!: () => void;
+  const upstreamReadStarted = new Promise<void>(resolve => {
+    resolveUpstreamReadStarted = resolve;
+  });
+  let upstreamReadStartedResolved = false;
+
+  const resolveReadStartedOnce = (): void => {
+    if (upstreamReadStartedResolved) return;
+    upstreamReadStartedResolved = true;
+    resolveUpstreamReadStarted();
+  };
+  const enqueueSseEvent = (event: string, data: unknown): void => {
+    upstreamController.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+  };
+  const hasMessageType = (messages: readonly Record<string, unknown>[], type: string): boolean =>
+    messages.some(message => message.type === type);
+
+  try {
+    await withMockedFetch(
+      async request => {
+        const url = new URL(request.url);
+        if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+        if (url.pathname === '/copilot_internal/v2/token') {
+          return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600 });
+        }
+        if (url.pathname === '/models') {
+          return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'] }]));
+        }
+        if (url.pathname === '/responses') {
+          return new Response(new ReadableStream<Uint8Array>({
+            start(controller) {
+              upstreamController = controller;
+            },
+            pull() {
+              resolveReadStartedOnce();
+            },
+          }), {
+            headers: { 'content-type': 'text/event-stream' },
+          });
+        }
+        throw new Error(`Unhandled fetch ${request.url}`);
+      },
+      async () => await withWorkerWebSocketRuntime(async () => {
+        const client = await connectResponsesWebSocket(apiKey.key);
+        const messages: Record<string, unknown>[] = [];
+        const onMessage = (event: Event): void => {
+          messages.push(JSON.parse((event as MessageEvent<string>).data) as Record<string, unknown>);
+        };
+        client.addEventListener('message', onMessage);
+
+        try {
+          client.send(JSON.stringify({
+            type: 'response.create',
+            event_id: 'evt_keepalive',
+            response: {
+              model: 'gpt-direct-responses',
+              input: 'hello',
+            },
+          }));
+
+          await upstreamReadStarted;
+          for (let i = 0; i < 4 && !hasMessageType(messages, 'ping'); i++) {
+            await waitForMicrotasks();
+            await time.tickAsync(DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS);
+          }
+
+          assert(hasMessageType(messages, 'ping'), 'expected a ping while the upstream response stream is idle');
+
+          const response = {
+            id: 'resp_ws_keepalive',
+            object: 'response',
+            model: 'gpt-direct-responses',
+            status: 'completed',
+            output: [],
+            output_text: 'done',
+          };
+          const inProgress = { ...response, status: 'in_progress', output: [], output_text: '' };
+          enqueueSseEvent('response.created', { type: 'response.created', response: inProgress, sequence_number: 0 });
+          enqueueSseEvent('response.in_progress', { type: 'response.in_progress', response: inProgress, sequence_number: 1 });
+          enqueueSseEvent('response.completed', { type: 'response.completed', response, sequence_number: 2 });
+          upstreamController.enqueue(encoder.encode('data: [DONE]\n\n'));
+          upstreamController.close();
+
+          for (let i = 0; i < 20 && !hasMessageType(messages, 'response.done'); i++) {
+            await waitForMicrotasks();
+          }
+
+          const types = messages.map(message => message.type);
+          assert(types.indexOf('ping') < types.indexOf('response.created'), 'expected the delayed upstream frame after the ping');
+          assert(types.includes('response.completed'), 'expected the terminal upstream frame after the ping');
+          assertEquals(types.at(-1), 'response.done');
+        } finally {
+          client.removeEventListener('message', onMessage);
+        }
+      }),
+    );
+  } finally {
+    time.restore();
+  }
 });
 
 test('Responses WebSocket returns OpenAI-style error envelopes for unsupported client events', async () => {
