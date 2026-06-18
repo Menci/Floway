@@ -1,0 +1,11 @@
+.git
+node_modules
+**/node_modules
+**/dist
+.wrangler
+.vite
+.eslintcache
+data
+.env
+outputs
+work

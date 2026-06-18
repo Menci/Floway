@@ -71,6 +71,23 @@ The Node target serves no SPA — point the dashboard at the same admin host
 through your own static-file server, or use the Cloudflare deploy for the
 dashboard while running data-plane traffic on Node.
 
+### Docker Compose (self-hosted web + server)
+
+```bash
+git clone https://github.com/Menci/Floway.git
+cd Floway
+ADMIN_KEY=<admin-secret> docker compose -f docker/docker-compose.yml up --build -d
+```
+
+Compose starts two services: `server` runs the Node.js target on
+`http://localhost:8788` with SQLite/files persisted in the `floway-data`
+volume, and `web` serves the built dashboard on `http://localhost:18088`.
+The nginx web container proxies Floway API paths to `server`, including
+WebSocket-capable `/v1/responses` and the Codex-compatible
+`/azure-api.codex/*` routes. Pass `FLOWAY_WEB_PORT` or
+`FLOWAY_SERVER_PORT` alongside `ADMIN_KEY` if those host ports are already in
+use.
+
 ### After the first boot
 
 Open the deployed URL (or `http://localhost:8788` for Node), log in with
