@@ -29,6 +29,19 @@
     "directory": "apps/web/dist",
     "html_handling": "auto-trailing-slash",
     "not_found_handling": "single-page-application",
+    // The path set that diverts to the Worker (rather than being served by
+    // Workers Static Assets as a SPA fallback) MUST stay in sync with the
+    // same list in two other places — drift is silent and only surfaces as
+    // a 404 the SPA fallback served for a real gateway endpoint:
+    //
+    //   - The `location ~` regexes in docker/nginx.conf (the docker-compose
+    //     self-host topology).
+    //   - `wranglerProxiedPaths` in apps/web/vite.config.ts (the `vite dev`
+    //     proxy-to-wrangler-dev topology).
+    //
+    // All three describe the same concept: every path the gateway owns; the
+    // rest is the SPA. Bare LLM paths (without `/v1` prefix) are listed
+    // because the gateway accepts both forms.
     "run_worker_first": [
       "/api/*",
       "/auth",
@@ -37,6 +50,7 @@
       "/v1beta/*",
       "/chat/*",
       "/responses",
+      "/responses/*",
       "/messages",
       "/messages/*",
       "/embeddings",

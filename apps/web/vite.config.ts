@@ -7,8 +7,34 @@ import { defineConfig } from 'vite';
 // claims 8787). Vite proxies every path the Worker owns so the SPA can call
 // relative URLs in both dev and prod. Anything not matched falls through to
 // the Vite dev server, which serves the SPA itself.
+//
+// This list MUST stay in sync with the same list in two other places — drift
+// is silent and only surfaces as a 404 the SPA fallback served for a real
+// gateway endpoint:
+//
+//   - The `location ~` regexes in docker/nginx.conf (the docker-compose
+//     self-host topology).
+//   - `assets.run_worker_first` in wrangler.example.jsonc (the production
+//     Cloudflare Workers topology, where the SPA is served from Workers
+//     Static Assets and the listed paths divert to the Worker).
+//
+// Bare LLM paths (without `/v1` prefix) are listed because the gateway
+// accepts both forms.
 const wranglerOrigin = 'http://127.0.0.1:8788';
-const wranglerProxiedPaths = ['/api', '/auth', '/v1', '/v1beta', '/embeddings', '/models'];
+const wranglerProxiedPaths = [
+  '/api',
+  '/auth',
+  '/v1',
+  '/v1beta',
+  '/azure-api.codex',
+  '/chat/completions',
+  '/responses',
+  '/messages',
+  '/embeddings',
+  '/models',
+  '/images/generations',
+  '/images/edits',
+];
 
 export default defineConfig({
   plugins: [
