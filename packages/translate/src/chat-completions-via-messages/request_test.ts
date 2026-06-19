@@ -44,8 +44,15 @@ function stubRemoteImageLoader(result: Awaited<ReturnType<RemoteImageLoader>>): 
 }
 
 // ── System / Developer messages ──
+//
+// Chat Completions system/developer messages translate INLINE as Messages
+// role: 'system' items, preserving chronology. The Messages role enum admits
+// 'system' (https://platform.claude.com/docs/en/api/messages); empirical
+// testing confirms native Messages upstreams accept mid-array system. The
+// Messages top-level `system` field is left untouched — Chat Completions has
+// no canonical top-level system slot to hoist into.
 
-test('system message extracted to system field', async () => {
+test('system message emitted inline as role: system', async () => {
   const result = await translateChatCompletionsToMessages(
     mkPayload({
       messages: [
@@ -54,12 +61,13 @@ test('system message extracted to system field', async () => {
       ],
     }),
   );
-  assertEquals(result.system, [{ type: 'text', text: 'You are helpful.', cache_control: { type: 'ephemeral' } }]);
-  assertEquals(result.messages.length, 1);
-  assertEquals(result.messages[0].role, 'user');
+  assertEquals(result.system, undefined);
+  assertEquals(result.messages.length, 2);
+  assertEquals(result.messages[0], { role: 'system', content: 'You are helpful.' });
+  assertEquals(result.messages[1].role, 'user');
 });
 
-test('developer message treated same as system', async () => {
+test('developer message normalized to role: system inline', async () => {
   const result = await translateChatCompletionsToMessages(
     mkPayload({
       messages: [
@@ -68,23 +76,30 @@ test('developer message treated same as system', async () => {
       ],
     }),
   );
-  assertEquals(result.system, [{ type: 'text', text: 'Dev instructions', cache_control: { type: 'ephemeral' } }]);
+  assertEquals(result.system, undefined);
+  assertEquals(result.messages[0], { role: 'system', content: 'Dev instructions' });
 });
 
-test('multiple system messages joined with double newline', async () => {
+test('multiple system messages preserve chronology inline', async () => {
   const result = await translateChatCompletionsToMessages(
     mkPayload({
       messages: [
         { role: 'system', content: 'First' },
-        { role: 'developer', content: 'Second' },
         { role: 'user', content: 'Hi' },
+        { role: 'developer', content: 'Second' },
+        { role: 'user', content: 'Bye' },
       ],
     }),
   );
-  assertEquals(result.system, [{ type: 'text', text: 'First\n\nSecond', cache_control: { type: 'ephemeral' } }]);
+  assertEquals(result.system, undefined);
+  assertEquals(result.messages.length, 4);
+  assertEquals(result.messages[0], { role: 'system', content: 'First' });
+  assertEquals(result.messages[1].role, 'user');
+  assertEquals(result.messages[2], { role: 'system', content: 'Second' });
+  assertEquals(result.messages[3].role, 'user');
 });
 
-test('empty system content is skipped', async () => {
+test('empty system content emits empty inline system', async () => {
   const result = await translateChatCompletionsToMessages(
     mkPayload({
       messages: [
@@ -94,9 +109,10 @@ test('empty system content is skipped', async () => {
     }),
   );
   assertEquals(result.system, undefined);
+  assertEquals(result.messages[0], { role: 'system', content: '' });
 });
 
-test('system with ContentPart array extracts text parts', async () => {
+test('system with ContentPart array maps each text part to a MessagesTextBlock', async () => {
   const result = await translateChatCompletionsToMessages(
     mkPayload({
       messages: [
@@ -111,7 +127,14 @@ test('system with ContentPart array extracts text parts', async () => {
       ],
     }),
   );
-  assertEquals(result.system, [{ type: 'text', text: 'AB', cache_control: { type: 'ephemeral' } }]);
+  assertEquals(result.system, undefined);
+  assertEquals(result.messages[0], {
+    role: 'system',
+    content: [
+      { type: 'text', text: 'A' },
+      { type: 'text', text: 'B' },
+    ],
+  });
 });
 
 // ── Basic message mapping ──
@@ -976,19 +999,20 @@ test('full tool use round-trip conversation', async () => {
       ],
     }),
   );
-  assertEquals(result.system, [{ type: 'text', text: 'You are helpful.', cache_control: { type: 'ephemeral' } }]);
-  assertEquals(result.messages.length, 4);
-  assertEquals(result.messages[0].role, 'user');
-  assertEquals(result.messages[1].role, 'assistant');
-  assertEquals(result.messages[2].role, 'user');
-  assertEquals(result.messages[3].role, 'assistant');
-  const trBlocks = result.messages[2].content as MessagesUserContentBlock[];
+  assertEquals(result.system, undefined);
+  assertEquals(result.messages.length, 5);
+  assertEquals(result.messages[0], { role: 'system', content: 'You are helpful.' });
+  assertEquals(result.messages[1].role, 'user');
+  assertEquals(result.messages[2].role, 'assistant');
+  assertEquals(result.messages[3].role, 'user');
+  assertEquals(result.messages[4].role, 'assistant');
+  const trBlocks = result.messages[3].content as MessagesUserContentBlock[];
   assertEquals(trBlocks[0].type, 'tool_result');
 });
 
 // ── Cache breakpoints ──
 
-test('attaches ephemeral cache breakpoints to system, last function tool, and last message block', async () => {
+test('attaches ephemeral cache breakpoints to last function tool and last message block', async () => {
   const result = await translateChatCompletionsToMessages(
     mkPayload({
       messages: [
@@ -1008,7 +1032,8 @@ test('attaches ephemeral cache breakpoints to system, last function tool, and la
     }),
   );
 
-  assertEquals(result.system, [{ type: 'text', text: 'You are helpful.', cache_control: { type: 'ephemeral' } }]);
+  // System messages flow through inline; no top-level system field is set.
+  assertEquals(result.system, undefined);
 
   const tools = result.tools as MessagesClientTool[];
   assertEquals(tools[0].cache_control, undefined);

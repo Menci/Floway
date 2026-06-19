@@ -178,7 +178,17 @@ export interface MessagesAssistantMessage {
   content: string | MessagesAssistantContentBlock[];
 }
 
-export type MessagesMessage = MessagesUserMessage | MessagesAssistantMessage;
+// The Anthropic Messages API role enum is "user" | "assistant" | "system"
+// (https://platform.claude.com/docs/en/api/messages). The docs prose has a
+// stale line saying "there is no system role for input messages", but the
+// schema and live behavior (Claude Code 2.1.154+ ships these and the
+// Anthropic backend accepts them) include role: "system". Honor the schema.
+export interface MessagesSystemMessage {
+  role: 'system';
+  content: string | MessagesTextBlock[];
+}
+
+export type MessagesMessage = MessagesUserMessage | MessagesAssistantMessage | MessagesSystemMessage;
 
 export interface MessagesClientTool {
   type?: 'custom';

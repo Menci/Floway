@@ -381,6 +381,47 @@ test('prepareMessagesWebSearchShimRequest rejects native web search name collisi
   });
 });
 
+test('prepareMessagesWebSearchShimRequest passes in-array role:"system" messages through unchanged', () => {
+  // Regression: prepareMessagesWebSearchReplay used to assume any non-user
+  // message with array content was an assistant turn and rewrite it with
+  // role: 'assistant'. After MessagesMessage was widened to include
+  // MessagesSystemMessage, a system message with MessagesTextBlock[] content
+  // would silently be re-roled. Verify the shim now passes system messages
+  // through as-is whether their content is a string or text-block array.
+  const payload: MessagesPayload = {
+    model: 'claude-test',
+    max_tokens: 64,
+    messages: [
+      { role: 'user', content: 'hi' },
+      { role: 'system', content: 'be terse' },
+      {
+        role: 'system',
+        content: [
+          { type: 'text', text: 'paragraph A' },
+          { type: 'text', text: 'paragraph B' },
+        ],
+      },
+      { role: 'user', content: 'who are you' },
+    ],
+  };
+
+  const prepared = prepareMessagesWebSearchShimRequest(payload);
+
+  assertEquals(prepared.type, 'ok');
+  if (prepared.type !== 'ok') throw new Error('expected ok result');
+
+  const messages = prepared.payload.messages;
+  assertEquals(messages.length, 4);
+  assertEquals(messages[1], { role: 'system', content: 'be terse' });
+  assertEquals(messages[2], {
+    role: 'system',
+    content: [
+      { type: 'text', text: 'paragraph A' },
+      { type: 'text', text: 'paragraph B' },
+    ],
+  });
+});
+
 test('prepareMessagesWebSearchShimRequest decodes our native-looking replay into upstream tool history', () => {
   const prepared = prepareMessagesWebSearchShimRequest(makeNativeReplayPayload());
 

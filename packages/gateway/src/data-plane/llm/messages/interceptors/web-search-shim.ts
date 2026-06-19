@@ -403,6 +403,17 @@ const prepareMessagesWebSearchReplay = (messages: MessagesMessage[]): PreparedMe
       continue;
     }
 
+    // System messages with array content pass through unchanged: the
+    // remaining rewrite path below assumes assistant-shape content
+    // (server_tool_use, web_search_tool_result, citations) and finalizes
+    // with `role: 'assistant'`, which would silently corrupt a
+    // MessagesSystemMessage carrying MessagesTextBlock[] into an assistant
+    // turn. System messages never own web-search replay markers.
+    if (message.role === 'system') {
+      rewrittenMessages.push(message);
+      continue;
+    }
+
     const ownedReplayResultsByServerToolUseId = collectOwnedReplayResultsByServerToolUseId(message.content);
 
     for (const ownedReplayResult of ownedReplayResultsByServerToolUseId.values()) {

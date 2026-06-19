@@ -1,6 +1,6 @@
 import { messagesThinkingBlockFromChatCompletionsScalarReasoning } from '../shared/chat-completions-and-messages/reasoning.ts';
 import { parseToolArgumentsObject } from '../shared/messages/tool-arguments.ts';
-import { applyLastMessageCacheBreakpoint, applyLastToolCacheBreakpoint, EPHEMERAL_CACHE_CONTROL } from '../shared/via-messages/cache-breakpoints.ts';
+import { applyLastMessageCacheBreakpoint, applyLastToolCacheBreakpoint } from '../shared/via-messages/cache-breakpoints.ts';
 import { fetchRemoteImage, type RemoteImageLoader, resolveImageUrlToMessagesImage } from '../shared/via-messages/remote-images.ts';
 import type { ChatCompletionsPayload, ChatCompletionsContentPart, ChatCompletionsMessage, ChatCompletionsTool } from '@floway-dev/protocols/chat-completions';
 import { MESSAGES_FALLBACK_MAX_TOKENS, type MessagesAssistantContentBlock, type MessagesMessage, type MessagesPayload, type MessagesTextBlock, type MessagesUserContentBlock } from '@floway-dev/protocols/messages';
@@ -82,6 +82,17 @@ const convertUserContent = async (message: ChatCompletionsMessage, loadRemoteIma
   return blocks.length > 0 ? blocks : [{ type: 'text', text: '' }];
 };
 
+const convertSystemContent = (content: ChatCompletionsMessage['content']): string | MessagesTextBlock[] => {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+
+  const blocks: MessagesTextBlock[] = content
+    .filter((part): part is Extract<ChatCompletionsContentPart, { type: 'text' }> => part.type === 'text')
+    .map(part => ({ type: 'text', text: part.text }));
+
+  return blocks.length > 0 ? blocks : '';
+};
+
 const buildMessagesInput = async (messages: ChatCompletionsMessage[], loadRemoteImage: RemoteImageLoader): Promise<MessagesMessage[]> => {
   const result: MessagesMessage[] = [];
 
@@ -108,6 +119,18 @@ const buildMessagesInput = async (messages: ChatCompletionsMessage[], loadRemote
           content: typeof message.content === 'string' ? message.content : '',
         },
       ]);
+      break;
+    case 'system':
+    case 'developer':
+      // Both Chat Completions system and developer messages map to Messages
+      // role: 'system' inline. The Messages role enum admits 'system'
+      // (https://platform.claude.com/docs/en/api/messages); developer content
+      // is the same intent layer and normalizes to system on the Messages
+      // wire.
+      result.push({
+        role: 'system',
+        content: convertSystemContent(message.content),
+      });
       break;
     default:
       throw new Error(`Chat Completions → Messages translator does not accept ${message.role} messages.`);
@@ -138,35 +161,12 @@ const CHAT_TOOL_CHOICES = {
 } satisfies Record<Extract<ChatCompletionsPayload['tool_choice'], string>, MessagesPayload['tool_choice']>;
 
 export const translateChatCompletionsToMessages = async (payload: ChatCompletionsPayload, options: TranslateChatCompletionsToMessagesOptions = {}): Promise<MessagesPayload> => {
-  const systemParts: string[] = [];
-  const nonSystemMessages: ChatCompletionsMessage[] = [];
-
-  for (const message of payload.messages) {
-    if (message.role === 'system' || message.role === 'developer') {
-      const text =
-        typeof message.content === 'string'
-          ? message.content
-          : Array.isArray(message.content)
-            ? message.content
-                .filter((part): part is Extract<ChatCompletionsContentPart, { type: 'text' }> => part.type === 'text')
-                .map(part => part.text)
-                .join('')
-            : '';
-
-      if (text) systemParts.push(text);
-      continue;
-    }
-
-    nonSystemMessages.push(message);
-  }
-
-  const messages = await buildMessagesInput(nonSystemMessages, options.loadRemoteImage ?? fetchRemoteImage);
+  // System / developer messages pass through inline as Messages role: 'system'
+  // items (the Messages role enum supports it). Chat Completions has no
+  // canonical top-level system field, so nothing is hoisted to MessagesPayload.system.
+  const messages = await buildMessagesInput(payload.messages, options.loadRemoteImage ?? fetchRemoteImage);
 
   const maxTokens = payload.max_tokens ?? options.fallbackMaxOutputTokens ?? MESSAGES_FALLBACK_MAX_TOKENS;
-  const systemText = systemParts.length > 0 ? systemParts.join('\n\n') : '';
-  const systemBlocks: MessagesTextBlock[] | undefined = systemText
-    ? [{ type: 'text', text: systemText, cache_control: EPHEMERAL_CACHE_CONTROL }]
-    : undefined;
   const tools = payload.tools?.length ? translateChatCompletionsTools(payload.tools) : undefined;
   applyLastToolCacheBreakpoint(tools);
   applyLastMessageCacheBreakpoint(messages);
@@ -194,7 +194,6 @@ export const translateChatCompletionsToMessages = async (payload: ChatCompletion
     model: payload.model,
     messages,
     max_tokens: maxTokens,
-    ...(systemBlocks ? { system: systemBlocks } : {}),
     ...(payload.temperature != null ? { temperature: payload.temperature } : {}),
     ...(payload.top_p != null ? { top_p: payload.top_p } : {}),
     ...(payload.stop != null

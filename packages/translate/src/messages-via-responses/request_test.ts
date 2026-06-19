@@ -429,3 +429,76 @@ test('translateMessagesToResponses rejects an unknown user content block type', 
     'does not accept audio user content blocks',
   );
 });
+
+test('translateMessagesToResponses emits in-array role:"system" inline as a Responses message input item', () => {
+  const result = translateMessagesToResponses({
+    model: 'gpt-test',
+    max_tokens: 256,
+    messages: [
+      { role: 'user', content: 'hi' },
+      { role: 'system', content: 'be terse' },
+      { role: 'user', content: 'who are you' },
+    ],
+  });
+
+  const input = result.input as Array<{ type: string; role?: string; content?: unknown }>;
+  assertEquals(input.length, 3);
+  assertEquals(input[0].role, 'user');
+  assertEquals(input[1], { type: 'message', role: 'system', content: 'be terse' });
+  assertEquals(input[2].role, 'user');
+});
+
+test('translateMessagesToResponses joins in-array system text blocks with double newline', () => {
+  const result = translateMessagesToResponses({
+    model: 'gpt-test',
+    max_tokens: 256,
+    messages: [
+      {
+        role: 'system',
+        content: [
+          { type: 'text', text: 'Para A' },
+          { type: 'text', text: 'Para B' },
+        ],
+      },
+      { role: 'user', content: 'hi' },
+    ],
+  });
+
+  const input = result.input as Array<{ type: string; role?: string; content?: unknown }>;
+  assertEquals(input[0], { type: 'message', role: 'system', content: 'Para A\n\nPara B' });
+});
+
+test('translateMessagesToResponses preserves chronology of multiple in-array system messages', () => {
+  const result = translateMessagesToResponses({
+    model: 'gpt-test',
+    max_tokens: 256,
+    messages: [
+      { role: 'system', content: 'mid-array A' },
+      { role: 'user', content: 'q1' },
+      { role: 'assistant', content: 'a1' },
+      { role: 'system', content: 'mid-array B' },
+      { role: 'user', content: 'q2' },
+    ],
+  });
+
+  const input = result.input as Array<{ type: string; role?: string }>;
+  assertEquals(input.length, 5);
+  assertEquals(input[0].role, 'system');
+  assertEquals(input[1].role, 'user');
+  assertEquals(input[2].role, 'assistant');
+  assertEquals(input[3].role, 'system');
+  assertEquals(input[4].role, 'user');
+});
+
+test('translateMessagesToResponses rejects an unknown message role', () => {
+  assertThrows(
+    () =>
+      translateMessagesToResponses({
+        model: 'gpt-test',
+        max_tokens: 256,
+        messages: [{ role: 'tool', content: 'oops' } as unknown as { role: 'user'; content: string }],
+      }),
+    Error,
+    'does not accept role tool',
+  );
+});

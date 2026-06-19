@@ -407,3 +407,76 @@ test('translateMessagesToChatCompletions rejects an unknown user content block t
     'does not accept audio content blocks',
   );
 });
+
+test('translateMessagesToChatCompletions emits in-array role:"system" inline as a CC system message', () => {
+  const result = translateMessagesToChatCompletions({
+    model: 'gpt-test',
+    max_tokens: 256,
+    messages: [
+      { role: 'user', content: 'hi' },
+      { role: 'system', content: 'be terse' },
+      { role: 'user', content: 'who are you' },
+    ],
+  });
+
+  assertEquals(result.messages.length, 3);
+  assertEquals(result.messages[0].role, 'user');
+  assertEquals(result.messages[1], { role: 'system', content: 'be terse' });
+  assertEquals(result.messages[2].role, 'user');
+});
+
+test('translateMessagesToChatCompletions joins in-array system text blocks with double newline', () => {
+  const result = translateMessagesToChatCompletions({
+    model: 'gpt-test',
+    max_tokens: 256,
+    messages: [
+      {
+        role: 'system',
+        content: [
+          { type: 'text', text: 'Para A' },
+          { type: 'text', text: 'Para B' },
+        ],
+      },
+      { role: 'user', content: 'hi' },
+    ],
+  });
+
+  assertEquals(result.messages[0], { role: 'system', content: 'Para A\n\nPara B' });
+});
+
+test('translateMessagesToChatCompletions preserves chronology of multiple in-array system messages', () => {
+  const result = translateMessagesToChatCompletions({
+    model: 'gpt-test',
+    max_tokens: 256,
+    system: 'top-level prompt',
+    messages: [
+      { role: 'system', content: 'mid-array A' },
+      { role: 'user', content: 'q1' },
+      { role: 'assistant', content: 'a1' },
+      { role: 'system', content: 'mid-array B' },
+      { role: 'user', content: 'q2' },
+    ],
+  });
+
+  // The top-level system comes first (canonical placement), then the
+  // in-array sequence is preserved verbatim.
+  assertEquals(result.messages[0], { role: 'system', content: 'top-level prompt' });
+  assertEquals(result.messages[1], { role: 'system', content: 'mid-array A' });
+  assertEquals(result.messages[2].role, 'user');
+  assertEquals(result.messages[3].role, 'assistant');
+  assertEquals(result.messages[4], { role: 'system', content: 'mid-array B' });
+  assertEquals(result.messages[5].role, 'user');
+});
+
+test('translateMessagesToChatCompletions rejects an unknown message role', () => {
+  assertThrows(
+    () =>
+      translateMessagesToChatCompletions({
+        model: 'gpt-test',
+        max_tokens: 256,
+        messages: [{ role: 'tool', content: 'oops' } as unknown as { role: 'user'; content: string }],
+      }),
+    Error,
+    'does not accept role tool',
+  );
+});

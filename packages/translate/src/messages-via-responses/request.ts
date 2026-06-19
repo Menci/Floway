@@ -8,6 +8,7 @@ import {
   type MessagesMessage,
   type MessagesPayload,
   type MessagesServerToolUseBlock,
+  type MessagesSystemMessage,
   type MessagesTextBlock,
   type MessagesToolResultBlock,
   type MessagesToolUseBlock,
@@ -140,8 +141,23 @@ const translateAssistantMessage = (message: MessagesAssistantMessage): Responses
   return input;
 };
 
+const translateMessagesSystem = (message: MessagesSystemMessage): ResponsesInputItem[] => [
+  {
+    type: 'message',
+    role: 'system',
+    content: typeof message.content === 'string' ? message.content : message.content.map(block => block.text).join('\n\n'),
+  },
+];
+
 const translateMessagesInput = (messages: MessagesMessage[]): ResponsesInputItem[] =>
-  messages.flatMap(message => (message.role === 'user' ? translateUserMessage(message) : translateAssistantMessage(message)));
+  messages.flatMap((message): ResponsesInputItem[] => {
+    switch (message.role) {
+    case 'user': return translateUserMessage(message);
+    case 'assistant': return translateAssistantMessage(message);
+    case 'system': return translateMessagesSystem(message);
+    default: throw new Error(`Messages → Responses translator does not accept role ${(message as { role: string }).role}.`);
+    }
+  });
 
 const translateSystemPrompt = (system: string | MessagesTextBlock[] | undefined): string | null => {
   if (typeof system === 'string') return system;

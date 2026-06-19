@@ -57,10 +57,10 @@ export const applyLastMessageCacheBreakpoint = (messages: MessagesMessage[]): vo
     const message = messages[m];
 
     if (typeof message.content === 'string') {
-      // MessagesTextBlock is valid in both the user and assistant content
-      // unions, so the union cast lets one literal serve either role.
+      // MessagesTextBlock is valid in the user, assistant, and system content
+      // unions, so the union cast lets one literal serve any of the three roles.
       const block: MessagesTextBlock = { type: 'text', text: message.content, cache_control: EPHEMERAL_CACHE_CONTROL };
-      message.content = [block] as MessagesUserContentBlock[] | MessagesAssistantContentBlock[];
+      message.content = [block] as MessagesUserContentBlock[] | MessagesAssistantContentBlock[] | MessagesTextBlock[];
       return;
     }
 

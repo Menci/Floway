@@ -557,3 +557,91 @@ test('translateResponsesToMessages drops text.format json_object (no Anthropic e
 
   assertFalse('output_config' in result.target);
 });
+
+test('translateResponsesToMessages emits in-array role:"system" inline as MessagesSystemMessage', async () => {
+  const result = await translateResponsesToMessages(
+    {
+      model: 'claude-test',
+      input: [
+        { type: 'message', role: 'user', content: 'q1' },
+        { type: 'message', role: 'system', content: 'be terse' },
+        { type: 'message', role: 'user', content: 'q2' },
+      ],
+      instructions: null,
+      temperature: null,
+      top_p: null,
+      max_output_tokens: 256,
+      tools: null,
+      tool_choice: 'auto',
+      metadata: null,
+      stream: null,
+      store: false,
+      parallel_tool_calls: true,
+    },
+    { loadRemoteImage: stubRemoteImageLoader(null) },
+  );
+
+  const messages = result.target.messages;
+  assertEquals(messages.length, 3);
+  assertEquals(messages[0].role, 'user');
+  assertEquals(messages[1], { role: 'system', content: 'be terse' });
+  assertEquals(messages[2].role, 'user');
+  // No top-level instructions → no top-level Messages system field
+  assertFalse('system' in result.target);
+});
+
+test('translateResponsesToMessages normalizes role:"developer" to inline role:"system"', async () => {
+  const result = await translateResponsesToMessages(
+    {
+      model: 'claude-test',
+      input: [
+        { type: 'message', role: 'developer', content: 'dev rule' },
+        { type: 'message', role: 'user', content: 'hi' },
+      ],
+      instructions: null,
+      temperature: null,
+      top_p: null,
+      max_output_tokens: 256,
+      tools: null,
+      tool_choice: 'auto',
+      metadata: null,
+      stream: null,
+      store: false,
+      parallel_tool_calls: true,
+    },
+    { loadRemoteImage: stubRemoteImageLoader(null) },
+  );
+
+  assertEquals(result.target.messages[0], { role: 'system', content: 'dev rule' });
+});
+
+test('translateResponsesToMessages keeps payload.instructions as the Messages top-level system field', async () => {
+  const result = await translateResponsesToMessages(
+    {
+      model: 'claude-test',
+      input: [
+        { type: 'message', role: 'system', content: 'mid-array note' },
+        { type: 'message', role: 'user', content: 'hi' },
+      ],
+      instructions: 'canonical top-level instructions',
+      temperature: null,
+      top_p: null,
+      max_output_tokens: 256,
+      tools: null,
+      tool_choice: 'auto',
+      metadata: null,
+      stream: null,
+      store: false,
+      parallel_tool_calls: true,
+    },
+    { loadRemoteImage: stubRemoteImageLoader(null) },
+  );
+
+  // payload.instructions → top-level Messages.system; in-array system stays inline.
+  // The two layers do not get merged anymore.
+  assertEquals(result.target.system, [
+    { type: 'text', text: 'canonical top-level instructions', cache_control: { type: 'ephemeral' } },
+  ]);
+  assertEquals(result.target.messages[0], { role: 'system', content: 'mid-array note' });
+  assertEquals(result.target.messages[1].role, 'user');
+});

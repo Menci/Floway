@@ -9,6 +9,7 @@ import {
   type MessagesAssistantMessage,
   type MessagesMessage,
   type MessagesPayload,
+  type MessagesSystemMessage,
   type MessagesTextBlock,
   type MessagesTool,
   type MessagesToolResultBlock,
@@ -48,16 +49,6 @@ export interface ResponsesToMessagesResult {
   target: MessagesPayload;
   customToolNames: Set<string>;
 }
-
-const extractSystemText = (message: ResponsesInputMessage): string => {
-  if (typeof message.content === 'string') return message.content;
-  if (!Array.isArray(message.content)) return '';
-
-  // Assumption: OpenAI text parts are transport fragments of one message, not
-  // paragraph-level blocks. Keep the existing no-separator join until we have
-  // stronger evidence that Responses text parts carry harder boundaries.
-  return message.content.map(block => ('text' in block ? block.text : '')).join('');
-};
 
 const translateUserMessage = async (message: ResponsesInputMessage, loadRemoteImage: RemoteImageLoader): Promise<MessagesUserMessage> => {
   if (typeof message.content === 'string') {
@@ -116,6 +107,26 @@ const translateAssistantMessage = (message: ResponsesInputMessage): MessagesAssi
   return { role: 'assistant', content: content.length > 0 ? content : '' };
 };
 
+// Both `role: 'system'` and `role: 'developer'` Responses input messages flow
+// through as Messages system items. The Messages role enum admits 'system'
+// directly (https://platform.claude.com/docs/en/api/messages); developer
+// content is the same intent layer and normalizes to 'system' on the
+// Messages wire.
+const translateSystemMessage = (message: ResponsesInputMessage): MessagesSystemMessage => {
+  if (typeof message.content === 'string') {
+    return { role: 'system', content: message.content };
+  }
+
+  const content: MessagesTextBlock[] = [];
+  for (const block of message.content) {
+    if (block.type === 'input_text' || block.type === 'output_text') {
+      content.push({ type: 'text', text: (block as ResponsesInputText).text });
+    }
+  }
+
+  return { role: 'system', content: content.length > 0 ? content : '' };
+};
+
 const appendAssistantBlock = (messages: MessagesMessage[], block: MessagesAssistantContentBlock): void => {
   const lastMessage = messages[messages.length - 1];
 
@@ -142,27 +153,30 @@ const unexpectedResponsesInputItem = (value: ResponsesInputItem): never => {
   throw new Error(`Unexpected Responses input item variant: ${JSON.stringify(value)}`);
 };
 
-const translateResponsesInput = async (input: string | ResponsesInputItem[], loadRemoteImage: RemoteImageLoader): Promise<{ messages: MessagesMessage[]; systemParts: string[] }> => {
+const translateResponsesInput = async (input: string | ResponsesInputItem[], loadRemoteImage: RemoteImageLoader): Promise<MessagesMessage[]> => {
   if (typeof input === 'string') {
-    return {
-      messages: [{ role: 'user', content: input }],
-      systemParts: [],
-    };
+    return [{ role: 'user', content: input }];
   }
 
   const messages: MessagesMessage[] = [];
-  const systemParts: string[] = [];
 
   for (const item of input) {
     switch (item.type) {
     case 'message':
-      if (item.role === 'system' || item.role === 'developer') {
-        const text = extractSystemText(item);
-        if (text) systemParts.push(text);
-        continue;
+      switch (item.role) {
+      case 'user':
+        messages.push(await translateUserMessage(item, loadRemoteImage));
+        break;
+      case 'assistant':
+        messages.push(translateAssistantMessage(item));
+        break;
+      case 'system':
+      case 'developer':
+        messages.push(translateSystemMessage(item));
+        break;
+      default:
+        throw new Error(`Responses → Messages translator: unexpected message role ${(item as { role: string }).role}.`);
       }
-
-      messages.push(item.role === 'user' ? await translateUserMessage(item, loadRemoteImage) : translateAssistantMessage(item));
       break;
     case 'function_call':
       appendAssistantBlock(messages, {
@@ -221,7 +235,7 @@ const translateResponsesInput = async (input: string | ResponsesInputItem[], loa
     }
   }
 
-  return { messages, systemParts };
+  return messages;
 };
 
 const translateTools = (tools: ResponsesTool[] | null | undefined, customToolNames: Set<string>): MessagesTool[] | undefined => {
@@ -285,9 +299,13 @@ const translateToolChoice = (toolChoice: ResponsesToolChoice | undefined): Messa
 
 export const translateResponsesToMessages = async (payload: ResponsesPayload, options: TranslateResponsesToMessagesOptions = {}): Promise<ResponsesToMessagesResult> => {
   const customToolNames = new Set<string>();
-  const { messages, systemParts } = await translateResponsesInput(payload.input, options.loadRemoteImage ?? fetchRemoteImage);
+  const messages = await translateResponsesInput(payload.input, options.loadRemoteImage ?? fetchRemoteImage);
   const tools = translateTools(payload.tools, customToolNames);
-  const system = [payload.instructions, ...systemParts].filter((part): part is string => Boolean(part)).join('\n\n');
+  // `payload.instructions` is the Responses canonical system field; it maps
+  // to the Messages top-level `system`. Any `role: 'system'`/`'developer'`
+  // input items are emitted inline as MessagesSystemMessage by the input
+  // translator, preserving chronology.
+  const system = payload.instructions ?? '';
   const effort = payload.reasoning?.effort;
   const maxTokens = payload.max_output_tokens ?? options.fallbackMaxOutputTokens ?? MESSAGES_FALLBACK_MAX_TOKENS;
   const systemBlocks: MessagesTextBlock[] | undefined = system

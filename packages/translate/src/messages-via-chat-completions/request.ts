@@ -10,6 +10,7 @@ import type {
   MessagesMessage,
   MessagesPayload,
   MessagesServerToolUseBlock,
+  MessagesSystemMessage,
   MessagesTextBlock,
   MessagesToolResultBlock,
   MessagesToolUseBlock,
@@ -209,6 +210,13 @@ const translateMessagesAssistant = (message: MessagesAssistantMessage): ChatComp
   return messages;
 };
 
+const translateMessagesSystem = (message: MessagesSystemMessage): ChatCompletionsMessage[] => [
+  {
+    role: 'system',
+    content: typeof message.content === 'string' ? message.content : message.content.map(block => block.text).join('\n\n'),
+  },
+];
+
 const translateMessagesInput = (messages: MessagesMessage[], system: string | MessagesTextBlock[] | undefined): ChatCompletionsMessage[] => {
   // Messages system blocks are prompt boundaries; keep them as separated
   // paragraphs when falling back to Chat Completions.
@@ -221,7 +229,17 @@ const translateMessagesInput = (messages: MessagesMessage[], system: string | Me
       ]
     : [];
 
-  return [...systemMessages, ...messages.flatMap(message => (message.role === 'user' ? translateMessagesUser(message) : translateMessagesAssistant(message)))];
+  return [
+    ...systemMessages,
+    ...messages.flatMap((message): ChatCompletionsMessage[] => {
+      switch (message.role) {
+      case 'user': return translateMessagesUser(message);
+      case 'assistant': return translateMessagesAssistant(message);
+      case 'system': return translateMessagesSystem(message);
+      default: throw new Error(`Messages → Chat Completions translator does not accept role ${(message as { role: string }).role}.`);
+      }
+    }),
+  ];
 };
 
 const translateMessagesTools = (tools?: MessagesClientTool[]): ChatCompletionsTool[] | undefined =>
