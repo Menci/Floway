@@ -348,7 +348,7 @@ test('/api/upstreams/copilot/auth/poll rejects unknown Copilot account type with
       });
 
       assertEquals(response.status, 502);
-      assertEquals((await response.json()) as Record<string, unknown>, { error: 'Unknown GitHub Copilot plan: free' });
+      assertEquals((await response.json()) as Record<string, unknown>, { error: 'Unknown GitHub Copilot plan: "free"' });
     },
   );
 
