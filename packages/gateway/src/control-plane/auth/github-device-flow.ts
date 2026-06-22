@@ -87,7 +87,5 @@ export const detectAccountType = async (githubToken: string, fetcher: Fetcher = 
   if (!resp.ok) throw new Error(`GitHub Copilot account type detection failed: ${resp.status} ${await resp.text()}`);
 
   const data = (await resp.json()) as { copilot_plan?: unknown };
-  const accountType = copilotPlanToAccountType(data.copilot_plan);
-  if (accountType === null) throw new Error(`Unknown GitHub Copilot plan: ${JSON.stringify(data.copilot_plan)}`);
-  return accountType;
+  return copilotPlanToAccountType(data.copilot_plan);
 };

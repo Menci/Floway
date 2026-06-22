@@ -2,23 +2,11 @@ import { serve, upgradeWebSocket } from '@hono/node-server';
 import { Agent, Pool, setGlobalDispatcher } from 'undici';
 import { WebSocketServer } from 'ws';
 
-// api.{individual,business,enterprise}.githubcopilot.com closes its
-// keep-alive socket immediately after each response. When undici's default
-// pool reuses that socket for the next POST, the race surfaces as either
-// UND_ERR_SOCKET (close lands before the next write) or
-// RequestContentLengthMismatchError (close lands mid-write — see client-h1.js
-// L1340 in undici v6, where bytesWritten < contentLength because the socket
-// was destroyed while the body was still being streamed). Disabling HTTP/1.1
-// connection reuse for these hosts removes the race.
+// api.{individual,business,enterprise}.githubcopilot.com closes its keep-alive
+// socket right after each response; reusing it surfaces as UND_ERR_SOCKET or
+// RequestContentLengthMismatchError. `pipelining: 0` disables keep-alive.
 //
-// `pipelining: 0` is the actual lever per undici's Client docs: "Set to `0`
-// to disable keep-alive connections." The Agent factory restricts the
-// override to the three Copilot data-plane origins so OpenAI, Azure,
-// Gemini, custom OpenAI-compatible, Ollama, GitHub OAuth, and the Codex
-// catalog endpoint all keep undici's default keep-alive behaviour and don't
-// pay an extra TCP+TLS handshake per request.
-//
-// Refs: https://github.com/nodejs/undici/blob/main/docs/docs/api/Client.md
+// Refs: https://github.com/nodejs/undici/blob/v6.21.0/docs/docs/api/Client.md#parameter-clientoptions
 //       https://github.com/Menci/Floway/pull/78#issuecomment-4765475966
 const COPILOT_HOSTS = new Set([
   'api.individual.githubcopilot.com',
@@ -28,7 +16,7 @@ const COPILOT_HOSTS = new Set([
 setGlobalDispatcher(new Agent({
   factory: (origin, opts) => {
     const hostname = typeof origin === 'string' ? new URL(origin).hostname : origin.hostname;
-    return COPILOT_HOSTS.has(hostname) ? new Pool(origin, { ...opts, pipelining: 0 }) : new Pool(origin, opts);
+    return new Pool(origin, COPILOT_HOSTS.has(hostname) ? { ...opts, pipelining: 0 } : opts);
   },
 }));
 
