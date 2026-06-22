@@ -1,5 +1,5 @@
 import { directFetcher, type Fetcher } from '@floway-dev/provider';
-import { githubHeaders, isCopilotAccountType, normalizeCopilotAccountType, type CopilotAccountType } from '@floway-dev/provider-copilot';
+import { copilotPlanToAccountType, githubHeaders, type CopilotAccountType } from '@floway-dev/provider-copilot';
 
 export interface GitHubUser {
   login: string;
@@ -87,6 +87,7 @@ export const detectAccountType = async (githubToken: string, fetcher: Fetcher = 
   if (!resp.ok) throw new Error(`GitHub Copilot account type detection failed: ${resp.status} ${await resp.text()}`);
 
   const data = (await resp.json()) as { copilot_plan?: unknown };
-  if (!isCopilotAccountType(data.copilot_plan)) throw new Error(`Unknown GitHub Copilot plan: ${String(data.copilot_plan)}`);
-  return normalizeCopilotAccountType(data.copilot_plan as string);
+  const accountType = copilotPlanToAccountType(data.copilot_plan);
+  if (accountType === null) throw new Error(`Unknown GitHub Copilot plan: ${JSON.stringify(data.copilot_plan)}`);
+  return accountType;
 };

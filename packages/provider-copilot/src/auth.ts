@@ -11,16 +11,36 @@ export type CopilotAccountType = keyof typeof COPILOT_BASE_URLS;
 
 const COPILOT_ACCOUNT_TYPES = ['individual', 'business', 'enterprise'] as const satisfies readonly CopilotAccountType[];
 
-// GitHub returns 'individual_pro' for Pro+ subscribers — treat as 'individual'
-const COPILOT_ACCOUNT_TYPE_ALIASES: Record<string, CopilotAccountType> = {
+// Maps GitHub's `copilot_plan` wire values to the data-plane host that backs
+// each subscription. Pro+, Pro Max, and EDU all live on
+// api.individual.githubcopilot.com alongside plain Pro. The full plan
+// enumeration is observable in VSCode's Copilot chat client:
+// https://github.com/microsoft/vscode/blob/main/src/vs/workbench/services/chat/common/chatEntitlementService.ts
+const COPILOT_PLAN_TO_ACCOUNT_TYPE: Record<string, CopilotAccountType> = {
+  individual: 'individual',
   individual_pro: 'individual',
+  individual_max: 'individual',
+  individual_edu: 'individual',
+  business: 'business',
+  enterprise: 'enterprise',
 };
 
+// Strict guard whose predicate matches its return type one-to-one: true only
+// for keys of COPILOT_BASE_URLS. Use for already-normalized data-plane values
+// (persisted config, function returns). Wire-side strings from GitHub need
+// copilotPlanToAccountType() to collapse aliases first.
 export const isCopilotAccountType = (value: unknown): value is CopilotAccountType =>
-  typeof value === 'string' && (COPILOT_ACCOUNT_TYPES.includes(value as CopilotAccountType) || value in COPILOT_ACCOUNT_TYPE_ALIASES);
+  typeof value === 'string' && COPILOT_ACCOUNT_TYPES.includes(value as CopilotAccountType);
 
-export const normalizeCopilotAccountType = (value: string): CopilotAccountType =>
-  COPILOT_ACCOUNT_TYPE_ALIASES[value] ?? (value as CopilotAccountType);
+// Normalize a wire-side `copilot_plan` string from
+// api.github.com/copilot_internal/user into the data-plane account type that
+// backs it. Returns null for unknown plans — the wire surface is owned by
+// GitHub and may grow new strings without notice, so callers throw with the
+// offending value rather than silently mapping to a default.
+export const copilotPlanToAccountType = (plan: unknown): CopilotAccountType | null => {
+  if (typeof plan !== 'string') return null;
+  return COPILOT_PLAN_TO_ACCOUNT_TYPE[plan] ?? null;
+};
 
 // Version constants pinned to a known-good set. GitHub Copilot rejects too-new
 // editor-plugin-version values (caozhiyuan/copilot-api@80e17dfd downgraded

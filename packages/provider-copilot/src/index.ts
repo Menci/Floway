@@ -2,9 +2,9 @@ export { createCopilotProvider } from './provider.ts';
 export {
   clearCopilotTokenCache,
   clearInProcessCopilotTokenCache,
+  copilotPlanToAccountType,
   githubHeaders,
   isCopilotAccountType,
-  normalizeCopilotAccountType,
   type CopilotAccountType,
 } from './auth.ts';
 export {

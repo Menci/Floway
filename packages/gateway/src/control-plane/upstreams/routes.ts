@@ -43,7 +43,7 @@ import {
   importCodexFromCallback,
   refreshCodexAccessToken,
 } from '@floway-dev/provider-codex';
-import { clearCopilotTokenCache, isCopilotAccountType } from '@floway-dev/provider-copilot';
+import { clearCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { assertCustomUpstreamRecord, fetchCustomModels } from '@floway-dev/provider-custom';
 import { assertOllamaUpstreamRecord, createOllamaProvider } from '@floway-dev/provider-ollama';
 
@@ -409,9 +409,6 @@ export const copilotAuthPoll = async (c: CtxWithJson<typeof copilotAuthPollBody>
 
     const user = await fetchGitHubUser(data.access_token, fetcher);
     const accountType = await detectAccountType(data.access_token, fetcher);
-    if (!isCopilotAccountType(accountType)) {
-      return c.json({ status: 'error', error: 'Unsupported Copilot account type' }, 502);
-    }
 
     const repo = getRepo().upstreams;
     const upstreams = await repo.list();
