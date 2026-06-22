@@ -1,5 +1,16 @@
 import { serve, upgradeWebSocket } from '@hono/node-server';
 import { WebSocketServer } from 'ws';
+import { Agent, setGlobalDispatcher } from 'undici';
+
+// Fix: Copilot upstream (api.individual.githubcopilot.com) closes keep-alive
+// connections after a single exchange. The default undici pool then reuses
+// the dead socket for a subsequent POST, causing "other side closed".
+// Setting a short keepAliveTimeout forces fresh connections.
+setGlobalDispatcher(new Agent({
+  keepAliveTimeout: 1000,
+  keepAliveMaxTimeout: 3000,
+  pipelining: 0,
+}));
 
 import { bootstrapNodePlatform } from './src/bootstrap.ts';
 import { applyMigrations } from './src/migrate.ts';
