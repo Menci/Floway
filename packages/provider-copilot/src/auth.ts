@@ -263,10 +263,6 @@ export async function copilotAuthedFetch(path: string, init: RequestInit, auth: 
   headers.set('openai-intent', 'conversation-agent');
   headers.set('x-interaction-type', 'conversation-agent');
 
-  // Remove content-length so undici/fetch recomputes it from the actual body,
-  // avoiding RequestContentLengthMismatchError when interceptors mutate the payload.
-  headers.delete('content-length');
-
   // Provider-attached invocation headers (vision, initiator, anthropic-beta,
   // ...) flow through unchanged. The provider's target interceptors decide
   // which headers each upstream call needs; this layer only knows how to ship
@@ -284,10 +280,6 @@ export async function copilotAuthedFetch(path: string, init: RequestInit, auth: 
       else headers.set(name, value);
     }
   }
-
-  // Final safety: ensure no stale content-length leaks to undici after
-  // interceptors may have re-added it.
-  headers.delete('content-length');
 
   return await options.fetcher(`${baseUrl}${path}`, { ...init, headers }, options.recordUpstreamLatency);
 }
