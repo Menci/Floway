@@ -26,7 +26,7 @@ const copilotFetch = (models: Array<{ id: string; maxContextWindowTokens?: numbe
     if (url.pathname === '/copilot_internal/v2/token') {
       return jsonResponse({ token: 'test-copilot-token', expires_at: 4102444800, refresh_in: 3600 });
     }
-    if (url.hostname === 'api.githubcopilot.com' && url.pathname === '/models') {
+    if (url.hostname === 'api.individual.githubcopilot.com' && url.pathname === '/models') {
       return jsonResponse(copilotModels(models));
     }
     throw new Error(`Unhandled fetch ${request.url}`);
@@ -300,7 +300,7 @@ describe('codex 1p namespace', () => {
         await withMockedFetch(
           request => {
             const url = new URL(request.url);
-            if (url.hostname === 'api.githubcopilot.com' && url.pathname === '/models') registryCalls += 1;
+            if (url.hostname === 'api.individual.githubcopilot.com' && url.pathname === '/models') registryCalls += 1;
             return copilotFetch([{ id: 'gpt-5.5', maxContextWindowTokens: 1050000 }])(request);
           },
           async () => {

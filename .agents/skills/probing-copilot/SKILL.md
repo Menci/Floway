@@ -47,7 +47,7 @@ method is GET, not POST — POST returns 404 from this endpoint.
 
 Base URL by account type:
 
-- `individual`  → `https://api.githubcopilot.com`
+- `individual`  → `https://api.individual.githubcopilot.com`
 - `business`    → `https://api.business.githubcopilot.com`
 - `enterprise`  → `https://api.enterprise.githubcopilot.com`
 

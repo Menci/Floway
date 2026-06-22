@@ -152,7 +152,7 @@ test('getInternalModels returns the catalog projection without execution binding
           refresh_in: 3600,
         });
       }
-      if (url.hostname === 'api.githubcopilot.com' && url.pathname === '/models') {
+      if (url.hostname === 'api.individual.githubcopilot.com' && url.pathname === '/models') {
         return jsonResponse(
           copilotModels([
             {
@@ -224,7 +224,7 @@ test('resolveModelForRequest applies provider-owned aliases only to that provide
           refresh_in: 3600,
         });
       }
-      if (url.hostname === 'api.githubcopilot.com' && url.pathname === '/models') {
+      if (url.hostname === 'api.individual.githubcopilot.com' && url.pathname === '/models') {
         return jsonResponse(copilotModels([{ id: 'claude-opus-4.7', supported_endpoints: ['/v1/messages'] }]));
       }
       if (url.hostname === 'custom.example.com' && url.pathname === '/v1/models') {

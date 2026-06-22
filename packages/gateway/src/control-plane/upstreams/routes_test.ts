@@ -1070,11 +1070,11 @@ test('POST /api/upstreams/copilot/auth/poll persists the override on the freshly
         return jsonResponse({ copilot_plan: 'individual' });
       }
       if (url.hostname === 'api.github.com' && url.pathname === '/copilot_internal/v2/token') {
-        return jsonResponse({ token: 'ct_test', expires_at: Math.floor(Date.now() / 1000) + 1500, refresh_in: 1200, endpoints: { api: 'https://api.githubcopilot.com' } });
+        return jsonResponse({ token: 'ct_test', expires_at: Math.floor(Date.now() / 1000) + 1500, refresh_in: 1200, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
       }
       // Models warmup probes the copilot api host; an empty list keeps the
       // warmup quiet without exercising the catalog.
-      if (url.hostname === 'api.githubcopilot.com') {
+      if (url.hostname === 'api.individual.githubcopilot.com') {
         return jsonResponse({ data: [] });
       }
       throw new Error(`Unhandled fetch ${request.url}`);

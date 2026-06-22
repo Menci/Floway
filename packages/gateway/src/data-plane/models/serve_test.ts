@@ -43,7 +43,7 @@ test('/v1/models returns merged model list from Copilot and custom upstreams', a
           refresh_in: 3600,
         });
       }
-      if (url.pathname === '/models' && url.hostname === 'api.githubcopilot.com') {
+      if (url.pathname === '/models' && url.hostname === 'api.individual.githubcopilot.com') {
         return jsonResponse(
           copilotModels([
             {
@@ -207,7 +207,7 @@ test('/models returns the same superset payload as /v1/models', async () => {
           refresh_in: 3600,
         });
       }
-      if (url.pathname === '/models' && url.hostname === 'api.githubcopilot.com') {
+      if (url.pathname === '/models' && url.hostname === 'api.individual.githubcopilot.com') {
         return jsonResponse(
           copilotModels([
             {

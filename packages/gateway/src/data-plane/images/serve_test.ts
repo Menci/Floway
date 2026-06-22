@@ -134,7 +134,7 @@ test('/v1/images/generations forwards a JSON request through a custom upstream a
       if (url.pathname === '/copilot_internal/v2/token') {
         return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600 });
       }
-      if (url.hostname === 'api.githubcopilot.com' && url.pathname === '/models') {
+      if (url.hostname === 'api.individual.githubcopilot.com' && url.pathname === '/models') {
         return jsonResponse(copilotModels([{ id: 'copilot-chat', supported_endpoints: ['/chat/completions'] }]));
       }
       if (url.hostname === 'images.example.com' && url.pathname === '/v1/models') {
@@ -199,7 +199,7 @@ test('/v1/images/edits forwards a multipart request through an Azure model and r
       if (url.pathname === '/copilot_internal/v2/token') {
         return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600 });
       }
-      if (url.hostname === 'api.githubcopilot.com' && url.pathname === '/models') {
+      if (url.hostname === 'api.individual.githubcopilot.com' && url.pathname === '/models') {
         return jsonResponse(copilotModels([{ id: 'copilot-chat', supported_endpoints: ['/chat/completions'] }]));
       }
       if (url.hostname === 'example.openai.azure.com') {

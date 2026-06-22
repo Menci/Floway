@@ -408,7 +408,7 @@ test('/v1/embeddings preserves model-load errors hidden by another provider', as
           refresh_in: 3600,
         });
       }
-      if (url.hostname === 'api.githubcopilot.com' && url.pathname === '/models') {
+      if (url.hostname === 'api.individual.githubcopilot.com' && url.pathname === '/models') {
         return jsonResponse(copilotModels([{ id: 'copilot-chat', supported_endpoints: ['/chat/completions'] }]));
       }
       if (url.hostname === 'embed.example.com' && url.pathname === '/v1/models') {
