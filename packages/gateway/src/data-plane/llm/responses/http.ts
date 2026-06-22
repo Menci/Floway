@@ -5,6 +5,7 @@ import { respondResponses } from './respond.ts';
 import { PreviousResponseNotFoundError } from './serve-prep.ts';
 import { responsesServe } from './serve.ts';
 import { CODEX_AUTO_REVIEW_ALIAS, CODEX_AUTO_REVIEW_TARGET } from '../../codex/auto-review-alias.ts';
+import { isCodexClientRequest } from '../../codex/client-detection.ts';
 import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
 import { createGatewayCtxFromHono } from '../shared/gateway-ctx.ts';
 import { providerModelsUnavailableResponse } from '../shared/upstream-models-error.ts';
@@ -25,6 +26,9 @@ const rewriteResponsesEntryModelAlias = (payload: ResponsesPayload, stampReasoni
     reasoning: { ...(payload.reasoning ?? {}), effort: 'low' },
   };
 };
+
+const shouldPreserveCodexStoreFalse = (c: Context, payload: ResponsesPayload): boolean =>
+  payload.store === false && isCodexClientRequest(c);
 
 // OpenAI's verbatim previous_response_not_found envelope. Codex compares this
 // body byte-for-byte against upstream — see the cross-references on
@@ -62,8 +66,19 @@ export const responsesHttp = {
       const payload = rewriteResponsesEntryModelAlias(await c.req.json<ResponsesPayload>(), true);
       const wantsStream = payload.stream === true;
       const ctx = createGatewayCtxFromHono(c, { wantsStream });
-      const store = createResponsesHttpStore(ctx.apiKeyId, payload.store ?? undefined);
-      const result = await responsesServe.generate({ payload, ctx, store, snapshotMode: payload.store === false ? 'none' : 'append', headers: inboundHeadersForUpstream(c) });
+      // Codex sends `store:false` when it fails to classify the endpoint as
+      // Azure-style, but still chains turns through Floway-minted
+      // `previous_response_id`. Preserve gateway replay state for that client
+      // without rewriting the upstream wire body.
+      const preserveCodexStoreFalse = shouldPreserveCodexStoreFalse(c, payload);
+      const store = createResponsesHttpStore(ctx.apiKeyId, preserveCodexStoreFalse ? true : payload.store ?? undefined);
+      const result = await responsesServe.generate({
+        payload,
+        ctx,
+        store,
+        snapshotMode: payload.store === false && !preserveCodexStoreFalse ? 'none' : 'append',
+        headers: inboundHeadersForUpstream(c),
+      });
       const { response } = await respondResponses(c, result, wantsStream, ctx);
       return response;
     } catch (error) {

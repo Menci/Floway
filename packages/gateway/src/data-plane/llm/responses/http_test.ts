@@ -10,7 +10,7 @@ import type { ProviderCandidate } from '../shared/candidates.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { directFetcher, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
-import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
+import { assert, assertEquals, assertExists, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
 
 // Mock the candidates seam so each test hands the http entry exactly the
 // provider candidates it wants. Mirrors the pattern from serve_test.ts.
@@ -192,6 +192,91 @@ test('POST /v1/responses returns a single JSON body when stream is omitted', asy
   const body = await response.json() as ResponsesResult;
   assert(isStoredResponseId(body.id), `expected floway-minted resp_ id, got ${body.id}`);
   assertEquals(body.status, 'completed');
+});
+
+test('POST /v1/responses with store:false keeps the response non-addressable for ordinary clients', async () => {
+  const repo = installRepo();
+  const callResponses = vi.fn(async (): Promise<ProviderStreamResult<ResponsesStreamEvent>> => ({
+    ok: true,
+    events: makeProviderEvents([completedEvent('resp_no_store')]),
+    modelKey: 'test-model-key',
+    headers: new Headers(),
+  }));
+  queueCandidates([makeCandidate({ callResponses })]);
+  const app = makeApp();
+
+  const response = await app.request('/v1/responses', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ model: 'test-model', input: 'do not store', store: false }),
+  });
+
+  assertEquals(response.status, 200);
+  const body = await response.json() as ResponsesResult;
+  assertEquals(await repo.responsesSnapshots.lookup(API_KEY_ID, body.id), null);
+
+  const followup = await app.request('/v1/responses', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      model: 'test-model',
+      previous_response_id: body.id,
+      input: 'follow up',
+    }),
+  });
+
+  assertEquals(followup.status, 400);
+  const followupBody = await followup.json() as { error: { code: string } };
+  assertEquals(followupBody.error.code, 'previous_response_not_found');
+});
+
+test('POST /v1/responses preserves gateway snapshots for Codex store:false requests without rewriting the provider body', async () => {
+  const repo = installRepo();
+  const observedBodies: Array<{ store?: unknown; previous_response_id?: unknown; input?: unknown }> = [];
+  const callResponses = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderStreamResult<ResponsesStreamEvent>> => {
+    observedBodies.push(body as { store?: unknown; previous_response_id?: unknown; input?: unknown });
+    return {
+      ok: true,
+      events: makeProviderEvents([completedEvent()]),
+      modelKey: 'test-model-key',
+      headers: new Headers(),
+    };
+  });
+  queueCandidates([makeCandidate({ callResponses })]);
+  queueCandidates([makeCandidate({ callResponses })]);
+  const app = makeApp();
+  const codexHeaders = { 'content-type': 'application/json', 'user-agent': 'codex_exec/0.999.0 (test)' };
+
+  const first = await app.request('/v1/responses', {
+    method: 'POST',
+    headers: codexHeaders,
+    body: JSON.stringify({ model: 'test-model', input: 'codex first', store: false }),
+  });
+
+  assertEquals(first.status, 200);
+  const firstBody = await first.json() as ResponsesResult;
+  assertExists(await repo.responsesSnapshots.lookup(API_KEY_ID, firstBody.id));
+
+  const second = await app.request('/v1/responses', {
+    method: 'POST',
+    headers: codexHeaders,
+    body: JSON.stringify({
+      model: 'test-model',
+      previous_response_id: firstBody.id,
+      input: 'codex second',
+      store: false,
+    }),
+  });
+
+  assertEquals(second.status, 200);
+  assertEquals(observedBodies.map(body => body.store), [false, false]);
+  assertEquals(observedBodies[1]?.previous_response_id, undefined);
+  const secondInput = observedBodies[1]?.input as Array<{ type: string; role?: string; content?: unknown }>;
+  assertEquals(secondInput.map(item => [item.type, item.role, item.content]), [
+    ['message', 'user', 'codex first'],
+    ['item_reference', undefined, undefined],
+    ['message', 'user', 'codex second'],
+  ]);
 });
 
 test('POST /v1/responses/compact returns a non-streaming compaction envelope', async () => {

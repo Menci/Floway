@@ -580,12 +580,13 @@ export const createResponsesHttpStore = (apiKeyId: string | null, store: boolean
 
 // For Responses WebSocket entry — session-scoped layered store.
 //
-// `store=false` on a WS message disables the durable backing for that turn but
-// still records full items and snapshots in the session-scoped in-memory layer,
-// so subsequent messages on the same socket can resolve `previous_response_id`
-// against them. The session's lifetime bounds the data — nothing persists beyond
-// the socket. `store=true` (or omitted) layers durable repo writes on top of the
-// in-memory layer, so the turn is also addressable from later sessions.
+// Effective `store=false` disables the durable backing for that turn but still
+// records full items and snapshots in the session-scoped in-memory layer, so
+// subsequent messages on the same socket can resolve `previous_response_id`
+// against them. The session's lifetime bounds the data — nothing persists
+// beyond the socket. Effective `store=true` (or omitted) layers durable repo
+// writes on top of the in-memory layer, so the turn is also addressable from
+// later sessions.
 export const createResponsesWsSession = (apiKeyId: string | null): {
   createStore(store: boolean | undefined): StatefulResponsesStore;
 } => {

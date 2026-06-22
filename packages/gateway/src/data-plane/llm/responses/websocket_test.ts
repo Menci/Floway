@@ -101,17 +101,32 @@ const waitForMicrotasks = async (): Promise<void> => {
   for (let i = 0; i < 10; i++) await Promise.resolve();
 };
 
-const connectResponsesWebSocket = async (apiKey: string): Promise<TestWorkerWebSocket> => {
+const responseDoneId = (messages: readonly Record<string, unknown>[]): string => {
+  const done = messages.find(message => message.type === 'response.done') as { response?: { id?: unknown } } | undefined;
+  assertExists(done);
+  const response = done.response;
+  assertExists(response);
+  const id = response.id;
+  if (typeof id !== 'string') throw new Error(`expected response.done id to be a string, got ${typeof id}`);
+  return id;
+};
+
+const connectResponsesWebSocket = async (
+  apiKey: string,
+  path = '/v1/responses',
+  extraHeaders: Record<string, string> = {},
+): Promise<TestWorkerWebSocket> => {
   const executionCtx = {
     waitUntil: () => {},
     passThroughOnException: () => {},
     props: {},
   } satisfies ExecutionContext;
-  const response = await app.fetch(new Request('https://example.test/v1/responses', {
+  const response = await app.fetch(new Request(`https://example.test${path}`, {
     method: 'GET',
     headers: {
       upgrade: 'websocket',
       'x-api-key': apiKey,
+      ...extraHeaders,
     },
   }), {}, executionCtx);
   assertEquals(response.status, 101);
@@ -409,13 +424,9 @@ test('Responses WebSocket forwards HTTP failures with status_code, error.code, a
   );
 });
 
-// store=false passes snapshotMode='none' to responsesServe, so the turn
-// writes neither a snapshot nor item rows anywhere (not even the per-session
-// MemoryStatefulResponsesBacking). A follow-up message that names the
-// previous response must therefore fail verbatim with the OpenAI
-// previous_response_not_found envelope.
-test('Responses WebSocket store:false writes no items/snapshot and follow-ups cannot resolve it', async () => {
+test('Responses WebSocket store:false keeps session snapshots without durable repo writes', async () => {
   const { apiKey, repo } = await setupAppTest();
+  const upstreamBodies: unknown[] = [];
 
   await withMockedFetch(
     async request => {
@@ -428,18 +439,20 @@ test('Responses WebSocket store:false writes no items/snapshot and follow-ups ca
         return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'] }]));
       }
       if (url.pathname === '/responses') {
+        upstreamBodies.push(JSON.parse(await request.text()));
+        const turn = upstreamBodies.length;
         return sseResponsesResponse({
-          id: 'resp_ws_first',
+          id: `resp_ws_store_false_${turn}`,
           object: 'response',
           model: 'gpt-direct-responses',
           status: 'completed',
-          output_text: 'first answer',
+          output_text: `answer ${turn}`,
           output: [{
-            id: 'assistant_ws_1',
+            id: `assistant_ws_store_false_${turn}`,
             type: 'message',
             role: 'assistant',
             status: 'completed',
-            content: [{ type: 'output_text', text: 'first answer' }],
+            content: [{ type: 'output_text', text: `answer ${turn}` }],
           }],
         });
       }
@@ -457,8 +470,9 @@ test('Responses WebSocket store:false writes no items/snapshot and follow-ups ca
         },
       }));
       const firstMessages = await firstDone;
+      const firstResponseId = responseDoneId(firstMessages);
 
-      assertEquals(await repo.responsesSnapshots.lookup(apiKey.id, 'resp_ws_first'), null);
+      assertEquals(await repo.responsesSnapshots.lookup(apiKey.id, firstResponseId), null);
       const firstOutput = firstMessages.find(message => message.type === 'response.output_item.done') as { item?: { id?: string } } | undefined;
       assertExists(firstOutput?.item?.id);
       assertEquals(await repo.responsesItems.lookupMany(apiKey.id, [firstOutput.item.id]), []);
@@ -467,28 +481,151 @@ test('Responses WebSocket store:false writes no items/snapshot and follow-ups ca
         [],
       );
 
-      const followupError = waitForMessages(client, messages => messages.length === 1);
+      const followupDone = waitForMessages(client, messages => messages.some(message => message.type === 'response.done'));
       client.send(JSON.stringify({
         type: 'response.create',
         event_id: 'evt_followup',
         response: {
           model: 'gpt-direct-responses',
-          previous_response_id: 'resp_ws_first',
+          previous_response_id: firstResponseId,
           input: 'follow-up',
           store: false,
         },
       }));
-      assertEquals(await followupError, [{
+      const secondMessages = await followupDone;
+      const secondResponseId = responseDoneId(secondMessages);
+      assertEquals(await repo.responsesSnapshots.lookup(apiKey.id, secondResponseId), null);
+
+      const secondBody = upstreamBodies[1] as { previous_response_id?: unknown; input: Array<{ type: string; role?: string; content?: unknown }> };
+      assertEquals(secondBody.previous_response_id, undefined);
+      assertEquals(secondBody.input.map(item => [item.type, item.role, item.content]), [
+        ['message', 'user', 'first question'],
+        ['message', 'assistant', [{ type: 'output_text', text: 'answer 1' }]],
+        ['message', 'user', 'follow-up'],
+      ]);
+
+      const sessionB = await connectResponsesWebSocket(apiKey.key);
+      const missingDone = waitForMessages(sessionB, messages => messages.length === 1);
+      sessionB.send(JSON.stringify({
+        type: 'response.create',
+        event_id: 'evt_cross_session',
+        response: {
+          model: 'gpt-direct-responses',
+          previous_response_id: firstResponseId,
+          input: 'cross-session attempt',
+          store: false,
+        },
+      }));
+
+      assertEquals(await missingDone, [{
         type: 'error',
-        event_id: 'evt_followup',
+        event_id: 'evt_cross_session',
         status_code: 400,
         error: {
-          message: "Previous response with id 'resp_ws_first' not found.",
+          message: `Previous response with id '${firstResponseId}' not found.`,
           type: 'invalid_request_error',
           param: 'previous_response_id',
           code: 'previous_response_not_found',
         },
       }]);
+    }),
+  );
+});
+
+test('Responses WebSocket writes durable snapshots for Codex store:false requests without rewriting the provider body', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  const upstreamBodies: unknown[] = [];
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models') {
+        return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'] }]));
+      }
+      if (url.pathname === '/responses') {
+        upstreamBodies.push(JSON.parse(await request.text()));
+        const turn = upstreamBodies.length;
+        return sseResponsesResponse({
+          id: `resp_ws_codex_store_false_${turn}`,
+          object: 'response',
+          model: 'gpt-direct-responses',
+          status: 'completed',
+          output_text: `codex answer ${turn}`,
+          output: [{
+            id: `assistant_ws_codex_store_false_${turn}`,
+            type: 'message',
+            role: 'assistant',
+            status: 'completed',
+            content: [{ type: 'output_text', text: `codex answer ${turn}` }],
+          }],
+        });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => await withWorkerWebSocketRuntime(async () => {
+      const client = await connectResponsesWebSocket(apiKey.key, '/v1/responses', { 'user-agent': 'codex_exec/0.999.0 (test)' });
+      const firstDone = waitForMessages(client, messages => messages.some(message => message.type === 'response.done'));
+      client.send(JSON.stringify({
+        type: 'response.create',
+        response: {
+          model: 'gpt-direct-responses',
+          input: 'codex first',
+          store: false,
+        },
+      }));
+      const firstMessages = await firstDone;
+      const firstResponseId = responseDoneId(firstMessages);
+      assertExists(await repo.responsesSnapshots.lookup(apiKey.id, firstResponseId));
+
+      const followupDone = waitForMessages(client, messages => messages.some(message => message.type === 'response.done'));
+      client.send(JSON.stringify({
+        type: 'response.create',
+        event_id: 'evt_followup',
+        response: {
+          model: 'gpt-direct-responses',
+          previous_response_id: firstResponseId,
+          input: 'codex second',
+          store: false,
+        },
+      }));
+      const secondMessages = await followupDone;
+      assertExists(await repo.responsesSnapshots.lookup(apiKey.id, responseDoneId(secondMessages)));
+
+      const sessionB = await connectResponsesWebSocket(apiKey.key, '/v1/responses', { 'user-agent': 'codex_exec/0.999.0 (test)' });
+      const crossSessionDone = waitForMessages(sessionB, messages => messages.some(message => message.type === 'response.done'));
+      sessionB.send(JSON.stringify({
+        type: 'response.create',
+        event_id: 'evt_cross_session',
+        response: {
+          model: 'gpt-direct-responses',
+          previous_response_id: firstResponseId,
+          input: 'codex cross-session',
+          store: false,
+        },
+      }));
+      const crossSessionMessages = await crossSessionDone;
+      assertExists(await repo.responsesSnapshots.lookup(apiKey.id, responseDoneId(crossSessionMessages)));
+
+      const [firstBody, secondBody, crossSessionBody] = upstreamBodies as Array<{ store?: unknown; previous_response_id?: unknown; input: Array<{ type: string; role?: string; content?: unknown }> }>;
+      assertEquals(firstBody?.store, false);
+      assertEquals(secondBody?.store, false);
+      assertEquals(crossSessionBody?.store, false);
+      assertEquals(secondBody?.previous_response_id, undefined);
+      assertEquals(secondBody?.input.map(item => [item.type, item.role, item.content]), [
+        ['message', 'user', 'codex first'],
+        ['message', 'assistant', [{ type: 'output_text', text: 'codex answer 1' }]],
+        ['message', 'user', 'codex second'],
+      ]);
+      assertEquals(crossSessionBody?.previous_response_id, undefined);
+      assertEquals(crossSessionBody?.input.map(item => [item.type, item.role, item.content]), [
+        ['message', 'user', 'codex first'],
+        ['message', 'assistant', [{ type: 'output_text', text: 'codex answer 1' }]],
+        ['message', 'user', 'codex cross-session'],
+      ]);
     }),
   );
 });

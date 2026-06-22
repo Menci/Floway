@@ -129,15 +129,17 @@ the shim driving the internal multi-turn loop and replaying prior
 `/v1/responses` stores replayable Responses input and output items for API-key
 scoped HTTP requests. Clients can send `previous_response_id` to continue from
 a stored snapshot, or resend full input history; repeated full-history input is
-deduplicated by content hash instead of stored again. HTTP `store: false` does
-not create durable snapshots or input payload rows, but it keeps output item
-metadata for routing; if a later `store: true` request echoes that item with a
-full payload, the metadata row is filled in place.
+deduplicated by content hash instead of stored again. For ordinary clients, HTTP
+`store: false` does not create durable snapshots or input payload rows, but it
+keeps output item metadata for routing; if a later `store: true` request echoes
+that item with a full payload, the metadata row is filled in place.
 
 The same endpoint accepts `GET` WebSocket upgrades for streaming Responses
-events. WebSocket `store: false` keeps replay state only inside the open
-session, so same-socket `previous_response_id` works without writing those
-items or snapshots to durable storage.
+events. For ordinary clients, WebSocket `store: false` keeps replay state only
+inside the open session, so same-socket `previous_response_id` works without
+writing those items or snapshots to durable storage. Codex clients are handled
+specially on both transports: their `store: false` requests still keep durable
+Floway replay snapshots so Floway-minted response ids remain chainable.
 
 ## Development
 

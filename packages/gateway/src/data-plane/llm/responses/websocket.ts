@@ -6,6 +6,7 @@ import { PreviousResponseNotFoundError } from './serve-prep.ts';
 import { responsesServe } from './serve.ts';
 import { tokenUsageFromResponsesResult } from './usage.ts';
 import { apiKeyFromContext, type AuthedContext } from '../../../middleware/auth.ts';
+import { isCodexClientRequest } from '../../codex/client-detection.ts';
 import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
 import { createGatewayCtxFromHono, type GatewayCtx } from '../shared/gateway-ctx.ts';
 import { SourceStreamState, eventResultMetadata, recordPerformance, recordUsage } from '../shared/respond.ts';
@@ -152,8 +153,13 @@ const handleClientMessage = async (
       : Object.fromEntries(Object.entries(message).filter(([key]) => key !== 'type' && key !== 'event_id'));
     const payload = responsesPayloadFromClientSource(source);
     const ctx = createGatewayCtxFromHono(c, { wantsStream: true, downstreamAbortController });
-    const store = session.createStore(payload.store ?? undefined);
-    const snapshotMode = payload.store === false ? 'none' : 'append';
+    // Codex may send `store:false` on /v1 WebSockets when the provider URL is
+    // not Azure-marked, while still expecting Floway response ids to chain.
+    // Preserve durable gateway replay state for Codex without rewriting the
+    // provider wire body; ordinary WS `store:false` stays session-local.
+    const preserveCodexStoreFalse = payload.store === false && isCodexClientRequest(c);
+    const store = session.createStore(preserveCodexStoreFalse ? true : payload.store ?? undefined);
+    const snapshotMode = 'append';
 
     let result;
     try {
