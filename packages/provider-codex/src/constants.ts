@@ -47,3 +47,9 @@ export const CODEX_CLI_VERSION = '0.137.0';
 // constraint at the top of this file.
 export const CODEX_ORIGINATOR = 'codex_cli_rs';
 export const CODEX_USER_AGENT = `codex_cli_rs/${CODEX_CLI_VERSION}`;
+
+// CLIProxyAPI's current Codex Responses executor presents as codex-tui
+// rather than codex_cli_rs. Keep this scoped to /codex/responses: model
+// listing still depends on the codex_cli_rs client_version contract above.
+export const CODEX_RESPONSES_ORIGINATOR = 'codex-tui';
+export const CODEX_RESPONSES_USER_AGENT = 'codex-tui/0.135.0 (Mac OS 26.5.0; arm64) iTerm.app/3.6.10 (codex-tui; 0.135.0)';

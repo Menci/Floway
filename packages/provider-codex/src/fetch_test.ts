@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
+import { CODEX_RESPONSES_ORIGINATOR, CODEX_RESPONSES_USER_AGENT } from './constants.ts';
 import { callCodexResponses, type CodexCallEffects } from './fetch.ts';
 import type { CodexAccessTokenEntry, CodexAccountCredential, CodexQuotaSnapshotEntry, CodexUpstreamState } from './state.ts';
 import { initProviderRepo, type Fetcher, type UpstreamModel, type UpstreamRecord } from '@floway-dev/provider';
@@ -196,6 +197,60 @@ describe('callCodexResponses — upstream classification', () => {
     expect(body.model).toBe('gpt-5.4');
     expect(body.store).toBe(false);
     expect(body.stream).toBe(true);
+  });
+
+  test('builds CLIProxyAPI-style Codex responses headers from a clean set', async () => {
+    seedFreshAccessToken();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
+    await callCodexResponses({
+      upstreamId, account: activeAccount,
+      model,
+      body: { input: [], stream: true },
+      headers: new Headers({
+        'cf-connecting-ip': '203.0.113.10',
+        forwarded: 'for=203.0.113.10',
+        'openai-beta': 'responses=experimental',
+        originator: 'downstream-originator',
+        session_id: 'downstream-session',
+        'user-agent': 'curl/8.7.1',
+        version: '1',
+        'x-client-request-id': 'req-123',
+        'x-codex-beta-features': 'responses_websockets=2026-02-06',
+        'x-codex-turn-metadata': 'turn-meta',
+        'x-real-ip': '203.0.113.10',
+      }),
+      effects: makeEffects(),
+      call: noopUpstreamCallOptions(),
+    });
+
+    const headers = new Headers((fetchSpy.mock.calls[0][1] as RequestInit).headers);
+    expect(headers.get('authorization')).toBe('Bearer at_kv');
+    expect(headers.get('chatgpt-account-id')).toBe('acc');
+    expect(headers.get('originator')).toBe(CODEX_RESPONSES_ORIGINATOR);
+    expect(headers.get('user-agent')).toBe(CODEX_RESPONSES_USER_AGENT);
+    expect(headers.get('accept')).toBe('text/event-stream');
+    expect(headers.get('content-type')).toBe('application/json');
+    expect(headers.get('session_id')).toBe('downstream-session');
+    expect(headers.get('version')).toBe('1');
+    expect(headers.get('x-client-request-id')).toBe('req-123');
+    expect(headers.get('x-codex-beta-features')).toBe('responses_websockets=2026-02-06');
+    expect(headers.get('x-codex-turn-metadata')).toBe('turn-meta');
+    expect(headers.get('cf-connecting-ip')).toBeNull();
+    expect(headers.get('forwarded')).toBeNull();
+    expect(headers.get('openai-beta')).toBeNull();
+    expect(headers.get('x-real-ip')).toBeNull();
+  });
+
+  test('generates a Codex session id when the downstream request has none', async () => {
+    seedFreshAccessToken();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
+    await callCodexResponses({
+      upstreamId, account: activeAccount,
+      model, body: { input: [], stream: true }, headers: new Headers(), effects: makeEffects(), call: noopUpstreamCallOptions(),
+    });
+
+    const headers = new Headers((fetchSpy.mock.calls[0][1] as RequestInit).headers);
+    expect(headers.get('session_id')).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
   });
 
   test('401 token_invalidated → persistTerminalState session_terminated, return 503', async () => {

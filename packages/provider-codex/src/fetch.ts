@@ -2,9 +2,9 @@ import { ensureCodexAccessToken, invalidateCodexAccessToken, mintCodexAccessToke
 import { CodexOAuthSessionTerminatedError } from './auth/oauth.ts';
 import {
   CODEX_BACKEND_BASE,
-  CODEX_ORIGINATOR,
+  CODEX_RESPONSES_ORIGINATOR,
   CODEX_RESPONSES_PATH,
-  CODEX_USER_AGENT,
+  CODEX_RESPONSES_USER_AGENT,
 } from './constants.ts';
 import {
   getCodexQuota,
@@ -85,21 +85,47 @@ const ensureAccessToken = async (opts: CallCodexResponsesOptions): Promise<strin
   return entry.token;
 };
 
+const CODEX_RESPONSE_PASSTHROUGH_HEADERS = [
+  'version',
+  'x-codex-beta-features',
+  'x-codex-turn-metadata',
+  'x-client-request-id',
+] as const;
+
+const CODEX_RESPONSE_SESSION_HEADERS = ['session_id', 'session-id'] as const;
+
+const nonEmptyHeader = (headers: Headers, names: readonly string[]): string | null => {
+  for (const name of names) {
+    const value = headers.get(name)?.trim();
+    if (value) return value;
+  }
+  return null;
+};
+
+const buildCodexResponsesHeaders = (opts: CallCodexResponsesOptions, accessToken: string): Headers => {
+  const headers = new Headers();
+  headers.set('authorization', `Bearer ${accessToken}`);
+  headers.set('chatgpt-account-id', opts.account.chatgptAccountId);
+  headers.set('originator', CODEX_RESPONSES_ORIGINATOR);
+  headers.set('user-agent', CODEX_RESPONSES_USER_AGENT);
+  headers.set('accept', 'text/event-stream');
+  headers.set('content-type', 'application/json');
+  headers.set('session_id', nonEmptyHeader(opts.headers, CODEX_RESPONSE_SESSION_HEADERS) ?? crypto.randomUUID());
+
+  for (const name of CODEX_RESPONSE_PASSTHROUGH_HEADERS) {
+    const value = opts.headers.get(name)?.trim();
+    if (value) headers.set(name, value);
+  }
+
+  return headers;
+};
+
 const performUpstreamCall = async (
   opts: CallCodexResponsesOptions,
   accessToken: string,
   alreadyRetried: boolean,
 ): Promise<ProviderStreamResult<ResponsesStreamEvent>> => {
-  // `opts.headers` is the provider's private boundary-ctx clone; mutate
-  // directly. Every header below uses `set`, so retry passes overwrite
-  // rather than accumulate.
-  const headers = opts.headers;
-  headers.set('authorization', `Bearer ${accessToken}`);
-  headers.set('chatgpt-account-id', opts.account.chatgptAccountId);
-  headers.set('originator', CODEX_ORIGINATOR);
-  headers.set('user-agent', CODEX_USER_AGENT);
-  headers.set('accept', 'text/event-stream');
-  headers.set('content-type', 'application/json');
+  const headers = buildCodexResponsesHeaders(opts, accessToken);
 
   const upstreamFetch = opts.call.fetcher(`${CODEX_BACKEND_BASE}${CODEX_RESPONSES_PATH}`, {
     method: 'POST',
