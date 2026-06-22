@@ -4,6 +4,7 @@ export {
   clearInProcessCopilotTokenCache,
   githubHeaders,
   isCopilotAccountType,
+  normalizeCopilotAccountType,
   type CopilotAccountType,
 } from './auth.ts';
 export {

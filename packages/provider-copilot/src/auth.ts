@@ -2,7 +2,7 @@ import { readCopilotUpstreamState, type CopilotTokenEntry, type CopilotUpstreamS
 import { getProviderRepo as getRepo, isAbortError, type Fetcher } from '@floway-dev/provider';
 
 const COPILOT_BASE_URLS = {
-  individual: 'https://api.githubcopilot.com',
+  individual: 'https://api.individual.githubcopilot.com',
   business: 'https://api.business.githubcopilot.com',
   enterprise: 'https://api.enterprise.githubcopilot.com',
 } as const;
@@ -11,8 +11,16 @@ export type CopilotAccountType = keyof typeof COPILOT_BASE_URLS;
 
 const COPILOT_ACCOUNT_TYPES = ['individual', 'business', 'enterprise'] as const satisfies readonly CopilotAccountType[];
 
+// GitHub returns 'individual_pro' for Pro+ subscribers — treat as 'individual'
+const COPILOT_ACCOUNT_TYPE_ALIASES: Record<string, CopilotAccountType> = {
+  individual_pro: 'individual',
+};
+
 export const isCopilotAccountType = (value: unknown): value is CopilotAccountType =>
-  typeof value === 'string' && COPILOT_ACCOUNT_TYPES.includes(value as CopilotAccountType);
+  typeof value === 'string' && (COPILOT_ACCOUNT_TYPES.includes(value as CopilotAccountType) || value in COPILOT_ACCOUNT_TYPE_ALIASES);
+
+export const normalizeCopilotAccountType = (value: string): CopilotAccountType =>
+  COPILOT_ACCOUNT_TYPE_ALIASES[value] ?? (value as CopilotAccountType);
 
 // Version constants pinned to a known-good set. GitHub Copilot rejects too-new
 // editor-plugin-version values (caozhiyuan/copilot-api@80e17dfd downgraded
@@ -255,6 +263,10 @@ export async function copilotAuthedFetch(path: string, init: RequestInit, auth: 
   headers.set('openai-intent', 'conversation-agent');
   headers.set('x-interaction-type', 'conversation-agent');
 
+  // Remove content-length so undici/fetch recomputes it from the actual body,
+  // avoiding RequestContentLengthMismatchError when interceptors mutate the payload.
+  headers.delete('content-length');
+
   // Provider-attached invocation headers (vision, initiator, anthropic-beta,
   // ...) flow through unchanged. The provider's target interceptors decide
   // which headers each upstream call needs; this layer only knows how to ship
@@ -272,6 +284,10 @@ export async function copilotAuthedFetch(path: string, init: RequestInit, auth: 
       else headers.set(name, value);
     }
   }
+
+  // Final safety: ensure no stale content-length leaks to undici after
+  // interceptors may have re-added it.
+  headers.delete('content-length');
 
   return await options.fetcher(`${baseUrl}${path}`, { ...init, headers }, options.recordUpstreamLatency);
 }
