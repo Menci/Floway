@@ -85,21 +85,21 @@ const ensureAccessToken = async (opts: CallCodexResponsesOptions): Promise<strin
   return entry.token;
 };
 
-const CODEX_RESPONSE_PASSTHROUGH_HEADERS = [
+const CODEX_RESPONSES_PASSTHROUGH_HEADERS = [
   'version',
   'x-codex-beta-features',
   'x-codex-turn-metadata',
   'x-client-request-id',
 ] as const;
 
-const CODEX_RESPONSE_SESSION_HEADERS = ['session_id', 'session-id'] as const;
+const trimHeader = (headers: Headers, name: string): string | null => {
+  const value = headers.get(name)?.trim();
+  return value || null;
+};
 
-const nonEmptyHeader = (headers: Headers, names: readonly string[]): string | null => {
-  for (const name of names) {
-    const value = headers.get(name)?.trim();
-    if (value) return value;
-  }
-  return null;
+const setCodexSessionHeaders = (headers: Headers, source: Headers): void => {
+  const sessionId = trimHeader(source, 'session-id') ?? trimHeader(source, 'session_id') ?? crypto.randomUUID();
+  headers.set('session-id', sessionId);
 };
 
 const buildCodexResponsesHeaders = (opts: CallCodexResponsesOptions, accessToken: string): Headers => {
@@ -110,9 +110,9 @@ const buildCodexResponsesHeaders = (opts: CallCodexResponsesOptions, accessToken
   headers.set('user-agent', CODEX_RESPONSES_USER_AGENT);
   headers.set('accept', 'text/event-stream');
   headers.set('content-type', 'application/json');
-  headers.set('session_id', nonEmptyHeader(opts.headers, CODEX_RESPONSE_SESSION_HEADERS) ?? crypto.randomUUID());
+  setCodexSessionHeaders(headers, opts.headers);
 
-  for (const name of CODEX_RESPONSE_PASSTHROUGH_HEADERS) {
+  for (const name of CODEX_RESPONSES_PASSTHROUGH_HEADERS) {
     const value = opts.headers.get(name)?.trim();
     if (value) headers.set(name, value);
   }

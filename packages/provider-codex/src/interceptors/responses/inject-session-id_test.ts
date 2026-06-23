@@ -74,13 +74,25 @@ test('honors a client-supplied session-id (hyphen form) without overwriting', as
   assertEquals(ctx.headers.get('session-id'), 'client-supplied');
 });
 
-test('honors a client-supplied session_id (underscore form) without injecting hyphen variant', async () => {
-  const ctx = invocation({ model: 'gpt-test', input: 'hi' }, new Headers({ 'session_id': 'client-supplied' }));
+test('canonicalizes a client-supplied session_id alias when session-id is absent', async () => {
+  const ctx = invocation({ model: 'gpt-test', input: 'hi' }, new Headers({ session_id: 'client-supplied' }));
 
   await injectSessionId(ctx, stubRequest, okEvents);
 
-  assertEquals(ctx.headers.get('session_id'), 'client-supplied');
-  assertEquals(ctx.headers.get('session-id'), null);
+  assertEquals(ctx.headers.get('session-id'), 'client-supplied');
+  assertEquals(ctx.headers.get('session_id'), null);
+});
+
+test('prefers session-id over a client-supplied session_id alias', async () => {
+  const ctx = invocation({ model: 'gpt-test', input: 'hi' }, new Headers({
+    'session-id': 'canonical',
+    session_id: 'alias',
+  }));
+
+  await injectSessionId(ctx, stubRequest, okEvents);
+
+  assertEquals(ctx.headers.get('session-id'), 'canonical');
+  assertEquals(ctx.headers.get('session_id'), null);
 });
 
 test('handles array input by reading the first role:"user" item', async () => {

@@ -1,11 +1,10 @@
 import type { ResponsesBoundaryCtx } from './types.ts';
 import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
 
-// Codex backend's prompt cache keys on the `session-id` header (hyphen form;
-// underscore form is silently ignored). Empirically: with a stable hyphen
-// `session-id` repeated across turns of the same conversation, ~88% of input
-// tokens hit the cache (e.g. 1792/2031 on a 2k-token prompt). Without it,
-// cache hits are sporadic at best.
+// Codex backend's prompt cache keys on the `session-id` header. Empirically:
+// with a stable `session-id` repeated across turns of the same conversation,
+// ~88% of input tokens hit the cache (e.g. 1792/2031 on a 2k-token prompt).
+// Without it, cache hits are sporadic at best.
 //
 // Strategy: derive a stable id from `(instructions + first user-message text)`
 // so the same conversation prefix produces the same session-id across turns,
@@ -13,16 +12,21 @@ import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
 // (different system prompt or different opening user message) get different
 // ids and don't poison each other's cache.
 //
-// Honor a client-supplied `session-id` (or underscore variant) verbatim — the
-// client may already track its own session boundary; we only inject when both
-// header forms are absent.
+// Honor a client-supplied `session-id` verbatim. A downstream `session_id` is
+// accepted only as a compatibility alias when the canonical header is absent;
+// upstream still receives only `session-id`.
 
 export const injectSessionId = async <TResult>(
   ctx: ResponsesBoundaryCtx,
   _request: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
-  if (ctx.headers.get('session-id') || ctx.headers.get('session_id')) return await run();
+  const suppliedSessionId = trimHeader(ctx.headers, 'session-id') ?? trimHeader(ctx.headers, 'session_id');
+  if (suppliedSessionId) {
+    ctx.headers.set('session-id', suppliedSessionId);
+    ctx.headers.delete('session_id');
+    return await run();
+  }
 
   const instructions = typeof ctx.payload.instructions === 'string' ? ctx.payload.instructions : '';
   const firstUser = firstUserMessageText(ctx.payload.input);
@@ -30,6 +34,11 @@ export const injectSessionId = async <TResult>(
   // collide with an empty first-user-message via prefix concatenation.
   ctx.headers.set('session-id', await sha256Uuid(`${instructions}${firstUser}`));
   return await run();
+};
+
+const trimHeader = (headers: Headers, name: string): string | null => {
+  const value = headers.get(name)?.trim();
+  return value || null;
 };
 
 const firstUserMessageText = (input: unknown): string => {

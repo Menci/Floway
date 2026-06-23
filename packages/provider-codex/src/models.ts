@@ -1,9 +1,9 @@
 import {
   CODEX_BACKEND_BASE,
   CODEX_CLI_VERSION,
+  CODEX_MODELS_ORIGINATOR,
   CODEX_MODELS_PATH,
-  CODEX_ORIGINATOR,
-  CODEX_USER_AGENT,
+  CODEX_MODELS_USER_AGENT,
 } from './constants.ts';
 import { pricingForCodexModelKey } from './pricing.ts';
 import { type Fetcher, type UpstreamModel } from '@floway-dev/provider';
@@ -26,8 +26,8 @@ export const fetchCodexCatalog = async (opts: { accessToken: string; accountId: 
     headers: {
       authorization: `Bearer ${opts.accessToken}`,
       'chatgpt-account-id': opts.accountId,
-      originator: CODEX_ORIGINATOR,
-      'user-agent': CODEX_USER_AGENT,
+      originator: CODEX_MODELS_ORIGINATOR,
+      'user-agent': CODEX_MODELS_USER_AGENT,
       accept: 'application/json',
     },
     signal: opts.signal,

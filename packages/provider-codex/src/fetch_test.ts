@@ -199,7 +199,7 @@ describe('callCodexResponses — upstream classification', () => {
     expect(body.stream).toBe(true);
   });
 
-  test('builds CLIProxyAPI-style Codex responses headers from a clean set', async () => {
+  test('builds Codex responses headers from a clean set', async () => {
     seedFreshAccessToken();
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
     await callCodexResponses({
@@ -211,7 +211,7 @@ describe('callCodexResponses — upstream classification', () => {
         forwarded: 'for=203.0.113.10',
         'openai-beta': 'responses=experimental',
         originator: 'downstream-originator',
-        session_id: 'downstream-session',
+        'session-id': 'downstream-session',
         'user-agent': 'curl/8.7.1',
         version: '1',
         'x-client-request-id': 'req-123',
@@ -230,7 +230,8 @@ describe('callCodexResponses — upstream classification', () => {
     expect(headers.get('user-agent')).toBe(CODEX_RESPONSES_USER_AGENT);
     expect(headers.get('accept')).toBe('text/event-stream');
     expect(headers.get('content-type')).toBe('application/json');
-    expect(headers.get('session_id')).toBe('downstream-session');
+    expect(headers.get('session-id')).toBe('downstream-session');
+    expect(headers.get('session_id')).toBeNull();
     expect(headers.get('version')).toBe('1');
     expect(headers.get('x-client-request-id')).toBe('req-123');
     expect(headers.get('x-codex-beta-features')).toBe('responses_websockets=2026-02-06');
@@ -239,6 +240,57 @@ describe('callCodexResponses — upstream classification', () => {
     expect(headers.get('forwarded')).toBeNull();
     expect(headers.get('openai-beta')).toBeNull();
     expect(headers.get('x-real-ip')).toBeNull();
+  });
+
+  test('preserves a hyphenated Codex session id for prompt cache', async () => {
+    seedFreshAccessToken();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
+    await callCodexResponses({
+      upstreamId, account: activeAccount,
+      model,
+      body: { input: [], stream: true },
+      headers: new Headers({ 'session-id': 'cache-session' }),
+      effects: makeEffects(),
+      call: noopUpstreamCallOptions(),
+    });
+
+    const headers = new Headers((fetchSpy.mock.calls[0][1] as RequestInit).headers);
+    expect(headers.get('session-id')).toBe('cache-session');
+    expect(headers.get('session_id')).toBeNull();
+  });
+
+  test('canonicalizes downstream session_id to the Codex session-id header', async () => {
+    seedFreshAccessToken();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
+    await callCodexResponses({
+      upstreamId, account: activeAccount,
+      model,
+      body: { input: [], stream: true },
+      headers: new Headers({ session_id: 'alias-session' }),
+      effects: makeEffects(),
+      call: noopUpstreamCallOptions(),
+    });
+
+    const headers = new Headers((fetchSpy.mock.calls[0][1] as RequestInit).headers);
+    expect(headers.get('session-id')).toBe('alias-session');
+    expect(headers.get('session_id')).toBeNull();
+  });
+
+  test('prefers downstream session-id over session_id when both are provided', async () => {
+    seedFreshAccessToken();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
+    await callCodexResponses({
+      upstreamId, account: activeAccount,
+      model,
+      body: { input: [], stream: true },
+      headers: new Headers({ 'session-id': 'canonical-session', session_id: 'alias-session' }),
+      effects: makeEffects(),
+      call: noopUpstreamCallOptions(),
+    });
+
+    const headers = new Headers((fetchSpy.mock.calls[0][1] as RequestInit).headers);
+    expect(headers.get('session-id')).toBe('canonical-session');
+    expect(headers.get('session_id')).toBeNull();
   });
 
   test('generates a Codex session id when the downstream request has none', async () => {
@@ -250,7 +302,8 @@ describe('callCodexResponses — upstream classification', () => {
     });
 
     const headers = new Headers((fetchSpy.mock.calls[0][1] as RequestInit).headers);
-    expect(headers.get('session_id')).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    expect(headers.get('session-id')).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    expect(headers.get('session_id')).toBeNull();
   });
 
   test('401 token_invalidated → persistTerminalState session_terminated, return 503', async () => {
