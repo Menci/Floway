@@ -1,28 +1,7 @@
 import { test } from 'vitest';
 
-import { createUpstreamLatencyRecorder, runtimeLocationFromRequest } from './performance.ts';
-import { initEnv } from '@floway-dev/platform';
+import { createUpstreamLatencyRecorder } from './performance.ts';
 import { assert, assertEquals, assertThrows } from '@floway-dev/test-utils';
-
-test('runtimeLocationFromRequest prefers Cloudflare colo', () => {
-  initEnv(() => 'fallback-location');
-  const request = new Request('https://example.test');
-  Object.defineProperty(request, 'cf', { value: { colo: 'SJC' } });
-
-  assertEquals(runtimeLocationFromRequest(request), 'SJC');
-});
-
-test('runtimeLocationFromRequest uses env fallback outside Cloudflare', () => {
-  initEnv(name => (name === 'RUNTIME_LOCATION' ? 'worker-local' : ''));
-
-  assertEquals(runtimeLocationFromRequest(new Request('https://example.test')), 'worker-local');
-});
-
-test('runtimeLocationFromRequest uses unknown without colo or env', () => {
-  initEnv(() => '');
-
-  assertEquals(runtimeLocationFromRequest(new Request('https://example.test')), 'unknown');
-});
 
 // Defer settle so the test can observe pre/post-settle state without racing
 // the immediate microtask. resolve(value) only after the test deliberately

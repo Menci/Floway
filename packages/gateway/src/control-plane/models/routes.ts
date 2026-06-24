@@ -3,9 +3,10 @@ import type { Context } from 'hono';
 import { toPublicModel } from '../../data-plane/models/load.ts';
 import { MODEL_LISTING_FAILURE_MESSAGE } from '../../data-plane/models/shared.ts';
 import { getModels } from '../../data-plane/providers/registry.ts';
-import { createPerRequestFetcherForAdmin } from '../../dial/per-request.ts';
+import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
+import { getCurrentColo } from '../../runtime/runtime-info.ts';
 import type { PublicModel, PublicModelsResponse } from '@floway-dev/protocols/common';
 import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 import type { ResolvedModel, UpstreamProviderKind } from '@floway-dev/provider';
@@ -34,7 +35,7 @@ export const controlPlaneModels = async (c: Context) => {
     // like the data-plane /models endpoint. On a session request there is no
     // API key, so this resolves to the user's per-user upstream cap: a user who
     // has had an upstream removed must not see its models in the Models tab.
-    const fetcherForUpstream = await createPerRequestFetcherForAdmin();
+    const fetcherForUpstream = await createPerRequestFetcher(getCurrentColo(c.req.raw));
     const models = await getModels(effectiveUpstreamIdsFromContext(c), fetcherForUpstream, backgroundSchedulerFromContext(c));
     const data = models.map(toControlPlaneModel);
     const response: ControlPlaneModelsResponse = {

@@ -12,7 +12,7 @@ test('/api/performance returns backend-aggregated base-model percentiles', async
     keyId: apiKey.id,
     upstream: 'copilot:1',
     stream: true,
-    runtimeLocation: 'unknown',
+    runtimeLocation: 'LOCAL',
   };
 
   for (let i = 0; i < 90; i++) {
@@ -72,7 +72,7 @@ test('/api/performance scopes to actor\'s keys in self-by-key mode', async () =>
     metricScope: 'request_total' as const,
     upstream: null,
     stream: false,
-    runtimeLocation: 'unknown',
+    runtimeLocation: 'LOCAL',
   };
 
   await repo.performance.recordLatency({ ...sample, keyId: apiKey.id, model: 'gpt-5', modelKey: 'gpt-5', durationMs: 50 });
@@ -97,7 +97,7 @@ test('/api/performance can include key metadata', async () => {
     upstream: null,
     modelKey: 'gpt-5',
     stream: false,
-    runtimeLocation: 'unknown',
+    runtimeLocation: 'LOCAL',
     durationMs: 50,
   });
 
@@ -137,7 +137,7 @@ test('/api/performance all-by-user view aggregates over every key', async () => 
     modelKey: 'gpt-5',
     upstream: null,
     stream: false,
-    runtimeLocation: 'unknown',
+    runtimeLocation: 'LOCAL',
     durationMs: 100,
   };
   await repo.performance.recordLatency({ ...sample, keyId: apiKey.id });
@@ -186,7 +186,7 @@ test('/api/performance all-by-user view supports group_by=userId', async () => {
     modelKey: 'gpt-5',
     upstream: null,
     stream: false,
-    runtimeLocation: 'unknown',
+    runtimeLocation: 'LOCAL',
     durationMs: 100,
   };
   await repo.performance.recordLatency({ ...sample, keyId: apiKey.id });
@@ -229,7 +229,7 @@ test('/api/performance/overview series stays per-model under all-by-user view', 
     modelKey: 'gpt-5',
     upstream: null,
     stream: false,
-    runtimeLocation: 'unknown',
+    runtimeLocation: 'LOCAL',
     durationMs: 100,
   };
   await repo.performance.recordLatency({ ...sample, keyId: apiKey.id });
@@ -329,7 +329,7 @@ test('/api/performance all-by-user attributes soft-deleted keys to their origina
     modelKey: 'gpt-5',
     upstream: null,
     stream: false,
-    runtimeLocation: 'unknown',
+    runtimeLocation: 'LOCAL',
     durationMs: 100,
   });
   await repo.apiKeys.softDelete(apiKey.id);
@@ -355,7 +355,7 @@ test('/api/performance self-by-key surfaces soft-deleted keys metadata to their 
     modelKey: 'gpt-5',
     upstream: null,
     stream: false,
-    runtimeLocation: 'unknown',
+    runtimeLocation: 'LOCAL',
     durationMs: 200,
   });
   await repo.apiKeys.softDelete(apiKey.id);

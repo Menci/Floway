@@ -159,7 +159,10 @@ package, use pnpm filters (e.g.
 
 `dev:node` boots the Node deployment target. Configure via
 `FLOWAY_DB_PATH` (sqlite file path), `FLOWAY_FILES_DIR` (filesystem store
-root), `ADMIN_KEY` (admin secret), and `PORT`. Default ports/paths in
+root), `ADMIN_KEY` (admin secret), `PORT`, and optionally
+`RUNTIME_LOCATION` (instance tag used as the perf-telemetry
+`runtimeLocation` dimension and the dial-time colo-whitelist key —
+uppercased on read, defaults to `LOCAL` when unset). Default ports/paths in
 `apps/platform-node/entry.ts`. The Node entry runs `applyMigrations` against
 `packages/gateway/migrations/*.sql` at boot, then serves the same Hono app
 through `@hono/node-server`. Static-asset serving is Workers-only; the Node

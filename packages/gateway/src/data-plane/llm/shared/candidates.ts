@@ -23,10 +23,10 @@ export const enumerateProviderCandidates = async ({
   // lookup hits the SWR-cached `fetchUpstreamModelsCached` instead of
   // round-tripping to the upstream on every LLM serve.
   scheduler: BackgroundScheduler;
-  // Current colo for this data-plane request — see GatewayCtx.currentColo.
-  // Threaded into the per-request fetcher so colo-scoped fallback entries
-  // can be honoured at dial time.
-  currentColo: string | null;
+  // Current colo for this request — see GatewayCtx.currentColo. Threaded
+  // into the per-request fetcher so colo-scoped fallback entries can be
+  // honoured at dial time.
+  currentColo: string;
 }): Promise<{ readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean; readonly failedUpstreams: readonly string[] }> => {
   const fetcherForUpstream = await createPerRequestFetcher(currentColo);
   const providers = await listModelProviders(upstreamIds);

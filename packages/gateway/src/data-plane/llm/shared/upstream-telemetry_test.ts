@@ -15,7 +15,7 @@ const CONTEXT: PerformanceTelemetryContext = {
   upstream: 'up_test',
   modelKey: 'test-model',
   stream: true,
-  runtimeLocation: 'test',
+  runtimeLocation: 'TEST',
 };
 
 const baseCtx = (overrides: Partial<GatewayCtx> = {}): GatewayCtx => {
@@ -25,8 +25,8 @@ const baseCtx = (overrides: Partial<GatewayCtx> = {}): GatewayCtx => {
     upstreamIds: null,
     wantsStream: true,
     requestStartedAt: 0,
-    runtimeLocation: 'test',
-    currentColo: null,
+    runtimeLocation: 'TEST',
+    currentColo: 'TEST',
     dump: null,
     abortSignal: downstream.signal,
     downstreamAbortController: downstream,

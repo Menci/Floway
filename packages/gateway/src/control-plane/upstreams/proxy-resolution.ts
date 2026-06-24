@@ -1,5 +1,5 @@
 import { createFetcher, type ProxyEntry } from '../../dial/fetcher.ts';
-import { createPerRequestFetcherForAdmin } from '../../dial/per-request.ts';
+import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { getRepo } from '../../repo/index.ts';
 import { DIRECT_PROXY_ID, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
 import { getSocketDial } from '@floway-dev/platform';
@@ -14,17 +14,22 @@ import { parseProxyUri, type ProxyUriError, runProxiedRequest } from '@floway-de
 export const resolveControlPlaneFetcher = async (opts: {
   override?: readonly ProxyFallbackEntry[];
   upstreamId?: string;
+  currentColo: string;
 }): Promise<Fetcher> => {
   if (opts.override !== undefined) {
-    return await buildOverrideFetcher(opts.override, opts.upstreamId ?? 'draft');
+    return await buildOverrideFetcher(opts.override, opts.upstreamId ?? 'draft', opts.currentColo);
   }
   if (opts.upstreamId !== undefined) {
-    return (await createPerRequestFetcherForAdmin())(opts.upstreamId);
+    return (await createPerRequestFetcher(opts.currentColo))(opts.upstreamId);
   }
   return directFetcher;
 };
 
-const buildOverrideFetcher = async (rawList: readonly ProxyFallbackEntry[], upstreamId: string): Promise<Fetcher> => {
+const buildOverrideFetcher = async (
+  rawList: readonly ProxyFallbackEntry[],
+  upstreamId: string,
+  currentColo: string,
+): Promise<Fetcher> => {
   const list = normalizeProxyFallbackList(rawList);
   const referenced = new Set(list.filter(entry => entry.id !== DIRECT_PROXY_ID).map(entry => entry.id));
   if (referenced.size === 0) {
@@ -61,7 +66,7 @@ const buildOverrideFetcher = async (rawList: readonly ProxyFallbackEntry[], upst
     repo,
     upstreamId,
     fallbackList: list,
-    currentColo: null,
+    currentColo,
     proxyById,
     runProxied: runProxiedRequest,
     runDirect: directFetcher,

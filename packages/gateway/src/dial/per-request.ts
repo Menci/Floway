@@ -10,7 +10,7 @@ import { parseProxyUri, type ProxyUriError, runProxiedRequest } from '@floway-de
 // other upstream in the same request. Per-upstream fetchers built against a
 // bad row throw at call time rather than at build time, mirroring how the
 // dial layer surfaces other dial-time failures.
-export const createPerRequestFetcher = async (currentColo: string | null): Promise<(upstreamId: string) => Fetcher> => {
+export const createPerRequestFetcher = async (currentColo: string): Promise<(upstreamId: string) => Fetcher> => {
   const repo = getRepo();
   const upstreams = await repo.upstreams.list();
   const fallbackById = new Map(upstreams.map(u => [u.id, u.proxyFallbackList] as const));
@@ -71,7 +71,3 @@ export const createPerRequestFetcher = async (currentColo: string | null): Promi
     });
   };
 };
-
-// Admin / background variant — no data-plane request, no colo to derive.
-export const createPerRequestFetcherForAdmin = (): Promise<(upstreamId: string) => Fetcher> =>
-  createPerRequestFetcher(null);

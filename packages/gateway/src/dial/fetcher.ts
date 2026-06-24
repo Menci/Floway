@@ -20,10 +20,9 @@ interface CreateFetcherInput {
   upstreamId: string;
   fallbackList: ProxyFallbackEntry[];
   proxyById: Map<string, ProxyEntry>;
-  // Current Cloudflare colo (or Node RUNTIME_LOCATION) the data-plane request
-  // landed in; null on deployments without a colo concept. See
-  // `entryMatchesColo` for the filter rule.
-  currentColo: string | null;
+  // Location tag the request landed in, used to apply each entry's optional
+  // `colos` whitelist via `entryMatchesColo`. See `getCurrentColo`.
+  currentColo: string;
   // Injected so the fetcher stays runtime-agnostic — the composition root
   // chooses the concrete dial/fetch implementations.
   runProxied: (

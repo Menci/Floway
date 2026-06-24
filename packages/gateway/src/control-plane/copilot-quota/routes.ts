@@ -1,7 +1,8 @@
 import type { Context } from 'hono';
 
-import { createPerRequestFetcherForAdmin } from '../../dial/per-request.ts';
+import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { getRepo } from '../../repo/index.ts';
+import { getCurrentColo } from '../../runtime/runtime-info.ts';
 import { assertCopilotUpstreamRecord, githubHeaders } from '@floway-dev/provider-copilot';
 
 interface QuotaDetail {
@@ -41,7 +42,7 @@ export const copilotQuota = async (c: Context) => {
 
     const { config } = assertCopilotUpstreamRecord(upstream);
 
-    const fetcherForUpstream = await createPerRequestFetcherForAdmin();
+    const fetcherForUpstream = await createPerRequestFetcher(getCurrentColo(c.req.raw));
     const fetcher = fetcherForUpstream(upstream.id);
     const resp = await fetcher('https://api.github.com/copilot_internal/user', { headers: githubHeaders(config.githubToken) });
 

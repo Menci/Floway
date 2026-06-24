@@ -4,7 +4,7 @@ import { callApi, useApi } from '../api/client.ts';
 
 export interface RuntimeInfo {
   kind: 'cloudflare' | 'node';
-  colo: string | null;
+  colo: string;
 }
 
 const info = shallowRef<RuntimeInfo | null>(null);

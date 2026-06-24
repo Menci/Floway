@@ -12,7 +12,7 @@ const record = (overrides: Partial<PerformanceTelemetryRecord>): PerformanceTele
   upstream: 'copilot:1',
   modelKey: 'claude-opus-4.7',
   stream: true,
-  runtimeLocation: 'unknown',
+  runtimeLocation: 'LOCAL',
   requests: 1,
   errors: 0,
   totalMsSum: 100,

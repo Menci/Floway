@@ -70,6 +70,12 @@ PORT=8788 \
 pnpm run dev:node
 ```
 
+Optionally set `RUNTIME_LOCATION=<tag>` to label this instance in the
+performance telemetry's `runtimeLocation` dimension and as the dial-time
+key for the proxy fallback list's per-instance colo whitelist. The value
+is uppercased on read so `local`, `Local`, and `LOCAL` all match the
+dashboard's uppercased whitelist input; defaults to `LOCAL` when unset.
+
 The Node target serves no SPA — point the dashboard at the same admin host
 through your own static-file server, or use the Cloudflare deploy for the
 dashboard while running data-plane traffic on Node.

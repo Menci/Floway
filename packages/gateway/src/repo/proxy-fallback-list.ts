@@ -7,8 +7,9 @@ export const DIRECT_PROXY_ID = 'direct';
 // Treat the list as a SET by `id` semantics: a duplicate entry has no meaning
 // beyond "try once", so silently drop repeats. The first occurrence's `colos`
 // whitelist wins on conflict. Colo codes are uppercased so the dial-time
-// match against `request.cf.colo` (which CF returns as uppercase) and the
-// dashboard's free-form input stay aligned.
+// match against `getCurrentColo` (which uppercases CF's `request.cf.colo` and
+// the Node `RUNTIME_LOCATION` env var) and the dashboard's free-form input
+// stay aligned.
 export const normalizeProxyFallbackList = (entries: readonly ProxyFallbackEntry[]): ProxyFallbackEntry[] => {
   const seen = new Set<string>();
   const result: ProxyFallbackEntry[] = [];
@@ -35,15 +36,9 @@ const normalizeColos = (colos: readonly string[] | undefined): string[] | undefi
   return out.length === 0 ? undefined : out;
 };
 
-// True when the entry is active under the data-plane request's current colo.
-// A null `currentColo` (Node without RUNTIME_LOCATION) means the deployment
-// has no colo concept, so every entry is honoured as written.
-//
-// `colos` is either absent (all colos) or non-empty — the wire schema rejects
-// an empty array and `normalizeProxyFallbackList` strips one before storage,
-// so we don't defend the "empty means all colos" interpretation here.
-export const entryMatchesColo = (entry: ProxyFallbackEntry, currentColo: string | null): boolean => {
-  if (currentColo === null) return true;
-  if (entry.colos === undefined) return true;
-  return entry.colos.includes(currentColo);
-};
+// True when the entry is active under the request's current colo. `colos`
+// is either absent (all colos) or non-empty — the wire schema rejects an
+// empty array and `normalizeProxyFallbackList` strips one before storage, so
+// we don't defend the "empty means all colos" interpretation here.
+export const entryMatchesColo = (entry: ProxyFallbackEntry, currentColo: string): boolean =>
+  entry.colos === undefined || entry.colos.includes(currentColo);

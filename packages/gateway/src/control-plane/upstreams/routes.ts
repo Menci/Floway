@@ -6,12 +6,13 @@ import { upstreamRecordToJson, type SerializedUpstreamRecord } from './serialize
 import { MODEL_LISTING_FAILURE_MESSAGE } from '../../data-plane/models/shared.ts';
 import { fetchUpstreamModelsCached } from '../../data-plane/providers/models-cache.ts';
 import { createProviderInstance } from '../../data-plane/providers/registry.ts';
-import { createPerRequestFetcherForAdmin } from '../../dial/per-request.ts';
+import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { type AuthedContext, userFromContext } from '../../middleware/auth.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { DIRECT_PROXY_ID, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
+import { getCurrentColo } from '../../runtime/runtime-info.ts';
 import { shortId } from '../../shared/short-id.ts';
 import { fetchGitHubUser, pollGitHubDeviceFlow, startGitHubDeviceFlow } from '../auth/github-device-flow.ts';
 import type { claudeCodeAuthorizeUrlBody, claudeCodeImportBody, claudeCodeProbeQuotaBody, claudeCodeRefreshNowBody, claudeCodeReimportBody, claudeCodeSetupTokenImportBody, claudeCodeSetupTokenReimportBody, codexAuthorizeUrlBody, codexImportBody, codexRefreshNowBody, codexReimportBody, copilotAuthPollBody, createUpstreamBody, fetchModelsBody, updateUpstreamBody } from '../schemas.ts';
@@ -161,7 +162,7 @@ const nextSortOrder = (upstreams: readonly UpstreamRecord[]): number => upstream
 const warmModelsCache = async (record: UpstreamRecord, c: Context): Promise<void> => {
   const scheduler = backgroundSchedulerFromContext(c);
   const instance = await createProviderInstance(record);
-  const fetcher = (await createPerRequestFetcherForAdmin())(record.id);
+  const fetcher = (await createPerRequestFetcher(getCurrentColo(c.req.raw)))(record.id);
   try {
     await fetchUpstreamModelsCached(instance, { scheduler, fetcher, force: true });
   } catch {}
@@ -398,7 +399,7 @@ export const listUpstreamModels = async (c: AuthedContext<'/:id'>) => {
 
   const refresh = c.req.query('refresh') === 'true';
   const scheduler = backgroundSchedulerFromContext(c);
-  const fetcher = (await createPerRequestFetcherForAdmin())(record.id);
+  const fetcher = (await createPerRequestFetcher(getCurrentColo(c.req.raw)))(record.id);
 
   try {
     const instance = await createProviderInstance(record);
@@ -443,7 +444,7 @@ const copilotConfigUserId = (config: unknown): number | null => {
 export const copilotAuthPoll = async (c: CtxWithJson<typeof copilotAuthPollBody>) => {
   try {
     const { device_code: deviceCode, proxy_fallback_list: proxyFallbackList } = c.req.valid('json');
-    const fetcher = await resolveControlPlaneFetcher({ override: proxyFallbackList });
+    const fetcher = await resolveControlPlaneFetcher({ override: proxyFallbackList, currentColo: getCurrentColo(c.req.raw) });
 
     const data = await pollGitHubDeviceFlow(deviceCode, fetcher);
 
@@ -570,7 +571,7 @@ export const codexImport = async (c: CtxWithJson<typeof codexImportBody>) => {
   try {
     // First-time import has no upstream id, so the resolver falls back to
     // direct egress when the operator left the override empty.
-    fetcher = await resolveControlPlaneFetcher({ override: body.proxy_fallback_list });
+    fetcher = await resolveControlPlaneFetcher({ override: body.proxy_fallback_list, currentColo: getCurrentColo(c.req.raw) });
   } catch (err) {
     return c.json({ error: errorMessage(err) }, 400);
   }
@@ -615,7 +616,7 @@ export const codexReimport = async (c: CtxWithJson<typeof codexReimportBody, '/:
   try {
     // Re-import threads the override through the same resolver as
     // `codexRefreshNow`; absent falls back to the persisted row's list.
-    fetcher = await resolveControlPlaneFetcher({ override: body.proxy_fallback_list, upstreamId: id });
+    fetcher = await resolveControlPlaneFetcher({ override: body.proxy_fallback_list, upstreamId: id, currentColo: getCurrentColo(c.req.raw) });
   } catch (err) {
     return c.json({ error: errorMessage(err) }, 400);
   }
@@ -666,7 +667,7 @@ export const codexRefreshNow = async (c: CtxWithJson<typeof codexRefreshNowBody,
   const body = c.req.valid('json');
   let fetcher;
   try {
-    fetcher = await resolveControlPlaneFetcher({ override: body.proxy_fallback_list, upstreamId: id });
+    fetcher = await resolveControlPlaneFetcher({ override: body.proxy_fallback_list, upstreamId: id, currentColo: getCurrentColo(c.req.raw) });
   } catch (err) {
     return c.json({ error: errorMessage(err) }, 400);
   }
@@ -787,7 +788,7 @@ export const claudeCodeImport = async (c: CtxWithJson<typeof claudeCodeImportBod
   const body = c.req.valid('json');
   let fetcher: Fetcher;
   try {
-    fetcher = await resolveControlPlaneFetcher({ override: body.proxy_fallback_list });
+    fetcher = await resolveControlPlaneFetcher({ override: body.proxy_fallback_list, currentColo: getCurrentColo(c.req.raw) });
   } catch (err) {
     return c.json({ error: errorMessage(err) }, 400);
   }
@@ -837,7 +838,7 @@ export const claudeCodeReimport = async (c: CtxWithJson<typeof claudeCodeReimpor
   const body = c.req.valid('json');
   let fetcher: Fetcher;
   try {
-    fetcher = await resolveControlPlaneFetcher({ override: body.proxy_fallback_list, upstreamId: id });
+    fetcher = await resolveControlPlaneFetcher({ override: body.proxy_fallback_list, upstreamId: id, currentColo: getCurrentColo(c.req.raw) });
   } catch (err) {
     return c.json({ error: errorMessage(err) }, 400);
   }
@@ -867,7 +868,7 @@ export const claudeCodeSetupTokenImport = async (c: CtxWithJson<typeof claudeCod
   const body = c.req.valid('json');
   let fetcher: Fetcher;
   try {
-    fetcher = await resolveControlPlaneFetcher({ override: body.proxy_fallback_list });
+    fetcher = await resolveControlPlaneFetcher({ override: body.proxy_fallback_list, currentColo: getCurrentColo(c.req.raw) });
   } catch (err) {
     return c.json({ error: errorMessage(err) }, 400);
   }
@@ -916,7 +917,7 @@ export const claudeCodeSetupTokenReimport = async (c: CtxWithJson<typeof claudeC
   const body = c.req.valid('json');
   let fetcher: Fetcher;
   try {
-    fetcher = await resolveControlPlaneFetcher({ override: body.proxy_fallback_list, upstreamId: id });
+    fetcher = await resolveControlPlaneFetcher({ override: body.proxy_fallback_list, upstreamId: id, currentColo: getCurrentColo(c.req.raw) });
   } catch (err) {
     return c.json({ error: errorMessage(err) }, 400);
   }
@@ -1076,7 +1077,7 @@ export const claudeCodeRefreshNow = async (c: CtxWithJson<typeof claudeCodeRefre
   const body = c.req.valid('json');
   let fetcher: Fetcher;
   try {
-    fetcher = await resolveControlPlaneFetcher({ override: body.proxy_fallback_list, upstreamId: id });
+    fetcher = await resolveControlPlaneFetcher({ override: body.proxy_fallback_list, upstreamId: id, currentColo: getCurrentColo(c.req.raw) });
   } catch (err) {
     return c.json({ error: errorMessage(err) }, 400);
   }
@@ -1189,7 +1190,7 @@ export const claudeCodeProbeQuota = async (c: CtxWithJson<typeof claudeCodeProbe
   const actor = userFromContext(c).id;
   let fetcher: Fetcher;
   try {
-    fetcher = await resolveControlPlaneFetcher({ override: body.proxy_fallback_list, upstreamId: id });
+    fetcher = await resolveControlPlaneFetcher({ override: body.proxy_fallback_list, upstreamId: id, currentColo: getCurrentColo(c.req.raw) });
   } catch (err) {
     return c.json({ error: errorMessage(err) }, 400);
   }

@@ -251,7 +251,7 @@ const PERFORMANCE_2: PerformanceTelemetryRecord = {
   upstream: 'up_azure_a',
   modelKey: 'gpt-prod',
   stream: false,
-  runtimeLocation: 'unknown',
+  runtimeLocation: 'LOCAL',
   requests: 3,
   errors: 0,
   totalMsSum: 900,

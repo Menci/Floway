@@ -447,7 +447,7 @@ interface ShimState {
   upstreamIds: readonly string[] | null;
   backgroundScheduler: GatewayCtx['backgroundScheduler'];
   runtimeLocation: string;
-  currentColo: string | null;
+  currentColo: string;
   downstreamAbortSignal: AbortSignal | undefined;
   imageDispatchCount: number;
 }

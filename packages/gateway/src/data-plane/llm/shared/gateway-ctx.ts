@@ -3,7 +3,6 @@ import { type DumpAccumulator, openDumpAccumulator } from '../../../dump/accumul
 import { apiKeyFromContext, type AuthedContext, effectiveUpstreamIdsFromContext } from '../../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 import { getCurrentColo } from '../../../runtime/runtime-info.ts';
-import { runtimeLocationFromRequest } from '../../shared/telemetry/performance.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 
 export interface GatewayCtx {
@@ -16,11 +15,12 @@ export interface GatewayCtx {
   // Stamped at ctx construction so request-total latency telemetry can subtract
   // from `performance.now()` at response completion.
   readonly requestStartedAt: number;
-  // The deployment colo / region, recorded as the `runtimeLocation` performance
-  // dimension. Request-scoped, so it is resolved once here rather than at the
+  // The deployment colo / region, used both as the `runtimeLocation`
+  // performance-telemetry dimension and as the dial-time colo whitelist key.
+  // Request-scoped, so it is resolved once here rather than at the
   // provider-call boundary.
   readonly runtimeLocation: string;
-  readonly currentColo: string | null;
+  readonly currentColo: string;
   // Null when the api key has no retention configured, in which case the
   // respond layer's `ctx.dump?.X(...)` calls collapse to no-ops and
   // `ctx.dump?.finalize(response) ?? response` returns the response unchanged.
@@ -58,6 +58,7 @@ export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCt
   const backgroundScheduler = backgroundSchedulerFromContext(c);
   const dump = openDumpAccumulator(c, opts.method ?? c.req.method, apiKey, opts.requestBody, backgroundScheduler);
   if (opts.model !== undefined) dump?.requestedModel(opts.model);
+  const colo = getCurrentColo(c.req.raw);
   return {
     apiKeyId: apiKey.id,
     upstreamIds,
@@ -66,8 +67,8 @@ export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCt
     downstreamAbortController: controller,
     backgroundScheduler,
     requestStartedAt: performance.now(),
-    runtimeLocation: runtimeLocationFromRequest(c.req.raw),
-    currentColo: getCurrentColo(c.req.raw),
+    runtimeLocation: colo,
+    currentColo: colo,
     dump,
   };
 };

@@ -14,7 +14,7 @@ import { fetchUpstreamModelsCached } from '../../data-plane/providers/models-cac
 import { createProviderInstance } from '../../data-plane/providers/registry.ts';
 import { parseSearchConfigDefault, parseSearchConfigStrict } from '../../data-plane/tools/web-search/search-config.ts';
 import type { SearchConfig } from '../../data-plane/tools/web-search/types.ts';
-import { createPerRequestFetcherForAdmin } from '../../dial/per-request.ts';
+import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { getDumpStore, notifyDisabledBestEffort } from '../../dump/registry.ts';
 import { type CtxWithJson, type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { parseDisabledPublicModelIdsWire } from '../../repo/disabled-public-models.ts';
@@ -22,6 +22,7 @@ import { getRepo } from '../../repo/index.ts';
 import { DIRECT_PROXY_ID, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
 import type { ApiKey, PerformanceMetricScope, PerformanceTelemetryRecord, SearchUsageRecord, TokenUsage, UsageRecord, User } from '../../repo/types.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
+import { getCurrentColo } from '../../runtime/runtime-info.ts';
 import { PASSWORD_HASH_SCHEME } from '../../shared/passwords.ts';
 import { isWebSearchProviderName } from '../../shared/web-search-providers.ts';
 import { parseUpstreamIdsValue } from '../api-keys/upstream-ids.ts';
@@ -573,7 +574,7 @@ const parsePerformanceRecords = (value: unknown): { type: 'ok'; records: Perform
 const warmModelsCache = async (record: UpstreamRecord, c: Context): Promise<void> => {
   const scheduler = backgroundSchedulerFromContext(c);
   const instance = await createProviderInstance(record);
-  const fetcher = (await createPerRequestFetcherForAdmin())(record.id);
+  const fetcher = (await createPerRequestFetcher(getCurrentColo(c.req.raw)))(record.id);
   try {
     await fetchUpstreamModelsCached(instance, { scheduler, fetcher, force: true });
   } catch {}

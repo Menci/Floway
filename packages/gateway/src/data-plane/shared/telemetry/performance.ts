@@ -2,16 +2,9 @@ import { currentHour } from './hour.ts';
 import { getRepo } from '../../../repo/index.ts';
 import type { PerformanceDimensions, PerformanceMetricScope } from '../../../repo/types.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import { getEnv } from '@floway-dev/platform';
 import type { PerformanceTelemetryContext } from '@floway-dev/provider';
 
 export type { PerformanceTelemetryContext };
-
-export function runtimeLocationFromRequest(request: Request): string {
-  const cf = (request as Request & { cf?: { colo?: unknown } }).cf;
-  if (typeof cf?.colo === 'string' && cf.colo) return cf.colo;
-  return getEnv('RUNTIME_LOCATION') || 'unknown';
-}
 
 const performanceDimensions = (context: PerformanceTelemetryContext, metricScope: PerformanceMetricScope): PerformanceDimensions => ({
   hour: currentHour(),

@@ -5,11 +5,11 @@ export type UpstreamProviderKind = typeof ALL_PROVIDER_KINDS[number];
 
 // One entry in `UpstreamRecord.proxyFallbackList`. `id` is the proxy id from
 // the proxies catalog or the literal 'direct' sentinel. `colos` is an
-// optional whitelist of Cloudflare colos / Node `RUNTIME_LOCATION` tags;
-// when set, the dial layer only attempts this entry from a request that
-// landed in one of the listed colos. Missing means "all colos". An empty
-// array is never persisted — the wire schema rejects it and the repo
-// normalizer strips it.
+// optional whitelist of location tags (Cloudflare colos / the Node
+// `RUNTIME_LOCATION` env var); when set, the dial layer only attempts this
+// entry from a request that landed in one of the listed locations. Missing
+// means "all locations". An empty array is never persisted — the wire schema
+// rejects it and the repo normalizer strips it.
 export interface ProxyFallbackEntry {
   id: string;
   colos?: string[];

@@ -532,10 +532,10 @@ const makeRespondCtx = (): GatewayCtx => ({
   apiKeyId: 'key_respond_test',
   upstreamIds: null,
   wantsStream: false,
-  runtimeLocation: 'test',
+  runtimeLocation: 'TEST',
   backgroundScheduler: () => {},
   requestStartedAt: 0,
-  currentColo: null,
+  currentColo: 'TEST',
   dump: null,
 });
 

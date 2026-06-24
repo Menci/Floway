@@ -28,9 +28,10 @@ import type { Context } from 'hono';
 import { CODEX_AUTO_REVIEW_ALIAS, CODEX_AUTO_REVIEW_TARGET } from './auto-review-alias.ts';
 import { parseCodexVersion, resolveCodexCatalog, type CodexCatalog } from './catalog.ts';
 import { applyContextWindowFromRegistry, type ContextWindowResolver } from './context-window.ts';
-import { createPerRequestFetcherForAdmin } from '../../dial/per-request.ts';
+import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
+import { getCurrentColo } from '../../runtime/runtime-info.ts';
 import { getInternalModels } from '../providers/registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { Fetcher } from '@floway-dev/provider';
@@ -94,7 +95,7 @@ export const codexModels = async (c: Context): Promise<Response> => {
     if (hit !== undefined) return hit;
   }
 
-  const fetcherForUpstream = await createPerRequestFetcherForAdmin();
+  const fetcherForUpstream = await createPerRequestFetcher(getCurrentColo(c.req.raw));
   const scheduler = backgroundSchedulerFromContext(c);
   const response = Response.json(await computeCatalog(userAgent, upstreamIds, fetcherForUpstream, scheduler), {
     headers: { 'cache-control': `public, max-age=${CACHE_TTL_SECONDS}` },

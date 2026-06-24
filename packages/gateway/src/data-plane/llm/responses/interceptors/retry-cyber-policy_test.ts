@@ -41,8 +41,8 @@ const stubCtx = (overrides: { abortSignal?: AbortSignal } = {}): GatewayCtx => (
   apiKeyId: 'test-key',
   upstreamIds: null,
   wantsStream: true,
-  runtimeLocation: 'test',
-  currentColo: null,
+  runtimeLocation: 'TEST',
+  currentColo: 'TEST',
   dump: null,
   backgroundScheduler: () => {},
   requestStartedAt: 0,
@@ -155,8 +155,8 @@ const performanceFor = (modelKey: string) => ({
   upstream: 'test-upstream',
   modelKey,
   stream: true,
-  runtimeLocation: 'test',
-  currentColo: null,
+  runtimeLocation: 'TEST',
+  currentColo: 'TEST',
   dump: null,
 });
 

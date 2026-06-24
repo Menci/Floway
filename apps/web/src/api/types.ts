@@ -245,9 +245,9 @@ interface UpstreamRecordBase {
   disabled_public_model_ids: string[];
   // Ordered fallback dial-list. Each entry pins a proxy id (or the literal
   // string `'direct'` for "no proxy") and an optional `colos` whitelist that
-  // scopes the entry to specific Cloudflare colos / Node RUNTIME_LOCATION
-  // tags. Empty/missing whitelist means "active in all colos". Empty top-
-  // level list means "always direct".
+  // scopes the entry to specific location tags (Cloudflare colos / the Node
+  // `RUNTIME_LOCATION` env var). Empty/missing whitelist means "active in
+  // all locations". Empty top-level list means "always direct".
   proxy_fallback_list: ProxyFallbackEntry[];
   // SWR models-cache freshness joined from the models_cache table. Both inner
   // values are null on a row that has never been warmed; lastError is set

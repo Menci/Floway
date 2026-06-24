@@ -14,7 +14,7 @@ const baseSample = {
   upstream: 'copilot:1',
   modelKey: 'claude-opus-4.7-xhigh',
   stream: true,
-  runtimeLocation: 'unknown',
+  runtimeLocation: 'LOCAL',
 };
 
 async function exercisePerformanceRepo(repo: PerformanceRepo) {
