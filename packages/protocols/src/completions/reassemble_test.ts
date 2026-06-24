@@ -66,12 +66,12 @@ test('reassembleCompletionsEvents merges multiple choices by index', async () =>
   ]);
 });
 
-test('reassembleCompletionsEvents folds the Zhipu/GLM vLLM-fork final usage chunk as a no-op placeholder', () => {
+test('reassembleCompletionsEvents folds the Zhipu/GLM vLLM-fork final usage chunk as a no-op placeholder', async () => {
   // The Zhipu/GLM fork emits a final `choices: [{ index: 0 }]` (no text,
   // no finish_reason) carrying the usage block instead of OpenAI's
   // `choices: []`. The reassembler folds it as a no-op while still
   // surfacing the usage onto the result.
-  return reassembleCompletionsEvents(fromArray([
+  const result = await reassembleCompletionsEvents(fromArray([
     chunk('hi'),
     chunk('!', 'stop'),
     {
@@ -82,10 +82,10 @@ test('reassembleCompletionsEvents folds the Zhipu/GLM vLLM-fork final usage chun
       choices: [{ index: 0 }],
       usage: { prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 },
     },
-  ])).then(result => {
-    assertEquals(result.choices, [{ index: 0, text: 'hi!', finish_reason: 'stop' }]);
-    assertEquals(result.usage, { prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 });
-  });
+  ]));
+
+  assertEquals(result.choices, [{ index: 0, text: 'hi!', finish_reason: 'stop' }]);
+  assertEquals(result.usage, { prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 });
 });
 
 test('reassembleCompletionsEvents carries system_fingerprint and logprobs through', async () => {

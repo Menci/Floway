@@ -6,7 +6,7 @@ import type { CompletionsStreamEvent, CompletionsUsage } from '@floway-dev/proto
 // `prompt_tokens_details` when the upstream reports it (vLLM, llama.cpp,
 // Fireworks, OpenRouter, xAI Grok all populate it; OpenAI's own text
 // models leave it absent). The bare `input` dimension subtracts cache_read
-// and cache_write so the three dimensions stay disjoint, matching what
+// so the two input dimensions stay disjoint, matching what
 // tokenUsageFromChatCompletionsUsage does for chat. No `service_tier` is
 // carried — that field is chat-only across every vendor's wire spec.
 export const tokenUsageFromCompletionsUsage = (usage: unknown): ReturnType<typeof tokenUsage> | null => {
@@ -14,15 +14,13 @@ export const tokenUsageFromCompletionsUsage = (usage: unknown): ReturnType<typeo
   const { prompt_tokens: promptTokens, completion_tokens: completionTokens, prompt_tokens_details: details } = usage as {
     prompt_tokens?: unknown;
     completion_tokens?: unknown;
-    prompt_tokens_details?: { cached_tokens?: unknown; cache_creation_input_tokens?: unknown };
+    prompt_tokens_details?: { cached_tokens?: unknown };
   };
   if (typeof promptTokens !== 'number' || typeof completionTokens !== 'number') return null;
   const cacheRead = typeof details?.cached_tokens === 'number' ? details.cached_tokens : 0;
-  const cacheWrite = typeof details?.cache_creation_input_tokens === 'number' ? details.cache_creation_input_tokens : 0;
   return tokenUsage({
-    input: promptTokens - cacheRead - cacheWrite,
+    input: promptTokens - cacheRead,
     input_cache_read: cacheRead,
-    input_cache_write: cacheWrite,
     output: completionTokens,
   });
 };
@@ -40,7 +38,7 @@ export const completionsUsageFromStreamEvent = (event: CompletionsStreamEvent | 
     prompt_tokens?: unknown;
     completion_tokens?: unknown;
     total_tokens?: unknown;
-    prompt_tokens_details?: { cached_tokens?: unknown; cache_creation_input_tokens?: unknown };
+    prompt_tokens_details?: { cached_tokens?: unknown };
   };
   if (typeof promptTokens !== 'number' || typeof completionTokens !== 'number') return null;
   const result: CompletionsUsage = {
@@ -48,11 +46,8 @@ export const completionsUsageFromStreamEvent = (event: CompletionsStreamEvent | 
     completion_tokens: completionTokens,
     total_tokens: typeof totalTokens === 'number' ? totalTokens : promptTokens + completionTokens,
   };
-  if (rawDetails && typeof rawDetails === 'object') {
-    const details: NonNullable<CompletionsUsage['prompt_tokens_details']> = {};
-    if (typeof rawDetails.cached_tokens === 'number') details.cached_tokens = rawDetails.cached_tokens;
-    if (typeof rawDetails.cache_creation_input_tokens === 'number') details.cache_creation_input_tokens = rawDetails.cache_creation_input_tokens;
-    if (Object.keys(details).length > 0) result.prompt_tokens_details = details;
+  if (rawDetails && typeof rawDetails === 'object' && typeof rawDetails.cached_tokens === 'number') {
+    result.prompt_tokens_details = { cached_tokens: rawDetails.cached_tokens };
   }
   return result;
 };

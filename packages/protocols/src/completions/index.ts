@@ -36,13 +36,9 @@ export interface CompletionsUsage {
   // from /v1/chat/completions) carries an optional prompt-cache split.
   // OpenAI's own text models do not populate it today, but vLLM, llama.cpp,
   // Fireworks, OpenRouter, and xAI Grok all emit `cached_tokens` here on
-  // /v1/completions, and Azure mirrors the schema. Floway extracts the
-  // split when present so billing dimensions match what the upstream
-  // actually reported. `cache_creation_input_tokens` is the Anthropic
-  // cache-write field — kept on the typed surface so an upstream that
-  // bridges Anthropic-shape usage onto the OpenAI envelope reports
-  // correctly without a code change here.
-  prompt_tokens_details?: { cached_tokens?: number; cache_creation_input_tokens?: number };
+  // /v1/completions, and Azure mirrors the schema. Floway extracts it when
+  // present so billing dimensions match what the upstream actually reported.
+  prompt_tokens_details?: { cached_tokens?: number };
 }
 
 // One streaming chunk on the wire. The final usage chunk (sent when

@@ -251,9 +251,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
         recordRequestPerformance(ctx.backgroundScheduler, performanceContext, true, performance.now() - requestStartedAt);
         // Preserve upstream correlation headers (x-request-id, cf-ray, ...)
         // on the synthesized 502 so this rare edge case is still traceable.
-        for (const [name, value] of response.headers.entries()) {
-          if (isForwardedResponseHeader(name)) c.header(name, value);
-        }
+        stageForwardedResponseHeaders(c, response);
         return passthroughApiError(c, 'Upstream returned a streaming response with no body.', 502);
       }
       stageForwardedResponseHeaders(c, response);

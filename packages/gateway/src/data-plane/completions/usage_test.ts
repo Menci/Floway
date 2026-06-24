@@ -13,7 +13,7 @@ test('tokenUsageFromCompletionsUsage maps the OpenAI bare shape to bare input + 
 test('tokenUsageFromCompletionsUsage splits prompt_tokens into cache_read + bare input when the upstream populates prompt_tokens_details.cached_tokens', () => {
   // vLLM, llama.cpp, Fireworks, OpenRouter, xAI Grok all populate this on
   // /v1/completions; the cache_read tokens come out of the bare input bucket
-  // so the three dimensions stay disjoint.
+  // so the two input dimensions stay disjoint.
   assertEquals(
     tokenUsageFromCompletionsUsage({
       prompt_tokens: 100,
@@ -22,18 +22,6 @@ test('tokenUsageFromCompletionsUsage splits prompt_tokens into cache_read + bare
       prompt_tokens_details: { cached_tokens: 80 },
     }),
     { input: 20, input_cache_read: 80, output: 7 },
-  );
-});
-
-test('tokenUsageFromCompletionsUsage splits prompt_tokens into cache_write + bare input when an upstream bridges Anthropic-shape cache_creation_input_tokens', () => {
-  assertEquals(
-    tokenUsageFromCompletionsUsage({
-      prompt_tokens: 50,
-      completion_tokens: 9,
-      total_tokens: 59,
-      prompt_tokens_details: { cache_creation_input_tokens: 30 },
-    }),
-    { input: 20, input_cache_write: 30, output: 9 },
   );
 });
 
