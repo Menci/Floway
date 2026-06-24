@@ -15,6 +15,11 @@ export interface ModelEndpoints {
   chatCompletions?: {};
   responses?: {};
   messages?: {};
+  // Legacy OpenAI text completions (`/v1/completions`). Passthrough only — we
+  // never translate it to or from the three LLM endpoints above, so it has no
+  // sub-capability surface. Orthogonal to `chatCompletions`: a model can
+  // declare any non-empty subset.
+  completions?: {};
   embeddings?: {};
   imagesGenerations?: {};
   imagesEdits?: {};

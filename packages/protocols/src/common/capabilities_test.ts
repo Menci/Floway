@@ -13,4 +13,5 @@ test('kindForEndpoints returns embedding for embeddings and chat for chat-protoc
   assertEquals(kindForEndpoints({ embeddings: {} }), 'embedding');
   assertEquals(kindForEndpoints({ chatCompletions: {} }), 'chat');
   assertEquals(kindForEndpoints({ messages: {} }), 'chat');
+  assertEquals(kindForEndpoints({ completions: {} }), 'chat');
 });
