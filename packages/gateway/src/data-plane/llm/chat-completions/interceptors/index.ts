@@ -1,5 +1,5 @@
+import { withDemoteDeveloperToSystem } from './demote-developer-to-system.ts';
 import { withReasoningDisabledOnForcedToolChoice } from './disable-reasoning-on-forced-tool-choice.ts';
-import { withDowngradeDeveloperRole } from './downgrade-developer-role.ts';
 import { withUsageStreamOptionsIncluded } from './include-usage-stream-options.ts';
 import { withUsageNormalized } from './normalize-usage.ts';
 import type { ChatCompletionsInterceptor } from './types.ts';
@@ -30,7 +30,7 @@ export const chatCompletionsInterceptors: readonly ChatCompletionsInterceptor[] 
   withUsageStreamOptionsIncluded,
   withUsageNormalized,
   withReasoningDisabledOnForcedToolChoice,
-  withDowngradeDeveloperRole,
+  withDemoteDeveloperToSystem,
   withVendorDeepseekChatCompletionsNormalize,
   withVendorQwenChatCompletionsNormalize,
   withVendorKimiChatCompletionsNormalize,

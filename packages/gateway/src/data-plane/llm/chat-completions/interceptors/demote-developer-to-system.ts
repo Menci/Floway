@@ -1,6 +1,6 @@
-// Downgrade `developer` role to `system` for upstreams that don't recognise
+// Demote `developer` role to `system` for upstreams that don't recognise
 // the `developer` role (e.g. DeepSeek). Always-attached; flag-gated by
-// `downgrade-developer-role`. Runs before vendor normalizers so the
+// `demote-developer-to-system`. Runs before vendor normalizers so the
 // role-mapped messages feed into any later vendor dialect rewrites.
 //
 // Outbound (request → upstream):
@@ -17,8 +17,8 @@ const downgradeRole = (message: ChatCompletionsMessage): ChatCompletionsMessage 
   return { ...message, role: 'system' as const };
 };
 
-export const withDowngradeDeveloperRole: ChatCompletionsInterceptor = async (ctx, _gatewayCtx, run) => {
-  if (!ctx.candidate.binding.enabledFlags.has('downgrade-developer-role')) return await run();
+export const withDemoteDeveloperToSystem: ChatCompletionsInterceptor = async (ctx, _gatewayCtx, run) => {
+  if (!ctx.candidate.binding.enabledFlags.has('demote-developer-to-system')) return await run();
 
   ctx.payload = {
     ...ctx.payload,

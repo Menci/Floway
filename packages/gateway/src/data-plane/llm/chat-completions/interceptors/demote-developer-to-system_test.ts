@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { withDowngradeDeveloperRole } from './downgrade-developer-role.ts';
+import { withDemoteDeveloperToSystem } from './demote-developer-to-system.ts';
 import type { ChatCompletionsInvocation } from './types.ts';
 import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
@@ -18,7 +18,7 @@ const stubCtx: GatewayCtx = {
   requestStartedAt: 0,
 };
 
-const invocation = (payload: ChatCompletionsPayload, enabledFlags: ReadonlySet<string> = new Set(['downgrade-developer-role'])): ChatCompletionsInvocation => ({
+const invocation = (payload: ChatCompletionsPayload, enabledFlags: ReadonlySet<string> = new Set(['demote-developer-to-system'])): ChatCompletionsInvocation => ({
   payload,
   candidate: stubProviderCandidate({ targetApi: 'chat-completions', binding: { enabledFlags } }),
   headers: new Headers(),
@@ -36,7 +36,7 @@ test('rewrites developer role to system on messages', async () => {
   });
 
   let observed: ChatCompletionsPayload | null = null;
-  await withDowngradeDeveloperRole(ctx, stubCtx, () => {
+  await withDemoteDeveloperToSystem(ctx, stubCtx, () => {
     observed = ctx.payload;
     return okEvents();
   });
@@ -55,7 +55,7 @@ test('leaves system role untouched', async () => {
   });
 
   let observed: ChatCompletionsPayload | null = null;
-  await withDowngradeDeveloperRole(ctx, stubCtx, () => {
+  await withDemoteDeveloperToSystem(ctx, stubCtx, () => {
     observed = ctx.payload;
     return okEvents();
   });
@@ -75,7 +75,7 @@ test('leaves assistant and tool roles untouched', async () => {
   });
 
   let observed: ChatCompletionsPayload | null = null;
-  await withDowngradeDeveloperRole(ctx, stubCtx, () => {
+  await withDemoteDeveloperToSystem(ctx, stubCtx, () => {
     observed = ctx.payload;
     return okEvents();
   });
@@ -98,7 +98,7 @@ test('early-returns when flag is not set', async () => {
   );
 
   let observed: ChatCompletionsPayload | null = null;
-  await withDowngradeDeveloperRole(ctx, stubCtx, () => {
+  await withDemoteDeveloperToSystem(ctx, stubCtx, () => {
     observed = ctx.payload;
     return okEvents();
   });
@@ -118,7 +118,7 @@ test('handles mixed roles with multiple developer messages', async () => {
   });
 
   let observed: ChatCompletionsPayload | null = null;
-  await withDowngradeDeveloperRole(ctx, stubCtx, () => {
+  await withDemoteDeveloperToSystem(ctx, stubCtx, () => {
     observed = ctx.payload;
     return okEvents();
   });

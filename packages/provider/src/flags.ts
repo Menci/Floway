@@ -83,8 +83,8 @@ export const OPTIONAL_FLAGS = [
   // subscription endpoint reads the placeholder block itself to attribute
   // billing.
   {
-    id: 'downgrade-developer-role',
-    label: 'Downgrade developer role to system',
+    id: 'demote-developer-to-system',
+    label: 'Demote developer role to system',
     description: "Rewrite messages with role 'developer' to role 'system' for upstreams that do not recognise the developer role.",
     defaultFor: [],
   },

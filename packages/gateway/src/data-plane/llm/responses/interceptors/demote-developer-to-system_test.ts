@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { withDowngradeDeveloperRole } from './downgrade-developer-role.ts';
+import { withDemoteDeveloperToSystem } from './demote-developer-to-system.ts';
 import type { ResponsesInvocation } from './types.ts';
 import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
 import { MemoryStatefulResponsesBacking, LayeredStatefulResponsesStore } from '../items/store.ts';
@@ -30,7 +30,7 @@ const okEvents = () =>
     ),
   );
 
-const invocation = (payload: ResponsesPayload, enabledFlags: ReadonlySet<string> = new Set(['downgrade-developer-role'])): ResponsesInvocation => ({
+const invocation = (payload: ResponsesPayload, enabledFlags: ReadonlySet<string> = new Set(['demote-developer-to-system'])): ResponsesInvocation => ({
   payload,
   candidate: stubProviderCandidate({ targetApi: 'responses', binding: { enabledFlags } }),
   store: new LayeredStatefulResponsesStore({
@@ -52,7 +52,7 @@ test('rewrites developer role to system on input messages', async () => {
     ],
   });
 
-  await withDowngradeDeveloperRole(input, stubCtx, okEvents);
+  await withDemoteDeveloperToSystem(input, stubCtx, okEvents);
 
   const items = input.payload.input as Array<{ role: string; content: unknown }>;
   assertEquals(items[0].role, 'system');
@@ -68,7 +68,7 @@ test('leaves system role untouched on input messages', async () => {
     ],
   });
 
-  await withDowngradeDeveloperRole(input, stubCtx, okEvents);
+  await withDemoteDeveloperToSystem(input, stubCtx, okEvents);
 
   const items = input.payload.input as Array<{ role: string }>;
   assertEquals(items[0].role, 'system');
@@ -84,7 +84,7 @@ test('leaves non-message input items untouched', async () => {
     ],
   });
 
-  await withDowngradeDeveloperRole(input, stubCtx, okEvents);
+  await withDemoteDeveloperToSystem(input, stubCtx, okEvents);
 
   const items = input.payload.input as Array<{ type: string; role?: string }>;
   assertEquals(items[0].type, 'message');
@@ -100,7 +100,7 @@ test('passes string input through unchanged', async () => {
   });
 
   const original = input.payload;
-  await withDowngradeDeveloperRole(input, stubCtx, okEvents);
+  await withDemoteDeveloperToSystem(input, stubCtx, okEvents);
 
   assertEquals(input.payload, original);
 });
@@ -116,7 +116,7 @@ test('early-returns when flag is not set', async () => {
     new Set(),
   );
 
-  await withDowngradeDeveloperRole(input, stubCtx, okEvents);
+  await withDemoteDeveloperToSystem(input, stubCtx, okEvents);
 
   const items = input.payload.input as Array<{ role: string }>;
   assertEquals(items[0].role, 'developer');

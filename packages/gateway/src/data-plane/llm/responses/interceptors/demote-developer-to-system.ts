@@ -1,6 +1,6 @@
-// Downgrade `developer` role to `system` in Responses input items for
+// Demote `developer` role to `system` in Responses input items for
 // upstreams that don't recognise the `developer` role (e.g. DeepSeek).
-// Always-attached; flag-gated by `downgrade-developer-role`. Runs before
+// Always-attached; flag-gated by `demote-developer-to-system`. Runs before
 // vendor normalizers so the role-mapped items feed into any later vendor
 // dialect rewrites.
 //
@@ -23,8 +23,8 @@ const downgradeRole = (item: ResponsesInputItem): ResponsesInputItem => {
   return { ...item, role: 'system' as const };
 };
 
-export const withDowngradeDeveloperRole: ResponsesInterceptor = async (ctx, _request, run) => {
-  if (!ctx.candidate.binding.enabledFlags.has('downgrade-developer-role')) return await run();
+export const withDemoteDeveloperToSystem: ResponsesInterceptor = async (ctx, _request, run) => {
+  if (!ctx.candidate.binding.enabledFlags.has('demote-developer-to-system')) return await run();
 
   if (Array.isArray(ctx.payload.input)) {
     ctx.payload = {

@@ -1,6 +1,6 @@
 import { withReasoningEncryptedContentCanonicalized } from './canonicalize-encrypted-content.ts';
+import { withDemoteDeveloperToSystem } from './demote-developer-to-system.ts';
 import { withReasoningDisabledOnForcedToolChoice } from './disable-reasoning-on-forced-tool-choice.ts';
-import { withDowngradeDeveloperRole } from './downgrade-developer-role.ts';
 import { withCyberPolicyRetried } from './retry-cyber-policy.ts';
 import { withResponsesServerToolShim } from './server-tool-shim.ts';
 import { imageGenerationServerTool } from './server-tools/image-generation.ts';
@@ -31,7 +31,7 @@ export const responsesInterceptors: readonly ResponsesInterceptor[] = [
   withReasoningEncryptedContentCanonicalized,
   withCyberPolicyRetried,
   withReasoningDisabledOnForcedToolChoice,
-  withDowngradeDeveloperRole,
+  withDemoteDeveloperToSystem,
   withVendorDeepseekResponsesNormalize,
   withVendorQwenResponsesNormalize,
 ];
