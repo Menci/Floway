@@ -7,6 +7,7 @@
     ".": { "import": "./src/index.ts", "types": "./src/index.ts" },
     "./common": { "import": "./src/common/index.ts", "types": "./src/common/index.ts" },
     "./chat-completions": { "import": "./src/chat-completions/index.ts", "types": "./src/chat-completions/index.ts" },
+    "./completions": { "import": "./src/completions/index.ts", "types": "./src/completions/index.ts" },
     "./responses": { "import": "./src/responses/index.ts", "types": "./src/responses/index.ts" },
     "./messages": { "import": "./src/messages/index.ts", "types": "./src/messages/index.ts" },
     "./gemini": { "import": "./src/gemini/index.ts", "types": "./src/gemini/index.ts" },

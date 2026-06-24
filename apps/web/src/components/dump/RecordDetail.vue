@@ -9,6 +9,7 @@ import { authFetch } from '../../api/client.ts';
 import type { DumpBody, DumpRecord, DumpStreamEvent } from '@floway-dev/gateway/dump-types';
 import { chatCompletionsProtocolFrameToSSEFrame } from '@floway-dev/protocols/chat-completions';
 import type { ProtocolFrame, SseFrame } from '@floway-dev/protocols/common';
+import { completionsProtocolFrameToSSEFrame } from '@floway-dev/protocols/completions';
 import { geminiProtocolFrameToSSEFrame } from '@floway-dev/protocols/gemini';
 import { messagesProtocolFrameToSSEFrame } from '@floway-dev/protocols/messages';
 import { responsesProtocolFrameToSSEFrame } from '@floway-dev/protocols/responses';
@@ -157,6 +158,7 @@ const frameToSse = (kind: CollectKind | null, frame: ProtocolFrame<unknown>): Ss
     switch (kind) {
     case 'messages':         return messagesProtocolFrameToSSEFrame(frame as Parameters<typeof messagesProtocolFrameToSSEFrame>[0]);
     case 'chat-completions': return chatCompletionsProtocolFrameToSSEFrame(frame as Parameters<typeof chatCompletionsProtocolFrameToSSEFrame>[0], { includeUsageChunk: true });
+    case 'completions':      return completionsProtocolFrameToSSEFrame(frame as Parameters<typeof completionsProtocolFrameToSSEFrame>[0]);
     case 'responses':        return responsesProtocolFrameToSSEFrame(frame as Parameters<typeof responsesProtocolFrameToSSEFrame>[0]);
     case 'gemini':           return geminiProtocolFrameToSSEFrame(frame as Parameters<typeof geminiProtocolFrameToSSEFrame>[0]);
     default:                 return null;

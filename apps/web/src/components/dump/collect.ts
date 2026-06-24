@@ -21,6 +21,11 @@ import {
 } from '@floway-dev/protocols/chat-completions';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import {
+  type CompletionsResult,
+  type CompletionsStreamEvent,
+  reassembleCompletionsEvents,
+} from '@floway-dev/protocols/completions';
+import {
   collectGeminiProtocolEventsToResult,
   type GeminiResult,
   type GeminiStreamEvent,
@@ -45,12 +50,13 @@ export interface CollectOutcome<TResult> {
   truncated: boolean;
 }
 
-export type CollectKind = 'messages' | 'chat-completions' | 'responses' | 'gemini';
+export type CollectKind = 'messages' | 'chat-completions' | 'completions' | 'responses' | 'gemini';
 
 export const detectCollectKind = (path: string): CollectKind | null => {
   if (path.includes('/messages')) return 'messages';
   if (path.includes('/responses')) return 'responses';
   if (path.includes('/chat/completions')) return 'chat-completions';
+  if (path.includes('/completions')) return 'completions';
   if (path.includes('/v1beta/') || path.includes(':generateContent')) return 'gemini';
   return null;
 };
@@ -59,6 +65,7 @@ export const collectByKind = (kind: CollectKind, events: readonly DumpStreamEven
   switch (kind) {
   case 'messages':         return collectMessagesStream(events);
   case 'chat-completions': return collectChatCompletionsStream(events);
+  case 'completions':      return collectCompletionsStream(events);
   case 'responses':        return collectResponsesStream(events);
   case 'gemini':           return collectGeminiStream(events);
   }
@@ -129,6 +136,29 @@ const collectChatCompletionsStream = async (events: readonly DumpStreamEvent[]):
     return { result, error, truncated };
   } catch (e) {
     return { result: null, error: error ?? (e instanceof Error ? e.message : String(e)), truncated: true };
+  }
+};
+
+// Legacy /v1/completions: no inline error envelope (errors surface as 4xx
+// JSON or as truncation, not as event-stream-level error frames), so a
+// `done` frame is the sole completion signal.
+const collectCompletionsStream = async (events: readonly DumpStreamEvent[]): Promise<CollectOutcome<CompletionsResult>> => {
+  let truncated = true;
+  for (const ev of events) {
+    if (ev.frame.type === 'done') { truncated = false; break; }
+  }
+
+  const eventStream = (async function* () {
+    for (const ev of events) {
+      const frame = ev.frame as ProtocolFrame<CompletionsStreamEvent>;
+      if (frame.type === 'event') yield frame.event;
+    }
+  })();
+  try {
+    const result = await reassembleCompletionsEvents(eventStream);
+    return { result, error: null, truncated };
+  } catch (e) {
+    return { result: null, error: e instanceof Error ? e.message : String(e), truncated: true };
   }
 };
 

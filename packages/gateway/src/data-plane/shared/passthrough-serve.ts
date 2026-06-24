@@ -108,16 +108,21 @@ const safeJsonClone = async (resp: Response, sourceApi: NonLlmServeApiName): Pro
 // `transformFrame` receives `ProtocolFrame<unknown>` and decides per-frame
 // whether to pass through, mutate, or drop (return null). The scaffold never
 // peeks at event contents; usage detection / accumulation is the caller's
-// closure.
+// closure. Every upstream-emitted frame is also pushed into the dump
+// accumulator before the transform so post-hoc forensics see the upstream's
+// truth — including frames the caller drops from the client-facing stream
+// (e.g. the usage-only chunk when the client did not opt into include_usage).
 const transformUpstreamSseStream = async function* (
   upstreamBody: ReadableStream<Uint8Array>,
   sourceApi: NonLlmServeApiName,
   transformFrame: (frame: ProtocolFrame<unknown>) => ProtocolFrame<unknown> | null,
+  dump: GatewayCtx['dump'],
   signal: AbortSignal | undefined,
 ): AsyncGenerator<SseFrame> {
   const sseFrames = parseSSEStream(upstreamBody, signal ? { signal } : {});
   for await (const parsed of parseTargetStreamFrames<unknown>(sseFrames, { protocol: sourceApi })) {
     const inputFrame: ProtocolFrame<unknown> = parsed.type === 'done' ? doneFrame() : eventFrame(parsed.data);
+    dump?.frame(inputFrame);
     const outputFrame = transformFrame(inputFrame);
     if (outputFrame === null) continue;
     yield outputFrame.type === 'done' ? sseFrame('[DONE]') : sseFrame(JSON.stringify(outputFrame.event));
@@ -243,7 +248,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
         let completion: StreamCompletion = 'error';
         let streamError: unknown;
         try {
-          const frames = transformUpstreamSseStream(response.body!, sourceApi, sseResponseHandling.transformFrame, ctx.abortSignal);
+          const frames = transformUpstreamSseStream(response.body!, sourceApi, sseResponseHandling.transformFrame, ctx.dump, ctx.abortSignal);
           completion = await writeSSEFrames(stream, frames, {
             keepAlive: { frame: sseCommentFrame('keepalive') },
             ...(ctx.downstreamAbortController !== undefined ? { downstreamAbortController: ctx.downstreamAbortController } : {}),
