@@ -26,7 +26,7 @@ import type { GatewayCtx } from '../llm/shared/gateway-ctx.ts';
 import { type StreamCompletion, writeSSEFrames } from '../llm/shared/stream/sse.ts';
 import { resolveModelForRequest } from '../providers/registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import { doneFrame, eventFrame, parseSSEStream, parseTargetStreamFrames, type ProtocolFrame, type SseFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
+import { doneFrame, eventFrame, parseSSEStream, parseTargetStreamFrames, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import { httpResponseToResponse, ProviderModelsUnavailableError, toInternalDebugError } from '@floway-dev/provider';
 import type { ProviderCallResult, ProviderModelRecord, UpstreamCallOptions } from '@floway-dev/provider';
 
@@ -83,44 +83,10 @@ const scheduleUsageRecord = (scheduler: BackgroundScheduler, promise: Promise<vo
   }));
 };
 
-// Convert an upstream SSE byte stream into transformed SseFrames ready for
-// re-serialization. `transformFrame` decides per-frame whether to pass
-// through, mutate, or drop (return null). Every upstream-emitted frame is
-// also pushed into the dump accumulator before the transform so post-hoc
-// forensics see the upstream's truth, including frames the caller drops
-// from the client-facing stream.
-//
-// `onTerminalFrame` fires the moment we see the upstream's terminal
-// (`done`) frame. The outer telemetry classifier uses it to distinguish a
-// client cancel that lands after the stream's natural end (graceful —
-// upstream already finished its work) from a mid-stream cancel (genuine
-// failure). Mirrors `SourceStreamState.failedAfter` on the LLM endpoints.
-const transformUpstreamSseStream = async function* (
-  upstreamBody: ReadableStream<Uint8Array>,
-  sourceApi: PassthroughServeApiName,
-  transformFrame: (frame: ProtocolFrame<unknown>) => ProtocolFrame<unknown> | null,
-  dump: GatewayCtx['dump'],
-  signal: AbortSignal | undefined,
-  onTerminalFrame: () => void,
-): AsyncGenerator<SseFrame> {
-  const sseFrames = parseSSEStream(upstreamBody, { signal });
-  for await (const parsed of parseTargetStreamFrames<unknown>(sseFrames, { protocol: sourceApi })) {
-    const inputFrame: ProtocolFrame<unknown> = parsed.type === 'done' ? doneFrame() : eventFrame(parsed.data);
-    dump?.frame(inputFrame);
-    if (inputFrame.type === 'done') onTerminalFrame();
-    const outputFrame = transformFrame(inputFrame);
-    if (outputFrame === null) continue;
-    yield outputFrame.type === 'done' ? sseFrame('[DONE]') : sseFrame(JSON.stringify(outputFrame.event));
-  }
-};
-
 // `json` (embeddings, images): single-shot body, `extractBilling` reads
 // usage / metadata off the parsed root. `sse` (/v1/completions): frame
 // stream, `transformFrame` mutates or drops frames (return null), then
-// `settleUsage` reports billing once the stream ends. The OpenAI
-// usage-only chunk (`choices: []` plus `usage`) is what the caller's
-// transformFrame keys off when it needs to strip-or-keep based on the
-// client's `stream_options.include_usage`.
+// `settleUsage` reports billing once the stream ends.
 type PassthroughResponseHandling =
   | {
     readonly format: 'json';
@@ -237,11 +203,29 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
       return streamSSE(c, async stream => {
         let completion: StreamCompletion = 'error';
         let streamError: unknown;
+        // Tracks whether the upstream's terminal (`done`) frame arrived
+        // before the writer settled. A client cancel after the terminal
+        // frame is graceful (upstream already finished its work); a
+        // mid-stream cancel or EOF without terminal is a real failure.
+        // Mirrors SourceStreamState.failedAfter on the LLM endpoints.
         let terminalFrameSeen = false;
         try {
-          const frames = transformUpstreamSseStream(upstreamBody, sourceApi, sseResponseHandling.transformFrame, ctx.dump, ctx.abortSignal, () => {
-            terminalFrameSeen = true;
-          });
+          // Inline frame pipeline: parse upstream bytes → push every
+          // frame into the dump (pre-transform, so forensics see
+          // upstream truth even when the caller drops a frame from the
+          // client-facing stream) → run the caller's transformFrame →
+          // serialize back to SseFrames.
+          const frames = (async function* () {
+            const sseFramesIn = parseSSEStream(upstreamBody, { signal: ctx.abortSignal });
+            for await (const parsed of parseTargetStreamFrames<unknown>(sseFramesIn, { protocol: sourceApi })) {
+              const inputFrame: ProtocolFrame<unknown> = parsed.type === 'done' ? doneFrame() : eventFrame(parsed.data);
+              ctx.dump?.frame(inputFrame);
+              if (inputFrame.type === 'done') terminalFrameSeen = true;
+              const outputFrame = sseResponseHandling.transformFrame(inputFrame);
+              if (outputFrame === null) continue;
+              yield outputFrame.type === 'done' ? sseFrame('[DONE]') : sseFrame(JSON.stringify(outputFrame.event));
+            }
+          })();
           completion = await writeSSEFrames(stream, frames, {
             keepAlive: { frame: sseCommentFrame('keepalive') },
             ...(ctx.downstreamAbortController !== undefined ? { downstreamAbortController: ctx.downstreamAbortController } : {}),
@@ -250,12 +234,6 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
           streamError = e;
         } finally {
           const usage = sseResponseHandling.settleUsage();
-          // Treat a client cancel that lands after the upstream's terminal
-          // frame as graceful — upstream already finished its work and
-          // billing should record what was accumulated. Mid-stream cancel,
-          // upstream cut-off without a terminal frame, and writer / parser
-          // errors are all real failures. Mirrors the LLM endpoints'
-          // SourceStreamState.failedAfter semantics.
           const failed = streamError !== undefined || completion === 'error' || !terminalFrameSeen;
           if (failed) {
             ctx.dump?.failed(streamError ?? `${sourceApi} stream ended with completion=${completion}`);

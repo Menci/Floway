@@ -75,14 +75,8 @@ export const completions = async (c: Context): Promise<Response> => {
   // on so billing always sees the usage chunk — sibling keys on
   // stream_options (if any) ride through unchanged.
   const { model: _model, ...upstreamBodyBase } = request.body;
-  const inboundStreamOptions = request.body.stream_options;
-  const baseStreamOptions: Record<string, unknown> = inboundStreamOptions !== null
-    && typeof inboundStreamOptions === 'object'
-    && !Array.isArray(inboundStreamOptions)
-    ? inboundStreamOptions as Record<string, unknown>
-    : {};
   const upstreamBody = request.wantsStream
-    ? { ...upstreamBodyBase, stream_options: { ...baseStreamOptions, include_usage: true } }
+    ? { ...upstreamBodyBase, stream_options: { ...(request.body.stream_options ?? {}), include_usage: true } }
     : upstreamBodyBase;
 
   // Streaming closure: track the usage block (only on the usage-only
@@ -109,7 +103,7 @@ export const completions = async (c: Context): Promise<Response> => {
     model: request.model,
     bindingServesEndpoint: binding => binding.upstreamModel.endpoints.completions !== undefined,
     call: (binding, opts) =>
-      binding.provider.callCompletions(binding.upstreamModel, upstreamBody, request.wantsStream ? ctx.abortSignal : undefined, opts),
+      binding.provider.callCompletions(binding.upstreamModel, upstreamBody, ctx.abortSignal, opts),
     response: request.wantsStream
       ? { format: 'sse', transformFrame, settleUsage }
       : {

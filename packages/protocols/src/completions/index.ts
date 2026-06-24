@@ -54,7 +54,6 @@ export interface CompletionsStreamEvent {
   system_fingerprint?: string;
 }
 
-// Reassembled single-shot result.
 export interface CompletionsChoice {
   index: number;
   text: string;

@@ -50,7 +50,7 @@ export interface CollectOutcome<TResult> {
   truncated: boolean;
 }
 
-export type CollectKind = 'completions' | 'messages' | 'chat-completions' | 'responses' | 'gemini';
+export type CollectKind = 'completions' | 'chat-completions' | 'messages' | 'responses' | 'gemini';
 
 export const detectCollectKind = (path: string): CollectKind | null => {
   // `/completions` is a substring of `/chat/completions`, so the
@@ -66,8 +66,8 @@ export const detectCollectKind = (path: string): CollectKind | null => {
 export const collectByKind = (kind: CollectKind, events: readonly DumpStreamEvent[]): Promise<CollectOutcome<unknown>> => {
   switch (kind) {
   case 'completions':      return collectCompletionsStream(events);
-  case 'messages':         return collectMessagesStream(events);
   case 'chat-completions': return collectChatCompletionsStream(events);
+  case 'messages':         return collectMessagesStream(events);
   case 'responses':        return collectResponsesStream(events);
   case 'gemini':           return collectGeminiStream(events);
   }
@@ -85,30 +85,26 @@ export const collectByKind = (kind: CollectKind, events: readonly DumpStreamEven
 // reassemblers wrap upstream error events as "Upstream SSE error: ..."
 // for the live path, which would clobber the raw message we surfaced.
 
-const collectMessagesStream = async (events: readonly DumpStreamEvent[]): Promise<CollectOutcome<MessagesResult>> => {
+// /v1/completions: no inline error envelope (errors surface as 4xx JSON or
+// as truncation, not as event-stream-level error frames), so a `done` frame
+// is the sole completion signal.
+const collectCompletionsStream = async (events: readonly DumpStreamEvent[]): Promise<CollectOutcome<CompletionsResult>> => {
   let truncated = true;
-  let error: string | null = null;
   for (const ev of events) {
-    const frame = ev.frame as ProtocolFrame<MessagesStreamEvent>;
-    if (frame.type !== 'event') continue;
-    if (frame.event.type === 'message_stop') { truncated = false; break; }
-    if (frame.event.type === 'error') {
-      error = frame.event.error.message;
-      break;
-    }
+    if (ev.frame.type === 'done') { truncated = false; break; }
   }
 
   const eventStream = (async function* () {
     for (const ev of events) {
-      const frame = ev.frame as ProtocolFrame<MessagesStreamEvent>;
-      if (frame.type === 'event' && frame.event.type !== 'error') yield frame.event;
+      const frame = ev.frame as ProtocolFrame<CompletionsStreamEvent>;
+      if (frame.type === 'event') yield frame.event;
     }
   })();
   try {
-    const result = await reassembleMessagesEvents(eventStream);
-    return { result, error, truncated };
+    const result = await reassembleCompletionsEvents(eventStream);
+    return { result, error: null, truncated };
   } catch (e) {
-    return { result: null, error: error ?? (e instanceof Error ? e.message : String(e)), truncated: true };
+    return { result: null, error: e instanceof Error ? e.message : String(e), truncated: true };
   }
 };
 
@@ -141,26 +137,30 @@ const collectChatCompletionsStream = async (events: readonly DumpStreamEvent[]):
   }
 };
 
-// /v1/completions: no inline error envelope (errors surface as 4xx JSON or
-// as truncation, not as event-stream-level error frames), so a `done` frame
-// is the sole completion signal.
-const collectCompletionsStream = async (events: readonly DumpStreamEvent[]): Promise<CollectOutcome<CompletionsResult>> => {
+const collectMessagesStream = async (events: readonly DumpStreamEvent[]): Promise<CollectOutcome<MessagesResult>> => {
   let truncated = true;
+  let error: string | null = null;
   for (const ev of events) {
-    if (ev.frame.type === 'done') { truncated = false; break; }
+    const frame = ev.frame as ProtocolFrame<MessagesStreamEvent>;
+    if (frame.type !== 'event') continue;
+    if (frame.event.type === 'message_stop') { truncated = false; break; }
+    if (frame.event.type === 'error') {
+      error = frame.event.error.message;
+      break;
+    }
   }
 
   const eventStream = (async function* () {
     for (const ev of events) {
-      const frame = ev.frame as ProtocolFrame<CompletionsStreamEvent>;
-      if (frame.type === 'event') yield frame.event;
+      const frame = ev.frame as ProtocolFrame<MessagesStreamEvent>;
+      if (frame.type === 'event' && frame.event.type !== 'error') yield frame.event;
     }
   })();
   try {
-    const result = await reassembleCompletionsEvents(eventStream);
-    return { result, error: null, truncated };
+    const result = await reassembleMessagesEvents(eventStream);
+    return { result, error, truncated };
   } catch (e) {
-    return { result: null, error: e instanceof Error ? e.message : String(e), truncated: true };
+    return { result: null, error: error ?? (e instanceof Error ? e.message : String(e)), truncated: true };
   }
 };
 

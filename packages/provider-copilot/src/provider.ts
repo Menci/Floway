@@ -109,8 +109,6 @@ const messagesReasoningEffort = (body: Omit<MessagesPayload, 'model'>): string |
 
 const responsesReasoningEffort = (body: Omit<ResponsesPayload, 'model'>): string | undefined => (body.reasoning?.effort && body.reasoning.effort !== 'none' ? body.reasoning.effort : undefined);
 
-// Copilot's catalog never declares /completions or /images/*, so these
-// stubs are unreachable; calling one is a routing bug we surface loudly.
 const rejectUnsupported = (capability: string) => (): Promise<never> =>
   Promise.reject(new Error(`Copilot provider does not implement ${capability}`));
 
@@ -297,7 +295,9 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
       return finalizeCopilotModels(projectKnownModels(merged, now), upstreamFlags);
     },
     getPricingForModelKey: pricingForCopilotModelKey,
-    callCompletions: rejectUnsupported('completions'),
+    // Copilot's catalog never declares endpoints.completions, so this
+    // stub is unreachable; the throw surfaces a routing bug.
+    callCompletions: rejectUnsupported('callCompletions'),
     callChatCompletions: async (model, body, signal, opts) => {
       const rawModel = rawModelFor(model, 'chatCompletions', { reasoningEffort: chatReasoningEffort(body) });
       const ctx: ChatCompletionsBoundaryCtx = {
@@ -403,8 +403,10 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
       return { response, modelKey: rawModel.id };
     },
     callEmbeddings: (model, body, signal, opts) => call(copilotFetchEmbeddings, copilotEmbeddingsBody(body), signal, rawModelFor(model, 'embeddings'), opts.headers, opts),
-    callImagesGenerations: rejectUnsupported('images/generations'),
-    callImagesEdits: rejectUnsupported('images/edits'),
+    // Copilot has no /images/* upstream; catalog never emits a kind='image'
+    // model, so these stubs are unreachable.
+    callImagesGenerations: rejectUnsupported('callImagesGenerations'),
+    callImagesEdits: rejectUnsupported('callImagesEdits'),
   };
 
   return {
