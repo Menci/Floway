@@ -20,14 +20,13 @@
 
 import type { Context } from 'hono';
 
-import { completionsUsageFromStreamEvent, tokenUsageFromCompletionsUsage } from './usage.ts';
+import { tokenUsageFromCompletionsBody, tokenUsageFromCompletionsStreamEvent } from './usage.ts';
 import type { TokenUsage } from '../../repo/types.ts';
 import { createGatewayCtxFromHono } from '../llm/shared/gateway-ctx.ts';
 import { readRequestBody } from '../llm/shared/request-body.ts';
 import type { PassthroughResponseHandling } from '../shared/passthrough-serve.ts';
 import { passthroughApiError, passthroughServe } from '../shared/passthrough-serve.ts';
 import { isOpenAIUsageOnlyEventShape, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { CompletionsUsage } from '@floway-dev/protocols/completions';
 
 interface CompletionsRequestBody {
   model?: unknown;
@@ -87,16 +86,15 @@ const withIncludeUsageStreamOption = (body: Record<string, unknown>): Record<str
 };
 
 const sseResponseHandling = (clientWantsUsageChunk: boolean): Extract<PassthroughResponseHandling, { format: 'sse' }> => {
-  let accumulatedUsage: CompletionsUsage | null = null;
+  let accumulated: TokenUsage | null = null;
   const transformFrame = (frame: ProtocolFrame<unknown>): ProtocolFrame<unknown> | null => {
     if (frame.type !== 'event') return frame;
     if (!isOpenAIUsageOnlyEventShape(frame.event)) return frame;
-    const usage = completionsUsageFromStreamEvent(frame.event);
-    if (usage) accumulatedUsage = usage;
+    const tokenUsage = tokenUsageFromCompletionsStreamEvent(frame.event);
+    if (tokenUsage) accumulated = tokenUsage;
     return clientWantsUsageChunk ? frame : null;
   };
-  const settleUsage = (): TokenUsage | null =>
-    accumulatedUsage ? tokenUsageFromCompletionsUsage(accumulatedUsage) : null;
+  const settleUsage = (): TokenUsage | null => accumulated;
   return { format: 'sse', transformFrame, settleUsage };
 };
 
@@ -129,7 +127,7 @@ export const completions = async (c: Context): Promise<Response> => {
       binding.provider.callCompletions(binding.upstreamModel, upstreamBody, request.wantsStream ? ctx.abortSignal : undefined, opts),
     response: request.wantsStream
       ? sseResponseHandling(request.clientWantsUsageChunk)
-      : { format: 'json', extractUsage: tokenUsageFromCompletionsUsage },
+      : { format: 'json', extractBilling: tokenUsageFromCompletionsBody },
     noBindingMessage: modelId => `Model ${modelId} does not support the /completions endpoint.`,
   });
   return (ctx.dump?.finalize(response) ?? response);

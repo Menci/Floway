@@ -140,9 +140,10 @@ const transformUpstreamSseStream = async function* (
 
 // Discriminator on the wire format the upstream produces.
 //
-// `json`: single-shot response. The scaffold drains the body once, hands
-// the parsed `usage` block (if any) to `extractUsage`, and forwards the
-// response verbatim. Embeddings and images use this path.
+// `json`: single-shot response. The scaffold drains the body once and hands
+// the parsed body to `extractBilling`, which decides how to read usage and
+// any per-response metadata (service tier, modality split, etc.). The
+// response is forwarded verbatim. Embeddings and images use this path.
 //
 // `sse`: streaming response. The scaffold parses SSE bytes into frames,
 // runs each through `transformFrame` (return null to drop), reserializes
@@ -155,7 +156,7 @@ const transformUpstreamSseStream = async function* (
 export type PassthroughResponseHandling =
   | {
     readonly format: 'json';
-    readonly extractUsage: (usage: unknown) => TokenUsage | null;
+    readonly extractBilling: (body: unknown) => TokenUsage | null;
   }
   | {
     readonly format: 'sse';
@@ -232,8 +233,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
 
       if (responseHandling.format === 'json') {
         const parsed = await safeJsonClone(response, sourceApi);
-        const usageBlock = parsed && typeof parsed === 'object' ? (parsed as { usage?: unknown }).usage : undefined;
-        const usage = usageBlock !== undefined ? responseHandling.extractUsage(usageBlock) : null;
+        const usage = parsed !== undefined ? responseHandling.extractBilling(parsed) : null;
         ctx.dump?.success(modelIdentity, usage);
         if (usage) {
           scheduleUsageRecord(ctx.backgroundScheduler, recordTokenUsage(ctx.apiKeyId, modelIdentity, usage));

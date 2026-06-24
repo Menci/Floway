@@ -1,38 +1,68 @@
 import { test } from 'vitest';
 
-import { completionsUsageFromStreamEvent, tokenUsageFromCompletionsUsage } from './usage.ts';
+import { tokenUsageFromCompletionsBody, tokenUsageFromCompletionsStreamEvent } from './usage.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
-test('tokenUsageFromCompletionsUsage maps the OpenAI bare shape to bare input + output', () => {
+test('tokenUsageFromCompletionsBody maps the OpenAI bare shape to bare input + output', () => {
   assertEquals(
-    tokenUsageFromCompletionsUsage({ prompt_tokens: 12, completion_tokens: 3, total_tokens: 15 }),
+    tokenUsageFromCompletionsBody({ usage: { prompt_tokens: 12, completion_tokens: 3, total_tokens: 15 } }),
     { input: 12, output: 3 },
   );
 });
 
-test('tokenUsageFromCompletionsUsage splits prompt_tokens into cache_read + bare input when the upstream populates prompt_tokens_details.cached_tokens', () => {
+test('tokenUsageFromCompletionsBody splits prompt_tokens into cache_read + bare input when the upstream populates prompt_tokens_details.cached_tokens', () => {
   // vLLM, llama.cpp, Fireworks, OpenRouter, xAI Grok all populate this on
   // /v1/completions; the cache_read tokens come out of the bare input bucket
   // so the two input dimensions stay disjoint.
   assertEquals(
-    tokenUsageFromCompletionsUsage({
-      prompt_tokens: 100,
-      completion_tokens: 7,
-      total_tokens: 107,
-      prompt_tokens_details: { cached_tokens: 80 },
+    tokenUsageFromCompletionsBody({
+      usage: {
+        prompt_tokens: 100,
+        completion_tokens: 7,
+        total_tokens: 107,
+        prompt_tokens_details: { cached_tokens: 80 },
+      },
     }),
     { input: 20, input_cache_read: 80, output: 7 },
   );
 });
 
-test('tokenUsageFromCompletionsUsage returns null on malformed input', () => {
-  assertEquals(tokenUsageFromCompletionsUsage(null), null);
-  assertEquals(tokenUsageFromCompletionsUsage('string'), null);
-  assertEquals(tokenUsageFromCompletionsUsage({}), null);
-  assertEquals(tokenUsageFromCompletionsUsage({ prompt_tokens: 'no' }), null);
+test('tokenUsageFromCompletionsBody carries service_tier from the response root through billableServiceTier', () => {
+  // vLLM emits `service_tier` on the /v1/completions response root
+  // (observed null in the wild; populated when the upstream applies
+  // priority/flex/etc tiering). Non-base values pass through; default /
+  // standard fold to null so they aggregate with rows that have no tier.
+  assertEquals(
+    tokenUsageFromCompletionsBody({
+      usage: { prompt_tokens: 5, completion_tokens: 2, total_tokens: 7 },
+      service_tier: 'priority',
+    }),
+    { input: 5, output: 2, tier: 'priority' },
+  );
+  assertEquals(
+    tokenUsageFromCompletionsBody({
+      usage: { prompt_tokens: 5, completion_tokens: 2, total_tokens: 7 },
+      service_tier: 'default',
+    }),
+    { input: 5, output: 2 },
+  );
+  assertEquals(
+    tokenUsageFromCompletionsBody({
+      usage: { prompt_tokens: 5, completion_tokens: 2, total_tokens: 7 },
+      service_tier: null,
+    }),
+    { input: 5, output: 2 },
+  );
 });
 
-test('completionsUsageFromStreamEvent preserves the cache split into the carried CompletionsUsage', () => {
+test('tokenUsageFromCompletionsBody returns null on malformed input', () => {
+  assertEquals(tokenUsageFromCompletionsBody(null), null);
+  assertEquals(tokenUsageFromCompletionsBody('string'), null);
+  assertEquals(tokenUsageFromCompletionsBody({}), null);
+  assertEquals(tokenUsageFromCompletionsBody({ usage: { prompt_tokens: 'no' } }), null);
+});
+
+test('tokenUsageFromCompletionsStreamEvent extracts usage + service_tier from the usage-only chunk', () => {
   const event = {
     id: 'cmpl_x',
     object: 'text_completion',
@@ -40,27 +70,17 @@ test('completionsUsageFromStreamEvent preserves the cache split into the carried
     model: 'm',
     choices: [],
     usage: { prompt_tokens: 100, completion_tokens: 7, total_tokens: 107, prompt_tokens_details: { cached_tokens: 80 } },
+    service_tier: 'priority',
   };
-  assertEquals(completionsUsageFromStreamEvent(event), {
-    prompt_tokens: 100,
-    completion_tokens: 7,
-    total_tokens: 107,
-    prompt_tokens_details: { cached_tokens: 80 },
+  assertEquals(tokenUsageFromCompletionsStreamEvent(event), {
+    input: 20,
+    input_cache_read: 80,
+    output: 7,
+    tier: 'priority',
   });
 });
 
-test('completionsUsageFromStreamEvent omits prompt_tokens_details when no recognized split fields are present', () => {
-  const event = {
-    id: 'cmpl_x',
-    object: 'text_completion',
-    created: 1,
-    model: 'm',
-    choices: [],
-    usage: { prompt_tokens: 5, completion_tokens: 4, total_tokens: 9 },
-  };
-  assertEquals(completionsUsageFromStreamEvent(event), {
-    prompt_tokens: 5,
-    completion_tokens: 4,
-    total_tokens: 9,
-  });
+test('tokenUsageFromCompletionsStreamEvent returns null when the event carries no usage block', () => {
+  const event = { choices: [], service_tier: 'priority' };
+  assertEquals(tokenUsageFromCompletionsStreamEvent(event), null);
 });

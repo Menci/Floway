@@ -36,7 +36,9 @@ export const tokenUsage = (counts: TokenUsage): TokenUsage => {
   return out;
 };
 
-export const tokenUsageFromPromptTokenResponse = (usage: unknown): TokenUsage | null => {
+export const tokenUsageFromEmbeddingsBody = (body: unknown): TokenUsage | null => {
+  if (!body || typeof body !== 'object') return null;
+  const { usage } = body as { usage?: unknown };
   if (!usage || typeof usage !== 'object') return null;
   const promptTokens = (usage as { prompt_tokens?: unknown }).prompt_tokens;
   return typeof promptTokens === 'number' ? tokenUsage({ input: promptTokens }) : null;
@@ -53,7 +55,9 @@ export const tokenUsageFromPromptTokenResponse = (usage: unknown): TokenUsage | 
 // charged on the bare dimension rather than inventing a split. A present field
 // that is a non-number is treated as a malformed upstream payload (return
 // null) rather than silently coerced.
-export const tokenUsageFromImagesResponse = (usage: unknown): TokenUsage | null => {
+export const tokenUsageFromImagesBody = (body: unknown): TokenUsage | null => {
+  if (!body || typeof body !== 'object') return null;
+  const { usage } = body as { usage?: unknown };
   if (!usage || typeof usage !== 'object') return null;
   const { input_tokens: inputTotal, output_tokens: outputTotal, input_tokens_details: inputDetails, output_tokens_details: outputDetails } = usage as ImagesUsageShape;
 

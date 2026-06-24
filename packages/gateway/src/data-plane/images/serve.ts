@@ -13,7 +13,7 @@ import type { Context } from 'hono';
 import { createGatewayCtxFromHono } from '../llm/shared/gateway-ctx.ts';
 import { readRequestBody } from '../llm/shared/request-body.ts';
 import { passthroughApiError, passthroughServe } from '../shared/passthrough-serve.ts';
-import { tokenUsageFromImagesResponse } from '../shared/telemetry/usage.ts';
+import { tokenUsageFromImagesBody } from '../shared/telemetry/usage.ts';
 
 interface ImagesGenerationsRequestBody {
   model?: unknown;
@@ -63,7 +63,7 @@ export const imagesGenerations = async (c: Context): Promise<Response> => {
       const { model: _model, ...body } = request.body;
       return binding.provider.callImagesGenerations(binding.upstreamModel, body, undefined, opts);
     },
-    response: { format: 'json', extractUsage: tokenUsageFromImagesResponse },
+    response: { format: 'json', extractBilling: tokenUsageFromImagesBody },
     noBindingMessage: modelId => `Model ${modelId} does not support the /images/generations endpoint.`,
   });
   return (ctx.dump?.finalize(response) ?? response);
@@ -114,7 +114,7 @@ export const imagesEdits = async (c: Context): Promise<Response> => {
       }
       return binding.provider.callImagesEdits(binding.upstreamModel, passthrough, undefined, opts);
     },
-    response: { format: 'json', extractUsage: tokenUsageFromImagesResponse },
+    response: { format: 'json', extractBilling: tokenUsageFromImagesBody },
     noBindingMessage: modelId => `Model ${modelId} does not support the /images/edits endpoint.`,
   });
   return (ctx.dump?.finalize(response) ?? response);

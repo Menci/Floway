@@ -3,7 +3,7 @@ import { sleep } from '../../../../../shared/sleep.ts';
 import { resolveModelForRequest } from '../../../../providers/registry.ts';
 import { appendFailedUpstreams } from '../../../../shared/failed-upstreams.ts';
 import { createUpstreamLatencyRecorder, recordPerformanceError, recordPerformanceLatency } from '../../../../shared/telemetry/performance.ts';
-import { recordTokenUsage, tokenUsageFromImagesResponse } from '../../../../shared/telemetry/usage.ts';
+import { recordTokenUsage, tokenUsageFromImagesBody } from '../../../../shared/telemetry/usage.ts';
 import type { GatewayCtx } from '../../../shared/gateway-ctx.ts';
 import type { ServerToolLifecycleEvent, ServerToolOutputItem, ServerToolRegistration, ServerToolTerminal } from '../server-tool-shim.ts';
 import { parseSSEStream } from '@floway-dev/protocols/common';
@@ -453,8 +453,7 @@ interface ShimState {
 }
 
 const recordImageUsage = (state: ShimState, binding: ProviderModelRecord, modelKey: string, responseBody: unknown): void => {
-  const usageBlock = responseBody !== null && typeof responseBody === 'object' ? (responseBody as { usage?: unknown }).usage : undefined;
-  const usage = usageBlock !== undefined ? tokenUsageFromImagesResponse(usageBlock) : null;
+  const usage = tokenUsageFromImagesBody(responseBody);
   if (usage === null) return;
   const promise = recordTokenUsage(state.apiKeyId, {
     model: binding.upstreamModel.id,
