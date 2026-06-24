@@ -10,7 +10,7 @@ export const newUiId = () => `m${++nextUiId}`;
 export const configOf = (row: Row): UpstreamModelConfig =>
   row.kind === 'manual' ? row.config : row.auto;
 
-const CHAT_ENDPOINT_KEYS: ModelEndpointKey[] = ['chatCompletions', 'responses', 'messages'];
+const CHAT_ENDPOINT_KEYS: ModelEndpointKey[] = ['chatCompletions', 'responses', 'messages', 'completions'];
 const IMAGE_ENDPOINT_KEYS: ModelEndpointKey[] = ['imagesGenerations', 'imagesEdits'];
 
 // The endpoint map to apply when switching INTO a kind, preserving any current
