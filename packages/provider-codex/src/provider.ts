@@ -159,9 +159,9 @@ export const createCodexProvider = async (record: UpstreamRecord): Promise<Model
     // gateway's wrap-once contract holds even for these stubs.
     callMessages: (_model, _body, _signal, opts) => unsupportedStreamResult(opts),
     callMessagesCountTokens: (_model, _body, _signal, opts) => unsupportedCallResult(opts),
+    callCompletions: (_model, _body, _signal, opts) => unsupportedCallResult(opts),
     callChatCompletions: (_model, _body, _signal, opts) => unsupportedStreamResult(opts),
     callEmbeddings: (_model, _body, _signal, opts) => unsupportedCallResult(opts),
-    callCompletions: (_model, _body, _signal, opts) => unsupportedCallResult(opts),
     callImagesGenerations: (_model, _body, _signal, opts) => unsupportedCallResult(opts),
     callImagesEdits: (_model, _body, _signal, opts) => unsupportedCallResult(opts),
   };

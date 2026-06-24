@@ -12,10 +12,10 @@ const props = defineProps<{
 }>();
 
 const CHAT_ENDPOINTS: { key: ModelEndpointKey; label: string }[] = [
+  { key: 'completions', label: '/completions' },
   { key: 'chatCompletions', label: '/chat/completions' },
   { key: 'responses', label: '/responses' },
   { key: 'messages', label: '/messages' },
-  { key: 'completions', label: '/completions' },
 ];
 
 const IMAGE_ENDPOINTS: { key: ModelEndpointKey; label: string }[] = [

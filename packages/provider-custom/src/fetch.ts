@@ -7,10 +7,10 @@ const ANTHROPIC_VERSION = '2023-06-01';
 // these one-for-one; messages_count_tokens / responses_compact track the
 // override of their parent endpoint (suffix appended).
 const CUSTOM_DEFAULT_PATHS = {
+  completions: '/v1/completions',
   chat_completions: '/v1/chat/completions',
   responses: '/v1/responses',
   messages: '/v1/messages',
-  completions: '/v1/completions',
   embeddings: '/v1/embeddings',
   images_generations: '/v1/images/generations',
   images_edits: '/v1/images/edits',

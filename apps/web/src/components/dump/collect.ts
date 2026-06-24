@@ -50,9 +50,13 @@ export interface CollectOutcome<TResult> {
   truncated: boolean;
 }
 
-export type CollectKind = 'messages' | 'chat-completions' | 'completions' | 'responses' | 'gemini';
+export type CollectKind = 'completions' | 'messages' | 'chat-completions' | 'responses' | 'gemini';
 
 export const detectCollectKind = (path: string): CollectKind | null => {
+  // The substring `/completions` appears inside `/chat/completions`, so the
+  // chat-completions check has to run BEFORE the completions check. Visual
+  // ordering of the CollectKind union puts completions first, but the
+  // runtime probe stays logic-ordered.
   if (path.includes('/messages')) return 'messages';
   if (path.includes('/responses')) return 'responses';
   if (path.includes('/chat/completions')) return 'chat-completions';
@@ -63,9 +67,9 @@ export const detectCollectKind = (path: string): CollectKind | null => {
 
 export const collectByKind = (kind: CollectKind, events: readonly DumpStreamEvent[]): Promise<CollectOutcome<unknown>> => {
   switch (kind) {
+  case 'completions':      return collectCompletionsStream(events);
   case 'messages':         return collectMessagesStream(events);
   case 'chat-completions': return collectChatCompletionsStream(events);
-  case 'completions':      return collectCompletionsStream(events);
   case 'responses':        return collectResponsesStream(events);
   case 'gemini':           return collectGeminiStream(events);
   }

@@ -292,6 +292,13 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
       return finalizeCopilotModels(projectKnownModels(merged, now), upstreamFlags);
     },
     getPricingForModelKey: pricingForCopilotModelKey,
+    // Copilot has no /completions or /images/... upstream — its catalog
+    // never emits `endpoints.completions` and never emits a kind='image'
+    // model, so these stubs are unreachable; they exist only to satisfy
+    // the ModelProvider interface.
+    callCompletions: () => {
+      throw new Error('Copilot provider does not implement completions');
+    },
     callChatCompletions: async (model, body, signal, opts) => {
       const rawModel = rawModelFor(model, 'chatCompletions', { reasoningEffort: chatReasoningEffort(body) });
       const ctx: ChatCompletionsBoundaryCtx = {
@@ -397,13 +404,6 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
       return { response, modelKey: rawModel.id };
     },
     callEmbeddings: (model, body, signal, opts) => call(copilotFetchEmbeddings, copilotEmbeddingsBody(body), signal, rawModelFor(model, 'embeddings'), opts.headers, opts),
-    // Copilot has no /completions or /images/... upstream — its catalog never
-    // emits `endpoints.completions` and never emits a kind='image' model,
-    // so these stubs are unreachable; they exist only to satisfy the
-    // ModelProvider interface.
-    callCompletions: () => {
-      throw new Error('Copilot provider does not implement completions');
-    },
     callImagesGenerations: () => {
       throw new Error('Copilot provider does not implement images_generations');
     },

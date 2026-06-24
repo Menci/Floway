@@ -14,10 +14,10 @@ target ships in the same repo for self-hosting on a long-lived process.
 
 | Source API                              | Path                          |
 | --------------------------------------- | ----------------------------- |
+| OpenAI Completions                      | `POST /v1/completions`        |
 | Anthropic Messages                      | `POST /v1/messages`, `POST /v1/messages/count_tokens` |
 | OpenAI Responses                        | `POST /v1/responses`, `POST /v1/responses/compact`, `GET /v1/responses` WebSocket |
 | OpenAI Chat Completions                 | `POST /v1/chat/completions`   |
-| OpenAI Completions                      | `POST /v1/completions`        |
 | OpenAI Embeddings                       | `POST /v1/embeddings`         |
 | OpenAI Images                           | `POST /v1/images/generations` |
 | OpenAI Image Edits                      | `POST /v1/images/edits`       |

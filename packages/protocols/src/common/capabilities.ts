@@ -12,14 +12,14 @@ import type { ModelKind } from './models.ts';
 // `responses`) are not modeled separately — presence of the base endpoint
 // implies them.
 export interface ModelEndpoints {
+  // OpenAI text completions (`/v1/completions`). Passthrough only — we
+  // never translate it to or from the three LLM endpoints below, so it has
+  // no sub-capability surface. Orthogonal to `chatCompletions`: a model can
+  // declare any non-empty subset.
+  completions?: {};
   chatCompletions?: {};
   responses?: {};
   messages?: {};
-  // OpenAI text completions (`/v1/completions`). Passthrough only — we
-  // never translate it to or from the three LLM endpoints above, so it has no
-  // sub-capability surface. Orthogonal to `chatCompletions`: a model can
-  // declare any non-empty subset.
-  completions?: {};
   embeddings?: {};
   imagesGenerations?: {};
   imagesEdits?: {};

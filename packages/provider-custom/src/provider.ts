@@ -177,6 +177,7 @@ export const createCustomProvider = (record: UpstreamRecord): ModelProviderInsta
       return withManual(autoFromResponse(response));
     },
     getPricingForModelKey: modelKey => manualPricingByUpstreamId.get(modelKey) ?? pricingByRawId.get(modelKey) ?? null,
+    callCompletions: (model, body, signal, opts) => call(customFetchCompletions, model, body, signal, opts.headers, opts),
     callChatCompletions: (model, body, signal, opts) => callStreaming(customFetchChatCompletions, model, body, signal, opts.headers, parseChatCompletionsStream, opts),
     callResponses: (model, body, signal, opts) => callStreaming(customFetchResponses, model, body, signal, opts.headers, parseResponsesStream, opts),
     callResponsesCompact: async (model, body, signal, opts) => {
@@ -194,7 +195,6 @@ export const createCustomProvider = (record: UpstreamRecord): ModelProviderInsta
     callMessages: (model, body, signal, opts) => callStreaming(customFetchMessages, model, body, signal, opts.headers, parseMessagesStream, opts),
     callMessagesCountTokens: (model, body, signal, opts) => call(customFetchMessagesCountTokens, model, body, signal, opts.headers, opts),
     callEmbeddings: (model, body, signal, opts) => call(customFetchEmbeddings, model, body, signal, opts.headers, opts),
-    callCompletions: (model, body, signal, opts) => call(customFetchCompletions, model, body, signal, opts.headers, opts),
     callImagesGenerations: (model, body, signal, opts) => call(customFetchImagesGenerations, model, body, signal, opts.headers, opts),
     callImagesEdits: async (model, body, signal, opts) => {
       rememberPricingForModel(model);

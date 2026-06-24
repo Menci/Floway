@@ -62,6 +62,7 @@ export const createAzureProvider = (record: UpstreamRecord): ModelProviderInstan
     getPricingForModelKey(modelKey) {
       return azure.config.models.find(model => model.upstreamModelId === modelKey)?.cost ?? null;
     },
+    callCompletions: (model, body, signal, opts) => callNonStreaming(azureFetchCompletions, model, body, signal, opts.headers, opts),
     callChatCompletions: (model, body, signal, opts) => callStreaming(azureFetchChatCompletions, model, body, signal, opts.headers, parseChatCompletionsStream, opts),
     callResponses: (model, body, signal, opts) => callStreaming(azureFetchResponses, model, body, signal, opts.headers, parseResponsesStream, opts),
     callResponsesCompact: async (model, body, signal, opts) => {
@@ -78,7 +79,6 @@ export const createAzureProvider = (record: UpstreamRecord): ModelProviderInstan
     callMessages: (model, body, signal, opts) => callStreaming(azureFetchMessages, model, body, signal, opts.headers, parseMessagesStream, opts),
     callMessagesCountTokens: (model, body, signal, opts) => callNonStreaming(azureFetchMessagesCountTokens, model, body, signal, opts.headers, opts),
     callEmbeddings: (model, body, signal, opts) => callNonStreaming(azureFetchEmbeddings, model, body, signal, opts.headers, opts),
-    callCompletions: (model, body, signal, opts) => callNonStreaming(azureFetchCompletions, model, body, signal, opts.headers, opts),
     callImagesGenerations: (model, body, signal, opts) => callNonStreaming(azureFetchImagesGenerations, model, body, signal, opts.headers, opts),
     callImagesEdits: async (model, body, signal, opts) => {
       // Azure routes by upstream model id in the multipart `model` field; the

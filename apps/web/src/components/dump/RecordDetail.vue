@@ -156,9 +156,9 @@ const collectKind = computed(() => record.value ? detectCollectKind(record.value
 const frameToSse = (kind: CollectKind | null, frame: ProtocolFrame<unknown>): SseFrame | null => {
   try {
     switch (kind) {
+    case 'completions':      return completionsProtocolFrameToSSEFrame(frame as Parameters<typeof completionsProtocolFrameToSSEFrame>[0]);
     case 'messages':         return messagesProtocolFrameToSSEFrame(frame as Parameters<typeof messagesProtocolFrameToSSEFrame>[0]);
     case 'chat-completions': return chatCompletionsProtocolFrameToSSEFrame(frame as Parameters<typeof chatCompletionsProtocolFrameToSSEFrame>[0], { includeUsageChunk: true });
-    case 'completions':      return completionsProtocolFrameToSSEFrame(frame as Parameters<typeof completionsProtocolFrameToSSEFrame>[0]);
     case 'responses':        return responsesProtocolFrameToSSEFrame(frame as Parameters<typeof responsesProtocolFrameToSSEFrame>[0]);
     case 'gemini':           return geminiProtocolFrameToSSEFrame(frame as Parameters<typeof geminiProtocolFrameToSSEFrame>[0]);
     default:                 return null;

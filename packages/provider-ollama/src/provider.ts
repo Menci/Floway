@@ -40,7 +40,7 @@ const rawModelIdOf = (model: UpstreamModel): string => model.providerData as str
 // chat-capable model: every model the upstream serves at
 // `/v1/chat/completions` works at `/v1/completions` too (same Go binary,
 // same upstream lifecycle).
-const CHAT_ENDPOINTS: ModelEndpoints = { chatCompletions: {}, responses: {}, messages: {}, completions: {} };
+const CHAT_ENDPOINTS: ModelEndpoints = { completions: {}, chatCompletions: {}, responses: {}, messages: {} };
 const EMBEDDING_ENDPOINTS: ModelEndpoints = { embeddings: {} };
 
 const endpointsForCapabilities = (capabilities: ReadonlySet<string>): ModelEndpoints =>
@@ -148,6 +148,7 @@ export const createOllamaProvider = (record: UpstreamRecord): ModelProviderInsta
       return [...manualModels, ...auto];
     },
     getPricingForModelKey: modelKey => manualPricingByUpstreamId.get(modelKey) ?? pricingForOllamaModelKey(modelKey),
+    callCompletions: (model, body, signal, opts) => call(ollamaFetchCompletions, model, body, signal, opts),
     callChatCompletions: (model, body, signal, opts) => callStreaming(ollamaFetchChatCompletions, model, body, signal, parseChatCompletionsStream, opts),
     callResponses: (model, body, signal, opts) => callStreaming(ollamaFetchResponses, model, body, signal, parseResponsesStream, opts),
     callResponsesCompact: async (model, body, signal, opts) => {
@@ -164,7 +165,6 @@ export const createOllamaProvider = (record: UpstreamRecord): ModelProviderInsta
     callMessages: (model, body, signal, opts) => callStreaming(ollamaFetchMessages, model, body, signal, parseMessagesStream, opts),
     callMessagesCountTokens: (model, body, signal, opts) => call(ollamaFetchMessagesCountTokens, model, body, signal, opts),
     callEmbeddings: (model, body, signal, opts) => call(ollamaFetchEmbeddings, model, body, signal, opts),
-    callCompletions: (model, body, signal, opts) => call(ollamaFetchCompletions, model, body, signal, opts),
     // Ollama serves no image-generation endpoint; reject if the gateway ever
     // routes one here. /v1/images/* is not exposed by the upstream binary.
     callImagesGenerations: rejectUnsupported('callImagesGenerations'),

@@ -11,10 +11,10 @@ import type { OllamaUpstreamConfig } from './config.ts';
 import { type UpstreamFetchOptions, joinBaseAndPath } from '@floway-dev/provider';
 
 const OLLAMA_PATHS = {
+  completions: '/v1/completions',
   chat_completions: '/v1/chat/completions',
   responses: '/v1/responses',
   messages: '/v1/messages',
-  completions: '/v1/completions',
   embeddings: '/v1/embeddings',
   tags: '/api/tags',
   show: '/api/show',

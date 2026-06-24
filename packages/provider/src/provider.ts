@@ -114,6 +114,15 @@ export interface ModelProvider {
   // parsed slice for variant selection (Copilot picks a raw upstream variant
   // before the wire header is filtered down to the Copilot allow-list)
   // re-parse it from `opts.headers.get('anthropic-beta')` themselves.
+  // /v1/completions (text completions). Passthrough — the gateway does not
+  // translate from or to any other LLM endpoint. The provider forwards the
+  // body to the upstream's /v1/completions and returns the raw Response
+  // (streaming SSE or single-shot JSON, matching the client's `stream`
+  // field). Providers whose upstream does not expose /v1/completions throw
+  // a non-supported error here; their getProvidedModels() also never sets
+  // endpoints.completions, so the route is unreachable in normal
+  // operation.
+  callCompletions(model: UpstreamModel, body: Omit<CompletionsPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
   callChatCompletions(model: UpstreamModel, body: Omit<ChatCompletionsPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
   callResponses(model: UpstreamModel, body: Omit<ResponsesPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderStreamResult<ResponsesStreamEvent>>;
   callResponsesCompact(model: UpstreamModel, body: Omit<ResponsesCompactPayload, 'model' | 'store'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCompactionResult>;
@@ -122,15 +131,6 @@ export interface ModelProvider {
   // Response verbatim.
   callMessagesCountTokens(model: UpstreamModel, body: Omit<MessagesPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
   callEmbeddings(model: UpstreamModel, body: Omit<EmbeddingsPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
-  // /v1/completions (text completions). Passthrough — the gateway
-  // does not translate from or to any other LLM endpoint. The provider
-  // forwards the body to the upstream's /v1/completions and returns the
-  // raw Response (streaming SSE or single-shot JSON, matching the
-  // client's `stream` field). Providers whose upstream does not expose
-  // /v1/completions throw a non-supported error here; their
-  // getProvidedModels() also never sets endpoints.completions, so the
-  // route is unreachable in normal operation.
-  callCompletions(model: UpstreamModel, body: Omit<CompletionsPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
   callImagesGenerations(model: UpstreamModel, body: Omit<ImagesGenerationsPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
   // The provider takes ownership of `body` and may mutate it (e.g. append
   // the upstream-specific model/deployment id). Callers must allocate a
