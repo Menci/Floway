@@ -16,26 +16,24 @@
 // by "carries usage" + "no choice element has any actual content", which
 // matches the LiteLLM / One-API / New-API consensus.
 
-const isContentlessChoice = (choice: unknown): boolean => {
-  if (typeof choice !== 'object' || choice === null) return false;
-  const { text, delta, finish_reason: finishReason } = choice as { text?: unknown; delta?: unknown; finish_reason?: unknown };
-  if (typeof text === 'string' && text.length > 0) return false;
-  if (finishReason !== undefined && finishReason !== null) return false;
-  if (delta !== undefined && delta !== null) {
-    if (typeof delta !== 'object') return false;
-    if (Object.keys(delta as object).length > 0) return false;
-  }
-  return true;
-};
-
 export const isOpenAIUsageOnlyEventShape = (event: unknown): boolean => {
   if (typeof event !== 'object' || event === null) return false;
   const { choices, usage } = event as { choices?: unknown; usage?: unknown };
   if (usage === undefined || usage === null) return false;
   if (!Array.isArray(choices)) return false;
-  // `every` over an empty array is true — that's the OpenAI / vanilla-vLLM
-  // shape. A non-empty array passes only when every element is a structural
-  // placeholder (no text, no delta keys, no finish_reason) — the Zhipu/GLM
-  // vendor-fork shape.
-  return choices.every(isContentlessChoice);
+  // `every` over an empty array is true (the OpenAI / vanilla-vLLM shape).
+  // A non-empty array passes only when every element is a structural
+  // placeholder (no text, no delta keys, no finish_reason) — the
+  // Zhipu/GLM vendor-fork shape.
+  return choices.every(choice => {
+    if (typeof choice !== 'object' || choice === null) return false;
+    const { text, delta, finish_reason: finishReason } = choice as { text?: unknown; delta?: unknown; finish_reason?: unknown };
+    if (typeof text === 'string' && text.length > 0) return false;
+    if (finishReason !== undefined && finishReason !== null) return false;
+    if (delta !== undefined && delta !== null) {
+      if (typeof delta !== 'object') return false;
+      if (Object.keys(delta as object).length > 0) return false;
+    }
+    return true;
+  });
 };

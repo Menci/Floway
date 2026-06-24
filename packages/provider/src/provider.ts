@@ -108,21 +108,20 @@ export interface ModelProvider {
   getProvidedModels(fetcher: Fetcher): Promise<readonly UpstreamModel[]>;
   // Resolve pricing for a usage record's `model_key` (the raw upstream model id).
   getPricingForModelKey(modelKey: string): ModelPricing | null;
+  // /v1/completions text completions. Passthrough — the provider forwards
+  // the body to the upstream and returns the raw Response (streaming SSE
+  // or single-shot JSON, matching the client's `stream` field).
+  // `getProvidedModels` never sets `endpoints.completions` on providers
+  // whose upstream doesn't expose it, so the route is unreachable for
+  // those bindings and the throwing stubs in those providers are pure
+  // defense-in-depth.
+  callCompletions(model: UpstreamModel, body: Omit<CompletionsPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
   // Same `opts.headers` shape across every protocol so provider impls never
   // branch on the protocol when reading inbound headers. `anthropic-beta`
   // lives on `opts.headers` like any other header; providers that need the
   // parsed slice for variant selection (Copilot picks a raw upstream variant
   // before the wire header is filtered down to the Copilot allow-list)
   // re-parse it from `opts.headers.get('anthropic-beta')` themselves.
-  // /v1/completions (text completions). Passthrough — the gateway does not
-  // translate from or to any other LLM endpoint. The provider forwards the
-  // body to the upstream's /v1/completions and returns the raw Response
-  // (streaming SSE or single-shot JSON, matching the client's `stream`
-  // field). Providers whose upstream does not expose /v1/completions throw
-  // a non-supported error here; their getProvidedModels() also never sets
-  // endpoints.completions, so the route is unreachable in normal
-  // operation.
-  callCompletions(model: UpstreamModel, body: Omit<CompletionsPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
   callChatCompletions(model: UpstreamModel, body: Omit<ChatCompletionsPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
   callResponses(model: UpstreamModel, body: Omit<ResponsesPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderStreamResult<ResponsesStreamEvent>>;
   callResponsesCompact(model: UpstreamModel, body: Omit<ResponsesCompactPayload, 'model' | 'store'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCompactionResult>;

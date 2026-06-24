@@ -20,7 +20,7 @@
 
 import type { Context } from 'hono';
 
-import { tokenUsageFromCompletionsBody, tokenUsageFromCompletionsStreamEvent } from './usage.ts';
+import { billingFromCompletionsUsageAndTier, tokenUsageFromCompletionsBody } from './usage.ts';
 import type { TokenUsage } from '../../repo/types.ts';
 import { createGatewayCtxFromHono } from '../llm/shared/gateway-ctx.ts';
 import { readRequestBody } from '../llm/shared/request-body.ts';
@@ -35,25 +35,14 @@ interface CompletionsRequestBody {
   [key: string]: unknown;
 }
 
-interface PreparedRequest {
-  type: 'ok';
-  body: Record<string, unknown>;
-  model: string;
-  wantsStream: boolean;
-  clientWantsUsageChunk: boolean;
-}
+type PreparedRequest =
+  | { type: 'ok'; body: Record<string, unknown>; model: string; wantsStream: boolean; clientWantsUsageChunk: boolean }
+  | { type: 'invalid'; message: string };
 
-interface InvalidRequest {
-  type: 'invalid';
-  message: string;
-}
-
-// Parse + lightly validate the request body without taking ownership of
-// shape decisions the upstream owns. We require `model` as a non-empty
-// string (gateway routing depends on it) and validate that the streaming
-// flags carry the expected primitive types when present; everything else
-// flows through unchanged.
-const prepareCompletionsRequest = (bytes: Uint8Array): PreparedRequest | InvalidRequest => {
+// `model` must be a non-empty string because gateway routing depends on
+// it; every other field on the body flows through to the upstream
+// unchanged.
+const prepareCompletionsRequest = (bytes: Uint8Array): PreparedRequest => {
   let request: CompletionsRequestBody;
   try {
     const parsed = JSON.parse(new TextDecoder().decode(bytes)) as unknown;
@@ -74,27 +63,25 @@ const prepareCompletionsRequest = (bytes: Uint8Array): PreparedRequest | Invalid
   return { type: 'ok', body: request, model: request.model, wantsStream, clientWantsUsageChunk };
 };
 
-// Force-on `stream_options.include_usage` so the upstream always emits the
-// usage-only chunk we need for billing. Preserves any sibling keys the
-// caller already set on stream_options.
-const withIncludeUsageStreamOption = (body: Record<string, unknown>): Record<string, unknown> => {
-  const existing = body.stream_options;
-  const merged = existing !== null && typeof existing === 'object' && !Array.isArray(existing)
-    ? { ...(existing as Record<string, unknown>), include_usage: true }
-    : { include_usage: true };
-  return { ...body, stream_options: merged };
-};
-
 const sseResponseHandling = (clientWantsUsageChunk: boolean): Extract<PassthroughResponseHandling, { format: 'sse' }> => {
-  let accumulated: TokenUsage | null = null;
+  // Track the usage block (only on the usage-only chunk per OpenAI spec)
+  // and service_tier independently — `service_tier` can ride on any
+  // event root in the chat-completions shape, and a future upstream may
+  // extend /v1/completions streaming to follow suit. Settling them
+  // together at the end lets the tier override land regardless of which
+  // chunk it travelled on.
+  let usageBlock: unknown = null;
+  let serviceTier: string | null | undefined = undefined;
   const transformFrame = (frame: ProtocolFrame<unknown>): ProtocolFrame<unknown> | null => {
     if (frame.type !== 'event') return frame;
+    const eventRoot = frame.event as { service_tier?: string | null; usage?: unknown };
+    if (eventRoot.service_tier !== undefined) serviceTier = eventRoot.service_tier;
     if (!isOpenAIUsageOnlyEventShape(frame.event)) return frame;
-    const tokenUsage = tokenUsageFromCompletionsStreamEvent(frame.event);
-    if (tokenUsage) accumulated = tokenUsage;
+    if (eventRoot.usage !== undefined) usageBlock = eventRoot.usage;
     return clientWantsUsageChunk ? frame : null;
   };
-  const settleUsage = (): TokenUsage | null => accumulated;
+  const settleUsage = (): TokenUsage | null =>
+    usageBlock === null ? null : billingFromCompletionsUsageAndTier(usageBlock, serviceTier);
   return { format: 'sse', transformFrame, settleUsage };
 };
 
@@ -112,10 +99,14 @@ export const completions = async (c: Context): Promise<Response> => {
   }
 
   ctx.dump?.requestedModel(request.model);
-  const upstreamBody = (() => {
-    const { model: _model, ...rest } = request.body;
-    return request.wantsStream ? withIncludeUsageStreamOption(rest) : rest;
-  })();
+  // Strip the inbound model; the provider re-stamps the upstream-resolved
+  // model id. For streaming requests we force `stream_options.include_usage`
+  // on so billing always sees the usage chunk — sibling keys on
+  // stream_options (if any) ride through unchanged.
+  const { model: _model, ...upstreamBodyBase } = request.body;
+  const upstreamBody = request.wantsStream
+    ? { ...upstreamBodyBase, stream_options: { ...(upstreamBodyBase.stream_options as Record<string, unknown> | null ?? {}), include_usage: true } }
+    : upstreamBodyBase;
 
   const response = await passthroughServe({
     c,

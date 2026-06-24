@@ -1,19 +1,13 @@
 // Shared serve scaffold for non-LLM passthrough data-plane endpoints. These
 // bypass the LLM source/target executor because they have no protocol
 // translation — the request body is forwarded to the chosen provider's
-// matching endpoint and the upstream response is passed through back to the
-// client.
-//
-// Response handling discriminates on the wire format the upstream produces.
-// `json` is single-shot (embeddings, images): the body is parsed once, usage
-// is read from the parsed JSON, and the response is forwarded verbatim.
-// `sse` is streaming (text-completions /v1/completions): bytes flow through a
-// parsed frame pipeline that the caller transforms before reserialization.
-// The scaffold never inspects frame contents — caller-owned closures detect
-// usage frames, accumulate totals, and may drop frames as needed. Usage and
-// request-performance writes are scheduled through the runtime's background
-// scheduler so transient repo failures cannot turn a successful 200 from
-// upstream into a 502.
+// matching endpoint and the upstream response is passed through back to
+// the client. Embeddings and images run the `json` branch (single-shot
+// body, OpenAI-shape `usage` block); /v1/completions runs the `sse` branch
+// (frame-level transformFrame closure + settleUsage). Usage and
+// request-performance writes are scheduled through the runtime's
+// background scheduler so transient repo failures cannot turn a
+// successful 200 from upstream into a 502.
 
 import type { Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
@@ -49,20 +43,14 @@ const isForwardedResponseHeader = (name: string): boolean => {
   return FORWARDED_RESPONSE_HEADERS.has(lower) || FORWARDED_RESPONSE_HEADER_PREFIXES.some(prefix => lower.startsWith(prefix));
 };
 
-const forwardedResponseHeaders = (resp: Response): Headers => {
+const forwardUpstreamResponse = (resp: Response): Response => {
   const headers = new Headers({ 'content-type': resp.headers.get('content-type') ?? 'application/json' });
   for (const [name, value] of resp.headers.entries()) {
     if (name.toLowerCase() === 'content-type') continue;
     if (isForwardedResponseHeader(name)) headers.set(name, value);
   }
-  return headers;
+  return new Response(resp.body, { status: resp.status, headers });
 };
-
-const forwardUpstreamResponse = (resp: Response): Response =>
-  new Response(resp.body, {
-    status: resp.status,
-    headers: forwardedResponseHeaders(resp),
-  });
 
 // Stage forwardable upstream headers onto the Hono context so the streaming
 // SSE response Hono builds emits them. `streamSSE`'s internal `c.newResponse`
@@ -72,6 +60,10 @@ const stageForwardedResponseHeaders = (c: Context, resp: Response): void => {
     if (isForwardedResponseHeader(name)) c.header(name, value);
   }
 };
+
+// Uniform error envelope for this endpoint family.
+export const passthroughApiError = (c: Context, message: string, status: ContentfulStatusCode): Response =>
+  c.json({ error: { message, type: 'api_error' } }, status);
 
 const recordUpstreamPerformance = (
   scheduler: BackgroundScheduler,
@@ -91,34 +83,18 @@ const scheduleUsageRecord = (scheduler: BackgroundScheduler, promise: Promise<vo
   }));
 };
 
-// A 2xx body that fails to parse must not 502 a client whose upstream call
-// already succeeded; we skip usage extraction and log so missing rows stay
-// traceable.
-const safeJsonClone = async (resp: Response, sourceApi: NonLlmServeApiName): Promise<unknown> => {
-  try {
-    return await resp.clone().json();
-  } catch (e) {
-    console.warn(`passthrough-serve: failed to parse 2xx upstream body for ${sourceApi}; usage row will be skipped`, e instanceof Error ? e.message : String(e));
-    return undefined;
-  }
-};
-
 // Convert an upstream SSE byte stream into transformed SseFrames ready for
-// re-serialization. The frame pipeline is generic over event payload —
-// `transformFrame` receives `ProtocolFrame<unknown>` and decides per-frame
-// whether to pass through, mutate, or drop (return null). The scaffold never
-// peeks at event contents; usage detection / accumulation is the caller's
-// closure. Every upstream-emitted frame is also pushed into the dump
-// accumulator before the transform so post-hoc forensics see the upstream's
-// truth — including frames the caller drops from the client-facing stream
-// (e.g. the usage-only chunk when the client did not opt into include_usage).
+// re-serialization. `transformFrame` decides per-frame whether to pass
+// through, mutate, or drop (return null). Every upstream-emitted frame is
+// also pushed into the dump accumulator before the transform so post-hoc
+// forensics see the upstream's truth, including frames the caller drops
+// from the client-facing stream.
 //
-// `onTerminalFrame` is fired the moment we see the upstream's terminal
-// (`done`) frame. The outer telemetry classifier uses this to distinguish
-// a client cancel that lands after the stream's natural end (graceful —
-// upstream already finished its work) from a mid-stream cancel
-// (genuine failure). The LLM streaming endpoints make the same
-// distinction via `SourceStreamState.failedAfter`.
+// `onTerminalFrame` fires the moment we see the upstream's terminal
+// (`done`) frame. The outer telemetry classifier uses it to distinguish a
+// client cancel that lands after the stream's natural end (graceful —
+// upstream already finished its work) from a mid-stream cancel (genuine
+// failure). Mirrors `SourceStreamState.failedAfter` on the LLM endpoints.
 const transformUpstreamSseStream = async function* (
   upstreamBody: ReadableStream<Uint8Array>,
   sourceApi: NonLlmServeApiName,
@@ -138,21 +114,14 @@ const transformUpstreamSseStream = async function* (
   }
 };
 
-// Discriminator on the wire format the upstream produces.
-//
-// `json`: single-shot response. The scaffold drains the body once and hands
-// the parsed body to `extractBilling`, which decides how to read usage and
-// any per-response metadata (service tier, modality split, etc.). The
-// response is forwarded verbatim. Embeddings and images use this path.
-//
-// `sse`: streaming response. The scaffold parses SSE bytes into frames,
-// runs each through `transformFrame` (return null to drop), reserializes
-// the survivors, and writes them through Hono's streamSSE helper. After
-// the stream ends, `settleUsage` is called to surface the caller's
-// accumulated usage for billing. Used by /v1/completions
-// passthrough; the caller's transformFrame closes over a usage
-// accumulator and a strip-or-keep decision for the OpenAI usage-only
-// chunk.
+// `json`: embeddings, images — single-shot body, the scaffold hands the
+// parsed body to `extractBilling`.
+// `sse`: /v1/completions — frame stream, the scaffold runs each through
+// `transformFrame` (return null to drop), then settles billing via
+// `settleUsage` after the stream ends. The OpenAI usage-only chunk
+// (`choices: []` plus `usage`) is what the caller's transformFrame keys
+// off when it needs to strip-or-keep based on the client's
+// `stream_options.include_usage`.
 export type PassthroughResponseHandling =
   | {
     readonly format: 'json';
@@ -180,7 +149,6 @@ export interface PassthroughServeContext {
   // recordUpstreamLatency wrapper for the upstream_success metric); the
   // callback forwards it verbatim to the chosen provider call method.
   readonly call: (binding: ProviderModelRecord, opts: UpstreamCallOptions) => Promise<ProviderCallResult>;
-  // Format-discriminated response handler. See PassthroughResponseHandling.
   readonly response: PassthroughResponseHandling;
   // Returned as the 400 body when no provider binding matched. Phrased
   // per-endpoint so the error tells the client which capability is missing.
@@ -232,7 +200,16 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
       recordUpstreamPerformance(ctx.backgroundScheduler, performanceContext, false, upstreamDurationMs);
 
       if (responseHandling.format === 'json') {
-        const parsed = await safeJsonClone(response, sourceApi);
+        // A 2xx body that fails to parse must not 502 a client whose
+        // upstream call already succeeded; we skip usage extraction and
+        // log so missing rows stay traceable.
+        let parsed: unknown;
+        try {
+          parsed = await response.clone().json();
+        } catch (e) {
+          console.warn(`passthrough-serve: failed to parse 2xx upstream body for ${sourceApi}; usage row will be skipped`, e instanceof Error ? e.message : String(e));
+          parsed = undefined;
+        }
         const usage = parsed !== undefined ? responseHandling.extractBilling(parsed) : null;
         ctx.dump?.success(modelIdentity, usage);
         if (usage) {
@@ -313,7 +290,3 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
     return c.json({ error: toInternalDebugError(e) }, 502);
   }
 };
-
-// Uniform error envelope for this endpoint family.
-export const passthroughApiError = (c: Context, message: string, status: ContentfulStatusCode): Response =>
-  c.json({ error: { message, type: 'api_error' } }, status);

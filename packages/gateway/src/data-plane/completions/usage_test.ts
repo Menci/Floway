@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { tokenUsageFromCompletionsBody, tokenUsageFromCompletionsStreamEvent } from './usage.ts';
+import { billingFromCompletionsUsageAndTier, tokenUsageFromCompletionsBody } from './usage.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 test('tokenUsageFromCompletionsBody maps the OpenAI bare shape to bare input + output', () => {
@@ -62,25 +62,31 @@ test('tokenUsageFromCompletionsBody returns null on malformed input', () => {
   assertEquals(tokenUsageFromCompletionsBody({ usage: { prompt_tokens: 'no' } }), null);
 });
 
-test('tokenUsageFromCompletionsStreamEvent extracts usage + service_tier from the usage-only chunk', () => {
-  const event = {
-    id: 'cmpl_x',
-    object: 'text_completion',
-    created: 1,
-    model: 'm',
-    choices: [],
-    usage: { prompt_tokens: 100, completion_tokens: 7, total_tokens: 107, prompt_tokens_details: { cached_tokens: 80 } },
-    service_tier: 'priority',
-  };
-  assertEquals(tokenUsageFromCompletionsStreamEvent(event), {
-    input: 20,
-    input_cache_read: 80,
-    output: 7,
-    tier: 'priority',
-  });
+test('billingFromCompletionsUsageAndTier combines usage + tier collected from separate stream-event sources', () => {
+  // The streaming closure tracks the usage block (from the usage-only
+  // chunk) and the service_tier (from any chunk root the upstream
+  // chooses) separately, then merges them here at settle time.
+  assertEquals(
+    billingFromCompletionsUsageAndTier(
+      { prompt_tokens: 100, completion_tokens: 7, total_tokens: 107, prompt_tokens_details: { cached_tokens: 80 } },
+      'priority',
+    ),
+    { input: 20, input_cache_read: 80, output: 7, tier: 'priority' },
+  );
 });
 
-test('tokenUsageFromCompletionsStreamEvent returns null when the event carries no usage block', () => {
-  const event = { choices: [], service_tier: 'priority' };
-  assertEquals(tokenUsageFromCompletionsStreamEvent(event), null);
+test('billingFromCompletionsUsageAndTier accepts an undefined tier (the no-tier-seen path)', () => {
+  assertEquals(
+    billingFromCompletionsUsageAndTier(
+      { prompt_tokens: 5, completion_tokens: 2, total_tokens: 7 },
+      undefined,
+    ),
+    { input: 5, output: 2 },
+  );
+});
+
+test('billingFromCompletionsUsageAndTier returns null when the usage block is missing or malformed', () => {
+  assertEquals(billingFromCompletionsUsageAndTier(null, 'priority'), null);
+  assertEquals(billingFromCompletionsUsageAndTier({}, 'priority'), null);
+  assertEquals(billingFromCompletionsUsageAndTier({ prompt_tokens: 'no' }, 'priority'), null);
 });
