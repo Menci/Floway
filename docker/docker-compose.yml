@@ -11,6 +11,7 @@ services:
       FLOWAY_DB_PATH: /data/floway.db
       FLOWAY_FILES_DIR: /data/files
       PORT: 8788
+      RUNTIME_LOCATION: local
     volumes:
       - floway-data:/data
     ports:
