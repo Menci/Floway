@@ -9,21 +9,16 @@ import { billableServiceTier, tokenUsage } from '../shared/telemetry/usage.ts';
 // so the two input dimensions stay disjoint, matching what
 // tokenUsageFromChatCompletionsUsage does for chat.
 //
-// vLLM also surfaces `service_tier` on the /v1/completions response root
-// (observed value: null on a Zhipu/GLM fork running vLLM 0.23.1rc1 — the
-// field is present and serialized but the upstream doesn't populate it
-// for this deployment). The streaming path was observed to omit the
-// field entirely from every chunk including the final usage chunk; the
-// chat-completions equivalent puts service_tier on every chunk root,
-// and vLLM is the likely vector for extending /v1/completions streaming
-// to the same shape. The streaming closure in serve.ts tracks the latest
-// service_tier seen on any event root and hands it to
-// billingFromCompletionsUsageAndTier alongside the usage block from the
-// final usage chunk — so the moment any upstream populates the field on
-// streaming (per-chunk or only the usage chunk) billing picks it up
-// without another code change.
+// `service_tier` lives on the response root, not inside `usage`. vLLM
+// surfaces it on the non-streaming /v1/completions body (observed null
+// on a Zhipu/GLM fork). The streaming path was observed to omit the
+// field, but `service_tier` rides on every chunk root in the
+// chat-completions shape; the gateway's streaming closure tracks it
+// independently of the usage-only chunk and hands both to this helper
+// at settle time — so the moment any upstream populates the field
+// (per-chunk or only on the usage chunk) billing picks it up.
 
-export const billingFromCompletionsUsageAndTier = (usage: unknown, serviceTier: string | null | undefined): TokenUsage | null => {
+export const tokenUsageFromCompletionsUsage = (usage: unknown, serviceTier: string | null | undefined): TokenUsage | null => {
   if (!usage || typeof usage !== 'object') return null;
   const { prompt_tokens: promptTokens, completion_tokens: completionTokens, prompt_tokens_details: details } = usage as {
     prompt_tokens?: unknown;
@@ -38,12 +33,4 @@ export const billingFromCompletionsUsageAndTier = (usage: unknown, serviceTier: 
     output: completionTokens,
     tier: billableServiceTier(serviceTier),
   });
-};
-
-// Body-based extractor for the non-streaming JSON path. Reads `usage` and
-// `service_tier` from the parsed body root.
-export const tokenUsageFromCompletionsBody = (body: unknown): TokenUsage | null => {
-  if (!body || typeof body !== 'object') return null;
-  const { usage, service_tier: serviceTier } = body as { usage?: unknown; service_tier?: string | null };
-  return billingFromCompletionsUsageAndTier(usage, serviceTier);
 };

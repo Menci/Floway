@@ -109,6 +109,15 @@ const messagesReasoningEffort = (body: Omit<MessagesPayload, 'model'>): string |
 
 const responsesReasoningEffort = (body: Omit<ResponsesPayload, 'model'>): string | undefined => (body.reasoning?.effort && body.reasoning.effort !== 'none' ? body.reasoning.effort : undefined);
 
+// The three Copilot stubs — /completions and /images/* — exist only to
+// satisfy the ModelProvider interface. Copilot's catalog never declares
+// those endpoints, so they're unreachable; calling them is a routing
+// bug, so we throw loudly. Matches the shape provider-claude-code uses
+// for the same pattern.
+const rejectUnsupported = (capability: string) => (): never => {
+  throw new Error(`Copilot provider does not implement ${capability}`);
+};
+
 const rawModelFor = (model: UpstreamModel, endpoint: ModelEndpointKey, hints: ModelSelectionHints = {}): CopilotRawModel => {
   // Copilot exposes one canonical public Claude model id per family. Raw
   // variant selection is derived from request fields such as reasoning effort
@@ -292,11 +301,7 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
       return finalizeCopilotModels(projectKnownModels(merged, now), upstreamFlags);
     },
     getPricingForModelKey: pricingForCopilotModelKey,
-    // Copilot doesn't expose /v1/completions — catalog never emits
-    // endpoints.completions, so this stub is pure defense-in-depth.
-    callCompletions: () => {
-      throw new Error('Copilot provider does not implement completions');
-    },
+    callCompletions: rejectUnsupported('completions'),
     callChatCompletions: async (model, body, signal, opts) => {
       const rawModel = rawModelFor(model, 'chatCompletions', { reasoningEffort: chatReasoningEffort(body) });
       const ctx: ChatCompletionsBoundaryCtx = {
@@ -402,14 +407,8 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
       return { response, modelKey: rawModel.id };
     },
     callEmbeddings: (model, body, signal, opts) => call(copilotFetchEmbeddings, copilotEmbeddingsBody(body), signal, rawModelFor(model, 'embeddings'), opts.headers, opts),
-    // Copilot has no /images/* upstream; catalog never emits a
-    // kind='image' model, so these stubs are unreachable.
-    callImagesGenerations: () => {
-      throw new Error('Copilot provider does not implement images_generations');
-    },
-    callImagesEdits: () => {
-      throw new Error('Copilot provider does not implement images_edits');
-    },
+    callImagesGenerations: rejectUnsupported('images_generations'),
+    callImagesEdits: rejectUnsupported('images_edits'),
   };
 
   return {

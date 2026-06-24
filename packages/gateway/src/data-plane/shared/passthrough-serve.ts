@@ -103,7 +103,7 @@ const transformUpstreamSseStream = async function* (
   signal: AbortSignal | undefined,
   onTerminalFrame: () => void,
 ): AsyncGenerator<SseFrame> {
-  const sseFrames = parseSSEStream(upstreamBody, signal ? { signal } : {});
+  const sseFrames = parseSSEStream(upstreamBody, { signal });
   for await (const parsed of parseTargetStreamFrames<unknown>(sseFrames, { protocol: sourceApi })) {
     const inputFrame: ProtocolFrame<unknown> = parsed.type === 'done' ? doneFrame() : eventFrame(parsed.data);
     dump?.frame(inputFrame);
@@ -114,14 +114,13 @@ const transformUpstreamSseStream = async function* (
   }
 };
 
-// `json`: embeddings, images — single-shot body, the scaffold hands the
-// parsed body to `extractBilling`.
-// `sse`: /v1/completions — frame stream, the scaffold runs each through
-// `transformFrame` (return null to drop), then settles billing via
-// `settleUsage` after the stream ends. The OpenAI usage-only chunk
-// (`choices: []` plus `usage`) is what the caller's transformFrame keys
-// off when it needs to strip-or-keep based on the client's
-// `stream_options.include_usage`.
+// `json` (embeddings, images): single-shot body, `extractBilling` reads
+// usage / metadata off the parsed root. `sse` (/v1/completions): frame
+// stream, `transformFrame` mutates or drops frames (return null), then
+// `settleUsage` reports billing once the stream ends. The OpenAI
+// usage-only chunk (`choices: []` plus `usage`) is what the caller's
+// transformFrame keys off when it needs to strip-or-keep based on the
+// client's `stream_options.include_usage`.
 export type PassthroughResponseHandling =
   | {
     readonly format: 'json';
@@ -219,10 +218,9 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
         return forwardUpstreamResponse(response);
       }
 
-      // `sse` branch. Hono's streamSSE owns the response — headers must be
-      // staged on `c` before the call. Telemetry and billing run after the
-      // stream completes (in the finally), so they remain symmetric with
-      // the `json` branch.
+      // Hono's streamSSE owns the response — forwardable upstream
+      // headers must be staged on `c` *before* the streamSSE call so
+      // they survive its internal newResponse.
       if (!response.body) {
         ctx.dump?.failed(`${sourceApi} streaming upstream returned no body`);
         recordRequestPerformance(ctx.backgroundScheduler, performanceContext, true, performance.now() - requestStartedAt);

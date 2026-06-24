@@ -9,7 +9,7 @@
 //   capabilities includes "embedding" → kind: 'embedding',
 //                                       endpoints: { embeddings: {} }
 //   otherwise (chat / vision / tools / thinking) → kind: 'chat',
-//                                       endpoints: { chatCompletions, responses, messages, completions }
+//                                       endpoints: { completions, chatCompletions, responses, messages }
 //
 // Vision, tool calling, and reasoning/thinking are request-time features, not
 // per-endpoint capabilities, so they do not change routing. They surface to

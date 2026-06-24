@@ -8,13 +8,13 @@
 // when the flag is off.
 //
 // The usage chunk's `choices` shape varies in the wild. Vanilla OpenAI and
-// vanilla vLLM emit `choices: []`. Vendor vLLM forks (e.g. Zhipu/GLM on
-// `endpoint.runa.moe`) emit `choices: [{ index: 0 }]` — a placeholder
-// element with no content fields. Some upstreams (Ollama) repeat a zeroed
-// usage on every content chunk, leaving the real numbers for a final
-// `choices: []` chunk. The predicate therefore identifies the usage chunk
-// by "carries usage" + "no choice element has any actual content", which
-// matches the LiteLLM / One-API / New-API consensus.
+// vanilla vLLM emit `choices: []`. Vendor vLLM forks (e.g. the Zhipu/GLM
+// fork) emit `choices: [{ index: 0 }]` — a placeholder element with no
+// content fields. Some upstreams (Ollama) repeat a zeroed usage on every
+// content chunk, leaving the real numbers for a final `choices: []`
+// chunk. The predicate therefore identifies the usage chunk by "carries
+// usage" + "no choice element has any actual content", which matches the
+// LiteLLM / One-API / New-API consensus.
 
 export const isOpenAIUsageOnlyEventShape = (event: unknown): boolean => {
   if (typeof event !== 'object' || event === null) return false;

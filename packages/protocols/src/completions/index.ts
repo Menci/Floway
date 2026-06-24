@@ -1,12 +1,12 @@
 // OpenAI text-completion protocol (POST /v1/completions). Floway runs
-// this endpoint as a passthrough — there is no translation to or from the
-// other LLM protocols, no shared interceptor chain, and no per-event shape
-// the gateway depends on beyond the OpenAI streaming envelope. The payload
-// type below is the gateway's read-only view of the client's request so the
-// `/completions` handler can route on `model` and react to `stream` /
-// `stream_options.include_usage` without parsing manually. The trailing
-// index signature lets every other client-side field flow through to the
-// upstream without a code change here.
+// this endpoint as a passthrough, so this module declares the
+// protocol's wire shape rather than a read-time DTO: the gateway's
+// /completions handler parses the inbound body through its own local
+// shape and reads `model` / `stream` / `stream_options` directly. Only
+// `model` is read structurally by downstream code (the provider
+// interface accepts `Omit<CompletionsPayload, 'model'>` and forwards
+// the rest unchanged); every other field flows through via the index
+// signature.
 
 export interface CompletionsPayload {
   model: string;
