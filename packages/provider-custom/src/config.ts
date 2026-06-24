@@ -32,7 +32,7 @@ export type CustomAuthStyle = 'bearer' | 'anthropic' | 'none';
 // a separate field. Kept package-internal because outside callers reach the
 // upstream through the typed `customFetchXxx` transports, not by naming an
 // endpoint key.
-type CustomPathOverrideKey = 'chat_completions' | 'responses' | 'messages' | 'embeddings' | 'images_generations' | 'images_edits';
+type CustomPathOverrideKey = 'chat_completions' | 'responses' | 'messages' | 'completions' | 'embeddings' | 'images_generations' | 'images_edits';
 
 export interface CustomModelsFetch {
   enabled: boolean;
@@ -88,7 +88,7 @@ const baseUrlField = (value: unknown): string => {
   return baseUrl;
 };
 
-const PATH_OVERRIDE_KEYS = new Set<CustomPathOverrideKey>(['chat_completions', 'responses', 'messages', 'embeddings', 'images_generations', 'images_edits']);
+const PATH_OVERRIDE_KEYS = new Set<CustomPathOverrideKey>(['chat_completions', 'responses', 'messages', 'completions', 'embeddings', 'images_generations', 'images_edits']);
 
 const pathOverridesField = (value: unknown): CustomUpstreamConfigBase['pathOverrides'] => {
   if (value === undefined) return undefined;

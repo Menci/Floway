@@ -10,6 +10,7 @@ const CUSTOM_DEFAULT_PATHS = {
   chat_completions: '/v1/chat/completions',
   responses: '/v1/responses',
   messages: '/v1/messages',
+  completions: '/v1/completions',
   embeddings: '/v1/embeddings',
   images_generations: '/v1/images/generations',
   images_edits: '/v1/images/edits',
@@ -56,6 +57,8 @@ export const customFetchMessagesCountTokens = (config: CustomUpstreamConfig, ini
   customFetchInternal(config, `${resolveOverridable(config, 'messages')}/count_tokens`, init, options);
 export const customFetchEmbeddings = (config: CustomUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
   customFetchInternal(config, resolveOverridable(config, 'embeddings'), init, options);
+export const customFetchCompletions = (config: CustomUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
+  customFetchInternal(config, resolveOverridable(config, 'completions'), init, options);
 export const customFetchImagesGenerations = (config: CustomUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
   customFetchInternal(config, resolveOverridable(config, 'images_generations'), init, options);
 export const customFetchImagesEdits = (config: CustomUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>

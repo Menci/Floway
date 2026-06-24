@@ -2,6 +2,7 @@ import type { InternalModel, UpstreamModel, UpstreamProviderKind } from './model
 import type { Fetcher } from './options.ts';
 import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import type { ModelEndpoints, ModelPricing, ProtocolFrame } from '@floway-dev/protocols/common';
+import type { CompletionsPayload } from '@floway-dev/protocols/completions';
 import type { EmbeddingsPayload } from '@floway-dev/protocols/embeddings';
 import type { ImagesGenerationsPayload } from '@floway-dev/protocols/images';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
@@ -121,6 +122,15 @@ export interface ModelProvider {
   // Response verbatim.
   callMessagesCountTokens(model: UpstreamModel, body: Omit<MessagesPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
   callEmbeddings(model: UpstreamModel, body: Omit<EmbeddingsPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
+  // Legacy /v1/completions (text completions). Passthrough — the gateway
+  // does not translate from or to any other LLM endpoint. The provider
+  // forwards the body to the upstream's /v1/completions and returns the
+  // raw Response (streaming SSE or single-shot JSON, matching the
+  // client's `stream` field). Providers whose upstream does not expose
+  // /v1/completions throw a non-supported error here; their
+  // getProvidedModels() also never sets endpoints.completions, so the
+  // route is unreachable in normal operation.
+  callCompletions(model: UpstreamModel, body: Omit<CompletionsPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
   callImagesGenerations(model: UpstreamModel, body: Omit<ImagesGenerationsPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
   // The provider takes ownership of `body` and may mutate it (e.g. append
   // the upstream-specific model/deployment id). Callers must allocate a

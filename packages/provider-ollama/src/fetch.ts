@@ -14,6 +14,7 @@ const OLLAMA_PATHS = {
   chat_completions: '/v1/chat/completions',
   responses: '/v1/responses',
   messages: '/v1/messages',
+  completions: '/v1/completions',
   embeddings: '/v1/embeddings',
   tags: '/api/tags',
   show: '/api/show',
@@ -48,6 +49,8 @@ export const ollamaFetchMessagesCountTokens = (config: OllamaUpstreamConfig, ini
   ollamaFetchInternal(config, `${OLLAMA_PATHS.messages}/count_tokens`, init, options);
 export const ollamaFetchEmbeddings = (config: OllamaUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
   ollamaFetchInternal(config, OLLAMA_PATHS.embeddings, init, options);
+export const ollamaFetchCompletions = (config: OllamaUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
+  ollamaFetchInternal(config, OLLAMA_PATHS.completions, init, options);
 export const ollamaFetchTags = (config: OllamaUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
   ollamaFetchInternal(config, OLLAMA_PATHS.tags, init, options);
 export const ollamaFetchShow = (config: OllamaUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>

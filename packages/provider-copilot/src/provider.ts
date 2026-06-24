@@ -400,6 +400,9 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
     // Copilot has no /images/... upstream. getProvidedModels never emits a
     // kind='image' model for Copilot, so these stubs are unreachable; they
     // exist only to satisfy the ModelProvider interface.
+    callCompletions: () => {
+      throw new Error('Copilot provider does not implement completions');
+    },
     callImagesGenerations: () => {
       throw new Error('Copilot provider does not implement images_generations');
     },

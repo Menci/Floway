@@ -53,6 +53,7 @@ export const stubProvider = (overrides: Partial<ModelProvider> = {}): ModelProvi
   callMessages: autoWrap(overrides.callMessages) ?? (() => Promise.reject(new Error('stubProvider.callMessages was called'))),
   callMessagesCountTokens: autoWrap(overrides.callMessagesCountTokens) ?? (() => Promise.reject(new Error('stubProvider.callMessagesCountTokens was called'))),
   callEmbeddings: autoWrap(overrides.callEmbeddings) ?? (() => Promise.reject(new Error('stubProvider.callEmbeddings was called'))),
+  callCompletions: autoWrap(overrides.callCompletions) ?? (() => Promise.reject(new Error('stubProvider.callCompletions was called'))),
   callImagesGenerations: autoWrap(overrides.callImagesGenerations) ?? (() => Promise.reject(new Error('stubProvider.callImagesGenerations was called'))),
   callImagesEdits: autoWrap(overrides.callImagesEdits) ?? (() => Promise.reject(new Error('stubProvider.callImagesEdits was called'))),
 });
