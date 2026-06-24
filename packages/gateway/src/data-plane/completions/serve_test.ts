@@ -1,5 +1,7 @@
 import { test } from 'vitest';
 
+import { initDumpBroker, initDumpStore } from '../../dump/registry.ts';
+import { installDumpStubs } from '../../dump/test-fixtures.ts';
 import { buildCustomUpstreamRecord, flushAsyncWork, requestApp, setupAppTest } from '../../test-helpers.ts';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 import { assertEquals, assertExists, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
@@ -260,4 +262,138 @@ test('/v1/completions handler also serves the unversioned /completions path', as
       await response.json();
     },
   );
+});
+
+// Dual-path coverage: usage + performance + dump telemetry must land
+// equivalently on both the non-streaming JSON and the streaming SSE
+// branches. The handler does not force `stream: true` upstream the way
+// chat-completions does (no interceptor framework to feed), so the two
+// paths really do exercise different scaffold branches and the assertions
+// here keep them honest.
+test('/v1/completions non-streaming records usage row, request_total+upstream_success performance rows, and a bytes-body dump record', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
+  await registerCompletionsUpstream(repo);
+  const dumpStubs = installDumpStubs(initDumpStore, initDumpBroker);
+
+  await withMockedFetch(
+    () => Promise.resolve(jsonResponse({
+      id: 'cmpl_x',
+      object: 'text_completion',
+      created: 1,
+      model: 'davinci-002',
+      choices: [{ index: 0, text: 'ok', finish_reason: 'stop' }],
+      usage: { prompt_tokens: 7, completion_tokens: 2, total_tokens: 9 },
+    })),
+    async () => {
+      const response = await requestApp('/v1/completions', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+        body: JSON.stringify({ model: 'davinci-002', prompt: 'hello' }),
+      });
+      assertEquals(response.status, 200);
+      await response.json();
+    },
+  );
+
+  await flushAsyncWork();
+
+  const usage = await repo.usage.listAll();
+  assertEquals(usage.length, 1);
+  assertEquals(usage[0]?.model, 'davinci-002');
+  assertEquals(usage[0]?.tokens.input, 7);
+  assertEquals(usage[0]?.tokens.output, 2);
+
+  const performance = await repo.performance.listAll();
+  const requestTotal = performance.find(row => row.metricScope === 'request_total');
+  const upstreamSuccess = performance.find(row => row.metricScope === 'upstream_success');
+  assertExists(requestTotal);
+  assertExists(upstreamSuccess);
+  assertEquals(requestTotal.model, 'davinci-002');
+  assertEquals(requestTotal.stream, false);
+  assertEquals(requestTotal.requests, 1);
+  assertEquals(requestTotal.errors, 0);
+  assertEquals(upstreamSuccess.stream, false);
+  assertEquals(upstreamSuccess.requests, 1);
+  assertEquals(upstreamSuccess.errors, 0);
+
+  assertEquals(dumpStubs.stored.length, 1);
+  const dump = dumpStubs.stored[0]!.record;
+  assertEquals(dump.meta.path, '/v1/completions');
+  assertEquals(dump.meta.status, 200);
+  assertEquals(dump.meta.model, 'davinci-002');
+  assertEquals(dump.meta.inputTokens, 7);
+  assertEquals(dump.meta.outputTokens, 2);
+  // Non-streaming: the upstream sent a one-shot JSON, so the dump
+  // captures the bytes (not a frame log).
+  assertEquals(dump.response.body.type, 'bytes');
+});
+
+test('/v1/completions streaming records usage row, request_total+upstream_success performance rows with stream=true, and a frame-log dump record', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
+  await registerCompletionsUpstream(repo);
+  const dumpStubs = installDumpStubs(initDumpStore, initDumpBroker);
+
+  await withMockedFetch(
+    () => Promise.resolve(completionStream()),
+    async () => {
+      const response = await requestApp('/v1/completions', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+        body: JSON.stringify({ model: 'davinci-002', prompt: 'hello', stream: true }),
+      });
+      assertEquals(response.status, 200);
+      await response.text();
+    },
+  );
+
+  await flushAsyncWork();
+
+  const usage = await repo.usage.listAll();
+  assertEquals(usage.length, 1);
+  assertEquals(usage[0]?.tokens.input, 4);
+  assertEquals(usage[0]?.tokens.output, 2);
+
+  const performance = await repo.performance.listAll();
+  const requestTotal = performance.find(row => row.metricScope === 'request_total');
+  const upstreamSuccess = performance.find(row => row.metricScope === 'upstream_success');
+  assertExists(requestTotal);
+  assertExists(upstreamSuccess);
+  assertEquals(requestTotal.stream, true);
+  assertEquals(requestTotal.requests, 1);
+  assertEquals(requestTotal.errors, 0);
+  assertEquals(upstreamSuccess.stream, true);
+  assertEquals(upstreamSuccess.requests, 1);
+  assertEquals(upstreamSuccess.errors, 0);
+
+  assertEquals(dumpStubs.stored.length, 1);
+  const dump = dumpStubs.stored[0]!.record;
+  assertEquals(dump.meta.path, '/v1/completions');
+  assertEquals(dump.meta.status, 200);
+  assertEquals(dump.meta.model, 'davinci-002');
+  assertEquals(dump.meta.inputTokens, 4);
+  assertEquals(dump.meta.outputTokens, 2);
+  // Streaming: dump stores the protocol frames the gateway saw from
+  // upstream BEFORE transformFrame ran. The fixture stream emits two
+  // content events, one usage-only event (which the client did not opt
+  // into and so it was stripped from the forwarded stream), and a done
+  // terminator.
+  assertEquals(dump.response.body.type, 'stream');
+  if (dump.response.body.type === 'stream') {
+    const frames = dump.response.body.events.map(e => e.frame);
+    assertEquals(frames.length, 4);
+    assertEquals(frames[0]?.type, 'event');
+    assertEquals(frames[1]?.type, 'event');
+    assertEquals(frames[2]?.type, 'event');
+    // Upstream's usage chunk is preserved in the dump even though it was
+    // stripped from the client-facing stream.
+    const usageFrame = frames[2];
+    if (usageFrame?.type === 'event') {
+      const event = usageFrame.event as { choices: unknown[]; usage: { prompt_tokens: number } };
+      assertEquals(event.choices.length, 0);
+      assertEquals(event.usage.prompt_tokens, 4);
+    }
+    assertEquals(frames[3]?.type, 'done');
+  }
 });
