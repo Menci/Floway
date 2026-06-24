@@ -16,7 +16,8 @@ const registerCompletionsUpstream = async (repo: Awaited<ReturnType<typeof setup
     sortOrder: 100,
     config: {
       baseUrl: 'https://passthrough.example.com',
-      bearerToken: 'sk-passthrough',
+      authStyle: 'bearer',
+      apiKey: 'sk-passthrough',
       endpoints: {},
       modelsFetch: { enabled: false },
       models: [{
@@ -209,7 +210,8 @@ test('/v1/completions rejects a model without the completions endpoint with the 
     id: 'up_chat_only',
     config: {
       baseUrl: 'https://passthrough.example.com',
-      bearerToken: 'sk-x',
+      authStyle: 'bearer',
+      apiKey: 'sk-x',
       endpoints: {},
       modelsFetch: { enabled: false },
       models: [{
