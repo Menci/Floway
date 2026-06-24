@@ -109,14 +109,10 @@ const messagesReasoningEffort = (body: Omit<MessagesPayload, 'model'>): string |
 
 const responsesReasoningEffort = (body: Omit<ResponsesPayload, 'model'>): string | undefined => (body.reasoning?.effort && body.reasoning.effort !== 'none' ? body.reasoning.effort : undefined);
 
-// The three Copilot stubs — /completions and /images/* — exist only to
-// satisfy the ModelProvider interface. Copilot's catalog never declares
-// those endpoints, so they're unreachable; calling them is a routing
-// bug, so we throw loudly. Matches the shape provider-claude-code uses
-// for the same pattern.
-const rejectUnsupported = (capability: string) => (): never => {
-  throw new Error(`Copilot provider does not implement ${capability}`);
-};
+// Copilot's catalog never declares /completions or /images/*, so these
+// stubs are unreachable; calling one is a routing bug we surface loudly.
+const rejectUnsupported = (capability: string) => (): Promise<never> =>
+  Promise.reject(new Error(`Copilot provider does not implement ${capability}`));
 
 const rawModelFor = (model: UpstreamModel, endpoint: ModelEndpointKey, hints: ModelSelectionHints = {}): CopilotRawModel => {
   // Copilot exposes one canonical public Claude model id per family. Raw

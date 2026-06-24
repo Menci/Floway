@@ -1,4 +1,4 @@
-// Shared serve scaffold for non-LLM passthrough data-plane endpoints. These
+// Shared serve scaffold for passthrough data-plane endpoints. These
 // bypass the LLM source/target executor because they have no protocol
 // translation — the request body is forwarded to the chosen provider's
 // matching endpoint and the upstream response is passed through back to
@@ -13,7 +13,7 @@ import type { Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
-import type { NonLlmServeApiName } from './api-names.ts';
+import type { PassthroughServeApiName } from './api-names.ts';
 import { appendFailedUpstreams } from './failed-upstreams.ts';
 import { inboundHeadersForUpstream } from './inbound-headers.ts';
 import type { PerformanceTelemetryContext } from './telemetry/performance.ts';
@@ -97,7 +97,7 @@ const scheduleUsageRecord = (scheduler: BackgroundScheduler, promise: Promise<vo
 // failure). Mirrors `SourceStreamState.failedAfter` on the LLM endpoints.
 const transformUpstreamSseStream = async function* (
   upstreamBody: ReadableStream<Uint8Array>,
-  sourceApi: NonLlmServeApiName,
+  sourceApi: PassthroughServeApiName,
   transformFrame: (frame: ProtocolFrame<unknown>) => ProtocolFrame<unknown> | null,
   dump: GatewayCtx['dump'],
   signal: AbortSignal | undefined,
@@ -135,7 +135,7 @@ export type PassthroughResponseHandling =
 export interface PassthroughServeContext {
   readonly c: AuthedContext;
   readonly ctx: GatewayCtx;
-  readonly sourceApi: NonLlmServeApiName;
+  readonly sourceApi: PassthroughServeApiName;
   // Already-validated public model id the client requested. The helper
   // resolves it against the provider registry; if no upstream serves the
   // id, the client sees a 404 with the standard wording.
@@ -221,7 +221,8 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
       // Hono's streamSSE owns the response — forwardable upstream
       // headers must be staged on `c` *before* the streamSSE call so
       // they survive its internal newResponse.
-      if (!response.body) {
+      const upstreamBody = response.body;
+      if (!upstreamBody) {
         ctx.dump?.failed(`${sourceApi} streaming upstream returned no body`);
         recordRequestPerformance(ctx.backgroundScheduler, performanceContext, true, performance.now() - requestStartedAt);
         // Preserve upstream correlation headers (x-request-id, cf-ray, ...)
@@ -238,7 +239,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
         let streamError: unknown;
         let terminalFrameSeen = false;
         try {
-          const frames = transformUpstreamSseStream(response.body!, sourceApi, sseResponseHandling.transformFrame, ctx.dump, ctx.abortSignal, () => {
+          const frames = transformUpstreamSseStream(upstreamBody, sourceApi, sseResponseHandling.transformFrame, ctx.dump, ctx.abortSignal, () => {
             terminalFrameSeen = true;
           });
           completion = await writeSSEFrames(stream, frames, {

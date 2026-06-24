@@ -56,9 +56,10 @@ const prepareCompletionsRequest = (bytes: Uint8Array): PreparedRequest => {
 
   const wantsStream = request.stream === true;
   const clientWantsUsageChunk = request.stream_options?.include_usage === true;
-  const inbound = request.stream_options;
-  const streamOptions: Record<string, unknown> = inbound !== null && typeof inbound === 'object' && !Array.isArray(inbound)
-    ? { ...(inbound as Record<string, unknown>) }
+  const streamOptions: Record<string, unknown> = request.stream_options !== null
+    && typeof request.stream_options === 'object'
+    && !Array.isArray(request.stream_options)
+    ? { ...(request.stream_options as Record<string, unknown>) }
     : {};
   return { type: 'ok', body: request, streamOptions, model: request.model, wantsStream, clientWantsUsageChunk };
 };

@@ -9,14 +9,10 @@ import { billableServiceTier, tokenUsage } from '../shared/telemetry/usage.ts';
 // so the two input dimensions stay disjoint, matching what
 // tokenUsageFromChatCompletionsUsage does for chat.
 //
-// `service_tier` lives on the response root, not inside `usage`. vLLM
-// surfaces it on the non-streaming /v1/completions body (observed null
-// on a Zhipu/GLM fork). The streaming path was observed to omit the
-// field, but `service_tier` rides on every chunk root in the
-// chat-completions shape; the gateway's streaming closure tracks it
-// independently of the usage-only chunk and hands both to this helper
-// at settle time — so the moment any upstream populates the field
-// (per-chunk or only on the usage chunk) billing picks it up.
+// `service_tier` lives on the response root, not inside `usage`, and is
+// supplied separately by the caller. vLLM surfaces it on the
+// non-streaming /v1/completions body (observed null on a Zhipu/GLM
+// fork); the streaming path was observed to omit the field.
 
 export const tokenUsageFromCompletionsUsage = (usage: unknown, serviceTier: string | null | undefined): TokenUsage | null => {
   if (!usage || typeof usage !== 'object') return null;

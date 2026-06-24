@@ -56,9 +56,8 @@ export interface CompletionsStreamEvent {
   system_fingerprint?: string;
 }
 
-// Reassembled single-shot result. Mirrors what OpenAI returns from a
-// non-streaming /v1/completions call. The dashboard's dump renderer uses
-// this to fold the captured frame log back into a human-readable view.
+// Reassembled single-shot result, used by the dashboard dump renderer
+// to fold a captured streaming frame log back into a single-shot view.
 export interface CompletionsChoice {
   index: number;
   text: string;
