@@ -30,6 +30,7 @@ const wranglerProxiedPaths = [
   '/chat/completions',
   '/responses',
   '/messages',
+  '/completions',
   '/embeddings',
   '/models',
   '/images/generations',

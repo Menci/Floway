@@ -25,9 +25,9 @@
 ## Project
 
 Floway is an LLM API gateway. It exposes Anthropic Messages, OpenAI
-Responses, OpenAI Chat Completions, OpenAI legacy Completions (text
-completions — passthrough only), Embeddings, OpenAI Images, and Google
-Gemini-compatible APIs over a unified upstream model. Provider kinds are
+Responses, OpenAI Chat Completions, OpenAI Completions, Embeddings,
+OpenAI Images, and Google Gemini-compatible APIs over a unified upstream
+model. Provider kinds are
 `copilot`, `custom`, `azure`, `codex` (ChatGPT subscription via the
 Codex CLI's OAuth client), `claude-code` (Claude.ai Pro/Max subscription
 via the Claude Code CLI's OAuth client), and `ollama` (any Ollama-
@@ -147,8 +147,8 @@ pnpm run db:migrate:remote   # production D1
 
 `dev` runs the Worker on `http://127.0.0.1:8788` and the SPA on
 `http://localhost:5174`. For frontend development open the Vite SPA (5174):
-Vite proxies `/api`, `/auth`, `/v1`, `/v1beta`, `/embeddings`, and
-`/models` to the Worker, so relative-URL fetches in `apps/web` work
+Vite proxies `/api`, `/auth`, `/v1`, `/v1beta`, `/completions`, `/embeddings`,
+and `/models` to the Worker, so relative-URL fetches in `apps/web` work
 identically in dev and prod. The Worker port serves the last built
 `apps/web/dist` via Workers Static Assets; direct SPA routes (e.g.
 `/login`, `/dashboard/...`) require

@@ -17,6 +17,7 @@ target ships in the same repo for self-hosting on a long-lived process.
 | Anthropic Messages                      | `POST /v1/messages`, `POST /v1/messages/count_tokens` |
 | OpenAI Responses                        | `POST /v1/responses`, `POST /v1/responses/compact`, `GET /v1/responses` WebSocket |
 | OpenAI Chat Completions                 | `POST /v1/chat/completions`   |
+| OpenAI Completions                      | `POST /v1/completions`        |
 | OpenAI Embeddings                       | `POST /v1/embeddings`         |
 | OpenAI Images                           | `POST /v1/images/generations` |
 | OpenAI Image Edits                      | `POST /v1/images/edits`       |
@@ -25,7 +26,9 @@ target ships in the same repo for self-hosting on a long-lived process.
 
 For each public model, Floway picks the first provider binding that can serve
 the request, translating between source and target protocols when the upstream
-speaks a different shape.
+speaks a different shape. `/v1/completions` is forwarded to upstreams that
+expose the OpenAI text-completions endpoint (Custom OpenAI-compatible, Azure
+OpenAI, Ollama) without cross-protocol translation.
 
 ## Quick Start
 

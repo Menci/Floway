@@ -54,6 +54,7 @@
       "/responses/*",
       "/messages",
       "/messages/*",
+      "/completions",
       "/embeddings",
       "/images/*",
       "/models",
