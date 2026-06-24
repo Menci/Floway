@@ -1,6 +1,6 @@
-// All Codex / ChatGPT upstream constants. Do NOT make these operator-
-// configurable — wrapper-identifying UA suffixes trigger selective 401s from
-// OpenAI's bot management.
+// All Codex / ChatGPT upstream constants. Keep the data-plane identity fixed
+// to the official Codex CLI shape; operator-specific products or wrapper/MCP
+// UA suffixes make the client fingerprint drift.
 
 // codex-cli's OAuth client id. Used at auth.openai.com for both authorize and
 // token-exchange. Same value across the canonical Codex CLI source and every
