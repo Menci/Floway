@@ -55,6 +55,7 @@ const modelEndpointsSchema = z.object({
   chatCompletions: z.object({}).optional(),
   responses: z.object({}).optional(),
   messages: z.object({}).optional(),
+  completions: z.object({}).optional(),
   embeddings: z.object({}).optional(),
   imagesGenerations: z.object({}).optional(),
   imagesEdits: z.object({}).optional(),

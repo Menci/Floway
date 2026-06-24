@@ -73,6 +73,29 @@ test('POST /api/upstreams creates custom upstreams and redacts bearer tokens', a
   assertEquals(items[0].config.apiKey, undefined);
 });
 
+// Regression: the Zod modelEndpointsSchema previously did not list
+// `completions`, so a POST that declared a model with only the completions
+// capability had it silently stripped by Zod and then failed the runtime
+// "must declare at least one endpoint" check.
+test('POST /api/upstreams accepts a custom model whose only endpoint is /completions', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+
+  const resp = await requestApp('/api/upstreams', authed(adminSession, createBody({
+    config: {
+      baseUrl: 'https://custom.example.com',
+      authStyle: 'none',
+      endpoints: {},
+      modelsFetch: { enabled: false },
+      models: [{ upstreamModelId: 'davinci-002', endpoints: { completions: {} } }],
+    },
+  })));
+
+  assertEquals(resp.status, 201);
+  const created = (await resp.json()) as JsonObject;
+  assertEquals(created.config.models[0].endpoints, { completions: {} });
+});
+
 test('POST /api/upstreams validates Azure models and redacts API keys', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
