@@ -1,4 +1,4 @@
-import { getEnv, getRuntimeKind, type RuntimeKind } from '@floway-dev/platform';
+import { getEnvOptional, getRuntimeKind, type RuntimeKind } from '@floway-dev/platform';
 
 export interface RuntimeInfo {
   kind: RuntimeKind;
@@ -11,7 +11,7 @@ export const getCurrentColo = (request: Request): string | null => {
     return typeof colo === 'string' && colo.length > 0 ? colo : null;
   }
   // On Node, RUNTIME_LOCATION lets operators tag each instance; unset means no colo concept.
-  const env = getEnv('RUNTIME_LOCATION');
+  const env = getEnvOptional('RUNTIME_LOCATION', '');
   return env.length > 0 ? env : null;
 };
 
