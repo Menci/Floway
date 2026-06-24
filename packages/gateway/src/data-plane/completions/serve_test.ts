@@ -27,8 +27,6 @@ const registerCompletionsUpstream = async (repo: Awaited<ReturnType<typeof setup
   }));
 };
 
-const responseBytes = (s: string): Uint8Array => new TextEncoder().encode(s);
-
 const completionStream = (): Response => {
   const body = [
     'data: {"id":"cmpl_X","object":"text_completion","created":1,"model":"davinci-002","choices":[{"index":0,"text":"hello"}]}\n\n',
@@ -36,7 +34,7 @@ const completionStream = (): Response => {
     'data: {"id":"cmpl_X","object":"text_completion","created":1,"model":"davinci-002","choices":[],"usage":{"prompt_tokens":4,"completion_tokens":2,"total_tokens":6}}\n\n',
     'data: [DONE]\n\n',
   ].join('');
-  return new Response(responseBytes(body), {
+  return new Response(body, {
     status: 200,
     headers: { 'content-type': 'text/event-stream' },
   });

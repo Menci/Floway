@@ -145,14 +145,14 @@ const transformUpstreamSseStream = async function* (
 // chunk.
 export type PassthroughResponseHandling =
   | {
-      readonly format: 'json';
-      readonly extractUsage: (usage: unknown) => TokenUsage | null;
-    }
+    readonly format: 'json';
+    readonly extractUsage: (usage: unknown) => TokenUsage | null;
+  }
   | {
-      readonly format: 'sse';
-      readonly transformFrame: (frame: ProtocolFrame<unknown>) => ProtocolFrame<unknown> | null;
-      readonly settleUsage: () => TokenUsage | null;
-    };
+    readonly format: 'sse';
+    readonly transformFrame: (frame: ProtocolFrame<unknown>) => ProtocolFrame<unknown> | null;
+    readonly settleUsage: () => TokenUsage | null;
+  };
 
 export interface PassthroughServeContext {
   readonly c: AuthedContext;

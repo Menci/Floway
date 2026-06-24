@@ -21,11 +21,11 @@
 import type { Context } from 'hono';
 
 import { completionsUsageFromStreamEvent, tokenUsageFromCompletionsUsage } from './usage.ts';
+import type { TokenUsage } from '../../repo/types.ts';
 import { createGatewayCtxFromHono } from '../llm/shared/gateway-ctx.ts';
 import { readRequestBody } from '../llm/shared/request-body.ts';
 import type { PassthroughResponseHandling } from '../shared/passthrough-serve.ts';
 import { passthroughApiError, passthroughServe } from '../shared/passthrough-serve.ts';
-import type { TokenUsage } from '../../repo/types.ts';
 import { isOpenAIUsageOnlyEventShape, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { CompletionsUsage } from '@floway-dev/protocols/completions';
 
