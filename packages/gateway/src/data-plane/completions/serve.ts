@@ -86,9 +86,7 @@ const withIncludeUsageStreamOption = (body: Record<string, unknown>): Record<str
   return { ...body, stream_options: merged };
 };
 
-const sseResponseHandling = (clientWantsUsageChunk: boolean): {
-  handling: PassthroughResponseHandling & { readonly format: 'sse' };
-} => {
+const sseResponseHandling = (clientWantsUsageChunk: boolean): Extract<PassthroughResponseHandling, { format: 'sse' }> => {
   let accumulatedUsage: CompletionsUsage | null = null;
   const transformFrame = (frame: ProtocolFrame<unknown>): ProtocolFrame<unknown> | null => {
     if (frame.type !== 'event') return frame;
@@ -99,7 +97,7 @@ const sseResponseHandling = (clientWantsUsageChunk: boolean): {
   };
   const settleUsage = (): TokenUsage | null =>
     accumulatedUsage ? tokenUsageFromCompletionsUsage(accumulatedUsage) : null;
-  return { handling: { format: 'sse', transformFrame, settleUsage } };
+  return { format: 'sse', transformFrame, settleUsage };
 };
 
 export const completions = async (c: Context): Promise<Response> => {
@@ -130,7 +128,7 @@ export const completions = async (c: Context): Promise<Response> => {
     call: (binding, opts) =>
       binding.provider.callCompletions(binding.upstreamModel, upstreamBody, request.wantsStream ? ctx.abortSignal : undefined, opts),
     response: request.wantsStream
-      ? sseResponseHandling(request.clientWantsUsageChunk).handling
+      ? sseResponseHandling(request.clientWantsUsageChunk)
       : { format: 'json', extractUsage: tokenUsageFromCompletionsUsage },
     noBindingMessage: modelId => `Model ${modelId} does not support the /completions endpoint.`,
   });

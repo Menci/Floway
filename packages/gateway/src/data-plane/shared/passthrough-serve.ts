@@ -7,10 +7,9 @@
 // Response handling discriminates on the wire format the upstream produces.
 // `json` is single-shot (embeddings, images): the body is parsed once, usage
 // is read from the parsed JSON, and the response is forwarded verbatim.
-// `sse` is streaming (text-completions /v1/completions): bytes flow through
-// a parsed
-// frame pipeline that the caller transforms before reserialization. The
-// scaffold never inspects frame contents — caller-owned closures detect
+// `sse` is streaming (text-completions /v1/completions): bytes flow through a
+// parsed frame pipeline that the caller transforms before reserialization.
+// The scaffold never inspects frame contents — caller-owned closures detect
 // usage frames, accumulate totals, and may drop frames as needed. Usage and
 // request-performance writes are scheduled through the runtime's background
 // scheduler so transient repo failures cannot turn a successful 200 from
@@ -113,17 +112,26 @@ const safeJsonClone = async (resp: Response, sourceApi: NonLlmServeApiName): Pro
 // accumulator before the transform so post-hoc forensics see the upstream's
 // truth — including frames the caller drops from the client-facing stream
 // (e.g. the usage-only chunk when the client did not opt into include_usage).
+//
+// `onTerminalFrame` is fired the moment we see the upstream's terminal
+// (`done`) frame. The outer telemetry classifier uses this to distinguish
+// a client cancel that lands after the stream's natural end (graceful —
+// upstream already finished its work) from a mid-stream cancel
+// (genuine failure). The LLM streaming endpoints make the same
+// distinction via `SourceStreamState.failedAfter`.
 const transformUpstreamSseStream = async function* (
   upstreamBody: ReadableStream<Uint8Array>,
   sourceApi: NonLlmServeApiName,
   transformFrame: (frame: ProtocolFrame<unknown>) => ProtocolFrame<unknown> | null,
   dump: GatewayCtx['dump'],
   signal: AbortSignal | undefined,
+  onTerminalFrame: () => void,
 ): AsyncGenerator<SseFrame> {
   const sseFrames = parseSSEStream(upstreamBody, signal ? { signal } : {});
   for await (const parsed of parseTargetStreamFrames<unknown>(sseFrames, { protocol: sourceApi })) {
     const inputFrame: ProtocolFrame<unknown> = parsed.type === 'done' ? doneFrame() : eventFrame(parsed.data);
     dump?.frame(inputFrame);
+    if (inputFrame.type === 'done') onTerminalFrame();
     const outputFrame = transformFrame(inputFrame);
     if (outputFrame === null) continue;
     yield outputFrame.type === 'done' ? sseFrame('[DONE]') : sseFrame(JSON.stringify(outputFrame.event));
@@ -241,15 +249,25 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
       if (!response.body) {
         ctx.dump?.failed(`${sourceApi} streaming upstream returned no body`);
         recordRequestPerformance(ctx.backgroundScheduler, performanceContext, true, performance.now() - requestStartedAt);
+        // Preserve upstream correlation headers (x-request-id, cf-ray, ...)
+        // on the synthesized 502 so this rare edge case is still traceable.
+        for (const [name, value] of response.headers.entries()) {
+          if (isForwardedResponseHeader(name)) c.header(name, value);
+        }
         return passthroughApiError(c, 'Upstream returned a streaming response with no body.', 502);
       }
       stageForwardedResponseHeaders(c, response);
+      // Capture the SSE-narrowed handler outside the streamSSE callback so
+      // TypeScript keeps the narrowing across the async closure boundary.
       const sseResponseHandling = responseHandling;
       return streamSSE(c, async stream => {
         let completion: StreamCompletion = 'error';
         let streamError: unknown;
+        let terminalFrameSeen = false;
         try {
-          const frames = transformUpstreamSseStream(response.body!, sourceApi, sseResponseHandling.transformFrame, ctx.dump, ctx.abortSignal);
+          const frames = transformUpstreamSseStream(response.body!, sourceApi, sseResponseHandling.transformFrame, ctx.dump, ctx.abortSignal, () => {
+            terminalFrameSeen = true;
+          });
           completion = await writeSSEFrames(stream, frames, {
             keepAlive: { frame: sseCommentFrame('keepalive') },
             ...(ctx.downstreamAbortController !== undefined ? { downstreamAbortController: ctx.downstreamAbortController } : {}),
@@ -258,14 +276,24 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
           streamError = e;
         } finally {
           const usage = sseResponseHandling.settleUsage();
-          const failed = streamError !== undefined || completion !== 'eof';
+          // Treat a client cancel that lands after the upstream's terminal
+          // frame as graceful — upstream already finished its work and
+          // billing should record what was accumulated. Mid-stream cancel,
+          // upstream cut-off without a terminal frame, and writer / parser
+          // errors are all real failures. Mirrors the LLM endpoints'
+          // SourceStreamState.failedAfter semantics.
+          const failed = streamError !== undefined || completion === 'error' || !terminalFrameSeen;
           if (failed) {
             ctx.dump?.failed(streamError ?? `${sourceApi} stream ended with completion=${completion}`);
           } else {
             ctx.dump?.success(modelIdentity, usage);
-            if (usage) {
-              scheduleUsageRecord(ctx.backgroundScheduler, recordTokenUsage(ctx.apiKeyId, modelIdentity, usage));
-            }
+          }
+          // Record any accumulated usage regardless of the failed flag —
+          // tokens already metered upstream should bill even when the
+          // downstream half of the round-trip turned out badly. The LLM
+          // streaming endpoints follow the same rule.
+          if (usage) {
+            scheduleUsageRecord(ctx.backgroundScheduler, recordTokenUsage(ctx.apiKeyId, modelIdentity, usage));
           }
           recordRequestPerformance(ctx.backgroundScheduler, performanceContext, failed, performance.now() - requestStartedAt);
         }

@@ -2,17 +2,21 @@ import type { CompletionsChoice, CompletionsResult, CompletionsStreamEvent, Comp
 
 // Fold a /v1/completions streaming chunk sequence back into the
 // single-shot envelope. Per-choice `text` concatenates, the latest
-// non-null `finish_reason` wins, and the final usage chunk (which carries
-// an empty `choices`) seeds the result's usage block. Chunk-level
-// identity (`id`, `created`, `model`, `system_fingerprint`) is taken from
-// the first chunk that carried it.
+// non-null `finish_reason` wins, and the final usage chunk seeds the
+// result's usage block. Chunk-level identity (`id`, `created`, `model`,
+// `system_fingerprint`) is taken from the first chunk that carried it.
 //
-// Unlike chat-completions, the text-completion protocol has no tool-calls or
-// reasoning surface, so the fold is straightforward text accumulation
-// per index. Unknown choice / chunk fields fall on the floor by design;
-// the dashboard renders the captured raw frame stream alongside the
-// reassembled result for a forensic view of what the upstream actually
-// emitted.
+// Unlike chat-completions, the text-completion protocol has no
+// tool-calls or reasoning surface, so the fold is straightforward text
+// accumulation per index. Unknown choice / chunk fields fall on the
+// floor by design; the dashboard renders the captured raw frame stream
+// alongside the reassembled result for a forensic view of what the
+// upstream actually emitted.
+//
+// Placeholder choices (only `index`, no `text` / `finish_reason`) appear
+// in the Zhipu/GLM vLLM fork's final usage chunk. They contribute
+// nothing to either text or finish_reason and are folded as no-ops
+// through the same per-index accumulator.
 
 export const reassembleCompletionsEvents = async (chunks: AsyncIterable<CompletionsStreamEvent>): Promise<CompletionsResult> => {
   let id = '';
@@ -44,7 +48,7 @@ export const reassembleCompletionsEvents = async (chunks: AsyncIterable<Completi
     if (!Array.isArray(chunk.choices)) continue;
     for (const choice of chunk.choices) {
       const accumulator = choices.get(choice.index) ?? { text: '', finishReason: null, logprobs: undefined };
-      if (typeof choice.text === 'string') accumulator.text += choice.text;
+      if (choice.text !== undefined) accumulator.text += choice.text;
       if (choice.finish_reason) accumulator.finishReason = choice.finish_reason;
       if (choice.logprobs !== undefined) accumulator.logprobs = choice.logprobs;
       choices.set(choice.index, accumulator);

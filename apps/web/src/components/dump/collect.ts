@@ -139,9 +139,9 @@ const collectChatCompletionsStream = async (events: readonly DumpStreamEvent[]):
   }
 };
 
-// Legacy /v1/completions: no inline error envelope (errors surface as 4xx
-// JSON or as truncation, not as event-stream-level error frames), so a
-// `done` frame is the sole completion signal.
+// /v1/completions: no inline error envelope (errors surface as 4xx JSON or
+// as truncation, not as event-stream-level error frames), so a `done` frame
+// is the sole completion signal.
 const collectCompletionsStream = async (events: readonly DumpStreamEvent[]): Promise<CollectOutcome<CompletionsResult>> => {
   let truncated = true;
   for (const ev of events) {

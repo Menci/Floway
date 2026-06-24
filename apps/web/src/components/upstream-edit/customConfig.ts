@@ -27,11 +27,11 @@ export type CustomAuthStyle = 'bearer' | 'anthropic' | 'none';
 
 // Form state is kept flat (apiKey is always a string slot, even when
 // authStyle === 'none' parks it as ''). This keeps two-way binding simple
-// across the SecretInput and lets the user toggle between styles without
-// the field disappearing from the underlying object. buildCustomConfigCore
-// projects this onto the discriminated wire shape: it omits apiKey entirely
-// when 'none', and otherwise sends a trimmed key (or omits it for the
-// edit-mode "keep stored secret" path).
+// across the SecretInput and lets the operator toggle between styles
+// without the field disappearing from the underlying object.
+// buildCustomConfigCore projects this onto the discriminated wire shape: it
+// omits apiKey entirely when 'none', and otherwise sends a trimmed key (or
+// omits it for the edit-mode "keep stored secret" path).
 export interface CustomDraft {
   baseUrl: string;
   authStyle: CustomAuthStyle;

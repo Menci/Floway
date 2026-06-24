@@ -16,12 +16,15 @@ export interface CompletionsPayload {
 }
 
 // One choice in a streaming chunk. `text` accumulates across chunks (the
-// streaming contract), `finish_reason` is null until the final chunk for
-// the choice. `logprobs` is opaque to the gateway — passed through as-is.
+// streaming contract). The Zhipu/GLM vLLM fork seen in the wild emits a
+// final placeholder choice carrying only `index` (no `text`, no
+// `finish_reason`) alongside the usage block — so `text` and
+// `finish_reason` are optional, matching that shape on the typed surface.
+// `logprobs` is opaque to the gateway — passed through as-is.
 export interface CompletionsChoiceStreaming {
   index: number;
-  text: string;
-  finish_reason: string | null;
+  text?: string;
+  finish_reason?: string | null;
   logprobs?: unknown;
 }
 
@@ -35,16 +38,18 @@ export interface CompletionsUsage {
   // Fireworks, OpenRouter, and xAI Grok all emit `cached_tokens` here on
   // /v1/completions, and Azure mirrors the schema. Floway extracts the
   // split when present so billing dimensions match what the upstream
-  // actually reported. `cache_creation_input_tokens` mirrors the Anthropic
-  // cache-write shape and is preserved defensively for upstreams that
-  // bridge in that direction.
+  // actually reported. `cache_creation_input_tokens` is the Anthropic
+  // cache-write field — kept on the typed surface so an upstream that
+  // bridges Anthropic-shape usage onto the OpenAI envelope reports
+  // correctly without a code change here.
   prompt_tokens_details?: { cached_tokens?: number; cache_creation_input_tokens?: number };
 }
 
-// One streaming chunk on the wire. The final usage-only chunk (sent when
-// `stream_options.include_usage` is on) carries an empty `choices` array
-// plus `usage`; isOpenAIUsageOnlyEventShape (in protocols/common) detects
-// this shape without consulting the typed surface.
+// One streaming chunk on the wire. The final usage chunk (sent when
+// `stream_options.include_usage` is on) carries the usage totals plus an
+// empty or placeholder `choices` array; isOpenAIUsageOnlyEventShape (in
+// protocols/common) detects that chunk shape without consulting the typed
+// surface.
 export interface CompletionsStreamEvent {
   id: string;
   object: 'text_completion';
