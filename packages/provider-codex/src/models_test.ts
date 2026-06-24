@@ -30,7 +30,7 @@ describe('fetchCodexCatalog', () => {
     expect(headers.get('chatgpt-account-id')).toBe('acc');
     expect(headers.get('originator')).toBe(CODEX_ORIGINATOR);
     expect(headers.get('user-agent')).toBe(CODEX_USER_AGENT);
-    expect(headers.get('user-agent')).toBe('codex_cli_rs/0.137.0 (Mac OS 26.5.0; arm64) iTerm.app/3.6.10');
+    expect(headers.get('user-agent')).toBe(`codex_cli_rs/${CODEX_CLI_VERSION} (Mac OS 26.5.0; arm64) iTerm.app/3.6.10`);
     expect(headers.get('openai-beta')).toBeNull();
   });
 
