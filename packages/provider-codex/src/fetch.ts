@@ -2,9 +2,10 @@ import { ensureCodexAccessToken, invalidateCodexAccessToken, mintCodexAccessToke
 import { CodexOAuthSessionTerminatedError } from './auth/oauth.ts';
 import {
   CODEX_BACKEND_BASE,
-  CODEX_RESPONSES_ORIGINATOR,
+  CODEX_CLI_VERSION,
+  CODEX_ORIGINATOR,
   CODEX_RESPONSES_PATH,
-  CODEX_RESPONSES_USER_AGENT,
+  CODEX_USER_AGENT,
 } from './constants.ts';
 import {
   getCodexQuota,
@@ -85,39 +86,63 @@ const ensureAccessToken = async (opts: CallCodexResponsesOptions): Promise<strin
   return entry.token;
 };
 
-const CODEX_RESPONSES_PASSTHROUGH_HEADERS = [
-  'version',
-  'x-codex-beta-features',
-  'x-codex-turn-metadata',
-  'x-client-request-id',
-] as const;
+interface CodexRequestIdentity {
+  installationId: string;
+  sessionId: string;
+  threadId: string;
+  windowId: string;
+}
 
 const trimHeader = (headers: Headers, name: string): string | null => {
   const value = headers.get(name)?.trim();
   return value || null;
 };
 
-const setCodexSessionHeaders = (headers: Headers, source: Headers): void => {
-  const sessionId = trimHeader(source, 'session-id') ?? trimHeader(source, 'session_id') ?? crypto.randomUUID();
-  headers.set('session-id', sessionId);
+const buildCodexRequestIdentity = async (opts: CallCodexResponsesOptions): Promise<CodexRequestIdentity> => {
+  const sessionId = trimHeader(opts.headers, 'session-id') ?? trimHeader(opts.headers, 'session_id') ?? crypto.randomUUID();
+  const installationId = await sha256Uuid(`codex-installation:${opts.upstreamId}:${opts.account.chatgptAccountId}`);
+  const windowId = await sha256Uuid(`codex-window:${opts.upstreamId}:${opts.account.chatgptAccountId}:${sessionId}`);
+  return { installationId, sessionId, threadId: sessionId, windowId };
 };
 
-const buildCodexResponsesHeaders = (opts: CallCodexResponsesOptions, accessToken: string): Headers => {
+const buildCodexResponsesHeaders = (opts: CallCodexResponsesOptions, accessToken: string, identity: CodexRequestIdentity): Headers => {
   const headers = new Headers();
   headers.set('authorization', `Bearer ${accessToken}`);
   headers.set('chatgpt-account-id', opts.account.chatgptAccountId);
-  headers.set('originator', CODEX_RESPONSES_ORIGINATOR);
-  headers.set('user-agent', CODEX_RESPONSES_USER_AGENT);
+  headers.set('originator', CODEX_ORIGINATOR);
+  headers.set('user-agent', CODEX_USER_AGENT);
   headers.set('accept', 'text/event-stream');
   headers.set('content-type', 'application/json');
-  setCodexSessionHeaders(headers, opts.headers);
-
-  for (const name of CODEX_RESPONSES_PASSTHROUGH_HEADERS) {
-    const value = opts.headers.get(name)?.trim();
-    if (value) headers.set(name, value);
-  }
+  headers.set('session-id', identity.sessionId);
+  headers.set('thread-id', identity.threadId);
+  headers.set('version', CODEX_CLI_VERSION);
+  headers.set('x-client-request-id', identity.threadId);
+  headers.set('x-codex-window-id', identity.windowId);
+  headers.set('x-codex-turn-metadata', JSON.stringify({
+    installation_id: identity.installationId,
+    session_id: identity.sessionId,
+    thread_id: identity.threadId,
+    window_id: identity.windowId,
+  }));
 
   return headers;
+};
+
+const buildCodexResponsesBody = (
+  opts: CallCodexResponsesOptions,
+  identity: CodexRequestIdentity,
+): Record<string, unknown> => {
+  const body: Record<string, unknown> = {
+    ...(opts.body as unknown as Record<string, unknown>),
+    model: opts.model.id,
+    store: false,
+    stream: true,
+    client_metadata: {
+      'x-codex-installation-id': identity.installationId,
+    },
+  };
+  if (body.prompt_cache_key === undefined) body.prompt_cache_key = identity.threadId;
+  return body;
 };
 
 const performUpstreamCall = async (
@@ -125,12 +150,14 @@ const performUpstreamCall = async (
   accessToken: string,
   alreadyRetried: boolean,
 ): Promise<ProviderStreamResult<ResponsesStreamEvent>> => {
-  const headers = buildCodexResponsesHeaders(opts, accessToken);
+  const identity = await buildCodexRequestIdentity(opts);
+  const headers = buildCodexResponsesHeaders(opts, accessToken, identity);
+  const body = buildCodexResponsesBody(opts, identity);
 
   const upstreamFetch = opts.call.fetcher(`${CODEX_BACKEND_BASE}${CODEX_RESPONSES_PATH}`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ ...opts.body, model: opts.model.id, store: false, stream: true }),
+    body: JSON.stringify(body),
     signal: opts.signal,
   }, opts.call.recordUpstreamLatency).then(async response => {
     if (response.ok) {
@@ -203,6 +230,16 @@ const parseUpstreamError = (rawText: string): { code: string | null; message: st
   } catch {
     return { code: null, message: rawText.slice(0, 256) };
   }
+};
+
+// Format the SHA-256 hex digest as a UUIDv4-shaped opaque identifier. The
+// upstream treats these values opaquely, but UUID shape keeps logs and tools
+// that validate ids happy.
+const sha256Uuid = async (input: string): Promise<string> => {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
+  const hex = Array.from(new Uint8Array(buf), b => b.toString(16).padStart(2, '0')).join('');
+  const variantNibble = ((parseInt(hex[16], 16) & 0x3) | 0x8).toString(16);
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-${variantNibble}${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
 };
 
 const synthetic503 = (message: string): Response => new Response(JSON.stringify({ error: { type: 'codex_upstream_unavailable', message } }), {

@@ -1,10 +1,9 @@
 import type { ResponsesBoundaryCtx } from './types.ts';
 import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
 
-// Codex backend's prompt cache keys on the `session-id` header. Empirically:
-// with a stable `session-id` repeated across turns of the same conversation,
-// ~88% of input tokens hit the cache (e.g. 1792/2031 on a 2k-token prompt).
-// Without it, cache hits are sporadic at best.
+// Codex backend's prompt cache keys on the `session-id` header. Keeping it
+// stable across turns of the same conversation gives upstream a consistent
+// cache key; omitting it leaves cache affinity to upstream defaults.
 //
 // Strategy: derive a stable id from `(instructions + first user-message text)`
 // so the same conversation prefix produces the same session-id across turns,

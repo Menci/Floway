@@ -42,13 +42,9 @@ export const CODEX_MODELS_PATH = '/codex/models';
 // the User-Agent so the upstream sees a self-consistent client.
 export const CODEX_CLI_VERSION = '0.137.0';
 
-// Identity headers for /codex/models. Keep these scoped to model listing:
-// /codex/models depends on the codex_cli_rs client_version contract above.
-export const CODEX_MODELS_ORIGINATOR = 'codex_cli_rs';
-export const CODEX_MODELS_USER_AGENT = `codex_cli_rs/${CODEX_CLI_VERSION}`;
-
-// Identity headers for /codex/responses. Responses traffic presents as
-// codex-tui rather than codex_cli_rs.
-export const CODEX_RESPONSES_ORIGINATOR = 'codex-tui';
-export const CODEX_RESPONSES_USER_AGENT =
-  `codex-tui/${CODEX_CLI_VERSION} (Mac OS 26.5.0; arm64) iTerm.app/3.6.10 (codex-tui; ${CODEX_CLI_VERSION})`;
+// Shared official Codex data-plane identity for /codex/models and
+// /codex/responses. Keep wrapper-specific products and MCP suffixes out of
+// this shape; OpenAI's bot management keys on the client fingerprint.
+export const CODEX_ORIGINATOR = 'codex_cli_rs';
+export const CODEX_USER_AGENT =
+  `codex_cli_rs/${CODEX_CLI_VERSION} (Mac OS 26.5.0; arm64) iTerm.app/3.6.10`;

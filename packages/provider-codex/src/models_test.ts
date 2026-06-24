@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
-import { CODEX_CLI_VERSION } from './constants.ts';
+import { CODEX_CLI_VERSION, CODEX_ORIGINATOR, CODEX_USER_AGENT } from './constants.ts';
 import { codexRawToUpstreamModel, fetchCodexCatalog } from './models.ts';
 import { resolveEffectivePricing } from '@floway-dev/protocols/common';
 import { directFetcher } from '@floway-dev/provider';
@@ -28,8 +28,9 @@ describe('fetchCodexCatalog', () => {
     const headers = new Headers((init as RequestInit | undefined)?.headers);
     expect(headers.get('authorization')).toBe('Bearer at');
     expect(headers.get('chatgpt-account-id')).toBe('acc');
-    expect(headers.get('originator')).toBe('codex_cli_rs');
-    expect(headers.get('user-agent')).toBe(`codex_cli_rs/${CODEX_CLI_VERSION}`);
+    expect(headers.get('originator')).toBe(CODEX_ORIGINATOR);
+    expect(headers.get('user-agent')).toBe(CODEX_USER_AGENT);
+    expect(headers.get('user-agent')).toBe('codex_cli_rs/0.137.0 (Mac OS 26.5.0; arm64) iTerm.app/3.6.10');
     expect(headers.get('openai-beta')).toBeNull();
   });
 

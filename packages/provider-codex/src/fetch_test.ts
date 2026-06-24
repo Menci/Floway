@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
-import { CODEX_RESPONSES_ORIGINATOR, CODEX_RESPONSES_USER_AGENT } from './constants.ts';
+import { CODEX_CLI_VERSION, CODEX_ORIGINATOR, CODEX_USER_AGENT } from './constants.ts';
 import { callCodexResponses, type CodexCallEffects } from './fetch.ts';
 import type { CodexAccessTokenEntry, CodexAccountCredential, CodexQuotaSnapshotEntry, CodexUpstreamState } from './state.ts';
 import { initProviderRepo, type Fetcher, type UpstreamModel, type UpstreamRecord } from '@floway-dev/provider';
@@ -17,6 +17,7 @@ const model: UpstreamModel = {
 };
 
 const upstreamId = 'up_a';
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 const farFutureAccessToken: CodexAccessTokenEntry = {
   token: 'at_kv',
@@ -199,13 +200,17 @@ describe('callCodexResponses — upstream classification', () => {
     expect(body.stream).toBe(true);
   });
 
-  test('builds Codex responses headers from a clean set', async () => {
+  test('builds Codex responses headers and metadata from a clean set', async () => {
     seedFreshAccessToken();
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
     await callCodexResponses({
       upstreamId, account: activeAccount,
       model,
-      body: { input: [], stream: true },
+      body: {
+        input: [],
+        stream: true,
+        client_metadata: { 'x-codex-installation-id': 'downstream-installation' },
+      } as unknown as Parameters<typeof callCodexResponses>[0]['body'],
       headers: new Headers({
         'cf-connecting-ip': '203.0.113.10',
         forwarded: 'for=203.0.113.10',
@@ -217,6 +222,7 @@ describe('callCodexResponses — upstream classification', () => {
         'x-client-request-id': 'req-123',
         'x-codex-beta-features': 'responses_websockets=2026-02-06',
         'x-codex-turn-metadata': 'turn-meta',
+        'x-codex-window-id': 'downstream-window',
         'x-real-ip': '203.0.113.10',
       }),
       effects: makeEffects(),
@@ -226,20 +232,120 @@ describe('callCodexResponses — upstream classification', () => {
     const headers = new Headers((fetchSpy.mock.calls[0][1] as RequestInit).headers);
     expect(headers.get('authorization')).toBe('Bearer at_kv');
     expect(headers.get('chatgpt-account-id')).toBe('acc');
-    expect(headers.get('originator')).toBe(CODEX_RESPONSES_ORIGINATOR);
-    expect(headers.get('user-agent')).toBe(CODEX_RESPONSES_USER_AGENT);
+    expect(headers.get('originator')).toBe(CODEX_ORIGINATOR);
+    expect(headers.get('user-agent')).toBe(CODEX_USER_AGENT);
     expect(headers.get('accept')).toBe('text/event-stream');
     expect(headers.get('content-type')).toBe('application/json');
     expect(headers.get('session-id')).toBe('downstream-session');
     expect(headers.get('session_id')).toBeNull();
-    expect(headers.get('version')).toBe('1');
-    expect(headers.get('x-client-request-id')).toBe('req-123');
-    expect(headers.get('x-codex-beta-features')).toBe('responses_websockets=2026-02-06');
-    expect(headers.get('x-codex-turn-metadata')).toBe('turn-meta');
+    expect(headers.get('version')).toBe(CODEX_CLI_VERSION);
+    expect(headers.get('x-client-request-id')).toBe('downstream-session');
+    expect(headers.get('thread-id')).toBe('downstream-session');
+    expect(headers.get('x-codex-beta-features')).toBeNull();
+    expect(headers.get('x-codex-window-id')).toMatch(UUID_RE);
+    expect(headers.get('x-codex-window-id')).not.toBe('downstream-window');
+    const turnMetadata = JSON.parse(headers.get('x-codex-turn-metadata') ?? 'null') as Record<string, unknown>;
+    expect(turnMetadata).toEqual({
+      installation_id: expect.stringMatching(UUID_RE),
+      session_id: 'downstream-session',
+      thread_id: 'downstream-session',
+      window_id: headers.get('x-codex-window-id'),
+    });
+    expect(headers.get('x-codex-turn-metadata')).not.toBe('turn-meta');
     expect(headers.get('cf-connecting-ip')).toBeNull();
     expect(headers.get('forwarded')).toBeNull();
     expect(headers.get('openai-beta')).toBeNull();
     expect(headers.get('x-real-ip')).toBeNull();
+
+    const body = JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string) as Record<string, unknown>;
+    expect(body.prompt_cache_key).toBe('downstream-session');
+    expect(body.client_metadata).toEqual({ 'x-codex-installation-id': turnMetadata.installation_id });
+  });
+
+  test('synthesized Codex identity is deterministic for the same session and account', async () => {
+    seedFreshAccessToken();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => sseResponse());
+    const request = {
+      upstreamId, account: activeAccount, model,
+      body: { input: [], stream: true },
+      headers: new Headers({ 'session-id': 'stable-session' }),
+      effects: makeEffects(),
+      call: noopUpstreamCallOptions(),
+    } satisfies Parameters<typeof callCodexResponses>[0];
+
+    await callCodexResponses(request);
+    await callCodexResponses({ ...request, headers: new Headers({ 'session-id': 'stable-session' }) });
+
+    const firstHeaders = new Headers((fetchSpy.mock.calls[0][1] as RequestInit).headers);
+    const secondHeaders = new Headers((fetchSpy.mock.calls[1][1] as RequestInit).headers);
+    expect(firstHeaders.get('x-codex-window-id')).toBe(secondHeaders.get('x-codex-window-id'));
+    expect(firstHeaders.get('x-codex-turn-metadata')).toBe(secondHeaders.get('x-codex-turn-metadata'));
+    expect(firstHeaders.get('x-client-request-id')).toBe('stable-session');
+    expect(secondHeaders.get('x-client-request-id')).toBe('stable-session');
+  });
+
+  test('different sessions produce different synthesized window and turn metadata', async () => {
+    seedFreshAccessToken();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => sseResponse());
+
+    await callCodexResponses({
+      upstreamId, account: activeAccount, model,
+      body: { input: [], stream: true },
+      headers: new Headers({ 'session-id': 'session-a' }),
+      effects: makeEffects(),
+      call: noopUpstreamCallOptions(),
+    });
+    await callCodexResponses({
+      upstreamId, account: activeAccount, model,
+      body: { input: [], stream: true },
+      headers: new Headers({ 'session-id': 'session-b' }),
+      effects: makeEffects(),
+      call: noopUpstreamCallOptions(),
+    });
+
+    const firstHeaders = new Headers((fetchSpy.mock.calls[0][1] as RequestInit).headers);
+    const secondHeaders = new Headers((fetchSpy.mock.calls[1][1] as RequestInit).headers);
+    expect(firstHeaders.get('x-codex-window-id')).not.toBe(secondHeaders.get('x-codex-window-id'));
+    expect(firstHeaders.get('x-codex-turn-metadata')).not.toBe(secondHeaders.get('x-codex-turn-metadata'));
+    const firstMetadata = JSON.parse(firstHeaders.get('x-codex-turn-metadata') ?? 'null') as Record<string, unknown>;
+    const secondMetadata = JSON.parse(secondHeaders.get('x-codex-turn-metadata') ?? 'null') as Record<string, unknown>;
+    expect(firstMetadata.installation_id).toBe(secondMetadata.installation_id);
+    expect(firstMetadata.session_id).toBe('session-a');
+    expect(secondMetadata.session_id).toBe('session-b');
+  });
+
+  test('injects prompt_cache_key only when caller leaves it absent', async () => {
+    seedFreshAccessToken();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => sseResponse());
+
+    await callCodexResponses({
+      upstreamId, account: activeAccount, model,
+      body: { input: [], stream: true },
+      headers: new Headers({ 'session-id': 'cache-session' }),
+      effects: makeEffects(),
+      call: noopUpstreamCallOptions(),
+    });
+    await callCodexResponses({
+      upstreamId, account: activeAccount, model,
+      body: { input: [], stream: true, prompt_cache_key: 'caller-cache-key' },
+      headers: new Headers({ 'session-id': 'cache-session' }),
+      effects: makeEffects(),
+      call: noopUpstreamCallOptions(),
+    });
+    await callCodexResponses({
+      upstreamId, account: activeAccount, model,
+      body: { input: [], stream: true, prompt_cache_key: null },
+      headers: new Headers({ 'session-id': 'cache-session' }),
+      effects: makeEffects(),
+      call: noopUpstreamCallOptions(),
+    });
+
+    const injectedBody = JSON.parse((fetchSpy.mock.calls[0][1] as RequestInit).body as string) as Record<string, unknown>;
+    const preservedStringBody = JSON.parse((fetchSpy.mock.calls[1][1] as RequestInit).body as string) as Record<string, unknown>;
+    const preservedNullBody = JSON.parse((fetchSpy.mock.calls[2][1] as RequestInit).body as string) as Record<string, unknown>;
+    expect(injectedBody.prompt_cache_key).toBe('cache-session');
+    expect(preservedStringBody.prompt_cache_key).toBe('caller-cache-key');
+    expect(preservedNullBody).toHaveProperty('prompt_cache_key', null);
   });
 
   test('preserves a hyphenated Codex session id for prompt cache', async () => {
