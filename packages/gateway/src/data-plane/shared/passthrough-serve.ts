@@ -121,7 +121,7 @@ const transformUpstreamSseStream = async function* (
 // usage-only chunk (`choices: []` plus `usage`) is what the caller's
 // transformFrame keys off when it needs to strip-or-keep based on the
 // client's `stream_options.include_usage`.
-export type PassthroughResponseHandling =
+type PassthroughResponseHandling =
   | {
     readonly format: 'json';
     readonly extractBilling: (body: unknown) => TokenUsage | null;
@@ -132,7 +132,7 @@ export type PassthroughResponseHandling =
     readonly settleUsage: () => TokenUsage | null;
   };
 
-export interface PassthroughServeContext {
+interface PassthroughServeContext {
   readonly c: AuthedContext;
   readonly ctx: GatewayCtx;
   readonly sourceApi: PassthroughServeApiName;
@@ -187,7 +187,6 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
         runtimeLocation: ctx.runtimeLocation,
       };
       lastPerformance = performanceContext;
-      const modelIdentity = { model: modelId, upstream: binding.upstream, modelKey, cost: binding.provider.getPricingForModelKey(modelKey) };
 
       if (!response.ok) {
         recordUpstreamPerformance(ctx.backgroundScheduler, performanceContext, true, upstreamDurationMs);
@@ -197,6 +196,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
       }
 
       recordUpstreamPerformance(ctx.backgroundScheduler, performanceContext, false, upstreamDurationMs);
+      const modelIdentity = { model: modelId, upstream: binding.upstream, modelKey, cost: binding.provider.getPricingForModelKey(modelKey) };
 
       if (responseHandling.format === 'json') {
         // A 2xx body that fails to parse must not 502 a client whose

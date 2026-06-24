@@ -10,8 +10,6 @@
 
 export interface CompletionsPayload {
   model: string;
-  stream?: boolean | null;
-  stream_options?: { include_usage?: boolean } | null;
   [key: string]: unknown;
 }
 
@@ -21,7 +19,7 @@ export interface CompletionsPayload {
 // `finish_reason`) alongside the usage block — so `text` and
 // `finish_reason` are optional, matching that shape on the typed surface.
 // `logprobs` is opaque to the gateway — passed through as-is.
-export interface CompletionsChoiceStreaming {
+interface CompletionsChoiceStreaming {
   index: number;
   text?: string;
   finish_reason?: string | null;
@@ -56,8 +54,7 @@ export interface CompletionsStreamEvent {
   system_fingerprint?: string;
 }
 
-// Reassembled single-shot result, used by the dashboard dump renderer
-// to fold a captured streaming frame log back into a single-shot view.
+// Reassembled single-shot result.
 export interface CompletionsChoice {
   index: number;
   text: string;

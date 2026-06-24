@@ -66,7 +66,7 @@ interface CustomConfigCoreBase {
 
 // Wire-shape projection of CustomDraft. Discriminated on authStyle so the
 // 'none' branch can't carry an apiKey field at all.
-export type CustomConfigCore =
+type CustomConfigCore =
   | (CustomConfigCoreBase & { authStyle: 'none' })
   | (CustomConfigCoreBase & { authStyle: 'bearer' | 'anthropic'; apiKey?: string });
 

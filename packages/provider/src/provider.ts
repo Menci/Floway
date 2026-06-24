@@ -108,12 +108,10 @@ export interface ModelProvider {
   getProvidedModels(fetcher: Fetcher): Promise<readonly UpstreamModel[]>;
   // Resolve pricing for a usage record's `model_key` (the raw upstream model id).
   getPricingForModelKey(modelKey: string): ModelPricing | null;
-  // /v1/completions text completions. Passthrough — the provider forwards
-  // the body to the upstream and returns the raw Response (streaming SSE
-  // or single-shot JSON, matching the client's `stream` field).
-  // `getProvidedModels` never sets `endpoints.completions` on providers
-  // whose upstream doesn't expose it, so the route is unreachable for
-  // those bindings and the throwing stubs in those providers are pure
+  // /v1/completions text completions. Passthrough. Providers whose
+  // upstream doesn't expose /v1/completions set `endpoints.completions`
+  // to absent in getProvidedModels, so this method is unreachable for
+  // those bindings; the rejecting stubs in those providers are pure
   // defense-in-depth.
   callCompletions(model: UpstreamModel, body: Omit<CompletionsPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
   // Same `opts.headers` shape across every protocol so provider impls never

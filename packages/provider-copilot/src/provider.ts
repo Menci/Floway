@@ -403,8 +403,8 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
       return { response, modelKey: rawModel.id };
     },
     callEmbeddings: (model, body, signal, opts) => call(copilotFetchEmbeddings, copilotEmbeddingsBody(body), signal, rawModelFor(model, 'embeddings'), opts.headers, opts),
-    callImagesGenerations: rejectUnsupported('images_generations'),
-    callImagesEdits: rejectUnsupported('images_edits'),
+    callImagesGenerations: rejectUnsupported('images/generations'),
+    callImagesEdits: rejectUnsupported('images/edits'),
   };
 
   return {

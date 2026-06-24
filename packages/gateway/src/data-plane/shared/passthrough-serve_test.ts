@@ -8,8 +8,9 @@
 //   - its acceptBinding gate is `kind === 'embedding'`, satisfied by any
 //     embedding-only custom upstream, with no per-endpoint Copilot setup
 //     required;
-//   - its extractUsage reads OpenAI-style `usage.prompt_tokens`, so a
-//     2xx JSON body with that shape triggers a real usage write;
+//   - its extractBilling reads the OpenAI-style `usage.prompt_tokens` off
+//     a 2xx JSON body, so a body with that shape triggers a real usage
+//     write;
 //   - it shares the exact same forwardUpstreamResponse + scheduleUsageRecord
 //     path as the images endpoints — the behaviors under test are owned by
 //     passthroughServe, not the endpoint shape.

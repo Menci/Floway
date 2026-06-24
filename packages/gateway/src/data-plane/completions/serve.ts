@@ -26,7 +26,6 @@ type PreparedRequest =
   | {
     type: 'ok';
     body: Record<string, unknown>;
-    streamOptions: Record<string, unknown>;
     model: string;
     wantsStream: boolean;
     clientWantsUsageChunk: boolean;
@@ -35,9 +34,7 @@ type PreparedRequest =
 
 // `model` must be a non-empty string because gateway routing depends on
 // it; every other field on the body flows through to the upstream
-// unchanged. `streamOptions` is the normalized inbound stream_options
-// (omitted/null collapsed to {}) so the upstream-body composition is one
-// merge rather than a cast + ?? at the use site.
+// unchanged.
 const prepareCompletionsRequest = (bytes: Uint8Array): PreparedRequest => {
   let request: CompletionsRequestBody;
   try {
@@ -56,12 +53,7 @@ const prepareCompletionsRequest = (bytes: Uint8Array): PreparedRequest => {
 
   const wantsStream = request.stream === true;
   const clientWantsUsageChunk = request.stream_options?.include_usage === true;
-  const streamOptions: Record<string, unknown> = request.stream_options !== null
-    && typeof request.stream_options === 'object'
-    && !Array.isArray(request.stream_options)
-    ? { ...(request.stream_options as Record<string, unknown>) }
-    : {};
-  return { type: 'ok', body: request, streamOptions, model: request.model, wantsStream, clientWantsUsageChunk };
+  return { type: 'ok', body: request, model: request.model, wantsStream, clientWantsUsageChunk };
 };
 
 export const completions = async (c: Context): Promise<Response> => {
@@ -83,8 +75,14 @@ export const completions = async (c: Context): Promise<Response> => {
   // on so billing always sees the usage chunk — sibling keys on
   // stream_options (if any) ride through unchanged.
   const { model: _model, ...upstreamBodyBase } = request.body;
+  const inboundStreamOptions = request.body.stream_options;
+  const baseStreamOptions: Record<string, unknown> = inboundStreamOptions !== null
+    && typeof inboundStreamOptions === 'object'
+    && !Array.isArray(inboundStreamOptions)
+    ? inboundStreamOptions as Record<string, unknown>
+    : {};
   const upstreamBody = request.wantsStream
-    ? { ...upstreamBodyBase, stream_options: { ...request.streamOptions, include_usage: true } }
+    ? { ...upstreamBodyBase, stream_options: { ...baseStreamOptions, include_usage: true } }
     : upstreamBodyBase;
 
   // Streaming closure: track the usage block (only on the usage-only

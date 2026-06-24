@@ -46,13 +46,12 @@ export const reassembleCompletionsEvents = async (chunks: AsyncIterable<Completi
     }
   }
 
-  const sortedIndices = [...choices.keys()].sort((a, b) => a - b);
   const result: CompletionsResult = {
     id,
     object: 'text_completion',
     created,
     model,
-    choices: sortedIndices.map((index): CompletionsChoice => {
+    choices: [...choices.keys()].sort((a, b) => a - b).map((index): CompletionsChoice => {
       const accumulator = choices.get(index)!;
       const choice: CompletionsChoice = {
         index,
