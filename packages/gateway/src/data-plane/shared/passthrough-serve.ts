@@ -1,18 +1,22 @@
 // Shared serve scaffold for non-LLM passthrough data-plane endpoints. These
 // bypass the LLM source/target executor because they have no protocol
 // translation — the request body is forwarded to the chosen provider's
-// matching endpoint and the JSON response is passed through back to the
-// client. The shape is:
+// matching endpoint and the upstream response is passed through back to the
+// client.
 //
-//   resolve model -> iterate provider bindings -> first matching binding
-//     -> provider call -> passthrough response -> fire-and-forget usage + perf
-//
-// Usage extraction is provided by the caller because each endpoint family
-// reports usage differently. Usage and request-performance writes are
-// scheduled through the runtime's background scheduler so transient repo
-// failures cannot turn a successful 200 from upstream into a 502.
+// Response handling discriminates on the wire format the upstream produces.
+// `json` is single-shot (embeddings, images): the body is parsed once, usage
+// is read from the parsed JSON, and the response is forwarded verbatim.
+// `sse` is streaming (legacy /v1/completions): bytes flow through a parsed
+// frame pipeline that the caller transforms before reserialization. The
+// scaffold never inspects frame contents — caller-owned closures detect
+// usage frames, accumulate totals, and may drop frames as needed. Usage and
+// request-performance writes are scheduled through the runtime's background
+// scheduler so transient repo failures cannot turn a successful 200 from
+// upstream into a 502.
 
 import type { Context } from 'hono';
+import { streamSSE } from 'hono/streaming';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
 import type { NonLlmServeApiName } from './api-names.ts';
@@ -25,12 +29,14 @@ import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import type { AuthedContext } from '../../middleware/auth.ts';
 import type { TokenUsage } from '../../repo/types.ts';
 import type { GatewayCtx } from '../llm/shared/gateway-ctx.ts';
+import { type StreamCompletion, writeSSEFrames } from '../llm/shared/stream/sse.ts';
 import { resolveModelForRequest } from '../providers/registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
+import { doneFrame, eventFrame, parseSSEStream, parseTargetStreamFrames, type ProtocolFrame, type SseFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import { httpResponseToResponse, ProviderModelsUnavailableError, toInternalDebugError } from '@floway-dev/provider';
 import type { ProviderCallResult, ProviderModelRecord, UpstreamCallOptions } from '@floway-dev/provider';
 
-// Headers we forward verbatim from a successful upstream JSON response, plus
+// Headers we forward verbatim from a successful upstream response, plus
 // content-type with an application/json fallback when the upstream omitted
 // it. The set is intentionally narrow and matches the passthrough contract
 // OpenAI clients (and the OpenAI Node SDK retry policy) expect to see —
@@ -38,14 +44,16 @@ import type { ProviderCallResult, ProviderModelRecord, UpstreamCallOptions } fro
 const FORWARDED_RESPONSE_HEADER_PREFIXES = ['openai-', 'x-ratelimit-'] as const;
 const FORWARDED_RESPONSE_HEADERS = new Set(['x-request-id', 'retry-after', 'cf-ray']);
 
+const isForwardedResponseHeader = (name: string): boolean => {
+  const lower = name.toLowerCase();
+  return FORWARDED_RESPONSE_HEADERS.has(lower) || FORWARDED_RESPONSE_HEADER_PREFIXES.some(prefix => lower.startsWith(prefix));
+};
+
 const forwardedResponseHeaders = (resp: Response): Headers => {
   const headers = new Headers({ 'content-type': resp.headers.get('content-type') ?? 'application/json' });
   for (const [name, value] of resp.headers.entries()) {
-    const lower = name.toLowerCase();
-    if (lower === 'content-type') continue;
-    if (FORWARDED_RESPONSE_HEADERS.has(lower) || FORWARDED_RESPONSE_HEADER_PREFIXES.some(prefix => lower.startsWith(prefix))) {
-      headers.set(name, value);
-    }
+    if (name.toLowerCase() === 'content-type') continue;
+    if (isForwardedResponseHeader(name)) headers.set(name, value);
   }
   return headers;
 };
@@ -55,6 +63,15 @@ const forwardUpstreamResponse = (resp: Response): Response =>
     status: resp.status,
     headers: forwardedResponseHeaders(resp),
   });
+
+// Stage forwardable upstream headers onto the Hono context so the streaming
+// SSE response Hono builds emits them. `streamSSE`'s internal `c.newResponse`
+// honors anything set via `c.header()` before it runs.
+const stageForwardedResponseHeaders = (c: Context, resp: Response): void => {
+  for (const [name, value] of resp.headers.entries()) {
+    if (isForwardedResponseHeader(name)) c.header(name, value);
+  }
+};
 
 const recordUpstreamPerformance = (
   scheduler: BackgroundScheduler,
@@ -86,6 +103,52 @@ const safeJsonClone = async (resp: Response, sourceApi: NonLlmServeApiName): Pro
   }
 };
 
+// Convert an upstream SSE byte stream into transformed SseFrames ready for
+// re-serialization. The frame pipeline is generic over event payload —
+// `transformFrame` receives `ProtocolFrame<unknown>` and decides per-frame
+// whether to pass through, mutate, or drop (return null). The scaffold never
+// peeks at event contents; usage detection / accumulation is the caller's
+// closure.
+const transformUpstreamSseStream = async function* (
+  upstreamBody: ReadableStream<Uint8Array>,
+  sourceApi: NonLlmServeApiName,
+  transformFrame: (frame: ProtocolFrame<unknown>) => ProtocolFrame<unknown> | null,
+  signal: AbortSignal | undefined,
+): AsyncGenerator<SseFrame> {
+  const sseFrames = parseSSEStream(upstreamBody, signal ? { signal } : {});
+  for await (const parsed of parseTargetStreamFrames<unknown>(sseFrames, { protocol: sourceApi })) {
+    const inputFrame: ProtocolFrame<unknown> = parsed.type === 'done' ? doneFrame() : eventFrame(parsed.data);
+    const outputFrame = transformFrame(inputFrame);
+    if (outputFrame === null) continue;
+    yield outputFrame.type === 'done' ? sseFrame('[DONE]') : sseFrame(JSON.stringify(outputFrame.event));
+  }
+};
+
+// Discriminator on the wire format the upstream produces.
+//
+// `json`: single-shot response. The scaffold drains the body once, hands
+// the parsed `usage` block (if any) to `extractUsage`, and forwards the
+// response verbatim. Embeddings and images use this path.
+//
+// `sse`: streaming response. The scaffold parses SSE bytes into frames,
+// runs each through `transformFrame` (return null to drop), reserializes
+// the survivors, and writes them through Hono's streamSSE helper. After
+// the stream ends, `settleUsage` is called to surface the caller's
+// accumulated usage for billing. Used by legacy /v1/completions
+// passthrough; the caller's transformFrame closes over a usage
+// accumulator and a strip-or-keep decision for the OpenAI usage-only
+// chunk.
+export type PassthroughResponseHandling =
+  | {
+      readonly format: 'json';
+      readonly extractUsage: (usage: unknown) => TokenUsage | null;
+    }
+  | {
+      readonly format: 'sse';
+      readonly transformFrame: (frame: ProtocolFrame<unknown>) => ProtocolFrame<unknown> | null;
+      readonly settleUsage: () => TokenUsage | null;
+    };
+
 export interface PassthroughServeContext {
   readonly c: AuthedContext;
   readonly ctx: GatewayCtx;
@@ -102,18 +165,15 @@ export interface PassthroughServeContext {
   // recordUpstreamLatency wrapper for the upstream_success metric); the
   // callback forwards it verbatim to the chosen provider call method.
   readonly call: (binding: ProviderModelRecord, opts: UpstreamCallOptions) => Promise<ProviderCallResult>;
-  // Extracts a usage row from the `usage` block of a parsed 2xx upstream
-  // body. The helper does the shallow `parsed.usage` lookup so each
-  // extractor only has to validate the usage shape. Return null when the
-  // usage block is missing or malformed.
-  readonly extractUsage: (usage: unknown) => TokenUsage | null;
+  // Format-discriminated response handler. See PassthroughResponseHandling.
+  readonly response: PassthroughResponseHandling;
   // Returned as the 400 body when no provider binding matched. Phrased
   // per-endpoint so the error tells the client which capability is missing.
   readonly noBindingMessage: (modelId: string) => string;
 }
 
 export const passthroughServe = async (input: PassthroughServeContext): Promise<Response> => {
-  const { c, ctx, sourceApi, model, bindingServesEndpoint, call, extractUsage, noBindingMessage } = input;
+  const { c, ctx, sourceApi, model, bindingServesEndpoint, call, response: responseHandling, noBindingMessage } = input;
   const requestStartedAt = performance.now();
   let lastPerformance: PerformanceTelemetryContext | undefined;
 
@@ -141,10 +201,11 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
         model: modelId,
         upstream: binding.upstream,
         modelKey,
-        stream: false,
+        stream: responseHandling.format === 'sse',
         runtimeLocation: ctx.runtimeLocation,
       };
       lastPerformance = performanceContext;
+      const modelIdentity = { model: modelId, upstream: binding.upstream, modelKey, cost: binding.provider.getPricingForModelKey(modelKey) };
 
       if (!response.ok) {
         recordUpstreamPerformance(ctx.backgroundScheduler, performanceContext, true, upstreamDurationMs);
@@ -154,27 +215,55 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
       }
 
       recordUpstreamPerformance(ctx.backgroundScheduler, performanceContext, false, upstreamDurationMs);
-      const parsed = await safeJsonClone(response, sourceApi);
-      const usageBlock = parsed && typeof parsed === 'object' ? (parsed as { usage?: unknown }).usage : undefined;
-      const usage = usageBlock !== undefined ? extractUsage(usageBlock) : null;
-      ctx.dump?.success({ model: modelId, upstream: binding.upstream, modelKey, cost: binding.provider.getPricingForModelKey(modelKey) }, usage);
-      if (usage) {
-        scheduleUsageRecord(
-          ctx.backgroundScheduler,
-          recordTokenUsage(
-            ctx.apiKeyId,
-            {
-              model: modelId,
-              upstream: binding.upstream,
-              modelKey,
-              cost: binding.provider.getPricingForModelKey(modelKey),
-            },
-            usage,
-          ),
-        );
+
+      if (responseHandling.format === 'json') {
+        const parsed = await safeJsonClone(response, sourceApi);
+        const usageBlock = parsed && typeof parsed === 'object' ? (parsed as { usage?: unknown }).usage : undefined;
+        const usage = usageBlock !== undefined ? responseHandling.extractUsage(usageBlock) : null;
+        ctx.dump?.success(modelIdentity, usage);
+        if (usage) {
+          scheduleUsageRecord(ctx.backgroundScheduler, recordTokenUsage(ctx.apiKeyId, modelIdentity, usage));
+        }
+        recordRequestPerformance(ctx.backgroundScheduler, performanceContext, false, performance.now() - requestStartedAt);
+        return forwardUpstreamResponse(response);
       }
-      recordRequestPerformance(ctx.backgroundScheduler, performanceContext, false, performance.now() - requestStartedAt);
-      return forwardUpstreamResponse(response);
+
+      // `sse` branch. Hono's streamSSE owns the response — headers must be
+      // staged on `c` before the call. Telemetry and billing run after the
+      // stream completes (in the finally), so they remain symmetric with
+      // the `json` branch.
+      if (!response.body) {
+        ctx.dump?.failed(`${sourceApi} streaming upstream returned no body`);
+        recordRequestPerformance(ctx.backgroundScheduler, performanceContext, true, performance.now() - requestStartedAt);
+        return passthroughApiError(c, 'Upstream returned a streaming response with no body.', 502);
+      }
+      stageForwardedResponseHeaders(c, response);
+      const sseResponseHandling = responseHandling;
+      return streamSSE(c, async stream => {
+        let completion: StreamCompletion = 'error';
+        let streamError: unknown;
+        try {
+          const frames = transformUpstreamSseStream(response.body!, sourceApi, sseResponseHandling.transformFrame, ctx.abortSignal);
+          completion = await writeSSEFrames(stream, frames, {
+            keepAlive: { frame: sseCommentFrame('keepalive') },
+            ...(ctx.downstreamAbortController !== undefined ? { downstreamAbortController: ctx.downstreamAbortController } : {}),
+          });
+        } catch (e) {
+          streamError = e;
+        } finally {
+          const usage = sseResponseHandling.settleUsage();
+          const failed = streamError !== undefined || completion !== 'eof';
+          if (failed) {
+            ctx.dump?.failed(streamError ?? `${sourceApi} stream ended with completion=${completion}`);
+          } else {
+            ctx.dump?.success(modelIdentity, usage);
+            if (usage) {
+              scheduleUsageRecord(ctx.backgroundScheduler, recordTokenUsage(ctx.apiKeyId, modelIdentity, usage));
+            }
+          }
+          recordRequestPerformance(ctx.backgroundScheduler, performanceContext, failed, performance.now() - requestStartedAt);
+        }
+      });
     }
 
     ctx.dump?.error('gateway');

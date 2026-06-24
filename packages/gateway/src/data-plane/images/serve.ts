@@ -63,7 +63,7 @@ export const imagesGenerations = async (c: Context): Promise<Response> => {
       const { model: _model, ...body } = request.body;
       return binding.provider.callImagesGenerations(binding.upstreamModel, body, undefined, opts);
     },
-    extractUsage: tokenUsageFromImagesResponse,
+    response: { format: 'json', extractUsage: tokenUsageFromImagesResponse },
     noBindingMessage: modelId => `Model ${modelId} does not support the /images/generations endpoint.`,
   });
   return (ctx.dump?.finalize(response) ?? response);
@@ -114,7 +114,7 @@ export const imagesEdits = async (c: Context): Promise<Response> => {
       }
       return binding.provider.callImagesEdits(binding.upstreamModel, passthrough, undefined, opts);
     },
-    extractUsage: tokenUsageFromImagesResponse,
+    response: { format: 'json', extractUsage: tokenUsageFromImagesResponse },
     noBindingMessage: modelId => `Model ${modelId} does not support the /images/edits endpoint.`,
   });
   return (ctx.dump?.finalize(response) ?? response);

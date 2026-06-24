@@ -64,7 +64,7 @@ export const embeddings = async (c: Context): Promise<Response> => {
       const { model: _model, ...body } = request.body;
       return await binding.provider.callEmbeddings(binding.upstreamModel, body, undefined, opts);
     },
-    extractUsage: tokenUsageFromPromptTokenResponse,
+    response: { format: 'json', extractUsage: tokenUsageFromPromptTokenResponse },
     noBindingMessage: modelId => `Model ${modelId} does not support the /embeddings endpoint.`,
   });
   return (ctx.dump?.finalize(response) ?? response);
