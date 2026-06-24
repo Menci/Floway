@@ -83,6 +83,12 @@ export const OPTIONAL_FLAGS = [
   // subscription endpoint reads the placeholder block itself to attribute
   // billing.
   {
+    id: 'downgrade-developer-role',
+    label: 'Downgrade developer role to system',
+    description: "Rewrite messages with role 'developer' to role 'system' for upstreams that do not recognise the developer role.",
+    defaultFor: [],
+  },
+  {
     id: 'strip-billing-attribution',
     label: 'Strip Claude Code billing attribution from system prompt',
     description: "Remove `x-anthropic-billing-header:` lines from the request's system prompt before forwarding upstream. Default on for copilot/azure/custom — the block is irrelevant to non-Anthropic upstreams and only pollutes their prompt-cache key. Default off for claude-code, where the same block is the input Anthropic uses to bill the request against the user's plan.",
