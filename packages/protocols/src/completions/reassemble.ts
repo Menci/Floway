@@ -7,7 +7,7 @@ import type { CompletionsChoice, CompletionsResult, CompletionsStreamEvent, Comp
 // identity (`id`, `created`, `model`, `system_fingerprint`) is taken from
 // the first chunk that carried it.
 //
-// Unlike chat-completions, the legacy protocol has no tool-calls or
+// Unlike chat-completions, the text-completion protocol has no tool-calls or
 // reasoning surface, so the fold is straightforward text accumulation
 // per index. Unknown choice / chunk fields fall on the floor by design;
 // the dashboard renders the captured raw frame stream alongside the

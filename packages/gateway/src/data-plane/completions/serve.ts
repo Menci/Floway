@@ -1,4 +1,4 @@
-// POST /v1/completions and /completions — legacy OpenAI text completions
+// POST /v1/completions and /completions — OpenAI text completions
 // (passthrough). The endpoint sits outside the LLM source/target executor
 // because there is no protocol translation, no interceptor chain, and no
 // cross-protocol traversal: the request body is forwarded to the chosen

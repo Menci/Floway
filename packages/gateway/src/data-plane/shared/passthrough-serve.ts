@@ -7,7 +7,8 @@
 // Response handling discriminates on the wire format the upstream produces.
 // `json` is single-shot (embeddings, images): the body is parsed once, usage
 // is read from the parsed JSON, and the response is forwarded verbatim.
-// `sse` is streaming (legacy /v1/completions): bytes flow through a parsed
+// `sse` is streaming (text-completions /v1/completions): bytes flow through
+// a parsed
 // frame pipeline that the caller transforms before reserialization. The
 // scaffold never inspects frame contents — caller-owned closures detect
 // usage frames, accumulate totals, and may drop frames as needed. Usage and
@@ -139,7 +140,7 @@ const transformUpstreamSseStream = async function* (
 // runs each through `transformFrame` (return null to drop), reserializes
 // the survivors, and writes them through Hono's streamSSE helper. After
 // the stream ends, `settleUsage` is called to surface the caller's
-// accumulated usage for billing. Used by legacy /v1/completions
+// accumulated usage for billing. Used by /v1/completions
 // passthrough; the caller's transformFrame closes over a usage
 // accumulator and a strip-or-keep decision for the OpenAI usage-only
 // chunk.

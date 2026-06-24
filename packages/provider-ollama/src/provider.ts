@@ -36,9 +36,10 @@ const rawModelIdOf = (model: UpstreamModel): string => model.providerData as str
 // Vision / tool / thinking capabilities live alongside `embedding` in the
 // /api/show response. Embedding is the only one that drives a different
 // kind/endpoints projection — the others are request-time signals. The
-// legacy `/v1/completions` is auto-on for every chat-capable model: every
-// model the upstream serves at `/v1/chat/completions` works at
-// `/v1/completions` too (same Go binary, same upstream lifecycle).
+// text-completion `/v1/completions` endpoint is auto-on for every
+// chat-capable model: every model the upstream serves at
+// `/v1/chat/completions` works at `/v1/completions` too (same Go binary,
+// same upstream lifecycle).
 const CHAT_ENDPOINTS: ModelEndpoints = { chatCompletions: {}, responses: {}, messages: {}, completions: {} };
 const EMBEDDING_ENDPOINTS: ModelEndpoints = { embeddings: {} };
 

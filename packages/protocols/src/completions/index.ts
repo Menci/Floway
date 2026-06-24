@@ -1,4 +1,4 @@
-// Legacy OpenAI text-completion protocol (POST /v1/completions). Floway runs
+// OpenAI text-completion protocol (POST /v1/completions). Floway runs
 // this endpoint as a passthrough — there is no translation to or from the
 // other LLM protocols, no shared interceptor chain, and no per-event shape
 // the gateway depends on beyond the OpenAI streaming envelope. The payload

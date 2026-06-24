@@ -122,7 +122,7 @@ export interface ModelProvider {
   // Response verbatim.
   callMessagesCountTokens(model: UpstreamModel, body: Omit<MessagesPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
   callEmbeddings(model: UpstreamModel, body: Omit<EmbeddingsPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
-  // Legacy /v1/completions (text completions). Passthrough — the gateway
+  // /v1/completions (text completions). Passthrough — the gateway
   // does not translate from or to any other LLM endpoint. The provider
   // forwards the body to the upstream's /v1/completions and returns the
   // raw Response (streaming SSE or single-shot JSON, matching the
