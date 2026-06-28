@@ -25,7 +25,8 @@ const invocation = (
   enabledFlags: ReadonlySet<string> = new Set(['demote-interleaved-system-to-user']),
 ): ChatCompletionsInvocation => ({
   payload,
-  candidate: stubProviderCandidate({ targetApi: 'chat-completions', binding: { enabledFlags } }),
+  candidate: stubProviderCandidate({ model: { enabledFlags } }),
+  targetApi: 'chat-completions',
   headers: new Headers(),
 });
 

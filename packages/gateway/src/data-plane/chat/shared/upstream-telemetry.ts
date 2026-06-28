@@ -1,8 +1,7 @@
-import type { ProviderCandidate } from './candidates.ts';
 import type { GatewayCtx } from './gateway-ctx.ts';
 import { recordPerformanceError, recordPerformanceLatency } from '../../shared/telemetry/performance.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ChatTargetApi, PerformanceTelemetryContext } from '@floway-dev/provider';
+import type { ChatTargetApi, PerformanceTelemetryContext, ProviderCandidate } from '@floway-dev/provider';
 
 export { createUpstreamLatencyRecorder } from '../../shared/telemetry/performance.ts';
 
@@ -13,8 +12,8 @@ type TerminalKind = 'success' | 'failure';
 // dimensions off the chosen candidate plus the upstream-reported model key.
 export const upstreamPerformanceContext = (ctx: GatewayCtx, candidate: ProviderCandidate, modelKey: string): PerformanceTelemetryContext => ({
   keyId: ctx.apiKeyId,
-  model: candidate.binding.upstreamModel.id,
-  upstream: candidate.binding.upstream,
+  model: candidate.model.id,
+  upstream: candidate.provider.upstream,
   modelKey,
   stream: ctx.wantsStream,
   runtimeLocation: ctx.runtimeLocation,

@@ -10,7 +10,7 @@ import { COPILOT_RESPONSES_BOUNDARY } from './interceptors/responses/index.ts';
 import type { ResponsesBoundaryCtx } from './interceptors/responses/types.ts';
 import { emptyKnownModels, mergeKnownModels, projectKnownModels } from './known-models.ts';
 import { mergeClaudeVariants } from './merge-claude-variants.ts';
-import { copilotPublicModelId, copilotRequestedModelAliasTarget } from './model-name.ts';
+import { copilotPublicModelId } from './model-name.ts';
 import { CONTEXT_1M_BETA, copilotModelSupportsFastMode, type ModelSelectionHints, resolveCopilotRawModel } from './model-selection.ts';
 import { pricingForCopilotModelKey, pricingForCopilotPublicModelId } from './pricing.ts';
 import { readCopilotUpstreamState, type CopilotUpstreamState } from './state.ts';
@@ -456,6 +456,5 @@ export const createCopilotProvider = async (record: UpstreamRecord): Promise<Mod
     modelPrefix: copilot.modelPrefix,
     provider,
     supportsResponsesItemReference: false,
-    resolveRequestedModelId: copilotRequestedModelAliasTarget,
   };
 };

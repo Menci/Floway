@@ -16,7 +16,7 @@ const hasForcedToolChoice = (payload: ResponsesPayload): boolean => {
 };
 
 export const withReasoningDisabledOnForcedToolChoice: ResponsesInterceptor = async (ctx, _request, run) => {
-  if (!ctx.candidate.binding.enabledFlags.has('disable-reasoning-on-forced-tool-choice')) return await run();
+  if (!ctx.candidate.model.enabledFlags.has('disable-reasoning-on-forced-tool-choice')) return await run();
   if (!hasForcedToolChoice(ctx.payload)) return await run();
   ctx.payload = { ...ctx.payload, reasoning: { effort: 'none' } };
   return await run();

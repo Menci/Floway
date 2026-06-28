@@ -5,18 +5,17 @@ import type { AuthVars } from '../../../middleware/auth.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import type { ApiKey, User } from '../../../repo/types.ts';
-import type { ProviderCandidate } from '../shared/candidates.ts';
-import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
-import { directFetcher, type ProviderCallResult, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
+import { type ProviderCandidate, directFetcher, type ProviderCallResult, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
 
-const candidatesQueue: { readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean }[] = [];
-vi.mock('../shared/candidates.ts', async importOriginal => {
-  const original = await importOriginal<typeof import('../shared/candidates.ts')>();
+const candidatesQueue: { readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean; readonly failedUpstreams: readonly string[] }[] = [];
+vi.mock('../../providers/registry.ts', async importOriginal => {
+  const original = await importOriginal<typeof import('../../providers/registry.ts')>();
   return {
     ...original,
-    enumerateProviderCandidates: vi.fn(async () => {
+    enumerateModelCandidates: vi.fn(async () => {
       const next = candidatesQueue.shift();
       if (next === undefined) throw new Error('http_test: no candidates enqueued');
       return next;
@@ -29,7 +28,7 @@ const { messagesHttp } = await import('./http.ts');
 const API_KEY_ID = 'key_messages_http_test';
 
 const queueCandidates = (candidates: readonly ProviderCandidate[], sawModel = candidates.length > 0): void => {
-  candidatesQueue.push({ candidates, sawModel });
+  candidatesQueue.push({ candidates, sawModel, failedUpstreams: [] });
 };
 
 const installRepo = (): InMemoryRepo => {
@@ -102,36 +101,21 @@ const makeProtocolFrames = async function* <TEvent>(events: readonly TEvent[]): 
 
 const makeCandidate = (overrides: {
   upstream?: string;
+  endpoints?: ModelEndpoints;
   callMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<MessagesStreamEvent>>;
   callMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderCallResult>;
 } = {}): ProviderCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
-  const upstreamModel = stubUpstreamModel();
   const provider = stubProvider({
     callMessages: overrides.callMessages,
     callMessagesCountTokens: overrides.callMessagesCountTokens,
   });
   return {
     provider: {
-      upstream,
-      providerKind: 'custom',
-      name: upstream,
-      disabledPublicModelIds: [],
-      modelPrefix: null,
-      provider,
-      supportsResponsesItemReference: true,
+      upstream, providerKind: 'custom', name: upstream,
+      disabledPublicModelIds: [], modelPrefix: null, provider, supportsResponsesItemReference: true,
     },
-    binding: {
-      upstream,
-      upstreamName: upstream,
-      providerKind: 'custom',
-      provider,
-      upstreamModel,
-      enabledFlags: upstreamModel.enabledFlags,
-      supportsResponsesItemReference: true,
-    },
-    targetApi: 'messages',
-
+    model: stubUpstreamModel(overrides.endpoints ? { endpoints: overrides.endpoints } : {}),
     fetcher: directFetcher,
   };
 };
@@ -271,4 +255,26 @@ test('POST /v1/messages forwards upstream response headers end-to-end (non-strea
   assertEquals(response.status, 200);
   assertEquals(response.headers.get('anthropic-ratelimit-unified-status'), 'allowed');
   assertEquals(response.headers.get('cf-ray'), 'cf_ray_e2e');
+});
+
+test('POST /v1/messages renders the Anthropic-shaped model-unsupported 400 when no candidate matches the messages-generate picker', async () => {
+  installRepo();
+  // Queue a chat-kind candidate whose endpoints expose only `completions` —
+  // messagesGenerateTarget (messages > responses > chat-completions) rejects
+  // it, leaving zero viable candidates, and with sawModel=true the serve
+  // renders model-unsupported as a 400.
+  queueCandidates([makeCandidate({ endpoints: { completions: {} } })]);
+
+  const response = await makeApp().request('/v1/messages', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({ model: 'wrong-endpoint-model', max_tokens: 32, messages: [{ role: 'user', content: 'hello' }] }),
+  });
+
+  assertEquals(response.status, 400);
+  assertEquals(response.headers.get('content-type')?.split(';')[0], 'application/json');
+  const body = await response.json() as { type: string; error: { type: string; message: string }; request_id: string };
+  assertEquals(body.type, 'error');
+  assertEquals(body.error.type, 'invalid_request_error');
+  assert(body.error.message.includes('does not support'));
 });

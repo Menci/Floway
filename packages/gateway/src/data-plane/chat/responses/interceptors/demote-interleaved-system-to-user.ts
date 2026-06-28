@@ -10,7 +10,7 @@ import type { ResponsesInterceptor } from './types.ts';
 // `role: 'system'` message item is rewritten to `role: 'user'` with its
 // content kept verbatim.
 export const withInterleavedSystemDemotedToUser: ResponsesInterceptor = (ctx, _gatewayCtx, run) => {
-  if (!ctx.candidate.binding.enabledFlags.has('demote-interleaved-system-to-user')) return run();
+  if (!ctx.candidate.model.enabledFlags.has('demote-interleaved-system-to-user')) return run();
 
   const { input } = ctx.payload;
   if (typeof input === 'string') return run();

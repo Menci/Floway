@@ -894,7 +894,7 @@ const resolveActiveMessagesWebSearchProvider = async (apiKeyId: string): Promise
  * may or may not be able to serve web_search natively).
  */
 export const withMessagesWebSearchShim: MessagesInterceptor = async (ctx, gatewayCtx, run) => {
-  if (ctx.candidate.targetApi === 'messages' && !ctx.candidate.binding.enabledFlags.has('messages-web-search-shim')) return await run();
+  if (ctx.targetApi === 'messages' && !ctx.candidate.model.enabledFlags.has('messages-web-search-shim')) return await run();
 
   const prepared = prepareMessagesWebSearchShimRequest(ctx.payload);
 

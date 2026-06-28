@@ -9,8 +9,8 @@ import { withVendorKimiChatCompletionsNormalize } from './vendor-kimi-normalize.
 import { withVendorQwenChatCompletionsNormalize } from './vendor-qwen-normalize.ts';
 
 // Unified Chat Completions interceptor list. All entries are attached to
-// every binding; each interceptor's body decides whether to act (flag-gated
-// entries early-return on `ctx.candidate.binding.enabledFlags.has(flagId)`).
+// every candidate; each interceptor's body decides whether to act (flag-gated
+// entries early-return on `ctx.candidate.model.enabledFlags.has(flagId)`).
 //
 // Order follows source-then-target semantics collapsed into a single chain.
 //

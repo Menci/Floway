@@ -5,8 +5,8 @@ import type { MessagesCountTokensInterceptor, MessagesInterceptor } from './type
 import { withMessagesWebSearchShim } from './web-search-shim.ts';
 
 // Unified Messages interceptor list. All entries are attached to every
-// binding; each interceptor's body decides whether to act (flag-gated entries
-// early-return on `ctx.candidate.binding.enabledFlags.has(flagId)`).
+// candidate; each interceptor's body decides whether to act (flag-gated entries
+// early-return on `ctx.candidate.model.enabledFlags.has(flagId)`).
 //
 // Order follows source-then-target semantics collapsed into a single chain:
 //   - withMessagesWebSearchShim: registered first so its replay rewrite and
@@ -14,7 +14,7 @@ import { withMessagesWebSearchShim } from './web-search-shim.ts';
 //     targets (Responses / Chat Completions cannot carry Anthropic server
 //     tools); gated by `messages-web-search-shim` for native Messages targets.
 //   - stripBillingAttribution: gated by `strip-billing-attribution` (default
-//     on for copilot/azure/custom, off for claude-code). On binding kinds
+//     on for copilot/azure/custom, off for claude-code). On candidates
 //     where it runs, it scrubs Claude Code's `x-anthropic-billing-header` /
 //     `cch=` markers out of the source-shape system prompt so prompt-cache
 //     hits survive across requests; on claude-code, the block is left intact

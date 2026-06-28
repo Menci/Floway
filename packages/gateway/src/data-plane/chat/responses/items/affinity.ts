@@ -1,10 +1,10 @@
 import { hashResponsesItemEncryptedContent, isStoredResponsesItemId, responsesItemEncryptedContent, responsesItemId } from './format.ts';
 import type { StatefulResponsesStore } from './store.ts';
 import type { StoredResponsesItem } from '../../../../repo/types.ts';
-import type { ProviderCandidate } from '../../shared/candidates.ts';
 import type { ChatServeFailure } from '../../shared/errors.ts';
 import type { RoutingDecision } from '../../shared/routing.ts';
 import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
+import type { ProviderCandidate } from '@floway-dev/provider';
 import type { ResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
 type StoredResponsesAffinity = 'forcing' | 'portable' | 'downgradable' | 'non_affinity';
@@ -107,9 +107,9 @@ const orderCandidatesByStoredResponsesAffinity = (
 
   const order = new Map(preferred.map((upstreamId, index) => [upstreamId, index]));
   const preferredCandidates = candidates
-    .filter(cand => order.has(cand.binding.upstream))
-    .toSorted((a, b) => order.get(a.binding.upstream)! - order.get(b.binding.upstream)!);
-  const remainingCandidates = candidates.filter(cand => !order.has(cand.binding.upstream));
+    .filter(cand => order.has(cand.provider.upstream))
+    .toSorted((a, b) => order.get(a.provider.upstream)! - order.get(b.provider.upstream)!);
+  const remainingCandidates = candidates.filter(cand => !order.has(cand.provider.upstream));
   return [...preferredCandidates, ...remainingCandidates];
 };
 
@@ -193,7 +193,7 @@ export const classifyResponsesItemAffinity = async <TSourceItems>(input: {
 
   if (forcingUpstreamList.length === 1) {
     const [upstreamId] = forcingUpstreamList;
-    const matching = candidates.filter(cand => cand.binding.upstream === upstreamId);
+    const matching = candidates.filter(cand => cand.provider.upstream === upstreamId);
     if (matching.length === 0) {
       return {
         kind: 'failure',
@@ -205,7 +205,7 @@ export const classifyResponsesItemAffinity = async <TSourceItems>(input: {
     }
     const unexpandedReferenceId = findUnexpandedItemReferenceForcingId(references, upstreamId);
     if (unexpandedReferenceId !== null) {
-      const itemReferenceCapable = matching.filter(cand => cand.binding.supportsResponsesItemReference);
+      const itemReferenceCapable = matching.filter(cand => cand.provider.supportsResponsesItemReference);
       if (itemReferenceCapable.length === 0) {
         return { kind: 'failure', failure: { kind: 'item-not-found', itemId: unexpandedReferenceId } };
       }

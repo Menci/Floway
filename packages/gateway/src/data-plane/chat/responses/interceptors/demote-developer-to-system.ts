@@ -24,7 +24,7 @@ const downgradeRole = (item: ResponsesInputItem): ResponsesInputItem => {
 };
 
 export const withDemoteDeveloperToSystem: ResponsesInterceptor = async (ctx, _request, run) => {
-  if (!ctx.candidate.binding.enabledFlags.has('demote-developer-to-system')) return await run();
+  if (!ctx.candidate.model.enabledFlags.has('demote-developer-to-system')) return await run();
 
   if (Array.isArray(ctx.payload.input)) {
     ctx.payload = {

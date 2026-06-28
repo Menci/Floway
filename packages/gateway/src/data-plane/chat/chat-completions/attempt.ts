@@ -4,8 +4,7 @@ import { messagesAttempt } from '../messages/attempt.ts';
 import { responsesAttempt } from '../responses/attempt.ts';
 import { rewriteStoredResponsesItemsForCandidate } from '../responses/items/rewrite.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
-import { providerStreamResultToExecuteResult, buildUpstreamCallOptions } from '../shared/attempt-helpers.ts';
-import type { ProviderCandidate } from '../shared/candidates.ts';
+import { providerStreamResultToExecuteResult, buildUpstreamCallOptions, chatTargetPicker } from '../shared/attempt-helpers.ts';
 import { tryCatchChatServeFailure } from '../shared/errors.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { traverseTranslation } from '../shared/translate-traverse.ts';
@@ -13,9 +12,13 @@ import { createUpstreamLatencyRecorder } from '../shared/upstream-telemetry.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ChatCompletionsMessage, ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import { type ExecuteResult } from '@floway-dev/provider';
+import { type ProviderCandidate, type ExecuteResult } from '@floway-dev/provider';
 import { translateChatCompletionsViaMessages, translateChatCompletionsViaResponses } from '@floway-dev/translate';
 import { chatCompletionsViaResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
+
+// `/v1/chat/completions` generate prefers a native Chat Completions target,
+// then the translated Messages path, then the translated Responses path.
+export const chatCompletionsTarget = chatTargetPicker(['chat-completions', 'messages', 'responses']);
 
 export interface ChatCompletionsAttemptArgs {
   readonly payload: ChatCompletionsPayload;
@@ -28,35 +31,41 @@ export interface ChatCompletionsAttemptArgs {
 export const chatCompletionsAttempt = {
   generate: async (args: ChatCompletionsAttemptArgs): Promise<ExecuteResult<ProtocolFrame<ChatCompletionsStreamEvent>>> => {
     const { payload, ctx, store, candidate, headers } = args;
+    const targetApi = chatCompletionsTarget.pick(candidate.model.endpoints);
     const rewritten = await rewriteOrRenderChatCompletionsFailure(payload, store, candidate);
     if (rewritten.failure) return rewritten.failure;
     const invocation: ChatCompletionsInvocation = {
       payload: rewritten.payload,
       candidate,
+      targetApi,
       headers,
     };
     return await runInterceptors(invocation, ctx, chatCompletionsInterceptors, async () => {
-      if (candidate.targetApi === 'chat-completions') {
+      if (targetApi === 'chat-completions') {
         return await callChatCompletionsAsExecuteResult(invocation.payload, ctx, candidate, invocation.headers);
       }
-      if (candidate.targetApi === 'messages') {
+      if (targetApi === 'messages') {
         return await traverseTranslation(
           invocation.payload,
           p => translateChatCompletionsViaMessages(p, {
-            model: candidate.binding.upstreamModel.id,
-            fallbackMaxOutputTokens: candidate.binding.upstreamModel.limits.max_output_tokens,
+            model: candidate.model.id,
+            fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
           }),
-          translated => messagesAttempt.generate({ payload: translated, ctx, store, candidate, headers: invocation.headers }),
+          translated => messagesAttempt.generate({
+            payload: translated, ctx, store, candidate, headers: invocation.headers,
+          }),
         );
       }
-      if (candidate.targetApi === 'responses') {
+      if (targetApi === 'responses') {
         return await traverseTranslation(
           invocation.payload,
-          p => translateChatCompletionsViaResponses(p, { model: candidate.binding.upstreamModel.id }),
-          translated => responsesAttempt.generate({ payload: translated, ctx, store, candidate, headers: invocation.headers }),
+          p => translateChatCompletionsViaResponses(p, { model: candidate.model.id }),
+          translated => responsesAttempt.generate({
+            payload: translated, ctx, store, candidate, headers: invocation.headers,
+          }),
         );
       }
-      throw new Error(`chatCompletionsAttempt.generate: unexpected targetApi '${(candidate as { targetApi: string }).targetApi}'`);
+      throw new Error(`chatCompletionsAttempt.generate: unexpected targetApi '${targetApi as string}'`);
     });
   },
 };
@@ -103,11 +112,11 @@ const callChatCompletionsAsExecuteResult = async (
 ): Promise<ExecuteResult<ProtocolFrame<ChatCompletionsStreamEvent>>> => {
   const { model: _model, ...body } = payload;
   const recorder = createUpstreamLatencyRecorder();
-  const providerResult = await candidate.binding.provider.callChatCompletions(
-    candidate.binding.upstreamModel,
+  const providerResult = await candidate.provider.provider.callChatCompletions(
+    candidate.model,
     body,
     ctx.abortSignal,
     buildUpstreamCallOptions(candidate, ctx, recorder.record, headers),
   );
-  return await providerStreamResultToExecuteResult(providerResult, candidate, ctx, recorder);
+  return await providerStreamResultToExecuteResult(providerResult, candidate, 'chat-completions', ctx, recorder);
 };

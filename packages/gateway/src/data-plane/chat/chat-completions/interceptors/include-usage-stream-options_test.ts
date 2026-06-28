@@ -22,7 +22,8 @@ const okEvents = () => Promise.resolve(eventResult((async function* () {})(), te
 
 const invocation = (payload: ChatCompletionsPayload): ChatCompletionsInvocation => ({
   payload,
-  candidate: stubProviderCandidate({ targetApi: 'chat-completions' }),
+  candidate: stubProviderCandidate(),
+  targetApi: 'chat-completions',
   headers: new Headers(),
 });
 

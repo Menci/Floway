@@ -30,7 +30,7 @@ const azureUpstream = (): UpstreamRecord => ({
   state: null,
 });
 
-test('/api/models exposes each binding as { kind, id } so multi-provider models are unambiguous', async () => {
+test('/api/models exposes each upstream as { kind, id } so multi-provider models are unambiguous', async () => {
   const { apiKey, repo } = await setupAppTest();
   await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_custom_models', sortOrder: 100 }));
   await repo.upstreams.save(azureUpstream());

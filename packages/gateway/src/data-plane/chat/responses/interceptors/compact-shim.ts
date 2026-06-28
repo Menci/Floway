@@ -245,8 +245,8 @@ export const withResponsesCompactShim: ResponsesInterceptor = async (ctx, _gatew
   // OR when the upstream's targetApi is not Responses (Messages /
   // Chat Completions have no compaction wire and would crash on the
   // unknown `compaction_trigger` input variant).
-  const flagOn = ctx.candidate.binding.enabledFlags.has('responses-compact-shim');
-  const structurallyRequired = ctx.candidate.targetApi !== 'responses';
+  const flagOn = ctx.candidate.model.enabledFlags.has('responses-compact-shim');
+  const structurallyRequired = ctx.targetApi !== 'responses';
   if (!flagOn && !structurallyRequired) return await run();
 
   // Inbound: expand any prior shim-encoded compactions back into their

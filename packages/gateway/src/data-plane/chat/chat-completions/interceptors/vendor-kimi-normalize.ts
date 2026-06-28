@@ -37,7 +37,7 @@ const rewriteInboundUsage = (chunk: ChatCompletionsStreamEvent): ChatCompletions
 };
 
 export const withVendorKimiChatCompletionsNormalize: ChatCompletionsInterceptor = async (ctx, _gatewayCtx, run) => {
-  if (!ctx.candidate.binding.enabledFlags.has('vendor-kimi')) return await run();
+  if (!ctx.candidate.model.enabledFlags.has('vendor-kimi')) return await run();
 
   const result = await run();
   if (result.type !== 'events') return result;

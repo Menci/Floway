@@ -21,7 +21,8 @@ const stubCtx: GatewayCtx = {
 
 const invocation = (payload: ChatCompletionsPayload, enabledFlags: ReadonlySet<string> = new Set(['vendor-kimi'])): ChatCompletionsInvocation => ({
   payload,
-  candidate: stubProviderCandidate({ targetApi: 'chat-completions', binding: { enabledFlags } }),
+  candidate: stubProviderCandidate({ model: { enabledFlags } }),
+  targetApi: 'chat-completions',
   headers: new Headers(),
 });
 
@@ -67,7 +68,7 @@ test('rewrites flat cached_tokens into prompt_tokens_details.cached_tokens', asy
   assertEquals('cached_tokens' in usage, false);
 });
 
-test('early-returns when its flag is not set on the binding', async () => {
+test('early-returns when its flag is not set on the candidate', async () => {
   const ctx = invocation(baseRequest(), new Set());
   const result = await withVendorKimiChatCompletionsNormalize(ctx, stubCtx, () =>
     Promise.resolve(eventResult(

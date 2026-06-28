@@ -18,7 +18,7 @@ const downgradeRole = (message: ChatCompletionsMessage): ChatCompletionsMessage 
 };
 
 export const withDemoteDeveloperToSystem: ChatCompletionsInterceptor = async (ctx, _gatewayCtx, run) => {
-  if (!ctx.candidate.binding.enabledFlags.has('demote-developer-to-system')) return await run();
+  if (!ctx.candidate.model.enabledFlags.has('demote-developer-to-system')) return await run();
 
   ctx.payload = {
     ...ctx.payload,

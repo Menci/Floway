@@ -25,7 +25,8 @@ const invocation = (
   enabledFlags: ReadonlySet<string> = new Set(['disable-reasoning-on-forced-tool-choice']),
 ): ChatCompletionsInvocation => ({
   payload,
-  candidate: stubProviderCandidate({ targetApi: 'chat-completions', binding: { enabledFlags } }),
+  candidate: stubProviderCandidate({ model: { enabledFlags } }),
+  targetApi: 'chat-completions',
   headers: new Headers(),
 });
 
@@ -73,7 +74,7 @@ test('non-forced tool_choice leaves reasoning_effort untouched', async () => {
   }
 });
 
-test('is a no-op when the flag is not set on the binding', async () => {
+test('is a no-op when the flag is not set on the candidate', async () => {
   const input = invocation(
     { model: 'm', messages: [], reasoning_effort: 'high', tool_choice: 'required' },
     new Set(),

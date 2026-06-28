@@ -35,7 +35,8 @@ const invocation = (
   enabledFlags: ReadonlySet<string> = new Set(['disable-reasoning-on-forced-tool-choice']),
 ): ResponsesInvocation => ({
   payload,
-  candidate: stubProviderCandidate({ targetApi: 'responses', binding: { enabledFlags } }),
+  candidate: stubProviderCandidate({ model: { enabledFlags } }),
+  targetApi: 'responses',
   store: new LayeredStatefulResponsesStore({
     apiKeyId: 'test-key',
     reads: [new MemoryStatefulResponsesBacking()],

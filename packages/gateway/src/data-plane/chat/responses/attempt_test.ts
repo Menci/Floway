@@ -7,12 +7,11 @@ import { createResponsesHttpStore } from './items/store.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import type { StoredResponsesItem } from '../../../repo/types.ts';
-import type { ProviderCandidate } from '../shared/candidates.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { directFetcher, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions, type UpstreamModel } from '@floway-dev/provider';
+import { type ProviderCandidate, directFetcher, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions, type UpstreamModel } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
 
 const API_KEY_ID = 'key_attempt_test';
@@ -57,7 +56,6 @@ const makeProviderEvents = async function* (events: readonly ResponsesStreamEven
 };
 
 const makeCandidate = (callResponses: (model: UpstreamModel, body: Omit<ResponsesPayload, 'model'>, action: ResponsesAction, signal: AbortSignal | undefined, opts: UpstreamCallOptions) => Promise<ProviderResponsesResult>): ProviderCandidate => {
-  const upstreamModel = stubUpstreamModel();
   const provider = stubProvider({ callResponses });
   return {
     provider: {
@@ -69,17 +67,7 @@ const makeCandidate = (callResponses: (model: UpstreamModel, body: Omit<Response
       provider,
       supportsResponsesItemReference: true,
     },
-    binding: {
-      upstream: 'up_test',
-      upstreamName: 'up_test',
-      providerKind: 'custom',
-      provider,
-      upstreamModel,
-      enabledFlags: upstreamModel.enabledFlags,
-      supportsResponsesItemReference: true,
-    },
-    targetApi: 'responses',
-
+    model: stubUpstreamModel(),
     fetcher: directFetcher,
   };
 };
@@ -229,7 +217,7 @@ test('generate returns failure when rewrite throws item-not-found', async () => 
   const candidate = makeCandidate(callResponses);
   // Force `supportsResponsesItemReference: false` so a stored row with no
   // inline payload triggers the rewrite-side throw.
-  candidate.binding.supportsResponsesItemReference = false;
+  candidate.provider.supportsResponsesItemReference = false;
 
   const missingId = createStoredResponsesItemId('message');
   // Pre-seed the store cache: a row with no inline payload, referenced as
@@ -364,7 +352,7 @@ test('compact reshapes the trigger turn into a result and derives snapshotMode=r
 test('generate inherits invocation headers across translation to Messages', async () => {
   installRepo();
   let observedHeaders: Headers | undefined;
-  const upstreamModel = stubUpstreamModel();
+  const upstreamModel = stubUpstreamModel({ endpoints: { messages: {} } });
   const messagesProvider = stubProvider({
     callMessages: async (_model, _body, _signal, opts): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
       observedHeaders = opts.headers;
@@ -392,13 +380,7 @@ test('generate inherits invocation headers across translation to Messages', asyn
       upstream: 'up_test', providerKind: 'custom', name: 'up_test',
       disabledPublicModelIds: [], modelPrefix: null, provider: messagesProvider, supportsResponsesItemReference: true,
     },
-    binding: {
-      upstream: 'up_test', upstreamName: 'up_test', providerKind: 'custom',
-      provider: messagesProvider, upstreamModel,
-      enabledFlags: upstreamModel.enabledFlags, supportsResponsesItemReference: true,
-    },
-    targetApi: 'messages',
-
+    model: upstreamModel,
     fetcher: directFetcher,
   };
 
@@ -482,12 +464,11 @@ test('generate seeds privatePayload before interceptors so the web-search shim r
     return { action: 'generate', ok: true, events: makeProviderEvents(upstreamEvents), modelKey: 'test-model-key', headers: new Headers() };
   });
   const candidate = makeCandidate(callResponses);
-  // The shim early-returns inactive unless the binding has the flag. The
-  // candidate shape is `readonly`, so swap the enabledFlags via Object.assign
-  // on both the binding and its upstreamModel (which the binding aliases).
+  // The shim early-returns inactive unless the model has the flag. The
+  // candidate shape is `readonly`, so swap the enabledFlags on the model via
+  // Object.assign.
   const enabledFlags = new Set(['responses-web-search-shim']);
-  Object.assign(candidate.binding.upstreamModel, { enabledFlags });
-  Object.assign(candidate.binding, { enabledFlags });
+  Object.assign(candidate.model, { enabledFlags });
 
   const store = createResponsesHttpStore(API_KEY_ID, true);
   await store.loadInputItems({

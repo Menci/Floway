@@ -12,8 +12,8 @@ import { withVendorDeepseekResponsesNormalize } from './vendor-deepseek-normaliz
 import { withVendorQwenResponsesNormalize } from './vendor-qwen-normalize.ts';
 
 // Unified Responses interceptor list. All entries are attached to every
-// binding; each interceptor's body decides whether to act (flag-gated entries
-// early-return on `ctx.candidate.binding.enabledFlags.has(flagId)`).
+// candidate; each interceptor's body decides whether to act (flag-gated entries
+// early-return on `ctx.candidate.model.enabledFlags.has(flagId)`).
 //
 // Order matters: earlier entries wrap later ones.
 //   - withResponsesCompactShim: runs outermost so the action pivot

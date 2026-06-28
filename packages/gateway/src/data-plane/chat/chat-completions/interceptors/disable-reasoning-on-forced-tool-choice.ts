@@ -15,7 +15,7 @@ const hasForcedToolChoice = (payload: ChatCompletionsPayload): boolean => {
 };
 
 export const withReasoningDisabledOnForcedToolChoice: ChatCompletionsInterceptor = async (ctx, _gatewayCtx, run) => {
-  if (!ctx.candidate.binding.enabledFlags.has('disable-reasoning-on-forced-tool-choice')) return await run();
+  if (!ctx.candidate.model.enabledFlags.has('disable-reasoning-on-forced-tool-choice')) return await run();
   if (!hasForcedToolChoice(ctx.payload)) return await run();
   ctx.payload = { ...ctx.payload, reasoning_effort: 'none' };
   return await run();

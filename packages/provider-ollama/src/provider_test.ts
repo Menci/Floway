@@ -95,7 +95,7 @@ test('getProvidedModels merges manual overrides in front of auto-fetched models 
   await withMockedFetch(tagsAndShow, async () => {
     const models = await instance.provider.getProvidedModels(directFetcher);
     // Manual entry appears first; the auto duplicate is filtered out so the
-    // public id resolves to the manual binding's narrower endpoints map.
+    // public id resolves to the manual entry's narrower endpoints map.
     assertEquals(models[0].id, 'gpt-oss:120b');
     assertEquals(models[0].display_name, 'Pinned 120B');
     assertEquals(Object.keys(models[0].endpoints), ['chatCompletions']);

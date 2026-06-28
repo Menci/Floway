@@ -31,13 +31,19 @@ const PNG_B64 = 'aGVsbG8='; // "hello" — any decodable base64 works for source
 // The registration only reads targetApi / enabledFlags / payload off the invocation.
 const makeCtx = (payload: Partial<ResponsesPayload>): ResponsesInvocation => ({
   candidate: {
-    targetApi: 'responses',
-    provider: {} as never,
-    binding: {
+    provider: {
+      upstream: 'test-upstream', providerKind: 'custom', name: 'test',
+      disabledPublicModelIds: [], modelPrefix: null,
+      provider: {} as never, supportsResponsesItemReference: false,
+    },
+    model: {
+      id: 'm', limits: {}, kind: 'chat',
+      endpoints: { responses: {} },
       enabledFlags: new Set<string>(['responses-image-generation-shim']),
-    } as never,
+    },
     fetcher: directFetcher,
   },
+  targetApi: 'responses',
   store: new LayeredStatefulResponsesStore({
     apiKeyId: 'test-key',
     reads: [new MemoryStatefulResponsesBacking()],

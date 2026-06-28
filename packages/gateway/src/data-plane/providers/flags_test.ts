@@ -54,7 +54,7 @@ test('provider flags: defaultsForProvider returns the catalog-declared defaults'
   assertEquals([...defaultsForProvider('ollama')].sort(), ['messages-web-search-shim', 'responses-compact-shim', 'responses-image-generation-shim', 'responses-web-search-shim', 'strip-billing-attribution']);
   assertEquals([...defaultsForProvider('codex')].sort(), ['strip-billing-attribution']);
   // claude-code gets responses-compact-shim by default (Messages-only — any
-  // Responses request that reaches a claude-code binding needs the shim to
+  // Responses request that reaches a claude-code candidate needs the shim to
   // simulate compaction; the alternative is a hard reject from the provider).
   assertEquals([...defaultsForProvider('claude-code')].sort(), ['responses-compact-shim']);
 });

@@ -21,7 +21,7 @@ const CCH_HASH_RE = /cch=[0-9a-f]{5,};?/gi;
 const stripText = (text: string): string => text.replace(BILLING_HEADER_LINE_RE, '').replace(CCH_HASH_RE, '').trim();
 
 export const stripBillingAttribution: MessagesInterceptor = (ctx, _gatewayCtx, run) => {
-  if (!ctx.candidate.binding.enabledFlags.has('strip-billing-attribution')) return run();
+  if (!ctx.candidate.model.enabledFlags.has('strip-billing-attribution')) return run();
 
   const { payload } = ctx;
 

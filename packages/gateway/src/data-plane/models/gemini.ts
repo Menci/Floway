@@ -6,11 +6,11 @@ import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getCurrentColo } from '../../runtime/runtime-info.ts';
 import { geminiStatusForHttpStatus } from '../chat/gemini/errors.ts';
-import { getInternalModels } from '../providers/registry.ts';
+import { getModels } from '../providers/registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ModelPricing } from '@floway-dev/protocols/common';
 import { ProviderModelsUnavailableError } from '@floway-dev/provider';
-import type { Fetcher, InternalModel } from '@floway-dev/provider';
+import type { InternalModel, Fetcher } from '@floway-dev/provider';
 
 type GeminiGenerationMethod = 'generateContent' | 'streamGenerateContent' | 'countTokens';
 
@@ -67,7 +67,7 @@ const loadGeminiModels = async (
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
 ): Promise<GeminiModel[]> => {
-  const models = await getInternalModels(upstreamFilter, fetcherForUpstream, scheduler);
+  const { models } = await getModels(upstreamFilter, fetcherForUpstream, scheduler);
   // Only chat models are representable in the Gemini /models shape.
   return models.filter(model => model.kind === 'chat').map(toGeminiModel);
 };

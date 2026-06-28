@@ -11,8 +11,8 @@
 // from upstream(s) "a" failed to load).", not "endpoint. (...load).".
 //
 // Returns the message unchanged when no upstream failed.
-export const appendFailedUpstreams = (message: string, failedUpstreams: readonly string[] | undefined): string => {
-  if (!failedUpstreams || failedUpstreams.length === 0) return message;
+export const appendFailedUpstreams = (message: string, failedUpstreams: readonly string[]): string => {
+  if (failedUpstreams.length === 0) return message;
   const names = failedUpstreams.map(name => `"${name}"`).join(', ');
   const suffix = ` (models from upstream(s) ${names} failed to load)`;
   return message.endsWith('.') ? `${message.slice(0, -1)}${suffix}.` : `${message}${suffix}`;

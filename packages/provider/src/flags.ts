@@ -7,7 +7,7 @@
 // catalog free of runtime closures.
 //
 // Vendor-style flags (`vendor-deepseek`, `vendor-qwen`, `vendor-kimi`) are
-// mutually exclusive per binding: a vendor interceptor translates the
+// mutually exclusive per model: a vendor interceptor translates the
 // gateway's OpenAI-canonical request and response shape into the vendor's
 // wire dialect; with no vendor flag set, behavior defaults to the OpenAI
 // standard and no vendor rewrite runs.

@@ -114,7 +114,7 @@ export const userUpstreamIdsFromContext = (c: AuthedContext): readonly string[] 
 // Effective upstream whitelist for this request: intersect the per-user cap
 // with the per-key whitelist. null = unrestricted. Session-only requests
 // resolve to the per-user cap alone (apiKey is absent). Data-plane reads
-// this to constrain provider/binding selection.
+// this to constrain provider/candidate selection.
 export const effectiveUpstreamIdsFromContext = (c: AuthedContext): readonly string[] | null => {
   const userIds = c.get('user')?.upstreamIds ?? null;
   const keyIds = c.get('apiKey')?.upstreamIds ?? null;

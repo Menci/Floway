@@ -34,7 +34,7 @@ export type ModelEndpointKey = keyof ModelEndpoints;
 // `imagesGenerations`/`imagesEdits` implies image, everything else is chat.
 // Mixed endpoint sets (e.g. a model tagged with both `embeddings` and
 // `chatCompletions`) are configuration errors; the first matching branch wins.
-// `kind` is a pure projection of `endpoints`; routing never reads it.
+// `kind` is a pure projection of `endpoints`; the dispatch layer never reads it.
 export const kindForEndpoints = (endpoints: ModelEndpoints): ModelKind => {
   if (endpoints.embeddings) return 'embedding';
   if (endpoints.imagesGenerations || endpoints.imagesEdits) return 'image';

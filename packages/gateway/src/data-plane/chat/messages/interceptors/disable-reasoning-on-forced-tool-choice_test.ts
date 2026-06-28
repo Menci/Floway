@@ -6,7 +6,7 @@ import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import { type ExecuteResult, eventResult } from '@floway-dev/provider';
-import { stubProviderCandidate, stubUpstreamModel, testTelemetryModelIdentity, assertEquals } from '@floway-dev/test-utils';
+import { stubProviderCandidate, testTelemetryModelIdentity, assertEquals } from '@floway-dev/test-utils';
 
 const stubCtx: GatewayCtx = {
   apiKeyId: 'test-key',
@@ -28,9 +28,9 @@ const invocation = (
 ): MessagesInvocation => ({
   payload,
   candidate: stubProviderCandidate({
-    targetApi: 'messages',
-    binding: { upstreamModel: stubUpstreamModel({ endpoints: { messages: {} } }), enabledFlags },
+    model: { endpoints: { messages: {} }, enabledFlags },
   }),
+  targetApi: 'messages',
   headers: new Headers(),
 });
 

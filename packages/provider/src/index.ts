@@ -45,14 +45,13 @@ export type {
   ModelProvider,
   ModelProviderInstance,
   ProviderCallResult,
-  ProviderModelRecord,
   ProviderResponsesResult,
   ProviderStreamResult,
-  ResolvedModel,
   ResponsesAction,
   UpstreamCallOptions,
 } from './provider.ts';
-export { streamingProviderCall, type ProviderStreamParser } from './streaming.ts';
+export type { ProviderStreamParser } from './streaming.ts';
+export { streamingProviderCall } from './streaming.ts';
 
 export type { ProviderRepo, UpstreamsRepoSlim } from './repo.ts';
 export { getProviderRepo, initProviderRepo } from './repo.ts';

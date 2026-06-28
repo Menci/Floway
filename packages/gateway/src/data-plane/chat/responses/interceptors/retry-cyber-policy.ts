@@ -173,7 +173,7 @@ const retryCyberPolicyEvents = async function* (
  * operators can inspect detailed upstream failures.
  */
 export const withCyberPolicyRetried: ResponsesInterceptor = async (ctx, gatewayCtx, run) => {
-  if (!ctx.candidate.binding.enabledFlags.has('retry-cyber-policy')) return await run();
+  if (!ctx.candidate.model.enabledFlags.has('retry-cyber-policy')) return await run();
 
   let finalResult: ResponsesResultFrames | undefined;
 

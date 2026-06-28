@@ -58,10 +58,11 @@ export const imagesGenerations = async (c: Context): Promise<Response> => {
     ctx,
     sourceApi: '/images/generations',
     model: request.model,
-    bindingServesEndpoint: binding => binding.upstreamModel.endpoints.imagesGenerations !== undefined,
-    call: (binding, opts) => {
+    kind: 'image',
+    modelServesEndpoint: model => model.endpoints.imagesGenerations !== undefined,
+    call: (provider, model, opts) => {
       const { model: _model, ...body } = request.body;
-      return binding.provider.callImagesGenerations(binding.upstreamModel, body, undefined, opts);
+      return provider.provider.callImagesGenerations(model, body, undefined, opts);
     },
     response: { format: 'json', extractBilling: tokenUsageFromImagesBody },
   });
@@ -99,19 +100,20 @@ export const imagesEdits = async (c: Context): Promise<Response> => {
     ctx,
     sourceApi: '/images/edits',
     model: modelRaw,
-    bindingServesEndpoint: binding => binding.upstreamModel.endpoints.imagesEdits !== undefined,
-    call: (binding, opts) => {
+    kind: 'image',
+    modelServesEndpoint: model => model.endpoints.imagesEdits !== undefined,
+    call: (provider, model, opts) => {
       // ModelProvider.callImagesEdits takes ownership of the FormData and
       // appends the upstream-specific model/deployment id; allocate a fresh
-      // copy per binding so the contract holds even if cross-binding
-      // fallback is ever extended to try a second binding. File-blob entries
+      // copy per candidate so the contract holds even if cross-candidate
+      // fallback is ever extended to try a second match. File-blob entries
       // are passed by reference so no buffer copy happens.
       const passthrough = new FormData();
       for (const [name, value] of form.entries()) {
         if (name === 'model') continue;
         passthrough.append(name, value);
       }
-      return binding.provider.callImagesEdits(binding.upstreamModel, passthrough, undefined, opts);
+      return provider.provider.callImagesEdits(model, passthrough, undefined, opts);
     },
     response: { format: 'json', extractBilling: tokenUsageFromImagesBody },
   });

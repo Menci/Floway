@@ -318,16 +318,25 @@ const makeStore = (apiKeyId: string | null = 'k1'): StatefulResponsesStore =>
 
 const makeInvocation = (overrides: InvocationOverrides = {}): ResponsesInvocation => ({
   candidate: {
-    // Default chat-completions so existing tests exercise the
-    // function_call_output path. Tests that care about a specific target
-    // set targetApi explicitly.
-    targetApi: overrides.targetApi ?? 'chat-completions',
-    provider: {} as never,
-    binding: {
+    provider: {
+      // Tests don't care about provider identity here; the shim reads
+      // targetApi off the invocation and enabledFlags off the candidate's
+      // model. Use `never` to skip the full ModelProviderInstance literal.
+      upstream: 'test-upstream', providerKind: 'custom', name: 'test',
+      disabledPublicModelIds: [], modelPrefix: null,
+      provider: {} as never, supportsResponsesItemReference: false,
+    },
+    model: {
+      id: 'claude-x', limits: {}, kind: 'chat',
+      endpoints: { chatCompletions: {}, responses: {}, messages: {} },
       enabledFlags: overrides.enabledFlags ?? new Set<string>(),
-    } as never,
+    },
     fetcher: directFetcher,
   },
+  // Default chat-completions so existing tests exercise the
+  // function_call_output path. Tests that care about a specific target
+  // set targetApi explicitly.
+  targetApi: overrides.targetApi ?? 'chat-completions',
   store: makeStore(),
   payload: {
     model: 'claude-x',

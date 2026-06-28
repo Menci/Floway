@@ -6,8 +6,8 @@ import { createNonResponsesSourceStore } from './store.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import type { StoredResponsesItem } from '../../../../repo/types.ts';
-import type { ProviderCandidate } from '../../shared/candidates.ts';
 import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
+import type { ProviderCandidate } from '@floway-dev/provider';
 import { directFetcher } from '@floway-dev/provider';
 import { stubProvider, stubUpstreamModel, assertEquals } from '@floway-dev/test-utils';
 import { responsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
@@ -15,9 +15,8 @@ import { responsesItemsView } from '@floway-dev/translate/via-responses/response
 const API_KEY_ID = 'key_affinity_test';
 
 const candidate = (upstream: string, supportsResponsesItemReference = true): ProviderCandidate => {
-  const upstreamModel = stubUpstreamModel();
   const modelProvider = stubProvider({
-    getProvidedModels: () => Promise.resolve([upstreamModel]),
+    getProvidedModels: () => Promise.resolve([stubUpstreamModel()]),
   });
   return {
     provider: {
@@ -29,17 +28,7 @@ const candidate = (upstream: string, supportsResponsesItemReference = true): Pro
       provider: modelProvider,
       supportsResponsesItemReference,
     },
-    binding: {
-      upstream,
-      upstreamName: upstream,
-      providerKind: 'custom',
-      provider: modelProvider,
-      upstreamModel,
-      enabledFlags: upstreamModel.enabledFlags,
-      supportsResponsesItemReference,
-    },
-    targetApi: 'responses',
-
+    model: stubUpstreamModel(),
     fetcher: directFetcher,
   };
 };
@@ -145,7 +134,7 @@ test('empty references pass through all candidates unchanged', async () => {
   const result = await classifyItems([], [candidate('up_a'), candidate('up_b')]);
 
   assertEquals(result.kind, 'success');
-  if (result.kind === 'success') assertEquals(result.candidates.map(c => c.binding.upstream), ['up_a', 'up_b']);
+  if (result.kind === 'success') assertEquals(result.candidates.map(c => c.provider.upstream), ['up_a', 'up_b']);
 });
 
 test('non-affinity items (no id, no encrypted_content) pass through candidates unchanged', async () => {
@@ -155,7 +144,7 @@ test('non-affinity items (no id, no encrypted_content) pass through candidates u
   const result = await classifyItems(items, [candidate('up_a'), candidate('up_b')]);
 
   assertEquals(result.kind, 'success');
-  if (result.kind === 'success') assertEquals(result.candidates.map(c => c.binding.upstream), ['up_a', 'up_b']);
+  if (result.kind === 'success') assertEquals(result.candidates.map(c => c.provider.upstream), ['up_a', 'up_b']);
 });
 
 test('duplicate stored ids dedupe preferred upstreams by last occurrence', async () => {
@@ -174,7 +163,7 @@ test('duplicate stored ids dedupe preferred upstreams by last occurrence', async
 
   // up_a appears last so it should be sorted first; up_b second
   assertEquals(result.kind, 'success');
-  if (result.kind === 'success') assertEquals(result.candidates.map(c => c.binding.upstream), ['up_a', 'up_b']);
+  if (result.kind === 'success') assertEquals(result.candidates.map(c => c.provider.upstream), ['up_a', 'up_b']);
 });
 
 test('mixed portable upstreams are ordered by reverse last occurrence before remaining candidates', async () => {
@@ -191,7 +180,7 @@ test('mixed portable upstreams are ordered by reverse last occurrence before rem
   ], [candidate('up_c'), candidate('up_a'), candidate('up_b')]);
 
   assertEquals(result.kind, 'success');
-  if (result.kind === 'success') assertEquals(result.candidates.map(c => c.binding.upstream), ['up_b', 'up_a', 'up_c']);
+  if (result.kind === 'success') assertEquals(result.candidates.map(c => c.provider.upstream), ['up_b', 'up_a', 'up_c']);
 });
 
 test('conflicting compaction forcing upstreams reject the request', async () => {
@@ -265,7 +254,7 @@ test('id-less reasoning is matched by encrypted_content hash and prefers its own
   const result = await classifyItems(items, [candidate('up_b'), candidate('up_a')]);
 
   assertEquals(result.kind, 'success');
-  if (result.kind === 'success') assertEquals(result.candidates.map(c => c.binding.upstream), ['up_a', 'up_b']);
+  if (result.kind === 'success') assertEquals(result.candidates.map(c => c.provider.upstream), ['up_a', 'up_b']);
 });
 
 test('id-less encrypted_content duplicate hash keeps the freshest stored row for affinity', async () => {
@@ -280,7 +269,7 @@ test('id-less encrypted_content duplicate hash keeps the freshest stored row for
   const result = await classifyItems(items, [candidate('up_old'), candidate('up_new')]);
 
   assertEquals(result.kind, 'success');
-  if (result.kind === 'success') assertEquals(result.candidates.map(c => c.binding.upstream), ['up_new', 'up_old']);
+  if (result.kind === 'success') assertEquals(result.candidates.map(c => c.provider.upstream), ['up_new', 'up_old']);
 });
 
 test('id-less compaction is matched by encrypted_content hash and forces its owning upstream', async () => {
@@ -294,7 +283,7 @@ test('id-less compaction is matched by encrypted_content hash and forces its own
 
   const resultWithOwner = await classifyItems(items, [candidate('up_b'), candidate('up_a')]);
   assertEquals(resultWithOwner.kind, 'success');
-  if (resultWithOwner.kind === 'success') assertEquals(resultWithOwner.candidates.map(c => c.binding.upstream), ['up_a']);
+  if (resultWithOwner.kind === 'success') assertEquals(resultWithOwner.candidates.map(c => c.provider.upstream), ['up_a']);
 
   const resultWithoutOwner = await classifyItems(items, [candidate('up_b')]);
   assertEquals(resultWithoutOwner.kind, 'failure');
@@ -308,5 +297,5 @@ test('id-less encrypted_content with no stored match is a benign passthrough wit
   const result = await classifyItems(items, [candidate('up_a'), candidate('up_b')]);
 
   assertEquals(result.kind, 'success');
-  if (result.kind === 'success') assertEquals(result.candidates.map(c => c.binding.upstream), ['up_a', 'up_b']);
+  if (result.kind === 'success') assertEquals(result.candidates.map(c => c.provider.upstream), ['up_a', 'up_b']);
 });

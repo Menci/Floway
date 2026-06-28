@@ -6,14 +6,20 @@ import { chatCompletionsAttempt } from '../chat-completions/attempt.ts';
 import { messagesAttempt } from '../messages/attempt.ts';
 import { responsesAttempt } from '../responses/attempt.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
-import type { ProviderCandidate } from '../shared/candidates.ts';
+import { chatTargetPicker } from '../shared/attempt-helpers.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { traverseTranslation } from '../shared/translate-traverse.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiPayload, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
-import { plainResult, type ExecuteResult, type GeminiInvocation, type PlainResult } from '@floway-dev/provider';
+import { type ProviderCandidate, plainResult, type ExecuteResult, type GeminiInvocation, type PlainResult } from '@floway-dev/provider';
 import { translateGeminiViaChatCompletions, translateGeminiViaMessages, translateGeminiViaResponses } from '@floway-dev/translate';
+
+// Gemini has no native upstream target in the provider API; prefer Chat
+// Completions, then Messages, then Responses for generate. countTokens has
+// no translation path beyond native Messages count_tokens.
+export const geminiGenerateTarget = chatTargetPicker(['chat-completions', 'messages', 'responses']);
+export const geminiCountTokensTarget = chatTargetPicker(['messages']);
 
 export interface GeminiAttemptGenerateArgs {
   readonly payload: GeminiPayload;
@@ -34,17 +40,18 @@ export interface GeminiAttemptCountTokensArgs {
 export const geminiAttempt = {
   generate: async (args: GeminiAttemptGenerateArgs): Promise<ExecuteResult<ProtocolFrame<GeminiStreamEvent>>> => {
     const { payload, ctx, store, candidate, headers } = args;
-    const invocation: GeminiInvocation = { payload, candidate, headers };
+    const targetApi = geminiGenerateTarget.pick(candidate.model.endpoints);
+    const invocation: GeminiInvocation = { payload, candidate, targetApi, headers };
     return await runInterceptors(invocation, ctx, geminiInterceptors, async () => {
       // Gemini has no native upstream target today — every targetApi we
-      // pickTarget for is reached via translation. The dispatch threads each
-      // branch through `traverseTranslation` so each inner attempt owns its
-      // own interceptor chain and rewrite.
+      // pick is reached via translation. The dispatch threads each branch
+      // through `traverseTranslation` so each inner attempt owns its own
+      // interceptor chain and rewrite.
       const transCtx = {
-        model: candidate.binding.upstreamModel.id,
-        fallbackMaxOutputTokens: candidate.binding.upstreamModel.limits.max_output_tokens,
+        model: candidate.model.id,
+        fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
       };
-      if (candidate.targetApi === 'messages') {
+      if (targetApi === 'messages') {
         return await traverseTranslation(
           invocation.payload,
           p => translateGeminiViaMessages(p, transCtx),
@@ -53,7 +60,7 @@ export const geminiAttempt = {
           }),
         );
       }
-      if (candidate.targetApi === 'responses') {
+      if (targetApi === 'responses') {
         return await traverseTranslation(
           invocation.payload,
           p => translateGeminiViaResponses(p, transCtx),
@@ -62,7 +69,7 @@ export const geminiAttempt = {
           }),
         );
       }
-      if (candidate.targetApi === 'chat-completions') {
+      if (targetApi === 'chat-completions') {
         return await traverseTranslation(
           invocation.payload,
           p => translateGeminiViaChatCompletions(p, transCtx),
@@ -71,16 +78,14 @@ export const geminiAttempt = {
           }),
         );
       }
-      throw new Error(`geminiAttempt.generate: unexpected targetApi '${(candidate as { targetApi: string }).targetApi}'`);
+      throw new Error(`geminiAttempt.generate: unexpected targetApi '${targetApi as string}'`);
     });
   },
 
   countTokens: async (args: GeminiAttemptCountTokensArgs): Promise<PlainResult> => {
     const { payload, ctx, store, candidate, headers } = args;
-    if (candidate.targetApi !== 'messages') {
-      throw new Error(`geminiAttempt.countTokens requires targetApi='messages', got '${candidate.targetApi}'`);
-    }
-    const invocation: GeminiInvocation = { payload, candidate, headers };
+    const targetApi = geminiCountTokensTarget.pick(candidate.model.endpoints);
+    const invocation: GeminiInvocation = { payload, candidate, targetApi, headers };
     return await runInterceptors(invocation, ctx, geminiCountTokensInterceptors, async () => {
       // Gemini countTokens has no native upstream; translate to Messages and
       // delegate to `messagesAttempt.countTokens`, then reshape the Messages
@@ -91,8 +96,8 @@ export const geminiAttempt = {
       // payload-mutators are applied inline here on a structuredClone of
       // the source so the caller's payload stays intact.
       const transCtx = {
-        model: candidate.binding.upstreamModel.id,
-        fallbackMaxOutputTokens: candidate.binding.upstreamModel.limits.max_output_tokens,
+        model: candidate.model.id,
+        fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
       };
       const cleaned = structuredClone(invocation.payload);
       stripUnsupportedPartFieldsFromPayload(cleaned);

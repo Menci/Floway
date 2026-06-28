@@ -7,8 +7,8 @@ import { createNonResponsesSourceStore } from './store.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import type { StoredResponsesItem } from '../../../../repo/types.ts';
-import type { ProviderCandidate } from '../../shared/candidates.ts';
 import type { ResponsesInputItem, ResponsesPayload } from '@floway-dev/protocols/responses';
+import type { ProviderCandidate } from '@floway-dev/provider';
 import { directFetcher } from '@floway-dev/provider';
 import { stubProvider, stubUpstreamModel, assert, assertEquals, assertFalse } from '@floway-dev/test-utils';
 import { responsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
@@ -16,9 +16,8 @@ import { responsesItemsView } from '@floway-dev/translate/via-responses/response
 const API_KEY_ID = 'key_rewrite_test';
 
 const candidate = (upstream: string, supportsResponsesItemReference = true): ProviderCandidate => {
-  const upstreamModel = stubUpstreamModel();
   const modelProvider = stubProvider({
-    getProvidedModels: () => Promise.resolve([upstreamModel]),
+    getProvidedModels: () => Promise.resolve([stubUpstreamModel()]),
   });
   return {
     provider: {
@@ -30,17 +29,7 @@ const candidate = (upstream: string, supportsResponsesItemReference = true): Pro
       provider: modelProvider,
       supportsResponsesItemReference,
     },
-    binding: {
-      upstream,
-      upstreamName: upstream,
-      providerKind: 'custom',
-      provider: modelProvider,
-      upstreamModel,
-      enabledFlags: upstreamModel.enabledFlags,
-      supportsResponsesItemReference,
-    },
-    targetApi: 'responses',
-
+    model: stubUpstreamModel(),
     fetcher: directFetcher,
   };
 };

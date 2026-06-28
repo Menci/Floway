@@ -1,8 +1,8 @@
 import { classifyResponsesItemAffinity } from '../responses/items/affinity.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
-import type { ProviderCandidate } from '../shared/candidates.ts';
 import type { RoutingDecision } from '../shared/routing.ts';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
+import type { ProviderCandidate } from '@floway-dev/provider';
 import { messagesViaResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
 export type MessagesRoutingDecision = RoutingDecision;

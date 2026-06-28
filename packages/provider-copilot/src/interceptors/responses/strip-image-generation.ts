@@ -4,7 +4,7 @@ import type { ResponsesPayload, ResponsesTool, ResponsesToolChoice } from '@flow
 /**
  * Copilot's `/responses` endpoint rejects public `image_generation` tool
  * entries, so strip them once the planner has committed to a native Responses
- * target on a Copilot binding. Other Responses-capable upstreams (e.g. OpenAI
+ * target on a Copilot upstream. Other Responses-capable upstreams (e.g. OpenAI
  * direct) accept the entry and must continue to see it. Other public hosted
  * and deferred tools (`web_search`, `tool_search`, `namespace`) are left in
  * place: Codex relies on `tool_search` / `namespace` for client-executed

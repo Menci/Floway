@@ -24,9 +24,9 @@ target ships in the same repo for self-hosting on a long-lived process.
 | OpenAI Models                           | `GET  /v1/models`             |
 | Google Gemini (generate / count tokens) | `POST /v1beta/models/...`     |
 
-For each public model, Floway picks the first provider binding that can serve
-the request, translating between source and target protocols when the upstream
-speaks a different shape. `/v1/completions` is forwarded to upstreams that
+For each public model, Floway picks the first (provider, model) pair that can
+serve the request, translating between source and target protocols when the
+upstream speaks a different shape. `/v1/completions` is forwarded to upstreams that
 expose the OpenAI text-completions endpoint (Custom OpenAI-compatible, Azure
 OpenAI, Ollama) without cross-protocol translation.
 

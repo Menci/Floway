@@ -32,7 +32,8 @@ const okEvents = () =>
 
 const invocation = (payload: ResponsesPayload, enabledFlags: ReadonlySet<string> = new Set(['vendor-qwen'])): ResponsesInvocation => ({
   payload,
-  candidate: stubProviderCandidate({ targetApi: 'responses', binding: { enabledFlags } }),
+  candidate: stubProviderCandidate({ model: { enabledFlags } }),
+  targetApi: 'responses',
   store: new LayeredStatefulResponsesStore({
     apiKeyId: 'test-key',
     reads: [new MemoryStatefulResponsesBacking()],
@@ -68,7 +69,7 @@ test('vendor-qwen leaves a real reasoning.effort value untouched (only the none 
   assertEquals(out.enable_thinking, undefined);
 });
 
-test('vendor-qwen early-returns when its flag is not set on the binding', async () => {
+test('vendor-qwen early-returns when its flag is not set on the candidate', async () => {
   const input = invocation({ model: 'qwen-max', input: 'hi', reasoning: { effort: 'none' } }, new Set());
 
   await withVendorQwenResponsesNormalize(input, stubCtx, okEvents);

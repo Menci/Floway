@@ -5,18 +5,17 @@ import type { AuthVars } from '../../../middleware/auth.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import type { ApiKey, User } from '../../../repo/types.ts';
-import type { ProviderCandidate } from '../shared/candidates.ts';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
-import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { directFetcher, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
+import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { type ProviderCandidate, directFetcher, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
 
-const candidatesQueue: { readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean }[] = [];
-vi.mock('../shared/candidates.ts', async importOriginal => {
-  const original = await importOriginal<typeof import('../shared/candidates.ts')>();
+const candidatesQueue: { readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean; readonly failedUpstreams: readonly string[] }[] = [];
+vi.mock('../../providers/registry.ts', async importOriginal => {
+  const original = await importOriginal<typeof import('../../providers/registry.ts')>();
   return {
     ...original,
-    enumerateProviderCandidates: vi.fn(async () => {
+    enumerateModelCandidates: vi.fn(async () => {
       const next = candidatesQueue.shift();
       if (next === undefined) throw new Error('http_test: no candidates enqueued');
       return next;
@@ -29,7 +28,7 @@ const { chatCompletionsHttp } = await import('./http.ts');
 const API_KEY_ID = 'key_chat_completions_http_test';
 
 const queueCandidates = (candidates: readonly ProviderCandidate[], sawModel = candidates.length > 0): void => {
-  candidatesQueue.push({ candidates, sawModel });
+  candidatesQueue.push({ candidates, sawModel, failedUpstreams: [] });
 };
 
 const installRepo = (): InMemoryRepo => {
@@ -101,23 +100,17 @@ const makeProtocolFrames = async function* <TEvent>(events: readonly TEvent[]): 
 
 const makeCandidate = (overrides: {
   upstream?: string;
+  endpoints?: ModelEndpoints;
   callChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
 } = {}): ProviderCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
-  const upstreamModel = stubUpstreamModel();
   const provider = stubProvider({ callChatCompletions: overrides.callChatCompletions });
   return {
     provider: {
       upstream, providerKind: 'custom', name: upstream,
       disabledPublicModelIds: [], modelPrefix: null, provider, supportsResponsesItemReference: true,
     },
-    binding: {
-      upstream, upstreamName: upstream, providerKind: 'custom',
-      provider, upstreamModel, enabledFlags: upstreamModel.enabledFlags,
-      supportsResponsesItemReference: true,
-    },
-    targetApi: 'chat-completions',
-
+    model: stubUpstreamModel(overrides.endpoints ? { endpoints: overrides.endpoints } : {}),
     fetcher: directFetcher,
   };
 };
@@ -244,4 +237,26 @@ test('POST /v1/chat/completions does not write any non-auth Hono context slot', 
 
   const unexpectedKeys = observedKeys.filter(key => !knownAuthKeys.has(key));
   assertEquals(unexpectedKeys, []);
+});
+
+test('POST /v1/chat/completions renders the OpenAI-shaped model-unsupported 400 when no candidate matches the chat-completions picker', async () => {
+  installRepo();
+  // Queue a chat-kind candidate whose endpoints expose only `completions` —
+  // the chatCompletionsTarget picker rejects it (its preference list is
+  // `chat-completions` > `messages` > `responses`), leaving zero viable
+  // candidates, and with sawModel=true the serve renders model-unsupported
+  // as a 400.
+  queueCandidates([makeCandidate({ endpoints: { completions: {} } })]);
+
+  const response = await makeApp().request('/v1/chat/completions', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({ model: 'wrong-endpoint-model', messages: [{ role: 'user', content: 'hello' }] }),
+  });
+
+  assertEquals(response.status, 400);
+  assertEquals(response.headers.get('content-type')?.split(';')[0], 'application/json');
+  const body = await response.json() as { error: { message: string; type: string } };
+  assertEquals(body.error.type, 'invalid_request_error');
+  assert(body.error.message.includes('does not support'));
 });

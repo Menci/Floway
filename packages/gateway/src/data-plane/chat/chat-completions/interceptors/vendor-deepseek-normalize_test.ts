@@ -25,7 +25,8 @@ const stubCtx: GatewayCtx = {
 
 const invocation = (payload: ChatCompletionsPayload, enabledFlags: ReadonlySet<string> = new Set(['vendor-deepseek'])): ChatCompletionsInvocation => ({
   payload,
-  candidate: stubProviderCandidate({ targetApi: 'chat-completions', binding: { enabledFlags } }),
+  candidate: stubProviderCandidate({ model: { enabledFlags } }),
+  targetApi: 'chat-completions',
   headers: new Headers(),
 });
 
@@ -334,7 +335,7 @@ test('leaves protocol done frames untouched', async () => {
   assertEquals(await collectFrames(result), [done]);
 });
 
-test('early-returns when its flag is not set on the binding', async () => {
+test('early-returns when its flag is not set on the candidate', async () => {
   const ctx = invocation(
     {
       model: 'deepseek-reasoner',

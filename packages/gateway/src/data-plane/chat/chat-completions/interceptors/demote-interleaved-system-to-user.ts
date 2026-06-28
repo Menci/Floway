@@ -6,7 +6,7 @@ import type { ChatCompletionsInterceptor } from './types.ts';
 // any non-system role, every later `role: 'system'` is rewritten to
 // `role: 'user'` with content preserved.
 export const withInterleavedSystemDemotedToUser: ChatCompletionsInterceptor = (ctx, _gatewayCtx, run) => {
-  if (!ctx.candidate.binding.enabledFlags.has('demote-interleaved-system-to-user')) return run();
+  if (!ctx.candidate.model.enabledFlags.has('demote-interleaved-system-to-user')) return run();
 
   const { messages } = ctx.payload;
   let crossedLeadingRun = false;

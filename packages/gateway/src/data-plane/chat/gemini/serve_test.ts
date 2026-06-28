@@ -1,24 +1,23 @@
-import { test, vi } from 'vitest';
+import { afterEach, test, vi } from 'vitest';
 
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { createNonResponsesSourceStore } from '../responses/items/store.ts';
-import type { ProviderCandidate } from '../shared/candidates.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
-import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiPayload } from '@floway-dev/protocols/gemini';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { directFetcher, type ProviderCallResult, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
+import { type ProviderCandidate, directFetcher, type ProviderCallResult, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
 
-const candidatesQueue: { readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean }[] = [];
-vi.mock('../shared/candidates.ts', async importOriginal => {
-  const original = await importOriginal<typeof import('../shared/candidates.ts')>();
+const candidatesQueue: { readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean; readonly failedUpstreams: readonly string[] }[] = [];
+vi.mock('../../providers/registry.ts', async importOriginal => {
+  const original = await importOriginal<typeof import('../../providers/registry.ts')>();
   return {
     ...original,
-    enumerateProviderCandidates: vi.fn(async () => {
+    enumerateModelCandidates: vi.fn(async () => {
       const next = candidatesQueue.shift();
       if (next === undefined) throw new Error('serve_test: no candidates enqueued');
       return next;
@@ -31,8 +30,10 @@ const { geminiServe } = await import('./serve.ts');
 const API_KEY_ID = 'key_gemini_serve_test';
 
 const queueCandidates = (candidates: readonly ProviderCandidate[], sawModel = candidates.length > 0): void => {
-  candidatesQueue.push({ candidates, sawModel });
+  candidatesQueue.push({ candidates, sawModel, failedUpstreams: [] });
 };
+
+afterEach(() => { candidatesQueue.length = 0; });
 
 const installRepo = (): InMemoryRepo => {
   const repo = new InMemoryRepo();
@@ -102,7 +103,8 @@ const makeResponsesResultEvent = (id = 'resp_test'): ResponsesStreamEvent => {
 
 const makeCandidate = (overrides: {
   upstream?: string;
-  targetApi?: ProviderCandidate['targetApi'];
+  targetApi?: 'chat-completions' | 'messages' | 'responses';
+  endpoints?: ModelEndpoints;
   callChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
   callMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<MessagesStreamEvent>>;
   callResponses?: (model: unknown, body: unknown, action: ResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderResponsesResult>;
@@ -110,7 +112,17 @@ const makeCandidate = (overrides: {
 } = {}): ProviderCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
   const targetApi = overrides.targetApi ?? 'chat-completions';
-  const upstreamModel = stubUpstreamModel();
+  // The gemini serve layer picks the target from model.endpoints (chat-completions
+  // first, then messages, then responses). Narrow endpoints to the target this
+  // test wants so the gemini serve layer picks the expected target via
+  // geminiGenerateTarget / planGeminiRouting. An explicit `endpoints` override
+  // beats the default `targetApi`-derived map, for tests that need a candidate
+  // whose endpoints satisfy none of the target preferences.
+  const endpoints = overrides.endpoints ?? (targetApi === 'chat-completions'
+    ? { chatCompletions: {} }
+    : targetApi === 'messages'
+      ? { messages: {} }
+      : { responses: {} });
   const provider = stubProvider({
     callChatCompletions: overrides.callChatCompletions,
     callMessages: overrides.callMessages,
@@ -122,11 +134,7 @@ const makeCandidate = (overrides: {
       upstream, providerKind: 'custom', name: upstream,
       disabledPublicModelIds: [], modelPrefix: null, provider, supportsResponsesItemReference: true,
     },
-    binding: {
-      upstream, upstreamName: upstream, providerKind: 'custom', provider, upstreamModel,
-      enabledFlags: upstreamModel.enabledFlags, supportsResponsesItemReference: true,
-    },
-    targetApi,
+    model: stubUpstreamModel({ endpoints }),
     fetcher: directFetcher,
   };
 };
@@ -279,6 +287,34 @@ test('generate renders model-missing as a Google RPC 404 when no candidates are 
   assert(typeof body.error.message === 'string' && body.error.message.includes('unknown-model'));
 });
 
+test('generate filters out candidates whose endpoints do not satisfy the gemini-generate preference and renders model-unsupported as a 400', async () => {
+  installRepo();
+  const callChatCompletions = vi.fn();
+  // geminiGenerateTarget prefers chat-completions > messages > responses;
+  // an endpoints-only `completions` candidate matches none and is filtered.
+  queueCandidates([makeCandidate({ upstream: 'up_x', endpoints: { completions: {} }, callChatCompletions })]);
+
+  const result = await geminiServe.generate({
+    payload: makePayload(),
+    ctx: makeGatewayCtx(),
+    store: createNonResponsesSourceStore(API_KEY_ID),
+    model: 'wrong-endpoint-model',
+    headers: new Headers(),
+  });
+
+  const upstreamError = expectType(result, 'api-error');
+  assertEquals(upstreamError.status, 400);
+  const body = JSON.parse(new TextDecoder().decode(upstreamError.body));
+  assertEquals(body.error.code, 400);
+  assertEquals(body.error.status, 'INVALID_ARGUMENT');
+  assert(typeof body.error.message === 'string' && body.error.message.includes('does not support'));
+  // Defense-in-depth: even though `pick` would also throw on this candidate's
+  // endpoints, the spy pins that the filter happens BEFORE pick is reached,
+  // not after a fallback. Sibling tests in messages/responses/chat-completions
+  // serve_test.ts mirror this assertion for the same reason.
+  assertEquals(callChatCompletions.mock.calls.length, 0);
+});
+
 test('countTokens translates Gemini to Messages count_tokens and returns the Gemini envelope', async () => {
   installRepo();
   const callMessagesCountTokens = vi.fn(async (): Promise<ProviderCallResult> => ({
@@ -318,4 +354,32 @@ test('countTokens renders a Google RPC NOT_FOUND when no Messages-capable candid
 
   const upstreamError = expectType(result, 'api-error');
   assertEquals(upstreamError.status, 404);
+  const body = JSON.parse(new TextDecoder().decode(upstreamError.body));
+  assertEquals(body.error.code, 404);
+  assertEquals(body.error.status, 'NOT_FOUND');
+  assert(typeof body.error.message === 'string' && body.error.message.includes('no-messages-model is not'));
+});
+
+test('countTokens filters out candidates whose endpoints do not satisfy the gemini-countTokens preference and renders model-unsupported as a 400', async () => {
+  installRepo();
+  const callMessagesCountTokens = vi.fn();
+  // geminiCountTokensTarget = chatTargetPicker(['messages']); a candidate
+  // exposing only chatCompletions matches none and is filtered out.
+  queueCandidates([makeCandidate({ upstream: 'up_x', endpoints: { chatCompletions: {} }, callMessagesCountTokens })]);
+
+  const result = await geminiServe.countTokens({
+    payload: makePayload(),
+    ctx: makeGatewayCtx(),
+    store: createNonResponsesSourceStore(API_KEY_ID),
+    model: 'wrong-endpoint-model',
+    headers: new Headers(),
+  });
+
+  const upstreamError = expectType(result, 'api-error');
+  assertEquals(upstreamError.status, 400);
+  const body = JSON.parse(new TextDecoder().decode(upstreamError.body));
+  assertEquals(body.error.code, 400);
+  assertEquals(body.error.status, 'INVALID_ARGUMENT');
+  assert(typeof body.error.message === 'string' && body.error.message.includes('does not support'));
+  assertEquals(callMessagesCountTokens.mock.calls.length, 0);
 });

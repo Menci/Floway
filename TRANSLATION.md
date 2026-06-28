@@ -36,7 +36,7 @@ translators.
 2. translated `/v1/messages`
 3. translated `/responses`
 
-If no provider binding exposes a capability-backed Chat plan, the gateway
+If no upstream's catalog advertises a capability-backed Chat target, the gateway
 returns a source-shaped unsupported-model error. It does not invent legacy
 model-name routing outside provider capability metadata. Copilot Claude models
 still route through Messages because the Copilot provider does not expose Chat
@@ -49,8 +49,8 @@ support for them.
 2. translated `/v1/messages`
 3. translated `/responses`
 
-If no provider binding exposes a capability-backed Gemini generation plan, the
-gateway returns a Gemini-shaped unsupported-model error.
+If no upstream's catalog advertises a capability-backed Gemini generation target,
+the gateway returns a Gemini-shaped unsupported-model error.
 
 ## Boundary Rules
 

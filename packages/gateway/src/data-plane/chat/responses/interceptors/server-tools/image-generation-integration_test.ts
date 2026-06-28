@@ -23,42 +23,56 @@ interface BackendStub {
   editsForms: FormData[];
   nextGenerations: Response[];
   nextEdits: Response[];
+  // When set, the next `enumerateModelCandidates` call returns this
+  // shape verbatim instead of the default single in-test candidate; lets
+  // a test drive `resolveImageCandidate`'s failure branches.
+  nextResolutionOverride: { candidates: readonly unknown[]; sawModel: boolean; failedUpstreams: readonly string[] } | null;
 }
 
 // Hoisted so the vi.mock factory below can close over it; tests mutate the
 // `next*` queues and read back the recorded calls.
-const stub = vi.hoisted((): BackendStub => ({ generationsCalls: [], editsForms: [], nextGenerations: [], nextEdits: [] }));
+const stub = vi.hoisted((): BackendStub => ({ generationsCalls: [], editsForms: [], nextGenerations: [], nextEdits: [], nextResolutionOverride: null }));
+
+const defaultCandidates = vi.hoisted(() => () => [{
+  provider: {
+    upstream: 'u',
+    providerKind: 'custom',
+    name: 'mock-image',
+    disabledPublicModelIds: [],
+    modelPrefix: null,
+    supportsResponsesItemReference: false,
+    provider: {
+      getPricingForModelKey: () => null,
+      callImagesGenerations: async (_model: unknown, body: Record<string, unknown>, _signal: unknown, opts: { recordUpstreamLatency: <T>(p: Promise<T>) => Promise<T> }) => {
+        stub.generationsCalls.push(body);
+        const response = stub.nextGenerations.shift();
+        if (response === undefined) throw new Error('test did not enqueue a generations response');
+        return { response: await opts.recordUpstreamLatency(Promise.resolve(response)), modelKey: 'gpt-image-2' };
+      },
+      callImagesEdits: async (_model: unknown, form: FormData, _signal: unknown, opts: { recordUpstreamLatency: <T>(p: Promise<T>) => Promise<T> }) => {
+        stub.editsForms.push(form);
+        const response = stub.nextEdits.shift();
+        if (response === undefined) throw new Error('test did not enqueue an edits response');
+        return { response: await opts.recordUpstreamLatency(Promise.resolve(response)), modelKey: 'gpt-image-2' };
+      },
+    },
+  },
+  model: {
+    id: 'gpt-image-2',
+    endpoints: { imagesGenerations: {}, imagesEdits: {} },
+  },
+  fetcher: (request: Request) => fetch(request),
+}]);
 
 vi.mock('../../../../providers/registry.ts', () => ({
-  resolveModelForRequest: vi.fn(async () => ({
-    matches: [{
-      id: 'gpt-image-2',
-      model: {
-        id: 'gpt-image-2',
-        endpoints: { imagesGenerations: {}, imagesEdits: {} },
-      },
-      binding: {
-        upstream: 'u',
-        upstreamModel: { id: 'gpt-image-2', endpoints: { imagesGenerations: {}, imagesEdits: {} } },
-        provider: {
-          getPricingForModelKey: () => null,
-          callImagesGenerations: async (_model: unknown, body: Record<string, unknown>, _signal: unknown, opts: { recordUpstreamLatency: <T>(p: Promise<T>) => Promise<T> }) => {
-            stub.generationsCalls.push(body);
-            const response = stub.nextGenerations.shift();
-            if (response === undefined) throw new Error('test did not enqueue a generations response');
-            return { response: await opts.recordUpstreamLatency(Promise.resolve(response)), modelKey: 'gpt-image-2' };
-          },
-          callImagesEdits: async (_model: unknown, form: FormData, _signal: unknown, opts: { recordUpstreamLatency: <T>(p: Promise<T>) => Promise<T> }) => {
-            stub.editsForms.push(form);
-            const response = stub.nextEdits.shift();
-            if (response === undefined) throw new Error('test did not enqueue an edits response');
-            return { response: await opts.recordUpstreamLatency(Promise.resolve(response)), modelKey: 'gpt-image-2' };
-          },
-        },
-      },
-    }],
-    failedUpstreams: [],
-  })),
+  enumerateModelCandidates: vi.fn(async () => {
+    const override = stub.nextResolutionOverride;
+    if (override !== null) {
+      stub.nextResolutionOverride = null;
+      return override;
+    }
+    return { candidates: defaultCandidates(), sawModel: true, failedUpstreams: [] };
+  }),
 }));
 
 // Imported AFTER vi.mock so the mocked registry is in effect.
@@ -119,13 +133,19 @@ const scriptedRun = (turns: ProtocolFrame<ResponsesStreamEvent>[][]) => {
 
 const makeCtx = (input: unknown[], action: 'generate' | 'edit' | 'auto' = 'auto', extraTool: Record<string, unknown> = {}): ResponsesInvocation => ({
   candidate: {
-    targetApi: 'responses',
-    provider: {} as never,
-    binding: {
+    provider: {
+      upstream: 'test-upstream', providerKind: 'custom', name: 'test',
+      disabledPublicModelIds: [], modelPrefix: null,
+      provider: {} as never, supportsResponsesItemReference: false,
+    },
+    model: {
+      id: 'm', limits: {}, kind: 'chat',
+      endpoints: { responses: {} },
       enabledFlags: new Set<string>(['responses-image-generation-shim']),
-    } as never,
+    },
     fetcher: directFetcher,
   },
+  targetApi: 'responses',
   store: new LayeredStatefulResponsesStore({
     apiKeyId: 'test-key',
     reads: [new MemoryStatefulResponsesBacking()],
@@ -157,8 +177,8 @@ const drain = async (result: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>)
 
 beforeEach(async () => {
   const repo = new InMemoryRepo();
-  // resolveImageBinding still calls createPerRequestFetcher to satisfy the
-  // production code path. Seed the in-memory repo with the mocked binding's
+  // resolveImageCandidate still calls createPerRequestFetcher to satisfy the
+  // production code path. Seed the in-memory repo with the mocked candidate's
   // upstream id so the fetcher mapper resolves it instead of throwing
   // "unknown upstream id: u".
   await repo.upstreams.save({
@@ -188,6 +208,7 @@ beforeEach(async () => {
   stub.editsForms = [];
   stub.nextGenerations = [];
   stub.nextEdits = [];
+  stub.nextResolutionOverride = null;
 });
 
 test('generates an image end-to-end and emits the native lifecycle', async () => {
@@ -312,4 +333,80 @@ test('does not retry non-rate-limit upstream failures', async () => {
   const item = (igcDone as { item: { status: string; error: { code: string } } }).item;
   assertEquals(item.status, 'failed');
   assertEquals(item.error.code, 'invalid_value');
+});
+
+// resolveImageCandidate failure branches: each variant is normalized into
+// a terminal `image_generation_call` item with `status: 'failed'` and a
+// specific error.code so the orchestrator can distinguish unknown-model
+// from existing-but-unsupported.
+
+test('resolveImageCandidate renders model_not_found when no upstream knows the model id', async () => {
+  stub.nextResolutionOverride = { candidates: [], sawModel: false, failedUpstreams: [] };
+  const result = await shim(makeCtx([{ type: 'message', role: 'user', content: 'draw' }]), gatewayCtx(), scriptedRun([
+    callTurn(0, 'call_1', 'a cat'),
+    messageTurn('sorry'),
+  ]));
+  const events = await drain(result);
+
+  // Backend never reached: resolution fails before the upstream call.
+  assertEquals(stub.generationsCalls.length, 0);
+  const igcDone = events.find(e => e.type === 'response.output_item.done' && (e as { item: { type: string } }).item.type === 'image_generation_call');
+  assert(igcDone !== undefined);
+  const item = (igcDone as { item: { status: string; error: { code: string; message: string } } }).item;
+  assertEquals(item.status, 'failed');
+  assertEquals(item.error.code, 'model_not_found');
+  assert(item.error.message.includes("No upstream provides model 'gpt-image-2'"), `unexpected message: ${item.error.message}`);
+});
+
+test('resolveImageCandidate renders model_not_supported when sawModel=true but no candidate is an image kind', async () => {
+  // Mirrors the resolver's "id exists in some catalog but the kind filter
+  // dropped it" signal — sawModel=true, candidates=[].
+  stub.nextResolutionOverride = { candidates: [], sawModel: true, failedUpstreams: [] };
+  const result = await shim(makeCtx([{ type: 'message', role: 'user', content: 'draw' }]), gatewayCtx(), scriptedRun([
+    callTurn(0, 'call_1', 'a cat'),
+    messageTurn('sorry'),
+  ]));
+  const events = await drain(result);
+
+  assertEquals(stub.generationsCalls.length, 0);
+  const igcDone = events.find(e => e.type === 'response.output_item.done' && (e as { item: { type: string } }).item.type === 'image_generation_call');
+  assert(igcDone !== undefined);
+  const item = (igcDone as { item: { status: string; error: { code: string; message: string } } }).item;
+  assertEquals(item.status, 'failed');
+  assertEquals(item.error.code, 'model_not_supported');
+  assert(item.error.message.includes("Model 'gpt-image-2' is not an image model."), `unexpected message: ${item.error.message}`);
+});
+
+test('resolveImageCandidate renders model_not_supported when image-kind candidates exist but none expose the imagesGenerations endpoint', async () => {
+  // The resolver produced an image-kind candidate but its `endpoints` does
+  // not include the per-endpoint key the request needs (imagesGenerations).
+  stub.nextResolutionOverride = {
+    candidates: [{
+      provider: {
+        upstream: 'u', providerKind: 'custom', name: 'wrong-endpoint',
+        disabledPublicModelIds: [], modelPrefix: null,
+        supportsResponsesItemReference: false,
+        provider: { getPricingForModelKey: () => null },
+      },
+      // Image-kind candidate without `imagesGenerations` — the endpoint
+      // filter inside resolveImageCandidate rejects it.
+      model: { id: 'gpt-image-2', endpoints: { imagesEdits: {} } },
+      fetcher: (request: Request) => fetch(request),
+    }],
+    sawModel: true,
+    failedUpstreams: [],
+  };
+  const result = await shim(makeCtx([{ type: 'message', role: 'user', content: 'draw' }]), gatewayCtx(), scriptedRun([
+    callTurn(0, 'call_1', 'a cat'),
+    messageTurn('sorry'),
+  ]));
+  const events = await drain(result);
+
+  assertEquals(stub.generationsCalls.length, 0);
+  const igcDone = events.find(e => e.type === 'response.output_item.done' && (e as { item: { type: string } }).item.type === 'image_generation_call');
+  assert(igcDone !== undefined);
+  const item = (igcDone as { item: { status: string; error: { code: string; message: string } } }).item;
+  assertEquals(item.status, 'failed');
+  assertEquals(item.error.code, 'model_not_supported');
+  assert(item.error.message.includes('/images/generations endpoint'), `unexpected message: ${item.error.message}`);
 });

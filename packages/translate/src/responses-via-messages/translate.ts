@@ -6,7 +6,7 @@ import type { ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protoco
 
 // Synthetic response id generated once per trip so that downstream events
 // referencing the response carry a stable id. Built fresh per call — never
-// reused across binding attempts.
+// reused across attempts.
 const synthesizeResponseId = (): string => `resp_${crypto.randomUUID().replace(/-/g, '').slice(0, 24)}`;
 
 export const translateResponsesViaMessages: TranslateTrip<

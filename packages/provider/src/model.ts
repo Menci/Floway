@@ -40,7 +40,7 @@ export interface UpstreamRecord {
   proxyFallbackList: ProxyFallbackEntry[];
   // Per-upstream model name prefix policy. `null` keeps the bare-id behavior
   // — the upstream's models are addressed and listed by bare upstream id only.
-  // When set, the registry interprets `addressable` and `listed` to expose /
+  // When set, the registry honors `addressable` and `listed` to expose /
   // accept either form (or both).
   modelPrefix: ModelPrefixConfig | null;
 }
@@ -67,12 +67,22 @@ export interface PerformanceTelemetryContext {
 // Provider-internal raw fields stay inside that provider's own types and
 // projections; nothing upstream-shaped leaks onto this type.
 //
-// `kind` is the high-level endpoint-family discriminator; `endpoints` (on
-// UpstreamModel) is the precise per-protocol availability map. They are
-// linked invariants enforced at the producer boundary:
+// `kind` is the high-level endpoint-family discriminator; `endpoints` is the
+// precise per-protocol availability map. They are linked invariants enforced
+// at the producer boundary:
 //   `kind === 'embedding'` ⇔ `endpoints === { embeddings: {} }`
 //   `kind === 'image'`     ⇔ `endpoints ⊂ {imagesGenerations, imagesEdits}`
 //   `kind === 'chat'`      ⇒ `endpoints ⊂ generation endpoints`.
+//
+// `endpoints` declares which protocols this model is reachable through.
+// The value is scoped by who produced the row: an `UpstreamModel` carries
+// that one upstream's wire capability; a merged catalog row (the projection
+// `getModels` returns) carries the OR-union across every upstream emitting
+// under the same public id — the gateway as a whole reaches the union,
+// translating where the dispatched upstream's native wire does not match.
+// Per-request dispatch reads off the per-upstream `UpstreamModel`; listing
+// endpoints (`/v1/models`, `/models`, `/v1beta/models`, and the control-
+// plane catalog) project the merged row.
 export interface InternalModel {
   id: string;
   display_name?: string;
@@ -86,10 +96,10 @@ export interface InternalModel {
   kind: ModelKind;
   cost?: ModelPricing;
   chat?: UpstreamChatModelConfig;
+  endpoints: ModelEndpoints;
 }
 
 export interface UpstreamModel extends InternalModel {
-  endpoints: ModelEndpoints;
   providerData?: unknown;
   enabledFlags: ReadonlySet<string>;
 }

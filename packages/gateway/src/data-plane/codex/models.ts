@@ -32,7 +32,7 @@ import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getCurrentColo } from '../../runtime/runtime-info.ts';
-import { getInternalModels } from '../providers/registry.ts';
+import { getModels } from '../providers/registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { Fetcher } from '@floway-dev/provider';
 
@@ -56,9 +56,9 @@ const computeCatalog = async (
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
 ): Promise<CodexCatalog> => {
-  const [catalog, internalModels] = await Promise.all([
+  const [catalog, { models: internalModels }] = await Promise.all([
     resolveCodexCatalog(userAgent),
-    getInternalModels(upstreamIds, fetcherForUpstream, scheduler),
+    getModels(upstreamIds, fetcherForUpstream, scheduler),
   ]);
   const slugContextWindow = new Map<string, number>();
   for (const m of internalModels) {

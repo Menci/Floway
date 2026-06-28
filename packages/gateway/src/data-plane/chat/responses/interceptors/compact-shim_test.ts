@@ -28,9 +28,9 @@ const makeInvocation = (
   payload: { model: 'test-model', input: [], ...payload } as ResponsesPayload,
   action: options.action ?? 'generate',
   candidate: stubProviderCandidate({
-    targetApi: options.targetApi ?? 'responses',
-    binding: { enabledFlags: new Set(options.flagOn === false ? [] : ['responses-compact-shim']) },
+    model: { enabledFlags: new Set(options.flagOn === false ? [] : ['responses-compact-shim']) },
   }),
+  targetApi: options.targetApi ?? 'responses',
   store: new LayeredStatefulResponsesStore({
     apiKeyId: 'test-key',
     reads: [new MemoryStatefulResponsesBacking()],

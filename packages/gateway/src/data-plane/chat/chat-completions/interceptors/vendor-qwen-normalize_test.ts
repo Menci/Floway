@@ -20,7 +20,8 @@ const stubCtx: GatewayCtx = {
 
 const invocation = (payload: ChatCompletionsPayload, enabledFlags: ReadonlySet<string> = new Set(['vendor-qwen'])): ChatCompletionsInvocation => ({
   payload,
-  candidate: stubProviderCandidate({ targetApi: 'chat-completions', binding: { enabledFlags } }),
+  candidate: stubProviderCandidate({ model: { enabledFlags } }),
+  targetApi: 'chat-completions',
   headers: new Headers(),
 });
 
@@ -62,7 +63,7 @@ test('leaves a real reasoning_effort value untouched (only the none sentinel tri
   assertEquals(out.enable_thinking, undefined);
 });
 
-test('early-returns when its flag is not set on the binding', async () => {
+test('early-returns when its flag is not set on the candidate', async () => {
   const ctx = invocation(
     {
       model: 'qwen-max',

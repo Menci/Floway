@@ -1,8 +1,8 @@
 import type { ModelPrefixConfig } from './model-prefix.ts';
-import type { InternalModel, UpstreamModel, UpstreamProviderKind } from './model.ts';
+import type { UpstreamModel, UpstreamProviderKind } from './model.ts';
 import type { Fetcher } from './options.ts';
 import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
-import type { ModelEndpoints, ModelPricing, ProtocolFrame } from '@floway-dev/protocols/common';
+import type { ModelPricing, ProtocolFrame } from '@floway-dev/protocols/common';
 import type { CompletionsPayload } from '@floway-dev/protocols/completions';
 import type { EmbeddingsPayload } from '@floway-dev/protocols/embeddings';
 import type { ImagesGenerationsPayload } from '@floway-dev/protocols/images';
@@ -19,21 +19,6 @@ import type { ResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@f
 // turn against the SUMMARIZATION_PROMPT).
 export type ResponsesAction = 'generate' | 'compact';
 
-export interface ProviderModelRecord {
-  upstream: string;
-  upstreamName: string;
-  providerKind: UpstreamProviderKind;
-  provider: ModelProvider;
-  upstreamModel: UpstreamModel;
-  enabledFlags: ReadonlySet<string>;
-  supportsResponsesItemReference: boolean;
-}
-
-export interface ResolvedModel extends InternalModel {
-  endpoints: ModelEndpoints;
-  providers: readonly ProviderModelRecord[];
-}
-
 export interface ModelProviderInstance {
   upstream: string;
   providerKind: UpstreamProviderKind;
@@ -46,7 +31,6 @@ export interface ModelProviderInstance {
   modelPrefix: ModelPrefixConfig | null;
   provider: ModelProvider;
   supportsResponsesItemReference: boolean;
-  resolveRequestedModelId?(modelId: string): string | undefined;
 }
 
 export interface ProviderCallResult {
@@ -133,7 +117,7 @@ export interface ModelProvider {
   // /v1/completions text completions. Passthrough. Providers whose
   // upstream doesn't expose /v1/completions set `endpoints.completions`
   // to absent in getProvidedModels, so this method is unreachable for
-  // those bindings; the rejecting stubs in those providers are pure
+  // those upstreams; the rejecting stubs in those providers are pure
   // defense-in-depth.
   callCompletions(model: UpstreamModel, body: Omit<CompletionsPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
   // Same `opts.headers` shape across every protocol so provider impls never

@@ -29,7 +29,7 @@ import type {
   MessagesToolResultContentBlock,
   MessagesUserContentBlock,
 } from '@floway-dev/protocols/messages';
-import { assertEquals, assertExists, assertRejects, stubProviderCandidate, stubUpstreamModel } from '@floway-dev/test-utils';
+import { assertEquals, assertExists, assertRejects, stubProviderCandidate } from '@floway-dev/test-utils';
 
 const testTelemetryModelIdentity = {
   model: 'test-model',
@@ -41,12 +41,12 @@ const testTelemetryModelIdentity = {
 const invocation = (payload: MessagesPayload): MessagesInvocation => ({
   payload,
   candidate: stubProviderCandidate({
-    targetApi: 'messages',
-    binding: {
-      upstreamModel: stubUpstreamModel({ endpoints: { messages: {} } }),
+    model: {
+      endpoints: { messages: {} },
       enabledFlags: new Set(['messages-web-search-shim']),
     },
   }),
+  targetApi: 'messages',
   headers: new Headers(),
 });
 

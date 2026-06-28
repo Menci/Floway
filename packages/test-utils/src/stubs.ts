@@ -1,4 +1,4 @@
-import { directFetcher, type ChatTargetApi, type ModelProvider, type ModelProviderInstance, type ProviderCandidate, type ProviderModelRecord, type TelemetryModelIdentity, type UpstreamCallOptions, type UpstreamModel } from '@floway-dev/provider';
+import { directFetcher, type ModelProvider, type ModelProviderInstance, type ProviderCandidate, type TelemetryModelIdentity, type UpstreamCallOptions, type UpstreamModel } from '@floway-dev/provider';
 
 // No-op UpstreamCallOptions factory for tests calling provider methods
 // directly: identity recordUpstreamLatency satisfies the contract without
@@ -57,7 +57,7 @@ export const stubProvider = (overrides: Partial<ModelProvider> = {}): ModelProvi
   callImagesEdits: autoWrap(overrides.callImagesEdits) ?? (() => Promise.reject(new Error('stubProvider.callImagesEdits was called'))),
 });
 
-export const stubProviderCandidate = (overrides: { targetApi?: ChatTargetApi; binding?: Partial<ProviderModelRecord>; provider?: ModelProviderInstance } = {}): ProviderCandidate => {
+export const stubProviderCandidate = (overrides: { model?: Partial<UpstreamModel>; provider?: ModelProviderInstance } = {}): ProviderCandidate => {
   const provider = overrides.provider ?? {
     upstream: 'test-upstream',
     providerKind: 'custom',
@@ -67,20 +67,9 @@ export const stubProviderCandidate = (overrides: { targetApi?: ChatTargetApi; bi
     provider: stubProvider(),
     supportsResponsesItemReference: false,
   };
-  const bindingOverrides = overrides.binding ?? {};
   return {
     provider,
-    binding: {
-      upstream: 'test-upstream',
-      upstreamName: 'Test Upstream',
-      providerKind: 'custom',
-      provider: provider.provider,
-      upstreamModel: stubUpstreamModel(),
-      enabledFlags: new Set<string>(),
-      supportsResponsesItemReference: false,
-      ...bindingOverrides,
-    },
-    targetApi: overrides.targetApi ?? 'messages',
+    model: stubUpstreamModel(overrides.model ?? {}),
     fetcher: directFetcher,
   };
 };

@@ -28,12 +28,12 @@ const formatTokenLimit = (n: number) => {
         </div>
         <div class="flex flex-wrap gap-1.5 mt-2">
           <span
-            v-for="binding in model.upstreams"
-            :key="binding.id"
+            v-for="upstream in model.upstreams"
+            :key="upstream.id"
             class="text-[10px] font-semibold px-2 py-0.5 rounded-full border"
-            :class="providerBadgeClass(binding.kind)"
-            :title="providerMeta(binding.kind).label + ' · ' + binding.name"
-          >{{ binding.name }}</span>
+            :class="providerBadgeClass(upstream.kind)"
+            :title="providerMeta(upstream.kind).label + ' · ' + upstream.name"
+          >{{ upstream.name }}</span>
           <span v-if="model.limits?.max_context_window_tokens" class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-surface-600 text-gray-400">
             context: {{ formatTokenLimit(model.limits.max_context_window_tokens) }}
           </span>

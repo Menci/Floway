@@ -26,8 +26,8 @@ const api = useApi();
 
 // Azure counts its configured models directly so the card still renders a
 // useful number for a freshly created upstream that has not been probed yet;
-// the other providers count public models that have a binding pointing at this
-// upstream row.
+// the other providers count public models that are served by this upstream
+// row.
 const modelCountFor = (record: UpstreamRecord): number => {
   if (record.provider === 'azure') return record.config.models.length;
   const list = props.models ?? [];

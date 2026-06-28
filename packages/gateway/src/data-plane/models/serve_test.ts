@@ -323,6 +323,63 @@ test('/v1/models hides upstream identity when a provider returns an invalid mode
   );
 });
 
+// A single upstream rejecting its catalog fetch must not poison the public
+// listing — the healthy upstream's models still surface with a 200. The
+// `getModels` unit test covers the same property at the registry level; this
+// pins it at the HTTP boundary so a regression in the listing renderer would
+// be caught.
+test('/v1/models surfaces healthy upstream models when another upstream catalog fetch fails', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  clearInProcessCopilotTokenCache();
+
+  await repo.upstreams.save(buildCustomUpstreamRecord({
+    id: 'up_healthy',
+    name: 'Healthy',
+    sortOrder: 1,
+    config: {
+      baseUrl: 'https://healthy.example.com',
+      authStyle: 'bearer',
+      apiKey: 'sk-h',
+      endpoints: { chatCompletions: {} },
+    },
+  }));
+  await repo.upstreams.save(buildCustomUpstreamRecord({
+    id: 'up_broken',
+    name: 'Broken',
+    sortOrder: 2,
+    config: {
+      baseUrl: 'https://broken.example.com',
+      authStyle: 'bearer',
+      apiKey: 'sk-b',
+      endpoints: { chatCompletions: {} },
+    },
+  }));
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'healthy.example.com' && url.pathname === '/v1/models') {
+        return jsonResponse({ object: 'list', data: [{ id: 'healthy-model', supported_endpoints: ['/chat/completions'] }] });
+      }
+      if (url.hostname === 'broken.example.com' && url.pathname === '/v1/models') {
+        return jsonResponse({ error: 'upstream went down' }, 502);
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const response = await requestApp('/v1/models', {
+        headers: { 'x-api-key': apiKey.key },
+      });
+
+      assertEquals(response.status, 200);
+      const body = (await response.json()) as { object: string; data: Array<{ id: string }> };
+      assertEquals(body.object, 'list');
+      assertEquals(body.data.map(m => m.id), ['healthy-model']);
+    },
+  );
+});
+
 test('public model list endpoints hide upstream HTTP error bodies and headers', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.upstreams.deleteAll();

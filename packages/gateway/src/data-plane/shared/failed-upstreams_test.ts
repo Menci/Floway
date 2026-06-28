@@ -4,7 +4,6 @@ import { appendFailedUpstreams } from './failed-upstreams.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 test('returns the message unchanged when no upstream failed', () => {
-  assertEquals(appendFailedUpstreams('Model X is not available.', undefined), 'Model X is not available.');
   assertEquals(appendFailedUpstreams('Model X is not available.', []), 'Model X is not available.');
 });
 

@@ -3,7 +3,7 @@ import { assertClaudeCodeUpstreamRecord } from './config.ts';
 import { isClaudeCodeShapedRequest } from './detection.ts';
 import { detectHaikuProbe, callClaudeCodeMessages } from './fetch.ts';
 import { claudeCodeMessagesChain, type ClaudeCodeMessagesBoundaryCtx } from './interceptors/messages/index.ts';
-import { buildClaudeCodeCatalog, claudeCodeResolveRequestedModelId, fetchClaudeCodeModelsList } from './models.ts';
+import { buildClaudeCodeCatalog, fetchClaudeCodeModelsList } from './models.ts';
 import { pricingForClaudeCodeModelKey } from './pricing.ts';
 import { assertClaudeCodeUpstreamState } from './state.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
@@ -106,7 +106,6 @@ export const createClaudeCodeProvider = async (record: UpstreamRecord): Promise<
     modelPrefix: record.modelPrefix,
     provider,
     supportsResponsesItemReference: false,
-    resolveRequestedModelId: claudeCodeResolveRequestedModelId,
   };
 };
 

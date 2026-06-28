@@ -4,13 +4,12 @@ import { chatCompletionsAttempt } from './attempt.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { createNonResponsesSourceStore } from '../responses/items/store.ts';
-import type { ProviderCandidate } from '../shared/candidates.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
-import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesResult } from '@floway-dev/protocols/responses';
-import { directFetcher, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
+import { type ProviderCandidate, directFetcher, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
 
 const API_KEY_ID = 'key_chat_completions_attempt_test';
@@ -51,7 +50,7 @@ const makeMessagesEvents = (): readonly MessagesStreamEvent[] => [
   {
     type: 'message_start',
     message: {
-      id: 'msg_1', type: 'message', role: 'assistant', content: [],
+      id: 'msg_cc_via_m', type: 'message', role: 'assistant', content: [],
       model: 'test-model', stop_reason: null, stop_sequence: null,
       usage: { input_tokens: 4, output_tokens: 0 },
     },
@@ -70,14 +69,12 @@ const makeProtocolFrames = async function* <TEvent>(events: readonly TEvent[]): 
 
 const makeCandidate = (overrides: {
   upstream?: string;
-  targetApi?: ProviderCandidate['targetApi'];
+  endpoints?: ModelEndpoints;
   callChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
   callMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<MessagesStreamEvent>>;
   callResponses?: (model: unknown, body: unknown, action: ResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderResponsesResult>;
 } = {}): ProviderCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
-  const targetApi = overrides.targetApi ?? 'chat-completions';
-  const upstreamModel = stubUpstreamModel();
   const provider = stubProvider({
     callChatCompletions: overrides.callChatCompletions,
     callMessages: overrides.callMessages,
@@ -88,12 +85,7 @@ const makeCandidate = (overrides: {
       upstream, providerKind: 'custom', name: upstream,
       disabledPublicModelIds: [], modelPrefix: null, provider, supportsResponsesItemReference: true,
     },
-    binding: {
-      upstream, upstreamName: upstream, providerKind: 'custom',
-      provider, upstreamModel, enabledFlags: upstreamModel.enabledFlags,
-      supportsResponsesItemReference: true,
-    },
-    targetApi,
+    model: overrides.endpoints ? stubUpstreamModel({ endpoints: overrides.endpoints }) : stubUpstreamModel(),
     fetcher: directFetcher,
   };
 };
@@ -131,7 +123,7 @@ test('generate native chat-completions target calls provider.callChatCompletions
   assertEquals(callChatCompletions.mock.calls.length, 1);
 });
 
-test('generate translate-to-messages branch routes through messagesAttempt', async () => {
+test('generate translates through the Messages target when only that endpoint is exposed', async () => {
   installRepo();
   const callMessages = vi.fn(async (): Promise<ProviderStreamResult<MessagesStreamEvent>> => ({
     ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'k', headers: new Headers(),
@@ -140,7 +132,7 @@ test('generate translate-to-messages branch routes through messagesAttempt', asy
     payload: makePayload(),
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
-    candidate: makeCandidate({ targetApi: 'messages', callMessages }),
+    candidate: makeCandidate({ callMessages, endpoints: { messages: {} } }),
     headers: new Headers(),
   });
 
@@ -150,7 +142,7 @@ test('generate translate-to-messages branch routes through messagesAttempt', asy
   assertEquals(callMessages.mock.calls.length, 1);
 });
 
-test('generate translate-to-responses branch routes through responsesAttempt', async () => {
+test('generate translates through the Responses target when only that endpoint is exposed', async () => {
   installRepo();
   const respResp: ResponsesResult = {
     id: 'resp_x', object: 'response', model: 'test-model', status: 'completed',
@@ -170,7 +162,7 @@ test('generate translate-to-responses branch routes through responsesAttempt', a
     payload: makePayload(),
     ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
-    candidate: makeCandidate({ targetApi: 'responses', callResponses }),
+    candidate: makeCandidate({ callResponses, endpoints: { responses: {} } }),
     headers: new Headers(),
   });
 
@@ -178,59 +170,6 @@ test('generate translate-to-responses branch routes through responsesAttempt', a
   if (result.type !== 'events') throw new Error('unreachable');
   await collectEvents(result.events);
   assertEquals(callResponses.mock.calls.length, 1);
-});
-
-test('generate inherits invocation headers across translation to Messages', async () => {
-  installRepo();
-  let observedHeaders: Headers | undefined;
-  const callMessages = vi.fn(async (_model: unknown, _body: unknown, _signal?: AbortSignal, opts?: UpstreamCallOptions): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
-    observedHeaders = opts?.headers;
-    return { ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'k', headers: new Headers() };
-  });
-  const result = await chatCompletionsAttempt.generate({
-    payload: makePayload(),
-    ctx: makeGatewayCtx(),
-    store: createNonResponsesSourceStore(API_KEY_ID),
-    candidate: makeCandidate({ targetApi: 'messages', callMessages }),
-    headers: new Headers({ 'x-test': 'abc' }),
-  });
-  assertEquals(result.type, 'events');
-  if (result.type !== 'events') throw new Error('unreachable');
-  await collectEvents(result.events);
-  assertEquals(observedHeaders?.get('x-test'), 'abc');
-});
-
-test('generate inherits invocation headers across translation to Responses', async () => {
-  installRepo();
-  let observedHeaders: Headers | undefined;
-  const respResp: ResponsesResult = {
-    id: 'resp_x', object: 'response', model: 'test-model', status: 'completed',
-    output: [{
-      type: 'message', id: 'msg_resp', role: 'assistant', status: 'completed',
-      content: [{ type: 'output_text', text: 'hi' }],
-    }],
-    output_text: 'hi', error: null, incomplete_details: null,
-  };
-  const callResponses = vi.fn(async (_model: unknown, _body: unknown, _action: ResponsesAction, _signal?: AbortSignal, opts?: UpstreamCallOptions): Promise<ProviderResponsesResult> => {
-    observedHeaders = opts?.headers;
-    return {
-      action: 'generate', ok: true,
-      events: makeProtocolFrames([{ type: 'response.completed', sequence_number: 0, response: respResp }]),
-      modelKey: 'k',
-      headers: new Headers(),
-    };
-  });
-  const result = await chatCompletionsAttempt.generate({
-    payload: makePayload(),
-    ctx: makeGatewayCtx(),
-    store: createNonResponsesSourceStore(API_KEY_ID),
-    candidate: makeCandidate({ targetApi: 'responses', callResponses }),
-    headers: new Headers({ 'x-test': 'abc' }),
-  });
-  assertEquals(result.type, 'events');
-  if (result.type !== 'events') throw new Error('unreachable');
-  await collectEvents(result.events);
-  assertEquals(observedHeaders?.get('x-test'), 'abc');
 });
 
 test('generate propagates upstream response headers onto the EventResult so respond can forward them', async () => {

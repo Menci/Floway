@@ -1,7 +1,7 @@
 // Per-upstream model name prefix. When set, a routing layer can address the
 // upstream's models in two forms — bare id (e.g. "gpt-4o") and prefix-qualified
 // (e.g. "openrouter/gpt-4o") — and the listing layer can publish either or
-// both. The shape is generic across providers; the registry interprets it.
+// both. The shape is generic across providers; the registry honors it.
 //
 // `addressable` is what the data plane accepts on inbound requests; `listed`
 // (always a subset of addressable) is what /v1/models surfaces. Splitting the

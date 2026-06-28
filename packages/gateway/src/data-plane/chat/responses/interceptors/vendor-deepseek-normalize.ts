@@ -35,7 +35,7 @@ const stripCanonicalReasoningSentinel = (payload: ResponsesPayload): ResponsesPa
 };
 
 export const withVendorDeepseekResponsesNormalize: ResponsesInterceptor = async (ctx, _request, run) => {
-  if (!ctx.candidate.binding.enabledFlags.has('vendor-deepseek')) return await run();
+  if (!ctx.candidate.model.enabledFlags.has('vendor-deepseek')) return await run();
 
   ctx.payload = stripCanonicalReasoningSentinel(ctx.payload);
 

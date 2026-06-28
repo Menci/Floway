@@ -1,8 +1,11 @@
-import { getInternalModels } from '../providers/registry.ts';
+import { getModels } from '../providers/registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { PublicModel, PublicModelsResponse } from '@floway-dev/protocols/common';
-import type { Fetcher, InternalModel } from '@floway-dev/provider';
+import type { InternalModel, Fetcher } from '@floway-dev/provider';
 
+// Project an InternalModel onto the public-facing `/v1/models` wire DTO.
+// The DTO doesn't carry per-protocol `endpoints` — listing names the model;
+// clients exercise its reach by calling the matching endpoint.
 export const toPublicModel = (model: InternalModel): PublicModel => {
   const info: PublicModel = {
     id: model.id,
@@ -27,7 +30,8 @@ export const loadModels = async (
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
 ): Promise<PublicModelsResponse> => {
-  const data = (await getInternalModels(upstreamFilter, fetcherForUpstream, scheduler)).map(toPublicModel);
+  const { models } = await getModels(upstreamFilter, fetcherForUpstream, scheduler);
+  const data = models.map(toPublicModel);
   return {
     object: 'list',
     has_more: false,

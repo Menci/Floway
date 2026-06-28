@@ -105,7 +105,7 @@ export const createCustomProvider = (record: UpstreamRecord): ModelProviderInsta
   //      response (cold path / cache miss).
   //   2. Every `call*` re-stamps the entry for the model it is dispatching
   //      against, sourced from the `UpstreamModel.cost` already carried on
-  //      the binding. This second writer is what saves us in any isolate
+  //      the candidate's model. This second writer is what saves us in any isolate
   //      where the SWR layer (`fetchUpstreamModelsCached`) returns the cached
   //      `UpstreamModel[]` row directly without ever calling
   //      `getProvidedModels` — without it, telemetry would see `null` cost

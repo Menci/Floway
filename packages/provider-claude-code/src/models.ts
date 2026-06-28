@@ -200,14 +200,3 @@ export const buildClaudeCodeCatalog = (
     ...(chat ? { chat } : {}),
   };
 });
-
-// Hook for `ModelProviderInstance.resolveRequestedModelId`: a client that
-// addresses a model by its dated upstream id resolves to the catalog alias
-// the dispatcher actually carries. The catalog publishes only aliases, so
-// any id that already lacks a date suffix needs no remap. We don't validate
-// against the live catalog here — the dispatcher's own model-id lookup is
-// what fails a request that names a model the upstream doesn't expose.
-export const claudeCodeResolveRequestedModelId = (modelId: string): string | undefined => {
-  const alias = aliasFromApiId(modelId);
-  return alias === modelId ? undefined : alias;
-};

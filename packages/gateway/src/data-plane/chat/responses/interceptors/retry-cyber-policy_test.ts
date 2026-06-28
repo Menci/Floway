@@ -26,7 +26,8 @@ const makePayload = (): ResponsesPayload => ({
 
 const makeInvocation = (payload: ResponsesPayload): ResponsesInvocation => ({
   payload,
-  candidate: stubProviderCandidate({ targetApi: 'responses', binding: { enabledFlags: new Set(['retry-cyber-policy']) } }),
+  candidate: stubProviderCandidate({ model: { enabledFlags: new Set(['retry-cyber-policy']) } }),
+  targetApi: 'responses',
   store: new LayeredStatefulResponsesStore({
     apiKeyId: 'test-key',
     reads: [new MemoryStatefulResponsesBacking()],
