@@ -8,6 +8,7 @@ import { computed, ref, watch } from 'vue';
 import { callApi, useApi, type ApiClient } from '../../api/client.ts';
 import type { BillingDimension } from '../../api/types.ts';
 import ChartCanvas from '../../components/charts/ChartCanvas.vue';
+import ChartFocusButton from '../../components/charts/ChartFocusButton.vue';
 import { bucketKeyForUtcHour, chartColor, chartFont, chartXAxisTick, dashboardBuckets, dashboardRangeQuery, type DashboardRange } from '../../components/charts/dashboard-chart.ts';
 import UsageSummaryMetric from '../../components/usage/UsageSummaryMetric.vue';
 import { useModelsStore } from '../../composables/useModels.ts';
@@ -146,6 +147,21 @@ const toggleHidden = (set: Set<string>, id: string) => {
   if (set.has(id)) set.delete(id);
   else set.add(id);
 };
+
+const selectOnly = (set: Set<string>, keepId: string, ids: readonly string[]) => {
+  set.clear();
+  for (const id of ids) if (id !== keepId) set.add(id);
+};
+
+const invertAll = (set: Set<string>, ids: readonly string[]) => {
+  for (const id of ids) {
+    if (set.has(id)) set.delete(id);
+    else set.add(id);
+  }
+};
+
+const isShiftClick = (native: Event | null): boolean =>
+  !!native && (native as MouseEvent).shiftKey;
 
 const load = async () => {
   const requestId = ++usageRequestId;
@@ -389,7 +405,7 @@ const keyMetadataForTokenRecords = (records: readonly DisplayUsageRecord[], meta
   return map;
 };
 
-const buildStackedConfig = (groupKey: 'keyId' | 'model'): ChartConfiguration<'line'> => {
+const buildStackedConfig = (groupKey: 'keyId' | 'model'): ChartConfiguration<'line'> & { _entryIds: string[] } => {
   const allRecords = data.value?.records ?? [];
   const metric = tokenChartMetric.value;
   const isPercent = isPercentMetric(metric);
@@ -413,8 +429,10 @@ const buildStackedConfig = (groupKey: 'keyId' | 'model'): ChartConfiguration<'li
   const datasetEntries = entries
     .map(entry => ({ entry, data: bucketKeys.map(k => values.get(k)?.get(entry.id) ?? (isPercent ? null : 0)) }))
     .filter(({ data }) => isPercent ? data.some(v => v !== null) : data.some(v => v !== 0));
+  const datasetIds = datasetEntries.map(d => d.entry.id);
   const labelWidth = datasetEntries.reduce((max, { entry }) => Math.max(max, entry.label.length), 0);
   return {
+    _entryIds: datasetIds,
     type: 'line',
     data: {
       labels,
@@ -444,9 +462,11 @@ const buildStackedConfig = (groupKey: 'keyId' | 'model'): ChartConfiguration<'li
         legend: {
           position: 'bottom',
           labels: { color: '#9e9e9e', font: { size: 11, family: chartFont.sans }, boxWidth: 12, padding: 16, usePointStyle: true, pointStyle: 'circle' },
-          onClick: (_event, legendItem) => {
+          onClick: (event, legendItem) => {
             const entry = datasetEntries[legendItem.datasetIndex ?? -1]?.entry;
-            if (entry) toggleHidden(ownHidden.value, entry.id);
+            if (!entry) return;
+            if (isShiftClick(event.native)) selectOnly(ownHidden.value, entry.id, datasetIds);
+            else toggleHidden(ownHidden.value, entry.id);
           },
         },
         tooltip: {
@@ -499,7 +519,7 @@ const searchUsageActiveProvider = computed(() => {
   return searchData.value?.activeProvider ?? 'disabled';
 });
 
-const searchByKeyConfig = computed<ChartConfiguration<'line'>>(() => {
+const searchByKeyConfig = computed<ChartConfiguration<'line'> & { _entryIds: string[] }>(() => {
   const records = searchData.value?.records ?? [];
   const { keys: bucketKeys, labels } = buckets.value;
   const groups = new Map<string, Map<string, number>>();
@@ -517,7 +537,9 @@ const searchByKeyConfig = computed<ChartConfiguration<'line'>>(() => {
     presentGroups.add(r.keyId);
   }
   const entries = keyChartEntries([...presentGroups], meta, searchData.value?.keys.map(k => k.id) ?? [...presentGroups]);
+  const entryIds = entries.map(e => e.id);
   return {
+    _entryIds: entryIds,
     type: 'line',
     data: {
       labels,
@@ -547,9 +569,11 @@ const searchByKeyConfig = computed<ChartConfiguration<'line'>>(() => {
         legend: {
           position: 'bottom',
           labels: { color: '#9e9e9e', font: { size: 11, family: chartFont.sans }, boxWidth: 12, padding: 16, usePointStyle: true, pointStyle: 'circle' },
-          onClick: (_event, legendItem) => {
+          onClick: (event, legendItem) => {
             const entry = entries[legendItem.datasetIndex ?? -1];
-            if (entry) toggleHidden(hiddenKeys.value, entry.id);
+            if (!entry) return;
+            if (isShiftClick(event.native)) selectOnly(hiddenKeys.value, entry.id, entryIds);
+            else toggleHidden(hiddenKeys.value, entry.id);
           },
         },
         tooltip: {
@@ -637,12 +661,14 @@ const formatCost = (v: number) => {
 
       <div style="height: 320px; position: relative;">
         <ChartCanvas :config="byKeyConfig" />
+        <ChartFocusButton v-if="byKeyConfig.data.datasets.length > 1" @toggle="invertAll(hiddenKeys, byKeyConfig._entryIds)" />
       </div>
 
       <div class="mt-6 pt-5 border-t border-white/5">
         <span class="text-xs font-medium text-gray-500 uppercase tracking-widest mb-4 block">By Model</span>
         <div style="height: 320px; position: relative;">
           <ChartCanvas :config="byModelConfig" />
+          <ChartFocusButton v-if="byModelConfig.data.datasets.length > 1" @toggle="invertAll(hiddenModels, byModelConfig._entryIds)" />
         </div>
       </div>
 
@@ -676,6 +702,7 @@ const formatCost = (v: number) => {
         </div>
         <div style="height: 320px; position: relative;">
           <ChartCanvas :config="searchByKeyConfig" />
+          <ChartFocusButton v-if="searchByKeyConfig.data.datasets.length > 1" @toggle="invertAll(hiddenKeys, searchByKeyConfig._entryIds)" />
         </div>
       </div>
     </div>
