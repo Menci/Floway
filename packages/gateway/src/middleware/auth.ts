@@ -74,12 +74,26 @@ export const authMiddleware = async (c: AuthedContext, next: Next) => {
   await next();
 };
 
+// Normalize a present-but-empty / whitespace-only credential source to
+// undefined. '' is not nullish, so without this it would latch the `??`
+// fallback chain below and shadow a valid lower-priority credential — the
+// request then 401s with the real key never consulted. Non-standard clients
+// hit this: e.g. Xcode's Claude agent custom-endpoint workaround sends an
+// empty x-api-key alongside a real Authorization: Bearer. Trimming also
+// tolerates keys copy-pasted with stray surrounding whitespace.
+const presentOrUndefined = (v: string | null | undefined): string | undefined => {
+  const trimmed = v?.trim();
+  if (!trimmed) return undefined;
+  return trimmed;
+};
+
 const extractApiKey = (c: Context): string | null => {
   const url = new URL(c.req.url);
-  return url.searchParams.get('key')
-    ?? c.req.header('x-api-key')
-    ?? c.req.header('x-goog-api-key')
-    ?? c.req.header('authorization')?.replace(/^Bearer\s+/i, '')
+  const bearer = c.req.header('authorization')?.replace(/^Bearer\s+/i, '');
+  return presentOrUndefined(url.searchParams.get('key'))
+    ?? presentOrUndefined(c.req.header('x-api-key'))
+    ?? presentOrUndefined(c.req.header('x-goog-api-key'))
+    ?? presentOrUndefined(bearer)
     ?? null;
 };
 

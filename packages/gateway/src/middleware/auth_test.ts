@@ -95,3 +95,59 @@ test('API key whose owner was deleted is rejected', async () => {
   });
   assertEquals(response.status, 401);
 });
+
+// A present-but-empty higher-priority source must not shadow a valid
+// lower-priority credential. '' is not nullish, so the raw `??` chain used to
+// latch onto it and 401 the request without ever consulting the real key —
+// exactly what non-standard clients (e.g. Xcode's Claude agent custom-endpoint
+// workaround) trigger by sending an empty x-api-key alongside a real Bearer.
+test('empty x-api-key does not shadow a valid Authorization: Bearer', async () => {
+  const { apiKey } = await setupAppTest();
+  const app = authTestApp();
+  const response = await app.request('/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'x-api-key': '', authorization: `Bearer ${apiKey.key}` },
+  });
+  assertEquals(response.status, 200);
+  assertEquals(await response.text(), 'ok');
+});
+
+test('empty ?key= query does not shadow a valid x-goog-api-key', async () => {
+  const { apiKey } = await setupAppTest();
+  const app = authTestApp();
+  const response = await app.request('/v1beta/models/gemini-test:generateContent?key=', {
+    method: 'POST',
+    headers: { 'x-goog-api-key': apiKey.key },
+  });
+  assertEquals(response.status, 200);
+});
+
+test('whitespace-only x-api-key falls through to a valid Bearer', async () => {
+  const { apiKey } = await setupAppTest();
+  const app = authTestApp();
+  const response = await app.request('/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'x-api-key': '   ', authorization: `Bearer ${apiKey.key}` },
+  });
+  assertEquals(response.status, 200);
+});
+
+test('a key with stray surrounding whitespace is trimmed and accepted', async () => {
+  const { apiKey } = await setupAppTest();
+  const app = authTestApp();
+  const response = await app.request('/v1beta/models/gemini-test:generateContent', {
+    method: 'POST',
+    headers: { 'x-goog-api-key': `  ${apiKey.key}  ` },
+  });
+  assertEquals(response.status, 200);
+});
+
+test('Authorization: Bearer with no value is rejected', async () => {
+  await setupAppTest();
+  const app = authTestApp();
+  const response = await app.request('/v1/chat/completions', {
+    method: 'POST',
+    headers: { authorization: 'Bearer ' },
+  });
+  assertEquals(response.status, 401);
+});
