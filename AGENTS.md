@@ -296,10 +296,12 @@ KV) only ever grow, never shrink — `pnpm run deploy` runs
 `pnpm install --frozen-lockfile` first (so a fast-forward that introduced
 a new workspace package wires its symlinks before the build runs) then
 `scripts/check-wrangler.ts` and refuses to publish if `wrangler.jsonc`
-drifts from `wrangler.example.jsonc` (bindings, `main`,
-`compatibility_date`, `triggers.crons`, the SPA `assets` block, and the
-Worker-first route list) — so plain code rollback stays safe; D1 state is
-rolled back separately as above.
+drifts from `wrangler.example.jsonc` in either direction — every key,
+value, and binding in the example must appear in the real config, and
+the real config must not carry anything the example doesn't pin (aside
+from `account_id`, the one personal-only key the gate allowlists). So
+plain code rollback stays safe; D1 state is rolled back separately as
+above.
 
 A complete deploy fits in a strict turn budget: **three agent turns when
 migrations are pending** (Step 1 = gather, Step 2 = bookmark + report +

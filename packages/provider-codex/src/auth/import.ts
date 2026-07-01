@@ -31,6 +31,12 @@ const buildCodexImportResult = (params: {
       refresh_token: params.refreshToken,
       state: 'active',
       state_updated_at: params.now,
+      // Mint a fresh per-account installation id at import time. Codex CLI's
+      // `$CODEX_HOME/installation_id` is a UUIDv4 written once per device and
+      // reused forever; we mirror the shape and lifetime per Floway-managed
+      // account so each account looks like one persisted Codex install rather
+      // than a fingerprint that rotates per call.
+      openaiDeviceId: crypto.randomUUID(),
       accessToken: {
         token: params.accessToken,
         expiresAt: params.expiresAt,

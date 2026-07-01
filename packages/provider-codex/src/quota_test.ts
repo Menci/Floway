@@ -35,6 +35,7 @@ const baseAccount = {
   refresh_token: 'rt_v1',
   state: 'active' as const,
   state_updated_at: '2026-06-01T00:00:00.000Z',
+  openaiDeviceId: '11111111-2222-4333-8444-555555555555',
   accessToken: null,
   quotaSnapshot: null as CodexQuotaSnapshotEntry | null,
 };

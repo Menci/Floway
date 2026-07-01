@@ -557,7 +557,7 @@ export class MemoryStatefulResponsesBacking implements StatefulResponsesBacking 
 
   insertSnapshot(snapshot: StoredResponsesSnapshot): Promise<void> {
     const key = scopedKey(snapshot.apiKeyId, snapshot.id);
-    if (!this.snapshots.has(key)) this.snapshots.set(key, cloneStoredResponsesSnapshot(snapshot));
+    this.snapshots.set(key, cloneStoredResponsesSnapshot(snapshot));
     return Promise.resolve();
   }
 

@@ -108,3 +108,4 @@ export {
 } from './image-helpers.ts';
 
 export { COMPACTION_TRIGGER, compactionResponse } from './compaction.ts';
+export { uuidV7 } from './ids.ts';

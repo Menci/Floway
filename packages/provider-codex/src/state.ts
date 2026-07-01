@@ -37,9 +37,15 @@ export interface CodexAccountCredential {
   // terminal-state flip). The mutation paths in routes.ts and provider.ts
   // always set it together with `state`, so it's required on the wire.
   state_updated_at: string;
-  // Pre-existing rows from before these fields were added carry no key at all
-  // on the wire. The asserter accepts that absent-key case unchanged so we
-  // never mutate the input (which would poison CAS via the caller's
+  // Stable per-account installation id, surfaced to the Codex upstream as
+  // `client_metadata['x-codex-installation-id']` so per-account requests look
+  // like a single persisted device rather than rotating per call. Minted at
+  // import time; the matching D1 / sqlite migration backfills the field on
+  // older rows so the contract is closed end-to-end.
+  openaiDeviceId: string;
+  // accessToken / quotaSnapshot were added after the initial schema; absent on
+  // pre-existing rows. The asserter accepts that absent-key case unchanged so
+  // we never mutate the input (which would poison CAS via the caller's
   // `fresh.state` reference); `readCodexUpstreamState` is the boundary that
   // normalizes absent → `null` on a shallow copy, so consumers can rely on
   // the typed `null` slot here.
@@ -59,6 +65,7 @@ const ALLOWED_CREDENTIAL_KEYS_MAP: Record<keyof CodexAccountCredential, true> = 
   state: true,
   state_message: true,
   state_updated_at: true,
+  openaiDeviceId: true,
   accessToken: true,
   quotaSnapshot: true,
 };
@@ -145,6 +152,9 @@ const assertCodexAccountCredential = (value: unknown, where: string): void => {
   }
   if (typeof obj.state_updated_at !== 'string' || obj.state_updated_at === '') {
     throw new TypeError(`${where}.state_updated_at must be a non-empty ISO string`);
+  }
+  if (typeof obj.openaiDeviceId !== 'string' || obj.openaiDeviceId === '') {
+    throw new TypeError(`${where}.openaiDeviceId must be a non-empty string`);
   }
   // accessToken / quotaSnapshot were added after the initial schema; absent on
   // pre-existing rows. Accept the absent-key case verbatim and only validate

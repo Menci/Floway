@@ -175,6 +175,7 @@ const CODEX_UPSTREAM: UpstreamRecord = {
       refresh_token: 'rt_alice_v3',
       state: 'active',
       state_updated_at: '2026-01-01T00:00:00.000Z',
+      openaiDeviceId: '11111111-2222-4333-8444-555555555555',
     }],
   },
 };

@@ -602,6 +602,50 @@ test('migration 0044 rewrites pathOverrides keys to the OpenAI-canonical /path/f
   }
 });
 
+test('migration 0047 backfills openaiDeviceId on legacy Codex rows and leaves populated rows alone', async () => {
+  const db = await createMigratedSqlJsDatabase();
+  try {
+    for (const filename of [...migrationSqlByFilename.keys()].filter(f => f >= '0010_unified_upstreams.sql' && f < '0047_codex_account_openai_device_id.sql').toSorted()) {
+      applySqlJsFile(db, filename);
+    }
+
+    // Seed three rows:
+    //   - up_codex_legacy: codex with no openaiDeviceId — migration must mint
+    //   - up_codex_imported: codex with a pre-existing id — migration leaves it
+    //   - up_custom: non-codex — migration ignores
+    db.run(`INSERT INTO upstreams (id, provider, name, enabled, sort_order, created_at, updated_at, config_json, state_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json)
+            VALUES
+              ('up_codex_legacy', 'codex', 'Codex Legacy', 1, 0, '2026-05-21T00:00:00.000Z', '2026-05-21T00:00:00.000Z',
+                json_object('accounts', json_array(json_object('email', 'a@b.com', 'chatgptAccountId', 'acc-legacy', 'chatgptUserId', 'usr', 'planType', 'plus'))),
+                json_object('accounts', json_array(json_object('chatgptAccountId', 'acc-legacy', 'refresh_token', 'rt', 'state', 'active', 'state_updated_at', '2026-05-21T00:00:00.000Z'))),
+                '[]', '[]', '[]'),
+              ('up_codex_imported', 'codex', 'Codex Imported', 1, 1, '2026-05-22T00:00:00.000Z', '2026-05-22T00:00:00.000Z',
+                json_object('accounts', json_array(json_object('email', 'a@b.com', 'chatgptAccountId', 'acc-imported', 'chatgptUserId', 'usr', 'planType', 'plus'))),
+                json_object('accounts', json_array(json_object('chatgptAccountId', 'acc-imported', 'refresh_token', 'rt', 'state', 'active', 'state_updated_at', '2026-05-22T00:00:00.000Z', 'openaiDeviceId', 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'))),
+                '[]', '[]', '[]'),
+              ('up_custom', 'custom', 'Custom', 1, 2, '2026-05-21T00:00:00.000Z', '2026-05-21T00:00:00.000Z',
+                json_object('baseUrl', 'https://a.example/v1', 'apiKey', 'k', 'authStyle', 'bearer'),
+                NULL,
+                '[]', '[]', '[]')`);
+
+    applySqlJsFile(db, '0047_codex_account_openai_device_id.sql');
+
+    const rows = sqlJsRows<{ id: string; deviceId: string | null }>(
+      db,
+      `SELECT id, json_extract(state_json, '$.accounts[0].openaiDeviceId') AS deviceId
+       FROM upstreams ORDER BY id`,
+    );
+
+    const legacy = rows.find(r => r.id === 'up_codex_legacy');
+    assert(typeof legacy?.deviceId === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(legacy.deviceId), `expected UUIDv4 device id for up_codex_legacy, got ${legacy?.deviceId}`);
+    assertEquals(rows.find(r => r.id === 'up_codex_imported')?.deviceId, 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee');
+    // Non-codex rows have no state_json; the json_extract returns null.
+    assertEquals(rows.find(r => r.id === 'up_custom')?.deviceId, null);
+  } finally {
+    db.close();
+  }
+});
+
 type FakeUpstreamRow = {
   id: string;
   provider: string;
