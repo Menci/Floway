@@ -288,13 +288,44 @@ test('alias resolution swaps the inbound model id for the target and overlays ru
   // The resolver saw the inbound alias id verbatim — target-id walking
   // happens inside the resolver, not in serve.
   assertEquals(lastResolveCall.model, 'gpt-fast');
-  // Serve rewrote payload.model to the target id before the attempt.
+  // Serve normalized payload.model to the candidate's real id before the
+  // attempt. Every attempt sees the canonical resolved public id — for an
+  // alias inbound the change is visible (gpt-fast → gpt-5.4); for a direct
+  // inbound the rewrite is a no-op.
   assertEquals(payload.model, 'gpt-5.4');
   // Alias rules land on the IR through candidate.rules → the attempt's
   // applyRulesToUpstreamChatCompletions call.
   const observed = capturedBodies[0]!;
   assertEquals(observed.reasoning_effort, 'low');
   assertEquals(observed.verbosity, 'low');
+});
+
+test('direct dispatch normalizes payload.model to the resolved public id', async () => {
+  // A prefix-addressable id ('cop/gpt-5.4') resolves to the catalog's
+  // 'gpt-5.4' — the resolver strips the prefix internally. Serve then
+  // pins payload.model to the candidate's real id so every attempt sees
+  // the canonical form regardless of how the client addressed the model.
+  installRepo();
+  const callChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => ({
+    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'gpt-5.4', headers: new Headers(),
+  }));
+  const candidate = makeCandidate({ upstream: 'up_a', callChatCompletions });
+  Object.assign(candidate.model, { id: 'gpt-5.4' });
+  queueResolution([candidate]);
+
+  const payload = makePayload({ model: 'cop/gpt-5.4' });
+  const result = await chatCompletionsServe.generate({
+    payload,
+    ctx: makeGatewayCtx(),
+    headers: new Headers(),
+  });
+  assertEquals(result.type, 'events');
+  if (result.type !== 'events') throw new Error('unreachable');
+  await collectEvents(result.events);
+
+  // Resolver saw the prefixed inbound; serve normalized to the catalog id.
+  assertEquals(lastResolveCall.model, 'cop/gpt-5.4');
+  assertEquals(payload.model, 'gpt-5.4');
 });
 
 test('alias whose targets have no kind-matching binding surfaces as the regular model-missing 404', async () => {

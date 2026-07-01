@@ -46,14 +46,14 @@ export const messagesServe = {
     // stream opened) is the final answer; an api-error or internal-error
     // from one candidate falls through to the next so the gateway absorbs
     // transient 5xx/429/network failures. When the list is exhausted, the
-    // most recent failure is forwarded verbatim. Alias-origin candidates
-    // carry `.rules`; rewrite `payload.model` to the candidate's real id
-    // so the wire call dispatches under the real model name.
+    // most recent failure is forwarded verbatim. Normalize `payload.model`
+    // to the candidate's real id so every attempt sees the canonical
+    // resolved public id.
     return await iterateCandidates(
       decision.candidates,
       'messagesServe.generate',
       candidate => {
-        if (candidate.rules !== undefined) payload.model = candidate.model.id;
+        payload.model = candidate.model.id;
         return messagesAttempt.generate({ payload, ctx, candidate, headers });
       },
     );
@@ -82,7 +82,7 @@ export const messagesServe = {
       decision.candidates,
       'messagesServe.countTokens',
       candidate => {
-        if (candidate.rules !== undefined) payload.model = candidate.model.id;
+        payload.model = candidate.model.id;
         return messagesAttempt.countTokens({ payload, ctx, candidate, headers });
       },
     );

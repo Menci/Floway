@@ -41,16 +41,15 @@ export const chatCompletionsServe = {
     // from one candidate falls through to the next so the gateway absorbs
     // transient 5xx/429/network failures. When the list is exhausted, the
     // most recent failure is forwarded verbatim so the client still sees
-    // real upstream telemetry rather than a synthetic envelope. Alias-
-    // origin candidates carry `.rules`, and the resolver already deduped
-    // them by (model, upstream, rules); rewrite `payload.model` to the
-    // candidate's real id so the wire call dispatches under the real
-    // model name.
+    // real upstream telemetry rather than a synthetic envelope. Normalize
+    // `payload.model` to the candidate's real id — inbound may be an alias
+    // name, a prefix-addressable variant, or a dated-suffix id, but every
+    // attempt sees the canonical resolved public id.
     return await iterateCandidates(
       decision.candidates,
       'chatCompletionsServe.generate',
       candidate => {
-        if (candidate.rules !== undefined) payload.model = candidate.model.id;
+        payload.model = candidate.model.id;
         return chatCompletionsAttempt.generate({ payload, ctx, candidate, headers });
       },
     );
