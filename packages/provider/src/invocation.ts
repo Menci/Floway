@@ -42,7 +42,7 @@ export interface ModelCandidate {
 export const providerModelOf = (candidate: ModelCandidate): ProviderModel => {
   const { model, provider } = candidate;
   if (model.providerModels === undefined) {
-    throw new Error(`providerModelOf: model '${model.id}' is an alias row (aliasedFrom='${model.aliasedFrom.name}'); the resolver should have expanded it to a target row before dispatch`);
+    throw new Error(`providerModelOf: model '${model.id}' is an alias row; the resolver should have expanded it to a target row before dispatch`);
   }
   const providerModel = model.providerModels[provider.upstream];
   if (providerModel === undefined) {

@@ -1,6 +1,6 @@
 import type { UpstreamChatModelConfig } from './model-config.ts';
 import type { ModelPrefixConfig } from './model-prefix.ts';
-import type { AliasKind, AliasSelection, AliasTarget, ModelKind, ModelEndpoints, ModelPricing } from '@floway-dev/protocols/common';
+import type { AliasSelection, AliasTarget, ModelKind, ModelEndpoints, ModelPricing } from '@floway-dev/protocols/common';
 
 export const ALL_PROVIDER_KINDS = ['copilot', 'custom', 'azure', 'codex', 'claude-code', 'ollama'] as const;
 export type UpstreamProviderKind = typeof ALL_PROVIDER_KINDS[number];
@@ -117,13 +117,14 @@ export type InternalModel = ModelMetadata & (
 
 // Alias-side payload carried on alias-synthesized `InternalModel` rows.
 // Mirrors the operator's `ModelAliasRecord` at the point the row was
-// synthesized: `name` is the alias's own id, `targets` is the resolved
-// walk order (per `selection`), and `kind` narrows the resolver's kind
-// filter. `AliasTarget.rules` on each entry rides through to the picked
-// candidate's request as the rule overlay.
+// synthesized: `selection` is the walk mode the resolver honors at request
+// time, and `targets` is the configured target list — projected as-is on
+// admin surfaces and filtered to the caller-reachable subset on data-plane
+// / non-admin surfaces. `AliasTarget.rules` on each entry rides through to
+// the picked candidate's request as the rule overlay. The alias's `name`
+// and `kind` live on the enclosing `InternalModel` (`id`, `kind`), so this
+// sidecar carries only the alias-specific fields.
 export interface InternalAliasedFrom {
-  readonly name: string;
-  readonly kind: AliasKind;
   readonly selection: AliasSelection;
   readonly targets: readonly AliasTarget[];
 }

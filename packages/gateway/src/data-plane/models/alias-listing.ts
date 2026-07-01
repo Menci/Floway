@@ -189,11 +189,11 @@ const buildAliasedFrom = (
   narrowTargets: boolean,
 ): InternalAliasedFrom => {
   if (!narrowTargets) {
-    return { name: alias.name, kind: alias.kind, selection: alias.selection, targets: alias.targets };
+    return { selection: alias.selection, targets: alias.targets };
   }
   const addressableSet = new Set(addressableModelIds.map(entry => entry.id));
   const targets = alias.targets.filter(t => addressableSet.has(t.target_model_id));
-  return { name: alias.name, kind: alias.kind, selection: alias.selection, targets };
+  return { selection: alias.selection, targets };
 };
 
 // Compute the rule-aware intersection (`limits` + `chat`) over the

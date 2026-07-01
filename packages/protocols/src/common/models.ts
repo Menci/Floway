@@ -1,4 +1,4 @@
-import type { AliasKind, AliasSelection, AliasTarget } from './aliases.ts';
+import type { AliasSelection, AliasTarget } from './aliases.ts';
 import type { ModelEndpoints } from './capabilities.ts';
 
 // Disjoint billing dimensions a single request can be charged on. Every count
@@ -121,10 +121,11 @@ export interface ChatModelInfo {
 // upstream catalog. `targets` carries every configured target — including
 // targets the live catalog currently can not serve — so the dashboard can
 // show the full configuration and warn about unavailable ones without a
-// second control-plane round trip.
+// second control-plane round trip. The alias's `kind` and `name` live on
+// the enclosing `PublicModel` (`kind`, `id`); every alias-synthesized row
+// puts the alias name on its outer `id` and the alias kind on its outer
+// `kind`, so the sidecar avoids duplicating them.
 export interface PublicModelAliasedFrom {
-  name: string;
-  kind: AliasKind;
   selection: AliasSelection;
   targets: AliasTarget[];
 }

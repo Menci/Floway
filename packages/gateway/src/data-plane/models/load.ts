@@ -30,8 +30,6 @@ export const toPublicModel = (model: InternalModel): PublicModel => {
   if (model.chat) info.chat = model.chat;
   if (model.aliasedFrom !== undefined) {
     info.aliasedFrom = {
-      name: model.aliasedFrom.name,
-      kind: model.aliasedFrom.kind,
       selection: model.aliasedFrom.selection,
       targets: [...model.aliasedFrom.targets],
     };

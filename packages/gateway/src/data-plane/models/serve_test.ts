@@ -716,7 +716,7 @@ test('/v1/models appends visible aliases with their aliasedFrom block and folds 
     async () => {
       const response = await requestApp('/v1/models', { headers: { 'x-api-key': apiKey.key } });
       assertEquals(response.status, 200);
-      const body = (await response.json()) as { data: Array<{ id: string; display_name: string; aliasedFrom?: { name: string; selection: string } }> };
+      const body = (await response.json()) as { data: Array<{ id: string; display_name: string; aliasedFrom?: { selection: string } }> };
       const ids = body.data.map(model => model.id);
 
       // Real `gpt-4o` is replaced by the alias of the same name; the alias
@@ -728,12 +728,12 @@ test('/v1/models appends visible aliases with their aliasedFrom block and folds 
       assertEquals(ids.includes('hidden-alias'), false);
 
       const collided = body.data.find(model => model.id === 'gpt-4o')!;
-      assertEquals(collided.aliasedFrom?.name, 'gpt-4o');
+      assertEquals(collided.aliasedFrom !== undefined, true);
       assertEquals(collided.aliasedFrom?.selection, 'first-available');
       assertEquals(collided.display_name, 'gpt-4o (low effort)');
 
       const fast = body.data.find(model => model.id === 'gpt-fast')!;
-      assertEquals(fast.aliasedFrom?.name, 'gpt-fast');
+      assertEquals(fast.aliasedFrom !== undefined, true);
       assertEquals(fast.display_name, 'Operator Fast');
     },
   );
@@ -791,10 +791,10 @@ test('/v1/models folds a real-id collision onto the alias even when the alias po
     async () => {
       const response = await requestApp('/v1/models', { headers: { 'x-api-key': apiKey.key } });
       assertEquals(response.status, 200);
-      const body = (await response.json()) as { data: Array<{ id: string; display_name: string; aliasedFrom?: { name: string } }> };
+      const body = (await response.json()) as { data: Array<{ id: string; display_name: string; aliasedFrom?: { selection: string } }> };
       const shadowRows = body.data.filter(model => model.id === 'orphan-shadow');
       assertEquals(shadowRows.length, 1);
-      assertEquals(shadowRows[0].aliasedFrom?.name, 'orphan-shadow');
+      assertEquals(shadowRows[0].aliasedFrom !== undefined, true);
       assertEquals(shadowRows[0].display_name, 'Alias entry wins');
     },
   );

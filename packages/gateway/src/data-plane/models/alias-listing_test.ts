@@ -62,8 +62,6 @@ describe('synthesizeListedAliases', () => {
     expect(entry.chat?.reasoning).toBeUndefined();
     expect(entry.chat?.modalities).toEqual({ input: ['text', 'image'], output: ['text'] });
     expect(entry.aliasedFrom).toEqual({
-      name: 'gpt-fast',
-      kind: 'chat',
       selection: 'first-available',
       targets: [{ target_model_id: 'gpt-5.4', rules: { reasoning: { effort: 'low' } } }],
     });
@@ -186,7 +184,7 @@ describe('synthesizeListedAliases', () => {
     const entries = synthesizeListedAliases({ aliases, gatewayAddressableModelIds: listed(realModels), callerAddressableModelIds: listed(realModels), narrowTargets: false });
     expect(entries).toHaveLength(1);
     expect(entries[0].id).toBe('gpt-5.4');
-    expect(entries[0].aliasedFrom?.name).toBe('gpt-5.4');
+    expect(entries[0].aliasedFrom).toBeDefined();
   });
 
   test('no available targets means the alias is hidden from the listing (resolver still returns 404 for the alias itself)', () => {

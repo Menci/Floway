@@ -12,7 +12,7 @@ const realWithUpstreams = (id: string, upstreams: { id: string }[]): ControlPlan
 const aliasWithTargets = (id: string, targetIds: string[]): ControlPlaneModel => buildAliasModel({
   id,
   aliasedFrom: {
-    name: id, kind: 'chat', selection: 'first-available',
+    selection: 'first-available',
     targets: targetIds.map(tid => ({ target_model_id: tid, rules: {} })),
   },
 });

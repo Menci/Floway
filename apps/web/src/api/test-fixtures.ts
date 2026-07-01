@@ -24,7 +24,7 @@ export const buildRealModel = (over: Partial<ControlPlaneModel> & { id: string }
 export const buildAliasModel = (over: Partial<ControlPlaneModel> & { id: string }): ControlPlaneModel => ({
   ...baseFields(),
   upstreams: [],
-  aliasedFrom: { name: over.id, kind: 'chat', selection: 'first-available', targets: [] },
+  aliasedFrom: { selection: 'first-available', targets: [] },
   ...over,
 });
 

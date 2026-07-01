@@ -72,8 +72,6 @@ test('providerModelOf throws the alias-row diagnostic when the candidate names a
       limits: {},
       endpoints: { chatCompletions: {}, responses: {}, messages: {} },
       aliasedFrom: {
-        name: 'gpt-fast',
-        kind: 'chat',
         selection: 'first-available',
         targets: [{ target_model_id: 'gpt-5.4', rules: {} }],
       },
@@ -84,6 +82,6 @@ test('providerModelOf throws the alias-row diagnostic when the candidate names a
   assertThrows(
     () => providerModelOf(candidate),
     Error,
-    "providerModelOf: model 'gpt-fast' is an alias row (aliasedFrom='gpt-fast'); the resolver should have expanded it to a target row before dispatch",
+    "providerModelOf: model 'gpt-fast' is an alias row; the resolver should have expanded it to a target row before dispatch",
   );
 });
