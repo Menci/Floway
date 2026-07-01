@@ -1,6 +1,6 @@
 import { chatCompletionsInterceptors } from './interceptors/index.ts';
 import type { ChatCompletionsInvocation } from './interceptors/types.ts';
-import { applyRulesToUpstreamChatCompletions } from '../../model-aliases/apply.ts';
+import { applyRulesToUpstreamChatCompletions } from '../../model-aliases/apply-rules.ts';
 import { messagesAttempt } from '../messages/attempt.ts';
 import { responsesAttempt } from '../responses/attempt.ts';
 import { rewriteStoredResponsesItemsForCandidate } from '../responses/items/rewrite.ts';

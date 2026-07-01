@@ -6,7 +6,7 @@
 
 import { test } from 'vitest';
 
-import { applyRulesToUpstreamChatCompletions, applyRulesToUpstreamMessages, applyRulesToUpstreamResponses } from './apply.ts';
+import { applyRulesToUpstreamChatCompletions, applyRulesToUpstreamMessages, applyRulesToUpstreamResponses } from './apply-rules.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
 import type { ResponsesPayload } from '@floway-dev/protocols/responses';

@@ -1,6 +1,6 @@
 import { messagesInterceptors, messagesCountTokensInterceptors } from './interceptors/index.ts';
 import type { MessagesInvocation } from './interceptors/types.ts';
-import { applyRulesToUpstreamMessages } from '../../model-aliases/apply.ts';
+import { applyRulesToUpstreamMessages } from '../../model-aliases/apply-rules.ts';
 import { requireRecordedDurationMs } from '../../shared/telemetry/performance.ts';
 import { chatCompletionsAttempt } from '../chat-completions/attempt.ts';
 import { responsesAttempt } from '../responses/attempt.ts';

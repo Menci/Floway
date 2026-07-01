@@ -4,5 +4,5 @@
 //
 // Standalone so transport-level consumers (the alias-prelude in chat serves,
 // the passthrough seam) can import it without dragging in the rule-overlay
-// helpers from `apply.ts`.
+// helpers from `apply-rules.ts`.
 export const ALIAS_RESPONSE_HEADER = 'x-floway-alias';
