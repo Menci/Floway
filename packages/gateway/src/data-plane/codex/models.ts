@@ -13,12 +13,6 @@
 // registry (see context-window.ts) so the codex client sees the same
 // limits the data plane will actually enforce.
 //
-// Operator-defined aliases do not participate in this filter — the catalog
-// only surfaces real registry slugs. When an alias name happens to match a
-// bundled catalog slug (`codex-auto-review` is the canonical example, seeded
-// alongside the alias itself), the codex CLI's `/model` picker shows that
-// slug and the alias resolver handles the request at dispatch time.
-//
 // Latency: codex aborts the catalog fetch after 5 s
 // (`MODELS_REFRESH_TIMEOUT` in codex-rs/model-provider/src/models_endpoint.rs)
 // and silently falls back to its binary-bundled catalog on miss. The
