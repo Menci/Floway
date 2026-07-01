@@ -30,7 +30,8 @@ const invocation = (
 ): MessagesInvocation => ({
   payload,
   candidate: stubModelCandidate({
-    model: { endpoints: { messages: {} }, enabledFlags },
+    model: { endpoints: { messages: {} } },
+    enabledFlags,
   }),
   targetApi: 'messages',
   headers: new Headers(),

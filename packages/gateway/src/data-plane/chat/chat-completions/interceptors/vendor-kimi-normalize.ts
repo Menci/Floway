@@ -18,6 +18,7 @@ import type { ChatCompletionsInterceptor } from './types.ts';
 import { asJsonObject, type JsonObject, readJsonNumber } from '../../../../shared/json-helpers.ts';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { eventFrame } from '@floway-dev/protocols/common';
+import { providerModelOf } from '@floway-dev/provider';
 
 const rewriteInboundUsage = (chunk: ChatCompletionsStreamEvent): ChatCompletionsStreamEvent => {
   const usage = asJsonObject(chunk.usage);
@@ -37,7 +38,7 @@ const rewriteInboundUsage = (chunk: ChatCompletionsStreamEvent): ChatCompletions
 };
 
 export const withVendorKimiChatCompletionsNormalize: ChatCompletionsInterceptor = async (ctx, _gatewayCtx, run) => {
-  if (!ctx.candidate.model.enabledFlags.has('vendor-kimi')) return await run();
+  if (!providerModelOf(ctx.candidate).enabledFlags.has('vendor-kimi')) return await run();
 
   const result = await run();
   if (result.type !== 'events') return result;

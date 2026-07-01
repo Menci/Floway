@@ -1,4 +1,4 @@
-// Ollama provider. Builds an UpstreamModel catalog from /api/tags + /api/show
+// Ollama provider. Builds a ProviderModel catalog from /api/tags + /api/show
 // (see fetch-models.ts) and routes inference through Ollama's OpenAI-/
 // Anthropic-compat shims at /v1/chat/completions, /v1/responses, /v1/messages,
 // /v1/completions, /v1/embeddings — the same paths the cloud (ollama.com) and
@@ -27,12 +27,11 @@ import { parseChatCompletionsStream } from '@floway-dev/protocols/chat-completio
 import { type ModelEndpoints, type ModelPricing, kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseMessagesStream } from '@floway-dev/protocols/messages';
 import { parseResponsesStream, type ResponsesResult, toCompactPayloadShape } from '@floway-dev/protocols/responses';
-import { publicModelId, resolveEffectiveFlags, defaultsForProvider, streamingProviderCall, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamModel, type UpstreamRecord } from '@floway-dev/provider';
+import { publicModelId, resolveEffectiveFlags, defaultsForProvider, streamingProviderCall, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord } from '@floway-dev/provider';
 
 // providerData carries the raw upstream id verbatim — the same value /api/tags
-// returns and the same value the gateway must send back on every inference
-// call.
-const rawModelIdOf = (model: UpstreamModel): string => model.providerData as string;
+// returns and the same value the gateway must send back on every inference call.
+const rawModelIdOf = (model: ProviderModel): string => model.providerData as string;
 
 // Vision / tool / thinking capabilities live alongside `embedding` in the
 // /api/show response. Embedding is the only one that drives a different
@@ -46,13 +45,13 @@ const endpointsForCapabilities = (capabilities: ReadonlySet<string>): ModelEndpo
 const finalizeOllamaModels = (
   catalog: OllamaCatalog,
   enabledFlags: ReadonlySet<string>,
-): UpstreamModel[] => {
-  const models: UpstreamModel[] = [];
+): ProviderModel[] => {
+  const models: ProviderModel[] = [];
   for (const raw of catalog.data) {
     const endpoints = endpointsForCapabilities(raw.capabilities);
-    const limits: UpstreamModel['limits'] = {};
+    const limits: ProviderModel['limits'] = {};
     if (raw.contextLength !== undefined) limits.max_context_window_tokens = raw.contextLength;
-    const model: UpstreamModel = {
+    const model: ProviderModel = {
       id: raw.id,
       owned_by: 'ollama',
       limits,
@@ -78,11 +77,11 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
   // Manual overrides always emit, regardless of whether the upstream catalog
   // fetch succeeds. Same shape and merge precedence as the custom provider.
   const overriddenIds = new Set(config.models.map(m => m.upstreamModelId));
-  const manualModels: UpstreamModel[] = config.models.map(model => {
+  const manualModels: ProviderModel[] = config.models.map(model => {
     const modelLayer = model.flagOverrides?.enabled ? model.flagOverrides.values : undefined;
     const enabledFlags = resolveEffectiveFlags(defaultsForProvider('ollama'), [record.flagOverrides, modelLayer]);
     const endpoints = model.endpoints;
-    const internal: UpstreamModel = {
+    const internal: ProviderModel = {
       id: publicModelId(model),
       limits: { ...(model.limits ?? {}) },
       kind: kindForEndpoints(endpoints),
@@ -101,7 +100,7 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
 
   const call = (
     transport: (config: OllamaUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions) => Promise<Response>,
-    model: UpstreamModel,
+    model: ProviderModel,
     body: Record<string, unknown>,
     signal: AbortSignal | undefined,
     opts: UpstreamCallOptions,
@@ -116,7 +115,7 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
 
   const callStreaming = <TEvent>(
     transport: (config: OllamaUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions) => Promise<Response>,
-    model: UpstreamModel,
+    model: ProviderModel,
     body: Record<string, unknown>,
     signal: AbortSignal | undefined,
     parser: ProviderStreamParser<TEvent>,

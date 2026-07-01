@@ -6,7 +6,7 @@ import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
-import { assertEquals, stubUpstreamModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import { assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const collect = async <T>(events: AsyncIterable<T>): Promise<T[]> => {
   const collected: T[] = [];
@@ -27,7 +27,7 @@ const makeCtx = (
     ...(thinking ? { thinking } : {}),
   },
   headers: new Headers(),
-  model: stubUpstreamModel({ endpoints: { messages: {} } }),
+  model: stubProviderModel({ endpoints: { messages: {} } }),
 });
 
 const stubRequest = {};

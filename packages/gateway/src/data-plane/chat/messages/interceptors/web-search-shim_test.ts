@@ -42,10 +42,8 @@ const testTelemetryModelIdentity = {
 const invocation = (payload: MessagesPayload): MessagesInvocation => ({
   payload,
   candidate: stubModelCandidate({
-    model: {
-      endpoints: { messages: {} },
-      enabledFlags: new Set(['messages-web-search-shim']),
-    },
+    model: { endpoints: { messages: {} } },
+    enabledFlags: new Set(['messages-web-search-shim']),
   }),
   targetApi: 'messages',
   headers: new Headers(),

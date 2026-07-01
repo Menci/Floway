@@ -94,8 +94,8 @@ test('Copilot provider terminal dispatches on post-chain ctx.action (interceptor
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const [model] = await provider.getProvidedModels(directFetcher);
-      const result = await provider.callResponses(model, {
+      const [providerModel] = await provider.getProvidedModels(directFetcher);
+      const result = await provider.callResponses(providerModel, {
         input: [{ type: 'message', role: 'user', content: 'hi' }],
       }, 'compact', undefined, noopUpstreamCallOptions());
       if (!result.ok) throw new Error('expected ok result');

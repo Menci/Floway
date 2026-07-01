@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { createOllamaProvider } from './provider.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { directFetcher } from '@floway-dev/provider';
-import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, jsonResponse, noopUpstreamCallOptions, withMockedFetch } from '@floway-dev/test-utils';
 
 const buildRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => ({
   id: 'up_ollama',
@@ -63,7 +63,7 @@ test('getProvidedModels surfaces chat models with all three OpenAI/Anthropic-com
     assertEquals(gptoss.owned_by, 'ollama');
     assertEquals(gptoss.limits.max_context_window_tokens, 131072);
     // OLLAMA_MODEL_PRICING covers gpt-oss:120b, so cost flows through into
-    // the UpstreamModel on the auto path.
+    // the ProviderModel on the auto path.
     assertEquals(gptoss.cost?.input, 0.15);
     assertEquals(gptoss.cost?.output, 0.6);
   });
@@ -153,12 +153,12 @@ test('call* methods POST to /v1/<endpoint> with the upstream model id and Bearer
       return new Response('unexpected', { status: 500 });
     },
     async () => {
-      const [model] = await instance.instance.getProvidedModels(directFetcher);
+      const [providerModel] = await instance.instance.getProvidedModels(directFetcher);
       const result = await instance.instance.callChatCompletions(
-        model,
+        providerModel,
         { messages: [{ role: 'user', content: 'hi' }] },
         undefined,
-        { fetcher: directFetcher, recordUpstreamLatency: p => p, waitUntil: () => {}, headers: new Headers() },
+        noopUpstreamCallOptions({ fetcher: directFetcher }),
       );
       assertEquals(result.modelKey, 'gpt-oss:120b');
     },

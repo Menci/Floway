@@ -16,7 +16,7 @@ import {
 import type { CodexAccountCredential } from './state.ts';
 import type { ResponsesCompactPayload, ResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { parseResponsesStream } from '@floway-dev/protocols/responses';
-import { type ProviderStreamResult, streamingProviderCall, type UpstreamCallOptions, type UpstreamModel } from '@floway-dev/provider';
+import { type ProviderModel, type ProviderStreamResult, streamingProviderCall, type UpstreamCallOptions } from '@floway-dev/provider';
 
 // Pre-tagging shape used by the unary compact backend call; the codex provider
 // terminal re-tags it onto the unified `ProviderResponsesResult` with
@@ -41,7 +41,7 @@ export interface CodexCallEffects {
 interface CodexBackendCallBase {
   upstreamId: string;
   account: CodexAccountCredential;
-  model: UpstreamModel;
+  model: ProviderModel;
   headers: Headers;
   signal?: AbortSignal;
   effects: CodexCallEffects;

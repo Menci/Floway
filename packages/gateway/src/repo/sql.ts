@@ -39,7 +39,7 @@ import { generateSessionToken } from '../shared/session-tokens.ts';
 import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';
 import type { SqlDatabase, SqlPreparedStatement, SqlResult } from '@floway-dev/platform';
 import { BILLING_DIMENSIONS, type BillingDimension, type ModelPricing, resolveEffectivePricing, unitPriceForDimension } from '@floway-dev/protocols/common';
-import type { ProxyFallbackEntry, ModelPrefixConfig, UpstreamModel, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
+import type { ProxyFallbackEntry, ModelPrefixConfig, ProviderModel, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { normalizeModelPrefix } from '@floway-dev/provider';
 
 const runStatements = async (db: SqlDatabase, statements: SqlPreparedStatement[]): Promise<SqlResult[]> => {
@@ -839,7 +839,7 @@ const toSearchUsageRecord = (row: { provider: string; key_id: string; action: st
   };
 };
 
-// `UpstreamModel.enabledFlags` is a Set, which JSON.stringify renders as `{}`
+// `ProviderModel.enabledFlags` is a Set, which JSON.stringify renders as `{}`
 // and JSON.parse cannot rebuild on its own. Replace Set with an array on
 // write, and rebuild Set under the same key on read so consumers downstream
 // of the cache see the same shape providers produced.
@@ -859,12 +859,12 @@ class SqlModelsCacheRepo implements ModelsCacheRepo {
     if (!row) return null;
     return {
       fetchedAt: row.fetched_at,
-      models: JSON.parse(row.models_json, modelsReviver) as UpstreamModel[],
+      models: JSON.parse(row.models_json, modelsReviver) as ProviderModel[],
       lastError: row.last_error_json ? JSON.parse(row.last_error_json) as { message: string; at: number } : null,
     };
   }
 
-  async put(upstreamId: string, row: { fetchedAt: number; models: UpstreamModel[] }): Promise<void> {
+  async put(upstreamId: string, row: { fetchedAt: number; models: ProviderModel[] }): Promise<void> {
     await this.db
       .prepare(
         `INSERT INTO models_cache (upstream_id, fetched_at, models_json, last_error_json) VALUES (?, ?, ?, NULL)

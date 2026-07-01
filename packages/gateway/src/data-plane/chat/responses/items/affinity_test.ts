@@ -9,14 +9,14 @@ import type { StoredResponsesItem } from '../../../../repo/types.ts';
 import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
 import type { ModelCandidate } from '@floway-dev/provider';
 import { directFetcher } from '@floway-dev/provider';
-import { stubProvider, stubUpstreamModel, assertEquals } from '@floway-dev/test-utils';
+import { stubInternalModel, stubProvider, stubProviderModel, assertEquals } from '@floway-dev/test-utils';
 import { responsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
 const API_KEY_ID = 'key_affinity_test';
 
 const candidate = (upstream: string, supportsResponsesItemReference = true): ModelCandidate => {
   const modelProvider = stubProvider({
-    getProvidedModels: () => Promise.resolve([stubUpstreamModel()]),
+    getProvidedModels: () => Promise.resolve([stubProviderModel()]),
   });
   return {
     provider: {
@@ -28,7 +28,7 @@ const candidate = (upstream: string, supportsResponsesItemReference = true): Mod
       instance: modelProvider,
       supportsResponsesItemReference,
     },
-    model: stubUpstreamModel(),
+    model: stubInternalModel({}, upstream),
     fetcher: directFetcher,
   };
 };

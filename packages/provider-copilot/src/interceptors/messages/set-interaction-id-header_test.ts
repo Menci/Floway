@@ -6,7 +6,7 @@ import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
-import { assert, assertEquals, stubUpstreamModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import { assert, assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const stubRequest = {};
 
@@ -16,7 +16,7 @@ const okEvents = (): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>>> 
 const invocation = (payload: MessagesPayload): MessagesBoundaryCtx => ({
   payload,
   headers: new Headers(),
-  model: stubUpstreamModel({ endpoints: { messages: {} } }),
+  model: stubProviderModel({ endpoints: { messages: {} } }),
 });
 
 const payloadWith = (userId: string | undefined): MessagesPayload => ({

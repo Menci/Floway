@@ -36,7 +36,7 @@ const invocation = (
   enabledFlags: ReadonlySet<string> = new Set(['disable-reasoning-on-forced-tool-choice']),
 ): ResponsesInvocation => ({
   payload,
-  candidate: stubModelCandidate({ model: { enabledFlags } }),
+  candidate: stubModelCandidate({ enabledFlags }),
   targetApi: 'responses',
   headers: new Headers(),
   action: 'generate',

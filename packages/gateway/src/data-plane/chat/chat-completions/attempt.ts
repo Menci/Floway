@@ -12,7 +12,7 @@ import { createUpstreamLatencyRecorder } from '../shared/upstream-telemetry.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ChatCompletionsMessage, ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import { type ModelCandidate, type ExecuteResult } from '@floway-dev/provider';
+import { type ModelCandidate, type ExecuteResult, providerModelOf } from '@floway-dev/provider';
 import { translateChatCompletionsViaMessages, translateChatCompletionsViaResponses } from '@floway-dev/translate';
 import { chatCompletionsViaResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
@@ -112,7 +112,7 @@ const callChatCompletionsAsExecuteResult = async (
   const { model: _model, ...body } = payload;
   const recorder = createUpstreamLatencyRecorder();
   const providerResult = await candidate.provider.instance.callChatCompletions(
-    candidate.model,
+    providerModelOf(candidate),
     body,
     ctx.abortSignal,
     buildUpstreamCallOptions(candidate, ctx, recorder.record, headers),

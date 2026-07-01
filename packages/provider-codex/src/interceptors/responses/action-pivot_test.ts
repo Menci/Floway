@@ -30,7 +30,7 @@ vi.mock('./index.ts', async () => {
 // Imports below MUST follow the vi.mock so the provider module resolves
 // against the mocked chain on first import.
 const { createCodexProvider } = await import('../../provider.ts');
-const { noopUpstreamCallOptions } = await import('@floway-dev/test-utils');
+const { noopUpstreamCallOptions, stubProviderModel } = await import('@floway-dev/test-utils');
 
 const farFutureMs = Date.now() + 24 * 60 * 60 * 1000;
 
@@ -91,7 +91,7 @@ test('Codex terminal dispatches on post-chain ctx.action (interceptor flip gener
   // of these are allowed on /responses/compact. The pivot above flips action
   // to 'compact'; the terminal must narrow the body before sending upstream.
   const result = await instance.instance.callResponses(
-    { id: 'gpt-5.4', display_name: 'gpt-5.4', kind: 'chat', limits: {}, endpoints: { responses: {} }, enabledFlags: new Set() },
+    stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { responses: {} } }),
     {
       input: [{ type: 'message', role: 'user', content: 'hi' }],
       tools: [{ type: 'function', name: 'noop', description: 'noop', parameters: { type: 'object' }, strict: false }],

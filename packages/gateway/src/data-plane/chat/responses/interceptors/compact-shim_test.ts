@@ -29,9 +29,7 @@ const makeInvocation = (
 ): ResponsesInvocation => ({
   payload: { model: 'test-model', input: [], ...payload } as CanonicalResponsesPayload,
   action: options.action ?? 'generate',
-  candidate: stubModelCandidate({
-    model: { enabledFlags: new Set(options.flagOn === false ? [] : ['responses-compact-shim']) },
-  }),
+  candidate: stubModelCandidate({ enabledFlags: new Set(options.flagOn === false ? [] : ['responses-compact-shim']) }),
   targetApi: options.targetApi ?? 'responses',
   headers: new Headers(),
 });

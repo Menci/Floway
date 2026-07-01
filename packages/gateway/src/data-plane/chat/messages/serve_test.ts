@@ -8,7 +8,7 @@ import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { type ModelCandidate, defaultsForProvider, directFetcher, type ProviderCallResult, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
-import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
+import { assert, assertEquals, stubProvider, stubInternalModel, stubProviderModel } from '@floway-dev/test-utils';
 
 const candidatesQueue: { readonly candidates: readonly ModelCandidate[]; readonly sawModel: boolean; readonly failedUpstreams: readonly string[] }[] = [];
 vi.mock('../../providers/registry.ts', async importOriginal => {
@@ -137,10 +137,15 @@ const makeCandidate = (overrides: {
       upstream, kind, name: upstream,
       disabledPublicModelIds: [], modelPrefix: null, instance: provider, supportsResponsesItemReference: true,
     },
-    model: stubUpstreamModel({
+    model: stubInternalModel({
       ...(overrides.endpoints ? { endpoints: overrides.endpoints } : {}),
-      ...(overrides.enabledFlags ? { enabledFlags: overrides.enabledFlags } : {}),
-    }),
+      providerModels: {
+        [upstream]: stubProviderModel({
+          ...(overrides.endpoints ? { endpoints: overrides.endpoints } : {}),
+          ...(overrides.enabledFlags ? { enabledFlags: overrides.enabledFlags } : {}),
+        }),
+      },
+    }, upstream),
     fetcher: directFetcher,
   };
 };

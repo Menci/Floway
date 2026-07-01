@@ -176,7 +176,7 @@ test('getModels returns the merged catalog plus the per-id upstream index', asyn
       assertEquals(model?.endpoints, { messages: {}, chatCompletions: {} });
       assertEquals(model?.kind, 'chat');
       // `providerData` (the per-provider wire id carrier) belongs to the
-      // upstream-facing UpstreamModel, not the gateway-merged catalog row.
+      // provider-emitted ProviderModel, not the gateway-merged catalog row.
       assertEquals(Object.hasOwn(model!, 'providerData'), false);
       // The reverse index lists every upstream that surfaced this id, in
       // enumeration order — copilot first, then custom.

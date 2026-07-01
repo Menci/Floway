@@ -3,7 +3,7 @@ import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { type ModelEndpointKey, type ModelEndpoints, type ModelKind, kindForEndpoints } from '@floway-dev/protocols/common';
-import { isAbortError, type InternalModel, type Fetcher, type Provider, type ModelCandidate, type UpstreamModel, type UpstreamProviderKind, type UpstreamRecord } from '@floway-dev/provider';
+import { isAbortError, type InternalModel, type Fetcher, type Provider, type ModelCandidate, type ProviderModel, type UpstreamProviderKind, type UpstreamRecord } from '@floway-dev/provider';
 import { createAzureProvider } from '@floway-dev/provider-azure';
 import { createClaudeCodeProvider } from '@floway-dev/provider-claude-code';
 import { createCodexProvider } from '@floway-dev/provider-codex';
@@ -95,29 +95,48 @@ const unionEndpoints = (a: ModelEndpoints, b: ModelEndpoints): ModelEndpoints =>
   return result;
 };
 
-const catalogFromUpstreamModel = (upstreamModel: UpstreamModel): InternalModel => {
-  const { providerData: _providerData, enabledFlags: _enabledFlags, endpoints, ...internal } = upstreamModel;
-  return { ...internal, endpoints: { ...endpoints } };
+// Lift a provider-emitted `ProviderModel` into an `InternalModel`, seeding
+// `providerModels` with the sole entry keyed on the emitting upstream id.
+// The provider model is stored verbatim under that entry so dispatch hands
+// the same reference back to the provider's `callXxx`.
+const internalModelFromProviderModel = (providerModel: ProviderModel, upstreamId: string): InternalModel => {
+  const { id, endpoints, kind, limits, display_name, owned_by, created, cost, chat } = providerModel;
+  const meta: InternalModel = {
+    id,
+    limits,
+    kind,
+    endpoints: { ...endpoints },
+    providerModels: { [upstreamId]: providerModel },
+  };
+  if (display_name !== undefined) meta.display_name = display_name;
+  if (owned_by !== undefined) meta.owned_by = owned_by;
+  if (created !== undefined) meta.created = created;
+  if (cost !== undefined) meta.cost = cost;
+  if (chat !== undefined) meta.chat = chat;
+  return meta;
 };
 
 // When multiple upstreams expose the same public model id, the first wins
 // for `/models` metadata and later ones union-merge their endpoint capability
 // map — the merged `endpoints` is the gateway-wide reach for that public id.
 // `kind` is recomputed from the union so a chat-only id that later acquires
-// an embedding-capable upstream gets correctly reclassified. The reverse
-// index `upstreamsByPublicId` accumulates every upstream that surfaced the
-// id, in enumeration order, so the control plane can render its per-model
-// upstream chips without re-walking the catalog.
+// an embedding-capable upstream gets correctly reclassified. Each contribution
+// adds its own entry to `providerModels` keyed on the contributing upstream id
+// with the emitted `ProviderModel` stored verbatim, so the same public id
+// carrying data from N upstreams ends up with N entries. The reverse index
+// `upstreamsByPublicId` accumulates every upstream that surfaced the id, in
+// enumeration order, so the control plane can render its per-model upstream
+// chips without re-walking the catalog.
 const mergeIntoCatalog = (
   byId: Map<string, InternalModel>,
   upstreamsByPublicId: Map<string, Provider[]>,
   instance: Provider,
-  surfacedModel: UpstreamModel,
+  surfacedModel: ProviderModel,
   publicId: string,
 ): void => {
   const existing = byId.get(publicId);
   if (!existing) {
-    byId.set(publicId, catalogFromUpstreamModel(surfacedModel));
+    byId.set(publicId, internalModelFromProviderModel(surfacedModel, instance.upstream));
     upstreamsByPublicId.set(publicId, [instance]);
     return;
   }
@@ -126,6 +145,10 @@ const mergeIntoCatalog = (
     ...existing,
     endpoints,
     kind: kindForEndpoints(endpoints),
+    providerModels: {
+      ...existing.providerModels,
+      [instance.upstream]: surfacedModel,
+    },
   });
   // We're on the merge branch (`existing !== undefined`), so the parallel
   // `upstreamsByPublicId` entry was populated by the earlier insertion branch
@@ -183,12 +206,12 @@ const collectProviderModels = async (
     // hides both `gpt-4o` and `<prefix>gpt-4o` from this upstream's
     // contribution.
     const disabled = new Set(instance.disabledPublicModelIds);
-    for (const upstreamModel of providedModels) {
-      if (!upstreamModel.id) continue;
-      if (disabled.has(upstreamModel.id)) continue;
+    for (const providerModel of providedModels) {
+      if (!providerModel.id) continue;
+      if (disabled.has(providerModel.id)) continue;
 
       // Each surface form the upstream chose to list becomes its own catalog
-      // entry. The unprefixed surface keeps the original UpstreamModel; the
+      // entry. The unprefixed surface keeps the original ProviderModel; the
       // prefixed surface uses a shallow clone with the rewritten id and a
       // synthesized display_name that prepends the upstream name (so the
       // dashboard tells the operator at a glance which upstream a prefixed
@@ -197,14 +220,14 @@ const collectProviderModels = async (
       const cfg = instance.modelPrefix;
       if (cfg !== null) {
         for (const form of cfg.listed) {
-          const publicId = form === 'prefixed' ? `${cfg.prefix}${upstreamModel.id}` : upstreamModel.id;
-          const surfacedModel: UpstreamModel = form === 'prefixed'
-            ? { ...upstreamModel, id: publicId, display_name: `${instance.name}: ${upstreamModel.display_name ?? upstreamModel.id}` }
-            : upstreamModel;
+          const publicId = form === 'prefixed' ? `${cfg.prefix}${providerModel.id}` : providerModel.id;
+          const surfacedModel: ProviderModel = form === 'prefixed'
+            ? { ...providerModel, id: publicId, display_name: `${instance.name}: ${providerModel.display_name ?? providerModel.id}` }
+            : providerModel;
           mergeIntoCatalog(byId, upstreamsByPublicId, instance, surfacedModel, publicId);
         }
       } else {
-        mergeIntoCatalog(byId, upstreamsByPublicId, instance, upstreamModel, upstreamModel.id);
+        mergeIntoCatalog(byId, upstreamsByPublicId, instance, providerModel, providerModel.id);
       }
     }
   }
@@ -316,7 +339,9 @@ const enumerateOneUpstreamCandidates = async (
     const match = providedModels.find(m => m.id === lookupId && !disabled.has(m.id));
     if (!match) continue;
     sawAnyId = true;
-    if (match.kind === kind) candidates.push({ provider, model: match, fetcher });
+    if (match.kind === kind) {
+      candidates.push({ provider, model: internalModelFromProviderModel(match, provider.upstream), fetcher });
+    }
   }
   return { candidates, sawAnyId };
 };

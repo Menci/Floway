@@ -18,7 +18,7 @@ import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectResponsesProtocolEventsToResult } from '@floway-dev/protocols/responses';
 import { type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { type ModelCandidate, eventResult, readUpstreamApiError, type ChatTargetApi, type ExecuteResult, type ProviderResponsesResult, type ResponsesAction } from '@floway-dev/provider';
+import { type ModelCandidate, eventResult, readUpstreamApiError, providerModelOf, type ChatTargetApi, type ExecuteResult, type ProviderResponsesResult, type ResponsesAction } from '@floway-dev/provider';
 import { translateResponsesViaChatCompletions, translateResponsesViaMessages } from '@floway-dev/translate';
 import type { CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
 
@@ -231,7 +231,7 @@ const dispatchResponses = async (
       // forces stream=true anyway).
       const { model: _model, stream: _stream, store: _store, ...body } = invocation.payload;
       const providerResult = await candidate.provider.instance.callResponses(
-        candidate.model,
+        providerModelOf(candidate),
         body,
         invocation.action,
         ctx.abortSignal,
@@ -241,7 +241,7 @@ const dispatchResponses = async (
     }
     const { model: _model, ...body } = invocation.payload;
     const providerResult = await candidate.provider.instance.callResponses(
-      candidate.model,
+      providerModelOf(candidate),
       body,
       invocation.action,
       ctx.abortSignal,

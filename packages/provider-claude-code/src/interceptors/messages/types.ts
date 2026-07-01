@@ -1,5 +1,5 @@
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
-import type { UpstreamModel } from '@floway-dev/provider';
+import type { ProviderModel } from '@floway-dev/provider';
 
 // Boundary ctx for Claude Code Messages interceptors. The chain runs only on
 // the re-mimicry path; callMessages decides shaped-vs-unshaped before
@@ -9,6 +9,6 @@ import type { UpstreamModel } from '@floway-dev/provider';
 // not on per-call randomness).
 export interface ClaudeCodeMessagesBoundaryCtx {
   payload: MessagesPayload;
-  readonly model: UpstreamModel;
+  readonly model: ProviderModel;
   readonly upstreamId: string;
 }

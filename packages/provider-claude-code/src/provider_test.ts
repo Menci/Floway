@@ -20,9 +20,9 @@ const API_MODELS: ClaudeCodeApiModel[] = [
   { id: 'claude-haiku-4-5-20251001', display_name: 'Claude Haiku 4.5', max_input_tokens: 200_000 },
 ];
 
-// Used by the messages-routing tests; carries the dated-upstream-id provider
-// data the wire path expects.
-const upstreamModel = buildClaudeCodeCatalog(API_MODELS, new Set<string>())
+// The catalog builder emits a `ProviderModel` per API row (with the dated
+// upstream id on providerData); pick the entry the messages-routing tests want.
+const sonnetProviderModel = buildClaudeCodeCatalog(API_MODELS, new Set<string>())
   .find(m => m.id === 'claude-sonnet-4-5')!;
 
 const activeAccount: ClaudeCodeAccountCredential = {
@@ -152,7 +152,7 @@ describe('createClaudeCodeProvider — callMessages routes through chain', () =>
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
 
     await instance.instance.callMessages(
-      upstreamModel,
+      sonnetProviderModel,
       { max_tokens: 16, messages: [{ role: 'user', content: 'hello' }] },
       undefined,
       noopUpstreamCallOptions(),
@@ -179,7 +179,7 @@ describe('createClaudeCodeProvider — callMessages routes through chain', () =>
 
     const userId = JSON.stringify({ device_id: 'd'.repeat(32), account_uuid: '', session_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' });
     await instance.instance.callMessages(
-      upstreamModel,
+      sonnetProviderModel,
       {
         max_tokens: 16,
         messages: [{ role: 'user', content: 'hi' }],
@@ -214,7 +214,7 @@ describe('createClaudeCodeProvider — callMessages routes through chain', () =>
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
 
     await instance.instance.callMessages(
-      upstreamModel,
+      sonnetProviderModel,
       { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] },
       undefined,
       { ...noopUpstreamCallOptions(), headers: new Headers({ 'user-agent': 'claude-cli/2.1.181' }) },

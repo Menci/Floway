@@ -23,7 +23,7 @@ const stubCtx: ChatGatewayCtx = {
 
 const invocation = (payload: ChatCompletionsPayload, enabledFlags: ReadonlySet<string> = new Set(['vendor-kimi'])): ChatCompletionsInvocation => ({
   payload,
-  candidate: stubModelCandidate({ model: { enabledFlags } }),
+  candidate: stubModelCandidate({ enabledFlags }),
   targetApi: 'chat-completions',
   headers: new Headers(),
 });

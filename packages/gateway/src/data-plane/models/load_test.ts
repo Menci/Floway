@@ -8,6 +8,7 @@ const base: InternalModel = {
   kind: 'chat',
   limits: { max_context_window_tokens: 100000 },
   endpoints: { chatCompletions: {} },
+  providerModels: {},
 };
 
 describe('toPublicModel', () => {

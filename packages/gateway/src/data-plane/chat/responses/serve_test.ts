@@ -11,7 +11,7 @@ import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { type ModelCandidate, directFetcher, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
-import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
+import { assert, assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
 import type { CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
 
 // `enumerateModelCandidates` is the only seam between serve and the
@@ -121,9 +121,9 @@ const makeCandidate = (overrides: {
       instance: provider,
       supportsResponsesItemReference: true,
     },
-    // Default keeps stubUpstreamModel's three-endpoint map intact; tests that
+    // Default keeps stubInternalModel's three-endpoint map intact; tests that
     // need a rejected candidate pass an explicit `endpoints` override.
-    model: stubUpstreamModel(overrides.endpoints ? { endpoints: overrides.endpoints } : {}),
+    model: stubInternalModel(overrides.endpoints ? { endpoints: overrides.endpoints } : {}, upstream),
     fetcher: directFetcher,
   };
 };

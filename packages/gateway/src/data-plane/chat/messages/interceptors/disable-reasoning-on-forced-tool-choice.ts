@@ -1,5 +1,7 @@
+
 import type { MessagesInterceptor } from './types.ts';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
+import { providerModelOf } from '@floway-dev/provider';
 
 // Opt-in workaround for upstreams where forced `tool_choice` and enabled
 // thinking do not compose. Messages has a native `thinking: disabled` shape.
@@ -23,7 +25,7 @@ const disableMessagesReasoning = (payload: MessagesPayload): MessagesPayload => 
 };
 
 export const withReasoningDisabledOnForcedToolChoice: MessagesInterceptor = async (ctx, _gatewayCtx, run) => {
-  if (!ctx.candidate.model.enabledFlags.has('disable-reasoning-on-forced-tool-choice')) return await run();
+  if (!providerModelOf(ctx.candidate).enabledFlags.has('disable-reasoning-on-forced-tool-choice')) return await run();
   if (!hasForcedToolChoice(ctx.payload)) return await run();
   ctx.payload = disableMessagesReasoning(ctx.payload);
   return await run();

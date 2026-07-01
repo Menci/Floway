@@ -2,7 +2,7 @@
 // (the hosted offering) by default, or a self-hosted daemon URL the operator
 // supplies. The catalog is discovered live via the Ollama-native /api/tags +
 // /api/show endpoints, since the OpenAI-compat /v1/models response strips the
-// capability/context-length metadata we need to project an UpstreamModel.
+// capability/context-length metadata we need to project a ProviderModel.
 //
 // Auth is a single optional bearer token: required against ollama.com, often
 // omitted on a private daemon, and sent as `Authorization: Bearer <key>` when

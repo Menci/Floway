@@ -33,7 +33,7 @@ const okEvents = () =>
 
 const invocation = (payload: CanonicalResponsesPayload, enabledFlags: ReadonlySet<string> = new Set(['vendor-qwen'])): ResponsesInvocation => ({
   payload,
-  candidate: stubModelCandidate({ model: { enabledFlags } }),
+  candidate: stubModelCandidate({ enabledFlags }),
   targetApi: 'responses',
   headers: new Headers(),
   action: 'generate',

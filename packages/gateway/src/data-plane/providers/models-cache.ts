@@ -1,6 +1,6 @@
 import { getRepo } from '../../repo/index.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import type { Fetcher, Provider, UpstreamModel } from '@floway-dev/provider';
+import type { Fetcher, Provider, ProviderModel } from '@floway-dev/provider';
 
 // Soft TTL: a fetched row is served verbatim within this window with no
 // upstream call. Past SOFT but within HARD, the stored row is still served
@@ -26,12 +26,12 @@ export interface ModelsCacheFetchOptions {
 // the same upstream onto a single upstream fetch. Not a TTL cache — the
 // entry is removed when the promise settles. The conditional delete
 // defends against a stale removal racing a later replacement.
-const inFlight = new Map<string, Promise<UpstreamModel[]>>();
+const inFlight = new Map<string, Promise<ProviderModel[]>>();
 
 const memoInFlight = (
   key: string,
-  fn: () => Promise<UpstreamModel[]>,
-): Promise<UpstreamModel[]> => {
+  fn: () => Promise<ProviderModel[]>,
+): Promise<ProviderModel[]> => {
   const existing = inFlight.get(key);
   if (existing) return existing;
   const promise = fn();
@@ -48,7 +48,7 @@ const runFetch = async (
   instance: Provider,
   fetcher: Fetcher,
   key: string,
-): Promise<UpstreamModel[]> => {
+): Promise<ProviderModel[]> => {
   try {
     const models = [...await instance.instance.getProvidedModels(fetcher)];
     await getRepo().modelsCache.put(key, { fetchedAt: Date.now(), models });
@@ -65,7 +65,7 @@ const runFetch = async (
 export const fetchUpstreamModelsCached = async (
   instance: Provider,
   opts: ModelsCacheFetchOptions,
-): Promise<UpstreamModel[]> => {
+): Promise<ProviderModel[]> => {
   const { scheduler, fetcher, force } = opts;
   const key = instance.upstream;
   const now = Date.now();

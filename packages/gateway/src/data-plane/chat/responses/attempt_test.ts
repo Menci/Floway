@@ -11,8 +11,8 @@ import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { type ModelCandidate, directFetcher, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions, type UpstreamModel } from '@floway-dev/provider';
-import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
+import { type ModelCandidate, directFetcher, type ProviderModel, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
+import { assert, assertEquals, stubProvider, stubInternalModel, stubProviderModel } from '@floway-dev/test-utils';
 import type { CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
 
 const API_KEY_ID = 'key_attempt_test';
@@ -57,19 +57,25 @@ const makeProviderEvents = async function* (events: readonly ResponsesStreamEven
   yield doneFrame();
 };
 
-const makeCandidate = (callResponses: (model: UpstreamModel, body: Omit<ResponsesPayload, 'model'>, action: ResponsesAction, signal: AbortSignal | undefined, opts: UpstreamCallOptions) => Promise<ProviderResponsesResult>): ModelCandidate => {
+const makeCandidate = (
+  callResponses: (model: ProviderModel, body: Omit<ResponsesPayload, 'model'>, action: ResponsesAction, signal: AbortSignal | undefined, opts: UpstreamCallOptions) => Promise<ProviderResponsesResult>,
+  enabledFlags: ReadonlySet<string> = new Set<string>(),
+): ModelCandidate => {
   const provider = stubProvider({ callResponses });
+  const upstream = 'up_test';
   return {
     provider: {
-      upstream: 'up_test',
+      upstream,
       kind: 'custom',
-      name: 'up_test',
+      name: upstream,
       disabledPublicModelIds: [],
       modelPrefix: null,
       instance: provider,
       supportsResponsesItemReference: true,
     },
-    model: stubUpstreamModel(),
+    model: stubInternalModel({
+      providerModels: { [upstream]: stubProviderModel({ enabledFlags }) },
+    }, upstream),
     fetcher: directFetcher,
   };
 };
@@ -304,7 +310,7 @@ test('compact reshapes the trigger turn into a result and derives snapshotMode=r
     output: [compactionItem] as unknown as ResponsesResult['output'],
   };
 
-  const callResponses = vi.fn(async (_model: UpstreamModel, _body: Omit<ResponsesPayload, 'model'>, action: ResponsesAction): Promise<ProviderResponsesResult> => {
+  const callResponses = vi.fn(async (_model: ProviderModel, _body: Omit<ResponsesPayload, 'model'>, action: ResponsesAction): Promise<ProviderResponsesResult> => {
     if (action !== 'compact') throw new Error(`compact candidate received action='${action}'`);
     return { action: 'compact', ok: true, result: compactionResult, modelKey: 'test-model-key' };
   });
@@ -349,7 +355,7 @@ test('compact reshapes the trigger turn into a result and derives snapshotMode=r
 test('generate inherits invocation headers across translation to Messages', async () => {
   installRepo();
   let observedHeaders: Headers | undefined;
-  const upstreamModel = stubUpstreamModel({ endpoints: { messages: {} } });
+  const upstreamModel = stubInternalModel({ endpoints: { messages: {} } }, 'up_test');
   const messagesProvider = stubProvider({
     callMessages: async (_model, _body, _signal, opts): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
       observedHeaders = opts.headers;
@@ -459,12 +465,7 @@ test('generate seeds privatePayload before interceptors so the web-search shim r
     capturedBody = body as { input?: unknown[] };
     return { action: 'generate', ok: true, events: makeProviderEvents(upstreamEvents), modelKey: 'test-model-key', headers: new Headers() };
   });
-  const candidate = makeCandidate(callResponses);
-  // The shim early-returns inactive unless the model has the flag. The
-  // candidate shape is `readonly`, so swap the enabledFlags on the model via
-  // Object.assign.
-  const enabledFlags = new Set(['responses-web-search-shim']);
-  Object.assign(candidate.model, { enabledFlags });
+  const candidate = makeCandidate(callResponses, new Set(['responses-web-search-shim']));
 
   const store = createResponsesHttpStore(API_KEY_ID, true);
   await store.loadInputItems({

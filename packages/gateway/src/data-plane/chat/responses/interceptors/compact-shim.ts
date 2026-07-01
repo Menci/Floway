@@ -52,7 +52,7 @@ import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
 import { syntheticEventsFromResult } from '../items/output.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectResponsesProtocolEventsToResult, type ResponsesInputItem, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import type { ExecuteResult } from '@floway-dev/provider';
+import { providerModelOf, type ExecuteResult } from '@floway-dev/provider';
 import type { CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
 
 // Vendored from openai/codex (Apache-2.0):
@@ -239,7 +239,7 @@ export const withResponsesCompactShim: ResponsesInterceptor = async (ctx, gatewa
   // OR when the upstream's targetApi is not Responses (Messages /
   // Chat Completions have no compaction wire and would crash on the
   // unknown `compaction_trigger` input variant).
-  const flagOn = ctx.candidate.model.enabledFlags.has('responses-compact-shim');
+  const flagOn = providerModelOf(ctx.candidate).enabledFlags.has('responses-compact-shim');
   const structurallyRequired = ctx.targetApi !== 'responses';
   if (!flagOn && !structurallyRequired) return await run();
 

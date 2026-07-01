@@ -1,6 +1,6 @@
 import type { Interceptor } from '@floway-dev/interceptor';
 import type { ResponsesPayload } from '@floway-dev/protocols/responses';
-import type { ProviderResponsesResult, ResponsesAction, UpstreamModel } from '@floway-dev/provider';
+import type { ProviderModel, ProviderResponsesResult, ResponsesAction } from '@floway-dev/provider';
 
 // Boundary ctx for Copilot Responses interceptors. See messages/types.ts for
 // the boundary-isolation rationale. A single chain wraps both the streaming
@@ -11,7 +11,7 @@ import type { ProviderResponsesResult, ResponsesAction, UpstreamModel } from '@f
 export interface ResponsesBoundaryCtx {
   payload: ResponsesPayload;
   headers: Headers;
-  readonly model: UpstreamModel;
+  readonly model: ProviderModel;
   action: ResponsesAction;
 }
 

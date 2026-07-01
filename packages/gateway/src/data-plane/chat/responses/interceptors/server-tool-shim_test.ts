@@ -42,8 +42,8 @@ import type {
   ResponsesToolChoice,
   ResponsesWebSearchAction,
 } from '@floway-dev/protocols/responses';
-import { directFetcher, type EventResult, type ExecuteResult } from '@floway-dev/provider';
-import { assert, assertEquals, assertFalse } from '@floway-dev/test-utils';
+import { type EventResult, type ExecuteResult } from '@floway-dev/provider';
+import { assert, assertEquals, assertFalse, stubModelCandidate } from '@floway-dev/test-utils';
 import type { CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
 
 const withResponsesWebSearchShim = withResponsesServerToolShim([webSearchServerTool]);
@@ -308,22 +308,10 @@ interface InvocationOverrides {
 }
 
 const makeInvocation = (overrides: InvocationOverrides = {}): ResponsesInvocation => ({
-  candidate: {
-    provider: {
-      // Tests don't care about provider identity here; the shim reads
-      // targetApi off the invocation and enabledFlags off the candidate's
-      // model. Use `never` to skip the full Provider literal.
-      upstream: 'test-upstream', kind: 'custom', name: 'test',
-      disabledPublicModelIds: [], modelPrefix: null,
-      instance: {} as never, supportsResponsesItemReference: false,
-    },
-    model: {
-      id: 'claude-x', limits: {}, kind: 'chat',
-      endpoints: { chatCompletions: {}, responses: {}, messages: {} },
-      enabledFlags: overrides.enabledFlags ?? new Set<string>(),
-    },
-    fetcher: directFetcher,
-  },
+  candidate: stubModelCandidate({
+    ...(overrides.enabledFlags ? { enabledFlags: overrides.enabledFlags } : {}),
+    model: { id: 'claude-x', endpoints: { chatCompletions: {}, responses: {}, messages: {} } },
+  }),
   // Default chat-completions so existing tests exercise the
   // function_call_output path. Tests that care about a specific target
   // set targetApi explicitly.

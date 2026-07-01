@@ -28,7 +28,7 @@ import { enumerateModelCandidates } from '../providers/registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { doneFrame, eventFrame, type ModelKind, parseSSEStream, parseTargetStreamFrames, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import { httpResponseToResponse, ProviderModelsUnavailableError, toInternalDebugError } from '@floway-dev/provider';
-import type { Provider, ProviderCallResult, UpstreamCallOptions, UpstreamModel } from '@floway-dev/provider';
+import type { InternalModel, Provider, ProviderCallResult, ProviderModel, UpstreamCallOptions } from '@floway-dev/provider';
 
 // Headers we forward verbatim from a successful upstream response, plus
 // content-type with an application/json fallback when the upstream omitted
@@ -98,14 +98,19 @@ interface PassthroughServeContext {
   // to `model.kind === kind`; `sawModel=true && candidates=[]` becomes
   // the "model exists but doesn't support this endpoint" 400.
   readonly kind: ModelKind;
-  readonly modelServesEndpoint: (model: UpstreamModel) => boolean;
+  // Endpoint-availability gate against a resolved candidate's `InternalModel`.
+  // Reads `.endpoints` on the candidate — the row narrows to exactly one
+  // contributing upstream, so those endpoints come verbatim from the emitting
+  // upstream's `ProviderModel`.
+  readonly modelServesEndpoint: (model: InternalModel) => boolean;
   // Performs the upstream HTTP call for the chosen (provider, model) pair.
   // Any throw here is preserved and becomes a 502 with the internal-debug
   // envelope — exceptions thrown from the actual fetch must not be silently
   // swallowed. `opts` carries the per-call hooks the gateway threads in
   // (the recordUpstreamLatency wrapper for the upstream_success metric);
   // the callback forwards it verbatim to the chosen provider call method.
-  readonly call: (provider: Provider, model: UpstreamModel, opts: UpstreamCallOptions) => Promise<ProviderCallResult>;
+  // `model` is the emitting upstream's `ProviderModel`.
+  readonly call: (provider: Provider, model: ProviderModel, opts: UpstreamCallOptions) => Promise<ProviderCallResult>;
   readonly response: PassthroughResponseHandling;
 }
 

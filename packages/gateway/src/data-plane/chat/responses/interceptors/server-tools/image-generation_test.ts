@@ -23,27 +23,17 @@ import type { ChatGatewayCtx } from '../../../shared/gateway-ctx.ts';
 import { createNonResponsesSourceStore } from '../../items/store.ts';
 import type { ResponsesInvocation } from '../types.ts';
 import type { ResponsesInputItem, ResponsesPayload, ResponsesTool } from '@floway-dev/protocols/responses';
-import { directFetcher } from '@floway-dev/provider';
-import { assert, assertEquals, assertFalse, assertStringIncludes } from '@floway-dev/test-utils';
+import { assert, assertEquals, assertFalse, assertStringIncludes, stubModelCandidate } from '@floway-dev/test-utils';
 import type { CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
 
 const PNG_B64 = 'aGVsbG8='; // "hello" — any decodable base64 works for source tests.
 
 // The registration only reads targetApi / enabledFlags / payload off the invocation.
 const makeCtx = (payload: Partial<ResponsesPayload>): ResponsesInvocation => ({
-  candidate: {
-    provider: {
-      upstream: 'test-upstream', kind: 'custom', name: 'test',
-      disabledPublicModelIds: [], modelPrefix: null,
-      instance: {} as never, supportsResponsesItemReference: false,
-    },
-    model: {
-      id: 'm', limits: {}, kind: 'chat',
-      endpoints: { responses: {} },
-      enabledFlags: new Set<string>(['responses-image-generation-shim']),
-    },
-    fetcher: directFetcher,
-  },
+  candidate: stubModelCandidate({
+    enabledFlags: new Set(['responses-image-generation-shim']),
+    model: { id: 'm', endpoints: { responses: {} } },
+  }),
   targetApi: 'responses',
   payload: { model: 'm', input: [], ...payload } as CanonicalResponsesPayload,
   headers: new Headers(),

@@ -15,6 +15,7 @@ import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesMessage, MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ModelCandidate, ExecuteResult, PlainResult } from '@floway-dev/provider';
+import { providerModelOf } from '@floway-dev/provider';
 import { translateMessagesViaChatCompletions, translateMessagesViaResponses } from '@floway-dev/translate';
 import { messagesViaResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
@@ -58,7 +59,7 @@ export const messagesAttempt = {
         const { model: _model, ...body } = invocation.payload;
         const recorder = createUpstreamLatencyRecorder();
         const providerResult = await candidate.provider.instance.callMessages(
-          candidate.model,
+          providerModelOf(candidate),
           body,
           ctx.abortSignal,
           buildUpstreamCallOptions(candidate, ctx, recorder.record, invocation.headers),
@@ -110,7 +111,7 @@ export const messagesAttempt = {
     const response = await runInterceptors(invocation, ctx, messagesCountTokensInterceptors, async () => {
       const { model: _model, ...body } = invocation.payload;
       const { response } = await candidate.provider.instance.callMessagesCountTokens(
-        candidate.model,
+        providerModelOf(candidate),
         body,
         ctx.abortSignal,
         buildUpstreamCallOptions(candidate, ctx, recorder.record, invocation.headers),

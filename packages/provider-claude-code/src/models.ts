@@ -16,7 +16,7 @@
 import { CLAUDE_CODE_HEADERS_SONNET_OPUS } from './headers.ts';
 import { pricingForClaudeCodeModelKey } from './pricing.ts';
 import type { ClaudeCodeProviderData } from './types.ts';
-import type { Fetcher, UpstreamModel, UpstreamChatModelConfig } from '@floway-dev/provider';
+import type { Fetcher, ProviderModel, UpstreamChatModelConfig } from '@floway-dev/provider';
 
 const ANTHROPIC_MODELS_ENDPOINT = 'https://api.anthropic.com/v1/models?limit=100';
 
@@ -139,7 +139,7 @@ export const aliasFromApiId = (apiId: string): string => apiId.replace(/-\d{8}$/
 
 // Derives the `chat` metadata from a model's capabilities block.
 // Returns undefined when no relevant capability is present so the
-// caller can omit the key entirely and keep the UpstreamModel lean.
+// caller can omit the key entirely and keep the ProviderModel lean.
 export const chatFromCapabilities = (
   capabilities: ClaudeCodeApiModel['capabilities'],
 ): UpstreamChatModelConfig | undefined => {
@@ -182,7 +182,7 @@ export const chatFromCapabilities = (
 export const buildClaudeCodeCatalog = (
   apiModels: readonly ClaudeCodeApiModel[],
   enabledFlags: ReadonlySet<string>,
-): UpstreamModel[] => apiModels.map(api => {
+): ProviderModel[] => apiModels.map(api => {
   const alias = aliasFromApiId(api.id);
   const cost = pricingForClaudeCodeModelKey(api.id);
   const providerData: ClaudeCodeProviderData = { upstreamModelId: api.id };

@@ -6,7 +6,7 @@ import type { ChatCompletionsStreamEvent, ChatCompletionsMessage } from '@floway
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
-import { assert, assertEquals, assertFalse, stubUpstreamModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import { assert, assertEquals, assertFalse, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const stubRequest = {};
 
@@ -16,7 +16,7 @@ const okEvents = (): Promise<ExecuteResult<ProtocolFrame<ChatCompletionsStreamEv
 const invocation = (messages: ChatCompletionsMessage[]): ChatCompletionsBoundaryCtx => ({
   payload: { model: 'gpt-test', messages },
   headers: new Headers(),
-  model: stubUpstreamModel({ endpoints: { chatCompletions: {} } }),
+  model: stubProviderModel({ endpoints: { chatCompletions: {} } }),
 });
 
 const markedIndexes = (messages: readonly ChatCompletionsMessage[]): number[] =>

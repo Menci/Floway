@@ -27,7 +27,7 @@ const makePayload = (): CanonicalResponsesPayload => ({
 
 const makeInvocation = (payload: CanonicalResponsesPayload): ResponsesInvocation => ({
   payload,
-  candidate: stubModelCandidate({ model: { enabledFlags: new Set(['retry-cyber-policy']) } }),
+  candidate: stubModelCandidate({ enabledFlags: new Set(['retry-cyber-policy']) }),
   targetApi: 'responses',
   headers: new Headers(),
   action: 'generate',

@@ -16,7 +16,8 @@ import type { PerformanceTelemetryContext } from './telemetry/performance.ts';
 import { createUpstreamLatencyRecorder, recordPerformanceError, recordPerformanceLatency, requireRecordedDurationMs } from './telemetry/performance.ts';
 import type { AuthedContext } from '../../middleware/auth.ts';
 import type { GatewayCtx } from '../chat/shared/gateway-ctx.ts';
-import type { ModelCandidate, Provider, ProviderCallResult, TelemetryModelIdentity, UpstreamCallOptions, UpstreamModel } from '@floway-dev/provider';
+import { providerModelOf } from '@floway-dev/provider';
+import type { ModelCandidate, Provider, ProviderCallResult, ProviderModel, TelemetryModelIdentity, UpstreamCallOptions } from '@floway-dev/provider';
 
 // Enlarged `plain` shape: `iterateCandidates` reads `type` + `status`;
 // the passthrough serve reads the rest to forward the response, attribute
@@ -43,14 +44,14 @@ export interface PassthroughAttemptArgs {
   // Delegated to the passthrough caller so each endpoint keeps its
   // request-body shaping (`{ model: _, ...body }`) local. Any throw here
   // is preserved and the serve layer turns it into a 502 with the
-  // internal-debug envelope.
-  readonly call: (provider: Provider, model: UpstreamModel, opts: UpstreamCallOptions) => Promise<ProviderCallResult>;
+  // internal-debug envelope. `model` is the emitting upstream's `ProviderModel`.
+  readonly call: (provider: Provider, model: ProviderModel, opts: UpstreamCallOptions) => Promise<ProviderCallResult>;
 }
 
 export const passthroughAttempt = async (args: PassthroughAttemptArgs): Promise<PassthroughAttemptResult> => {
   const { c, ctx, candidate, stream, call } = args;
   const recorder = createUpstreamLatencyRecorder();
-  const { response, modelKey } = await call(candidate.provider, candidate.model, {
+  const { response, modelKey } = await call(candidate.provider, providerModelOf(candidate), {
     fetcher: candidate.fetcher,
     recordUpstreamLatency: recorder.record,
     waitUntil: ctx.backgroundScheduler,

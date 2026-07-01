@@ -1,5 +1,5 @@
 import type { ResponsesPayload } from '@floway-dev/protocols/responses';
-import type { ResponsesAction, UpstreamModel } from '@floway-dev/provider';
+import type { ProviderModel, ResponsesAction } from '@floway-dev/provider';
 
 // Boundary ctx for Codex Responses interceptors. The same ctx feeds both the
 // streaming `/responses` (action='generate') and the non-streaming compaction
@@ -8,7 +8,7 @@ import type { ResponsesAction, UpstreamModel } from '@floway-dev/provider';
 export interface ResponsesBoundaryCtx {
   payload: ResponsesPayload;
   headers: Headers;
-  readonly model: UpstreamModel;
+  readonly model: ProviderModel;
   // Mirrors the gateway-side ResponsesInvocation.action. Interceptors MAY
   // mutate it during the chain to re-route dispatch in the terminal
   // handler — the terminal reads `ctx.action`, not the parameter the

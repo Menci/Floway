@@ -1,7 +1,7 @@
 import type { HistogramBucket } from '../shared/performance-histogram.ts';
 import type { WebSearchProviderName } from '../shared/web-search-providers.ts';
 import type { BillingDimension, ModelPricing } from '@floway-dev/protocols/common';
-import type { UpstreamModel, UpstreamRecord } from '@floway-dev/provider';
+import type { UpstreamRecord, ProviderModel } from '@floway-dev/provider';
 
 export interface ApiKey {
   id: string;
@@ -185,13 +185,13 @@ export interface PerformanceRepo {
 
 export interface CachedModelsRow {
   fetchedAt: number;
-  models: UpstreamModel[];
+  models: ProviderModel[];
   lastError: { message: string; at: number } | null;
 }
 
 export interface ModelsCacheRepo {
   get(upstreamId: string): Promise<CachedModelsRow | null>;
-  put(upstreamId: string, row: { fetchedAt: number; models: UpstreamModel[] }): Promise<void>;
+  put(upstreamId: string, row: { fetchedAt: number; models: ProviderModel[] }): Promise<void>;
   setLastError(upstreamId: string, error: { message: string; at: number } | null): Promise<void>;
   delete(upstreamId: string): Promise<void>;
 }

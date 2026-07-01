@@ -17,7 +17,7 @@ import type {
   ResponsesOutputImageGenerationCall,
   ResponsesTool,
 } from '@floway-dev/protocols/responses';
-import type { Fetcher, Provider, PerformanceTelemetryContext, ModelCandidate, UpstreamModel } from '@floway-dev/provider';
+import { providerModelOf, type Fetcher, type Provider, type PerformanceTelemetryContext, type ModelCandidate, type ProviderModel } from '@floway-dev/provider';
 
 export const SHIM_TOOL_NAME = 'image_generation';
 
@@ -458,7 +458,7 @@ interface ShimState {
   imageDispatchCount: number;
 }
 
-const recordImageUsage = (state: ShimState, provider: Provider, model: UpstreamModel, modelKey: string, responseBody: unknown): void => {
+const recordImageUsage = (state: ShimState, provider: Provider, model: ProviderModel, modelKey: string, responseBody: unknown): void => {
   const usage = tokenUsageFromImagesBody(responseBody);
   if (usage === null) return;
   const promise = recordTokenUsage(state.apiKeyId, {
@@ -630,7 +630,7 @@ export const parseRetryAfterMs = (headers: Headers): number | null => {
 // the underlying socket can be reused while we sleep.
 const issueImageCall = async (
   provider: Provider,
-  model: UpstreamModel,
+  model: ProviderModel,
   fetcher: Fetcher,
   prompt: string,
   isEdit: boolean,
@@ -640,9 +640,15 @@ const issueImageCall = async (
 ): Promise<{ response: Response; modelKey: string }> => {
   for (let attempt = 0; ; attempt++) {
     const recorder = createUpstreamLatencyRecorder();
+    const opts = {
+      fetcher,
+      recordUpstreamLatency: recorder.record,
+      waitUntil: state.backgroundScheduler,
+      headers: new Headers(),
+    };
     const { response, modelKey } = await (isEdit
-      ? provider.instance.callImagesEdits(model, buildEditsForm(prompt, state.config, sources, stream), state.downstreamAbortSignal, { fetcher, recordUpstreamLatency: recorder.record, waitUntil: state.backgroundScheduler, headers: new Headers() })
-      : provider.instance.callImagesGenerations(model, buildGenerationsBody(prompt, state.config, stream), state.downstreamAbortSignal, { fetcher, recordUpstreamLatency: recorder.record, waitUntil: state.backgroundScheduler, headers: new Headers() }));
+      ? provider.instance.callImagesEdits(model, buildEditsForm(prompt, state.config, sources, stream), state.downstreamAbortSignal, opts)
+      : provider.instance.callImagesGenerations(model, buildGenerationsBody(prompt, state.config, stream), state.downstreamAbortSignal, opts));
     const context: PerformanceTelemetryContext = {
       keyId: state.apiKeyId,
       model: model.id,
@@ -674,7 +680,7 @@ const issueImageCall = async (
 // throwing, so the caller always produces a terminal image item.
 const consumeImageResponse = async (
   provider: Provider,
-  model: UpstreamModel,
+  model: ProviderModel,
   modelKey: string,
   response: Response,
   state: ShimState,
@@ -794,7 +800,8 @@ const streamImageGeneration = (
 ) => async function* (): AsyncGenerator<ServerToolLifecycleEvent, ServerToolTerminal> {
   const resolved = await resolveImageCandidate(isEdit, state);
   if (!resolved.ok) return imageTerminal(prompt, action, { ok: false, error: resolved.error });
-  const { provider, model, fetcher } = resolved.candidate;
+  const { provider, fetcher } = resolved.candidate;
+  const model = providerModelOf(resolved.candidate);
   const wantsPartials = (state.config.partial_images ?? 0) > 0;
 
   let response: Response;
@@ -916,7 +923,7 @@ export const transformInputItemsForImageGeneration = (
 };
 
 export const imageGenerationServerTool: ServerToolRegistration = (invocation, gatewayCtx) => {
-  if (invocation.targetApi === 'responses' && !invocation.candidate.model.enabledFlags.has('responses-image-generation-shim')) {
+  if (invocation.targetApi === 'responses' && !providerModelOf(invocation.candidate).enabledFlags.has('responses-image-generation-shim')) {
     return { type: 'inactive' };
   }
 

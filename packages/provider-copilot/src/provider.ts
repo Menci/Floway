@@ -20,33 +20,32 @@ import { parseChatCompletionsStream, type ChatCompletionsPayload, type ChatCompl
 import { type ModelEndpointKey, type ModelEndpoints, type ProtocolFrame, kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseAnthropicBetaHeader, parseMessagesStream, type MessagesPayload, type MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import { parseResponsesStream, type ResponsesInputItem, type ResponsesPayload, type ResponsesResult } from '@floway-dev/protocols/responses';
-import { COMPACTION_TRIGGER, compactionResponse, eventResult, getProviderRepo, readUpstreamApiError, streamingProviderCall, apiErrorToResponse, defaultsForProvider, resolveEffectiveFlags, type ExecuteResult, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderResponsesResult, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamModel, type UpstreamRecord } from '@floway-dev/provider';
+import { COMPACTION_TRIGGER, compactionResponse, eventResult, getProviderRepo, readUpstreamApiError, streamingProviderCall, apiErrorToResponse, defaultsForProvider, resolveEffectiveFlags, type ExecuteResult, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderResponsesResult, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord } from '@floway-dev/provider';
 
 interface CopilotProviderData {
   rawModels: CopilotRawModel[];
 }
 
-// Project Copilot's raw `/models` shape into the slim provider-neutral fields
-// shared by every provider. kind/endpoints/providerData/enabledFlags are added
-// by the caller because they depend on Copilot's endpoint knowledge and the
-// upstream-level flag layer.
-const copilotInternalModel = (model: CopilotRawModel): Omit<UpstreamModel, 'kind' | 'endpoints' | 'providerData' | 'enabledFlags'> => {
-  const limits: UpstreamModel['limits'] = {};
+// Project Copilot's raw `/models` shape into the slim provider-neutral fields.
+// kind/endpoints/providerData/enabledFlags are added by the caller because they
+// depend on Copilot's endpoint knowledge and the upstream-level flag layer.
+const copilotRawToProviderModel = (model: CopilotRawModel): Omit<ProviderModel, 'kind' | 'endpoints' | 'providerData' | 'enabledFlags'> => {
+  const limits: ProviderModel['limits'] = {};
   if (model.capabilities?.limits?.max_output_tokens !== undefined) limits.max_output_tokens = model.capabilities.limits.max_output_tokens;
   if (model.capabilities?.limits?.max_context_window_tokens !== undefined) limits.max_context_window_tokens = model.capabilities.limits.max_context_window_tokens;
   if (model.capabilities?.limits?.max_prompt_tokens !== undefined) limits.max_prompt_tokens = model.capabilities.limits.max_prompt_tokens;
 
-  const internal: Omit<UpstreamModel, 'kind' | 'endpoints' | 'providerData' | 'enabledFlags'> = {
+  const partial: Omit<ProviderModel, 'kind' | 'endpoints' | 'providerData' | 'enabledFlags'> = {
     id: model.id,
     limits,
   };
-  if (model.owned_by !== undefined) internal.owned_by = model.owned_by;
-  if (model.created !== undefined) internal.created = model.created;
+  if (model.owned_by !== undefined) partial.owned_by = model.owned_by;
+  if (model.created !== undefined) partial.created = model.created;
   const displayName = model.display_name ?? model.name;
-  if (displayName !== undefined) internal.display_name = displayName;
+  if (displayName !== undefined) partial.display_name = displayName;
   const chat = chatFromCopilotRaw(model);
-  if (chat !== undefined) internal.chat = chat;
-  return internal;
+  if (chat !== undefined) partial.chat = chat;
+  return partial;
 };
 
 // Copilot's `/models` reports each model's served endpoints as public paths; map
@@ -115,7 +114,7 @@ const responsesReasoningEffort = (body: Omit<ResponsesPayload, 'model'>): string
 const rejectUnsupported = (capability: string) => (): Promise<never> =>
   Promise.reject(new Error(`Copilot provider does not implement ${capability}`));
 
-const rawModelFor = (model: UpstreamModel, endpoint: ModelEndpointKey, hints: ModelSelectionHints = {}): CopilotRawModel => {
+const rawModelFor = (model: ProviderModel, endpoint: ModelEndpointKey, hints: ModelSelectionHints = {}): CopilotRawModel => {
   // Copilot exposes one canonical public Claude model id per family. Raw
   // variant selection is derived from request fields such as reasoning effort
   // and anthropic-beta, not from the client's original model alias string.
@@ -139,7 +138,7 @@ const copilotEmbeddingsBody = (body: Record<string, unknown>): Record<string, un
   return { ...body, input: [body.input] };
 };
 
-const finalizeCopilotModels = (rawModels: CopilotRawModel[], enabledFlags: ReadonlySet<string>): UpstreamModel[] => {
+const finalizeCopilotModels = (rawModels: CopilotRawModel[], enabledFlags: ReadonlySet<string>): ProviderModel[] => {
   const merged = mergeClaudeVariants({ object: 'list', data: rawModels });
   const groups = new Map<string, CopilotRawModel[]>();
   for (const rawModel of rawModels) {
@@ -147,13 +146,13 @@ const finalizeCopilotModels = (rawModels: CopilotRawModel[], enabledFlags: Reado
     groups.set(id, [...(groups.get(id) ?? []), rawModel]);
   }
 
-  const models: UpstreamModel[] = [];
+  const models: ProviderModel[] = [];
   for (const mergedModel of merged.data) {
     const variants = groups.get(mergedModel.id) ?? [mergedModel];
     const endpoints = copilotModelEndpoints(mergedModel, variants);
     const cost = pricingForCopilotPublicModelId(mergedModel.id);
     models.push({
-      ...copilotInternalModel(mergedModel),
+      ...copilotRawToProviderModel(mergedModel),
       kind: kindForEndpoints(endpoints),
       endpoints,
       providerData: { rawModels: variants } satisfies CopilotProviderData,

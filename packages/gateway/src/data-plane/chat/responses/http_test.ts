@@ -9,7 +9,7 @@ import type { ApiKey, StoredResponsesItem, User } from '../../../repo/types.ts';
 import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { type ModelCandidate, directFetcher, type ProviderResponsesResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
-import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
+import { assert, assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
 
 // Mock the candidates seam so each test hands the http entry exactly the
 // provider candidates it wants. Mirrors the pattern from serve_test.ts.
@@ -121,7 +121,7 @@ const makeCandidate = (overrides: {
       instance: provider,
       supportsResponsesItemReference: true,
     },
-    model: stubUpstreamModel(overrides.endpoints ? { endpoints: overrides.endpoints } : {}),
+    model: stubInternalModel(overrides.endpoints ? { endpoints: overrides.endpoints } : {}, upstream),
     fetcher: directFetcher,
   };
 };

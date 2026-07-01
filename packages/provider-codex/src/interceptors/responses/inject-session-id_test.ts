@@ -4,7 +4,7 @@ import { injectSessionId } from './inject-session-id.ts';
 import type { ResponsesBoundaryCtx } from './types.ts';
 import type { ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { ProviderStreamResult } from '@floway-dev/provider';
-import { assert, assertEquals, stubUpstreamModel } from '@floway-dev/test-utils';
+import { assert, assertEquals, stubProviderModel } from '@floway-dev/test-utils';
 
 const stubRequest = {};
 
@@ -14,7 +14,7 @@ const okEvents = (): Promise<ProviderStreamResult<ResponsesStreamEvent>> =>
 const invocation = (payload: ResponsesPayload, headers: Headers = new Headers()): ResponsesBoundaryCtx => ({
   payload,
   headers,
-  model: stubUpstreamModel({ endpoints: { responses: {} } }),
+  model: stubProviderModel({ endpoints: { responses: {} } }),
   action: 'generate',
 });
 

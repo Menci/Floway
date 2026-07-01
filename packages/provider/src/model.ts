@@ -63,9 +63,13 @@ export interface PerformanceTelemetryContext {
   runtimeLocation: string;
 }
 
-// The neutral internal model shape produced by every provider.
-// Provider-internal raw fields stay inside that provider's own types and
-// projections; nothing upstream-shaped leaks onto this type.
+// The neutral internal model shape consumed across the gateway. Metadata fields
+// (id, display_name, cost, ...) surface the public identity of the model;
+// `endpoints` and `kind` reflect the OR-union across every contributing
+// upstream so the gateway as a whole reaches the union. Per-upstream provider
+// state lives inside `providerModels[<upstream>]`, not as flat fields, so the
+// same public id can carry independent state from every upstream that
+// surfaces it.
 //
 // `kind` is the high-level endpoint-family discriminator; `endpoints` is the
 // precise per-protocol availability map. They are linked invariants enforced
@@ -75,14 +79,14 @@ export interface PerformanceTelemetryContext {
 //   `kind === 'chat'`      ⇒ `endpoints ⊂ generation endpoints`.
 //
 // `endpoints` declares which protocols this model is reachable through.
-// The value is scoped by who produced the row: an `UpstreamModel` carries
-// that one upstream's wire capability; a merged catalog row (the projection
+// Per-candidate rows produced by `enumerateRealModelCandidates` carry the
+// single upstream's wire capability; a merged catalog row (the projection
 // `getModels` returns) carries the OR-union across every upstream emitting
 // under the same public id — the gateway as a whole reaches the union,
 // translating where the dispatched upstream's native wire does not match.
-// Per-request dispatch reads off the per-upstream `UpstreamModel`; listing
-// endpoints (`/v1/models`, `/models`, `/v1beta/models`, and the control-
-// plane catalog) project the merged row.
+// Per-request dispatch reads the chosen upstream's `ProviderModel` off the
+// candidate's `providerModels` map; listing endpoints (`/v1/models`, `/models`,
+// `/v1beta/models`, and the control-plane catalog) project the merged row.
 export interface InternalModel {
   id: string;
   display_name?: string;
@@ -97,9 +101,36 @@ export interface InternalModel {
   cost?: ModelPricing;
   chat?: UpstreamChatModelConfig;
   endpoints: ModelEndpoints;
+  // Every upstream that surfaces this public id contributes one entry, keyed
+  // by upstream id, storing that upstream's `ProviderModel` verbatim. A
+  // per-candidate row (single upstream in the map) is what dispatch reads
+  // through `providerModelOf`; the merged catalog row aggregates every
+  // contributing upstream so the control plane can render the reverse index
+  // without a second walk.
+  providerModels: Record<string, ProviderModel>;
 }
 
-export interface UpstreamModel extends InternalModel {
+// Per-upstream projection returned by every provider's `getProvidedModels` and
+// the shape every provider's `callXxx(model, ...)` takes at dispatch time.
+// Carries the same metadata as `InternalModel` plus `providerData` (the opaque
+// per-provider wire carrier — Copilot's raw variant list, Claude Code's dated
+// upstream id, ...) and `enabledFlags` (the effective flag set for the model
+// on the emitting upstream). Providers only ever see their own emission —
+// the surrounding `InternalModel` map is assembled by the registry.
+export interface ProviderModel {
+  id: string;
+  display_name?: string;
+  owned_by?: string;
+  created?: number;
+  limits: {
+    max_output_tokens?: number;
+    max_context_window_tokens?: number;
+    max_prompt_tokens?: number;
+  };
+  kind: ModelKind;
+  cost?: ModelPricing;
+  chat?: UpstreamChatModelConfig;
+  endpoints: ModelEndpoints;
   providerData?: unknown;
   enabledFlags: ReadonlySet<string>;
 }

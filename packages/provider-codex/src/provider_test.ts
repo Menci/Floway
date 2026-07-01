@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { createCodexProvider } from './provider.ts';
 import type { CodexAccessTokenEntry, CodexUpstreamState } from './state.ts';
 import { directFetcher, initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
-import { noopUpstreamCallOptions } from '@floway-dev/test-utils';
+import { noopUpstreamCallOptions, stubProviderModel } from '@floway-dev/test-utils';
 
 const farFutureMs = Date.now() + 24 * 60 * 60 * 1000;
 
@@ -129,7 +129,7 @@ describe('createCodexProvider', () => {
     await expect(instance.instance.getProvidedModels(directFetcher)).rejects.toThrow(/Codex OAuth session terminated/);
   });
 
-  test('getProvidedModels resolves operator flag overrides into every UpstreamModel', async () => {
+  test('getProvidedModels resolves operator flag overrides into every ProviderModel', async () => {
     // The codex provider has no provider-default flags, so an operator
     // toggling `responses-web-search-shim` on at the upstream layer is the
     // only signal downstream interceptors get. A previous regression
@@ -151,7 +151,7 @@ describe('createCodexProvider', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
     const instance = await createCodexProvider(baseRecord);
     const result = await instance.instance.callResponses(
-      { id: 'gpt-5.4', display_name: 'gpt-5.4', kind: 'chat', limits: {}, endpoints: { responses: {} }, enabledFlags: new Set() },
+      stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { responses: {} } }),
       { input: [{ type: 'message', role: 'user', content: 'hi' }], stream: true },
       'generate',
       undefined,
@@ -165,7 +165,7 @@ describe('createCodexProvider', () => {
     getByIdSpy.mockResolvedValueOnce({ ...baseRecord, state: { accounts: [{ chatgptAccountId: 'acc', refresh_token: 'rt_v1', state: 'session_terminated', state_updated_at: '2026-01-02T00:00:00Z', accessToken: null, quotaSnapshot: null }] } as CodexUpstreamState });
     const instance = await createCodexProvider(baseRecord);
     const result = await instance.instance.callResponses(
-      { id: 'gpt-5.4', display_name: 'gpt-5.4', kind: 'chat', limits: {}, endpoints: { responses: {} }, enabledFlags: new Set() },
+      stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { responses: {} } }),
       { input: [], stream: true },
       'generate',
       undefined,
@@ -184,7 +184,7 @@ describe('createCodexProvider', () => {
     'callMessages',
   ] as const)('%s returns a synthetic 405 (data plane never dispatches these to Codex)', async method => {
     const instance = await createCodexProvider(baseRecord);
-    const model = { id: 'gpt-5.4', display_name: 'gpt-5.4', kind: 'chat', limits: {}, endpoints: { responses: {} }, enabledFlags: new Set<string>() };
+    const model = stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { responses: {} } });
     // @ts-expect-error: each method has a different body type; we only assert
     // the synthetic 405 envelope is what comes back.
     const result = await instance.instance[method](model, {}, undefined, noopUpstreamCallOptions()) as { response: Response };

@@ -6,7 +6,7 @@ import { MAX_CONSECUTIVE_WHITESPACE } from '../shared/whitespace-overflow.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { ProviderResponsesResult } from '@floway-dev/provider';
-import { assertEquals, stubUpstreamModel } from '@floway-dev/test-utils';
+import { assertEquals, stubProviderModel } from '@floway-dev/test-utils';
 
 const invocation = (): ResponsesBoundaryCtx => ({
   payload: {
@@ -24,7 +24,7 @@ const invocation = (): ResponsesBoundaryCtx => ({
     parallel_tool_calls: true,
   },
   headers: new Headers(),
-  model: stubUpstreamModel({ endpoints: { responses: {} } }),
+  model: stubProviderModel({ endpoints: { responses: {} } }),
   action: 'generate',
 });
 

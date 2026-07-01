@@ -36,7 +36,7 @@ const invocation = (
   enabledFlags: ReadonlySet<string> = new Set(['demote-interleaved-system-to-user']),
 ): ResponsesInvocation => ({
   payload,
-  candidate: stubModelCandidate({ model: { enabledFlags } }),
+  candidate: stubModelCandidate({ enabledFlags }),
   targetApi: 'responses',
   headers: new Headers(),
   action: 'generate',

@@ -3,14 +3,14 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { clearInFlightForTesting, fetchUpstreamModelsCached } from './models-cache.ts';
 import { initRepo } from '../../repo/index.ts';
 import { InMemoryRepo } from '../../repo/memory.ts';
-import { directFetcher, type Provider, type UpstreamModel } from '@floway-dev/provider';
-import { stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
+import { directFetcher, type Provider, type ProviderModel } from '@floway-dev/provider';
+import { stubProvider, stubProviderModel } from '@floway-dev/test-utils';
 
-const aModel = (id: string): UpstreamModel => stubUpstreamModel({ id });
+const aModel = (id: string): ProviderModel => stubProviderModel({ id });
 
 const stubInstance = (
   upstreamId: string,
-  fetchFn: () => Promise<UpstreamModel[]>,
+  fetchFn: () => Promise<ProviderModel[]>,
 ): Provider => ({
   upstream: upstreamId,
   kind: 'custom',
@@ -111,8 +111,8 @@ describe('fetchUpstreamModelsCached', () => {
 
   test('two concurrent cold callers join one fetch', async () => {
     setupRepo();
-    let resolveFetch: ((v: UpstreamModel[]) => void) | null = null;
-    const fetchFn = vi.fn(() => new Promise<UpstreamModel[]>(r => { resolveFetch = r; }));
+    let resolveFetch: ((v: ProviderModel[]) => void) | null = null;
+    const fetchFn = vi.fn(() => new Promise<ProviderModel[]>(r => { resolveFetch = r; }));
     const instance = stubInstance('up_a', fetchFn);
 
     const p1 = fetchUpstreamModelsCached(instance, { scheduler: () => {}, fetcher: directFetcher });

@@ -4,7 +4,7 @@ import { stripUnsupportedFields } from './strip-unsupported-fields.ts';
 import type { ResponsesBoundaryCtx } from './types.ts';
 import type { ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { ProviderStreamResult } from '@floway-dev/provider';
-import { assertEquals, assertFalse, stubUpstreamModel } from '@floway-dev/test-utils';
+import { assertEquals, assertFalse, stubProviderModel } from '@floway-dev/test-utils';
 
 const stubRequest = {};
 
@@ -14,7 +14,7 @@ const okEvents = (): Promise<ProviderStreamResult<ResponsesStreamEvent>> =>
 const invocation = (payload: ResponsesPayload): ResponsesBoundaryCtx => ({
   payload,
   headers: new Headers(),
-  model: stubUpstreamModel({ endpoints: { responses: {} } }),
+  model: stubProviderModel({ endpoints: { responses: {} } }),
   action: 'generate',
 });
 

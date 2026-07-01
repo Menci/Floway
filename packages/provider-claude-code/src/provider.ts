@@ -63,9 +63,9 @@ export const createClaudeCodeProvider = async (record: UpstreamRecord): Promise<
 
       const terminal = async (): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
         // Drop `model` from the payload: callClaudeCodeMessages re-attaches the
-        // dated upstream id (from `opts.model.providerData.upstreamModelId`)
-        // on the wire so Anthropic sees a stable per-revision id rather than
-        // the public alias the catalog exposes to clients.
+        // dated upstream id (from `opts.model.providerData.upstreamModelId`) on
+        // the wire so Anthropic sees a stable per-revision id rather than the
+        // public alias the catalog exposes to clients.
         const { model: _ignored, ...wireBody } = ctx.payload;
         return await callClaudeCodeMessages({
           upstreamId: record.id,

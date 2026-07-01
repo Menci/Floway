@@ -391,7 +391,7 @@ export const fetchModels = async (c: CtxWithJson<typeof fetchModelsBody>) => {
       return c.json(result);
     }
     // body.kind === 'ollama' — the provider's own getProvidedModels
-    // already projects /api/tags + /api/show into UpstreamModel; reshape each
+    // already projects /api/tags + /api/show into ProviderModel; reshape each
     // into UpstreamModelConfig so the dashboard can drop them straight into
     // the auto rows without re-deriving endpoints from capabilities.
     assertOllamaUpstreamRecord(record);

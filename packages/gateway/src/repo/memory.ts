@@ -43,7 +43,7 @@ import { latencyBucketForMs } from '../shared/performance-histogram.ts';
 import { generateSessionToken } from '../shared/session-tokens.ts';
 import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';
 import { BILLING_DIMENSIONS, type BillingDimension, type ModelPricing, resolveEffectivePricing, unitPriceForDimension } from '@floway-dev/protocols/common';
-import type { UpstreamModel, UpstreamRecord } from '@floway-dev/provider';
+import type { ProviderModel, UpstreamRecord } from '@floway-dev/provider';
 
 const SEED_ADMIN_USER: User = {
   id: 1,
@@ -478,7 +478,7 @@ class MemoryModelsCacheRepo implements ModelsCacheRepo {
     return Promise.resolve(row ? { ...row, models: [...row.models] } : null);
   }
 
-  put(upstreamId: string, row: { fetchedAt: number; models: UpstreamModel[] }): Promise<void> {
+  put(upstreamId: string, row: { fetchedAt: number; models: ProviderModel[] }): Promise<void> {
     this.rows.set(upstreamId, { fetchedAt: row.fetchedAt, models: [...row.models], lastError: null });
     return Promise.resolve();
   }

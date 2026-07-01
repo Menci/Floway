@@ -6,6 +6,7 @@ export type {
   ModelCandidate,
   ResponsesInvocation,
 } from './invocation.ts';
+export { providerModelOf } from './invocation.ts';
 
 export type { InternalDebugError } from './error.ts';
 export { toInternalDebugError } from './error.ts';
@@ -30,9 +31,9 @@ export {
 export type {
   InternalModel,
   PerformanceTelemetryContext,
+  ProviderModel,
   ProxyFallbackEntry,
   TelemetryModelIdentity,
-  UpstreamModel,
   UpstreamProviderKind,
   UpstreamRecord,
 } from './model.ts';

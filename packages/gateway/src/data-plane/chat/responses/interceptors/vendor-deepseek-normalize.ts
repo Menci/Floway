@@ -19,6 +19,7 @@
 // - https://api-docs.deepseek.com/zh-cn/guides/thinking_mode
 
 import type { ResponsesInterceptor } from './types.ts';
+import { providerModelOf } from '@floway-dev/provider';
 import type { CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
 
 interface DeepseekDisableField {
@@ -35,7 +36,7 @@ const stripCanonicalReasoningSentinel = (payload: CanonicalResponsesPayload): Ca
 };
 
 export const withVendorDeepseekResponsesNormalize: ResponsesInterceptor = async (ctx, _request, run) => {
-  if (!ctx.candidate.model.enabledFlags.has('vendor-deepseek')) return await run();
+  if (!providerModelOf(ctx.candidate).enabledFlags.has('vendor-deepseek')) return await run();
 
   ctx.payload = stripCanonicalReasoningSentinel(ctx.payload);
 

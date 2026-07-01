@@ -31,10 +31,8 @@ interface InvocationOptions {
 const invocation = (payload: MessagesPayload, { flagOn = true }: InvocationOptions = {}): MessagesInvocation => ({
   payload,
   candidate: stubModelCandidate({
-    model: {
-      endpoints: { messages: {} },
-      enabledFlags: flagOn ? new Set(['demote-interleaved-system-to-user']) : new Set(),
-    },
+    model: { endpoints: { messages: {} } },
+    enabledFlags: flagOn ? new Set(['demote-interleaved-system-to-user']) : new Set(),
   }),
   targetApi: 'messages',
   headers: new Headers(),

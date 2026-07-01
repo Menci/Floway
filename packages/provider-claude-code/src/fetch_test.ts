@@ -8,8 +8,8 @@ import type {
   ClaudeCodeQuotaSnapshotEntry,
   ClaudeCodeUpstreamState,
 } from './state.ts';
-import { initProviderRepo, type Fetcher, type UpstreamCallOptions, type UpstreamModel, type UpstreamRecord } from '@floway-dev/provider';
-import { noopUpstreamCallOptions } from '@floway-dev/test-utils';
+import { initProviderRepo, type Fetcher, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
+import { noopUpstreamCallOptions, stubProviderModel } from '@floway-dev/test-utils';
 
 const upstreamId = 'up_cc';
 
@@ -24,25 +24,21 @@ const activeAccount: ClaudeCodeAccountCredential = {
   usageProbeSnapshot: null,
 };
 
-const sonnetModel: UpstreamModel = {
+const sonnetProviderData = { upstreamModelId: 'claude-sonnet-4-5-20250929' };
+const sonnetModel = stubProviderModel({
   id: 'claude-sonnet-4-5',
   display_name: 'Sonnet',
-  kind: 'chat',
-  limits: {},
   endpoints: { messages: {} },
-  enabledFlags: new Set(),
-  providerData: { upstreamModelId: 'claude-sonnet-4-5-20250929' },
-};
+  providerData: sonnetProviderData,
+});
 
-const haikuModel: UpstreamModel = {
+const haikuProviderData = { upstreamModelId: 'claude-haiku-4-5-20251001' };
+const haikuModel = stubProviderModel({
   id: 'claude-haiku-4-5',
   display_name: 'Haiku',
-  kind: 'chat',
-  limits: {},
   endpoints: { messages: {} },
-  enabledFlags: new Set(),
-  providerData: { upstreamModelId: 'claude-haiku-4-5-20251001' },
-};
+  providerData: haikuProviderData,
+});
 
 const freshAccessTokenEntry: ClaudeCodeAccessTokenEntry = {
   token: 'at_cached',

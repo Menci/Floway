@@ -10,14 +10,14 @@ import type { StoredResponsesItem } from '../../../../repo/types.ts';
 import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
 import type { ModelCandidate } from '@floway-dev/provider';
 import { directFetcher } from '@floway-dev/provider';
-import { stubProvider, stubUpstreamModel, assert, assertEquals, assertFalse } from '@floway-dev/test-utils';
+import { stubProvider, stubInternalModel, stubProviderModel, assert, assertEquals, assertFalse } from '@floway-dev/test-utils';
 import { responsesItemsView, type CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
 
 const API_KEY_ID = 'key_rewrite_test';
 
 const candidate = (upstream: string, supportsResponsesItemReference = true): ModelCandidate => {
   const modelProvider = stubProvider({
-    getProvidedModels: () => Promise.resolve([stubUpstreamModel()]),
+    getProvidedModels: () => Promise.resolve([stubProviderModel()]),
   });
   return {
     provider: {
@@ -29,7 +29,7 @@ const candidate = (upstream: string, supportsResponsesItemReference = true): Mod
       instance: modelProvider,
       supportsResponsesItemReference,
     },
-    model: stubUpstreamModel(),
+    model: stubInternalModel({}, upstream),
     fetcher: directFetcher,
   };
 };
