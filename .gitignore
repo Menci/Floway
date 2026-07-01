@@ -8,6 +8,7 @@ docs/superpowers
 apps/web/dist/
 .dev.vars
 .env
+.pnpm-store/
 /wrangler.jsonc
 
 # Local node-target dev runtime (sqlite db + uploaded files). One under the
