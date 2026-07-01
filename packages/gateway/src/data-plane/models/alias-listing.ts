@@ -312,14 +312,13 @@ export const synthesizeListedAliases = (input: ListedAliasInputs): InternalModel
     .filter((entry): entry is InternalModel => entry !== null);
 
 // Compose real-model rows with visible alias rows into a single `InternalModel[]`.
-// Both data-plane `/v1/models`, `/v1beta/models`, `/models` (Codex), and the
-// dashboard's `/api/models` share the same merge rule: when an alias's `name`
-// collides with a real model id, the alias row wins and the colliding real
-// row is dropped — two entries with the same `id` would break OpenAI-client
-// deduplication, and the alias was added by the operator deliberately, so
-// collapsing to it preserves intent. Callers project the returned rows onto
-// their wire shape with a single mapper that reads `.aliasedFrom` off the
-// discriminated union to decide whether to emit the alias sidecar.
+// Shared merge point across the alias-aware listing endpoints (OpenAI
+// `/v1/models`, Gemini `/v1beta/models`, dashboard `/api/models`); Codex
+// `/models` opts out by consuming the real-only catalog directly. Callers
+// project the returned rows onto their wire shape with a single mapper
+// that reads `.aliasedFrom` off the discriminated union to decide whether
+// to emit the alias sidecar. Collision handling is spelled out at the file
+// header.
 export const mergeAliasesIntoModels = (input: {
   readonly realModels: readonly InternalModel[];
   readonly gatewayAddressableModelIds: readonly AddressableIdEntry[];

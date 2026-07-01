@@ -29,9 +29,9 @@ export interface ModelCandidate {
 // Pull the emitting upstream's `ProviderModel` off the candidate. Dispatch
 // hands this to the provider's `callXxx`; interceptor gates read
 // `.enabledFlags`, boundary shims read `.providerData`, etc. The candidate
-// always names exactly one upstream via `provider.upstream`, and the resolver
-// populates `model.providerModels` with an entry under that key at
-// candidate-creation time.
+// always names exactly one upstream via `provider.upstream`; for real-row
+// candidates the resolver populates `model.providerModels` with an entry
+// under that key at candidate-creation time.
 //
 // Two error paths, distinguished so a caller reading the message can tell
 // which invariant broke: an alias row was mistakenly used as a dispatch

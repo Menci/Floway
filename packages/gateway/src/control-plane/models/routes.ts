@@ -30,10 +30,6 @@ interface ControlPlaneModelsResponse extends Omit<PublicModelsResponse, 'data'> 
 
 const toControlPlaneModel = (model: InternalModel, instances: readonly Provider[]): ControlPlaneModel => ({
   ...toPublicModel(model),
-  // Alias-synthesized rows never bind directly to an upstream — their
-  // targets ride under `aliasedFrom` on the wire projection. The caller
-  // hands us the empty list for alias rows; for real rows it is the
-  // list of contributing upstreams.
   upstreams: instances.map(instance => ({ kind: instance.kind, id: instance.upstream, name: instance.name })),
 });
 
