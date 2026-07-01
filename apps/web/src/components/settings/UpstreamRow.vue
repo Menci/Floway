@@ -26,7 +26,7 @@ const modelSummary = computed(() => `${props.modelCount} model${props.modelCount
 
 const subtitle = computed(() => {
   const u = props.upstream;
-  switch (u.provider) {
+  switch (u.kind) {
   case 'azure': return u.config.endpoint;
   case 'custom': return u.config.baseUrl;
   case 'copilot': {
@@ -60,8 +60,8 @@ const subtitle = computed(() => {
         <div class="mb-1.5 flex min-w-0 flex-wrap items-center gap-2">
           <span
             class="rounded border px-2 py-0.5 text-xs font-semibold uppercase tracking-wide"
-            :class="providerBadgeClass(upstream.provider)"
-          >{{ providerMeta(upstream.provider).label }}</span>
+            :class="providerBadgeClass(upstream.kind)"
+          >{{ providerMeta(upstream.kind).label }}</span>
           <span class="rounded bg-surface-900/70 px-2 py-0.5 text-[11px] font-medium text-gray-400">{{ modelSummary }}</span>
         </div>
         <p class="truncate text-sm font-semibold text-white">{{ upstream.name }}</p>

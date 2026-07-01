@@ -20,9 +20,9 @@ const API_MODELS: ClaudeCodeApiModel[] = [
   { id: 'claude-haiku-4-5-20251001', display_name: 'Claude Haiku 4.5', max_input_tokens: 200_000 },
 ];
 
-// Used by the messages-routing tests; carries the dated-upstream-id provider
-// data the wire path expects.
-const upstreamModel = buildClaudeCodeCatalog(API_MODELS, new Set<string>())
+// The catalog builder emits a `ProviderModel` per API row (with the dated
+// upstream id on providerData); pick the entry the messages-routing tests want.
+const sonnetProviderModel = buildClaudeCodeCatalog(API_MODELS, new Set<string>())
   .find(m => m.id === 'claude-sonnet-4-5')!;
 
 const activeAccount: ClaudeCodeAccountCredential = {
@@ -42,7 +42,7 @@ const activeAccount: ClaudeCodeAccountCredential = {
 
 const makeRecord = (state: ClaudeCodeUpstreamState): UpstreamRecord => ({
   id: upstreamId,
-  provider: 'claude-code',
+  kind: 'claude-code',
   name: 'CC',
   enabled: true,
   sortOrder: 0,
@@ -109,7 +109,7 @@ describe('createClaudeCodeProvider — factory surface', () => {
   test('getProvidedModels mirrors the live /v1/models catalog under public aliases', async () => {
     stubModelsListFetch();
     const instance = await createClaudeCodeProvider(currentRecord);
-    const models = await instance.provider.getProvidedModels(noopUpstreamCallOptions().fetcher);
+    const models = await instance.instance.getProvidedModels(noopUpstreamCallOptions().fetcher);
     expect(models.map(m => m.id)).toEqual([
       'claude-fable-5',
       'claude-opus-4-7',
@@ -125,7 +125,7 @@ describe('createClaudeCodeProvider — factory surface', () => {
     // stays empty regardless of the other providers' defaults.
     stubModelsListFetch();
     const instance = await createClaudeCodeProvider(currentRecord);
-    const models = await instance.provider.getProvidedModels(noopUpstreamCallOptions().fetcher);
+    const models = await instance.instance.getProvidedModels(noopUpstreamCallOptions().fetcher);
     for (const m of models) {
       expect(m.enabledFlags.has('strip-billing-attribution')).toBe(false);
     }
@@ -133,14 +133,14 @@ describe('createClaudeCodeProvider — factory surface', () => {
 
   test('getPricingForModelKey wires through the pricing table (keyed by dated upstream id)', async () => {
     const instance = await createClaudeCodeProvider(currentRecord);
-    expect(instance.provider.getPricingForModelKey('claude-sonnet-4-5-20250929'))
+    expect(instance.instance.getPricingForModelKey('claude-sonnet-4-5-20250929'))
       .toEqual(pricingForClaudeCodeModelKey('claude-sonnet-4-5-20250929'));
-    expect(instance.provider.getPricingForModelKey('unknown-id')).toBeNull();
+    expect(instance.instance.getPricingForModelKey('unknown-id')).toBeNull();
   });
 
-  test('providerKind is "claude-code" and supportsResponsesItemReference is false', async () => {
+  test('kind is "claude-code" and supportsResponsesItemReference is false', async () => {
     const instance = await createClaudeCodeProvider(currentRecord);
-    expect(instance.providerKind).toBe('claude-code');
+    expect(instance.kind).toBe('claude-code');
     expect(instance.supportsResponsesItemReference).toBe(false);
     expect(instance.upstream).toBe(upstreamId);
   });
@@ -151,8 +151,8 @@ describe('createClaudeCodeProvider — callMessages routes through chain', () =>
     const instance = await createClaudeCodeProvider(currentRecord);
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
 
-    await instance.provider.callMessages(
-      upstreamModel,
+    await instance.instance.callMessages(
+      sonnetProviderModel,
       { max_tokens: 16, messages: [{ role: 'user', content: 'hello' }] },
       undefined,
       noopUpstreamCallOptions(),
@@ -178,8 +178,8 @@ describe('createClaudeCodeProvider — callMessages routes through chain', () =>
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
 
     const userId = JSON.stringify({ device_id: 'd'.repeat(32), account_uuid: '', session_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' });
-    await instance.provider.callMessages(
-      upstreamModel,
+    await instance.instance.callMessages(
+      sonnetProviderModel,
       {
         max_tokens: 16,
         messages: [{ role: 'user', content: 'hi' }],
@@ -213,8 +213,8 @@ describe('createClaudeCodeProvider — callMessages routes through chain', () =>
     const instance = await createClaudeCodeProvider(currentRecord);
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
 
-    await instance.provider.callMessages(
-      upstreamModel,
+    await instance.instance.callMessages(
+      sonnetProviderModel,
       { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] },
       undefined,
       { ...noopUpstreamCallOptions(), headers: new Headers({ 'user-agent': 'claude-cli/2.1.181' }) },

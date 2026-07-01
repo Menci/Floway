@@ -12,7 +12,7 @@
 // content type. Only `role: 'assistant'` is rewritten; user/system/developer
 // messages keep `input_text` because that IS the correct type on those roles.
 
-import type { ResponsesInputContent, ResponsesInputItem, ResponsesPayload } from '@floway-dev/protocols/responses';
+import type { ResponsesInputContent, ResponsesInputItem } from '@floway-dev/protocols/responses';
 
 const normalizeAssistantContentBlocks = (content: string | ResponsesInputContent[]): string | ResponsesInputContent[] => {
   if (typeof content === 'string') return content;
@@ -31,8 +31,7 @@ const normalizeItem = (item: ResponsesInputItem): ResponsesInputItem => {
   return next === item.content ? item : { ...item, content: next };
 };
 
-export const normalizeAssistantInputText = (input: ResponsesPayload['input']): ResponsesPayload['input'] => {
-  if (typeof input === 'string') return input;
+export const normalizeAssistantInputText = (input: ResponsesInputItem[]): ResponsesInputItem[] => {
   let mutated = false;
   const next = input.map(item => {
     const replaced = normalizeItem(item);

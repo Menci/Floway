@@ -7,10 +7,10 @@ import { InMemoryRepo } from '../../../repo/memory.ts';
 import type { ApiKey, User } from '../../../repo/types.ts';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { directFetcher, type ProviderCandidate, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
-import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
+import { type ModelCandidate, directFetcher, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
+import { assert, assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
 
-const candidatesQueue: { readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean; readonly failedUpstreams: readonly string[] }[] = [];
+const candidatesQueue: { readonly candidates: readonly ModelCandidate[]; readonly sawModel: boolean; readonly failedUpstreams: readonly string[] }[] = [];
 vi.mock('../../providers/registry.ts', async importOriginal => {
   const original = await importOriginal<typeof import('../../providers/registry.ts')>();
   return {
@@ -27,7 +27,7 @@ const { chatCompletionsHttp } = await import('./http.ts');
 
 const API_KEY_ID = 'key_chat_completions_http_test';
 
-const queueCandidates = (candidates: readonly ProviderCandidate[], sawModel = candidates.length > 0): void => {
+const queueCandidates = (candidates: readonly ModelCandidate[], sawModel = candidates.length > 0): void => {
   candidatesQueue.push({ candidates, sawModel, failedUpstreams: [] });
 };
 
@@ -102,15 +102,15 @@ const makeCandidate = (overrides: {
   upstream?: string;
   endpoints?: ModelEndpoints;
   callChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
-} = {}): ProviderCandidate => {
+} = {}): ModelCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
   const provider = stubProvider({ callChatCompletions: overrides.callChatCompletions });
   return {
     provider: {
-      upstream, providerKind: 'custom', name: upstream,
-      disabledPublicModelIds: [], modelPrefix: null, provider, supportsResponsesItemReference: true,
+      upstream, kind: 'custom', name: upstream,
+      disabledPublicModelIds: [], modelPrefix: null, instance: provider, supportsResponsesItemReference: true,
     },
-    model: stubUpstreamModel(overrides.endpoints ? { endpoints: overrides.endpoints } : {}),
+    model: stubInternalModel(overrides.endpoints ? { endpoints: overrides.endpoints } : {}, upstream),
     fetcher: directFetcher,
   };
 };

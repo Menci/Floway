@@ -5,12 +5,13 @@ import { PreviousResponseNotFoundError } from './serve-prep.ts';
 import { responsesServe } from './serve.ts';
 import type { AuthedContext } from '../../../middleware/auth.ts';
 import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
-import { createGatewayCtxFromHono, finalizeGatewayResponse, type GatewayCtx } from '../shared/gateway-ctx.ts';
+import { createChatGatewayCtxFromHono, createGatewayCtxFromHono, finalizeGatewayResponse, type ChatGatewayCtx, type GatewayCtx } from '../shared/gateway-ctx.ts';
 import { readRequestBody, type RequestBody } from '../shared/request-body.ts';
 import { providerModelsUnavailableResponse } from '../shared/upstream-models-error.ts';
 import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 import { internalErrorResult, toInternalDebugError } from '@floway-dev/provider';
 import { TranslatorInputError } from '@floway-dev/translate';
+import { canonicalizeResponsesPayload, type CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
 
 // OpenAI's verbatim previous_response_not_found envelope. Codex compares this
 // body byte-for-byte against upstream — see the cross-references on
@@ -63,19 +64,18 @@ const respondToThrow = async (c: AuthedContext, error: unknown, requestBody: Req
   return await respondWithInternalError(c, error, requestBody, ctx);
 };
 
-const parsePayload = (requestBody: RequestBody): ResponsesPayload =>
-  JSON.parse(new TextDecoder().decode(requestBody.bytes)) as ResponsesPayload;
+const parsePayload = (requestBody: RequestBody): CanonicalResponsesPayload =>
+  canonicalizeResponsesPayload(JSON.parse(new TextDecoder().decode(requestBody.bytes)) as ResponsesPayload);
 
 export const responsesHttp = {
   generate: async (c: AuthedContext): Promise<Response> => {
     const requestBody = await readRequestBody(c);
-    let ctx: GatewayCtx | undefined;
+    let ctx: ChatGatewayCtx | undefined;
     try {
       const payload = parsePayload(requestBody);
       const wantsStream = payload.stream === true;
-      ctx = createGatewayCtxFromHono(c, { wantsStream, requestBody, model: payload.model });
-      const store = createResponsesHttpStore(ctx.apiKeyId, payload.store ?? undefined);
-      const result = await responsesServe.generate({ payload, ctx, store, headers: inboundHeadersForUpstream(c) });
+      ctx = createChatGatewayCtxFromHono(c, { wantsStream, requestBody, model: payload.model }, apiKeyId => createResponsesHttpStore(apiKeyId, payload.store ?? undefined));
+      const result = await responsesServe.generate({ payload, ctx, headers: inboundHeadersForUpstream(c) });
       const { response } = await respondResponses(c, result, wantsStream, ctx);
       return finalizeGatewayResponse(ctx, response);
     } catch (error) {
@@ -85,12 +85,11 @@ export const responsesHttp = {
 
   compact: async (c: AuthedContext): Promise<Response> => {
     const requestBody = await readRequestBody(c);
-    let ctx: GatewayCtx | undefined;
+    let ctx: ChatGatewayCtx | undefined;
     try {
       const payload = parsePayload(requestBody);
-      ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody, model: payload.model });
-      const store = createResponsesHttpStore(ctx.apiKeyId, payload.store ?? undefined);
-      const result = await responsesServe.compact({ payload, ctx, store, headers: inboundHeadersForUpstream(c) });
+      ctx = createChatGatewayCtxFromHono(c, { wantsStream: false, requestBody, model: payload.model }, apiKeyId => createResponsesHttpStore(apiKeyId, payload.store ?? undefined));
+      const result = await responsesServe.compact({ payload, ctx, headers: inboundHeadersForUpstream(c) });
       if (result.type === 'result') {
         ctx.dump?.success(result.modelIdentity, result.usage);
         const compactResponse = Response.json(result.result);

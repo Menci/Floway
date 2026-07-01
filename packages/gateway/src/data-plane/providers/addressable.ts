@@ -14,7 +14,7 @@
 import { fetchUpstreamModelsCached } from './models-cache.ts';
 import { compareModelIds, getModelsFromProviders, listModelProviders } from './registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import { isAbortError, type Fetcher, type InternalModel, type ModelProviderInstance } from '@floway-dev/provider';
+import { isAbortError, type Fetcher, type InternalModel, type Provider } from '@floway-dev/provider';
 
 export interface AddressableIdEntry {
   // The inbound model id the data plane will accept verbatim.
@@ -35,7 +35,7 @@ export interface AddressableIdEntry {
   // alternates inherit the same list (the prefix-stripped id resolves
   // through the same upstream). Lets the control-plane DTO render per-
   // model upstream chips without re-walking the registry.
-  readonly upstreams: readonly ModelProviderInstance[];
+  readonly upstreams: readonly Provider[];
 }
 
 // Project the listed (real-catalog) `InternalModel`s out of an addressable

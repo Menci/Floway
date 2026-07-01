@@ -311,37 +311,37 @@ const upstreamBaseFields = {
   model_prefix: modelPrefixSchema.optional(),
 };
 
-// Create accepts a discriminated union on `provider` for per-provider config
+// Create accepts a discriminated union on `kind` for per-provider config
 // validation. Copilot upstreams normally originate from the device-flow poll
 // endpoint, but POST also accepts them for the import flow. `enabled` and
 // `sort_order` are optional — the handler defaults them to `true` and
 // `nextSortOrder()` respectively when omitted.
 //
 // `codex` and `claude-code` are listed here so the handler can return the
-// canonical "use POST /api/upstreams/<provider>-import" 400 instead of the
+// canonical "use POST /api/upstreams/<kind>-import" 400 instead of the
 // cryptic zod "invalid discriminator value" message. The `config` slot is
 // `unknown()` because the real config is derived from the OAuth flow, not
 // from anything posted against this endpoint.
-export const createUpstreamBody = z.discriminatedUnion('provider', [
-  z.object({ provider: z.literal('custom'), ...upstreamBaseFields, config: customConfigSchema }),
-  z.object({ provider: z.literal('azure'), ...upstreamBaseFields, config: azureConfigSchema }),
-  z.object({ provider: z.literal('copilot'), ...upstreamBaseFields, config: copilotConfigSchema }),
-  z.object({ provider: z.literal('codex'), ...upstreamBaseFields, config: z.unknown() }),
-  z.object({ provider: z.literal('claude-code'), ...upstreamBaseFields, config: z.unknown() }),
-  z.object({ provider: z.literal('ollama'), ...upstreamBaseFields, config: ollamaConfigSchema }),
+export const createUpstreamBody = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('custom'), ...upstreamBaseFields, config: customConfigSchema }),
+  z.object({ kind: z.literal('azure'), ...upstreamBaseFields, config: azureConfigSchema }),
+  z.object({ kind: z.literal('copilot'), ...upstreamBaseFields, config: copilotConfigSchema }),
+  z.object({ kind: z.literal('codex'), ...upstreamBaseFields, config: z.unknown() }),
+  z.object({ kind: z.literal('claude-code'), ...upstreamBaseFields, config: z.unknown() }),
+  z.object({ kind: z.literal('ollama'), ...upstreamBaseFields, config: ollamaConfigSchema }),
 ]);
 
-// Update is provider-agnostic: provider is read from the existing record, and
-// the config shape is validated by the handler against that record's provider.
+// Update is kind-agnostic: kind is read from the existing record, and
+// the config shape is validated by the handler against that record's kind.
 // Patches omit fields they don't change; `config` may be a partial patch object
 // that the handler shallow-merges with the existing config.
 //
-// `provider` may appear in the body so the handler can return the canonical
-// "provider cannot be changed" 400 when a caller tries to switch providers;
+// `kind` may appear in the body so the handler can return the canonical
+// "kind cannot be changed" 400 when a caller tries to switch kinds;
 // without this field the schema would silently strip it and the API would
 // look like it had accepted the change.
 export const updateUpstreamBody = z.object({
-  provider: z.enum(['custom', 'azure', 'copilot', 'codex', 'claude-code', 'ollama']).optional(),
+  kind: z.enum(['custom', 'azure', 'copilot', 'codex', 'claude-code', 'ollama']).optional(),
   name: z.string().min(1).optional(),
   enabled: z.boolean().optional(),
   sort_order: z.number().int().optional(),
@@ -355,11 +355,11 @@ export const updateUpstreamBody = z.object({
 // Draft /models browse: accepts an in-progress upstream config so callers can
 // fetch the upstream's live model list before saving. `id` is present in
 // edit mode so the handler can substitute the stored secret when the secret
-// is left blank ("keep the stored secret"). Discriminated by `provider` so
+// is left blank ("keep the stored secret"). Discriminated by `kind` so
 // each provider's draft preview surfaces a typed catalog.
-export const fetchModelsBody = z.discriminatedUnion('provider', [
-  z.object({ provider: z.literal('custom'), id: z.string().optional(), config: customConfigSchema }),
-  z.object({ provider: z.literal('ollama'), id: z.string().optional(), config: ollamaConfigSchema }),
+export const fetchModelsBody = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('custom'), id: z.string().optional(), config: customConfigSchema }),
+  z.object({ kind: z.literal('ollama'), id: z.string().optional(), config: ollamaConfigSchema }),
 ]);
 
 // --- copilot device flow ---
@@ -373,7 +373,7 @@ export const copilotAuthPollBody = z.object({
 
 // --- codex import / authorize-url / refresh ---
 //
-// The control plane refuses `provider: 'codex'` on the generic create / update
+// The control plane refuses `kind: 'codex'` on the generic create / update
 // upstream endpoints; Codex credentials enter only through these dedicated
 // routes so the id_token parsing lives in one place.
 //
@@ -460,7 +460,7 @@ export const codexRefreshNowBody = z.object({
 // --- claude-code import / authorize-url / refresh ---
 //
 // Same shape rationale as the codex routes above: the generic create / update
-// upstream endpoints reject `provider: 'claude-code'` and dedicated
+// upstream endpoints reject `kind: 'claude-code'` and dedicated
 // authorize-url + import + re-import endpoints own the OAuth handoff so
 // credential parsing lives in one place. PKCE state is SPA-held (see codex
 // section above for the architecture). The single authorize-url endpoint

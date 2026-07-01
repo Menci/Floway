@@ -6,7 +6,7 @@ import {
   CODEX_USER_AGENT,
 } from './constants.ts';
 import { pricingForCodexModelKey } from './pricing.ts';
-import { type Fetcher, type UpstreamChatModelConfig, type UpstreamModel } from '@floway-dev/provider';
+import { type Fetcher, type ProviderModel, type UpstreamChatModelConfig } from '@floway-dev/provider';
 
 export interface CodexRawModel {
   id: string;
@@ -101,7 +101,7 @@ const assertRawModel = (value: unknown): CodexRawModel => {
 // `enabledFlags` is the upstream-resolved flag set (provider defaults
 // merged with the row's `flagOverrides`); it propagates per-model so
 // downstream interceptors can read the effective set without re-resolving.
-export const codexRawToUpstreamModel = (raw: CodexRawModel, enabledFlags: ReadonlySet<string>): UpstreamModel => {
+export const codexRawToProviderModel = (raw: CodexRawModel, enabledFlags: ReadonlySet<string>): ProviderModel => {
   const cost = pricingForCodexModelKey(raw.id);
   const chat: UpstreamChatModelConfig = {};
   if (raw.input_modalities && raw.input_modalities.length > 0) {

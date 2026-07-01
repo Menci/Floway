@@ -61,6 +61,16 @@ describe('pricingForClaudeCodeModelKey', () => {
     });
   });
 
+  test('returns the introductory rates for claude-sonnet-5 (in effect through 2026-08-31)', () => {
+    expect(pricingForClaudeCodeModelKey('claude-sonnet-5')).toEqual({
+      input: 2,
+      input_cache_read: 0.2,
+      input_cache_write: 2.5,
+      input_cache_write_1h: 4,
+      output: 10,
+    });
+  });
+
   test('returns the documented rates for claude-fable-5 (premium tier, no fast mode)', () => {
     expect(pricingForClaudeCodeModelKey('claude-fable-5')).toEqual({
       input: 10,

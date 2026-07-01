@@ -1,6 +1,6 @@
-import type { UpstreamModel } from './model.ts';
+import type { InternalModel, ProviderModel } from './model.ts';
 import type { Fetcher } from './options.ts';
-import type { ModelProviderInstance, ResponsesAction } from './provider.ts';
+import type { Provider, ResponsesAction } from './provider.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import type { GeminiPayload } from '@floway-dev/protocols/gemini';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
@@ -11,18 +11,35 @@ export type ChatTargetApi = 'messages' | 'responses' | 'chat-completions';
 // One (provider, model) pair the resolver produced for an inbound id,
 // plus the per-request `Fetcher` minted for the provider's upstream. The
 // pair is the smallest unit the dispatch layer needs to make a wire call:
-// `provider.provider.callXxx(model, body, ...)` — upstream id / upstream
-// name / provider kind / capability flags come off `provider.*`, model id
-// / providerData / endpoints off `model.*`.
+// `provider.instance.callXxx(providerModelOf(candidate), body, ...)` —
+// upstream id / upstream name / provider kind / capability flags come off
+// `provider.*`, the merged public metadata (id, endpoints, limits, ...) off
+// `model.*`, and the per-upstream `ProviderModel` (providerData,
+// enabledFlags) off `providerModelOf(candidate)`.
 //
 // Resolution narrows by `model.kind` only — choosing the inbound target
 // protocol from `model.endpoints` is the attempt layer's job, not part of
 // the candidate.
-export interface ProviderCandidate {
-  readonly provider: ModelProviderInstance;
-  readonly model: UpstreamModel;
+export interface ModelCandidate {
+  readonly provider: Provider;
+  readonly model: InternalModel;
   readonly fetcher: Fetcher;
 }
+
+// Pull the emitting upstream's `ProviderModel` off the candidate. Dispatch
+// hands this to the provider's `callXxx`; interceptor gates read
+// `.enabledFlags`, boundary shims read `.providerData`, etc. The candidate
+// always names exactly one upstream via `provider.upstream`, and the resolver
+// populates `model.providerModels` with an entry under that key at
+// candidate-creation time — a missing lookup means the candidate was
+// assembled without going through the resolver.
+export const providerModelOf = (candidate: ModelCandidate): ProviderModel => {
+  const providerModel = candidate.model.providerModels[candidate.provider.upstream];
+  if (providerModel === undefined) {
+    throw new Error(`providerModelOf: model '${candidate.model.id}' has no providerModel for '${candidate.provider.upstream}'`);
+  }
+  return providerModel;
+};
 
 // Per-protocol invocation shape passed to interceptors. Carries the
 // source-shape request body (mutable, so the body can be cleaned), the
@@ -33,7 +50,7 @@ export interface ProviderCandidate {
 // widening the provider call signature.
 export interface MessagesInvocation {
   payload: MessagesPayload;
-  readonly candidate: ProviderCandidate;
+  readonly candidate: ModelCandidate;
   readonly targetApi: ChatTargetApi;
   readonly headers: Headers;
 }
@@ -45,21 +62,21 @@ export interface ResponsesInvocation {
   // responses-compact-shim) and the gateway derives snapshot mode from the
   // post-chain action carried on the provider's tagged result.
   action: ResponsesAction;
-  readonly candidate: ProviderCandidate;
+  readonly candidate: ModelCandidate;
   readonly targetApi: ChatTargetApi;
   readonly headers: Headers;
 }
 
 export interface ChatCompletionsInvocation {
   payload: ChatCompletionsPayload;
-  readonly candidate: ProviderCandidate;
+  readonly candidate: ModelCandidate;
   readonly targetApi: ChatTargetApi;
   readonly headers: Headers;
 }
 
 export interface GeminiInvocation {
   payload: GeminiPayload;
-  readonly candidate: ProviderCandidate;
+  readonly candidate: ModelCandidate;
   readonly targetApi: ChatTargetApi;
   readonly headers: Headers;
 }

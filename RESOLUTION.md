@@ -45,17 +45,19 @@ When two upstreams emit an entry under the same public id, the first wins
 for metadata and the later one **endpoint-unions** into it. The merged
 `endpoints` is the OR of the participants' endpoint capability flags, and
 `kind` is recomputed from the union. The same `endpoints` field carries
-different values at different scopes: an `UpstreamModel`'s `endpoints`
-declares that one upstream's wire reach, while the merged catalog row's
-`endpoints` is the gateway-wide reach. Per-request dispatch always reads
-the per-upstream value off the chosen candidate.
+different values at different scopes: a per-candidate row's `endpoints`
+declares one upstream's wire reach (the row `enumerateRealModelCandidates`
+produces carries a single-entry `providerModels` map), while the merged
+catalog row's `endpoints` is the gateway-wide reach. Per-request dispatch
+always reads the per-upstream `ProviderModel` off the chosen candidate via
+`providerModelOf(candidate)`.
 
 Catalog assembly returns two artefacts together:
 
 - `models: InternalModel[]` — public-id-keyed metadata (id, kind, limits,
   cost, plus the merged `endpoints`). `toPublicModel` projects each row
   onto the wire DTO at `/v1/models` and `/models`.
-- `upstreamsByPublicId: Map<string, ModelProviderInstance[]>` — every
+- `upstreamsByPublicId: Map<string, Provider[]>` — every
   upstream instance that emitted an entry under the given public id, in
   enumeration order. The control-plane catalog endpoint reads this to
   render per-model upstream chips without re-walking the catalog.
@@ -166,7 +168,7 @@ lookups against the same SWR-cached catalog fetch:
 For each branch that found a match:
 
 - If the catalog match's `kind === inboundKind`, push a
-  `ProviderCandidate { provider, model, fetcher }` into the result.
+  `ModelCandidate { provider, model, fetcher }` into the result.
 - If the match exists but `kind !== inboundKind`, set `sawAnyId = true`
   but do not push.
 
@@ -202,8 +204,10 @@ the stripped id is tried against every visible upstream in its own
 enumeration order.
 
 The resolver never mutates the inbound id on the request body. The
-returned candidates carry the actual `UpstreamModel` (with its own `id`
-and `providerData`), and the dispatch layer reads from there.
+returned candidates carry an `InternalModel` whose `providerModels` map
+holds the emitting upstream's `ProviderModel` (with `providerData` and
+`enabledFlags`); the dispatch layer reads that entry via
+`providerModelOf(candidate)`.
 
 ## Alias Resolution
 
@@ -242,9 +246,9 @@ implementation notes under `data-plane/model-aliases/`.
 ## Candidate Shape
 
 ```ts
-interface ProviderCandidate {
-  readonly provider: ModelProviderInstance;
-  readonly model: UpstreamModel;
+interface ModelCandidate {
+  readonly provider: Provider;
+  readonly model: InternalModel;
   readonly fetcher: Fetcher;
 }
 ```
@@ -252,10 +256,12 @@ interface ProviderCandidate {
 - `provider` is the resolved upstream provider instance — every wire call,
   capability flag, and pricing lookup reads off `provider.*` directly
   (upstream id, upstream name, provider kind, `supportsResponsesItemReference`).
-- `model` is the specific `UpstreamModel` entry that the catalog match
-  produced for this upstream. Its `id` is the upstream's catalog id;
-  `providerData` carries the per-provider wire id; `enabledFlags` carries
-  the operator's per-model flag set.
+- `model` is the merged public row for this id, projected to a single
+  contributing upstream: `providerModels` carries exactly one entry keyed
+  on `provider.upstream`. That entry is the `ProviderModel` the upstream
+  emitted verbatim — its `providerData` carries the per-provider wire id,
+  its `enabledFlags` carries the operator's per-model flag set. Dispatch
+  and interceptor gates read the entry through `providerModelOf(candidate)`.
 - `fetcher` is the per-request proxy-chain-bound `Fetcher` for the
   candidate's upstream, minted once at resolution time and carried with
   the candidate that dispatches.

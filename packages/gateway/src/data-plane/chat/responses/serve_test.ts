@@ -5,13 +5,14 @@ import { createResponsesHttpStore, MemoryStatefulResponsesBacking, LayeredStatef
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import type { StoredResponsesItem, StoredResponsesSnapshot } from '../../../repo/types.ts';
-import type { GatewayCtx } from '../shared/gateway-ctx.ts';
+import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { directFetcher, type ProviderCandidate, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
-import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
+import { type ModelCandidate, directFetcher, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
+import { assert, assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
+import type { CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
 
 // Mock the resolver seam so each test hands the serve exactly the provider
 // candidates it wants, optionally with an alias-rules overlay attached.
@@ -19,7 +20,7 @@ import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-d
 // `model-missing` failure tests queue an empty list and expect `sawModel:
 // false` so the serve renders 404 rather than 400.
 interface QueuedResolution {
-  readonly candidates: readonly ProviderCandidate[];
+  readonly candidates: readonly ModelCandidate[];
   readonly sawModel: boolean;
   readonly failedUpstreams: readonly string[];
   readonly aliasRules?: AliasRules;
@@ -45,7 +46,7 @@ const { expandPreviousResponseId } = await import('./serve-prep.ts');
 const API_KEY_ID = 'key_serve_test';
 
 const queueResolution = (
-  candidates: readonly ProviderCandidate[],
+  candidates: readonly ModelCandidate[],
   extra: { sawModel?: boolean; aliasRules?: AliasRules } = {},
 ): void => {
   resolutionsQueue.push({
@@ -64,7 +65,7 @@ const installRepo = (): InMemoryRepo => {
   return repo;
 };
 
-const makeGatewayCtx = (): GatewayCtx => ({
+const makeGatewayCtx = (store?: ChatGatewayCtx['store']): ChatGatewayCtx => ({
   apiKeyId: API_KEY_ID,
   upstreamIds: null,
   wantsStream: true,
@@ -74,11 +75,12 @@ const makeGatewayCtx = (): GatewayCtx => ({
   responseHeaders: new Headers(),
   backgroundScheduler: () => {},
   requestStartedAt: 0,
+  store: store ?? createResponsesHttpStore(API_KEY_ID, true),
 });
 
-const makePayload = (overrides: Partial<ResponsesPayload> = {}): ResponsesPayload => ({
+const makePayload = (overrides: Partial<CanonicalResponsesPayload> = {}): CanonicalResponsesPayload => ({
   model: 'test-model',
-  input: 'hello',
+  input: [{ type: 'message', role: 'user', content: 'hello' }],
   ...overrides,
 });
 
@@ -86,7 +88,7 @@ const makePayload = (overrides: Partial<ResponsesPayload> = {}): ResponsesPayloa
 // compaction trigger or item_reference shapes the routing layer cares
 // about). Default to the kept-user-message the existing happy-path test
 // uses; override `input` when a test needs a different shape.
-const compactPayload = (overrides: Partial<ResponsesPayload> = {}): ResponsesPayload =>
+const compactPayload = (overrides: Partial<CanonicalResponsesPayload> = {}): CanonicalResponsesPayload =>
   makePayload({ input: [{ type: 'message', role: 'user', content: 'kept' }], ...overrides });
 
 const makeResponsesResult = (id = 'resp_test'): ResponsesResult => ({
@@ -117,7 +119,7 @@ const makeCandidate = (overrides: {
   callResponses?: (model: unknown, body: unknown, action: ResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderResponsesResult>;
   callMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<MessagesStreamEvent>>;
   callChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
-} = {}): ProviderCandidate => {
+} = {}): ModelCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
   const provider = stubProvider({
     callResponses: overrides.callResponses,
@@ -127,16 +129,16 @@ const makeCandidate = (overrides: {
   return {
     provider: {
       upstream,
-      providerKind: 'custom',
+      kind: 'custom',
       name: upstream,
       disabledPublicModelIds: [],
       modelPrefix: null,
-      provider,
+      instance: provider,
       supportsResponsesItemReference: true,
     },
-    // Default keeps stubUpstreamModel's three-endpoint map intact; tests that
+    // Default keeps stubInternalModel's three-endpoint map intact; tests that
     // need a rejected candidate pass an explicit `endpoints` override.
-    model: stubUpstreamModel(overrides.endpoints ? { endpoints: overrides.endpoints } : {}),
+    model: stubInternalModel(overrides.endpoints ? { endpoints: overrides.endpoints } : {}, upstream),
     fetcher: directFetcher,
   };
 };
@@ -168,7 +170,6 @@ test('generate routes a native Responses candidate end to end', async () => {
   const result = await responsesServe.generate({
     payload: makePayload(),
     ctx: makeGatewayCtx(),
-    store: createResponsesHttpStore(API_KEY_ID, true),
     headers: new Headers(),
   });
 
@@ -197,7 +198,6 @@ test('compact returns a result envelope from the wrapped attempt', async () => {
   const result = await responsesServe.compact({
     payload: compactPayload(),
     ctx: makeGatewayCtx(),
-    store: createResponsesHttpStore(API_KEY_ID, true),
     headers: new Headers(),
   });
 
@@ -208,7 +208,7 @@ test('compact returns a result envelope from the wrapped attempt', async () => {
   assertEquals(callResponses.mock.calls[0][2], 'compact');
 });
 
-test('generate stops at the first candidate even when it yields an upstream error', async () => {
+test('generate falls through to the next candidate when the first yields an upstream error', async () => {
   installRepo();
   const firstError = new Response(JSON.stringify({ error: { message: 'nope' } }), {
     status: 502, headers: new Headers({ 'content-type': 'application/json' }),
@@ -231,16 +231,15 @@ test('generate stops at the first candidate even when it yields an upstream erro
   const result = await responsesServe.generate({
     payload: makePayload(),
     ctx: makeGatewayCtx(),
-    store: createResponsesHttpStore(API_KEY_ID, true),
     headers: new Headers(),
   });
 
-  // An upstream error from the first candidate IS the final answer — the
-  // gateway does not retry on a different upstream just because the first one
-  // produced an HTTP error.
-  assertEquals(result.type, 'api-error');
+  // The narrowed candidate list exists exactly so a transient upstream
+  // failure (5xx/429/network) on one entry rolls over to the next. The
+  // second candidate's success is the request's final answer.
+  assertEquals(result.type, 'events');
   assertEquals(firstCall.mock.calls.length, 1);
-  assertEquals(secondCall.mock.calls.length, 0);
+  assertEquals(secondCall.mock.calls.length, 1);
 });
 
 test('generate renders model-missing when no candidates are available', async () => {
@@ -250,7 +249,6 @@ test('generate renders model-missing when no candidates are available', async ()
   const result = await responsesServe.generate({
     payload: makePayload({ model: 'unknown-model' }),
     ctx: makeGatewayCtx(),
-    store: createResponsesHttpStore(API_KEY_ID, true),
     headers: new Headers(),
   });
 
@@ -272,7 +270,6 @@ test('generate filters out candidates whose endpoints do not satisfy the respons
   const result = await responsesServe.generate({
     payload: makePayload({ model: 'wrong-endpoint-model' }),
     ctx: makeGatewayCtx(),
-    store: createResponsesHttpStore(API_KEY_ID, true),
     headers: new Headers(),
   });
 
@@ -308,7 +305,6 @@ test('generate renders routing-unavailable as a 400 when a forcing item names an
   const result = await responsesServe.generate({
     payload: makePayload({ input: [{ type: 'item_reference', id }] }),
     ctx: makeGatewayCtx(),
-    store: createResponsesHttpStore(API_KEY_ID, true),
     headers: new Headers(),
   });
 
@@ -341,7 +337,6 @@ test('compact renders routing-unavailable when no candidate exposes the response
   const result = await responsesServe.compact({
     payload: makePayload({ input: [{ type: 'item_reference', id }] }),
     ctx: makeGatewayCtx(),
-    store: createResponsesHttpStore(API_KEY_ID, true),
     headers: new Headers(),
   });
 
@@ -359,7 +354,6 @@ test('compact renders model-missing as a 404 when no candidates are available', 
   const result = await responsesServe.compact({
     payload: compactPayload({ model: 'unknown-model' }),
     ctx: makeGatewayCtx(),
-    store: createResponsesHttpStore(API_KEY_ID, true),
     headers: new Headers(),
   });
 
@@ -381,7 +375,6 @@ test('compact renders model-unsupported as a 400 when the only candidate\'s endp
   const result = await responsesServe.compact({
     payload: compactPayload({ model: 'wrong-endpoint-model' }),
     ctx: makeGatewayCtx(),
-    store: createResponsesHttpStore(API_KEY_ID, true),
     headers: new Headers(),
   });
 
@@ -429,7 +422,6 @@ test('expandPreviousResponseId prepends snapshot items and strips the previous_r
   );
 
   assertEquals(expanded.previous_response_id, undefined);
-  if (!Array.isArray(expanded.input)) throw new Error('expected expanded input array');
   assertEquals(expanded.input.length, 2);
   assertEquals(expanded.input[0], { type: 'item_reference', id: previousMessageId });
   assertEquals(expanded.input[1], { type: 'message', role: 'user', content: 'second turn' });
@@ -482,7 +474,6 @@ test('expandPreviousResponseId resolves snapshots from a non-repo-backed store',
     store,
   );
 
-  if (!Array.isArray(expanded.input)) throw new Error('expected expanded input array');
   assertEquals(expanded.input.length, 2);
   assertEquals(expanded.input[0], { type: 'item_reference', id });
 });
@@ -520,7 +511,6 @@ test('generate falls through translate-out to messages target', async () => {
   const result = await responsesServe.generate({
     payload: makePayload(),
     ctx: makeGatewayCtx(),
-    store: createResponsesHttpStore(API_KEY_ID, true),
     headers: new Headers(),
   });
 
@@ -561,7 +551,6 @@ test('generate falls through translate-out to chat-completions target', async ()
   const result = await responsesServe.generate({
     payload: makePayload(),
     ctx: makeGatewayCtx(),
-    store: createResponsesHttpStore(API_KEY_ID, true),
     headers: new Headers(),
   });
 
@@ -591,12 +580,12 @@ test('generate reuses an existing input row when a later turn echoes the same us
   const payload = makePayload({ input: [{ type: 'message', role: 'user', content: 'hello' }] });
 
   queueResolution([makeCandidate({ callResponses })]);
-  const turn1 = await responsesServe.generate({ payload, ctx: makeGatewayCtx(), store, headers: new Headers() });
+  const turn1 = await responsesServe.generate({ payload, ctx: makeGatewayCtx(store), headers: new Headers() });
   if (turn1.type !== 'events') throw new Error('turn 1: expected events');
   const turn1Events = await collectEvents(turn1.events);
 
   queueResolution([makeCandidate({ callResponses })]);
-  const turn2 = await responsesServe.generate({ payload, ctx: makeGatewayCtx(), store, headers: new Headers() });
+  const turn2 = await responsesServe.generate({ payload, ctx: makeGatewayCtx(store), headers: new Headers() });
   if (turn2.type !== 'events') throw new Error('turn 2: expected events');
   const turn2Events = await collectEvents(turn2.events);
 
@@ -671,7 +660,6 @@ test('generate treats compaction_trigger-bearing input as compaction: snapshot r
       input: [{ type: 'compaction_trigger' }],
     }),
     ctx: makeGatewayCtx(),
-    store: createResponsesHttpStore(API_KEY_ID, true),
     headers: new Headers(),
   });
 
@@ -714,8 +702,7 @@ test('alias resolution swaps the inbound model id for the target and overlays ru
   const payload = makePayload({ model: 'gpt-fast' });
   const result = await responsesServe.generate({
     payload,
-    ctx: makeGatewayCtx(),
-    store: createResponsesHttpStore(API_KEY_ID, true),
+    ctx: makeGatewayCtx(createResponsesHttpStore(API_KEY_ID, true)),
     headers: new Headers(),
   });
 
@@ -742,8 +729,7 @@ test('alias whose targets have no kind-matching binding surfaces as the regular 
 
   const result = await responsesServe.generate({
     payload: makePayload({ model: 'gpt-fast' }),
-    ctx: makeGatewayCtx(),
-    store: createResponsesHttpStore(API_KEY_ID, true),
+    ctx: makeGatewayCtx(createResponsesHttpStore(API_KEY_ID, true)),
     headers: new Headers(),
   });
 

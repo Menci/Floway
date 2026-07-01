@@ -31,6 +31,10 @@ import type { ModelPricing } from '@floway-dev/protocols/common';
 
 const OPUS_TIER: ModelPricing = { input: 5, input_cache_read: 0.5, input_cache_write: 6.25, input_cache_write_1h: 10, output: 25 };
 const SONNET_TIER: ModelPricing = { input: 3, input_cache_read: 0.3, input_cache_write: 3.75, input_cache_write_1h: 6, output: 15 };
+// Sonnet 5 — Anthropic introductory pricing runs through 2026-08-31; the
+// SONNET_TIER sticker rate takes over afterwards. Cache ratios follow the
+// same 0.1× / 1.25× / 2× ratios documented above.
+const SONNET_5_INTRO_TIER: ModelPricing = { input: 2, input_cache_read: 0.2, input_cache_write: 2.5, input_cache_write_1h: 4, output: 10 };
 const HAIKU_TIER: ModelPricing = { input: 1, input_cache_read: 0.1, input_cache_write: 1.25, input_cache_write_1h: 2, output: 5 };
 const FABLE_TIER: ModelPricing = { input: 10, input_cache_read: 1, input_cache_write: 12.5, input_cache_write_1h: 20, output: 50 };
 const OPUS_LEGACY_TIER: ModelPricing = { input: 15, input_cache_read: 1.5, input_cache_write: 18.75, input_cache_write_1h: 30, output: 75 };
@@ -43,6 +47,7 @@ const CLAUDE_CODE_MODEL_PRICING: Record<string, ModelPricing> = {
   'claude-opus-4-8': OPUS_48_TIER,
   'claude-opus-4-7': OPUS_46_47_TIER,
   'claude-opus-4-6': OPUS_46_47_TIER,
+  'claude-sonnet-5': SONNET_5_INTRO_TIER,
   'claude-sonnet-4-6': SONNET_TIER,
   'claude-fable-5': FABLE_TIER,
   // 4.5 generation (dated upstream id).

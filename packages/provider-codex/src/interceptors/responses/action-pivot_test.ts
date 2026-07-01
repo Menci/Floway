@@ -30,20 +30,20 @@ vi.mock('./index.ts', async () => {
 // Imports below MUST follow the vi.mock so the provider module resolves
 // against the mocked chain on first import.
 const { createCodexProvider } = await import('../../provider.ts');
-const { noopUpstreamCallOptions } = await import('@floway-dev/test-utils');
+const { noopUpstreamCallOptions, stubProviderModel } = await import('@floway-dev/test-utils');
 
 const farFutureMs = Date.now() + 24 * 60 * 60 * 1000;
 
 const baseRecord: UpstreamRecord = {
   id: 'up_codex_pivot',
-  provider: 'codex',
+  kind: 'codex',
   name: 'Codex (pivot tester)',
   enabled: true,
   sortOrder: 0,
   createdAt: '2026-03-15T00:00:00.000Z',
   updatedAt: '2026-03-15T00:00:00.000Z',
   config: { accounts: [{ email: 'a@b.com', chatgptAccountId: 'acc', chatgptUserId: 'usr', planType: 'plus' }] },
-  state: { accounts: [{ chatgptAccountId: 'acc', refresh_token: 'rt_v1', state: 'active', state_updated_at: '2026-01-01T00:00:00Z', accessToken: { token: 'at', expiresAt: farFutureMs, refreshedAt: 'now' }, quotaSnapshot: null }] },
+  state: { accounts: [{ chatgptAccountId: 'acc', refresh_token: 'rt_v1', state: 'active', state_updated_at: '2026-01-01T00:00:00Z', openaiDeviceId: '11111111-2222-4333-8444-555555555555', accessToken: { token: 'at', expiresAt: farFutureMs, refreshedAt: 'now' }, quotaSnapshot: null }] },
   flagOverrides: {},
   disabledPublicModelIds: [],
   proxyFallbackList: [],
@@ -90,8 +90,8 @@ test('Codex terminal dispatches on post-chain ctx.action (interceptor flip gener
   // Generate-shaped body — carries tools, reasoning, temperature, etc. None
   // of these are allowed on /responses/compact. The pivot above flips action
   // to 'compact'; the terminal must narrow the body before sending upstream.
-  const result = await instance.provider.callResponses(
-    { id: 'gpt-5.4', display_name: 'gpt-5.4', kind: 'chat', limits: {}, endpoints: { responses: {} }, enabledFlags: new Set() },
+  const result = await instance.instance.callResponses(
+    stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { responses: {} } }),
     {
       input: [{ type: 'message', role: 'user', content: 'hi' }],
       tools: [{ type: 'function', name: 'noop', description: 'noop', parameters: { type: 'object' }, strict: false }],

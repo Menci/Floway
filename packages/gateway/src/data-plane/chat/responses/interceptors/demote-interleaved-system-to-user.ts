@@ -1,4 +1,5 @@
 import type { ResponsesInterceptor } from './types.ts';
+import { providerModelOf } from '@floway-dev/provider';
 
 // Workaround for upstreams (e.g. DeepSeek-R1) that reject `role: 'system'`
 // after the first non-system message. The Responses input is a mixed
@@ -10,11 +11,9 @@ import type { ResponsesInterceptor } from './types.ts';
 // `role: 'system'` message item is rewritten to `role: 'user'` with its
 // content kept verbatim.
 export const withInterleavedSystemDemotedToUser: ResponsesInterceptor = (ctx, _gatewayCtx, run) => {
-  if (!ctx.candidate.model.enabledFlags.has('demote-interleaved-system-to-user')) return run();
+  if (!providerModelOf(ctx.candidate).enabledFlags.has('demote-interleaved-system-to-user')) return run();
 
   const { input } = ctx.payload;
-  if (typeof input === 'string') return run();
-
   let crossedLeadingRun = false;
   for (let i = 0; i < input.length; i++) {
     const item = input[i];

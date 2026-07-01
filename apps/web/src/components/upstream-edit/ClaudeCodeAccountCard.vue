@@ -20,7 +20,7 @@ import { formatClaudeCodeSubscriptionType } from '../../lib/claude-code-format.t
 import { providerSwatchClass } from '../upstreams/provider-meta.ts';
 import { Badge, Button, Spinner } from '@floway-dev/ui';
 
-type ClaudeCodeUpstreamRecord = Extract<UpstreamRecord, { provider: 'claude-code' }>;
+type ClaudeCodeUpstreamRecord = Extract<UpstreamRecord, { kind: 'claude-code' }>;
 
 const props = defineProps<{
   record: ClaudeCodeUpstreamRecord;

@@ -4,7 +4,7 @@ import type { StoredResponsesItem } from '../../../../repo/types.ts';
 import type { ChatServeFailure } from '../../shared/errors.ts';
 import type { RoutingDecision } from '../../shared/routing.ts';
 import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
-import type { ProviderCandidate } from '@floway-dev/provider';
+import type { ModelCandidate } from '@floway-dev/provider';
 import type { ResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
 type StoredResponsesAffinity = 'forcing' | 'portable' | 'downgradable' | 'non_affinity';
@@ -98,7 +98,7 @@ const collectStoredResponsesItemRefs = async <TSourceItems>(
   return references;
 };
 
-const orderCandidatesByStoredResponsesAffinity = <T extends ProviderCandidate>(
+const orderCandidatesByStoredResponsesAffinity = <T extends ModelCandidate>(
   candidates: readonly T[],
   preferredUpstreamIds: ReadonlySet<string>,
 ): readonly T[] => {
@@ -113,7 +113,7 @@ const orderCandidatesByStoredResponsesAffinity = <T extends ProviderCandidate>(
   return [...preferredCandidates, ...remainingCandidates];
 };
 
-export const classifyResponsesItemAffinity = async <TSourceItems, TCandidate extends ProviderCandidate>(input: {
+export const classifyResponsesItemAffinity = async <TSourceItems, TCandidate extends ModelCandidate>(input: {
   sourceItems: TSourceItems;
   view: ResponsesItemsView<TSourceItems>;
   store: StatefulResponsesStore;

@@ -11,7 +11,7 @@ import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getCurrentColo } from '../../runtime/runtime-info.ts';
 import type { PublicModel, PublicModelsResponse } from '@floway-dev/protocols/common';
 import { ProviderModelsUnavailableError } from '@floway-dev/provider';
-import type { InternalModel, ModelProviderInstance, UpstreamProviderKind } from '@floway-dev/provider';
+import type { InternalModel, Provider, UpstreamProviderKind } from '@floway-dev/provider';
 
 // Same DTO as the public /models endpoint, plus one dashboard-only field:
 // `upstreams` lists every upstream that surfaces this model as { kind, id, name }
@@ -28,9 +28,9 @@ interface ControlPlaneModelsResponse extends Omit<PublicModelsResponse, 'data'> 
   data: ControlPlaneModel[];
 }
 
-const toControlPlaneModel = (model: InternalModel, instances: readonly ModelProviderInstance[]): ControlPlaneModel => ({
+const toControlPlaneModel = (model: InternalModel, instances: readonly Provider[]): ControlPlaneModel => ({
   ...toPublicModel(model),
-  upstreams: instances.map(instance => ({ kind: instance.providerKind, id: instance.upstream, name: instance.name })),
+  upstreams: instances.map(instance => ({ kind: instance.kind, id: instance.upstream, name: instance.name })),
 });
 
 // Wrap an addressable-but-not-listed entry as a control-plane row. The

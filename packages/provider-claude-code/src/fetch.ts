@@ -13,9 +13,9 @@ import { parseMessagesStream } from '@floway-dev/protocols/messages';
 import {
   getProviderRepo,
   streamingProviderCall,
+  type ProviderModel,
   type ProviderStreamResult,
   type UpstreamCallOptions,
-  type UpstreamModel,
 } from '@floway-dev/provider';
 
 const ANTHROPIC_MESSAGES_ENDPOINT = 'https://api.anthropic.com/v1/messages?beta=true';
@@ -32,7 +32,7 @@ export const detectHaikuProbe = (body: { model?: unknown; max_tokens?: unknown }
 
 export interface CallClaudeCodeMessagesOptions {
   upstreamId: string;
-  model: UpstreamModel;
+  model: ProviderModel;
   body: Omit<MessagesPayload, 'model'>;
   // `shaped: true` means the inbound request already looks like real CC
   // traffic (operator's CC client sent through verbatim). The wire header
@@ -368,9 +368,9 @@ const ensureOrSession503 = async (
 export const callClaudeCodeMessages = async (
   opts: CallClaudeCodeMessagesOptions,
 ): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
-  // `model.id` is the public alias on the catalog; the dated upstream id
-  // Anthropic expects on the wire — and that the pricing table keys by —
-  // lives under `providerData.upstreamModelId`. Resolve once so synthetic
+  // `opts.model.id` is the public alias on the catalog; the dated upstream id
+  // Anthropic expects on the wire — and that the pricing table keys by — rides
+  // on `opts.model.providerData.upstreamModelId`. Resolve once so synthetic
   // gates, the wire body, and the streaming-call modelKey all surface the
   // same dated id.
   const upstreamModelId = (opts.model.providerData as ClaudeCodeProviderData).upstreamModelId;

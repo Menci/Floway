@@ -8,7 +8,7 @@ export interface ModelsCacheStatus {
 
 export interface SerializedUpstreamRecord {
   id: string;
-  provider: UpstreamProviderKind;
+  kind: UpstreamProviderKind;
   name: string;
   enabled: boolean;
   sort_order: number;
@@ -24,7 +24,7 @@ export interface SerializedUpstreamRecord {
   // route handler. Both inner values are null on a row that has never been
   // warmed.
   modelsCache?: ModelsCacheStatus;
-  // Present only for provider === 'codex'.
+  // Present only for kind === 'codex'.
   codex_quota?: CodexQuotaSnapshot | null;
 }
 
@@ -36,11 +36,11 @@ const hasSecret = (value: unknown): boolean => typeof value === 'string' && valu
 
 const assertAccountsArray = (upstream: UpstreamRecord, accounts: unknown): Record<string, unknown>[] => {
   if (!Array.isArray(accounts)) {
-    throw new Error(`Upstream ${upstream.id} (${upstream.provider}) has malformed accounts: expected array`);
+    throw new Error(`Upstream ${upstream.id} (${upstream.kind}) has malformed accounts: expected array`);
   }
   return accounts.map((account, index) => {
     if (!isRecord(account)) {
-      throw new Error(`Upstream ${upstream.id} (${upstream.provider}) account[${index}] is malformed: expected object`);
+      throw new Error(`Upstream ${upstream.id} (${upstream.kind}) account[${index}] is malformed: expected object`);
     }
     return account;
   });
@@ -49,18 +49,18 @@ const assertAccountsArray = (upstream: UpstreamRecord, accounts: unknown): Recor
 const serializeOpaqueRecord = (upstream: UpstreamRecord, field: string, value: unknown): Record<string, unknown> | null => {
   if (value === null) return null;
   if (!isRecord(value)) {
-    throw new Error(`Upstream ${upstream.id} (${upstream.provider}) has malformed ${field}: expected object or null`);
+    throw new Error(`Upstream ${upstream.id} (${upstream.kind}) has malformed ${field}: expected object or null`);
   }
   return clone(value);
 };
 
 const redactedConfig = (upstream: UpstreamRecord): unknown => {
   if (!isRecord(upstream.config)) {
-    throw new Error(`Upstream ${upstream.id} (${upstream.provider}) has malformed config: expected object`);
+    throw new Error(`Upstream ${upstream.id} (${upstream.kind}) has malformed config: expected object`);
   }
   const config = upstream.config;
 
-  switch (upstream.provider) {
+  switch (upstream.kind) {
   case 'custom':
     return {
       ...(config.baseUrl !== undefined ? { baseUrl: clone(config.baseUrl) } : {}),
@@ -110,7 +110,7 @@ const redactedConfig = (upstream: UpstreamRecord): unknown => {
       apiKeySet: hasSecret(config.apiKey),
     };
   default: {
-    const exhaustive: never = upstream.provider;
+    const exhaustive: never = upstream.kind;
     throw new Error(`Unknown upstream provider for redaction: ${String(exhaustive)}`);
   }
   }
@@ -119,11 +119,11 @@ const redactedConfig = (upstream: UpstreamRecord): unknown => {
 const redactedState = (upstream: UpstreamRecord): unknown => {
   if (upstream.state === null || upstream.state === undefined) return null;
   if (!isRecord(upstream.state)) {
-    throw new Error(`Upstream ${upstream.id} (${upstream.provider}) has malformed state: expected object`);
+    throw new Error(`Upstream ${upstream.id} (${upstream.kind}) has malformed state: expected object`);
   }
   const state = upstream.state;
 
-  switch (upstream.provider) {
+  switch (upstream.kind) {
   case 'codex':
     return {
       accounts: assertAccountsArray(upstream, state.accounts).map(a => ({
@@ -142,7 +142,7 @@ const redactedState = (upstream: UpstreamRecord): unknown => {
           ? null
           : isRecord(a.accessToken)
             ? { expiresAt: clone(a.accessToken.expiresAt), refreshedAt: clone(a.accessToken.refreshedAt) }
-            : (() => { throw new Error(`Upstream ${upstream.id} (${upstream.provider}) has malformed accessToken: expected object or null`); })();
+            : (() => { throw new Error(`Upstream ${upstream.id} (${upstream.kind}) has malformed accessToken: expected object or null`); })();
         return {
           ...(a.accountUuid !== undefined ? { accountUuid: clone(a.accountUuid) } : {}),
           ...(a.tokenKind !== undefined ? { tokenKind: clone(a.tokenKind) } : {}),
@@ -173,7 +173,7 @@ const redactedState = (upstream: UpstreamRecord): unknown => {
     // These providers have no autonomous state.
     return null;
   default: {
-    const exhaustive: never = upstream.provider;
+    const exhaustive: never = upstream.kind;
     throw new Error(`Unknown upstream provider for state redaction: ${String(exhaustive)}`);
   }
   }
@@ -184,7 +184,7 @@ const serializeBase = (
   payload: { config: unknown; state: unknown },
 ): SerializedUpstreamRecord => ({
   id: upstream.id,
-  provider: upstream.provider,
+  kind: upstream.kind,
   name: upstream.name,
   enabled: upstream.enabled,
   sort_order: upstream.sortOrder,

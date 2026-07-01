@@ -8,14 +8,15 @@ import { rewriteStoredResponsesItemsForCandidate } from '../responses/items/rewr
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import { providerStreamResultToExecuteResult, buildUpstreamCallOptions, chatTargetPicker } from '../shared/attempt-helpers.ts';
 import { tryCatchChatServeFailure } from '../shared/errors.ts';
-import type { GatewayCtx } from '../shared/gateway-ctx.ts';
+import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { plainResultFromResponse } from '../shared/respond.ts';
 import { traverseTranslation } from '../shared/translate-traverse.ts';
 import { createUpstreamLatencyRecorder } from '../shared/upstream-telemetry.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesMessage, MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
-import type { ProviderCandidate, ExecuteResult, PlainResult } from '@floway-dev/provider';
+import type { ModelCandidate, ExecuteResult, PlainResult } from '@floway-dev/provider';
+import { providerModelOf } from '@floway-dev/provider';
 import { translateMessagesViaChatCompletions, translateMessagesViaResponses } from '@floway-dev/translate';
 import { messagesViaResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
@@ -29,23 +30,22 @@ export const messagesCountTokensTarget = chatTargetPicker(['messages']);
 
 export interface MessagesAttemptGenerateArgs {
   readonly payload: MessagesPayload;
-  readonly ctx: GatewayCtx;
-  readonly store: StatefulResponsesStore;
-  readonly candidate: ProviderCandidate;
+  readonly ctx: ChatGatewayCtx;
+  readonly candidate: ModelCandidate;
   readonly headers: Headers;
 }
 
 export interface MessagesAttemptCountTokensArgs {
   readonly payload: MessagesPayload;
-  readonly ctx: GatewayCtx;
-  readonly store: StatefulResponsesStore;
-  readonly candidate: ProviderCandidate;
+  readonly ctx: ChatGatewayCtx;
+  readonly candidate: ModelCandidate;
   readonly headers: Headers;
 }
 
 export const messagesAttempt = {
   generate: async (args: MessagesAttemptGenerateArgs): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>>> => {
-    const { payload, ctx, store, candidate, headers } = args;
+    const { payload, ctx, candidate, headers } = args;
+    const { store } = ctx;
     const targetApi = messagesGenerateTarget.pick(candidate.model.endpoints);
     const rewritten = await rewriteOrRenderMessagesFailure(payload, store, candidate);
     if (rewritten.failure) return rewritten.failure;
@@ -60,8 +60,8 @@ export const messagesAttempt = {
         if (ctx.aliasRules !== undefined) applyRulesToUpstreamMessages(invocation.payload, ctx.aliasRules);
         const { model: _model, ...body } = invocation.payload;
         const recorder = createUpstreamLatencyRecorder();
-        const providerResult = await candidate.provider.provider.callMessages(
-          candidate.model,
+        const providerResult = await candidate.provider.instance.callMessages(
+          providerModelOf(candidate),
           body,
           ctx.abortSignal,
           buildUpstreamCallOptions(candidate, ctx, recorder.record, invocation.headers),
@@ -73,7 +73,7 @@ export const messagesAttempt = {
           invocation.payload,
           p => translateMessagesViaResponses(p, { model: candidate.model.id }),
           translated => responsesAttempt.generate({
-            payload: translated, ctx, store, candidate, headers: invocation.headers,
+            payload: translated, ctx, candidate, headers: invocation.headers,
           }),
         );
       }
@@ -82,7 +82,7 @@ export const messagesAttempt = {
           invocation.payload,
           p => translateMessagesViaChatCompletions(p, { model: candidate.model.id }),
           translated => chatCompletionsAttempt.generate({
-            payload: translated, ctx, store, candidate, headers: invocation.headers,
+            payload: translated, ctx, candidate, headers: invocation.headers,
           }),
         );
       }
@@ -91,7 +91,8 @@ export const messagesAttempt = {
   },
 
   countTokens: async (args: MessagesAttemptCountTokensArgs): Promise<PlainResult> => {
-    const { payload, ctx, store, candidate, headers } = args;
+    const { payload, ctx, candidate, headers } = args;
+    const { store } = ctx;
     // `pick` here is contractually total — serve filtered with
     // `messagesCountTokensTarget.canServe`, so a non-messages candidate is
     // a contract breach.
@@ -112,8 +113,8 @@ export const messagesAttempt = {
     const response = await runInterceptors(invocation, ctx, messagesCountTokensInterceptors, async () => {
       if (ctx.aliasRules !== undefined) applyRulesToUpstreamMessages(invocation.payload, ctx.aliasRules);
       const { model: _model, ...body } = invocation.payload;
-      const { response } = await candidate.provider.provider.callMessagesCountTokens(
-        candidate.model,
+      const { response } = await candidate.provider.instance.callMessagesCountTokens(
+        providerModelOf(candidate),
         body,
         ctx.abortSignal,
         buildUpstreamCallOptions(candidate, ctx, recorder.record, invocation.headers),
@@ -138,7 +139,7 @@ export const messagesAttempt = {
 const rewriteOrRenderMessagesFailure = async (
   payload: MessagesPayload,
   store: StatefulResponsesStore,
-  candidate: ProviderCandidate,
+  candidate: ModelCandidate,
 ): Promise<{ payload: MessagesPayload; failure?: undefined } | { payload?: undefined; failure: ExecuteResult<ProtocolFrame<MessagesStreamEvent>> & { type: 'api-error' } }> => {
   try {
     const rewrittenMessages = await rewriteStoredResponsesItemsForCandidate(

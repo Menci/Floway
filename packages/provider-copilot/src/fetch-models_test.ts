@@ -10,7 +10,7 @@ const installRepoAndConfig = async () => {
   const githubToken = `ghu_${crypto.randomUUID().replace(/-/g, '')}`;
   const stub: UpstreamRecord = {
     id,
-    provider: 'copilot',
+    kind: 'copilot',
     name: 'fetch-models-test',
     enabled: true,
     sortOrder: 0,

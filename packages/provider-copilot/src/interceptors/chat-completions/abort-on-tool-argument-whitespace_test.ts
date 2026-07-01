@@ -7,12 +7,12 @@ import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-comp
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
-import { assert, assertEquals, assertStringIncludes, stubUpstreamModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import { assert, assertEquals, assertStringIncludes, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const invocation = (): ChatCompletionsBoundaryCtx => ({
   payload: { model: 'test-model', messages: [] },
   headers: new Headers(),
-  model: stubUpstreamModel({ endpoints: { chatCompletions: {} } }),
+  model: stubProviderModel({ endpoints: { chatCompletions: {} } }),
 });
 
 const stubRequest = {};

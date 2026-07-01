@@ -8,7 +8,7 @@ export interface AzureUpstreamConfig {
 }
 
 export type AzureUpstreamRecord = UpstreamRecord & {
-  provider: 'azure';
+  kind: 'azure';
   config: AzureUpstreamConfig;
 };
 
@@ -62,7 +62,7 @@ const azureEndpointField = (value: unknown, label: string): string => {
 };
 
 export const assertAzureUpstreamRecord = (record: UpstreamRecord): AzureUpstreamRecord => {
-  if (record.provider !== 'azure') throw new Error(`Expected azure upstream record, got ${record.provider}`);
+  if (record.kind !== 'azure') throw new Error(`Expected azure upstream record, got ${record.kind}`);
   if (!isRecord(record.config)) throw new Error('Malformed azure upstream config: config must be an object');
 
   const models = modelsField(record.config.models, 'azure');
@@ -76,7 +76,7 @@ export const assertAzureUpstreamRecord = (record: UpstreamRecord): AzureUpstream
 
   return {
     ...record,
-    provider: 'azure',
+    kind: 'azure',
     config,
   };
 };

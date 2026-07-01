@@ -8,7 +8,7 @@ import { jsonResponse, noopUpstreamCallOptions, sseResponse, withMockedFetch, as
 
 const baseRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => ({
   id: 'up_custom_test',
-  provider: 'custom',
+  kind: 'custom',
   name: 'Custom Test',
   enabled: true,
   sortOrder: 0,
@@ -30,7 +30,7 @@ const baseRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => 
 
 test('Custom provider forces stream=true for streaming endpoints and leaves count-tokens/embeddings alone', async () => {
   const instance = createCustomProvider(baseRecord());
-  const provider = instance.provider;
+  const provider = instance.instance;
   const bodies: Record<string, Record<string, unknown>> = {};
 
   assertEquals(instance.supportsResponsesItemReference, true);
@@ -68,14 +68,15 @@ test('Custom provider forces stream=true for streaming endpoints and leaves coun
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const [model] = await provider.getProvidedModels(directFetcher);
-      assertEquals(model.id, 'echo');
+      const [providerModel] = await provider.getProvidedModels(directFetcher);
+      assertEquals(providerModel.id, 'echo');
+      const model = providerModel; const opts = noopUpstreamCallOptions();
 
-      await provider.callChatCompletions(model, { messages: [{ role: 'user', content: 'hi' }] }, undefined, noopUpstreamCallOptions());
-      await provider.callResponses(model, { input: [] }, 'generate', undefined, noopUpstreamCallOptions());
-      await provider.callMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, noopUpstreamCallOptions());
-      await provider.callMessagesCountTokens(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, noopUpstreamCallOptions());
-      await provider.callEmbeddings(model, { input: 'hi' }, undefined, noopUpstreamCallOptions());
+      await provider.callChatCompletions(model, { messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
+      await provider.callResponses(model, { input: [] }, 'generate', undefined, opts);
+      await provider.callMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
+      await provider.callMessagesCountTokens(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
+      await provider.callEmbeddings(model, { input: 'hi' }, undefined, opts);
     },
   );
 
@@ -103,7 +104,7 @@ test('Custom provider uses configured endpoints regardless of per-model hints in
           apiKey: 'sk-test',
           endpoints: { chatCompletions: {} },
         },
-      })).provider;
+      })).instance;
       const [model] = await provider.getProvidedModels(directFetcher);
       assertEquals(model.endpoints, { chatCompletions: {} });
       assertEquals(model.kind, 'chat');
@@ -128,7 +129,7 @@ test('Custom provider projects display_name / created / limits / cost from a Flo
     }),
     async () => {
       const instance = createCustomProvider(baseRecord({ id: 'up_custom_rich' }));
-      const [model] = await instance.provider.getProvidedModels(directFetcher);
+      const [model] = await instance.instance.getProvidedModels(directFetcher);
       assertEquals(model.display_name, 'Rich Model');
       assertEquals(model.created, Math.floor(Date.parse('2026-04-01T00:00:00Z') / 1000));
       assertEquals(model.limits.max_output_tokens, 8192);
@@ -137,11 +138,11 @@ test('Custom provider projects display_name / created / limits / cost from a Flo
       assertEquals(model.cost?.output, 15);
       assertEquals(model.cost?.input_cache_read, 0.3);
 
-      const pricing = instance.provider.getPricingForModelKey('m-rich');
+      const pricing = instance.instance.getPricingForModelKey('m-rich');
       assertEquals(pricing?.input, 3);
       assertEquals(pricing?.output, 15);
 
-      assertEquals(instance.provider.getPricingForModelKey('unknown'), null);
+      assertEquals(instance.instance.getPricingForModelKey('unknown'), null);
     },
   );
 });
@@ -152,7 +153,7 @@ test('Custom provider falls back to `name` when display_name is missing (loose O
   await withMockedFetch(
     () => jsonResponse({ object: 'list', data: [{ id: 'm-named', name: 'Named Model' }] }),
     async () => {
-      const [model] = await createCustomProvider(baseRecord({ id: 'up_custom_named' })).provider.getProvidedModels(directFetcher);
+      const [model] = await createCustomProvider(baseRecord({ id: 'up_custom_named' })).instance.getProvidedModels(directFetcher);
       assertEquals(model.display_name, 'Named Model');
     },
   );
@@ -172,7 +173,7 @@ test('Custom provider projects gpt-image-* models with kind=image and both image
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const provider = createCustomProvider(record).provider;
+      const provider = createCustomProvider(record).instance;
       const models = await provider.getProvidedModels(directFetcher);
       assertEquals(models.length, 1);
       assertEquals(models[0].id, 'gpt-image-2-2026-04-21');
@@ -199,9 +200,10 @@ test('Custom provider callImagesGenerations posts JSON with model re-injected', 
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const provider = createCustomProvider(record).provider;
-      const models = await provider.getProvidedModels(directFetcher);
-      const result = await provider.callImagesGenerations(models[0], { prompt: 'hi' }, undefined, noopUpstreamCallOptions());
+      const provider = createCustomProvider(record);
+      const models = await provider.instance.getProvidedModels(directFetcher);
+      const model = models[0]; const opts = noopUpstreamCallOptions();
+      const result = await provider.instance.callImagesGenerations(model, { prompt: 'hi' }, undefined, opts);
       assertEquals(result.modelKey, 'gpt-image-2');
       assertEquals(result.response.status, 200);
     },
@@ -228,12 +230,13 @@ test('Custom provider callImagesEdits forwards multipart body with model field a
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const provider = createCustomProvider(record).provider;
-      const models = await provider.getProvidedModels(directFetcher);
+      const provider = createCustomProvider(record);
+      const models = await provider.instance.getProvidedModels(directFetcher);
       const form = new FormData();
       form.append('prompt', 'add a kite');
       form.append('image', new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' }), 'photo.png');
-      const result = await provider.callImagesEdits(models[0], form, undefined, noopUpstreamCallOptions());
+      const model = models[0]; const opts = noopUpstreamCallOptions();
+      const result = await provider.instance.callImagesEdits(model, form, undefined, opts);
       assertEquals(result.modelKey, 'gpt-image-2');
       assertEquals(result.response.status, 200);
     },
@@ -269,7 +272,7 @@ test('Custom provider with modelsFetch disabled serves only manual models and ne
             },
           ],
         },
-      })).provider;
+      })).instance;
 
       const models = await provider.getProvidedModels(directFetcher);
       assertEquals(models.length, 1);
@@ -322,7 +325,7 @@ test('Custom provider with a manual override sharing an upstream id wins over th
             },
           ],
         },
-      })).provider;
+      })).instance;
 
       const models = await provider.getProvidedModels(directFetcher);
       // [manual, ...autoFiltered] — the upstream 'shared' copy is dropped.
@@ -345,7 +348,7 @@ test('Custom provider with a manual override sharing an upstream id wins over th
 
 test('Custom provider forwards inbound anthropic-beta header through opts.headers', async () => {
   const instance = createCustomProvider(baseRecord());
-  const provider = instance.provider;
+  const provider = instance.instance;
   const seen: Array<string | null> = [];
 
   await withMockedFetch(
@@ -358,15 +361,16 @@ test('Custom provider forwards inbound anthropic-beta header through opts.header
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const [model] = await provider.getProvidedModels(directFetcher);
+      const [providerModel] = await provider.getProvidedModels(directFetcher);
+      const model = providerModel; const opts = noopUpstreamCallOptions();
       // The data plane plumbs `anthropic-beta` straight through `opts.headers`;
       // custom upstreams register no filter interceptor, so whatever arrives on
       // `opts.headers` is what the wire sees.
-      await provider.callMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, { ...noopUpstreamCallOptions(), headers: new Headers({ 'anthropic-beta': 'oauth-2025-04-20,interleaved-thinking-2025-05-14' }) });
-      await provider.callMessagesCountTokens(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, { ...noopUpstreamCallOptions(), headers: new Headers({ 'anthropic-beta': 'oauth-2025-04-20' }) });
+      await provider.callMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, { ...opts, headers: new Headers({ 'anthropic-beta': 'oauth-2025-04-20,interleaved-thinking-2025-05-14' }) });
+      await provider.callMessagesCountTokens(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, { ...opts, headers: new Headers({ 'anthropic-beta': 'oauth-2025-04-20' }) });
       // Empty inbound headers must not emit an anthropic-beta header on the wire.
-      await provider.callMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, noopUpstreamCallOptions());
-      await provider.callMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, noopUpstreamCallOptions());
+      await provider.callMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
+      await provider.callMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
     },
   );
 

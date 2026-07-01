@@ -1,8 +1,9 @@
 import { chatCompletionsContentToResponsesInputContent, chatCompletionsContentToText } from '../shared/chat-completions-and-responses/content.ts';
 import { scalarToResponsesReasoningItem, translateChatCompletionsReasoningItems } from '../shared/chat-completions-and-responses/reasoning.ts';
+import { type CanonicalResponsesPayload } from '../shared/via-responses/responses-items.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
 import type { ChatCompletionsPayload, ChatCompletionsTool } from '@floway-dev/protocols/chat-completions';
-import type { ResponsesInputItem, ResponsesInputReasoning, ResponsesPayload, ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
+import type { ResponsesInputItem, ResponsesInputReasoning, ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
 
 const translateChatTools = (tools?: ChatCompletionsTool[] | null): ResponsesTool[] | null =>
   tools?.length
@@ -20,7 +21,7 @@ const translateChatTools = (tools?: ChatCompletionsTool[] | null): ResponsesTool
 const translateChatToolChoice = (choice?: ChatCompletionsPayload['tool_choice']): ResponsesToolChoice =>
   choice == null ? 'auto' : typeof choice === 'string' ? choice : { type: 'function', name: choice.function.name };
 
-export const translateChatCompletionsToResponses = (payload: ChatCompletionsPayload): ResponsesPayload => {
+export const translateChatCompletionsToResponses = (payload: ChatCompletionsPayload): CanonicalResponsesPayload => {
   const instructions: string[] = [];
   const input: ResponsesInputItem[] = [];
   let hoistSystemPrefix = true;

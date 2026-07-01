@@ -13,7 +13,7 @@ import { withVendorQwenResponsesNormalize } from './vendor-qwen-normalize.ts';
 
 // Unified Responses interceptor list. All entries are attached to every
 // candidate; each interceptor's body decides whether to act (flag-gated entries
-// early-return on `ctx.candidate.model.enabledFlags.has(flagId)`).
+// early-return on `providerModelOf(ctx.candidate).enabledFlags.has(flagId)`).
 //
 // Order matters: earlier entries wrap later ones.
 //   - withResponsesCompactShim: runs outermost so the action pivot

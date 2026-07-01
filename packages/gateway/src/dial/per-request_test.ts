@@ -19,7 +19,7 @@ const COPILOT_CONFIG = {
 
 const upstream = (id: string, proxyFallbackList: ProxyFallbackEntry[]) => ({
   id,
-  provider: 'copilot' as const,
+  kind: 'copilot' as const,
   name: id,
   enabled: true,
   sortOrder: 0,

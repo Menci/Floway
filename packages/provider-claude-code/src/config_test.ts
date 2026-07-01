@@ -12,7 +12,7 @@ const goodAccount = {
 const good = { accounts: [goodAccount] };
 
 const wrap = (config: unknown): UpstreamRecord => ({
-  id: 'up', provider: 'claude-code', name: 'n', enabled: true, sortOrder: 0,
+  id: 'up', kind: 'claude-code', name: 'n', enabled: true, sortOrder: 0,
   createdAt: '', updatedAt: '', config: config as UpstreamRecord['config'], state: null,
   flagOverrides: {}, disabledPublicModelIds: [], proxyFallbackList: [], modelPrefix: null,
 });
@@ -64,7 +64,7 @@ describe('assertClaudeCodeUpstreamRecord (config validation)', () => {
 describe('assertClaudeCodeUpstreamRecord (record-level checks)', () => {
   test('rejects non-claude-code record', () => {
     const record: UpstreamRecord = {
-      id: 'up', provider: 'copilot', name: 'n', enabled: true, sortOrder: 0,
+      id: 'up', kind: 'copilot', name: 'n', enabled: true, sortOrder: 0,
       createdAt: '', updatedAt: '', config: {}, state: null,
       flagOverrides: {}, disabledPublicModelIds: [], proxyFallbackList: [], modelPrefix: null,
     };

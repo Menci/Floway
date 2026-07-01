@@ -3,7 +3,32 @@ import { responsesReasoningToMessagesBlock, unpackReasoningSignature } from '../
 import type { ChatCompletionsReasoningItem, ChatCompletionsMessage } from '@floway-dev/protocols/chat-completions';
 import type { GeminiContent } from '@floway-dev/protocols/gemini';
 import type { MessagesAssistantContentBlock, MessagesMessage } from '@floway-dev/protocols/messages';
-import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
+import type { ResponsesInputItem, ResponsesPayload } from '@floway-dev/protocols/responses';
+
+// Wire `ResponsesPayload.input` is `string | ResponsesInputItem[]`. The
+// gateway's canonical internal shape narrows it to array-only: every
+// consumer past the wire boundary (HTTP / WS entry canonicalization,
+// cross-protocol translation returning this type) sees a real item array.
+// The name is owned here because `*-via-responses` translators produce this
+// shape directly — their `buildTargetRequest` always constructs an array —
+// so the boundary between "wire" and "canonical" naturally sits at the
+// translator's return type.
+export type CanonicalResponsesPayload = Omit<ResponsesPayload, 'input'> & {
+  input: ResponsesInputItem[];
+};
+
+// Lifts a wire `ResponsesPayload` to canonical form by wrapping a bare-string
+// `input` into a single synthetic user-role message. Called at every wire
+// boundary that produces a `ResponsesPayload` destined for internal use — the
+// HTTP entry parsing a request body, and the WebSocket entry building a
+// payload from a client frame. Cross-protocol translators return
+// `CanonicalResponsesPayload` directly and do not need this step.
+export const canonicalizeResponsesPayload = (payload: ResponsesPayload): CanonicalResponsesPayload => ({
+  ...payload,
+  input: typeof payload.input === 'string'
+    ? [{ type: 'message', role: 'user', content: payload.input }]
+    : payload.input,
+});
 
 export type ResponsesItemMapper = (
   item: ResponsesInputItem,

@@ -14,7 +14,7 @@ export interface UpstreamPickerValue {
 interface RowState {
   id: string;
   name: string;
-  provider: UpstreamProviderKind | null;
+  kind: UpstreamProviderKind | null;
   enabled: boolean;
 }
 
@@ -35,9 +35,9 @@ const reset = () => {
   rows.value = [
     ...orderedIds.map(id => {
       const u = props.available.find(x => x.id === id);
-      return { id, name: u?.name ?? `Unknown (${id})`, provider: u?.provider ?? null, enabled: true };
+      return { id, name: u?.name ?? `Unknown (${id})`, kind: u?.kind ?? null, enabled: true };
     }),
-    ...rest.map(u => ({ id: u.id, name: u.name, provider: u.provider, enabled: false })),
+    ...rest.map(u => ({ id: u.id, name: u.name, kind: u.kind, enabled: false })),
   ];
 };
 
@@ -59,11 +59,11 @@ const toggleRow = (id: string, enabled: boolean) => {
 const badgeCount = computed(() => value.value.override ? rows.value.filter(r => r.enabled).length : props.available.length);
 
 interface ProviderMeta { tone: 'amber' | 'emerald' | 'cyan' | 'rose' | 'zinc'; label: string }
-const providerMeta = (provider: UpstreamProviderKind | null): ProviderMeta => {
-  // The row's provider goes null when an upstream id in the saved value list
+const providerMeta = (kind: UpstreamProviderKind | null): ProviderMeta => {
+  // The row's kind goes null when an upstream id in the saved value list
   // no longer matches anything in `available` (e.g. a deleted upstream).
-  if (provider === null) return { tone: 'zinc', label: 'Unknown' };
-  switch (provider) {
+  if (kind === null) return { tone: 'zinc', label: 'Unknown' };
+  switch (kind) {
   case 'custom': return { tone: 'amber', label: 'Custom' };
   case 'azure': return { tone: 'emerald', label: 'Azure' };
   case 'copilot': return { tone: 'cyan', label: 'Copilot' };
@@ -71,7 +71,7 @@ const providerMeta = (provider: UpstreamProviderKind | null): ProviderMeta => {
   case 'claude-code': return { tone: 'rose', label: 'Claude Code' };
   case 'ollama': return { tone: 'rose', label: 'Ollama' };
   }
-  return assertNever(provider);
+  return assertNever(kind);
 };
 </script>
 
@@ -107,7 +107,7 @@ const providerMeta = (provider: UpstreamProviderKind | null): ProviderMeta => {
             <i class="i-lucide-grip-vertical size-4" />
           </button>
           <Switch :model-value="row.enabled" @update:model-value="v => toggleRow(row.id, !!v)" />
-          <Badge :tone="providerMeta(row.provider).tone" size="sm" class="shrink-0 !rounded !uppercase tracking-wide">{{ providerMeta(row.provider).label }}</Badge>
+          <Badge :tone="providerMeta(row.kind).tone" size="sm" class="shrink-0 !rounded !uppercase tracking-wide">{{ providerMeta(row.kind).label }}</Badge>
           <span class="min-w-0 flex-1 truncate text-sm text-white">{{ row.name }}</span>
           <code class="text-xs text-gray-500">{{ row.id }}</code>
         </li>

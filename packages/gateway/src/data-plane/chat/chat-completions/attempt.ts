@@ -7,13 +7,13 @@ import { rewriteStoredResponsesItemsForCandidate } from '../responses/items/rewr
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import { providerStreamResultToExecuteResult, buildUpstreamCallOptions, chatTargetPicker } from '../shared/attempt-helpers.ts';
 import { tryCatchChatServeFailure } from '../shared/errors.ts';
-import type { GatewayCtx } from '../shared/gateway-ctx.ts';
+import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { traverseTranslation } from '../shared/translate-traverse.ts';
 import { createUpstreamLatencyRecorder } from '../shared/upstream-telemetry.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ChatCompletionsMessage, ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import { type ProviderCandidate, type ExecuteResult } from '@floway-dev/provider';
+import { type ModelCandidate, type ExecuteResult, providerModelOf } from '@floway-dev/provider';
 import { translateChatCompletionsViaMessages, translateChatCompletionsViaResponses } from '@floway-dev/translate';
 import { chatCompletionsViaResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
@@ -23,17 +23,16 @@ export const chatCompletionsTarget = chatTargetPicker(['chat-completions', 'mess
 
 export interface ChatCompletionsAttemptArgs {
   readonly payload: ChatCompletionsPayload;
-  readonly ctx: GatewayCtx;
-  readonly store: StatefulResponsesStore;
-  readonly candidate: ProviderCandidate;
+  readonly ctx: ChatGatewayCtx;
+  readonly candidate: ModelCandidate;
   readonly headers: Headers;
 }
 
 export const chatCompletionsAttempt = {
   generate: async (args: ChatCompletionsAttemptArgs): Promise<ExecuteResult<ProtocolFrame<ChatCompletionsStreamEvent>>> => {
-    const { payload, ctx, store, candidate, headers } = args;
+    const { payload, ctx, candidate, headers } = args;
     const targetApi = chatCompletionsTarget.pick(candidate.model.endpoints);
-    const rewritten = await rewriteOrRenderChatCompletionsFailure(payload, store, candidate);
+    const rewritten = await rewriteOrRenderChatCompletionsFailure(payload, ctx.store, candidate);
     if (rewritten.failure) return rewritten.failure;
     const invocation: ChatCompletionsInvocation = {
       payload: rewritten.payload,
@@ -53,7 +52,7 @@ export const chatCompletionsAttempt = {
             fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
           }),
           translated => messagesAttempt.generate({
-            payload: translated, ctx, store, candidate, headers: invocation.headers,
+            payload: translated, ctx, candidate, headers: invocation.headers,
           }),
         );
       }
@@ -62,7 +61,7 @@ export const chatCompletionsAttempt = {
           invocation.payload,
           p => translateChatCompletionsViaResponses(p, { model: candidate.model.id }),
           translated => responsesAttempt.generate({
-            payload: translated, ctx, store, candidate, headers: invocation.headers,
+            payload: translated, ctx, candidate, headers: invocation.headers,
           }),
         );
       }
@@ -77,7 +76,7 @@ export const chatCompletionsAttempt = {
 const rewriteOrRenderChatCompletionsFailure = async (
   payload: ChatCompletionsPayload,
   store: StatefulResponsesStore,
-  candidate: ProviderCandidate,
+  candidate: ModelCandidate,
 ): Promise<{ payload: ChatCompletionsPayload; failure?: undefined } | { payload?: undefined; failure: ExecuteResult<ProtocolFrame<ChatCompletionsStreamEvent>> & { type: 'api-error' } }> => {
   try {
     const rewrittenMessages = await rewriteStoredResponsesItemsForCandidate(
@@ -107,15 +106,15 @@ const rewriteOrRenderChatCompletionsFailure = async (
 
 const callChatCompletionsAsExecuteResult = async (
   payload: ChatCompletionsPayload,
-  ctx: GatewayCtx,
-  candidate: ProviderCandidate,
+  ctx: ChatGatewayCtx,
+  candidate: ModelCandidate,
   headers: Headers,
 ): Promise<ExecuteResult<ProtocolFrame<ChatCompletionsStreamEvent>>> => {
   if (ctx.aliasRules !== undefined) applyRulesToUpstreamChatCompletions(payload, ctx.aliasRules);
   const { model: _model, ...body } = payload;
   const recorder = createUpstreamLatencyRecorder();
-  const providerResult = await candidate.provider.provider.callChatCompletions(
-    candidate.model,
+  const providerResult = await candidate.provider.instance.callChatCompletions(
+    providerModelOf(candidate),
     body,
     ctx.abortSignal,
     buildUpstreamCallOptions(candidate, ctx, recorder.record, headers),

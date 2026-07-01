@@ -8,14 +8,14 @@ import { InMemoryRepo } from '../../../repo/memory.ts';
 import type { ApiKey, StoredResponsesItem, User } from '../../../repo/types.ts';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { directFetcher, type ProviderCandidate, type ProviderResponsesResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
-import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
+import { type ModelCandidate, directFetcher, type ProviderResponsesResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
+import { assert, assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
 
 // Mock the resolver seam so each test hands the http entry exactly the
 // provider candidates it wants, optionally with an alias-rules overlay
 // attached.
 interface QueuedResolution {
-  readonly candidates: readonly ProviderCandidate[];
+  readonly candidates: readonly ModelCandidate[];
   readonly sawModel: boolean;
   readonly failedUpstreams: readonly string[];
   readonly aliasRules?: AliasRules;
@@ -40,7 +40,7 @@ const { responsesHttp } = await import('./http.ts');
 const API_KEY_ID = 'key_http_test';
 
 const queueResolution = (
-  candidates: readonly ProviderCandidate[],
+  candidates: readonly ModelCandidate[],
   extra: { sawModel?: boolean; aliasRules?: AliasRules } = {},
 ): void => {
   resolutionsQueue.push({
@@ -121,7 +121,7 @@ const makeCandidate = (overrides: {
   upstream?: string;
   endpoints?: ModelEndpoints;
   callResponses?: (model: unknown, body: unknown, action: ResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderResponsesResult>;
-} = {}): ProviderCandidate => {
+} = {}): ModelCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
   const provider = stubProvider({
     callResponses: overrides.callResponses,
@@ -129,14 +129,14 @@ const makeCandidate = (overrides: {
   return {
     provider: {
       upstream,
-      providerKind: 'custom',
+      kind: 'custom',
       name: upstream,
       disabledPublicModelIds: [],
       modelPrefix: null,
-      provider,
+      instance: provider,
       supportsResponsesItemReference: true,
     },
-    model: stubUpstreamModel(overrides.endpoints ? { endpoints: overrides.endpoints } : {}),
+    model: stubInternalModel(overrides.endpoints ? { endpoints: overrides.endpoints } : {}, upstream),
     fetcher: directFetcher,
   };
 };

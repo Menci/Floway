@@ -3,17 +3,17 @@ import { afterEach, test, vi } from 'vitest';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { createNonResponsesSourceStore } from '../responses/items/store.ts';
-import type { GatewayCtx } from '../shared/gateway-ctx.ts';
+import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { defaultsForProvider, directFetcher, type ProviderCallResult, type ProviderCandidate, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
-import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
+import { type ModelCandidate, defaultsForProvider, directFetcher, type ProviderCallResult, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
+import { assert, assertEquals, stubProvider, stubInternalModel, stubProviderModel } from '@floway-dev/test-utils';
 
 // Mock the resolver seam so each test hands the serve exactly the provider
 // candidates it wants, optionally with an alias-rules overlay attached.
 interface QueuedResolution {
-  readonly candidates: readonly ProviderCandidate[];
+  readonly candidates: readonly ModelCandidate[];
   readonly sawModel: boolean;
   readonly failedUpstreams: readonly string[];
   readonly aliasRules?: AliasRules;
@@ -38,7 +38,7 @@ const { messagesServe } = await import('./serve.ts');
 const API_KEY_ID = 'key_messages_serve_test';
 
 const queueResolution = (
-  candidates: readonly ProviderCandidate[],
+  candidates: readonly ModelCandidate[],
   extra: { sawModel?: boolean; aliasRules?: AliasRules } = {},
 ): void => {
   resolutionsQueue.push({
@@ -57,7 +57,7 @@ const installRepo = (): InMemoryRepo => {
   return repo;
 };
 
-const makeGatewayCtx = (): GatewayCtx => ({
+const makeGatewayCtx = (): ChatGatewayCtx => ({
   apiKeyId: API_KEY_ID,
   upstreamIds: null,
   wantsStream: true,
@@ -67,6 +67,7 @@ const makeGatewayCtx = (): GatewayCtx => ({
   responseHeaders: new Headers(),
   backgroundScheduler: () => {},
   requestStartedAt: 0,
+  store: createNonResponsesSourceStore(API_KEY_ID),
 });
 
 const makePayload = (overrides: Partial<MessagesPayload> = {}): MessagesPayload => ({
@@ -137,14 +138,14 @@ const makeProtocolFrames = async function* <TEvent>(events: readonly TEvent[]): 
 const makeCandidate = (overrides: {
   upstream?: string;
   endpoints?: ModelEndpoints;
-  providerKind?: ProviderCandidate['provider']['providerKind'];
+  kind?: ModelCandidate['provider']['kind'];
   enabledFlags?: ReadonlySet<string>;
   callMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<MessagesStreamEvent>>;
   callResponses?: (model: unknown, body: unknown, action: ResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderResponsesResult>;
   callMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderCallResult>;
-} = {}): ProviderCandidate => {
+} = {}): ModelCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
-  const providerKind = overrides.providerKind ?? 'custom';
+  const kind = overrides.kind ?? 'custom';
   const provider = stubProvider({
     callMessages: overrides.callMessages,
     callResponses: overrides.callResponses,
@@ -152,13 +153,18 @@ const makeCandidate = (overrides: {
   });
   return {
     provider: {
-      upstream, providerKind, name: upstream,
-      disabledPublicModelIds: [], modelPrefix: null, provider, supportsResponsesItemReference: true,
+      upstream, kind, name: upstream,
+      disabledPublicModelIds: [], modelPrefix: null, instance: provider, supportsResponsesItemReference: true,
     },
-    model: stubUpstreamModel({
+    model: stubInternalModel({
       ...(overrides.endpoints ? { endpoints: overrides.endpoints } : {}),
-      ...(overrides.enabledFlags ? { enabledFlags: overrides.enabledFlags } : {}),
-    }),
+      providerModels: {
+        [upstream]: stubProviderModel({
+          ...(overrides.endpoints ? { endpoints: overrides.endpoints } : {}),
+          ...(overrides.enabledFlags ? { enabledFlags: overrides.enabledFlags } : {}),
+        }),
+      },
+    }, upstream),
     fetcher: directFetcher,
   };
 };
@@ -200,7 +206,6 @@ test('generate routes a native Messages candidate end to end', async () => {
   const result = await messagesServe.generate({
     payload: makePayload(),
     ctx: makeGatewayCtx(),
-    store: createNonResponsesSourceStore(API_KEY_ID),
     headers: new Headers(),
   });
 
@@ -222,7 +227,6 @@ test('generate translates through the Responses target when only that endpoint i
   const result = await messagesServe.generate({
     payload: makePayload(),
     ctx: makeGatewayCtx(),
-    store: createNonResponsesSourceStore(API_KEY_ID),
     headers: new Headers(),
   });
 
@@ -230,7 +234,7 @@ test('generate translates through the Responses target when only that endpoint i
   assertEquals(callResponses.mock.calls.length, 1);
 });
 
-test('generate stops at the first candidate even when it yields an upstream error', async () => {
+test('generate falls through to the next candidate when the first yields an upstream error', async () => {
   installRepo();
   const firstError = new Response(JSON.stringify({ error: { message: 'nope' } }), {
     status: 502, headers: new Headers({ 'content-type': 'application/json' }),
@@ -249,16 +253,34 @@ test('generate stops at the first candidate even when it yields an upstream erro
   const result = await messagesServe.generate({
     payload: makePayload(),
     ctx: makeGatewayCtx(),
-    store: createNonResponsesSourceStore(API_KEY_ID),
     headers: new Headers(),
   });
 
-  // An upstream error from the first candidate IS the final answer — the
-  // gateway does not retry on a different upstream just because the first one
-  // produced an HTTP error.
-  assertEquals(result.type, 'api-error');
+  // The narrowed candidate list exists exactly so a transient upstream
+  // failure (5xx/429/network) on one entry rolls over to the next. The
+  // second candidate's success is the request's final answer.
+  assertEquals(result.type, 'events');
   assertEquals(firstCall.mock.calls.length, 1);
-  assertEquals(secondCall.mock.calls.length, 0);
+  assertEquals(secondCall.mock.calls.length, 1);
+});
+
+test('generate surfaces the last upstream error verbatim when every candidate fails', async () => {
+  installRepo();
+  const firstError = new Response('first', { status: 503 });
+  const lastError = new Response('last', { status: 502 });
+  queueResolution([
+    makeCandidate({ upstream: 'up_a', callMessages: async () => ({ ok: false, response: firstError, modelKey: 'first-key' }) }),
+    makeCandidate({ upstream: 'up_b', callMessages: async () => ({ ok: false, response: lastError, modelKey: 'last-key' }) }),
+  ]);
+
+  const result = await messagesServe.generate({
+    payload: makePayload(),
+    ctx: makeGatewayCtx(),
+    headers: new Headers(),
+  });
+
+  const failure = assertResultType(result, 'api-error');
+  assertEquals(failure.status, 502);
 });
 
 test('generate stops at the first candidate when the payload has no reasoning carriers to route on', async () => {
@@ -277,7 +299,6 @@ test('generate stops at the first candidate when the payload has no reasoning ca
   const result = await messagesServe.generate({
     payload: makePayload({ messages: [{ role: 'user', content: 'hi' }] }),
     ctx: makeGatewayCtx(),
-    store: createNonResponsesSourceStore(API_KEY_ID),
     headers: new Headers(),
   });
 
@@ -292,7 +313,6 @@ test('generate renders model-missing when no candidates are available', async ()
   const result = await messagesServe.generate({
     payload: makePayload({ model: 'unknown-model' }),
     ctx: makeGatewayCtx(),
-    store: createNonResponsesSourceStore(API_KEY_ID),
     headers: new Headers(),
   });
 
@@ -313,7 +333,6 @@ test('generate filters out candidates whose endpoints do not satisfy the message
   const result = await messagesServe.generate({
     payload: makePayload({ model: 'wrong-endpoint-model' }),
     ctx: makeGatewayCtx(),
-    store: createNonResponsesSourceStore(API_KEY_ID),
     headers: new Headers(),
   });
 
@@ -339,7 +358,6 @@ test('countTokens proxies the upstream measurement response as a plain result', 
   const result = await messagesServe.countTokens({
     payload: makePayload(),
     ctx: makeGatewayCtx(),
-    store: createNonResponsesSourceStore(API_KEY_ID),
     headers: new Headers(),
   });
 
@@ -357,7 +375,6 @@ test('countTokens renders model-missing as a 404 when no candidates are availabl
   const result = await messagesServe.countTokens({
     payload: makePayload({ model: 'unknown-model' }),
     ctx: makeGatewayCtx(),
-    store: createNonResponsesSourceStore(API_KEY_ID),
     headers: new Headers(),
   });
 
@@ -378,7 +395,6 @@ test('countTokens filters out candidates whose endpoints do not satisfy the mess
   const result = await messagesServe.countTokens({
     payload: makePayload({ model: 'wrong-endpoint-model' }),
     ctx: makeGatewayCtx(),
-    store: createNonResponsesSourceStore(API_KEY_ID),
     headers: new Headers(),
   });
 
@@ -421,7 +437,7 @@ test('claude-code candidate preserves x-anthropic-billing-header system block th
   queueResolution([
     makeCandidate({
       upstream: 'up_cc',
-      providerKind: 'claude-code',
+      kind: 'claude-code',
       enabledFlags: claudeCodeDefaults,
       callMessages,
     }),
@@ -435,7 +451,6 @@ test('claude-code candidate preserves x-anthropic-billing-header system block th
       ],
     }),
     ctx: makeGatewayCtx(),
-    store: createNonResponsesSourceStore(API_KEY_ID),
     headers: new Headers(),
   });
 
@@ -477,7 +492,7 @@ test('copilot candidate strips x-anthropic-billing-header system block via the d
   queueResolution([
     makeCandidate({
       upstream: 'up_co',
-      providerKind: 'copilot',
+      kind: 'copilot',
       enabledFlags: copilotDefaults,
       callMessages,
     }),
@@ -491,7 +506,6 @@ test('copilot candidate strips x-anthropic-billing-header system block via the d
       ],
     }),
     ctx: makeGatewayCtx(),
-    store: createNonResponsesSourceStore(API_KEY_ID),
     headers: new Headers(),
   });
 
@@ -522,7 +536,6 @@ test('alias resolution swaps the inbound model id for the target and overlays ru
   const result = await messagesServe.generate({
     payload,
     ctx: makeGatewayCtx(),
-    store: createNonResponsesSourceStore(API_KEY_ID),
     headers: new Headers(),
   });
 
@@ -547,7 +560,6 @@ test('alias whose targets have no kind-matching binding surfaces as the regular 
   const result = await messagesServe.generate({
     payload: makePayload({ model: 'claude-fast' }),
     ctx: makeGatewayCtx(),
-    store: createNonResponsesSourceStore(API_KEY_ID),
     headers: new Headers(),
   });
 

@@ -13,7 +13,7 @@ interface BuildOptions {
 
 const buildCustomUpstream = (options: BuildOptions = {}): UpstreamRecord => ({
   id: 'up_custom',
-  provider: 'custom',
+  kind: 'custom',
   name: 'Custom Provider',
   enabled: true,
   sortOrder: 0,
@@ -55,7 +55,7 @@ test('getProvidedModels returns only manual models and never fetches when models
       return jsonResponse({ object: 'list', data: [{ id: 'should-not-appear' }] });
     },
     async () => {
-      const models = await instance.provider.getProvidedModels(directFetcher);
+      const models = await instance.instance.getProvidedModels(directFetcher);
       assertEquals(models.length, 1);
       assertEquals(models[0].id, 'manual-only');
     },
@@ -79,7 +79,7 @@ test('getProvidedModels merges manual models in front of auto-fetched models whe
   await withMockedFetch(
     () => jsonResponse({ object: 'list', data: [{ id: 'auto-1' }, { id: 'auto-2' }] }),
     async () => {
-      const models = await instance.provider.getProvidedModels(directFetcher);
+      const models = await instance.instance.getProvidedModels(directFetcher);
       assertEquals(models.map(m => m.id), ['manual-extra', 'auto-1', 'auto-2']);
     },
   );
@@ -92,7 +92,7 @@ test('getProvidedModels rethrows when the upstream fetch fails — no fallback i
   await withMockedFetch(
     () => new Response('rate limited', { status: 429 }),
     async () => {
-      await assertRejects(() => instance.provider.getProvidedModels(directFetcher));
+      await assertRejects(() => instance.instance.getProvidedModels(directFetcher));
     },
   );
 });
@@ -108,11 +108,11 @@ test('getProvidedModels remembers pricing from the fetched response so getPricin
       data: [{ id: 'priced-model', cost: upstreamCost }],
     }),
     async () => {
-      await instance.provider.getProvidedModels(directFetcher);
+      await instance.instance.getProvidedModels(directFetcher);
     },
   );
 
-  const pricing = instance.provider.getPricingForModelKey('priced-model');
+  const pricing = instance.instance.getPricingForModelKey('priced-model');
   assertEquals(pricing, upstreamCost);
 });
 
@@ -140,11 +140,11 @@ test('A manual model whose upstreamModelId matches an auto-fetched id overrides 
       ],
     }),
     async () => {
-      const models = await instance.provider.getProvidedModels(directFetcher);
+      const models = await instance.instance.getProvidedModels(directFetcher);
       assertEquals(models.map(m => m.id), ['shared-id', 'auto-only']);
       assertEquals(models[0].display_name, 'Manual Override');
     },
   );
 
-  assertEquals(instance.provider.getPricingForModelKey('shared-id'), manualCost);
+  assertEquals(instance.instance.getPricingForModelKey('shared-id'), manualCost);
 });

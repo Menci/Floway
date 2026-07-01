@@ -255,7 +255,7 @@ test('/api/upstreams/copilot/auth/poll creates a Copilot upstream row and seeds 
       assertEquals(body.status, 'complete');
       assertEquals(/^up_[0-9a-f]{24}$/.test(body.upstream.id), true);
       assertEquals(body.upstream.id.includes('copilot'), false);
-      assertEquals(body.upstream.provider, 'copilot');
+      assertEquals(body.upstream.kind, 'copilot');
       assertEquals(body.upstream.config.githubToken, undefined);
       assertEquals(body.upstream.config.githubTokenSet, true);
       // The serialized state exposes only the per-tier baseUrl; the bearer
@@ -266,7 +266,7 @@ test('/api/upstreams/copilot/auth/poll creates a Copilot upstream row and seeds 
 
   const rows = await repo.upstreams.list();
   assertEquals(rows.length, 1);
-  assertEquals(rows[0].provider, 'copilot');
+  assertEquals(rows[0].kind, 'copilot');
   assertEquals((rows[0].config as Record<string, any>).githubToken, 'ghu_new');
   assertEquals((rows[0].config as Record<string, any>).accountType, undefined);
   assertEquals((rows[0].config as Record<string, any>).user.id, 777);

@@ -92,7 +92,7 @@ test('listModelProviders creates enabled provider instances with upstream row id
   await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_custom', sortOrder: 1 }));
   await repo.upstreams.save({
     id: 'up_azure',
-    provider: 'azure',
+    kind: 'azure',
     name: 'Azure Resource',
     enabled: true,
     sortOrder: 2,
@@ -176,17 +176,35 @@ test('getModels returns the merged catalog plus the per-id upstream index', asyn
       assertEquals(model?.endpoints, { messages: {}, chatCompletions: {} });
       assertEquals(model?.kind, 'chat');
       // `providerData` (the per-provider wire id carrier) belongs to the
-      // upstream-facing UpstreamModel, not the gateway-merged catalog row.
+      // provider-emitted ProviderModel, not the gateway-merged catalog row.
       assertEquals(Object.hasOwn(model!, 'providerData'), false);
       // The reverse index lists every upstream that surfaced this id, in
       // enumeration order — copilot first, then custom.
       assertEquals(upstreamsByPublicId.get('shared-model')?.map(p => p.upstream), ['up_copilot', 'up_custom']);
+      // Every contributing upstream keeps its own emitted `ProviderModel`
+      // verbatim under `providerModels[<upstream>]` — merge unions the
+      // outer `endpoints` but never rewrites the per-upstream capability
+      // each provider originally advertised.
+      assertEquals(Object.keys(model!.providerModels).sort(), ['up_copilot', 'up_custom']);
+      assertEquals(model!.providerModels['up_copilot']?.endpoints, { messages: {} });
+      assertEquals(model!.providerModels['up_custom']?.endpoints, { chatCompletions: {} });
+      // `enabledFlags` is required on every ProviderModel — proves the
+      // stored value is the provider-emitted shape (not a projected
+      // subset).
+      assertEquals(model!.providerModels['up_copilot']?.enabledFlags instanceof Set, true);
+      assertEquals(model!.providerModels['up_custom']?.enabledFlags instanceof Set, true);
 
       const resolved = await enumerateModelCandidates({ upstreamIds: null, model: 'shared-model', kind: 'chat', scheduler: testScheduler, currentColo: 'TEST' });
       assertEquals(resolved.candidates.map(m => m.provider.upstream), ['up_copilot', 'up_custom']);
       // Each match carries its own per-provider endpoints — no merge.
       assertEquals(resolved.candidates[0]?.model.endpoints, { messages: {} });
       assertEquals(resolved.candidates[1]?.model.endpoints, { chatCompletions: {} });
+      // Each enumerated candidate seeds `providerModels[provider.upstream]`
+      // so `providerModelOf(candidate)` resolves at dispatch time.
+      assertEquals(Object.keys(resolved.candidates[0]!.model.providerModels), ['up_copilot']);
+      assertEquals(Object.keys(resolved.candidates[1]!.model.providerModels), ['up_custom']);
+      assertEquals(resolved.candidates[0]?.model.providerModels['up_copilot']?.endpoints, { messages: {} });
+      assertEquals(resolved.candidates[1]?.model.providerModels['up_custom']?.endpoints, { chatCompletions: {} });
     },
   );
 });
@@ -351,6 +369,9 @@ test('enumerateRealModelCandidates only loads the selected providers\' catalogs'
 
       assertEquals(candidates[0]?.model.id, 'target-model');
       assertEquals(candidates[0]?.provider.upstream, 'up_first');
+      // Every enumerated candidate seeds `providerModels[provider.upstream]`
+      // so `providerModelOf(candidate)` resolves at dispatch time.
+      assertEquals(Object.keys(candidates[0]!.model.providerModels), ['up_first']);
     },
   );
 
@@ -385,7 +406,7 @@ test('disabledPublicModelIds hides models from the catalog and routing, per upst
 
   const azureUpstream = (over: { id: string; sortOrder: number; models: { upstreamModelId: string; publicModelId?: string }[]; disabledPublicModelIds: string[] }) => ({
     id: over.id,
-    provider: 'azure' as const,
+    kind: 'azure' as const,
     name: over.id,
     enabled: true,
     sortOrder: over.sortOrder,
@@ -444,7 +465,7 @@ test('enumerateRealModelCandidates rejects a model id disabled on that upstream 
   await repo.upstreams.deleteAll();
   await repo.upstreams.save({
     id: 'up_x',
-    provider: 'azure',
+    kind: 'azure',
     name: 'X',
     enabled: true,
     sortOrder: 1,

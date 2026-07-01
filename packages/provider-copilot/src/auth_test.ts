@@ -13,7 +13,7 @@ const installRepoAndClearCache = async () => {
   let state: unknown = null;
   const stub: UpstreamRecord = {
     id: UPSTREAM_ID,
-    provider: 'copilot',
+    kind: 'copilot',
     name: 'auth-test',
     enabled: true,
     sortOrder: 0,

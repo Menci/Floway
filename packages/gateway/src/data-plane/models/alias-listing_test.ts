@@ -23,6 +23,7 @@ const realModel = (overrides: Partial<InternalModel> & { id: string }): Internal
   kind: 'chat',
   limits: {},
   endpoints: { chatCompletions: {}, messages: {}, responses: {} },
+  providerModels: {},
   ...overrides,
 });
 

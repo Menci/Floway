@@ -20,7 +20,7 @@ export interface CodexUpstreamConfig {
 }
 
 export type CodexUpstreamRecord = UpstreamRecord & {
-  provider: 'codex';
+  kind: 'codex';
   config: CodexUpstreamConfig;
 };
 
@@ -66,8 +66,8 @@ function assertCodexUpstreamConfig(value: unknown): asserts value is CodexUpstre
 }
 
 export function assertCodexUpstreamRecord(record: UpstreamRecord): asserts record is CodexUpstreamRecord {
-  if (record.provider !== 'codex') {
-    throw new TypeError(`Expected provider 'codex', got '${record.provider}'`);
+  if (record.kind !== 'codex') {
+    throw new TypeError(`Expected provider 'codex', got '${record.kind}'`);
   }
   assertCodexUpstreamConfig(record.config);
 }

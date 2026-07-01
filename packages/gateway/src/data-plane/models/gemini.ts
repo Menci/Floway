@@ -99,6 +99,7 @@ const loadGeminiModels = async (
       limits: entry.limits,
       kind: entry.kind,
       endpoints: entry.endpoints,
+      providerModels: {},
       ...(entry.cost !== undefined ? { cost: entry.cost } : {}),
       ...(entry.chat !== undefined ? { chat: entry.chat } : {}),
     }),

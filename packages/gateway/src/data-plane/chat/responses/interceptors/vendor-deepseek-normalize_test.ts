@@ -2,14 +2,14 @@ import { test } from 'vitest';
 
 import type { ResponsesInvocation } from './types.ts';
 import { withVendorDeepseekResponsesNormalize } from './vendor-deepseek-normalize.ts';
-import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
-import { MemoryStatefulResponsesBacking, LayeredStatefulResponsesStore } from '../items/store.ts';
+import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
+import { createNonResponsesSourceStore } from '../items/store.ts';
 import { doneFrame } from '@floway-dev/protocols/common';
-import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 import { eventResult } from '@floway-dev/provider';
-import { assertEquals, stubProviderCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import type { CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
 
-const stubCtx: GatewayCtx = {
+const stubCtx: ChatGatewayCtx = {
   apiKeyId: 'test-key',
   upstreamIds: null,
   wantsStream: false,
@@ -19,6 +19,7 @@ const stubCtx: GatewayCtx = {
   responseHeaders: new Headers(),
   backgroundScheduler: () => {},
   requestStartedAt: 0,
+  store: createNonResponsesSourceStore('test-key'),
 };
 
 const okEvents = () =>
@@ -31,17 +32,10 @@ const okEvents = () =>
     ),
   );
 
-const invocation = (payload: ResponsesPayload, enabledFlags: ReadonlySet<string> = new Set(['vendor-deepseek'])): ResponsesInvocation => ({
+const invocation = (payload: CanonicalResponsesPayload, enabledFlags: ReadonlySet<string> = new Set(['vendor-deepseek'])): ResponsesInvocation => ({
   payload,
-  candidate: stubProviderCandidate({ model: { enabledFlags } }),
+  candidate: stubModelCandidate({ enabledFlags }),
   targetApi: 'responses',
-  store: new LayeredStatefulResponsesStore({
-    apiKeyId: 'test-key',
-    reads: [new MemoryStatefulResponsesBacking()],
-    itemWrites: [],
-    snapshotWrites: [],
-    stageInputs: false,
-  }),
   headers: new Headers(),
   action: 'generate',
 });
@@ -49,7 +43,7 @@ const invocation = (payload: ResponsesPayload, enabledFlags: ReadonlySet<string>
 test("vendor-deepseek translates canonical reasoning.effort: 'none' into top-level thinking:{type:'disabled'}", async () => {
   const input = invocation({
     model: 'deepseek-reasoner',
-    input: 'hi',
+    input: [{ type: 'message', role: 'user', content: 'hi' }],
     reasoning: { effort: 'none' },
   });
 
@@ -63,7 +57,7 @@ test("vendor-deepseek translates canonical reasoning.effort: 'none' into top-lev
 test('vendor-deepseek leaves a real reasoning.effort value untouched (only the none sentinel triggers the rewrite)', async () => {
   const input = invocation({
     model: 'deepseek-reasoner',
-    input: 'hi',
+    input: [{ type: 'message', role: 'user', content: 'hi' }],
     reasoning: { effort: 'high' },
   });
 
@@ -75,7 +69,7 @@ test('vendor-deepseek leaves a real reasoning.effort value untouched (only the n
 });
 
 test('vendor-deepseek early-returns when its flag is not set on the candidate', async () => {
-  const input = invocation({ model: 'deepseek-reasoner', input: 'hi', reasoning: { effort: 'none' } }, new Set());
+  const input = invocation({ model: 'deepseek-reasoner', input: [{ type: 'message', role: 'user', content: 'hi' }], reasoning: { effort: 'none' } }, new Set());
 
   await withVendorDeepseekResponsesNormalize(input, stubCtx, okEvents);
 

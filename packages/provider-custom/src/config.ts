@@ -64,7 +64,7 @@ export type CustomUpstreamConfig =
   | (CustomUpstreamConfigBase & { authStyle: 'bearer' | 'anthropic'; apiKey: string });
 
 export type CustomUpstreamRecord = UpstreamRecord & {
-  provider: 'custom';
+  kind: 'custom';
   config: CustomUpstreamConfig;
 };
 
@@ -142,7 +142,7 @@ const modelsFetchField = (value: unknown): CustomModelsFetch => {
 };
 
 export const assertCustomUpstreamRecord = (record: UpstreamRecord): CustomUpstreamRecord => {
-  if (record.provider !== 'custom') throw new Error(`Expected custom upstream record, got ${record.provider}`);
+  if (record.kind !== 'custom') throw new Error(`Expected custom upstream record, got ${record.kind}`);
   if (!isRecord(record.config)) throw new Error('Malformed custom upstream config: config must be an object');
 
   const raw = record.config;
@@ -163,9 +163,9 @@ export const assertCustomUpstreamRecord = (record: UpstreamRecord): CustomUpstre
     if (raw.apiKey !== undefined) {
       throw new Error('Malformed custom upstream config: apiKey must not be present when authStyle is "none"');
     }
-    return { ...record, provider: 'custom', config: { ...base, authStyle } };
+    return { ...record, kind: 'custom', config: { ...base, authStyle } };
   }
 
   const apiKey = nonEmptyStringField(raw.apiKey, 'apiKey');
-  return { ...record, provider: 'custom', config: { ...base, authStyle, apiKey } };
+  return { ...record, kind: 'custom', config: { ...base, authStyle, apiKey } };
 };

@@ -19,7 +19,7 @@ const REPO_BACKENDS: Array<readonly [string, () => Promise<Repo>]> = [
 
 const upstreamFixture = (id: string, proxyFallbackList: ProxyFallbackEntry[]): UpstreamRecord => ({
   id,
-  provider: 'custom',
+  kind: 'custom',
   name: id,
   enabled: true,
   sortOrder: 0,

@@ -48,10 +48,12 @@
 import type { ResponsesInterceptor, ResponsesInvocation } from './types.ts';
 import { decodeBase64UrlJson, encodeBase64UrlJson } from '../../../../shared/base64url-json.ts';
 import { isJsonObject } from '../../../../shared/json-helpers.ts';
+import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
 import { syntheticEventsFromResult } from '../items/output.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import { collectResponsesProtocolEventsToResult, type ResponsesInputItem, type ResponsesPayload, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import type { ExecuteResult } from '@floway-dev/provider';
+import { collectResponsesProtocolEventsToResult, type ResponsesInputItem, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { providerModelOf, type ExecuteResult } from '@floway-dev/provider';
+import type { CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
 
 // Vendored from openai/codex (Apache-2.0):
 // https://github.com/openai/codex/blob/ba2b67f9cda954bcdda43c2a65ac58e807b996bd/codex-rs/prompts/templates/compact/prompt.md
@@ -73,9 +75,7 @@ const isShimCompactionPayload = (value: unknown): value is ResponsesInputItem[] 
   Array.isArray(value) && value.every(item =>
     isJsonObject(item) && typeof (item as { type?: unknown }).type === 'string');
 
-export const expandShimCompactionItems = (payload: ResponsesPayload): ResponsesPayload => {
-  if (typeof payload.input === 'string') return payload;
-
+export const expandShimCompactionItems = (payload: CanonicalResponsesPayload): CanonicalResponsesPayload => {
   const rewritten: ResponsesInputItem[] = [];
   let changed = false;
   for (const item of payload.input) {
@@ -153,18 +153,12 @@ const buildCompactionEnvelope = (cmpId: string, summaryText: string, upstream: R
   };
 };
 
-const simulateCompaction = async (ctx: ResponsesInvocation, run: ChainRun): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
+const simulateCompaction = async (ctx: ResponsesInvocation, gatewayCtx: ChatGatewayCtx, run: ChainRun): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
   const originalPayload = ctx.payload;
 
-  // Materialize the user-supplied input (string or array) into Responses items,
-  // then strip compaction_trigger so the upstream sees a plain generate turn
-  // against SUMMARIZATION_PROMPT. The string branch matches the serve-prep
-  // precedent (responses/serve-prep.ts): a string `input` becomes one
-  // user-role message whose content is the original text.
-  const originalInputItems: ResponsesInputItem[] = typeof originalPayload.input === 'string'
-    ? [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: originalPayload.input }] }]
-    : originalPayload.input;
-  const historyItems = originalInputItems.filter(item => item.type !== 'compaction_trigger');
+  // Strip compaction_trigger so the upstream sees a plain generate turn
+  // against SUMMARIZATION_PROMPT.
+  const historyItems = originalPayload.input.filter(item => item.type !== 'compaction_trigger');
 
   // Anthropic Messages rejects assistant prefill — when the translated
   // conversation ends on an assistant message, the upstream returns 400
@@ -224,7 +218,7 @@ const simulateCompaction = async (ctx: ResponsesInvocation, run: ChainRun): Prom
   // (For non-responses targets the targetApi check already suppresses
   // ownership; this also covers the responses-target + flag-on engagement.)
   const cmpId = `cmp_${crypto.randomUUID()}`;
-  ctx.store.addSyntheticItem(cmpId);
+  gatewayCtx.store.addSyntheticItem(cmpId);
   const synthesized = buildCompactionEnvelope(cmpId, summaryText, collected);
 
   return {
@@ -237,15 +231,15 @@ const simulateCompaction = async (ctx: ResponsesInvocation, run: ChainRun): Prom
 // CLI's RemoteCompactionV2 path that semantically requests compaction
 // through `action: 'generate'`. Exported so callers outside the shim
 // (attempt.ts's snapshot-mode derivation) can ask the same question.
-export const containsCompactionTrigger = (input: ResponsesPayload['input']): boolean =>
-  typeof input !== 'string' && input.some(item => item.type === 'compaction_trigger');
+export const containsCompactionTrigger = (input: readonly ResponsesInputItem[]): boolean =>
+  input.some(item => item.type === 'compaction_trigger');
 
-export const withResponsesCompactShim: ResponsesInterceptor = async (ctx, _gatewayCtx, run) => {
+export const withResponsesCompactShim: ResponsesInterceptor = async (ctx, gatewayCtx, run) => {
   // The shim is engaged when the operator turned it on for this upstream,
   // OR when the upstream's targetApi is not Responses (Messages /
   // Chat Completions have no compaction wire and would crash on the
   // unknown `compaction_trigger` input variant).
-  const flagOn = ctx.candidate.model.enabledFlags.has('responses-compact-shim');
+  const flagOn = providerModelOf(ctx.candidate).enabledFlags.has('responses-compact-shim');
   const structurallyRequired = ctx.targetApi !== 'responses';
   if (!flagOn && !structurallyRequired) return await run();
 
@@ -258,5 +252,5 @@ export const withResponsesCompactShim: ResponsesInterceptor = async (ctx, _gatew
   const isCompactShaped = ctx.action === 'compact' || containsCompactionTrigger(ctx.payload.input);
   if (!isCompactShaped) return await run();
 
-  return await simulateCompaction(ctx, run);
+  return await simulateCompaction(ctx, gatewayCtx, run);
 };

@@ -295,17 +295,17 @@ interface UpstreamRecordBase {
   };
 }
 
-// Provider-keyed discriminated union: each variant pins `provider` and the
-// matching `config` / `state` shape, so `switch (record.provider)` narrows
+// Kind-keyed discriminated union: each variant pins `kind` and the
+// matching `config` / `state` shape, so `switch (record.kind)` narrows
 // both fields without an `as` cast. Codex's `codex_quota` field rides on the
 // codex variant only.
 export type UpstreamRecord =
-  | (UpstreamRecordBase & { provider: 'custom'; config: CustomUpstreamConfig; state: null })
-  | (UpstreamRecordBase & { provider: 'azure'; config: AzureUpstreamConfig; state: null })
-  | (UpstreamRecordBase & { provider: 'copilot'; config: CopilotUpstreamConfig; state: CopilotUpstreamState | null })
-  | (UpstreamRecordBase & { provider: 'codex'; config: CodexUpstreamConfig; state: CodexUpstreamState | null; codex_quota?: CodexQuotaSnapshot | null })
-  | (UpstreamRecordBase & { provider: 'claude-code'; config: ClaudeCodeUpstreamConfig; state: ClaudeCodeUpstreamState | null })
-  | (UpstreamRecordBase & { provider: 'ollama'; config: OllamaUpstreamConfig; state: null });
+  | (UpstreamRecordBase & { kind: 'custom'; config: CustomUpstreamConfig; state: null })
+  | (UpstreamRecordBase & { kind: 'azure'; config: AzureUpstreamConfig; state: null })
+  | (UpstreamRecordBase & { kind: 'copilot'; config: CopilotUpstreamConfig; state: CopilotUpstreamState | null })
+  | (UpstreamRecordBase & { kind: 'codex'; config: CodexUpstreamConfig; state: CodexUpstreamState | null; codex_quota?: CodexQuotaSnapshot | null })
+  | (UpstreamRecordBase & { kind: 'claude-code'; config: ClaudeCodeUpstreamConfig; state: ClaudeCodeUpstreamState | null })
+  | (UpstreamRecordBase & { kind: 'ollama'; config: OllamaUpstreamConfig; state: null });
 
 export interface FlagDef {
   id: string;

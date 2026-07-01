@@ -557,7 +557,7 @@ export class MemoryStatefulResponsesBacking implements StatefulResponsesBacking 
 
   insertSnapshot(snapshot: StoredResponsesSnapshot): Promise<void> {
     const key = scopedKey(snapshot.apiKeyId, snapshot.id);
-    if (!this.snapshots.has(key)) this.snapshots.set(key, cloneStoredResponsesSnapshot(snapshot));
+    this.snapshots.set(key, cloneStoredResponsesSnapshot(snapshot));
     return Promise.resolve();
   }
 
@@ -601,13 +601,17 @@ export const createResponsesHttpStore = (apiKeyId: string | null, store: boolean
 // against them. The session's lifetime bounds the data — nothing persists beyond
 // the socket. `store=true` (or omitted) layers durable repo writes on top of the
 // in-memory layer, so the turn is also addressable from later sessions.
-export const createResponsesWsSession = (apiKeyId: string | null): {
-  createStore(store: boolean | undefined): StatefulResponsesStore;
+//
+// The session owns only the pair of backings that persist across turns; the
+// per-turn `apiKeyId` is passed into `createStore` by the caller (which sources
+// it from `ctx.apiKeyId`), keeping apiKeyId ownership on the ctx.
+export const createResponsesWsSession = (): {
+  createStore(apiKeyId: string | null, store: boolean | undefined): StatefulResponsesStore;
 } => {
   const localBacking = new MemoryStatefulResponsesBacking();
   const repoBacking = new RepoStatefulResponsesBacking(getRepo);
   return {
-    createStore(store: boolean | undefined): StatefulResponsesStore {
+    createStore(apiKeyId: string | null, store: boolean | undefined): StatefulResponsesStore {
       const localWrite = { backing: localBacking, durable: false };
       if (store === false) {
         return new LayeredStatefulResponsesStore({

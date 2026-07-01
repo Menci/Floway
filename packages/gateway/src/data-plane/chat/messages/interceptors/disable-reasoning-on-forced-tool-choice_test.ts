@@ -2,13 +2,14 @@ import { test } from 'vitest';
 
 import { withReasoningDisabledOnForcedToolChoice } from './disable-reasoning-on-forced-tool-choice.ts';
 import type { MessagesInvocation } from './types.ts';
-import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
+import { createNonResponsesSourceStore } from '../../responses/items/store.ts';
+import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import { type ExecuteResult, eventResult } from '@floway-dev/provider';
-import { stubProviderCandidate, testTelemetryModelIdentity, assertEquals } from '@floway-dev/test-utils';
+import { stubModelCandidate, testTelemetryModelIdentity, assertEquals } from '@floway-dev/test-utils';
 
-const stubCtx: GatewayCtx = {
+const stubCtx: ChatGatewayCtx = {
   apiKeyId: 'test-key',
   upstreamIds: null,
   wantsStream: false,
@@ -18,6 +19,7 @@ const stubCtx: GatewayCtx = {
   responseHeaders: new Headers(),
   backgroundScheduler: () => {},
   requestStartedAt: 0,
+  store: createNonResponsesSourceStore('test-key'),
 };
 
 const okEvents = (): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>>> =>
@@ -28,8 +30,9 @@ const invocation = (
   enabledFlags: ReadonlySet<string> = new Set(['disable-reasoning-on-forced-tool-choice']),
 ): MessagesInvocation => ({
   payload,
-  candidate: stubProviderCandidate({
-    model: { endpoints: { messages: {} }, enabledFlags },
+  candidate: stubModelCandidate({
+    model: { endpoints: { messages: {} } },
+    enabledFlags,
   }),
   targetApi: 'messages',
   headers: new Headers(),

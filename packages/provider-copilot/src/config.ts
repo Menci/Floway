@@ -13,7 +13,7 @@ export interface CopilotUpstreamConfig {
 }
 
 export type CopilotUpstreamRecord = UpstreamRecord & {
-  provider: 'copilot';
+  kind: 'copilot';
   config: CopilotUpstreamConfig;
 };
 
@@ -45,11 +45,11 @@ const copilotUserField = (value: unknown): CopilotUpstreamUser => {
 };
 
 export const assertCopilotUpstreamRecord = (record: UpstreamRecord): CopilotUpstreamRecord => {
-  if (record.provider !== 'copilot') throw new Error(`Expected copilot upstream record, got ${record.provider}`);
+  if (record.kind !== 'copilot') throw new Error(`Expected copilot upstream record, got ${record.kind}`);
   if (!isRecord(record.config)) throw new Error('Malformed copilot upstream config: config must be an object');
   return {
     ...record,
-    provider: 'copilot',
+    kind: 'copilot',
     config: {
       githubToken: stringField(record.config.githubToken, 'githubToken'),
       user: copilotUserField(record.config.user),

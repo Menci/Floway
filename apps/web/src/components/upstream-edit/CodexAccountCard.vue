@@ -16,8 +16,8 @@ const props = defineProps<{
 // Pinning the narrow at the script-setup boundary lets every computed below
 // reach `config` / `state` / `codex_quota` without `as` casts.
 const codexRecord = computed(() => {
-  if (props.record.provider !== 'codex') {
-    throw new Error(`CodexAccountCard requires a codex upstream, got ${props.record.provider}`);
+  if (props.record.kind !== 'codex') {
+    throw new Error(`CodexAccountCard requires a codex upstream, got ${props.record.kind}`);
   }
   return props.record;
 });

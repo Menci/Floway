@@ -14,6 +14,7 @@
 
 import type { ResponsesInterceptor } from './types.ts';
 import type { ResponsesInputItem, ResponsesInputMessage } from '@floway-dev/protocols/responses';
+import { providerModelOf } from '@floway-dev/provider';
 
 const isInputMessage = (item: ResponsesInputItem): item is ResponsesInputMessage =>
   item.type === 'message';
@@ -24,14 +25,12 @@ const downgradeRole = (item: ResponsesInputItem): ResponsesInputItem => {
 };
 
 export const withDemoteDeveloperToSystem: ResponsesInterceptor = async (ctx, _request, run) => {
-  if (!ctx.candidate.model.enabledFlags.has('demote-developer-to-system')) return await run();
+  if (!providerModelOf(ctx.candidate).enabledFlags.has('demote-developer-to-system')) return await run();
 
-  if (Array.isArray(ctx.payload.input)) {
-    ctx.payload = {
-      ...ctx.payload,
-      input: ctx.payload.input.map(downgradeRole),
-    };
-  }
+  ctx.payload = {
+    ...ctx.payload,
+    input: ctx.payload.input.map(downgradeRole),
+  };
 
   return await run();
 };

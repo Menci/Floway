@@ -2,7 +2,7 @@
 // (the hosted offering) by default, or a self-hosted daemon URL the operator
 // supplies. The catalog is discovered live via the Ollama-native /api/tags +
 // /api/show endpoints, since the OpenAI-compat /v1/models response strips the
-// capability/context-length metadata we need to project an UpstreamModel.
+// capability/context-length metadata we need to project a ProviderModel.
 //
 // Auth is a single optional bearer token: required against ollama.com, often
 // omitted on a private daemon, and sent as `Authorization: Bearer <key>` when
@@ -29,7 +29,7 @@ export interface OllamaUpstreamConfig {
 }
 
 export type OllamaUpstreamRecord = UpstreamRecord & {
-  provider: 'ollama';
+  kind: 'ollama';
   config: OllamaUpstreamConfig;
 };
 
@@ -60,13 +60,13 @@ const apiKeyField = (value: unknown): string | undefined => {
 };
 
 export const assertOllamaUpstreamRecord = (record: UpstreamRecord): OllamaUpstreamRecord => {
-  if (record.provider !== 'ollama') throw new Error(`Expected ollama upstream record, got ${record.provider}`);
+  if (record.kind !== 'ollama') throw new Error(`Expected ollama upstream record, got ${record.kind}`);
   if (!isRecord(record.config)) throw new Error('Malformed ollama upstream config: config must be an object');
 
   const apiKey = apiKeyField(record.config.apiKey);
   return {
     ...record,
-    provider: 'ollama',
+    kind: 'ollama',
     config: {
       baseUrl: baseUrlField(record.config.baseUrl),
       ...(apiKey !== undefined ? { apiKey } : {}),

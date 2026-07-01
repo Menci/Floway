@@ -81,7 +81,6 @@ test('/v1/models returns merged model list from Copilot and custom upstreams', a
           limits?: Record<string, number>;
           capabilities?: unknown;
           provider?: unknown;
-          providerKind?: unknown;
           providers?: unknown;
           providerData?: unknown;
           endpoints?: unknown;
@@ -116,7 +115,6 @@ test('/v1/models returns merged model list from Copilot and custom upstreams', a
       for (const model of body.data) {
         // Provider / upstream identity is hidden on the public surface.
         assertEquals(model.provider, undefined);
-        assertEquals(model.providerKind, undefined);
         assertEquals(model.providers, undefined);
         assertEquals(model.providerData, undefined);
         assertEquals(model.upstream, undefined);

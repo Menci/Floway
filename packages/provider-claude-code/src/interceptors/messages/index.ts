@@ -30,7 +30,7 @@
 // The on-wire `model` field is set in `fetch.ts` from
 // `opts.model.providerData.upstreamModelId` so the chain never has to rewrite
 // it — the catalog id is already Anthropic's public alias and the dated
-// upstream id is read straight off the resolved model.
+// upstream id is read straight off `opts.model.providerData`.
 
 import { backfillRequiredFields } from './backfill-required-fields.ts';
 import { hoistUserSystemToMessages } from './hoist-user-system-to-messages.ts';

@@ -13,9 +13,10 @@ import {
   type GeminiToolCallIds,
   geminiVisibleText,
 } from '../shared/gemini-via/gemini.ts';
+import { type CanonicalResponsesPayload } from '../shared/via-responses/responses-items.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
 import type { GeminiContent, GeminiPayload, GeminiGenerationConfig, GeminiPart } from '@floway-dev/protocols/gemini';
-import type { ResponsesInputContent, ResponsesInputItem, ResponsesPayload, ResponsesTool } from '@floway-dev/protocols/responses';
+import type { ResponsesInputContent, ResponsesInputItem, ResponsesTool } from '@floway-dev/protocols/responses';
 
 const flushPendingContent = (input: ResponsesInputItem[], pending: ResponsesInputContent[], role: 'user' | 'assistant'): void => {
   if (pending.length === 0) return;
@@ -118,7 +119,7 @@ const buildAssistantInputItems = (content: GeminiContent, turnIndex: number, unm
   return input;
 };
 
-const applyGenerationConfig = (request: ResponsesPayload, generationConfig?: GeminiGenerationConfig): void => {
+const applyGenerationConfig = (request: CanonicalResponsesPayload, generationConfig?: GeminiGenerationConfig): void => {
   if (!generationConfig) return;
 
   if (generationConfig.maxOutputTokens !== undefined) {
@@ -167,8 +168,8 @@ const buildTools = (payload: GeminiPayload): ResponsesTool[] | undefined => {
   return tools.length ? tools : undefined;
 };
 
-export const buildTargetRequest = (payload: GeminiPayload, model: string): ResponsesPayload => {
-  const request: ResponsesPayload = {
+export const buildTargetRequest = (payload: GeminiPayload, model: string): CanonicalResponsesPayload => {
+  const request: CanonicalResponsesPayload = {
     model,
     stream: true,
     input: [],

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 
 import { assertCodexUpstreamState, readCodexUpstreamState, type CodexUpstreamState } from './state.ts';
 
-const goodAccount = { chatgptAccountId: 'acc_x', refresh_token: 'rt_x', state: 'active' as const, state_updated_at: '2026-01-01T00:00:00Z' };
+const goodAccount = { chatgptAccountId: 'acc_x', refresh_token: 'rt_x', state: 'active' as const, state_updated_at: '2026-01-01T00:00:00Z', openaiDeviceId: '11111111-2222-4333-8444-555555555555' };
 const good: CodexUpstreamState = { accounts: [{ ...goodAccount, accessToken: null, quotaSnapshot: null }] };
 
 describe('assertCodexUpstreamState', () => {
@@ -17,10 +17,11 @@ describe('assertCodexUpstreamState', () => {
         state: 'session_terminated',
         state_message: 'Token revoked',
         state_updated_at: '2026-06-05T00:00:00.000Z',
+        openaiDeviceId: '11111111-2222-4333-8444-555555555555',
       }],
     })).not.toThrow();
     expect(() => assertCodexUpstreamState({
-      accounts: [{ chatgptAccountId: 'acc_x', refresh_token: 'rt_x', state: 'refresh_failed', state_updated_at: '2026-06-05T00:00:00.000Z' }],
+      accounts: [{ chatgptAccountId: 'acc_x', refresh_token: 'rt_x', state: 'refresh_failed', state_updated_at: '2026-06-05T00:00:00.000Z', openaiDeviceId: '11111111-2222-4333-8444-555555555555' }],
     })).not.toThrow();
   });
   test('rejects missing state_updated_at', () => {
@@ -90,11 +91,18 @@ describe('assertCodexUpstreamState', () => {
       accounts: [{ ...goodAccount, quotaSnapshot: { fetchedAt: 1, data: {}, extra: 1 } }],
     })).toThrow(/extra/);
   });
+
+  test('rejects missing / empty openaiDeviceId', () => {
+    const { openaiDeviceId: _drop, ...withoutDeviceId } = goodAccount;
+    expect(() => assertCodexUpstreamState({ accounts: [withoutDeviceId] })).toThrow(/openaiDeviceId/);
+    expect(() => assertCodexUpstreamState({ accounts: [{ ...goodAccount, openaiDeviceId: '' }] })).toThrow(/openaiDeviceId/);
+    expect(() => assertCodexUpstreamState({ accounts: [{ ...goodAccount, openaiDeviceId: 42 }] })).toThrow(/openaiDeviceId/);
+  });
 });
 
 describe('readCodexUpstreamState', () => {
   test('normalizes absent accessToken / quotaSnapshot to null', () => {
-    const fresh = { chatgptAccountId: 'acc_x', refresh_token: 'rt_x', state: 'active' as const, state_updated_at: '2026-01-01T00:00:00Z' };
+    const fresh = { chatgptAccountId: 'acc_x', refresh_token: 'rt_x', state: 'active' as const, state_updated_at: '2026-01-01T00:00:00Z', openaiDeviceId: '11111111-2222-4333-8444-555555555555' };
     const out = readCodexUpstreamState({ accounts: [fresh] });
     expect(out.accounts[0].accessToken).toBeNull();
     expect(out.accounts[0].quotaSnapshot).toBeNull();

@@ -6,7 +6,7 @@ import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
-import { assertEquals, stubUpstreamModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import { assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const stubRequest = {};
 
@@ -19,7 +19,7 @@ const invocation = (payload: MessagesPayload, anthropicBeta?: readonly string[])
   return {
     payload,
     headers,
-    model: stubUpstreamModel({ endpoints: { messages: {} } }),
+    model: stubProviderModel({ endpoints: { messages: {} } }),
   };
 };
 

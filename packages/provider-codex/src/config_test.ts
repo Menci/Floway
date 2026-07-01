@@ -7,7 +7,7 @@ const goodAccount = { email: 'a@b.com', chatgptAccountId: 'a', chatgptUserId: 'u
 const good = { accounts: [goodAccount] };
 
 const wrap = (config: unknown): UpstreamRecord => ({
-  id: 'up', provider: 'codex', name: 'n', enabled: true, sortOrder: 0,
+  id: 'up', kind: 'codex', name: 'n', enabled: true, sortOrder: 0,
   createdAt: '', updatedAt: '', config: config as UpstreamRecord['config'], state: null,
   flagOverrides: {}, disabledPublicModelIds: [], proxyFallbackList: [], modelPrefix: null,
 });
@@ -40,7 +40,7 @@ describe('assertCodexUpstreamRecord (config validation)', () => {
 describe('assertCodexUpstreamRecord (record-level checks)', () => {
   test('rejects non-codex record', () => {
     const record: UpstreamRecord = {
-      id: 'up', provider: 'copilot', name: 'n', enabled: true, sortOrder: 0,
+      id: 'up', kind: 'copilot', name: 'n', enabled: true, sortOrder: 0,
       createdAt: '', updatedAt: '', config: {}, state: null,
       flagOverrides: {}, disabledPublicModelIds: [], proxyFallbackList: [], modelPrefix: null,
     };

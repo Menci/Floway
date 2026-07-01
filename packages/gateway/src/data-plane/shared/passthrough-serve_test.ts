@@ -230,3 +230,104 @@ test('passthrough-serve: alias whose targets have no kind-matching binding surfa
     },
   );
 });
+
+// Register two custom upstreams both exposing the same embedding model, so
+// the shared narrow phase produces a two-element candidate list ordered by
+// `sortOrder`. The passthrough loop must try `up_a` first (sortOrder 100)
+// and `up_b` second (sortOrder 200).
+const registerTwoEmbeddingsUpstreams = async (repo: Awaited<ReturnType<typeof setupAppTest>>['repo']): Promise<void> => {
+  await repo.upstreams.deleteAll();
+  clearInProcessCopilotTokenCache();
+  await repo.upstreams.save(buildCustomUpstreamRecord({
+    id: 'up_a', name: 'Upstream A', sortOrder: 100,
+    config: { baseUrl: 'https://up-a.example.com', authStyle: 'bearer', apiKey: 'sk-a', endpoints: {} },
+  }));
+  await repo.upstreams.save(buildCustomUpstreamRecord({
+    id: 'up_b', name: 'Upstream B', sortOrder: 200,
+    config: { baseUrl: 'https://up-b.example.com', authStyle: 'bearer', apiKey: 'sk-b', endpoints: {} },
+  }));
+};
+
+test('passthrough-serve: 5xx from the first candidate falls through to the next successful upstream', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerTwoEmbeddingsUpstreams(repo);
+
+  let firstEmbeddingsCalls = 0;
+  let secondEmbeddingsCalls = 0;
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.pathname === '/v1/models') {
+        return jsonResponse({ object: 'list', data: [{ id: 'custom-embed-model' }] });
+      }
+      if (url.hostname === 'up-a.example.com' && url.pathname === '/v1/embeddings') {
+        firstEmbeddingsCalls += 1;
+        return new Response('upstream boom', { status: 503 });
+      }
+      if (url.hostname === 'up-b.example.com' && url.pathname === '/v1/embeddings') {
+        secondEmbeddingsCalls += 1;
+        return jsonResponse({
+          object: 'list',
+          model: 'custom-embed-model',
+          data: [{ object: 'embedding', index: 0, embedding: [0.25] }],
+          usage: { prompt_tokens: 2, total_tokens: 2 },
+        });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const response = await requestApp('/v1/embeddings', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+        body: JSON.stringify({ model: 'custom-embed-model', input: 'hi' }),
+      });
+
+      assertEquals(response.status, 200);
+      const body = await response.json() as { data: Array<{ embedding: number[] }> };
+      assertEquals(body.data[0].embedding, [0.25]);
+      await flushAsyncWork();
+    },
+  );
+
+  assertEquals(firstEmbeddingsCalls, 1);
+  assertEquals(secondEmbeddingsCalls, 1);
+});
+
+test('passthrough-serve: when every candidate returns non-2xx the most recent upstream response is forwarded verbatim', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerTwoEmbeddingsUpstreams(repo);
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.pathname === '/v1/models') {
+        return jsonResponse({ object: 'list', data: [{ id: 'custom-embed-model' }] });
+      }
+      if (url.hostname === 'up-a.example.com' && url.pathname === '/v1/embeddings') {
+        return new Response('first upstream unavailable', { status: 503 });
+      }
+      if (url.hostname === 'up-b.example.com' && url.pathname === '/v1/embeddings') {
+        return new Response(JSON.stringify({ error: { message: 'rate limited' } }), {
+          status: 429, headers: { 'content-type': 'application/json', 'retry-after': '17' },
+        });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const response = await requestApp('/v1/embeddings', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+        body: JSON.stringify({ model: 'custom-embed-model', input: 'hi' }),
+      });
+
+      // The last-attempted upstream's status, body, and allow-listed
+      // headers pass through unchanged so clients see real upstream
+      // telemetry — no synthetic gateway envelope.
+      assertEquals(response.status, 429);
+      assertEquals(response.headers.get('retry-after'), '17');
+      const body = await response.json() as { error: { message: string } };
+      assertEquals(body.error.message, 'rate limited');
+      await flushAsyncWork();
+    },
+  );
+});

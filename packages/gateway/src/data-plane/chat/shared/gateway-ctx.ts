@@ -3,6 +3,7 @@ import { type DumpAccumulator, openDumpAccumulator } from '../../../dump/accumul
 import { apiKeyFromContext, type AuthedContext, effectiveUpstreamIdsFromContext } from '../../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 import { getCurrentColo } from '../../../runtime/runtime-info.ts';
+import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { AliasRules } from '@floway-dev/protocols/common';
 
@@ -35,6 +36,15 @@ export interface GatewayCtx {
   // requests that did not resolve through an alias; each attempt's leaf
   // wire call is a no-op when this is absent.
   aliasRules?: AliasRules;
+}
+
+// Chat-protocol ctx — `GatewayCtx` plus the request-scoped stored-items
+// store. Every chat HTTP/WS entry constructs this via
+// `createChatGatewayCtxFromHono` and threads it through serve → narrow →
+// attempt. Passthrough endpoints (embeddings / images / completions) have
+// no stored-items concept and stay on plain `GatewayCtx`.
+export interface ChatGatewayCtx extends GatewayCtx {
+  readonly store: StatefulResponsesStore;
 }
 
 export interface CreateGatewayCtxOptions {
@@ -90,4 +100,20 @@ export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCt
 export const finalizeGatewayResponse = (ctx: GatewayCtx, response: Response): Response => {
   for (const [name, value] of ctx.responseHeaders) response.headers.set(name, value);
   return ctx.dump?.finalize(response) ?? response;
+};
+
+// Chat-protocol counterpart of `createGatewayCtxFromHono`. Calls the base
+// factory, then attaches the stored-items store the caller chose for this
+// protocol. The factory receives `ctx.apiKeyId` so every entry threads the
+// same authoritative id into its store — messages / gemini / chat-completions
+// pass `createNonResponsesSourceStore`; responses HTTP passes
+// `apiKeyId => createResponsesHttpStore(apiKeyId, payload.store)`; responses
+// WS passes `apiKeyId => session.createStore(apiKeyId, payload.store)`.
+export const createChatGatewayCtxFromHono = (
+  c: AuthedContext,
+  opts: CreateGatewayCtxOptions,
+  storeFactory: (apiKeyId: string) => StatefulResponsesStore,
+): ChatGatewayCtx => {
+  const base = createGatewayCtxFromHono(c, opts);
+  return { ...base, store: storeFactory(base.apiKeyId) };
 };

@@ -5,7 +5,7 @@ import { getRepo } from '../../repo/index.ts';
 import type { ModelAliasRecord } from '../../repo/types.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { type AliasRules, type ModelKind, kindForEndpoints } from '@floway-dev/protocols/common';
-import { isAbortError, type Fetcher, type InternalModel, type ModelProviderInstance, type ProviderCandidate, type UpstreamModel, type UpstreamProviderKind, type UpstreamRecord } from '@floway-dev/provider';
+import { isAbortError, type Fetcher, type InternalModel, type ModelCandidate, type Provider, type ProviderModel, type UpstreamProviderKind, type UpstreamRecord } from '@floway-dev/provider';
 import { createAzureProvider } from '@floway-dev/provider-azure';
 import { createClaudeCodeProvider } from '@floway-dev/provider-claude-code';
 import { createCodexProvider } from '@floway-dev/provider-codex';
@@ -19,7 +19,7 @@ interface ProviderModelsResult {
   // given public id, in enumeration order. The control-plane catalog
   // endpoint reads this to render `upstreams: [{kind, id, name}]` per row;
   // the alias listing reads it to project per-target upstream chips.
-  upstreamsByPublicId: Map<string, ModelProviderInstance[]>;
+  upstreamsByPublicId: Map<string, Provider[]>;
   sawSuccess: boolean;
   lastError: unknown;
   // Upstream names whose catalog fetch rejected this round, in the same
@@ -30,7 +30,7 @@ interface ProviderModelsResult {
 
 const NO_UPSTREAM_CONFIGURED_MESSAGE = 'No upstream provider configured — connect GitHub Copilot or add a Custom/Azure upstream in the dashboard';
 
-type ProviderFactory = (record: UpstreamRecord) => ModelProviderInstance | Promise<ModelProviderInstance>;
+type ProviderFactory = (record: UpstreamRecord) => Provider | Promise<Provider>;
 
 const providerFactories: Record<UpstreamProviderKind, ProviderFactory> = {
   copilot: createCopilotProvider,
@@ -41,8 +41,8 @@ const providerFactories: Record<UpstreamProviderKind, ProviderFactory> = {
   ollama: createOllamaProvider,
 };
 
-export const createProviderInstance = (record: UpstreamRecord): ModelProviderInstance | Promise<ModelProviderInstance> =>
-  providerFactories[record.provider](record);
+export const createProviderInstance = (record: UpstreamRecord): Provider | Promise<Provider> =>
+  providerFactories[record.kind](record);
 
 // The upstream scope is a required argument across the catalog-assembly chain
 // (this, getModels) so a caller can never omit it and silently receive the
@@ -50,7 +50,7 @@ export const createProviderInstance = (record: UpstreamRecord): ModelProviderIns
 // leak. Pass `null` to deliberately request every enabled upstream.
 export const listModelProviders = async (
   upstreamFilter: readonly string[] | null,
-): Promise<ModelProviderInstance[]> => {
+): Promise<Provider[]> => {
   const upstreams = await getRepo().upstreams.list();
   const enabledById = new Map<string, UpstreamRecord>();
   const knownIds = new Set<string>();
@@ -77,38 +77,49 @@ export const listModelProviders = async (
     selection = [...enabledById.values()];
   }
 
-  const providers: ModelProviderInstance[] = [];
+  const providers: Provider[] = [];
   for (const upstream of selection) {
-    const factory = providerFactories[upstream.provider];
+    const factory = providerFactories[upstream.kind];
     providers.push(await factory(upstream));
   }
 
   return providers;
 };
 
-const catalogFromUpstreamModel = (upstreamModel: UpstreamModel): InternalModel => {
-  const { providerData: _providerData, enabledFlags: _enabledFlags, endpoints, ...internal } = upstreamModel;
-  return { ...internal, endpoints: { ...endpoints } };
+// Lift a provider-emitted `ProviderModel` into an `InternalModel`, seeding
+// `providerModels` with the sole entry keyed on the emitting upstream id.
+// The provider model is stored verbatim under that entry so dispatch hands
+// the same reference back to the provider's `callXxx`.
+const internalModelFromProviderModel = (providerModel: ProviderModel, upstreamId: string): InternalModel => {
+  const { providerData, enabledFlags, endpoints, ...metadata } = providerModel;
+  return {
+    ...metadata,
+    endpoints: { ...endpoints },
+    providerModels: { [upstreamId]: providerModel },
+  };
 };
 
 // When multiple upstreams expose the same public model id, the first wins
 // for `/models` metadata and later ones union-merge their endpoint capability
 // map — the merged `endpoints` is the gateway-wide reach for that public id.
 // `kind` is recomputed from the union so a chat-only id that later acquires
-// an embedding-capable upstream gets correctly reclassified. The reverse
-// index `upstreamsByPublicId` accumulates every upstream that surfaced the
-// id, in enumeration order, so the control plane can render its per-model
-// upstream chips without re-walking the catalog.
+// an embedding-capable upstream gets correctly reclassified. Each contribution
+// adds its own entry to `providerModels` keyed on the contributing upstream id
+// with the emitted `ProviderModel` stored verbatim, so the same public id
+// carrying data from N upstreams ends up with N entries. The reverse index
+// `upstreamsByPublicId` accumulates every upstream that surfaced the id, in
+// enumeration order, so the control plane can render its per-model upstream
+// chips without re-walking the catalog.
 const mergeIntoCatalog = (
   byId: Map<string, InternalModel>,
-  upstreamsByPublicId: Map<string, ModelProviderInstance[]>,
-  instance: ModelProviderInstance,
-  surfacedModel: UpstreamModel,
+  upstreamsByPublicId: Map<string, Provider[]>,
+  instance: Provider,
+  surfacedModel: ProviderModel,
   publicId: string,
 ): void => {
   const existing = byId.get(publicId);
   if (!existing) {
-    byId.set(publicId, catalogFromUpstreamModel(surfacedModel));
+    byId.set(publicId, internalModelFromProviderModel(surfacedModel, instance.upstream));
     upstreamsByPublicId.set(publicId, [instance]);
     return;
   }
@@ -117,6 +128,10 @@ const mergeIntoCatalog = (
     ...existing,
     endpoints,
     kind: kindForEndpoints(endpoints),
+    providerModels: {
+      ...existing.providerModels,
+      [instance.upstream]: surfacedModel,
+    },
   });
   // We're on the merge branch (`existing !== undefined`), so the parallel
   // `upstreamsByPublicId` entry was populated by the earlier insertion branch
@@ -127,12 +142,12 @@ const mergeIntoCatalog = (
 };
 
 const collectProviderModels = async (
-  providers: readonly ModelProviderInstance[],
+  providers: readonly Provider[],
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
 ): Promise<ProviderModelsResult> => {
   const byId = new Map<string, InternalModel>();
-  const upstreamsByPublicId = new Map<string, ModelProviderInstance[]>();
+  const upstreamsByPublicId = new Map<string, Provider[]>();
   let sawSuccess = false;
   let lastError: unknown = null;
   const failedUpstreams: string[] = [];
@@ -142,7 +157,7 @@ const collectProviderModels = async (
   // the SOFT-fresh row without an upstream round trip, so the parallel walk
   // is cheap on the warm path and bounded by `max(per-upstream fetch)` on
   // the cold path.
-  const fetchOne = (instance: ModelProviderInstance) =>
+  const fetchOne = (instance: Provider) =>
     fetchUpstreamModelsCached(instance, {
       scheduler,
       fetcher: fetcherForUpstream(instance.upstream),
@@ -174,12 +189,12 @@ const collectProviderModels = async (
     // hides both `gpt-4o` and `<prefix>gpt-4o` from this upstream's
     // contribution.
     const disabled = new Set(instance.disabledPublicModelIds);
-    for (const upstreamModel of providedModels) {
-      if (!upstreamModel.id) continue;
-      if (disabled.has(upstreamModel.id)) continue;
+    for (const providerModel of providedModels) {
+      if (!providerModel.id) continue;
+      if (disabled.has(providerModel.id)) continue;
 
       // Each surface form the upstream chose to list becomes its own catalog
-      // entry. The unprefixed surface keeps the original UpstreamModel; the
+      // entry. The unprefixed surface keeps the original ProviderModel; the
       // prefixed surface uses a shallow clone with the rewritten id and a
       // synthesized display_name that prepends the upstream name (so the
       // dashboard tells the operator at a glance which upstream a prefixed
@@ -188,14 +203,14 @@ const collectProviderModels = async (
       const cfg = instance.modelPrefix;
       if (cfg !== null) {
         for (const form of cfg.listed) {
-          const publicId = form === 'prefixed' ? `${cfg.prefix}${upstreamModel.id}` : upstreamModel.id;
-          const surfacedModel: UpstreamModel = form === 'prefixed'
-            ? { ...upstreamModel, id: publicId, display_name: `${instance.name}: ${upstreamModel.display_name ?? upstreamModel.id}` }
-            : upstreamModel;
+          const publicId = form === 'prefixed' ? `${cfg.prefix}${providerModel.id}` : providerModel.id;
+          const surfacedModel: ProviderModel = form === 'prefixed'
+            ? { ...providerModel, id: publicId, display_name: `${instance.name}: ${providerModel.display_name ?? providerModel.id}` }
+            : providerModel;
           mergeIntoCatalog(byId, upstreamsByPublicId, instance, surfacedModel, publicId);
         }
       } else {
-        mergeIntoCatalog(byId, upstreamsByPublicId, instance, upstreamModel, upstreamModel.id);
+        mergeIntoCatalog(byId, upstreamsByPublicId, instance, providerModel, providerModel.id);
       }
     }
   }
@@ -243,10 +258,10 @@ export const compareModelIds = (a: string, b: string): number => {
 // walk — pass providers through to avoid the duplicate upstreams.list()
 // DB query.
 export const getModelsFromProviders = async (
-  providers: readonly ModelProviderInstance[],
+  providers: readonly Provider[],
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
-): Promise<{ models: InternalModel[]; upstreamsByPublicId: Map<string, ModelProviderInstance[]>; failedUpstreams: readonly string[] }> => {
+): Promise<{ models: InternalModel[]; upstreamsByPublicId: Map<string, Provider[]>; failedUpstreams: readonly string[] }> => {
   if (providers.length === 0) {
     throw new Error(NO_UPSTREAM_CONFIGURED_MESSAGE);
   }
@@ -270,7 +285,7 @@ export const getModels = async (
   upstreamFilter: readonly string[] | null,
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
-): Promise<{ models: InternalModel[]; upstreamsByPublicId: Map<string, ModelProviderInstance[]>; failedUpstreams: readonly string[] }> =>
+): Promise<{ models: InternalModel[]; upstreamsByPublicId: Map<string, Provider[]>; failedUpstreams: readonly string[] }> =>
   await getModelsFromProviders(await listModelProviders(upstreamFilter), fetcherForUpstream, scheduler);
 
 // Resolve one inbound id against one upstream. The upstream's
@@ -288,12 +303,12 @@ export const getModels = async (
 // catalog regardless of kind, so the caller can distinguish
 // "id is unknown to this upstream" from "id exists but wrong kind".
 const enumerateOneUpstreamCandidates = async (
-  provider: ModelProviderInstance,
+  provider: Provider,
   modelId: string,
   kind: ModelKind,
   fetcher: Fetcher,
   scheduler: BackgroundScheduler,
-): Promise<{ candidates: ProviderCandidate[]; sawAnyId: boolean }> => {
+): Promise<{ candidates: ModelCandidate[]; sawAnyId: boolean }> => {
   const cfg = provider.modelPrefix;
   const lookupIds: string[] = [];
   if (cfg === null) {
@@ -308,13 +323,15 @@ const enumerateOneUpstreamCandidates = async (
 
   const providedModels = await fetchUpstreamModelsCached(provider, { scheduler, fetcher });
   const disabled = new Set(provider.disabledPublicModelIds);
-  const candidates: ProviderCandidate[] = [];
+  const candidates: ModelCandidate[] = [];
   let sawAnyId = false;
   for (const lookupId of lookupIds) {
     const match = providedModels.find(m => m.id === lookupId && !disabled.has(m.id));
     if (!match) continue;
     sawAnyId = true;
-    if (match.kind === kind) candidates.push({ provider, model: match, fetcher });
+    if (match.kind === kind) {
+      candidates.push({ provider, model: internalModelFromProviderModel(match, provider.upstream), fetcher });
+    }
   }
   return { candidates, sawAnyId };
 };
@@ -334,11 +351,11 @@ const enumerateOneUpstreamCandidates = async (
 export const enumerateRealModelCandidates = async (
   modelId: string,
   kind: ModelKind,
-  providers: readonly ModelProviderInstance[],
+  providers: readonly Provider[],
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
 ): Promise<{
-  readonly candidates: readonly ProviderCandidate[];
+  readonly candidates: readonly ModelCandidate[];
   readonly sawAnyId: boolean;
   readonly failedUpstreams: readonly string[];
 }> => {
@@ -346,7 +363,7 @@ export const enumerateRealModelCandidates = async (
     enumerateOneUpstreamCandidates(provider, modelId, kind, fetcherForUpstream(provider.upstream), scheduler)));
 
   const failedUpstreams: string[] = [];
-  const candidates: ProviderCandidate[] = [];
+  const candidates: ModelCandidate[] = [];
   let sawAnyId = false;
   for (const [index, result] of settled.entries()) {
     if (result.status === 'rejected') {
@@ -376,11 +393,11 @@ const DATED_SUFFIX = /-\d{8}$/;
 const resolveRealCandidates = async (
   modelId: string,
   kind: ModelKind,
-  providers: readonly ModelProviderInstance[],
+  providers: readonly Provider[],
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
 ): Promise<{
-  readonly candidates: readonly ProviderCandidate[];
+  readonly candidates: readonly ModelCandidate[];
   readonly sawModel: boolean;
   readonly failedUpstreams: readonly string[];
 }> => {
@@ -458,7 +475,7 @@ export const enumerateModelCandidates = async ({
   // honoured at dial time.
   currentColo: string;
 }): Promise<{
-  readonly candidates: readonly ProviderCandidate[];
+  readonly candidates: readonly ModelCandidate[];
   readonly sawModel: boolean;
   readonly failedUpstreams: readonly string[];
   // Set only when the inbound id resolved through an alias whose picked

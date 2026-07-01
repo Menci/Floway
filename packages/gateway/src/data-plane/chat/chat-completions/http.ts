@@ -4,7 +4,7 @@ import { chatCompletionsServe } from './serve.ts';
 import type { AuthedContext } from '../../../middleware/auth.ts';
 import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
 import { createNonResponsesSourceStore } from '../responses/items/store.ts';
-import { createGatewayCtxFromHono, finalizeGatewayResponse, type GatewayCtx } from '../shared/gateway-ctx.ts';
+import { createChatGatewayCtxFromHono, createGatewayCtxFromHono, finalizeGatewayResponse, type ChatGatewayCtx, type GatewayCtx } from '../shared/gateway-ctx.ts';
 import { readRequestBody, type RequestBody } from '../shared/request-body.ts';
 import { providerModelsUnavailableResponse } from '../shared/upstream-models-error.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
@@ -42,7 +42,7 @@ const respondToThrow = async (c: AuthedContext, error: unknown, requestBody: Req
 export const chatCompletionsHttp = {
   generate: async (c: AuthedContext): Promise<Response> => {
     const requestBody = await readRequestBody(c);
-    let ctx: GatewayCtx | undefined;
+    let ctx: ChatGatewayCtx | undefined;
     try {
       const payload = JSON.parse(new TextDecoder().decode(requestBody.bytes)) as ChatCompletionsPayload;
       const wantsStream = payload.stream === true;
@@ -52,9 +52,8 @@ export const chatCompletionsHttp = {
       // slots — the value lives in this http-entry closure for the duration of
       // the request.
       const includeUsageChunk = payload.stream_options?.include_usage === true;
-      ctx = createGatewayCtxFromHono(c, { wantsStream, requestBody, model: payload.model });
-      const store = createNonResponsesSourceStore(ctx.apiKeyId);
-      const result = await chatCompletionsServe.generate({ payload, ctx, store, headers: inboundHeadersForUpstream(c) });
+      ctx = createChatGatewayCtxFromHono(c, { wantsStream, requestBody, model: payload.model }, createNonResponsesSourceStore);
+      const result = await chatCompletionsServe.generate({ payload, ctx, headers: inboundHeadersForUpstream(c) });
       const { response } = await respondChatCompletions(c, result, wantsStream, includeUsageChunk, ctx);
       return finalizeGatewayResponse(ctx, response);
     } catch (error) {

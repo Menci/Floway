@@ -41,6 +41,7 @@ import type { ChatCompletionsInterceptor } from './types.ts';
 import { asJsonObject, type JsonObject, readJsonNumber } from '../../../../shared/json-helpers.ts';
 import type { ChatCompletionsStreamEvent, ChatCompletionsPayload, ChatCompletionsReasoningItem, ChatCompletionsMessage } from '@floway-dev/protocols/chat-completions';
 import { eventFrame } from '@floway-dev/protocols/common';
+import { providerModelOf } from '@floway-dev/provider';
 
 const synthesizeFromItems = (items: ChatCompletionsReasoningItem[] | null | undefined): string | undefined => {
   if (!items?.length) return undefined;
@@ -119,7 +120,7 @@ const rewriteInboundUsage = (chunk: ChatCompletionsStreamEvent): ChatCompletions
 };
 
 export const withVendorDeepseekChatCompletionsNormalize: ChatCompletionsInterceptor = async (ctx, _gatewayCtx, run) => {
-  if (!ctx.candidate.model.enabledFlags.has('vendor-deepseek')) return await run();
+  if (!providerModelOf(ctx.candidate).enabledFlags.has('vendor-deepseek')) return await run();
 
   ctx.payload = rewriteOutboundPayload(ctx.payload);
 

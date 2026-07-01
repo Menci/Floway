@@ -1,3 +1,4 @@
+
 import type { MessagesInterceptor } from './types.ts';
 import { decodeBase64UrlJson, encodeBase64UrlJson } from '../../../../shared/base64url-json.ts';
 import { isJsonObject } from '../../../../shared/json-helpers.ts';
@@ -23,7 +24,7 @@ import type {
   MessagesWebSearchToolResultError,
 } from '@floway-dev/protocols/messages';
 import { MESSAGES_WEB_SEARCH_ERROR_CODES } from '@floway-dev/protocols/messages';
-import { internalErrorResult, toInternalDebugError } from '@floway-dev/provider';
+import { providerModelOf, internalErrorResult, toInternalDebugError } from '@floway-dev/provider';
 
 const MAX_QUERY_LENGTH = 1000;
 const WEB_SEARCH_TOOL_NAME = 'web_search';
@@ -894,7 +895,7 @@ const resolveActiveMessagesWebSearchProvider = async (apiKeyId: string): Promise
  * may or may not be able to serve web_search natively).
  */
 export const withMessagesWebSearchShim: MessagesInterceptor = async (ctx, gatewayCtx, run) => {
-  if (ctx.targetApi === 'messages' && !ctx.candidate.model.enabledFlags.has('messages-web-search-shim')) return await run();
+  if (ctx.targetApi === 'messages' && !providerModelOf(ctx.candidate).enabledFlags.has('messages-web-search-shim')) return await run();
 
   const prepared = prepareMessagesWebSearchShimRequest(ctx.payload);
 
