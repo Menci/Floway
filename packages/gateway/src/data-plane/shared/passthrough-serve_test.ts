@@ -181,14 +181,15 @@ test('passthrough-serve: response header allow-list forwards expected headers an
   );
 });
 
-test('passthrough-serve: alias resolves to no routable target — 404 envelope', async () => {
-  // Mirrors the four chat-protocol serve_test cases: when the alias
-  // resolver throws `AliasNoTargetAvailableError`, the shared prelude
-  // converts it to a passthrough-shaped 404. No upstream call should fire.
+test('passthrough-serve: alias whose targets have no kind-matching binding surfaces as the regular model-missing 404', async () => {
+  // The inlined alias resolver walks alias targets in `selection` order and
+  // stops at the first target with kind-matching candidates. When every
+  // target is unroutable (as here, where the single target id doesn't
+  // exist in any upstream catalog), the resolver returns empty candidates
+  // + sawModel=false, and the passthrough seam surfaces the regular
+  // model-missing 404. No upstream call should fire.
   const { apiKey, repo } = await setupAppTest();
   await registerEmbeddingsUpstream(repo);
-  // Seed an alias whose only target id does not exist in any upstream
-  // catalog, so the resolver builds an empty available pool and throws.
   await repo.modelAliases.insert({
     name: 'embed-fast',
     kind: 'embedding',
@@ -223,8 +224,9 @@ test('passthrough-serve: alias resolves to no routable target — 404 envelope',
       assertEquals(response.status, 404);
       const body = await response.json() as { error: { message: string; type: string } };
       assertEquals(body.error.type, 'api_error');
-      // The canonical wording carries the alias name + configured count.
-      assertEquals(body.error.message.includes("alias 'embed-fast'"), true);
+      // The alias name (still on `payload.model` because no candidate was
+      // rewritten in) reaches the wording verbatim.
+      assertEquals(body.error.message, 'Model embed-fast is not available on any configured upstream.');
     },
   );
 });

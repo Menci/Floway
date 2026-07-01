@@ -1,7 +1,7 @@
 import { messagesAttempt, messagesGenerateTarget, messagesCountTokensTarget } from './attempt.ts';
 import { renderMessagesFailure } from './errors.ts';
 import { planMessagesRouting } from './routing.ts';
-import { resolveCandidatesAndApplyAlias } from '../../model-aliases/prelude.ts';
+import { enumerateModelCandidates } from '../../providers/registry.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import { noViableCandidateFailure } from '../shared/errors.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
@@ -23,23 +23,17 @@ export interface MessagesServeCountTokensArgs {
   readonly headers: Headers;
 }
 
-const applyAlias = (payload: MessagesPayload) => (resolution: { targetModelId: string }) => {
-  payload.model = resolution.targetModelId;
-};
-
 export const messagesServe = {
   generate: async (args: MessagesServeGenerateArgs): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>>> => {
     const { payload, ctx, store, headers } = args;
-    const resolved = await resolveCandidatesAndApplyAlias({
-      ctx,
-      modelName: payload.model,
+    const { candidates, sawModel, failedUpstreams, aliasRules } = await enumerateModelCandidates({
+      upstreamIds: ctx.upstreamIds,
+      model: payload.model,
       kind: 'chat',
-      endpointAccepts: messagesGenerateTarget.canServe,
-      applyAlias: applyAlias(payload),
-      renderAliasFailure: failure => renderMessagesFailure(failure, 'generate'),
+      scheduler: ctx.backgroundScheduler,
+      currentColo: ctx.currentColo,
     });
-    if (resolved.kind === 'failure') return resolved.result;
-    const { candidates, sawModel, failedUpstreams } = resolved;
+    if (aliasRules !== undefined) ctx.aliasRules = aliasRules;
     const viable = candidates.filter(c => messagesGenerateTarget.canServe(c.model.endpoints));
     const decision = await planMessagesRouting({ payload, candidates: viable, store });
     if (decision.kind === 'failure') return renderMessagesFailure(decision.failure, 'generate');
@@ -50,21 +44,20 @@ export const messagesServe = {
     // upstream.
     const [candidate] = decision.candidates;
     if (candidate === undefined) return renderMessagesFailure(noViableCandidateFailure(sawModel, payload.model, failedUpstreams), 'generate');
+    if (aliasRules !== undefined) payload.model = candidate.model.id;
     return await messagesAttempt.generate({ payload, ctx, store, candidate, headers });
   },
 
   countTokens: async (args: MessagesServeCountTokensArgs): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>> | PlainResult> => {
     const { payload, ctx, store, headers } = args;
-    const resolved = await resolveCandidatesAndApplyAlias({
-      ctx,
-      modelName: payload.model,
+    const { candidates, sawModel, failedUpstreams, aliasRules } = await enumerateModelCandidates({
+      upstreamIds: ctx.upstreamIds,
+      model: payload.model,
       kind: 'chat',
-      endpointAccepts: messagesCountTokensTarget.canServe,
-      applyAlias: applyAlias(payload),
-      renderAliasFailure: failure => renderMessagesFailure(failure, 'countTokens'),
+      scheduler: ctx.backgroundScheduler,
+      currentColo: ctx.currentColo,
     });
-    if (resolved.kind === 'failure') return resolved.result;
-    const { candidates, sawModel, failedUpstreams } = resolved;
+    if (aliasRules !== undefined) ctx.aliasRules = aliasRules;
     const viable = candidates.filter(c => messagesCountTokensTarget.canServe(c.model.endpoints));
     const decision = await planMessagesRouting({ payload, candidates: viable, store });
     if (decision.kind === 'failure') return renderMessagesFailure(decision.failure, 'countTokens');
@@ -74,6 +67,7 @@ export const messagesServe = {
     // is the answer. Provider-level transport errors throw and propagate.
     const [candidate] = decision.candidates;
     if (candidate === undefined) return renderMessagesFailure(noViableCandidateFailure(sawModel, payload.model, failedUpstreams), 'countTokens');
+    if (aliasRules !== undefined) payload.model = candidate.model.id;
     return await messagesAttempt.countTokens({ payload, ctx, store, candidate, headers });
   },
 };

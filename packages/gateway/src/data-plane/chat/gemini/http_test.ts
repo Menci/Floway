@@ -16,7 +16,7 @@ vi.mock('../../providers/registry.ts', async importOriginal => {
   const original = await importOriginal<typeof import('../../providers/registry.ts')>();
   return {
     ...original,
-    enumerateRealModelCandidatesWithDatedRetry: vi.fn(async () => {
+    enumerateModelCandidates: vi.fn(async () => {
       const next = candidatesQueue.shift();
       if (next === undefined) throw new Error('http_test: no candidates enqueued');
       return next;

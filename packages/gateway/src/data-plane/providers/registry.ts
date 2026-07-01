@@ -2,8 +2,9 @@ import { unionEndpoints } from './endpoint-union.ts';
 import { fetchUpstreamModelsCached } from './models-cache.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { getRepo } from '../../repo/index.ts';
+import type { ModelAliasRecord } from '../../repo/types.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import { type ModelKind, kindForEndpoints } from '@floway-dev/protocols/common';
+import { type AliasRules, type ModelKind, kindForEndpoints } from '@floway-dev/protocols/common';
 import { isAbortError, type Fetcher, type InternalModel, type ModelProviderInstance, type ProviderCandidate, type UpstreamModel, type UpstreamProviderKind, type UpstreamRecord } from '@floway-dev/provider';
 import { createAzureProvider } from '@floway-dev/provider-azure';
 import { createClaudeCodeProvider } from '@floway-dev/provider-claude-code';
@@ -368,12 +369,11 @@ export const enumerateRealModelCandidates = async (
 // `failedUpstreams` list for the caller's renderer.
 const DATED_SUFFIX = /-\d{8}$/;
 
-// Real-catalog resolution with the dated-suffix retry baked in. The alias
-// prelude calls this directly: it has already shared a provider list across
-// the alias resolver and the per-target candidate probe, so it skips the
-// `listModelProviders` round-trip that `enumerateModelCandidates` below
-// would re-pay.
-export const enumerateRealModelCandidatesWithDatedRetry = async (
+// Real-catalog resolution with the dated-suffix retry baked in. Used both
+// directly (when we already hold the provider list) and by
+// `enumerateModelCandidates` below, which lists providers and then delegates
+// here — once for each alias target when the inbound id names an alias.
+const resolveRealCandidates = async (
   modelId: string,
   kind: ModelKind,
   providers: readonly ModelProviderInstance[],
@@ -397,24 +397,40 @@ export const enumerateRealModelCandidatesWithDatedRetry = async (
   };
 };
 
-// Per-request model resolution, structured as the user-spec call chain:
+// Target order for an alias walk: `first-available` walks in declaration
+// order; `random` shuffles so the pick distributes uniformly across
+// whichever target happens to have live candidates. Both modes stop at the
+// first target whose catalog walk yields at least one kind-matching
+// candidate; a target that resolves to zero candidates is skipped, so the
+// pool-narrowing that used to live in a dedicated resolver step now falls
+// out of the same catalog walk the non-alias branch runs.
+const orderAliasTargets = (alias: ModelAliasRecord): readonly ModelAliasRecord['targets'][number][] => {
+  if (alias.selection === 'first-available') return alias.targets;
+  const shuffled = [...alias.targets];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+};
+
+// Per-request model resolution. Two-branch chain:
 //
-//   1. Resolve the inbound id against every visible upstream at the
-//      requested kind (real-model walk — `enumerateRealModelCandidates`).
-//      Wrong-kind catalog entries are dropped inside that walk, so they
-//      never reach this layer as candidates.
-//   2. If the id matched no upstream catalog at all (`sawAnyId=false`)
-//      and the id ends in `-YYYYMMDD`, strip the suffix and walk again.
-//      The retry runs the full provider list, so the stripped id is
-//      exposed in the same enumeration order as the original attempt.
-//      A wrong-kind match does NOT trigger retry — the suffix strip
-//      cannot turn a wrong-kind model into a right-kind one.
+//   1. Look the inbound id up in the alias repo. When the id names an
+//      alias, walk its targets in `selection`-mode order and delegate to
+//      the real-catalog resolver for each one; the first target with at
+//      least one kind-matching candidate wins, and its rule overlay rides
+//      out on `aliasRules` so each terminal wire call can apply it against
+//      the target IR.
+//   2. Otherwise (or when the alias walk found no target with candidates)
+//      run the real-catalog resolver directly on the inbound id.
 //
-// `sawModel` is true whenever the inbound id (or its dated-stripped form)
-// appeared in some upstream catalog regardless of kind. Callers use it to
-// distinguish "model id is unknown to every configured upstream"
-// (sawModel=false) from "model exists but is the wrong kind for this
-// endpoint" (sawModel=true, candidates=[]).
+// The real-catalog resolver walks every visible upstream, filters by kind
+// inside the walk (so wrong-kind entries never become candidates), and
+// retries once with an eight-digit dated suffix stripped when the id
+// matched nothing at all. `sawModel` reports whether the id was known to
+// any upstream regardless of kind, so the caller can distinguish "model
+// missing" (404) from "model wrong kind" (400).
 //
 // Endpoint-level narrowing — picking the chat target protocol from
 // `model.endpoints`, or checking the specific `imagesEdits` /
@@ -422,10 +438,10 @@ export const enumerateRealModelCandidatesWithDatedRetry = async (
 // This function stays endpoint-blind so the same path serves chat,
 // embeddings, image generation/edits, and legacy completions.
 //
-// Aliases enter through the chat alias prelude (`resolveCandidatesAndApplyAlias`),
-// which calls `enumerateRealModelCandidatesWithDatedRetry` against the
-// target id the alias resolved to. Passthrough seams use this function
-// directly because they do not participate in the alias resolution flow.
+// The alias walk is a natural top-of-chain check: by construction an
+// alias's target id is a real model id, so the shadow pattern (an alias
+// whose first target matches its own name) resolves to the real model on
+// the first pass; alias names never re-enter the alias layer.
 export const enumerateModelCandidates = async ({
   upstreamIds, model, kind, scheduler, currentColo,
 }: {
@@ -445,8 +461,38 @@ export const enumerateModelCandidates = async ({
   readonly candidates: readonly ProviderCandidate[];
   readonly sawModel: boolean;
   readonly failedUpstreams: readonly string[];
+  // Set only when the inbound id resolved through an alias whose picked
+  // target had kind-matching candidates. Each attempt's leaf wire call
+  // reads `ctx.aliasRules` and overlays it onto the target IR.
+  readonly aliasRules?: AliasRules;
 }> => {
   const fetcherForUpstream = await createPerRequestFetcher(currentColo);
   const providers = await listModelProviders(upstreamIds);
-  return await enumerateRealModelCandidatesWithDatedRetry(model, kind, providers, fetcherForUpstream, scheduler);
+
+  const alias = await getRepo().modelAliases.getByName(model);
+  if (alias === null) {
+    return await resolveRealCandidates(model, kind, providers, fetcherForUpstream, scheduler);
+  }
+
+  // Aggregate failed-upstream names across every target attempt so a
+  // partial catalog outage during the walk still surfaces in the caller's
+  // error wording, even if a later target succeeds and short-circuits the
+  // walk.
+  const aggregatedFailed = new Set<string>();
+  for (const target of orderAliasTargets(alias)) {
+    const result = await resolveRealCandidates(target.target_model_id, kind, providers, fetcherForUpstream, scheduler);
+    for (const name of result.failedUpstreams) aggregatedFailed.add(name);
+    if (result.candidates.length > 0) {
+      return {
+        candidates: result.candidates,
+        sawModel: result.sawModel,
+        failedUpstreams: [...aggregatedFailed],
+        aliasRules: target.rules,
+      };
+    }
+  }
+  // The alias exists but no target has any kind-matching binding. Surface
+  // as the regular model-missing 404 — the client sees the alias name
+  // (which is still on `payload.model`) in the error message.
+  return { candidates: [], sawModel: false, failedUpstreams: [...aggregatedFailed] };
 };

@@ -1,7 +1,7 @@
 import { geminiAttempt, geminiCountTokensTarget, geminiGenerateTarget } from './attempt.ts';
 import { renderGeminiFailure } from './errors.ts';
 import { planGeminiRouting } from './routing.ts';
-import { resolveCandidatesAndApplyAlias } from '../../model-aliases/prelude.ts';
+import { enumerateModelCandidates } from '../../providers/registry.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import { noViableCandidateFailure } from '../shared/errors.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
@@ -31,15 +31,14 @@ export interface GeminiServeCountTokensArgs {
 export const geminiServe = {
   generate: async (args: GeminiServeGenerateArgs): Promise<ExecuteResult<ProtocolFrame<GeminiStreamEvent>>> => {
     const { payload, ctx, store, headers } = args;
-    const resolved = await resolveCandidatesAndApplyAlias({
-      ctx,
-      modelName: args.model,
+    const { candidates, sawModel, failedUpstreams, aliasRules } = await enumerateModelCandidates({
+      upstreamIds: ctx.upstreamIds,
+      model: args.model,
       kind: 'chat',
-      endpointAccepts: geminiGenerateTarget.canServe,
-      renderAliasFailure: failure => renderGeminiFailure(failure, 'generate'),
+      scheduler: ctx.backgroundScheduler,
+      currentColo: ctx.currentColo,
     });
-    if (resolved.kind === 'failure') return resolved.result;
-    const { candidates, sawModel, failedUpstreams, effectiveModelId: model } = resolved;
+    if (aliasRules !== undefined) ctx.aliasRules = aliasRules;
     const viable = candidates.filter(c => geminiGenerateTarget.canServe(c.model.endpoints));
     const decision = await planGeminiRouting({ payload, candidates: viable, store });
     if (decision.kind === 'failure') return renderGeminiFailure(decision.failure, 'generate');
@@ -49,21 +48,20 @@ export const geminiServe = {
     // from the first viable candidate is final, not a hint to try another
     // upstream.
     const [candidate] = decision.candidates;
-    if (candidate === undefined) return renderGeminiFailure(noViableCandidateFailure(sawModel, model, failedUpstreams), 'generate');
+    if (candidate === undefined) return renderGeminiFailure(noViableCandidateFailure(sawModel, args.model, failedUpstreams), 'generate');
     return await geminiAttempt.generate({ payload, ctx, store, candidate, headers });
   },
 
   countTokens: async (args: GeminiServeCountTokensArgs): Promise<ExecuteResult<ProtocolFrame<GeminiStreamEvent>> | PlainResult> => {
     const { payload, ctx, store, headers } = args;
-    const resolved = await resolveCandidatesAndApplyAlias({
-      ctx,
-      modelName: args.model,
+    const { candidates, sawModel, failedUpstreams, aliasRules } = await enumerateModelCandidates({
+      upstreamIds: ctx.upstreamIds,
+      model: args.model,
       kind: 'chat',
-      endpointAccepts: geminiCountTokensTarget.canServe,
-      renderAliasFailure: failure => renderGeminiFailure(failure, 'countTokens'),
+      scheduler: ctx.backgroundScheduler,
+      currentColo: ctx.currentColo,
     });
-    if (resolved.kind === 'failure') return resolved.result;
-    const { candidates, sawModel, failedUpstreams, effectiveModelId: model } = resolved;
+    if (aliasRules !== undefined) ctx.aliasRules = aliasRules;
     const viable = candidates.filter(c => geminiCountTokensTarget.canServe(c.model.endpoints));
     const decision = await planGeminiRouting({ payload, candidates: viable, store });
     if (decision.kind === 'failure') return renderGeminiFailure(decision.failure, 'countTokens');
@@ -72,7 +70,7 @@ export const geminiServe = {
     // errors come back as a `plain` envelope, so the first candidate's result
     // is the answer. Provider-level transport errors throw and propagate.
     const [candidate] = decision.candidates;
-    if (candidate === undefined) return renderGeminiFailure(noViableCandidateFailure(sawModel, model, failedUpstreams), 'countTokens');
+    if (candidate === undefined) return renderGeminiFailure(noViableCandidateFailure(sawModel, args.model, failedUpstreams), 'countTokens');
     return await geminiAttempt.countTokens({ payload, ctx, store, candidate, headers });
   },
 };

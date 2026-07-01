@@ -7,46 +7,33 @@ import { InMemoryRepo } from '../../../repo/memory.ts';
 import type { StoredResponsesItem, StoredResponsesSnapshot } from '../../../repo/types.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
-import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { directFetcher, type ProviderCandidate, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
 
-// `enumerateRealModelCandidatesWithDatedRetry` is the registry-side seam the
-// alias prelude calls into — mocking it directly keeps the serve tests narrow
-// provider registry — mocking it directly keeps the serve tests narrow
-// (no fake fetch, no repo upstream rows for provider catalogs) and lets
-// each test hand the serve exactly the candidates it wants to exercise.
+// Mock the resolver seam so each test hands the serve exactly the provider
+// candidates it wants, optionally with an alias-rules overlay attached.
 // `sawModel` defaults to true when at least one candidate was queued; the
 // `model-missing` failure tests queue an empty list and expect `sawModel:
 // false` so the serve renders 404 rather than 400.
-const candidatesQueue: { readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean; readonly failedUpstreams: readonly string[] }[] = [];
-const lastCandidatesCall: { model?: string } = {};
+interface QueuedResolution {
+  readonly candidates: readonly ProviderCandidate[];
+  readonly sawModel: boolean;
+  readonly failedUpstreams: readonly string[];
+  readonly aliasRules?: AliasRules;
+}
+const resolutionsQueue: QueuedResolution[] = [];
+const lastResolveCall: { model?: string } = {};
 vi.mock('../../providers/registry.ts', async importOriginal => {
   const original = await importOriginal<typeof import('../../providers/registry.ts')>();
   return {
     ...original,
-    enumerateRealModelCandidatesWithDatedRetry: vi.fn(async (modelId: string) => {
-      lastCandidatesCall.model = modelId;
-      const next = candidatesQueue.shift();
-      if (next === undefined) throw new Error('serve_test: no candidates enqueued');
-      return next;
-    }),
-  };
-});
-
-// Mock the alias resolver so the integration test can inject a resolution
-// without standing up the full per-request fetcher + registry stack.
-const aliasResolutionQueue: ({ targetModelId: string; rules: Record<string, unknown>; aliasName: string } | null | Error)[] = [];
-vi.mock('../../model-aliases/resolve.ts', async importOriginal => {
-  const original = await importOriginal<typeof import('../../model-aliases/resolve.ts')>();
-  return {
-    ...original,
-    resolveAlias: vi.fn(async () => {
-      if (aliasResolutionQueue.length === 0) return null;
-      const next = aliasResolutionQueue.shift()!;
-      if (next instanceof Error) throw next;
+    enumerateModelCandidates: vi.fn(async ({ model }: { model: string }) => {
+      lastResolveCall.model = model;
+      const next = resolutionsQueue.shift();
+      if (next === undefined) throw new Error('serve_test: no resolution enqueued');
       return next;
     }),
   };
@@ -57,11 +44,19 @@ const { expandPreviousResponseId } = await import('./serve-prep.ts');
 
 const API_KEY_ID = 'key_serve_test';
 
-const queueCandidates = (candidates: readonly ProviderCandidate[], sawModel = candidates.length > 0): void => {
-  candidatesQueue.push({ candidates, sawModel, failedUpstreams: [] });
+const queueResolution = (
+  candidates: readonly ProviderCandidate[],
+  extra: { sawModel?: boolean; aliasRules?: AliasRules } = {},
+): void => {
+  resolutionsQueue.push({
+    candidates,
+    sawModel: extra.sawModel ?? candidates.length > 0,
+    failedUpstreams: [],
+    aliasRules: extra.aliasRules,
+  });
 };
 
-afterEach(() => { candidatesQueue.length = 0; });
+afterEach(() => { resolutionsQueue.length = 0; });
 
 const installRepo = (): InMemoryRepo => {
   const repo = new InMemoryRepo();
@@ -168,7 +163,7 @@ test('generate routes a native Responses candidate end to end', async () => {
     headers: new Headers(),
   }));
   const candidate = makeCandidate({ upstream: 'up_a', callResponses });
-  queueCandidates([candidate]);
+  queueResolution([candidate]);
 
   const result = await responsesServe.generate({
     payload: makePayload(),
@@ -197,7 +192,7 @@ test('compact returns a result envelope from the wrapped attempt', async () => {
     return { action: 'compact', ok: true, result: compactionResult, modelKey: 'test-model-key' };
   });
   const candidate = makeCandidate({ upstream: 'up_a', callResponses });
-  queueCandidates([candidate]);
+  queueResolution([candidate]);
 
   const result = await responsesServe.compact({
     payload: compactPayload(),
@@ -231,7 +226,7 @@ test('generate stops at the first candidate even when it yields an upstream erro
   }));
   const first = makeCandidate({ upstream: 'up_a', callResponses: firstCall });
   const second = makeCandidate({ upstream: 'up_b', callResponses: secondCall });
-  queueCandidates([first, second]);
+  queueResolution([first, second]);
 
   const result = await responsesServe.generate({
     payload: makePayload(),
@@ -250,7 +245,7 @@ test('generate stops at the first candidate even when it yields an upstream erro
 
 test('generate renders model-missing when no candidates are available', async () => {
   installRepo();
-  queueCandidates([]);
+  queueResolution([]);
 
   const result = await responsesServe.generate({
     payload: makePayload({ model: 'unknown-model' }),
@@ -272,7 +267,7 @@ test('generate filters out candidates whose endpoints do not satisfy the respons
   const callResponses = vi.fn();
   // responsesTarget prefers responses > messages > chat-completions; an
   // endpoints-only `completions` candidate matches none and is filtered out.
-  queueCandidates([makeCandidate({ upstream: 'up_x', endpoints: { completions: {} }, callResponses })]);
+  queueResolution([makeCandidate({ upstream: 'up_x', endpoints: { completions: {} }, callResponses })]);
 
   const result = await responsesServe.generate({
     payload: makePayload({ model: 'wrong-endpoint-model' }),
@@ -308,7 +303,7 @@ test('generate renders routing-unavailable as a 400 when a forcing item names an
   };
   await repo.responsesItems.insertMany([row]);
 
-  queueCandidates([makeCandidate({ upstream: 'up_b' })]);
+  queueResolution([makeCandidate({ upstream: 'up_b' })]);
 
   const result = await responsesServe.generate({
     payload: makePayload({ input: [{ type: 'item_reference', id }] }),
@@ -341,7 +336,7 @@ test('compact renders routing-unavailable when no candidate exposes the response
     refreshedAt: 1_000,
   }]);
 
-  queueCandidates([makeCandidate({ upstream: 'up_b' })]);
+  queueResolution([makeCandidate({ upstream: 'up_b' })]);
 
   const result = await responsesServe.compact({
     payload: makePayload({ input: [{ type: 'item_reference', id }] }),
@@ -359,7 +354,7 @@ test('compact renders routing-unavailable when no candidate exposes the response
 
 test('compact renders model-missing as a 404 when no candidates are available', async () => {
   installRepo();
-  queueCandidates([]);
+  queueResolution([]);
 
   const result = await responsesServe.compact({
     payload: compactPayload({ model: 'unknown-model' }),
@@ -381,7 +376,7 @@ test('compact renders model-unsupported as a 400 when the only candidate\'s endp
   const callResponses = vi.fn();
   // responsesTarget prefers responses > messages > chat-completions; an
   // endpoints-only `completions` candidate matches none and is filtered out.
-  queueCandidates([makeCandidate({ upstream: 'up_x', endpoints: { completions: {} }, callResponses })]);
+  queueResolution([makeCandidate({ upstream: 'up_x', endpoints: { completions: {} }, callResponses })]);
 
   const result = await responsesServe.compact({
     payload: compactPayload({ model: 'wrong-endpoint-model' }),
@@ -520,7 +515,7 @@ test('generate falls through translate-out to messages target', async () => {
     headers: new Headers(),
   }));
   const candidate = makeCandidate({ upstream: 'up_m', endpoints: { messages: {} }, callMessages });
-  queueCandidates([candidate]);
+  queueResolution([candidate]);
 
   const result = await responsesServe.generate({
     payload: makePayload(),
@@ -561,7 +556,7 @@ test('generate falls through translate-out to chat-completions target', async ()
     headers: new Headers(),
   }));
   const candidate = makeCandidate({ upstream: 'up_c', endpoints: { chatCompletions: {} }, callChatCompletions });
-  queueCandidates([candidate]);
+  queueResolution([candidate]);
 
   const result = await responsesServe.generate({
     payload: makePayload(),
@@ -595,12 +590,12 @@ test('generate reuses an existing input row when a later turn echoes the same us
   const store = createResponsesHttpStore(API_KEY_ID, true);
   const payload = makePayload({ input: [{ type: 'message', role: 'user', content: 'hello' }] });
 
-  queueCandidates([makeCandidate({ callResponses })]);
+  queueResolution([makeCandidate({ callResponses })]);
   const turn1 = await responsesServe.generate({ payload, ctx: makeGatewayCtx(), store, headers: new Headers() });
   if (turn1.type !== 'events') throw new Error('turn 1: expected events');
   const turn1Events = await collectEvents(turn1.events);
 
-  queueCandidates([makeCandidate({ callResponses })]);
+  queueResolution([makeCandidate({ callResponses })]);
   const turn2 = await responsesServe.generate({ payload, ctx: makeGatewayCtx(), store, headers: new Headers() });
   if (turn2.type !== 'events') throw new Error('turn 2: expected events');
   const turn2Events = await collectEvents(turn2.events);
@@ -668,7 +663,7 @@ test('generate treats compaction_trigger-bearing input as compaction: snapshot r
       headers: new Headers(),
     };
   });
-  queueCandidates([makeCandidate({ upstream: 'up_a', callResponses })]);
+  queueResolution([makeCandidate({ upstream: 'up_a', callResponses })]);
 
   const result = await responsesServe.generate({
     payload: makePayload({
@@ -705,22 +700,21 @@ test('generate treats compaction_trigger-bearing input as compaction: snapshot r
 
 test('alias resolution swaps the inbound model id for the target and overlays rules onto the Responses IR', async () => {
   installRepo();
-  aliasResolutionQueue.push({
-    targetModelId: 'gpt-5.4',
-    rules: { reasoning: { effort: 'high', summary: 'detailed' }, verbosity: 'medium', serviceTier: 'priority' },
-    aliasName: 'gpt-fast',
-  });
   const capturedBodies: ResponsesPayload[] = [];
   const callResponses = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderResponsesResult> => {
     capturedBodies.push(body as ResponsesPayload);
     return { action: 'generate', ok: true, events: makeProtocolFrames([{ type: 'response.completed', sequence_number: 0, response: makeResponsesResult() }]), modelKey: 'gpt-5.4', headers: new Headers() };
   });
-  queueCandidates([makeCandidate({ upstream: 'up_a', callResponses })]);
+  const candidate = makeCandidate({ upstream: 'up_a', callResponses });
+  Object.assign(candidate.model, { id: 'gpt-5.4' });
+  queueResolution([candidate], {
+    aliasRules: { reasoning: { effort: 'high', summary: 'detailed' }, verbosity: 'medium', serviceTier: 'priority' },
+  });
 
-  const ctx = makeGatewayCtx();
+  const payload = makePayload({ model: 'gpt-fast' });
   const result = await responsesServe.generate({
-    payload: makePayload({ model: 'gpt-fast' }),
-    ctx,
+    payload,
+    ctx: makeGatewayCtx(),
     store: createResponsesHttpStore(API_KEY_ID, true),
     headers: new Headers(),
   });
@@ -729,8 +723,12 @@ test('alias resolution swaps the inbound model id for the target and overlays ru
   if (result.type !== 'events') throw new Error('unreachable');
   await collectEvents(result.events);
 
-  // The resolved target id, not the alias name, reaches candidate enumeration.
-  assertEquals(lastCandidatesCall.model, 'gpt-5.4');
+  // Resolver saw the inbound alias id; serve rewrote the prepared payload's
+  // model to the target id before dispatching. (The attempt strips `model`
+  // from the body — the provider re-stamps it from `candidate.model.id` —
+  // so we only verify payload rewriting via `payload.model` here.)
+  assertEquals(lastResolveCall.model, 'gpt-fast');
+  assertEquals(payload.model, 'gpt-5.4');
   const observed = capturedBodies[0]!;
   assertEquals(observed.reasoning?.effort, 'high');
   assertEquals(observed.reasoning?.summary, 'detailed');
@@ -738,12 +736,9 @@ test('alias resolution swaps the inbound model id for the target and overlays ru
   assertEquals(observed.service_tier, 'priority');
 });
 
-test('alias resolves to no routable target — renders the Responses 404 envelope', async () => {
+test('alias whose targets have no kind-matching binding surfaces as the regular model-missing 404', async () => {
   installRepo();
-  const { AliasNoTargetAvailableError } = await import('../../model-aliases/resolve.ts');
-  aliasResolutionQueue.push(new AliasNoTargetAvailableError({
-    aliasName: 'gpt-fast', targetCount: 2, allEndpointMismatch: false,
-  }));
+  queueResolution([], { sawModel: false });
 
   const result = await responsesServe.generate({
     payload: makePayload({ model: 'gpt-fast' }),
@@ -756,5 +751,5 @@ test('alias resolves to no routable target — renders the Responses 404 envelop
   if (result.type !== 'api-error') throw new Error('unreachable');
   assertEquals(result.status, 404);
   const body = JSON.parse(new TextDecoder().decode(result.body));
-  assert(body.error.message.includes("alias 'gpt-fast'"));
+  assertEquals(body.error.message, 'Model gpt-fast is not available on any configured upstream.');
 });

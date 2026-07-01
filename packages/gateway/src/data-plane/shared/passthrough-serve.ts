@@ -23,7 +23,7 @@ import type { AuthedContext } from '../../middleware/auth.ts';
 import type { TokenUsage } from '../../repo/types.ts';
 import type { GatewayCtx } from '../chat/shared/gateway-ctx.ts';
 import { type StreamCompletion, writeSSEFrames } from '../chat/shared/stream/sse.ts';
-import { resolveCandidatesAndApplyAlias } from '../model-aliases/prelude.ts';
+import { enumerateModelCandidates } from '../providers/registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { doneFrame, eventFrame, type ModelEndpointKey, type ModelKind, parseSSEStream, parseTargetStreamFrames, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import { httpResponseToResponse, ProviderModelsUnavailableError, toInternalDebugError } from '@floway-dev/provider';
@@ -142,20 +142,20 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
     // branch pushed before the prefixed one within a single upstream.
     // The first candidate whose endpoint-key check passes wins.
     //
-    // The alias prelude resolves once above prefix routing, and surfaces
-    // a rendered failure when the alias resolver has no routable target.
-    const resolved = await resolveCandidatesAndApplyAlias({
-      ctx,
-      modelName: model,
+    // Alias resolution is a top-of-chain step inside the resolver: an alias
+    // id walks its targets in `selection` order, and the first target with
+    // kind-matching candidates wins; its rule overlay rides out on
+    // `aliasRules` and is stashed on `ctx` so the wire call can apply it.
+    // Passthrough aliases carry empty rules, so the branch is a no-op in
+    // practice — the alias flow only changes which id we address upstream.
+    const { candidates, sawModel, failedUpstreams, aliasRules } = await enumerateModelCandidates({
+      upstreamIds: ctx.upstreamIds,
+      model,
       kind,
-      endpointAccepts: endpoints => endpoints[endpointKey] !== undefined,
-      renderAliasFailure: failure => {
-        ctx.dump?.error('gateway');
-        return passthroughApiError(c, failure.message, 404);
-      },
+      scheduler: ctx.backgroundScheduler,
+      currentColo: ctx.currentColo,
     });
-    if (resolved.kind === 'failure') return resolved.result;
-    const { candidates, sawModel, failedUpstreams } = resolved;
+    if (aliasRules !== undefined) ctx.aliasRules = aliasRules;
     if (candidates.length === 0) {
       ctx.dump?.error('gateway');
       // `sawModel === false` means no upstream catalog knew the inbound id

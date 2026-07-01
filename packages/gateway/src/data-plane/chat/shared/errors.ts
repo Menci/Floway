@@ -9,12 +9,7 @@ export type ChatServeFailure =
   | { readonly kind: 'model-missing'; readonly model: string; readonly failedUpstreams: readonly string[] }
   | { readonly kind: 'model-unsupported'; readonly model: string; readonly failedUpstreams: readonly string[] }
   | { readonly kind: 'item-not-found'; readonly itemId: string }
-  | { readonly kind: 'routing-unavailable'; readonly message: string }
-  // Alias name resolved, but no entry in its targets list currently maps
-  // to an enabled upstream binding. `message` carries the canonical
-  // wording the Error class already built, so renderers do not re-derive
-  // it.
-  | { readonly kind: 'alias-no-target-available'; readonly message: string };
+  | { readonly kind: 'routing-unavailable'; readonly message: string };
 
 class ChatServeFailureError extends Error {
   readonly failure: ChatServeFailure;

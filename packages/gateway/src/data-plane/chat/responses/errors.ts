@@ -45,7 +45,5 @@ export const renderResponsesFailure = (
     return openAiErrorResult(404, appendFailedUpstreams(`Model ${failure.model} is not available on any configured upstream.`, failure.failedUpstreams));
   case 'model-unsupported':
     return openAiErrorResult(400, appendFailedUpstreams(`Model ${failure.model} does not support the /responses endpoint.`, failure.failedUpstreams));
-  case 'alias-no-target-available':
-    return openAiErrorResult(404, failure.message);
   }
 };

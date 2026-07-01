@@ -230,9 +230,10 @@ const mergeWithOverride = (
 // Returns null when no target serves this alias on the gateway, OR when the
 // caller cannot reach any of the configured targets — the catalog should
 // never advertise an id the caller would 404 on. The alias itself stays
-// addressable through `resolveAlias`, which surfaces
-// `AliasNoTargetAvailableError` at request time. Callers
-// (`synthesizeListedAliases`) filter the nulls out.
+// addressable through the request-time resolver in `providers/registry.ts`,
+// which walks the alias's targets in configured order and surfaces a
+// regular model-missing 404 when no target has any kind-matching binding.
+// Callers (`synthesizeListedAliases`) filter the nulls out.
 const synthesizeOne = (
   alias: ModelAliasRecord,
   gatewayAddressableModelIds: readonly AddressableIdEntry[],
@@ -273,10 +274,11 @@ const synthesizeOne = (
     : computed;
 
   // Endpoints follow the gateway-wide union — every endpoint reachable
-  // through ANY gateway target is advertised. The resolver's
-  // request-time pool narrows to targets that serve the inbound endpoint;
-  // a caller hitting an endpoint that's only available through an out-of-
-  // cap target gets the natural `AliasNoTargetAvailableError` 404.
+  // through ANY gateway target is advertised. The request-time resolver
+  // walks the alias's targets in configured order and stops at the first
+  // target with kind-matching candidates; a caller hitting an endpoint
+  // that's only served by an out-of-cap target sees the natural
+  // model-missing / model-unsupported error.
   const endpoints = unionEndpoints(gatewayAvailable.map(({ real }) => real.endpoints));
 
   const entry: PublicModel = {

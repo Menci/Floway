@@ -1,7 +1,7 @@
 import { chatCompletionsAttempt, chatCompletionsTarget } from './attempt.ts';
 import { renderChatCompletionsFailure } from './errors.ts';
 import { planChatCompletionsRouting } from './routing.ts';
-import { resolveCandidatesAndApplyAlias } from '../../model-aliases/prelude.ts';
+import { enumerateModelCandidates } from '../../providers/registry.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import { noViableCandidateFailure } from '../shared/errors.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
@@ -19,16 +19,14 @@ export interface ChatCompletionsServeGenerateArgs {
 export const chatCompletionsServe = {
   generate: async (args: ChatCompletionsServeGenerateArgs): Promise<ExecuteResult<ProtocolFrame<ChatCompletionsStreamEvent>>> => {
     const { payload, ctx, store, headers } = args;
-    const resolved = await resolveCandidatesAndApplyAlias({
-      ctx,
-      modelName: payload.model,
+    const { candidates, sawModel, failedUpstreams, aliasRules } = await enumerateModelCandidates({
+      upstreamIds: ctx.upstreamIds,
+      model: payload.model,
       kind: 'chat',
-      endpointAccepts: chatCompletionsTarget.canServe,
-      applyAlias: resolution => { payload.model = resolution.targetModelId; },
-      renderAliasFailure: renderChatCompletionsFailure,
+      scheduler: ctx.backgroundScheduler,
+      currentColo: ctx.currentColo,
     });
-    if (resolved.kind === 'failure') return resolved.result;
-    const { candidates, sawModel, failedUpstreams } = resolved;
+    if (aliasRules !== undefined) ctx.aliasRules = aliasRules;
     const viable = candidates.filter(c => chatCompletionsTarget.canServe(c.model.endpoints));
     const decision = await planChatCompletionsRouting({ payload, candidates: viable, store });
     if (decision.kind === 'failure') return renderChatCompletionsFailure(decision.failure);
@@ -39,6 +37,7 @@ export const chatCompletionsServe = {
     // upstream.
     const [candidate] = decision.candidates;
     if (candidate === undefined) return renderChatCompletionsFailure(noViableCandidateFailure(sawModel, payload.model, failedUpstreams));
+    if (aliasRules !== undefined) payload.model = candidate.model.id;
     return await chatCompletionsAttempt.generate({ payload, ctx, store, candidate, headers });
   },
 };

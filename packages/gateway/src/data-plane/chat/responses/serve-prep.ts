@@ -2,7 +2,7 @@ import { responsesTarget } from './attempt.ts';
 import { renderResponsesFailure } from './errors.ts';
 import type { StatefulResponsesStore } from './items/store.ts';
 import { planResponsesRouting } from './routing.ts';
-import { resolveCandidatesAndApplyAlias } from '../../model-aliases/prelude.ts';
+import { enumerateModelCandidates } from '../../providers/registry.ts';
 import { noViableCandidateFailure } from '../shared/errors.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -87,16 +87,14 @@ export const prepareResponsesServePlan = async (args: {
 }): Promise<ResponsesServePlan> => {
   const { payload, ctx, store } = args;
   const prepared = await expandPreviousResponseId(payload, store);
-  const resolved = await resolveCandidatesAndApplyAlias({
-    ctx,
-    modelName: prepared.model,
+  const { candidates, sawModel, failedUpstreams, aliasRules } = await enumerateModelCandidates({
+    upstreamIds: ctx.upstreamIds,
+    model: prepared.model,
     kind: 'chat',
-    endpointAccepts: responsesTarget.canServe,
-    applyAlias: resolution => { prepared.model = resolution.targetModelId; },
-    renderAliasFailure: failure => renderResponsesFailure(failure),
+    scheduler: ctx.backgroundScheduler,
+    currentColo: ctx.currentColo,
   });
-  if (resolved.kind === 'failure') return { kind: 'failure', result: resolved.result };
-  const { candidates, sawModel, failedUpstreams } = resolved;
+  if (aliasRules !== undefined) ctx.aliasRules = aliasRules;
   const viable = candidates.filter(c => responsesTarget.canServe(c.model.endpoints));
   const decision = await planResponsesRouting({ payload: prepared, candidates: viable, store });
   if (decision.kind === 'failure') return { kind: 'failure', result: renderResponsesFailure(decision.failure) };
@@ -118,5 +116,6 @@ export const prepareResponsesServePlan = async (args: {
       result: renderResponsesFailure(noViableCandidateFailure(sawModel, prepared.model, failedUpstreams)),
     };
   }
+  if (aliasRules !== undefined) prepared.model = candidate.model.id;
   return { kind: 'ready', prepared, candidate };
 };
