@@ -18,7 +18,6 @@ interface QueuedResolution {
   readonly candidates: readonly ModelCandidate[];
   readonly sawModel: boolean;
   readonly failedUpstreams: readonly string[];
-  readonly aliasRules?: AliasRules;
 }
 const resolutionsQueue: QueuedResolution[] = [];
 const lastResolveCall: { model?: string } = {};
@@ -43,11 +42,11 @@ const queueResolution = (
   candidates: readonly ModelCandidate[],
   extra: { sawModel?: boolean; aliasRules?: AliasRules } = {},
 ): void => {
+  const rules = extra.aliasRules;
   resolutionsQueue.push({
-    candidates,
+    candidates: rules !== undefined ? candidates.map(c => ({ ...c, rules })) : candidates,
     sawModel: extra.sawModel ?? candidates.length > 0,
     failedUpstreams: [],
-    aliasRules: extra.aliasRules,
   });
 };
 

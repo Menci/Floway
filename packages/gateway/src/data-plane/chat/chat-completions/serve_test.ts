@@ -15,7 +15,6 @@ interface QueuedResolution {
   readonly candidates: readonly ModelCandidate[];
   readonly sawModel: boolean;
   readonly failedUpstreams: readonly string[];
-  readonly aliasRules?: AliasRules;
 }
 const resolutionsQueue: QueuedResolution[] = [];
 const lastResolveCall: { model?: string } = {};
@@ -40,11 +39,11 @@ const queueResolution = (
   candidates: readonly ModelCandidate[],
   extra: { sawModel?: boolean; aliasRules?: AliasRules } = {},
 ): void => {
+  const rules = extra.aliasRules;
   resolutionsQueue.push({
-    candidates,
+    candidates: rules !== undefined ? candidates.map(c => ({ ...c, rules })) : candidates,
     sawModel: extra.sawModel ?? candidates.length > 0,
     failedUpstreams: [],
-    aliasRules: extra.aliasRules,
   });
 };
 
@@ -291,7 +290,7 @@ test('alias resolution swaps the inbound model id for the target and overlays ru
   assertEquals(lastResolveCall.model, 'gpt-fast');
   // Serve rewrote payload.model to the target id before the attempt.
   assertEquals(payload.model, 'gpt-5.4');
-  // Alias rules land on the IR through ctx.aliasRules → the attempt's
+  // Alias rules land on the IR through candidate.rules → the attempt's
   // applyRulesToUpstreamChatCompletions call.
   const observed = capturedBodies[0]!;
   assertEquals(observed.reasoning_effort, 'low');

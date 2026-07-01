@@ -61,6 +61,28 @@ export interface ChatAliasRules {
 // unchecked cast.
 export type AliasRules = ChatAliasRules;
 
+// Structural equality across two `AliasRules` values. The resolver dedups
+// alias-expanded candidates by (modelId, upstreamId, rules); "same rules"
+// is a value comparison because two targets can carry independent objects
+// with identical field content, and the caller wants those collapsed
+// (target-set overlap without functional divergence). Two undefined
+// operands never appear on the alias path — the helper still returns
+// `true` for symmetry so callers can compare two optional rule slots.
+export const sameAliasRules = (a: AliasRules | undefined, b: AliasRules | undefined): boolean => {
+  if (a === b) return true;
+  if (a === undefined || b === undefined) return false;
+  if (a.verbosity !== b.verbosity) return false;
+  if (a.serviceTier !== b.serviceTier) return false;
+  const ar = a.reasoning;
+  const br = b.reasoning;
+  if (ar === br) return true;
+  if (ar === undefined || br === undefined) return false;
+  return ar.effort === br.effort
+    && ar.budget_tokens === br.budget_tokens
+    && ar.adaptive === br.adaptive
+    && ar.summary === br.summary;
+};
+
 // One target row inside an alias's `targets` list. Order is meaningful for
 // `first-available` selection and preserved (but ignored) for `random`.
 export interface AliasTarget {

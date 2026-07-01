@@ -57,7 +57,7 @@ export const messagesAttempt = {
     };
     return await runInterceptors(invocation, ctx, messagesInterceptors, async () => {
       if (targetApi === 'messages') {
-        if (ctx.aliasRules !== undefined) applyRulesToUpstreamMessages(invocation.payload, ctx.aliasRules);
+        if (candidate.rules !== undefined) applyRulesToUpstreamMessages(invocation.payload, candidate.rules);
         const { model: _model, ...body } = invocation.payload;
         const recorder = createUpstreamLatencyRecorder();
         const providerResult = await candidate.provider.instance.callMessages(
@@ -111,7 +111,7 @@ export const messagesAttempt = {
     };
     const recorder = createUpstreamLatencyRecorder();
     const response = await runInterceptors(invocation, ctx, messagesCountTokensInterceptors, async () => {
-      if (ctx.aliasRules !== undefined) applyRulesToUpstreamMessages(invocation.payload, ctx.aliasRules);
+      if (candidate.rules !== undefined) applyRulesToUpstreamMessages(invocation.payload, candidate.rules);
       const { model: _model, ...body } = invocation.payload;
       const { response } = await candidate.provider.instance.callMessagesCountTokens(
         providerModelOf(candidate),

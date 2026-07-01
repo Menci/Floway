@@ -19,14 +19,13 @@ export interface ChatCompletionsServeGenerateArgs {
 export const chatCompletionsServe = {
   generate: async (args: ChatCompletionsServeGenerateArgs): Promise<ExecuteResult<ProtocolFrame<ChatCompletionsStreamEvent>>> => {
     const { payload, ctx, headers } = args;
-    const { candidates: enumerated, sawModel, failedUpstreams, aliasRules } = await enumerateModelCandidates({
+    const { candidates: enumerated, sawModel, failedUpstreams } = await enumerateModelCandidates({
       upstreamIds: ctx.upstreamIds,
       model: payload.model,
       kind: 'chat',
       scheduler: ctx.backgroundScheduler,
       currentColo: ctx.currentColo,
     });
-    if (aliasRules !== undefined) ctx.aliasRules = aliasRules;
     const viable = enumerated.filter(c => chatCompletionsTarget.canServe(c.model.endpoints));
     const decision = await classifyResponsesItemAffinity({
       sourceItems: payload.messages,
@@ -42,15 +41,16 @@ export const chatCompletionsServe = {
     // from one candidate falls through to the next so the gateway absorbs
     // transient 5xx/429/network failures. When the list is exhausted, the
     // most recent failure is forwarded verbatim so the client still sees
-    // real upstream telemetry rather than a synthetic envelope. When the
-    // request rode in on an alias, rewrite `payload.model` to the chosen
-    // target's public id so the downstream provider dispatches under the
-    // real model name.
+    // real upstream telemetry rather than a synthetic envelope. Alias-
+    // origin candidates carry `.rules`, and the resolver already deduped
+    // them by (model, upstream, rules); rewrite `payload.model` to the
+    // candidate's real id so the wire call dispatches under the real
+    // model name.
     return await iterateCandidates(
       decision.candidates,
       'chatCompletionsServe.generate',
       candidate => {
-        if (aliasRules !== undefined) payload.model = candidate.model.id;
+        if (candidate.rules !== undefined) payload.model = candidate.model.id;
         return chatCompletionsAttempt.generate({ payload, ctx, candidate, headers });
       },
     );

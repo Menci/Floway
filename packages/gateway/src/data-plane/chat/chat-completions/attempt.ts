@@ -110,7 +110,7 @@ const callChatCompletionsAsExecuteResult = async (
   candidate: ModelCandidate,
   headers: Headers,
 ): Promise<ExecuteResult<ProtocolFrame<ChatCompletionsStreamEvent>>> => {
-  if (ctx.aliasRules !== undefined) applyRulesToUpstreamChatCompletions(payload, ctx.aliasRules);
+  if (candidate.rules !== undefined) applyRulesToUpstreamChatCompletions(payload, candidate.rules);
   const { model: _model, ...body } = payload;
   const recorder = createUpstreamLatencyRecorder();
   const providerResult = await candidate.provider.instance.callChatCompletions(

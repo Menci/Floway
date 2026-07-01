@@ -18,7 +18,6 @@ interface QueuedResolution {
   readonly candidates: readonly ModelCandidate[];
   readonly sawModel: boolean;
   readonly failedUpstreams: readonly string[];
-  readonly aliasRules?: AliasRules;
 }
 const resolutionsQueue: QueuedResolution[] = [];
 const lastSeenModel: { value: string | null } = { value: null };
@@ -43,11 +42,11 @@ const queueResolution = (
   candidates: readonly ModelCandidate[],
   extra: { sawModel?: boolean; aliasRules?: AliasRules } = {},
 ): void => {
+  const rules = extra.aliasRules;
   resolutionsQueue.push({
-    candidates,
+    candidates: rules !== undefined ? candidates.map(c => ({ ...c, rules })) : candidates,
     sawModel: extra.sawModel ?? candidates.length > 0,
     failedUpstreams: [],
-    aliasRules: extra.aliasRules,
   });
 };
 
@@ -288,7 +287,7 @@ test('POST /v1/responses renders a routing-unavailable 400 when a forcing item n
 // Alias flow: the resolver returns a candidate whose upstream catalog id
 // is the target model id, plus the alias's rule overlay. Serve rewrites
 // `payload.model` to `candidate.model.id` before dispatching, and the
-// attempt's leaf wire call reads `ctx.aliasRules` to overlay the rules
+// attempt's leaf wire call reads `candidate.rules` to overlay the rules
 // onto the target IR.
 const queueCodexAutoReviewCandidate = (
   callResponses: (model: unknown, body: unknown, action: ResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderResponsesResult>,

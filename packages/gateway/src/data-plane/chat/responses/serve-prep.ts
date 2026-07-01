@@ -59,7 +59,7 @@ export const expandPreviousResponseId = async (
 
 export type ResponsesServePlan =
   | { readonly kind: 'failure'; readonly result: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> }
-  | { readonly kind: 'ready'; readonly prepared: CanonicalResponsesPayload; readonly candidates: readonly ModelCandidate[]; readonly aliased: boolean };
+  | { readonly kind: 'ready'; readonly prepared: CanonicalResponsesPayload; readonly candidates: readonly ModelCandidate[] };
 
 // Runs the shared serve-side prep both `responsesServe.generate` and
 // `responsesServe.compact` need before dispatching to `responsesAttempt`:
@@ -76,14 +76,13 @@ export const prepareResponsesServePlan = async (args: {
   const { payload, ctx } = args;
   const { store } = ctx;
   const prepared = await expandPreviousResponseId(payload, store);
-  const { candidates, sawModel, failedUpstreams, aliasRules } = await enumerateModelCandidates({
+  const { candidates, sawModel, failedUpstreams } = await enumerateModelCandidates({
     upstreamIds: ctx.upstreamIds,
     model: prepared.model,
     kind: 'chat',
     scheduler: ctx.backgroundScheduler,
     currentColo: ctx.currentColo,
   });
-  if (aliasRules !== undefined) ctx.aliasRules = aliasRules;
   const viable = candidates.filter(c => responsesTarget.canServe(c.model.endpoints));
   const decision = await classifyResponsesItemAffinity({
     sourceItems: prepared.input,
@@ -111,5 +110,5 @@ export const prepareResponsesServePlan = async (args: {
       result: renderResponsesFailure(noViableCandidateFailure(sawModel, prepared.model, failedUpstreams)),
     };
   }
-  return { kind: 'ready', prepared, candidates: decision.candidates, aliased: aliasRules !== undefined };
+  return { kind: 'ready', prepared, candidates: decision.candidates };
 };

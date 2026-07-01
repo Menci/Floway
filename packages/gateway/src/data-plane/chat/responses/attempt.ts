@@ -223,7 +223,7 @@ const dispatchResponses = async (
   switch (targetApi) {
   case 'responses': {
     const recorder = createUpstreamLatencyRecorder();
-    if (ctx.aliasRules !== undefined) applyRulesToUpstreamResponses(invocation.payload, ctx.aliasRules);
+    if (candidate.rules !== undefined) applyRulesToUpstreamResponses(invocation.payload, candidate.rules);
     if (invocation.action === 'compact') {
       // The compact wire body drops `stream` and `store` — `store` is a
       // gateway-only snapshot-persistence hint that the upstream compact

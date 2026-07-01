@@ -138,19 +138,18 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
     // The first candidate whose endpoint-key check passes wins.
     //
     // Alias resolution is a top-of-chain step inside the resolver: an alias
-    // id walks its targets in `selection` order, and the first target with
-    // kind-matching candidates wins; its rule overlay rides out on
-    // `aliasRules` and is stashed on `ctx` so the wire call can apply it.
-    // Passthrough aliases carry empty rules, so the branch is a no-op in
-    // practice — the alias flow only changes which id we address upstream.
-    const { candidates, sawModel, failedUpstreams, aliasRules } = await enumerateModelCandidates({
+    // id walks every target in `selection` order, tags each returned
+    // candidate with that target's rule overlay, and dedups across the
+    // flattened list. Passthrough aliases carry empty rules, so the tag
+    // is a no-op in practice — the alias flow only changes which id the
+    // gateway addresses upstream.
+    const { candidates, sawModel, failedUpstreams } = await enumerateModelCandidates({
       upstreamIds: ctx.upstreamIds,
       model,
       kind,
       scheduler: ctx.backgroundScheduler,
       currentColo: ctx.currentColo,
     });
-    if (aliasRules !== undefined) ctx.aliasRules = aliasRules;
     if (candidates.length === 0) {
       ctx.dump?.error('gateway');
       // `sawModel === false` means no upstream catalog knew the inbound id

@@ -4,7 +4,7 @@ import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { ModelAliasRecord } from '../../repo/types.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import { type AliasRules, type ModelKind, kindForEndpoints } from '@floway-dev/protocols/common';
+import { type ModelKind, kindForEndpoints, sameAliasRules } from '@floway-dev/protocols/common';
 import { isAbortError, type Fetcher, type InternalModel, type ModelCandidate, type Provider, type ProviderModel, type UpstreamProviderKind, type UpstreamRecord } from '@floway-dev/provider';
 import { createAzureProvider } from '@floway-dev/provider-azure';
 import { createClaudeCodeProvider } from '@floway-dev/provider-claude-code';
@@ -421,13 +421,11 @@ const resolveRealCandidates = async (
   };
 };
 
-// Target order for an alias walk: `first-available` walks in declaration
-// order; `random` shuffles so the pick distributes uniformly across
-// whichever target happens to have live candidates. Both modes stop at the
-// first target whose catalog walk yields at least one kind-matching
-// candidate; a target that resolves to zero candidates is skipped, so the
-// pool-narrowing that used to live in a dedicated resolver step now falls
-// out of the same catalog walk the non-alias branch runs.
+// Target order for an alias walk: `first-available` yields declaration
+// order; `random` shuffles so the outer walk distributes uniformly across
+// targets. Within a single target's real-catalog walk the per-upstream
+// order is always preserved (registry enumeration order); shuffling
+// applies to the target list, not to a target's candidates.
 const orderAliasTargets = (alias: ModelAliasRecord): readonly ModelAliasRecord['targets'][number][] => {
   if (alias.selection === 'first-available') return alias.targets;
   const shuffled = [...alias.targets];
@@ -441,13 +439,17 @@ const orderAliasTargets = (alias: ModelAliasRecord): readonly ModelAliasRecord['
 // Per-request model resolution. Two-branch chain:
 //
 //   1. Look the inbound id up in the alias repo. When the id names an
-//      alias, walk its targets in `selection`-mode order and delegate to
-//      the real-catalog resolver for each one; the first target with at
-//      least one kind-matching candidate wins, and its rule overlay rides
-//      out on `aliasRules` so each terminal wire call can apply it against
-//      the target IR.
-//   2. Otherwise (or when the alias walk found no target with candidates)
-//      run the real-catalog resolver directly on the inbound id.
+//      alias, walk every target in `selection`-mode order, delegate to the
+//      real-catalog resolver for each one, tag each returned candidate
+//      with that target's rule overlay, flatten across targets, and dedup
+//      by (modelId, upstreamId, rules) — same (model, upstream) with
+//      differing rules stays as distinct candidates so both variants can
+//      be dispatched. `iterateCandidates` at the serve layer then cascades
+//      across every kept candidate: a target's upstreams all failing over
+//      falls through into the next target's candidates instead of hard-
+//      failing at the first target.
+//   2. Otherwise (no alias match at all) run the real-catalog resolver
+//      directly on the inbound id.
 //
 // The real-catalog resolver walks every visible upstream, filters by kind
 // inside the walk (so wrong-kind entries never become candidates), and
@@ -485,10 +487,6 @@ export const enumerateModelCandidates = async ({
   readonly candidates: readonly ModelCandidate[];
   readonly sawModel: boolean;
   readonly failedUpstreams: readonly string[];
-  // Set only when the inbound id resolved through an alias whose picked
-  // target had kind-matching candidates. Each attempt's leaf wire call
-  // reads `ctx.aliasRules` and overlays it onto the target IR.
-  readonly aliasRules?: AliasRules;
 }> => {
   const fetcherForUpstream = await createPerRequestFetcher(currentColo);
   const providers = await listModelProviders(upstreamIds);
@@ -498,25 +496,33 @@ export const enumerateModelCandidates = async ({
     return await resolveRealCandidates(model, kind, providers, fetcherForUpstream, scheduler);
   }
 
-  // Aggregate failed-upstream names across every target attempt so a
-  // partial catalog outage during the walk still surfaces in the caller's
-  // error wording, even if a later target succeeds and short-circuits the
-  // walk.
+  // Walk every target, tag each returned candidate with the target's rule
+  // overlay, then flatten (target order preserved), and dedup by
+  // (modelId, upstreamId, rules). Different rules against the same
+  // (model, upstream) stay as distinct entries so the operator can pin the
+  // same physical binding under two rule variants.
   const aggregatedFailed = new Set<string>();
+  let sawAny = false;
+  const flat: ModelCandidate[] = [];
   for (const target of orderAliasTargets(alias)) {
     const result = await resolveRealCandidates(target.target_model_id, kind, providers, fetcherForUpstream, scheduler);
     for (const name of result.failedUpstreams) aggregatedFailed.add(name);
-    if (result.candidates.length > 0) {
-      return {
-        candidates: result.candidates,
-        sawModel: result.sawModel,
-        failedUpstreams: [...aggregatedFailed],
-        aliasRules: target.rules,
-      };
+    if (result.sawModel) sawAny = true;
+    for (const candidate of result.candidates) {
+      flat.push({ ...candidate, rules: target.rules });
     }
   }
-  // The alias exists but no target has any kind-matching binding. Surface
-  // as the regular model-missing 404 — the client sees the alias name
-  // (which is still on `payload.model`) in the error message.
-  return { candidates: [], sawModel: false, failedUpstreams: [...aggregatedFailed] };
+  const deduped: ModelCandidate[] = [];
+  for (const candidate of flat) {
+    const duplicate = deduped.some(existing =>
+      existing.model.id === candidate.model.id
+      && existing.provider.upstream === candidate.provider.upstream
+      && sameAliasRules(existing.rules, candidate.rules));
+    if (!duplicate) deduped.push(candidate);
+  }
+  return {
+    candidates: deduped,
+    sawModel: sawAny,
+    failedUpstreams: [...aggregatedFailed],
+  };
 };

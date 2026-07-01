@@ -1123,3 +1123,179 @@ test('enumerateModelCandidates returns the empty triple when the visible upstrea
   assertEquals(resolved.sawModel, false);
   assertEquals(resolved.failedUpstreams, []);
 });
+
+// The alias walk visits every target, tags each real-catalog candidate
+// with that target's rule overlay, flattens across targets in `selection`
+// order, and dedups by (model, upstream, rules). Two targets pointing at
+// the same real model with the same rules collapse; the same pair with
+// distinct rules stays as two candidates so both can be attempted.
+describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
+  const aliasCommon = {
+    displayName: null,
+    visibleInModelsList: true,
+    announcedMetadata: null,
+    sortOrder: 1,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+  } as const;
+
+  const buildCatalogFetch = (byModel: Record<string, readonly string[]>) => (request: Request): Response => {
+    const url = new URL(request.url);
+    if (url.hostname === 'a.example.com' && url.pathname === '/v1/models') {
+      return jsonResponse({ object: 'list', data: byModel.up_a.map(id => ({ id })) });
+    }
+    if (url.hostname === 'b.example.com' && url.pathname === '/v1/models') {
+      return jsonResponse({ object: 'list', data: byModel.up_b.map(id => ({ id })) });
+    }
+    throw new Error(`Unhandled fetch ${request.url}`);
+  };
+
+  const seedUpstreams = async (repo: Awaited<ReturnType<typeof setupAppTest>>['repo']): Promise<void> => {
+    await repo.upstreams.deleteAll();
+    await repo.upstreams.save(buildCustomUpstreamRecord({
+      id: 'up_a', name: 'A', sortOrder: 1,
+      config: { baseUrl: 'https://a.example.com', authStyle: 'bearer', apiKey: 'sk-a', endpoints: { chatCompletions: {} } },
+    }));
+    await repo.upstreams.save(buildCustomUpstreamRecord({
+      id: 'up_b', name: 'B', sortOrder: 2,
+      config: { baseUrl: 'https://b.example.com', authStyle: 'bearer', apiKey: 'sk-b', endpoints: { chatCompletions: {} } },
+    }));
+  };
+
+  test('flattens across targets in declaration order for first-available', async () => {
+    clearInFlightForTesting();
+    const { repo } = await setupAppTest();
+    await seedUpstreams(repo);
+    await repo.modelAliases.insert({
+      name: 'smart', kind: 'chat', selection: 'first-available',
+      targets: [
+        { target_model_id: 'gpt-5', rules: {} },
+        { target_model_id: 'claude', rules: {} },
+      ],
+      ...aliasCommon,
+    });
+
+    await withMockedFetch(
+      buildCatalogFetch({ up_a: ['gpt-5'], up_b: ['claude'] }),
+      async () => {
+        const resolved = await enumerateModelCandidates({
+          upstreamIds: null, model: 'smart', kind: 'chat', scheduler: testScheduler, currentColo: 'TEST',
+        });
+        assertEquals(
+          resolved.candidates.map(c => `${c.model.id}@${c.provider.upstream}`),
+          ['gpt-5@up_a', 'claude@up_b'],
+        );
+      },
+    );
+  });
+
+  test('shuffles the outer walk for random selection but keeps intra-target order', async () => {
+    clearInFlightForTesting();
+    const { repo } = await setupAppTest();
+    await seedUpstreams(repo);
+    await repo.modelAliases.insert({
+      name: 'random-alias', kind: 'chat', selection: 'random',
+      targets: [
+        { target_model_id: 'gpt-5', rules: {} },
+        { target_model_id: 'claude', rules: {} },
+      ],
+      ...aliasCommon,
+    });
+
+    await withMockedFetch(
+      buildCatalogFetch({ up_a: ['gpt-5', 'claude'], up_b: ['gpt-5', 'claude'] }),
+      async () => {
+        const resolved = await enumerateModelCandidates({
+          upstreamIds: null, model: 'random-alias', kind: 'chat', scheduler: testScheduler, currentColo: 'TEST',
+        });
+        // Each target contributes two candidates (up_a before up_b, the
+        // configured sort order). The two two-candidate blocks stay together
+        // regardless of the outer shuffle.
+        const grouped = [resolved.candidates.slice(0, 2), resolved.candidates.slice(2, 4)];
+        for (const block of grouped) {
+          expect(block.map(c => c.provider.upstream)).toEqual(['up_a', 'up_b']);
+        }
+        const targetOrder = grouped.map(block => block[0]?.model.id);
+        expect(new Set(targetOrder)).toEqual(new Set(['gpt-5', 'claude']));
+      },
+    );
+  });
+
+  test('dedups (model, upstream, rules) when two targets hit the same binding with identical rules', async () => {
+    clearInFlightForTesting();
+    const { repo } = await setupAppTest();
+    await seedUpstreams(repo);
+    await repo.modelAliases.insert({
+      name: 'dup-alias', kind: 'chat', selection: 'first-available',
+      targets: [
+        { target_model_id: 'gpt-5', rules: { reasoning: { effort: 'low' } } },
+        { target_model_id: 'gpt-5', rules: { reasoning: { effort: 'low' } } },
+      ],
+      ...aliasCommon,
+    });
+
+    await withMockedFetch(
+      buildCatalogFetch({ up_a: ['gpt-5'], up_b: [] }),
+      async () => {
+        const resolved = await enumerateModelCandidates({
+          upstreamIds: null, model: 'dup-alias', kind: 'chat', scheduler: testScheduler, currentColo: 'TEST',
+        });
+        assertEquals(resolved.candidates.length, 1);
+        assertEquals(resolved.candidates[0]!.model.id, 'gpt-5');
+        assertEquals(resolved.candidates[0]!.provider.upstream, 'up_a');
+      },
+    );
+  });
+
+  test('keeps two entries for the same (model, upstream) with distinct rules', async () => {
+    clearInFlightForTesting();
+    const { repo } = await setupAppTest();
+    await seedUpstreams(repo);
+    await repo.modelAliases.insert({
+      name: 'two-rules', kind: 'chat', selection: 'first-available',
+      targets: [
+        { target_model_id: 'gpt-5', rules: { reasoning: { effort: 'low' } } },
+        { target_model_id: 'gpt-5', rules: { reasoning: { effort: 'high' } } },
+      ],
+      ...aliasCommon,
+    });
+
+    await withMockedFetch(
+      buildCatalogFetch({ up_a: ['gpt-5'], up_b: [] }),
+      async () => {
+        const resolved = await enumerateModelCandidates({
+          upstreamIds: null, model: 'two-rules', kind: 'chat', scheduler: testScheduler, currentColo: 'TEST',
+        });
+        assertEquals(resolved.candidates.length, 2);
+        expect(resolved.candidates.map(c => c.rules?.reasoning?.effort)).toEqual(['low', 'high']);
+      },
+    );
+  });
+
+  test('falls through to a later target when an earlier one has no kind-matching binding', async () => {
+    clearInFlightForTesting();
+    const { repo } = await setupAppTest();
+    await seedUpstreams(repo);
+    await repo.modelAliases.insert({
+      name: 'fallback', kind: 'chat', selection: 'first-available',
+      targets: [
+        { target_model_id: 'missing', rules: { verbosity: 'low' } },
+        { target_model_id: 'gpt-5', rules: { verbosity: 'high' } },
+      ],
+      ...aliasCommon,
+    });
+
+    await withMockedFetch(
+      buildCatalogFetch({ up_a: ['gpt-5'], up_b: [] }),
+      async () => {
+        const resolved = await enumerateModelCandidates({
+          upstreamIds: null, model: 'fallback', kind: 'chat', scheduler: testScheduler, currentColo: 'TEST',
+        });
+        // The `missing` target contributes nothing; the `gpt-5` target
+        // contributes one candidate carrying its own rule overlay.
+        assertEquals(resolved.candidates.length, 1);
+        assertEquals(resolved.candidates[0]!.rules?.verbosity, 'high');
+      },
+    );
+  });
+});

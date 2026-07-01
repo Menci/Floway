@@ -5,7 +5,6 @@ import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 import { getCurrentColo } from '../../../runtime/runtime-info.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import type { AliasRules } from '@floway-dev/protocols/common';
 
 export interface GatewayCtx {
   readonly apiKeyId: string;
@@ -31,11 +30,6 @@ export interface GatewayCtx {
   // outbound response by `finalizeGatewayResponse`, regardless of how
   // the responder built the body.
   readonly responseHeaders: Headers;
-  // Alias rules picked by the resolver, applied by each terminal wire call
-  // via the target-protocol `applyRulesToUpstream*` helpers. Undefined on
-  // requests that did not resolve through an alias; each attempt's leaf
-  // wire call is a no-op when this is absent.
-  aliasRules?: AliasRules;
 }
 
 // Chat-protocol ctx — `GatewayCtx` plus the request-scoped stored-items

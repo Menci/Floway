@@ -30,14 +30,13 @@ export interface GeminiServeCountTokensArgs {
 export const geminiServe = {
   generate: async (args: GeminiServeGenerateArgs): Promise<ExecuteResult<ProtocolFrame<GeminiStreamEvent>>> => {
     const { payload, ctx, model, headers } = args;
-    const { candidates: enumerated, sawModel, failedUpstreams, aliasRules } = await enumerateModelCandidates({
+    const { candidates: enumerated, sawModel, failedUpstreams } = await enumerateModelCandidates({
       upstreamIds: ctx.upstreamIds,
       model,
       kind: 'chat',
       scheduler: ctx.backgroundScheduler,
       currentColo: ctx.currentColo,
     });
-    if (aliasRules !== undefined) ctx.aliasRules = aliasRules;
     const viable = enumerated.filter(c => geminiGenerateTarget.canServe(c.model.endpoints));
     const decision = await classifyResponsesItemAffinity({
       sourceItems: payload.contents ?? [],
@@ -53,10 +52,10 @@ export const geminiServe = {
     // from one candidate falls through to the next so the gateway absorbs
     // transient 5xx/429/network failures. When the list is exhausted, the
     // most recent failure is forwarded verbatim so the client still sees
-    // real upstream telemetry rather than a synthetic envelope. When the
-    // request rode in on an alias, the URL-path model id is already in
-    // `model`; downstream dispatch keys off `candidate.model.id`, so no
-    // payload rewrite is needed here.
+    // real upstream telemetry rather than a synthetic envelope. The
+    // Gemini URL-path model id is already in `model`; downstream dispatch
+    // keys off `candidate.model.id`, so no payload rewrite is needed here
+    // even for alias-origin candidates.
     return await iterateCandidates(
       decision.candidates,
       'geminiServe.generate',
@@ -66,14 +65,13 @@ export const geminiServe = {
 
   countTokens: async (args: GeminiServeCountTokensArgs): Promise<ExecuteResult<ProtocolFrame<GeminiStreamEvent>> | PlainResult> => {
     const { payload, ctx, model, headers } = args;
-    const { candidates: enumerated, sawModel, failedUpstreams, aliasRules } = await enumerateModelCandidates({
+    const { candidates: enumerated, sawModel, failedUpstreams } = await enumerateModelCandidates({
       upstreamIds: ctx.upstreamIds,
       model,
       kind: 'chat',
       scheduler: ctx.backgroundScheduler,
       currentColo: ctx.currentColo,
     });
-    if (aliasRules !== undefined) ctx.aliasRules = aliasRules;
     const viable = enumerated.filter(c => geminiCountTokensTarget.canServe(c.model.endpoints));
     const decision = await classifyResponsesItemAffinity({
       sourceItems: payload.contents ?? [],

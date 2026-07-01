@@ -25,14 +25,13 @@ export interface MessagesServeCountTokensArgs {
 export const messagesServe = {
   generate: async (args: MessagesServeGenerateArgs): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>>> => {
     const { payload, ctx, headers } = args;
-    const { candidates: enumerated, sawModel, failedUpstreams, aliasRules } = await enumerateModelCandidates({
+    const { candidates: enumerated, sawModel, failedUpstreams } = await enumerateModelCandidates({
       upstreamIds: ctx.upstreamIds,
       model: payload.model,
       kind: 'chat',
       scheduler: ctx.backgroundScheduler,
       currentColo: ctx.currentColo,
     });
-    if (aliasRules !== undefined) ctx.aliasRules = aliasRules;
     const viable = enumerated.filter(c => messagesGenerateTarget.canServe(c.model.endpoints));
     const decision = await classifyResponsesItemAffinity({
       sourceItems: payload.messages,
@@ -47,14 +46,14 @@ export const messagesServe = {
     // stream opened) is the final answer; an api-error or internal-error
     // from one candidate falls through to the next so the gateway absorbs
     // transient 5xx/429/network failures. When the list is exhausted, the
-    // most recent failure is forwarded verbatim. When the request rode in
-    // on an alias, rewrite `payload.model` to the chosen target's public
-    // id so the downstream provider dispatches under the real model name.
+    // most recent failure is forwarded verbatim. Alias-origin candidates
+    // carry `.rules`; rewrite `payload.model` to the candidate's real id
+    // so the wire call dispatches under the real model name.
     return await iterateCandidates(
       decision.candidates,
       'messagesServe.generate',
       candidate => {
-        if (aliasRules !== undefined) payload.model = candidate.model.id;
+        if (candidate.rules !== undefined) payload.model = candidate.model.id;
         return messagesAttempt.generate({ payload, ctx, candidate, headers });
       },
     );
@@ -62,14 +61,13 @@ export const messagesServe = {
 
   countTokens: async (args: MessagesServeCountTokensArgs): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>> | PlainResult> => {
     const { payload, ctx, headers } = args;
-    const { candidates: enumerated, sawModel, failedUpstreams, aliasRules } = await enumerateModelCandidates({
+    const { candidates: enumerated, sawModel, failedUpstreams } = await enumerateModelCandidates({
       upstreamIds: ctx.upstreamIds,
       model: payload.model,
       kind: 'chat',
       scheduler: ctx.backgroundScheduler,
       currentColo: ctx.currentColo,
     });
-    if (aliasRules !== undefined) ctx.aliasRules = aliasRules;
     const viable = enumerated.filter(c => messagesCountTokensTarget.canServe(c.model.endpoints));
     const decision = await classifyResponsesItemAffinity({
       sourceItems: payload.messages,
@@ -84,7 +82,7 @@ export const messagesServe = {
       decision.candidates,
       'messagesServe.countTokens',
       candidate => {
-        if (aliasRules !== undefined) payload.model = candidate.model.id;
+        if (candidate.rules !== undefined) payload.model = candidate.model.id;
         return messagesAttempt.countTokens({ payload, ctx, candidate, headers });
       },
     );

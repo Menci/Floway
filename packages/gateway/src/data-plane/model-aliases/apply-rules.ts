@@ -1,7 +1,8 @@
-// Post-translate rule overlay. The alias resolver stages the rules on
-// `ctx.aliasRules`; each terminal wire call reads them and writes onto the
-// target IR's NATIVE slot before dispatching. Rules that a target protocol
-// cannot express are silently dropped — the wire has nowhere to put them.
+// Post-translate rule overlay. The alias resolver tags each alias-origin
+// candidate with `.rules`; each terminal wire call reads them off the
+// dispatching candidate and writes onto the target IR's NATIVE slot before
+// dispatching. Rules that a target protocol cannot express are silently
+// dropped — the wire has nowhere to put them.
 //
 // Structuring the overlay this way keeps every translate pair pure
 // native↔native and eliminates the fan-out of Floway-extension fields onto

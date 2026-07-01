@@ -2,6 +2,7 @@ import type { InternalModel, ProviderModel } from './model.ts';
 import type { Fetcher } from './options.ts';
 import type { Provider, ResponsesAction } from './provider.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
+import type { AliasRules } from '@floway-dev/protocols/common';
 import type { GeminiPayload } from '@floway-dev/protocols/gemini';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
 import type { ResponsesPayload } from '@floway-dev/protocols/responses';
@@ -20,10 +21,18 @@ export type ChatTargetApi = 'messages' | 'responses' | 'chat-completions';
 // Resolution narrows by `model.kind` only — choosing the inbound target
 // protocol from `model.endpoints` is the attempt layer's job, not part of
 // the candidate.
+//
+// `rules` is set only for candidates minted by the alias walk — it carries
+// the picked target's rule overlay so the attempt's terminal wire call can
+// apply it against the target IR. Absent (undefined) for direct-resolution
+// candidates, present (possibly `{}`) for alias-origin candidates; the two
+// values together also mark the candidate as needing a `payload.model`
+// rewrite before dispatch.
 export interface ModelCandidate {
   readonly provider: Provider;
   readonly model: InternalModel;
   readonly fetcher: Fetcher;
+  readonly rules?: AliasRules;
 }
 
 // Pull the emitting upstream's `ProviderModel` off the candidate. Dispatch
