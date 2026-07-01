@@ -39,11 +39,14 @@ export type Verbosity = 'low' | 'medium' | 'high' | (string & {});
 // as `ReasoningEffort`.
 export type ServiceTier = 'default' | 'flex' | 'priority' | 'scale' | 'fast' | (string & {});
 
-// Rule overlay applied to a chat-kind alias target. Every field is optional;
-// an absent field leaves the inbound request value untouched. Rule values
-// are forwarded verbatim to the upstream — the gateway does not narrow them
-// against the target's advertised capability metadata.
-export interface ChatAliasRules {
+// Rule overlay payload for an alias target. Every field is optional; an
+// absent field leaves the inbound request value untouched. Rule values are
+// forwarded verbatim to the upstream — the gateway does not narrow them
+// against the target's advertised capability metadata. Non-chat targets
+// (embedding, image) carry `{}`, which trivially satisfies the shape
+// because every field is optional; the rule overlay is a no-op for those
+// kinds today.
+export interface AliasRules {
   reasoning?: {
     effort?: ReasoningEffort;
     budget_tokens?: number;
@@ -53,13 +56,6 @@ export interface ChatAliasRules {
   verbosity?: Verbosity;
   serviceTier?: ServiceTier;
 }
-
-// Rule overlay payload. Today only chat-kind aliases carry rules — embedding
-// and image targets pass `{}`, which already satisfies `ChatAliasRules`
-// because every field is optional. The type is a single alias rather than a
-// union so consumers can read `rules.reasoning?.effort` directly without an
-// unchecked cast.
-export type AliasRules = ChatAliasRules;
 
 // Structural equality across two `AliasRules` values. The resolver dedups
 // alias-expanded candidates by (modelId, upstreamId, rules); "same rules"

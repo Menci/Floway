@@ -11,9 +11,9 @@
 // hand. The backend stays authoritative — what `/v1/models` reports
 // is what the gateway computes there, not what this helper emits.
 
-import type { AliasTarget, AnnouncedMetadata, ChatAliasRules, ChatModelInfo, ControlPlaneModel, PublicModelLimits } from '../../api/types.ts';
+import type { AliasTarget, AnnouncedMetadata, AliasRules, ChatModelInfo, ControlPlaneModel, PublicModelLimits } from '../../api/types.ts';
 
-const chatRules = (target: AliasTarget): ChatAliasRules => target.rules;
+const chatRules = (target: AliasTarget): AliasRules => target.rules;
 
 const intersectArrays = <T>(arrays: readonly (readonly T[])[]): T[] => {
   if (arrays.length === 0) return [];
