@@ -22,8 +22,7 @@ import type { Fetcher, ModelProviderInstance } from '@floway-dev/provider';
 export interface AliasResolution {
   readonly targetModelId: string;
   readonly rules: AliasRules;
-  // Original alias name, for the `x-floway-alias` response header and dump
-  // attribution.
+  // Original alias name, preserved for dump attribution.
   readonly aliasName: string;
 }
 

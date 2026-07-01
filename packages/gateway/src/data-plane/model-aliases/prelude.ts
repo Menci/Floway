@@ -1,4 +1,3 @@
-import { ALIAS_RESPONSE_HEADER } from './header.ts';
 import { AliasNoTargetAvailableError, type AliasResolution, resolveAlias } from './resolve.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { getRepo } from '../../repo/index.ts';
@@ -17,15 +16,14 @@ export interface AliasNoTargetFailure {
 
 // Shared serve-side prelude every chat protocol — and the passthrough seam —
 // runs before routing. Resolves candidates against the live registry, runs
-// the alias resolver when the inbound id is an alias, stages the
-// `x-floway-alias` response header on every alias-touched code path
-// (including the no-target 404), stashes the alias rules on `ctx` so each
-// terminal wire call can overlay them onto the target IR, and converts
-// `AliasNoTargetAvailableError` to whatever rendered failure the caller's
-// `renderAliasFailure` produces. `applyAlias` is left as the seam through
-// which the caller rewrites its own body-carried model id (chat: mutates
-// `payload.model`; Gemini reads `effectiveModelId` since the id rides the
-// URL path); rule overlay itself lives target-side in the attempt layer.
+// the alias resolver when the inbound id is an alias, stashes the alias
+// rules on `ctx` so each terminal wire call can overlay them onto the
+// target IR, and converts `AliasNoTargetAvailableError` to whatever
+// rendered failure the caller's `renderAliasFailure` produces. `applyAlias`
+// is left as the seam through which the caller rewrites its own body-
+// carried model id (chat: mutates `payload.model`; Gemini reads
+// `effectiveModelId` since the id rides the URL path); rule overlay
+// itself lives target-side in the attempt layer.
 export interface ResolveCandidatesArgs<F> {
   readonly ctx: GatewayCtx;
   readonly modelName: string;
@@ -86,11 +84,6 @@ export const resolveCandidatesAndApplyAlias = async <F>(args: ResolveCandidatesA
     });
   } catch (error) {
     if (error instanceof AliasNoTargetAvailableError) {
-      // Header staged on the 404 too — observability ties together "client
-      // asked for X" / "alias X had no routable target" without parsing
-      // the body. finalizeGatewayResponse copies ctx.responseHeaders onto
-      // every outbound response, including rendered failures.
-      ctx.responseHeaders.set(ALIAS_RESPONSE_HEADER, error.aliasName);
       return { kind: 'failure', result: renderAliasFailure({ kind: 'alias-no-target-available', message: error.message }) };
     }
     throw error;
@@ -112,7 +105,6 @@ export const resolveCandidatesAndApplyAlias = async <F>(args: ResolveCandidatesA
     // rules automatically.
     ctx.aliasRules = aliasResolution.rules;
     applyAlias?.(aliasResolution);
-    ctx.responseHeaders.set(ALIAS_RESPONSE_HEADER, aliasResolution.aliasName);
   }
   return {
     kind: 'ok',

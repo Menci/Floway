@@ -181,11 +181,10 @@ test('passthrough-serve: response header allow-list forwards expected headers an
   );
 });
 
-test('passthrough-serve: alias resolves to no routable target — 404 envelope + x-floway-alias header', async () => {
+test('passthrough-serve: alias resolves to no routable target — 404 envelope', async () => {
   // Mirrors the four chat-protocol serve_test cases: when the alias
   // resolver throws `AliasNoTargetAvailableError`, the shared prelude
-  // converts it to a passthrough-shaped 404 and stages the
-  // `x-floway-alias` correlation header. No upstream call should fire.
+  // converts it to a passthrough-shaped 404. No upstream call should fire.
   const { apiKey, repo } = await setupAppTest();
   await registerEmbeddingsUpstream(repo);
   // Seed an alias whose only target id does not exist in any upstream
@@ -222,99 +221,10 @@ test('passthrough-serve: alias resolves to no routable target — 404 envelope +
       });
 
       assertEquals(response.status, 404);
-      assertEquals(response.headers.get('x-floway-alias'), 'embed-fast');
       const body = await response.json() as { error: { message: string; type: string } };
       assertEquals(body.error.type, 'api_error');
       // The canonical wording carries the alias name + configured count.
       assertEquals(body.error.message.includes("alias 'embed-fast'"), true);
-    },
-  );
-});
-
-test('passthrough-serve: alias resolves and routes — 200 stages x-floway-alias with the alias name', async () => {
-  // Companion to the alias-404 case above: on the success path the shared
-  // prelude also stages `x-floway-alias`, so downstream observability can
-  // correlate "client asked for X" / "upstream saw Y" for every request
-  // that went through an alias, not only the ones that failed to route.
-  const { apiKey, repo } = await setupAppTest();
-  await registerEmbeddingsUpstream(repo);
-  await repo.modelAliases.insert({
-    name: 'embed-fast',
-    kind: 'embedding',
-    selection: 'first-available',
-    displayName: null,
-    visibleInModelsList: true,
-    targets: [{ target_model_id: 'custom-embed-model', rules: {} }],
-    announcedMetadata: null,
-    sortOrder: 0,
-    createdAt: '2026-01-01T00:00:00.000Z',
-    updatedAt: '2026-01-01T00:00:00.000Z',
-  });
-
-  await withMockedFetch(
-    request => {
-      const url = new URL(request.url);
-      if (url.hostname === 'passthrough.example.com' && url.pathname === '/v1/models') {
-        return jsonResponse({ object: 'list', data: [{ id: 'custom-embed-model' }] });
-      }
-      if (url.hostname === 'passthrough.example.com' && url.pathname === '/v1/embeddings') {
-        return jsonResponse({
-          object: 'list',
-          model: 'custom-embed-model',
-          data: [{ object: 'embedding', index: 0, embedding: [0.5] }],
-          usage: { prompt_tokens: 3, total_tokens: 3 },
-        });
-      }
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => {
-      const response = await requestApp('/v1/embeddings', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
-        body: JSON.stringify({ model: 'embed-fast', input: 'hi' }),
-      });
-
-      assertEquals(response.status, 200);
-      assertEquals(response.headers.get('x-floway-alias'), 'embed-fast');
-      await response.json();
-    },
-  );
-});
-
-test('passthrough-serve: non-alias request omits the x-floway-alias header', async () => {
-  // Complement to both alias tests: a request whose model id maps to a real
-  // upstream binding must not stage the alias correlation header, so
-  // downstream tooling can trust the header's presence as an alias-touched
-  // signal.
-  const { apiKey, repo } = await setupAppTest();
-  await registerEmbeddingsUpstream(repo);
-
-  await withMockedFetch(
-    request => {
-      const url = new URL(request.url);
-      if (url.hostname === 'passthrough.example.com' && url.pathname === '/v1/models') {
-        return jsonResponse({ object: 'list', data: [{ id: 'custom-embed-model' }] });
-      }
-      if (url.hostname === 'passthrough.example.com' && url.pathname === '/v1/embeddings') {
-        return jsonResponse({
-          object: 'list',
-          model: 'custom-embed-model',
-          data: [{ object: 'embedding', index: 0, embedding: [0.5] }],
-          usage: { prompt_tokens: 3, total_tokens: 3 },
-        });
-      }
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => {
-      const response = await requestApp('/v1/embeddings', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
-        body: JSON.stringify({ model: 'custom-embed-model', input: 'hi' }),
-      });
-
-      assertEquals(response.status, 200);
-      assertEquals(response.headers.get('x-floway-alias'), null);
-      await response.json();
     },
   );
 });

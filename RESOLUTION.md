@@ -215,10 +215,12 @@ pass. The prelude also stashes the alias's rule overlay on `ctx` for the
 target-side wire call — the resolver itself never sees rules.
 
 The alias-resolved target id, not the alias name, is what dispatch
-addresses upstream. The alias name is preserved on `ctx.responseHeaders`
-as `x-floway-alias` for observability. Alias listing behavior on
-`/v1/models`, `/v1beta/models`, and the Codex catalog is covered in the
-alias implementation notes under `data-plane/model-aliases/`.
+addresses upstream. The upstream response's `model` field reports the
+model that actually served the request, so a client that wants to
+attribute a response to a particular target can compare that against
+the id it sent. Alias listing behavior on `/v1/models`, `/v1beta/models`,
+and the Codex catalog is covered in the alias implementation notes
+under `data-plane/model-aliases/`.
 
 ## Candidate Shape
 

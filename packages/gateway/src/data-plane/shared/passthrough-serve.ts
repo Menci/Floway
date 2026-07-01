@@ -142,10 +142,8 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
     // branch pushed before the prefixed one within a single upstream.
     // The first candidate whose endpoint-key check passes wins.
     //
-    // The alias prelude resolves once above prefix routing, stages the
-    // `x-floway-alias` response header on every alias-touched path
-    // (including the 404), and surfaces a rendered failure when the
-    // alias resolver has no routable target.
+    // The alias prelude resolves once above prefix routing, and surfaces
+    // a rendered failure when the alias resolver has no routable target.
     const resolved = await resolveCandidatesAndApplyAlias({
       ctx,
       modelName: model,

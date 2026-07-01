@@ -436,21 +436,18 @@ test('alias resolution swaps the inbound model id for the target and overlays ru
   const observed = capturedBodies[0]!;
   assertEquals(observed.reasoning_effort, 'high');
   assertEquals(observed.verbosity, 'low');
-  // The correlation header carries the alias name on the 200 path too.
-  assertEquals(ctx.responseHeaders.get('x-floway-alias'), 'gemini-fast');
 });
 
-test('alias resolves to no routable target — renders the Gemini 404 envelope + stages x-floway-alias on the failure', async () => {
+test('alias resolves to no routable target — renders the Gemini 404 envelope', async () => {
   installRepo();
   const { AliasNoTargetAvailableError } = await import('../../model-aliases/resolve.ts');
   aliasResolutionQueue.push(new AliasNoTargetAvailableError({
     aliasName: 'gemini-fast', targetCount: 2, allEndpointMismatch: false,
   }));
 
-  const ctx = makeGatewayCtx();
   const result = await geminiServe.generate({
     payload: makePayload(),
-    ctx,
+    ctx: makeGatewayCtx(),
     store: createNonResponsesSourceStore(API_KEY_ID),
     model: 'gemini-fast',
     headers: new Headers(),
@@ -461,5 +458,4 @@ test('alias resolves to no routable target — renders the Gemini 404 envelope +
   assertEquals(result.status, 404);
   const body = JSON.parse(new TextDecoder().decode(result.body));
   assert(body.error.message.includes("alias 'gemini-fast'"));
-  assertEquals(ctx.responseHeaders.get('x-floway-alias'), 'gemini-fast');
 });

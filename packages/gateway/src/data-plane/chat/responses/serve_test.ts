@@ -736,21 +736,18 @@ test('alias resolution swaps the inbound model id for the target and overlays ru
   assertEquals(observed.reasoning?.summary, 'detailed');
   assertEquals(observed.text?.verbosity, 'medium');
   assertEquals(observed.service_tier, 'priority');
-  // The correlation header carries the alias name on the 200 path too.
-  assertEquals(ctx.responseHeaders.get('x-floway-alias'), 'gpt-fast');
 });
 
-test('alias resolves to no routable target — renders the Responses 404 envelope + stages x-floway-alias on the failure', async () => {
+test('alias resolves to no routable target — renders the Responses 404 envelope', async () => {
   installRepo();
   const { AliasNoTargetAvailableError } = await import('../../model-aliases/resolve.ts');
   aliasResolutionQueue.push(new AliasNoTargetAvailableError({
     aliasName: 'gpt-fast', targetCount: 2, allEndpointMismatch: false,
   }));
 
-  const ctx = makeGatewayCtx();
   const result = await responsesServe.generate({
     payload: makePayload({ model: 'gpt-fast' }),
-    ctx,
+    ctx: makeGatewayCtx(),
     store: createResponsesHttpStore(API_KEY_ID, true),
     headers: new Headers(),
   });
@@ -760,5 +757,4 @@ test('alias resolves to no routable target — renders the Responses 404 envelop
   assertEquals(result.status, 404);
   const body = JSON.parse(new TextDecoder().decode(result.body));
   assert(body.error.message.includes("alias 'gpt-fast'"));
-  assertEquals(ctx.responseHeaders.get('x-floway-alias'), 'gpt-fast');
 });

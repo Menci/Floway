@@ -535,11 +535,9 @@ test('alias resolution swaps the inbound model id for the target and overlays ru
   // The serviceTier=fast → speed=fast bridge lands the alias rule on
   // Anthropic's native Fast Mode field.
   assertEquals(observed.speed, 'fast');
-  // The correlation header carries the alias name on the 200 path too.
-  assertEquals(ctx.responseHeaders.get('x-floway-alias'), 'claude-fast');
 });
 
-test('alias resolves to no routable target — renders the Messages 404 envelope + stages x-floway-alias on the failure', async () => {
+test('alias resolves to no routable target — renders the Messages 404 envelope', async () => {
   installRepo();
   const { AliasNoTargetAvailableError } = await import('../../model-aliases/resolve.ts');
   aliasResolutionQueue.push(new AliasNoTargetAvailableError({
@@ -560,5 +558,4 @@ test('alias resolves to no routable target — renders the Messages 404 envelope
   const body = JSON.parse(new TextDecoder().decode(result.body));
   assertEquals(body.error.type, 'not_found_error');
   assert(body.error.message.includes("alias 'claude-fast'"));
-  assertEquals(ctx.responseHeaders.get('x-floway-alias'), 'claude-fast');
 });

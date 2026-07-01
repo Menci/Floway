@@ -165,9 +165,10 @@ request as if the client had asked for the picked id directly.
 Aliases surface on every listing endpoint (`/v1/models`,
 `/v1beta/models`, the Codex catalog); a visible alias whose name
 collides with a real id replaces the real entry on the wire so the row
-count stays one-per-id. Every response that went through an alias
-carries an `x-floway-alias: <alias-name>` header so downstream tooling
-can correlate the alias-side and upstream-side model ids.
+count stays one-per-id. The upstream response's `model` field reports
+the target the request actually landed on, so a client that wants to
+tell alias-vs-direct routing apart can compare the response's model id
+against the id it sent.
 
 Chat aliases (kind `chat`) can carry per-target rules — reasoning
 effort, verbosity, service tier, and Anthropic thinking configuration.
