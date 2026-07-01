@@ -63,13 +63,11 @@ export interface PerformanceTelemetryContext {
   runtimeLocation: string;
 }
 
-// The neutral internal model shape consumed across the gateway. Metadata fields
-// (id, display_name, cost, ...) surface the public identity of the model;
-// `endpoints` and `kind` reflect the OR-union across every contributing
-// upstream so the gateway as a whole reaches the union. Per-upstream provider
-// state lives inside `providerModels[<upstream>]`, not as flat fields, so the
-// same public id can carry independent state from every upstream that
-// surfaces it.
+// Public identity + capability surface shared by `InternalModel` (the merged,
+// gateway-facing view) and `ProviderModel` (a single upstream's emission).
+// The two shapes carry the same metadata verbatim; the merge step OR-unions
+// `endpoints` and recomputes `kind`. Kept internal so callers can only touch
+// the wrapper types — this base has no meaning on its own.
 //
 // `kind` is the high-level endpoint-family discriminator; `endpoints` is the
 // precise per-protocol availability map. They are linked invariants enforced
@@ -77,17 +75,7 @@ export interface PerformanceTelemetryContext {
 //   `kind === 'embedding'` ⇔ `endpoints === { embeddings: {} }`
 //   `kind === 'image'`     ⇔ `endpoints ⊂ {imagesGenerations, imagesEdits}`
 //   `kind === 'chat'`      ⇒ `endpoints ⊂ generation endpoints`.
-//
-// `endpoints` declares which protocols this model is reachable through.
-// Per-candidate rows produced by `enumerateRealModelCandidates` carry the
-// single upstream's wire capability; a merged catalog row (the projection
-// `getModels` returns) carries the OR-union across every upstream emitting
-// under the same public id — the gateway as a whole reaches the union,
-// translating where the dispatched upstream's native wire does not match.
-// Per-request dispatch reads the chosen upstream's `ProviderModel` off the
-// candidate's `providerModels` map; listing endpoints (`/v1/models`, `/models`,
-// `/v1beta/models`, and the control-plane catalog) project the merged row.
-export interface InternalModel {
+interface ModelMetadata {
   id: string;
   display_name?: string;
   owned_by?: string;
@@ -101,6 +89,24 @@ export interface InternalModel {
   cost?: ModelPricing;
   chat?: UpstreamChatModelConfig;
   endpoints: ModelEndpoints;
+}
+
+// The neutral internal model shape consumed across the gateway. Metadata fields
+// surface the public identity of the model; `endpoints` and `kind` reflect the
+// OR-union across every contributing upstream so the gateway as a whole reaches
+// the union. Per-upstream provider state lives inside `providerModels[<upstream>]`,
+// not as flat fields, so the same public id can carry independent state from
+// every upstream that surfaces it.
+//
+// Per-candidate rows produced by `enumerateRealModelCandidates` carry a single
+// upstream's wire capability; a merged catalog row (the projection `getModels`
+// returns) carries the OR-union across every upstream emitting under the same
+// public id — the gateway as a whole reaches the union, translating where the
+// dispatched upstream's native wire does not match. Per-request dispatch reads
+// the chosen upstream's `ProviderModel` off the candidate's `providerModels`
+// map; listing endpoints (`/v1/models`, `/models`, `/v1beta/models`, and the
+// control-plane catalog) project the merged row.
+export interface InternalModel extends ModelMetadata {
   // Every upstream that surfaces this public id contributes one entry, keyed
   // by upstream id, storing that upstream's `ProviderModel` verbatim. A
   // per-candidate row (single upstream in the map) is what dispatch reads
@@ -117,20 +123,7 @@ export interface InternalModel {
 // upstream id, ...) and `enabledFlags` (the effective flag set for the model
 // on the emitting upstream). Providers only ever see their own emission —
 // the surrounding `InternalModel` map is assembled by the registry.
-export interface ProviderModel {
-  id: string;
-  display_name?: string;
-  owned_by?: string;
-  created?: number;
-  limits: {
-    max_output_tokens?: number;
-    max_context_window_tokens?: number;
-    max_prompt_tokens?: number;
-  };
-  kind: ModelKind;
-  cost?: ModelPricing;
-  chat?: UpstreamChatModelConfig;
-  endpoints: ModelEndpoints;
+export interface ProviderModel extends ModelMetadata {
   providerData?: unknown;
   enabledFlags: ReadonlySet<string>;
 }

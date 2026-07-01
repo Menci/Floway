@@ -100,20 +100,12 @@ const unionEndpoints = (a: ModelEndpoints, b: ModelEndpoints): ModelEndpoints =>
 // The provider model is stored verbatim under that entry so dispatch hands
 // the same reference back to the provider's `callXxx`.
 const internalModelFromProviderModel = (providerModel: ProviderModel, upstreamId: string): InternalModel => {
-  const { id, endpoints, kind, limits, display_name, owned_by, created, cost, chat } = providerModel;
-  const meta: InternalModel = {
-    id,
-    limits,
-    kind,
+  const { providerData, enabledFlags, endpoints, ...metadata } = providerModel;
+  return {
+    ...metadata,
     endpoints: { ...endpoints },
     providerModels: { [upstreamId]: providerModel },
   };
-  if (display_name !== undefined) meta.display_name = display_name;
-  if (owned_by !== undefined) meta.owned_by = owned_by;
-  if (created !== undefined) meta.created = created;
-  if (cost !== undefined) meta.cost = cost;
-  if (chat !== undefined) meta.chat = chat;
-  return meta;
 };
 
 // When multiple upstreams expose the same public model id, the first wins
