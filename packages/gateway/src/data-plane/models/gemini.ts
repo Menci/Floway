@@ -86,23 +86,12 @@ const loadGeminiModels = async (
   // Gemini surfaces chat-kind models only; filter both the real catalog and
   // the synthesized alias entries before the merge so the alias collision
   // step only ever weighs chat-on-chat.
-  const merged = mergeAliasesIntoModels<InternalModel>({
+  const merged = mergeAliasesIntoModels({
     realModels: realModels.filter(model => model.kind === 'chat'),
     gatewayAddressableModelIds: gatewayAddressableModelIds.filter(entry => entry.model.kind === 'chat'),
     callerAddressableModelIds: callerAddressable.filter(entry => entry.model.kind === 'chat'),
     aliases: aliases.filter(alias => alias.kind === 'chat'),
     narrowTargets: true,
-    mapReal: model => model,
-    wrapAlias: entry => ({
-      id: entry.id,
-      display_name: entry.display_name,
-      limits: entry.limits,
-      kind: entry.kind,
-      endpoints: entry.endpoints,
-      providerModels: {},
-      ...(entry.cost !== undefined ? { cost: entry.cost } : {}),
-      ...(entry.chat !== undefined ? { chat: entry.chat } : {}),
-    }),
   });
   return merged.map(toGeminiModel);
 };

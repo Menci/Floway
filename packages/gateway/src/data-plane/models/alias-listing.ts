@@ -1,6 +1,9 @@
 // Synthesizes the alias entries that join the real-model catalog inside
-// `/v1/models`. One PublicModel per visible alias. The synthesized entry
-// carries an `aliasedFrom` block so an alias-aware UI can render the
+// the listing pipeline. Every visible alias becomes one `InternalModel`
+// row on the alias-row branch of the discriminated union: metadata
+// (`limits`, `chat`, `endpoints`, `cost`) is computed against the
+// currently-available targets, and the `aliasedFrom` sidecar carries the
+// operator's alias record so wire-projection layers can render the
 // alias-of relationship without a second round trip.
 //
 // `limits`, `chat`, `endpoints`, and `cost` are computed against the
@@ -29,14 +32,14 @@
 // with the same `id` would break OpenAI client deduplication; collapsing
 // to the alias entry preserves the operator's intent (the alias is the
 // reason both rows would have been present). The real entry is removed
-// at the `loadModels` merge step.
+// at the `mergeAliasesIntoModels` step.
 
 import type { ModelAliasRecord } from '../../repo/types.ts';
 import type { AddressableIdEntry } from '../providers/addressable.ts';
 import { unionEndpoints } from '../providers/endpoint-union.ts';
 import { composeAliasDisplayName } from '@floway-dev/protocols/common';
-import type { AliasTarget, AnnouncedMetadata, ChatModelInfo, PublicModel, PublicModelAliasedFrom, PublicModelLimits } from '@floway-dev/protocols/common';
-import type { InternalModel } from '@floway-dev/provider';
+import type { AliasTarget, AnnouncedMetadata, ChatModelInfo, PublicModelLimits } from '@floway-dev/protocols/common';
+import type { InternalAliasedFrom, InternalModel } from '@floway-dev/provider';
 
 export interface ListedAliasInputs {
   readonly aliases: readonly ModelAliasRecord[];
@@ -184,7 +187,7 @@ const buildAliasedFrom = (
   alias: ModelAliasRecord,
   addressableModelIds: readonly AddressableIdEntry[],
   narrowTargets: boolean,
-): PublicModelAliasedFrom => {
+): InternalAliasedFrom => {
   if (!narrowTargets) {
     return { name: alias.name, kind: alias.kind, selection: alias.selection, targets: alias.targets };
   }
@@ -239,7 +242,7 @@ const synthesizeOne = (
   gatewayAddressableModelIds: readonly AddressableIdEntry[],
   callerAddressableModelIds: readonly AddressableIdEntry[],
   narrowTargets: boolean,
-): PublicModel | null => {
+): InternalModel | null => {
   // Gateway-wide kind-matched targets — the basis for stable metadata.
   // A target reachable only via a prefix-addressable alternate or a
   // provider-side redirect (Copilot variant id) still counts.
@@ -281,66 +284,50 @@ const synthesizeOne = (
   // model-missing / model-unsupported error.
   const endpoints = unionEndpoints(gatewayAvailable.map(({ real }) => real.endpoints));
 
-  const entry: PublicModel = {
+  // Gateway-wide single-target chat pricing rides along when available.
+  // Stable across callers — same alias publishes the same cost
+  // everywhere.
+  const singleTargetCost = gatewayAvailable.length === 1 ? gatewayAvailable[0].real.cost : undefined;
+
+  const entry: InternalModel = {
     id: alias.name,
-    object: 'model',
-    type: 'model',
     display_name: displayName,
     limits,
     kind: alias.kind,
     endpoints,
     aliasedFrom: buildAliasedFrom(alias, callerAddressableModelIds, narrowTargets),
+    ...(chat !== undefined ? { chat } : {}),
+    ...(singleTargetCost !== undefined ? { cost: singleTargetCost } : {}),
   };
-  if (chat !== undefined) entry.chat = chat;
-
-  // Gateway-wide single-target chat pricing rides along when available.
-  // Stable across callers — same alias publishes the same cost
-  // everywhere.
-  if (gatewayAvailable.length === 1) {
-    const [{ real }] = gatewayAvailable;
-    if (real.cost !== undefined) entry.cost = real.cost;
-  }
-
   return entry;
 };
 
 const sortAliases = (aliases: readonly ModelAliasRecord[]): ModelAliasRecord[] =>
   [...aliases].sort((a, b) => (a.sortOrder - b.sortOrder) || a.name.localeCompare(b.name));
 
-export const synthesizeListedAliases = (input: ListedAliasInputs): PublicModel[] =>
+export const synthesizeListedAliases = (input: ListedAliasInputs): InternalModel[] =>
   sortAliases(input.aliases)
     .filter(alias => alias.visibleInModelsList)
     .map(alias => synthesizeOne(alias, input.gatewayAddressableModelIds, input.callerAddressableModelIds, input.narrowTargets))
-    .filter((entry): entry is PublicModel => entry !== null);
+    .filter((entry): entry is InternalModel => entry !== null);
 
-// Compose real-model entries with visible alias entries into a single typed
-// list. Both data-plane `/v1/models` and the dashboard's `/api/models`
-// share the same merge rule: when an alias's `name` collides with a real
-// model id, the alias entry wins and the colliding real entry is dropped
-// — two entries with the same `id` would break OpenAI-client deduplication,
-// and the alias was added by the operator deliberately, so collapsing to
-// it preserves intent. `mapReal` shapes each real model into the caller's
-// row type; `wrapAlias` lifts a synthesized `PublicModel` alias entry into
-// the same row type (the dashboard, for example, adds an empty `upstreams`
-// array since alias rows do not bind to an upstream directly; the Gemini
-// `/v1beta/models` route maps into the upstream's `InternalModel` shape
-// before projecting to Gemini's wire form).
-//
-// `realModels` is the listed projection — what `/v1/models` and the
-// dashboard's default `/api/models` row stream emit (caller-scoped).
-// The two addressable surfaces feed the alias synthesizer's metadata-vs-
-// visibility split; the merge step never promotes addressable-but-not-
-// listed ids to real-model rows.
-export const mergeAliasesIntoModels = <T>(input: {
+// Compose real-model rows with visible alias rows into a single `InternalModel[]`.
+// Both data-plane `/v1/models`, `/v1beta/models`, `/models` (Codex), and the
+// dashboard's `/api/models` share the same merge rule: when an alias's `name`
+// collides with a real model id, the alias row wins and the colliding real
+// row is dropped — two entries with the same `id` would break OpenAI-client
+// deduplication, and the alias was added by the operator deliberately, so
+// collapsing to it preserves intent. Callers project the returned rows onto
+// their wire shape with a single mapper that reads `.aliasedFrom` off the
+// discriminated union to decide whether to emit the alias sidecar.
+export const mergeAliasesIntoModels = (input: {
   readonly realModels: readonly InternalModel[];
   readonly gatewayAddressableModelIds: readonly AddressableIdEntry[];
   readonly callerAddressableModelIds: readonly AddressableIdEntry[];
   readonly aliases: readonly ModelAliasRecord[];
   readonly narrowTargets: boolean;
-  readonly mapReal: (model: InternalModel) => T;
-  readonly wrapAlias: (entry: PublicModel) => T;
-}): T[] => {
-  const { realModels, gatewayAddressableModelIds, callerAddressableModelIds, aliases, narrowTargets, mapReal, wrapAlias } = input;
+}): InternalModel[] => {
+  const { realModels, gatewayAddressableModelIds, callerAddressableModelIds, aliases, narrowTargets } = input;
   const aliasEntries = synthesizeListedAliases({
     aliases,
     gatewayAddressableModelIds,
@@ -349,7 +336,7 @@ export const mergeAliasesIntoModels = <T>(input: {
   });
   const aliasIds = new Set(aliasEntries.map(entry => entry.id));
   return [
-    ...realModels.filter(model => !aliasIds.has(model.id)).map(mapReal),
-    ...aliasEntries.map(wrapAlias),
+    ...realModels.filter(model => !aliasIds.has(model.id)),
+    ...aliasEntries,
   ];
 };

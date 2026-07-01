@@ -5,10 +5,12 @@ import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { PublicModel, PublicModelsResponse } from '@floway-dev/protocols/common';
 import type { Fetcher, InternalModel } from '@floway-dev/provider';
 
-// Project an InternalModel onto the public-facing `/v1/models` wire DTO.
+// Project an `InternalModel` onto the public-facing `/v1/models` wire DTO.
 // `endpoints` rides through so listing clients can introspect each model's
-// reach without a per-endpoint probe; alias entries surface the union of
-// every currently-available target's reach (see `synthesizeListedAliases`).
+// reach without a per-endpoint probe. When the row is an alias-synthesized
+// one, `aliasedFrom` is emitted verbatim from the internal shape (they
+// share the same fields); the real branch never carries it, so the sidecar
+// is present exactly on alias rows.
 export const toPublicModel = (model: InternalModel): PublicModel => {
   const info: PublicModel = {
     id: model.id,
@@ -26,6 +28,14 @@ export const toPublicModel = (model: InternalModel): PublicModel => {
   }
   if (model.cost) info.cost = model.cost;
   if (model.chat) info.chat = model.chat;
+  if (model.aliasedFrom !== undefined) {
+    info.aliasedFrom = {
+      name: model.aliasedFrom.name,
+      kind: model.aliasedFrom.kind,
+      selection: model.aliasedFrom.selection,
+      targets: [...model.aliasedFrom.targets],
+    };
+  }
   return info;
 };
 
@@ -48,15 +58,14 @@ export const loadModels = async (
   ]);
   const gatewayAddressableModelIds = gatewayAddressable ?? callerAddressable;
   const realModels = listedRealModels(callerAddressable);
-  const data = mergeAliasesIntoModels({
+  const merged = mergeAliasesIntoModels({
     realModels,
     gatewayAddressableModelIds,
     callerAddressableModelIds: callerAddressable,
     aliases,
     narrowTargets: true,
-    mapReal: toPublicModel,
-    wrapAlias: entry => entry,
   });
+  const data = merged.map(toPublicModel);
   return {
     object: 'list',
     has_more: false,

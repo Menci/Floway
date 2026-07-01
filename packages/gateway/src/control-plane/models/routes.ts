@@ -30,6 +30,10 @@ interface ControlPlaneModelsResponse extends Omit<PublicModelsResponse, 'data'> 
 
 const toControlPlaneModel = (model: InternalModel, instances: readonly Provider[]): ControlPlaneModel => ({
   ...toPublicModel(model),
+  // Alias-synthesized rows never bind directly to an upstream — their
+  // targets ride under `aliasedFrom` on the wire projection. The caller
+  // hands us the empty list for alias rows; for real rows it is the
+  // list of contributing upstreams.
   upstreams: instances.map(instance => ({ kind: instance.kind, id: instance.upstream, name: instance.name })),
 });
 
@@ -76,9 +80,8 @@ export const controlPlaneModels = async (c: Context) => {
     ]);
     const gatewayAddressableModelIds = gatewayAddressable ?? callerAddressable;
     const upstreamsByListedId = new Map(callerAddressable.map(entry => [entry.id, entry.upstreams] as const));
-    const mapReal = (model: InternalModel) => toControlPlaneModel(model, upstreamsByListedId.get(model.id) ?? []);
     const realModels = listedRealModels(callerAddressable);
-    const listedRows = includeAliases
+    const merged = includeAliases
       ? mergeAliasesIntoModels({
           realModels,
           gatewayAddressableModelIds,
@@ -88,10 +91,11 @@ export const controlPlaneModels = async (c: Context) => {
           // cap models) so the alias-edit dialog can render the full
           // configuration; non-admin sessions get the narrowed projection.
           narrowTargets: !isAdmin,
-          mapReal,
-          wrapAlias: entry => ({ ...entry, upstreams: [] }),
         })
-      : realModels.map(mapReal);
+      : realModels;
+    // Alias-synthesized rows never bind to an upstream — hand an empty
+    // list; real rows read the reverse index built from `callerAddressable`.
+    const listedRows = merged.map(model => toControlPlaneModel(model, model.aliasedFrom !== undefined ? [] : (upstreamsByListedId.get(model.id) ?? [])));
     // Dedupe the unlisted half against the listed half on `id` — an alias
     // whose name coincides with an addressable-but-not-listed id (e.g. a
     // Copilot variant) would otherwise emit two rows with the same id but
