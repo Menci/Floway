@@ -3,7 +3,7 @@
 // helpers keeps the Settings card and the dialog reading the same view of
 // the live /api/models catalog.
 
-import type { ModelKind, AliasRules, ControlPlaneModel } from '../../api/types.ts';
+import type { ModelKind, ChatAliasRules, ControlPlaneModel } from '../../api/types.ts';
 
 // Excludes alias rows — target ids never re-enter the alias layer, so the
 // rule-warning lookup runs against the real-model surface only.
@@ -34,7 +34,7 @@ export interface AliasRuleWarning {
 // forwards the value verbatim; the warning just tells the operator the
 // upstream may ignore it.
 export const computeRuleWarnings = (
-  rules: AliasRules,
+  rules: ChatAliasRules,
   catalog: ControlPlaneModel | undefined,
 ): AliasRuleWarning[] => {
   const out: AliasRuleWarning[] = [];

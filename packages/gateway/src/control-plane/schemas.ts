@@ -619,7 +619,7 @@ const chatAliasRulesSchema = z.object({
 }).strict();
 
 // Rules are validated against the alias-level kind in the superRefine pass
-// below — chat-kind aliases accept AliasRules; other kinds require an
+// below — chat-kind aliases accept ChatAliasRules; other kinds require an
 // empty object. Each target_model_id is opaque (no `/` semantics in the
 // alias layer), so the only structural check is non-emptiness.
 const aliasTargetSchema = z.object({

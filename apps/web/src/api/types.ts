@@ -6,6 +6,7 @@ import type {
   AliasTarget,
   AnnouncedMetadata,
   BillingDimension,
+  ChatAliasRules,
   ChatModelInfo,
   ModelAlias,
   ModelEndpointKey,
@@ -20,7 +21,7 @@ import type { AddressableForm, ModelPrefixConfig } from '@floway-dev/provider/mo
 export type { BillingDimension, ModelEndpointKey, ModelEndpoints, ModelKind, ModelPricing };
 export type { AddressableForm, ModelPrefixConfig };
 export type {
-  AliasRules, AliasSelection, AliasTarget, AnnouncedMetadata, ChatModelInfo, ModelAlias,
+  AliasRules, AliasSelection, AliasTarget, AnnouncedMetadata, ChatAliasRules, ChatModelInfo, ModelAlias,
   PublicModel, PublicModelLimits,
 };
 

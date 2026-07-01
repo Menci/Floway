@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue';
 
 import { computeModelWarnings, computeRuleWarnings, findCatalogModel } from './warnings.ts';
-import type { ModelKind, AliasTarget, AliasRules, ControlPlaneModel } from '../../api/types.ts';
+import type { ModelKind, AliasTarget, ChatAliasRules, ControlPlaneModel } from '../../api/types.ts';
 import { Combobox, Select, Tooltip } from '@floway-dev/ui';
 
 const target = defineModel<AliasTarget>({ required: true });
@@ -38,9 +38,9 @@ const targetId = computed({
 
 // Setters always clone the rules object so the v-model emit fires and the
 // parent's targets array stays referentially up to date.
-const setRules = (next: AliasRules) => { target.value = { ...target.value, rules: next }; };
+const setRules = (next: ChatAliasRules) => { target.value = { ...target.value, rules: next }; };
 
-const patchReasoning = (patch: Partial<NonNullable<AliasRules['reasoning']>>) => {
+const patchReasoning = (patch: Partial<NonNullable<ChatAliasRules['reasoning']>>) => {
   const current = target.value.rules.reasoning ?? {};
   const next = { ...current, ...patch };
   for (const k of Object.keys(patch) as (keyof typeof patch)[]) {
