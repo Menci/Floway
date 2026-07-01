@@ -76,6 +76,30 @@ const intersectArrays = <T>(arrays: readonly (readonly T[])[]): T[] => {
   return head.filter(value => tail.every(other => other.includes(value)));
 };
 
+// All-or-nothing field intersect. Every input must declare a non-undefined
+// value for `pick` or the field drops (undefined). When every input carries
+// one, `merge` computes the intersected value — which may itself decide to
+// drop the field (returning undefined) if the intersection collapses (e.g.
+// modalities with an empty side, or a budget window with min > max).
+// Every sub-field intersection in this module goes through this — the
+// "declared at every target, else drop" invariant is the announced-metadata
+// contract, and stating it once per field keeps the individual specs to a
+// three-liner each.
+const intersectField = <Src, R>(
+  items: readonly Src[],
+  pick: (src: Src) => R | undefined,
+  merge: (values: readonly R[]) => R | undefined,
+): R | undefined => {
+  if (items.length === 0) return undefined;
+  const picked: R[] = [];
+  for (const src of items) {
+    const v = pick(src);
+    if (v === undefined) return undefined;
+    picked.push(v);
+  }
+  return merge(picked);
+};
+
 // Apply the rule-driven downgrade: a target with a pinned rule reports
 // the corresponding catalog sub-field as unsupported (= undefined) for
 // the purposes of intersection. Fields the rule doesn't touch pass
@@ -94,69 +118,58 @@ const effectiveChatForIntersection = (chat: ChatModelInfo | undefined, target: A
   return { ...chat, reasoning };
 };
 
+const intersectReasoning = (
+  rs: readonly NonNullable<ChatModelInfo['reasoning']>[],
+): NonNullable<ChatModelInfo['reasoning']> | undefined => {
+  const result: NonNullable<ChatModelInfo['reasoning']> = {};
+
+  const effort = intersectField(rs, r => r.effort, efforts => {
+    const supported = intersectArrays(efforts.map(e => e.supported));
+    if (supported.length === 0) return undefined;
+    // Intersection's `default` is the agreed value when every target names
+    // the same one and that value still survives the supported intersection;
+    // otherwise fall back to `supported[0]` (ordered by the first input).
+    const defaults = new Set(efforts.map(e => e.default));
+    const agreed = defaults.size === 1 ? [...defaults][0] : undefined;
+    return { supported, default: agreed !== undefined && supported.includes(agreed) ? agreed : supported[0] };
+  });
+  if (effort !== undefined) result.effort = effort;
+
+  const budgetTokens = intersectField(rs, r => r.budget_tokens, budgets => {
+    // BOTH min and max must be all-declared — a half-declared block would
+    // advertise a capability some target does not actually report. Drop the
+    // block when the intersected window is empty (contradictory ranges).
+    const min = intersectField(budgets, b => b.min, ns => Math.max(...ns));
+    const max = intersectField(budgets, b => b.max, ns => Math.min(...ns));
+    return min !== undefined && max !== undefined && min <= max ? { min, max } : undefined;
+  });
+  if (budgetTokens !== undefined) result.budget_tokens = budgetTokens;
+
+  // adaptive / mandatory are `true | undefined` — the intersectField gate
+  // already drops the field the moment any target leaves it undeclared, so
+  // the merge just re-yields `true`.
+  const adaptive = intersectField(rs, r => r.adaptive, () => true as const);
+  if (adaptive !== undefined) result.adaptive = adaptive;
+  const mandatory = intersectField(rs, r => r.mandatory, () => true as const);
+  if (mandatory !== undefined) result.mandatory = mandatory;
+
+  return Object.keys(result).length > 0 ? result : undefined;
+};
+
 const intersectChat = (chats: readonly ChatModelInfo[]): ChatModelInfo | undefined => {
   const result: ChatModelInfo = {};
 
-  const modalityChats = chats.filter(c => c.modalities !== undefined);
-  if (modalityChats.length === chats.length) {
-    const input = intersectArrays(modalityChats.map(c => c.modalities!.input));
-    const output = intersectArrays(modalityChats.map(c => c.modalities!.output));
+  const modalities = intersectField(chats, c => c.modalities, mods => {
+    const input = intersectArrays(mods.map(m => m.input));
+    const output = intersectArrays(mods.map(m => m.output));
     // Both halves must survive — an alias that consumes a modality but
-    // promises no output (or the inverse) is incoherent. Omit the block
-    // entirely when either intersection collapses.
-    if (input.length > 0 && output.length > 0) result.modalities = { input, output };
-  }
+    // promises no output (or the inverse) is incoherent.
+    return input.length > 0 && output.length > 0 ? { input, output } : undefined;
+  });
+  if (modalities !== undefined) result.modalities = modalities;
 
-  const reasoningChats = chats.filter(c => c.reasoning !== undefined);
-  if (reasoningChats.length === chats.length) {
-    const reasoning: NonNullable<ChatModelInfo['reasoning']> = {};
-
-    const effortChats = reasoningChats.filter(c => c.reasoning!.effort !== undefined);
-    if (effortChats.length === reasoningChats.length) {
-      const supported = intersectArrays(effortChats.map(c => c.reasoning!.effort!.supported));
-      const defaults = new Set(effortChats.map(c => c.reasoning!.effort!.default));
-      // Intersection's `default` is the agreed value when every target
-      // names the same one and that value still survives the supported
-      // intersection; otherwise we report supported-only.
-      if (supported.length > 0) {
-        const agreedDefault = defaults.size === 1 ? [...defaults][0] : undefined;
-        reasoning.effort = agreedDefault !== undefined && supported.includes(agreedDefault)
-          ? { supported, default: agreedDefault }
-          : { supported, default: supported[0] };
-      }
-    }
-
-    const budgetChats = reasoningChats.filter(c => c.reasoning!.budget_tokens !== undefined);
-    if (budgetChats.length === reasoningChats.length) {
-      const mins = budgetChats.map(c => c.reasoning!.budget_tokens!.min).filter((v): v is number => v !== undefined);
-      const maxes = budgetChats.map(c => c.reasoning!.budget_tokens!.max).filter((v): v is number => v !== undefined);
-      // Require BOTH min and max to be all-declared, mirroring how
-      // `effort`, `adaptive`, and `mandatory` all collapse the moment one
-      // target leaves a leaf undeclared. A half-declared block (e.g.
-      // `{ min }` with no max) would advertise a capability some target
-      // does not actually report.
-      if (mins.length === budgetChats.length && maxes.length === budgetChats.length) {
-        const min = Math.max(...mins);
-        const max = Math.min(...maxes);
-        // Drop the budget block when the intersected window is empty —
-        // a contradictory range is worse than no advertisement.
-        if (min <= max) reasoning.budget_tokens = { min, max };
-      }
-    }
-
-    const adaptiveAgreed = new Set(reasoningChats.map(c => c.reasoning!.adaptive));
-    if (adaptiveAgreed.size === 1) {
-      const value = [...adaptiveAgreed][0];
-      if (value !== undefined) reasoning.adaptive = value;
-    }
-    const mandatoryAgreed = new Set(reasoningChats.map(c => c.reasoning!.mandatory));
-    if (mandatoryAgreed.size === 1) {
-      const value = [...mandatoryAgreed][0];
-      if (value !== undefined) reasoning.mandatory = value;
-    }
-
-    if (Object.keys(reasoning).length > 0) result.reasoning = reasoning;
-  }
+  const reasoning = intersectField(chats, c => c.reasoning, intersectReasoning);
+  if (reasoning !== undefined) result.reasoning = reasoning;
 
   return Object.keys(result).length > 0 ? result : undefined;
 };
@@ -168,11 +181,10 @@ const intersectChat = (chats: readonly ChatModelInfo[]): ChatModelInfo | undefin
 const LIMIT_KEYS = ['max_context_window_tokens', 'max_prompt_tokens', 'max_output_tokens'] as const;
 
 const intersectLimits = (limitsList: readonly PublicModelLimits[]): PublicModelLimits => {
-  if (limitsList.length === 0) return {};
   const result: PublicModelLimits = {};
   for (const key of LIMIT_KEYS) {
-    const values = limitsList.map(l => l[key]).filter((v): v is number => v !== undefined);
-    if (values.length === limitsList.length) result[key] = Math.min(...values);
+    const value = intersectField(limitsList, l => l[key], values => Math.min(...values));
+    if (value !== undefined) result[key] = value;
   }
   return result;
 };
