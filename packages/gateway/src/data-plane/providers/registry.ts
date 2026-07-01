@@ -123,6 +123,13 @@ const mergeIntoCatalog = (
     upstreamsByPublicId.set(publicId, [instance]);
     return;
   }
+  // The catalog only stores real (upstream-backed) rows; alias-synthesized
+  // rows join the caller-facing catalog downstream via `mergeAliasesIntoModels`.
+  // Narrow off the discriminated union so the merge below sees a concrete
+  // `providerModels` map.
+  if (existing.providerModels === undefined) {
+    throw new Error(`mergeIntoCatalog: catalog row for '${publicId}' unexpectedly carries aliasedFrom instead of providerModels`);
+  }
   const endpoints = unionEndpoints([existing.endpoints, surfacedModel.endpoints]);
   byId.set(publicId, {
     ...existing,

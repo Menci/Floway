@@ -3,8 +3,17 @@ import { describe, expect, test } from 'vitest';
 import { clearInFlightForTesting } from './models-cache.ts';
 import { compareModelIds, enumerateModelCandidates, enumerateRealModelCandidates, getModels, listModelProviders } from './registry.ts';
 import { buildCopilotUpstreamRecord, buildCustomUpstreamRecord, copilotModels, setupAppTest } from '../../test-helpers.ts';
-import { directFetcher } from '@floway-dev/provider';
+import { directFetcher, type InternalModel, type ProviderModel } from '@floway-dev/provider';
 import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
+
+// Test-scoped narrowing: registry rows in these tests are always real
+// (upstream-backed). This helper reads the `providerModels` map off the
+// discriminated union without spraying non-null assertions across every
+// assertion.
+const realProviderModels = (model: InternalModel | undefined): Record<string, ProviderModel> => {
+  if (model?.providerModels === undefined) throw new Error(`expected real InternalModel with providerModels, got ${JSON.stringify(model)}`);
+  return model.providerModels;
+};
 
 const sortedIds = (ids: readonly string[]): string[] => [...ids].sort(compareModelIds);
 
@@ -185,14 +194,14 @@ test('getModels returns the merged catalog plus the per-id upstream index', asyn
       // verbatim under `providerModels[<upstream>]` — merge unions the
       // outer `endpoints` but never rewrites the per-upstream capability
       // each provider originally advertised.
-      assertEquals(Object.keys(model!.providerModels).sort(), ['up_copilot', 'up_custom']);
-      assertEquals(model!.providerModels['up_copilot']?.endpoints, { messages: {} });
-      assertEquals(model!.providerModels['up_custom']?.endpoints, { chatCompletions: {} });
+      assertEquals(Object.keys(realProviderModels(model)).sort(), ['up_copilot', 'up_custom']);
+      assertEquals(realProviderModels(model)['up_copilot']?.endpoints, { messages: {} });
+      assertEquals(realProviderModels(model)['up_custom']?.endpoints, { chatCompletions: {} });
       // `enabledFlags` is required on every ProviderModel — proves the
       // stored value is the provider-emitted shape (not a projected
       // subset).
-      assertEquals(model!.providerModels['up_copilot']?.enabledFlags instanceof Set, true);
-      assertEquals(model!.providerModels['up_custom']?.enabledFlags instanceof Set, true);
+      assertEquals(realProviderModels(model)['up_copilot']?.enabledFlags instanceof Set, true);
+      assertEquals(realProviderModels(model)['up_custom']?.enabledFlags instanceof Set, true);
 
       const resolved = await enumerateModelCandidates({ upstreamIds: null, model: 'shared-model', kind: 'chat', scheduler: testScheduler, currentColo: 'TEST' });
       assertEquals(resolved.candidates.map(m => m.provider.upstream), ['up_copilot', 'up_custom']);
@@ -201,10 +210,10 @@ test('getModels returns the merged catalog plus the per-id upstream index', asyn
       assertEquals(resolved.candidates[1]?.model.endpoints, { chatCompletions: {} });
       // Each enumerated candidate seeds `providerModels[provider.upstream]`
       // so `providerModelOf(candidate)` resolves at dispatch time.
-      assertEquals(Object.keys(resolved.candidates[0]!.model.providerModels), ['up_copilot']);
-      assertEquals(Object.keys(resolved.candidates[1]!.model.providerModels), ['up_custom']);
-      assertEquals(resolved.candidates[0]?.model.providerModels['up_copilot']?.endpoints, { messages: {} });
-      assertEquals(resolved.candidates[1]?.model.providerModels['up_custom']?.endpoints, { chatCompletions: {} });
+      assertEquals(Object.keys(realProviderModels(resolved.candidates[0]?.model)), ['up_copilot']);
+      assertEquals(Object.keys(realProviderModels(resolved.candidates[1]?.model)), ['up_custom']);
+      assertEquals(realProviderModels(resolved.candidates[0]?.model)['up_copilot']?.endpoints, { messages: {} });
+      assertEquals(realProviderModels(resolved.candidates[1]?.model)['up_custom']?.endpoints, { chatCompletions: {} });
     },
   );
 });
@@ -371,7 +380,7 @@ test('enumerateRealModelCandidates only loads the selected providers\' catalogs'
       assertEquals(candidates[0]?.provider.upstream, 'up_first');
       // Every enumerated candidate seeds `providerModels[provider.upstream]`
       // so `providerModelOf(candidate)` resolves at dispatch time.
-      assertEquals(Object.keys(candidates[0]!.model.providerModels), ['up_first']);
+      assertEquals(Object.keys(realProviderModels(candidates[0]?.model)), ['up_first']);
     },
   );
 

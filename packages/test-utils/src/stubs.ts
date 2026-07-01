@@ -33,8 +33,13 @@ export const stubProviderModel = (overrides: Partial<ProviderModel> = {}): Provi
 // the entry mirrors the outer metadata so tests that resolve
 // `providerModelOf(candidate)` see a coherent shape without extra ceremony.
 // Callers that need a specific per-upstream shape pass `providerModels`
-// explicitly.
-export const stubInternalModel = (overrides: Partial<InternalModel> = {}, upstream = 'test-upstream'): InternalModel => {
+// explicitly. Every stub is a real-row `InternalModel`; alias-row fixtures
+// belong on the alias-listing side and construct their `InternalModel`
+// directly with `aliasedFrom`.
+export const stubInternalModel = (
+  overrides: Partial<Omit<InternalModel, 'aliasedFrom' | 'providerModels'>> & { readonly providerModels?: Record<string, ProviderModel> } = {},
+  upstream = 'test-upstream',
+): InternalModel => {
   const base = {
     id: overrides.id ?? 'test-model',
     limits: overrides.limits ?? {},
@@ -91,7 +96,7 @@ export const stubProvider = (overrides: Partial<ProviderInstance> = {}): Provide
 // through `overrides.model` replaces both the default entry and those
 // shortcuts wholesale.
 export const stubModelCandidate = (overrides: {
-  model?: Partial<InternalModel>;
+  model?: Partial<Omit<InternalModel, 'aliasedFrom' | 'providerModels'>> & { readonly providerModels?: Record<string, ProviderModel> };
   provider?: Provider;
   enabledFlags?: ReadonlySet<string>;
   providerData?: unknown;
@@ -106,12 +111,12 @@ export const stubModelCandidate = (overrides: {
     supportsResponsesItemReference: false,
   };
   const modelOverrides = overrides.model ?? {};
-  const outerMeta: Partial<InternalModel> = {
+  const outerMeta = {
     id: modelOverrides.id ?? 'test-model',
     limits: modelOverrides.limits ?? {},
     kind: modelOverrides.kind ?? 'chat',
     endpoints: modelOverrides.endpoints ?? { chatCompletions: {}, responses: {}, messages: {} },
-  };
+  } as const;
   const providerModel = stubProviderModel({
     id: outerMeta.id,
     limits: outerMeta.limits,

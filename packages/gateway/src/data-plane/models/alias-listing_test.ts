@@ -3,7 +3,7 @@ import { describe, expect, test } from 'vitest';
 import { synthesizeListedAliases } from './alias-listing.ts';
 import type { ModelAliasRecord } from '../../repo/types.ts';
 import type { AddressableIdEntry } from '../providers/addressable.ts';
-import type { InternalModel } from '@floway-dev/provider';
+import type { InternalModel, ProviderModel } from '@floway-dev/provider';
 
 const aliasFixture = (overrides: Partial<ModelAliasRecord> = {}): ModelAliasRecord => ({
   name: 'gpt-fast',
@@ -19,7 +19,9 @@ const aliasFixture = (overrides: Partial<ModelAliasRecord> = {}): ModelAliasReco
   ...overrides,
 });
 
-const realModel = (overrides: Partial<InternalModel> & { id: string }): InternalModel => ({
+const realModel = (
+  overrides: Partial<Omit<InternalModel, 'aliasedFrom' | 'providerModels'>> & { id: string; providerModels?: Record<string, ProviderModel> },
+): InternalModel => ({
   kind: 'chat',
   limits: {},
   endpoints: { chatCompletions: {}, messages: {}, responses: {} },

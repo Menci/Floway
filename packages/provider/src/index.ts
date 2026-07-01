@@ -29,6 +29,7 @@ export {
 } from './result.ts';
 
 export type {
+  InternalAliasedFrom,
   InternalModel,
   PerformanceTelemetryContext,
   ProviderModel,

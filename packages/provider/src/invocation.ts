@@ -31,12 +31,22 @@ export interface ModelCandidate {
 // `.enabledFlags`, boundary shims read `.providerData`, etc. The candidate
 // always names exactly one upstream via `provider.upstream`, and the resolver
 // populates `model.providerModels` with an entry under that key at
-// candidate-creation time — a missing lookup means the candidate was
-// assembled without going through the resolver.
+// candidate-creation time.
+//
+// Two error paths, distinguished so a caller reading the message can tell
+// which invariant broke: an alias row was mistakenly used as a dispatch
+// target (the resolver should have expanded it to its target's real row
+// first), or a real row is missing the entry for the candidate's upstream
+// (the candidate was assembled outside the resolver, or the row was merged
+// after the upstream stopped contributing).
 export const providerModelOf = (candidate: ModelCandidate): ProviderModel => {
-  const providerModel = candidate.model.providerModels[candidate.provider.upstream];
+  const { model, provider } = candidate;
+  if (model.providerModels === undefined) {
+    throw new Error(`providerModelOf: model '${model.id}' is an alias row (aliasedFrom='${model.aliasedFrom.name}'); the resolver should have expanded it to a target row before dispatch`);
+  }
+  const providerModel = model.providerModels[provider.upstream];
   if (providerModel === undefined) {
-    throw new Error(`providerModelOf: model '${candidate.model.id}' has no providerModel for '${candidate.provider.upstream}'`);
+    throw new Error(`providerModelOf: model '${model.id}' has no providerModel for '${provider.upstream}'`);
   }
   return providerModel;
 };
