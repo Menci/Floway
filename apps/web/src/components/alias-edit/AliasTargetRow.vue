@@ -2,13 +2,13 @@
 import { computed, ref, watch } from 'vue';
 
 import { computeModelWarnings, computeRuleWarnings, findCatalogModel } from './warnings.ts';
-import type { AliasKind, AliasTarget, ChatAliasRules, ControlPlaneModel } from '../../api/types.ts';
+import type { ModelKind, AliasTarget, ChatAliasRules, ControlPlaneModel } from '../../api/types.ts';
 import { Combobox, Select, Tooltip } from '@floway-dev/ui';
 
 const target = defineModel<AliasTarget>({ required: true });
 
 const props = defineProps<{
-  kind: AliasKind;
+  kind: ModelKind;
   targetIdItems: readonly string[];
   models: readonly ControlPlaneModel[] | null;
   isFirst: boolean;

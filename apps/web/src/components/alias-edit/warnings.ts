@@ -3,7 +3,7 @@
 // helpers keeps the Settings card and the dialog reading the same view of
 // the live /api/models catalog.
 
-import type { AliasKind, ChatAliasRules, ControlPlaneModel } from '../../api/types.ts';
+import type { ModelKind, ChatAliasRules, ControlPlaneModel } from '../../api/types.ts';
 
 // Excludes alias rows — target ids never re-enter the alias layer, so the
 // rule-warning lookup runs against the real-model surface only.
@@ -19,7 +19,7 @@ export const findCatalogModel = (
 // the suggestion list is a hint, not a constraint.
 export const realModelIdsOfKind = (
   models: readonly ControlPlaneModel[] | null | undefined,
-  kind: AliasKind,
+  kind: ModelKind,
 ): string[] =>
   (models ?? []).filter(m => m.aliasedFrom === undefined && m.kind === kind).map(m => m.id);
 
@@ -82,7 +82,7 @@ export const computeRuleWarnings = (
 export const computeModelWarnings = (
   targetModelId: string,
   catalog: ControlPlaneModel | undefined,
-  aliasKind: AliasKind,
+  aliasKind: ModelKind,
 ): string[] => {
   if (targetModelId === '') return [];
   if (catalog === undefined) {

@@ -5,7 +5,7 @@ import AliasTargetRow from './AliasTargetRow.vue';
 import { computeAnnouncedMetadata } from './announced-metadata.ts';
 import { computeAliasLevelWarnings, realModelIdsOfKind } from './warnings.ts';
 import { callApi, useApi } from '../../api/client.ts';
-import type { AliasKind, AliasSelection, AliasTarget, AnnouncedMetadata, ModelAlias } from '../../api/types.ts';
+import type { ModelKind, AliasSelection, AliasTarget, AnnouncedMetadata, ModelAlias } from '../../api/types.ts';
 import { useModelAliases } from '../../composables/useModelAliases.ts';
 import { useRawModelsStore } from '../../composables/useModels.ts';
 import ChatMetadataEditor from '../shared/ChatMetadataEditor.vue';
@@ -30,13 +30,13 @@ const mode = computed<'create' | 'edit'>(() => (props.record ? 'edit' : 'create'
 
 // Switching kind discards rule state — a chat-only rule must not survive a
 // switch into embedding/image.
-const emptyRulesFor = (k: AliasKind): AliasTarget['rules'] => (k === 'chat' ? {} : {} as Record<string, never>);
+const emptyRulesFor = (k: ModelKind): AliasTarget['rules'] => (k === 'chat' ? {} : {} as Record<string, never>);
 
-const blankTarget = (k: AliasKind): AliasTarget => ({ target_model_id: '', rules: emptyRulesFor(k) });
+const blankTarget = (k: ModelKind): AliasTarget => ({ target_model_id: '', rules: emptyRulesFor(k) });
 
 const aliasName = ref(props.record?.name ?? '');
 const displayName = ref(props.record?.display_name ?? '');
-const kind = ref<AliasKind>(props.record?.kind ?? 'chat');
+const kind = ref<ModelKind>(props.record?.kind ?? 'chat');
 const selection = ref<AliasSelection>(props.record?.selection ?? 'first-available');
 const visibleInModelsList = ref(props.record?.visible_in_models_list ?? true);
 
@@ -46,7 +46,7 @@ const targets = ref<AliasTarget[]>(
     : [blankTarget(kind.value)],
 );
 
-const setKind = (k: AliasKind) => {
+const setKind = (k: ModelKind) => {
   kind.value = k;
   targets.value = targets.value.map(t => ({ target_model_id: t.target_model_id, rules: emptyRulesFor(k) }));
 };
@@ -211,7 +211,7 @@ const save = async () => {
 
 const title = computed(() => mode.value === 'create' ? 'Create Alias' : `Edit Alias: ${props.record?.name ?? ''}`);
 
-const KIND_OPTIONS: { value: AliasKind; label: string }[] = [
+const KIND_OPTIONS: { value: ModelKind; label: string }[] = [
   { value: 'chat', label: 'Chat' },
   { value: 'embedding', label: 'Embedding' },
   { value: 'image', label: 'Image' },
@@ -239,7 +239,7 @@ const KIND_OPTIONS: { value: AliasKind; label: string }[] = [
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
           <label class="mb-1.5 block text-xs font-medium text-gray-500">Kind</label>
-          <Select :model-value="kind" :options="KIND_OPTIONS" @update:model-value="v => setKind(v as AliasKind)" />
+          <Select :model-value="kind" :options="KIND_OPTIONS" @update:model-value="v => setKind(v as ModelKind)" />
         </div>
         <div>
           <label class="mb-1.5 block text-xs font-medium text-gray-500">Selection</label>

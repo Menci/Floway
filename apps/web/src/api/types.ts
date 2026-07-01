@@ -1,7 +1,6 @@
 // Control-plane DTOs the SPA consumes — serialized shapes the gateway emits at /api.
 
 import type {
-  AliasKind,
   AliasRules,
   AliasSelection,
   AliasTarget,
@@ -22,7 +21,7 @@ import type { AddressableForm, ModelPrefixConfig } from '@floway-dev/provider/mo
 export type { BillingDimension, ModelEndpointKey, ModelEndpoints, ModelKind, ModelPricing };
 export type { AddressableForm, ModelPrefixConfig };
 export type {
-  AliasKind, AliasRules, AliasSelection, AliasTarget, AnnouncedMetadata, ChatAliasRules, ChatModelInfo, ModelAlias,
+  AliasRules, AliasSelection, AliasTarget, AnnouncedMetadata, ChatAliasRules, ChatModelInfo, ModelAlias,
   PublicModel, PublicModelLimits,
 };
 

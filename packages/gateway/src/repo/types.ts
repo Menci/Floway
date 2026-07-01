@@ -1,6 +1,6 @@
 import type { HistogramBucket } from '../shared/performance-histogram.ts';
 import type { WebSearchProviderName } from '../shared/web-search-providers.ts';
-import type { AliasKind, AliasSelection, AliasTarget, AnnouncedMetadata, BillingDimension, ModelPricing } from '@floway-dev/protocols/common';
+import type { AliasSelection, AliasTarget, AnnouncedMetadata, BillingDimension, ModelKind, ModelPricing } from '@floway-dev/protocols/common';
 import type { ProviderModel, UpstreamRecord } from '@floway-dev/provider';
 
 export interface ApiKey {
@@ -269,7 +269,7 @@ export interface ProxyBackoffRepo {
 // control-plane/model-aliases/serialize.ts.
 export interface ModelAliasRecord {
   name: string;
-  kind: AliasKind;
+  kind: ModelKind;
   selection: AliasSelection;
   // null = derive at render time from targets + rules.
   displayName: string | null;
