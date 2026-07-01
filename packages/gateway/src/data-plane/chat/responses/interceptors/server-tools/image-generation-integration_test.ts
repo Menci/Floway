@@ -373,18 +373,13 @@ test('resolveImageCandidate renders model_not_supported when image-kind candidat
   // The resolver produced an image-kind candidate but its `endpoints` does
   // not include the per-endpoint key the request needs (imagesGenerations).
   stub.nextResolutionOverride = {
-    candidates: [{
-      provider: {
-        upstream: 'u', kind: 'custom', name: 'wrong-endpoint',
-        disabledPublicModelIds: [], modelPrefix: null,
-        supportsResponsesItemReference: false,
-        provider: { getPricingForModelKey: () => null },
+    candidates: [stubModelCandidate({
+      model: {
+        id: 'gpt-image-2',
+        kind: 'image',
+        endpoints: { imagesEdits: {} },
       },
-      // Image-kind candidate without `imagesGenerations` — the endpoint
-      // filter inside resolveImageCandidate rejects it.
-      model: { id: 'gpt-image-2', endpoints: { imagesEdits: {} } },
-      fetcher: (request: Request) => fetch(request),
-    }],
+    })],
     sawModel: true,
     failedUpstreams: [],
   };

@@ -131,14 +131,14 @@ test('createAzureProvider supports Azure AI cross-provider models with explicit 
     }),
   );
   const [chatProviderModel, responsesProviderModel] = await instance.instance.getProvidedModels(directFetcher);
-  const chatModel = chatProviderModel; const chatOpts = noopUpstreamCallOptions();
-  const responsesModel = responsesProviderModel; const responsesOpts = noopUpstreamCallOptions();
+  const chatOpts = noopUpstreamCallOptions();
+  const responsesOpts = noopUpstreamCallOptions();
   const seen: Array<{ url: string; apiKey: string | null; body: Record<string, unknown> }> = [];
 
-  assertEquals(chatModel.id, 'deepseek-v4-pro');
-  assertEquals(chatModel.endpoints, { chatCompletions: {} });
-  assertEquals(responsesModel.id, 'gpt-5.4-pro');
-  assertEquals(responsesModel.endpoints, { responses: {} });
+  assertEquals(chatProviderModel.id, 'deepseek-v4-pro');
+  assertEquals(chatProviderModel.endpoints, { chatCompletions: {} });
+  assertEquals(responsesProviderModel.id, 'gpt-5.4-pro');
+  assertEquals(responsesProviderModel.endpoints, { responses: {} });
 
   await withMockedFetch(
     async request => {
@@ -150,8 +150,8 @@ test('createAzureProvider supports Azure AI cross-provider models with explicit 
       return sseResponse();
     },
     async () => {
-      const chat = await instance.instance.callChatCompletions(chatModel, { messages: [{ role: 'user', content: 'hello' }] }, undefined, chatOpts);
-      const responses = await instance.instance.callResponses(responsesModel, { input: 'hello' }, 'generate', undefined, responsesOpts);
+      const chat = await instance.instance.callChatCompletions(chatProviderModel, { messages: [{ role: 'user', content: 'hello' }] }, undefined, chatOpts);
+      const responses = await instance.instance.callResponses(responsesProviderModel, { input: 'hello' }, 'generate', undefined, responsesOpts);
       assertEquals(chat.modelKey, 'deepseek-v4-pro');
       assertEquals(responses.modelKey, 'gpt-5.4-pro');
     },
