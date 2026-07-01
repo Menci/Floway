@@ -13,14 +13,11 @@
 // registry (see context-window.ts) so the codex client sees the same
 // limits the data plane will actually enforce.
 //
-// Operator-defined aliases participate in the same filter: a bundled
-// catalog slug that matches a visible alias survives whenever the alias
-// has at least one currently-routable target. The context window the alias
-// advertises follows its announced metadata (when the operator overrode
-// it) or the min across every routable target's window — the safe lower
-// bound `/v1/models`'s rule-aware intersection already applies, so
-// whichever target the resolver picks at request time the catalog's
-// published window is one the gateway can actually serve.
+// Operator-defined aliases do not participate in this filter — the catalog
+// only surfaces real registry slugs. When an alias name happens to match a
+// bundled catalog slug (`codex-auto-review` is the canonical example, seeded
+// alongside the alias itself), the codex CLI's `/model` picker shows that
+// slug and the alias resolver handles the request at dispatch time.
 //
 // Latency: codex aborts the catalog fetch after 5 s
 // (`MODELS_REFRESH_TIMEOUT` in codex-rs/model-provider/src/models_endpoint.rs)
@@ -38,10 +35,8 @@ import { parseCodexVersion, resolveCodexCatalog, type CodexCatalog } from './cat
 import { applyContextWindowFromRegistry, type ContextWindowResolver } from './context-window.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
-import { getRepo } from '../../repo/index.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getCurrentColo } from '../../runtime/runtime-info.ts';
-import { synthesizeListedAliases } from '../models/alias-listing.ts';
 import { enumerateAddressableModelIds, listedRealModels } from '../providers/addressable.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { Fetcher } from '@floway-dev/provider';
@@ -66,80 +61,20 @@ const computeCatalog = async (
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
 ): Promise<CodexCatalog> => {
-  const [catalog, callerAddressable, gatewayAddressable, aliases] = await Promise.all([
+  const [catalog, callerAddressable] = await Promise.all([
     resolveCodexCatalog(userAgent),
     enumerateAddressableModelIds(upstreamIds, fetcherForUpstream, scheduler),
-    upstreamIds === null
-      ? Promise.resolve(null)
-      : enumerateAddressableModelIds(null, fetcherForUpstream, scheduler),
-    getRepo().modelAliases.list(),
   ]);
-  const gatewayAddressableModelIds = gatewayAddressable ?? callerAddressable;
   const realModels = listedRealModels(callerAddressable);
-  // `registrySlugs` mirrors the caller's listed catalog — the slugs the
-  // codex client would have seen in a regular /v1/models call. The two
-  // addressable maps below feed the synthesizer's metadata-vs-visibility
-  // split: gateway-wide for the alias's context-window intersection (so
-  // every API key sees the same number), caller-scope for "does this
-  // alias appear at all".
   const registrySlugs = new Set(realModels.map(m => m.id));
-  const gatewayById = new Map(gatewayAddressableModelIds.map(entry => [entry.id, entry] as const));
   const callerById = new Map(callerAddressable.map(entry => [entry.id, entry] as const));
 
-  // Each alias entry survives in the codex catalog when at least one of
-  // its configured targets is currently addressable AND kind-matches the
-  // alias under the CALLER's cap (this matches `synthesizeListedAliases`'s
-  // visibility rule). The fallback window — used when the operator did
-  // not override `announcedMetadata` — is the min across every GATEWAY-
-  // wide routable target's window, mirroring the safe-lower-bound rule
-  // /v1/models already applies. Selection mode is irrelevant here because
-  // the catalog must publish a single stable window.
-  interface AliasCatalogInfo {
-    readonly routableWindowsMin: number | null;
-    readonly announcedContextWindow: number | undefined;
-  }
-  const aliasCatalogInfo = new Map<string, AliasCatalogInfo>();
-  for (const entry of synthesizeListedAliases({
-    aliases,
-    gatewayAddressableModelIds,
-    callerAddressableModelIds: callerAddressable,
-    narrowTargets: true,
-  })) {
-    const aliasedFrom = entry.aliasedFrom;
-    if (aliasedFrom === undefined) continue;
-    // Use the raw alias record's targets for the window scan — the
-    // entry's `aliasedFrom.targets` is the narrowed projection, which
-    // would understate the gateway-wide min when the caller is scoped.
-    const alias = aliases.find(a => a.name === entry.id);
-    if (alias === undefined) continue;
-    const gatewayRoutable = alias.targets
-      .map(t => gatewayById.get(t.target_model_id))
-      .filter((a): a is NonNullable<typeof a> => a !== undefined && a.model.kind === entry.kind);
-    if (gatewayRoutable.length === 0) continue;
-    const windows = gatewayRoutable
-      .map(a => a.model.limits.max_context_window_tokens)
-      .filter((w): w is number => w !== undefined);
-    aliasCatalogInfo.set(entry.id, {
-      routableWindowsMin: windows.length > 0 ? Math.min(...windows) : null,
-      announcedContextWindow: entry.limits.max_context_window_tokens,
-    });
-  }
-
   const filtered: CodexCatalog = {
-    models: catalog.models.filter(m => registrySlugs.has(m.slug) || aliasCatalogInfo.has(m.slug)),
+    models: catalog.models.filter(m => registrySlugs.has(m.slug)),
   };
 
-  // Alias slug: prefer the alias's announced window (operator override OR
-  // the synthesizer's automatic intersection) so codex's local gating —
-  // auto-compact, context-budget UX — agrees with what /v1/models told
-  // the operator's other tooling. Fallback to the min over routable
-  // targets' windows when the alias publishes no window. Plain slugs read
-  // straight off the registry.
-  const contextWindowOf: ContextWindowResolver = slug => {
-    const info = aliasCatalogInfo.get(slug);
-    if (info !== undefined) return info.announcedContextWindow ?? info.routableWindowsMin;
-    return callerById.get(slug)?.model.limits.max_context_window_tokens ?? null;
-  };
+  const contextWindowOf: ContextWindowResolver = slug =>
+    callerById.get(slug)?.model.limits.max_context_window_tokens ?? null;
   return applyContextWindowFromRegistry(filtered, contextWindowOf);
 };
 
