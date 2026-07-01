@@ -1,9 +1,9 @@
 import type { Context } from 'hono';
 
-import { mergeAliasesIntoModels } from '../../data-plane/models/alias-listing.ts';
+import { mergeAliasesIntoModels } from '../../data-plane/shared/listing/alias.ts';
 import { toPublicModel } from '../../data-plane/models/load.ts';
 import { MODEL_LISTING_FAILURE_MESSAGE } from '../../data-plane/models/shared.ts';
-import { type AddressableIdEntry, enumerateAddressableModelIds, listedRealModels } from '../../data-plane/providers/addressable.ts';
+import { type AddressableIdEntry, enumerateAddressableModelIds, listedRealModels } from '../../data-plane/shared/listing/addressable.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { effectiveUpstreamIdsFromContext, userFromContext } from '../../middleware/auth.ts';
 import { getRepo } from '../../repo/index.ts';

@@ -34,9 +34,9 @@
 // reason both rows would have been present). The real entry is removed
 // at the `mergeAliasesIntoModels` step.
 
-import type { ModelAliasRecord } from '../../repo/types.ts';
-import type { AddressableIdEntry } from '../providers/addressable.ts';
-import { unionEndpoints } from '../providers/endpoint-union.ts';
+import type { ModelAliasRecord } from '../../../repo/types.ts';
+import type { AddressableIdEntry } from './addressable.ts';
+import { unionEndpoints } from '../../providers/endpoint-union.ts';
 import { composeAliasDisplayName } from '@floway-dev/protocols/common';
 import type { AliasTarget, AnnouncedMetadata, ChatModelInfo, PublicModelLimits } from '@floway-dev/protocols/common';
 import type { InternalAliasedFrom, InternalModel } from '@floway-dev/provider';

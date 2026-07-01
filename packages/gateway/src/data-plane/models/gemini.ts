@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
 
-import { mergeAliasesIntoModels } from './alias-listing.ts';
+import { mergeAliasesIntoModels } from '../shared/listing/alias.ts';
 import { MODEL_LISTING_FAILURE_MESSAGE } from './shared.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
@@ -9,7 +9,7 @@ import type { ModelAliasesRepo } from '../../repo/types.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getCurrentColo } from '../../runtime/runtime-info.ts';
 import { geminiStatusForHttpStatus } from '../chat/gemini/errors.ts';
-import { enumerateAddressableModelIds, listedRealModels } from '../providers/addressable.ts';
+import { enumerateAddressableModelIds, listedRealModels } from '../shared/listing/addressable.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ModelPricing } from '@floway-dev/protocols/common';
 import { ProviderModelsUnavailableError } from '@floway-dev/provider';

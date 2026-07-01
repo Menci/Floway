@@ -1,18 +1,18 @@
 // One enumeration per (effective upstream cap) of every inbound model id the
 // gateway accepts — the union of the listed catalog surface and the
 // addressable-but-not-listed surface contributed by `modelPrefix.addressable`
-// alternates. Listing-side availability checks (alias-listing, codex catalog)
-// must see the same set the request-time resolver routes through (the
-// per-upstream walk inside `enumerateRealModelCandidates`); recomputing it
-// once here gives every consumer one consistent answer.
+// alternates. Listing-side availability checks (this module's alias helper,
+// codex catalog) must see the same set the request-time resolver routes
+// through (the per-upstream walk inside `enumerateRealModelCandidates`);
+// recomputing it once here gives every consumer one consistent answer.
 //
 // Each entry carries the merged `InternalModel` the addressable id will
 // route to, so consumers (alias intersection, codex catalog, control-plane
 // DTO) read `limits` / `chat` / `endpoints` directly off the entry without
 // a second registry round trip.
 
-import { fetchUpstreamModelsCached } from './models-cache.ts';
-import { compareModelIds, getModelsFromProviders, listModelProviders } from './registry.ts';
+import { fetchUpstreamModelsCached } from '../../providers/models-cache.ts';
+import { compareModelIds, getModelsFromProviders, listModelProviders } from '../../providers/registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { isAbortError, type Fetcher, type InternalModel, type Provider } from '@floway-dev/provider';
 

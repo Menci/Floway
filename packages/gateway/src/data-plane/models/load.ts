@@ -1,6 +1,6 @@
-import { mergeAliasesIntoModels } from './alias-listing.ts';
+import { mergeAliasesIntoModels } from '../shared/listing/alias.ts';
 import type { ModelAliasesRepo } from '../../repo/types.ts';
-import { enumerateAddressableModelIds, listedRealModels } from '../providers/addressable.ts';
+import { enumerateAddressableModelIds, listedRealModels } from '../shared/listing/addressable.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { PublicModel, PublicModelsResponse } from '@floway-dev/protocols/common';
 import type { Fetcher, InternalModel } from '@floway-dev/provider';

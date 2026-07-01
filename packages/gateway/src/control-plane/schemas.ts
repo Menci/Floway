@@ -628,8 +628,8 @@ const aliasTargetSchema = z.object({
 });
 
 // Operator override for an alias's announced /v1/models payload. Both
-// sub-fields are independently optional, and the alias-listing pipeline
-// falls back to the rule-aware automatic computation for any TOP-LEVEL
+// sub-fields are independently optional, and the listing pipeline falls
+// back to the rule-aware automatic computation for any TOP-LEVEL
 // sub-block (`limits` / `chat`) the operator did not provide — a present
 // sub-block replaces the computed counterpart wholesale, not per-leaf.
 // `chatSchema` and `limitsSchema` are the same shapes the upstream-model

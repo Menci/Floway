@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'vitest';
 
-import { synthesizeListedAliases } from './alias-listing.ts';
-import type { ModelAliasRecord } from '../../repo/types.ts';
-import type { AddressableIdEntry } from '../providers/addressable.ts';
+import { synthesizeListedAliases } from './alias.ts';
+import type { ModelAliasRecord } from '../../../repo/types.ts';
+import type { AddressableIdEntry } from './addressable.ts';
 import type { InternalModel, ProviderModel } from '@floway-dev/provider';
 
 const aliasFixture = (overrides: Partial<ModelAliasRecord> = {}): ModelAliasRecord => ({

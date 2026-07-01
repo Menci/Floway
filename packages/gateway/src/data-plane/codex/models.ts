@@ -37,7 +37,7 @@ import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getCurrentColo } from '../../runtime/runtime-info.ts';
-import { enumerateAddressableModelIds, listedRealModels } from '../providers/addressable.ts';
+import { enumerateAddressableModelIds, listedRealModels } from '../shared/listing/addressable.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { Fetcher } from '@floway-dev/provider';
 
