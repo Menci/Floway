@@ -9,6 +9,7 @@ const base: InternalModel = {
   kind: 'chat',
   limits: { max_context_window_tokens: 128000 },
   endpoints: { chatCompletions: {} },
+  providerModels: {},
 };
 
 describe('synthesizeCatalogEntry', () => {
