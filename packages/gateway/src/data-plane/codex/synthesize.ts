@@ -1,20 +1,88 @@
-// Synthesize a Codex `models.json`-shaped catalog entry for a Floway chat model
-// that does not appear in the bundled Codex catalog. The shape matches what
-// `openai/codex`'s OpenAiModelsManager deserializes; fields we do not
-// opinionate on are filled with safe baselines.
+// Build a Codex `models.json`-shaped catalog entry for a Floway chat model.
+//
+// Both branches of the pipeline — a bundled catalog match and a registry
+// model with no bundled equivalent — funnel through this one function.
+// `base` is the bundled entry when there is a match, `undefined` otherwise;
+// on `undefined` the hardcoded `BASELINE` fills in the same slot.
+//
+// Field precedence, per field family:
+//
+//   1. `slug` — always the registry public id (bundled base carries the
+//      upstream slug; we always overwrite with the operator-visible id).
+//   2. `display_name` — `model.display_name ?? source.display_name`. Registry
+//      wins when the operator set a label; else the bundled/base label
+//      rides through.
+//   3. `service_tiers` — unconditional override with `deriveServiceTiers(model)`.
+//      No fallback to bundled: bundled entries may advertise OpenAI 1p tiers
+//      Floway cannot bill, so publishing them without registry-side unit
+//      prices would surface a toggle we could not honor.
+//   4. `context_window` / `max_context_window` — `registry ?? source ?? 128k`.
+//      Registry-supplied limits win; else preserve the base's value (bundled
+//      entries carry a real OpenAI-vendored window); else the conservative
+//      default so codex's `(cw * 9) / 10` auto-compact math never sees zero.
+//   5. `input_modalities` (and its derived siblings `supports_image_detail_original`
+//      and `web_search_tool_type`) — `chat.modalities.input ?? source.input_modalities`.
+//      When the operator declared `chat.modalities`, honour it (even if the
+//      upstream base advertised more); else keep the base's list. The two
+//      "does this model see images" derivations always follow the final
+//      modality list so they cannot drift from it.
+//   6. `supported_reasoning_levels` / `default_reasoning_level` — same
+//      `chat.reasoning.effort ?? source's` precedence as the modalities.
+//
+// Fields not listed above ride through from `source` unchanged: the base
+// pass supplies bundled defaults for bundled-hit and hardcoded baselines
+// for the miss path.
 
 import type { CatalogModel } from './catalog.ts';
 import { SYNTHESIZED_BASE_INSTRUCTIONS } from './synthesized-base-instructions.ts';
 import type { InternalModel, Modality } from '@floway-dev/provider';
 
-const BASELINE_INPUT_MODALITIES: readonly Modality[] = ['text'];
-
 // Bundled-hit entries inherit a real window from the codex catalog; missing
-// that fallback, a synthesized entry needs SOME value or codex's
-// `(context_window * 9) / 10` auto-compact trigger blows up on absent /
-// zero windows. 128k is deliberately low — an operator who wants more
-// configures `max_context_window_tokens` on the registry entry.
+// that fallback, an entry needs SOME value or codex's `(cw * 9) / 10`
+// auto-compact trigger blows up on absent / zero windows. 128k is
+// deliberately low — an operator who wants more configures
+// `max_context_window_tokens` on the registry entry.
 const CONSERVATIVE_DEFAULT_CONTEXT_WINDOW = 128_000;
+
+// Hardcoded baseline for a codex catalog entry when no bundled match exists.
+// The synthesizer starts from this object (via a shallow spread) and layers
+// registry-derived overlays on top. Bundled matches use the bundled entry
+// as the base and overlay the same fields, so both paths converge on one
+// field-precedence rule set (documented above).
+const BASELINE: CatalogModel = {
+  slug: '',                                             // always overwritten
+  description: '',
+  truncation_policy: { mode: 'tokens', limit: 10000 },
+  input_modalities: ['text'],
+  supports_image_detail_original: false,
+  web_search_tool_type: 'text',
+  supports_parallel_tool_calls: true,
+  supported_reasoning_levels: [],
+  shell_type: 'shell_command',
+  support_verbosity: false,
+  default_verbosity: null,
+  prefer_websockets: true,
+  supported_in_api: true,
+  // ModelInfo (codex-rs/protocol/src/openai_models.rs) requires
+  // `supports_reasoning_summaries: bool` and `apply_patch_tool_type:
+  // Option<...>` to be present; absence aborts deserialization of the whole
+  // `/models` body and codex silently falls back to its bundled catalog.
+  supports_reasoning_summaries: false,
+  apply_patch_tool_type: null,
+  default_reasoning_summary: 'none',
+  base_instructions: SYNTHESIZED_BASE_INSTRUCTIONS,
+  effective_context_window_percent: 95,
+  experimental_supported_tools: [],
+  additional_speed_tiers: [],
+  service_tiers: [],
+  priority: 0,
+  visibility: 'list',
+  availability_nux: null,
+  upgrade: null,
+  auto_compact_token_limit: null,
+  context_window: CONSERVATIVE_DEFAULT_CONTEXT_WINDOW,
+  max_context_window: CONSERVATIVE_DEFAULT_CONTEXT_WINDOW,
+};
 
 // Registry-derived: each key in cost.tiers is a billable tier wire-id. Names
 // mirror ids and descriptions are blank — Floway does not yet carry tier
@@ -22,64 +90,62 @@ const CONSERVATIVE_DEFAULT_CONTEXT_WINDOW = 128_000;
 export const deriveServiceTiers = (model: InternalModel): { id: string; name: string; description: string }[] =>
   Object.keys(model.cost?.tiers ?? {}).map(id => ({ id, name: id, description: '' }));
 
-export const synthesizeCatalogEntry = (model: InternalModel): CatalogModel => {
-  const inputModalities = model.chat?.modalities?.input ?? BASELINE_INPUT_MODALITIES;
+// Lossy projection: Codex CLI's catalog wire can only model effort-tiered reasoning
+// (`supported_reasoning_levels: [{effort, description}]` + `default_reasoning_level`),
+// mirroring `codex-rs/protocol/src/openai_models.rs` ModelInfo fields
+// `supported_reasoning_levels: Vec<ReasoningEffortPreset>` and
+// `default_reasoning_level: Option<ReasoningEffort>`
+// (https://github.com/openai/codex/blob/b98870dc46c7b97a08b98e0fc39e85ccf36093c0/codex-rs/protocol/src/openai_models.rs).
+// Floway's `chat.reasoning` is richer: `budget_tokens`, `adaptive`, and `mandatory`
+// don't fit the Codex wire and are silently dropped here. The omission is benign at
+// request-time: Codex CLI sends `reasoning.effort` from the global default, and
+// Floway's translation layer maps that effort value into the appropriate upstream
+// representation (e.g. Anthropic `thinking.budget_tokens`).
+const reasoningPresetsFromRegistry = (model: InternalModel): { effort: string; description: string }[] | undefined => {
+  const supported = model.chat?.reasoning?.effort?.supported;
+  return supported === undefined ? undefined : supported.map(effort => ({ effort, description: '' }));
+};
+
+export const synthesizeCatalogEntry = (model: InternalModel, base?: CatalogModel): CatalogModel => {
+  const source = base ?? BASELINE;
+
+  // Overlay chain for every registry-derived field: `registry ?? source ?? BASELINE`.
+  // BASELINE is always the ultimate fallback so a partially-populated `source`
+  // (e.g. a bundled entry from an older codex release that omits a field)
+  // still lands on a valid value.
+  const inputModalities = (model.chat?.modalities?.input
+    ?? source.input_modalities
+    ?? BASELINE.input_modalities) as readonly Modality[];
   const hasImage = inputModalities.includes('image');
-  // Lossy projection: Codex CLI's catalog wire can only model effort-tiered reasoning
-  // (`supported_reasoning_levels: [{effort, description}]` + `default_reasoning_level`),
-  // mirroring `codex-rs/protocol/src/openai_models.rs` ModelInfo fields
-  // `supported_reasoning_levels: Vec<ReasoningEffortPreset>` and
-  // `default_reasoning_level: Option<ReasoningEffort>`
-  // (https://github.com/openai/codex/blob/b98870dc46c7b97a08b98e0fc39e85ccf36093c0/codex-rs/protocol/src/openai_models.rs).
-  // Floway's `chat.reasoning` is richer: `budget_tokens`, `adaptive`, and `mandatory`
-  // don't fit the Codex wire and are silently dropped here. The omission is benign at
-  // request-time: Codex CLI sends `reasoning.effort` from the global default, and
-  // Floway's translation layer maps that effort value into the appropriate upstream
-  // representation (e.g. Anthropic `thinking.budget_tokens`). The catalog simply doesn't
-  // surface effort pickers for models that don't support effort-tiered reasoning.
-  const supportedReasoning = model.chat?.reasoning?.effort?.supported ?? [];
-  const reasoningPresets = supportedReasoning.map(effort => ({ effort, description: '' }));
-  const contextWindow = model.limits.max_context_window_tokens ?? CONSERVATIVE_DEFAULT_CONTEXT_WINDOW;
+
+  const supportedReasoning = reasoningPresetsFromRegistry(model)
+    ?? source.supported_reasoning_levels
+    ?? BASELINE.supported_reasoning_levels;
+
+  const registryWindow = model.limits.max_context_window_tokens;
+  const contextWindow = (registryWindow
+    ?? source.context_window
+    ?? BASELINE.context_window) as number;
+  const maxContextWindow = (registryWindow
+    ?? source.max_context_window
+    ?? BASELINE.max_context_window) as number;
 
   const entry: CatalogModel = {
+    ...source,
     slug: model.id,
-    display_name: model.display_name ?? model.id,
-    description: '',
-    truncation_policy: { mode: 'tokens', limit: 10000 },
+    display_name: model.display_name ?? source.display_name ?? model.id,
     input_modalities: [...inputModalities],
     supports_image_detail_original: hasImage,
     web_search_tool_type: hasImage ? 'text_and_image' : 'text',
-    supports_parallel_tool_calls: true,
-    supported_reasoning_levels: reasoningPresets,
-    shell_type: 'shell_command',
-    support_verbosity: false,
-    default_verbosity: null,
-    prefer_websockets: true,
-    supported_in_api: true,
-    // ModelInfo (codex-rs/protocol/src/openai_models.rs) requires
-    // `supports_reasoning_summaries: bool` and `apply_patch_tool_type:
-    // Option<...>` to be present; absence aborts deserialization of the
-    // whole `/models` body and codex silently falls back to its bundled
-    // catalog — wiping out every synthesized entry.
-    supports_reasoning_summaries: false,
-    apply_patch_tool_type: null,
-    default_reasoning_summary: 'none',
-    base_instructions: SYNTHESIZED_BASE_INSTRUCTIONS,
-    effective_context_window_percent: 95,
-    experimental_supported_tools: [],
-    additional_speed_tiers: [],
+    supported_reasoning_levels: supportedReasoning,
     service_tiers: deriveServiceTiers(model),
-    priority: 0,
-    visibility: 'list',
-    availability_nux: null,
-    upgrade: null,
-    auto_compact_token_limit: null,
     context_window: contextWindow,
-    max_context_window: contextWindow,
+    max_context_window: maxContextWindow,
   };
 
-  if (model.chat?.reasoning?.effort?.default !== undefined) {
-    entry.default_reasoning_level = model.chat.reasoning.effort.default;
+  const defaultEffort = model.chat?.reasoning?.effort?.default;
+  if (defaultEffort !== undefined) {
+    entry.default_reasoning_level = defaultEffort;
   }
 
   return entry;

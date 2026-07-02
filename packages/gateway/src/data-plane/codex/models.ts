@@ -7,14 +7,12 @@
 // (`{"object":"list","data":[...]}`) we serve at `/v1/models`.
 //
 // Pipeline: codex publishes a bundled catalog per release (see catalog.ts);
-// for each chat-kind model the registry lists as addressable, we either
-// reuse its bundled entry (found via segment-based slug matching so
-// prefixed public ids like `openrouter/gpt-5.5` still resolve to the
-// upstream slug) or synthesize a new one (see synthesize.ts). Bundled
-// entries have their slug overridden to the registry public id and their
-// context_window / max_context_window rewritten from the registry (see
-// context-window.ts) so the codex client sees the same limits the data
-// plane will actually enforce.
+// for each chat-kind model the registry lists as addressable, we call
+// `synthesizeCatalogEntry(model, base?)` with the segment-matched bundled
+// entry as `base` (or `undefined` when no bundled entry matches). The
+// synthesizer builds the codex-shaped entry from that base plus the
+// registry-owned overlays it announces (see synthesize.ts for the exact
+// field precedence rules).
 //
 // Aliases never enter this pipeline — `enumerateAddressableModelIds`
 // walks real provider-advertised models plus `modelPrefix.addressable`
@@ -24,8 +22,7 @@
 import type { Context } from 'hono';
 
 import { resolveCodexCatalog, type CatalogModel, type CodexCatalog } from './catalog.ts';
-import { applyContextWindowFromRegistry, type ContextWindowResolver } from './context-window.ts';
-import { deriveServiceTiers, synthesizeCatalogEntry } from './synthesize.ts';
+import { synthesizeCatalogEntry } from './synthesize.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
@@ -44,12 +41,12 @@ export const assembleCatalog = (
   const bundledBySlug = new Map<string, CatalogModel>();
   for (const m of bundled.models) bundledBySlug.set(m.slug.toLowerCase(), m);
 
-  const matchBundled = (publicId: string): CatalogModel | null => {
+  const matchBundled = (publicId: string): CatalogModel | undefined => {
     for (const seg of publicId.toLowerCase().split(/[/:]/)) {
       const hit = bundledBySlug.get(seg);
-      if (hit) return hit;
+      if (hit !== undefined) return hit;
     }
-    return null;
+    return undefined;
   };
 
   const models: CatalogModel[] = [];
@@ -58,26 +55,10 @@ export const assembleCatalog = (
     // publish stay off the codex picker too — they are routable at
     // request time but never surface as their own picker row.
     if (entry.unlisted !== undefined) continue;
-    const model = entry.model;
-    if (model.kind !== 'chat') continue;
-    const hit = matchBundled(model.id);
-    if (hit) {
-      const cloned: CatalogModel = { ...hit, slug: model.id };
-      if (model.display_name !== undefined) cloned.display_name = model.display_name;
-      // Registry-derived tiers win over bundled: a tier we can bill must
-      // have unit prices in the registry, so any bundled tier we lack
-      // pricing for cannot be surfaced to the client.
-      cloned.service_tiers = deriveServiceTiers(model);
-      models.push(cloned);
-    } else {
-      models.push(synthesizeCatalogEntry(model));
-    }
+    if (entry.model.kind !== 'chat') continue;
+    models.push(synthesizeCatalogEntry(entry.model, matchBundled(entry.model.id)));
   }
-
-  const addressableById = new Map(addressable.map(entry => [entry.id, entry] as const));
-  const contextWindowOf: ContextWindowResolver = slug =>
-    addressableById.get(slug)?.model.limits.max_context_window_tokens ?? null;
-  return applyContextWindowFromRegistry({ models }, contextWindowOf);
+  return { models };
 };
 
 const computeCatalog = async (
