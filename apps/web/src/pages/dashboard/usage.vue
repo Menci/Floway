@@ -8,7 +8,9 @@ import { computed, ref, watch } from 'vue';
 import { callApi, useApi, type ApiClient } from '../../api/client.ts';
 import type { BillingDimension } from '../../api/types.ts';
 import ChartCanvas from '../../components/charts/ChartCanvas.vue';
+import ChartSeriesControls from '../../components/charts/ChartSeriesControls.vue';
 import { bucketKeyForUtcHour, chartColor, chartFont, chartXAxisTick, dashboardBuckets, dashboardRangeQuery, type DashboardRange } from '../../components/charts/dashboard-chart.ts';
+import { applySeriesSelection, chartEventsWithDoubleClick, chartSeriesIds, createSeriesIsolation, handleLegendClick } from '../../components/charts/series-selection.ts';
 import UsageSummaryMetric from '../../components/usage/UsageSummaryMetric.vue';
 import { useModelsStore } from '../../composables/useModels.ts';
 import { useAuthStore } from '../../stores/auth.ts';
@@ -142,11 +144,6 @@ let usageRequestId = 0;
 const hiddenKeys = ref(new Set<string>());
 const hiddenModels = ref(new Set<string>());
 
-const toggleHidden = (set: Set<string>, id: string) => {
-  if (set.has(id)) set.delete(id);
-  else set.add(id);
-};
-
 const load = async () => {
   const requestId = ++usageRequestId;
   const requestedRange = tokenRange.value;
@@ -274,6 +271,10 @@ interface ChartEntry {
   label: string;
   colorSlot: number;
 }
+
+const keySeriesIsolation = createSeriesIsolation();
+const modelSeriesIsolation = createSeriesIsolation();
+const searchSeriesIsolation = createSeriesIsolation();
 
 const keyChartEntries = (
   presentKeyIds: readonly string[],
@@ -422,6 +423,7 @@ const buildStackedConfig = (groupKey: 'keyId' | 'model'): ChartConfiguration<'li
         const color = chartColor(entry.colorSlot);
         return {
           label: entry.label,
+          seriesId: entry.id,
           data: datasetData,
           hidden: ownHidden.value.has(entry.id),
           borderColor: color,
@@ -436,6 +438,7 @@ const buildStackedConfig = (groupKey: 'keyId' | 'model'): ChartConfiguration<'li
       }),
     },
     options: {
+      events: chartEventsWithDoubleClick,
       responsive: true,
       maintainAspectRatio: false,
       animation: false,
@@ -444,9 +447,10 @@ const buildStackedConfig = (groupKey: 'keyId' | 'model'): ChartConfiguration<'li
         legend: {
           position: 'bottom',
           labels: { color: '#9e9e9e', font: { size: 11, family: chartFont.sans }, boxWidth: 12, padding: 16, usePointStyle: true, pointStyle: 'circle' },
-          onClick: (_event, legendItem) => {
-            const entry = datasetEntries[legendItem.datasetIndex ?? -1]?.entry;
-            if (entry) toggleHidden(ownHidden.value, entry.id);
+          onClick: (event, legendItem) => {
+            const entry = datasetEntries[legendItem.datasetIndex!].entry;
+            const isolation = groupKey === 'keyId' ? keySeriesIsolation : modelSeriesIsolation;
+            handleLegendClick(event, isolation, ownHidden.value, datasetEntries.map(({ entry }) => entry.id), entry.id);
           },
         },
         tooltip: {
@@ -494,6 +498,8 @@ const buildStackedConfig = (groupKey: 'keyId' | 'model'): ChartConfiguration<'li
 
 const byKeyConfig = computed(() => buildStackedConfig('keyId'));
 const byModelConfig = computed(() => buildStackedConfig('model'));
+const byKeySeriesIds = computed(() => chartSeriesIds(byKeyConfig.value));
+const byModelSeriesIds = computed(() => chartSeriesIds(byModelConfig.value));
 
 const searchUsageActiveProvider = computed(() => {
   return searchData.value?.activeProvider ?? 'disabled';
@@ -525,6 +531,7 @@ const searchByKeyConfig = computed<ChartConfiguration<'line'>>(() => {
         const color = chartColor(entry.colorSlot);
         return {
           label: entry.label,
+          seriesId: entry.id,
           data: bucketKeys.map(k => groups.get(entry.id)?.get(k) ?? 0),
           hidden: hiddenKeys.value.has(entry.id),
           borderColor: color,
@@ -539,6 +546,7 @@ const searchByKeyConfig = computed<ChartConfiguration<'line'>>(() => {
       }),
     },
     options: {
+      events: chartEventsWithDoubleClick,
       responsive: true,
       maintainAspectRatio: false,
       animation: false,
@@ -547,9 +555,9 @@ const searchByKeyConfig = computed<ChartConfiguration<'line'>>(() => {
         legend: {
           position: 'bottom',
           labels: { color: '#9e9e9e', font: { size: 11, family: chartFont.sans }, boxWidth: 12, padding: 16, usePointStyle: true, pointStyle: 'circle' },
-          onClick: (_event, legendItem) => {
-            const entry = entries[legendItem.datasetIndex ?? -1];
-            if (entry) toggleHidden(hiddenKeys.value, entry.id);
+          onClick: (event, legendItem) => {
+            const entry = entries[legendItem.datasetIndex!];
+            handleLegendClick(event, searchSeriesIsolation, hiddenKeys.value, entries.map(entry => entry.id), entry.id);
           },
         },
         tooltip: {
@@ -571,6 +579,8 @@ const searchByKeyConfig = computed<ChartConfiguration<'line'>>(() => {
     },
   };
 });
+
+const searchByKeySeriesIds = computed(() => chartSeriesIds(searchByKeyConfig.value));
 
 const formatCost = (v: number) => {
   if (v >= 1) return `$${v.toFixed(2)}`;
@@ -635,12 +645,18 @@ const formatCost = (v: number) => {
         </OverlayScrollbars>
       </div>
 
+      <div class="mb-2 flex justify-end">
+        <ChartSeriesControls label="Token usage series selection" @select="applySeriesSelection(hiddenKeys, byKeySeriesIds, $event)" />
+      </div>
       <div style="height: 320px; position: relative;">
         <ChartCanvas :config="byKeyConfig" />
       </div>
 
       <div class="mt-6 pt-5 border-t border-white/5">
-        <span class="text-xs font-medium text-gray-500 uppercase tracking-widest mb-4 block">By Model</span>
+        <div class="flex items-center justify-between gap-3 mb-4">
+          <span class="text-xs font-medium text-gray-500 uppercase tracking-widest block">By Model</span>
+          <ChartSeriesControls label="Model usage series selection" @select="applySeriesSelection(hiddenModels, byModelSeriesIds, $event)" />
+        </div>
         <div style="height: 320px; position: relative;">
           <ChartCanvas :config="byModelConfig" />
         </div>
@@ -670,9 +686,12 @@ const formatCost = (v: number) => {
       </div>
 
       <div v-if="searchUsageActiveProvider !== 'disabled'" class="mt-6 pt-5 border-t border-white/5">
-        <div class="flex items-center gap-3 mb-4">
-          <span class="text-xs font-medium text-gray-500 uppercase tracking-widest block">Search Usage</span>
-          <Spinner v-if="searchUsageLoading" class="h-3.5 w-3.5 text-gray-500" />
+        <div class="flex items-center justify-between gap-3 mb-4">
+          <div class="flex items-center gap-3">
+            <span class="text-xs font-medium text-gray-500 uppercase tracking-widest block">Search Usage</span>
+            <Spinner v-if="searchUsageLoading" class="h-3.5 w-3.5 text-gray-500" />
+          </div>
+          <ChartSeriesControls label="Search usage series selection" @select="applySeriesSelection(hiddenKeys, searchByKeySeriesIds, $event)" />
         </div>
         <div style="height: 320px; position: relative;">
           <ChartCanvas :config="searchByKeyConfig" />

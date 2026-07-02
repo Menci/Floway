@@ -89,12 +89,12 @@ const rawModelSupportsEndpoint = (model: CopilotRawModel, endpoint: ModelEndpoin
   return false;
 };
 
-const copilotModelEndpoints = (publicModel: CopilotRawModel, rawModels: readonly CopilotRawModel[]): ModelEndpoints => {
+const copilotModelEndpoints = (rawModels: readonly CopilotRawModel[]): ModelEndpoints => {
   if (rawModels.some(model => rawModelSupportsEndpoint(model, 'responses'))) {
     return { responses: {} };
   }
 
-  if (publicModel.id.startsWith('claude-') || rawModels.some(model => rawModelSupportsEndpoint(model, 'messages'))) {
+  if (rawModels.some(model => rawModelSupportsEndpoint(model, 'messages'))) {
     return { messages: {} };
   }
 
@@ -149,7 +149,7 @@ const finalizeCopilotModels = (rawModels: CopilotRawModel[], enabledFlags: Reado
   const models: ProviderModel[] = [];
   for (const mergedModel of merged.data) {
     const variants = groups.get(mergedModel.id) ?? [mergedModel];
-    const endpoints = copilotModelEndpoints(mergedModel, variants);
+    const endpoints = copilotModelEndpoints(variants);
     const cost = pricingForCopilotPublicModelId(mergedModel.id);
     models.push({
       ...copilotRawToProviderModel(mergedModel),
