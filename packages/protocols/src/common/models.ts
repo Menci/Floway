@@ -31,7 +31,9 @@ export const BILLING_DIMENSIONS: readonly BillingDimension[] = ['input', 'input_
 //
 // `tiers` carries per-request service-tier overrides (Anthropic fast mode,
 // OpenAI priority/flex). Each tier key is the wire-value the upstream stamps
-// on the usage object (`fast`, `priority`, `flex`, ...). Resolve through
+// on the usage object (`fast`, `priority`, `flex`, ...). An overlay may be
+// empty — that acknowledges the tier without changing any rate, so every
+// dimension inherits base pricing. Resolve through
 // `resolveEffectivePricing(pricing, usage.tier)` before any unit-price lookup.
 export interface ModelPricing extends Partial<Record<BillingDimension, number>> {
   tiers?: Record<string, Partial<Record<BillingDimension, number>>>;

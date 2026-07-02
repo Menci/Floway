@@ -1,0 +1,18 @@
+[Unit]
+After=floway-server.service
+Requires=floway-server.service
+
+[Container]
+ContainerName=floway-web
+Image=ghcr.io/menci/floway-web:latest
+Pod=floway.pod
+
+# Auto-update
+Pull=newer
+
+[Service]
+Restart=always
+
+[Install]
+# Auto-start
+WantedBy=default.target

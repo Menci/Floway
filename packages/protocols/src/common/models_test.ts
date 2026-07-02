@@ -87,3 +87,15 @@ test('resolveEffectivePricing returns null when the base snapshot is null', () =
   assertEquals(resolveEffectivePricing(null, 'fast'), null);
   assertEquals(resolveEffectivePricing(null, null), null);
 });
+
+test('resolveEffectivePricing folds an empty overlay to the base snapshot', () => {
+  // Operators who don't track per-tier billing (or upstreams where every tier
+  // prices identically) declare `tiers.foo = {}` to acknowledge the tier
+  // without any rate change.
+  const base: ModelPricing = {
+    input: 5,
+    output: 25,
+    tiers: { priority: {} },
+  };
+  assertEquals(resolveEffectivePricing(base, 'priority'), { input: 5, output: 25 });
+});

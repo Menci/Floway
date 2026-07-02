@@ -34,7 +34,7 @@ test('pricingField parses per-tier overlays alongside base rates', () => {
   });
 });
 
-test('pricingField drops empty tier overlays and skips unknown keys inside them', () => {
+test('pricingField preserves empty tier overlays and skips unknown keys inside them', () => {
   const result = pricingField(
     {
       input: 5,
@@ -45,7 +45,7 @@ test('pricingField drops empty tier overlays and skips unknown keys inside them'
     },
     'cost',
   );
-  assertEquals(result, { input: 5, tiers: { fast: { input: 30 } } });
+  assertEquals(result, { input: 5, tiers: { fast: { input: 30 }, priority: {} } });
 });
 
 test('pricingField rejects non-object tiers, empty names, and negative rates', () => {

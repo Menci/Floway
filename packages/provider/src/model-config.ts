@@ -145,7 +145,9 @@ export const pricingField = (value: unknown, label: string): ModelPricing | unde
           tierPricing[dimension] = nonNegativeNumberField(overlay[dimension], `${label}.tiers.${tierName}.${dimension}`);
         }
       }
-      if (Object.keys(tierPricing).length > 0) tiers[tierName] = tierPricing;
+      // An empty overlay is a valid declaration: the tier exists but every
+      // dimension inherits base pricing. Preserve it verbatim.
+      tiers[tierName] = tierPricing;
     }
     if (Object.keys(tiers).length > 0) pricing.tiers = tiers;
   }

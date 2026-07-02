@@ -142,13 +142,9 @@ const upstreamModelSchema = z.object({
   cost: z.object({
     ...pricingDimensionShape,
     // See ModelPricing.tiers in @floway-dev/protocols/common for semantics.
-    tiers: z.record(
-      z.string().min(1),
-      z.object(pricingDimensionShape).refine(
-        t => Object.values(t).some(v => v !== undefined),
-        { message: 'tier overlay must declare at least one rate' },
-      ),
-    ).optional(),
+    // An empty overlay is legal — it declares the tier without changing any
+    // rate, so every dimension inherits base pricing.
+    tiers: z.record(z.string().min(1), z.object(pricingDimensionShape)).optional(),
   }).optional(),
   flagOverrides: z.object({
     enabled: z.boolean(),
