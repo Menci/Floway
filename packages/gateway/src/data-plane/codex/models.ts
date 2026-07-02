@@ -46,7 +46,6 @@ export const assembleCatalog = (
 
   const matchBundled = (publicId: string): CatalogModel | null => {
     for (const seg of publicId.toLowerCase().split(/[/:]/)) {
-      if (seg === '') continue;
       const hit = bundledBySlug.get(seg);
       if (hit) return hit;
     }
