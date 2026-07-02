@@ -7,7 +7,7 @@ import { assertEquals, assertRejects, jsonResponse, withMockedFetch } from '@flo
 
 const config: OllamaUpstreamConfig = assertOllamaUpstreamRecord({
   id: 'up_ollama',
-  provider: 'ollama',
+  kind: 'ollama',
   name: 'Ollama',
   enabled: true,
   sortOrder: 0,

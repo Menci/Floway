@@ -4,29 +4,14 @@ import { respondResponses } from './respond.ts';
 import { PreviousResponseNotFoundError } from './serve-prep.ts';
 import { responsesServe } from './serve.ts';
 import type { AuthedContext } from '../../../middleware/auth.ts';
-import { CODEX_AUTO_REVIEW_ALIAS, CODEX_AUTO_REVIEW_TARGET } from '../../codex/auto-review-alias.ts';
 import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
-import { createGatewayCtxFromHono, type GatewayCtx } from '../shared/gateway-ctx.ts';
+import { createChatGatewayCtxFromHono, createGatewayCtxFromHono, finalizeGatewayResponse, type ChatGatewayCtx, type GatewayCtx } from '../shared/gateway-ctx.ts';
 import { readRequestBody, type RequestBody } from '../shared/request-body.ts';
 import { providerModelsUnavailableResponse } from '../shared/upstream-models-error.ts';
 import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 import { internalErrorResult, toInternalDebugError } from '@floway-dev/provider';
 import { TranslatorInputError } from '@floway-dev/translate';
-
-// Codex sends auto-review requests over the Responses wire API as a
-// `codex-auto-review` model id; rewrite at the entry so downstream routing,
-// performance telemetry, and usage accounting all see the real model name
-// (and the `low` reasoning effort the alias implies — generate only;
-// compact carries no `reasoning` field).
-const rewriteResponsesEntryModelAlias = (payload: ResponsesPayload, stampReasoningEffort: boolean): ResponsesPayload => {
-  if (payload.model !== CODEX_AUTO_REVIEW_ALIAS) return payload;
-  if (!stampReasoningEffort) return { ...payload, model: CODEX_AUTO_REVIEW_TARGET };
-  return {
-    ...payload,
-    model: CODEX_AUTO_REVIEW_TARGET,
-    reasoning: { ...(payload.reasoning ?? {}), effort: 'low' },
-  };
-};
+import { canonicalizeResponsesPayload, type CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
 
 // OpenAI's verbatim previous_response_not_found envelope. Codex compares this
 // body byte-for-byte against upstream — see the cross-references on
@@ -59,7 +44,7 @@ const respondWithInternalError = async (c: AuthedContext, error: unknown, reques
   const effectiveCtx = ctx ?? createGatewayCtxFromHono(c, { wantsStream: false, requestBody });
   const result = internalErrorResult(502, toInternalDebugError(error));
   const { response } = await respondResponses(c, result, false, effectiveCtx);
-  return (effectiveCtx.dump?.finalize(response) ?? response);
+  return finalizeGatewayResponse(effectiveCtx, response);
 };
 
 // Pre-stream throw dispatcher. `PreviousResponseNotFoundError` and the
@@ -69,31 +54,30 @@ const respondToThrow = async (c: AuthedContext, error: unknown, requestBody: Req
   if (error instanceof PreviousResponseNotFoundError) {
     const response = previousResponseNotFoundResponse(error.previousResponseId);
     ctx?.dump?.error('gateway');
-    return (ctx?.dump?.finalize(response) ?? response);
+    return ctx ? finalizeGatewayResponse(ctx, response) : response;
   }
   if (error instanceof TranslatorInputError) {
     const effectiveCtx = ctx ?? createGatewayCtxFromHono(c, { wantsStream: false, requestBody });
     const { response } = await respondResponses(c, translatorInputErrorResult(error), false, effectiveCtx);
-    return (effectiveCtx.dump?.finalize(response) ?? response);
+    return finalizeGatewayResponse(effectiveCtx, response);
   }
   return await respondWithInternalError(c, error, requestBody, ctx);
 };
 
-const parsePayload = (requestBody: RequestBody, stampReasoningEffort: boolean): ResponsesPayload =>
-  rewriteResponsesEntryModelAlias(JSON.parse(new TextDecoder().decode(requestBody.bytes)) as ResponsesPayload, stampReasoningEffort);
+const parsePayload = (requestBody: RequestBody): CanonicalResponsesPayload =>
+  canonicalizeResponsesPayload(JSON.parse(new TextDecoder().decode(requestBody.bytes)) as ResponsesPayload);
 
 export const responsesHttp = {
   generate: async (c: AuthedContext): Promise<Response> => {
     const requestBody = await readRequestBody(c);
-    let ctx: GatewayCtx | undefined;
+    let ctx: ChatGatewayCtx | undefined;
     try {
-      const payload = parsePayload(requestBody, true);
+      const payload = parsePayload(requestBody);
       const wantsStream = payload.stream === true;
-      ctx = createGatewayCtxFromHono(c, { wantsStream, requestBody, model: payload.model });
-      const store = createResponsesHttpStore(ctx.apiKeyId, payload.store ?? undefined);
-      const result = await responsesServe.generate({ payload, ctx, store, headers: inboundHeadersForUpstream(c) });
+      ctx = createChatGatewayCtxFromHono(c, { wantsStream, requestBody, model: payload.model }, apiKeyId => createResponsesHttpStore(apiKeyId, payload.store ?? undefined));
+      const result = await responsesServe.generate({ payload, ctx, headers: inboundHeadersForUpstream(c) });
       const { response } = await respondResponses(c, result, wantsStream, ctx);
-      return (ctx.dump?.finalize(response) ?? response);
+      return finalizeGatewayResponse(ctx, response);
     } catch (error) {
       return await respondToThrow(c, error, requestBody, ctx);
     }
@@ -101,19 +85,18 @@ export const responsesHttp = {
 
   compact: async (c: AuthedContext): Promise<Response> => {
     const requestBody = await readRequestBody(c);
-    let ctx: GatewayCtx | undefined;
+    let ctx: ChatGatewayCtx | undefined;
     try {
-      const payload = parsePayload(requestBody, false);
-      ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody, model: payload.model });
-      const store = createResponsesHttpStore(ctx.apiKeyId, payload.store ?? undefined);
-      const result = await responsesServe.compact({ payload, ctx, store, headers: inboundHeadersForUpstream(c) });
+      const payload = parsePayload(requestBody);
+      ctx = createChatGatewayCtxFromHono(c, { wantsStream: false, requestBody, model: payload.model }, apiKeyId => createResponsesHttpStore(apiKeyId, payload.store ?? undefined));
+      const result = await responsesServe.compact({ payload, ctx, headers: inboundHeadersForUpstream(c) });
       if (result.type === 'result') {
         ctx.dump?.success(result.modelIdentity, result.usage);
         const compactResponse = Response.json(result.result);
-        return (ctx.dump?.finalize(compactResponse) ?? compactResponse);
+        return finalizeGatewayResponse(ctx, compactResponse);
       }
       const { response } = await respondResponses(c, result, false, ctx);
-      return (ctx.dump?.finalize(response) ?? response);
+      return finalizeGatewayResponse(ctx, response);
     } catch (error) {
       return await respondToThrow(c, error, requestBody, ctx);
     }

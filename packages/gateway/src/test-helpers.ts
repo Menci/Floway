@@ -53,7 +53,7 @@ export const buildCopilotUpstreamRecord = (githubAccount: CopilotAccountFixture,
 
   return {
     id: 'up_copilot',
-    provider: 'copilot',
+    kind: 'copilot',
     name: githubAccount.user.login ? `GitHub Copilot (${githubAccount.user.login})` : 'GitHub Copilot',
     enabled: true,
     sortOrder: 0,
@@ -80,7 +80,7 @@ export const buildCustomUpstreamRecord = (overrides: Partial<UpstreamRecord> = {
 
   return {
     id: 'up_custom',
-    provider: 'custom',
+    kind: 'custom',
     name: 'Custom Provider',
     enabled: true,
     sortOrder: 100,

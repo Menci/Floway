@@ -7,29 +7,29 @@ import { createNonResponsesSourceStore } from './store.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import type { StoredResponsesItem } from '../../../../repo/types.ts';
-import type { ResponsesInputItem, ResponsesPayload } from '@floway-dev/protocols/responses';
-import type { ProviderCandidate } from '@floway-dev/provider';
+import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
+import type { ModelCandidate } from '@floway-dev/provider';
 import { directFetcher } from '@floway-dev/provider';
-import { stubProvider, stubUpstreamModel, assert, assertEquals, assertFalse } from '@floway-dev/test-utils';
-import { responsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
+import { stubProvider, stubInternalModel, stubProviderModel, assert, assertEquals, assertFalse } from '@floway-dev/test-utils';
+import { responsesItemsView, type CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
 
 const API_KEY_ID = 'key_rewrite_test';
 
-const candidate = (upstream: string, supportsResponsesItemReference = true): ProviderCandidate => {
+const candidate = (upstream: string, supportsResponsesItemReference = true): ModelCandidate => {
   const modelProvider = stubProvider({
-    getProvidedModels: () => Promise.resolve([stubUpstreamModel()]),
+    getProvidedModels: () => Promise.resolve([stubProviderModel()]),
   });
   return {
     provider: {
       upstream,
-      providerKind: 'custom',
+      kind: 'custom',
       name: upstream,
       disabledPublicModelIds: [],
       modelPrefix: null,
-      provider: modelProvider,
+      instance: modelProvider,
       supportsResponsesItemReference,
     },
-    model: stubUpstreamModel(),
+    model: stubInternalModel({}, upstream),
     fetcher: directFetcher,
   };
 };
@@ -67,14 +67,14 @@ const storedMessageId = (_label: string): string => createStoredResponsesItemId(
 const storedReasoningId = (_label: string): string => createStoredResponsesItemId('reasoning');
 const storedCompactionId = (_label: string): string => createStoredResponsesItemId('compaction');
 
-const makePayload = (input: ResponsesInputItem[]): ResponsesPayload => ({
+const makePayload = (input: ResponsesInputItem[]): CanonicalResponsesPayload => ({
   model: 'test-model',
   input,
 });
 
 const rewrite = async (
   input: ResponsesInputItem[],
-  cand: ProviderCandidate,
+  cand: ModelCandidate,
 ): Promise<ResponsesInputItem[]> => {
   const store = createNonResponsesSourceStore(API_KEY_ID);
   await store.loadInputItems({ sourceItems: input, view: responsesItemsView });
@@ -277,16 +277,6 @@ test('id-less encrypted_content with no stored match is a benign passthrough', a
   const rewritten = await rewrite(input, candidate('up_a'));
 
   assertEquals(rewritten, input);
-});
-
-test('string input is returned unchanged', async () => {
-  await insertRows([]);
-  const store = createNonResponsesSourceStore(API_KEY_ID);
-  const payload: ResponsesPayload = { model: 'test-model', input: 'plain text' };
-  const result = await rewriteResponsesItemsForCandidate(payload, store, candidate('up_a'));
-
-  assertEquals(result.payload, payload);
-  assertEquals(result.references, []);
 });
 
 test('id-less encrypted_content duplicate hash uses freshest stored row for rewrite', async () => {

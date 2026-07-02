@@ -3,14 +3,15 @@ import { test } from 'vitest';
 import { expandShimCompactionItems, withResponsesCompactShim } from './compact-shim.ts';
 import type { ResponsesInvocation } from './types.ts';
 import { encodeBase64UrlJson } from '../../../../shared/base64url-json.ts';
-import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
-import { LayeredStatefulResponsesStore, MemoryStatefulResponsesBacking } from '../items/store.ts';
+import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
+import { createNonResponsesSourceStore } from '../items/store.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectResponsesProtocolEventsToResult, type ResponsesPayload, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { eventResult, type ExecuteResult } from '@floway-dev/provider';
-import { assertEquals, stubProviderCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import type { CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
 
-const stubCtx: GatewayCtx = {
+const stubCtx: ChatGatewayCtx = {
   apiKeyId: 'test-key',
   upstreamIds: null,
   wantsStream: false,
@@ -19,25 +20,18 @@ const stubCtx: GatewayCtx = {
   dump: null,
   backgroundScheduler: () => {},
   requestStartedAt: 0,
+  responseHeaders: new Headers(),
+  store: createNonResponsesSourceStore('test-key'),
 };
 
 const makeInvocation = (
   payload: Partial<ResponsesPayload> = {},
   options: { action?: 'generate' | 'compact'; flagOn?: boolean; targetApi?: 'responses' | 'messages' | 'chat-completions' } = {},
 ): ResponsesInvocation => ({
-  payload: { model: 'test-model', input: [], ...payload } as ResponsesPayload,
+  payload: { model: 'test-model', input: [], ...payload } as CanonicalResponsesPayload,
   action: options.action ?? 'generate',
-  candidate: stubProviderCandidate({
-    model: { enabledFlags: new Set(options.flagOn === false ? [] : ['responses-compact-shim']) },
-  }),
+  candidate: stubModelCandidate({ enabledFlags: new Set(options.flagOn === false ? [] : ['responses-compact-shim']) }),
   targetApi: options.targetApi ?? 'responses',
-  store: new LayeredStatefulResponsesStore({
-    apiKeyId: 'test-key',
-    reads: [new MemoryStatefulResponsesBacking()],
-    itemWrites: [],
-    snapshotWrites: [],
-    stageInputs: false,
-  }),
   headers: new Headers(),
 });
 
@@ -84,7 +78,6 @@ test('inbound: compaction item with a shim-encoded payload expands inline', () =
     ],
   });
 
-  if (typeof expanded.input === 'string') throw new Error('expected array input');
   assertEquals(expanded.input.length, 2);
   assertEquals(expanded.input[0], userItem);
   assertEquals(expanded.input[1], { type: 'message', role: 'user', content: 'new turn' });
@@ -115,11 +108,6 @@ test('inbound: foreign compaction blob (valid base64url but wrong shape) round-t
   };
   const expanded = expandShimCompactionItems(original);
   assertEquals(expanded, original);
-});
-
-test('inbound: string input is returned unchanged', () => {
-  const result = expandShimCompactionItems({ model: 'm', input: 'plain string' });
-  assertEquals(result.input, 'plain string');
 });
 
 // ── Outbound summarization (withResponsesCompactShim) ────────────────────────
@@ -203,7 +191,7 @@ test('compact + flag on: synthesized compaction id is registered as synthetic so
   if (result.type !== 'events') throw new Error('expected events branch');
   const collected = await collectResponsesProtocolEventsToResult(result.events);
   const compactionItem = collected.output[0] as { type: string; id: string };
-  assertEquals(inv.store.isSyntheticItem(compactionItem.id), true);
+  assertEquals(stubCtx.store.isSyntheticItem(compactionItem.id), true);
 });
 
 test('compact + flag on: upstream `output_text` SDK alias is dropped from the synthesized envelope', async () => {
@@ -290,31 +278,6 @@ test('compact + flag on: upstream incomplete status propagates onto the synthesi
   const collected = await collectResponsesProtocolEventsToResult(result.events);
   assertEquals(collected.status, 'incomplete');
   assertEquals(collected.incomplete_details, { reason: 'max_output_tokens' });
-});
-
-test('compact + flag on: string input is materialized into one user-message item before the upstream call', async () => {
-  const inv = makeInvocation(
-    { input: 'a single string turn' as unknown as never },
-    { action: 'compact' },
-  );
-
-  let seenPayload: ResponsesPayload | undefined;
-  await withResponsesCompactShim(inv, stubCtx, () => {
-    seenPayload = inv.payload;
-    return fakeUpstreamRun('s')();
-  });
-  if (!seenPayload) throw new Error('expected the upstream call to fire');
-  // Without materialization the original string would have been dropped on
-  // the floor — the summarization turn would see an empty history and the
-  // synthesized envelope would condense nothing. The trailing item is the
-  // synthetic terminal-user nudge appended unconditionally (see Bug 2).
-  const items = seenPayload.input as Array<{ type: string; role?: string; content?: unknown }>;
-  assertEquals(items.length, 2);
-  assertEquals(items[0].type, 'message');
-  assertEquals(items[0].role, 'user');
-  const content = items[0].content as Array<{ type: string; text: string }>;
-  assertEquals(content[0].type, 'input_text');
-  assertEquals(content[0].text, 'a single string turn');
 });
 
 test('compact + flag on: compaction_trigger items are stripped before the upstream call', async () => {
@@ -541,7 +504,7 @@ test('round-trip: outbound synthesis then inbound expansion recovers the summary
 
   // Step 2: next turn echoes the compaction item back as an input item;
   // inbound expansion replaces it with the summary message.
-  const nextTurn: ResponsesPayload = {
+  const nextTurn: CanonicalResponsesPayload = {
     model: 'test-model',
     input: [
       { type: 'compaction', id: compactionItem.id ?? 'cmp_rt', encrypted_content: compactionItem.encrypted_content } as unknown as never,

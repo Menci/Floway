@@ -10,7 +10,7 @@ import type { UpstreamProviderKind } from '../api/types.ts';
 export interface UpstreamOption {
   id: string;
   name: string;
-  provider: UpstreamProviderKind;
+  kind: UpstreamProviderKind;
   enabled: boolean;
 }
 

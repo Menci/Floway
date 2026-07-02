@@ -4,14 +4,14 @@ import { assertCodexUpstreamRecord, type CodexUpstreamConfig } from './config.ts
 import { callCodexResponses, callCodexResponsesCompact, type CodexCallEffects } from './fetch.ts';
 import { CODEX_RESPONSES_BOUNDARY } from './interceptors/responses/index.ts';
 import type { ResponsesBoundaryCtx } from './interceptors/responses/types.ts';
-import { codexRawToUpstreamModel, fetchCodexCatalog } from './models.ts';
+import { codexRawToProviderModel, fetchCodexCatalog } from './models.ts';
 import { pricingForCodexModelKey } from './pricing.ts';
 import { assertCodexUpstreamState, type CodexUpstreamState } from './state.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import { toCompactPayloadShape } from '@floway-dev/protocols/responses';
-import { defaultsForProvider, getProviderRepo, resolveEffectiveFlags, type ModelProvider, type ModelProviderInstance, type ProviderCallResult, type ProviderResponsesResult, type ProviderStreamResult, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
+import { defaultsForProvider, getProviderRepo, resolveEffectiveFlags, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderResponsesResult, type ProviderStreamResult, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
 
-export const createCodexProvider = async (record: UpstreamRecord): Promise<ModelProviderInstance> => {
+export const createCodexProvider = async (record: UpstreamRecord): Promise<Provider> => {
   assertCodexUpstreamRecord(record);
   assertCodexUpstreamState(record.state);
   const config: CodexUpstreamConfig = record.config;
@@ -21,7 +21,7 @@ export const createCodexProvider = async (record: UpstreamRecord): Promise<Model
   const accountIdentity = config.accounts[0];
 
   // Computed once per provider instance: only the upstream layer applies
-  // (no per-model override layer). Threaded into every UpstreamModel emitted
+  // (no per-model override layer). Threaded into every ProviderModel emitted
   // by getProvidedModels so interceptors can read the effective flag set
   // without re-resolving.
   const enabledFlags = resolveEffectiveFlags(defaultsForProvider('codex'), [record.flagOverrides]);
@@ -68,7 +68,7 @@ export const createCodexProvider = async (record: UpstreamRecord): Promise<Model
 
   const effects: CodexCallEffects = { persistRefreshTokenRotation, persistTerminalState };
 
-  const provider: ModelProvider = {
+  const instance: ProviderInstance = {
     getProvidedModels: async fetcher => {
       // A model-list refresh is the first thing a brand-new Codex upstream
       // does, and it is the only place outside the data plane that mints an
@@ -93,7 +93,7 @@ export const createCodexProvider = async (record: UpstreamRecord): Promise<Model
       // operator's gateway is its own surface — they can dispatch to those
       // models even though the ChatGPT UI hides them — and the dashboard
       // toggles them per-upstream when needed.
-      return raw.map(r => codexRawToUpstreamModel(r, enabledFlags));
+      return raw.map(r => codexRawToProviderModel(r, enabledFlags));
     },
 
     // Codex itself is a flat-fee subscription, but the dashboard reports
@@ -148,11 +148,11 @@ export const createCodexProvider = async (record: UpstreamRecord): Promise<Model
 
   return {
     upstream: record.id,
-    providerKind: 'codex',
+    kind: 'codex',
     name: record.name,
     disabledPublicModelIds: record.disabledPublicModelIds,
     modelPrefix: record.modelPrefix,
-    provider,
+    instance,
     supportsResponsesItemReference: false,
   };
 };

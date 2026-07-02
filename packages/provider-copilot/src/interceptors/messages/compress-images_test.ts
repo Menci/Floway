@@ -7,7 +7,7 @@ import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
-import { assertEquals, stubUpstreamModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import { assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const stubRequest = {};
 
@@ -32,7 +32,7 @@ const spyProcessor = (): { processor: ImageProcessor; inputs: Uint8Array[]; targ
 const invocation = (payload: MessagesPayload, upstreamModelId = 'claude-test'): MessagesBoundaryCtx => ({
   payload,
   headers: new Headers(),
-  model: stubUpstreamModel({ id: upstreamModelId, endpoints: { messages: {} } }),
+  model: stubProviderModel({ id: upstreamModelId, endpoints: { messages: {} } }),
 });
 
 test('compresses a top-level image block to WebP', async () => {

@@ -1,9 +1,13 @@
+import { isEqual } from 'es-toolkit';
+
+import { unionEndpoints } from './endpoint-union.ts';
 import { fetchUpstreamModelsCached } from './models-cache.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { getRepo } from '../../repo/index.ts';
+import type { ModelAliasRecord } from '../../repo/types.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import { type ModelEndpointKey, type ModelEndpoints, type ModelKind, kindForEndpoints } from '@floway-dev/protocols/common';
-import { isAbortError, type InternalModel, type Fetcher, type ModelProviderInstance, type ProviderCandidate, type UpstreamModel, type UpstreamProviderKind, type UpstreamRecord } from '@floway-dev/provider';
+import { type ModelKind, kindForEndpoints } from '@floway-dev/protocols/common';
+import { isAbortError, type Fetcher, type InternalModel, type ModelCandidate, type Provider, type ProviderModel, type UpstreamProviderKind, type UpstreamRecord } from '@floway-dev/provider';
 import { createAzureProvider } from '@floway-dev/provider-azure';
 import { createClaudeCodeProvider } from '@floway-dev/provider-claude-code';
 import { createCodexProvider } from '@floway-dev/provider-codex';
@@ -15,8 +19,9 @@ interface ProviderModelsResult {
   models: InternalModel[];
   // Reverse index: every upstream instance that emitted an entry under the
   // given public id, in enumeration order. The control-plane catalog
-  // endpoint reads this to render `upstreams: [{kind, id, name}]` per row.
-  upstreamsByPublicId: Map<string, ModelProviderInstance[]>;
+  // endpoint reads this to render `upstreams: [{kind, id, name}]` per row;
+  // the alias listing reads it to project per-target upstream chips.
+  upstreamsByPublicId: Map<string, Provider[]>;
   sawSuccess: boolean;
   lastError: unknown;
   // Upstream names whose catalog fetch rejected this round, in the same
@@ -27,7 +32,7 @@ interface ProviderModelsResult {
 
 const NO_UPSTREAM_CONFIGURED_MESSAGE = 'No upstream provider configured — connect GitHub Copilot or add a Custom/Azure upstream in the dashboard';
 
-type ProviderFactory = (record: UpstreamRecord) => ModelProviderInstance | Promise<ModelProviderInstance>;
+type ProviderFactory = (record: UpstreamRecord) => Provider | Promise<Provider>;
 
 const providerFactories: Record<UpstreamProviderKind, ProviderFactory> = {
   copilot: createCopilotProvider,
@@ -38,8 +43,8 @@ const providerFactories: Record<UpstreamProviderKind, ProviderFactory> = {
   ollama: createOllamaProvider,
 };
 
-export const createProviderInstance = (record: UpstreamRecord): ModelProviderInstance | Promise<ModelProviderInstance> =>
-  providerFactories[record.provider](record);
+export const createProviderInstance = (record: UpstreamRecord): Provider | Promise<Provider> =>
+  providerFactories[record.kind](record);
 
 // The upstream scope is a required argument across the catalog-assembly chain
 // (this, getModels) so a caller can never omit it and silently receive the
@@ -47,7 +52,7 @@ export const createProviderInstance = (record: UpstreamRecord): ModelProviderIns
 // leak. Pass `null` to deliberately request every enabled upstream.
 export const listModelProviders = async (
   upstreamFilter: readonly string[] | null,
-): Promise<ModelProviderInstance[]> => {
+): Promise<Provider[]> => {
   const upstreams = await getRepo().upstreams.list();
   const enabledById = new Map<string, UpstreamRecord>();
   const knownIds = new Set<string>();
@@ -74,58 +79,68 @@ export const listModelProviders = async (
     selection = [...enabledById.values()];
   }
 
-  const providers: ModelProviderInstance[] = [];
+  const providers: Provider[] = [];
   for (const upstream of selection) {
-    const factory = providerFactories[upstream.provider];
+    const factory = providerFactories[upstream.kind];
     providers.push(await factory(upstream));
   }
 
   return providers;
 };
 
-// Merge two capability maps: a key present in either side is present in the
-// result, and its sub-capability flags are OR-ed so a sub-cap advertised by
-// either provider survives.
-const unionEndpoints = (a: ModelEndpoints, b: ModelEndpoints): ModelEndpoints => {
-  const result: ModelEndpoints = { ...a };
-  for (const key of Object.keys(b) as ModelEndpointKey[]) {
-    const merged = { ...result[key], ...b[key] };
-    (result as Record<ModelEndpointKey, object>)[key] = merged;
-  }
-  return result;
-};
-
-const catalogFromUpstreamModel = (upstreamModel: UpstreamModel): InternalModel => {
-  const { providerData: _providerData, enabledFlags: _enabledFlags, endpoints, ...internal } = upstreamModel;
-  return { ...internal, endpoints: { ...endpoints } };
+// Lift a provider-emitted `ProviderModel` into an `InternalModel`, seeding
+// `providerModels` with the sole entry keyed on the emitting upstream id.
+// The provider model is stored verbatim under that entry so dispatch hands
+// the same reference back to the provider's `callXxx`.
+const internalModelFromProviderModel = (providerModel: ProviderModel, upstreamId: string): InternalModel => {
+  const { providerData, enabledFlags, endpoints, ...metadata } = providerModel;
+  return {
+    ...metadata,
+    endpoints: { ...endpoints },
+    providerModels: { [upstreamId]: providerModel },
+  };
 };
 
 // When multiple upstreams expose the same public model id, the first wins
 // for `/models` metadata and later ones union-merge their endpoint capability
 // map — the merged `endpoints` is the gateway-wide reach for that public id.
 // `kind` is recomputed from the union so a chat-only id that later acquires
-// an embedding-capable upstream gets correctly reclassified. The reverse
-// index `upstreamsByPublicId` accumulates every upstream that surfaced the
-// id, in enumeration order, so the control plane can render its per-model
-// upstream chips without re-walking the catalog.
+// an embedding-capable upstream gets correctly reclassified. Each contribution
+// adds its own entry to `providerModels` keyed on the contributing upstream id
+// with the emitted `ProviderModel` stored verbatim, so the same public id
+// carrying data from N upstreams ends up with N entries. The reverse index
+// `upstreamsByPublicId` accumulates every upstream that surfaced the id, in
+// enumeration order, so the control plane can render its per-model upstream
+// chips without re-walking the catalog.
 const mergeIntoCatalog = (
   byId: Map<string, InternalModel>,
-  upstreamsByPublicId: Map<string, ModelProviderInstance[]>,
-  instance: ModelProviderInstance,
-  surfacedModel: UpstreamModel,
+  upstreamsByPublicId: Map<string, Provider[]>,
+  instance: Provider,
+  surfacedModel: ProviderModel,
   publicId: string,
 ): void => {
   const existing = byId.get(publicId);
   if (!existing) {
-    byId.set(publicId, catalogFromUpstreamModel(surfacedModel));
+    byId.set(publicId, internalModelFromProviderModel(surfacedModel, instance.upstream));
     upstreamsByPublicId.set(publicId, [instance]);
     return;
   }
-  const endpoints = unionEndpoints(existing.endpoints, surfacedModel.endpoints);
+  // The catalog only stores real (upstream-backed) rows; alias-synthesized
+  // rows join the caller-facing catalog downstream via `mergeAliasesIntoModels`.
+  // Narrow off the discriminated union so the merge below sees a concrete
+  // `providerModels` map.
+  if (existing.providerModels === undefined) {
+    throw new Error(`mergeIntoCatalog: catalog row for '${publicId}' unexpectedly carries aliasedFrom instead of providerModels`);
+  }
+  const endpoints = unionEndpoints([existing.endpoints, surfacedModel.endpoints]);
   byId.set(publicId, {
     ...existing,
     endpoints,
     kind: kindForEndpoints(endpoints),
+    providerModels: {
+      ...existing.providerModels,
+      [instance.upstream]: surfacedModel,
+    },
   });
   // We're on the merge branch (`existing !== undefined`), so the parallel
   // `upstreamsByPublicId` entry was populated by the earlier insertion branch
@@ -136,12 +151,12 @@ const mergeIntoCatalog = (
 };
 
 const collectProviderModels = async (
-  providers: readonly ModelProviderInstance[],
+  providers: readonly Provider[],
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
 ): Promise<ProviderModelsResult> => {
   const byId = new Map<string, InternalModel>();
-  const upstreamsByPublicId = new Map<string, ModelProviderInstance[]>();
+  const upstreamsByPublicId = new Map<string, Provider[]>();
   let sawSuccess = false;
   let lastError: unknown = null;
   const failedUpstreams: string[] = [];
@@ -151,7 +166,7 @@ const collectProviderModels = async (
   // the SOFT-fresh row without an upstream round trip, so the parallel walk
   // is cheap on the warm path and bounded by `max(per-upstream fetch)` on
   // the cold path.
-  const fetchOne = (instance: ModelProviderInstance) =>
+  const fetchOne = (instance: Provider) =>
     fetchUpstreamModelsCached(instance, {
       scheduler,
       fetcher: fetcherForUpstream(instance.upstream),
@@ -183,12 +198,12 @@ const collectProviderModels = async (
     // hides both `gpt-4o` and `<prefix>gpt-4o` from this upstream's
     // contribution.
     const disabled = new Set(instance.disabledPublicModelIds);
-    for (const upstreamModel of providedModels) {
-      if (!upstreamModel.id) continue;
-      if (disabled.has(upstreamModel.id)) continue;
+    for (const providerModel of providedModels) {
+      if (!providerModel.id) continue;
+      if (disabled.has(providerModel.id)) continue;
 
       // Each surface form the upstream chose to list becomes its own catalog
-      // entry. The unprefixed surface keeps the original UpstreamModel; the
+      // entry. The unprefixed surface keeps the original ProviderModel; the
       // prefixed surface uses a shallow clone with the rewritten id and a
       // synthesized display_name that prepends the upstream name (so the
       // dashboard tells the operator at a glance which upstream a prefixed
@@ -197,14 +212,14 @@ const collectProviderModels = async (
       const cfg = instance.modelPrefix;
       if (cfg !== null) {
         for (const form of cfg.listed) {
-          const publicId = form === 'prefixed' ? `${cfg.prefix}${upstreamModel.id}` : upstreamModel.id;
-          const surfacedModel: UpstreamModel = form === 'prefixed'
-            ? { ...upstreamModel, id: publicId, display_name: `${instance.name}: ${upstreamModel.display_name ?? upstreamModel.id}` }
-            : upstreamModel;
+          const publicId = form === 'prefixed' ? `${cfg.prefix}${providerModel.id}` : providerModel.id;
+          const surfacedModel: ProviderModel = form === 'prefixed'
+            ? { ...providerModel, id: publicId, display_name: `${instance.name}: ${providerModel.display_name ?? providerModel.id}` }
+            : providerModel;
           mergeIntoCatalog(byId, upstreamsByPublicId, instance, surfacedModel, publicId);
         }
       } else {
-        mergeIntoCatalog(byId, upstreamsByPublicId, instance, upstreamModel, upstreamModel.id);
+        mergeIntoCatalog(byId, upstreamsByPublicId, instance, providerModel, providerModel.id);
       }
     }
   }
@@ -246,18 +261,16 @@ export const compareModelIds = (a: string, b: string): number => {
     || cmp(a, b, -1);
 };
 
-// `fetcherForUpstream` routes each upstream's catalog fetch through its
-// per-upstream proxy chain. Returns the merged catalog together with the
-// reverse `upstreamsByPublicId` map and the list of upstream names whose
-// catalog fetch rejected during this assembly; callers that only want the
-// bare metadata projection (`/v1/models`, `/models`, etc.) destructure
-// `models` and ignore the rest.
-export const getModels = async (
-  upstreamFilter: readonly string[] | null,
+// Catalog assembly against an already-resolved provider list. Callers that
+// already paid the `listModelProviders` round-trip — the alias prelude
+// shares its provider list across the alias resolver and the candidate
+// walk — pass providers through to avoid the duplicate upstreams.list()
+// DB query.
+export const getModelsFromProviders = async (
+  providers: readonly Provider[],
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
-): Promise<{ models: InternalModel[]; upstreamsByPublicId: Map<string, ModelProviderInstance[]>; failedUpstreams: readonly string[] }> => {
-  const providers = await listModelProviders(upstreamFilter);
+): Promise<{ models: InternalModel[]; upstreamsByPublicId: Map<string, Provider[]>; failedUpstreams: readonly string[] }> => {
   if (providers.length === 0) {
     throw new Error(NO_UPSTREAM_CONFIGURED_MESSAGE);
   }
@@ -268,12 +281,21 @@ export const getModels = async (
   // so partial-listing failures reach clients.
   if (sawSuccess) return { models: models.sort((a, b) => compareModelIds(a.id, b.id)), upstreamsByPublicId, failedUpstreams };
   if (lastError) throw lastError;
-  // `Promise.allSettled` with a non-empty `providers` always yields at least
-  // one settled entry — the prior `lastError` branch covers the all-rejected
-  // case, the `sawSuccess` branch covers any-resolved. There is no third
-  // state where every provider settled but neither flag flipped.
-  throw new Error('invariant broken: collectProviderModels resolved with neither success nor failure');
+  return { models: [], upstreamsByPublicId, failedUpstreams };
 };
+
+// `fetcherForUpstream` routes each upstream's catalog fetch through its
+// per-upstream proxy chain. Returns the merged catalog together with the
+// reverse `upstreamsByPublicId` map and the list of upstream names whose
+// catalog fetch rejected during this assembly; callers that only want the
+// bare metadata projection (`/v1/models`, `/models`, etc.) destructure
+// `models` and ignore the rest.
+export const getModels = async (
+  upstreamFilter: readonly string[] | null,
+  fetcherForUpstream: (upstreamId: string) => Fetcher,
+  scheduler: BackgroundScheduler,
+): Promise<{ models: InternalModel[]; upstreamsByPublicId: Map<string, Provider[]>; failedUpstreams: readonly string[] }> =>
+  await getModelsFromProviders(await listModelProviders(upstreamFilter), fetcherForUpstream, scheduler);
 
 // Resolve one inbound id against one upstream. The upstream's
 // `modelPrefix.addressable` configuration decides which lookup branches
@@ -290,12 +312,12 @@ export const getModels = async (
 // catalog regardless of kind, so the caller can distinguish
 // "id is unknown to this upstream" from "id exists but wrong kind".
 const enumerateOneUpstreamCandidates = async (
-  provider: ModelProviderInstance,
+  provider: Provider,
   modelId: string,
   kind: ModelKind,
   fetcher: Fetcher,
   scheduler: BackgroundScheduler,
-): Promise<{ candidates: ProviderCandidate[]; sawAnyId: boolean }> => {
+): Promise<{ candidates: ModelCandidate[]; sawAnyId: boolean }> => {
   const cfg = provider.modelPrefix;
   const lookupIds: string[] = [];
   if (cfg === null) {
@@ -310,13 +332,15 @@ const enumerateOneUpstreamCandidates = async (
 
   const providedModels = await fetchUpstreamModelsCached(provider, { scheduler, fetcher });
   const disabled = new Set(provider.disabledPublicModelIds);
-  const candidates: ProviderCandidate[] = [];
+  const candidates: ModelCandidate[] = [];
   let sawAnyId = false;
   for (const lookupId of lookupIds) {
     const match = providedModels.find(m => m.id === lookupId && !disabled.has(m.id));
     if (!match) continue;
     sawAnyId = true;
-    if (match.kind === kind) candidates.push({ provider, model: match, fetcher });
+    if (match.kind === kind) {
+      candidates.push({ provider, model: internalModelFromProviderModel(match, provider.upstream), fetcher });
+    }
   }
   return { candidates, sawAnyId };
 };
@@ -336,11 +360,11 @@ const enumerateOneUpstreamCandidates = async (
 export const enumerateRealModelCandidates = async (
   modelId: string,
   kind: ModelKind,
-  providers: readonly ModelProviderInstance[],
+  providers: readonly Provider[],
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
 ): Promise<{
-  readonly candidates: readonly ProviderCandidate[];
+  readonly candidates: readonly ModelCandidate[];
   readonly sawAnyId: boolean;
   readonly failedUpstreams: readonly string[];
 }> => {
@@ -348,7 +372,7 @@ export const enumerateRealModelCandidates = async (
     enumerateOneUpstreamCandidates(provider, modelId, kind, fetcherForUpstream(provider.upstream), scheduler)));
 
   const failedUpstreams: string[] = [];
-  const candidates: ProviderCandidate[] = [];
+  const candidates: ModelCandidate[] = [];
   let sawAnyId = false;
   for (const [index, result] of settled.entries()) {
     if (result.status === 'rejected') {
@@ -371,30 +395,81 @@ export const enumerateRealModelCandidates = async (
 // `failedUpstreams` list for the caller's renderer.
 const DATED_SUFFIX = /-\d{8}$/;
 
-// Per-request model resolution, structured as the user-spec call chain:
+// Real-catalog resolution with the dated-suffix retry baked in. Used both
+// directly (when we already hold the provider list) and by
+// `enumerateModelCandidates` below, which lists providers and then delegates
+// here — once for each alias target when the inbound id names an alias.
+const resolveRealCandidates = async (
+  modelId: string,
+  kind: ModelKind,
+  providers: readonly Provider[],
+  fetcherForUpstream: (upstreamId: string) => Fetcher,
+  scheduler: BackgroundScheduler,
+): Promise<{
+  readonly candidates: readonly ModelCandidate[];
+  readonly sawModel: boolean;
+  readonly failedUpstreams: readonly string[];
+}> => {
+  const first = await enumerateRealModelCandidates(modelId, kind, providers, fetcherForUpstream, scheduler);
+  if (first.candidates.length > 0 || first.sawAnyId || !DATED_SUFFIX.test(modelId)) {
+    return { candidates: first.candidates, sawModel: first.sawAnyId, failedUpstreams: first.failedUpstreams };
+  }
+  const stripped = modelId.replace(DATED_SUFFIX, '');
+  const second = await enumerateRealModelCandidates(stripped, kind, providers, fetcherForUpstream, scheduler);
+  return {
+    candidates: second.candidates,
+    sawModel: second.sawAnyId,
+    failedUpstreams: [...new Set([...first.failedUpstreams, ...second.failedUpstreams])],
+  };
+};
+
+// Target order for an alias walk: `first-available` yields declaration
+// order; `random` shuffles so the outer walk distributes uniformly across
+// targets. Within a single target's real-catalog walk the per-upstream
+// order is always preserved (registry enumeration order); shuffling
+// applies to the target list, not to a target's candidates.
+const orderAliasTargets = (alias: ModelAliasRecord): readonly ModelAliasRecord['targets'][number][] => {
+  if (alias.selection === 'first-available') return alias.targets;
+  const shuffled = [...alias.targets];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+};
+
+// Per-request model resolution. Two-branch chain:
 //
-//   1. Resolve the inbound id against every visible upstream at the
-//      requested kind (real-model walk — `enumerateRealModelCandidates`).
-//      Wrong-kind catalog entries are dropped inside that walk, so they
-//      never reach this layer as candidates.
-//   2. If the id matched no upstream catalog at all (`sawAnyId=false`)
-//      and the id ends in `-YYYYMMDD`, strip the suffix and walk again.
-//      The retry runs the full provider list, so the stripped id is
-//      exposed in the same enumeration order as the original attempt.
-//      A wrong-kind match does NOT trigger retry — the suffix strip
-//      cannot turn a wrong-kind model into a right-kind one.
+//   1. Look the inbound id up in the alias repo. When the id names an
+//      alias, walk every target in `selection`-mode order, delegate to the
+//      real-catalog resolver for each one, tag each returned candidate
+//      with that target's rule overlay, flatten across targets, and dedup
+//      by (modelId, upstreamId, rules) — same (model, upstream) with
+//      differing rules stays as distinct candidates so both variants can
+//      be dispatched. `iterateCandidates` at the serve layer then cascades
+//      across every kept candidate: a target's upstreams all failing over
+//      falls through into the next target's candidates instead of hard-
+//      failing at the first target.
+//   2. Otherwise (no alias match at all) run the real-catalog resolver
+//      directly on the inbound id.
 //
-// `sawModel` is true whenever the inbound id (or its dated-stripped form)
-// appeared in some upstream catalog regardless of kind. Callers use it to
-// distinguish "model id is unknown to every configured upstream"
-// (sawModel=false) from "model exists but is the wrong kind for this
-// endpoint" (sawModel=true, candidates=[]).
+// The real-catalog resolver walks every visible upstream, filters by kind
+// inside the walk (so wrong-kind entries never become candidates), and
+// retries once with an eight-digit dated suffix stripped when the id
+// matched nothing at all. `sawModel` reports whether the id was known to
+// any upstream regardless of kind, so the caller can distinguish "model
+// missing" (404) from "model wrong kind" (400).
 //
 // Endpoint-level narrowing — picking the chat target protocol from
 // `model.endpoints`, or checking the specific `imagesEdits` /
 // `imagesGenerations` / `completions` endpoint key — is the caller's job.
 // This function stays endpoint-blind so the same path serves chat,
 // embeddings, image generation/edits, and legacy completions.
+//
+// The alias walk is a natural top-of-chain check: by construction an
+// alias's target id is a real model id, so the shadow pattern (an alias
+// whose first target matches its own name) resolves to the real model on
+// the first pass; alias names never re-enter the alias layer.
 export const enumerateModelCandidates = async ({
   upstreamIds, model, kind, scheduler, currentColo,
 }: {
@@ -411,22 +486,45 @@ export const enumerateModelCandidates = async ({
   // honoured at dial time.
   currentColo: string;
 }): Promise<{
-  readonly candidates: readonly ProviderCandidate[];
+  readonly candidates: readonly ModelCandidate[];
   readonly sawModel: boolean;
   readonly failedUpstreams: readonly string[];
 }> => {
   const fetcherForUpstream = await createPerRequestFetcher(currentColo);
   const providers = await listModelProviders(upstreamIds);
 
-  const first = await enumerateRealModelCandidates(model, kind, providers, fetcherForUpstream, scheduler);
-  if (first.candidates.length > 0 || first.sawAnyId || !DATED_SUFFIX.test(model)) {
-    return { candidates: first.candidates, sawModel: first.sawAnyId, failedUpstreams: first.failedUpstreams };
+  const alias = await getRepo().modelAliases.getByName(model);
+  if (alias === null) {
+    return await resolveRealCandidates(model, kind, providers, fetcherForUpstream, scheduler);
   }
-  const stripped = model.replace(DATED_SUFFIX, '');
-  const second = await enumerateRealModelCandidates(stripped, kind, providers, fetcherForUpstream, scheduler);
+
+  // Walk every target, tag each returned candidate with the target's rule
+  // overlay, then flatten (target order preserved), and dedup by
+  // (modelId, upstreamId, rules). Different rules against the same
+  // (model, upstream) stay as distinct entries so the operator can pin the
+  // same physical binding under two rule variants.
+  const aggregatedFailed = new Set<string>();
+  let sawAny = false;
+  const flat: ModelCandidate[] = [];
+  for (const target of orderAliasTargets(alias)) {
+    const result = await resolveRealCandidates(target.target_model_id, kind, providers, fetcherForUpstream, scheduler);
+    for (const name of result.failedUpstreams) aggregatedFailed.add(name);
+    if (result.sawModel) sawAny = true;
+    for (const candidate of result.candidates) {
+      flat.push({ ...candidate, rules: target.rules });
+    }
+  }
+  const deduped: ModelCandidate[] = [];
+  for (const candidate of flat) {
+    const duplicate = deduped.some(existing =>
+      existing.model.id === candidate.model.id
+      && existing.provider.upstream === candidate.provider.upstream
+      && isEqual(existing.rules, candidate.rules));
+    if (!duplicate) deduped.push(candidate);
+  }
   return {
-    candidates: second.candidates,
-    sawModel: second.sawAnyId,
-    failedUpstreams: [...new Set([...first.failedUpstreams, ...second.failedUpstreams])],
+    candidates: deduped,
+    sawModel: sawAny,
+    failedUpstreams: [...aggregatedFailed],
   };
 };

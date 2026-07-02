@@ -1,3 +1,6 @@
+import type { AliasSelection, AliasTarget } from './aliases.ts';
+import type { ModelEndpoints } from './capabilities.ts';
+
 // Disjoint billing dimensions a single request can be charged on. Every count
 // keyed by these is non-overlapping: a prompt token is counted under exactly
 // one of `input`, `input_cache_read`, `input_cache_write`,
@@ -113,6 +116,29 @@ export interface ChatModelInfo {
   };
 }
 
+// Alias provenance attached to a `/v1/models` entry that the gateway
+// synthesized from an operator-defined alias rather than fetched from an
+// upstream catalog. `targets` carries every configured target — including
+// targets the live catalog currently can not serve — so the dashboard can
+// show the full configuration and warn about unavailable ones without a
+// second control-plane round trip. The alias's `kind` and `name` live on
+// the enclosing `PublicModel` (`kind`, `id`); every alias-synthesized row
+// puts the alias name on its outer `id` and the alias kind on its outer
+// `kind`, so the sidecar avoids duplicating them.
+export interface PublicModelAliasedFrom {
+  selection: AliasSelection;
+  targets: AliasTarget[];
+}
+
+// Operator-set context-window / prompt / output token limits the gateway
+// surfaces on /v1/models. Pure data — every field is optional so a
+// partially-known upstream still produces a sensible row.
+export interface PublicModelLimits {
+  max_output_tokens?: number;
+  max_context_window_tokens?: number;
+  max_prompt_tokens?: number;
+}
+
 // Public DTO served at /v1/models and /models. Single superset shape — OpenAI's
 // and Anthropic's /models field names do not overlap, so one payload satisfies
 // both client shapes.
@@ -127,14 +153,36 @@ export interface PublicModel {
   display_name: string;
   created_at?: string;
   // Non-standard extra fields below.
-  limits: {
-    max_output_tokens?: number;
-    max_context_window_tokens?: number;
-    max_prompt_tokens?: number;
-  };
+  limits: PublicModelLimits;
   kind: ModelKind;
+  // Public-facing endpoint surface. Mirrors the upstream-side ModelEndpoints
+  // verbatim — by the time a model reaches this DTO, the provider layer
+  // (e.g. provider-ollama, provider-copilot) has already projected the raw
+  // upstream catalog into the public-facing shape: the three chat endpoints
+  // (chatCompletions / messages / responses) appear together because the
+  // gateway translates between them, while `completions`, `embeddings`,
+  // `imagesGenerations`, and `imagesEdits` only appear when the upstream
+  // natively serves them. Alias entries surface the UNION of every
+  // currently-available target's endpoint map — at request time the
+  // resolver narrows the pool to targets that serve the inbound endpoint,
+  // so any endpoint advertised here is reachable through at least one
+  // target.
+  endpoints: ModelEndpoints;
   cost?: ModelPricing;
   chat?: ChatModelInfo;
+  // Present only on entries the gateway synthesized from an operator-defined
+  // alias; absent for entries that came from an upstream catalog.
+  aliasedFrom?: PublicModelAliasedFrom;
+  // Sidecar flag carried only on entries that are addressable-but-not-
+  // listed: ids the data plane accepts (via `modelPrefix.addressable`
+  // alternates) but that do NOT appear in the default `/v1/models`
+  // payload. Absent on every default-listed row and on alias rows — both
+  // are part of the public catalog. The field surfaces only on
+  // `/api/models?include_unlisted=true` rows that the dashboard's alias
+  // edit combobox shows alongside the listed catalog. Wire shape is
+  // intentionally `unlisted?: true` — boolean would add a wire byte to
+  // every listed row for no caller benefit.
+  unlisted?: true;
 }
 
 export interface PublicModelsResponse {

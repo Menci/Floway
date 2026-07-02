@@ -18,6 +18,9 @@ export interface ChatCompletionsPayload {
   parallel_tool_calls?: boolean | null;
   response_format?: Record<string, unknown> | null;
   reasoning_effort?: string | null;
+  // GPT-5-family response-length control. Native OpenAI Chat field.
+  // Reference: https://platform.openai.com/docs/api-reference/chat/create
+  verbosity?: string | null;
   prompt_cache_key?: string | null;
   safety_identifier?: string | null;
   service_tier?: 'default' | 'auto' | 'flex' | 'priority' | 'scale' | (string & {}) | null;

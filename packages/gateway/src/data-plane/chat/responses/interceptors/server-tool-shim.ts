@@ -1,7 +1,7 @@
 import { jsonrepair } from 'jsonrepair';
 
 import type { ResponsesInterceptor, ResponsesInvocation } from './types.ts';
-import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
+import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
 import { truncatePreservingCodePoints } from '../../shared/text.ts';
 import type { StatefulResponsesStore } from '../items/store.ts';
 import type { InterceptorRun } from '@floway-dev/interceptor';
@@ -10,13 +10,13 @@ import type {
   ResponsesHostedTool,
   ResponsesInputItem,
   ResponsesOutputItem,
-  ResponsesPayload,
   ResponsesResult,
   ResponsesStreamEvent,
   ResponsesTool,
   ResponsesToolChoice,
 } from '@floway-dev/protocols/responses';
 import type { EventResultMetadata, ExecuteResult } from '@floway-dev/provider';
+import type { CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
 
 export interface MergeUsage {
   input_tokens?: number;
@@ -131,7 +131,7 @@ export type ServerToolPrepareResult =
     hosted?: ServerToolHostedDispatch;
   };
 
-export type ServerToolRegistration = (invocation: ResponsesInvocation, gatewayCtx: GatewayCtx) => ServerToolPrepareResult | Promise<ServerToolPrepareResult>;
+export type ServerToolRegistration = (invocation: ResponsesInvocation, gatewayCtx: ChatGatewayCtx) => ServerToolPrepareResult | Promise<ServerToolPrepareResult>;
 
 type ActiveServerTool = Extract<ServerToolPrepareResult, { type: 'active' }> & {
   toolName: string;
@@ -917,7 +917,7 @@ async function* runMultiTurnLoop(args: {
         ...baseInput,
         ...materializeAccumulatedOutput(merge).map(item => item as ResponsesInputItem),
       ];
-      const nextPayload: ResponsesPayload = { ...ctx.payload, input: transformServerToolItems(nextCanonicalInput, active) };
+      const nextPayload: CanonicalResponsesPayload = { ...ctx.payload, input: transformServerToolItems(nextCanonicalInput, active) };
       if (loopState.remainingToolCalls !== undefined) {
         nextPayload.max_tool_calls = Math.max(0, loopState.remainingToolCalls);
       } else {
@@ -984,12 +984,9 @@ export const withResponsesServerToolShim = (
     ctx.payload = { ...ctx.payload, tool_choice: rewrittenToolChoice };
   }
 
-  const canonicalInput: ResponsesInputItem[] = Array.isArray(ctx.payload.input) ? ctx.payload.input : [{ type: 'message', role: 'user', content: ctx.payload.input }];
-  const inputArray = Array.isArray(ctx.payload.input) ? ctx.payload.input : undefined;
-  if (inputArray !== undefined) {
-    const nextInput = transformServerToolItems(inputArray, active);
-    if (nextInput !== inputArray) ctx.payload = { ...ctx.payload, input: nextInput };
-  }
+  const canonicalInput = ctx.payload.input;
+  const nextInput = transformServerToolItems(canonicalInput, active);
+  if (nextInput !== canonicalInput) ctx.payload = { ...ctx.payload, input: nextInput };
 
   const hostedActive = active.filter(
     (entry): entry is ActiveServerTool & { hosted: ServerToolHostedDispatch } =>
@@ -1034,7 +1031,7 @@ export const withResponsesServerToolShim = (
       demoteForcedServerToolChoiceAfterFirstTurn,
       turn1Iter,
       dispatchers,
-      statefulResponsesStore: ctx.store,
+      statefulResponsesStore: gatewayCtx.store,
       canonicalInput,
       active,
       metadata,

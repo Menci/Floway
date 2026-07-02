@@ -81,7 +81,6 @@ test('/v1/models returns merged model list from Copilot and custom upstreams', a
           limits?: Record<string, number>;
           capabilities?: unknown;
           provider?: unknown;
-          providerKind?: unknown;
           providers?: unknown;
           providerData?: unknown;
           endpoints?: unknown;
@@ -116,10 +115,8 @@ test('/v1/models returns merged model list from Copilot and custom upstreams', a
       for (const model of body.data) {
         // Provider / upstream identity is hidden on the public surface.
         assertEquals(model.provider, undefined);
-        assertEquals(model.providerKind, undefined);
         assertEquals(model.providers, undefined);
         assertEquals(model.providerData, undefined);
-        assertEquals(model.endpoints, undefined);
         assertEquals(model.upstream, undefined);
         assertEquals(model.upstreamModel, undefined);
         // Copilot-only raw fields never reach the public DTO.
@@ -250,6 +247,7 @@ test('/models returns the same superset payload as /v1/models', async () => {
             display_name: 'Claude Opus 4.7 XHigh',
             limits: {},
             kind: 'chat',
+            endpoints: { messages: {} },
             cost: {
               input: 5,
               output: 25,
@@ -272,6 +270,7 @@ test('/models returns the same superset payload as /v1/models', async () => {
             display_name: 'embedding-only',
             limits: {},
             kind: 'embedding',
+            endpoints: { embeddings: {} },
           },
           {
             id: 'gpt-image-2',
@@ -280,6 +279,7 @@ test('/models returns the same superset payload as /v1/models', async () => {
             display_name: 'gpt-image-2',
             limits: {},
             kind: 'image',
+            endpoints: { imagesGenerations: {}, imagesEdits: {} },
           },
         ],
       });
@@ -640,6 +640,162 @@ test('/v1/models returns the last real error when every account model load fails
       assertEquals(response.status, 200);
       const body = (await response.json()) as { data: unknown[] };
       assertEquals(body.data, []);
+    },
+  );
+});
+
+test('/v1/models appends visible aliases with their aliasedFrom block and folds alias-id collisions onto the alias entry', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  await repo.modelAliases.deleteAll();
+  await repo.upstreams.save(buildCustomUpstreamRecord({
+    id: 'up_oai',
+    name: 'Test OpenAI',
+    sortOrder: 100,
+    config: {
+      baseUrl: 'https://oai.example.com',
+      authStyle: 'bearer',
+      apiKey: 'sk-test',
+      endpoints: { chatCompletions: {} },
+    },
+  }));
+  // Two aliases: one shadows a real id (`gpt-4o`) so the alias entry must
+  // replace the catalog entry; one points at a real id under a brand-new
+  // name (`gpt-fast`).
+  await repo.modelAliases.insert({
+    name: 'gpt-4o',
+    kind: 'chat',
+    selection: 'first-available',
+    displayName: null,
+    visibleInModelsList: true,
+    targets: [{ target_model_id: 'gpt-4o', rules: { reasoning: { effort: 'low' } } }],
+    announcedMetadata: null,
+    sortOrder: 1,
+    createdAt: '2026-06-26T00:00:00.000Z',
+    updatedAt: '2026-06-26T00:00:00.000Z',
+  });
+  await repo.modelAliases.insert({
+    name: 'gpt-fast',
+    kind: 'chat',
+    selection: 'first-available',
+    displayName: 'Operator Fast',
+    visibleInModelsList: true,
+    targets: [{ target_model_id: 'gpt-4o-mini', rules: {} }],
+    announcedMetadata: null,
+    sortOrder: 0,
+    createdAt: '2026-06-26T00:00:00.000Z',
+    updatedAt: '2026-06-26T00:00:00.000Z',
+  });
+  await repo.modelAliases.insert({
+    name: 'hidden-alias',
+    kind: 'chat',
+    selection: 'first-available',
+    displayName: null,
+    visibleInModelsList: false,
+    targets: [{ target_model_id: 'gpt-4o', rules: {} }],
+    announcedMetadata: null,
+    sortOrder: 2,
+    createdAt: '2026-06-26T00:00:00.000Z',
+    updatedAt: '2026-06-26T00:00:00.000Z',
+  });
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models' && url.hostname === 'api.individual.githubcopilot.com') {
+        return jsonResponse(copilotModels([]));
+      }
+      if (url.pathname === '/v1/models' && url.hostname === 'oai.example.com') {
+        return jsonResponse({ object: 'list', data: [{ id: 'gpt-4o' }, { id: 'gpt-4o-mini' }] });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const response = await requestApp('/v1/models', { headers: { 'x-api-key': apiKey.key } });
+      assertEquals(response.status, 200);
+      const body = (await response.json()) as { data: Array<{ id: string; display_name: string; aliasedFrom?: { selection: string } }> };
+      const ids = body.data.map(model => model.id);
+
+      // Real `gpt-4o` is replaced by the alias of the same name; the alias
+      // entry sits where the catalog ordering placed it. `gpt-4o-mini`
+      // (still a real id) stays first, and the two visible aliases land
+      // after the real-only entries.
+      assertEquals(ids.includes('gpt-4o-mini'), true);
+      assertEquals(ids.filter(id => id === 'gpt-4o').length, 1);
+      assertEquals(ids.includes('hidden-alias'), false);
+
+      const collided = body.data.find(model => model.id === 'gpt-4o')!;
+      assertEquals(collided.aliasedFrom !== undefined, true);
+      assertEquals(collided.aliasedFrom?.selection, 'first-available');
+      assertEquals(collided.display_name, 'gpt-4o (low effort)');
+
+      const fast = body.data.find(model => model.id === 'gpt-fast')!;
+      assertEquals(fast.aliasedFrom !== undefined, true);
+      assertEquals(fast.display_name, 'Operator Fast');
+    },
+  );
+});
+
+test('/v1/models folds a real-id collision onto the alias even when the alias points at a different target', async () => {
+  // The existing collision-fold case seeds an alias that targets its own
+  // name; C6 covers the more subtle "alias name coincides with an
+  // unrelated real id" case. `orphan-shadow` here targets `gpt-5.4`, but
+  // the upstream catalog also lists a real `orphan-shadow`. The alias
+  // must win the row and the real `orphan-shadow` must not appear
+  // separately — otherwise a caller resolving `orphan-shadow` would see
+  // two entries with the same id.
+  const { repo, apiKey } = await setupAppTest();
+  await repo.modelAliases.deleteAll();
+  await repo.upstreams.save(buildCustomUpstreamRecord({
+    id: 'up_shadow',
+    name: 'Shadow Provider',
+    sortOrder: 100,
+    config: {
+      baseUrl: 'https://shadow.example.com',
+      authStyle: 'bearer',
+      apiKey: 'sk-shadow',
+      endpoints: { chatCompletions: {} },
+    },
+  }));
+  await repo.modelAliases.insert({
+    name: 'orphan-shadow',
+    kind: 'chat',
+    selection: 'first-available',
+    displayName: 'Alias entry wins',
+    visibleInModelsList: true,
+    targets: [{ target_model_id: 'gpt-5.4', rules: {} }],
+    announcedMetadata: null,
+    sortOrder: 0,
+    createdAt: '2026-06-26T00:00:00.000Z',
+    updatedAt: '2026-06-26T00:00:00.000Z',
+  });
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models' && url.hostname === 'api.individual.githubcopilot.com') {
+        return jsonResponse(copilotModels([]));
+      }
+      if (url.pathname === '/v1/models' && url.hostname === 'shadow.example.com') {
+        return jsonResponse({ object: 'list', data: [{ id: 'gpt-5.4' }, { id: 'orphan-shadow' }] });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const response = await requestApp('/v1/models', { headers: { 'x-api-key': apiKey.key } });
+      assertEquals(response.status, 200);
+      const body = (await response.json()) as { data: Array<{ id: string; display_name: string; aliasedFrom?: { selection: string } }> };
+      const shadowRows = body.data.filter(model => model.id === 'orphan-shadow');
+      assertEquals(shadowRows.length, 1);
+      assertEquals(shadowRows[0].aliasedFrom !== undefined, true);
+      assertEquals(shadowRows[0].display_name, 'Alias entry wins');
     },
   );
 });

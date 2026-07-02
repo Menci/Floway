@@ -10,7 +10,7 @@ import type { Context } from 'hono';
 
 import { tokenUsageFromCompletionsUsage } from './usage.ts';
 import type { TokenUsage } from '../../repo/types.ts';
-import { createGatewayCtxFromHono } from '../chat/shared/gateway-ctx.ts';
+import { createGatewayCtxFromHono, finalizeGatewayResponse } from '../chat/shared/gateway-ctx.ts';
 import { readRequestBody } from '../chat/shared/request-body.ts';
 import { passthroughApiError, passthroughServe } from '../shared/passthrough-serve.ts';
 import { isOpenAIUsageOnlyEventShape, type ProtocolFrame } from '@floway-dev/protocols/common';
@@ -65,8 +65,7 @@ export const completions = async (c: Context): Promise<Response> => {
   });
   if (request.type === 'invalid') {
     ctx.dump?.error('gateway');
-    const response = passthroughApiError(c, request.message, 400);
-    return (ctx.dump?.finalize(response) ?? response);
+    return finalizeGatewayResponse(ctx, passthroughApiError(c, request.message, 400));
   }
 
   ctx.dump?.requestedModel(request.model);
@@ -104,7 +103,7 @@ export const completions = async (c: Context): Promise<Response> => {
     kind: 'chat',
     modelServesEndpoint: model => model.endpoints.completions !== undefined,
     call: (provider, model, opts) =>
-      provider.provider.callCompletions(model, upstreamBody, ctx.abortSignal, opts),
+      provider.instance.callCompletions(model, upstreamBody, ctx.abortSignal, opts),
     response: request.wantsStream
       ? { format: 'sse', transformFrame, settleUsage }
       : {
@@ -116,5 +115,5 @@ export const completions = async (c: Context): Promise<Response> => {
           },
         },
   });
-  return (ctx.dump?.finalize(response) ?? response);
+  return finalizeGatewayResponse(ctx, response);
 };

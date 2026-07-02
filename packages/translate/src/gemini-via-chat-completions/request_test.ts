@@ -477,3 +477,22 @@ test('buildTargetRequest rejects a part with no recognized content field', () =>
     'has no recognized content',
   );
 });
+
+test('buildTargetRequest extends reasoning_effort enum to recognize xhigh and max', () => {
+  const xhigh = buildTargetRequest(
+    { contents: [{ role: 'user', parts: [{ text: 'hi' }] }], generationConfig: { thinkingConfig: { thinkingLevel: 'xhigh' } } },
+    'gpt-test',
+  );
+  const max = buildTargetRequest(
+    { contents: [{ role: 'user', parts: [{ text: 'hi' }] }], generationConfig: { thinkingConfig: { thinkingLevel: 'max' } } },
+    'gpt-test',
+  );
+  const minimal = buildTargetRequest(
+    { contents: [{ role: 'user', parts: [{ text: 'hi' }] }], generationConfig: { thinkingConfig: { thinkingLevel: 'minimal' } } },
+    'gpt-test',
+  );
+
+  assertEquals(xhigh.reasoning_effort, 'xhigh');
+  assertEquals(max.reasoning_effort, 'max');
+  assertEquals(minimal.reasoning_effort, 'minimal');
+});

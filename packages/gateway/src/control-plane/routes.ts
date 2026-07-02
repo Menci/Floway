@@ -5,10 +5,11 @@ import { authLogin, authLogout, authMe } from './auth/routes.ts';
 import { copilotQuota } from './copilot-quota/routes.ts';
 import { exportData, importData } from './data-transfer/routes.ts';
 import { dumpRoutes } from './dump.ts';
+import { createAlias, deleteAlias, listAliases, updateAlias } from './model-aliases/routes.ts';
 import { controlPlaneModels } from './models/routes.ts';
 import { performanceOverview, performanceTelemetry } from './performance/routes.ts';
 import { createProxy, deleteProxy, listAllBackoffs, listProxies, listProxyBackoffs, resetProxyBackoffs, testProxy, updateProxy } from './proxies/routes.ts';
-import { authLoginBody, changeOwnPasswordBody, claudeCodeAuthorizeUrlBody, claudeCodeImportBody, claudeCodeProbeQuotaBody, claudeCodeRefreshNowBody, claudeCodeReimportBody, claudeCodeSetupTokenImportBody, claudeCodeSetupTokenReimportBody, codexAuthorizeUrlBody, codexImportBody, codexRefreshNowBody, codexReimportBody, copilotAuthPollBody, createKeyBody, createProxyBody, createUpstreamBody, createUserBody, exportQuery, fetchModelsBody, importBody, performanceQuery, resetBackoffBody, searchConfigSchema, searchUsageQuery, testProxyBody, tokenUsageQuery, updateKeyBody, updateProxyBody, updateUpstreamBody, updateUserBody } from './schemas.ts';
+import { authLoginBody, changeOwnPasswordBody, claudeCodeAuthorizeUrlBody, claudeCodeImportBody, claudeCodeProbeQuotaBody, claudeCodeRefreshNowBody, claudeCodeReimportBody, claudeCodeSetupTokenImportBody, claudeCodeSetupTokenReimportBody, codexAuthorizeUrlBody, codexImportBody, codexRefreshNowBody, codexReimportBody, copilotAuthPollBody, createAliasBody, createKeyBody, createProxyBody, createUpstreamBody, createUserBody, exportQuery, fetchModelsBody, importBody, modelsQuery, performanceQuery, resetBackoffBody, searchConfigSchema, searchUsageQuery, testProxyBody, tokenUsageQuery, updateAliasBody, updateKeyBody, updateProxyBody, updateUpstreamBody, updateUserBody } from './schemas.ts';
 import { getSearchConfigRoute, putSearchConfigRoute, testSearchConfigRoute } from './search-config/routes.ts';
 import { searchUsage } from './search-usage/routes.ts';
 import { tokenUsage } from './token-usage/routes.ts';
@@ -48,7 +49,7 @@ export const controlPlaneRoutes = new Hono<{ Variables: AuthVars }>()
   .get('/api/search-usage', zValidator('query', searchUsageQuery), searchUsage)
   .get('/api/performance', zValidator('query', performanceQuery), performanceTelemetry)
   .get('/api/performance/overview', zValidator('query', performanceQuery), performanceOverview)
-  .get('/api/models', controlPlaneModels)
+  .get('/api/models', zValidator('query', modelsQuery), controlPlaneModels)
   // Minimal upstream picker exposed to non-admin users so they can scope a key
   // to specific upstreams. Returns id/name/provider/enabled only — no config,
   // no flag overrides, no model lists. Server-side validation (api-keys'
@@ -97,6 +98,12 @@ export const controlPlaneRoutes = new Hono<{ Variables: AuthVars }>()
     .get('/proxies/:id/backoffs', listProxyBackoffs)
     .patch('/proxies/:id', zValidator('json', updateProxyBody), updateProxy)
     .delete('/proxies/:id', deleteProxy)
+    // Model aliases. Admin-only — alias config is gateway-wide tenant state,
+    // and the data-plane resolver runs above prefix routing for every request.
+    .get('/aliases', listAliases)
+    .post('/aliases', zValidator('json', createAliasBody), createAlias)
+    .put('/aliases/:name', zValidator('json', updateAliasBody), updateAlias)
+    .delete('/aliases/:name', deleteAlias)
     .get('/search-config', getSearchConfigRoute)
     .put('/search-config', zValidator('json', searchConfigSchema), putSearchConfigRoute)
     .post('/search-config/test', zValidator('json', searchConfigSchema), testSearchConfigRoute)

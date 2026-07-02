@@ -13,6 +13,8 @@ import type {
   ApiKeyRepo,
   BackoffRow,
   CachedModelsRow,
+  ModelAliasesRepo,
+  ModelAliasRecord,
   ModelsCacheRepo,
   PerformanceDimensions,
   PerformanceErrorSample,
@@ -43,7 +45,7 @@ import { latencyBucketForMs } from '../shared/performance-histogram.ts';
 import { generateSessionToken } from '../shared/session-tokens.ts';
 import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';
 import { BILLING_DIMENSIONS, type BillingDimension, type ModelPricing, resolveEffectivePricing, unitPriceForDimension } from '@floway-dev/protocols/common';
-import type { UpstreamModel, UpstreamRecord } from '@floway-dev/provider';
+import type { ProviderModel, UpstreamRecord } from '@floway-dev/provider';
 
 const SEED_ADMIN_USER: User = {
   id: 1,
@@ -478,7 +480,7 @@ class MemoryModelsCacheRepo implements ModelsCacheRepo {
     return Promise.resolve(row ? { ...row, models: [...row.models] } : null);
   }
 
-  put(upstreamId: string, row: { fetchedAt: number; models: UpstreamModel[] }): Promise<void> {
+  put(upstreamId: string, row: { fetchedAt: number; models: ProviderModel[] }): Promise<void> {
     this.rows.set(upstreamId, { fetchedAt: row.fetchedAt, models: [...row.models], lastError: null });
     return Promise.resolve();
   }
@@ -882,6 +884,54 @@ class MemoryProxyBackoffRepo implements ProxyBackoffRepo {
 
 const cloneBackoffRow = (row: BackoffRow): BackoffRow => ({ ...row });
 
+const cloneModelAliasRecord = (record: ModelAliasRecord): ModelAliasRecord => ({
+  ...record,
+  targets: structuredClone(record.targets),
+  announcedMetadata: record.announcedMetadata === null ? null : structuredClone(record.announcedMetadata),
+});
+
+class MemoryModelAliasesRepo implements ModelAliasesRepo {
+  private store = new Map<string, ModelAliasRecord>();
+
+  list(): Promise<ModelAliasRecord[]> {
+    return Promise.resolve(
+      [...this.store.values()]
+        .map(cloneModelAliasRecord)
+        .sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt.localeCompare(b.createdAt)),
+    );
+  }
+
+  getByName(name: string): Promise<ModelAliasRecord | null> {
+    const found = this.store.get(name);
+    return Promise.resolve(found ? cloneModelAliasRecord(found) : null);
+  }
+
+  insert(record: ModelAliasRecord): Promise<void> {
+    if (this.store.has(record.name)) throw new Error(`alias ${record.name} already exists`);
+    this.store.set(record.name, cloneModelAliasRecord(record));
+    return Promise.resolve();
+  }
+
+  update(oldName: string, record: ModelAliasRecord): Promise<void> {
+    if (!this.store.has(oldName)) throw new Error(`alias ${oldName} not found`);
+    if (oldName !== record.name && this.store.has(record.name)) {
+      throw new Error(`alias ${record.name} already exists`);
+    }
+    this.store.delete(oldName);
+    this.store.set(record.name, cloneModelAliasRecord(record));
+    return Promise.resolve();
+  }
+
+  delete(name: string): Promise<boolean> {
+    return Promise.resolve(this.store.delete(name));
+  }
+
+  deleteAll(): Promise<void> {
+    this.store.clear();
+    return Promise.resolve();
+  }
+}
+
 export class InMemoryRepo implements Repo {
   apiKeys: ApiKeyRepo;
   users: UsersRepo;
@@ -894,6 +944,7 @@ export class InMemoryRepo implements Repo {
   upstreams: UpstreamRepo;
   proxies: ProxyRepo;
   proxyBackoffs: ProxyBackoffRepo;
+  modelAliases: ModelAliasesRepo;
   responsesItems: ResponsesItemsRepo;
   responsesSnapshots: ResponsesSnapshotsRepo;
 
@@ -909,6 +960,7 @@ export class InMemoryRepo implements Repo {
     this.upstreams = new MemoryUpstreamRepo();
     this.proxies = new MemoryProxyRepo(this.upstreams);
     this.proxyBackoffs = new MemoryProxyBackoffRepo();
+    this.modelAliases = new MemoryModelAliasesRepo();
     this.responsesItems = new MemoryResponsesItemsRepo();
     this.responsesSnapshots = new MemoryResponsesSnapshotsRepo();
   }

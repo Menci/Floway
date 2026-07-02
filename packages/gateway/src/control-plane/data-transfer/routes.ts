@@ -83,13 +83,13 @@ const importErrorBuilder = (field: string, expected: string) => new Error(`${fie
 const nonEmptyString = (value: unknown, field: string): string => nonEmptyStringField(value, field, importErrorBuilder);
 
 const normalizeUpstreamConfig = (record: UpstreamRecord): unknown => {
-  if (record.provider === 'custom') return assertCustomUpstreamRecord(record).config;
-  if (record.provider === 'azure') return assertAzureUpstreamRecord(record).config;
-  if (record.provider === 'codex') {
+  if (record.kind === 'custom') return assertCustomUpstreamRecord(record).config;
+  if (record.kind === 'azure') return assertAzureUpstreamRecord(record).config;
+  if (record.kind === 'codex') {
     assertCodexUpstreamRecord(record);
     return record.config;
   }
-  if (record.provider === 'claude-code') {
+  if (record.kind === 'claude-code') {
     assertClaudeCodeUpstreamRecord(record);
     return record.config;
   }
@@ -149,8 +149,8 @@ const parseUpstreamRecords = (value: unknown): { type: 'ok'; records: UpstreamRe
       if (hasOwn(item, 'enabled_fixes')) {
         throw new Error("legacy 'enabled_fixes' field is no longer supported; re-export with current code");
       }
-      if (typeof item.provider !== 'string' || !UPSTREAM_PROVIDERS.has(item.provider as UpstreamProviderKind)) {
-        throw new Error('provider must be one of custom, azure, copilot, codex, claude-code');
+      if (typeof item.kind !== 'string' || !UPSTREAM_PROVIDERS.has(item.kind as UpstreamProviderKind)) {
+        throw new Error(`kind must be one of ${ALL_PROVIDER_KINDS.join(', ')}`);
       }
       if (typeof item.enabled !== 'boolean') throw new Error('enabled must be a boolean');
       if (typeof item.sort_order !== 'number' || !Number.isFinite(item.sort_order)) throw new Error('sort_order must be a finite number');
@@ -158,10 +158,10 @@ const parseUpstreamRecords = (value: unknown): { type: 'ok'; records: UpstreamRe
       const id = nonEmptyString(item.id, 'id');
       if (isLegacyUpstreamIdentity(id)) throw new Error('id must use a raw upstream id, not a legacy provider-prefixed identity');
 
-      const provider = item.provider as UpstreamProviderKind;
+      const kind = item.kind as UpstreamProviderKind;
       const record: UpstreamRecord = {
         id,
-        provider,
+        kind,
         name: nonEmptyString(item.name, 'name'),
         enabled: item.enabled,
         sortOrder: Math.floor(item.sort_order),
@@ -172,7 +172,7 @@ const parseUpstreamRecords = (value: unknown): { type: 'ok'; records: UpstreamRe
         proxyFallbackList: parseProxyFallbackListField(item.proxy_fallback_list),
         modelPrefix: normalizeModelPrefix(item.model_prefix),
         config: item.config,
-        state: normalizeUpstreamState(provider, item.state),
+        state: normalizeUpstreamState(kind, item.state),
       };
       records.push({ ...record, config: normalizeUpstreamConfig(record) });
     } catch (error) {

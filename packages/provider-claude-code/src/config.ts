@@ -38,7 +38,7 @@ export interface ClaudeCodeUpstreamConfig {
 }
 
 export type ClaudeCodeUpstreamRecord = UpstreamRecord & {
-  provider: 'claude-code';
+  kind: 'claude-code';
   config: ClaudeCodeUpstreamConfig;
 };
 
@@ -92,8 +92,8 @@ function assertClaudeCodeUpstreamConfig(value: unknown): asserts value is Claude
 }
 
 export function assertClaudeCodeUpstreamRecord(record: UpstreamRecord): asserts record is ClaudeCodeUpstreamRecord {
-  if (record.provider !== 'claude-code') {
-    throw new TypeError(`Expected provider 'claude-code', got '${record.provider}'`);
+  if (record.kind !== 'claude-code') {
+    throw new TypeError(`Expected provider 'claude-code', got '${record.kind}'`);
   }
   assertClaudeCodeUpstreamConfig(record.config);
 }

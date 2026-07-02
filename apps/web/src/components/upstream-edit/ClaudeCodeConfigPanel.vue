@@ -9,7 +9,7 @@ import type { ProxyFallbackEntry, UpstreamRecord } from '../../api/types.ts';
 import { clearPkce, deriveChallenge, generatePkce, parseCallbackPaste, peekStashedPkce, pkceStorageKey, recallPkce, stashPkce } from '../../lib/pkce.ts';
 import { Button, Spinner } from '@floway-dev/ui';
 
-type ClaudeCodeUpstreamRecord = Extract<UpstreamRecord, { provider: 'claude-code' }>;
+type ClaudeCodeUpstreamRecord = Extract<UpstreamRecord, { kind: 'claude-code' }>;
 
 const props = defineProps<
   | {

@@ -3,6 +3,7 @@ export { default as Button } from './Button.vue';
 export { default as Card } from './Card.vue';
 export { default as Checkbox } from './Checkbox.vue';
 export { default as Code } from './Code.vue';
+export { default as Combobox } from './Combobox.vue';
 export { default as Dialog } from './Dialog.vue';
 export { default as Input } from './Input.vue';
 export { default as NumberField } from './NumberField.vue';

@@ -16,7 +16,7 @@ import { assertEquals, withMockedFetch } from '@floway-dev/test-utils';
 
 const baseRecord: UpstreamRecord = {
   id: 'up_azure',
-  provider: 'azure',
+  kind: 'azure',
   name: 'Azure Resource',
   enabled: true,
   sortOrder: 0,

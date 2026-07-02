@@ -7,6 +7,8 @@ import type { ApiKey, ControlPlaneModel } from '../../api/types.ts';
 import ChatPanel from '../../components/models/ChatPanel.vue';
 import ModelInfoBar from '../../components/models/ModelInfoBar.vue';
 import { useModelsStore } from '../../composables/useModels.ts';
+import { useAuthStore } from '../../stores/auth.ts';
+import { effectiveUpstreamCap, isReachableUnderCap } from '../../utils/reachability.ts';
 import { Input, OverlayScrollbars } from '@floway-dev/ui';
 
 export const useModelsPageData = defineBasicLoader(async () => {
@@ -22,6 +24,7 @@ export const useModelsPageData = defineBasicLoader(async () => {
 <script setup lang="ts">
 const initialData = useModelsPageData();
 const { models, error: modelsError } = useModelsStore();
+const auth = useAuthStore();
 
 // Reactivity is intentionally dropped: the loader never refetches keys here.
 const keys = initialData.data.value.keys;
@@ -30,11 +33,32 @@ const modelsSearch = ref('');
 const chatModelId = ref<string>('');
 const chatPanelRef = useTemplateRef<InstanceType<typeof ChatPanel>>('chatPanel');
 
+// Playground requires a real per-user API key, not the admin key.
+const selectedKeyId = ref<string | null>(keys[0]?.id ?? null);
+
+const selectedKey = computed<ApiKey | null>(() => {
+  const id = selectedKeyId.value;
+  if (!id) return null;
+  return keys.find(k => k.id === id) ?? null;
+});
+
+const selectedApiKey = computed(() => selectedKey.value?.key ?? null);
+
+// Server returns gateway-wide for admin sessions, so we filter client-side
+// here by the effective cap of (selected api key, owner user). Mirrors the
+// gateway's `effectiveUpstreamIdsFromContext`: the key's whitelist wins
+// when set; otherwise the user's cap applies. Without a selected key (no
+// keys created yet) the cap collapses to the admin's own user.upstreamIds.
+const effectiveCap = computed<readonly string[] | null>(
+  () => effectiveUpstreamCap(selectedKey.value?.upstream_ids ?? null, auth.currentUser?.upstreamIds ?? null),
+);
+
 const filteredChatModels = computed(() => {
-  const list = (models.value ?? []).filter(m => m.kind === 'chat');
+  const catalog = models.value ?? [];
+  const reachable = catalog.filter(m => m.kind === 'chat' && isReachableUnderCap(m, catalog, effectiveCap.value));
   const needle = modelsSearch.value.trim().toLowerCase();
-  if (!needle) return list;
-  return list.filter(m => m.id.toLowerCase().includes(needle) || (m.display_name?.toLowerCase().includes(needle) ?? false));
+  if (!needle) return reachable;
+  return reachable.filter(m => m.id.toLowerCase().includes(needle) || (m.display_name?.toLowerCase().includes(needle) ?? false));
 });
 
 const chatModelInfo = computed<ControlPlaneModel | undefined>(
@@ -42,15 +66,6 @@ const chatModelInfo = computed<ControlPlaneModel | undefined>(
 );
 
 if (!chatModelId.value && filteredChatModels.value[0]) chatModelId.value = filteredChatModels.value[0].id;
-
-// Playground requires a real per-user API key, not the admin key.
-const selectedKeyId = ref<string | null>(keys[0]?.id ?? null);
-
-const selectedApiKey = computed(() => {
-  const id = selectedKeyId.value;
-  if (!id) return null;
-  return keys.find(k => k.id === id)!.key;
-});
 
 const banner = computed(() => modelsError.value ?? initialData.data.value.keysError);
 </script>
@@ -113,7 +128,7 @@ const banner = computed(() => modelsError.value ?? initialData.data.value.keysEr
 
       <div class="flex-1 flex flex-col min-w-0 min-h-0">
         <template v-if="chatModelInfo">
-          <ModelInfoBar :model="chatModelInfo" @clear="chatPanelRef?.clear()" />
+          <ModelInfoBar :model="chatModelInfo" :catalog="models ?? []" :cap="effectiveCap" @clear="chatPanelRef?.clear()" />
           <ChatPanel v-if="selectedApiKey" ref="chatPanel" :model-id="chatModelInfo.id" :api-key="selectedApiKey" />
           <div v-else class="flex-1 flex items-center justify-center px-6 text-center text-gray-600 text-sm">
             Create an API key in the Keys tab to chat with models.

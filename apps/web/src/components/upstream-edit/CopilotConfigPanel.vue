@@ -4,7 +4,7 @@ import CopilotDeviceFlow from './CopilotDeviceFlow.vue';
 import CopilotInfo from './CopilotInfo.vue';
 import type { CopilotQuotaSnapshot, ProxyFallbackEntry, UpstreamRecord } from '../../api/types.ts';
 
-type CopilotUpstreamRecord = Extract<UpstreamRecord, { provider: 'copilot' }>;
+type CopilotUpstreamRecord = Extract<UpstreamRecord, { kind: 'copilot' }>;
 
 defineProps<
   | {

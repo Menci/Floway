@@ -8,7 +8,7 @@ const timestamp = '2026-04-29T00:00:00.000Z';
 
 const custom: UpstreamRecord = {
   id: 'up_custom_test',
-  provider: 'custom',
+  kind: 'custom',
   name: 'Custom Upstream',
   enabled: true,
   sortOrder: 10,
@@ -34,7 +34,7 @@ test('upstreamRecordToJson redacts custom bearer token inside config', () => {
   const config = result.config as Record<string, unknown>;
 
   assertEquals(result.id, 'up_custom_test');
-  assertEquals(result.provider, 'custom');
+  assertEquals(result.kind, 'custom');
   assertEquals(result.sort_order, 10);
   assertEquals(result.created_at, timestamp);
   assertEquals(result.updated_at, timestamp);
@@ -52,7 +52,7 @@ test('upstreamRecordToJson redacts Azure API keys inside config', () => {
   const result = upstreamRecordToJson({
     ...custom,
     id: 'up_azure_test',
-    provider: 'azure',
+    kind: 'azure',
     config: {
       endpoint: 'https://example.openai.azure.com',
       apiKey: 'az-secret',
@@ -61,7 +61,7 @@ test('upstreamRecordToJson redacts Azure API keys inside config', () => {
   });
   const config = result.config as Record<string, unknown>;
 
-  assertEquals(result.provider, 'azure');
+  assertEquals(result.kind, 'azure');
   assertEquals(config.endpoint, 'https://example.openai.azure.com');
   assertEquals(config.apiKey, undefined);
   assertEquals(config.apiKeySet, true);
@@ -72,7 +72,7 @@ test('upstreamRecordToJson redacts Copilot GitHub token inside config and expose
   const result = upstreamRecordToJson({
     ...custom,
     id: 'up_copilot_test',
-    provider: 'copilot',
+    kind: 'copilot',
     config: {
       githubToken: 'ghu_secret',
       user: {
@@ -89,7 +89,7 @@ test('upstreamRecordToJson redacts Copilot GitHub token inside config and expose
   const config = result.config as Record<string, unknown>;
   const state = result.state as Record<string, unknown>;
 
-  assertEquals(result.provider, 'copilot');
+  assertEquals(result.kind, 'copilot');
   assertEquals(config.githubToken, undefined);
   assertEquals(config.githubTokenSet, true);
   assertEquals(config.accountType, undefined);
@@ -107,7 +107,7 @@ test('upstreamRecordToJson serializes a Copilot row with state=null without thro
   const result = upstreamRecordToJson({
     ...custom,
     id: 'up_copilot_fresh',
-    provider: 'copilot',
+    kind: 'copilot',
     config: {
       githubToken: 'ghu_secret',
       user: { id: 200, login: 'fresh', name: null, avatar_url: 'https://example.com/fresh.png' },
@@ -115,7 +115,7 @@ test('upstreamRecordToJson serializes a Copilot row with state=null without thro
     state: null,
   });
 
-  assertEquals(result.provider, 'copilot');
+  assertEquals(result.kind, 'copilot');
   // A freshly imported Copilot row that hasn't completed its first token
   // exchange yet has no state at all — the dashboard renders the generic
   // 'copilot' badge in that case rather than a per-tier label.
@@ -126,7 +126,7 @@ test('upstreamRecordToJson serializes a Copilot row whose state lacks copilotTok
   const result = upstreamRecordToJson({
     ...custom,
     id: 'up_copilot_no_token',
-    provider: 'copilot',
+    kind: 'copilot',
     config: {
       githubToken: 'ghu_secret',
       user: { id: 201, login: 'no-token', name: null, avatar_url: 'https://example.com/n.png' },
@@ -153,7 +153,7 @@ test('upstreamRecordToFullJson includes provider config secrets for export', () 
 
 const claudeCodeBase = (overrides: { config?: unknown; state?: unknown }): UpstreamRecord => ({
   id: 'up_cc_test',
-  provider: 'claude-code',
+  kind: 'claude-code',
   name: 'Claude Code',
   enabled: true,
   sortOrder: 0,
@@ -169,7 +169,7 @@ const claudeCodeBase = (overrides: { config?: unknown; state?: unknown }): Upstr
 
 const codexBase = (overrides: { config?: unknown; state?: unknown }): UpstreamRecord => ({
   id: 'up_cx_test',
-  provider: 'codex',
+  kind: 'codex',
   name: 'Codex',
   enabled: true,
   sortOrder: 0,

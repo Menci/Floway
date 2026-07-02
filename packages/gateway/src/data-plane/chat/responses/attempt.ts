@@ -6,20 +6,22 @@ import { drainAsync, syntheticEventsFromResult, wrapResponsesOutputForStorage } 
 import { rewriteResponsesItemsForCandidate, type RewrittenResponsesPayload } from './items/rewrite.ts';
 import type { StatefulResponsesStore } from './items/store.ts';
 import { tokenUsageFromResponsesResult } from './usage.ts';
+import { applyRulesToUpstreamResponses } from '../../model-aliases/apply-rules.ts';
 import { recordPerformanceLatency, requireRecordedDurationMs } from '../../shared/telemetry/performance.ts';
 import { chatCompletionsAttempt } from '../chat-completions/attempt.ts';
 import { messagesAttempt } from '../messages/attempt.ts';
 import { providerStreamResultToExecuteResult, buildUpstreamCallOptions, telemetryModelIdentity, chatTargetPicker } from '../shared/attempt-helpers.ts';
 import { tryCatchChatServeFailure } from '../shared/errors.ts';
-import type { GatewayCtx } from '../shared/gateway-ctx.ts';
+import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { traverseTranslation } from '../shared/translate-traverse.ts';
 import { createUpstreamLatencyRecorder, recordUpstreamHttpFailure, upstreamPerformanceContext } from '../shared/upstream-telemetry.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectResponsesProtocolEventsToResult } from '@floway-dev/protocols/responses';
-import { type ResponsesPayload, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { type ProviderCandidate, eventResult, readUpstreamApiError, type ChatTargetApi, type ExecuteResult, type ProviderResponsesResult, type ResponsesAction } from '@floway-dev/provider';
+import { type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { type ModelCandidate, eventResult, readUpstreamApiError, providerModelOf, type ChatTargetApi, type ExecuteResult, type ProviderResponsesResult, type ResponsesAction } from '@floway-dev/provider';
 import { translateResponsesViaChatCompletions, translateResponsesViaMessages } from '@floway-dev/translate';
+import type { CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
 
 // `/v1/responses` generate prefers the native Responses target, then the
 // translated Messages path, then the translated Chat Completions path. The
@@ -29,11 +31,10 @@ import { translateResponsesViaChatCompletions, translateResponsesViaMessages } f
 export const responsesTarget = chatTargetPicker(['responses', 'messages', 'chat-completions']);
 
 export interface ResponsesAttemptInvokeArgs {
-  readonly payload: ResponsesPayload;
+  readonly payload: CanonicalResponsesPayload;
   readonly action: ResponsesAction;
-  readonly ctx: GatewayCtx;
-  readonly store: StatefulResponsesStore;
-  readonly candidate: ProviderCandidate;
+  readonly ctx: ChatGatewayCtx;
+  readonly candidate: ModelCandidate;
   readonly headers: Headers;
 }
 
@@ -76,7 +77,8 @@ export interface ResponsesAttemptInvokeArgs {
 // no-op at the store-write layer.
 export const responsesAttempt = {
   invoke: async (args: ResponsesAttemptInvokeArgs): Promise<ResponsesAttemptResult> => {
-    const { payload, action, ctx, store, candidate, headers } = args;
+    const { payload, action, ctx, candidate, headers } = args;
+    const { store } = ctx;
     const targetApi = responsesTarget.pick(candidate.model.endpoints);
     // Rewrite + privatePayload seed + assistant-content normalization all run
     // BEFORE the interceptor chain so source interceptors — most importantly
@@ -95,14 +97,13 @@ export const responsesAttempt = {
     // here, after the rewrite has expanded any `item_reference` items
     // from the snapshot store, catches both the direct-echo and
     // store-replay paths in one place.
-    const normalized: ResponsesPayload = { ...rewritten.payload, input: normalizeAssistantInputText(rewritten.payload.input) };
+    const normalized: CanonicalResponsesPayload = { ...rewritten.payload, input: normalizeAssistantInputText(rewritten.payload.input) };
 
     const invocation: ResponsesInvocation = {
       payload: normalized,
       action,
       candidate,
       targetApi,
-      store,
       headers,
     };
     const chainResult = await runInterceptors(invocation, ctx, responsesInterceptors, async () =>
@@ -179,9 +180,9 @@ type RewriteOutcome =
   | { readonly failure: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> };
 
 const rewriteOrRenderFailure = async (
-  payload: ResponsesPayload,
+  payload: CanonicalResponsesPayload,
   store: StatefulResponsesStore,
-  candidate: ProviderCandidate,
+  candidate: ModelCandidate,
 ): Promise<RewriteOutcome> => {
   try {
     return await rewriteResponsesItemsForCandidate(payload, store, candidate);
@@ -216,12 +217,13 @@ const rewriteOrRenderFailure = async (
 
 const dispatchResponses = async (
   invocation: ResponsesInvocation,
-  ctx: GatewayCtx,
+  ctx: ChatGatewayCtx,
 ): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
-  const { candidate, targetApi, store } = invocation;
+  const { candidate, targetApi } = invocation;
   switch (targetApi) {
   case 'responses': {
     const recorder = createUpstreamLatencyRecorder();
+    if (candidate.rules !== undefined) applyRulesToUpstreamResponses(invocation.payload, candidate.rules);
     if (invocation.action === 'compact') {
       // The compact wire body drops `stream` and `store` — `store` is a
       // gateway-only snapshot-persistence hint that the upstream compact
@@ -230,8 +232,8 @@ const dispatchResponses = async (
       // provider can decide for itself (every provider's streaming call
       // forces stream=true anyway).
       const { model: _model, stream: _stream, store: _store, ...body } = invocation.payload;
-      const providerResult = await candidate.provider.provider.callResponses(
-        candidate.model,
+      const providerResult = await candidate.provider.instance.callResponses(
+        providerModelOf(candidate),
         body,
         invocation.action,
         ctx.abortSignal,
@@ -240,8 +242,8 @@ const dispatchResponses = async (
       return await providerResponsesResultToExecuteResult(providerResult, candidate, targetApi, ctx, recorder);
     }
     const { model: _model, ...body } = invocation.payload;
-    const providerResult = await candidate.provider.provider.callResponses(
-      candidate.model,
+    const providerResult = await candidate.provider.instance.callResponses(
+      providerModelOf(candidate),
       body,
       invocation.action,
       ctx.abortSignal,
@@ -266,7 +268,7 @@ const dispatchResponses = async (
         fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
       }),
       translated => messagesAttempt.generate({
-        payload: translated, ctx, store, candidate, headers: invocation.headers,
+        payload: translated, ctx, candidate, headers: invocation.headers,
       }),
     );
   case 'chat-completions':
@@ -277,7 +279,7 @@ const dispatchResponses = async (
       invocation.payload,
       p => translateResponsesViaChatCompletions(p, { model: candidate.model.id }),
       translated => chatCompletionsAttempt.generate({
-        payload: translated, ctx, store, candidate, headers: invocation.headers,
+        payload: translated, ctx, candidate, headers: invocation.headers,
       }),
     );
   default: {
@@ -294,9 +296,9 @@ const dispatchResponses = async (
 // the provider executed.
 const providerResponsesResultToExecuteResult = async (
   providerResult: ProviderResponsesResult,
-  candidate: ProviderCandidate,
+  candidate: ModelCandidate,
   targetApi: ChatTargetApi,
-  ctx: GatewayCtx,
+  ctx: ChatGatewayCtx,
   recorder: ReturnType<typeof createUpstreamLatencyRecorder>,
 ): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
   if (providerResult.action === 'generate') {

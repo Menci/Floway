@@ -4,14 +4,23 @@
   "version": "0.0.0",
   "type": "module",
   "exports": {
-    ".": { "import": "./src/index.ts", "types": "./src/index.ts" },
-    "./app-type": { "types": "./src/app.ts" },
+    ".": {
+      "import": "./src/index.ts",
+      "types": "./src/index.ts"
+    },
+    "./app-type": {
+      "types": "./src/app.ts"
+    },
     "./channel-broker": {
       "import": "./src/runtime/channel-broker-contract.ts",
       "types": "./src/runtime/channel-broker-contract.ts"
     },
-    "./control-plane/proxies/serialize": { "types": "./src/control-plane/proxies/serialize.ts" },
-    "./control-plane/pricing/types": { "types": "./src/control-plane/pricing/types.ts" },
+    "./control-plane/proxies/serialize": {
+      "types": "./src/control-plane/proxies/serialize.ts"
+    },
+    "./control-plane/pricing/types": {
+      "types": "./src/control-plane/pricing/types.ts"
+    },
     "./data-plane/tools/web-search/types": {
       "import": "./src/data-plane/tools/web-search/types.ts",
       "types": "./src/data-plane/tools/web-search/types.ts"
@@ -44,6 +53,7 @@
     "@floway-dev/translate": "workspace:*",
     "@hono/zod-validator": "^0.8.0",
     "crc-32": "^1.2.2",
+    "es-toolkit": "^1.49.0",
     "hono": "^4",
     "jsonrepair": "^3.14.0",
     "zod": "^4.4.3"

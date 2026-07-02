@@ -16,9 +16,10 @@
 
 import type { ChatCompletionsInterceptor } from './types.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
+import { providerModelOf } from '@floway-dev/provider';
 
 export const withVendorQwenChatCompletionsNormalize: ChatCompletionsInterceptor = async (ctx, _gatewayCtx, run) => {
-  if (!ctx.candidate.model.enabledFlags.has('vendor-qwen')) return await run();
+  if (!providerModelOf(ctx.candidate).enabledFlags.has('vendor-qwen')) return await run();
 
   if (ctx.payload.reasoning_effort === 'none') {
     const { reasoning_effort: _stripped, ...rest } = ctx.payload;

@@ -173,7 +173,7 @@ test('/v1/images/edits forwards a multipart request through an Azure model and r
   clearInProcessCopilotTokenCache();
   await repo.upstreams.save({
     id: 'az-image',
-    provider: 'azure',
+    kind: 'azure',
     name: 'azure-images',
     enabled: true,
     sortOrder: 1,

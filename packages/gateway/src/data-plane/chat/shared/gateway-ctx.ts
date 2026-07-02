@@ -3,6 +3,7 @@ import { type DumpAccumulator, openDumpAccumulator } from '../../../dump/accumul
 import { apiKeyFromContext, type AuthedContext, effectiveUpstreamIdsFromContext } from '../../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 import { getCurrentColo } from '../../../runtime/runtime-info.ts';
+import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 
 export interface GatewayCtx {
@@ -21,10 +22,23 @@ export interface GatewayCtx {
   // provider-call boundary.
   readonly runtimeLocation: string;
   readonly currentColo: string;
-  // Null when the api key has no retention configured, in which case the
-  // respond layer's `ctx.dump?.X(...)` calls collapse to no-ops and
-  // `ctx.dump?.finalize(response) ?? response` returns the response unchanged.
+  // Null when the api key has no retention configured, in which case
+  // `finalizeGatewayResponse` short-circuits the dump tee and returns the
+  // response untouched.
   readonly dump: DumpAccumulator | null;
+  // Headers staged during request processing and written onto the
+  // outbound response by `finalizeGatewayResponse`, regardless of how
+  // the responder built the body.
+  readonly responseHeaders: Headers;
+}
+
+// Chat-protocol ctx — `GatewayCtx` plus the request-scoped stored-items
+// store. Every chat HTTP/WS entry constructs this via
+// `createChatGatewayCtxFromHono` and threads it through serve → narrow →
+// attempt. Passthrough endpoints (embeddings / images / completions) have
+// no stored-items concept and stay on plain `GatewayCtx`.
+export interface ChatGatewayCtx extends GatewayCtx {
+  readonly store: StatefulResponsesStore;
 }
 
 export interface CreateGatewayCtxOptions {
@@ -70,5 +84,30 @@ export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCt
     runtimeLocation: colo,
     currentColo: colo,
     dump,
+    responseHeaders: new Headers(),
   };
+};
+
+// Run the dump-accumulator's finalize tee on the outgoing Response. Every
+// inbound HTTP wrapper returns its response through this seam so the dump
+// pipeline applies uniformly across happy-path, error, and passthrough paths.
+export const finalizeGatewayResponse = (ctx: GatewayCtx, response: Response): Response => {
+  for (const [name, value] of ctx.responseHeaders) response.headers.set(name, value);
+  return ctx.dump?.finalize(response) ?? response;
+};
+
+// Chat-protocol counterpart of `createGatewayCtxFromHono`. Calls the base
+// factory, then attaches the stored-items store the caller chose for this
+// protocol. The factory receives `ctx.apiKeyId` so every entry threads the
+// same authoritative id into its store — messages / gemini / chat-completions
+// pass `createNonResponsesSourceStore`; responses HTTP passes
+// `apiKeyId => createResponsesHttpStore(apiKeyId, payload.store)`; responses
+// WS passes `apiKeyId => session.createStore(apiKeyId, payload.store)`.
+export const createChatGatewayCtxFromHono = (
+  c: AuthedContext,
+  opts: CreateGatewayCtxOptions,
+  storeFactory: (apiKeyId: string) => StatefulResponsesStore,
+): ChatGatewayCtx => {
+  const base = createGatewayCtxFromHono(c, opts);
+  return { ...base, store: storeFactory(base.apiKeyId) };
 };

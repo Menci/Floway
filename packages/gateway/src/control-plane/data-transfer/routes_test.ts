@@ -73,7 +73,7 @@ const USER_BOB: User = {
 
 const CUSTOM_UPSTREAM: UpstreamRecord = {
   id: 'up_custom_a',
-  provider: 'custom',
+  kind: 'custom',
   name: 'Custom A',
   enabled: true,
   sortOrder: 10,
@@ -95,7 +95,7 @@ const CUSTOM_UPSTREAM: UpstreamRecord = {
 
 const COPILOT_UPSTREAM: UpstreamRecord = {
   id: 'up_copilot_a',
-  provider: 'copilot',
+  kind: 'copilot',
   name: 'GitHub Copilot (alice)',
   enabled: true,
   sortOrder: 0,
@@ -119,7 +119,7 @@ const COPILOT_UPSTREAM: UpstreamRecord = {
 
 const AZURE_UPSTREAM: UpstreamRecord = {
   id: 'up_azure_a',
-  provider: 'azure',
+  kind: 'azure',
   name: 'Azure A',
   enabled: true,
   sortOrder: 20,
@@ -151,7 +151,7 @@ const AZURE_UPSTREAM: UpstreamRecord = {
 
 const CODEX_UPSTREAM: UpstreamRecord = {
   id: 'up_codex_a',
-  provider: 'codex',
+  kind: 'codex',
   name: 'ChatGPT Codex (alice)',
   enabled: true,
   sortOrder: 30,
@@ -175,6 +175,7 @@ const CODEX_UPSTREAM: UpstreamRecord = {
       refresh_token: 'rt_alice_v3',
       state: 'active',
       state_updated_at: '2026-01-01T00:00:00.000Z',
+      openaiDeviceId: '11111111-2222-4333-8444-555555555555',
     }],
   },
 };

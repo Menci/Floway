@@ -532,6 +532,21 @@ test('translateMessagesToResponses rejects an unknown message role', () => {
   );
 });
 
+test('translateMessagesToResponses collapses Anthropic thinking mode onto reasoning.effort only', () => {
+  const result = translateMessagesToResponses({
+    model: 'gpt-test',
+    max_tokens: 256,
+    messages: [{ role: 'user', content: 'hi' }],
+    thinking: { type: 'enabled', budget_tokens: 4096 },
+  });
+
+  // `thinking.type === 'enabled'` resolves to the OpenAI-canonical `medium`
+  // effort; the `budget_tokens` scalar has no Responses slot and drops.
+  assertEquals(result.reasoning, { effort: 'medium' });
+});
+
+// ── speed ↔ service_tier bridge ──
+
 test('translateMessagesToResponses maps speed:fast to service_tier:fast on the outbound Responses payload', () => {
   const result = translateMessagesToResponses({
     model: 'gpt-test',

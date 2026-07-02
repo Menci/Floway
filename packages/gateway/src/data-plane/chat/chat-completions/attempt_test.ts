@@ -4,25 +4,27 @@ import { chatCompletionsAttempt } from './attempt.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { createNonResponsesSourceStore } from '../responses/items/store.ts';
-import type { GatewayCtx } from '../shared/gateway-ctx.ts';
+import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesResult } from '@floway-dev/protocols/responses';
-import { type ProviderCandidate, directFetcher, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
-import { assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
+import { type ModelCandidate, directFetcher, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
+import { assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
 
 const API_KEY_ID = 'key_chat_completions_attempt_test';
 
-const makeGatewayCtx = (): GatewayCtx => ({
+const makeGatewayCtx = (): ChatGatewayCtx => ({
   apiKeyId: API_KEY_ID,
   upstreamIds: null,
   wantsStream: true,
   runtimeLocation: 'TEST',
   currentColo: 'TEST',
   dump: null,
+  responseHeaders: new Headers(),
   backgroundScheduler: () => {},
   requestStartedAt: 0,
+  store: createNonResponsesSourceStore(API_KEY_ID),
 });
 
 const makePayload = (overrides: Partial<ChatCompletionsPayload> = {}): ChatCompletionsPayload => ({
@@ -73,7 +75,7 @@ const makeCandidate = (overrides: {
   callChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
   callMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<MessagesStreamEvent>>;
   callResponses?: (model: unknown, body: unknown, action: ResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderResponsesResult>;
-} = {}): ProviderCandidate => {
+} = {}): ModelCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
   const provider = stubProvider({
     callChatCompletions: overrides.callChatCompletions,
@@ -82,10 +84,10 @@ const makeCandidate = (overrides: {
   });
   return {
     provider: {
-      upstream, providerKind: 'custom', name: upstream,
-      disabledPublicModelIds: [], modelPrefix: null, provider, supportsResponsesItemReference: true,
+      upstream, kind: 'custom', name: upstream,
+      disabledPublicModelIds: [], modelPrefix: null, instance: provider, supportsResponsesItemReference: true,
     },
-    model: overrides.endpoints ? stubUpstreamModel({ endpoints: overrides.endpoints }) : stubUpstreamModel(),
+    model: stubInternalModel(overrides.endpoints ? { endpoints: overrides.endpoints } : {}, upstream),
     fetcher: directFetcher,
   };
 };
@@ -112,7 +114,6 @@ test('generate native chat-completions target calls provider.callChatCompletions
   const result = await chatCompletionsAttempt.generate({
     payload: makePayload(),
     ctx: makeGatewayCtx(),
-    store: createNonResponsesSourceStore(API_KEY_ID),
     candidate: makeCandidate({ callChatCompletions }),
     headers: new Headers(),
   });
@@ -131,7 +132,6 @@ test('generate translates through the Messages target when only that endpoint is
   const result = await chatCompletionsAttempt.generate({
     payload: makePayload(),
     ctx: makeGatewayCtx(),
-    store: createNonResponsesSourceStore(API_KEY_ID),
     candidate: makeCandidate({ callMessages, endpoints: { messages: {} } }),
     headers: new Headers(),
   });
@@ -161,7 +161,6 @@ test('generate translates through the Responses target when only that endpoint i
   const result = await chatCompletionsAttempt.generate({
     payload: makePayload(),
     ctx: makeGatewayCtx(),
-    store: createNonResponsesSourceStore(API_KEY_ID),
     candidate: makeCandidate({ callResponses, endpoints: { responses: {} } }),
     headers: new Headers(),
   });
@@ -184,7 +183,6 @@ test('generate propagates upstream response headers onto the EventResult so resp
   const result = await chatCompletionsAttempt.generate({
     payload: makePayload(),
     ctx: makeGatewayCtx(),
-    store: createNonResponsesSourceStore(API_KEY_ID),
     candidate: makeCandidate({ callChatCompletions }),
     headers: new Headers(),
   });

@@ -2,13 +2,19 @@
 // wrangler.jsonc is gitignored so that each contributor's own Cloudflare
 // account id, D1 database id, and Worker name stay local. Every concrete
 // value here is load-bearing — `scripts/check-wrangler.ts` gates dev and
-// deploy on real wrangler.jsonc mirroring this example exactly, except
-// that <YOUR_*> placeholders may (and must) be replaced with your own
-// values.
+// deploy on real wrangler.jsonc mirroring this example exactly in both
+// directions, except that <YOUR_*> placeholders may (and must) be
+// replaced with your own values, and `account_id` may additionally
+// appear only in wrangler.jsonc since it is per-contributor. Anything
+// else the real config needs (extra bindings, extra compat flags, `vars`
+// blocks) belongs in this example first so every contributor and the
+// deploy gate agree on the Worker's shape.
 //
 // 1. Optionally set CLOUDFLARE_ACCOUNT_ID in the environment, or run
 //    `pnpm wrangler login`. If neither is in place, add an `account_id`
-//    field below — extra keys outside this example are allowed.
+//    field to wrangler.jsonc — it is the one personal-only key the
+//    check gate accepts in the real config without a matching example
+//    entry.
 // 2. Pick a unique `name` for your Worker; it becomes the deployed
 //    workers.dev subdomain.
 // 3. Run `pnpm wrangler d1 create <database_name>` and paste the returned
@@ -23,6 +29,10 @@
   "name": "<YOUR_WORKER_NAME>",
   "main": "apps/platform-cloudflare/entry.ts",
   "compatibility_date": "2025-01-01",
+  // `@reclaimprotocol/tls/webcrypto` (used by packages/http for userspace
+  // TLS) still `import { webcrypto } from 'crypto'`, so the Worker won't
+  // resolve modules at cold start without the Node compat flag.
+  "compatibility_flags": ["nodejs_compat"],
   "triggers": {
     "crons": ["17 * * * *"]
   },

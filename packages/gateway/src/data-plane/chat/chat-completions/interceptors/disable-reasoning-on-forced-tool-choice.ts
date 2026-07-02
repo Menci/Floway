@@ -1,5 +1,7 @@
+
 import type { ChatCompletionsInterceptor } from './types.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
+import { providerModelOf } from '@floway-dev/provider';
 
 // Opt-in workaround for upstreams where forced `tool_choice` and enabled
 // reasoning do not compose. Sets the gateway's canonical "no reasoning"
@@ -15,7 +17,7 @@ const hasForcedToolChoice = (payload: ChatCompletionsPayload): boolean => {
 };
 
 export const withReasoningDisabledOnForcedToolChoice: ChatCompletionsInterceptor = async (ctx, _gatewayCtx, run) => {
-  if (!ctx.candidate.model.enabledFlags.has('disable-reasoning-on-forced-tool-choice')) return await run();
+  if (!providerModelOf(ctx.candidate).enabledFlags.has('disable-reasoning-on-forced-tool-choice')) return await run();
   if (!hasForcedToolChoice(ctx.payload)) return await run();
   ctx.payload = { ...ctx.payload, reasoning_effort: 'none' };
   return await run();

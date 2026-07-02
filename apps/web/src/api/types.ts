@@ -1,16 +1,29 @@
 // Control-plane DTOs the SPA consumes — serialized shapes the gateway emits at /api.
 
 import type {
+  AliasRules,
+  AliasSelection,
+  AliasTarget,
+  AnnouncedMetadata,
   BillingDimension,
+  ChatAliasRules,
+  ChatModelInfo,
+  ModelAlias,
   ModelEndpointKey,
   ModelEndpoints,
   ModelKind,
   ModelPricing,
+  PublicModel,
+  PublicModelLimits,
 } from '@floway-dev/protocols/common';
 import type { AddressableForm, ModelPrefixConfig } from '@floway-dev/provider/model-prefix';
 
 export type { BillingDimension, ModelEndpointKey, ModelEndpoints, ModelKind, ModelPricing };
 export type { AddressableForm, ModelPrefixConfig };
+export type {
+  AliasRules, AliasSelection, AliasTarget, AnnouncedMetadata, ChatAliasRules, ChatModelInfo, ModelAlias,
+  PublicModel, PublicModelLimits,
+};
 
 export type UpstreamProviderKind = 'custom' | 'azure' | 'copilot' | 'codex' | 'claude-code' | 'ollama';
 
@@ -38,7 +51,7 @@ export interface UpstreamModelConfig {
   kind: ModelKind;
   endpoints: ModelEndpoints;
   display_name?: string;
-  limits?: ModelLimits;
+  limits?: PublicModelLimits;
   cost?: ModelPricing;
   flagOverrides?: { enabled: boolean; values: Record<string, boolean> };
   chat?: UpstreamChatConfig;
@@ -57,7 +70,7 @@ export interface CustomRawModel {
   name?: string;
   created?: number;
   owned_by?: string;
-  limits?: ModelLimits;
+  limits?: PublicModelLimits;
   cost?: ModelPricing;
   kind?: ModelKind;
 }
@@ -281,17 +294,17 @@ interface UpstreamRecordBase {
   };
 }
 
-// Provider-keyed discriminated union: each variant pins `provider` and the
-// matching `config` / `state` shape, so `switch (record.provider)` narrows
+// Kind-keyed discriminated union: each variant pins `kind` and the
+// matching `config` / `state` shape, so `switch (record.kind)` narrows
 // both fields without an `as` cast. Codex's `codex_quota` field rides on the
 // codex variant only.
 export type UpstreamRecord =
-  | (UpstreamRecordBase & { provider: 'custom'; config: CustomUpstreamConfig; state: null })
-  | (UpstreamRecordBase & { provider: 'azure'; config: AzureUpstreamConfig; state: null })
-  | (UpstreamRecordBase & { provider: 'copilot'; config: CopilotUpstreamConfig; state: CopilotUpstreamState | null })
-  | (UpstreamRecordBase & { provider: 'codex'; config: CodexUpstreamConfig; state: CodexUpstreamState | null; codex_quota?: CodexQuotaSnapshot | null })
-  | (UpstreamRecordBase & { provider: 'claude-code'; config: ClaudeCodeUpstreamConfig; state: ClaudeCodeUpstreamState | null })
-  | (UpstreamRecordBase & { provider: 'ollama'; config: OllamaUpstreamConfig; state: null });
+  | (UpstreamRecordBase & { kind: 'custom'; config: CustomUpstreamConfig; state: null })
+  | (UpstreamRecordBase & { kind: 'azure'; config: AzureUpstreamConfig; state: null })
+  | (UpstreamRecordBase & { kind: 'copilot'; config: CopilotUpstreamConfig; state: CopilotUpstreamState | null })
+  | (UpstreamRecordBase & { kind: 'codex'; config: CodexUpstreamConfig; state: CodexUpstreamState | null; codex_quota?: CodexQuotaSnapshot | null })
+  | (UpstreamRecordBase & { kind: 'claude-code'; config: ClaudeCodeUpstreamConfig; state: ClaudeCodeUpstreamState | null })
+  | (UpstreamRecordBase & { kind: 'ollama'; config: OllamaUpstreamConfig; state: null });
 
 export interface FlagDef {
   id: string;
@@ -320,26 +333,6 @@ export interface ApiKey {
   last_used_at: string | null;
   upstream_ids: string[] | null;
   dump_retention_seconds: number | null;
-}
-
-export interface ModelEndpointInfo {
-  url: string;
-  doc?: string;
-}
-
-export interface ModelLimits {
-  max_context_window_tokens?: number;
-  max_prompt_tokens?: number;
-  max_output_tokens?: number;
-}
-
-export interface PublicModel {
-  id: string;
-  display_name?: string;
-  limits?: ModelLimits;
-  endpoints?: Record<string, ModelEndpointInfo>;
-  cost?: ModelPricing;
-  kind?: ModelKind;
 }
 
 export interface ControlPlaneModel extends PublicModel {

@@ -4,7 +4,7 @@ import { messagesServe } from './serve.ts';
 import type { AuthedContext } from '../../../middleware/auth.ts';
 import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
 import { createNonResponsesSourceStore } from '../responses/items/store.ts';
-import { createGatewayCtxFromHono, type GatewayCtx } from '../shared/gateway-ctx.ts';
+import { createChatGatewayCtxFromHono, createGatewayCtxFromHono, finalizeGatewayResponse, type ChatGatewayCtx, type GatewayCtx } from '../shared/gateway-ctx.ts';
 import { readRequestBody, type RequestBody } from '../shared/request-body.ts';
 import { providerModelsUnavailableResponse } from '../shared/upstream-models-error.ts';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
@@ -46,7 +46,7 @@ const respondWithInternalError = async (c: AuthedContext, error: unknown, reques
   const effectiveCtx = ctx ?? createGatewayCtxFromHono(c, { wantsStream: false, requestBody });
   const result = internalErrorResult(502, toInternalDebugError(error));
   const { response } = await respondMessages(c, result, false, effectiveCtx);
-  return (effectiveCtx.dump?.finalize(response) ?? response);
+  return finalizeGatewayResponse(effectiveCtx, response);
 };
 
 // Pre-stream caller-input failure raised by a translator → Messages-shaped
@@ -65,18 +65,17 @@ const parsePayload = (requestBody: RequestBody): MessagesPayload =>
 export const messagesHttp = {
   generate: async (c: AuthedContext): Promise<Response> => {
     const requestBody = await readRequestBody(c);
-    let ctx: GatewayCtx | undefined;
+    let ctx: ChatGatewayCtx | undefined;
     try {
       const payload = parsePayload(requestBody);
       const rejected = rejectBodyBetaResponse(payload);
       if (rejected) return rejected;
 
       const wantsStream = payload.stream === true;
-      ctx = createGatewayCtxFromHono(c, { wantsStream, requestBody, model: payload.model });
-      const store = createNonResponsesSourceStore(ctx.apiKeyId);
-      const result = await messagesServe.generate({ payload, ctx, store, headers: inboundHeadersForUpstream(c) });
+      ctx = createChatGatewayCtxFromHono(c, { wantsStream, requestBody, model: payload.model }, createNonResponsesSourceStore);
+      const result = await messagesServe.generate({ payload, ctx, headers: inboundHeadersForUpstream(c) });
       const { response } = await respondMessages(c, result, wantsStream, ctx);
-      return (ctx.dump?.finalize(response) ?? response);
+      return finalizeGatewayResponse(ctx, response);
     } catch (error) {
       return await respondToThrow(c, error, requestBody, ctx);
     }
@@ -84,17 +83,16 @@ export const messagesHttp = {
 
   countTokens: async (c: AuthedContext): Promise<Response> => {
     const requestBody = await readRequestBody(c);
-    let ctx: GatewayCtx | undefined;
+    let ctx: ChatGatewayCtx | undefined;
     try {
       const payload = parsePayload(requestBody);
       const rejected = rejectBodyBetaResponse(payload);
       if (rejected) return rejected;
 
-      ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody, model: payload.model });
-      const store = createNonResponsesSourceStore(ctx.apiKeyId);
-      const result = await messagesServe.countTokens({ payload, ctx, store, headers: inboundHeadersForUpstream(c) });
+      ctx = createChatGatewayCtxFromHono(c, { wantsStream: false, requestBody, model: payload.model }, createNonResponsesSourceStore);
+      const result = await messagesServe.countTokens({ payload, ctx, headers: inboundHeadersForUpstream(c) });
       const { response } = await respondMessages(c, result, false, ctx);
-      return (ctx.dump?.finalize(response) ?? response);
+      return finalizeGatewayResponse(ctx, response);
     } catch (error) {
       return await respondToThrow(c, error, requestBody, ctx);
     }

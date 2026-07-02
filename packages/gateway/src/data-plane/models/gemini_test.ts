@@ -408,3 +408,59 @@ test('/v1beta/models hides malformed upstream response bodies', async () => {
     },
   );
 });
+
+test('/v1beta/models emits visible aliases as models/<alias-name> entries with displayName and baseModelId', async () => {
+  // Aliases must surface on the Gemini listing surface alongside real ids,
+  // so Gemini-native clients (google-genai SDK) can address them the same
+  // way OpenAI clients hit them on /v1/models.
+  const { apiKey, repo } = await setupAppTest();
+  await repo.modelAliases.deleteAll();
+  await repo.upstreams.deleteAll();
+  clearInProcessCopilotTokenCache();
+
+  await repo.upstreams.save(buildCustomUpstreamRecord({
+    id: 'up_gemini_alias',
+    name: 'Alias Provider for Gemini Listing',
+    sortOrder: 100,
+    createdAt: '2026-05-01T00:00:00.000Z',
+    config: {
+      baseUrl: 'https://custom-alias.example.com',
+      authStyle: 'bearer',
+      apiKey: 'sk-custom',
+      endpoints: { chatCompletions: {} },
+    },
+  }));
+  await repo.modelAliases.insert({
+    name: 'gpt-fast',
+    kind: 'chat',
+    selection: 'first-available',
+    displayName: 'Operator Fast Alias',
+    visibleInModelsList: true,
+    targets: [{ target_model_id: 'custom-llm-target', rules: {} }],
+    announcedMetadata: null,
+    sortOrder: 0,
+    createdAt: '2026-06-26T00:00:00.000Z',
+    updatedAt: '2026-06-26T00:00:00.000Z',
+  });
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'custom-alias.example.com' && url.pathname === '/v1/models') {
+        return jsonResponse({ object: 'list', data: [{ id: 'custom-llm-target' }] });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const response = await requestApp('/v1beta/models', {
+        headers: { 'x-api-key': apiKey.key },
+      });
+      assertEquals(response.status, 200);
+      const body = (await response.json()) as { models: Array<{ name: string; displayName?: string; baseModelId?: string }> };
+      const aliasEntry = body.models.find(model => model.name === 'models/gpt-fast');
+      if (!aliasEntry) throw new Error(`missing alias entry; got ${JSON.stringify(body.models.map(m => m.name))}`);
+      assertEquals(aliasEntry.displayName, 'Operator Fast Alias');
+      assertEquals(aliasEntry.baseModelId, 'gpt-fast');
+    },
+  );
+});

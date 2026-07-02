@@ -2,27 +2,30 @@ import { test } from 'vitest';
 
 import { withUsageStreamOptionsIncluded } from './include-usage-stream-options.ts';
 import type { ChatCompletionsInvocation } from './types.ts';
-import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
+import { createNonResponsesSourceStore } from '../../responses/items/store.ts';
+import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import { eventResult } from '@floway-dev/provider';
-import { assertEquals, stubProviderCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
-const stubCtx: GatewayCtx = {
+const stubCtx: ChatGatewayCtx = {
   apiKeyId: 'test-key',
   upstreamIds: null,
   wantsStream: false,
   runtimeLocation: 'TEST',
   currentColo: 'TEST',
   dump: null,
+  responseHeaders: new Headers(),
   backgroundScheduler: () => {},
   requestStartedAt: 0,
+  store: createNonResponsesSourceStore('test-key'),
 };
 
 const okEvents = () => Promise.resolve(eventResult((async function* () {})(), testTelemetryModelIdentity));
 
 const invocation = (payload: ChatCompletionsPayload): ChatCompletionsInvocation => ({
   payload,
-  candidate: stubProviderCandidate(),
+  candidate: stubModelCandidate(),
   targetApi: 'chat-completions',
   headers: new Headers(),
 });

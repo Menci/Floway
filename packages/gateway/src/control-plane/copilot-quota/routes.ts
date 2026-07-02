@@ -38,7 +38,7 @@ export const copilotQuota = async (c: Context) => {
     const id = c.req.param('id')!;
     const upstream = await getRepo().upstreams.getById(id);
     if (!upstream) return c.json({ error: 'Upstream not found' }, 404);
-    if (upstream.provider !== 'copilot') return c.json({ error: 'Upstream is not a Copilot upstream' }, 400);
+    if (upstream.kind !== 'copilot') return c.json({ error: 'Upstream is not a Copilot upstream' }, 400);
 
     const { config } = assertCopilotUpstreamRecord(upstream);
 

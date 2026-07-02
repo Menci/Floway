@@ -14,7 +14,7 @@ const overrides = defineModel<Record<string, boolean>>({ required: true });
 
 const props = withDefaults(defineProps<{
   flags: FlagDef[];
-  providerKind: UpstreamProviderKind;
+  kind: UpstreamProviderKind;
   inheritedOverrides?: Record<string, boolean>;
   namePrefix?: string;
   class?: HTMLAttributes['class'];
@@ -40,7 +40,7 @@ const setState = (flagId: string, next: TriState) => {
 const inheritedLabel = (flag: FlagDef): 'on' | 'off' => {
   const inherited = props.inheritedOverrides[flag.id];
   if (typeof inherited === 'boolean') return inherited ? 'on' : 'off';
-  return flag.defaultFor.includes(props.providerKind) ? 'on' : 'off';
+  return flag.defaultFor.includes(props.kind) ? 'on' : 'off';
 };
 
 const stateLabel = (state: TriState, flag: FlagDef) => {

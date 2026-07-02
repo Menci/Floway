@@ -7,7 +7,7 @@ import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
 const baseRecord: UpstreamRecord = {
   id: 'up_ollama_test',
-  provider: 'ollama',
+  kind: 'ollama',
   name: 'Ollama Cloud',
   enabled: true,
   sortOrder: 0,

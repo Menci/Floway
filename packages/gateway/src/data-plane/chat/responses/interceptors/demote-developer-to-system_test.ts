@@ -2,22 +2,24 @@ import { test } from 'vitest';
 
 import { withDemoteDeveloperToSystem } from './demote-developer-to-system.ts';
 import type { ResponsesInvocation } from './types.ts';
-import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
-import { MemoryStatefulResponsesBacking, LayeredStatefulResponsesStore } from '../items/store.ts';
+import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
+import { createNonResponsesSourceStore } from '../items/store.ts';
 import { doneFrame } from '@floway-dev/protocols/common';
-import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 import { eventResult } from '@floway-dev/provider';
-import { assertEquals, stubProviderCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import type { CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
 
-const stubCtx: GatewayCtx = {
+const stubCtx: ChatGatewayCtx = {
   apiKeyId: 'test-key',
   upstreamIds: null,
   wantsStream: false,
   runtimeLocation: 'TEST',
   currentColo: 'TEST',
   dump: null,
+  responseHeaders: new Headers(),
   backgroundScheduler: () => {},
   requestStartedAt: 0,
+  store: createNonResponsesSourceStore('test-key'),
 };
 
 const okEvents = () =>
@@ -30,17 +32,10 @@ const okEvents = () =>
     ),
   );
 
-const invocation = (payload: ResponsesPayload, enabledFlags: ReadonlySet<string> = new Set(['demote-developer-to-system'])): ResponsesInvocation => ({
+const invocation = (payload: CanonicalResponsesPayload, enabledFlags: ReadonlySet<string> = new Set(['demote-developer-to-system'])): ResponsesInvocation => ({
   payload,
-  candidate: stubProviderCandidate({ model: { enabledFlags } }),
+  candidate: stubModelCandidate({ enabledFlags }),
   targetApi: 'responses',
-  store: new LayeredStatefulResponsesStore({
-    apiKeyId: 'test-key',
-    reads: [new MemoryStatefulResponsesBacking()],
-    itemWrites: [],
-    snapshotWrites: [],
-    stageInputs: false,
-  }),
   headers: new Headers(),
   action: 'generate',
 });
@@ -93,18 +88,6 @@ test('leaves non-message input items untouched', async () => {
   assertEquals(items[0].role, 'user');
   assertEquals(items[1].type, 'function_call_output');
   assertEquals(items[2].role, 'system');
-});
-
-test('passes string input through unchanged', async () => {
-  const input = invocation({
-    model: 'deepseek-chat',
-    input: 'hello world',
-  });
-
-  const original = input.payload;
-  await withDemoteDeveloperToSystem(input, stubCtx, okEvents);
-
-  assertEquals(input.payload, original);
 });
 
 test('early-returns when flag is not set', async () => {

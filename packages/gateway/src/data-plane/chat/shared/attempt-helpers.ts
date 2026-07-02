@@ -2,7 +2,7 @@ import type { GatewayCtx } from './gateway-ctx.ts';
 import { recordUpstreamHttpFailure, upstreamPerformanceContext, withUpstreamTelemetry } from './upstream-telemetry.ts';
 import { requireRecordedDurationMs, type UpstreamLatencyRecorder } from '../../shared/telemetry/performance.ts';
 import type { ModelEndpoints, ProtocolFrame } from '@floway-dev/protocols/common';
-import { eventResult, readUpstreamApiError, type ChatTargetApi, type ExecuteResult, type ProviderCandidate, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamCallOptions } from '@floway-dev/provider';
+import { eventResult, readUpstreamApiError, type ChatTargetApi, type ExecuteResult, type ModelCandidate, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamCallOptions } from '@floway-dev/provider';
 
 // Per-protocol chat-target picker. Serve calls `canServe` to filter
 // candidates whose upstream wire cannot satisfy any preferred target;
@@ -54,18 +54,18 @@ export const chatTargetPicker = (preference: readonly ChatTargetApi[]): ChatTarg
 // (`or/gpt-4o` or `gpt-4o`). Usage and performance aggregates therefore key on
 // the canonical upstream id, and a dashboard slice over `model` rolls up both
 // surfaces of the same upstream model under one row.
-export const telemetryModelIdentity = (candidate: ProviderCandidate, modelKey: string): TelemetryModelIdentity => ({
+export const telemetryModelIdentity = (candidate: ModelCandidate, modelKey: string): TelemetryModelIdentity => ({
   model: candidate.model.id,
   upstream: candidate.provider.upstream,
   modelKey,
-  cost: candidate.provider.provider.getPricingForModelKey(modelKey),
+  cost: candidate.provider.instance.getPricingForModelKey(modelKey),
 });
 
 // Per-call UpstreamCallOptions for the chosen candidate; see
 // UpstreamCallOptions in `@floway-dev/provider` for the contract on each
 // field, especially header ownership.
 export const buildUpstreamCallOptions = (
-  candidate: ProviderCandidate,
+  candidate: ModelCandidate,
   ctx: GatewayCtx,
   recordUpstreamLatency: UpstreamCallOptions['recordUpstreamLatency'],
   headers: Headers,
@@ -89,7 +89,7 @@ export const buildUpstreamCallOptions = (
 // — and so doesn't consult the recorder.
 export const providerStreamResultToExecuteResult = async <TEvent>(
   providerResult: ProviderStreamResult<TEvent>,
-  candidate: ProviderCandidate,
+  candidate: ModelCandidate,
   targetApi: ChatTargetApi,
   ctx: GatewayCtx,
   recorder: UpstreamLatencyRecorder,

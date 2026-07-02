@@ -16,7 +16,7 @@ import { assertEquals, withMockedFetch } from '@floway-dev/test-utils';
 
 const baseRecord: UpstreamRecord = {
   id: 'up_test',
-  provider: 'custom',
+  kind: 'custom',
   name: 'Test Custom',
   enabled: true,
   sortOrder: 0,

@@ -35,7 +35,7 @@ const copilotConfig = {
 };
 
 const createBody = (overrides: Record<string, unknown> = {}) => ({
-  provider: 'custom',
+  kind: 'custom',
   name: 'Test custom upstream',
   config: customConfig,
   flag_overrides: {},
@@ -59,7 +59,7 @@ test('POST /api/upstreams creates custom upstreams and redacts bearer tokens', a
 
   assertEquals(resp.status, 201);
   const created = (await resp.json()) as JsonObject;
-  assertEquals(created.provider, 'custom');
+  assertEquals(created.kind, 'custom');
   assertEquals(created.config.apiKey, undefined);
   assertEquals(created.config.apiKeySet, true);
   assertEquals(created.config.baseUrl, 'https://custom.example.com');
@@ -100,15 +100,15 @@ test('POST /api/upstreams validates Azure models and redacts API keys', async ()
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
-  const invalid = await requestApp('/api/upstreams', authed(adminSession, createBody({ provider: 'azure', config: { ...azureConfig, models: [] } })));
+  const invalid = await requestApp('/api/upstreams', authed(adminSession, createBody({ kind: 'azure', config: { ...azureConfig, models: [] } })));
   assertEquals(invalid.status, 400);
   const invalidBody = (await invalid.json()) as { error?: string };
   assertEquals(invalidBody.error?.includes('models must be a non-empty array'), true);
 
-  const createdResp = await requestApp('/api/upstreams', authed(adminSession, createBody({ provider: 'azure', name: 'Azure', config: azureConfig })));
+  const createdResp = await requestApp('/api/upstreams', authed(adminSession, createBody({ kind: 'azure', name: 'Azure', config: azureConfig })));
   assertEquals(createdResp.status, 201);
   const created = (await createdResp.json()) as JsonObject;
-  assertEquals(created.provider, 'azure');
+  assertEquals(created.kind, 'azure');
   assertEquals(created.config.apiKey, undefined);
   assertEquals(created.config.apiKeySet, true);
   assertEquals(created.config.endpoint, 'https://example.openai.azure.com');
@@ -126,13 +126,13 @@ test('POST /api/upstreams creates Copilot upstream rows with redacted GitHub tok
   const created = await withMockedFetch(
     () => jsonResponse({ error: 'forbidden' }, 403),
     async () => {
-      const resp = await requestApp('/api/upstreams', authed(adminSession, createBody({ provider: 'copilot', name: 'Copilot', config: copilotConfig })));
+      const resp = await requestApp('/api/upstreams', authed(adminSession, createBody({ kind: 'copilot', name: 'Copilot', config: copilotConfig })));
       assertEquals(resp.status, 201);
       const body = (await resp.json()) as JsonObject;
       return body;
     },
   );
-  assertEquals(created.provider, 'copilot');
+  assertEquals(created.kind, 'copilot');
   assertEquals(created.config.githubToken, undefined);
   assertEquals(created.config.githubTokenSet, true);
   assertEquals(created.config.user.id, 12345);
@@ -141,7 +141,7 @@ test('POST /api/upstreams creates Copilot upstream rows with redacted GitHub tok
   assertEquals((stored?.config as Record<string, unknown>).githubToken, 'ghu_secret');
 });
 
-test('PATCH /api/upstreams rejects provider changes and preserves the row', async () => {
+test('PATCH /api/upstreams rejects kind changes and preserves the row', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
@@ -154,12 +154,12 @@ test('PATCH /api/upstreams rejects provider changes and preserves the row', asyn
       'content-type': 'application/json',
       'x-floway-session': adminSession,
     },
-    body: JSON.stringify({ provider: 'azure' }),
+    body: JSON.stringify({ kind: 'azure' }),
   });
 
   assertEquals(patch.status, 400);
-  assertEquals(((await patch.json()) as { error?: string }).error, 'provider cannot be changed');
-  assertEquals((await repo.upstreams.getById(created.id))?.provider, 'custom');
+  assertEquals(((await patch.json()) as { error?: string }).error, 'kind cannot be changed');
+  assertEquals((await repo.upstreams.getById(created.id))?.kind, 'custom');
 });
 
 test('PATCH /api/upstreams preserves omitted secrets and re-warms the models cache', async () => {
@@ -211,7 +211,7 @@ test('PATCH /api/upstreams keeps Azure as a single endpoint config', async () =>
   await repo.upstreams.deleteAll();
   await repo.upstreams.save({
     id: 'up_azure_single_endpoint',
-    provider: 'azure',
+    kind: 'azure',
     name: 'Azure Single Endpoint',
     enabled: true,
     sortOrder: 0,
@@ -258,7 +258,7 @@ test('GET /api/upstreams attaches models-cache freshness to every row', async ()
   // Three upstreams cover the three cache states: no row, warm row, warm row
   // with a follow-up failure annotated via setLastError.
   const baseRow = {
-    provider: 'custom' as const,
+    kind: 'custom' as const,
     enabled: true,
     sortOrder: 0,
     createdAt: '2026-06-01T00:00:00.000Z',
@@ -317,7 +317,7 @@ test('GET /api/upstream-options returns the minimal picker shape to admin and no
   const { repo, adminSession, apiKey } = await setupAppTest();
   await repo.upstreams.save({
     id: 'up_disabled_custom',
-    provider: 'custom',
+    kind: 'custom',
     name: 'Disabled Custom',
     enabled: false,
     sortOrder: 5,
@@ -332,8 +332,8 @@ test('GET /api/upstream-options returns the minimal picker shape to admin and no
   });
 
   const expected = [
-    { id: 'up_copilot', name: 'GitHub Copilot (tester)', provider: 'copilot', enabled: true },
-    { id: 'up_disabled_custom', name: 'Disabled Custom', provider: 'custom', enabled: false },
+    { id: 'up_copilot', name: 'GitHub Copilot (tester)', kind: 'copilot', enabled: true },
+    { id: 'up_disabled_custom', name: 'Disabled Custom', kind: 'custom', enabled: false },
   ];
 
   const adminResp = await requestApp('/api/upstream-options', { headers: { 'x-floway-session': adminSession } });
@@ -346,7 +346,7 @@ test('GET /api/upstream-options returns the minimal picker shape to admin and no
   assertEquals(userBody, expected);
   // No secret-bearing or operator-only fields leak through this endpoint.
   for (const row of userBody) {
-    assertEquals(Object.keys(row).sort(), ['enabled', 'id', 'name', 'provider']);
+    assertEquals(Object.keys(row).sort(), ['enabled', 'id', 'kind', 'name']);
   }
 });
 
@@ -363,7 +363,7 @@ test('POST /api/upstreams/fetch-models fetches a draft custom upstream model lis
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const resp = await requestApp('/api/upstreams/fetch-models', authed(adminSession, { provider: 'custom', config: customConfig }));
+      const resp = await requestApp('/api/upstreams/fetch-models', authed(adminSession, { kind: 'custom', config: customConfig }));
       assertEquals(resp.status, 200);
       const body = (await resp.json()) as { data: Array<Record<string, unknown>> };
       assertEquals(body.data.map(m => m.id), ['gpt-a', 'gpt-b']);
@@ -377,7 +377,7 @@ test('POST /api/upstreams/fetch-models rejects calls that supply a saved upstrea
   await repo.upstreams.deleteAll();
   await repo.upstreams.save({
     id: 'up_stored_secret',
-    provider: 'custom',
+    kind: 'custom',
     name: 'Stored Secret Custom',
     enabled: true,
     sortOrder: 0,
@@ -395,7 +395,7 @@ test('POST /api/upstreams/fetch-models rejects calls that supply a saved upstrea
   // (the SWR-cached path); fetch-models stays draft-only.
   const resp = await requestApp(
     '/api/upstreams/fetch-models',
-    authed(adminSession, { provider: 'custom', id: 'up_stored_secret', config: { ...customConfig, apiKey: '' } }),
+    authed(adminSession, { kind: 'custom', id: 'up_stored_secret', config: { ...customConfig, apiKey: '' } }),
   );
   assertEquals(resp.status, 400);
   const body = (await resp.json()) as { error: { message: string; type: string } };
@@ -433,7 +433,7 @@ test('POST /api/upstreams/fetch-models projects an ollama draft into UpstreamMod
     },
     async () => {
       const resp = await requestApp('/api/upstreams/fetch-models', authed(adminSession, {
-        provider: 'ollama',
+        kind: 'ollama',
         config: { baseUrl: 'https://ollama.com', apiKey: 'ollama_test' },
       }));
       assertEquals(resp.status, 200);
@@ -462,7 +462,7 @@ test('POST /api/upstreams/fetch-models surfaces upstream model-listing failures 
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const resp = await requestApp('/api/upstreams/fetch-models', authed(adminSession, { provider: 'custom', config: customConfig }));
+      const resp = await requestApp('/api/upstreams/fetch-models', authed(adminSession, { kind: 'custom', config: customConfig }));
       assertEquals(resp.status, 502);
       const body = (await resp.json()) as { error: { message: string; type: string } };
       assertEquals(body.error.type, 'api_error');
@@ -483,7 +483,7 @@ test('POST /api/upstreams/fetch-models surfaces an ollama /api/tags failure as 5
     },
     async () => {
       const resp = await requestApp('/api/upstreams/fetch-models', authed(adminSession, {
-        provider: 'ollama',
+        kind: 'ollama',
         config: { baseUrl: 'https://ollama.com', apiKey: 'ollama_test' },
       }));
       assertEquals(resp.status, 502);
@@ -498,7 +498,7 @@ test('POST /api/upstreams/fetch-models rejects a malformed draft config with 400
 
   // Blank token with no id and no stored secret to substitute: the runtime
   // assert rejects the empty apiKey, surfaced as a 400 validation error.
-  const resp = await requestApp('/api/upstreams/fetch-models', authed(adminSession, { provider: 'custom', config: { ...customConfig, apiKey: '' } }));
+  const resp = await requestApp('/api/upstreams/fetch-models', authed(adminSession, { kind: 'custom', config: { ...customConfig, apiKey: '' } }));
   assertEquals(resp.status, 400);
   const body = (await resp.json()) as { error: string };
   assertEquals(body.error.includes('apiKey'), true);
@@ -509,7 +509,7 @@ test('GET /api/upstreams/:id/models?refresh=true forces a fresh upstream fetch',
   await repo.upstreams.deleteAll();
   await repo.upstreams.save({
     id: 'up_refresh',
-    provider: 'custom',
+    kind: 'custom',
     name: 'Refresh Custom',
     enabled: true,
     sortOrder: 0,
@@ -561,7 +561,7 @@ test('GET /api/upstreams/:id/models resolves a saved upstream catalog and 404s f
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
-  const created = (await (await requestApp('/api/upstreams', authed(adminSession, createBody({ provider: 'azure', name: 'Az', config: azureConfig })))).json()) as { id: string };
+  const created = (await (await requestApp('/api/upstreams', authed(adminSession, createBody({ kind: 'azure', name: 'Az', config: azureConfig })))).json()) as { id: string };
 
   const resp = await requestApp(`/api/upstreams/${created.id}/models`, { headers: { 'x-floway-session': adminSession } });
   assertEquals(resp.status, 200);
@@ -645,7 +645,7 @@ test('POST /api/upstreams/fetch-models without an id still serves draft preview'
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const resp = await requestApp('/api/upstreams/fetch-models', authed(adminSession, { provider: 'custom', config: customConfig }));
+      const resp = await requestApp('/api/upstreams/fetch-models', authed(adminSession, { kind: 'custom', config: customConfig }));
       assertEquals(resp.status, 200);
       const body = (await resp.json()) as { data: Array<Record<string, unknown>> };
       assertEquals(body.data.map(m => m.id), ['draft-only']);
@@ -716,8 +716,8 @@ test('POST /api/upstreams/codex-import (callback) exchanges the SPA-supplied ver
         authed(adminSession, { name: 'ChatGPT Codex', callback: { code: 'AUTH_CODE', verifier: 'TEST_VERIFIER' } }),
       );
       assertEquals(resp.status, 201);
-      const created = (await resp.json()) as { provider: string; state: { accounts: Array<{ refresh_token_set: boolean }> } };
-      assertEquals(created.provider, 'codex');
+      const created = (await resp.json()) as { kind: string; state: { accounts: Array<{ refresh_token_set: boolean }> } };
+      assertEquals(created.kind, 'codex');
       assertEquals(created.state.accounts[0].refresh_token_set, true);
     },
   );
@@ -730,7 +730,7 @@ test('POST /api/upstreams/codex-import (auth_json) creates a codex upstream with
   const resp = await requestApp('/api/upstreams/codex-import', authed(adminSession, codexAuthJsonImport()));
   assertEquals(resp.status, 201);
   const created = (await resp.json()) as JsonObject;
-  assertEquals(created.provider, 'codex');
+  assertEquals(created.kind, 'codex');
   assertEquals(created.config.accounts[0].email, 'alice@example.com');
   assertEquals(created.config.accounts[0].chatgptAccountId, 'acc_test');
   assertEquals(created.config.accounts[0].planType, 'plus');
@@ -945,8 +945,8 @@ test('POST /api/upstreams/claude-code-import (callback) exchanges the SPA-suppli
         authed(adminSession, { name: 'Claude Code', callback: { code: 'AUTH_CODE', verifier: 'TEST_VERIFIER', state: 'TEST_STATE' } }),
       );
       assertEquals(resp.status, 201);
-      const created = (await resp.json()) as { provider: string; state: { accounts: Array<{ refreshTokenSet: boolean; accessToken: { expiresAt: number } | null }> } };
-      assertEquals(created.provider, 'claude-code');
+      const created = (await resp.json()) as { kind: string; state: { accounts: Array<{ refreshTokenSet: boolean; accessToken: { expiresAt: number } | null }> } };
+      assertEquals(created.kind, 'claude-code');
       assertEquals(created.state.accounts[0].refreshTokenSet, true);
       assertEquals(typeof created.state.accounts[0].accessToken?.expiresAt, 'number');
     },
@@ -966,7 +966,7 @@ test('POST /api/upstreams/claude-code-import (credentials_json) creates a row wi
       );
       assertEquals(resp.status, 201);
       const created = (await resp.json()) as JsonObject;
-      assertEquals(created.provider, 'claude-code');
+      assertEquals(created.kind, 'claude-code');
       assertEquals(created.config.accounts[0].email, 'alice@example.com');
       assertEquals(created.config.accounts[0].accountUuid, 'acc-uuid-1');
       // CLI subscriptionType + rateLimitTier verbatim from the persisted
@@ -1073,7 +1073,7 @@ test('POST /api/upstreams rejects a direct claude-code create with a redirect me
   const { adminSession } = await setupAppTest();
 
   const resp = await requestApp('/api/upstreams', authed(adminSession, {
-    provider: 'claude-code',
+    kind: 'claude-code',
     name: 'Claude Code',
     config: {},
   }));
@@ -1789,11 +1789,11 @@ test('POST /api/upstreams/claude-code-setup-token-import (callback) creates a se
       );
       assertEquals(resp.status, 201);
       const created = (await resp.json()) as {
-        id: string; provider: string;
+        id: string; kind: string;
         config: { accounts: Array<{ email: string | null; accountUuid: string }> };
         state: { accounts: Array<{ tokenKind: string; refreshTokenSet: boolean; accessToken: { expiresAt: number } | null }> };
       };
-      assertEquals(created.provider, 'claude-code');
+      assertEquals(created.kind, 'claude-code');
       assertEquals(created.state.accounts[0].tokenKind, 'setup-token');
       // No refresh token on the wire view — the serializer surfaces presence
       // as `refreshTokenSet`. For setup-token it's always false.

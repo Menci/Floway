@@ -1,0 +1,69 @@
+name: Build and Push
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 6 * * *'
+
+env:
+  IMAGE_PREFIX: menci/floway
+
+jobs:
+  build:
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - name: server
+          - name: web
+    name: ${{ matrix.target.name }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+      - name: Login to DockerHub
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Login to ghcr.io
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Generate Tag List
+        run: |
+          echo "TAGS<<EOF" >> $GITHUB_ENV
+
+          IMAGE_NAME="$IMAGE_PREFIX-$TARGET"
+          DATE="$(date +'%Y%m%d')"
+          for REGISTRY in {"","ghcr.io/"}; do
+              echo $REGISTRY$IMAGE_NAME:latest >> $GITHUB_ENV
+              echo $REGISTRY$IMAGE_NAME:$DATE.$RUN_ID >> $GITHUB_ENV
+          done
+
+          echo "EOF" >> $GITHUB_ENV
+        env:
+          TARGET: ${{ matrix.target.name }}
+          RUN_ID: ${{ github.run_id }}
+      - name: Build and Push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docker/Dockerfile
+          target: ${{ matrix.target.name }}
+          platforms: linux/amd64,linux/arm64,linux/arm/v7,linux/riscv64
+          push: true
+          tags: ${{ env.TAGS }}
+          cache-from: type=gha,scope=${{ matrix.target.name }}
+          cache-to: type=gha,scope=${{ matrix.target.name }},mode=max

@@ -3,33 +3,36 @@ import { test, vi } from 'vitest';
 import { responsesAttempt } from './attempt.ts';
 import { createStoredResponsesItemId, isStoredResponseId } from './items/format.ts';
 import * as outputModule from './items/output.ts';
-import { createResponsesHttpStore } from './items/store.ts';
+import { createResponsesHttpStore, createNonResponsesSourceStore } from './items/store.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import type { StoredResponsesItem } from '../../../repo/types.ts';
-import type { GatewayCtx } from '../shared/gateway-ctx.ts';
+import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { type ProviderCandidate, directFetcher, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions, type UpstreamModel } from '@floway-dev/provider';
-import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
+import { type ModelCandidate, directFetcher, type ProviderModel, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
+import { assert, assertEquals, stubProvider, stubInternalModel, stubProviderModel } from '@floway-dev/test-utils';
+import type { CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
 
 const API_KEY_ID = 'key_attempt_test';
 
-const makeGatewayCtx = (): GatewayCtx => ({
+const makeGatewayCtx = (store?: ChatGatewayCtx['store']): ChatGatewayCtx => ({
   apiKeyId: API_KEY_ID,
   upstreamIds: null,
   wantsStream: true,
   runtimeLocation: 'TEST',
   currentColo: 'TEST',
   dump: null,
+  responseHeaders: new Headers(),
   backgroundScheduler: () => {},
   requestStartedAt: 0,
+  store: store ?? createNonResponsesSourceStore(API_KEY_ID),
 });
 
-const makePayload = (overrides: Partial<ResponsesPayload> = {}): ResponsesPayload => ({
+const makePayload = (overrides: Partial<CanonicalResponsesPayload> = {}): CanonicalResponsesPayload => ({
   model: 'test-model',
-  input: 'hello',
+  input: [{ type: 'message', role: 'user', content: 'hello' }],
   ...overrides,
 });
 
@@ -55,19 +58,25 @@ const makeProviderEvents = async function* (events: readonly ResponsesStreamEven
   yield doneFrame();
 };
 
-const makeCandidate = (callResponses: (model: UpstreamModel, body: Omit<ResponsesPayload, 'model'>, action: ResponsesAction, signal: AbortSignal | undefined, opts: UpstreamCallOptions) => Promise<ProviderResponsesResult>): ProviderCandidate => {
+const makeCandidate = (
+  callResponses: (model: ProviderModel, body: Omit<ResponsesPayload, 'model'>, action: ResponsesAction, signal: AbortSignal | undefined, opts: UpstreamCallOptions) => Promise<ProviderResponsesResult>,
+  enabledFlags: ReadonlySet<string> = new Set<string>(),
+): ModelCandidate => {
   const provider = stubProvider({ callResponses });
+  const upstream = 'up_test';
   return {
     provider: {
-      upstream: 'up_test',
-      providerKind: 'custom',
-      name: 'up_test',
+      upstream,
+      kind: 'custom',
+      name: upstream,
       disabledPublicModelIds: [],
       modelPrefix: null,
-      provider,
+      instance: provider,
       supportsResponsesItemReference: true,
     },
-    model: stubUpstreamModel(),
+    model: stubInternalModel({
+      providerModels: { [upstream]: stubProviderModel({ enabledFlags }) },
+    }, upstream),
     fetcher: directFetcher,
   };
 };
@@ -120,14 +129,13 @@ test('generate native success wraps the upstream event stream once', async () =>
   }));
 
   const candidate = makeCandidate(callResponses);
-  const ctx = makeGatewayCtx();
   const store = createResponsesHttpStore(API_KEY_ID, true);
+  const ctx = makeGatewayCtx(store);
   const commitSpy = vi.spyOn(store, 'commitSnapshot').mockResolvedValue();
 
   const result = await responsesAttempt.generate({
     payload: makePayload(),
     ctx,
-    store,
     candidate,
     headers: new Headers(),
   });
@@ -192,8 +200,7 @@ test('generate derives snapshotMode=replace when the upstream emits a compaction
         { type: 'message', role: 'user', content: 'kept message' },
       ],
     }),
-    ctx: makeGatewayCtx(),
-    store,
+    ctx: makeGatewayCtx(store),
     candidate,
     headers: new Headers(),
   });
@@ -240,8 +247,7 @@ test('generate returns failure when rewrite throws item-not-found', async () => 
 
   const result = await responsesAttempt.generate({
     payload: makePayload({ input: [{ type: 'item_reference', id: missingId }] }),
-    ctx: makeGatewayCtx(),
-    store,
+    ctx: makeGatewayCtx(store),
     candidate,
     headers: new Headers(),
   });
@@ -269,8 +275,7 @@ test('generate passes non-events provider result through unchanged', async () =>
   const candidate = makeCandidate(callResponses);
   const result = await responsesAttempt.generate({
     payload: makePayload(),
-    ctx: makeGatewayCtx(),
-    store: createResponsesHttpStore(API_KEY_ID, true),
+    ctx: makeGatewayCtx(createResponsesHttpStore(API_KEY_ID, true)),
     candidate,
     headers: new Headers(),
   });
@@ -306,7 +311,7 @@ test('compact reshapes the trigger turn into a result and derives snapshotMode=r
     output: [compactionItem] as unknown as ResponsesResult['output'],
   };
 
-  const callResponses = vi.fn(async (_model: UpstreamModel, _body: Omit<ResponsesPayload, 'model'>, action: ResponsesAction): Promise<ProviderResponsesResult> => {
+  const callResponses = vi.fn(async (_model: ProviderModel, _body: Omit<ResponsesPayload, 'model'>, action: ResponsesAction): Promise<ProviderResponsesResult> => {
     if (action !== 'compact') throw new Error(`compact candidate received action='${action}'`);
     return { action: 'compact', ok: true, result: compactionResult, modelKey: 'test-model-key' };
   });
@@ -321,8 +326,7 @@ test('compact reshapes the trigger turn into a result and derives snapshotMode=r
       ],
     }),
     action: 'compact',
-    ctx: makeGatewayCtx(),
-    store,
+    ctx: makeGatewayCtx(store),
     candidate,
     headers: new Headers(),
   });
@@ -352,7 +356,7 @@ test('compact reshapes the trigger turn into a result and derives snapshotMode=r
 test('generate inherits invocation headers across translation to Messages', async () => {
   installRepo();
   let observedHeaders: Headers | undefined;
-  const upstreamModel = stubUpstreamModel({ endpoints: { messages: {} } });
+  const upstreamModel = stubInternalModel({ endpoints: { messages: {} } }, 'up_test');
   const messagesProvider = stubProvider({
     callMessages: async (_model, _body, _signal, opts): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
       observedHeaders = opts.headers;
@@ -375,10 +379,10 @@ test('generate inherits invocation headers across translation to Messages', asyn
       };
     },
   });
-  const candidate: ProviderCandidate = {
+  const candidate: ModelCandidate = {
     provider: {
-      upstream: 'up_test', providerKind: 'custom', name: 'up_test',
-      disabledPublicModelIds: [], modelPrefix: null, provider: messagesProvider, supportsResponsesItemReference: true,
+      upstream: 'up_test', kind: 'custom', name: 'up_test',
+      disabledPublicModelIds: [], modelPrefix: null, instance: messagesProvider, supportsResponsesItemReference: true,
     },
     model: upstreamModel,
     fetcher: directFetcher,
@@ -386,8 +390,7 @@ test('generate inherits invocation headers across translation to Messages', asyn
 
   const result = await responsesAttempt.generate({
     payload: makePayload(),
-    ctx: makeGatewayCtx(),
-    store: createResponsesHttpStore(API_KEY_ID, true),
+    ctx: makeGatewayCtx(createResponsesHttpStore(API_KEY_ID, true)),
     candidate,
     headers: new Headers({ 'x-test': 'abc' }),
   });
@@ -463,12 +466,7 @@ test('generate seeds privatePayload before interceptors so the web-search shim r
     capturedBody = body as { input?: unknown[] };
     return { action: 'generate', ok: true, events: makeProviderEvents(upstreamEvents), modelKey: 'test-model-key', headers: new Headers() };
   });
-  const candidate = makeCandidate(callResponses);
-  // The shim early-returns inactive unless the model has the flag. The
-  // candidate shape is `readonly`, so swap the enabledFlags on the model via
-  // Object.assign.
-  const enabledFlags = new Set(['responses-web-search-shim']);
-  Object.assign(candidate.model, { enabledFlags });
+  const candidate = makeCandidate(callResponses, new Set(['responses-web-search-shim']));
 
   const store = createResponsesHttpStore(API_KEY_ID, true);
   await store.loadInputItems({
@@ -495,8 +493,7 @@ test('generate seeds privatePayload before interceptors so the web-search shim r
       ],
       tools: [{ type: 'web_search' }],
     }),
-    ctx: makeGatewayCtx(),
-    store,
+    ctx: makeGatewayCtx(store),
     candidate,
     headers: new Headers(),
   });
@@ -543,8 +540,7 @@ test('generate propagates upstream response headers onto the EventResult so resp
   const store = createResponsesHttpStore(API_KEY_ID, true);
   const result = await responsesAttempt.generate({
     payload: makePayload(),
-    ctx: makeGatewayCtx(),
-    store,
+    ctx: makeGatewayCtx(store),
     candidate,
     headers: new Headers(),
   });

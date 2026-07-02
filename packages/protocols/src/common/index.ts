@@ -1,3 +1,4 @@
+export * from './aliases.ts';
 export * from './capabilities.ts';
 export * from './models.ts';
 export * from './openai-stream.ts';

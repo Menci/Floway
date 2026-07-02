@@ -59,7 +59,3 @@ test('rewrites every input_text block in a multi-block assistant message', () =>
     ],
   });
 });
-
-test('passes through string-typed payload.input verbatim', () => {
-  assertEquals(normalizeAssistantInputText('hello'), 'hello');
-});

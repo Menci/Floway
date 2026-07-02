@@ -369,6 +369,8 @@ export const translateResponsesToMessages = async (payload: ResponsesPayload, op
   if (formatSchema) outputConfig.format = { type: 'json_schema', schema: formatSchema };
   const hasOutputConfig = Object.keys(outputConfig).length > 0;
 
+  const thinking = effort === 'none' ? { type: 'disabled' as const } : undefined;
+
   // `service_tier: 'fast'` from the Responses caller maps to Anthropic's
   // `speed: 'fast'`; all other defined service_tier values pass through as
   // `service_tier` on the Messages wire (Anthropic accepts 'auto',
@@ -393,7 +395,7 @@ export const translateResponsesToMessages = async (payload: ResponsesPayload, op
     stream: true,
     tools,
     tool_choice: translateToolChoice(payload.tool_choice),
-    ...(effort === 'none' ? { thinking: { type: 'disabled' as const } } : {}),
+    ...(thinking ? { thinking } : {}),
     ...(hasOutputConfig ? { output_config: outputConfig } : {}),
     ...serviceTierFields,
   };

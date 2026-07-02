@@ -6,7 +6,7 @@ import type { ChatCompletionsStreamEvent, ChatCompletionsPayload } from '@floway
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
-import { assertEquals, stubUpstreamModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import { assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const stubRequest = {};
 
@@ -16,7 +16,7 @@ const okEvents = (): Promise<ExecuteResult<ProtocolFrame<ChatCompletionsStreamEv
 const invocation = (payload: ChatCompletionsPayload): ChatCompletionsBoundaryCtx => ({
   payload,
   headers: new Headers(),
-  model: stubUpstreamModel({ endpoints: { chatCompletions: {} } }),
+  model: stubProviderModel({ endpoints: { chatCompletions: {} } }),
 });
 
 test('Chat Completions initiator is user when the last message is from the user', async () => {

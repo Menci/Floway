@@ -51,7 +51,7 @@ const onSaved = async () => {
     v-if="provider"
     mode="create"
     :record="null"
-    :initial-provider="provider"
+    :initial-kind="provider"
     :next-sort-order="data.data.value.nextSortOrder"
     :flags="data.data.value.flags"
     @saved="onSaved"

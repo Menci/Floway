@@ -1,8 +1,9 @@
 import { chatCompletionsContentToResponsesInputContent, chatCompletionsContentToText } from '../shared/chat-completions-and-responses/content.ts';
 import { scalarToResponsesReasoningItem, translateChatCompletionsReasoningItems } from '../shared/chat-completions-and-responses/reasoning.ts';
+import { type CanonicalResponsesPayload } from '../shared/via-responses/responses-items.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
 import type { ChatCompletionsPayload, ChatCompletionsTool } from '@floway-dev/protocols/chat-completions';
-import type { ResponsesInputItem, ResponsesInputReasoning, ResponsesPayload, ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
+import type { ResponsesInputItem, ResponsesInputReasoning, ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
 
 const translateChatTools = (tools?: ChatCompletionsTool[] | null): ResponsesTool[] | null =>
   tools?.length
@@ -20,7 +21,7 @@ const translateChatTools = (tools?: ChatCompletionsTool[] | null): ResponsesTool
 const translateChatToolChoice = (choice?: ChatCompletionsPayload['tool_choice']): ResponsesToolChoice =>
   choice == null ? 'auto' : typeof choice === 'string' ? choice : { type: 'function', name: choice.function.name };
 
-export const translateChatCompletionsToResponses = (payload: ChatCompletionsPayload): ResponsesPayload => {
+export const translateChatCompletionsToResponses = (payload: ChatCompletionsPayload): CanonicalResponsesPayload => {
   const instructions: string[] = [];
   const input: ResponsesInputItem[] = [];
   let hoistSystemPrefix = true;
@@ -113,6 +114,12 @@ export const translateChatCompletionsToResponses = (payload: ChatCompletionsPayl
 
   const responseTextConfig = payload.response_format === undefined ? undefined : payload.response_format === null ? null : { format: payload.response_format };
 
+  // Chat's `reasoning_effort: 'none'` disables reasoning without a Responses
+  // equivalent (Responses `reasoning.effort` has no 'none' member); drop the
+  // field instead of forwarding a value the upstream rejects.
+  const reasoningEffort = payload.reasoning_effort && payload.reasoning_effort !== 'none' ? payload.reasoning_effort : undefined;
+  const reasoning = reasoningEffort !== undefined ? { effort: reasoningEffort } : undefined;
+
   return {
     model: payload.model,
     input,
@@ -135,7 +142,7 @@ export const translateChatCompletionsToResponses = (payload: ChatCompletionsPayl
     // https://developers.openai.com/api/docs/guides/migrate-to-responses
     ...(payload.store !== undefined ? { store: payload.store } : {}),
     ...(payload.parallel_tool_calls !== undefined ? { parallel_tool_calls: payload.parallel_tool_calls } : {}),
-    ...(payload.reasoning_effort != null ? { reasoning: { effort: payload.reasoning_effort } } : {}),
+    ...(reasoning ? { reasoning } : {}),
     ...(responseTextConfig !== undefined ? { text: responseTextConfig } : {}),
     ...(payload.prompt_cache_key !== undefined ? { prompt_cache_key: payload.prompt_cache_key } : {}),
     ...(payload.safety_identifier !== undefined ? { safety_identifier: payload.safety_identifier } : {}),

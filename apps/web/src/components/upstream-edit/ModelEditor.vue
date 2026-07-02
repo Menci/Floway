@@ -4,7 +4,9 @@ import { computed, ref, watch } from 'vue';
 import EndpointsField from './EndpointsField.vue';
 import FlagOverridesEditor from './FlagOverridesEditor.vue';
 import { configOf, defaultEndpointsForKind, publicIdOf, titleFor, type Row } from './modelRows.ts';
-import type { BillingDimension, FlagDef, ModelKind, ModelPricing, UpstreamChatConfig, UpstreamModelConfig, UpstreamProviderKind } from '../../api/types.ts';
+import type { AnnouncedMetadata, BillingDimension, FlagDef, ModelKind, ModelPricing, UpstreamChatConfig, UpstreamModelConfig, UpstreamProviderKind } from '../../api/types.ts';
+import { parseOptionalNumber } from '../../utils/parse-optional-number.ts';
+import ChatMetadataEditor from '../shared/ChatMetadataEditor.vue';
 import { Button, Input, Select, Switch, Tooltip } from '@floway-dev/ui';
 
 const props = defineProps<{
@@ -63,27 +65,6 @@ const patch = (next: Partial<UpstreamModelConfig>) => {
 const setKind = (k: ModelKind) => {
   if (!editable.value || !config.value) return;
   patch({ kind: k, endpoints: defaultEndpointsForKind(k, config.value.endpoints) });
-};
-
-const parseOptionalNumber = (raw: string | number | null | undefined): number | undefined => {
-  if (raw === '' || raw === null || raw === undefined) return undefined;
-  const num = Number(raw);
-  // Backend pricing validators reject negatives (see `nonNegativeNumberField`
-  // in packages/provider/src/model-config.ts); drop them at the form boundary
-  // so a typo doesn't stage data the next PUT will 400 on.
-  return Number.isFinite(num) && num >= 0 ? num : undefined;
-};
-
-const updateLimit = (
-  key: 'max_context_window_tokens' | 'max_prompt_tokens' | 'max_output_tokens',
-  raw: string | number | null | undefined,
-) => {
-  if (!config.value) return;
-  const limits = { ...(config.value.limits ?? {}) };
-  const num = parseOptionalNumber(raw);
-  if (num === undefined) delete limits[key];
-  else limits[key] = num;
-  patch({ limits: Object.keys(limits).length > 0 ? limits : undefined });
 };
 
 const updateCost = (key: BillingDimension, raw: string | number | null | undefined) => {
@@ -255,44 +236,23 @@ const updateFlagOverrides = (values: Record<string, boolean>) => {
 
 // ── Chat metadata ──────────────────────────────────────────────────────────
 
-// Known Codex CLI effort presets as of v0.137. Codex's wire type is open
-// (ReasoningEffort::Custom(String)) so any string is accepted upstream;
-// these are just the convenient quick-adds. See:
-// https://github.com/openai/codex/blob/main/codex-rs/protocol/src/openai_models.rs
-const REASONING_LEVELS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
-
-// Free-typing input for adding a custom reasoning level not in the quick-add list.
-const reasoningLevelInput = ref('');
-
-// Resync input buffer when the active row changes.
-watch(() => props.row?.uiId, () => {
-  reasoningLevelInput.value = '';
+// Mirror the shared editor's value shape: pull the model's `limits` +
+// `chat` block out of the row config, hand it to ChatMetadataEditor,
+// and forward edits back through `patch()`.
+const chatMetadataValue = computed<AnnouncedMetadata | undefined>(() => {
+  if (!config.value) return undefined;
+  const out: AnnouncedMetadata = {};
+  if (config.value.limits) out.limits = config.value.limits;
+  if (config.value.chat) out.chat = config.value.chat;
+  return out;
 });
 
-const chatImageInput = computed<boolean>(
-  () => config.value?.chat?.modalities?.input.includes('image') ?? false,
-);
-
-// ── Reasoning sub-block enabled states ────────────────────────────────────
-
-const effortEnabled = computed(() => config.value?.chat?.reasoning?.effort !== undefined);
-const budgetTokensEnabled = computed(() => config.value?.chat?.reasoning?.budget_tokens !== undefined);
-const adaptiveEnabled = computed(() => config.value?.chat?.reasoning?.adaptive === true);
-const mandatoryEnabled = computed(() => config.value?.chat?.reasoning?.mandatory === true);
-
-// Mandatory is exclusive: when enabled it dominates and the three operator-
-// controlled toggles disappear. When any of those is on, Mandatory is locked
-// off. UI-only constraint (the schema would technically accept any subset).
-const anyControlledEnabled = computed(() => effortEnabled.value || budgetTokensEnabled.value || adaptiveEnabled.value);
-const controlledDisabled = computed(() => !editable.value || mandatoryEnabled.value);
-const mandatoryDisabled = computed(() => !editable.value || anyControlledEnabled.value);
-
-const supportedEfforts = computed<string[]>(
-  () => config.value?.chat?.reasoning?.effort?.supported ?? [],
-);
-const presetEffortLevels = computed(() => REASONING_LEVELS.filter(level => !supportedEfforts.value.includes(level)));
-
-// ── Validity ───────────────────────────────────────────────────────────────
+const onChatMetadataChange = (next: AnnouncedMetadata | undefined) => {
+  // The editor builds `chat` through fresh object literals — its
+  // `readonly` modality arrays are nominally typed, never frozen, so the
+  // mutable `UpstreamChatConfig` shape held in `config` accepts them.
+  patch({ limits: next?.limits, chat: next?.chat as UpstreamChatConfig | undefined });
+};
 
 // A chat row is invalid when:
 // - effort is enabled but supported list is empty
@@ -300,209 +260,23 @@ const presetEffortLevels = computed(() => REASONING_LEVELS.filter(level => !supp
 // - budget_tokens is enabled but max < min (when both are set)
 const isReasoningValid = computed<boolean>(() => {
   const reasoning = config.value?.chat?.reasoning;
+  if (reasoning === undefined) return true;
 
-  if (effortEnabled.value) {
-    const effort = reasoning?.effort;
-    if (!effort || effort.supported.length === 0) return false;
+  if (reasoning.effort !== undefined) {
+    const effort = reasoning.effort;
+    if (effort.supported.length === 0) return false;
     if (effort.default === '' || !effort.supported.includes(effort.default)) return false;
   }
 
-  if (budgetTokensEnabled.value) {
-    const bt = reasoning?.budget_tokens;
-    if (bt?.min !== undefined && bt?.max !== undefined && bt.max < bt.min) return false;
+  if (reasoning.budget_tokens !== undefined) {
+    const bt = reasoning.budget_tokens;
+    if (bt.min !== undefined && bt.max !== undefined && bt.max < bt.min) return false;
   }
 
   return true;
 });
 
 watch(isReasoningValid, valid => { emit('validity-change', valid); }, { immediate: true });
-
-// ── Chat state builder ─────────────────────────────────────────────────────
-
-const buildNextChat = (partial: Partial<UpstreamChatConfig>): UpstreamChatConfig | undefined => {
-  const base = config.value?.chat ?? {};
-  const next: UpstreamChatConfig = { ...base, ...partial };
-
-  // Normalise: omit modalities when it would only carry the default (text-only) shape.
-  const hasImageInput = next.modalities?.input.includes('image') === true;
-  next.modalities = hasImageInput
-    ? { input: ['text', 'image'], output: ['text'] }
-    : undefined;
-
-  // Return undefined (omit chat key entirely) when nothing is configured.
-  if (!next.modalities && !next.reasoning) return undefined;
-  return next;
-};
-
-// Build a reasoning object with a single key updated, dropping undefined keys.
-const buildNextReasoning = (
-  update: Partial<NonNullable<UpstreamChatConfig['reasoning']>>,
-): UpstreamChatConfig['reasoning'] => {
-  const base = config.value?.chat?.reasoning ?? {};
-  const merged = { ...base, ...update };
-  // Drop keys explicitly set to undefined.
-  const cleaned = Object.fromEntries(
-    Object.entries(merged).filter(([, v]) => v !== undefined),
-  ) as NonNullable<UpstreamChatConfig['reasoning']>;
-  return Object.keys(cleaned).length > 0 ? cleaned : undefined;
-};
-
-const toggleImageInput = (on: boolean) => {
-  if (!editable.value) return;
-  patch({ chat: buildNextChat({ modalities: on ? { input: ['text', 'image'], output: ['text'] } : undefined }) });
-};
-
-// ── Effort sub-block ───────────────────────────────────────────────────────
-
-const toggleEffort = (on: boolean) => {
-  if (!editable.value) return;
-  const reasoning = on
-    ? buildNextReasoning({ effort: { supported: ['low', 'medium', 'high'], default: 'medium' } })
-    : buildNextReasoning({ effort: undefined });
-  patch({ chat: buildNextChat({ reasoning }) });
-};
-
-const addReasoningLevel = (level: string) => {
-  if (!editable.value || !config.value) return;
-  const trimmed = level.trim();
-  if (!trimmed) return;
-  const current = supportedEfforts.value;
-  if (current.includes(trimmed)) return;
-  const updated = [...current, trimmed];
-  const existing = config.value.chat?.reasoning?.effort;
-  patch({ chat: buildNextChat({ reasoning: buildNextReasoning({ effort: { supported: updated, default: existing?.default ?? '' } }) }) });
-};
-
-const removeReasoningLevel = (level: string) => {
-  if (!editable.value || !config.value) return;
-  const current = supportedEfforts.value;
-  const removedIndex = current.indexOf(level);
-  const updated = current.filter(e => e !== level);
-  const existingEffort = config.value.chat?.reasoning?.effort;
-  // The default must always be one of the supported levels (or empty when the
-  // list itself is empty). When the operator deletes the current default, pick
-  // the neighbor that slides into the same index slot — falling back to the
-  // new tail when the removed entry was the last one.
-  let nextDefault = existingEffort?.default ?? '';
-  if (existingEffort?.default === level) {
-    if (updated.length === 0) nextDefault = '';
-    else if (removedIndex < updated.length) nextDefault = updated[removedIndex]!;
-    else nextDefault = updated[updated.length - 1]!;
-  }
-  // Keep the effort sub-block even when no levels remain — the empty-list
-  // warning replaces the tag row in-place so the user sees what's needed
-  // without the toggle silently flipping off.
-  const nextEffort = { supported: updated, default: nextDefault };
-  patch({ chat: buildNextChat({ reasoning: buildNextReasoning({ effort: nextEffort }) }) });
-};
-
-const commitReasoningInput = () => {
-  const trimmed = reasoningLevelInput.value.trim();
-  if (!trimmed) return;
-  addReasoningLevel(trimmed);
-  reasoningLevelInput.value = '';
-};
-
-const setDefaultEffort = (value: string) => {
-  if (!editable.value || !config.value) return;
-  const current = supportedEfforts.value;
-  patch({ chat: buildNextChat({ reasoning: buildNextReasoning({ effort: { supported: current, default: value } }) }) });
-};
-
-// ── Effort tag drag-to-reorder ─────────────────────────────────────────────
-//
-// HTML5 DnD distinguishes drag from click via a built-in pointer-distance
-// threshold: a mousedown+mouseup with no movement still fires `click` (and
-// sets the default), while a mousedown+drag+drop suppresses click entirely.
-// So the two affordances coexist on the same button element.
-const draggedEffortIndex = ref<number | null>(null);
-const dragOverEffortIndex = ref<number | null>(null);
-
-const onEffortDragStart = (index: number, e: DragEvent) => {
-  if (!editable.value) return;
-  draggedEffortIndex.value = index;
-  if (e.dataTransfer) {
-    e.dataTransfer.effectAllowed = 'move';
-    // Firefox requires setData to actually initiate the drag.
-    e.dataTransfer.setData('text/plain', String(index));
-  }
-};
-
-const onEffortDragOver = (index: number, e: DragEvent) => {
-  if (draggedEffortIndex.value === null) return;
-  e.preventDefault();
-  if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
-  dragOverEffortIndex.value = index;
-};
-
-const onEffortDragLeave = (index: number) => {
-  if (dragOverEffortIndex.value === index) dragOverEffortIndex.value = null;
-};
-
-const onEffortDrop = (index: number, e: DragEvent) => {
-  e.preventDefault();
-  const from = draggedEffortIndex.value;
-  draggedEffortIndex.value = null;
-  dragOverEffortIndex.value = null;
-  if (from === null || from === index || !config.value) return;
-  const current = [...supportedEfforts.value];
-  const [moved] = current.splice(from, 1);
-  if (moved === undefined) return;
-  current.splice(index, 0, moved);
-  const existing = config.value.chat?.reasoning?.effort;
-  patch({ chat: buildNextChat({ reasoning: buildNextReasoning({ effort: { supported: current, default: existing?.default ?? '' } }) }) });
-};
-
-const onEffortDragEnd = () => {
-  draggedEffortIndex.value = null;
-  dragOverEffortIndex.value = null;
-};
-
-// ── Budget tokens sub-block ────────────────────────────────────────────────
-
-const toggleBudgetTokens = (on: boolean) => {
-  if (!editable.value) return;
-  const reasoning = on
-    ? buildNextReasoning({ budget_tokens: {} })
-    : buildNextReasoning({ budget_tokens: undefined });
-  patch({ chat: buildNextChat({ reasoning }) });
-};
-
-const updateBudgetTokensMin = (raw: string | number | null | undefined) => {
-  if (!editable.value || !config.value) return;
-  const num = parseOptionalNumber(raw);
-  const current = config.value.chat?.reasoning?.budget_tokens ?? {};
-  const next = { ...current };
-  if (num === undefined) delete next.min; else next.min = num;
-  patch({ chat: buildNextChat({ reasoning: buildNextReasoning({ budget_tokens: next }) }) });
-};
-
-const updateBudgetTokensMax = (raw: string | number | null | undefined) => {
-  if (!editable.value || !config.value) return;
-  const num = parseOptionalNumber(raw);
-  const current = config.value.chat?.reasoning?.budget_tokens ?? {};
-  const next = { ...current };
-  if (num === undefined) delete next.max; else next.max = num;
-  patch({ chat: buildNextChat({ reasoning: buildNextReasoning({ budget_tokens: next }) }) });
-};
-
-// ── Adaptive / Mandatory toggles ───────────────────────────────────────────
-
-const toggleAdaptive = (on: boolean) => {
-  if (!editable.value) return;
-  const reasoning = on
-    ? buildNextReasoning({ adaptive: true })
-    : buildNextReasoning({ adaptive: undefined });
-  patch({ chat: buildNextChat({ reasoning }) });
-};
-
-const toggleMandatory = (on: boolean) => {
-  if (!editable.value) return;
-  const reasoning = on
-    ? buildNextReasoning({ mandatory: true })
-    : buildNextReasoning({ mandatory: undefined });
-  patch({ chat: buildNextChat({ reasoning }) });
-};
 </script>
 
 <template>
@@ -608,47 +382,13 @@ const toggleMandatory = (on: boolean) => {
           />
         </section>
 
-        <section v-if="rowKind === 'chat'">
-          <div class="mb-3 flex items-baseline gap-3">
-            <h3 class="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Context Limits</h3>
-            <span class="text-[11px] text-gray-500">tokens — leave blank to inherit upstream defaults</span>
-          </div>
-          <div class="grid gap-3 sm:grid-cols-3">
-            <label class="block space-y-1.5">
-              <span class="block text-xs font-medium text-gray-500">Context Window</span>
-              <Input
-                type="number"
-                :model-value="config.limits?.max_context_window_tokens"
-                :readonly="!editable"
-                placeholder="e.g. 1050000"
-                class="font-mono"
-                @update:model-value="v => updateLimit('max_context_window_tokens', v)"
-              />
-            </label>
-            <label class="block space-y-1.5">
-              <span class="block text-xs font-medium text-gray-500">Prompt Tokens</span>
-              <Input
-                type="number"
-                :model-value="config.limits?.max_prompt_tokens"
-                :readonly="!editable"
-                placeholder="e.g. 922000"
-                class="font-mono"
-                @update:model-value="v => updateLimit('max_prompt_tokens', v)"
-              />
-            </label>
-            <label class="block space-y-1.5">
-              <span class="block text-xs font-medium text-gray-500">Output Tokens</span>
-              <Input
-                type="number"
-                :model-value="config.limits?.max_output_tokens"
-                :readonly="!editable"
-                placeholder="e.g. 128000"
-                class="font-mono"
-                @update:model-value="v => updateLimit('max_output_tokens', v)"
-              />
-            </label>
-          </div>
-        </section>
+        <ChatMetadataEditor
+          v-if="rowKind !== 'image'"
+          :model-value="chatMetadataValue"
+          :kind="rowKind"
+          :mode="editable ? 'manual' : 'auto'"
+          @update:model-value="onChatMetadataChange"
+        />
 
         <section>
           <div class="mb-3 flex items-baseline gap-3">
@@ -786,147 +526,6 @@ const toggleMandatory = (on: boolean) => {
           </div>
         </section>
 
-        <section v-if="rowKind === 'chat'">
-          <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
-            <h3 class="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Modalities</h3>
-            <label class="flex items-center gap-2" :class="editable ? 'cursor-pointer' : 'cursor-not-allowed'">
-              <Switch
-                :model-value="chatImageInput"
-                :disabled="!editable"
-                @update:model-value="v => toggleImageInput(v === true)"
-              />
-              <span class="text-xs" :class="chatImageInput ? 'text-white' : 'text-gray-500'">Image input</span>
-            </label>
-          </div>
-        </section>
-
-        <section v-if="rowKind === 'chat'">
-          <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
-            <h3 class="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Reasoning</h3>
-            <label class="flex items-center gap-2" :class="controlledDisabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'">
-              <Switch :model-value="effortEnabled" :disabled="controlledDisabled" @update:model-value="v => toggleEffort(v === true)" />
-              <span class="text-xs" :class="effortEnabled ? 'text-white' : 'text-gray-500'">Effort levels</span>
-            </label>
-            <label class="flex items-center gap-2" :class="controlledDisabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'">
-              <Switch :model-value="budgetTokensEnabled" :disabled="controlledDisabled" @update:model-value="v => toggleBudgetTokens(v === true)" />
-              <span class="text-xs" :class="budgetTokensEnabled ? 'text-white' : 'text-gray-500'">Budget tokens</span>
-            </label>
-            <label class="flex items-center gap-2" :class="controlledDisabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'">
-              <Switch :model-value="adaptiveEnabled" :disabled="controlledDisabled" @update:model-value="v => toggleAdaptive(v === true)" />
-              <span class="text-xs" :class="adaptiveEnabled ? 'text-white' : 'text-gray-500'">Adaptive</span>
-              <Tooltip content="Model self-selects reasoning effort"><span class="text-[10px] text-gray-600">?</span></Tooltip>
-            </label>
-            <label class="flex items-center gap-2" :class="mandatoryDisabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'">
-              <Switch :model-value="mandatoryEnabled" :disabled="mandatoryDisabled" @update:model-value="v => toggleMandatory(v === true)" />
-              <span class="text-xs" :class="mandatoryEnabled ? 'text-white' : 'text-gray-500'">Mandatory</span>
-              <Tooltip content="Reasoning is always applied; caller cannot opt out"><span class="text-[10px] text-gray-600">?</span></Tooltip>
-            </label>
-          </div>
-
-          <div v-if="effortEnabled" class="mt-3 space-y-1.5 border-l-2 border-white/[0.08] pl-3">
-            <div class="flex min-h-[1.625rem] flex-wrap items-center gap-x-3 gap-y-1.5">
-              <span class="text-xs font-semibold text-gray-300">Effort levels</span>
-              <span class="text-[11px] text-gray-500">(click to set default)</span>
-              <template v-if="supportedEfforts.length > 0">
-                <button
-                  v-for="(level, index) in supportedEfforts"
-                  :key="level"
-                  type="button"
-                  class="inline-flex items-center gap-1 rounded border px-2 py-0.5 font-mono text-[11px] transition-colors"
-                  :class="[
-                    config.chat?.reasoning?.effort?.default === level
-                      ? 'border-accent-cyan/50 bg-accent-cyan/10 text-accent-cyan font-semibold'
-                      : 'border-white/15 bg-white/[0.07] text-gray-300 hover:border-white/30 hover:text-white',
-                    editable ? 'cursor-grab active:cursor-grabbing' : 'cursor-not-allowed',
-                    draggedEffortIndex === index && 'opacity-40',
-                    dragOverEffortIndex === index && draggedEffortIndex !== index && 'ring-1 ring-accent-cyan',
-                  ]"
-                  :disabled="!editable"
-                  :draggable="editable"
-                  :title="config.chat?.reasoning?.effort?.default === level ? 'Default — click another to switch, drag to reorder' : 'Click to set as default, drag to reorder'"
-                  @click="setDefaultEffort(level)"
-                  @dragstart="e => onEffortDragStart(index, e)"
-                  @dragover="e => onEffortDragOver(index, e)"
-                  @dragleave="onEffortDragLeave(index)"
-                  @drop="e => onEffortDrop(index, e)"
-                  @dragend="onEffortDragEnd"
-                >
-                  {{ level }}
-                  <span
-                    v-if="editable"
-                    role="button"
-                    tabindex="0"
-                    class="ml-0.5 cursor-pointer text-gray-500 transition-colors hover:text-accent-rose"
-                    :aria-label="`Remove ${level}`"
-                    @click.stop="removeReasoningLevel(level)"
-                    @keydown.enter.stop.prevent="removeReasoningLevel(level)"
-                  >
-                    <svg class="h-2.5 w-2.5" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2">
-                      <path d="M9 3 3 9M3 3l6 6" />
-                    </svg>
-                  </span>
-                </button>
-              </template>
-              <p v-else class="whitespace-nowrap text-[11px] text-accent-amber">Add at least one effort level — click a preset on the right.</p>
-            </div>
-            <div v-if="editable" class="flex flex-wrap items-center gap-1.5">
-              <button
-                v-for="level in presetEffortLevels"
-                :key="level"
-                type="button"
-                class="rounded border border-white/15 px-2 py-0.5 font-mono text-[11px] text-gray-400 transition-colors hover:border-accent-cyan/40 hover:text-accent-cyan"
-                @click="addReasoningLevel(level)"
-              >+ {{ level }}</button>
-              <Input
-                v-model="reasoningLevelInput"
-                size="sm"
-                placeholder="custom…"
-                class="!h-6 !w-28 !py-0 !text-[11px] font-mono"
-                @keydown.enter.prevent="commitReasoningInput"
-              />
-              <Button variant="secondary" size="sm" class="!h-6 !px-2 !py-0 !text-[11px]" @click="commitReasoningInput">Add</Button>
-            </div>
-          </div>
-
-          <div v-if="budgetTokensEnabled" class="mt-3 flex flex-wrap items-center gap-3 border-l-2 border-white/[0.08] pl-3">
-            <span class="text-xs font-semibold text-gray-300">Budget tokens</span>
-            <label class="flex items-center gap-1.5">
-              <span class="text-[11px] text-gray-500">Min</span>
-              <Input
-                type="number"
-                min="0"
-                size="sm"
-                :model-value="config.chat?.reasoning?.budget_tokens?.min"
-                :readonly="!editable"
-                placeholder="—"
-                class="!h-6 !w-24 !py-0 !text-[11px] font-mono"
-                @update:model-value="v => updateBudgetTokensMin(v)"
-              />
-            </label>
-            <label class="flex items-center gap-1.5">
-              <span class="text-[11px] text-gray-500">Max</span>
-              <Input
-                type="number"
-                min="0"
-                size="sm"
-                :model-value="config.chat?.reasoning?.budget_tokens?.max"
-                :readonly="!editable"
-                placeholder="—"
-                class="!h-6 !w-24 !py-0 !text-[11px] font-mono"
-                @update:model-value="v => updateBudgetTokensMax(v)"
-              />
-            </label>
-            <p
-              v-if="config.chat?.reasoning?.budget_tokens?.min !== undefined
-                && config.chat?.reasoning?.budget_tokens?.max !== undefined
-                && config.chat.reasoning.budget_tokens.max < config.chat.reasoning.budget_tokens.min"
-              class="text-[11px] text-accent-amber"
-            >
-              Max must be ≥ min.
-            </p>
-          </div>
-        </section>
-
         <section>
           <div class="mb-3 flex items-baseline gap-3">
             <h3 class="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Override Feature Flags</h3>
@@ -943,7 +542,7 @@ const toggleMandatory = (on: boolean) => {
             v-if="editable && config.flagOverrides?.enabled"
             :model-value="config.flagOverrides?.values ?? {}"
             :flags="flags"
-            :provider-kind="flagProviderKind"
+            :kind="flagProviderKind"
             :inherited-overrides="upstreamFlagOverrides"
             :name-prefix="`${row.uiId}-flag`"
             class="max-h-72"

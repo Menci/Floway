@@ -7,6 +7,8 @@ import type {
   ApiKeyRepo,
   BackoffRow,
   CachedModelsRow,
+  ModelAliasesRepo,
+  ModelAliasRecord,
   ModelsCacheRepo,
   PerformanceDimensions,
   PerformanceErrorSample,
@@ -38,8 +40,8 @@ import { latencyBucketForMs } from '../shared/performance-histogram.ts';
 import { generateSessionToken } from '../shared/session-tokens.ts';
 import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';
 import type { SqlDatabase, SqlPreparedStatement, SqlResult } from '@floway-dev/platform';
-import { BILLING_DIMENSIONS, type BillingDimension, type ModelPricing, resolveEffectivePricing, unitPriceForDimension } from '@floway-dev/protocols/common';
-import type { ProxyFallbackEntry, ModelPrefixConfig, UpstreamModel, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
+import { BILLING_DIMENSIONS, type AliasSelection, type AliasTarget, type AnnouncedMetadata, type BillingDimension, type ModelKind, type ModelPricing, resolveEffectivePricing, unitPriceForDimension } from '@floway-dev/protocols/common';
+import type { ProviderModel, ProxyFallbackEntry, ModelPrefixConfig, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { normalizeModelPrefix } from '@floway-dev/provider';
 
 const runStatements = async (db: SqlDatabase, statements: SqlPreparedStatement[]): Promise<SqlResult[]> => {
@@ -839,7 +841,7 @@ const toSearchUsageRecord = (row: { provider: string; key_id: string; action: st
   };
 };
 
-// `UpstreamModel.enabledFlags` is a Set, which JSON.stringify renders as `{}`
+// `ProviderModel.enabledFlags` is a Set, which JSON.stringify renders as `{}`
 // and JSON.parse cannot rebuild on its own. Replace Set with an array on
 // write, and rebuild Set under the same key on read so consumers downstream
 // of the cache see the same shape providers produced.
@@ -859,12 +861,12 @@ class SqlModelsCacheRepo implements ModelsCacheRepo {
     if (!row) return null;
     return {
       fetchedAt: row.fetched_at,
-      models: JSON.parse(row.models_json, modelsReviver) as UpstreamModel[],
+      models: JSON.parse(row.models_json, modelsReviver) as ProviderModel[],
       lastError: row.last_error_json ? JSON.parse(row.last_error_json) as { message: string; at: number } : null,
     };
   }
 
-  async put(upstreamId: string, row: { fetchedAt: number; models: UpstreamModel[] }): Promise<void> {
+  async put(upstreamId: string, row: { fetchedAt: number; models: ProviderModel[] }): Promise<void> {
     await this.db
       .prepare(
         `INSERT INTO models_cache (upstream_id, fetched_at, models_json, last_error_json) VALUES (?, ?, ?, NULL)
@@ -1166,7 +1168,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
       )
       .bind(
         upstream.id,
-        upstream.provider,
+        upstream.kind,
         upstream.name,
         upstream.enabled ? 1 : 0,
         upstream.sortOrder,
@@ -1238,7 +1240,7 @@ const toUpstreamRecord = (row: UpstreamRow): UpstreamRecord => {
 
   return {
     id: row.id,
-    provider: assertUpstreamProviderKind(row.provider),
+    kind: assertUpstreamProviderKind(row.provider),
     name: row.name,
     enabled: row.enabled !== 0,
     sortOrder: row.sort_order,
@@ -1585,6 +1587,167 @@ const toBackoffRow = (row: BackoffRowDb): BackoffRow => ({
   lastErrorAt: row.last_error_at,
 });
 
+interface ModelAliasRow {
+  name: string;
+  kind: string;
+  selection: string;
+  display_name: string | null;
+  visible_in_models_list: number;
+  targets: string;
+  announced_metadata_json: string | null;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+const MODEL_ALIAS_COLUMNS = 'name, kind, selection, display_name, visible_in_models_list, targets, announced_metadata_json, sort_order, created_at, updated_at';
+
+const parseAliasTargets = (raw: string, name: string): AliasTarget[] => {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (cause) {
+    throw new Error(`model_aliases.targets JSON is malformed for ${name}`, { cause });
+  }
+  if (!Array.isArray(parsed)) throw new Error(`model_aliases.targets is not an array for ${name}`);
+  return parsed as AliasTarget[];
+};
+
+const parseAnnouncedMetadata = (raw: string | null, name: string): AnnouncedMetadata | null => {
+  if (raw === null) return null;
+  try {
+    return JSON.parse(raw) as AnnouncedMetadata;
+  } catch (cause) {
+    throw new Error(`model_aliases.announced_metadata_json is malformed for ${name}`, { cause });
+  }
+};
+
+const toModelAliasRecord = (row: ModelAliasRow): ModelAliasRecord => ({
+  name: row.name,
+  kind: row.kind as ModelKind,
+  selection: row.selection as AliasSelection,
+  displayName: row.display_name,
+  visibleInModelsList: row.visible_in_models_list !== 0,
+  targets: parseAliasTargets(row.targets, row.name),
+  announcedMetadata: parseAnnouncedMetadata(row.announced_metadata_json, row.name),
+  sortOrder: row.sort_order,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+});
+
+const announcedMetadataBind = (value: AnnouncedMetadata | null): string | null =>
+  value === null ? null : JSON.stringify(value);
+
+class SqlModelAliasesRepo implements ModelAliasesRepo {
+  constructor(private db: SqlDatabase) {}
+
+  async list(): Promise<ModelAliasRecord[]> {
+    const { results } = await this.db
+      .prepare(`SELECT ${MODEL_ALIAS_COLUMNS} FROM model_aliases ORDER BY sort_order, created_at`)
+      .all<ModelAliasRow>();
+    return results.map(toModelAliasRecord);
+  }
+
+  async getByName(name: string): Promise<ModelAliasRecord | null> {
+    const row = await this.db
+      .prepare(`SELECT ${MODEL_ALIAS_COLUMNS} FROM model_aliases WHERE name = ?`)
+      .bind(name)
+      .first<ModelAliasRow>();
+    return row ? toModelAliasRecord(row) : null;
+  }
+
+  async insert(record: ModelAliasRecord): Promise<void> {
+    await this.db
+      .prepare(
+        `INSERT INTO model_aliases (${MODEL_ALIAS_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .bind(
+        record.name,
+        record.kind,
+        record.selection,
+        record.displayName,
+        record.visibleInModelsList ? 1 : 0,
+        JSON.stringify(record.targets),
+        announcedMetadataBind(record.announcedMetadata),
+        record.sortOrder,
+        record.createdAt,
+        record.updatedAt,
+      )
+      .run();
+  }
+
+  async update(oldName: string, record: ModelAliasRecord): Promise<void> {
+    if (oldName === record.name) {
+      const result = await this.db
+        .prepare(
+          `UPDATE model_aliases SET
+             kind = ?,
+             selection = ?,
+             display_name = ?,
+             visible_in_models_list = ?,
+             targets = ?,
+             announced_metadata_json = ?,
+             sort_order = ?,
+             created_at = ?,
+             updated_at = ?
+           WHERE name = ?`,
+        )
+        .bind(
+          record.kind,
+          record.selection,
+          record.displayName,
+          record.visibleInModelsList ? 1 : 0,
+          JSON.stringify(record.targets),
+          announcedMetadataBind(record.announcedMetadata),
+          record.sortOrder,
+          record.createdAt,
+          record.updatedAt,
+          oldName,
+        )
+        .run();
+      if ((result.meta.changes ?? 0) === 0) throw new Error(`alias ${oldName} not found`);
+      return;
+    }
+
+    // Rename. Verify the source row exists first, then INSERT(new) +
+    // DELETE(old) atomically through the batch primitive — a PK collision
+    // against `record.name` bubbles up from the INSERT, which the route
+    // layer translates to 409.
+    const existing = await this.getByName(oldName);
+    if (!existing) throw new Error(`alias ${oldName} not found`);
+
+    await runStatements(this.db, [
+      this.db
+        .prepare(`INSERT INTO model_aliases (${MODEL_ALIAS_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .bind(
+          record.name,
+          record.kind,
+          record.selection,
+          record.displayName,
+          record.visibleInModelsList ? 1 : 0,
+          JSON.stringify(record.targets),
+          announcedMetadataBind(record.announcedMetadata),
+          record.sortOrder,
+          record.createdAt,
+          record.updatedAt,
+        ),
+      this.db.prepare('DELETE FROM model_aliases WHERE name = ?').bind(oldName),
+    ]);
+  }
+
+  async delete(name: string): Promise<boolean> {
+    const result = await this.db
+      .prepare('DELETE FROM model_aliases WHERE name = ?')
+      .bind(name)
+      .run();
+    return (result.meta.changes ?? 0) > 0;
+  }
+
+  async deleteAll(): Promise<void> {
+    await this.db.prepare('DELETE FROM model_aliases').run();
+  }
+}
+
 export class SqlRepo implements Repo {
   users: UsersRepo;
   sessions: SessionsRepo;
@@ -1597,6 +1760,7 @@ export class SqlRepo implements Repo {
   upstreams: UpstreamRepo;
   proxies: ProxyRepo;
   proxyBackoffs: ProxyBackoffRepo;
+  modelAliases: ModelAliasesRepo;
   responsesItems: ResponsesItemsRepo;
   responsesSnapshots: ResponsesSnapshotsRepo;
 
@@ -1612,6 +1776,7 @@ export class SqlRepo implements Repo {
     this.upstreams = new SqlUpstreamRepo(db);
     this.proxies = new SqlProxyRepo(db);
     this.proxyBackoffs = new SqlProxyBackoffRepo(db);
+    this.modelAliases = new SqlModelAliasesRepo(db);
     this.responsesItems = new SqlResponsesItemsRepo(db);
     this.responsesSnapshots = new SqlResponsesSnapshotsRepo(db);
   }

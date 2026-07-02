@@ -5,14 +5,14 @@ import type { ClaudeCodeMessagesBoundaryCtx } from './types.ts';
 import { CLAUDE_CLI_VERSION } from '../../headers.ts';
 import type { MessagesPayload, MessagesStreamEvent, MessagesTextBlock } from '@floway-dev/protocols/messages';
 import type { ProviderStreamResult } from '@floway-dev/provider';
-import { assertEquals, stubUpstreamModel } from '@floway-dev/test-utils';
+import { assertEquals, stubProviderModel } from '@floway-dev/test-utils';
 
 const okEvents = (): Promise<ProviderStreamResult<MessagesStreamEvent>> =>
   Promise.resolve({ ok: true, events: (async function* () {})(), modelKey: 'test' });
 
 const invocation = (payload: MessagesPayload): ClaudeCodeMessagesBoundaryCtx => ({
   payload,
-  model: stubUpstreamModel({ endpoints: { messages: {} } }),
+  model: stubProviderModel({ endpoints: { messages: {} } }),
   upstreamId: 'up_test',
 });
 

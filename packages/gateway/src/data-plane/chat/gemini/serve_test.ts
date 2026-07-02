@@ -3,23 +3,32 @@ import { afterEach, test, vi } from 'vitest';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { createNonResponsesSourceStore } from '../responses/items/store.ts';
-import type { GatewayCtx } from '../shared/gateway-ctx.ts';
+import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
-import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiPayload } from '@floway-dev/protocols/gemini';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { type ProviderCandidate, directFetcher, type ProviderCallResult, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
-import { assert, assertEquals, stubProvider, stubUpstreamModel } from '@floway-dev/test-utils';
+import { type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
+import { assert, assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
 
-const candidatesQueue: { readonly candidates: readonly ProviderCandidate[]; readonly sawModel: boolean; readonly failedUpstreams: readonly string[] }[] = [];
+// Mock the resolver seam so each test hands the serve exactly the model
+// candidates it wants, optionally with an alias-rules overlay attached.
+interface QueuedResolution {
+  readonly candidates: readonly ModelCandidate[];
+  readonly sawModel: boolean;
+  readonly failedUpstreams: readonly string[];
+}
+const resolutionsQueue: QueuedResolution[] = [];
+const lastResolveCall: { model?: string } = {};
 vi.mock('../../providers/registry.ts', async importOriginal => {
   const original = await importOriginal<typeof import('../../providers/registry.ts')>();
   return {
     ...original,
-    enumerateModelCandidates: vi.fn(async () => {
-      const next = candidatesQueue.shift();
-      if (next === undefined) throw new Error('serve_test: no candidates enqueued');
+    enumerateModelCandidates: vi.fn(async ({ model }: { model: string }) => {
+      lastResolveCall.model = model;
+      const next = resolutionsQueue.shift();
+      if (next === undefined) throw new Error('serve_test: no resolution enqueued');
       return next;
     }),
   };
@@ -29,11 +38,19 @@ const { geminiServe } = await import('./serve.ts');
 
 const API_KEY_ID = 'key_gemini_serve_test';
 
-const queueCandidates = (candidates: readonly ProviderCandidate[], sawModel = candidates.length > 0): void => {
-  candidatesQueue.push({ candidates, sawModel, failedUpstreams: [] });
+const queueResolution = (
+  candidates: readonly ModelCandidate[],
+  extra: { sawModel?: boolean; aliasRules?: AliasRules } = {},
+): void => {
+  const rules = extra.aliasRules;
+  resolutionsQueue.push({
+    candidates: rules !== undefined ? candidates.map(c => ({ ...c, rules })) : candidates,
+    sawModel: extra.sawModel ?? candidates.length > 0,
+    failedUpstreams: [],
+  });
 };
 
-afterEach(() => { candidatesQueue.length = 0; });
+afterEach(() => { resolutionsQueue.length = 0; });
 
 const installRepo = (): InMemoryRepo => {
   const repo = new InMemoryRepo();
@@ -41,15 +58,17 @@ const installRepo = (): InMemoryRepo => {
   return repo;
 };
 
-const makeGatewayCtx = (): GatewayCtx => ({
+const makeGatewayCtx = (): ChatGatewayCtx => ({
   apiKeyId: API_KEY_ID,
   upstreamIds: null,
   wantsStream: true,
   runtimeLocation: 'TEST',
   currentColo: 'TEST',
   dump: null,
+  responseHeaders: new Headers(),
   backgroundScheduler: () => {},
   requestStartedAt: 0,
+  store: createNonResponsesSourceStore(API_KEY_ID),
 });
 
 const makePayload = (overrides: Partial<GeminiPayload> = {}): GeminiPayload => ({
@@ -109,15 +128,15 @@ const makeCandidate = (overrides: {
   callMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<MessagesStreamEvent>>;
   callResponses?: (model: unknown, body: unknown, action: ResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderResponsesResult>;
   callMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderCallResult>;
-} = {}): ProviderCandidate => {
+} = {}): ModelCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
   const targetApi = overrides.targetApi ?? 'chat-completions';
   // The gemini serve layer picks the target from model.endpoints (chat-completions
   // first, then messages, then responses). Narrow endpoints to the target this
   // test wants so the gemini serve layer picks the expected target via
-  // geminiGenerateTarget / planGeminiRouting. An explicit `endpoints` override
-  // beats the default `targetApi`-derived map, for tests that need a candidate
-  // whose endpoints satisfy none of the target preferences.
+  // geminiGenerateTarget.canServe. An explicit `endpoints` override beats the
+  // default `targetApi`-derived map, for tests that need a candidate whose
+  // endpoints satisfy none of the target preferences.
   const endpoints = overrides.endpoints ?? (targetApi === 'chat-completions'
     ? { chatCompletions: {} }
     : targetApi === 'messages'
@@ -131,10 +150,10 @@ const makeCandidate = (overrides: {
   });
   return {
     provider: {
-      upstream, providerKind: 'custom', name: upstream,
-      disabledPublicModelIds: [], modelPrefix: null, provider, supportsResponsesItemReference: true,
+      upstream, kind: 'custom', name: upstream,
+      disabledPublicModelIds: [], modelPrefix: null, instance: provider, supportsResponsesItemReference: true,
     },
-    model: stubUpstreamModel({ endpoints }),
+    model: stubInternalModel({ endpoints }, upstream),
     fetcher: directFetcher,
   };
 };
@@ -157,12 +176,11 @@ test('generate translates through native Chat Completions target end to end', as
   const callChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => ({
     ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'k', headers: new Headers(),
   }));
-  queueCandidates([makeCandidate({ targetApi: 'chat-completions', callChatCompletions })]);
+  queueResolution([makeCandidate({ targetApi: 'chat-completions', callChatCompletions })]);
 
   const result = await geminiServe.generate({
     payload: makePayload(),
     ctx: makeGatewayCtx(),
-    store: createNonResponsesSourceStore(API_KEY_ID),
     model: 'test-model',
     headers: new Headers(),
   });
@@ -177,12 +195,11 @@ test('generate translates through Messages when only that endpoint is exposed', 
   const callMessages = vi.fn(async (): Promise<ProviderStreamResult<MessagesStreamEvent>> => ({
     ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'k', headers: new Headers(),
   }));
-  queueCandidates([makeCandidate({ targetApi: 'messages', callMessages })]);
+  queueResolution([makeCandidate({ targetApi: 'messages', callMessages })]);
 
   const result = await geminiServe.generate({
     payload: makePayload(),
     ctx: makeGatewayCtx(),
-    store: createNonResponsesSourceStore(API_KEY_ID),
     model: 'test-model',
     headers: new Headers(),
   });
@@ -197,12 +214,11 @@ test('generate translates through Responses when only that endpoint is exposed',
   const callResponses = vi.fn(async (): Promise<ProviderResponsesResult> => ({
     action: 'generate', ok: true, events: makeProtocolFrames([makeResponsesResultEvent()]), modelKey: 'k', headers: new Headers(),
   }));
-  queueCandidates([makeCandidate({ targetApi: 'responses', callResponses })]);
+  queueResolution([makeCandidate({ targetApi: 'responses', callResponses })]);
 
   const result = await geminiServe.generate({
     payload: makePayload(),
     ctx: makeGatewayCtx(),
-    store: createNonResponsesSourceStore(API_KEY_ID),
     model: 'test-model',
     headers: new Headers(),
   });
@@ -212,7 +228,7 @@ test('generate translates through Responses when only that endpoint is exposed',
   assertEquals(callResponses.mock.calls.length, 1);
 });
 
-test('generate stops at the first candidate even when it yields an upstream error', async () => {
+test('generate falls through to the next candidate when the first yields an upstream error', async () => {
   installRepo();
   const firstError = new Response(JSON.stringify({ error: { message: 'nope' } }), {
     status: 502, headers: new Headers({ 'content-type': 'application/json' }),
@@ -223,7 +239,7 @@ test('generate stops at the first candidate even when it yields an upstream erro
   const secondCall = vi.fn(async (): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => ({
     ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'second-key', headers: new Headers(),
   }));
-  queueCandidates([
+  queueResolution([
     makeCandidate({ upstream: 'up_a', targetApi: 'chat-completions', callChatCompletions: firstCall }),
     makeCandidate({ upstream: 'up_b', targetApi: 'chat-completions', callChatCompletions: secondCall }),
   ]);
@@ -231,17 +247,16 @@ test('generate stops at the first candidate even when it yields an upstream erro
   const result = await geminiServe.generate({
     payload: makePayload(),
     ctx: makeGatewayCtx(),
-    store: createNonResponsesSourceStore(API_KEY_ID),
     model: 'test-model',
     headers: new Headers(),
   });
 
-  // An upstream error from the first candidate IS the final answer — the
-  // gateway does not retry on a different upstream just because the first one
-  // produced an HTTP error.
-  expectType(result, 'api-error');
+  // The narrowed candidate list exists exactly so a transient upstream
+  // failure (5xx/429/network) on one entry rolls over to the next. The
+  // second candidate's success is the request's final answer.
+  expectType(result, 'events');
   assertEquals(firstCall.mock.calls.length, 1);
-  assertEquals(secondCall.mock.calls.length, 0);
+  assertEquals(secondCall.mock.calls.length, 1);
 });
 
 test('generate is a routing no-op for a bare user-text request (degenerate path)', async () => {
@@ -249,7 +264,7 @@ test('generate is a routing no-op for a bare user-text request (degenerate path)
   const callChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => ({
     ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'k', headers: new Headers(),
   }));
-  queueCandidates([
+  queueResolution([
     makeCandidate({ upstream: 'up_a', targetApi: 'chat-completions', callChatCompletions }),
     makeCandidate({ upstream: 'up_b', targetApi: 'chat-completions', callChatCompletions }),
   ]);
@@ -257,7 +272,6 @@ test('generate is a routing no-op for a bare user-text request (degenerate path)
   const result = await geminiServe.generate({
     payload: makePayload(),
     ctx: makeGatewayCtx(),
-    store: createNonResponsesSourceStore(API_KEY_ID),
     model: 'test-model',
     headers: new Headers(),
   });
@@ -269,12 +283,11 @@ test('generate is a routing no-op for a bare user-text request (degenerate path)
 
 test('generate renders model-missing as a Google RPC 404 when no candidates are available', async () => {
   installRepo();
-  queueCandidates([]);
+  queueResolution([]);
 
   const result = await geminiServe.generate({
     payload: makePayload(),
     ctx: makeGatewayCtx(),
-    store: createNonResponsesSourceStore(API_KEY_ID),
     model: 'unknown-model',
     headers: new Headers(),
   });
@@ -292,12 +305,11 @@ test('generate filters out candidates whose endpoints do not satisfy the gemini-
   const callChatCompletions = vi.fn();
   // geminiGenerateTarget prefers chat-completions > messages > responses;
   // an endpoints-only `completions` candidate matches none and is filtered.
-  queueCandidates([makeCandidate({ upstream: 'up_x', endpoints: { completions: {} }, callChatCompletions })]);
+  queueResolution([makeCandidate({ upstream: 'up_x', endpoints: { completions: {} }, callChatCompletions })]);
 
   const result = await geminiServe.generate({
     payload: makePayload(),
     ctx: makeGatewayCtx(),
-    store: createNonResponsesSourceStore(API_KEY_ID),
     model: 'wrong-endpoint-model',
     headers: new Headers(),
   });
@@ -323,12 +335,11 @@ test('countTokens translates Gemini to Messages count_tokens and returns the Gem
     }),
     modelKey: 'k',
   }));
-  queueCandidates([makeCandidate({ targetApi: 'messages', callMessagesCountTokens })]);
+  queueResolution([makeCandidate({ targetApi: 'messages', callMessagesCountTokens })]);
 
   const result = await geminiServe.countTokens({
     payload: makePayload(),
     ctx: makeGatewayCtx(),
-    store: createNonResponsesSourceStore(API_KEY_ID),
     model: 'test-model',
     headers: new Headers(),
   });
@@ -342,12 +353,11 @@ test('countTokens translates Gemini to Messages count_tokens and returns the Gem
 
 test('countTokens renders a Google RPC NOT_FOUND when no Messages-capable candidate exists', async () => {
   installRepo();
-  queueCandidates([]);
+  queueResolution([]);
 
   const result = await geminiServe.countTokens({
     payload: makePayload(),
     ctx: makeGatewayCtx(),
-    store: createNonResponsesSourceStore(API_KEY_ID),
     model: 'no-messages-model',
     headers: new Headers(),
   });
@@ -365,12 +375,11 @@ test('countTokens filters out candidates whose endpoints do not satisfy the gemi
   const callMessagesCountTokens = vi.fn();
   // geminiCountTokensTarget = chatTargetPicker(['messages']); a candidate
   // exposing only chatCompletions matches none and is filtered out.
-  queueCandidates([makeCandidate({ upstream: 'up_x', endpoints: { chatCompletions: {} }, callMessagesCountTokens })]);
+  queueResolution([makeCandidate({ upstream: 'up_x', endpoints: { chatCompletions: {} }, callMessagesCountTokens })]);
 
   const result = await geminiServe.countTokens({
     payload: makePayload(),
     ctx: makeGatewayCtx(),
-    store: createNonResponsesSourceStore(API_KEY_ID),
     model: 'wrong-endpoint-model',
     headers: new Headers(),
   });
@@ -382,4 +391,52 @@ test('countTokens filters out candidates whose endpoints do not satisfy the gemi
   assertEquals(body.error.status, 'INVALID_ARGUMENT');
   assert(typeof body.error.message === 'string' && body.error.message.includes('does not support'));
   assertEquals(callMessagesCountTokens.mock.calls.length, 0);
+});
+
+test('alias resolution overlays rules onto the target IR at the wire call', async () => {
+  installRepo();
+  const capturedBodies: Record<string, unknown>[] = [];
+  const callChatCompletions = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => {
+    capturedBodies.push(body as Record<string, unknown>);
+    return { ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'gpt-5.4', headers: new Headers() };
+  });
+  queueResolution([makeCandidate({ targetApi: 'chat-completions', callChatCompletions })], {
+    aliasRules: { reasoning: { effort: 'high', budget_tokens: 1024 }, verbosity: 'low' },
+  });
+
+  const result = await geminiServe.generate({
+    payload: makePayload(),
+    ctx: makeGatewayCtx(),
+    model: 'gemini-fast',
+    headers: new Headers(),
+  });
+  await collectEvents(expectType(result, 'events').events);
+
+  // The resolver sees the inbound alias id verbatim. Target-id walking
+  // happens inside the resolver.
+  assertEquals(lastResolveCall.model, 'gemini-fast');
+  // Alias rules land on the terminal wire target's native slots — for a
+  // Gemini→ChatCompletions traversal that is `reasoning_effort` and
+  // `verbosity`. Rules that lack a native CC slot (budget_tokens) drop.
+  const observed = capturedBodies[0]!;
+  assertEquals(observed.reasoning_effort, 'high');
+  assertEquals(observed.verbosity, 'low');
+});
+
+test('alias whose targets have no kind-matching binding surfaces as the regular model-missing 404', async () => {
+  installRepo();
+  queueResolution([], { sawModel: false });
+
+  const result = await geminiServe.generate({
+    payload: makePayload(),
+    ctx: makeGatewayCtx(),
+    model: 'gemini-fast',
+    headers: new Headers(),
+  });
+
+  assertEquals(result.type, 'api-error');
+  if (result.type !== 'api-error') throw new Error('unreachable');
+  assertEquals(result.status, 404);
+  const body = JSON.parse(new TextDecoder().decode(result.body));
+  assertEquals(body.error.message, 'Model gemini-fast is not available on any configured upstream.');
 });

@@ -1,8 +1,10 @@
+
 import type { ResponsesInterceptor } from './types.ts';
 import { isObjectLike } from '../../../../shared/json-helpers.ts';
 import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { providerModelOf } from '@floway-dev/provider';
 import type { ExecuteResult } from '@floway-dev/provider';
 
 const CYBER_POLICY_ERROR_CODE = 'cyber_policy';
@@ -173,7 +175,7 @@ const retryCyberPolicyEvents = async function* (
  * operators can inspect detailed upstream failures.
  */
 export const withCyberPolicyRetried: ResponsesInterceptor = async (ctx, gatewayCtx, run) => {
-  if (!ctx.candidate.model.enabledFlags.has('retry-cyber-policy')) return await run();
+  if (!providerModelOf(ctx.candidate).enabledFlags.has('retry-cyber-policy')) return await run();
 
   let finalResult: ResponsesResultFrames | undefined;
 

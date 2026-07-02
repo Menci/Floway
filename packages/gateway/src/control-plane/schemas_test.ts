@@ -3,7 +3,7 @@ import { describe, expect, test } from 'vitest';
 import { createUpstreamBody } from './schemas.ts';
 
 const baseAzure = {
-  provider: 'azure' as const,
+  kind: 'azure' as const,
   name: 'azure',
   config: {
     endpoint: 'https://a.example.com',

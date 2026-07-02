@@ -1,4 +1,5 @@
 import type { MessagesInterceptor } from './types.ts';
+import { providerModelOf } from '@floway-dev/provider';
 
 // Workaround for upstreams (e.g. DeepSeek-R1) that reject `role: 'system'`
 // after the first non-system message. Anthropic Messages carries the
@@ -6,7 +7,7 @@ import type { MessagesInterceptor } from './types.ts';
 // any inline message with `role: 'system'` is therefore by definition
 // interleaved, and gets demoted to `role: 'user'` with content preserved.
 export const demoteInterleavedSystemToUser: MessagesInterceptor = (ctx, _gatewayCtx, run) => {
-  if (!ctx.candidate.model.enabledFlags.has('demote-interleaved-system-to-user')) return run();
+  if (!providerModelOf(ctx.candidate).enabledFlags.has('demote-interleaved-system-to-user')) return run();
 
   const { messages } = ctx.payload;
   for (let i = 0; i < messages.length; i++) {

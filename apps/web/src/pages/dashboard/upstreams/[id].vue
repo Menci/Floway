@@ -29,11 +29,11 @@ export const useEditUpstreamData = defineBasicLoader('/dashboard/upstreams/[id]'
   // Every provider except Azure resolves its catalog through the SWR cache
   // backing GET /upstreams/:id/models. Azure's catalog is operator-edited
   // form data — there is nothing to fetch — so it is skipped here.
-  if (record && record.provider !== 'azure') {
+  if (record && record.kind !== 'azure') {
     const modelsPromise = callApi<{ data: UpstreamModelConfig[] }>(
       () => api.api.upstreams[':id'].models.$get({ param: { id: record.id } }),
     );
-    const quotaPromise = record.provider === 'copilot'
+    const quotaPromise = record.kind === 'copilot'
       ? callApi<CopilotQuotaSnapshot>(() => api.api.upstreams[':id'].copilot.quota.$get({ param: { id: record.id } }))
       : null;
     const [modelsRes, quotaRes] = await Promise.all([modelsPromise, quotaPromise ?? Promise.resolve(null)]);

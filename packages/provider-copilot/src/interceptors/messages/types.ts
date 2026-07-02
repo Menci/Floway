@@ -1,7 +1,7 @@
 import type { Interceptor } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
-import type { ExecuteResult, UpstreamModel } from '@floway-dev/provider';
+import type { ExecuteResult, ProviderModel } from '@floway-dev/provider';
 
 // Boundary ctx for Copilot Messages interceptors. The chain runs inside
 // `provider.callMessages` after the gateway has handed control to the
@@ -13,12 +13,11 @@ import type { ExecuteResult, UpstreamModel } from '@floway-dev/provider';
 // working unchanged; the terminal strips it before serializing to the wire.
 // `headers` is the mutable `Headers` instance the provider call seeds from
 // `opts.headers` and passes through to the upstream fetch; the boundary
-// chain mutates this clone, not the caller's bag. `model` is the resolved
-// UpstreamModel record.
+// chain mutates this clone, not the caller's bag.
 export interface MessagesBoundaryCtx {
   payload: MessagesPayload;
   headers: Headers;
-  readonly model: UpstreamModel;
+  readonly model: ProviderModel;
 }
 
 export type CopilotMessagesBoundaryInterceptor = Interceptor<
@@ -34,7 +33,7 @@ export type CopilotMessagesBoundaryInterceptor = Interceptor<
 export interface MessagesCountTokensBoundaryCtx {
   payload: MessagesPayload;
   headers: Headers;
-  readonly model: UpstreamModel;
+  readonly model: ProviderModel;
 }
 
 export type CopilotMessagesCountTokensBoundaryInterceptor = Interceptor<

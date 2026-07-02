@@ -9,6 +9,7 @@ import { truncatePreservingCodePoints } from '../../../shared/text.ts';
 import { type ServerToolLoopState, type ServerToolOutputItem, type ServerToolRegistration } from '../server-tool-shim.ts';
 import type { ResponsesFunctionTool, ResponsesFunctionToolCallItem, ResponsesHostedTool, ResponsesInputItem, ResponsesOutputWebSearchCall, ResponsesTool, ResponsesWebSearchAction, ResponsesWebSearchResult } from '@floway-dev/protocols/responses';
 import { WEB_SEARCH_HOSTED_TYPE_NAMES } from '@floway-dev/protocols/responses';
+import { providerModelOf } from '@floway-dev/provider';
 
 // Runtime set derived from the canonical tuple declared next to
 // `ResponsesHostedToolType` so the type union and runtime check can't drift.
@@ -1306,13 +1307,13 @@ const planShimSlots = (
 };
 
 export const webSearchServerTool: ServerToolRegistration = (invocation, gatewayCtx) => {
-  if (invocation.targetApi === 'responses' && !invocation.candidate.model.enabledFlags.has('responses-web-search-shim')) {
+  if (invocation.targetApi === 'responses' && !providerModelOf(invocation.candidate).enabledFlags.has('responses-web-search-shim')) {
     return { type: 'inactive' };
   }
 
   const tools = Array.isArray(invocation.payload.tools) ? invocation.payload.tools : [];
   const hasHostedWebSearch = tools.some(isHostedWebSearchTool);
-  const hasReplayInput = Array.isArray(invocation.payload.input) && invocation.payload.input.some(i => i.type === 'web_search_call');
+  const hasReplayInput = invocation.payload.input.some(i => i.type === 'web_search_call');
   if (!hasHostedWebSearch && !hasReplayInput) return { type: 'inactive' };
 
   const prepared = prepareToolsForShim(tools);
@@ -1343,7 +1344,7 @@ export const webSearchServerTool: ServerToolRegistration = (invocation, gatewayC
   return {
     type: 'active',
     baseToolName: SHIM_TOOL_NAME,
-    transformItems: (items, toolName) => transformInputItemsForWebSearch(items, toolName, id => invocation.store.getPrivatePayload(id)),
+    transformItems: (items, toolName) => transformInputItemsForWebSearch(items, toolName, id => gatewayCtx.store.getPrivatePayload(id)),
     ...(hasHostedWebSearch
       ? {
           hosted: {

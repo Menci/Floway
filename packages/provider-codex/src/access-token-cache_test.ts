@@ -16,7 +16,7 @@ const upstreamId = 'up_a';
 
 const makeRecord = (state: CodexUpstreamState): UpstreamRecord => ({
   id: upstreamId,
-  provider: 'codex',
+  kind: 'codex',
   name: 'Codex',
   enabled: true,
   sortOrder: 0,
@@ -35,6 +35,7 @@ const baseAccount = {
   refresh_token: 'rt_v1',
   state: 'active' as const,
   state_updated_at: '2026-06-01T00:00:00.000Z',
+  openaiDeviceId: '11111111-2222-4333-8444-555555555555',
   accessToken: null as CodexAccessTokenEntry | null,
   quotaSnapshot: null,
 };

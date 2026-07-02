@@ -6,7 +6,7 @@ import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-ut
 
 const upstreamRecord = () => ({
   id: 'up_custom',
-  provider: 'custom' as const,
+  kind: 'custom' as const,
   name: 'Custom',
   enabled: true,
   sortOrder: 0,

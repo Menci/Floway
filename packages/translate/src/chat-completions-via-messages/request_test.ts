@@ -1270,3 +1270,28 @@ test('translateChatCompletionsToMessages rejects an unknown user content part ty
     "Invalid 'video_url' content part",
   );
 });
+
+// ── service_tier forwarding ──
+
+test('translateChatCompletionsToMessages forwards service_tier verbatim', async () => {
+  const result = await translateChatCompletionsToMessages(
+    mkPayload({
+      messages: [{ role: 'user', content: 'hi' }],
+      service_tier: 'priority',
+    }),
+  );
+
+  assertEquals(result.service_tier, 'priority');
+});
+
+test('translateChatCompletionsToMessages does not emit thinking or fast-mode fields for a bare payload', async () => {
+  const result = await translateChatCompletionsToMessages(
+    mkPayload({
+      messages: [{ role: 'user', content: 'hi' }],
+    }),
+  );
+
+  assertEquals(result.thinking, undefined);
+  assertEquals(result.speed, undefined);
+  assertEquals(result.service_tier, undefined);
+});

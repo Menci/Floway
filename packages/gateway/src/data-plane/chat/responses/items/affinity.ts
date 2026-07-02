@@ -4,7 +4,7 @@ import type { StoredResponsesItem } from '../../../../repo/types.ts';
 import type { ChatServeFailure } from '../../shared/errors.ts';
 import type { RoutingDecision } from '../../shared/routing.ts';
 import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
-import type { ProviderCandidate } from '@floway-dev/provider';
+import type { ModelCandidate } from '@floway-dev/provider';
 import type { ResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
 type StoredResponsesAffinity = 'forcing' | 'portable' | 'downgradable' | 'non_affinity';
@@ -98,10 +98,10 @@ const collectStoredResponsesItemRefs = async <TSourceItems>(
   return references;
 };
 
-const orderCandidatesByStoredResponsesAffinity = (
-  candidates: readonly ProviderCandidate[],
+const orderCandidatesByStoredResponsesAffinity = <T extends ModelCandidate>(
+  candidates: readonly T[],
   preferredUpstreamIds: ReadonlySet<string>,
-): readonly ProviderCandidate[] => {
+): readonly T[] => {
   const preferred = [...preferredUpstreamIds].reverse();
   if (preferred.length === 0) return candidates;
 
@@ -113,17 +113,17 @@ const orderCandidatesByStoredResponsesAffinity = (
   return [...preferredCandidates, ...remainingCandidates];
 };
 
-export const classifyResponsesItemAffinity = async <TSourceItems>(input: {
+export const classifyResponsesItemAffinity = async <TSourceItems, TCandidate extends ModelCandidate>(input: {
   sourceItems: TSourceItems;
   view: ResponsesItemsView<TSourceItems>;
   store: StatefulResponsesStore;
-  candidates: readonly ProviderCandidate[];
+  candidates: readonly TCandidate[];
   // Items the caller will stage as inputs after the affinity walk; passed
   // here so `loadInputItems` can pre-load any stored row whose content hash
   // matches one of them. Without this, a duplicate user message resent on
   // a later turn cannot be reused — it would mint a fresh row each time.
   inputItemsToStage?: readonly ResponsesInputItem[];
-}): Promise<RoutingDecision> => {
+}): Promise<RoutingDecision<TCandidate>> => {
   const { sourceItems, view, store, candidates, inputItemsToStage } = input;
   await store.loadInputItems({
     sourceItems,

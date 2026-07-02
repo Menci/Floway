@@ -15,7 +15,7 @@ const decode = (base64: string): Uint8Array => {
 
 // 1x1 red PNG. Used everywhere we don't care about input dimensions; sharp
 // can decode it but it's too small to exercise the resize path.
-const PNG_1x1 = decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/wEAAAAASUVORK5CYII=');
+const PNG_1x1 = decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADElEQVQImWP4z8AAAAMBAQCc479ZAAAAAElFTkSuQmCC');
 
 const generatePng = async (width: number, height: number): Promise<Uint8Array> => {
   const buffer = await sharp({

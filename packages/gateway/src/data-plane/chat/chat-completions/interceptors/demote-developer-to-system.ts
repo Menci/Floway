@@ -11,6 +11,7 @@
 
 import type { ChatCompletionsInterceptor } from './types.ts';
 import type { ChatCompletionsMessage } from '@floway-dev/protocols/chat-completions';
+import { providerModelOf } from '@floway-dev/provider';
 
 const downgradeRole = (message: ChatCompletionsMessage): ChatCompletionsMessage => {
   if (message.role !== 'developer') return message;
@@ -18,7 +19,7 @@ const downgradeRole = (message: ChatCompletionsMessage): ChatCompletionsMessage 
 };
 
 export const withDemoteDeveloperToSystem: ChatCompletionsInterceptor = async (ctx, _gatewayCtx, run) => {
-  if (!ctx.candidate.model.enabledFlags.has('demote-developer-to-system')) return await run();
+  if (!providerModelOf(ctx.candidate).enabledFlags.has('demote-developer-to-system')) return await run();
 
   ctx.payload = {
     ...ctx.payload,

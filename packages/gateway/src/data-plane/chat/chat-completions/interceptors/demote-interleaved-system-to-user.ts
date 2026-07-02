@@ -1,4 +1,5 @@
 import type { ChatCompletionsInterceptor } from './types.ts';
+import { providerModelOf } from '@floway-dev/provider';
 
 // Workaround for upstreams (e.g. DeepSeek-R1) that reject `role: 'system'`
 // after the first non-system message. The leading contiguous run of
@@ -6,7 +7,7 @@ import type { ChatCompletionsInterceptor } from './types.ts';
 // any non-system role, every later `role: 'system'` is rewritten to
 // `role: 'user'` with content preserved.
 export const withInterleavedSystemDemotedToUser: ChatCompletionsInterceptor = (ctx, _gatewayCtx, run) => {
-  if (!ctx.candidate.model.enabledFlags.has('demote-interleaved-system-to-user')) return run();
+  if (!providerModelOf(ctx.candidate).enabledFlags.has('demote-interleaved-system-to-user')) return run();
 
   const { messages } = ctx.payload;
   let crossedLeadingRun = false;

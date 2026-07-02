@@ -26,10 +26,14 @@ export interface ResponsesPayload {
   parallel_tool_calls?: boolean | null;
   reasoning?: {
     effort?: string;
-    summary?: 'detailed' | 'auto' | 'concise';
+    summary?: 'detailed' | 'auto' | 'concise' | (string & {});
   };
   include?: string[];
-  text?: { format?: Record<string, unknown> | null } | null;
+  // `text.verbosity` is a native GPT-5-family Responses field that controls
+  // response length; `text.format` carries structured-output schemas. Both
+  // ride on the same `text` object.
+  // Reference: https://platform.openai.com/docs/api-reference/responses/create
+  text?: { format?: Record<string, unknown> | null; verbosity?: string | null } | null;
   prompt_cache_key?: string | null;
   safety_identifier?: string | null;
   service_tier?: 'default' | 'auto' | 'flex' | 'priority' | 'scale' | (string & {}) | null;

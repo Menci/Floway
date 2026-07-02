@@ -51,7 +51,7 @@ test('translateResponsesToMessages omits both speed and service_tier when servic
   assertFalse('service_tier' in result.target);
 });
 
-test('translateResponsesToMessages maps reasoning.effort none to thinking.disabled', async () => {
+test('translateResponsesToMessages maps reasoning.effort none to thinking.disabled (summary ignored when reasoning is disabled)', async () => {
   const result = await translateResponsesToMessages({
     model: 'claude-test',
     input: [{ type: 'message', role: 'user', content: 'hi' }],
@@ -86,7 +86,7 @@ test('translateResponsesToMessages maps reasoning.effort directly to output_conf
     stream: null,
     store: false,
     parallel_tool_calls: true,
-    reasoning: { effort: 'minimal', summary: 'detailed' },
+    reasoning: { effort: 'minimal' },
   });
 
   assertEquals(result.target.output_config, { effort: 'minimal' });
@@ -846,3 +846,7 @@ test('translateResponsesToMessages throws when a non-leading developer input mes
     "Invalid 'input_image' content part in developer message",
   );
 });
+
+// (Native native↔native only — Responses no longer carries thinking-mode
+// extension fields; alias overlays land on the Messages IR at the wire
+// call via `applyRulesToUpstreamMessages`.)

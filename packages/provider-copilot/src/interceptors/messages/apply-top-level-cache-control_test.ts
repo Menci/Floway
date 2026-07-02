@@ -6,7 +6,7 @@ import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
-import { assertEquals, stubUpstreamModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import { assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const stubRequest = {};
 
@@ -16,7 +16,7 @@ const okEvents = (): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>>> 
 const invocation = (payload: MessagesPayload & { cache_control?: { type: 'ephemeral' } }): MessagesBoundaryCtx => ({
   payload,
   headers: new Headers(),
-  model: stubUpstreamModel({ endpoints: { messages: {} } }),
+  model: stubProviderModel({ endpoints: { messages: {} } }),
 });
 
 test('ports top-level cache_control onto the last cacheable block and drops the root field', async () => {

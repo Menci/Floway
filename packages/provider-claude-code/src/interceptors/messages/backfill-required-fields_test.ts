@@ -3,13 +3,13 @@ import { test } from 'vitest';
 import { backfillRequiredFields } from './backfill-required-fields.ts';
 import type { ClaudeCodeMessagesBoundaryCtx } from './types.ts';
 import { MESSAGES_FALLBACK_MAX_TOKENS, type MessagesPayload, type MessagesStreamEvent } from '@floway-dev/protocols/messages';
-import type { ProviderStreamResult, UpstreamModel } from '@floway-dev/provider';
-import { assertEquals, stubUpstreamModel } from '@floway-dev/test-utils';
+import type { ProviderModel, ProviderStreamResult } from '@floway-dev/provider';
+import { assertEquals, stubProviderModel } from '@floway-dev/test-utils';
 
 const okEvents = (): Promise<ProviderStreamResult<MessagesStreamEvent>> =>
   Promise.resolve({ ok: true, events: (async function* () {})(), modelKey: 'test' });
 
-const invocation = (payload: MessagesPayload, model: UpstreamModel = stubUpstreamModel({ endpoints: { messages: {} } })): ClaudeCodeMessagesBoundaryCtx => ({
+const invocation = (payload: MessagesPayload, model: ProviderModel = stubProviderModel({ endpoints: { messages: {} } })): ClaudeCodeMessagesBoundaryCtx => ({
   payload,
   model,
   upstreamId: 'up_test',
@@ -32,7 +32,7 @@ test('backfills max_tokens from MESSAGES_FALLBACK_MAX_TOKENS when both payload a
 });
 
 test('prefers model.limits.max_output_tokens over the gateway fallback when set', async () => {
-  const model = stubUpstreamModel({ endpoints: { messages: {} }, limits: { max_output_tokens: 64000 } });
+  const model = stubProviderModel({ endpoints: { messages: {} }, limits: { max_output_tokens: 64000 } });
   const ctx = invocation(
     {
       model: 'claude-sonnet-4-5-20250929',
@@ -48,7 +48,7 @@ test('prefers model.limits.max_output_tokens over the gateway fallback when set'
 });
 
 test('preserves caller-supplied max_tokens', async () => {
-  const model = stubUpstreamModel({ endpoints: { messages: {} }, limits: { max_output_tokens: 64000 } });
+  const model = stubProviderModel({ endpoints: { messages: {} }, limits: { max_output_tokens: 64000 } });
   const ctx = invocation(
     {
       model: 'claude-sonnet-4-5-20250929',

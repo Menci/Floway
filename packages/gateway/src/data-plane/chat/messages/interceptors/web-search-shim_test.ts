@@ -15,7 +15,8 @@ import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { DEFAULT_SEARCH_CONFIG } from '../../../tools/web-search/search-config.ts';
 import type { WebSearchProvider, WebSearchProviderResult } from '../../../tools/web-search/types.ts';
-import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
+import { createNonResponsesSourceStore } from '../../responses/items/store.ts';
+import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
 import { type ProtocolFrame, eventFrame } from '@floway-dev/protocols/common';
 import { messagesProtocolFrameToSSEFrame } from '@floway-dev/protocols/messages';
 import type {
@@ -29,7 +30,7 @@ import type {
   MessagesToolResultContentBlock,
   MessagesUserContentBlock,
 } from '@floway-dev/protocols/messages';
-import { assertEquals, assertExists, assertRejects, stubProviderCandidate } from '@floway-dev/test-utils';
+import { assertEquals, assertExists, assertRejects, stubModelCandidate } from '@floway-dev/test-utils';
 
 const testTelemetryModelIdentity = {
   model: 'test-model',
@@ -40,25 +41,25 @@ const testTelemetryModelIdentity = {
 
 const invocation = (payload: MessagesPayload): MessagesInvocation => ({
   payload,
-  candidate: stubProviderCandidate({
-    model: {
-      endpoints: { messages: {} },
-      enabledFlags: new Set(['messages-web-search-shim']),
-    },
+  candidate: stubModelCandidate({
+    model: { endpoints: { messages: {} } },
+    enabledFlags: new Set(['messages-web-search-shim']),
   }),
   targetApi: 'messages',
   headers: new Headers(),
 });
 
-const gatewayCtx = (apiKeyId: string = 'test-key'): GatewayCtx => ({
+const gatewayCtx = (apiKeyId: string = 'test-key'): ChatGatewayCtx => ({
   apiKeyId,
   upstreamIds: null,
   wantsStream: false,
   runtimeLocation: 'TEST',
   currentColo: 'TEST',
   dump: null,
+  responseHeaders: new Headers(),
   backgroundScheduler: () => {},
   requestStartedAt: 0,
+  store: createNonResponsesSourceStore(apiKeyId),
 });
 
 const encodeUnsignedPayload = (payload: unknown): string => btoa(JSON.stringify(payload)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');

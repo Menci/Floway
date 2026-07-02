@@ -8,7 +8,7 @@ import { assertEquals } from '@floway-dev/test-utils';
 const goodAccount = { chatgptAccountId: 'aid', refresh_token: 'rt_v1', state: 'active' as const, state_updated_at: '2026-01-01T00:00:00Z' };
 const baseRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => ({
   id: 'up_test',
-  provider: 'codex',
+  kind: 'codex',
   name: 'Codex Test',
   enabled: true,
   sortOrder: 0,

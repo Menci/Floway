@@ -6,7 +6,7 @@ import { withMessagesWebSearchShim } from './web-search-shim.ts';
 
 // Unified Messages interceptor list. All entries are attached to every
 // candidate; each interceptor's body decides whether to act (flag-gated entries
-// early-return on `ctx.candidate.model.enabledFlags.has(flagId)`).
+// early-return on `providerModelOf(ctx.candidate).enabledFlags.has(flagId)`).
 //
 // Order follows source-then-target semantics collapsed into a single chain:
 //   - withMessagesWebSearchShim: registered first so its replay rewrite and

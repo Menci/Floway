@@ -117,21 +117,31 @@ export const geminiFunctionResponsePart = (part: GeminiPart, ids: GeminiToolCall
   return { response, id: unmatched?.shift() ?? id };
 };
 
-export const geminiThinkingLevelEffort = (thinkingConfig?: GeminiThinkingConfig): 'low' | 'medium' | 'high' | undefined => {
+// Reasoning effort is freeform on the inbound IRs — the gateway never
+// enum-gates these values at the wire boundary — so the translate-side
+// mappers below return whatever Gemini surfaced for `thinkingLevel` /
+// derived from `thinkingBudget` verbatim.
+
+export const geminiThinkingLevelEffort = (thinkingConfig?: GeminiThinkingConfig): string | undefined => {
   switch (thinkingConfig?.thinkingLevel) {
   case 'minimal':
+    return 'minimal';
   case 'low':
     return 'low';
   case 'medium':
     return 'medium';
   case 'high':
     return 'high';
+  case 'xhigh':
+    return 'xhigh';
+  case 'max':
+    return 'max';
   default:
     return undefined;
   }
 };
 
-export const geminiReasoningEffort = (thinkingConfig?: GeminiThinkingConfig): 'none' | 'low' | 'medium' | 'high' | null => {
+export const geminiReasoningEffort = (thinkingConfig?: GeminiThinkingConfig): string | null => {
   if (!thinkingConfig) return null;
 
   if (thinkingConfig.thinkingBudget !== undefined) {

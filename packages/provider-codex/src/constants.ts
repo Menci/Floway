@@ -1,6 +1,6 @@
-// All Codex / ChatGPT upstream constants. Do NOT make these operator-
-// configurable — wrapper-identifying UA suffixes trigger selective 401s from
-// OpenAI's bot management.
+// All Codex / ChatGPT upstream constants. Keep the data-plane identity fixed
+// to the official Codex CLI shape. Do not add Floway/operator attribution as a
+// product token or trailing User-Agent suffix.
 
 // codex-cli's OAuth client id. Used at auth.openai.com for both authorize and
 // token-exchange. Same value across the canonical Codex CLI source and every
@@ -45,15 +45,16 @@ export const CODEX_RESPONSES_COMPACT_PATH = '/codex/responses/compact';
 export const CODEX_MODELS_PATH = '/codex/models';
 
 // codex_cli_rs version we impersonate on the data plane. Bumped against the
-// latest tag at https://github.com/openai/codex/releases — newer entries in
+// latest stable release at https://github.com/openai/codex/releases — newer entries in
 // /codex/models gate themselves behind a `minimal_client_version` (e.g.
 // gpt-5.5 needs 0.124.0+), so a stale value here silently truncates the model
 // list. The same value flows into both the `?client_version=` query param and
 // the User-Agent so the upstream sees a self-consistent client.
-export const CODEX_CLI_VERSION = '0.137.0';
+export const CODEX_CLI_VERSION = '0.142.0';
 
-// Identity headers for /codex/responses. Bare User-Agent — no
-// parenthetical OS/arch/terminal suffix per the bot-management
-// constraint at the top of this file.
+// Shared official Codex data-plane identity for /codex/models and
+// /codex/responses. The User-Agent intentionally includes Codex's normal
+// OS/arch/terminal segment; do not append Floway/operator/MCP attribution.
 export const CODEX_ORIGINATOR = 'codex_cli_rs';
-export const CODEX_USER_AGENT = `codex_cli_rs/${CODEX_CLI_VERSION}`;
+export const CODEX_USER_AGENT =
+  `codex_cli_rs/${CODEX_CLI_VERSION} (Mac OS 26.5.0; arm64) iTerm.app/3.6.10`;

@@ -3,8 +3,8 @@ import { enumerateModelCandidates } from '../../../../providers/registry.ts';
 import { appendFailedUpstreams } from '../../../../shared/failed-upstreams.ts';
 import { createUpstreamLatencyRecorder, recordPerformanceError, recordPerformanceLatency, requireRecordedDurationMs } from '../../../../shared/telemetry/performance.ts';
 import { recordTokenUsage, tokenUsageFromImagesBody } from '../../../../shared/telemetry/usage.ts';
-import type { GatewayCtx } from '../../../shared/gateway-ctx.ts';
 import type { ServerToolLifecycleEvent, ServerToolOutputItem, ServerToolRegistration, ServerToolTerminal } from '../server-tool-shim.ts';
+import type { BackgroundScheduler } from '@floway-dev/platform';
 import { parseSSEStream } from '@floway-dev/protocols/common';
 import type {
   ResponsesFunctionCallOutputItem,
@@ -15,10 +15,9 @@ import type {
   ResponsesInputImageGenerationCall,
   ResponsesInputItem,
   ResponsesOutputImageGenerationCall,
-  ResponsesPayload,
   ResponsesTool,
 } from '@floway-dev/protocols/responses';
-import type { Fetcher, ModelProviderInstance, PerformanceTelemetryContext, ProviderCandidate, UpstreamModel } from '@floway-dev/provider';
+import { providerModelOf, type Fetcher, type Provider, type PerformanceTelemetryContext, type ModelCandidate, type ProviderModel } from '@floway-dev/provider';
 
 export const SHIM_TOOL_NAME = 'image_generation';
 
@@ -346,8 +345,7 @@ export const synthesizeImageGenerationCallId = (): string =>
 // against the order received — and native flattens every image across messages
 // and tool results into this same forward order. Preserving declaration order
 // therefore makes "the Nth image" mean the same thing here as it does natively.
-export const collectImageSources = (input: ResponsesPayload['input']): ImageSource[] => {
-  if (!Array.isArray(input)) return [];
+export const collectImageSources = (input: readonly ResponsesInputItem[]): ImageSource[] => {
   const sources: ImageSource[] = [];
   const collectFromContent = (content: string | ResponsesInputContent[]): void => {
     if (!Array.isArray(content)) return;
@@ -453,21 +451,21 @@ interface ShimState {
   config: ImageGenerationConfig;
   apiKeyId: string;
   upstreamIds: readonly string[] | null;
-  backgroundScheduler: GatewayCtx['backgroundScheduler'];
+  backgroundScheduler: BackgroundScheduler;
   runtimeLocation: string;
   currentColo: string;
   downstreamAbortSignal: AbortSignal | undefined;
   imageDispatchCount: number;
 }
 
-const recordImageUsage = (state: ShimState, provider: ModelProviderInstance, model: UpstreamModel, modelKey: string, responseBody: unknown): void => {
+const recordImageUsage = (state: ShimState, provider: Provider, model: ProviderModel, modelKey: string, responseBody: unknown): void => {
   const usage = tokenUsageFromImagesBody(responseBody);
   if (usage === null) return;
   const promise = recordTokenUsage(state.apiKeyId, {
     model: model.id,
     upstream: provider.upstream,
     modelKey,
-    cost: provider.provider.getPricingForModelKey(modelKey) ?? null,
+    cost: provider.instance.getPricingForModelKey(modelKey) ?? null,
   }, usage).catch((error: unknown) => {
     console.error('Failed to record image generation usage:', error);
   });
@@ -537,7 +535,7 @@ const serverError = (e: unknown): ImageError => ({
 const resolveImageCandidate = async (
   isEdit: boolean,
   state: ShimState,
-): Promise<{ ok: true; candidate: ProviderCandidate } | { ok: false; error: ImageError }> => {
+): Promise<{ ok: true; candidate: ModelCandidate } | { ok: false; error: ImageError }> => {
   const endpointKey = isEdit ? 'imagesEdits' : 'imagesGenerations';
   const endpointPath = isEdit ? '/images/edits' : '/images/generations';
   let resolution;
@@ -631,8 +629,8 @@ export const parseRetryAfterMs = (headers: Headers): number | null => {
 // unread body — intermediate failed responses are drained inside the loop so
 // the underlying socket can be reused while we sleep.
 const issueImageCall = async (
-  provider: ModelProviderInstance,
-  model: UpstreamModel,
+  provider: Provider,
+  model: ProviderModel,
   fetcher: Fetcher,
   prompt: string,
   isEdit: boolean,
@@ -642,9 +640,15 @@ const issueImageCall = async (
 ): Promise<{ response: Response; modelKey: string }> => {
   for (let attempt = 0; ; attempt++) {
     const recorder = createUpstreamLatencyRecorder();
+    const opts = {
+      fetcher,
+      recordUpstreamLatency: recorder.record,
+      waitUntil: state.backgroundScheduler,
+      headers: new Headers(),
+    };
     const { response, modelKey } = await (isEdit
-      ? provider.provider.callImagesEdits(model, buildEditsForm(prompt, state.config, sources, stream), state.downstreamAbortSignal, { fetcher, recordUpstreamLatency: recorder.record, waitUntil: state.backgroundScheduler, headers: new Headers() })
-      : provider.provider.callImagesGenerations(model, buildGenerationsBody(prompt, state.config, stream), state.downstreamAbortSignal, { fetcher, recordUpstreamLatency: recorder.record, waitUntil: state.backgroundScheduler, headers: new Headers() }));
+      ? provider.instance.callImagesEdits(model, buildEditsForm(prompt, state.config, sources, stream), state.downstreamAbortSignal, opts)
+      : provider.instance.callImagesGenerations(model, buildGenerationsBody(prompt, state.config, stream), state.downstreamAbortSignal, opts));
     const context: PerformanceTelemetryContext = {
       keyId: state.apiKeyId,
       model: model.id,
@@ -675,8 +679,8 @@ const issueImageCall = async (
 // outcome. Transport/backend failures become `{ok:false}` rather than
 // throwing, so the caller always produces a terminal image item.
 const consumeImageResponse = async (
-  provider: ModelProviderInstance,
-  model: UpstreamModel,
+  provider: Provider,
+  model: ProviderModel,
   modelKey: string,
   response: Response,
   state: ShimState,
@@ -796,7 +800,8 @@ const streamImageGeneration = (
 ) => async function* (): AsyncGenerator<ServerToolLifecycleEvent, ServerToolTerminal> {
   const resolved = await resolveImageCandidate(isEdit, state);
   if (!resolved.ok) return imageTerminal(prompt, action, { ok: false, error: resolved.error });
-  const { provider, model, fetcher } = resolved.candidate;
+  const { provider, fetcher } = resolved.candidate;
+  const model = providerModelOf(resolved.candidate);
   const wantsPartials = (state.config.partial_images ?? 0) > 0;
 
   let response: Response;
@@ -918,13 +923,13 @@ export const transformInputItemsForImageGeneration = (
 };
 
 export const imageGenerationServerTool: ServerToolRegistration = (invocation, gatewayCtx) => {
-  if (invocation.targetApi === 'responses' && !invocation.candidate.model.enabledFlags.has('responses-image-generation-shim')) {
+  if (invocation.targetApi === 'responses' && !providerModelOf(invocation.candidate).enabledFlags.has('responses-image-generation-shim')) {
     return { type: 'inactive' };
   }
 
   const tools = Array.isArray(invocation.payload.tools) ? invocation.payload.tools : [];
   const hasHostedTool = tools.some(isHostedImageGenerationTool);
-  const hasReplayInput = Array.isArray(invocation.payload.input) && invocation.payload.input.some(i => i.type === 'image_generation_call');
+  const hasReplayInput = invocation.payload.input.some(i => i.type === 'image_generation_call');
   if (!hasHostedTool && !hasReplayInput) return { type: 'inactive' };
 
   if (!hasHostedTool) {

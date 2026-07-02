@@ -25,7 +25,7 @@ const baseConfig: ClaudeCodeUpstreamConfig = {
 
 const makeRecord = (state: ClaudeCodeUpstreamState): UpstreamRecord => ({
   id: upstreamId,
-  provider: 'claude-code',
+  kind: 'claude-code',
   name: 'Claude Code',
   enabled: true,
   sortOrder: 0,

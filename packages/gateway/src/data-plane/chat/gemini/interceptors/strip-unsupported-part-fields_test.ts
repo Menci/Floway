@@ -1,21 +1,24 @@
 import { test } from 'vitest';
 
 import { stripUnsupportedPartFields } from './strip-unsupported-part-fields.ts';
-import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
+import { createNonResponsesSourceStore } from '../../responses/items/store.ts';
+import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiPayload, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 import { type ExecuteResult, eventResult, type GeminiInvocation } from '@floway-dev/provider';
-import { assertEquals, stubProviderCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
-const stubCtx: GatewayCtx = {
+const stubCtx: ChatGatewayCtx = {
   apiKeyId: 'test-key',
   upstreamIds: null,
   wantsStream: false,
   runtimeLocation: 'TEST',
   currentColo: 'TEST',
   dump: null,
+  responseHeaders: new Headers(),
   backgroundScheduler: () => {},
   requestStartedAt: 0,
+  store: createNonResponsesSourceStore('test-key'),
 };
 
 const okEvents = (): Promise<ExecuteResult<ProtocolFrame<GeminiStreamEvent>>> =>
@@ -23,7 +26,7 @@ const okEvents = (): Promise<ExecuteResult<ProtocolFrame<GeminiStreamEvent>>> =>
 
 const invocation = (payload: GeminiPayload): GeminiInvocation => ({
   payload,
-  candidate: stubProviderCandidate(),
+  candidate: stubModelCandidate(),
   targetApi: 'messages',
   headers: new Headers(),
 });

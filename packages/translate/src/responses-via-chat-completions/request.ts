@@ -243,6 +243,7 @@ export const translateResponsesToChatCompletions = (payload: ResponsesPayload): 
     ...(payload.prompt_cache_key !== undefined ? { prompt_cache_key: payload.prompt_cache_key } : {}),
     ...(payload.safety_identifier !== undefined ? { safety_identifier: payload.safety_identifier } : {}),
     ...(payload.reasoning?.effort != null ? { reasoning_effort: payload.reasoning.effort } : {}),
+    ...(payload.text?.verbosity != null ? { verbosity: payload.text.verbosity } : {}),
     ...(payload.service_tier !== undefined ? { service_tier: payload.service_tier } : {}),
     // Chat Completions has no request-level counterpart for Responses
     // `reasoning`; only explicit reasoning items survive this translation.

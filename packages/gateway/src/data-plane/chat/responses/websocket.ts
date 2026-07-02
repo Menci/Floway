@@ -4,9 +4,9 @@ import { createResponsesWsSession } from './items/store.ts';
 import { PreviousResponseNotFoundError } from './serve-prep.ts';
 import { responsesServe } from './serve.ts';
 import { tokenUsageFromResponsesResult } from './usage.ts';
-import { apiKeyFromContext, type AuthedContext } from '../../../middleware/auth.ts';
+import type { AuthedContext } from '../../../middleware/auth.ts';
 import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
-import { createGatewayCtxFromHono, type GatewayCtx } from '../shared/gateway-ctx.ts';
+import { createChatGatewayCtxFromHono, type ChatGatewayCtx, type GatewayCtx } from '../shared/gateway-ctx.ts';
 import { SourceStreamState, eventResultMetadata, recordPerformance, recordUsage } from '../shared/respond.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS, type StreamCompletion } from '../shared/stream/sse.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -14,6 +14,7 @@ import { RESPONSES_MISSING_TERMINAL_MESSAGE } from '@floway-dev/protocols/respon
 import { isResponsesTerminalEvent, type ResponsesPayload, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { toInternalDebugError } from '@floway-dev/provider';
+import { canonicalizeResponsesPayload, type CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
 
 interface WorkerWebSocket extends WebSocket {
   accept(): void;
@@ -87,7 +88,7 @@ export const responsesWebSocket = async (c: AuthedContext): Promise<Response> =>
 };
 
 const createResponsesWebSocketEvents = (c: AuthedContext): ResponsesWebSocketHandlers => {
-  const session = createResponsesWsSession(apiKeyFromContext(c).id);
+  const session = createResponsesWsSession();
   let closed = false;
   let activeAbortController: AbortController | undefined;
   let queue = Promise.resolve();
@@ -132,7 +133,7 @@ const handleClientMessage = async (
 ): Promise<void> => {
   const signal = downstreamAbortController.signal;
   let eventId: string | undefined;
-  let ctx: GatewayCtx | undefined;
+  let ctx: ChatGatewayCtx | undefined;
   try {
     // Capture raw frame bytes up front so they're available as the dump's
     // request body when `ctx` is constructed below. Payloads that fail to
@@ -162,7 +163,7 @@ const handleClientMessage = async (
       ? message.response
       : Object.fromEntries(Object.entries(message).filter(([key]) => key !== 'type' && key !== 'event_id'));
     const payload = responsesPayloadFromClientSource(source);
-    ctx = createGatewayCtxFromHono(c, {
+    ctx = createChatGatewayCtxFromHono(c, {
       wantsStream: true,
       downstreamAbortController,
       // The WS upgrade has no HTTP body; the dump's request body is the
@@ -171,12 +172,11 @@ const handleClientMessage = async (
       requestBody: { bytes: requestBytes, streamError: null },
       method: 'WS',
       model: payload.model,
-    });
-    const store = session.createStore(payload.store ?? undefined);
+    }, apiKeyId => session.createStore(apiKeyId, payload.store ?? undefined));
 
     let result;
     try {
-      result = await responsesServe.generate({ payload, ctx, store, headers: inboundHeadersForUpstream(c) });
+      result = await responsesServe.generate({ payload, ctx, headers: inboundHeadersForUpstream(c) });
     } catch (error) {
       if (signal.aborted || isClosed()) return;
       // The HTTP entry renders this verbatim envelope as a 400; WS surfaces the
@@ -231,7 +231,7 @@ const validateClientMessage = (parsed: unknown): ResponsesWebSocketClientEvent =
   return parsed as ResponsesWebSocketClientEvent;
 };
 
-const responsesPayloadFromClientSource = (source: object): ResponsesPayload => {
+const responsesPayloadFromClientSource = (source: object): CanonicalResponsesPayload => {
   const candidate = source as { model?: unknown; input?: unknown };
   if (typeof candidate.model !== 'string' || candidate.model.length === 0) {
     throw new WebSocketClientMessageError('response.create requires response.model to be a non-empty string.');
@@ -239,7 +239,9 @@ const responsesPayloadFromClientSource = (source: object): ResponsesPayload => {
   if (typeof candidate.input !== 'string' && !Array.isArray(candidate.input)) {
     throw new WebSocketClientMessageError('response.create requires response.input to be a string or an array.');
   }
-  return { ...source, stream: true } as ResponsesPayload;
+  // Feed the wire shape through the same canonicalization the HTTP entry uses,
+  // then stamp `stream: true` — the WS transport streams every turn.
+  return { ...canonicalizeResponsesPayload(source as ResponsesPayload), stream: true };
 };
 
 const respondResponsesWebSocket = async (input: {

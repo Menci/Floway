@@ -431,37 +431,11 @@ describe('codex 1p namespace', () => {
         },
       );
       const slugs = body.models.map(m => m.slug);
-      // The bundled catalog ships with six slugs (gpt-5.5, gpt-5.4,
-      // gpt-5.4-mini, gpt-5.3-codex, gpt-5.2, codex-auto-review). Registry
-      // here advertises only gpt-5.5, and codex-auto-review's target
-      // (gpt-5.4) is missing — so the response is just gpt-5.5.
+      // Bundled rust-v0.136.0 catalog ships six slugs (gpt-5.5, gpt-5.4,
+      // gpt-5.4-mini, gpt-5.3-codex, gpt-5.2, codex-auto-review). Only
+      // gpt-5.5 is in the registry; every other slug — including
+      // codex-auto-review — drops out.
       expect(slugs).toEqual(['gpt-5.5']);
-    });
-
-    it('keeps codex-auto-review when its alias target is in the registry, drops it otherwise, and reports the target window', async () => {
-      const { apiKey } = await setupAppTest();
-      const app = buildCodexApp();
-      const body = await withMockedFetch(
-        copilotFetch([{ id: 'gpt-5.4', maxContextWindowTokens: 272000 }]),
-        async () => {
-          const response = await app.request('/azure-api.codex/models', {
-            headers: { authorization: `Bearer ${apiKey.key}` },
-          });
-          expect(response.status).toBe(200);
-          return await response.json() as CodexModelsResponse;
-        },
-      );
-      const slugs = new Set(body.models.map(m => m.slug));
-      expect(slugs.has('gpt-5.4')).toBe(true);
-      expect(slugs.has('codex-auto-review')).toBe(true);
-      expect(slugs.has('gpt-5.5')).toBe(false);
-      // codex-auto-review has no registry entry of its own, but it gets
-      // rewritten to gpt-5.4 at request time, so its catalog row reports
-      // gpt-5.4's window — not the bundled 1000000 max that would advertise
-      // a tier the gateway cannot serve.
-      const autoReview = body.models.find(m => m.slug === 'codex-auto-review');
-      expect(autoReview?.context_window).toBe(272000);
-      expect(autoReview?.max_context_window).toBe(272000);
     });
 
     it('synthesizes a catalog entry for registry chat models with no bundled match', async () => {

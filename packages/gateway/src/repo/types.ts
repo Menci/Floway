@@ -1,7 +1,7 @@
 import type { HistogramBucket } from '../shared/performance-histogram.ts';
 import type { WebSearchProviderName } from '../shared/web-search-providers.ts';
-import type { BillingDimension, ModelPricing } from '@floway-dev/protocols/common';
-import type { UpstreamModel, UpstreamRecord } from '@floway-dev/provider';
+import type { AliasSelection, AliasTarget, AnnouncedMetadata, BillingDimension, ModelKind, ModelPricing } from '@floway-dev/protocols/common';
+import type { ProviderModel, UpstreamRecord } from '@floway-dev/provider';
 
 export interface ApiKey {
   id: string;
@@ -185,13 +185,13 @@ export interface PerformanceRepo {
 
 export interface CachedModelsRow {
   fetchedAt: number;
-  models: UpstreamModel[];
+  models: ProviderModel[];
   lastError: { message: string; at: number } | null;
 }
 
 export interface ModelsCacheRepo {
   get(upstreamId: string): Promise<CachedModelsRow | null>;
-  put(upstreamId: string, row: { fetchedAt: number; models: UpstreamModel[] }): Promise<void>;
+  put(upstreamId: string, row: { fetchedAt: number; models: ProviderModel[] }): Promise<void>;
   setLastError(upstreamId: string, error: { message: string; at: number } | null): Promise<void>;
   delete(upstreamId: string): Promise<void>;
 }
@@ -264,6 +264,48 @@ export interface ProxyBackoffRepo {
   deleteAll(): Promise<void>;
 }
 
+// One alias row. The wire DTO (`ModelAlias` in @floway-dev/protocols/common)
+// is the snake_case projection of this record; conversion lives in
+// control-plane/model-aliases/serialize.ts.
+export interface ModelAliasRecord {
+  name: string;
+  kind: ModelKind;
+  selection: AliasSelection;
+  // null = derive at render time from targets + rules.
+  displayName: string | null;
+  // Listing-only visibility: filtered by `synthesizeListedAliases` before
+  // an alias enters /v1/models. Dispatch stays alias-agnostic on this flag,
+  // so a hidden alias remains resolvable at request time.
+  visibleInModelsList: boolean;
+  // Order is meaningful for selection=first-available; preserved (but
+  // ignored) for selection=random.
+  targets: AliasTarget[];
+  // null = compute the announced /v1/models payload automatically from
+  // targets + rules at listing time. A non-null payload replaces the
+  // computed value at the top-level sub-block boundary (`limits` /
+  // `chat`); omitted sub-blocks fall back to the computation but a
+  // present sub-block wins wholesale (it does not merge per-leaf).
+  announcedMetadata: AnnouncedMetadata | null;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ModelAliasesRepo {
+  list(): Promise<ModelAliasRecord[]>;
+  getByName(name: string): Promise<ModelAliasRecord | null>;
+  // Throws on primary-key collision so the route layer can surface a 409.
+  insert(record: ModelAliasRecord): Promise<void>;
+  // Replaces the row keyed by `oldName`. When oldName === record.name the
+  // call is a plain UPDATE; when they differ this is a rename, executed as
+  // INSERT(new) + DELETE(old) inside one transaction so dependent reads
+  // stay consistent. Throws when `oldName` does not exist, or when the
+  // rename target already collides with a different row.
+  update(oldName: string, record: ModelAliasRecord): Promise<void>;
+  delete(name: string): Promise<boolean>;
+  deleteAll(): Promise<void>;
+}
+
 export interface StoredResponsesItem {
   id: string;
   apiKeyId: string | null;
@@ -330,6 +372,7 @@ export interface Repo {
   upstreams: UpstreamRepo;
   proxies: ProxyRepo;
   proxyBackoffs: ProxyBackoffRepo;
+  modelAliases: ModelAliasesRepo;
   responsesItems: ResponsesItemsRepo;
   responsesSnapshots: ResponsesSnapshotsRepo;
 }

@@ -2,14 +2,14 @@ import { beforeEach, test, vi } from 'vitest';
 
 import { initRepo } from '../../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../../repo/memory.ts';
-import type { GatewayCtx } from '../../../shared/gateway-ctx.ts';
-import { MemoryStatefulResponsesBacking, LayeredStatefulResponsesStore } from '../../items/store.ts';
+import type { ChatGatewayCtx } from '../../../shared/gateway-ctx.ts';
+import { createNonResponsesSourceStore } from '../../items/store.ts';
 import type { ResponsesInvocation } from '../types.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { directFetcher, type EventResult, type ExecuteResult } from '@floway-dev/provider';
-import { assert, assertEquals } from '@floway-dev/test-utils';
+import { type EventResult, type ExecuteResult } from '@floway-dev/provider';
+import { assert, assertEquals, stubModelCandidate } from '@floway-dev/test-utils';
 
 // Dirty integration harness: mock the model registry so the image backend is a
 // pair of in-test stubs, then drive the whole shim (function-tool rewrite,
@@ -36,12 +36,12 @@ const stub = vi.hoisted((): BackendStub => ({ generationsCalls: [], editsForms: 
 const defaultCandidates = vi.hoisted(() => () => [{
   provider: {
     upstream: 'u',
-    providerKind: 'custom',
+    kind: 'custom',
     name: 'mock-image',
     disabledPublicModelIds: [],
     modelPrefix: null,
     supportsResponsesItemReference: false,
-    provider: {
+    instance: {
       getPricingForModelKey: () => null,
       callImagesGenerations: async (_model: unknown, body: Record<string, unknown>, _signal: unknown, opts: { recordUpstreamLatency: <T>(p: Promise<T>) => Promise<T> }) => {
         stub.generationsCalls.push(body);
@@ -60,6 +60,13 @@ const defaultCandidates = vi.hoisted(() => () => [{
   model: {
     id: 'gpt-image-2',
     endpoints: { imagesGenerations: {}, imagesEdits: {} },
+    providerModels: {
+      u: {
+        id: 'gpt-image-2', limits: {}, kind: 'image',
+        endpoints: { imagesGenerations: {}, imagesEdits: {} },
+        enabledFlags: new Set<string>(),
+      },
+    },
   },
   fetcher: (request: Request) => fetch(request),
 }]);
@@ -132,40 +139,26 @@ const scriptedRun = (turns: ProtocolFrame<ResponsesStreamEvent>[][]) => {
 };
 
 const makeCtx = (input: unknown[], action: 'generate' | 'edit' | 'auto' = 'auto', extraTool: Record<string, unknown> = {}): ResponsesInvocation => ({
-  candidate: {
-    provider: {
-      upstream: 'test-upstream', providerKind: 'custom', name: 'test',
-      disabledPublicModelIds: [], modelPrefix: null,
-      provider: {} as never, supportsResponsesItemReference: false,
-    },
-    model: {
-      id: 'm', limits: {}, kind: 'chat',
-      endpoints: { responses: {} },
-      enabledFlags: new Set<string>(['responses-image-generation-shim']),
-    },
-    fetcher: directFetcher,
-  },
-  targetApi: 'responses',
-  store: new LayeredStatefulResponsesStore({
-    apiKeyId: 'test-key',
-    reads: [new MemoryStatefulResponsesBacking()],
-    itemWrites: [],
-    snapshotWrites: [],
-    stageInputs: false,
+  candidate: stubModelCandidate({
+    enabledFlags: new Set(['responses-image-generation-shim']),
+    model: { id: 'm', endpoints: { responses: {} } },
   }),
+  targetApi: 'responses',
   payload: { model: 'orchestrator', input, tools: [{ type: 'image_generation', action, ...extraTool }] } as never,
   headers: new Headers(),
   action: 'generate',
 });
-const gatewayCtx = (): GatewayCtx => ({
+const gatewayCtx = (): ChatGatewayCtx => ({
   apiKeyId: 'test-key',
   upstreamIds: null,
   wantsStream: true,
   runtimeLocation: 'TEST',
   currentColo: 'TEST',
   dump: null,
+  responseHeaders: new Headers(),
   backgroundScheduler: () => {},
   requestStartedAt: 0,
+  store: createNonResponsesSourceStore('test-key'),
 });
 
 const drain = async (result: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>): Promise<ResponsesStreamEvent[]> => {
@@ -183,7 +176,7 @@ beforeEach(async () => {
   // "unknown upstream id: u".
   await repo.upstreams.save({
     id: 'u',
-    provider: 'custom',
+    kind: 'custom',
     name: 'mock-image',
     enabled: true,
     sortOrder: 0,
@@ -381,18 +374,13 @@ test('resolveImageCandidate renders model_not_supported when image-kind candidat
   // The resolver produced an image-kind candidate but its `endpoints` does
   // not include the per-endpoint key the request needs (imagesGenerations).
   stub.nextResolutionOverride = {
-    candidates: [{
-      provider: {
-        upstream: 'u', providerKind: 'custom', name: 'wrong-endpoint',
-        disabledPublicModelIds: [], modelPrefix: null,
-        supportsResponsesItemReference: false,
-        provider: { getPricingForModelKey: () => null },
+    candidates: [stubModelCandidate({
+      model: {
+        id: 'gpt-image-2',
+        kind: 'image',
+        endpoints: { imagesEdits: {} },
       },
-      // Image-kind candidate without `imagesGenerations` — the endpoint
-      // filter inside resolveImageCandidate rejects it.
-      model: { id: 'gpt-image-2', endpoints: { imagesEdits: {} } },
-      fetcher: (request: Request) => fetch(request),
-    }],
+    })],
     sawModel: true,
     failedUpstreams: [],
   };

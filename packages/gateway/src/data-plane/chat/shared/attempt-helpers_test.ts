@@ -16,7 +16,7 @@ const testScheduler = (promise: Promise<unknown>): void => {
 // Azure resolves its catalog without HTTP, giving deterministic candidates.
 const azureUpstream = (id: string, sortOrder: number, modelIds: string[], endpoints: ModelEndpoints): UpstreamRecord => ({
   id,
-  provider: 'azure',
+  kind: 'azure',
   name: id,
   enabled: true,
   sortOrder,

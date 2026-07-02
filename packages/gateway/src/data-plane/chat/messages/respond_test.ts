@@ -4,7 +4,8 @@ import { test } from 'vitest';
 import { createMessagesStreamUsageState, respondMessages, tokenUsageFromMessagesFrame } from './respond.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
-import type { GatewayCtx } from '../shared/gateway-ctx.ts';
+import { createNonResponsesSourceStore } from '../responses/items/store.ts';
+import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import { eventResult, type ExecuteResult } from '@floway-dev/provider';
@@ -528,7 +529,7 @@ const forwardedHeadersFixture = (): Headers => new Headers({
   'set-cookie': 'session=secret',
 });
 
-const makeRespondCtx = (): GatewayCtx => ({
+const makeRespondCtx = (): ChatGatewayCtx => ({
   apiKeyId: 'key_respond_test',
   upstreamIds: null,
   wantsStream: false,
@@ -537,6 +538,8 @@ const makeRespondCtx = (): GatewayCtx => ({
   requestStartedAt: 0,
   currentColo: 'TEST',
   dump: null,
+  responseHeaders: new Headers(),
+  store: createNonResponsesSourceStore('key_respond_test'),
 });
 
 const messagesEventsForRespond = (): readonly MessagesStreamEvent[] => [
@@ -668,7 +671,7 @@ test('respondMessages records the last observed message_delta usage when the cli
       { headers: new Headers({ 'content-type': 'text/event-stream' }) },
     );
     const downstreamAbortController = new AbortController();
-    const ctx: GatewayCtx = { ...makeRespondCtx(), wantsStream: true, downstreamAbortController };
+    const ctx: ChatGatewayCtx = { ...makeRespondCtx(), wantsStream: true, downstreamAbortController };
     return respondMessages(c, result, true, ctx).then(({ response }) => response);
   });
   const response = await app.request('/');
