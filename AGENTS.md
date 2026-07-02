@@ -49,103 +49,59 @@ here.
 
 ## Design Principle: Upstream Models And Field Values Are Opaque
 
-Floway assumes an upstream speaks the protocol declared for it (Chat
-Completions, Messages, Responses, Gemini, Embeddings, Images, Ollama).
-Beyond that, the model catalog the upstream serves and the exact enum
-values each protocol slot accepts are upstream-owned. Floway must not
-silently collapse that surface onto a fixed vendor family.
+Floway assumes each upstream speaks the protocol declared for it. The
+model catalog and the enum values in open-string protocol slots are
+upstream-owned; Floway must not silently collapse either onto a fixed
+vendor family.
 
-The rule has a permission side and a prohibition side, and the
-prohibition is narrower than a naive reading would suggest.
+Allowed:
 
-**Explicit model-specific branching is allowed.** Code MAY special-case
-a known id, a family regex, or a version threshold when the special
-case only fires on a match: `if (model.id === 'X') use special-caps`,
-`if (isOpus47Plus(id)) use high-res caps`, `if (isClaudeFamily(id))
-promote thinking display`. These are "handle THIS identified model
-differently" — vendor knowledge, and vendor knowledge lives in the code
-that talks to that vendor.
+- **Identified-model special cases** — `if (model.id === 'X')`,
+  `if (isOpus47Plus(id))`, `if (isClaudeFamily(id))`. Vendor knowledge
+  lives in the code that talks to that vendor.
+- **Provider-wide uniform defaults on a bounded scope** — e.g.,
+  `provider-ollama` advertising `reasoning.effort: { supported: ['low',
+  'medium', 'high'] }` for every thinking-capable Ollama model. The
+  scope is bounded by the provider itself.
+- **Metadata-first id-inference fallbacks.** Endpoint capability comes
+  from upstream metadata first (Copilot `supported_endpoints`, a
+  Floway-shaped upstream's `kind`, capabilities blocks, operator
+  override); a name-token or prefix fallback that fires AFTER the
+  metadata check is silent is fine, provided it lives in the provider
+  package that owns the workaround and — for upstream-bug workarounds
+  — carries a reference URL and a listing in the
+  `audit-copilot-workarounds` skill or equivalent.
+- **Client-tool-compat name filters.** Dashboard helpers that build a
+  config for a CLI which itself expects a name family (Claude Code CLI
+  expects `claude-*`, Codex CLI expects `gpt-5-*`) MAY filter that
+  picker by the same pattern. Mirroring the CLI's own expectation, not
+  Floway asserting an endpoint mapping. Scope must be the CLI setup
+  helper; general model pickers still read `endpoints` from the DTO.
 
-**Provider-wide uniform defaults are allowed on a bounded scope.** A
-provider package MAY expose one editorial default across every model it
-serves — e.g., `provider-ollama` advertising
-`reasoning.effort: { supported: ['low','medium','high'], default:
-'medium' }` for every Ollama model that declares `thinking`. The scope
-is bounded by the provider itself: Ollama can only serve Ollama, so
-"for every Ollama thinking-capable model" is a bounded editorial
-statement, not an unbounded narrowing.
+Forbidden — silent narrowing at wire / translate / control-plane
+boundaries. Open-string fields declared `| (string & {})` or bare
+`string` in `packages/protocols/` (`reasoning_effort`, `verbosity`,
+`service_tier`, `reasoning.summary`, `thinkingLevel`, `speed`, Messages
+`thinking.display`, …) MUST be forwarded verbatim: `z.string()` in
+control-plane schemas, direct pass-through in translators, no `switch`
+default that drops unknown values. The upstream owns the accept/reject
+decision. Cross-protocol synthesis between different shapes — Gemini
+`includeThoughts: true` ↔ Responses `summary`, Messages
+`thinking.type: 'enabled'` (no effort) ↔ Chat `reasoning_effort` — is
+legit translation, distinct from within-protocol enum gating.
 
-**Metadata-first id-inference fallbacks are allowed when no metadata
-exists.** Endpoint capability comes from upstream metadata first —
-Copilot's `supported_endpoints`, a Floway-shaped upstream's `kind`,
-capabilities blocks on `/models`, or an operator override. When no such
-metadata is available (a plain OpenAI-compatible `/models` response
-carries no `kind`; Copilot's Anthropic-family entries under-report
-`/v1/messages`), a name-token or id-prefix heuristic that fires only
-AFTER the metadata check is fine as a Tier-N fallback. Any such
-fallback MUST (a) sit strictly below the metadata check (metadata wins
-if present), (b) live in the provider package that owns the workaround,
-(c) carry a comment explaining why metadata alone isn't sufficient, and
-(d) for upstream-bug workarounds, carry a reference URL and be listed
-in the `audit-copilot-workarounds` skill (or the equivalent
-provider-scoped audit) so it can be periodically re-checked.
+**Every vendor constant needs a reference URL** — image caps, effort→
+budget bin edges, canonical enum values, header sets, protocol quirks.
+Prose like "per Anthropic's vision docs" without a permalink doesn't
+count.
 
-**Client-tool-compat surfaces are allowed to filter by name family.**
-When Floway generates a config for a specific client tool that itself
-makes assumptions about model naming (Claude Code CLI expects
-Claude-family model ids, Codex CLI expects `gpt-5`-family ids), the
-dashboard helper that builds that config MAY filter the picker by the
-same name pattern the CLI expects. This is not Floway asserting an
-endpoint mapping — it is Floway mirroring the client tool's own
-expectations. Filtering must be scoped to the specific CLI setup
-helper; general model pickers must still read `endpoints` from the DTO.
-
-**Silent narrowing at a wire / translation / control-plane boundary is
-forbidden.** Concretely:
-
-- Open-string fields — `reasoning_effort`, `verbosity`, `service_tier`,
-  `reasoning.summary`, `thinkingLevel`, `speed`, Messages
-  `thinking.display`, and every other slot the wire types in
-  `packages/protocols/` declare as `| (string & {})` or bare `string`
-  — MUST be forwarded verbatim through translate layers, interceptors,
-  and control-plane Zod schemas. A `switch` whose `default:` returns
-  `undefined` is a violation; `z.enum([...])` on such a field is a
-  violation. Use `z.string()` in schemas and a direct pass-through in
-  translators, so the upstream owns the accept/reject decision.
-- A translation-layer synthesis of a "safe default" from a caller's
-  intent (mapping Gemini's `includeThoughts: true` to a specific
-  Responses `summary` string, mapping Messages `thinking.type:
-  'enabled'` without effort to a synthesized effort) MAY be necessary
-  when the source protocol expresses the same intent through a
-  different shape than the target does. That's cross-protocol
-  translation, distinct from within-protocol enum gating. It is not a
-  violation of this rule; when in doubt, prefer forwarding to
-  synthesis and let the upstream reject if it can't consume the
-  passthrough.
-
-**Reference URLs are required for vendor constants.** Any hardcoded
-value that comes from an upstream doc, spec, community convention, or
-wire capture (image caps, canonical enum values, header sets, protocol
-quirks, effort→budget bin edges) MUST carry a URL in a comment. Prose
-like "per Anthropic's vision docs" or "community convention" without a
-link doesn't count — the whole point of the reference is that a future
-reader can re-verify it against the source.
-
-Legit narrow exceptions to the "no naming assumption" language above:
-
-- **Per-provider pricing tables (`pricing.ts` in each `provider-*`).**
-  Pricing is inherently vendor-specific, the map returns null for
-  unknown keys, and no downstream code branches on the mapping.
-- **A provider's config discriminator naming its OWN provider kind**
-  (`kind: 'claude-code'`, `kind: 'copilot'`, …). Floway-internal
-  identifier, not an upstream model assumption.
-- **Vendor-locked provider packages (`provider-claude-code`,
-  `provider-codex`).** Subscription products serving a fixed vendor's
-  models under an OAuth client. Even inside those, name-based endpoint
-  or protocol-capability gating still needs the metadata-first
-  ordering; pricing and fixed-catalog request/header mimicry are OK,
-  and mimicry constants MUST be captured verbatim from a live wire
-  probe with a reference URL.
+Beyond the allowed patterns above, three carve-outs also fall outside
+the prohibition: per-provider pricing tables (`pricing.ts` — return
+null for unknown keys); provider config discriminators naming the OWN
+kind (`kind: 'claude-code'`); and vendor-locked provider packages
+(`provider-claude-code`, `provider-codex`) doing fixed-catalog
+request/header mimicry captured verbatim from a live wire probe with a
+reference URL.
 
 Stack: Hono on Web APIs, TypeScript, pnpm, Vitest. The dashboard is a
 Vue + Vite SPA. Cloudflare Workers is the production deployment target;
