@@ -7,7 +7,9 @@ import { computed, ref, watch, watchEffect } from 'vue';
 
 import { callApi, useApi } from '../../api/client.ts';
 import ChartCanvas from '../../components/charts/ChartCanvas.vue';
+import ChartSeriesControls from '../../components/charts/ChartSeriesControls.vue';
 import { chartColor, chartFont, chartXAxisTick, dashboardBuckets, dashboardRangeQuery, type DashboardRange } from '../../components/charts/dashboard-chart.ts';
+import { applySeriesSelection, chartEventsWithDoubleClick, chartSeriesIds, createSeriesIsolation, handleLegendClick } from '../../components/charts/series-selection.ts';
 import { useAuthStore } from '../../stores/auth.ts';
 import { OverlayScrollbars, Spinner } from '@floway-dev/ui';
 
@@ -67,6 +69,7 @@ const performanceChartView = ref<ChartView>('model');
 const performancePercentile = ref<PercentileKey>('p95Ms');
 const performanceModel = ref<string>('');
 const performanceView = ref<PerformanceView>(initialOverview.data.value.view);
+const hiddenPerformanceSeries = ref(new Set<string>());
 
 const overview = ref<PerformanceOverviewResponse>(initialOverview.data.value.overview);
 const performanceError = ref<string | null>(initialOverview.data.value.error);
@@ -113,6 +116,8 @@ watchEffect(() => {
   if (!options.includes(performanceModel.value)) performanceModel.value = options[0]!;
 });
 
+const performanceSeriesIsolation = createSeriesIsolation();
+
 const formatDuration = (ms: number | null) => {
   if (ms === null) return '—';
   if (ms >= 60_000) return `${(ms / 60_000).toFixed(1)}m`;
@@ -135,6 +140,8 @@ const chartConfig = computed<ChartConfiguration<'line'>>(() => {
           const color = chartColor(i);
           return {
             label: group,
+            seriesId: group,
+            hidden: hiddenPerformanceSeries.value.has(group),
             data: bucketKeys.map(k => byBucket.get(k) ?? null),
             borderColor: color,
             backgroundColor: `${color}25`,
@@ -152,6 +159,8 @@ const chartConfig = computed<ChartConfiguration<'line'>>(() => {
         const color = chartColor(i);
         return {
           label: p.replace('Ms', ''),
+          seriesId: p,
+          hidden: hiddenPerformanceSeries.value.has(p),
           data: bucketKeys.map(k => byBucket.get(k) ?? null),
           borderColor: color,
           backgroundColor: `${color}25`,
@@ -172,6 +181,7 @@ const chartConfig = computed<ChartConfiguration<'line'>>(() => {
     type: 'line',
     data: { labels, datasets },
     options: {
+      events: chartEventsWithDoubleClick,
       responsive: true,
       maintainAspectRatio: false,
       animation: false,
@@ -180,6 +190,10 @@ const chartConfig = computed<ChartConfiguration<'line'>>(() => {
         legend: {
           position: 'bottom',
           labels: { color: '#9e9e9e', font: { size: 11, family: chartFont.sans }, boxWidth: 12, padding: 16, usePointStyle: true, pointStyle: 'circle' },
+          onClick: (event, legendItem) => {
+            const dataset = datasets[legendItem.datasetIndex!];
+            handleLegendClick(event, performanceSeriesIsolation, hiddenPerformanceSeries.value, datasets.map(d => d.seriesId), dataset.seriesId);
+          },
         },
         tooltip: {
           backgroundColor: 'rgba(12,16,21,0.95)',
@@ -217,6 +231,8 @@ const chartConfig = computed<ChartConfiguration<'line'>>(() => {
     },
   };
 });
+
+const performanceSeriesIds = computed(() => chartSeriesIds(chartConfig.value));
 
 const performanceSummary = computed(() => {
   const row = overview.value.summaryRows[0];
@@ -373,6 +389,9 @@ const performanceSummary = computed(() => {
         </div>
       </div>
 
+      <div class="mb-2 flex justify-end">
+        <ChartSeriesControls label="Performance series selection" @select="applySeriesSelection(hiddenPerformanceSeries, performanceSeriesIds, $event)" />
+      </div>
       <div style="height: 340px; position: relative;">
         <ChartCanvas :config="chartConfig" />
       </div>
