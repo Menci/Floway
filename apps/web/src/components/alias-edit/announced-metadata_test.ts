@@ -4,7 +4,7 @@ import { computeAnnouncedMetadata } from './announced-metadata.ts';
 import { buildRealModel } from '../../api/test-fixtures.ts';
 import type { AliasTarget, ChatAliasRules, ControlPlaneModel } from '../../api/types.ts';
 
-// Mirror of `packages/gateway/src/data-plane/models/alias-listing_test.ts`'s
+// Mirror of `packages/gateway/src/data-plane/shared/listing/alias_test.ts`'s
 // matrix on the frontend's hand-written `intersectChat` / `intersectLimits`.
 // The two have already drifted once (the ||→&& fix landed gateway-side first),
 // so every invariant the gateway test pins lands here too.

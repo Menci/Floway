@@ -5,7 +5,7 @@
 // the operator flips the override switch on, so the editor starts
 // from the same baseline the wire surface would have published.
 //
-// Mirrors packages/gateway/src/data-plane/models/alias-listing.ts.
+// Mirrors packages/gateway/src/data-plane/shared/listing/alias.ts.
 // Keeping a local copy avoids a server round-trip per dialog open,
 // at the cost of a duplicated computation that we keep in sync by
 // hand. The backend stays authoritative — what `/v1/models` reports

@@ -525,8 +525,9 @@ test('alias resolution swaps the inbound model id for the target and overlays ru
     return { ok: true, events: makeProtocolFrames(makeMessagesResultEvents()), modelKey: 'claude-opus-4-7' };
   });
   // Alias flow shape: the resolver returns candidates carrying the target's
-  // upstream catalog id AND the alias's rule overlay. Serve rewrites
-  // `payload.model` to `candidate.model.id` and stashes the rules on ctx.
+  // upstream catalog id AND the alias's rule overlay on `candidate.rules`.
+  // Serve normalizes `payload.model` to `candidate.model.id`; the attempt
+  // reads the overlay directly off `candidate.rules` at wire-call time.
   const candidate = makeCandidate({ upstream: 'up_cf', callMessages });
   Object.assign(candidate.model, { id: 'claude-opus-4-7' });
   queueResolution([candidate], { aliasRules: { reasoning: { effort: 'high', budget_tokens: 2048 }, serviceTier: 'fast' } });

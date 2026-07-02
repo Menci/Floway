@@ -786,9 +786,9 @@ describe('catalog listing under modelPrefix', () => {
 
   test('listed=[unprefixed, prefixed] emits both surfaces, both upstreams enumerate on the shared bare id', async () => {
     // up_plain has no prefix and lists `gpt-4o`. up_dual exposes both forms.
-    // The bare `gpt-4o` reaches both upstreams (no first-wins exclusion); the
-    // `or/gpt-4o` surface belongs solely to up_dual because up_plain's catalog
-    // does not contain `or/gpt-4o`.
+    // The bare `gpt-4o` reaches both upstreams — the resolver enumerates
+    // candidates from every match; the `or/gpt-4o` surface belongs solely
+    // to up_dual because up_plain's catalog does not contain `or/gpt-4o`.
     const { repo } = await setupAppTest();
     await repo.upstreams.deleteAll();
     await repo.upstreams.save(buildCustomUpstreamRecord({
@@ -919,7 +919,8 @@ describe('catalog listing under modelPrefix', () => {
   // `bb/gpt-5`, a longer `aa/bb/`-prefixed upstream whose catalog carries the
   // id `gpt-5`, and a bare upstream whose catalog literally carries
   // `aa/bb/gpt-5`. Every upstream must enumerate as an independent match —
-  // the old first-wins primitive would have shadowed two of them.
+  // an earlier iteration of the resolver returned only the first match and
+  // would have shadowed two of them.
   test('three upstreams advertising the same public id via different paths all enumerate as matches', async () => {
     const { repo } = await setupAppTest();
     await repo.upstreams.deleteAll();
