@@ -118,9 +118,10 @@ otherwise the real-catalog walk:
 ```
 enumerateModelCandidates({upstreamIds, model, kind, ...})            ← entry
   ├─ alias lookup: getRepo().modelAliases.getByName(model)
-  │     └─ if matched: walk targets in selection order, delegating each
-  │        to the real-catalog walk; the first target with kind-matching
-  │        candidates wins, and its rule overlay rides out on `aliasRules`
+  │     └─ if matched: walk EVERY target in selection-mode order,
+  │        delegating each to the real-catalog walk; tag each returned
+  │        candidate with that target's rule overlay; flatten across
+  │        targets and dedup by (model.id, upstream, rules)
   └─ otherwise: real-catalog walk on the inbound id
        └─ enumerateRealModelCandidates per provider (dated-suffix retry
           if the first pass matched nothing)
@@ -131,15 +132,20 @@ enumerateModelCandidates({upstreamIds, model, kind, ...})            ← entry
 1. List the visible providers through `listModelProviders(upstreamIds)` in
    configured `sort_order`.
 2. Look the inbound id up in the alias repo. When it names an alias:
-   walk the alias's targets in `selection`-mode order (`first-available`
-   walks declaration order; `random` shuffles); for each target,
-   delegate to the real-catalog walk (dated-suffix retry included) and
-   stop at the first target with at least one kind-matching candidate.
-   Its `rules` overlay rides out on `aliasRules`, and each terminal wire
-   call reads `ctx.aliasRules` to apply it to the target IR. When no
-   target has kind-matching candidates, the resolver returns empty
-   candidates + `sawModel: false`, which surfaces as the regular
-   model-missing 404 with the alias name in the wording.
+   walk EVERY target in `selection`-mode order (`first-available` walks
+   declaration order; `random` shuffles); for each target, delegate to
+   the real-catalog walk (dated-suffix retry included) and tag each
+   returned candidate with that target's `rules` overlay. Flatten
+   across targets (target order preserved) and dedup by
+   `(model.id, provider.upstream, rules)` — same physical binding with
+   distinct rules stays as two candidates so both variants can be
+   attempted; identical triples collapse. The caller's `iterateCandidates`
+   loop then cascades across the flat list, so a target's upstreams all
+   failing over falls through into the next target's candidates instead
+   of hard-failing at the first target. When no target has kind-matching
+   candidates, the resolver returns empty candidates + `sawModel: false`,
+   which surfaces as the regular model-missing 404 with the alias name
+   in the wording.
 3. When the inbound id is not an alias, run the real-catalog walk
    directly. If the walk returns at least one candidate, OR its
    `sawAnyId` is true (the id exists in some catalog under any kind), OR
@@ -215,17 +221,33 @@ Alias resolution is a top-of-chain step inside `enumerateModelCandidates`
 — an alias id matches inside the same call the non-alias path uses, so
 the whole pipeline stays a single two-branch function. The resolver
 looks the inbound id up in the alias repo; if it names an alias, it
-walks the alias's `targets` in `selection`-mode order and delegates each
-target to the real-catalog walk (with dated-suffix retry). The first
-target that yields kind-matching candidates wins, and its `rules` ride
-out on the resolver's `aliasRules` return field. Each chat serve stashes
-`aliasRules` on `ctx.aliasRules` and rewrites `payload.model` to the
-picked candidate's upstream id before dispatching; each terminal wire
-call reads `ctx.aliasRules` and overlays the rules onto the target IR
-through `data-plane/model-aliases/apply-rules.ts`. Passthrough seams
-carry the same `aliasRules` on `ctx` but never receive non-empty rules
-(passthrough alias kinds — `embedding`, `image` — have empty `rules` by
-schema).
+walks EVERY target in `selection`-mode order and delegates each target
+to the real-catalog walk (with dated-suffix retry). Every candidate
+returned by a target walk is tagged with that target's `rules` overlay
+and pushed onto a flat list; the resolver then dedups by
+`(model.id, provider.upstream, rules)` — identical triples collapse,
+but the same physical binding with distinct rules stays as two
+candidates so the operator can pin one binding under two rule variants.
+
+The rule overlay rides on the `ModelCandidate.rules` field. Dispatch
+reads it in each attempt's terminal wire call, right before destructuring
+`payload.model` out of the body, via
+`applyRulesToUpstream{ChatCompletions,Responses,Messages}` in
+`data-plane/model-aliases/apply-rules.ts`. Passthrough seams thread
+alias-origin candidates through the same iteration but never observe
+non-empty rules (passthrough alias kinds — `embedding`, `image` — carry
+`{}` by schema; the apply-rules call is a no-op).
+
+The `payload.model` normalization is unconditional across every chat
+serve site (`chat-completions`, `messages`, `responses`): each attempt
+sees `payload.model === candidate.model.id`, whether the inbound id was
+an alias name, a prefix-addressable variant like `cop/gpt-5.4`, a dated
+suffix like `claude-opus-4-7-20250929`, or a bare public id. The wire
+body drops `payload.model` at the last step; the provider layer stamps
+the emitting upstream's own id from `providerModelOf(candidate)`.
+Gemini omits the normalization because its inbound model rides on the
+URL path, not the body — dispatch keys off `candidate.model.id`
+directly.
 
 By construction alias names never re-enter the alias layer: the target
 id is a real model id, so the shadow pattern (an alias whose first
