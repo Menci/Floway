@@ -656,7 +656,10 @@ const aliasBodyCore = z.object(aliasBaseShape);
 // superRefine cross-validates each target's `rules` against the alias-level
 // kind. Chat: parse through `chatAliasRulesSchema` and surface the inner
 // issue verbatim. Embedding / image: the slot must be `{}` until a future
-// schema lands.
+// schema lands. `announced_metadata.chat` is bound to the same invariant:
+// a chat block on a non-chat alias would land on the InternalModel row and
+// leak an incoherent `chat: {...}` sidecar onto `/v1/models` for a row
+// whose `kind` says it does not carry one.
 const aliasBodyRulesRefinement = (
   value: z.infer<typeof aliasBodyCore>,
   ctx: z.core.$RefinementCtx,
@@ -685,6 +688,14 @@ const aliasBodyRulesRefinement = (
       });
     }
   });
+  if (value.kind !== 'chat' && value.announced_metadata?.chat !== undefined) {
+    ctx.issues.push({
+      code: 'custom',
+      message: `announced_metadata.chat is only allowed for kind='chat' aliases`,
+      path: ['announced_metadata', 'chat'],
+      input: value.announced_metadata.chat,
+    });
+  }
 };
 
 // Create and update share the same body shape — the difference is operational:

@@ -202,6 +202,43 @@ test('POST /api/aliases accepts kind=embedding with empty rules', async () => {
   assertEquals(resp.status, 201);
 });
 
+test('POST /api/aliases rejects announced_metadata.chat on a non-chat alias with 400', async () => {
+  // A `chat` block on an embedding / image alias would land on the row's
+  // announced-metadata sidecar and, at listing time, get surfaced onto the
+  // /v1/models entry — advertising `chat: {...}` on a row whose `kind` says
+  // it has none. The schema keeps the row structurally coherent by rejecting
+  // the mismatch at the boundary.
+  const { repo, adminSession } = await setupAppTest();
+  await repo.modelAliases.deleteAll();
+
+  const resp = await requestApp(
+    '/api/aliases',
+    authed(adminSession, baseBody({
+      kind: 'embedding',
+      targets: [{ target_model_id: 'text-embedding-3', rules: {} }],
+      announced_metadata: { chat: { modalities: { input: ['text'], output: ['text'] } } },
+    })),
+  );
+  assertEquals(resp.status, 400);
+});
+
+test('POST /api/aliases accepts announced_metadata.limits on a non-chat alias', async () => {
+  // limits stays legal on every kind — every model has a context/output
+  // token window regardless of endpoint family.
+  const { repo, adminSession } = await setupAppTest();
+  await repo.modelAliases.deleteAll();
+
+  const resp = await requestApp(
+    '/api/aliases',
+    authed(adminSession, baseBody({
+      kind: 'embedding',
+      targets: [{ target_model_id: 'text-embedding-3', rules: {} }],
+      announced_metadata: { limits: { max_context_window_tokens: 8192 } },
+    })),
+  );
+  assertEquals(resp.status, 201);
+});
+
 test('POST /api/aliases rejects unknown reasoning fields on a chat target with 400', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.modelAliases.deleteAll();
