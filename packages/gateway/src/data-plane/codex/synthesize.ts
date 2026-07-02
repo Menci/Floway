@@ -38,7 +38,7 @@
 // for the miss path.
 
 import type { CatalogModel } from './catalog.ts';
-import { SYNTHESIZED_BASE_INSTRUCTIONS } from './synthesized-base-instructions.ts';
+import { synthesizedBaseInstructions } from './synthesized-base-instructions.ts';
 import type { InternalModel, Modality } from '@floway-dev/provider';
 
 // Bundled-hit entries inherit a real window from the codex catalog; missing
@@ -74,7 +74,11 @@ const BASELINE: CatalogModel = {
   supports_reasoning_summaries: false,
   apply_patch_tool_type: null,
   default_reasoning_summary: 'none',
-  base_instructions: SYNTHESIZED_BASE_INSTRUCTIONS,
+  // Placeholder — the miss-path always overlays this with a model-specific
+  // string from `synthesizedBaseInstructions(model.id)`. Leaving an empty
+  // default here keeps BASELINE a plain constant that TypeScript can type
+  // without depending on the eventual model.
+  base_instructions: '',
   effective_context_window_percent: 95,
   experimental_supported_tools: [],
   additional_speed_tiers: [],
@@ -149,6 +153,15 @@ export const synthesizeCatalogEntry = (model: InternalModel, base?: CatalogModel
   // from the spread untouched.
   if (registryEffort !== undefined) {
     entry.default_reasoning_level = registryEffort.default;
+  }
+
+  // Miss-path `base_instructions` names the underlying model id so
+  // introspection questions ("what model are you?") resolve against the
+  // actual routed model instead of confabulating a GPT-5 lineage from the
+  // "Codex" persona. Bundled entries keep their upstream-vendored prompt
+  // (accurate for the GPT-5 family they were shipped for).
+  if (base === undefined) {
+    entry.base_instructions = synthesizedBaseInstructions(model.id, model.display_name ?? model.id);
   }
 
   return entry;

@@ -40,10 +40,22 @@ describe('synthesizeCatalogEntry', () => {
     expect(entry.service_tiers).toEqual([]);
     // Synthesized models get a vendored Codex-CLI agent prompt (adapted from
     // openai/codex's gpt-5.5 entry) — see synthesized-base-instructions.ts.
-    // Test the opening line so a future refresh that mangles the file gets
-    // caught without re-asserting all ~20KB on every run.
+    // The opening paragraph names the routed model so an introspection
+    // question resolves against it rather than the "Codex" persona's
+    // trained-in GPT lineage association.
     expect(typeof entry.base_instructions).toBe('string');
-    expect((entry.base_instructions as string).startsWith('You are Codex, a coding agent running in the Codex CLI.')).toBe(true);
+    expect(entry.base_instructions as string).toContain('You are Codex, a coding agent running in the Codex CLI.');
+    expect(entry.base_instructions as string).toContain('the model named "DeepSeek V4 Pro"');
+    expect(entry.base_instructions as string).toContain('The exact model ID is "deepseek-v4-pro"');
+  });
+
+  test('base_instructions collapses to a single identity sentence when display_name equals id', () => {
+    const entry = synthesizeCatalogEntry({ ...base, display_name: undefined });
+    // With no display_name, id falls through to both slots; the paragraph
+    // states the model once instead of the "named X. Exact ID is X."
+    // redundancy.
+    expect(entry.base_instructions as string).toContain('You are powered by the model "deepseek-v4-pro".');
+    expect(entry.base_instructions as string).not.toContain('The exact model ID is');
   });
 
   test('falls back to id for display_name when absent', () => {

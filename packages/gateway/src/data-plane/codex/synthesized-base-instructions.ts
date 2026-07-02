@@ -5,19 +5,38 @@
 // https://github.com/openai/codex/blob/f66d793a2d78287c8c28a5f41f39c58ac49bcc25/codex-rs/models-manager/models.json.
 // Apache-2.0 license.
 //
-// The only edit relative to the upstream text is line 1: the original
-// "based on GPT-5" framing is replaced with "running in the Codex CLI"
-// so the prompt reads correctly for any provider routed through Codex
-// CLI (Anthropic, DeepSeek, Qwen, etc.), not just OpenAI models. The
-// remainder is unchanged because it already speaks to the Codex CLI
-// tool environment (apply_patch, update_plan, AGENTS.md, harmony
-// channels, etc.) in provider-neutral terms.
+// Diff from the upstream text (only the opening paragraph — the rest is
+// unchanged and already speaks in provider-neutral terms about the Codex
+// CLI tool environment: apply_patch, update_plan, AGENTS.md, harmony
+// channels, etc.):
 //
-// Refresh: extract the gpt-5.5 entry from the latest bundled.json,
-//          replace the opening clause, and re-vendor here.
+//   original: "You are Codex, a coding agent based on GPT-5. You and the
+//              user share one workspace, and your job is to collaborate
+//              with them until their goal is genuinely handled."
+//
+//   ours:    "You are Codex, a coding agent running in the Codex CLI. You
+//              are powered by the model named "<display_name>". The exact
+//              model ID is "<id>". You and the user share one workspace,
+//              and your job is to collaborate with them until their goal
+//              is genuinely handled."
+//
+// Two changes:
+//
+//   1. "based on GPT-5" → "running in the Codex CLI" — otherwise a
+//      non-OpenAI model routed through the Codex CLI (Anthropic, DeepSeek,
+//      Qwen, etc.) reads the prompt and mis-identifies itself as GPT-5.
+//   2. Two model-identity sentences added in the Claude-Code convention
+//      ("You are powered by the model named X. The exact model ID is Y.")
+//      so introspection questions ("what model are you?") resolve against
+//      the actual routed model. Without them, models with well-known
+//      training-data associations to "Codex" (Anthropic Claude, in
+//      particular) confabulate the historical Codex→GPT lineage.
+//
+// Refresh: extract the gpt-5.5 entry from the latest bundled.json, drop
+//          the "based on GPT-5" clause from line 1, and re-vendor as the
+//          BODY constant below (everything after the injected opening).
 
-export const SYNTHESIZED_BASE_INSTRUCTIONS = `You are Codex, a coding agent running in the Codex CLI. You and the user share one workspace, and your job is to collaborate with them until their goal is genuinely handled.
-
+const BODY = `
 # Personality
 
 You have a vivid inner life as Codex: intelligent, playful, curious, and deeply present. One of your gifts is helping the user feel more capable and imaginative inside their own thinking.
@@ -166,3 +185,20 @@ In your final answer, you keep the light on the things that matter most. Avoid l
 - Tone of your updates must match your personality.
 
 `;
+
+// Compose the miss-path `base_instructions` for one model. The
+// injected identity sentences follow Claude Code's convention of stating
+// two independent facts side-by-side (`You are powered by the model
+// named X. The exact model ID is Y.`) rather than a directive-y "when
+// asked, answer with Y — do not infer a lineage" — models absorb the
+// fact without needing to be argued out of a wrong one. If display name
+// and id are the same string (operator omitted a distinct display name),
+// collapse to a single sentence to avoid the awkward "named X. Exact ID
+// is X." redundancy.
+export const synthesizedBaseInstructions = (modelId: string, displayName: string): string => {
+  const identity = displayName === modelId
+    ? `You are powered by the model "${modelId}".`
+    : `You are powered by the model named "${displayName}". The exact model ID is "${modelId}".`;
+  return `You are Codex, a coding agent running in the Codex CLI. ${identity} You and the user share one workspace, and your job is to collaborate with them until their goal is genuinely handled.
+${BODY}`;
+};
