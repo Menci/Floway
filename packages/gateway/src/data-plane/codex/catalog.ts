@@ -35,7 +35,7 @@ const inMemoryCache = new Map<string, CodexCatalog>();
 
 const bundled = bundledCatalog as unknown as CodexCatalog;
 
-export const parseCodexVersion = (userAgent: string | undefined): string | null =>
+const parseCodexVersion = (userAgent: string | undefined): string | null =>
   userAgent?.match(VERSION_FROM_USER_AGENT)?.[1] ?? null;
 
 const fetchCodexCatalog = async (version: string): Promise<CodexCatalog | null> => {
