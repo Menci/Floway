@@ -39,7 +39,7 @@ describe('chatFromCapabilities', () => {
       effort: { supported: false },
       thinking: { types: { enabled: { supported: true } } },
     });
-    expect(chat).toEqual({ reasoning: { budget_tokens: {} } });
+    expect(chat).toEqual({ reasoning: { budget_tokens: { min: 1024 } } });
   });
 
   // Case 2: effort with 4 levels + xhigh=false + max=true, both thinking types (mirrors Opus 4.6)
@@ -58,7 +58,7 @@ describe('chatFromCapabilities', () => {
     expect(chat).toEqual({
       reasoning: {
         effort: { supported: ['low', 'medium', 'high', 'max'], default: 'medium' },
-        budget_tokens: {},
+        budget_tokens: { min: 1024 },
         adaptive: true,
       },
     });
@@ -107,7 +107,7 @@ describe('chatFromCapabilities', () => {
       modalities: { input: ['text', 'image'], output: ['text'] },
       reasoning: {
         effort: { supported: ['low', 'medium', 'high'], default: 'medium' },
-        budget_tokens: {},
+        budget_tokens: { min: 1024 },
         adaptive: true,
       },
     });
@@ -124,7 +124,7 @@ describe('chatFromCapabilities', () => {
       image_input: { supported: false },
       thinking: { types: { enabled: { supported: true } } },
     });
-    expect(chat).toEqual({ reasoning: { budget_tokens: {} } });
+    expect(chat).toEqual({ reasoning: { budget_tokens: { min: 1024 } } });
   });
 
   // Case 8: default selection — 'medium' preferred; fallback to first
@@ -232,7 +232,7 @@ describe('buildClaudeCodeCatalog', () => {
       modalities: { input: ['text', 'image'], output: ['text'] },
       reasoning: {
         effort: { supported: ['low', 'medium', 'high', 'max'], default: 'medium' },
-        budget_tokens: {},
+        budget_tokens: { min: 1024 },
         adaptive: true,
       },
     });
