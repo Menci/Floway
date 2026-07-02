@@ -417,7 +417,7 @@ describe('codex 1p namespace', () => {
       expect(gpt54?.max_context_window).toBe(272000);
     });
 
-    it('drops slugs the registry does not advertise; only registry-known catalog entries reach the client', async () => {
+    it('registry-driven output: bundled entries surface only when a registry model resolves to them', async () => {
       const { apiKey } = await setupAppTest();
       const app = buildCodexApp();
       const body = await withMockedFetch(
@@ -430,12 +430,12 @@ describe('codex 1p namespace', () => {
           return await response.json() as CodexModelsResponse;
         },
       );
-      const slugs = body.models.map(m => m.slug);
-      // Bundled rust-v0.136.0 catalog ships six slugs (gpt-5.5, gpt-5.4,
-      // gpt-5.4-mini, gpt-5.3-codex, gpt-5.2, codex-auto-review). Only
-      // gpt-5.5 is in the registry; every other slug — including
-      // codex-auto-review — drops out.
-      expect(slugs).toEqual(['gpt-5.5']);
+      // Pipeline iterates the addressable-listed real models (gpt-5.5 is the
+      // only one the registry advertises here) and matches each against the
+      // bundled catalog. The other bundled slugs (gpt-5.4, gpt-5.4-mini,
+      // gpt-5.3-codex, gpt-5.2, codex-auto-review) have no registry counterpart
+      // and never appear in the output.
+      expect(body.models.map(m => m.slug)).toEqual(['gpt-5.5']);
     });
 
     it('synthesizes a catalog entry for registry chat models with no bundled match', async () => {
