@@ -16,11 +16,10 @@
 // context-window.ts) so the codex client sees the same limits the data
 // plane will actually enforce.
 //
-// Operator-defined aliases do not participate in this pipeline. When the
-// codex client sends a request against an alias, the alias resolver walks
-// its targets at dispatch time; for aliases whose id happens to also be a
-// real bundled slug (`codex-auto-review` is the canonical seed), the
-// bundled entry surfaces through its own listed row in the registry.
+// Aliases never enter this pipeline — `enumerateAddressableModelIds`
+// walks real provider-advertised models plus `modelPrefix.addressable`
+// alternates only. The alias resolver handles alias requests at dispatch
+// time, so alias ids do not appear on the codex `/model` picker.
 
 import type { Context } from 'hono';
 
@@ -56,9 +55,9 @@ export const assembleCatalog = (
 
   const models: CatalogModel[] = [];
   for (const entry of addressable) {
-    // Unlisted prefix-addressable alternates are routable at request time
-    // but never surface on the codex picker — the operator opted them out
-    // of the default listing on the /v1/models side too.
+    // Prefix-addressable alternates that the listing surface did not
+    // publish stay off the codex picker too — they are routable at
+    // request time but never surface as their own picker row.
     if (entry.unlisted !== undefined) continue;
     const model = entry.model;
     if (model.kind !== 'chat') continue;
