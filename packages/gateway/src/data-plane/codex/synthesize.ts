@@ -11,7 +11,11 @@
 //      upstream slug; we always overwrite with the operator-visible id).
 //   2. `display_name` — `model.display_name ?? source.display_name`. Registry
 //      wins when the operator set a label; else the bundled/base label
-//      rides through.
+//      rides through. Bundled-inherit is fine here because display_name is
+//      pure UI — inheriting the vendored "GPT-5.5" string when the operator
+//      has not customized it is meaningful, unlike service_tiers and
+//      context_window below where a stale bundled value could mis-bill or
+//      mis-gate a real request.
 //   3. `service_tiers` — unconditional override with `deriveServiceTiers(model)`.
 //      No fallback to bundled: bundled entries may advertise OpenAI 1p tiers
 //      Floway cannot bill, so publishing them without registry-side unit

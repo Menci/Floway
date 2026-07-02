@@ -42,11 +42,6 @@ describe('assembleCatalog', () => {
   });
 
   test('bundled match: registry display_name=undefined preserves the bundled display_name', () => {
-    // display_name is the only bundled-inherited field we keep on undefined —
-    // service_tiers and context_window have their own registry-driven
-    // fallbacks because they tie to billing / runtime gating, but the UI
-    // label is fine to inherit from bundled (the vendored "GPT-5.5" string
-    // is meaningful enough when the operator has not customized it).
     const out = assembleCatalog(bundled, entries(chat('gpt-5.5')));     // chat() passes display_name: undefined
     expect(out.models).toHaveLength(1);
     expect(out.models[0].display_name).toBe('GPT-5.5');         // bundled's display_name
