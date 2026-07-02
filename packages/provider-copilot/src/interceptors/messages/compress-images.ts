@@ -4,15 +4,21 @@ import type { MessagesImageBlock, MessagesMessage } from '@floway-dev/protocols/
 import { memoizedBase64Compressor } from '@floway-dev/provider';
 
 // Per-model image caps for the Claude (Messages) egress, measured from the real
-// /v1/messages generation path (count_tokens misreports the downscale here):
+// /v1/messages generation path (count_tokens misreports the downscale here).
+// Copilot's Messages endpoint is Anthropic-only by Copilot's own contract, so
+// the caps below are Anthropic's canonical vision limits:
 //
-// - Opus 4.7 was the first high-resolution Claude model (per Anthropic's vision
-//   docs); Opus 4.7 and 4.8 sample up to ~3.59 MP within a 2576px long edge.
+// - Opus 4.7 was the first high-resolution Claude model; Opus 4.7 and 4.8
+//   sample up to ~3.59 MP within a 2576px long edge.
 // - Opus 4.5 / 4.6 and the sonnet / haiku families use the standard ~1.18 MP /
 //   1568px cap.
 //
 // We threshold on the Opus version so future Opus releases inherit the high-res
 // tier; every non-Opus Claude model uses the standard cap.
+//
+// References:
+// - Anthropic vision docs: https://docs.claude.com/en/docs/build-with-claude/vision
+// - High-res Opus 4.7+ sampling: https://docs.claude.com/en/docs/build-with-claude/vision#evaluate-image-size
 const STANDARD_CLAUDE_CAPS: SizeCaps = { maxLongEdge: 1568, maxArea: 1_176_000 };
 
 const claudeImageCaps = (upstreamModelId: string): SizeCaps => {
