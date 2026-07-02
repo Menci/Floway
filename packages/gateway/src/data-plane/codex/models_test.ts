@@ -87,9 +87,14 @@ describe('assembleCatalog', () => {
     expect(out.models.every(m => m.priority === 1)).toBe(true);
   });
 
-  test('first segment match wins', () => {
+  test('leaf-first segment match: trailing leaf beats colliding earlier segments', () => {
+    // `openrouter/gpt-5.5/gpt-5.4` binds against gpt-5.4 (the real leaf).
+    // MODEL_PREFIX_REGEX puts every prefix behind a trailing `/`, so the
+    // last segment is always the upstream slug — walking segments leaf-first
+    // avoids binding against an earlier segment that happens to collide
+    // with a bundled slug (`gpt-5.5` here).
     const out = assembleCatalog(bundled, entries(chat('openrouter/gpt-5.5/gpt-5.4')));
-    expect(out.models[0].priority).toBe(1);  // gpt-5.5's priority
+    expect(out.models[0].priority).toBe(2);  // gpt-5.4's priority
   });
 
   test('no match: synthesizes a new entry', () => {

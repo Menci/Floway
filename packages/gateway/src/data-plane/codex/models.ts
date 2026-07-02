@@ -41,9 +41,16 @@ export const assembleCatalog = (
   const bundledBySlug = new Map<string, CatalogModel>();
   for (const m of bundled.models) bundledBySlug.set(m.slug.toLowerCase(), m);
 
+  // Match against bundled by walking segments from the trailing leaf back
+  // toward the prefix. MODEL_PREFIX_REGEX enforces `/`-terminated prefixes,
+  // so the leaf is always the real upstream slug — searching leaf-first
+  // ensures a publicId like `openrouter/gpt-5.5/gpt-5.4` binds against
+  // `gpt-5.4` (the actual model) rather than the earlier `gpt-5.5` segment
+  // that happens to collide with a bundled slug.
   const matchBundled = (publicId: string): CatalogModel | undefined => {
-    for (const seg of publicId.toLowerCase().split(/[/:]/)) {
-      const hit = bundledBySlug.get(seg);
+    const segments = publicId.toLowerCase().split(/[/:]/);
+    for (let i = segments.length - 1; i >= 0; i--) {
+      const hit = bundledBySlug.get(segments[i]);
       if (hit !== undefined) return hit;
     }
     return undefined;
