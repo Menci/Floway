@@ -496,3 +496,11 @@ test('buildTargetRequest extends reasoning_effort enum to recognize xhigh and ma
   assertEquals(max.reasoning_effort, 'max');
   assertEquals(minimal.reasoning_effort, 'minimal');
 });
+
+test('buildTargetRequest forwards a vendor-specific thinkingLevel verbatim (no enum gate)', () => {
+  const turbo = buildTargetRequest(
+    { contents: [{ role: 'user', parts: [{ text: 'hi' }] }], generationConfig: { thinkingConfig: { thinkingLevel: 'turbo' } } },
+    'gpt-test',
+  );
+  assertEquals(turbo.reasoning_effort, 'turbo');
+});
