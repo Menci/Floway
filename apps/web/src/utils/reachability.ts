@@ -13,13 +13,23 @@
 import type { ControlPlaneModel } from '../api/types.ts';
 
 // Resolve the effective per-request cap. Mirrors the gateway's
-// `effectiveUpstreamIdsFromContext`: the api key's `upstream_ids` win when
-// set; otherwise the cap falls back to the owner user's `upstreamIds`.
-// Both null means unrestricted.
+// `effectiveUpstreamIdsFromContext` (packages/gateway/src/middleware/auth.ts):
+// both null = unrestricted; one null = the other; both set = intersection.
+// A key created against a broader user cap keeps its original id list even
+// after admin narrows the user cap, so the intersection is load-bearing —
+// the ??-fallback shape used to happen to agree because the api-keys route
+// enforces `key ⊆ user` at creation, but the two drift the moment the user
+// cap shrinks post-hoc.
 export const effectiveUpstreamCap = (
   keyUpstreamIds: readonly string[] | null,
   userUpstreamIds: readonly string[] | null,
-): readonly string[] | null => keyUpstreamIds ?? userUpstreamIds;
+): readonly string[] | null => {
+  if (keyUpstreamIds === null && userUpstreamIds === null) return null;
+  if (keyUpstreamIds === null) return userUpstreamIds;
+  if (userUpstreamIds === null) return keyUpstreamIds;
+  const userSet = new Set(userUpstreamIds);
+  return keyUpstreamIds.filter(id => userSet.has(id));
+};
 
 // True when any of the model's upstream bindings is in the cap (or the
 // cap is unrestricted). For an alias row this is always false — the

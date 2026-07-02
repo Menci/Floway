@@ -18,12 +18,27 @@ const aliasWithTargets = (id: string, targetIds: string[]): ControlPlaneModel =>
 });
 
 describe('effectiveUpstreamCap', () => {
-  it('prefers the api key cap when set', () => {
+  it('intersects when both caps are set — key ⊆ user (creation-time invariant)', () => {
     expect(effectiveUpstreamCap(['up_a'], ['up_a', 'up_b'])).toEqual(['up_a']);
+  });
+
+  it('intersects when the user cap has been narrowed post-key-creation', () => {
+    // API-keys route enforces key ⊆ user at creation, but the user cap can
+    // shrink later without touching the key row. The frontend must not
+    // surface upstreams the backend would silently reject at dispatch.
+    expect(effectiveUpstreamCap(['up_a', 'up_b'], ['up_a'])).toEqual(['up_a']);
+  });
+
+  it('collapses to [] when the two caps are disjoint', () => {
+    expect(effectiveUpstreamCap(['up_a'], ['up_b'])).toEqual([]);
   });
 
   it('falls back to the user cap when the key has no whitelist', () => {
     expect(effectiveUpstreamCap(null, ['up_a', 'up_b'])).toEqual(['up_a', 'up_b']);
+  });
+
+  it('falls back to the key cap when the user has no whitelist', () => {
+    expect(effectiveUpstreamCap(['up_a'], null)).toEqual(['up_a']);
   });
 
   it('returns null (unrestricted) when both are null', () => {
