@@ -36,7 +36,7 @@ describe('assembleCatalog', () => {
     const e = out.models[0];
     expect(e.slug).toBe('gpt-5.5');
     expect(e.display_name).toBe('Custom Display Name');
-    expect(e.context_window).toBe(200000);   // applyContextWindowFromRegistry rewrites
+    expect(e.context_window).toBe(200000);   // registry max_context_window_tokens overrides bundled
     expect(e.priority).toBe(1);
     expect((e as Record<string, unknown>).extra).toBe('keep');  // arbitrary bundled fields stay
   });

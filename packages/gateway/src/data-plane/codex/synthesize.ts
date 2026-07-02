@@ -90,22 +90,6 @@ const BASELINE: CatalogModel = {
 export const deriveServiceTiers = (model: InternalModel): { id: string; name: string; description: string }[] =>
   Object.keys(model.cost?.tiers ?? {}).map(id => ({ id, name: id, description: '' }));
 
-// Lossy projection: Codex CLI's catalog wire can only model effort-tiered reasoning
-// (`supported_reasoning_levels: [{effort, description}]` + `default_reasoning_level`),
-// mirroring `codex-rs/protocol/src/openai_models.rs` ModelInfo fields
-// `supported_reasoning_levels: Vec<ReasoningEffortPreset>` and
-// `default_reasoning_level: Option<ReasoningEffort>`
-// (https://github.com/openai/codex/blob/b98870dc46c7b97a08b98e0fc39e85ccf36093c0/codex-rs/protocol/src/openai_models.rs).
-// Floway's `chat.reasoning` is richer: `budget_tokens`, `adaptive`, and `mandatory`
-// don't fit the Codex wire and are silently dropped here. The omission is benign at
-// request-time: Codex CLI sends `reasoning.effort` from the global default, and
-// Floway's translation layer maps that effort value into the appropriate upstream
-// representation (e.g. Anthropic `thinking.budget_tokens`).
-const reasoningPresetsFromRegistry = (model: InternalModel): { effort: string; description: string }[] | undefined => {
-  const supported = model.chat?.reasoning?.effort?.supported;
-  return supported === undefined ? undefined : supported.map(effort => ({ effort, description: '' }));
-};
-
 export const synthesizeCatalogEntry = (model: InternalModel, base?: CatalogModel): CatalogModel => {
   const source = base ?? BASELINE;
 
@@ -118,9 +102,21 @@ export const synthesizeCatalogEntry = (model: InternalModel, base?: CatalogModel
     ?? BASELINE.input_modalities) as readonly Modality[];
   const hasImage = inputModalities.includes('image');
 
-  const supportedReasoning = reasoningPresetsFromRegistry(model)
-    ?? source.supported_reasoning_levels
-    ?? BASELINE.supported_reasoning_levels;
+  // Lossy projection: Codex CLI's catalog wire can only model effort-tiered reasoning
+  // (`supported_reasoning_levels: [{effort, description}]` + `default_reasoning_level`),
+  // mirroring `codex-rs/protocol/src/openai_models.rs` ModelInfo fields
+  // `supported_reasoning_levels: Vec<ReasoningEffortPreset>` and
+  // `default_reasoning_level: Option<ReasoningEffort>`
+  // (https://github.com/openai/codex/blob/b98870dc46c7b97a08b98e0fc39e85ccf36093c0/codex-rs/protocol/src/openai_models.rs).
+  // Floway's `chat.reasoning` is richer: `budget_tokens`, `adaptive`, and `mandatory`
+  // don't fit the Codex wire and are silently dropped here. The omission is benign at
+  // request-time: Codex CLI sends `reasoning.effort` from the global default, and
+  // Floway's translation layer maps that effort value into the appropriate upstream
+  // representation (e.g. Anthropic `thinking.budget_tokens`).
+  const registryEffort = model.chat?.reasoning?.effort;
+  const supportedReasoning = registryEffort !== undefined
+    ? registryEffort.supported.map(effort => ({ effort, description: '' }))
+    : (source.supported_reasoning_levels ?? BASELINE.supported_reasoning_levels);
 
   const registryWindow = model.limits.max_context_window_tokens;
   const contextWindow = (registryWindow
@@ -143,9 +139,12 @@ export const synthesizeCatalogEntry = (model: InternalModel, base?: CatalogModel
     max_context_window: maxContextWindow,
   };
 
-  const defaultEffort = model.chat?.reasoning?.effort?.default;
-  if (defaultEffort !== undefined) {
-    entry.default_reasoning_level = defaultEffort;
+  // `default_reasoning_level` pairs with `supported_reasoning_levels` — both
+  // come from the same source. When registry supplied `effort`, its schema
+  // requires both fields together; otherwise the bundled pair rides through
+  // from the spread untouched.
+  if (registryEffort !== undefined) {
+    entry.default_reasoning_level = registryEffort.default;
   }
 
   return entry;
