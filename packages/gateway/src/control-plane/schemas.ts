@@ -601,9 +601,10 @@ export const searchConfigSchema = z.object({
 
 // Per-target chat rules. Field names mirror the IR slot each value overlays.
 // Values forward verbatim — no capability narrowing here, so an operator
-// can drive a feature the catalog hasn't advertised yet. The four value
-// fields below (`effort`, `summary`, `verbosity`, `serviceTier`) accept
-// any string for the same reason; the dashboard pins canonical presets as
+// can drive a feature the catalog hasn't advertised yet. All open-string
+// fields (`effort` + `summary` on the reasoning sub-block below,
+// `verbosity` + `serviceTier` on the outer rules schema) accept any
+// string for the same reason; the dashboard pins canonical presets as
 // combobox suggestions.
 const chatAliasReasoningSchema = z.object({
   effort: z.string().min(1).optional(),

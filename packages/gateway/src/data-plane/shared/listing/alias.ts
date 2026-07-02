@@ -319,6 +319,11 @@ const sortAliases = (aliases: readonly ModelAliasRecord[]): ModelAliasRecord[] =
 
 export const synthesizeListedAliases = (input: ListedAliasInputs): InternalModel[] =>
   sortAliases(input.aliases)
+    // `visibleInModelsList` is a LISTING flag only — the request-time
+    // resolver in `providers/registry.ts` does not consult it, so a hidden
+    // alias stays reachable at dispatch. This lets an operator ship a
+    // gateway id (e.g. a legacy client hardcodes it) without cluttering
+    // the public catalog.
     .filter(alias => alias.visibleInModelsList)
     .map(alias => synthesizeOne(alias, input.gatewayAddressableModelIds, input.callerAddressableModelIds, input.narrowTargets))
     .filter((entry): entry is InternalModel => entry !== null);

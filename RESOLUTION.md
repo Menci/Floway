@@ -272,6 +272,7 @@ interface ModelCandidate {
   readonly provider: Provider;
   readonly model: InternalModel;
   readonly fetcher: Fetcher;
+  readonly rules?: AliasRules;
 }
 ```
 
@@ -287,6 +288,12 @@ interface ModelCandidate {
 - `fetcher` is the per-request proxy-chain-bound `Fetcher` for the
   candidate's upstream, minted once at resolution time and carried with
   the candidate that dispatches.
+- `rules` is present only on candidates minted by the alias walk — it
+  carries the picked target's rule overlay so each attempt's terminal
+  wire call can apply it against the target IR via
+  `applyRulesToUpstream{ChatCompletions,Responses,Messages}`. Absent
+  (undefined) on direct-resolution candidates; present (possibly `{}`)
+  on alias-origin candidates.
 
 A target protocol (e.g. `messages` / `responses` / `chat-completions`) is
 deliberately **not** part of the candidate — see Endpoint Selection.

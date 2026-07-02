@@ -273,6 +273,9 @@ export interface ModelAliasRecord {
   selection: AliasSelection;
   // null = derive at render time from targets + rules.
   displayName: string | null;
+  // Listing-only visibility: filtered by `synthesizeListedAliases` before
+  // an alias enters /v1/models. Dispatch stays alias-agnostic on this flag,
+  // so a hidden alias remains resolvable at request time.
   visibleInModelsList: boolean;
   // Order is meaningful for selection=first-available; preserved (but
   // ignored) for selection=random.

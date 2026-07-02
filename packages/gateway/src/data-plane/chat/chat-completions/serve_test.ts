@@ -268,8 +268,9 @@ test('alias resolution swaps the inbound model id for the target and overlays ru
     return { ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'gpt-5.4', headers: new Headers() };
   });
   // Alias flow shape: the resolver returns candidates carrying the target's
-  // upstream catalog id AND the alias's rule overlay. Serve rewrites
-  // `payload.model` to `candidate.model.id` and stashes the rules on ctx.
+  // upstream catalog id AND the alias's rule overlay on `candidate.rules`.
+  // Serve normalizes `payload.model` to `candidate.model.id`; the attempt
+  // reads the overlay directly off `candidate.rules` at wire-call time.
   const candidate = makeCandidate({ upstream: 'up_a', callChatCompletions });
   Object.assign(candidate.model, { id: 'gpt-5.4' });
   queueResolution([candidate], { aliasRules: { reasoning: { effort: 'low' }, verbosity: 'low' } });

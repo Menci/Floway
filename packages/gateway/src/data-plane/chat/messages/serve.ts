@@ -82,6 +82,8 @@ export const messagesServe = {
       decision.candidates,
       'messagesServe.countTokens',
       candidate => {
+        // Same normalization as generate above — every attempt sees
+        // payload.model === candidate.model.id regardless of inbound form.
         payload.model = candidate.model.id;
         return messagesAttempt.countTokens({ payload, ctx, candidate, headers });
       },
