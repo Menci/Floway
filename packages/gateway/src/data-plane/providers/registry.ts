@@ -1,10 +1,12 @@
+import { isEqual } from 'es-toolkit';
+
 import { unionEndpoints } from './endpoint-union.ts';
 import { fetchUpstreamModelsCached } from './models-cache.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { ModelAliasRecord } from '../../repo/types.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import { type ModelKind, kindForEndpoints, sameAliasRules } from '@floway-dev/protocols/common';
+import { type ModelKind, kindForEndpoints } from '@floway-dev/protocols/common';
 import { isAbortError, type Fetcher, type InternalModel, type ModelCandidate, type Provider, type ProviderModel, type UpstreamProviderKind, type UpstreamRecord } from '@floway-dev/provider';
 import { createAzureProvider } from '@floway-dev/provider-azure';
 import { createClaudeCodeProvider } from '@floway-dev/provider-claude-code';
@@ -517,7 +519,7 @@ export const enumerateModelCandidates = async ({
     const duplicate = deduped.some(existing =>
       existing.model.id === candidate.model.id
       && existing.provider.upstream === candidate.provider.upstream
-      && sameAliasRules(existing.rules, candidate.rules));
+      && isEqual(existing.rules, candidate.rules));
     if (!duplicate) deduped.push(candidate);
   }
   return {
