@@ -430,7 +430,7 @@ describe('codex 1p namespace', () => {
           return await response.json() as CodexModelsResponse;
         },
       );
-      // Pipeline iterates the addressable-listed real models (gpt-5.5 is the
+      // Pipeline iterates the addressable-listed chat models (gpt-5.5 is the
       // only one the registry advertises here) and matches each against the
       // bundled catalog. The other bundled slugs (gpt-5.4, gpt-5.4-mini,
       // gpt-5.3-codex, gpt-5.2, codex-auto-review) have no registry counterpart

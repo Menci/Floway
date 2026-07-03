@@ -13,11 +13,6 @@
 // synthesizer builds the codex-shaped entry from that base plus the
 // registry-owned overlays it announces (see synthesize.ts for the exact
 // field precedence rules).
-//
-// Aliases never enter this pipeline — `enumerateAddressableModelIds`
-// walks real provider-advertised models plus `modelPrefix.addressable`
-// alternates only. The alias resolver handles alias requests at dispatch
-// time, so alias ids do not appear on the codex `/model` picker.
 
 import type { Context } from 'hono';
 
