@@ -75,9 +75,9 @@ const BASELINE: CatalogModel = {
   apply_patch_tool_type: null,
   default_reasoning_summary: 'none',
   // Placeholder — the miss-path always overlays this with a model-specific
-  // string from `synthesizedBaseInstructions(model.id)`. Leaving an empty
-  // default here keeps BASELINE a plain constant that TypeScript can type
-  // without depending on the eventual model.
+  // string from `synthesizedBaseInstructions(model.id, displayName)`.
+  // Leaving an empty default here keeps BASELINE a plain constant that
+  // TypeScript can type without depending on the eventual model.
   base_instructions: '',
   effective_context_window_percent: 95,
   experimental_supported_tools: [],

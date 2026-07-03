@@ -6,8 +6,11 @@ import type { InternalModel } from '@floway-dev/provider';
 
 const bundled = {
   models: [
-    { slug: 'gpt-5.5', display_name: 'GPT-5.5', context_window: 272000, priority: 1, visibility: 'list', extra: 'keep', service_tiers: [] },
-    { slug: 'gpt-5.4', display_name: 'GPT-5.4', context_window: 272000, priority: 2, visibility: 'list', service_tiers: [] },
+    // Bundled entries seeded with a non-empty `service_tiers` so the
+    // "hard override" assertion below (registry cost.tiers replaces
+    // bundled) is an end-to-end proof rather than a `[] === []` no-op.
+    { slug: 'gpt-5.5', display_name: 'GPT-5.5', context_window: 272000, priority: 1, visibility: 'list', extra: 'keep', service_tiers: [{ id: 'auto', name: 'auto', description: '' }] },
+    { slug: 'gpt-5.4', display_name: 'GPT-5.4', context_window: 272000, priority: 2, visibility: 'list', service_tiers: [{ id: 'auto', name: 'auto', description: '' }] },
   ],
 };
 
