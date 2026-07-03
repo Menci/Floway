@@ -132,6 +132,7 @@ const COPILOT_MODEL_PRICING: readonly PricingRule[] = [
   ['goldeneye', { input: 1.25, input_cache_read: 0.125, output: 10 }],
   ['raptor-mini', { input: 0.25, input_cache_read: 0.025, output: 2 }],
   ['minimax-m2.5', { input: 0.3, output: 1.2 }],
+  [/^mai-code-1-flash/, { input: 0.75, input_cache_read: 0.075, output: 4.5 }],
   [/^text-embedding-3-small/, { input: 0.02, output: 0 }],
   ['text-embedding-ada-002', { input: 0.1, output: 0 }],
 ];
