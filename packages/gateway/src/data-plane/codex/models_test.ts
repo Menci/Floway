@@ -65,11 +65,10 @@ describe('assembleCatalog', () => {
     // operators republish an upstream model under a path-shaped prefix —
     // `openrouter/gpt-5.5`, `vendor/sub/region/gpt-5.5`. By the time the
     // public id reaches assembleCatalog the prefix is already baked in, so
-    // bundle-matching falls out of the segment splitter: every `/`-separated
-    // segment of the publicId is checked against the bundled slug map, and
-    // the trailing unprefixed leaf is the last one tried. The invariant
-    // relies on MODEL_PREFIX_REGEX requiring a trailing slash on every
-    // prefix — if that ever changes, leaf-match stops being free.
+    // bundle-matching falls out of the segment splitter: the publicId is
+    // split on `/` (model-prefix segments) and `:` (OpenRouter-style
+    // `:variant` suffixes), and the segments are walked leaf-first against
+    // the bundled slug map — the trailing model slug is tried first.
     const out = assembleCatalog(bundled, entries(chat('vendor/sub/region/gpt-5.5', 'Sub-region GPT-5.5', 200000)));
     expect(out.models).toHaveLength(1);
     const e = out.models[0];
@@ -86,11 +85,9 @@ describe('assembleCatalog', () => {
   });
 
   test('leaf-first segment match: trailing leaf beats colliding earlier segments', () => {
-    // `openrouter/gpt-5.5/gpt-5.4` binds against gpt-5.4 (the real leaf).
-    // MODEL_PREFIX_REGEX puts every prefix behind a trailing `/`, so the
-    // last segment is always the upstream slug — walking segments leaf-first
-    // avoids binding against an earlier segment that happens to collide
-    // with a bundled slug (`gpt-5.5` here).
+    // `openrouter/gpt-5.5/gpt-5.4` binds against gpt-5.4 — walking segments
+    // leaf-first avoids binding against an earlier segment (`gpt-5.5`) that
+    // happens to collide with a bundled slug.
     const out = assembleCatalog(bundled, entries(chat('openrouter/gpt-5.5/gpt-5.4')));
     expect(out.models[0].priority).toBe(2);  // gpt-5.4's priority
   });

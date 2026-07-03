@@ -27,9 +27,6 @@ describe('synthesizeCatalogEntry', () => {
     expect(entry.support_verbosity).toBe(false);
     expect(entry.prefer_websockets).toBe(true);
     expect(entry.supports_parallel_tool_calls).toBe(true);
-    // Codex's ModelInfo struct (codex-rs/protocol/src/openai_models.rs) makes
-    // these two mandatory at the wire level — absent fields abort
-    // deserialization and codex silently falls back to its bundled catalog.
     expect(entry.supports_reasoning_summaries).toBe(false);
     expect(entry.apply_patch_tool_type).toBeNull();
     expect(entry.supported_reasoning_levels).toEqual([]);

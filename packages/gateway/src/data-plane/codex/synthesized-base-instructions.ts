@@ -25,16 +25,23 @@
 //   1. "based on GPT-5" → "running in the Codex CLI" — otherwise a
 //      non-OpenAI model routed through the Codex CLI (Anthropic, DeepSeek,
 //      Qwen, etc.) reads the prompt and mis-identifies itself as GPT-5.
-//   2. Two model-identity sentences added in the Claude-Code convention
-//      ("You are powered by the model named X. The exact model ID is Y.")
-//      so introspection questions ("what model are you?") resolve against
-//      the actual routed model. Without them, models with well-known
-//      training-data associations to "Codex" (Anthropic Claude, in
-//      particular) confabulate the historical Codex→GPT lineage.
+//   2. One or two model-identity sentences added in the Claude-Code
+//      convention ("You are powered by the model named X. The exact model
+//      ID is Y.") so introspection questions ("what model are you?")
+//      resolve against the actual routed model. When display name and id
+//      are the same string, the pair collapses to a single sentence to
+//      avoid the "named X. Exact ID is X." redundancy — see the composer
+//      below. Without this injection, models with well-known training-data
+//      associations to "Codex" (Anthropic Claude, in particular)
+//      confabulate the historical Codex→GPT lineage.
 //
-// Refresh: extract the gpt-5.5 entry from the latest bundled.json, drop
-//          the "based on GPT-5" clause from line 1, and re-vendor as the
-//          BODY constant below (everything after the injected opening).
+// Refresh: extract the gpt-5.5 entry from the latest bundled.json, drop the
+//          entire opening identity sentence ("You are Codex, a coding agent
+//          based on GPT-5. You and the user share one workspace, and your
+//          job is to collaborate with them until their goal is genuinely
+//          handled."), and re-vendor everything after it as the BODY
+//          constant below (starting with the blank line before
+//          `# Personality`).
 
 const BODY = `
 # Personality

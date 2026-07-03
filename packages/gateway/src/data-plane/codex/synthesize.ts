@@ -13,9 +13,8 @@
 //      wins when the operator set a label; else the bundled/base label
 //      rides through. Bundled-inherit is fine here because display_name is
 //      pure UI — inheriting the vendored "GPT-5.5" string when the operator
-//      has not customized it is meaningful, unlike service_tiers and
-//      context_window below where a stale bundled value could mis-bill or
-//      mis-gate a real request.
+//      has not customized it is meaningful, unlike service_tiers below
+//      where a stale bundled value could mis-bill a real request.
 //   3. `service_tiers` — unconditional override with `deriveServiceTiers(model)`.
 //      No fallback to bundled: bundled entries may advertise OpenAI 1p tiers
 //      Floway cannot bill, so publishing them without registry-side unit
@@ -41,11 +40,11 @@ import type { CatalogModel } from './catalog.ts';
 import { synthesizedBaseInstructions } from './synthesized-base-instructions.ts';
 import type { InternalModel, Modality } from '@floway-dev/provider';
 
-// Bundled-hit entries inherit a real window from the codex catalog; missing
-// that fallback, an entry needs SOME value or codex's `(cw * 9) / 10`
-// auto-compact trigger blows up on absent / zero windows. 128k is
-// deliberately low — an operator who wants more configures
-// `max_context_window_tokens` on the registry entry.
+// A synthesized (miss-path) entry with no registry-supplied
+// `max_context_window_tokens` still needs SOME window — codex's auto-compact
+// math (see `auto_compact_token_limit` in BASELINE for the source URL) blows
+// up on absent / zero. 128k is deliberately low; an operator who wants more
+// sets `max_context_window_tokens` on the registry entry.
 const CONSERVATIVE_DEFAULT_CONTEXT_WINDOW = 128_000;
 
 // Hardcoded baseline for a codex catalog entry when no bundled match exists.
@@ -67,19 +66,19 @@ const BASELINE: CatalogModel = {
   default_verbosity: null,
   prefer_websockets: true,
   supported_in_api: true,
-  // ModelInfo (codex-rs/protocol/src/openai_models.rs) requires
-  // `supports_reasoning_summaries: bool` and `apply_patch_tool_type:
-  // Option<...>` to be present; absence aborts deserialization of the whole
-  // `/models` body and codex silently falls back to its bundled catalog.
+  // ModelInfo requires `supports_reasoning_summaries: bool` and
+  // `apply_patch_tool_type: Option<...>` to be present; absence aborts
+  // deserialization of the whole `/models` body and codex silently falls
+  // back to its bundled catalog
+  // (https://github.com/openai/codex/blob/f66d793a2d78287c8c28a5f41f39c58ac49bcc25/codex-rs/protocol/src/openai_models.rs#L351-L429).
   supports_reasoning_summaries: false,
   apply_patch_tool_type: null,
   default_reasoning_summary: 'none',
   // Placeholder — the miss-path always overlays this with a model-specific
-  // string from `synthesizedBaseInstructions(model.id, displayName)`.
+  // string from `synthesizedBaseInstructions(model.id, model.display_name ?? model.id)`.
   // Leaving an empty default here keeps BASELINE a plain constant that
   // TypeScript can type without depending on the eventual model.
   base_instructions: '',
-  effective_context_window_percent: 95,
   experimental_supported_tools: [],
   additional_speed_tiers: [],
   service_tiers: [],
@@ -87,6 +86,12 @@ const BASELINE: CatalogModel = {
   visibility: 'list',
   availability_nux: null,
   upgrade: null,
+  // Bundled entries also emit `null` here, and codex's
+  // `ModelInfo::auto_compact_token_limit()` resolves it to `(context_window
+  // * 9) / 10`. An explicit positive integer would be clamped down by that
+  // same 90% ceiling, so writing a value here is a no-op at best and a
+  // ceiling lowering at worst
+  // (https://github.com/openai/codex/blob/f66d793a2d78287c8c28a5f41f39c58ac49bcc25/codex-rs/protocol/src/openai_models.rs#L436-L447).
   auto_compact_token_limit: null,
   context_window: CONSERVATIVE_DEFAULT_CONTEXT_WINDOW,
   max_context_window: CONSERVATIVE_DEFAULT_CONTEXT_WINDOW,
@@ -95,7 +100,7 @@ const BASELINE: CatalogModel = {
 // Registry-derived: each key in cost.tiers is a billable tier wire-id. Names
 // mirror ids and descriptions are blank — Floway does not yet carry tier
 // metadata, and Codex only needs the id to round-trip the selection.
-export const deriveServiceTiers = (model: InternalModel): { id: string; name: string; description: string }[] =>
+const deriveServiceTiers = (model: InternalModel): { id: string; name: string; description: string }[] =>
   Object.keys(model.cost?.tiers ?? {}).map(id => ({ id, name: id, description: '' }));
 
 export const synthesizeCatalogEntry = (model: InternalModel, base?: CatalogModel): CatalogModel => {
@@ -110,17 +115,18 @@ export const synthesizeCatalogEntry = (model: InternalModel, base?: CatalogModel
     ?? BASELINE.input_modalities) as readonly Modality[];
   const hasImage = inputModalities.includes('image');
 
-  // Lossy projection: Codex CLI's catalog wire can only model effort-tiered reasoning
-  // (`supported_reasoning_levels: [{effort, description}]` + `default_reasoning_level`),
-  // mirroring `codex-rs/protocol/src/openai_models.rs` ModelInfo fields
+  // Lossy projection: Codex CLI's catalog wire can only model effort-tiered
+  // reasoning (`supported_reasoning_levels: [{effort, description}]` +
+  // `default_reasoning_level`), mirroring the ModelInfo fields
   // `supported_reasoning_levels: Vec<ReasoningEffortPreset>` and
   // `default_reasoning_level: Option<ReasoningEffort>`
-  // (https://github.com/openai/codex/blob/b98870dc46c7b97a08b98e0fc39e85ccf36093c0/codex-rs/protocol/src/openai_models.rs).
-  // Floway's `chat.reasoning` is richer: `budget_tokens`, `adaptive`, and `mandatory`
-  // don't fit the Codex wire and are silently dropped here. The omission is benign at
-  // request-time: Codex CLI sends `reasoning.effort` from the global default, and
-  // Floway's translation layer maps that effort value into the appropriate upstream
-  // representation (e.g. Anthropic `thinking.budget_tokens`).
+  // (https://github.com/openai/codex/blob/f66d793a2d78287c8c28a5f41f39c58ac49bcc25/codex-rs/protocol/src/openai_models.rs#L356-L357).
+  // Floway's `chat.reasoning` is richer: `budget_tokens`, `adaptive`, and
+  // `mandatory` don't fit the Codex wire and are silently dropped here. The
+  // omission is benign at request-time: Codex CLI sends `reasoning.effort`
+  // from the global default, and Floway's translation layer maps that
+  // effort value into the appropriate upstream representation (e.g.
+  // Anthropic `thinking.budget_tokens`).
   const registryEffort = model.chat?.reasoning?.effort;
   const supportedReasoning = registryEffort !== undefined
     ? registryEffort.supported.map(effort => ({ effort, description: '' }))

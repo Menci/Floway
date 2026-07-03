@@ -26,9 +26,10 @@ import { enumerateAddressableModelIds, type AddressableIdEntry } from '../shared
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { Fetcher } from '@floway-dev/provider';
 
-// Pure transformation: bundled catalog + listed addressable entries →
-// codex-shaped catalog. Extracted so tests can drive the mapping logic
-// without standing up the addressable-enumeration pipeline.
+// Pure transformation: bundled catalog + addressable entries →
+// codex-shaped catalog (drops unlisted alternates and non-chat kinds).
+// Extracted so tests can drive the mapping logic without standing up the
+// addressable-enumeration pipeline.
 export const assembleCatalog = (
   bundled: CodexCatalog,
   addressable: readonly AddressableIdEntry[],
@@ -37,11 +38,11 @@ export const assembleCatalog = (
   for (const m of bundled.models) bundledBySlug.set(m.slug.toLowerCase(), m);
 
   // Match against bundled by walking segments from the trailing leaf back
-  // toward the prefix. MODEL_PREFIX_REGEX enforces `/`-terminated prefixes,
-  // so the leaf is always the real upstream slug — searching leaf-first
-  // ensures a publicId like `openrouter/gpt-5.5/gpt-5.4` binds against
-  // `gpt-5.4` (the actual model) rather than the earlier `gpt-5.5` segment
-  // that happens to collide with a bundled slug.
+  // toward the prefix, so a publicId like `openrouter/gpt-5.5/gpt-5.4`
+  // binds against `gpt-5.4` rather than the earlier `gpt-5.5` segment that
+  // happens to collide with a bundled slug. Split on both `/` (model-prefix
+  // segments) and `:` (OpenRouter-style `:variant` suffixes) — a variant
+  // tag on the leaf falls through the walk without accidentally binding.
   const matchBundled = (publicId: string): CatalogModel | undefined => {
     const segments = publicId.toLowerCase().split(/[/:]/);
     for (let i = segments.length - 1; i >= 0; i--) {
