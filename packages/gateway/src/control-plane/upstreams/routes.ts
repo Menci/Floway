@@ -2,7 +2,7 @@ import type { Context } from 'hono';
 import type { z } from 'zod';
 
 import { resolveControlPlaneFetcher } from './proxy-resolution.ts';
-import { upstreamRecordToJson, type SerializedUpstreamRecord } from './serialize.ts';
+import { blueprintUpstreamRecord, upstreamRecordToFullJson, upstreamRecordToJson, type SerializedUpstreamRecord } from './serialize.ts';
 import { MODEL_LISTING_FAILURE_MESSAGE } from '../../data-plane/models/shared.ts';
 import { fetchUpstreamModelsCached } from '../../data-plane/providers/models-cache.ts';
 import { createProviderInstance } from '../../data-plane/providers/registry.ts';
@@ -22,6 +22,7 @@ import {
   getFlagCatalog,
   normalizeModelPrefix,
   ProviderModelsUnavailableError,
+  ALL_PROVIDER_KINDS,
   type Fetcher,
   type ModelPrefixConfig,
   type ProxyFallbackEntry,
@@ -230,6 +231,22 @@ export const listUpstreamOptions = async (c: Context) => {
 };
 
 export const listOptionalFlags = (c: Context) => c.json(getFlagCatalog());
+
+const isValidProviderKind = (value: unknown): value is UpstreamProviderKind =>
+  typeof value === 'string' && (ALL_PROVIDER_KINDS as readonly string[]).includes(value);
+
+// Serve a shape-complete blank SerializedUpstreamRecord for the requested
+// kind. The create page's loader calls this so it can render the same
+// UpstreamEditPage component edit uses, treating a fresh upstream as an
+// edit of an unpersisted record. The record is never written; the client's
+// draft state is the sole source of truth until Save.
+export const getUpstreamBlueprint = (c: Context): Response => {
+  const kind = c.req.query('kind');
+  if (!isValidProviderKind(kind)) {
+    return c.json({ error: `kind must be one of: ${ALL_PROVIDER_KINDS.join(', ')}` }, 400);
+  }
+  return c.json(upstreamRecordToFullJson(blueprintUpstreamRecord(kind)));
+};
 
 export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) => {
   const body = c.req.valid('json');
