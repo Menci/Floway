@@ -375,4 +375,24 @@ export interface Repo {
   modelAliases: ModelAliasesRepo;
   responsesItems: ResponsesItemsRepo;
   responsesSnapshots: ResponsesSnapshotsRepo;
+  cursorSessions: CursorSessionsRepo;
+}
+
+// Cross-instance Cursor session scalars (see migration 0049_cursor_sessions.sql
+// and packages/provider/src/repo.ts CursorSessionsRepoSlim). The full repo adds
+// the cron sweep; the read/claim/put/delete surface is structurally the slim
+// interface the provider package consumes.
+export interface CursorSessionRow {
+  sessionKey: string;
+  requestId: string;
+  appendSeqno: number;
+  leftover: Uint8Array | null;
+}
+
+export interface CursorSessionsRepo {
+  claim(sessionKey: string, ttlMs: number): Promise<CursorSessionRow | null>;
+  put(row: CursorSessionRow): Promise<void>;
+  delete(sessionKey: string): Promise<void>;
+  /** Cron sweep: drop rows whose refreshed_at is older than the cutoff (unix ms). */
+  deleteOlderThan(cutoffMs: number): Promise<void>;
 }

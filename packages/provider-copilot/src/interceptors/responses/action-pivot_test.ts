@@ -33,7 +33,7 @@ const { clearInProcessCopilotTokenCache } = await import('../../auth.ts');
 const { createCopilotProvider } = await import('../../provider.ts');
 const { createInMemoryImageProcessor, initImageProcessor } = await import('@floway-dev/platform');
 const { directFetcher, initProviderRepo } = await import('@floway-dev/provider');
-const { jsonResponse, noopUpstreamCallOptions, sseResponse, withMockedFetch } = await import('@floway-dev/test-utils');
+const { jsonResponse, noopCursorSessionsRepo, noopUpstreamCallOptions, sseResponse, withMockedFetch } = await import('@floway-dev/test-utils');
 type UpstreamRecord = import('@floway-dev/provider').UpstreamRecord;
 
 test('Copilot provider terminal dispatches on post-chain ctx.action (interceptor flip compact→generate routes to the streaming generate path)', async () => {
@@ -60,6 +60,7 @@ test('Copilot provider terminal dispatches on post-chain ctx.action (interceptor
       getById: async () => upstream,
       saveState: async () => ({ updated: true }),
     },
+    cursorSessions: noopCursorSessionsRepo(),
   }));
   initImageProcessor(createInMemoryImageProcessor());
   clearInProcessCopilotTokenCache();

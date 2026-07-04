@@ -8,7 +8,7 @@ import { createInMemoryImageProcessor, initImageProcessor } from '@floway-dev/pl
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { directFetcher, initProviderRepo } from '@floway-dev/provider';
-import { assertEquals, assertRejects, jsonResponse, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, assertRejects, jsonResponse, noopCursorSessionsRepo, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const buildCopilotUpstream = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => {
   const { config: overrideConfig, ...rest } = overrides;
@@ -72,6 +72,7 @@ const setupCopilotTest = async (initial: SetupOptions = {}): Promise<CopilotTest
     return saveResult;
   };
   initProviderRepo(() => ({
+    cursorSessions: noopCursorSessionsRepo(),
     upstreams: {
       getById: () => getByIdImpl(),
       saveState: (id, newState, options) => saveStateImpl(id, newState, options),

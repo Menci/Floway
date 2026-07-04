@@ -1,4 +1,5 @@
 import { DurableObjectChannelBroker, type BroadcastNamespace } from './do-channel-broker.ts';
+import { DurableObjectDurableHttpSession, type DurableHttpSessionNamespace } from './do-durable-http-session.ts';
 import { createCloudflareImageProcessor, type ImagesBinding } from './image-processor.ts';
 import { KvImageCache, type KvNamespace } from './kv-image-cache.ts';
 import { R2FileProvider, type R2BucketLike } from './r2-file-provider.ts';
@@ -10,6 +11,7 @@ import type { DumpMetadata } from '@floway-dev/gateway/dump-types';
 import { addTrustedRootCAs } from '@floway-dev/http';
 import {
   IMAGE_CACHE_POLICY,
+  initDurableHttpSession,
   initEnv,
   initFileProvider,
   initImageCacheStore,
@@ -25,15 +27,17 @@ export interface CloudflareEnv {
   IMAGES: ImagesBinding;
   KV: KvNamespace;
   BROADCAST_DO: BroadcastNamespace;
+  DURABLE_HTTP_SESSION: DurableHttpSessionNamespace;
   [key: string]: unknown;
 }
 
 // Every binding declared on `CloudflareEnv` is load-bearing — D1 holds all
 // config and telemetry, R2 holds spilled payloads, Images compresses inline
-// images, KV memoises compressed image results. A missing binding means
-// wrangler.jsonc drifted from the code, so we refuse to initialise rather
-// than 503 on first use of the absent binding.
-const REQUIRED_BINDINGS = ['DB', 'FILES', 'IMAGES', 'KV', 'BROADCAST_DO'] as const;
+// images, KV memoises compressed image results, BROADCAST_DO fans out dump
+// events, DURABLE_HTTP_SESSION holds cross-request upstream response streams
+// (cursor RunSSE). A missing binding means wrangler.jsonc drifted from the
+// code, so we refuse to initialise rather than 503 on first use.
+const REQUIRED_BINDINGS = ['DB', 'FILES', 'IMAGES', 'KV', 'BROADCAST_DO', 'DURABLE_HTTP_SESSION'] as const;
 
 export const bootstrapCloudflarePlatform = (env: CloudflareEnv): { db: SqlDatabase } => {
   const missing = REQUIRED_BINDINGS.filter(name => env[name] === undefined);
@@ -58,5 +62,6 @@ export const bootstrapCloudflarePlatform = (env: CloudflareEnv): { db: SqlDataba
   addTrustedRootCAs(cloudflareRuntimeRootCAs);
   initDumpStore(new FileDumpStore(env.DB, files));
   initDumpBroker(new DurableObjectChannelBroker<DumpMetadata>(env.BROADCAST_DO, dumpCodec));
+  initDurableHttpSession(new DurableObjectDurableHttpSession(env.DURABLE_HTTP_SESSION));
   return { db: env.DB };
 };

@@ -13,6 +13,8 @@ import type {
   ApiKeyRepo,
   BackoffRow,
   CachedModelsRow,
+  CursorSessionRow,
+  CursorSessionsRepo,
   ModelAliasesRepo,
   ModelAliasRecord,
   ModelsCacheRepo,
@@ -884,6 +886,31 @@ class MemoryProxyBackoffRepo implements ProxyBackoffRepo {
 
 const cloneBackoffRow = (row: BackoffRow): BackoffRow => ({ ...row });
 
+class MemoryCursorSessionsRepo implements CursorSessionsRepo {
+  private rows = new Map<string, CursorSessionRow & { lockedUntil: number | null; refreshedAt: number }>();
+
+  async claim(sessionKey: string, ttlMs: number): Promise<CursorSessionRow | null> {
+    const now = Date.now();
+    const row = this.rows.get(sessionKey);
+    if (!row) return null;
+    if (row.lockedUntil !== null && row.lockedUntil >= now) return null;
+    row.lockedUntil = now + ttlMs;
+    return { sessionKey, requestId: row.requestId, appendSeqno: row.appendSeqno, leftover: row.leftover };
+  }
+
+  async put(row: CursorSessionRow): Promise<void> {
+    this.rows.set(row.sessionKey, { ...row, lockedUntil: null, refreshedAt: Date.now() });
+  }
+
+  async delete(sessionKey: string): Promise<void> {
+    this.rows.delete(sessionKey);
+  }
+
+  async deleteOlderThan(cutoffMs: number): Promise<void> {
+    for (const [k, v] of this.rows) if (v.refreshedAt < cutoffMs) this.rows.delete(k);
+  }
+}
+
 const cloneModelAliasRecord = (record: ModelAliasRecord): ModelAliasRecord => ({
   ...record,
   targets: structuredClone(record.targets),
@@ -947,6 +974,7 @@ export class InMemoryRepo implements Repo {
   modelAliases: ModelAliasesRepo;
   responsesItems: ResponsesItemsRepo;
   responsesSnapshots: ResponsesSnapshotsRepo;
+  cursorSessions: CursorSessionsRepo;
 
   constructor() {
     this.users = new MemoryUsersRepo();
@@ -963,5 +991,6 @@ export class InMemoryRepo implements Repo {
     this.modelAliases = new MemoryModelAliasesRepo();
     this.responsesItems = new MemoryResponsesItemsRepo();
     this.responsesSnapshots = new MemoryResponsesSnapshotsRepo();
+    this.cursorSessions = new MemoryCursorSessionsRepo();
   }
 }

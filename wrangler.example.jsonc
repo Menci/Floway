@@ -104,11 +104,22 @@
   ],
   // Per-key WebSocket fan-out actor. Content-agnostic — the actor never
   // inspects the payload; callers layer their own framing via a codec.
+  //
+  // DURABLE_HTTP_SESSION is the first actor that owns a live OUTBOUND socket:
+  // it holds a cross-request upstream HTTP response stream (cursor's RunSSE)
+  // open so a later inbound request can drive an ExecMcpResult continuation on
+  // the same conversation. The outbound socket keeps the DO alive (CF
+  // 2026-06-19 outbound-connections-keep-DOs-alive, 15-minute cap); an idle
+  // alarm (default 5 min) evicts an abandoned session before then.
   "durable_objects": {
     "bindings": [
       {
         "name": "BROADCAST_DO",
         "class_name": "BroadcastDO"
+      },
+      {
+        "name": "DURABLE_HTTP_SESSION",
+        "class_name": "DurableHttpSessionDO"
       }
     ]
   },
@@ -120,12 +131,18 @@
   // CF is phasing out and which Workers Free cannot create.
   //
   // BroadcastDO has no `ctx.storage.*` calls — the SQLite db is provisioned
-  // but unused. The name reflects the BACKEND choice, not whether the actor
-  // touches it.
+  // but unused. DurableHttpSessionDO uses `ctx.storage.setAlarm` for idle
+  // eviction. The name reflects the BACKEND choice, not whether the actor
+  // touches it. Migrations are append-only: v1 created BroadcastDO, v2 adds
+  // DurableHttpSessionDO.
   "migrations": [
     {
       "tag": "v1",
       "new_sqlite_classes": ["BroadcastDO"]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": ["DurableHttpSessionDO"]
     }
   ]
 }

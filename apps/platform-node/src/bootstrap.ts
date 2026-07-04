@@ -1,5 +1,6 @@
 import { EventTargetChannelBroker } from './event-target-channel-broker.ts';
 import { FsFileProvider } from './fs-file-provider.ts';
+import { InProcessDurableHttpSession } from './in-process-durable-http-session.ts';
 import { createNodeSqliteDatabase } from './node-sqlite-database.ts';
 import { createSharpImageProcessor } from './sharp-image-processor.ts';
 import { nodeSocketDial } from './socket-dial.ts';
@@ -12,6 +13,7 @@ import { addTrustedRootCAs } from '@floway-dev/http';
 import {
   getEnvOptional,
   IMAGE_CACHE_POLICY,
+  initDurableHttpSession,
   initEnv,
   initFileProvider,
   initImageCacheStore,
@@ -37,5 +39,6 @@ export const bootstrapNodePlatform = (): { db: SqlDatabase } => {
   initImageProcessor(createSharpImageProcessor());
   initDumpStore(new FileDumpStore(db, files));
   initDumpBroker(new EventTargetChannelBroker<DumpMetadata>(dumpCodec));
+  initDurableHttpSession(new InProcessDurableHttpSession());
   return { db };
 };

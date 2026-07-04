@@ -14,6 +14,7 @@
     "@floway-dev/gateway": "workspace:*",
     "@floway-dev/http": "workspace:*",
     "@floway-dev/platform": "workspace:*",
+    "@floway-dev/proxy": "workspace:*",
     "@floway-dev/protocols": "workspace:*",
     "@hono/node-server": "^2.0.4",
     "hono": "^4",

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { createCodexProvider } from './provider.ts';
 import type { CodexAccessTokenEntry, CodexUpstreamState } from './state.ts';
 import { directFetcher, initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
-import { noopUpstreamCallOptions, stubProviderModel } from '@floway-dev/test-utils';
+import { noopCursorSessionsRepo, noopUpstreamCallOptions, stubProviderModel } from '@floway-dev/test-utils';
 
 const farFutureMs = Date.now() + 24 * 60 * 60 * 1000;
 
@@ -37,6 +37,7 @@ beforeEach(() => {
   saveStateSpy = vi.fn<(id: string, newState: unknown, options: { expectedState: unknown }) => Promise<{ updated: boolean }>>(async () => ({ updated: true }));
   getByIdSpy = vi.fn<(id: string) => Promise<UpstreamRecord | null>>(async () => recordWithAccessToken());
   initProviderRepo(() => ({
+    cursorSessions: noopCursorSessionsRepo(),
     upstreams: { getById: getByIdSpy, saveState: saveStateSpy },
   }));
 });

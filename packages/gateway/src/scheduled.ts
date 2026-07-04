@@ -7,6 +7,12 @@ import { getImageCacheStore } from '@floway-dev/platform';
 // by it — a row stays referenceable until cleanup removes it.
 const RESPONSES_ITEM_ROW_TTL_MS = 180 * 24 * 60 * 60 * 1000;
 
+// Cursor session scalars track a LIVE conversation turn (the read stream is
+// held for at most the DurableHttpSession idle/cap window), so they expire far
+// faster than durable history — a stale row only ever causes a clean
+// cold-resume, never corruption.
+const CURSOR_SESSION_ROW_TTL_MS = 30 * 60 * 1000;
+
 const runSweep = async (name: string, fn: () => Promise<unknown>): Promise<void> => {
   try {
     await fn();
@@ -21,6 +27,7 @@ export const runScheduledMaintenance = async (): Promise<void> => {
   await runSweep('responsesItems.sweepPayloadFiles', () => sweepExpiredResponsesItemPayloadFiles(now));
   await runSweep('responsesSnapshots.deleteOlderThan', () => getRepo().responsesSnapshots.deleteOlderThan(now - RESPONSES_ITEM_ROW_TTL_MS));
   await runSweep('responsesItems.deleteOlderThan', () => getRepo().responsesItems.deleteOlderThan(now - RESPONSES_ITEM_ROW_TTL_MS));
+  await runSweep('cursorSessions.deleteOlderThan', () => getRepo().cursorSessions.deleteOlderThan(Date.now() - CURSOR_SESSION_ROW_TTL_MS));
   await runSweep('imageCacheStore.sweepExpired', () => getImageCacheStore().sweepExpired(Date.now()));
   await runSweep('dumps.sweepExpired', () => sweepExpiredDumps());
 };

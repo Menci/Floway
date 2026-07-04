@@ -56,6 +56,7 @@ export const passthroughAttempt = async (args: PassthroughAttemptArgs): Promise<
     recordUpstreamLatency: recorder.record,
     waitUntil: ctx.backgroundScheduler,
     headers: inboundHeadersForUpstream(c),
+    apiKeyId: ctx.apiKeyId,
   });
   const upstreamDurationMs = requireRecordedDurationMs(recorder, 'passthrough upstream call');
   // Telemetry keys on the upstream's bare catalog id (`model.id`); the

@@ -1043,6 +1043,61 @@ test('PATCH /api/upstreams rejects config edits on a claude-code row', async () 
   assertEquals(body.error.includes('claude-code-reimport'), true);
 });
 
+test('PATCH /api/upstreams accepts a privacyMode edit on a cursor row but rejects credential edits', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  await repo.upstreams.save({
+    id: 'up_cursor_privacy',
+    kind: 'cursor',
+    name: 'Cursor',
+    enabled: true,
+    sortOrder: 0,
+    createdAt: '2026-05-22T00:00:00.000Z',
+    updatedAt: '2026-05-22T00:00:00.000Z',
+    flagOverrides: {},
+    disabledPublicModelIds: [],
+    proxyFallbackList: [],
+    modelPrefix: null,
+    config: { accounts: [{ email: 'a@b.com', userId: 'u1' }] },
+    state: {
+      accounts: [{
+        userId: 'u1',
+        refresh_token: 'rt',
+        state: 'active',
+        state_updated_at: '2026-01-01T00:00:00.000Z',
+        // Far-future token so warmModelsCache never mints (network-free); its
+        // catalog fetch is mocked below and swallowed on failure.
+        accessToken: { token: 'at.cursor.test', expiresAt: 4102444800000, refreshedAt: '2026-01-01T00:00:00.000Z' },
+      }],
+    },
+  });
+
+  // Credential (accounts) edits still belong to cursor-reimport → 400.
+  const rejected = await requestApp('/api/upstreams/up_cursor_privacy', {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json', 'x-floway-session': adminSession },
+    body: JSON.stringify({ config: { accounts: [] } }),
+  });
+  assertEquals(rejected.status, 400);
+  assertEquals(((await rejected.json()) as { error: string }).error.includes('cursor-reimport'), true);
+
+  // A privacyMode-only edit is accepted and merged over the existing config, so
+  // the account credentials survive.
+  const accepted = await withMockedFetch(
+    () => new Response('', { status: 500 }),
+    () => requestApp('/api/upstreams/up_cursor_privacy', {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', 'x-floway-session': adminSession },
+      body: JSON.stringify({ config: { privacyMode: false } }),
+    }),
+  );
+  assertEquals(accepted.status, 200);
+  const stored = await repo.upstreams.getById('up_cursor_privacy');
+  const cfg = stored?.config as { privacyMode?: boolean; accounts?: unknown[] };
+  assertEquals(cfg.privacyMode, false);
+  assertEquals(cfg.accounts?.length, 1);
+});
+
 test('PATCH /api/upstreams accepts metadata edits on a claude-code row', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();

@@ -77,6 +77,7 @@ const upstreamKindTextClass = (kind: string): string => {
   case 'azure': return 'text-accent-emerald';
   case 'custom': return 'text-accent-amber';
   case 'ollama': return 'text-accent-rose';
+  case 'cursor': return 'text-accent-violet';
   default: return 'text-gray-500';
   }
 };

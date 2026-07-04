@@ -2,7 +2,7 @@ import type { UpstreamChatModelConfig } from './model-config.ts';
 import type { ModelPrefixConfig } from './model-prefix.ts';
 import type { AliasSelection, AliasTarget, ModelKind, ModelEndpoints, ModelPricing } from '@floway-dev/protocols/common';
 
-export const ALL_PROVIDER_KINDS = ['copilot', 'custom', 'azure', 'codex', 'claude-code', 'ollama'] as const;
+export const ALL_PROVIDER_KINDS = ['copilot', 'custom', 'azure', 'codex', 'claude-code', 'ollama', 'cursor'] as const;
 export type UpstreamProviderKind = typeof ALL_PROVIDER_KINDS[number];
 
 // One entry in `UpstreamRecord.proxyFallbackList`. `id` is the proxy id from

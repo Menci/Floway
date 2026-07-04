@@ -4,7 +4,7 @@ import { copilotAuthedFetch } from './auth.ts';
 import { clearInProcessCopilotTokenCache } from './index.ts';
 import type { CopilotUpstreamState } from './state.ts';
 import { initProviderRepo, directFetcher, type UpstreamRecord } from '@floway-dev/provider';
-import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, jsonResponse, noopCursorSessionsRepo, withMockedFetch } from '@floway-dev/test-utils';
 
 const UPSTREAM_ID = 'up_copilot_test';
 const TOKEN_BASE_URL = 'https://api.individual.githubcopilot.com';
@@ -27,6 +27,7 @@ const installRepoAndClearCache = async () => {
     config: { githubToken: 'ghu_test', user: { id: 1, login: 't', name: null, avatar_url: '' } },
   };
   initProviderRepo(() => ({
+    cursorSessions: noopCursorSessionsRepo(),
     upstreams: {
       getById: async () => ({ ...stub, state }),
       saveState: async (_id, newState) => {

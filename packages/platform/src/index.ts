@@ -1,4 +1,5 @@
 export * from './background.ts';
+export * from './durable-http-session.ts';
 export * from './env.ts';
 export * from './file-provider.ts';
 export * from './image-cache-store.ts';

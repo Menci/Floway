@@ -103,6 +103,17 @@ const redactedConfig = (upstream: UpstreamRecord): unknown => {
         ...(a.rateLimitTier !== undefined ? { rateLimitTier: clone(a.rateLimitTier) } : {}),
       })),
     };
+  case 'cursor':
+    // refresh_token lives in state and is redacted by redactedState.
+    return {
+      accounts: assertAccountsArray(upstream, config.accounts).map(a => ({
+        ...(a.email !== undefined ? { email: clone(a.email) } : {}),
+        ...(a.userId !== undefined ? { userId: clone(a.userId) } : {}),
+      })),
+      ...(config.maxMode !== undefined ? { maxMode: clone(config.maxMode) } : {}),
+      ...(config.tabCompletion !== undefined ? { tabCompletion: clone(config.tabCompletion) } : {}),
+      ...(config.privacyMode !== undefined ? { privacyMode: clone(config.privacyMode) } : {}),
+    };
   case 'ollama':
     return {
       ...(config.baseUrl !== undefined ? { baseUrl: clone(config.baseUrl) } : {}),
@@ -156,6 +167,25 @@ const redactedState = (upstream: UpstreamRecord): unknown => {
           // /api/oauth/usage endpoint and evolves on their schedule, so we
           // round-trip the entry without re-shaping any inner fields.
           usageProbeSnapshot: serializeOpaqueRecord(upstream, 'usageProbeSnapshot', a.usageProbeSnapshot),
+        };
+      }),
+    };
+  case 'cursor':
+    return {
+      accounts: assertAccountsArray(upstream, state.accounts).map(a => {
+        // accessToken.token is dropped; expiresAt + refreshedAt are surfaced to the dashboard.
+        const accessToken = a.accessToken === null
+          ? null
+          : isRecord(a.accessToken)
+            ? { expiresAt: clone(a.accessToken.expiresAt), refreshedAt: clone(a.accessToken.refreshedAt) }
+            : (() => { throw new Error(`Upstream ${upstream.id} (${upstream.kind}) has malformed accessToken: expected object or null`); })();
+        return {
+          ...(a.userId !== undefined ? { userId: clone(a.userId) } : {}),
+          ...(a.state !== undefined ? { state: clone(a.state) } : {}),
+          ...(a.state_message !== undefined ? { state_message: clone(a.state_message) } : {}),
+          state_updated_at: clone(a.state_updated_at),
+          refresh_token_set: hasSecret(a.refresh_token),
+          accessToken,
         };
       }),
     };

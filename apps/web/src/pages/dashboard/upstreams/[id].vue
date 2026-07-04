@@ -3,7 +3,7 @@ import { defineBasicLoader } from 'unplugin-vue-router/data-loaders/basic';
 import { useRouter } from 'vue-router';
 
 import { callApi, useApi } from '../../../api/client.ts';
-import type { CopilotQuotaSnapshot, UpstreamModelConfig } from '../../../api/types.ts';
+import type { CopilotQuotaSnapshot, CursorDashboardUsage, UpstreamModelConfig } from '../../../api/types.ts';
 import UpstreamEditPage from '../../../components/upstream-edit/UpstreamEditPage.vue';
 import { useProxiesStore } from '../../../composables/useProxies.ts';
 import { useRuntimeInfo } from '../../../composables/useRuntimeInfo.ts';
@@ -25,6 +25,8 @@ export const useEditUpstreamData = defineBasicLoader('/dashboard/upstreams/[id]'
   let upstreamModelsError: string | null = null;
   let copilotQuota: CopilotQuotaSnapshot | null = null;
   let copilotQuotaError: string | null = null;
+  let cursorQuota: CursorDashboardUsage | null = null;
+  let cursorQuotaError: string | null = null;
 
   // Every provider except Azure resolves its catalog through the SWR cache
   // backing GET /upstreams/:id/models. Azure's catalog is operator-edited
@@ -33,15 +35,29 @@ export const useEditUpstreamData = defineBasicLoader('/dashboard/upstreams/[id]'
     const modelsPromise = callApi<{ data: UpstreamModelConfig[] }>(
       () => api.api.upstreams[':id'].models.$get({ param: { id: record.id } }),
     );
-    const quotaPromise = record.kind === 'copilot'
+    const copilotQuotaPromise = record.kind === 'copilot'
       ? callApi<CopilotQuotaSnapshot>(() => api.api.upstreams[':id'].copilot.quota.$get({ param: { id: record.id } }))
       : null;
-    const [modelsRes, quotaRes] = await Promise.all([modelsPromise, quotaPromise ?? Promise.resolve(null)]);
+    // Prefetch the Cursor dashboard usage for cursor upstreams; the panel's
+    // CursorAccountCard renders it on first paint (no spinner flicker).
+    // Skip if the account isn't active — the panel guards the same check.
+    const cursorQuotaPromise = record.kind === 'cursor' && record.state?.accounts[0]?.state === 'active'
+      ? callApi<CursorDashboardUsage>(() => api.api.upstreams[':id'].cursor.quota.$get({ param: { id: record.id } }))
+      : null;
+    const [modelsRes, copilotRes, cursorRes] = await Promise.all([
+      modelsPromise,
+      copilotQuotaPromise ?? Promise.resolve(null),
+      cursorQuotaPromise ?? Promise.resolve(null),
+    ]);
     if (modelsRes.error) upstreamModelsError = modelsRes.error.message;
     else upstreamModels = modelsRes.data.data;
-    if (quotaRes) {
-      if (quotaRes.error) copilotQuotaError = quotaRes.error.message;
-      else copilotQuota = quotaRes.data;
+    if (copilotRes) {
+      if (copilotRes.error) copilotQuotaError = copilotRes.error.message;
+      else copilotQuota = copilotRes.data;
+    }
+    if (cursorRes) {
+      if (cursorRes.error) cursorQuotaError = cursorRes.error.message;
+      else cursorQuota = cursorRes.data;
     }
   }
 
@@ -53,6 +69,8 @@ export const useEditUpstreamData = defineBasicLoader('/dashboard/upstreams/[id]'
     upstreamModelsError,
     copilotQuota,
     copilotQuotaError,
+    cursorQuota,
+    cursorQuotaError,
   };
 });
 </script>
@@ -83,6 +101,8 @@ if (data.data.value.record === null) {
     :initial-upstream-models-error="data.data.value.upstreamModelsError"
     :initial-copilot-quota="data.data.value.copilotQuota"
     :initial-copilot-quota-error="data.data.value.copilotQuotaError"
+    :initial-cursor-quota="data.data.value.cursorQuota"
+    :initial-cursor-quota-error="data.data.value.cursorQuotaError"
     @saved="store.load"
   />
 </template>

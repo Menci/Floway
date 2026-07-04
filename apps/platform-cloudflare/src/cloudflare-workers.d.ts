@@ -20,9 +20,14 @@ declare module 'cloudflare:workers' {
   }
 }
 
-// The runtime's `DurableObjectState` surface the actor touches — just the
-// WebSocket Hibernation entry points.
+// The runtime's `DurableObjectState` surface the actor touches — the
+// WebSocket Hibernation entry points and the alarm scheduler (used by
+// DurableHttpSessionDO for idle eviction).
 interface DurableObjectState {
   acceptWebSocket(server: WebSocket): void;
   getWebSockets(): WebSocket[];
+  storage: {
+    setAlarm(scheduledTime: number): Promise<void>;
+    deleteAlarm(): Promise<void>;
+  };
 }

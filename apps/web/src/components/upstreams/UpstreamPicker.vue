@@ -70,6 +70,7 @@ const providerMeta = (kind: UpstreamProviderKind | null): ProviderMeta => {
   case 'codex': return { tone: 'cyan', label: 'Codex' };
   case 'claude-code': return { tone: 'rose', label: 'Claude Code' };
   case 'ollama': return { tone: 'rose', label: 'Ollama' };
+  case 'cursor': return { tone: 'cyan', label: 'Cursor' };
   }
   return assertNever(kind);
 };

@@ -313,7 +313,7 @@ const upstreamBaseFields = {
 // `sort_order` are optional — the handler defaults them to `true` and
 // `nextSortOrder()` respectively when omitted.
 //
-// `codex` and `claude-code` are listed here so the handler can return the
+// `codex`, `claude-code`, and `cursor` are listed here so the handler can return the
 // canonical "use POST /api/upstreams/<kind>-import" 400 instead of the
 // cryptic zod "invalid discriminator value" message. The `config` slot is
 // `unknown()` because the real config is derived from the OAuth flow, not
@@ -324,6 +324,7 @@ export const createUpstreamBody = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('copilot'), ...upstreamBaseFields, config: copilotConfigSchema }),
   z.object({ kind: z.literal('codex'), ...upstreamBaseFields, config: z.unknown() }),
   z.object({ kind: z.literal('claude-code'), ...upstreamBaseFields, config: z.unknown() }),
+  z.object({ kind: z.literal('cursor'), ...upstreamBaseFields, config: z.unknown() }),
   z.object({ kind: z.literal('ollama'), ...upstreamBaseFields, config: ollamaConfigSchema }),
 ]);
 
@@ -337,7 +338,7 @@ export const createUpstreamBody = z.discriminatedUnion('kind', [
 // without this field the schema would silently strip it and the API would
 // look like it had accepted the change.
 export const updateUpstreamBody = z.object({
-  kind: z.enum(['custom', 'azure', 'copilot', 'codex', 'claude-code', 'ollama']).optional(),
+  kind: z.enum(['custom', 'azure', 'copilot', 'codex', 'claude-code', 'cursor', 'ollama']).optional(),
   name: z.string().min(1).optional(),
   enabled: z.boolean().optional(),
   sort_order: z.number().int().optional(),
@@ -450,6 +451,31 @@ export const codexReimportBody = z.object({
 export const codexRefreshNowBody = z.object({
   // Edit-form override; absent falls back to the persisted row's list. See
   // proxy-resolution.ts.
+  proxy_fallback_list: proxyFallbackListSchema.optional(),
+});
+
+// --- cursor import / authorize-url / poll / refresh ---
+// See control-plane/upstreams/routes.ts for the poll-based login protocol.
+export const cursorAuthorizeUrlBody = z.object({
+  proxy_fallback_list: proxyFallbackListSchema.optional(),
+});
+
+export const cursorPollBody = z.object({
+  uuid: z.string().min(1),
+  verifier: z.string().min(1),
+  name: z.string().min(1).optional(),
+  sort_order: z.number().int().optional(),
+  proxy_fallback_list: proxyFallbackListSchema.optional(),
+});
+
+export const cursorReimportBody = z.object({
+  uuid: z.string().min(1),
+  verifier: z.string().min(1),
+  name: z.string().min(1).optional(),
+  proxy_fallback_list: proxyFallbackListSchema.optional(),
+});
+
+export const cursorRefreshNowBody = z.object({
   proxy_fallback_list: proxyFallbackListSchema.optional(),
 });
 

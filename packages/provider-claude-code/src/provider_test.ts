@@ -5,7 +5,7 @@ import { pricingForClaudeCodeModelKey } from './pricing.ts';
 import { createClaudeCodeProvider } from './provider.ts';
 import type { ClaudeCodeAccessTokenEntry, ClaudeCodeAccountCredential, ClaudeCodeUpstreamState } from './state.ts';
 import { initProviderRepo, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
-import { noopUpstreamCallOptions } from '@floway-dev/test-utils';
+import { noopCursorSessionsRepo, noopUpstreamCallOptions } from '@floway-dev/test-utils';
 
 const upstreamId = 'up_cc_provider';
 
@@ -68,6 +68,7 @@ beforeEach(() => {
         return { updated: true };
       },
     },
+    cursorSessions: noopCursorSessionsRepo(),
   }));
 });
 

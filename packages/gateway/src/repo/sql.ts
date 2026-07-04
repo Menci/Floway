@@ -7,6 +7,8 @@ import type {
   ApiKeyRepo,
   BackoffRow,
   CachedModelsRow,
+  CursorSessionRow,
+  CursorSessionsRepo,
   ModelAliasesRepo,
   ModelAliasRecord,
   ModelsCacheRepo,
@@ -1256,7 +1258,7 @@ const toUpstreamRecord = (row: UpstreamRow): UpstreamRecord => {
 };
 
 const assertUpstreamProviderKind = (provider: string): UpstreamProviderKind => {
-  if (provider === 'copilot' || provider === 'custom' || provider === 'azure' || provider === 'codex' || provider === 'claude-code' || provider === 'ollama') return provider;
+  if (provider === 'copilot' || provider === 'custom' || provider === 'azure' || provider === 'codex' || provider === 'claude-code' || provider === 'ollama' || provider === 'cursor') return provider;
   throw new TypeError(`Invalid upstream provider kind: ${provider}`);
 };
 
@@ -1587,6 +1589,66 @@ const toBackoffRow = (row: BackoffRowDb): BackoffRow => ({
   lastErrorAt: row.last_error_at,
 });
 
+interface CursorSessionRowDb {
+  request_id: string;
+  append_seqno: number;
+  leftover: Uint8Array | null;
+}
+
+class SqlCursorSessionsRepo implements CursorSessionsRepo {
+  constructor(private db: SqlDatabase) {}
+
+  async claim(sessionKey: string, ttlMs: number): Promise<CursorSessionRow | null> {
+    const now = Date.now();
+    // Atomic single-flight: take the lock only if the row exists and is
+    // unclaimed (or its claim expired), returning the scalars in the same
+    // statement. RETURNING is supported by both D1 and node:sqlite.
+    const row = await this.db
+      .prepare(
+        `UPDATE cursor_sessions
+            SET locked_until = ?
+          WHERE session_key = ? AND (locked_until IS NULL OR locked_until < ?)
+          RETURNING request_id, append_seqno, leftover`,
+      )
+      .bind(now + ttlMs, sessionKey, now)
+      .first<CursorSessionRowDb>();
+    if (!row) return null;
+    return {
+      sessionKey,
+      requestId: row.request_id,
+      appendSeqno: row.append_seqno,
+      leftover: row.leftover ? new Uint8Array(row.leftover) : null,
+    };
+  }
+
+  async put(row: CursorSessionRow): Promise<void> {
+    const now = Date.now();
+    // Upsert the scalars; clear the claim lock and refresh the sweep clock.
+    await this.db
+      .prepare(
+        `INSERT INTO cursor_sessions
+           (session_key, request_id, append_seqno, leftover, locked_until, created_at, refreshed_at)
+         VALUES (?, ?, ?, ?, NULL, ?, ?)
+         ON CONFLICT (session_key) DO UPDATE SET
+           request_id = excluded.request_id,
+           append_seqno = excluded.append_seqno,
+           leftover = excluded.leftover,
+           locked_until = NULL,
+           refreshed_at = excluded.refreshed_at`,
+      )
+      .bind(row.sessionKey, row.requestId, row.appendSeqno, row.leftover ?? null, now, now)
+      .run();
+  }
+
+  async delete(sessionKey: string): Promise<void> {
+    await this.db.prepare('DELETE FROM cursor_sessions WHERE session_key = ?').bind(sessionKey).run();
+  }
+
+  async deleteOlderThan(cutoffMs: number): Promise<void> {
+    await this.db.prepare('DELETE FROM cursor_sessions WHERE refreshed_at < ?').bind(cutoffMs).run();
+  }
+}
+
 interface ModelAliasRow {
   name: string;
   kind: string;
@@ -1763,6 +1825,7 @@ export class SqlRepo implements Repo {
   modelAliases: ModelAliasesRepo;
   responsesItems: ResponsesItemsRepo;
   responsesSnapshots: ResponsesSnapshotsRepo;
+  cursorSessions: CursorSessionsRepo;
 
   constructor(db: SqlDatabase) {
     this.users = new SqlUsersRepo(db);
@@ -1779,5 +1842,6 @@ export class SqlRepo implements Repo {
     this.modelAliases = new SqlModelAliasesRepo(db);
     this.responsesItems = new SqlResponsesItemsRepo(db);
     this.responsesSnapshots = new SqlResponsesSnapshotsRepo(db);
+    this.cursorSessions = new SqlCursorSessionsRepo(db);
   }
 }

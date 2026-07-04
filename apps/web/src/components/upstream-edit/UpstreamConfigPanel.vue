@@ -5,6 +5,7 @@ import AzureConfigPanel from './AzureConfigPanel.vue';
 import ClaudeCodeConfigPanel from './ClaudeCodeConfigPanel.vue';
 import CodexConfigPanel from './CodexConfigPanel.vue';
 import CopilotConfigPanel from './CopilotConfigPanel.vue';
+import CursorConfigPanel from './CursorConfigPanel.vue';
 import type { AzureDraft, CustomDraft, OllamaDraft } from './customConfig.ts';
 import CustomConfigPanel from './CustomConfigPanel.vue';
 import FlagOverridesEditor from './FlagOverridesEditor.vue';
@@ -12,7 +13,7 @@ import ModelPrefixEditor from './ModelPrefixEditor.vue';
 import ModelsCacheStatus from './ModelsCacheStatus.vue';
 import OllamaConfigPanel from './OllamaConfigPanel.vue';
 import ProxyFallbackListPanel from './ProxyFallbackListPanel.vue';
-import type { CopilotQuotaSnapshot, FlagDef, ModelPrefixConfig, ProxyFallbackEntry, UpstreamProviderKind, UpstreamRecord } from '../../api/types.ts';
+import type { CopilotQuotaSnapshot, CursorDashboardUsage, FlagDef, ModelPrefixConfig, ProxyFallbackEntry, UpstreamProviderKind, UpstreamRecord } from '../../api/types.ts';
 import { providerBadgeClass, providerMeta } from '../upstreams/provider-meta.ts';
 import { Input, Switch, TagCombobox } from '@floway-dev/ui';
 
@@ -23,6 +24,7 @@ const disabledIds = defineModel<string[]>('disabledIds', { required: true });
 const customDraft = defineModel<CustomDraft>('custom', { required: true });
 const azureDraft = defineModel<AzureDraft>('azure', { required: true });
 const ollamaDraft = defineModel<OllamaDraft>('ollama', { required: true });
+const cursorPrivacyMode = defineModel<boolean>('cursorPrivacyMode', { required: true });
 const proxyFallbackList = defineModel<ProxyFallbackEntry[]>('proxyFallbackList', { required: true });
 const modelPrefix = defineModel<ModelPrefixConfig | null>('modelPrefix', { required: true });
 
@@ -38,6 +40,8 @@ type CommonConfigPanelProps = {
   availableModelItems: { value: string; label: string }[];
   initialCopilotQuota?: CopilotQuotaSnapshot | null;
   initialCopilotQuotaError?: string | null;
+  initialCursorQuota?: CursorDashboardUsage | null;
+  initialCursorQuotaError?: string | null;
   // Live cache snapshot for the saved upstream. Null in create mode and for
   // Azure (which has no fetch step) — `ModelsCacheStatus` is rendered only
   // when this is provided.
@@ -69,6 +73,7 @@ defineEmits<{
 type CodexRecord = Extract<UpstreamRecord, { kind: 'codex' }>;
 type ClaudeCodeRecord = Extract<UpstreamRecord, { kind: 'claude-code' }>;
 type CopilotRecord = Extract<UpstreamRecord, { kind: 'copilot' }>;
+type CursorRecord = Extract<UpstreamRecord, { kind: 'cursor' }>;
 type PanelMode<R> = { mode: 'create'; record: null } | { mode: 'edit'; record: R };
 
 const codexPanel = computed<PanelMode<CodexRecord> | null>(() => {
@@ -82,6 +87,10 @@ const claudeCodePanel = computed<PanelMode<ClaudeCodeRecord> | null>(() => {
 const copilotPanel = computed<PanelMode<CopilotRecord> | null>(() => {
   if (props.mode === 'create') return { mode: 'create', record: null };
   return props.record.kind === 'copilot' ? { mode: 'edit', record: props.record } : null;
+});
+const cursorPanel = computed<PanelMode<CursorRecord> | null>(() => {
+  if (props.mode === 'create') return { mode: 'create', record: null };
+  return props.record.kind === 'cursor' ? { mode: 'edit', record: props.record } : null;
 });
 
 // Intrinsic floor for the aside: smallest height at which every
@@ -145,7 +154,7 @@ onBeforeUnmount(() => floorObserver?.disconnect());
 
     <div ref="contentRef" class="flex min-h-0 flex-1 flex-col gap-6 px-5 py-5">
 
-      <section v-if="!(mode === 'create' && (kind === 'copilot' || kind === 'codex' || kind === 'claude-code'))" class="shrink-0">
+      <section v-if="!(mode === 'create' && (kind === 'copilot' || kind === 'codex' || kind === 'claude-code' || kind === 'cursor'))" class="shrink-0">
         <label class="mb-1.5 block text-xs font-medium text-gray-500">Name</label>
         <Input v-model="name" placeholder="e.g. OpenAI Production" />
       </section>
@@ -221,6 +230,18 @@ onBeforeUnmount(() => floorObserver?.disconnect());
           :proxy-fallback-list="proxyFallbackList"
           @imported="u => $emit('imported', u)"
           @quota-refreshed="u => $emit('claude-code-quota-refreshed', u)"
+          @error="m => $emit('error', m)"
+        />
+      </section>
+
+      <section v-else-if="kind === 'cursor' && cursorPanel" class="shrink-0">
+        <CursorConfigPanel
+          v-bind="cursorPanel"
+          v-model:privacy-mode="cursorPrivacyMode"
+          :proxy-fallback-list="proxyFallbackList"
+          :initial-quota="initialCursorQuota"
+          :initial-quota-error="initialCursorQuotaError"
+          @imported="u => $emit('imported', u)"
           @error="m => $emit('error', m)"
         />
       </section>

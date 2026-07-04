@@ -20,6 +20,7 @@ const projectList = [
   './packages/provider-azure/tsconfig.json',
   './packages/provider-claude-code/tsconfig.json',
   './packages/provider-codex/tsconfig.json',
+  './packages/provider-cursor/tsconfig.json',
   './packages/provider-copilot/tsconfig.json',
   './packages/provider-custom/tsconfig.json',
   './packages/provider-ollama/tsconfig.json',

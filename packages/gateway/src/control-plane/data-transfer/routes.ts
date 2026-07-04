@@ -35,6 +35,7 @@ import type { ProxyFallbackEntry, UpstreamProviderKind, UpstreamRecord } from '@
 import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
 import { assertClaudeCodeUpstreamRecord, assertClaudeCodeUpstreamState } from '@floway-dev/provider-claude-code';
 import { assertCodexUpstreamRecord, assertCodexUpstreamState } from '@floway-dev/provider-codex';
+import { assertCursorUpstreamRecord, assertCursorUpstreamState } from '@floway-dev/provider-cursor';
 import { assertCustomUpstreamRecord } from '@floway-dev/provider-custom';
 import { parseProxyUri } from '@floway-dev/proxy';
 
@@ -93,6 +94,10 @@ const normalizeUpstreamConfig = (record: UpstreamRecord): unknown => {
     assertClaudeCodeUpstreamRecord(record);
     return record.config;
   }
+  if (record.kind === 'cursor') {
+    assertCursorUpstreamRecord(record);
+    return record.config;
+  }
   return copilotConfigField(record.config, importErrorBuilder);
 };
 
@@ -104,12 +109,13 @@ const normalizeUpstreamConfig = (record: UpstreamRecord): unknown => {
 // runtime uses so a corrupt or hand-edited import can't smuggle unknown
 // fields onto the column.
 const normalizeUpstreamState = (provider: UpstreamProviderKind, value: unknown): unknown => {
-  if (provider !== 'codex' && provider !== 'claude-code') return null;
+  if (provider !== 'codex' && provider !== 'claude-code' && provider !== 'cursor') return null;
   if (value === null || value === undefined) {
     throw new Error(`${provider} upstream is missing state — re-export with current code`);
   }
   if (provider === 'codex') assertCodexUpstreamState(value);
-  else assertClaudeCodeUpstreamState(value);
+  else if (provider === 'claude-code') assertClaudeCodeUpstreamState(value);
+  else assertCursorUpstreamState(value);
   return value;
 };
 

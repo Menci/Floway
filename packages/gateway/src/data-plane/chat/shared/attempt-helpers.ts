@@ -74,6 +74,7 @@ export const buildUpstreamCallOptions = (
   recordUpstreamLatency,
   waitUntil: ctx.backgroundScheduler,
   headers,
+  apiKeyId: ctx.apiKeyId,
 });
 
 // Lifts a provider's streaming-call result into the attempt's ExecuteResult

@@ -10,6 +10,7 @@ import {
 } from './quota.ts';
 import type { CodexQuotaSnapshotEntry, CodexUpstreamState } from './state.ts';
 import { initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
+import { noopCursorSessionsRepo } from '@floway-dev/test-utils';
 
 const accountId = 'acc_1';
 const upstreamId = 'up_a';
@@ -53,6 +54,7 @@ beforeEach(() => {
   getByIdSpy = vi.fn(async () => current);
   initProviderRepo(() => ({
     upstreams: { getById: getByIdSpy, saveState: saveStateSpy },
+    cursorSessions: noopCursorSessionsRepo(),
   }));
 });
 

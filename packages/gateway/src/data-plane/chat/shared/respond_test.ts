@@ -159,8 +159,13 @@ test('recordUsage is a no-op when usage is null', async () => {
   assertEquals(await harness.repo.usage.listAll(), []);
 });
 
-test('recordUsage is a no-op when usage carries no billable dimensions', async () => {
+test('recordUsage records a bare request when usage carries no billable dimensions', async () => {
+  // A non-null-but-empty usage (cursor: no per-request tokens, but the request
+  // still happened) records a request row with zero token dimensions.
   await recordUsage(harness.ctx(), testTelemetryModelIdentity, {});
 
-  assertEquals(await harness.repo.usage.listAll(), []);
+  const rows = await harness.repo.usage.listAll();
+  assertEquals(rows.length, 1);
+  assertEquals(rows[0].tokens, {});
+  assertEquals(rows[0].requests, 1);
 });

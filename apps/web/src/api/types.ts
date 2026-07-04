@@ -25,7 +25,7 @@ export type {
   PublicModel, PublicModelLimits,
 };
 
-export type UpstreamProviderKind = 'custom' | 'azure' | 'copilot' | 'codex' | 'claude-code' | 'ollama';
+export type UpstreamProviderKind = 'custom' | 'azure' | 'copilot' | 'codex' | 'claude-code' | 'cursor' | 'ollama';
 
 export interface ProxyFallbackEntry {
   id: string;
@@ -148,6 +148,46 @@ export interface CodexAccountCredentialState {
 
 export interface CodexUpstreamState {
   accounts: CodexAccountCredentialState[];
+}
+
+export interface CursorAccountIdentity {
+  email: string;
+  userId: string;
+}
+
+export interface CursorUpstreamConfig {
+  accounts: [CursorAccountIdentity];
+  // Operator toggle: send every request in Cursor Max Mode (larger context
+  // window, higher usage cost). Absent/false = normal mode.
+  maxMode?: boolean;
+  // Operator toggle: expose Cursor Tab (StreamCpp) as an OpenAI /v1/completions
+  // edit-prediction model. `model` is the cpp model name sent upstream.
+  tabCompletion?: {
+    enabled: boolean;
+    model?: string;
+  };
+  // Ghost/privacy mode toggle sent as the x-ghost-mode data-plane header.
+  // Absent = privacy on (default). Editable via the config panel.
+  privacyMode?: boolean;
+}
+
+export interface CursorAccessTokenState {
+  expiresAt: number;
+  refreshedAt: string;
+}
+
+export interface CursorAccountCredentialState {
+  userId: string;
+  state: 'active' | 'session_terminated' | 'refresh_failed';
+  state_message?: string;
+  state_updated_at: string;
+  refresh_token_set: boolean;
+  accessToken: CursorAccessTokenState | null;
+  quotaSnapshot?: unknown;
+}
+
+export interface CursorUpstreamState {
+  accounts: CursorAccountCredentialState[];
 }
 
 export interface CodexQuotaSnapshot {
@@ -304,6 +344,7 @@ export type UpstreamRecord =
   | (UpstreamRecordBase & { kind: 'copilot'; config: CopilotUpstreamConfig; state: CopilotUpstreamState | null })
   | (UpstreamRecordBase & { kind: 'codex'; config: CodexUpstreamConfig; state: CodexUpstreamState | null; codex_quota?: CodexQuotaSnapshot | null })
   | (UpstreamRecordBase & { kind: 'claude-code'; config: ClaudeCodeUpstreamConfig; state: ClaudeCodeUpstreamState | null })
+  | (UpstreamRecordBase & { kind: 'cursor'; config: CursorUpstreamConfig; state: CursorUpstreamState | null })
   | (UpstreamRecordBase & { kind: 'ollama'; config: OllamaUpstreamConfig; state: null });
 
 export interface FlagDef {
@@ -354,6 +395,18 @@ export interface CopilotQuotaSnapshot {
       reset_date?: string;
     };
   };
+}
+
+// Mirror of the provider-cursor CursorDashboardUsage shape. Fetched from
+// GET /api/upstreams/:id/cursor/quota on the dashboard's Cursor upstream page;
+// see packages/provider-cursor/src/quota.ts for field semantics.
+export interface CursorDashboardUsage {
+  limitCents: number | null;
+  totalSpendCents: number;
+  autoPercentUsed: number;
+  apiPercentUsed: number;
+  totalPercentUsed: number;
+  billingCycleEndMs: number | null;
 }
 
 export interface DeviceFlowStart {

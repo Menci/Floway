@@ -645,6 +645,7 @@ const issueImageCall = async (
       recordUpstreamLatency: recorder.record,
       waitUntil: state.backgroundScheduler,
       headers: new Headers(),
+      apiKeyId: state.apiKeyId,
     };
     const { response, modelKey } = await (isEdit
       ? provider.instance.callImagesEdits(model, buildEditsForm(prompt, state.config, sources, stream), state.downstreamAbortSignal, opts)

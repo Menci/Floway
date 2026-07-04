@@ -9,7 +9,7 @@ import type {
   ClaudeCodeUpstreamState,
 } from './state.ts';
 import { initProviderRepo, type Fetcher, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
-import { noopUpstreamCallOptions, stubProviderModel } from '@floway-dev/test-utils';
+import { noopCursorSessionsRepo, noopUpstreamCallOptions, stubProviderModel } from '@floway-dev/test-utils';
 
 const upstreamId = 'up_cc';
 
@@ -96,6 +96,7 @@ beforeEach(() => {
         return { updated: true };
       },
     },
+    cursorSessions: noopCursorSessionsRepo(),
   }));
 });
 

@@ -48,6 +48,10 @@ const subtitle = computed(() => {
     return subscription ? `${label} · ${subscription}` : label;
   }
   case 'ollama': return u.config.baseUrl ?? 'Ollama endpoint';
+  case 'cursor': {
+    const account = u.config.accounts[0];
+    return account.email;
+  }
   }
   return assertNever(u);
 });

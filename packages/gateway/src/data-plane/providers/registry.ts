@@ -12,6 +12,7 @@ import { createAzureProvider } from '@floway-dev/provider-azure';
 import { createClaudeCodeProvider } from '@floway-dev/provider-claude-code';
 import { createCodexProvider } from '@floway-dev/provider-codex';
 import { createCopilotProvider } from '@floway-dev/provider-copilot';
+import { createCursorProvider } from '@floway-dev/provider-cursor';
 import { createCustomProvider } from '@floway-dev/provider-custom';
 import { createOllamaProvider } from '@floway-dev/provider-ollama';
 
@@ -40,6 +41,7 @@ const providerFactories: Record<UpstreamProviderKind, ProviderFactory> = {
   azure: createAzureProvider,
   codex: createCodexProvider,
   'claude-code': createClaudeCodeProvider,
+  cursor: createCursorProvider,
   ollama: createOllamaProvider,
 };
 

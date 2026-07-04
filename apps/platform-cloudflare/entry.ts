@@ -13,6 +13,7 @@ import {
 // exported name on the Worker module. The wrangler `migrations.new_sqlite_classes`
 // entry must match this export.
 export { BroadcastDO } from './src/broadcast-do.ts';
+export { DurableHttpSessionDO } from './src/durable-http-session-do.ts';
 
 initBackgroundSchedulerResolver(c => promise => c.executionCtx.waitUntil(promise));
 

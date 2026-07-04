@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { fetchCopilotModels } from './fetch-models.ts';
 import { clearInProcessCopilotTokenCache } from './index.ts';
 import { ProviderModelsUnavailableError, initProviderRepo, directFetcher, type UpstreamRecord } from '@floway-dev/provider';
-import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { assertEquals, jsonResponse, noopCursorSessionsRepo, withMockedFetch } from '@floway-dev/test-utils';
 
 const installRepoAndConfig = async () => {
   const id = 'up_copilot_fetch_models_test';
@@ -24,6 +24,7 @@ const installRepoAndConfig = async () => {
     config: { githubToken, user: { id: 1, login: 't', name: null, avatar_url: '' } },
   };
   initProviderRepo(() => ({
+    cursorSessions: noopCursorSessionsRepo(),
     upstreams: {
       getById: async () => stub,
       saveState: async () => ({ updated: true }),

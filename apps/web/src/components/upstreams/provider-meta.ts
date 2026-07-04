@@ -60,6 +60,14 @@ export const PROVIDER_META: readonly ProviderMeta[] = [
     icon: 'i-simple-icons-claudecode',
   },
   {
+    kind: 'cursor',
+    label: 'Cursor',
+    subtitle: 'Cursor Pro / Business subscription',
+    tone: 'violet',
+    defaultName: 'Cursor',
+    icon: 'i-simple-icons-cursor',
+  },
+  {
     kind: 'ollama',
     label: 'Ollama',
     subtitle: 'ollama.com or self-hosted',

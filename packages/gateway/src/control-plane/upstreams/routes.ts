@@ -15,7 +15,7 @@ import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getCurrentColo } from '../../runtime/runtime-info.ts';
 import { shortId } from '../../shared/short-id.ts';
 import { fetchGitHubUser, pollGitHubDeviceFlow, startGitHubDeviceFlow } from '../auth/github-device-flow.ts';
-import type { claudeCodeAuthorizeUrlBody, claudeCodeImportBody, claudeCodeProbeQuotaBody, claudeCodeRefreshNowBody, claudeCodeReimportBody, claudeCodeSetupTokenImportBody, claudeCodeSetupTokenReimportBody, codexAuthorizeUrlBody, codexImportBody, codexRefreshNowBody, codexReimportBody, copilotAuthPollBody, createUpstreamBody, fetchModelsBody, updateUpstreamBody } from '../schemas.ts';
+import type { claudeCodeAuthorizeUrlBody, claudeCodeImportBody, claudeCodeProbeQuotaBody, claudeCodeRefreshNowBody, claudeCodeReimportBody, claudeCodeSetupTokenImportBody, claudeCodeSetupTokenReimportBody, codexAuthorizeUrlBody, codexImportBody, codexRefreshNowBody, codexReimportBody, copilotAuthPollBody, createUpstreamBody, cursorAuthorizeUrlBody, cursorPollBody, cursorReimportBody, cursorRefreshNowBody, fetchModelsBody, updateUpstreamBody } from '../schemas.ts';
 import { copilotConfigField, type CopilotUpstreamConfig, isRecord } from '../shared/field-validators.ts';
 import {
   directFetcher,
@@ -62,6 +62,19 @@ import {
   refreshCodexAccessToken,
 } from '@floway-dev/provider-codex';
 import { clearInProcessCopilotTokenCache, exchangeCopilotToken, readCopilotUpstreamState, type CopilotUpstreamState } from '@floway-dev/provider-copilot';
+import {
+  generateCursorAuthParams,
+  pollCursorAuth,
+  deriveCursorIdentity,
+  buildCursorImportConfig,
+  buildCursorImportState,
+  refreshCursorAccessToken,
+  CursorSessionTerminatedError,
+  assertCursorUpstreamRecord,
+  assertCursorUpstreamState,
+  type CursorUpstreamConfig,
+  type CursorUpstreamState,
+} from '@floway-dev/provider-cursor';
 import { assertCustomUpstreamRecord, fetchCustomModels } from '@floway-dev/provider-custom';
 import { assertOllamaUpstreamRecord, createOllamaProvider } from '@floway-dev/provider-ollama';
 
@@ -126,6 +139,10 @@ const normalizeConfig = (record: UpstreamRecord): ValidationResult<unknown> => {
     }
     if (record.kind === 'claude-code') {
       assertClaudeCodeUpstreamRecord(record);
+      return { ok: true, value: record.config };
+    }
+    if (record.kind === 'cursor') {
+      assertCursorUpstreamRecord(record);
       return { ok: true, value: record.config };
     }
     return {
@@ -247,6 +264,11 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
   if (body.kind === 'claude-code') {
     return c.json({ error: 'Use POST /api/upstreams/claude-code-import for claude-code provider' }, 400);
   }
+  // Same rationale for cursor: the row carries an OAuth refresh token derived
+  // from the poll-based login flow, not a config the operator can type in.
+  if (body.kind === 'cursor') {
+    return c.json({ error: 'Use POST /api/upstreams/cursor-authorize-url + /api/upstreams/cursor-poll for cursor provider' }, 400);
+  }
 
   const proxyFallbackList = normalizeProxyFallbackList(body.proxy_fallback_list ?? []);
   const fallbackCheck = await validateProxyFallbackList(proxyFallbackList);
@@ -305,6 +327,16 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '
   // not a generic field patch.
   if (existing.kind === 'claude-code' && body.config !== undefined) {
     return c.json({ error: 'Use POST /api/upstreams/:id/claude-code-reimport to update claude-code credentials' }, 400);
+  }
+  // Cursor credentials (config.accounts) belong to the import / re-import
+  // endpoints, but operator settings like config.maxMode, config.tabCompletion,
+  // and config.privacyMode patch through here. Reject only a patch that tries to
+  // touch accounts (or that isn't an object at all); a settings-only patch
+  // merges over the existing account pool.
+  if (existing.kind === 'cursor' && body.config !== undefined) {
+    if (!isRecord(body.config) || 'accounts' in body.config) {
+      return c.json({ error: 'Use POST /api/upstreams/:id/cursor-reimport to update cursor credentials' }, 400);
+    }
   }
 
   let next: UpstreamRecord = { ...existing, updatedAt: new Date().toISOString() };
@@ -762,6 +794,154 @@ export const codexRefreshNow = async (c: CtxWithJson<typeof codexRefreshNowBody,
       // a "your codex credential is dead" condition must not be confused
       // with "your dashboard auth is invalid".
       return c.json({ error: `Codex refresh failed: ${err.upstreamMessage}. Re-import the credential to recover.` }, 400);
+    }
+    return c.json({ error: errorMessage(err) }, 502);
+  }
+};
+
+// --- cursor authorize-url / poll / re-import / refresh-now ---
+//
+// Cursor login is poll-based (not callback-paste): cursorAuthorizeUrl hands
+// the dashboard a login URL + uuid/verifier pair generated server-side; the
+// dashboard opens the URL, then calls cursorPoll which polls api2.cursor.sh
+// until the operator completes login, then persists the row. Re-import
+// re-polls against an existing id; refresh-now mints a fresh access token
+// from the stored refresh_token (same shape as codexRefreshNow).
+
+export const cursorAuthorizeUrl = async (c: CtxWithJson<typeof cursorAuthorizeUrlBody>) => {
+  const params = await generateCursorAuthParams();
+  return c.json({ authorize_url: params.loginUrl, uuid: params.uuid, verifier: params.verifier });
+};
+
+const ingestCursorPoll = async (
+  uuid: string,
+  verifier: string,
+  fetcher: Fetcher,
+): Promise<{ ok: true; config: CursorUpstreamConfig; state: CursorUpstreamState } | { ok: false; error: string }> => {
+  try {
+    const tokens = await pollCursorAuth(uuid, verifier, fetcher);
+    const config = buildCursorImportConfig(deriveCursorIdentity(tokens.accessToken));
+    const state = buildCursorImportState(tokens);
+    return { ok: true, config, state };
+  } catch (err) {
+    return { ok: false, error: errorMessage(err) };
+  }
+};
+
+export const cursorPoll = async (c: CtxWithJson<typeof cursorPollBody>) => {
+  const body = c.req.valid('json');
+  let fetcher: Fetcher;
+  try {
+    fetcher = await resolveControlPlaneFetcher({ override: body.proxy_fallback_list, currentColo: getCurrentColo(c.req.raw) });
+  } catch (err) {
+    return c.json({ error: errorMessage(err) }, 400);
+  }
+  const ingestion = await ingestCursorPoll(body.uuid, body.verifier, fetcher);
+  if (!ingestion.ok) return c.json({ error: ingestion.error }, 400);
+
+  const existing = await getRepo().upstreams.list();
+  const now = new Date().toISOString();
+  const defaultName = `Cursor (${ingestion.config.accounts[0].email})`;
+  const upstream: UpstreamRecord = {
+    id: newId(),
+    kind: 'cursor',
+    name: body.name ?? defaultName,
+    enabled: true,
+    sortOrder: body.sort_order ?? nextSortOrder(existing),
+    createdAt: now,
+    updatedAt: now,
+    flagOverrides: {},
+    disabledPublicModelIds: [],
+    proxyFallbackList: body.proxy_fallback_list !== undefined ? normalizeProxyFallbackList(body.proxy_fallback_list) : [],
+    modelPrefix: null,
+    config: ingestion.config,
+    state: ingestion.state,
+  };
+  await getRepo().upstreams.save(upstream);
+  await warmModelsCache(upstream, c);
+  return c.json(await serializeForResponse(upstream), 201);
+};
+
+export const cursorReimport = async (c: CtxWithJson<typeof cursorReimportBody, '/:id'>) => {
+  const id = c.req.param('id');
+  const existing = await getRepo().upstreams.getById(id);
+  if (existing?.kind !== 'cursor') {
+    return c.json({ error: 'Cursor upstream not found' }, 404);
+  }
+  const body = c.req.valid('json');
+  let fetcher: Fetcher;
+  try {
+    fetcher = await resolveControlPlaneFetcher({ override: body.proxy_fallback_list, upstreamId: id, currentColo: getCurrentColo(c.req.raw) });
+  } catch (err) {
+    return c.json({ error: errorMessage(err) }, 400);
+  }
+  const ingestion = await ingestCursorPoll(body.uuid, body.verifier, fetcher);
+  if (!ingestion.ok) return c.json({ error: ingestion.error }, 400);
+
+  const next: UpstreamRecord = {
+    ...existing,
+    updatedAt: new Date().toISOString(),
+    name: body.name ?? existing.name,
+    proxyFallbackList: body.proxy_fallback_list !== undefined ? normalizeProxyFallbackList(body.proxy_fallback_list) : existing.proxyFallbackList,
+    config: ingestion.config,
+    state: ingestion.state,
+  };
+  await getRepo().upstreams.save(next);
+  await warmModelsCache(next, c);
+  return c.json(await serializeForResponse(next));
+};
+
+export const cursorRefreshNow = async (c: CtxWithJson<typeof cursorRefreshNowBody, '/:id'>) => {
+  const id = c.req.param('id');
+  const existing = await getRepo().upstreams.getById(id);
+  if (existing?.kind !== 'cursor') {
+    return c.json({ error: 'Cursor upstream not found' }, 404);
+  }
+  assertCursorUpstreamState(existing.state);
+  const state = existing.state;
+  const account = state.accounts[0];
+  if (account.state !== 'active') {
+    return c.json({ error: `Cursor upstream is ${account.state}; re-import to recover` }, 400);
+  }
+
+  const body = c.req.valid('json');
+  let fetcher: Fetcher;
+  try {
+    fetcher = await resolveControlPlaneFetcher({ override: body.proxy_fallback_list, upstreamId: id, currentColo: getCurrentColo(c.req.raw) });
+  } catch (err) {
+    return c.json({ error: errorMessage(err) }, 400);
+  }
+
+  try {
+    const tokens = await refreshCursorAccessToken(account.refresh_token, fetcher);
+    const now = new Date();
+    const nextAccount = {
+      ...account,
+      refresh_token: tokens.refresh_token,
+      accessToken: {
+        token: tokens.access_token,
+        expiresAt: tokens.expires_at,
+        refreshedAt: now.toISOString(),
+      },
+    };
+    const nextState: CursorUpstreamState = { accounts: [nextAccount] };
+    const result = await getRepo().upstreams.saveState(id, nextState, { expectedState: state });
+    if (!result.updated) {
+      return c.json({ error: 'Concurrent state mutation; refresh aborted' }, 409);
+    }
+    return await respondWithFreshRow(id, c);
+  } catch (err) {
+    if (err instanceof CursorSessionTerminatedError) {
+      const failedAccount = {
+        ...account,
+        state: 'refresh_failed' as const,
+        state_message: err.upstreamMessage,
+        state_updated_at: new Date().toISOString(),
+        accessToken: null,
+      };
+      const failedState: CursorUpstreamState = { accounts: [failedAccount] };
+      await getRepo().upstreams.saveState(id, failedState, { expectedState: state });
+      return c.json({ error: `Cursor refresh failed: ${err.upstreamMessage}. Re-import the credential to recover.` }, 400);
     }
     return c.json({ error: errorMessage(err) }, 502);
   }

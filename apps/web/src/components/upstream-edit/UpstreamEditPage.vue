@@ -20,7 +20,7 @@ import {
 import ModelsPanel from './ModelsPanel.vue';
 import UpstreamConfigPanel from './UpstreamConfigPanel.vue';
 import { authFetch, callApi, useApi } from '../../api/client.ts';
-import type { CopilotQuotaSnapshot, CustomRawModel, FlagDef, ModelEndpoints, ModelPrefixConfig, OllamaUpstreamConfig, ProxyFallbackEntry, UpstreamModelConfig, UpstreamProviderKind, UpstreamRecord } from '../../api/types.ts';
+import type { CopilotQuotaSnapshot, CursorDashboardUsage, CustomRawModel, FlagDef, ModelEndpoints, ModelPrefixConfig, OllamaUpstreamConfig, ProxyFallbackEntry, UpstreamModelConfig, UpstreamProviderKind, UpstreamRecord } from '../../api/types.ts';
 import { useRuntimeInfo } from '../../composables/useRuntimeInfo.ts';
 import { useUpstreamsStore } from '../../composables/useUpstreams.ts';
 import { providerMeta } from '../upstreams/provider-meta.ts';
@@ -37,6 +37,8 @@ type CommonPageProps = {
   initialUpstreamModelsError?: string | null;
   initialCopilotQuota?: CopilotQuotaSnapshot | null;
   initialCopilotQuotaError?: string | null;
+  initialCursorQuota?: CursorDashboardUsage | null;
+  initialCursorQuotaError?: string | null;
 };
 
 const props = defineProps<
@@ -92,6 +94,10 @@ const modelPrefixInvalid = ref(false);
 const customDraft = ref<CustomDraft>(blankCustomDraft());
 const azureDraft = ref<AzureDraft>(blankAzureDraft());
 const ollamaDraft = ref<OllamaDraft>(blankOllamaDraft());
+// Cursor privacy toggle persisted via the page Save button (maxMode /
+// tabCompletion are edited inline in CursorConfigPanel). Absent on the
+// record = privacy on.
+const cursorPrivacyMode = ref(true);
 
 const upstreamModels = ref<UpstreamModelConfig[]>(props.initialUpstreamModels ?? []);
 const upstreamModelsError = ref<string | null>(props.initialUpstreamModelsError ?? null);
@@ -151,6 +157,8 @@ const seedFromRecord = (r: UpstreamRecord) => {
       apiKey: '',
       models: cfg.models ? (JSON.parse(JSON.stringify(cfg.models)) as UpstreamModelConfig[]) : [],
     };
+  } else if (r.kind === 'cursor') {
+    cursorPrivacyMode.value = r.config.privacyMode ?? true;
   }
 };
 
@@ -388,6 +396,7 @@ const save = async () => {
       if (activeKind.value === 'custom') patch.config = buildCustomConfig();
       else if (activeKind.value === 'azure') patch.config = buildAzureConfig();
       else if (activeKind.value === 'ollama') patch.config = buildOllamaConfig();
+      else if (activeKind.value === 'cursor') patch.config = { privacyMode: cursorPrivacyMode.value };
       const { error } = await callApi(
         () => api.api.upstreams[':id'].$patch({ param: { id: props.record.id }, json: patch }),
       );
@@ -458,7 +467,7 @@ const autoForActive = computed<UpstreamModelConfig[]>(() => {
 
 const upstreamIdLabelForActive = computed(() => activeKind.value === 'azure' ? 'Deployment' : 'Upstream Model ID');
 // Provider import panels (copilot/codex/claude-code) land the row themselves on create, so the page-level Save button stays hidden until they emit.
-const showSaveButton = computed(() => props.mode === 'edit' || (activeKind.value !== 'copilot' && activeKind.value !== 'codex' && activeKind.value !== 'claude-code'));
+const showSaveButton = computed(() => props.mode === 'edit' || (activeKind.value !== 'copilot' && activeKind.value !== 'codex' && activeKind.value !== 'claude-code' && activeKind.value !== 'cursor'));
 
 // The cache-status panel reads the row's `modelsCache` summary and offers a
 // force-refresh shortcut. Azure is the one provider whose catalog is pure
@@ -561,6 +570,7 @@ const workbenchStyle = computed(() => ({ '--right-pane-h': `${Math.ceil(rightCon
         v-model:custom="customDraft"
         v-model:azure="azureDraft"
         v-model:ollama="ollamaDraft"
+        v-model:cursor-privacy-mode="cursorPrivacyMode"
         :flags="flags"
         :colo-aware="coloAware"
         :current-colo="currentColo"
@@ -573,6 +583,8 @@ const workbenchStyle = computed(() => ({ '--right-pane-h': `${Math.ceil(rightCon
         :available-model-items="availableModelItems"
         :initial-copilot-quota="initialCopilotQuota"
         :initial-copilot-quota-error="initialCopilotQuotaError"
+        :initial-cursor-quota="initialCursorQuota"
+        :initial-cursor-quota-error="initialCursorQuotaError"
         :models-cache="showCacheStatus ? liveRecord!.modelsCache : null"
         :refreshing="refreshing"
         @fetch-models="fetchDraftModels"
@@ -590,7 +602,7 @@ const workbenchStyle = computed(() => ({ '--right-pane-h': `${Math.ceil(rightCon
         :upstream-flag-overrides="flagOverrides"
         :flag-provider-kind="activeKind"
         :upstream-id-label="upstreamIdLabelForActive"
-        :read-only="activeKind === 'copilot' || activeKind === 'codex' || activeKind === 'claude-code'"
+        :read-only="activeKind === 'copilot' || activeKind === 'codex' || activeKind === 'claude-code' || activeKind === 'cursor'"
         :all-manual="activeKind === 'azure'"
         @update:invalid="v => modelsPanelInvalid = v"
       />

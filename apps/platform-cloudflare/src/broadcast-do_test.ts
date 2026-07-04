@@ -52,6 +52,12 @@ class FakeState {
   push(ws: FakeWebSocket): void {
     this.sockets.push(ws);
   }
+  // BroadcastDO never touches storage; present only to satisfy the shared
+  // DurableObjectState type (DurableHttpSessionDO uses setAlarm).
+  storage = {
+    async setAlarm(): Promise<void> {},
+    async deleteAlarm(): Promise<void> {},
+  };
 }
 
 test('BroadcastDO extends DurableObject so the runtime gates RPC dispatch on it', () => {

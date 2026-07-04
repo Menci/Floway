@@ -5,7 +5,7 @@ import { callCodexResponses, callCodexResponsesCompact, type CodexCallEffects } 
 import type { CodexAccessTokenEntry, CodexAccountCredential, CodexQuotaSnapshotEntry, CodexUpstreamState } from './state.ts';
 import type { ResponsesResult } from '@floway-dev/protocols/responses';
 import { initProviderRepo, type Fetcher, type UpstreamRecord } from '@floway-dev/provider';
-import { noopUpstreamCallOptions, stubProviderModel } from '@floway-dev/test-utils';
+import { noopCursorSessionsRepo, noopUpstreamCallOptions, stubProviderModel } from '@floway-dev/test-utils';
 
 const makeEffects = (): CodexCallEffects => ({
   persistRefreshTokenRotation: vi.fn(async () => {}),
@@ -62,6 +62,7 @@ beforeEach(() => {
   vi.useRealTimers();
   currentRecord = makeRecord({ accounts: [{ ...activeAccount }] });
   initProviderRepo(() => ({
+    cursorSessions: noopCursorSessionsRepo(),
     upstreams: {
       getById: async () => currentRecord,
       saveState: async (_id, newState) => {
@@ -752,6 +753,7 @@ const enforcingRecorder = () => {
       recordUpstreamLatency: record,
       waitUntil: () => {},
       headers: new Headers(),
+      apiKeyId: 'test-api-key',
     },
     invocations: () => wrappedPromises.length,
     durationMs: (): number => {

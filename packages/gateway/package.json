@@ -46,6 +46,7 @@
     "@floway-dev/provider-azure": "workspace:*",
     "@floway-dev/provider-claude-code": "workspace:*",
     "@floway-dev/provider-codex": "workspace:*",
+    "@floway-dev/provider-cursor": "workspace:*",
     "@floway-dev/provider-copilot": "workspace:*",
     "@floway-dev/provider-custom": "workspace:*",
     "@floway-dev/provider-ollama": "workspace:*",

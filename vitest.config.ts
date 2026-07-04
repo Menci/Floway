@@ -18,6 +18,7 @@ export default defineConfig({
       'packages/provider-claude-code/vitest.config.ts',
       'packages/provider-codex/vitest.config.ts',
       'packages/provider-copilot/vitest.config.ts',
+      'packages/provider-cursor/vitest.config.ts',
       'packages/provider-custom/vitest.config.ts',
     ],
   },

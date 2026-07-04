@@ -30,7 +30,7 @@ vi.mock('./index.ts', async () => {
 // Imports below MUST follow the vi.mock so the provider module resolves
 // against the mocked chain on first import.
 const { createCodexProvider } = await import('../../provider.ts');
-const { noopUpstreamCallOptions, stubProviderModel } = await import('@floway-dev/test-utils');
+const { noopCursorSessionsRepo, noopUpstreamCallOptions, stubProviderModel } = await import('@floway-dev/test-utils');
 
 const farFutureMs = Date.now() + 24 * 60 * 60 * 1000;
 
@@ -56,6 +56,7 @@ beforeEach(() => {
       getById: async () => baseRecord,
       saveState: async () => ({ updated: true }),
     },
+    cursorSessions: noopCursorSessionsRepo(),
   }));
 });
 
