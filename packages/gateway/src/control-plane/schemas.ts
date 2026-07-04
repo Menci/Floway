@@ -477,6 +477,30 @@ export const codexRefreshNowBody = z.object({
   proxy_fallback_list: proxyFallbackListSchema.optional(),
 });
 
+// --- codex OAuth (record-body contract) ---
+
+export const codexOauthAuthorizeUrlBody = z.object({
+  record: upstreamRecordEnvelope,
+  challenge: z.string().min(1),
+  state: z.string().min(1),
+});
+
+export const codexOauthExchangeBody = z.object({
+  record: upstreamRecordEnvelope,
+  auth_json: z.string().min(1).optional(),
+  callback: z.object({
+    code: z.string().min(1),
+    verifier: z.string().min(1),
+  }).optional(),
+}).refine(
+  b => (b.auth_json !== undefined) !== (b.callback !== undefined),
+  { message: 'Provide exactly one of auth_json or callback' },
+);
+
+export const codexOauthRefreshBody = z.object({
+  record: upstreamRecordEnvelope,
+});
+
 // --- claude-code import / authorize-url / refresh ---
 //
 // Same shape rationale as the codex routes above: the generic create / update

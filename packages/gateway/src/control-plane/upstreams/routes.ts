@@ -15,7 +15,7 @@ import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getCurrentColo } from '../../runtime/runtime-info.ts';
 import { shortId } from '../../shared/short-id.ts';
 import { fetchGitHubUser, pollGitHubDeviceFlow, startGitHubDeviceFlow } from '../auth/github-device-flow.ts';
-import type { claudeCodeAuthorizeUrlBody, claudeCodeImportBody, claudeCodeProbeQuotaBody, claudeCodeRefreshNowBody, claudeCodeReimportBody, claudeCodeSetupTokenImportBody, claudeCodeSetupTokenReimportBody, codexAuthorizeUrlBody, codexImportBody, codexRefreshNowBody, codexReimportBody, copilotAuthPollBody, copilotOauthDeviceLoginPollBody, copilotQuotaBody, createUpstreamBody, fetchModelsBody, updateUpstreamBody } from '../schemas.ts';
+import type { claudeCodeAuthorizeUrlBody, claudeCodeImportBody, claudeCodeProbeQuotaBody, claudeCodeRefreshNowBody, claudeCodeReimportBody, claudeCodeSetupTokenImportBody, claudeCodeSetupTokenReimportBody, codexAuthorizeUrlBody, codexImportBody, codexOauthAuthorizeUrlBody, codexOauthExchangeBody, codexOauthRefreshBody, codexRefreshNowBody, codexReimportBody, copilotAuthPollBody, copilotOauthDeviceLoginPollBody, copilotQuotaBody, createUpstreamBody, fetchModelsBody, updateUpstreamBody } from '../schemas.ts';
 import { copilotConfigField, type CopilotUpstreamConfig, isRecord } from '../shared/field-validators.ts';
 import {
   directFetcher,
@@ -909,6 +909,152 @@ export const codexRefreshNow = async (c: CtxWithJson<typeof codexRefreshNowBody,
       // a "your codex credential is dead" condition must not be confused
       // with "your dashboard auth is invalid".
       return c.json({ error: `Codex refresh failed: ${err.upstreamMessage}. Re-import the credential to recover.` }, 400);
+    }
+    return c.json({ error: errorMessage(err) }, 502);
+  }
+};
+
+// Codex OAuth under the unified record-body contract. Same URL / token /
+// identity plumbing as the legacy `codexAuthorizeUrl` / `codexImport` /
+// `codexRefreshNow`, wrapped so create and edit share one endpoint each:
+// the caller posts the draft record; when `record.id !== ''` the produced
+// patch is targeted-persisted, otherwise it is only returned for the
+// front-end to merge into its draft.
+export const codexOauthAuthorizeUrl = async (c: CtxWithJson<typeof codexOauthAuthorizeUrlBody>) => {
+  const { challenge, state } = c.req.valid('json');
+  const url = new URL(CODEX_AUTHORIZE_URL);
+  url.searchParams.set('response_type', 'code');
+  url.searchParams.set('client_id', CODEX_CLIENT_ID);
+  url.searchParams.set('redirect_uri', CODEX_REDIRECT_URI);
+  url.searchParams.set('scope', CODEX_OAUTH_SCOPE);
+  url.searchParams.set('state', state);
+  url.searchParams.set('code_challenge', challenge);
+  url.searchParams.set('code_challenge_method', 'S256');
+  url.searchParams.set('id_token_add_organizations', 'true');
+  url.searchParams.set('codex_cli_simplified_flow', 'true');
+  url.searchParams.set('originator', 'codex_cli_rs');
+  return c.json({ authorize_url: url.toString() });
+};
+
+export const codexOauthExchange = async (c: CtxWithJson<typeof codexOauthExchangeBody>) => {
+  const body = c.req.valid('json');
+  const { record } = body;
+  if (record.kind !== 'codex') return c.json({ error: 'Upstream is not a Codex upstream' }, 400);
+
+  let fetcher: Fetcher;
+  try {
+    fetcher = await resolveControlPlaneFetcher({
+      override: record.proxy_fallback_list,
+      upstreamId: record.id || undefined,
+      currentColo: getCurrentColo(c.req.raw),
+    });
+  } catch (err) {
+    return c.json({ error: errorMessage(err) }, 400);
+  }
+
+  let ingestion: { config: CodexUpstreamConfig; state: CodexUpstreamState };
+  try {
+    if (body.auth_json !== undefined) {
+      ingestion = await importCodexFromAuthJson(body.auth_json);
+    } else {
+      const cb = body.callback!;
+      ingestion = await importCodexFromCallback({ code: cb.code, codeVerifier: cb.verifier, fetcher });
+    }
+  } catch (err) {
+    return c.json({ error: errorMessage(err) }, 400);
+  }
+
+  // Edit state: overwrite the credential slice of the stored record.
+  // Single-account convention — exchange REPLACES accounts[0], no append.
+  if (record.id !== '') {
+    const dbRecord = await getRepo().upstreams.getById(record.id);
+    if (!dbRecord) return c.json({ error: 'Upstream not found' }, 404);
+    if (dbRecord.kind !== 'codex') return c.json({ error: 'Upstream is not a Codex upstream' }, 400);
+    const next: UpstreamRecord = {
+      ...dbRecord,
+      config: ingestion.config,
+      state: ingestion.state,
+      updatedAt: new Date().toISOString(),
+    };
+    await getRepo().upstreams.save(next);
+    await warmModelsCache(next, c);
+  }
+
+  return c.json({
+    patch: {
+      config: ingestion.config,
+      state: ingestion.state,
+    },
+  });
+};
+
+export const codexOauthRefresh = async (c: CtxWithJson<typeof codexOauthRefreshBody>) => {
+  const { record } = c.req.valid('json');
+  if (record.kind !== 'codex') return c.json({ error: 'Upstream is not a Codex upstream' }, 400);
+  // Even in create state the caller must have completed an OAuth exchange
+  // first — draft.state.accounts[0].refresh_token is the sole input the
+  // refresh helper needs. In edit state the same field mirrors DB state.
+  assertCodexUpstreamState(record.state);
+  const account = record.state.accounts[0];
+  if (account.state !== 'active') {
+    return c.json({ error: `Codex upstream is ${account.state}; re-run OAuth exchange to recover` }, 400);
+  }
+
+  let fetcher: Fetcher;
+  try {
+    fetcher = await resolveControlPlaneFetcher({
+      override: record.proxy_fallback_list,
+      upstreamId: record.id || undefined,
+      currentColo: getCurrentColo(c.req.raw),
+    });
+  } catch (err) {
+    return c.json({ error: errorMessage(err) }, 400);
+  }
+
+  try {
+    const tokens = await refreshCodexAccessToken(account.refresh_token, fetcher);
+    const now = new Date();
+    const nextAccount = {
+      ...account,
+      refresh_token: tokens.refresh_token,
+      accessToken: {
+        token: tokens.access_token,
+        expiresAt: now.getTime() + tokens.expires_in * 1000,
+        refreshedAt: now.toISOString(),
+      },
+    };
+    const nextState: CodexUpstreamState = { accounts: [nextAccount] };
+
+    if (record.id !== '') {
+      // CAS keyed on the caller's just-read state so a concurrent data-plane
+      // refresh that already rotated the row surfaces 409 instead of a
+      // silent overwrite.
+      const dbRecord = await getRepo().upstreams.getById(record.id);
+      if (!dbRecord) return c.json({ error: 'Upstream not found' }, 404);
+      const result = await getRepo().upstreams.saveState(record.id, nextState, { expectedState: dbRecord.state });
+      if (!result.updated) {
+        return c.json({ error: 'Concurrent state mutation; refresh aborted' }, 409);
+      }
+    }
+
+    return c.json({ patch: { state: nextState } });
+  } catch (err) {
+    if (err instanceof CodexOAuthSessionTerminatedError) {
+      const failedAccount = {
+        ...account,
+        state: 'refresh_failed' as const,
+        state_message: err.upstreamMessage,
+        state_updated_at: new Date().toISOString(),
+        accessToken: null,
+      };
+      const failedState: CodexUpstreamState = { accounts: [failedAccount] };
+      if (record.id !== '') {
+        // Best-effort: a losing CAS means a concurrent rotation already wrote
+        // newer state, which by definition supersedes ours.
+        const dbRecord = await getRepo().upstreams.getById(record.id);
+        if (dbRecord) await getRepo().upstreams.saveState(record.id, failedState, { expectedState: dbRecord.state });
+      }
+      return c.json({ error: `Codex refresh failed: ${err.upstreamMessage}. Re-run OAuth exchange to recover.` }, 400);
     }
     return c.json({ error: errorMessage(err) }, 502);
   }
