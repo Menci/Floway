@@ -3,20 +3,38 @@ import { defineBasicLoader } from 'unplugin-vue-router/data-loaders/basic';
 import { computed, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
-import type { UpstreamProviderKind } from '../../../../api/types.ts';
+import { callApi, useApi } from '../../../../api/client.ts';
+import type { UpstreamProviderKind, UpstreamRecord } from '../../../../api/types.ts';
 import UpstreamEditPage from '../../../../components/upstream-edit/UpstreamEditPage.vue';
 import { PROVIDER_META } from '../../../../components/upstreams/provider-meta.ts';
 import { useProxiesStore } from '../../../../composables/useProxies.ts';
 import { useRuntimeInfo } from '../../../../composables/useRuntimeInfo.ts';
 import { useUpstreamsStore } from '../../../../composables/useUpstreams.ts';
 
-export const useNewUpstreamData = defineBasicLoader(async () => {
+// Blueprint is a shape-complete blank `UpstreamRecord` with `id: ''` — the
+// same shape edit consumes, so `UpstreamEditPage` treats create as an edit
+// of an unpersisted record. `sort_order: 0` is a placeholder; the editor
+// resolves the real next slot off the store at save time.
+export const useNewUpstreamData = defineBasicLoader('/dashboard/upstreams/new/[provider]', async route => {
+  const api = useApi();
   const store = useUpstreamsStore();
-  await Promise.all([store.load(), useProxiesStore().load(), useRuntimeInfo().load()]);
-  const list = store.upstreams.value!;
-  const flags = store.flagCatalog.value!;
-  const nextSortOrder = list.reduce((acc, u) => Math.max(acc, u.sort_order), -1) + 1;
-  return { flags, nextSortOrder };
+  const raw = route.params.provider;
+  const kind = (PROVIDER_META.map(m => m.kind) as string[]).includes(raw) ? (raw as UpstreamProviderKind) : null;
+
+  const blueprintPromise = kind === null
+    ? Promise.resolve({ data: undefined, error: undefined } as { data: UpstreamRecord | undefined; error: { message: string } | undefined })
+    : callApi<UpstreamRecord>(() => api.api.upstreams.blueprint.$get({ query: { kind } }));
+  const [blueprintRes] = await Promise.all([
+    blueprintPromise,
+    store.load(),
+    useProxiesStore().load(),
+    useRuntimeInfo().load(),
+  ]);
+
+  return {
+    initialRecord: blueprintRes.error ? null : blueprintRes.data ?? null,
+    flags: store.flagCatalog.value!,
+  };
 });
 </script>
 
@@ -30,15 +48,15 @@ const store = useUpstreamsStore();
 
 // The provider segment is the route's discriminator: an unknown value is a
 // dead URL (typo, stale bookmark) and should not silently default to one
-// kind. Bounce to the settings list and let the user pick from the
+// kind. Bounce to the upstreams list and let the user pick from the
 // dropdown again rather than rendering a fake "Custom" form.
-const provider = computed<UpstreamProviderKind | null>(() => {
+const providerKnown = computed<boolean>(() => {
   const raw = route.params.provider;
-  return (PROVIDER_META.map(m => m.kind) as string[]).includes(raw) ? (raw as UpstreamProviderKind) : null;
+  return (PROVIDER_META.map(m => m.kind) as string[]).includes(raw);
 });
 
 onMounted(() => {
-  if (provider.value === null) void router.replace('/dashboard/upstreams');
+  if (!providerKnown.value) void router.replace('/dashboard/upstreams');
 });
 
 const onSaved = async () => {
@@ -48,11 +66,8 @@ const onSaved = async () => {
 
 <template>
   <UpstreamEditPage
-    v-if="provider"
-    mode="create"
-    :record="null"
-    :initial-kind="provider"
-    :next-sort-order="data.data.value.nextSortOrder"
+    v-if="data.data.value.initialRecord"
+    :initial-record="data.data.value.initialRecord"
     :flags="data.data.value.flags"
     @saved="onSaved"
   />
