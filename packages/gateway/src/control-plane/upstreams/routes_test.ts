@@ -297,10 +297,10 @@ test('GET /api/upstreams attaches models-cache freshness to every row', async ()
   });
 });
 
-test('GET /api/upstream-flags returns the flag catalog and requires admin auth', async () => {
+test('GET /api/upstreams/flags returns the flag catalog and requires admin auth', async () => {
   const { adminSession, apiKey } = await setupAppTest();
 
-  const resp = await requestApp('/api/upstream-flags', { method: 'GET', headers: { 'x-floway-session': adminSession } });
+  const resp = await requestApp('/api/upstreams/flags', { method: 'GET', headers: { 'x-floway-session': adminSession } });
   assertEquals(resp.status, 200);
   const catalog = (await resp.json()) as Array<Record<string, unknown>>;
   const sample = catalog.find(e => e.id === 'vendor-kimi');
@@ -309,7 +309,7 @@ test('GET /api/upstream-flags returns the flag catalog and requires admin auth',
   // appliesTo is not part of the catalog shape; guard against silent re-introduction.
   assertEquals('appliesTo' in sample!, false);
 
-  const forbidden = await requestApp('/api/upstream-flags', { method: 'GET', headers: { 'x-api-key': apiKey.key } });
+  const forbidden = await requestApp('/api/upstreams/flags', { method: 'GET', headers: { 'x-api-key': apiKey.key } });
   assertEquals(forbidden.status, 403);
 });
 

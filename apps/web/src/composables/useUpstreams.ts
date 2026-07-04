@@ -16,7 +16,7 @@ export const useUpstreamsStore = () => {
     try {
       const [listRes, flagsRes] = await Promise.all([
         callApi<UpstreamRecord[]>(() => api.api.upstreams.$get()),
-        callApi<FlagDef[]>(() => api.api['upstream-flags'].$get()),
+        callApi<FlagDef[]>(() => api.api.upstreams.flags.$get()),
       ]);
       if (listRes.error) throw new Error(listRes.error.message);
       if (flagsRes.error) throw new Error(flagsRes.error.message);
