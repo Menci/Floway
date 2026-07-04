@@ -364,8 +364,7 @@ const save = async () => {
       };
       // The kind discriminator collapses to a valid createBody variant at
       // runtime; the RPC client's generic $post accepts unknown JSON.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data, error } = await callApi<UpstreamRecord>(() => api.api.upstreams.$post({ json: createBody as any }));
+      const { data, error } = await callApi<UpstreamRecord>(() => api.api.upstreams.$post({ json: createBody as never }));
       if (error) { saveError.value = error.message; return; }
       emit('saved', data);
       await router.replace(`/dashboard/upstreams/${data.id}`);
@@ -378,8 +377,7 @@ const save = async () => {
       if (draft.value.kind === 'custom' || draft.value.kind === 'azure' || draft.value.kind === 'ollama') {
         patchBody.config = config;
       }
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { data, error } = await callApi<UpstreamRecord>(() => api.api.upstreams[':id'].$patch({ param: { id: draft.value.id }, json: patchBody as any }));
+      const { data, error } = await callApi<UpstreamRecord>(() => api.api.upstreams[':id'].$patch({ param: { id: draft.value.id }, json: patchBody as never }));
       if (error) { saveError.value = error.message; return; }
       emit('saved', data);
       // Re-seed the draft from the fresh server response so the editor
