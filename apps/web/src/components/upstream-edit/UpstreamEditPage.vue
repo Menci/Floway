@@ -1,9 +1,9 @@
 <script setup lang="ts">
 // Owns the entire draft state (provider, name, enabled, flag overrides,
-// disabled model ids, plus the provider-specific custom/azure drafts) and
-// the live /models fetch for custom upstreams. Create and edit share this
-// component — the sole differentiator is `draft.id === ''`, which selects
-// POST vs PATCH at save time.
+// disabled model ids, plus the provider-specific custom/azure/ollama
+// drafts) and the live /models fetch for custom upstreams. Create and
+// edit share this component — the sole differentiator is
+// `draft.id === ''`, which selects POST vs PATCH at save time.
 
 import { computed, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue';
 import { RouterLink, useRouter } from 'vue-router';
@@ -74,9 +74,9 @@ const seedProviderDrafts = () => {
         : { enabled: true, endpoint: '' },
       // JSON round-trip clones the models array: `structuredClone` refuses
       // Vue's reactive Proxy over `ref().value`, and `toRaw` only unwraps the
-      // top layer. Sibling code that clones props (line 49) uses
-      // `structuredClone` because props aren't proxied — different call sites,
-      // different constraints.
+      // top layer. The top-level `draft` ref seeded with `structuredClone`
+      // works because props aren't proxied — different call sites, different
+      // constraints.
       models: JSON.parse(JSON.stringify(cfg.models)) as UpstreamModelConfig[],
     };
   } else if (draft.value.kind === 'azure') {

@@ -76,8 +76,7 @@ const serializeForResponse = async (record: UpstreamRecord): Promise<SerializedU
     assertCodexUpstreamRecord(record);
     codexQuotaPromise = getCodexQuota(record.id, record.config.accounts[0].chatgptAccountId);
   }
-  const cacheRowPromise = getRepo().modelsCache.get(record.id);
-  const cacheRow = await cacheRowPromise;
+  const cacheRow = await getRepo().modelsCache.get(record.id);
   const serialized = upstreamRecordToJson(record);
   serialized.modelsCache = {
     fetchedAt: cacheRow?.fetchedAt ?? null,
