@@ -175,6 +175,17 @@ test('messages: adaptive=true sets thinking.type=adaptive and ignores budget_tok
   assertEquals(body.thinking?.type, 'adaptive');
 });
 
+test('messages: adaptive=true strips a client-set budget_tokens from body.thinking', () => {
+  const body = msgPayload();
+  body.thinking = { type: 'enabled', budget_tokens: 5000 };
+  applyRulesToUpstreamMessages(body, { reasoning: { adaptive: true } });
+  assertEquals(body.thinking?.type, 'adaptive');
+  // The prior client budget must not leak into the adaptive block — adaptive
+  // auto-determines the budget and a sibling budget_tokens violates the
+  // rules-are-authoritative contract.
+  assertEquals((body.thinking as { budget_tokens?: number }).budget_tokens, undefined);
+});
+
 test('messages: serviceTier=fast maps to speed=fast (cross-protocol bridge)', () => {
   const body = msgPayload();
   applyRulesToUpstreamMessages(body, { serviceTier: 'fast' });

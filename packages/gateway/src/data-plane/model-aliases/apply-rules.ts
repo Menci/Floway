@@ -60,7 +60,11 @@ export const applyRulesToUpstreamMessages = (body: MessagesPayload, rules: Alias
     const display = summary !== undefined ? mapSummaryToMessagesDisplay(summary) : undefined;
     const displayPart = display !== undefined ? { display } : {};
     if (adaptive === true) {
-      body.thinking = { ...body.thinking, type: 'adaptive', ...displayPart };
+      // Adaptive auto-determines the budget; strip any client-set
+      // `budget_tokens` so the alias rule's mode isn't accompanied by a
+      // sibling budget the operator didn't ask for.
+      const { budget_tokens: _drop, ...priorThinking } = body.thinking ?? {};
+      body.thinking = { ...priorThinking, type: 'adaptive', ...displayPart };
     } else if (budget_tokens !== undefined) {
       body.thinking = { ...body.thinking, type: 'enabled', budget_tokens, ...displayPart };
     } else if (display !== undefined) {
