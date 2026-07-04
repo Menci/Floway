@@ -97,20 +97,26 @@ export const ensureCodexAccessToken = async (
   upstreamId: string,
   accountId: string,
   mint: (refreshToken: string) => Promise<CodexAccessTokenEntry>,
-): Promise<CodexAccessTokenEntry> => await ensureCodexAccessTokenInner(upstreamId, accountId, mint, true);
+  // When true, skip the "cached access_token is still fresh" fast-path and
+  // always mint a fresh one. Dashboard's Refresh button sets this so the
+  // operator sees the row's tokens actually rotate; the data plane leaves
+  // it false so a live request served from cache stays cheap.
+  force = false,
+): Promise<CodexAccessTokenEntry> => await ensureCodexAccessTokenInner(upstreamId, accountId, mint, true, force);
 
 const ensureCodexAccessTokenInner = async (
   upstreamId: string,
   accountId: string,
   mint: (refreshToken: string) => Promise<CodexAccessTokenEntry>,
   recoveryAllowed: boolean,
+  force: boolean,
 ): Promise<CodexAccessTokenEntry> => {
   const fresh = await getProviderRepo().upstreams.getById(upstreamId);
   if (!fresh) throw new Error(`Codex upstream ${upstreamId} not found`);
   const state = readCodexUpstreamState(fresh.state);
   const account = state.accounts.find(a => a.chatgptAccountId === accountId);
   if (!account) throw new Error(`Codex account ${accountId} not found in upstream ${upstreamId}`);
-  if (account.accessToken && isAccessTokenFresh(account.accessToken)) {
+  if (account.accessToken && isAccessTokenFresh(account.accessToken) && !force) {
     return account.accessToken;
   }
 
@@ -162,7 +168,7 @@ const recoverFromRefreshRace = async (
   // through the standard mint path. The depth guard suppresses a second
   // recovery attempt — if `invalid_grant` strikes again the refresh token
   // really is dead and we want the terminal flip.
-  return await ensureCodexAccessTokenInner(upstreamId, accountId, mint, false);
+  return await ensureCodexAccessTokenInner(upstreamId, accountId, mint, false, false);
 };
 
 // Mints a fresh access token via /oauth/token and routes the rotated

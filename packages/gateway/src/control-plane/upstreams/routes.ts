@@ -43,7 +43,6 @@ import {
   importClaudeCodeFromSetupTokenCallback,
   logInfo,
   readClaudeCodeUpstreamState,
-  refreshClaudeCodeAccessToken,
 } from '@floway-dev/provider-claude-code';
 import {
   type CodexQuotaSnapshotMap,
@@ -56,10 +55,11 @@ import {
   CodexOAuthSessionTerminatedError,
   assertCodexUpstreamRecord,
   assertCodexUpstreamState,
+  ensureCodexAccessToken,
   getCodexQuota,
   importCodexFromAuthJson,
   importCodexFromCallback,
-  refreshCodexAccessToken,
+  mintCodexAccessToken,
 } from '@floway-dev/provider-codex';
 import { clearInProcessCopilotTokenCache, exchangeCopilotToken, githubHeaders, readCopilotUpstreamState, type CopilotUpstreamState } from '@floway-dev/provider-copilot';
 import { assertCustomUpstreamRecord, fetchCustomModels } from '@floway-dev/provider-custom';
@@ -567,9 +567,13 @@ export const codexOauthExchange = async (c: CtxWithJson<typeof codexOauthExchang
 export const codexOauthRefresh = async (c: CtxWithJson<typeof codexOauthRefreshBody>) => {
   const { record } = c.req.valid('json');
   if (record.kind !== 'codex') return c.json({ error: 'Upstream is not a Codex upstream' }, 400);
-  // Even in create state the caller must have completed an OAuth exchange
-  // first — draft.state.accounts[0].refresh_token is the sole input the
-  // refresh helper needs. In edit state the same field mirrors DB state.
+  // Refresh is a stateful action on a persisted row — it delegates to
+  // `ensureCodexAccessToken` which reads state from DB, mints, and
+  // CAS-writes back with sibling-rotation recovery. Create-state refresh
+  // has no target: the just-completed OAuth exchange handed the client a
+  // brand-new refresh_token that has no reason to rotate yet, and the
+  // front-end does not surface the button until Save lands the row.
+  if (record.id === '') return c.json({ error: 'refresh requires a persisted upstream' }, 400);
   assertCodexUpstreamState(record.state);
   const account = record.state.accounts[0];
   if (account.state !== 'active') {
@@ -580,60 +584,63 @@ export const codexOauthRefresh = async (c: CtxWithJson<typeof codexOauthRefreshB
   try {
     fetcher = await resolveControlPlaneFetcher({
       override: record.proxy_fallback_list,
-      upstreamId: record.id || undefined,
+      upstreamId: record.id,
       currentColo: getCurrentColo(c.req.raw),
     });
   } catch (err) {
     return c.json({ error: errorMessage(err) }, 400);
   }
 
-  try {
-    const tokens = await refreshCodexAccessToken(account.refresh_token, fetcher);
-    const now = new Date();
-    const nextAccount = {
-      ...account,
-      refresh_token: tokens.refresh_token,
-      accessToken: {
-        token: tokens.access_token,
-        expiresAt: now.getTime() + tokens.expires_in * 1000,
-        refreshedAt: now.toISOString(),
-      },
+  // Persist callback shape matches `createCodexProvider` — a rotated
+  // refresh_token CAS-writes back into the account slot with the just-read
+  // state as the expected value. A losing CAS is not an error here: the
+  // sibling that won the race already persisted a newer refresh_token, and
+  // `ensureCodexAccessToken`'s `recoverFromRefreshRace` picks up the
+  // sibling's fresh access token when our mint gets `invalid_grant`.
+  const persistRefreshTokenRotation = async (newRefreshToken: string): Promise<void> => {
+    const fresh = await getRepo().upstreams.getById(record.id);
+    if (!fresh) return;
+    assertCodexUpstreamState(fresh.state);
+    const next: CodexUpstreamState = {
+      accounts: fresh.state.accounts.map(a => a.chatgptAccountId === account.chatgptAccountId
+        ? { ...a, refresh_token: newRefreshToken, state_updated_at: new Date().toISOString() }
+        : a),
     };
-    const nextState: CodexUpstreamState = { accounts: [nextAccount] };
+    await getRepo().upstreams.saveState(record.id, next, { expectedState: fresh.state });
+  };
 
-    if (record.id !== '') {
-      // CAS keyed on the caller's just-read state so a concurrent data-plane
-      // refresh that already rotated the row surfaces 409 instead of a
-      // silent overwrite.
-      const dbRecord = await getRepo().upstreams.getById(record.id);
-      if (!dbRecord) return c.json({ error: 'Upstream not found' }, 404);
-      const result = await getRepo().upstreams.saveState(record.id, nextState, { expectedState: dbRecord.state });
-      if (!result.updated) {
-        return c.json({ error: 'Concurrent state mutation; refresh aborted' }, 409);
-      }
-    }
-
-    return c.json({ patch: { state: nextState } });
+  try {
+    await ensureCodexAccessToken(record.id, account.chatgptAccountId,
+      refreshToken => mintCodexAccessToken(refreshToken, fetcher, persistRefreshTokenRotation),
+      true);
   } catch (err) {
     if (err instanceof CodexOAuthSessionTerminatedError) {
-      const failedAccount = {
-        ...account,
-        state: 'refresh_failed' as const,
-        state_message: err.upstreamMessage,
-        state_updated_at: new Date().toISOString(),
-        accessToken: null,
-      };
-      const failedState: CodexUpstreamState = { accounts: [failedAccount] };
-      if (record.id !== '') {
-        // Best-effort: a losing CAS means a concurrent rotation already wrote
-        // newer state, which by definition supersedes ours.
-        const dbRecord = await getRepo().upstreams.getById(record.id);
-        if (dbRecord) await getRepo().upstreams.saveState(record.id, failedState, { expectedState: dbRecord.state });
+      // Terminal flip mirrors `createCodexProvider.persistTerminalState`:
+      // clear the cached access token, mark the account refresh_failed so
+      // the dashboard renders the red badge and prompts a re-import.
+      const fresh = await getRepo().upstreams.getById(record.id);
+      if (fresh) {
+        try {
+          assertCodexUpstreamState(fresh.state);
+          const next: CodexUpstreamState = {
+            accounts: fresh.state.accounts.map(a => a.chatgptAccountId === account.chatgptAccountId
+              ? { ...a, state: 'refresh_failed' as const, state_message: err.upstreamMessage, state_updated_at: new Date().toISOString(), accessToken: null }
+              : a),
+          };
+          await getRepo().upstreams.saveState(record.id, next, { expectedState: fresh.state });
+        } catch {
+          // Best-effort: a losing CAS means a concurrent rotation already
+          // wrote newer state, which by definition supersedes ours.
+        }
       }
       return c.json({ error: `Codex refresh failed: ${err.upstreamMessage}. Re-run OAuth exchange to recover.` }, 400);
     }
     return c.json({ error: errorMessage(err) }, 502);
   }
+
+  const updated = await getRepo().upstreams.getById(record.id);
+  if (!updated) return c.json({ error: 'Upstream not found' }, 404);
+  return c.json({ patch: { state: updated.state } });
 };
 
 // Claude Code OAuth + setup-token + probe endpoints under the unified
@@ -747,10 +754,14 @@ export const claudeCodeSetupTokenExchange = async (c: CtxWithJson<typeof claudeC
 export const claudeCodeOauthRefresh = async (c: CtxWithJson<typeof claudeCodeOauthRefreshBody>) => {
   const { record } = c.req.valid('json');
   if (record.kind !== 'claude-code') return c.json({ error: 'Upstream is not a Claude Code upstream' }, 400);
+  // Refresh delegates to the data plane's `ensureClaudeCodeAccessToken`
+  // with `force: true` so operator clicks and data-plane requests share
+  // the same rotation + sibling-race recovery path (no duplicated CAS
+  // logic, no divergence). Create-state refresh has no target — the
+  // just-completed OAuth exchange handed the client a brand-new
+  // refresh_token that has no reason to rotate yet.
+  if (record.id === '') return c.json({ error: 'refresh requires a persisted upstream' }, 400);
 
-  // record.state is unknown from the envelope; a corrupt shape throws at
-  // the framework 500 boundary. The single-account convention means
-  // refresh always targets accounts[0].
   const parsedState = readClaudeCodeUpstreamState(record.state);
   const account = parsedState.accounts[0];
   if (account.state !== 'active') {
@@ -764,7 +775,7 @@ export const claudeCodeOauthRefresh = async (c: CtxWithJson<typeof claudeCodeOau
   try {
     fetcher = await resolveControlPlaneFetcher({
       override: record.proxy_fallback_list,
-      upstreamId: record.id || undefined,
+      upstreamId: record.id,
       currentColo: getCurrentColo(c.req.raw),
     });
   } catch (err) {
@@ -772,47 +783,21 @@ export const claudeCodeOauthRefresh = async (c: CtxWithJson<typeof claudeCodeOau
   }
 
   try {
-    const tokens = await refreshClaudeCodeAccessToken(account.refreshToken, fetcher);
-    const now = new Date();
-    const nextAccount: ClaudeCodeAccountCredential = {
-      ...account,
-      refreshToken: tokens.refresh_token ?? account.refreshToken,
-      accessToken: {
-        token: tokens.access_token,
-        expiresAt: now.getTime() + tokens.expires_in * 1000,
-        refreshedAt: now.toISOString(),
-      },
-    };
-    const nextState: ClaudeCodeUpstreamState = { ...parsedState, accounts: [nextAccount] };
-
-    if (record.id !== '') {
-      const dbRecord = await getRepo().upstreams.getById(record.id);
-      if (!dbRecord) return c.json({ error: 'Upstream not found' }, 404);
-      const result = await getRepo().upstreams.saveState(record.id, nextState, { expectedState: dbRecord.state });
-      if (!result.updated) {
-        return c.json({ error: 'Concurrent state mutation; refresh aborted' }, 409);
-      }
-    }
-
-    return c.json({ patch: { state: nextState } });
+    // `ensureClaudeCodeAccessToken` handles the whole flow: read state,
+    // CAS-write the rotated refresh_token alongside the fresh access
+    // token, and flip the row to refresh_failed on a terminal OAuth
+    // error. All this handler contributes is the HTTP framing.
+    await ensureClaudeCodeAccessToken({ upstreamId: record.id, repo: getRepo().upstreams, fetcher, force: true });
   } catch (err) {
     if (err instanceof ClaudeCodeOAuthSessionTerminatedError) {
-      const failedAccount: ClaudeCodeAccountCredential = {
-        ...account,
-        state: 'refresh_failed',
-        stateMessage: err.upstreamMessage,
-        stateUpdatedAt: new Date().toISOString(),
-        accessToken: null,
-      };
-      const failedState: ClaudeCodeUpstreamState = { ...parsedState, accounts: [failedAccount] };
-      if (record.id !== '') {
-        const dbRecord = await getRepo().upstreams.getById(record.id);
-        if (dbRecord) await getRepo().upstreams.saveState(record.id, failedState, { expectedState: dbRecord.state });
-      }
       return c.json({ error: `Claude Code refresh failed: ${err.upstreamMessage}. Re-run OAuth exchange to recover.` }, 400);
     }
     return c.json({ error: errorMessage(err) }, 502);
   }
+
+  const updated = await getRepo().upstreams.getById(record.id);
+  if (!updated) return c.json({ error: 'Upstream not found' }, 404);
+  return c.json({ patch: { state: updated.state } });
 };
 
 export const claudeCodeProbe = async (c: CtxWithJson<typeof claudeCodeProbeBody>) => {

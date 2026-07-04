@@ -42,6 +42,14 @@ export interface EnsureClaudeCodeAccessTokenArgs {
   upstreamId: string;
   repo: UpstreamsRepoSlim;
   fetcher: Fetcher;
+  // When true, skip the "cached access_token is still fresh" fast-path and
+  // always call the OAuth refresh endpoint. The dashboard's Refresh button
+  // sets this so the operator sees the row's tokens actually rotate; the
+  // data plane leaves it false so a live request served from cache stays
+  // cheap. Cross-isolate coalescing (`inFlightEnsures`) still applies —
+  // concurrent force calls collapse to one refresh, as do concurrent
+  // force/non-force pairs.
+  force?: boolean;
 }
 
 // Process-local coalescing of concurrent ensure calls. On a cold start N
@@ -132,7 +140,7 @@ const ensureClaudeCodeAccessTokenInner = async (
     throw new ClaudeCodeOAuthSessionTerminatedError({ code: 'setup_token_expired', message });
   }
 
-  if (account.accessToken && isAccessTokenFresh(account.accessToken)) {
+  if (account.accessToken && isAccessTokenFresh(account.accessToken) && !args.force) {
     return { entry: account.accessToken, freshlyMinted: false };
   }
 
