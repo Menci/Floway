@@ -1,12 +1,11 @@
-import { mount } from '@vue/test-utils';
+import { mount, type VueWrapper } from '@vue/test-utils';
 import { describe, expect, it } from 'vitest';
 import { nextTick } from 'vue';
-
-import { Select } from '@floway-dev/ui';
 
 import AliasTargetRow from './AliasTargetRow.vue';
 import { buildRealModel } from '../../api/test-fixtures.ts';
 import type { AliasTarget, ControlPlaneModel } from '../../api/types.ts';
+import { Select } from '@floway-dev/ui';
 
 const target = (over: Partial<AliasTarget> = {}): AliasTarget => ({
   target_model_id: 'gpt-5',
@@ -96,14 +95,13 @@ describe('AliasTargetRow', () => {
     await w.find('button[aria-label="Toggle target row"]').trigger('click');
     await nextTick();
 
-    // The chat rule body renders two Selects (target-id combobox uses
-    // Combobox, not Select; the remaining Selects here are Adaptive and
-    // Selection — but Selection lives on the parent, so within one row the
-    // only Select is Adaptive). Pick by current model-value to be robust.
-    const selects = w.findAllComponents(Select);
-    const adaptive = selects.find(s => s.props('modelValue') === 'auto');
-    expect(adaptive).toBeDefined();
-    await adaptive!.vm.$emit('update:modelValue', 'on');
+    // The chat rule body has one Select (Adaptive); target-id uses Combobox
+    // and Selection lives on the parent dialog, so findComponent is safe.
+    // Cast is necessary because Select is a generic SFC whose type args
+    // don't flow through findComponent's overloads.
+    const adaptive = w.findComponent(Select) as unknown as VueWrapper<Record<string, unknown>>;
+    expect(adaptive.exists()).toBe(true);
+    adaptive.vm.$emit('update:modelValue', 'on');
     await nextTick();
 
     const events = w.emitted<[AliasTarget]>('update:modelValue') ?? [];
