@@ -501,6 +501,42 @@ export const codexOauthRefreshBody = z.object({
   record: upstreamRecordEnvelope,
 });
 
+// --- claude-code OAuth + setup-token + probe (record-body contract) ---
+
+export const claudeCodeOauthAuthorizeUrlBody = z.object({
+  record: upstreamRecordEnvelope,
+  challenge: z.string().min(1),
+  state: z.string().min(1),
+});
+
+export const claudeCodeOauthExchangeBody = z.object({
+  record: upstreamRecordEnvelope,
+  credentials_json: z.string().min(1).optional(),
+  callback: oauthCallbackSchema.optional(),
+}).refine(
+  b => (b.credentials_json !== undefined) !== (b.callback !== undefined),
+  { message: 'Provide exactly one of credentials_json or callback' },
+);
+
+export const claudeCodeOauthRefreshBody = z.object({
+  record: upstreamRecordEnvelope,
+});
+
+export const claudeCodeSetupTokenAuthorizeUrlBody = z.object({
+  record: upstreamRecordEnvelope,
+  challenge: z.string().min(1),
+  state: z.string().min(1),
+});
+
+export const claudeCodeSetupTokenExchangeBody = z.object({
+  record: upstreamRecordEnvelope,
+  callback: oauthCallbackSchema,
+});
+
+export const claudeCodeProbeBody = z.object({
+  record: upstreamRecordEnvelope,
+});
+
 // --- claude-code import / authorize-url / refresh ---
 //
 // Same shape rationale as the codex routes above: the generic create / update

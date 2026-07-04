@@ -15,7 +15,7 @@ import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getCurrentColo } from '../../runtime/runtime-info.ts';
 import { shortId } from '../../shared/short-id.ts';
 import { fetchGitHubUser, pollGitHubDeviceFlow, startGitHubDeviceFlow } from '../auth/github-device-flow.ts';
-import type { claudeCodeAuthorizeUrlBody, claudeCodeImportBody, claudeCodeProbeQuotaBody, claudeCodeRefreshNowBody, claudeCodeReimportBody, claudeCodeSetupTokenImportBody, claudeCodeSetupTokenReimportBody, codexAuthorizeUrlBody, codexImportBody, codexOauthAuthorizeUrlBody, codexOauthExchangeBody, codexOauthRefreshBody, codexRefreshNowBody, codexReimportBody, copilotAuthPollBody, copilotOauthDeviceLoginPollBody, copilotQuotaBody, createUpstreamBody, fetchModelsBody, updateUpstreamBody } from '../schemas.ts';
+import type { claudeCodeAuthorizeUrlBody, claudeCodeImportBody, claudeCodeOauthAuthorizeUrlBody, claudeCodeOauthExchangeBody, claudeCodeOauthRefreshBody, claudeCodeProbeBody, claudeCodeProbeQuotaBody, claudeCodeRefreshNowBody, claudeCodeReimportBody, claudeCodeSetupTokenAuthorizeUrlBody, claudeCodeSetupTokenExchangeBody, claudeCodeSetupTokenImportBody, claudeCodeSetupTokenReimportBody, codexAuthorizeUrlBody, codexImportBody, codexOauthAuthorizeUrlBody, codexOauthExchangeBody, codexOauthRefreshBody, codexRefreshNowBody, codexReimportBody, copilotAuthPollBody, copilotOauthDeviceLoginPollBody, copilotQuotaBody, createUpstreamBody, fetchModelsBody, updateUpstreamBody } from '../schemas.ts';
 import { copilotConfigField, type CopilotUpstreamConfig, isRecord } from '../shared/field-validators.ts';
 import {
   directFetcher,
@@ -1566,4 +1566,263 @@ export const claudeCodeProbeQuota = async (c: CtxWithJson<typeof claudeCodeProbe
   // Anthropic adds fields without warning — surface as Record so Hono's
   // c.json accepts it.
   return c.json({ fetched_at: probe.fetched_at, ...(probe.body as Record<string, unknown>) });
+};
+
+// Claude Code OAuth + setup-token + probe endpoints under the unified
+// record-body contract. Same authorize/token/probe plumbing as the
+// legacy claudeCode* handlers, wrapped so create and edit share one
+// endpoint each: the caller posts the draft record; when
+// `record.id !== ''` the produced patch is targeted-persisted, otherwise
+// only returned for the front-end to merge into its draft.
+
+export const claudeCodeOauthAuthorizeUrl = async (c: CtxWithJson<typeof claudeCodeOauthAuthorizeUrlBody>) => {
+  const { challenge, state } = c.req.valid('json');
+  const authorize_url = buildClaudeCodeAuthorizeUrl({ state, codeChallenge: challenge, kind: 'oauth' });
+  return c.json({ authorize_url });
+};
+
+export const claudeCodeSetupTokenAuthorizeUrl = async (c: CtxWithJson<typeof claudeCodeSetupTokenAuthorizeUrlBody>) => {
+  const { challenge, state } = c.req.valid('json');
+  const authorize_url = buildClaudeCodeAuthorizeUrl({ state, codeChallenge: challenge, kind: 'setup-token' });
+  return c.json({ authorize_url });
+};
+
+export const claudeCodeOauthExchange = async (c: CtxWithJson<typeof claudeCodeOauthExchangeBody>) => {
+  const body = c.req.valid('json');
+  const { record } = body;
+  if (record.kind !== 'claude-code') return c.json({ error: 'Upstream is not a Claude Code upstream' }, 400);
+
+  let fetcher: Fetcher;
+  try {
+    fetcher = await resolveControlPlaneFetcher({
+      override: record.proxy_fallback_list,
+      upstreamId: record.id || undefined,
+      currentColo: getCurrentColo(c.req.raw),
+    });
+  } catch (err) {
+    return c.json({ error: errorMessage(err) }, 400);
+  }
+
+  let ingestion: { config: ClaudeCodeUpstreamConfig; state: ClaudeCodeUpstreamState };
+  try {
+    if (body.credentials_json !== undefined) {
+      ingestion = await importClaudeCodeFromCredentialsJson(body.credentials_json, fetcher);
+    } else {
+      const cb = body.callback!;
+      ingestion = await importClaudeCodeFromCallback({ code: cb.code, pkceVerifier: cb.verifier, state: cb.state, fetcher });
+    }
+  } catch (err) {
+    return c.json({ error: errorMessage(err) }, 400);
+  }
+
+  if (record.id !== '') {
+    const dbRecord = await getRepo().upstreams.getById(record.id);
+    if (!dbRecord) return c.json({ error: 'Upstream not found' }, 404);
+    if (dbRecord.kind !== 'claude-code') return c.json({ error: 'Upstream is not a Claude Code upstream' }, 400);
+    const next: UpstreamRecord = {
+      ...dbRecord,
+      config: ingestion.config,
+      state: ingestion.state,
+      updatedAt: new Date().toISOString(),
+    };
+    await getRepo().upstreams.save(next);
+    await warmModelsCache(next, c);
+  }
+
+  return c.json({ patch: { config: ingestion.config, state: ingestion.state } });
+};
+
+export const claudeCodeSetupTokenExchange = async (c: CtxWithJson<typeof claudeCodeSetupTokenExchangeBody>) => {
+  const { record, callback } = c.req.valid('json');
+  if (record.kind !== 'claude-code') return c.json({ error: 'Upstream is not a Claude Code upstream' }, 400);
+
+  let fetcher: Fetcher;
+  try {
+    fetcher = await resolveControlPlaneFetcher({
+      override: record.proxy_fallback_list,
+      upstreamId: record.id || undefined,
+      currentColo: getCurrentColo(c.req.raw),
+    });
+  } catch (err) {
+    return c.json({ error: errorMessage(err) }, 400);
+  }
+
+  let ingestion: { config: ClaudeCodeUpstreamConfig; state: ClaudeCodeUpstreamState };
+  try {
+    ingestion = await importClaudeCodeFromSetupTokenCallback({
+      code: callback.code,
+      pkceVerifier: callback.verifier,
+      state: callback.state,
+      fetcher,
+    });
+  } catch (err) {
+    return c.json({ error: errorMessage(err) }, 400);
+  }
+
+  if (record.id !== '') {
+    const dbRecord = await getRepo().upstreams.getById(record.id);
+    if (!dbRecord) return c.json({ error: 'Upstream not found' }, 404);
+    if (dbRecord.kind !== 'claude-code') return c.json({ error: 'Upstream is not a Claude Code upstream' }, 400);
+    const next: UpstreamRecord = {
+      ...dbRecord,
+      config: ingestion.config,
+      state: ingestion.state,
+      updatedAt: new Date().toISOString(),
+    };
+    await getRepo().upstreams.save(next);
+    await warmModelsCache(next, c);
+  }
+
+  return c.json({ patch: { config: ingestion.config, state: ingestion.state } });
+};
+
+export const claudeCodeOauthRefresh = async (c: CtxWithJson<typeof claudeCodeOauthRefreshBody>) => {
+  const { record } = c.req.valid('json');
+  if (record.kind !== 'claude-code') return c.json({ error: 'Upstream is not a Claude Code upstream' }, 400);
+
+  // record.state is unknown from the envelope; a corrupt shape throws at
+  // the framework 500 boundary. The single-account convention means
+  // refresh always targets accounts[0].
+  const parsedState = readClaudeCodeUpstreamState(record.state);
+  const account = parsedState.accounts[0];
+  if (account.state !== 'active') {
+    return c.json({ error: `Claude Code upstream is ${account.state}; re-run OAuth exchange to recover` }, 400);
+  }
+  if (account.tokenKind === 'setup-token') {
+    return c.json({ error: 'Setup-token credentials cannot be refreshed; re-run setup-token exchange to rotate' }, 400);
+  }
+
+  let fetcher: Fetcher;
+  try {
+    fetcher = await resolveControlPlaneFetcher({
+      override: record.proxy_fallback_list,
+      upstreamId: record.id || undefined,
+      currentColo: getCurrentColo(c.req.raw),
+    });
+  } catch (err) {
+    return c.json({ error: errorMessage(err) }, 400);
+  }
+
+  try {
+    const tokens = await refreshClaudeCodeAccessToken(account.refreshToken, fetcher);
+    const now = new Date();
+    const nextAccount: ClaudeCodeAccountCredential = {
+      ...account,
+      refreshToken: tokens.refresh_token ?? account.refreshToken,
+      accessToken: {
+        token: tokens.access_token,
+        expiresAt: now.getTime() + tokens.expires_in * 1000,
+        refreshedAt: now.toISOString(),
+      },
+    };
+    const nextState: ClaudeCodeUpstreamState = { ...parsedState, accounts: [nextAccount] };
+
+    if (record.id !== '') {
+      const dbRecord = await getRepo().upstreams.getById(record.id);
+      if (!dbRecord) return c.json({ error: 'Upstream not found' }, 404);
+      const result = await getRepo().upstreams.saveState(record.id, nextState, { expectedState: dbRecord.state });
+      if (!result.updated) {
+        return c.json({ error: 'Concurrent state mutation; refresh aborted' }, 409);
+      }
+    }
+
+    return c.json({ patch: { state: nextState } });
+  } catch (err) {
+    if (err instanceof ClaudeCodeOAuthSessionTerminatedError) {
+      const failedAccount: ClaudeCodeAccountCredential = {
+        ...account,
+        state: 'refresh_failed',
+        stateMessage: err.upstreamMessage,
+        stateUpdatedAt: new Date().toISOString(),
+        accessToken: null,
+      };
+      const failedState: ClaudeCodeUpstreamState = { ...parsedState, accounts: [failedAccount] };
+      if (record.id !== '') {
+        const dbRecord = await getRepo().upstreams.getById(record.id);
+        if (dbRecord) await getRepo().upstreams.saveState(record.id, failedState, { expectedState: dbRecord.state });
+      }
+      return c.json({ error: `Claude Code refresh failed: ${err.upstreamMessage}. Re-run OAuth exchange to recover.` }, 400);
+    }
+    return c.json({ error: errorMessage(err) }, 502);
+  }
+};
+
+export const claudeCodeProbe = async (c: CtxWithJson<typeof claudeCodeProbeBody>) => {
+  const { record } = c.req.valid('json');
+  if (record.kind !== 'claude-code') return c.json({ error: 'Quota probe is only supported for claude-code upstreams' }, 400);
+  const actor = userFromContext(c).id;
+
+  let fetcher: Fetcher;
+  try {
+    fetcher = await resolveControlPlaneFetcher({
+      override: record.proxy_fallback_list,
+      upstreamId: record.id || undefined,
+      currentColo: getCurrentColo(c.req.raw),
+    });
+  } catch (err) {
+    return c.json({ error: errorMessage(err) }, 400);
+  }
+
+  // Resolving a fresh access token demands DB access (the token cache
+  // and CAS-guarded refresh live there), so probe on a create-state
+  // record requires that the caller has ensured a fresh access_token
+  // sits in draft.state.accounts[0].accessToken from the OAuth
+  // exchange step. In edit state, we can call the standard cache
+  // helper that reads / refreshes from DB.
+  let accessToken: string;
+  try {
+    if (record.id !== '') {
+      const access = await ensureClaudeCodeAccessToken({
+        upstreamId: record.id,
+        repo: getRepo().upstreams,
+        fetcher,
+      });
+      accessToken = access.entry.token;
+    } else {
+      const parsedState = readClaudeCodeUpstreamState(record.state);
+      const account = parsedState.accounts[0];
+      if (!account.accessToken?.token) {
+        return c.json({ error: 'Draft account has no fresh access token; run OAuth refresh first' }, 400);
+      }
+      accessToken = account.accessToken.token;
+    }
+  } catch (err) {
+    logInfo('claude_code_admin_action', { upstream_id: record.id, action: 'quota_probe', actor, outcome: 'error', error: errorMessage(err) });
+    if (err instanceof ClaudeCodeOAuthSessionTerminatedError) {
+      return c.json({ error: `Claude Code refresh failed: ${err.upstreamMessage}` }, 503);
+    }
+    return c.json({ error: errorMessage(err) }, 502);
+  }
+
+  let probe;
+  try {
+    probe = await fetchClaudeCodeUsageProbe(accessToken, fetcher);
+  } catch (err) {
+    logInfo('claude_code_admin_action', { upstream_id: record.id, action: 'quota_probe', actor, outcome: 'error', error: errorMessage(err) });
+    return c.json({ error: errorMessage(err) }, 502);
+  }
+
+  const snapshotPatch = {
+    usageProbeSnapshot: { fetchedAt: Date.parse(probe.fetched_at), data: probe.body },
+  };
+
+  if (record.id !== '') {
+    // Best-effort CAS persist — same rationale as the legacy handler.
+    const fresh = await getRepo().upstreams.getById(record.id);
+    if (fresh) {
+      const parsed = readClaudeCodeUpstreamState(fresh.state);
+      const next: ClaudeCodeUpstreamState = {
+        ...parsed,
+        accounts: parsed.accounts.map((a, i): ClaudeCodeAccountCredential => i === 0 ? { ...a, ...snapshotPatch } : a),
+      };
+      await getRepo().upstreams.saveState(record.id, next, { expectedState: fresh.state });
+    }
+  }
+
+  logInfo('claude_code_admin_action', { upstream_id: record.id, action: 'quota_probe', actor, outcome: 'ok' });
+  return c.json({
+    fetched_at: probe.fetched_at,
+    body: probe.body,
+    patch: { state: { accounts: [snapshotPatch] } },
+  });
 };
