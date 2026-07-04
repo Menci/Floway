@@ -367,6 +367,30 @@ export const copilotAuthPollBody = z.object({
   proxy_fallback_list: proxyFallbackListSchema.optional(),
 });
 
+// Shared envelope for the record-body action contract used by every
+// action endpoint (OAuth exchange/refresh, quota, probe, list-models,
+// etc.). The client posts its full draft record; the server reads only
+// fields relevant to the specific action (credentials in config/state,
+// proxy_fallback_list for routing) and produces a targeted patch. Kind
+// and id validation is deferred to the handler so a single schema
+// serves every provider.
+export const upstreamRecordEnvelope = z.object({
+  id: z.string(),
+  kind: z.string(),
+  config: z.unknown(),
+  state: z.unknown(),
+  proxy_fallback_list: proxyFallbackListSchema.optional(),
+}).passthrough();
+
+export const copilotOauthDeviceLoginPollBody = z.object({
+  record: upstreamRecordEnvelope,
+  deviceCode: z.string().min(1),
+});
+
+export const copilotQuotaBody = z.object({
+  record: upstreamRecordEnvelope,
+});
+
 // --- codex import / authorize-url / refresh ---
 //
 // The control plane refuses `kind: 'codex'` on the generic create / update

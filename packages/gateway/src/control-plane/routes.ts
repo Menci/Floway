@@ -9,11 +9,11 @@ import { createAlias, deleteAlias, listAliases, updateAlias } from './model-alia
 import { controlPlaneModels } from './models/routes.ts';
 import { performanceOverview, performanceTelemetry } from './performance/routes.ts';
 import { createProxy, deleteProxy, listAllBackoffs, listProxies, listProxyBackoffs, resetProxyBackoffs, testProxy, updateProxy } from './proxies/routes.ts';
-import { authLoginBody, changeOwnPasswordBody, claudeCodeAuthorizeUrlBody, claudeCodeImportBody, claudeCodeProbeQuotaBody, claudeCodeRefreshNowBody, claudeCodeReimportBody, claudeCodeSetupTokenImportBody, claudeCodeSetupTokenReimportBody, codexAuthorizeUrlBody, codexImportBody, codexRefreshNowBody, codexReimportBody, copilotAuthPollBody, createAliasBody, createKeyBody, createProxyBody, createUpstreamBody, createUserBody, exportQuery, fetchModelsBody, importBody, modelsQuery, performanceQuery, resetBackoffBody, searchConfigSchema, searchUsageQuery, testProxyBody, tokenUsageQuery, updateAliasBody, updateKeyBody, updateProxyBody, updateUpstreamBody, updateUserBody } from './schemas.ts';
+import { authLoginBody, changeOwnPasswordBody, claudeCodeAuthorizeUrlBody, claudeCodeImportBody, claudeCodeProbeQuotaBody, claudeCodeRefreshNowBody, claudeCodeReimportBody, claudeCodeSetupTokenImportBody, claudeCodeSetupTokenReimportBody, codexAuthorizeUrlBody, codexImportBody, codexRefreshNowBody, codexReimportBody, copilotAuthPollBody, copilotOauthDeviceLoginPollBody, copilotQuotaBody, createAliasBody, createKeyBody, createProxyBody, createUpstreamBody, createUserBody, exportQuery, fetchModelsBody, importBody, modelsQuery, performanceQuery, resetBackoffBody, searchConfigSchema, searchUsageQuery, testProxyBody, tokenUsageQuery, updateAliasBody, updateKeyBody, updateProxyBody, updateUpstreamBody, updateUserBody } from './schemas.ts';
 import { getSearchConfigRoute, putSearchConfigRoute, testSearchConfigRoute } from './search-config/routes.ts';
 import { searchUsage } from './search-usage/routes.ts';
 import { tokenUsage } from './token-usage/routes.ts';
-import { claudeCodeAuthorizeUrl, claudeCodeImport, claudeCodeProbeQuota, claudeCodeRefreshNow, claudeCodeReimport, claudeCodeSetupTokenImport, claudeCodeSetupTokenReimport, codexAuthorizeUrl, codexImport, codexRefreshNow, codexReimport, copilotAuthPoll, copilotAuthStart, createUpstream, deleteUpstream, fetchModels, getUpstream, getUpstreamBlueprint, listOptionalFlags, listUpstreamModels, listUpstreamOptions, listUpstreams, updateUpstream } from './upstreams/routes.ts';
+import { claudeCodeAuthorizeUrl, claudeCodeImport, claudeCodeProbeQuota, claudeCodeRefreshNow, claudeCodeReimport, claudeCodeSetupTokenImport, claudeCodeSetupTokenReimport, codexAuthorizeUrl, codexImport, codexRefreshNow, codexReimport, copilotAuthPoll, copilotAuthStart, copilotOauthDeviceLoginPoll, copilotQuotaAction, createUpstream, deleteUpstream, fetchModels, getUpstream, getUpstreamBlueprint, listOptionalFlags, listUpstreamModels, listUpstreamOptions, listUpstreams, updateUpstream } from './upstreams/routes.ts';
 import { changeOwnPassword, createUser, deleteUser, listUsers, updateUser } from './users/routes.ts';
 import { type AuthedContext, type AuthVars, userFromContext } from '../middleware/auth.ts';
 import { zValidator } from '../middleware/zod-validator.ts';
@@ -72,6 +72,9 @@ export const controlPlaneRoutes = new Hono<{ Variables: AuthVars }>()
     .get('/upstreams/flags', listOptionalFlags)
     .post('/upstreams/copilot/auth/start', copilotAuthStart)
     .post('/upstreams/copilot/auth/poll', zValidator('json', copilotAuthPollBody), copilotAuthPoll)
+    .post('/upstreams/copilot/oauth/device-login/start', copilotAuthStart)
+    .post('/upstreams/copilot/oauth/device-login/poll', zValidator('json', copilotOauthDeviceLoginPollBody), copilotOauthDeviceLoginPoll)
+    .post('/upstreams/copilot/quota', zValidator('json', copilotQuotaBody), copilotQuotaAction)
     .post('/upstreams/codex-authorize-url', zValidator('json', codexAuthorizeUrlBody), codexAuthorizeUrl)
     .post('/upstreams/codex-import', zValidator('json', codexImportBody), codexImport)
     .post('/upstreams/:id/codex-reimport', zValidator('json', codexReimportBody), codexReimport)

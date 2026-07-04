@@ -15,7 +15,7 @@ import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getCurrentColo } from '../../runtime/runtime-info.ts';
 import { shortId } from '../../shared/short-id.ts';
 import { fetchGitHubUser, pollGitHubDeviceFlow, startGitHubDeviceFlow } from '../auth/github-device-flow.ts';
-import type { claudeCodeAuthorizeUrlBody, claudeCodeImportBody, claudeCodeProbeQuotaBody, claudeCodeRefreshNowBody, claudeCodeReimportBody, claudeCodeSetupTokenImportBody, claudeCodeSetupTokenReimportBody, codexAuthorizeUrlBody, codexImportBody, codexRefreshNowBody, codexReimportBody, copilotAuthPollBody, createUpstreamBody, fetchModelsBody, updateUpstreamBody } from '../schemas.ts';
+import type { claudeCodeAuthorizeUrlBody, claudeCodeImportBody, claudeCodeProbeQuotaBody, claudeCodeRefreshNowBody, claudeCodeReimportBody, claudeCodeSetupTokenImportBody, claudeCodeSetupTokenReimportBody, codexAuthorizeUrlBody, codexImportBody, codexRefreshNowBody, codexReimportBody, copilotAuthPollBody, copilotOauthDeviceLoginPollBody, copilotQuotaBody, createUpstreamBody, fetchModelsBody, updateUpstreamBody } from '../schemas.ts';
 import { copilotConfigField, type CopilotUpstreamConfig, isRecord } from '../shared/field-validators.ts';
 import {
   directFetcher,
@@ -62,7 +62,7 @@ import {
   importCodexFromCallback,
   refreshCodexAccessToken,
 } from '@floway-dev/provider-codex';
-import { clearInProcessCopilotTokenCache, exchangeCopilotToken, readCopilotUpstreamState, type CopilotUpstreamState } from '@floway-dev/provider-copilot';
+import { clearInProcessCopilotTokenCache, exchangeCopilotToken, githubHeaders, readCopilotUpstreamState, type CopilotUpstreamState } from '@floway-dev/provider-copilot';
 import { assertCustomUpstreamRecord, fetchCustomModels } from '@floway-dev/provider-custom';
 import { assertOllamaUpstreamRecord, createOllamaProvider } from '@floway-dev/provider-ollama';
 
@@ -576,6 +576,124 @@ export const copilotAuthPoll = async (c: CtxWithJson<typeof copilotAuthPollBody>
   } catch (e: unknown) {
     const msg = errorMessage(e);
     return c.json({ error: msg }, 502);
+  }
+};
+
+// Unified device-login poll under the record-body action contract. The
+// GitHub device flow is inherently stateless; this handler exchanges the
+// device_code for a GitHub PAT + user info + Copilot access token, and
+// returns them as a patch to merge into the caller's draft record. When
+// the caller supplies a persisted `record.id`, the same patch is
+// simultaneously applied to the stored record so the live data plane
+// picks up the fresh credential immediately.
+export const copilotOauthDeviceLoginPoll = async (c: CtxWithJson<typeof copilotOauthDeviceLoginPollBody>) => {
+  try {
+    const { record, deviceCode } = c.req.valid('json');
+    const fetcher = await resolveControlPlaneFetcher({ override: record.proxy_fallback_list, currentColo: getCurrentColo(c.req.raw) });
+
+    const data = await pollGitHubDeviceFlow(deviceCode, fetcher);
+
+    if (data.error === 'authorization_pending') return c.json({ status: 'pending' as const });
+    if (data.error === 'slow_down') return c.json({ status: 'slow_down' as const, interval: data.interval });
+    if (data.error) return c.json({ status: 'error' as const, error: data.error_description ?? data.error }, 400);
+    if (!data.access_token) return c.json({ status: 'error' as const, error: 'Unknown response' }, 500);
+
+    const user = await fetchGitHubUser(data.access_token, fetcher);
+    // Validates the PAT + seeds a fresh Copilot access token so the data
+    // plane and dashboard `endpoints.api` calls work immediately without
+    // a follow-up exchange round trip.
+    const tokenEntry = await exchangeCopilotToken(data.access_token, fetcher);
+
+    const configPatch: CopilotUpstreamConfig = { githubToken: data.access_token, user };
+    const statePatch = { copilotToken: tokenEntry };
+
+    // Edit state (id present): targeted-patch the stored record so any
+    // in-flight data-plane traffic on this upstream sees the new token
+    // right away. Only credential fields are touched — the caller's
+    // draft-only form edits (name, flags, etc.) never reach the DB from
+    // this handler; save endpoints are the sole route for those.
+    if (record.id !== '') {
+      const dbRecord = await getRepo().upstreams.getById(record.id);
+      if (!dbRecord) return c.json({ status: 'error' as const, error: 'Upstream not found' }, 404);
+      if (dbRecord.kind !== 'copilot') return c.json({ status: 'error' as const, error: 'Upstream is not a Copilot upstream' }, 400);
+      const prevState = readCopilotUpstreamState(dbRecord.state);
+      const nextState: CopilotUpstreamState = { ...prevState, ...statePatch };
+      const next: UpstreamRecord = { ...dbRecord, config: configPatch, state: nextState, updatedAt: new Date().toISOString() };
+      await getRepo().upstreams.save(next);
+      clearInProcessCopilotTokenCache();
+      await warmModelsCache(next, c);
+    }
+
+    return c.json({
+      status: 'complete' as const,
+      user,
+      patch: {
+        config: configPatch,
+        state: statePatch,
+      },
+    });
+  } catch (e: unknown) {
+    const msg = errorMessage(e);
+    return c.json({ status: 'error' as const, error: msg }, 502);
+  }
+};
+
+interface CopilotQuotaDetail {
+  entitlement: number;
+  overage_count: number;
+  overage_permitted: boolean;
+  percent_remaining: number;
+  quota_id: string;
+  quota_remaining: number;
+  remaining: number;
+  unlimited: boolean;
+}
+
+interface CopilotUsageResponse {
+  access_type_sku: string;
+  analytics_tracking_id: string;
+  assigned_date: string;
+  can_signup_for_limited: boolean;
+  chat_enabled: boolean;
+  copilot_plan: string;
+  organization_login_list: unknown[];
+  organization_list: unknown[];
+  quota_reset_date: string;
+  quota_snapshots: {
+    chat: CopilotQuotaDetail;
+    completions: CopilotQuotaDetail;
+    premium_interactions: CopilotQuotaDetail;
+  };
+}
+
+// Look up GitHub Copilot quota for the draft's github token. Pure query —
+// no DB touch, no patch — because the response is a live snapshot that
+// the dashboard renders in place; if the operator wants it retained they
+// would need a Copilot-side persistence field, which today doesn't exist.
+// Works uniformly in create and edit state (draft.config.githubToken is
+// the sole input).
+export const copilotQuotaAction = async (c: CtxWithJson<typeof copilotQuotaBody>) => {
+  try {
+    const { record } = c.req.valid('json');
+    if (record.kind !== 'copilot') return c.json({ error: 'Upstream is not a Copilot upstream' }, 400);
+    const config = isRecord(record.config) ? record.config : null;
+    const githubToken = config && typeof config.githubToken === 'string' ? config.githubToken : '';
+    if (!githubToken) return c.json({ error: 'Copilot upstream has no GitHub token' }, 400);
+
+    const fetcher = await resolveControlPlaneFetcher({ override: record.proxy_fallback_list, currentColo: getCurrentColo(c.req.raw) });
+    const resp = await fetcher('https://api.github.com/copilot_internal/user', { headers: githubHeaders(githubToken) });
+
+    if (!resp.ok) {
+      const text = await resp.text();
+      const status = resp.status === 401 || resp.status === 403 ? 502 : resp.status;
+      return c.json({ error: `GitHub API error: ${resp.status} ${text}` }, status as 400 | 404 | 500 | 502);
+    }
+
+    const data = (await resp.json()) as CopilotUsageResponse;
+    return c.json(data);
+  } catch (e: unknown) {
+    console.error('Failed to fetch Copilot quota:', e);
+    return c.json({ error: 'Failed to fetch Copilot quota from GitHub' }, 502);
   }
 };
 
