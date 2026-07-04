@@ -74,7 +74,15 @@ const adaptiveSelect = computed<AdaptiveSelect>(() => {
   return 'auto';
 });
 const setAdaptive = (raw: AdaptiveSelect | undefined) => {
-  patchReasoning({ adaptive: raw === 'on' ? true : raw === 'off' ? false : undefined });
+  // Switching to `on` clears any sibling budget_tokens in the same patch:
+  // adaptive mode auto-determines the budget, so the pinned value would be
+  // silently discarded downstream (and the control-plane schema rejects the
+  // combination on save).
+  if (raw === 'on') {
+    patchReasoning({ adaptive: true, budget_tokens: undefined });
+    return;
+  }
+  patchReasoning({ adaptive: raw === 'off' ? false : undefined });
 };
 const setVerbosity = (raw: string) => {
   const next = { ...target.value.rules };

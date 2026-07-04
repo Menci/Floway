@@ -251,3 +251,46 @@ test('POST /api/aliases rejects unknown reasoning fields on a chat target with 4
   );
   assertEquals(resp.status, 400);
 });
+
+test('POST /api/aliases rejects reasoning that combines adaptive=true with budget_tokens (400)', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.modelAliases.deleteAll();
+
+  const resp = await requestApp(
+    '/api/aliases',
+    authed(adminSession, baseBody({
+      targets: [{ target_model_id: 'gpt-5.4', rules: { reasoning: { adaptive: true, budget_tokens: 4096 } } }],
+    })),
+  );
+  assertEquals(resp.status, 400);
+  const body = (await resp.json()) as { error?: string };
+  assertEquals(body.error?.includes('adaptive'), true);
+  assertEquals(body.error?.includes('budget_tokens'), true);
+});
+
+test('PUT /api/aliases/:name rejects an update that pairs adaptive=true with budget_tokens (400)', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.modelAliases.deleteAll();
+  await requestApp('/api/aliases', authed(adminSession, baseBody()));
+
+  const resp = await requestApp(
+    '/api/aliases/gpt-fast',
+    putAuthed(adminSession, baseBody({
+      targets: [{ target_model_id: 'gpt-5.4', rules: { reasoning: { adaptive: true, budget_tokens: 4096 } } }],
+    })),
+  );
+  assertEquals(resp.status, 400);
+});
+
+test('POST /api/aliases accepts adaptive=false alongside budget_tokens (force non-adaptive + pinned budget)', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.modelAliases.deleteAll();
+
+  const resp = await requestApp(
+    '/api/aliases',
+    authed(adminSession, baseBody({
+      targets: [{ target_model_id: 'gpt-5.4', rules: { reasoning: { adaptive: false, budget_tokens: 4096 } } }],
+    })),
+  );
+  assertEquals(resp.status, 201);
+});

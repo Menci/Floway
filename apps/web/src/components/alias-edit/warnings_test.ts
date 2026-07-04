@@ -91,6 +91,22 @@ describe('computeRuleWarnings', () => {
     expect(w[0].field).toBe('reasoning.adaptive');
   });
 
+  it('flags a rule that combines adaptive=true with budget_tokens (cross-field)', () => {
+    const advertisesAdaptive = realModel({
+      id: 'gpt-5',
+      chat: {
+        reasoning: {
+          budget_tokens: { min: 100, max: 8000 },
+          adaptive: true,
+        },
+      },
+    });
+    const w = computeRuleWarnings({ reasoning: { adaptive: true, budget_tokens: 4096 } }, advertisesAdaptive);
+    const budgetWarning = w.find(x => x.field === 'reasoning.budget_tokens');
+    expect(budgetWarning).toBeDefined();
+    expect(budgetWarning!.message).toContain('Adaptive');
+  });
+
   it('flags reasoning at all when the target lacks reasoning metadata', () => {
     const noReasoning = realModel({ id: 'gpt-5', chat: {} });
     const w = computeRuleWarnings({ reasoning: { effort: 'low' } }, noReasoning);

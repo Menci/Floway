@@ -607,7 +607,17 @@ const chatAliasReasoningSchema = z.object({
   budget_tokens: z.number().int().nonnegative().optional(),
   adaptive: z.boolean().optional(),
   summary: z.string().min(1).optional(),
-}).strict();
+}).strict().refine(
+  // `adaptive` and a pinned `budget_tokens` are mutually exclusive on the
+  // Messages wire — `thinking.type` is one of `adaptive` or `enabled`, and
+  // only the `enabled` branch carries a `budget_tokens`. Storing both on the
+  // same rule would silently discard the budget at overlay time.
+  r => !(r.adaptive === true && r.budget_tokens !== undefined),
+  {
+    message: 'reasoning.adaptive=true cannot be combined with reasoning.budget_tokens — adaptive mode auto-determines the budget',
+    path: ['budget_tokens'],
+  },
+);
 
 const chatAliasRulesSchema = z.object({
   reasoning: chatAliasReasoningSchema.optional(),

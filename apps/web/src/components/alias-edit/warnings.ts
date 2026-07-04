@@ -61,6 +61,17 @@ export const computeRuleWarnings = (
     }
   }
 
+  // Cross-field: adaptive mode auto-determines the budget on the wire, so a
+  // sibling budget_tokens on the same rule would be silently discarded at
+  // overlay time — the control-plane schema also rejects this combination,
+  // so the warning surfaces it earlier in the editor.
+  if (rules.reasoning?.adaptive === true && rules.reasoning?.budget_tokens !== undefined) {
+    out.push({
+      field: 'reasoning.budget_tokens',
+      message: 'Adaptive reasoning auto-determines the budget — this value is ignored. Remove it or turn Adaptive off.',
+    });
+  }
+
   if (rules.reasoning?.adaptive === true && reasoning?.adaptive !== true) {
     out.push({ field: 'reasoning.adaptive', message: 'Target does not advertise adaptive reasoning.' });
   }

@@ -2,6 +2,8 @@ import { mount } from '@vue/test-utils';
 import { describe, expect, it } from 'vitest';
 import { nextTick } from 'vue';
 
+import { Select } from '@floway-dev/ui';
+
 import AliasTargetRow from './AliasTargetRow.vue';
 import { buildRealModel } from '../../api/test-fixtures.ts';
 import type { AliasTarget, ControlPlaneModel } from '../../api/types.ts';
@@ -85,5 +87,29 @@ describe('AliasTargetRow', () => {
     const html = w.html();
     expect(html).toContain('text-amber-300');
     expect(html).toContain('low, medium');
+  });
+
+  it('clears budget_tokens when adaptive is switched to on', async () => {
+    const w = mountRow({
+      modelValue: { target_model_id: 'gpt-5', rules: { reasoning: { budget_tokens: 4096 } } },
+    });
+    await w.find('button[aria-label="Toggle target row"]').trigger('click');
+    await nextTick();
+
+    // The chat rule body renders two Selects (target-id combobox uses
+    // Combobox, not Select; the remaining Selects here are Adaptive and
+    // Selection — but Selection lives on the parent, so within one row the
+    // only Select is Adaptive). Pick by current model-value to be robust.
+    const selects = w.findAllComponents(Select);
+    const adaptive = selects.find(s => s.props('modelValue') === 'auto');
+    expect(adaptive).toBeDefined();
+    await adaptive!.vm.$emit('update:modelValue', 'on');
+    await nextTick();
+
+    const events = w.emitted<[AliasTarget]>('update:modelValue') ?? [];
+    expect(events.length).toBeGreaterThan(0);
+    const latest = events[events.length - 1][0];
+    expect(latest.rules.reasoning?.adaptive).toBe(true);
+    expect(latest.rules.reasoning?.budget_tokens).toBeUndefined();
   });
 });
