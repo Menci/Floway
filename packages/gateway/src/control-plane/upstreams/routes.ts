@@ -248,6 +248,18 @@ export const getUpstreamBlueprint = (c: Context): Response => {
   return c.json(upstreamRecordToFullJson(blueprintUpstreamRecord(kind)));
 };
 
+// Single-record read for the edit page. Returns the FULL record — no
+// secret redaction — because every editor-scoped action posts the record
+// back to a helper endpoint that needs the same credentials the data plane
+// uses (refresh tokens, api keys, etc.). The list endpoint continues to
+// serve the redacted projection for surfaces that don't need secrets.
+export const getUpstream = async (c: AuthedContext<'/:id'>) => {
+  const id = c.req.param('id');
+  const record = await getRepo().upstreams.getById(id);
+  if (!record) return c.json({ error: 'upstream not found' }, 404);
+  return c.json(upstreamRecordToFullJson(record));
+};
+
 export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) => {
   const body = c.req.valid('json');
 

@@ -13,7 +13,7 @@ import { authLoginBody, changeOwnPasswordBody, claudeCodeAuthorizeUrlBody, claud
 import { getSearchConfigRoute, putSearchConfigRoute, testSearchConfigRoute } from './search-config/routes.ts';
 import { searchUsage } from './search-usage/routes.ts';
 import { tokenUsage } from './token-usage/routes.ts';
-import { claudeCodeAuthorizeUrl, claudeCodeImport, claudeCodeProbeQuota, claudeCodeRefreshNow, claudeCodeReimport, claudeCodeSetupTokenImport, claudeCodeSetupTokenReimport, codexAuthorizeUrl, codexImport, codexRefreshNow, codexReimport, copilotAuthPoll, copilotAuthStart, createUpstream, deleteUpstream, fetchModels, getUpstreamBlueprint, listOptionalFlags, listUpstreamModels, listUpstreamOptions, listUpstreams, updateUpstream } from './upstreams/routes.ts';
+import { claudeCodeAuthorizeUrl, claudeCodeImport, claudeCodeProbeQuota, claudeCodeRefreshNow, claudeCodeReimport, claudeCodeSetupTokenImport, claudeCodeSetupTokenReimport, codexAuthorizeUrl, codexImport, codexRefreshNow, codexReimport, copilotAuthPoll, copilotAuthStart, createUpstream, deleteUpstream, fetchModels, getUpstream, getUpstreamBlueprint, listOptionalFlags, listUpstreamModels, listUpstreamOptions, listUpstreams, updateUpstream } from './upstreams/routes.ts';
 import { changeOwnPassword, createUser, deleteUser, listUsers, updateUser } from './users/routes.ts';
 import { type AuthedContext, type AuthVars, userFromContext } from '../middleware/auth.ts';
 import { zValidator } from '../middleware/zod-validator.ts';
@@ -87,6 +87,7 @@ export const controlPlaneRoutes = new Hono<{ Variables: AuthVars }>()
     .post('/upstreams', zValidator('json', createUpstreamBody), createUpstream)
     .get('/upstreams/:id/copilot/quota', copilotQuota)
     .get('/upstreams/:id/models', listUpstreamModels)
+    .get('/upstreams/:id', getUpstream)
     .patch('/upstreams/:id', zValidator('json', updateUpstreamBody), updateUpstream)
     .delete('/upstreams/:id', deleteUpstream)
     // Proxies. Literal `/proxies/backoffs` is registered before any `/:id`
