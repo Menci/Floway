@@ -321,9 +321,14 @@ const upstreamBaseFields = {
 export const createUpstreamBody = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('custom'), ...upstreamBaseFields, config: customConfigSchema }),
   z.object({ kind: z.literal('azure'), ...upstreamBaseFields, config: azureConfigSchema }),
-  z.object({ kind: z.literal('copilot'), ...upstreamBaseFields, config: copilotConfigSchema }),
-  z.object({ kind: z.literal('codex'), ...upstreamBaseFields, config: z.unknown() }),
-  z.object({ kind: z.literal('claude-code'), ...upstreamBaseFields, config: z.unknown() }),
+  // Copilot / Codex / Claude Code carry OAuth-derived credentials that
+  // originate in the create-page's device-login / exchange calls; POST is
+  // the sole write path in the new-shape control plane, so `state` is
+  // accepted here as an opaque payload the per-kind assertXxxUpstreamRecord
+  // narrows once the handler runs.
+  z.object({ kind: z.literal('copilot'), ...upstreamBaseFields, config: z.unknown(), state: z.unknown().optional() }),
+  z.object({ kind: z.literal('codex'), ...upstreamBaseFields, config: z.unknown(), state: z.unknown().optional() }),
+  z.object({ kind: z.literal('claude-code'), ...upstreamBaseFields, config: z.unknown(), state: z.unknown().optional() }),
   z.object({ kind: z.literal('ollama'), ...upstreamBaseFields, config: ollamaConfigSchema }),
 ]);
 

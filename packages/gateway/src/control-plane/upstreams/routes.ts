@@ -264,20 +264,6 @@ export const getUpstream = async (c: AuthedContext<'/:id'>) => {
 export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) => {
   const body = c.req.valid('json');
 
-  // Codex credentials carry an OAuth refresh_token + id_token-derived identity
-  // that this endpoint cannot synthesize. Route the operator to the dedicated
-  // PKCE / import flow instead of letting a `kind: 'codex'` body through
-  // with no credential material.
-  if (body.kind === 'codex') {
-    return c.json({ error: 'Use POST /api/upstreams/codex-import for codex provider' }, 400);
-  }
-  // Same rationale for claude-code: the row carries an OAuth refresh token and
-  // an identity derived from /api/oauth/profile, neither of which is
-  // synthesizable from a plain POST.
-  if (body.kind === 'claude-code') {
-    return c.json({ error: 'Use POST /api/upstreams/claude-code-import for claude-code provider' }, 400);
-  }
-
   const proxyFallbackList = normalizeProxyFallbackList(body.proxy_fallback_list ?? []);
   const fallbackCheck = await validateProxyFallbackList(proxyFallbackList);
   if (!fallbackCheck.ok) return c.json({ error: fallbackCheck.error }, 400);
@@ -288,6 +274,14 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
 
   const existing = await getRepo().upstreams.list();
   const now = new Date().toISOString();
+  // Copilot / Codex / Claude Code carry OAuth-derived server-owned fields
+  // (config.githubToken + config.user for Copilot; config.accounts +
+  // state.accounts for the multi-account providers) that the create page
+  // populated in draft via the corresponding OAuth-exchange helper before
+  // Save. The per-kind assertXxxUpstreamRecord below narrows those opaque
+  // payloads into their typed shape and rejects a POST that skipped the
+  // credential step.
+  const stateFromBody = body.kind === 'copilot' || body.kind === 'codex' || body.kind === 'claude-code' ? body.state ?? null : null;
   const upstream: UpstreamRecord = {
     id: newId(),
     kind: body.kind,
@@ -301,7 +295,7 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
     proxyFallbackList,
     modelPrefix,
     config: body.config,
-    state: null,
+    state: stateFromBody,
   };
 
   const config = normalizeConfig(upstream);
