@@ -859,16 +859,29 @@ export const claudeCodeProbe = async (c: CtxWithJson<typeof claudeCodeProbeBody>
     usageProbeSnapshot: { fetchedAt: Date.parse(probe.fetched_at), data: probe.body },
   };
 
+  // Merge the freshly-fetched snapshot into the caller's draft state so the
+  // response carries a whole state slot the caller can hand to its uniform
+  // patch merger — the wire contract stays symmetric with refresh/exchange
+  // instead of asking the client to hand-merge into accounts[0].
+  const parsed = readClaudeCodeUpstreamState(record.state);
+  const merged: ClaudeCodeUpstreamState = {
+    ...parsed,
+    accounts: parsed.accounts.map((a, i): ClaudeCodeAccountCredential => i === 0 ? { ...a, ...snapshotPatch } : a),
+  };
+
   if (record.id !== '') {
-    // Best-effort CAS persist — same rationale as the legacy handler.
+    // Best-effort CAS persist against the currently-stored state — a losing
+    // race means a concurrent rotation wrote newer state that supersedes
+    // ours, which is fine (the snapshot rides on top of that new state on
+    // the next probe).
     const fresh = await getRepo().upstreams.getById(record.id);
     if (fresh) {
-      const parsed = readClaudeCodeUpstreamState(fresh.state);
-      const next: ClaudeCodeUpstreamState = {
-        ...parsed,
-        accounts: parsed.accounts.map((a, i): ClaudeCodeAccountCredential => i === 0 ? { ...a, ...snapshotPatch } : a),
+      const freshParsed = readClaudeCodeUpstreamState(fresh.state);
+      const freshMerged: ClaudeCodeUpstreamState = {
+        ...freshParsed,
+        accounts: freshParsed.accounts.map((a, i): ClaudeCodeAccountCredential => i === 0 ? { ...a, ...snapshotPatch } : a),
       };
-      await getRepo().upstreams.saveState(record.id, next, { expectedState: fresh.state });
+      await getRepo().upstreams.saveState(record.id, freshMerged, { expectedState: fresh.state });
     }
   }
 
@@ -876,18 +889,17 @@ export const claudeCodeProbe = async (c: CtxWithJson<typeof claudeCodeProbeBody>
   return c.json({
     fetched_at: probe.fetched_at,
     body: probe.body,
-    patch: { state: { accounts: [snapshotPatch] } },
+    patch: { state: merged },
   });
 };
 
-// Unified model catalog fetch replacing both fetch-models (draft
-// preview) and :id/models (saved-record refresh). Always live-fetches
-// on the control plane; when record.id !== '' the request also
-// warms/refreshes the SWR cache via `fetchUpstreamModelsCached` so a
-// subsequent data-plane call picks up the fresh catalog. Custom's
-// response stays the raw upstream row shape (dashboard translates
-// through the draft's endpoints); every other kind returns
-// UpstreamModelConfig-shaped rows.
+// Unified model catalog fetch for both draft preview and saved-record
+// refresh. Always live-fetches on the control plane; when
+// record.id !== '' the request also warms/refreshes the SWR cache via
+// `fetchUpstreamModelsCached` so a subsequent data-plane call picks up
+// the fresh catalog. Custom's response stays the raw upstream row shape
+// (dashboard translates through the draft's endpoints); every other
+// kind returns UpstreamModelConfig-shaped rows.
 const reshapeModelForDashboard = (model: ProviderModel): Record<string, unknown> => ({
   upstreamModelId: providerDataUpstreamModelId(model.providerData) ?? model.id,
   publicModelId: model.id,

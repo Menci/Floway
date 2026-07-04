@@ -162,7 +162,7 @@ const submit = async () => {
 
 // Refresh-now is only meaningful for OAuth credentials (setup-token has
 // no rotation counterpart). The button is hidden for setup-token rows AND
-// for empty-account rows so the operator never sees a doomed affordance.
+// for empty-account rows so a doomed affordance never renders.
 const refreshable = computed(() => {
   const account = props.draft.state?.accounts[0];
   return account?.tokenKind === 'oauth';
@@ -179,11 +179,6 @@ const refreshTokenNow = async () => {
   emit('patched', data.patch);
 };
 
-// Probe returns `{ fetched_at, body, patch }`, where patch's state carries
-// only the freshly-fetched `usageProbeSnapshot` slot. Since the parent's
-// applyPatch does whole-slot replacement on `state`, we merge locally
-// against the current draft.state so the rest of accounts[0] (refresh
-// token, access token, quotaSnapshot, ...) stays intact.
 const refreshQuotaNow = async () => {
   if (probing.value) return;
   if (!props.draft.state || props.draft.state.accounts.length === 0) {
@@ -194,18 +189,13 @@ const refreshQuotaNow = async () => {
   const { data, error } = await callApi<{
     fetched_at: string;
     body: unknown;
-    patch: { state?: { accounts?: Array<{ usageProbeSnapshot?: { fetchedAt: number; data: unknown } }> } };
+    patch: { state?: ClaudeCodeUpstreamState };
   }>(
     () => api.api.upstreams['claude-code'].probe.$post({ json: { record: toRecordEnvelope(props.draft) } }),
   );
   probing.value = false;
   if (error) { emit('error', error.message); return; }
-  const snapshot = data.patch.state?.accounts?.[0]?.usageProbeSnapshot;
-  if (!snapshot) return;
-  const currentState = props.draft.state;
-  const nextAccounts = currentState.accounts.map((acc, i) => i === 0 ? { ...acc, usageProbeSnapshot: snapshot } : acc);
-  const nextState: ClaudeCodeUpstreamState = { ...currentState, accounts: nextAccounts };
-  emit('patched', { state: nextState });
+  if (data.patch.state) emit('patched', { state: data.patch.state });
 };
 </script>
 
