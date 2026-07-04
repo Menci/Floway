@@ -199,7 +199,7 @@ test('old /auth GitHub management routes are removed', async () => {
   assertEquals(order.status, 404);
 });
 
-test('/api/upstreams/copilot/auth/start starts GitHub device flow', async () => {
+test('/api/upstreams/copilot/oauth/device-login/start starts GitHub device flow', async () => {
   const { adminSession } = await setupAppTest();
 
   await withMockedFetch(
@@ -211,14 +211,21 @@ test('/api/upstreams/copilot/auth/start starts GitHub device flow', async () => 
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const response = await requestApp('/api/upstreams/copilot/auth/start', { method: 'POST', headers: { 'x-floway-session': adminSession } });
+      const response = await requestApp('/api/upstreams/copilot/oauth/device-login/start', { method: 'POST', headers: { 'x-floway-session': adminSession } });
       assertEquals(response.status, 200);
       assertEquals(await response.json(), { device_code: 'device', user_code: 'ABCD', verification_uri: 'https://github.com/login/device', expires_in: 900, interval: 5 });
     },
   );
 });
 
-test('/api/upstreams/copilot/auth/poll creates a Copilot upstream row and seeds state from the token exchange', async () => {
+// The blueprint envelope shape the SPA sends when the operator has not yet
+// saved a Copilot row. Matches `blueprintUpstreamRecord('copilot')` on the
+// wire — the exchange endpoint only reads `id`, `kind`, and
+// `proxy_fallback_list` from the envelope, so a minimal literal keeps the
+// test focused on the exchange semantics.
+const copilotBlueprintEnvelope = { id: '', kind: 'copilot', config: null, state: null };
+
+test('/api/upstreams/copilot/oauth/device-login/poll returns a config+state patch and identity from the token exchange', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
@@ -235,47 +242,37 @@ test('/api/upstreams/copilot/auth/poll creates a Copilot upstream row and seeds 
           endpoints: { api: 'https://api.enterprise.githubcopilot.com' },
         });
       }
-      // Warmup probes /models on the per-tier host — return an empty catalog
-      // so the import handler completes without waiting on a real fetch.
-      if (url.hostname === 'api.enterprise.githubcopilot.com') return jsonResponse({ data: [] });
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const response = await requestApp('/api/upstreams/copilot/auth/poll', {
+      const response = await requestApp('/api/upstreams/copilot/oauth/device-login/poll', {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
           'x-floway-session': adminSession,
         },
-        body: JSON.stringify({ device_code: 'device' }),
+        body: JSON.stringify({ record: copilotBlueprintEnvelope, deviceCode: 'device' }),
       });
 
       assertEquals(response.status, 200);
-      const body = (await response.json()) as Record<string, any>;
+      const body = (await response.json()) as { status: string; user: { id: number }; patch: { config: { githubToken: string; user: { id: number } }; state: { copilotToken: { token: string; baseUrl: string } } } };
       assertEquals(body.status, 'complete');
-      assertEquals(/^up_[0-9a-f]{24}$/.test(body.upstream.id), true);
-      assertEquals(body.upstream.id.includes('copilot'), false);
-      assertEquals(body.upstream.kind, 'copilot');
-      assertEquals(body.upstream.config.githubToken, undefined);
-      assertEquals(body.upstream.config.githubTokenSet, true);
-      // The serialized state exposes only the per-tier baseUrl; the bearer
-      // token and its expiry stay server-side.
-      assertEquals(body.upstream.state, { copilotToken: { baseUrl: 'https://api.enterprise.githubcopilot.com' } });
+      assertEquals(body.user.id, githubUser.id);
+      // Create-flow returns the raw patch — no DB write happens here; the
+      // SPA merges it into the draft and calls POST /api/upstreams to save.
+      assertEquals(body.patch.config.githubToken, 'ghu_new');
+      assertEquals(body.patch.config.user.id, githubUser.id);
+      assertEquals(body.patch.state.copilotToken.token, 'ct_new');
+      assertEquals(body.patch.state.copilotToken.baseUrl, 'https://api.enterprise.githubcopilot.com');
     },
   );
 
-  const rows = await repo.upstreams.list();
-  assertEquals(rows.length, 1);
-  assertEquals(rows[0].kind, 'copilot');
-  assertEquals((rows[0].config as Record<string, any>).githubToken, 'ghu_new');
-  assertEquals((rows[0].config as Record<string, any>).accountType, undefined);
-  assertEquals((rows[0].config as Record<string, any>).user.id, 777);
-  const persistedState = rows[0].state as { copilotToken: { token: string; baseUrl: string } | null } | null;
-  assertEquals(persistedState?.copilotToken?.token, 'ct_new');
-  assertEquals(persistedState?.copilotToken?.baseUrl, 'https://api.enterprise.githubcopilot.com');
+  // No DB write during create-flow poll — persistence is the caller's
+  // subsequent POST /api/upstreams.
+  assertEquals(await repo.upstreams.list(), []);
 });
 
-test('/api/upstreams/copilot/auth/poll rejects failed GitHub user lookup without saving an upstream', async () => {
+test('/api/upstreams/copilot/oauth/device-login/poll rejects failed GitHub user lookup with 502 and no side-effect', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
@@ -287,13 +284,13 @@ test('/api/upstreams/copilot/auth/poll rejects failed GitHub user lookup without
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const response = await requestApp('/api/upstreams/copilot/auth/poll', {
+      const response = await requestApp('/api/upstreams/copilot/oauth/device-login/poll', {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
           'x-floway-session': adminSession,
         },
-        body: JSON.stringify({ device_code: 'device' }),
+        body: JSON.stringify({ record: copilotBlueprintEnvelope, deviceCode: 'device' }),
       });
 
       assertEquals(response.status, 502);
@@ -306,7 +303,7 @@ test('/api/upstreams/copilot/auth/poll rejects failed GitHub user lookup without
   assertEquals(await repo.upstreams.list(), []);
 });
 
-test('/api/upstreams/copilot/auth/poll rejects a failed token exchange without saving an upstream', async () => {
+test('/api/upstreams/copilot/oauth/device-login/poll rejects a failed token exchange with 502 and no side-effect', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
@@ -319,13 +316,13 @@ test('/api/upstreams/copilot/auth/poll rejects a failed token exchange without s
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const response = await requestApp('/api/upstreams/copilot/auth/poll', {
+      const response = await requestApp('/api/upstreams/copilot/oauth/device-login/poll', {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
           'x-floway-session': adminSession,
         },
-        body: JSON.stringify({ device_code: 'device' }),
+        body: JSON.stringify({ record: copilotBlueprintEnvelope, deviceCode: 'device' }),
       });
 
       assertEquals(response.status, 502);
@@ -338,7 +335,7 @@ test('/api/upstreams/copilot/auth/poll rejects a failed token exchange without s
   assertEquals(await repo.upstreams.list(), []);
 });
 
-test('/api/upstreams/copilot/auth/poll rejects a token-exchange response missing endpoints.api without saving an upstream', async () => {
+test('/api/upstreams/copilot/oauth/device-login/poll rejects a token-exchange response missing endpoints.api with 502 and no side-effect', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
@@ -353,24 +350,25 @@ test('/api/upstreams/copilot/auth/poll rejects a token-exchange response missing
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const response = await requestApp('/api/upstreams/copilot/auth/poll', {
+      const response = await requestApp('/api/upstreams/copilot/oauth/device-login/poll', {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
           'x-floway-session': adminSession,
         },
-        body: JSON.stringify({ device_code: 'device' }),
+        body: JSON.stringify({ record: copilotBlueprintEnvelope, deviceCode: 'device' }),
       });
 
       assertEquals(response.status, 502);
-      assertEquals((await response.json()) as Record<string, unknown>, { error: 'Copilot token exchange response missing endpoints.api' });
+      const body = (await response.json()) as { error: string };
+      assertStringIncludes(body.error, 'endpoints.api');
     },
   );
 
   assertEquals(await repo.upstreams.list(), []);
 });
 
-test('/api/upstreams/copilot/auth/poll updates an existing row for the same GitHub user', async () => {
+test('/api/upstreams/copilot/oauth/device-login/poll targeted-patches config+state on the row identified by record.id', async () => {
   const { repo, adminSession, githubAccount } = await setupAppTest({
     githubAccount: {
       token: 'ghu_old',
@@ -394,25 +392,31 @@ test('/api/upstreams/copilot/auth/poll updates an existing row for the same GitH
           endpoints: { api: 'https://api.business.githubcopilot.com' },
         });
       }
+      // Warmup probes /models on the per-tier host — return an empty catalog
+      // so the post-persist warm completes without waiting on a real fetch.
       if (url.hostname === 'api.business.githubcopilot.com') return jsonResponse({ data: [] });
       throw new Error(`Unhandled fetch ${request.url}`);
     },
     async () => {
-      const response = await requestApp('/api/upstreams/copilot/auth/poll', {
+      const response = await requestApp('/api/upstreams/copilot/oauth/device-login/poll', {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
           'x-floway-session': adminSession,
         },
-        body: JSON.stringify({ device_code: 'device' }),
+        body: JSON.stringify({ record: { id: 'up_existing_copilot', kind: 'copilot', config: null, state: null }, deviceCode: 'device' }),
       });
       assertEquals(response.status, 200);
-      assertEquals(((await response.json()) as Record<string, any>).upstream.id, 'up_existing_copilot');
+      const body = (await response.json()) as { status: string; patch: { config: { githubToken: string } } };
+      assertEquals(body.status, 'complete');
+      assertEquals(body.patch.config.githubToken, 'ghu_refreshed');
     },
   );
 
   const rows = await repo.upstreams.list();
   assertEquals(rows.length, 1);
+  // The row-metadata fields (id, name, sortOrder) survive; only config +
+  // state are overwritten by the credential patch.
   assertEquals(rows[0].id, 'up_existing_copilot');
   assertEquals(rows[0].name, 'Pinned Copilot');
   assertEquals(rows[0].sortOrder, 9);
