@@ -537,6 +537,14 @@ export const claudeCodeProbeBody = z.object({
   record: upstreamRecordEnvelope,
 });
 
+// Unified live-model listing for both create-time preview and edit-time
+// refresh. Custom returns the raw upstream row (dashboard translates
+// through the draft's endpoints); every other kind returns the fully
+// projected UpstreamModelConfig catalog.
+export const listModelsBody = z.object({
+  record: upstreamRecordEnvelope,
+});
+
 // --- claude-code import / authorize-url / refresh ---
 //
 // Same shape rationale as the codex routes above: the generic create / update

@@ -15,7 +15,7 @@ import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getCurrentColo } from '../../runtime/runtime-info.ts';
 import { shortId } from '../../shared/short-id.ts';
 import { fetchGitHubUser, pollGitHubDeviceFlow, startGitHubDeviceFlow } from '../auth/github-device-flow.ts';
-import type { claudeCodeAuthorizeUrlBody, claudeCodeImportBody, claudeCodeOauthAuthorizeUrlBody, claudeCodeOauthExchangeBody, claudeCodeOauthRefreshBody, claudeCodeProbeBody, claudeCodeProbeQuotaBody, claudeCodeRefreshNowBody, claudeCodeReimportBody, claudeCodeSetupTokenAuthorizeUrlBody, claudeCodeSetupTokenExchangeBody, claudeCodeSetupTokenImportBody, claudeCodeSetupTokenReimportBody, codexAuthorizeUrlBody, codexImportBody, codexOauthAuthorizeUrlBody, codexOauthExchangeBody, codexOauthRefreshBody, codexRefreshNowBody, codexReimportBody, copilotAuthPollBody, copilotOauthDeviceLoginPollBody, copilotQuotaBody, createUpstreamBody, fetchModelsBody, updateUpstreamBody } from '../schemas.ts';
+import type { claudeCodeAuthorizeUrlBody, claudeCodeImportBody, claudeCodeOauthAuthorizeUrlBody, claudeCodeOauthExchangeBody, claudeCodeOauthRefreshBody, claudeCodeProbeBody, claudeCodeProbeQuotaBody, claudeCodeRefreshNowBody, claudeCodeReimportBody, claudeCodeSetupTokenAuthorizeUrlBody, claudeCodeSetupTokenExchangeBody, claudeCodeSetupTokenImportBody, claudeCodeSetupTokenReimportBody, codexAuthorizeUrlBody, codexImportBody, codexOauthAuthorizeUrlBody, codexOauthExchangeBody, codexOauthRefreshBody, codexRefreshNowBody, codexReimportBody, copilotAuthPollBody, copilotOauthDeviceLoginPollBody, copilotQuotaBody, createUpstreamBody, fetchModelsBody, listModelsBody, updateUpstreamBody } from '../schemas.ts';
 import { copilotConfigField, type CopilotUpstreamConfig, isRecord } from '../shared/field-validators.ts';
 import {
   directFetcher,
@@ -25,6 +25,7 @@ import {
   ALL_PROVIDER_KINDS,
   type Fetcher,
   type ModelPrefixConfig,
+  type ProviderModel,
   type ProxyFallbackEntry,
   type UpstreamProviderKind,
   type UpstreamRecord,
@@ -1825,4 +1826,91 @@ export const claudeCodeProbe = async (c: CtxWithJson<typeof claudeCodeProbeBody>
     body: probe.body,
     patch: { state: { accounts: [snapshotPatch] } },
   });
+};
+
+// Unified model catalog fetch replacing both fetch-models (draft
+// preview) and :id/models (saved-record refresh). Always live-fetches
+// on the control plane; when record.id !== '' the request also
+// warms/refreshes the SWR cache via `fetchUpstreamModelsCached` so a
+// subsequent data-plane call picks up the fresh catalog. Custom's
+// response stays the raw upstream row shape (dashboard translates
+// through the draft's endpoints); every other kind returns
+// UpstreamModelConfig-shaped rows.
+const reshapeModelForDashboard = (model: ProviderModel): Record<string, unknown> => ({
+  upstreamModelId: providerDataUpstreamModelId(model.providerData) ?? model.id,
+  publicModelId: model.id,
+  kind: model.kind,
+  endpoints: model.endpoints,
+  ...(model.display_name !== undefined ? { display_name: model.display_name } : {}),
+  ...(Object.keys(model.limits).length > 0 ? { limits: model.limits } : {}),
+  ...(model.cost ? { cost: model.cost } : {}),
+  ...(model.chat ? { chat: model.chat } : {}),
+});
+
+export const listModels = async (c: CtxWithJson<typeof listModelsBody>) => {
+  const { record } = c.req.valid('json');
+  if (!(ALL_PROVIDER_KINDS as readonly string[]).includes(record.kind)) {
+    return c.json({ error: { message: `Invalid kind: ${record.kind}`, type: 'invalid_request_error' } }, 400);
+  }
+  const kind = record.kind as UpstreamProviderKind;
+
+  const scheduler = backgroundSchedulerFromContext(c);
+  const now = new Date().toISOString();
+  const synthRecord: UpstreamRecord = {
+    id: record.id || 'draft',
+    kind,
+    name: 'draft',
+    enabled: true,
+    sortOrder: 0,
+    createdAt: now,
+    updatedAt: now,
+    flagOverrides: {},
+    disabledPublicModelIds: [],
+    proxyFallbackList: (record.proxy_fallback_list ?? []) as ProxyFallbackEntry[],
+    modelPrefix: null,
+    config: record.config,
+    state: record.state,
+  };
+
+  let fetcher: Fetcher;
+  try {
+    fetcher = await resolveControlPlaneFetcher({
+      override: record.proxy_fallback_list,
+      upstreamId: record.id || undefined,
+      currentColo: getCurrentColo(c.req.raw),
+    });
+  } catch (err) {
+    return c.json({ error: errorMessage(err) }, 400);
+  }
+
+  try {
+    if (kind === 'custom') {
+      const assertedConfig = assertCustomUpstreamRecord(synthRecord).config;
+      const result = await fetchCustomModels(assertedConfig, fetcher);
+      return c.json(result);
+    }
+    if (kind === 'ollama') {
+      assertOllamaUpstreamRecord(synthRecord);
+      const instance = createOllamaProvider(synthRecord);
+      const models = await instance.instance.getProvidedModels(fetcher);
+      return c.json({ data: models.map(reshapeModelForDashboard) });
+    }
+    // Copilot / codex / claude-code / azure — use the provider factory.
+    // Force through the SWR cache when the record is persisted so the
+    // side-effect refresh keeps the data-plane cache in step; otherwise
+    // live-fetch without any caching.
+    const instance = await createProviderInstance(synthRecord);
+    const models = record.id !== ''
+      ? await fetchUpstreamModelsCached(instance, { scheduler, fetcher, force: true })
+      : await instance.instance.getProvidedModels(fetcher);
+    return c.json({ data: models.map(reshapeModelForDashboard) });
+  } catch (e) {
+    if (e instanceof ProviderModelsUnavailableError) {
+      return c.json({ error: { message: MODEL_LISTING_FAILURE_MESSAGE, type: 'api_error' } }, 502);
+    }
+    if (e instanceof Error && /Malformed .* upstream config/.test(e.message)) {
+      return c.json({ error: errorMessage(e) }, 400);
+    }
+    throw e;
+  }
 };
