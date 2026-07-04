@@ -67,16 +67,17 @@ const seedProviderDrafts = () => {
       baseUrl: cfg.baseUrl,
       authStyle: cfg.authStyle,
       endpoints: { ...cfg.endpoints },
-      // The apiKey slot is intentionally blank on mount even when the
-      // record carries a real one: the same "leave blank to keep"
-      // affordance stays consistent between edit and create, and the
-      // stored secret only leaves this browser tab if they retype it.
       apiKey: '',
       pathOverrides: seedPathOverrides(cfg.pathOverrides),
       modelsFetch: cfg.modelsFetch
         ? { enabled: cfg.modelsFetch.enabled, endpoint: cfg.modelsFetch.endpoint ?? '' }
         : { enabled: true, endpoint: '' },
-      models: cfg.models ? (JSON.parse(JSON.stringify(cfg.models)) as UpstreamModelConfig[]) : [],
+      // JSON round-trip clones the models array: `structuredClone` refuses
+      // Vue's reactive Proxy over `ref().value`, and `toRaw` only unwraps the
+      // top layer. Sibling code that clones props (line 49) uses
+      // `structuredClone` because props aren't proxied — different call sites,
+      // different constraints.
+      models: JSON.parse(JSON.stringify(cfg.models)) as UpstreamModelConfig[],
     };
   } else if (draft.value.kind === 'azure') {
     const cfg: AzureUpstreamConfig = draft.value.config;
@@ -94,7 +95,7 @@ const seedProviderDrafts = () => {
     ollamaDraft.value = {
       baseUrl: cfg.baseUrl,
       apiKey: '',
-      models: cfg.models ? (JSON.parse(JSON.stringify(cfg.models)) as UpstreamModelConfig[]) : [],
+      models: JSON.parse(JSON.stringify(cfg.models)) as UpstreamModelConfig[],
     };
   }
 };
@@ -247,8 +248,8 @@ const refreshCachedModels = async () => {
 };
 
 // Kick off an initial list-models for saved rows so the ModelsPanel mounts
-// pre-populated — mirrors the loader-side pre-fetch we retired. Runs once
-// on mount; failures surface through `upstreamModelsError` in the header.
+// pre-populated. Runs once on mount; failures surface through
+// `upstreamModelsError` in the header.
 const primeSavedModels = async () => {
   if (isCreate.value || draft.value.kind === 'azure') return;
   const { data, error } = await callApi<{ data: UpstreamModelConfig[] }>(
@@ -287,14 +288,14 @@ const buildAzureConfig = () => {
   return config;
 };
 
-function buildOllamaConfig() {
+const buildOllamaConfig = () => {
   const config: Record<string, unknown> = {
     baseUrl: ollamaDraft.value.baseUrl.trim(),
     models: ollamaDraft.value.models,
   };
   if (ollamaDraft.value.apiKey.trim()) config.apiKey = ollamaDraft.value.apiKey.trim();
   return config;
-}
+};
 
 // Editable providers (custom/azure/ollama) rebuild the config from the
 // per-provider form draft; OAuth providers hand back the credential slice

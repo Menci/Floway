@@ -13,10 +13,9 @@ import { Button } from '@floway-dev/ui';
 type CodexUpstreamRecord = Extract<UpstreamRecord, { kind: 'codex' }>;
 
 const props = defineProps<{
-  // The draft record flows into every action endpoint under the record-
-  // body contract; the panel never reaches for a separate props.mode
-  // discriminator — `draft.id === ''` and the presence of `accounts[0]`
-  // decide what the panel renders on its own.
+  // Every action endpoint takes the draft record as its body. The panel
+  // derives its render state from the draft itself — `draft.id === ''`
+  // signals create-state, `accounts[0]` signals a credential is present.
   draft: CodexUpstreamRecord;
 }>();
 
@@ -127,7 +126,6 @@ const submit = async () => {
 };
 
 const refreshTokenNow = async () => {
-  if (isCreate.value) return;
   refreshing.value = true;
   const { data, error } = await callApi<{ patch: { config?: unknown; state?: unknown } }>(
     () => api.api.upstreams.codex.oauth.refresh.$post({ json: { record: toRecordEnvelope(props.draft) } }),

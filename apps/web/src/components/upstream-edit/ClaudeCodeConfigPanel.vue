@@ -169,7 +169,7 @@ const refreshable = computed(() => {
 });
 
 const refreshTokenNow = async () => {
-  if (refreshing.value || isCreate.value) return;
+  if (refreshing.value) return;
   refreshing.value = true;
   const { data, error } = await callApi<{ patch: { state?: unknown } }>(
     () => api.api.upstreams['claude-code'].oauth.refresh.$post({ json: { record: toRecordEnvelope(props.draft) } }),

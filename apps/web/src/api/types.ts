@@ -153,8 +153,7 @@ export interface OllamaUpstreamConfig {
 
 // Redacted projection sits on the list endpoint; the full projection on
 // `:id` and `blueprint` carries the actual `refresh_token` and the full
-// `accessToken` (`token` present). Both shapes coexist here so a single
-// state array can carry either.
+// `accessToken` (`token` present).
 export interface CodexAccountCredentialState {
   chatgptAccountId: string;
   state: 'active' | 'session_terminated' | 'refresh_failed';
@@ -212,8 +211,7 @@ export interface ClaudeCodeUpstreamConfig {
   accounts: ClaudeCodeAccountIdentity[];
 }
 
-// Full state carries `token` on the access token; redacted drops it. Kept
-// optional so both shapes are the same type.
+// Full state carries `token` on the access token; redacted drops it.
 export interface ClaudeCodeAccessTokenSummary {
   token?: string;
   expiresAt: number;

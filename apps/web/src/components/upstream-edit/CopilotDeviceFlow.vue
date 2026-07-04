@@ -50,7 +50,7 @@ const pollOnce = async (intervalSec: number) => {
       }),
     );
     if (unmounted) return;
-    if (err || !data) { scheduleNextPoll(intervalSec); return; } // transient
+    if (err) { scheduleNextPoll(intervalSec); return; } // transient
     if (data.status === 'complete') {
       stopPolling();
       emit('patched', data.patch);
@@ -88,7 +88,6 @@ const start = async () => {
     error.value = err.message;
     return;
   }
-  if (!data) return;
   flow.value = data;
   scheduleNextPoll(data.interval);
 };

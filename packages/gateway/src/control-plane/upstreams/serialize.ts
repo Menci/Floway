@@ -207,10 +207,10 @@ export const upstreamRecordToFullJson = (upstream: UpstreamRecord): SerializedUp
 // Shape-complete UpstreamRecord blank for `kind`, never persisted. Serves the
 // GET /api/upstreams/blueprint endpoint so the create page consumes the same
 // SerializedUpstreamRecord shape edit does — the front-end draft variable is
-// uniform across create and edit, and no fake write-path assertion has to be
-// satisfied because this record never enters a write path. Field values are
-// true blanks (empty strings, empty arrays), matching what an operator sees
-// before typing anything or completing any OAuth flow.
+// uniform across create and edit, and no write-path invariants have to be
+// satisfied. Field values are true blanks (empty strings, empty arrays),
+// matching what an editor sees before typing anything or completing any
+// OAuth flow.
 export const blueprintUpstreamRecord = (kind: UpstreamProviderKind): UpstreamRecord => {
   const base = {
     id: '',

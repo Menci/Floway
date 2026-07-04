@@ -164,10 +164,6 @@ const normalizeModelPrefixField = (input: unknown): ValidationResult<ModelPrefix
   }
 };
 
-const newId = (): string => shortId('up');
-
-const nextSortOrder = (upstreams: readonly UpstreamRecord[]): number => upstreams.reduce((acc, upstream) => Math.max(acc, upstream.sortOrder), -1) + 1;
-
 // Synchronously populate the SWR models cache for a freshly-saved upstream
 // so the dashboard's next navigation lands on a populated row. Upstream
 // fetch failures are persisted to the row's `lastError` by runFetch and
@@ -273,11 +269,11 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
   // credential step.
   const stateFromBody = body.kind === 'copilot' || body.kind === 'codex' || body.kind === 'claude-code' ? body.state ?? null : null;
   const upstream: UpstreamRecord = {
-    id: newId(),
+    id: shortId('up'),
     kind: body.kind,
     name: body.name,
     enabled: body.enabled ?? true,
-    sortOrder: body.sort_order ?? nextSortOrder(existing),
+    sortOrder: body.sort_order ?? existing.reduce((acc, u) => Math.max(acc, u.sortOrder), -1) + 1,
     createdAt: now,
     updatedAt: now,
     flagOverrides: body.flag_overrides ?? {},
@@ -644,11 +640,10 @@ export const codexOauthRefresh = async (c: CtxWithJson<typeof codexOauthRefreshB
 };
 
 // Claude Code OAuth + setup-token + probe endpoints under the unified
-// record-body contract. Same authorize/token/probe plumbing as the
-// legacy claudeCode* handlers, wrapped so create and edit share one
-// endpoint each: the caller posts the draft record; when
-// `record.id !== ''` the produced patch is targeted-persisted, otherwise
-// only returned for the front-end to merge into its draft.
+// record-body contract. Create and edit share one endpoint each: the
+// caller posts the draft record; when `record.id !== ''` the produced
+// patch is targeted-persisted, otherwise only returned for the
+// front-end to merge into its draft.
 
 export const claudeCodeOauthAuthorizeUrl = async (c: CtxWithJson<typeof claudeCodeOauthAuthorizeUrlBody>) => {
   const { challenge, state } = c.req.valid('json');

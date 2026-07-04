@@ -172,7 +172,7 @@ onBeforeUnmount(() => floorObserver?.disconnect());
         />
       </section>
 
-      <section v-else-if="kind === 'copilot' && draft.kind === 'copilot'" class="shrink-0">
+      <section v-else-if="draft.kind === 'copilot'" class="shrink-0">
         <CopilotConfigPanel
           :draft="draft"
           @patched="p => $emit('patched', p)"
@@ -180,7 +180,7 @@ onBeforeUnmount(() => floorObserver?.disconnect());
         />
       </section>
 
-      <section v-else-if="kind === 'codex' && draft.kind === 'codex'" class="shrink-0">
+      <section v-else-if="draft.kind === 'codex'" class="shrink-0">
         <CodexConfigPanel
           :draft="draft"
           @patched="p => $emit('patched', p)"
@@ -188,7 +188,7 @@ onBeforeUnmount(() => floorObserver?.disconnect());
         />
       </section>
 
-      <section v-else-if="kind === 'claude-code' && draft.kind === 'claude-code'" class="shrink-0">
+      <section v-else-if="draft.kind === 'claude-code'" class="shrink-0">
         <ClaudeCodeConfigPanel
           :draft="draft"
           @patched="p => $emit('patched', p)"

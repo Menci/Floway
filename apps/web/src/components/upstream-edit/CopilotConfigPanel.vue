@@ -10,7 +10,7 @@ type CopilotUpstreamRecord = Extract<UpstreamRecord, { kind: 'copilot' }>;
 // exchange). Once the device-flow completion emits a patch, the parent
 // merges it into draft.config.githubToken and this component re-renders
 // into the info view without any local state.
-const props = defineProps<{
+defineProps<{
   draft: CopilotUpstreamRecord;
 }>();
 
@@ -18,13 +18,11 @@ defineEmits<{
   patched: [patch: { config?: unknown; state?: unknown }];
   error: [message: string];
 }>();
-
-const hasCredential = () => Boolean(props.draft.config.githubToken);
 </script>
 
 <template>
   <CopilotInfo
-    v-if="hasCredential()"
+    v-if="draft.config.githubToken"
     :draft="draft"
     @error="m => $emit('error', m)"
   />

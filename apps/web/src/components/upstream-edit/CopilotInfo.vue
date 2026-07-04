@@ -20,9 +20,7 @@ defineEmits<{
 const accountTypeDisplay = computed(() => copilotAccountTypeDisplay(props.draft.state));
 
 const api = useApi();
-// Quota is a pure query — no draft mutation and no persistence. The
-// dashboard renders whatever the upstream reports in place; a fresh
-// snapshot requires clicking Refresh.
+// Quota is a pure query — no draft mutation and no persistence.
 const quota = ref<CopilotQuotaSnapshot | null>(null);
 const quotaError = ref<string | null>(null);
 const loadingQuota = ref(false);

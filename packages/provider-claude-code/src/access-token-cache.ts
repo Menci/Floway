@@ -46,7 +46,7 @@ export interface EnsureClaudeCodeAccessTokenArgs {
   // always call the OAuth refresh endpoint. The dashboard's Refresh button
   // sets this so the operator sees the row's tokens actually rotate; the
   // data plane leaves it false so a live request served from cache stays
-  // cheap. Cross-isolate coalescing (`inFlightEnsures`) still applies —
+  // cheap. Within-isolate coalescing (`inFlightEnsures`) still applies —
   // concurrent force calls collapse to one refresh, as do concurrent
   // force/non-force pairs.
   force?: boolean;

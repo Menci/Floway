@@ -298,24 +298,17 @@ const upstreamBaseFields = {
 };
 
 // Create accepts a discriminated union on `kind` for per-provider config
-// validation. Copilot upstreams normally originate from the device-flow poll
-// endpoint, but POST also accepts them for the import flow. `enabled` and
-// `sort_order` are optional — the handler defaults them to `true` and
-// `nextSortOrder()` respectively when omitted.
-//
-// `codex` and `claude-code` are listed here so the handler can return the
-// canonical "use POST /api/upstreams/<kind>-import" 400 instead of the
-// cryptic zod "invalid discriminator value" message. The `config` slot is
-// `unknown()` because the real config is derived from the OAuth flow, not
-// from anything posted against this endpoint.
+// validation. `enabled` and `sort_order` are optional — the handler
+// defaults them to `true` and to one past the current max sort order
+// when omitted.
 export const createUpstreamBody = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('custom'), ...upstreamBaseFields, config: customConfigSchema }),
   z.object({ kind: z.literal('azure'), ...upstreamBaseFields, config: azureConfigSchema }),
-  // Copilot / Codex / Claude Code carry OAuth-derived credentials that
-  // originate in the create-page's device-login / exchange calls; POST is
-  // the sole write path in the new-shape control plane, so `state` is
-  // accepted here as an opaque payload the per-kind assertXxxUpstreamRecord
-  // narrows once the handler runs.
+  // Copilot / Codex / Claude Code carry OAuth-derived credentials that the
+  // create page populates via the corresponding OAuth-exchange helper
+  // before Save. `state` is accepted here as an opaque payload; the
+  // per-kind assertXxxUpstreamRecord in the handler narrows it once the
+  // request lands.
   z.object({ kind: z.literal('copilot'), ...upstreamBaseFields, config: z.unknown(), state: z.unknown().optional() }),
   z.object({ kind: z.literal('codex'), ...upstreamBaseFields, config: z.unknown(), state: z.unknown().optional() }),
   z.object({ kind: z.literal('claude-code'), ...upstreamBaseFields, config: z.unknown(), state: z.unknown().optional() }),
@@ -367,11 +360,6 @@ export const copilotQuotaBody = z.object({
   record: upstreamRecordEnvelope,
 });
 
-// --- codex import / authorize-url / refresh ---
-//
-// The control plane refuses `kind: 'codex'` on the generic create / update
-// upstream endpoints; Codex credentials enter only through these dedicated
-// routes so the id_token parsing lives in one place.
 // --- codex OAuth (record-body contract) ---
 //
 // PKCE state is fully SPA-held: the dashboard mints `{verifier, challenge,
@@ -379,13 +367,6 @@ export const copilotQuotaBody = z.object({
 // sessionStorage, and posts `challenge + state` here so the server can stamp
 // them into the upstream's authorize URL. The server never sees the
 // verifier until the callback comes back as `{code, verifier}` on exchange.
-
-// Shared by claude-code OAuth + Setup-Token callbacks; codex defines its own callback inline because it omits `state`.
-const oauthCallbackSchema = z.object({
-  code: z.string().min(1),
-  verifier: z.string().min(1),
-  state: z.string().min(1),
-});
 
 export const codexOauthAuthorizeUrlBody = z.object({
   record: upstreamRecordEnvelope,
@@ -410,6 +391,13 @@ export const codexOauthRefreshBody = z.object({
 });
 
 // --- claude-code OAuth + setup-token + probe (record-body contract) ---
+
+// Shared by claude-code OAuth + Setup-Token callbacks.
+const oauthCallbackSchema = z.object({
+  code: z.string().min(1),
+  verifier: z.string().min(1),
+  state: z.string().min(1),
+});
 
 export const claudeCodeOauthAuthorizeUrlBody = z.object({
   record: upstreamRecordEnvelope,
@@ -452,8 +440,6 @@ export const claudeCodeProbeBody = z.object({
 export const listModelsBody = z.object({
   record: upstreamRecordEnvelope,
 });
-
-// --- claude-code OAuth + setup-token + probe (record-body contract) ---
 
 // --- proxies ---
 //
