@@ -308,17 +308,17 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '
   }
 
   // Codex `config` (id_token-derived identity) and credential state are
-  // owned by the dedicated re-import / refresh endpoints. Generic PATCH still
-  // adjusts the surrounding row metadata (name, enabled, sort_order, flag
-  // overrides, disabled model ids) but never the credential payload.
+  // owned by the dedicated OAuth exchange / refresh endpoints. Generic PATCH
+  // still adjusts the surrounding row metadata (name, enabled, sort_order,
+  // flag overrides, disabled model ids) but never the credential payload.
   if (existing.kind === 'codex' && body.config !== undefined) {
-    return c.json({ error: 'Use POST /api/upstreams/:id/codex-reimport to update codex credentials' }, 400);
+    return c.json({ error: 'Use POST /api/upstreams/codex/oauth/exchange to update codex credentials' }, 400);
   }
   // Same gate for claude-code: identity comes from /api/oauth/profile at
-  // import time and the credential state belongs to refresh-now / re-import,
+  // exchange time and the credential state belongs to OAuth refresh / exchange,
   // not a generic field patch.
   if (existing.kind === 'claude-code' && body.config !== undefined) {
-    return c.json({ error: 'Use POST /api/upstreams/:id/claude-code-reimport to update claude-code credentials' }, 400);
+    return c.json({ error: 'Use POST /api/upstreams/claude-code/oauth/exchange to update claude-code credentials' }, 400);
   }
 
   let next: UpstreamRecord = { ...existing, updatedAt: new Date().toISOString() };
