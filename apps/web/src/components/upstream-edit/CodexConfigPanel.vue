@@ -7,7 +7,7 @@ import CodexImportTabs from './CodexImportTabs.vue';
 import { callApi, useApi } from '../../api/client.ts';
 import type { ProxyFallbackEntry, UpstreamRecord } from '../../api/types.ts';
 import { clearPkce, deriveChallenge, generatePkce, parseCallbackPaste, peekStashedPkce, pkceStorageKey, recallPkce, stashPkce } from '../../lib/pkce.ts';
-import { Button, Spinner } from '@floway-dev/ui';
+import { Button } from '@floway-dev/ui';
 
 type CodexUpstreamRecord = Extract<UpstreamRecord, { kind: 'codex' }>;
 
@@ -154,8 +154,7 @@ const refreshTokenNow = async () => {
       <CodexAccountCard :record="record" />
       <div class="flex flex-wrap items-center gap-2">
         <Button :loading="refreshing" @click="refreshTokenNow">
-          <Spinner v-if="refreshing" class="size-3.5" />
-          <i v-else class="i-lucide-refresh-cw size-3.5" />
+          <i v-if="!refreshing" class="i-lucide-refresh-cw size-3.5" />
           Refresh token now
         </Button>
         <Button variant="secondary" @click="reimportOpen = !reimportOpen">
@@ -183,7 +182,6 @@ const refreshTokenNow = async () => {
       <p v-if="pkceError" class="text-xs text-accent-rose">{{ pkceError }}</p>
       <div class="flex justify-end">
         <Button :loading="submitting" @click="submit">
-          <Spinner v-if="submitting" class="size-3.5" />
           {{ mode === 'create' ? 'Import' : 'Re-import' }}
         </Button>
       </div>

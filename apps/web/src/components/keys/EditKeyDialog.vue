@@ -8,7 +8,7 @@ import type { UpstreamOption } from '../../composables/useUpstreamOptions.ts';
 import { useAuthStore } from '../../stores/auth.ts';
 import { parseDuration } from '../../utils/parseDuration.ts';
 import UpstreamPicker, { type UpstreamPickerValue } from '../upstreams/UpstreamPicker.vue';
-import { Button, Dialog, Input, Select, Spinner } from '@floway-dev/ui';
+import { Button, Dialog, Input, Select } from '@floway-dev/ui';
 
 const open = defineModel<boolean>('open');
 
@@ -184,7 +184,6 @@ const save = async () => {
       <footer class="flex items-center justify-end gap-2">
         <Button variant="secondary" :disabled="saving" @click="open = false">Cancel</Button>
         <Button :loading="saving" @click="save">
-          <Spinner v-if="saving" class="size-3.5" />
           Save changes
         </Button>
       </footer>

@@ -18,7 +18,7 @@ import { computed } from 'vue';
 import type { ClaudeCodeAccountCredentialSummary, ClaudeCodeAccountIdentity, ClaudeCodeQuotaWindow, UpstreamRecord } from '../../api/types.ts';
 import { formatClaudeCodeSubscriptionType } from '../../lib/claude-code-format.ts';
 import { providerSwatchClass } from '../upstreams/provider-meta.ts';
-import { Badge, Button, Spinner } from '@floway-dev/ui';
+import { Badge, Button } from '@floway-dev/ui';
 
 type ClaudeCodeUpstreamRecord = Extract<UpstreamRecord, { kind: 'claude-code' }>;
 
@@ -285,8 +285,7 @@ const probeFetchedAtIso = computed<string | null>(() => {
       <p v-if="!hasAnyWindow" class="text-xs text-gray-500">No quota snapshot yet. Click Refresh to call <code class="font-mono text-[11px]">/api/oauth/usage</code> or wait for the next Claude Code call to populate headers.</p>
       <p v-else class="text-[11px] uppercase tracking-wide text-gray-500">Rate-limit windows</p>
       <Button size="sm" variant="secondary" :loading="probing" :disabled="probing" @click="emit('refresh-quota')">
-        <Spinner v-if="probing" class="size-3.5" />
-        <i v-else class="i-lucide-refresh-cw size-3.5" />
+        <i v-if="!probing" class="i-lucide-refresh-cw size-3.5" />
         Refresh quota
       </Button>
     </div>

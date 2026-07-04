@@ -6,7 +6,7 @@ import { callApi, useApi } from '../../api/client.ts';
 import type { UpstreamOption } from '../../composables/useUpstreamOptions.ts';
 import SecretInput from '../shared/SecretInput.vue';
 import UpstreamPicker, { type UpstreamPickerValue } from '../upstreams/UpstreamPicker.vue';
-import { Button, Dialog, Input, Spinner, Switch } from '@floway-dev/ui';
+import { Button, Dialog, Input, Switch } from '@floway-dev/ui';
 
 const open = defineModel<boolean>('open');
 
@@ -164,7 +164,6 @@ const submit = async () => {
       <footer class="flex items-center justify-end gap-2">
         <Button variant="secondary" type="button" :disabled="saving" @click="open = false">Cancel</Button>
         <Button :loading="saving" type="submit">
-          <Spinner v-if="saving" class="size-3.5" />
           {{ mode === 'create' ? 'Create user' : 'Save changes' }}
         </Button>
       </footer>

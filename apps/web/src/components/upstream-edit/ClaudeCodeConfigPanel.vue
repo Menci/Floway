@@ -7,7 +7,7 @@ import ClaudeCodeImportTabs from './ClaudeCodeImportTabs.vue';
 import { callApi, useApi } from '../../api/client.ts';
 import type { ProxyFallbackEntry, UpstreamRecord } from '../../api/types.ts';
 import { clearPkce, deriveChallenge, generatePkce, parseCallbackPaste, peekStashedPkce, pkceStorageKey, recallPkce, stashPkce } from '../../lib/pkce.ts';
-import { Button, Spinner } from '@floway-dev/ui';
+import { Button } from '@floway-dev/ui';
 
 type ClaudeCodeUpstreamRecord = Extract<UpstreamRecord, { kind: 'claude-code' }>;
 
@@ -253,8 +253,7 @@ const refreshQuotaNow = async () => {
       <ClaudeCodeAccountCard :record="record" :probing="probing" @refresh-quota="refreshQuotaNow" />
       <div class="flex flex-wrap items-center gap-2">
         <Button v-if="refreshable" :loading="refreshing" @click="refreshTokenNow">
-          <Spinner v-if="refreshing" class="size-3.5" />
-          <i v-else class="i-lucide-refresh-cw size-3.5" />
+          <i v-if="!refreshing" class="i-lucide-refresh-cw size-3.5" />
           Refresh token now
         </Button>
         <Button variant="secondary" @click="reimportOpen = !reimportOpen">
@@ -286,7 +285,6 @@ const refreshQuotaNow = async () => {
       />
       <div class="flex justify-end">
         <Button :loading="submitting" @click="submit">
-          <Spinner v-if="submitting" class="size-3.5" />
           {{ mode === 'create' ? 'Import' : 'Re-import' }}
         </Button>
       </div>
