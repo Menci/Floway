@@ -181,16 +181,6 @@ const azureConfigSchema = z.object({
   models: z.array(upstreamModelSchema).min(1, 'models must be a non-empty array'),
 });
 
-const copilotConfigSchema = z.object({
-  githubToken: z.string().min(1),
-  user: z.object({
-    login: z.string(),
-    avatar_url: z.string(),
-    name: z.string().nullable(),
-    id: z.number(),
-  }),
-});
-
 const ollamaConfigSchema = z.object({
   baseUrl: z.string().min(1),
   // Optional: required against ollama.com, typically absent for a private
@@ -353,25 +343,6 @@ export const updateUpstreamBody = z.object({
   config: z.unknown().optional(),
 });
 
-// Draft /models browse: accepts an in-progress upstream config so callers can
-// fetch the upstream's live model list before saving. `id` is present in
-// edit mode so the handler can substitute the stored secret when the secret
-// is left blank ("keep the stored secret"). Discriminated by `kind` so
-// each provider's draft preview surfaces a typed catalog.
-export const fetchModelsBody = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('custom'), id: z.string().optional(), config: customConfigSchema }),
-  z.object({ kind: z.literal('ollama'), id: z.string().optional(), config: ollamaConfigSchema }),
-]);
-
-// --- copilot device flow ---
-
-export const copilotAuthPollBody = z.object({
-  device_code: z.string().min(1),
-  // Edit-form override routing every GitHub-side call through the
-  // operator's in-progress chain. See proxy-resolution.ts.
-  proxy_fallback_list: proxyFallbackListSchema.optional(),
-});
-
 // Shared envelope for the record-body action contract used by every
 // action endpoint (OAuth exchange/refresh, quota, probe, list-models,
 // etc.). The client posts its full draft record; the server reads only
@@ -401,88 +372,20 @@ export const copilotQuotaBody = z.object({
 // The control plane refuses `kind: 'codex'` on the generic create / update
 // upstream endpoints; Codex credentials enter only through these dedicated
 // routes so the id_token parsing lives in one place.
+// --- codex OAuth (record-body contract) ---
 //
 // PKCE state is fully SPA-held: the dashboard mints `{verifier, challenge,
 // state}` in the browser via Web Crypto, stores `{verifier, state}` in
 // sessionStorage, and posts `challenge + state` here so the server can stamp
 // them into the upstream's authorize URL. The server never sees the
-// verifier until the callback comes back as `{code, verifier}` on import.
+// verifier until the callback comes back as `{code, verifier}` on exchange.
 
-export const codexAuthorizeUrlBody = z.object({
-  challenge: z.string().min(1),
-  state: z.string().min(1),
-});
-
-// Path A — operator pastes `~/.codex/auth.json` verbatim. Path B — operator
-// supplies the SPA-validated OAuth callback as `{code, verifier}`. The two
-// paths are mutually exclusive; the refine below catches the both-or-neither
-// case before the handler runs. State is not threaded through here:
-// auth.openai.com rejects state on the token-exchange endpoint with 400
-// unknown_parameter (live-probed); the SPA still validates state before
-// sending the callback so CSRF protection is intact, but the gateway has
-// no reason to receive it.
 // Shared by claude-code OAuth + Setup-Token callbacks; codex defines its own callback inline because it omits `state`.
 const oauthCallbackSchema = z.object({
   code: z.string().min(1),
   verifier: z.string().min(1),
   state: z.string().min(1),
 });
-
-const codexCredentialFields = {
-  auth_json: z.string().min(1).optional(),
-  callback: z.object({
-    code: z.string().min(1),
-    verifier: z.string().min(1),
-  }).optional(),
-  // Edit-form override carried through the import dialog. The PKCE token
-  // exchange runs before the upstream record exists, so re-import uses the
-  // persisted row's list as a fallback; on first-time import only the
-  // override path is available.
-  proxy_fallback_list: proxyFallbackListSchema.optional(),
-};
-
-// Both `codexImportBody.name` and `codexReimportBody.name` are optional. On
-// import, the server synthesizes a default name from the id_token-derived
-// identity (matching how copilot's device flow auto-names rows from the
-// GitHub login); the operator can rename later from the edit page. On
-// re-import, the existing row already has a name, so omitting it is the
-// common case.
-export const codexImportBody = z.object({
-  name: z.string().min(1).optional(),
-  sort_order: z.number().int().optional(),
-  ...codexCredentialFields,
-  // Pre-save proxy override: a brand-new upstream has no persisted chain, so
-  // the OAuth bootstrap goes direct by default. When the operator has
-  // already picked a fallback list in the in-flight form, send it here so
-  // the bootstrap routes through that chain AND so the same chain is
-  // persisted on the new row for subsequent data-plane calls.
-  proxy_fallback_list: proxyFallbackListSchema.optional(),
-}).refine(
-  b => (b.auth_json !== undefined) !== (b.callback !== undefined),
-  { message: 'Provide exactly one of auth_json or callback' },
-);
-
-// `sort_order` is omitted because re-import must not re-rank the row.
-export const codexReimportBody = z.object({
-  name: z.string().min(1).optional(),
-  ...codexCredentialFields,
-  // Edit-time override: same rationale as codexImportBody — the operator may
-  // be changing the proxy chain in the same edit that re-imports the
-  // credential. When present, route the bootstrap through the override and
-  // overwrite the persisted list with it.
-  proxy_fallback_list: proxyFallbackListSchema.optional(),
-}).refine(
-  b => (b.auth_json !== undefined) !== (b.callback !== undefined),
-  { message: 'Provide exactly one of auth_json or callback' },
-);
-
-export const codexRefreshNowBody = z.object({
-  // Edit-form override; absent falls back to the persisted row's list. See
-  // proxy-resolution.ts.
-  proxy_fallback_list: proxyFallbackListSchema.optional(),
-});
-
-// --- codex OAuth (record-body contract) ---
 
 export const codexOauthAuthorizeUrlBody = z.object({
   record: upstreamRecordEnvelope,
@@ -550,85 +453,7 @@ export const listModelsBody = z.object({
   record: upstreamRecordEnvelope,
 });
 
-// --- claude-code import / authorize-url / refresh ---
-//
-// Same shape rationale as the codex routes above: the generic create / update
-// upstream endpoints reject `kind: 'claude-code'` and dedicated
-// authorize-url + import + re-import endpoints own the OAuth handoff so
-// credential parsing lives in one place. PKCE state is SPA-held (see codex
-// section above for the architecture). The single authorize-url endpoint
-// covers both the full-OAuth and Setup-Token scopes via the `kind`
-// discriminator; the matching import endpoint per kind consumes the SPA-
-// provided verifier. Every claude-code body below accepts the same in-flight
-// `proxy_fallback_list` edit-form override with semantics documented in
-// proxy-resolution.ts.
-
-export const claudeCodeAuthorizeUrlBody = z.object({
-  challenge: z.string().min(1),
-  state: z.string().min(1),
-  kind: z.enum(['oauth', 'setup-token']),
-});
-
-// Path A — operator pastes `~/.claude/.credentials.json` verbatim. Path B —
-// operator supplies the SPA-validated OAuth callback as `{code, verifier,
-// state}`. The two paths are mutually exclusive; the refine below catches
-// the both-or-neither case before the handler runs.
-const claudeCodeCredentialFields = {
-  credentials_json: z.string().min(1).optional(),
-  callback: oauthCallbackSchema.optional(),
-};
-
-export const claudeCodeImportBody = z.object({
-  name: z.string().min(1).optional(),
-  sort_order: z.number().int().optional(),
-  ...claudeCodeCredentialFields,
-  proxy_fallback_list: proxyFallbackListSchema.optional(),
-}).refine(
-  b => (b.credentials_json !== undefined) !== (b.callback !== undefined),
-  { message: 'Provide exactly one of credentials_json or callback' },
-);
-
-export const claudeCodeReimportBody = z.object({
-  name: z.string().min(1).optional(),
-  ...claudeCodeCredentialFields,
-  proxy_fallback_list: proxyFallbackListSchema.optional(),
-}).refine(
-  b => (b.credentials_json !== undefined) !== (b.callback !== undefined),
-  { message: 'Provide exactly one of credentials_json or callback' },
-);
-
-export const claudeCodeRefreshNowBody = z.object({
-  proxy_fallback_list: proxyFallbackListSchema.optional(),
-});
-
-// Same in-flight override slot as the refresh route: a probe fired from an
-// unsaved edit form should reach Anthropic through the proxy chain the
-// operator is currently editing, not the persisted one.
-export const claudeCodeProbeQuotaBody = z.object({
-  proxy_fallback_list: proxyFallbackListSchema.optional(),
-});
-
-// --- claude-code Setup-Token import / re-import ---
-//
-// The Setup-Token flow uses the same authorize host / client_id /
-// redirect_uri / token endpoint as the regular OAuth flow but narrows the
-// scope to `user:inference` (selected via the shared authorize-url
-// endpoint's `kind: 'setup-token'`). The resulting credential has no
-// refresh_token, so the import body has no credentials_json path
-// (Anthropic's CLI never persists a setup token).
-
-export const claudeCodeSetupTokenImportBody = z.object({
-  name: z.string().min(1).optional(),
-  sort_order: z.number().int().optional(),
-  callback: oauthCallbackSchema,
-  proxy_fallback_list: proxyFallbackListSchema.optional(),
-});
-
-export const claudeCodeSetupTokenReimportBody = z.object({
-  name: z.string().min(1).optional(),
-  callback: oauthCallbackSchema,
-  proxy_fallback_list: proxyFallbackListSchema.optional(),
-});
+// --- claude-code OAuth + setup-token + probe (record-body contract) ---
 
 // --- proxies ---
 //
