@@ -10,8 +10,7 @@ type CopilotUpstreamRecord = Extract<UpstreamRecord, { kind: 'copilot' }>;
 
 const props = defineProps<{
   // The draft record is forwarded verbatim into the poll body so the
-  // GitHub-side egress honors the in-progress proxy chain the operator
-  // is editing.
+  // GitHub-side egress honors the in-progress proxy chain being edited.
   draft: CopilotUpstreamRecord;
 }>();
 
@@ -25,46 +24,55 @@ const flow = ref<DeviceFlowStart | null>(null);
 const starting = ref(false);
 const polling = ref(false);
 const error = ref<string | null>(null);
+// Recursive-setTimeout scheduling (not setInterval) so a poll that outruns
+// its cadence cannot fire a second concurrent request; `inFlight` gates
+// re-entry, and `unmounted` guards against a late resolve emitting `patched`
+// after the component tore down.
 let pollTimer: number | null = null;
+let inFlight = false;
+let unmounted = false;
 
 const stopPolling = () => {
   if (pollTimer !== null) {
-    window.clearInterval(pollTimer);
+    window.clearTimeout(pollTimer);
     pollTimer = null;
   }
   polling.value = false;
 };
 
-const pollOnce = async () => {
-  if (!flow.value) return;
-  const { data, error: err } = await callApi<DeviceFlowPoll>(
-    () => api.api.upstreams.copilot.oauth['device-login'].poll.$post({
-      json: { record: toRecordEnvelope(props.draft), deviceCode: flow.value!.device_code },
-    }),
-  );
-  if (err) return; // Transient — keep polling.
-  if (!data) return;
-  if (data.status === 'complete') {
-    stopPolling();
-    emit('patched', data.patch);
-    return;
+const pollOnce = async (intervalSec: number) => {
+  if (!flow.value || inFlight) return;
+  inFlight = true;
+  try {
+    const { data, error: err } = await callApi<DeviceFlowPoll>(
+      () => api.api.upstreams.copilot.oauth['device-login'].poll.$post({
+        json: { record: toRecordEnvelope(props.draft), deviceCode: flow.value!.device_code },
+      }),
+    );
+    if (unmounted) return;
+    if (err || !data) { scheduleNextPoll(intervalSec); return; } // transient
+    if (data.status === 'complete') {
+      stopPolling();
+      emit('patched', data.patch);
+      return;
+    }
+    if (data.status === 'slow_down') { scheduleNextPoll(data.interval + 1); return; }
+    if (data.status === 'error') {
+      error.value = data.error;
+      stopPolling();
+      return;
+    }
+    // status === 'pending': re-queue at the same cadence.
+    scheduleNextPoll(intervalSec);
+  } finally {
+    inFlight = false;
   }
-  if (data.status === 'slow_down') {
-    scheduleNextPoll(data.interval + 1);
-    return;
-  }
-  if (data.status === 'error') {
-    error.value = data.error;
-    stopPolling();
-    return;
-  }
-  // status === 'pending': the setInterval fires again on the same cadence.
 };
 
 const scheduleNextPoll = (intervalSec: number) => {
-  stopPolling();
+  if (unmounted) return;
   polling.value = true;
-  pollTimer = window.setInterval(() => { void pollOnce(); }, intervalSec * 1000);
+  pollTimer = window.setTimeout(() => { void pollOnce(intervalSec); }, intervalSec * 1000);
 };
 
 const start = async () => {
@@ -85,7 +93,10 @@ const start = async () => {
   scheduleNextPoll(data.interval);
 };
 
-onUnmounted(stopPolling);
+onUnmounted(() => {
+  unmounted = true;
+  stopPolling();
+});
 </script>
 
 <template>
