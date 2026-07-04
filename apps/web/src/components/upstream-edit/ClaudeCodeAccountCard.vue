@@ -9,7 +9,7 @@
 //
 // When both are present, the newer `fetchedAt` wins for the 5h/7d window
 // chips: the probe is the official CC `/status` source and is fresher right
-// after the operator hits Refresh; the header-derived snapshot is fresher
+// after a Refresh click; the header-derived snapshot is fresher
 // after any real model call. We never merge fields from the two — they shape
 // the same windows differently and a half-and-half view would mislead.
 
@@ -24,10 +24,10 @@ type ClaudeCodeUpstreamRecord = Extract<UpstreamRecord, { kind: 'claude-code' }>
 
 const props = defineProps<{
   record: ClaudeCodeUpstreamRecord;
-  // True while the parent's probe-quota request is in flight; binds the
-  // Refresh button's loading state. The card never gates Refresh on the
-  // tokenKind axis — `/api/oauth/usage` answers under inference-only
-  // scopes too, so setup-token credentials can probe.
+  // True while the parent's probe request is in flight; binds the Refresh
+  // button's loading state. The card never gates Refresh on the tokenKind
+  // axis — `/api/oauth/usage` answers under inference-only scopes too, so
+  // setup-token credentials can probe.
   probing: boolean;
 }>();
 
@@ -215,7 +215,7 @@ const accessTokenExpiry = computed(() => {
 // Hide the `out_of_credits` reason because it's the steady state pair of
 // `overage.status: rejected` — every plan account without purchased credits
 // reports it. Any other value (a code we haven't seen, a future Anthropic
-// signal) surfaces verbatim so operators see it.
+// signal) surfaces verbatim in place.
 const unexpectedDisabledReason = computed<string | null>(() => {
   const reason = quota.value?.overage?.disabledReason;
   if (!reason || reason === 'out_of_credits') return null;

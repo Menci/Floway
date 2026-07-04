@@ -21,8 +21,8 @@ const accountTypeDisplay = computed(() => copilotAccountTypeDisplay(props.draft.
 
 const api = useApi();
 // Quota is a pure query — no draft mutation and no persistence. The
-// dashboard renders whatever the upstream reports in place; if the
-// operator wants a fresh snapshot they click Refresh.
+// dashboard renders whatever the upstream reports in place; a fresh
+// snapshot requires clicking Refresh.
 const quota = ref<CopilotQuotaSnapshot | null>(null);
 const quotaError = ref<string | null>(null);
 const loadingQuota = ref(false);
@@ -40,11 +40,6 @@ const loadQuota = async () => {
   }
   quota.value = data ?? null;
 };
-
-// The token is fetched lazily on first click rather than on mount so we
-// don't burn a GitHub round trip for every editor visit; the operator's
-// mental model is "the number I see is the number I asked for."
-void loadQuota;
 
 const premium = computed(() => quota.value?.quota_snapshots?.premium_interactions);
 

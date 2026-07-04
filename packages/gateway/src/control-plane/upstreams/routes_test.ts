@@ -651,7 +651,6 @@ const fakeIdToken = (claims: Record<string, unknown>): string => {
 };
 
 const codexAuthJsonImport = (overrides: Record<string, unknown> = {}) => ({
-  name: 'ChatGPT Codex',
   auth_json: JSON.stringify({
     tokens: {
       access_token: 'at_test',

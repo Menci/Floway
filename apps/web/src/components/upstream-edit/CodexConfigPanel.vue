@@ -50,8 +50,8 @@ const pkceError = ref<string | null>(null);
 // On re-mount (Vite HMR, router navigation back to this page) the
 // component sees a null `pkce` ref but an existing stash. We resume
 // from the stash — derive the challenge from the stored verifier and
-// rebuild the URL with the same state — so the operator's already-
-// opened consent screen stays valid.
+// rebuild the URL with the same state — so the already-opened
+// consent screen stays valid.
 const prepareAuthorize = async () => {
   if (pkce.value || pkceLoading.value) return;
   pkceLoading.value = true;
@@ -117,8 +117,8 @@ const submit = async () => {
   if (error) { emit('error', error.message); return; }
   // Burn the in-flight stash only on success — the OAuth code is single-use
   // upstream, so a successful exchange invalidates it anyway. On failure the
-  // stash survives so the operator can re-paste / retry without losing the
-  // verifier+state pair their authorize URL was built against.
+  // stash survives so a re-paste / retry works without losing the
+  // verifier+state pair the authorize URL was built against.
   clearPkce(storageKey);
   emit('patched', data.patch);
   importDraft.value = { activeTab: 'auth_json', authJsonText: '', callbackUrlText: '' };

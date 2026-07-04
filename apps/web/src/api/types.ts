@@ -62,8 +62,8 @@ export interface CustomModelsFetch {
   endpoint?: string;
 }
 
-// Raw model entries returned by POST /api/upstreams/fetch-models; permissive
-// superset over the shapes the backend accepts.
+// Raw model entries returned by POST /api/upstreams/list-models for custom
+// upstreams; permissive superset over the shapes the backend accepts.
 export interface CustomRawModel {
   id: string;
   display_name?: string;

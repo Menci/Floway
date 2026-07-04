@@ -52,9 +52,10 @@ const isCreate = computed(() => draft.value.id === '');
 
 // Provider-specific form-UX drafts. These mirror the record's config but
 // hold form-only state — most importantly, `apiKey` starts as '' on
-// mount even when the record carries a real value, so the operator sees
-// the "type to overwrite; empty means keep-existing" behavior everywhere.
-// They project back into draft.config via buildCustomConfig / … at save.
+// mount even when the record carries a real value, so the "type to
+// overwrite; empty means keep-existing" behavior stays consistent
+// everywhere. They project back into draft.config via
+// buildCustomConfig / … at save.
 const customDraft = ref<CustomDraft>(blankCustomDraft());
 const azureDraft = ref<AzureDraft>(blankAzureDraft());
 const ollamaDraft = ref<OllamaDraft>(blankOllamaDraft());
@@ -67,8 +68,8 @@ const seedProviderDrafts = () => {
       authStyle: cfg.authStyle,
       endpoints: { ...cfg.endpoints },
       // The apiKey slot is intentionally blank on mount even when the
-      // record carries a real one: the operator sees the same
-      // "leave blank to keep" affordance on edit as on create, and the
+      // record carries a real one: the same "leave blank to keep"
+      // affordance stays consistent between edit and create, and the
       // stored secret only leaves this browser tab if they retype it.
       apiKey: '',
       pathOverrides: seedPathOverrides(cfg.pathOverrides),
@@ -128,7 +129,7 @@ const upstreamModelsError = ref<string | null>(null);
 
 // Create-mode draft preview state for the inline "Fetch" button on the
 // Custom and Ollama panels: `POST /api/upstreams/list-models` returns the
-// unsaved config's catalog so the operator can pick rows before saving.
+// unsaved config's catalog so rows can be picked before saving.
 // `fetchedRaw` carries the Custom raw rows (translated through the draft's
 // endpoints by `customAutoModelsFromDraft`); `fetchedOllamaModels` carries
 // the Ollama rows the backend already projected — no further translation
@@ -176,7 +177,7 @@ const listDraftModels = async () => {
   fetchError.value = null;
   try {
     // Merge the current form drafts into the payload so the preview
-    // reflects the operator's in-flight edits (baseUrl, apiKey, models)
+    // reflects the in-flight edits (baseUrl, apiKey, models)
     // rather than the record's persisted config.
     const config = draft.value.kind === 'custom'
       ? { ...buildCustomConfigCore(customDraft.value), models: customDraft.value.models }
