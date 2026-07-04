@@ -13,6 +13,13 @@ import type { createAliasBody, updateAliasBody } from '../schemas.ts';
 const nextSortOrder = (existing: readonly ModelAliasRecord[]): number =>
   existing.reduce((acc, record) => Math.max(acc, record.sortOrder), -1) + 1;
 
+// Both D1 and node:sqlite raise a UNIQUE-constraint error naming the column;
+// the repo layer's alias INSERT / rename UPDATE lets that bubble up so the
+// route can translate a lost read-then-write race into a structured 409.
+const isAliasNameCollision = (err: unknown): boolean =>
+  err instanceof Error &&
+  err.message.includes('UNIQUE constraint failed: model_aliases.name');
+
 export const listAliases = async (c: Context) => {
   const records = await getRepo().modelAliases.list();
   return c.json(records.map(recordToWire));
@@ -22,11 +29,6 @@ export const createAlias = async (c: CtxWithJson<typeof createAliasBody>) => {
   const body = c.req.valid('json');
   const repo = getRepo();
 
-  const collision = await repo.modelAliases.getByName(body.name);
-  if (collision) {
-    return c.json({ error: `Alias ${body.name} already exists` }, 409);
-  }
-
   const existing = await repo.modelAliases.list();
   const now = new Date().toISOString();
   const record = wireToRecord(body, {
@@ -34,7 +36,12 @@ export const createAlias = async (c: CtxWithJson<typeof createAliasBody>) => {
     createdAt: now,
     updatedAt: now,
   });
-  await repo.modelAliases.insert(record);
+  try {
+    await repo.modelAliases.insert(record);
+  } catch (err) {
+    if (isAliasNameCollision(err)) return c.json({ error: `Alias ${body.name} already exists` }, 409);
+    throw err;
+  }
   return c.json(recordToWire(record), 201);
 };
 
@@ -46,11 +53,6 @@ export const updateAlias = async (c: CtxWithJson<typeof updateAliasBody>) => {
   const existing = await repo.modelAliases.getByName(oldName);
   if (!existing) return c.json({ error: 'Alias not found' }, 404);
 
-  if (body.name !== oldName) {
-    const collision = await repo.modelAliases.getByName(body.name);
-    if (collision) return c.json({ error: `Alias ${body.name} already exists` }, 409);
-  }
-
   const next = wireToRecord(body, {
     // Preserve the original sortOrder unless the client explicitly overrides
     // it; createdAt belongs to the row's first-seen instant and never moves.
@@ -58,7 +60,12 @@ export const updateAlias = async (c: CtxWithJson<typeof updateAliasBody>) => {
     createdAt: existing.createdAt,
     updatedAt: new Date().toISOString(),
   });
-  await repo.modelAliases.update(oldName, next);
+  try {
+    await repo.modelAliases.update(oldName, next);
+  } catch (err) {
+    if (isAliasNameCollision(err)) return c.json({ error: `Alias ${body.name} already exists` }, 409);
+    throw err;
+  }
   return c.json(recordToWire(next));
 };
 

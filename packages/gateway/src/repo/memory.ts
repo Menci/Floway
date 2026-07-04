@@ -907,7 +907,7 @@ class MemoryModelAliasesRepo implements ModelAliasesRepo {
   }
 
   insert(record: ModelAliasRecord): Promise<void> {
-    if (this.store.has(record.name)) throw new Error(`alias ${record.name} already exists`);
+    if (this.store.has(record.name)) throw new Error('UNIQUE constraint failed: model_aliases.name');
     this.store.set(record.name, cloneModelAliasRecord(record));
     return Promise.resolve();
   }
@@ -915,7 +915,7 @@ class MemoryModelAliasesRepo implements ModelAliasesRepo {
   update(oldName: string, record: ModelAliasRecord): Promise<void> {
     if (!this.store.has(oldName)) throw new Error(`alias ${oldName} not found`);
     if (oldName !== record.name && this.store.has(record.name)) {
-      throw new Error(`alias ${record.name} already exists`);
+      throw new Error('UNIQUE constraint failed: model_aliases.name');
     }
     this.store.delete(oldName);
     this.store.set(record.name, cloneModelAliasRecord(record));

@@ -294,13 +294,17 @@ export interface ModelAliasRecord {
 export interface ModelAliasesRepo {
   list(): Promise<ModelAliasRecord[]>;
   getByName(name: string): Promise<ModelAliasRecord | null>;
-  // Throws on primary-key collision so the route layer can surface a 409.
+  // Throws on primary-key collision. The thrown Error's message contains
+  // `UNIQUE constraint failed: model_aliases.name` — SQLite's own PK
+  // violation string — so the route layer can match on the message and
+  // surface a 409 without knowing which repo backend fired.
   insert(record: ModelAliasRecord): Promise<void>;
   // Replaces the row keyed by `oldName`. When oldName === record.name the
   // call is a plain UPDATE; when they differ this is a rename, executed as
   // INSERT(new) + DELETE(old) inside one transaction so dependent reads
   // stay consistent. Throws when `oldName` does not exist, or when the
-  // rename target already collides with a different row.
+  // rename target already collides with a different row (same
+  // `UNIQUE constraint failed: model_aliases.name` message as `insert`).
   update(oldName: string, record: ModelAliasRecord): Promise<void>;
   delete(name: string): Promise<boolean>;
   deleteAll(): Promise<void>;
