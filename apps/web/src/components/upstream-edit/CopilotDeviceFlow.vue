@@ -35,7 +35,7 @@ const stopPolling = () => {
   polling.value = false;
 };
 
-const pollOnce = async (currentInterval: number) => {
+const pollOnce = async () => {
   if (!flow.value) return;
   const { data, error: err } = await callApi<DeviceFlowPoll>(
     () => api.api.upstreams.copilot.oauth['device-login'].poll.$post({
@@ -58,14 +58,13 @@ const pollOnce = async (currentInterval: number) => {
     stopPolling();
     return;
   }
-  // status === 'pending': keep the current interval.
-  void currentInterval;
+  // status === 'pending': the setInterval fires again on the same cadence.
 };
 
 const scheduleNextPoll = (intervalSec: number) => {
   stopPolling();
   polling.value = true;
-  pollTimer = window.setInterval(() => { void pollOnce(intervalSec); }, intervalSec * 1000);
+  pollTimer = window.setInterval(() => { void pollOnce(); }, intervalSec * 1000);
 };
 
 const start = async () => {
