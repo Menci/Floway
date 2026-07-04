@@ -318,6 +318,20 @@ const save = async () => {
   if (!trimmedName) { saveError.value = 'Name is required'; return; }
   if (modelPrefixInvalid.value) { saveError.value = 'Model name prefix is invalid'; return; }
   if (modelsPanelInvalid.value) { saveError.value = 'One or more models have invalid configuration — check model reasoning settings'; return; }
+  // OAuth providers can only persist an initial record once the wizard has
+  // populated the credential slice; without it the backend's per-kind
+  // asserter rejects the POST with an opaque error. Fail early so the
+  // dashboard surfaces the user-friendly variant.
+  if (isCreate.value) {
+    if (draft.value.kind === 'copilot' && !draft.value.config.githubToken) {
+      saveError.value = 'Complete the GitHub device flow before saving.';
+      return;
+    }
+    if ((draft.value.kind === 'codex' || draft.value.kind === 'claude-code') && draft.value.config.accounts.length === 0) {
+      saveError.value = 'Import a credential before saving.';
+      return;
+    }
+  }
 
   saving.value = true;
   try {

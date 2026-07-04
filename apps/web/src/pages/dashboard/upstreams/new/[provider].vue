@@ -6,7 +6,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { callApi, useApi } from '../../../../api/client.ts';
 import type { UpstreamProviderKind, UpstreamRecord } from '../../../../api/types.ts';
 import UpstreamEditPage from '../../../../components/upstream-edit/UpstreamEditPage.vue';
-import { PROVIDER_META } from '../../../../components/upstreams/provider-meta.ts';
+import { PROVIDER_META, providerMeta } from '../../../../components/upstreams/provider-meta.ts';
 import { useProxiesStore } from '../../../../composables/useProxies.ts';
 import { useRuntimeInfo } from '../../../../composables/useRuntimeInfo.ts';
 import { useUpstreamsStore } from '../../../../composables/useUpstreams.ts';
@@ -15,6 +15,10 @@ import { useUpstreamsStore } from '../../../../composables/useUpstreams.ts';
 // same shape edit consumes, so `UpstreamEditPage` treats create as an edit
 // of an unpersisted record. `sort_order: 0` is a placeholder; the editor
 // resolves the real next slot off the store at save time.
+//
+// The blueprint's `enabled: false` and empty `name` are wire-level blanks;
+// the create page seeds them with UI-friendly defaults so a fresh row is
+// enabled and named per the provider before the operator types anything.
 export const useNewUpstreamData = defineBasicLoader('/dashboard/upstreams/new/[provider]', async route => {
   const api = useApi();
   const store = useUpstreamsStore();
@@ -31,8 +35,13 @@ export const useNewUpstreamData = defineBasicLoader('/dashboard/upstreams/new/[p
     useRuntimeInfo().load(),
   ]);
 
+  let initialRecord: UpstreamRecord | null = null;
+  if (blueprintRes.data && kind !== null) {
+    initialRecord = { ...blueprintRes.data, name: providerMeta(kind).defaultName, enabled: true };
+  }
+
   return {
-    initialRecord: blueprintRes.error ? null : blueprintRes.data ?? null,
+    initialRecord,
     flags: store.flagCatalog.value!,
   };
 });
