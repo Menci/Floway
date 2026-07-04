@@ -3,9 +3,10 @@
 // this component stays a presentation-only paste area.
 
 import type { CodexAuthorizeUrlResult, CodexImportTab } from './codex-import-types.ts';
-import { Button, Spinner, Tabs, Textarea } from '@floway-dev/ui';
+import PkceAuthorizePanel from './PkceAuthorizePanel.vue';
+import { Tabs, Textarea } from '@floway-dev/ui';
 
-const props = defineProps<{
+defineProps<{
   pkce: CodexAuthorizeUrlResult | null;
   pkceLoading: boolean;
 }>();
@@ -18,11 +19,6 @@ const importTabs = [
   { value: 'auth_json', label: 'Paste auth.json' },
   { value: 'callback', label: 'Paste login URL' },
 ] as const;
-
-const copyAuthorizeUrl = async () => {
-  if (!props.pkce) return;
-  try { await navigator.clipboard.writeText(props.pkce.authorize_url); } catch { /* clipboard is best-effort; the visible link still works */ }
-};
 </script>
 
 <template>
@@ -43,35 +39,22 @@ const copyAuthorizeUrl = async () => {
     </template>
 
     <template #callback>
-      <div class="space-y-3">
-        <p class="text-xs text-gray-500">
-          Open the authorize URL in a browser signed in to ChatGPT, complete the consent screen,
-          then paste the URL the browser was redirected to (it starts with
-          <code class="rounded bg-surface-700 px-1 py-0.5 text-[11px] text-gray-300">http://localhost:1455/auth/callback</code>).
-          Pasting just the <code class="rounded bg-surface-700 px-1 py-0.5 text-[11px] text-gray-300">?code=&hellip;&amp;state=&hellip;</code> fragment is also accepted.
-        </p>
-
-        <div v-if="pkceLoading" class="flex items-center gap-2 text-sm text-gray-400">
-          <Spinner class="size-4" /> Preparing PKCE flow…
-        </div>
-
-        <div v-else-if="pkce" class="space-y-2">
-          <p class="text-xs font-medium text-gray-500">Authorize URL</p>
-          <a :href="pkce.authorize_url" :title="pkce.authorize_url" target="_blank" rel="noopener" class="block truncate text-xs text-accent-cyan hover:underline">
-            {{ pkce.authorize_url }}
-          </a>
-          <Button size="sm" variant="secondary" @click="copyAuthorizeUrl">
-            <i class="i-lucide-clipboard size-3.5" /> Copy URL
-          </Button>
-        </div>
-
-        <Textarea
-          v-model="callbackUrlText"
-          :rows="3"
-          monospace
-          placeholder="http://localhost:1455/auth/callback?code=...&state=..."
-        />
-      </div>
+      <PkceAuthorizePanel
+        v-model:callback-url-text="callbackUrlText"
+        :pkce="pkce"
+        :pkce-loading="pkceLoading"
+        :pkce-error="null"
+        placeholder="http://localhost:1455/auth/callback?code=...&state=..."
+      >
+        <template #info>
+          <p class="text-xs text-gray-500">
+            Open the authorize URL in a browser signed in to ChatGPT, complete the consent screen,
+            then paste the URL the browser was redirected to (it starts with
+            <code class="rounded bg-surface-700 px-1 py-0.5 text-[11px] text-gray-300">http://localhost:1455/auth/callback</code>).
+            Pasting just the <code class="rounded bg-surface-700 px-1 py-0.5 text-[11px] text-gray-300">?code=&hellip;&amp;state=&hellip;</code> fragment is also accepted.
+          </p>
+        </template>
+      </PkceAuthorizePanel>
     </template>
   </Tabs>
 </template>
