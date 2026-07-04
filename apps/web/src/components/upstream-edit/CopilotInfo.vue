@@ -2,30 +2,35 @@
 import { computed, ref } from 'vue';
 
 import { callApi, useApi } from '../../api/client.ts';
-import type { CopilotQuotaSnapshot, CopilotUpstreamConfig, CopilotUpstreamState } from '../../api/types.ts';
+import type { CopilotQuotaSnapshot, UpstreamRecord } from '../../api/types.ts';
 import { copilotAccountTypeDisplay } from '../../utils/copilot.ts';
 import { Card } from '@floway-dev/ui';
 
+type CopilotUpstreamRecord = Extract<UpstreamRecord, { kind: 'copilot' }>;
+
 const props = defineProps<{
-  upstreamId: string;
-  config: CopilotUpstreamConfig;
-  state: CopilotUpstreamState | null;
-  initialQuota?: CopilotQuotaSnapshot | null;
-  initialQuotaError?: string | null;
+  draft: CopilotUpstreamRecord;
 }>();
 
-const accountTypeDisplay = computed(() => copilotAccountTypeDisplay(props.state));
+defineEmits<{
+  error: [message: string];
+}>();
+
+const accountTypeDisplay = computed(() => copilotAccountTypeDisplay(props.draft.state));
 
 const api = useApi();
-const quota = ref<CopilotQuotaSnapshot | null>(props.initialQuota ?? null);
-const quotaError = ref<string | null>(props.initialQuotaError ?? null);
+// Quota is a pure query — no draft mutation and no persistence. The
+// dashboard renders whatever the upstream reports in place; if the
+// operator wants a fresh snapshot they click Refresh.
+const quota = ref<CopilotQuotaSnapshot | null>(null);
+const quotaError = ref<string | null>(null);
 const loadingQuota = ref(false);
 
 const loadQuota = async () => {
   loadingQuota.value = true;
   quotaError.value = null;
   const { data, error } = await callApi<CopilotQuotaSnapshot>(
-    () => api.api.upstreams[':id'].copilot.quota.$get({ param: { id: props.upstreamId } }),
+    () => api.api.upstreams.copilot.quota.$post({ json: { record: props.draft } }),
   );
   loadingQuota.value = false;
   if (error) {
@@ -34,6 +39,11 @@ const loadQuota = async () => {
   }
   quota.value = data ?? null;
 };
+
+// The token is fetched lazily on first click rather than on mount so we
+// don't burn a GitHub round trip for every editor visit; the operator's
+// mental model is "the number I see is the number I asked for."
+void loadQuota;
 
 const premium = computed(() => quota.value?.quota_snapshots?.premium_interactions);
 
@@ -50,14 +60,14 @@ const usedPercent = computed(() => {
     <Card :padded="false" class="space-y-3 p-4">
       <div class="flex items-center gap-3">
         <img
-          v-if="config.user.avatar_url"
-          :src="config.user.avatar_url"
-          :alt="config.user.login"
+          v-if="draft.config.user.avatar_url"
+          :src="draft.config.user.avatar_url"
+          :alt="draft.config.user.login"
           class="size-10 rounded-full"
         >
         <div>
-          <p class="text-sm font-medium text-white">{{ config.user.name ?? config.user.login }}</p>
-          <p class="text-xs text-gray-400">@{{ config.user.login }} · {{ accountTypeDisplay }}</p>
+          <p class="text-sm font-medium text-white">{{ draft.config.user.name ?? draft.config.user.login }}</p>
+          <p class="text-xs text-gray-400">@{{ draft.config.user.login }} · {{ accountTypeDisplay }}</p>
         </div>
       </div>
     </Card>
@@ -71,7 +81,7 @@ const usedPercent = computed(() => {
           :disabled="loadingQuota"
           @click="loadQuota"
         >
-          {{ loadingQuota ? 'Loading…' : 'Refresh' }}
+          {{ loadingQuota ? 'Loading…' : (quota ? 'Refresh' : 'Load') }}
         </button>
       </header>
       <div v-if="quotaError" class="text-xs text-accent-rose">{{ quotaError }}</div>
@@ -92,7 +102,7 @@ const usedPercent = computed(() => {
           </p>
         </div>
       </template>
-      <p v-else-if="!loadingQuota" class="text-xs text-gray-500">No premium quota reported.</p>
+      <p v-else-if="!loadingQuota" class="text-xs text-gray-500">Click Load to fetch the current premium quota.</p>
     </Card>
   </div>
 </template>

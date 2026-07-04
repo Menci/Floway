@@ -12,7 +12,7 @@ import ModelPrefixEditor from './ModelPrefixEditor.vue';
 import ModelsCacheStatus from './ModelsCacheStatus.vue';
 import OllamaConfigPanel from './OllamaConfigPanel.vue';
 import ProxyFallbackListPanel from './ProxyFallbackListPanel.vue';
-import type { CopilotQuotaSnapshot, FlagDef, ModelPrefixConfig, ProxyFallbackEntry, UpstreamProviderKind, UpstreamRecord } from '../../api/types.ts';
+import type { FlagDef, ModelPrefixConfig, ProxyFallbackEntry, UpstreamRecord } from '../../api/types.ts';
 import { providerBadgeClass, providerMeta } from '../upstreams/provider-meta.ts';
 import { Input, Switch, TagCombobox } from '@floway-dev/ui';
 
@@ -26,8 +26,12 @@ const ollamaDraft = defineModel<OllamaDraft>('ollama', { required: true });
 const proxyFallbackList = defineModel<ProxyFallbackEntry[]>('proxyFallbackList', { required: true });
 const modelPrefix = defineModel<ModelPrefixConfig | null>('modelPrefix', { required: true });
 
-type CommonConfigPanelProps = {
-  kind: UpstreamProviderKind;
+// `draft` is the parent's single source of truth. This panel and its
+// wizard children read draft.kind / draft.config / draft.state; wizards
+// emit patches through the `patched` event so the parent can shallow-
+// merge them into the same draft ref.
+const props = defineProps<{
+  draft: UpstreamRecord;
   flags: FlagDef[];
   customApiKeySet: boolean;
   azureApiKeySet: boolean;
@@ -36,8 +40,6 @@ type CommonConfigPanelProps = {
   fetchError: string | null;
   fetchStatus: string | null;
   availableModelItems: { value: string; label: string }[];
-  initialCopilotQuota?: CopilotQuotaSnapshot | null;
-  initialCopilotQuotaError?: string | null;
   // Live cache snapshot for the saved upstream. Null in create mode and for
   // Azure (which has no fetch step) — `ModelsCacheStatus` is rendered only
   // when this is provided.
@@ -45,44 +47,18 @@ type CommonConfigPanelProps = {
   refreshing: boolean;
   coloAware: boolean;
   currentColo: string | null;
-};
-
-const props = defineProps<
-  | (CommonConfigPanelProps & { mode: 'create'; record: null })
-  | (CommonConfigPanelProps & { mode: 'edit'; record: UpstreamRecord })
->();
+}>();
 
 defineEmits<{
   'fetch-models': [];
   'refresh-cache': [];
-  imported: [record: UpstreamRecord];
+  patched: [patch: { config?: unknown; state?: unknown }];
   error: [message: string];
-  'claude-code-quota-refreshed': [upstream: UpstreamRecord];
   'update:model-prefix-invalid': [invalid: boolean];
 }>();
 
-// Per-provider narrowed views of (mode, record) so each child panel receives
-// the matching discriminated variant without inline casts. Edit mode and a
-// record-of-the-wrong-kind both yield null — the per-provider section is
-// already gated on `kind === '<kind>'` in the template, so this only
-// happens during the brief window when a sibling section is mounting.
-type CodexRecord = Extract<UpstreamRecord, { kind: 'codex' }>;
-type ClaudeCodeRecord = Extract<UpstreamRecord, { kind: 'claude-code' }>;
-type CopilotRecord = Extract<UpstreamRecord, { kind: 'copilot' }>;
-type PanelMode<R> = { mode: 'create'; record: null } | { mode: 'edit'; record: R };
-
-const codexPanel = computed<PanelMode<CodexRecord> | null>(() => {
-  if (props.mode === 'create') return { mode: 'create', record: null };
-  return props.record.kind === 'codex' ? { mode: 'edit', record: props.record } : null;
-});
-const claudeCodePanel = computed<PanelMode<ClaudeCodeRecord> | null>(() => {
-  if (props.mode === 'create') return { mode: 'create', record: null };
-  return props.record.kind === 'claude-code' ? { mode: 'edit', record: props.record } : null;
-});
-const copilotPanel = computed<PanelMode<CopilotRecord> | null>(() => {
-  if (props.mode === 'create') return { mode: 'create', record: null };
-  return props.record.kind === 'copilot' ? { mode: 'edit', record: props.record } : null;
-});
+const kind = computed(() => props.draft.kind);
+const isCreate = computed(() => props.draft.id === '');
 
 // Intrinsic floor for the aside: smallest height at which every
 // non-flag-editor section is fully laid out AND the flag editor still has
@@ -113,7 +89,7 @@ const measureFloor = () => {
   if (header) h += header.getBoundingClientRect().height;
   intrinsicFloorPx.value = h;
 };
-watch([contentRef, flagSectionRef, headerRef, () => props.kind], () => {
+watch([contentRef, flagSectionRef, headerRef, kind], () => {
   floorObserver?.disconnect();
   const content = contentRef.value;
   if (!content) return;
@@ -138,14 +114,14 @@ onBeforeUnmount(() => floorObserver?.disconnect());
         :class="providerBadgeClass(kind)"
       >{{ providerMeta(kind).label }}</span>
       <h2 class="min-w-0 truncate text-sm font-semibold text-white">
-        {{ name || (mode === 'create' ? 'New upstream' : 'Upstream') }}
+        {{ name || (isCreate ? 'New upstream' : 'Upstream') }}
       </h2>
       <Switch v-model="enabled" class="ml-auto" />
     </header>
 
     <div ref="contentRef" class="flex min-h-0 flex-1 flex-col gap-6 px-5 py-5">
 
-      <section v-if="!(mode === 'create' && (kind === 'copilot' || kind === 'codex' || kind === 'claude-code'))" class="shrink-0">
+      <section class="shrink-0">
         <label class="mb-1.5 block text-xs font-medium text-gray-500">Name</label>
         <Input v-model="name" placeholder="e.g. OpenAI Production" />
       </section>
@@ -158,7 +134,7 @@ onBeforeUnmount(() => floorObserver?.disconnect());
            confirmation that a proxy is already configured. -->
       <ProxyFallbackListPanel
         v-model="proxyFallbackList"
-        :upstream-id="record?.id ?? null"
+        :upstream-id="isCreate ? null : draft.id"
         :colo-aware="coloAware"
         :current-colo="currentColo"
         class="shrink-0"
@@ -168,7 +144,7 @@ onBeforeUnmount(() => floorObserver?.disconnect());
         <CustomConfigPanel
           v-model="customDraft"
           :api-key-set="customApiKeySet"
-          :edit-mode="mode === 'edit'"
+          :edit-mode="!isCreate"
           :fetch-loading="fetchLoading"
           :fetch-error="fetchError"
           :fetch-status="fetchStatus"
@@ -180,7 +156,7 @@ onBeforeUnmount(() => floorObserver?.disconnect());
         <AzureConfigPanel
           v-model="azureDraft"
           :api-key-set="azureApiKeySet"
-          :edit-mode="mode === 'edit'"
+          :edit-mode="!isCreate"
         />
       </section>
 
@@ -188,7 +164,7 @@ onBeforeUnmount(() => floorObserver?.disconnect());
         <OllamaConfigPanel
           v-model="ollamaDraft"
           :api-key-set="ollamaApiKeySet"
-          :edit-mode="mode === 'edit'"
+          :edit-mode="!isCreate"
           :fetch-loading="fetchLoading"
           :fetch-error="fetchError"
           :fetch-status="fetchStatus"
@@ -196,31 +172,26 @@ onBeforeUnmount(() => floorObserver?.disconnect());
         />
       </section>
 
-      <section v-else-if="kind === 'copilot' && copilotPanel" class="shrink-0">
+      <section v-else-if="kind === 'copilot' && draft.kind === 'copilot'" class="shrink-0">
         <CopilotConfigPanel
-          v-bind="copilotPanel"
-          :initial-quota="initialCopilotQuota"
-          :initial-quota-error="initialCopilotQuotaError"
-          :proxy-fallback-list="proxyFallbackList"
-          @completed="u => u && $emit('imported', u)"
-        />
-      </section>
-
-      <section v-else-if="kind === 'codex' && codexPanel" class="shrink-0">
-        <CodexConfigPanel
-          v-bind="codexPanel"
-          :proxy-fallback-list="proxyFallbackList"
-          @imported="u => $emit('imported', u)"
+          :draft="draft"
+          @patched="p => $emit('patched', p)"
           @error="m => $emit('error', m)"
         />
       </section>
 
-      <section v-else-if="kind === 'claude-code' && claudeCodePanel" class="shrink-0">
+      <section v-else-if="kind === 'codex' && draft.kind === 'codex'" class="shrink-0">
+        <CodexConfigPanel
+          :draft="draft"
+          @patched="p => $emit('patched', p)"
+          @error="m => $emit('error', m)"
+        />
+      </section>
+
+      <section v-else-if="kind === 'claude-code' && draft.kind === 'claude-code'" class="shrink-0">
         <ClaudeCodeConfigPanel
-          v-bind="claudeCodePanel"
-          :proxy-fallback-list="proxyFallbackList"
-          @imported="u => $emit('imported', u)"
-          @quota-refreshed="u => $emit('claude-code-quota-refreshed', u)"
+          :draft="draft"
+          @patched="p => $emit('patched', p)"
           @error="m => $emit('error', m)"
         />
       </section>

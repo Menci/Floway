@@ -1,41 +1,32 @@
 <script setup lang="ts">
-
 import CopilotDeviceFlow from './CopilotDeviceFlow.vue';
 import CopilotInfo from './CopilotInfo.vue';
-import type { CopilotQuotaSnapshot, ProxyFallbackEntry, UpstreamRecord } from '../../api/types.ts';
+import type { UpstreamRecord } from '../../api/types.ts';
 
 type CopilotUpstreamRecord = Extract<UpstreamRecord, { kind: 'copilot' }>;
 
-defineProps<
-  | {
-    mode: 'create';
-    record: null;
-    initialQuota?: CopilotQuotaSnapshot | null;
-    initialQuotaError?: string | null;
-    // Current edit-form chain forwarded into the device-flow poll so the
-    // GitHub-side calls honor the in-progress proxy override.
-    proxyFallbackList: ProxyFallbackEntry[];
-  }
-  | {
-    mode: 'edit';
-    record: CopilotUpstreamRecord;
-    initialQuota?: CopilotQuotaSnapshot | null;
-    initialQuotaError?: string | null;
-    proxyFallbackList: ProxyFallbackEntry[];
-  }
->();
+// The draft's `githubToken` is the sole discriminator between "run device
+// flow" (blueprint / freshly created row) and "show account info" (post-
+// exchange). Once the device-flow completion emits a patch, the parent
+// merges it into draft.config.githubToken and this component re-renders
+// into the info view without any local state.
+const props = defineProps<{
+  draft: CopilotUpstreamRecord;
+}>();
 
-defineEmits<{ completed: [upstream: UpstreamRecord | undefined] }>();
+defineEmits<{
+  patched: [patch: { config?: unknown; state?: unknown }];
+  error: [message: string];
+}>();
+
+const hasCredential = () => Boolean(props.draft.config.githubToken);
 </script>
 
 <template>
   <CopilotInfo
-    v-if="record"
-    :upstream-id="record.id"
-    :config="record.config"
-    :state="record.state"
-    :initial-quota="initialQuota"
-    :initial-quota-error="initialQuotaError"
+    v-if="hasCredential()"
+    :draft="draft"
+    @error="m => $emit('error', m)"
   />
-  <CopilotDeviceFlow v-else :proxy-fallback-list="proxyFallbackList" @completed="u => $emit('completed', u)" />
+  <CopilotDeviceFlow v-else :draft="draft" @patched="p => $emit('patched', p)" />
 </template>

@@ -2,16 +2,21 @@
 import { onUnmounted, ref } from 'vue';
 
 import { callApi, useApi } from '../../api/client.ts';
-import type { DeviceFlowPoll, DeviceFlowStart, ProxyFallbackEntry, UpstreamRecord } from '../../api/types.ts';
+import type { DeviceFlowPoll, DeviceFlowStart, UpstreamRecord } from '../../api/types.ts';
 import { Button, Code, Spinner } from '@floway-dev/ui';
 
+type CopilotUpstreamRecord = Extract<UpstreamRecord, { kind: 'copilot' }>;
+
 const props = defineProps<{
-  // Current edit-form chain; forwarded into the poll body so the
-  // GitHub-side egress honors the in-progress chain.
-  proxyFallbackList: ProxyFallbackEntry[];
+  // The draft record is forwarded verbatim into the poll body so the
+  // GitHub-side egress honors the in-progress proxy chain the operator
+  // is editing.
+  draft: CopilotUpstreamRecord;
 }>();
 
-const emit = defineEmits<{ completed: [upstream: UpstreamRecord | undefined] }>();
+const emit = defineEmits<{
+  patched: [patch: { config?: unknown; state?: unknown }];
+}>();
 
 const api = useApi();
 
@@ -32,25 +37,28 @@ const stopPolling = () => {
 const pollOnce = async (currentInterval: number) => {
   if (!flow.value) return;
   const { data, error: err } = await callApi<DeviceFlowPoll>(
-    () => api.api.upstreams.copilot.auth.poll.$post({
-      json: { device_code: flow.value!.device_code, proxy_fallback_list: props.proxyFallbackList },
+    () => api.api.upstreams.copilot.oauth['device-login'].poll.$post({
+      json: { record: props.draft, deviceCode: flow.value!.device_code },
     }),
   );
   if (err) return; // Transient — keep polling.
   if (!data) return;
   if (data.status === 'complete') {
     stopPolling();
-    emit('completed', data.upstream);
+    emit('patched', data.patch);
     return;
   }
   if (data.status === 'slow_down') {
-    scheduleNextPoll((data.interval ?? currentInterval) + 1);
+    scheduleNextPoll(data.interval + 1);
     return;
   }
   if (data.status === 'error') {
-    error.value = data.error ?? 'Authorization failed';
+    error.value = data.error;
     stopPolling();
+    return;
   }
+  // status === 'pending': keep the current interval.
+  void currentInterval;
 };
 
 const scheduleNextPoll = (intervalSec: number) => {
@@ -65,7 +73,7 @@ const start = async () => {
   stopPolling();
   starting.value = true;
   const { data, error: err } = await callApi<DeviceFlowStart>(
-    () => api.api.upstreams.copilot.auth.start.$post(),
+    () => api.api.upstreams.copilot.oauth['device-login'].start.$post(),
   );
   starting.value = false;
   if (err) {
@@ -85,8 +93,7 @@ onUnmounted(stopPolling);
     <div class="rounded-lg border border-white/10 bg-surface-800/40 p-4">
       <p class="text-sm font-semibold text-white">Connect GitHub Copilot</p>
       <p class="mt-1 text-xs leading-relaxed text-gray-500">
-        GitHub device auth creates or refreshes a Copilot upstream for the
-        signed-in account.
+        GitHub device auth binds the signed-in account's Copilot subscription to this upstream.
       </p>
 
       <div v-if="error" class="mt-3 rounded-md border border-accent-rose/40 bg-accent-rose/10 px-3 py-2 text-xs text-accent-rose">{{ error }}</div>
