@@ -6,6 +6,7 @@ import ClaudeCodeAccountCard from './ClaudeCodeAccountCard.vue';
 import ClaudeCodeImportTabs from './ClaudeCodeImportTabs.vue';
 import { callApi, useApi } from '../../api/client.ts';
 import type { ClaudeCodeUpstreamState, UpstreamRecord } from '../../api/types.ts';
+import { toRecordEnvelope } from '../../api/types.ts';
 import { clearPkce, deriveChallenge, generatePkce, parseCallbackPaste, peekStashedPkce, pkceStorageKey, recallPkce, stashPkce } from '../../lib/pkce.ts';
 import { Button } from '@floway-dev/ui';
 
@@ -73,7 +74,7 @@ const prepareAuthorize = async (kind: 'oauth' | 'setup-token') => {
     ? api.api.upstreams['claude-code'].oauth['authorize-url']
     : api.api.upstreams['claude-code']['setup-token']['authorize-url'];
   const { data, error } = await callApi<ClaudeCodeAuthorizeUrlResult>(
-    () => endpoint.$post({ json: { record: props.draft, challenge, state } }),
+    () => endpoint.$post({ json: { record: toRecordEnvelope(props.draft), challenge, state } }),
   );
   loadingFlag.value = false;
   if (error) { errorFlag.value = error.message; return; }
@@ -128,20 +129,21 @@ const submit = async () => {
   if (!body.ok) { emit('error', body.error); return; }
 
   submitting.value = true;
+  const record = toRecordEnvelope(props.draft);
   const { data, error } = await callApi<{ patch: { config?: unknown; state?: unknown } }>(() => {
     const payload = body.value;
     if (payload.kind === 'setup-token-callback') {
       return api.api.upstreams['claude-code']['setup-token'].exchange.$post({
-        json: { record: props.draft, callback: payload.callback },
+        json: { record, callback: payload.callback },
       });
     }
     if (payload.kind === 'oauth-credentials_json') {
       return api.api.upstreams['claude-code'].oauth.exchange.$post({
-        json: { record: props.draft, credentials_json: payload.credentials_json },
+        json: { record, credentials_json: payload.credentials_json },
       });
     }
     return api.api.upstreams['claude-code'].oauth.exchange.$post({
-      json: { record: props.draft, callback: payload.callback },
+      json: { record, callback: payload.callback },
     });
   });
   submitting.value = false;
@@ -170,7 +172,7 @@ const refreshTokenNow = async () => {
   if (refreshing.value || isCreate.value) return;
   refreshing.value = true;
   const { data, error } = await callApi<{ patch: { state?: unknown } }>(
-    () => api.api.upstreams['claude-code'].oauth.refresh.$post({ json: { record: props.draft } }),
+    () => api.api.upstreams['claude-code'].oauth.refresh.$post({ json: { record: toRecordEnvelope(props.draft) } }),
   );
   refreshing.value = false;
   if (error) { emit('error', error.message); return; }
@@ -194,7 +196,7 @@ const refreshQuotaNow = async () => {
     body: unknown;
     patch: { state?: { accounts?: Array<{ usageProbeSnapshot?: { fetchedAt: number; data: unknown } }> } };
   }>(
-    () => api.api.upstreams['claude-code'].probe.$post({ json: { record: props.draft } }),
+    () => api.api.upstreams['claude-code'].probe.$post({ json: { record: toRecordEnvelope(props.draft) } }),
   );
   probing.value = false;
   if (error) { emit('error', error.message); return; }

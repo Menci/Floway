@@ -3,6 +3,7 @@ import { onUnmounted, ref } from 'vue';
 
 import { callApi, useApi } from '../../api/client.ts';
 import type { DeviceFlowPoll, DeviceFlowStart, UpstreamRecord } from '../../api/types.ts';
+import { toRecordEnvelope } from '../../api/types.ts';
 import { Button, Code, Spinner } from '@floway-dev/ui';
 
 type CopilotUpstreamRecord = Extract<UpstreamRecord, { kind: 'copilot' }>;
@@ -38,7 +39,7 @@ const pollOnce = async (currentInterval: number) => {
   if (!flow.value) return;
   const { data, error: err } = await callApi<DeviceFlowPoll>(
     () => api.api.upstreams.copilot.oauth['device-login'].poll.$post({
-      json: { record: props.draft, deviceCode: flow.value!.device_code },
+      json: { record: toRecordEnvelope(props.draft), deviceCode: flow.value!.device_code },
     }),
   );
   if (err) return; // Transient — keep polling.

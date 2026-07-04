@@ -22,6 +22,7 @@ import ModelsPanel from './ModelsPanel.vue';
 import UpstreamConfigPanel from './UpstreamConfigPanel.vue';
 import { callApi, useApi } from '../../api/client.ts';
 import type { AzureUpstreamConfig, CustomRawModel, CustomUpstreamConfig, FlagDef, ModelEndpoints, OllamaUpstreamConfig, UpstreamModelConfig, UpstreamRecord } from '../../api/types.ts';
+import { toRecordEnvelope } from '../../api/types.ts';
 import { useRuntimeInfo } from '../../composables/useRuntimeInfo.ts';
 import { useUpstreamsStore } from '../../composables/useUpstreams.ts';
 import { Button } from '@floway-dev/ui';
@@ -180,7 +181,7 @@ const listDraftModels = async () => {
     const config = draft.value.kind === 'custom'
       ? { ...buildCustomConfigCore(customDraft.value), models: customDraft.value.models }
       : buildOllamaConfig();
-    const previewRecord = { ...draft.value, config } as UpstreamRecord;
+    const previewRecord = { ...toRecordEnvelope(draft.value), config };
     const { data, error } = await callApi<ListModelsResult>(
       () => api.api.upstreams['list-models'].$post({ json: { record: previewRecord } }),
     );
@@ -226,7 +227,7 @@ const refreshCachedModels = async () => {
   upstreamModelsError.value = null;
   try {
     const { data, error } = await callApi<{ data: UpstreamModelConfig[] }>(
-      () => api.api.upstreams['list-models'].$post({ json: { record: draft.value } }),
+      () => api.api.upstreams['list-models'].$post({ json: { record: toRecordEnvelope(draft.value) } }),
     );
     if (error) {
       upstreamModelsError.value = error.message;
@@ -250,7 +251,7 @@ const refreshCachedModels = async () => {
 const primeSavedModels = async () => {
   if (isCreate.value || draft.value.kind === 'azure') return;
   const { data, error } = await callApi<{ data: UpstreamModelConfig[] }>(
-    () => api.api.upstreams['list-models'].$post({ json: { record: draft.value } }),
+    () => api.api.upstreams['list-models'].$post({ json: { record: toRecordEnvelope(draft.value) } }),
   );
   if (error) { upstreamModelsError.value = error.message; return; }
   upstreamModels.value = data.data;

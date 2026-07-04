@@ -331,6 +331,23 @@ export type UpstreamRecord =
   | (UpstreamRecordBase & { kind: 'claude-code'; config: ClaudeCodeUpstreamConfig; state: ClaudeCodeUpstreamState | null })
   | (UpstreamRecordBase & { kind: 'ollama'; config: OllamaUpstreamConfig; state: null });
 
+// The action-endpoint wire envelope (matches `upstreamRecordEnvelope` in
+// packages/gateway/src/control-plane/schemas.ts): zod's `.passthrough()`
+// widens the inferred request type with a string index signature, which
+// our discriminated `UpstreamRecord` lacks. Every `{ record: draft, ... }`
+// call site funnels its draft through `toRecordEnvelope` to satisfy the
+// RPC client without an unsafe cast on the payload as a whole.
+export type UpstreamRecordEnvelope = {
+  id: string;
+  kind: string;
+  config: unknown;
+  state: unknown;
+  proxy_fallback_list?: ProxyFallbackEntry[];
+  [key: string]: unknown;
+};
+
+export const toRecordEnvelope = (record: UpstreamRecord): UpstreamRecordEnvelope => ({ ...record });
+
 export interface FlagDef {
   id: string;
   label: string;

@@ -6,6 +6,7 @@ import CodexAccountCard from './CodexAccountCard.vue';
 import CodexImportTabs from './CodexImportTabs.vue';
 import { callApi, useApi } from '../../api/client.ts';
 import type { UpstreamRecord } from '../../api/types.ts';
+import { toRecordEnvelope } from '../../api/types.ts';
 import { clearPkce, deriveChallenge, generatePkce, parseCallbackPaste, peekStashedPkce, pkceStorageKey, recallPkce, stashPkce } from '../../lib/pkce.ts';
 import { Button } from '@floway-dev/ui';
 
@@ -68,7 +69,7 @@ const prepareAuthorize = async () => {
   }
   const { data, error } = await callApi<CodexAuthorizeUrlResult>(
     () => api.api.upstreams.codex.oauth['authorize-url'].$post({
-      json: { record: props.draft, challenge, state },
+      json: { record: toRecordEnvelope(props.draft), challenge, state },
     }),
   );
   pkceLoading.value = false;
@@ -109,7 +110,7 @@ const submit = async () => {
   submitting.value = true;
   const { data, error } = await callApi<{ patch: { config?: unknown; state?: unknown } }>(
     () => api.api.upstreams.codex.oauth.exchange.$post({
-      json: { record: props.draft, ...body.value },
+      json: { record: toRecordEnvelope(props.draft), ...body.value },
     }),
   );
   submitting.value = false;
@@ -129,7 +130,7 @@ const refreshTokenNow = async () => {
   if (isCreate.value) return;
   refreshing.value = true;
   const { data, error } = await callApi<{ patch: { config?: unknown; state?: unknown } }>(
-    () => api.api.upstreams.codex.oauth.refresh.$post({ json: { record: props.draft } }),
+    () => api.api.upstreams.codex.oauth.refresh.$post({ json: { record: toRecordEnvelope(props.draft) } }),
   );
   refreshing.value = false;
   if (error) { emit('error', error.message); return; }

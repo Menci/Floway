@@ -3,6 +3,7 @@ import { computed, ref } from 'vue';
 
 import { callApi, useApi } from '../../api/client.ts';
 import type { CopilotQuotaSnapshot, UpstreamRecord } from '../../api/types.ts';
+import { toRecordEnvelope } from '../../api/types.ts';
 import { copilotAccountTypeDisplay } from '../../utils/copilot.ts';
 import { Card } from '@floway-dev/ui';
 
@@ -30,7 +31,7 @@ const loadQuota = async () => {
   loadingQuota.value = true;
   quotaError.value = null;
   const { data, error } = await callApi<CopilotQuotaSnapshot>(
-    () => api.api.upstreams.copilot.quota.$post({ json: { record: props.draft } }),
+    () => api.api.upstreams.copilot.quota.$post({ json: { record: toRecordEnvelope(props.draft) } }),
   );
   loadingQuota.value = false;
   if (error) {
