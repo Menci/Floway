@@ -24,9 +24,14 @@ export const useEditUpstreamData = defineBasicLoader('/dashboard/upstreams/[id]'
     useRuntimeInfo().load(),
   ]);
 
+  // 404 signals the row was deleted (open editor tab, another admin
+  // deletes it) → the setup script bounces to /dashboard/settings. Every
+  // other failure (5xx / auth / network) propagates so the operator sees
+  // the actual problem instead of a silent redirect.
+  if (recordRes.error && recordRes.error.status !== 404) {
+    throw new Error(recordRes.error.message);
+  }
   return {
-    // Missing rows fall through as null; the setup script bounces to
-    // /dashboard/settings when this is the case.
     initialRecord: recordRes.error ? null : recordRes.data,
     flags: upstreamsStore.flagCatalog.value!,
   };

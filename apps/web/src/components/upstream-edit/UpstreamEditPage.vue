@@ -222,20 +222,28 @@ const fetchStatus = computed<string | null>(() => {
   return `${fetchedCount.value} returned · ${label}`;
 });
 
+// Fetch the live model catalog for the current draft. Skipped in create
+// state (no persisted row for the SWR cache to refresh) and for Azure
+// (operator-edited catalog, no upstream `/models` endpoint). Populates
+// `upstreamModels` on success; surfaces the error on `upstreamModelsError`
+// otherwise. Returns nothing — callers wrap this with their own
+// bookkeeping (mount-time prime, operator-driven refresh).
+const fetchSavedModels = async () => {
+  if (isCreate.value || draft.value.kind === 'azure') return;
+  upstreamModelsError.value = null;
+  const { data, error } = await callApi<{ data: UpstreamModelConfig[] }>(
+    () => api.api.upstreams['list-models'].$post({ json: { record: toRecordEnvelope(draft.value) } }),
+  );
+  if (error) { upstreamModelsError.value = error.message; return; }
+  upstreamModels.value = data.data;
+};
+
 const refreshing = ref(false);
 const refreshCachedModels = async () => {
-  if (isCreate.value || draft.value.kind === 'azure') return;
   refreshing.value = true;
-  upstreamModelsError.value = null;
   try {
-    const { data, error } = await callApi<{ data: UpstreamModelConfig[] }>(
-      () => api.api.upstreams['list-models'].$post({ json: { record: toRecordEnvelope(draft.value) } }),
-    );
-    if (error) {
-      upstreamModelsError.value = error.message;
-      return;
-    }
-    upstreamModels.value = data.data;
+    await fetchSavedModels();
+    if (upstreamModelsError.value) return;
     // The server-side list-models refreshed the SWR cache too; reload the
     // store so the header's `modelsCache` summary reflects the freshest
     // fetchedAt / lastError the gateway just wrote.
@@ -247,18 +255,9 @@ const refreshCachedModels = async () => {
   }
 };
 
-// Kick off an initial list-models for saved rows so the ModelsPanel mounts
-// pre-populated. Runs once on mount; failures surface through
-// `upstreamModelsError` in the header.
-const primeSavedModels = async () => {
-  if (isCreate.value || draft.value.kind === 'azure') return;
-  const { data, error } = await callApi<{ data: UpstreamModelConfig[] }>(
-    () => api.api.upstreams['list-models'].$post({ json: { record: toRecordEnvelope(draft.value) } }),
-  );
-  if (error) { upstreamModelsError.value = error.message; return; }
-  upstreamModels.value = data.data;
-};
-void primeSavedModels();
+// Prime on mount so ModelsPanel renders populated; refresh button reruns
+// the same call plus the store reload above.
+void fetchSavedModels();
 
 const saving = ref(false);
 const saveError = ref<string | null>(null);
