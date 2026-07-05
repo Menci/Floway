@@ -61,7 +61,7 @@ import {
   importCodexFromCallback,
   mintCodexAccessToken,
 } from '@floway-dev/provider-codex';
-import { clearInProcessCopilotTokenCache, exchangeCopilotToken, githubHeaders, readCopilotUpstreamState, type CopilotUpstreamState } from '@floway-dev/provider-copilot';
+import { clearInProcessCopilotTokenCache, emptyCopilotUpstreamState, exchangeCopilotToken, githubHeaders, readCopilotUpstreamState, type CopilotUpstreamState } from '@floway-dev/provider-copilot';
 import { assertCustomUpstreamRecord, fetchCustomModels } from '@floway-dev/provider-custom';
 import { assertOllamaUpstreamRecord, createOllamaProvider } from '@floway-dev/provider-ollama';
 
@@ -392,23 +392,26 @@ export const copilotOauthDeviceLoginPoll = async (c: CtxWithJson<typeof copilotO
     const tokenEntry = await exchangeCopilotToken(data.access_token, fetcher);
 
     const configPatch: CopilotUpstreamConfig = { githubToken: data.access_token, user };
-    const statePatch = { copilotToken: tokenEntry };
 
-    // Edit state (id present): targeted-patch the stored record so any
-    // in-flight data-plane traffic on this upstream sees the new token
-    // right away. Only credential fields are touched — the caller's
-    // draft-only form edits (name, flags, etc.) never reach the DB from
-    // this handler; save endpoints are the sole route for those.
+    // Return the fully-merged state slot instead of a partial `{ copilotToken }`
+    // patch. Frontend `applyPatch` does whole-slot replacement on state, so a
+    // partial slot would clobber any sibling field (e.g. draft.state.knownModels
+    // hydrated by an earlier fetch). Edit state seeds the merge from the stored
+    // record; create state seeds from an empty slot so the reply is uniformly a
+    // full slot regardless of caller path.
+    let nextState: CopilotUpstreamState;
     if (record.id !== '') {
       const dbRecord = await getRepo().upstreams.getById(record.id);
       if (!dbRecord) return c.json({ status: 'error' as const, error: 'Upstream not found' }, 404);
       if (dbRecord.kind !== 'copilot') return c.json({ status: 'error' as const, error: 'Upstream is not a Copilot upstream' }, 400);
       const prevState = readCopilotUpstreamState(dbRecord.state);
-      const nextState: CopilotUpstreamState = { ...prevState, ...statePatch };
+      nextState = { ...prevState, copilotToken: tokenEntry };
       const next: UpstreamRecord = { ...dbRecord, config: configPatch, state: nextState, updatedAt: new Date().toISOString() };
       await getRepo().upstreams.save(next);
       clearInProcessCopilotTokenCache();
       await warmModelsCache(next, c);
+    } else {
+      nextState = { ...emptyCopilotUpstreamState(), copilotToken: tokenEntry };
     }
 
     return c.json({
@@ -416,7 +419,7 @@ export const copilotOauthDeviceLoginPoll = async (c: CtxWithJson<typeof copilotO
       user,
       patch: {
         config: configPatch,
-        state: statePatch,
+        state: nextState,
       },
     });
   } catch (e: unknown) {
