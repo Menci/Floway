@@ -245,8 +245,8 @@ const hasCredentialForFetch = computed<boolean>(() => {
 // preview uses; every other kind receives already-projected
 // UpstreamModelConfig rows and lands in `upstreamModels`. Surfaces the
 // error on `upstreamModelsError` otherwise. Returns nothing — callers
-// wrap this with their own bookkeeping (mount-time prime, wizard-driven
-// auto-fetch after OAuth completes, operator-driven refresh).
+// wrap this with their own bookkeeping (mount-time prime, operator-driven
+// refresh).
 const fetchUpstreamModels = async () => {
   if (draft.value.kind === 'azure') return;
   if (!hasCredentialForFetch.value) return;
