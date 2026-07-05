@@ -286,16 +286,15 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
   // is already well-shaped. We still assert here because POST /api/upstreams
   // accepts state on create — a caller who bypasses the exchange helpers
   // could otherwise persist garbage that only surfaces on the first
-  // data-plane call. Empty blueprints (accounts: [] for the multi-account
-  // kinds; null for copilot) pass the assert cleanly.
-  if (stateFromBody !== null) {
-    try {
-      if (upstream.kind === 'copilot') readCopilotUpstreamState(stateFromBody);
-      else if (upstream.kind === 'codex') assertCodexUpstreamState(stateFromBody);
-      else if (upstream.kind === 'claude-code') readClaudeCodeUpstreamState(stateFromBody);
-    } catch (err) {
-      return c.json({ error: `Invalid state for ${upstream.kind}: ${errorMessage(err)}` }, 400);
-    }
+  // data-plane call. Copilot's reader accepts null as the empty blueprint
+  // shape; codex / claude-code assert against null too — their blueprints
+  // carry `{accounts: []}`, so an incoming null is a malformed request.
+  try {
+    if (upstream.kind === 'copilot') readCopilotUpstreamState(stateFromBody);
+    else if (upstream.kind === 'codex') assertCodexUpstreamState(stateFromBody);
+    else if (upstream.kind === 'claude-code') readClaudeCodeUpstreamState(stateFromBody);
+  } catch (err) {
+    return c.json({ error: `Invalid state for ${upstream.kind}: ${errorMessage(err)}` }, 400);
   }
 
   const record = { ...upstream, config: config.value };
