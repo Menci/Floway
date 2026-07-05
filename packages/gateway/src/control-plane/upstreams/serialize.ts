@@ -163,6 +163,9 @@ const redactedState = (upstream: UpstreamRecord): unknown => {
     // Expose only the per-tier baseUrl the dashboard renders an account-type
     // badge from. Bearer token + expiry stay server-side: short-lived auth
     // material has no presentation use.
+    if (state.copilotToken !== null && state.copilotToken !== undefined && !isRecord(state.copilotToken)) {
+      throw new Error(`Upstream ${upstream.id} (${upstream.kind}) has malformed copilotToken: expected object or null`);
+    }
     const token = isRecord(state.copilotToken) ? state.copilotToken : null;
     const baseUrl = typeof token?.baseUrl === 'string' ? token.baseUrl : null;
     return { copilotToken: baseUrl !== null ? { baseUrl } : null };
