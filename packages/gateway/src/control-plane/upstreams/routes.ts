@@ -464,10 +464,8 @@ interface CopilotUsageResponse {
 
 // Look up GitHub Copilot quota for the draft's github token. Pure query —
 // no DB touch, no patch — because the response is a live snapshot that
-// the dashboard renders in place; if the operator wants it retained they
-// would need a Copilot-side persistence field, which today doesn't exist.
-// Works uniformly in create and edit state (draft.config.githubToken is
-// the sole input).
+// the dashboard renders in place. Works uniformly in create and edit
+// state (draft.config.githubToken is the sole input).
 export const copilotQuota = async (c: CtxWithJson<typeof copilotQuotaBody>) => {
   try {
     const { record } = c.req.valid('json');
