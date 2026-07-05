@@ -223,10 +223,11 @@ const fetchStatus = computed<string | null>(() => {
 });
 
 // True when the current draft config carries enough credentials for the
-// list-models call to succeed. Blueprints (empty config) fail this gate so
-// mount-time prime doesn't fire an unauthenticated upstream hit; a
-// wizard-emitted patch that lands the credential flips this true and
-// applyPatch re-runs the fetch immediately.
+// list-models call to succeed. Guards mount-time prime and the refresh
+// button so a blueprint (empty config) never fires an unauthenticated
+// upstream hit. Wizard-emitted patches do NOT auto-fetch here — the
+// per-provider "Save and load models" CTA is the create-state path
+// (see the note on applyPatch below for why).
 const hasCredentialForFetch = computed<boolean>(() => {
   const d = draft.value;
   if (d.kind === 'copilot') return d.config.githubToken !== '';
