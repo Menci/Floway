@@ -302,18 +302,15 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '
     return c.json({ error: 'kind cannot be changed' }, 400);
   }
 
-  // Codex `config` (id_token-derived identity) and credential state are
-  // owned by the dedicated OAuth exchange / refresh endpoints. Generic PATCH
-  // still adjusts the surrounding row metadata (name, enabled, sort_order,
-  // flag overrides, disabled model ids) but never the credential payload.
-  if (existing.kind === 'codex' && body.config !== undefined) {
-    return c.json({ error: 'Use POST /api/upstreams/codex/oauth/exchange to update codex credentials' }, 400);
-  }
-  // Same gate for claude-code: identity comes from /api/oauth/profile at
-  // exchange time and the credential state belongs to OAuth refresh / exchange,
-  // not a generic field patch.
-  if (existing.kind === 'claude-code' && body.config !== undefined) {
-    return c.json({ error: 'Use POST /api/upstreams/claude-code/oauth/exchange to update claude-code credentials' }, 400);
+  // OAuth-managed config slices (Copilot githubToken/user, Codex/Claude
+  // Code accounts[]) are owned by the per-provider action endpoints, not
+  // by generic PATCH. Metadata (name, enabled, sort_order, flag overrides,
+  // disabled model ids) still flows through here.
+  if (body.config !== undefined && (existing.kind === 'copilot' || existing.kind === 'codex' || existing.kind === 'claude-code')) {
+    const endpoint = existing.kind === 'copilot'
+      ? '/api/upstreams/copilot/oauth/device-login/poll'
+      : `/api/upstreams/${existing.kind}/oauth/exchange`;
+    return c.json({ error: `Use POST ${endpoint} to update ${existing.kind} credentials` }, 400);
   }
 
   let next: UpstreamRecord = { ...existing, updatedAt: new Date().toISOString() };
@@ -482,8 +479,7 @@ export const copilotQuota = async (c: CtxWithJson<typeof copilotQuotaBody>) => {
     const data = (await resp.json()) as CopilotUsageResponse;
     return c.json(data);
   } catch (e: unknown) {
-    console.error('Failed to fetch Copilot quota:', e);
-    return c.json({ error: 'Failed to fetch Copilot quota from GitHub' }, 502);
+    return c.json({ error: errorMessage(e) }, 502);
   }
 };
 
@@ -613,20 +609,17 @@ export const codexOauthRefresh = async (c: CtxWithJson<typeof codexOauthRefreshB
       // Terminal flip mirrors `createCodexProvider.persistTerminalState`:
       // clear the cached access token, mark the account refresh_failed so
       // the dashboard renders the red badge and prompts a re-import.
+      // Best-effort — a losing CAS means a concurrent rotation already
+      // wrote newer state that supersedes ours.
       const fresh = await getRepo().upstreams.getById(record.id);
       if (fresh) {
-        try {
-          assertCodexUpstreamState(fresh.state);
-          const next: CodexUpstreamState = {
-            accounts: fresh.state.accounts.map(a => a.chatgptAccountId === account.chatgptAccountId
-              ? { ...a, state: 'refresh_failed' as const, state_message: err.upstreamMessage, state_updated_at: new Date().toISOString(), accessToken: null }
-              : a),
-          };
-          await getRepo().upstreams.saveState(record.id, next, { expectedState: fresh.state });
-        } catch {
-          // Best-effort: a losing CAS means a concurrent rotation already
-          // wrote newer state, which by definition supersedes ours.
-        }
+        assertCodexUpstreamState(fresh.state);
+        const next: CodexUpstreamState = {
+          accounts: fresh.state.accounts.map(a => a.chatgptAccountId === account.chatgptAccountId
+            ? { ...a, state: 'refresh_failed' as const, state_message: err.upstreamMessage, state_updated_at: new Date().toISOString(), accessToken: null }
+            : a),
+        };
+        await getRepo().upstreams.saveState(record.id, next, { expectedState: fresh.state });
       }
       return c.json({ error: `Codex refresh failed: ${err.upstreamMessage}. Re-run OAuth exchange to recover.` }, 400);
     }
@@ -852,16 +845,16 @@ export const claudeCodeProbe = async (c: CtxWithJson<typeof claudeCodeProbeBody>
   const snapshotPatch = {
     usageProbeSnapshot: { fetchedAt: Date.parse(probe.fetched_at), data: probe.body },
   };
+  const mergeSnapshotInto = (state: ClaudeCodeUpstreamState): ClaudeCodeUpstreamState => ({
+    ...state,
+    accounts: state.accounts.map((a, i): ClaudeCodeAccountCredential => i === 0 ? { ...a, ...snapshotPatch } : a),
+  });
 
   // Merge the freshly-fetched snapshot into the caller's draft state so the
   // response carries a whole state slot the caller can hand to its uniform
   // patch merger — the wire contract stays symmetric with refresh/exchange
   // instead of asking the client to hand-merge into accounts[0].
-  const parsed = readClaudeCodeUpstreamState(record.state);
-  const merged: ClaudeCodeUpstreamState = {
-    ...parsed,
-    accounts: parsed.accounts.map((a, i): ClaudeCodeAccountCredential => i === 0 ? { ...a, ...snapshotPatch } : a),
-  };
+  const merged = mergeSnapshotInto(readClaudeCodeUpstreamState(record.state));
 
   if (record.id !== '') {
     // Best-effort CAS persist against the currently-stored state — a losing
@@ -870,11 +863,7 @@ export const claudeCodeProbe = async (c: CtxWithJson<typeof claudeCodeProbeBody>
     // the next probe).
     const fresh = await getRepo().upstreams.getById(record.id);
     if (fresh) {
-      const freshParsed = readClaudeCodeUpstreamState(fresh.state);
-      const freshMerged: ClaudeCodeUpstreamState = {
-        ...freshParsed,
-        accounts: freshParsed.accounts.map((a, i): ClaudeCodeAccountCredential => i === 0 ? { ...a, ...snapshotPatch } : a),
-      };
+      const freshMerged = mergeSnapshotInto(readClaudeCodeUpstreamState(fresh.state));
       await getRepo().upstreams.saveState(record.id, freshMerged, { expectedState: fresh.state });
     }
   }
@@ -907,10 +896,10 @@ const reshapeModelForDashboard = (model: ProviderModel): Record<string, unknown>
 
 export const listModels = async (c: CtxWithJson<typeof listModelsBody>) => {
   const { record } = c.req.valid('json');
-  if (!(ALL_PROVIDER_KINDS as readonly string[]).includes(record.kind)) {
+  if (!isValidProviderKind(record.kind)) {
     return c.json({ error: { message: `Invalid kind: ${record.kind}`, type: 'invalid_request_error' } }, 400);
   }
-  const kind = record.kind as UpstreamProviderKind;
+  const kind = record.kind;
 
   const scheduler = backgroundSchedulerFromContext(c);
   const now = new Date().toISOString();

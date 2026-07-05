@@ -333,7 +333,13 @@ export const updateUpstreamBody = z.object({
   disabled_public_model_ids: disabledPublicModelIdsSchema.optional(),
   proxy_fallback_list: proxyFallbackListSchema.optional(),
   model_prefix: modelPrefixSchema.optional(),
-  config: z.unknown().optional(),
+  // Patches only carry field diffs, not per-kind shape validation — the
+  // handler dispatches on the existing row's kind and enforces the shape
+  // there (Copilot/Codex/Claude Code reject a config patch outright, since
+  // OAuth-managed slices belong to the action endpoints; the rest run
+  // through `assertXxxUpstreamRecord`). `z.record(z.unknown())` blocks
+  // primitives / arrays / null from reaching the handler as `config`.
+  config: z.record(z.string(), z.unknown()).optional(),
 });
 
 // Shared envelope for the record-body action contract used by every
@@ -351,14 +357,16 @@ export const upstreamRecordEnvelope = z.object({
   proxy_fallback_list: proxyFallbackListSchema.optional(),
 }).passthrough();
 
+// The bare envelope contract — every action endpoint that takes no extras
+// beyond `record` (refresh, probe, quota, list-models) shares this shape.
+const recordOnlyBody = z.object({ record: upstreamRecordEnvelope });
+
 export const copilotOauthDeviceLoginPollBody = z.object({
   record: upstreamRecordEnvelope,
   deviceCode: z.string().min(1),
 });
 
-export const copilotQuotaBody = z.object({
-  record: upstreamRecordEnvelope,
-});
+export const copilotQuotaBody = recordOnlyBody;
 
 // --- codex OAuth (record-body contract) ---
 //
@@ -386,9 +394,7 @@ export const codexOauthExchangeBody = z.object({
   { message: 'Provide exactly one of auth_json or callback' },
 );
 
-export const codexOauthRefreshBody = z.object({
-  record: upstreamRecordEnvelope,
-});
+export const codexOauthRefreshBody = recordOnlyBody;
 
 // --- claude-code OAuth + setup-token + probe (record-body contract) ---
 
@@ -414,9 +420,7 @@ export const claudeCodeOauthExchangeBody = z.object({
   { message: 'Provide exactly one of credentials_json or callback' },
 );
 
-export const claudeCodeOauthRefreshBody = z.object({
-  record: upstreamRecordEnvelope,
-});
+export const claudeCodeOauthRefreshBody = recordOnlyBody;
 
 export const claudeCodeSetupTokenAuthorizeUrlBody = z.object({
   record: upstreamRecordEnvelope,
@@ -429,17 +433,13 @@ export const claudeCodeSetupTokenExchangeBody = z.object({
   callback: oauthCallbackSchema,
 });
 
-export const claudeCodeProbeBody = z.object({
-  record: upstreamRecordEnvelope,
-});
+export const claudeCodeProbeBody = recordOnlyBody;
 
 // Unified live-model listing for both create-time preview and edit-time
 // refresh. Custom returns the raw upstream row (dashboard translates
 // through the draft's endpoints); every other kind returns the fully
 // projected UpstreamModelConfig catalog.
-export const listModelsBody = z.object({
-  record: upstreamRecordEnvelope,
-});
+export const listModelsBody = recordOnlyBody;
 
 // --- proxies ---
 //
