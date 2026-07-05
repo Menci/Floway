@@ -1933,9 +1933,14 @@ test('spec invariant (3): POST /api/upstreams/claude-code/probe does not persist
 test('spec invariant (3): POST /api/upstreams/list-models ignores record.name mutation on a saved row', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
+  // Azure sits in the SWR-cached branch alongside copilot / codex /
+  // claude-code, so this exercises the `fetchUpstreamModelsCached` path a
+  // future "refresh row metadata" regression would land in. Azure's
+  // getProvidedModels reads directly from config.models — no upstream mock
+  // needed, no credential mint.
   const savedRecord: UpstreamRecord = {
     id: 'up_invariant_list_models',
-    kind: 'custom',
+    kind: 'azure',
     name: 'Original',
     enabled: true,
     sortOrder: 0,
@@ -1945,7 +1950,11 @@ test('spec invariant (3): POST /api/upstreams/list-models ignores record.name mu
     disabledPublicModelIds: [],
     proxyFallbackList: [],
     modelPrefix: null,
-    config: { ...customConfig, apiKey: 'sk-invariant' },
+    config: {
+      endpoint: 'https://invariant.openai.azure.com',
+      apiKey: 'sk-invariant',
+      models: [{ upstreamModelId: 'gpt-4o', publicModelId: 'gpt-4o', kind: 'chat', endpoints: { chatCompletions: {} } }],
+    },
     state: null,
   };
   await repo.upstreams.save(savedRecord);
@@ -1953,18 +1962,8 @@ test('spec invariant (3): POST /api/upstreams/list-models ignores record.name mu
   const envelope = envelopeFromRecord(savedRecord);
   envelope.name = 'Mutated';
 
-  await withMockedFetch(
-    async request => {
-      if (new URL(request.url).pathname === '/v1/models') {
-        return jsonResponse({ object: 'list', data: [{ id: 'm' }] });
-      }
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => {
-      const resp = await requestApp('/api/upstreams/list-models', authed(adminSession, { record: envelope }));
-      assertEquals(resp.status, 200);
-    },
-  );
+  const resp = await requestApp('/api/upstreams/list-models', authed(adminSession, { record: envelope }));
+  assertEquals(resp.status, 200);
 
   const stored = await repo.upstreams.getById(savedRecord.id);
   assertEquals(stored?.name, savedRecord.name);
