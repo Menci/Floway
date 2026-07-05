@@ -1030,6 +1030,35 @@ test('PATCH /api/upstreams rejects config edits on a claude-code row', async () 
   assertEquals(body.error.toLowerCase().includes('claude-code'), true);
 });
 
+test('PATCH /api/upstreams rejects config edits on a codex row', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+
+  const created = await createCodexUpstreamViaExchange(adminSession);
+
+  const patch = await requestApp(`/api/upstreams/${created.id}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json', 'x-floway-session': adminSession },
+    body: JSON.stringify({ config: { accounts: [] } }),
+  });
+  assertEquals(patch.status, 400);
+  const body = (await patch.json()) as { error: string };
+  assertEquals(body.error.toLowerCase().includes('codex'), true);
+});
+
+test('PATCH /api/upstreams rejects config edits on a copilot row', async () => {
+  const { adminSession, copilotUpstream } = await setupAppTest();
+
+  const patch = await requestApp(`/api/upstreams/${copilotUpstream.id}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json', 'x-floway-session': adminSession },
+    body: JSON.stringify({ config: { githubToken: 'ghu_hijack', user: { login: 'x', id: 0, avatar_url: '', name: null } } }),
+  });
+  assertEquals(patch.status, 400);
+  const body = (await patch.json()) as { error: string };
+  assertEquals(body.error.toLowerCase().includes('copilot'), true);
+});
+
 test('PATCH /api/upstreams accepts metadata edits on a claude-code row', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
@@ -1569,9 +1598,19 @@ test('POST /api/upstreams/claude-code/probe returns Anthropic body verbatim and 
         record: envelopeFromRecord(await getRecord(repo, created.id)),
       }));
       assertEquals(resp.status, 200);
-      const body = (await resp.json()) as { fetched_at: string; body: Record<string, unknown> };
+      const body = (await resp.json()) as {
+        fetched_at: string;
+        body: Record<string, unknown>;
+        patch: { state: { accounts: Array<{ refreshToken: string; accessToken?: { token: string }; usageProbeSnapshot?: { data: Record<string, unknown> } }> } };
+      };
       assertEquals(typeof body.fetched_at, 'string');
       assertEquals(body.body, usageProbeBody);
+      // The patch's state slot MUST be a full account slice, not a partial
+      // `{ usageProbeSnapshot }`; frontend applyPatch does whole-slot
+      // replacement and a partial would clobber refreshToken/accessToken.
+      assertEquals(body.patch.state.accounts[0].refreshToken, 'cli_rt');
+      assertEquals(body.patch.state.accounts[0].accessToken?.token, 'cli_at');
+      assertEquals(body.patch.state.accounts[0].usageProbeSnapshot?.data, usageProbeBody);
     },
   );
 
@@ -1889,6 +1928,46 @@ test('spec invariant (3): POST /api/upstreams/claude-code/probe does not persist
 
   const stored = await repo.upstreams.getById(created.id);
   assertEquals(stored?.proxyFallbackList, originalList);
+});
+
+test('spec invariant (3): POST /api/upstreams/list-models ignores record.name mutation on a saved row', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  const savedRecord: UpstreamRecord = {
+    id: 'up_invariant_list_models',
+    kind: 'custom',
+    name: 'Original',
+    enabled: true,
+    sortOrder: 0,
+    createdAt: '2026-05-22T00:00:00.000Z',
+    updatedAt: '2026-05-22T00:00:00.000Z',
+    flagOverrides: {},
+    disabledPublicModelIds: [],
+    proxyFallbackList: [],
+    modelPrefix: null,
+    config: { ...customConfig, apiKey: 'sk-invariant' },
+    state: null,
+  };
+  await repo.upstreams.save(savedRecord);
+
+  const envelope = envelopeFromRecord(savedRecord);
+  envelope.name = 'Mutated';
+
+  await withMockedFetch(
+    async request => {
+      if (new URL(request.url).pathname === '/v1/models') {
+        return jsonResponse({ object: 'list', data: [{ id: 'm' }] });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const resp = await requestApp('/api/upstreams/list-models', authed(adminSession, { record: envelope }));
+      assertEquals(resp.status, 200);
+    },
+  );
+
+  const stored = await repo.upstreams.getById(savedRecord.id);
+  assertEquals(stored?.name, savedRecord.name);
 });
 
 // --- Group B: endpoint tests for surfaces with zero coverage ---
