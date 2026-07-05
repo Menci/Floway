@@ -90,18 +90,6 @@ type ValidationResult<T> = { ok: true; value: T } | { ok: false; error: string }
 
 const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
-// Pulls the wire-side identifier from a provider's opaque `providerData`
-// blob when the provider distinguishes between the public catalog id and
-// the upstream id (e.g. claude-code exposes `claude-sonnet-4-5` publicly
-// while sending `claude-sonnet-4-5-20250929` on the wire). Falls through
-// to undefined when the blob is absent or lacks the field, in which case
-// the caller falls back to `model.id`.
-const providerDataUpstreamModelId = (data: unknown): string | undefined => {
-  if (typeof data !== 'object' || data === null) return undefined;
-  const candidate = (data as { upstreamModelId?: unknown }).upstreamModelId;
-  return typeof candidate === 'string' && candidate.length > 0 ? candidate : undefined;
-};
-
 // Run the per-provider invariant asserts on a freshly-built or freshly-merged
 // record before it hits the repo. Request-time zod schemas only validate JSON
 // shape; these helpers enforce the URL / endpoint-mix / path-override rules
@@ -908,6 +896,26 @@ export const claudeCodeProbe = async (c: CtxWithJson<typeof claudeCodeProbeBody>
   });
 };
 
+// `upstreamModelId` is the wire-side identifier the provider will send when
+// a caller invokes the public `model.id` — claude-code exposes
+// `claude-sonnet-4-5` publicly while sending `claude-sonnet-4-5-20250929`
+// on the wire, and other providers may distinguish similarly through their
+// opaque `providerData` blob.
+const reshapeModelForDashboard = (model: ProviderModel): Record<string, unknown> => {
+  const providerData = typeof model.providerData === 'object' && model.providerData !== null ? model.providerData as { upstreamModelId?: unknown } : null;
+  const wireId = typeof providerData?.upstreamModelId === 'string' && providerData.upstreamModelId.length > 0 ? providerData.upstreamModelId : model.id;
+  return {
+    upstreamModelId: wireId,
+    publicModelId: model.id,
+    kind: model.kind,
+    endpoints: model.endpoints,
+    ...(model.display_name !== undefined ? { display_name: model.display_name } : {}),
+    ...(Object.keys(model.limits).length > 0 ? { limits: model.limits } : {}),
+    ...(model.cost ? { cost: model.cost } : {}),
+    ...(model.chat ? { chat: model.chat } : {}),
+  };
+};
+
 // Unified model catalog fetch for both draft preview and saved-record
 // refresh. Always live-fetches on the control plane; when
 // record.id !== '' the request also warms/refreshes the SWR cache via
@@ -915,17 +923,6 @@ export const claudeCodeProbe = async (c: CtxWithJson<typeof claudeCodeProbeBody>
 // the fresh catalog. Custom's response stays the raw upstream row shape
 // (dashboard translates through the draft's endpoints); every other
 // kind returns UpstreamModelConfig-shaped rows.
-const reshapeModelForDashboard = (model: ProviderModel): Record<string, unknown> => ({
-  upstreamModelId: providerDataUpstreamModelId(model.providerData) ?? model.id,
-  publicModelId: model.id,
-  kind: model.kind,
-  endpoints: model.endpoints,
-  ...(model.display_name !== undefined ? { display_name: model.display_name } : {}),
-  ...(Object.keys(model.limits).length > 0 ? { limits: model.limits } : {}),
-  ...(model.cost ? { cost: model.cost } : {}),
-  ...(model.chat ? { chat: model.chat } : {}),
-});
-
 export const listModels = async (c: CtxWithJson<typeof listModelsBody>) => {
   const { record } = c.req.valid('json');
   if (!isValidProviderKind(record.kind)) {

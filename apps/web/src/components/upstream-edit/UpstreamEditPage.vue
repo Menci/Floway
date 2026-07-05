@@ -308,11 +308,6 @@ const buildConfigForSave = (): unknown => {
   return draft.value.config;
 };
 
-const nextSortOrderFromStore = (): number => {
-  const list = upstreamsStore.upstreams.value ?? [];
-  return list.reduce((acc, u) => Math.max(acc, u.sort_order), -1) + 1;
-};
-
 const save = async () => {
   saveError.value = null;
   const trimmedName = draft.value.name.trim();
@@ -340,7 +335,9 @@ const save = async () => {
     // sort_order arrives as `0` from the blueprint (a placeholder); resolve
     // to the true next slot at save time so we don't rank the new row at
     // the top of the list.
-    const sortOrder = isCreate.value ? nextSortOrderFromStore() : draft.value.sort_order;
+    const sortOrder = isCreate.value
+      ? (upstreamsStore.upstreams.value ?? []).reduce((acc, u) => Math.max(acc, u.sort_order), -1) + 1
+      : draft.value.sort_order;
     const baseBody = {
       name: trimmedName,
       enabled: draft.value.enabled,
