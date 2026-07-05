@@ -93,6 +93,19 @@ export const invalidateCodexAccessToken = async (
 // other terminal codes (`app_session_terminated`, `invalid_refresh_token`,
 // `invalid_client`, `unauthorized_client`, `access_denied`) signal
 // credential death under any race scenario and skip recovery.
+// Process-local coalescing of concurrent ensure calls. On a cold start N
+// requests on the same isolate would all see `accessToken === null` and
+// each POST /oauth/token; the upstream rotates on every call so only one
+// survives and the rest fall into `recoverFromRefreshRace`, burning N
+// round-trips for one usable token. Coalescing here collapses the
+// within-isolate herd to a single mint. Key includes `force` so a
+// dashboard `force: true` click never rides on a concurrent lazy call's
+// cache-hit result (and vice versa); concurrent forces still collapse.
+//
+// Scope: per-isolate only. Cross-isolate siblings still race and are
+// caught by `recoverFromRefreshRace` — same trade-off as claude-code.
+const inFlightEnsures = new Map<string, Promise<CodexAccessTokenEntry>>();
+
 export const ensureCodexAccessToken = async (
   upstreamId: string,
   accountId: string,
@@ -102,7 +115,18 @@ export const ensureCodexAccessToken = async (
   // operator sees the row's tokens actually rotate; the data plane leaves
   // it false so a live request served from cache stays cheap.
   force = false,
-): Promise<CodexAccessTokenEntry> => await ensureCodexAccessTokenInner(upstreamId, accountId, mint, true, force);
+): Promise<CodexAccessTokenEntry> => {
+  const key = `${upstreamId}:${accountId}:${force ? 'force' : 'lazy'}`;
+  const existing = inFlightEnsures.get(key);
+  if (existing) return await existing;
+  const promise = ensureCodexAccessTokenInner(upstreamId, accountId, mint, true, force);
+  inFlightEnsures.set(key, promise);
+  try {
+    return await promise;
+  } finally {
+    inFlightEnsures.delete(key);
+  }
+};
 
 const ensureCodexAccessTokenInner = async (
   upstreamId: string,
