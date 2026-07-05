@@ -293,6 +293,23 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
   const config = normalizeConfig(upstream);
   if (!config.ok) return c.json({ error: config.error }, 400);
 
+  // Server-owned state (copilotToken, OAuth account slots) originates from
+  // this repo's own exchange endpoints, so a legitimate caller's body.state
+  // is already well-shaped. We still assert here because POST /api/upstreams
+  // accepts state on create — a caller who bypasses the exchange helpers
+  // could otherwise persist garbage that only surfaces on the first
+  // data-plane call. Empty blueprints (accounts: [] for the multi-account
+  // kinds; null for copilot) pass the assert cleanly.
+  if (stateFromBody !== null) {
+    try {
+      if (upstream.kind === 'copilot') readCopilotUpstreamState(stateFromBody);
+      else if (upstream.kind === 'codex') assertCodexUpstreamState(stateFromBody);
+      else if (upstream.kind === 'claude-code') readClaudeCodeUpstreamState(stateFromBody);
+    } catch (err) {
+      return c.json({ error: `Invalid state for ${upstream.kind}: ${errorMessage(err)}` }, 400);
+    }
+  }
+
   const record = { ...upstream, config: config.value };
   await getRepo().upstreams.save(record);
   await warmModelsCache(record, c);
