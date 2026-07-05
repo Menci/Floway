@@ -175,7 +175,13 @@ const warmModelsCache = async (record: UpstreamRecord, c: Context): Promise<void
   const fetcher = (await createPerRequestFetcher(getCurrentColo(c.req.raw)))(record.id);
   try {
     await fetchUpstreamModelsCached(instance, { scheduler, fetcher, force: true });
-  } catch {}
+  } catch (e) {
+    // runFetch persists upstream failures to the row's `lastError`; the throw
+    // reaching here means the DB write of that lastError itself failed. Log so
+    // the failure is observable — the dashboard would otherwise silently show a
+    // stale cache with no explanation.
+    logInfo('warm_models_cache_failed', { upstream_id: record.id, error: errorMessage(e) });
+  }
 };
 
 // 'direct' is always a valid entry id; any other id must reference an
