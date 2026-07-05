@@ -224,18 +224,26 @@ const fetchStatus = computed<string | null>(() => {
 
 // Fetch the live model catalog for the current draft. Skipped in create
 // state (no persisted row for the SWR cache to refresh) and for Azure
-// (operator-edited catalog, no upstream `/models` endpoint). Populates
-// `upstreamModels` on success; surfaces the error on `upstreamModelsError`
-// otherwise. Returns nothing — callers wrap this with their own
-// bookkeeping (mount-time prime, operator-driven refresh).
+// (operator-edited catalog, no upstream `/models` endpoint). For custom
+// the server returns raw rows the dashboard translates through the
+// draft's endpoints, so route them into `fetchedRaw` — the same slot the
+// unsaved draft preview uses; every other kind receives already-projected
+// UpstreamModelConfig rows and lands in `upstreamModels`. Surfaces the
+// error on `upstreamModelsError` otherwise. Returns nothing — callers
+// wrap this with their own bookkeeping (mount-time prime, operator-driven
+// refresh).
 const fetchSavedModels = async () => {
   if (isCreate.value || draft.value.kind === 'azure') return;
   upstreamModelsError.value = null;
-  const { data, error } = await callApi<{ data: UpstreamModelConfig[] }>(
+  const { data, error } = await callApi<ListModelsResult>(
     () => api.api.upstreams['list-models'].$post({ json: { record: toRecordEnvelope(draft.value) } }),
   );
   if (error) { upstreamModelsError.value = error.message; return; }
-  upstreamModels.value = data.data;
+  if (draft.value.kind === 'custom') {
+    fetchedRaw.value = data.data as CustomRawModel[];
+  } else {
+    upstreamModels.value = data.data as UpstreamModelConfig[];
+  }
 };
 
 const refreshing = ref(false);
@@ -429,7 +437,9 @@ const modelsManualForActive = computed<UpstreamModelConfig[]>({
 const autoForActive = computed<UpstreamModelConfig[]>(() => {
   if (draft.value.kind === 'custom') {
     if (!customDraft.value.modelsFetch.enabled) return [];
-    if (!isCreate.value) return upstreamModels.value;
+    // Both saved and unsaved custom rows read the raw catalog from
+    // `fetchedRaw` and translate through the draft's endpoints — the
+    // server returns raw upstream rows uniformly for both call paths.
     return customAutoModelsFromDraft.value;
   }
   if (draft.value.kind === 'ollama') {
