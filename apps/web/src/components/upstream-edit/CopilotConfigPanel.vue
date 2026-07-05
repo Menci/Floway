@@ -16,7 +16,6 @@ defineProps<{
 
 defineEmits<{
   patched: [patch: { config?: unknown; state?: unknown }];
-  error: [message: string];
 }>();
 </script>
 
@@ -24,7 +23,6 @@ defineEmits<{
   <CopilotInfo
     v-if="draft.config.githubToken"
     :draft="draft"
-    @error="m => $emit('error', m)"
   />
   <CopilotDeviceFlow v-else :draft="draft" @patched="p => $emit('patched', p)" />
 </template>

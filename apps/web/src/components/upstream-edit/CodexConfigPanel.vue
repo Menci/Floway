@@ -76,8 +76,6 @@ const prepareAuthorize = async () => {
   pkce.value = data;
 };
 
-// When there's no account yet (create-state blueprint), the import form
-// is always visible; edit-state opens it explicitly through the button.
 const importFormVisible = computed(() => !hasAccount.value || reimportOpen.value);
 
 watch([importFormVisible, () => importDraft.value.activeTab], ([visible, tab]) => {

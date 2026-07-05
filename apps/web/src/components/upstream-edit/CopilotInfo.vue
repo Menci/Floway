@@ -13,10 +13,6 @@ const props = defineProps<{
   draft: CopilotUpstreamRecord;
 }>();
 
-defineEmits<{
-  error: [message: string];
-}>();
-
 const accountTypeDisplay = computed(() => copilotAccountTypeDisplay(props.draft.state));
 
 const api = useApi();

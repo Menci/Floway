@@ -26,10 +26,8 @@ const ollamaDraft = defineModel<OllamaDraft>('ollama', { required: true });
 const proxyFallbackList = defineModel<ProxyFallbackEntry[]>('proxyFallbackList', { required: true });
 const modelPrefix = defineModel<ModelPrefixConfig | null>('modelPrefix', { required: true });
 
-// `draft` is the parent's single source of truth. This panel and its
-// wizard children read draft.kind / draft.config / draft.state; wizards
-// emit patches through the `patched` event so the parent can shallow-
-// merge them into the same draft ref.
+// `draft` is the parent's single source of truth; wizards emit patches
+// through `patched` for the parent to merge.
 const props = defineProps<{
   draft: UpstreamRecord;
   flags: FlagDef[];
@@ -140,7 +138,7 @@ onBeforeUnmount(() => floorObserver?.disconnect());
         class="shrink-0"
       />
 
-      <section v-if="kind === 'custom'" class="shrink-0">
+      <section v-if="draft.kind === 'custom'" class="shrink-0">
         <CustomConfigPanel
           v-model="customDraft"
           :api-key-set="customApiKeySet"
@@ -152,7 +150,7 @@ onBeforeUnmount(() => floorObserver?.disconnect());
         />
       </section>
 
-      <section v-else-if="kind === 'azure'" class="shrink-0">
+      <section v-else-if="draft.kind === 'azure'" class="shrink-0">
         <AzureConfigPanel
           v-model="azureDraft"
           :api-key-set="azureApiKeySet"
@@ -160,7 +158,7 @@ onBeforeUnmount(() => floorObserver?.disconnect());
         />
       </section>
 
-      <section v-else-if="kind === 'ollama'" class="shrink-0">
+      <section v-else-if="draft.kind === 'ollama'" class="shrink-0">
         <OllamaConfigPanel
           v-model="ollamaDraft"
           :api-key-set="ollamaApiKeySet"
@@ -176,7 +174,6 @@ onBeforeUnmount(() => floorObserver?.disconnect());
         <CopilotConfigPanel
           :draft="draft"
           @patched="p => $emit('patched', p)"
-          @error="m => $emit('error', m)"
         />
       </section>
 

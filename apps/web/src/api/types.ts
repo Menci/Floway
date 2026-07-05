@@ -151,9 +151,6 @@ export interface OllamaUpstreamConfig {
   models: UpstreamModelConfig[];
 }
 
-// Redacted projection sits on the list endpoint; the full projection on
-// `:id` and `blueprint` carries the actual `refresh_token` and the full
-// `accessToken` (`token` present).
 export interface CodexAccountCredentialState {
   chatgptAccountId: string;
   state: 'active' | 'session_terminated' | 'refresh_failed';
@@ -185,11 +182,6 @@ export interface CodexQuotaSnapshot {
 
 export type CodexQuotaSnapshotMap = Record<string, CodexQuotaSnapshot>;
 
-// Claude Code identity + state shapes. Mirror the redacted projections in
-// packages/gateway/src/control-plane/upstreams/serialize.ts: refreshToken
-// lives in state and surfaces only as the boolean `refreshTokenSet`, and
-// accessToken.token is dropped while expiresAt / refreshedAt remain so the
-// dashboard can display a relative-time badge.
 export interface ClaudeCodeAccountIdentity {
   // null when the access token lacks the `user:profile` scope (personal
   // accounts whose CLI flow did not request it). Dashboard substitutes the
@@ -211,7 +203,6 @@ export interface ClaudeCodeUpstreamConfig {
   accounts: ClaudeCodeAccountIdentity[];
 }
 
-// Full state carries `token` on the access token; redacted drops it.
 export interface ClaudeCodeAccessTokenSummary {
   token?: string;
   expiresAt: number;
