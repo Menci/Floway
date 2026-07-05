@@ -19,9 +19,10 @@ import { useUpstreamsStore } from '../../../../composables/useUpstreams.ts';
 // the create page seeds them with UI-friendly defaults so a fresh row is
 // enabled and named per the provider before the operator types anything.
 //
-// An unknown kind (typo, stale bookmark) or a failed blueprint fetch both
-// resolve to `initialRecord: null`; the setup script bounces to the
-// upstreams list.
+// An unknown kind (typo, stale bookmark) resolves to `initialRecord: null`
+// and the setup script bounces to the upstreams list. Every other blueprint
+// failure (5xx / auth / network) propagates so the operator sees the actual
+// problem instead of a silent redirect.
 export const useNewUpstreamData = defineBasicLoader('/dashboard/upstreams/new/[provider]', async route => {
   const api = useApi();
   const store = useUpstreamsStore();
@@ -34,6 +35,10 @@ export const useNewUpstreamData = defineBasicLoader('/dashboard/upstreams/new/[p
     useProxiesStore().load(),
     useRuntimeInfo().load(),
   ]);
+
+  if (blueprintRes?.error) {
+    throw new Error(blueprintRes.error.message);
+  }
 
   const initialRecord = blueprintRes?.data && kind !== null
     ? { ...blueprintRes.data, name: providerMeta(kind).defaultName, enabled: true }
