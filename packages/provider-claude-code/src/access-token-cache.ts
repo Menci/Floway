@@ -46,9 +46,9 @@ export interface EnsureClaudeCodeAccessTokenArgs {
   // always call the OAuth refresh endpoint. The dashboard's Refresh button
   // sets this so the operator sees the row's tokens actually rotate; the
   // data plane leaves it false so a live request served from cache stays
-  // cheap. Within-isolate coalescing (`inFlightEnsures`) still applies —
-  // concurrent force calls collapse to one refresh, as do concurrent
-  // force/non-force pairs.
+  // cheap. Coalescing keys on `(upstreamId, force)` so a force call never
+  // returns a lazy call's cache-hit result and vice versa; concurrent
+  // dashboard clicks still collapse to one refresh.
   force?: boolean;
 }
 
@@ -73,14 +73,15 @@ const inFlightEnsures = new Map<string, Promise<EnsuredAccessToken>>();
 export const ensureClaudeCodeAccessToken = async (
   args: EnsureClaudeCodeAccessTokenArgs,
 ): Promise<EnsuredAccessToken> => {
-  const existing = inFlightEnsures.get(args.upstreamId);
+  const key = `${args.upstreamId}:${args.force ? 'force' : 'lazy'}`;
+  const existing = inFlightEnsures.get(key);
   if (existing) return await existing;
   const promise = ensureClaudeCodeAccessTokenInner(args, true);
-  inFlightEnsures.set(args.upstreamId, promise);
+  inFlightEnsures.set(key, promise);
   try {
     return await promise;
   } finally {
-    inFlightEnsures.delete(args.upstreamId);
+    inFlightEnsures.delete(key);
   }
 };
 
