@@ -13,7 +13,7 @@ import { DIRECT_PROXY_ID, normalizeProxyFallbackList } from '../../repo/proxy-fa
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getCurrentColo } from '../../runtime/runtime-info.ts';
 import { shortId } from '../../shared/short-id.ts';
-import { fetchGitHubUser, pollGitHubDeviceFlow, startGitHubDeviceFlow } from '../auth/github-device-flow.ts';
+import { fetchGitHubUser, pollGitHubDeviceFlow, startGitHubDeviceFlow, type GitHubUser } from '../auth/github-device-flow.ts';
 import type { claudeCodeOauthAuthorizeUrlBody, claudeCodeOauthExchangeBody, claudeCodeOauthRefreshBody, claudeCodeProbeBody, claudeCodeSetupTokenAuthorizeUrlBody, claudeCodeSetupTokenExchangeBody, codexOauthAuthorizeUrlBody, codexOauthExchangeBody, codexOauthRefreshBody, copilotOauthDeviceLoginPollBody, copilotQuotaBody, createUpstreamBody, listModelsBody, updateUpstreamBody } from '../schemas.ts';
 import { copilotConfigField, type CopilotUpstreamConfig, isRecord } from '../shared/field-validators.ts';
 import {
@@ -61,7 +61,7 @@ import {
   importCodexFromCallback,
   mintCodexAccessToken,
 } from '@floway-dev/provider-codex';
-import { clearInProcessCopilotTokenCache, emptyCopilotUpstreamState, exchangeCopilotToken, githubHeaders, readCopilotUpstreamState, type CopilotUpstreamState } from '@floway-dev/provider-copilot';
+import { clearInProcessCopilotTokenCache, emptyCopilotUpstreamState, exchangeCopilotToken, githubHeaders, readCopilotUpstreamState, type CopilotTokenEntry, type CopilotUpstreamState } from '@floway-dev/provider-copilot';
 import { assertCustomUpstreamRecord, fetchCustomModels } from '@floway-dev/provider-custom';
 import { assertOllamaUpstreamRecord, createOllamaProvider } from '@floway-dev/provider-ollama';
 
@@ -381,10 +381,17 @@ export const copilotOauthDeviceLoginStart = async (c: Context) => {
 // simultaneously applied to the stored record so the live data plane
 // picks up the fresh credential immediately.
 export const copilotOauthDeviceLoginPoll = async (c: CtxWithJson<typeof copilotOauthDeviceLoginPollBody>) => {
-  try {
-    const { record, deviceCode } = c.req.valid('json');
-    const fetcher = await resolveControlPlaneFetcher({ override: record.proxy_fallback_list, currentColo: getCurrentColo(c.req.raw) });
+  const { record, deviceCode } = c.req.valid('json');
+  const fetcher = await resolveControlPlaneFetcher({ override: record.proxy_fallback_list, currentColo: getCurrentColo(c.req.raw) });
 
+  // Upstream-facing calls (GitHub device poll + user lookup + Copilot token
+  // exchange) can legitimately 502 the caller when GitHub / Copilot is
+  // unhealthy. DB ops below run OUTSIDE this catch so that a repo `.save()`
+  // or scheduler failure surfaces as a 500 with a stack, not as a
+  // misleading "upstream error" 502.
+  type UpstreamCred = { user: GitHubUser; tokenEntry: CopilotTokenEntry; accessToken: string };
+  let cred: UpstreamCred;
+  try {
     const data = await pollGitHubDeviceFlow(deviceCode, fetcher);
 
     if (data.error === 'authorization_pending') return c.json({ status: 'pending' as const });
@@ -392,47 +399,47 @@ export const copilotOauthDeviceLoginPoll = async (c: CtxWithJson<typeof copilotO
     if (data.error) return c.json({ status: 'error' as const, error: data.error_description ?? data.error }, 400);
     if (!data.access_token) return c.json({ status: 'error' as const, error: 'Unknown response' }, 500);
 
-    const user = await fetchGitHubUser(data.access_token, fetcher);
     // Validates the PAT + seeds a fresh Copilot access token so the data
     // plane and dashboard `endpoints.api` calls work immediately without
     // a follow-up exchange round trip.
+    const user = await fetchGitHubUser(data.access_token, fetcher);
     const tokenEntry = await exchangeCopilotToken(data.access_token, fetcher);
-
-    const configPatch: CopilotUpstreamConfig = { githubToken: data.access_token, user };
-
-    // Return the fully-merged state slot instead of a partial `{ copilotToken }`
-    // patch. Frontend `applyPatch` does whole-slot replacement on state, so a
-    // partial slot would clobber any sibling field (e.g. draft.state.knownModels
-    // hydrated by an earlier fetch). Edit state seeds the merge from the stored
-    // record; create state seeds from an empty slot so the reply is uniformly a
-    // full slot regardless of caller path.
-    let nextState: CopilotUpstreamState;
-    if (record.id !== '') {
-      const dbRecord = await getRepo().upstreams.getById(record.id);
-      if (!dbRecord) return c.json({ status: 'error' as const, error: 'Upstream not found' }, 404);
-      if (dbRecord.kind !== 'copilot') return c.json({ status: 'error' as const, error: 'Upstream is not a Copilot upstream' }, 400);
-      const prevState = readCopilotUpstreamState(dbRecord.state);
-      nextState = { ...prevState, copilotToken: tokenEntry };
-      const next: UpstreamRecord = { ...dbRecord, config: configPatch, state: nextState, updatedAt: new Date().toISOString() };
-      await getRepo().upstreams.save(next);
-      clearInProcessCopilotTokenCache();
-      await warmModelsCache(next, c);
-    } else {
-      nextState = { ...emptyCopilotUpstreamState(), copilotToken: tokenEntry };
-    }
-
-    return c.json({
-      status: 'complete' as const,
-      user,
-      patch: {
-        config: configPatch,
-        state: nextState,
-      },
-    });
+    cred = { user, tokenEntry, accessToken: data.access_token };
   } catch (e: unknown) {
-    const msg = errorMessage(e);
-    return c.json({ status: 'error' as const, error: msg }, 502);
+    return c.json({ status: 'error' as const, error: errorMessage(e) }, 502);
   }
+
+  const configPatch: CopilotUpstreamConfig = { githubToken: cred.accessToken, user: cred.user };
+
+  // Return the fully-merged state slot instead of a partial `{ copilotToken }`
+  // patch. Frontend `applyPatch` does whole-slot replacement on state, so a
+  // partial slot would clobber any sibling field (e.g. draft.state.knownModels
+  // hydrated by an earlier fetch). Edit state seeds the merge from the stored
+  // record; create state seeds from an empty slot so the reply is uniformly a
+  // full slot regardless of caller path.
+  let nextState: CopilotUpstreamState;
+  if (record.id !== '') {
+    const dbRecord = await getRepo().upstreams.getById(record.id);
+    if (!dbRecord) return c.json({ status: 'error' as const, error: 'Upstream not found' }, 404);
+    if (dbRecord.kind !== 'copilot') return c.json({ status: 'error' as const, error: 'Upstream is not a Copilot upstream' }, 400);
+    const prevState = readCopilotUpstreamState(dbRecord.state);
+    nextState = { ...prevState, copilotToken: cred.tokenEntry };
+    const next: UpstreamRecord = { ...dbRecord, config: configPatch, state: nextState, updatedAt: new Date().toISOString() };
+    await getRepo().upstreams.save(next);
+    clearInProcessCopilotTokenCache();
+    await warmModelsCache(next, c);
+  } else {
+    nextState = { ...emptyCopilotUpstreamState(), copilotToken: cred.tokenEntry };
+  }
+
+  return c.json({
+    status: 'complete' as const,
+    user: cred.user,
+    patch: {
+      config: configPatch,
+      state: nextState,
+    },
+  });
 };
 
 interface CopilotQuotaDetail {
