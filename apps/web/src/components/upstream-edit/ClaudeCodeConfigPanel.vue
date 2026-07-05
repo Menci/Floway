@@ -14,10 +14,12 @@ type ClaudeCodeUpstreamRecord = Extract<UpstreamRecord, { kind: 'claude-code' }>
 
 const props = defineProps<{
   draft: ClaudeCodeUpstreamRecord;
+  saving: boolean;
 }>();
 
 const emit = defineEmits<{
   patched: [patch: { config?: unknown; state?: unknown }];
+  'save-and-open-edit': [];
   error: [message: string];
 }>();
 
@@ -203,6 +205,24 @@ const refreshQuotaNow = async () => {
   <div class="space-y-4">
     <template v-if="hasAccount">
       <ClaudeCodeAccountCard :record="draft" :probing="probing" @refresh-quota="refreshQuotaNow" />
+
+      <!-- See CopilotInfo for the create-state save-and-load rationale — same
+           shape here: no persisted id means list-models can't hit the SWR
+           path, so the CTA saves first and lands on the edit page. -->
+      <div
+        v-if="isCreate"
+        class="flex items-center justify-between gap-4 rounded-xl border border-[rgba(0,229,255,0.18)] bg-gradient-to-br from-[rgba(0,229,255,0.08)] to-[rgba(0,229,255,0.02)] px-4 py-3.5"
+      >
+        <div class="min-w-0 flex-1">
+          <p class="text-sm font-medium text-white">Ready to save</p>
+          <p class="text-xs text-gray-400">Save this Claude Code upstream to load its model catalog for review.</p>
+        </div>
+        <Button :loading="saving" class="shrink-0" @click="emit('save-and-open-edit')">
+          <i v-if="!saving" class="i-lucide-save size-3.5" />
+          Save and load models
+        </Button>
+      </div>
+
       <div class="flex flex-wrap items-center gap-2">
         <Button v-if="!isCreate && refreshable" :loading="refreshing" @click="refreshTokenNow">
           <i v-if="!refreshing" class="i-lucide-refresh-cw size-3.5" />

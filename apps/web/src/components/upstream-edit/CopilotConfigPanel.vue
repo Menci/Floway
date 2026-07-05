@@ -12,10 +12,12 @@ type CopilotUpstreamRecord = Extract<UpstreamRecord, { kind: 'copilot' }>;
 // into the info view without any local state.
 defineProps<{
   draft: CopilotUpstreamRecord;
+  saving: boolean;
 }>();
 
 defineEmits<{
   patched: [patch: { config?: unknown; state?: unknown }];
+  'save-and-open-edit': [];
 }>();
 </script>
 
@@ -23,6 +25,8 @@ defineEmits<{
   <CopilotInfo
     v-if="draft.config.githubToken"
     :draft="draft"
+    :saving="saving"
+    @save-and-open-edit="$emit('save-and-open-edit')"
   />
   <CopilotDeviceFlow v-else :draft="draft" @patched="p => $emit('patched', p)" />
 </template>

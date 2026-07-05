@@ -5,14 +5,20 @@ import { callApi, useApi } from '../../api/client.ts';
 import type { CopilotQuotaSnapshot, UpstreamRecord } from '../../api/types.ts';
 import { toRecordEnvelope } from '../../api/types.ts';
 import { copilotAccountTypeDisplay } from '../../utils/copilot.ts';
-import { Card } from '@floway-dev/ui';
+import { Button, Card } from '@floway-dev/ui';
 
 type CopilotUpstreamRecord = Extract<UpstreamRecord, { kind: 'copilot' }>;
 
 const props = defineProps<{
   draft: CopilotUpstreamRecord;
+  saving: boolean;
 }>();
 
+const emit = defineEmits<{
+  'save-and-open-edit': [];
+}>();
+
+const isCreate = computed(() => props.draft.id === '');
 const accountTypeDisplay = computed(() => copilotAccountTypeDisplay(props.draft.state));
 
 const api = useApi();
@@ -94,5 +100,24 @@ const usedPercent = computed(() => {
       </template>
       <p v-else-if="!loadingQuota" class="text-xs text-gray-500">Click Load to fetch the current premium quota.</p>
     </Card>
+
+    <!-- Create-state prompt: the operator has completed the device flow but
+         hasn't persisted the row yet, so the list-models endpoint has no DB
+         id to key off. Offer an explicit save-and-open path that lands them
+         on the edit page whose mount-time prime populates the catalog. The
+         main Save button in the page footer instead returns to the list. -->
+    <div
+      v-if="isCreate"
+      class="flex items-center justify-between gap-4 rounded-xl border border-[rgba(0,229,255,0.18)] bg-gradient-to-br from-[rgba(0,229,255,0.08)] to-[rgba(0,229,255,0.02)] px-4 py-3.5"
+    >
+      <div class="min-w-0 flex-1">
+        <p class="text-sm font-medium text-white">Ready to save</p>
+        <p class="text-xs text-gray-400">Save this Copilot upstream to load its model catalog for review.</p>
+      </div>
+      <Button :loading="saving" class="shrink-0" @click="emit('save-and-open-edit')">
+        <i v-if="!saving" class="i-lucide-save size-3.5" />
+        Save and load models
+      </Button>
+    </div>
   </div>
 </template>

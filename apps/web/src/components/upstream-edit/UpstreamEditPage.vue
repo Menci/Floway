@@ -222,18 +222,33 @@ const fetchStatus = computed<string | null>(() => {
   return `${fetchedCount.value} returned · ${label}`;
 });
 
-// Fetch the live model catalog for the current draft. Skipped in create
-// state (no persisted row for the SWR cache to refresh) and for Azure
-// (operator-edited catalog, no upstream `/models` endpoint). For custom
-// the server returns raw rows the dashboard translates through the
-// draft's endpoints, so route them into `fetchedRaw` — the same slot the
-// unsaved draft preview uses; every other kind receives already-projected
+// True when the current draft config carries enough credentials for the
+// list-models call to succeed. Blueprints (empty config) fail this gate so
+// mount-time prime doesn't fire an unauthenticated upstream hit; a
+// wizard-emitted patch that lands the credential flips this true and
+// applyPatch re-runs the fetch immediately.
+const hasCredentialForFetch = computed<boolean>(() => {
+  const d = draft.value;
+  if (d.kind === 'copilot') return d.config.githubToken !== '';
+  if (d.kind === 'codex' || d.kind === 'claude-code') return d.config.accounts.length > 0;
+  if (d.kind === 'custom') return d.config.baseUrl !== '' && d.config.apiKey !== '';
+  if (d.kind === 'ollama') return d.config.baseUrl !== '';
+  return false;
+});
+
+// Fetch the live model catalog for the current draft. Skipped for Azure
+// (operator-edited catalog, no upstream `/models` endpoint) and when the
+// draft has no credential yet (blueprint state). For custom the server
+// returns raw rows the dashboard translates through the draft's endpoints,
+// so route them into `fetchedRaw` — the same slot the unsaved draft
+// preview uses; every other kind receives already-projected
 // UpstreamModelConfig rows and lands in `upstreamModels`. Surfaces the
 // error on `upstreamModelsError` otherwise. Returns nothing — callers
-// wrap this with their own bookkeeping (mount-time prime, operator-driven
-// refresh).
-const fetchSavedModels = async () => {
-  if (isCreate.value || draft.value.kind === 'azure') return;
+// wrap this with their own bookkeeping (mount-time prime, wizard-driven
+// auto-fetch after OAuth completes, operator-driven refresh).
+const fetchUpstreamModels = async () => {
+  if (draft.value.kind === 'azure') return;
+  if (!hasCredentialForFetch.value) return;
   upstreamModelsError.value = null;
   const { data, error } = await callApi<ListModelsResult>(
     () => api.api.upstreams['list-models'].$post({ json: { record: toRecordEnvelope(draft.value) } }),
@@ -250,7 +265,7 @@ const refreshing = ref(false);
 const refreshCachedModels = async () => {
   refreshing.value = true;
   try {
-    await fetchSavedModels();
+    await fetchUpstreamModels();
     if (upstreamModelsError.value) return;
     // The server-side list-models refreshed the SWR cache too; reload the
     // store so the header's `modelsCache` summary reflects the freshest
@@ -265,7 +280,7 @@ const refreshCachedModels = async () => {
 
 // Prime on mount so ModelsPanel renders populated; refresh button reruns
 // the same call plus the store reload above.
-void fetchSavedModels();
+void fetchUpstreamModels();
 
 const saving = ref(false);
 const saveError = ref<string | null>(null);
@@ -316,7 +331,7 @@ const buildConfigForSave = (): unknown => {
   return draft.value.config;
 };
 
-const save = async () => {
+const save = async ({ openEdit = false }: { openEdit?: boolean } = {}) => {
   saveError.value = null;
   const trimmedName = draft.value.name.trim();
   if (!trimmedName) { saveError.value = 'Name is required'; return; }
@@ -373,7 +388,12 @@ const save = async () => {
       const { data, error } = await callApi<UpstreamRecord>(() => api.api.upstreams.$post({ json: createBody as never }));
       if (error) { saveError.value = error.message; return; }
       emit('saved', data);
-      await router.replace(`/dashboard/upstreams/${data.id}`);
+      // The main Save button bounces back to the list — the operator opened
+      // this page to bring a row into existence, not to keep tweaking it. The
+      // per-provider "Save and load models" CTA sets openEdit so the newly-
+      // saved row's edit page renders next, letting its mount-time list-models
+      // populate the catalog for a review pass before the operator leaves.
+      await router.replace(openEdit ? `/dashboard/upstreams/${data.id}` : '/dashboard/upstreams');
     } else {
       // PATCH only user-owned fields. For OAuth providers the backend
       // rejects a `config` patch, so we skip config for them — their
@@ -405,6 +425,12 @@ const cancel = async () => {
 // Wizards emit patches into the draft. `state` is the OAuth-owned slice
 // (accounts + credentials); `config` is the identity slice. Shallow-merge
 // per key so a patch that only carries `state` doesn't blow away `config`.
+// Auto-fetching upstream models on a create-state patch is not viable:
+// provider factories read row state from DB by upstream id, and the
+// synthetic 'draft' id used for list-models has no DB row. The
+// per-provider "Save and load models" CTA is the create-state path — it
+// saves first, then the edit page's mount-time prime populates the
+// catalog.
 const applyPatch = (patch: { config?: unknown; state?: unknown }) => {
   const next: UpstreamRecord = { ...draft.value };
   if (patch.config !== undefined) (next as { config: unknown }).config = patch.config;
@@ -518,7 +544,7 @@ const workbenchStyle = computed(() => ({ '--right-pane-h': `${Math.ceil(rightCon
       </nav>
       <div class="ml-auto flex items-center gap-2">
         <Button variant="secondary" :disabled="saving" @click="cancel">Cancel</Button>
-        <Button :loading="saving" @click="save">Save changes</Button>
+        <Button :loading="saving" @click="() => save()">Save changes</Button>
       </div>
     </header>
 
@@ -559,9 +585,11 @@ const workbenchStyle = computed(() => ({ '--right-pane-h': `${Math.ceil(rightCon
         :available-model-items="availableModelItems"
         :models-cache="showCacheStatus ? draft.modelsCache : null"
         :refreshing="refreshing"
+        :saving="saving"
         @fetch-models="listDraftModels"
         @refresh-cache="refreshCachedModels"
         @patched="applyPatch"
+        @save-and-open-edit="save({ openEdit: true })"
         @error="onError"
       />
       <ModelsPanel

@@ -43,6 +43,7 @@ const props = defineProps<{
   // when this is provided.
   modelsCache: UpstreamRecord['modelsCache'] | null;
   refreshing: boolean;
+  saving: boolean;
   coloAware: boolean;
   currentColo: string | null;
 }>();
@@ -51,6 +52,7 @@ defineEmits<{
   'fetch-models': [];
   'refresh-cache': [];
   patched: [patch: { config?: unknown; state?: unknown }];
+  'save-and-open-edit': [];
   error: [message: string];
   'update:model-prefix-invalid': [invalid: boolean];
 }>();
@@ -173,14 +175,18 @@ onBeforeUnmount(() => floorObserver?.disconnect());
       <section v-else-if="draft.kind === 'copilot'" class="shrink-0">
         <CopilotConfigPanel
           :draft="draft"
+          :saving="saving"
           @patched="p => $emit('patched', p)"
+          @save-and-open-edit="$emit('save-and-open-edit')"
         />
       </section>
 
       <section v-else-if="draft.kind === 'codex'" class="shrink-0">
         <CodexConfigPanel
           :draft="draft"
+          :saving="saving"
           @patched="p => $emit('patched', p)"
+          @save-and-open-edit="$emit('save-and-open-edit')"
           @error="m => $emit('error', m)"
         />
       </section>
@@ -188,7 +194,9 @@ onBeforeUnmount(() => floorObserver?.disconnect());
       <section v-else-if="draft.kind === 'claude-code'" class="shrink-0">
         <ClaudeCodeConfigPanel
           :draft="draft"
+          :saving="saving"
           @patched="p => $emit('patched', p)"
+          @save-and-open-edit="$emit('save-and-open-edit')"
           @error="m => $emit('error', m)"
         />
       </section>
