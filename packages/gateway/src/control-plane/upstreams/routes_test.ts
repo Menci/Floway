@@ -154,6 +154,81 @@ test('POST /api/upstreams creates Copilot upstream rows with redacted GitHub tok
   assertEquals((stored?.config as Record<string, unknown>).githubToken, 'ghu_secret');
 });
 
+// --- create-time state assert (OAuth-kind rejection surface) ---
+//
+// createUpstream runs each kind's state reader against body.state, so a
+// caller who bypasses the exchange helpers can't slip a malformed shape
+// past the row builder. Copilot's null blueprint passes; codex and
+// claude-code blueprints carry `{accounts: []}` and their asserters
+// reject null on purpose.
+
+test('POST /api/upstreams rejects a codex create with null state', async () => {
+  const { adminSession } = await setupAppTest();
+
+  // Two-step setup: exchange returns a valid config+state patch, then we
+  // POST /api/upstreams with the config intact but a null state to prove
+  // the create-time state reader rejects it (before the state-hardening
+  // fix a client bypassing the exchange could persist this).
+  const exchange = await requestApp('/api/upstreams/codex/oauth/exchange', authed(adminSession, {
+    record: blueprintEnvelope('codex'),
+    auth_json: codexAuthJsonImport().auth_json,
+  }));
+  assertEquals(exchange.status, 200);
+  const { patch } = (await exchange.json()) as { patch: { config: unknown; state: unknown } };
+
+  const resp = await requestApp('/api/upstreams', authed(adminSession, {
+    kind: 'codex',
+    name: 'Codex',
+    config: patch.config,
+    state: null,
+    flag_overrides: {},
+  }));
+  assertEquals(resp.status, 400);
+  const body = (await resp.json()) as { error: string };
+  assertEquals(body.error.toLowerCase().includes('invalid state for codex'), true);
+});
+
+test('POST /api/upstreams rejects a claude-code create with null state', async () => {
+  const { adminSession } = await setupAppTest();
+
+  const exchange = await withMockedFetch(
+    () => jsonResponse(claudeCodeProfileBody),
+    () => requestApp('/api/upstreams/claude-code/oauth/exchange', authed(adminSession, {
+      record: blueprintEnvelope('claude-code'),
+      credentials_json: claudeCodeCredentialsJson(),
+    })),
+  );
+  assertEquals(exchange.status, 200);
+  const { patch } = (await exchange.json()) as { patch: { config: unknown; state: unknown } };
+
+  const resp = await requestApp('/api/upstreams', authed(adminSession, {
+    kind: 'claude-code',
+    name: 'Claude Code',
+    config: patch.config,
+    state: null,
+    flag_overrides: {},
+  }));
+  assertEquals(resp.status, 400);
+  const body = (await resp.json()) as { error: string };
+  assertEquals(body.error.toLowerCase().includes('invalid state for claude-code'), true);
+});
+
+test('POST /api/upstreams rejects a copilot create with malformed copilotToken', async () => {
+  const { adminSession } = await setupAppTest();
+  const resp = await requestApp('/api/upstreams', authed(adminSession, createBody({
+    kind: 'copilot',
+    name: 'Copilot',
+    config: copilotConfig,
+    // copilotToken is normally an object with token/expiresAt/baseUrl; a
+    // string here would silently null-degrade in the serializer layer
+    // before the state reader was hardened.
+    state: { copilotToken: 'not-an-object' },
+  })));
+  assertEquals(resp.status, 400);
+  const body = (await resp.json()) as { error: string };
+  assertEquals(body.error.toLowerCase().includes('invalid state for copilot'), true);
+});
+
 test('PATCH /api/upstreams rejects kind changes and preserves the row', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
