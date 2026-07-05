@@ -176,10 +176,11 @@ const warmModelsCache = async (record: UpstreamRecord, c: Context): Promise<void
   try {
     await fetchUpstreamModelsCached(instance, { scheduler, fetcher, force: true });
   } catch (e) {
-    // runFetch persists upstream failures to the row's `lastError`; the throw
-    // reaching here means the DB write of that lastError itself failed. Log so
-    // the failure is observable — the dashboard would otherwise silently show a
-    // stale cache with no explanation.
+    // runFetch persists upstream failures to the row's `lastError`; anything
+    // reaching here is a Floway-side fault (lastError write itself failed,
+    // scheduler blew up, sqlite ran out of space, etc.). Log so the failure
+    // is observable — the dashboard would otherwise silently show a stale
+    // cache with no explanation.
     logInfo('warm_models_cache_failed', { upstream_id: record.id, error: errorMessage(e) });
   }
 };
