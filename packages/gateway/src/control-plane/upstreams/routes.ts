@@ -387,7 +387,15 @@ export const copilotOauthDeviceLoginStart = async (c: Context) => {
 // picks up the fresh credential immediately.
 export const copilotOauthDeviceLoginPoll = async (c: CtxWithJson<typeof copilotOauthDeviceLoginPollBody>) => {
   const { record, deviceCode } = c.req.valid('json');
-  const fetcher = await resolveControlPlaneFetcher({ override: record.proxy_fallback_list, currentColo: getCurrentColo(c.req.raw) });
+
+  // Config-validation errors (e.g. unknown proxy id in the override) surface
+  // as 400 — they belong to the caller, not to the upstream.
+  let fetcher: Fetcher;
+  try {
+    fetcher = await resolveControlPlaneFetcher({ override: record.proxy_fallback_list, currentColo: getCurrentColo(c.req.raw) });
+  } catch (err) {
+    return c.json({ status: 'error' as const, error: errorMessage(err) }, 400);
+  }
 
   // Upstream-facing calls (GitHub device poll + user lookup + Copilot token
   // exchange) can legitimately 502 the caller when GitHub / Copilot is

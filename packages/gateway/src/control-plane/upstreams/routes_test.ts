@@ -1340,9 +1340,10 @@ test('POST /api/upstreams/copilot/oauth/device-login/poll honors the record.prox
     }),
   );
   // resolveControlPlaneFetcher throws synchronously when validating the
-  // override; the handler's outer catch maps that to a 502 with the
-  // error message intact.
-  assertEquals(resp.status, 502);
+  // override; the handler maps that to a 400 (config error, not upstream
+  // error) with the error message intact. Mirrors codex / claude-code
+  // refresh which reject the same shape as 400.
+  assertEquals(resp.status, 400);
   const body = (await resp.json()) as { error: string };
   assertEquals(body.error.toLowerCase().includes('unknown proxy id'), true);
 });
