@@ -86,7 +86,7 @@ test('Codex terminal dispatches on post-chain ctx.action (interceptor flip gener
     throw new Error(`unexpected fetch ${url}`);
   });
 
-  const instance = await createCodexProvider(baseRecord);
+  const instance = createCodexProvider(baseRecord);
   // Generate-shaped body — carries tools, reasoning, temperature, etc. None
   // of these are allowed on /responses/compact. The pivot above flips action
   // to 'compact'; the terminal must narrow the body before sending upstream.

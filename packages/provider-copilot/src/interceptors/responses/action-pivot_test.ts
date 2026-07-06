@@ -64,7 +64,7 @@ test('Copilot provider terminal dispatches on post-chain ctx.action (interceptor
   initImageProcessor(createInMemoryImageProcessor());
   clearInProcessCopilotTokenCache();
 
-  const instance = await createCopilotProvider(upstream);
+  const instance = createCopilotProvider(upstream);
   const provider = instance.instance;
 
   let responsesBody: Record<string, unknown> | undefined;

@@ -70,7 +70,7 @@ const oauthTokenResponse = (overrides: Partial<{ access_token: string; refresh_t
 
 describe('createCodexProvider', () => {
   test('returns an instance carrying provider kind and identity', async () => {
-    const instance = await createCodexProvider(baseRecord);
+    const instance = createCodexProvider(baseRecord);
     expect(instance.kind).toBe('codex');
     expect(instance.upstream).toBe('up_codex');
     expect(instance.name).toBe('Codex Plus');
@@ -79,7 +79,7 @@ describe('createCodexProvider', () => {
 
   test('getProvidedModels uses the cached access token when fresh and surfaces every catalog entry', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(modelsResponse());
-    const instance = await createCodexProvider(baseRecord);
+    const instance = createCodexProvider(baseRecord);
     const models = await instance.instance.getProvidedModels(directFetcher);
     // Provider surfaces both visible and hidden upstream models — operators
     // can dispatch to `codex-auto-review` even though ChatGPT's UI hides it.
@@ -97,7 +97,7 @@ describe('createCodexProvider', () => {
       if (url.includes('/codex/models')) return modelsResponse();
       throw new Error(`unexpected fetch ${url}`);
     });
-    const instance = await createCodexProvider(baseRecord);
+    const instance = createCodexProvider(baseRecord);
     const models = await instance.instance.getProvidedModels(directFetcher);
     expect(models.map(m => m.id)).toEqual(['gpt-5.4', 'codex-auto-review']);
     const urls = fetchSpy.mock.calls.map(c => typeof c[0] === 'string' ? c[0] : (c[0] as URL | Request).toString());
@@ -114,7 +114,7 @@ describe('createCodexProvider', () => {
 
   test('getProvidedModels propagates catalog fetch failures', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('upstream down', { status: 502 }));
-    const instance = await createCodexProvider(baseRecord);
+    const instance = createCodexProvider(baseRecord);
     await expect(instance.instance.getProvidedModels(directFetcher)).rejects.toThrow(/Codex \/models fetch failed/);
   });
 
@@ -125,7 +125,7 @@ describe('createCodexProvider', () => {
       if (url.includes('/oauth/token')) return new Response(JSON.stringify({ error: 'invalid_grant' }), { status: 400, headers: new Headers({ 'content-type': 'application/json' }) });
       throw new Error(`unexpected fetch ${url}`);
     });
-    const instance = await createCodexProvider(baseRecord);
+    const instance = createCodexProvider(baseRecord);
     await expect(instance.instance.getProvidedModels(directFetcher)).rejects.toThrow(/Codex OAuth session terminated/);
   });
 
@@ -140,7 +140,7 @@ describe('createCodexProvider', () => {
       ...baseRecord,
       flagOverrides: { 'responses-web-search-shim': true },
     };
-    const instance = await createCodexProvider(recordWithOverride);
+    const instance = createCodexProvider(recordWithOverride);
     const models = await instance.instance.getProvidedModels(directFetcher);
     for (const m of models) {
       expect(m.enabledFlags.has('responses-web-search-shim')).toBe(true);
@@ -149,7 +149,7 @@ describe('createCodexProvider', () => {
 
   test('callResponses round-trips through fetch transport', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
-    const instance = await createCodexProvider(baseRecord);
+    const instance = createCodexProvider(baseRecord);
     const result = await instance.instance.callResponses(
       stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { responses: {} } }),
       { input: [{ type: 'message', role: 'user', content: 'hi' }], stream: true },
@@ -163,7 +163,7 @@ describe('createCodexProvider', () => {
 
   test('callResponses re-reads state per request (operator re-import takes effect)', async () => {
     getByIdSpy.mockResolvedValueOnce({ ...baseRecord, state: { accounts: [{ chatgptAccountId: 'acc', refresh_token: 'rt_v1', state: 'session_terminated', state_updated_at: '2026-01-02T00:00:00Z', openaiDeviceId: '11111111-2222-4333-8444-555555555555', accessToken: null, quotaSnapshot: null }] } as CodexUpstreamState });
-    const instance = await createCodexProvider(baseRecord);
+    const instance = createCodexProvider(baseRecord);
     const result = await instance.instance.callResponses(
       stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { responses: {} } }),
       { input: [], stream: true },
@@ -183,7 +183,7 @@ describe('createCodexProvider', () => {
     'callMessagesCountTokens',
     'callMessages',
   ] as const)('%s returns a synthetic 405 (data plane never dispatches these to Codex)', async method => {
-    const instance = await createCodexProvider(baseRecord);
+    const instance = createCodexProvider(baseRecord);
     const model = stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { responses: {} } });
     // @ts-expect-error: each method has a different body type; we only assert
     // the synthetic 405 envelope is what comes back.
