@@ -1,5 +1,6 @@
 import { ensureClaudeCodeAccessToken } from './access-token-cache.ts';
 import { assertClaudeCodeUpstreamRecord } from './config.ts';
+import { CLAUDE_CODE_DEFAULT_FLAGS } from './defaults.ts';
 import { isClaudeCodeShapedRequest } from './detection.ts';
 import { detectHaikuProbe, callClaudeCodeMessages } from './fetch.ts';
 import { claudeCodeMessagesChain, type ClaudeCodeMessagesBoundaryCtx } from './interceptors/messages/index.ts';
@@ -9,7 +10,6 @@ import { assertClaudeCodeUpstreamState } from './state.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import {
-  defaultsForProvider,
   getProviderRepo,
   resolveEffectiveFlags,
   type ProviderInstance,
@@ -18,13 +18,14 @@ import {
   type UpstreamRecord,
 } from '@floway-dev/provider';
 
-export const createClaudeCodeProvider = async (record: UpstreamRecord): Promise<Provider> => {
+export const createClaudeCodeProvider = (record: UpstreamRecord): Provider => {
   assertClaudeCodeUpstreamRecord(record);
   assertClaudeCodeUpstreamState(record.state);
 
-  const enabledFlags = resolveEffectiveFlags(defaultsForProvider('claude-code'), [record.flagOverrides]);
+  const enabledFlags = resolveEffectiveFlags([CLAUDE_CODE_DEFAULT_FLAGS, record.flagOverrides]);
 
   const instance: ProviderInstance = {
+    defaultFlagsForUpstream: () => CLAUDE_CODE_DEFAULT_FLAGS,
     // Catalog refresh mints an access token and hits /v1/models on every
     // dispatcher poll. `ensureClaudeCodeAccessToken` flips the row to
     // `refresh_failed` and throws `ClaudeCodeOAuthSessionTerminatedError`

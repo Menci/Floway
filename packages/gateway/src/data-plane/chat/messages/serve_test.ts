@@ -7,7 +7,7 @@ import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { type ModelCandidate, defaultsForProvider, directFetcher, type ProviderCallResult, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
+import { type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubInternalModel, stubProviderModel } from '@floway-dev/test-utils';
 
 // Mock the resolver seam so each test hands the serve exactly the provider
@@ -412,11 +412,10 @@ test('countTokens filters out candidates whose endpoints do not satisfy the mess
 test('claude-code candidate preserves x-anthropic-billing-header system block through the interceptor chain', async () => {
   installRepo();
 
-  // Pre-confirm the flag catalog is wired the expected way; an edit that
-  // adds 'claude-code' to defaultFor by mistake should fail at setup, not
-  // silently pass on a stripped body.
-  const claudeCodeDefaults = defaultsForProvider('claude-code');
-  assertEquals(claudeCodeDefaults.has('strip-billing-attribution'), false);
+  // Match the `strip-billing-attribution: false` decision the claude-code
+  // provider ships (see provider-claude-code/src/defaults.ts): the plan-tier
+  // block must reach Anthropic verbatim.
+  const claudeCodeDefaults: ReadonlySet<string> = new Set();
 
   const billingBlock = 'x-anthropic-billing-header: per-turn-token\ncch=deadbeef1234;\ncc_entrypoint=cli';
 
@@ -470,8 +469,9 @@ test('claude-code candidate preserves x-anthropic-billing-header system block th
 test('copilot candidate strips x-anthropic-billing-header system block via the default-on flag', async () => {
   installRepo();
 
-  const copilotDefaults = defaultsForProvider('copilot');
-  assertEquals(copilotDefaults.has('strip-billing-attribution'), true);
+  // Match `strip-billing-attribution: true` on the copilot provider default
+  // (see provider-copilot/src/defaults.ts).
+  const copilotDefaults: ReadonlySet<string> = new Set(['strip-billing-attribution']);
 
   const billingBlock = 'x-anthropic-billing-header: per-turn-token\ncch=deadbeef1234;';
 

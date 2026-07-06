@@ -1,6 +1,7 @@
 import { ensureCodexAccessToken, mintCodexAccessToken } from './access-token-cache.ts';
 import { CodexOAuthSessionTerminatedError } from './auth/oauth.ts';
 import { assertCodexUpstreamRecord, type CodexUpstreamConfig } from './config.ts';
+import { CODEX_DEFAULT_FLAGS } from './defaults.ts';
 import { callCodexResponses, callCodexResponsesCompact, type CodexCallEffects } from './fetch.ts';
 import { CODEX_RESPONSES_BOUNDARY } from './interceptors/responses/index.ts';
 import type { ResponsesBoundaryCtx } from './interceptors/responses/types.ts';
@@ -9,9 +10,9 @@ import { pricingForCodexModelKey } from './pricing.ts';
 import { assertCodexUpstreamState, type CodexUpstreamState } from './state.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import { toCompactPayloadShape } from '@floway-dev/protocols/responses';
-import { defaultsForProvider, getProviderRepo, resolveEffectiveFlags, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderResponsesResult, type ProviderStreamResult, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
+import { getProviderRepo, resolveEffectiveFlags, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderResponsesResult, type ProviderStreamResult, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
 
-export const createCodexProvider = async (record: UpstreamRecord): Promise<Provider> => {
+export const createCodexProvider = (record: UpstreamRecord): Provider => {
   assertCodexUpstreamRecord(record);
   assertCodexUpstreamState(record.state);
   const config: CodexUpstreamConfig = record.config;
@@ -24,7 +25,7 @@ export const createCodexProvider = async (record: UpstreamRecord): Promise<Provi
   // (no per-model override layer). Threaded into every ProviderModel emitted
   // by getProvidedModels so interceptors can read the effective flag set
   // without re-resolving.
-  const enabledFlags = resolveEffectiveFlags(defaultsForProvider('codex'), [record.flagOverrides]);
+  const enabledFlags = resolveEffectiveFlags([CODEX_DEFAULT_FLAGS, record.flagOverrides]);
 
   // Re-read upstream state on every request rather than capturing the record's
   // state at construction. Refresh-token rotation, terminal-state transitions,
@@ -69,6 +70,7 @@ export const createCodexProvider = async (record: UpstreamRecord): Promise<Provi
   const effects: CodexCallEffects = { persistRefreshTokenRotation, persistTerminalState };
 
   const instance: ProviderInstance = {
+    defaultFlagsForUpstream: () => CODEX_DEFAULT_FLAGS,
     getProvidedModels: async fetcher => {
       // A model-list refresh is the first thing a brand-new Codex upstream
       // does, and it is the only place outside the data plane that mints an

@@ -1,3 +1,4 @@
+import type { FlagDefaults, FlagOverrides } from './flags.ts';
 import type { ModelPrefixConfig } from './model-prefix.ts';
 import type { ProviderModel, UpstreamProviderKind } from './model.ts';
 import type { Fetcher } from './options.ts';
@@ -108,6 +109,21 @@ export interface UpstreamCallOptions {
 }
 
 export interface ProviderInstance {
+  // Provider's declaration of the default value for every flag when this
+  // upstream is created. Exhaustive: `FlagDefaults` is a full record over
+  // every catalog flag, so adding a new flag to the catalog is a type
+  // error until every provider decides its own default. This replaces the
+  // catalog-side `defaultFor` mechanism so vendor-specific knowledge lives
+  // in the provider package that talks to that vendor.
+  defaultFlagsForUpstream(): FlagDefaults;
+  // Per-model deltas on top of `defaultFlagsForUpstream()`. Optional: only
+  // providers whose models legitimately differ (e.g. Copilot routes
+  // different Claude versions to Bedrock vs Vertex, and only Bedrock
+  // accepts inline `role:'system'`) need to implement this. Returns
+  // a partial map: absent keys inherit from the upstream default; explicit
+  // `true`/`false` overrides. Operator overrides on the DB row still layer
+  // on top of the result.
+  defaultFlagsForModel?(model: Omit<ProviderModel, 'enabledFlags'>): FlagOverrides;
   // Catalog refresh fetches a single resource and never enters the per-request
   // latency budget, so it takes the per-upstream fetcher directly instead of
   // the broader `UpstreamCallOptions` bag the data-plane `call*` methods use.

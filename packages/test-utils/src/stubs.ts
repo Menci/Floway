@@ -75,6 +75,21 @@ const autoWrap = <T>(impl: T | undefined): T | undefined => {
 };
 
 export const stubProvider = (overrides: Partial<ProviderInstance> = {}): ProviderInstance => ({
+  defaultFlagsForUpstream: overrides.defaultFlagsForUpstream ?? (() => ({
+    'vendor-deepseek': false,
+    'vendor-qwen': false,
+    'vendor-kimi': false,
+    'retry-cyber-policy': false,
+    'messages-web-search-shim': false,
+    'responses-web-search-shim': false,
+    'responses-image-generation-shim': false,
+    'responses-compact-shim': false,
+    'disable-reasoning-on-forced-tool-choice': false,
+    'demote-interleaved-system-to-user': false,
+    'demote-developer-to-system': false,
+    'strip-billing-attribution': false,
+  })),
+  ...(overrides.defaultFlagsForModel ? { defaultFlagsForModel: overrides.defaultFlagsForModel } : {}),
   getProvidedModels: overrides.getProvidedModels ?? (() => Promise.resolve([])),
   getPricingForModelKey: overrides.getPricingForModelKey ?? (() => null),
   callCompletions: autoWrap(overrides.callCompletions) ?? (() => Promise.reject(new Error('stubProvider.callCompletions was called'))),

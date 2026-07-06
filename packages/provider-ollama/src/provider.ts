@@ -20,6 +20,7 @@
 
 import { chatFromOllamaRaw } from './chat-from-raw.ts';
 import { assertOllamaUpstreamRecord, type OllamaUpstreamConfig } from './config.ts';
+import { OLLAMA_DEFAULT_FLAGS } from './defaults.ts';
 import { fetchOllamaCatalog, type OllamaCatalog } from './fetch-models.ts';
 import { ollamaFetchChatCompletions, ollamaFetchCompletions, ollamaFetchEmbeddings, ollamaFetchMessages, ollamaFetchMessagesCountTokens, ollamaFetchResponses, ollamaFetchResponsesCompact } from './fetch.ts';
 import { pricingForOllamaModelKey } from './pricing.ts';
@@ -27,7 +28,7 @@ import { parseChatCompletionsStream } from '@floway-dev/protocols/chat-completio
 import { type ModelEndpoints, type ModelPricing, kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseMessagesStream } from '@floway-dev/protocols/messages';
 import { parseResponsesStream, type ResponsesResult, toCompactPayloadShape } from '@floway-dev/protocols/responses';
-import { publicModelId, resolveEffectiveFlags, defaultsForProvider, streamingProviderCall, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord } from '@floway-dev/provider';
+import { publicModelId, resolveEffectiveFlags, streamingProviderCall, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord } from '@floway-dev/provider';
 
 // providerData carries the raw upstream id verbatim — the same value /api/tags
 // returns and the same value the gateway must send back on every inference call.
@@ -72,14 +73,14 @@ const finalizeOllamaModels = (
 
 export const createOllamaProvider = (record: UpstreamRecord): Provider => {
   const { config } = assertOllamaUpstreamRecord(record);
-  const upstreamFlags = resolveEffectiveFlags(defaultsForProvider('ollama'), [record.flagOverrides]);
+  const upstreamFlags = resolveEffectiveFlags([OLLAMA_DEFAULT_FLAGS, record.flagOverrides]);
 
   // Manual overrides always emit, regardless of whether the upstream catalog
   // fetch succeeds. Same shape and merge precedence as the custom provider.
   const overriddenIds = new Set(config.models.map(m => m.upstreamModelId));
   const manualModels: ProviderModel[] = config.models.map(model => {
     const modelLayer = model.flagOverrides?.enabled ? model.flagOverrides.values : undefined;
-    const enabledFlags = resolveEffectiveFlags(defaultsForProvider('ollama'), [record.flagOverrides, modelLayer]);
+    const enabledFlags = resolveEffectiveFlags([OLLAMA_DEFAULT_FLAGS, record.flagOverrides, modelLayer]);
     const endpoints = model.endpoints;
     const internal: ProviderModel = {
       id: publicModelId(model),
@@ -138,6 +139,7 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
     Promise.reject(new Error(`Ollama provider does not implement ${capability}`));
 
   const instance: ProviderInstance = {
+    defaultFlagsForUpstream: () => OLLAMA_DEFAULT_FLAGS,
     getProvidedModels: async fetcher => {
       const catalog = await fetchOllamaCatalog(config, fetcher);
       const auto = finalizeOllamaModels(
