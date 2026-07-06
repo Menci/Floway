@@ -32,7 +32,7 @@ interface ProviderModelsResult {
 
 const NO_UPSTREAM_CONFIGURED_MESSAGE = 'No upstream provider configured — connect GitHub Copilot or add a Custom/Azure upstream in the dashboard';
 
-type ProviderFactory = (record: UpstreamRecord) => Provider | Promise<Provider>;
+type ProviderFactory = (record: UpstreamRecord) => Provider;
 
 const providerFactories: Record<UpstreamProviderKind, ProviderFactory> = {
   copilot: createCopilotProvider,
@@ -43,7 +43,15 @@ const providerFactories: Record<UpstreamProviderKind, ProviderFactory> = {
   ollama: createOllamaProvider,
 };
 
-export const createProviderInstance = (record: UpstreamRecord): Provider | Promise<Provider> =>
+// Provider construction is synchronous: every factory just captures the
+// record and returns closures. Any I/O the provider needs (token refresh,
+// state persistence, model catalog fetch) happens on demand inside the
+// per-request methods, never at factory time. Keeping this sync lets the
+// serializer route flag defaults through the ProviderInstance methods
+// without threading async through every caller, and — via the invariant
+// that ProviderInstance is the ONLY source of flag defaults — prevents
+// parallel per-kind lookup maps from reappearing.
+export const createProviderInstance = (record: UpstreamRecord): Provider =>
   providerFactories[record.kind](record);
 
 // The upstream scope is a required argument across the catalog-assembly chain
@@ -82,7 +90,7 @@ export const listModelProviders = async (
   const providers: Provider[] = [];
   for (const upstream of selection) {
     const factory = providerFactories[upstream.kind];
-    providers.push(await factory(upstream));
+    providers.push(factory(upstream));
   }
 
   return providers;

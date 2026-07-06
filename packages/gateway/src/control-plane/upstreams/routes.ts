@@ -159,7 +159,7 @@ const normalizeModelPrefixField = (input: unknown): ValidationResult<ModelPrefix
 // genuine misconfiguration that the operator must see.
 const warmModelsCache = async (record: UpstreamRecord, c: Context): Promise<void> => {
   const scheduler = backgroundSchedulerFromContext(c);
-  const instance = await createProviderInstance(record);
+  const instance = createProviderInstance(record);
   const fetcher = (await createPerRequestFetcher(getCurrentColo(c.req.raw)))(record.id);
   try {
     await fetchUpstreamModelsCached(instance, { scheduler, fetcher, force: true });
@@ -982,7 +982,7 @@ export const listModels = async (c: CtxWithJson<typeof listModelsBody>) => {
     // Force through the SWR cache when the record is persisted so the
     // side-effect refresh keeps the data-plane cache in step; otherwise
     // live-fetch without any caching.
-    const instance = await createProviderInstance(synthRecord);
+    const instance = createProviderInstance(synthRecord);
     const models = record.id !== ''
       ? await fetchUpstreamModelsCached(instance, { scheduler, fetcher, force: true })
       : await instance.instance.getProvidedModels(fetcher);

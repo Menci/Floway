@@ -574,7 +574,7 @@ const parsePerformanceRecords = (value: unknown): { type: 'ok'; records: Perform
 // genuine misconfiguration and are not swallowed.
 const warmModelsCache = async (record: UpstreamRecord, c: Context): Promise<void> => {
   const scheduler = backgroundSchedulerFromContext(c);
-  const instance = await createProviderInstance(record);
+  const instance = createProviderInstance(record);
   const fetcher = (await createPerRequestFetcher(getCurrentColo(c.req.raw)))(record.id);
   try {
     await fetchUpstreamModelsCached(instance, { scheduler, fetcher, force: true });
