@@ -393,8 +393,11 @@ test('GET /api/upstreams/flags returns the flag catalog and requires admin auth'
   const catalog = (await resp.json()) as Array<Record<string, unknown>>;
   const sample = catalog.find(e => e.id === 'vendor-kimi');
   assertEquals(typeof sample?.label, 'string');
-  assertEquals(Array.isArray(sample!.defaultFor), true);
-  // appliesTo is not part of the catalog shape; guard against silent re-introduction.
+  assertEquals(typeof sample?.description, 'string');
+  // Neither defaults nor appliesTo travel on the per-flag entry any more —
+  // defaults live per-record on `SerializedUpstreamRecord.flag_defaults`.
+  // Guard against silent reintroduction of either on the catalog row.
+  assertEquals('defaultFor' in sample!, false);
   assertEquals('appliesTo' in sample!, false);
 
   const forbidden = await requestApp('/api/upstreams/flags', { method: 'GET', headers: { 'x-api-key': apiKey.key } });
@@ -2076,16 +2079,41 @@ test('GET /api/upstreams/blueprint rejects an unknown kind with 400', async () =
 test('GET /api/upstreams/blueprint serves blank credentials without running the runtime asserts', async () => {
   const { adminSession } = await setupAppTest();
 
-  // The custom / azure / ollama blueprints carry blank credentials + empty
-  // model lists that assertXxxUpstreamRecord would reject on the save
-  // path. The blueprint route bypasses those asserts so the SPA can render
-  // an empty draft to edit.
+  // Blueprints are shape-complete synthetic-but-schema-valid rows that ride
+  // through the standard serialization pipeline (including provider factory
+  // for `flag_defaults`). The SPA discards everything except `flag_defaults`
+  // and lets the user fill the actual config in from an empty draft. Custom
+  // uses `authStyle: 'none'` so the assert accepts an absent apiKey; azure
+  // carries a single placeholder model since its assert rejects empty
+  // model lists. The blueprint travels through `upstreamRecordToFullJson`,
+  // so credentials come through verbatim (empty strings, not `*Set` bools).
   const custom = (await (await requestApp('/api/upstreams/blueprint?kind=custom', { headers: { 'x-floway-session': adminSession } })).json()) as JsonObject;
-  assertEquals(custom.config.apiKey, '');
+  assertEquals(custom.config.authStyle, 'none');
+  assertEquals('apiKey' in custom.config, false);
   const azure = (await (await requestApp('/api/upstreams/blueprint?kind=azure', { headers: { 'x-floway-session': adminSession } })).json()) as JsonObject;
-  assertEquals(azure.config.models, []);
+  assertEquals(Array.isArray(azure.config.models), true);
   const ollama = (await (await requestApp('/api/upstreams/blueprint?kind=ollama', { headers: { 'x-floway-session': adminSession } })).json()) as JsonObject;
   assertEquals(ollama.config.apiKey, '');
+
+  // Every provider kind must reach a 200 — the blueprint's synthetic record
+  // has to satisfy that kind's `assertXxxUpstream{Record,State}` on its way
+  // through the provider factory. `flag_defaults` on the wire is the whole
+  // point of routing through the factory; assert it lands on every kind.
+  for (const kind of ['copilot', 'custom', 'azure', 'codex', 'claude-code', 'ollama']) {
+    const preview = (await (await requestApp(`/api/upstreams/blueprint?kind=${kind}`, { headers: { 'x-floway-session': adminSession } })).json()) as JsonObject;
+    assertEquals(typeof preview.flag_defaults['strip-billing-attribution'], 'boolean');
+  }
+
+  // Spot-check the two provider-computed decisions we care about at the
+  // wire boundary. copilot keeps `strip-billing-attribution` on so the
+  // Claude Code billing block never reaches its OpenAI-compatible upstream
+  // prompt cache; claude-code keeps it off so plan-tier attribution reaches
+  // Anthropic verbatim.
+  const copilotPreview = (await (await requestApp('/api/upstreams/blueprint?kind=copilot', { headers: { 'x-floway-session': adminSession } })).json()) as JsonObject;
+  assertEquals(copilotPreview.flag_defaults['strip-billing-attribution'], true);
+  assertEquals(copilotPreview.flag_defaults['demote-interleaved-system-to-user'], false);
+  const ccPreview = (await (await requestApp('/api/upstreams/blueprint?kind=claude-code', { headers: { 'x-floway-session': adminSession } })).json()) as JsonObject;
+  assertEquals(ccPreview.flag_defaults['strip-billing-attribution'], false);
 });
 
 test('GET /api/upstreams/:id returns the full unredacted record so the edit page can post it back to action endpoints', async () => {

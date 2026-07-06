@@ -240,7 +240,7 @@ onBeforeUnmount(() => floorObserver?.disconnect());
         <FlagOverridesEditor
           v-model="flagOverrides"
           :flags="flags"
-          :kind="kind"
+          :provider-defaults="draft.flag_defaults"
           name-prefix="upstream-flag"
           class="min-h-0 flex-1"
         />

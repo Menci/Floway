@@ -55,6 +55,10 @@ export interface UpstreamModelConfig {
   cost?: ModelPricing;
   flagOverrides?: { enabled: boolean; values: Record<string, boolean> };
   chat?: UpstreamChatConfig;
+  // Wire-only: provider-declared per-model default overlay (layer 2 of
+  // the flag resolver). Absent on rows the client synthesizes locally
+  // before save. All current manual-model providers emit an empty map.
+  provider_default_overlay?: Record<string, boolean>;
 }
 
 export interface CustomModelsFetch {
@@ -282,6 +286,9 @@ interface UpstreamRecordBase {
   created_at: string;
   updated_at: string;
   flag_overrides: Record<string, boolean>;
+  // Provider-declared upstream-level default for every flag on this
+  // record. Fed into the flag editor's "Inherit → on/off" hint.
+  flag_defaults: Record<string, boolean>;
   // Public model ids switched off for this upstream. Hidden from the catalog and
   // unroutable, but their per-model metadata stays editable. May include ids no
   // longer present in the live model list.

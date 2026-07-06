@@ -600,7 +600,7 @@ const workbenchStyle = computed(() => ({ '--right-pane-h': `${Math.ceil(rightCon
         :auto-models="autoForActive"
         :flags="flags"
         :upstream-flag-overrides="flagOverrides"
-        :flag-provider-kind="draft.kind"
+        :provider-flag-defaults="draft.flag_defaults"
         :upstream-id-label="upstreamIdLabelForActive"
         :read-only="draft.kind === 'copilot' || draft.kind === 'codex' || draft.kind === 'claude-code'"
         :all-manual="draft.kind === 'azure'"

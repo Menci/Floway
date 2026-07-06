@@ -2,19 +2,23 @@
 // Tri-state flag editor: each flag is either Inherit, On, or Off. The
 // `inheritedOverrides` prop is what the "Inherit" pill should resolve to when
 // the flag has no explicit override at the level being edited — at the
-// upstream level that's the flag's defaultFor; at the model level that's the
-// upstream's effective value for the flag.
+// upstream level that's the provider-side default (`providerDefaults`); at
+// the model level that's the upstream's effective value for the flag.
 
 import type { HTMLAttributes } from 'vue';
 
-import type { FlagDef, UpstreamProviderKind } from '../../api/types.ts';
+import type { FlagDef } from '../../api/types.ts';
 import { cn, OverlayScrollbars } from '@floway-dev/ui';
 
 const overrides = defineModel<Record<string, boolean>>({ required: true });
 
 const props = withDefaults(defineProps<{
   flags: FlagDef[];
-  kind: UpstreamProviderKind;
+  // Provider-declared defaults for this upstream kind (from the record's
+  // `flag_defaults`). The editor falls through to this map for flags that
+  // neither the operator's per-upstream override nor the per-model override
+  // touched.
+  providerDefaults: Record<string, boolean>;
   inheritedOverrides?: Record<string, boolean>;
   namePrefix?: string;
   class?: HTMLAttributes['class'];
@@ -40,7 +44,7 @@ const setState = (flagId: string, next: TriState) => {
 const inheritedLabel = (flag: FlagDef): 'on' | 'off' => {
   const inherited = props.inheritedOverrides[flag.id];
   if (typeof inherited === 'boolean') return inherited ? 'on' : 'off';
-  return flag.defaultFor.includes(props.kind) ? 'on' : 'off';
+  return props.providerDefaults[flag.id] ? 'on' : 'off';
 };
 
 const stateLabel = (state: TriState, flag: FlagDef) => {

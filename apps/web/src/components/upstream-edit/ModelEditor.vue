@@ -4,7 +4,7 @@ import { computed, ref, watch } from 'vue';
 import EndpointsField from './EndpointsField.vue';
 import FlagOverridesEditor from './FlagOverridesEditor.vue';
 import { configOf, defaultEndpointsForKind, publicIdOf, titleFor, type Row } from './modelRows.ts';
-import type { AnnouncedMetadata, BillingDimension, FlagDef, ModelKind, ModelPricing, UpstreamChatConfig, UpstreamModelConfig, UpstreamProviderKind } from '../../api/types.ts';
+import type { AnnouncedMetadata, BillingDimension, FlagDef, ModelKind, ModelPricing, UpstreamChatConfig, UpstreamModelConfig } from '../../api/types.ts';
 import { parseOptionalNumber } from '../../utils/parse-optional-number.ts';
 import ChatMetadataEditor from '../shared/ChatMetadataEditor.vue';
 import { Button, Input, Select, Switch, Tooltip } from '@floway-dev/ui';
@@ -13,7 +13,14 @@ const props = defineProps<{
   row: Row | null;
   flags: FlagDef[];
   upstreamFlagOverrides: Record<string, boolean>;
-  flagProviderKind: UpstreamProviderKind;
+  // Provider-declared upstream-level default for every flag on this
+  // upstream kind (layer 1 in the flag resolver). The per-model editor's
+  // "Inherit" pill resolves via layer 3 (upstream override, live-edited)
+  // else the merge of layer 1 with this row's `provider_default_overlay`
+  // (layer 2, when the provider ships per-model defaults). All current
+  // manual-model providers emit an empty layer 2, but the merge keeps the
+  // component future-proof.
+  providerFlagDefaults: Record<string, boolean>;
   // "Upstream Model ID" for custom/copilot, "Deployment" for azure.
   upstreamIdLabel: string;
   // True when this manual row's upstream id is fixed (seeded from an auto
@@ -56,6 +63,14 @@ const PRICING_BY_KIND: Record<ModelKind, BillingDimension[]> = {
 const config = computed<UpstreamModelConfig | null>(() => props.row ? configOf(props.row) : null);
 const editable = computed(() => props.row?.kind === 'manual');
 const rowKind = computed<ModelKind>(() => config.value?.kind ?? 'chat');
+
+// Merge of layer 1 (upstream default) with this row's layer 2 for
+// FlagOverridesEditor's inherit fallthrough. See the `providerFlagDefaults`
+// prop above for the full layer semantics.
+const flagDefaultsForThisModel = computed<Record<string, boolean>>(() => ({
+  ...props.providerFlagDefaults,
+  ...(config.value?.provider_default_overlay ?? {}),
+}));
 
 const patch = (next: Partial<UpstreamModelConfig>) => {
   if (!editable.value) return;
@@ -542,7 +557,7 @@ watch(isReasoningValid, valid => { emit('validity-change', valid); }, { immediat
             v-if="editable && config.flagOverrides?.enabled"
             :model-value="config.flagOverrides?.values ?? {}"
             :flags="flags"
-            :kind="flagProviderKind"
+            :provider-defaults="flagDefaultsForThisModel"
             :inherited-overrides="upstreamFlagOverrides"
             :name-prefix="`${row.uiId}-flag`"
             class="max-h-72"
