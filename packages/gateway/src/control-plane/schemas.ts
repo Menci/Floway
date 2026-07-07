@@ -18,14 +18,14 @@
 import { z } from 'zod';
 
 import { normalizeDisabledPublicModelIds } from '../repo/disabled-public-models.ts';
-import { MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX, parseFlagOverridesWire } from '@floway-dev/provider';
+import { type FlagOverrides, MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX, parseFlagOverridesWire } from '@floway-dev/provider';
 
 // --- shared atoms ---
 
 // Reuse the runtime parseFlagOverridesWire so unknown-id and type errors
 // carry the canonical messages. z.unknown() → transform keeps the
-// schema-validated output typed as Record<string, boolean> for the RPC client.
-const flagOverridesSchema = z.unknown().transform((value, ctx): Record<string, boolean> => {
+// schema-validated output typed as FlagOverrides for the RPC client.
+const flagOverridesSchema = z.unknown().transform((value, ctx): FlagOverrides => {
   try {
     return parseFlagOverridesWire(value);
   } catch (e) {

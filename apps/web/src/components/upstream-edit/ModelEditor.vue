@@ -7,17 +7,18 @@ import { configOf, defaultEndpointsForKind, publicIdOf, titleFor, type Row } fro
 import type { AnnouncedMetadata, BillingDimension, FlagDef, ModelKind, ModelPricing, UpstreamChatConfig, UpstreamModelConfig } from '../../api/types.ts';
 import { parseOptionalNumber } from '../../utils/parse-optional-number.ts';
 import ChatMetadataEditor from '../shared/ChatMetadataEditor.vue';
+import type { FlagDefaults, FlagId, FlagOverrides } from '@floway-dev/provider/flags';
 import { Button, Input, Select, Switch, Tooltip } from '@floway-dev/ui';
 
 const props = defineProps<{
   row: Row | null;
   flags: FlagDef[];
-  upstreamFlagOverrides: Record<string, boolean>;
+  upstreamFlagOverrides: FlagOverrides;
   // Provider-declared upstream-level default for every flag on this
   // upstream kind. The per-model editor's "Inherit" pill resolves via
   // the upstream override (live-edited, `upstreamFlagOverrides`) if set,
   // else falls through to this map.
-  providerFlagDefaults: Record<string, boolean>;
+  providerFlagDefaults: FlagDefaults;
   // "Upstream Model ID" for custom/copilot, "Deployment" for azure.
   upstreamIdLabel: string;
   // True when this manual row's upstream id is fixed (seeded from an auto
@@ -68,11 +69,12 @@ const rowKind = computed<ModelKind>(() => config.value?.kind ?? 'chat');
 // `resolveEffectiveFlags` at request time, so what the dashboard shows
 // is exactly what the provider dispatches.
 const autoRowFlagState = (flagId: string): { on: boolean; source: string } => {
-  const perModel = config.value?.flagOverrides?.[flagId];
+  const id = flagId as FlagId;
+  const perModel = config.value?.flagOverrides?.[id];
   if (perModel !== undefined) return { on: perModel, source: 'provider — this model' };
-  const upstreamOverride = props.upstreamFlagOverrides[flagId];
+  const upstreamOverride = props.upstreamFlagOverrides[id];
   if (upstreamOverride !== undefined) return { on: upstreamOverride, source: 'upstream override' };
-  return { on: props.providerFlagDefaults[flagId], source: 'provider default' };
+  return { on: props.providerFlagDefaults[id], source: 'provider default' };
 };
 
 const patch = (next: Partial<UpstreamModelConfig>) => {
@@ -146,7 +148,7 @@ watch(() => props.row?.uiId, () => {
 // override off then back on for the same row — otherwise a stray click
 // would clear the map they had built up. Reset on row change so a fresh
 // row starts empty.
-const lastFlagOverrides = ref<Record<string, boolean>>({});
+const lastFlagOverrides = ref<FlagOverrides>({});
 
 const writeTierDrafts = (drafts: readonly TierDraft[]) => {
   if (!config.value) return;
@@ -256,7 +258,7 @@ const toggleFlagOverridesEnabled = () => {
   }
 };
 
-const updateFlagOverrides = (values: Record<string, boolean>) => {
+const updateFlagOverrides = (values: FlagOverrides) => {
   patch({ flagOverrides: values });
 };
 

@@ -25,6 +25,7 @@ import type { AzureUpstreamConfig, CustomRawModel, CustomUpstreamConfig, FlagDef
 import { toRecordEnvelope } from '../../api/types.ts';
 import { useRuntimeInfo } from '../../composables/useRuntimeInfo.ts';
 import { useUpstreamsStore } from '../../composables/useUpstreams.ts';
+import type { FlagOverrides } from '@floway-dev/provider/flags';
 import { Button } from '@floway-dev/ui';
 
 const props = defineProps<{
@@ -107,7 +108,7 @@ seedProviderDrafts();
 // getting it observes any patch merged in by a wizard.
 const name = computed<string>({ get: () => draft.value.name, set: v => { draft.value = { ...draft.value, name: v }; } });
 const enabled = computed<boolean>({ get: () => draft.value.enabled, set: v => { draft.value = { ...draft.value, enabled: v }; } });
-const flagOverrides = computed<Record<string, boolean>>({
+const flagOverrides = computed<FlagOverrides>({
   get: () => draft.value.flag_overrides,
   set: v => { draft.value = { ...draft.value, flag_overrides: v }; },
 });

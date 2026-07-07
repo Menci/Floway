@@ -1,5 +1,5 @@
 import { flagDefaultsForKind } from '../../data-plane/providers/registry.ts';
-import { type FlagDefaults, type ModelPrefixConfig, type ProxyFallbackEntry, type UpstreamProviderKind, type UpstreamRecord } from '@floway-dev/provider';
+import { type FlagDefaults, type FlagOverrides, type ModelPrefixConfig, type ProxyFallbackEntry, type UpstreamProviderKind, type UpstreamRecord } from '@floway-dev/provider';
 import type { CodexQuotaSnapshotMap } from '@floway-dev/provider-codex';
 
 export interface ModelsCacheStatus {
@@ -15,7 +15,7 @@ export interface SerializedUpstreamRecord {
   sort_order: number;
   created_at: string;
   updated_at: string;
-  flag_overrides: Record<string, boolean>;
+  flag_overrides: FlagOverrides;
   // Provider-declared upstream-level flag defaults for this record.
   // Read from `ProviderModule.defaultFlags` — one map per kind, sent per
   // record so the dashboard's "Inherit → on/off" pill renders each row
@@ -228,7 +228,7 @@ export const blueprintUpstreamRecord = (kind: UpstreamProviderKind): UpstreamRec
     sortOrder: 0,
     createdAt: '',
     updatedAt: '',
-    flagOverrides: {} as Record<string, boolean>,
+    flagOverrides: {} as FlagOverrides,
     disabledPublicModelIds: [] as string[],
     proxyFallbackList: [] as ProxyFallbackEntry[],
     modelPrefix: null,

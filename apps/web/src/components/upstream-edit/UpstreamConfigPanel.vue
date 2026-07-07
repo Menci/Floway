@@ -14,11 +14,12 @@ import OllamaConfigPanel from './OllamaConfigPanel.vue';
 import ProxyFallbackListPanel from './ProxyFallbackListPanel.vue';
 import type { FlagDef, ModelPrefixConfig, ProxyFallbackEntry, UpstreamRecord } from '../../api/types.ts';
 import { providerBadgeClass, providerMeta } from '../upstreams/provider-meta.ts';
+import type { FlagOverrides } from '@floway-dev/provider/flags';
 import { Input, Switch, TagCombobox } from '@floway-dev/ui';
 
 const name = defineModel<string>('name', { required: true });
 const enabled = defineModel<boolean>('enabled', { required: true });
-const flagOverrides = defineModel<Record<string, boolean>>('flagOverrides', { required: true });
+const flagOverrides = defineModel<FlagOverrides>('flagOverrides', { required: true });
 const disabledIds = defineModel<string[]>('disabledIds', { required: true });
 const customDraft = defineModel<CustomDraft>('custom', { required: true });
 const azureDraft = defineModel<AzureDraft>('azure', { required: true });

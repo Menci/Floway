@@ -187,8 +187,7 @@ export const resolveEffectiveFlags = (
   const effective = new Set<FlagId>();
   for (const layer of layers) {
     if (!layer) continue;
-    for (const [id, on] of Object.entries(layer)) {
-      if (!isKnownFlagId(id)) continue;
+    for (const [id, on] of Object.entries(layer) as [FlagId, boolean][]) {
       if (on) effective.add(id);
       else effective.delete(id);
     }

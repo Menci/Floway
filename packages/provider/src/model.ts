@@ -32,7 +32,7 @@ export interface UpstreamRecord {
   // Runtime state managed by the gateway autonomous flows; null when a
   // provider has no autonomous state.
   state: unknown;
-  flagOverrides: Record<string, boolean>;
+  flagOverrides: FlagOverrides;
   // Public model ids the operator switched off for this upstream. Orthogonal to
   // every per-model metadata field and uniform across provider kinds: a disabled
   // id is hidden from the catalog and unroutable, but its row metadata stays

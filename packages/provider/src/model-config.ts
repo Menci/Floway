@@ -1,4 +1,4 @@
-import { validateFlagOverridesRecord } from './flags.ts';
+import { type FlagOverrides, validateFlagOverridesRecord } from './flags.ts';
 import { BILLING_DIMENSIONS, type BillingDimension, type ChatModelInfo, type ModelEndpointKey, type ModelEndpoints, type ModelKind, type Modality, type ModelPricing } from '@floway-dev/protocols/common';
 import { kindForEndpoints } from '@floway-dev/protocols/common';
 
@@ -33,7 +33,7 @@ export interface UpstreamModelConfig {
   // `ProviderModel.flagOverrides` — same field name, occupies the same
   // layer-3 slot, but sourced from the provider's per-model rule
   // rather than an operator-authored config row.
-  flagOverrides?: Record<string, boolean>;
+  flagOverrides?: FlagOverrides;
 }
 
 // The public catalog id a model is exposed under: an explicit override when set,
@@ -100,7 +100,7 @@ export const limitsField = (value: unknown, label: string): UpstreamModelLimits 
   };
 };
 
-export const flagOverridesField = (value: unknown, label: string): Record<string, boolean> | undefined => {
+export const flagOverridesField = (value: unknown, label: string): FlagOverrides | undefined => {
   if (value === undefined) return undefined;
   return validateFlagOverridesRecord(value, {
     notObject: `Malformed ${label}: must be an object`,

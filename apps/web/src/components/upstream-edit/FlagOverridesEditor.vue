@@ -8,9 +8,10 @@
 import type { HTMLAttributes } from 'vue';
 
 import type { FlagDef } from '../../api/types.ts';
+import type { FlagDefaults, FlagId, FlagOverrides } from '@floway-dev/provider/flags';
 import { cn, OverlayScrollbars } from '@floway-dev/ui';
 
-const overrides = defineModel<Record<string, boolean>>({ required: true });
+const overrides = defineModel<FlagOverrides>({ required: true });
 
 const props = withDefaults(defineProps<{
   flags: FlagDef[];
@@ -18,8 +19,8 @@ const props = withDefaults(defineProps<{
   // `flag_defaults`). The editor falls through to this map for flags that
   // neither the operator's per-upstream override nor the per-model override
   // touched.
-  providerDefaults: Record<string, boolean>;
-  inheritedOverrides?: Record<string, boolean>;
+  providerDefaults: FlagDefaults;
+  inheritedOverrides?: FlagOverrides;
   namePrefix?: string;
   class?: HTMLAttributes['class'];
 }>(), {
@@ -30,21 +31,24 @@ const props = withDefaults(defineProps<{
 type TriState = 'inherit' | 'on' | 'off';
 
 const stateFor = (flagId: string): TriState => {
-  if (flagId in overrides.value) return overrides.value[flagId] ? 'on' : 'off';
+  const id = flagId as FlagId;
+  if (id in overrides.value) return overrides.value[id] ? 'on' : 'off';
   return 'inherit';
 };
 
 const setState = (flagId: string, next: TriState) => {
+  const id = flagId as FlagId;
   const copy = { ...overrides.value };
-  if (next === 'inherit') delete copy[flagId];
-  else copy[flagId] = next === 'on';
+  if (next === 'inherit') delete copy[id];
+  else copy[id] = next === 'on';
   overrides.value = copy;
 };
 
 const inheritedLabel = (flag: FlagDef): 'on' | 'off' => {
-  const inherited = props.inheritedOverrides[flag.id];
+  const id = flag.id as FlagId;
+  const inherited = props.inheritedOverrides[id];
   if (typeof inherited === 'boolean') return inherited ? 'on' : 'off';
-  return props.providerDefaults[flag.id] ? 'on' : 'off';
+  return props.providerDefaults[id] ? 'on' : 'off';
 };
 
 const stateLabel = (state: TriState, flag: FlagDef) => {

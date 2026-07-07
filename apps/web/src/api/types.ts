@@ -16,6 +16,7 @@ import type {
   PublicModel,
   PublicModelLimits,
 } from '@floway-dev/protocols/common';
+import type { FlagDefaults, FlagOverrides } from '@floway-dev/provider/flags';
 import type { AddressableForm, ModelPrefixConfig } from '@floway-dev/provider/model-prefix';
 
 export type { BillingDimension, ModelEndpointKey, ModelEndpoints, ModelKind, ModelPricing };
@@ -62,7 +63,7 @@ export interface UpstreamModelConfig {
   // read-only projection. The shape is the same in both cases; the
   // source and whether the row persists are carried by the enclosing
   // `Row.kind` at consumption time, not by a wire discriminator.
-  flagOverrides?: Record<string, boolean>;
+  flagOverrides?: FlagOverrides;
 }
 
 export interface CustomModelsFetch {
@@ -289,10 +290,10 @@ interface UpstreamRecordBase {
   sort_order: number;
   created_at: string;
   updated_at: string;
-  flag_overrides: Record<string, boolean>;
+  flag_overrides: FlagOverrides;
   // Provider-declared upstream-level default for every flag on this
   // record. Fed into the flag editor's "Inherit → on/off" hint.
-  flag_defaults: Record<string, boolean>;
+  flag_defaults: FlagDefaults;
   // Public model ids switched off for this upstream. Hidden from the catalog and
   // unroutable, but their per-model metadata stays editable. May include ids no
   // longer present in the live model list.

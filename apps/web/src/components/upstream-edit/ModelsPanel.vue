@@ -8,6 +8,7 @@ import ModelEditor from './ModelEditor.vue';
 import { newUiId, type Row, seedFromAuto } from './modelRows.ts';
 import ModelsGrid from './ModelsGrid.vue';
 import type { FlagDef, UpstreamModelConfig } from '../../api/types.ts';
+import type { FlagDefaults, FlagOverrides } from '@floway-dev/provider/flags';
 import { Button } from '@floway-dev/ui';
 
 const manualModels = defineModel<UpstreamModelConfig[]>({ required: true });
@@ -20,8 +21,8 @@ const emit = defineEmits<{
 const props = withDefaults(defineProps<{
   autoModels?: UpstreamModelConfig[];
   flags: FlagDef[];
-  upstreamFlagOverrides: Record<string, boolean>;
-  providerFlagDefaults: Record<string, boolean>;
+  upstreamFlagOverrides: FlagOverrides;
+  providerFlagDefaults: FlagDefaults;
   upstreamIdLabel: string;
   // Fully read-only: no add, no mode switch, no editing.
   readOnly?: boolean;
