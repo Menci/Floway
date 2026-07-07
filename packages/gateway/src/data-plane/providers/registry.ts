@@ -45,8 +45,6 @@ const providersByKind: Record<UpstreamProviderKind, ProviderModule> = {
   ollama: ollamaProvider,
 };
 
-export const providerModuleForKind = (kind: UpstreamProviderKind): ProviderModule => providersByKind[kind];
-
 // Provider factories only capture the record and return closures; any
 // I/O they need (token refresh, state persistence, model catalog fetch)
 // happens on demand inside the per-request methods, never at factory
