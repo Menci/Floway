@@ -72,7 +72,7 @@ const pillClass = (state: TriState, selected: boolean, inheritedTo: 'on' | 'off'
         class="flex min-w-0 items-start justify-between gap-3 border-t border-white/[0.06] px-1 py-2.5"
       >
         <div class="min-w-0">
-          <span class="block break-words text-xs text-white">{{ flag.label || flag.id }}</span>
+          <span class="block break-words text-xs text-white">{{ flag.label }}</span>
           <span v-if="flag.description" class="mt-0.5 block text-[11px] text-gray-500">{{ flag.description }}</span>
         </div>
         <fieldset class="flex shrink-0 items-center gap-1 text-[11px]">

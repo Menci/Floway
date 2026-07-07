@@ -71,7 +71,7 @@ const autoRowFlagOn = (flagId: string): boolean => {
   if (perModel !== undefined) return perModel;
   const upstreamOverride = props.upstreamFlagOverrides[flagId];
   if (upstreamOverride !== undefined) return upstreamOverride;
-  return props.providerFlagDefaults[flagId] ?? false;
+  return props.providerFlagDefaults[flagId];
 };
 
 const autoRowFlagSource = (flagId: string): string => {
@@ -578,7 +578,7 @@ watch(isReasoningValid, valid => { emit('validity-change', valid); }, { immediat
                 class="flex min-w-0 items-start justify-between gap-3 border-t border-white/[0.06] px-1 py-2.5"
               >
                 <div class="min-w-0">
-                  <span class="block break-words text-xs text-white">{{ flag.label || flag.id }}</span>
+                  <span class="block break-words text-xs text-white">{{ flag.label }}</span>
                   <span v-if="flag.description" class="mt-0.5 block text-[11px] text-gray-500">{{ flag.description }}</span>
                 </div>
                 <div class="flex shrink-0 flex-col items-end gap-0.5 text-[11px]">
