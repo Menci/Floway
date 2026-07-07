@@ -16,12 +16,11 @@ import type {
   PublicModel,
   PublicModelLimits,
 } from '@floway-dev/protocols/common';
-import type { Flag as FlagDef, FlagDefaults, FlagOverrides } from '@floway-dev/provider/flags';
+import type { FlagDefaults, FlagOverrides } from '@floway-dev/provider/flags';
 import type { AddressableForm, ModelPrefixConfig } from '@floway-dev/provider/model-prefix';
 
 export type { BillingDimension, ModelEndpointKey, ModelEndpoints, ModelKind, ModelPricing };
 export type { AddressableForm, ModelPrefixConfig };
-export type { FlagDef };
 export type {
   AliasRules, AliasSelection, AliasTarget, AnnouncedMetadata, ChatAliasRules, ChatModelInfo, ModelAlias,
   PublicModel, PublicModelLimits,

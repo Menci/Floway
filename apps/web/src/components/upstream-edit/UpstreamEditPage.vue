@@ -21,16 +21,16 @@ import {
 import ModelsPanel from './ModelsPanel.vue';
 import UpstreamConfigPanel from './UpstreamConfigPanel.vue';
 import { callApi, useApi } from '../../api/client.ts';
-import type { AzureUpstreamConfig, CustomRawModel, CustomUpstreamConfig, FlagDef, ModelEndpoints, OllamaUpstreamConfig, UpstreamModelConfig, UpstreamRecord } from '../../api/types.ts';
+import type { AzureUpstreamConfig, CustomRawModel, CustomUpstreamConfig, ModelEndpoints, OllamaUpstreamConfig, UpstreamModelConfig, UpstreamRecord } from '../../api/types.ts';
 import { toRecordEnvelope } from '../../api/types.ts';
 import { useRuntimeInfo } from '../../composables/useRuntimeInfo.ts';
 import { useUpstreamsStore } from '../../composables/useUpstreams.ts';
-import type { FlagOverrides } from '@floway-dev/provider/flags';
+import type { Flag, FlagOverrides } from '@floway-dev/provider/flags';
 import { Button } from '@floway-dev/ui';
 
 const props = defineProps<{
   initialRecord: UpstreamRecord;
-  flags: FlagDef[];
+  flags: Flag[];
 }>();
 
 const emit = defineEmits<{

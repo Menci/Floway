@@ -29,7 +29,9 @@ interface CopilotProviderData {
 
 // Project Copilot's raw `/models` shape into the slim provider-neutral fields.
 // kind/endpoints/providerData/enabledFlags are added by the caller because they
-// depend on Copilot's endpoint knowledge and the upstream-level flag layer.
+// depend on Copilot's endpoint knowledge and on the multi-layer flag resolution
+// (provider default + operator upstream override + per-model overlay);
+// `flagOverrides` is stamped on top when the per-model overlay is non-empty.
 const copilotRawToProviderModel = (model: CopilotRawModel): Omit<ProviderModel, 'kind' | 'endpoints' | 'providerData' | 'enabledFlags'> => {
   const limits: ProviderModel['limits'] = {};
   if (model.capabilities?.limits?.max_output_tokens !== undefined) limits.max_output_tokens = model.capabilities.limits.max_output_tokens;

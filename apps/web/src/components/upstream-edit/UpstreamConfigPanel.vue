@@ -12,9 +12,9 @@ import ModelPrefixEditor from './ModelPrefixEditor.vue';
 import ModelsCacheStatus from './ModelsCacheStatus.vue';
 import OllamaConfigPanel from './OllamaConfigPanel.vue';
 import ProxyFallbackListPanel from './ProxyFallbackListPanel.vue';
-import type { FlagDef, ModelPrefixConfig, ProxyFallbackEntry, UpstreamRecord } from '../../api/types.ts';
+import type { ModelPrefixConfig, ProxyFallbackEntry, UpstreamRecord } from '../../api/types.ts';
 import { providerBadgeClass, providerMeta } from '../upstreams/provider-meta.ts';
-import type { FlagOverrides } from '@floway-dev/provider/flags';
+import type { Flag, FlagOverrides } from '@floway-dev/provider/flags';
 import { Input, Switch, TagCombobox } from '@floway-dev/ui';
 
 const name = defineModel<string>('name', { required: true });
@@ -31,7 +31,7 @@ const modelPrefix = defineModel<ModelPrefixConfig | null>('modelPrefix', { requi
 // through `patched` for the parent to merge.
 const props = defineProps<{
   draft: UpstreamRecord;
-  flags: FlagDef[];
+  flags: Flag[];
   customApiKeySet: boolean;
   azureApiKeySet: boolean;
   ollamaApiKeySet: boolean;

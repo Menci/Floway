@@ -1,5 +1,5 @@
 import { flagDefaultsForKind } from '../../data-plane/providers/registry.ts';
-import { type FlagDefaults, type FlagOverrides, type ModelPrefixConfig, type ProxyFallbackEntry, type UpstreamProviderKind, type UpstreamRecord } from '@floway-dev/provider';
+import type { FlagDefaults, FlagOverrides, ModelPrefixConfig, ProxyFallbackEntry, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import type { CodexQuotaSnapshotMap } from '@floway-dev/provider-codex';
 
 export interface ModelsCacheStatus {

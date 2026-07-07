@@ -4,15 +4,15 @@ import { computed, ref, watch } from 'vue';
 import EndpointsField from './EndpointsField.vue';
 import FlagOverridesEditor from './FlagOverridesEditor.vue';
 import { defaultEndpointsForKind, publicIdOf, titleFor, type Row } from './modelRows.ts';
-import type { AnnouncedMetadata, BillingDimension, FlagDef, ModelKind, ModelPricing, UpstreamChatConfig, UpstreamModelConfig } from '../../api/types.ts';
+import type { AnnouncedMetadata, BillingDimension, ModelKind, ModelPricing, UpstreamChatConfig, UpstreamModelConfig } from '../../api/types.ts';
 import { parseOptionalNumber } from '../../utils/parse-optional-number.ts';
 import ChatMetadataEditor from '../shared/ChatMetadataEditor.vue';
-import type { FlagDefaults, FlagId, FlagOverrides } from '@floway-dev/provider/flags';
+import type { Flag, FlagDefaults, FlagId, FlagOverrides } from '@floway-dev/provider/flags';
 import { Button, Input, Select, Switch, Tooltip } from '@floway-dev/ui';
 
 const props = defineProps<{
   row: Row | null;
-  flags: FlagDef[];
+  flags: Flag[];
   upstreamFlagOverrides: FlagOverrides;
   // Provider-declared upstream-level default for every flag on this
   // upstream kind. The per-model editor's "Inherit" pill resolves via

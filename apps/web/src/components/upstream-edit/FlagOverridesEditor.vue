@@ -7,14 +7,13 @@
 
 import type { HTMLAttributes } from 'vue';
 
-import type { FlagDef } from '../../api/types.ts';
-import type { FlagDefaults, FlagId, FlagOverrides } from '@floway-dev/provider/flags';
+import type { Flag, FlagDefaults, FlagId, FlagOverrides } from '@floway-dev/provider/flags';
 import { cn, OverlayScrollbars } from '@floway-dev/ui';
 
 const overrides = defineModel<FlagOverrides>({ required: true });
 
 const props = withDefaults(defineProps<{
-  flags: FlagDef[];
+  flags: Flag[];
   // Provider-declared defaults for this upstream kind (from the record's
   // `flag_defaults`). The editor falls through to this map for flags that
   // neither the operator's per-upstream override nor the per-model override
@@ -44,14 +43,14 @@ const setState = (flagId: string, next: TriState) => {
   overrides.value = copy;
 };
 
-const inheritedLabel = (flag: FlagDef): 'on' | 'off' => {
+const inheritedLabel = (flag: Flag): 'on' | 'off' => {
   const id = flag.id as FlagId;
   const inherited = props.inheritedOverrides[id];
   if (typeof inherited === 'boolean') return inherited ? 'on' : 'off';
   return props.providerDefaults[id] ? 'on' : 'off';
 };
 
-const stateLabel = (state: TriState, flag: FlagDef) => {
+const stateLabel = (state: TriState, flag: Flag) => {
   if (state === 'inherit') return `Inherit: ${inheritedLabel(flag)}`;
   return state === 'on' ? 'On' : 'Off';
 };

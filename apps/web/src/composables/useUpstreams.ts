@@ -1,11 +1,12 @@
 import { ref, shallowRef } from 'vue';
 
 import { callApi, useApi } from '../api/client.ts';
-import type { FlagDef, UpstreamRecord } from '../api/types.ts';
+import type { UpstreamRecord } from '../api/types.ts';
+import type { Flag } from '@floway-dev/provider/flags';
 
 // Module-scoped so Settings edits reflect on Models without a refetch.
 const upstreams = shallowRef<UpstreamRecord[] | null>(null);
-const flagCatalog = shallowRef<FlagDef[] | null>(null);
+const flagCatalog = shallowRef<Flag[] | null>(null);
 const loading = ref(false);
 
 export const useUpstreamsStore = () => {
@@ -16,7 +17,7 @@ export const useUpstreamsStore = () => {
     try {
       const [listRes, flagsRes] = await Promise.all([
         callApi<UpstreamRecord[]>(() => api.api.upstreams.$get()),
-        callApi<FlagDef[]>(() => api.api.upstreams.flags.$get()),
+        callApi<Flag[]>(() => api.api.upstreams.flags.$get()),
       ]);
       if (listRes.error) throw new Error(listRes.error.message);
       if (flagsRes.error) throw new Error(flagsRes.error.message);
