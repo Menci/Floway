@@ -260,10 +260,6 @@ const toggleFlagOverridesEnabled = () => {
   }
 };
 
-const updateFlagOverrides = (values: FlagOverrides) => {
-  patch({ flagOverrides: values });
-};
-
 // ── Chat metadata ──────────────────────────────────────────────────────────
 
 // Mirror the shared editor's value shape: pull the model's `limits` +
@@ -576,7 +572,7 @@ watch(isReasoningValid, valid => { emit('validity-change', valid); }, { immediat
             :inherited-overrides="upstreamFlagOverrides"
             :name-prefix="`${row.uiId}-flag`"
             class="max-h-72"
-            @update:model-value="updateFlagOverrides"
+            @update:model-value="v => patch({ flagOverrides: v })"
           />
           <p v-else-if="editable" class="text-[11px] text-gray-600">
             Toggle on to override individual flags for this model only.
