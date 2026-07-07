@@ -119,27 +119,48 @@ export type FlagDefaults = Readonly<Record<FlagId, boolean>>;
 // `defaultFlagsForCopilotModel` for the current example.
 export type FlagOverrides = Partial<Record<FlagId, boolean>>;
 
-// Validate a wire-form flag_overrides object. Throws on malformed shape;
-// returns a sorted, validated record of known flag ids to booleans.
-export const parseFlagOverridesWire = (value: unknown): FlagOverrides => {
+// Shape validator + canonicalizer shared by every entry point that
+// takes a "flag id → boolean" map from an untrusted source
+// (wire-form `parseFlagOverridesWire`, per-model
+// `flagOverridesField`). Rejects non-object payloads, non-boolean
+// values, and unknown flag ids; returns a copy with keys sorted
+// lexicographically so equal maps round-trip to identical JSON.
+// Error message format is caller-driven so each entry point keeps
+// its canonical operator-facing wording.
+export interface FlagOverridesErrorMessages {
+  readonly notObject: string;
+  readonly notBoolean: (id: string) => string;
+  readonly unknownIds: (ids: readonly string[]) => string;
+}
+
+export const validateFlagOverridesRecord = (value: unknown, msg: FlagOverridesErrorMessages): FlagOverrides => {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-    throw new Error('flag_overrides must be an object of { flagId: boolean }');
+    throw new Error(msg.notObject);
   }
   const result: Record<string, boolean> = {};
   const unknown: string[] = [];
   for (const [id, on] of Object.entries(value as Record<string, unknown>)) {
-    if (typeof on !== 'boolean') throw new Error(`flag_overrides.${id} must be a boolean`);
+    if (typeof on !== 'boolean') throw new Error(msg.notBoolean(id));
     if (!isKnownFlagId(id)) {
       unknown.push(id);
       continue;
     }
     result[id] = on;
   }
-  if (unknown.length > 0) throw new Error(`Unknown flag_overrides ids: ${unknown.join(', ')}`);
+  if (unknown.length > 0) throw new Error(msg.unknownIds(unknown));
   const sorted: FlagOverrides = {};
   for (const id of Object.keys(result).sort() as FlagId[]) sorted[id] = result[id];
   return sorted;
 };
+
+// Validate a wire-form flag_overrides object. Throws on malformed shape;
+// returns a sorted, validated record of known flag ids to booleans.
+export const parseFlagOverridesWire = (value: unknown): FlagOverrides =>
+  validateFlagOverridesRecord(value, {
+    notObject: 'flag_overrides must be an object of { flagId: boolean }',
+    notBoolean: id => `flag_overrides.${id} must be a boolean`,
+    unknownIds: ids => `Unknown flag_overrides ids: ${ids.join(', ')}`,
+  });
 
 // Reduce ordered flag layers to the effective enabled set. Layers apply
 // left-to-right; a later layer's explicit `true` re-enables a previously-off

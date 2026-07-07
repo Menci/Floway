@@ -1,4 +1,4 @@
-import { isKnownFlagId } from './flags.ts';
+import { validateFlagOverridesRecord } from './flags.ts';
 import { BILLING_DIMENSIONS, type BillingDimension, type ChatModelInfo, type ModelEndpointKey, type ModelEndpoints, type ModelKind, type Modality, type ModelPricing } from '@floway-dev/protocols/common';
 import { kindForEndpoints } from '@floway-dev/protocols/common';
 
@@ -102,27 +102,11 @@ export const limitsField = (value: unknown, label: string): UpstreamModelLimits 
 
 export const flagOverridesField = (value: unknown, label: string): Record<string, boolean> | undefined => {
   if (value === undefined) return undefined;
-  if (!isRecord(value)) throw new Error(`Malformed ${label}: must be an object`);
-  const unknown: string[] = [];
-  const values: Record<string, boolean> = {};
-  for (const [id, on] of Object.entries(value)) {
-    if (typeof on !== 'boolean') throw new Error(`Malformed ${label}.${id}: must be a boolean`);
-    if (!isKnownFlagId(id)) {
-      unknown.push(id);
-      continue;
-    }
-    values[id] = on;
-  }
-  if (unknown.length > 0) {
-    throw new Error(`Malformed ${label}: unknown flag ids: ${unknown.join(', ')}`);
-  }
-  // Sort keys lexicographically so two rows with the same flag set round-trip
-  // to byte-identical JSON regardless of the caller's insertion order —
-  // matches `parseFlagOverridesWire`'s canonicalization for the sibling
-  // upstream-level `flagOverrides` column.
-  const sorted: Record<string, boolean> = {};
-  for (const id of Object.keys(values).sort()) sorted[id] = values[id];
-  return sorted;
+  return validateFlagOverridesRecord(value, {
+    notObject: `Malformed ${label}: must be an object`,
+    notBoolean: id => `Malformed ${label}.${id}: must be a boolean`,
+    unknownIds: ids => `Malformed ${label}: unknown flag ids: ${ids.join(', ')}`,
+  });
 };
 
 const nonNegativeNumberField = (value: unknown, label: string): number => {
