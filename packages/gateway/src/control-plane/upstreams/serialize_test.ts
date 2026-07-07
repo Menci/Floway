@@ -45,7 +45,7 @@ test('upstreamRecordToJson redacts custom bearer token inside config', () => {
   assertEquals(config.apiKeySet, true);
   assertEquals(config.endpoints, { chatCompletions: {}, responses: {} });
   assertEquals(config.modelsFetch, { enabled: true, endpoint: '/models' });
-  assertEquals(config.models, [{ upstreamModelId: 'gpt-prod', endpoints: { chatCompletions: {} }, providerFlagOverlay: {} }]);
+  assertEquals(config.models, [{ upstreamModelId: 'gpt-prod', endpoints: { chatCompletions: {} } }]);
 });
 
 test('upstreamRecordToJson redacts Azure API keys inside config', () => {
@@ -65,7 +65,7 @@ test('upstreamRecordToJson redacts Azure API keys inside config', () => {
   assertEquals(config.endpoint, 'https://example.openai.azure.com');
   assertEquals(config.apiKey, undefined);
   assertEquals(config.apiKeySet, true);
-  assertEquals(config.models, [{ upstreamModelId: 'gpt-prod', endpoints: { chatCompletions: {} }, providerFlagOverlay: {} }]);
+  assertEquals(config.models, [{ upstreamModelId: 'gpt-prod', endpoints: { chatCompletions: {} } }]);
 });
 
 test('upstreamRecordToJson redacts Copilot GitHub token inside config and exposes the state baseUrl', () => {

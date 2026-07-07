@@ -1,5 +1,5 @@
-import { flagDefaultsForKind, flagDefaultsForModelByKind } from '../../data-plane/providers/registry.ts';
-import { publicModelId, type FlagDefaults, type FlagOverrides, type ModelPrefixConfig, type ProviderModel, type ProxyFallbackEntry, type UpstreamModelConfig, type UpstreamProviderKind, type UpstreamRecord } from '@floway-dev/provider';
+import { flagDefaultsForKind } from '../../data-plane/providers/registry.ts';
+import { type FlagDefaults, type ModelPrefixConfig, type ProxyFallbackEntry, type UpstreamProviderKind, type UpstreamRecord } from '@floway-dev/provider';
 import type { CodexQuotaSnapshotMap } from '@floway-dev/provider-codex';
 
 export interface ModelsCacheStatus {
@@ -185,30 +185,6 @@ const redactedState = (upstream: UpstreamRecord): unknown => {
   }
 };
 
-// Attach per-model `providerFlagOverlay` (layer 2 of the flag resolver)
-// by asking the provider module's `getDefaultFlagsForModel` per row.
-// Uniformly `{}` today — no provider that supports manual model
-// configuration also implements per-model deltas — but routing through
-// the registry keeps the invariant that provider modules are the sole
-// source of flag defaults intact. When a future provider ships per-model
-// deltas, the map computation lands here automatically.
-const modelDraftFromConfig = (model: UpstreamModelConfig): Omit<ProviderModel, 'enabledFlags'> => ({
-  id: publicModelId(model),
-  kind: model.kind,
-  endpoints: model.endpoints,
-  limits: model.limits ?? {},
-  ...(model.display_name !== undefined ? { display_name: model.display_name } : {}),
-  ...(model.cost ? { cost: model.cost } : {}),
-  ...(model.chat ? { chat: model.chat } : {}),
-});
-
-const withProviderFlagOverlay = (kind: UpstreamProviderKind, models: readonly unknown[]): unknown[] =>
-  models.map(m => {
-    if (!isRecord(m)) return m;
-    const overlay: FlagOverrides = flagDefaultsForModelByKind(kind, modelDraftFromConfig(m as unknown as UpstreamModelConfig));
-    return { ...m, providerFlagOverlay: overlay };
-  });
-
 const serializeBase = (
   upstream: UpstreamRecord,
   payload: { config: unknown; state: unknown },
@@ -225,9 +201,7 @@ const serializeBase = (
   disabled_public_model_ids: [...upstream.disabledPublicModelIds],
   proxy_fallback_list: upstream.proxyFallbackList.map(entry => entry.colos === undefined ? { id: entry.id } : { id: entry.id, colos: [...entry.colos] }),
   model_prefix: upstream.modelPrefix === null ? null : clone(upstream.modelPrefix),
-  config: isRecord(payload.config) && Array.isArray((payload.config as { models?: unknown }).models)
-    ? { ...payload.config, models: withProviderFlagOverlay(upstream.kind, (payload.config as { models: unknown[] }).models) }
-    : payload.config,
+  config: payload.config,
   state: payload.state,
 });
 
