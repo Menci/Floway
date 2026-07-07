@@ -1,3 +1,13 @@
+import { COPILOT_DEFAULT_FLAGS, defaultFlagsForCopilotModel } from './defaults.ts';
+import { createCopilotProvider } from './provider.ts';
+import type { ProviderModule } from '@floway-dev/provider';
+
+export const copilotProvider: ProviderModule = {
+  create: createCopilotProvider,
+  defaultFlags: COPILOT_DEFAULT_FLAGS,
+  getDefaultFlagsForModel: defaultFlagsForCopilotModel,
+};
+
 export { createCopilotProvider } from './provider.ts';
 export {
   clearCopilotTokenCache,

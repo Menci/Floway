@@ -2076,29 +2076,26 @@ test('GET /api/upstreams/blueprint rejects an unknown kind with 400', async () =
   assertEquals(resp.status, 400);
 });
 
-test('GET /api/upstreams/blueprint serves blank credentials without running the runtime asserts', async () => {
+test('GET /api/upstreams/blueprint serves a pure-blank record with provider flag defaults filled in', async () => {
   const { adminSession } = await setupAppTest();
 
-  // Blueprints are shape-complete synthetic-but-schema-valid rows that ride
-  // through the standard serialization pipeline (including provider factory
-  // for `flag_defaults`). The SPA discards everything except `flag_defaults`
-  // and lets the user fill the actual config in from an empty draft. Custom
-  // uses `authStyle: 'none'` so the assert accepts an absent apiKey; azure
-  // carries a single placeholder model since its assert rejects empty
-  // model lists. The blueprint travels through `upstreamRecordToFullJson`,
-  // so credentials come through verbatim (empty strings, not `*Set` bools).
+  // Blueprints are pure-blank shape-complete records; the SPA discards
+  // everything except `flag_defaults` and lets the operator fill the
+  // actual config in from an empty draft. Serialization is a static
+  // registry lookup so no provider asserter runs against the blank.
+  // The blueprint travels through `upstreamRecordToFullJson`, so
+  // credentials come through verbatim (empty strings, not `*Set` bools).
   const custom = (await (await requestApp('/api/upstreams/blueprint?kind=custom', { headers: { 'x-floway-session': adminSession } })).json()) as JsonObject;
-  assertEquals(custom.config.authStyle, 'none');
-  assertEquals('apiKey' in custom.config, false);
+  assertEquals(custom.config.authStyle, 'bearer');
+  assertEquals(custom.config.apiKey, '');
   const azure = (await (await requestApp('/api/upstreams/blueprint?kind=azure', { headers: { 'x-floway-session': adminSession } })).json()) as JsonObject;
-  assertEquals(Array.isArray(azure.config.models), true);
+  assertEquals(azure.config.models, []);
   const ollama = (await (await requestApp('/api/upstreams/blueprint?kind=ollama', { headers: { 'x-floway-session': adminSession } })).json()) as JsonObject;
   assertEquals(ollama.config.apiKey, '');
 
-  // Every provider kind must reach a 200 — the blueprint's synthetic record
-  // has to satisfy that kind's `assertXxxUpstream{Record,State}` on its way
-  // through the provider factory. `flag_defaults` on the wire is the whole
-  // point of routing through the factory; assert it lands on every kind.
+  // `flag_defaults` on the wire is the whole point of the blueprint;
+  // assert it lands on every kind so the dashboard's "Inherit → on/off"
+  // pill has data to render before Save.
   for (const kind of ['copilot', 'custom', 'azure', 'codex', 'claude-code', 'ollama']) {
     const preview = (await (await requestApp(`/api/upstreams/blueprint?kind=${kind}`, { headers: { 'x-floway-session': adminSession } })).json()) as JsonObject;
     assertEquals(typeof preview.flag_defaults['strip-billing-attribution'], 'boolean');

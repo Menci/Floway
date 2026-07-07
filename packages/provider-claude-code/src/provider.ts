@@ -25,7 +25,6 @@ export const createClaudeCodeProvider = (record: UpstreamRecord): Provider => {
   const enabledFlags = resolveEffectiveFlags([CLAUDE_CODE_DEFAULT_FLAGS, record.flagOverrides]);
 
   const instance: ProviderInstance = {
-    defaultFlagsForUpstream: () => CLAUDE_CODE_DEFAULT_FLAGS,
     // Catalog refresh mints an access token and hits /v1/models on every
     // dispatcher poll. `ensureClaudeCodeAccessToken` flips the row to
     // `refresh_failed` and throws `ClaudeCodeOAuthSessionTerminatedError`

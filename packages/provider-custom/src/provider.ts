@@ -173,7 +173,6 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
   };
 
   const instance: ProviderInstance = {
-    defaultFlagsForUpstream: () => CUSTOM_DEFAULT_FLAGS,
     getProvidedModels: async fetcher => {
       if (!config.modelsFetch.enabled) return manualModels;
       const response = await fetchCustomModels(config, fetcher);

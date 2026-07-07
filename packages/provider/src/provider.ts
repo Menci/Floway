@@ -1,6 +1,6 @@
 import type { FlagDefaults, FlagOverrides } from './flags.ts';
 import type { ModelPrefixConfig } from './model-prefix.ts';
-import type { ProviderModel, UpstreamProviderKind } from './model.ts';
+import type { ProviderModel, UpstreamProviderKind, UpstreamRecord } from './model.ts';
 import type { Fetcher } from './options.ts';
 import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import type { ModelPricing, ProtocolFrame } from '@floway-dev/protocols/common';
@@ -109,21 +109,6 @@ export interface UpstreamCallOptions {
 }
 
 export interface ProviderInstance {
-  // Provider's declaration of the default value for every flag when this
-  // upstream is created. Exhaustive: `FlagDefaults` is a full record over
-  // every catalog flag, so adding a new flag to the catalog is a type
-  // error until every provider decides its own default. Vendor-specific
-  // flag knowledge lives in the provider package that talks to that
-  // vendor.
-  defaultFlagsForUpstream(): FlagDefaults;
-  // Per-model deltas on top of `defaultFlagsForUpstream()`. Optional: only
-  // providers whose models legitimately differ (e.g. Copilot routes
-  // different Claude versions to Bedrock vs Vertex, and only Bedrock
-  // accepts inline `role:'system'`) need to implement this. Returns
-  // a partial map: absent keys inherit from the upstream default; explicit
-  // `true`/`false` overrides. Operator overrides on the DB row still layer
-  // on top of the result.
-  defaultFlagsForModel?(model: Omit<ProviderModel, 'enabledFlags'>): FlagOverrides;
   // Catalog refresh fetches a single resource and never enters the per-request
   // latency budget, so it takes the per-upstream fetcher directly instead of
   // the broader `UpstreamCallOptions` bag the data-plane `call*` methods use.
@@ -154,4 +139,30 @@ export interface ProviderInstance {
   // the upstream-specific model/deployment id). Callers must allocate a
   // fresh FormData per call.
   callImagesEdits(model: ProviderModel, body: FormData, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
+}
+
+// Static, module-shaped surface each provider package exports. The gateway
+// registry keeps a Record<UpstreamProviderKind, ProviderModule> and every
+// kind→X dispatch (instance construction, flag defaults, per-model flag
+// overlay) reads its answer off the same object. Adding a new dispatch
+// slot means a field here, not a parallel per-kind map.
+export interface ProviderModule {
+  // Instance factory: capture the record and return closures. Sync — any
+  // I/O the provider needs (token refresh, state persistence, catalog
+  // fetch) happens on demand inside the per-request methods on the
+  // returned ProviderInstance.
+  create: (record: UpstreamRecord) => Provider;
+  // Exhaustive default map over every catalog flag id for a fresh
+  // upstream of this kind. Vendor-specific knowledge lives in the
+  // provider package that talks to that vendor; the central catalog only
+  // describes identity, label, and UI copy.
+  defaultFlags: FlagDefaults;
+  // Per-model deltas on top of `defaultFlags`. Optional: only providers
+  // whose models legitimately differ (e.g. Copilot routes different
+  // Claude versions to Bedrock vs Vertex, and only Bedrock accepts
+  // inline `role:'system'`) need to implement this. Returns a partial
+  // map: absent keys inherit from the upstream default; explicit
+  // true/false overrides. Operator overrides on the DB row still layer
+  // on top of the result.
+  getDefaultFlagsForModel?: (model: Omit<ProviderModel, 'enabledFlags'>) => FlagOverrides;
 }

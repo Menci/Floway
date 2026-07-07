@@ -70,7 +70,6 @@ export const createCodexProvider = (record: UpstreamRecord): Provider => {
   const effects: CodexCallEffects = { persistRefreshTokenRotation, persistTerminalState };
 
   const instance: ProviderInstance = {
-    defaultFlagsForUpstream: () => CODEX_DEFAULT_FLAGS,
     getProvidedModels: async fetcher => {
       // A model-list refresh is the first thing a brand-new Codex upstream
       // does, and it is the only place outside the data plane that mints an

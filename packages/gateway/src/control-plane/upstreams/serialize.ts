@@ -1,5 +1,5 @@
-import { createProviderInstance } from '../../data-plane/providers/registry.ts';
-import { publicModelId, type FlagDefaults, type FlagOverrides, type ModelPrefixConfig, type Provider, type ProviderModel, type ProxyFallbackEntry, type UpstreamModelConfig, type UpstreamProviderKind, type UpstreamRecord } from '@floway-dev/provider';
+import { flagDefaultsForKind, flagDefaultsForModelByKind } from '../../data-plane/providers/registry.ts';
+import { publicModelId, type FlagDefaults, type FlagOverrides, type ModelPrefixConfig, type ProviderModel, type ProxyFallbackEntry, type UpstreamModelConfig, type UpstreamProviderKind, type UpstreamRecord } from '@floway-dev/provider';
 import type { CodexQuotaSnapshotMap } from '@floway-dev/provider-codex';
 
 export interface ModelsCacheStatus {
@@ -185,13 +185,12 @@ const redactedState = (upstream: UpstreamRecord): unknown => {
   }
 };
 
-// Attach per-model `providerFlagOverlay` (layer 2 of the flag
-// resolver) by asking the provider's `defaultFlagsForModel(model)` per
-// row. Uniformly `{}` today — no provider that supports manual model
-// configuration also implements the optional per-model method — but
-// routing through the instance keeps the invariant that
-// `ProviderInstance.defaultFlagsFor{Upstream,Model}` is the sole source
-// of flag defaults intact. When a future provider ships per-model
+// Attach per-model `providerFlagOverlay` (layer 2 of the flag resolver)
+// by asking the provider module's `getDefaultFlagsForModel` per row.
+// Uniformly `{}` today — no provider that supports manual model
+// configuration also implements per-model deltas — but routing through
+// the registry keeps the invariant that provider modules are the sole
+// source of flag defaults intact. When a future provider ships per-model
 // deltas, the map computation lands here automatically.
 const modelDraftFromConfig = (model: UpstreamModelConfig): Omit<ProviderModel, 'enabledFlags'> => ({
   id: publicModelId(model),
@@ -203,37 +202,34 @@ const modelDraftFromConfig = (model: UpstreamModelConfig): Omit<ProviderModel, '
   ...(model.chat ? { chat: model.chat } : {}),
 });
 
-const withProviderDefaultOverlay = (provider: Provider, models: readonly unknown[]): unknown[] =>
+const withProviderFlagOverlay = (kind: UpstreamProviderKind, models: readonly unknown[]): unknown[] =>
   models.map(m => {
     if (!isRecord(m)) return m;
-    const overlay: FlagOverrides = provider.instance.defaultFlagsForModel?.(modelDraftFromConfig(m as unknown as UpstreamModelConfig)) ?? {};
+    const overlay: FlagOverrides = flagDefaultsForModelByKind(kind, modelDraftFromConfig(m as unknown as UpstreamModelConfig));
     return { ...m, providerFlagOverlay: overlay };
   });
 
 const serializeBase = (
   upstream: UpstreamRecord,
   payload: { config: unknown; state: unknown },
-): SerializedUpstreamRecord => {
-  const provider = createProviderInstance(upstream);
-  return {
-    id: upstream.id,
-    kind: upstream.kind,
-    name: upstream.name,
-    enabled: upstream.enabled,
-    sort_order: upstream.sortOrder,
-    created_at: upstream.createdAt,
-    updated_at: upstream.updatedAt,
-    flag_overrides: { ...upstream.flagOverrides },
-    flag_defaults: provider.instance.defaultFlagsForUpstream(),
-    disabled_public_model_ids: [...upstream.disabledPublicModelIds],
-    proxy_fallback_list: upstream.proxyFallbackList.map(entry => entry.colos === undefined ? { id: entry.id } : { id: entry.id, colos: [...entry.colos] }),
-    model_prefix: upstream.modelPrefix === null ? null : clone(upstream.modelPrefix),
-    config: isRecord(payload.config) && Array.isArray((payload.config as { models?: unknown }).models)
-      ? { ...payload.config, models: withProviderDefaultOverlay(provider, (payload.config as { models: unknown[] }).models) }
-      : payload.config,
-    state: payload.state,
-  };
-};
+): SerializedUpstreamRecord => ({
+  id: upstream.id,
+  kind: upstream.kind,
+  name: upstream.name,
+  enabled: upstream.enabled,
+  sort_order: upstream.sortOrder,
+  created_at: upstream.createdAt,
+  updated_at: upstream.updatedAt,
+  flag_overrides: { ...upstream.flagOverrides },
+  flag_defaults: flagDefaultsForKind(upstream.kind),
+  disabled_public_model_ids: [...upstream.disabledPublicModelIds],
+  proxy_fallback_list: upstream.proxyFallbackList.map(entry => entry.colos === undefined ? { id: entry.id } : { id: entry.id, colos: [...entry.colos] }),
+  model_prefix: upstream.modelPrefix === null ? null : clone(upstream.modelPrefix),
+  config: isRecord(payload.config) && Array.isArray((payload.config as { models?: unknown }).models)
+    ? { ...payload.config, models: withProviderFlagOverlay(upstream.kind, (payload.config as { models: unknown[] }).models) }
+    : payload.config,
+  state: payload.state,
+});
 
 export const upstreamRecordToJson = (upstream: UpstreamRecord): SerializedUpstreamRecord =>
   serializeBase(upstream, { config: redactedConfig(upstream), state: redactedState(upstream) });
@@ -245,12 +241,10 @@ export const upstreamRecordToFullJson = (upstream: UpstreamRecord): SerializedUp
 // GET /api/upstreams/blueprint endpoint so the create page consumes the same
 // SerializedUpstreamRecord shape edit does — the front-end draft variable is
 // uniform across create and edit, and no write-path invariants have to be
-// satisfied. Every field value is a synthetic-but-schema-valid placeholder
-// so the blank passes every provider's `assertXxxUpstream{Record,State}` on
-// its way through `createProviderInstance` (needed to compute
-// `flag_defaults` via the provider's `defaultFlagsForUpstream()`); the
-// dashboard's create flow discards everything on this record except
-// `flag_defaults`.
+// satisfied. Field values are true blanks (empty strings, empty arrays),
+// matching what an editor sees before typing anything or completing any
+// OAuth flow. The dashboard's create flow discards everything on this
+// record except `flag_defaults`.
 export const blueprintUpstreamRecord = (kind: UpstreamProviderKind): UpstreamRecord => {
   const base = {
     id: '',
@@ -266,69 +260,17 @@ export const blueprintUpstreamRecord = (kind: UpstreamProviderKind): UpstreamRec
   };
   switch (kind) {
   case 'copilot':
-    return {
-      ...base, kind,
-      config: { githubToken: '', user: { login: 'preview', avatar_url: 'https://preview.invalid', name: null, id: 0 } },
-      state: null,
-    };
+    return { ...base, kind, config: { githubToken: '', user: { login: '', avatar_url: '', name: null, id: 0 } }, state: null };
   case 'custom':
-    // authStyle: 'none' avoids the `apiKey` non-empty requirement that
-    // `authStyle: 'bearer'` imposes; the blank record is never actually
-    // dispatched against, so a "no auth" style is a valid placeholder.
-    return {
-      ...base, kind,
-      config: { baseUrl: 'https://preview.invalid', authStyle: 'none', endpoints: {}, modelsFetch: { enabled: false }, models: [] },
-      state: null,
-    };
+    return { ...base, kind, config: { baseUrl: '', authStyle: 'bearer', apiKey: '', endpoints: {}, modelsFetch: { enabled: false }, models: [] }, state: null };
   case 'azure':
-    // Azure asserts a non-empty `apiKey` plus at least one model entry;
-    // the blank carries a placeholder for each so the assert passes.
-    return {
-      ...base, kind,
-      config: {
-        endpoint: 'https://preview.openai.azure.com/openai/v1',
-        apiKey: 'preview',
-        models: [{ upstreamModelId: 'preview', kind: 'chat', endpoints: { chatCompletions: {} } }],
-      },
-      state: null,
-    };
+    return { ...base, kind, config: { endpoint: '', apiKey: '', models: [] }, state: null };
   case 'codex':
-    return {
-      ...base, kind,
-      config: { accounts: [{ email: 'preview', chatgptAccountId: 'preview', chatgptUserId: 'preview', planType: 'preview' }] },
-      state: {
-        accounts: [{
-          chatgptAccountId: 'preview',
-          refresh_token: 'preview',
-          state: 'active',
-          state_updated_at: '1970-01-01T00:00:00.000Z',
-          openaiDeviceId: 'preview',
-        }],
-      },
-    };
+    return { ...base, kind, config: { accounts: [] }, state: { accounts: [] } };
   case 'claude-code':
-    return {
-      ...base, kind,
-      config: { accounts: [{ email: 'preview', accountUuid: 'preview', organizationUuid: null, subscriptionType: null, rateLimitTier: null }] },
-      state: {
-        accounts: [{
-          accountUuid: 'preview',
-          tokenKind: 'oauth',
-          refreshToken: 'preview',
-          state: 'active',
-          stateUpdatedAt: '1970-01-01T00:00:00.000Z',
-          accessToken: null,
-          quotaSnapshot: null,
-          usageProbeSnapshot: null,
-        }],
-      },
-    };
+    return { ...base, kind, config: { accounts: [] }, state: { accounts: [] } };
   case 'ollama':
-    return {
-      ...base, kind,
-      config: { baseUrl: 'http://preview.invalid', apiKey: '', models: [] },
-      state: null,
-    };
+    return { ...base, kind, config: { baseUrl: '', apiKey: '', models: [] }, state: null };
   default: {
     const exhaustive: never = kind;
     throw new Error(`Unknown upstream provider kind: ${String(exhaustive)}`);

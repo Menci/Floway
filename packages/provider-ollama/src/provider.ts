@@ -139,7 +139,6 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
     Promise.reject(new Error(`Ollama provider does not implement ${capability}`));
 
   const instance: ProviderInstance = {
-    defaultFlagsForUpstream: () => OLLAMA_DEFAULT_FLAGS,
     getProvidedModels: async fetcher => {
       const catalog = await fetchOllamaCatalog(config, fetcher);
       const auto = finalizeOllamaModels(

@@ -7,13 +7,13 @@ import { getRepo } from '../../repo/index.ts';
 import type { ModelAliasRecord } from '../../repo/types.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { type ModelKind, kindForEndpoints } from '@floway-dev/protocols/common';
-import { isAbortError, type Fetcher, type InternalModel, type ModelCandidate, type Provider, type ProviderModel, type UpstreamProviderKind, type UpstreamRecord } from '@floway-dev/provider';
-import { createAzureProvider } from '@floway-dev/provider-azure';
-import { createClaudeCodeProvider } from '@floway-dev/provider-claude-code';
-import { createCodexProvider } from '@floway-dev/provider-codex';
-import { createCopilotProvider } from '@floway-dev/provider-copilot';
-import { createCustomProvider } from '@floway-dev/provider-custom';
-import { createOllamaProvider } from '@floway-dev/provider-ollama';
+import { isAbortError, type Fetcher, type FlagDefaults, type FlagOverrides, type InternalModel, type ModelCandidate, type Provider, type ProviderModel, type ProviderModule, type UpstreamProviderKind, type UpstreamRecord } from '@floway-dev/provider';
+import { azureProvider } from '@floway-dev/provider-azure';
+import { claudeCodeProvider } from '@floway-dev/provider-claude-code';
+import { codexProvider } from '@floway-dev/provider-codex';
+import { copilotProvider } from '@floway-dev/provider-copilot';
+import { customProvider } from '@floway-dev/provider-custom';
+import { ollamaProvider } from '@floway-dev/provider-ollama';
 
 interface ProviderModelsResult {
   models: InternalModel[];
@@ -32,23 +32,41 @@ interface ProviderModelsResult {
 
 const NO_UPSTREAM_CONFIGURED_MESSAGE = 'No upstream provider configured — connect GitHub Copilot or add a Custom/Azure upstream in the dashboard';
 
-type ProviderFactory = (record: UpstreamRecord) => Provider;
-
-const providerFactories: Record<UpstreamProviderKind, ProviderFactory> = {
-  copilot: createCopilotProvider,
-  custom: createCustomProvider,
-  azure: createAzureProvider,
-  codex: createCodexProvider,
-  'claude-code': createClaudeCodeProvider,
-  ollama: createOllamaProvider,
+// Single kind→module dispatch table. Every static answer the gateway needs
+// from a provider (instance factory, flag defaults, per-model flag
+// overlay) reads off the same object; adding a new dispatch slot means a
+// new field on `ProviderModule`, not a parallel per-kind map.
+const providersByKind: Record<UpstreamProviderKind, ProviderModule> = {
+  copilot: copilotProvider,
+  custom: customProvider,
+  azure: azureProvider,
+  codex: codexProvider,
+  'claude-code': claudeCodeProvider,
+  ollama: ollamaProvider,
 };
+
+export const providerModuleForKind = (kind: UpstreamProviderKind): ProviderModule => providersByKind[kind];
 
 // Provider factories only capture the record and return closures; any
 // I/O they need (token refresh, state persistence, model catalog fetch)
 // happens on demand inside the per-request methods, never at factory
 // time.
 export const createProviderInstance = (record: UpstreamRecord): Provider =>
-  providerFactories[record.kind](record);
+  providersByKind[record.kind].create(record);
+
+// Flag defaults for a fresh upstream of `kind`, read off the same module
+// object. Serializer, dashboard flag-defaults endpoint, and any future
+// caller share one lookup.
+export const flagDefaultsForKind = (kind: UpstreamProviderKind): FlagDefaults =>
+  providersByKind[kind].defaultFlags;
+
+// Per-model flag deltas layered on top of `flagDefaultsForKind`. Returns
+// {} when the provider has no per-model opinion (only Copilot implements
+// this today; see COPILOT_DEFAULT_FLAGS + defaultFlagsForCopilotModel).
+export const flagDefaultsForModelByKind = (
+  kind: UpstreamProviderKind,
+  model: Omit<ProviderModel, 'enabledFlags'>,
+): FlagOverrides => providersByKind[kind].getDefaultFlagsForModel?.(model) ?? {};
 
 // The upstream scope is a required argument across the catalog-assembly chain
 // (this, getModels) so a caller can never omit it and silently receive the
@@ -85,8 +103,7 @@ export const listModelProviders = async (
 
   const providers: Provider[] = [];
   for (const upstream of selection) {
-    const factory = providerFactories[upstream.kind];
-    providers.push(factory(upstream));
+    providers.push(providersByKind[upstream.kind].create(upstream));
   }
 
   return providers;

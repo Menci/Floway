@@ -43,7 +43,6 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
   };
 
   const instance: ProviderInstance = {
-    defaultFlagsForUpstream: () => AZURE_DEFAULT_FLAGS,
     getProvidedModels() {
       return Promise.resolve(azure.config.models.map(model => {
         const modelLayer = model.flagOverrides?.enabled ? model.flagOverrides.values : undefined;

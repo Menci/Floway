@@ -1,3 +1,12 @@
+import { CLAUDE_CODE_DEFAULT_FLAGS } from './defaults.ts';
+import { createClaudeCodeProvider } from './provider.ts';
+import type { ProviderModule } from '@floway-dev/provider';
+
+export const claudeCodeProvider: ProviderModule = {
+  create: createClaudeCodeProvider,
+  defaultFlags: CLAUDE_CODE_DEFAULT_FLAGS,
+};
+
 export * from './config.ts';
 export * from './state.ts';
 export * from './constants.ts';

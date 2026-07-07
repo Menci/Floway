@@ -47,6 +47,7 @@ export type {
   Provider,
   ProviderInstance,
   ProviderCallResult,
+  ProviderModule,
   ProviderResponsesResult,
   ProviderStreamResult,
   ResponsesAction,
