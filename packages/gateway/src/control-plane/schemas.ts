@@ -18,11 +18,9 @@
 import { z } from 'zod';
 
 import { normalizeDisabledPublicModelIds } from '../repo/disabled-public-models.ts';
-import { MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX, OPTIONAL_FLAGS, parseFlagOverridesWire } from '@floway-dev/provider';
+import { MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX, parseFlagOverridesWire } from '@floway-dev/provider';
 
 // --- shared atoms ---
-
-const knownFlagIds = new Set<string>(OPTIONAL_FLAGS.map(f => f.id));
 
 // Reuse the runtime parseFlagOverridesWire so unknown-id and type errors
 // carry the canonical messages. z.unknown() → transform keeps the
@@ -35,11 +33,6 @@ const flagOverridesSchema = z.unknown().transform((value, ctx): Record<string, b
     return z.NEVER;
   }
 });
-
-const flagOverrideValuesSchema = z.record(z.string(), z.boolean()).refine(
-  overrides => Object.keys(overrides).every(id => knownFlagIds.has(id)),
-  'Unknown flag id in model flag overrides',
-);
 
 // Like flag_overrides, the disabled-models field normalizes at the API edge so a
 // create/update response echoes exactly what gets persisted (trimmed, de-duped).
@@ -146,10 +139,7 @@ const upstreamModelSchema = z.object({
     // rate, so every dimension inherits base pricing.
     tiers: z.record(z.string().min(1), z.object(pricingDimensionShape)).optional(),
   }).optional(),
-  flagOverrides: z.object({
-    enabled: z.boolean(),
-    values: flagOverrideValuesSchema,
-  }).optional(),
+  flagOverrides: flagOverridesSchema.optional(),
   limits: limitsSchema.optional(),
   chat: chatSchema.optional(),
 }).refine(
