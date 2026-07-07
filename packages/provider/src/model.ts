@@ -144,11 +144,11 @@ export interface ProviderModel extends ModelMetadata {
   enabledFlags: ReadonlySet<FlagId>;
   // Provider's per-model flag call as a sparse override — each entry
   // states the provider's opinion for that flag on this specific
-  // model, in `true`/`false` on/off form. Absent when the provider
-  // has no per-model call on this model; when present, the map is
-  // non-empty (producers elide empty overlays before emission).
-  // Populated only for providers with a per-model rule (Copilot's
-  // Claude < 4.8 demote clause is the current example); other
+  // model. Absent when the provider has no per-model call on this
+  // model; when present, the map is non-empty (producers elide empty
+  // overlays before emission). Populated only for providers with a
+  // per-model rule (Copilot's Claude < 4.8 demote clause is the current
+  // example); other
   // providers leave it undefined.
   //
   // The data plane consumes the already-resolved `enabledFlags` and
