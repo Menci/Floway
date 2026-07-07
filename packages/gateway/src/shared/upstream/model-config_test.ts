@@ -13,7 +13,7 @@ test('modelsField parses a full model entry', () => {
         display_name: 'GPT Prod',
         limits: { max_context_window_tokens: 128000, max_output_tokens: 4096 },
         cost: { input: 2.5, output: 15, input_cache_read: 0.25, input_cache_write: 3.75 },
-        flagOverrides: { enabled: true, values: { 'vendor-deepseek': false } },
+        flagOverrides: { 'vendor-deepseek': false },
       },
     ],
     'azure',
@@ -28,7 +28,7 @@ test('modelsField parses a full model entry', () => {
       display_name: 'GPT Prod',
       limits: { max_context_window_tokens: 128000, max_output_tokens: 4096 },
       cost: { input: 2.5, output: 15, input_cache_read: 0.25, input_cache_write: 3.75 },
-      flagOverrides: { enabled: true, values: { 'vendor-deepseek': false } },
+      flagOverrides: { 'vendor-deepseek': false },
     },
   ]);
 });
@@ -128,7 +128,7 @@ test('modelsField rejects cost with a negative input', () => {
   );
 });
 
-test('modelsField rejects a non-boolean flagOverrides.enabled', () => {
+test('modelsField rejects a non-object flagOverrides', () => {
   assertThrows(
     () =>
       modelsField(
@@ -136,13 +136,13 @@ test('modelsField rejects a non-boolean flagOverrides.enabled', () => {
           {
             upstreamModelId: 'gpt-prod',
             endpoints: { chatCompletions: {} },
-            flagOverrides: { enabled: 'yes', values: {} },
+            flagOverrides: 'not-an-object',
           },
         ],
         'azure',
       ),
     Error,
-    'Malformed azure models[0].flagOverrides.enabled: must be a boolean',
+    'Malformed azure models[0].flagOverrides: must be an object',
   );
 });
 
@@ -154,12 +154,12 @@ test('modelsField rejects flagOverrides with an unknown flag id', () => {
           {
             upstreamModelId: 'gpt-prod',
             endpoints: { chatCompletions: {} },
-            flagOverrides: { enabled: true, values: { 'made-up-flag': true } },
+            flagOverrides: { 'made-up-flag': true },
           },
         ],
         'azure',
       ),
     Error,
-    'Malformed azure models[0].flagOverrides.values: unknown flag ids: made-up-flag',
+    'Malformed azure models[0].flagOverrides: unknown flag ids: made-up-flag',
   );
 });

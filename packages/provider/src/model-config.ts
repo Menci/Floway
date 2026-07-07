@@ -10,11 +10,6 @@ export interface UpstreamModelLimits {
   max_output_tokens?: number;
 }
 
-export interface UpstreamModelFlagOverrides {
-  enabled: boolean;
-  values: Record<string, boolean>;
-}
-
 // The catalog-side name for the wire chat metadata. Shape lives in
 // @floway-dev/protocols/common so PublicModel.chat and the upstream catalog
 // share a single declaration.
@@ -31,7 +26,14 @@ export interface UpstreamModelConfig {
   // Floway-internal (camelCase, not surfaced on PublicModel).
   upstreamModelId: string;
   publicModelId?: string;
-  flagOverrides?: UpstreamModelFlagOverrides;
+  // Layer 3 in resolveEffectiveFlags for a manual row: operator-declared
+  // per-model override, applied on top of the upstream default +
+  // operator upstream override. Absent / `{}` = no per-model override
+  // (pure inherit). The auto-row counterpart is `ProviderModel.
+  // flagOverridesAuto`, projected onto the wire by
+  // reshapeModelForDashboard — the two are mutually exclusive by row
+  // kind, since a config.models[] entry is always operator-authored.
+  flagOverrides?: Record<string, boolean>;
 }
 
 // The public catalog id a model is exposed under: an explicit override when set,
@@ -98,15 +100,13 @@ export const limitsField = (value: unknown, label: string): UpstreamModelLimits 
   };
 };
 
-export const flagOverridesField = (value: unknown, label: string): UpstreamModelFlagOverrides | undefined => {
+export const flagOverridesField = (value: unknown, label: string): Record<string, boolean> | undefined => {
   if (value === undefined) return undefined;
   if (!isRecord(value)) throw new Error(`Malformed ${label}: must be an object`);
-  if (typeof value.enabled !== 'boolean') throw new Error(`Malformed ${label}.enabled: must be a boolean`);
-  if (!isRecord(value.values)) throw new Error(`Malformed ${label}.values: must be an object`);
   const unknown: string[] = [];
   const values: Record<string, boolean> = {};
-  for (const [id, on] of Object.entries(value.values)) {
-    if (typeof on !== 'boolean') throw new Error(`Malformed ${label}.values.${id}: must be a boolean`);
+  for (const [id, on] of Object.entries(value)) {
+    if (typeof on !== 'boolean') throw new Error(`Malformed ${label}.${id}: must be a boolean`);
     if (!isKnownFlagId(id)) {
       unknown.push(id);
       continue;
@@ -114,9 +114,9 @@ export const flagOverridesField = (value: unknown, label: string): UpstreamModel
     values[id] = on;
   }
   if (unknown.length > 0) {
-    throw new Error(`Malformed ${label}.values: unknown flag ids: ${unknown.join(', ')}`);
+    throw new Error(`Malformed ${label}: unknown flag ids: ${unknown.join(', ')}`);
   }
-  return { enabled: value.enabled, values };
+  return values;
 };
 
 const nonNegativeNumberField = (value: unknown, label: string): number => {

@@ -56,11 +56,14 @@ export interface UpstreamModelConfig {
   // Layer 3 in the flag resolver, mutually exclusive by row kind:
   //   - flagOverrides: operator-declared per-model override on a
   //     manual row (persisted under upstreams.config.models[]).
+  //     Presence itself (undefined vs `{}`) toggles whether the row
+  //     opts into per-model overriding; individual flags are tri-state
+  //     via the editor (inherit / on / off).
   //   - flagOverridesAuto: provider-declared per-model default on an
   //     auto row (populated by reshapeModelForDashboard, never
   //     persisted). Read-only in the dashboard.
   // Exactly one of the two is populated on any given row.
-  flagOverrides?: { enabled: boolean; values: Record<string, boolean> };
+  flagOverrides?: Record<string, boolean>;
   flagOverridesAuto?: Record<string, boolean>;
   chat?: UpstreamChatConfig;
 }

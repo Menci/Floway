@@ -112,9 +112,10 @@ export type FlagDefaults = Readonly<Record<FlagId, boolean>>;
 // this layer (including flags seeded by earlier layers — the operator or
 // per-model default explicitly opted out).
 //
-// Used by operator override storage (`UpstreamRecord.flagOverrides`,
-// per-model `flagOverrides.values`) and by the per-model default deltas
-// a provider computes inside its `create` — see
+// Used by operator override storage (upstream-level
+// `UpstreamRecord.flagOverrides`, per-model
+// `UpstreamModelConfig.flagOverrides`) and by the per-model default
+// deltas a provider computes inside its `create` — see
 // `defaultFlagsForCopilotModel` for the current example.
 export type FlagOverrides = Partial<Record<FlagId, boolean>>;
 
@@ -150,7 +151,7 @@ export const parseFlagOverridesWire = (value: unknown): FlagOverrides => {
 //   2. Operator upstream override (`UpstreamRecord.flagOverrides`)
 //   3. Per-model layer — provider's per-model default for auto rows
 //      (`defaultFlagsForCopilotModel(model)`), operator's per-model
-//      override for manual rows (`UpstreamModelConfig.flagOverrides.values`).
+//      override for manual rows (`UpstreamModelConfig.flagOverrides`).
 //      Never both, since an auto/manual row cannot be the other.
 //
 // Placing per-model last lets provider-declared technical necessities

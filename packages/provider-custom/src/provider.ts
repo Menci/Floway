@@ -79,7 +79,7 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
   // Manual models always emit.
   const overriddenIds = new Set(config.models.map(m => m.upstreamModelId));
   const manualModels: ProviderModel[] = config.models.map(model => {
-    const modelLayer = model.flagOverrides?.enabled ? model.flagOverrides.values : undefined;
+    const modelLayer = model.flagOverrides;
     const enabledFlags = resolveEffectiveFlags([CUSTOM_DEFAULT_FLAGS, record.flagOverrides, modelLayer]);
     const endpoints = model.endpoints;
     const internal: ProviderModel = {

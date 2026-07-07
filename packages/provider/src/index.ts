@@ -76,7 +76,6 @@ export {
 
 export type {
   UpstreamModelConfig,
-  UpstreamModelFlagOverrides,
   UpstreamModelLimits,
   Modality,
   UpstreamChatModelConfig,

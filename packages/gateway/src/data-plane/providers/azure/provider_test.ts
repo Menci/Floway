@@ -282,7 +282,7 @@ test('createAzureProvider applies per-model flag overrides on top of the upstrea
           {
             upstreamModelId: 'd2',
             endpoints: { chatCompletions: {} },
-            flagOverrides: { enabled: true, values: { 'vendor-deepseek': false, 'vendor-kimi': true } },
+            flagOverrides: { 'vendor-deepseek': false, 'vendor-kimi': true },
           },
         ],
       },
@@ -299,7 +299,7 @@ test('createAzureProvider applies per-model flag overrides on top of the upstrea
   assertEquals(d2.enabledFlags.has('vendor-kimi'), true);
 });
 
-test('createAzureProvider skips the per-model layer when flagOverrides.enabled is false', async () => {
+test('createAzureProvider respects upstream override when per-model flagOverrides is empty', async () => {
   const instance = createAzureProvider(
     azureRecord({
       flagOverrides: { 'vendor-deepseek': true },
@@ -311,7 +311,7 @@ test('createAzureProvider skips the per-model layer when flagOverrides.enabled i
           {
             upstreamModelId: 'd1',
             endpoints: { chatCompletions: {} },
-            flagOverrides: { enabled: false, values: { 'vendor-deepseek': false } },
+            flagOverrides: {},
           },
         ],
       },

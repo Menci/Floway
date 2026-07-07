@@ -45,7 +45,7 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
   const instance: ProviderInstance = {
     getProvidedModels() {
       return Promise.resolve(azure.config.models.map(model => {
-        const modelLayer = model.flagOverrides?.enabled ? model.flagOverrides.values : undefined;
+        const modelLayer = model.flagOverrides;
         const effective = resolveEffectiveFlags([AZURE_DEFAULT_FLAGS, azure.flagOverrides, modelLayer]);
         const endpoints = model.endpoints;
         return {

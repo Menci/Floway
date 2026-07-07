@@ -227,15 +227,11 @@ const moveTierDown = (index: number) => {
 
 const toggleFlagOverridesEnabled = () => {
   if (!editable.value || !config.value) return;
-  if (config.value.flagOverrides?.enabled) {
-    patch({ flagOverrides: undefined });
-  } else {
-    patch({ flagOverrides: { enabled: true, values: { ...(config.value.flagOverrides?.values ?? {}) } } });
-  }
+  patch({ flagOverrides: config.value.flagOverrides !== undefined ? undefined : {} });
 };
 
 const updateFlagOverrides = (values: Record<string, boolean>) => {
-  patch({ flagOverrides: { enabled: true, values } });
+  patch({ flagOverrides: values });
 };
 
 // ── Chat metadata ──────────────────────────────────────────────────────────
@@ -536,15 +532,15 @@ watch(isReasoningValid, valid => { emit('validity-change', valid); }, { immediat
             <span class="text-[11px] text-gray-500">applied on top of upstream-level flags; <code class="font-mono">Inherit</code> reflects the upstream-resolved value</span>
             <Switch
               v-if="editable"
-              :model-value="config.flagOverrides?.enabled === true"
+              :model-value="config.flagOverrides !== undefined"
               class="ml-auto"
               @update:model-value="toggleFlagOverridesEnabled"
             />
             <Switch v-else :model-value="false" disabled class="ml-auto" />
           </div>
           <FlagOverridesEditor
-            v-if="editable && config.flagOverrides?.enabled"
-            :model-value="config.flagOverrides?.values ?? {}"
+            v-if="editable && config.flagOverrides !== undefined"
+            :model-value="config.flagOverrides"
             :flags="flags"
             :provider-defaults="providerFlagDefaults"
             :inherited-overrides="upstreamFlagOverrides"

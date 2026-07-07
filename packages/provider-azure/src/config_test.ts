@@ -142,16 +142,13 @@ test('assertAzureUpstreamRecord round-trips per-model flagOverrides', () => {
         {
           upstreamModelId: 'gpt-5',
           endpoints: { chatCompletions: {} },
-          flagOverrides: { enabled: true, values: { 'vendor-kimi': true, 'vendor-deepseek': false } },
+          flagOverrides: { 'vendor-kimi': true, 'vendor-deepseek': false },
         },
       ],
     },
   });
 
-  assertEquals(parsed.config.models[0].flagOverrides, {
-    enabled: true,
-    values: { 'vendor-kimi': true, 'vendor-deepseek': false },
-  });
+  assertEquals(parsed.config.models[0].flagOverrides, { 'vendor-kimi': true, 'vendor-deepseek': false });
 });
 
 test('assertAzureUpstreamRecord rejects malformed per-model flagOverrides', () => {
@@ -165,13 +162,13 @@ test('assertAzureUpstreamRecord rejects malformed per-model flagOverrides', () =
             {
               upstreamModelId: 'gpt-prod',
               endpoints: { chatCompletions: {} },
-              flagOverrides: { enabled: 'yes', values: {} },
+              flagOverrides: 'not-an-object',
             },
           ],
         },
       }),
     Error,
-    'azure models[0].flagOverrides.enabled: must be a boolean',
+    'azure models[0].flagOverrides: must be an object',
   );
 
   assertThrows(
@@ -184,13 +181,13 @@ test('assertAzureUpstreamRecord rejects malformed per-model flagOverrides', () =
             {
               upstreamModelId: 'gpt-prod',
               endpoints: { chatCompletions: {} },
-              flagOverrides: { enabled: true, values: { 'vendor-deepseek': 'on' } },
+              flagOverrides: { 'vendor-deepseek': 'on' },
             },
           ],
         },
       }),
     Error,
-    'azure models[0].flagOverrides.values.vendor-deepseek: must be a boolean',
+    'azure models[0].flagOverrides.vendor-deepseek: must be a boolean',
   );
 });
 
@@ -205,13 +202,13 @@ test('assertAzureUpstreamRecord rejects per-model flagOverrides with unknown fla
             {
               upstreamModelId: 'gpt-prod',
               endpoints: { chatCompletions: {} },
-              flagOverrides: { enabled: true, values: { 'made-up-flag': true } },
+              flagOverrides: { 'made-up-flag': true },
             },
           ],
         },
       }),
     Error,
-    'azure models[0].flagOverrides.values: unknown flag ids: made-up-flag',
+    'azure models[0].flagOverrides: unknown flag ids: made-up-flag',
   );
 });
 
@@ -226,13 +223,13 @@ test('assertAzureUpstreamRecord reports all unknown per-model flag ids in one er
             {
               upstreamModelId: 'gpt-prod',
               endpoints: { chatCompletions: {} },
-              flagOverrides: { enabled: true, values: { 'made-up-flag': true, 'another-typo': false } },
+              flagOverrides: { 'made-up-flag': true, 'another-typo': false },
             },
           ],
         },
       }),
     Error,
-    'azure models[0].flagOverrides.values: unknown flag ids: made-up-flag, another-typo',
+    'azure models[0].flagOverrides: unknown flag ids: made-up-flag, another-typo',
   );
 });
 
