@@ -21,7 +21,7 @@ import { parseChatCompletionsStream, type ChatCompletionsPayload, type ChatCompl
 import { type ModelEndpointKey, type ModelEndpoints, type ProtocolFrame, kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseAnthropicBetaHeader, parseMessagesStream, type MessagesPayload, type MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import { parseResponsesStream, type ResponsesInputItem, type ResponsesPayload, type ResponsesResult } from '@floway-dev/protocols/responses';
-import { COMPACTION_TRIGGER, compactionResponse, eventResult, getProviderRepo, readUpstreamApiError, streamingProviderCall, apiErrorToResponse, resolveEffectiveFlags, type ExecuteResult, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderResponsesResult, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord } from '@floway-dev/provider';
+import { COMPACTION_TRIGGER, compactionResponse, eventResult, getProviderRepo, readUpstreamApiError, streamingProviderCall, apiErrorToResponse, resolveEffectiveFlags, type ExecuteResult, type FlagOverrides, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderResponsesResult, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord } from '@floway-dev/provider';
 
 interface CopilotProviderData {
   rawModels: CopilotRawModel[];
@@ -141,7 +141,7 @@ const copilotEmbeddingsBody = (body: Record<string, unknown>): Record<string, un
 
 const finalizeCopilotModels = (
   rawModels: CopilotRawModel[],
-  resolveModelFlags: (draft: Omit<ProviderModel, 'enabledFlags'>) => ReadonlySet<string>,
+  upstreamOverrides: FlagOverrides,
 ): ProviderModel[] => {
   const merged = mergeClaudeVariants({ object: 'list', data: rawModels });
   const groups = new Map<string, CopilotRawModel[]>();
@@ -162,14 +162,19 @@ const finalizeCopilotModels = (
       providerData: { rawModels: variants } satisfies CopilotProviderData,
       ...(cost ? { cost } : {}),
     };
-    // Surface the per-model layer that fed into `enabledFlags` so the
-    // dashboard's auto-row flag view can render "provider forces X on
-    // for this model" pills. Empty overlay → omit the field (no per-
-    // model deviation from the upstream default).
+    // Layer order: provider upstream default → operator upstream override
+    // → per-model provider default. Placing the per-model layer last
+    // keeps a technical necessity the provider knows about (Vertex
+    // rejects inline `role:'system'` for Claude < 4.8; see
+    // `defaultFlagsForCopilotModel`) from being silently undone by the
+    // operator's upstream toggle. The same per-model overlay is surfaced
+    // on `flagOverridesAuto` so the dashboard can show which flags the
+    // provider forces on this specific model.
     const flagOverridesAuto = defaultFlagsForCopilotModel(draft);
+    const enabledFlags = resolveEffectiveFlags([COPILOT_DEFAULT_FLAGS, upstreamOverrides, flagOverridesAuto]);
     models.push({
       ...draft,
-      enabledFlags: resolveModelFlags(draft),
+      enabledFlags,
       ...(Object.keys(flagOverridesAuto).length > 0 ? { flagOverridesAuto } : {}),
     });
   }
@@ -179,14 +184,6 @@ const finalizeCopilotModels = (
 export const createCopilotProvider = (record: UpstreamRecord): Provider => {
   const copilot = assertCopilotUpstreamRecord(record);
   const upstreamConfig = { id: copilot.id, githubToken: copilot.config.githubToken };
-  // Layer order: provider upstream default → operator upstream override
-  // → per-model default. Placing the per-model layer last keeps a
-  // technical necessity the provider knows about (see
-  // `defaultFlagsForCopilotModel`) from being silently undone by an
-  // operator upstream toggle; opting out means switching the row to
-  // Manual and overriding there.
-  const resolveModelFlags = (draft: Omit<ProviderModel, 'enabledFlags'>): ReadonlySet<string> =>
-    resolveEffectiveFlags([COPILOT_DEFAULT_FLAGS, copilot.flagOverrides, defaultFlagsForCopilotModel(draft)]);
 
   const call = async (
     transport: (config: typeof upstreamConfig, init: RequestInit, options: UpstreamFetchOptions) => Promise<Response>,
@@ -312,7 +309,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
           console.warn(`Failed to persist Copilot known-models for ${copilot.id}:`, err);
         }
       }
-      return finalizeCopilotModels(projectKnownModels(merged, now), resolveModelFlags);
+      return finalizeCopilotModels(projectKnownModels(merged, now), copilot.flagOverrides);
     },
     getPricingForModelKey: pricingForCopilotModelKey,
     // Copilot's catalog never declares endpoints.completions, so this
