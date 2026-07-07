@@ -68,7 +68,7 @@ const rowKind = computed<ModelKind>(() => config.value?.kind ?? 'chat');
 // `resolveEffectiveFlags` at request time, so what the dashboard shows
 // is exactly what the provider dispatches.
 const autoRowFlagState = (flagId: string): { on: boolean; source: string } => {
-  const perModel = config.value?.flagOverridesAuto?.[flagId];
+  const perModel = config.value?.flagOverrides?.[flagId];
   if (perModel !== undefined) return { on: perModel, source: 'provider — this model' };
   const upstreamOverride = props.upstreamFlagOverrides[flagId];
   if (upstreamOverride !== undefined) return { on: upstreamOverride, source: 'upstream override' };

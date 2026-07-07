@@ -80,13 +80,13 @@ const reconcile = () => {
         placedManual.add(row.config);
       }
     } else {
-      const live = auto.find(a => a.upstreamModelId === row.auto.upstreamModelId);
+      const live = auto.find(a => a.upstreamModelId === row.config.upstreamModelId);
       if (live) {
         // Refresh the snapshot in place so a re-fetch updates read-only
         // metadata without disturbing the row's identity/position.
-        row.auto = live;
+        row.config = live;
         next.push(row);
-        placedAuto.add(row.auto.upstreamModelId);
+        placedAuto.add(row.config.upstreamModelId);
       }
     }
   }
@@ -101,7 +101,7 @@ const reconcile = () => {
 
   for (const a of auto) {
     if (!placedAuto.has(a.upstreamModelId)) {
-      next.push({ uiId: newUiId(), kind: 'auto', auto: a });
+      next.push({ uiId: newUiId(), kind: 'auto', config: a });
     }
   }
 
@@ -122,7 +122,7 @@ const selectedRow = computed<Row | null>(() =>
 
 const emitManual = () => {
   manualModels.value = rows.value
-    .filter((r): r is Extract<Row, { kind: 'manual' }> => r.kind === 'manual')
+    .filter(r => r.kind === 'manual')
     .map(r => r.config);
 };
 
@@ -152,7 +152,7 @@ const setMode = (uiId: string, mode: 'auto' | 'manual') => {
   if (mode === 'manual' && row.kind === 'auto') {
     // Seed an editable manual entry from the auto snapshot, keep the
     // position, and lock its upstreamModelId so it keeps shadowing the twin.
-    const config = seedFromAuto(row.auto);
+    const config = seedFromAuto(row.config);
     rows.value.splice(index, 1, { uiId, kind: 'manual', config });
     lockedUpstreamId.add(uiId);
     emitManual();
@@ -161,7 +161,7 @@ const setMode = (uiId: string, mode: 'auto' | 'manual') => {
     // the same uiId so the row keeps its position.
     lockedUpstreamId.delete(uiId);
     const twin = props.autoModels.find(a => a.upstreamModelId === row.config.upstreamModelId);
-    if (twin) rows.value.splice(index, 1, { uiId, kind: 'auto', auto: twin });
+    if (twin) rows.value.splice(index, 1, { uiId, kind: 'auto', config: twin });
     else rows.value.splice(index, 1);
     emitManual();
   }

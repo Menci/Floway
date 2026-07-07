@@ -45,21 +45,7 @@ export interface UpstreamChatConfig {
   };
 }
 
-// Layer 3 in the flag resolver — exclusive by row kind. Encoded as a
-// union so `{ flagOverrides, flagOverridesAuto }` set together is a
-// compile error at every wire producer / consumer:
-//   - manual row: operator-declared per-model override stored under
-//     `upstreams.config.models[].flagOverrides`. Presence itself
-//     (undefined vs `{}`) toggles opt-in; individual flags are
-//     tri-state via the editor (inherit / on / off).
-//   - auto row: provider-declared per-model default projected onto
-//     `flagOverridesAuto` by reshapeModelForDashboard, never
-//     persisted, read-only in the dashboard.
-type FlagLayer3 =
-  | { flagOverrides?: Record<string, boolean>; flagOverridesAuto?: never }
-  | { flagOverrides?: never; flagOverridesAuto?: Record<string, boolean> };
-
-export type UpstreamModelConfig = {
+export interface UpstreamModelConfig {
   upstreamModelId: string;
   publicModelId?: string;
   kind: ModelKind;
@@ -68,7 +54,16 @@ export type UpstreamModelConfig = {
   limits?: PublicModelLimits;
   cost?: ModelPricing;
   chat?: UpstreamChatConfig;
-} & FlagLayer3;
+  // Layer 3 per-model flag map. On a manual row (from
+  // `upstreams.config.models[]`) this is the operator-declared
+  // override that PATCH writes back to the DB; on an auto row (from
+  // `POST /api/upstreams/list-models`, reshaped from `ProviderModel`
+  // by the backend) it is the provider's per-model rule as a live
+  // read-only projection. The shape is the same in both cases; the
+  // source and whether the row persists are carried by the enclosing
+  // `Row.kind` at consumption time, not by a wire discriminator.
+  flagOverrides?: Record<string, boolean>;
+}
 
 export interface CustomModelsFetch {
   enabled: boolean;

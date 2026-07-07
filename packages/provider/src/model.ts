@@ -136,7 +136,7 @@ export interface InternalAliasedFrom {
 // per-provider wire carrier — Copilot's raw variant list, Claude Code's dated
 // upstream id, ...), `enabledFlags` (the effective flag set for the model
 // on the emitting upstream, already resolved through every layer), and
-// `flagOverridesAuto` (optional dashboard-only view of the per-model layer
+// `flagOverrides` (optional dashboard-only view of the per-model layer
 // that fed into `enabledFlags`). Providers only ever see their own emission —
 // the surrounding `InternalModel` map is assembled by the registry.
 export interface ProviderModel extends ModelMetadata {
@@ -156,7 +156,9 @@ export interface ProviderModel extends ModelMetadata {
   // auto-row flag view can render a per-flag pill showing which flags
   // the provider itself calls on this specific model —
   // reshapeModelForDashboard projects it onto the wire as the auto-row
-  // counterpart to the operator's `UpstreamModelConfig.flagOverrides`,
-  // and the two are mutually exclusive by row kind.
-  flagOverridesAuto?: FlagOverrides;
+  // counterpart to the operator-authored
+  // `UpstreamModelConfig.flagOverrides` on manual rows. The two
+  // occupy the same layer-3 slot; the source is carried by the
+  // enclosing row type (auto vs manual), not by the field name.
+  flagOverrides?: FlagOverrides;
 }

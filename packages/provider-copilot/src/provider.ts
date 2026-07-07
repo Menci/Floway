@@ -168,14 +168,14 @@ const finalizeCopilotModels = (
     // rejects inline `role:'system'` for Claude < 4.8; see
     // `defaultFlagsForCopilotModel`) from being silently undone by the
     // operator's upstream toggle. The same per-model overlay is surfaced
-    // on `flagOverridesAuto` so the dashboard can show which flags the
+    // on `flagOverrides` so the dashboard can show which flags the
     // provider forces on this specific model.
-    const flagOverridesAuto = defaultFlagsForCopilotModel(draft);
-    const enabledFlags = resolveEffectiveFlags([COPILOT_DEFAULT_FLAGS, upstreamOverrides, flagOverridesAuto]);
+    const flagOverrides = defaultFlagsForCopilotModel(draft);
+    const enabledFlags = resolveEffectiveFlags([COPILOT_DEFAULT_FLAGS, upstreamOverrides, flagOverrides]);
     models.push({
       ...draft,
       enabledFlags,
-      ...(Object.keys(flagOverridesAuto).length > 0 ? { flagOverridesAuto } : {}),
+      ...(Object.keys(flagOverrides).length > 0 ? { flagOverrides } : {}),
     });
   }
   return models;

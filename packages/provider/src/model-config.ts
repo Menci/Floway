@@ -29,10 +29,10 @@ export interface UpstreamModelConfig {
   // Layer 3 in resolveEffectiveFlags for a manual row: operator-declared
   // per-model override, applied on top of the upstream default +
   // operator upstream override. Absent / `{}` = no per-model override
-  // (pure inherit). The auto-row counterpart is `ProviderModel.
-  // flagOverridesAuto`, projected onto the wire by
-  // reshapeModelForDashboard — the two are mutually exclusive by row
-  // kind, since a config.models[] entry is always operator-authored.
+  // (pure inherit). The auto-row counterpart is
+  // `ProviderModel.flagOverrides` — same field name, occupies the same
+  // layer-3 slot, but sourced from the provider's per-model rule
+  // rather than an operator-authored config row.
   flagOverrides?: Record<string, boolean>;
 }
 

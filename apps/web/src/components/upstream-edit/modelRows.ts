@@ -1,14 +1,23 @@
 import type { ModelEndpointKey, ModelEndpoints, ModelKind, UpstreamModelConfig } from '../../api/types.ts';
 
-export type Row =
-  | { uiId: string; kind: 'manual'; config: UpstreamModelConfig }
-  | { uiId: string; kind: 'auto'; auto: UpstreamModelConfig };
+// A row's `kind` names the source of its `config`, not the shape:
+// `manual` came from `upstreams.config.models[]` (persists on PATCH,
+// operator-editable); `auto` came from the live wire projection of
+// `POST /api/upstreams/list-models` (read-only, never persists).
+// Both flavours share `UpstreamModelConfig` — a manual row is what
+// `seedFromAuto` produces from an auto row, verbatim except for a
+// `defaultEndpointsForKind` fallback when the source endpoints map is
+// empty, so the type must accept the union already.
+export interface Row {
+  uiId: string;
+  kind: 'manual' | 'auto';
+  config: UpstreamModelConfig;
+}
 
 let nextUiId = 0;
 export const newUiId = () => `m${++nextUiId}`;
 
-export const configOf = (row: Row): UpstreamModelConfig =>
-  row.kind === 'manual' ? row.config : row.auto;
+export const configOf = (row: Row): UpstreamModelConfig => row.config;
 
 const CHAT_ENDPOINT_KEYS: ModelEndpointKey[] = ['completions', 'chatCompletions', 'responses', 'messages'];
 const IMAGE_ENDPOINT_KEYS: ModelEndpointKey[] = ['imagesGenerations', 'imagesEdits'];
@@ -25,6 +34,12 @@ export const defaultEndpointsForKind = (kind: ModelKind, current: ModelEndpoints
   return kind === 'image' ? { imagesGenerations: {}, imagesEdits: {} } : { chatCompletions: {} };
 };
 
+// Crystallize an auto row's live projection into a manual row: copy every
+// metadata field, and pull the auto row's `flagOverrides` (the provider's
+// per-model rule) into the manual row's `flagOverrides` so the operator
+// starts from the same layer-3 state the provider was applying.
+// `defaultEndpointsForKind` fills in when the source has an empty
+// endpoints map, otherwise the auto endpoints ride through unchanged.
 export const seedFromAuto = (auto: UpstreamModelConfig): UpstreamModelConfig => {
   const kind = auto.kind;
   return {
@@ -38,6 +53,7 @@ export const seedFromAuto = (auto: UpstreamModelConfig): UpstreamModelConfig => 
     ...(auto.limits ? { limits: { ...auto.limits } } : {}),
     ...(auto.cost ? { cost: { ...auto.cost } } : {}),
     ...(auto.chat ? { chat: auto.chat } : {}),
+    ...(auto.flagOverrides ? { flagOverrides: { ...auto.flagOverrides } } : {}),
   };
 };
 

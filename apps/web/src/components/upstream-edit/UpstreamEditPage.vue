@@ -487,7 +487,7 @@ const showCacheStatus = computed(() => !isCreate.value && draft.value.kind !== '
 const availableModelItems = computed<{ value: string; label: string }[]>(() => {
   const seen = new Set<string>();
   const items: { value: string; label: string }[] = [];
-  const collect = (list: UpstreamModelConfig[]) => {
+  const collect = (list: readonly UpstreamModelConfig[]) => {
     for (const m of list) {
       // `||` (not `??`) is intentional: a whitespace-only override should
       // not shadow the upstream id.
