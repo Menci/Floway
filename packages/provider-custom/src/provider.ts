@@ -112,24 +112,9 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
   //      for auto-fetched models on every isolate that started cold against
   //      a SOFT-fresh cache row.
   const pricingByRawId = new Map<string, ModelPricing>();
-  const rememberPricingFromResponse = (response: CustomModelsResponse): void => {
-    pricingByRawId.clear();
-    for (const raw of response.data) {
-      if (raw.id && raw.cost) pricingByRawId.set(raw.id, raw.cost);
-    }
-  };
   const rememberPricingForModel = (model: ProviderModel): void => {
     if (model.cost) pricingByRawId.set(rawModelIdOf(model), model.cost);
   };
-
-  // Drop any auto-fetched model whose id is pinned by a manual override so the
-  // manual copy is the only one emitted for that id.
-  const autoFromResponse = (response: CustomModelsResponse): ProviderModel[] => {
-    const filtered: CustomModelsResponse = { data: response.data.filter(raw => !overriddenIds.has(raw.id)) };
-    return finalizeCustomModels(filtered, configuredEndpoints, upstreamFlags);
-  };
-
-  const withManual = (auto: ProviderModel[]): ProviderModel[] => [...manualModels, ...auto];
 
   const call = (
     transport: (config: CustomUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions) => Promise<Response>,
@@ -175,8 +160,19 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
     getProvidedModels: async fetcher => {
       if (!config.modelsFetch.enabled) return manualModels;
       const response = await fetchCustomModels(config, fetcher);
-      rememberPricingFromResponse(response);
-      return withManual(autoFromResponse(response));
+      // Populate the raw-id→cost cache so a dispatch coming through the
+      // SWR cache path (which hands the provider a rebuilt ProviderModel
+      // without going through getProvidedModels again) can still resolve
+      // per-model pricing for telemetry — without it, cold isolates would
+      // report null cost until the next catalog fetch.
+      pricingByRawId.clear();
+      for (const raw of response.data) {
+        if (raw.id && raw.cost) pricingByRawId.set(raw.id, raw.cost);
+      }
+      // Drop any auto-fetched model whose id is pinned by a manual
+      // override so the manual copy is the only one emitted for that id.
+      const filtered: CustomModelsResponse = { data: response.data.filter(raw => !overriddenIds.has(raw.id)) };
+      return [...manualModels, ...finalizeCustomModels(filtered, configuredEndpoints, upstreamFlags)];
     },
     getPricingForModelKey: modelKey => manualPricingByUpstreamId.get(modelKey) ?? pricingByRawId.get(modelKey) ?? null,
     callCompletions: (model, body, signal, opts) => call(customFetchCompletions, model, body, signal, opts.headers, opts),
