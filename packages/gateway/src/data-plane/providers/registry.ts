@@ -30,12 +30,10 @@ interface ProviderModelsResult {
   failedUpstreams: string[];
 }
 
-const NO_UPSTREAM_CONFIGURED_MESSAGE = 'No upstream provider configured — connect GitHub Copilot or add a Custom/Azure upstream in the dashboard';
-
-// Single kind→module dispatch table. Every static answer the gateway needs
-// from a provider (instance factory, flag defaults, per-model flag
-// overlay) reads off the same object; adding a new dispatch slot means a
-// new field on `ProviderModule`, not a parallel per-kind map.
+// Single kind→module dispatch table. Every static answer the gateway
+// needs from a provider (instance factory, flag defaults) reads off
+// the same object; adding a new dispatch slot means a new field on
+// `ProviderModule`, not a parallel per-kind map.
 const providersByKind: Record<UpstreamProviderKind, ProviderModule> = {
   copilot: copilotProvider,
   custom: customProvider,
@@ -93,7 +91,7 @@ export const listModelProviders = async (
 
   const providers: Provider[] = [];
   for (const upstream of selection) {
-    providers.push(providersByKind[upstream.kind].create(upstream));
+    providers.push(createProviderInstance(upstream));
   }
 
   return providers;
@@ -283,7 +281,7 @@ export const getModelsFromProviders = async (
   scheduler: BackgroundScheduler,
 ): Promise<{ models: InternalModel[]; upstreamsByPublicId: Map<string, Provider[]>; failedUpstreams: readonly string[] }> => {
   if (providers.length === 0) {
-    throw new Error(NO_UPSTREAM_CONFIGURED_MESSAGE);
+    throw new Error('No upstream provider configured — connect GitHub Copilot or add a Custom/Azure upstream in the dashboard');
   }
 
   const { models, upstreamsByPublicId, sawSuccess, lastError, failedUpstreams } = await collectProviderModels(providers, fetcherForUpstream, scheduler);
