@@ -12,9 +12,12 @@
 --     passed through byte-for-byte.
 --
 -- Rebuild config.models via json_group_array(CASE …) so untouched entries
--- fall through the ELSE branch unchanged, and gate the outer UPDATE on
--- EXISTS(...) so rows that hold zero wrapped entries are not rewritten.
--- Idempotent: on a second pass every row lands in the ELSE branch.
+-- fall through the ELSE branch unchanged. The outer EXISTS gate is a
+-- perf hedge, not a correctness gate — rows that hold zero wrapped
+-- entries would just rewrite themselves to the same JSON, but skipping
+-- the rebuild avoids that write on every re-run. Idempotent: on a
+-- second pass every row lands in the ELSE branch, EXISTS returns false,
+-- nothing is written.
 
 UPDATE upstreams
 SET config_json = json_set(
