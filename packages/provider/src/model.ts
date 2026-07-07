@@ -1,3 +1,4 @@
+import type { FlagOverrides } from './flags.ts';
 import type { UpstreamChatModelConfig } from './model-config.ts';
 import type { ModelPrefixConfig } from './model-prefix.ts';
 import type { AliasSelection, AliasTarget, ModelKind, ModelEndpoints, ModelPricing } from '@floway-dev/protocols/common';
@@ -133,10 +134,29 @@ export interface InternalAliasedFrom {
 // the shape every provider's `callXxx(model, ...)` takes at dispatch time.
 // Carries the same metadata as `InternalModel` plus `providerData` (the opaque
 // per-provider wire carrier — Copilot's raw variant list, Claude Code's dated
-// upstream id, ...) and `enabledFlags` (the effective flag set for the model
-// on the emitting upstream). Providers only ever see their own emission —
+// upstream id, ...), `enabledFlags` (the effective flag set for the model
+// on the emitting upstream, already resolved through every layer), and
+// `flagOverridesAuto` (optional dashboard-only view of the per-model layer
+// that fed into `enabledFlags`). Providers only ever see their own emission —
 // the surrounding `InternalModel` map is assembled by the registry.
 export interface ProviderModel extends ModelMetadata {
   providerData?: unknown;
   enabledFlags: ReadonlySet<string>;
+  // Provider's per-model default flag delta relative to its upstream-level
+  // default map, as a sparse override — only entries where the provider's
+  // per-model call differs from the upstream default are present, with
+  // `true`/`false` for on/off. Absent, `undefined`, or `{}` means "no
+  // per-model deviation from the upstream default." Populated only for
+  // providers with a per-model rule (Copilot's Claude < 4.8 demote
+  // clause is the current example); other providers leave it undefined.
+  //
+  // Mirrors the per-model layer the provider fed into `enabledFlags` at
+  // construction time. The data plane consumes the already-resolved
+  // `enabledFlags` and never re-layers this. The field exists so the
+  // dashboard's auto-row flag view can render a per-flag pill showing
+  // which flags the provider itself forces on this specific model —
+  // reshapeModelForDashboard projects it onto the wire as the auto-row
+  // counterpart to the operator's `UpstreamModelConfig.flagOverrides`,
+  // and the two are mutually exclusive by row kind.
+  flagOverridesAuto?: FlagOverrides;
 }

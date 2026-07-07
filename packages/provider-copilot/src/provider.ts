@@ -162,7 +162,16 @@ const finalizeCopilotModels = (
       providerData: { rawModels: variants } satisfies CopilotProviderData,
       ...(cost ? { cost } : {}),
     };
-    models.push({ ...draft, enabledFlags: resolveModelFlags(draft) });
+    // Surface the per-model layer that fed into `enabledFlags` so the
+    // dashboard's auto-row flag view can render "provider forces X on
+    // for this model" pills. Empty overlay → omit the field (no per-
+    // model deviation from the upstream default).
+    const flagOverridesAuto = defaultFlagsForCopilotModel(draft);
+    models.push({
+      ...draft,
+      enabledFlags: resolveModelFlags(draft),
+      ...(Object.keys(flagOverridesAuto).length > 0 ? { flagOverridesAuto } : {}),
+    });
   }
   return models;
 };

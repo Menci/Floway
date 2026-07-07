@@ -53,7 +53,15 @@ export interface UpstreamModelConfig {
   display_name?: string;
   limits?: PublicModelLimits;
   cost?: ModelPricing;
+  // Layer 3 in the flag resolver, mutually exclusive by row kind:
+  //   - flagOverrides: operator-declared per-model override on a
+  //     manual row (persisted under upstreams.config.models[]).
+  //   - flagOverridesAuto: provider-declared per-model default on an
+  //     auto row (populated by reshapeModelForDashboard, never
+  //     persisted). Read-only in the dashboard.
+  // Exactly one of the two is populated on any given row.
   flagOverrides?: { enabled: boolean; values: Record<string, boolean> };
+  flagOverridesAuto?: Record<string, boolean>;
   chat?: UpstreamChatConfig;
 }
 
