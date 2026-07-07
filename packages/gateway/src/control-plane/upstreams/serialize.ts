@@ -203,14 +203,12 @@ const modelDraftFromConfig = (model: UpstreamModelConfig): Omit<ProviderModel, '
   ...(model.chat ? { chat: model.chat } : {}),
 });
 
-const withProviderDefaultOverlay = (provider: Provider, models: unknown): unknown => {
-  if (!Array.isArray(models)) return models;
-  return models.map(m => {
+const withProviderDefaultOverlay = (provider: Provider, models: readonly unknown[]): unknown[] =>
+  models.map(m => {
     if (!isRecord(m)) return m;
     const overlay: FlagOverrides = provider.instance.defaultFlagsForModel?.(modelDraftFromConfig(m as unknown as UpstreamModelConfig)) ?? {};
     return { ...m, provider_default_overlay: overlay };
   });
-};
 
 const serializeBase = (
   upstream: UpstreamRecord,
@@ -231,7 +229,7 @@ const serializeBase = (
     proxy_fallback_list: upstream.proxyFallbackList.map(entry => entry.colos === undefined ? { id: entry.id } : { id: entry.id, colos: [...entry.colos] }),
     model_prefix: upstream.modelPrefix === null ? null : clone(upstream.modelPrefix),
     config: isRecord(payload.config) && Array.isArray((payload.config as { models?: unknown }).models)
-      ? { ...payload.config, models: withProviderDefaultOverlay(provider, (payload.config as { models?: unknown }).models) }
+      ? { ...payload.config, models: withProviderDefaultOverlay(provider, (payload.config as { models: unknown[] }).models) }
       : payload.config,
     state: payload.state,
   };
