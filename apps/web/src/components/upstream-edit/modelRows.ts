@@ -4,10 +4,6 @@ import type { ModelEndpointKey, ModelEndpoints, ModelKind, UpstreamModelConfig }
 // `manual` came from `upstreams.config.models[]` (persists on PATCH,
 // operator-editable); `auto` came from the live wire projection of
 // `POST /api/upstreams/list-models` (read-only, never persists).
-// Both flavours share `UpstreamModelConfig` — a manual row is what
-// `seedFromAuto` produces from an auto row, verbatim except for a
-// `defaultEndpointsForKind` fallback when the source endpoints map is
-// empty, so the type must accept the union already.
 export interface Row {
   uiId: string;
   kind: 'manual' | 'auto';
@@ -36,8 +32,6 @@ export const defaultEndpointsForKind = (kind: ModelKind, current: ModelEndpoints
 // metadata field, and pull the auto row's `flagOverrides` (the provider's
 // per-model rule) into the manual row's `flagOverrides` so the operator
 // starts from the same layer-3 state the provider was applying.
-// `defaultEndpointsForKind` fills in when the source has an empty
-// endpoints map, otherwise the auto endpoints ride through unchanged.
 export const seedFromAuto = (auto: UpstreamModelConfig): UpstreamModelConfig => {
   const kind = auto.kind;
   return {

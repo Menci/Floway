@@ -151,8 +151,6 @@ export const validateFlagOverridesRecord = (value: unknown, msg: FlagOverridesEr
   return sorted;
 };
 
-// Validate a wire-form flag_overrides object. Throws on malformed shape;
-// returns a sorted, validated record of known flag ids to booleans.
 export const parseFlagOverridesWire = (value: unknown): FlagOverrides =>
   validateFlagOverridesRecord(value, {
     notObject: 'flag_overrides must be an object of { flagId: boolean }',

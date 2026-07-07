@@ -153,8 +153,6 @@ export interface ProviderModule {
   // returned ProviderInstance.
   create: (record: UpstreamRecord) => Provider;
   // Exhaustive default map over every catalog flag id for a fresh
-  // upstream of this kind. Vendor-specific knowledge lives in the
-  // provider package that talks to that vendor; the central catalog only
-  // describes identity, label, and UI copy.
+  // upstream of this kind; see each provider package's `defaults.ts`.
   defaultFlags: FlagDefaults;
 }

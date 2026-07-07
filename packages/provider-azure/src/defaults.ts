@@ -1,6 +1,5 @@
 import type { FlagDefaults } from '@floway-dev/provider';
 
-// Exhaustive flag defaults for Azure OpenAI upstreams.
 export const AZURE_DEFAULT_FLAGS: FlagDefaults = {
   'vendor-deepseek': false,
   'vendor-qwen': false,

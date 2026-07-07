@@ -160,11 +160,6 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
     getProvidedModels: async fetcher => {
       if (!config.modelsFetch.enabled) return manualModels;
       const response = await fetchCustomModels(config, fetcher);
-      // Populate the raw-id→cost cache so a dispatch coming through the
-      // SWR cache path (which hands the provider a rebuilt ProviderModel
-      // without going through getProvidedModels again) can still resolve
-      // per-model pricing for telemetry — without it, cold isolates would
-      // report null cost until the next catalog fetch.
       pricingByRawId.clear();
       for (const raw of response.data) {
         if (raw.id && raw.cost) pricingByRawId.set(raw.id, raw.cost);

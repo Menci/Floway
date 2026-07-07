@@ -218,8 +218,7 @@ export const upstreamRecordToFullJson = (upstream: UpstreamRecord): SerializedUp
 // uniform across create and edit, and no write-path invariants have to be
 // satisfied. Field values are true blanks (empty strings, empty arrays),
 // matching what an editor sees before typing anything or completing any
-// OAuth flow. The dashboard's create flow discards everything on this
-// record except `flag_defaults`.
+// OAuth flow.
 export const blueprintUpstreamRecord = (kind: UpstreamProviderKind): UpstreamRecord => {
   const base = {
     id: '',

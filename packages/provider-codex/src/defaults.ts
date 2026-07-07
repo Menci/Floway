@@ -1,6 +1,5 @@
 import type { FlagDefaults } from '@floway-dev/provider';
 
-// Exhaustive flag defaults for ChatGPT Codex (subscription) upstreams.
 export const CODEX_DEFAULT_FLAGS: FlagDefaults = {
   'vendor-deepseek': false,
   'vendor-qwen': false,
