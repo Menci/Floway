@@ -7,7 +7,7 @@ import { parseChatCompletionsStream } from '@floway-dev/protocols/chat-completio
 import { type ModelEndpoints, type ModelPricing, kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseMessagesStream } from '@floway-dev/protocols/messages';
 import { parseResponsesStream, type ResponsesResult, toCompactPayloadShape } from '@floway-dev/protocols/responses';
-import { publicModelId, resolveEffectiveFlags, streamingProviderCall, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord } from '@floway-dev/provider';
+import { publicModelId, resolveEffectiveFlags, streamingProviderCall, type FlagId, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord } from '@floway-dev/provider';
 
 const rawModelIdOf = (model: ProviderModel): string => model.providerData as string;
 
@@ -51,7 +51,7 @@ const autoModelEndpoints = (model: CustomRawModel, configured: ModelEndpoints): 
 const finalizeCustomModels = (
   response: CustomModelsResponse,
   configuredEndpoints: ModelEndpoints,
-  enabledFlags: ReadonlySet<string>,
+  enabledFlags: ReadonlySet<FlagId>,
 ): ProviderModel[] => {
   const models: ProviderModel[] = [];
   for (const rawModel of response.data) {

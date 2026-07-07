@@ -3,7 +3,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import { CODEX_CLI_VERSION, CODEX_ORIGINATOR, CODEX_USER_AGENT } from './constants.ts';
 import { codexRawToProviderModel, fetchCodexCatalog } from './models.ts';
 import { resolveEffectivePricing } from '@floway-dev/protocols/common';
-import { directFetcher } from '@floway-dev/provider';
+import { directFetcher, type FlagId } from '@floway-dev/provider';
 
 const okJson = (body: unknown): Response => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
 
@@ -116,7 +116,7 @@ describe('codexRawToProviderModel', () => {
   // The mapper just threads `enabledFlags` through onto the produced model;
   // these unit tests exercise the rest of the shape with the empty set, and
   // a dedicated test asserts the threading.
-  const noFlags: ReadonlySet<string> = new Set();
+  const noFlags: ReadonlySet<FlagId> = new Set();
 
   test('shapes raw → ProviderModel with responses-only endpoint and per-request context window', () => {
     const m = codexRawToProviderModel({ id: 'gpt-5.4', display_name: 'GPT-5.4', context_window: 272000 }, noFlags);
@@ -175,7 +175,7 @@ describe('codexRawToProviderModel', () => {
   });
 
   test('threads the supplied enabledFlags onto the produced model', () => {
-    const flags: ReadonlySet<string> = new Set(['responses-web-search-shim']);
+    const flags: ReadonlySet<FlagId> = new Set(['responses-web-search-shim']);
     const m = codexRawToProviderModel({ id: 'gpt-5.4', display_name: 'GPT-5.4', context_window: 272000 }, flags);
     expect(m.enabledFlags).toBe(flags);
   });

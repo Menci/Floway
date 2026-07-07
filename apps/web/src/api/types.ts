@@ -16,11 +16,12 @@ import type {
   PublicModel,
   PublicModelLimits,
 } from '@floway-dev/protocols/common';
-import type { FlagDefaults, FlagOverrides } from '@floway-dev/provider/flags';
+import type { Flag as FlagDef, FlagDefaults, FlagOverrides } from '@floway-dev/provider/flags';
 import type { AddressableForm, ModelPrefixConfig } from '@floway-dev/provider/model-prefix';
 
 export type { BillingDimension, ModelEndpointKey, ModelEndpoints, ModelKind, ModelPricing };
 export type { AddressableForm, ModelPrefixConfig };
+export type { FlagDef };
 export type {
   AliasRules, AliasSelection, AliasTarget, AnnouncedMetadata, ChatAliasRules, ChatModelInfo, ModelAlias,
   PublicModel, PublicModelLimits,
@@ -348,12 +349,6 @@ export type UpstreamRecordEnvelope = {
 };
 
 export const toRecordEnvelope = (record: UpstreamRecord): UpstreamRecordEnvelope => ({ ...record });
-
-export interface FlagDef {
-  id: string;
-  label: string;
-  description: string;
-}
 
 // Importing the gateway's source-of-truth type as the actual definition (rather
 // than redeclaring the shape) makes any future field rename a compile error

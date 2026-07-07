@@ -8,7 +8,7 @@ import type { ResponsesInvocation } from '../types.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { type EventResult, type ExecuteResult } from '@floway-dev/provider';
+import { type EventResult, type ExecuteResult, type FlagId } from '@floway-dev/provider';
 import { assert, assertEquals, stubModelCandidate } from '@floway-dev/test-utils';
 
 // Dirty integration harness: mock the model registry so the image backend is a
@@ -64,7 +64,7 @@ const defaultCandidates = vi.hoisted(() => () => [{
       u: {
         id: 'gpt-image-2', limits: {}, kind: 'image',
         endpoints: { imagesGenerations: {}, imagesEdits: {} },
-        enabledFlags: new Set<string>(),
+        enabledFlags: new Set<FlagId>(),
       },
     },
   },

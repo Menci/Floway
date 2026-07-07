@@ -16,7 +16,7 @@
 import { CLAUDE_CODE_HEADERS_SONNET_OPUS } from './headers.ts';
 import { pricingForClaudeCodeModelKey } from './pricing.ts';
 import type { ClaudeCodeProviderData } from './types.ts';
-import type { Fetcher, ProviderModel, UpstreamChatModelConfig } from '@floway-dev/provider';
+import type { Fetcher, FlagId, ProviderModel, UpstreamChatModelConfig } from '@floway-dev/provider';
 
 const ANTHROPIC_MODELS_ENDPOINT = 'https://api.anthropic.com/v1/models?limit=100';
 
@@ -189,7 +189,7 @@ export const chatFromCapabilities = (
 
 export const buildClaudeCodeCatalog = (
   apiModels: readonly ClaudeCodeApiModel[],
-  enabledFlags: ReadonlySet<string>,
+  enabledFlags: ReadonlySet<FlagId>,
 ): ProviderModel[] => apiModels.map(api => {
   const alias = aliasFromApiId(api.id);
   const cost = pricingForClaudeCodeModelKey(api.id);

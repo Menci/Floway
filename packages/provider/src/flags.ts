@@ -180,7 +180,7 @@ export const parseFlagOverridesWire = (value: unknown): FlagOverrides =>
 // The function itself doesn't enforce this order; each provider's
 // `createXxx` composes its layer list in this shape.
 export const resolveEffectiveFlags = (
-  layers: readonly (FlagOverrides | FlagDefaults | undefined)[],
+  layers: readonly (FlagOverrides | undefined)[],
 ): ReadonlySet<FlagId> => {
   const effective = new Set<FlagId>();
   for (const layer of layers) {

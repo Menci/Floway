@@ -5,7 +5,7 @@ import { withVendorQwenChatCompletionsNormalize } from './vendor-qwen-normalize.
 import { createNonResponsesSourceStore } from '../../responses/items/store.ts';
 import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
-import { eventResult } from '@floway-dev/provider';
+import { eventResult, type FlagId } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const stubCtx: ChatGatewayCtx = {
@@ -21,7 +21,7 @@ const stubCtx: ChatGatewayCtx = {
   store: createNonResponsesSourceStore('test-key'),
 };
 
-const invocation = (payload: ChatCompletionsPayload, enabledFlags: ReadonlySet<string> = new Set(['vendor-qwen'])): ChatCompletionsInvocation => ({
+const invocation = (payload: ChatCompletionsPayload, enabledFlags: ReadonlySet<FlagId> = new Set(['vendor-qwen'])): ChatCompletionsInvocation => ({
   payload,
   candidate: stubModelCandidate({ enabledFlags }),
   targetApi: 'chat-completions',

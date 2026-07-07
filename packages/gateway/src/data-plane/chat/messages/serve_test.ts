@@ -7,7 +7,7 @@ import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
+import { type ModelCandidate, directFetcher, type ProviderCallResult, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions, type FlagId } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubInternalModel, stubProviderModel } from '@floway-dev/test-utils';
 
 // Mock the resolver seam so each test hands the serve exactly the provider
@@ -138,7 +138,7 @@ const makeCandidate = (overrides: {
   upstream?: string;
   endpoints?: ModelEndpoints;
   kind?: ModelCandidate['provider']['kind'];
-  enabledFlags?: ReadonlySet<string>;
+  enabledFlags?: ReadonlySet<FlagId>;
   callMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<MessagesStreamEvent>>;
   callResponses?: (model: unknown, body: unknown, action: ResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderResponsesResult>;
   callMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderCallResult>;
@@ -415,7 +415,7 @@ test('claude-code candidate preserves x-anthropic-billing-header system block th
   // Match the `strip-billing-attribution: false` decision the claude-code
   // provider ships (see provider-claude-code/src/defaults.ts): the plan-tier
   // block must reach Anthropic verbatim.
-  const claudeCodeDefaults: ReadonlySet<string> = new Set();
+  const claudeCodeDefaults: ReadonlySet<FlagId> = new Set();
 
   const billingBlock = 'x-anthropic-billing-header: per-turn-token\ncch=deadbeef1234;\ncc_entrypoint=cli';
 
@@ -471,7 +471,7 @@ test('copilot candidate strips x-anthropic-billing-header system block via the d
 
   // Match `strip-billing-attribution: true` on the copilot provider default
   // (see provider-copilot/src/defaults.ts).
-  const copilotDefaults: ReadonlySet<string> = new Set(['strip-billing-attribution']);
+  const copilotDefaults: ReadonlySet<FlagId> = new Set(['strip-billing-attribution']);
 
   const billingBlock = 'x-anthropic-billing-header: per-turn-token\ncch=deadbeef1234;';
 

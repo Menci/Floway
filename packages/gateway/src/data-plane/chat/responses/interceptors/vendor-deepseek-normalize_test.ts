@@ -5,7 +5,7 @@ import { withVendorDeepseekResponsesNormalize } from './vendor-deepseek-normaliz
 import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
 import { createNonResponsesSourceStore } from '../items/store.ts';
 import { doneFrame } from '@floway-dev/protocols/common';
-import { eventResult } from '@floway-dev/provider';
+import { eventResult, type FlagId } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 import type { CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
 
@@ -32,7 +32,7 @@ const okEvents = () =>
     ),
   );
 
-const invocation = (payload: CanonicalResponsesPayload, enabledFlags: ReadonlySet<string> = new Set(['vendor-deepseek'])): ResponsesInvocation => ({
+const invocation = (payload: CanonicalResponsesPayload, enabledFlags: ReadonlySet<FlagId> = new Set(['vendor-deepseek'])): ResponsesInvocation => ({
   payload,
   candidate: stubModelCandidate({ enabledFlags }),
   targetApi: 'responses',

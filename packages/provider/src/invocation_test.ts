@@ -5,7 +5,7 @@ import { providerModelOf } from './invocation.ts';
 import { assertEquals, assertThrows, stubModelCandidate, stubProvider, stubProviderModel } from '@floway-dev/test-utils';
 
 test('providerModelOf returns the ProviderModel keyed on the candidate provider upstream, verbatim', () => {
-  const providerModel = stubProviderModel({ id: 'gpt-9', enabledFlags: new Set(['flag-a']) });
+  const providerModel = stubProviderModel({ id: 'gpt-9', enabledFlags: new Set(['retry-cyber-policy']) });
   const candidate = stubModelCandidate({
     model: {
       id: 'gpt-9',
@@ -16,7 +16,7 @@ test('providerModelOf returns the ProviderModel keyed on the candidate provider 
   const resolved = providerModelOf(candidate);
 
   assertEquals(resolved, providerModel);
-  assertEquals(resolved.enabledFlags, new Set(['flag-a']));
+  assertEquals(resolved.enabledFlags, new Set(['retry-cyber-policy']));
 });
 
 test('providerModelOf throws when the candidate names an upstream missing from providerModels', () => {

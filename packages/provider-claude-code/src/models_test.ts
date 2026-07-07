@@ -8,6 +8,7 @@ import {
 } from './models.ts';
 import { pricingForClaudeCodeModelKey } from './pricing.ts';
 import type { ClaudeCodeProviderData } from './types.ts';
+import type { FlagId } from '@floway-dev/provider';
 
 const SAMPLE_API_MODELS: ClaudeCodeApiModel[] = [
   { id: 'claude-fable-5', display_name: 'Claude Fable 5', max_input_tokens: 1_000_000 },
@@ -155,7 +156,7 @@ describe('chatFromCapabilities', () => {
 });
 
 describe('buildClaudeCodeCatalog', () => {
-  const models = buildClaudeCodeCatalog(SAMPLE_API_MODELS, new Set<string>());
+  const models = buildClaudeCodeCatalog(SAMPLE_API_MODELS, new Set<FlagId>());
 
   test('publishes each model under its public alias (date-stripped where applicable)', () => {
     expect(models.map(m => m.id)).toEqual([
@@ -201,7 +202,7 @@ describe('buildClaudeCodeCatalog', () => {
   });
 
   test('forwards the supplied enabledFlags set onto every model', () => {
-    const flags = new Set(['custom-flag-a', 'custom-flag-b']);
+    const flags: ReadonlySet<FlagId> = new Set(['demote-developer-to-system', 'retry-cyber-policy']);
     const built = buildClaudeCodeCatalog(SAMPLE_API_MODELS, flags);
     for (const m of built) {
       expect(m.enabledFlags).toBe(flags);

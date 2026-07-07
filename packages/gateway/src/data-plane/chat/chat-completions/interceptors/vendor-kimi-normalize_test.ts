@@ -6,7 +6,7 @@ import { createNonResponsesSourceStore } from '../../responses/items/store.ts';
 import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
 import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { type ExecuteResult, eventResult } from '@floway-dev/provider';
+import { type ExecuteResult, eventResult, type FlagId } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const stubCtx: ChatGatewayCtx = {
@@ -22,7 +22,7 @@ const stubCtx: ChatGatewayCtx = {
   store: createNonResponsesSourceStore('test-key'),
 };
 
-const invocation = (payload: ChatCompletionsPayload, enabledFlags: ReadonlySet<string> = new Set(['vendor-kimi'])): ChatCompletionsInvocation => ({
+const invocation = (payload: ChatCompletionsPayload, enabledFlags: ReadonlySet<FlagId> = new Set(['vendor-kimi'])): ChatCompletionsInvocation => ({
   payload,
   candidate: stubModelCandidate({ enabledFlags }),
   targetApi: 'chat-completions',

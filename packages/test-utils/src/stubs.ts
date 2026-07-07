@@ -1,4 +1,4 @@
-import { directFetcher, type InternalModel, type ProviderInstance, type Provider, type ProviderModel, type ModelCandidate, type TelemetryModelIdentity, type UpstreamCallOptions } from '@floway-dev/provider';
+import { directFetcher, type FlagId, type InternalModel, type ProviderInstance, type Provider, type ProviderModel, type ModelCandidate, type TelemetryModelIdentity, type UpstreamCallOptions } from '@floway-dev/provider';
 
 // No-op UpstreamCallOptions factory for tests calling provider methods
 // directly: identity recordUpstreamLatency satisfies the contract without
@@ -24,7 +24,7 @@ export const stubProviderModel = (overrides: Partial<ProviderModel> = {}): Provi
   limits: {},
   kind: 'chat',
   endpoints: { chatCompletions: {}, responses: {}, messages: {} },
-  enabledFlags: new Set<string>(),
+  enabledFlags: new Set<FlagId>(),
   ...overrides,
 });
 
@@ -98,7 +98,7 @@ export const stubProvider = (overrides: Partial<ProviderInstance> = {}): Provide
 export const stubModelCandidate = (overrides: {
   model?: Partial<Omit<InternalModel, 'aliasedFrom' | 'providerModels'>> & { readonly providerModels?: Record<string, ProviderModel> };
   provider?: Provider;
-  enabledFlags?: ReadonlySet<string>;
+  enabledFlags?: ReadonlySet<FlagId>;
   providerData?: unknown;
 } = {}): ModelCandidate => {
   const provider = overrides.provider ?? {
@@ -122,7 +122,7 @@ export const stubModelCandidate = (overrides: {
     limits: outerMeta.limits,
     kind: outerMeta.kind,
     endpoints: outerMeta.endpoints,
-    enabledFlags: overrides.enabledFlags ?? new Set<string>(),
+    enabledFlags: overrides.enabledFlags ?? new Set<FlagId>(),
     ...(overrides.providerData !== undefined ? { providerData: overrides.providerData } : {}),
   });
   return {

@@ -5,7 +5,7 @@ import type { ResponsesInvocation } from './types.ts';
 import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
 import { createNonResponsesSourceStore } from '../items/store.ts';
 import { doneFrame } from '@floway-dev/protocols/common';
-import { eventResult } from '@floway-dev/provider';
+import { eventResult, type FlagId } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 import type { CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
 
@@ -34,7 +34,7 @@ const okEvents = () =>
 
 const invocation = (
   payload: CanonicalResponsesPayload,
-  enabledFlags: ReadonlySet<string> = new Set(['disable-reasoning-on-forced-tool-choice']),
+  enabledFlags: ReadonlySet<FlagId> = new Set(['disable-reasoning-on-forced-tool-choice']),
 ): ResponsesInvocation => ({
   payload,
   candidate: stubModelCandidate({ enabledFlags }),

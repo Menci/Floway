@@ -5,7 +5,7 @@ import type { ChatCompletionsInvocation } from './types.ts';
 import { createNonResponsesSourceStore } from '../../responses/items/store.ts';
 import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
-import { eventResult } from '@floway-dev/provider';
+import { eventResult, type FlagId } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const stubCtx: ChatGatewayCtx = {
@@ -25,7 +25,7 @@ const okEvents = () => Promise.resolve(eventResult((async function* () {})(), te
 
 const invocation = (
   payload: ChatCompletionsPayload,
-  enabledFlags: ReadonlySet<string> = new Set(['demote-interleaved-system-to-user']),
+  enabledFlags: ReadonlySet<FlagId> = new Set(['demote-interleaved-system-to-user']),
 ): ChatCompletionsInvocation => ({
   payload,
   candidate: stubModelCandidate({ enabledFlags }),

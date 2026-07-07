@@ -4,7 +4,7 @@ import { buildClaudeCodeCatalog, type ClaudeCodeApiModel } from './models.ts';
 import { pricingForClaudeCodeModelKey } from './pricing.ts';
 import { createClaudeCodeProvider } from './provider.ts';
 import type { ClaudeCodeAccessTokenEntry, ClaudeCodeAccountCredential, ClaudeCodeUpstreamState } from './state.ts';
-import { initProviderRepo, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
+import { initProviderRepo, type FlagId, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
 import { noopUpstreamCallOptions } from '@floway-dev/test-utils';
 
 const upstreamId = 'up_cc_provider';
@@ -22,7 +22,7 @@ const API_MODELS: ClaudeCodeApiModel[] = [
 
 // The catalog builder emits a `ProviderModel` per API row (with the dated
 // upstream id on providerData); pick the entry the messages-routing tests want.
-const sonnetProviderModel = buildClaudeCodeCatalog(API_MODELS, new Set<string>())
+const sonnetProviderModel = buildClaudeCodeCatalog(API_MODELS, new Set<FlagId>())
   .find(m => m.id === 'claude-sonnet-4-5')!;
 
 const activeAccount: ClaudeCodeAccountCredential = {
