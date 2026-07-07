@@ -14,10 +14,7 @@ const overrides = defineModel<FlagOverrides>({ required: true });
 
 const props = withDefaults(defineProps<{
   flags: Flag[];
-  // Provider-declared defaults for this upstream kind (from the record's
-  // `flag_defaults`). The editor falls through to this map for flags that
-  // neither the operator's per-upstream override nor the per-model override
-  // touched.
+  // Provider-declared defaults for this upstream kind (from the record's `flag_defaults`).
   providerDefaults: FlagDefaults;
   inheritedOverrides?: FlagOverrides;
   namePrefix?: string;
