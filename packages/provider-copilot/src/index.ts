@@ -7,7 +7,6 @@ export const copilotProvider: ProviderModule = {
   defaultFlags: COPILOT_DEFAULT_FLAGS,
 };
 
-export { createCopilotProvider } from './provider.ts';
 export {
   clearCopilotTokenCache,
   clearInProcessCopilotTokenCache,

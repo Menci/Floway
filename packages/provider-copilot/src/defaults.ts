@@ -58,9 +58,9 @@ export const COPILOT_DEFAULT_FLAGS: FlagDefaults = {
 // leave inline system on, or is the model split across backends where
 // we must demote to avoid random Vertex-side 400s?
 //
-// We ran a two-day cron-driven probe (Jun 26 → Jun 28 2026, session
-// `56030d79-c7dc-4d2f-a1af-8edef05522fa`) that hit the Copilot
-// enterprise endpoint from two accounts (personal + GHE) every 30
+// We ran a two-day cron-driven probe (Jun 26 → Jun 28 2026) that hit
+// the Copilot enterprise endpoint from two accounts (personal + GHE)
+// every 30
 // minutes with a Shape E payload
 // (`[user, assistant, system, user]` + the beta header) against every
 // Claude model then in the catalog. The classifier keyed on
