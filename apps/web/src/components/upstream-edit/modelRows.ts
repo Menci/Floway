@@ -17,8 +17,6 @@ export interface Row {
 let nextUiId = 0;
 export const newUiId = () => `m${++nextUiId}`;
 
-export const configOf = (row: Row): UpstreamModelConfig => row.config;
-
 const CHAT_ENDPOINT_KEYS: ModelEndpointKey[] = ['completions', 'chatCompletions', 'responses', 'messages'];
 const IMAGE_ENDPOINT_KEYS: ModelEndpointKey[] = ['imagesGenerations', 'imagesEdits'];
 
@@ -62,17 +60,15 @@ export const seedFromAuto = (auto: UpstreamModelConfig): UpstreamModelConfig => 
 // backend publicModelId() so the toggle and the combobox key on the same id
 // the data plane filters by.
 export const publicIdOf = (row: Row): string => {
-  const c = configOf(row);
-  const configured = c.publicModelId?.trim();
+  const configured = row.config.publicModelId?.trim();
   if (configured) return configured;
-  return c.upstreamModelId;
+  return row.config.upstreamModelId;
 };
 
 export const titleFor = (row: Row): string => {
-  const c = configOf(row);
-  const display = c.display_name?.trim();
+  const display = row.config.display_name?.trim();
   if (display) return display;
-  const upstream = c.upstreamModelId.trim();
+  const upstream = row.config.upstreamModelId.trim();
   if (upstream) return upstream;
   return 'Untitled model';
 };

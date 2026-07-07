@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue';
 
 import EndpointsField from './EndpointsField.vue';
 import FlagOverridesEditor from './FlagOverridesEditor.vue';
-import { configOf, defaultEndpointsForKind, publicIdOf, titleFor, type Row } from './modelRows.ts';
+import { defaultEndpointsForKind, publicIdOf, titleFor, type Row } from './modelRows.ts';
 import type { AnnouncedMetadata, BillingDimension, FlagDef, ModelKind, ModelPricing, UpstreamChatConfig, UpstreamModelConfig } from '../../api/types.ts';
 import { parseOptionalNumber } from '../../utils/parse-optional-number.ts';
 import ChatMetadataEditor from '../shared/ChatMetadataEditor.vue';
@@ -58,7 +58,7 @@ const PRICING_BY_KIND: Record<ModelKind, BillingDimension[]> = {
   image: ['input', 'input_image', 'output', 'output_image'],
 };
 
-const config = computed<UpstreamModelConfig | null>(() => props.row ? configOf(props.row) : null);
+const config = computed<UpstreamModelConfig | null>(() => props.row?.config ?? null);
 const editable = computed(() => props.row?.kind === 'manual');
 const rowKind = computed<ModelKind>(() => config.value?.kind ?? 'chat');
 
