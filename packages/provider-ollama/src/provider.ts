@@ -79,8 +79,7 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
   // fetch succeeds. Same shape and merge precedence as the custom provider.
   const overriddenIds = new Set(config.models.map(m => m.upstreamModelId));
   const manualModels: ProviderModel[] = config.models.map(model => {
-    const modelLayer = model.flagOverrides;
-    const enabledFlags = resolveEffectiveFlags([OLLAMA_DEFAULT_FLAGS, record.flagOverrides, modelLayer]);
+    const enabledFlags = resolveEffectiveFlags([OLLAMA_DEFAULT_FLAGS, record.flagOverrides, model.flagOverrides]);
     const endpoints = model.endpoints;
     const internal: ProviderModel = {
       id: publicModelId(model),
