@@ -17,8 +17,12 @@
 // per-model differentiation matters, per model). Vendor-specific
 // knowledge lives inside the provider package that talks to that
 // vendor — the central catalog only describes identity, label, and
-// UI copy. See `ProviderInstance.defaultFlagsForUpstream` and
-// `defaultFlagsForModel` in `provider.ts`.
+// UI copy. See `ProviderModule.defaultFlags` in `provider.ts` for the
+// module surface, and each provider package's `defaults.ts` for the
+// per-kind constants themselves. Per-model deltas — where the same
+// provider forms a different opinion for individual models — are
+// provider-internal: `createXxxProvider` computes them once and
+// stakes the result into `ProviderModel.enabledFlags`.
 
 export interface Flag {
   id: string;
@@ -108,10 +112,10 @@ export type FlagDefaults = Readonly<Record<FlagId, boolean>>;
 // this layer (including flags seeded by earlier layers — the operator or
 // per-model default explicitly opted out).
 //
-// Used both by operator override storage (`UpstreamRecord.flagOverrides`,
-// per-model `flagOverrides.values`) and by
-// `ProviderInstance.defaultFlagsForModel` for per-model default deltas
-// atop the upstream default.
+// Used by operator override storage (`UpstreamRecord.flagOverrides`,
+// per-model `flagOverrides.values`) and by the per-model default deltas
+// a provider computes inside its `create` — see
+// `defaultFlagsForCopilotModel` for the current example.
 export type FlagOverrides = Partial<Record<FlagId, boolean>>;
 
 // Validate a wire-form flag_overrides object. Throws on malformed shape;
