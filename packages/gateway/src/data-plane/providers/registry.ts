@@ -30,10 +30,8 @@ interface ProviderModelsResult {
   failedUpstreams: string[];
 }
 
-// Single kind→module dispatch table. Every static answer the gateway
-// needs from a provider (instance factory, flag defaults) reads off
-// the same object; adding a new dispatch slot means a new field on
-// `ProviderModule`, not a parallel per-kind map.
+// Dispatch table: every static per-kind answer the gateway needs from a
+// provider hangs off `ProviderModule`.
 const providersByKind: Record<UpstreamProviderKind, ProviderModule> = {
   copilot: copilotProvider,
   custom: customProvider,
@@ -43,10 +41,6 @@ const providersByKind: Record<UpstreamProviderKind, ProviderModule> = {
   ollama: ollamaProvider,
 };
 
-// Provider factories only capture the record and return closures; any
-// I/O they need (token refresh, state persistence, model catalog fetch)
-// happens on demand inside the per-request methods, never at factory
-// time.
 export const createProviderInstance = (record: UpstreamRecord): Provider =>
   providersByKind[record.kind].create(record);
 

@@ -137,6 +137,12 @@ const tierDrafts = ref<TierDraft[]>(tierDraftsFor(config.value?.cost));
 // without an extra click. An Add Tier click also auto-expands.
 const tierSectionExpanded = ref(tierDrafts.value.length > 0);
 
+// Preserve the operator's per-flag choices when they toggle the whole
+// override off then back on for the same row — otherwise a stray click
+// would clear the map they had built up. Reset on row change so a fresh
+// row starts empty.
+const lastFlagOverrides = ref<FlagOverrides>({});
+
 // Resync the local drafts whenever the active row changes (a different model's
 // cost replaces the working set). Edits within the same row leave the drafts
 // alone — `writeTierDrafts` writes both local state and stored cost in lockstep.
@@ -145,12 +151,6 @@ watch(() => props.row?.uiId, () => {
   tierSectionExpanded.value = tierDrafts.value.length > 0;
   lastFlagOverrides.value = {};
 });
-
-// Preserve the operator's per-flag choices when they toggle the whole
-// override off then back on for the same row — otherwise a stray click
-// would clear the map they had built up. Reset on row change so a fresh
-// row starts empty.
-const lastFlagOverrides = ref<FlagOverrides>({});
 
 const writeTierDrafts = (drafts: readonly TierDraft[]) => {
   if (!config.value) return;

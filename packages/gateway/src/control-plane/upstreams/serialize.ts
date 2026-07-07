@@ -16,10 +16,9 @@ export interface SerializedUpstreamRecord {
   created_at: string;
   updated_at: string;
   flag_overrides: FlagOverrides;
-  // Provider-declared upstream-level flag defaults for this record.
-  // Read from `ProviderModule.defaultFlags` — one map per kind, sent per
-  // record so the dashboard's "Inherit → on/off" pill renders each row
-  // without a second round trip.
+  // Sent per record (rather than a separate per-kind lookup) so the
+  // dashboard's "Inherit → on/off" pill renders each row without a
+  // second round trip.
   flag_defaults: FlagDefaults;
   disabled_public_model_ids: string[];
   proxy_fallback_list: ProxyFallbackEntry[];
