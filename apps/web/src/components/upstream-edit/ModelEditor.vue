@@ -61,6 +61,25 @@ const config = computed<UpstreamModelConfig | null>(() => props.row ? configOf(p
 const editable = computed(() => props.row?.kind === 'manual');
 const rowKind = computed<ModelKind>(() => config.value?.kind ?? 'chat');
 
+// Auto-row read-only flag view: resolve each flag through the three
+// layers (upstream default → operator upstream override → provider
+// per-model default) and label the source. Mirrors the layer order the
+// data plane applies in `resolveEffectiveFlags` at request time, so
+// what the dashboard shows is exactly what the provider dispatches.
+const autoRowFlagOn = (flagId: string): boolean => {
+  const perModel = config.value?.flagOverridesAuto?.[flagId];
+  if (perModel !== undefined) return perModel;
+  const upstreamOverride = props.upstreamFlagOverrides[flagId];
+  if (upstreamOverride !== undefined) return upstreamOverride;
+  return props.providerFlagDefaults[flagId] ?? false;
+};
+
+const autoRowFlagSource = (flagId: string): string => {
+  if (config.value?.flagOverridesAuto?.[flagId] !== undefined) return 'provider — this model';
+  if (props.upstreamFlagOverrides[flagId] !== undefined) return 'your upstream override';
+  return 'provider default';
+};
+
 const patch = (next: Partial<UpstreamModelConfig>) => {
   if (!editable.value) return;
   emit('patch-config', next);
@@ -528,15 +547,15 @@ watch(isReasoningValid, valid => { emit('validity-change', valid); }, { immediat
 
         <section>
           <div class="mb-3 flex items-baseline gap-3">
-            <h3 class="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Override Feature Flags</h3>
-            <span class="text-[11px] text-gray-500">applied on top of upstream-level flags; <code class="font-mono">Inherit</code> reflects the upstream-resolved value</span>
+            <h3 class="text-[11px] font-semibold uppercase tracking-wider text-gray-500">{{ editable ? 'Override Feature Flags' : 'Effective Feature Flags' }}</h3>
+            <span v-if="editable" class="text-[11px] text-gray-500">applied on top of upstream-level flags; <code class="font-mono">Inherit</code> reflects the upstream-resolved value</span>
+            <span v-else class="text-[11px] text-gray-500">resolved from upstream default → your upstream override → provider per-model rule</span>
             <Switch
               v-if="editable"
               :model-value="config.flagOverrides !== undefined"
               class="ml-auto"
               @update:model-value="toggleFlagOverridesEnabled"
             />
-            <Switch v-else :model-value="false" disabled class="ml-auto" />
           </div>
           <FlagOverridesEditor
             v-if="editable && config.flagOverrides !== undefined"
@@ -551,9 +570,29 @@ watch(isReasoningValid, valid => { emit('validity-change', valid); }, { immediat
           <p v-else-if="editable" class="text-[11px] text-gray-600">
             Toggle on to override individual flags for this model only.
           </p>
-          <p v-else class="text-[11px] text-gray-600">
-            Auto models inherit upstream flags. Switch to Manual to override per model.
-          </p>
+          <div v-else class="max-h-72 overflow-y-auto">
+            <div class="grid grid-cols-[repeat(auto-fit,minmax(320px,1fr))]">
+              <div
+                v-for="flag in flags"
+                :key="flag.id"
+                class="flex min-w-0 items-start justify-between gap-3 border-t border-white/[0.06] px-1 py-2.5"
+              >
+                <div class="min-w-0">
+                  <span class="block break-words text-xs text-white">{{ flag.label || flag.id }}</span>
+                  <span v-if="flag.description" class="mt-0.5 block text-[11px] text-gray-500">{{ flag.description }}</span>
+                </div>
+                <div class="flex shrink-0 flex-col items-end gap-0.5 text-[11px]">
+                  <span
+                    class="rounded border px-1.5 py-0.5"
+                    :class="autoRowFlagOn(flag.id)
+                      ? 'border-accent-emerald/40 bg-accent-emerald/15 text-accent-emerald'
+                      : 'border-accent-rose/40 bg-accent-rose/15 text-accent-rose'"
+                  >{{ autoRowFlagOn(flag.id) ? 'On' : 'Off' }}</span>
+                  <span class="text-[10px] text-gray-500">{{ autoRowFlagSource(flag.id) }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
         </section>
 
       </div>
