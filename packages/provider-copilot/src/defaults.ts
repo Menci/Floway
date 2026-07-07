@@ -25,22 +25,16 @@ export const COPILOT_DEFAULT_FLAGS: FlagDefaults = {
   'strip-billing-attribution': true,
 };
 
-// Parse the version tuple from a Claude model id, using dash-separated
-// minor form (`claude-opus-4-8`, `claude-sonnet-4-6`, `claude-haiku-4-5`)
-// — the shape copilotPublicModelId emits and finalizeCopilotModels
-// hands us here. Whole-number releases (`claude-sonnet-5`) drop the
-// minor slot, which defaults to 0 so tuple comparison works uniformly.
-// Also accepts the dotted form (`claude-opus-4.8`) so raw upstream ids
-// route the same way; the resolver never asserts a specific separator.
-const parseClaudeVersion = (id: string): readonly [number, number] | null => {
-  const m = /^claude-(?:opus|sonnet|haiku)-(\d+)(?:[.-](\d+))?$/.exec(id);
-  return m ? [Number(m[1]), Number(m[2] ?? 0)] as const : null;
-};
-
 // True when the model id names a Claude release whose Anthropic Messages
 // wire accepts inline `role:'system'` (i.e., a mid-conversation system
 // turn placed between assistant/user turns rather than in the top-level
 // `system` field).
+//
+// The id-family regex accepts both the dash-separated minor form
+// (`claude-opus-4-8`, the shape copilotPublicModelId emits) and the
+// dotted form (`claude-opus-4.8`, seen on raw upstream ids). Whole-
+// number releases drop the minor slot; missing minor is treated as 0
+// so the version comparison works uniformly.
 //
 // # Empirical evidence
 //
@@ -101,8 +95,11 @@ const parseClaudeVersion = (id: string): readonly [number, number] | null => {
 // every 5.x release (which trivially exceeds `[4, 8]`); everything at
 // 4.7 or below stays demoted.
 const supportsInlineSystem = (id: string): boolean => {
-  const v = parseClaudeVersion(id);
-  return v !== null && (v[0] > 4 || (v[0] === 4 && v[1] >= 8));
+  const m = /^claude-(?:opus|sonnet|haiku)-(\d+)(?:[.-](\d+))?$/.exec(id);
+  if (!m) return false;
+  const major = Number(m[1]);
+  const minor = Number(m[2] ?? 0);
+  return major > 4 || (major === 4 && minor >= 8);
 };
 
 // Per-model default flag deltas for Copilot. Only Claude models below

@@ -49,8 +49,8 @@ test('defaultFlagsForCopilotModel returns empty for non-Claude ids', () => {
 test('defaultFlagsForCopilotModel falls back to demote-on when a Claude id fails version parsing', () => {
   // Safer than defaulting off — a Claude family name we don't recognize
   // might route through Vertex, which still rejects inline system turns.
-  // Only a positive parseClaudeVersion match with a `>= 4.8` tuple flips
-  // the overlay to empty.
+  // Only a positive supportsInlineSystem match (regex + `>= 4.8` version
+  // tuple) flips the overlay to empty.
   assertEquals(defaultFlagsForCopilotModel(model('claude-opus')), OVERLAY_ON);
   assertEquals(defaultFlagsForCopilotModel(model('claude-unknown-4-7')), OVERLAY_ON);
 });
