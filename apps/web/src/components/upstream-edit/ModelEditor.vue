@@ -71,7 +71,7 @@ const autoRowFlagState = (flagId: string): { on: boolean; source: string } => {
   const perModel = config.value?.flagOverridesAuto?.[flagId];
   if (perModel !== undefined) return { on: perModel, source: 'provider — this model' };
   const upstreamOverride = props.upstreamFlagOverrides[flagId];
-  if (upstreamOverride !== undefined) return { on: upstreamOverride, source: 'your upstream override' };
+  if (upstreamOverride !== undefined) return { on: upstreamOverride, source: 'upstream override' };
   return { on: props.providerFlagDefaults[flagId], source: 'provider default' };
 };
 
@@ -556,7 +556,7 @@ watch(isReasoningValid, valid => { emit('validity-change', valid); }, { immediat
           <div class="mb-3 flex items-baseline gap-3">
             <h3 class="text-[11px] font-semibold uppercase tracking-wider text-gray-500">{{ editable ? 'Override Feature Flags' : 'Effective Feature Flags' }}</h3>
             <span v-if="editable" class="text-[11px] text-gray-500">applied on top of upstream-level flags; <code class="font-mono">Inherit</code> reflects the upstream-resolved value</span>
-            <span v-else class="text-[11px] text-gray-500">resolved from upstream default → your upstream override → provider per-model rule</span>
+            <span v-else class="text-[11px] text-gray-500">resolved from upstream default → upstream override → provider per-model rule</span>
             <Switch
               v-if="editable"
               :model-value="config.flagOverrides !== undefined"
