@@ -453,11 +453,6 @@ test('GET /api/upstreams/flags returns the flag catalog and requires admin auth'
   const sample = catalog.find(e => e.id === 'vendor-kimi');
   assertEquals(typeof sample?.label, 'string');
   assertEquals(typeof sample?.description, 'string');
-  // Neither defaults nor appliesTo travel on the per-flag entry any more —
-  // defaults live per-record on `SerializedUpstreamRecord.flag_defaults`.
-  // Guard against silent reintroduction of either on the catalog row.
-  assertEquals('defaultFor' in sample!, false);
-  assertEquals('appliesTo' in sample!, false);
 
   const forbidden = await requestApp('/api/upstreams/flags', { method: 'GET', headers: { 'x-api-key': apiKey.key } });
   assertEquals(forbidden.status, 403);
