@@ -1,4 +1,4 @@
-import type { FlagDefaults, FlagOverrides } from './flags.ts';
+import type { FlagDefaults } from './flags.ts';
 import type { ModelPrefixConfig } from './model-prefix.ts';
 import type { ProviderModel, UpstreamProviderKind, UpstreamRecord } from './model.ts';
 import type { Fetcher } from './options.ts';
@@ -142,10 +142,10 @@ export interface ProviderInstance {
 }
 
 // Static, module-shaped surface each provider package exports. The gateway
-// registry keeps a Record<UpstreamProviderKind, ProviderModule> and every
-// kind→X dispatch (instance construction, flag defaults, per-model flag
-// overlay) reads its answer off the same object. Adding a new dispatch
-// slot means a field here, not a parallel per-kind map.
+// registry keeps a Record<UpstreamProviderKind, ProviderModule> so every
+// kind→X dispatch (instance construction, flag defaults) reads its answer
+// off the same object. Adding a new dispatch slot means a field here, not
+// a parallel per-kind map.
 export interface ProviderModule {
   // Instance factory: capture the record and return closures. Sync — any
   // I/O the provider needs (token refresh, state persistence, catalog
@@ -155,14 +155,12 @@ export interface ProviderModule {
   // Exhaustive default map over every catalog flag id for a fresh
   // upstream of this kind. Vendor-specific knowledge lives in the
   // provider package that talks to that vendor; the central catalog only
-  // describes identity, label, and UI copy.
+  // describes identity, label, and UI copy. Per-model deltas — e.g.
+  // Copilot's demote-interleaved-system-to-user on Claude < 4.8, which
+  // Bedrock accepts inline and Vertex does not — are a provider-internal
+  // concern: the provider's `create` computes them once against the raw
+  // model list and stakes the result into `ProviderModel.enabledFlags`,
+  // which the data plane reads directly. No cross-provider generalization
+  // has warranted lifting them into a separate module slot.
   defaultFlags: FlagDefaults;
-  // Per-model deltas on top of `defaultFlags`. Optional: only providers
-  // whose models legitimately differ (e.g. Copilot routes different
-  // Claude versions to Bedrock vs Vertex, and only Bedrock accepts
-  // inline `role:'system'`) need to implement this. Returns a partial
-  // map: absent keys inherit from the upstream default; explicit
-  // true/false overrides. Operator overrides on the DB row still layer
-  // on top of the result.
-  getDefaultFlagsForModel?: (model: Omit<ProviderModel, 'enabledFlags'>) => FlagOverrides;
 }

@@ -7,7 +7,7 @@ import { getRepo } from '../../repo/index.ts';
 import type { ModelAliasRecord } from '../../repo/types.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { type ModelKind, kindForEndpoints } from '@floway-dev/protocols/common';
-import { isAbortError, type Fetcher, type FlagDefaults, type FlagOverrides, type InternalModel, type ModelCandidate, type Provider, type ProviderModel, type ProviderModule, type UpstreamProviderKind, type UpstreamRecord } from '@floway-dev/provider';
+import { isAbortError, type Fetcher, type FlagDefaults, type InternalModel, type ModelCandidate, type Provider, type ProviderModel, type ProviderModule, type UpstreamProviderKind, type UpstreamRecord } from '@floway-dev/provider';
 import { azureProvider } from '@floway-dev/provider-azure';
 import { claudeCodeProvider } from '@floway-dev/provider-claude-code';
 import { codexProvider } from '@floway-dev/provider-codex';
@@ -59,14 +59,6 @@ export const createProviderInstance = (record: UpstreamRecord): Provider =>
 // caller share one lookup.
 export const flagDefaultsForKind = (kind: UpstreamProviderKind): FlagDefaults =>
   providersByKind[kind].defaultFlags;
-
-// Per-model flag deltas layered on top of `flagDefaultsForKind`. Returns
-// {} when the provider has no per-model opinion (only Copilot implements
-// this today; see COPILOT_DEFAULT_FLAGS + defaultFlagsForCopilotModel).
-export const flagDefaultsForModelByKind = (
-  kind: UpstreamProviderKind,
-  model: Omit<ProviderModel, 'enabledFlags'>,
-): FlagOverrides => providersByKind[kind].getDefaultFlagsForModel?.(model) ?? {};
 
 // The upstream scope is a required argument across the catalog-assembly chain
 // (this, getModels) so a caller can never omit it and silently receive the
