@@ -922,7 +922,7 @@ const reshapeModelForDashboard = (model: ProviderModel): Record<string, unknown>
     ...(model.chat ? { chat: model.chat } : {}),
     // Per-model deviation from upstream flag defaults; absent when the
     // model has none.
-    ...(model.flagOverridesAuto && Object.keys(model.flagOverridesAuto).length > 0 ? { flagOverridesAuto: model.flagOverridesAuto } : {}),
+    ...(model.flagOverridesAuto ? { flagOverridesAuto: model.flagOverridesAuto } : {}),
   };
 };
 

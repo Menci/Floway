@@ -142,21 +142,21 @@ export interface InternalAliasedFrom {
 export interface ProviderModel extends ModelMetadata {
   providerData?: unknown;
   enabledFlags: ReadonlySet<string>;
-  // Provider's per-model default flag delta relative to its upstream-level
-  // default map, as a sparse override — only entries where the provider's
-  // per-model call differs from the upstream default are present, with
-  // `true`/`false` for on/off. Absent when the provider has no per-model
-  // deviation from its upstream default; when present, the map is non-empty.
-  // Populated only for providers with a per-model rule (Copilot's Claude
-  // < 4.8 demote clause is the current example); other providers leave it
-  // undefined.
+  // Provider's per-model flag call as a sparse override — each entry
+  // states the provider's opinion for that flag on this specific
+  // model, in `true`/`false` on/off form. Absent when the provider
+  // has no per-model call on this model; when present, the map is
+  // non-empty (producers elide empty overlays before emission).
+  // Populated only for providers with a per-model rule (Copilot's
+  // Claude < 4.8 demote clause is the current example); other
+  // providers leave it undefined.
   //
-  // The data plane consumes the already-resolved `enabledFlags` and never
-  // re-layers this. The field exists so the dashboard's auto-row flag view
-  // can render a per-flag pill showing which flags the provider itself
-  // forces on this specific model — reshapeModelForDashboard projects it
-  // onto the wire as the auto-row counterpart to the operator's
-  // `UpstreamModelConfig.flagOverrides`, and the two are mutually
-  // exclusive by row kind.
+  // The data plane consumes the already-resolved `enabledFlags` and
+  // never re-layers this. The field exists so the dashboard's
+  // auto-row flag view can render a per-flag pill showing which flags
+  // the provider itself calls on this specific model —
+  // reshapeModelForDashboard projects it onto the wire as the auto-row
+  // counterpart to the operator's `UpstreamModelConfig.flagOverrides`,
+  // and the two are mutually exclusive by row kind.
   flagOverridesAuto?: FlagOverrides;
 }
