@@ -1,6 +1,5 @@
 import type { FlagDefaults } from '@floway-dev/provider';
 
-// Exhaustive flag defaults for Ollama upstreams (self-hosted daemon or ollama.com).
 export const OLLAMA_DEFAULT_FLAGS: FlagDefaults = {
   'vendor-deepseek': false,
   'vendor-qwen': false,
