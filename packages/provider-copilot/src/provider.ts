@@ -170,13 +170,17 @@ const finalizeCopilotModels = (
 export const createCopilotProvider = (record: UpstreamRecord): Provider => {
   const copilot = assertCopilotUpstreamRecord(record);
   const upstreamConfig = { id: copilot.id, githubToken: copilot.config.githubToken };
-  // Per-model flag resolution: provider-wide defaults, then per-model
-  // deltas (Claude models below 4.8 get `demote-interleaved-system-to-user`
-  // — see `defaultFlagsForCopilotModel` for the empirical basis), then the
-  // operator's upstream-level override. Copilot has no per-model operator
-  // override layer.
+  // Per-model flag resolution follows the shared layer order: provider
+  // upstream default → operator upstream override → per-model layer. For
+  // an auto (catalog-fetched) row like Copilot's the per-model layer is
+  // the provider's own model-specific default (`defaultFlagsForCopilotModel`
+  // — e.g. force demote-interleaved-system-to-user on for Claude < 4.8,
+  // whose Vertex backend rejects inline `role:'system'`). Placing it last
+  // means a technical necessity the provider knows about is not silently
+  // undone by an upstream-level operator toggle; operators who genuinely
+  // want to opt out switch the row to Manual and override there.
   const resolveModelFlags = (draft: Omit<ProviderModel, 'enabledFlags'>): ReadonlySet<string> =>
-    resolveEffectiveFlags([COPILOT_DEFAULT_FLAGS, defaultFlagsForCopilotModel(draft), copilot.flagOverrides]);
+    resolveEffectiveFlags([COPILOT_DEFAULT_FLAGS, copilot.flagOverrides, defaultFlagsForCopilotModel(draft)]);
 
   const call = async (
     transport: (config: typeof upstreamConfig, init: RequestInit, options: UpstreamFetchOptions) => Promise<Response>,

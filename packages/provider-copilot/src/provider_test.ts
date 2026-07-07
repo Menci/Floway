@@ -442,6 +442,60 @@ test('Copilot provider exposes its default flag set via ProviderModel.enabledFla
   );
 });
 
+test('per-model provider default beats operator upstream override — Claude < 4.8 stays demoted even when the upstream flag is off', async () => {
+  const { copilotUpstream } = await setupCopilotTest({
+    // Operator flipped the upstream-wide flag off. Provider says
+    // Claude < 4.8 must stay demoted (its Vertex backend rejects
+    // inline `role:'system'`), and the per-model layer sits after the
+    // upstream override in the resolve chain, so the provider judgment
+    // wins for the affected model while every other model honors the
+    // operator setting.
+    flagOverrides: { 'demote-interleaved-system-to-user': false },
+  });
+  const instance = createCopilotProvider(copilotUpstream);
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') {
+        return jsonResponse(['1.110.1']);
+      }
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({
+          token: 'copilot-access-token',
+          expires_at: 4102444800,
+          refresh_in: 3600,
+          endpoints: { api: 'https://api.individual.githubcopilot.com' },
+        });
+      }
+      if (url.pathname === '/models') {
+        return jsonResponse(copilotModels([
+          { id: 'claude-opus-4.6', supported_endpoints: ['/chat/completions'] },
+          { id: 'claude-opus-4.8', supported_endpoints: ['/chat/completions'] },
+          { id: 'gpt-test', supported_endpoints: ['/chat/completions'] },
+        ]));
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const models = await instance.instance.getProvidedModels(directFetcher);
+      const claude46 = models.find(m => m.id === 'claude-opus-4-6');
+      const claude48 = models.find(m => m.id === 'claude-opus-4-8');
+      const gpt = models.find(m => m.id === 'gpt-test');
+      if (!claude46 || !claude48 || !gpt) throw new Error('expected all three models in the emitted catalog');
+      // Per-model layer forces demote on for Claude < 4.8, even though
+      // the operator upstream override said off.
+      assertEquals(claude46.enabledFlags.has('demote-interleaved-system-to-user'), true);
+      // No per-model rule for Claude >= 4.8; the operator upstream
+      // override wins on this row.
+      assertEquals(claude48.enabledFlags.has('demote-interleaved-system-to-user'), false);
+      // Non-Claude ids never get a per-model rule; operator setting
+      // stands.
+      assertEquals(gpt.enabledFlags.has('demote-interleaved-system-to-user'), false);
+    },
+  );
+});
+
 test('Copilot provider forces stream=true for streaming endpoints and leaves count-tokens/embeddings alone', async () => {
   const { copilotUpstream } = await setupCopilotTest();
   const instance = createCopilotProvider(copilotUpstream);

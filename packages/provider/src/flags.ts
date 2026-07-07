@@ -145,9 +145,22 @@ export const parseFlagOverridesWire = (value: unknown): FlagOverrides => {
 // flag, an explicit `false` overrides any earlier `true`, and an absent key
 // inherits the previous layer's decision. `undefined` layers are skipped.
 //
-// The typical call site walks provider defaults first, then per-model
-// defaults, then operator overrides — but the function itself doesn't
-// distinguish; the layer order is the caller's choice.
+// Canonical layer order across every provider:
+//   1. Provider upstream default (per-kind constant)
+//   2. Operator upstream override (`UpstreamRecord.flagOverrides`)
+//   3. Per-model layer — provider's per-model default for auto rows
+//      (`defaultFlagsForCopilotModel(model)`), operator's per-model
+//      override for manual rows (`UpstreamModelConfig.flagOverrides.values`).
+//      Never both, since an auto/manual row cannot be the other.
+//
+// Placing per-model last lets provider-declared technical necessities
+// (e.g. Copilot forcing demote-interleaved-system-to-user on for
+// Claude < 4.8, whose Vertex backend rejects inline `role:'system'`)
+// survive an upstream-wide operator override. Operators who genuinely
+// want to opt out of a provider's per-model call switch the row to
+// Manual and override there — explicit and visible in the dashboard.
+// The function itself doesn't enforce this order; each provider's
+// `createXxx` composes its layer list in this shape.
 export const resolveEffectiveFlags = (
   layers: readonly (FlagOverrides | FlagDefaults | undefined)[],
 ): ReadonlySet<FlagId> => {
