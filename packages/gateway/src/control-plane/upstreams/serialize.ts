@@ -187,7 +187,8 @@ const redactedState = (upstream: UpstreamRecord): unknown => {
 
 const serializeBase = (
   upstream: UpstreamRecord,
-  payload: { config: unknown; state: unknown },
+  config: unknown,
+  state: unknown,
 ): SerializedUpstreamRecord => ({
   id: upstream.id,
   kind: upstream.kind,
@@ -201,15 +202,15 @@ const serializeBase = (
   disabled_public_model_ids: [...upstream.disabledPublicModelIds],
   proxy_fallback_list: upstream.proxyFallbackList.map(entry => entry.colos === undefined ? { id: entry.id } : { id: entry.id, colos: [...entry.colos] }),
   model_prefix: upstream.modelPrefix === null ? null : clone(upstream.modelPrefix),
-  config: payload.config,
-  state: payload.state,
+  config,
+  state,
 });
 
 export const upstreamRecordToJson = (upstream: UpstreamRecord): SerializedUpstreamRecord =>
-  serializeBase(upstream, { config: redactedConfig(upstream), state: redactedState(upstream) });
+  serializeBase(upstream, redactedConfig(upstream), redactedState(upstream));
 
 export const upstreamRecordToFullJson = (upstream: UpstreamRecord): SerializedUpstreamRecord =>
-  serializeBase(upstream, { config: clone(upstream.config), state: clone(upstream.state) });
+  serializeBase(upstream, clone(upstream.config), clone(upstream.state));
 
 // Shape-complete UpstreamRecord blank for `kind`, never persisted. Serves the
 // GET /api/upstreams/blueprint endpoint so the create page consumes the same
