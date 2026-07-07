@@ -121,13 +121,16 @@ describe('createClaudeCodeProvider — factory surface', () => {
   });
 
   test('getProvidedModels stamps the effective flag set onto every model', async () => {
-    // claude-code has zero declared flag defaults — verify the effective set
-    // stays empty regardless of the other providers' defaults.
+    // claude-code's provider defaults leave `strip-billing-attribution` off
+    // (Anthropic reads the block to bill against the user's plan) and turn
+    // `responses-compact-shim` on (Messages has no native compact wire).
+    // Both should be reflected on every emitted model's enabledFlags.
     stubModelsListFetch();
     const instance = createClaudeCodeProvider(currentRecord);
     const models = await instance.instance.getProvidedModels(noopUpstreamCallOptions().fetcher);
     for (const m of models) {
       expect(m.enabledFlags.has('strip-billing-attribution')).toBe(false);
+      expect(m.enabledFlags.has('responses-compact-shim')).toBe(true);
     }
   });
 
