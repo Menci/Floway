@@ -63,21 +63,16 @@ const rowKind = computed<ModelKind>(() => config.value?.kind ?? 'chat');
 
 // Auto-row read-only flag view: resolve each flag through the three
 // layers (upstream default → operator upstream override → provider
-// per-model default) and label the source. Mirrors the layer order the
-// data plane applies in `resolveEffectiveFlags` at request time, so
-// what the dashboard shows is exactly what the provider dispatches.
-const autoRowFlagOn = (flagId: string): boolean => {
+// per-model default) and label the winning source in one walk.
+// Mirrors the layer order the data plane applies in
+// `resolveEffectiveFlags` at request time, so what the dashboard shows
+// is exactly what the provider dispatches.
+const autoRowFlagState = (flagId: string): { on: boolean; source: string } => {
   const perModel = config.value?.flagOverridesAuto?.[flagId];
-  if (perModel !== undefined) return perModel;
+  if (perModel !== undefined) return { on: perModel, source: 'provider — this model' };
   const upstreamOverride = props.upstreamFlagOverrides[flagId];
-  if (upstreamOverride !== undefined) return upstreamOverride;
-  return props.providerFlagDefaults[flagId];
-};
-
-const autoRowFlagSource = (flagId: string): string => {
-  if (config.value?.flagOverridesAuto?.[flagId] !== undefined) return 'provider — this model';
-  if (props.upstreamFlagOverrides[flagId] !== undefined) return 'your upstream override';
-  return 'provider default';
+  if (upstreamOverride !== undefined) return { on: upstreamOverride, source: 'your upstream override' };
+  return { on: props.providerFlagDefaults[flagId], source: 'provider default' };
 };
 
 const patch = (next: Partial<UpstreamModelConfig>) => {
@@ -582,13 +577,15 @@ watch(isReasoningValid, valid => { emit('validity-change', valid); }, { immediat
                   <span v-if="flag.description" class="mt-0.5 block text-[11px] text-gray-500">{{ flag.description }}</span>
                 </div>
                 <div class="flex shrink-0 flex-col items-end gap-0.5 text-[11px]">
-                  <span
-                    class="rounded border px-1.5 py-0.5"
-                    :class="autoRowFlagOn(flag.id)
-                      ? 'border-accent-emerald/40 bg-accent-emerald/15 text-accent-emerald'
-                      : 'border-accent-rose/40 bg-accent-rose/15 text-accent-rose'"
-                  >{{ autoRowFlagOn(flag.id) ? 'On' : 'Off' }}</span>
-                  <span class="text-[10px] text-gray-500">{{ autoRowFlagSource(flag.id) }}</span>
+                  <template v-for="state in [autoRowFlagState(flag.id)]" :key="flag.id">
+                    <span
+                      class="rounded border px-1.5 py-0.5"
+                      :class="state.on
+                        ? 'border-accent-emerald/40 bg-accent-emerald/15 text-accent-emerald'
+                        : 'border-accent-rose/40 bg-accent-rose/15 text-accent-rose'"
+                    >{{ state.on ? 'On' : 'Off' }}</span>
+                    <span class="text-[10px] text-gray-500">{{ state.source }}</span>
+                  </template>
                 </div>
               </div>
             </div>
