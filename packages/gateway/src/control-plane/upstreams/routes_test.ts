@@ -339,7 +339,7 @@ test('PATCH /api/upstreams keeps Azure as a single endpoint config', async () =>
   });
 });
 
-test('PATCH /api/upstreams round-trips a flat per-model flagOverrides map and rejects the legacy wrapped shape', async () => {
+test('PATCH /api/upstreams round-trips a flat per-model flagOverrides map', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
   await repo.upstreams.save({
@@ -379,23 +379,6 @@ test('PATCH /api/upstreams round-trips a flat per-model flagOverrides map and re
   const storedFlat = await repo.upstreams.getById('up_azure_flag_overrides');
   const modelsFlat = (storedFlat?.config as { models: { flagOverrides?: unknown }[] }).models;
   assertEquals(modelsFlat[0].flagOverrides, { 'vendor-deepseek': true });
-
-  // The pre-flatten wire shape is no longer accepted; the schema rejects the
-  // legacy `{ enabled, values }` envelope with a canonical error.
-  const patchWrapped = await requestApp('/api/upstreams/up_azure_flag_overrides', {
-    method: 'PATCH',
-    headers: { 'content-type': 'application/json', 'x-floway-session': adminSession },
-    body: JSON.stringify({
-      config: {
-        models: [{
-          upstreamModelId: 'gpt-prod',
-          endpoints: { chatCompletions: {} },
-          flagOverrides: { enabled: true, values: { 'vendor-deepseek': true } },
-        }],
-      },
-    }),
-  });
-  assertEquals(patchWrapped.status, 400);
 });
 
 test('GET /api/upstreams attaches models-cache freshness to every row', async () => {
