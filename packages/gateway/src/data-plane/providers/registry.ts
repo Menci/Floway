@@ -50,9 +50,6 @@ const providersByKind: Record<UpstreamProviderKind, ProviderModule> = {
 export const createProviderInstance = (record: UpstreamRecord): Provider =>
   providersByKind[record.kind].create(record);
 
-// Flag defaults for a fresh upstream of `kind`, read off the same module
-// object. Serializer, dashboard flag-defaults endpoint, and any future
-// caller share one lookup.
 export const flagDefaultsForKind = (kind: UpstreamProviderKind): FlagDefaults =>
   providersByKind[kind].defaultFlags;
 
@@ -89,12 +86,7 @@ export const listModelProviders = async (
     selection = [...enabledById.values()];
   }
 
-  const providers: Provider[] = [];
-  for (const upstream of selection) {
-    providers.push(createProviderInstance(upstream));
-  }
-
-  return providers;
+  return selection.map(createProviderInstance);
 };
 
 // Lift a provider-emitted `ProviderModel` into an `InternalModel`, seeding
