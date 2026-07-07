@@ -45,7 +45,21 @@ export interface UpstreamChatConfig {
   };
 }
 
-export interface UpstreamModelConfig {
+// Layer 3 in the flag resolver — exclusive by row kind. Encoded as a
+// union so `{ flagOverrides, flagOverridesAuto }` set together is a
+// compile error at every wire producer / consumer:
+//   - manual row: operator-declared per-model override stored under
+//     `upstreams.config.models[].flagOverrides`. Presence itself
+//     (undefined vs `{}`) toggles opt-in; individual flags are
+//     tri-state via the editor (inherit / on / off).
+//   - auto row: provider-declared per-model default projected onto
+//     `flagOverridesAuto` by reshapeModelForDashboard, never
+//     persisted, read-only in the dashboard.
+type FlagLayer3 =
+  | { flagOverrides?: Record<string, boolean>; flagOverridesAuto?: never }
+  | { flagOverrides?: never; flagOverridesAuto?: Record<string, boolean> };
+
+export type UpstreamModelConfig = {
   upstreamModelId: string;
   publicModelId?: string;
   kind: ModelKind;
@@ -53,20 +67,8 @@ export interface UpstreamModelConfig {
   display_name?: string;
   limits?: PublicModelLimits;
   cost?: ModelPricing;
-  // Layer 3 in the flag resolver, mutually exclusive by row kind:
-  //   - flagOverrides: operator-declared per-model override on a
-  //     manual row (persisted under upstreams.config.models[]).
-  //     Presence itself (undefined vs `{}`) toggles whether the row
-  //     opts into per-model overriding; individual flags are tri-state
-  //     via the editor (inherit / on / off).
-  //   - flagOverridesAuto: provider-declared per-model default on an
-  //     auto row (populated by reshapeModelForDashboard, never
-  //     persisted). Read-only in the dashboard.
-  // Exactly one of the two is populated on any given row.
-  flagOverrides?: Record<string, boolean>;
-  flagOverridesAuto?: Record<string, boolean>;
   chat?: UpstreamChatConfig;
-}
+} & FlagLayer3;
 
 export interface CustomModelsFetch {
   enabled: boolean;
