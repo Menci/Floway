@@ -62,8 +62,9 @@ export interface UpstreamModelConfig {
   // `POST /api/upstreams/list-models`, reshaped from `ProviderModel`
   // by the backend) it is the provider's per-model rule as a live
   // read-only projection. The shape is the same in both cases; the
-  // source and whether the row persists are carried by the enclosing
-  // `Row.kind` at consumption time, not by a wire discriminator.
+  // source (and whether the row persists) is not carried on the wire —
+  // the consuming UI knows it from which list it is iterating (the
+  // config models[] array vs. the list-models response).
   flagOverrides?: FlagOverrides;
 }
 

@@ -114,8 +114,16 @@ export type FlagDefaults = Readonly<Record<FlagId, boolean>>;
 // `UpstreamRecord.flagOverrides`, per-model
 // `UpstreamModelConfig.flagOverrides`) and by the per-model default
 // deltas a provider computes inside its `create` — see
-// `defaultFlagsForCopilotModel` for the current example.
+// `defaultFlagsForCopilotModel`.
 export type FlagOverrides = Partial<Record<FlagId, boolean>>;
+
+// Caller-supplied wording for validateFlagOverridesRecord errors — each
+// entry point keeps its canonical operator-facing message.
+export interface FlagOverridesErrorMessages {
+  readonly notObject: string;
+  readonly notBoolean: (id: string) => string;
+  readonly unknownIds: (ids: readonly string[]) => string;
+}
 
 // Shape validator + canonicalizer shared by every entry point that
 // takes a "flag id → boolean" map from an untrusted source
@@ -123,14 +131,6 @@ export type FlagOverrides = Partial<Record<FlagId, boolean>>;
 // `flagOverridesField`). Rejects non-object payloads, non-boolean
 // values, and unknown flag ids; returns a copy with keys sorted
 // lexicographically so equal maps round-trip to identical JSON.
-// Error message format is caller-driven so each entry point keeps
-// its canonical operator-facing wording.
-export interface FlagOverridesErrorMessages {
-  readonly notObject: string;
-  readonly notBoolean: (id: string) => string;
-  readonly unknownIds: (ids: readonly string[]) => string;
-}
-
 export const validateFlagOverridesRecord = (value: unknown, msg: FlagOverridesErrorMessages): FlagOverrides => {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error(msg.notObject);

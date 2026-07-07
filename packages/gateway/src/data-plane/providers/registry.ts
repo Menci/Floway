@@ -30,8 +30,6 @@ interface ProviderModelsResult {
   failedUpstreams: string[];
 }
 
-// Dispatch table: every static per-kind answer the gateway needs from a
-// provider hangs off `ProviderModule`.
 const providersByKind: Record<UpstreamProviderKind, ProviderModule> = {
   copilot: copilotProvider,
   custom: customProvider,
@@ -88,7 +86,7 @@ export const listModelProviders = async (
 // The provider model is stored verbatim under that entry so dispatch hands
 // the same reference back to the provider's `callXxx`.
 const internalModelFromProviderModel = (providerModel: ProviderModel, upstreamId: string): InternalModel => {
-  const { providerData, enabledFlags, endpoints, ...metadata } = providerModel;
+  const { providerData, enabledFlags, flagOverrides, endpoints, ...metadata } = providerModel;
   return {
     ...metadata,
     endpoints: { ...endpoints },
