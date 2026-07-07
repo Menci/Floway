@@ -58,7 +58,7 @@ export interface UpstreamModelConfig {
   // Wire-only: provider-declared per-model default overlay (layer 2 of
   // the flag resolver). Absent on rows the client synthesizes locally
   // before save. All current manual-model providers emit an empty map.
-  provider_default_overlay?: Record<string, boolean>;
+  providerFlagOverlay?: Record<string, boolean>;
 }
 
 export interface CustomModelsFetch {

@@ -16,7 +16,7 @@ const props = defineProps<{
   // Provider-declared upstream-level default for every flag on this
   // upstream kind (layer 1 in the flag resolver). The per-model editor's
   // "Inherit" pill resolves via layer 3 (upstream override, live-edited)
-  // else the merge of layer 1 with this row's `provider_default_overlay`
+  // else the merge of layer 1 with this row's `providerFlagOverlay`
   // (layer 2, when the provider ships per-model defaults). All current
   // manual-model providers emit an empty layer 2, but the merge keeps the
   // component future-proof.
@@ -69,7 +69,7 @@ const rowKind = computed<ModelKind>(() => config.value?.kind ?? 'chat');
 // prop above for the full layer semantics.
 const flagDefaultsForThisModel = computed<Record<string, boolean>>(() => ({
   ...props.providerFlagDefaults,
-  ...(config.value?.provider_default_overlay ?? {}),
+  ...(config.value?.providerFlagOverlay ?? {}),
 }));
 
 const patch = (next: Partial<UpstreamModelConfig>) => {

@@ -185,7 +185,7 @@ const redactedState = (upstream: UpstreamRecord): unknown => {
   }
 };
 
-// Attach per-model `provider_default_overlay` (layer 2 of the flag
+// Attach per-model `providerFlagOverlay` (layer 2 of the flag
 // resolver) by asking the provider's `defaultFlagsForModel(model)` per
 // row. Uniformly `{}` today — no provider that supports manual model
 // configuration also implements the optional per-model method — but
@@ -207,7 +207,7 @@ const withProviderDefaultOverlay = (provider: Provider, models: readonly unknown
   models.map(m => {
     if (!isRecord(m)) return m;
     const overlay: FlagOverrides = provider.instance.defaultFlagsForModel?.(modelDraftFromConfig(m as unknown as UpstreamModelConfig)) ?? {};
-    return { ...m, provider_default_overlay: overlay };
+    return { ...m, providerFlagOverlay: overlay };
   });
 
 const serializeBase = (
