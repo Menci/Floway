@@ -352,7 +352,6 @@ export interface FlagDef {
   id: string;
   label: string;
   description: string;
-  defaultFor: UpstreamProviderKind[];
 }
 
 // Importing the gateway's source-of-truth type as the actual definition (rather
