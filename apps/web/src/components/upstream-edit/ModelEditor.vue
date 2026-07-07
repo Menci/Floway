@@ -77,6 +77,8 @@ const autoRowFlagState = (flagId: string): { on: boolean; source: string } => {
   return { on: props.providerFlagDefaults[id], source: 'provider default' };
 };
 
+const autoFlagRows = computed(() => props.flags.map(flag => ({ flag, state: autoRowFlagState(flag.id) })));
+
 const patch = (next: Partial<UpstreamModelConfig>) => {
   if (!editable.value) return;
   emit('patch-config', next);
@@ -582,24 +584,22 @@ watch(isReasoningValid, valid => { emit('validity-change', valid); }, { immediat
           <div v-else class="max-h-72 overflow-y-auto">
             <div class="grid grid-cols-[repeat(auto-fit,minmax(320px,1fr))]">
               <div
-                v-for="flag in flags"
-                :key="flag.id"
+                v-for="row in autoFlagRows"
+                :key="row.flag.id"
                 class="flex min-w-0 items-start justify-between gap-3 border-t border-white/[0.06] px-1 py-2.5"
               >
                 <div class="min-w-0">
-                  <span class="block break-words text-xs text-white">{{ flag.label }}</span>
-                  <span v-if="flag.description" class="mt-0.5 block text-[11px] text-gray-500">{{ flag.description }}</span>
+                  <span class="block break-words text-xs text-white">{{ row.flag.label }}</span>
+                  <span v-if="row.flag.description" class="mt-0.5 block text-[11px] text-gray-500">{{ row.flag.description }}</span>
                 </div>
                 <div class="flex shrink-0 flex-col items-end gap-0.5 text-[11px]">
-                  <template v-for="state in [autoRowFlagState(flag.id)]" :key="flag.id">
-                    <span
-                      class="rounded border px-1.5 py-0.5"
-                      :class="state.on
-                        ? 'border-accent-emerald/40 bg-accent-emerald/15 text-accent-emerald'
-                        : 'border-accent-rose/40 bg-accent-rose/15 text-accent-rose'"
-                    >{{ state.on ? 'On' : 'Off' }}</span>
-                    <span class="text-[10px] text-gray-500">{{ state.source }}</span>
-                  </template>
+                  <span
+                    class="rounded border px-1.5 py-0.5"
+                    :class="row.state.on
+                      ? 'border-accent-emerald/40 bg-accent-emerald/15 text-accent-emerald'
+                      : 'border-accent-rose/40 bg-accent-rose/15 text-accent-rose'"
+                  >{{ row.state.on ? 'On' : 'Off' }}</span>
+                  <span class="text-[10px] text-gray-500">{{ row.state.source }}</span>
                 </div>
               </div>
             </div>
