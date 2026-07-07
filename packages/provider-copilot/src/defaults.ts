@@ -25,14 +25,15 @@ export const COPILOT_DEFAULT_FLAGS: FlagDefaults = {
   'strip-billing-attribution': true,
 };
 
-// Extract `[major, minor]` from a Copilot Claude model id. Copilot's ids
-// keep vendor version numbers as `<family>-<major>.<minor>`
-// (e.g. `claude-opus-4.8`, `claude-sonnet-4.6`, `claude-haiku-4.5`) or
-// just `<family>-<major>` for whole-number releases
-// (e.g. `claude-sonnet-5`). The `minor` slot defaults to 0 when absent so
-// tuple comparison works uniformly.
+// Parse the version tuple from a Claude model id, using dash-separated
+// minor form (`claude-opus-4-8`, `claude-sonnet-4-6`, `claude-haiku-4-5`)
+// — the shape copilotPublicModelId emits and finalizeCopilotModels
+// hands us here. Whole-number releases (`claude-sonnet-5`) drop the
+// minor slot, which defaults to 0 so tuple comparison works uniformly.
+// Also accepts the dotted form (`claude-opus-4.8`) so raw upstream ids
+// route the same way; the resolver never asserts a specific separator.
 const parseClaudeVersion = (id: string): readonly [number, number] | null => {
-  const m = /^claude-(?:opus|sonnet|haiku)-(\d+)(?:\.(\d+))?$/.exec(id);
+  const m = /^claude-(?:opus|sonnet|haiku)-(\d+)(?:[.-](\d+))?$/.exec(id);
   return m ? [Number(m[1]), Number(m[2] ?? 0)] as const : null;
 };
 
