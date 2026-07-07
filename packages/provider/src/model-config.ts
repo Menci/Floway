@@ -116,7 +116,13 @@ export const flagOverridesField = (value: unknown, label: string): Record<string
   if (unknown.length > 0) {
     throw new Error(`Malformed ${label}: unknown flag ids: ${unknown.join(', ')}`);
   }
-  return values;
+  // Sort keys lexicographically so two rows with the same flag set round-trip
+  // to byte-identical JSON regardless of the caller's insertion order —
+  // matches `parseFlagOverridesWire`'s canonicalization for the sibling
+  // upstream-level `flagOverrides` column.
+  const sorted: Record<string, boolean> = {};
+  for (const id of Object.keys(values).sort()) sorted[id] = values[id];
+  return sorted;
 };
 
 const nonNegativeNumberField = (value: unknown, label: string): number => {
