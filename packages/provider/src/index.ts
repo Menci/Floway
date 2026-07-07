@@ -68,7 +68,6 @@ export {
 export type { Flag, FlagDefaults, FlagId, FlagOverrides } from './flags.ts';
 export {
   OPTIONAL_FLAGS,
-  getFlagCatalog,
   isKnownFlagId,
   parseFlagOverridesWire,
   resolveEffectiveFlags,

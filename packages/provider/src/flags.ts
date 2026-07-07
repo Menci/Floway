@@ -97,8 +97,6 @@ export type FlagId = (typeof OPTIONAL_FLAGS)[number]['id'];
 
 const KNOWN_IDS = new Set<string>(OPTIONAL_FLAGS.map(f => f.id));
 
-export const getFlagCatalog = (): readonly Flag[] => OPTIONAL_FLAGS;
-
 export const isKnownFlagId = (id: string): id is FlagId => KNOWN_IDS.has(id);
 
 // A provider's full opinion on every flag: `true` = default on for this

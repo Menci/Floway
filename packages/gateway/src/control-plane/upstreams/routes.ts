@@ -17,8 +17,8 @@ import { fetchGitHubUser, pollGitHubDeviceFlow, startGitHubDeviceFlow, type GitH
 import type { claudeCodeOauthAuthorizeUrlBody, claudeCodeOauthExchangeBody, claudeCodeOauthRefreshBody, claudeCodeProbeBody, claudeCodeSetupTokenAuthorizeUrlBody, claudeCodeSetupTokenExchangeBody, codexOauthAuthorizeUrlBody, codexOauthExchangeBody, codexOauthRefreshBody, copilotOauthDeviceLoginPollBody, copilotQuotaBody, createUpstreamBody, listModelsBody, updateUpstreamBody } from '../schemas.ts';
 import { copilotConfigField, type CopilotUpstreamConfig, isRecord } from '../shared/field-validators.ts';
 import {
-  getFlagCatalog,
   normalizeModelPrefix,
+  OPTIONAL_FLAGS,
   ProviderModelsUnavailableError,
   ALL_PROVIDER_KINDS,
   type Fetcher,
@@ -211,7 +211,7 @@ export const listUpstreamOptions = async (c: Context) => {
     })));
 };
 
-export const listOptionalFlags = (c: Context) => c.json(getFlagCatalog());
+export const listOptionalFlags = (c: Context) => c.json(OPTIONAL_FLAGS);
 
 const isValidProviderKind = (value: unknown): value is UpstreamProviderKind =>
   typeof value === 'string' && (ALL_PROVIDER_KINDS as readonly string[]).includes(value);
