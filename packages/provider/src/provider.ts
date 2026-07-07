@@ -155,12 +155,6 @@ export interface ProviderModule {
   // Exhaustive default map over every catalog flag id for a fresh
   // upstream of this kind. Vendor-specific knowledge lives in the
   // provider package that talks to that vendor; the central catalog only
-  // describes identity, label, and UI copy. Per-model deltas — e.g.
-  // Copilot's demote-interleaved-system-to-user on Claude < 4.8, which
-  // Bedrock accepts inline and Vertex does not — are a provider-internal
-  // concern: the provider's `create` computes them once against the raw
-  // model list and stakes the result into `ProviderModel.enabledFlags`,
-  // which the data plane reads directly. No cross-provider generalization
-  // has warranted lifting them into a separate module slot.
+  // describes identity, label, and UI copy.
   defaultFlags: FlagDefaults;
 }

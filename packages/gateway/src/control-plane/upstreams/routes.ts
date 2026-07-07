@@ -920,10 +920,8 @@ const reshapeModelForDashboard = (model: ProviderModel): Record<string, unknown>
     ...(Object.keys(model.limits).length > 0 ? { limits: model.limits } : {}),
     ...(model.cost ? { cost: model.cost } : {}),
     ...(model.chat ? { chat: model.chat } : {}),
-    // The dashboard's auto-row flag view reads this to render "provider
-    // forces X on for this model" pills. Absent = no per-model
-    // deviation from the upstream default; the auto view falls back to
-    // upstream defaults + upstream overrides.
+    // Per-model deviation from upstream flag defaults; absent when the
+    // model has none.
     ...(model.flagOverridesAuto && Object.keys(model.flagOverridesAuto).length > 0 ? { flagOverridesAuto: model.flagOverridesAuto } : {}),
   };
 };
