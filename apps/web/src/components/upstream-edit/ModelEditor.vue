@@ -139,7 +139,14 @@ const tierSectionExpanded = ref(tierDrafts.value.length > 0);
 watch(() => props.row?.uiId, () => {
   tierDrafts.value = tierDraftsFor(config.value?.cost);
   tierSectionExpanded.value = tierDrafts.value.length > 0;
+  lastFlagOverrides.value = {};
 });
+
+// Preserve the operator's per-flag choices when they toggle the whole
+// override off then back on for the same row — otherwise a stray click
+// would clear the map they had built up. Reset on row change so a fresh
+// row starts empty.
+const lastFlagOverrides = ref<Record<string, boolean>>({});
 
 const writeTierDrafts = (drafts: readonly TierDraft[]) => {
   if (!config.value) return;
@@ -241,7 +248,12 @@ const moveTierDown = (index: number) => {
 
 const toggleFlagOverridesEnabled = () => {
   if (!editable.value || !config.value) return;
-  patch({ flagOverrides: config.value.flagOverrides !== undefined ? undefined : {} });
+  if (config.value.flagOverrides !== undefined) {
+    lastFlagOverrides.value = { ...config.value.flagOverrides };
+    patch({ flagOverrides: undefined });
+  } else {
+    patch({ flagOverrides: { ...lastFlagOverrides.value } });
+  }
 };
 
 const updateFlagOverrides = (values: Record<string, boolean>) => {
