@@ -43,14 +43,10 @@ const providerFactories: Record<UpstreamProviderKind, ProviderFactory> = {
   ollama: createOllamaProvider,
 };
 
-// Provider construction is synchronous: every factory just captures the
-// record and returns closures. Any I/O the provider needs (token refresh,
-// state persistence, model catalog fetch) happens on demand inside the
-// per-request methods, never at factory time. Keeping this sync lets the
-// serializer route flag defaults through the ProviderInstance methods
-// without threading async through every caller, and — via the invariant
-// that ProviderInstance is the ONLY source of flag defaults — prevents
-// parallel per-kind lookup maps from reappearing.
+// Provider factories only capture the record and return closures; any
+// I/O they need (token refresh, state persistence, model catalog fetch)
+// happens on demand inside the per-request methods, never at factory
+// time.
 export const createProviderInstance = (record: UpstreamRecord): Provider =>
   providerFactories[record.kind](record);
 

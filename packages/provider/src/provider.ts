@@ -112,9 +112,9 @@ export interface ProviderInstance {
   // Provider's declaration of the default value for every flag when this
   // upstream is created. Exhaustive: `FlagDefaults` is a full record over
   // every catalog flag, so adding a new flag to the catalog is a type
-  // error until every provider decides its own default. This replaces the
-  // catalog-side `defaultFor` mechanism so vendor-specific knowledge lives
-  // in the provider package that talks to that vendor.
+  // error until every provider decides its own default. Vendor-specific
+  // flag knowledge lives in the provider package that talks to that
+  // vendor.
   defaultFlagsForUpstream(): FlagDefaults;
   // Per-model deltas on top of `defaultFlagsForUpstream()`. Optional: only
   // providers whose models legitimately differ (e.g. Copilot routes

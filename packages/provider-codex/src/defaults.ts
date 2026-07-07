@@ -1,7 +1,6 @@
 import type { FlagDefaults } from '@floway-dev/provider';
 
 // Exhaustive flag defaults for ChatGPT Codex (subscription) upstreams.
-// Codex has no hosted-tool concept, so the three shim flags stay off.
 export const CODEX_DEFAULT_FLAGS: FlagDefaults = {
   'vendor-deepseek': false,
   'vendor-qwen': false,

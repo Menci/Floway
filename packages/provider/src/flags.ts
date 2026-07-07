@@ -14,9 +14,9 @@
 //
 // Defaults are NOT declared in this catalog. Each provider owns the
 // decision of which flags default on for its own upstream (and, when
-// per-model differentiation matters, per model). The pivot keeps
-// vendor-specific knowledge inside the provider package that talks to
-// that vendor — the central catalog only describes identity, label, and
+// per-model differentiation matters, per model). Vendor-specific
+// knowledge lives inside the provider package that talks to that
+// vendor — the central catalog only describes identity, label, and
 // UI copy. See `ProviderInstance.defaultFlagsForUpstream` and
 // `defaultFlagsForModel` in `provider.ts`.
 
