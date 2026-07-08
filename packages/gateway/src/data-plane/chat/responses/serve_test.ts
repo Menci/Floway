@@ -74,6 +74,8 @@ const makeGatewayCtx = (store?: ChatGatewayCtx['store']): ChatGatewayCtx => ({
   responseHeaders: new Headers(),
   backgroundScheduler: () => {},
   requestStartedAt: 0,
+
+  perfTiming: { firstOutputTokenAt: null },
   store: store ?? createResponsesHttpStore(API_KEY_ID, true),
 });
 

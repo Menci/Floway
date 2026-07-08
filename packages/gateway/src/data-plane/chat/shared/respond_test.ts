@@ -45,6 +45,7 @@ const setup = (): Harness => {
       responseHeaders: new Headers(),
       backgroundScheduler: promise => { background.push(promise); },
       requestStartedAt,
+      perfTiming: { firstOutputTokenAt: null },
     }),
   };
 };

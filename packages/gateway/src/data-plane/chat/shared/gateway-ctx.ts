@@ -15,6 +15,11 @@ export interface GatewayCtx {
   // Stamped at ctx construction so request-total latency telemetry can subtract
   // from `performance.now()` at response completion.
   readonly requestStartedAt: number;
+  // Stamped once by the upstream stream wrapper on the first frame that
+  // carries downstream-visible output content. Null when no such frame has
+  // arrived yet — the request either errored, was cancelled before any
+  // output, or hasn't started streaming.
+  readonly perfTiming: { firstOutputTokenAt: number | null };
   // The deployment colo / region, used both as the `runtimeLocation`
   // performance-telemetry dimension and as the dial-time colo whitelist key.
   // Request-scoped, so it is resolved once here rather than at the
@@ -88,6 +93,7 @@ export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCt
     downstreamAbortController: controller,
     backgroundScheduler: opts.backgroundScheduler,
     requestStartedAt: performance.now(),
+    perfTiming: { firstOutputTokenAt: null },
     runtimeLocation: colo,
     currentColo: colo,
     dump,

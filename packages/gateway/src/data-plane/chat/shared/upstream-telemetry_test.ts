@@ -13,6 +13,8 @@ const baseCtx = (overrides: Partial<GatewayCtx> = {}): GatewayCtx => {
     upstreamIds: null,
     wantsStream: true,
     requestStartedAt: 0,
+
+    perfTiming: { firstOutputTokenAt: null },
     runtimeLocation: 'TEST',
     currentColo: 'TEST',
     dump: null,

@@ -59,6 +59,8 @@ const gatewayCtx = (apiKeyId: string = 'test-key'): ChatGatewayCtx => ({
   responseHeaders: new Headers(),
   backgroundScheduler: () => {},
   requestStartedAt: 0,
+
+  perfTiming: { firstOutputTokenAt: null },
   store: createNonResponsesSourceStore(apiKeyId),
 });
 
