@@ -10,13 +10,12 @@ import type {
   ModelAliasesRepo,
   ModelAliasRecord,
   ModelsCacheRepo,
+  PerformanceBucketRow,
   PerformanceDimensions,
   PerformanceErrorSample,
-  // TODO(perf-ttft-tpot): removed by tasks 4/5
-  PerformanceLatencySample,
-  // TODO(perf-ttft-tpot): removed by tasks 4/5
-  PerformanceMetricScope,
+  PerformanceMetric,
   PerformanceRepo,
+  PerformanceSample,
   PerformanceTelemetryRecord,
   ProxyBackoffRepo,
   ProxyRecord,
@@ -38,7 +37,7 @@ import type {
   UsersRepo,
 } from './types.ts';
 import { serializeStoredConfig, serializeStoredState } from './upstream-json.ts';
-import { latencyBucketForMs } from '../shared/performance-histogram.ts';
+import { bucketForTtftMs, bucketForTpotUs } from '../shared/performance-histogram.ts';
 import { generateSessionToken } from '../shared/session-tokens.ts';
 import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';
 import type { SqlDatabase, SqlPreparedStatement, SqlResult } from '@floway-dev/platform';
@@ -599,236 +598,145 @@ class SqlSearchUsageRepo implements SearchUsageRepo {
   }
 }
 
-class SqlPerformanceRepo implements PerformanceRepo {
-  constructor(private db: SqlDatabase) {}
-
-  async recordLatency(sample: PerformanceLatencySample): Promise<void> {
-    const durationMs = Math.max(0, Math.round(sample.durationMs));
-    const bucket = latencyBucketForMs(durationMs);
-    await runStatements(this.db, [this.addSummaryStatement(sample, 1, 0, durationMs), this.bucketStatement(sample, bucket.lowerMs, bucket.upperMs, 1, 'add')]);
-  }
-
-  async recordError(sample: PerformanceErrorSample): Promise<void> {
-    await this.addSummaryStatement(sample, 0, 1, 0).run();
-  }
-
-  async query(opts: { keyId?: string; metricScope?: PerformanceMetricScope; start: string; end: string }): Promise<PerformanceTelemetryRecord[]> {
-    const filters = ['hour >= ?', 'hour < ?'];
-    const binds: unknown[] = [opts.start, opts.end];
-    if (opts.keyId) {
-      filters.push('key_id = ?');
-      binds.push(opts.keyId);
-    }
-    if (opts.metricScope) {
-      filters.push('metric_scope = ?');
-      binds.push(opts.metricScope);
-    }
-    return await this.queryWhere(filters.join(' AND '), binds);
-  }
-
-  async listAll(): Promise<PerformanceTelemetryRecord[]> {
-    return await this.queryWhere('1 = 1', []);
-  }
-
-  async set(record: PerformanceTelemetryRecord): Promise<void> {
-    await runStatements(this.db, [
-      this.setSummaryStatement(record),
-      this.deleteBucketsStatement(record),
-      ...record.buckets.map(bucket => this.bucketStatement(record, bucket.lowerMs, bucket.upperMs, bucket.count, 'set')),
-    ]);
-  }
-
-  async deleteAll(): Promise<void> {
-    await this.db.prepare('DELETE FROM performance_latency_buckets').run();
-    await this.db.prepare('DELETE FROM performance_summary').run();
-  }
-
-  private async queryWhere(where: string, binds: unknown[]): Promise<PerformanceTelemetryRecord[]> {
-    const records = new Map<string, PerformanceTelemetryRecord>();
-
-    const { results: summaries } = await this.db
-      .prepare(
-        `SELECT hour, metric_scope, key_id, model, upstream, model_key, stream, runtime_location, requests, errors, total_ms_sum
-         FROM performance_summary WHERE ${where} ORDER BY hour`,
-      )
-      .bind(...binds)
-      .all<PerformanceSummaryRow>();
-    for (const row of summaries) {
-      const dimensions = performanceDimensionsFromRow(row);
-      records.set(performanceRecordKey(dimensions), {
-        ...dimensions,
-        requests: row.requests,
-        errors: row.errors,
-        totalMsSum: row.total_ms_sum,
-        buckets: [],
-      });
-    }
-
-    const { results: buckets } = await this.db
-      .prepare(
-        `SELECT hour, metric_scope, key_id, model, upstream, model_key, stream, runtime_location, lower_ms, upper_ms, count
-         FROM performance_latency_buckets WHERE ${where} ORDER BY hour, upper_ms`,
-      )
-      .bind(...binds)
-      .all<PerformanceBucketRow>();
-    for (const row of buckets) {
-      const dimensions = performanceDimensionsFromRow(row);
-      const key = performanceRecordKey(dimensions);
-      let record = records.get(key);
-      if (!record) {
-        record = {
-          ...dimensions,
-          requests: 0,
-          errors: 0,
-          totalMsSum: 0,
-          buckets: [],
-        };
-        records.set(key, record);
-      }
-      record.buckets.push({
-        lowerMs: row.lower_ms,
-        upperMs: row.upper_ms,
-        count: row.count,
-      });
-    }
-
-    return [...records.values()].sort(comparePerformanceTelemetryRecords);
-  }
-
-  private addSummaryStatement(sample: PerformanceDimensions, requests: number, errors: number, totalMsSum: number): SqlPreparedStatement {
-    return this.db
-      .prepare(
-        `INSERT INTO performance_summary (hour, metric_scope, key_id, model, upstream, model_key, stream, runtime_location, requests, errors, total_ms_sum)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT DO UPDATE SET
-           requests = requests + excluded.requests,
-           errors = errors + excluded.errors,
-           total_ms_sum = total_ms_sum + excluded.total_ms_sum`,
-      )
-      .bind(
-        sample.hour,
-        sample.metricScope,
-        sample.keyId,
-        sample.model,
-        sample.upstream,
-        sample.modelKey,
-        sample.stream ? 1 : 0,
-        sample.runtimeLocation,
-        requests,
-        errors,
-        totalMsSum,
-      );
-  }
-
-  private setSummaryStatement(record: PerformanceTelemetryRecord): SqlPreparedStatement {
-    return this.db
-      .prepare(
-        `INSERT INTO performance_summary (hour, metric_scope, key_id, model, upstream, model_key, stream, runtime_location, requests, errors, total_ms_sum)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT DO UPDATE SET
-           requests = excluded.requests,
-           errors = excluded.errors,
-           total_ms_sum = excluded.total_ms_sum`,
-      )
-      .bind(
-        record.hour,
-        record.metricScope,
-        record.keyId,
-        record.model,
-        record.upstream,
-        record.modelKey,
-        record.stream ? 1 : 0,
-        record.runtimeLocation,
-        record.requests,
-        record.errors,
-        record.totalMsSum,
-      );
-  }
-
-  private deleteBucketsStatement(record: PerformanceDimensions): SqlPreparedStatement {
-    return this.db
-      .prepare(
-        `DELETE FROM performance_latency_buckets
-         WHERE hour = ? AND metric_scope = ? AND key_id = ? AND model = ? AND upstream IS ? AND model_key = ? AND stream = ? AND runtime_location = ?`,
-      )
-      .bind(...performanceDimensionBinds(record));
-  }
-
-  private bucketStatement(sample: PerformanceDimensions, lowerMs: number, upperMs: number, count: number, mode: 'add' | 'set'): SqlPreparedStatement {
-    return this.db
-      .prepare(
-        `INSERT INTO performance_latency_buckets (hour, metric_scope, key_id, model, upstream, model_key, stream, runtime_location, lower_ms, upper_ms, count)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT DO UPDATE SET
-           count = ${mode === 'add' ? 'count + excluded.count' : 'excluded.count'}`,
-      )
-      .bind(
-        sample.hour,
-        sample.metricScope,
-        sample.keyId,
-        sample.model,
-        sample.upstream,
-        sample.modelKey,
-        sample.stream ? 1 : 0,
-        sample.runtimeLocation,
-        lowerMs,
-        upperMs,
-        count,
-      );
-  }
-}
-
 type PerformanceDimensionRow = {
   hour: string;
-  metric_scope: string;
   key_id: string;
   model: string;
-  upstream: string | null;
-  model_key: string;
-  stream: number;
+  upstream: string;
   runtime_location: string;
 };
 
-interface PerformanceSummaryRow extends PerformanceDimensionRow {
-  requests: number;
-  errors: number;
-  total_ms_sum: number;
-}
-
-interface PerformanceBucketRow extends PerformanceDimensionRow {
-  lower_ms: number;
-  upper_ms: number;
-  count: number;
-}
-
 const performanceDimensionsFromRow = (row: PerformanceDimensionRow): PerformanceDimensions => ({
   hour: row.hour,
-  metricScope: row.metric_scope as PerformanceMetricScope,
   keyId: row.key_id,
   model: row.model,
   upstream: row.upstream,
-  modelKey: row.model_key,
-  stream: row.stream === 1,
   runtimeLocation: row.runtime_location,
 });
 
-const performanceRecordKey = (record: PerformanceDimensions): string =>
-  [record.hour, record.metricScope, record.keyId, record.model, record.upstream, record.modelKey, record.stream ? '1' : '0', record.runtimeLocation].join(
-    '\0',
-  );
+const performanceRecordKey = (dims: PerformanceDimensions): string =>
+  `${dims.hour}\0${dims.keyId}\0${dims.model}\0${dims.upstream}\0${dims.runtimeLocation}`;
 
-const performanceDimensionBinds = (record: PerformanceDimensions): unknown[] =>
-  [record.hour, record.metricScope, record.keyId, record.model, record.upstream, record.modelKey, record.stream ? 1 : 0, record.runtimeLocation];
+const performanceDimensionBinds = (dims: PerformanceDimensions): unknown[] =>
+  [dims.hour, dims.keyId, dims.model, dims.upstream, dims.runtimeLocation];
 
-const comparePerformanceTelemetryRecords = (a: PerformanceTelemetryRecord, b: PerformanceTelemetryRecord): number =>
-  a.hour.localeCompare(b.hour) ||
-  a.metricScope.localeCompare(b.metricScope) ||
-  a.keyId.localeCompare(b.keyId) ||
-  a.model.localeCompare(b.model) ||
-  (a.upstream ?? '').localeCompare(b.upstream ?? '') ||
-  a.modelKey.localeCompare(b.modelKey) ||
-  Number(a.stream) - Number(b.stream) ||
-  a.runtimeLocation.localeCompare(b.runtimeLocation);
+class SqlPerformanceRepo implements PerformanceRepo {
+  constructor(private readonly db: SqlDatabase) {}
+
+  async recordSample(sample: PerformanceSample): Promise<void> {
+    await this.db.prepare(
+      `INSERT INTO performance_summary (hour, key_id, model, upstream, runtime_location, requests, errors, samples, ttft_ms_sum, tpot_us_sum)
+       VALUES (?, ?, ?, ?, ?, 1, 0, 1, ?, ?)
+       ON CONFLICT (hour, key_id, model, upstream, runtime_location) DO UPDATE SET
+         requests = requests + 1,
+         samples = samples + 1,
+         ttft_ms_sum = ttft_ms_sum + excluded.ttft_ms_sum,
+         tpot_us_sum = tpot_us_sum + excluded.tpot_us_sum`,
+    ).bind(...performanceDimensionBinds(sample), sample.ttftMs, sample.tpotUs).run();
+
+    const ttft = bucketForTtftMs(sample.ttftMs);
+    const tpot = bucketForTpotUs(sample.tpotUs);
+    await this.upsertBucket(sample, 'ttft_ms', ttft);
+    await this.upsertBucket(sample, 'tpot_us', tpot);
+  }
+
+  async recordError(sample: PerformanceErrorSample): Promise<void> {
+    await this.db.prepare(
+      `INSERT INTO performance_summary (hour, key_id, model, upstream, runtime_location, requests, errors, samples, ttft_ms_sum, tpot_us_sum)
+       VALUES (?, ?, ?, ?, ?, 1, 1, 0, 0, 0)
+       ON CONFLICT (hour, key_id, model, upstream, runtime_location) DO UPDATE SET
+         requests = requests + 1,
+         errors = errors + 1`,
+    ).bind(...performanceDimensionBinds(sample)).run();
+  }
+
+  async query(opts: { keyId?: string; start: string; end: string }): Promise<PerformanceTelemetryRecord[]> {
+    const where = opts.keyId ? 'hour >= ? AND hour <= ? AND key_id = ?' : 'hour >= ? AND hour <= ?';
+    const binds = opts.keyId ? [opts.start, opts.end, opts.keyId] : [opts.start, opts.end];
+    return await this.rowsFromWhere(where, binds);
+  }
+
+  async listAll(): Promise<PerformanceTelemetryRecord[]> {
+    return await this.rowsFromWhere('1=1', []);
+  }
+
+  async set(record: PerformanceTelemetryRecord): Promise<void> {
+    await this.db.prepare(
+      `INSERT INTO performance_summary (hour, key_id, model, upstream, runtime_location, requests, errors, samples, ttft_ms_sum, tpot_us_sum)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (hour, key_id, model, upstream, runtime_location) DO UPDATE SET
+         requests = excluded.requests,
+         errors = excluded.errors,
+         samples = excluded.samples,
+         ttft_ms_sum = excluded.ttft_ms_sum,
+         tpot_us_sum = excluded.tpot_us_sum`,
+    ).bind(
+      ...performanceDimensionBinds(record),
+      record.requests, record.errors, record.samples, record.ttftMsSum, record.tpotUsSum,
+    ).run();
+
+    await this.db.prepare(
+      `DELETE FROM performance_buckets WHERE hour = ? AND key_id = ? AND model = ? AND upstream = ? AND runtime_location = ?`,
+    ).bind(...performanceDimensionBinds(record)).run();
+
+    for (const bucket of record.buckets) {
+      await this.db.prepare(
+        `INSERT INTO performance_buckets (hour, key_id, model, upstream, runtime_location, metric, lower, upper, count)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).bind(...performanceDimensionBinds(record), bucket.metric, bucket.lower, bucket.upper, bucket.count).run();
+    }
+  }
+
+  async deleteAll(): Promise<void> {
+    await this.db.prepare('DELETE FROM performance_buckets').run();
+    await this.db.prepare('DELETE FROM performance_summary').run();
+  }
+
+  private async upsertBucket(dims: PerformanceDimensions, metric: PerformanceMetric, edges: { lower: number; upper: number | null }): Promise<void> {
+    await this.db.prepare(
+      `INSERT INTO performance_buckets (hour, key_id, model, upstream, runtime_location, metric, lower, upper, count)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
+       ON CONFLICT (hour, key_id, model, upstream, runtime_location, metric, lower) DO UPDATE SET
+         count = count + 1`,
+    ).bind(...performanceDimensionBinds(dims), metric, edges.lower, edges.upper).run();
+  }
+
+  private async rowsFromWhere(where: string, binds: readonly unknown[]): Promise<PerformanceTelemetryRecord[]> {
+    const { results: summaryRows } = await this.db.prepare(
+      `SELECT hour, key_id, model, upstream, runtime_location, requests, errors, samples, ttft_ms_sum, tpot_us_sum
+       FROM performance_summary WHERE ${where} ORDER BY hour`,
+    ).bind(...binds).all<PerformanceDimensionRow & { requests: number; errors: number; samples: number; ttft_ms_sum: number; tpot_us_sum: number }>();
+
+    const records = new Map<string, PerformanceTelemetryRecord & { bucketAcc: PerformanceBucketRow[] }>();
+    for (const row of summaryRows) {
+      const dims = performanceDimensionsFromRow(row);
+      records.set(performanceRecordKey(dims), {
+        ...dims,
+        requests: row.requests,
+        errors: row.errors,
+        samples: row.samples,
+        ttftMsSum: row.ttft_ms_sum,
+        tpotUsSum: row.tpot_us_sum,
+        buckets: [],
+        bucketAcc: [],
+      });
+    }
+
+    const { results: bucketRows } = await this.db.prepare(
+      `SELECT hour, key_id, model, upstream, runtime_location, metric, lower, upper, count
+       FROM performance_buckets WHERE ${where} ORDER BY hour, metric, lower`,
+    ).bind(...binds).all<PerformanceDimensionRow & { metric: PerformanceMetric; lower: number; upper: number | null; count: number }>();
+    for (const row of bucketRows) {
+      const dims = performanceDimensionsFromRow(row);
+      const key = performanceRecordKey(dims);
+      const record = records.get(key);
+      if (!record) continue;
+      record.bucketAcc.push({ metric: row.metric, lower: row.lower, upper: row.upper, count: row.count });
+    }
+
+    return [...records.values()].map(r => ({ ...r, buckets: r.bucketAcc }));
+  }
+}
 
 const toSearchUsageRecord = (row: { provider: string; key_id: string; action: string; hour: string; requests: number }): SearchUsageRecord => {
   if (row.action !== 'search' && row.action !== 'fetch_page') {
