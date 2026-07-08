@@ -14,4 +14,5 @@ export const AZURE_DEFAULT_FLAGS: FlagDefaults = {
   'demote-interleaved-system-to-user': false,
   'demote-developer-to-system': false,
   'strip-billing-attribution': true,
+  'strip-prompt-cache-key': false,
 };

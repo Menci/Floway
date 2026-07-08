@@ -23,6 +23,7 @@ export const COPILOT_DEFAULT_FLAGS: FlagDefaults = {
   'demote-interleaved-system-to-user': false,
   'demote-developer-to-system': false,
   'strip-billing-attribution': true,
+  'strip-prompt-cache-key': false,
 };
 
 // True when the model id names a Claude release whose Anthropic Messages

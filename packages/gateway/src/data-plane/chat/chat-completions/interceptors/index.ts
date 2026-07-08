@@ -3,6 +3,7 @@ import { withInterleavedSystemDemotedToUser } from './demote-interleaved-system-
 import { withReasoningDisabledOnForcedToolChoice } from './disable-reasoning-on-forced-tool-choice.ts';
 import { withUsageStreamOptionsIncluded } from './include-usage-stream-options.ts';
 import { withUsageNormalized } from './normalize-usage.ts';
+import { withPromptCacheKeyStripped } from './strip-prompt-cache-key.ts';
 import type { ChatCompletionsInterceptor } from './types.ts';
 import { withVendorDeepseekChatCompletionsNormalize } from './vendor-deepseek-normalize.ts';
 import { withVendorKimiChatCompletionsNormalize } from './vendor-kimi-normalize.ts';
@@ -29,6 +30,11 @@ import { withVendorQwenChatCompletionsNormalize } from './vendor-qwen-normalize.
 //     `demote-interleaved-system-to-user`. Rewrites any `role: 'system'` that
 //     appears after the leading contiguous system run to `role: 'user'` so
 //     upstreams that reject mid-stream system messages still accept the body.
+//   - withPromptCacheKeyStripped: gated by `strip-prompt-cache-key`. Drops
+//     the top-level `prompt_cache_key` field for upstreams that reject it as
+//     an unknown argument (e.g. Azure DeepSeek). Runs before vendor
+//     normalizers so vendor-specific translation sees the already-stripped
+//     canonical payload.
 //   - withVendor*ChatCompletionsNormalize: gated by `vendor-<X>`. Registered
 //     LAST so that on the outbound path each gets the final say on the wire
 //     body and on the inbound path each gets the first say on the upstream
@@ -42,6 +48,7 @@ export const chatCompletionsInterceptors: readonly ChatCompletionsInterceptor[] 
   withReasoningDisabledOnForcedToolChoice,
   withDemoteDeveloperToSystem,
   withInterleavedSystemDemotedToUser,
+  withPromptCacheKeyStripped,
   withVendorDeepseekChatCompletionsNormalize,
   withVendorQwenChatCompletionsNormalize,
   withVendorKimiChatCompletionsNormalize,

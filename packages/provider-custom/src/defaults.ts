@@ -21,4 +21,5 @@ export const CUSTOM_DEFAULT_FLAGS: FlagDefaults = {
   // only to the Anthropic subscription endpoint; strip it here so it
   // does not pollute the OpenAI-compatible upstream's prompt-cache key.
   'strip-billing-attribution': true,
+  'strip-prompt-cache-key': false,
 };

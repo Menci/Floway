@@ -91,6 +91,11 @@ export const OPTIONAL_FLAGS = [
     label: 'Strip Claude Code billing attribution from system prompt',
     description: "Remove `x-anthropic-billing-header:` lines from the request's system prompt before forwarding upstream. The block is irrelevant to non-Anthropic upstreams and only pollutes their prompt-cache key. On `claude-code`, the same block is the input Anthropic uses to bill the request against the user's plan and must be preserved.",
   },
+  {
+    id: 'strip-prompt-cache-key',
+    label: 'Strip prompt_cache_key from request',
+    description: 'Drop the top-level `prompt_cache_key` field from Chat Completions and Responses requests before forwarding upstream. Pick this when the upstream rejects `prompt_cache_key` as an unknown argument (e.g. Azure DeepSeek). OpenAI-native and truly OpenAI-compatible upstreams accept the field for prefix-cache attribution, so this stays off by default.',
+  },
 ] as const satisfies readonly Flag[];
 
 export type FlagId = (typeof OPTIONAL_FLAGS)[number]['id'];

@@ -7,6 +7,7 @@ import { withCyberPolicyRetried } from './retry-cyber-policy.ts';
 import { withResponsesServerToolShim } from './server-tool-shim.ts';
 import { imageGenerationServerTool } from './server-tools/image-generation.ts';
 import { webSearchServerTool } from './server-tools/web-search.ts';
+import { withPromptCacheKeyStripped } from './strip-prompt-cache-key.ts';
 import type { ResponsesInterceptor } from './types.ts';
 import { withVendorDeepseekResponsesNormalize } from './vendor-deepseek-normalize.ts';
 import { withVendorQwenResponsesNormalize } from './vendor-qwen-normalize.ts';
@@ -36,6 +37,11 @@ import { withVendorQwenResponsesNormalize } from './vendor-qwen-normalize.ts';
 //     rewrites any `role: 'system'` message item that follows the leading
 //     contiguous system run to `role: 'user'` so upstreams that reject
 //     mid-stream system messages still accept the body.
+//   - withPromptCacheKeyStripped: gated by `strip-prompt-cache-key`. Drops
+//     the top-level `prompt_cache_key` field for upstreams that reject it
+//     as an unknown argument (e.g. Azure DeepSeek). Runs before vendor
+//     normalizers so vendor-specific translation sees the already-stripped
+//     canonical payload.
 //   - withVendor*ResponsesNormalize: gated by `vendor-<X>`. Registered after
 //     the demotion entries so each gets the final say on the outbound wire
 //     body.
@@ -56,6 +62,7 @@ export const responsesInterceptors: readonly ResponsesInterceptor[] = [
   withReasoningDisabledOnForcedToolChoice,
   withDemoteDeveloperToSystem,
   withInterleavedSystemDemotedToUser,
+  withPromptCacheKeyStripped,
   withVendorDeepseekResponsesNormalize,
   withVendorQwenResponsesNormalize,
   withResponsesOutputItemsCanonicalized,
