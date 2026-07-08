@@ -30,11 +30,14 @@ export const COPILOT_DEFAULT_FLAGS: FlagDefaults = {
 // turn placed between assistant/user turns rather than in the top-level
 // `system` field).
 //
-// The id-family regex accepts both the dash-separated minor form
-// (`claude-opus-4-8`, the shape copilotPublicModelId emits) and the
-// dotted form (`claude-opus-4.8`, seen on raw upstream ids). Whole-
-// number releases drop the minor slot; missing minor is treated as 0
-// so the version comparison works uniformly.
+// The id-family regex accepts any `claude-<family>-<major>[[.-]<minor>]`
+// shape — the version number is the sole gate, family names are opaque
+// (Anthropic ships new sub-families on their own schedule; the historical
+// catalog is opus/sonnet/haiku but a future `claude-<newfamily>-<N.M>`
+// routes the same way). Both dash-separated minor form (`claude-opus-4-8`,
+// the shape copilotPublicModelId emits) and dotted form (`claude-opus-4.8`,
+// seen on raw upstream ids) are accepted; whole-number releases drop the
+// minor slot, missing minor is treated as 0.
 //
 // # Empirical evidence
 //
@@ -95,7 +98,7 @@ export const COPILOT_DEFAULT_FLAGS: FlagDefaults = {
 // every 5.x release (which trivially exceeds `[4, 8]`); everything at
 // 4.7 or below stays demoted.
 const supportsInlineSystem = (id: string): boolean => {
-  const m = /^claude-(?:opus|sonnet|haiku)-(\d+)(?:[.-](\d+))?$/.exec(id);
+  const m = /^claude-[a-z]+-(\d+)(?:[.-](\d+))?$/.exec(id);
   if (!m) return false;
   const major = Number(m[1]);
   const minor = Number(m[2] ?? 0);
