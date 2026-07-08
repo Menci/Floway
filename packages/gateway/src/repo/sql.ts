@@ -675,12 +675,10 @@ class SqlPerformanceRepo implements PerformanceRepo {
       'DELETE FROM performance_buckets WHERE hour = ? AND key_id = ? AND model = ? AND upstream = ? AND runtime_location = ?',
     ).bind(...performanceDimensionBinds(record));
 
-    const bucketStmts = record.buckets.map(bucket =>
-      this.db.prepare(
-        `INSERT INTO performance_buckets (hour, key_id, model, upstream, runtime_location, metric, lower, upper, count)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).bind(...performanceDimensionBinds(record), bucket.metric, bucket.lower, bucket.upper, bucket.count),
-    );
+    const bucketStmts = record.buckets.map(bucket => this.db.prepare(
+      `INSERT INTO performance_buckets (hour, key_id, model, upstream, runtime_location, metric, lower, upper, count)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).bind(...performanceDimensionBinds(record), bucket.metric, bucket.lower, bucket.upper, bucket.count));
 
     await runStatements(this.db, [summaryStmt, deleteStmt, ...bucketStmts]);
   }

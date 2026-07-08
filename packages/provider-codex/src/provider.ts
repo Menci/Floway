@@ -10,7 +10,7 @@ import { pricingForCodexModelKey } from './pricing.ts';
 import { assertCodexUpstreamState, type CodexUpstreamState } from './state.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import { toCompactPayloadShape } from '@floway-dev/protocols/responses';
-import { getProviderRepo, resolveEffectiveFlags, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderResponsesResult, type ProviderStreamResult, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
+import { getProviderRepo, resolveEffectiveFlags, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderResponsesResult, type ProviderStreamResult, type UpstreamRecord } from '@floway-dev/provider';
 
 export const createCodexProvider = (record: UpstreamRecord): Provider => {
   assertCodexUpstreamRecord(record);

@@ -1,4 +1,4 @@
--- packages/gateway/migrations/0049_perf_ttft_tpot.sql
+-- packages/gateway/migrations/0050_perf_ttft_tpot.sql
 
 DROP TABLE IF EXISTS performance_latency_buckets;
 DROP TABLE IF EXISTS performance_summary;
