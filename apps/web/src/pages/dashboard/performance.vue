@@ -143,13 +143,15 @@ const formatMs = (ms: number | null) => {
   return `${Math.round(ms)}ms`;
 };
 
-const formatTokPerSec = (us: number | null): string => {
-  if (us === null || us <= 0) return '—';
-  const tokPerSec = 1_000_000 / us;
-  if (tokPerSec >= 100) return `${Math.round(tokPerSec)} tok/s`;
-  if (tokPerSec >= 10) return `${tokPerSec.toFixed(1)} tok/s`;
-  return `${tokPerSec.toFixed(2)} tok/s`;
+const formatTps = (tps: number | null): string => {
+  if (tps === null || tps <= 0) return '—';
+  if (tps >= 100) return `${Math.round(tps)} tok/s`;
+  if (tps >= 10) return `${tps.toFixed(1)} tok/s`;
+  return `${tps.toFixed(2)} tok/s`;
 };
+
+const formatTokPerSec = (us: number | null): string =>
+  us === null || us <= 0 ? '—' : formatTps(1_000_000 / us);
 
 const getTtftValue = (record: PerformanceDisplayRecord, p: PercentileKey): number | null => {
   if (p === 'p50') return record.ttftMsP50;
@@ -165,6 +167,17 @@ const getTokPerSecValue = (record: PerformanceDisplayRecord, p: PercentileKey): 
 const getChartValue = (record: PerformanceDisplayRecord, p: PercentileKey): number | null =>
   performanceMetric.value === 'ttft' ? getTtftValue(record, p) : getTokPerSecValue(record, p);
 
+const getRowAvg = (record: PerformanceDisplayRecord): number | null => {
+  if (performanceMetric.value === 'ttft') return record.ttftMsAvg;
+  const us = record.tpotUsAvg;
+  return us === null || us <= 0 ? null : 1_000_000 / us;
+};
+
+const formatRowValue = (v: number | null): string =>
+  performanceMetric.value === 'ttft' ? formatMs(v) : formatTps(v);
+
+const metricLabel = computed(() => performanceMetric.value === 'ttft' ? 'TTFT' : 'Speed');
+
 const percentileButtonLabel = (p: PercentileKey): string => {
   if (performanceMetric.value === 'tokPerSec') {
     if (p === 'p95') return 'worst 5%';
@@ -176,7 +189,7 @@ const percentileButtonLabel = (p: PercentileKey): string => {
 const chartConfig = computed<ChartConfiguration<'line'>>(() => {
   const { keys: bucketKeys, labels } = dashboardBuckets(loadedPerformanceRange.value, loadedAt.value);
   const metric = performanceMetric.value;
-  const formatter = metric === 'ttft' ? formatMs : formatTokPerSec;
+  const formatter = metric === 'ttft' ? formatMs : formatTps;
   const yTitle = metric === 'ttft' ? 'TTFT (ms)' : 'decode tok/s';
 
   const datasets = performanceChartView.value === 'group'
@@ -470,16 +483,16 @@ const performanceSummary = computed(() => {
                 <tr>
                   <th class="px-3 py-2 text-left font-medium">Model</th>
                   <th class="px-3 py-2 text-right font-medium">Req</th>
-                  <th class="px-3 py-2 text-right font-medium">TTFT {{ performancePercentile }}</th>
-                  <th class="px-3 py-2 text-right font-medium">TTFT avg</th>
+                  <th class="px-3 py-2 text-right font-medium">{{ metricLabel }} {{ percentileButtonLabel(performancePercentile) }}</th>
+                  <th class="px-3 py-2 text-right font-medium">{{ metricLabel }} avg</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-white/5">
                 <tr v-for="row in overview.modelRows" :key="row.group">
                   <td class="px-3 py-2 text-gray-300">{{ row.group }}</td>
                   <td class="px-3 py-2 text-right font-mono text-gray-400">{{ row.requests.toLocaleString() }}</td>
-                  <td class="px-3 py-2 text-right font-mono text-white">{{ formatMs(getTtftValue(row, performancePercentile)) }}</td>
-                  <td class="px-3 py-2 text-right font-mono text-gray-400">{{ formatMs(row.ttftMsAvg) }}</td>
+                  <td class="px-3 py-2 text-right font-mono text-white">{{ formatRowValue(getChartValue(row, performancePercentile)) }}</td>
+                  <td class="px-3 py-2 text-right font-mono text-gray-400">{{ formatRowValue(getRowAvg(row)) }}</td>
                 </tr>
               </tbody>
             </table>
@@ -493,16 +506,16 @@ const performanceSummary = computed(() => {
                 <tr>
                   <th class="px-3 py-2 text-left font-medium">Upstream</th>
                   <th class="px-3 py-2 text-right font-medium">Req</th>
-                  <th class="px-3 py-2 text-right font-medium">TTFT {{ performancePercentile }}</th>
-                  <th class="px-3 py-2 text-right font-medium">TTFT avg</th>
+                  <th class="px-3 py-2 text-right font-medium">{{ metricLabel }} {{ percentileButtonLabel(performancePercentile) }}</th>
+                  <th class="px-3 py-2 text-right font-medium">{{ metricLabel }} avg</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-white/5">
                 <tr v-for="row in overview.upstreamRows" :key="row.group">
                   <td class="px-3 py-2 text-gray-300">{{ row.group }}</td>
                   <td class="px-3 py-2 text-right font-mono text-gray-400">{{ row.requests.toLocaleString() }}</td>
-                  <td class="px-3 py-2 text-right font-mono text-white">{{ formatMs(getTtftValue(row, performancePercentile)) }}</td>
-                  <td class="px-3 py-2 text-right font-mono text-gray-400">{{ formatMs(row.ttftMsAvg) }}</td>
+                  <td class="px-3 py-2 text-right font-mono text-white">{{ formatRowValue(getChartValue(row, performancePercentile)) }}</td>
+                  <td class="px-3 py-2 text-right font-mono text-gray-400">{{ formatRowValue(getRowAvg(row)) }}</td>
                 </tr>
               </tbody>
             </table>
@@ -516,16 +529,16 @@ const performanceSummary = computed(() => {
                 <tr>
                   <th class="px-3 py-2 text-left font-medium">Region</th>
                   <th class="px-3 py-2 text-right font-medium">Req</th>
-                  <th class="px-3 py-2 text-right font-medium">TTFT {{ performancePercentile }}</th>
-                  <th class="px-3 py-2 text-right font-medium">TTFT avg</th>
+                  <th class="px-3 py-2 text-right font-medium">{{ metricLabel }} {{ percentileButtonLabel(performancePercentile) }}</th>
+                  <th class="px-3 py-2 text-right font-medium">{{ metricLabel }} avg</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-white/5">
                 <tr v-for="row in overview.runtimeRows" :key="row.group">
                   <td class="px-3 py-2 text-gray-300">{{ row.group }}</td>
                   <td class="px-3 py-2 text-right font-mono text-gray-400">{{ row.requests.toLocaleString() }}</td>
-                  <td class="px-3 py-2 text-right font-mono text-white">{{ formatMs(getTtftValue(row, performancePercentile)) }}</td>
-                  <td class="px-3 py-2 text-right font-mono text-gray-400">{{ formatMs(row.ttftMsAvg) }}</td>
+                  <td class="px-3 py-2 text-right font-mono text-white">{{ formatRowValue(getChartValue(row, performancePercentile)) }}</td>
+                  <td class="px-3 py-2 text-right font-mono text-gray-400">{{ formatRowValue(getRowAvg(row)) }}</td>
                 </tr>
               </tbody>
             </table>
