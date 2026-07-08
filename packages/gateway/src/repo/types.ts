@@ -84,30 +84,38 @@ export interface SearchUsageRecord {
   requests: number;
 }
 
-export type PerformanceMetricScope = 'request_total' | 'upstream_success';
+export type PerformanceMetric = 'ttft_ms' | 'tpot_us';
 
 export interface PerformanceDimensions {
-  hour: string;
-  metricScope: PerformanceMetricScope;
+  hour: string;              // 'YYYY-MM-DDTHH'
   keyId: string;
   model: string;
-  upstream: string | null;
-  modelKey: string;
-  stream: boolean;
+  upstream: string;
   runtimeLocation: string;
 }
 
-export interface PerformanceLatencySample extends PerformanceDimensions {
-  durationMs: number;
+export interface PerformanceSample extends PerformanceDimensions {
+  ttftMs: number;            // 0 or positive
+  tpotUs: number;            // 0 or positive
+  outputTokens: number;      // > 0 for a sample to count
 }
 
-export type PerformanceErrorSample = PerformanceDimensions;
+export interface PerformanceErrorSample extends PerformanceDimensions {}
+
+export interface PerformanceBucketRow {
+  metric: PerformanceMetric;
+  lower: number;
+  upper: number | null;
+  count: number;
+}
 
 export interface PerformanceTelemetryRecord extends PerformanceDimensions {
-  requests: number;
+  requests: number;           // samples + errors
   errors: number;
-  totalMsSum: number;
-  buckets: HistogramBucket[];
+  samples: number;
+  ttftMsSum: number;
+  tpotUsSum: number;
+  buckets: readonly PerformanceBucketRow[];
 }
 
 export interface ApiKeyRepo {
@@ -175,10 +183,14 @@ export interface SearchUsageRepo {
 }
 
 export interface PerformanceRepo {
-  recordLatency(sample: PerformanceLatencySample): Promise<void>;
+  // Writes one sample: increments summary sums + samples + requests, and
+  // increments one TTFT bucket + one TPOT bucket.
+  recordSample(sample: PerformanceSample): Promise<void>;
+  // Writes one error: increments summary requests + errors only.
   recordError(sample: PerformanceErrorSample): Promise<void>;
-  query(opts: { keyId?: string; metricScope?: PerformanceMetricScope; start: string; end: string }): Promise<PerformanceTelemetryRecord[]>;
+  query(opts: { keyId?: string; start: string; end: string }): Promise<PerformanceTelemetryRecord[]>;
   listAll(): Promise<PerformanceTelemetryRecord[]>;
+  // Replacement upsert used by admin restore paths.
   set(record: PerformanceTelemetryRecord): Promise<void>;
   deleteAll(): Promise<void>;
 }

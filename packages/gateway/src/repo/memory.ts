@@ -18,6 +18,7 @@ import type {
   ModelsCacheRepo,
   PerformanceDimensions,
   PerformanceErrorSample,
+  // TODO(perf-ttft-tpot): removed by tasks 4/5
   PerformanceLatencySample,
   PerformanceRepo,
   PerformanceTelemetryRecord,
