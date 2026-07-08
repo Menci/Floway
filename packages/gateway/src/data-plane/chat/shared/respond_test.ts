@@ -19,7 +19,6 @@ const testPerformanceContext: PerformanceTelemetryContext = {
   model: 'claude-test',
   upstream: 'copilot:1',
   modelKey: 'claude-test-raw',
-  stream: true,
   runtimeLocation: 'SJC',
 };
 

@@ -58,9 +58,8 @@ export interface TelemetryModelIdentity {
 export interface PerformanceTelemetryContext {
   keyId: string;
   model: string;
-  upstream: string | null;
+  upstream: string;
   modelKey: string;
-  stream: boolean;
   runtimeLocation: string;
 }
 

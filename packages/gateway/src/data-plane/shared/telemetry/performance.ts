@@ -13,7 +13,6 @@ const performanceDimensions = (context: PerformanceTelemetryContext, metricScope
   model: context.model,
   upstream: context.upstream,
   modelKey: context.modelKey,
-  stream: context.stream,
   runtimeLocation: context.runtimeLocation,
 });
 

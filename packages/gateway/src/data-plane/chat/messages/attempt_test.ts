@@ -213,7 +213,6 @@ test('generate attaches the performance context and records upstream_success', a
   assertEquals(result.performance.model, 'test-model');
   assertEquals(result.performance.upstream, 'up_perf');
   assertEquals(result.performance.modelKey, 'gpt-test');
-  assertEquals(result.performance.stream, true);
   assertEquals(result.performance.runtimeLocation, 'SJC');
 
   await collectEvents(result.events);

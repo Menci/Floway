@@ -654,7 +654,6 @@ const issueImageCall = async (
       model: model.id,
       upstream: provider.upstream,
       modelKey,
-      stream: false,
       runtimeLocation: state.runtimeLocation,
     };
     if (response.ok) {

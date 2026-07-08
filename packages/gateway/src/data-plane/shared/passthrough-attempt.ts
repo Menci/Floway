@@ -36,10 +36,6 @@ export interface PassthroughAttemptArgs {
   readonly c: AuthedContext;
   readonly ctx: GatewayCtx;
   readonly candidate: ModelCandidate;
-  // `true` when the passthrough serves an SSE stream (completions); flows
-  // through to `PerformanceTelemetryContext.stream` so per-model latency
-  // charts stay split by streaming vs one-shot semantics.
-  readonly stream: boolean;
   // Performs the upstream HTTP call for the chosen (provider, model) pair.
   // Delegated to the passthrough caller so each endpoint keeps its
   // request-body shaping (`{ model: _, ...body }`) local. Any throw here
@@ -49,7 +45,7 @@ export interface PassthroughAttemptArgs {
 }
 
 export const passthroughAttempt = async (args: PassthroughAttemptArgs): Promise<PassthroughAttemptResult> => {
-  const { c, ctx, candidate, stream, call } = args;
+  const { c, ctx, candidate, call } = args;
   const recorder = createUpstreamLatencyRecorder();
   const { response, modelKey } = await call(candidate.provider, providerModelOf(candidate), {
     fetcher: candidate.fetcher,
@@ -72,7 +68,6 @@ export const passthroughAttempt = async (args: PassthroughAttemptArgs): Promise<
     model: identity.model,
     upstream: identity.upstream,
     modelKey: identity.modelKey,
-    stream,
     runtimeLocation: ctx.runtimeLocation,
   };
   // Upstream-perf is recorded per attempt so the dashboard shows each

@@ -14,7 +14,6 @@ const CONTEXT: PerformanceTelemetryContext = {
   model: 'test-model',
   upstream: 'up_test',
   modelKey: 'test-model',
-  stream: true,
   runtimeLocation: 'TEST',
 };
 

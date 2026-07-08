@@ -8,14 +8,13 @@ export { createUpstreamLatencyRecorder } from '../../shared/telemetry/performanc
 type TerminalKind = 'success' | 'failure';
 
 // The full telemetry context for one upstream call: request-scoped dimensions
-// (keyId, stream, runtimeLocation) come off the gateway ctx, the model
-// dimensions off the chosen candidate plus the upstream-reported model key.
+// (keyId, runtimeLocation) come off the gateway ctx, the model dimensions
+// off the chosen candidate plus the upstream-reported model key.
 export const upstreamPerformanceContext = (ctx: GatewayCtx, candidate: ModelCandidate, modelKey: string): PerformanceTelemetryContext => ({
   keyId: ctx.apiKeyId,
   model: candidate.model.id,
   upstream: candidate.provider.upstream,
   modelKey,
-  stream: ctx.wantsStream,
   runtimeLocation: ctx.runtimeLocation,
 });
 

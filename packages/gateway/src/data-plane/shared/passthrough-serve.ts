@@ -184,7 +184,6 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
       async candidate => {
         const attempted = await passthroughAttempt({
           c, ctx, candidate,
-          stream: responseHandling.format === 'sse',
           call,
         });
         lastPerformance = attempted.performance;
