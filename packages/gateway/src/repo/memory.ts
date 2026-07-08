@@ -18,10 +18,11 @@ import type {
   ModelsCacheRepo,
   PerformanceDimensions,
   PerformanceErrorSample,
-  // TODO(perf-ttft-tpot): removed by tasks 4/5
-  PerformanceLatencySample,
   PerformanceRepo,
   PerformanceTelemetryRecord,
+  PerformanceSample,
+  PerformanceBucketRow,
+  PerformanceMetric,
   ProxyBackoffRepo,
   ProxyRecord,
   ProxyRepo,
@@ -42,7 +43,7 @@ import type {
   UsersRepo,
 } from './types.ts';
 import { serializeStoredState } from './upstream-json.ts';
-import { latencyBucketForMs } from '../shared/performance-histogram.ts';
+import { bucketForTtftMs, bucketForTpotUs } from '../shared/performance-histogram.ts';
 import { generateSessionToken } from '../shared/session-tokens.ts';
 import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';
 import { BILLING_DIMENSIONS, type BillingDimension, type ModelPricing, resolveEffectivePricing, unitPriceForDimension } from '@floway-dev/protocols/common';
@@ -382,95 +383,73 @@ class MemorySearchUsageRepo implements SearchUsageRepo {
   }
 }
 
-const comparePerformanceTelemetryRecords = (a: PerformanceTelemetryRecord, b: PerformanceTelemetryRecord): number =>
-  a.hour.localeCompare(b.hour) ||
-  a.metricScope.localeCompare(b.metricScope) ||
-  a.keyId.localeCompare(b.keyId) ||
-  a.model.localeCompare(b.model) ||
-  (a.upstream ?? '').localeCompare(b.upstream ?? '') ||
-  a.modelKey.localeCompare(b.modelKey) ||
-  Number(a.stream) - Number(b.stream) ||
-  a.runtimeLocation.localeCompare(b.runtimeLocation);
-
 class MemoryPerformanceRepo implements PerformanceRepo {
-  private summaries = new Map<string, PerformanceTelemetryRecord>();
+  // Keyed by JSON.stringify of the dimensions.
+  private readonly summaries = new Map<string, PerformanceTelemetryRecord & { bucketMap: Map<string, PerformanceBucketRow> }>();
 
-  private key(r: PerformanceDimensions): string {
-    return [r.hour, r.metricScope, r.keyId, r.model, r.upstream ?? '', r.modelKey, r.stream ? '1' : '0', r.runtimeLocation].join('\0');
+  async recordSample(sample: PerformanceSample): Promise<void> {
+    const row = this.upsertRow(sample);
+    row.requests += 1;
+    row.samples += 1;
+    row.ttftMsSum += sample.ttftMs;
+    row.tpotUsSum += sample.tpotUs;
+    const ttftBucket = bucketForTtftMs(sample.ttftMs);
+    const tpotBucket = bucketForTpotUs(sample.tpotUs);
+    this.incrementBucket(row, 'ttft_ms', ttftBucket);
+    this.incrementBucket(row, 'tpot_us', tpotBucket);
   }
 
-  private summary(sample: PerformanceDimensions): PerformanceTelemetryRecord {
-    const key = this.key(sample);
-    let record = this.summaries.get(key);
-    if (!record) {
-      record = {
-        hour: sample.hour,
-        metricScope: sample.metricScope,
-        keyId: sample.keyId,
-        model: sample.model,
-        upstream: sample.upstream ?? null,
-        modelKey: sample.modelKey,
-        stream: sample.stream,
-        runtimeLocation: sample.runtimeLocation,
-        requests: 0,
-        errors: 0,
-        totalMsSum: 0,
-        buckets: [],
-      };
-      this.summaries.set(key, record);
-    }
-    return record;
+  async recordError(sample: PerformanceErrorSample): Promise<void> {
+    const row = this.upsertRow(sample);
+    row.requests += 1;
+    row.errors += 1;
   }
 
-  recordLatency(sample: PerformanceLatencySample): Promise<void> {
-    const record = this.summary(sample);
-    const durationMs = Math.max(0, Math.round(sample.durationMs));
-    record.requests += 1;
-    record.totalMsSum += durationMs;
-
-    const bucket = latencyBucketForMs(durationMs);
-    const existing = record.buckets.find(b => b.lowerMs === bucket.lowerMs && b.upperMs === bucket.upperMs);
-    if (existing) {
-      existing.count += 1;
-    } else {
-      record.buckets.push({ ...bucket, count: 1 });
-      record.buckets.sort((a, b) => a.upperMs - b.upperMs || a.lowerMs - b.lowerMs);
-    }
-    return Promise.resolve();
+  async query(opts: { keyId?: string; start: string; end: string }): Promise<PerformanceTelemetryRecord[]> {
+    return [...this.summaries.values()]
+      .filter(r => (opts.keyId ? r.keyId === opts.keyId : true) && r.hour >= opts.start && r.hour <= opts.end)
+      .map(this.freeze);
   }
 
-  recordError(sample: PerformanceErrorSample): Promise<void> {
-    this.summary(sample).errors += 1;
-    return Promise.resolve();
+  async listAll(): Promise<PerformanceTelemetryRecord[]> {
+    return [...this.summaries.values()].map(this.freeze);
   }
 
-  query(opts: { keyId?: string; metricScope?: PerformanceTelemetryRecord['metricScope']; start: string; end: string }): Promise<PerformanceTelemetryRecord[]> {
-    return Promise.resolve(
-      [...this.summaries.values()]
-        .filter(r => r.hour >= opts.start && r.hour < opts.end)
-        .filter(r => !opts.keyId || r.keyId === opts.keyId)
-        .filter(r => !opts.metricScope || r.metricScope === opts.metricScope)
-        .map(r => ({ ...r, buckets: r.buckets.map(b => ({ ...b })) }))
-        .sort(comparePerformanceTelemetryRecords),
-    );
+  async set(record: PerformanceTelemetryRecord): Promise<void> {
+    const key = this.rowKey(record);
+    const bucketMap = new Map(record.buckets.map(b => [`${b.metric}\0${b.lower}`, { ...b }] as const));
+    this.summaries.set(key, { ...record, bucketMap });
   }
 
-  listAll(): Promise<PerformanceTelemetryRecord[]> {
-    return Promise.resolve([...this.summaries.values()].map(r => ({ ...r, buckets: r.buckets.map(b => ({ ...b })) })).sort(comparePerformanceTelemetryRecords));
-  }
-
-  set(record: PerformanceTelemetryRecord): Promise<void> {
-    this.summaries.set(this.key(record), {
-      ...record,
-      buckets: record.buckets.map(bucket => ({ ...bucket })).sort((a, b) => a.upperMs - b.upperMs || a.lowerMs - b.lowerMs),
-    });
-    return Promise.resolve();
-  }
-
-  deleteAll(): Promise<void> {
+  async deleteAll(): Promise<void> {
     this.summaries.clear();
-    return Promise.resolve();
   }
+
+  private rowKey(dims: PerformanceDimensions): string {
+    return `${dims.hour}\0${dims.keyId}\0${dims.model}\0${dims.upstream}\0${dims.runtimeLocation}`;
+  }
+
+  private upsertRow(dims: PerformanceDimensions) {
+    const key = this.rowKey(dims);
+    let row = this.summaries.get(key);
+    if (!row) {
+      row = { ...dims, requests: 0, errors: 0, samples: 0, ttftMsSum: 0, tpotUsSum: 0, buckets: [], bucketMap: new Map() };
+      this.summaries.set(key, row);
+    }
+    return row;
+  }
+
+  private incrementBucket(row: { bucketMap: Map<string, PerformanceBucketRow> }, metric: PerformanceMetric, edges: { lower: number; upper: number | null }) {
+    const key = `${metric}\0${edges.lower}`;
+    const existing = row.bucketMap.get(key);
+    if (existing) { existing.count += 1; return; }
+    row.bucketMap.set(key, { metric, lower: edges.lower, upper: edges.upper, count: 1 });
+  }
+
+  private freeze = (row: { bucketMap: Map<string, PerformanceBucketRow> } & PerformanceTelemetryRecord): PerformanceTelemetryRecord => ({
+    ...row,
+    buckets: [...row.bucketMap.values()].map(b => ({ ...b })),
+  });
 }
 
 class MemoryModelsCacheRepo implements ModelsCacheRepo {
