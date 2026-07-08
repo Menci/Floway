@@ -17,10 +17,12 @@ const props = withDefaults(defineProps<{
   providerDefaults: FlagDefaults;
   inheritedOverrides?: FlagOverrides;
   namePrefix?: string;
+  readOnly?: boolean;
   class?: HTMLAttributes['class'];
 }>(), {
   inheritedOverrides: () => ({}),
   namePrefix: 'flag',
+  readOnly: false,
 });
 
 type TriState = 'inherit' | 'on' | 'off';
@@ -52,7 +54,9 @@ const stateLabel = (state: TriState, flag: Flag) => {
 };
 
 const pillClass = (state: TriState, selected: boolean, inheritedTo: 'on' | 'off') => {
-  if (!selected) return 'border-white/10 text-gray-500 hover:bg-white/5';
+  if (!selected) return props.readOnly
+    ? 'border-white/10 text-gray-600'
+    : 'border-white/10 text-gray-500 hover:bg-white/5';
   if (state === 'on') return 'border-accent-emerald/40 bg-accent-emerald/15 text-accent-emerald';
   if (state === 'off') return 'border-accent-rose/40 bg-accent-rose/15 text-accent-rose';
   return inheritedTo === 'on'
@@ -74,12 +78,12 @@ const pillClass = (state: TriState, selected: boolean, inheritedTo: 'on' | 'off'
           <span class="block break-words text-xs text-white">{{ flag.label }}</span>
           <span v-if="flag.description" class="mt-0.5 block text-[11px] text-gray-500">{{ flag.description }}</span>
         </div>
-        <fieldset class="flex shrink-0 items-center gap-1 text-[11px]">
+        <fieldset class="flex shrink-0 items-center gap-1 text-[11px]" :disabled="readOnly">
           <label
             v-for="state in (['inherit', 'on', 'off'] as TriState[])"
             :key="state"
-            class="flex cursor-pointer items-center gap-1 rounded border px-1.5 py-0.5 transition-colors"
-            :class="pillClass(state, stateFor(flag.id) === state, inheritedLabel(flag))"
+            class="flex items-center gap-1 rounded border px-1.5 py-0.5 transition-colors"
+            :class="[pillClass(state, stateFor(flag.id) === state, inheritedLabel(flag)), readOnly ? 'cursor-default' : 'cursor-pointer']"
           >
             <input
               type="radio"

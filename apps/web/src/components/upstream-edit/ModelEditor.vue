@@ -7,17 +7,13 @@ import { defaultEndpointsForKind, publicIdOf, titleFor, type Row } from './model
 import type { AnnouncedMetadata, BillingDimension, ModelKind, ModelPricing, UpstreamChatConfig, UpstreamModelConfig } from '../../api/types.ts';
 import { parseOptionalNumber } from '../../utils/parse-optional-number.ts';
 import ChatMetadataEditor from '../shared/ChatMetadataEditor.vue';
-import type { Flag, FlagDefaults, FlagId, FlagOverrides } from '@floway-dev/provider/flags';
+import type { Flag, FlagDefaults, FlagOverrides } from '@floway-dev/provider/flags';
 import { Button, Input, Select, Switch, Tooltip } from '@floway-dev/ui';
 
 const props = defineProps<{
   row: Row | null;
   flags: Flag[];
   upstreamFlagOverrides: FlagOverrides;
-  // Provider-declared upstream-level default for every flag on this
-  // upstream kind. The per-model editor's "Inherit" pill resolves via
-  // the upstream override (live-edited, `upstreamFlagOverrides`) if set,
-  // else falls through to this map.
   providerFlagDefaults: FlagDefaults;
   // "Upstream Model ID" for custom/copilot, "Deployment" for azure.
   upstreamIdLabel: string;
@@ -61,23 +57,6 @@ const PRICING_BY_KIND: Record<ModelKind, BillingDimension[]> = {
 const config = computed<UpstreamModelConfig | null>(() => props.row?.config ?? null);
 const editable = computed(() => props.row?.kind === 'manual');
 const rowKind = computed<ModelKind>(() => config.value?.kind ?? 'chat');
-
-// Auto-row read-only flag view: resolve each flag through the three
-// layers (upstream default → operator upstream override → provider
-// per-model default) and label the winning source in one walk.
-// Mirrors the layer order the data plane applies in
-// `resolveEffectiveFlags` at request time, so what the dashboard shows
-// is exactly what the provider dispatches.
-const autoRowFlagState = (flagId: string): { on: boolean; source: string } => {
-  const id = flagId as FlagId;
-  const perModel = config.value?.flagOverrides?.[id];
-  if (perModel !== undefined) return { on: perModel, source: 'provider — this model' };
-  const upstreamOverride = props.upstreamFlagOverrides[id];
-  if (upstreamOverride !== undefined) return { on: upstreamOverride, source: 'upstream override' };
-  return { on: props.providerFlagDefaults[id], source: 'provider default' };
-};
-
-const autoFlagRows = computed(() => props.flags.map(flag => ({ flag, state: autoRowFlagState(flag.id) })));
 
 const patch = (next: Partial<UpstreamModelConfig>) => {
   if (!editable.value) return;
@@ -554,9 +533,8 @@ watch(isReasoningValid, valid => { emit('validity-change', valid); }, { immediat
 
         <section>
           <div class="mb-3 flex items-baseline gap-3">
-            <h3 class="text-[11px] font-semibold uppercase tracking-wider text-gray-500">{{ editable ? 'Override Feature Flags' : 'Effective Feature Flags' }}</h3>
+            <h3 class="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Feature Flags</h3>
             <span v-if="editable" class="text-[11px] text-gray-500">applied on top of upstream-level flags; <code class="font-mono">Inherit</code> reflects the upstream-resolved value</span>
-            <span v-else class="text-[11px] text-gray-500">resolved from upstream default → upstream override → provider per-model rule</span>
             <Switch
               v-if="editable"
               :model-value="config.flagOverrides !== undefined"
@@ -565,41 +543,19 @@ watch(isReasoningValid, valid => { emit('validity-change', valid); }, { immediat
             />
           </div>
           <FlagOverridesEditor
-            v-if="editable && config.flagOverrides !== undefined"
-            :model-value="config.flagOverrides"
+            v-if="!editable || config.flagOverrides !== undefined"
+            :model-value="config.flagOverrides ?? {}"
             :flags="flags"
             :provider-defaults="providerFlagDefaults"
             :inherited-overrides="upstreamFlagOverrides"
             :name-prefix="`${row.uiId}-flag`"
+            :read-only="!editable"
             class="max-h-72"
             @update:model-value="v => patch({ flagOverrides: v })"
           />
-          <p v-else-if="editable" class="text-[11px] text-gray-600">
+          <p v-else class="text-[11px] text-gray-600">
             Toggle on to override individual flags for this model only.
           </p>
-          <div v-else class="max-h-72 overflow-y-auto">
-            <div class="grid grid-cols-[repeat(auto-fit,minmax(320px,1fr))]">
-              <div
-                v-for="row in autoFlagRows"
-                :key="row.flag.id"
-                class="flex min-w-0 items-start justify-between gap-3 border-t border-white/[0.06] px-1 py-2.5"
-              >
-                <div class="min-w-0">
-                  <span class="block break-words text-xs text-white">{{ row.flag.label }}</span>
-                  <span v-if="row.flag.description" class="mt-0.5 block text-[11px] text-gray-500">{{ row.flag.description }}</span>
-                </div>
-                <div class="flex shrink-0 flex-col items-end gap-0.5 text-[11px]">
-                  <span
-                    class="rounded border px-1.5 py-0.5"
-                    :class="row.state.on
-                      ? 'border-accent-emerald/40 bg-accent-emerald/15 text-accent-emerald'
-                      : 'border-accent-rose/40 bg-accent-rose/15 text-accent-rose'"
-                  >{{ row.state.on ? 'On' : 'Off' }}</span>
-                  <span class="text-[10px] text-gray-500">{{ row.state.source }}</span>
-                </div>
-              </div>
-            </div>
-          </div>
         </section>
 
       </div>
