@@ -143,7 +143,12 @@ export const performanceOverview = async (c: Ctx) => {
   if (rawRecords === null) return c.json({ error: 'Unknown key_id' }, 404);
 
   const baseOptions = { timezoneOffsetMinutes: params.value.timezoneOffsetMinutes };
-  const series = aggregatePerformanceForDisplay(rawRecords, { ...baseOptions, bucket: params.value.bucket, groupBy: 'model' });
+  const series = aggregatePerformanceForDisplay(
+    rawRecords,
+    params.value.groupBy === 'userId'
+      ? { ...baseOptions, bucket: params.value.bucket, groupBy: 'userId', keyToUser: await buildKeyToUserMap() }
+      : { ...baseOptions, bucket: params.value.bucket, groupBy: params.value.groupBy },
+  );
   const summaryRows = aggregatePerformanceForDisplay(rawRecords, { ...baseOptions, bucket: 'all', groupBy: 'none' });
   const modelRows = aggregatePerformanceForDisplay(rawRecords, { ...baseOptions, bucket: 'all', groupBy: 'model' });
   const upstreamRows = aggregatePerformanceForDisplay(rawRecords, { ...baseOptions, bucket: 'all', groupBy: 'upstream' });

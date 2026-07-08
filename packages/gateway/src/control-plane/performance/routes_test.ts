@@ -227,7 +227,7 @@ test('/api/performance/overview series stays per-model under all-by-user view', 
   await repo.performance.recordSample({ ...sample, keyId: apiKey.id });
   await repo.performance.recordSample({ ...sample, keyId: 'key_other' });
 
-  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&bucket=hour&view=all-by-user&include_user_metadata=1', { headers: { 'x-floway-session': adminSession } });
+  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&bucket=hour&group_by=model&view=all-by-user&include_user_metadata=1', { headers: { 'x-floway-session': adminSession } });
 
   assertEquals(response.status, 200);
   const body = await response.json();
