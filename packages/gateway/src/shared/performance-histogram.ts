@@ -1,40 +1,50 @@
+export const TTFT_UPPER_EDGES_MS = [
+  50, 100, 200, 500, 1_000, 2_000, 5_000, 10_000, 20_000, 30_000,
+  60_000, 120_000, 300_000, 600_000, 1_200_000, 1_800_000,
+] as const;
+
+export const TPOT_UPPER_EDGES_US = [
+  200, 500, 1_000, 2_000, 5_000, 10_000, 20_000, 30_000,
+  50_000, 75_000, 100_000, 200_000, 500_000, 1_000_000, 2_500_000, 10_000_000,
+] as const;
+
 export interface HistogramBucket {
-  lowerMs: number;
-  upperMs: number;
+  lower: number;
+  upper: number | null;
   count: number;
 }
 
-const BASE_BUCKET_UPPER_MS = 100;
-const HISTOGRAM_FACTOR = Math.SQRT2;
-
-export function latencyBucketForMs(durationMs: number): Omit<HistogramBucket, 'count'> {
-  const ms = Math.max(0, Math.ceil(durationMs));
-  if (ms <= BASE_BUCKET_UPPER_MS) {
-    return { lowerMs: 0, upperMs: BASE_BUCKET_UPPER_MS };
+const bucketForValue = (edges: readonly number[], value: number): Omit<HistogramBucket, 'count'> => {
+  const clamped = Math.max(0, Math.ceil(value));
+  let lower = 0;
+  for (const upper of edges) {
+    if (clamped <= upper) return { lower, upper };
+    lower = upper;
   }
+  return { lower, upper: null };
+};
 
-  let lowerMs = BASE_BUCKET_UPPER_MS;
-  let upperMs = Math.ceil(BASE_BUCKET_UPPER_MS * HISTOGRAM_FACTOR);
-  while (ms > upperMs) {
-    lowerMs = upperMs;
-    upperMs = Math.max(lowerMs + 1, Math.ceil(upperMs * HISTOGRAM_FACTOR));
-  }
+export const bucketForTtftMs = (ttftMs: number) => bucketForValue(TTFT_UPPER_EDGES_MS, ttftMs);
+export const bucketForTpotUs = (tpotUs: number) => bucketForValue(TPOT_UPPER_EDGES_US, tpotUs);
 
-  return { lowerMs, upperMs };
-}
-
-export function percentileFromHistogramBuckets(buckets: readonly HistogramBucket[], percentile: number): number | null {
+export const percentileFromBuckets = (buckets: readonly HistogramBucket[], percentile: number): number | null => {
   const total = buckets.reduce((sum, bucket) => sum + bucket.count, 0);
   if (total <= 0) return null;
 
   const rank = Math.ceil(total * percentile);
-  let seen = 0;
-  const ordered = [...buckets].sort((a, b) => a.upperMs - b.upperMs || a.lowerMs - b.lowerMs);
+  const ordered = [...buckets].sort((a, b) => {
+    // +∞ overflow bucket sorts last.
+    if (a.upper === null) return 1;
+    if (b.upper === null) return -1;
+    return a.upper - b.upper;
+  });
 
+  let seen = 0;
   for (const bucket of ordered) {
     seen += bucket.count;
-    if (seen >= rank) return bucket.upperMs;
+    // A percentile that lands in the overflow bucket has no finite upper; return
+    // the bucket's lower edge (the highest known finite edge for that row).
+    if (seen >= rank) return bucket.upper ?? bucket.lower;
   }
-
-  return ordered.at(-1)?.upperMs ?? null;
-}
+  return null;
+};

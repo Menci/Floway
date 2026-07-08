@@ -1,29 +1,85 @@
-import { test } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
-import { latencyBucketForMs, percentileFromHistogramBuckets } from './performance-histogram.ts';
-import { assertEquals } from '@floway-dev/test-utils';
+import {
+  TTFT_UPPER_EDGES_MS,
+  TPOT_UPPER_EDGES_US,
+  bucketForTtftMs,
+  bucketForTpotUs,
+  percentileFromBuckets,
+  type HistogramBucket,
+} from './performance-histogram.ts';
 
-test('latencyBucketForMs returns self-describing exponential buckets', () => {
-  assertEquals(latencyBucketForMs(75), { lowerMs: 0, upperMs: 100 });
-  assertEquals(latencyBucketForMs(101).lowerMs, 100);
-  assertEquals(latencyBucketForMs(600_000).upperMs >= 600_000, true);
+describe('bucket edges', () => {
+  it('TTFT has 16 upper edges spanning 50ms to 30min', () => {
+    expect(TTFT_UPPER_EDGES_MS).toEqual([
+      50, 100, 200, 500, 1_000, 2_000, 5_000, 10_000, 20_000, 30_000,
+      60_000, 120_000, 300_000, 600_000, 1_200_000, 1_800_000,
+    ]);
+  });
+
+  it('TPOT has 16 upper edges spanning 200μs to 10s', () => {
+    expect(TPOT_UPPER_EDGES_US).toEqual([
+      200, 500, 1_000, 2_000, 5_000, 10_000, 20_000, 30_000,
+      50_000, 75_000, 100_000, 200_000, 500_000, 1_000_000, 2_500_000, 10_000_000,
+    ]);
+  });
 });
 
-test('percentileFromHistogramBuckets merges mixed bucket shapes by upper bound', () => {
-  const p95 = percentileFromHistogramBuckets(
-    [
-      { lowerMs: 0, upperMs: 100, count: 90 },
-      { lowerMs: 100, upperMs: 150, count: 5 },
-      { lowerMs: 100, upperMs: 141, count: 4 },
-      { lowerMs: 150, upperMs: 220, count: 1 },
-    ],
-    0.95,
-  );
+describe('bucketForTtftMs', () => {
+  it('sub-edge value lands in the first bucket [0, 50]', () => {
+    expect(bucketForTtftMs(10)).toEqual({ lower: 0, upper: 50 });
+    expect(bucketForTtftMs(50)).toEqual({ lower: 0, upper: 50 });
+  });
 
-  assertEquals(p95, 150);
+  it('boundary values land in the bucket whose upper equals the value', () => {
+    expect(bucketForTtftMs(200)).toEqual({ lower: 100, upper: 200 });
+    expect(bucketForTtftMs(1_800_000)).toEqual({ lower: 1_200_000, upper: 1_800_000 });
+  });
+
+  it('above-top value lands in the +∞ overflow bucket', () => {
+    expect(bucketForTtftMs(3_600_000)).toEqual({ lower: 1_800_000, upper: null });
+  });
+
+  it('negative or zero clamps to the first bucket', () => {
+    expect(bucketForTtftMs(0)).toEqual({ lower: 0, upper: 50 });
+    expect(bucketForTtftMs(-5)).toEqual({ lower: 0, upper: 50 });
+  });
 });
 
-test('percentileFromHistogramBuckets returns null for empty histograms', () => {
-  assertEquals(percentileFromHistogramBuckets([], 0.95), null);
-  assertEquals(percentileFromHistogramBuckets([{ lowerMs: 0, upperMs: 100, count: 0 }], 0.95), null);
+describe('bucketForTpotUs', () => {
+  it('below-bottom value lands in the first bucket [0, 200]', () => {
+    expect(bucketForTpotUs(150)).toEqual({ lower: 0, upper: 200 });
+  });
+
+  it('above-top value lands in overflow', () => {
+    expect(bucketForTpotUs(50_000_000)).toEqual({ lower: 10_000_000, upper: null });
+  });
+});
+
+describe('percentileFromBuckets', () => {
+  const buckets: HistogramBucket[] = [
+    { lower: 0, upper: 50, count: 1 },
+    { lower: 50, upper: 100, count: 2 },
+    { lower: 100, upper: 200, count: 7 },
+  ];
+
+  it('p50 lands in the highest-count bucket', () => {
+    expect(percentileFromBuckets(buckets, 0.5)).toBe(200);
+  });
+
+  it('p99 lands in the top bucket', () => {
+    expect(percentileFromBuckets(buckets, 0.99)).toBe(200);
+  });
+
+  it('empty histogram returns null', () => {
+    expect(percentileFromBuckets([], 0.5)).toBe(null);
+  });
+
+  it('overflow bucket returns the highest finite upper', () => {
+    const withOverflow: HistogramBucket[] = [
+      { lower: 0, upper: 50, count: 1 },
+      { lower: 1_800_000, upper: null, count: 9 },
+    ];
+    expect(percentileFromBuckets(withOverflow, 0.95)).toBe(1_800_000);
+  });
 });
