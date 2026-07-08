@@ -434,7 +434,19 @@ class MemoryPerformanceRepo implements PerformanceRepo {
     const key = this.rowKey(dims);
     let row = this.summaries.get(key);
     if (!row) {
-      row = { ...dims, requests: 0, errors: 0, samples: 0, ttftMsSum: 0, tpotUsSum: 0, bucketMap: new Map() };
+      row = {
+        hour: dims.hour,
+        keyId: dims.keyId,
+        model: dims.model,
+        upstream: dims.upstream,
+        runtimeLocation: dims.runtimeLocation,
+        requests: 0,
+        errors: 0,
+        samples: 0,
+        ttftMsSum: 0,
+        tpotUsSum: 0,
+        bucketMap: new Map(),
+      };
       this.summaries.set(key, row);
     }
     return row;

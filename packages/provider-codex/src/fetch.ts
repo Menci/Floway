@@ -30,9 +30,9 @@ export interface CodexCallEffects {
   persistTerminalState(state: 'session_terminated' | 'refresh_failed', message: string): Promise<void>;
 }
 
-// Account selection + per-call observation hooks. Both Codex endpoints share
-// the same OAuth credential, the same quota row, and the same retry contract;
-// only the wire body and the response decoding differ.
+// Account selection for one Codex call. Both Codex endpoints share the same
+// OAuth credential, the same quota row, and the same retry contract; only the
+// wire body and the response decoding differ.
 interface CodexBackendCallBase {
   upstreamId: string;
   account: CodexAccountCredential;
