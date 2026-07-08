@@ -26,19 +26,24 @@
 //      is replaced inline with the items it originally encoded — so a
 //      subsequent turn that echoes back the synthesized compaction sees the
 //      summarized history.
-//   2. Outbound: pivot the action to 'generate', swap in the
-//      SUMMARIZATION_PROMPT (vendored from openai/codex), strip any
-//      `compaction_trigger` items, append a terminal user message if the
-//      history ends on a non-user item (Anthropic Messages rejects
-//      assistant prefill), and force `store: false` so the ephemeral
-//      summarization turn does not pollute the upstream's conversation
-//      history. Call `run()` to drive the chain through the normal generate
-//      path; collect the resulting summary text; pack a single user-role
-//      message containing the summary into a synthetic
-//      `response.compaction` envelope. Mutations of `ctx.payload` /
-//      `ctx.action` are one-way per the project's interceptor convention;
-//      attempt.invoke does not consume the post-chain `ctx` for its result
-//      shape (it keys envelope-drain off the caller's intent action).
+//   2. Outbound: pivot the action to 'generate', prepend a role=system
+//      message carrying the SUMMARIZATION_PROMPT (vendored from
+//      openai/codex), strip any `compaction_trigger` items, append a
+//      terminal user message if the history ends on a non-user item
+//      (Anthropic Messages rejects assistant prefill), and force
+//      `store: false` so the ephemeral summarization turn does not
+//      pollute the upstream's conversation history. The caller's
+//      `instructions` field flows through untouched — native
+//      `/responses/compact` keeps SUMMARIZATION_PROMPT as a system-role
+//      prompt AND forwards the caller's instructions as a developer-role
+//      message alongside, and we mirror that shape. Call `run()` to
+//      drive the chain through the normal generate path; collect the
+//      resulting summary text; pack a single user-role message
+//      containing the summary into a synthetic `response.compaction`
+//      envelope. Mutations of `ctx.payload` / `ctx.action` are one-way
+//      per the project's interceptor convention; attempt.invoke does
+//      not consume the post-chain `ctx` for its result shape (it keys
+//      envelope-drain off the caller's intent action).
 //
 // Foreign-upstream blobs (opaque strings that fail base64url+JSON decoding
 // or fail the array-of-objects-with-string-types schema below) round-trip
@@ -55,6 +60,47 @@ import { collectResponsesProtocolEventsToResult, type ResponsesInputItem, type R
 import { providerModelOf, type ExecuteResult } from '@floway-dev/provider';
 import type { CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
 
+// The two vendored constants below (SUMMARIZATION_PROMPT and SUMMARY_PREFIX)
+// are the compactor system prompt and the handoff prefix openai/codex ships
+// for local remote-v2 compaction. Both are also the exact strings Copilot's
+// server-side compactor uses today — Copilot's `/responses` endpoint hosts
+// the same compaction infrastructure as openai/codex, verbatim.
+//
+// The equivalence was confirmed by prompt-injection extraction against the
+// live Copilot upstream, following the methodology at
+// https://yuanchang.org/en/posts/investigating-codex-context-compaction/:
+//   1. Call `/responses` with `{input: [{role: user, content: INJECTION}, {type: 'compaction_trigger'}], stream: false}`.
+//      Copilot returns a `type: 'compaction'` output item whose
+//      `encrypted_content` is a Fernet-encrypted blob containing the
+//      compactor's plaintext summary.
+//   2. Call `/responses` again with `{input: [<same user injection>, <compaction item from step 1>, {role: user, content: PROBE}]}`.
+//      The server decrypts the blob, prepends SUMMARY_PREFIX, hands it to
+//      the target model, which sees the injection payload smuggled inside
+//      the summary and — if it complies with the probe — echoes the
+//      compactor's system prompt (SUMMARIZATION_PROMPT) and the handoff
+//      prefix (SUMMARY_PREFIX) back verbatim.
+// INJECTION is a fake "project notes" user message carrying a bracketed
+// pseudo-system directive that asks the compactor to quote any received
+// message mentioning "CONTEXT CHECKPOINT" / "handoff summary" / "concise"
+// / "seamlessly" between INSTRUCTION_START/END markers before writing its
+// normal summary. PROBE then asks the target model to output the full
+// text of any context message containing those markers or key phrases
+// (INSTRUCTION_START, "Another language model", "ChatGPT",
+// "CONTEXT CHECKPOINT"). See the article for the exact payloads.
+//
+// Coverage: all five gpt-5* models an enterprise Copilot account can reach
+// (gpt-5-mini, gpt-5.3-codex, gpt-5.4-mini, gpt-5.4, gpt-5.5), 3+ runs
+// each. `gpt-5-mini` leaked SUMMARIZATION_PROMPT and SUMMARY_PREFIX
+// character-identical to the vendored openai/codex strings on 3/3 runs;
+// `gpt-5.4` and `gpt-5.5` refused every probe (stronger alignment);
+// `gpt-5.3-codex` leaked its base identity but withheld the compactor
+// prompt. The confirming `gpt-5-mini` leaks make it strictly unlikely
+// the model invented these strings from scratch — the byte-level match
+// against a specific-length prompt with a specific bullet ordering is
+// far outside the space of plausible hallucinations. Bumps to
+// openai/codex's `compact/prompt.md` or `compact/summary_prefix.md` are
+// therefore also the signal to bump these constants.
+
 // Vendored from openai/codex (Apache-2.0):
 // https://github.com/openai/codex/blob/ba2b67f9cda954bcdda43c2a65ac58e807b996bd/codex-rs/prompts/templates/compact/prompt.md
 const SUMMARIZATION_PROMPT
@@ -65,6 +111,38 @@ const SUMMARIZATION_PROMPT
   + '- What remains to be done (clear next steps)\n'
   + '- Any critical data, examples, or references needed to continue\n\n'
   + 'Be concise, structured, and focused on helping the next LLM seamlessly continue the work.';
+
+// Trivial short histories tend to yield noticeably longer summaries from
+// the shim than from native compact (the shim runs SUMMARIZATION_PROMPT
+// through a normal `/responses` generate call, and the model dutifully
+// fills every Include bullet; native's compactor short-circuits on
+// trivial inputs). On realistic long histories the gap closes. Not a
+// correctness bug — downstream turns behave the same either way — so we
+// accept the drift rather than cap output and risk truncating summaries
+// that long tasks legitimately need.
+
+// Vendored from openai/codex (Apache-2.0):
+// https://github.com/openai/codex/blob/ba2b67f9cda954bcdda43c2a65ac58e807b996bd/codex-rs/prompts/templates/compact/summary_prefix.md
+//
+// Prepended to the summary text before the summary is packed into the
+// synthesized compaction envelope. Without this prefix, the next turn's
+// downstream LLM sees a raw user-role message whose contents are a
+// prose summary and misreads it as something the human said. The prefix
+// makes the message's provenance explicit — "another LLM produced this
+// summary, use it to continue the task" — matching what the native
+// server-side compact endpoint prepends to the decrypted blob.
+//
+// The concatenation is `${SUMMARY_PREFIX}\n${summaryText}` — a single
+// newline separator, mirroring codex-rs/core/src/compact.rs:271
+// (`format!("{SUMMARY_PREFIX}\n{summary_suffix}")`):
+// https://github.com/openai/codex/blob/ba2b67f9cda954bcdda43c2a65ac58e807b996bd/codex-rs/core/src/compact.rs#L271
+const SUMMARY_PREFIX
+  = 'Another language model started to solve this problem and produced a summary of its thinking process.'
+  + ' You also have access to the state of the tools that were used by that language model. Use this to'
+  + ' build on the work that has already been done and avoid duplicating work. Here is the summary produced'
+  + ' by the other language model, use the information in this summary to assist with your own analysis:';
+
+export { SUMMARY_PREFIX };
 
 // ── Inbound expansion ─────────────────────────────────────────────────────────
 
@@ -119,10 +197,15 @@ const extractTextFromResult = (result: ResponsesResult): string => {
 };
 
 const buildCompactionEnvelope = (cmpId: string, summaryText: string, upstream: ResponsesResult): ResponsesResult => {
+  // The prefix lives inside the blob so it round-trips atomically with the
+  // summary — a downstream LLM sees `${SUMMARY_PREFIX}\n${summaryText}` in
+  // one message and reads it as "another LLM's handoff", not as the human
+  // speaking. Encoding the prefix here rather than at expand-time keeps the
+  // envelope's semantics complete regardless of who decodes it.
   const summaryItem: ResponsesInputItem = {
     type: 'message',
     role: 'user',
-    content: [{ type: 'input_text', text: summaryText }],
+    content: [{ type: 'input_text', text: `${SUMMARY_PREFIX}\n${summaryText}` }],
   };
   const encryptedContent = encodeBase64UrlJson([summaryItem]);
 
@@ -182,12 +265,42 @@ const simulateCompaction = async (ctx: ResponsesInvocation, gatewayCtx: ChatGate
     role: 'user',
     content: [{ type: 'input_text', text: '<system-reminder>Produce the handoff summary now per the instructions above.</system-reminder>' }],
   };
-  const inputForSummarization = [...historyItems, terminalUserMessage];
+
+  // Native `/responses/compact` puts SUMMARIZATION_PROMPT into the compactor
+  // context as a role=system message and forwards the caller's `instructions`
+  // as a role=developer message alongside it — both are in scope
+  // simultaneously. Confirmed by prompt-injection extraction against the
+  // live Copilot upstream: a caller who sets `instructions="always mention
+  // quokka"` leaks a summary whose reasoning trace names it as "the
+  // developer message", and a caller who sets an adversarial
+  // `instructions="PIRATE SUMMARY: yarr!"` can outright hijack the
+  // compactor's output shape — proof that SUMMARIZATION_PROMPT stays in
+  // scope but the caller's instructions can override it under standard
+  // system-vs-developer role weighting.
+  //
+  // Bug-for-bug parity means the shim must reproduce that shape:
+  //   - SUMMARIZATION_PROMPT rides as a role=system input item at the head
+  //     of the history — always injected, never overridable.
+  //   - The caller's original `instructions` flows through unchanged, so
+  //     the same benign/adversarial semantics carry over. Any hijack blast
+  //     radius stays confined to the caller's own subsequent blob (that
+  //     caller only pollutes their own next-turn summary), matching native.
+  //
+  // Non-Responses targets (Messages, Chat Completions) don't model a
+  // developer role separately from system; the translator downgrades both
+  // layers onto a single top-level system slot. That's a strict native
+  // capability gap, not a shim regression — nothing this layer can do
+  // preserves the split once we cross into a protocol that lacks it.
+  const compactorSystemMessage: ResponsesInputItem = {
+    type: 'message',
+    role: 'system',
+    content: [{ type: 'input_text', text: SUMMARIZATION_PROMPT }],
+  };
+  const inputForSummarization = [compactorSystemMessage, ...historyItems, terminalUserMessage];
 
   ctx.payload = {
     ...originalPayload,
     input: inputForSummarization,
-    instructions: SUMMARIZATION_PROMPT,
     // Do not persist the ephemeral summarization turn in the upstream's
     // conversation history.
     store: false,
