@@ -53,11 +53,14 @@ describe('withUpstreamTelemetry', () => {
       { type: 'event', event: { choices: [{ delta: { content: 'b' } }] } },
       { type: 'event', event: { choices: [{ delta: { content: 'c' } }] } },
     ];
-    const before = performance.now();
-    for await (const _ of withUpstreamTelemetry(iter(frames), ctx, 'chat-completions')) { /* drain */ }
-    const first = ctx.perfTiming.firstOutputTokenAt;
-    expect(first).not.toBe(null);
-    // Sanity: stamp is between `before` and `after` — i.e. it fired on the first frame, not later.
-    expect(first!).toBeGreaterThanOrEqual(before);
+    const stampsAfterEachFrame: (number | null)[] = [];
+    for await (const _ of withUpstreamTelemetry(iter(frames), ctx, 'chat-completions')) {
+      stampsAfterEachFrame.push(ctx.perfTiming.firstOutputTokenAt);
+    }
+    expect(stampsAfterEachFrame[0]).not.toBe(null);
+    // The subsequent frames must observe the exact same stamp — the wrapper
+    // never overwrites once firstOutputTokenAt has been set.
+    expect(stampsAfterEachFrame[1]).toBe(stampsAfterEachFrame[0]);
+    expect(stampsAfterEachFrame[2]).toBe(stampsAfterEachFrame[0]);
   });
 });
