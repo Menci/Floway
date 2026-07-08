@@ -407,7 +407,7 @@ class MemoryPerformanceRepo implements PerformanceRepo {
 
   async query(opts: { keyId?: string; start: string; end: string }): Promise<PerformanceTelemetryRecord[]> {
     return [...this.summaries.values()]
-      .filter(r => (opts.keyId ? r.keyId === opts.keyId : true) && r.hour >= opts.start && r.hour <= opts.end)
+      .filter(r => (opts.keyId ? r.keyId === opts.keyId : true) && r.hour >= opts.start && r.hour < opts.end)
       .map(this.freeze);
   }
 
