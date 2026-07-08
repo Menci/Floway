@@ -539,6 +539,7 @@ const parsePerformanceRecords = (value: unknown): { type: 'ok'; records: Perform
         !isPerformanceMetric(b.metric) ||
         !isNonNegativeSafeInteger(b.lower) ||
         (b.upper !== null && !isNonNegativeSafeInteger(b.upper)) ||
+        (b.upper !== null && (b.upper as number) <= (b.lower as number)) ||
         !isNonNegativeSafeInteger(b.count)
       ) {
         return { type: 'invalid', index: i, error: 'bucket metric/lower/upper/count fields are missing or malformed' };
