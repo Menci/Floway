@@ -106,14 +106,6 @@ const load = async () => {
 watch([performanceRange, performanceView, performanceGroupBy], load);
 useIntervalFn(() => { void load(); }, 60_000);
 
-const performancePercentileLabel = computed(() => {
-  if (performanceMetric.value === 'tokPerSec') {
-    if (performancePercentile.value === 'p95') return 'worst 5%';
-    if (performancePercentile.value === 'p99') return 'worst 1%';
-  }
-  return performancePercentile.value;
-});
-
 const performanceModelOptions = computed(() => {
   const ids = new Set<string>();
   for (const r of overview.value.series) ids.add(r.group);

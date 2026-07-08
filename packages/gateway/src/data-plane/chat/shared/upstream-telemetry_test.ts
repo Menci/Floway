@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { withUpstreamTelemetry } from './upstream-telemetry.ts';
 import type { GatewayCtx } from './gateway-ctx.ts';
+import { withUpstreamTelemetry } from './upstream-telemetry.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 
 const iter = <T>(items: readonly T[]): AsyncIterable<T> => ({
-  [Symbol.asyncIterator]: async function* () { for (const item of items) yield item; },
+  async *[Symbol.asyncIterator]() { for (const item of items) yield item; },
 });
 
 const stubCtx = (): GatewayCtx => ({
@@ -42,7 +42,6 @@ describe('withUpstreamTelemetry', () => {
       { type: 'event', event: { type: 'response.created' } },
       { type: 'event', event: { type: 'response.reasoning_text.delta', delta: '...' } },
     ];
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     for await (const _ of withUpstreamTelemetry(iter(frames), ctx, 'responses')) { /* drain */ }
     expect(ctx.perfTiming.firstOutputTokenAt).toBe(null);
   });

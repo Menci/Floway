@@ -676,7 +676,7 @@ class SqlPerformanceRepo implements PerformanceRepo {
     ).run();
 
     await this.db.prepare(
-      `DELETE FROM performance_buckets WHERE hour = ? AND key_id = ? AND model = ? AND upstream = ? AND runtime_location = ?`,
+      'DELETE FROM performance_buckets WHERE hour = ? AND key_id = ? AND model = ? AND upstream = ? AND runtime_location = ?',
     ).bind(...performanceDimensionBinds(record)).run();
 
     for (const bucket of record.buckets) {

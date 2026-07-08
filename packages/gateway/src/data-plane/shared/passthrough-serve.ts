@@ -172,7 +172,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
     }
 
     // Iterate the viable list. Each candidate's attempt runs the upstream
-    // HTTP call and records `upstream_success` telemetry; the shared
+    // HTTP call and records performance telemetry; the shared
     // iterator returns the first 2xx or, on exhaustion, the last non-2xx
     // result. Request-perf and dump attribution wait until this point so
     // they land against the terminal candidate.

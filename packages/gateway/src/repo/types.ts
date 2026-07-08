@@ -1,4 +1,3 @@
-import type { HistogramBucket } from '../shared/performance-histogram.ts';
 import type { WebSearchProviderName } from '../shared/web-search-providers.ts';
 import type { AliasSelection, AliasTarget, AnnouncedMetadata, BillingDimension, ModelKind, ModelPricing } from '@floway-dev/protocols/common';
 import type { ProviderModel, UpstreamRecord } from '@floway-dev/provider';
