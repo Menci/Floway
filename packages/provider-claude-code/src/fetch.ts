@@ -465,11 +465,6 @@ const performUpstreamCall = async (
       repo: getProviderRepo().upstreams,
     });
     const ensured = await ensureOrSession503(opts, upstreamModelId);
-    // If the refresh terminated, ensureOrSession503 returns a syntheticReturn
-    // wrap. That wrap intentionally shadows the failed first fetch's recorded
-    // latency under the "last wrap wins" semantics — the telemetry surface
-    // reflects the synthetic 503 because that is what the caller sees, not the
-    // 401 we discarded.
     if ('modelKey' in ensured) return ensured;
     return await performUpstreamCall(opts, upstreamModelId, ensured, true);
   }

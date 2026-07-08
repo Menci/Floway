@@ -18,10 +18,10 @@ import { providerModelOf } from '@floway-dev/provider';
 import type { ModelCandidate, Provider, ProviderCallResult, ProviderModel, TelemetryModelIdentity, UpstreamCallOptions } from '@floway-dev/provider';
 
 // Enlarged `plain` shape: `iterateCandidates` reads `type` + `status`;
-// the passthrough serve reads the rest to forward the response, attribute
-// dumps, and record request-total perf. `identity` carries the upstream
-// id alongside the model/pricing metadata the dump and usage-record
-// paths already consume together.
+// the passthrough serve reads the rest to forward the response and
+// attribute dumps. `identity` carries the upstream id alongside the
+// model/pricing metadata the dump and usage-record paths already consume
+// together.
 export interface PassthroughAttemptResult {
   readonly type: 'plain';
   readonly status: number;

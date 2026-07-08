@@ -3,9 +3,6 @@ import type { GatewayCtx } from './gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ChatTargetApi, ModelCandidate, PerformanceTelemetryContext } from '@floway-dev/provider';
 
-// The full telemetry context for one upstream call: request-scoped dimensions
-// (keyId, runtimeLocation) come off the gateway ctx, the model dimensions
-// off the chosen candidate plus the upstream-reported model key.
 export const upstreamPerformanceContext = (ctx: GatewayCtx, candidate: ModelCandidate, modelKey: string): PerformanceTelemetryContext => ({
   keyId: ctx.apiKeyId,
   model: candidate.model.id,
@@ -14,11 +11,9 @@ export const upstreamPerformanceContext = (ctx: GatewayCtx, candidate: ModelCand
   runtimeLocation: ctx.runtimeLocation,
 });
 
-// Pipes the upstream event stream through, stamping
-// `ctx.perfTiming.firstOutputTokenAt` the moment the first output-content
-// frame arrives (thinking / reasoning / envelope frames don't count). This
-// wrapper does not record any telemetry itself — the terminal-frame recorder
-// owns that decision, using the stamped timestamp to compute TTFT and TPOT.
+// First output-content frame (thinking / reasoning / envelope frames don't
+// count) stamps ctx.perfTiming.firstOutputTokenAt; the terminal-frame
+// recorder uses that timestamp to compute TTFT and TPOT.
 export const withUpstreamTelemetry = <T>(
   events: AsyncIterable<ProtocolFrame<T>>,
   ctx: GatewayCtx,

@@ -182,10 +182,9 @@ export interface SearchUsageRepo {
 }
 
 export interface PerformanceRepo {
-  // Writes one sample: increments summary sums + samples + requests, and
-  // increments one TTFT bucket + one TPOT bucket.
+  // Increments summary sums, samples, and requests; also increments one TTFT bucket and one TPOT bucket.
   recordSample(sample: PerformanceSample): Promise<void>;
-  // Writes one error: increments summary requests + errors only.
+  // Increments only summary requests and errors; does not touch sums, samples, or buckets.
   recordError(sample: PerformanceErrorSample): Promise<void>;
   query(opts: { keyId?: string; start: string; end: string }): Promise<PerformanceTelemetryRecord[]>;
   listAll(): Promise<PerformanceTelemetryRecord[]>;

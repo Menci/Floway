@@ -64,8 +64,7 @@ export const callCodexResponsesCompact = async (opts: CallCodexResponsesCompactO
   return await performUnaryCompactCall(opts, ready.accessToken, false);
 };
 
-// Pre-fetch gates + initial access-token mint. Each synthetic failure returns
-// directly without an upstream HTTP call.
+// Pre-fetch gates + initial access-token mint.
 const prepareCodexCall = async (opts: CodexBackendCallBase): Promise<{ ok: true; accessToken: string } | { ok: false; response: Response }> => {
   if (opts.account.state !== 'active') {
     return { ok: false, response: synthetic503(`Codex upstream is ${opts.account.state}`) };

@@ -384,7 +384,6 @@ class MemorySearchUsageRepo implements SearchUsageRepo {
 }
 
 class MemoryPerformanceRepo implements PerformanceRepo {
-  // Keyed by JSON.stringify of the dimensions.
   private readonly summaries = new Map<string, PerformanceTelemetryRecord & { bucketMap: Map<string, PerformanceBucketRow> }>();
 
   async recordSample(sample: PerformanceSample): Promise<void> {

@@ -74,10 +74,7 @@ export const buildUpstreamCallOptions = (
 });
 
 // Lifts a provider's streaming-call result into the attempt's ExecuteResult
-// shape, attaching the performance telemetry context every layer above reads:
-// a non-ok provider response is read into an `api-error` (source 'upstream')
-// carrying the context, otherwise the events stream is wrapped with upstream
-// telemetry and flows on with both the telemetry identity and the context.
+// shape, attaching the performance telemetry context every layer above reads.
 export const providerStreamResultToExecuteResult = async <TEvent>(
   providerResult: ProviderStreamResult<TEvent>,
   candidate: ModelCandidate,

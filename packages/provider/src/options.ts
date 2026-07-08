@@ -5,8 +5,7 @@ export type Fetcher = (
   init: RequestInit,
 ) => Promise<Response>;
 
-// Plain runtime fetch as a Fetcher, for callers that need neither proxy
-// nor recorder wrapping.
+// Plain runtime fetch as a Fetcher, for callers that need no proxy wrapping.
 export const directFetcher: Fetcher = (url, init) => fetch(url, init);
 
 // Per-call options for upstream fetch helpers: a per-upstream Fetcher plus

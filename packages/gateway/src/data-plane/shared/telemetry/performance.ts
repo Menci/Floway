@@ -30,13 +30,8 @@ const recordError = async (dims: PerformanceErrorSample): Promise<void> => {
   }
 };
 
-// Records one perf write per request.
-//   - telemetry === undefined → no attribution; skip.
-//   - failed === true → error row.
-//   - failed === false + valid TTFT + outputTokens > 0 → sample row with
-//     ttft_ms and tpot_us computed from ctx.perfTiming and outputTokens.
-//   - failed === false but missing TTFT or outputTokens <= 0 → error row
-//     (a "successful" stream that produced no output is not a valid sample).
+// A non-failed stream with no TTFT or no output tokens is still an error row —
+// tpot cannot be computed without output.
 export const recordRequestPerformance = (
   scheduler: BackgroundScheduler,
   ctx: { perfTiming: { firstOutputTokenAt: number | null }; requestStartedAt: number },

@@ -616,12 +616,6 @@ export const parseRetryAfterMs = (headers: Headers): number | null => {
   return null;
 };
 
-// The image-generation sub-call is a real upstream HTTP request that lands
-// under its own `(model, upstream, modelKey)` dimensions in the performance
-// telemetry — distinct from the outer Responses orchestrator's
-// recording. Each attempt of the 429-retry loop records on its own; the
-// intermediate failures land as error counters and the final outcome's
-// latency (success or failure) is the one operators see at the dimension.
 // On 429, sleep for the upstream's retry hint (or jittered exponential
 // backoff when absent) and replay the same backend call up to
 // MAX_RATE_LIMIT_RETRIES times. The returned `response` always has a fresh,
