@@ -659,8 +659,7 @@ export const searchUsageQuery = z.object({
 
 export const performanceQuery = z.object({
   ...usageBaseQuery,
-  metric_scope: z.enum(['request_total', 'upstream_success']).optional(),
-  group_by: z.enum(['none', 'keyId', 'userId', 'model', 'runtimeLocation']).optional(),
+  group_by: z.enum(['none', 'keyId', 'userId', 'model', 'upstream', 'runtimeLocation']).optional(),
   bucket: z.enum(['hour', '4h', '8h', 'day', 'all']).optional(),
   timezone_offset_minutes: z.string().optional(),
 });

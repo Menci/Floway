@@ -1,6 +1,5 @@
 import { test } from 'vitest';
 
-import { latencyBucketForMs } from '../../shared/performance-histogram.ts';
 import { requestApp, setupAppTest } from '../../test-helpers.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
@@ -8,46 +7,42 @@ test('/api/performance returns backend-aggregated base-model percentiles', async
   const { repo, apiKey } = await setupAppTest();
   const sample = {
     hour: '2026-04-30T10',
-    metricScope: 'request_total' as const,
     keyId: apiKey.id,
+    model: 'claude-opus-4-7',
     upstream: 'copilot:1',
-    stream: true,
     runtimeLocation: 'LOCAL',
+    tpotUs: 500,
+    outputTokens: 10,
   };
 
+  // 90 fast samples (ttftMs=100 → bucket [50,100]) + 10 slow samples
+  // (ttftMs=300 → bucket [200,500]) → p50=100, p95=p99=500.
   for (let i = 0; i < 90; i++) {
-    await repo.performance.recordLatency({
-      ...sample,
-      model: 'claude-opus-4-7',
-      modelKey: 'claude-opus-4.7',
-      durationMs: 100,
-    });
+    await repo.performance.recordSample({ ...sample, ttftMs: 100 });
   }
   for (let i = 0; i < 10; i++) {
-    await repo.performance.recordLatency({
-      ...sample,
-      model: 'claude-opus-4-7',
-      modelKey: 'claude-opus-4.7-xhigh',
-      durationMs: 300,
-    });
+    await repo.performance.recordSample({ ...sample, ttftMs: 300 });
   }
 
-  const response = await requestApp('/api/performance?start=2026-04-30T00&end=2026-05-01T00&bucket=hour&group_by=model&metric_scope=request_total', { headers: { 'x-api-key': apiKey.key } });
+  const response = await requestApp('/api/performance?start=2026-04-30T00&end=2026-05-01T00&bucket=hour&group_by=model', { headers: { 'x-api-key': apiKey.key } });
 
   assertEquals(response.status, 200);
   const body = await response.json();
-  const slowBucket = latencyBucketForMs(300).upperMs;
   assertEquals(body.records, [
     {
       bucket: '2026-04-30T10',
       group: 'claude-opus-4-7',
       requests: 100,
       errors: 0,
-      totalMsSum: 12000,
-      avgMs: 120,
-      p50Ms: 100,
-      p95Ms: slowBucket,
-      p99Ms: slowBucket,
+      samples: 100,
+      ttftMsAvg: 120,
+      ttftMsP50: 100,
+      ttftMsP95: 500,
+      ttftMsP99: 500,
+      tpotUsAvg: 500,
+      tpotUsP50: 500,
+      tpotUsP95: 500,
+      tpotUsP99: 500,
     },
   ]);
 });
@@ -69,14 +64,15 @@ test('/api/performance scopes to actor\'s keys in self-by-key mode', async () =>
 
   const sample = {
     hour: '2026-04-30T10',
-    metricScope: 'request_total' as const,
-    upstream: null,
-    stream: false,
+    model: 'gpt-5',
+    upstream: 'copilot:1',
     runtimeLocation: 'LOCAL',
+    tpotUs: 500,
+    outputTokens: 10,
   };
 
-  await repo.performance.recordLatency({ ...sample, keyId: apiKey.id, model: 'gpt-5', modelKey: 'gpt-5', durationMs: 50 });
-  await repo.performance.recordLatency({ ...sample, keyId: 'key_other', model: 'gpt-5', modelKey: 'gpt-5', durationMs: 250 });
+  await repo.performance.recordSample({ ...sample, keyId: apiKey.id, ttftMs: 50 });
+  await repo.performance.recordSample({ ...sample, keyId: 'key_other', ttftMs: 250 });
 
   const response = await requestApp('/api/performance?start=2026-04-30T00&end=2026-05-01T00&bucket=hour&group_by=keyId', { headers: { 'x-api-key': apiKey.key } });
 
@@ -89,16 +85,15 @@ test('/api/performance scopes to actor\'s keys in self-by-key mode', async () =>
 
 test('/api/performance can include key metadata', async () => {
   const { repo, apiKey } = await setupAppTest();
-  await repo.performance.recordLatency({
+  await repo.performance.recordSample({
     hour: '2026-04-30T10',
-    metricScope: 'request_total',
     keyId: apiKey.id,
     model: 'gpt-5',
-    upstream: null,
-    modelKey: 'gpt-5',
-    stream: false,
+    upstream: 'copilot:1',
     runtimeLocation: 'LOCAL',
-    durationMs: 50,
+    ttftMs: 50,
+    tpotUs: 500,
+    outputTokens: 10,
   });
 
   const response = await requestApp('/api/performance?start=2026-04-30T00&end=2026-05-01T00&include_key_metadata=1', { headers: { 'x-api-key': apiKey.key } });
@@ -132,16 +127,15 @@ test('/api/performance all-by-user view aggregates over every key', async () => 
 
   const sample = {
     hour: '2026-04-30T10',
-    metricScope: 'request_total' as const,
     model: 'gpt-5',
-    modelKey: 'gpt-5',
-    upstream: null,
-    stream: false,
+    upstream: 'copilot:1',
     runtimeLocation: 'LOCAL',
-    durationMs: 100,
+    ttftMs: 100,
+    tpotUs: 500,
+    outputTokens: 10,
   };
-  await repo.performance.recordLatency({ ...sample, keyId: apiKey.id });
-  await repo.performance.recordLatency({ ...sample, keyId: 'key_other' });
+  await repo.performance.recordSample({ ...sample, keyId: apiKey.id });
+  await repo.performance.recordSample({ ...sample, keyId: 'key_other' });
 
   const response = await requestApp('/api/performance?start=2026-04-30T00&end=2026-05-01T00&group_by=model&view=all-by-user', { headers: { 'x-floway-session': adminSession } });
 
@@ -181,17 +175,16 @@ test('/api/performance all-by-user view supports group_by=userId', async () => {
 
   const sample = {
     hour: '2026-04-30T10',
-    metricScope: 'request_total' as const,
     model: 'gpt-5',
-    modelKey: 'gpt-5',
-    upstream: null,
-    stream: false,
+    upstream: 'copilot:1',
     runtimeLocation: 'LOCAL',
-    durationMs: 100,
+    ttftMs: 100,
+    tpotUs: 500,
+    outputTokens: 10,
   };
-  await repo.performance.recordLatency({ ...sample, keyId: apiKey.id });
-  await repo.performance.recordLatency({ ...sample, keyId: apiKey.id });
-  await repo.performance.recordLatency({ ...sample, keyId: 'key_other' });
+  await repo.performance.recordSample({ ...sample, keyId: apiKey.id });
+  await repo.performance.recordSample({ ...sample, keyId: apiKey.id });
+  await repo.performance.recordSample({ ...sample, keyId: 'key_other' });
 
   const response = await requestApp('/api/performance?start=2026-04-30T00&end=2026-05-01T00&group_by=userId&view=all-by-user', { headers: { 'x-floway-session': adminSession } });
 
@@ -224,18 +217,17 @@ test('/api/performance/overview series stays per-model under all-by-user view', 
 
   const sample = {
     hour: '2026-04-30T10',
-    metricScope: 'request_total' as const,
     model: 'gpt-5',
-    modelKey: 'gpt-5',
-    upstream: null,
-    stream: false,
+    upstream: 'copilot:1',
     runtimeLocation: 'LOCAL',
-    durationMs: 100,
+    ttftMs: 100,
+    tpotUs: 500,
+    outputTokens: 10,
   };
-  await repo.performance.recordLatency({ ...sample, keyId: apiKey.id });
-  await repo.performance.recordLatency({ ...sample, keyId: 'key_other' });
+  await repo.performance.recordSample({ ...sample, keyId: apiKey.id });
+  await repo.performance.recordSample({ ...sample, keyId: 'key_other' });
 
-  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&bucket=hour&metric_scope=request_total&view=all-by-user&include_user_metadata=1', { headers: { 'x-floway-session': adminSession } });
+  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&bucket=hour&view=all-by-user&include_user_metadata=1', { headers: { 'x-floway-session': adminSession } });
 
   assertEquals(response.status, 200);
   const body = await response.json();
@@ -255,27 +247,26 @@ test('/api/performance/overview returns dashboard aggregates from one repo query
     return originalQuery(opts);
   }) as typeof repo.performance.query;
 
-  await repo.performance.recordLatency({
+  await repo.performance.recordSample({
     hour: '2026-04-30T10',
-    metricScope: 'request_total',
     keyId: apiKey.id,
     model: 'claude-sonnet-4-5',
     upstream: 'copilot:1',
-    modelKey: 'claude-sonnet-4.5-xhigh',
-    stream: true,
     runtimeLocation: 'SJC',
-    durationMs: 250,
+    ttftMs: 250,
+    tpotUs: 1000,
+    outputTokens: 10,
   });
 
-  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&bucket=hour&metric_scope=request_total', { headers: { 'x-api-key': apiKey.key } });
+  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&bucket=hour', { headers: { 'x-api-key': apiKey.key } });
 
   assertEquals(response.status, 200);
   const body = await response.json();
   assertEquals(queryCount, 1);
   assertEquals(body.series[0].group, 'claude-sonnet-4-5');
-  assertEquals('percentileSeries' in body, false);
   assertEquals(body.summaryRows[0].bucket, 'all');
   assertEquals(body.modelRows[0].group, 'claude-sonnet-4-5');
+  assertEquals(body.upstreamRows[0].group, 'copilot:1');
   assertEquals(body.runtimeRows[0].group, 'SJC');
 });
 
@@ -283,26 +274,23 @@ test('/api/performance/overview counts failed attempts in dashboard request tota
   const { repo, apiKey } = await setupAppTest();
   await repo.performance.recordError({
     hour: '2026-04-30T10',
-    metricScope: 'request_total',
     keyId: apiKey.id,
     model: 'gpt-5.5-pro-2026-04-23',
     upstream: 'up_copilot',
-    modelKey: 'gpt-5.5-pro-2026-04-23',
-    stream: true,
     runtimeLocation: 'SJC',
   });
 
-  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&bucket=hour&metric_scope=request_total', { headers: { 'x-api-key': apiKey.key } });
+  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&bucket=hour', { headers: { 'x-api-key': apiKey.key } });
 
   assertEquals(response.status, 200);
   const body = await response.json();
   assertEquals(body.summaryRows[0].requests, 1);
   assertEquals(body.summaryRows[0].errors, 1);
-  assertEquals(body.summaryRows[0].avgMs, null);
+  assertEquals(body.summaryRows[0].ttftMsAvg, null);
   assertEquals(body.modelRows[0].group, 'gpt-5.5-pro-2026-04-23');
   assertEquals(body.modelRows[0].requests, 1);
   assertEquals(body.modelRows[0].errors, 1);
-  assertEquals(body.modelRows[0].p95Ms, null);
+  assertEquals(body.modelRows[0].ttftMsP95, null);
 });
 
 test('/api/performance rejects out-of-range timezone offsets', async () => {
@@ -321,16 +309,15 @@ test('/api/performance all-by-user attributes soft-deleted keys to their origina
   // Latency sample on apiKey, then soft-delete the key. The aggregator must
   // still resolve the row to apiKey.userId rather than the synthetic userId 0
   // it falls back to when the key→user lookup misses.
-  await repo.performance.recordLatency({
+  await repo.performance.recordSample({
     hour: '2026-04-30T10',
     keyId: apiKey.id,
-    metricScope: 'request_total',
     model: 'gpt-5',
-    modelKey: 'gpt-5',
-    upstream: null,
-    stream: false,
+    upstream: 'copilot:1',
     runtimeLocation: 'LOCAL',
-    durationMs: 100,
+    ttftMs: 100,
+    tpotUs: 500,
+    outputTokens: 10,
   });
   await repo.apiKeys.softDelete(apiKey.id);
 
@@ -347,16 +334,15 @@ test('/api/performance all-by-user attributes soft-deleted keys to their origina
 
 test('/api/performance self-by-key surfaces soft-deleted keys metadata to their owner', async () => {
   const { repo, apiKey } = await setupAppTest();
-  await repo.performance.recordLatency({
+  await repo.performance.recordSample({
     hour: '2026-04-30T10',
     keyId: apiKey.id,
-    metricScope: 'request_total',
     model: 'gpt-5',
-    modelKey: 'gpt-5',
-    upstream: null,
-    stream: false,
+    upstream: 'copilot:1',
     runtimeLocation: 'LOCAL',
-    durationMs: 200,
+    ttftMs: 200,
+    tpotUs: 500,
+    outputTokens: 10,
   });
   await repo.apiKeys.softDelete(apiKey.id);
   // The acting api key was the one that was soft-deleted; build a fresh

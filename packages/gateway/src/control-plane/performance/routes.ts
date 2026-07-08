@@ -10,7 +10,7 @@
 import { aggregatePerformanceForDisplay, type PerformanceBucketGranularity, type PerformanceGroupBy } from './aggregate.ts';
 import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
-import type { PerformanceMetricScope, PerformanceTelemetryRecord } from '../../repo/types.ts';
+import type { PerformanceTelemetryRecord } from '../../repo/types.ts';
 import type { performanceQuery } from '../schemas.ts';
 import { resolveTelemetryView, type ResolvedTelemetryView } from '../telemetry-view.ts';
 
@@ -22,7 +22,6 @@ interface PerformanceQueryParams {
   end: string;
   bucket: PerformanceBucketGranularity;
   groupBy: PerformanceGroupBy;
-  metricScope: PerformanceMetricScope;
   timezoneOffsetMinutes: number;
 }
 
@@ -47,7 +46,6 @@ const readPerformanceQuery = (
       end: query.end,
       bucket: query.bucket ?? 'hour',
       groupBy: query.group_by ?? 'model',
-      metricScope: query.metric_scope ?? 'request_total',
       timezoneOffsetMinutes,
     },
   };
@@ -77,7 +75,6 @@ const queryRecordsForView = async (
     return await repo.performance.query({
       start: params.start,
       end: params.end,
-      metricScope: params.metricScope,
     });
   }
 
@@ -90,7 +87,6 @@ const queryRecordsForView = async (
     keyId: params.keyId,
     start: params.start,
     end: params.end,
-    metricScope: params.metricScope,
   });
   return params.keyId !== undefined ? rows : rows.filter(r => ownedSet.has(r.keyId));
 };
@@ -150,18 +146,19 @@ export const performanceOverview = async (c: Ctx) => {
   const series = aggregatePerformanceForDisplay(rawRecords, { ...baseOptions, bucket: params.value.bucket, groupBy: 'model' });
   const summaryRows = aggregatePerformanceForDisplay(rawRecords, { ...baseOptions, bucket: 'all', groupBy: 'none' });
   const modelRows = aggregatePerformanceForDisplay(rawRecords, { ...baseOptions, bucket: 'all', groupBy: 'model' });
+  const upstreamRows = aggregatePerformanceForDisplay(rawRecords, { ...baseOptions, bucket: 'all', groupBy: 'upstream' });
   const runtimeRows = aggregatePerformanceForDisplay(rawRecords, { ...baseOptions, bucket: 'all', groupBy: 'runtimeLocation' });
 
   const query = c.req.valid('query');
 
   if (resolved.view === 'all-by-user') {
-    if (query.include_user_metadata !== '1') return c.json({ series, summaryRows, modelRows, runtimeRows });
+    if (query.include_user_metadata !== '1') return c.json({ series, summaryRows, modelRows, upstreamRows, runtimeRows });
     const users = await getRepo().users.listIncludingDeleted();
     const userMetadata = users
       .map(u => ({ id: u.id, username: u.username }))
       .sort((a, b) => a.id - b.id);
-    return c.json({ series, summaryRows, modelRows, runtimeRows, users: userMetadata });
+    return c.json({ series, summaryRows, modelRows, upstreamRows, runtimeRows, users: userMetadata });
   }
 
-  return c.json({ series, summaryRows, modelRows, runtimeRows });
+  return c.json({ series, summaryRows, modelRows, upstreamRows, runtimeRows });
 };

@@ -4,37 +4,28 @@ import { aggregatePerformanceForDisplay } from './aggregate.ts';
 import type { PerformanceTelemetryRecord } from '../../repo/types.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
-const record = (overrides: Partial<PerformanceTelemetryRecord>): PerformanceTelemetryRecord => ({
+const record = (overrides: Partial<PerformanceTelemetryRecord> = {}): PerformanceTelemetryRecord => ({
   hour: '2026-04-30T10',
-  metricScope: 'request_total',
   keyId: 'key_a',
   model: 'claude-opus-4-7',
   upstream: 'copilot:1',
-  modelKey: 'claude-opus-4.7',
-  stream: true,
   runtimeLocation: 'LOCAL',
   requests: 1,
   errors: 0,
-  totalMsSum: 100,
-  buckets: [{ lowerMs: 0, upperMs: 100, count: 1 }],
+  samples: 1,
+  ttftMsSum: 100,
+  tpotUsSum: 500,
+  // ttftMs=100 → bucket [50,100]; tpotUs=500 → bucket [200,500]
+  buckets: [
+    { metric: 'ttft_ms', lower: 50, upper: 100, count: 1 },
+    { metric: 'tpot_us', lower: 200, upper: 500, count: 1 },
+  ],
   ...overrides,
 });
 
-test('aggregatePerformanceForDisplay groups provider model keys by public model', () => {
+test('aggregatePerformanceForDisplay produces correct averages and percentiles for a single record', () => {
   const rows = aggregatePerformanceForDisplay(
-    [
-      record({
-        requests: 90,
-        totalMsSum: 9000,
-        buckets: [{ lowerMs: 0, upperMs: 100, count: 90 }],
-      }),
-      record({
-        modelKey: 'claude-opus-4.7-xhigh',
-        requests: 10,
-        totalMsSum: 3000,
-        buckets: [{ lowerMs: 100, upperMs: 300, count: 10 }],
-      }),
-    ],
+    [record()],
     { bucket: 'hour', groupBy: 'model', timezoneOffsetMinutes: 0 },
   );
 
@@ -42,13 +33,17 @@ test('aggregatePerformanceForDisplay groups provider model keys by public model'
     {
       bucket: '2026-04-30T10',
       group: 'claude-opus-4-7',
-      requests: 100,
+      requests: 1,
       errors: 0,
-      totalMsSum: 12000,
-      avgMs: 120,
-      p50Ms: 100,
-      p95Ms: 300,
-      p99Ms: 300,
+      samples: 1,
+      ttftMsAvg: 100,
+      ttftMsP50: 100,
+      ttftMsP95: 100,
+      ttftMsP99: 100,
+      tpotUsAvg: 500,
+      tpotUsP50: 500,
+      tpotUsP95: 500,
+      tpotUsP99: 500,
     },
   ]);
 });
@@ -58,10 +53,12 @@ test('aggregatePerformanceForDisplay counts error-only rows as displayed request
     [
       record({
         model: 'gpt-5.5-pro-2026-04-23',
-        modelKey: 'gpt-5.5-pro-2026-04-23',
-        requests: 0,
+        upstream: 'codex:1',
+        requests: 3,
         errors: 3,
-        totalMsSum: 0,
+        samples: 0,
+        ttftMsSum: 0,
+        tpotUsSum: 0,
         buckets: [],
       }),
     ],
@@ -74,13 +71,64 @@ test('aggregatePerformanceForDisplay counts error-only rows as displayed request
       group: 'gpt-5.5-pro-2026-04-23',
       requests: 3,
       errors: 3,
-      totalMsSum: 0,
-      avgMs: null,
-      p50Ms: null,
-      p95Ms: null,
-      p99Ms: null,
+      samples: 0,
+      ttftMsAvg: null,
+      ttftMsP50: null,
+      ttftMsP95: null,
+      ttftMsP99: null,
+      tpotUsAvg: null,
+      tpotUsP50: null,
+      tpotUsP95: null,
+      tpotUsP99: null,
     },
   ]);
+});
+
+test('aggregatePerformanceForDisplay merges two hours under bucket: all', () => {
+  const rows = aggregatePerformanceForDisplay(
+    [record({ hour: '2026-04-30T10' }), record({ hour: '2026-04-30T11' })],
+    { bucket: 'all', groupBy: 'model', timezoneOffsetMinutes: 0 },
+  );
+
+  assertEquals(rows.length, 1);
+  assertEquals(rows[0].bucket, 'all');
+  assertEquals(rows[0].requests, 2);
+  assertEquals(rows[0].samples, 2);
+  assertEquals(rows[0].ttftMsAvg, 100);
+});
+
+test('aggregatePerformanceForDisplay splits rows by upstream when groupBy is upstream', () => {
+  const rows = aggregatePerformanceForDisplay(
+    [
+      record({ upstream: 'copilot:1' }),
+      record({ upstream: 'codex:2' }),
+    ],
+    { bucket: 'hour', groupBy: 'upstream', timezoneOffsetMinutes: 0 },
+  );
+
+  assertEquals(rows.length, 2);
+  const groups = rows.map(r => r.group).sort();
+  assertEquals(groups, ['codex:2', 'copilot:1']);
+});
+
+test('aggregatePerformanceForDisplay returns lower edge for overflow-bucket percentile', () => {
+  // A ttftMs value above the highest edge (1_800_000 ms) falls into the
+  // overflow bucket { lower: 1_800_000, upper: null }. percentileFromBuckets
+  // returns bucket.lower when upper is null.
+  const rows = aggregatePerformanceForDisplay(
+    [
+      record({
+        ttftMsSum: 3_600_000,
+        samples: 1,
+        requests: 1,
+        buckets: [{ metric: 'ttft_ms', lower: 1_800_000, upper: null, count: 1 }],
+      }),
+    ],
+    { bucket: 'hour', groupBy: 'model', timezoneOffsetMinutes: 0 },
+  );
+
+  assertEquals(rows[0].ttftMsP50, 1_800_000);
+  assertEquals(rows[0].ttftMsP99, 1_800_000);
 });
 
 test('aggregatePerformanceForDisplay groups days using caller timezone offset', () => {

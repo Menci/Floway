@@ -1,19 +1,23 @@
-import type { PerformanceTelemetryRecord } from '../../repo/types.ts';
-import { type HistogramBucket, percentileFromHistogramBuckets } from '../../shared/performance-histogram.ts';
+import type { PerformanceMetric, PerformanceTelemetryRecord } from '../../repo/types.ts';
+import { type HistogramBucket, percentileFromBuckets } from '../../shared/performance-histogram.ts';
 
 export type PerformanceBucketGranularity = 'hour' | '4h' | '8h' | 'day' | 'all';
-export type PerformanceGroupBy = 'none' | 'keyId' | 'userId' | 'model' | 'runtimeLocation';
+export type PerformanceGroupBy = 'none' | 'keyId' | 'userId' | 'model' | 'upstream' | 'runtimeLocation';
 
 export interface PerformanceDisplayRecord {
   bucket: string;
   group: string;
   requests: number;
   errors: number;
-  totalMsSum: number;
-  avgMs: number | null;
-  p50Ms: number | null;
-  p95Ms: number | null;
-  p99Ms: number | null;
+  samples: number;
+  ttftMsAvg: number | null;
+  ttftMsP50: number | null;
+  ttftMsP95: number | null;
+  ttftMsP99: number | null;
+  tpotUsAvg: number | null;
+  tpotUsP50: number | null;
+  tpotUsP95: number | null;
+  tpotUsP99: number | null;
 }
 
 type AggregateOptions =
@@ -37,9 +41,10 @@ interface MutableAggregate {
   group: string;
   requests: number;
   errors: number;
-  totalMsSum: number;
-  latencySamples: number;
-  buckets: Map<string, HistogramBucket>;
+  samples: number;
+  ttftMsSum: number;
+  tpotUsSum: number;
+  bucketsByMetric: Record<PerformanceMetric, Map<string, HistogramBucket>>;
 }
 
 export function aggregatePerformanceForDisplay(records: readonly PerformanceTelemetryRecord[], options: AggregateOptions): PerformanceDisplayRecord[] {
@@ -56,24 +61,27 @@ export function aggregatePerformanceForDisplay(records: readonly PerformanceTele
         group,
         requests: 0,
         errors: 0,
-        totalMsSum: 0,
-        latencySamples: 0,
-        buckets: new Map(),
+        samples: 0,
+        ttftMsSum: 0,
+        tpotUsSum: 0,
+        bucketsByMetric: { ttft_ms: new Map(), tpot_us: new Map() },
       };
       aggregates.set(key, aggregate);
     }
 
-    aggregate.requests += record.requests + record.errors;
+    aggregate.requests += record.requests;
     aggregate.errors += record.errors;
-    aggregate.totalMsSum += record.totalMsSum;
-    aggregate.latencySamples += record.requests;
-    for (const bucket of record.buckets) {
-      const bucketKey = `${bucket.lowerMs}\0${bucket.upperMs}`;
-      const existing = aggregate.buckets.get(bucketKey);
+    aggregate.samples += record.samples;
+    aggregate.ttftMsSum += record.ttftMsSum;
+    aggregate.tpotUsSum += record.tpotUsSum;
+    for (const b of record.buckets) {
+      const metricMap = aggregate.bucketsByMetric[b.metric];
+      const bucketKey = String(b.lower);
+      const existing = metricMap.get(bucketKey);
       if (existing) {
-        existing.count += bucket.count;
+        existing.count += b.count;
       } else {
-        aggregate.buckets.set(bucketKey, { ...bucket });
+        metricMap.set(bucketKey, { lower: b.lower, upper: b.upper, count: b.count });
       }
     }
   }
@@ -103,17 +111,23 @@ function displayGroup(record: PerformanceTelemetryRecord, options: AggregateOpti
   return String(record[options.groupBy]);
 }
 
-function toDisplayRecord(aggregate: MutableAggregate): PerformanceDisplayRecord {
-  const buckets = [...aggregate.buckets.values()];
+function toDisplayRecord(a: MutableAggregate): PerformanceDisplayRecord {
+  const ttftBuckets = [...a.bucketsByMetric.ttft_ms.values()];
+  const tpotBuckets = [...a.bucketsByMetric.tpot_us.values()];
+  const hasSamples = a.samples > 0;
   return {
-    bucket: aggregate.bucket,
-    group: aggregate.group,
-    requests: aggregate.requests,
-    errors: aggregate.errors,
-    totalMsSum: aggregate.totalMsSum,
-    avgMs: aggregate.latencySamples > 0 ? aggregate.totalMsSum / aggregate.latencySamples : null,
-    p50Ms: percentileFromHistogramBuckets(buckets, 0.5),
-    p95Ms: percentileFromHistogramBuckets(buckets, 0.95),
-    p99Ms: percentileFromHistogramBuckets(buckets, 0.99),
+    bucket: a.bucket,
+    group: a.group,
+    requests: a.requests,
+    errors: a.errors,
+    samples: a.samples,
+    ttftMsAvg: hasSamples ? a.ttftMsSum / a.samples : null,
+    ttftMsP50: percentileFromBuckets(ttftBuckets, 0.5),
+    ttftMsP95: percentileFromBuckets(ttftBuckets, 0.95),
+    ttftMsP99: percentileFromBuckets(ttftBuckets, 0.99),
+    tpotUsAvg: hasSamples ? a.tpotUsSum / a.samples : null,
+    tpotUsP50: percentileFromBuckets(tpotBuckets, 0.5),
+    tpotUsP95: percentileFromBuckets(tpotBuckets, 0.95),
+    tpotUsP99: percentileFromBuckets(tpotBuckets, 0.99),
   };
 }
