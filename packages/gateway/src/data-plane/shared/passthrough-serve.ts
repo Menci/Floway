@@ -103,12 +103,8 @@ interface PassthroughServeContext {
   // contributing upstream, so those endpoints come verbatim from the emitting
   // upstream's `ProviderModel`.
   readonly modelServesEndpoint: (model: InternalModel) => boolean;
-  // Performs the upstream HTTP call for the chosen (provider, model) pair.
   // Any throw here is preserved and becomes a 502 with the internal-debug
-  // envelope — exceptions thrown from the actual fetch must not be silently
-  // swallowed. `opts` carries the per-call hooks the gateway threads in;
-  // the callback forwards it verbatim to the chosen provider call method.
-  // `model` is the emitting upstream's `ProviderModel`.
+  // envelope. `model` is the emitting upstream's `ProviderModel`.
   readonly call: (provider: Provider, model: ProviderModel, opts: UpstreamCallOptions) => Promise<ProviderCallResult>;
   readonly response: PassthroughResponseHandling;
 }

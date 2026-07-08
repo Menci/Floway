@@ -1,7 +1,5 @@
-// HTTP transport for the ollama upstream. Joins the operator's base URL to
-// each Ollama endpoint path, sets `Authorization: Bearer <apiKey>` when an
-// API key is configured (omitting the header on an unauthenticated daemon),
-// and adds `Content-Type: application/json` for JSON request bodies.
+// HTTP transport for the Ollama upstream. The Authorization header is omitted
+// when no API key is configured (unauthenticated local daemon).
 //
 // Endpoint paths are fixed: ollama.com and a self-hosted daemon serve the
 // same routes from the same Go binary, so there is no pathOverrides escape

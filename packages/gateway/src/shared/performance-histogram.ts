@@ -42,7 +42,6 @@ export const percentileFromBuckets = (buckets: readonly HistogramBucket[], perce
   let seen = 0;
   for (const bucket of ordered) {
     seen += bucket.count;
-    // Overflow bucket has no finite upper; return its lower (the highest defined edge).
     if (seen >= rank) return bucket.upper ?? bucket.lower;
   }
   return null;

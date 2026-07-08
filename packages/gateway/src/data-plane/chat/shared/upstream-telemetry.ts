@@ -11,9 +11,8 @@ export const upstreamPerformanceContext = (ctx: GatewayCtx, candidate: ModelCand
   runtimeLocation: ctx.runtimeLocation,
 });
 
-// First output-content frame (thinking / reasoning / envelope frames don't
-// count) stamps ctx.perfTiming.firstOutputTokenAt; the terminal-frame
-// recorder uses that timestamp to compute TTFT and TPOT.
+// Thinking, reasoning, and envelope frames are excluded; the terminal-frame
+// recorder uses firstOutputTokenAt to compute TTFT and TPOT.
 export const withUpstreamTelemetry = <T>(
   events: AsyncIterable<ProtocolFrame<T>>,
   ctx: GatewayCtx,

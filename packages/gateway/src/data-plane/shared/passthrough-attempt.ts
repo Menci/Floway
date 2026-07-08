@@ -34,11 +34,10 @@ export interface PassthroughAttemptArgs {
   readonly c: AuthedContext;
   readonly ctx: GatewayCtx;
   readonly candidate: ModelCandidate;
-  // Performs the upstream HTTP call for the chosen (provider, model) pair.
   // Delegated to the passthrough caller so each endpoint keeps its
   // request-body shaping (`{ model: _, ...body }`) local. Any throw here
   // is preserved and the serve layer turns it into a 502 with the
-  // internal-debug envelope. `model` is the emitting upstream's `ProviderModel`.
+  // internal-debug envelope.
   readonly call: (provider: Provider, model: ProviderModel, opts: UpstreamCallOptions) => Promise<ProviderCallResult>;
 }
 

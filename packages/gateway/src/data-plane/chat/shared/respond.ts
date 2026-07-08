@@ -15,10 +15,8 @@ import type { EventResultMetadata, ExecuteResult, PlainResult, TelemetryModelIde
 export const plainResultToResponse = (result: PlainResult): Response =>
   new Response(result.body.slice().buffer, { status: result.status, headers: result.headers });
 
-// Captures an upstream HTTP response as a plain result, keeping its status,
-// content type, and upstream attribution. Used by count_tokens endpoints
-// that either pass through the upstream body or wrap an already-built
-// error/success Response.
+// Used by count_tokens endpoints that either pass through the upstream body
+// or wrap an already-built error/success Response.
 export const plainResultFromResponse = async (response: Response, upstream?: string): Promise<PlainResult> =>
   plainResult(
     response.status,
@@ -41,16 +39,11 @@ export class SourceStreamState {
     if (usage && hasTokenUsage(usage)) this.usage = usage;
   }
 
-  // Whether the streamed response should be recorded as failed: an upstream or
-  // internal error frame set `failed`, the writer reported an error completion,
-  // or the client cancelled before the terminal frame arrived.
   failedAfter(completion: StreamCompletion): boolean {
     return completion === 'error' || this.failed || (completion === 'cancel' && !this.completed);
   }
 }
 
-// The events result's metadata, resolved once: prefer the upstream's finalized
-// metadata, else fall back to the identity/performance carried on the result.
 export const eventResultMetadata = async <TEvent>(result: Extract<ExecuteResult<ProtocolFrame<TEvent>>, { type: 'events' }>): Promise<EventResultMetadata> =>
   await (result.finalMetadata ?? {
     modelIdentity: result.modelIdentity,
@@ -127,9 +120,8 @@ export const forwardUpstreamHeaders = (c: Context, headers: Headers | undefined)
   }
 };
 
-// Returns a `HeadersInit` extending `base` with every forwardable entry from
-// `upstream`. Used by non-streaming JSON responses where the response is
-// built directly (`Response.json(...)`) instead of through Hono's `c`.
+// Used by non-streaming JSON responses where the response is built directly
+// (`Response.json(...)`) instead of through Hono's `c`.
 export const mergeForwardedUpstreamHeaders = (base: HeadersInit | undefined, upstream: Headers | undefined): HeadersInit => {
   const merged = new Headers(base);
   if (upstream) {

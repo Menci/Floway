@@ -99,7 +99,7 @@ export const createCodexProvider = (record: UpstreamRecord): Provider => {
 
     // Codex itself is a flat-fee subscription, but the dashboard reports
     // notional cost per request as if the operator were paying OpenAI's
-    // public API rates. The table lives in ./pricing.ts.
+    // public API rates.
     getPricingForModelKey: pricingForCodexModelKey,
 
     callResponses: async (model, body, action, signal, opts) => {

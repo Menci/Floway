@@ -12,8 +12,8 @@ export interface GatewayCtx {
   readonly wantsStream: boolean;
   readonly downstreamAbortController?: AbortController;
   readonly backgroundScheduler: BackgroundScheduler;
-  // Stamped at ctx construction so request-total latency telemetry can subtract
-  // from `performance.now()` at response completion.
+  // Anchors TTFT computation: subtracted from `perfTiming.firstOutputTokenAt`
+  // when that stamp arrives.
   readonly requestStartedAt: number;
   // Stamped once by the upstream stream wrapper on the first frame that
   // carries downstream-visible output content. Null when no such frame has

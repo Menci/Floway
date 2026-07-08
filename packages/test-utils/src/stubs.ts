@@ -3,8 +3,8 @@ import { directFetcher, type FlagId, type InternalModel, type ProviderInstance, 
 // No-op UpstreamCallOptions factory for tests calling provider methods
 // directly: the fetcher uses runtime fetch so `globalThis.fetch` spies still
 // intercept; waitUntil drops the promise (the runtime would have absorbed it
-// in production). Each invocation hands back a fresh `Headers` instance so
-// tests that mutate the bag do not bleed state across cases.
+// in production). The Headers bag is per-call so tests that mutate it do not
+// bleed state across cases.
 export const noopUpstreamCallOptions = (overrides: Partial<UpstreamCallOptions> = {}): UpstreamCallOptions => ({
   fetcher: directFetcher,
   waitUntil: () => {},

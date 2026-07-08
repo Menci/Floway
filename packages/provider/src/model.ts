@@ -146,8 +146,8 @@ export interface ProviderModel extends ModelMetadata {
   // model. Absent when the provider has no per-model call on this
   // model; when present, the map is non-empty (producers elide empty
   // overlays before emission). Populated only for providers with a
-  // per-model rule (Copilot's Claude < 4.8 demote clause is the current
-  // example); other providers leave it undefined.
+  // per-model rule (e.g., Copilot's Claude < 4.8 demote clause); other
+  // providers leave it undefined.
   //
   // The data plane consumes the already-resolved `enabledFlags` and
   // never re-layers this. The field exists so the dashboard's

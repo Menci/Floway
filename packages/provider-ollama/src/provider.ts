@@ -13,7 +13,7 @@
 //
 // Vision, tool calling, and reasoning/thinking are request-time features, not
 // per-endpoint capabilities, so they do not change routing. They surface to
-// the dashboard via providerData for display purposes only.
+// the dashboard via the model's `chat` field for display purposes only.
 //
 // Manual config.models[] entries override auto-fetched models with the same
 // upstreamModelId, mirroring the custom provider's pinning behavior.

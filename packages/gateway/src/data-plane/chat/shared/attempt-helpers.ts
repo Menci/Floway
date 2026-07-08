@@ -44,8 +44,7 @@ export const chatTargetPicker = (preference: readonly ChatTargetApi[]): ChatTarg
   };
 };
 
-// Telemetry identity for the chosen candidate plus the upstream-reported
-// model key. Pricing reads off the provider so the cost lookup respects any
+// Pricing reads off the provider so the cost lookup respects any
 // provider-specific override.
 //
 // `model` is the upstream-facing bare id (`candidate.model.id`,
@@ -60,8 +59,7 @@ export const telemetryModelIdentity = (candidate: ModelCandidate, modelKey: stri
   cost: candidate.provider.instance.getPricingForModelKey(modelKey),
 });
 
-// Per-call UpstreamCallOptions for the chosen candidate; see
-// UpstreamCallOptions in `@floway-dev/provider` for the contract on each
+// See UpstreamCallOptions in `@floway-dev/provider` for the contract on each
 // field, especially header ownership.
 export const buildUpstreamCallOptions = (
   candidate: ModelCandidate,
@@ -73,8 +71,7 @@ export const buildUpstreamCallOptions = (
   headers,
 });
 
-// Lifts a provider's streaming-call result into the attempt's ExecuteResult
-// shape, attaching the performance telemetry context every layer above reads.
+// Attaches the performance telemetry context every layer above reads.
 export const providerStreamResultToExecuteResult = async <TEvent>(
   providerResult: ProviderStreamResult<TEvent>,
   candidate: ModelCandidate,

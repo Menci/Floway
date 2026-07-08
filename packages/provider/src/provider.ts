@@ -24,7 +24,6 @@ export interface Provider {
   upstream: string;
   kind: UpstreamProviderKind;
   name: string;
-  // Public model ids the operator switched off for this upstream.
   disabledPublicModelIds: readonly string[];
   // Per-upstream model name prefix policy mirrored from the source upstream
   // record so registry helpers — routing and listing — read it from the
@@ -72,7 +71,7 @@ export type ProviderResponsesResult =
   | { action: 'compact'; ok: true; result: ResponsesResult; modelKey: string }
   | { action: 'compact'; ok: false; response: Response; modelKey: string };
 
-// Per-call observation hooks the gateway threads through to the provider.
+// Per-call options the gateway threads through to the provider.
 //
 // `fetcher` is the per-upstream proxy-aware indirection for outbound HTTP.
 // Every upstream call (data-plane request, OAuth refresh, etc.) must go
