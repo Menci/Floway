@@ -467,10 +467,11 @@ class MemoryPerformanceRepo implements PerformanceRepo {
 
 type StoredPerformanceRow = Omit<PerformanceTelemetryRecord, 'buckets'> & { bucketMap: Map<string, PerformanceBucketRow> };
 
-// SQL-side rowsFromWhere orders by (hour, keyId, model, upstream, runtimeLocation)
-// on summary rows and (metric, lower) on bucket rows. Memory-side query/listAll
-// and freeze mirror those orderings so a test that compares repo outputs sees
-// the same shape from both impls.
+// Memory-side query/listAll and freeze produce a deterministic order across
+// the full dimension tuple; SQL's ORDER BY hour (summary) + ORDER BY hour,
+// metric, lower (buckets) already covers what tests compare on. Sorting by
+// the full 5-tuple + (metric, lower) here means a repo-output diff never
+// depends on Map insertion order.
 const comparePerformanceRow = (a: StoredPerformanceRow, b: StoredPerformanceRow): number =>
   a.hour.localeCompare(b.hour)
   || a.keyId.localeCompare(b.keyId)
