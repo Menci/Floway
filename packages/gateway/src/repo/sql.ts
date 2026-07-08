@@ -624,7 +624,7 @@ class SqlPerformanceRepo implements PerformanceRepo {
   constructor(private readonly db: SqlDatabase) {}
 
   async recordSample(sample: PerformanceSample): Promise<void> {
-    await this.db.prepare(
+    const summaryStmt = this.db.prepare(
       `INSERT INTO performance_summary (hour, key_id, model, upstream, runtime_location, requests, errors, samples, ttft_ms_sum, tpot_us_sum)
        VALUES (?, ?, ?, ?, ?, 1, 0, 1, ?, ?)
        ON CONFLICT (hour, key_id, model, upstream, runtime_location) DO UPDATE SET
@@ -632,12 +632,11 @@ class SqlPerformanceRepo implements PerformanceRepo {
          samples = samples + 1,
          ttft_ms_sum = ttft_ms_sum + excluded.ttft_ms_sum,
          tpot_us_sum = tpot_us_sum + excluded.tpot_us_sum`,
-    ).bind(...performanceDimensionBinds(sample), sample.ttftMs, sample.tpotUs).run();
+    ).bind(...performanceDimensionBinds(sample), sample.ttftMs, sample.tpotUs);
 
     const ttft = bucketForTtftMs(sample.ttftMs);
     const tpot = bucketForTpotUs(sample.tpotUs);
-    await this.upsertBucket(sample, 'ttft_ms', ttft);
-    await this.upsertBucket(sample, 'tpot_us', tpot);
+    await runStatements(this.db, [summaryStmt, this.buildBucketStmt(sample, 'ttft_ms', ttft), this.buildBucketStmt(sample, 'tpot_us', tpot)]);
   }
 
   async recordError(sample: PerformanceErrorSample): Promise<void> {
@@ -651,7 +650,7 @@ class SqlPerformanceRepo implements PerformanceRepo {
   }
 
   async query(opts: { keyId?: string; start: string; end: string }): Promise<PerformanceTelemetryRecord[]> {
-    const where = opts.keyId ? 'hour >= ? AND hour <= ? AND key_id = ?' : 'hour >= ? AND hour <= ?';
+    const where = opts.keyId ? 'hour >= ? AND hour < ? AND key_id = ?' : 'hour >= ? AND hour < ?';
     const binds = opts.keyId ? [opts.start, opts.end, opts.keyId] : [opts.start, opts.end];
     return await this.rowsFromWhere(where, binds);
   }
@@ -661,7 +660,7 @@ class SqlPerformanceRepo implements PerformanceRepo {
   }
 
   async set(record: PerformanceTelemetryRecord): Promise<void> {
-    await this.db.prepare(
+    const summaryStmt = this.db.prepare(
       `INSERT INTO performance_summary (hour, key_id, model, upstream, runtime_location, requests, errors, samples, ttft_ms_sum, tpot_us_sum)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (hour, key_id, model, upstream, runtime_location) DO UPDATE SET
@@ -670,21 +669,20 @@ class SqlPerformanceRepo implements PerformanceRepo {
          samples = excluded.samples,
          ttft_ms_sum = excluded.ttft_ms_sum,
          tpot_us_sum = excluded.tpot_us_sum`,
-    ).bind(
-      ...performanceDimensionBinds(record),
-      record.requests, record.errors, record.samples, record.ttftMsSum, record.tpotUsSum,
-    ).run();
+    ).bind(...performanceDimensionBinds(record), record.requests, record.errors, record.samples, record.ttftMsSum, record.tpotUsSum);
 
-    await this.db.prepare(
+    const deleteStmt = this.db.prepare(
       'DELETE FROM performance_buckets WHERE hour = ? AND key_id = ? AND model = ? AND upstream = ? AND runtime_location = ?',
-    ).bind(...performanceDimensionBinds(record)).run();
+    ).bind(...performanceDimensionBinds(record));
 
-    for (const bucket of record.buckets) {
-      await this.db.prepare(
+    const bucketStmts = record.buckets.map(bucket =>
+      this.db.prepare(
         `INSERT INTO performance_buckets (hour, key_id, model, upstream, runtime_location, metric, lower, upper, count)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).bind(...performanceDimensionBinds(record), bucket.metric, bucket.lower, bucket.upper, bucket.count).run();
-    }
+      ).bind(...performanceDimensionBinds(record), bucket.metric, bucket.lower, bucket.upper, bucket.count),
+    );
+
+    await runStatements(this.db, [summaryStmt, deleteStmt, ...bucketStmts]);
   }
 
   async deleteAll(): Promise<void> {
@@ -692,13 +690,13 @@ class SqlPerformanceRepo implements PerformanceRepo {
     await this.db.prepare('DELETE FROM performance_summary').run();
   }
 
-  private async upsertBucket(dims: PerformanceDimensions, metric: PerformanceMetric, edges: { lower: number; upper: number | null }): Promise<void> {
-    await this.db.prepare(
+  private buildBucketStmt(dims: PerformanceDimensions, metric: PerformanceMetric, edges: { lower: number; upper: number | null }): SqlPreparedStatement {
+    return this.db.prepare(
       `INSERT INTO performance_buckets (hour, key_id, model, upstream, runtime_location, metric, lower, upper, count)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
        ON CONFLICT (hour, key_id, model, upstream, runtime_location, metric, lower) DO UPDATE SET
          count = count + 1`,
-    ).bind(...performanceDimensionBinds(dims), metric, edges.lower, edges.upper).run();
+    ).bind(...performanceDimensionBinds(dims), metric, edges.lower, edges.upper);
   }
 
   private async rowsFromWhere(where: string, binds: readonly unknown[]): Promise<PerformanceTelemetryRecord[]> {
