@@ -33,6 +33,14 @@ describe('isFirstOutputTokenFrame — responses', () => {
     expect(isFirstOutputTokenFrame(eventFrame({ type: 'response.function_call_arguments.delta', delta: '{' }), 'responses')).toBe(true);
   });
 
+  it('accepts response.custom_tool_call_input.delta', () => {
+    expect(isFirstOutputTokenFrame(eventFrame({ type: 'response.custom_tool_call_input.delta', delta: 'hi' }), 'responses')).toBe(true);
+  });
+
+  it('accepts response.refusal.delta', () => {
+    expect(isFirstOutputTokenFrame(eventFrame({ type: 'response.refusal.delta', delta: 'sorry' }), 'responses')).toBe(true);
+  });
+
   it('rejects response.reasoning_text.delta and response.reasoning_summary_text.delta', () => {
     expect(isFirstOutputTokenFrame(eventFrame({ type: 'response.reasoning_text.delta', delta: '...' }), 'responses')).toBe(false);
     expect(isFirstOutputTokenFrame(eventFrame({ type: 'response.reasoning_summary_text.delta', delta: '...' }), 'responses')).toBe(false);

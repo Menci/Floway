@@ -384,7 +384,7 @@ class MemorySearchUsageRepo implements SearchUsageRepo {
 }
 
 class MemoryPerformanceRepo implements PerformanceRepo {
-  private readonly summaries = new Map<string, PerformanceTelemetryRecord & { bucketMap: Map<string, PerformanceBucketRow> }>();
+  private readonly summaries = new Map<string, StoredPerformanceRow>();
 
   async recordSample(sample: PerformanceSample): Promise<void> {
     const row = this.upsertRow(sample);
@@ -416,8 +416,9 @@ class MemoryPerformanceRepo implements PerformanceRepo {
 
   async set(record: PerformanceTelemetryRecord): Promise<void> {
     const key = this.rowKey(record);
-    const bucketMap = new Map(record.buckets.map(b => [`${b.metric}\0${b.lower}`, { ...b }] as const));
-    this.summaries.set(key, { ...record, bucketMap });
+    const { buckets, ...dims } = record;
+    const bucketMap = new Map(buckets.map(b => [`${b.metric}\0${b.lower}`, { ...b }] as const));
+    this.summaries.set(key, { ...dims, bucketMap });
   }
 
   async deleteAll(): Promise<void> {
@@ -428,28 +429,30 @@ class MemoryPerformanceRepo implements PerformanceRepo {
     return `${dims.hour}\0${dims.keyId}\0${dims.model}\0${dims.upstream}\0${dims.runtimeLocation}`;
   }
 
-  private upsertRow(dims: PerformanceDimensions) {
+  private upsertRow(dims: PerformanceDimensions): StoredPerformanceRow {
     const key = this.rowKey(dims);
     let row = this.summaries.get(key);
     if (!row) {
-      row = { ...dims, requests: 0, errors: 0, samples: 0, ttftMsSum: 0, tpotUsSum: 0, buckets: [], bucketMap: new Map() };
+      row = { ...dims, requests: 0, errors: 0, samples: 0, ttftMsSum: 0, tpotUsSum: 0, bucketMap: new Map() };
       this.summaries.set(key, row);
     }
     return row;
   }
 
-  private incrementBucket(row: { bucketMap: Map<string, PerformanceBucketRow> }, metric: PerformanceMetric, edges: { lower: number; upper: number | null }) {
+  private incrementBucket(row: StoredPerformanceRow, metric: PerformanceMetric, edges: { lower: number; upper: number | null }) {
     const key = `${metric}\0${edges.lower}`;
     const existing = row.bucketMap.get(key);
     if (existing) { existing.count += 1; return; }
     row.bucketMap.set(key, { metric, lower: edges.lower, upper: edges.upper, count: 1 });
   }
 
-  private freeze = ({ bucketMap, ...rest }: { bucketMap: Map<string, PerformanceBucketRow> } & PerformanceTelemetryRecord): PerformanceTelemetryRecord => ({
+  private freeze = ({ bucketMap, ...rest }: StoredPerformanceRow): PerformanceTelemetryRecord => ({
     ...rest,
     buckets: [...bucketMap.values()].map(b => ({ ...b })),
   });
 }
+
+type StoredPerformanceRow = Omit<PerformanceTelemetryRecord, 'buckets'> & { bucketMap: Map<string, PerformanceBucketRow> };
 
 class MemoryModelsCacheRepo implements ModelsCacheRepo {
   private rows = new Map<string, CachedModelsRow>();

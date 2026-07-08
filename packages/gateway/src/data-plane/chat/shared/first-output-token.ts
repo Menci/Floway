@@ -29,6 +29,7 @@ const isResponsesOutputEvent = (event: Record<string, unknown> & { type?: unknow
   if (typeof t !== 'string') return false;
   if (t === 'response.output_text.delta') return true;
   if (t === 'response.function_call_arguments.delta') return true;
+  if (t === 'response.custom_tool_call_input.delta') return true;
   if (t === 'response.refusal.delta') return true;
   return false;
 };
