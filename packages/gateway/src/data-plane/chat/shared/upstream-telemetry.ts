@@ -1,6 +1,7 @@
+import { isFirstOutputTokenFrame } from './first-output-token.ts';
 import type { GatewayCtx } from './gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ChatTargetApi, PerformanceTelemetryContext, ModelCandidate } from '@floway-dev/provider';
+import type { ChatTargetApi, ModelCandidate, PerformanceTelemetryContext } from '@floway-dev/provider';
 
 // The full telemetry context for one upstream call: request-scoped dimensions
 // (keyId, runtimeLocation) come off the gateway ctx, the model dimensions
@@ -13,14 +14,22 @@ export const upstreamPerformanceContext = (ctx: GatewayCtx, candidate: ModelCand
   runtimeLocation: ctx.runtimeLocation,
 });
 
-// Pass-through wrapper around the upstream event stream. Task 10 will layer
-// TTFT stamping on top of this.
+// Pipes the upstream event stream through, stamping
+// `ctx.perfTiming.firstOutputTokenAt` the moment the first output-content
+// frame arrives (thinking / reasoning / envelope frames don't count). This
+// wrapper does not record any telemetry itself — the terminal-frame recorder
+// owns that decision, using the stamped timestamp to compute TTFT and TPOT.
 export const withUpstreamTelemetry = <T>(
   events: AsyncIterable<ProtocolFrame<T>>,
-  _ctx: GatewayCtx,
-  _targetApi: ChatTargetApi,
+  ctx: GatewayCtx,
+  targetApi: ChatTargetApi,
 ): AsyncIterable<ProtocolFrame<T>> => {
   return (async function* () {
-    for await (const frame of events) yield frame;
+    for await (const frame of events) {
+      if (ctx.perfTiming.firstOutputTokenAt === null && isFirstOutputTokenFrame(frame, targetApi)) {
+        ctx.perfTiming.firstOutputTokenAt = performance.now();
+      }
+      yield frame;
+    }
   })();
 };
