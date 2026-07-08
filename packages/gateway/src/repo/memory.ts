@@ -446,9 +446,9 @@ class MemoryPerformanceRepo implements PerformanceRepo {
     row.bucketMap.set(key, { metric, lower: edges.lower, upper: edges.upper, count: 1 });
   }
 
-  private freeze = (row: { bucketMap: Map<string, PerformanceBucketRow> } & PerformanceTelemetryRecord): PerformanceTelemetryRecord => ({
-    ...row,
-    buckets: [...row.bucketMap.values()].map(b => ({ ...b })),
+  private freeze = ({ bucketMap, ...rest }: { bucketMap: Map<string, PerformanceBucketRow> } & PerformanceTelemetryRecord): PerformanceTelemetryRecord => ({
+    ...rest,
+    buckets: [...bucketMap.values()].map(b => ({ ...b })),
   });
 }
 

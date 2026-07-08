@@ -236,32 +236,30 @@ const STORED_RESPONSES_ITEM: StoredResponsesItem = {
 
 const PERFORMANCE_1: PerformanceTelemetryRecord = {
   hour: '2026-01-01T10',
-  metricScope: 'request_total',
   keyId: 'key-a',
   model: 'claude-opus-4-7',
   upstream: 'up_copilot_a',
-  modelKey: 'claude-opus-4.7',
-  stream: true,
   runtimeLocation: 'SJC',
   requests: 5,
   errors: 1,
-  totalMsSum: 1250,
-  buckets: [{ lowerMs: 100, upperMs: 142, count: 5 }],
+  samples: 4,
+  ttftMsSum: 1000,
+  tpotUsSum: 4000,
+  buckets: [{ metric: 'ttft_ms', lower: 100, upper: 142, count: 4 }],
 };
 
 const PERFORMANCE_2: PerformanceTelemetryRecord = {
   hour: '2026-01-01T11',
-  metricScope: 'upstream_success',
   keyId: 'key-b',
   model: 'gpt-public',
   upstream: 'up_azure_a',
-  modelKey: 'gpt-prod',
-  stream: false,
   runtimeLocation: 'LOCAL',
   requests: 3,
   errors: 0,
-  totalMsSum: 900,
-  buckets: [{ lowerMs: 200, upperMs: 284, count: 3 }],
+  samples: 3,
+  ttftMsSum: 600,
+  tpotUsSum: 1500,
+  buckets: [{ metric: 'ttft_ms', lower: 200, upper: 284, count: 3 }],
 };
 
 const setup = () => {

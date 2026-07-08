@@ -187,13 +187,12 @@ test('countTokens refuses a non-messages candidate', async () => {
   assertEquals(thrown.message.includes('chatTargetPicker.pick'), true);
 });
 
-test('generate attaches the performance context and records upstream_success', async () => {
-  const repo = installRepo();
-  const background: Promise<unknown>[] = [];
+test('generate attaches the performance context to the result', async () => {
+  installRepo();
   const ctx: ChatGatewayCtx = {
     ...makeGatewayCtx(),
     runtimeLocation: 'SJC',
-    backgroundScheduler: (promise: Promise<unknown>) => { background.push(promise); },
+    backgroundScheduler: () => {},
   };
   const callMessages = vi.fn(async (): Promise<ProviderStreamResult<MessagesStreamEvent>> => ({
     ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'gpt-test', headers: new Headers(),
@@ -208,8 +207,8 @@ test('generate attaches the performance context and records upstream_success', a
 
   assertEquals(result.type, 'events');
   if (result.type !== 'events') throw new Error('unreachable');
-  // The full performance dimension set rides every chat result so both
-  // telemetry scopes record.
+  // result.performance carries the full dimension set that respond.ts will
+  // use to record telemetry once the stream settles.
   assertExists(result.performance);
   assertEquals(result.performance.keyId, API_KEY_ID);
   assertEquals(result.performance.model, 'test-model');
@@ -218,11 +217,6 @@ test('generate attaches the performance context and records upstream_success', a
   assertEquals(result.performance.runtimeLocation, 'SJC');
 
   await collectEvents(result.events);
-  await Promise.all(background);
-  const upstreamSamples = await repo.performance.query({ metricScope: 'upstream_success', start: '0000', end: '9999' });
-  assertEquals(upstreamSamples.length, 1);
-  assertEquals(upstreamSamples[0]?.upstream, 'up_perf');
-  assertEquals(upstreamSamples[0]?.requests, 1);
 });
 
 test('generate propagates upstream response headers onto the EventResult so respond can forward them', async () => {
