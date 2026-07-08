@@ -61,8 +61,20 @@ export const recordUsage = async (ctx: GatewayCtx, modelIdentity: TelemetryModel
   if (usage && hasTokenUsage(usage)) await recordTokenUsage(ctx.apiKeyId, modelIdentity, usage);
 };
 
-export const recordPerformance = (ctx: GatewayCtx, context: EventResultMetadata['performance'], failed: boolean): void => {
-  recordRequestPerformance(ctx.backgroundScheduler, context, failed, performance.now() - ctx.requestStartedAt);
+export const recordPerformance = (
+  ctx: GatewayCtx,
+  telemetry: EventResultMetadata['performance'],
+  failed: boolean,
+  outputTokens: number,
+): void => {
+  recordRequestPerformance(
+    ctx.backgroundScheduler,
+    { perfTiming: ctx.perfTiming, requestStartedAt: ctx.requestStartedAt },
+    telemetry,
+    failed,
+    outputTokens,
+    performance.now(),
+  );
 };
 
 // Upstream response headers we propagate verbatim to the downstream client.

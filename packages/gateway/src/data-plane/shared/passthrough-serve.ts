@@ -119,7 +119,6 @@ export const passthroughApiError = (c: Context, message: string, status: Content
 
 export const passthroughServe = async (input: PassthroughServeContext): Promise<Response> => {
   const { c, ctx, sourceApi, model, kind, modelServesEndpoint, call, response: responseHandling } = input;
-  const requestStartedAt = performance.now();
   // Populated as attempts land so a throw from `passthroughAttempt` (or
   // the response handling below) can still attribute request-perf to the
   // most recent candidate the loop touched. A throw before any candidate
@@ -195,7 +194,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
       // Exhausted — forward the last upstream response verbatim so clients
       // still see real upstream telemetry (status, retry-after, request-id,
       // ...) rather than a synthetic gateway envelope.
-      recordRequestPerformance(ctx.backgroundScheduler, performanceContext, true, performance.now() - requestStartedAt);
+      recordRequestPerformance(ctx.backgroundScheduler, { perfTiming: ctx.perfTiming, requestStartedAt: ctx.requestStartedAt }, performanceContext, true, 0, performance.now());
       ctx.dump?.error('upstream', identity.upstream);
       return forwardUpstreamResponse(response);
     }
@@ -216,7 +215,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
       if (usage) {
         scheduleUsageRecord(ctx.backgroundScheduler, recordTokenUsage(ctx.apiKeyId, identity, usage));
       }
-      recordRequestPerformance(ctx.backgroundScheduler, performanceContext, false, performance.now() - requestStartedAt);
+      recordRequestPerformance(ctx.backgroundScheduler, { perfTiming: ctx.perfTiming, requestStartedAt: ctx.requestStartedAt }, performanceContext, false, usage?.output ?? 0, performance.now());
       return forwardUpstreamResponse(response);
     }
 
@@ -226,7 +225,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
     const upstreamBody = response.body;
     if (!upstreamBody) {
       ctx.dump?.failed(`${sourceApi} streaming upstream returned no body`);
-      recordRequestPerformance(ctx.backgroundScheduler, performanceContext, true, performance.now() - requestStartedAt);
+      recordRequestPerformance(ctx.backgroundScheduler, { perfTiming: ctx.perfTiming, requestStartedAt: ctx.requestStartedAt }, performanceContext, true, 0, performance.now());
       // Preserve upstream correlation headers (x-request-id, cf-ray, ...)
       // on the synthesized 502 so this rare edge case is still traceable.
       stageForwardedResponseHeaders(c, response);
@@ -277,7 +276,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
         if (usage) {
           scheduleUsageRecord(ctx.backgroundScheduler, recordTokenUsage(ctx.apiKeyId, identity, usage));
         }
-        recordRequestPerformance(ctx.backgroundScheduler, performanceContext, failed, performance.now() - requestStartedAt);
+        recordRequestPerformance(ctx.backgroundScheduler, { perfTiming: ctx.perfTiming, requestStartedAt: ctx.requestStartedAt }, performanceContext, failed, usage?.output ?? 0, performance.now());
       }
     });
   } catch (e) {
@@ -288,7 +287,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
         return forwarded;
       }
     }
-    recordRequestPerformance(ctx.backgroundScheduler, lastPerformance, true, performance.now() - requestStartedAt);
+    recordRequestPerformance(ctx.backgroundScheduler, { perfTiming: ctx.perfTiming, requestStartedAt: ctx.requestStartedAt }, lastPerformance, true, 0, performance.now());
     ctx.dump?.failed(e);
     return c.json({ error: toInternalDebugError(e) }, 502);
   }

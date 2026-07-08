@@ -24,13 +24,13 @@ export const respondGemini = async (
   ctx: GatewayCtx,
 ): Promise<{ success: boolean; response: Response }> => {
   if (result.type === 'api-error') {
-    recordPerformance(ctx, result.performance, true);
+    recordPerformance(ctx, result.performance, true, 0);
     ctx.dump?.error(result.source, result.upstream);
     return { success: false, response: geminiApiErrorResponse(result) };
   }
 
   if (result.type === 'internal-error') {
-    recordPerformance(ctx, result.performance, true);
+    recordPerformance(ctx, result.performance, true, 0);
     ctx.dump?.failed(result.error.message);
     return { success: false, response: geminiErrorResponse(result.status, result.error.message, internalDebugFields(result.error)) };
   }
@@ -52,10 +52,10 @@ export const respondGemini = async (
       const usage = tokenUsageFromGeminiResponse(response);
       ctx.dump?.success(metadata.modelIdentity, usage);
       await recordUsage(ctx, metadata.modelIdentity, usage);
-      recordPerformance(ctx, metadata.performance, state.failed);
+      recordPerformance(ctx, metadata.performance, state.failed, usage?.output ?? 0);
       return { success: true, response: Response.json(response, { headers: mergeForwardedUpstreamHeaders(undefined, result.headers) }) };
     } catch (error) {
-      recordPerformance(ctx, result.performance, true);
+      recordPerformance(ctx, result.performance, true, 0);
       ctx.dump?.failed(error);
       return { success: false, response: geminiCollectErrorResponse(error) };
     }
@@ -82,7 +82,7 @@ export const respondGemini = async (
       } catch (error) {
         console.error('Failed to record Gemini usage:', error);
       } finally {
-        recordPerformance(ctx, metadata.performance, failed);
+        recordPerformance(ctx, metadata.performance, failed, state.usage?.output ?? 0);
       }
     }
   });
