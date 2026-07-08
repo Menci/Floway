@@ -114,12 +114,8 @@ type GeminiErrorStatusPayload = {
   error: GeminiErrorResponse['error'] & GeminiErrorDebugFields;
 };
 
-// HTTP status -> Google RPC status string mapping plus the two ways we coerce
-// an out-of-range code: `googleRpcHttpStatusCode` for passthrough/native
-// errors (anything insane becomes 500), `synthesizedGeminiHttpStatusCode` for
-// errors we mint (a non-500 that maps to INTERNAL becomes 500).
-const synthesizedGeminiHttpStatusCode = (status: number): number => (geminiStatusForHttpStatus(status) === 'INTERNAL' && status !== 500 ? 500 : status);
-
+// HTTP status -> Google RPC status string mapping: `googleRpcHttpStatusCode`
+// coerces anything insane to 500 for passthrough / native errors.
 const googleRpcHttpStatusCode = (status: number): number => (Number.isInteger(status) && status >= 400 && status <= 599 ? status : 500);
 
 const geminiRpcErrorPayload = (status: number, message: string, debug: GeminiErrorDebugFields = {}): GeminiErrorStatusPayload => {
@@ -155,7 +151,8 @@ export const geminiInternalRpcErrorResponse = (status: number, error: unknown): 
 };
 
 const geminiErrorResponse = (status: number, message: string, debug: GeminiErrorDebugFields = {}): Response => {
-  const code = synthesizedGeminiHttpStatusCode(status);
+  // For gateway-minted errors, a non-500 that maps to INTERNAL is coerced to 500.
+  const code = geminiStatusForHttpStatus(status) === 'INTERNAL' && status !== 500 ? 500 : status;
   return Response.json({ error: { code, message, status: geminiStatusForHttpStatus(code), ...debug } }, { status: code });
 };
 

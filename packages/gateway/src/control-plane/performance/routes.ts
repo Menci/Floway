@@ -106,11 +106,12 @@ export const performanceTelemetry = async (c: Ctx) => {
   const rawRecords = await queryRecordsForView(resolved, params.value);
   if (rawRecords === null) return c.json({ error: 'Unknown key_id' }, 404);
 
+  const baseOptions = { bucket: params.value.bucket, timezoneOffsetMinutes: params.value.timezoneOffsetMinutes };
   const records = aggregatePerformanceForDisplay(
     rawRecords,
     params.value.groupBy === 'userId'
-      ? { ...params.value, groupBy: 'userId', keyToUser: await buildKeyToUserMap() }
-      : { ...params.value, groupBy: params.value.groupBy },
+      ? { ...baseOptions, groupBy: 'userId', keyToUser: await buildKeyToUserMap() }
+      : { ...baseOptions, groupBy: params.value.groupBy },
   );
 
   const query = c.req.valid('query');

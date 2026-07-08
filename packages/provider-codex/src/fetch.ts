@@ -300,12 +300,6 @@ const buildCodexResponsesBody = (
   return body;
 };
 
-const codexTurnMetadataOptions = (opts: CallCodexResponsesOptions): CodexTurnMetadataOptions =>
-  opts.turnMetadata ?? (containsCompactionTrigger(opts.body.input) ? CODEX_RESPONSES_COMPACTION_V2_TURN_METADATA : { requestKind: 'turn' });
-
-const containsCompactionTrigger = (input: ResponsesPayload['input']): boolean =>
-  Array.isArray(input) && input.some(item => item.type === 'compaction_trigger');
-
 // One upstream round-trip with quota-header persistence and terminal-401
 // classification. The returned Response is what the caller relays:
 //   - 2xx: caller decodes the body (SSE for /responses, JSON for /responses/compact)
@@ -405,7 +399,7 @@ const performStreamingResponsesCall = async (
   const clientTurnMetadata = parseClientTurnMetadataJson(trimHeader(opts.headers, 'x-codex-turn-metadata'));
   const clientMetadata = clientCodexClientMetadata(opts.body);
   const identity = await buildCodexRequestIdentity(opts, opts.body, clientMetadata, clientTurnMetadata);
-  const metadata = codexTurnMetadataOptions(opts);
+  const metadata = opts.turnMetadata ?? (Array.isArray(opts.body.input) && opts.body.input.some(item => item.type === 'compaction_trigger') ? CODEX_RESPONSES_COMPACTION_V2_TURN_METADATA : { requestKind: 'turn' });
   const turnMetadataJson = buildCodexTurnMetadataJson(identity, metadata, clientTurnMetadata);
   const upstreamFetch = dispatchCodexHttpCall(
     opts,

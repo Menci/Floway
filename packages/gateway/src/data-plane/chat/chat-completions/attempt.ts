@@ -41,7 +41,15 @@ export const chatCompletionsAttempt = {
     };
     return await runInterceptors(invocation, ctx, chatCompletionsInterceptors, async () => {
       if (targetApi === 'chat-completions') {
-        return await callChatCompletionsAsExecuteResult(invocation.payload, ctx, candidate, invocation.headers);
+        if (candidate.rules !== undefined) applyRulesToUpstreamChatCompletions(invocation.payload, candidate.rules);
+        const { model: _model, ...body } = invocation.payload;
+        const providerResult = await candidate.provider.instance.callChatCompletions(
+          providerModelOf(candidate),
+          body,
+          ctx.abortSignal,
+          buildUpstreamCallOptions(candidate, ctx, invocation.headers),
+        );
+        return await providerStreamResultToExecuteResult(providerResult, candidate, 'chat-completions', ctx);
       }
       if (targetApi === 'messages') {
         return await traverseTranslation(
@@ -101,21 +109,4 @@ const rewriteOrRenderChatCompletionsFailure = async (
       },
     };
   }
-};
-
-const callChatCompletionsAsExecuteResult = async (
-  payload: ChatCompletionsPayload,
-  ctx: ChatGatewayCtx,
-  candidate: ModelCandidate,
-  headers: Headers,
-): Promise<ExecuteResult<ProtocolFrame<ChatCompletionsStreamEvent>>> => {
-  if (candidate.rules !== undefined) applyRulesToUpstreamChatCompletions(payload, candidate.rules);
-  const { model: _model, ...body } = payload;
-  const providerResult = await candidate.provider.instance.callChatCompletions(
-    providerModelOf(candidate),
-    body,
-    ctx.abortSignal,
-    buildUpstreamCallOptions(candidate, ctx, headers),
-  );
-  return await providerStreamResultToExecuteResult(providerResult, candidate, 'chat-completions', ctx);
 };

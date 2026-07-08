@@ -6,14 +6,6 @@ import type { PerformanceTelemetryContext } from '@floway-dev/provider';
 
 export type { PerformanceTelemetryContext };
 
-const dimensions = (telemetry: PerformanceTelemetryContext): PerformanceDimensions => ({
-  hour: currentHour(),
-  keyId: telemetry.keyId,
-  model: telemetry.model,
-  upstream: telemetry.upstream,
-  runtimeLocation: telemetry.runtimeLocation,
-});
-
 const recordSample = async (sample: PerformanceSample): Promise<void> => {
   try {
     await getRepo().performance.recordSample(sample);
@@ -41,7 +33,13 @@ export const recordRequestPerformance = (
   requestFinishedAt: number,
 ): void => {
   if (!telemetry) return;
-  const dims = dimensions(telemetry);
+  const dims: PerformanceDimensions = {
+    hour: currentHour(),
+    keyId: telemetry.keyId,
+    model: telemetry.model,
+    upstream: telemetry.upstream,
+    runtimeLocation: telemetry.runtimeLocation,
+  };
   if (failed || ctx.perfTiming.firstOutputTokenAt === null || outputTokens <= 0) {
     scheduler(recordError(dims));
     return;

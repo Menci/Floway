@@ -40,16 +40,13 @@ const rawModelIdOf = (model: ProviderModel): string => model.providerData as str
 const CHAT_ENDPOINTS: ModelEndpoints = { completions: {}, chatCompletions: {}, responses: {}, messages: {} };
 const EMBEDDING_ENDPOINTS: ModelEndpoints = { embeddings: {} };
 
-const endpointsForCapabilities = (capabilities: ReadonlySet<string>): ModelEndpoints =>
-  (capabilities.has('embedding') ? EMBEDDING_ENDPOINTS : CHAT_ENDPOINTS);
-
 const finalizeOllamaModels = (
   catalog: OllamaCatalog,
   enabledFlags: ReadonlySet<FlagId>,
 ): ProviderModel[] => {
   const models: ProviderModel[] = [];
   for (const raw of catalog.data) {
-    const endpoints = endpointsForCapabilities(raw.capabilities);
+    const endpoints = raw.capabilities.has('embedding') ? EMBEDDING_ENDPOINTS : CHAT_ENDPOINTS;
     const limits: ProviderModel['limits'] = {};
     if (raw.contextLength !== undefined) limits.max_context_window_tokens = raw.contextLength;
     const model: ProviderModel = {

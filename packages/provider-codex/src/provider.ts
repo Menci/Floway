@@ -136,13 +136,13 @@ export const createCodexProvider = (record: UpstreamRecord): Provider => {
     // plane never routes these surfaces here in practice, but a stray
     // dispatch must surface as a 405 carrying a proper JSON error rather
     // than letting a raw stack trace bubble up the boundary.
-    callMessages: () => Promise.resolve(unsupportedStreamResult()),
-    callMessagesCountTokens: () => Promise.resolve(unsupportedCallResult()),
-    callCompletions: () => Promise.resolve(unsupportedCallResult()),
-    callChatCompletions: () => Promise.resolve(unsupportedStreamResult()),
-    callEmbeddings: () => Promise.resolve(unsupportedCallResult()),
-    callImagesGenerations: () => Promise.resolve(unsupportedCallResult()),
-    callImagesEdits: () => Promise.resolve(unsupportedCallResult()),
+    callMessages: () => unsupportedStreamResult(),
+    callMessagesCountTokens: () => unsupportedCallResult(),
+    callCompletions: () => unsupportedCallResult(),
+    callChatCompletions: () => unsupportedStreamResult(),
+    callEmbeddings: () => unsupportedCallResult(),
+    callImagesGenerations: () => unsupportedCallResult(),
+    callImagesEdits: () => unsupportedCallResult(),
   };
 
   return {
@@ -161,13 +161,8 @@ const synthetic405 = (): Response => new Response(
   { status: 405, headers: { 'content-type': 'application/json' } },
 );
 
-const unsupportedStreamResult = <TEvent>(): ProviderStreamResult<TEvent> => ({
-  ok: false,
-  modelKey: '',
-  response: synthetic405(),
-});
+const unsupportedStreamResult = <TEvent>(): Promise<ProviderStreamResult<TEvent>> =>
+  Promise.resolve({ ok: false, modelKey: '', response: synthetic405() });
 
-const unsupportedCallResult = (): ProviderCallResult => ({
-  modelKey: '',
-  response: synthetic405(),
-});
+const unsupportedCallResult = (): Promise<ProviderCallResult> =>
+  Promise.resolve({ modelKey: '', response: synthetic405() });

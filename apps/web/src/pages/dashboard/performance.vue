@@ -153,19 +153,15 @@ const formatTps = (tps: number | null): string => {
 const formatTokPerSec = (us: number | null): string =>
   us === null || us <= 0 ? '—' : formatTps(1_000_000 / us);
 
-const getTtftValue = (record: PerformanceDisplayRecord, p: PercentileKey): number | null => {
-  if (p === 'p50') return record.ttftMsP50;
-  if (p === 'p95') return record.ttftMsP95;
-  return record.ttftMsP99;
-};
-
-const getTokPerSecValue = (record: PerformanceDisplayRecord, p: PercentileKey): number | null => {
+const getChartValue = (record: PerformanceDisplayRecord, p: PercentileKey): number | null => {
+  if (performanceMetric.value === 'ttft') {
+    if (p === 'p50') return record.ttftMsP50;
+    if (p === 'p95') return record.ttftMsP95;
+    return record.ttftMsP99;
+  }
   const us = p === 'p50' ? record.tpotUsP50 : p === 'p95' ? record.tpotUsP95 : record.tpotUsP99;
-  return (us === null || us <= 0) ? null : 1_000_000 / us;
+  return us === null || us <= 0 ? null : 1_000_000 / us;
 };
-
-const getChartValue = (record: PerformanceDisplayRecord, p: PercentileKey): number | null =>
-  performanceMetric.value === 'ttft' ? getTtftValue(record, p) : getTokPerSecValue(record, p);
 
 const getRowAvg = (record: PerformanceDisplayRecord): number | null => {
   if (performanceMetric.value === 'ttft') return record.ttftMsAvg;
