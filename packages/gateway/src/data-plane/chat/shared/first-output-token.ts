@@ -36,7 +36,7 @@ const isResponsesOutputEvent = (event: Record<string, unknown> & { type?: unknow
 const isChatCompletionsOutputEvent = (event: Record<string, unknown> & { choices?: unknown }): boolean => {
   const choices = event.choices;
   if (!Array.isArray(choices) || choices.length === 0) return false;
-  const delta = (choices[0] as { delta?: Record<string, unknown> } | undefined)?.delta;
+  const delta = (choices[0] as { delta?: Record<string, unknown> }).delta;
   if (!delta) return false;
   const content = delta.content;
   if (typeof content === 'string' && content.length > 0) return true;

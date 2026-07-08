@@ -703,7 +703,7 @@ class SqlPerformanceRepo implements PerformanceRepo {
        FROM performance_summary WHERE ${where} ORDER BY hour`,
     ).bind(...binds).all<PerformanceDimensionRow & { requests: number; errors: number; samples: number; ttft_ms_sum: number; tpot_us_sum: number }>();
 
-    const records = new Map<string, PerformanceTelemetryRecord & { bucketAcc: PerformanceBucketRow[] }>();
+    const records = new Map<string, Omit<PerformanceTelemetryRecord, 'buckets'> & { buckets: PerformanceBucketRow[] }>();
     for (const row of summaryRows) {
       const dims = performanceDimensionsFromRow(row);
       records.set(performanceRecordKey(dims), {
@@ -714,7 +714,6 @@ class SqlPerformanceRepo implements PerformanceRepo {
         ttftMsSum: row.ttft_ms_sum,
         tpotUsSum: row.tpot_us_sum,
         buckets: [],
-        bucketAcc: [],
       });
     }
 
@@ -726,11 +725,13 @@ class SqlPerformanceRepo implements PerformanceRepo {
       const dims = performanceDimensionsFromRow(row);
       const key = performanceRecordKey(dims);
       const record = records.get(key);
-      if (!record) continue;
-      record.bucketAcc.push({ metric: row.metric, lower: row.lower, upper: row.upper, count: row.count });
+      // Every write path inserts the summary + buckets atomically, so a bucket
+      // row without its summary is a DB invariant violation, not a domain case.
+      if (!record) throw new Error(`performance_buckets row has no matching summary for key ${key}`);
+      record.buckets.push({ metric: row.metric, lower: row.lower, upper: row.upper, count: row.count });
     }
 
-    return [...records.values()].map(r => ({ ...r, buckets: r.bucketAcc }));
+    return [...records.values()];
   }
 }
 
