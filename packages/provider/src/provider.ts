@@ -79,15 +79,6 @@ export type ProviderResponsesResult =
 // through this fetcher so a single fallback chain governs every leg of the
 // call under restricted egress.
 //
-// `recordUpstreamLatency` measures the precise upstream round-trip — request
-// leaves the gateway, response returns to the gateway — and explicitly excludes
-// in-process work the provider does around the call (boundary interceptors,
-// auth-token refresh, request/response shaping, SSE parsing). The provider is
-// required to wrap the actual upstream fetch promise with this helper at least
-// once; the gateway throws on a violation so missing wraps fail loud. On
-// retries (e.g. invalidate-token-and-redo), only the most recent invocation's
-// measurement is kept.
-//
 // `waitUntil` registers a fire-and-forget promise that must outlive the
 // response. On workerd it maps to `ExecutionContext.waitUntil` so the
 // isolate is not terminated when the response is returned; on Node it is a
@@ -103,7 +94,6 @@ export type ProviderResponsesResult =
 // the bag and the provider must not retain a reference past the call.
 export interface UpstreamCallOptions {
   fetcher: Fetcher;
-  recordUpstreamLatency: <T>(promise: Promise<T>) => Promise<T>;
   waitUntil: (promise: Promise<unknown>) => void;
   headers: Headers;
 }

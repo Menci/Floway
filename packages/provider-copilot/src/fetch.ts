@@ -14,7 +14,6 @@ const copilotFetchInternal = async (
     return await copilotAuthedFetch(path, init, config, {
       headers: options.extraHeaders,
       fetcher: options.fetcher,
-      ...(options.recordUpstreamLatency ? { recordUpstreamLatency: options.recordUpstreamLatency } : {}),
     });
   } catch (error) {
     if (!isCopilotTokenFetchError(error)) throw error;

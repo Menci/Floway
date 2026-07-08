@@ -4,7 +4,7 @@ import { CODEX_ORIGINATOR, CODEX_USER_AGENT } from './constants.ts';
 import { callCodexResponses, callCodexResponsesCompact, type CodexCallEffects } from './fetch.ts';
 import type { CodexAccessTokenEntry, CodexAccountCredential, CodexQuotaSnapshotMapEntry, CodexUpstreamState } from './state.ts';
 import type { ResponsesResult } from '@floway-dev/protocols/responses';
-import { initProviderRepo, type Fetcher, type UpstreamRecord } from '@floway-dev/provider';
+import { initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
 import { noopUpstreamCallOptions, stubProviderModel } from '@floway-dev/test-utils';
 
 const makeEffects = (): CodexCallEffects => ({
@@ -730,100 +730,6 @@ describe('callCodexResponses — background-write registration', () => {
   });
 });
 
-// Provider-level tests need their own enforcing recorder so they can assert
-// the wrap-once contract without depending on the gateway package. The
-// `fetcher` honours the third-arg recorder because data-plane POSTs thread
-// the recorder through the fetcher rather than wrapping outside.
-const enforcingRecorder = () => {
-  const wrappedPromises: unknown[] = [];
-  let last: number | undefined;
-  const record = <T>(promise: Promise<T>): Promise<T> => {
-    wrappedPromises.push(promise);
-    const startedAt = performance.now();
-    return promise.finally(() => { last = performance.now() - startedAt; });
-  };
-  const fetcher: Fetcher = (url, init, recordUpstreamLatency) => {
-    const inner = fetch(url, init);
-    return recordUpstreamLatency ? recordUpstreamLatency(inner) : inner;
-  };
-  return {
-    options: {
-      fetcher,
-      recordUpstreamLatency: record,
-      waitUntil: () => {},
-      headers: new Headers(),
-    },
-    invocations: () => wrappedPromises.length,
-    durationMs: (): number => {
-      if (last === undefined) throw new Error('recorder was never wrapped');
-      return last;
-    },
-  };
-};
-
-describe('callCodexResponses — recorder contract', () => {
-  test('non-active gate satisfies an enforcing recorder once', async () => {
-    const recorder = enforcingRecorder();
-    const result = await callCodexResponses({
-      upstreamId, account: { ...activeAccount, state: 'session_terminated' },
-      model, body: { input: [], stream: true }, headers: new Headers(), effects: makeEffects(), call: recorder.options,
-    });
-    expect(result.ok).toBe(false);
-    expect(recorder.invocations()).toBe(1);
-    expect(recorder.durationMs()).toBeGreaterThanOrEqual(0);
-  });
-
-  test('cached rate-limited quota does not synthetic-return before the upstream fetch', async () => {
-    seedAccountState({
-      accessToken: farFutureAccessToken,
-      quotaSnapshot: {
-        premium: {
-          fetchedAt: new Date('2026-06-05T00:00:00.000Z').getTime(),
-          data: { observed_at: '2026-06-05T00:00:00.000Z', active_limit: 'premium', ratelimited_until: '2026-06-05T01:00:00.000Z' },
-        },
-      },
-    });
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
-    const recorder = enforcingRecorder();
-    const result = await callCodexResponses({
-      upstreamId, account: activeAccount,
-      model, body: { input: [], stream: true }, headers: new Headers(), effects: makeEffects(), call: recorder.options,
-    });
-    expect(result.ok).toBe(true);
-    expect(recorder.invocations()).toBe(1);
-    expect(() => recorder.durationMs()).not.toThrow();
-  });
-
-  test('refresh-failed gate satisfies an enforcing recorder once', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(errorJson(400, { error: { code: 'app_session_terminated', message: 'gone' } }));
-    const recorder = enforcingRecorder();
-    const result = await callCodexResponses({
-      upstreamId, account: activeAccount,
-      model, body: { input: [], stream: true }, headers: new Headers(), effects: makeEffects(), call: recorder.options,
-    });
-    expect(result.ok).toBe(false);
-    expect(recorder.invocations()).toBe(1);
-    expect(() => recorder.durationMs()).not.toThrow();
-  });
-
-  test('401-then-success: recorder records both fetch attempts; durationMs reflects the second', async () => {
-    seedFreshAccessToken();
-    vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(errorJson(401, { error: { code: 'expired_token', message: 'expired' } }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: 'at2', refresh_token: 'rt_v2', id_token: 'it', expires_in: 600 }), { status: 200 }))
-      .mockResolvedValueOnce(sseResponse());
-    const recorder = enforcingRecorder();
-    const result = await callCodexResponses({
-      upstreamId, account: activeAccount,
-      model, body: { input: [], stream: true }, headers: new Headers(), effects: makeEffects(), call: recorder.options,
-    });
-    expect(result.ok).toBe(true);
-    // Both upstream fetches go through `recordUpstreamLatency`; the OAuth
-    // refresh in between is provider-internal and must NOT be wrapped.
-    expect(recorder.invocations()).toBe(2);
-  });
-});
-
 // `callCodexResponsesCompact` shares OAuth + quota + 401-retry plumbing with
 // `callCodexResponses` (both go through `prepareCodexCall` →
 // `dispatchCodexHttpCall` → `refreshAccessTokenForRetry`). The streaming
@@ -953,13 +859,4 @@ describe('callCodexResponsesCompact', () => {
     expect(effects.persistRefreshTokenRotation).not.toHaveBeenCalled();
   });
 
-  test('non-active gate satisfies an enforcing recorder once (shared pre-fetch path)', async () => {
-    const recorder = enforcingRecorder();
-    const result = await callCodexResponsesCompact({
-      upstreamId, account: { ...activeAccount, state: 'session_terminated' },
-      model, body: { input: [] }, headers: new Headers(), effects: makeEffects(), call: recorder.options,
-    });
-    expect(result.ok).toBe(false);
-    expect(recorder.invocations()).toBe(1);
-  });
 });

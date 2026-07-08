@@ -109,7 +109,7 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
     return transport(
       config,
       { method: 'POST', body: JSON.stringify({ ...body, model: rawModelId }), signal },
-      { extraHeaders: opts.headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency },
+      { extraHeaders: opts.headers, fetcher: opts.fetcher },
     ).then(response => ({ response, modelKey: rawModelId }));
   };
 
@@ -126,7 +126,7 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
       transport(
         config,
         { method: 'POST', body: JSON.stringify({ ...body, stream: true, model: rawModelId }), signal },
-        { extraHeaders: opts.headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency },
+        { extraHeaders: opts.headers, fetcher: opts.fetcher },
       ),
       parser,
       rawModelId,
@@ -162,7 +162,7 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
         const response = await ollamaFetchResponsesCompact(
           config,
           { method: 'POST', body: JSON.stringify({ ...toCompactPayloadShape(body), model: rawModelId }), signal },
-          { extraHeaders: opts.headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency },
+          { extraHeaders: opts.headers, fetcher: opts.fetcher },
         );
         return response.ok
           ? { action: 'compact', ok: true, result: (await response.json()) as ResponsesResult, modelKey: rawModelId }

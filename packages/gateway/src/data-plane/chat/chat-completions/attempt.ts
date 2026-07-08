@@ -9,7 +9,6 @@ import { providerStreamResultToExecuteResult, buildUpstreamCallOptions, chatTarg
 import { tryCatchChatServeFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { traverseTranslation } from '../shared/translate-traverse.ts';
-import { createUpstreamLatencyRecorder } from '../shared/upstream-telemetry.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ChatCompletionsMessage, ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -112,12 +111,11 @@ const callChatCompletionsAsExecuteResult = async (
 ): Promise<ExecuteResult<ProtocolFrame<ChatCompletionsStreamEvent>>> => {
   if (candidate.rules !== undefined) applyRulesToUpstreamChatCompletions(payload, candidate.rules);
   const { model: _model, ...body } = payload;
-  const recorder = createUpstreamLatencyRecorder();
   const providerResult = await candidate.provider.instance.callChatCompletions(
     providerModelOf(candidate),
     body,
     ctx.abortSignal,
-    buildUpstreamCallOptions(candidate, ctx, recorder.record, headers),
+    buildUpstreamCallOptions(candidate, ctx, headers),
   );
-  return await providerStreamResultToExecuteResult(providerResult, candidate, 'chat-completions', ctx, recorder);
+  return await providerStreamResultToExecuteResult(providerResult, candidate, 'chat-completions', ctx);
 };

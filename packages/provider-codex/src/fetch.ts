@@ -64,16 +64,11 @@ export const callCodexResponsesCompact = async (opts: CallCodexResponsesCompactO
   return await performUnaryCompactCall(opts, ready.accessToken, false);
 };
 
-// Pre-fetch gates + initial access-token mint. Each synthetic failure rides
-// through the per-call latency recorder once so the gateway's wrap-once
-// contract holds even when no upstream HTTP ever leaves the process — the
-// captured ~0 ms is never read (gateway records `upstream_success` failures
-// as a counter), but a missing wrap is a contract violation.
+// Pre-fetch gates + initial access-token mint. Each synthetic failure returns
+// directly without an upstream HTTP call.
 const prepareCodexCall = async (opts: CodexBackendCallBase): Promise<{ ok: true; accessToken: string } | { ok: false; response: Response }> => {
-  const wrapSynthetic = (response: Response) => opts.call.recordUpstreamLatency(Promise.resolve(response));
-
   if (opts.account.state !== 'active') {
-    return { ok: false, response: await wrapSynthetic(synthetic503(`Codex upstream is ${opts.account.state}`)) };
+    return { ok: false, response: synthetic503(`Codex upstream is ${opts.account.state}`) };
   }
 
   try {
@@ -82,7 +77,7 @@ const prepareCodexCall = async (opts: CodexBackendCallBase): Promise<{ ok: true;
   } catch (err) {
     if (err instanceof CodexOAuthSessionTerminatedError) {
       await opts.effects.persistTerminalState('refresh_failed', err.upstreamMessage);
-      return { ok: false, response: await wrapSynthetic(synthetic503(`Codex refresh failed: ${err.upstreamMessage}`)) };
+      return { ok: false, response: synthetic503(`Codex refresh failed: ${err.upstreamMessage}`) };
     }
     throw err;
   }
@@ -349,7 +344,7 @@ const dispatchCodexHttpCall = async (
     headers,
     body: JSON.stringify(body),
     signal: opts.signal,
-  }, opts.call.recordUpstreamLatency);
+  });
 
   if (response.ok) {
     const responseNow = new Date();

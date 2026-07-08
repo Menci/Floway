@@ -1,7 +1,6 @@
 import { sleep } from '../../../../../shared/sleep.ts';
 import { enumerateModelCandidates } from '../../../../providers/registry.ts';
 import { appendFailedUpstreams } from '../../../../shared/failed-upstreams.ts';
-import { createUpstreamLatencyRecorder, recordPerformanceError, recordPerformanceLatency, requireRecordedDurationMs } from '../../../../shared/telemetry/performance.ts';
 import { recordTokenUsage, tokenUsageFromImagesBody } from '../../../../shared/telemetry/usage.ts';
 import type { ServerToolLifecycleEvent, ServerToolOutputItem, ServerToolRegistration, ServerToolTerminal } from '../server-tool-shim.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
@@ -17,7 +16,7 @@ import type {
   ResponsesOutputImageGenerationCall,
   ResponsesTool,
 } from '@floway-dev/protocols/responses';
-import { providerModelOf, type Fetcher, type Provider, type PerformanceTelemetryContext, type ModelCandidate, type ProviderModel } from '@floway-dev/provider';
+import { providerModelOf, type Fetcher, type Provider, type ModelCandidate, type ProviderModel } from '@floway-dev/provider';
 
 export const SHIM_TOOL_NAME = 'image_generation';
 
@@ -639,29 +638,14 @@ const issueImageCall = async (
   stream: boolean,
 ): Promise<{ response: Response; modelKey: string }> => {
   for (let attempt = 0; ; attempt++) {
-    const recorder = createUpstreamLatencyRecorder();
     const opts = {
       fetcher,
-      recordUpstreamLatency: recorder.record,
       waitUntil: state.backgroundScheduler,
       headers: new Headers(),
     };
     const { response, modelKey } = await (isEdit
       ? provider.instance.callImagesEdits(model, buildEditsForm(prompt, state.config, sources, stream), state.downstreamAbortSignal, opts)
       : provider.instance.callImagesGenerations(model, buildGenerationsBody(prompt, state.config, stream), state.downstreamAbortSignal, opts));
-    const context: PerformanceTelemetryContext = {
-      keyId: state.apiKeyId,
-      model: model.id,
-      upstream: provider.upstream,
-      modelKey,
-      runtimeLocation: state.runtimeLocation,
-    };
-    if (response.ok) {
-      const durationMs = requireRecordedDurationMs(recorder, isEdit ? 'callImagesEdits' : 'callImagesGenerations');
-      state.backgroundScheduler(recordPerformanceLatency(context, 'upstream_success', durationMs));
-    } else {
-      state.backgroundScheduler(recordPerformanceError(context, 'upstream_success'));
-    }
     if (response.status !== 429 || attempt >= MAX_RATE_LIMIT_RETRIES) return { response, modelKey };
 
     // 25% jitter desynchronizes parallel callers so a burst of orchestrator

@@ -37,7 +37,7 @@ const customFetchInternal = async (
     for (const [k, v] of options.extraHeaders) headers.set(k, v);
   }
   const dispatch = options.fetcher;
-  return await dispatch(joinBaseAndPath(config.baseUrl, path), { ...init, headers }, options.recordUpstreamLatency);
+  return await dispatch(joinBaseAndPath(config.baseUrl, path), { ...init, headers });
 };
 
 export const customFetchChatCompletions = (config: CustomUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>

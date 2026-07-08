@@ -1,7 +1,6 @@
 // Per-candidate passthrough attempt: does the upstream HTTP call for one
-// resolved candidate, records the upstream_success perf metric (success
-// or failure), and hands the serve loop back a `plain`-shaped result the
-// shared `iterateCandidates` iterator can drive.
+// resolved candidate and hands the serve loop back a `plain`-shaped result
+// the shared `iterateCandidates` iterator can drive.
 //
 // Chat protocols run each attempt through a translation + interceptor
 // stack that yields an `ExecuteResult` discriminated union. Passthrough
@@ -13,7 +12,6 @@
 
 import { inboundHeadersForUpstream } from './inbound-headers.ts';
 import type { PerformanceTelemetryContext } from './telemetry/performance.ts';
-import { createUpstreamLatencyRecorder, recordPerformanceError, recordPerformanceLatency, requireRecordedDurationMs } from './telemetry/performance.ts';
 import type { AuthedContext } from '../../middleware/auth.ts';
 import type { GatewayCtx } from '../chat/shared/gateway-ctx.ts';
 import { providerModelOf } from '@floway-dev/provider';
@@ -46,14 +44,11 @@ export interface PassthroughAttemptArgs {
 
 export const passthroughAttempt = async (args: PassthroughAttemptArgs): Promise<PassthroughAttemptResult> => {
   const { c, ctx, candidate, call } = args;
-  const recorder = createUpstreamLatencyRecorder();
   const { response, modelKey } = await call(candidate.provider, providerModelOf(candidate), {
     fetcher: candidate.fetcher,
-    recordUpstreamLatency: recorder.record,
     waitUntil: ctx.backgroundScheduler,
     headers: inboundHeadersForUpstream(c),
   });
-  const upstreamDurationMs = requireRecordedDurationMs(recorder, 'passthrough upstream call');
   // Telemetry keys on the upstream's bare catalog id (`model.id`); the
   // user-facing error body echoes the inbound `model` and is the serve
   // layer's job.
@@ -70,13 +65,6 @@ export const passthroughAttempt = async (args: PassthroughAttemptArgs): Promise<
     modelKey: identity.modelKey,
     runtimeLocation: ctx.runtimeLocation,
   };
-  // Upstream-perf is recorded per attempt so the dashboard shows each
-  // attempted upstream; request-perf and the dump's upstream attribution
-  // wait until the serve loop picks its terminal candidate (2xx success
-  // or last failure on exhaustion).
-  ctx.backgroundScheduler(response.ok
-    ? recordPerformanceLatency(performance, 'upstream_success', upstreamDurationMs)
-    : recordPerformanceError(performance, 'upstream_success'));
   return {
     type: 'plain',
     status: response.status,

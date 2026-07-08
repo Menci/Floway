@@ -7,14 +7,13 @@ import { rewriteResponsesItemsForCandidate, type RewrittenResponsesPayload } fro
 import type { StatefulResponsesStore } from './items/store.ts';
 import { tokenUsageFromResponsesResult } from './usage.ts';
 import { applyRulesToUpstreamResponses } from '../../model-aliases/apply-rules.ts';
-import { recordPerformanceLatency, requireRecordedDurationMs } from '../../shared/telemetry/performance.ts';
 import { chatCompletionsAttempt } from '../chat-completions/attempt.ts';
 import { messagesAttempt } from '../messages/attempt.ts';
 import { providerStreamResultToExecuteResult, buildUpstreamCallOptions, telemetryModelIdentity, chatTargetPicker } from '../shared/attempt-helpers.ts';
 import { tryCatchChatServeFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { traverseTranslation } from '../shared/translate-traverse.ts';
-import { createUpstreamLatencyRecorder, recordUpstreamHttpFailure, upstreamPerformanceContext } from '../shared/upstream-telemetry.ts';
+import { upstreamPerformanceContext } from '../shared/upstream-telemetry.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectResponsesProtocolEventsToResult } from '@floway-dev/protocols/responses';
@@ -222,7 +221,6 @@ const dispatchResponses = async (
   const { candidate, targetApi } = invocation;
   switch (targetApi) {
   case 'responses': {
-    const recorder = createUpstreamLatencyRecorder();
     if (candidate.rules !== undefined) applyRulesToUpstreamResponses(invocation.payload, candidate.rules);
     if (invocation.action === 'compact') {
       // The compact wire body drops `stream` and `store` — `store` is a
@@ -237,9 +235,9 @@ const dispatchResponses = async (
         body,
         invocation.action,
         ctx.abortSignal,
-        buildUpstreamCallOptions(candidate, ctx, recorder.record, invocation.headers),
+        buildUpstreamCallOptions(candidate, ctx, invocation.headers),
       );
-      return await providerResponsesResultToExecuteResult(providerResult, candidate, targetApi, ctx, recorder);
+      return await providerResponsesResultToExecuteResult(providerResult, candidate, targetApi, ctx);
     }
     const { model: _model, ...body } = invocation.payload;
     const providerResult = await candidate.provider.instance.callResponses(
@@ -247,9 +245,9 @@ const dispatchResponses = async (
       body,
       invocation.action,
       ctx.abortSignal,
-      buildUpstreamCallOptions(candidate, ctx, recorder.record, invocation.headers),
+      buildUpstreamCallOptions(candidate, ctx, invocation.headers),
     );
-    return await providerResponsesResultToExecuteResult(providerResult, candidate, targetApi, ctx, recorder);
+    return await providerResponsesResultToExecuteResult(providerResult, candidate, targetApi, ctx);
   }
   case 'messages':
     if (invocation.action === 'compact') {
@@ -299,7 +297,6 @@ const providerResponsesResultToExecuteResult = async (
   candidate: ModelCandidate,
   targetApi: ChatTargetApi,
   ctx: ChatGatewayCtx,
-  recorder: ReturnType<typeof createUpstreamLatencyRecorder>,
 ): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
   if (providerResult.action === 'generate') {
     return await providerStreamResultToExecuteResult(
@@ -309,17 +306,14 @@ const providerResponsesResultToExecuteResult = async (
       candidate,
       targetApi,
       ctx,
-      recorder,
     );
   }
   // action === 'compact'. The non-streaming envelope expands into the same
   // event stream wrap-output-storage consumes for the streaming path.
   const context = upstreamPerformanceContext(ctx, candidate, providerResult.modelKey);
   if (!providerResult.ok) {
-    recordUpstreamHttpFailure(ctx, context);
     return { ...(await readUpstreamApiError(providerResult.response, candidate.provider.upstream)), performance: context };
   }
-  ctx.backgroundScheduler(recordPerformanceLatency(context, 'upstream_success', requireRecordedDurationMs(recorder, 'callResponses(action=compact)')));
   return eventResult(
     syntheticEventsFromResult(providerResult.result),
     telemetryModelIdentity(candidate, providerResult.modelKey),

@@ -135,16 +135,14 @@ export const createCodexProvider = (record: UpstreamRecord): Provider => {
     // that single endpoint and no other entry point is reachable. The data
     // plane never routes these surfaces here in practice, but a stray
     // dispatch must surface as a 405 carrying a proper JSON error rather
-    // than letting a raw stack trace bubble up the boundary. The synthetic
-    // response still flows through the per-call latency recorder so the
-    // gateway's wrap-once contract holds even for these stubs.
-    callMessages: (_model, _body, _signal, opts) => unsupportedStreamResult(opts),
-    callMessagesCountTokens: (_model, _body, _signal, opts) => unsupportedCallResult(opts),
-    callCompletions: (_model, _body, _signal, opts) => unsupportedCallResult(opts),
-    callChatCompletions: (_model, _body, _signal, opts) => unsupportedStreamResult(opts),
-    callEmbeddings: (_model, _body, _signal, opts) => unsupportedCallResult(opts),
-    callImagesGenerations: (_model, _body, _signal, opts) => unsupportedCallResult(opts),
-    callImagesEdits: (_model, _body, _signal, opts) => unsupportedCallResult(opts),
+    // than letting a raw stack trace bubble up the boundary.
+    callMessages: () => Promise.resolve(unsupportedStreamResult()),
+    callMessagesCountTokens: () => Promise.resolve(unsupportedCallResult()),
+    callCompletions: () => Promise.resolve(unsupportedCallResult()),
+    callChatCompletions: () => Promise.resolve(unsupportedStreamResult()),
+    callEmbeddings: () => Promise.resolve(unsupportedCallResult()),
+    callImagesGenerations: () => Promise.resolve(unsupportedCallResult()),
+    callImagesEdits: () => Promise.resolve(unsupportedCallResult()),
   };
 
   return {
@@ -163,13 +161,13 @@ const synthetic405 = (): Response => new Response(
   { status: 405, headers: { 'content-type': 'application/json' } },
 );
 
-const unsupportedStreamResult = async <TEvent>(opts: UpstreamCallOptions): Promise<ProviderStreamResult<TEvent>> => ({
+const unsupportedStreamResult = <TEvent>(): ProviderStreamResult<TEvent> => ({
   ok: false,
   modelKey: '',
-  response: await opts.recordUpstreamLatency(Promise.resolve(synthetic405())),
+  response: synthetic405(),
 });
 
-const unsupportedCallResult = async (opts: UpstreamCallOptions): Promise<ProviderCallResult> => ({
+const unsupportedCallResult = (): ProviderCallResult => ({
   modelKey: '',
-  response: await opts.recordUpstreamLatency(Promise.resolve(synthetic405())),
+  response: synthetic405(),
 });

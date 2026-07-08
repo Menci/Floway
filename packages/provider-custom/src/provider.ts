@@ -126,7 +126,7 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
   ): Promise<ProviderCallResult> => {
     rememberPricingForModel(model);
     const rawModelId = rawModelIdOf(model);
-    return transport(config, { method: 'POST', body: JSON.stringify({ ...body, model: rawModelId }), signal }, { extraHeaders: headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency })
+    return transport(config, { method: 'POST', body: JSON.stringify({ ...body, model: rawModelId }), signal }, { extraHeaders: headers, fetcher: opts.fetcher })
       .then(response => ({
         response,
         modelKey: rawModelId,
@@ -148,7 +148,7 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
       transport(
         config,
         { method: 'POST', body: JSON.stringify({ ...body, stream: true, model: rawModelId }), signal },
-        { extraHeaders: headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency },
+        { extraHeaders: headers, fetcher: opts.fetcher },
       ),
       parser,
       rawModelId,
@@ -186,7 +186,7 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
         const response = await customFetchResponsesCompact(
           config,
           { method: 'POST', body: JSON.stringify({ ...toCompactPayloadShape(body), model: rawModelId }), signal },
-          { extraHeaders: opts.headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency },
+          { extraHeaders: opts.headers, fetcher: opts.fetcher },
         );
         return response.ok
           ? { action: 'compact', ok: true, result: (await response.json()) as ResponsesResult, modelKey: rawModelId }
@@ -207,7 +207,7 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
       // the FormData with a fresh boundary and sets Content-Type itself.
       const rawModelId = rawModelIdOf(model);
       body.append('model', rawModelId);
-      const response = await customFetchImagesEdits(config, { method: 'POST', body, signal }, { extraHeaders: opts.headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency });
+      const response = await customFetchImagesEdits(config, { method: 'POST', body, signal }, { extraHeaders: opts.headers, fetcher: opts.fetcher });
       return { response, modelKey: rawModelId };
     },
   };

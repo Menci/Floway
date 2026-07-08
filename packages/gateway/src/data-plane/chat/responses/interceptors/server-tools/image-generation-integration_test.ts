@@ -43,17 +43,17 @@ const defaultCandidates = vi.hoisted(() => () => [{
     supportsResponsesItemReference: false,
     instance: {
       getPricingForModelKey: () => null,
-      callImagesGenerations: async (_model: unknown, body: Record<string, unknown>, _signal: unknown, opts: { recordUpstreamLatency: <T>(p: Promise<T>) => Promise<T> }) => {
+      callImagesGenerations: async (_model: unknown, body: Record<string, unknown>) => {
         stub.generationsCalls.push(body);
         const response = stub.nextGenerations.shift();
         if (response === undefined) throw new Error('test did not enqueue a generations response');
-        return { response: await opts.recordUpstreamLatency(Promise.resolve(response)), modelKey: 'gpt-image-2' };
+        return { response, modelKey: 'gpt-image-2' };
       },
-      callImagesEdits: async (_model: unknown, form: FormData, _signal: unknown, opts: { recordUpstreamLatency: <T>(p: Promise<T>) => Promise<T> }) => {
+      callImagesEdits: async (_model: unknown, form: FormData) => {
         stub.editsForms.push(form);
         const response = stub.nextEdits.shift();
         if (response === undefined) throw new Error('test did not enqueue an edits response');
-        return { response: await opts.recordUpstreamLatency(Promise.resolve(response)), modelKey: 'gpt-image-2' };
+        return { response, modelKey: 'gpt-image-2' };
       },
     },
   },

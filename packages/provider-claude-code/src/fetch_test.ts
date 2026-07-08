@@ -8,7 +8,7 @@ import type {
   ClaudeCodeQuotaSnapshotEntry,
   ClaudeCodeUpstreamState,
 } from './state.ts';
-import { initProviderRepo, type Fetcher, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
+import { initProviderRepo, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
 import { noopUpstreamCallOptions, stubProviderModel } from '@floway-dev/test-utils';
 
 const upstreamId = 'up_cc';
@@ -407,57 +407,6 @@ describe('callClaudeCodeMessages — quota persistence', () => {
     await expect(handed).resolves.toBeUndefined();
     const stored = readQuotaEntry();
     expect(stored).not.toBeNull();
-  });
-});
-
-const enforcingRecorder = () => {
-  const wrappedPromises: unknown[] = [];
-  const record = <T>(promise: Promise<T>): Promise<T> => {
-    wrappedPromises.push(promise);
-    return promise;
-  };
-  const fetcher: Fetcher = (url, init, recorder) => {
-    const inner = fetch(url, init);
-    return recorder ? recorder(inner) : inner;
-  };
-  const options: UpstreamCallOptions = { ...noopUpstreamCallOptions(), fetcher, recordUpstreamLatency: record };
-  return { options, invocations: () => wrappedPromises.length };
-};
-
-describe('callClaudeCodeMessages — recorder contract', () => {
-  test('non-active gate wraps exactly one synthetic response', async () => {
-    seedAccount({ state: 'refresh_failed', stateMessage: 'gone' });
-    const recorder = enforcingRecorder();
-    const result = await callClaudeCodeMessages({
-      upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: recorder.options,
-    });
-    expect(result.ok).toBe(false);
-    expect(recorder.invocations()).toBe(1);
-  });
-
-  test('happy path wraps exactly one upstream fetch', async () => {
-    seedAccount({ accessToken: freshAccessTokenEntry });
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
-    const recorder = enforcingRecorder();
-    const result = await callClaudeCodeMessages({
-      upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: recorder.options,
-    });
-    expect(result.ok).toBe(true);
-    expect(recorder.invocations()).toBe(1);
-  });
-
-  test('401-then-success wraps both upstream attempts (OAuth refresh is provider-internal)', async () => {
-    seedAccount({ accessToken: freshAccessTokenEntry });
-    vi.spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(errorJson(401, { error: { type: 'authentication_error', message: 'expired' } }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: 'at_new', refresh_token: 'rt_v2', token_type: 'Bearer', expires_in: 600, scope: '' }), { status: 200 }))
-      .mockResolvedValueOnce(sseResponse());
-    const recorder = enforcingRecorder();
-    const result = await callClaudeCodeMessages({
-      upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: recorder.options,
-    });
-    expect(result.ok).toBe(true);
-    expect(recorder.invocations()).toBe(2);
   });
 });
 
