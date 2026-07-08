@@ -39,8 +39,7 @@ const customRawToProviderModel = (model: CustomRawModel): Omit<ProviderModel, 'k
 // verbatim. With no/unrecognized published kind, the id heuristic (Tier 2) runs
 // and falls back to the configured endpoints when it does not match. The
 // configured set may be empty, leaving the model listed but unroutable until
-// the operator declares an endpoint. The result is the model's `endpoints`;
-// `kind` is derived back from it.
+// the operator declares an endpoint. `kind` is derived back from the endpoints.
 const autoModelEndpoints = (model: CustomRawModel, configured: ModelEndpoints): ModelEndpoints => {
   if (model.kind === 'embedding') return { embeddings: {} };
   if (model.kind === 'image') return { imagesGenerations: {}, imagesEdits: {} };
@@ -203,8 +202,8 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
     callImagesGenerations: (model, body, signal, opts) => call(customFetchImagesGenerations, model, body, signal, opts.headers, opts),
     callImagesEdits: async (model, body, signal, opts) => {
       rememberPricingForModel(model);
-      // Custom forwards the resolved upstream model id. The runtime auto-encodes
-      // the FormData with a fresh boundary and sets Content-Type itself.
+      // The runtime auto-encodes the FormData with a fresh boundary and sets
+      // Content-Type itself.
       const rawModelId = rawModelIdOf(model);
       body.append('model', rawModelId);
       const response = await customFetchImagesEdits(config, { method: 'POST', body, signal }, { extraHeaders: opts.headers, fetcher: opts.fetcher });

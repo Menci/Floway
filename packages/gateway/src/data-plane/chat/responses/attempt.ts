@@ -222,24 +222,14 @@ const dispatchResponses = async (
   switch (targetApi) {
   case 'responses': {
     if (candidate.rules !== undefined) applyRulesToUpstreamResponses(invocation.payload, candidate.rules);
-    if (invocation.action === 'compact') {
-      // The compact wire body drops `stream` and `store` — `store` is a
-      // gateway-only snapshot-persistence hint that the upstream compact
-      // endpoint rejects, and `stream` is irrelevant on a non-streaming
-      // call. The generate branch leaves both fields on the body so the
-      // provider can decide for itself (every provider's streaming call
-      // forces stream=true anyway).
-      const { model: _model, stream: _stream, store: _store, ...body } = invocation.payload;
-      const providerResult = await candidate.provider.instance.callResponses(
-        providerModelOf(candidate),
-        body,
-        invocation.action,
-        ctx.abortSignal,
-        buildUpstreamCallOptions(candidate, ctx, invocation.headers),
-      );
-      return await providerResponsesResultToExecuteResult(providerResult, candidate, targetApi, ctx);
-    }
-    const { model: _model, ...body } = invocation.payload;
+    // Compact drops `stream` and `store` before hitting the wire: `store` is a
+    // gateway-only snapshot-persistence hint the upstream compact endpoint
+    // rejects, and `stream` is irrelevant on a non-streaming call. The generate
+    // branch leaves both fields on the body — every provider's streaming call
+    // forces stream=true anyway.
+    const body = invocation.action === 'compact'
+      ? (({ model: _model, stream: _stream, store: _store, ...rest }) => rest)(invocation.payload)
+      : (({ model: _model, ...rest }) => rest)(invocation.payload);
     const providerResult = await candidate.provider.instance.callResponses(
       providerModelOf(candidate),
       body,
@@ -308,8 +298,6 @@ const providerResponsesResultToExecuteResult = async (
       ctx,
     );
   }
-  // action === 'compact'. The non-streaming envelope expands into the same
-  // event stream wrap-output-storage consumes for the streaming path.
   const context = upstreamPerformanceContext(ctx, candidate, providerResult.modelKey);
   if (!providerResult.ok) {
     return { ...(await readUpstreamApiError(providerResult.response, candidate.provider.upstream)), performance: context };

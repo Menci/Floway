@@ -407,11 +407,12 @@ class MemoryPerformanceRepo implements PerformanceRepo {
   async query(opts: { keyId?: string; start: string; end: string }): Promise<PerformanceTelemetryRecord[]> {
     return [...this.summaries.values()]
       .filter(r => (opts.keyId ? r.keyId === opts.keyId : true) && r.hour >= opts.start && r.hour < opts.end)
+      .sort(comparePerformanceRow)
       .map(this.freeze);
   }
 
   async listAll(): Promise<PerformanceTelemetryRecord[]> {
-    return [...this.summaries.values()].map(this.freeze);
+    return [...this.summaries.values()].sort(comparePerformanceRow).map(this.freeze);
   }
 
   async set(record: PerformanceTelemetryRecord): Promise<void> {
@@ -448,11 +449,25 @@ class MemoryPerformanceRepo implements PerformanceRepo {
 
   private freeze = ({ bucketMap, ...rest }: StoredPerformanceRow): PerformanceTelemetryRecord => ({
     ...rest,
-    buckets: [...bucketMap.values()].map(b => ({ ...b })),
+    buckets: [...bucketMap.values()].map(b => ({ ...b })).sort(compareBucketRow),
   });
 }
 
 type StoredPerformanceRow = Omit<PerformanceTelemetryRecord, 'buckets'> & { bucketMap: Map<string, PerformanceBucketRow> };
+
+// SQL-side rowsFromWhere orders by (hour, keyId, model, upstream, runtimeLocation)
+// on summary rows and (metric, lower) on bucket rows. Memory-side query/listAll
+// and freeze mirror those orderings so a test that compares repo outputs sees
+// the same shape from both impls.
+const comparePerformanceRow = (a: StoredPerformanceRow, b: StoredPerformanceRow): number =>
+  a.hour.localeCompare(b.hour)
+  || a.keyId.localeCompare(b.keyId)
+  || a.model.localeCompare(b.model)
+  || a.upstream.localeCompare(b.upstream)
+  || a.runtimeLocation.localeCompare(b.runtimeLocation);
+
+const compareBucketRow = (a: PerformanceBucketRow, b: PerformanceBucketRow): number =>
+  a.metric.localeCompare(b.metric) || a.lower - b.lower;
 
 class MemoryModelsCacheRepo implements ModelsCacheRepo {
   private rows = new Map<string, CachedModelsRow>();

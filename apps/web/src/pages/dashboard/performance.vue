@@ -290,20 +290,17 @@ const chartConfig = computed<ChartConfiguration<'line'>>(() => {
 
 const performanceSeriesIds = computed(() => chartSeriesIds(chartConfig.value));
 
-const performanceSummary = computed(() => {
-  const row = overview.value.summaryRows[0];
-  return {
-    requests: row?.requests ?? 0,
-    errors: row?.errors ?? 0,
-    ttftMsAvg: row?.ttftMsAvg ?? null,
-    ttftMsP50: row?.ttftMsP50 ?? null,
-    ttftMsP95: row?.ttftMsP95 ?? null,
-    ttftMsP99: row?.ttftMsP99 ?? null,
-    tpotUsAvg: row?.tpotUsAvg ?? null,
-    tpotUsP50: row?.tpotUsP50 ?? null,
-    tpotUsP95: row?.tpotUsP95 ?? null,
-    tpotUsP99: row?.tpotUsP99 ?? null,
-  };
+const performanceSummary = computed(() => overview.value.summaryRows[0] ?? {
+  requests: 0,
+  errors: 0,
+  ttftMsAvg: null,
+  ttftMsP50: null,
+  ttftMsP95: null,
+  ttftMsP99: null,
+  tpotUsAvg: null,
+  tpotUsP50: null,
+  tpotUsP95: null,
+  tpotUsP99: null,
 });
 </script>
 

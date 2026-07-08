@@ -285,8 +285,7 @@ const responsesPayloadFromClientSource = (source: object): CanonicalResponsesPay
   if (typeof candidate.input !== 'string' && !Array.isArray(candidate.input)) {
     throw new WebSocketClientMessageError('response.create requires response.input to be a string or an array.');
   }
-  // Feed the wire shape through the same canonicalization the HTTP entry uses,
-  // then stamp `stream: true` — the WS transport streams every turn.
+  // stamp stream: true — the WS transport always streams.
   return { ...canonicalizeResponsesPayload(source as ResponsesPayload), stream: true };
 };
 
@@ -473,10 +472,8 @@ const serverErrorEnvelope = (error: unknown): Record<string, unknown> => ({
   code: 'internal_error',
 });
 
-const responseDoneSummary = (event: unknown) => {
-  if (!event || typeof event !== 'object') return null;
-  const type = (event as { type?: unknown }).type;
-  if (type !== 'response.completed' && type !== 'response.failed' && type !== 'response.incomplete') return null;
+const responseDoneSummary = (event: ResponsesStreamEvent) => {
+  if (event.type !== 'response.completed' && event.type !== 'response.failed' && event.type !== 'response.incomplete') return null;
   const response = (event as { response?: unknown }).response;
   if (!response || typeof response !== 'object') return null;
   const id = (response as { id?: unknown }).id;

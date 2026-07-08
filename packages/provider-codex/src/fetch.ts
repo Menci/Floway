@@ -31,8 +31,8 @@ export interface CodexCallEffects {
 }
 
 // Account selection + per-call observation hooks. Both Codex endpoints share
-// the same OAuth credential, the same quota row, and the same retry/recorder
-// contract; only the wire body and the response decoding differ.
+// the same OAuth credential, the same quota row, and the same retry contract;
+// only the wire body and the response decoding differ.
 interface CodexBackendCallBase {
   upstreamId: string;
   account: CodexAccountCredential;
@@ -315,10 +315,8 @@ const dispatchCodexHttpCall = async (
   accept: string,
   body: Record<string, unknown>,
   identity: CodexRequestIdentity,
-  metadata: CodexTurnMetadataOptions,
-  clientTurnMetadata: Record<string, unknown> | null,
+  turnMetadataJson: string,
 ): Promise<Response> => {
-  const turnMetadataJson = buildCodexTurnMetadataJson(identity, metadata, clientTurnMetadata);
   const headers = new Headers();
   headers.set('authorization', `Bearer ${accessToken}`);
   headers.set('chatgpt-account-id', opts.account.chatgptAccountId);
@@ -408,8 +406,7 @@ const performStreamingResponsesCall = async (
     'text/event-stream',
     buildCodexResponsesBody(opts, identity, turnMetadataJson),
     identity,
-    metadata,
-    clientTurnMetadata,
+    turnMetadataJson,
   ).then(ensureSseContentType);
 
   const result = await streamingProviderCall(upstreamFetch, parseResponsesStream, opts.model.id, opts.signal);
@@ -432,6 +429,7 @@ const performUnaryCompactCall = async (
   const clientMetadata = clientCodexClientMetadata(opts.body);
   const identity = await buildCodexRequestIdentity(opts, opts.body, clientMetadata, clientTurnMetadata);
   const metadata = opts.turnMetadata ?? { requestKind: 'compaction' };
+  const turnMetadataJson = buildCodexTurnMetadataJson(identity, metadata, clientTurnMetadata);
   const response = await dispatchCodexHttpCall(
     opts,
     accessToken,
@@ -439,8 +437,7 @@ const performUnaryCompactCall = async (
     'application/json',
     { ...opts.body, model: opts.model.id },
     identity,
-    metadata,
-    clientTurnMetadata,
+    turnMetadataJson,
   );
 
   if (response.status === 401 && !alreadyRetried) {

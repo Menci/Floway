@@ -451,7 +451,6 @@ interface ShimState {
   apiKeyId: string;
   upstreamIds: readonly string[] | null;
   backgroundScheduler: BackgroundScheduler;
-  runtimeLocation: string;
   currentColo: string;
   downstreamAbortSignal: AbortSignal | undefined;
   imageDispatchCount: number;
@@ -974,7 +973,6 @@ export const imageGenerationServerTool: ServerToolRegistration = (invocation, ga
     apiKeyId: gatewayCtx.apiKeyId,
     upstreamIds: gatewayCtx.upstreamIds,
     backgroundScheduler: gatewayCtx.backgroundScheduler,
-    runtimeLocation: gatewayCtx.runtimeLocation,
     currentColo: gatewayCtx.currentColo,
     downstreamAbortSignal: gatewayCtx.abortSignal,
     imageDispatchCount: 0,

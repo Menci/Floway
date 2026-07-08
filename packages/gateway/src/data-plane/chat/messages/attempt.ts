@@ -26,14 +26,7 @@ export const messagesGenerateTarget = chatTargetPicker(['messages', 'responses',
 // satisfies the operation.
 export const messagesCountTokensTarget = chatTargetPicker(['messages']);
 
-export interface MessagesAttemptGenerateArgs {
-  readonly payload: MessagesPayload;
-  readonly ctx: ChatGatewayCtx;
-  readonly candidate: ModelCandidate;
-  readonly headers: Headers;
-}
-
-export interface MessagesAttemptCountTokensArgs {
+export interface MessagesAttemptArgs {
   readonly payload: MessagesPayload;
   readonly ctx: ChatGatewayCtx;
   readonly candidate: ModelCandidate;
@@ -41,7 +34,7 @@ export interface MessagesAttemptCountTokensArgs {
 }
 
 export const messagesAttempt = {
-  generate: async (args: MessagesAttemptGenerateArgs): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>>> => {
+  generate: async (args: MessagesAttemptArgs): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>>> => {
     const { payload, ctx, candidate, headers } = args;
     const { store } = ctx;
     const targetApi = messagesGenerateTarget.pick(candidate.model.endpoints);
@@ -87,7 +80,7 @@ export const messagesAttempt = {
     });
   },
 
-  countTokens: async (args: MessagesAttemptCountTokensArgs): Promise<PlainResult> => {
+  countTokens: async (args: MessagesAttemptArgs): Promise<PlainResult> => {
     const { payload, ctx, candidate, headers } = args;
     const { store } = ctx;
     // `pick` here is contractually total — serve filtered with

@@ -1,11 +1,9 @@
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ChatTargetApi } from '@floway-dev/provider';
 
-// True iff the frame is the first chunk that carries downstream-visible
-// output content — a text delta, a tool-call argument delta, or a
-// chat-completions chunk with non-empty content / tool_calls. Thinking /
-// reasoning chunks, upstream envelope frames, and the `done` sentinel all
-// return false. Stateless: the caller tracks whether the "first" fired.
+// True when the frame carries downstream-visible output content but not
+// thinking / reasoning chunks or upstream envelope frames. Stateless: the
+// caller tracks whether the first fired.
 export const isFirstOutputTokenFrame = <T>(frame: ProtocolFrame<T>, targetApi: ChatTargetApi): boolean => {
   if (frame.type === 'done') return false;
 
@@ -20,8 +18,7 @@ const isMessagesOutputEvent = (event: Record<string, unknown> & { type?: unknown
   if (event.type !== 'content_block_delta') return false;
   const delta = (event as { delta?: { type?: unknown } }).delta;
   if (!delta || typeof delta !== 'object') return false;
-  const kind = (delta as { type?: unknown }).type;
-  return kind === 'text_delta' || kind === 'input_json_delta';
+  return delta.type === 'text_delta' || delta.type === 'input_json_delta';
 };
 
 const isResponsesOutputEvent = (event: Record<string, unknown> & { type?: unknown }): boolean => {
