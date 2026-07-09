@@ -639,7 +639,7 @@ const issueImageCall = async (
       // responses stream. A stamp here would overwrite the upstream call start
       // recorded for the primary inference fetch, so this is intentionally a
       // no-op.
-      stampUpstreamCallStart: () => {},
+      wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p,
     };
     const { response, modelKey } = await (isEdit
       ? provider.instance.callImagesEdits(model, buildEditsForm(prompt, state.config, sources, stream), state.downstreamAbortSignal, opts)

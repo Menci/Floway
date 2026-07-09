@@ -27,6 +27,6 @@ const MODELS_HEADER_OVERRIDES = new Headers({
 
 export const fetchCopilotModels = (config: CopilotFetchConfig, fetcher: Fetcher): Promise<CopilotModelsResponse> =>
   fetchUpstreamModels(
-    () => copilotFetchModels(config, { method: 'GET' }, { extraHeaders: MODELS_HEADER_OVERRIDES, fetcher }),
+    () => copilotFetchModels(config, { method: 'GET' }, { extraHeaders: MODELS_HEADER_OVERRIDES, fetcher, wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p }),
     v => (isCopilotModelsResponse(v) ? v : null),
   );

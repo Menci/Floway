@@ -11,4 +11,9 @@ export const directFetcher: Fetcher = (url, init) => fetch(url, init);
 export interface UpstreamFetchOptions {
   extraHeaders?: Headers;
   fetcher: Fetcher;
+  /** Per-provider fetch helper wraps its `fetcher(...)` promise with this to
+   *  anchor TTFT to the actual outbound dispatch. Mirrors UpstreamCallOptions'
+   *  contract — stamps `perfTiming.upstreamCallStartedAt` on invocation and
+   *  returns the promise. */
+  wrapUpstreamCall: <T>(promise: Promise<T>) => Promise<T>;
 }

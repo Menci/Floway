@@ -194,7 +194,6 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
     headers: Headers,
     opts: UpstreamCallOptions,
   ): Promise<ProviderCallResult> => {
-    opts.stampUpstreamCallStart();
     const response = await transport(
       upstreamConfig,
       {
@@ -202,7 +201,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
         body: JSON.stringify({ ...body, model: rawModel.id }),
         signal,
       },
-      { extraHeaders: headers, fetcher: opts.fetcher },
+      { extraHeaders: headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
     );
     return { response, modelKey: rawModel.id };
   };
@@ -216,7 +215,6 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
     parser: Parameters<typeof streamingProviderCall<TEvent>>[1],
     opts: UpstreamCallOptions,
   ) => {
-    opts.stampUpstreamCallStart();
     return streamingProviderCall(
       transport(
         upstreamConfig,
@@ -225,7 +223,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
           body: JSON.stringify({ ...body, stream: true, model: rawModel.id }),
           signal,
         },
-        { extraHeaders: headers, fetcher: opts.fetcher },
+        { extraHeaders: headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
       ),
       parser,
       rawModel.id,
@@ -367,11 +365,10 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
           case 'compact': {
             const input: ResponsesInputItem[] = typeof wireBody.input === 'string' ? [{ type: 'message', role: 'user', content: wireBody.input }] : wireBody.input;
             const triggered = { ...wireBody, input: [...input, COMPACTION_TRIGGER], stream: false, model: rawModel.id };
-            opts.stampUpstreamCallStart();
             const response = await copilotFetchResponses(
               upstreamConfig,
               { method: 'POST', body: JSON.stringify(triggered), signal },
-              { extraHeaders: ctx.headers, fetcher: opts.fetcher },
+              { extraHeaders: ctx.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
             );
             if (!response.ok) return { action: 'compact', ok: false, response, modelKey: rawModel.id };
             const generated = (await response.json()) as ResponsesResult;

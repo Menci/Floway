@@ -103,11 +103,10 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
     opts: UpstreamCallOptions,
   ): Promise<ProviderCallResult> => {
     const rawModelId = rawModelIdOf(model);
-    opts.stampUpstreamCallStart();
     return transport(
       config,
       { method: 'POST', body: JSON.stringify({ ...body, model: rawModelId }), signal },
-      { extraHeaders: opts.headers, fetcher: opts.fetcher },
+      { extraHeaders: opts.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
     ).then(response => ({ response, modelKey: rawModelId }));
   };
 
@@ -120,12 +119,11 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
     opts: UpstreamCallOptions,
   ) => {
     const rawModelId = rawModelIdOf(model);
-    opts.stampUpstreamCallStart();
     return streamingProviderCall(
       transport(
         config,
         { method: 'POST', body: JSON.stringify({ ...body, stream: true, model: rawModelId }), signal },
-        { extraHeaders: opts.headers, fetcher: opts.fetcher },
+        { extraHeaders: opts.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
       ),
       parser,
       rawModelId,
@@ -158,11 +156,10 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
       }
       case 'compact': {
         const rawModelId = rawModelIdOf(model);
-        opts.stampUpstreamCallStart();
         const response = await ollamaFetchResponsesCompact(
           config,
           { method: 'POST', body: JSON.stringify({ ...toCompactPayloadShape(body), model: rawModelId }), signal },
-          { extraHeaders: opts.headers, fetcher: opts.fetcher },
+          { extraHeaders: opts.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
         );
         return response.ok
           ? { action: 'compact', ok: true, result: (await response.json()) as ResponsesResult, modelKey: rawModelId }

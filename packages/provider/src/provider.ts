@@ -95,10 +95,12 @@ export interface UpstreamCallOptions {
   fetcher: Fetcher;
   waitUntil: (promise: Promise<unknown>) => void;
   headers: Headers;
-  // Provider MUST call this once, immediately before its outbound fetch to
-  // upstream. Multiple calls overwrite (last attempt wins), giving TTFT the
-  // pure round-trip of whichever attempt produced the first output frame.
-  stampUpstreamCallStart: () => void;
+  // Providers wrap their outbound fetch promise with this callback. It stamps
+  // `perfTiming.upstreamCallStartedAt` at wrap-invocation and returns the
+  // promise unchanged, so TTFT is anchored to the actual data-plane request
+  // (post-auth-exchange, post-dial) rather than the gateway's arrival time.
+  // Retries and fallback candidates naturally overwrite — the last wrap wins.
+  wrapUpstreamCall: <T>(promise: Promise<T>) => Promise<T>;
 }
 
 export interface ProviderInstance {

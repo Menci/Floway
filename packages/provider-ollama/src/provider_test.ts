@@ -158,7 +158,7 @@ test('call* methods POST to /v1/<endpoint> with the upstream model id and Bearer
         providerModel,
         { messages: [{ role: 'user', content: 'hi' }] },
         undefined,
-        noopUpstreamCallOptions({ fetcher: directFetcher }),
+        noopUpstreamCallOptions({ fetcher: directFetcher, wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p }),
       );
       assertEquals(result.modelKey, 'gpt-oss:120b');
     },

@@ -118,6 +118,6 @@ const parseCustomModelsResponse = (value: unknown): CustomModelsResponse | null 
 
 export const fetchCustomModels = (config: CustomUpstreamConfig, fetcher: Fetcher): Promise<CustomModelsResponse> =>
   fetchUpstreamModels(
-    () => customFetchModels(config, { method: 'GET' }, { fetcher }),
+    () => customFetchModels(config, { method: 'GET' }, { fetcher, wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p }),
     parseCustomModelsResponse,
   );

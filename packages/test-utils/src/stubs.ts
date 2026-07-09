@@ -9,7 +9,7 @@ export const noopUpstreamCallOptions = (overrides: Partial<UpstreamCallOptions> 
   fetcher: directFetcher,
   waitUntil: () => {},
   headers: new Headers(),
-  stampUpstreamCallStart: () => {},
+  wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p,
   ...overrides,
 });
 

@@ -67,7 +67,7 @@ const mockTokenAndCapture = async (
         '/v1/messages',
         { method: 'POST', body: '{}' },
         { id: UPSTREAM_ID, githubToken: 'ghu_test' },
-        extraHeaders ? { headers: extraHeaders, fetcher: directFetcher } : { fetcher: directFetcher },
+        extraHeaders ? { headers: extraHeaders, fetcher: directFetcher, wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p } : { fetcher: directFetcher, wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p },
       );
     },
   );
@@ -115,7 +115,7 @@ test('copilotAuthedFetch persists the minted Copilot token (with baseUrl) into s
         '/v1/messages',
         { method: 'POST', body: '{}' },
         { id: UPSTREAM_ID, githubToken: 'ghu_test' },
-        { fetcher: directFetcher },
+        { fetcher: directFetcher, wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p },
       );
     },
   );
@@ -149,7 +149,7 @@ test('copilotAuthedFetch routes the data-plane call through the baseUrl GitHub s
         '/v1/messages',
         { method: 'POST', body: '{}' },
         { id: UPSTREAM_ID, githubToken: 'ghu_test' },
-        { fetcher: directFetcher },
+        { fetcher: directFetcher, wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p },
       );
     },
   );
@@ -182,7 +182,7 @@ test('copilotAuthedFetch reads a still-valid Copilot token from state_json inste
         '/v1/messages',
         { method: 'POST' as const, body: '{}' },
         { id: UPSTREAM_ID, githubToken: 'ghu_test' },
-        { fetcher: directFetcher },
+        { fetcher: directFetcher, wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p },
       ] as const;
       await copilotAuthedFetch(...args);
       // Drop the in-process memo so the second call has to consult state_json;

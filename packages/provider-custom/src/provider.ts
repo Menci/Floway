@@ -125,8 +125,7 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
   ): Promise<ProviderCallResult> => {
     rememberPricingForModel(model);
     const rawModelId = rawModelIdOf(model);
-    opts.stampUpstreamCallStart();
-    return transport(config, { method: 'POST', body: JSON.stringify({ ...body, model: rawModelId }), signal }, { extraHeaders: headers, fetcher: opts.fetcher })
+    return transport(config, { method: 'POST', body: JSON.stringify({ ...body, model: rawModelId }), signal }, { extraHeaders: headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall })
       .then(response => ({
         response,
         modelKey: rawModelId,
@@ -144,12 +143,11 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
   ) => {
     rememberPricingForModel(model);
     const rawModelId = rawModelIdOf(model);
-    opts.stampUpstreamCallStart();
     return streamingProviderCall(
       transport(
         config,
         { method: 'POST', body: JSON.stringify({ ...body, stream: true, model: rawModelId }), signal },
-        { extraHeaders: headers, fetcher: opts.fetcher },
+        { extraHeaders: headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
       ),
       parser,
       rawModelId,
@@ -184,11 +182,10 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
       case 'compact': {
         rememberPricingForModel(model);
         const rawModelId = rawModelIdOf(model);
-        opts.stampUpstreamCallStart();
         const response = await customFetchResponsesCompact(
           config,
           { method: 'POST', body: JSON.stringify({ ...toCompactPayloadShape(body), model: rawModelId }), signal },
-          { extraHeaders: opts.headers, fetcher: opts.fetcher },
+          { extraHeaders: opts.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
         );
         return response.ok
           ? { action: 'compact', ok: true, result: (await response.json()) as ResponsesResult, modelKey: rawModelId }
@@ -209,8 +206,7 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
       // Content-Type itself.
       const rawModelId = rawModelIdOf(model);
       body.append('model', rawModelId);
-      opts.stampUpstreamCallStart();
-      const response = await customFetchImagesEdits(config, { method: 'POST', body, signal }, { extraHeaders: opts.headers, fetcher: opts.fetcher });
+      const response = await customFetchImagesEdits(config, { method: 'POST', body, signal }, { extraHeaders: opts.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall });
       return { response, modelKey: rawModelId };
     },
   };

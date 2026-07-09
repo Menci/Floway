@@ -14,6 +14,7 @@ const copilotFetchInternal = async (
     return await copilotAuthedFetch(path, init, config, {
       headers: options.extraHeaders,
       fetcher: options.fetcher,
+      wrapUpstreamCall: options.wrapUpstreamCall,
     });
   } catch (error) {
     if (!isCopilotTokenFetchError(error)) throw error;

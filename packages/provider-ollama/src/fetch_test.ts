@@ -42,13 +42,13 @@ test('typed transports hit the fixed Ollama endpoint paths', async () => {
       return new Response('{}', { status: 200 });
     },
     async () => {
-      await ollamaFetchChatCompletions(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher });
-      await ollamaFetchResponses(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher });
-      await ollamaFetchResponsesCompact(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher });
-      await ollamaFetchMessages(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher });
-      await ollamaFetchEmbeddings(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher });
-      await ollamaFetchTags(config, { method: 'GET' }, { fetcher: directFetcher });
-      await ollamaFetchShow(config, { method: 'POST', body: '{"name":"gpt-oss:120b"}' }, { fetcher: directFetcher });
+      await ollamaFetchChatCompletions(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p });
+      await ollamaFetchResponses(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p });
+      await ollamaFetchResponsesCompact(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p });
+      await ollamaFetchMessages(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p });
+      await ollamaFetchEmbeddings(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p });
+      await ollamaFetchTags(config, { method: 'GET' }, { fetcher: directFetcher, wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p });
+      await ollamaFetchShow(config, { method: 'POST', body: '{"name":"gpt-oss:120b"}' }, { fetcher: directFetcher, wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p });
     },
   );
 
@@ -72,7 +72,7 @@ test('Authorization: Bearer is set when apiKey is configured', async () => {
       return new Response('{}', { status: 200 });
     },
     async () => {
-      await ollamaFetchChatCompletions(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher });
+      await ollamaFetchChatCompletions(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p });
     },
   );
   assertEquals(auth, 'Bearer ollama_test');
@@ -90,7 +90,7 @@ test('Authorization header is omitted entirely when apiKey is absent (local daem
       return new Response('{}', { status: 200 });
     },
     async () => {
-      await ollamaFetchChatCompletions(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher });
+      await ollamaFetchChatCompletions(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p });
     },
   );
   assertEquals(auth, null);
@@ -105,7 +105,7 @@ test('Content-Type defaults to application/json for JSON bodies', async () => {
       return new Response('{}', { status: 200 });
     },
     async () => {
-      await ollamaFetchChatCompletions(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher });
+      await ollamaFetchChatCompletions(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p });
     },
   );
   assertEquals(contentType, 'application/json');
@@ -132,7 +132,7 @@ test('extraHeaders is a Headers instance and every entry reaches the wire', asyn
       await ollamaFetchChatCompletions(
         config,
         { method: 'POST', body: '{}' },
-        { fetcher: directFetcher, extraHeaders },
+        { fetcher: directFetcher, extraHeaders, wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p },
       );
     },
   );

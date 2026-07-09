@@ -137,7 +137,7 @@ const fetchShowForTag = async (
   const response = await ollamaFetchShow(
     config,
     { method: 'POST', body: JSON.stringify({ name: tag.name }) },
-    { fetcher },
+    { fetcher, wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p },
   );
   if (!response.ok) return null;
   let parsed: unknown;
@@ -155,7 +155,7 @@ export const fetchOllamaCatalog = async (config: OllamaUpstreamConfig, fetcher: 
   // provider's catalog fetch produces, which the control-plane and SWR cache
   // both branch on.
   const tags = await fetchUpstreamModels(
-    () => ollamaFetchTags(config, { method: 'GET' }, { fetcher }),
+    () => ollamaFetchTags(config, { method: 'GET' }, { fetcher, wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p }),
     parseTagsResponse,
   );
   // /api/show fan-out stays outside the scaffold: `allSettled` already drops

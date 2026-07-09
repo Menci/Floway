@@ -427,13 +427,12 @@ const performUpstreamCall = async (
   // and the real Claude Code client always sets `stream: true`.
   const wireBody: MessagesPayload = { ...opts.body, model: upstreamModelId, stream: true };
 
-  opts.call.stampUpstreamCallStart();
-  const upstreamFetch = opts.call.fetcher(ANTHROPIC_MESSAGES_ENDPOINT, {
+  const upstreamFetch = opts.call.wrapUpstreamCall(opts.call.fetcher(ANTHROPIC_MESSAGES_ENDPOINT, {
     method: 'POST',
     headers,
     body: JSON.stringify(wireBody),
     signal: opts.signal,
-  }).then(response => {
+  })).then(response => {
     // `opts.call.waitUntil` is set by the gateway on Workers so the
     // runtime keeps the worker alive past the response (without it, the
     // persist promise gets cancelled the moment the response returns).

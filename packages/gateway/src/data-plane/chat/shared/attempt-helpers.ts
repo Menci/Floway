@@ -69,7 +69,10 @@ export const buildUpstreamCallOptions = (
   fetcher: candidate.fetcher,
   waitUntil: ctx.backgroundScheduler,
   headers,
-  stampUpstreamCallStart: () => { ctx.perfTiming.upstreamCallStartedAt = performance.now(); },
+  wrapUpstreamCall: <T>(promise: Promise<T>): Promise<T> => {
+    ctx.perfTiming.upstreamCallStartedAt = performance.now();
+    return promise;
+  },
 });
 
 // Attaches the performance telemetry context every layer above reads.

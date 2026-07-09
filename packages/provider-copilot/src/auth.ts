@@ -221,6 +221,9 @@ export interface CopilotFetchOptions {
    *  request and the api.github.com token exchange so a single fallback
    *  chain covers both paths under restricted egress. */
   fetcher: Fetcher;
+  /** Provider wraps its `fetcher(...)` promise with this so TTFT is anchored
+   *  to the data-plane dispatch, AFTER any token-exchange round trip. */
+  wrapUpstreamCall: <T>(promise: Promise<T>) => Promise<T>;
 }
 
 export interface CopilotAuth {
@@ -268,7 +271,7 @@ export async function copilotAuthedFetch(path: string, init: RequestInit, auth: 
     }
   }
 
-  return await options.fetcher(`${entry.baseUrl}${path}`, { ...init, headers });
+  return await options.wrapUpstreamCall(options.fetcher(`${entry.baseUrl}${path}`, { ...init, headers }));
 }
 
 // Headers for api.github.com calls — token exchange and /copilot_internal/user.
