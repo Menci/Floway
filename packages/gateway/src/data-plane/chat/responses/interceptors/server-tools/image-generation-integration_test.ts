@@ -157,7 +157,6 @@ const gatewayCtx = (): ChatGatewayCtx => ({
   dump: null,
   responseHeaders: new Headers(),
   backgroundScheduler: () => {},
-  requestStartedAt: 0,
   perfTiming: { firstOutputTokenAt: null, upstreamCallStartedAt: null },
   store: createNonResponsesSourceStore('test-key'),
 });

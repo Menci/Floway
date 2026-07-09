@@ -26,7 +26,6 @@ const makeGatewayCtx = (store?: ChatGatewayCtx['store']): ChatGatewayCtx => ({
   dump: null,
   responseHeaders: new Headers(),
   backgroundScheduler: () => {},
-  requestStartedAt: 0,
   perfTiming: { firstOutputTokenAt: null, upstreamCallStartedAt: null },
   store: store ?? createNonResponsesSourceStore(API_KEY_ID),
 });

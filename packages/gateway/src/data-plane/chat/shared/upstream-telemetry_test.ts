@@ -13,7 +13,6 @@ const stubCtx = (): GatewayCtx => ({
   upstreamIds: null,
   wantsStream: true,
   backgroundScheduler: (p: Promise<unknown>) => { void p; },
-  requestStartedAt: 0,
   perfTiming: { firstOutputTokenAt: null, upstreamCallStartedAt: null },
   runtimeLocation: 'x',
   currentColo: 'x',

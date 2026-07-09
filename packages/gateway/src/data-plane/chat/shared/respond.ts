@@ -62,7 +62,7 @@ export const recordPerformance = (
 ): void => {
   recordRequestPerformance(
     ctx.backgroundScheduler,
-    { perfTiming: ctx.perfTiming },
+    ctx.perfTiming,
     telemetry,
     failed,
     outputTokens,

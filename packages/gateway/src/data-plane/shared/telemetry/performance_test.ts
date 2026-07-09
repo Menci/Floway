@@ -29,7 +29,7 @@ describe('recordRequestPerformance', () => {
   // --- error ---
 
   it('records an error when failed=true', async () => {
-    const ctx = { perfTiming: { firstOutputTokenAt: null, upstreamCallStartedAt: null } };
+    const ctx = { firstOutputTokenAt: null, upstreamCallStartedAt: null };
     recordRequestPerformance(scheduler, ctx, telemetry, true, 0, 400);
     await Promise.all(promises);
     const [row] = await repo.performance.listAll();
@@ -39,7 +39,7 @@ describe('recordRequestPerformance', () => {
   // --- neutral ---
 
   it('records a neutral row for non-chat operation on success', async () => {
-    const ctx = { perfTiming: { firstOutputTokenAt: null, upstreamCallStartedAt: null } };
+    const ctx = { firstOutputTokenAt: null, upstreamCallStartedAt: null };
     recordRequestPerformance(scheduler, ctx, { ...telemetry, operation: 'embeddings' }, false, 0, 500);
     await Promise.all(promises);
     const [row] = await repo.performance.listAll();
@@ -47,7 +47,7 @@ describe('recordRequestPerformance', () => {
   });
 
   it('records an error row for non-chat operation on failure', async () => {
-    const ctx = { perfTiming: { firstOutputTokenAt: null, upstreamCallStartedAt: null } };
+    const ctx = { firstOutputTokenAt: null, upstreamCallStartedAt: null };
     recordRequestPerformance(scheduler, ctx, { ...telemetry, operation: 'embeddings' }, true, 0, 500);
     await Promise.all(promises);
     const [row] = await repo.performance.listAll();
@@ -56,7 +56,7 @@ describe('recordRequestPerformance', () => {
 
   it('records neutral for chat with no upstream call (synthetic result)', async () => {
     // upstreamCallStartedAt === null means no real fetch was issued (e.g. cached / synthetic).
-    const ctx = { perfTiming: { firstOutputTokenAt: 100, upstreamCallStartedAt: null } };
+    const ctx = { firstOutputTokenAt: 100, upstreamCallStartedAt: null };
     recordRequestPerformance(scheduler, ctx, telemetry, false, 50, 400);
     await Promise.all(promises);
     const [row] = await repo.performance.listAll();
@@ -65,7 +65,7 @@ describe('recordRequestPerformance', () => {
 
   it('records neutral for chat with upstream call but no first generated token', async () => {
     // Stream aborted or reasoning-only: upstream was called but no generated token arrived.
-    const ctx = { perfTiming: { firstOutputTokenAt: null, upstreamCallStartedAt: 50 } };
+    const ctx = { firstOutputTokenAt: null, upstreamCallStartedAt: 50 };
     recordRequestPerformance(scheduler, ctx, telemetry, false, 50, 400);
     await Promise.all(promises);
     const [row] = await repo.performance.listAll();
@@ -75,7 +75,7 @@ describe('recordRequestPerformance', () => {
   it('records neutral for chat with outputTokens=1 (single-token stream, tpot unmeasurable)', async () => {
     // With only one output token the stream duration divided by 1 gives tpot ≈ 0 μs,
     // polluting histogram buckets — treat as neutral instead.
-    const ctx = { perfTiming: { firstOutputTokenAt: 100, upstreamCallStartedAt: 50 } };
+    const ctx = { firstOutputTokenAt: 100, upstreamCallStartedAt: 50 };
     recordRequestPerformance(scheduler, ctx, telemetry, false, 1, 400);
     await Promise.all(promises);
     const [row] = await repo.performance.listAll();
@@ -83,7 +83,7 @@ describe('recordRequestPerformance', () => {
   });
 
   it('records neutral for chat with outputTokens=0 (client disconnect before any output)', async () => {
-    const ctx = { perfTiming: { firstOutputTokenAt: 100, upstreamCallStartedAt: 50 } };
+    const ctx = { firstOutputTokenAt: 100, upstreamCallStartedAt: 50 };
     recordRequestPerformance(scheduler, ctx, telemetry, false, 0, 400);
     await Promise.all(promises);
     const [row] = await repo.performance.listAll();
@@ -92,13 +92,8 @@ describe('recordRequestPerformance', () => {
 
   // --- sample ---
 
-  it('records sample with ttft measured from upstreamCallStartedAt not requestStartedAt', async () => {
-    const ctx = {
-      perfTiming: {
-        firstOutputTokenAt: 500,
-        upstreamCallStartedAt: 100,
-      },
-    };
+  it('records sample with ttft measured from upstreamCallStartedAt', async () => {
+    const ctx = { firstOutputTokenAt: 500, upstreamCallStartedAt: 100 };
     recordRequestPerformance(scheduler, ctx, telemetry, false, 200, 1000);
     await Promise.all(promises);
     const [row] = await repo.performance.listAll();
@@ -110,7 +105,7 @@ describe('recordRequestPerformance', () => {
   });
 
   it('records sample with exactly 2 output tokens (boundary: outputTokens >= 2)', async () => {
-    const ctx = { perfTiming: { firstOutputTokenAt: 200, upstreamCallStartedAt: 100 } };
+    const ctx = { firstOutputTokenAt: 200, upstreamCallStartedAt: 100 };
     recordRequestPerformance(scheduler, ctx, telemetry, false, 2, 600);
     await Promise.all(promises);
     const [row] = await repo.performance.listAll();
@@ -124,7 +119,7 @@ describe('recordRequestPerformance', () => {
   // --- no-op ---
 
   it('is a no-op when telemetry is undefined', async () => {
-    const ctx = { perfTiming: { firstOutputTokenAt: 100, upstreamCallStartedAt: 50 } };
+    const ctx = { firstOutputTokenAt: 100, upstreamCallStartedAt: 50 };
     recordRequestPerformance(scheduler, ctx, undefined, false, 200, 400);
     await Promise.all(promises);
     expect(await repo.performance.listAll()).toEqual([]);

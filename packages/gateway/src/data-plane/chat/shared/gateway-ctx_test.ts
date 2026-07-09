@@ -189,20 +189,4 @@ describe('createGatewayCtxFromHono', () => {
     assertEquals(collected.both, ['up-b']);
     assertEquals(collected.keyOnly, ['up-x']);
   });
-
-  test('stamps requestStartedAt from performance.now() at construction', async () => {
-    const app = makeApp();
-    let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
-    const before = performance.now();
-    app.get('/test', c => {
-      ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER });
-      return c.text('ok');
-    });
-    await app.request('/test');
-    const after = performance.now();
-    assertExists(ctx);
-    if (!(ctx.requestStartedAt >= before && ctx.requestStartedAt <= after)) {
-      throw new Error(`requestStartedAt ${ctx.requestStartedAt} not in [${before}, ${after}]`);
-    }
-  });
 });
