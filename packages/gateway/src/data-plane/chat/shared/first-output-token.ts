@@ -18,7 +18,7 @@ const isMessagesOutputEvent = (event: Record<string, unknown> & { type?: unknown
   if (event.type !== 'content_block_delta') return false;
   const delta = (event as { delta?: { type?: unknown } }).delta;
   if (!delta || typeof delta !== 'object') return false;
-  return delta.type === 'text_delta' || delta.type === 'input_json_delta';
+  return delta.type === 'text_delta' || delta.type === 'input_json_delta' || delta.type === 'citations_delta';
 };
 
 const isResponsesOutputEvent = (event: Record<string, unknown> & { type?: unknown }): boolean => {

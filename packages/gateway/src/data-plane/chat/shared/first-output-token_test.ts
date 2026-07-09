@@ -14,6 +14,10 @@ describe('isFirstOutputTokenFrame — messages', () => {
     expect(isFirstOutputTokenFrame(eventFrame({ type: 'content_block_delta', delta: { type: 'input_json_delta', partial_json: '{' } }), 'messages')).toBe(true);
   });
 
+  it('accepts citations_delta (Anthropic citations / web-search)', () => {
+    expect(isFirstOutputTokenFrame(eventFrame({ type: 'content_block_delta', delta: { type: 'citations_delta', citation: {} } }), 'messages')).toBe(true);
+  });
+
   it('rejects thinking_delta', () => {
     expect(isFirstOutputTokenFrame(eventFrame({ type: 'content_block_delta', delta: { type: 'thinking_delta', thinking: '...' } }), 'messages')).toBe(false);
   });
