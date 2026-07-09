@@ -227,9 +227,14 @@ const dispatchResponses = async (
     // rejects, and `stream` is irrelevant on a non-streaming call. The generate
     // branch leaves both fields on the body — every provider's streaming call
     // forces stream=true anyway.
-    const body = invocation.action === 'compact'
-      ? (({ model: _model, stream: _stream, store: _store, ...rest }) => rest)(invocation.payload)
-      : (({ model: _model, ...rest }) => rest)(invocation.payload);
+    let body: Omit<CanonicalResponsesPayload, 'model'>;
+    if (invocation.action === 'compact') {
+      const { model: _model, stream: _stream, store: _store, ...rest } = invocation.payload;
+      body = rest;
+    } else {
+      const { model: _model, ...rest } = invocation.payload;
+      body = rest;
+    }
     const providerResult = await candidate.provider.instance.callResponses(
       providerModelOf(candidate),
       body,
