@@ -16,7 +16,7 @@ import type {
   ResponsesOutputImageGenerationCall,
   ResponsesTool,
 } from '@floway-dev/protocols/responses';
-import { providerModelOf, type Fetcher, type Provider, type ModelCandidate, type ProviderModel , identityWrapUpstreamCall} from '@floway-dev/provider';
+import { providerModelOf, type Fetcher, type Provider, type ModelCandidate, type ProviderModel, identityWrapUpstreamCall } from '@floway-dev/provider';
 
 export const SHIM_TOOL_NAME = 'image_generation';
 

@@ -627,8 +627,6 @@ class SqlPerformanceRepo implements PerformanceRepo {
 
   async recordSample(sample: PerformanceSample): Promise<void> {
     const hasTpot = sample.tpotUs !== undefined;
-    const tpotSamplesInc = hasTpot ? 1 : 0;
-    const tpotUsInc = sample.tpotUs ?? 0;
     const summaryStmt = this.db.prepare(
       `INSERT INTO performance_summary (hour, key_id, model, upstream, operation, runtime_location, requests, errors, ttft_samples, tpot_samples, ttft_ms_sum, tpot_us_sum)
        VALUES (?, ?, ?, ?, ?, ?, 1, 0, 1, ?, ?, ?)
@@ -638,10 +636,10 @@ class SqlPerformanceRepo implements PerformanceRepo {
          tpot_samples = tpot_samples + excluded.tpot_samples,
          ttft_ms_sum = ttft_ms_sum + excluded.ttft_ms_sum,
          tpot_us_sum = tpot_us_sum + excluded.tpot_us_sum`,
-    ).bind(...performanceDimensionBinds(sample), tpotSamplesInc, sample.ttftMs, tpotUsInc);
+    ).bind(...performanceDimensionBinds(sample), hasTpot ? 1 : 0, sample.ttftMs, sample.tpotUs ?? 0);
 
     const stmts: SqlPreparedStatement[] = [summaryStmt, this.buildBucketStmt(sample, 'ttft_ms', bucketForTtftMs(sample.ttftMs))];
-    if (sample.tpotUs !== undefined) stmts.push(this.buildBucketStmt(sample, 'tpot_us', bucketForTpotUs(sample.tpotUs)));
+    if (hasTpot) stmts.push(this.buildBucketStmt(sample, 'tpot_us', bucketForTpotUs(sample.tpotUs!)));
     await runStatements(this.db, stmts);
   }
 

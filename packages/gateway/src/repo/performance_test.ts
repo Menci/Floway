@@ -17,7 +17,6 @@ const sample = (over: Partial<PerformanceSample> = {}): PerformanceSample => ({
   runtimeLocation: 'hkg',
   ttftMs: 340,
   tpotUs: 15_000,
-  outputTokens: 128,
   ...over,
 });
 
@@ -74,8 +73,8 @@ for (const impl of impls) {
       const repo = await impl.open();
       // Both samples fall in the same TTFT bucket [200, 300] and same TPOT bucket [10000, 12500]
       // so a single (lower, upper) entry accumulates count=2 for each metric.
-      await repo.recordSample(sample({ ttftMs: 250, tpotUs: 10_500, outputTokens: 50 }));
-      await repo.recordSample(sample({ ttftMs: 260, tpotUs: 11_500, outputTokens: 90 }));
+      await repo.recordSample(sample({ ttftMs: 250, tpotUs: 10_500 }));
+      await repo.recordSample(sample({ ttftMs: 260, tpotUs: 11_500 }));
       const [row] = await repo.listAll();
       expect(row).toMatchObject({ requests: 2, ttftSamples: 2, tpotSamples: 2, ttftMsSum: 510, tpotUsSum: 22_000 });
       const ttft = row!.buckets.find(b => b.metric === 'ttft_ms' && b.lower === 200 && b.upper === 300)!;
@@ -134,7 +133,7 @@ for (const impl of impls) {
 
     it('TTFT-only sample (no tpotUs) records TTFT bucket without touching TPOT columns', async () => {
       const repo = await impl.open();
-      const { tpotUs: _tpot, outputTokens: _out, ...ttftOnly } = sample();
+      const { tpotUs: _tpot, ...ttftOnly } = sample();
       await repo.recordSample(ttftOnly);
       const [row] = await repo.listAll();
       expect(row).toMatchObject({ requests: 1, ttftSamples: 1, tpotSamples: 0, ttftMsSum: 340, tpotUsSum: 0 });

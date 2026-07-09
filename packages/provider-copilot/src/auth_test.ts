@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { copilotAuthedFetch } from './auth.ts';
 import { clearInProcessCopilotTokenCache } from './index.ts';
 import type { CopilotUpstreamState } from './state.ts';
-import { initProviderRepo, directFetcher, type UpstreamRecord , identityWrapUpstreamCall} from '@floway-dev/provider';
+import { initProviderRepo, directFetcher, type UpstreamRecord, identityWrapUpstreamCall } from '@floway-dev/provider';
 import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 const UPSTREAM_ID = 'up_copilot_test';

@@ -13,7 +13,6 @@ test('/api/performance returns backend-aggregated base-model percentiles', async
     operation: 'chat' as const,
     runtimeLocation: 'LOCAL',
     tpotUs: 500,
-    outputTokens: 10,
   };
 
   // 90 fast samples (ttftMs=100 → bucket [0, 100]) + 10 slow samples (ttftMs=300 → bucket [200, 300]).
@@ -73,7 +72,6 @@ test('/api/performance scopes to actor\'s keys in self-by-key mode', async () =>
     operation: 'chat' as const,
     runtimeLocation: 'LOCAL',
     tpotUs: 500,
-    outputTokens: 10,
   };
 
   await repo.performance.recordSample({ ...sample, keyId: apiKey.id, ttftMs: 50 });
@@ -99,7 +97,6 @@ test('/api/performance can include key metadata', async () => {
     runtimeLocation: 'LOCAL',
     ttftMs: 50,
     tpotUs: 500,
-    outputTokens: 10,
   });
 
   const response = await requestApp('/api/performance?start=2026-04-30T00&end=2026-05-01T00&include_key_metadata=1', { headers: { 'x-api-key': apiKey.key } });
@@ -139,7 +136,6 @@ test('/api/performance all-by-user view aggregates over every key', async () => 
     runtimeLocation: 'LOCAL',
     ttftMs: 100,
     tpotUs: 500,
-    outputTokens: 10,
   };
   await repo.performance.recordSample({ ...sample, keyId: apiKey.id });
   await repo.performance.recordSample({ ...sample, keyId: 'key_other' });
@@ -188,7 +184,6 @@ test('/api/performance all-by-user view supports group_by=userId', async () => {
     runtimeLocation: 'LOCAL',
     ttftMs: 100,
     tpotUs: 500,
-    outputTokens: 10,
   };
   await repo.performance.recordSample({ ...sample, keyId: apiKey.id });
   await repo.performance.recordSample({ ...sample, keyId: apiKey.id });
@@ -231,7 +226,6 @@ test('/api/performance/overview series stays per-model under all-by-user view', 
     runtimeLocation: 'LOCAL',
     ttftMs: 100,
     tpotUs: 500,
-    outputTokens: 10,
   };
   await repo.performance.recordSample({ ...sample, keyId: apiKey.id });
   await repo.performance.recordSample({ ...sample, keyId: 'key_other' });
@@ -265,7 +259,6 @@ test('/api/performance/overview returns dashboard aggregates from one repo query
     runtimeLocation: 'SJC',
     ttftMs: 250,
     tpotUs: 1000,
-    outputTokens: 10,
   });
 
   const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&bucket=hour', { headers: { 'x-api-key': apiKey.key } });
@@ -329,7 +322,6 @@ test('/api/performance all-by-user attributes soft-deleted keys to their origina
     runtimeLocation: 'LOCAL',
     ttftMs: 100,
     tpotUs: 500,
-    outputTokens: 10,
   });
   await repo.apiKeys.softDelete(apiKey.id);
 
@@ -355,7 +347,6 @@ test('/api/performance self-by-key surfaces soft-deleted keys metadata to their 
     runtimeLocation: 'LOCAL',
     ttftMs: 200,
     tpotUs: 500,
-    outputTokens: 10,
   });
   await repo.apiKeys.softDelete(apiKey.id);
   // The acting api key was the one that was soft-deleted; build a fresh
@@ -398,7 +389,6 @@ test('/api/performance/overview returns operationRows grouped by operation value
     runtimeLocation: 'LOCAL',
     ttftMs: 100,
     tpotUs: 500,
-    outputTokens: 10,
   });
   await repo.performance.recordNeutral({
     hour: '2026-04-30T10',
@@ -441,7 +431,6 @@ test('/api/performance with group_by=operation splits rows by operation value', 
     runtimeLocation: 'LOCAL',
     ttftMs: 100,
     tpotUs: 500,
-    outputTokens: 10,
   });
   await repo.performance.recordNeutral({
     hour: '2026-04-30T10',

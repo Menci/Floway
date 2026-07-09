@@ -11,7 +11,7 @@ import {
   customFetchResponsesCompact,
 } from './fetch.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
-import { directFetcher , identityWrapUpstreamCall} from '@floway-dev/provider';
+import { directFetcher, identityWrapUpstreamCall } from '@floway-dev/provider';
 import { assertEquals, withMockedFetch } from '@floway-dev/test-utils';
 
 const baseRecord: UpstreamRecord = {

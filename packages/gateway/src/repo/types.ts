@@ -96,15 +96,13 @@ export interface PerformanceDimensions {
   runtimeLocation: string;
 }
 
-// TPOT is measurable only when at least two output tokens are streamed. The
-// three TPOT-side fields (tpotUs, outputTokens) travel as one — the caller
-// either provides both, or provides neither for a TTFT-only sample. Modeled
-// as a discriminated union so the repo can narrow via a single tpotUs check
-// instead of asserting both fields independently.
-export type PerformanceSample = PerformanceDimensions & { ttftMs: number } & (
-  | { tpotUs?: undefined; outputTokens?: undefined }
-  | { tpotUs: number; outputTokens: number }
-);
+// TPOT is measurable only when at least two output tokens are streamed; the
+// caller (recordRequestPerformance) enforces that gate before setting
+// `tpotUs`. A TTFT-only sample omits it entirely.
+export interface PerformanceSample extends PerformanceDimensions {
+  ttftMs: number;
+  tpotUs?: number;
+}
 
 export interface PerformanceBucketRow {
   metric: PerformanceMetric;

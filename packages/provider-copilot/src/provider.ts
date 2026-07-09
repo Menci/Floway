@@ -214,8 +214,8 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
     headers: Headers,
     parser: Parameters<typeof streamingProviderCall<TEvent>>[1],
     opts: UpstreamCallOptions,
-  ) => {
-    return streamingProviderCall(
+  ) =>
+    streamingProviderCall(
       transport(
         upstreamConfig,
         {
@@ -229,7 +229,6 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
       rawModel.id,
       signal,
     );
-  };
 
   // The boundary chain expects ExecuteResult shape so post-`run()` inspectors
   // (e.g. rewriteContextWindowError) can pattern-match on `result.type`. The

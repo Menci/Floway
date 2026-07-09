@@ -1,4 +1,4 @@
-import { directFetcher, type FlagId, type InternalModel, type ProviderInstance, type Provider, type ProviderModel, type ModelCandidate, type TelemetryModelIdentity, type UpstreamCallOptions , identityWrapUpstreamCall} from '@floway-dev/provider';
+import { directFetcher, type FlagId, type InternalModel, type ProviderInstance, type Provider, type ProviderModel, type ModelCandidate, type TelemetryModelIdentity, type UpstreamCallOptions, identityWrapUpstreamCall } from '@floway-dev/provider';
 
 // No-op UpstreamCallOptions factory for tests calling provider methods
 // directly: the fetcher uses runtime fetch so `globalThis.fetch` spies still

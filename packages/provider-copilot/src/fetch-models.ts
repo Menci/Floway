@@ -1,6 +1,6 @@
 import { copilotFetchModels, type CopilotFetchConfig } from './fetch.ts';
 import type { CopilotModelsResponse } from './types.ts';
-import { fetchUpstreamModels, type Fetcher , identityWrapUpstreamCall} from '@floway-dev/provider';
+import { fetchUpstreamModels, type Fetcher, identityWrapUpstreamCall } from '@floway-dev/provider';
 
 const isCopilotModelsResponse = (value: unknown): value is CopilotModelsResponse => {
   const response = value as CopilotModelsResponse;

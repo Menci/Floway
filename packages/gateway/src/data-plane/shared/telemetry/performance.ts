@@ -67,5 +67,5 @@ export const recordRequestPerformance = (
   // spec (gen_ai.server.time_per_output_token).
   const streamDeltaMs = requestFinishedAt - perfTiming.firstOutputTokenAt;
   const tpotUs = Math.round((streamDeltaMs * 1_000) / (outputTokens - 1));
-  scheduler(record(getRepo().performance.recordSample({ ...dims, ttftMs, tpotUs, outputTokens }), 'sample'));
+  scheduler(record(getRepo().performance.recordSample({ ...dims, ttftMs, tpotUs }), 'sample'));
 };

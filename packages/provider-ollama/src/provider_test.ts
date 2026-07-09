@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { createOllamaProvider } from './provider.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
-import { directFetcher , identityWrapUpstreamCall} from '@floway-dev/provider';
+import { directFetcher, identityWrapUpstreamCall } from '@floway-dev/provider';
 import { assertEquals, jsonResponse, noopUpstreamCallOptions, withMockedFetch } from '@floway-dev/test-utils';
 
 const buildRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => ({

@@ -21,7 +21,7 @@
 
 import type { OllamaUpstreamConfig } from './config.ts';
 import { ollamaFetchShow, ollamaFetchTags } from './fetch.ts';
-import { fetchUpstreamModels, type Fetcher , identityWrapUpstreamCall} from '@floway-dev/provider';
+import { fetchUpstreamModels, type Fetcher, identityWrapUpstreamCall } from '@floway-dev/provider';
 
 export interface OllamaRawModel {
   // The slug Ollama uses everywhere (e.g. `gpt-oss:120b`, `deepseek-v4-flash`,
