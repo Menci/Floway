@@ -112,7 +112,7 @@ export interface PerformanceBucketRow {
 }
 
 export interface PerformanceTelemetryRecord extends PerformanceDimensions {
-  requests: number;           // samples + errors
+  requests: number;           // samples + errors + neutral (non-chat successes)
   errors: number;
   samples: number;
   ttftMsSum: number;
