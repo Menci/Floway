@@ -154,17 +154,18 @@ export const performanceOverview = async (c: Ctx) => {
   const modelRows = aggregatePerformanceForDisplay(rawRecords, { ...baseOptions, bucket: 'all', groupBy: 'model' });
   const upstreamRows = aggregatePerformanceForDisplay(rawRecords, { ...baseOptions, bucket: 'all', groupBy: 'upstream' });
   const runtimeRows = aggregatePerformanceForDisplay(rawRecords, { ...baseOptions, bucket: 'all', groupBy: 'runtimeLocation' });
+  const operationRows = aggregatePerformanceForDisplay(rawRecords, { ...baseOptions, bucket: 'all', groupBy: 'operation' });
 
   const query = c.req.valid('query');
 
   if (resolved.view === 'all-by-user') {
-    if (query.include_user_metadata !== '1') return c.json({ series, summaryRows, modelRows, upstreamRows, runtimeRows });
+    if (query.include_user_metadata !== '1') return c.json({ series, summaryRows, modelRows, upstreamRows, runtimeRows, operationRows });
     const users = await getRepo().users.listIncludingDeleted();
     const userMetadata = users
       .map(u => ({ id: u.id, username: u.username }))
       .sort((a, b) => a.id - b.id);
-    return c.json({ series, summaryRows, modelRows, upstreamRows, runtimeRows, users: userMetadata });
+    return c.json({ series, summaryRows, modelRows, upstreamRows, runtimeRows, operationRows, users: userMetadata });
   }
 
-  return c.json({ series, summaryRows, modelRows, upstreamRows, runtimeRows });
+  return c.json({ series, summaryRows, modelRows, upstreamRows, runtimeRows, operationRows });
 };

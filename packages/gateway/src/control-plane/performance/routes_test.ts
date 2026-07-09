@@ -36,6 +36,7 @@ test('/api/performance returns backend-aggregated base-model percentiles', async
       requests: 100,
       errors: 0,
       samples: 100,
+      neutral: 0,
       ttftMsAvg: 120,
       ttftMsP50: 100,
       ttftMsP95: 500,
@@ -381,4 +382,85 @@ test('/api/performance self-by-key surfaces soft-deleted keys metadata to their 
   assertEquals(ids.includes(apiKey.id), true);
   const matched = body.records.find((r: { group: string }) => r.group === apiKey.id);
   assertEquals(matched?.requests, 1);
+});
+
+test('/api/performance/overview returns operationRows grouped by operation value', async () => {
+  const { repo, apiKey } = await setupAppTest();
+
+  await repo.performance.recordSample({
+    hour: '2026-04-30T10',
+    keyId: apiKey.id,
+    model: 'claude-sonnet-4-5',
+    upstream: 'copilot:1',
+    operation: 'chat',
+    runtimeLocation: 'LOCAL',
+    ttftMs: 100,
+    tpotUs: 500,
+    outputTokens: 10,
+  });
+  await repo.performance.recordNeutral({
+    hour: '2026-04-30T10',
+    keyId: apiKey.id,
+    model: 'text-embedding-3-small',
+    upstream: 'copilot:1',
+    operation: 'embeddings',
+    runtimeLocation: 'LOCAL',
+  });
+  await repo.performance.recordNeutral({
+    hour: '2026-04-30T10',
+    keyId: apiKey.id,
+    model: 'text-embedding-3-small',
+    upstream: 'copilot:1',
+    operation: 'embeddings',
+    runtimeLocation: 'LOCAL',
+  });
+
+  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&bucket=hour', { headers: { 'x-api-key': apiKey.key } });
+
+  assertEquals(response.status, 200);
+  const body = await response.json();
+  assertEquals(typeof body.operationRows, 'object');
+  const opGroups = body.operationRows.map((r: { group: string; requests: number; neutral: number }) => ({ group: r.group, requests: r.requests, neutral: r.neutral })).sort((a: { group: string }, b: { group: string }) => a.group.localeCompare(b.group));
+  assertEquals(opGroups, [
+    { group: 'chat', requests: 1, neutral: 0 },
+    { group: 'embeddings', requests: 2, neutral: 2 },
+  ]);
+});
+
+test('/api/performance with group_by=operation splits rows by operation value', async () => {
+  const { repo, apiKey } = await setupAppTest();
+
+  await repo.performance.recordSample({
+    hour: '2026-04-30T10',
+    keyId: apiKey.id,
+    model: 'claude-sonnet-4-5',
+    upstream: 'copilot:1',
+    operation: 'chat',
+    runtimeLocation: 'LOCAL',
+    ttftMs: 100,
+    tpotUs: 500,
+    outputTokens: 10,
+  });
+  await repo.performance.recordNeutral({
+    hour: '2026-04-30T10',
+    keyId: apiKey.id,
+    model: 'text-embedding-3-small',
+    upstream: 'copilot:1',
+    operation: 'embeddings',
+    runtimeLocation: 'LOCAL',
+  });
+
+  const response = await requestApp(
+    '/api/performance?start=2026-04-30T00&end=2026-05-01T00&bucket=hour&group_by=operation',
+    { headers: { 'x-api-key': apiKey.key } },
+  );
+
+  assertEquals(response.status, 200);
+  const body = await response.json();
+  assertEquals(body.records.length, 2);
+  const groups = body.records.map((r: { group: string }) => r.group).sort();
+  assertEquals(groups, ['chat', 'embeddings']);
+  const embRow = body.records.find((r: { group: string }) => r.group === 'embeddings');
+  assertEquals(embRow.neutral, 1);
+  assertEquals(embRow.samples, 0);
 });

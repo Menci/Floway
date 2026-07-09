@@ -2,7 +2,7 @@ import type { PerformanceMetric, PerformanceTelemetryRecord } from '../../repo/t
 import { type HistogramBucket, percentileFromBuckets } from '../../shared/performance-histogram.ts';
 
 export type PerformanceBucketGranularity = 'hour' | '4h' | '8h' | 'day' | 'all';
-export type PerformanceGroupBy = 'none' | 'keyId' | 'userId' | 'model' | 'upstream' | 'runtimeLocation';
+export type PerformanceGroupBy = 'none' | 'keyId' | 'userId' | 'model' | 'upstream' | 'operation' | 'runtimeLocation';
 
 export interface PerformanceDisplayRecord {
   bucket: string;
@@ -10,6 +10,7 @@ export interface PerformanceDisplayRecord {
   requests: number;
   errors: number;
   samples: number;
+  neutral: number;
   ttftMsAvg: number | null;
   ttftMsP50: number | null;
   ttftMsP95: number | null;
@@ -121,6 +122,7 @@ function toDisplayRecord(a: MutableAggregate): PerformanceDisplayRecord {
     requests: a.requests,
     errors: a.errors,
     samples: a.samples,
+    neutral: a.requests - a.samples - a.errors,
     ttftMsAvg: hasSamples ? a.ttftMsSum / a.samples : null,
     ttftMsP50: percentileFromBuckets(ttftBuckets, 0.5),
     ttftMsP95: percentileFromBuckets(ttftBuckets, 0.95),

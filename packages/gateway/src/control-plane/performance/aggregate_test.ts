@@ -37,6 +37,7 @@ test('aggregatePerformanceForDisplay produces correct averages and percentiles f
       requests: 1,
       errors: 0,
       samples: 1,
+      neutral: 0,
       ttftMsAvg: 100,
       ttftMsP50: 100,
       ttftMsP95: 100,
@@ -73,6 +74,7 @@ test('aggregatePerformanceForDisplay counts error-only rows as displayed request
       requests: 3,
       errors: 3,
       samples: 0,
+      neutral: 0,
       ttftMsAvg: null,
       ttftMsP50: null,
       ttftMsP95: null,
@@ -171,4 +173,47 @@ test('aggregatePerformanceForDisplay aligns 8h buckets in caller timezone', () =
   const rows = aggregatePerformanceForDisplay([record({ hour: '2026-04-30T16' })], { bucket: '8h', groupBy: 'none', timezoneOffsetMinutes: 480 });
 
   assertEquals(rows[0].bucket, '2026-04-30T08');
+});
+
+test('aggregatePerformanceForDisplay splits rows by operation when groupBy is operation', () => {
+  const rows = aggregatePerformanceForDisplay(
+    [
+      record({ operation: 'chat' }),
+      record({ operation: 'embeddings', requests: 2, errors: 0, samples: 0, ttftMsSum: 0, tpotUsSum: 0, buckets: [] }),
+    ],
+    { bucket: 'all', groupBy: 'operation', timezoneOffsetMinutes: 0 },
+  );
+
+  assertEquals(rows.length, 2);
+  const groups = rows.map(r => r.group).sort();
+  assertEquals(groups, ['chat', 'embeddings']);
+});
+
+test('aggregatePerformanceForDisplay derives neutral as requests - samples - errors', () => {
+  const rows = aggregatePerformanceForDisplay(
+    [
+      record({ requests: 5, samples: 3, errors: 1, ttftMsSum: 300, tpotUsSum: 1500, buckets: [
+        { metric: 'ttft_ms', lower: 50, upper: 100, count: 3 },
+        { metric: 'tpot_us', lower: 200, upper: 500, count: 3 },
+      ] }),
+    ],
+    { bucket: 'all', groupBy: 'none', timezoneOffsetMinutes: 0 },
+  );
+
+  assertEquals(rows[0].neutral, 1);
+  assertEquals(rows[0].requests, 5);
+  assertEquals(rows[0].samples, 3);
+  assertEquals(rows[0].errors, 1);
+});
+
+test('aggregatePerformanceForDisplay neutral is zero for pure chat rows (samples + errors = requests)', () => {
+  const rows = aggregatePerformanceForDisplay(
+    [record({ requests: 4, samples: 3, errors: 1, ttftMsSum: 300, tpotUsSum: 1500, buckets: [
+      { metric: 'ttft_ms', lower: 50, upper: 100, count: 3 },
+      { metric: 'tpot_us', lower: 200, upper: 500, count: 3 },
+    ] })],
+    { bucket: 'all', groupBy: 'none', timezoneOffsetMinutes: 0 },
+  );
+
+  assertEquals(rows[0].neutral, 0);
 });
