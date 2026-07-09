@@ -21,7 +21,6 @@ interface PerformanceDisplayRecord {
   group: string;
   requests: number;
   errors: number;
-  samples: number;
   neutral: number;
   ttftMsAvg: number | null;
   ttftMsP50: number | null;
