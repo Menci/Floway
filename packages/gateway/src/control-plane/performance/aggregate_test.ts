@@ -40,11 +40,9 @@ test('aggregatePerformanceForDisplay produces correct averages and percentiles f
       ttftSamples: 1,
       tpotSamples: 1,
       neutral: 0,
-      ttftMsAvg: 100,
       ttftMsP50: 100,
       ttftMsP95: 100,
       ttftMsP99: 100,
-      tpotUsAvg: 500,
       tpotUsP50: 500,
       tpotUsP95: 500,
       tpotUsP99: 500,
@@ -79,11 +77,9 @@ test('aggregatePerformanceForDisplay counts error-only rows as displayed request
       ttftSamples: 0,
       tpotSamples: 0,
       neutral: 0,
-      ttftMsAvg: null,
       ttftMsP50: null,
       ttftMsP95: null,
       ttftMsP99: null,
-      tpotUsAvg: null,
       tpotUsP50: null,
       tpotUsP95: null,
       tpotUsP99: null,
@@ -102,7 +98,7 @@ test('aggregatePerformanceForDisplay merges two hours under bucket: all', () => 
   assertEquals(rows[0].requests, 2);
   assertEquals(rows[0].ttftSamples, 2);
   assertEquals(rows[0].tpotSamples, 2);
-  assertEquals(rows[0].ttftMsAvg, 100);
+  assertEquals(rows[0].ttftMsP50, 100);
 });
 
 test('aggregatePerformanceForDisplay splits rows by upstream when groupBy is upstream', () => {
@@ -225,18 +221,20 @@ test('aggregatePerformanceForDisplay neutral is zero for pure chat rows (ttftSam
   assertEquals(rows[0].neutral, 0);
 });
 
-test('aggregatePerformanceForDisplay tpotUsAvg divides by tpotSamples so single-token records skew nothing', () => {
-  // Mix: one full sample (contributes to both) + one TTFT-only sample (contributes to
-  // ttftSamples only). tpotUsAvg must divide by tpotSamples (1), not ttftSamples (2).
+test('aggregatePerformanceForDisplay tpot percentiles derive from the tpot bucket set only, unaffected by TTFT-only samples', () => {
+  // Mix: one full sample (contributes ttft + tpot) + one TTFT-only sample (ttft only).
+  // The tpot histogram carries only the full sample's bucket, so tpot percentiles
+  // reflect that single point without dilution from the TTFT-only row.
   const rows = aggregatePerformanceForDisplay(
-    [record({ requests: 2, ttftSamples: 2, tpotSamples: 1, ttftMsSum: 200, tpotUsSum: 500, buckets: [
+    [record({ requests: 2, ttftSamples: 2, tpotSamples: 1, buckets: [
       { metric: 'ttft_ms', lower: 50, upper: 100, count: 2 },
       { metric: 'tpot_us', lower: 200, upper: 500, count: 1 },
     ] })],
     { bucket: 'all', groupBy: 'none', timezoneOffsetMinutes: 0 },
   );
 
-  assertEquals(rows[0].ttftMsAvg, 100);
-  assertEquals(rows[0].tpotUsAvg, 500);
+  assertEquals(rows[0].ttftSamples, 2);
+  assertEquals(rows[0].tpotSamples, 1);
+  assertEquals(rows[0].tpotUsP50, 500);
   assertEquals(rows[0].neutral, 0);
 });

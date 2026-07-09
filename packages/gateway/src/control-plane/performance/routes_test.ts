@@ -38,11 +38,9 @@ test('/api/performance returns backend-aggregated base-model percentiles', async
       ttftSamples: 100,
       tpotSamples: 100,
       neutral: 0,
-      ttftMsAvg: 120,
       ttftMsP50: 100,
       ttftMsP95: 500,
       ttftMsP99: 500,
-      tpotUsAvg: 500,
       tpotUsP50: 500,
       tpotUsP95: 500,
       tpotUsP99: 500,
@@ -296,7 +294,7 @@ test('/api/performance/overview counts failed attempts in dashboard request tota
   const body = await response.json();
   assertEquals(body.summaryRows[0].requests, 1);
   assertEquals(body.summaryRows[0].errors, 1);
-  assertEquals(body.summaryRows[0].ttftMsAvg, null);
+  assertEquals(body.summaryRows[0].ttftSamples, 0);
   assertEquals(body.modelRows[0].group, 'gpt-5.5-pro-2026-04-23');
   assertEquals(body.modelRows[0].requests, 1);
   assertEquals(body.modelRows[0].errors, 1);

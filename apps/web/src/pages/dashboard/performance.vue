@@ -22,11 +22,9 @@ interface PerformanceDisplayRecord {
   requests: number;
   errors: number;
   neutral: number;
-  ttftMsAvg: number | null;
   ttftMsP50: number | null;
   ttftMsP95: number | null;
   ttftMsP99: number | null;
-  tpotUsAvg: number | null;
   tpotUsP50: number | null;
   tpotUsP95: number | null;
   tpotUsP99: number | null;
@@ -165,30 +163,16 @@ const getChartValue = (record: PerformanceDisplayRecord, p: PercentileKey): numb
   return us === null || us <= 0 ? null : 1_000_000 / us;
 };
 
-const getRowAvg = (record: PerformanceDisplayRecord): number | null => {
-  if (performanceMetric.value === 'ttft') return record.ttftMsAvg;
-  const us = record.tpotUsAvg;
-  return us === null || us <= 0 ? null : 1_000_000 / us;
-};
-
 const formatRowValue = (v: number | null): string =>
   performanceMetric.value === 'ttft' ? formatMs(v) : formatTps(v);
 
-const metricLabel = computed(() => performanceMetric.value === 'ttft' ? 'TTFT' : 'Speed');
-
-const percentileButtonLabel = (p: PercentileKey): string => {
-  if (performanceMetric.value === 'tokPerSec') {
-    if (p === 'p95') return 'worst 5%';
-    if (p === 'p99') return 'worst 1%';
-  }
-  return p;
-};
+const metricLabel = computed(() => performanceMetric.value === 'ttft' ? 'TTFT' : 'Output speed');
 
 const chartConfig = computed<ChartConfiguration<'line'>>(() => {
   const { keys: bucketKeys, labels } = dashboardBuckets(loadedPerformanceRange.value, loadedAt.value);
   const metric = performanceMetric.value;
   const formatter = metric === 'ttft' ? formatMs : formatTps;
-  const yTitle = metric === 'ttft' ? 'TTFT (ms)' : 'decode tok/s';
+  const yTitle = metric === 'ttft' ? 'TTFT (ms)' : 'Output speed (tok/s)';
 
   const datasets = performanceChartView.value === 'group'
     ? (() => {
@@ -220,7 +204,7 @@ const chartConfig = computed<ChartConfiguration<'line'>>(() => {
         const byBucket = new Map(overview.value.series.filter(r => r.group === performanceModel.value).map(r => [r.bucket, getChartValue(r, p)]));
         const color = chartColor(i);
         return {
-          label: percentileButtonLabel(p),
+          label: p,
           seriesId: p,
           hidden: hiddenPerformanceSeries.value.has(p),
           data: bucketKeys.map(k => byBucket.get(k) ?? null),
@@ -295,11 +279,9 @@ const performanceSeriesIds = computed(() => chartSeriesIds(chartConfig.value));
 const performanceSummary = computed(() => overview.value.summaryRows[0] ?? {
   requests: 0,
   errors: 0,
-  ttftMsAvg: null,
   ttftMsP50: null,
   ttftMsP95: null,
   ttftMsP99: null,
-  tpotUsAvg: null,
   tpotUsP50: null,
   tpotUsP95: null,
   tpotUsP99: null,
@@ -343,7 +325,7 @@ const performanceSummary = computed(() => overview.value.summaryRows[0] ?? {
               class="shrink-0 px-3 py-1.5 rounded-md text-xs font-medium transition-all"
               :class="performanceMetric === 'tokPerSec' ? 'bg-surface-600 text-white' : 'text-gray-500 hover:text-gray-300'"
               @click="performanceMetric = 'tokPerSec'"
-            >Speed</button>
+            >Output speed</button>
           </OverlayScrollbars>
           <OverlayScrollbars
             class="max-w-full rounded-lg bg-surface-800"
@@ -373,7 +355,7 @@ const performanceSummary = computed(() => overview.value.summaryRows[0] ?? {
               class="shrink-0 px-3 py-1.5 rounded-md text-xs font-medium transition-all"
               :class="performancePercentile === p ? 'bg-surface-600 text-white' : 'text-gray-500 hover:text-gray-300'"
               @click="performancePercentile = p"
-            >{{ percentileButtonLabel(p) }}</button>
+            >{{ p }}</button>
           </OverlayScrollbars>
           <OverlayScrollbars
             v-if="performanceChartView === 'percentile'"
@@ -416,18 +398,10 @@ const performanceSummary = computed(() => overview.value.summaryRows[0] ?? {
         {{ performanceError }}
       </div>
 
-      <div class="grid grid-cols-2 gap-3 mb-3 lg:grid-cols-6">
+      <div class="grid grid-cols-2 gap-3 mb-6 lg:grid-cols-4">
         <div class="rounded-md border border-white/5 bg-surface-800/60 px-3 py-3">
           <span class="block text-xs text-gray-500 mb-1">Requests</span>
           <span class="block text-lg font-bold font-mono text-white">{{ performanceSummary.requests.toLocaleString() }}</span>
-        </div>
-        <div class="rounded-md border border-white/5 bg-surface-800/60 px-3 py-3">
-          <span class="block text-xs text-gray-500 mb-1">Errors</span>
-          <span class="block text-lg font-bold font-mono text-white">{{ performanceSummary.errors.toLocaleString() }}</span>
-        </div>
-        <div class="rounded-md border border-white/5 bg-surface-800/60 px-3 py-3">
-          <span class="block text-xs text-gray-500 mb-1">TTFT avg</span>
-          <span class="block text-lg font-bold font-mono text-white">{{ formatMs(performanceSummary.ttftMsAvg) }}</span>
         </div>
         <div class="rounded-md border border-white/5 bg-surface-800/60 px-3 py-3">
           <span class="block text-xs text-gray-500 mb-1">TTFT p50</span>
@@ -441,23 +415,20 @@ const performanceSummary = computed(() => overview.value.summaryRows[0] ?? {
           <span class="block text-xs text-gray-500 mb-1">TTFT p99</span>
           <span class="block text-lg font-bold font-mono text-white">{{ formatMs(performanceSummary.ttftMsP99) }}</span>
         </div>
-      </div>
-
-      <div class="grid grid-cols-2 gap-3 mb-6 lg:grid-cols-4">
         <div class="rounded-md border border-white/5 bg-surface-800/60 px-3 py-3">
-          <span class="block text-xs text-gray-500 mb-1">Speed avg</span>
-          <span class="block text-lg font-bold font-mono text-white">{{ formatTokPerSec(performanceSummary.tpotUsAvg) }}</span>
+          <span class="block text-xs text-gray-500 mb-1">Errors</span>
+          <span class="block text-lg font-bold font-mono text-white">{{ performanceSummary.errors.toLocaleString() }}</span>
         </div>
         <div class="rounded-md border border-white/5 bg-surface-800/60 px-3 py-3">
-          <span class="block text-xs text-gray-500 mb-1">Speed p50</span>
+          <span class="block text-xs text-gray-500 mb-1">Output speed p50</span>
           <span class="block text-lg font-bold font-mono text-white">{{ formatTokPerSec(performanceSummary.tpotUsP50) }}</span>
         </div>
         <div class="rounded-md border border-white/5 bg-surface-800/60 px-3 py-3">
-          <span class="block text-xs text-gray-500 mb-1">Worst 5% speed</span>
+          <span class="block text-xs text-gray-500 mb-1">Output speed p95</span>
           <span class="block text-lg font-bold font-mono text-white">{{ formatTokPerSec(performanceSummary.tpotUsP95) }}</span>
         </div>
         <div class="rounded-md border border-white/5 bg-surface-800/60 px-3 py-3">
-          <span class="block text-xs text-gray-500 mb-1">Worst 1% speed</span>
+          <span class="block text-xs text-gray-500 mb-1">Output speed p99</span>
           <span class="block text-lg font-bold font-mono text-white">{{ formatTokPerSec(performanceSummary.tpotUsP99) }}</span>
         </div>
       </div>
@@ -478,8 +449,7 @@ const performanceSummary = computed(() => overview.value.summaryRows[0] ?? {
                 <tr>
                   <th class="px-3 py-2 text-left font-medium">Model</th>
                   <th class="px-3 py-2 text-right font-medium">Req</th>
-                  <th class="px-3 py-2 text-right font-medium">{{ metricLabel }} {{ percentileButtonLabel(performancePercentile) }}</th>
-                  <th class="px-3 py-2 text-right font-medium">{{ metricLabel }} avg</th>
+                  <th class="px-3 py-2 text-right font-medium">{{ metricLabel }} {{ performancePercentile }}</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-white/5">
@@ -487,7 +457,6 @@ const performanceSummary = computed(() => overview.value.summaryRows[0] ?? {
                   <td class="px-3 py-2 text-gray-300">{{ row.group }}</td>
                   <td class="px-3 py-2 text-right font-mono text-gray-400">{{ row.requests.toLocaleString() }}</td>
                   <td class="px-3 py-2 text-right font-mono text-white">{{ formatRowValue(getChartValue(row, performancePercentile)) }}</td>
-                  <td class="px-3 py-2 text-right font-mono text-gray-400">{{ formatRowValue(getRowAvg(row)) }}</td>
                 </tr>
               </tbody>
             </table>
@@ -501,8 +470,7 @@ const performanceSummary = computed(() => overview.value.summaryRows[0] ?? {
                 <tr>
                   <th class="px-3 py-2 text-left font-medium">Upstream</th>
                   <th class="px-3 py-2 text-right font-medium">Req</th>
-                  <th class="px-3 py-2 text-right font-medium">{{ metricLabel }} {{ percentileButtonLabel(performancePercentile) }}</th>
-                  <th class="px-3 py-2 text-right font-medium">{{ metricLabel }} avg</th>
+                  <th class="px-3 py-2 text-right font-medium">{{ metricLabel }} {{ performancePercentile }}</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-white/5">
@@ -510,7 +478,6 @@ const performanceSummary = computed(() => overview.value.summaryRows[0] ?? {
                   <td class="px-3 py-2 text-gray-300">{{ row.group }}</td>
                   <td class="px-3 py-2 text-right font-mono text-gray-400">{{ row.requests.toLocaleString() }}</td>
                   <td class="px-3 py-2 text-right font-mono text-white">{{ formatRowValue(getChartValue(row, performancePercentile)) }}</td>
-                  <td class="px-3 py-2 text-right font-mono text-gray-400">{{ formatRowValue(getRowAvg(row)) }}</td>
                 </tr>
               </tbody>
             </table>
@@ -524,8 +491,7 @@ const performanceSummary = computed(() => overview.value.summaryRows[0] ?? {
                 <tr>
                   <th class="px-3 py-2 text-left font-medium">Region</th>
                   <th class="px-3 py-2 text-right font-medium">Req</th>
-                  <th class="px-3 py-2 text-right font-medium">{{ metricLabel }} {{ percentileButtonLabel(performancePercentile) }}</th>
-                  <th class="px-3 py-2 text-right font-medium">{{ metricLabel }} avg</th>
+                  <th class="px-3 py-2 text-right font-medium">{{ metricLabel }} {{ performancePercentile }}</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-white/5">
@@ -533,7 +499,6 @@ const performanceSummary = computed(() => overview.value.summaryRows[0] ?? {
                   <td class="px-3 py-2 text-gray-300">{{ row.group }}</td>
                   <td class="px-3 py-2 text-right font-mono text-gray-400">{{ row.requests.toLocaleString() }}</td>
                   <td class="px-3 py-2 text-right font-mono text-white">{{ formatRowValue(getChartValue(row, performancePercentile)) }}</td>
-                  <td class="px-3 py-2 text-right font-mono text-gray-400">{{ formatRowValue(getRowAvg(row)) }}</td>
                 </tr>
               </tbody>
             </table>
@@ -550,7 +515,7 @@ const performanceSummary = computed(() => overview.value.summaryRows[0] ?? {
                   <th class="px-3 py-2 text-right font-medium">Errors</th>
                   <th class="px-3 py-2 text-right font-medium">Neutral</th>
                   <th class="px-3 py-2 text-right font-medium">TTFT p95</th>
-                  <th class="px-3 py-2 text-right font-medium">Worst 5% speed</th>
+                  <th class="px-3 py-2 text-right font-medium">Output speed p95</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-white/5">

@@ -12,11 +12,9 @@ export interface PerformanceDisplayRecord {
   ttftSamples: number;
   tpotSamples: number;
   neutral: number;
-  ttftMsAvg: number | null;
   ttftMsP50: number | null;
   ttftMsP95: number | null;
   ttftMsP99: number | null;
-  tpotUsAvg: number | null;
   tpotUsP50: number | null;
   tpotUsP95: number | null;
   tpotUsP99: number | null;
@@ -45,8 +43,6 @@ interface MutableAggregate {
   errors: number;
   ttftSamples: number;
   tpotSamples: number;
-  ttftMsSum: number;
-  tpotUsSum: number;
   bucketsByMetric: Record<PerformanceMetric, Map<string, HistogramBucket>>;
 }
 
@@ -66,8 +62,6 @@ export function aggregatePerformanceForDisplay(records: readonly PerformanceTele
         errors: 0,
         ttftSamples: 0,
         tpotSamples: 0,
-        ttftMsSum: 0,
-        tpotUsSum: 0,
         bucketsByMetric: { ttft_ms: new Map(), tpot_us: new Map() },
       };
       aggregates.set(key, aggregate);
@@ -77,8 +71,6 @@ export function aggregatePerformanceForDisplay(records: readonly PerformanceTele
     aggregate.errors += record.errors;
     aggregate.ttftSamples += record.ttftSamples;
     aggregate.tpotSamples += record.tpotSamples;
-    aggregate.ttftMsSum += record.ttftMsSum;
-    aggregate.tpotUsSum += record.tpotUsSum;
     for (const b of record.buckets) {
       const metricMap = aggregate.bucketsByMetric[b.metric];
       const bucketKey = String(b.lower);
@@ -130,11 +122,9 @@ function toDisplayRecord(a: MutableAggregate): PerformanceDisplayRecord {
     // alone yields the neutral count (chat successes without a first-token
     // stamp, plus every non-chat success).
     neutral: a.requests - a.ttftSamples - a.errors,
-    ttftMsAvg: a.ttftSamples > 0 ? a.ttftMsSum / a.ttftSamples : null,
     ttftMsP50: percentileFromBuckets(ttftBuckets, 0.5),
     ttftMsP95: percentileFromBuckets(ttftBuckets, 0.95),
     ttftMsP99: percentileFromBuckets(ttftBuckets, 0.99),
-    tpotUsAvg: a.tpotSamples > 0 ? a.tpotUsSum / a.tpotSamples : null,
     tpotUsP50: percentileFromBuckets(tpotBuckets, 0.5),
     tpotUsP95: percentileFromBuckets(tpotBuckets, 0.95),
     tpotUsP99: percentileFromBuckets(tpotBuckets, 0.99),
