@@ -474,11 +474,7 @@ const serverErrorEnvelope = (error: unknown): Record<string, unknown> => ({
 
 const responseDoneSummary = (event: ResponsesStreamEvent) => {
   if (event.type !== 'response.completed' && event.type !== 'response.failed' && event.type !== 'response.incomplete') return null;
-  const response = (event as { response?: unknown }).response;
-  if (!response || typeof response !== 'object') return null;
-  const id = (response as { id?: unknown }).id;
-  if (typeof id !== 'string') return null;
-  const usage = (response as { usage?: ResponsesResult['usage'] }).usage;
+  const { id, usage } = event.response;
   return usage === undefined ? { id } : { id, usage };
 };
 
