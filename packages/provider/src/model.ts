@@ -55,10 +55,26 @@ export interface TelemetryModelIdentity {
   cost: ModelPricing | null;
 }
 
+// Aligns with OTel `gen_ai.operation.name` well-known values plus the
+// concrete non-chat endpoints Floway routes. Extend only when a new route
+// lands — no wildcard string.
+export type PerformanceOperation =
+  | 'chat'
+  | 'text_completion'
+  | 'embeddings'
+  | 'image_generation'
+  | 'image_edit'
+  | 'image_variation'
+  | 'audio_transcription'
+  | 'audio_speech'
+  | 'moderation'
+  | 'rerank';
+
 export interface PerformanceTelemetryContext {
   keyId: string;
   model: string;
   upstream: string;
+  operation: PerformanceOperation;
   modelKey: string;
   runtimeLocation: string;
 }

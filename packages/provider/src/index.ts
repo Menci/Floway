@@ -31,6 +31,7 @@ export {
 export type {
   InternalAliasedFrom,
   InternalModel,
+  PerformanceOperation,
   PerformanceTelemetryContext,
   ProviderModel,
   ProxyFallbackEntry,

@@ -1,6 +1,6 @@
 import type { WebSearchProviderName } from '../shared/web-search-providers.ts';
 import type { AliasSelection, AliasTarget, AnnouncedMetadata, BillingDimension, ModelKind, ModelPricing } from '@floway-dev/protocols/common';
-import type { ProviderModel, UpstreamRecord } from '@floway-dev/provider';
+import type { PerformanceOperation, ProviderModel, UpstreamRecord } from '@floway-dev/provider';
 
 export interface ApiKey {
   id: string;
@@ -85,11 +85,14 @@ export interface SearchUsageRecord {
 
 export type PerformanceMetric = 'ttft_ms' | 'tpot_us';
 
+export type { PerformanceOperation } from '@floway-dev/provider';
+
 export interface PerformanceDimensions {
   hour: string;              // 'YYYY-MM-DDTHH'
   keyId: string;
   model: string;
   upstream: string;
+  operation: PerformanceOperation;
   runtimeLocation: string;
 }
 
