@@ -59,6 +59,7 @@ export const geminiServe = {
     return await iterateCandidates(
       decision.candidates,
       'geminiServe.generate',
+      ctx.perfTiming,
       candidate => geminiAttempt.generate({ payload, ctx, candidate, headers }),
     );
   },
@@ -85,6 +86,7 @@ export const geminiServe = {
     return await iterateCandidates(
       decision.candidates,
       'geminiServe.countTokens',
+      ctx.perfTiming,
       candidate => geminiAttempt.countTokens({ payload, ctx, candidate, headers }),
     );
   },

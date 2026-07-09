@@ -52,6 +52,7 @@ export const messagesServe = {
     return await iterateCandidates(
       decision.candidates,
       'messagesServe.generate',
+      ctx.perfTiming,
       candidate => {
         payload.model = candidate.model.id;
         return messagesAttempt.generate({ payload, ctx, candidate, headers });
@@ -81,6 +82,7 @@ export const messagesServe = {
     return await iterateCandidates(
       decision.candidates,
       'messagesServe.countTokens',
+      ctx.perfTiming,
       candidate => {
         // Same normalization as generate above — every attempt sees
         // payload.model === candidate.model.id regardless of inbound form.

@@ -43,13 +43,24 @@ const isAttemptSuccess = (result: IterableAttemptResult): boolean => {
 // non-empty candidate list — the empty-candidate branch renders each
 // caller's own protocol-shaped "no viable candidate" envelope at the
 // serve site.
+//
+// `perfTiming` is the per-request TTFT/TPOT slot pair from `GatewayCtx`
+// (or from a passthrough serve's shared plain context). Both fields are
+// reset to null at the start of every candidate attempt so the next
+// candidate cannot inherit a stale stamp from a failed prior attempt —
+// stamping is a pull operation (the provider wraps its fetch promise), and
+// a candidate that returns without ever wrapping (synthetic result, dry
+// short-circuit) must not carry the previous fetch's start time forward.
 export const iterateCandidates = async <T extends IterableAttemptResult>(
   candidates: readonly ModelCandidate[],
   invocationLabel: string,
+  perfTiming: { upstreamCallStartedAt: number | null; firstOutputTokenAt: number | null },
   attempt: (candidate: ModelCandidate) => Promise<T>,
 ): Promise<T> => {
   let lastFailure: T | undefined;
   for (const candidate of candidates) {
+    perfTiming.upstreamCallStartedAt = null;
+    perfTiming.firstOutputTokenAt = null;
     const result = await attempt(candidate);
     if (isAttemptSuccess(result)) return result;
     lastFailure = result;

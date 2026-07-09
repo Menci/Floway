@@ -34,6 +34,7 @@ export const responsesServe = {
     return await iterateCandidates(
       plan.candidates,
       'responsesServe.generate',
+      ctx.perfTiming,
       candidate => {
         plan.prepared.model = candidate.model.id;
         return responsesAttempt.generate({ payload: plan.prepared, ctx, candidate, headers });
@@ -56,6 +57,7 @@ export const responsesServe = {
     return await iterateCandidates(
       plan.candidates,
       'responsesServe.compact',
+      ctx.perfTiming,
       candidate => {
         plan.prepared.model = candidate.model.id;
         return responsesAttempt.invoke({ payload: plan.prepared, action: 'compact', ctx, candidate, headers });

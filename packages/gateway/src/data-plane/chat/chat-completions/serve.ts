@@ -48,6 +48,7 @@ export const chatCompletionsServe = {
     return await iterateCandidates(
       decision.candidates,
       'chatCompletionsServe.generate',
+      ctx.perfTiming,
       candidate => {
         payload.model = candidate.model.id;
         return chatCompletionsAttempt.generate({ payload, ctx, candidate, headers });

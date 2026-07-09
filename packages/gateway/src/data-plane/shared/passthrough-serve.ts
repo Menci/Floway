@@ -177,6 +177,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
     const result = await iterateCandidates(
       viable,
       'passthroughServe',
+      ctx.perfTiming,
       async candidate => {
         const attempted = await passthroughAttempt({
           c, ctx, candidate, operation,
