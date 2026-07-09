@@ -17,8 +17,6 @@ export const upstreamPerformanceContext = (
   runtimeLocation: ctx.runtimeLocation,
 });
 
-// Thinking, reasoning, and envelope frames are excluded; the terminal-frame
-// recorder uses firstOutputTokenAt to compute TTFT and TPOT.
 export const withUpstreamTelemetry = <T>(
   events: AsyncIterable<ProtocolFrame<T>>,
   ctx: GatewayCtx,
