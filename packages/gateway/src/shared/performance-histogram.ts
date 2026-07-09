@@ -15,7 +15,8 @@ export interface HistogramBucket {
 }
 
 const bucketForValue = (edges: readonly number[], value: number): Omit<HistogramBucket, 'count'> => {
-  const clamped = Math.max(0, Math.ceil(value));
+  if (!Number.isFinite(value) || value < 0) throw new Error(`bucketForValue: expected finite non-negative number, got ${value}`);
+  const clamped = Math.ceil(value);
   let lower = 0;
   for (const upper of edges) {
     if (clamped <= upper) return { lower, upper };
@@ -31,9 +32,13 @@ export const percentileFromBuckets = (buckets: readonly HistogramBucket[], perce
   const total = buckets.reduce((sum, bucket) => sum + bucket.count, 0);
   if (total <= 0) return null;
 
-  const rank = Math.ceil(total * percentile);
+  // Nearest-rank percentile with a small epsilon guard so IEEE-754 drift like
+  // `200 * 0.29 === 58.00000000000001` doesn't push the rank past the intended
+  // sample and land on the next bucket.
+  const rank = Math.max(1, Math.min(total, Math.ceil(total * percentile - 1e-9)));
   const ordered = [...buckets].sort((a, b) => {
-    // +∞ overflow bucket sorts last.
+    // +∞ overflow bucket sorts last; two overflow buckets compare equal.
+    if (a.upper === null && b.upper === null) return 0;
     if (a.upper === null) return 1;
     if (b.upper === null) return -1;
     return a.upper - b.upper;

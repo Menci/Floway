@@ -40,9 +40,20 @@ describe('bucketForTtftMs', () => {
     expect(bucketForTtftMs(3_600_000)).toEqual({ lower: 1_800_000, upper: null });
   });
 
-  it('negative or zero clamps to the first bucket', () => {
+  it('accepts zero (real ttft = 0 is valid)', () => {
     expect(bucketForTtftMs(0)).toEqual({ lower: 0, upper: 50 });
-    expect(bucketForTtftMs(-5)).toEqual({ lower: 0, upper: 50 });
+  });
+
+  it('throws on negative input rather than silently clamping', () => {
+    expect(() => bucketForTtftMs(-5)).toThrow(/bucketForValue/);
+  });
+
+  it('throws on NaN rather than silently landing in overflow', () => {
+    expect(() => bucketForTtftMs(NaN)).toThrow(/bucketForValue/);
+  });
+
+  it('throws on Infinity rather than silently landing in overflow', () => {
+    expect(() => bucketForTtftMs(Infinity)).toThrow(/bucketForValue/);
   });
 });
 
@@ -81,5 +92,16 @@ describe('percentileFromBuckets', () => {
       { lower: 1_800_000, upper: null, count: 9 },
     ];
     expect(percentileFromBuckets(withOverflow, 0.95)).toBe(1_800_000);
+  });
+
+  it('IEEE-754 drift in total*percentile does not spill rank into the next bucket', () => {
+    // 200 * 0.29 === 58.00000000000001 → Math.ceil = 59 without the epsilon guard,
+    // which would jump one bucket past the intended sample.
+    const flat: HistogramBucket[] = Array.from({ length: 4 }, (_, i) => ({
+      lower: i * 50,
+      upper: (i + 1) * 50,
+      count: 50,
+    }));
+    expect(percentileFromBuckets(flat, 0.29)).toBe(100);
   });
 });
