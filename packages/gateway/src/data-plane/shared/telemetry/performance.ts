@@ -31,7 +31,7 @@ const recordError = (dims: PerformanceDimensions): Promise<void> =>
 // still an error row — tpot requires both a first-token timestamp and a positive output-token count.
 export const recordRequestPerformance = (
   scheduler: BackgroundScheduler,
-  ctx: { perfTiming: { firstOutputTokenAt: number | null }; requestStartedAt: number },
+  ctx: { perfTiming: { firstGeneratedTokenAt: number | null }; requestStartedAt: number },
   telemetry: PerformanceTelemetryContext | undefined,
   failed: boolean,
   outputTokens: number,
@@ -47,12 +47,12 @@ export const recordRequestPerformance = (
     scheduler(record(getRepo().performance.recordNeutral(dims), 'neutral'));
     return;
   }
-  if (ctx.perfTiming.firstOutputTokenAt === null || outputTokens <= 0) {
+  if (ctx.perfTiming.firstGeneratedTokenAt === null || outputTokens <= 0) {
     scheduler(recordError(dims));
     return;
   }
-  const ttftMs = Math.round(ctx.perfTiming.firstOutputTokenAt - ctx.requestStartedAt);
-  const streamUs = Math.round((requestFinishedAt - ctx.perfTiming.firstOutputTokenAt) * 1_000);
+  const ttftMs = Math.round(ctx.perfTiming.firstGeneratedTokenAt - ctx.requestStartedAt);
+  const streamUs = Math.round((requestFinishedAt - ctx.perfTiming.firstGeneratedTokenAt) * 1_000);
   const tpotUs = Math.round(streamUs / outputTokens);
   scheduler(record(getRepo().performance.recordSample({ ...dims, ttftMs, tpotUs, outputTokens }), 'sample'));
 };

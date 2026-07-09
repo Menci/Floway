@@ -12,14 +12,15 @@ export interface GatewayCtx {
   readonly wantsStream: boolean;
   readonly downstreamAbortController?: AbortController;
   readonly backgroundScheduler: BackgroundScheduler;
-  // Anchors TTFT computation: subtracted from `perfTiming.firstOutputTokenAt`
+  // Anchors TTFT computation: subtracted from `perfTiming.firstGeneratedTokenAt`
   // when that stamp arrives.
   readonly requestStartedAt: number;
   // Stamped once by the upstream stream wrapper on the first frame that
-  // carries downstream-visible output content. Null when no such frame has
-  // arrived yet — the request either errored, was cancelled before any
-  // output, or hasn't started streaming.
-  readonly perfTiming: { firstOutputTokenAt: number | null };
+  // carries any model-generated token (text, tool-call arguments, refusal,
+  // reasoning, or thinking). Null when no such frame has arrived yet — the
+  // request either errored, was cancelled before any output, or hasn't
+  // started streaming.
+  readonly perfTiming: { firstGeneratedTokenAt: number | null };
   // The deployment colo / region, used both as the `runtimeLocation`
   // performance-telemetry dimension and as the dial-time colo whitelist key.
   // Request-scoped, so it is resolved once here rather than at the
@@ -93,7 +94,7 @@ export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCt
     downstreamAbortController: controller,
     backgroundScheduler: opts.backgroundScheduler,
     requestStartedAt: performance.now(),
-    perfTiming: { firstOutputTokenAt: null },
+    perfTiming: { firstGeneratedTokenAt: null },
     runtimeLocation: colo,
     currentColo: colo,
     dump,

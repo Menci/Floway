@@ -26,7 +26,7 @@ const testPerformanceContext: PerformanceTelemetryContext = {
 interface Harness {
   repo: InMemoryRepo;
   background: Promise<unknown>[];
-  ctx: (overrides?: { apiKeyId?: string; requestStartedAt?: number; firstOutputTokenAt?: number | null }) => GatewayCtx;
+  ctx: (overrides?: { apiKeyId?: string; requestStartedAt?: number; firstGeneratedTokenAt?: number | null }) => GatewayCtx;
 }
 
 const setup = (): Harness => {
@@ -36,7 +36,7 @@ const setup = (): Harness => {
   return {
     repo,
     background,
-    ctx: ({ apiKeyId = 'key_a', requestStartedAt = 0, firstOutputTokenAt = null } = {}) => ({
+    ctx: ({ apiKeyId = 'key_a', requestStartedAt = 0, firstGeneratedTokenAt = null } = {}) => ({
       apiKeyId,
       upstreamIds: null,
       wantsStream: true,
@@ -46,7 +46,7 @@ const setup = (): Harness => {
       responseHeaders: new Headers(),
       backgroundScheduler: promise => { background.push(promise); },
       requestStartedAt,
-      perfTiming: { firstOutputTokenAt },
+      perfTiming: { firstGeneratedTokenAt },
     }),
   };
 };
@@ -113,8 +113,8 @@ test('SourceStreamState.rememberUsage keeps real usage and ignores zero figures'
 
 // ── recordPerformance ──
 
-test('recordPerformance records a sample when success with firstOutputTokenAt and positive outputTokens', async () => {
-  recordPerformance(harness.ctx({ requestStartedAt: 0, firstOutputTokenAt: 100 }), testPerformanceContext, false, 50);
+test('recordPerformance records a sample when success with firstGeneratedTokenAt and positive outputTokens', async () => {
+  recordPerformance(harness.ctx({ requestStartedAt: 0, firstGeneratedTokenAt: 100 }), testPerformanceContext, false, 50);
   await Promise.all(harness.background);
 
   const rows = await harness.repo.performance.listAll();
@@ -125,7 +125,7 @@ test('recordPerformance records a sample when success with firstOutputTokenAt an
 });
 
 test('recordPerformance records an error when success but outputTokens is zero', async () => {
-  recordPerformance(harness.ctx({ requestStartedAt: 0, firstOutputTokenAt: 100 }), testPerformanceContext, false, 0);
+  recordPerformance(harness.ctx({ requestStartedAt: 0, firstGeneratedTokenAt: 100 }), testPerformanceContext, false, 0);
   await Promise.all(harness.background);
 
   const rows = await harness.repo.performance.listAll();
@@ -135,8 +135,8 @@ test('recordPerformance records an error when success but outputTokens is zero',
   assertEquals(rows[0].requests, 1);
 });
 
-test('recordPerformance records an error when success but firstOutputTokenAt is null', async () => {
-  recordPerformance(harness.ctx({ requestStartedAt: 0, firstOutputTokenAt: null }), testPerformanceContext, false, 50);
+test('recordPerformance records an error when success but firstGeneratedTokenAt is null', async () => {
+  recordPerformance(harness.ctx({ requestStartedAt: 0, firstGeneratedTokenAt: null }), testPerformanceContext, false, 50);
   await Promise.all(harness.background);
 
   const rows = await harness.repo.performance.listAll();
@@ -147,7 +147,7 @@ test('recordPerformance records an error when success but firstOutputTokenAt is 
 });
 
 test('recordPerformance records an error when failed', async () => {
-  recordPerformance(harness.ctx({ firstOutputTokenAt: 100 }), testPerformanceContext, true, 50);
+  recordPerformance(harness.ctx({ firstGeneratedTokenAt: 100 }), testPerformanceContext, true, 50);
   await Promise.all(harness.background);
 
   const rows = await harness.repo.performance.listAll();

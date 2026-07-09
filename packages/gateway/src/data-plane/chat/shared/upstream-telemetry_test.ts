@@ -14,7 +14,7 @@ const stubCtx = (): GatewayCtx => ({
   wantsStream: true,
   backgroundScheduler: (p: Promise<unknown>) => { void p; },
   requestStartedAt: 0,
-  perfTiming: { firstOutputTokenAt: null },
+  perfTiming: { firstGeneratedTokenAt: null },
   runtimeLocation: 'x',
   currentColo: 'x',
   dump: null,
@@ -22,7 +22,7 @@ const stubCtx = (): GatewayCtx => ({
 } as unknown as GatewayCtx);
 
 describe('withUpstreamTelemetry', () => {
-  it('stamps firstOutputTokenAt on the first output-content frame (messages)', async () => {
+  it('stamps firstGeneratedTokenAt on the first generated-token frame (messages thinking_delta)', async () => {
     const ctx = stubCtx();
     const frames: ProtocolFrame<unknown>[] = [
       { type: 'event', event: { type: 'message_start' } },
@@ -33,17 +33,17 @@ describe('withUpstreamTelemetry', () => {
     const collected: ProtocolFrame<unknown>[] = [];
     for await (const f of withUpstreamTelemetry(iter(frames), ctx, 'messages')) collected.push(f);
     expect(collected).toEqual(frames);
-    expect(ctx.perfTiming.firstOutputTokenAt).not.toBe(null);
+    expect(ctx.perfTiming.firstGeneratedTokenAt).not.toBe(null);
   });
 
-  it('leaves firstOutputTokenAt null when no output-content frame appears', async () => {
+  it('leaves firstGeneratedTokenAt null when only envelope frames appear', async () => {
     const ctx = stubCtx();
     const frames: ProtocolFrame<unknown>[] = [
       { type: 'event', event: { type: 'response.created' } },
-      { type: 'event', event: { type: 'response.reasoning_text.delta', delta: '...' } },
+      { type: 'event', event: { type: 'response.output_item.added' } },
     ];
     for await (const _ of withUpstreamTelemetry(iter(frames), ctx, 'responses')) { /* drain */ }
-    expect(ctx.perfTiming.firstOutputTokenAt).toBe(null);
+    expect(ctx.perfTiming.firstGeneratedTokenAt).toBe(null);
   });
 
   it('stamps at most once even for many output-content frames', async () => {
@@ -55,11 +55,11 @@ describe('withUpstreamTelemetry', () => {
     ];
     const stampsAfterEachFrame: (number | null)[] = [];
     for await (const _ of withUpstreamTelemetry(iter(frames), ctx, 'chat-completions')) {
-      stampsAfterEachFrame.push(ctx.perfTiming.firstOutputTokenAt);
+      stampsAfterEachFrame.push(ctx.perfTiming.firstGeneratedTokenAt);
     }
     expect(stampsAfterEachFrame[0]).not.toBe(null);
     // The subsequent frames must observe the exact same stamp — the wrapper
-    // never overwrites once firstOutputTokenAt has been set.
+    // never overwrites once firstGeneratedTokenAt has been set.
     expect(stampsAfterEachFrame[1]).toBe(stampsAfterEachFrame[0]);
     expect(stampsAfterEachFrame[2]).toBe(stampsAfterEachFrame[0]);
   });
