@@ -118,9 +118,7 @@ function toDisplayRecord(a: MutableAggregate): PerformanceDisplayRecord {
     errors: a.errors,
     ttftSamples: a.ttftSamples,
     tpotSamples: a.tpotSamples,
-    // ttftSamples is a superset of tpotSamples, so subtracting ttftSamples
-    // alone yields the neutral count (chat successes without a first-token
-    // stamp, plus every non-chat success).
+    // Neutral = requests without a first-token stamp (subset of non-error successes).
     neutral: a.requests - a.ttftSamples - a.errors,
     ttftMsP50: percentileFromBuckets(ttftBuckets, 0.5),
     ttftMsP95: percentileFromBuckets(ttftBuckets, 0.95),

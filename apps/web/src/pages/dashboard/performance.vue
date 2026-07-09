@@ -89,8 +89,10 @@ const upstreamNameById = computed<Map<string, string>>(() => {
   for (const u of upstreamsStore.upstreams.value ?? []) map.set(u.id, u.name);
   return map;
 });
-const displayGroup = (group: string, groupByAtDisplay: GroupBy): string =>
-  groupByAtDisplay === 'upstream' ? (upstreamNameById.value.get(group) ?? group) : group;
+// Chart legend / By-Upstream table map upstream ids to operator-facing
+// names. Falls back to the raw id when the upstream has been hard-deleted
+// but still appears in historical performance rows.
+const resolveUpstreamName = (id: string): string => upstreamNameById.value.get(id) ?? id;
 
 const performanceRange = ref<DashboardRange>('today');
 const loadedPerformanceRange = ref<DashboardRange>('today');
@@ -213,7 +215,7 @@ const chartConfig = computed<ChartConfiguration<'line'>>(() => {
         return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([group, byBucket], i) => {
           const color = chartColor(i);
           return {
-            label: displayGroup(group, performanceGroupBy.value),
+            label: performanceGroupBy.value === 'upstream' ? resolveUpstreamName(group) : group,
             seriesId: group,
             hidden: hiddenPerformanceSeries.value.has(group),
             data: bucketKeys.map(k => byBucket.get(k) ?? null),
@@ -304,9 +306,14 @@ const chartConfig = computed<ChartConfiguration<'line'>>(() => {
 
 const performanceSeriesIds = computed(() => chartSeriesIds(chartConfig.value));
 
-const performanceSummary = computed(() => overview.value.summaryRows[0] ?? {
+const performanceSummary = computed<PerformanceDisplayRecord>(() => overview.value.summaryRows[0] ?? {
+  bucket: 'all',
+  group: 'all',
   requests: 0,
   errors: 0,
+  ttftSamples: 0,
+  tpotSamples: 0,
+  neutral: 0,
   ttftMsP50: null,
   ttftMsP95: null,
   ttftMsP99: null,
@@ -503,7 +510,7 @@ const performanceSummary = computed(() => overview.value.summaryRows[0] ?? {
               </thead>
               <tbody class="divide-y divide-white/5">
                 <tr v-for="row in overview.upstreamRows" :key="row.group">
-                  <td class="px-3 py-2 text-gray-300">{{ displayGroup(row.group, 'upstream') }}</td>
+                  <td class="px-3 py-2 text-gray-300">{{ resolveUpstreamName(row.group) }}</td>
                   <td class="px-3 py-2 text-right font-mono text-gray-400">{{ row.requests.toLocaleString() }}</td>
                   <td class="px-3 py-2 text-right font-mono text-white">{{ formatRowValue(getChartValue(row, performancePercentile)) }}</td>
                 </tr>

@@ -27,13 +27,12 @@ const dimensions = (telemetry: PerformanceTelemetryContext): PerformanceDimensio
 const recordError = (dims: PerformanceDimensions): Promise<void> =>
   record(getRepo().performance.recordError(dims), 'error');
 
-// TTFT is measured from perfTiming.upstreamCallStartedAt (the provider's
-// outbound fetch), not from the request's arrival at the gateway — this
-// isolates upstream round-trip latency from gateway-internal overhead.
-// TTFT records whenever we have both stamps; TPOT layers on top only when
-// output tokens >= 2 (a single token has no inter-token interval). Any
-// success without a real upstream call or first-output-token stamp records
-// as neutral; only genuine upstream failures land in the error bucket.
+// TTFT is measured from the provider's outbound-fetch stamp so it isolates
+// upstream round-trip latency from gateway-internal overhead. Any success
+// without a real upstream call or first-output-token stamp records as
+// neutral; only genuine upstream failures land in the error bucket. TPOT
+// layers on top only when at least two output tokens streamed — see the
+// per-branch comments below.
 export const recordRequestPerformance = (
   scheduler: BackgroundScheduler,
   perfTiming: PerfTiming,
@@ -57,20 +56,12 @@ export const recordRequestPerformance = (
     scheduler(record(getRepo().performance.recordNeutral(dims), 'neutral'));
     return;
   }
-  const ttftDeltaMs = perfTiming.firstOutputTokenAt - perfTiming.upstreamCallStartedAt;
-  if (ttftDeltaMs < 0) {
-    // Stale upstreamCallStartedAt outran firstOutputTokenAt (should not happen
-    // now that iterateCandidates resets per attempt, but the negative-latency
-    // sample would be nonsense either way).
-    scheduler(record(getRepo().performance.recordNeutral(dims), 'neutral'));
-    return;
-  }
-  const ttftMs = Math.round(ttftDeltaMs);
+  const ttftMs = Math.round(perfTiming.firstOutputTokenAt - perfTiming.upstreamCallStartedAt);
   if (outputTokens < 2) {
     scheduler(record(getRepo().performance.recordSample({ ...dims, ttftMs }), 'sample'));
     return;
   }
-  // TPOT is the inter-token generation interval: streamDeltaMs covers only the
+  // TPOT is the inter-token generation interval: streamDelta covers only the
   // (N-1) tokens that arrived AFTER firstOutputTokenAt, so the divisor is
   // outputTokens - 1. Matches Envoy AI Gateway and the OpenTelemetry GenAI
   // spec (gen_ai.server.time_per_output_token).

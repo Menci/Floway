@@ -25,7 +25,7 @@ const isMessagesOutputEvent = (event: Record<string, unknown> & { type?: unknown
   case 'text_delta': return nonEmptyString(delta.text);
   case 'thinking_delta': return nonEmptyString(delta.thinking);
   case 'input_json_delta': return nonEmptyString(delta.partial_json);
-  case 'citations_delta': return delta.citation != null;
+  case 'citations_delta': return delta.citation !== undefined;
   default: return false;
   }
 };
