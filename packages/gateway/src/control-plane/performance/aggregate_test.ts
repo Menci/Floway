@@ -9,6 +9,7 @@ const record = (overrides: Partial<PerformanceTelemetryRecord> = {}): Performanc
   keyId: 'key_a',
   model: 'claude-opus-4-7',
   upstream: 'copilot:1',
+  operation: 'chat',
   runtimeLocation: 'LOCAL',
   requests: 1,
   errors: 0,

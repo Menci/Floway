@@ -1,12 +1,18 @@
 import { isFirstOutputTokenFrame } from './first-output-token.ts';
 import type { GatewayCtx } from './gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ChatTargetApi, ModelCandidate, PerformanceTelemetryContext } from '@floway-dev/provider';
+import type { ChatTargetApi, ModelCandidate, PerformanceOperation, PerformanceTelemetryContext } from '@floway-dev/provider';
 
-export const upstreamPerformanceContext = (ctx: GatewayCtx, candidate: ModelCandidate, modelKey: string): PerformanceTelemetryContext => ({
+export const upstreamPerformanceContext = (
+  ctx: GatewayCtx,
+  candidate: ModelCandidate,
+  modelKey: string,
+  operation: PerformanceOperation,
+): PerformanceTelemetryContext => ({
   keyId: ctx.apiKeyId,
   model: candidate.model.id,
   upstream: candidate.provider.upstream,
+  operation,
   modelKey,
   runtimeLocation: ctx.runtimeLocation,
 });

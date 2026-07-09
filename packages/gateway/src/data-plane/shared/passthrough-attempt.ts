@@ -15,7 +15,7 @@ import type { PerformanceTelemetryContext } from './telemetry/performance.ts';
 import type { AuthedContext } from '../../middleware/auth.ts';
 import type { GatewayCtx } from '../chat/shared/gateway-ctx.ts';
 import { providerModelOf } from '@floway-dev/provider';
-import type { ModelCandidate, Provider, ProviderCallResult, ProviderModel, TelemetryModelIdentity, UpstreamCallOptions } from '@floway-dev/provider';
+import type { ModelCandidate, PerformanceOperation, Provider, ProviderCallResult, ProviderModel, TelemetryModelIdentity, UpstreamCallOptions } from '@floway-dev/provider';
 
 // Enlarged `plain` shape: `iterateCandidates` reads `type` + `status`;
 // the passthrough serve reads the rest to forward the response and
@@ -34,6 +34,7 @@ export interface PassthroughAttemptArgs {
   readonly c: AuthedContext;
   readonly ctx: GatewayCtx;
   readonly candidate: ModelCandidate;
+  readonly operation: PerformanceOperation;
   // Delegated to the passthrough caller so each endpoint keeps its
   // request-body shaping (`{ model: _, ...body }`) local. Any throw here
   // is preserved and the serve layer turns it into a 502 with the
@@ -42,7 +43,7 @@ export interface PassthroughAttemptArgs {
 }
 
 export const passthroughAttempt = async (args: PassthroughAttemptArgs): Promise<PassthroughAttemptResult> => {
-  const { c, ctx, candidate, call } = args;
+  const { c, ctx, candidate, operation, call } = args;
   const { response, modelKey } = await call(candidate.provider, providerModelOf(candidate), {
     fetcher: candidate.fetcher,
     waitUntil: ctx.backgroundScheduler,
@@ -61,6 +62,7 @@ export const passthroughAttempt = async (args: PassthroughAttemptArgs): Promise<
     keyId: ctx.apiKeyId,
     model: identity.model,
     upstream: identity.upstream,
+    operation,
     modelKey: identity.modelKey,
     runtimeLocation: ctx.runtimeLocation,
   };

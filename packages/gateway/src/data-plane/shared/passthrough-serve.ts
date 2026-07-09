@@ -19,6 +19,7 @@ import { iterateCandidates } from './iterate-candidates.ts';
 import { passthroughAttempt } from './passthrough-attempt.ts';
 import type { PerformanceTelemetryContext } from './telemetry/performance.ts';
 import { recordRequestPerformance } from './telemetry/performance.ts';
+import type { PerformanceOperation } from '@floway-dev/provider';
 import { recordTokenUsage } from './telemetry/usage.ts';
 import type { AuthedContext } from '../../middleware/auth.ts';
 import type { TokenUsage } from '../../repo/types.ts';
@@ -89,6 +90,7 @@ interface PassthroughServeContext {
   readonly c: AuthedContext;
   readonly ctx: GatewayCtx;
   readonly sourceApi: PassthroughServeApiName;
+  readonly operation: PerformanceOperation;
   // Already-validated public model id the client requested. The helper
   // resolves it against the provider registry; if no upstream serves the
   // id with the requested kind, the client sees a 404 with the standard
@@ -114,7 +116,7 @@ export const passthroughApiError = (c: Context, message: string, status: Content
   c.json({ error: { message, type: 'api_error' } }, status);
 
 export const passthroughServe = async (input: PassthroughServeContext): Promise<Response> => {
-  const { c, ctx, sourceApi, model, kind, modelServesEndpoint, call, response: responseHandling } = input;
+  const { c, ctx, sourceApi, operation, model, kind, modelServesEndpoint, call, response: responseHandling } = input;
   // Populated as attempts land so a throw from `passthroughAttempt` (or
   // the response handling below) can still attribute request-perf to the
   // most recent candidate the loop touched. A throw before any candidate
@@ -178,7 +180,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
       'passthroughServe',
       async candidate => {
         const attempted = await passthroughAttempt({
-          c, ctx, candidate,
+          c, ctx, candidate, operation,
           call,
         });
         lastPerformance = attempted.performance;

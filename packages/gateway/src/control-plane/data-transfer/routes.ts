@@ -20,7 +20,7 @@ import { type CtxWithJson, type CtxWithQuery } from '../../middleware/zod-valida
 import { parseDisabledPublicModelIdsWire } from '../../repo/disabled-public-models.ts';
 import { getRepo } from '../../repo/index.ts';
 import { DIRECT_PROXY_ID, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
-import type { ApiKey, PerformanceBucketRow, PerformanceMetric, PerformanceTelemetryRecord, SearchUsageRecord, TokenUsage, UsageRecord, User } from '../../repo/types.ts';
+import type { ApiKey, PerformanceBucketRow, PerformanceMetric, PerformanceOperation, PerformanceTelemetryRecord, SearchUsageRecord, TokenUsage, UsageRecord, User } from '../../repo/types.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getCurrentColo } from '../../runtime/runtime-info.ts';
 import { PASSWORD_HASH_SCHEME } from '../../shared/passwords.ts';
@@ -77,6 +77,9 @@ const isLegacyUpstreamIdentity = (value: string): boolean => LEGACY_UPSTREAM_PRE
 const isNonNegativeSafeInteger = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 
 const isPerformanceMetric = (value: unknown): value is PerformanceMetric => typeof value === 'string' && PERFORMANCE_METRICS.has(value as PerformanceMetric);
+
+const PERFORMANCE_OPERATIONS = new Set<PerformanceOperation>(['chat', 'text_completion', 'embeddings', 'image_generation', 'image_edit', 'image_variation', 'audio_transcription', 'audio_speech', 'moderation', 'rerank']);
+const isPerformanceOperation = (value: unknown): value is PerformanceOperation => typeof value === 'string' && PERFORMANCE_OPERATIONS.has(value as PerformanceOperation);
 
 const importErrorBuilder = (field: string, expected: string) => new Error(`${field} must be ${expected}`);
 
@@ -519,6 +522,7 @@ const parsePerformanceRecords = (value: unknown): { type: 'ok'; records: Perform
       typeof item.upstream !== 'string' ||
       item.upstream.length === 0 ||
       isLegacyUpstreamIdentity(item.upstream) ||
+      !isPerformanceOperation(item.operation) ||
       typeof item.runtimeLocation !== 'string' ||
       item.runtimeLocation.length === 0 ||
       !isNonNegativeSafeInteger(item.requests) ||
@@ -552,6 +556,7 @@ const parsePerformanceRecords = (value: unknown): { type: 'ok'; records: Perform
       keyId: item.keyId,
       model: item.model,
       upstream: item.upstream,
+      operation: item.operation as PerformanceOperation,
       runtimeLocation: item.runtimeLocation,
       requests: item.requests,
       errors: item.errors,

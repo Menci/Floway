@@ -153,6 +153,7 @@ const performanceFor = (modelKey: string) => ({
   keyId: 'key_test',
   model: 'gpt-test',
   upstream: 'test-upstream',
+  operation: 'chat' as const,
   modelKey,
   stream: true,
   runtimeLocation: 'TEST',
