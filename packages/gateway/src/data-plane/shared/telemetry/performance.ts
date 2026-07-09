@@ -34,14 +34,14 @@ const recordError = (dims: PerformanceDimensions): Promise<void> =>
 //             compute a per-token rate (outputTokens < 2). Successful but
 //             degenerate cases (client disconnect, reasoning-only, single-token
 //             stream) land here rather than in error.
-//   sample  — chat operation with a real upstream call, a first-generated-token
+//   sample  — chat operation with a real upstream call, a first-output-token
 //             stamp, and ≥ 2 output tokens. TTFT is measured from
 //             upstreamCallStartedAt (the provider's outbound fetch) to the first
 //             generated token, isolating upstream round-trip latency from
 //             gateway-internal overhead.
 export const recordRequestPerformance = (
   scheduler: BackgroundScheduler,
-  ctx: { perfTiming: { firstGeneratedTokenAt: number | null; upstreamCallStartedAt: number | null } },
+  ctx: { perfTiming: { firstOutputTokenAt: number | null; upstreamCallStartedAt: number | null } },
   telemetry: PerformanceTelemetryContext | undefined,
   failed: boolean,
   outputTokens: number,
@@ -63,14 +63,14 @@ export const recordRequestPerformance = (
   // failures land in `error`.
   if (
     ctx.perfTiming.upstreamCallStartedAt === null ||
-    ctx.perfTiming.firstGeneratedTokenAt === null ||
+    ctx.perfTiming.firstOutputTokenAt === null ||
     outputTokens < 2
   ) {
     scheduler(record(getRepo().performance.recordNeutral(dims), 'neutral'));
     return;
   }
-  const ttftMs = Math.round(ctx.perfTiming.firstGeneratedTokenAt - ctx.perfTiming.upstreamCallStartedAt);
-  const streamUs = Math.round((requestFinishedAt - ctx.perfTiming.firstGeneratedTokenAt) * 1_000);
+  const ttftMs = Math.round(ctx.perfTiming.firstOutputTokenAt - ctx.perfTiming.upstreamCallStartedAt);
+  const streamUs = Math.round((requestFinishedAt - ctx.perfTiming.firstOutputTokenAt) * 1_000);
   const tpotUs = Math.round(streamUs / outputTokens);
   scheduler(record(getRepo().performance.recordSample({ ...dims, ttftMs, tpotUs, outputTokens }), 'sample'));
 };

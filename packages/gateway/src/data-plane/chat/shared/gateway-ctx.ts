@@ -12,7 +12,7 @@ export interface GatewayCtx {
   readonly wantsStream: boolean;
   readonly downstreamAbortController?: AbortController;
   readonly backgroundScheduler: BackgroundScheduler;
-  // Anchors TTFT computation: subtracted from `perfTiming.firstGeneratedTokenAt`
+  // Anchors TTFT computation: subtracted from `perfTiming.firstOutputTokenAt`
   // when that stamp arrives.
   readonly requestStartedAt: number;
   // Stamped once by the upstream stream wrapper on the first frame that
@@ -21,7 +21,7 @@ export interface GatewayCtx {
   // request either errored, was cancelled before any output, or hasn't
   // started streaming.
   readonly perfTiming: {
-    firstGeneratedTokenAt: number | null;
+    firstOutputTokenAt: number | null;
     // Stamped by the provider right before its outbound fetch to upstream.
     // Reset on each retry attempt so TTFT reflects only the winning attempt's
     // fetch round-trip, not accumulated retry overhead.
@@ -100,7 +100,7 @@ export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCt
     downstreamAbortController: controller,
     backgroundScheduler: opts.backgroundScheduler,
     requestStartedAt: performance.now(),
-    perfTiming: { firstGeneratedTokenAt: null, upstreamCallStartedAt: null },
+    perfTiming: { firstOutputTokenAt: null, upstreamCallStartedAt: null },
     runtimeLocation: colo,
     currentColo: colo,
     dump,

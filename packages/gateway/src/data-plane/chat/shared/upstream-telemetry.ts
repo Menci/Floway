@@ -1,4 +1,4 @@
-import { isFirstGeneratedTokenFrame } from './first-generated-token.ts';
+import { isFirstOutputTokenFrame } from './first-output-token.ts';
 import type { GatewayCtx } from './gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ChatTargetApi, ModelCandidate, PerformanceOperation, PerformanceTelemetryContext } from '@floway-dev/provider';
@@ -24,8 +24,8 @@ export const withUpstreamTelemetry = <T>(
 ): AsyncIterable<ProtocolFrame<T>> => {
   return (async function* () {
     for await (const frame of events) {
-      if (ctx.perfTiming.firstGeneratedTokenAt === null && isFirstGeneratedTokenFrame(frame, targetApi)) {
-        ctx.perfTiming.firstGeneratedTokenAt = performance.now();
+      if (ctx.perfTiming.firstOutputTokenAt === null && isFirstOutputTokenFrame(frame, targetApi)) {
+        ctx.perfTiming.firstOutputTokenAt = performance.now();
       }
       yield frame;
     }

@@ -536,7 +536,7 @@ const makeRespondCtx = (): ChatGatewayCtx => ({
   runtimeLocation: 'TEST',
   backgroundScheduler: () => {},
   requestStartedAt: 0,
-  perfTiming: { firstGeneratedTokenAt: null, upstreamCallStartedAt: null },
+  perfTiming: { firstOutputTokenAt: null, upstreamCallStartedAt: null },
   currentColo: 'TEST',
   dump: null,
   responseHeaders: new Headers(),
