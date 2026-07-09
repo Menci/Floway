@@ -7,8 +7,9 @@ import { type ImageSizeCalculator, type SizeCaps, fitWithin } from '@floway-dev/
 // - gpt-4o / gpt-4.1: tile encoder — samples within a 2048px box with the short
 //   edge clamped to 768px.
 // - gpt-5-mini: patch encoder, but likewise clamps the short edge to 768px.
-// - gpt-5.4 / gpt-5.4-mini / gpt-5.5 (and any other model via the fallback):
-//   patch encoder capped at ~2500 32px patches (~2.56 MP) within a 2048px box.
+// - gpt-5.4 / gpt-5.4-mini / gpt-5.5 / gpt-5.6-{sol,terra,luna} (and any
+//   other model via the fallback): patch encoder capped at ~2500 32px
+//   patches (~2.56 MP) within a 2048px box.
 // - Gemini: no documented sampling cap; we clamp the long edge to 2048px to
 //   keep tile/token cost bounded.
 //
