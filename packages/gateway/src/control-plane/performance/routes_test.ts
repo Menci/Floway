@@ -35,7 +35,8 @@ test('/api/performance returns backend-aggregated base-model percentiles', async
       group: 'claude-opus-4-7',
       requests: 100,
       errors: 0,
-      samples: 100,
+      ttftSamples: 100,
+      tpotSamples: 100,
       neutral: 0,
       ttftMsAvg: 120,
       ttftMsP50: 100,
@@ -462,5 +463,6 @@ test('/api/performance with group_by=operation splits rows by operation value', 
   assertEquals(groups, ['chat', 'embeddings']);
   const embRow = body.records.find((r: { group: string }) => r.group === 'embeddings');
   assertEquals(embRow.neutral, 1);
-  assertEquals(embRow.samples, 0);
+  assertEquals(embRow.ttftSamples, 0);
+  assertEquals(embRow.tpotSamples, 0);
 });

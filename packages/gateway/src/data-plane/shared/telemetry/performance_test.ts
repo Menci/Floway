@@ -33,7 +33,7 @@ describe('recordRequestPerformance', () => {
     recordRequestPerformance(scheduler, ctx, telemetry, true, 0, 400);
     await Promise.all(promises);
     const [row] = await repo.performance.listAll();
-    expect(row).toMatchObject({ errors: 1, samples: 0 });
+    expect(row).toMatchObject({ errors: 1, ttftSamples: 0, tpotSamples: 0 });
   });
 
   // --- neutral ---
@@ -43,7 +43,7 @@ describe('recordRequestPerformance', () => {
     recordRequestPerformance(scheduler, ctx, { ...telemetry, operation: 'embeddings' }, false, 0, 500);
     await Promise.all(promises);
     const [row] = await repo.performance.listAll();
-    expect(row).toMatchObject({ requests: 1, errors: 0, samples: 0, ttftMsSum: 0, tpotUsSum: 0 });
+    expect(row).toMatchObject({ requests: 1, errors: 0, ttftSamples: 0, tpotSamples: 0, ttftMsSum: 0, tpotUsSum: 0 });
   });
 
   it('records an error row for non-chat operation on failure', async () => {
@@ -51,7 +51,7 @@ describe('recordRequestPerformance', () => {
     recordRequestPerformance(scheduler, ctx, { ...telemetry, operation: 'embeddings' }, true, 0, 500);
     await Promise.all(promises);
     const [row] = await repo.performance.listAll();
-    expect(row).toMatchObject({ requests: 1, errors: 1, samples: 0 });
+    expect(row).toMatchObject({ requests: 1, errors: 1, ttftSamples: 0, tpotSamples: 0 });
   });
 
   it('records neutral for chat with no upstream call (synthetic result)', async () => {
@@ -60,7 +60,7 @@ describe('recordRequestPerformance', () => {
     recordRequestPerformance(scheduler, ctx, telemetry, false, 50, 400);
     await Promise.all(promises);
     const [row] = await repo.performance.listAll();
-    expect(row).toMatchObject({ requests: 1, errors: 0, samples: 0, ttftMsSum: 0, tpotUsSum: 0 });
+    expect(row).toMatchObject({ requests: 1, errors: 0, ttftSamples: 0, tpotSamples: 0, ttftMsSum: 0, tpotUsSum: 0 });
   });
 
   it('records neutral for chat with upstream call but no first generated token', async () => {
@@ -69,28 +69,44 @@ describe('recordRequestPerformance', () => {
     recordRequestPerformance(scheduler, ctx, telemetry, false, 50, 400);
     await Promise.all(promises);
     const [row] = await repo.performance.listAll();
-    expect(row).toMatchObject({ requests: 1, errors: 0, samples: 0, ttftMsSum: 0, tpotUsSum: 0 });
+    expect(row).toMatchObject({ requests: 1, errors: 0, ttftSamples: 0, tpotSamples: 0, ttftMsSum: 0, tpotUsSum: 0 });
   });
 
-  it('records neutral for chat with outputTokens=1 (single-token stream, tpot unmeasurable)', async () => {
-    // With only one output token the stream duration divided by 1 gives tpot ≈ 0 μs,
-    // polluting histogram buckets — treat as neutral instead.
+  // --- ttft-only sample ---
+
+  it('records TTFT-only sample for outputTokens=1 (single-token stream)', async () => {
+    // Single token gives no inter-token interval, so TPOT is skipped; TTFT is
+    // still measurable and useful.
     const ctx = { firstOutputTokenAt: 100, upstreamCallStartedAt: 50 };
     recordRequestPerformance(scheduler, ctx, telemetry, false, 1, 400);
     await Promise.all(promises);
     const [row] = await repo.performance.listAll();
-    expect(row).toMatchObject({ requests: 1, errors: 0, samples: 0, ttftMsSum: 0, tpotUsSum: 0 });
+    expect(row).toMatchObject({ requests: 1, errors: 0, ttftSamples: 1, tpotSamples: 0, ttftMsSum: 50, tpotUsSum: 0 });
+    expect(row!.buckets.some(b => b.metric === 'ttft_ms')).toBe(true);
+    expect(row!.buckets.some(b => b.metric === 'tpot_us')).toBe(false);
   });
 
-  it('records neutral for chat with outputTokens=0 (client disconnect before any output)', async () => {
+  it('records TTFT-only sample for outputTokens=0 when first-token stamp fired anyway', async () => {
+    // Rare upstream mismatch: detector saw an output frame but usage reports 0.
+    // Honour the detector — TTFT is real, TPOT can't be computed.
     const ctx = { firstOutputTokenAt: 100, upstreamCallStartedAt: 50 };
     recordRequestPerformance(scheduler, ctx, telemetry, false, 0, 400);
     await Promise.all(promises);
     const [row] = await repo.performance.listAll();
-    expect(row).toMatchObject({ requests: 1, errors: 0, samples: 0, ttftMsSum: 0, tpotUsSum: 0 });
+    expect(row).toMatchObject({ requests: 1, errors: 0, ttftSamples: 1, tpotSamples: 0, ttftMsSum: 50 });
   });
 
-  // --- sample ---
+  it('records TTFT-only sample when stream delta is negative (clock hazard)', async () => {
+    // requestFinishedAt < firstOutputTokenAt — TPOT would be negative. Preserve TTFT
+    // (the earlier delta is fine), drop TPOT.
+    const ctx = { firstOutputTokenAt: 500, upstreamCallStartedAt: 100 };
+    recordRequestPerformance(scheduler, ctx, telemetry, false, 10, 400);
+    await Promise.all(promises);
+    const [row] = await repo.performance.listAll();
+    expect(row).toMatchObject({ ttftSamples: 1, tpotSamples: 0, ttftMsSum: 400 });
+  });
+
+  // --- full ttft + tpot sample ---
 
   it('records sample with ttft measured from upstreamCallStartedAt', async () => {
     const ctx = { firstOutputTokenAt: 500, upstreamCallStartedAt: 100 };
@@ -101,7 +117,7 @@ describe('recordRequestPerformance', () => {
     expect(row!.ttftMsSum).toBe(400);
     // Stream = (1000 - 500) * 1000 = 500_000μs; TPOT = 500_000 / 200 = 2_500 μs/tok
     expect(row!.tpotUsSum).toBe(2_500);
-    expect(row).toMatchObject({ requests: 1, samples: 1, errors: 0 });
+    expect(row).toMatchObject({ requests: 1, ttftSamples: 1, tpotSamples: 1, errors: 0 });
   });
 
   it('records sample with exactly 2 output tokens (boundary: outputTokens >= 2)', async () => {
@@ -113,7 +129,7 @@ describe('recordRequestPerformance', () => {
     expect(row!.ttftMsSum).toBe(100);
     // Stream = (600 - 200) * 1000 = 400_000μs; TPOT = 400_000 / 2 = 200_000 μs/tok
     expect(row!.tpotUsSum).toBe(200_000);
-    expect(row).toMatchObject({ requests: 1, samples: 1, errors: 0 });
+    expect(row).toMatchObject({ requests: 1, ttftSamples: 1, tpotSamples: 1, errors: 0 });
   });
 
   // --- no-op ---

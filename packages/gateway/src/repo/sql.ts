@@ -626,25 +626,29 @@ class SqlPerformanceRepo implements PerformanceRepo {
   constructor(private readonly db: SqlDatabase) {}
 
   async recordSample(sample: PerformanceSample): Promise<void> {
+    const hasTpot = sample.tpotUs !== undefined && sample.outputTokens !== undefined && sample.outputTokens >= 2;
+    const tpotSamplesInc = hasTpot ? 1 : 0;
+    const tpotUsInc = hasTpot ? sample.tpotUs! : 0;
     const summaryStmt = this.db.prepare(
-      `INSERT INTO performance_summary (hour, key_id, model, upstream, operation, runtime_location, requests, errors, samples, ttft_ms_sum, tpot_us_sum)
-       VALUES (?, ?, ?, ?, ?, ?, 1, 0, 1, ?, ?)
+      `INSERT INTO performance_summary (hour, key_id, model, upstream, operation, runtime_location, requests, errors, ttft_samples, tpot_samples, ttft_ms_sum, tpot_us_sum)
+       VALUES (?, ?, ?, ?, ?, ?, 1, 0, 1, ?, ?, ?)
        ON CONFLICT (hour, key_id, model, upstream, operation, runtime_location) DO UPDATE SET
          requests = requests + 1,
-         samples = samples + 1,
+         ttft_samples = ttft_samples + 1,
+         tpot_samples = tpot_samples + excluded.tpot_samples,
          ttft_ms_sum = ttft_ms_sum + excluded.ttft_ms_sum,
          tpot_us_sum = tpot_us_sum + excluded.tpot_us_sum`,
-    ).bind(...performanceDimensionBinds(sample), sample.ttftMs, sample.tpotUs);
+    ).bind(...performanceDimensionBinds(sample), tpotSamplesInc, sample.ttftMs, tpotUsInc);
 
-    const ttft = bucketForTtftMs(sample.ttftMs);
-    const tpot = bucketForTpotUs(sample.tpotUs);
-    await runStatements(this.db, [summaryStmt, this.buildBucketStmt(sample, 'ttft_ms', ttft), this.buildBucketStmt(sample, 'tpot_us', tpot)]);
+    const stmts: SqlPreparedStatement[] = [summaryStmt, this.buildBucketStmt(sample, 'ttft_ms', bucketForTtftMs(sample.ttftMs))];
+    if (hasTpot) stmts.push(this.buildBucketStmt(sample, 'tpot_us', bucketForTpotUs(sample.tpotUs!)));
+    await runStatements(this.db, stmts);
   }
 
   async recordError(dims: PerformanceDimensions): Promise<void> {
     await this.db.prepare(
-      `INSERT INTO performance_summary (hour, key_id, model, upstream, operation, runtime_location, requests, errors, samples, ttft_ms_sum, tpot_us_sum)
-       VALUES (?, ?, ?, ?, ?, ?, 1, 1, 0, 0, 0)
+      `INSERT INTO performance_summary (hour, key_id, model, upstream, operation, runtime_location, requests, errors, ttft_samples, tpot_samples, ttft_ms_sum, tpot_us_sum)
+       VALUES (?, ?, ?, ?, ?, ?, 1, 1, 0, 0, 0, 0)
        ON CONFLICT (hour, key_id, model, upstream, operation, runtime_location) DO UPDATE SET
          requests = requests + 1,
          errors = errors + 1`,
@@ -653,8 +657,8 @@ class SqlPerformanceRepo implements PerformanceRepo {
 
   async recordNeutral(dims: PerformanceDimensions): Promise<void> {
     await this.db.prepare(
-      `INSERT INTO performance_summary (hour, key_id, model, upstream, operation, runtime_location, requests, errors, samples, ttft_ms_sum, tpot_us_sum)
-       VALUES (?, ?, ?, ?, ?, ?, 1, 0, 0, 0, 0)
+      `INSERT INTO performance_summary (hour, key_id, model, upstream, operation, runtime_location, requests, errors, ttft_samples, tpot_samples, ttft_ms_sum, tpot_us_sum)
+       VALUES (?, ?, ?, ?, ?, ?, 1, 0, 0, 0, 0, 0)
        ON CONFLICT (hour, key_id, model, upstream, operation, runtime_location) DO UPDATE SET
          requests = requests + 1`,
     ).bind(...performanceDimensionBinds(dims)).run();
@@ -672,15 +676,16 @@ class SqlPerformanceRepo implements PerformanceRepo {
 
   async set(record: PerformanceTelemetryRecord): Promise<void> {
     const summaryStmt = this.db.prepare(
-      `INSERT INTO performance_summary (hour, key_id, model, upstream, operation, runtime_location, requests, errors, samples, ttft_ms_sum, tpot_us_sum)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO performance_summary (hour, key_id, model, upstream, operation, runtime_location, requests, errors, ttft_samples, tpot_samples, ttft_ms_sum, tpot_us_sum)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (hour, key_id, model, upstream, operation, runtime_location) DO UPDATE SET
          requests = excluded.requests,
          errors = excluded.errors,
-         samples = excluded.samples,
+         ttft_samples = excluded.ttft_samples,
+         tpot_samples = excluded.tpot_samples,
          ttft_ms_sum = excluded.ttft_ms_sum,
          tpot_us_sum = excluded.tpot_us_sum`,
-    ).bind(...performanceDimensionBinds(record), record.requests, record.errors, record.samples, record.ttftMsSum, record.tpotUsSum);
+    ).bind(...performanceDimensionBinds(record), record.requests, record.errors, record.ttftSamples, record.tpotSamples, record.ttftMsSum, record.tpotUsSum);
 
     const deleteStmt = this.db.prepare(
       'DELETE FROM performance_buckets WHERE hour = ? AND key_id = ? AND model = ? AND upstream = ? AND operation = ? AND runtime_location = ?',
@@ -710,9 +715,9 @@ class SqlPerformanceRepo implements PerformanceRepo {
 
   private async rowsFromWhere(where: string, binds: readonly unknown[]): Promise<PerformanceTelemetryRecord[]> {
     const { results: summaryRows } = await this.db.prepare(
-      `SELECT hour, key_id, model, upstream, operation, runtime_location, requests, errors, samples, ttft_ms_sum, tpot_us_sum
+      `SELECT hour, key_id, model, upstream, operation, runtime_location, requests, errors, ttft_samples, tpot_samples, ttft_ms_sum, tpot_us_sum
        FROM performance_summary WHERE ${where} ORDER BY hour`,
-    ).bind(...binds).all<PerformanceDimensionRow & { requests: number; errors: number; samples: number; ttft_ms_sum: number; tpot_us_sum: number }>();
+    ).bind(...binds).all<PerformanceDimensionRow & { requests: number; errors: number; ttft_samples: number; tpot_samples: number; ttft_ms_sum: number; tpot_us_sum: number }>();
 
     const records = new Map<string, Omit<PerformanceTelemetryRecord, 'buckets'> & { buckets: PerformanceBucketRow[] }>();
     for (const row of summaryRows) {
@@ -721,7 +726,8 @@ class SqlPerformanceRepo implements PerformanceRepo {
         ...dims,
         requests: row.requests,
         errors: row.errors,
-        samples: row.samples,
+        ttftSamples: row.ttft_samples,
+        tpotSamples: row.tpot_samples,
         ttftMsSum: row.ttft_ms_sum,
         tpotUsSum: row.tpot_us_sum,
         buckets: [],

@@ -96,10 +96,14 @@ export interface PerformanceDimensions {
   runtimeLocation: string;
 }
 
+// TPOT is measurable only when at least two output tokens are streamed
+// (otherwise the inter-token interval is undefined). The three TPOT fields
+// travel as one — either all three are set (full TTFT + TPOT sample) or all
+// three are absent (TTFT-only sample: e.g. single-token responses).
 export interface PerformanceSample extends PerformanceDimensions {
   ttftMs: number;
-  tpotUs: number;
-  outputTokens: number;      // > 0 for a sample to count
+  tpotUs?: number;
+  outputTokens?: number;
 }
 
 export interface PerformanceBucketRow {
@@ -110,9 +114,10 @@ export interface PerformanceBucketRow {
 }
 
 export interface PerformanceTelemetryRecord extends PerformanceDimensions {
-  requests: number;           // samples + errors + neutral (non-chat successes)
+  requests: number;
   errors: number;
-  samples: number;
+  ttftSamples: number;        // requests contributing to TTFT (any first-token stamp)
+  tpotSamples: number;        // requests contributing to TPOT (outputTokens >= 2), a subset of ttftSamples
   ttftMsSum: number;
   tpotUsSum: number;
   buckets: readonly PerformanceBucketRow[];
@@ -183,12 +188,14 @@ export interface SearchUsageRepo {
 }
 
 export interface PerformanceRepo {
-  // Increments summary sums, samples, and requests; also increments one TTFT bucket and one TPOT bucket.
+  // TTFT always contributes (ttft_samples + ttft_ms_sum + one ttft bucket).
+  // TPOT contributes only when the sample carries tpotUs / outputTokens
+  // (tpot_samples + tpot_us_sum + one tpot bucket). `requests` bumps regardless.
   recordSample(sample: PerformanceSample): Promise<void>;
-  // Increments only summary requests and errors; does not touch sums, samples, or buckets.
+  // Increments summary requests and errors; does not touch sums, samples, or buckets.
   recordError(dims: PerformanceDimensions): Promise<void>;
-  // Increments only summary requests; does not touch errors, sums, samples, or buckets. Used for
-  // non-chat operations (embeddings, images, audio, etc.) on successful requests.
+  // Increments summary requests; does not touch errors, sums, samples, or buckets. Used for
+  // non-chat successes and chat successes that never got a first output token or a real upstream call.
   recordNeutral(dims: PerformanceDimensions): Promise<void>;
   query(opts: { keyId?: string; start: string; end: string }): Promise<PerformanceTelemetryRecord[]>;
   listAll(): Promise<PerformanceTelemetryRecord[]>;

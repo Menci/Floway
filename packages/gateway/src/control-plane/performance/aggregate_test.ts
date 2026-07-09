@@ -13,7 +13,8 @@ const record = (overrides: Partial<PerformanceTelemetryRecord> = {}): Performanc
   runtimeLocation: 'LOCAL',
   requests: 1,
   errors: 0,
-  samples: 1,
+  ttftSamples: 1,
+  tpotSamples: 1,
   ttftMsSum: 100,
   tpotUsSum: 500,
   // ttftMs=100 → bucket [50,100]; tpotUs=500 → bucket [200,500]
@@ -36,7 +37,8 @@ test('aggregatePerformanceForDisplay produces correct averages and percentiles f
       group: 'claude-opus-4-7',
       requests: 1,
       errors: 0,
-      samples: 1,
+      ttftSamples: 1,
+      tpotSamples: 1,
       neutral: 0,
       ttftMsAvg: 100,
       ttftMsP50: 100,
@@ -58,7 +60,8 @@ test('aggregatePerformanceForDisplay counts error-only rows as displayed request
         upstream: 'codex:1',
         requests: 3,
         errors: 3,
-        samples: 0,
+        ttftSamples: 0,
+        tpotSamples: 0,
         ttftMsSum: 0,
         tpotUsSum: 0,
         buckets: [],
@@ -73,7 +76,8 @@ test('aggregatePerformanceForDisplay counts error-only rows as displayed request
       group: 'gpt-5.5-pro-2026-04-23',
       requests: 3,
       errors: 3,
-      samples: 0,
+      ttftSamples: 0,
+      tpotSamples: 0,
       neutral: 0,
       ttftMsAvg: null,
       ttftMsP50: null,
@@ -96,7 +100,8 @@ test('aggregatePerformanceForDisplay merges two hours under bucket: all', () => 
   assertEquals(rows.length, 1);
   assertEquals(rows[0].bucket, 'all');
   assertEquals(rows[0].requests, 2);
-  assertEquals(rows[0].samples, 2);
+  assertEquals(rows[0].ttftSamples, 2);
+  assertEquals(rows[0].tpotSamples, 2);
   assertEquals(rows[0].ttftMsAvg, 100);
 });
 
@@ -122,7 +127,8 @@ test('aggregatePerformanceForDisplay returns lower edge for overflow-bucket perc
     [
       record({
         ttftMsSum: 3_600_000,
-        samples: 1,
+        ttftSamples: 1,
+        tpotSamples: 1,
         requests: 1,
         buckets: [{ metric: 'ttft_ms', lower: 1_800_000, upper: null, count: 1 }],
       }),
@@ -179,7 +185,7 @@ test('aggregatePerformanceForDisplay splits rows by operation when groupBy is op
   const rows = aggregatePerformanceForDisplay(
     [
       record({ operation: 'chat' }),
-      record({ operation: 'embeddings', requests: 2, errors: 0, samples: 0, ttftMsSum: 0, tpotUsSum: 0, buckets: [] }),
+      record({ operation: 'embeddings', requests: 2, errors: 0, ttftSamples: 0, tpotSamples: 0, ttftMsSum: 0, tpotUsSum: 0, buckets: [] }),
     ],
     { bucket: 'all', groupBy: 'operation', timezoneOffsetMinutes: 0 },
   );
@@ -189,10 +195,10 @@ test('aggregatePerformanceForDisplay splits rows by operation when groupBy is op
   assertEquals(groups, ['chat', 'embeddings']);
 });
 
-test('aggregatePerformanceForDisplay derives neutral as requests - samples - errors', () => {
+test('aggregatePerformanceForDisplay derives neutral as requests - ttftSamples - errors', () => {
   const rows = aggregatePerformanceForDisplay(
     [
-      record({ requests: 5, samples: 3, errors: 1, ttftMsSum: 300, tpotUsSum: 1500, buckets: [
+      record({ requests: 5, ttftSamples: 3, tpotSamples: 3, errors: 1, ttftMsSum: 300, tpotUsSum: 1500, buckets: [
         { metric: 'ttft_ms', lower: 50, upper: 100, count: 3 },
         { metric: 'tpot_us', lower: 200, upper: 500, count: 3 },
       ] }),
@@ -202,18 +208,35 @@ test('aggregatePerformanceForDisplay derives neutral as requests - samples - err
 
   assertEquals(rows[0].neutral, 1);
   assertEquals(rows[0].requests, 5);
-  assertEquals(rows[0].samples, 3);
+  assertEquals(rows[0].ttftSamples, 3);
+  assertEquals(rows[0].tpotSamples, 3);
   assertEquals(rows[0].errors, 1);
 });
 
-test('aggregatePerformanceForDisplay neutral is zero for pure chat rows (samples + errors = requests)', () => {
+test('aggregatePerformanceForDisplay neutral is zero for pure chat rows (ttftSamples + errors = requests)', () => {
   const rows = aggregatePerformanceForDisplay(
-    [record({ requests: 4, samples: 3, errors: 1, ttftMsSum: 300, tpotUsSum: 1500, buckets: [
+    [record({ requests: 4, ttftSamples: 3, tpotSamples: 3, errors: 1, ttftMsSum: 300, tpotUsSum: 1500, buckets: [
       { metric: 'ttft_ms', lower: 50, upper: 100, count: 3 },
       { metric: 'tpot_us', lower: 200, upper: 500, count: 3 },
     ] })],
     { bucket: 'all', groupBy: 'none', timezoneOffsetMinutes: 0 },
   );
 
+  assertEquals(rows[0].neutral, 0);
+});
+
+test('aggregatePerformanceForDisplay tpotUsAvg divides by tpotSamples so single-token records skew nothing', () => {
+  // Mix: one full sample (contributes to both) + one TTFT-only sample (contributes to
+  // ttftSamples only). tpotUsAvg must divide by tpotSamples (1), not ttftSamples (2).
+  const rows = aggregatePerformanceForDisplay(
+    [record({ requests: 2, ttftSamples: 2, tpotSamples: 1, ttftMsSum: 200, tpotUsSum: 500, buckets: [
+      { metric: 'ttft_ms', lower: 50, upper: 100, count: 2 },
+      { metric: 'tpot_us', lower: 200, upper: 500, count: 1 },
+    ] })],
+    { bucket: 'all', groupBy: 'none', timezoneOffsetMinutes: 0 },
+  );
+
+  assertEquals(rows[0].ttftMsAvg, 100);
+  assertEquals(rows[0].tpotUsAvg, 500);
   assertEquals(rows[0].neutral, 0);
 });

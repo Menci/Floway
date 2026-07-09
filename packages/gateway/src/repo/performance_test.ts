@@ -51,7 +51,8 @@ for (const impl of impls) {
         runtimeLocation: 'hkg',
         requests: 1,
         errors: 0,
-        samples: 1,
+        ttftSamples: 1,
+        tpotSamples: 1,
         ttftMsSum: 340,
         tpotUsSum: 15_000,
       });
@@ -65,7 +66,7 @@ for (const impl of impls) {
       const repo = await impl.open();
       await repo.recordError(errSample());
       const rows = await repo.listAll();
-      expect(rows[0]).toMatchObject({ requests: 1, errors: 1, samples: 0, ttftMsSum: 0, tpotUsSum: 0 });
+      expect(rows[0]).toMatchObject({ requests: 1, errors: 1, ttftSamples: 0, tpotSamples: 0, ttftMsSum: 0, tpotUsSum: 0 });
       expect(rows[0]!.buckets).toEqual([]);
     });
 
@@ -74,7 +75,7 @@ for (const impl of impls) {
       await repo.recordSample(sample({ ttftMs: 250, tpotUs: 12_000, outputTokens: 50 }));
       await repo.recordSample(sample({ ttftMs: 260, tpotUs: 18_000, outputTokens: 90 }));
       const [row] = await repo.listAll();
-      expect(row).toMatchObject({ requests: 2, samples: 2, ttftMsSum: 510, tpotUsSum: 30_000 });
+      expect(row).toMatchObject({ requests: 2, ttftSamples: 2, tpotSamples: 2, ttftMsSum: 510, tpotUsSum: 30_000 });
       const ttft = row!.buckets.find(b => b.metric === 'ttft_ms' && b.lower === 200 && b.upper === 500)!;
       expect(ttft.count).toBe(2);
       const tpot10 = row!.buckets.find(b => b.metric === 'tpot_us' && b.lower === 10_000 && b.upper === 20_000)!;
@@ -105,7 +106,8 @@ for (const impl of impls) {
       const [orig] = await repo.listAll();
       await repo.set({
         ...orig!,
-        samples: 5,
+        ttftSamples: 5,
+        tpotSamples: 5,
         requests: 5,
         errors: 0,
         ttftMsSum: 500,
@@ -116,7 +118,7 @@ for (const impl of impls) {
         ],
       });
       const [after] = await repo.listAll();
-      expect(after).toMatchObject({ samples: 5, ttftMsSum: 500, tpotUsSum: 40_000 });
+      expect(after).toMatchObject({ ttftSamples: 5, tpotSamples: 5, ttftMsSum: 500, tpotUsSum: 40_000 });
       expect(after!.buckets).toHaveLength(2);
     });
 
@@ -128,12 +130,29 @@ for (const impl of impls) {
       expect(overflow).toEqual({ metric: 'ttft_ms', lower: 1_800_000, upper: null, count: 1 });
     });
 
+    it('single-token sample records TTFT only — no TPOT bucket, no tpotSamples increment', async () => {
+      const repo = await impl.open();
+      await repo.recordSample({ ...sample(), tpotUs: undefined, outputTokens: 1 });
+      const [row] = await repo.listAll();
+      expect(row).toMatchObject({ requests: 1, ttftSamples: 1, tpotSamples: 0, ttftMsSum: 340, tpotUsSum: 0 });
+      expect(row!.buckets.some(b => b.metric === 'ttft_ms')).toBe(true);
+      expect(row!.buckets.some(b => b.metric === 'tpot_us')).toBe(false);
+    });
+
+    it('sample without tpotUs (any outputTokens) records TTFT only', async () => {
+      const repo = await impl.open();
+      await repo.recordSample({ ...sample(), tpotUs: undefined, outputTokens: undefined });
+      const [row] = await repo.listAll();
+      expect(row).toMatchObject({ requests: 1, ttftSamples: 1, tpotSamples: 0 });
+      expect(row!.buckets.some(b => b.metric === 'tpot_us')).toBe(false);
+    });
+
     it('recordNeutral bumps requests only', async () => {
       const repo = await impl.open();
       await repo.recordNeutral(errSample({ operation: 'embeddings' }));
       const rows = await repo.listAll();
       expect(rows).toHaveLength(1);
-      expect(rows[0]).toMatchObject({ requests: 1, errors: 0, samples: 0, ttftMsSum: 0, tpotUsSum: 0 });
+      expect(rows[0]).toMatchObject({ requests: 1, errors: 0, ttftSamples: 0, tpotSamples: 0, ttftMsSum: 0, tpotUsSum: 0 });
       expect(rows[0]!.buckets).toEqual([]);
     });
 
@@ -145,7 +164,8 @@ for (const impl of impls) {
       const [row] = await repo.listAll();
       expect(row!.requests).toBe(3);
       expect(row!.errors).toBe(0);
-      expect(row!.samples).toBe(0);
+      expect(row!.ttftSamples).toBe(0);
+      expect(row!.tpotSamples).toBe(0);
     });
 
     it('different operations create different rows', async () => {

@@ -9,7 +9,8 @@ export interface PerformanceDisplayRecord {
   group: string;
   requests: number;
   errors: number;
-  samples: number;
+  ttftSamples: number;
+  tpotSamples: number;
   neutral: number;
   ttftMsAvg: number | null;
   ttftMsP50: number | null;
@@ -42,7 +43,8 @@ interface MutableAggregate {
   group: string;
   requests: number;
   errors: number;
-  samples: number;
+  ttftSamples: number;
+  tpotSamples: number;
   ttftMsSum: number;
   tpotUsSum: number;
   bucketsByMetric: Record<PerformanceMetric, Map<string, HistogramBucket>>;
@@ -62,7 +64,8 @@ export function aggregatePerformanceForDisplay(records: readonly PerformanceTele
         group,
         requests: 0,
         errors: 0,
-        samples: 0,
+        ttftSamples: 0,
+        tpotSamples: 0,
         ttftMsSum: 0,
         tpotUsSum: 0,
         bucketsByMetric: { ttft_ms: new Map(), tpot_us: new Map() },
@@ -72,7 +75,8 @@ export function aggregatePerformanceForDisplay(records: readonly PerformanceTele
 
     aggregate.requests += record.requests;
     aggregate.errors += record.errors;
-    aggregate.samples += record.samples;
+    aggregate.ttftSamples += record.ttftSamples;
+    aggregate.tpotSamples += record.tpotSamples;
     aggregate.ttftMsSum += record.ttftMsSum;
     aggregate.tpotUsSum += record.tpotUsSum;
     for (const b of record.buckets) {
@@ -115,19 +119,22 @@ function displayGroup(record: PerformanceTelemetryRecord, options: AggregateOpti
 function toDisplayRecord(a: MutableAggregate): PerformanceDisplayRecord {
   const ttftBuckets = [...a.bucketsByMetric.ttft_ms.values()];
   const tpotBuckets = [...a.bucketsByMetric.tpot_us.values()];
-  const hasSamples = a.samples > 0;
   return {
     bucket: a.bucket,
     group: a.group,
     requests: a.requests,
     errors: a.errors,
-    samples: a.samples,
-    neutral: a.requests - a.samples - a.errors,
-    ttftMsAvg: hasSamples ? a.ttftMsSum / a.samples : null,
+    ttftSamples: a.ttftSamples,
+    tpotSamples: a.tpotSamples,
+    // ttftSamples is a superset of tpotSamples, so subtracting ttftSamples
+    // alone yields the neutral count (chat successes without a first-token
+    // stamp, plus every non-chat success).
+    neutral: a.requests - a.ttftSamples - a.errors,
+    ttftMsAvg: a.ttftSamples > 0 ? a.ttftMsSum / a.ttftSamples : null,
     ttftMsP50: percentileFromBuckets(ttftBuckets, 0.5),
     ttftMsP95: percentileFromBuckets(ttftBuckets, 0.95),
     ttftMsP99: percentileFromBuckets(ttftBuckets, 0.99),
-    tpotUsAvg: hasSamples ? a.tpotUsSum / a.samples : null,
+    tpotUsAvg: a.tpotSamples > 0 ? a.tpotUsSum / a.tpotSamples : null,
     tpotUsP50: percentileFromBuckets(tpotBuckets, 0.5),
     tpotUsP95: percentileFromBuckets(tpotBuckets, 0.95),
     tpotUsP99: percentileFromBuckets(tpotBuckets, 0.99),

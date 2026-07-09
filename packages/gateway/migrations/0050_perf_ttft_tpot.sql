@@ -2,6 +2,10 @@ DROP TABLE IF EXISTS performance_latency_buckets;
 DROP TABLE IF EXISTS performance_summary;
 DROP TABLE IF EXISTS performance_buckets;
 
+-- TTFT and TPOT sample counters are independent: a chat request that emits
+-- a single output token has a measurable TTFT but no TPOT (TPOT is the
+-- inter-token interval, undefined for one token). Non-chat / no-upstream /
+-- no-first-token requests contribute to `requests` only via recordNeutral.
 CREATE TABLE performance_summary (
   hour             TEXT    NOT NULL,
   key_id           TEXT    NOT NULL,
@@ -11,7 +15,8 @@ CREATE TABLE performance_summary (
   runtime_location TEXT    NOT NULL DEFAULT 'unknown',
   requests         INTEGER NOT NULL DEFAULT 0,
   errors           INTEGER NOT NULL DEFAULT 0,
-  samples          INTEGER NOT NULL DEFAULT 0,
+  ttft_samples     INTEGER NOT NULL DEFAULT 0,
+  tpot_samples     INTEGER NOT NULL DEFAULT 0,
   ttft_ms_sum      INTEGER NOT NULL DEFAULT 0,
   tpot_us_sum      INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (hour, key_id, model, upstream, operation, runtime_location)

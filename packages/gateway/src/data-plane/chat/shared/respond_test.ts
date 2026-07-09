@@ -116,24 +116,26 @@ test('SourceStreamState.rememberUsage keeps real usage and ignores zero figures'
 
 // ── recordPerformance ──
 
-test('recordPerformance records a sample when success with upstreamCallStartedAt, firstOutputTokenAt, and positive outputTokens', async () => {
+test('recordPerformance records a full sample when success with upstreamCallStartedAt, firstOutputTokenAt, and outputTokens>=2', async () => {
   recordPerformance(harness.ctx({ upstreamCallStartedAt: 50, firstOutputTokenAt: 100 }), testPerformanceContext, false, 50);
   await Promise.all(harness.background);
 
   const rows = await harness.repo.performance.listAll();
   assertEquals(rows.length, 1);
-  assertEquals(rows[0].samples, 1);
+  assertEquals(rows[0].ttftSamples, 1);
+  assertEquals(rows[0].tpotSamples, 1);
   assertEquals(rows[0].errors, 0);
   assertEquals(rows[0].requests, 1);
 });
 
-test('recordPerformance records neutral when success but outputTokens is zero', async () => {
+test('recordPerformance records TTFT-only sample when outputTokens is zero but first-token stamp fired', async () => {
   recordPerformance(harness.ctx({ upstreamCallStartedAt: 50, firstOutputTokenAt: 100 }), testPerformanceContext, false, 0);
   await Promise.all(harness.background);
 
   const rows = await harness.repo.performance.listAll();
   assertEquals(rows.length, 1);
-  assertEquals(rows[0].samples, 0);
+  assertEquals(rows[0].ttftSamples, 1);
+  assertEquals(rows[0].tpotSamples, 0);
   assertEquals(rows[0].errors, 0);
   assertEquals(rows[0].requests, 1);
 });
@@ -144,7 +146,8 @@ test('recordPerformance records neutral when success but firstOutputTokenAt is n
 
   const rows = await harness.repo.performance.listAll();
   assertEquals(rows.length, 1);
-  assertEquals(rows[0].samples, 0);
+  assertEquals(rows[0].ttftSamples, 0);
+  assertEquals(rows[0].tpotSamples, 0);
   assertEquals(rows[0].errors, 0);
   assertEquals(rows[0].requests, 1);
 });
@@ -155,7 +158,8 @@ test('recordPerformance records an error when failed', async () => {
 
   const rows = await harness.repo.performance.listAll();
   assertEquals(rows.length, 1);
-  assertEquals(rows[0].samples, 0);
+  assertEquals(rows[0].ttftSamples, 0);
+  assertEquals(rows[0].tpotSamples, 0);
   assertEquals(rows[0].errors, 1);
   assertEquals(rows[0].requests, 1);
 });

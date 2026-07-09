@@ -28,10 +28,11 @@ const recordError = (dims: PerformanceDimensions): Promise<void> =>
 
 // TTFT is measured from perfTiming.upstreamCallStartedAt (the provider's
 // outbound fetch), not from the request's arrival at the gateway — this
-// isolates upstream round-trip latency from gateway-internal overhead. Any
-// success without a real upstream call, a first-output-token stamp, or ≥ 2
-// output tokens records as a neutral row rather than an error; only genuine
-// upstream failures land in the error bucket.
+// isolates upstream round-trip latency from gateway-internal overhead.
+// TTFT records whenever we have both stamps; TPOT layers on top only when
+// output tokens >= 2 (a single token has no inter-token interval). Any
+// success without a real upstream call or first-output-token stamp records
+// as neutral; only genuine upstream failures land in the error bucket.
 export const recordRequestPerformance = (
   scheduler: BackgroundScheduler,
   perfTiming: { upstreamCallStartedAt: number | null; firstOutputTokenAt: number | null },
@@ -50,21 +51,29 @@ export const recordRequestPerformance = (
   if (
     telemetry.operation !== 'chat' ||
     perfTiming.upstreamCallStartedAt === null ||
-    perfTiming.firstOutputTokenAt === null ||
-    outputTokens < 2
+    perfTiming.firstOutputTokenAt === null
   ) {
     scheduler(record(getRepo().performance.recordNeutral(dims), 'neutral'));
     return;
   }
   const ttftDeltaMs = perfTiming.firstOutputTokenAt - perfTiming.upstreamCallStartedAt;
-  const streamDeltaMs = requestFinishedAt - perfTiming.firstOutputTokenAt;
-  if (ttftDeltaMs < 0 || streamDeltaMs < 0) {
-    // Retry ordering hazard: a stale upstreamCallStartedAt from a prior candidate
-    // outran firstOutputTokenAt. Refuse to fabricate a negative-latency sample.
+  if (ttftDeltaMs < 0) {
+    // Stale upstreamCallStartedAt outran firstOutputTokenAt (should not happen
+    // now that iterateCandidates resets per attempt, but the negative-latency
+    // sample would be nonsense either way).
     scheduler(record(getRepo().performance.recordNeutral(dims), 'neutral'));
     return;
   }
   const ttftMs = Math.round(ttftDeltaMs);
+  if (outputTokens < 2) {
+    scheduler(record(getRepo().performance.recordSample({ ...dims, ttftMs }), 'sample'));
+    return;
+  }
+  const streamDeltaMs = requestFinishedAt - perfTiming.firstOutputTokenAt;
+  if (streamDeltaMs < 0) {
+    scheduler(record(getRepo().performance.recordSample({ ...dims, ttftMs }), 'sample'));
+    return;
+  }
   const tpotUs = Math.round((streamDeltaMs * 1_000) / outputTokens);
   scheduler(record(getRepo().performance.recordSample({ ...dims, ttftMs, tpotUs, outputTokens }), 'sample'));
 };

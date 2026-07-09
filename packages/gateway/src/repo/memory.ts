@@ -388,13 +388,14 @@ class MemoryPerformanceRepo implements PerformanceRepo {
   async recordSample(sample: PerformanceSample): Promise<void> {
     const row = this.upsertRow(sample);
     row.requests += 1;
-    row.samples += 1;
+    row.ttftSamples += 1;
     row.ttftMsSum += sample.ttftMs;
-    row.tpotUsSum += sample.tpotUs;
-    const ttftBucket = bucketForTtftMs(sample.ttftMs);
-    const tpotBucket = bucketForTpotUs(sample.tpotUs);
-    this.incrementBucket(row, 'ttft_ms', ttftBucket);
-    this.incrementBucket(row, 'tpot_us', tpotBucket);
+    this.incrementBucket(row, 'ttft_ms', bucketForTtftMs(sample.ttftMs));
+    if (sample.tpotUs !== undefined && sample.outputTokens !== undefined && sample.outputTokens >= 2) {
+      row.tpotSamples += 1;
+      row.tpotUsSum += sample.tpotUs;
+      this.incrementBucket(row, 'tpot_us', bucketForTpotUs(sample.tpotUs));
+    }
   }
 
   async recordError(dims: PerformanceDimensions): Promise<void> {
@@ -447,7 +448,8 @@ class MemoryPerformanceRepo implements PerformanceRepo {
         runtimeLocation: dims.runtimeLocation,
         requests: 0,
         errors: 0,
-        samples: 0,
+        ttftSamples: 0,
+        tpotSamples: 0,
         ttftMsSum: 0,
         tpotUsSum: 0,
         bucketMap: new Map(),

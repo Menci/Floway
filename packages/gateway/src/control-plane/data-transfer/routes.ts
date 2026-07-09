@@ -527,7 +527,8 @@ const parsePerformanceRecords = (value: unknown): { type: 'ok'; records: Perform
       item.runtimeLocation.length === 0 ||
       !isNonNegativeSafeInteger(item.requests) ||
       !isNonNegativeSafeInteger(item.errors) ||
-      !isNonNegativeSafeInteger(item.samples) ||
+      !isNonNegativeSafeInteger(item.ttftSamples) ||
+      !isNonNegativeSafeInteger(item.tpotSamples) ||
       !isNonNegativeSafeInteger(item.ttftMsSum) ||
       !isNonNegativeSafeInteger(item.tpotUsSum) ||
       !Array.isArray(item.buckets)
@@ -560,7 +561,8 @@ const parsePerformanceRecords = (value: unknown): { type: 'ok'; records: Perform
       runtimeLocation: item.runtimeLocation,
       requests: item.requests,
       errors: item.errors,
-      samples: item.samples,
+      ttftSamples: item.ttftSamples,
+      tpotSamples: item.tpotSamples,
       ttftMsSum: item.ttftMsSum,
       tpotUsSum: item.tpotUsSum,
       buckets,
