@@ -14,7 +14,7 @@ import { useAuthStore } from '../../stores/auth.ts';
 import { OverlayScrollbars, Spinner } from '@floway-dev/ui';
 
 type PerformanceView = 'all-by-user' | 'self-by-key';
-type GroupBy = 'none' | 'keyId' | 'userId' | 'model' | 'upstream' | 'runtimeLocation';
+type GroupBy = 'none' | 'keyId' | 'userId' | 'model' | 'upstream' | 'operation' | 'runtimeLocation';
 
 interface PerformanceDisplayRecord {
   bucket: string;
@@ -22,6 +22,7 @@ interface PerformanceDisplayRecord {
   requests: number;
   errors: number;
   samples: number;
+  neutral: number;
   ttftMsAvg: number | null;
   ttftMsP50: number | null;
   ttftMsP95: number | null;
@@ -38,6 +39,7 @@ interface PerformanceOverviewResponse {
   modelRows: PerformanceDisplayRecord[];
   upstreamRows: PerformanceDisplayRecord[];
   runtimeRows: PerformanceDisplayRecord[];
+  operationRows: PerformanceDisplayRecord[];
 }
 
 export const usePerformancePageData = defineBasicLoader(async () => {
@@ -50,7 +52,7 @@ export const usePerformancePageData = defineBasicLoader(async () => {
   }));
   return {
     view,
-    overview: overviewRes.data ?? { series: [], summaryRows: [], modelRows: [], upstreamRows: [], runtimeRows: [] },
+    overview: overviewRes.data ?? { series: [], summaryRows: [], modelRows: [], upstreamRows: [], runtimeRows: [], operationRows: [] },
     error: overviewRes.error ? overviewRes.error.message : null,
   };
 });
@@ -126,6 +128,7 @@ const groupByOptions = computed<{ value: GroupBy; label: string }[]>(() => {
     { value: 'none', label: 'All combined' },
     { value: 'model', label: 'By Model' },
     { value: 'upstream', label: 'By Upstream' },
+    { value: 'operation', label: 'By Operation' },
     { value: 'runtimeLocation', label: 'By Region' },
     { value: 'keyId', label: 'By API Key' },
     { value: 'userId', label: 'By User' },
@@ -532,6 +535,33 @@ const performanceSummary = computed(() => overview.value.summaryRows[0] ?? {
                   <td class="px-3 py-2 text-right font-mono text-gray-400">{{ row.requests.toLocaleString() }}</td>
                   <td class="px-3 py-2 text-right font-mono text-white">{{ formatRowValue(getChartValue(row, performancePercentile)) }}</td>
                   <td class="px-3 py-2 text-right font-mono text-gray-400">{{ formatRowValue(getRowAvg(row)) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </OverlayScrollbars>
+        </div>
+        <div v-if="overview.operationRows.length > 0">
+          <span class="text-xs font-medium text-gray-500 uppercase tracking-widest mb-3 block">By Operation</span>
+          <OverlayScrollbars class="rounded-md border border-white/5" no-tabindex>
+            <table class="w-full text-sm">
+              <thead class="bg-surface-800/70 text-xs uppercase tracking-widest text-gray-500">
+                <tr>
+                  <th class="px-3 py-2 text-left font-medium">Operation</th>
+                  <th class="px-3 py-2 text-right font-medium">Req</th>
+                  <th class="px-3 py-2 text-right font-medium">Errors</th>
+                  <th class="px-3 py-2 text-right font-medium">Neutral</th>
+                  <th class="px-3 py-2 text-right font-medium">TTFT p95</th>
+                  <th class="px-3 py-2 text-right font-medium">Worst 5% speed</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-white/5">
+                <tr v-for="row in overview.operationRows" :key="row.group">
+                  <td class="px-3 py-2 text-gray-300">{{ row.group }}</td>
+                  <td class="px-3 py-2 text-right font-mono text-gray-400">{{ row.requests.toLocaleString() }}</td>
+                  <td class="px-3 py-2 text-right font-mono text-gray-400">{{ row.errors.toLocaleString() }}</td>
+                  <td class="px-3 py-2 text-right font-mono text-gray-400">{{ row.neutral.toLocaleString() }}</td>
+                  <td class="px-3 py-2 text-right font-mono text-white">{{ formatMs(row.ttftMsP95) }}</td>
+                  <td class="px-3 py-2 text-right font-mono text-white">{{ formatTokPerSec(row.tpotUsP95) }}</td>
                 </tr>
               </tbody>
             </table>
