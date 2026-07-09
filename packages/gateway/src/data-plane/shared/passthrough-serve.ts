@@ -122,7 +122,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
   // most recent candidate the loop touched. A throw before any candidate
   // fired leaves this undefined; the outer catch below is happy with that.
   let lastPerformance: PerformanceTelemetryContext | undefined;
-  const requestTiming = { perfTiming: ctx.perfTiming, requestStartedAt: ctx.requestStartedAt };
+  const requestTiming = { perfTiming: ctx.perfTiming };
 
   try {
     // The shared resolver returns every candidate of the requested kind:

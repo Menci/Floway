@@ -26,12 +26,22 @@ const dimensions = (telemetry: PerformanceTelemetryContext): PerformanceDimensio
 const recordError = (dims: PerformanceDimensions): Promise<void> =>
   record(getRepo().performance.recordError(dims), 'error');
 
-// Non-chat operations record a neutral row on success (no TTFT/TPOT samples produced,
-// requests counter only). A non-failed chat stream with no TTFT or no output tokens is
-// still an error row — tpot requires both a first-token timestamp and a positive output-token count.
+// Three outcome classes:
+//
+//   error   — upstream genuinely failed (`failed === true`).
+//   neutral — no TTFT/TPOT semantics: non-chat operation, no upstream call
+//             (synthetic result), no generated token, or too few tokens to
+//             compute a per-token rate (outputTokens < 2). Successful but
+//             degenerate cases (client disconnect, reasoning-only, single-token
+//             stream) land here rather than in error.
+//   sample  — chat operation with a real upstream call, a first-generated-token
+//             stamp, and ≥ 2 output tokens. TTFT is measured from
+//             upstreamCallStartedAt (the provider's outbound fetch) to the first
+//             generated token, isolating upstream round-trip latency from
+//             gateway-internal overhead.
 export const recordRequestPerformance = (
   scheduler: BackgroundScheduler,
-  ctx: { perfTiming: { firstGeneratedTokenAt: number | null; upstreamCallStartedAt: number | null }; requestStartedAt: number },
+  ctx: { perfTiming: { firstGeneratedTokenAt: number | null; upstreamCallStartedAt: number | null } },
   telemetry: PerformanceTelemetryContext | undefined,
   failed: boolean,
   outputTokens: number,
@@ -43,15 +53,23 @@ export const recordRequestPerformance = (
     scheduler(recordError(dims));
     return;
   }
+  // Non-chat operations always neutral (no TTFT/TPOT semantic).
   if (telemetry.operation !== 'chat') {
     scheduler(record(getRepo().performance.recordNeutral(dims), 'neutral'));
     return;
   }
-  if (ctx.perfTiming.firstGeneratedTokenAt === null || outputTokens <= 0) {
-    scheduler(recordError(dims));
+  // Chat but no upstream call (synthetic result) OR no generated token OR too
+  // few tokens to compute a per-token rate → also neutral. Only real upstream
+  // failures land in `error`.
+  if (
+    ctx.perfTiming.upstreamCallStartedAt === null ||
+    ctx.perfTiming.firstGeneratedTokenAt === null ||
+    outputTokens < 2
+  ) {
+    scheduler(record(getRepo().performance.recordNeutral(dims), 'neutral'));
     return;
   }
-  const ttftMs = Math.round(ctx.perfTiming.firstGeneratedTokenAt - ctx.requestStartedAt);
+  const ttftMs = Math.round(ctx.perfTiming.firstGeneratedTokenAt - ctx.perfTiming.upstreamCallStartedAt);
   const streamUs = Math.round((requestFinishedAt - ctx.perfTiming.firstGeneratedTokenAt) * 1_000);
   const tpotUs = Math.round(streamUs / outputTokens);
   scheduler(record(getRepo().performance.recordSample({ ...dims, ttftMs, tpotUs, outputTokens }), 'sample'));
