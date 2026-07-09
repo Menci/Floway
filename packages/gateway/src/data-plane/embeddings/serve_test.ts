@@ -129,7 +129,7 @@ test('/v1/embeddings records usage under request model when upstream omits model
   assertEquals(performanceRows.length, 1);
   assertEquals(performanceRows[0]?.model, 'text-embedding-real');
   assertEquals(performanceRows[0]?.requests, 1);
-  assertEquals(performanceRows[0]?.errors, 1);
+  assertEquals(performanceRows[0]?.errors, 0);
 });
 
 test('/v1/embeddings records request and upstream performance', async () => {
@@ -188,7 +188,7 @@ test('/v1/embeddings records request and upstream performance', async () => {
   assertEquals(records[0]?.model, 'text-embedding-real');
   assertEquals(records[0]?.upstream, copilotUpstream.id);
   assertEquals(records[0]?.requests, 1);
-  assertEquals(records[0]?.errors, 1);
+  assertEquals(records[0]?.errors, 0);
 });
 
 test('/v1/embeddings routes to custom upstream when model is only declared there', async () => {

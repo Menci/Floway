@@ -270,7 +270,7 @@ test('/v1/completions handler also serves the unversioned /completions path', as
 // chat-completions does (no interceptor framework to feed), so the two
 // paths really do exercise different scaffold branches and the assertions
 // here keep them honest.
-test('/v1/completions non-streaming records usage row, performance error row (TTFT not tracked by passthrough), and a bytes-body dump record', async () => {
+test('/v1/completions non-streaming records usage row, performance neutral row (text_completion operation, no TTFT/TPOT), and a bytes-body dump record', async () => {
   const { apiKey, repo } = await setupAppTest();
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
   await registerCompletionsUpstream(repo);
@@ -308,7 +308,7 @@ test('/v1/completions non-streaming records usage row, performance error row (TT
   assertEquals(performance.length, 1);
   assertEquals(performance[0]?.model, 'davinci-002');
   assertEquals(performance[0]?.requests, 1);
-  assertEquals(performance[0]?.errors, 1);
+  assertEquals(performance[0]?.errors, 0);
 
   assertEquals(dumpStubs.stored.length, 1);
   const dump = dumpStubs.stored[0]!.record;
@@ -322,7 +322,7 @@ test('/v1/completions non-streaming records usage row, performance error row (TT
   assertEquals(dump.response.body.type, 'bytes');
 });
 
-test('/v1/completions streaming records usage row, performance error row (TTFT not tracked by passthrough), and a frame-log dump record', async () => {
+test('/v1/completions streaming records usage row, performance neutral row (text_completion operation, no TTFT/TPOT), and a frame-log dump record', async () => {
   const { apiKey, repo } = await setupAppTest();
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
   await registerCompletionsUpstream(repo);
@@ -351,7 +351,7 @@ test('/v1/completions streaming records usage row, performance error row (TTFT n
   const performance = await repo.performance.listAll();
   assertEquals(performance.length, 1);
   assertEquals(performance[0]?.requests, 1);
-  assertEquals(performance[0]?.errors, 1);
+  assertEquals(performance[0]?.errors, 0);
 
   assertEquals(dumpStubs.stored.length, 1);
   const dump = dumpStubs.stored[0]!.record;

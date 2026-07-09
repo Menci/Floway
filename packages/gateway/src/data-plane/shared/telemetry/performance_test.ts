@@ -66,4 +66,28 @@ describe('recordRequestPerformance', () => {
     await Promise.all(promises);
     expect(await repo.performance.listAll()).toEqual([]);
   });
+
+  it('records a neutral row for non-chat operation on success', async () => {
+    const ctx = { perfTiming: { firstOutputTokenAt: null }, requestStartedAt: 0 };
+    recordRequestPerformance(scheduler, ctx, { ...telemetry, operation: 'embeddings' }, false, 0, 500);
+    await Promise.all(promises);
+    const [row] = await repo.performance.listAll();
+    expect(row).toMatchObject({ requests: 1, errors: 0, samples: 0, ttftMsSum: 0, tpotUsSum: 0 });
+  });
+
+  it('records an error row for non-chat operation on failure', async () => {
+    const ctx = { perfTiming: { firstOutputTokenAt: null }, requestStartedAt: 0 };
+    recordRequestPerformance(scheduler, ctx, { ...telemetry, operation: 'embeddings' }, true, 0, 500);
+    await Promise.all(promises);
+    const [row] = await repo.performance.listAll();
+    expect(row).toMatchObject({ requests: 1, errors: 1, samples: 0 });
+  });
+
+  it('records a chat sample as before (regression guard)', async () => {
+    const ctx = { perfTiming: { firstOutputTokenAt: 100 }, requestStartedAt: 0 };
+    recordRequestPerformance(scheduler, ctx, { ...telemetry, operation: 'chat' }, false, 200, 400);
+    await Promise.all(promises);
+    const [row] = await repo.performance.listAll();
+    expect(row).toMatchObject({ samples: 1, ttftMsSum: 100 });
+  });
 });
