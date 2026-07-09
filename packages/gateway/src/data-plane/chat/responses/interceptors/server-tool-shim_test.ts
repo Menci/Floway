@@ -340,7 +340,6 @@ const makeGatewayCtx = (apiKeyId: string = 'k1'): ChatGatewayCtx => ({
   responseHeaders: new Headers(),
   backgroundScheduler: () => {},
   requestStartedAt: 0,
-
   perfTiming: { firstOutputTokenAt: null },
   store: createNonResponsesSourceStore(apiKeyId),
 });
@@ -4493,7 +4492,6 @@ test('downstream AbortSignal threads through to provider search / fetchPage and 
     responseHeaders: new Headers(),
     backgroundScheduler: () => {},
     requestStartedAt: 0,
-
     perfTiming: { firstOutputTokenAt: null },
     store: createNonResponsesSourceStore('k1'),
     abortSignal: controller.signal,
