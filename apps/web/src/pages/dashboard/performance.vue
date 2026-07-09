@@ -10,6 +10,7 @@ import ChartCanvas from '../../components/charts/ChartCanvas.vue';
 import ChartSeriesControls from '../../components/charts/ChartSeriesControls.vue';
 import { chartColor, chartFont, chartXAxisTick, dashboardBuckets, dashboardRangeQuery, type DashboardRange } from '../../components/charts/dashboard-chart.ts';
 import { applySeriesSelection, chartEventsWithDoubleClick, chartSeriesIds, createSeriesIsolation, handleLegendClick } from '../../components/charts/series-selection.ts';
+import { useUpstreamsStore } from '../../composables/useUpstreams.ts';
 import { useAuthStore } from '../../stores/auth.ts';
 import { OverlayScrollbars, Spinner } from '@floway-dev/ui';
 
@@ -42,11 +43,18 @@ interface PerformanceOverviewResponse {
 export const usePerformancePageData = defineBasicLoader(async () => {
   const api = useApi();
   const auth = useAuthStore();
+  const upstreamsStore = useUpstreamsStore();
   const view: PerformanceView = auth.canViewGlobalTelemetry ? 'all-by-user' : 'self-by-key';
   const { start, end, bucket } = dashboardRangeQuery('today', Date.now());
-  const overviewRes = await callApi<PerformanceOverviewResponse>(() => api.api.performance.overview.$get({
-    query: { start, end, bucket, timezone_offset_minutes: String(new Date().getTimezoneOffset()), view },
-  }));
+  // Load upstream names in parallel with the perf overview so By-Upstream tables
+  // and chart legends can resolve upstream ids to human-readable names. Store is
+  // module-scoped, so this is a no-op when the user has already visited Settings.
+  const [overviewRes] = await Promise.all([
+    callApi<PerformanceOverviewResponse>(() => api.api.performance.overview.$get({
+      query: { start, end, bucket, timezone_offset_minutes: String(new Date().getTimezoneOffset()), view },
+    })),
+    upstreamsStore.upstreams.value ? Promise.resolve() : upstreamsStore.load().catch(() => {}),
+  ]);
   return {
     view,
     overview: overviewRes.data ?? { series: [], summaryRows: [], modelRows: [], upstreamRows: [], runtimeRows: [], operationRows: [] },
@@ -62,7 +70,20 @@ type PercentileKey = 'p50' | 'p95' | 'p99';
 
 const api = useApi();
 const auth = useAuthStore();
+const upstreamsStore = useUpstreamsStore();
 const initialOverview = usePerformancePageData();
+
+// Map upstream id → operator-facing name so By-Upstream tables and chart
+// legends render "Copilot GHE" rather than "up_690bc65c8872cd54b7431068".
+// Falls back to the raw id for upstreams the operator has since hard-deleted
+// but that still appear in historical performance rows.
+const upstreamNameById = computed<Map<string, string>>(() => {
+  const map = new Map<string, string>();
+  for (const u of upstreamsStore.upstreams.value ?? []) map.set(u.id, u.name);
+  return map;
+});
+const displayGroup = (group: string, groupByAtDisplay: GroupBy): string =>
+  groupByAtDisplay === 'upstream' ? (upstreamNameById.value.get(group) ?? group) : group;
 
 const performanceRange = ref<DashboardRange>('today');
 const loadedPerformanceRange = ref<DashboardRange>('today');
@@ -185,7 +206,7 @@ const chartConfig = computed<ChartConfiguration<'line'>>(() => {
         return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([group, byBucket], i) => {
           const color = chartColor(i);
           return {
-            label: group,
+            label: displayGroup(group, performanceGroupBy.value),
             seriesId: group,
             hidden: hiddenPerformanceSeries.value.has(group),
             data: bucketKeys.map(k => byBucket.get(k) ?? null),
@@ -475,7 +496,7 @@ const performanceSummary = computed(() => overview.value.summaryRows[0] ?? {
               </thead>
               <tbody class="divide-y divide-white/5">
                 <tr v-for="row in overview.upstreamRows" :key="row.group">
-                  <td class="px-3 py-2 text-gray-300">{{ row.group }}</td>
+                  <td class="px-3 py-2 text-gray-300">{{ displayGroup(row.group, 'upstream') }}</td>
                   <td class="px-3 py-2 text-right font-mono text-gray-400">{{ row.requests.toLocaleString() }}</td>
                   <td class="px-3 py-2 text-right font-mono text-white">{{ formatRowValue(getChartValue(row, performancePercentile)) }}</td>
                 </tr>
