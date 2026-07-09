@@ -17,7 +17,6 @@ import type {
   ModelAliasRecord,
   ModelsCacheRepo,
   PerformanceDimensions,
-  PerformanceErrorSample,
   PerformanceRepo,
   PerformanceTelemetryRecord,
   PerformanceSample,
@@ -398,13 +397,13 @@ class MemoryPerformanceRepo implements PerformanceRepo {
     this.incrementBucket(row, 'tpot_us', tpotBucket);
   }
 
-  async recordError(sample: PerformanceErrorSample): Promise<void> {
-    const row = this.upsertRow(sample);
+  async recordError(dims: PerformanceDimensions): Promise<void> {
+    const row = this.upsertRow(dims);
     row.requests += 1;
     row.errors += 1;
   }
 
-  async recordNeutral(dims: PerformanceErrorSample): Promise<void> {
+  async recordNeutral(dims: PerformanceDimensions): Promise<void> {
     const row = this.upsertRow(dims);
     row.requests += 1;
   }

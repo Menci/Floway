@@ -3,9 +3,9 @@ import { describe, expect, it } from 'vitest';
 import { InMemoryRepo } from './memory.ts';
 import { createSqliteTestDb } from './test-sqlite.ts';
 import type {
+  PerformanceDimensions,
   PerformanceRepo,
   PerformanceSample,
-  PerformanceErrorSample,
 } from './types.ts';
 
 const sample = (over: Partial<PerformanceSample> = {}): PerformanceSample => ({
@@ -21,7 +21,7 @@ const sample = (over: Partial<PerformanceSample> = {}): PerformanceSample => ({
   ...over,
 });
 
-const errSample = (over: Partial<PerformanceErrorSample> = {}): PerformanceErrorSample => ({
+const errSample = (over: Partial<PerformanceDimensions> = {}): PerformanceDimensions => ({
   hour: '2026-06-30T09',
   keyId: 'key_a',
   model: 'claude-opus-4-8',

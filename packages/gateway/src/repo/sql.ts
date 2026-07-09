@@ -12,7 +12,6 @@ import type {
   ModelsCacheRepo,
   PerformanceBucketRow,
   PerformanceDimensions,
-  PerformanceErrorSample,
   PerformanceMetric,
   PerformanceOperation,
   PerformanceRepo,
@@ -642,17 +641,17 @@ class SqlPerformanceRepo implements PerformanceRepo {
     await runStatements(this.db, [summaryStmt, this.buildBucketStmt(sample, 'ttft_ms', ttft), this.buildBucketStmt(sample, 'tpot_us', tpot)]);
   }
 
-  async recordError(sample: PerformanceErrorSample): Promise<void> {
+  async recordError(dims: PerformanceDimensions): Promise<void> {
     await this.db.prepare(
       `INSERT INTO performance_summary (hour, key_id, model, upstream, operation, runtime_location, requests, errors, samples, ttft_ms_sum, tpot_us_sum)
        VALUES (?, ?, ?, ?, ?, ?, 1, 1, 0, 0, 0)
        ON CONFLICT (hour, key_id, model, upstream, operation, runtime_location) DO UPDATE SET
          requests = requests + 1,
          errors = errors + 1`,
-    ).bind(...performanceDimensionBinds(sample)).run();
+    ).bind(...performanceDimensionBinds(dims)).run();
   }
 
-  async recordNeutral(dims: PerformanceErrorSample): Promise<void> {
+  async recordNeutral(dims: PerformanceDimensions): Promise<void> {
     await this.db.prepare(
       `INSERT INTO performance_summary (hour, key_id, model, upstream, operation, runtime_location, requests, errors, samples, ttft_ms_sum, tpot_us_sum)
        VALUES (?, ?, ?, ?, ?, ?, 1, 0, 0, 0, 0)

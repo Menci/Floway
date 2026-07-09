@@ -97,12 +97,10 @@ export interface PerformanceDimensions {
 }
 
 export interface PerformanceSample extends PerformanceDimensions {
-  ttftMs: number;            // 0 or positive
-  tpotUs: number;            // 0 or positive
+  ttftMs: number;
+  tpotUs: number;
   outputTokens: number;      // > 0 for a sample to count
 }
-
-export interface PerformanceErrorSample extends PerformanceDimensions {}
 
 export interface PerformanceBucketRow {
   metric: PerformanceMetric;
@@ -188,10 +186,10 @@ export interface PerformanceRepo {
   // Increments summary sums, samples, and requests; also increments one TTFT bucket and one TPOT bucket.
   recordSample(sample: PerformanceSample): Promise<void>;
   // Increments only summary requests and errors; does not touch sums, samples, or buckets.
-  recordError(sample: PerformanceErrorSample): Promise<void>;
+  recordError(dims: PerformanceDimensions): Promise<void>;
   // Increments only summary requests; does not touch errors, sums, samples, or buckets. Used for
   // non-chat operations (embeddings, images, audio, etc.) on successful requests.
-  recordNeutral(sample: PerformanceErrorSample): Promise<void>;
+  recordNeutral(dims: PerformanceDimensions): Promise<void>;
   query(opts: { keyId?: string; start: string; end: string }): Promise<PerformanceTelemetryRecord[]>;
   listAll(): Promise<PerformanceTelemetryRecord[]>;
   // Replacement upsert used by admin restore paths.
