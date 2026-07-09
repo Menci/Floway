@@ -31,7 +31,7 @@ const recordError = (dims: PerformanceDimensions): Promise<void> =>
 // still an error row — tpot requires both a first-token timestamp and a positive output-token count.
 export const recordRequestPerformance = (
   scheduler: BackgroundScheduler,
-  ctx: { perfTiming: { firstGeneratedTokenAt: number | null }; requestStartedAt: number },
+  ctx: { perfTiming: { firstGeneratedTokenAt: number | null; upstreamCallStartedAt: number | null }; requestStartedAt: number },
   telemetry: PerformanceTelemetryContext | undefined,
   failed: boolean,
   outputTokens: number,

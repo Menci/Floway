@@ -20,7 +20,13 @@ export interface GatewayCtx {
   // reasoning, or thinking). Null when no such frame has arrived yet — the
   // request either errored, was cancelled before any output, or hasn't
   // started streaming.
-  readonly perfTiming: { firstGeneratedTokenAt: number | null };
+  readonly perfTiming: {
+    firstGeneratedTokenAt: number | null;
+    // Stamped by the provider right before its outbound fetch to upstream.
+    // Reset on each retry attempt so TTFT reflects only the winning attempt's
+    // fetch round-trip, not accumulated retry overhead.
+    upstreamCallStartedAt: number | null;
+  };
   // The deployment colo / region, used both as the `runtimeLocation`
   // performance-telemetry dimension and as the dial-time colo whitelist key.
   // Request-scoped, so it is resolved once here rather than at the
@@ -94,7 +100,7 @@ export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCt
     downstreamAbortController: controller,
     backgroundScheduler: opts.backgroundScheduler,
     requestStartedAt: performance.now(),
-    perfTiming: { firstGeneratedTokenAt: null },
+    perfTiming: { firstGeneratedTokenAt: null, upstreamCallStartedAt: null },
     runtimeLocation: colo,
     currentColo: colo,
     dump,

@@ -103,6 +103,7 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
     opts: UpstreamCallOptions,
   ): Promise<ProviderCallResult> => {
     const rawModelId = rawModelIdOf(model);
+    opts.stampUpstreamCallStart();
     return transport(
       config,
       { method: 'POST', body: JSON.stringify({ ...body, model: rawModelId }), signal },
@@ -119,6 +120,7 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
     opts: UpstreamCallOptions,
   ) => {
     const rawModelId = rawModelIdOf(model);
+    opts.stampUpstreamCallStart();
     return streamingProviderCall(
       transport(
         config,
@@ -156,6 +158,7 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
       }
       case 'compact': {
         const rawModelId = rawModelIdOf(model);
+        opts.stampUpstreamCallStart();
         const response = await ollamaFetchResponsesCompact(
           config,
           { method: 'POST', body: JSON.stringify({ ...toCompactPayloadShape(body), model: rawModelId }), signal },

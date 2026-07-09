@@ -95,6 +95,10 @@ export interface UpstreamCallOptions {
   fetcher: Fetcher;
   waitUntil: (promise: Promise<unknown>) => void;
   headers: Headers;
+  // Provider MUST call this once, immediately before its outbound fetch to
+  // upstream. Multiple calls overwrite (last attempt wins), giving TTFT the
+  // pure round-trip of whichever attempt produced the first output frame.
+  stampUpstreamCallStart: () => void;
 }
 
 export interface ProviderInstance {

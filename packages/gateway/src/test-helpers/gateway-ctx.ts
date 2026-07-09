@@ -15,7 +15,7 @@ export const mockGatewayCtx = (overrides: Partial<GatewayCtx> = {}): GatewayCtx 
   dump: null,
   backgroundScheduler: promise => { void promise; },
   requestStartedAt: 0,
-  perfTiming: { firstGeneratedTokenAt: null },
+  perfTiming: { firstGeneratedTokenAt: null, upstreamCallStartedAt: null },
   responseHeaders: new Headers(),
   ...overrides,
 });

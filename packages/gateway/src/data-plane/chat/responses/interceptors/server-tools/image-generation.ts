@@ -635,6 +635,11 @@ const issueImageCall = async (
       fetcher,
       waitUntil: state.backgroundScheduler,
       headers: new Headers(),
+      // Image-generation sub-calls are orchestration steps within an ongoing
+      // responses stream. A stamp here would overwrite the upstream call start
+      // recorded for the primary inference fetch, so this is intentionally a
+      // no-op.
+      stampUpstreamCallStart: () => {},
     };
     const { response, modelKey } = await (isEdit
       ? provider.instance.callImagesEdits(model, buildEditsForm(prompt, state.config, sources, stream), state.downstreamAbortSignal, opts)

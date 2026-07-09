@@ -24,6 +24,7 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
     opts: UpstreamCallOptions,
   ) => {
     const upstreamModelId = upstreamModelIdOf(model);
+    opts.stampUpstreamCallStart();
     return streamingProviderCall(
       transport(
         azure.config,
@@ -38,6 +39,7 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
 
   const callNonStreaming = async (transport: AzureTypedFetch, model: ProviderModel, body: Record<string, unknown>, signal: AbortSignal | undefined, headers: Headers, opts: UpstreamCallOptions) => {
     const upstreamModelId = upstreamModelIdOf(model);
+    opts.stampUpstreamCallStart();
     const response = await transport(azure.config, { method: 'POST', body: JSON.stringify({ ...body, model: upstreamModelId }), signal }, { extraHeaders: headers, fetcher: opts.fetcher });
     return { response, modelKey: upstreamModelId };
   };
@@ -75,6 +77,7 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
       }
       case 'compact': {
         const upstreamModelId = upstreamModelIdOf(model);
+        opts.stampUpstreamCallStart();
         const response = await azureFetchResponsesCompact(
           azure.config,
           { method: 'POST', body: JSON.stringify({ ...toCompactPayloadShape(body), model: upstreamModelId }), signal },
@@ -99,6 +102,7 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
       // Content-Type itself.
       const upstreamModelId = upstreamModelIdOf(model);
       body.append('model', upstreamModelId);
+      opts.stampUpstreamCallStart();
       const response = await azureFetchImagesEdits(azure.config, { method: 'POST', body, signal }, { extraHeaders: opts.headers, fetcher: opts.fetcher });
       return { response, modelKey: upstreamModelId };
     },

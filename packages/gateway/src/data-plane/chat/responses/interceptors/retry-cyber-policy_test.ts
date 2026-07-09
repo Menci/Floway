@@ -43,7 +43,7 @@ const stubCtx = (overrides: { abortSignal?: AbortSignal } = {}): ChatGatewayCtx 
   responseHeaders: new Headers(),
   backgroundScheduler: () => {},
   requestStartedAt: 0,
-  perfTiming: { firstGeneratedTokenAt: null },
+  perfTiming: { firstGeneratedTokenAt: null, upstreamCallStartedAt: null },
   store: createNonResponsesSourceStore('test-key'),
   ...overrides,
 });

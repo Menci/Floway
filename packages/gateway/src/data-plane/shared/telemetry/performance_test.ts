@@ -27,7 +27,7 @@ describe('recordRequestPerformance', () => {
   });
 
   it('records a sample with ttft + tpot on a successful stream', async () => {
-    const ctx = { perfTiming: { firstGeneratedTokenAt: 100 }, requestStartedAt: 0 };
+    const ctx = { perfTiming: { firstGeneratedTokenAt: 100, upstreamCallStartedAt: null }, requestStartedAt: 0 };
     recordRequestPerformance(scheduler, ctx, telemetry, false, 200, 400);
     await Promise.all(promises);
     const [row] = await repo.performance.listAll();
@@ -37,7 +37,7 @@ describe('recordRequestPerformance', () => {
   });
 
   it('records an error when failed=true', async () => {
-    const ctx = { perfTiming: { firstGeneratedTokenAt: null }, requestStartedAt: 0 };
+    const ctx = { perfTiming: { firstGeneratedTokenAt: null, upstreamCallStartedAt: null }, requestStartedAt: 0 };
     recordRequestPerformance(scheduler, ctx, telemetry, true, 0, 400);
     await Promise.all(promises);
     const [row] = await repo.performance.listAll();
@@ -45,7 +45,7 @@ describe('recordRequestPerformance', () => {
   });
 
   it('records an error when success but firstGeneratedTokenAt never fired', async () => {
-    const ctx = { perfTiming: { firstGeneratedTokenAt: null }, requestStartedAt: 0 };
+    const ctx = { perfTiming: { firstGeneratedTokenAt: null, upstreamCallStartedAt: null }, requestStartedAt: 0 };
     recordRequestPerformance(scheduler, ctx, telemetry, false, 50, 400);
     await Promise.all(promises);
     const [row] = await repo.performance.listAll();
@@ -53,7 +53,7 @@ describe('recordRequestPerformance', () => {
   });
 
   it('records an error when outputTokens is 0', async () => {
-    const ctx = { perfTiming: { firstGeneratedTokenAt: 100 }, requestStartedAt: 0 };
+    const ctx = { perfTiming: { firstGeneratedTokenAt: 100, upstreamCallStartedAt: null }, requestStartedAt: 0 };
     recordRequestPerformance(scheduler, ctx, telemetry, false, 0, 400);
     await Promise.all(promises);
     const [row] = await repo.performance.listAll();
@@ -61,14 +61,14 @@ describe('recordRequestPerformance', () => {
   });
 
   it('is a no-op when telemetry is undefined', async () => {
-    const ctx = { perfTiming: { firstGeneratedTokenAt: 100 }, requestStartedAt: 0 };
+    const ctx = { perfTiming: { firstGeneratedTokenAt: 100, upstreamCallStartedAt: null }, requestStartedAt: 0 };
     recordRequestPerformance(scheduler, ctx, undefined, false, 200, 400);
     await Promise.all(promises);
     expect(await repo.performance.listAll()).toEqual([]);
   });
 
   it('records a neutral row for non-chat operation on success', async () => {
-    const ctx = { perfTiming: { firstGeneratedTokenAt: null }, requestStartedAt: 0 };
+    const ctx = { perfTiming: { firstGeneratedTokenAt: null, upstreamCallStartedAt: null }, requestStartedAt: 0 };
     recordRequestPerformance(scheduler, ctx, { ...telemetry, operation: 'embeddings' }, false, 0, 500);
     await Promise.all(promises);
     const [row] = await repo.performance.listAll();
@@ -76,7 +76,7 @@ describe('recordRequestPerformance', () => {
   });
 
   it('records an error row for non-chat operation on failure', async () => {
-    const ctx = { perfTiming: { firstGeneratedTokenAt: null }, requestStartedAt: 0 };
+    const ctx = { perfTiming: { firstGeneratedTokenAt: null, upstreamCallStartedAt: null }, requestStartedAt: 0 };
     recordRequestPerformance(scheduler, ctx, { ...telemetry, operation: 'embeddings' }, true, 0, 500);
     await Promise.all(promises);
     const [row] = await repo.performance.listAll();
@@ -84,7 +84,7 @@ describe('recordRequestPerformance', () => {
   });
 
   it('records a chat sample as before (regression guard)', async () => {
-    const ctx = { perfTiming: { firstGeneratedTokenAt: 100 }, requestStartedAt: 0 };
+    const ctx = { perfTiming: { firstGeneratedTokenAt: 100, upstreamCallStartedAt: null }, requestStartedAt: 0 };
     recordRequestPerformance(scheduler, ctx, { ...telemetry, operation: 'chat' }, false, 200, 400);
     await Promise.all(promises);
     const [row] = await repo.performance.listAll();

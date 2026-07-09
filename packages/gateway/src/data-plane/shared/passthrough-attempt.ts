@@ -48,6 +48,7 @@ export const passthroughAttempt = async (args: PassthroughAttemptArgs): Promise<
     fetcher: candidate.fetcher,
     waitUntil: ctx.backgroundScheduler,
     headers: inboundHeadersForUpstream(c),
+    stampUpstreamCallStart: () => { ctx.perfTiming.upstreamCallStartedAt = globalThis.performance.now(); },
   });
   // Telemetry keys on the upstream's bare catalog id (`model.id`); the
   // user-facing error body echoes the inbound `model` and is the serve

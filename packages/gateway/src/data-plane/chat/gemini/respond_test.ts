@@ -29,7 +29,7 @@ const ctx = (): ChatGatewayCtx => ({
   responseHeaders: new Headers(),
   backgroundScheduler: () => {},
   requestStartedAt: 0,
-  perfTiming: { firstGeneratedTokenAt: null },
+  perfTiming: { firstGeneratedTokenAt: null, upstreamCallStartedAt: null },
   store: createNonResponsesSourceStore('test-key'),
 });
 

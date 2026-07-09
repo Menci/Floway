@@ -194,6 +194,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
     headers: Headers,
     opts: UpstreamCallOptions,
   ): Promise<ProviderCallResult> => {
+    opts.stampUpstreamCallStart();
     const response = await transport(
       upstreamConfig,
       {
@@ -214,8 +215,9 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
     headers: Headers,
     parser: Parameters<typeof streamingProviderCall<TEvent>>[1],
     opts: UpstreamCallOptions,
-  ) =>
-    streamingProviderCall(
+  ) => {
+    opts.stampUpstreamCallStart();
+    return streamingProviderCall(
       transport(
         upstreamConfig,
         {
@@ -229,6 +231,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
       rawModel.id,
       signal,
     );
+  };
 
   // The boundary chain expects ExecuteResult shape so post-`run()` inspectors
   // (e.g. rewriteContextWindowError) can pattern-match on `result.type`. The
@@ -364,6 +367,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
           case 'compact': {
             const input: ResponsesInputItem[] = typeof wireBody.input === 'string' ? [{ type: 'message', role: 'user', content: wireBody.input }] : wireBody.input;
             const triggered = { ...wireBody, input: [...input, COMPACTION_TRIGGER], stream: false, model: rawModel.id };
+            opts.stampUpstreamCallStart();
             const response = await copilotFetchResponses(
               upstreamConfig,
               { method: 'POST', body: JSON.stringify(triggered), signal },
