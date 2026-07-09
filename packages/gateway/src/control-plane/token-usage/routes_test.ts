@@ -55,6 +55,7 @@ test('/api/token-usage self-by-key surfaces soft-deleted keys metadata to their 
     userId: apiKey.userId,
     name: 'Fresh',
     key: 'raw_fresh_key',
+    apiKeyFormat: 'openai',
     createdAt: '2026-04-30T11:00:00.000Z',
     upstreamIds: null,
     deletedAt: null,

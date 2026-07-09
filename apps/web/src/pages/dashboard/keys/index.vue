@@ -2,14 +2,14 @@
 import { defineBasicLoader } from 'unplugin-vue-router/data-loaders/basic';
 import { computed, ref } from 'vue';
 
-import { callApi, useApi } from '../../../api/client.ts';
+import { authFetch, callApi, useApi } from '../../../api/client.ts';
 import type { ApiKey } from '../../../api/types.ts';
 import CliSnippet from '../../../components/keys/CliSnippet.vue';
 import EditKeyDialog from '../../../components/keys/EditKeyDialog.vue';
 import KeysTable from '../../../components/keys/KeysTable.vue';
 import { useModelsStore } from '../../../composables/useModels.ts';
 import { useUpstreamOptionsStore } from '../../../composables/useUpstreamOptions.ts';
-import { Button, Input } from '@floway-dev/ui';
+import { Button, Dialog, Input } from '@floway-dev/ui';
 
 export const useKeysPageData = defineBasicLoader(async () => {
   const api = useApi();
@@ -35,10 +35,13 @@ const initialData = useKeysPageData();
 
 const keys = ref<ApiKey[]>(initialData.data.value.keys);
 const error = ref<string | null>(initialData.data.value.error);
-const newName = ref('');
-const creating = ref(false);
+const createOpen = ref(false);
 const editTarget = ref<ApiKey | undefined>();
 const editOpen = ref(false);
+const rotateTarget = ref<ApiKey | null>(null);
+const rotateCustomKey = ref('');
+const rotating = ref(false);
+const rotateError = ref<string | null>(null);
 const selectedKeyId = ref<string>('');
 const copied = ref<string | null>(null);
 const copyFailed = ref<string | null>(null);
@@ -57,27 +60,45 @@ const loadAll = async () => {
   keys.value = keysRes.data;
 };
 
-const create = async () => {
-  const trimmed = newName.value.trim();
-  if (!trimmed) return;
-  creating.value = true;
-  const { error: err } = await callApi(() => api.api.keys.$post({ json: { name: trimmed } }));
-  creating.value = false;
-  if (err) {
-    error.value = err.message;
+const rotate = async (key: ApiKey) => {
+  if (key.api_key_format === 'custom') {
+    rotateTarget.value = key;
+    rotateCustomKey.value = '';
+    rotateError.value = null;
     return;
   }
-  newName.value = '';
-  await loadAll();
-};
-
-const rotate = async (key: ApiKey) => {
   if (!window.confirm(`Rotate key "${key.name}"? The old key will stop working immediately.`)) return;
   const { error: err } = await callApi(() => api.api.keys[':id'].rotate.$post({ param: { id: key.id } }));
   if (err) {
     window.alert(`Rotate failed: ${err.message}`);
     return;
   }
+  await loadAll();
+};
+
+const rotateCustom = async () => {
+  const target = rotateTarget.value;
+  if (!target) return;
+  const customKey = rotateCustomKey.value.trim();
+  if (!customKey) {
+    rotateError.value = 'Custom API key is required.';
+    return;
+  }
+  rotating.value = true;
+  rotateError.value = null;
+  const { error: err } = await callApi(
+    () => authFetch(`/api/keys/${encodeURIComponent(target.id)}/rotate`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ custom_key: customKey }),
+    }),
+  );
+  rotating.value = false;
+  if (err) {
+    rotateError.value = err.message;
+    return;
+  }
+  rotateTarget.value = null;
   await loadAll();
 };
 
@@ -112,6 +133,12 @@ const selectedKey = computed(() => keys.value.find(k => k.id === selectedKeyId.v
 const configurationKey = computed(() => selectedKey.value?.key ?? keys.value[0]?.key ?? '<your-api-key>');
 const modelsForSnippets = computed(() => modelsStore.models.value ?? []);
 const upstreamOptions = computed(() => upstreamOptionsStore.options.value);
+const rotateOpen = computed({
+  get: () => rotateTarget.value !== null,
+  set: (value: boolean) => {
+    if (!value) rotateTarget.value = null;
+  },
+});
 </script>
 
 <template>
@@ -119,24 +146,7 @@ const upstreamOptions = computed(() => upstreamOptionsStore.options.value);
     <div class="glass-card p-5 sm:p-6 mb-6 animate-in">
       <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6">
         <span class="text-xs font-medium text-gray-500 uppercase tracking-widest">API Keys</span>
-        <div class="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
-          <Input
-            v-model="newName"
-            size="sm"
-            placeholder="Name"
-            class="!w-full sm:!w-32"
-            @keydown.enter="create"
-          />
-          <Button
-            :loading="creating"
-            :disabled="!newName.trim() || creating"
-            class="whitespace-nowrap"
-            @click="create"
-          >
-            <span v-if="!creating">+ Create</span>
-            <span v-else>Creating…</span>
-          </Button>
-        </div>
+        <Button class="whitespace-nowrap" @click="createOpen = true">+ Create API Key</Button>
       </div>
 
       <div v-if="error" class="mb-3 rounded-md border border-accent-rose/40 bg-accent-rose/10 px-3 py-2 text-sm text-accent-rose">
@@ -175,11 +185,36 @@ const upstreamOptions = computed(() => upstreamOptionsStore.options.value);
     </div>
 
     <EditKeyDialog
+      v-model:open="createOpen"
+      mode="create"
+      :upstreams="upstreamOptions"
+      @saved="loadAll"
+    />
+
+    <EditKeyDialog
       v-if="editTarget"
       v-model:open="editOpen"
+      mode="edit"
       :api-key="editTarget"
       :upstreams="upstreamOptions"
       @saved="loadAll"
     />
+
+    <Dialog v-model:open="rotateOpen" title="Rotate Custom API Key" size="md" :auto-focus-on-open="false">
+      <div class="space-y-4">
+        <p class="text-sm text-gray-400">
+          Enter the replacement key for {{ rotateTarget?.name }}. The old key stops working immediately after rotation.
+        </p>
+        <div class="space-y-2">
+          <label class="block text-xs font-medium text-gray-500">New API key</label>
+          <Input v-model="rotateCustomKey" placeholder="Paste custom API key" @keydown.enter="rotateCustom" />
+        </div>
+        <p v-if="rotateError" class="rounded-md border border-accent-rose/40 bg-accent-rose/10 px-3 py-2 text-xs text-accent-rose">{{ rotateError }}</p>
+        <footer class="flex items-center justify-end gap-2">
+          <Button variant="secondary" :disabled="rotating" @click="rotateTarget = null">Cancel</Button>
+          <Button :loading="rotating" @click="rotateCustom">Rotate key</Button>
+        </footer>
+      </div>
+    </Dialog>
   </div>
 </template>

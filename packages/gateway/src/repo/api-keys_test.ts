@@ -16,6 +16,7 @@ const baseKey = (overrides: Partial<ApiKey> = {}): ApiKey => ({
   userId: 1,
   name: 'Dump key',
   key: 'raw_dump_key',
+  apiKeyFormat: 'openai',
   createdAt: '2026-06-19T00:00:00.000Z',
   upstreamIds: null,
   deletedAt: null,
@@ -61,5 +62,14 @@ for (const [backend, makeRepo] of REPO_BACKENDS) {
 
     const byUser = await repo.apiKeys.listByUserId(1);
     assertEquals(byUser.find(k => k.id === 'key_dump')?.dumpRetentionSeconds, 86_400);
+  });
+
+  test(`[${backend}] api keys repo round-trips apiKeyFormat`, async () => {
+    const repo = await makeRepo();
+    await repo.apiKeys.save(baseKey({ apiKeyFormat: 'openai' }));
+    assertEquals((await repo.apiKeys.getById('key_dump'))?.apiKeyFormat, 'openai');
+
+    await repo.apiKeys.save(baseKey({ apiKeyFormat: 'custom' }));
+    assertEquals((await repo.apiKeys.findByRawKey('raw_dump_key'))?.apiKeyFormat, 'custom');
   });
 }

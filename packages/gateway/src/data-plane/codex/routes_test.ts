@@ -187,7 +187,7 @@ describe('codex 1p namespace', () => {
       const app = buildCodexApp();
 
       const response = await app.request('/azure-api.codex/wham/agent-identities/jwks', {
-        headers: { authorization: 'Bearer not-a-floway-key' },
+        headers: { authorization: 'Bearer not-an-api-key' },
       });
       expect(response.status).toBe(401);
     });

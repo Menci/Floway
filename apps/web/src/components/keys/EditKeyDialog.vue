@@ -13,7 +13,8 @@ import { Button, Dialog, Input, Select } from '@floway-dev/ui';
 const open = defineModel<boolean>('open');
 
 const props = defineProps<{
-  apiKey: ApiKey;
+  apiKey?: ApiKey;
+  mode?: 'create' | 'edit';
   upstreams: UpstreamOption[];
 }>();
 
@@ -21,6 +22,8 @@ const emit = defineEmits<{ saved: [] }>();
 
 const api = useApi();
 const auth = useAuthStore();
+const mode = computed(() => props.mode ?? (props.apiKey ? 'edit' : 'create'));
+const isCreate = computed(() => mode.value === 'create');
 
 const visibleUpstreams = computed<UpstreamOption[]>(() => {
   if (!auth.currentUser) throw new Error('EditKeyDialog rendered without an authenticated user');
@@ -31,6 +34,7 @@ const visibleUpstreams = computed<UpstreamOption[]>(() => {
 });
 
 type RetentionPreset = 'off' | '1h' | '6h' | '24h' | '7d' | 'custom';
+type ApiKeyFormat = ApiKey['api_key_format'];
 
 const retentionPresetSeconds: Record<Exclude<RetentionPreset, 'off' | 'custom'>, number> = {
   '1h': 3600,
@@ -46,6 +50,11 @@ const retentionOptions: { value: RetentionPreset; label: string }[] = [
   { value: '24h', label: '24 hours' },
   { value: '7d', label: '7 days' },
   { value: 'custom', label: 'Custom…' },
+];
+
+const formatOptions: { value: ApiKeyFormat; label: string; description: string }[] = [
+  { value: 'openai', label: 'OpenAI', description: 'sk-...T3BlbkFJ... compatible token shape.' },
+  { value: 'custom', label: 'Custom', description: 'Use a key you provide.' },
 ];
 
 const retentionPresetFromValue = (sec: number | null): { preset: RetentionPreset; custom: string } => {
@@ -66,18 +75,22 @@ const name = ref('');
 const upstreamSelection = ref<UpstreamPickerValue>({ override: false, ids: [] });
 const retentionPreset = ref<RetentionPreset>('off');
 const retentionCustom = ref('');
+const keyFormat = ref<ApiKeyFormat>('openai');
+const customKey = ref('');
 const saving = ref(false);
 const error = ref<string | null>(null);
 
 const reset = () => {
-  name.value = props.apiKey.name;
+  name.value = props.apiKey?.name ?? '';
   upstreamSelection.value = {
-    override: props.apiKey.upstream_ids !== null,
-    ids: props.apiKey.upstream_ids ?? [],
+    override: props.apiKey?.upstream_ids !== null && props.apiKey?.upstream_ids !== undefined,
+    ids: props.apiKey?.upstream_ids ?? [],
   };
-  const { preset, custom } = retentionPresetFromValue(props.apiKey.dump_retention_seconds);
+  const { preset, custom } = retentionPresetFromValue(props.apiKey?.dump_retention_seconds ?? null);
   retentionPreset.value = preset;
   retentionCustom.value = custom;
+  keyFormat.value = props.apiKey?.api_key_format ?? 'openai';
+  customKey.value = '';
   error.value = null;
 };
 
@@ -97,7 +110,7 @@ const retentionEnabled = computed(() => {
 });
 
 const retentionWarning = computed<string | null>(() => {
-  const previous = props.apiKey.dump_retention_seconds;
+  const previous = props.apiKey?.dump_retention_seconds ?? null;
   if (previous === null) return null;
   const next = proposedRetentionSeconds.value;
   if (next === 'invalid') return null;
@@ -121,17 +134,30 @@ const save = async () => {
     error.value = 'Retention must be an integer number of seconds, or a value like 30m / 2h / 3d.';
     return;
   }
+  const custom = customKey.value.trim();
+  if (isCreate.value && keyFormat.value === 'custom' && !custom) {
+    error.value = 'Custom API key is required.';
+    return;
+  }
 
   saving.value = true;
   error.value = null;
-  const body = {
+  const commonBody = {
     name: trimmed,
     upstream_ids: upstreamSelection.value.override ? upstreamSelection.value.ids : null,
     dump_retention_seconds: proposedRetention,
   };
-  const { error: err } = await callApi(
-    () => api.api.keys[':id'].$patch({ param: { id: props.apiKey.id }, json: body }),
-  );
+  const { error: err } = isCreate.value
+    ? await callApi(() => api.api.keys.$post({
+        json: {
+          ...commonBody,
+          key_format: keyFormat.value,
+          ...(keyFormat.value === 'custom' ? { custom_key: custom } : {}),
+        },
+      }))
+    : await callApi(
+        () => api.api.keys[':id'].$patch({ param: { id: props.apiKey!.id }, json: commonBody }),
+      );
   saving.value = false;
   if (err) {
     error.value = err.message;
@@ -143,7 +169,7 @@ const save = async () => {
 </script>
 
 <template>
-  <Dialog v-model:open="open" title="Edit API Key" size="lg" :auto-focus-on-open="false">
+  <Dialog v-model:open="open" :title="isCreate ? 'Create API Key' : 'Edit API Key'" size="lg" :auto-focus-on-open="false">
     <div class="space-y-5">
       <div class="space-y-2">
         <label class="block text-xs font-medium text-gray-500">Name</label>
@@ -156,6 +182,20 @@ const save = async () => {
         title="Override Available Upstreams"
         inherit-description="When off, this key inherits the global upstream order."
       />
+
+      <div v-if="isCreate" class="space-y-2">
+        <label class="block text-xs font-medium text-gray-500">API key format</label>
+        <Select v-model="keyFormat" :options="formatOptions">
+          <template #description="{ option }">
+            <span class="text-xs text-gray-500">{{ option.description }}</span>
+          </template>
+        </Select>
+        <Input
+          v-if="keyFormat === 'custom'"
+          v-model="customKey"
+          placeholder="Paste custom API key"
+        />
+      </div>
 
       <div class="space-y-2">
         <label class="block text-xs font-medium text-gray-500">Request dump retention</label>
@@ -173,7 +213,7 @@ const save = async () => {
           {{ retentionWarning }}
         </p>
         <p v-if="retentionEnabled" class="text-xs text-gray-500">
-          <RouterLink :to="`/dashboard/requests/${apiKey.id}`" class="text-accent-cyan hover:underline">
+          <RouterLink v-if="apiKey" :to="`/dashboard/requests/${apiKey.id}`" class="text-accent-cyan hover:underline">
             View captured requests →
           </RouterLink>
         </p>
@@ -184,7 +224,7 @@ const save = async () => {
       <footer class="flex items-center justify-end gap-2">
         <Button variant="secondary" :disabled="saving" @click="open = false">Cancel</Button>
         <Button :loading="saving" @click="save">
-          Save changes
+          {{ isCreate ? 'Create key' : 'Save changes' }}
         </Button>
       </footer>
     </div>

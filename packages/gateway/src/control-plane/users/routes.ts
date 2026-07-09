@@ -53,6 +53,7 @@ export const createUser = async (c: CtxWithJson<typeof createUserBody>) => {
     userId: user.id,
     name: 'Default',
     key: generateApiKeyToken(),
+    apiKeyFormat: 'openai',
     createdAt: new Date().toISOString(),
     upstreamIds: null,
     deletedAt: null,

@@ -130,6 +130,7 @@ export async function setupAppTest(options: SetupOptions = {}): Promise<AppTestC
     userId: 2,
     name: 'Primary key',
     key: `raw_${crypto.randomUUID().replace(/-/g, '')}`,
+    apiKeyFormat: 'openai',
     createdAt: '2026-03-15T00:00:00.000Z',
     upstreamIds: null,
     deletedAt: null,
