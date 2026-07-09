@@ -53,7 +53,14 @@ export const usePerformancePageData = defineBasicLoader(async () => {
     callApi<PerformanceOverviewResponse>(() => api.api.performance.overview.$get({
       query: { start, end, bucket, timezone_offset_minutes: String(new Date().getTimezoneOffset()), view },
     })),
-    upstreamsStore.upstreams.value ? Promise.resolve() : upstreamsStore.load().catch(() => {}),
+    upstreamsStore.upstreams.value
+      ? Promise.resolve()
+      : upstreamsStore.load().catch(err => {
+          // Surface but don't fail the dashboard load — the By-Upstream table
+          // falls back to raw ids. Operator sees the console warning if the
+          // name-resolution API failed vs. an upstream genuinely being hard-deleted.
+          console.warn('Failed to load upstreams for name resolution:', err);
+        }),
   ]);
   return {
     view,

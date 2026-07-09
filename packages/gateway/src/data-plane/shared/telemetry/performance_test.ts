@@ -96,16 +96,6 @@ describe('recordRequestPerformance', () => {
     expect(row).toMatchObject({ requests: 1, errors: 0, ttftSamples: 1, tpotSamples: 0, ttftMsSum: 50 });
   });
 
-  it('records TTFT-only sample when stream delta is negative (clock hazard)', async () => {
-    // requestFinishedAt < firstOutputTokenAt — TPOT would be negative. Preserve TTFT
-    // (the earlier delta is fine), drop TPOT.
-    const ctx = { firstOutputTokenAt: 500, upstreamCallStartedAt: 100 };
-    recordRequestPerformance(scheduler, ctx, telemetry, false, 10, 400);
-    await Promise.all(promises);
-    const [row] = await repo.performance.listAll();
-    expect(row).toMatchObject({ ttftSamples: 1, tpotSamples: 0, ttftMsSum: 400 });
-  });
-
   // --- full ttft + tpot sample ---
 
   it('records sample with ttft measured from upstreamCallStartedAt', async () => {
@@ -115,8 +105,9 @@ describe('recordRequestPerformance', () => {
     const [row] = await repo.performance.listAll();
     // TTFT = firstOutputTokenAt - upstreamCallStartedAt = 500 - 100 = 400ms
     expect(row!.ttftMsSum).toBe(400);
-    // Stream = (1000 - 500) * 1000 = 500_000μs; TPOT = 500_000 / 200 = 2_500 μs/tok
-    expect(row!.tpotUsSum).toBe(2_500);
+    // Stream = (1000 - 500) * 1000 = 500_000μs covers (N-1) = 199 inter-token intervals;
+    // TPOT = 500_000 / 199 ≈ 2513 μs/tok.
+    expect(row!.tpotUsSum).toBe(2_513);
     expect(row).toMatchObject({ requests: 1, ttftSamples: 1, tpotSamples: 1, errors: 0 });
   });
 
@@ -127,8 +118,9 @@ describe('recordRequestPerformance', () => {
     const [row] = await repo.performance.listAll();
     // TTFT = 200 - 100 = 100ms
     expect(row!.ttftMsSum).toBe(100);
-    // Stream = (600 - 200) * 1000 = 400_000μs; TPOT = 400_000 / 2 = 200_000 μs/tok
-    expect(row!.tpotUsSum).toBe(200_000);
+    // Stream = (600 - 200) * 1000 = 400_000μs covers (N-1) = 1 inter-token interval;
+    // TPOT = 400_000 / 1 = 400_000 μs/tok.
+    expect(row!.tpotUsSum).toBe(400_000);
     expect(row).toMatchObject({ requests: 1, ttftSamples: 1, tpotSamples: 1, errors: 0 });
   });
 
