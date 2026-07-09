@@ -70,6 +70,26 @@ export const recordPerformance = (
   );
 };
 
+// Terminal recording for a streaming chat response: usage first (whose
+// failure is logged but non-fatal so perf still records), then perf. Every
+// protocol's stream-branch finally block was inlining the same
+// try/catch/finally around these two calls — extract once here.
+export const settleUsageAndPerformance = async (
+  ctx: GatewayCtx,
+  metadata: EventResultMetadata,
+  usage: TokenUsage | null,
+  failed: boolean,
+  protocolLabel: string,
+): Promise<void> => {
+  try {
+    await recordUsage(ctx, metadata.modelIdentity, usage);
+  } catch (error) {
+    console.error(`Failed to record ${protocolLabel} usage:`, error);
+  } finally {
+    recordPerformance(ctx, metadata.performance, failed, usage?.output ?? 0);
+  }
+};
+
 // Upstream response headers we propagate verbatim to the downstream client.
 // A blocklist (not an allowlist): operators want to see what the upstream
 // actually sent — vendor traces (`request-id`, `cf-ray`), plan-billing state

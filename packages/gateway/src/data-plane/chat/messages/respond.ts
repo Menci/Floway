@@ -3,7 +3,7 @@ import { streamSSE } from 'hono/streaming';
 
 import { billableServiceTier, tokenUsage } from '../../shared/telemetry/usage.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
-import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse, recordPerformance, recordUsage } from '../shared/respond.ts';
+import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse, recordPerformance, recordUsage, settleUsageAndPerformance } from '../shared/respond.ts';
 import { type StreamCompletion, writeSSEFrames } from '../shared/stream/sse.ts';
 import { type ProtocolFrame, sseFrame } from '@floway-dev/protocols/common';
 import { messagesProtocolFrameToSSEFrame, MESSAGES_MISSING_TERMINAL_MESSAGE, collectMessagesProtocolEventsToResult } from '@floway-dev/protocols/messages';
@@ -79,13 +79,7 @@ export const respondMessages = async (
       } else {
         ctx.dump?.success(metadata.modelIdentity, state.usage);
       }
-      try {
-        await recordUsage(ctx, metadata.modelIdentity, state.usage);
-      } catch (error) {
-        console.error('Failed to record Messages usage:', error);
-      } finally {
-        recordPerformance(ctx, metadata.performance, failed, state.usage?.output ?? 0);
-      }
+      await settleUsageAndPerformance(ctx, metadata, state.usage, failed, 'Messages');
     }
   });
 

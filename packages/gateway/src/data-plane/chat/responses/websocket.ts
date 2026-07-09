@@ -8,7 +8,7 @@ import type { AuthedContext } from '../../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
 import { createChatGatewayCtxFromHono, type ChatGatewayCtx, type GatewayCtx } from '../shared/gateway-ctx.ts';
-import { SourceStreamState, eventResultMetadata, recordPerformance, recordUsage } from '../shared/respond.ts';
+import { SourceStreamState, eventResultMetadata, recordPerformance, settleUsageAndPerformance } from '../shared/respond.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS, type StreamCompletion } from '../shared/stream/sse.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -103,7 +103,7 @@ const createResponsesWebSocketEvents = (c: AuthedContext): ResponsesWebSocketHan
   // upgrade, subsequent waitUntil calls made from message-event handlers
   // are silently dropped (the promise never runs, the isolate has no
   // registered reason to defer eviction for it). Every per-message background
-  // task — dump.finalize, recordPerformance, recordUsage — would therefore
+  // task — dump.finalize, recordPerformance, settleUsageAndPerformance — would therefore
   // lose its write.
   //
   // Fix: give the ctx a scheduler that doesn't depend on the fetch's
@@ -414,13 +414,7 @@ const respondResponsesWebSocket = async (input: {
     if (failed) ctx.dump?.failed(`responses ws turn failed (completion=${completion}, source-failed=${state.failed})`);
     else ctx.dump?.success(metadata.modelIdentity, state.usage);
     ctx.dump?.finalize(failed ? 500 : 200, []);
-    try {
-      await recordUsage(ctx, metadata.modelIdentity, state.usage);
-    } catch (error) {
-      console.error('Failed to record Responses WebSocket usage:', error);
-    } finally {
-      recordPerformance(ctx, metadata.performance, failed, state.usage?.output ?? 0);
-    }
+    await settleUsageAndPerformance(ctx, metadata, state.usage, failed, 'Responses WebSocket');
   }
 };
 
