@@ -1,4 +1,5 @@
 import type { GatewayCtx } from './gateway-ctx.ts';
+import { stampUpstreamCallStart } from './gateway-ctx.ts';
 import { upstreamPerformanceContext, withUpstreamTelemetry } from './upstream-telemetry.ts';
 import type { ModelEndpoints, ProtocolFrame } from '@floway-dev/protocols/common';
 import { eventResult, readUpstreamApiError, type ChatTargetApi, type ExecuteResult, type ModelCandidate, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamCallOptions } from '@floway-dev/provider';
@@ -69,10 +70,7 @@ export const buildUpstreamCallOptions = (
   fetcher: candidate.fetcher,
   waitUntil: ctx.backgroundScheduler,
   headers,
-  wrapUpstreamCall: <T>(promise: Promise<T>): Promise<T> => {
-    ctx.perfTiming.upstreamCallStartedAt = performance.now();
-    return promise;
-  },
+  wrapUpstreamCall: stampUpstreamCallStart(ctx.perfTiming),
 });
 
 // Attaches the performance telemetry context every layer above reads.

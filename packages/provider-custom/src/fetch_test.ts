@@ -11,7 +11,7 @@ import {
   customFetchResponsesCompact,
 } from './fetch.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
-import { directFetcher } from '@floway-dev/provider';
+import { directFetcher , identityWrapUpstreamCall} from '@floway-dev/provider';
 import { assertEquals, withMockedFetch } from '@floway-dev/test-utils';
 
 const baseRecord: UpstreamRecord = {
@@ -45,13 +45,13 @@ test('typed transports use default /v1/* paths', async () => {
       return new Response('{}', { status: 200 });
     },
     async () => {
-      await customFetchChatCompletions(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p });
-      await customFetchResponses(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p });
-      await customFetchResponsesCompact(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p });
-      await customFetchMessages(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p });
-      await customFetchMessagesCountTokens(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p });
-      await customFetchEmbeddings(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p });
-      await customFetchModels(config, { method: 'GET' }, { fetcher: directFetcher, wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p });
+      await customFetchChatCompletions(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await customFetchResponses(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await customFetchResponsesCompact(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await customFetchMessages(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await customFetchMessagesCountTokens(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await customFetchEmbeddings(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await customFetchModels(config, { method: 'GET' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
     },
   );
 
@@ -84,12 +84,12 @@ test('admin pathOverrides replace defaults and propagate to derived sub-paths', 
       return new Response('{}', { status: 200 });
     },
     async () => {
-      await customFetchMessages(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p });
+      await customFetchMessages(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
       // count_tokens / compact follow their parent override.
-      await customFetchMessagesCountTokens(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p });
-      await customFetchResponsesCompact(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p });
+      await customFetchMessagesCountTokens(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await customFetchResponsesCompact(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
       // Endpoints without an override fall back to the OpenAI default.
-      await customFetchChatCompletions(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p });
+      await customFetchChatCompletions(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
     },
   );
 
@@ -116,7 +116,7 @@ test('customFetchModels resolves the path from modelsFetch.endpoint', async () =
       return new Response('{}', { status: 200 });
     },
     async () => {
-      await customFetchModels(config, { method: 'GET' }, { fetcher: directFetcher, wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p });
+      await customFetchModels(config, { method: 'GET' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
     },
   );
 
@@ -138,7 +138,7 @@ test('customFetchModels falls back to the default /v1/models path when modelsFet
       return new Response('{}', { status: 200 });
     },
     async () => {
-      await customFetchModels(config, { method: 'GET' }, { fetcher: directFetcher, wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p });
+      await customFetchModels(config, { method: 'GET' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
     },
   );
 
@@ -156,7 +156,7 @@ test('bearer authStyle sends the configured token via Authorization', async () =
       return new Response('{}', { status: 200 });
     },
     async () => {
-      await customFetchModels(config, { method: 'GET' }, { fetcher: directFetcher, wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p });
+      await customFetchModels(config, { method: 'GET' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
     },
   );
 
@@ -183,7 +183,7 @@ test('authStyle "anthropic" sends x-api-key + anthropic-version', async () => {
       return new Response('{}', { status: 200 });
     },
     async () => {
-      await customFetchMessages(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p });
+      await customFetchMessages(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
     },
   );
 
@@ -210,7 +210,7 @@ test('authStyle "anthropic" preserves a caller-supplied anthropic-version', asyn
       await customFetchMessages(
         config,
         { method: 'POST', body: '{}', headers: { 'anthropic-version': '2024-01-01' } },
-        { fetcher: directFetcher, wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p },
+        { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall },
       );
     },
   );
@@ -238,7 +238,7 @@ test('authStyle "none" sends neither Authorization nor x-api-key', async () => {
       return new Response('{}', { status: 200 });
     },
     async () => {
-      await customFetchChatCompletions(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p });
+      await customFetchChatCompletions(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
     },
   );
 

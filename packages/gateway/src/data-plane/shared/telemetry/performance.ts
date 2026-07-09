@@ -1,6 +1,7 @@
 import { currentHour } from './hour.ts';
 import { getRepo } from '../../../repo/index.ts';
 import type { PerformanceDimensions } from '../../../repo/types.ts';
+import type { PerfTiming } from '../../chat/shared/gateway-ctx.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { PerformanceTelemetryContext } from '@floway-dev/provider';
 
@@ -35,7 +36,7 @@ const recordError = (dims: PerformanceDimensions): Promise<void> =>
 // as neutral; only genuine upstream failures land in the error bucket.
 export const recordRequestPerformance = (
   scheduler: BackgroundScheduler,
-  perfTiming: { upstreamCallStartedAt: number | null; firstOutputTokenAt: number | null },
+  perfTiming: PerfTiming,
   telemetry: PerformanceTelemetryContext | undefined,
   failed: boolean,
   outputTokens: number,

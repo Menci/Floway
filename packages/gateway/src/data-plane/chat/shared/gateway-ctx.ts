@@ -5,6 +5,29 @@ import { getCurrentColo } from '../../../runtime/runtime-info.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 
+// Per-request TTFT/TPOT clock slots. Written by two collaborators:
+//   - `upstreamCallStartedAt` — stamped inside wrapUpstreamCall the moment
+//     the provider hands its outbound-fetch promise off.
+//   - `firstOutputTokenAt` — stamped by upstream-telemetry.ts on the first
+//     stream frame carrying a model-generated token.
+// Both are reset to null at the start of every iterateCandidates attempt so
+// a candidate that never wraps its fetch cannot inherit the prior attempt's
+// stamps. Read by recordRequestPerformance in the respond-layer finally.
+export interface PerfTiming {
+  upstreamCallStartedAt: number | null;
+  firstOutputTokenAt: number | null;
+}
+
+// Factory for the stamp closure providers plug into wrapUpstreamCall.
+// Kept as a shared helper so the two data-plane composition roots
+// (chat attempt-helpers and passthrough-attempt) don't re-inline the
+// same three-line closure.
+export const stampUpstreamCallStart = (perfTiming: PerfTiming) =>
+  <T>(promise: Promise<T>): Promise<T> => {
+    perfTiming.upstreamCallStartedAt = performance.now();
+    return promise;
+  };
+
 export interface GatewayCtx {
   readonly apiKeyId: string;
   readonly upstreamIds: readonly string[] | null;
@@ -12,17 +35,7 @@ export interface GatewayCtx {
   readonly wantsStream: boolean;
   readonly downstreamAbortController?: AbortController;
   readonly backgroundScheduler: BackgroundScheduler;
-  readonly perfTiming: {
-    // Stamped by the provider right before its outbound fetch to upstream.
-    // Reset per candidate so TTFT reflects only the winning attempt's
-    // fetch round-trip, not accumulated retry overhead.
-    upstreamCallStartedAt: number | null;
-    // Stamped by the upstream stream wrapper on the first frame that carries
-    // any model-generated token (text, tool-call arguments, refusal, reasoning,
-    // or thinking). Null when no such frame has arrived — the request either
-    // errored, was cancelled before any output, or hasn't started streaming.
-    firstOutputTokenAt: number | null;
-  };
+  readonly perfTiming: PerfTiming;
   // The deployment colo / region, used both as the `runtimeLocation`
   // performance-telemetry dimension and as the dial-time colo whitelist key.
   // Request-scoped, so it is resolved once here rather than at the

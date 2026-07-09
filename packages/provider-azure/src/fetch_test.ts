@@ -11,7 +11,7 @@ import {
   azureFetchResponsesCompact,
 } from './fetch.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
-import { directFetcher } from '@floway-dev/provider';
+import { directFetcher , identityWrapUpstreamCall} from '@floway-dev/provider';
 import { assertEquals, withMockedFetch } from '@floway-dev/test-utils';
 
 const baseRecord: UpstreamRecord = {
@@ -54,10 +54,10 @@ test('OpenAI v1 transports apply api-key auth and the canonical paths', async ()
       return new Response('{}', { status: 200 });
     },
     async () => {
-      await azureFetchChatCompletions(config, { method: 'POST', body: JSON.stringify({ model: 'set-by-provider' }) }, { fetcher: directFetcher, wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p });
-      await azureFetchResponses(config, { method: 'POST', body: JSON.stringify({ model: 'set-by-provider' }) }, { fetcher: directFetcher, wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p });
-      await azureFetchResponsesCompact(config, { method: 'POST', body: JSON.stringify({ model: 'set-by-provider' }) }, { fetcher: directFetcher, wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p });
-      await azureFetchEmbeddings(config, { method: 'POST', body: JSON.stringify({ model: 'set-by-provider' }) }, { fetcher: directFetcher, wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p });
+      await azureFetchChatCompletions(config, { method: 'POST', body: JSON.stringify({ model: 'set-by-provider' }) }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await azureFetchResponses(config, { method: 'POST', body: JSON.stringify({ model: 'set-by-provider' }) }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await azureFetchResponsesCompact(config, { method: 'POST', body: JSON.stringify({ model: 'set-by-provider' }) }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await azureFetchEmbeddings(config, { method: 'POST', body: JSON.stringify({ model: 'set-by-provider' }) }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
     },
   );
 
@@ -91,7 +91,7 @@ test('image transports append the Azure preview api-version', async () => {
       return new Response('{}', { status: 200 });
     },
     async () => {
-      await azureFetchImagesGenerations(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p });
+      await azureFetchImagesGenerations(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
     },
   );
 
@@ -114,7 +114,7 @@ test('endpoint that already includes /openai/v1 routes through unchanged', async
       return new Response('{}', { status: 200 });
     },
     async () => {
-      await azureFetchResponses(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p });
+      await azureFetchResponses(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
     },
   );
 
@@ -143,7 +143,7 @@ test('Foundry project endpoints route OpenAI v1 calls under the project base', a
       return new Response('{}', { status: 200 });
     },
     async () => {
-      await azureFetchResponses(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p });
+      await azureFetchResponses(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
     },
   );
 
@@ -172,8 +172,8 @@ test('Foundry project endpoints split OpenAI v1 vs Anthropic surfaces', async ()
       return new Response('{}', { status: 200 });
     },
     async () => {
-      await azureFetchResponses(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p });
-      await azureFetchMessages(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p });
+      await azureFetchResponses(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await azureFetchMessages(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
     },
   );
 
@@ -205,7 +205,7 @@ test('native Anthropic calls land on the resource Anthropic base when a project 
       return new Response('{}', { status: 200 });
     },
     async () => {
-      await azureFetchMessages(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p });
+      await azureFetchMessages(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
     },
   );
 
@@ -240,8 +240,8 @@ test('Azure Foundry Anthropic surface uses x-api-key + anthropic-version', async
       return new Response('{}', { status: 200 });
     },
     async () => {
-      await azureFetchMessages(config, { method: 'POST', body: '{}' }, { extraHeaders: new Headers({ 'anthropic-beta': 'context-1m' }), fetcher: directFetcher, wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p });
-      await azureFetchMessagesCountTokens(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p });
+      await azureFetchMessages(config, { method: 'POST', body: '{}' }, { extraHeaders: new Headers({ 'anthropic-beta': 'context-1m' }), fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
+      await azureFetchMessagesCountTokens(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
     },
   );
 
@@ -285,7 +285,7 @@ test('Foundry Anthropic messages target URI is accepted and splits per surface',
       return new Response('{}', { status: 200 });
     },
     async () => {
-      await azureFetchMessages(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p });
+      await azureFetchMessages(config, { method: 'POST', body: '{}' }, { fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall });
     },
   );
 

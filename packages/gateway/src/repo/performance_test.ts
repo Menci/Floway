@@ -132,20 +132,13 @@ for (const impl of impls) {
       expect(overflow).toEqual({ metric: 'ttft_ms', lower: 300_000, upper: null, count: 1 });
     });
 
-    it('single-token sample records TTFT only — no TPOT bucket, no tpotSamples increment', async () => {
+    it('TTFT-only sample (no tpotUs) records TTFT bucket without touching TPOT columns', async () => {
       const repo = await impl.open();
-      await repo.recordSample({ ...sample(), tpotUs: undefined, outputTokens: 1 });
+      const { tpotUs: _tpot, outputTokens: _out, ...ttftOnly } = sample();
+      await repo.recordSample(ttftOnly);
       const [row] = await repo.listAll();
       expect(row).toMatchObject({ requests: 1, ttftSamples: 1, tpotSamples: 0, ttftMsSum: 340, tpotUsSum: 0 });
       expect(row!.buckets.some(b => b.metric === 'ttft_ms')).toBe(true);
-      expect(row!.buckets.some(b => b.metric === 'tpot_us')).toBe(false);
-    });
-
-    it('sample without tpotUs (any outputTokens) records TTFT only', async () => {
-      const repo = await impl.open();
-      await repo.recordSample({ ...sample(), tpotUs: undefined, outputTokens: undefined });
-      const [row] = await repo.listAll();
-      expect(row).toMatchObject({ requests: 1, ttftSamples: 1, tpotSamples: 0 });
       expect(row!.buckets.some(b => b.metric === 'tpot_us')).toBe(false);
     });
 

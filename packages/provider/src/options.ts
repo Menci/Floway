@@ -11,9 +11,12 @@ export const directFetcher: Fetcher = (url, init) => fetch(url, init);
 export interface UpstreamFetchOptions {
   extraHeaders?: Headers;
   fetcher: Fetcher;
-  /** Per-provider fetch helper wraps its `fetcher(...)` promise with this to
-   *  anchor TTFT to the actual outbound dispatch. Mirrors UpstreamCallOptions'
-   *  contract — stamps `perfTiming.upstreamCallStartedAt` on invocation and
-   *  returns the promise. */
+  /** See UpstreamCallOptions.wrapUpstreamCall — same contract. */
   wrapUpstreamCall: <T>(promise: Promise<T>) => Promise<T>;
 }
+
+// Identity wrapper for callers that don't participate in per-request TTFT
+// timing — model-listing helpers and interceptor sub-calls that dispatch
+// outside the primary data-plane fetch. Reusable so the identity closure
+// is not re-inlined at every non-participating call site.
+export const identityWrapUpstreamCall = <T>(promise: Promise<T>): Promise<T> => promise;

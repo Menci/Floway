@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { createOllamaProvider } from './provider.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
-import { directFetcher } from '@floway-dev/provider';
+import { directFetcher , identityWrapUpstreamCall} from '@floway-dev/provider';
 import { assertEquals, jsonResponse, noopUpstreamCallOptions, withMockedFetch } from '@floway-dev/test-utils';
 
 const buildRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => ({
@@ -158,7 +158,7 @@ test('call* methods POST to /v1/<endpoint> with the upstream model id and Bearer
         providerModel,
         { messages: [{ role: 'user', content: 'hi' }] },
         undefined,
-        noopUpstreamCallOptions({ fetcher: directFetcher, wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p }),
+        noopUpstreamCallOptions({ fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall }),
       );
       assertEquals(result.modelKey, 'gpt-oss:120b');
     },

@@ -16,7 +16,7 @@ import type {
   ResponsesOutputImageGenerationCall,
   ResponsesTool,
 } from '@floway-dev/protocols/responses';
-import { providerModelOf, type Fetcher, type Provider, type ModelCandidate, type ProviderModel } from '@floway-dev/provider';
+import { providerModelOf, type Fetcher, type Provider, type ModelCandidate, type ProviderModel , identityWrapUpstreamCall} from '@floway-dev/provider';
 
 export const SHIM_TOOL_NAME = 'image_generation';
 
@@ -639,7 +639,7 @@ const issueImageCall = async (
       // responses stream. A stamp here would overwrite the upstream call start
       // recorded for the primary inference fetch, so this is intentionally a
       // no-op.
-      wrapUpstreamCall: <T>(p: Promise<T>): Promise<T> => p,
+      wrapUpstreamCall: identityWrapUpstreamCall,
     };
     const { response, modelKey } = await (isEdit
       ? provider.instance.callImagesEdits(model, buildEditsForm(prompt, state.config, sources, stream), state.downstreamAbortSignal, opts)

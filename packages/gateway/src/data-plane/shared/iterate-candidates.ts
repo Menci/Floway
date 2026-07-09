@@ -1,3 +1,4 @@
+import type { PerfTiming } from '../chat/shared/gateway-ctx.ts';
 import type { ModelCandidate } from '@floway-dev/provider';
 
 // A serve-layer attempt result counts as success when:
@@ -44,17 +45,13 @@ const isAttemptSuccess = (result: IterableAttemptResult): boolean => {
 // caller's own protocol-shaped "no viable candidate" envelope at the
 // serve site.
 //
-// `perfTiming` is the per-request TTFT/TPOT slot pair from `GatewayCtx`
-// (or from a passthrough serve's shared plain context). Both fields are
-// reset to null at the start of every candidate attempt so the next
-// candidate cannot inherit a stale stamp from a failed prior attempt —
-// stamping is a pull operation (the provider wraps its fetch promise), and
-// a candidate that returns without ever wrapping (synthetic result, dry
-// short-circuit) must not carry the previous fetch's start time forward.
+// Resets `perfTiming.upstreamCallStartedAt` / `firstOutputTokenAt` to null
+// before every attempt so a candidate that never fires its wrap (synthetic
+// result, dry short-circuit) cannot inherit the prior attempt's stamps.
 export const iterateCandidates = async <T extends IterableAttemptResult>(
   candidates: readonly ModelCandidate[],
   invocationLabel: string,
-  perfTiming: { upstreamCallStartedAt: number | null; firstOutputTokenAt: number | null },
+  perfTiming: PerfTiming,
   attempt: (candidate: ModelCandidate) => Promise<T>,
 ): Promise<T> => {
   let lastFailure: T | undefined;

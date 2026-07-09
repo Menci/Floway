@@ -95,11 +95,13 @@ export interface UpstreamCallOptions {
   fetcher: Fetcher;
   waitUntil: (promise: Promise<unknown>) => void;
   headers: Headers;
-  // Providers wrap their outbound fetch promise with this callback. It stamps
-  // `perfTiming.upstreamCallStartedAt` at wrap-invocation and returns the
-  // promise unchanged, so TTFT is anchored to the actual data-plane request
-  // (post-auth-exchange, post-dial) rather than the gateway's arrival time.
-  // Retries and fallback candidates naturally overwrite — the last wrap wins.
+  // Providers wrap their outbound fetch promise with this callback. The wrap
+  // stamps `perfTiming.upstreamCallStartedAt` at invocation time and returns
+  // the promise unchanged, so TTFT is anchored to the actual data-plane
+  // request (post-auth-exchange, post-dial) rather than gateway arrival.
+  // Between fallback candidates iterateCandidates resets the slot to null,
+  // so a candidate that returns without ever wrapping (synthetic result,
+  // dry short-circuit) cannot inherit the prior fetch's stamp.
   wrapUpstreamCall: <T>(promise: Promise<T>) => Promise<T>;
 }
 

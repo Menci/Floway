@@ -221,8 +221,8 @@ export interface CopilotFetchOptions {
    *  request and the api.github.com token exchange so a single fallback
    *  chain covers both paths under restricted egress. */
   fetcher: Fetcher;
-  /** Provider wraps its `fetcher(...)` promise with this so TTFT is anchored
-   *  to the data-plane dispatch, AFTER any token-exchange round trip. */
+  /** See UpstreamCallOptions.wrapUpstreamCall. Fires on the data-plane
+   *  request only, after any token-exchange round trip. */
   wrapUpstreamCall: <T>(promise: Promise<T>) => Promise<T>;
 }
 

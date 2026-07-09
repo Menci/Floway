@@ -14,6 +14,7 @@ import { inboundHeadersForUpstream } from './inbound-headers.ts';
 import type { PerformanceTelemetryContext } from './telemetry/performance.ts';
 import type { AuthedContext } from '../../middleware/auth.ts';
 import type { GatewayCtx } from '../chat/shared/gateway-ctx.ts';
+import { stampUpstreamCallStart } from '../chat/shared/gateway-ctx.ts';
 import { providerModelOf } from '@floway-dev/provider';
 import type { ModelCandidate, PerformanceOperation, Provider, ProviderCallResult, ProviderModel, TelemetryModelIdentity, UpstreamCallOptions } from '@floway-dev/provider';
 
@@ -48,10 +49,7 @@ export const passthroughAttempt = async (args: PassthroughAttemptArgs): Promise<
     fetcher: candidate.fetcher,
     waitUntil: ctx.backgroundScheduler,
     headers: inboundHeadersForUpstream(c),
-    wrapUpstreamCall: <T>(promise: Promise<T>): Promise<T> => {
-      ctx.perfTiming.upstreamCallStartedAt = globalThis.performance.now();
-      return promise;
-    },
+    wrapUpstreamCall: stampUpstreamCallStart(ctx.perfTiming),
   });
   // Telemetry keys on the upstream's bare catalog id (`model.id`); the
   // user-facing error body echoes the inbound `model` and is the serve

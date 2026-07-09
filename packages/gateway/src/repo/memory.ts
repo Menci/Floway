@@ -391,7 +391,7 @@ class MemoryPerformanceRepo implements PerformanceRepo {
     row.ttftSamples += 1;
     row.ttftMsSum += sample.ttftMs;
     this.incrementBucket(row, 'ttft_ms', bucketForTtftMs(sample.ttftMs));
-    if (sample.tpotUs !== undefined && sample.outputTokens !== undefined && sample.outputTokens >= 2) {
+    if (sample.tpotUs !== undefined) {
       row.tpotSamples += 1;
       row.tpotUsSum += sample.tpotUs;
       this.incrementBucket(row, 'tpot_us', bucketForTpotUs(sample.tpotUs));
