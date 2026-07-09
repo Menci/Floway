@@ -189,6 +189,9 @@ export interface PerformanceRepo {
   recordSample(sample: PerformanceSample): Promise<void>;
   // Increments only summary requests and errors; does not touch sums, samples, or buckets.
   recordError(sample: PerformanceErrorSample): Promise<void>;
+  // Increments only summary requests; does not touch errors, sums, samples, or buckets. Used for
+  // non-chat operations (embeddings, images, audio, etc.) on successful requests.
+  recordNeutral(sample: PerformanceErrorSample): Promise<void>;
   query(opts: { keyId?: string; start: string; end: string }): Promise<PerformanceTelemetryRecord[]>;
   listAll(): Promise<PerformanceTelemetryRecord[]>;
   // Replacement upsert used by admin restore paths.

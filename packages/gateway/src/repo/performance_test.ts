@@ -13,6 +13,7 @@ const sample = (over: Partial<PerformanceSample> = {}): PerformanceSample => ({
   keyId: 'key_a',
   model: 'claude-opus-4-8',
   upstream: 'anthropic-1',
+  operation: 'chat',
   runtimeLocation: 'hkg',
   ttftMs: 340,
   tpotUs: 15_000,
@@ -25,6 +26,7 @@ const errSample = (over: Partial<PerformanceErrorSample> = {}): PerformanceError
   keyId: 'key_a',
   model: 'claude-opus-4-8',
   upstream: 'anthropic-1',
+  operation: 'chat',
   runtimeLocation: 'hkg',
   ...over,
 });
@@ -124,6 +126,35 @@ for (const impl of impls) {
       const [row] = await repo.listAll();
       const overflow = row!.buckets.find(b => b.metric === 'ttft_ms' && b.upper === null)!;
       expect(overflow).toEqual({ metric: 'ttft_ms', lower: 1_800_000, upper: null, count: 1 });
+    });
+
+    it('recordNeutral bumps requests only', async () => {
+      const repo = await impl.open();
+      await repo.recordNeutral(errSample({ operation: 'embeddings' }));
+      const rows = await repo.listAll();
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ requests: 1, errors: 0, samples: 0, ttftMsSum: 0, tpotUsSum: 0 });
+      expect(rows[0]!.buckets).toEqual([]);
+    });
+
+    it('recordNeutral is additive across calls', async () => {
+      const repo = await impl.open();
+      await repo.recordNeutral(errSample({ operation: 'embeddings' }));
+      await repo.recordNeutral(errSample({ operation: 'embeddings' }));
+      await repo.recordNeutral(errSample({ operation: 'embeddings' }));
+      const [row] = await repo.listAll();
+      expect(row!.requests).toBe(3);
+      expect(row!.errors).toBe(0);
+      expect(row!.samples).toBe(0);
+    });
+
+    it('different operations create different rows', async () => {
+      const repo = await impl.open();
+      await repo.recordSample(sample({ operation: 'chat' }));
+      await repo.recordNeutral(errSample({ operation: 'embeddings' }));
+      const rows = await repo.listAll();
+      expect(rows).toHaveLength(2);
+      expect(new Set(rows.map(r => r.operation))).toEqual(new Set(['chat', 'embeddings']));
     });
   });
 }

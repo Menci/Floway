@@ -404,6 +404,11 @@ class MemoryPerformanceRepo implements PerformanceRepo {
     row.errors += 1;
   }
 
+  async recordNeutral(dims: PerformanceErrorSample): Promise<void> {
+    const row = this.upsertRow(dims);
+    row.requests += 1;
+  }
+
   async query(opts: { keyId?: string; start: string; end: string }): Promise<PerformanceTelemetryRecord[]> {
     return [...this.summaries.values()]
       .filter(r => (opts.keyId ? r.keyId === opts.keyId : true) && r.hour >= opts.start && r.hour < opts.end)
@@ -427,7 +432,7 @@ class MemoryPerformanceRepo implements PerformanceRepo {
   }
 
   private rowKey(dims: PerformanceDimensions): string {
-    return `${dims.hour}\0${dims.keyId}\0${dims.model}\0${dims.upstream}\0${dims.runtimeLocation}`;
+    return `${dims.hour}\0${dims.keyId}\0${dims.model}\0${dims.upstream}\0${dims.operation}\0${dims.runtimeLocation}`;
   }
 
   private upsertRow(dims: PerformanceDimensions): StoredPerformanceRow {
@@ -439,6 +444,7 @@ class MemoryPerformanceRepo implements PerformanceRepo {
         keyId: dims.keyId,
         model: dims.model,
         upstream: dims.upstream,
+        operation: dims.operation,
         runtimeLocation: dims.runtimeLocation,
         requests: 0,
         errors: 0,
@@ -477,6 +483,7 @@ const comparePerformanceRow = (a: StoredPerformanceRow, b: StoredPerformanceRow)
   || a.keyId.localeCompare(b.keyId)
   || a.model.localeCompare(b.model)
   || a.upstream.localeCompare(b.upstream)
+  || a.operation.localeCompare(b.operation)
   || a.runtimeLocation.localeCompare(b.runtimeLocation);
 
 const compareBucketRow = (a: PerformanceBucketRow, b: PerformanceBucketRow): number =>
