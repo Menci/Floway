@@ -58,8 +58,8 @@ for (const impl of impls) {
       });
       const ttft = rows[0]!.buckets.find(b => b.metric === 'ttft_ms')!;
       const tpot = rows[0]!.buckets.find(b => b.metric === 'tpot_us')!;
-      expect(ttft).toEqual({ metric: 'ttft_ms', lower: 200, upper: 500, count: 1 });
-      expect(tpot).toEqual({ metric: 'tpot_us', lower: 10_000, upper: 20_000, count: 1 });
+      expect(ttft).toEqual({ metric: 'ttft_ms', lower: 300, upper: 500, count: 1 });
+      expect(tpot).toEqual({ metric: 'tpot_us', lower: 14_286, upper: 16_667, count: 1 });
     });
 
     it('records an error into summary requests + errors only, no bucket rows', async () => {
@@ -72,14 +72,16 @@ for (const impl of impls) {
 
     it('additive upsert accumulates sums, samples, and bucket counts', async () => {
       const repo = await impl.open();
-      await repo.recordSample(sample({ ttftMs: 250, tpotUs: 12_000, outputTokens: 50 }));
-      await repo.recordSample(sample({ ttftMs: 260, tpotUs: 18_000, outputTokens: 90 }));
+      // Both samples fall in the same TTFT bucket [200, 300] and same TPOT bucket [10000, 12500]
+      // so a single (lower, upper) entry accumulates count=2 for each metric.
+      await repo.recordSample(sample({ ttftMs: 250, tpotUs: 10_500, outputTokens: 50 }));
+      await repo.recordSample(sample({ ttftMs: 260, tpotUs: 11_500, outputTokens: 90 }));
       const [row] = await repo.listAll();
-      expect(row).toMatchObject({ requests: 2, ttftSamples: 2, tpotSamples: 2, ttftMsSum: 510, tpotUsSum: 30_000 });
-      const ttft = row!.buckets.find(b => b.metric === 'ttft_ms' && b.lower === 200 && b.upper === 500)!;
+      expect(row).toMatchObject({ requests: 2, ttftSamples: 2, tpotSamples: 2, ttftMsSum: 510, tpotUsSum: 22_000 });
+      const ttft = row!.buckets.find(b => b.metric === 'ttft_ms' && b.lower === 200 && b.upper === 300)!;
       expect(ttft.count).toBe(2);
-      const tpot10 = row!.buckets.find(b => b.metric === 'tpot_us' && b.lower === 10_000 && b.upper === 20_000)!;
-      expect(tpot10.count).toBe(2);
+      const tpot = row!.buckets.find(b => b.metric === 'tpot_us' && b.lower === 10_000 && b.upper === 12_500)!;
+      expect(tpot.count).toBe(2);
     });
 
     it('separates rows by any dimension change (upstream)', async () => {
@@ -122,12 +124,12 @@ for (const impl of impls) {
       expect(after!.buckets).toHaveLength(2);
     });
 
-    it('records TTFT overflow bucket for very slow reasoning', async () => {
+    it('records TTFT overflow bucket for very slow requests beyond the top edge', async () => {
       const repo = await impl.open();
-      await repo.recordSample(sample({ ttftMs: 3_600_000 }));
+      await repo.recordSample(sample({ ttftMs: 600_000 }));
       const [row] = await repo.listAll();
       const overflow = row!.buckets.find(b => b.metric === 'ttft_ms' && b.upper === null)!;
-      expect(overflow).toEqual({ metric: 'ttft_ms', lower: 1_800_000, upper: null, count: 1 });
+      expect(overflow).toEqual({ metric: 'ttft_ms', lower: 300_000, upper: null, count: 1 });
     });
 
     it('single-token sample records TTFT only — no TPOT bucket, no tpotSamples increment', async () => {

@@ -16,8 +16,10 @@ test('/api/performance returns backend-aggregated base-model percentiles', async
     outputTokens: 10,
   };
 
-  // 90 fast samples (ttftMs=100 → bucket [50,100]) + 10 slow samples
-  // (ttftMs=300 → bucket [200,500]) → p50=100, p95=p99=500.
+  // 90 fast samples (ttftMs=100 → bucket [0, 100]) + 10 slow samples (ttftMs=300 → bucket [200, 300]).
+  // Rank(p50, 100) = 50 lands in the first bucket → arithmetic midpoint 100/2 = 50 (geometric midpoint
+  // is undefined when lower=0). Rank(p95, 100) = 95 lands in [200, 300] → geometric midpoint sqrt(60000).
+  // Every tpotUs=500 falls in [0, 500] → arithmetic midpoint 250.
   for (let i = 0; i < 90; i++) {
     await repo.performance.recordSample({ ...sample, ttftMs: 100 });
   }
@@ -29,6 +31,7 @@ test('/api/performance returns backend-aggregated base-model percentiles', async
 
   assertEquals(response.status, 200);
   const body = await response.json();
+  const slowMid = Math.sqrt(200 * 300);
   assertEquals(body.records, [
     {
       bucket: '2026-04-30T10',
@@ -38,12 +41,12 @@ test('/api/performance returns backend-aggregated base-model percentiles', async
       ttftSamples: 100,
       tpotSamples: 100,
       neutral: 0,
-      ttftMsP50: 100,
-      ttftMsP95: 500,
-      ttftMsP99: 500,
-      tpotUsP50: 500,
-      tpotUsP95: 500,
-      tpotUsP99: 500,
+      ttftMsP50: 50,
+      ttftMsP95: slowMid,
+      ttftMsP99: slowMid,
+      tpotUsP50: 250,
+      tpotUsP95: 250,
+      tpotUsP99: 250,
     },
   ]);
 });

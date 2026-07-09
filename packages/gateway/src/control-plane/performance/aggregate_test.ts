@@ -17,13 +17,19 @@ const record = (overrides: Partial<PerformanceTelemetryRecord> = {}): Performanc
   tpotSamples: 1,
   ttftMsSum: 100,
   tpotUsSum: 500,
-  // ttftMs=100 → bucket [50,100]; tpotUs=500 → bucket [200,500]
+  // Bucket edges here are illustrative test fixtures, not the production edge set.
+  // ttft bucket [50, 100] → geometric midpoint sqrt(5000) ≈ 70.71
+  // tpot bucket [200, 500] → geometric midpoint sqrt(100000) ≈ 316.23
   buckets: [
     { metric: 'ttft_ms', lower: 50, upper: 100, count: 1 },
     { metric: 'tpot_us', lower: 200, upper: 500, count: 1 },
   ],
   ...overrides,
 });
+
+// Geometric midpoints of the fixture buckets — expected percentile values.
+const TTFT_MID = Math.sqrt(50 * 100);
+const TPOT_MID = Math.sqrt(200 * 500);
 
 test('aggregatePerformanceForDisplay produces correct averages and percentiles for a single record', () => {
   const rows = aggregatePerformanceForDisplay(
@@ -40,12 +46,12 @@ test('aggregatePerformanceForDisplay produces correct averages and percentiles f
       ttftSamples: 1,
       tpotSamples: 1,
       neutral: 0,
-      ttftMsP50: 100,
-      ttftMsP95: 100,
-      ttftMsP99: 100,
-      tpotUsP50: 500,
-      tpotUsP95: 500,
-      tpotUsP99: 500,
+      ttftMsP50: TTFT_MID,
+      ttftMsP95: TTFT_MID,
+      ttftMsP99: TTFT_MID,
+      tpotUsP50: TPOT_MID,
+      tpotUsP95: TPOT_MID,
+      tpotUsP99: TPOT_MID,
     },
   ]);
 });
@@ -98,7 +104,7 @@ test('aggregatePerformanceForDisplay merges two hours under bucket: all', () => 
   assertEquals(rows[0].requests, 2);
   assertEquals(rows[0].ttftSamples, 2);
   assertEquals(rows[0].tpotSamples, 2);
-  assertEquals(rows[0].ttftMsP50, 100);
+  assertEquals(rows[0].ttftMsP50, TTFT_MID);
 });
 
 test('aggregatePerformanceForDisplay splits rows by upstream when groupBy is upstream', () => {
@@ -116,24 +122,25 @@ test('aggregatePerformanceForDisplay splits rows by upstream when groupBy is ups
 });
 
 test('aggregatePerformanceForDisplay returns lower edge for overflow-bucket percentile', () => {
-  // A ttftMs value above the highest edge (1_800_000 ms) falls into the
-  // overflow bucket { lower: 1_800_000, upper: null }. percentileFromBuckets
-  // returns bucket.lower when upper is null.
+  // A ttftMs value above the highest edge falls into the overflow bucket
+  // { lower: <top-finite-edge>, upper: null }. percentileFromBuckets returns
+  // bucket.lower when upper is null (geometric midpoint is undefined without an
+  // upper edge).
   const rows = aggregatePerformanceForDisplay(
     [
       record({
-        ttftMsSum: 3_600_000,
+        ttftMsSum: 600_000,
         ttftSamples: 1,
         tpotSamples: 1,
         requests: 1,
-        buckets: [{ metric: 'ttft_ms', lower: 1_800_000, upper: null, count: 1 }],
+        buckets: [{ metric: 'ttft_ms', lower: 300_000, upper: null, count: 1 }],
       }),
     ],
     { bucket: 'hour', groupBy: 'model', timezoneOffsetMinutes: 0 },
   );
 
-  assertEquals(rows[0].ttftMsP50, 1_800_000);
-  assertEquals(rows[0].ttftMsP99, 1_800_000);
+  assertEquals(rows[0].ttftMsP50, 300_000);
+  assertEquals(rows[0].ttftMsP99, 300_000);
 });
 
 test('aggregatePerformanceForDisplay groups days using caller timezone offset', () => {
@@ -235,6 +242,6 @@ test('aggregatePerformanceForDisplay tpot percentiles derive from the tpot bucke
 
   assertEquals(rows[0].ttftSamples, 2);
   assertEquals(rows[0].tpotSamples, 1);
-  assertEquals(rows[0].tpotUsP50, 500);
+  assertEquals(rows[0].tpotUsP50, TPOT_MID);
   assertEquals(rows[0].neutral, 0);
 });
