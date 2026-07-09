@@ -54,7 +54,7 @@ export const respondMessages = async (
       const usage = tokenUsageFromMessagesUsage(response.usage);
       ctx.dump?.success(metadata.modelIdentity, usage);
       await recordUsage(ctx, metadata.modelIdentity, usage);
-      recordPerformance(ctx, metadata.performance, state.failed, usage.output ?? 0);
+      recordPerformance(ctx, metadata.performance, state.failed, usage?.output ?? 0);
       return { success: true, response: Response.json(response, { headers: mergeForwardedUpstreamHeaders(undefined, result.headers) }) };
     } catch (error) {
       recordPerformance(ctx, result.performance, true, 0);
