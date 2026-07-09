@@ -26,12 +26,6 @@ const dimensions = (telemetry: PerformanceTelemetryContext): PerformanceDimensio
 const recordError = (dims: PerformanceDimensions): Promise<void> =>
   record(getRepo().performance.recordError(dims), 'error');
 
-const recordNeutral = (dims: PerformanceDimensions): Promise<void> =>
-  record(getRepo().performance.recordNeutral(dims), 'neutral');
-
-const recordSample = (dims: PerformanceDimensions, ttftMs: number, tpotUs: number, outputTokens: number): Promise<void> =>
-  record(getRepo().performance.recordSample({ ...dims, ttftMs, tpotUs, outputTokens }), 'sample');
-
 // Non-chat operations record a neutral row on success (no TTFT/TPOT samples produced,
 // requests counter only). A non-failed chat stream with no TTFT or no output tokens is
 // still an error row — tpot requires both a first-token timestamp and a positive output-token count.
@@ -50,15 +44,15 @@ export const recordRequestPerformance = (
     return;
   }
   if (telemetry.operation !== 'chat') {
-    scheduler(recordNeutral(dims));
+    scheduler(record(getRepo().performance.recordNeutral(dims), 'neutral'));
     return;
   }
   if (ctx.perfTiming.firstOutputTokenAt === null || outputTokens <= 0) {
     scheduler(recordError(dims));
     return;
   }
-  const ttftMs = Math.max(0, Math.round(ctx.perfTiming.firstOutputTokenAt - ctx.requestStartedAt));
-  const streamUs = Math.max(0, Math.round((requestFinishedAt - ctx.perfTiming.firstOutputTokenAt) * 1_000));
-  const tpotUs = Math.max(0, Math.round(streamUs / outputTokens));
-  scheduler(recordSample(dims, ttftMs, tpotUs, outputTokens));
+  const ttftMs = Math.round(ctx.perfTiming.firstOutputTokenAt - ctx.requestStartedAt);
+  const streamUs = Math.round((requestFinishedAt - ctx.perfTiming.firstOutputTokenAt) * 1_000);
+  const tpotUs = Math.round(streamUs / outputTokens);
+  scheduler(record(getRepo().performance.recordSample({ ...dims, ttftMs, tpotUs, outputTokens }), 'sample'));
 };
