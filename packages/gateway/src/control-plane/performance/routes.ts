@@ -10,9 +10,9 @@
 import { aggregatePerformanceForDisplay, aggregatePerformanceForDisplayMulti, type PerformanceBucketGranularity, type PerformanceGroupBy } from './aggregate.ts';
 import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
-import type { ApiKey, PerformanceTelemetryRecord, Repo } from '../../repo/types.ts';
+import type { PerformanceTelemetryRecord } from '../../repo/types.ts';
 import type { performanceQuery } from '../schemas.ts';
-import { resolveTelemetryView, type ResolvedTelemetryView } from '../telemetry-view.ts';
+import { loadTelemetryKeys, resolveTelemetryView, type ResolvedTelemetryView } from '../telemetry-view.ts';
 
 type Ctx = CtxWithQuery<typeof performanceQuery>;
 
@@ -108,27 +108,6 @@ const queryRecordsForView = async (
   return params.keyId !== undefined ? rows : rows.filter(r => ownedSet.has(r.keyId));
 };
 
-const buildKeyToUserMap = async (): Promise<ReadonlyMap<string, number>> => {
-  const keys = await getRepo().apiKeys.listIncludingDeleted();
-  return new Map(keys.map(k => [k.id, k.userId] as const));
-};
-
-// Overview needs both the key→user map (for user filter, group_by=userId,
-// and the userIds dimension list) AND the sorted key-metadata block. One
-// listing of api_keys feeds both — the handler used to fetch the same
-// table twice. In self-view the actor's keys are enough; every telemetry
-// row in that view belongs to the actor by construction, so the map
-// resolves every keyId that will appear.
-const loadKeysAndMap = async (
-  repo: Repo,
-  resolved: ResolvedTelemetryView,
-): Promise<{ keyToUser: ReadonlyMap<string, number>; keys: readonly ApiKey[] }> => {
-  const keys = resolved.view === 'all-by-user'
-    ? await repo.apiKeys.listIncludingDeleted()
-    : await repo.apiKeys.listByUserIdIncludingDeleted(resolved.scopeUserId);
-  return { keyToUser: new Map(keys.map(k => [k.id, k.userId] as const)), keys };
-};
-
 // Cross-cutting filter predicate applied at the raw-record level so every
 // aggregation (chart series, summary, per-dimension breakdowns) reflects the
 // same filtered view. Combining filters is AND. filter_user_id resolves via
@@ -140,7 +119,7 @@ const loadKeysAndMap = async (
 const matchesFilters = (
   r: PerformanceTelemetryRecord,
   filters: PerformanceFilters,
-  keyToUser: ReadonlyMap<string, number> | null,
+  keyToUser: ReadonlyMap<string, number>,
   wantUserId: number | null,
 ): boolean => {
   if (filters.model !== undefined && r.model !== filters.model) return false;
@@ -148,17 +127,14 @@ const matchesFilters = (
   if (filters.operation !== undefined && r.operation !== filters.operation) return false;
   if (filters.runtimeLocation !== undefined && r.runtimeLocation !== filters.runtimeLocation) return false;
   if (filters.keyId !== undefined && r.keyId !== filters.keyId) return false;
-  if (wantUserId !== null) {
-    const uid = keyToUser?.get(r.keyId);
-    if (uid !== wantUserId) return false;
-  }
+  if (wantUserId !== null && keyToUser.get(r.keyId) !== wantUserId) return false;
   return true;
 };
 
 const applyFilters = (
   rows: readonly PerformanceTelemetryRecord[],
   filters: PerformanceFilters,
-  keyToUser: ReadonlyMap<string, number> | null,
+  keyToUser: ReadonlyMap<string, number>,
 ): readonly PerformanceTelemetryRecord[] => {
   const wantUserId = filters.userId === undefined ? null : Number(filters.userId);
   return rows.filter(r => matchesFilters(r, filters, keyToUser, wantUserId));
@@ -232,22 +208,31 @@ export const performanceTelemetry = async (c: Ctx) => {
   const resolved = resolveView(c, params.value);
   if ('error' in resolved) return c.json({ error: resolved.message }, resolved.error === 'forbidden' ? 403 : 400);
 
-  const rawRecords = await queryRecordsForView(resolved, params.value);
+  // Always load the key-listing for the resolved view. In self-view this is
+  // the actor's keys only; in all-by-user it is every key. Both handlers
+  // need the key→user map (filter_user_id, group_by=userId), and the
+  // self-by-key metadata block reuses the same `keys` array — one round
+  // trip covers both. The tiny extra listing in the "no user filter, no
+  // userId grouping" case buys us a Map-typed keyToUser at the aggregate
+  // call site, dropping the historic non-null assertion.
+  const repo = getRepo();
+  const [rawRecords, keysInfo] = await Promise.all([
+    queryRecordsForView(resolved, params.value),
+    loadTelemetryKeys(repo, resolved),
+  ]);
   if (rawRecords === null) return c.json({ error: 'Unknown key_id' }, 404);
 
-  const keyToUser = params.value.groupBy === 'userId' || params.value.filters.userId !== undefined ? await buildKeyToUserMap() : null;
-  const filtered = applyFilters(rawRecords, params.value.filters, keyToUser);
+  const filtered = applyFilters(rawRecords, params.value.filters, keysInfo.keyToUser);
 
   const baseOptions = { bucket: params.value.bucket, timezoneOffsetMinutes: params.value.timezoneOffsetMinutes };
   const records = aggregatePerformanceForDisplay(
     filtered,
     params.value.groupBy === 'userId'
-      ? { ...baseOptions, groupBy: 'userId', keyToUser: keyToUser! }
+      ? { ...baseOptions, groupBy: 'userId', keyToUser: keysInfo.keyToUser }
       : { ...baseOptions, groupBy: params.value.groupBy },
   );
 
   const query = c.req.valid('query');
-  const repo = getRepo();
 
   if (resolved.view === 'all-by-user') {
     if (query.include_user_metadata !== '1') return c.json({ records });
@@ -259,8 +244,7 @@ export const performanceTelemetry = async (c: Ctx) => {
   }
 
   if (query.include_key_metadata !== '1') return c.json({ records });
-  const keys = await repo.apiKeys.listByUserIdIncludingDeleted(resolved.scopeUserId);
-  const keyMetadata = keys.map(k => ({ id: k.id, name: k.name, createdAt: k.createdAt }))
+  const keyMetadata = keysInfo.keys.map(k => ({ id: k.id, name: k.name, createdAt: k.createdAt }))
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
   return c.json({ records, keys: keyMetadata });
 };
@@ -280,7 +264,7 @@ export const performanceOverview = async (c: Ctx) => {
   const repo = getRepo();
   const [rawRecords, keysInfo, users] = await Promise.all([
     queryRecordsForView(resolved, params.value),
-    loadKeysAndMap(repo, resolved),
+    loadTelemetryKeys(repo, resolved),
     resolved.view === 'all-by-user' ? repo.users.listIncludingDeleted() : Promise.resolve([]),
   ]);
   if (rawRecords === null) return c.json({ error: 'Unknown key_id' }, 404);

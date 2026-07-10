@@ -8,7 +8,7 @@ import { aggregateUsageByUserForDisplay, aggregateUsageForDisplay } from './aggr
 import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { tokenUsageQuery } from '../schemas.ts';
-import { resolveTelemetryView } from '../telemetry-view.ts';
+import { loadTelemetryKeys, resolveTelemetryView } from '../telemetry-view.ts';
 
 export const tokenUsage = async (c: CtxWithQuery<typeof tokenUsageQuery>) => {
   const query = c.req.valid('query');
@@ -25,13 +25,12 @@ export const tokenUsage = async (c: CtxWithQuery<typeof tokenUsageQuery>) => {
   const repo = getRepo();
 
   if (resolved.view === 'all-by-user') {
-    const [rawRecords, users, keys] = await Promise.all([
+    const [rawRecords, users, keysInfo] = await Promise.all([
       repo.usage.query({ start, end }),
       repo.users.listIncludingDeleted(),
-      repo.apiKeys.listIncludingDeleted(),
+      loadTelemetryKeys(repo, resolved),
     ]);
-    const keyToUser = new Map(keys.map(k => [k.id, k.userId] as const));
-    const records = aggregateUsageByUserForDisplay(rawRecords, keyToUser);
+    const records = aggregateUsageByUserForDisplay(rawRecords, keysInfo.keyToUser);
 
     if (query.include_user_metadata !== '1') return c.json(records);
     const userMetadata = users
@@ -47,14 +46,14 @@ export const tokenUsage = async (c: CtxWithQuery<typeof tokenUsageQuery>) => {
     return c.json({ error: 'Unknown key_id' }, 404);
   }
 
-  const [rawRecords, keys] = await Promise.all([
+  const [rawRecords, keysInfo] = await Promise.all([
     repo.usage.query({ keyId: explicitKeyId, start, end }),
-    repo.apiKeys.listByUserIdIncludingDeleted(resolved.scopeUserId),
+    loadTelemetryKeys(repo, resolved),
   ]);
   const filtered = explicitKeyId ? rawRecords : rawRecords.filter(r => ownedSet.has(r.keyId));
   const records = aggregateUsageForDisplay(filtered);
 
-  const keyMap = new Map(keys.map(k => [k.id, k]));
+  const keyMap = new Map(keysInfo.keys.map(k => [k.id, k]));
   const recordsWithKeyMetadata = records.map(r => {
     const k = keyMap.get(r.keyId);
     if (!k) throw new Error(`telemetry row references unknown key ${r.keyId} for user ${resolved.scopeUserId}`);
@@ -63,7 +62,7 @@ export const tokenUsage = async (c: CtxWithQuery<typeof tokenUsageQuery>) => {
 
   if (query.include_key_metadata !== '1') return c.json(recordsWithKeyMetadata);
 
-  const keyMetadata = keys
+  const keyMetadata = keysInfo.keys
     .map(k => ({ id: k.id, name: k.name, createdAt: k.createdAt }))
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
   return c.json({
