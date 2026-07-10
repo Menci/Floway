@@ -536,7 +536,6 @@ const makeRespondCtx = (): ChatGatewayCtx => ({
   runtimeLocation: 'TEST',
   backgroundScheduler: () => {},
   perfTiming: { firstOutputTokenAt: null, upstreamCallStartedAt: null },
-  currentColo: 'TEST',
   dump: null,
   responseHeaders: new Headers(),
   store: createNonResponsesSourceStore('key_respond_test'),

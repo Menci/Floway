@@ -24,7 +24,6 @@ const ctx = (): ChatGatewayCtx => ({
   upstreamIds: null,
   wantsStream: false,
   runtimeLocation: 'TEST',
-  currentColo: 'TEST',
   dump: null,
   responseHeaders: new Headers(),
   backgroundScheduler: () => {},

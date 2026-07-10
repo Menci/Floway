@@ -16,7 +16,6 @@ const stubCtx: ChatGatewayCtx = {
   upstreamIds: null,
   wantsStream: false,
   runtimeLocation: 'TEST',
-  currentColo: 'TEST',
   dump: null,
   backgroundScheduler: () => {},
   perfTiming: { firstOutputTokenAt: null, upstreamCallStartedAt: null },

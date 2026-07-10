@@ -30,7 +30,7 @@ export const messagesServe = {
       model: payload.model,
       kind: 'chat',
       scheduler: ctx.backgroundScheduler,
-      currentColo: ctx.currentColo,
+      currentColo: ctx.runtimeLocation,
     });
     const viable = enumerated.filter(c => messagesGenerateTarget.canServe(c.model.endpoints));
     const decision = await classifyResponsesItemAffinity({
@@ -67,7 +67,7 @@ export const messagesServe = {
       model: payload.model,
       kind: 'chat',
       scheduler: ctx.backgroundScheduler,
-      currentColo: ctx.currentColo,
+      currentColo: ctx.runtimeLocation,
     });
     const viable = enumerated.filter(c => messagesCountTokensTarget.canServe(c.model.endpoints));
     const decision = await classifyResponsesItemAffinity({

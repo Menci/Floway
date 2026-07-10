@@ -451,7 +451,7 @@ interface ShimState {
   apiKeyId: string;
   upstreamIds: readonly string[] | null;
   backgroundScheduler: BackgroundScheduler;
-  currentColo: string;
+  runtimeLocation: string;
   downstreamAbortSignal: AbortSignal | undefined;
   imageDispatchCount: number;
 }
@@ -543,7 +543,7 @@ const resolveImageCandidate = async (
       model: state.config.model,
       kind: 'image',
       scheduler: state.backgroundScheduler,
-      currentColo: state.currentColo,
+      currentColo: state.runtimeLocation,
     });
   } catch (e) {
     return { ok: false, error: serverError(e) };
@@ -978,7 +978,7 @@ export const imageGenerationServerTool: ServerToolRegistration = (invocation, ga
     apiKeyId: gatewayCtx.apiKeyId,
     upstreamIds: gatewayCtx.upstreamIds,
     backgroundScheduler: gatewayCtx.backgroundScheduler,
-    currentColo: gatewayCtx.currentColo,
+    runtimeLocation: gatewayCtx.runtimeLocation,
     downstreamAbortSignal: gatewayCtx.abortSignal,
     imageDispatchCount: 0,
   };

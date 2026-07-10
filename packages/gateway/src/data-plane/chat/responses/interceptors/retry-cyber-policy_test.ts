@@ -38,7 +38,6 @@ const stubCtx = (overrides: { abortSignal?: AbortSignal } = {}): ChatGatewayCtx 
   upstreamIds: null,
   wantsStream: true,
   runtimeLocation: 'TEST',
-  currentColo: 'TEST',
   dump: null,
   responseHeaders: new Headers(),
   backgroundScheduler: () => {},
@@ -154,7 +153,6 @@ const performanceFor = (model: string) => ({
   operation: 'chat' as const,
   stream: true,
   runtimeLocation: 'TEST',
-  currentColo: 'TEST',
   dump: null,
   responseHeaders: new Headers(),
 });

@@ -163,7 +163,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
       model,
       kind,
       scheduler: ctx.backgroundScheduler,
-      currentColo: ctx.currentColo,
+      currentColo: ctx.runtimeLocation,
     });
     if (candidates.length === 0) {
       ctx.dump?.error('gateway');

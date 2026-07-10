@@ -54,7 +54,6 @@ const gatewayCtx = (apiKeyId: string = 'test-key'): ChatGatewayCtx => ({
   upstreamIds: null,
   wantsStream: false,
   runtimeLocation: 'TEST',
-  currentColo: 'TEST',
   dump: null,
   responseHeaders: new Headers(),
   backgroundScheduler: () => {},

@@ -69,7 +69,6 @@ const makeGatewayCtx = (store?: ChatGatewayCtx['store']): ChatGatewayCtx => ({
   upstreamIds: null,
   wantsStream: true,
   runtimeLocation: 'TEST',
-  currentColo: 'TEST',
   dump: null,
   responseHeaders: new Headers(),
   backgroundScheduler: () => {},

@@ -997,7 +997,6 @@ test('enumerateModelCandidates does NOT trigger the dated-suffix retry on a wron
         model: 'claude-opus-4-7-20251231',
         kind: 'image',
         scheduler: testScheduler,
-        currentColo: 'TEST',
       });
       assertEquals(resolved.candidates, []);
       // `sawModel: true` pins that only the first attempt ran: the resolver
@@ -1037,7 +1036,6 @@ test('enumerateModelCandidates deduplicates failedUpstreams across the dated-suf
         model: 'claude-opus-4-7-20251231',
         kind: 'chat',
         scheduler: testScheduler,
-        currentColo: 'TEST',
       });
       assertEquals(resolved.candidates.length, 0);
       // The same broken upstream appears in both attempts' failedUpstreams;
@@ -1082,7 +1080,6 @@ test('enumerateModelCandidates rethrows AbortError from a per-upstream catalog f
           model: 'any-model',
           kind: 'chat',
           scheduler: testScheduler,
-          currentColo: 'TEST',
         });
       } catch (e) {
         thrown = e;
@@ -1118,7 +1115,6 @@ test('enumerateModelCandidates returns the empty triple when the visible upstrea
     model: 'any-model',
     kind: 'chat',
     scheduler: testScheduler,
-    currentColo: 'TEST',
   });
   assertEquals(resolved.candidates, []);
   assertEquals(resolved.sawModel, false);

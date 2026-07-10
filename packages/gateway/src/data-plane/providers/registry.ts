@@ -474,7 +474,7 @@ export const enumerateModelCandidates = async ({
   // catalog lookup hits the SWR-cached `fetchUpstreamModelsCached` instead
   // of round-tripping to the upstream on every request.
   scheduler: BackgroundScheduler;
-  // Current colo for this request — see GatewayCtx.currentColo. Threaded
+  // Current colo for this request — see GatewayCtx.runtimeLocation. Threaded
   // into the per-request fetcher so colo-scoped fallback entries can be
   // honoured at dial time.
   currentColo: string;

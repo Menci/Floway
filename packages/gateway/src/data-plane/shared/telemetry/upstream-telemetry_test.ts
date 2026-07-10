@@ -15,7 +15,6 @@ const stubCtx = (): GatewayCtx => ({
   backgroundScheduler: (p: Promise<unknown>) => { void p; },
   perfTiming: { firstOutputTokenAt: null, upstreamCallStartedAt: null },
   runtimeLocation: 'x',
-  currentColo: 'x',
   dump: null,
   responseHeaders: new Headers(),
 } as unknown as GatewayCtx);
