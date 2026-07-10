@@ -464,7 +464,7 @@ const orderAliasTargets = (alias: ModelAliasRecord): readonly ModelAliasRecord['
 // whose first target matches its own name) resolves to the real model on
 // the first pass; alias names never re-enter the alias layer.
 export const enumerateModelCandidates = async ({
-  upstreamIds, model, kind, scheduler, currentColo,
+  upstreamIds, model, kind, scheduler, runtimeLocation,
 }: {
   // null = unrestricted; empty list = no providers visible.
   upstreamIds: readonly string[] | null;
@@ -474,16 +474,16 @@ export const enumerateModelCandidates = async ({
   // catalog lookup hits the SWR-cached `fetchUpstreamModelsCached` instead
   // of round-tripping to the upstream on every request.
   scheduler: BackgroundScheduler;
-  // Current colo for this request — see GatewayCtx.runtimeLocation. Threaded
-  // into the per-request fetcher so colo-scoped fallback entries can be
-  // honoured at dial time.
-  currentColo: string;
+  // Runtime location tag for this request — see GatewayCtx.runtimeLocation.
+  // Threaded into the per-request fetcher so colo-scoped fallback entries
+  // can be honoured at dial time.
+  runtimeLocation: string;
 }): Promise<{
   readonly candidates: readonly ModelCandidate[];
   readonly sawModel: boolean;
   readonly failedUpstreams: readonly string[];
 }> => {
-  const fetcherForUpstream = await createPerRequestFetcher(currentColo);
+  const fetcherForUpstream = await createPerRequestFetcher(runtimeLocation);
   const providers = await listModelProviders(upstreamIds);
 
   const alias = await getRepo().modelAliases.getByName(model);

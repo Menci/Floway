@@ -22,7 +22,7 @@ interface CreateFetcherInput {
   proxyById: Map<string, ProxyEntry>;
   // Location tag the request landed in, used to apply each entry's optional
   // `colos` whitelist via `entryMatchesColo`. See `getCurrentColo`.
-  currentColo: string;
+  runtimeLocation: string;
   // Injected so the fetcher stays runtime-agnostic — the composition root
   // chooses the concrete dial/fetch implementations.
   runProxied: (
@@ -69,7 +69,7 @@ export const createFetcher = (input: CreateFetcherInput): Fetcher => {
   // Colo filter precedes the implicit-['direct'] collapse so a fully-excluded
   // list behaves like an empty list and gets the direct fallback, rather than
   // throwing because pass 1 had no candidates.
-  const matched = input.fallbackList.filter(entry => entryMatchesColo(entry, input.currentColo));
+  const matched = input.fallbackList.filter(entry => entryMatchesColo(entry, input.runtimeLocation));
   const list = matched.length > 0 ? matched.map(entry => entry.id) : [DIRECT_PROXY_ID];
   // If `direct` precedes any non-direct entry, runtime fetch may take
   // ownership of `init.body` and consume its underlying stream/Blob.

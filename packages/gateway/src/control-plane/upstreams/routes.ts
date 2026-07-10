@@ -391,7 +391,7 @@ export const copilotOauthDeviceLoginPoll = async (c: CtxWithJson<typeof copilotO
   // as 400 — they belong to the caller, not to the upstream.
   let fetcher: Fetcher;
   try {
-    fetcher = await resolveControlPlaneFetcher({ override: record.proxy_fallback_list, currentColo: getCurrentColo(c.req.raw) });
+    fetcher = await resolveControlPlaneFetcher({ override: record.proxy_fallback_list, runtimeLocation: getCurrentColo(c.req.raw) });
   } catch (err) {
     return c.json({ status: 'error' as const, error: errorMessage(err) }, 400);
   }
@@ -494,7 +494,7 @@ export const copilotQuota = async (c: CtxWithJson<typeof copilotQuotaBody>) => {
     const githubToken = config && typeof config.githubToken === 'string' ? config.githubToken : '';
     if (!githubToken) return c.json({ error: 'Copilot upstream has no GitHub token' }, 400);
 
-    const fetcher = await resolveControlPlaneFetcher({ override: record.proxy_fallback_list, currentColo: getCurrentColo(c.req.raw) });
+    const fetcher = await resolveControlPlaneFetcher({ override: record.proxy_fallback_list, runtimeLocation: getCurrentColo(c.req.raw) });
     const resp = await fetcher('https://api.github.com/copilot_internal/user', { headers: githubHeaders(githubToken) });
 
     if (!resp.ok) {
@@ -540,7 +540,7 @@ export const codexOauthExchange = async (c: CtxWithJson<typeof codexOauthExchang
     fetcher = await resolveControlPlaneFetcher({
       override: record.proxy_fallback_list,
       upstreamId: record.id || undefined,
-      currentColo: getCurrentColo(c.req.raw),
+      runtimeLocation: getCurrentColo(c.req.raw),
     });
   } catch (err) {
     return c.json({ error: errorMessage(err) }, 400);
@@ -603,7 +603,7 @@ export const codexOauthRefresh = async (c: CtxWithJson<typeof codexOauthRefreshB
     fetcher = await resolveControlPlaneFetcher({
       override: record.proxy_fallback_list,
       upstreamId: record.id,
-      currentColo: getCurrentColo(c.req.raw),
+      runtimeLocation: getCurrentColo(c.req.raw),
     });
   } catch (err) {
     return c.json({ error: errorMessage(err) }, 400);
@@ -686,7 +686,7 @@ export const claudeCodeOauthExchange = async (c: CtxWithJson<typeof claudeCodeOa
     fetcher = await resolveControlPlaneFetcher({
       override: record.proxy_fallback_list,
       upstreamId: record.id || undefined,
-      currentColo: getCurrentColo(c.req.raw),
+      runtimeLocation: getCurrentColo(c.req.raw),
     });
   } catch (err) {
     return c.json({ error: errorMessage(err) }, 400);
@@ -730,7 +730,7 @@ export const claudeCodeSetupTokenExchange = async (c: CtxWithJson<typeof claudeC
     fetcher = await resolveControlPlaneFetcher({
       override: record.proxy_fallback_list,
       upstreamId: record.id || undefined,
-      currentColo: getCurrentColo(c.req.raw),
+      runtimeLocation: getCurrentColo(c.req.raw),
     });
   } catch (err) {
     return c.json({ error: errorMessage(err) }, 400);
@@ -790,7 +790,7 @@ export const claudeCodeOauthRefresh = async (c: CtxWithJson<typeof claudeCodeOau
     fetcher = await resolveControlPlaneFetcher({
       override: record.proxy_fallback_list,
       upstreamId: record.id,
-      currentColo: getCurrentColo(c.req.raw),
+      runtimeLocation: getCurrentColo(c.req.raw),
     });
   } catch (err) {
     return c.json({ error: errorMessage(err) }, 400);
@@ -824,7 +824,7 @@ export const claudeCodeProbe = async (c: CtxWithJson<typeof claudeCodeProbeBody>
     fetcher = await resolveControlPlaneFetcher({
       override: record.proxy_fallback_list,
       upstreamId: record.id || undefined,
-      currentColo: getCurrentColo(c.req.raw),
+      runtimeLocation: getCurrentColo(c.req.raw),
     });
   } catch (err) {
     return c.json({ error: errorMessage(err) }, 400);
@@ -961,7 +961,7 @@ export const listModels = async (c: CtxWithJson<typeof listModelsBody>) => {
     fetcher = await resolveControlPlaneFetcher({
       override: record.proxy_fallback_list,
       upstreamId: record.id || undefined,
-      currentColo: getCurrentColo(c.req.raw),
+      runtimeLocation: getCurrentColo(c.req.raw),
     });
   } catch (err) {
     return c.json({ error: errorMessage(err) }, 400);

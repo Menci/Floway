@@ -14,13 +14,13 @@ import { parseProxyUri, type ProxyUriError, runProxiedRequest } from '@floway-de
 export const resolveControlPlaneFetcher = async (opts: {
   override?: readonly ProxyFallbackEntry[];
   upstreamId?: string;
-  currentColo: string;
+  runtimeLocation: string;
 }): Promise<Fetcher> => {
   if (opts.override !== undefined) {
-    return await buildOverrideFetcher(opts.override, opts.upstreamId ?? 'draft', opts.currentColo);
+    return await buildOverrideFetcher(opts.override, opts.upstreamId ?? 'draft', opts.runtimeLocation);
   }
   if (opts.upstreamId !== undefined) {
-    return (await createPerRequestFetcher(opts.currentColo))(opts.upstreamId);
+    return (await createPerRequestFetcher(opts.runtimeLocation))(opts.upstreamId);
   }
   return directFetcher;
 };
@@ -28,7 +28,7 @@ export const resolveControlPlaneFetcher = async (opts: {
 const buildOverrideFetcher = async (
   rawList: readonly ProxyFallbackEntry[],
   upstreamId: string,
-  currentColo: string,
+  runtimeLocation: string,
 ): Promise<Fetcher> => {
   const list = normalizeProxyFallbackList(rawList);
   const referenced = new Set(list.filter(entry => entry.id !== DIRECT_PROXY_ID).map(entry => entry.id));
@@ -66,7 +66,7 @@ const buildOverrideFetcher = async (
     repo,
     upstreamId,
     fallbackList: list,
-    currentColo,
+    runtimeLocation,
     proxyById,
     runProxied: runProxiedRequest,
     runDirect: directFetcher,

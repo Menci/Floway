@@ -543,7 +543,7 @@ const resolveImageCandidate = async (
       model: state.config.model,
       kind: 'image',
       scheduler: state.backgroundScheduler,
-      currentColo: state.runtimeLocation,
+      runtimeLocation: state.runtimeLocation,
     });
   } catch (e) {
     return { ok: false, error: serverError(e) };
