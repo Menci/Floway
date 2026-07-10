@@ -659,7 +659,16 @@ export const searchUsageQuery = z.object({
 
 export const performanceQuery = z.object({
   ...usageBaseQuery,
-  group_by: z.enum(['none', 'keyId', 'userId', 'model', 'upstream', 'operation', 'runtimeLocation']).optional(),
+  group_by: z.enum(['keyId', 'userId', 'model', 'upstream', 'operation', 'runtimeLocation']).optional(),
   bucket: z.enum(['hour', '4h', '8h', 'day', 'all']).optional(),
   timezone_offset_minutes: z.string().optional(),
+  // Cross-cutting filters applied to raw records before aggregation. Each is
+  // a single value (dashboard dropdown is single-select); combining filters
+  // is AND. filter_user_id is a numeric string; the others are opaque ids.
+  filter_model: z.string().optional(),
+  filter_upstream: z.string().optional(),
+  filter_operation: z.string().optional(),
+  filter_runtime_location: z.string().optional(),
+  filter_user_id: z.string().optional(),
+  filter_key_id: z.string().optional(),
 });
