@@ -711,7 +711,17 @@ class SqlPerformanceRepo implements PerformanceRepo {
     mode: 'add' | 'set',
   ): SqlPreparedStatement {
     const sql = mode === 'add' ? PERFORMANCE_SUMMARY_ADD_SQL : PERFORMANCE_SUMMARY_SET_SQL;
-    const countBinds = PERFORMANCE_SUMMARY_COUNT_COLUMNS.map(col => counts[col] ?? 0);
+    const countBinds = PERFORMANCE_SUMMARY_COUNT_COLUMNS.map(col => {
+      const value = counts[col];
+      if (value === undefined) {
+        // The overload above guards 'set' at compile time; this runtime check
+        // catches an `as`-cast or widened caller slipping a partial through.
+        // 'add' treats a missing column as a no-op increment.
+        if (mode === 'set') throw new Error(`upsertSummary('set'): missing count column ${col}`);
+        return 0;
+      }
+      return value;
+    });
     return this.db.prepare(sql).bind(...performanceDimensionBinds(dims), ...countBinds);
   }
 

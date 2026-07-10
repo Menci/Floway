@@ -21,7 +21,7 @@ interface PerformanceFilters {
   upstream: string | undefined;
   operation: string | undefined;
   runtimeLocation: string | undefined;
-  userId: string | undefined;
+  userId: number | undefined;
   keyId: string | undefined;
 }
 
@@ -64,7 +64,7 @@ const readPerformanceQuery = (
         upstream: blank(query.filter_upstream),
         operation: blank(query.filter_operation),
         runtimeLocation: blank(query.filter_runtime_location),
-        userId: blank(query.filter_user_id),
+        userId: query.filter_user_id,
         keyId: blank(query.filter_key_id),
       },
     },
@@ -114,20 +114,18 @@ const queryRecordsForView = async (
 // the key→user map because userId is not a native record column; orphan
 // rows (hard-deleted key → keyToUser miss) never match a numeric user
 // filter, matching the aggregation path's By-User grouping that also drops
-// them rather than coercing undefined to 0. `wantUserId` is precomputed by
-// the caller so this predicate stays branch-cheap in the hot loop.
+// them rather than coercing undefined to 0.
 const matchesFilters = (
   r: PerformanceTelemetryRecord,
   filters: PerformanceFilters,
   keyToUser: ReadonlyMap<string, number>,
-  wantUserId: number | null,
 ): boolean => {
   if (filters.model !== undefined && r.model !== filters.model) return false;
   if (filters.upstream !== undefined && r.upstream !== filters.upstream) return false;
   if (filters.operation !== undefined && r.operation !== filters.operation) return false;
   if (filters.runtimeLocation !== undefined && r.runtimeLocation !== filters.runtimeLocation) return false;
   if (filters.keyId !== undefined && r.keyId !== filters.keyId) return false;
-  if (wantUserId !== null && keyToUser.get(r.keyId) !== wantUserId) return false;
+  if (filters.userId !== undefined && keyToUser.get(r.keyId) !== filters.userId) return false;
   return true;
 };
 
@@ -135,10 +133,8 @@ const applyFilters = (
   rows: readonly PerformanceTelemetryRecord[],
   filters: PerformanceFilters,
   keyToUser: ReadonlyMap<string, number>,
-): readonly PerformanceTelemetryRecord[] => {
-  const wantUserId = filters.userId === undefined ? null : Number(filters.userId);
-  return rows.filter(r => matchesFilters(r, filters, keyToUser, wantUserId));
-};
+): readonly PerformanceTelemetryRecord[] =>
+  rows.filter(r => matchesFilters(r, filters, keyToUser));
 
 // Distinct values per dimension observed in the UNFILTERED record set so the
 // dashboard dropdowns show the full menu regardless of which filters are
@@ -171,7 +167,6 @@ const partitionRecords = (
   const runtimeLocations = new Set<string>();
   const keyIds = new Set<string>();
   const userIds = new Set<number>();
-  const wantUserId = filters.userId === undefined ? null : Number(filters.userId);
   const filtered: PerformanceTelemetryRecord[] = [];
   for (const r of rows) {
     models.add(r.model);
@@ -186,7 +181,7 @@ const partitionRecords = (
     const uid = keyToUser.get(r.keyId);
     if (uid !== undefined) userIds.add(uid);
 
-    if (matchesFilters(r, filters, keyToUser, wantUserId)) filtered.push(r);
+    if (matchesFilters(r, filters, keyToUser)) filtered.push(r);
   }
   return {
     filtered,

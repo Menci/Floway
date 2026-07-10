@@ -669,11 +669,14 @@ export const performanceQuery = z.object({
   filter_upstream: z.string().optional(),
   filter_operation: z.string().optional(),
   filter_runtime_location: z.string().optional(),
-  // Accepts either a non-negative integer or the empty string. The handler's
-  // `blank()` helper collapses '' → undefined, matching the "absent filter"
-  // semantics that stale dashboard bookmarks with a lingering `filter_user_id=`
-  // rely on. Negative ids can never resolve — user ids are always positive —
-  // and would silently return an empty result, so the regex rejects them.
-  filter_user_id: z.union([z.literal(''), z.string().regex(/^\d+$/, 'filter_user_id must be a non-negative integer')]).optional(),
+  // Accepts either a non-negative integer or the empty string, and normalizes
+  // both to `number | undefined` so the handler pipeline compares against
+  // real user ids without a second parse. The empty-string branch keeps
+  // stale dashboard bookmarks with a lingering `filter_user_id=` working
+  // as "absent filter". Negative ids can never resolve — user ids are
+  // always positive — and would silently return an empty result, so the
+  // regex rejects them.
+  filter_user_id: z.union([z.literal(''), z.string().regex(/^\d+$/, 'filter_user_id must be a non-negative integer')]).optional()
+    .transform(v => (v === undefined || v === '' ? undefined : Number(v))),
   filter_key_id: z.string().optional(),
 });

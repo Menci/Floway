@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import { InMemoryRepo } from './memory.ts';
+import { SqlRepo } from './sql.ts';
 import { createSqliteTestDb } from './test-sqlite.ts';
 import type {
   PerformanceDimensions,
   PerformanceRepo,
   PerformanceSample,
+  PerformanceTelemetryRecord,
 } from './types.ts';
 
 const sample = (over: Partial<PerformanceSample> = {}): PerformanceSample => ({
@@ -32,7 +34,7 @@ const errSample = (over: Partial<PerformanceDimensions> = {}): PerformanceDimens
 
 const impls: Array<{ name: string; open: () => Promise<PerformanceRepo> }> = [
   { name: 'memory', open: async () => new InMemoryRepo().performance },
-  { name: 'sqlite', open: async () => new (await import('./sql.ts')).SqlRepo(await createSqliteTestDb()).performance },
+  { name: 'sqlite', open: async () => new SqlRepo(await createSqliteTestDb()).performance },
 ];
 
 for (const impl of impls) {
@@ -172,3 +174,22 @@ for (const impl of impls) {
     });
   });
 }
+
+describe('SqlPerformanceRepo upsertSummary set-mode guard', () => {
+  it("throws when set() is handed a record missing a count column", async () => {
+    const repo = new SqlRepo(await createSqliteTestDb()).performance;
+    // TS enforces every count on the public shape; test the runtime guard by
+    // casting a partial through, mirroring an `as`-cast slipping past compile.
+    const incomplete = {
+      ...errSample(),
+      requests: 5,
+      errors: 0,
+      ttftSamples: 5,
+      tpotSamples: 5,
+      // ttftMsSum omitted on purpose
+      tpotUsSum: 40_000,
+      buckets: [],
+    } as unknown as PerformanceTelemetryRecord;
+    await expect(repo.set(incomplete)).rejects.toThrow(/missing count column ttft_ms_sum/);
+  });
+});
