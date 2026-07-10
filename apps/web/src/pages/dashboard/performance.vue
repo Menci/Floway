@@ -283,6 +283,14 @@ const load = async () => {
 // fields (percentile, metric, sort key/dir) don't need a re-fetch.
 watch([performanceRange, performanceGroupBy, filterModel, filterUpstream, filterOperation, filterRuntime, filterUserId, filterKeyId], load);
 
+// Switching groupBy re-shapes the chart around a new axis; the hidden-series
+// set was captured against the previous axis and its ids are meaningless in
+// the new one. Reset so the new view starts fully visible — the sync-to-URL
+// watchEffect drops the `hide=` param automatically once the set is empty.
+watch(performanceGroupBy, () => {
+  hiddenPerformanceSeries.value.clear();
+});
+
 // Background tabs shouldn't burn backend cycles running the 6-way overview
 // aggregation every 60s while nobody's looking. Gate the poll on document
 // visibility and resume the loop as soon as the user comes back. `resume()`
