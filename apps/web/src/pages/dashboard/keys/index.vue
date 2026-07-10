@@ -4,10 +4,10 @@ import { computed, ref } from 'vue';
 
 import { callApi, useApi } from '../../../api/client.ts';
 import type { ApiKey } from '../../../api/types.ts';
-import CliSnippet from '../../../components/keys/CliSnippet.vue';
+import AgentSetupCard from '../../../components/keys/AgentSetupCard.vue';
 import EditKeyDialog from '../../../components/keys/EditKeyDialog.vue';
 import KeysTable from '../../../components/keys/KeysTable.vue';
-import { useModelsStore } from '../../../composables/useModels.ts';
+import { useAddressableModelsStore } from '../../../composables/useModels.ts';
 import { useUpstreamOptionsStore } from '../../../composables/useUpstreamOptions.ts';
 import { Button, Input } from '@floway-dev/ui';
 
@@ -17,7 +17,7 @@ export const useKeysPageData = defineBasicLoader(async () => {
   const [keysRes] = await Promise.all([
     callApi<ApiKey[]>(() => api.api.keys.$get()),
     upstreamOptions.load(),
-    useModelsStore().load(),
+    useAddressableModelsStore().load(),
   ]);
   return {
     keys: keysRes.error ? [] : keysRes.data,
@@ -30,7 +30,7 @@ export const useKeysPageData = defineBasicLoader(async () => {
 
 const api = useApi();
 const upstreamOptionsStore = useUpstreamOptionsStore();
-const modelsStore = useModelsStore();
+const modelsStore = useAddressableModelsStore();
 const initialData = useKeysPageData();
 
 const keys = ref<ApiKey[]>(initialData.data.value.keys);
@@ -39,7 +39,6 @@ const newName = ref('');
 const creating = ref(false);
 const editTarget = ref<ApiKey | undefined>();
 const editOpen = ref(false);
-const selectedKeyId = ref<string>('');
 const copied = ref<string | null>(null);
 const copyFailed = ref<string | null>(null);
 
@@ -108,10 +107,12 @@ const copyToClipboard = async (text: string, tag: string) => {
   }
 };
 
-const selectedKey = computed(() => keys.value.find(k => k.id === selectedKeyId.value));
-const configurationKey = computed(() => selectedKey.value?.key ?? keys.value[0]?.key ?? '<your-api-key>');
-const modelsForSnippets = computed(() => modelsStore.models.value ?? []);
 const upstreamOptions = computed(() => upstreamOptionsStore.options.value);
+// The setup card revalidates its selected key against the live account, so it
+// only needs each key's id and name; a genuine no-key → has-key transition
+// re-acquires a lease by remounting the card with a fresh useAgentSetup.
+const setupKeys = computed(() => keys.value.map(k => ({ id: k.id, name: k.name })));
+const models = computed(() => modelsStore.models.value ?? []);
 </script>
 
 <template>
@@ -146,10 +147,8 @@ const upstreamOptions = computed(() => upstreamOptionsStore.options.value);
       <KeysTable
         :keys="keys"
         :upstreams="upstreamOptions"
-        :selected-id="selectedKeyId"
         :copied="copied"
         :copy-failed="copyFailed"
-        @select="id => selectedKeyId = id"
         @copy="(text, tag) => copyToClipboard(text, tag)"
         @edit="openEdit"
         @rotate="rotate"
@@ -157,22 +156,13 @@ const upstreamOptions = computed(() => upstreamOptionsStore.options.value);
       />
     </div>
 
-    <div class="glass-card p-5 sm:p-6 animate-in delay-1">
-      <span class="text-xs font-medium text-gray-500 uppercase tracking-widest">Configuration</span>
-
-      <p v-if="selectedKey" class="text-xs text-accent-cyan mt-2 flex items-center gap-1.5">
-        <svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="12" r="10" />
-          <path d="M12 16v-4" />
-          <path d="M12 8h.01" />
-        </svg>
-        Configs below use the selected key.
-      </p>
-
-      <div class="mt-5">
-        <CliSnippet :api-key="configurationKey" :models="modelsForSnippets" />
-      </div>
-    </div>
+    <AgentSetupCard
+      :key="keys.length > 0 ? 'has-keys' : 'no-keys'"
+      :keys="setupKeys"
+      :models="models"
+      :loading="modelsStore.loading.value"
+      :error="modelsStore.error.value"
+    />
 
     <EditKeyDialog
       v-if="editTarget"

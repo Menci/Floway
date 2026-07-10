@@ -12,13 +12,11 @@ dayjs.extend(relativeTime);
 const props = defineProps<{
   keys: ApiKey[];
   upstreams: UpstreamOption[];
-  selectedId: string;
   copied: string | null;
   copyFailed: string | null;
 }>();
 
 defineEmits<{
-  select: [id: string];
   copy: [text: string, tag: string];
   edit: [key: ApiKey];
   rotate: [key: ApiKey];
@@ -78,16 +76,10 @@ const upstreamsTextClass = (k: ApiKey) => {
         <tr
           v-for="k in keys"
           :key="k.id"
-          class="border-b border-white/[0.03] transition-colors cursor-pointer"
-          :class="selectedId === k.id ? 'bg-accent-cyan/5 hover:bg-accent-cyan/8' : 'hover:bg-white/[0.02]'"
-          @click="$emit('select', k.id)"
+          class="border-b border-white/[0.03] transition-colors hover:bg-white/[0.02]"
         >
           <td class="py-3 pr-4 pl-2">
             <div class="flex items-center gap-2 min-w-0">
-              <div
-                class="w-1.5 h-1.5 rounded-full shrink-0 transition-colors"
-                :class="selectedId === k.id ? 'bg-accent-cyan' : 'bg-transparent'"
-              />
               <span class="text-white font-medium truncate">{{ k.name }}</span>
             </div>
           </td>
@@ -113,7 +105,7 @@ const upstreamsTextClass = (k: ApiKey) => {
                 :class="copyFailed === 'key-' + k.id ? 'text-accent-rose' : 'text-gray-600 hover:text-accent-cyan'"
                 aria-label="Copy API key"
                 :title="copyFailed === 'key-' + k.id ? 'Copy failed' : 'Copy key'"
-                @click.stop="$emit('copy', k.key, 'key-' + k.id)"
+                @click="$emit('copy', k.key, 'key-' + k.id)"
               >
                 <svg v-if="copyFailed === 'key-' + k.id" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <circle cx="12" cy="12" r="10" />
@@ -132,7 +124,7 @@ const upstreamsTextClass = (k: ApiKey) => {
                 class="inline-flex min-h-9 min-w-9 items-center justify-center rounded-md text-gray-600 hover:text-accent-cyan hover:bg-white/[0.04] transition-colors p-1"
                 aria-label="Edit API key"
                 title="Edit key"
-                @click.stop="$emit('edit', k)"
+                @click="$emit('edit', k)"
               >
                 <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
@@ -143,7 +135,7 @@ const upstreamsTextClass = (k: ApiKey) => {
                 class="inline-flex min-h-9 min-w-9 items-center justify-center rounded-md text-gray-600 hover:text-accent-amber hover:bg-white/[0.04] transition-colors p-1"
                 aria-label="Rotate API key"
                 title="Rotate key"
-                @click.stop="$emit('rotate', k)"
+                @click="$emit('rotate', k)"
               >
                 <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M21.5 2v6h-6" />
@@ -156,7 +148,7 @@ const upstreamsTextClass = (k: ApiKey) => {
                 class="inline-flex min-h-9 min-w-9 items-center justify-center rounded-md text-gray-600 hover:text-accent-rose hover:bg-white/[0.04] transition-colors p-1"
                 aria-label="Delete API key"
                 title="Delete key"
-                @click.stop="$emit('remove', k)"
+                @click="$emit('remove', k)"
               >
                 <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <polyline points="3 6 5 6 21 6" />
