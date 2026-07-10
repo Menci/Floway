@@ -466,14 +466,14 @@ const performanceSummary = computed<PerformanceDisplayRecord>(() => overview.val
             <option v-for="v in overview.dimensionValues.runtimeLocations" :key="v" :value="v">{{ v }}</option>
           </select>
         </label>
-        <label v-if="performanceView === 'all-by-user' && performanceGroupBy !== 'userId'" class="flex items-center gap-1.5 text-xs text-gray-500">
+        <label v-if="performanceView === 'all-by-user' && performanceGroupBy !== 'userId' && performanceGroupBy !== 'keyId'" class="flex items-center gap-1.5 text-xs text-gray-500">
           <span>User:</span>
           <select v-model="filterUserId" class="shrink-0 rounded-lg bg-surface-800 px-3 py-1.5 text-xs font-medium text-gray-300 outline-none">
             <option value="">All</option>
             <option v-for="v in overview.dimensionValues.userIds" :key="v" :value="String(v)">{{ userNameById.get(v) ?? `user ${v}` }}</option>
           </select>
         </label>
-        <label v-if="performanceGroupBy !== 'keyId'" class="flex items-center gap-1.5 text-xs text-gray-500">
+        <label v-if="performanceGroupBy !== 'keyId' && performanceGroupBy !== 'userId'" class="flex items-center gap-1.5 text-xs text-gray-500">
           <span>API Key:</span>
           <select v-model="filterKeyId" class="shrink-0 rounded-lg bg-surface-800 px-3 py-1.5 text-xs font-medium text-gray-300 outline-none">
             <option value="">All</option>
