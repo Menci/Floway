@@ -20,11 +20,15 @@ export interface ModelOption {
   unavailable: boolean;
 }
 
-// Native-family matchers. Prefixed addressable ids (e.g. `openrouter/claude-3`)
-// match on their trailing segment so a provider prefix does not demote a model
-// out of its own family band. Ref: AGENTS.md — "All model selectors retain every
-// addressable chat model and use family matching only for stable native-first
-// ordering."
+// These matchers affect picker rank only; every addressable chat id remains in
+// both pickers. Claude Code discovers gateway models under Claude-family names,
+// while Codex's catalog-driven picker applies native behavior to GPT-5/Codex
+// slugs. A provider prefix may precede the family segment in Floway's addressable
+// ids, so matching starts at either the whole id or a path segment.
+// Refs:
+// https://code.claude.com/docs/en/llm-gateway-protocol#request-and-response
+// https://github.com/openai/codex/blob/c4318c386de365bd0dd9595a08d55a30bb142d11/codex-rs/tui/src/chatwidget/model_popups.rs#L158-L168
+// https://github.com/openai/codex/blob/c4318c386de365bd0dd9595a08d55a30bb142d11/codex-rs/models-manager/src/model_presets.rs#L1-L6
 const NATIVE_MATCHERS: Record<AgentFamily, RegExp> = {
   claude: /(?:^|\/)claude-/i,
   codex: /(?:^|\/)(?:gpt-5(?:$|[.\-])|codex-)/i,
