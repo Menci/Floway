@@ -3,7 +3,7 @@ import { useDocumentVisibility, useIntervalFn } from '@vueuse/core';
 import type { TooltipItem } from 'chart.js';
 import type { ChartConfiguration } from 'chart.js/auto';
 import { defineBasicLoader } from 'unplugin-vue-router/data-loaders/basic';
-import { computed, ref, watch, watchEffect } from 'vue';
+import { computed, ref, shallowRef, watch, watchEffect } from 'vue';
 import { useRoute, useRouter, type LocationQuery, type LocationQueryValue } from 'vue-router';
 
 import { callApi, useApi } from '../../api/client.ts';
@@ -244,7 +244,11 @@ const hiddenPerformanceSeries = ref(new Set<string>(initial.hidden));
 const tableSortKey = ref<TableSortKey>(initial.sortKey);
 const tableSortDir = ref<SortDir>(initial.sortDir);
 
-const overview = ref<PerformanceOverviewResponse>(initialOverview.data.value.overview);
+// shallowRef: the overview response is only ever replaced whole
+// (load() assigns `overview.value = data` on refetch); nested arrays
+// and rows never mutate in place, so recursive reactive proxying of
+// every row's fields would burn cycles for zero gain.
+const overview = shallowRef<PerformanceOverviewResponse>(initialOverview.data.value.overview);
 const performanceError = ref<string | null>(initialOverview.data.value.error);
 const performanceLoading = ref(false);
 let performanceRequestId = 0;
@@ -324,17 +328,14 @@ watchEffect(() => {
 // to the actor by construction, so splitting by user is a no-op there).
 // By API Key is available in both views — admins see every user's keys,
 // self-scoped users see only their own.
-const groupByOptions = computed<{ value: GroupBy; label: string }[]>(() => {
-  const shared: { value: GroupBy; label: string }[] = [
-    { value: 'model', label: 'By Model' },
-    { value: 'upstream', label: 'By Upstream' },
-    { value: 'operation', label: 'By Operation' },
-    { value: 'runtimeLocation', label: 'By Region' },
-    { value: 'keyId', label: 'By API Key' },
-  ];
-  if (performanceView === 'all-by-user') return [...shared, { value: 'userId', label: 'By User' }];
-  return shared;
-});
+const groupByOptions: { value: GroupBy; label: string }[] = [
+  { value: 'model', label: 'By Model' },
+  { value: 'upstream', label: 'By Upstream' },
+  { value: 'operation', label: 'By Operation' },
+  { value: 'runtimeLocation', label: 'By Region' },
+  { value: 'keyId', label: 'By API Key' },
+  ...(performanceView === 'all-by-user' ? [{ value: 'userId' as const, label: 'By User' }] : []),
+];
 
 const performanceSeriesIsolation = createSeriesIsolation();
 
