@@ -700,6 +700,11 @@ class SqlPerformanceRepo implements PerformanceRepo {
     await runStatements(this.db, [summaryStmt, deleteStmt, ...bucketStmts]);
   }
 
+  // 'add' takes a partial map because missing columns are a no-op increment.
+  // 'set' rewrites the row wholesale, so a missing column would zero the
+  // existing value — the overload forces callers to spell out every count.
+  private upsertSummary(dims: PerformanceDimensions, counts: Partial<Record<PerformanceSummaryCountColumn, number>>, mode: 'add'): SqlPreparedStatement;
+  private upsertSummary(dims: PerformanceDimensions, counts: Record<PerformanceSummaryCountColumn, number>, mode: 'set'): SqlPreparedStatement;
   private upsertSummary(
     dims: PerformanceDimensions,
     counts: Partial<Record<PerformanceSummaryCountColumn, number>>,
