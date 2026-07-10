@@ -1,5 +1,5 @@
 <script lang="ts">
-import { useIntervalFn } from '@vueuse/core';
+import { useDocumentVisibility, useIntervalFn } from '@vueuse/core';
 import type { TooltipItem } from 'chart.js';
 import type { ChartConfiguration } from 'chart.js/auto';
 import { defineBasicLoader } from 'unplugin-vue-router/data-loaders/basic';
@@ -9,7 +9,7 @@ import { useRoute, useRouter, type LocationQuery, type LocationQueryValue } from
 import { callApi, useApi } from '../../api/client.ts';
 import ChartCanvas from '../../components/charts/ChartCanvas.vue';
 import ChartSeriesControls from '../../components/charts/ChartSeriesControls.vue';
-import { chartColor, chartFont, chartXAxisTick, dashboardBuckets, dashboardRangeQuery, type DashboardRange } from '../../components/charts/dashboard-chart.ts';
+import { DASHBOARD_CHART_PALETTE, chartFont, chartXAxisTick, dashboardBuckets, dashboardRangeQuery, type DashboardRange } from '../../components/charts/dashboard-chart.ts';
 import { applySeriesSelection, chartEventsWithDoubleClick, chartSeriesIds, createSeriesIsolation, handleLegendClick } from '../../components/charts/series-selection.ts';
 import { useUpstreamsStore } from '../../composables/useUpstreams.ts';
 import { useAuthStore } from '../../stores/auth.ts';
@@ -98,21 +98,71 @@ interface UrlState {
   sortDir: SortDir;
 }
 
-const parseUrlState = (q: LocationQuery): UrlState => ({
-  metric: asOneOf(asStr(q.m), METRIC_VALUES, 'ttft'),
-  percentile: asOneOf(asStr(q.pct), PERCENTILE_VALUES, 'p95'),
-  groupBy: asOneOf(asStr(q.g), GROUP_BY_VALUES, 'model'),
-  range: asOneOf(asStr(q.r), RANGE_VALUES, 'today'),
-  filterModel: asStr(q.fm),
-  filterUpstream: asStr(q.fu),
-  filterOperation: asStr(q.fo),
-  filterRuntime: asStr(q.fr),
-  filterUserId: asStr(q.fusr),
-  filterKeyId: asStr(q.fk),
-  hidden: asStr(q.hide).split(',').filter(Boolean),
-  sortKey: asOneOf(asStr(q.sort), SORT_KEY_VALUES, 'requests'),
-  sortDir: asOneOf(asStr(q.dir), SORT_DIR_VALUES, 'desc'),
+// Single source of truth for URL <-> UrlState. Every field declares its
+// query key, how to parse a raw string, and how to serialize back — returning
+// `undefined` from `serialize` elides the key so pristine defaults leave no
+// query string behind. parseUrlState and serializeUrlState both loop over
+// this map, so read and write can never drift.
+interface UrlField<T> {
+  urlKey: string;
+  parse: (v: string) => T;
+  serialize: (v: T) => string | undefined;
+}
+
+const enumField = <T extends string>(urlKey: string, allowed: readonly T[], fallback: T): UrlField<T> => ({
+  urlKey,
+  parse: v => asOneOf(v, allowed, fallback),
+  serialize: v => (v === fallback ? undefined : v),
 });
+
+const stringField = (urlKey: string): UrlField<string> => ({
+  urlKey,
+  parse: v => v,
+  serialize: v => (v === '' ? undefined : v),
+});
+
+const URL_FIELDS = {
+  metric: enumField('m', METRIC_VALUES, 'ttft'),
+  percentile: enumField('pct', PERCENTILE_VALUES, 'p95'),
+  groupBy: enumField('g', GROUP_BY_VALUES, 'model'),
+  range: enumField('r', RANGE_VALUES, 'today'),
+  filterModel: stringField('fm'),
+  filterUpstream: stringField('fu'),
+  filterOperation: stringField('fo'),
+  filterRuntime: stringField('fr'),
+  filterUserId: stringField('fusr'),
+  filterKeyId: stringField('fk'),
+  hidden: {
+    urlKey: 'hide',
+    parse: (v: string): string[] => v.split(',').filter(Boolean),
+    // TODO: escape — hide param cannot round-trip group ids containing commas
+    serialize: (v: string[]) => (v.length > 0 ? v.join(',') : undefined),
+  },
+  sortKey: enumField('sort', SORT_KEY_VALUES, 'requests'),
+  sortDir: enumField('dir', SORT_DIR_VALUES, 'desc'),
+} satisfies { [K in keyof UrlState]: UrlField<UrlState[K]> };
+
+const parseUrlState = (q: LocationQuery): UrlState => {
+  const out: Partial<Record<keyof UrlState, unknown>> = {};
+  for (const key of Object.keys(URL_FIELDS) as (keyof UrlState)[]) {
+    const field = URL_FIELDS[key];
+    out[key] = field.parse(asStr(q[field.urlKey]));
+  }
+  return out as UrlState;
+};
+
+const serializeUrlState = (state: UrlState): Record<string, string> => {
+  const out: Record<string, string> = {};
+  for (const key of Object.keys(URL_FIELDS) as (keyof UrlState)[]) {
+    const field = URL_FIELDS[key];
+    // Union-of-serialize collapses its param type to `never` under
+    // contravariance; cast state[key] so the loop compiles. Runtime call is
+    // sound because the `satisfies` clause pairs each key with its own field.
+    const value = field.serialize(state[key] as never);
+    if (value !== undefined) out[field.urlKey] = value;
+  }
+  return out;
+};
 
 const buildOverviewQuery = (state: UrlState, view: PerformanceView, at: number): Record<string, string> => {
   const { start, end, bucket } = dashboardRangeQuery(state.range, at);
@@ -235,29 +285,24 @@ const load = async () => {
 // the response). Chart-only fields (hiddenPerformanceSeries) and pure display
 // fields (percentile, metric, sort key/dir) don't need a re-fetch.
 watch([performanceRange, performanceGroupBy, filterModel, filterUpstream, filterOperation, filterRuntime, filterUserId, filterKeyId], load);
-useIntervalFn(() => { void load(); }, 60_000);
 
-// Sync every state field to the URL query. Only non-default values are
-// written so a pristine dashboard URL is `/dashboard/performance` with no
-// junk trailing it. `router.replace` (not `push`) so click-heavy toggling
-// doesn't flood the browser history.
+// Background tabs shouldn't burn backend cycles running the 6-way overview
+// aggregation every 60s while nobody's looking. Gate the poll on document
+// visibility and resume the loop as soon as the user comes back.
+const { pause: pausePoll, resume: resumePoll } = useIntervalFn(() => { void load(); }, 60_000);
+const documentVisibility = useDocumentVisibility();
+watch(documentVisibility, v => {
+  if (v === 'visible') resumePoll();
+  else pausePoll();
+}, { immediate: true });
+
+// Sync every state field to the URL query via URL_FIELDS so a pristine
+// dashboard URL stays `/dashboard/performance` with no junk trailing it.
+// `router.replace` (not `push`) so click-heavy toggling doesn't flood the
+// browser history.
 watchEffect(() => {
-  const s = currentUrlState();
-  const q: Record<string, string> = {};
-  if (s.metric !== 'ttft') q.m = s.metric;
-  if (s.percentile !== 'p95') q.pct = s.percentile;
-  if (s.groupBy !== 'model') q.g = s.groupBy;
-  if (s.range !== 'today') q.r = s.range;
-  if (s.filterModel !== '') q.fm = s.filterModel;
-  if (s.filterUpstream !== '') q.fu = s.filterUpstream;
-  if (s.filterOperation !== '') q.fo = s.filterOperation;
-  if (s.filterRuntime !== '') q.fr = s.filterRuntime;
-  if (s.filterUserId !== '') q.fusr = s.filterUserId;
-  if (s.filterKeyId !== '') q.fk = s.filterKeyId;
-  if (s.hidden.length > 0) q.hide = s.hidden.join(',');
-  if (s.sortKey !== 'requests') q.sort = s.sortKey;
-  if (s.sortDir !== 'desc') q.dir = s.sortDir;
-  void router.replace({ query: q });
+  // swallow NavigationFailure — a superseded replace is not an error
+  router.replace({ query: serializeUrlState(currentUrlState()) }).catch(() => {});
 });
 
 // Group-by dropdown: By User is admin-only (every self-view row belongs
@@ -277,6 +322,14 @@ const groupByOptions = computed<{ value: GroupBy; label: string }[]>(() => {
 });
 
 const performanceSeriesIsolation = createSeriesIsolation();
+
+// Stable per-name color: filter-driven series changes don't reshuffle every
+// remaining line. Simple djb2-ish string hash into the shared palette.
+const chartColor = (groupName: string): string => {
+  let h = 0;
+  for (let i = 0; i < groupName.length; i++) h = (h * 31 + groupName.charCodeAt(i)) >>> 0;
+  return DASHBOARD_CHART_PALETTE[h % DASHBOARD_CHART_PALETTE.length]!;
+};
 
 // Name resolvers — all three (upstream, user, API key) look up display names
 // from separate metadata sources. resolveGroupName picks the right one based
@@ -315,13 +368,16 @@ const tableSortToggle = (key: TableSortKey): void => {
   tableSortDir.value = key === 'group' ? 'asc' : 'desc';
 };
 
-// tok/s (Output speed) is inverted from tpotUs: bigger tok/s = smaller tpotUs.
-// Clicking "Output speed p95 ↓" expects "fastest first", so we invert the
-// direction for that column so the visible ordering matches the label.
+// Output speed is stored as tpotUs (smaller = faster), but the column
+// header labels it "Output speed" (tok/s, higher = better), so clicking
+// asc/desc must produce the ordering the label promises. Bake the invert
+// into a single effectiveSign so null-handling stays consistent — nulls
+// always sort last regardless of direction.
 const sortedRows = (rows: readonly PerformanceDisplayRecord[], groupBy: GroupBy): PerformanceDisplayRecord[] => {
   const key = tableSortKey.value;
   const dir = tableSortDir.value;
-  const sign = dir === 'asc' ? 1 : -1;
+  const invert = key === 'tpotUsP95' ? -1 : 1;
+  const sign = (dir === 'asc' ? 1 : -1) * invert;
   const compareNumbers = (a: number | null, b: number | null): number => {
     if (a === null && b === null) return 0;
     if (a === null) return 1;
@@ -331,9 +387,6 @@ const sortedRows = (rows: readonly PerformanceDisplayRecord[], groupBy: GroupBy)
   return [...rows].sort((a, b) => {
     if (key === 'group') {
       return resolveGroupName(a.group, groupBy).localeCompare(resolveGroupName(b.group, groupBy)) * sign;
-    }
-    if (key === 'tpotUsP95') {
-      return compareNumbers(a.tpotUsP95, b.tpotUsP95) * -1;
     }
     return compareNumbers(a[key], b[key]);
   });
@@ -383,8 +436,8 @@ const chartConfig = computed<ChartConfiguration<'line'>>(() => {
     inner.set(r.bucket, getChartValue(r, performancePercentile.value));
     groups.set(r.group, inner);
   }
-  const datasets = [...groups.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([group, byBucket], i) => {
-    const color = chartColor(i);
+  const datasets = [...groups.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([group, byBucket]) => {
+    const color = chartColor(group);
     return {
       label: resolveGroupName(group, performanceGroupBy.value),
       seriesId: group,
