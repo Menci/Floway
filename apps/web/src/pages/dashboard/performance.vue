@@ -386,7 +386,6 @@ const performanceSummary = computed<PerformanceDisplayRecord>(() => overview.val
       <div class="flex flex-col gap-3 mb-3 lg:flex-row lg:items-center lg:justify-between">
         <div class="flex flex-wrap items-center gap-2">
           <span class="text-xs font-medium text-gray-500 uppercase tracking-widest mr-1">Performance</span>
-          <Spinner v-if="performanceLoading" class="h-3.5 w-3.5 text-gray-500 mr-1" />
           <OverlayScrollbars class="max-w-full rounded-lg bg-surface-800" content-class="flex items-center gap-1 p-0.5" no-tabindex>
             <button
               class="shrink-0 px-3 py-1.5 rounded-md text-xs font-medium transition-all"
@@ -406,6 +405,10 @@ const performanceSummary = computed<PerformanceDisplayRecord>(() => overview.val
           >
             <option v-for="opt in groupByOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
           </select>
+          <!-- Loading spinner sits next to the group-by dropdown but always
+               occupies its slot (opacity toggle instead of v-if) so the row
+               above the chart doesn't reflow every refresh. -->
+          <Spinner class="h-3.5 w-3.5 text-gray-500 transition-opacity" :class="performanceLoading ? 'opacity-100' : 'opacity-0'" />
         </div>
         <div class="flex flex-wrap items-center gap-2">
           <OverlayScrollbars class="max-w-full rounded-lg bg-surface-800" content-class="flex items-center gap-1 p-0.5" no-tabindex>
