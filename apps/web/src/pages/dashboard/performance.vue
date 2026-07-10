@@ -13,6 +13,7 @@ import { chartColorByName, chartFont, chartXAxisTick, dashboardBuckets, dashboar
 import { applySeriesSelection, chartEventsWithDoubleClick, chartSeriesIds, createSeriesIsolation, handleLegendClick } from '../../components/charts/series-selection.ts';
 import { useUpstreamsStore } from '../../composables/useUpstreams.ts';
 import { useAuthStore } from '../../stores/auth.ts';
+import type { PerformanceDisplayRecord } from '@floway-dev/gateway/control-plane/performance/aggregate';
 import { OverlayScrollbars, Spinner } from '@floway-dev/ui';
 
 type PerformanceView = 'all-by-user' | 'self-by-key';
@@ -21,19 +22,6 @@ type MetricView = 'ttft' | 'tokPerSec';
 type PercentileKey = 'p50' | 'p95' | 'p99';
 type TableSortKey = 'group' | 'requests' | 'errors' | 'ttftMsP95' | 'tpotUsP95';
 type SortDir = 'asc' | 'desc';
-
-interface PerformanceDisplayRecord {
-  bucket: string;
-  group: string;
-  requests: number;
-  errors: number;
-  ttftMsP50: number | null;
-  ttftMsP95: number | null;
-  ttftMsP99: number | null;
-  tpotUsP50: number | null;
-  tpotUsP95: number | null;
-  tpotUsP99: number | null;
-}
 
 // PerformanceDisplayRecord + the human label resolved once at sort time so
 // the template never re-invokes resolveGroupName per render tick.
