@@ -97,7 +97,7 @@ export interface PerformanceDimensions {
 }
 
 // TPOT is measurable only when at least two output tokens are streamed; the
-// caller (recordRequestPerformance) enforces that gate before setting
+// caller (recordPerformance) enforces that gate before setting
 // `tpotUs`. A TTFT-only sample omits it entirely.
 export interface PerformanceSample extends PerformanceDimensions {
   ttftMs: number;

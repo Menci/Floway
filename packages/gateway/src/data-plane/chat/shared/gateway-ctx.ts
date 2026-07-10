@@ -21,7 +21,7 @@ import type { PerformanceTelemetryContext } from '@floway-dev/provider';
 //     synthesized internal-error / translator-input-error result would carry
 //     no performance context and `recordFailedRequest` would short-circuit
 //     on the missing telemetry, dropping the failure from performance_summary.
-// The first two are read by recordRequestPerformance in the respond-layer
+// The first two are read by recordPerformance in the respond-layer
 // finally; the third is read by the http.ts error-render helpers. The
 // numeric slots use `null` because a real timestamp of `0` would be
 // ambiguous; `attemptTelemetry` uses `undefined` so it flows straight into

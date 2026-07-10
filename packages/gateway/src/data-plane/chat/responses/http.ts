@@ -95,7 +95,7 @@ export const responsesHttp = {
       const result = await responsesServe.compact({ payload, ctx, headers: inboundHeadersForUpstream(c) });
       if (result.type === 'result') {
         // Compact drains the upstream stream into a single envelope with
-        // no per-token stamps; recordRequestPerformance therefore lands in
+        // no per-token stamps; recordPerformance therefore lands in
         // the neutral bucket (request counted, no TTFT/TPOT sample). The
         // envelope's own `status` is authoritative for failure — a compact
         // that surfaced as `response.failed` must be recorded as such so it

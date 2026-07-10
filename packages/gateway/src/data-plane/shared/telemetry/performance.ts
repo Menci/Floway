@@ -1,11 +1,17 @@
 import { currentHour } from './hour.ts';
 import { getRepo } from '../../../repo/index.ts';
 import type { PerformanceDimensions } from '../../../repo/types.ts';
-import type { GatewayCtx, PerfTiming } from '../../chat/shared/gateway-ctx.ts';
-import type { BackgroundScheduler } from '@floway-dev/platform';
+import type { GatewayCtx } from '../../chat/shared/gateway-ctx.ts';
 import type { PerformanceTelemetryContext } from '@floway-dev/provider';
 
 export type { PerformanceTelemetryContext };
+
+// Structural view of the fields recordPerformance actually reads. Every chat /
+// passthrough call site passes its full `GatewayCtx`; the Responses image-
+// generation server tool synthesizes a per-dispatch object because each image
+// call carries its own TTFT window and can't share `ctx.perfTiming` with the
+// enclosing Responses turn.
+type PerformanceRecordScope = Pick<GatewayCtx, 'perfTiming' | 'backgroundScheduler'>;
 
 const record = async (op: Promise<void>, label: string): Promise<void> => {
   try {
@@ -24,28 +30,29 @@ const dimensions = (telemetry: PerformanceTelemetryContext): PerformanceDimensio
   runtimeLocation: telemetry.runtimeLocation,
 });
 
-const recordError = (dims: PerformanceDimensions): Promise<void> =>
-  record(getRepo().performance.recordError(dims), 'error');
-
 // TTFT is measured from the provider's outbound-fetch stamp so it isolates
 // upstream round-trip latency from gateway-internal overhead. Any success
 // without a real upstream call or first-output-token stamp records as
 // neutral; only genuine upstream failures land in the error bucket. TPOT
 // layers on top only when at least two output tokens streamed — see the
-// per-branch comments below.
-export const recordRequestPerformance = (
-  scheduler: BackgroundScheduler,
-  perfTiming: PerfTiming,
+// per-branch comments below. `requestFinishedAt` is the caller's monotonic
+// timestamp for the end of the token stream. It MUST be sampled before any
+// post-stream persistence work (e.g. the usage D1 write in
+// settleUsageAndPerformance) so TPOT reflects the stream itself rather than
+// the persistence path.
+export const recordPerformance = (
+  ctx: PerformanceRecordScope,
   telemetry: PerformanceTelemetryContext | undefined,
   failed: boolean,
   outputTokens: number,
   requestFinishedAt: number,
 ): void => {
   if (!telemetry) return;
-  if (outputTokens < 0) throw new Error(`recordRequestPerformance: negative outputTokens=${outputTokens}`);
+  if (outputTokens < 0) throw new Error(`recordPerformance: negative outputTokens=${outputTokens}`);
+  const { perfTiming, backgroundScheduler: scheduler } = ctx;
   const dims = dimensions(telemetry);
   if (failed) {
-    scheduler(recordError(dims));
+    scheduler(record(getRepo().performance.recordError(dims), 'error'));
     return;
   }
   if (
@@ -71,31 +78,6 @@ export const recordRequestPerformance = (
   const streamDeltaMs = requestFinishedAt - perfTiming.firstOutputTokenAt;
   const tpotUs = Math.round((streamDeltaMs * 1_000) / (outputTokens - 1));
   scheduler(record(getRepo().performance.recordSample({ ...dims, ttftMs, tpotUs }), 'sample'));
-};
-
-// Ctx-taking wrapper over recordRequestPerformance. Every data-plane
-// caller already has a GatewayCtx in hand, so callers pass it directly
-// instead of destructuring `.backgroundScheduler` and `.perfTiming` at
-// each call site. `requestFinishedAt` is the caller's monotonic
-// timestamp for the end of the token stream. It MUST be sampled before
-// any post-stream persistence work (e.g. the usage D1 write in
-// settleUsageAndPerformance) so TPOT reflects the stream itself rather
-// than the persistence path.
-export const recordPerformance = (
-  ctx: GatewayCtx,
-  telemetry: PerformanceTelemetryContext | undefined,
-  failed: boolean,
-  outputTokens: number,
-  requestFinishedAt: number,
-): void => {
-  recordRequestPerformance(
-    ctx.backgroundScheduler,
-    ctx.perfTiming,
-    telemetry,
-    failed,
-    outputTokens,
-    requestFinishedAt,
-  );
 };
 
 // Terminal-failure shortcut for every pre-stream / mid-stream error branch:
