@@ -4,7 +4,7 @@ import type { TooltipItem } from 'chart.js';
 import type { ChartConfiguration } from 'chart.js/auto';
 import { defineBasicLoader } from 'unplugin-vue-router/data-loaders/basic';
 import { computed, ref, watch, watchEffect } from 'vue';
-import { useRoute, useRouter, type LocationQuery, type LocationQueryValue } from 'vue-router';
+import { useRoute, useRouter, isNavigationFailure, NavigationFailureType, type LocationQuery, type LocationQueryValue } from 'vue-router';
 
 import { callApi, useApi } from '../../api/client.ts';
 import ChartCanvas from '../../components/charts/ChartCanvas.vue';
@@ -288,12 +288,24 @@ watch([performanceRange, performanceGroupBy, filterModel, filterUpstream, filter
 
 // Background tabs shouldn't burn backend cycles running the 6-way overview
 // aggregation every 60s while nobody's looking. Gate the poll on document
-// visibility and resume the loop as soon as the user comes back.
+// visibility and resume the loop as soon as the user comes back. `resume()`
+// only re-arms the interval; without an immediate fetch a tab that came
+// back after 10 minutes would keep showing stale data for up to 60s. Force
+// a load on every visible-again transition — but skip the first invocation
+// (immediate: true fires it during setup, when the route loader has just
+// populated overview.value and a second identical request would waste a
+// round trip).
 const { pause: pausePoll, resume: resumePoll } = useIntervalFn(() => { void load(); }, 60_000);
 const documentVisibility = useDocumentVisibility();
+let visibilityInitialized = false;
 watch(documentVisibility, v => {
-  if (v === 'visible') resumePoll();
-  else pausePoll();
+  if (v === 'visible') {
+    resumePoll();
+    if (visibilityInitialized) void load();
+  } else {
+    pausePoll();
+  }
+  visibilityInitialized = true;
 }, { immediate: true });
 
 // Sync every state field to the URL query via URL_FIELDS so a pristine
@@ -301,8 +313,14 @@ watch(documentVisibility, v => {
 // `router.replace` (not `push`) so click-heavy toggling doesn't flood the
 // browser history.
 watchEffect(() => {
-  // swallow NavigationFailure — a superseded replace is not an error
-  router.replace({ query: serializeUrlState(currentUrlState()) }).catch(() => {});
+  router.replace({ query: serializeUrlState(currentUrlState()) }).catch(err => {
+    // Overlapping replaces during rapid state changes fire duplicated /
+    // aborted NavigationFailure — a benign artifact of our own
+    // watchEffect firing faster than the router resolves. Anything else
+    // is a real error and must not be swallowed.
+    if (isNavigationFailure(err, NavigationFailureType.duplicated | NavigationFailureType.aborted)) return;
+    throw err;
+  });
 });
 
 // Group-by dropdown: By User is admin-only (every self-view row belongs
