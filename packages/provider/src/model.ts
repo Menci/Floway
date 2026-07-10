@@ -63,12 +63,7 @@ export type PerformanceOperation =
   | 'text_completion'
   | 'embeddings'
   | 'image_generation'
-  | 'image_edit'
-  | 'image_variation'
-  | 'audio_transcription'
-  | 'audio_speech'
-  | 'moderation'
-  | 'rerank';
+  | 'image_edit';
 
 export interface PerformanceTelemetryContext {
   keyId: string;

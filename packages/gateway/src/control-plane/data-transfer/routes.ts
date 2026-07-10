@@ -78,7 +78,7 @@ const isNonNegativeSafeInteger = (value: unknown): value is number => typeof val
 
 const isPerformanceMetric = (value: unknown): value is PerformanceMetric => typeof value === 'string' && PERFORMANCE_METRICS.has(value as PerformanceMetric);
 
-const PERFORMANCE_OPERATIONS = new Set<PerformanceOperation>(['chat', 'text_completion', 'embeddings', 'image_generation', 'image_edit', 'image_variation', 'audio_transcription', 'audio_speech', 'moderation', 'rerank']);
+const PERFORMANCE_OPERATIONS = new Set<PerformanceOperation>(['chat', 'text_completion', 'embeddings', 'image_generation', 'image_edit']);
 const isPerformanceOperation = (value: unknown): value is PerformanceOperation => typeof value === 'string' && PERFORMANCE_OPERATIONS.has(value as PerformanceOperation);
 
 const importErrorBuilder = (field: string, expected: string) => new Error(`${field} must be ${expected}`);
