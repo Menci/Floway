@@ -93,16 +93,23 @@ export const responsesHttp = {
       ctx = createChatGatewayCtxFromHono(c, { wantsStream: false, requestBody, model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) }, apiKeyId => createResponsesHttpStore(apiKeyId, payload.store ?? undefined));
       const result = await responsesServe.compact({ payload, ctx, headers: inboundHeadersForUpstream(c) });
       if (result.type === 'result') {
-        ctx.dump?.success(result.modelIdentity, result.usage);
         // Compact drains the upstream stream into a single envelope with
         // no per-token stamps; recordRequestPerformance therefore lands in
         // the neutral bucket (request counted, no TTFT/TPOT sample). The
-        // settle helper still routes usage into billing.
+        // envelope's own `status` is authoritative for failure — a compact
+        // that surfaced as `response.failed` must be recorded as such so it
+        // shows up in the error column instead of masquerading as a success.
+        const failed = result.result.status === 'failed';
+        if (failed) {
+          ctx.dump?.failed(`compact envelope status=${result.result.status}`);
+        } else {
+          ctx.dump?.success(result.modelIdentity, result.usage);
+        }
         await settleUsageAndPerformance(
           ctx,
           { modelIdentity: result.modelIdentity, ...(result.performance ? { performance: result.performance } : {}) },
           result.usage,
-          false,
+          failed,
           'Responses HTTP (compact)',
         );
         const compactResponse = Response.json(result.result);
