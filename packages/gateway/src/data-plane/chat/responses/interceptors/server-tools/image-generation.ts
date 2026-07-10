@@ -1,7 +1,9 @@
 import { sleep } from '../../../../../shared/sleep.ts';
 import { enumerateModelCandidates } from '../../../../providers/registry.ts';
 import { appendFailedUpstreams } from '../../../../shared/failed-upstreams.ts';
+import { recordPerformance, type PerformanceTelemetryContext } from '../../../../shared/telemetry/performance.ts';
 import { recordTokenUsage, tokenUsageFromImagesBody } from '../../../../shared/telemetry/usage.ts';
+import { stampUpstreamCallStart, type PerfTiming } from '../../../shared/gateway-ctx.ts';
 import type { ServerToolLifecycleEvent, ServerToolOutputItem, ServerToolRegistration, ServerToolTerminal } from '../server-tool-shim.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { parseSSEStream } from '@floway-dev/protocols/common';
@@ -16,7 +18,7 @@ import type {
   ResponsesOutputImageGenerationCall,
   ResponsesTool,
 } from '@floway-dev/protocols/responses';
-import { providerModelOf, type Fetcher, type Provider, type ModelCandidate, type ProviderModel, identityWrapUpstreamCall } from '@floway-dev/provider';
+import { providerModelOf, type Fetcher, type Provider, type ModelCandidate, type ProviderModel } from '@floway-dev/provider';
 
 export const SHIM_TOOL_NAME = 'image_generation';
 
@@ -629,17 +631,19 @@ const issueImageCall = async (
   sources: readonly ImageSource[],
   state: ShimState,
   stream: boolean,
+  perfTiming: PerfTiming,
 ): Promise<{ response: Response; modelKey: string }> => {
   for (let attempt = 0; ; attempt++) {
     const opts = {
       fetcher,
       waitUntil: state.backgroundScheduler,
       headers: new Headers(),
-      // Image-generation sub-calls are orchestration steps within an ongoing
-      // responses stream. A stamp here would overwrite the upstream call start
-      // recorded for the primary inference fetch, so this is intentionally a
-      // no-op.
-      wrapUpstreamCall: identityWrapUpstreamCall,
+      // Stamp this image sub-call's OWN perf slot — never ctx.perfTiming —
+      // so the outer Responses turn's upstream-call stamp is preserved.
+      // Perf recording lives at the sub-call's terminal boundary in
+      // streamImageGeneration; the retry loop overwrites this slot each
+      // attempt so it reflects the dispatch that actually returned.
+      wrapUpstreamCall: stampUpstreamCallStart(perfTiming),
     };
     const { response, modelKey } = await (isEdit
       ? provider.instance.callImagesEdits(model, buildEditsForm(prompt, state.config, sources, stream), state.downstreamAbortSignal, opts)
@@ -772,6 +776,14 @@ export const parseImageStreamEvent = (data: string): ImageStreamSignal => {
 // progressively-rendered preview as a native `partial_image` frame, then
 // return the terminal `image_generation_call` item. partial_images = 0 (or
 // absent) takes a single non-streaming round-trip and yields no preview frames.
+//
+// Every sub-call records its OWN perf row under operation='image_generation'
+// or 'image_edit' via a local PerfTiming distinct from ctx.perfTiming (which
+// belongs to the outer Responses turn). firstOutputTokenAt stays null — image
+// backends are single-body from the perf model's point of view, so the row
+// lands in the neutral bucket with an honest requests + errors count and no
+// synthesized TTFT. Resolution failures record no row: no upstream was ever
+// dispatched.
 const streamImageGeneration = (
   prompt: string,
   action: 'generate' | 'edit',
@@ -785,24 +797,37 @@ const streamImageGeneration = (
   const model = providerModelOf(resolved.candidate);
   const wantsPartials = (state.config.partial_images ?? 0) > 0;
 
+  const perfTiming: PerfTiming = { upstreamCallStartedAt: null, firstOutputTokenAt: null, attemptTelemetry: undefined };
+  const perfContext: PerformanceTelemetryContext = {
+    keyId: state.apiKeyId,
+    model: model.id,
+    upstream: provider.upstream,
+    operation: isEdit ? 'image_edit' : 'image_generation',
+    runtimeLocation: state.runtimeLocation,
+  };
+  const finish = (outcome: ImageOutcome): ServerToolTerminal => {
+    recordPerformance({ perfTiming, backgroundScheduler: state.backgroundScheduler }, perfContext, !outcome.ok, 0, performance.now());
+    return imageTerminal(prompt, action, outcome);
+  };
+
   let response: Response;
   let modelKey: string;
   try {
-    ({ response, modelKey } = await issueImageCall(provider, model, fetcher, prompt, isEdit, sources, state, wantsPartials));
+    ({ response, modelKey } = await issueImageCall(provider, model, fetcher, prompt, isEdit, sources, state, wantsPartials, perfTiming));
   } catch (e) {
-    return imageTerminal(prompt, action, { ok: false, error: serverError(e) });
+    return finish({ ok: false, error: serverError(e) });
   }
 
   if (!wantsPartials) {
-    return imageTerminal(prompt, action, await consumeImageResponse(provider, model, modelKey, response, state));
+    return finish(await consumeImageResponse(provider, model, modelKey, response, state));
   }
 
   if (!response.ok) {
     const { type, code, message } = errorFromBody(await response.text(), response.status);
-    return imageTerminal(prompt, action, { ok: false, error: { type: type ?? 'image_generation_error', code, message, retryable: isRetryableImageError(code, type) } });
+    return finish({ ok: false, error: { type: type ?? 'image_generation_error', code, message, retryable: isRetryableImageError(code, type) } });
   }
   if (response.body === null) {
-    return imageTerminal(prompt, action, { ok: false, error: { type: 'image_generation_error', message: 'Image backend returned a streaming response with no body.', code: 'server_error', retryable: true } });
+    return finish({ ok: false, error: { type: 'image_generation_error', message: 'Image backend returned a streaming response with no body.', code: 'server_error', retryable: true } });
   }
 
   let finalB64: string | undefined;
@@ -818,14 +843,14 @@ const streamImageGeneration = (
       finalEcho = signal.echo;
       usage = signal.usage;
     } else {
-      return imageTerminal(prompt, action, { ok: false, error: signal.error });
+      return finish({ ok: false, error: signal.error });
     }
   }
   if (finalB64 === undefined) {
-    return imageTerminal(prompt, action, { ok: false, error: { type: 'image_generation_error', message: 'Image backend stream ended without a completed image.', code: 'server_error', retryable: true } });
+    return finish({ ok: false, error: { type: 'image_generation_error', message: 'Image backend stream ended without a completed image.', code: 'server_error', retryable: true } });
   }
   recordImageUsage(state, provider, model, modelKey, { usage });
-  return imageTerminal(prompt, action, { ok: true, b64: finalB64, echo: finalEcho });
+  return finish({ ok: true, b64: finalB64, echo: finalEcho });
 };
 
 // Output-as-input round-trip: the multi-turn loop feeds accumulated
