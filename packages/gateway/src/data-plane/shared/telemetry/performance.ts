@@ -97,3 +97,12 @@ export const recordPerformance = (
     requestFinishedAt,
   );
 };
+
+// Terminal-failure shortcut for every pre-stream / mid-stream error branch:
+// the request produced no output tokens and settles as of now. Sole purpose
+// is to keep the error-branch shape a single verb rather than a five-arg
+// invocation repeated across every protocol renderer.
+export const recordFailedRequest = (
+  ctx: GatewayCtx,
+  telemetry: PerformanceTelemetryContext | undefined,
+): void => recordPerformance(ctx, telemetry, true, 0, performance.now());

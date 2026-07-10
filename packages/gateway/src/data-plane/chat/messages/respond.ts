@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
 
-import { recordPerformance } from '../../shared/telemetry/performance.ts';
+import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import { billableServiceTier, tokenUsage } from '../../shared/telemetry/usage.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse, settleUsageAndPerformance } from '../shared/respond.ts';
@@ -26,13 +26,13 @@ export const respondMessages = async (
   ctx: GatewayCtx,
 ): Promise<{ success: boolean; response: Response }> => {
   if (result.type === 'api-error') {
-    recordPerformance(ctx, result.performance, true, 0, performance.now());
+    recordFailedRequest(ctx, result.performance);
     ctx.dump?.error(result.source, result.upstream);
     return { success: false, response: apiErrorToResponse(result) };
   }
 
   if (result.type === 'internal-error') {
-    recordPerformance(ctx, result.performance, true, 0, performance.now());
+    recordFailedRequest(ctx, result.performance);
     ctx.dump?.failed(result.error.message);
     return { success: false, response: internalMessagesErrorResponse(result.status, result.error) };
   }
@@ -57,7 +57,7 @@ export const respondMessages = async (
       await settleUsageAndPerformance(ctx, metadata, usage, state.failed, 'Messages');
       return { success: true, response: Response.json(response, { headers: mergeForwardedUpstreamHeaders(undefined, result.headers) }) };
     } catch (error) {
-      recordPerformance(ctx, result.performance, true, 0, performance.now());
+      recordFailedRequest(ctx, result.performance);
       ctx.dump?.failed(error);
       return { success: false, response: internalMessagesErrorResponse(502, toInternalDebugError(error)) };
     }

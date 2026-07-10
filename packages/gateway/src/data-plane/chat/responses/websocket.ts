@@ -7,7 +7,7 @@ import { tokenUsageFromResponsesResult } from './usage.ts';
 import type { AuthedContext } from '../../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
-import { recordPerformance } from '../../shared/telemetry/performance.ts';
+import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import { createChatGatewayCtxFromHono, type ChatGatewayCtx, type GatewayCtx } from '../shared/gateway-ctx.ts';
 import { SourceStreamState, eventResultMetadata, settleUsageAndPerformance } from '../shared/respond.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS, type StreamCompletion } from '../shared/stream/sse.ts';
@@ -104,7 +104,7 @@ const createResponsesWebSocketEvents = (c: AuthedContext): ResponsesWebSocketHan
   // upgrade, subsequent waitUntil calls made from message-event handlers
   // are silently dropped (the promise never runs, the isolate has no
   // registered reason to defer eviction for it). Every per-message background
-  // task — dump.finalize, recordPerformance, settleUsageAndPerformance — would therefore
+  // task — dump.finalize, recordFailedRequest, settleUsageAndPerformance — would therefore
   // lose its write.
   //
   // Fix: give the ctx a scheduler that doesn't depend on the fetch's
@@ -117,7 +117,7 @@ const createResponsesWebSocketEvents = (c: AuthedContext): ResponsesWebSocketHan
   // The drain uses a `while (size > 0)` loop rather than a single
   // `Promise.allSettled(pendingWork)` snapshot: the in-flight message
   // handler running at close time may still enqueue a final
-  // dump.finalize / recordPerformance from its finally/catch after
+  // dump.finalize / recordFailedRequest from its finally/catch after
   // `sessionClosed` resolves. The loop keeps going until the Set is
   // genuinely empty, which is bounded because `closed = true` short-
   // circuits future message handlers at the top of `handleClientMessage`.
@@ -300,7 +300,7 @@ const respondResponsesWebSocket = async (input: {
 }): Promise<void> => {
   const { socket, eventId, signal, isClosed, result, ctx } = input;
   if (result.type === 'api-error') {
-    recordPerformance(ctx, result.performance, true, 0, performance.now());
+    recordFailedRequest(ctx, result.performance);
     ctx.dump?.error(result.source, result.upstream);
     ctx.dump?.finalize(result.status, []);
     sendError(socket, result.status, normalizeErrorBody(parseMaybeJson(result.body, result.headers), result.status), eventId);
@@ -308,7 +308,7 @@ const respondResponsesWebSocket = async (input: {
   }
 
   if (result.type === 'internal-error') {
-    recordPerformance(ctx, result.performance, true, 0, performance.now());
+    recordFailedRequest(ctx, result.performance);
     ctx.dump?.failed(result.error.message);
     ctx.dump?.finalize(result.status, []);
     sendError(socket, result.status, internalErrorEnvelope(result.error), eventId);

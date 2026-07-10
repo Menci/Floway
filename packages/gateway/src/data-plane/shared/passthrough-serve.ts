@@ -18,7 +18,7 @@ import { appendFailedUpstreams } from './failed-upstreams.ts';
 import { iterateCandidates } from './iterate-candidates.ts';
 import { passthroughAttempt } from './passthrough-attempt.ts';
 import type { PerformanceTelemetryContext } from './telemetry/performance.ts';
-import { recordPerformance } from './telemetry/performance.ts';
+import { recordFailedRequest, recordPerformance } from './telemetry/performance.ts';
 import { upstreamPerformanceContext } from './telemetry/upstream-telemetry.ts';
 import { recordTokenUsage } from './telemetry/usage.ts';
 import type { AuthedContext } from '../../middleware/auth.ts';
@@ -204,7 +204,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
       // Exhausted — forward the last upstream response verbatim so clients
       // still see real upstream telemetry (status, retry-after, request-id,
       // ...) rather than a synthetic gateway envelope.
-      recordPerformance(ctx, performanceContext, true, 0, performance.now());
+      recordFailedRequest(ctx, performanceContext);
       ctx.dump?.error('upstream', identity.upstream);
       return forwardUpstreamResponse(response);
     }
@@ -235,7 +235,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
     const upstreamBody = response.body;
     if (!upstreamBody) {
       ctx.dump?.failed(`${sourceApi} streaming upstream returned no body`);
-      recordPerformance(ctx, performanceContext, true, 0, performance.now());
+      recordFailedRequest(ctx, performanceContext);
       // Preserve upstream correlation headers (x-request-id, cf-ray, ...)
       // on the synthesized 502 so this rare edge case is still traceable.
       stageForwardedResponseHeaders(c, response);
@@ -297,7 +297,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
         return forwarded;
       }
     }
-    recordPerformance(ctx, lastPerformance, true, 0, performance.now());
+    recordFailedRequest(ctx, lastPerformance);
     ctx.dump?.failed(e);
     return c.json({ error: toInternalDebugError(e) }, 502);
   }
