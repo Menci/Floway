@@ -2,25 +2,14 @@ import { test } from 'vitest';
 
 import { withResponsesOutputItemsCanonicalized } from './canonicalize-output-items.ts';
 import type { ResponsesInvocation } from './types.ts';
-import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
-import { createNonResponsesSourceStore } from '../items/store.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { type ExecuteResult, eventResult } from '@floway-dev/provider';
 import { stubModelCandidate, testTelemetryModelIdentity, assertEquals } from '@floway-dev/test-utils';
 import type { CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
+import { mockChatGatewayCtx } from '../../../../test-helpers/gateway-ctx.ts';
 
-const stubCtx: ChatGatewayCtx = {
-  apiKeyId: 'test-key',
-  upstreamIds: null,
-  wantsStream: false,
-  runtimeLocation: 'TEST',
-  dump: null,
-  backgroundScheduler: () => {},
-  perfTiming: { firstOutputTokenAt: null, upstreamCallStartedAt: null, attemptTelemetry: undefined },
-  responseHeaders: new Headers(),
-  store: createNonResponsesSourceStore('test-key'),
-};
+const stubCtx = mockChatGatewayCtx({ apiKeyId: 'test-key' });
 
 const invocation = (): ResponsesInvocation => ({
   payload: { model: 'gpt-test', input: [{ type: 'message' as const, role: 'user' as const, content: 'hi' }] } as CanonicalResponsesPayload,

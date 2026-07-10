@@ -1,4 +1,5 @@
-import type { GatewayCtx } from '../data-plane/chat/shared/gateway-ctx.ts';
+import type { ChatGatewayCtx, GatewayCtx } from '../data-plane/chat/shared/gateway-ctx.ts';
+import { createNonResponsesSourceStore } from '../data-plane/chat/responses/items/store.ts';
 
 // Shared minimal GatewayCtx for tests that exercise serve / respond /
 // interceptor code in isolation. Defaults satisfy every required field; pass
@@ -17,3 +18,15 @@ export const mockGatewayCtx = (overrides: Partial<GatewayCtx> = {}): GatewayCtx 
   responseHeaders: new Headers(),
   ...overrides,
 });
+
+// Chat-protocol counterpart: adds the stored-items store bound to the
+// resolved apiKeyId (base default or override). Interceptor tests only
+// need the store to exist; overriding `.store` explicitly is supported
+// for tests that inspect its per-turn behaviour.
+export const mockChatGatewayCtx = (overrides: Partial<ChatGatewayCtx> = {}): ChatGatewayCtx => {
+  const base = mockGatewayCtx(overrides);
+  return {
+    ...base,
+    store: overrides.store ?? createNonResponsesSourceStore(base.apiKeyId),
+  };
+};

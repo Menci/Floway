@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { withCyberPolicyRetried } from './retry-cyber-policy.ts';
 import type { ResponsesInvocation } from './types.ts';
 import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
-import { createNonResponsesSourceStore } from '../items/store.ts';
+import { mockChatGatewayCtx } from '../../../../test-helpers/gateway-ctx.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { eventResult, type ExecuteResult } from '@floway-dev/provider';
@@ -33,18 +33,8 @@ const makeInvocation = (payload: CanonicalResponsesPayload): ResponsesInvocation
   action: 'generate',
 });
 
-const stubCtx = (overrides: { abortSignal?: AbortSignal } = {}): ChatGatewayCtx => ({
-  apiKeyId: 'test-key',
-  upstreamIds: null,
-  wantsStream: true,
-  runtimeLocation: 'TEST',
-  dump: null,
-  responseHeaders: new Headers(),
-  backgroundScheduler: () => {},
-  perfTiming: { firstOutputTokenAt: null, upstreamCallStartedAt: null, attemptTelemetry: undefined },
-  store: createNonResponsesSourceStore('test-key'),
-  ...overrides,
-});
+const stubCtx = (overrides: Partial<ChatGatewayCtx> = {}): ChatGatewayCtx =>
+  mockChatGatewayCtx({ apiKeyId: 'test-key', wantsStream: true, ...overrides });
 
 type PromiseState<T> = { type: 'pending' } | { type: 'fulfilled'; value: T } | { type: 'rejected'; error: unknown };
 
