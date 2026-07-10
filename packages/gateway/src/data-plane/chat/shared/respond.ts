@@ -75,12 +75,15 @@ export const recordPerformance = (
   );
 };
 
-// Terminal recording for a streaming chat response: usage first (whose
-// failure is logged but non-fatal so perf still records), then perf. Every
-// protocol's stream-branch finally block was inlining the same
-// try/catch/finally around these two calls — extract once here. The TPOT
-// end-time is stamped at entry, BEFORE the usage write, so the persistence
-// round-trip doesn't get charged to the token stream.
+// Terminal recording for a chat response: usage first (whose failure is
+// logged but non-fatal so perf still records), then perf. Every protocol's
+// stream-branch finally block was inlining the same try/catch/finally
+// around these two calls; the non-stream branches inlined the same pair
+// too and returned 502 whenever the usage write bounced on a successful
+// upstream reply. Both paths share this helper — recordUsage's error is
+// swallowed here so the surrounding caller can return its response
+// regardless. The TPOT end-time is stamped at entry, BEFORE the usage
+// write, so the persistence round-trip isn't charged to the token stream.
 export const settleUsageAndPerformance = async (
   ctx: GatewayCtx,
   metadata: EventResultMetadata,

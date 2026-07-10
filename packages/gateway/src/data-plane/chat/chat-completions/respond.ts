@@ -3,7 +3,7 @@ import { streamSSE } from 'hono/streaming';
 
 import { tokenUsageFromChatCompletionsUsage } from './usage.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
-import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse, recordPerformance, recordUsage, settleUsageAndPerformance } from '../shared/respond.ts';
+import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse, recordPerformance, settleUsageAndPerformance } from '../shared/respond.ts';
 import { type StreamCompletion, writeSSEFrames } from '../shared/stream/sse.ts';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { chatCompletionsProtocolFrameToSSEFrame, CHAT_COMPLETIONS_MISSING_TERMINAL_MESSAGE, collectChatCompletionsProtocolEventsToResult, chatCompletionsErrorPayloadMessage } from '@floway-dev/protocols/chat-completions';
@@ -46,9 +46,7 @@ export const respondChatCompletions = async (
       const metadata = await eventResultMetadata(result);
       const usage = response.usage ? tokenUsageFromChatCompletionsUsage(response.usage, response.service_tier) : null;
       ctx.dump?.success(metadata.modelIdentity, usage);
-      const requestFinishedAt = performance.now();
-      await recordUsage(ctx, metadata.modelIdentity, usage);
-      recordPerformance(ctx, metadata.performance, state.failed, usage?.output ?? 0, requestFinishedAt);
+      await settleUsageAndPerformance(ctx, metadata, usage, state.failed, 'Chat Completions');
       return { success: true, response: Response.json(response, { headers: mergeForwardedUpstreamHeaders(undefined, result.headers) }) };
     } catch (error) {
       recordPerformance(ctx, result.performance, true, 0, performance.now());
