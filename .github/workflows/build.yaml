@@ -48,6 +48,8 @@ jobs:
           OWNER_LC="${OWNER,,}"
           IMAGE_NAME="$OWNER_LC/floway-$TARGET"
           DATE="$(date +'%Y%m%d')"
+          # `/` is legal in a branch name, not in a docker tag.
+          REF_TAG="${REF_NAME//\//-}"
 
           # Docker Hub for upstream only, GHCR for everyone.
           REGISTRIES=("ghcr.io/")
@@ -58,6 +60,10 @@ jobs:
           for REGISTRY in "${REGISTRIES[@]}"; do
               echo "${REGISTRY}${IMAGE_NAME}:latest" >> $GITHUB_ENV
               echo "${REGISTRY}${IMAGE_NAME}:${DATE}.${RUN_ID}" >> $GITHUB_ENV
+              # Non-main refs also get a `:branch-name` tag so downstream stacks can pin to a per-branch image
+              if [ "$REF_NAME" != "main" ]; then
+                  echo "${REGISTRY}${IMAGE_NAME}:${REF_TAG}" >> $GITHUB_ENV
+              fi
           done
 
           echo "EOF" >> $GITHUB_ENV
@@ -65,6 +71,7 @@ jobs:
           TARGET: ${{ matrix.target.name }}
           RUN_ID: ${{ github.run_id }}
           OWNER: ${{ github.repository_owner }}
+          REF_NAME: ${{ github.ref_name }}
       - name: Build and Push
         uses: docker/build-push-action@v7
         with:
