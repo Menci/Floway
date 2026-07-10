@@ -9,7 +9,7 @@ import { useRoute, useRouter, type LocationQuery, type LocationQueryValue } from
 import { callApi, useApi } from '../../api/client.ts';
 import ChartCanvas from '../../components/charts/ChartCanvas.vue';
 import ChartSeriesControls from '../../components/charts/ChartSeriesControls.vue';
-import { chartColorByName, chartFont, chartXAxisTick, dashboardBuckets, dashboardRangeQuery, type DashboardRange } from '../../components/charts/dashboard-chart.ts';
+import { chartColor, chartColorByName, chartFont, chartXAxisTick, dashboardBuckets, dashboardRangeQuery, type DashboardRange } from '../../components/charts/dashboard-chart.ts';
 import { applySeriesSelection, chartEventsWithDoubleClick, chartSeriesIds, createSeriesIsolation, handleLegendClick } from '../../components/charts/series-selection.ts';
 import { useUpstreamsStore } from '../../composables/useUpstreams.ts';
 import { useAuthStore } from '../../stores/auth.ts';
@@ -457,8 +457,24 @@ const chartConfig = computed<ChartConfiguration<'line'>>(() => {
     }
     inner.set(r.bucket, getChartValue(r, performancePercentile.value));
   }
+  // By-User / By-API-Key axes have server-sorted metadata (stable id order),
+  // so map each group name into that metadata slot for a color that matches
+  // the usage dashboard's palette assignment. Orphan ids (deleted-with-no-row)
+  // or non-user/key axes fall back to the name-hashed palette entry — still
+  // stable, just not slot-aligned.
+  const colorFor = (groupName: string): string => {
+    if (performanceGroupBy.value === 'userId') {
+      const slot = overview.value.users.findIndex(u => String(u.id) === groupName);
+      return slot >= 0 ? chartColor(slot) : chartColorByName(groupName);
+    }
+    if (performanceGroupBy.value === 'keyId') {
+      const slot = overview.value.keys.findIndex(k => k.id === groupName);
+      return slot >= 0 ? chartColor(slot) : chartColorByName(groupName);
+    }
+    return chartColorByName(groupName);
+  };
   const datasets = [...groups.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([group, byBucket]) => {
-    const color = chartColorByName(group);
+    const color = colorFor(group);
     return {
       label: resolveGroupName(group, performanceGroupBy.value),
       seriesId: group,
