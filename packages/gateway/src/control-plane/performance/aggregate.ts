@@ -48,32 +48,30 @@ interface MutableAggregate {
   bucketsByMetric: Record<PerformanceMetric, Map<string, HistogramBucket>>;
 }
 
-export function aggregatePerformanceForDisplay(records: readonly PerformanceTelemetryRecord[], options: AggregateOptions): PerformanceDisplayRecord[] {
-  const aggregates = new Map<string, MutableAggregate>();
-  for (const record of records) updateAggregate(aggregates, record, options);
-  return finalizeAggregates(aggregates);
-}
+const displayBucket = (hour: string, options: Pick<AggregateOptions, 'bucket' | 'timezoneOffsetMinutes'>): string => {
+  if (options.bucket === 'all') return 'all';
+  const utcMs = Date.parse(`${hour}:00:00Z`);
+  const localMs = utcMs - options.timezoneOffsetMinutes * 60_000;
+  const localIso = new Date(localMs).toISOString();
+  if (options.bucket === 'hour') return localIso.slice(0, 13);
+  if (options.bucket === 'day') return localIso.slice(0, 10);
+  const hourOfDay = Number(localIso.slice(11, 13));
+  const divisor = options.bucket === '4h' ? 4 : 8;
+  const aligned = hourOfDay - (hourOfDay % divisor);
+  return `${localIso.slice(0, 11)}${String(aligned).padStart(2, '0')}`;
+};
 
-// One-pass multi-axis variant. The dashboard overview asks for the same
-// records aggregated along 6-8 different (bucket, groupBy) axes; running
-// the single-axis function once per axis walks the record set N times
-// with an identical outer loop. This visits each record once and updates
-// every axis's Map in-place.
-export function aggregatePerformanceForDisplayMulti<K extends string>(
-  records: readonly PerformanceTelemetryRecord[],
-  axes: Record<K, AggregateOptions>,
-): Record<K, PerformanceDisplayRecord[]> {
-  const entries = Object.entries(axes) as [K, AggregateOptions][];
-  const maps = entries.map(() => new Map<string, MutableAggregate>());
-  for (const record of records) {
-    for (let i = 0; i < entries.length; i++) updateAggregate(maps[i], record, entries[i][1]);
+const displayGroup = (record: PerformanceTelemetryRecord, options: AggregateOptions): string | null => {
+  if (options.groupBy === 'none') return 'all';
+  if (options.groupBy === 'userId') {
+    const userId = options.keyToUser.get(record.keyId);
+    if (userId === undefined) return null;
+    return String(userId);
   }
-  const result = {} as Record<K, PerformanceDisplayRecord[]>;
-  for (let i = 0; i < entries.length; i++) result[entries[i][0]] = finalizeAggregates(maps[i]);
-  return result;
-}
+  return String(record[options.groupBy]);
+};
 
-function updateAggregate(aggregates: Map<string, MutableAggregate>, record: PerformanceTelemetryRecord, options: AggregateOptions): void {
+const updateAggregate = (aggregates: Map<string, MutableAggregate>, record: PerformanceTelemetryRecord, options: AggregateOptions): void => {
   const bucket = displayBucket(record.hour, options);
   const group = displayGroup(record, options);
   if (group === null) return;
@@ -105,36 +103,9 @@ function updateAggregate(aggregates: Map<string, MutableAggregate>, record: Perf
       metricMap.set(bucketKey, { lower: b.lower, upper: b.upper, count: b.count });
     }
   }
-}
+};
 
-function finalizeAggregates(aggregates: Map<string, MutableAggregate>): PerformanceDisplayRecord[] {
-  return [...aggregates.values()].map(toDisplayRecord).sort((a, b) => a.bucket.localeCompare(b.bucket) || a.group.localeCompare(b.group));
-}
-
-function displayBucket(hour: string, options: Pick<AggregateOptions, 'bucket' | 'timezoneOffsetMinutes'>): string {
-  if (options.bucket === 'all') return 'all';
-  const utcMs = Date.parse(`${hour}:00:00Z`);
-  const localMs = utcMs - options.timezoneOffsetMinutes * 60_000;
-  const localIso = new Date(localMs).toISOString();
-  if (options.bucket === 'hour') return localIso.slice(0, 13);
-  if (options.bucket === 'day') return localIso.slice(0, 10);
-  const hourOfDay = Number(localIso.slice(11, 13));
-  const divisor = options.bucket === '4h' ? 4 : 8;
-  const aligned = hourOfDay - (hourOfDay % divisor);
-  return `${localIso.slice(0, 11)}${String(aligned).padStart(2, '0')}`;
-}
-
-function displayGroup(record: PerformanceTelemetryRecord, options: AggregateOptions): string | null {
-  if (options.groupBy === 'none') return 'all';
-  if (options.groupBy === 'userId') {
-    const userId = options.keyToUser.get(record.keyId);
-    if (userId === undefined) return null;
-    return String(userId);
-  }
-  return String(record[options.groupBy]);
-}
-
-function toDisplayRecord(a: MutableAggregate): PerformanceDisplayRecord {
+const toDisplayRecord = (a: MutableAggregate): PerformanceDisplayRecord => {
   const ttftBuckets = [...a.bucketsByMetric.ttft_ms.values()];
   const tpotBuckets = [...a.bucketsByMetric.tpot_us.values()];
   return {
@@ -153,4 +124,32 @@ function toDisplayRecord(a: MutableAggregate): PerformanceDisplayRecord {
     tpotUsP95: percentileFromBuckets(tpotBuckets, 0.95),
     tpotUsP99: percentileFromBuckets(tpotBuckets, 0.99),
   };
-}
+};
+
+const finalizeAggregates = (aggregates: Map<string, MutableAggregate>): PerformanceDisplayRecord[] =>
+  [...aggregates.values()].map(toDisplayRecord).sort((a, b) => a.bucket.localeCompare(b.bucket) || a.group.localeCompare(b.group));
+
+export const aggregatePerformanceForDisplay = (records: readonly PerformanceTelemetryRecord[], options: AggregateOptions): PerformanceDisplayRecord[] => {
+  const aggregates = new Map<string, MutableAggregate>();
+  for (const record of records) updateAggregate(aggregates, record, options);
+  return finalizeAggregates(aggregates);
+};
+
+// One-pass multi-axis variant. The dashboard overview asks for the same
+// records aggregated along 6-8 different (bucket, groupBy) axes; running
+// the single-axis function once per axis walks the record set N times
+// with an identical outer loop. This visits each record once and updates
+// every axis's Map in-place.
+export const aggregatePerformanceForDisplayMulti = <K extends string>(
+  records: readonly PerformanceTelemetryRecord[],
+  axes: Record<K, AggregateOptions>,
+): Record<K, PerformanceDisplayRecord[]> => {
+  const entries = Object.entries(axes) as [K, AggregateOptions][];
+  const maps = entries.map(() => new Map<string, MutableAggregate>());
+  for (const record of records) {
+    for (let i = 0; i < entries.length; i++) updateAggregate(maps[i], record, entries[i][1]);
+  }
+  const result = {} as Record<K, PerformanceDisplayRecord[]>;
+  for (let i = 0; i < entries.length; i++) result[entries[i][0]] = finalizeAggregates(maps[i]);
+  return result;
+};
