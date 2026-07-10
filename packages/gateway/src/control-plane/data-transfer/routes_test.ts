@@ -247,7 +247,10 @@ const PERFORMANCE_1: PerformanceTelemetryRecord = {
   tpotSamples: 4,
   ttftMsSum: 1000,
   tpotUsSum: 4000,
-  buckets: [{ metric: 'ttft_ms', lower: 100, upper: 142, count: 4 }],
+  buckets: [
+    { metric: 'tpot_us', lower: 1000, upper: 1250, count: 4 },
+    { metric: 'ttft_ms', lower: 100, upper: 142, count: 4 },
+  ],
 };
 
 const PERFORMANCE_2: PerformanceTelemetryRecord = {
@@ -263,7 +266,10 @@ const PERFORMANCE_2: PerformanceTelemetryRecord = {
   tpotSamples: 3,
   ttftMsSum: 600,
   tpotUsSum: 1500,
-  buckets: [{ metric: 'ttft_ms', lower: 200, upper: 284, count: 3 }],
+  buckets: [
+    { metric: 'tpot_us', lower: 500, upper: 625, count: 3 },
+    { metric: 'ttft_ms', lower: 200, upper: 284, count: 3 },
+  ],
 };
 
 const setup = () => {
