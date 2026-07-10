@@ -585,36 +585,47 @@ const performanceSummary = computed<PerformanceDisplayRecord>(() => overview.val
         <ChartCanvas :config="chartConfig" />
       </div>
 
+      <!-- Stat cards. Three different orderings by breakpoint:
+             sm (2 cols):  Req | Err            → DOM source order
+                           TTFT p50 | OS p50
+                           TTFT p95 | OS p95
+                           TTFT p99 | OS p99
+             lg (4 cols):  Req | TTFT p50 | TTFT p95 | TTFT p99
+                           Err | OS p50   | OS p95   | OS p99
+             xl (8 cols):  Req | Err | TTFT p50 | TTFT p95 | TTFT p99 | OS p50 | OS p95 | OS p99
+           The DOM matches the narrow ordering (TTFT and Output speed
+           interleaved by percentile) and each card carries `lg:` / `xl:`
+           `order-*` overrides for the wider layouts. -->
       <div class="grid grid-cols-2 gap-3 mt-6 lg:grid-cols-4 xl:grid-cols-8">
-        <div class="rounded-md border border-white/5 bg-surface-800/60 px-3 py-3">
+        <div class="rounded-md border border-white/5 bg-surface-800/60 px-3 py-3 lg:order-1 xl:order-1">
           <span class="block text-xs text-gray-500 mb-1">Requests</span>
           <span class="block text-lg font-bold font-mono text-white">{{ performanceSummary.requests.toLocaleString() }}</span>
         </div>
-        <div class="rounded-md border border-white/5 bg-surface-800/60 px-3 py-3">
-          <span class="block text-xs text-gray-500 mb-1">TTFT p50</span>
-          <span class="block text-lg font-bold font-mono text-white">{{ formatMs(performanceSummary.ttftMsP50) }}</span>
-        </div>
-        <div class="rounded-md border border-white/5 bg-surface-800/60 px-3 py-3">
-          <span class="block text-xs text-gray-500 mb-1">TTFT p95</span>
-          <span class="block text-lg font-bold font-mono text-white">{{ formatMs(performanceSummary.ttftMsP95) }}</span>
-        </div>
-        <div class="rounded-md border border-white/5 bg-surface-800/60 px-3 py-3">
-          <span class="block text-xs text-gray-500 mb-1">TTFT p99</span>
-          <span class="block text-lg font-bold font-mono text-white">{{ formatMs(performanceSummary.ttftMsP99) }}</span>
-        </div>
-        <div class="rounded-md border border-white/5 bg-surface-800/60 px-3 py-3">
+        <div class="rounded-md border border-white/5 bg-surface-800/60 px-3 py-3 lg:order-5 xl:order-2">
           <span class="block text-xs text-gray-500 mb-1">Errors</span>
           <span class="block text-lg font-bold font-mono text-white">{{ performanceSummary.errors.toLocaleString() }}</span>
         </div>
-        <div class="rounded-md border border-white/5 bg-surface-800/60 px-3 py-3">
+        <div class="rounded-md border border-white/5 bg-surface-800/60 px-3 py-3 lg:order-2 xl:order-3">
+          <span class="block text-xs text-gray-500 mb-1">TTFT p50</span>
+          <span class="block text-lg font-bold font-mono text-white">{{ formatMs(performanceSummary.ttftMsP50) }}</span>
+        </div>
+        <div class="rounded-md border border-white/5 bg-surface-800/60 px-3 py-3 lg:order-6 xl:order-6">
           <span class="block text-xs text-gray-500 mb-1">Output speed p50</span>
           <span class="block text-lg font-bold font-mono text-white">{{ formatTokPerSec(performanceSummary.tpotUsP50) }}</span>
         </div>
-        <div class="rounded-md border border-white/5 bg-surface-800/60 px-3 py-3">
+        <div class="rounded-md border border-white/5 bg-surface-800/60 px-3 py-3 lg:order-3 xl:order-4">
+          <span class="block text-xs text-gray-500 mb-1">TTFT p95</span>
+          <span class="block text-lg font-bold font-mono text-white">{{ formatMs(performanceSummary.ttftMsP95) }}</span>
+        </div>
+        <div class="rounded-md border border-white/5 bg-surface-800/60 px-3 py-3 lg:order-7 xl:order-7">
           <span class="block text-xs text-gray-500 mb-1">Output speed p95</span>
           <span class="block text-lg font-bold font-mono text-white">{{ formatTokPerSec(performanceSummary.tpotUsP95) }}</span>
         </div>
-        <div class="rounded-md border border-white/5 bg-surface-800/60 px-3 py-3">
+        <div class="rounded-md border border-white/5 bg-surface-800/60 px-3 py-3 lg:order-4 xl:order-5">
+          <span class="block text-xs text-gray-500 mb-1">TTFT p99</span>
+          <span class="block text-lg font-bold font-mono text-white">{{ formatMs(performanceSummary.ttftMsP99) }}</span>
+        </div>
+        <div class="rounded-md border border-white/5 bg-surface-800/60 px-3 py-3 lg:order-8 xl:order-8">
           <span class="block text-xs text-gray-500 mb-1">Output speed p99</span>
           <span class="block text-lg font-bold font-mono text-white">{{ formatTokPerSec(performanceSummary.tpotUsP99) }}</span>
         </div>
