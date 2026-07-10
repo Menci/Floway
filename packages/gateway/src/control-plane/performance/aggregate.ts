@@ -113,10 +113,13 @@ const toDisplayRecord = (a: MutableAggregate): PerformanceDisplayRecord => {
     ttftSamples: a.ttftSamples,
     tpotSamples: a.tpotSamples,
     // Neutral = requests without a first-token stamp (subset of non-error successes).
-    // Floor at 0 to keep the display sane against any inconsistent input row
-    // (partial import, hand-edited row, migration bug) where the counts don't
-    // satisfy the invariant `errors + ttftSamples <= requests`.
-    neutral: Math.max(0, a.requests - a.ttftSamples - a.errors),
+    // Every recorder path atomically bumps requests + one of {errors, ttft, neutral},
+    // and parsePerformanceRecords enforces `errors + ttftSamples <= requests` at import,
+    // so this subtraction is non-negative for any row Floway wrote. Pass the raw value
+    // through: a negative result means the underlying row was corrupted by something
+    // outside the recorder (manual D1 edit, future recorder bug) and should surface,
+    // not hide behind a floor.
+    neutral: a.requests - a.ttftSamples - a.errors,
     ttftMsP50: percentileFromBuckets(ttftBuckets, 0.5),
     ttftMsP95: percentileFromBuckets(ttftBuckets, 0.95),
     ttftMsP99: percentileFromBuckets(ttftBuckets, 0.99),

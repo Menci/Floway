@@ -216,6 +216,23 @@ test('aggregatePerformanceForDisplay derives neutral as requests - ttftSamples -
   assertEquals(rows[0].errors, 1);
 });
 
+test('aggregatePerformanceForDisplay surfaces negative neutral when input row breaks the recorder invariant', () => {
+  // Recorder atomicity + parsePerformanceRecords guarantee `errors + ttftSamples <= requests`
+  // for anything Floway wrote. A negative neutral therefore indicates the row was corrupted
+  // outside the recorder path (manual D1 UPDATE, future recorder bug). We pass the raw
+  // subtraction through so the corruption surfaces on the dashboard rather than hiding
+  // behind a floor.
+  const rows = aggregatePerformanceForDisplay(
+    [record({ requests: 2, ttftSamples: 3, tpotSamples: 3, errors: 1, ttftMsSum: 300, tpotUsSum: 1500, buckets: [
+      { metric: 'ttft_ms', lower: 50, upper: 100, count: 3 },
+      { metric: 'tpot_us', lower: 200, upper: 500, count: 3 },
+    ] })],
+    { bucket: 'all', groupBy: 'none', timezoneOffsetMinutes: 0 },
+  );
+
+  assertEquals(rows[0].neutral, -2);
+});
+
 test('aggregatePerformanceForDisplay neutral is zero for pure chat rows (ttftSamples + errors = requests)', () => {
   const rows = aggregatePerformanceForDisplay(
     [record({ requests: 4, ttftSamples: 3, tpotSamples: 3, errors: 1, ttftMsSum: 300, tpotUsSum: 1500, buckets: [
