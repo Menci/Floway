@@ -241,11 +241,12 @@ export const performanceOverview = async (c: Ctx) => {
   const resolved = resolveView(c, params.value);
   if ('error' in resolved) return c.json({ error: resolved.message }, resolved.error === 'forbidden' ? 403 : 400);
 
-  // The overview handler used to run four independent repo reads serially
-  // (records → key-user map → users → keys) followed by 6-8 pure-JS
-  // aggregations over the same filtered array. Fan the reads out in
-  // parallel, and let a single api_keys listing feed both the key→user
-  // map and the sorted key-metadata block below.
+  // One api_keys listing feeds every downstream concern in this handler:
+  // the ownedKeyIds gate on the record query, the key→user map for
+  // group_by=userId / filter_user_id, and the sorted keys[] block on
+  // the response. Records and (all-by-user only) users then fan out
+  // in parallel — six or seven pure-JS aggregations follow over the
+  // same filtered array without touching D1 again.
   const repo = getRepo();
   const keysInfo = await loadTelemetryKeys(repo, resolved);
   const ownedKeyIds = new Set(keysInfo.keys.map(k => k.id));
