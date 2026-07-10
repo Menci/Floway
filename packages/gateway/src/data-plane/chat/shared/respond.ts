@@ -54,11 +54,16 @@ export const recordUsage = async (ctx: GatewayCtx, modelIdentity: TelemetryModel
   if (usage && hasTokenUsage(usage)) await recordTokenUsage(ctx.apiKeyId, modelIdentity, usage);
 };
 
+// `requestFinishedAt` is the caller's monotonic timestamp for the end of the
+// token stream. It MUST be sampled before any post-stream persistence work
+// (e.g. the usage D1 write in settleUsageAndPerformance) so TPOT reflects the
+// stream itself rather than the persistence path.
 export const recordPerformance = (
   ctx: GatewayCtx,
   telemetry: EventResultMetadata['performance'],
   failed: boolean,
   outputTokens: number,
+  requestFinishedAt: number,
 ): void => {
   recordRequestPerformance(
     ctx.backgroundScheduler,
@@ -66,14 +71,16 @@ export const recordPerformance = (
     telemetry,
     failed,
     outputTokens,
-    performance.now(),
+    requestFinishedAt,
   );
 };
 
 // Terminal recording for a streaming chat response: usage first (whose
 // failure is logged but non-fatal so perf still records), then perf. Every
 // protocol's stream-branch finally block was inlining the same
-// try/catch/finally around these two calls — extract once here.
+// try/catch/finally around these two calls — extract once here. The TPOT
+// end-time is stamped at entry, BEFORE the usage write, so the persistence
+// round-trip doesn't get charged to the token stream.
 export const settleUsageAndPerformance = async (
   ctx: GatewayCtx,
   metadata: EventResultMetadata,
@@ -81,12 +88,13 @@ export const settleUsageAndPerformance = async (
   failed: boolean,
   protocolLabel: string,
 ): Promise<void> => {
+  const requestFinishedAt = performance.now();
   try {
     await recordUsage(ctx, metadata.modelIdentity, usage);
   } catch (error) {
     console.error(`Failed to record ${protocolLabel} usage:`, error);
   } finally {
-    recordPerformance(ctx, metadata.performance, failed, usage?.output ?? 0);
+    recordPerformance(ctx, metadata.performance, failed, usage?.output ?? 0, requestFinishedAt);
   }
 };
 

@@ -23,13 +23,13 @@ export const respondResponses = async (
   ctx: GatewayCtx,
 ): Promise<{ success: boolean; response: Response }> => {
   if (result.type === 'api-error') {
-    recordPerformance(ctx, result.performance, true, 0);
+    recordPerformance(ctx, result.performance, true, 0, performance.now());
     ctx.dump?.error(result.source, result.upstream);
     return { success: false, response: apiErrorToResponse(result) };
   }
 
   if (result.type === 'internal-error') {
-    recordPerformance(ctx, result.performance, true, 0);
+    recordPerformance(ctx, result.performance, true, 0, performance.now());
     ctx.dump?.failed(result.error.message);
     return { success: false, response: internalResponsesErrorResponse(result.status, result.error) };
   }
@@ -50,11 +50,12 @@ export const respondResponses = async (
       const metadata = await eventResultMetadata(result);
       const usage = tokenUsageFromResponsesResult(response);
       ctx.dump?.success(metadata.modelIdentity, usage);
+      const requestFinishedAt = performance.now();
       await recordUsage(ctx, metadata.modelIdentity, usage);
-      recordPerformance(ctx, metadata.performance, state.failed || response.status === 'failed', usage?.output ?? 0);
+      recordPerformance(ctx, metadata.performance, state.failed || response.status === 'failed', usage?.output ?? 0, requestFinishedAt);
       return { success: true, response: Response.json(response, { headers: mergeForwardedUpstreamHeaders(undefined, result.headers) }) };
     } catch (error) {
-      recordPerformance(ctx, result.performance, true, 0);
+      recordPerformance(ctx, result.performance, true, 0, performance.now());
       ctx.dump?.failed(error);
       return { success: false, response: internalResponsesErrorResponse(502, toInternalDebugError(error)) };
     }

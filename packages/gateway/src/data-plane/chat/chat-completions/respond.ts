@@ -19,13 +19,13 @@ export const respondChatCompletions = async (
   ctx: GatewayCtx,
 ): Promise<{ success: boolean; response: Response }> => {
   if (result.type === 'api-error') {
-    recordPerformance(ctx, result.performance, true, 0);
+    recordPerformance(ctx, result.performance, true, 0, performance.now());
     ctx.dump?.error(result.source, result.upstream);
     return { success: false, response: apiErrorToResponse(result) };
   }
 
   if (result.type === 'internal-error') {
-    recordPerformance(ctx, result.performance, true, 0);
+    recordPerformance(ctx, result.performance, true, 0, performance.now());
     ctx.dump?.failed(result.error.message);
     return { success: false, response: internalChatCompletionsErrorResponse(result.status, result.error) };
   }
@@ -46,11 +46,12 @@ export const respondChatCompletions = async (
       const metadata = await eventResultMetadata(result);
       const usage = response.usage ? tokenUsageFromChatCompletionsUsage(response.usage, response.service_tier) : null;
       ctx.dump?.success(metadata.modelIdentity, usage);
+      const requestFinishedAt = performance.now();
       await recordUsage(ctx, metadata.modelIdentity, usage);
-      recordPerformance(ctx, metadata.performance, state.failed, usage?.output ?? 0);
+      recordPerformance(ctx, metadata.performance, state.failed, usage?.output ?? 0, requestFinishedAt);
       return { success: true, response: Response.json(response, { headers: mergeForwardedUpstreamHeaders(undefined, result.headers) }) };
     } catch (error) {
-      recordPerformance(ctx, result.performance, true, 0);
+      recordPerformance(ctx, result.performance, true, 0, performance.now());
       ctx.dump?.failed(error);
       return { success: false, response: internalChatCompletionsErrorResponse(502, toInternalDebugError(error)) };
     }

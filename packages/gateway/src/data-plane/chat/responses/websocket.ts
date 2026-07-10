@@ -299,7 +299,7 @@ const respondResponsesWebSocket = async (input: {
 }): Promise<void> => {
   const { socket, eventId, signal, isClosed, result, ctx } = input;
   if (result.type === 'api-error') {
-    recordPerformance(ctx, result.performance, true, 0);
+    recordPerformance(ctx, result.performance, true, 0, performance.now());
     ctx.dump?.error(result.source, result.upstream);
     ctx.dump?.finalize(result.status, []);
     sendError(socket, result.status, normalizeErrorBody(parseMaybeJson(result.body, result.headers), result.status), eventId);
@@ -307,7 +307,7 @@ const respondResponsesWebSocket = async (input: {
   }
 
   if (result.type === 'internal-error') {
-    recordPerformance(ctx, result.performance, true, 0);
+    recordPerformance(ctx, result.performance, true, 0, performance.now());
     ctx.dump?.failed(result.error.message);
     ctx.dump?.finalize(result.status, []);
     sendError(socket, result.status, internalErrorEnvelope(result.error), eventId);

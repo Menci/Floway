@@ -117,7 +117,7 @@ test('SourceStreamState.rememberUsage keeps real usage and ignores zero figures'
 // ── recordPerformance ──
 
 test('recordPerformance records a full sample when success with upstreamCallStartedAt, firstOutputTokenAt, and outputTokens>=2', async () => {
-  recordPerformance(harness.ctx({ upstreamCallStartedAt: 50, firstOutputTokenAt: 100 }), testPerformanceContext, false, 50);
+  recordPerformance(harness.ctx({ upstreamCallStartedAt: 50, firstOutputTokenAt: 100 }), testPerformanceContext, false, 50, 200);
   await Promise.all(harness.background);
 
   const rows = await harness.repo.performance.listAll();
@@ -129,7 +129,7 @@ test('recordPerformance records a full sample when success with upstreamCallStar
 });
 
 test('recordPerformance records TTFT-only sample when outputTokens is zero but first-token stamp fired', async () => {
-  recordPerformance(harness.ctx({ upstreamCallStartedAt: 50, firstOutputTokenAt: 100 }), testPerformanceContext, false, 0);
+  recordPerformance(harness.ctx({ upstreamCallStartedAt: 50, firstOutputTokenAt: 100 }), testPerformanceContext, false, 0, 200);
   await Promise.all(harness.background);
 
   const rows = await harness.repo.performance.listAll();
@@ -141,7 +141,7 @@ test('recordPerformance records TTFT-only sample when outputTokens is zero but f
 });
 
 test('recordPerformance records neutral when success but firstOutputTokenAt is null', async () => {
-  recordPerformance(harness.ctx({ firstOutputTokenAt: null }), testPerformanceContext, false, 50);
+  recordPerformance(harness.ctx({ firstOutputTokenAt: null }), testPerformanceContext, false, 50, 200);
   await Promise.all(harness.background);
 
   const rows = await harness.repo.performance.listAll();
@@ -153,7 +153,7 @@ test('recordPerformance records neutral when success but firstOutputTokenAt is n
 });
 
 test('recordPerformance records an error when failed', async () => {
-  recordPerformance(harness.ctx({ firstOutputTokenAt: 100 }), testPerformanceContext, true, 50);
+  recordPerformance(harness.ctx({ firstOutputTokenAt: 100 }), testPerformanceContext, true, 50, 200);
   await Promise.all(harness.background);
 
   const rows = await harness.repo.performance.listAll();
@@ -165,7 +165,7 @@ test('recordPerformance records an error when failed', async () => {
 });
 
 test('recordPerformance skips when performance context is absent', async () => {
-  recordPerformance(harness.ctx(), undefined, true, 0);
+  recordPerformance(harness.ctx(), undefined, true, 0, 200);
   await Promise.all(harness.background);
 
   assertEquals(await harness.repo.performance.listAll(), []);
