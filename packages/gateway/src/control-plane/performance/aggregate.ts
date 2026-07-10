@@ -113,7 +113,10 @@ const toDisplayRecord = (a: MutableAggregate): PerformanceDisplayRecord => {
     ttftSamples: a.ttftSamples,
     tpotSamples: a.tpotSamples,
     // Neutral = requests without a first-token stamp (subset of non-error successes).
-    neutral: a.requests - a.ttftSamples - a.errors,
+    // Floor at 0 to keep the display sane against any inconsistent input row
+    // (partial import, hand-edited row, migration bug) where the counts don't
+    // satisfy the invariant `errors + ttftSamples <= requests`.
+    neutral: Math.max(0, a.requests - a.ttftSamples - a.errors),
     ttftMsP50: percentileFromBuckets(ttftBuckets, 0.5),
     ttftMsP95: percentileFromBuckets(ttftBuckets, 0.95),
     ttftMsP99: percentileFromBuckets(ttftBuckets, 0.99),
