@@ -82,6 +82,7 @@ describe('enumerateModelCandidates + chatTargetPicker', () => {
       model: 'test-model',
       kind: 'chat',
       scheduler: testScheduler,
+      currentColo: 'TEST',
     });
     assertEquals(candidates.length, 1);
 
@@ -103,6 +104,7 @@ describe('enumerateModelCandidates + chatTargetPicker', () => {
       model: 'test-model',
       kind: 'chat',
       scheduler: testScheduler,
+      currentColo: 'TEST',
     });
     assertEquals(candidates.length, 1);
 
