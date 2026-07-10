@@ -1,5 +1,7 @@
 import type { Context } from 'hono';
 
+import { redactSetupTokenPath } from './request-path.ts';
+
 const serializeErrorCause = (cause: unknown): unknown => {
   if (cause instanceof Error) {
     return {
@@ -32,7 +34,7 @@ export const internalErrorResponse = (error: Error, c: Context): Response => {
         stack: error.stack,
         cause: serializeErrorCause(error.cause),
         method: c.req.method,
-        path: c.req.path,
+        path: redactSetupTokenPath(c.req.path),
       },
     },
     500,

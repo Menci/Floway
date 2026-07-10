@@ -1,5 +1,6 @@
 import type { Context, Next } from 'hono';
 
+import { isPublicSetupScriptRequest } from './request-path.ts';
 import { getRepo } from '../repo/index.ts';
 import type { ApiKey, User } from '../repo/types.ts';
 import { timingSafeEqual } from '../shared/passwords.ts';
@@ -28,6 +29,14 @@ export const authMiddleware = async (c: AuthedContext, next: Next) => {
   const path = c.req.path;
   if (PUBLIC_PATHS.has(path) && c.req.method === 'GET') return await next();
   if (AUTH_VALIDATE_PATHS.has(path) && c.req.method === 'POST') return await next();
+
+  // The public Agent Setup script endpoints reveal the selected API key as
+  // executable source to an unauthenticated machine on purpose — that is the
+  // whole point of a curl-able setup URL. The exact matcher (GET/HEAD + a
+  // 43-char token + a fixed filename) keeps that bypass as narrow as the
+  // contract; the handler itself revalidates the lease and returns a generic
+  // 404 for anything stale.
+  if (isPublicSetupScriptRequest(c.req.method, path)) return await next();
 
   // Browsers cannot attach custom headers to EventSource, so the dump SSE
   // stream — the only browser-driven SSE endpoint — accepts the session

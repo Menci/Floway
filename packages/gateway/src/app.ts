@@ -1,11 +1,19 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { logger } from 'hono/logger';
 
 import { controlPlaneRoutes } from './control-plane/routes.ts';
 import { mountDataPlane } from './data-plane/routes.ts';
 import { type AuthVars, authMiddleware } from './middleware/auth.ts';
 import { internalErrorResponse } from './middleware/internal-error-response.ts';
+import { requestLogger } from './middleware/request-logger.ts';
+import { isPublicSetupScriptRequest } from './middleware/request-path.ts';
+
+// The public Agent Setup script endpoints are non-CORS: a `<script>`/`fetch`
+// from another origin must never read the API-key-bearing body, and the machine
+// that curls them is not a browser. Every other route keeps the default
+// dashboard CORS. The same exact matcher that exempts them from auth exempts
+// them here, so the two layers cannot disagree on what "public script" means.
+const corsMiddleware = cors();
 
 // `app` is built as a single chained expression so its TypeScript type carries
 // the full path/method map that Hono RPC needs. apps/web consumes the exported
@@ -20,8 +28,11 @@ import { internalErrorResponse } from './middleware/internal-error-response.ts';
 // type mismatches now fail compile instead of producing silent `any`.
 export const app = new Hono<{ Variables: AuthVars }>()
   .onError(internalErrorResponse)
-  .use('*', logger())
-  .use('*', cors())
+  .use('*', requestLogger)
+  .use('*', async (c, next) => {
+    if (isPublicSetupScriptRequest(c.req.method, c.req.path)) return await next();
+    return await corsMiddleware(c, next);
+  })
   .use('*', authMiddleware)
   .route('/', controlPlaneRoutes);
 
