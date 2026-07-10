@@ -217,9 +217,7 @@ export const performanceTelemetry = async (c: Ctx) => {
   const baseOptions = { bucket: params.value.bucket, timezoneOffsetMinutes: params.value.timezoneOffsetMinutes };
   const records = aggregatePerformanceForDisplay(
     filtered,
-    params.value.groupBy === 'userId'
-      ? { ...baseOptions, groupBy: 'userId', keyToUser: keysInfo.keyToUser }
-      : { ...baseOptions, groupBy: params.value.groupBy },
+    { ...baseOptions, groupBy: params.value.groupBy, keyToUser: keysInfo.keyToUser },
   );
 
   const query = c.req.valid('query');
@@ -270,18 +268,16 @@ export const performanceOverview = async (c: Ctx) => {
   // aggregation layer (the cost of computing a one-group breakdown is
   // negligible next to the O(N) records loop).
   const includeUserRows = resolved.view === 'all-by-user';
-  const seriesAxis = params.value.groupBy === 'userId'
-    ? { ...tzOnly, bucket: params.value.bucket, groupBy: 'userId', keyToUser: keysInfo.keyToUser } as const
-    : { ...tzOnly, bucket: params.value.bucket, groupBy: params.value.groupBy } as const;
+  const axisBase = { ...tzOnly, keyToUser: keysInfo.keyToUser };
   const breakdowns = aggregatePerformanceForDisplayMulti(filtered, {
-    series: seriesAxis,
-    summaryRows: { ...tzOnly, bucket: 'all', groupBy: 'none' },
-    modelRows: { ...tzOnly, bucket: 'all', groupBy: 'model' },
-    upstreamRows: { ...tzOnly, bucket: 'all', groupBy: 'upstream' },
-    runtimeRows: { ...tzOnly, bucket: 'all', groupBy: 'runtimeLocation' },
-    operationRows: { ...tzOnly, bucket: 'all', groupBy: 'operation' },
-    keyRows: { ...tzOnly, bucket: 'all', groupBy: 'keyId' },
-    userRows: { ...tzOnly, bucket: 'all', groupBy: 'userId', keyToUser: keysInfo.keyToUser },
+    series: { ...axisBase, bucket: params.value.bucket, groupBy: params.value.groupBy },
+    summaryRows: { ...axisBase, bucket: 'all', groupBy: 'none' },
+    modelRows: { ...axisBase, bucket: 'all', groupBy: 'model' },
+    upstreamRows: { ...axisBase, bucket: 'all', groupBy: 'upstream' },
+    runtimeRows: { ...axisBase, bucket: 'all', groupBy: 'runtimeLocation' },
+    operationRows: { ...axisBase, bucket: 'all', groupBy: 'operation' },
+    keyRows: { ...axisBase, bucket: 'all', groupBy: 'keyId' },
+    userRows: { ...axisBase, bucket: 'all', groupBy: 'userId' },
   });
 
   // User/key name metadata is always returned so the dashboard can render

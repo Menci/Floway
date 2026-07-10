@@ -20,23 +20,19 @@ export interface PerformanceDisplayRecord {
   tpotUsP99: number | null;
 }
 
-type AggregateOptions =
-  | {
-    bucket: PerformanceBucketGranularity;
-    groupBy: Exclude<PerformanceGroupBy, 'userId'>;
-    timezoneOffsetMinutes: number;
-  }
-  | {
-    bucket: PerformanceBucketGranularity;
-    groupBy: 'userId';
-    timezoneOffsetMinutes: number;
-    // Records whose keyId no longer resolves (operator hard-deleted the key)
-    // are dropped: they have no defensible owning user to render, and
-    // collapsing them into userId 0 both fabricates a phantom bucket and
-    // conflicts with any real user whose id is 0. Soft-deleted keys still
-    // resolve because keyToUser includes them.
-    keyToUser: ReadonlyMap<string, number>;
-  };
+interface AggregateOptions {
+  bucket: PerformanceBucketGranularity;
+  groupBy: PerformanceGroupBy;
+  timezoneOffsetMinutes: number;
+  // Required when `groupBy === 'userId'` (orphan rows whose keyId no longer
+  // resolves are dropped there rather than collapsed onto userId 0, which
+  // both fabricates a phantom bucket and conflicts with any real user
+  // whose id is 0; soft-deleted keys still resolve because the map
+  // includes them). Ignored for every other groupBy — callers pass it
+  // unconditionally so the aggregate call sites don't ternary between
+  // two shapes.
+  keyToUser?: ReadonlyMap<string, number>;
+}
 
 interface MutableAggregate {
   bucket: string;
@@ -64,6 +60,7 @@ const displayBucket = (hour: string, options: Pick<AggregateOptions, 'bucket' | 
 const displayGroup = (record: PerformanceTelemetryRecord, options: AggregateOptions): string | null => {
   if (options.groupBy === 'none') return 'all';
   if (options.groupBy === 'userId') {
+    if (!options.keyToUser) throw new Error("aggregatePerformanceForDisplay: groupBy='userId' requires keyToUser");
     const userId = options.keyToUser.get(record.keyId);
     if (userId === undefined) return null;
     return String(userId);
