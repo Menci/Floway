@@ -624,16 +624,16 @@ const performanceDimensionBinds = (dims: PerformanceDimensions): unknown[] =>
 
 // Column-order source of truth for the performance_summary upsert. Dimensions
 // form the composite PK and lead the VALUES tuple; counts trail in the exact
-// order the ON CONFLICT clause updates them. `upsertSummary` binds these two
+// order the ON CONFLICT clause updates them. `upsertSummary` binds the two
 // lists together so any future column addition is a one-line edit here.
-const PERFORMANCE_SUMMARY_DIMENSION_COLUMNS = ['hour', 'key_id', 'model', 'upstream', 'operation', 'runtime_location'] as const;
 const PERFORMANCE_SUMMARY_COUNT_COLUMNS = ['requests', 'errors', 'ttft_samples', 'tpot_samples', 'ttft_ms_sum', 'tpot_us_sum'] as const;
 type PerformanceSummaryCountColumn = typeof PERFORMANCE_SUMMARY_COUNT_COLUMNS[number];
 
 const buildPerformanceSummarySql = (mode: 'add' | 'set'): string => {
-  const allColumns = [...PERFORMANCE_SUMMARY_DIMENSION_COLUMNS, ...PERFORMANCE_SUMMARY_COUNT_COLUMNS];
+  const dimensionColumns = ['hour', 'key_id', 'model', 'upstream', 'operation', 'runtime_location'] as const;
+  const allColumns = [...dimensionColumns, ...PERFORMANCE_SUMMARY_COUNT_COLUMNS];
   const placeholders = allColumns.map(() => '?').join(', ');
-  const conflictKey = PERFORMANCE_SUMMARY_DIMENSION_COLUMNS.join(', ');
+  const conflictKey = dimensionColumns.join(', ');
   const updates = PERFORMANCE_SUMMARY_COUNT_COLUMNS
     .map(col => (mode === 'add' ? `${col} = ${col} + excluded.${col}` : `${col} = excluded.${col}`))
     .join(', ');
