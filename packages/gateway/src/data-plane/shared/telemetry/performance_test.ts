@@ -129,4 +129,12 @@ describe('recordRequestPerformance', () => {
     await Promise.all(promises);
     expect(await repo.performance.listAll()).toEqual([]);
   });
+
+  // --- invariants ---
+
+  it('throws on negative outputTokens — an upstream that reports a negative token count is data corruption, not a value to floor', () => {
+    const ctx = { firstOutputTokenAt: 100, upstreamCallStartedAt: 50, attemptTelemetry: undefined };
+    expect(() => recordRequestPerformance(scheduler, ctx, telemetry, false, -1, 400))
+      .toThrow(/negative outputTokens=-1/);
+  });
 });
