@@ -3,7 +3,7 @@ import { useIntervalFn } from '@vueuse/core';
 import type { TooltipItem } from 'chart.js';
 import type { ChartConfiguration } from 'chart.js/auto';
 import { defineBasicLoader } from 'unplugin-vue-router/data-loaders/basic';
-import { computed, ref, watch, watchEffect } from 'vue';
+import { computed, ref, watch } from 'vue';
 
 import { callApi, useApi } from '../../api/client.ts';
 import ChartCanvas from '../../components/charts/ChartCanvas.vue';
@@ -15,14 +15,13 @@ import { useAuthStore } from '../../stores/auth.ts';
 import { OverlayScrollbars, Spinner } from '@floway-dev/ui';
 
 type PerformanceView = 'all-by-user' | 'self-by-key';
-type GroupBy = 'none' | 'keyId' | 'userId' | 'model' | 'upstream' | 'operation' | 'runtimeLocation';
+type GroupBy = 'keyId' | 'userId' | 'model' | 'upstream' | 'operation' | 'runtimeLocation';
 
 interface PerformanceDisplayRecord {
   bucket: string;
   group: string;
   requests: number;
   errors: number;
-  neutral: number;
   ttftMsP50: number | null;
   ttftMsP95: number | null;
   ttftMsP99: number | null;
@@ -31,6 +30,18 @@ interface PerformanceDisplayRecord {
   tpotUsP99: number | null;
 }
 
+interface DimensionValues {
+  models: string[];
+  upstreams: string[];
+  operations: string[];
+  runtimeLocations: string[];
+  keyIds: string[];
+  userIds: number[];
+}
+
+interface UserMetadata { id: number; username: string }
+interface KeyMetadata { id: string; name: string; createdAt: string }
+
 interface PerformanceOverviewResponse {
   series: PerformanceDisplayRecord[];
   summaryRows: PerformanceDisplayRecord[];
@@ -38,7 +49,18 @@ interface PerformanceOverviewResponse {
   upstreamRows: PerformanceDisplayRecord[];
   runtimeRows: PerformanceDisplayRecord[];
   operationRows: PerformanceDisplayRecord[];
+  keyRows: PerformanceDisplayRecord[];
+  userRows: PerformanceDisplayRecord[];
+  dimensionValues: DimensionValues;
+  users: UserMetadata[];
+  keys: KeyMetadata[];
 }
+
+const emptyOverview = (): PerformanceOverviewResponse => ({
+  series: [], summaryRows: [], modelRows: [], upstreamRows: [], runtimeRows: [], operationRows: [], keyRows: [], userRows: [],
+  dimensionValues: { models: [], upstreams: [], operations: [], runtimeLocations: [], keyIds: [], userIds: [] },
+  users: [], keys: [],
+});
 
 export const usePerformancePageData = defineBasicLoader(async () => {
   const api = useApi();
@@ -64,14 +86,13 @@ export const usePerformancePageData = defineBasicLoader(async () => {
   ]);
   return {
     view,
-    overview: overviewRes.data ?? { series: [], summaryRows: [], modelRows: [], upstreamRows: [], runtimeRows: [], operationRows: [] },
+    overview: overviewRes.data ?? emptyOverview(),
     error: overviewRes.error ? overviewRes.error.message : null,
   };
 });
 </script>
 
 <script setup lang="ts">
-type ChartView = 'group' | 'percentile';
 type MetricView = 'ttft' | 'tokPerSec';
 type PercentileKey = 'p50' | 'p95' | 'p99';
 
@@ -80,25 +101,111 @@ const auth = useAuthStore();
 const upstreamsStore = useUpstreamsStore();
 const initialOverview = usePerformancePageData();
 
-// Map upstream id → operator-facing name so By-Upstream tables and chart
-// legends render "Copilot GHE" rather than "up_690bc65c8872cd54b7431068".
-// Falls back to the raw id for upstreams the operator has since hard-deleted
-// but that still appear in historical performance rows.
+// View is resolved once from the caller's permission — admins see all users'
+// data, regular users see only their own keys. The dashboard doesn't expose
+// a toggle; the underlying backend `view` param is still threaded through.
+const performanceView: PerformanceView = initialOverview.data.value.view;
+
+// Filters applied at the backend before aggregation. Empty string = no filter.
+const filterModel = ref<string>('');
+const filterUpstream = ref<string>('');
+const filterOperation = ref<string>('');
+const filterRuntime = ref<string>('');
+const filterUserId = ref<string>('');   // numeric string; backend parses
+const filterKeyId = ref<string>('');
+
+const performanceRange = ref<DashboardRange>('today');
+const loadedPerformanceRange = ref<DashboardRange>('today');
+// Buckets and the request window are derived from the same `loadedAt` so the
+// chart axis stays in lockstep with whichever data snapshot is currently shown.
+const loadedAt = ref(Date.now());
+const performanceMetric = ref<MetricView>('ttft');
+const performancePercentile = ref<PercentileKey>('p95');
+const performanceGroupBy = ref<GroupBy>('model');
+const hiddenPerformanceSeries = ref(new Set<string>());
+
+const overview = ref<PerformanceOverviewResponse>(initialOverview.data.value.overview);
+const performanceError = ref<string | null>(initialOverview.data.value.error);
+const performanceLoading = ref(false);
+let performanceRequestId = 0;
+
+const load = async () => {
+  const requestId = ++performanceRequestId;
+  const requestedRange = performanceRange.value;
+  const requestedGroupBy = performanceGroupBy.value;
+  const requestedAt = Date.now();
+  performanceLoading.value = true;
+  const { start, end, bucket } = dashboardRangeQuery(requestedRange, requestedAt);
+  const query: Record<string, string> = {
+    start, end, bucket,
+    timezone_offset_minutes: String(new Date().getTimezoneOffset()),
+    view: performanceView,
+    group_by: requestedGroupBy,
+  };
+  if (filterModel.value !== '') query.filter_model = filterModel.value;
+  if (filterUpstream.value !== '') query.filter_upstream = filterUpstream.value;
+  if (filterOperation.value !== '') query.filter_operation = filterOperation.value;
+  if (filterRuntime.value !== '') query.filter_runtime_location = filterRuntime.value;
+  if (filterUserId.value !== '') query.filter_user_id = filterUserId.value;
+  if (filterKeyId.value !== '') query.filter_key_id = filterKeyId.value;
+
+  const { data, error: err } = await callApi<PerformanceOverviewResponse>(() => api.api.performance.overview.$get({ query }));
+  if (requestId !== performanceRequestId) return;
+  performanceLoading.value = false;
+  if (err) { performanceError.value = err.message; return; }
+  performanceError.value = null;
+  overview.value = data;
+  loadedPerformanceRange.value = requestedRange;
+  loadedAt.value = requestedAt;
+};
+
+watch([performanceRange, performanceGroupBy, filterModel, filterUpstream, filterOperation, filterRuntime, filterUserId, filterKeyId], load);
+useIntervalFn(() => { void load(); }, 60_000);
+
+// Group-by dropdown options depend on view: keyId only makes sense in
+// self-by-key (the actor's own keys), userId only in all-by-user (admins).
+const groupByOptions = computed<{ value: GroupBy; label: string }[]>(() => {
+  const shared: { value: GroupBy; label: string }[] = [
+    { value: 'model', label: 'By Model' },
+    { value: 'upstream', label: 'By Upstream' },
+    { value: 'operation', label: 'By Operation' },
+    { value: 'runtimeLocation', label: 'By Region' },
+  ];
+  if (performanceView === 'all-by-user') return [...shared, { value: 'userId', label: 'By User' }];
+  return [...shared, { value: 'keyId', label: 'By API Key' }];
+});
+
+const performanceSeriesIsolation = createSeriesIsolation();
+
+// Name resolvers — all three (upstream, user, API key) look up display names
+// from separate metadata sources. resolveGroupName picks the right one based
+// on the row's group dimension so tables render "Copilot GHE" / "admin" /
+// "my-cli-key" rather than raw ids.
 const upstreamNameById = computed<Map<string, string>>(() => {
   const map = new Map<string, string>();
   for (const u of upstreamsStore.upstreams.value ?? []) map.set(u.id, u.name);
   return map;
 });
-// Chart legend / By-Upstream table map upstream ids to operator-facing
-// names. Falls back to the raw id when the upstream has been hard-deleted
-// but still appears in historical performance rows.
-const resolveUpstreamName = (id: string): string => upstreamNameById.value.get(id) ?? id;
+const userNameById = computed<Map<number, string>>(() => {
+  const map = new Map<number, string>();
+  for (const u of overview.value.users) map.set(u.id, u.username);
+  return map;
+});
+const keyNameById = computed<Map<string, string>>(() => {
+  const map = new Map<string, string>();
+  for (const k of overview.value.keys) map.set(k.id, k.name);
+  return map;
+});
+const resolveGroupName = (group: string, groupBy: GroupBy): string => {
+  if (groupBy === 'upstream') return upstreamNameById.value.get(group) ?? group;
+  if (groupBy === 'userId') return userNameById.value.get(Number(group)) ?? `user ${group}`;
+  if (groupBy === 'keyId') return keyNameById.value.get(group) ?? group;
+  return group;
+};
 
-// Shared sort key across all four break-down tables. Tables track the same
-// dimensions (requests / errors / TTFT p95 / Output speed p95) so clicking
-// any table's header re-orders every table. Kept independent from the chart
-// controls (metric / percentile toggles) — chart, stats card grid, and
-// tables each pick their own reference points.
+// Shared sort key across all break-down tables. Every table carries the same
+// columns (Req / Errors / TTFT p95 / Output speed p95) so clicking any header
+// re-orders every table. Independent from the chart's metric/percentile.
 type TableSortKey = 'group' | 'requests' | 'errors' | 'ttftMsP95' | 'tpotUsP95';
 type SortDir = 'asc' | 'desc';
 const tableSortKey = ref<TableSortKey>('requests');
@@ -116,28 +223,23 @@ const tableSortToggle = (key: TableSortKey): void => {
 };
 
 // tok/s (Output speed) is inverted from tpotUs: bigger tok/s = smaller tpotUs.
-// Sorting by tpotUsP95 ascending means "slowest speed first"; UI users clicking
-// "Output speed p95 ↓" expect "slowest first", so we invert the direction for
-// this column so the visible ordering matches the label's semantic.
-const sortedRows = (rows: readonly PerformanceDisplayRecord[], groupKey: 'upstream' | 'plain'): PerformanceDisplayRecord[] => {
+// Clicking "Output speed p95 ↓" expects "fastest first", so we invert the
+// direction for that column so the visible ordering matches the label.
+const sortedRows = (rows: readonly PerformanceDisplayRecord[], groupBy: GroupBy): PerformanceDisplayRecord[] => {
   const key = tableSortKey.value;
   const dir = tableSortDir.value;
   const sign = dir === 'asc' ? 1 : -1;
   const compareNumbers = (a: number | null, b: number | null): number => {
     if (a === null && b === null) return 0;
-    if (a === null) return 1;   // nulls always trail
+    if (a === null) return 1;
     if (b === null) return -1;
     return (a - b) * sign;
   };
   return [...rows].sort((a, b) => {
     if (key === 'group') {
-      const aName = groupKey === 'upstream' ? resolveUpstreamName(a.group) : a.group;
-      const bName = groupKey === 'upstream' ? resolveUpstreamName(b.group) : b.group;
-      return aName.localeCompare(bName) * sign;
+      return resolveGroupName(a.group, groupBy).localeCompare(resolveGroupName(b.group, groupBy)) * sign;
     }
     if (key === 'tpotUsP95') {
-      // Invert: smaller tpotUs = faster speed, so "desc" (default) means
-      // fastest-first in tok/s terms.
       return compareNumbers(a.tpotUsP95, b.tpotUsP95) * -1;
     }
     return compareNumbers(a[key], b[key]);
@@ -148,78 +250,6 @@ const sortIndicator = (key: TableSortKey): string => {
   if (tableSortKey.value !== key) return '';
   return tableSortDir.value === 'asc' ? ' ↑' : ' ↓';
 };
-
-const performanceRange = ref<DashboardRange>('today');
-const loadedPerformanceRange = ref<DashboardRange>('today');
-// Buckets and the request window are derived from the same `loadedAt` so the
-// chart axis stays in lockstep with whichever data snapshot is currently shown.
-const loadedAt = ref(Date.now());
-const performanceChartView = ref<ChartView>('group');
-const performanceMetric = ref<MetricView>('ttft');
-const performancePercentile = ref<PercentileKey>('p95');
-const performanceGroupBy = ref<GroupBy>('model');
-const performanceModel = ref<string>('');
-const performanceView = ref<PerformanceView>(initialOverview.data.value.view);
-const hiddenPerformanceSeries = ref(new Set<string>());
-
-const overview = ref<PerformanceOverviewResponse>(initialOverview.data.value.overview);
-const performanceError = ref<string | null>(initialOverview.data.value.error);
-const performanceLoading = ref(false);
-let performanceRequestId = 0;
-
-const load = async () => {
-  const requestId = ++performanceRequestId;
-  const requestedRange = performanceRange.value;
-  const requestedView = performanceView.value;
-  const requestedGroupBy = performanceGroupBy.value;
-  const requestedAt = Date.now();
-  performanceLoading.value = true;
-  const { start, end, bucket } = dashboardRangeQuery(requestedRange, requestedAt);
-  const { data, error: err } = await callApi<PerformanceOverviewResponse>(() => api.api.performance.overview.$get({
-    query: { start, end, bucket, timezone_offset_minutes: String(new Date().getTimezoneOffset()), view: requestedView, group_by: requestedGroupBy },
-  }));
-  if (requestId !== performanceRequestId || performanceRange.value !== requestedRange || performanceView.value !== requestedView || performanceGroupBy.value !== requestedGroupBy) return;
-  performanceLoading.value = false;
-  if (err) { performanceError.value = err.message; return; }
-  performanceError.value = null;
-  overview.value = data;
-  loadedPerformanceRange.value = requestedRange;
-  loadedAt.value = requestedAt;
-};
-
-watch([performanceRange, performanceView, performanceGroupBy], load);
-useIntervalFn(() => { void load(); }, 60_000);
-
-const performanceModelOptions = computed(() => {
-  const ids = new Set<string>();
-  for (const r of overview.value.series) ids.add(r.group);
-  return [...ids].sort();
-});
-
-watchEffect(() => {
-  const options = performanceModelOptions.value;
-  if (options.length === 0) {
-    performanceModel.value = '';
-    return;
-  }
-  if (!options.includes(performanceModel.value)) performanceModel.value = options[0]!;
-});
-
-const groupByOptions = computed<{ value: GroupBy; label: string }[]>(() => {
-  const all: { value: GroupBy; label: string }[] = [
-    { value: 'none', label: 'All combined' },
-    { value: 'model', label: 'By Model' },
-    { value: 'upstream', label: 'By Upstream' },
-    { value: 'operation', label: 'By Operation' },
-    { value: 'runtimeLocation', label: 'By Region' },
-    { value: 'keyId', label: 'By API Key' },
-    { value: 'userId', label: 'By User' },
-  ];
-  if (performanceView.value === 'all-by-user') return all.filter(o => o.value !== 'keyId');
-  return all.filter(o => o.value !== 'userId');
-});
-
-const performanceSeriesIsolation = createSeriesIsolation();
 
 const formatMs = (ms: number | null) => {
   if (ms === null) return '—';
@@ -248,61 +278,35 @@ const getChartValue = (record: PerformanceDisplayRecord, p: PercentileKey): numb
   return us === null || us <= 0 ? null : 1_000_000 / us;
 };
 
-const formatRowValue = (v: number | null): string =>
-  performanceMetric.value === 'ttft' ? formatMs(v) : formatTps(v);
-
-const metricLabel = computed(() => performanceMetric.value === 'ttft' ? 'TTFT' : 'Output speed');
-
 const chartConfig = computed<ChartConfiguration<'line'>>(() => {
   const { keys: bucketKeys, labels } = dashboardBuckets(loadedPerformanceRange.value, loadedAt.value);
   const metric = performanceMetric.value;
   const formatter = metric === 'ttft' ? formatMs : formatTps;
   const yTitle = metric === 'ttft' ? 'TTFT (ms)' : 'Output speed (tok/s)';
 
-  const datasets = performanceChartView.value === 'group'
-    ? (() => {
-        const groups = new Map<string, Map<string, number | null>>();
-        for (const r of overview.value.series) {
-          const inner = groups.get(r.group) ?? new Map<string, number | null>();
-          inner.set(r.bucket, getChartValue(r, performancePercentile.value));
-          groups.set(r.group, inner);
-        }
-        return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([group, byBucket], i) => {
-          const color = chartColor(i);
-          return {
-            label: performanceGroupBy.value === 'upstream' ? resolveUpstreamName(group) : group,
-            seriesId: group,
-            hidden: hiddenPerformanceSeries.value.has(group),
-            data: bucketKeys.map(k => byBucket.get(k) ?? null),
-            borderColor: color,
-            backgroundColor: `${color}25`,
-            borderWidth: 2,
-            pointRadius: 2,
-            pointHoverRadius: 5,
-            tension: 0.25,
-            fill: false,
-            spanGaps: true,
-          };
-        });
-      })()
-    : (['p50', 'p95', 'p99'] as PercentileKey[]).map((p, i) => {
-        const byBucket = new Map(overview.value.series.filter(r => r.group === performanceModel.value).map(r => [r.bucket, getChartValue(r, p)]));
-        const color = chartColor(i);
-        return {
-          label: p,
-          seriesId: p,
-          hidden: hiddenPerformanceSeries.value.has(p),
-          data: bucketKeys.map(k => byBucket.get(k) ?? null),
-          borderColor: color,
-          backgroundColor: `${color}25`,
-          borderWidth: 2,
-          pointRadius: 2,
-          pointHoverRadius: 5,
-          tension: 0.25,
-          fill: false,
-          spanGaps: true,
-        };
-      });
+  const groups = new Map<string, Map<string, number | null>>();
+  for (const r of overview.value.series) {
+    const inner = groups.get(r.group) ?? new Map<string, number | null>();
+    inner.set(r.bucket, getChartValue(r, performancePercentile.value));
+    groups.set(r.group, inner);
+  }
+  const datasets = [...groups.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([group, byBucket], i) => {
+    const color = chartColor(i);
+    return {
+      label: resolveGroupName(group, performanceGroupBy.value),
+      seriesId: group,
+      hidden: hiddenPerformanceSeries.value.has(group),
+      data: bucketKeys.map(k => byBucket.get(k) ?? null),
+      borderColor: color,
+      backgroundColor: `${color}25`,
+      borderWidth: 2,
+      pointRadius: 2,
+      pointHoverRadius: 5,
+      tension: 0.25,
+      fill: false,
+      spanGaps: true,
+    };
+  });
 
   return {
     type: 'line',
@@ -366,9 +370,6 @@ const performanceSummary = computed<PerformanceDisplayRecord>(() => overview.val
   group: 'all',
   requests: 0,
   errors: 0,
-  ttftSamples: 0,
-  tpotSamples: 0,
-  neutral: 0,
   ttftMsP50: null,
   ttftMsP95: null,
   ttftMsP99: null,
@@ -381,31 +382,12 @@ const performanceSummary = computed<PerformanceDisplayRecord>(() => overview.val
 <template>
   <div>
     <div class="glass-card p-6 animate-in">
-      <div class="flex flex-col gap-4 mb-6 lg:flex-row lg:items-center lg:justify-between">
-        <div class="flex items-center gap-3">
-          <span class="text-xs font-medium text-gray-500 uppercase tracking-widest">Performance</span>
-          <div v-if="auth.canViewGlobalTelemetry" class="inline-flex rounded-md bg-surface-800 p-0.5" role="tablist">
-            <button
-              type="button"
-              class="px-2 py-1 text-[11px] font-medium rounded transition-colors"
-              :class="performanceView === 'all-by-user' ? 'bg-surface-600 text-white' : 'text-gray-500 hover:text-gray-300'"
-              @click="performanceView = 'all-by-user'"
-            >All by user</button>
-            <button
-              type="button"
-              class="px-2 py-1 text-[11px] font-medium rounded transition-colors"
-              :class="performanceView === 'self-by-key' ? 'bg-surface-600 text-white' : 'text-gray-500 hover:text-gray-300'"
-              @click="performanceView = 'self-by-key'"
-            >My keys</button>
-          </div>
-          <Spinner v-if="performanceLoading" class="h-3.5 w-3.5 text-gray-500" />
-        </div>
-        <div class="flex max-w-full flex-wrap items-center gap-2">
-          <OverlayScrollbars
-            class="max-w-full rounded-lg bg-surface-800"
-            content-class="flex items-center gap-1 p-0.5"
-            no-tabindex
-          >
+      <!-- Row 1: metric (left) · group-by (next-left) · percentile (next-right) · time range (right) -->
+      <div class="flex flex-col gap-3 mb-3 lg:flex-row lg:items-center lg:justify-between">
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="text-xs font-medium text-gray-500 uppercase tracking-widest mr-1">Performance</span>
+          <Spinner v-if="performanceLoading" class="h-3.5 w-3.5 text-gray-500 mr-1" />
+          <OverlayScrollbars class="max-w-full rounded-lg bg-surface-800" content-class="flex items-center gap-1 p-0.5" no-tabindex>
             <button
               class="shrink-0 px-3 py-1.5 rounded-md text-xs font-medium transition-all"
               :class="performanceMetric === 'ttft' ? 'bg-surface-600 text-white' : 'text-gray-500 hover:text-gray-300'"
@@ -417,28 +399,16 @@ const performanceSummary = computed<PerformanceDisplayRecord>(() => overview.val
               @click="performanceMetric = 'tokPerSec'"
             >Output speed</button>
           </OverlayScrollbars>
-          <OverlayScrollbars
-            class="max-w-full rounded-lg bg-surface-800"
-            content-class="flex items-center gap-1 p-0.5"
-            no-tabindex
+          <select
+            v-model="performanceGroupBy"
+            class="shrink-0 rounded-lg bg-surface-800 px-3 py-1.5 text-xs font-medium text-gray-300 outline-none"
+            aria-label="Group by"
           >
-            <button
-              class="shrink-0 px-3 py-1.5 rounded-md text-xs font-medium transition-all"
-              :class="performanceChartView === 'group' ? 'bg-surface-600 text-white' : 'text-gray-500 hover:text-gray-300'"
-              @click="performanceChartView = 'group'"
-            >By Group</button>
-            <button
-              class="shrink-0 px-3 py-1.5 rounded-md text-xs font-medium transition-all"
-              :class="performanceChartView === 'percentile' ? 'bg-surface-600 text-white' : 'text-gray-500 hover:text-gray-300'"
-              @click="performanceChartView = 'percentile'"
-            >By Percentile</button>
-          </OverlayScrollbars>
-          <OverlayScrollbars
-            v-if="performanceChartView === 'group'"
-            class="max-w-full rounded-lg bg-surface-800"
-            content-class="flex items-center gap-1 p-0.5"
-            no-tabindex
-          >
+            <option v-for="opt in groupByOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+          </select>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+          <OverlayScrollbars class="max-w-full rounded-lg bg-surface-800" content-class="flex items-center gap-1 p-0.5" no-tabindex>
             <button
               v-for="p in (['p50', 'p95', 'p99'] as const)"
               :key="p"
@@ -447,32 +417,7 @@ const performanceSummary = computed<PerformanceDisplayRecord>(() => overview.val
               @click="performancePercentile = p"
             >{{ p }}</button>
           </OverlayScrollbars>
-          <OverlayScrollbars
-            v-if="performanceChartView === 'percentile'"
-            class="max-w-full rounded-lg bg-surface-800"
-            content-class="flex items-center gap-1 p-0.5"
-            no-tabindex
-          >
-            <select
-              v-model="performanceModel"
-              class="shrink-0 min-w-44 max-w-64 rounded-md bg-surface-600 px-3 py-1.5 text-xs font-medium text-white outline-none"
-              aria-label="Performance group"
-            >
-              <option v-for="m in performanceModelOptions" :key="m" :value="m">{{ m }}</option>
-            </select>
-          </OverlayScrollbars>
-          <select
-            v-model="performanceGroupBy"
-            class="shrink-0 rounded-lg bg-surface-800 px-3 py-1.5 text-xs font-medium text-gray-300 outline-none"
-            aria-label="Group by"
-          >
-            <option v-for="opt in groupByOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
-          </select>
-          <OverlayScrollbars
-            class="max-w-full rounded-lg bg-surface-800"
-            content-class="flex items-center gap-1 p-0.5"
-            no-tabindex
-          >
+          <OverlayScrollbars class="max-w-full rounded-lg bg-surface-800" content-class="flex items-center gap-1 p-0.5" no-tabindex>
             <button
               v-for="r in (['today', '7d', '30d'] as const)"
               :key="r"
@@ -482,6 +427,34 @@ const performanceSummary = computed<PerformanceDisplayRecord>(() => overview.val
             >{{ r === 'today' ? 'Last Day' : r === '7d' ? '7 Days' : '30 Days' }}</button>
           </OverlayScrollbars>
         </div>
+      </div>
+
+      <!-- Row 2: filter dropdowns — every filter is AND at the backend, options are drawn from the un-filtered dataset -->
+      <div class="mb-6 flex flex-wrap items-center gap-2">
+        <select v-model="filterModel" class="shrink-0 rounded-lg bg-surface-800 px-3 py-1.5 text-xs font-medium text-gray-300 outline-none" aria-label="Filter model">
+          <option value="">All models</option>
+          <option v-for="v in overview.dimensionValues.models" :key="v" :value="v">{{ v }}</option>
+        </select>
+        <select v-model="filterUpstream" class="shrink-0 rounded-lg bg-surface-800 px-3 py-1.5 text-xs font-medium text-gray-300 outline-none" aria-label="Filter upstream">
+          <option value="">All upstreams</option>
+          <option v-for="v in overview.dimensionValues.upstreams" :key="v" :value="v">{{ upstreamNameById.get(v) ?? v }}</option>
+        </select>
+        <select v-model="filterOperation" class="shrink-0 rounded-lg bg-surface-800 px-3 py-1.5 text-xs font-medium text-gray-300 outline-none" aria-label="Filter operation">
+          <option value="">All operations</option>
+          <option v-for="v in overview.dimensionValues.operations" :key="v" :value="v">{{ v }}</option>
+        </select>
+        <select v-model="filterRuntime" class="shrink-0 rounded-lg bg-surface-800 px-3 py-1.5 text-xs font-medium text-gray-300 outline-none" aria-label="Filter region">
+          <option value="">All regions</option>
+          <option v-for="v in overview.dimensionValues.runtimeLocations" :key="v" :value="v">{{ v }}</option>
+        </select>
+        <select v-if="performanceView === 'all-by-user'" v-model="filterUserId" class="shrink-0 rounded-lg bg-surface-800 px-3 py-1.5 text-xs font-medium text-gray-300 outline-none" aria-label="Filter user">
+          <option value="">All users</option>
+          <option v-for="v in overview.dimensionValues.userIds" :key="v" :value="String(v)">{{ userNameById.get(v) ?? `user ${v}` }}</option>
+        </select>
+        <select v-if="performanceView === 'self-by-key'" v-model="filterKeyId" class="shrink-0 rounded-lg bg-surface-800 px-3 py-1.5 text-xs font-medium text-gray-300 outline-none" aria-label="Filter API key">
+          <option value="">All API keys</option>
+          <option v-for="v in overview.dimensionValues.keyIds" :key="v" :value="v">{{ keyNameById.get(v) ?? v }}</option>
+        </select>
       </div>
 
       <div v-if="performanceError" class="mb-3 rounded-md border border-accent-rose/40 bg-accent-rose/10 px-3 py-2 text-sm text-accent-rose">
@@ -531,13 +504,20 @@ const performanceSummary = computed<PerformanceDisplayRecord>(() => overview.val
       </div>
 
       <div class="grid grid-cols-1 gap-5 mt-6 pt-5 border-t border-white/5 lg:grid-cols-2">
-        <div>
-          <span class="text-xs font-medium text-gray-500 uppercase tracking-widest mb-3 block">By Model</span>
+        <div v-for="table in [
+          { key: 'model' as const, label: 'By Model', rows: overview.modelRows, header: 'Model' },
+          { key: 'upstream' as const, label: 'By Upstream', rows: overview.upstreamRows, header: 'Upstream' },
+          { key: 'runtimeLocation' as const, label: 'By Region', rows: overview.runtimeRows, header: 'Region' },
+          { key: 'operation' as const, label: 'By Operation', rows: overview.operationRows, header: 'Operation' },
+          { key: 'userId' as const, label: 'By User', rows: overview.userRows, header: 'User' },
+          { key: 'keyId' as const, label: 'By API Key', rows: overview.keyRows, header: 'API Key' },
+        ]" :key="table.key" v-show="table.rows.length > 0">
+          <span class="text-xs font-medium text-gray-500 uppercase tracking-widest mb-3 block">{{ table.label }}</span>
           <OverlayScrollbars class="rounded-md border border-white/5" no-tabindex>
             <table class="w-full text-sm">
               <thead class="bg-surface-800/70 text-xs uppercase tracking-widest text-gray-500">
                 <tr>
-                  <th class="px-3 py-2 text-left font-medium cursor-pointer select-none hover:text-gray-300" @click="tableSortToggle('group')">Model{{ sortIndicator('group') }}</th>
+                  <th class="px-3 py-2 text-left font-medium cursor-pointer select-none hover:text-gray-300" @click="tableSortToggle('group')">{{ table.header }}{{ sortIndicator('group') }}</th>
                   <th class="px-3 py-2 text-right font-medium cursor-pointer select-none hover:text-gray-300" @click="tableSortToggle('requests')">Req{{ sortIndicator('requests') }}</th>
                   <th class="px-3 py-2 text-right font-medium cursor-pointer select-none hover:text-gray-300" @click="tableSortToggle('errors')">Errors{{ sortIndicator('errors') }}</th>
                   <th class="px-3 py-2 text-right font-medium cursor-pointer select-none hover:text-gray-300" @click="tableSortToggle('ttftMsP95')">TTFT p95{{ sortIndicator('ttftMsP95') }}</th>
@@ -545,83 +525,8 @@ const performanceSummary = computed<PerformanceDisplayRecord>(() => overview.val
                 </tr>
               </thead>
               <tbody class="divide-y divide-white/5">
-                <tr v-for="row in sortedRows(overview.modelRows, 'plain')" :key="row.group">
-                  <td class="px-3 py-2 text-gray-300">{{ row.group }}</td>
-                  <td class="px-3 py-2 text-right font-mono text-gray-400">{{ row.requests.toLocaleString() }}</td>
-                  <td class="px-3 py-2 text-right font-mono text-gray-400">{{ row.errors.toLocaleString() }}</td>
-                  <td class="px-3 py-2 text-right font-mono text-white">{{ formatMs(row.ttftMsP95) }}</td>
-                  <td class="px-3 py-2 text-right font-mono text-white">{{ formatTokPerSec(row.tpotUsP95) }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </OverlayScrollbars>
-        </div>
-        <div v-if="overview.upstreamRows.length > 0">
-          <span class="text-xs font-medium text-gray-500 uppercase tracking-widest mb-3 block">By Upstream</span>
-          <OverlayScrollbars class="rounded-md border border-white/5" no-tabindex>
-            <table class="w-full text-sm">
-              <thead class="bg-surface-800/70 text-xs uppercase tracking-widest text-gray-500">
-                <tr>
-                  <th class="px-3 py-2 text-left font-medium cursor-pointer select-none hover:text-gray-300" @click="tableSortToggle('group')">Upstream{{ sortIndicator('group') }}</th>
-                  <th class="px-3 py-2 text-right font-medium cursor-pointer select-none hover:text-gray-300" @click="tableSortToggle('requests')">Req{{ sortIndicator('requests') }}</th>
-                  <th class="px-3 py-2 text-right font-medium cursor-pointer select-none hover:text-gray-300" @click="tableSortToggle('errors')">Errors{{ sortIndicator('errors') }}</th>
-                  <th class="px-3 py-2 text-right font-medium cursor-pointer select-none hover:text-gray-300" @click="tableSortToggle('ttftMsP95')">TTFT p95{{ sortIndicator('ttftMsP95') }}</th>
-                  <th class="px-3 py-2 text-right font-medium cursor-pointer select-none hover:text-gray-300" @click="tableSortToggle('tpotUsP95')">Output speed p95{{ sortIndicator('tpotUsP95') }}</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-white/5">
-                <tr v-for="row in sortedRows(overview.upstreamRows, 'upstream')" :key="row.group">
-                  <td class="px-3 py-2 text-gray-300">{{ resolveUpstreamName(row.group) }}</td>
-                  <td class="px-3 py-2 text-right font-mono text-gray-400">{{ row.requests.toLocaleString() }}</td>
-                  <td class="px-3 py-2 text-right font-mono text-gray-400">{{ row.errors.toLocaleString() }}</td>
-                  <td class="px-3 py-2 text-right font-mono text-white">{{ formatMs(row.ttftMsP95) }}</td>
-                  <td class="px-3 py-2 text-right font-mono text-white">{{ formatTokPerSec(row.tpotUsP95) }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </OverlayScrollbars>
-        </div>
-        <div v-if="overview.runtimeRows.length > 0">
-          <span class="text-xs font-medium text-gray-500 uppercase tracking-widest mb-3 block">By Region</span>
-          <OverlayScrollbars class="rounded-md border border-white/5" no-tabindex>
-            <table class="w-full text-sm">
-              <thead class="bg-surface-800/70 text-xs uppercase tracking-widest text-gray-500">
-                <tr>
-                  <th class="px-3 py-2 text-left font-medium cursor-pointer select-none hover:text-gray-300" @click="tableSortToggle('group')">Region{{ sortIndicator('group') }}</th>
-                  <th class="px-3 py-2 text-right font-medium cursor-pointer select-none hover:text-gray-300" @click="tableSortToggle('requests')">Req{{ sortIndicator('requests') }}</th>
-                  <th class="px-3 py-2 text-right font-medium cursor-pointer select-none hover:text-gray-300" @click="tableSortToggle('errors')">Errors{{ sortIndicator('errors') }}</th>
-                  <th class="px-3 py-2 text-right font-medium cursor-pointer select-none hover:text-gray-300" @click="tableSortToggle('ttftMsP95')">TTFT p95{{ sortIndicator('ttftMsP95') }}</th>
-                  <th class="px-3 py-2 text-right font-medium cursor-pointer select-none hover:text-gray-300" @click="tableSortToggle('tpotUsP95')">Output speed p95{{ sortIndicator('tpotUsP95') }}</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-white/5">
-                <tr v-for="row in sortedRows(overview.runtimeRows, 'plain')" :key="row.group">
-                  <td class="px-3 py-2 text-gray-300">{{ row.group }}</td>
-                  <td class="px-3 py-2 text-right font-mono text-gray-400">{{ row.requests.toLocaleString() }}</td>
-                  <td class="px-3 py-2 text-right font-mono text-gray-400">{{ row.errors.toLocaleString() }}</td>
-                  <td class="px-3 py-2 text-right font-mono text-white">{{ formatMs(row.ttftMsP95) }}</td>
-                  <td class="px-3 py-2 text-right font-mono text-white">{{ formatTokPerSec(row.tpotUsP95) }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </OverlayScrollbars>
-        </div>
-        <div v-if="overview.operationRows.length > 0">
-          <span class="text-xs font-medium text-gray-500 uppercase tracking-widest mb-3 block">By Operation</span>
-          <OverlayScrollbars class="rounded-md border border-white/5" no-tabindex>
-            <table class="w-full text-sm">
-              <thead class="bg-surface-800/70 text-xs uppercase tracking-widest text-gray-500">
-                <tr>
-                  <th class="px-3 py-2 text-left font-medium cursor-pointer select-none hover:text-gray-300" @click="tableSortToggle('group')">Operation{{ sortIndicator('group') }}</th>
-                  <th class="px-3 py-2 text-right font-medium cursor-pointer select-none hover:text-gray-300" @click="tableSortToggle('requests')">Req{{ sortIndicator('requests') }}</th>
-                  <th class="px-3 py-2 text-right font-medium cursor-pointer select-none hover:text-gray-300" @click="tableSortToggle('errors')">Errors{{ sortIndicator('errors') }}</th>
-                  <th class="px-3 py-2 text-right font-medium cursor-pointer select-none hover:text-gray-300" @click="tableSortToggle('ttftMsP95')">TTFT p95{{ sortIndicator('ttftMsP95') }}</th>
-                  <th class="px-3 py-2 text-right font-medium cursor-pointer select-none hover:text-gray-300" @click="tableSortToggle('tpotUsP95')">Output speed p95{{ sortIndicator('tpotUsP95') }}</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-white/5">
-                <tr v-for="row in sortedRows(overview.operationRows, 'plain')" :key="row.group">
-                  <td class="px-3 py-2 text-gray-300">{{ row.group }}</td>
+                <tr v-for="row in sortedRows(table.rows, table.key)" :key="row.group">
+                  <td class="px-3 py-2 text-gray-300">{{ resolveGroupName(row.group, table.key) }}</td>
                   <td class="px-3 py-2 text-right font-mono text-gray-400">{{ row.requests.toLocaleString() }}</td>
                   <td class="px-3 py-2 text-right font-mono text-gray-400">{{ row.errors.toLocaleString() }}</td>
                   <td class="px-3 py-2 text-right font-mono text-white">{{ formatMs(row.ttftMsP95) }}</td>
