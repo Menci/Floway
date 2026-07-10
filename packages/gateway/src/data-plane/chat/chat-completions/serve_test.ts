@@ -63,7 +63,7 @@ const makeGatewayCtx = (): ChatGatewayCtx => ({
   dump: null,
   responseHeaders: new Headers(),
   backgroundScheduler: () => {},
-  perfTiming: { firstOutputTokenAt: null, upstreamCallStartedAt: null },
+  perfTiming: { firstOutputTokenAt: null, upstreamCallStartedAt: null, attemptTelemetry: undefined },
   store: createNonResponsesSourceStore(API_KEY_ID),
 });
 
@@ -193,6 +193,43 @@ test('generate falls through to the next candidate when the first yields an upst
   assertEquals(result.type, 'events');
   assertEquals(firstCall.mock.calls.length, 1);
   assertEquals(secondCall.mock.calls.length, 1);
+});
+
+// A mid-attempt throw (interceptor bug / translation error / provider-layer
+// JS exception bypassing tryCatchChatServeFailure) must attribute the perf
+// error row to the throwing candidate — see the R4-3 comment in
+// messages/serve_test.ts for the full rationale.
+test('mid-attempt throw stamps attemptTelemetry with the throwing candidate, not the previous one', async () => {
+  installRepo();
+  const firstError = new Response(JSON.stringify({ error: { message: 'nope' } }), {
+    status: 502, headers: new Headers({ 'content-type': 'application/json' }),
+  });
+  const firstCall = vi.fn(async (): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => ({
+    ok: false, response: firstError, modelKey: 'first-key',
+  }));
+  const secondCall = vi.fn(async (): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => {
+    throw new Error('simulated provider-layer JS exception');
+  });
+  queueResolution([
+    makeCandidate({ upstream: 'up_a', callChatCompletions: firstCall }),
+    makeCandidate({ upstream: 'up_b', callChatCompletions: secondCall }),
+  ]);
+
+  const ctx = makeGatewayCtx();
+  await chatCompletionsServe.generate({
+    payload: makePayload(),
+    ctx,
+    headers: new Headers(),
+  }).then(
+    () => { throw new Error('expected chatCompletionsServe.generate to throw'); },
+    (error: unknown) => {
+      assertEquals((error as Error).message, 'simulated provider-layer JS exception');
+    },
+  );
+
+  assertEquals(firstCall.mock.calls.length, 1);
+  assertEquals(secondCall.mock.calls.length, 1);
+  assertEquals(ctx.perfTiming.attemptTelemetry?.upstream, 'up_b');
 });
 
 test('generate surfaces the last upstream error verbatim when every candidate fails', async () => {

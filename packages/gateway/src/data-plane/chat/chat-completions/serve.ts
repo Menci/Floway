@@ -2,6 +2,7 @@ import { chatCompletionsAttempt, chatCompletionsTarget } from './attempt.ts';
 import { renderChatCompletionsFailure } from './errors.ts';
 import { enumerateModelCandidates } from '../../providers/registry.ts';
 import { iterateCandidates } from '../../shared/iterate-candidates.ts';
+import { upstreamPerformanceContext } from '../../shared/telemetry/upstream-telemetry.ts';
 import { classifyResponsesItemAffinity } from '../responses/items/affinity.ts';
 import { noViableCandidateFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
@@ -44,13 +45,17 @@ export const chatCompletionsServe = {
     // real upstream telemetry rather than a synthetic envelope. Normalize
     // `payload.model` to the candidate's real id — inbound may be an alias
     // name, a prefix-addressable variant, or a dated-suffix id, but every
-    // attempt sees the canonical resolved public id.
+    // attempt sees the canonical resolved public id. Stamping
+    // `attemptTelemetry` synchronously before awaiting the attempt is what
+    // preserves error attribution when the attempt throws mid-flight — see
+    // the PerfTiming comment in gateway-ctx.ts.
     return await iterateCandidates(
       decision.candidates,
       'chatCompletionsServe.generate',
       ctx.perfTiming,
       candidate => {
         payload.model = candidate.model.id;
+        ctx.perfTiming.attemptTelemetry = upstreamPerformanceContext(ctx, candidate, 'chat');
         return chatCompletionsAttempt.generate({ payload, ctx, candidate, headers });
       },
     );

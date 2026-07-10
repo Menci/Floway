@@ -38,13 +38,14 @@ const previousResponseNotFoundResponse = (id: string): Response =>
 // that body verbatim — the upstream's `/models` 401 IS the diagnostic. The
 // caller passes its outer `ctx` when one was already constructed (so the
 // dump row preserves the model attribution the request-time
-// `requestedModel` stamped); a fresh ctx is minted only for pre-parse
-// failures where no payload was available to read model from.
+// `requestedModel` stamped, and the throwing-candidate telemetry stamped
+// in serve.ts survives onto the error row); a fresh ctx is minted only
+// for pre-parse failures where no payload was available to read model from.
 const respondWithInternalError = async (c: AuthedContext, error: unknown, requestBody: RequestBody, ctx?: GatewayCtx): Promise<Response> => {
   const verbatim = providerModelsUnavailableResponse(error);
   if (verbatim !== null) return verbatim;
   const effectiveCtx = ctx ?? createGatewayCtxFromHono(c, { wantsStream: false, requestBody, backgroundScheduler: backgroundSchedulerFromContext(c) });
-  const result = internalErrorResult(502, toInternalDebugError(error));
+  const result = internalErrorResult(502, toInternalDebugError(error), effectiveCtx.perfTiming.attemptTelemetry);
   const { response } = await respondResponses(c, result, false, effectiveCtx);
   return finalizeGatewayResponse(effectiveCtx, response);
 };
@@ -60,7 +61,7 @@ const respondToThrow = async (c: AuthedContext, error: unknown, requestBody: Req
   }
   if (error instanceof TranslatorInputError) {
     const effectiveCtx = ctx ?? createGatewayCtxFromHono(c, { wantsStream: false, requestBody, backgroundScheduler: backgroundSchedulerFromContext(c) });
-    const { response } = await respondResponses(c, translatorInputErrorResult(error), false, effectiveCtx);
+    const { response } = await respondResponses(c, translatorInputErrorResult(error, effectiveCtx.perfTiming.attemptTelemetry), false, effectiveCtx);
     return finalizeGatewayResponse(effectiveCtx, response);
   }
   return await respondWithInternalError(c, error, requestBody, ctx);

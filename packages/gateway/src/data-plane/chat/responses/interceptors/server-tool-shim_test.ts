@@ -338,7 +338,7 @@ const makeGatewayCtx = (apiKeyId: string = 'k1'): ChatGatewayCtx => ({
   dump: null,
   responseHeaders: new Headers(),
   backgroundScheduler: () => {},
-  perfTiming: { firstOutputTokenAt: null, upstreamCallStartedAt: null },
+  perfTiming: { firstOutputTokenAt: null, upstreamCallStartedAt: null, attemptTelemetry: undefined },
   store: createNonResponsesSourceStore(apiKeyId),
 });
 
@@ -4488,7 +4488,7 @@ test('downstream AbortSignal threads through to provider search / fetchPage and 
     dump: null,
     responseHeaders: new Headers(),
     backgroundScheduler: () => {},
-    perfTiming: { firstOutputTokenAt: null, upstreamCallStartedAt: null },
+    perfTiming: { firstOutputTokenAt: null, upstreamCallStartedAt: null, attemptTelemetry: undefined },
     store: createNonResponsesSourceStore('k1'),
     abortSignal: controller.signal,
   };

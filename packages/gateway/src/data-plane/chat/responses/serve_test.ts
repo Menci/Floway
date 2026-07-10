@@ -72,7 +72,7 @@ const makeGatewayCtx = (store?: ChatGatewayCtx['store']): ChatGatewayCtx => ({
   dump: null,
   responseHeaders: new Headers(),
   backgroundScheduler: () => {},
-  perfTiming: { firstOutputTokenAt: null, upstreamCallStartedAt: null },
+  perfTiming: { firstOutputTokenAt: null, upstreamCallStartedAt: null, attemptTelemetry: undefined },
   store: store ?? createResponsesHttpStore(API_KEY_ID, true),
 });
 
@@ -238,6 +238,43 @@ test('generate falls through to the next candidate when the first yields an upst
   assertEquals(result.type, 'events');
   assertEquals(firstCall.mock.calls.length, 1);
   assertEquals(secondCall.mock.calls.length, 1);
+});
+
+// A mid-attempt throw (interceptor bug / translation error / provider-layer
+// JS exception bypassing tryCatchChatServeFailure) must attribute the perf
+// error row to the throwing candidate — see the R4-3 comment in
+// messages/serve_test.ts for the full rationale.
+test('mid-attempt throw stamps attemptTelemetry with the throwing candidate, not the previous one', async () => {
+  installRepo();
+  const firstError = new Response(JSON.stringify({ error: { message: 'nope' } }), {
+    status: 502, headers: new Headers({ 'content-type': 'application/json' }),
+  });
+  const firstCall = vi.fn(async (): Promise<ProviderResponsesResult> => ({
+    action: 'generate', ok: false, response: firstError, modelKey: 'first-key',
+  }));
+  const secondCall = vi.fn(async (): Promise<ProviderResponsesResult> => {
+    throw new Error('simulated provider-layer JS exception');
+  });
+  queueResolution([
+    makeCandidate({ upstream: 'up_a', callResponses: firstCall }),
+    makeCandidate({ upstream: 'up_b', callResponses: secondCall }),
+  ]);
+
+  const ctx = makeGatewayCtx();
+  await responsesServe.generate({
+    payload: makePayload(),
+    ctx,
+    headers: new Headers(),
+  }).then(
+    () => { throw new Error('expected responsesServe.generate to throw'); },
+    (error: unknown) => {
+      assertEquals((error as Error).message, 'simulated provider-layer JS exception');
+    },
+  );
+
+  assertEquals(firstCall.mock.calls.length, 1);
+  assertEquals(secondCall.mock.calls.length, 1);
+  assertEquals(ctx.perfTiming.attemptTelemetry?.upstream, 'up_b');
 });
 
 test('generate renders model-missing when no candidates are available', async () => {

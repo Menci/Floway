@@ -2,6 +2,7 @@ import { messagesAttempt, messagesGenerateTarget, messagesCountTokensTarget } fr
 import { renderMessagesFailure } from './errors.ts';
 import { enumerateModelCandidates } from '../../providers/registry.ts';
 import { iterateCandidates } from '../../shared/iterate-candidates.ts';
+import { upstreamPerformanceContext } from '../../shared/telemetry/upstream-telemetry.ts';
 import { classifyResponsesItemAffinity } from '../responses/items/affinity.ts';
 import { noViableCandidateFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
@@ -48,13 +49,17 @@ export const messagesServe = {
     // transient 5xx/429/network failures. When the list is exhausted, the
     // most recent failure is forwarded verbatim. Normalize `payload.model`
     // to the candidate's real id so every attempt sees the canonical
-    // resolved public id.
+    // resolved public id. Stamping `attemptTelemetry` synchronously before
+    // awaiting the attempt is what preserves error attribution when the
+    // attempt throws mid-flight — see the PerfTiming comment in
+    // gateway-ctx.ts.
     return await iterateCandidates(
       decision.candidates,
       'messagesServe.generate',
       ctx.perfTiming,
       candidate => {
         payload.model = candidate.model.id;
+        ctx.perfTiming.attemptTelemetry = upstreamPerformanceContext(ctx, candidate, 'chat');
         return messagesAttempt.generate({ payload, ctx, candidate, headers });
       },
     );
@@ -87,6 +92,7 @@ export const messagesServe = {
         // Same normalization as generate above — every attempt sees
         // payload.model === candidate.model.id regardless of inbound form.
         payload.model = candidate.model.id;
+        ctx.perfTiming.attemptTelemetry = upstreamPerformanceContext(ctx, candidate, 'chat');
         return messagesAttempt.countTokens({ payload, ctx, candidate, headers });
       },
     );

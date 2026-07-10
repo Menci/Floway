@@ -2,6 +2,7 @@ import { geminiAttempt, geminiCountTokensTarget, geminiGenerateTarget } from './
 import { renderGeminiFailure } from './errors.ts';
 import { enumerateModelCandidates } from '../../providers/registry.ts';
 import { iterateCandidates } from '../../shared/iterate-candidates.ts';
+import { upstreamPerformanceContext } from '../../shared/telemetry/upstream-telemetry.ts';
 import { classifyResponsesItemAffinity } from '../responses/items/affinity.ts';
 import { noViableCandidateFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
@@ -55,12 +56,18 @@ export const geminiServe = {
     // real upstream telemetry rather than a synthetic envelope. The
     // Gemini URL-path model id is already in `model`; downstream dispatch
     // keys off `candidate.model.id`, so no payload rewrite is needed here
-    // even for alias-origin candidates.
+    // even for alias-origin candidates. Stamping `attemptTelemetry`
+    // synchronously before awaiting the attempt is what preserves error
+    // attribution when the attempt throws mid-flight — see the PerfTiming
+    // comment in gateway-ctx.ts.
     return await iterateCandidates(
       decision.candidates,
       'geminiServe.generate',
       ctx.perfTiming,
-      candidate => geminiAttempt.generate({ payload, ctx, candidate, headers }),
+      candidate => {
+        ctx.perfTiming.attemptTelemetry = upstreamPerformanceContext(ctx, candidate, 'chat');
+        return geminiAttempt.generate({ payload, ctx, candidate, headers });
+      },
     );
   },
 
@@ -87,7 +94,10 @@ export const geminiServe = {
       decision.candidates,
       'geminiServe.countTokens',
       ctx.perfTiming,
-      candidate => geminiAttempt.countTokens({ payload, ctx, candidate, headers }),
+      candidate => {
+        ctx.perfTiming.attemptTelemetry = upstreamPerformanceContext(ctx, candidate, 'chat');
+        return geminiAttempt.countTokens({ payload, ctx, candidate, headers });
+      },
     );
   },
 };

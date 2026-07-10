@@ -8,7 +8,7 @@ const stubCandidate = (id: string): ModelCandidate =>
 
 describe('iterateCandidates', () => {
   it('resets perfTiming to null at the start of every candidate attempt', async () => {
-    const perfTiming = { upstreamCallStartedAt: 999, firstOutputTokenAt: 999 };
+    const perfTiming = { upstreamCallStartedAt: 999, firstOutputTokenAt: 999, attemptTelemetry: undefined };
     const observed: Array<{ upstreamCallStartedAt: number | null; firstOutputTokenAt: number | null }> = [];
 
     await iterateCandidates(
@@ -16,7 +16,7 @@ describe('iterateCandidates', () => {
       'test',
       perfTiming,
       async candidate => {
-        observed.push({ ...perfTiming });
+        observed.push({ upstreamCallStartedAt: perfTiming.upstreamCallStartedAt, firstOutputTokenAt: perfTiming.firstOutputTokenAt });
         // simulate an attempt that stamps then fails, so the loop advances
         perfTiming.upstreamCallStartedAt = 100;
         perfTiming.firstOutputTokenAt = 200;
@@ -34,7 +34,7 @@ describe('iterateCandidates', () => {
   });
 
   it('returns the first success and stops iterating', async () => {
-    const perfTiming = { upstreamCallStartedAt: null, firstOutputTokenAt: null };
+    const perfTiming = { upstreamCallStartedAt: null, firstOutputTokenAt: null, attemptTelemetry: undefined };
     let calls = 0;
     const result = await iterateCandidates(
       [stubCandidate('a'), stubCandidate('b'), stubCandidate('c')],
@@ -51,7 +51,7 @@ describe('iterateCandidates', () => {
   });
 
   it('returns the last failure once every candidate errors', async () => {
-    const perfTiming = { upstreamCallStartedAt: null, firstOutputTokenAt: null };
+    const perfTiming = { upstreamCallStartedAt: null, firstOutputTokenAt: null, attemptTelemetry: undefined };
     let index = 0;
     const failures = [
       { type: 'api-error' as const, marker: 'first' },
@@ -68,7 +68,7 @@ describe('iterateCandidates', () => {
   });
 
   it('treats non-2xx plain results as failure so the next candidate runs', async () => {
-    const perfTiming = { upstreamCallStartedAt: null, firstOutputTokenAt: null };
+    const perfTiming = { upstreamCallStartedAt: null, firstOutputTokenAt: null, attemptTelemetry: undefined };
     const attempts: number[] = [];
     const result = await iterateCandidates(
       [stubCandidate('a'), stubCandidate('b')],

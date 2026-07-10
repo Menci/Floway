@@ -2,6 +2,7 @@ import { responsesAttempt } from './attempt.ts';
 import type { ResponsesAttemptResult } from './interceptors/types.ts';
 import { prepareResponsesServePlan } from './serve-prep.ts';
 import { iterateCandidates } from '../../shared/iterate-candidates.ts';
+import { upstreamPerformanceContext } from '../../shared/telemetry/upstream-telemetry.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesStreamEvent } from '@floway-dev/protocols/responses';
@@ -30,13 +31,17 @@ export const responsesServe = {
     // 5xx/429/network does not become the request's verdict when another
     // candidate can serve. The last failure surfaces verbatim on exhaustion.
     // Normalize `prepared.model` to the candidate's real id so every
-    // attempt sees the canonical resolved public id.
+    // attempt sees the canonical resolved public id. Stamping
+    // `attemptTelemetry` synchronously before awaiting the attempt is what
+    // preserves error attribution when the attempt throws mid-flight — see
+    // the PerfTiming comment in gateway-ctx.ts.
     return await iterateCandidates(
       plan.candidates,
       'responsesServe.generate',
       ctx.perfTiming,
       candidate => {
         plan.prepared.model = candidate.model.id;
+        ctx.perfTiming.attemptTelemetry = upstreamPerformanceContext(ctx, candidate, 'chat');
         return responsesAttempt.generate({ payload: plan.prepared, ctx, candidate, headers });
       },
     );
@@ -60,6 +65,7 @@ export const responsesServe = {
       ctx.perfTiming,
       candidate => {
         plan.prepared.model = candidate.model.id;
+        ctx.perfTiming.attemptTelemetry = upstreamPerformanceContext(ctx, candidate, 'chat');
         return responsesAttempt.invoke({ payload: plan.prepared, action: 'compact', ctx, candidate, headers });
       },
     );

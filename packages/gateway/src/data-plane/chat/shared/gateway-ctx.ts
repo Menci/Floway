@@ -4,18 +4,33 @@ import { apiKeyFromContext, type AuthedContext, effectiveUpstreamIdsFromContext 
 import { getCurrentColo } from '../../../runtime/runtime-info.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
+import type { PerformanceTelemetryContext } from '@floway-dev/provider';
 
-// Per-request TTFT/TPOT clock slots. Written by two collaborators:
+// Per-attempt performance state. Reset at the start of every
+// iterateCandidates attempt so a candidate that short-circuits cannot inherit
+// the prior attempt's slots. Three collaborators fill them:
 //   - `upstreamCallStartedAt` — stamped inside wrapUpstreamCall the moment
 //     the provider hands its outbound-fetch dispatch off.
 //   - `firstOutputTokenAt` — stamped by upstream-telemetry.ts on the first
 //     stream frame carrying a model-generated token.
-// Both are reset to null at the start of every iterateCandidates attempt so
-// a candidate that never wraps its fetch cannot inherit the prior attempt's
-// stamps. Read by recordRequestPerformance in the respond-layer finally.
+//   - `attemptTelemetry` — the chat serve's synchronous pre-await stamp of
+//     the current candidate's PerformanceTelemetryContext. Used by the outer
+//     http.ts catch to attribute a mid-attempt throw (interceptor bug,
+//     translation error, provider-layer JS exception bypassing
+//     tryCatchChatServeFailure) to the throwing upstream — without it, the
+//     synthesized internal-error / translator-input-error result would carry
+//     no performance context and `recordFailedRequest` would short-circuit
+//     on the missing telemetry, dropping the failure from performance_summary.
+// The first two are read by recordRequestPerformance in the respond-layer
+// finally; the third is read by the http.ts error-render helpers. The
+// numeric slots use `null` because a real timestamp of `0` would be
+// ambiguous; `attemptTelemetry` uses `undefined` so it flows straight into
+// the `PerformanceTelemetryContext | undefined` parameter of the result
+// constructors without translation.
 export interface PerfTiming {
   upstreamCallStartedAt: number | null;
   firstOutputTokenAt: number | null;
+  attemptTelemetry: PerformanceTelemetryContext | undefined;
 }
 
 // Factory for the stamp closure providers plug into wrapUpstreamCall.
@@ -108,7 +123,7 @@ export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCt
     wantsStream: opts.wantsStream,
     downstreamAbortController: controller,
     backgroundScheduler: opts.backgroundScheduler,
-    perfTiming: { firstOutputTokenAt: null, upstreamCallStartedAt: null },
+    perfTiming: { firstOutputTokenAt: null, upstreamCallStartedAt: null, attemptTelemetry: undefined },
     runtimeLocation: getCurrentColo(c.req.raw),
     dump,
     responseHeaders: new Headers(),

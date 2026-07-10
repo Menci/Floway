@@ -18,7 +18,7 @@ const stubCtx: ChatGatewayCtx = {
   runtimeLocation: 'TEST',
   dump: null,
   backgroundScheduler: () => {},
-  perfTiming: { firstOutputTokenAt: null, upstreamCallStartedAt: null },
+  perfTiming: { firstOutputTokenAt: null, upstreamCallStartedAt: null, attemptTelemetry: undefined },
   responseHeaders: new Headers(),
   store: createNonResponsesSourceStore('test-key'),
 };
