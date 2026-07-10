@@ -622,44 +622,50 @@ const performanceRecordKey = (dims: PerformanceDimensions): string =>
 const performanceDimensionBinds = (dims: PerformanceDimensions): unknown[] =>
   [dims.hour, dims.keyId, dims.model, dims.upstream, dims.operation, dims.runtimeLocation];
 
+// Column-order source of truth for the performance_summary upsert. Dimensions
+// form the composite PK and lead the VALUES tuple; counts trail in the exact
+// order the ON CONFLICT clause updates them. `upsertSummary` binds these two
+// lists together so any future column addition is a one-line edit here.
+const PERFORMANCE_SUMMARY_DIMENSION_COLUMNS = ['hour', 'key_id', 'model', 'upstream', 'operation', 'runtime_location'] as const;
+const PERFORMANCE_SUMMARY_COUNT_COLUMNS = ['requests', 'errors', 'ttft_samples', 'tpot_samples', 'ttft_ms_sum', 'tpot_us_sum'] as const;
+type PerformanceSummaryCountColumn = typeof PERFORMANCE_SUMMARY_COUNT_COLUMNS[number];
+
+const buildPerformanceSummarySql = (mode: 'add' | 'set'): string => {
+  const allColumns = [...PERFORMANCE_SUMMARY_DIMENSION_COLUMNS, ...PERFORMANCE_SUMMARY_COUNT_COLUMNS];
+  const placeholders = allColumns.map(() => '?').join(', ');
+  const conflictKey = PERFORMANCE_SUMMARY_DIMENSION_COLUMNS.join(', ');
+  const updates = PERFORMANCE_SUMMARY_COUNT_COLUMNS
+    .map(col => (mode === 'add' ? `${col} = ${col} + excluded.${col}` : `${col} = excluded.${col}`))
+    .join(', ');
+  return `INSERT INTO performance_summary (${allColumns.join(', ')}) VALUES (${placeholders})
+          ON CONFLICT (${conflictKey}) DO UPDATE SET ${updates}`;
+};
+
+const PERFORMANCE_SUMMARY_ADD_SQL = buildPerformanceSummarySql('add');
+const PERFORMANCE_SUMMARY_SET_SQL = buildPerformanceSummarySql('set');
+
 class SqlPerformanceRepo implements PerformanceRepo {
   constructor(private readonly db: SqlDatabase) {}
 
   async recordSample(sample: PerformanceSample): Promise<void> {
-    const hasTpot = sample.tpotUs !== undefined;
-    const summaryStmt = this.db.prepare(
-      `INSERT INTO performance_summary (hour, key_id, model, upstream, operation, runtime_location, requests, errors, ttft_samples, tpot_samples, ttft_ms_sum, tpot_us_sum)
-       VALUES (?, ?, ?, ?, ?, ?, 1, 0, 1, ?, ?, ?)
-       ON CONFLICT (hour, key_id, model, upstream, operation, runtime_location) DO UPDATE SET
-         requests = requests + 1,
-         ttft_samples = ttft_samples + 1,
-         tpot_samples = tpot_samples + excluded.tpot_samples,
-         ttft_ms_sum = ttft_ms_sum + excluded.ttft_ms_sum,
-         tpot_us_sum = tpot_us_sum + excluded.tpot_us_sum`,
-    ).bind(...performanceDimensionBinds(sample), hasTpot ? 1 : 0, sample.ttftMs, sample.tpotUs ?? 0);
-
+    const summaryStmt = this.upsertSummary(sample, {
+      requests: 1,
+      ttft_samples: 1,
+      tpot_samples: sample.tpotUs === undefined ? 0 : 1,
+      ttft_ms_sum: sample.ttftMs,
+      tpot_us_sum: sample.tpotUs ?? 0,
+    }, 'add');
     const stmts: SqlPreparedStatement[] = [summaryStmt, this.buildBucketStmt(sample, 'ttft_ms', bucketForTtftMs(sample.ttftMs))];
     if (sample.tpotUs !== undefined) stmts.push(this.buildBucketStmt(sample, 'tpot_us', bucketForTpotUs(sample.tpotUs)));
     await runStatements(this.db, stmts);
   }
 
   async recordError(dims: PerformanceDimensions): Promise<void> {
-    await this.db.prepare(
-      `INSERT INTO performance_summary (hour, key_id, model, upstream, operation, runtime_location, requests, errors, ttft_samples, tpot_samples, ttft_ms_sum, tpot_us_sum)
-       VALUES (?, ?, ?, ?, ?, ?, 1, 1, 0, 0, 0, 0)
-       ON CONFLICT (hour, key_id, model, upstream, operation, runtime_location) DO UPDATE SET
-         requests = requests + 1,
-         errors = errors + 1`,
-    ).bind(...performanceDimensionBinds(dims)).run();
+    await this.upsertSummary(dims, { requests: 1, errors: 1 }, 'add').run();
   }
 
   async recordNeutral(dims: PerformanceDimensions): Promise<void> {
-    await this.db.prepare(
-      `INSERT INTO performance_summary (hour, key_id, model, upstream, operation, runtime_location, requests, errors, ttft_samples, tpot_samples, ttft_ms_sum, tpot_us_sum)
-       VALUES (?, ?, ?, ?, ?, ?, 1, 0, 0, 0, 0, 0)
-       ON CONFLICT (hour, key_id, model, upstream, operation, runtime_location) DO UPDATE SET
-         requests = requests + 1`,
-    ).bind(...performanceDimensionBinds(dims)).run();
+    await this.upsertSummary(dims, { requests: 1 }, 'add').run();
   }
 
   async query(opts: { keyId?: string; start: string; end: string }): Promise<PerformanceTelemetryRecord[]> {
@@ -673,17 +679,14 @@ class SqlPerformanceRepo implements PerformanceRepo {
   }
 
   async set(record: PerformanceTelemetryRecord): Promise<void> {
-    const summaryStmt = this.db.prepare(
-      `INSERT INTO performance_summary (hour, key_id, model, upstream, operation, runtime_location, requests, errors, ttft_samples, tpot_samples, ttft_ms_sum, tpot_us_sum)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT (hour, key_id, model, upstream, operation, runtime_location) DO UPDATE SET
-         requests = excluded.requests,
-         errors = excluded.errors,
-         ttft_samples = excluded.ttft_samples,
-         tpot_samples = excluded.tpot_samples,
-         ttft_ms_sum = excluded.ttft_ms_sum,
-         tpot_us_sum = excluded.tpot_us_sum`,
-    ).bind(...performanceDimensionBinds(record), record.requests, record.errors, record.ttftSamples, record.tpotSamples, record.ttftMsSum, record.tpotUsSum);
+    const summaryStmt = this.upsertSummary(record, {
+      requests: record.requests,
+      errors: record.errors,
+      ttft_samples: record.ttftSamples,
+      tpot_samples: record.tpotSamples,
+      ttft_ms_sum: record.ttftMsSum,
+      tpot_us_sum: record.tpotUsSum,
+    }, 'set');
 
     const deleteStmt = this.db.prepare(
       'DELETE FROM performance_buckets WHERE hour = ? AND key_id = ? AND model = ? AND upstream = ? AND operation = ? AND runtime_location = ?',
@@ -695,6 +698,16 @@ class SqlPerformanceRepo implements PerformanceRepo {
     ).bind(...performanceDimensionBinds(record), bucket.metric, bucket.lower, bucket.upper, bucket.count));
 
     await runStatements(this.db, [summaryStmt, deleteStmt, ...bucketStmts]);
+  }
+
+  private upsertSummary(
+    dims: PerformanceDimensions,
+    counts: Partial<Record<PerformanceSummaryCountColumn, number>>,
+    mode: 'add' | 'set',
+  ): SqlPreparedStatement {
+    const sql = mode === 'add' ? PERFORMANCE_SUMMARY_ADD_SQL : PERFORMANCE_SUMMARY_SET_SQL;
+    const countBinds = PERFORMANCE_SUMMARY_COUNT_COLUMNS.map(col => counts[col] ?? 0);
+    return this.db.prepare(sql).bind(...performanceDimensionBinds(dims), ...countBinds);
   }
 
   async deleteAll(): Promise<void> {
