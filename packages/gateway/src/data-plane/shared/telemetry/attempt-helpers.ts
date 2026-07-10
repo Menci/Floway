@@ -1,6 +1,6 @@
-import type { GatewayCtx } from './gateway-ctx.ts';
-import { stampUpstreamCallStart } from './gateway-ctx.ts';
 import { upstreamPerformanceContext, withUpstreamTelemetry } from './upstream-telemetry.ts';
+import type { GatewayCtx } from '../../chat/shared/gateway-ctx.ts';
+import { stampUpstreamCallStart } from '../../chat/shared/gateway-ctx.ts';
 import type { ModelEndpoints, ProtocolFrame } from '@floway-dev/protocols/common';
 import { eventResult, readUpstreamApiError, type ChatTargetApi, type ExecuteResult, type ModelCandidate, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamCallOptions } from '@floway-dev/provider';
 

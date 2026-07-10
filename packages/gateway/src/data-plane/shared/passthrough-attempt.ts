@@ -11,10 +11,11 @@
 // forwards the winning attempt (2xx) or the last failure (exhausted).
 
 import { inboundHeadersForUpstream } from './inbound-headers.ts';
+import { buildUpstreamCallOptions, telemetryModelIdentity } from './telemetry/attempt-helpers.ts';
 import type { PerformanceTelemetryContext } from './telemetry/performance.ts';
+import { upstreamPerformanceContext } from './telemetry/upstream-telemetry.ts';
 import type { AuthedContext } from '../../middleware/auth.ts';
 import type { GatewayCtx } from '../chat/shared/gateway-ctx.ts';
-import { stampUpstreamCallStart } from '../chat/shared/gateway-ctx.ts';
 import { providerModelOf } from '@floway-dev/provider';
 import type { ModelCandidate, PerformanceOperation, Provider, ProviderCallResult, ProviderModel, TelemetryModelIdentity, UpstreamCallOptions } from '@floway-dev/provider';
 
@@ -45,34 +46,16 @@ export interface PassthroughAttemptArgs {
 
 export const passthroughAttempt = async (args: PassthroughAttemptArgs): Promise<PassthroughAttemptResult> => {
   const { c, ctx, candidate, operation, call } = args;
-  const { response, modelKey } = await call(candidate.provider, providerModelOf(candidate), {
-    fetcher: candidate.fetcher,
-    waitUntil: ctx.backgroundScheduler,
-    headers: inboundHeadersForUpstream(c),
-    wrapUpstreamCall: stampUpstreamCallStart(ctx.perfTiming),
-  });
-  // Telemetry keys on the upstream's bare catalog id (`model.id`); the
-  // user-facing error body echoes the inbound `model` and is the serve
-  // layer's job.
-  const identity: TelemetryModelIdentity = {
-    model: candidate.model.id,
-    upstream: candidate.provider.upstream,
-    modelKey,
-    cost: candidate.provider.instance.getPricingForModelKey(modelKey),
-  };
-  const performance: PerformanceTelemetryContext = {
-    keyId: ctx.apiKeyId,
-    model: identity.model,
-    upstream: identity.upstream,
-    operation,
-    modelKey: identity.modelKey,
-    runtimeLocation: ctx.runtimeLocation,
-  };
+  const { response, modelKey } = await call(
+    candidate.provider,
+    providerModelOf(candidate),
+    buildUpstreamCallOptions(candidate, ctx, inboundHeadersForUpstream(c)),
+  );
   return {
     type: 'plain',
     status: response.status,
     response,
-    performance,
-    identity,
+    performance: upstreamPerformanceContext(ctx, candidate, modelKey, operation),
+    identity: telemetryModelIdentity(candidate, modelKey),
   };
 };

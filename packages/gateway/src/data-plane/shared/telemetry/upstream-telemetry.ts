@@ -1,5 +1,5 @@
-import { isFirstOutputTokenFrame } from './first-output-token.ts';
-import type { GatewayCtx } from './gateway-ctx.ts';
+import { isFirstOutputTokenFrame } from '../../chat/shared/first-output-token.ts';
+import type { GatewayCtx } from '../../chat/shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ChatTargetApi, ModelCandidate, PerformanceOperation, PerformanceTelemetryContext } from '@floway-dev/provider';
 

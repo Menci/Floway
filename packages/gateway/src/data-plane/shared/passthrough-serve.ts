@@ -18,19 +18,18 @@ import { appendFailedUpstreams } from './failed-upstreams.ts';
 import { iterateCandidates } from './iterate-candidates.ts';
 import { passthroughAttempt } from './passthrough-attempt.ts';
 import type { PerformanceTelemetryContext } from './telemetry/performance.ts';
-import { recordRequestPerformance } from './telemetry/performance.ts';
-import type { PerformanceOperation } from '@floway-dev/provider';
+import { recordPerformance } from './telemetry/performance.ts';
+import { upstreamPerformanceContext } from './telemetry/upstream-telemetry.ts';
 import { recordTokenUsage } from './telemetry/usage.ts';
 import type { AuthedContext } from '../../middleware/auth.ts';
 import type { TokenUsage } from '../../repo/types.ts';
 import type { GatewayCtx } from '../chat/shared/gateway-ctx.ts';
 import { type StreamCompletion, writeSSEFrames } from '../chat/shared/stream/sse.ts';
-import { upstreamPerformanceContext } from '../chat/shared/upstream-telemetry.ts';
 import { enumerateModelCandidates } from '../providers/registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { doneFrame, eventFrame, type ModelKind, parseSSEStream, parseTargetStreamFrames, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import { httpResponseToResponse, ProviderModelsUnavailableError, toInternalDebugError } from '@floway-dev/provider';
-import type { InternalModel, Provider, ProviderCallResult, ProviderModel, UpstreamCallOptions } from '@floway-dev/provider';
+import type { PerformanceOperation, InternalModel, Provider, ProviderCallResult, ProviderModel, UpstreamCallOptions } from '@floway-dev/provider';
 
 // Headers we forward verbatim from a successful upstream response, plus
 // content-type with an application/json fallback when the upstream omitted
@@ -205,7 +204,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
       // Exhausted — forward the last upstream response verbatim so clients
       // still see real upstream telemetry (status, retry-after, request-id,
       // ...) rather than a synthetic gateway envelope.
-      recordRequestPerformance(ctx.backgroundScheduler, ctx.perfTiming, performanceContext, true, 0, performance.now());
+      recordPerformance(ctx, performanceContext, true, 0, performance.now());
       ctx.dump?.error('upstream', identity.upstream);
       return forwardUpstreamResponse(response);
     }
@@ -226,7 +225,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
       if (usage) {
         scheduleUsageRecord(ctx.backgroundScheduler, recordTokenUsage(ctx.apiKeyId, identity, usage));
       }
-      recordRequestPerformance(ctx.backgroundScheduler, ctx.perfTiming, performanceContext, false, usage?.output ?? 0, performance.now());
+      recordPerformance(ctx, performanceContext, false, usage?.output ?? 0, performance.now());
       return forwardUpstreamResponse(response);
     }
 
@@ -236,7 +235,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
     const upstreamBody = response.body;
     if (!upstreamBody) {
       ctx.dump?.failed(`${sourceApi} streaming upstream returned no body`);
-      recordRequestPerformance(ctx.backgroundScheduler, ctx.perfTiming, performanceContext, true, 0, performance.now());
+      recordPerformance(ctx, performanceContext, true, 0, performance.now());
       // Preserve upstream correlation headers (x-request-id, cf-ray, ...)
       // on the synthesized 502 so this rare edge case is still traceable.
       stageForwardedResponseHeaders(c, response);
@@ -287,7 +286,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
         if (usage) {
           scheduleUsageRecord(ctx.backgroundScheduler, recordTokenUsage(ctx.apiKeyId, identity, usage));
         }
-        recordRequestPerformance(ctx.backgroundScheduler, ctx.perfTiming, performanceContext, failed, usage?.output ?? 0, performance.now());
+        recordPerformance(ctx, performanceContext, failed, usage?.output ?? 0, performance.now());
       }
     });
   } catch (e) {
@@ -298,7 +297,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
         return forwarded;
       }
     }
-    recordRequestPerformance(ctx.backgroundScheduler, ctx.perfTiming, lastPerformance, true, 0, performance.now());
+    recordPerformance(ctx, lastPerformance, true, 0, performance.now());
     ctx.dump?.failed(e);
     return c.json({ error: toInternalDebugError(e) }, 502);
   }

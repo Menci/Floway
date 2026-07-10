@@ -1,7 +1,7 @@
 import { currentHour } from './hour.ts';
 import { getRepo } from '../../../repo/index.ts';
 import type { PerformanceDimensions } from '../../../repo/types.ts';
-import type { PerfTiming } from '../../chat/shared/gateway-ctx.ts';
+import type { GatewayCtx, PerfTiming } from '../../chat/shared/gateway-ctx.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { PerformanceTelemetryContext } from '@floway-dev/provider';
 
@@ -71,4 +71,29 @@ export const recordRequestPerformance = (
   const streamDeltaMs = requestFinishedAt - perfTiming.firstOutputTokenAt;
   const tpotUs = Math.round((streamDeltaMs * 1_000) / (outputTokens - 1));
   scheduler(record(getRepo().performance.recordSample({ ...dims, ttftMs, tpotUs }), 'sample'));
+};
+
+// Ctx-taking wrapper over recordRequestPerformance. Every data-plane
+// caller already has a GatewayCtx in hand, so callers pass it directly
+// instead of destructuring `.backgroundScheduler` and `.perfTiming` at
+// each call site. `requestFinishedAt` is the caller's monotonic
+// timestamp for the end of the token stream. It MUST be sampled before
+// any post-stream persistence work (e.g. the usage D1 write in
+// settleUsageAndPerformance) so TPOT reflects the stream itself rather
+// than the persistence path.
+export const recordPerformance = (
+  ctx: GatewayCtx,
+  telemetry: PerformanceTelemetryContext | undefined,
+  failed: boolean,
+  outputTokens: number,
+  requestFinishedAt: number,
+): void => {
+  recordRequestPerformance(
+    ctx.backgroundScheduler,
+    ctx.perfTiming,
+    telemetry,
+    failed,
+    outputTokens,
+    requestFinishedAt,
+  );
 };

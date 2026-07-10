@@ -2,7 +2,7 @@ import type { Context } from 'hono';
 
 import type { StreamCompletion } from './stream/sse.ts';
 import type { TokenUsage } from '../../../repo/types.ts';
-import { recordRequestPerformance } from '../../shared/telemetry/performance.ts';
+import { recordPerformance } from '../../shared/telemetry/performance.ts';
 import { hasTokenUsage, recordTokenUsage } from '../../shared/telemetry/usage.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -52,27 +52,6 @@ export const eventResultMetadata = async <TEvent>(result: Extract<ExecuteResult<
 
 export const recordUsage = async (ctx: GatewayCtx, modelIdentity: TelemetryModelIdentity, usage: TokenUsage | null): Promise<void> => {
   if (usage && hasTokenUsage(usage)) await recordTokenUsage(ctx.apiKeyId, modelIdentity, usage);
-};
-
-// `requestFinishedAt` is the caller's monotonic timestamp for the end of the
-// token stream. It MUST be sampled before any post-stream persistence work
-// (e.g. the usage D1 write in settleUsageAndPerformance) so TPOT reflects the
-// stream itself rather than the persistence path.
-export const recordPerformance = (
-  ctx: GatewayCtx,
-  telemetry: EventResultMetadata['performance'],
-  failed: boolean,
-  outputTokens: number,
-  requestFinishedAt: number,
-): void => {
-  recordRequestPerformance(
-    ctx.backgroundScheduler,
-    ctx.perfTiming,
-    telemetry,
-    failed,
-    outputTokens,
-    requestFinishedAt,
-  );
 };
 
 // Terminal recording for a chat response: usage first (whose failure is

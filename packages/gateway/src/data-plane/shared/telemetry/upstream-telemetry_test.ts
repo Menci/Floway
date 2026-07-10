@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import type { GatewayCtx } from './gateway-ctx.ts';
 import { withUpstreamTelemetry } from './upstream-telemetry.ts';
+import type { GatewayCtx } from '../../chat/shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 
 const iter = <T>(items: readonly T[]): AsyncIterable<T> => ({

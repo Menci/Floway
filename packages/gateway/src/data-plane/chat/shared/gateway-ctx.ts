@@ -19,11 +19,11 @@ export interface PerfTiming {
 }
 
 // Factory for the stamp closure providers plug into wrapUpstreamCall.
-// Kept as a shared helper so the two data-plane composition roots
-// (chat attempt-helpers and passthrough-attempt) don't re-inline the
-// same three-line closure. Stamps at dispatch entry — pre-dial by design.
-// See UpstreamCallOptions.wrapUpstreamCall for why the interval includes
-// proxy handshake time (the user waits for it too).
+// Callers wire this through the shared `buildUpstreamCallOptions` in
+// data-plane/shared/telemetry/attempt-helpers.ts. Stamps at dispatch
+// entry — pre-dial by design. See UpstreamCallOptions.wrapUpstreamCall
+// for why the interval includes proxy handshake time (the user waits
+// for it too).
 export const stampUpstreamCallStart = (perfTiming: PerfTiming) =>
   <T>(dispatch: () => Promise<T>): Promise<T> => {
     perfTiming.upstreamCallStartedAt = performance.now();
