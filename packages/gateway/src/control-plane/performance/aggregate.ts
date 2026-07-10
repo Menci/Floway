@@ -50,42 +50,64 @@ interface MutableAggregate {
 
 export function aggregatePerformanceForDisplay(records: readonly PerformanceTelemetryRecord[], options: AggregateOptions): PerformanceDisplayRecord[] {
   const aggregates = new Map<string, MutableAggregate>();
+  for (const record of records) updateAggregate(aggregates, record, options);
+  return finalizeAggregates(aggregates);
+}
 
+// One-pass multi-axis variant. The dashboard overview asks for the same
+// records aggregated along 6-8 different (bucket, groupBy) axes; running
+// the single-axis function once per axis walks the record set N times
+// with an identical outer loop. This visits each record once and updates
+// every axis's Map in-place.
+export function aggregatePerformanceForDisplayMulti<K extends string>(
+  records: readonly PerformanceTelemetryRecord[],
+  axes: Record<K, AggregateOptions>,
+): Record<K, PerformanceDisplayRecord[]> {
+  const entries = Object.entries(axes) as [K, AggregateOptions][];
+  const maps = entries.map(() => new Map<string, MutableAggregate>());
   for (const record of records) {
-    const bucket = displayBucket(record.hour, options);
-    const group = displayGroup(record, options);
-    if (group === null) continue;
-    const key = `${bucket}\0${group}`;
-    let aggregate = aggregates.get(key);
-    if (!aggregate) {
-      aggregate = {
-        bucket,
-        group,
-        requests: 0,
-        errors: 0,
-        ttftSamples: 0,
-        tpotSamples: 0,
-        bucketsByMetric: { ttft_ms: new Map(), tpot_us: new Map() },
-      };
-      aggregates.set(key, aggregate);
-    }
+    for (let i = 0; i < entries.length; i++) updateAggregate(maps[i], record, entries[i][1]);
+  }
+  const result = {} as Record<K, PerformanceDisplayRecord[]>;
+  for (let i = 0; i < entries.length; i++) result[entries[i][0]] = finalizeAggregates(maps[i]);
+  return result;
+}
 
-    aggregate.requests += record.requests;
-    aggregate.errors += record.errors;
-    aggregate.ttftSamples += record.ttftSamples;
-    aggregate.tpotSamples += record.tpotSamples;
-    for (const b of record.buckets) {
-      const metricMap = aggregate.bucketsByMetric[b.metric];
-      const bucketKey = String(b.lower);
-      const existing = metricMap.get(bucketKey);
-      if (existing) {
-        existing.count += b.count;
-      } else {
-        metricMap.set(bucketKey, { lower: b.lower, upper: b.upper, count: b.count });
-      }
+function updateAggregate(aggregates: Map<string, MutableAggregate>, record: PerformanceTelemetryRecord, options: AggregateOptions): void {
+  const bucket = displayBucket(record.hour, options);
+  const group = displayGroup(record, options);
+  if (group === null) return;
+  const key = `${bucket}\0${group}`;
+  let aggregate = aggregates.get(key);
+  if (!aggregate) {
+    aggregate = {
+      bucket,
+      group,
+      requests: 0,
+      errors: 0,
+      ttftSamples: 0,
+      tpotSamples: 0,
+      bucketsByMetric: { ttft_ms: new Map(), tpot_us: new Map() },
+    };
+    aggregates.set(key, aggregate);
+  }
+  aggregate.requests += record.requests;
+  aggregate.errors += record.errors;
+  aggregate.ttftSamples += record.ttftSamples;
+  aggregate.tpotSamples += record.tpotSamples;
+  for (const b of record.buckets) {
+    const metricMap = aggregate.bucketsByMetric[b.metric];
+    const bucketKey = String(b.lower);
+    const existing = metricMap.get(bucketKey);
+    if (existing) {
+      existing.count += b.count;
+    } else {
+      metricMap.set(bucketKey, { lower: b.lower, upper: b.upper, count: b.count });
     }
   }
+}
 
+function finalizeAggregates(aggregates: Map<string, MutableAggregate>): PerformanceDisplayRecord[] {
   return [...aggregates.values()].map(toDisplayRecord).sort((a, b) => a.bucket.localeCompare(b.bucket) || a.group.localeCompare(b.group));
 }
 

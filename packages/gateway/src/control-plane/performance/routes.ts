@@ -7,10 +7,10 @@
 //   `canViewGlobalTelemetry`). `group_by=keyId` is rejected so we never leak
 //   another user's key id into a global response.
 
-import { aggregatePerformanceForDisplay, type PerformanceBucketGranularity, type PerformanceGroupBy } from './aggregate.ts';
+import { aggregatePerformanceForDisplay, aggregatePerformanceForDisplayMulti, type PerformanceBucketGranularity, type PerformanceGroupBy } from './aggregate.ts';
 import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
-import type { PerformanceTelemetryRecord } from '../../repo/types.ts';
+import type { ApiKey, PerformanceTelemetryRecord, Repo } from '../../repo/types.ts';
 import type { performanceQuery } from '../schemas.ts';
 import { resolveTelemetryView, type ResolvedTelemetryView } from '../telemetry-view.ts';
 
@@ -113,6 +113,22 @@ const buildKeyToUserMap = async (): Promise<ReadonlyMap<string, number>> => {
   return new Map(keys.map(k => [k.id, k.userId] as const));
 };
 
+// Overview needs both the key→user map (for user filter, group_by=userId,
+// and the userIds dimension list) AND the sorted key-metadata block. One
+// listing of api_keys feeds both — the handler used to fetch the same
+// table twice. In self-view the actor's keys are enough; every telemetry
+// row in that view belongs to the actor by construction, so the map
+// resolves every keyId that will appear.
+const loadKeysAndMap = async (
+  repo: Repo,
+  resolved: ResolvedTelemetryView,
+): Promise<{ keyToUser: ReadonlyMap<string, number>; keys: readonly ApiKey[] }> => {
+  const keys = resolved.view === 'all-by-user'
+    ? await repo.apiKeys.listIncludingDeleted()
+    : await repo.apiKeys.listByUserIdIncludingDeleted(resolved.scopeUserId);
+  return { keyToUser: new Map(keys.map(k => [k.id, k.userId] as const)), keys };
+};
+
 // Apply cross-cutting filters at the raw-record level so every aggregation
 // (chart series, summary, per-dimension breakdowns) reflects the same
 // filtered view. Combining filters is AND. filter_user_id filters via the
@@ -167,32 +183,54 @@ interface DimensionValues {
   userIds: number[];
 }
 
-const collectDimensionValues = (
+// The overview handler needs both the filtered record set (feeds every
+// aggregation) and the dimension-value dropdown menus (collected from
+// UNFILTERED rows so filters never narrow the menu). One traversal
+// produces both instead of walking the raw set twice.
+const partitionRecords = (
   rows: readonly PerformanceTelemetryRecord[],
-  keyToUser: ReadonlyMap<string, number> | null,
-): DimensionValues => {
+  filters: PerformanceFilters,
+  keyToUser: ReadonlyMap<string, number>,
+): { filtered: readonly PerformanceTelemetryRecord[]; dimensionValues: DimensionValues } => {
   const models = new Set<string>();
   const upstreams = new Set<string>();
   const operations = new Set<string>();
   const runtimeLocations = new Set<string>();
   const keyIds = new Set<string>();
   const userIds = new Set<number>();
+  const wantUserId = filters.userId === undefined ? null : Number(filters.userId);
+  const filtered: PerformanceTelemetryRecord[] = [];
   for (const r of rows) {
     models.add(r.model);
     upstreams.add(r.upstream);
     operations.add(r.operation);
     runtimeLocations.add(r.runtimeLocation);
     keyIds.add(r.keyId);
-    const uid = keyToUser?.get(r.keyId);
+    // Orphan rows (hard-deleted key → keyToUser miss) don't contribute a
+    // userId to the dropdown and cannot match a numeric user filter;
+    // dropping them here mirrors the aggregation path's By-User grouping,
+    // which also skips orphans rather than coercing undefined to 0.
+    const uid = keyToUser.get(r.keyId);
     if (uid !== undefined) userIds.add(uid);
+
+    if (filters.model !== undefined && r.model !== filters.model) continue;
+    if (filters.upstream !== undefined && r.upstream !== filters.upstream) continue;
+    if (filters.operation !== undefined && r.operation !== filters.operation) continue;
+    if (filters.runtimeLocation !== undefined && r.runtimeLocation !== filters.runtimeLocation) continue;
+    if (filters.keyId !== undefined && r.keyId !== filters.keyId) continue;
+    if (wantUserId !== null && uid !== wantUserId) continue;
+    filtered.push(r);
   }
   return {
-    models: [...models].sort(),
-    upstreams: [...upstreams].sort(),
-    operations: [...operations].sort(),
-    runtimeLocations: [...runtimeLocations].sort(),
-    keyIds: [...keyIds].sort(),
-    userIds: [...userIds].sort((a, b) => a - b),
+    filtered,
+    dimensionValues: {
+      models: [...models].sort(),
+      upstreams: [...upstreams].sort(),
+      operations: [...operations].sort(),
+      runtimeLocations: [...runtimeLocations].sort(),
+      keyIds: [...keyIds].sort(),
+      userIds: [...userIds].sort((a, b) => a - b),
+    },
   };
 };
 
@@ -243,65 +281,66 @@ export const performanceOverview = async (c: Ctx) => {
   const resolved = resolveView(c, params.value);
   if ('error' in resolved) return c.json({ error: resolved.message }, resolved.error === 'forbidden' ? 403 : 400);
 
-  const rawRecords = await queryRecordsForView(resolved, params.value);
+  // The overview handler used to run four independent repo reads serially
+  // (records → key-user map → users → keys) followed by 6-8 pure-JS
+  // aggregations over the same filtered array. Fan the reads out in
+  // parallel, and let a single api_keys listing feed both the key→user
+  // map and the sorted key-metadata block below.
+  const repo = getRepo();
+  const [rawRecords, keysInfo, users] = await Promise.all([
+    queryRecordsForView(resolved, params.value),
+    loadKeysAndMap(repo, resolved),
+    resolved.view === 'all-by-user' ? repo.users.listIncludingDeleted() : Promise.resolve([]),
+  ]);
   if (rawRecords === null) return c.json({ error: 'Unknown key_id' }, 404);
 
-  // keyToUser is needed whenever the response mentions user ids — for the
-  // user-id filter, for group_by=userId, or for the dimensionValues.userIds
-  // list (always populated so the dropdown has content).
-  const keyToUser = await buildKeyToUserMap();
-  const dimensionValues = collectDimensionValues(rawRecords, keyToUser);
-  const filtered = applyFilters(rawRecords, params.value.filters, keyToUser);
+  const { filtered, dimensionValues } = partitionRecords(rawRecords, params.value.filters, keysInfo.keyToUser);
 
-  const baseOptions = { timezoneOffsetMinutes: params.value.timezoneOffsetMinutes };
-  const series = aggregatePerformanceForDisplay(
-    filtered,
-    params.value.groupBy === 'userId'
-      ? { ...baseOptions, bucket: params.value.bucket, groupBy: 'userId', keyToUser }
-      : { ...baseOptions, bucket: params.value.bucket, groupBy: params.value.groupBy },
-  );
-  const summaryRows = aggregatePerformanceForDisplay(filtered, { ...baseOptions, bucket: 'all', groupBy: 'none' });
-  const modelRows = aggregatePerformanceForDisplay(filtered, { ...baseOptions, bucket: 'all', groupBy: 'model' });
-  const upstreamRows = aggregatePerformanceForDisplay(filtered, { ...baseOptions, bucket: 'all', groupBy: 'upstream' });
-  const runtimeRows = aggregatePerformanceForDisplay(filtered, { ...baseOptions, bucket: 'all', groupBy: 'runtimeLocation' });
-  const operationRows = aggregatePerformanceForDisplay(filtered, { ...baseOptions, bucket: 'all', groupBy: 'operation' });
-  // API-key breakdown is available in both views; the admin view sees every
-  // user's keys (name metadata below lists them all), the self view only sees
-  // the actor's. User breakdown is only meaningful in the admin view — every
-  // self-view row belongs to the actor by construction.
-  const keyRows = aggregatePerformanceForDisplay(filtered, { ...baseOptions, bucket: 'all', groupBy: 'keyId' });
-  const userRows = resolved.view === 'all-by-user'
-    ? aggregatePerformanceForDisplay(filtered, { ...baseOptions, bucket: 'all', groupBy: 'userId', keyToUser })
-    : [];
+  const tzOnly = { timezoneOffsetMinutes: params.value.timezoneOffsetMinutes };
+  // One traversal of `filtered` feeds every breakdown (chart series +
+  // summary + per-dimension By-X panels). API-key breakdown is available
+  // in both views; user breakdown is only meaningful in all-by-user —
+  // every self-view row belongs to the actor by construction, so the
+  // panel is emptied at the response boundary rather than at the
+  // aggregation layer (the cost of computing a one-group breakdown is
+  // negligible next to the O(N) records loop).
+  const includeUserRows = resolved.view === 'all-by-user';
+  const seriesAxis = params.value.groupBy === 'userId'
+    ? { ...tzOnly, bucket: params.value.bucket, groupBy: 'userId', keyToUser: keysInfo.keyToUser } as const
+    : { ...tzOnly, bucket: params.value.bucket, groupBy: params.value.groupBy } as const;
+  const breakdowns = aggregatePerformanceForDisplayMulti(filtered, {
+    series: seriesAxis,
+    summaryRows: { ...tzOnly, bucket: 'all', groupBy: 'none' },
+    modelRows: { ...tzOnly, bucket: 'all', groupBy: 'model' },
+    upstreamRows: { ...tzOnly, bucket: 'all', groupBy: 'upstream' },
+    runtimeRows: { ...tzOnly, bucket: 'all', groupBy: 'runtimeLocation' },
+    operationRows: { ...tzOnly, bucket: 'all', groupBy: 'operation' },
+    keyRows: { ...tzOnly, bucket: 'all', groupBy: 'keyId' },
+    userRows: { ...tzOnly, bucket: 'all', groupBy: 'userId', keyToUser: keysInfo.keyToUser },
+  });
 
-  const repo = getRepo();
   // User/key name metadata is always returned so the dashboard can render
   // usernames + key names in the By-User / By-API-key group column and in
   // the filter dropdowns — no include-flag negotiation, single source of
   // truth per view.
-  const users = resolved.view === 'all-by-user'
-    ? (await repo.users.listIncludingDeleted())
-        .map(u => ({ id: u.id, username: u.username }))
-        .sort((a, b) => a.id - b.id)
-    : [];
-  const keyList = resolved.view === 'all-by-user'
-    ? await repo.apiKeys.listIncludingDeleted()
-    : await repo.apiKeys.listByUserIdIncludingDeleted(resolved.scopeUserId);
-  const keys = keyList
+  const userMetadata = users
+    .map(u => ({ id: u.id, username: u.username }))
+    .sort((a, b) => a.id - b.id);
+  const keys = keysInfo.keys
     .map(k => ({ id: k.id, name: k.name, createdAt: k.createdAt }))
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
 
   return c.json({
-    series,
-    summaryRows,
-    modelRows,
-    upstreamRows,
-    runtimeRows,
-    operationRows,
-    keyRows,
-    userRows,
+    series: breakdowns.series,
+    summaryRows: breakdowns.summaryRows,
+    modelRows: breakdowns.modelRows,
+    upstreamRows: breakdowns.upstreamRows,
+    runtimeRows: breakdowns.runtimeRows,
+    operationRows: breakdowns.operationRows,
+    keyRows: breakdowns.keyRows,
+    userRows: includeUserRows ? breakdowns.userRows : [],
     dimensionValues,
-    users,
+    users: userMetadata,
     keys,
   });
 };
