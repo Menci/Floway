@@ -468,9 +468,12 @@ const chartConfig = computed<ChartConfiguration<'line'>>(() => {
 
   const groups = new Map<string, Map<string, number | null>>();
   for (const r of overview.value.series) {
-    const inner = groups.get(r.group) ?? new Map<string, number | null>();
+    let inner = groups.get(r.group);
+    if (!inner) {
+      inner = new Map<string, number | null>();
+      groups.set(r.group, inner);
+    }
     inner.set(r.bucket, getChartValue(r, performancePercentile.value));
-    groups.set(r.group, inner);
   }
   const datasets = [...groups.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([group, byBucket]) => {
     const color = chartColor(group);
