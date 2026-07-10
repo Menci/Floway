@@ -58,13 +58,13 @@ const azureFetchInternal = async (
   }
   const url = joinBaseAndPath(baseUrl, path);
   if (!query) {
-    return await options.wrapUpstreamCall(options.fetcher(url, { ...init, headers }));
+    return await options.wrapUpstreamCall(() => options.fetcher(url, { ...init, headers }));
   }
   // Append per-endpoint query through URL.searchParams so a future path
   // that itself carries a query suffix does not produce `path?a?b`.
   const parsed = new URL(url);
   for (const [key, value] of new URLSearchParams(query).entries()) parsed.searchParams.append(key, value);
-  return await options.wrapUpstreamCall(options.fetcher(parsed.href, { ...init, headers }));
+  return await options.wrapUpstreamCall(() => options.fetcher(parsed.href, { ...init, headers }));
 };
 
 export const azureFetchChatCompletions = (config: AzureUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>

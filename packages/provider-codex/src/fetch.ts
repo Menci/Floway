@@ -330,7 +330,7 @@ const dispatchCodexHttpCall = async (
   headers.set('x-codex-window-id', identity.windowId);
   headers.set('x-codex-turn-metadata', turnMetadataJson);
 
-  const response = await opts.call.wrapUpstreamCall(opts.call.fetcher(`${CODEX_BACKEND_BASE}${path}`, {
+  const response = await opts.call.wrapUpstreamCall(() => opts.call.fetcher(`${CODEX_BACKEND_BASE}${path}`, {
     method: 'POST',
     headers,
     body: JSON.stringify(body),

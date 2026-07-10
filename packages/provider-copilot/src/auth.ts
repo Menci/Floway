@@ -223,7 +223,7 @@ export interface CopilotFetchOptions {
   fetcher: Fetcher;
   /** See UpstreamCallOptions.wrapUpstreamCall. Fires on the data-plane
    *  request only, after any token-exchange round trip. */
-  wrapUpstreamCall: <T>(promise: Promise<T>) => Promise<T>;
+  wrapUpstreamCall: <T>(dispatch: () => Promise<T>) => Promise<T>;
 }
 
 export interface CopilotAuth {
@@ -271,7 +271,7 @@ export async function copilotAuthedFetch(path: string, init: RequestInit, auth: 
     }
   }
 
-  return await options.wrapUpstreamCall(options.fetcher(`${entry.baseUrl}${path}`, { ...init, headers }));
+  return await options.wrapUpstreamCall(() => options.fetcher(`${entry.baseUrl}${path}`, { ...init, headers }));
 }
 
 // Headers for api.github.com calls — token exchange and /copilot_internal/user.

@@ -7,7 +7,7 @@ import type { BackgroundScheduler } from '@floway-dev/platform';
 
 // Per-request TTFT/TPOT clock slots. Written by two collaborators:
 //   - `upstreamCallStartedAt` — stamped inside wrapUpstreamCall the moment
-//     the provider hands its outbound-fetch promise off.
+//     the provider hands its outbound-fetch dispatch off.
 //   - `firstOutputTokenAt` — stamped by upstream-telemetry.ts on the first
 //     stream frame carrying a model-generated token.
 // Both are reset to null at the start of every iterateCandidates attempt so
@@ -21,11 +21,13 @@ export interface PerfTiming {
 // Factory for the stamp closure providers plug into wrapUpstreamCall.
 // Kept as a shared helper so the two data-plane composition roots
 // (chat attempt-helpers and passthrough-attempt) don't re-inline the
-// same three-line closure.
+// same three-line closure. Stamps at dispatch entry — pre-dial by design.
+// See UpstreamCallOptions.wrapUpstreamCall for why the interval includes
+// proxy handshake time (the user waits for it too).
 export const stampUpstreamCallStart = (perfTiming: PerfTiming) =>
-  <T>(promise: Promise<T>): Promise<T> => {
+  <T>(dispatch: () => Promise<T>): Promise<T> => {
     perfTiming.upstreamCallStartedAt = performance.now();
-    return promise;
+    return dispatch();
   };
 
 export interface GatewayCtx {

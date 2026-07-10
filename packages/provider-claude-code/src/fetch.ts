@@ -427,7 +427,7 @@ const performUpstreamCall = async (
   // and the real Claude Code client always sets `stream: true`.
   const wireBody: MessagesPayload = { ...opts.body, model: upstreamModelId, stream: true };
 
-  const upstreamFetch = opts.call.wrapUpstreamCall(opts.call.fetcher(ANTHROPIC_MESSAGES_ENDPOINT, {
+  const upstreamFetch = opts.call.wrapUpstreamCall(() => opts.call.fetcher(ANTHROPIC_MESSAGES_ENDPOINT, {
     method: 'POST',
     headers,
     body: JSON.stringify(wireBody),
