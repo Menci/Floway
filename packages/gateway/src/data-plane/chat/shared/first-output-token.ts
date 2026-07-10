@@ -51,6 +51,7 @@ const isChatCompletionsOutputEvent = (event: Record<string, unknown> & { choices
   if (!delta) return false;
   if (nonEmptyString(delta.content)) return true;
   if (Array.isArray(delta.tool_calls) && delta.tool_calls.length > 0) return true;
+  if (nonEmptyString(delta.refusal)) return true;
   if (nonEmptyString(delta.reasoning)) return true;
   if (nonEmptyString(delta.reasoning_content)) return true;
   if (nonEmptyString(delta.reasoning_text)) return true;

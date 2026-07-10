@@ -83,12 +83,17 @@ describe('isFirstOutputTokenFrame — chat-completions', () => {
     expect(isFirstOutputTokenFrame(eventFrame({ choices: [{ delta: { reasoning_text: '...' } }] }), 'chat-completions')).toBe(true);
   });
 
+  it('accepts refusal delta (safety refusals are legitimate generated output)', () => {
+    expect(isFirstOutputTokenFrame(eventFrame({ choices: [{ delta: { refusal: "I can't help with that." } }] }), 'chat-completions')).toBe(true);
+  });
+
   it('rejects role-only chunk', () => {
     expect(isFirstOutputTokenFrame(eventFrame({ choices: [{ delta: { role: 'assistant' } }] }), 'chat-completions')).toBe(false);
   });
 
   it('rejects empty-content chunk', () => {
     expect(isFirstOutputTokenFrame(eventFrame({ choices: [{ delta: { content: '' } }] }), 'chat-completions')).toBe(false);
+    expect(isFirstOutputTokenFrame(eventFrame({ choices: [{ delta: { refusal: '' } }] }), 'chat-completions')).toBe(false);
     expect(isFirstOutputTokenFrame(eventFrame({ choices: [{ delta: {} }] }), 'chat-completions')).toBe(false);
   });
 });
