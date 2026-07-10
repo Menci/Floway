@@ -132,6 +132,7 @@ export const responsesAttempt = {
         result: { ...upstreamCompacted, id: responseId },
         modelIdentity: chainResult.modelIdentity,
         usage: tokenUsageFromResponsesResult(upstreamCompacted),
+        performance: chainResult.performance,
       };
     }
 

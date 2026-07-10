@@ -8,6 +8,7 @@ import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
 import { createChatGatewayCtxFromHono, createGatewayCtxFromHono, finalizeGatewayResponse, type ChatGatewayCtx, type GatewayCtx } from '../shared/gateway-ctx.ts';
 import { readRequestBody, type RequestBody } from '../shared/request-body.ts';
+import { settleUsageAndPerformance } from '../shared/respond.ts';
 import { providerModelsUnavailableResponse } from '../shared/upstream-models-error.ts';
 import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 import { internalErrorResult, toInternalDebugError } from '@floway-dev/provider';
@@ -93,6 +94,17 @@ export const responsesHttp = {
       const result = await responsesServe.compact({ payload, ctx, headers: inboundHeadersForUpstream(c) });
       if (result.type === 'result') {
         ctx.dump?.success(result.modelIdentity, result.usage);
+        // Compact drains the upstream stream into a single envelope with
+        // no per-token stamps; recordRequestPerformance therefore lands in
+        // the neutral bucket (request counted, no TTFT/TPOT sample). The
+        // settle helper still routes usage into billing.
+        await settleUsageAndPerformance(
+          ctx,
+          { modelIdentity: result.modelIdentity, ...(result.performance ? { performance: result.performance } : {}) },
+          result.usage,
+          false,
+          'Responses HTTP (compact)',
+        );
         const compactResponse = Response.json(result.result);
         return finalizeGatewayResponse(ctx, compactResponse);
       }
