@@ -469,6 +469,76 @@ test('import replace handles performance inclusion explicitly', async () => {
   assertEquals(await repo.performance.listAll(), [PERFORMANCE_2]);
 });
 
+test('import rejects performance records that break the recorder invariants', async () => {
+  const { app } = setup();
+
+  const withPerf = (record: PerformanceTelemetryRecord) => latestImportData({
+    performanceIncluded: true,
+    performance: [record],
+  });
+
+  // errors + ttftSamples > requests
+  const errorPlusTtftOverflow = await doImport(app, 'replace', withPerf({
+    ...PERFORMANCE_1,
+    requests: 3,
+    errors: 2,
+    ttftSamples: 2,
+  }));
+  assertEquals(errorPlusTtftOverflow.status, 400);
+  assertEquals(String(errorPlusTtftOverflow.body.error).includes('errors + ttftSamples must not exceed requests'), true);
+
+  // tpotSamples > ttftSamples
+  const tpotBeyondTtft = await doImport(app, 'replace', withPerf({
+    ...PERFORMANCE_1,
+    ttftSamples: 2,
+    tpotSamples: 3,
+    buckets: [
+      { metric: 'ttft_ms', lower: 100, upper: 142, count: 2 },
+      { metric: 'tpot_us', lower: 1000, upper: 1250, count: 3 },
+    ],
+  }));
+  assertEquals(tpotBeyondTtft.status, 400);
+  assertEquals(String(tpotBeyondTtft.body.error).includes('tpotSamples must not exceed ttftSamples'), true);
+
+  // ttft_ms bucket sum does not match ttftSamples
+  const ttftBucketMismatch = await doImport(app, 'replace', withPerf({
+    ...PERFORMANCE_1,
+    ttftSamples: 4,
+    buckets: [
+      { metric: 'ttft_ms', lower: 100, upper: 142, count: 3 },
+      { metric: 'tpot_us', lower: 1000, upper: 1250, count: 4 },
+    ],
+  }));
+  assertEquals(ttftBucketMismatch.status, 400);
+  assertEquals(String(ttftBucketMismatch.body.error).includes('ttft_ms bucket sum (3) must equal ttftSamples (4)'), true);
+
+  // tpot_us bucket sum does not match tpotSamples
+  const tpotBucketMismatch = await doImport(app, 'replace', withPerf({
+    ...PERFORMANCE_1,
+    tpotSamples: 4,
+    buckets: [
+      { metric: 'ttft_ms', lower: 100, upper: 142, count: 4 },
+      { metric: 'tpot_us', lower: 1000, upper: 1250, count: 2 },
+    ],
+  }));
+  assertEquals(tpotBucketMismatch.status, 400);
+  assertEquals(String(tpotBucketMismatch.body.error).includes('tpot_us bucket sum (2) must equal tpotSamples (4)'), true);
+
+  // Duplicate {metric, lower, upper} tuples would silently over-count in
+  // the aggregator's per-bucket merge.
+  const duplicateBucket = await doImport(app, 'replace', withPerf({
+    ...PERFORMANCE_1,
+    ttftSamples: 4,
+    buckets: [
+      { metric: 'ttft_ms', lower: 100, upper: 142, count: 2 },
+      { metric: 'ttft_ms', lower: 100, upper: 142, count: 2 },
+      { metric: 'tpot_us', lower: 1000, upper: 1250, count: 4 },
+    ],
+  }));
+  assertEquals(duplicateBucket.status, 400);
+  assertEquals(String(duplicateBucket.body.error).includes('duplicate bucket entry'), true);
+});
+
 test('import rejects missing upstreams before clearing existing data', async () => {
   const { app, repo } = setup();
   await repo.apiKeys.save(KEY_A);

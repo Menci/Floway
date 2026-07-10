@@ -549,6 +549,9 @@ const parsePerformanceRecords = (value: unknown): { type: 'ok'; records: Perform
     }
 
     const buckets: PerformanceBucketRow[] = [];
+    const bucketKeys = new Set<string>();
+    let ttftBucketCount = 0;
+    let tpotBucketCount = 0;
     for (const bucket of item.buckets) {
       if (!bucket || typeof bucket !== 'object') return { type: 'invalid', index: i, error: 'bucket is not an object' };
       const b = bucket as Record<string, unknown>;
@@ -561,7 +564,28 @@ const parsePerformanceRecords = (value: unknown): { type: 'ok'; records: Perform
       ) {
         return { type: 'invalid', index: i, error: 'bucket metric/lower/upper/count fields are missing or malformed' };
       }
+      // Duplicate {metric, lower, upper} tuples would silently over-count in
+      // aggregation because updateAggregate merges bucket entries by lower
+      // edge and adds their counts.
+      const dedupKey = `${b.metric}\0${b.lower as number}\0${b.upper === null ? 'inf' : b.upper as number}`;
+      if (bucketKeys.has(dedupKey)) {
+        return { type: 'invalid', index: i, error: `duplicate bucket entry for {metric: ${b.metric}, lower: ${b.lower as number}, upper: ${b.upper === null ? 'null' : b.upper as number}}` };
+      }
+      bucketKeys.add(dedupKey);
+      if (b.metric === 'ttft_ms') ttftBucketCount += b.count as number;
+      else tpotBucketCount += b.count as number;
       buckets.push({ metric: b.metric, lower: b.lower as number, upper: b.upper as number | null, count: b.count as number });
+    }
+
+    // Every ttft/tpot sample the recorder logs also increments exactly one
+    // bucket entry for its metric. If the per-metric bucket sum doesn't match
+    // the declared sample count, the histogram is inconsistent with the
+    // counters and percentile queries would return misleading values.
+    if (ttftBucketCount !== (item.ttftSamples as number)) {
+      return { type: 'invalid', index: i, error: `ttft_ms bucket sum (${ttftBucketCount}) must equal ttftSamples (${item.ttftSamples as number})` };
+    }
+    if (tpotBucketCount !== (item.tpotSamples as number)) {
+      return { type: 'invalid', index: i, error: `tpot_us bucket sum (${tpotBucketCount}) must equal tpotSamples (${item.tpotSamples as number})` };
     }
 
     records.push({
