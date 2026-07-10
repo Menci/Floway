@@ -45,14 +45,14 @@ const isAttemptSuccess = (result: IterableAttemptResult): boolean => {
 // caller's own protocol-shaped "no viable candidate" envelope at the
 // serve site.
 //
-// Resets `perfTiming.upstreamCallStartedAt` / `firstOutputTokenAt` /
-// `attemptTelemetry` to null before every attempt so a candidate that
-// short-circuits (synthetic result, dry stub, throws before writing) cannot
-// inherit the prior attempt's stamps. Chat serves overwrite
+// Resets `perfTiming.upstreamCallStartedAt` / `firstOutputTokenAt` to null
+// and `attemptTelemetry` to undefined before every attempt so a candidate
+// that short-circuits (synthetic result, dry stub, throws before writing)
+// cannot inherit the prior attempt's stamps. Chat serves overwrite
 // `attemptTelemetry` synchronously inside the callback before awaiting, so
 // a mid-attempt throw still attributes the failure to the throwing
 // candidate; passthrough serves manage attribution through their own local
-// closure and leave `attemptTelemetry` at null.
+// closure and leave `attemptTelemetry` undefined.
 export const iterateCandidates = async <T extends IterableAttemptResult>(
   candidates: readonly ModelCandidate[],
   invocationLabel: string,
