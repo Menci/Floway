@@ -84,7 +84,12 @@ export const useAgentSetup = (
   const expiresAt = ref<number | null>(null);
   const scripts = ref<LeaseScripts | null>(null);
   const noSelectableKey = ref(false);
-  const error = ref<string | null>(null);
+  // Each operation owns its error. A successful heartbeat must not erase a
+  // rejected form save; only that save stream can clear its own failure.
+  const createError = ref<string | null>(null);
+  const saveError = ref<string | null>(null);
+  const heartbeatError = ref<string | null>(null);
+  const error = computed(() => saveError.value ?? heartbeatError.value ?? createError.value);
   const draft = ref<AgentSetupConfiguration | null>(null);
   const formGeneration = ref(0);
   const confirmedGeneration = ref(0);
@@ -97,6 +102,7 @@ export const useAgentSetup = (
   let expiryTimer: ReturnType<typeof setTimeout> | null = null;
   let activeRequest: ActiveRequest | null = null;
   let savePending = false;
+  let activeSaveGeneration: number | null = null;
   let heartbeatDue = false;
   let pumpRunning = false;
   let disposed = false;
@@ -216,9 +222,10 @@ export const useAgentSetup = (
   const reconcileRevisionConflict = (raw: unknown, savedGeneration: number) => {
     const lease = asLease(raw);
     if (lease === null) {
-      error.value = 'Received an unexpected conflict response from the server.';
+      saveError.value = 'Received an unexpected conflict response from the server.';
       return;
     }
+    saveError.value = null;
     adoptLeaseMetadata(lease);
     if (formGeneration.value > savedGeneration) {
       // Cancel the newer edit's debounce before immediate resubmission; otherwise
@@ -236,21 +243,23 @@ export const useAgentSetup = (
     const configuration = snapshot(draft.value);
     const currentToken = token.value;
     const expectedRevision = configurationRevision.value;
+    activeSaveGeneration = generation;
 
     const result = await callApi<LeaseOkResponse>(() => requestWithTimeout(signal =>
       api.api.setup.$put({ json: { token: currentToken, configuration, expectedRevision } }, { init: { signal } })));
+    activeSaveGeneration = null;
     if (disposed) return;
 
     if (result.error) {
       const status = rawStatus(result.error.raw);
       if (status === 'superseded') { markSuperseded(); return; }
       if (status === 'revision-conflict') { reconcileRevisionConflict(result.error.raw, generation); return; }
-      error.value = result.error.message;
+      saveError.value = result.error.message;
       if (isRetryableHttpStatus(result.error.status)) scheduleSaveRetry();
       return;
     }
 
-    error.value = null;
+    saveError.value = null;
     saveRetryTimer = clearTimer(saveRetryTimer);
     adoptLeaseMetadata(result.data);
     if (generation > confirmedGeneration.value) confirmedGeneration.value = generation;
@@ -272,16 +281,16 @@ export const useAgentSetup = (
         const lease = asLease(result.error.raw);
         if (lease !== null) {
           adoptLeaseMetadata(lease);
-          error.value = null;
+          heartbeatError.value = null;
           scheduleHeartbeat(HEARTBEAT_INTERVAL_MS);
           return;
         }
       }
-      error.value = result.error.message;
+      heartbeatError.value = result.error.message;
       if (isRetryableHttpStatus(result.error.status)) scheduleHeartbeat(RETRY_DELAY_MS);
       return;
     }
-    error.value = null;
+    heartbeatError.value = null;
     adoptLeaseMetadata(result.data);
     scheduleHeartbeat(HEARTBEAT_INTERVAL_MS);
   };
@@ -317,7 +326,11 @@ export const useAgentSetup = (
 
   const save = () => {
     if (disposed || superseded.value || !initialized.value) return;
-    if (formGeneration.value !== confirmedGeneration.value) scheduleDebouncedSave();
+    if (formGeneration.value === confirmedGeneration.value) return;
+    // The deep watcher already queued this generation. Calling save() while its
+    // PUT is active is an idempotent flush, not a request for a second PUT.
+    if (formGeneration.value === activeSaveGeneration) return;
+    scheduleDebouncedSave();
   };
 
   const heartbeat = () => {
@@ -336,10 +349,11 @@ export const useAgentSetup = (
 
     if (result.error) {
       if (rawStatus(result.error.raw) === 'no-selectable-key') { noSelectableKey.value = true; return; }
-      error.value = result.error.message;
+      createError.value = result.error.message;
       return;
     }
 
+    createError.value = null;
     adoptLeaseMetadata(result.data);
     installDraft(result.data.configuration);
     formGeneration.value = 0;

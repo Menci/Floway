@@ -230,6 +230,21 @@ describe('useAgentSetup — debounced serialized saves', () => {
     expect(setup.state.configurationRevision.value).toBe(2);
   });
 
+  it('calling save during the current in-flight generation does not enqueue a duplicate PUT', async () => {
+    const { records, setup } = await startInitialized();
+    setup.draft.value!.codex.model = 'gpt-5-codex';
+    await vi.advanceTimersByTimeAsync(400);
+    expect(records.put.length).toBe(1);
+
+    // No edit happened after PUT #1 captured the form generation. save() must
+    // recognize that the current dirty generation is already in flight.
+    setup.save();
+    records.put[0]!.deferred.resolve(okBody(lease({ configurationRevision: 2 })));
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(400);
+    expect(records.put.length).toBe(1);
+  });
+
   it('a stale save response updates lease metadata without clearing a newer draft', async () => {
     const { records, setup } = await startInitialized();
     setup.draft.value!.codex.model = 'gpt-5-codex';
@@ -390,6 +405,28 @@ describe('useAgentSetup — heartbeat', () => {
     expect(records.heartbeat.length).toBe(2);
   });
 
+  it('keeps a permanent save error through a successful heartbeat and clears it on a later successful save', async () => {
+    const { records, setup } = await startInitialized();
+    setup.draft.value!.codex.model = 'gpt-5-codex';
+    await vi.advanceTimersByTimeAsync(400);
+    records.put[0]!.deferred.resolve(errorBody(400, { error: 'bad configuration' }));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(setup.state.error.value).toBe('bad configuration');
+
+    setup.heartbeat();
+    await vi.advanceTimersByTimeAsync(0);
+    records.heartbeat[0]!.deferred.resolve(okBody(lease()));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(setup.state.error.value).toBe('bad configuration');
+
+    setup.draft.value!.codex.reasoningEffort = 'high';
+    await vi.advanceTimersByTimeAsync(400);
+    expect(records.put.length).toBe(2);
+    records.put[1]!.deferred.resolve(okBody(lease({ configurationRevision: 2 })));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(setup.state.error.value).toBeNull();
+  });
+
   it('does not retry permanent 4xx save or heartbeat failures', async () => {
     const { records, setup } = await startInitialized();
     setup.draft.value!.codex.model = 'gpt-5-codex';
@@ -406,7 +443,8 @@ describe('useAgentSetup — heartbeat', () => {
     records.heartbeat[0]!.deferred.resolve(errorBody(403, { error: 'forbidden' }));
     await vi.advanceTimersByTimeAsync(60_000);
     expect(records.heartbeat.length).toBe(1);
-    expect(setup.state.error.value).toBe('forbidden');
+    // Save errors own the primary form-error slot until a save succeeds.
+    expect(setup.state.error.value).toBe('bad configuration');
   });
 });
 
@@ -464,6 +502,16 @@ describe('useAgentSetup — terminal + lifecycle', () => {
     setup.dispose();
     expect(signal.aborted).toBe(true);
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('disables copy exactly when the server lease expires without a heartbeat', async () => {
+    const { setup } = await startInitialized({ expiresAt: 1_000 });
+    expect(setup.canCopy.value).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(999);
+    expect(setup.canCopy.value).toBe(true);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(setup.canCopy.value).toBe(false);
   });
 
   it('gates copy on the selected key still existing and saves a direct key change', async () => {
