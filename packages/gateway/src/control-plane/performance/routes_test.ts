@@ -343,7 +343,7 @@ test('/api/performance rejects non-numeric filter_user_id at the schema boundary
 
   assertEquals(response.status, 400);
   assertEquals(await response.json(), {
-    error: 'filter_user_id must be a non-negative integer',
+    error: 'filter_user_id must be a positive integer',
   });
 });
 
@@ -354,13 +354,35 @@ test('/api/performance rejects negative filter_user_id', async () => {
 
   assertEquals(response.status, 400);
   assertEquals(await response.json(), {
-    error: 'filter_user_id must be a non-negative integer',
+    error: 'filter_user_id must be a positive integer',
+  });
+});
+
+test('/api/performance rejects filter_user_id=0 (user ids start at 1)', async () => {
+  const { apiKey } = await setupAppTest();
+
+  const response = await requestApp('/api/performance?start=2026-04-30T00&end=2026-05-01T00&filter_user_id=0', { headers: { 'x-api-key': apiKey.key } });
+
+  assertEquals(response.status, 400);
+  assertEquals(await response.json(), {
+    error: 'filter_user_id must be a positive integer',
+  });
+});
+
+test('/api/performance rejects filter_user_id with a leading zero', async () => {
+  const { apiKey } = await setupAppTest();
+
+  const response = await requestApp('/api/performance?start=2026-04-30T00&end=2026-05-01T00&filter_user_id=01', { headers: { 'x-api-key': apiKey.key } });
+
+  assertEquals(response.status, 400);
+  assertEquals(await response.json(), {
+    error: 'filter_user_id must be a positive integer',
   });
 });
 
 test('/api/performance treats empty filter_user_id as absent', async () => {
   // Stale dashboard bookmarks may carry `filter_user_id=` with no value; the
-  // schema tightening for the negative-id reject must not regress those to 400.
+  // schema tightening for the zero/negative reject must not regress those to 400.
   const { apiKey } = await setupAppTest();
 
   const response = await requestApp('/api/performance?start=2026-04-30T00&end=2026-05-01T00&filter_user_id=', { headers: { 'x-api-key': apiKey.key } });
