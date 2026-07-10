@@ -285,10 +285,22 @@ watch([performanceRange, performanceGroupBy, filterModel, filterUpstream, filter
 
 // Switching groupBy re-shapes the chart around a new axis; the hidden-series
 // set was captured against the previous axis and its ids are meaningless in
-// the new one. Reset so the new view starts fully visible — the sync-to-URL
-// watchEffect drops the `hide=` param automatically once the set is empty.
-watch(performanceGroupBy, () => {
+// the new one. Reset so the new view starts fully visible. The same switch
+// also hides any filter dropdown whose dimension is now the group-by axis
+// (and the User + API Key pair, which hides together whenever either is the
+// axis) — mirror the template's v-if guards so no invisible filter keeps
+// silently narrowing the dataset. The sync-to-URL watchEffect drops the
+// corresponding query params automatically once each field is at its default.
+watch(performanceGroupBy, groupBy => {
   hiddenPerformanceSeries.value.clear();
+  if (groupBy === 'model') filterModel.value = '';
+  if (groupBy === 'upstream') filterUpstream.value = '';
+  if (groupBy === 'operation') filterOperation.value = '';
+  if (groupBy === 'runtimeLocation') filterRuntime.value = '';
+  if (groupBy === 'userId' || groupBy === 'keyId') {
+    filterUserId.value = '';
+    filterKeyId.value = '';
+  }
 });
 
 // Background tabs shouldn't burn backend cycles running the 6-way overview
