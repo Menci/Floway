@@ -1,5 +1,5 @@
-import type { ChatGatewayCtx, GatewayCtx } from '../data-plane/chat/shared/gateway-ctx.ts';
 import { createNonResponsesSourceStore } from '../data-plane/chat/responses/items/store.ts';
+import type { ChatGatewayCtx, GatewayCtx } from '../data-plane/chat/shared/gateway-ctx.ts';
 
 // Shared minimal GatewayCtx for tests that exercise serve / respond /
 // interceptor code in isolation. Defaults satisfy every required field; pass

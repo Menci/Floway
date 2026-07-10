@@ -2,10 +2,10 @@ import { test } from 'vitest';
 
 import { withReasoningDisabledOnForcedToolChoice } from './disable-reasoning-on-forced-tool-choice.ts';
 import type { ChatCompletionsInvocation } from './types.ts';
+import { mockChatGatewayCtx } from '../../../../test-helpers/gateway-ctx.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import { eventResult, type FlagId } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
-import { mockChatGatewayCtx } from '../../../../test-helpers/gateway-ctx.ts';
 
 const stubCtx = mockChatGatewayCtx({ apiKeyId: 'test-key' });
 

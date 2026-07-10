@@ -2,11 +2,11 @@ import { test } from 'vitest';
 
 import { demoteInterleavedSystemToUser } from './demote-interleaved-system-to-user.ts';
 import type { MessagesInvocation } from './types.ts';
+import { mockChatGatewayCtx } from '../../../../test-helpers/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import { type ExecuteResult, eventResult } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
-import { mockChatGatewayCtx } from '../../../../test-helpers/gateway-ctx.ts';
 
 const stubCtx = mockChatGatewayCtx({ apiKeyId: 'test-key' });
 

@@ -201,10 +201,12 @@ test('aggregatePerformanceForDisplay splits rows by operation when groupBy is op
 test('aggregatePerformanceForDisplay derives neutral as requests - ttftSamples - errors', () => {
   const rows = aggregatePerformanceForDisplay(
     [
-      record({ requests: 5, ttftSamples: 3, tpotSamples: 3, errors: 1, ttftMsSum: 300, tpotUsSum: 1500, buckets: [
-        { metric: 'ttft_ms', lower: 50, upper: 100, count: 3 },
-        { metric: 'tpot_us', lower: 200, upper: 500, count: 3 },
-      ] }),
+      record({
+        requests: 5, ttftSamples: 3, tpotSamples: 3, errors: 1, ttftMsSum: 300, tpotUsSum: 1500, buckets: [
+          { metric: 'ttft_ms', lower: 50, upper: 100, count: 3 },
+          { metric: 'tpot_us', lower: 200, upper: 500, count: 3 },
+        ],
+      }),
     ],
     { bucket: 'all', groupBy: 'none', timezoneOffsetMinutes: 0 },
   );
@@ -223,10 +225,12 @@ test('aggregatePerformanceForDisplay surfaces negative neutral when input row br
   // subtraction through so the corruption surfaces on the dashboard rather than hiding
   // behind a floor.
   const rows = aggregatePerformanceForDisplay(
-    [record({ requests: 2, ttftSamples: 3, tpotSamples: 3, errors: 1, ttftMsSum: 300, tpotUsSum: 1500, buckets: [
-      { metric: 'ttft_ms', lower: 50, upper: 100, count: 3 },
-      { metric: 'tpot_us', lower: 200, upper: 500, count: 3 },
-    ] })],
+    [record({
+      requests: 2, ttftSamples: 3, tpotSamples: 3, errors: 1, ttftMsSum: 300, tpotUsSum: 1500, buckets: [
+        { metric: 'ttft_ms', lower: 50, upper: 100, count: 3 },
+        { metric: 'tpot_us', lower: 200, upper: 500, count: 3 },
+      ],
+    })],
     { bucket: 'all', groupBy: 'none', timezoneOffsetMinutes: 0 },
   );
 
@@ -235,10 +239,12 @@ test('aggregatePerformanceForDisplay surfaces negative neutral when input row br
 
 test('aggregatePerformanceForDisplay neutral is zero for pure chat rows (ttftSamples + errors = requests)', () => {
   const rows = aggregatePerformanceForDisplay(
-    [record({ requests: 4, ttftSamples: 3, tpotSamples: 3, errors: 1, ttftMsSum: 300, tpotUsSum: 1500, buckets: [
-      { metric: 'ttft_ms', lower: 50, upper: 100, count: 3 },
-      { metric: 'tpot_us', lower: 200, upper: 500, count: 3 },
-    ] })],
+    [record({
+      requests: 4, ttftSamples: 3, tpotSamples: 3, errors: 1, ttftMsSum: 300, tpotUsSum: 1500, buckets: [
+        { metric: 'ttft_ms', lower: 50, upper: 100, count: 3 },
+        { metric: 'tpot_us', lower: 200, upper: 500, count: 3 },
+      ],
+    })],
     { bucket: 'all', groupBy: 'none', timezoneOffsetMinutes: 0 },
   );
 
@@ -250,10 +256,12 @@ test('aggregatePerformanceForDisplay tpot percentiles derive from the tpot bucke
   // The tpot histogram carries only the full sample's bucket, so tpot percentiles
   // reflect that single point without dilution from the TTFT-only row.
   const rows = aggregatePerformanceForDisplay(
-    [record({ requests: 2, ttftSamples: 2, tpotSamples: 1, buckets: [
-      { metric: 'ttft_ms', lower: 50, upper: 100, count: 2 },
-      { metric: 'tpot_us', lower: 200, upper: 500, count: 1 },
-    ] })],
+    [record({
+      requests: 2, ttftSamples: 2, tpotSamples: 1, buckets: [
+        { metric: 'ttft_ms', lower: 50, upper: 100, count: 2 },
+        { metric: 'tpot_us', lower: 200, upper: 500, count: 1 },
+      ],
+    })],
     { bucket: 'all', groupBy: 'none', timezoneOffsetMinutes: 0 },
   );
 

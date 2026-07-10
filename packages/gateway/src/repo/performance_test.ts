@@ -176,7 +176,7 @@ for (const impl of impls) {
 }
 
 describe('SqlPerformanceRepo upsertSummary set-mode guard', () => {
-  it("throws when set() is handed a record missing a count column", async () => {
+  it('throws when set() is handed a record missing a count column', async () => {
     const repo = new SqlRepo(await createSqliteTestDb()).performance;
     // TS enforces every count on the public shape; test the runtime guard by
     // casting a partial through, mirroring an `as`-cast slipping past compile.

@@ -2,11 +2,11 @@ import { test } from 'vitest';
 
 import type { ChatCompletionsInvocation } from './types.ts';
 import { withVendorKimiChatCompletionsNormalize } from './vendor-kimi-normalize.ts';
+import { mockChatGatewayCtx } from '../../../../test-helpers/gateway-ctx.ts';
 import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { type ExecuteResult, eventResult, type FlagId } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
-import { mockChatGatewayCtx } from '../../../../test-helpers/gateway-ctx.ts';
 
 const stubCtx = mockChatGatewayCtx({ apiKeyId: 'test-key' });
 
