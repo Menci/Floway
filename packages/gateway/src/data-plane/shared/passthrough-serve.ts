@@ -26,10 +26,9 @@ import type { TokenUsage } from '../../repo/types.ts';
 import type { GatewayCtx } from '../chat/shared/gateway-ctx.ts';
 import { type StreamCompletion, writeSSEFrames } from '../chat/shared/stream/sse.ts';
 import { enumerateModelCandidates } from '../providers/registry.ts';
-import type { BackgroundScheduler } from '@floway-dev/platform';
 import { doneFrame, eventFrame, type ModelKind, parseSSEStream, parseTargetStreamFrames, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import { httpResponseToResponse, ProviderModelsUnavailableError, toInternalDebugError } from '@floway-dev/provider';
-import type { PerformanceOperation, InternalModel, Provider, ProviderCallResult, ProviderModel, UpstreamCallOptions } from '@floway-dev/provider';
+import type { PerformanceOperation, InternalModel, Provider, ProviderCallResult, ProviderModel, TelemetryModelIdentity, UpstreamCallOptions } from '@floway-dev/provider';
 
 // Headers we forward verbatim from a successful upstream response, plus
 // content-type with an application/json fallback when the upstream omitted
@@ -65,10 +64,29 @@ const stageForwardedResponseHeaders = (c: Context, resp: Response): void => {
 // Fire-and-forget the usage record. A transient D1/KV failure here must not
 // surface as a 502 to a client whose upstream call already succeeded with a
 // 200 response body in hand. We log so the failure is still observable.
-const scheduleUsageRecord = (scheduler: BackgroundScheduler, promise: Promise<void>): void => {
-  scheduler(promise.catch(error => {
+// No-op when `usage` is null so success paths don't repeat the null guard.
+const scheduleUsageRecord = (ctx: GatewayCtx, identity: TelemetryModelIdentity, usage: TokenUsage | null): void => {
+  if (!usage) return;
+  ctx.backgroundScheduler(recordTokenUsage(ctx.apiKeyId, identity, usage).catch(error => {
     console.error('Failed to record token usage:', error);
   }));
+};
+
+// Success-path terminal: schedule the usage row and record the perf sample as
+// a pair. Mirrors `recordFailedRequest` for the failure branches — both the
+// json and sse arms inline the same two calls, so the helper keeps the pair
+// in lockstep. `failed` stays a parameter because the sse branch may still
+// mark the request failed (mid-stream cancel, missing terminal frame) even
+// when usage tokens are worth billing.
+const settlePassthroughSuccess = (
+  ctx: GatewayCtx,
+  performanceContext: PerformanceTelemetryContext,
+  identity: TelemetryModelIdentity,
+  usage: TokenUsage | null,
+  failed: boolean,
+): void => {
+  scheduleUsageRecord(ctx, identity, usage);
+  recordPerformance(ctx, performanceContext, failed, usage?.output ?? 0, performance.now());
 };
 
 // `json` (embeddings, images): single-shot body, `extractBilling` reads
@@ -218,10 +236,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
       }
       const usage = parsed !== undefined ? responseHandling.extractBilling(parsed) : null;
       ctx.dump?.success(identity, usage);
-      if (usage) {
-        scheduleUsageRecord(ctx.backgroundScheduler, recordTokenUsage(ctx.apiKeyId, identity, usage));
-      }
-      recordPerformance(ctx, performanceContext, false, usage?.output ?? 0, performance.now());
+      settlePassthroughSuccess(ctx, performanceContext, identity, usage, false);
       return forwardUpstreamResponse(response);
     }
 
@@ -279,10 +294,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
         // tokens already metered upstream should bill even when the
         // downstream half of the round-trip turned out badly. The chat
         // streaming endpoints follow the same rule.
-        if (usage) {
-          scheduleUsageRecord(ctx.backgroundScheduler, recordTokenUsage(ctx.apiKeyId, identity, usage));
-        }
-        recordPerformance(ctx, performanceContext, failed, usage?.output ?? 0, performance.now());
+        settlePassthroughSuccess(ctx, performanceContext, identity, usage, failed);
       }
     });
   } catch (e) {
