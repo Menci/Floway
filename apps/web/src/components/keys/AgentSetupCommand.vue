@@ -56,7 +56,7 @@ onScopeDispose(() => { if (resetTimer !== null) clearTimeout(resetTimer); });
         <Button
           variant="secondary"
           size="sm"
-          aria-label="Copy command"
+          :aria-label="`Copy ${label} command`"
           :disabled="disabled"
           @click="copy"
         >

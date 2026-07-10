@@ -33,6 +33,7 @@ const value = defineModel<string>({ required: true });
 const props = withDefaults(defineProps<{
   /** Suggestion list. Each item's `value` is what gets committed; `label` is the visible row text. */
   items: readonly (string | Item)[];
+  id?: string;
   placeholder?: string;
   disabled?: boolean;
   inputmode?: 'text' | 'numeric' | 'decimal';
@@ -127,6 +128,7 @@ const commitTyped = async () => {
     <ComboboxAnchor as-child>
       <div class="relative w-full">
         <ComboboxInput
+          :id="id"
           v-model="query"
           :placeholder="placeholder"
           :disabled="disabled"

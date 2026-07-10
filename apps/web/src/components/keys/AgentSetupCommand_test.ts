@@ -17,15 +17,16 @@ afterEach(() => {
   document.body.innerHTML = '';
 });
 
-const copyButton = (w: ReturnType<typeof mount>) => w.find('button[aria-label="Copy command"]');
+const copyButton = (w: ReturnType<typeof mount>, label = 'Shell') => w.find(`button[aria-label="Copy ${label} command"]`);
 
 describe('AgentSetupCommand', () => {
-  it('renders the label and the exact command text', () => {
+  it('renders the label and exact command with an instance-specific copy name', () => {
     const w = mount(AgentSetupCommand, {
       props: { label: 'macOS / Linux', command: 'curl -fsSL https://x/api/setup/t/setup.sh | bash', language: 'bash' },
     });
     expect(w.text()).toContain('macOS / Linux');
     expect(w.text()).toContain('curl -fsSL https://x/api/setup/t/setup.sh | bash');
+    expect(copyButton(w, 'macOS / Linux').exists()).toBe(true);
   });
 
   it('copies exactly the visible command to the clipboard and announces success', async () => {

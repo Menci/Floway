@@ -5,7 +5,7 @@
 // composable's draft, whose deep watcher autosaves and whose canCopy gate folds
 // in sync state, lease expiry, supersession, and whether the selected key still
 // exists on the account.
-import { computed } from 'vue';
+import { computed, useId } from 'vue';
 
 import AgentSetupCommand from './AgentSetupCommand.vue';
 import { useApi } from '../../api/client.ts';
@@ -42,6 +42,16 @@ const { initialized, noSelectableKey, error: setupError, scripts } = setup.state
 
 type ClaudeEffortLevel = NonNullable<AgentSetupConfiguration['claudeCode']['effortLevel']>;
 
+const fieldIds = {
+  apiKey: useId(),
+  claudeModel: useId(),
+  claudeSonnet: useId(),
+  claudeHaiku: useId(),
+  claudeEffort: useId(),
+  codexModel: useId(),
+  codexEffort: useId(),
+};
+
 // Reka's Select reserves the empty string for "cleared" and rejects it as an
 // option value, but the model helpers' "no override" sentinel IS the empty
 // string. The Select layer swaps in a NUL-prefixed token: the agent-setup
@@ -52,12 +62,23 @@ const SELECT_NONE = '\u0000none';
 // Claude Code's reasoning-effort control is a closed Floway-side enum (see the
 // agent-setup configuration schema), not an upstream-owned protocol slot, so its
 // options are enumerated here rather than read from a model's capabilities.
+const claudeEffortLevels = ['low', 'medium', 'high', 'xhigh'] as const satisfies readonly ClaudeEffortLevel[];
+const claudeEffortLabels = {
+  low: 'Low',
+  medium: 'Medium',
+  high: 'High',
+  xhigh: 'Extra high',
+} satisfies Record<ClaudeEffortLevel, string>;
+const isClaudeEffortLevel = (value: string): value is ClaudeEffortLevel =>
+  claudeEffortLevels.some(level => level === value);
+const normalizeClaudeEffort = (value: string): ClaudeEffortLevel | null => {
+  if (value === SELECT_NONE) return null;
+  if (isClaudeEffortLevel(value)) return value;
+  throw new Error(`Unexpected Claude effort option: ${value}`);
+};
 const claudeEffortOptions: { value: string; label: string }[] = [
   { value: SELECT_NONE, label: 'Default (agent chooses)' },
-  { value: 'low', label: 'Low' },
-  { value: 'medium', label: 'Medium' },
-  { value: 'high', label: 'High' },
-  { value: 'xhigh', label: 'Extra high' },
+  ...claudeEffortLevels.map(value => ({ value, label: claudeEffortLabels[value] })),
 ];
 
 const apiKeyOptions = computed(() => props.keys.map(key => ({ value: key.id, label: key.name })));
@@ -103,7 +124,7 @@ const claudeHaikuModel = computed<string>({
 });
 const claudeEffort = computed<string>({
   get: () => draft.value?.claudeCode.effortLevel ?? SELECT_NONE,
-  set: value => { if (draft.value) draft.value.claudeCode.effortLevel = value === SELECT_NONE ? null : value as ClaudeEffortLevel; },
+  set: value => { if (draft.value) draft.value.claudeCode.effortLevel = normalizeClaudeEffort(value); },
 });
 const codexModel = computed<string>({
   get: () => draft.value?.codex.model ?? SELECT_NONE,
@@ -151,8 +172,8 @@ const copyDisabled = computed(() => !canCopy.value);
       </div>
 
       <div class="mb-6" data-testid="agent-setup-api-key">
-        <label class="mb-1.5 block text-xs text-gray-500">API key</label>
-        <Select v-model="draft.apiKeyId" :options="apiKeyOptions" placeholder="Select an API key" />
+        <label :for="fieldIds.apiKey" class="mb-1.5 block text-xs text-gray-500">API key</label>
+        <Select :id="fieldIds.apiKey" v-model="draft.apiKeyId" :options="apiKeyOptions" placeholder="Select an API key" />
         <p class="mt-1.5 text-[11px] text-gray-600">
           The generated commands carry this key. Anyone with the setup link can read it — keep the link private.
         </p>
@@ -168,20 +189,20 @@ const copyDisabled = computed(() => !canCopy.value);
           </div>
           <div class="space-y-3" :class="{ 'opacity-60': !draft.claudeCode.enabled }">
             <div data-testid="claude-model">
-              <label class="mb-1.5 block text-xs text-gray-500">Model</label>
-              <Select v-model="claudeModel" :options="claudeModelOptions" :disabled="!draft.claudeCode.enabled" />
+              <label :for="fieldIds.claudeModel" class="mb-1.5 block text-xs text-gray-500">Model</label>
+              <Select :id="fieldIds.claudeModel" v-model="claudeModel" :options="claudeModelOptions" :disabled="!draft.claudeCode.enabled" />
             </div>
             <div data-testid="claude-sonnet">
-              <label class="mb-1.5 block text-xs text-gray-500">Sonnet alias</label>
-              <Select v-model="claudeSonnetModel" :options="claudeSonnetOptions" :disabled="!draft.claudeCode.enabled" />
+              <label :for="fieldIds.claudeSonnet" class="mb-1.5 block text-xs text-gray-500">Sonnet alias</label>
+              <Select :id="fieldIds.claudeSonnet" v-model="claudeSonnetModel" :options="claudeSonnetOptions" :disabled="!draft.claudeCode.enabled" />
             </div>
             <div data-testid="claude-haiku">
-              <label class="mb-1.5 block text-xs text-gray-500">Haiku alias</label>
-              <Select v-model="claudeHaikuModel" :options="claudeHaikuOptions" :disabled="!draft.claudeCode.enabled" />
+              <label :for="fieldIds.claudeHaiku" class="mb-1.5 block text-xs text-gray-500">Haiku alias</label>
+              <Select :id="fieldIds.claudeHaiku" v-model="claudeHaikuModel" :options="claudeHaikuOptions" :disabled="!draft.claudeCode.enabled" />
             </div>
             <div data-testid="claude-effort">
-              <label class="mb-1.5 block text-xs text-gray-500">Reasoning effort</label>
-              <Select v-model="claudeEffort" :options="claudeEffortOptions" :disabled="!draft.claudeCode.enabled" />
+              <label :for="fieldIds.claudeEffort" class="mb-1.5 block text-xs text-gray-500">Reasoning effort</label>
+              <Select :id="fieldIds.claudeEffort" v-model="claudeEffort" :options="claudeEffortOptions" :disabled="!draft.claudeCode.enabled" />
             </div>
             <div class="flex items-center justify-between pt-1">
               <label class="text-xs text-gray-500">Gateway model discovery</label>
@@ -197,12 +218,13 @@ const copyDisabled = computed(() => !canCopy.value);
           </div>
           <div class="space-y-3" :class="{ 'opacity-60': !draft.codex.enabled }">
             <div data-testid="codex-model">
-              <label class="mb-1.5 block text-xs text-gray-500">Model</label>
-              <Select v-model="codexModel" :options="codexModelOptions" :disabled="!draft.codex.enabled" />
+              <label :for="fieldIds.codexModel" class="mb-1.5 block text-xs text-gray-500">Model</label>
+              <Select :id="fieldIds.codexModel" v-model="codexModel" :options="codexModelOptions" :disabled="!draft.codex.enabled" />
             </div>
             <div data-testid="codex-effort">
-              <label class="mb-1.5 block text-xs text-gray-500">Reasoning effort</label>
+              <label :for="fieldIds.codexEffort" class="mb-1.5 block text-xs text-gray-500">Reasoning effort</label>
               <Combobox
+                :id="fieldIds.codexEffort"
                 v-model="codexEffort"
                 :items="codexEffortItems"
                 :disabled="!draft.codex.enabled"

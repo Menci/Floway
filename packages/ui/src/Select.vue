@@ -8,6 +8,7 @@ const value = defineModel<T>();
 
 const props = withDefaults(defineProps<{
   options: O[];
+  id?: string;
   placeholder?: string;
   disabled?: boolean;
   size?: 'sm' | 'md';
@@ -40,7 +41,7 @@ const onUpdate = (raw: string | number | undefined) => {
 
 <template>
   <SelectRoot :model-value="value" :disabled="disabled" @update:model-value="onUpdate">
-    <SelectTrigger :class="triggerClass">
+    <SelectTrigger :id="id" :class="triggerClass">
       <SelectValue :placeholder="placeholder" />
       <SelectIcon class="ml-2 text-gray-300">
         <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25">

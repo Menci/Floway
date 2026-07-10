@@ -120,6 +120,17 @@ describe('AgentSetupCard', () => {
     ]);
   });
 
+  it('associates visible labels with representative Select and Combobox controls', () => {
+    const w = mountCard();
+    const apiKeyField = w.get('[data-testid="agent-setup-api-key"]');
+    const claudeModelField = w.get('[data-testid="claude-model"]');
+    const codexEffortField = w.get('[data-testid="codex-effort"]');
+
+    expect(apiKeyField.get('label').attributes('for')).toBe(apiKeyField.get('button[role="combobox"]').attributes('id'));
+    expect(claudeModelField.get('label').attributes('for')).toBe(claudeModelField.get('button[role="combobox"]').attributes('id'));
+    expect(codexEffortField.get('label').attributes('for')).toBe(codexEffortField.get('input').attributes('id'));
+  });
+
   it('renders both agent enable switches and the Claude discovery switch', () => {
     const w = mountCard();
     // Reka-UI renders Switch as button[role="switch"]: Claude enabled, Claude
@@ -220,11 +231,13 @@ describe('AgentSetupCard', () => {
     expect(mountCard({ loading: true }).text()).not.toContain('Loading models');
   });
 
-  it('renders the shell and PowerShell commands built from the origin and the lease script paths', () => {
+  it('renders the shell and PowerShell commands with distinct copy-button names', () => {
     const w = mountCard();
     const text = w.text();
     expect(text).toContain(`curl -fsSL ${window.location.origin}/api/setup/tok-1/setup.sh | bash`);
     expect(text).toContain(`irm ${window.location.origin}/api/setup/tok-1/setup.ps1 | iex`);
+    expect(w.find('button[aria-label="Copy macOS · Linux · WSL command"]').exists()).toBe(true);
+    expect(w.find('button[aria-label="Copy Windows PowerShell command"]').exists()).toBe(true);
     // The PowerShell command must not touch Execution Policy.
     expect(text).not.toContain('ExecutionPolicy');
     expect(text).not.toContain('Bypass');
@@ -234,7 +247,7 @@ describe('AgentSetupCard', () => {
     setupStub = makeSetup({ syncing: true, canCopy: false });
     const w = mountCard();
     expect(w.text()).toContain('Saving');
-    const buttons = w.findAll('button[aria-label="Copy command"]');
+    const buttons = w.findAll('button[aria-label^="Copy "][aria-label$=" command"]');
     expect(buttons.length).toBe(2);
     for (const b of buttons) expect((b.element as HTMLButtonElement).disabled).toBe(true);
   });
@@ -243,20 +256,20 @@ describe('AgentSetupCard', () => {
     setupStub = makeSetup({ initialized: false, noSelectableKey: true, scripts: null });
     const w = mountCard({ keys: [] });
     expect(w.text()).toContain('API key');
-    expect(w.findAll('button[aria-label="Copy command"]').length).toBe(0);
+    expect(w.findAll('button[aria-label^="Copy "][aria-label$=" command"]').length).toBe(0);
   });
 
   it('renders a superseded terminal state that tells the user to reload and shows no copy affordance', () => {
     setupStub = makeSetup({ superseded: true, canCopy: false });
     const w = mountCard();
     expect(w.text().toLowerCase()).toContain('reload');
-    expect(w.findAll('button[aria-label="Copy command"]').length).toBe(0);
+    expect(w.findAll('button[aria-label^="Copy "][aria-label$=" command"]').length).toBe(0);
   });
 
   it('copies exactly the visible shell command through the command button', async () => {
     const w = mountCard();
     const writeText = (navigator.clipboard as unknown as { writeText: ReturnType<typeof vi.fn> }).writeText;
-    await w.findAll('button[aria-label="Copy command"]')[0]!.trigger('click');
+    await w.findAll('button[aria-label^="Copy "][aria-label$=" command"]')[0]!.trigger('click');
     await nextTick();
     expect(writeText).toHaveBeenCalledWith(`curl -fsSL ${window.location.origin}/api/setup/tok-1/setup.sh | bash`);
   });
