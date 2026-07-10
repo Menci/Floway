@@ -67,6 +67,38 @@ describe('rankAgentSetupModels', () => {
     ]);
   });
 
+  it('does not promote near-miss Claude ids without a claude- segment', () => {
+    const models = [
+      buildRealModel({ id: 'claudeish-model' }),
+      buildRealModel({ id: 'vendor/my-claude-sonnet' }),
+      buildRealModel({ id: 'vendor/claude-opus-4-8' }),
+      buildRealModel({ id: 'claude-sonnet-4-5' }),
+    ];
+    expect(rankAgentSetupModels(models, 'claude').map(m => m.id)).toEqual([
+      'vendor/claude-opus-4-8',
+      'claude-sonnet-4-5',
+      'claudeish-model',
+      'vendor/my-claude-sonnet',
+    ]);
+  });
+
+  it('only promotes gpt-5 and codex- segments for Codex', () => {
+    const models = [
+      buildRealModel({ id: 'gpt-4o' }),
+      buildRealModel({ id: 'gpt-50-preview' }),
+      buildRealModel({ id: 'vendor/my-codex-model' }),
+      buildRealModel({ id: 'vendor/gpt-5.6-codex' }),
+      buildRealModel({ id: 'codex-mini' }),
+    ];
+    expect(rankAgentSetupModels(models, 'codex').map(m => m.id)).toEqual([
+      'vendor/gpt-5.6-codex',
+      'codex-mini',
+      'gpt-4o',
+      'gpt-50-preview',
+      'vendor/my-codex-model',
+    ]);
+  });
+
   it('removes duplicate ids, keeping the first occurrence', () => {
     const models = [
       buildRealModel({ id: 'claude-sonnet-4-5', display_name: 'first' }),
@@ -168,13 +200,14 @@ describe('codexEffortSuggestions', () => {
 });
 
 describe('normalizeEffortInput', () => {
-  it('maps blank input to null', () => {
+  it('maps only the exact empty sentinel to null', () => {
     expect(normalizeEffortInput('')).toBeNull();
-    expect(normalizeEffortInput('   ')).toBeNull();
   });
 
-  it('retains an arbitrary non-empty value verbatim after trimming surrounding whitespace', () => {
+  it('retains every nonempty value byte-for-byte', () => {
     expect(normalizeEffortInput('ultra')).toBe('ultra');
-    expect(normalizeEffortInput('  high  ')).toBe('high');
+    expect(normalizeEffortInput('  high  ')).toBe('  high  ');
+    expect(normalizeEffortInput('   ')).toBe('   ');
+    expect(normalizeEffortInput('\thigh\n')).toBe('\thigh\n');
   });
 });

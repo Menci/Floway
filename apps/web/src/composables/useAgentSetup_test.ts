@@ -31,7 +31,12 @@ interface FakeResponse {
 }
 
 const okBody = (body: unknown): FakeResponse => ({ ok: true, status: 200, json: async () => body });
-const conflictBody = (body: unknown): FakeResponse => ({ ok: false, status: 409, json: async () => body });
+const errorBody = (status: number, body: unknown = { error: `HTTP ${status}` }): FakeResponse => ({
+  ok: false,
+  status,
+  json: async () => body,
+});
+const conflictBody = (body: unknown): FakeResponse => errorBody(409, body);
 
 interface RecordedCall {
   args: unknown[];
@@ -69,6 +74,9 @@ const lease = (over: Record<string, unknown> = {}) => ({
 
 const jsonArg = (call: RecordedCall): Record<string, unknown> =>
   (call.args[0] as { json: Record<string, unknown> }).json;
+
+const signalArg = (call: RecordedCall): AbortSignal =>
+  (call.args[1] as { init: { signal: AbortSignal } }).init.signal;
 
 let scope: ReturnType<typeof effectScope> | null = null;
 
@@ -200,14 +208,20 @@ describe('useAgentSetup — debounced serialized saves', () => {
     });
   });
 
-  it('re-enables copy only once the current generation is confirmed', async () => {
+  it('direct form mutation immediately gates copy, queues a save, and re-enables copy only after confirmation', async () => {
     const { records, setup } = await startInitialized();
     expect(setup.canCopy.value).toBe(true);
 
+    // Task 6 may bind controls directly to nested draft fields. The deep watcher
+    // owns dirtying and autosave; callers do not need to remember save().
     setup.draft.value!.claudeCode.effortLevel = 'high';
-    setup.save();
-    await vi.advanceTimersByTimeAsync(400);
+    expect(setup.syncing.value).toBe(true);
     expect(setup.canCopy.value).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(399);
+    expect(records.put.length).toBe(0);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(records.put.length).toBe(1);
 
     records.put[0]!.deferred.resolve(okBody(lease({ configurationRevision: 2 })));
     await vi.advanceTimersByTimeAsync(0);
@@ -277,6 +291,12 @@ describe('useAgentSetup — revision conflict', () => {
     expect(jsonArg(records.put[1]!).configuration).toMatchObject({
       codex: { model: 'gpt-5-codex', reasoningEffort: 'medium' },
     });
+
+    records.put[1]!.deferred.resolve(okBody(lease({ configurationRevision: 6 })));
+    await vi.advanceTimersByTimeAsync(0);
+    // Advancing past the newer edit's original debounce must not emit PUT #3.
+    await vi.advanceTimersByTimeAsync(400);
+    expect(records.put.length).toBe(2);
   });
 });
 
@@ -343,7 +363,6 @@ describe('useAgentSetup — heartbeat', () => {
   it('retries a save whose transport failed', async () => {
     const { records, setup } = await startInitialized();
     setup.draft.value!.codex.model = 'gpt-5-codex';
-    setup.save();
     await vi.advanceTimersByTimeAsync(400);
     expect(records.put.length).toBe(1);
 
@@ -351,6 +370,43 @@ describe('useAgentSetup — heartbeat', () => {
     await vi.advanceTimersByTimeAsync(15_000);
     expect(records.put.length).toBe(2);
     expect(jsonArg(records.put[1]!).configuration).toMatchObject({ codex: { model: 'gpt-5-codex' } });
+  });
+
+  it('retries explicit retryable HTTP statuses for saves and heartbeats', async () => {
+    const { records, setup } = await startInitialized();
+    setup.draft.value!.codex.model = 'gpt-5-codex';
+    await vi.advanceTimersByTimeAsync(400);
+    records.put[0]!.deferred.resolve(errorBody(429));
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(records.put.length).toBe(2);
+
+    // Complete the retry so the serialized pump can service heartbeat.
+    records.put[1]!.deferred.resolve(okBody(lease({ configurationRevision: 2 })));
+    await vi.advanceTimersByTimeAsync(0);
+    setup.heartbeat();
+    await vi.advanceTimersByTimeAsync(0);
+    records.heartbeat[0]!.deferred.resolve(errorBody(503));
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(records.heartbeat.length).toBe(2);
+  });
+
+  it('does not retry permanent 4xx save or heartbeat failures', async () => {
+    const { records, setup } = await startInitialized();
+    setup.draft.value!.codex.model = 'gpt-5-codex';
+    await vi.advanceTimersByTimeAsync(400);
+    records.put[0]!.deferred.resolve(errorBody(400, { error: 'bad configuration' }));
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(records.put.length).toBe(1);
+    expect(setup.state.error.value).toBe('bad configuration');
+
+    // A manual heartbeat may still be attempted, but its permanent 403 must not
+    // schedule the 15s retry (the regular 60s lease cadence remains independent).
+    setup.heartbeat();
+    await vi.advanceTimersByTimeAsync(0);
+    records.heartbeat[0]!.deferred.resolve(errorBody(403, { error: 'forbidden' }));
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(records.heartbeat.length).toBe(1);
+    expect(setup.state.error.value).toBe('forbidden');
   });
 });
 
@@ -372,27 +428,59 @@ describe('useAgentSetup — terminal + lifecycle', () => {
     expect(records.put.length).toBe(1);
   });
 
-  it('dispose() clears timers and ignores late responses', async () => {
+  it('dispose() aborts an active save, clears every timer, and ignores late responses', async () => {
     const { records, setup } = await startInitialized();
     setup.draft.value!.codex.model = 'gpt-5-codex';
-    setup.save();
     await vi.advanceTimersByTimeAsync(400);
+    const signal = signalArg(records.put[0]!);
+    expect(signal.aborted).toBe(false);
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
 
     setup.dispose();
+    expect(signal.aborted).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
     records.put[0]!.deferred.resolve(okBody(lease({ token: 'tok-late', configurationRevision: 9 })));
-    await vi.advanceTimersByTimeAsync(120_000);
+    await vi.advanceTimersByTimeAsync(0);
 
-    // No heartbeat scheduled, and the late PUT response was ignored.
     expect(records.heartbeat.length).toBe(0);
     expect(setup.state.token.value).toBe('tok-1');
   });
 
-  it('gates copy on the selected key still existing', async () => {
-    const { setup } = await startInitialized({}, ['key-2']);
+  it.each(['create', 'heartbeat'] as const)('dispose() aborts an active %s request', async kind => {
+    const { api, records } = makeApi();
+    const setup = run(() => useAgentSetup(api));
+    let call = records.post[0]!;
+
+    if (kind === 'heartbeat') {
+      call.deferred.resolve(okBody(lease()));
+      await vi.advanceTimersByTimeAsync(0);
+      setup.heartbeat();
+      await vi.advanceTimersByTimeAsync(0);
+      call = records.heartbeat[0]!;
+    }
+
+    const signal = signalArg(call);
+    expect(signal.aborted).toBe(false);
+    setup.dispose();
+    expect(signal.aborted).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('gates copy on the selected key still existing and saves a direct key change', async () => {
+    const { records, setup } = await startInitialized({}, ['key-2']);
     // draft.apiKeyId is 'key-1' but the account only offers 'key-2'.
     expect(setup.canCopy.value).toBe(false);
 
     setup.draft.value!.apiKeyId = 'key-2';
+    // The selected key now exists, but the direct mutation is dirty until saved.
+    expect(setup.canCopy.value).toBe(false);
+    await vi.advanceTimersByTimeAsync(400);
+    expect(records.put.length).toBe(1);
+    records.put[0]!.deferred.resolve(okBody(lease({
+      configuration: { ...defaultConfig(), apiKeyId: 'key-2' },
+      configurationRevision: 2,
+    })));
+    await vi.advanceTimersByTimeAsync(0);
     expect(setup.canCopy.value).toBe(true);
   });
 });
@@ -417,5 +505,28 @@ describe('useAgentSetup — visibility', () => {
     expect(records.heartbeat.length).toBe(1);
     records.heartbeat[0]!.deferred.resolve(okBody(lease()));
     await vi.advanceTimersByTimeAsync(0);
+  });
+
+  it('resume flushes a hidden dirty draft once without leaving its debounce to duplicate the PUT', async () => {
+    const { records, setup } = await startInitialized();
+    setVisibility('hidden');
+    setup.draft.value!.codex.model = 'gpt-5-codex';
+    expect(setup.canCopy.value).toBe(false);
+
+    // Resume before the 400ms debounce fires: the immediate reconciliation must
+    // cancel that timer and serialize save before heartbeat.
+    await vi.advanceTimersByTimeAsync(100);
+    setVisibility('visible');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(records.put.length).toBe(1);
+    expect(records.heartbeat.length).toBe(0);
+
+    records.put[0]!.deferred.resolve(okBody(lease({ configurationRevision: 2 })));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(records.heartbeat.length).toBe(1);
+    records.heartbeat[0]!.deferred.resolve(okBody(lease({ configurationRevision: 2 })));
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(400);
+    expect(records.put.length).toBe(1);
   });
 });

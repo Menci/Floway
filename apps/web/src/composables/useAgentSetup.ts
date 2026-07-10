@@ -2,34 +2,20 @@
 // it acquires a setup lease, keeps the editable draft in sync with the server
 // under optimistic concurrency, and renews the lease while the tab is visible.
 //
-// Concurrency model. A single serialized pump owns every mutating request, so a
-// configuration PUT and a lease heartbeat never overlap. Saves are debounced and
-// coalesced; the pump always drains a pending save before a due heartbeat. Local
-// intent is tracked by a monotonic draft generation that is deliberately separate
-// from the server's configuration revision: `formGeneration` bumps on each edit,
-// `confirmedGeneration` follows the server's acknowledgements, and the two only
-// meeting means the draft is fully persisted. A response for an older generation
-// still adopts the freshest lease metadata (token, revision, expiry, script URLs)
-// but never rewinds a newer draft.
+// One serialized pump owns every PUT and heartbeat, so mutations never overlap.
+// Local form generations are independent of server configuration revisions: an
+// old response may advance lease metadata, but cannot overwrite a newer draft.
 
 import type { InferResponseType } from 'hono/client';
-import { computed, onScopeDispose, ref, toValue, type MaybeRefOrGetter, type Ref } from 'vue';
+import { computed, onScopeDispose, ref, toValue, watch, type MaybeRefOrGetter, type Ref } from 'vue';
 
 import { callApi, type ApiClient } from '../api/client.ts';
 
-// Debounce window before an edit is flushed as a PUT.
 const SAVE_DEBOUNCE_MS = 400;
-// Lease heartbeat cadence while the tab is visible.
 const HEARTBEAT_INTERVAL_MS = 60_000;
-// Backoff before retrying a save or heartbeat that failed on the transport.
 const RETRY_DELAY_MS = 15_000;
-// Per-request ceiling; a request still outstanding at this point is aborted and
-// treated as a transport failure so the pump does not wedge on a dead socket.
 const REQUEST_TIMEOUT_MS = 20_000;
 
-// The `status: 'ok'` lease body every mutating route returns on success. Derived
-// from the RPC client type so a backend field rename surfaces here at compile
-// time rather than as a silent runtime mismatch.
 type LeaseOkResponse = Extract<InferResponseType<ApiClient['api']['setup']['$put']>, { status: 'ok' }>;
 export type AgentSetupConfiguration = LeaseOkResponse['configuration'];
 type LeaseScripts = LeaseOkResponse['scripts'];
@@ -39,6 +25,11 @@ interface LeaseMetadata {
   configurationRevision: number;
   expiresAt: number;
   scripts: LeaseScripts;
+}
+
+interface ActiveRequest {
+  controller: AbortController;
+  timeout: ReturnType<typeof setTimeout> | null;
 }
 
 export interface AgentSetupState {
@@ -57,6 +48,8 @@ export interface UseAgentSetup {
   syncing: Ref<boolean>;
   superseded: Ref<boolean>;
   canCopy: Ref<boolean>;
+  // Deep draft mutations auto-save. `save` remains an ergonomic explicit flush
+  // hook for forms that already call it after applying a batch of changes.
   save: () => void;
   heartbeat: () => void;
   dispose: () => void;
@@ -65,9 +58,6 @@ export interface UseAgentSetup {
 const snapshot = (configuration: AgentSetupConfiguration): AgentSetupConfiguration =>
   JSON.parse(JSON.stringify(configuration)) as AgentSetupConfiguration;
 
-// Extract the machine-readable `{ status }` a backend 409 carries. callApi routes
-// the parsed 409 body through `GlobalError.raw`, so this reads that discriminant
-// structurally — never by matching an English message.
 const rawStatus = (raw: unknown): string | null =>
   raw !== null && typeof raw === 'object' && typeof (raw as { status?: unknown }).status === 'string'
     ? (raw as { status: string }).status
@@ -81,27 +71,11 @@ const asLease = (raw: unknown): LeaseMetadata | null => {
   return { token: body.token, configurationRevision: body.configurationRevision, expiresAt: body.expiresAt, scripts: body.scripts };
 };
 
-// Race a request against the timeout, aborting the in-flight fetch when it wins so
-// a dead socket is freed rather than left dangling.
-const raceTimeout = <T>(request: (signal: AbortSignal) => Promise<T>): Promise<T> => {
-  const controller = new AbortController();
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      controller.abort();
-      reject(new Error('Agent setup request timed out'));
-    }, REQUEST_TIMEOUT_MS);
-    request(controller.signal).then(
-      value => { clearTimeout(timer); resolve(value); },
-      (error: unknown) => { clearTimeout(timer); reject(error); },
-    );
-  });
-};
+const isRetryableHttpStatus = (status: number): boolean =>
+  status === 0 || status === 408 || status === 429 || status >= 500;
 
 export const useAgentSetup = (
   api: ApiClient,
-  // Ids of the API keys the account can currently serve. When supplied, copy is
-  // gated on the draft's selected key still being among them; omit to leave that
-  // check to the caller.
   selectableKeyIds: MaybeRefOrGetter<readonly string[] | null> = null,
 ): UseAgentSetup => {
   const initialized = ref(false);
@@ -112,27 +86,34 @@ export const useAgentSetup = (
   const noSelectableKey = ref(false);
   const error = ref<string | null>(null);
   const draft = ref<AgentSetupConfiguration | null>(null);
-
-  // Monotonic local draft version and the highest version the server has
-  // acknowledged. Dirty ⇔ they differ.
   const formGeneration = ref(0);
   const confirmedGeneration = ref(0);
   const superseded = ref(false);
-  // Reactive clock the copy gate reads; refreshed on every lease interaction so
-  // an expiry check re-evaluates without a standalone ticker.
   const nowMs = ref(Date.now());
 
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
   let heartbeatTimer: ReturnType<typeof setTimeout> | null = null;
   let saveRetryTimer: ReturnType<typeof setTimeout> | null = null;
+  let expiryTimer: ReturnType<typeof setTimeout> | null = null;
+  let activeRequest: ActiveRequest | null = null;
   let savePending = false;
   let heartbeatDue = false;
   let pumpRunning = false;
   let disposed = false;
+  let installingDraft = false;
 
   const clearTimer = (timer: ReturnType<typeof setTimeout> | null): null => {
     if (timer !== null) clearTimeout(timer);
     return null;
+  };
+
+  const scheduleExpiry = (expiry: number) => {
+    expiryTimer = clearTimer(expiryTimer);
+    const delay = Math.max(0, expiry - Date.now());
+    expiryTimer = setTimeout(() => {
+      expiryTimer = null;
+      nowMs.value = Date.now();
+    }, delay);
   };
 
   const adoptLeaseMetadata = (lease: LeaseMetadata) => {
@@ -141,6 +122,54 @@ export const useAgentSetup = (
     expiresAt.value = lease.expiresAt;
     scripts.value = lease.scripts;
     nowMs.value = Date.now();
+    scheduleExpiry(lease.expiresAt);
+  };
+
+  const installDraft = (configuration: AgentSetupConfiguration) => {
+    installingDraft = true;
+    draft.value = snapshot(configuration);
+    installingDraft = false;
+  };
+
+  const abortActiveRequest = () => {
+    const request = activeRequest;
+    if (request === null) return;
+    activeRequest = null;
+    request.timeout = clearTimer(request.timeout);
+    request.controller.abort();
+  };
+
+  // The active AbortController and timeout are instance-owned so dispose can
+  // synchronously release both even when the underlying fetch never settles.
+  const requestWithTimeout = <T>(request: (signal: AbortSignal) => Promise<T>): Promise<T> => {
+    if (activeRequest !== null) throw new Error('Agent setup mutation requests must be serialized');
+    const state: ActiveRequest = { controller: new AbortController(), timeout: null };
+    activeRequest = state;
+
+    return new Promise<T>((resolve, reject) => {
+      let settled = false;
+      const finish = (complete: () => void) => {
+        if (settled) return;
+        settled = true;
+        state.timeout = clearTimer(state.timeout);
+        if (activeRequest === state) activeRequest = null;
+        complete();
+      };
+
+      state.timeout = setTimeout(() => {
+        state.controller.abort();
+        finish(() => reject(new Error('Agent setup request timed out')));
+      }, REQUEST_TIMEOUT_MS);
+
+      try {
+        request(state.controller.signal).then(
+          value => finish(() => resolve(value)),
+          (reason: unknown) => finish(() => reject(reason)),
+        );
+      } catch (reason: unknown) {
+        finish(() => reject(reason));
+      }
+    });
   };
 
   const markSuperseded = () => {
@@ -148,6 +177,7 @@ export const useAgentSetup = (
     debounceTimer = clearTimer(debounceTimer);
     heartbeatTimer = clearTimer(heartbeatTimer);
     saveRetryTimer = clearTimer(saveRetryTimer);
+    expiryTimer = clearTimer(expiryTimer);
     savePending = false;
     heartbeatDue = false;
   };
@@ -172,6 +202,34 @@ export const useAgentSetup = (
     }, RETRY_DELAY_MS);
   };
 
+  const cancelScheduledSave = () => {
+    debounceTimer = clearTimer(debounceTimer);
+    saveRetryTimer = clearTimer(saveRetryTimer);
+  };
+
+  const queueImmediateSave = () => {
+    cancelScheduledSave();
+    savePending = true;
+    kickPump();
+  };
+
+  const reconcileRevisionConflict = (raw: unknown, savedGeneration: number) => {
+    const lease = asLease(raw);
+    if (lease === null) {
+      error.value = 'Received an unexpected conflict response from the server.';
+      return;
+    }
+    adoptLeaseMetadata(lease);
+    if (formGeneration.value > savedGeneration) {
+      // Cancel the newer edit's debounce before immediate resubmission; otherwise
+      // its stale timer would emit a duplicate PUT after the resubmit succeeds.
+      queueImmediateSave();
+      return;
+    }
+    installDraft((raw as LeaseOkResponse).configuration);
+    confirmedGeneration.value = formGeneration.value;
+  };
+
   const runSave = async () => {
     if (!initialized.value || token.value === null || configurationRevision.value === null || draft.value === null) return;
     const generation = formGeneration.value;
@@ -179,7 +237,7 @@ export const useAgentSetup = (
     const currentToken = token.value;
     const expectedRevision = configurationRevision.value;
 
-    const result = await callApi<LeaseOkResponse>(() => raceTimeout(signal =>
+    const result = await callApi<LeaseOkResponse>(() => requestWithTimeout(signal =>
       api.api.setup.$put({ json: { token: currentToken, configuration, expectedRevision } }, { init: { signal } })));
     if (disposed) return;
 
@@ -188,7 +246,7 @@ export const useAgentSetup = (
       if (status === 'superseded') { markSuperseded(); return; }
       if (status === 'revision-conflict') { reconcileRevisionConflict(result.error.raw, generation); return; }
       error.value = result.error.message;
-      scheduleSaveRetry();
+      if (isRetryableHttpStatus(result.error.status)) scheduleSaveRetry();
       return;
     }
 
@@ -198,44 +256,36 @@ export const useAgentSetup = (
     if (generation > confirmedGeneration.value) confirmedGeneration.value = generation;
   };
 
-  const reconcileRevisionConflict = (raw: unknown, savedGeneration: number) => {
-    const lease = asLease(raw);
-    if (lease === null) { error.value = 'Received an unexpected conflict response from the server.'; return; }
-    adoptLeaseMetadata(lease);
-    if (formGeneration.value > savedGeneration) {
-      // A newer local edit outranks the server's copy — resubmit against the
-      // revision we just learned. The pump loop picks this up on its next turn.
-      savePending = true;
-      return;
-    }
-    // No newer intent: take the server's configuration and settle clean.
-    const body = raw as LeaseOkResponse;
-    draft.value = snapshot(body.configuration);
-    confirmedGeneration.value = formGeneration.value;
-  };
-
   const runHeartbeat = async () => {
     if (!initialized.value || token.value === null) return;
     const currentToken = token.value;
-    // Refresh the copy gate's clock on every attempt, so a lease that lapses
-    // while heartbeats keep failing still flips `canCopy` false.
     nowMs.value = Date.now();
 
-    const result = await callApi<LeaseOkResponse>(() => raceTimeout(signal =>
+    const result = await callApi<LeaseOkResponse>(() => requestWithTimeout(signal =>
       api.api.setup.heartbeat.$post({ json: { token: currentToken } }, { init: { signal } })));
     if (disposed) return;
 
     if (result.error) {
-      if (rawStatus(result.error.raw) === 'superseded') { markSuperseded(); return; }
-      scheduleHeartbeat(RETRY_DELAY_MS);
+      const status = rawStatus(result.error.raw);
+      if (status === 'superseded') { markSuperseded(); return; }
+      if (status === 'revision-conflict') {
+        const lease = asLease(result.error.raw);
+        if (lease !== null) {
+          adoptLeaseMetadata(lease);
+          error.value = null;
+          scheduleHeartbeat(HEARTBEAT_INTERVAL_MS);
+          return;
+        }
+      }
+      error.value = result.error.message;
+      if (isRetryableHttpStatus(result.error.status)) scheduleHeartbeat(RETRY_DELAY_MS);
       return;
     }
+    error.value = null;
     adoptLeaseMetadata(result.data);
     scheduleHeartbeat(HEARTBEAT_INTERVAL_MS);
   };
 
-  // The serialized pump: drains a pending save before a due heartbeat, one at a
-  // time, so a heartbeat can never overlap an in-flight PUT.
   const kickPump = () => {
     if (pumpRunning || disposed || superseded.value) return;
     pumpRunning = true;
@@ -257,8 +307,7 @@ export const useAgentSetup = (
   };
 
   const scheduleDebouncedSave = () => {
-    debounceTimer = clearTimer(debounceTimer);
-    saveRetryTimer = clearTimer(saveRetryTimer);
+    cancelScheduledSave();
     debounceTimer = setTimeout(() => {
       debounceTimer = null;
       savePending = true;
@@ -268,18 +317,20 @@ export const useAgentSetup = (
 
   const save = () => {
     if (disposed || superseded.value || !initialized.value) return;
-    formGeneration.value += 1;
-    scheduleDebouncedSave();
+    if (formGeneration.value !== confirmedGeneration.value) scheduleDebouncedSave();
   };
 
   const heartbeat = () => {
     if (disposed || superseded.value || !initialized.value) return;
+    // An explicit reconciliation replaces the scheduled cadence tick. Keeping
+    // both would make a permanent 4xx appear to retry when the old timer fires.
+    heartbeatTimer = clearTimer(heartbeatTimer);
     heartbeatDue = true;
     kickPump();
   };
 
   const create = async () => {
-    const result = await callApi<LeaseOkResponse>(() => raceTimeout(signal =>
+    const result = await callApi<LeaseOkResponse>(() => requestWithTimeout(signal =>
       api.api.setup.$post({ json: { publicBaseUrl: window.location.origin } }, { init: { signal } })));
     if (disposed) return;
 
@@ -290,25 +341,34 @@ export const useAgentSetup = (
     }
 
     adoptLeaseMetadata(result.data);
-    draft.value = snapshot(result.data.configuration);
+    installDraft(result.data.configuration);
     formGeneration.value = 0;
     confirmedGeneration.value = 0;
     initialized.value = true;
     scheduleHeartbeat(HEARTBEAT_INTERVAL_MS);
   };
 
+  watch(draft, () => {
+    if (disposed || superseded.value || !initialized.value || installingDraft) return;
+    formGeneration.value += 1;
+    scheduleDebouncedSave();
+  }, { deep: true, flush: 'sync' });
+
   const onVisibilityChange = () => {
     if (disposed || superseded.value) return;
     if (document.visibilityState === 'hidden') {
-      // Pause scheduling; in-flight work finishes on its own.
       heartbeatTimer = clearTimer(heartbeatTimer);
       return;
     }
     nowMs.value = Date.now();
     if (!initialized.value) return;
-    // Resume: reconcile the lease immediately and flush any dirty draft.
     heartbeatDue = true;
-    if (formGeneration.value !== confirmedGeneration.value) savePending = true;
+    if (formGeneration.value !== confirmedGeneration.value) {
+      // Visibility resume reconciles immediately. Remove a debounce left by an
+      // edit made while hidden so it cannot issue a second PUT later.
+      cancelScheduledSave();
+      savePending = true;
+    }
     kickPump();
   };
 
@@ -318,6 +378,8 @@ export const useAgentSetup = (
     debounceTimer = clearTimer(debounceTimer);
     heartbeatTimer = clearTimer(heartbeatTimer);
     saveRetryTimer = clearTimer(saveRetryTimer);
+    expiryTimer = clearTimer(expiryTimer);
+    abortActiveRequest();
     document.removeEventListener('visibilitychange', onVisibilityChange);
   };
 

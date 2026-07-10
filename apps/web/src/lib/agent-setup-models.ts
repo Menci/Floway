@@ -26,8 +26,8 @@ export interface ModelOption {
 // addressable chat model and use family matching only for stable native-first
 // ordering."
 const NATIVE_MATCHERS: Record<AgentFamily, RegExp> = {
-  claude: /(?:^|\/)claude/i,
-  codex: /(?:^|\/)(?:gpt-|codex-)/i,
+  claude: /(?:^|\/)claude-/i,
+  codex: /(?:^|\/)(?:gpt-5(?:$|[.\-])|codex-)/i,
 };
 
 // Filter to chat models, drop duplicate ids (first occurrence wins), then stable-
@@ -102,10 +102,8 @@ export const codexEffortSuggestions = (model: PublicModel | null | undefined): s
   return supported ? [...supported] : [];
 };
 
-// Normalize a Codex effort text input into its persisted form: a blank field
-// clears the override (null); any other value is kept, trimmed of surrounding
-// whitespace, without further narrowing.
-export const normalizeEffortInput = (value: string): string | null => {
-  const trimmed = value.trim();
-  return trimmed === '' ? null : trimmed;
-};
+// Normalize a Codex effort text input into its persisted form: only the exact
+// empty UI sentinel clears the override. Every nonempty upstream-owned value —
+// including surrounding whitespace — is preserved byte-for-byte.
+export const normalizeEffortInput = (value: string): string | null =>
+  value === '' ? null : value;
