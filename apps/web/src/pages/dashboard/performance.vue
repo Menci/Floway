@@ -585,7 +585,7 @@ const performanceSummary = computed<PerformanceDisplayRecord>(() => overview.val
         <ChartCanvas :config="chartConfig" />
       </div>
 
-      <div class="grid grid-cols-2 gap-3 mt-6 lg:grid-cols-4">
+      <div class="grid grid-cols-2 gap-3 mt-6 lg:grid-cols-4 xl:grid-cols-8">
         <div class="rounded-md border border-white/5 bg-surface-800/60 px-3 py-3">
           <span class="block text-xs text-gray-500 mb-1">Requests</span>
           <span class="block text-lg font-bold font-mono text-white">{{ performanceSummary.requests.toLocaleString() }}</span>
