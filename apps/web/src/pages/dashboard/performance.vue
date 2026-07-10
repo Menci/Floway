@@ -128,9 +128,8 @@ const URL_FIELDS = {
   filterKeyId: stringField('fk'),
   hidden: {
     urlKey: 'hide',
-    parse: (v: string): string[] => v.split(',').filter(Boolean),
-    // TODO: escape — hide param cannot round-trip group ids containing commas
-    serialize: (v: string[]) => (v.length > 0 ? v.join(',') : undefined),
+    parse: (v: string): string[] => v.split(',').map(decodeURIComponent).filter(Boolean),
+    serialize: (v: string[]) => (v.length > 0 ? v.map(encodeURIComponent).join(',') : undefined),
   },
   sortKey: enumField('sort', SORT_KEY_VALUES, 'requests'),
   sortDir: enumField('dir', SORT_DIR_VALUES, 'desc'),
