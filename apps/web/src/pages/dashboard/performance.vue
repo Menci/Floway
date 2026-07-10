@@ -390,25 +390,43 @@ const tableSortToggle = (key: TableSortKey): void => {
 // header labels it "Output speed" (tok/s, higher = better), so clicking
 // asc/desc must produce the ordering the label promises. Bake the invert
 // into a single effectiveSign so null-handling stays consistent — nulls
-// always sort last regardless of direction.
+// always sort last regardless of direction. Group-by sort uses a
+// Schwartzian transform: resolveGroupName reads a Map per invocation, so
+// pre-resolving the sort key once per row saves 2*(N log N) Map lookups
+// per table across the 6 breakdown tables.
 const sortedRows = (rows: readonly PerformanceDisplayRecord[], groupBy: GroupBy): PerformanceDisplayRecord[] => {
   const key = tableSortKey.value;
   const dir = tableSortDir.value;
   const invert = key === 'tpotUsP95' ? -1 : 1;
   const sign = (dir === 'asc' ? 1 : -1) * invert;
+  if (key === 'group') {
+    return rows
+      .map(r => ({ r, sortKey: resolveGroupName(r.group, groupBy) }))
+      .sort((a, b) => a.sortKey.localeCompare(b.sortKey) * sign)
+      .map(x => x.r);
+  }
   const compareNumbers = (a: number | null, b: number | null): number => {
     if (a === null && b === null) return 0;
     if (a === null) return 1;
     if (b === null) return -1;
     return (a - b) * sign;
   };
-  return [...rows].sort((a, b) => {
-    if (key === 'group') {
-      return resolveGroupName(a.group, groupBy).localeCompare(resolveGroupName(b.group, groupBy)) * sign;
-    }
-    return compareNumbers(a[key], b[key]);
-  });
+  return [...rows].sort((a, b) => compareNumbers(a[key], b[key]));
 };
+
+// Every reactive tick — including loading-spinner opacity toggles — would
+// re-invoke sortedRows for all 6 tables if it stayed a template-called
+// function. Wrap the 6 rows arrays in a single computed so the sort only
+// re-runs when its actual inputs change (row snapshot, sort key/dir, or
+// any name-resolver map behind the group-column sort).
+const breakdownTables = computed(() => [
+  { key: 'model' as const, label: 'By Model', rows: overview.value.modelRows, header: 'Model' },
+  { key: 'upstream' as const, label: 'By Upstream', rows: overview.value.upstreamRows, header: 'Upstream' },
+  { key: 'runtimeLocation' as const, label: 'By Region', rows: overview.value.runtimeRows, header: 'Region' },
+  { key: 'operation' as const, label: 'By Operation', rows: overview.value.operationRows, header: 'Operation' },
+  { key: 'userId' as const, label: 'By User', rows: overview.value.userRows, header: 'User' },
+  { key: 'keyId' as const, label: 'By API Key', rows: overview.value.keyRows, header: 'API Key' },
+].map(t => ({ ...t, sortedRows: sortedRows(t.rows, t.key) })));
 
 const sortIndicator = (key: TableSortKey): string => {
   if (tableSortKey.value !== key) return '';
@@ -703,14 +721,7 @@ const performanceSummary = computed<PerformanceDisplayRecord>(() => overview.val
       </div>
 
       <div class="grid grid-cols-1 gap-5 mt-6 pt-5 border-t border-white/5 lg:grid-cols-2">
-        <div v-for="table in [
-          { key: 'model' as const, label: 'By Model', rows: overview.modelRows, header: 'Model' },
-          { key: 'upstream' as const, label: 'By Upstream', rows: overview.upstreamRows, header: 'Upstream' },
-          { key: 'runtimeLocation' as const, label: 'By Region', rows: overview.runtimeRows, header: 'Region' },
-          { key: 'operation' as const, label: 'By Operation', rows: overview.operationRows, header: 'Operation' },
-          { key: 'userId' as const, label: 'By User', rows: overview.userRows, header: 'User' },
-          { key: 'keyId' as const, label: 'By API Key', rows: overview.keyRows, header: 'API Key' },
-        ]" :key="table.key" v-show="table.rows.length > 0">
+        <div v-for="table in breakdownTables" :key="table.key" v-show="table.rows.length > 0">
           <span class="text-xs font-medium text-gray-500 uppercase tracking-widest mb-3 block">{{ table.label }}</span>
           <OverlayScrollbars class="rounded-md border border-white/5" no-tabindex>
             <table class="w-full text-sm">
@@ -724,7 +735,7 @@ const performanceSummary = computed<PerformanceDisplayRecord>(() => overview.val
                 </tr>
               </thead>
               <tbody class="divide-y divide-white/5">
-                <tr v-for="row in sortedRows(table.rows, table.key)" :key="row.group">
+                <tr v-for="row in table.sortedRows" :key="row.group">
                   <td class="px-3 py-2 text-gray-300">{{ resolveGroupName(row.group, table.key) }}</td>
                   <td class="px-3 py-2 text-right font-mono text-gray-400">{{ row.requests.toLocaleString() }}</td>
                   <td class="px-3 py-2 text-right font-mono text-gray-400">{{ row.errors.toLocaleString() }}</td>
