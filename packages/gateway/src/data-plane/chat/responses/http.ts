@@ -107,7 +107,7 @@ export const responsesHttp = {
         }
         await settleUsageAndPerformance(
           ctx,
-          { modelIdentity: result.modelIdentity, ...(result.performance ? { performance: result.performance } : {}) },
+          { modelIdentity: result.modelIdentity, performance: result.performance },
           result.usage,
           failed,
           'Responses HTTP (compact)',
