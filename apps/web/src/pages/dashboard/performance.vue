@@ -433,7 +433,14 @@ const performanceSummary = computed<PerformanceDisplayRecord>(() => overview.val
         {{ performanceError }}
       </div>
 
-      <div class="grid grid-cols-2 gap-3 mb-6 lg:grid-cols-4">
+      <div class="mb-2 flex justify-end">
+        <ChartSeriesControls label="Performance series selection" @select="applySeriesSelection(hiddenPerformanceSeries, performanceSeriesIds, $event)" />
+      </div>
+      <div style="height: 340px; position: relative;">
+        <ChartCanvas :config="chartConfig" />
+      </div>
+
+      <div class="grid grid-cols-2 gap-3 mt-6 lg:grid-cols-4">
         <div class="rounded-md border border-white/5 bg-surface-800/60 px-3 py-3">
           <span class="block text-xs text-gray-500 mb-1">Requests</span>
           <span class="block text-lg font-bold font-mono text-white">{{ performanceSummary.requests.toLocaleString() }}</span>
@@ -466,13 +473,6 @@ const performanceSummary = computed<PerformanceDisplayRecord>(() => overview.val
           <span class="block text-xs text-gray-500 mb-1">Output speed p99</span>
           <span class="block text-lg font-bold font-mono text-white">{{ formatTokPerSec(performanceSummary.tpotUsP99) }}</span>
         </div>
-      </div>
-
-      <div class="mb-2 flex justify-end">
-        <ChartSeriesControls label="Performance series selection" @select="applySeriesSelection(hiddenPerformanceSeries, performanceSeriesIds, $event)" />
-      </div>
-      <div style="height: 340px; position: relative;">
-        <ChartCanvas :config="chartConfig" />
       </div>
 
       <div class="grid grid-cols-1 gap-5 mt-6 pt-5 border-t border-white/5 lg:grid-cols-2">
