@@ -3,7 +3,8 @@ import { useIntervalFn } from '@vueuse/core';
 import type { TooltipItem } from 'chart.js';
 import type { ChartConfiguration } from 'chart.js/auto';
 import { defineBasicLoader } from 'unplugin-vue-router/data-loaders/basic';
-import { computed, ref, watch } from 'vue';
+import { computed, ref, watch, watchEffect } from 'vue';
+import { useRoute, useRouter, type LocationQuery, type LocationQueryValue } from 'vue-router';
 
 import { callApi, useApi } from '../../api/client.ts';
 import ChartCanvas from '../../components/charts/ChartCanvas.vue';
@@ -16,6 +17,10 @@ import { OverlayScrollbars, Spinner } from '@floway-dev/ui';
 
 type PerformanceView = 'all-by-user' | 'self-by-key';
 type GroupBy = 'keyId' | 'userId' | 'model' | 'upstream' | 'operation' | 'runtimeLocation';
+type MetricView = 'ttft' | 'tokPerSec';
+type PercentileKey = 'p50' | 'p95' | 'p99';
+type TableSortKey = 'group' | 'requests' | 'errors' | 'ttftMsP95' | 'tpotUsP95';
+type SortDir = 'asc' | 'desc';
 
 interface PerformanceDisplayRecord {
   bucket: string;
@@ -62,19 +67,82 @@ const emptyOverview = (): PerformanceOverviewResponse => ({
   users: [], keys: [],
 });
 
-export const usePerformancePageData = defineBasicLoader(async () => {
+// URL <-> state (de)serialization. Every widget's state lives in the URL query
+// so refreshing / copying the URL restores the same view. Only non-default
+// values are written so pristine URLs stay clean.
+const GROUP_BY_VALUES = ['model', 'upstream', 'operation', 'runtimeLocation', 'keyId', 'userId'] as const;
+const METRIC_VALUES = ['ttft', 'tokPerSec'] as const;
+const PERCENTILE_VALUES = ['p50', 'p95', 'p99'] as const;
+const RANGE_VALUES = ['today', '7d', '30d'] as const;
+const SORT_KEY_VALUES = ['group', 'requests', 'errors', 'ttftMsP95', 'tpotUsP95'] as const;
+const SORT_DIR_VALUES = ['asc', 'desc'] as const;
+
+const asStr = (v: LocationQueryValue | LocationQueryValue[] | undefined): string =>
+  (typeof v === 'string' ? v : '');
+const asOneOf = <T extends string>(v: string, allowed: readonly T[], fallback: T): T =>
+  (allowed as readonly string[]).includes(v) ? (v as T) : fallback;
+
+interface UrlState {
+  metric: MetricView;
+  percentile: PercentileKey;
+  groupBy: GroupBy;
+  range: DashboardRange;
+  filterModel: string;
+  filterUpstream: string;
+  filterOperation: string;
+  filterRuntime: string;
+  filterUserId: string;
+  filterKeyId: string;
+  hidden: string[];
+  sortKey: TableSortKey;
+  sortDir: SortDir;
+}
+
+const parseUrlState = (q: LocationQuery): UrlState => ({
+  metric: asOneOf(asStr(q.m), METRIC_VALUES, 'ttft'),
+  percentile: asOneOf(asStr(q.pct), PERCENTILE_VALUES, 'p95'),
+  groupBy: asOneOf(asStr(q.g), GROUP_BY_VALUES, 'model'),
+  range: asOneOf(asStr(q.r), RANGE_VALUES, 'today'),
+  filterModel: asStr(q.fm),
+  filterUpstream: asStr(q.fu),
+  filterOperation: asStr(q.fo),
+  filterRuntime: asStr(q.fr),
+  filterUserId: asStr(q.fusr),
+  filterKeyId: asStr(q.fk),
+  hidden: asStr(q.hide).split(',').filter(Boolean),
+  sortKey: asOneOf(asStr(q.sort), SORT_KEY_VALUES, 'requests'),
+  sortDir: asOneOf(asStr(q.dir), SORT_DIR_VALUES, 'desc'),
+});
+
+const buildOverviewQuery = (state: UrlState, view: PerformanceView, at: number): Record<string, string> => {
+  const { start, end, bucket } = dashboardRangeQuery(state.range, at);
+  const q: Record<string, string> = {
+    start, end, bucket,
+    timezone_offset_minutes: String(new Date().getTimezoneOffset()),
+    view,
+    group_by: state.groupBy,
+  };
+  if (state.filterModel !== '') q.filter_model = state.filterModel;
+  if (state.filterUpstream !== '') q.filter_upstream = state.filterUpstream;
+  if (state.filterOperation !== '') q.filter_operation = state.filterOperation;
+  if (state.filterRuntime !== '') q.filter_runtime_location = state.filterRuntime;
+  if (state.filterUserId !== '') q.filter_user_id = state.filterUserId;
+  if (state.filterKeyId !== '') q.filter_key_id = state.filterKeyId;
+  return q;
+};
+
+export const usePerformancePageData = defineBasicLoader('/dashboard/performance', async route => {
   const api = useApi();
   const auth = useAuthStore();
   const upstreamsStore = useUpstreamsStore();
   const view: PerformanceView = auth.canViewGlobalTelemetry ? 'all-by-user' : 'self-by-key';
-  const { start, end, bucket } = dashboardRangeQuery('today', Date.now());
+  const initial = parseUrlState(route.query);
+  const query = buildOverviewQuery(initial, view, Date.now());
   // Load upstream names in parallel with the perf overview so By-Upstream tables
   // and chart legends can resolve upstream ids to human-readable names. Store is
   // module-scoped, so this is a no-op when the user has already visited Settings.
   const [overviewRes] = await Promise.all([
-    callApi<PerformanceOverviewResponse>(() => api.api.performance.overview.$get({
-      query: { start, end, bucket, timezone_offset_minutes: String(new Date().getTimezoneOffset()), view },
-    })),
+    callApi<PerformanceOverviewResponse>(() => api.api.performance.overview.$get({ query })),
     upstreamsStore.upstreams.value
       ? Promise.resolve()
       : upstreamsStore.load().catch(err => {
@@ -93,12 +161,10 @@ export const usePerformancePageData = defineBasicLoader(async () => {
 </script>
 
 <script setup lang="ts">
-type MetricView = 'ttft' | 'tokPerSec';
-type PercentileKey = 'p50' | 'p95' | 'p99';
-
 const api = useApi();
-const auth = useAuthStore();
 const upstreamsStore = useUpstreamsStore();
+const route = useRoute();
+const router = useRouter();
 const initialOverview = usePerformancePageData();
 
 // View is resolved once from the caller's permission — admins see all users'
@@ -106,49 +172,55 @@ const initialOverview = usePerformancePageData();
 // a toggle; the underlying backend `view` param is still threaded through.
 const performanceView: PerformanceView = initialOverview.data.value.view;
 
-// Filters applied at the backend before aggregation. Empty string = no filter.
-const filterModel = ref<string>('');
-const filterUpstream = ref<string>('');
-const filterOperation = ref<string>('');
-const filterRuntime = ref<string>('');
-const filterUserId = ref<string>('');   // numeric string; backend parses
-const filterKeyId = ref<string>('');
-
-const performanceRange = ref<DashboardRange>('today');
-const loadedPerformanceRange = ref<DashboardRange>('today');
+// Initialize every ref from the URL so the page opens in the same state that
+// was captured when the URL was minted (bookmark / share). The subsequent
+// syncStateToUrl watchEffect writes changes back so refreshing preserves them.
+const initial = parseUrlState(route.query);
+const filterModel = ref<string>(initial.filterModel);
+const filterUpstream = ref<string>(initial.filterUpstream);
+const filterOperation = ref<string>(initial.filterOperation);
+const filterRuntime = ref<string>(initial.filterRuntime);
+const filterUserId = ref<string>(initial.filterUserId);
+const filterKeyId = ref<string>(initial.filterKeyId);
+const performanceRange = ref<DashboardRange>(initial.range);
+const loadedPerformanceRange = ref<DashboardRange>(initial.range);
 // Buckets and the request window are derived from the same `loadedAt` so the
 // chart axis stays in lockstep with whichever data snapshot is currently shown.
 const loadedAt = ref(Date.now());
-const performanceMetric = ref<MetricView>('ttft');
-const performancePercentile = ref<PercentileKey>('p95');
-const performanceGroupBy = ref<GroupBy>('model');
-const hiddenPerformanceSeries = ref(new Set<string>());
+const performanceMetric = ref<MetricView>(initial.metric);
+const performancePercentile = ref<PercentileKey>(initial.percentile);
+const performanceGroupBy = ref<GroupBy>(initial.groupBy);
+const hiddenPerformanceSeries = ref(new Set<string>(initial.hidden));
+const tableSortKey = ref<TableSortKey>(initial.sortKey);
+const tableSortDir = ref<SortDir>(initial.sortDir);
 
 const overview = ref<PerformanceOverviewResponse>(initialOverview.data.value.overview);
 const performanceError = ref<string | null>(initialOverview.data.value.error);
 const performanceLoading = ref(false);
 let performanceRequestId = 0;
 
+const currentUrlState = (): UrlState => ({
+  metric: performanceMetric.value,
+  percentile: performancePercentile.value,
+  groupBy: performanceGroupBy.value,
+  range: performanceRange.value,
+  filterModel: filterModel.value,
+  filterUpstream: filterUpstream.value,
+  filterOperation: filterOperation.value,
+  filterRuntime: filterRuntime.value,
+  filterUserId: filterUserId.value,
+  filterKeyId: filterKeyId.value,
+  hidden: [...hiddenPerformanceSeries.value],
+  sortKey: tableSortKey.value,
+  sortDir: tableSortDir.value,
+});
+
 const load = async () => {
   const requestId = ++performanceRequestId;
   const requestedRange = performanceRange.value;
-  const requestedGroupBy = performanceGroupBy.value;
   const requestedAt = Date.now();
   performanceLoading.value = true;
-  const { start, end, bucket } = dashboardRangeQuery(requestedRange, requestedAt);
-  const query: Record<string, string> = {
-    start, end, bucket,
-    timezone_offset_minutes: String(new Date().getTimezoneOffset()),
-    view: performanceView,
-    group_by: requestedGroupBy,
-  };
-  if (filterModel.value !== '') query.filter_model = filterModel.value;
-  if (filterUpstream.value !== '') query.filter_upstream = filterUpstream.value;
-  if (filterOperation.value !== '') query.filter_operation = filterOperation.value;
-  if (filterRuntime.value !== '') query.filter_runtime_location = filterRuntime.value;
-  if (filterUserId.value !== '') query.filter_user_id = filterUserId.value;
-  if (filterKeyId.value !== '') query.filter_key_id = filterKeyId.value;
-
+  const query = buildOverviewQuery(currentUrlState(), performanceView, requestedAt);
   const { data, error: err } = await callApi<PerformanceOverviewResponse>(() => api.api.performance.overview.$get({ query }));
   if (requestId !== performanceRequestId) return;
   performanceLoading.value = false;
@@ -159,8 +231,34 @@ const load = async () => {
   loadedAt.value = requestedAt;
 };
 
+// Any of these state fields going in => triggers a re-fetch (they all affect
+// the response). Chart-only fields (hiddenPerformanceSeries) and pure display
+// fields (percentile, metric, sort key/dir) don't need a re-fetch.
 watch([performanceRange, performanceGroupBy, filterModel, filterUpstream, filterOperation, filterRuntime, filterUserId, filterKeyId], load);
 useIntervalFn(() => { void load(); }, 60_000);
+
+// Sync every state field to the URL query. Only non-default values are
+// written so a pristine dashboard URL is `/dashboard/performance` with no
+// junk trailing it. `router.replace` (not `push`) so click-heavy toggling
+// doesn't flood the browser history.
+watchEffect(() => {
+  const s = currentUrlState();
+  const q: Record<string, string> = {};
+  if (s.metric !== 'ttft') q.m = s.metric;
+  if (s.percentile !== 'p95') q.pct = s.percentile;
+  if (s.groupBy !== 'model') q.g = s.groupBy;
+  if (s.range !== 'today') q.r = s.range;
+  if (s.filterModel !== '') q.fm = s.filterModel;
+  if (s.filterUpstream !== '') q.fu = s.filterUpstream;
+  if (s.filterOperation !== '') q.fo = s.filterOperation;
+  if (s.filterRuntime !== '') q.fr = s.filterRuntime;
+  if (s.filterUserId !== '') q.fusr = s.filterUserId;
+  if (s.filterKeyId !== '') q.fk = s.filterKeyId;
+  if (s.hidden.length > 0) q.hide = s.hidden.join(',');
+  if (s.sortKey !== 'requests') q.sort = s.sortKey;
+  if (s.sortDir !== 'desc') q.dir = s.sortDir;
+  void router.replace({ query: q });
+});
 
 // Group-by dropdown: By User is admin-only (every self-view row belongs
 // to the actor by construction, so splitting by user is a no-op there).
@@ -205,14 +303,6 @@ const resolveGroupName = (group: string, groupBy: GroupBy): string => {
   if (groupBy === 'keyId') return keyNameById.value.get(group) ?? group;
   return group;
 };
-
-// Shared sort key across all break-down tables. Every table carries the same
-// columns (Req / Errors / TTFT p95 / Output speed p95) so clicking any header
-// re-orders every table. Independent from the chart's metric/percentile.
-type TableSortKey = 'group' | 'requests' | 'errors' | 'ttftMsP95' | 'tpotUsP95';
-type SortDir = 'asc' | 'desc';
-const tableSortKey = ref<TableSortKey>('requests');
-const tableSortDir = ref<SortDir>('desc');
 
 const tableSortToggle = (key: TableSortKey): void => {
   if (tableSortKey.value === key) {
@@ -436,7 +526,9 @@ const performanceSummary = computed<PerformanceDisplayRecord>(() => overview.val
       </div>
 
       <!-- Row 2: filter dropdowns — every filter is AND at the backend, options are drawn from the un-filtered dataset.
-           The dimension currently used as the group-by axis is hidden (filtering to one value would collapse the split). -->
+           The dimension currently used as the group-by axis is hidden (filtering to one value would collapse the split).
+           User and API Key are hierarchically related (a key belongs to exactly one user), so grouping by either hides
+           both filters — cross-hierarchy filtering just degenerates the view. -->
       <div class="mb-6 flex flex-wrap items-center gap-x-4 gap-y-2">
         <label v-if="performanceGroupBy !== 'model'" class="flex items-center gap-1.5 text-xs text-gray-500">
           <span>Model:</span>
