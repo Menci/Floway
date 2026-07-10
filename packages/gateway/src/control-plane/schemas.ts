@@ -676,7 +676,7 @@ export const performanceQuery = z.object({
   // as "absent filter". Negative ids can never resolve — user ids are
   // always positive — and would silently return an empty result, so the
   // regex rejects them.
-  filter_user_id: z.union([z.literal(''), z.string().regex(/^\d+$/, 'filter_user_id must be a non-negative integer')]).optional()
-    .transform(v => (v === undefined || v === '' ? undefined : Number(v))),
+  filter_user_id: z.union([z.literal(''), z.string().regex(/^\d+$/, 'filter_user_id must be a non-negative integer')])
+    .transform(v => (v === '' ? undefined : Number(v))).optional(),
   filter_key_id: z.string().optional(),
 });
