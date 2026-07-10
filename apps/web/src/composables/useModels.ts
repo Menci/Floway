@@ -8,14 +8,17 @@ interface ModelsResponse {
   data: ControlPlaneModel[];
 }
 
-// Two stores share this core. The server returns gateway-wide rows for
+// Three stores share this core. The server returns gateway-wide rows for
 // admin sessions and scoped rows for non-admin sessions, so every surface
 // that mounts under `requiresAdmin` (alias edit dialog, settings card,
 // Models playground) gets the full catalog and filters client-side as
 // needed. `useModelsStore` includes synthesised alias entries (the
 // default `/v1/models` view); `useRawModelsStore` drops alias merging
 // and adds `include_unlisted=true` so the alias editor's combobox sees
-// every id the data-plane resolver would accept.
+// every id the data-plane resolver would accept; `useAddressableModelsStore`
+// keeps alias merging AND `include_unlisted=true` so the Agent Setup page
+// offers every chat id a downstream agent could address — listed catalog,
+// operator aliases, and prefix-form alternates alike.
 const makeStore = (params: { includeAliases: boolean; includeUnlisted?: boolean }) => {
   const models = ref<ControlPlaneModel[] | null>(null);
   const loading = ref(false);
@@ -45,3 +48,4 @@ const makeStore = (params: { includeAliases: boolean; includeUnlisted?: boolean 
 
 export const useModelsStore = makeStore({ includeAliases: true });
 export const useRawModelsStore = makeStore({ includeAliases: false, includeUnlisted: true });
+export const useAddressableModelsStore = makeStore({ includeAliases: true, includeUnlisted: true });
