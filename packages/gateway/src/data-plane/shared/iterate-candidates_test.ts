@@ -1,35 +1,47 @@
 import { describe, expect, it } from 'vitest';
 
 import { iterateCandidates } from './iterate-candidates.ts';
-import type { ModelCandidate } from '@floway-dev/provider';
+import type { ModelCandidate, PerformanceTelemetryContext } from '@floway-dev/provider';
 
 const stubCandidate = (id: string): ModelCandidate =>
   ({ model: { id }, provider: { upstream: 'up' } } as unknown as ModelCandidate);
 
+const stubTelemetry = (upstream: string): PerformanceTelemetryContext =>
+  ({ upstream, model: { id: 'm', canonicalizedId: 'm' }, operation: 'chat' } as unknown as PerformanceTelemetryContext);
+
 describe('iterateCandidates', () => {
-  it('resets perfTiming to null at the start of every candidate attempt', async () => {
-    const perfTiming = { upstreamCallStartedAt: 999, firstOutputTokenAt: 999, attemptTelemetry: undefined };
-    const observed: Array<{ upstreamCallStartedAt: number | null; firstOutputTokenAt: number | null }> = [];
+  it('resets perfTiming to null/undefined at the start of every candidate attempt', async () => {
+    const perfTiming = { upstreamCallStartedAt: 999, firstOutputTokenAt: 999, attemptTelemetry: stubTelemetry('carryover') as PerformanceTelemetryContext | undefined };
+    const observed: Array<{ upstreamCallStartedAt: number | null; firstOutputTokenAt: number | null; attemptTelemetry: PerformanceTelemetryContext | undefined }> = [];
 
     await iterateCandidates(
       [stubCandidate('a'), stubCandidate('b'), stubCandidate('c')],
       'test',
       perfTiming,
       async candidate => {
-        observed.push({ upstreamCallStartedAt: perfTiming.upstreamCallStartedAt, firstOutputTokenAt: perfTiming.firstOutputTokenAt });
+        observed.push({
+          upstreamCallStartedAt: perfTiming.upstreamCallStartedAt,
+          firstOutputTokenAt: perfTiming.firstOutputTokenAt,
+          attemptTelemetry: perfTiming.attemptTelemetry,
+        });
         // simulate an attempt that stamps then fails, so the loop advances
         perfTiming.upstreamCallStartedAt = 100;
         perfTiming.firstOutputTokenAt = 200;
+        perfTiming.attemptTelemetry = stubTelemetry(candidate.model.id);
         return candidate.model.id === 'c'
           ? { type: 'events' as const }
           : { type: 'api-error' as const };
       },
     );
 
+    // Every attempt must observe cleared slots on entry — a prior candidate's
+    // stamps (or the caller-supplied carryover) must not survive into the next
+    // attempt. Regressing this reintroduces the mid-attempt-throw
+    // misattribution the reset was added to prevent.
     expect(observed).toEqual([
-      { upstreamCallStartedAt: null, firstOutputTokenAt: null },
-      { upstreamCallStartedAt: null, firstOutputTokenAt: null },
-      { upstreamCallStartedAt: null, firstOutputTokenAt: null },
+      { upstreamCallStartedAt: null, firstOutputTokenAt: null, attemptTelemetry: undefined },
+      { upstreamCallStartedAt: null, firstOutputTokenAt: null, attemptTelemetry: undefined },
+      { upstreamCallStartedAt: null, firstOutputTokenAt: null, attemptTelemetry: undefined },
     ]);
   });
 
