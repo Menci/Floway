@@ -343,8 +343,37 @@ test('/api/performance rejects non-numeric filter_user_id at the schema boundary
 
   assertEquals(response.status, 400);
   assertEquals(await response.json(), {
-    error: 'filter_user_id must be an integer',
+    error: 'filter_user_id must be a non-negative integer',
   });
+});
+
+test('/api/performance rejects negative filter_user_id', async () => {
+  const { apiKey } = await setupAppTest();
+
+  const response = await requestApp('/api/performance?start=2026-04-30T00&end=2026-05-01T00&filter_user_id=-5', { headers: { 'x-api-key': apiKey.key } });
+
+  assertEquals(response.status, 400);
+  assertEquals(await response.json(), {
+    error: 'filter_user_id must be a non-negative integer',
+  });
+});
+
+test('/api/performance treats empty filter_user_id as absent', async () => {
+  // Stale dashboard bookmarks may carry `filter_user_id=` with no value; the
+  // schema tightening for the negative-id reject must not regress those to 400.
+  const { apiKey } = await setupAppTest();
+
+  const response = await requestApp('/api/performance?start=2026-04-30T00&end=2026-05-01T00&filter_user_id=', { headers: { 'x-api-key': apiKey.key } });
+
+  assertEquals(response.status, 200);
+});
+
+test('/api/performance accepts numeric filter_user_id', async () => {
+  const { apiKey } = await setupAppTest();
+
+  const response = await requestApp('/api/performance?start=2026-04-30T00&end=2026-05-01T00&filter_user_id=42', { headers: { 'x-api-key': apiKey.key } });
+
+  assertEquals(response.status, 200);
 });
 
 test('/api/performance all-by-user attributes soft-deleted keys to their original owner', async () => {
