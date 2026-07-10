@@ -162,17 +162,20 @@ const load = async () => {
 watch([performanceRange, performanceGroupBy, filterModel, filterUpstream, filterOperation, filterRuntime, filterUserId, filterKeyId], load);
 useIntervalFn(() => { void load(); }, 60_000);
 
-// Group-by dropdown options depend on view: keyId only makes sense in
-// self-by-key (the actor's own keys), userId only in all-by-user (admins).
+// Group-by dropdown: By User is admin-only (every self-view row belongs
+// to the actor by construction, so splitting by user is a no-op there).
+// By API Key is available in both views — admins see every user's keys,
+// self-scoped users see only their own.
 const groupByOptions = computed<{ value: GroupBy; label: string }[]>(() => {
   const shared: { value: GroupBy; label: string }[] = [
     { value: 'model', label: 'By Model' },
     { value: 'upstream', label: 'By Upstream' },
     { value: 'operation', label: 'By Operation' },
     { value: 'runtimeLocation', label: 'By Region' },
+    { value: 'keyId', label: 'By API Key' },
   ];
   if (performanceView === 'all-by-user') return [...shared, { value: 'userId', label: 'By User' }];
-  return [...shared, { value: 'keyId', label: 'By API Key' }];
+  return shared;
 });
 
 const performanceSeriesIsolation = createSeriesIsolation();
@@ -432,44 +435,45 @@ const performanceSummary = computed<PerformanceDisplayRecord>(() => overview.val
         </div>
       </div>
 
-      <!-- Row 2: filter dropdowns — every filter is AND at the backend, options are drawn from the un-filtered dataset -->
+      <!-- Row 2: filter dropdowns — every filter is AND at the backend, options are drawn from the un-filtered dataset.
+           The dimension currently used as the group-by axis is hidden (filtering to one value would collapse the split). -->
       <div class="mb-6 flex flex-wrap items-center gap-x-4 gap-y-2">
-        <label class="flex items-center gap-1.5 text-xs text-gray-500">
+        <label v-if="performanceGroupBy !== 'model'" class="flex items-center gap-1.5 text-xs text-gray-500">
           <span>Model:</span>
           <select v-model="filterModel" class="shrink-0 rounded-lg bg-surface-800 px-3 py-1.5 text-xs font-medium text-gray-300 outline-none">
             <option value="">All</option>
             <option v-for="v in overview.dimensionValues.models" :key="v" :value="v">{{ v }}</option>
           </select>
         </label>
-        <label class="flex items-center gap-1.5 text-xs text-gray-500">
+        <label v-if="performanceGroupBy !== 'upstream'" class="flex items-center gap-1.5 text-xs text-gray-500">
           <span>Upstream:</span>
           <select v-model="filterUpstream" class="shrink-0 rounded-lg bg-surface-800 px-3 py-1.5 text-xs font-medium text-gray-300 outline-none">
             <option value="">All</option>
             <option v-for="v in overview.dimensionValues.upstreams" :key="v" :value="v">{{ upstreamNameById.get(v) ?? v }}</option>
           </select>
         </label>
-        <label class="flex items-center gap-1.5 text-xs text-gray-500">
+        <label v-if="performanceGroupBy !== 'operation'" class="flex items-center gap-1.5 text-xs text-gray-500">
           <span>Operation:</span>
           <select v-model="filterOperation" class="shrink-0 rounded-lg bg-surface-800 px-3 py-1.5 text-xs font-medium text-gray-300 outline-none">
             <option value="">All</option>
             <option v-for="v in overview.dimensionValues.operations" :key="v" :value="v">{{ v }}</option>
           </select>
         </label>
-        <label class="flex items-center gap-1.5 text-xs text-gray-500">
+        <label v-if="performanceGroupBy !== 'runtimeLocation'" class="flex items-center gap-1.5 text-xs text-gray-500">
           <span>Region:</span>
           <select v-model="filterRuntime" class="shrink-0 rounded-lg bg-surface-800 px-3 py-1.5 text-xs font-medium text-gray-300 outline-none">
             <option value="">All</option>
             <option v-for="v in overview.dimensionValues.runtimeLocations" :key="v" :value="v">{{ v }}</option>
           </select>
         </label>
-        <label v-if="performanceView === 'all-by-user'" class="flex items-center gap-1.5 text-xs text-gray-500">
+        <label v-if="performanceView === 'all-by-user' && performanceGroupBy !== 'userId'" class="flex items-center gap-1.5 text-xs text-gray-500">
           <span>User:</span>
           <select v-model="filterUserId" class="shrink-0 rounded-lg bg-surface-800 px-3 py-1.5 text-xs font-medium text-gray-300 outline-none">
             <option value="">All</option>
             <option v-for="v in overview.dimensionValues.userIds" :key="v" :value="String(v)">{{ userNameById.get(v) ?? `user ${v}` }}</option>
           </select>
         </label>
-        <label v-if="performanceView === 'self-by-key'" class="flex items-center gap-1.5 text-xs text-gray-500">
+        <label v-if="performanceGroupBy !== 'keyId'" class="flex items-center gap-1.5 text-xs text-gray-500">
           <span>API Key:</span>
           <select v-model="filterKeyId" class="shrink-0 rounded-lg bg-surface-800 px-3 py-1.5 text-xs font-medium text-gray-300 outline-none">
             <option value="">All</option>

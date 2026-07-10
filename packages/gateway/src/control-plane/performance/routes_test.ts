@@ -155,12 +155,40 @@ test('/api/performance rejects all-by-user from a user without canViewGlobalTele
   assertEquals(response.status, 403);
 });
 
-test('/api/performance rejects group_by=keyId in all-by-user mode', async () => {
-  const { adminSession } = await setupAppTest();
+test('/api/performance all-by-user view supports group_by=keyId across every user\'s keys', async () => {
+  const { repo, adminSession, apiKey } = await setupAppTest();
+  // Two keys owned by different users; admin group_by=keyId should surface
+  // both rows without leaking to a self-scoped user (that path is covered
+  // by the self-by-key gate test above).
+  await repo.apiKeys.save({
+    id: 'key_other',
+    userId: 1,
+    name: 'Admin owned',
+    key: 'raw_admin_owned',
+    createdAt: '2026-04-30T00:00:00.000Z',
+    upstreamIds: null,
+    deletedAt: null,
+    dumpRetentionSeconds: null,
+  });
+
+  const sample = {
+    hour: '2026-04-30T10',
+    model: 'gpt-5',
+    upstream: 'copilot:1',
+    operation: 'chat' as const,
+    runtimeLocation: 'LOCAL',
+    ttftMs: 100,
+    tpotUs: 500,
+  };
+  await repo.performance.recordSample({ ...sample, keyId: apiKey.id });
+  await repo.performance.recordSample({ ...sample, keyId: 'key_other' });
+
   const response = await requestApp('/api/performance?start=2026-04-30T00&end=2026-05-01T00&view=all-by-user&group_by=keyId', { headers: { 'x-floway-session': adminSession } });
-  assertEquals(response.status, 400);
+
+  assertEquals(response.status, 200);
   const body = await response.json();
-  assertEquals(body.error, 'group_by=keyId is not allowed in all-by-user mode');
+  const groups = body.records.map((r: { group: string; requests: number }) => [r.group, r.requests]).sort();
+  assertEquals(groups, [[apiKey.id, 1], ['key_other', 1]].sort());
 });
 
 test('/api/performance all-by-user view supports group_by=userId', async () => {

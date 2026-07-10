@@ -77,9 +77,6 @@ const resolveView = (
 ): ResolvedTelemetryView | { error: 'forbidden' | 'bad_request'; message: string } => {
   const resolved = resolveTelemetryView(c, c.req.valid('query').view, params.keyId);
   if ('error' in resolved) return resolved;
-  if (resolved.view === 'all-by-user' && params.groupBy === 'keyId') {
-    return { error: 'bad_request', message: 'group_by=keyId is not allowed in all-by-user mode' };
-  }
   if (resolved.view === 'self-by-key' && params.groupBy === 'userId') {
     return { error: 'bad_request', message: 'group_by=userId is not allowed in self-by-key mode' };
   }
@@ -264,9 +261,11 @@ export const performanceOverview = async (c: Ctx) => {
   const upstreamRows = aggregatePerformanceForDisplay(filtered, { ...baseOptions, bucket: 'all', groupBy: 'upstream' });
   const runtimeRows = aggregatePerformanceForDisplay(filtered, { ...baseOptions, bucket: 'all', groupBy: 'runtimeLocation' });
   const operationRows = aggregatePerformanceForDisplay(filtered, { ...baseOptions, bucket: 'all', groupBy: 'operation' });
-  const keyRows = resolved.view === 'self-by-key'
-    ? aggregatePerformanceForDisplay(filtered, { ...baseOptions, bucket: 'all', groupBy: 'keyId' })
-    : [];
+  // API-key breakdown is available in both views; the admin view sees every
+  // user's keys (name metadata below lists them all), the self view only sees
+  // the actor's. User breakdown is only meaningful in the admin view — every
+  // self-view row belongs to the actor by construction.
+  const keyRows = aggregatePerformanceForDisplay(filtered, { ...baseOptions, bucket: 'all', groupBy: 'keyId' });
   const userRows = resolved.view === 'all-by-user'
     ? aggregatePerformanceForDisplay(filtered, { ...baseOptions, bucket: 'all', groupBy: 'userId', keyToUser })
     : [];
@@ -281,11 +280,12 @@ export const performanceOverview = async (c: Ctx) => {
         .map(u => ({ id: u.id, username: u.username }))
         .sort((a, b) => a.id - b.id)
     : [];
-  const keys = resolved.view === 'self-by-key'
-    ? (await repo.apiKeys.listByUserIdIncludingDeleted(resolved.scopeUserId))
-        .map(k => ({ id: k.id, name: k.name, createdAt: k.createdAt }))
-        .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
-    : [];
+  const keyList = resolved.view === 'all-by-user'
+    ? await repo.apiKeys.listIncludingDeleted()
+    : await repo.apiKeys.listByUserIdIncludingDeleted(resolved.scopeUserId);
+  const keys = keyList
+    .map(k => ({ id: k.id, name: k.name, createdAt: k.createdAt }))
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
 
   return c.json({
     series,
