@@ -80,7 +80,7 @@ export const providerStreamResultToExecuteResult = async <TEvent>(
   targetApi: ChatTargetApi,
   ctx: GatewayCtx,
 ): Promise<ExecuteResult<ProtocolFrame<TEvent>>> => {
-  const context = upstreamPerformanceContext(ctx, candidate, providerResult.modelKey, 'chat');
+  const context = upstreamPerformanceContext(ctx, candidate, 'chat');
   if (!providerResult.ok) {
     return { ...(await readUpstreamApiError(providerResult.response, candidate.provider.upstream)), performance: context };
   }

@@ -211,7 +211,6 @@ test('generate attaches the performance context to the result', async () => {
   assertEquals(result.performance.keyId, API_KEY_ID);
   assertEquals(result.performance.model, 'test-model');
   assertEquals(result.performance.upstream, 'up_perf');
-  assertEquals(result.performance.modelKey, 'gpt-test');
   assertEquals(result.performance.runtimeLocation, 'SJC');
 
   await collectEvents(result.events);

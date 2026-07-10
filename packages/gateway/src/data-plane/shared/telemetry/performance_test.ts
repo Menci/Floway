@@ -11,7 +11,6 @@ const telemetry: PerformanceTelemetryContext = {
   model: 'claude-opus-4-8',
   upstream: 'anthropic-1',
   operation: 'chat',
-  modelKey: 'claude-opus-4-8-2026-06-30',
   runtimeLocation: 'hkg',
 };
 

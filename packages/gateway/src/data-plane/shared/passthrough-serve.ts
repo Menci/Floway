@@ -119,13 +119,9 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
   const { c, ctx, sourceApi, operation, model, kind, modelServesEndpoint, call, response: responseHandling } = input;
   // Populated as attempts land so a throw from `passthroughAttempt` (or
   // the response handling below) can still attribute request-perf to the
-  // candidate the loop was working on when the throw fired. The pre-await
-  // stamp uses `candidate.model.id` as `modelKey` since `PerformanceDimensions`
-  // does not read that field — it isolates dimensions to (keyId, model,
-  // upstream, operation, runtimeLocation) — so the placeholder never
-  // reaches a persisted row. On success we overwrite with the exact
-  // context the attempt returned. A throw before any candidate fired
-  // leaves this undefined; the outer catch below is happy with that.
+  // candidate the loop was working on when the throw fired. A throw
+  // before any candidate fired leaves this undefined; the outer catch
+  // below is happy with that.
   let lastPerformance: PerformanceTelemetryContext | undefined;
 
   try {
@@ -188,8 +184,8 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
         // attempt, so a throw from `passthroughAttempt` (or the upstream
         // call inside it) attributes the outer-catch error row to THIS
         // candidate rather than to whichever one settled last. On success
-        // we overwrite with the attempt's exact context (real modelKey).
-        lastPerformance = upstreamPerformanceContext(ctx, candidate, candidate.model.id, operation);
+        // we overwrite with the attempt's exact context.
+        lastPerformance = upstreamPerformanceContext(ctx, candidate, operation);
         const attempted = await passthroughAttempt({
           c, ctx, candidate, operation,
           call,

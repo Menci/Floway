@@ -6,14 +6,12 @@ import type { ChatTargetApi, ModelCandidate, PerformanceOperation, PerformanceTe
 export const upstreamPerformanceContext = (
   ctx: GatewayCtx,
   candidate: ModelCandidate,
-  modelKey: string,
   operation: PerformanceOperation,
 ): PerformanceTelemetryContext => ({
   keyId: ctx.apiKeyId,
   model: candidate.model.id,
   upstream: candidate.provider.upstream,
   operation,
-  modelKey,
   runtimeLocation: ctx.runtimeLocation,
 });
 

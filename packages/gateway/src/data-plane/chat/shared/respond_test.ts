@@ -20,7 +20,6 @@ const testPerformanceContext: PerformanceTelemetryContext = {
   model: 'claude-test',
   upstream: 'copilot:1',
   operation: 'chat',
-  modelKey: 'claude-test-raw',
   runtimeLocation: 'SJC',
 };
 

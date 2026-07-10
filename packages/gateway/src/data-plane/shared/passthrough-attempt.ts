@@ -55,7 +55,7 @@ export const passthroughAttempt = async (args: PassthroughAttemptArgs): Promise<
     type: 'plain',
     status: response.status,
     response,
-    performance: upstreamPerformanceContext(ctx, candidate, modelKey, operation),
+    performance: upstreamPerformanceContext(ctx, candidate, operation),
     identity: telemetryModelIdentity(candidate, modelKey),
   };
 };

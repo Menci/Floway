@@ -147,12 +147,11 @@ const modelIdentityFor = (modelKey: string) => ({
   modelKey,
 });
 
-const performanceFor = (modelKey: string) => ({
+const performanceFor = (model: string) => ({
   keyId: 'key_test',
-  model: 'gpt-test',
+  model,
   upstream: 'test-upstream',
   operation: 'chat' as const,
-  modelKey,
   stream: true,
   runtimeLocation: 'TEST',
   currentColo: 'TEST',
@@ -291,7 +290,7 @@ test('withCyberPolicyRetried attributes streaming retries to the final provider 
 
   assertEquals(frames.length, 1);
   assertEquals(result.modelIdentity.modelKey, 'final-model-key');
-  assertEquals(result.performance?.modelKey, 'final-model-key');
+  assertEquals(result.performance?.model, 'final-model-key');
 });
 
 test('withCyberPolicyRetried returns successful streams without draining them', async () => {

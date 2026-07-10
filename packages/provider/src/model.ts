@@ -75,7 +75,6 @@ export interface PerformanceTelemetryContext {
   model: string;
   upstream: string;
   operation: PerformanceOperation;
-  modelKey: string;
   runtimeLocation: string;
 }
 
