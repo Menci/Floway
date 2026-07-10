@@ -5,6 +5,9 @@ import { deleteAllResponsesItemPayloadFiles, parseStoredResponsesPayload, RESPON
 import type {
   ApiKey,
   ApiKeyRepo,
+  AgentSetupMutation,
+  AgentSetupRecord,
+  AgentSetupRepo,
   BackoffRow,
   CachedModelsRow,
   ModelAliasesRepo,
@@ -1748,6 +1751,154 @@ class SqlModelAliasesRepo implements ModelAliasesRepo {
   }
 }
 
+interface AgentSetupRow {
+  user_id: number;
+  token: string;
+  api_key_id: string;
+  configuration_json: string;
+  configuration_revision: number;
+  public_base_url: string;
+  expires_at: number;
+  created_at: number;
+  updated_at: number;
+}
+
+const AGENT_SETUP_COLUMNS = 'user_id, token, api_key_id, configuration_json, configuration_revision, public_base_url, expires_at, created_at, updated_at';
+
+const toAgentSetupRecord = (row: AgentSetupRow): AgentSetupRecord => ({
+  userId: row.user_id,
+  token: row.token,
+  apiKeyId: row.api_key_id,
+  configurationJson: row.configuration_json,
+  configurationRevision: row.configuration_revision,
+  publicBaseUrl: row.public_base_url,
+  expiresAt: row.expires_at,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+});
+
+class SqlAgentSetupRepo implements AgentSetupRepo {
+  constructor(private db: SqlDatabase) {}
+
+  async getByUserId(userId: number): Promise<AgentSetupRecord | null> {
+    const row = await this.db
+      .prepare(`SELECT ${AGENT_SETUP_COLUMNS} FROM agent_setup WHERE user_id = ?`)
+      .bind(userId)
+      .first<AgentSetupRow>();
+    return row ? toAgentSetupRecord(row) : null;
+  }
+
+  async findByToken(token: string): Promise<AgentSetupRecord | null> {
+    const row = await this.db
+      .prepare(`SELECT ${AGENT_SETUP_COLUMNS} FROM agent_setup WHERE token = ?`)
+      .bind(token)
+      .first<AgentSetupRow>();
+    return row ? toAgentSetupRecord(row) : null;
+  }
+
+  async replaceForUser(input: {
+    userId: number;
+    token: string;
+    apiKeyId: string;
+    configurationJson: string;
+    publicBaseUrl: string;
+    now: number;
+    expiresAt: number;
+  }): Promise<AgentSetupRecord> {
+    // Upsert on the user PK. A fresh lease starts at revision 1; replacing an
+    // existing lease keeps created_at and advances the revision so a stale
+    // tab's cached revision can never coincide with the new one.
+    const row = await this.db
+      .prepare(
+        `INSERT INTO agent_setup (${AGENT_SETUP_COLUMNS})
+         VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?)
+         ON CONFLICT (user_id) DO UPDATE SET
+           token = excluded.token,
+           api_key_id = excluded.api_key_id,
+           configuration_json = excluded.configuration_json,
+           configuration_revision = agent_setup.configuration_revision + 1,
+           public_base_url = excluded.public_base_url,
+           expires_at = excluded.expires_at,
+           updated_at = excluded.updated_at
+         RETURNING ${AGENT_SETUP_COLUMNS}`,
+      )
+      .bind(input.userId, input.token, input.apiKeyId, input.configurationJson, input.publicBaseUrl, input.expiresAt, input.now, input.now)
+      .first<AgentSetupRow>();
+    if (!row) throw new Error('replaceForUser: upsert returned no rows');
+    return toAgentSetupRecord(row);
+  }
+
+  async updateConfiguration(input: {
+    userId: number;
+    token: string;
+    expectedRevision: number;
+    apiKeyId: string;
+    configurationJson: string;
+    now: number;
+    replacementToken: string;
+    replacementExpiresAt: number;
+  }): Promise<AgentSetupMutation> {
+    // Single-statement CAS on (user_id, token, revision). Expiry only decides
+    // whether the token rotates; the write itself is atomic.
+    const row = await this.db
+      .prepare(
+        `UPDATE agent_setup SET
+           configuration_json = ?,
+           api_key_id = ?,
+           configuration_revision = configuration_revision + 1,
+           token = CASE WHEN expires_at <= ? THEN ? ELSE token END,
+           expires_at = ?,
+           updated_at = ?
+         WHERE user_id = ? AND token = ? AND configuration_revision = ?
+         RETURNING ${AGENT_SETUP_COLUMNS}`,
+      )
+      .bind(
+        input.configurationJson,
+        input.apiKeyId,
+        input.now,
+        input.replacementToken,
+        input.replacementExpiresAt,
+        input.now,
+        input.userId,
+        input.token,
+        input.expectedRevision,
+      )
+      .first<AgentSetupRow>();
+    if (row) return { status: 'ok', record: toAgentSetupRecord(row) };
+    // The atomic write matched nothing. Read the live row purely to classify
+    // the rejection: a mismatched (or absent) token is superseded, otherwise
+    // the token still owns the lease and only the revision was stale.
+    const current = await this.getByUserId(input.userId);
+    if (!current || current.token !== input.token) return { status: 'superseded' };
+    return { status: 'revision-conflict', record: current };
+  }
+
+  async renewLease(input: {
+    userId: number;
+    token: string;
+    now: number;
+    expiresAt: number;
+    replacementToken: string;
+  }): Promise<AgentSetupMutation> {
+    const row = await this.db
+      .prepare(
+        `UPDATE agent_setup SET
+           token = CASE WHEN expires_at <= ? THEN ? ELSE token END,
+           expires_at = ?,
+           updated_at = ?
+         WHERE user_id = ? AND token = ?
+         RETURNING ${AGENT_SETUP_COLUMNS}`,
+      )
+      .bind(input.now, input.replacementToken, input.expiresAt, input.now, input.userId, input.token)
+      .first<AgentSetupRow>();
+    return row ? { status: 'ok', record: toAgentSetupRecord(row) } : { status: 'superseded' };
+  }
+
+  async deleteAll(): Promise<void> {
+    await this.db.prepare('DELETE FROM agent_setup').run();
+  }
+}
+
 export class SqlRepo implements Repo {
   users: UsersRepo;
   sessions: SessionsRepo;
@@ -1763,6 +1914,7 @@ export class SqlRepo implements Repo {
   modelAliases: ModelAliasesRepo;
   responsesItems: ResponsesItemsRepo;
   responsesSnapshots: ResponsesSnapshotsRepo;
+  agentSetup: AgentSetupRepo;
 
   constructor(db: SqlDatabase) {
     this.users = new SqlUsersRepo(db);
@@ -1779,5 +1931,6 @@ export class SqlRepo implements Repo {
     this.modelAliases = new SqlModelAliasesRepo(db);
     this.responsesItems = new SqlResponsesItemsRepo(db);
     this.responsesSnapshots = new SqlResponsesSnapshotsRepo(db);
+    this.agentSetup = new SqlAgentSetupRepo(db);
   }
 }

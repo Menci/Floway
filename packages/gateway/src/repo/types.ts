@@ -364,6 +364,79 @@ export interface ResponsesSnapshotsRepo {
   deleteAll(): Promise<void>;
 }
 
+// Persisted per-user Agent Setup lease. Times are Unix milliseconds.
+export interface AgentSetupRecord {
+  userId: number;
+  // Random lease token embedded in the public setup-script URL. Unique across
+  // users; a fresh lease or an expired-lease rotation replaces it, which is
+  // how a superseded tab's writes stop matching.
+  token: string;
+  apiKeyId: string;
+  configurationJson: string;
+  // Optimistic-concurrency counter for configuration edits. Bumped by
+  // replaceForUser (POST) and successful updateConfiguration (PUT); left
+  // untouched by lease renewal, so a heartbeat never invalidates an in-flight
+  // dashboard edit.
+  configurationRevision: number;
+  // External origin the dashboard was loaded from, captured at lease
+  // creation and echoed into the rendered script. See migration 0050.
+  publicBaseUrl: string;
+  expiresAt: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+// Outcome of a conditional lease write. `superseded` means the caller's token
+// no longer owns the user's lease; `revision-conflict` means the token still
+// owns it but the caller edited against a stale revision — the current record
+// rides along so the caller can rebase.
+export type AgentSetupMutation =
+  | { status: 'ok'; record: AgentSetupRecord }
+  | { status: 'superseded' }
+  | { status: 'revision-conflict'; record: AgentSetupRecord };
+
+export interface AgentSetupRepo {
+  getByUserId(userId: number): Promise<AgentSetupRecord | null>;
+  findByToken(token: string): Promise<AgentSetupRecord | null>;
+  // POST: acquire or replace the user's lease with a fresh token, resetting
+  // expiry and configuration. Bumps configurationRevision (starting at 1) and
+  // preserves createdAt across replacement.
+  replaceForUser(input: {
+    userId: number;
+    token: string;
+    apiKeyId: string;
+    configurationJson: string;
+    publicBaseUrl: string;
+    now: number;
+    expiresAt: number;
+  }): Promise<AgentSetupRecord>;
+  // PUT: write configuration under optimistic concurrency. Applies the token-
+  // mismatch check before the revision check. On success bumps the revision,
+  // extends expiry to replacementExpiresAt, and — only when the lease had
+  // already expired — rotates the token to replacementToken.
+  updateConfiguration(input: {
+    userId: number;
+    token: string;
+    expectedRevision: number;
+    apiKeyId: string;
+    configurationJson: string;
+    now: number;
+    replacementToken: string;
+    replacementExpiresAt: number;
+  }): Promise<AgentSetupMutation>;
+  // Heartbeat: extend expiry for the token's owner, leaving configuration and
+  // revision untouched. Rotates the token to replacementToken only when the
+  // lease had already expired; a non-matching token yields `superseded`.
+  renewLease(input: {
+    userId: number;
+    token: string;
+    now: number;
+    expiresAt: number;
+    replacementToken: string;
+  }): Promise<AgentSetupMutation>;
+  deleteAll(): Promise<void>;
+}
+
 export interface Repo {
   apiKeys: ApiKeyRepo;
   users: UsersRepo;
@@ -379,4 +452,5 @@ export interface Repo {
   modelAliases: ModelAliasesRepo;
   responsesItems: ResponsesItemsRepo;
   responsesSnapshots: ResponsesSnapshotsRepo;
+  agentSetup: AgentSetupRepo;
 }

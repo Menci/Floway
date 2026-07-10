@@ -11,6 +11,9 @@ import { RESPONSES_REFRESH_DEBOUNCE_MS } from './responses-payload.ts';
 import type {
   ApiKey,
   ApiKeyRepo,
+  AgentSetupMutation,
+  AgentSetupRecord,
+  AgentSetupRepo,
   BackoffRow,
   CachedModelsRow,
   ModelAliasesRepo,
@@ -932,6 +935,101 @@ class MemoryModelAliasesRepo implements ModelAliasesRepo {
   }
 }
 
+class MemoryAgentSetupRepo implements AgentSetupRepo {
+  private byUser = new Map<number, AgentSetupRecord>();
+
+  getByUserId(userId: number): Promise<AgentSetupRecord | null> {
+    const found = this.byUser.get(userId);
+    return Promise.resolve(found ? { ...found } : null);
+  }
+
+  findByToken(token: string): Promise<AgentSetupRecord | null> {
+    for (const record of this.byUser.values()) {
+      if (record.token === token) return Promise.resolve({ ...record });
+    }
+    return Promise.resolve(null);
+  }
+
+  replaceForUser(input: {
+    userId: number;
+    token: string;
+    apiKeyId: string;
+    configurationJson: string;
+    publicBaseUrl: string;
+    now: number;
+    expiresAt: number;
+  }): Promise<AgentSetupRecord> {
+    const existing = this.byUser.get(input.userId);
+    const record: AgentSetupRecord = {
+      userId: input.userId,
+      token: input.token,
+      apiKeyId: input.apiKeyId,
+      configurationJson: input.configurationJson,
+      configurationRevision: (existing?.configurationRevision ?? 0) + 1,
+      publicBaseUrl: input.publicBaseUrl,
+      expiresAt: input.expiresAt,
+      createdAt: existing?.createdAt ?? input.now,
+      updatedAt: input.now,
+    };
+    this.byUser.set(input.userId, record);
+    return Promise.resolve({ ...record });
+  }
+
+  updateConfiguration(input: {
+    userId: number;
+    token: string;
+    expectedRevision: number;
+    apiKeyId: string;
+    configurationJson: string;
+    now: number;
+    replacementToken: string;
+    replacementExpiresAt: number;
+  }): Promise<AgentSetupMutation> {
+    const existing = this.byUser.get(input.userId);
+    if (!existing || existing.token !== input.token) return Promise.resolve({ status: 'superseded' });
+    if (existing.configurationRevision !== input.expectedRevision) {
+      return Promise.resolve({ status: 'revision-conflict', record: { ...existing } });
+    }
+    const rotated = existing.expiresAt <= input.now;
+    const record: AgentSetupRecord = {
+      ...existing,
+      apiKeyId: input.apiKeyId,
+      configurationJson: input.configurationJson,
+      configurationRevision: existing.configurationRevision + 1,
+      token: rotated ? input.replacementToken : existing.token,
+      expiresAt: input.replacementExpiresAt,
+      updatedAt: input.now,
+    };
+    this.byUser.set(input.userId, record);
+    return Promise.resolve({ status: 'ok', record: { ...record } });
+  }
+
+  renewLease(input: {
+    userId: number;
+    token: string;
+    now: number;
+    expiresAt: number;
+    replacementToken: string;
+  }): Promise<AgentSetupMutation> {
+    const existing = this.byUser.get(input.userId);
+    if (!existing || existing.token !== input.token) return Promise.resolve({ status: 'superseded' });
+    const rotated = existing.expiresAt <= input.now;
+    const record: AgentSetupRecord = {
+      ...existing,
+      token: rotated ? input.replacementToken : existing.token,
+      expiresAt: input.expiresAt,
+      updatedAt: input.now,
+    };
+    this.byUser.set(input.userId, record);
+    return Promise.resolve({ status: 'ok', record: { ...record } });
+  }
+
+  deleteAll(): Promise<void> {
+    this.byUser.clear();
+    return Promise.resolve();
+  }
+}
+
 export class InMemoryRepo implements Repo {
   apiKeys: ApiKeyRepo;
   users: UsersRepo;
@@ -947,6 +1045,7 @@ export class InMemoryRepo implements Repo {
   modelAliases: ModelAliasesRepo;
   responsesItems: ResponsesItemsRepo;
   responsesSnapshots: ResponsesSnapshotsRepo;
+  agentSetup: AgentSetupRepo;
 
   constructor() {
     this.users = new MemoryUsersRepo();
@@ -963,5 +1062,6 @@ export class InMemoryRepo implements Repo {
     this.modelAliases = new MemoryModelAliasesRepo();
     this.responsesItems = new MemoryResponsesItemsRepo();
     this.responsesSnapshots = new MemoryResponsesSnapshotsRepo();
+    this.agentSetup = new MemoryAgentSetupRepo();
   }
 }
