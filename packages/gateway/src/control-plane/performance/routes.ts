@@ -140,6 +140,10 @@ const applyFilters = (
     if (filters.runtimeLocation !== undefined && r.runtimeLocation !== filters.runtimeLocation) return false;
     if (filters.keyId !== undefined && r.keyId !== filters.keyId) return false;
     if (wantUserId !== null) {
+      // Orphan rows (hard-deleted key → keyToUser miss returns undefined)
+      // never match a numeric filter target; drop them rather than
+      // coercing undefined to 0. This mirrors the aggregation path,
+      // which drops the same rows from the By-User grouping.
       const uid = keyToUser?.get(r.keyId);
       if (uid !== wantUserId) return false;
     }

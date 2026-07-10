@@ -245,3 +245,46 @@ test('aggregatePerformanceForDisplay tpot percentiles derive from the tpot bucke
   assertEquals(rows[0].tpotUsP50, TPOT_MID);
   assertEquals(rows[0].neutral, 0);
 });
+
+test('aggregatePerformanceForDisplay groups by userId via keyToUser and drops orphan-key rows', () => {
+  // key_a → user 7, key_b → user 42, key_ghost → hard-deleted (not in map).
+  // The orphan row must not surface as a synthetic userId 0 bucket.
+  const rows = aggregatePerformanceForDisplay(
+    [
+      record({ keyId: 'key_a', requests: 2, ttftSamples: 0, tpotSamples: 0, ttftMsSum: 0, tpotUsSum: 0, buckets: [] }),
+      record({ keyId: 'key_b', requests: 5, ttftSamples: 0, tpotSamples: 0, ttftMsSum: 0, tpotUsSum: 0, buckets: [] }),
+      record({ keyId: 'key_ghost', requests: 9, ttftSamples: 0, tpotSamples: 0, ttftMsSum: 0, tpotUsSum: 0, buckets: [] }),
+    ],
+    {
+      bucket: 'all',
+      groupBy: 'userId',
+      timezoneOffsetMinutes: 0,
+      keyToUser: new Map([['key_a', 7], ['key_b', 42]]),
+    },
+  );
+
+  assertEquals(rows.length, 2);
+  const byGroup = Object.fromEntries(rows.map(r => [r.group, r.requests]));
+  assertEquals(byGroup, { 7: 2, 42: 5 });
+});
+
+test('aggregatePerformanceForDisplay does not conflate a real userId 0 with orphan-key rows', () => {
+  // key_zero legitimately maps to user 0; key_ghost is hard-deleted. Only the
+  // real user 0 row must appear, and its request count must exclude the ghost.
+  const rows = aggregatePerformanceForDisplay(
+    [
+      record({ keyId: 'key_zero', requests: 3, ttftSamples: 0, tpotSamples: 0, ttftMsSum: 0, tpotUsSum: 0, buckets: [] }),
+      record({ keyId: 'key_ghost', requests: 11, ttftSamples: 0, tpotSamples: 0, ttftMsSum: 0, tpotUsSum: 0, buckets: [] }),
+    ],
+    {
+      bucket: 'all',
+      groupBy: 'userId',
+      timezoneOffsetMinutes: 0,
+      keyToUser: new Map([['key_zero', 0]]),
+    },
+  );
+
+  assertEquals(rows.length, 1);
+  assertEquals(rows[0].group, '0');
+  assertEquals(rows[0].requests, 3);
+});

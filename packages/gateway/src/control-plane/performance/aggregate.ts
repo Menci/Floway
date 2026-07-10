@@ -31,8 +31,10 @@ type AggregateOptions =
     groupBy: 'userId';
     timezoneOffsetMinutes: number;
     // Records whose keyId no longer resolves (operator hard-deleted the key)
-    // collapse into synthetic userId 0; soft-deleted keys still resolve
-    // because keyToUser includes them.
+    // are dropped: they have no defensible owning user to render, and
+    // collapsing them into userId 0 both fabricates a phantom bucket and
+    // conflicts with any real user whose id is 0. Soft-deleted keys still
+    // resolve because keyToUser includes them.
     keyToUser: ReadonlyMap<string, number>;
   };
 
@@ -52,6 +54,7 @@ export function aggregatePerformanceForDisplay(records: readonly PerformanceTele
   for (const record of records) {
     const bucket = displayBucket(record.hour, options);
     const group = displayGroup(record, options);
+    if (group === null) continue;
     const key = `${bucket}\0${group}`;
     let aggregate = aggregates.get(key);
     if (!aggregate) {
@@ -99,10 +102,11 @@ function displayBucket(hour: string, options: Pick<AggregateOptions, 'bucket' | 
   return `${localIso.slice(0, 11)}${String(aligned).padStart(2, '0')}`;
 }
 
-function displayGroup(record: PerformanceTelemetryRecord, options: AggregateOptions): string {
+function displayGroup(record: PerformanceTelemetryRecord, options: AggregateOptions): string | null {
   if (options.groupBy === 'none') return 'all';
   if (options.groupBy === 'userId') {
-    const userId = options.keyToUser.get(record.keyId) ?? 0;
+    const userId = options.keyToUser.get(record.keyId);
+    if (userId === undefined) return null;
     return String(userId);
   }
   return String(record[options.groupBy]);
