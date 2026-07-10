@@ -3,15 +3,14 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { recordRequestPerformance } from './performance.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
-import type { PerformanceTelemetryContext } from '@floway-dev/provider';
+import { mockPerfTelemetryContext } from '@floway-dev/test-utils';
 
-const telemetry: PerformanceTelemetryContext = {
+const telemetry = mockPerfTelemetryContext({
   keyId: 'key_a',
   model: 'claude-opus-4-8',
   upstream: 'anthropic-1',
-  operation: 'chat',
   runtimeLocation: 'hkg',
-};
+});
 
 describe('recordRequestPerformance', () => {
   let repo: InMemoryRepo;

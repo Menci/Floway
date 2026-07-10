@@ -332,10 +332,8 @@ test('passthrough-serve: when every candidate returns non-2xx the most recent up
   );
 });
 
-// A throw from the second candidate's attempt (network error, provider
-// exception, ...) must not attribute the error row to the first candidate
-// that already rolled over — the outer catch in passthrough-serve used to
-// read a `lastPerformance` that was still holding candidate A's identity.
+// A throw during candidate rollover attributes the error row to the
+// throwing candidate, not the previously-succeeded one.
 test('passthrough-serve: throw during rollover attributes the error perf row to the throwing candidate, not the previous one', async () => {
   const { apiKey, repo } = await setupAppTest();
   await registerTwoEmbeddingsUpstreams(repo);

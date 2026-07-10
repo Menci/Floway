@@ -1,4 +1,4 @@
-import { directFetcher, type FlagId, type InternalModel, type ProviderInstance, type Provider, type ProviderModel, type ModelCandidate, type TelemetryModelIdentity, type UpstreamCallOptions, identityWrapUpstreamCall } from '@floway-dev/provider';
+import { directFetcher, type FlagId, type InternalModel, type PerformanceTelemetryContext, type ProviderInstance, type Provider, type ProviderModel, type ModelCandidate, type TelemetryModelIdentity, type UpstreamCallOptions, identityWrapUpstreamCall } from '@floway-dev/provider';
 
 // No-op UpstreamCallOptions factory for tests calling provider methods
 // directly: the fetcher uses runtime fetch so `globalThis.fetch` spies still
@@ -57,6 +57,15 @@ export const testTelemetryModelIdentity: TelemetryModelIdentity = {
   modelKey: 'test-model-key',
   cost: null,
 };
+
+export const mockPerfTelemetryContext = (overrides: Partial<PerformanceTelemetryContext> = {}): PerformanceTelemetryContext => ({
+  keyId: 'test-key',
+  model: 'test-model',
+  upstream: 'test-upstream',
+  operation: 'chat',
+  runtimeLocation: 'SJC',
+  ...overrides,
+});
 
 export const stubProvider = (overrides: Partial<ProviderInstance> = {}): ProviderInstance => ({
   getProvidedModels: overrides.getProvidedModels ?? (() => Promise.resolve([])),

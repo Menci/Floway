@@ -5,8 +5,8 @@ import { SourceStreamState, recordUsage } from './respond.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { recordPerformance } from '../../shared/telemetry/performance.ts';
-import type { PerformanceTelemetryContext, TelemetryModelIdentity } from '@floway-dev/provider';
-import { assertEquals } from '@floway-dev/test-utils';
+import type { TelemetryModelIdentity } from '@floway-dev/provider';
+import { assertEquals, mockPerfTelemetryContext } from '@floway-dev/test-utils';
 
 const testTelemetryModelIdentity: TelemetryModelIdentity = {
   model: 'claude-test',
@@ -15,13 +15,12 @@ const testTelemetryModelIdentity: TelemetryModelIdentity = {
   cost: null,
 };
 
-const testPerformanceContext: PerformanceTelemetryContext = {
+const testPerformanceContext = mockPerfTelemetryContext({
   keyId: '',
   model: 'claude-test',
   upstream: 'copilot:1',
-  operation: 'chat',
   runtimeLocation: 'SJC',
-};
+});
 
 interface Harness {
   repo: InMemoryRepo;
