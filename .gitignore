@@ -16,5 +16,3 @@ apps/web/dist/
 # itself when entry.ts resolves the default `./data/` relative to its own cwd.
 /data/
 apps/platform-node/data/
-
-.task-*-base
