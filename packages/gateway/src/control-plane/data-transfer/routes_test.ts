@@ -245,6 +245,7 @@ const PERFORMANCE_1: PerformanceTelemetryRecord = {
   errors: 1,
   ttftSamples: 4,
   tpotSamples: 4,
+  failedWithOutput: 0,
   ttftMsSum: 1000,
   tpotUsSum: 4000,
   buckets: [
@@ -264,6 +265,7 @@ const PERFORMANCE_2: PerformanceTelemetryRecord = {
   errors: 0,
   ttftSamples: 3,
   tpotSamples: 3,
+  failedWithOutput: 0,
   ttftMsSum: 600,
   tpotUsSum: 1500,
   buckets: [
@@ -477,7 +479,7 @@ test('import rejects performance records that break the recorder invariants', as
     performance: [record],
   });
 
-  // errors + ttftSamples > requests
+  // errors + ttftSamples - failedWithOutput > requests (partition overrun)
   const errorPlusTtftOverflow = await doImport(app, 'replace', withPerf({
     ...PERFORMANCE_1,
     requests: 3,
@@ -485,7 +487,39 @@ test('import rejects performance records that break the recorder invariants', as
     ttftSamples: 2,
   }));
   assertEquals(errorPlusTtftOverflow.status, 400);
-  assertEquals(String(errorPlusTtftOverflow.body.error).includes('errors + ttftSamples must not exceed requests'), true);
+  assertEquals(String(errorPlusTtftOverflow.body.error).includes('errors + ttftSamples - failedWithOutput must not exceed requests'), true);
+
+  // failedWithOutput > errors — the overlap can't exceed either counter it lives in.
+  const failedBeyondErrors = await doImport(app, 'replace', withPerf({
+    ...PERFORMANCE_1,
+    requests: 10,
+    errors: 1,
+    ttftSamples: 4,
+    tpotSamples: 4,
+    failedWithOutput: 2,
+    buckets: [
+      { metric: 'ttft_ms', lower: 100, upper: 142, count: 4 },
+      { metric: 'tpot_us', lower: 1000, upper: 1250, count: 4 },
+    ],
+  }));
+  assertEquals(failedBeyondErrors.status, 400);
+  assertEquals(String(failedBeyondErrors.body.error).includes('failedWithOutput must not exceed errors'), true);
+
+  // failedWithOutput > ttftSamples — the overlap can't exceed either counter it lives in.
+  const failedBeyondTtft = await doImport(app, 'replace', withPerf({
+    ...PERFORMANCE_1,
+    requests: 10,
+    errors: 5,
+    ttftSamples: 2,
+    tpotSamples: 2,
+    failedWithOutput: 3,
+    buckets: [
+      { metric: 'ttft_ms', lower: 100, upper: 142, count: 2 },
+      { metric: 'tpot_us', lower: 1000, upper: 1250, count: 2 },
+    ],
+  }));
+  assertEquals(failedBeyondTtft.status, 400);
+  assertEquals(String(failedBeyondTtft.body.error).includes('failedWithOutput must not exceed ttftSamples'), true);
 
   // tpotSamples > ttftSamples
   const tpotBeyondTtft = await doImport(app, 'replace', withPerf({

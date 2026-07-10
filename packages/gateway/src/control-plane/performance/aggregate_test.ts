@@ -15,6 +15,7 @@ const record = (overrides: Partial<PerformanceTelemetryRecord> = {}): Performanc
   errors: 0,
   ttftSamples: 1,
   tpotSamples: 1,
+  failedWithOutput: 0,
   ttftMsSum: 100,
   tpotUsSum: 500,
   // Bucket edges here are illustrative test fixtures, not the production edge set.
@@ -45,6 +46,7 @@ test('aggregatePerformanceForDisplay produces correct averages and percentiles f
       errors: 0,
       ttftSamples: 1,
       tpotSamples: 1,
+      failedWithOutput: 0,
       neutral: 0,
       ttftMsP50: TTFT_MID,
       ttftMsP95: TTFT_MID,
@@ -82,6 +84,7 @@ test('aggregatePerformanceForDisplay counts error-only rows as displayed request
       errors: 3,
       ttftSamples: 0,
       tpotSamples: 0,
+      failedWithOutput: 0,
       neutral: 0,
       ttftMsP50: null,
       ttftMsP95: null,
@@ -198,7 +201,7 @@ test('aggregatePerformanceForDisplay splits rows by operation when groupBy is op
   assertEquals(groups, ['chat', 'embeddings']);
 });
 
-test('aggregatePerformanceForDisplay derives neutral as requests - ttftSamples - errors', () => {
+test('aggregatePerformanceForDisplay derives neutral as requests - ttftSamples - errors + failedWithOutput', () => {
   const rows = aggregatePerformanceForDisplay(
     [
       record({
@@ -218,12 +221,36 @@ test('aggregatePerformanceForDisplay derives neutral as requests - ttftSamples -
   assertEquals(rows[0].errors, 1);
 });
 
+test('aggregatePerformanceForDisplay backs partial-output failures out of neutral via failedWithOutput', () => {
+  // A row where one of the two errors is a partial-output failure (both in
+  // errors AND ttftSamples). Without the overlap subtraction, neutral would
+  // read `4 - 3 - 2 = -1`; with `failedWithOutput = 1` the aggregator gets
+  // `4 - 3 - 2 + 1 = 0`, matching the recorder's actual partition.
+  const rows = aggregatePerformanceForDisplay(
+    [
+      record({
+        requests: 4, ttftSamples: 3, tpotSamples: 3, errors: 2, failedWithOutput: 1, ttftMsSum: 300, tpotUsSum: 1500, buckets: [
+          { metric: 'ttft_ms', lower: 50, upper: 100, count: 3 },
+          { metric: 'tpot_us', lower: 200, upper: 500, count: 3 },
+        ],
+      }),
+    ],
+    { bucket: 'all', groupBy: 'none', timezoneOffsetMinutes: 0 },
+  );
+
+  assertEquals(rows[0].neutral, 0);
+  assertEquals(rows[0].failedWithOutput, 1);
+  assertEquals(rows[0].errors, 2);
+  assertEquals(rows[0].ttftSamples, 3);
+});
+
 test('aggregatePerformanceForDisplay surfaces negative neutral when input row breaks the recorder invariant', () => {
-  // Recorder atomicity + parsePerformanceRecords guarantee `errors + ttftSamples <= requests`
-  // for anything Floway wrote. A negative neutral therefore indicates the row was corrupted
-  // outside the recorder path (manual D1 UPDATE, future recorder bug). We pass the raw
-  // subtraction through so the corruption surfaces on the dashboard rather than hiding
-  // behind a floor.
+  // Recorder atomicity + parsePerformanceRecords guarantee
+  // `errors + ttftSamples - failedWithOutput <= requests` for anything Floway
+  // wrote. A negative neutral therefore indicates the row was corrupted outside
+  // the recorder path (manual D1 UPDATE, future recorder bug). We pass the raw
+  // subtraction through so the corruption surfaces on the dashboard rather than
+  // hiding behind a floor.
   const rows = aggregatePerformanceForDisplay(
     [record({
       requests: 2, ttftSamples: 3, tpotSamples: 3, errors: 1, ttftMsSum: 300, tpotUsSum: 1500, buckets: [
@@ -237,7 +264,7 @@ test('aggregatePerformanceForDisplay surfaces negative neutral when input row br
   assertEquals(rows[0].neutral, -2);
 });
 
-test('aggregatePerformanceForDisplay neutral is zero for pure chat rows (ttftSamples + errors = requests)', () => {
+test('aggregatePerformanceForDisplay neutral is zero for pure chat rows (ttftSamples + errors - failedWithOutput = requests)', () => {
   const rows = aggregatePerformanceForDisplay(
     [record({
       requests: 4, ttftSamples: 3, tpotSamples: 3, errors: 1, ttftMsSum: 300, tpotUsSum: 1500, buckets: [

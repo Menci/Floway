@@ -392,6 +392,10 @@ class MemoryPerformanceRepo implements PerformanceRepo {
       row.tpotUsSum += sample.tpotUs;
       this.incrementBucket(row, 'tpot_us', bucketForTpotUs(sample.tpotUs));
     }
+    if (sample.failed) {
+      row.errors += 1;
+      row.failedWithOutput += 1;
+    }
   }
 
   async recordError(dims: PerformanceDimensions): Promise<void> {
@@ -446,6 +450,7 @@ class MemoryPerformanceRepo implements PerformanceRepo {
         errors: 0,
         ttftSamples: 0,
         tpotSamples: 0,
+        failedWithOutput: 0,
         ttftMsSum: 0,
         tpotUsSum: 0,
         bucketMap: new Map(),

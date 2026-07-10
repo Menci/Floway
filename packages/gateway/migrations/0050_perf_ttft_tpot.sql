@@ -6,19 +6,28 @@ DROP TABLE IF EXISTS performance_buckets;
 -- a single output token has a measurable TTFT but no TPOT (TPOT is the
 -- inter-token interval, undefined for one token). Non-chat / no-upstream /
 -- no-first-token requests contribute to `requests` only via recordNeutral.
+--
+-- `failed_with_output` counts requests that both errored AND produced
+-- enough output to yield a TTFT sample — a mid-stream failure that
+-- streamed tokens before dying. Such rows increment `errors` AND
+-- `ttft_samples` (and `tpot_samples` when applicable) in a single atomic
+-- upsert. Tracking the overlap separately keeps `neutral = requests -
+-- ttft_samples - errors + failed_with_output` non-negative and lets the
+-- dashboard distinguish clean errors from partial-output errors.
 CREATE TABLE performance_summary (
-  hour             TEXT    NOT NULL,
-  key_id           TEXT    NOT NULL,
-  model            TEXT    NOT NULL,
-  upstream         TEXT    NOT NULL,
-  operation        TEXT    NOT NULL CHECK (operation IN ('chat', 'text_completion', 'embeddings', 'image_generation', 'image_edit')),
-  runtime_location TEXT    NOT NULL DEFAULT 'unknown',
-  requests         INTEGER NOT NULL DEFAULT 0,
-  errors           INTEGER NOT NULL DEFAULT 0,
-  ttft_samples     INTEGER NOT NULL DEFAULT 0,
-  tpot_samples     INTEGER NOT NULL DEFAULT 0,
-  ttft_ms_sum      INTEGER NOT NULL DEFAULT 0,
-  tpot_us_sum      INTEGER NOT NULL DEFAULT 0,
+  hour               TEXT    NOT NULL,
+  key_id             TEXT    NOT NULL,
+  model              TEXT    NOT NULL,
+  upstream           TEXT    NOT NULL,
+  operation          TEXT    NOT NULL CHECK (operation IN ('chat', 'text_completion', 'embeddings', 'image_generation', 'image_edit')),
+  runtime_location   TEXT    NOT NULL DEFAULT 'unknown',
+  requests           INTEGER NOT NULL DEFAULT 0,
+  errors             INTEGER NOT NULL DEFAULT 0,
+  ttft_samples       INTEGER NOT NULL DEFAULT 0,
+  tpot_samples       INTEGER NOT NULL DEFAULT 0,
+  failed_with_output INTEGER NOT NULL DEFAULT 0,
+  ttft_ms_sum        INTEGER NOT NULL DEFAULT 0,
+  tpot_us_sum        INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (hour, key_id, model, upstream, operation, runtime_location)
 );
 

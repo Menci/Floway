@@ -3,8 +3,8 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { recordPerformance } from './performance.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
-import type { PerfTiming } from '../../chat/shared/gateway-ctx.ts';
 import { mockGatewayCtx } from '../../../test-helpers/gateway-ctx.ts';
+import type { PerfTiming } from '../../chat/shared/gateway-ctx.ts';
 import { mockPerfTelemetryContext } from '@floway-dev/test-utils';
 
 const telemetry = mockPerfTelemetryContext({
@@ -122,6 +122,70 @@ describe('recordPerformance', () => {
     // TPOT = 400_000 / 1 = 400_000 μs/tok.
     expect(row!.tpotUsSum).toBe(400_000);
     expect(row).toMatchObject({ requests: 1, ttftSamples: 1, tpotSamples: 1, errors: 0 });
+  });
+
+  // --- partial-output failure ---
+
+  it('records TTFT+TPOT sample AND bumps errors when a stream fails after emitting tokens', async () => {
+    // Mid-stream failure that produced output: the recorder MUST expose
+    // the observed latency (TTFT + TPOT) as a sample AND increment errors,
+    // in one atomic upsert. The `failed_with_output` counter tracks the
+    // overlap so the aggregator can back it out of `neutral`.
+    const ctx = ctxWith({ firstOutputTokenAt: 500, upstreamCallStartedAt: 100, attemptTelemetry: undefined });
+    recordPerformance(ctx, telemetry, true, 200, 1000);
+    await Promise.all(promises);
+    const [row] = await repo.performance.listAll();
+    expect(row).toMatchObject({
+      requests: 1,
+      errors: 1,
+      ttftSamples: 1,
+      tpotSamples: 1,
+      failedWithOutput: 1,
+    });
+    expect(row!.ttftMsSum).toBe(400);
+    expect(row!.tpotUsSum).toBe(2_513);
+    expect(row!.buckets.some(b => b.metric === 'ttft_ms')).toBe(true);
+    expect(row!.buckets.some(b => b.metric === 'tpot_us')).toBe(true);
+  });
+
+  it('records TTFT-only sample AND bumps errors when partial failure produced a single token', async () => {
+    // outputTokens=1 gives no inter-token interval so TPOT stays 0, but TTFT
+    // is real and the failure still counts. failed_with_output tracks the
+    // overlap with the ttft sample.
+    const ctx = ctxWith({ firstOutputTokenAt: 100, upstreamCallStartedAt: 50, attemptTelemetry: undefined });
+    recordPerformance(ctx, telemetry, true, 1, 400);
+    await Promise.all(promises);
+    const [row] = await repo.performance.listAll();
+    expect(row).toMatchObject({
+      requests: 1,
+      errors: 1,
+      ttftSamples: 1,
+      tpotSamples: 0,
+      failedWithOutput: 1,
+      ttftMsSum: 50,
+      tpotUsSum: 0,
+    });
+    expect(row!.buckets.some(b => b.metric === 'ttft_ms')).toBe(true);
+    expect(row!.buckets.some(b => b.metric === 'tpot_us')).toBe(false);
+  });
+
+  it('records pure error (no sample) when a failure produced zero output tokens', async () => {
+    // Even with a first-token stamp on the ctx (rare race), if usage reports
+    // zero tokens the failure lands in the plain error bucket — nothing to
+    // report a TTFT for, and `failed_with_output` stays 0.
+    const ctx = ctxWith({ firstOutputTokenAt: 100, upstreamCallStartedAt: 50, attemptTelemetry: undefined });
+    recordPerformance(ctx, telemetry, true, 0, 400);
+    await Promise.all(promises);
+    const [row] = await repo.performance.listAll();
+    expect(row).toMatchObject({
+      requests: 1,
+      errors: 1,
+      ttftSamples: 0,
+      tpotSamples: 0,
+      failedWithOutput: 0,
+      ttftMsSum: 0,
+    });
+    expect(row!.buckets).toEqual([]);
   });
 
   // --- no-op ---

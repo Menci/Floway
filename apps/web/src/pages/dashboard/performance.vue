@@ -575,6 +575,7 @@ const performanceSummary = computed<PerformanceDisplayRecord>(() => overview.val
   errors: 0,
   ttftSamples: 0,
   tpotSamples: 0,
+  failedWithOutput: 0,
   neutral: 0,
   ttftMsP50: null,
   ttftMsP95: null,

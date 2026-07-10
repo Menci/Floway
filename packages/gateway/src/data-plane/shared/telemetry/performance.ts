@@ -33,13 +33,22 @@ const dimensions = (telemetry: PerformanceTelemetryContext): PerformanceDimensio
 // TTFT is measured from the provider's outbound-fetch stamp so it isolates
 // upstream round-trip latency from gateway-internal overhead. Any success
 // without a real upstream call or first-output-token stamp records as
-// neutral; only genuine upstream failures land in the error bucket. TPOT
-// layers on top only when at least two output tokens streamed — see the
-// per-branch comments below. `requestFinishedAt` is the caller's monotonic
-// timestamp for the end of the token stream. It MUST be sampled before any
-// post-stream persistence work (e.g. the usage D1 write in
-// settleUsageAndPerformance) so TPOT reflects the stream itself rather than
-// the persistence path.
+// neutral; only genuine upstream failures with no output land in a pure
+// error bucket. TPOT layers on top only when at least two output tokens
+// streamed — see the per-branch comments below.
+//
+// A failure that produced output tokens (mid-stream failure that streamed
+// tokens before dying) records a partial-output sample: the row bumps
+// `errors` AND `ttft_samples` (and `tpot_samples` when applicable) in a
+// single atomic upsert, plus the `failed_with_output` counter so the
+// aggregator can back the overlap out of `neutral`. The alternative —
+// dropping the TTFT/TPOT reading — would hide upstream instability from
+// the dashboard whenever failures cluster on real streams.
+//
+// `requestFinishedAt` is the caller's monotonic timestamp for the end of
+// the token stream. It MUST be sampled before any post-stream persistence
+// work (e.g. the usage D1 write in settleUsageAndPerformance) so TPOT
+// reflects the stream itself rather than the persistence path.
 export const recordPerformance = (
   ctx: PerformanceRecordScope,
   telemetry: PerformanceTelemetryContext | undefined,
@@ -51,21 +60,23 @@ export const recordPerformance = (
   if (outputTokens < 0) throw new Error(`recordPerformance: negative outputTokens=${outputTokens}`);
   const { perfTiming, backgroundScheduler: scheduler } = ctx;
   const dims = dimensions(telemetry);
-  if (failed) {
-    scheduler(record(getRepo().performance.recordError(dims), 'error'));
-    return;
-  }
   if (
     telemetry.operation !== 'chat' ||
     perfTiming.upstreamCallStartedAt === null ||
-    perfTiming.firstOutputTokenAt === null
+    perfTiming.firstOutputTokenAt === null ||
+    (failed && outputTokens === 0)
   ) {
-    scheduler(record(getRepo().performance.recordNeutral(dims), 'neutral'));
+    // No TTFT stamp available (non-chat / no upstream call / no first-token
+    // frame), or a failure that produced no tokens: settle to error or neutral
+    // without a sample. TTFT + TPOT contribute only when a real inter-token
+    // window exists AND the stream actually produced tokens.
+    const settle = failed ? getRepo().performance.recordError(dims) : getRepo().performance.recordNeutral(dims);
+    scheduler(record(settle, failed ? 'error' : 'neutral'));
     return;
   }
   const ttftMs = Math.round(perfTiming.firstOutputTokenAt - perfTiming.upstreamCallStartedAt);
   if (outputTokens < 2) {
-    scheduler(record(getRepo().performance.recordSample({ ...dims, ttftMs }), 'sample'));
+    scheduler(record(getRepo().performance.recordSample({ ...dims, ttftMs, failed }), 'sample'));
     return;
   }
   // TPOT is the inter-token generation interval: streamDelta covers only the
@@ -77,13 +88,14 @@ export const recordPerformance = (
   // (https://aigateway.envoyproxy.io/docs/capabilities/observability/metrics/).
   const streamDeltaMs = requestFinishedAt - perfTiming.firstOutputTokenAt;
   const tpotUs = Math.round((streamDeltaMs * 1_000) / (outputTokens - 1));
-  scheduler(record(getRepo().performance.recordSample({ ...dims, ttftMs, tpotUs }), 'sample'));
+  scheduler(record(getRepo().performance.recordSample({ ...dims, ttftMs, tpotUs, failed }), 'sample'));
 };
 
-// Terminal-failure shortcut for every pre-stream / mid-stream error branch:
-// the request produced no output tokens and settles as of now. Sole purpose
-// is to keep the error-branch shape a single verb rather than a five-arg
-// invocation repeated across every protocol renderer.
+// Terminal-failure shortcut for every pre-stream / mid-stream error branch
+// whose failure produced no output tokens (or whose caller doesn't have a
+// token count in hand). Callers with a real usage figure should invoke
+// `recordPerformance` directly so a partial-output failure can still
+// contribute a TTFT / TPOT sample.
 export const recordFailedRequest = (
   ctx: GatewayCtx,
   telemetry: PerformanceTelemetryContext | undefined,

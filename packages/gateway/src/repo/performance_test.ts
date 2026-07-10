@@ -19,6 +19,7 @@ const sample = (over: Partial<PerformanceSample> = {}): PerformanceSample => ({
   runtimeLocation: 'hkg',
   ttftMs: 340,
   tpotUs: 15_000,
+  failed: false,
   ...over,
 });
 
@@ -186,6 +187,7 @@ describe('SqlPerformanceRepo upsertSummary set-mode guard', () => {
       errors: 0,
       ttftSamples: 5,
       tpotSamples: 5,
+      failedWithOutput: 0,
       // ttftMsSum omitted on purpose
       tpotUsSum: 40_000,
       buckets: [],

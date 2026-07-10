@@ -529,6 +529,7 @@ const parsePerformanceRecords = (value: unknown): { type: 'ok'; records: Perform
       !isNonNegativeSafeInteger(item.errors) ||
       !isNonNegativeSafeInteger(item.ttftSamples) ||
       !isNonNegativeSafeInteger(item.tpotSamples) ||
+      !isNonNegativeSafeInteger(item.failedWithOutput) ||
       !isNonNegativeSafeInteger(item.ttftMsSum) ||
       !isNonNegativeSafeInteger(item.tpotUsSum) ||
       !Array.isArray(item.buckets)
@@ -536,15 +537,28 @@ const parsePerformanceRecords = (value: unknown): { type: 'ok'; records: Perform
       return { type: 'invalid', index: i, error: 'record fields are missing or malformed' };
     }
 
-    // Cross-field invariants the recorder maintains and the aggregator
-    // relies on. `errors + ttftSamples <= requests` because a request is
-    // counted once and every ttft sample belongs to a non-error success;
-    // `tpotSamples <= ttftSamples` because a TPOT sample requires a
-    // preceding TTFT stamp on the same stream.
-    if ((item.errors as number) + (item.ttftSamples as number) > (item.requests as number)) {
-      return { type: 'invalid', index: i, error: 'errors + ttftSamples must not exceed requests' };
+    // Cross-field invariants the recorder maintains and the aggregator relies
+    // on. `errors <= requests` and `ttftSamples <= requests` hold as independent
+    // caps; `failedWithOutput` is the overlap (a partial-output failure counts
+    // in both errors AND ttftSamples), so the tighter cap is
+    // `errors + ttftSamples - failedWithOutput <= requests`, which also implies
+    // `failedWithOutput <= min(errors, ttftSamples)`. `tpotSamples <=
+    // ttftSamples` because a TPOT sample requires a preceding TTFT stamp on
+    // the same stream.
+    const errorsN = item.errors as number;
+    const ttftN = item.ttftSamples as number;
+    const failedWithOutputN = item.failedWithOutput as number;
+    const requestsN = item.requests as number;
+    if (failedWithOutputN > errorsN) {
+      return { type: 'invalid', index: i, error: 'failedWithOutput must not exceed errors' };
     }
-    if ((item.tpotSamples as number) > (item.ttftSamples as number)) {
+    if (failedWithOutputN > ttftN) {
+      return { type: 'invalid', index: i, error: 'failedWithOutput must not exceed ttftSamples' };
+    }
+    if (errorsN + ttftN - failedWithOutputN > requestsN) {
+      return { type: 'invalid', index: i, error: 'errors + ttftSamples - failedWithOutput must not exceed requests' };
+    }
+    if ((item.tpotSamples as number) > ttftN) {
       return { type: 'invalid', index: i, error: 'tpotSamples must not exceed ttftSamples' };
     }
 
@@ -599,6 +613,7 @@ const parsePerformanceRecords = (value: unknown): { type: 'ok'; records: Perform
       errors: item.errors,
       ttftSamples: item.ttftSamples,
       tpotSamples: item.tpotSamples,
+      failedWithOutput: item.failedWithOutput,
       ttftMsSum: item.ttftMsSum,
       tpotUsSum: item.tpotUsSum,
       buckets,
