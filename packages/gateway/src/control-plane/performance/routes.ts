@@ -129,42 +129,39 @@ const loadKeysAndMap = async (
   return { keyToUser: new Map(keys.map(k => [k.id, k.userId] as const)), keys };
 };
 
-// Apply cross-cutting filters at the raw-record level so every aggregation
-// (chart series, summary, per-dimension breakdowns) reflects the same
-// filtered view. Combining filters is AND. filter_user_id filters via the
-// key→user map (userId is not a native record column).
+// Cross-cutting filter predicate applied at the raw-record level so every
+// aggregation (chart series, summary, per-dimension breakdowns) reflects the
+// same filtered view. Combining filters is AND. filter_user_id resolves via
+// the key→user map because userId is not a native record column; orphan
+// rows (hard-deleted key → keyToUser miss) never match a numeric user
+// filter, matching the aggregation path's By-User grouping that also drops
+// them rather than coercing undefined to 0. `wantUserId` is precomputed by
+// the caller so this predicate stays branch-cheap in the hot loop.
+const matchesFilters = (
+  r: PerformanceTelemetryRecord,
+  filters: PerformanceFilters,
+  keyToUser: ReadonlyMap<string, number> | null,
+  wantUserId: number | null,
+): boolean => {
+  if (filters.model !== undefined && r.model !== filters.model) return false;
+  if (filters.upstream !== undefined && r.upstream !== filters.upstream) return false;
+  if (filters.operation !== undefined && r.operation !== filters.operation) return false;
+  if (filters.runtimeLocation !== undefined && r.runtimeLocation !== filters.runtimeLocation) return false;
+  if (filters.keyId !== undefined && r.keyId !== filters.keyId) return false;
+  if (wantUserId !== null) {
+    const uid = keyToUser?.get(r.keyId);
+    if (uid !== wantUserId) return false;
+  }
+  return true;
+};
+
 const applyFilters = (
   rows: readonly PerformanceTelemetryRecord[],
   filters: PerformanceFilters,
   keyToUser: ReadonlyMap<string, number> | null,
 ): readonly PerformanceTelemetryRecord[] => {
-  if (
-    filters.model === undefined &&
-    filters.upstream === undefined &&
-    filters.operation === undefined &&
-    filters.runtimeLocation === undefined &&
-    filters.userId === undefined &&
-    filters.keyId === undefined
-  ) {
-    return rows;
-  }
   const wantUserId = filters.userId === undefined ? null : Number(filters.userId);
-  return rows.filter(r => {
-    if (filters.model !== undefined && r.model !== filters.model) return false;
-    if (filters.upstream !== undefined && r.upstream !== filters.upstream) return false;
-    if (filters.operation !== undefined && r.operation !== filters.operation) return false;
-    if (filters.runtimeLocation !== undefined && r.runtimeLocation !== filters.runtimeLocation) return false;
-    if (filters.keyId !== undefined && r.keyId !== filters.keyId) return false;
-    if (wantUserId !== null) {
-      // Orphan rows (hard-deleted key → keyToUser miss returns undefined)
-      // never match a numeric filter target; drop them rather than
-      // coercing undefined to 0. This mirrors the aggregation path,
-      // which drops the same rows from the By-User grouping.
-      const uid = keyToUser?.get(r.keyId);
-      if (uid !== wantUserId) return false;
-    }
-    return true;
-  });
+  return rows.filter(r => matchesFilters(r, filters, keyToUser, wantUserId));
 };
 
 // Distinct values per dimension observed in the UNFILTERED record set so the
@@ -213,13 +210,7 @@ const partitionRecords = (
     const uid = keyToUser.get(r.keyId);
     if (uid !== undefined) userIds.add(uid);
 
-    if (filters.model !== undefined && r.model !== filters.model) continue;
-    if (filters.upstream !== undefined && r.upstream !== filters.upstream) continue;
-    if (filters.operation !== undefined && r.operation !== filters.operation) continue;
-    if (filters.runtimeLocation !== undefined && r.runtimeLocation !== filters.runtimeLocation) continue;
-    if (filters.keyId !== undefined && r.keyId !== filters.keyId) continue;
-    if (wantUserId !== null && uid !== wantUserId) continue;
-    filtered.push(r);
+    if (matchesFilters(r, filters, keyToUser, wantUserId)) filtered.push(r);
   }
   return {
     filtered,
