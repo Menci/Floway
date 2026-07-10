@@ -536,6 +536,18 @@ const parsePerformanceRecords = (value: unknown): { type: 'ok'; records: Perform
       return { type: 'invalid', index: i, error: 'record fields are missing or malformed' };
     }
 
+    // Cross-field invariants the recorder maintains and the aggregator
+    // relies on. `errors + ttftSamples <= requests` because a request is
+    // counted once and every ttft sample belongs to a non-error success;
+    // `tpotSamples <= ttftSamples` because a TPOT sample requires a
+    // preceding TTFT stamp on the same stream.
+    if ((item.errors as number) + (item.ttftSamples as number) > (item.requests as number)) {
+      return { type: 'invalid', index: i, error: 'errors + ttftSamples must not exceed requests' };
+    }
+    if ((item.tpotSamples as number) > (item.ttftSamples as number)) {
+      return { type: 'invalid', index: i, error: 'tpotSamples must not exceed ttftSamples' };
+    }
+
     const buckets: PerformanceBucketRow[] = [];
     for (const bucket of item.buckets) {
       if (!bucket || typeof bucket !== 'object') return { type: 'invalid', index: i, error: 'bucket is not an object' };
