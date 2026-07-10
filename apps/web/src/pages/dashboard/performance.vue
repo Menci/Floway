@@ -35,6 +35,12 @@ interface PerformanceDisplayRecord {
   tpotUsP99: number | null;
 }
 
+// PerformanceDisplayRecord + the human label resolved once at sort time so
+// the template never re-invokes resolveGroupName per render tick.
+interface DisplayRow extends PerformanceDisplayRecord {
+  groupLabel: string;
+}
+
 interface DimensionValues {
   models: string[];
   upstreams: string[];
