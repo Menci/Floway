@@ -1,9 +1,11 @@
 // TTFT and TPOT bucket edges are fitted to 30k+ real per-model per-provider
 // throughput/latency samples scraped from OpenRouter's public endpoint stats
-// (spans 346 models × ~5 providers × 4 in-page percentiles × 3 time windows).
-// The core [p10, p90] of the empirical distribution must land 8-10 bucket
-// slots to keep the max single-bucket concentration below ~15% and give
-// meaningful percentiles. See the design log for the fit table.
+// (throughput_last_30m + latency_last_30m from
+// https://openrouter.ai/api/v1/models/{author}/{slug}/endpoints, enumerated
+// via https://openrouter.ai/api/v1/models; spans 346 models × ~5 providers
+// × 4 in-page percentiles × 3 time windows). The core [p10, p90] of the
+// empirical distribution must land 8-10 bucket slots to keep the max
+// single-bucket concentration below ~15% and give meaningful percentiles.
 //
 // TPOT edges anchor exactly on the human-facing tok/s SLO points (100, 50,
 // 20, 10 tok/s) so a dashboard alert reads as "p95 speed >= 20 tok/s" and
@@ -46,7 +48,8 @@ export const bucketForTpotUs = (tpotUs: number) => bucketForValue(TPOT_UPPER_EDG
 // rather than the upper edge, so a bucket [a, b] contributes sqrt(a*b) —
 // the log-scale center. Rationale: our edges form a near-geometric series,
 // so geometric mean is the unbiased estimate of "typical value in this
-// bucket" per DDSketch (Masson et al., VLDB 2019). Returning the upper
+// bucket" per DDSketch (Masson et al., VLDB 2019,
+// https://www.vldb.org/pvldb/vol12/p2195-masson.pdf). Returning the upper
 // edge (pessimistic bound) instead concentrates all reported values at the
 // slowest end of the bucket, which for TPOT-inverted tok/s underreports
 // speed by the full bucket factor. The overflow bucket has no upper, so

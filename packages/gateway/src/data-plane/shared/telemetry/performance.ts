@@ -63,8 +63,11 @@ export const recordRequestPerformance = (
   }
   // TPOT is the inter-token generation interval: streamDelta covers only the
   // (N-1) tokens that arrived AFTER firstOutputTokenAt, so the divisor is
-  // outputTokens - 1. Matches Envoy AI Gateway and the OpenTelemetry GenAI
-  // spec (gen_ai.server.time_per_output_token).
+  // outputTokens - 1. Matches the OpenTelemetry GenAI spec
+  // gen_ai.server.time_per_output_token
+  // (https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/gen-ai-metrics.md#metric-gen_aiservertime_per_output_token)
+  // and Envoy AI Gateway
+  // (https://aigateway.envoyproxy.io/docs/capabilities/observability/metrics/).
   const streamDeltaMs = requestFinishedAt - perfTiming.firstOutputTokenAt;
   const tpotUs = Math.round((streamDeltaMs * 1_000) / (outputTokens - 1));
   scheduler(record(getRepo().performance.recordSample({ ...dims, ttftMs, tpotUs }), 'sample'));
