@@ -267,6 +267,33 @@ test('/api/performance/overview series stays per-model under all-by-user view', 
   const seriesGroups = body.series.map((r: { group: string; requests: number }) => [r.group, r.requests]).sort();
   assertEquals(seriesGroups, [['gpt-5', 2]]);
   assertEquals(body.users.map((u: { id: number }) => u.id).sort(), [1, 2]);
+  // All-by-user view populates the userIds dropdown; the response drives
+  // the admin dashboard's per-user filter.
+  assertEquals(body.dimensionValues.userIds.sort((a: number, b: number) => a - b), [1, 2]);
+});
+
+test('/api/performance/overview leaves dimensionValues.userIds empty under self-by-key view', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  await repo.performance.recordSample({
+    hour: '2026-04-30T10',
+    keyId: apiKey.id,
+    model: 'gpt-5',
+    upstream: 'copilot:1',
+    operation: 'chat',
+    runtimeLocation: 'LOCAL',
+    ttftMs: 100,
+    tpotUs: 500,
+  });
+
+  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&bucket=hour', { headers: { 'x-api-key': apiKey.key } });
+
+  assertEquals(response.status, 200);
+  const body = await response.json();
+  // Self-view rows all belong to the actor; the dashboard hides the user
+  // dropdown for this view, and the backend confirms it by never surfacing
+  // a single-element list that would encourage a downstream client to
+  // render it.
+  assertEquals(body.dimensionValues.userIds, []);
 });
 
 test('/api/performance/overview returns dashboard aggregates from one repo query', async () => {

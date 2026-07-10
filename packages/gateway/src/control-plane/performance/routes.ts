@@ -141,7 +141,10 @@ interface DimensionValues {
   operations: string[];
   runtimeLocations: string[];
   // keyIds / userIds are returned as their raw ids; the frontend joins to
-  // the users/keys metadata below to render names.
+  // the users/keys metadata below to render names. userIds is empty in
+  // self-view — every self-view row belongs to the actor by construction,
+  // so a single-element user dropdown carries no useful choice and the
+  // dashboard hides that filter entirely for that view.
   keyIds: string[];
   userIds: number[];
 }
@@ -154,6 +157,7 @@ const partitionRecords = (
   rows: readonly PerformanceTelemetryRecord[],
   filters: PerformanceFilters,
   keyToUser: ReadonlyMap<string, number>,
+  includeUserIds: boolean,
 ): { filtered: readonly PerformanceTelemetryRecord[]; dimensionValues: DimensionValues } => {
   const models = new Set<string>();
   const upstreams = new Set<string>();
@@ -171,9 +175,11 @@ const partitionRecords = (
     // Orphan rows (hard-deleted key → keyToUser miss) don't contribute a
     // userId to the dropdown and cannot match a numeric user filter;
     // dropping them here mirrors the aggregation path's By-User grouping,
-    // which also skips orphans rather than coercing undefined to 0.
+    // which also skips orphans rather than coercing undefined to 0. The
+    // keyToUser lookup still runs unconditionally because matchesFilters
+    // needs it to gate `filter_user_id` even in self-view.
     const uid = keyToUser.get(r.keyId);
-    if (uid !== undefined) userIds.add(uid);
+    if (uid !== undefined && includeUserIds) userIds.add(uid);
 
     if (matchesFilters(r, filters, uid)) filtered.push(r);
   }
@@ -256,17 +262,19 @@ export const performanceOverview = async (c: Ctx) => {
   ]);
   if (rawRecords === null) return c.json({ error: 'Unknown key_id' }, 404);
 
-  const { filtered, dimensionValues } = partitionRecords(rawRecords, params.value.filters, keysInfo.keyToUser);
+  // API-key breakdown is available in both views; user breakdown is only
+  // meaningful in all-by-user — every self-view row belongs to the actor
+  // by construction, so both the By-User panel and the user-filter
+  // dropdown are collapsed for that view. The by-user aggregation still
+  // runs (its cost is negligible next to the O(N) records loop) and is
+  // emptied at the response boundary; the dropdown values fold in at the
+  // dimension-collection step.
+  const includeUserRows = resolved.view === 'all-by-user';
+  const { filtered, dimensionValues } = partitionRecords(rawRecords, params.value.filters, keysInfo.keyToUser, includeUserRows);
 
   const tzOnly = { timezoneOffsetMinutes: params.value.timezoneOffsetMinutes };
   // One traversal of `filtered` feeds every breakdown (chart series +
-  // summary + per-dimension By-X panels). API-key breakdown is available
-  // in both views; user breakdown is only meaningful in all-by-user —
-  // every self-view row belongs to the actor by construction, so the
-  // panel is emptied at the response boundary rather than at the
-  // aggregation layer (the cost of computing a one-group breakdown is
-  // negligible next to the O(N) records loop).
-  const includeUserRows = resolved.view === 'all-by-user';
+  // summary + per-dimension By-X panels).
   const axisBase = { ...tzOnly, keyToUser: keysInfo.keyToUser };
   const breakdowns = aggregatePerformanceForDisplayMulti(filtered, {
     series: { ...axisBase, bucket: params.value.bucket, groupBy: params.value.groupBy },
