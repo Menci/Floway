@@ -54,15 +54,12 @@ export const recordUsage = async (ctx: GatewayCtx, modelIdentity: TelemetryModel
   if (usage && hasTokenUsage(usage)) await recordTokenUsage(ctx.apiKeyId, modelIdentity, usage);
 };
 
-// Terminal recording for a chat response: usage first (whose failure is
-// logged but non-fatal so perf still records), then perf. Every protocol's
-// stream-branch finally block was inlining the same try/catch/finally
-// around these two calls; the non-stream branches inlined the same pair
-// too and returned 502 whenever the usage write bounced on a successful
-// upstream reply. Both paths share this helper — recordUsage's error is
-// swallowed here so the surrounding caller can return its response
-// regardless. The TPOT end-time is stamped at entry, BEFORE the usage
-// write, so the persistence round-trip isn't charged to the token stream.
+// Settles token-usage recording (D1 write, non-fatal if it throws) and
+// perf sample recording as a pair. Usage errors are logged so the response
+// still returns; the finally clause guarantees a perf sample lands even
+// when persistence bounces. The TPOT end-time is stamped at entry, BEFORE
+// the usage write, so the persistence round-trip isn't charged to the
+// token stream.
 export const settleUsageAndPerformance = async (
   ctx: GatewayCtx,
   metadata: EventResultMetadata,
