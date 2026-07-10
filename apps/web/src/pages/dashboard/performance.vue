@@ -94,6 +94,61 @@ const upstreamNameById = computed<Map<string, string>>(() => {
 // but still appears in historical performance rows.
 const resolveUpstreamName = (id: string): string => upstreamNameById.value.get(id) ?? id;
 
+// Shared sort key across all four break-down tables. Tables track the same
+// dimensions (requests / errors / TTFT p95 / Output speed p95) so clicking
+// any table's header re-orders every table. Kept independent from the chart
+// controls (metric / percentile toggles) — chart, stats card grid, and
+// tables each pick their own reference points.
+type TableSortKey = 'group' | 'requests' | 'errors' | 'ttftMsP95' | 'tpotUsP95';
+type SortDir = 'asc' | 'desc';
+const tableSortKey = ref<TableSortKey>('requests');
+const tableSortDir = ref<SortDir>('desc');
+
+const tableSortToggle = (key: TableSortKey): void => {
+  if (tableSortKey.value === key) {
+    tableSortDir.value = tableSortDir.value === 'asc' ? 'desc' : 'asc';
+    return;
+  }
+  tableSortKey.value = key;
+  // Default: string columns start ascending (A-Z), numeric columns start
+  // descending (biggest first — the failure mode operators scan for).
+  tableSortDir.value = key === 'group' ? 'asc' : 'desc';
+};
+
+// tok/s (Output speed) is inverted from tpotUs: bigger tok/s = smaller tpotUs.
+// Sorting by tpotUsP95 ascending means "slowest speed first"; UI users clicking
+// "Output speed p95 ↓" expect "slowest first", so we invert the direction for
+// this column so the visible ordering matches the label's semantic.
+const sortedRows = (rows: readonly PerformanceDisplayRecord[], groupKey: 'upstream' | 'plain'): PerformanceDisplayRecord[] => {
+  const key = tableSortKey.value;
+  const dir = tableSortDir.value;
+  const sign = dir === 'asc' ? 1 : -1;
+  const compareNumbers = (a: number | null, b: number | null): number => {
+    if (a === null && b === null) return 0;
+    if (a === null) return 1;   // nulls always trail
+    if (b === null) return -1;
+    return (a - b) * sign;
+  };
+  return [...rows].sort((a, b) => {
+    if (key === 'group') {
+      const aName = groupKey === 'upstream' ? resolveUpstreamName(a.group) : a.group;
+      const bName = groupKey === 'upstream' ? resolveUpstreamName(b.group) : b.group;
+      return aName.localeCompare(bName) * sign;
+    }
+    if (key === 'tpotUsP95') {
+      // Invert: smaller tpotUs = faster speed, so "desc" (default) means
+      // fastest-first in tok/s terms.
+      return compareNumbers(a.tpotUsP95, b.tpotUsP95) * -1;
+    }
+    return compareNumbers(a[key], b[key]);
+  });
+};
+
+const sortIndicator = (key: TableSortKey): string => {
+  if (tableSortKey.value !== key) return '';
+  return tableSortDir.value === 'asc' ? ' ↑' : ' ↓';
+};
+
 const performanceRange = ref<DashboardRange>('today');
 const loadedPerformanceRange = ref<DashboardRange>('today');
 // Buckets and the request window are derived from the same `loadedAt` so the
@@ -482,16 +537,20 @@ const performanceSummary = computed<PerformanceDisplayRecord>(() => overview.val
             <table class="w-full text-sm">
               <thead class="bg-surface-800/70 text-xs uppercase tracking-widest text-gray-500">
                 <tr>
-                  <th class="px-3 py-2 text-left font-medium">Model</th>
-                  <th class="px-3 py-2 text-right font-medium">Req</th>
-                  <th class="px-3 py-2 text-right font-medium">{{ metricLabel }} {{ performancePercentile }}</th>
+                  <th class="px-3 py-2 text-left font-medium cursor-pointer select-none hover:text-gray-300" @click="tableSortToggle('group')">Model{{ sortIndicator('group') }}</th>
+                  <th class="px-3 py-2 text-right font-medium cursor-pointer select-none hover:text-gray-300" @click="tableSortToggle('requests')">Req{{ sortIndicator('requests') }}</th>
+                  <th class="px-3 py-2 text-right font-medium cursor-pointer select-none hover:text-gray-300" @click="tableSortToggle('errors')">Errors{{ sortIndicator('errors') }}</th>
+                  <th class="px-3 py-2 text-right font-medium cursor-pointer select-none hover:text-gray-300" @click="tableSortToggle('ttftMsP95')">TTFT p95{{ sortIndicator('ttftMsP95') }}</th>
+                  <th class="px-3 py-2 text-right font-medium cursor-pointer select-none hover:text-gray-300" @click="tableSortToggle('tpotUsP95')">Output speed p95{{ sortIndicator('tpotUsP95') }}</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-white/5">
-                <tr v-for="row in overview.modelRows" :key="row.group">
+                <tr v-for="row in sortedRows(overview.modelRows, 'plain')" :key="row.group">
                   <td class="px-3 py-2 text-gray-300">{{ row.group }}</td>
                   <td class="px-3 py-2 text-right font-mono text-gray-400">{{ row.requests.toLocaleString() }}</td>
-                  <td class="px-3 py-2 text-right font-mono text-white">{{ formatRowValue(getChartValue(row, performancePercentile)) }}</td>
+                  <td class="px-3 py-2 text-right font-mono text-gray-400">{{ row.errors.toLocaleString() }}</td>
+                  <td class="px-3 py-2 text-right font-mono text-white">{{ formatMs(row.ttftMsP95) }}</td>
+                  <td class="px-3 py-2 text-right font-mono text-white">{{ formatTokPerSec(row.tpotUsP95) }}</td>
                 </tr>
               </tbody>
             </table>
@@ -503,16 +562,20 @@ const performanceSummary = computed<PerformanceDisplayRecord>(() => overview.val
             <table class="w-full text-sm">
               <thead class="bg-surface-800/70 text-xs uppercase tracking-widest text-gray-500">
                 <tr>
-                  <th class="px-3 py-2 text-left font-medium">Upstream</th>
-                  <th class="px-3 py-2 text-right font-medium">Req</th>
-                  <th class="px-3 py-2 text-right font-medium">{{ metricLabel }} {{ performancePercentile }}</th>
+                  <th class="px-3 py-2 text-left font-medium cursor-pointer select-none hover:text-gray-300" @click="tableSortToggle('group')">Upstream{{ sortIndicator('group') }}</th>
+                  <th class="px-3 py-2 text-right font-medium cursor-pointer select-none hover:text-gray-300" @click="tableSortToggle('requests')">Req{{ sortIndicator('requests') }}</th>
+                  <th class="px-3 py-2 text-right font-medium cursor-pointer select-none hover:text-gray-300" @click="tableSortToggle('errors')">Errors{{ sortIndicator('errors') }}</th>
+                  <th class="px-3 py-2 text-right font-medium cursor-pointer select-none hover:text-gray-300" @click="tableSortToggle('ttftMsP95')">TTFT p95{{ sortIndicator('ttftMsP95') }}</th>
+                  <th class="px-3 py-2 text-right font-medium cursor-pointer select-none hover:text-gray-300" @click="tableSortToggle('tpotUsP95')">Output speed p95{{ sortIndicator('tpotUsP95') }}</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-white/5">
-                <tr v-for="row in overview.upstreamRows" :key="row.group">
+                <tr v-for="row in sortedRows(overview.upstreamRows, 'upstream')" :key="row.group">
                   <td class="px-3 py-2 text-gray-300">{{ resolveUpstreamName(row.group) }}</td>
                   <td class="px-3 py-2 text-right font-mono text-gray-400">{{ row.requests.toLocaleString() }}</td>
-                  <td class="px-3 py-2 text-right font-mono text-white">{{ formatRowValue(getChartValue(row, performancePercentile)) }}</td>
+                  <td class="px-3 py-2 text-right font-mono text-gray-400">{{ row.errors.toLocaleString() }}</td>
+                  <td class="px-3 py-2 text-right font-mono text-white">{{ formatMs(row.ttftMsP95) }}</td>
+                  <td class="px-3 py-2 text-right font-mono text-white">{{ formatTokPerSec(row.tpotUsP95) }}</td>
                 </tr>
               </tbody>
             </table>
@@ -524,16 +587,20 @@ const performanceSummary = computed<PerformanceDisplayRecord>(() => overview.val
             <table class="w-full text-sm">
               <thead class="bg-surface-800/70 text-xs uppercase tracking-widest text-gray-500">
                 <tr>
-                  <th class="px-3 py-2 text-left font-medium">Region</th>
-                  <th class="px-3 py-2 text-right font-medium">Req</th>
-                  <th class="px-3 py-2 text-right font-medium">{{ metricLabel }} {{ performancePercentile }}</th>
+                  <th class="px-3 py-2 text-left font-medium cursor-pointer select-none hover:text-gray-300" @click="tableSortToggle('group')">Region{{ sortIndicator('group') }}</th>
+                  <th class="px-3 py-2 text-right font-medium cursor-pointer select-none hover:text-gray-300" @click="tableSortToggle('requests')">Req{{ sortIndicator('requests') }}</th>
+                  <th class="px-3 py-2 text-right font-medium cursor-pointer select-none hover:text-gray-300" @click="tableSortToggle('errors')">Errors{{ sortIndicator('errors') }}</th>
+                  <th class="px-3 py-2 text-right font-medium cursor-pointer select-none hover:text-gray-300" @click="tableSortToggle('ttftMsP95')">TTFT p95{{ sortIndicator('ttftMsP95') }}</th>
+                  <th class="px-3 py-2 text-right font-medium cursor-pointer select-none hover:text-gray-300" @click="tableSortToggle('tpotUsP95')">Output speed p95{{ sortIndicator('tpotUsP95') }}</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-white/5">
-                <tr v-for="row in overview.runtimeRows" :key="row.group">
+                <tr v-for="row in sortedRows(overview.runtimeRows, 'plain')" :key="row.group">
                   <td class="px-3 py-2 text-gray-300">{{ row.group }}</td>
                   <td class="px-3 py-2 text-right font-mono text-gray-400">{{ row.requests.toLocaleString() }}</td>
-                  <td class="px-3 py-2 text-right font-mono text-white">{{ formatRowValue(getChartValue(row, performancePercentile)) }}</td>
+                  <td class="px-3 py-2 text-right font-mono text-gray-400">{{ row.errors.toLocaleString() }}</td>
+                  <td class="px-3 py-2 text-right font-mono text-white">{{ formatMs(row.ttftMsP95) }}</td>
+                  <td class="px-3 py-2 text-right font-mono text-white">{{ formatTokPerSec(row.tpotUsP95) }}</td>
                 </tr>
               </tbody>
             </table>
@@ -545,20 +612,18 @@ const performanceSummary = computed<PerformanceDisplayRecord>(() => overview.val
             <table class="w-full text-sm">
               <thead class="bg-surface-800/70 text-xs uppercase tracking-widest text-gray-500">
                 <tr>
-                  <th class="px-3 py-2 text-left font-medium">Operation</th>
-                  <th class="px-3 py-2 text-right font-medium">Req</th>
-                  <th class="px-3 py-2 text-right font-medium">Errors</th>
-                  <th class="px-3 py-2 text-right font-medium">Neutral</th>
-                  <th class="px-3 py-2 text-right font-medium">TTFT p95</th>
-                  <th class="px-3 py-2 text-right font-medium">Output speed p95</th>
+                  <th class="px-3 py-2 text-left font-medium cursor-pointer select-none hover:text-gray-300" @click="tableSortToggle('group')">Operation{{ sortIndicator('group') }}</th>
+                  <th class="px-3 py-2 text-right font-medium cursor-pointer select-none hover:text-gray-300" @click="tableSortToggle('requests')">Req{{ sortIndicator('requests') }}</th>
+                  <th class="px-3 py-2 text-right font-medium cursor-pointer select-none hover:text-gray-300" @click="tableSortToggle('errors')">Errors{{ sortIndicator('errors') }}</th>
+                  <th class="px-3 py-2 text-right font-medium cursor-pointer select-none hover:text-gray-300" @click="tableSortToggle('ttftMsP95')">TTFT p95{{ sortIndicator('ttftMsP95') }}</th>
+                  <th class="px-3 py-2 text-right font-medium cursor-pointer select-none hover:text-gray-300" @click="tableSortToggle('tpotUsP95')">Output speed p95{{ sortIndicator('tpotUsP95') }}</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-white/5">
-                <tr v-for="row in overview.operationRows" :key="row.group">
+                <tr v-for="row in sortedRows(overview.operationRows, 'plain')" :key="row.group">
                   <td class="px-3 py-2 text-gray-300">{{ row.group }}</td>
                   <td class="px-3 py-2 text-right font-mono text-gray-400">{{ row.requests.toLocaleString() }}</td>
                   <td class="px-3 py-2 text-right font-mono text-gray-400">{{ row.errors.toLocaleString() }}</td>
-                  <td class="px-3 py-2 text-right font-mono text-gray-400">{{ row.neutral.toLocaleString() }}</td>
                   <td class="px-3 py-2 text-right font-mono text-white">{{ formatMs(row.ttftMsP95) }}</td>
                   <td class="px-3 py-2 text-right font-mono text-white">{{ formatTokPerSec(row.tpotUsP95) }}</td>
                 </tr>
