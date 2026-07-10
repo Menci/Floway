@@ -114,21 +114,20 @@ const queryRecordsForView = async (
 // the key→user map because userId is not a native record column; orphan
 // rows (hard-deleted key → keyToUser miss) never match a numeric user
 // filter, matching the aggregation path's By-User grouping that also drops
-// them rather than coercing undefined to 0. `uid` is an optional pre-resolved
-// keyToUser lookup — callers already walking the row set (see
-// `partitionRecords`) skip the redundant Map.get by passing it in.
+// them rather than coercing undefined to 0. The caller pre-resolves `uid`
+// once per row so this predicate — and the neighbouring dimension-value
+// pass in `partitionRecords` — share a single Map.get per record.
 const matchesFilters = (
   r: PerformanceTelemetryRecord,
   filters: PerformanceFilters,
-  keyToUser: ReadonlyMap<string, number>,
-  uid?: number,
+  uid: number | undefined,
 ): boolean => {
   if (filters.model !== undefined && r.model !== filters.model) return false;
   if (filters.upstream !== undefined && r.upstream !== filters.upstream) return false;
   if (filters.operation !== undefined && r.operation !== filters.operation) return false;
   if (filters.runtimeLocation !== undefined && r.runtimeLocation !== filters.runtimeLocation) return false;
   if (filters.keyId !== undefined && r.keyId !== filters.keyId) return false;
-  if (filters.userId !== undefined && (uid ?? keyToUser.get(r.keyId)) !== filters.userId) return false;
+  if (filters.userId !== undefined && uid !== filters.userId) return false;
   return true;
 };
 
@@ -177,7 +176,7 @@ const partitionRecords = (
     const uid = keyToUser.get(r.keyId);
     if (uid !== undefined) userIds.add(uid);
 
-    if (matchesFilters(r, filters, keyToUser)) filtered.push(r);
+    if (matchesFilters(r, filters, uid)) filtered.push(r);
   }
   return {
     filtered,
@@ -213,7 +212,7 @@ export const performanceTelemetry = async (c: Ctx) => {
   ]);
   if (rawRecords === null) return c.json({ error: 'Unknown key_id' }, 404);
 
-  const filtered = rawRecords.filter(r => matchesFilters(r, params.value.filters, keysInfo.keyToUser));
+  const filtered = rawRecords.filter(r => matchesFilters(r, params.value.filters, keysInfo.keyToUser.get(r.keyId)));
 
   const baseOptions = { bucket: params.value.bucket, timezoneOffsetMinutes: params.value.timezoneOffsetMinutes };
   const records = aggregatePerformanceForDisplay(
