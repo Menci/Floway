@@ -1,4 +1,3 @@
-// packages/gateway/src/data-plane/shared/telemetry/performance_test.ts
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { recordRequestPerformance } from './performance.ts';
