@@ -433,31 +433,49 @@ const performanceSummary = computed<PerformanceDisplayRecord>(() => overview.val
       </div>
 
       <!-- Row 2: filter dropdowns — every filter is AND at the backend, options are drawn from the un-filtered dataset -->
-      <div class="mb-6 flex flex-wrap items-center gap-2">
-        <select v-model="filterModel" class="shrink-0 rounded-lg bg-surface-800 px-3 py-1.5 text-xs font-medium text-gray-300 outline-none" aria-label="Filter model">
-          <option value="">All models</option>
-          <option v-for="v in overview.dimensionValues.models" :key="v" :value="v">{{ v }}</option>
-        </select>
-        <select v-model="filterUpstream" class="shrink-0 rounded-lg bg-surface-800 px-3 py-1.5 text-xs font-medium text-gray-300 outline-none" aria-label="Filter upstream">
-          <option value="">All upstreams</option>
-          <option v-for="v in overview.dimensionValues.upstreams" :key="v" :value="v">{{ upstreamNameById.get(v) ?? v }}</option>
-        </select>
-        <select v-model="filterOperation" class="shrink-0 rounded-lg bg-surface-800 px-3 py-1.5 text-xs font-medium text-gray-300 outline-none" aria-label="Filter operation">
-          <option value="">All operations</option>
-          <option v-for="v in overview.dimensionValues.operations" :key="v" :value="v">{{ v }}</option>
-        </select>
-        <select v-model="filterRuntime" class="shrink-0 rounded-lg bg-surface-800 px-3 py-1.5 text-xs font-medium text-gray-300 outline-none" aria-label="Filter region">
-          <option value="">All regions</option>
-          <option v-for="v in overview.dimensionValues.runtimeLocations" :key="v" :value="v">{{ v }}</option>
-        </select>
-        <select v-if="performanceView === 'all-by-user'" v-model="filterUserId" class="shrink-0 rounded-lg bg-surface-800 px-3 py-1.5 text-xs font-medium text-gray-300 outline-none" aria-label="Filter user">
-          <option value="">All users</option>
-          <option v-for="v in overview.dimensionValues.userIds" :key="v" :value="String(v)">{{ userNameById.get(v) ?? `user ${v}` }}</option>
-        </select>
-        <select v-if="performanceView === 'self-by-key'" v-model="filterKeyId" class="shrink-0 rounded-lg bg-surface-800 px-3 py-1.5 text-xs font-medium text-gray-300 outline-none" aria-label="Filter API key">
-          <option value="">All API keys</option>
-          <option v-for="v in overview.dimensionValues.keyIds" :key="v" :value="v">{{ keyNameById.get(v) ?? v }}</option>
-        </select>
+      <div class="mb-6 flex flex-wrap items-center gap-x-4 gap-y-2">
+        <label class="flex items-center gap-1.5 text-xs text-gray-500">
+          <span>Model:</span>
+          <select v-model="filterModel" class="shrink-0 rounded-lg bg-surface-800 px-3 py-1.5 text-xs font-medium text-gray-300 outline-none">
+            <option value="">All</option>
+            <option v-for="v in overview.dimensionValues.models" :key="v" :value="v">{{ v }}</option>
+          </select>
+        </label>
+        <label class="flex items-center gap-1.5 text-xs text-gray-500">
+          <span>Upstream:</span>
+          <select v-model="filterUpstream" class="shrink-0 rounded-lg bg-surface-800 px-3 py-1.5 text-xs font-medium text-gray-300 outline-none">
+            <option value="">All</option>
+            <option v-for="v in overview.dimensionValues.upstreams" :key="v" :value="v">{{ upstreamNameById.get(v) ?? v }}</option>
+          </select>
+        </label>
+        <label class="flex items-center gap-1.5 text-xs text-gray-500">
+          <span>Operation:</span>
+          <select v-model="filterOperation" class="shrink-0 rounded-lg bg-surface-800 px-3 py-1.5 text-xs font-medium text-gray-300 outline-none">
+            <option value="">All</option>
+            <option v-for="v in overview.dimensionValues.operations" :key="v" :value="v">{{ v }}</option>
+          </select>
+        </label>
+        <label class="flex items-center gap-1.5 text-xs text-gray-500">
+          <span>Region:</span>
+          <select v-model="filterRuntime" class="shrink-0 rounded-lg bg-surface-800 px-3 py-1.5 text-xs font-medium text-gray-300 outline-none">
+            <option value="">All</option>
+            <option v-for="v in overview.dimensionValues.runtimeLocations" :key="v" :value="v">{{ v }}</option>
+          </select>
+        </label>
+        <label v-if="performanceView === 'all-by-user'" class="flex items-center gap-1.5 text-xs text-gray-500">
+          <span>User:</span>
+          <select v-model="filterUserId" class="shrink-0 rounded-lg bg-surface-800 px-3 py-1.5 text-xs font-medium text-gray-300 outline-none">
+            <option value="">All</option>
+            <option v-for="v in overview.dimensionValues.userIds" :key="v" :value="String(v)">{{ userNameById.get(v) ?? `user ${v}` }}</option>
+          </select>
+        </label>
+        <label v-if="performanceView === 'self-by-key'" class="flex items-center gap-1.5 text-xs text-gray-500">
+          <span>API Key:</span>
+          <select v-model="filterKeyId" class="shrink-0 rounded-lg bg-surface-800 px-3 py-1.5 text-xs font-medium text-gray-300 outline-none">
+            <option value="">All</option>
+            <option v-for="v in overview.dimensionValues.keyIds" :key="v" :value="v">{{ keyNameById.get(v) ?? v }}</option>
+          </select>
+        </label>
       </div>
 
       <div v-if="performanceError" class="mb-3 rounded-md border border-accent-rose/40 bg-accent-rose/10 px-3 py-2 text-sm text-accent-rose">
