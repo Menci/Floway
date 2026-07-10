@@ -25,6 +25,7 @@ import type { AuthedContext } from '../../middleware/auth.ts';
 import type { TokenUsage } from '../../repo/types.ts';
 import type { GatewayCtx } from '../chat/shared/gateway-ctx.ts';
 import { type StreamCompletion, writeSSEFrames } from '../chat/shared/stream/sse.ts';
+import { upstreamPerformanceContext } from '../chat/shared/upstream-telemetry.ts';
 import { enumerateModelCandidates } from '../providers/registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { doneFrame, eventFrame, type ModelKind, parseSSEStream, parseTargetStreamFrames, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
@@ -119,8 +120,13 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
   const { c, ctx, sourceApi, operation, model, kind, modelServesEndpoint, call, response: responseHandling } = input;
   // Populated as attempts land so a throw from `passthroughAttempt` (or
   // the response handling below) can still attribute request-perf to the
-  // most recent candidate the loop touched. A throw before any candidate
-  // fired leaves this undefined; the outer catch below is happy with that.
+  // candidate the loop was working on when the throw fired. The pre-await
+  // stamp uses `candidate.model.id` as `modelKey` since `PerformanceDimensions`
+  // does not read that field — it isolates dimensions to (keyId, model,
+  // upstream, operation, runtimeLocation) — so the placeholder never
+  // reaches a persisted row. On success we overwrite with the exact
+  // context the attempt returned. A throw before any candidate fired
+  // leaves this undefined; the outer catch below is happy with that.
   let lastPerformance: PerformanceTelemetryContext | undefined;
 
   try {
@@ -179,6 +185,12 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
       'passthroughServe',
       ctx.perfTiming,
       async candidate => {
+        // Stamp the candidate's identity synchronously BEFORE awaiting the
+        // attempt, so a throw from `passthroughAttempt` (or the upstream
+        // call inside it) attributes the outer-catch error row to THIS
+        // candidate rather than to whichever one settled last. On success
+        // we overwrite with the attempt's exact context (real modelKey).
+        lastPerformance = upstreamPerformanceContext(ctx, candidate, candidate.model.id, operation);
         const attempted = await passthroughAttempt({
           c, ctx, candidate, operation,
           call,

@@ -331,3 +331,49 @@ test('passthrough-serve: when every candidate returns non-2xx the most recent up
     },
   );
 });
+
+// A throw from the second candidate's attempt (network error, provider
+// exception, ...) must not attribute the error row to the first candidate
+// that already rolled over — the outer catch in passthrough-serve used to
+// read a `lastPerformance` that was still holding candidate A's identity.
+test('passthrough-serve: throw during rollover attributes the error perf row to the throwing candidate, not the previous one', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerTwoEmbeddingsUpstreams(repo);
+
+  const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+  try {
+    await withMockedFetch(
+      request => {
+        const url = new URL(request.url);
+        if (url.pathname === '/v1/models') {
+          return jsonResponse({ object: 'list', data: [{ id: 'custom-embed-model' }] });
+        }
+        if (url.hostname === 'up-a.example.com' && url.pathname === '/v1/embeddings') {
+          return new Response('first upstream unavailable', { status: 503 });
+        }
+        if (url.hostname === 'up-b.example.com' && url.pathname === '/v1/embeddings') {
+          throw new Error('simulated network error to up_b');
+        }
+        throw new Error(`Unhandled fetch ${request.url}`);
+      },
+      async () => {
+        const response = await requestApp('/v1/embeddings', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+          body: JSON.stringify({ model: 'custom-embed-model', input: 'hi' }),
+        });
+
+        assertEquals(response.status, 502);
+        await flushAsyncWork();
+      },
+    );
+
+    const perfRows = await repo.performance.listAll();
+    const errorRows = perfRows.filter(row => row.errors > 0);
+    assertEquals(errorRows.length, 1);
+    assertEquals(errorRows[0].upstream, 'up_b');
+  } finally {
+    errorSpy.mockRestore();
+  }
+});
