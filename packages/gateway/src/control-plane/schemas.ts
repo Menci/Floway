@@ -17,6 +17,7 @@
 
 import { z } from 'zod';
 
+import { agentSetupConfigurationSchema } from './agent-setup/configuration.ts';
 import { normalizeDisabledPublicModelIds } from '../repo/disabled-public-models.ts';
 import { type FlagOverrides, MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX, parseFlagOverridesWire } from '@floway-dev/provider';
 
@@ -430,6 +431,33 @@ export const claudeCodeProbeBody = recordOnlyBody;
 // through the draft's endpoints); every other kind returns the fully
 // projected UpstreamModelConfig catalog.
 export const listModelsBody = recordOnlyBody;
+
+// --- agent setup ---
+//
+// The one-command Agent Setup lease. `agentSetupConfigurationSchema` (defined
+// alongside the render helpers so the persisted shape and its renderer stay
+// together) is the payload the dashboard saves and the setup scripts read.
+//
+// `publicBaseUrl` is the browser origin the setup URL is minted from; a Node
+// deployment behind a TLS-terminating proxy cannot recover the external scheme
+// from the inbound request, so the client sends it explicitly. Its strict
+// http(s)-origin validation (no userinfo, no path beyond `/`, no query or
+// fragment) lives in the route handler, which owns the canonical rejection
+// message. `expectedRevision` drives the optimistic-concurrency CAS on update.
+
+export const agentSetupCreateBody = z.object({
+  publicBaseUrl: z.string().min(1),
+});
+
+export const agentSetupUpdateBody = z.object({
+  token: z.string().min(1),
+  configuration: agentSetupConfigurationSchema,
+  expectedRevision: z.number().int().nonnegative(),
+});
+
+export const agentSetupHeartbeatBody = z.object({
+  token: z.string().min(1),
+});
 
 // --- proxies ---
 //
