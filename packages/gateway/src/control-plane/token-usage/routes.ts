@@ -39,17 +39,19 @@ export const tokenUsage = async (c: CtxWithQuery<typeof tokenUsageQuery>) => {
     return c.json({ records, users: userMetadata });
   }
 
-  const ownedIds = await repo.apiKeys.idsByUserIdIncludingDeleted(resolved.scopeUserId);
-  const ownedSet = new Set(ownedIds);
+  // self-view: one api_keys listing feeds every downstream concern —
+  // the ownedSet that gates the keyId check, the key→row joins for
+  // metadata, and the sorted keys[] block. usage.query stays sequential
+  // behind it because 404-on-invalid-keyId has to fire before we spend
+  // a bytes-usage read that would only be discarded.
+  const keysInfo = await loadTelemetryKeys(repo, resolved);
+  const ownedSet = new Set(keysInfo.keys.map(k => k.id));
   const explicitKeyId = query.key_id === '' ? undefined : query.key_id;
   if (explicitKeyId !== undefined && !ownedSet.has(explicitKeyId)) {
     return c.json({ error: 'Unknown key_id' }, 404);
   }
 
-  const [rawRecords, keysInfo] = await Promise.all([
-    repo.usage.query({ keyId: explicitKeyId, start, end }),
-    loadTelemetryKeys(repo, resolved),
-  ]);
+  const rawRecords = await repo.usage.query({ keyId: explicitKeyId, start, end });
   const filtered = explicitKeyId ? rawRecords : rawRecords.filter(r => ownedSet.has(r.keyId));
   const records = aggregateUsageForDisplay(filtered);
 

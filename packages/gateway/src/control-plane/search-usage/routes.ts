@@ -53,9 +53,11 @@ export const searchUsage = async (c: CtxWithQuery<typeof searchUsageQuery>) => {
     });
   }
 
-  // self-by-key: scope rows to the actor's keys (active + soft-deleted).
-  const ownedIds = await repo.apiKeys.idsByUserIdIncludingDeleted(resolved.scopeUserId);
-  const ownedSet = new Set(ownedIds);
+  // self-view: scope rows to the actor's keys (active + soft-deleted).
+  // One api_keys listing feeds both the ownedSet gate and — when
+  // include_key_metadata=1 asks for it — the sorted keys[] block below.
+  const keysInfo = await loadTelemetryKeys(repo, resolved);
+  const ownedSet = new Set(keysInfo.keys.map(k => k.id));
   const explicitKeyId = query.key_id === '' ? undefined : query.key_id;
   if (explicitKeyId !== undefined && !ownedSet.has(explicitKeyId)) {
     return c.json({ error: 'Unknown key_id' }, 404);
@@ -71,13 +73,10 @@ export const searchUsage = async (c: CtxWithQuery<typeof searchUsageQuery>) => {
   const aggregated = aggregateSearchUsageByKey(filtered);
 
   // Aggregated-records-only callers (CI, automation) skip the
-  // apiKeys.list() round-trip via include_key_metadata=0.
+  // sorted key-metadata block via include_key_metadata=0.
   if (query.include_key_metadata !== '1') return c.json(aggregated);
 
-  const [keysInfo, searchConfig] = await Promise.all([
-    loadTelemetryKeys(repo, resolved),
-    loadSearchConfig(),
-  ]);
+  const searchConfig = await loadSearchConfig();
   const keyMap = new Map(keysInfo.keys.map(k => [k.id, k]));
   const recordsWithKeyMetadata = aggregated.map(r => {
     const k = keyMap.get(r.keyId);

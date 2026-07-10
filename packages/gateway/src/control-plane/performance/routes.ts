@@ -86,6 +86,7 @@ const resolveView = (
 const queryRecordsForView = async (
   resolved: ResolvedTelemetryView,
   params: PerformanceQueryParams,
+  ownedKeyIds: ReadonlySet<string>,
 ): Promise<readonly PerformanceTelemetryRecord[] | null> => {
   const repo = getRepo();
   if (resolved.view === 'all-by-user') {
@@ -95,9 +96,7 @@ const queryRecordsForView = async (
     });
   }
 
-  const ownedIds = await repo.apiKeys.idsByUserIdIncludingDeleted(resolved.scopeUserId);
-  const ownedSet = new Set(ownedIds);
-  if (params.keyId !== undefined && !ownedSet.has(params.keyId)) {
+  if (params.keyId !== undefined && !ownedKeyIds.has(params.keyId)) {
     return null;
   }
   const rows = await repo.performance.query({
@@ -105,7 +104,7 @@ const queryRecordsForView = async (
     start: params.start,
     end: params.end,
   });
-  return params.keyId !== undefined ? rows : rows.filter(r => ownedSet.has(r.keyId));
+  return params.keyId !== undefined ? rows : rows.filter(r => ownedKeyIds.has(r.keyId));
 };
 
 // Cross-cutting filter predicate applied at the raw-record level so every
@@ -198,18 +197,16 @@ export const performanceTelemetry = async (c: Ctx) => {
   const resolved = resolveView(c, params.value);
   if ('error' in resolved) return c.json({ error: resolved.message }, resolved.error === 'forbidden' ? 403 : 400);
 
-  // Always load the key-listing for the resolved view. In self-view this is
-  // the actor's keys only; in all-by-user it is every key. Both handlers
-  // need the key→user map (filter_user_id, group_by=userId), and the
-  // self-by-key metadata block reuses the same `keys` array — one round
-  // trip covers both. The tiny extra listing in the "no user filter, no
-  // userId grouping" case buys us a Map-typed keyToUser at the aggregate
-  // call site, dropping the historic non-null assertion.
+  // Load the actor's key listing up front. Self-view derives ownedKeyIds
+  // from the same list that later joins to key metadata, avoiding a
+  // second api_keys SELECT; all-by-user gets the global list to feed the
+  // key→user map (filter_user_id, group_by=userId). One round trip
+  // covers both concerns per view, and dropping the historic Promise.all
+  // pair costs one D1 hop we're eating anyway to gate the keyId check.
   const repo = getRepo();
-  const [rawRecords, keysInfo] = await Promise.all([
-    queryRecordsForView(resolved, params.value),
-    loadTelemetryKeys(repo, resolved),
-  ]);
+  const keysInfo = await loadTelemetryKeys(repo, resolved);
+  const ownedKeyIds = new Set(keysInfo.keys.map(k => k.id));
+  const rawRecords = await queryRecordsForView(resolved, params.value, ownedKeyIds);
   if (rawRecords === null) return c.json({ error: 'Unknown key_id' }, 404);
 
   const filtered = rawRecords.filter(r => matchesFilters(r, params.value.filters, keysInfo.keyToUser.get(r.keyId)));
@@ -250,9 +247,10 @@ export const performanceOverview = async (c: Ctx) => {
   // parallel, and let a single api_keys listing feed both the key→user
   // map and the sorted key-metadata block below.
   const repo = getRepo();
-  const [rawRecords, keysInfo, users] = await Promise.all([
-    queryRecordsForView(resolved, params.value),
-    loadTelemetryKeys(repo, resolved),
+  const keysInfo = await loadTelemetryKeys(repo, resolved);
+  const ownedKeyIds = new Set(keysInfo.keys.map(k => k.id));
+  const [rawRecords, users] = await Promise.all([
+    queryRecordsForView(resolved, params.value, ownedKeyIds),
     resolved.view === 'all-by-user' ? repo.users.listIncludingDeleted() : Promise.resolve([]),
   ]);
   if (rawRecords === null) return c.json({ error: 'Unknown key_id' }, 404);

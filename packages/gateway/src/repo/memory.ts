@@ -190,10 +190,6 @@ class MemoryApiKeyRepo implements ApiKeyRepo {
     return Promise.resolve(k ? { ...k } : null);
   }
 
-  idsByUserIdIncludingDeleted(userId: number): Promise<string[]> {
-    return Promise.resolve(this.keys.filter(k => k.userId === userId).map(k => k.id));
-  }
-
   async save(key: ApiKey): Promise<void> {
     const i = this.keys.findIndex(k => k.id === key.id);
     if (i >= 0) this.keys[i] = { ...key };

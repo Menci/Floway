@@ -145,14 +145,6 @@ class SqlApiKeyRepo implements ApiKeyRepo {
     return row ? toApiKey(row) : null;
   }
 
-  async idsByUserIdIncludingDeleted(userId: number): Promise<string[]> {
-    const { results } = await this.db
-      .prepare('SELECT id FROM api_keys WHERE user_id = ?')
-      .bind(userId)
-      .all<{ id: string }>();
-    return results.map(r => r.id);
-  }
-
   async save(key: ApiKey): Promise<void> {
     await this.db
       .prepare(
