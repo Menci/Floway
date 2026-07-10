@@ -9,7 +9,7 @@ import { useRoute, useRouter, isNavigationFailure, NavigationFailureType, type L
 import { callApi, useApi } from '../../api/client.ts';
 import ChartCanvas from '../../components/charts/ChartCanvas.vue';
 import ChartSeriesControls from '../../components/charts/ChartSeriesControls.vue';
-import { DASHBOARD_CHART_PALETTE, chartFont, chartXAxisTick, dashboardBuckets, dashboardRangeQuery, type DashboardRange } from '../../components/charts/dashboard-chart.ts';
+import { chartColorByName, chartFont, chartXAxisTick, dashboardBuckets, dashboardRangeQuery, type DashboardRange } from '../../components/charts/dashboard-chart.ts';
 import { applySeriesSelection, chartEventsWithDoubleClick, chartSeriesIds, createSeriesIsolation, handleLegendClick } from '../../components/charts/series-selection.ts';
 import { useUpstreamsStore } from '../../composables/useUpstreams.ts';
 import { useAuthStore } from '../../stores/auth.ts';
@@ -341,14 +341,6 @@ const groupByOptions = computed<{ value: GroupBy; label: string }[]>(() => {
 
 const performanceSeriesIsolation = createSeriesIsolation();
 
-// Stable per-name color: filter-driven series changes don't reshuffle every
-// remaining line. Simple djb2-ish string hash into the shared palette.
-const chartColor = (groupName: string): string => {
-  let h = 0;
-  for (let i = 0; i < groupName.length; i++) h = (h * 31 + groupName.charCodeAt(i)) >>> 0;
-  return DASHBOARD_CHART_PALETTE[h % DASHBOARD_CHART_PALETTE.length]!;
-};
-
 // Name resolvers — all three (upstream, user, API key) look up display names
 // from separate metadata sources. resolveGroupName picks the right one based
 // on the row's group dimension so tables render "Copilot GHE" / "admin" /
@@ -476,7 +468,7 @@ const chartConfig = computed<ChartConfiguration<'line'>>(() => {
     inner.set(r.bucket, getChartValue(r, performancePercentile.value));
   }
   const datasets = [...groups.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([group, byBucket]) => {
-    const color = chartColor(group);
+    const color = chartColorByName(group);
     return {
       label: resolveGroupName(group, performanceGroupBy.value),
       seriesId: group,
