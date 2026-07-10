@@ -65,7 +65,7 @@ export const recordRequestPerformance = (
   // (N-1) tokens that arrived AFTER firstOutputTokenAt, so the divisor is
   // outputTokens - 1. Matches the OpenTelemetry GenAI spec
   // gen_ai.server.time_per_output_token
-  // (https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/gen-ai-metrics.md#metric-gen_aiservertime_per_output_token)
+  // (https://github.com/open-telemetry/semantic-conventions-genai/blob/953dd22e3cecd3a397d742c349d2435d59c8b771/docs/gen-ai/gen-ai-metrics.md#metric-gen_aiservertime_per_output_token)
   // and Envoy AI Gateway
   // (https://aigateway.envoyproxy.io/docs/capabilities/observability/metrics/).
   const streamDeltaMs = requestFinishedAt - perfTiming.firstOutputTokenAt;
