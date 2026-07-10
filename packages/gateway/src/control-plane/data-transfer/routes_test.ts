@@ -1179,7 +1179,7 @@ test('any data bearing a historical version is rejected on the version gate, bef
     searchConfig: DEFAULT_SEARCH_CONFIG,
   };
 
-  for (const version of [1, 2, 3, 4, 5]) {
+  for (const version of [1, 2, 3, 4, 5, 6, 7]) {
     const result = await doImport(app, 'replace', wellFormed, version);
     assertEquals(result.status, 400);
     assertEquals(String(result.body.error).includes('version must be 8'), true);
