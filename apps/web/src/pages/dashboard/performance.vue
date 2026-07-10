@@ -386,20 +386,19 @@ const tableSortToggle = (key: TableSortKey): void => {
 // header labels it "Output speed" (tok/s, higher = better), so clicking
 // asc/desc must produce the ordering the label promises. Bake the invert
 // into a single effectiveSign so null-handling stays consistent — nulls
-// always sort last regardless of direction. Group-by sort uses a
-// Schwartzian transform: resolveGroupName reads a Map per invocation, so
-// pre-resolving the sort key once per row saves 2*(N log N) Map lookups
-// per table across the 6 breakdown tables.
-const sortedRows = (rows: readonly PerformanceDisplayRecord[], groupBy: GroupBy): PerformanceDisplayRecord[] => {
+// always sort last regardless of direction. Every row also carries its
+// resolved group label — resolveGroupName reads a Map per invocation, so
+// pre-resolving once per row keeps the group-column sort cheap AND lets
+// the template render `{{ row.groupLabel }}` without walking the Map on
+// every reactive tick across the 6 breakdown tables.
+const sortedRows = (rows: readonly PerformanceDisplayRecord[], groupBy: GroupBy): DisplayRow[] => {
   const key = tableSortKey.value;
   const dir = tableSortDir.value;
   const invert = key === 'tpotUsP95' ? -1 : 1;
   const sign = (dir === 'asc' ? 1 : -1) * invert;
+  const withLabel: DisplayRow[] = rows.map(r => ({ ...r, groupLabel: resolveGroupName(r.group, groupBy) }));
   if (key === 'group') {
-    return rows
-      .map(r => ({ r, sortKey: resolveGroupName(r.group, groupBy) }))
-      .sort((a, b) => a.sortKey.localeCompare(b.sortKey) * sign)
-      .map(x => x.r);
+    return withLabel.sort((a, b) => a.groupLabel.localeCompare(b.groupLabel) * sign);
   }
   const compareNumbers = (a: number | null, b: number | null): number => {
     if (a === null && b === null) return 0;
@@ -407,7 +406,7 @@ const sortedRows = (rows: readonly PerformanceDisplayRecord[], groupBy: GroupBy)
     if (b === null) return -1;
     return (a - b) * sign;
   };
-  return [...rows].sort((a, b) => compareNumbers(a[key], b[key]));
+  return withLabel.sort((a, b) => compareNumbers(a[key], b[key]));
 };
 
 // Every reactive tick — including loading-spinner opacity toggles — would
@@ -735,7 +734,7 @@ const performanceSummary = computed<PerformanceDisplayRecord>(() => overview.val
               </thead>
               <tbody class="divide-y divide-white/5">
                 <tr v-for="row in table.sortedRows" :key="row.group">
-                  <td class="px-3 py-2 text-gray-300">{{ resolveGroupName(row.group, table.key) }}</td>
+                  <td class="px-3 py-2 text-gray-300">{{ row.groupLabel }}</td>
                   <td class="px-3 py-2 text-right font-mono text-gray-400">{{ row.requests.toLocaleString() }}</td>
                   <td class="px-3 py-2 text-right font-mono text-gray-400">{{ row.errors.toLocaleString() }}</td>
                   <td class="px-3 py-2 text-right font-mono text-white">{{ formatMs(row.ttftMsP95) }}</td>
