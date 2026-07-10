@@ -1,11 +1,11 @@
-import { beforeEach, test } from 'vitest';
+import { beforeEach, expect, test } from 'vitest';
 
 import type { GatewayCtx } from './gateway-ctx.ts';
-import { SourceStreamState, recordUsage } from './respond.ts';
+import { SourceStreamState, recordUsage, settleUsageAndPerformance } from './respond.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { recordPerformance } from '../../shared/telemetry/performance.ts';
-import type { TelemetryModelIdentity } from '@floway-dev/provider';
+import type { EventResultMetadata, TelemetryModelIdentity } from '@floway-dev/provider';
 import { assertEquals, mockPerfTelemetryContext } from '@floway-dev/test-utils';
 
 const testTelemetryModelIdentity: TelemetryModelIdentity = {
@@ -191,4 +191,40 @@ test('recordUsage is a no-op when usage carries no billable dimensions', async (
   await recordUsage(harness.ctx(), testTelemetryModelIdentity, {});
 
   assertEquals(await harness.repo.usage.listAll(), []);
+});
+
+// ── settleUsageAndPerformance ──
+
+// TPOT reflects the token stream, not the D1 write that follows it. The
+// contract is that requestFinishedAt is stamped at settle entry, BEFORE
+// the awaited recordUsage — regressing that (moving the stamp past the
+// await, or letting a refactor accidentally re-derive it inside the
+// finally) would fold persistence latency into every stream's per-token
+// interval.
+test('settleUsageAndPerformance samples requestFinishedAt BEFORE the recordUsage await', async () => {
+  const originalRecord = harness.repo.usage.record.bind(harness.repo.usage);
+  const persistenceDelayMs = 200;
+  harness.repo.usage.record = async row => {
+    await new Promise(resolve => setTimeout(resolve, persistenceDelayMs));
+    await originalRecord(row);
+  };
+
+  const beforeSettle = performance.now();
+  const ctx = harness.ctx({ upstreamCallStartedAt: beforeSettle - 10, firstOutputTokenAt: beforeSettle });
+  const metadata: EventResultMetadata = {
+    modelIdentity: testTelemetryModelIdentity,
+    performance: mockPerfTelemetryContext({ keyId: '', model: 'claude-test', upstream: 'copilot:1', runtimeLocation: 'SJC' }),
+  };
+
+  await settleUsageAndPerformance(ctx, metadata, { input: 5, output: 3 }, false, 'test');
+  await Promise.all(harness.background);
+
+  const rows = await harness.repo.performance.listAll();
+  assertEquals(rows.length, 1);
+  // TPOT = (requestFinishedAt - firstOutputTokenAt) * 1000 / (outputTokens - 1).
+  // Stamped BEFORE the 200ms await: tpotUs reflects only the sub-millisecond
+  // gap between ctx construction and settle entry. Stamped AFTER: tpotUs
+  // would be ~100_000us (200ms / 2). 50_000us fences the regression while
+  // tolerating scheduler jitter.
+  expect(rows[0].tpotUsSum).toBeLessThan(50_000);
 });
