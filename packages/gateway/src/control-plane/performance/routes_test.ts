@@ -336,6 +336,17 @@ test('/api/performance rejects out-of-range timezone offsets', async () => {
   });
 });
 
+test('/api/performance rejects non-numeric filter_user_id at the schema boundary', async () => {
+  const { apiKey } = await setupAppTest();
+
+  const response = await requestApp('/api/performance?start=2026-04-30T00&end=2026-05-01T00&filter_user_id=abc', { headers: { 'x-api-key': apiKey.key } });
+
+  assertEquals(response.status, 400);
+  assertEquals(await response.json(), {
+    error: 'filter_user_id must be an integer',
+  });
+});
+
 test('/api/performance all-by-user attributes soft-deleted keys to their original owner', async () => {
   const { repo, adminSession, apiKey } = await setupAppTest();
   // Latency sample on apiKey, then soft-delete the key. The aggregator must

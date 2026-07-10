@@ -669,6 +669,6 @@ export const performanceQuery = z.object({
   filter_upstream: z.string().optional(),
   filter_operation: z.string().optional(),
   filter_runtime_location: z.string().optional(),
-  filter_user_id: z.string().optional(),
+  filter_user_id: z.string().regex(/^-?\d+$/, 'filter_user_id must be an integer').optional(),
   filter_key_id: z.string().optional(),
 });
