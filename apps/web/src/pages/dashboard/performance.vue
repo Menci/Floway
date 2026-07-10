@@ -4,7 +4,7 @@ import type { TooltipItem } from 'chart.js';
 import type { ChartConfiguration } from 'chart.js/auto';
 import { defineBasicLoader } from 'unplugin-vue-router/data-loaders/basic';
 import { computed, ref, watch, watchEffect } from 'vue';
-import { useRoute, useRouter, isNavigationFailure, NavigationFailureType, type LocationQuery, type LocationQueryValue } from 'vue-router';
+import { useRoute, useRouter, type LocationQuery, type LocationQueryValue } from 'vue-router';
 
 import { callApi, useApi } from '../../api/client.ts';
 import ChartCanvas from '../../components/charts/ChartCanvas.vue';
@@ -311,16 +311,13 @@ watch(documentVisibility, v => {
 // Sync every state field to the URL query via URL_FIELDS so a pristine
 // dashboard URL stays `/dashboard/performance` with no junk trailing it.
 // `router.replace` (not `push`) so click-heavy toggling doesn't flood the
-// browser history.
+// browser history. vue-router 4's internal navigate() catches
+// NAVIGATION_CANCELLED and pushWithRedirect swallows every other
+// NavigationFailure via markAsReady, so this promise never rejects for
+// benign duplicated/aborted races — a real thrown error from a guard is
+// a real bug and should surface as an unhandled rejection.
 watchEffect(() => {
-  router.replace({ query: serializeUrlState(currentUrlState()) }).catch(err => {
-    // Overlapping replaces during rapid state changes fire duplicated /
-    // aborted NavigationFailure — a benign artifact of our own
-    // watchEffect firing faster than the router resolves. Anything else
-    // is a real error and must not be swallowed.
-    if (isNavigationFailure(err, NavigationFailureType.duplicated | NavigationFailureType.aborted)) return;
-    throw err;
-  });
+  void router.replace({ query: serializeUrlState(currentUrlState()) });
 });
 
 // Group-by dropdown: By User is admin-only (every self-view row belongs
