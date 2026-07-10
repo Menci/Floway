@@ -33,6 +33,7 @@ describe('synthesizeCatalogEntry', () => {
     expect(entry.default_reasoning_level).toBeUndefined();
     expect(entry.truncation_policy).toEqual({ mode: 'tokens', limit: 10000 });
     expect(entry.visibility).toBe('list');
+    expect(entry.supported_in_api).toBe(true);
     expect(entry.priority).toBe(0);
     expect(entry.service_tiers).toEqual([]);
     // Synthesized models get a vendored Codex-CLI agent prompt (adapted from
@@ -91,6 +92,29 @@ describe('synthesizeCatalogEntry', () => {
       { effort: 'high', description: '' },
     ]);
     expect(entry.default_reasoning_level).toBe('low');
+  });
+
+  test('registry effort metadata forces supports_reasoning_summaries on even when the source says false', () => {
+    // Miss-path BASELINE ships `supports_reasoning_summaries: false`. Once the
+    // registry declares effort tiers the model reasons, so its Codex catalog
+    // entry must advertise summaries — otherwise codex hides the reasoning
+    // stream for a model that produces one.
+    const entry = synthesizeCatalogEntry({
+      ...base,
+      chat: { reasoning: { effort: { supported: ['low'], default: 'low' } } },
+    });
+    expect(entry.supports_reasoning_summaries).toBe(true);
+  });
+
+  test('registry reasoning without effort tiers leaves supports_reasoning_summaries at the source value', () => {
+    // budget_tokens / adaptive / mandatory don't fit the Codex effort wire and
+    // are dropped; with no effort tiers the summary capability rides through
+    // from the source (BASELINE `false` here) rather than being forced on.
+    const entry = synthesizeCatalogEntry({
+      ...base,
+      chat: { reasoning: { budget_tokens: { min: 100, max: 8000 } } },
+    });
+    expect(entry.supports_reasoning_summaries).toBe(false);
   });
 
   test('drops budget_tokens silently — no effort fields on output', () => {
@@ -162,6 +186,8 @@ describe('synthesizeCatalogEntry', () => {
       display_name: 'GPT-5.5',
       priority: 1,
       visibility: 'list',
+      supported_in_api: true,
+      supports_reasoning_summaries: true,
       input_modalities: ['text', 'image'],
       supports_image_detail_original: true,
       web_search_tool_type: 'text_and_image',
@@ -187,9 +213,26 @@ describe('synthesizeCatalogEntry', () => {
     test('unannounced fields ride through from bundled base unchanged', () => {
       const entry = synthesizeCatalogEntry(base, bundledBase);
       expect(entry.priority).toBe(1);
-      expect(entry.visibility).toBe('list');
       expect(entry.base_instructions).toBe('BUNDLED PROMPT');
       expect(entry.truncation_policy).toEqual({ mode: 'tokens', limit: 20000 });
+    });
+
+    test('bundled supports_reasoning_summaries preserved when registry omits chat.reasoning', () => {
+      // With no registry effort to force it, the summary capability rides
+      // through from the bundled source rather than collapsing to the
+      // miss-path BASELINE default.
+      expect(synthesizeCatalogEntry(base, bundledBase).supports_reasoning_summaries).toBe(true);
+    });
+
+    test('visibility and supported_in_api are forced on even when the bundled source hides the model', () => {
+      // Every registry chat model we surface must be pickable in codex and
+      // usable over the API. A bundled entry may ship `visibility: 'hide'`
+      // (e.g. codex-auto-review) — that hidden state must not leak onto a
+      // registry-addressable model.
+      const hidden: CatalogModel = { ...bundledBase, visibility: 'hide', supported_in_api: false };
+      const entry = synthesizeCatalogEntry(base, hidden);
+      expect(entry.visibility).toBe('list');
+      expect(entry.supported_in_api).toBe(true);
     });
 
     test('bundled input_modalities preserved when registry omits chat.modalities', () => {
@@ -221,6 +264,7 @@ describe('synthesizeCatalogEntry', () => {
       }, bundledBase);
       expect(entry.supported_reasoning_levels).toEqual([{ effort: 'high', description: '' }]);
       expect(entry.default_reasoning_level).toBe('high');
+      expect(entry.supports_reasoning_summaries).toBe(true);
     });
 
     test('bundled context_window preserved when registry omits max_context_window_tokens', () => {
