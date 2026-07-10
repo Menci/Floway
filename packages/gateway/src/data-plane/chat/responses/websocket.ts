@@ -256,6 +256,12 @@ const handleClientMessage = async (
     }
     sendError(socket, 500, serverErrorEnvelope(error), eventId);
     if (ctx !== undefined) {
+      // Mid-attempt throws (interceptor bug, translation error, provider-layer JS
+      // exception that bypassed tryCatchChatServeFailure) never reach the
+      // respondResponsesWebSocket result branches, so their `recordFailedRequest`
+      // call would be skipped. Attribute the failure to the last upstream stamped
+      // synchronously by `responsesServe.generate`, matching the HTTP transports.
+      recordFailedRequest(ctx, ctx.perfTiming.attemptTelemetry);
       ctx.dump?.failed(error);
       ctx.dump?.finalize(500, []);
     }
