@@ -129,13 +129,6 @@ const matchesFilters = (
   return true;
 };
 
-const applyFilters = (
-  rows: readonly PerformanceTelemetryRecord[],
-  filters: PerformanceFilters,
-  keyToUser: ReadonlyMap<string, number>,
-): readonly PerformanceTelemetryRecord[] =>
-  rows.filter(r => matchesFilters(r, filters, keyToUser));
-
 // Distinct values per dimension observed in the UNFILTERED record set so the
 // dashboard dropdowns show the full menu regardless of which filters are
 // currently applied. (Cross-filtering the dropdowns to the current selection
@@ -217,7 +210,7 @@ export const performanceTelemetry = async (c: Ctx) => {
   ]);
   if (rawRecords === null) return c.json({ error: 'Unknown key_id' }, 404);
 
-  const filtered = applyFilters(rawRecords, params.value.filters, keysInfo.keyToUser);
+  const filtered = rawRecords.filter(r => matchesFilters(r, params.value.filters, keysInfo.keyToUser));
 
   const baseOptions = { bucket: params.value.bucket, timezoneOffsetMinutes: params.value.timezoneOffsetMinutes };
   const records = aggregatePerformanceForDisplay(
