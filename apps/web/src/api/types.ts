@@ -17,22 +17,16 @@ import type {
   PublicModelLimits,
 } from '@floway-dev/protocols/common';
 import type { FlagDefaults, FlagOverrides } from '@floway-dev/provider/flags';
+import type { UpstreamColor, UpstreamColorPreset, UpstreamProviderKind } from '@floway-dev/provider/model';
 import type { AddressableForm, ModelPrefixConfig } from '@floway-dev/provider/model-prefix';
 
 export type { BillingDimension, ModelEndpointKey, ModelEndpoints, ModelKind, ModelPricing };
 export type { AddressableForm, ModelPrefixConfig };
+export type { UpstreamColor, UpstreamColorPreset, UpstreamProviderKind };
 export type {
   AliasRules, AliasSelection, AliasTarget, AnnouncedMetadata, ChatAliasRules, ChatModelInfo, ModelAlias,
   PublicModel, PublicModelLimits,
 };
-
-export type UpstreamProviderKind = 'custom' | 'azure' | 'copilot' | 'codex' | 'claude-code' | 'ollama';
-
-// Kept in lockstep with `UPSTREAM_COLOR_PRESETS` in `@floway-dev/provider`
-// (redeclared here to avoid the SPA importing runtime provider code).
-export const UPSTREAM_COLOR_PRESETS = ['amber', 'emerald', 'cyan', 'violet', 'rose', 'orange'] as const;
-export type UpstreamColorPreset = typeof UPSTREAM_COLOR_PRESETS[number];
-export type UpstreamColor = UpstreamColorPreset | `#${string}`;
 
 export interface ProxyFallbackEntry {
   id: string;

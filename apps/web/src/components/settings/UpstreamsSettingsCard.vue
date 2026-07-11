@@ -119,7 +119,7 @@ const moveDisabled = (id: string, direction: -1 | 1) => {
                 :kind="meta.kind"
                 :color="null"
                 variant="swatch"
-                class="!grid !size-8 !p-0 shrink-0 place-items-center !rounded-md"
+                class="size-8 shrink-0 rounded-md"
               >
                 <i :class="[meta.icon, 'size-4']" />
               </UpstreamBadge>

@@ -5,7 +5,6 @@ import relativeTime from 'dayjs/plugin/relativeTime';
 import { computed, onBeforeUnmount, useTemplateRef, watch } from 'vue';
 
 import { errorLabel, rowTintClass, statusIcon } from './badge.ts';
-import type { UpstreamProviderKind } from '../../api/types.ts';
 import UpstreamBadge from '../upstreams/UpstreamBadge.vue';
 import type { DumpMetadata } from '@floway-dev/gateway/dump-types';
 import { OverlayScrollbars, Spinner } from '@floway-dev/ui';
@@ -181,7 +180,7 @@ const showEmpty = computed(() => !props.loading && props.records.length === 0 &&
           <div class="mt-1 flex items-center gap-2 text-[11px]">
             <UpstreamBadge
               v-if="record.upstream"
-              :kind="(record.upstream.kind as UpstreamProviderKind)"
+              :kind="record.upstream.kind"
               :color="record.upstream.color"
               variant="text"
               class="min-w-0 truncate"

@@ -26,7 +26,7 @@ const candidate = (upstream: string, supportsResponsesItemReference = true): Mod
       name: upstream,
       disabledPublicModelIds: [],
       modelPrefix: null,
-      instance: modelProvider,
+            instance: modelProvider,
       supportsResponsesItemReference,
     },
     model: stubInternalModel({}, upstream),

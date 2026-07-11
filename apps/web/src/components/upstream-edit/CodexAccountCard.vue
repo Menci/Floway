@@ -5,7 +5,6 @@
 import { computed } from 'vue';
 
 import type { CodexAccountCredentialState, CodexAccountIdentity, CodexQuotaSnapshot, UpstreamRecord } from '../../api/types.ts';
-import { resolveUpstreamColor } from '../upstreams/provider-meta.ts';
 import UpstreamBadge from '../upstreams/UpstreamBadge.vue';
 import { Badge, Card } from '@floway-dev/ui';
 
@@ -47,19 +46,6 @@ const credential = computed<CodexAccountCredentialState | null>(() => {
 });
 
 const quotaMap = computed(() => codexRecord.value.codex_quota ?? null);
-
-// Resolve the Codex upstream's color once so the avatar swatch and each
-// quota progress bar paint with the operator's chosen shade. Preset →
-// class attached to the bar; hex → inline color-mix() bar with the
-// resolver's textStyle providing a hex `color:` (readable via
-// `currentColor` on the bar element).
-const colorResolved = computed(() => resolveUpstreamColor({
-  kind: codexRecord.value.kind,
-  color: codexRecord.value.color,
-}));
-
-const barClass = computed(() => colorResolved.value.mode === 'class' ? colorResolved.value.textClass : '');
-const barStyle = computed(() => colorResolved.value.mode === 'style' ? colorResolved.value.textStyle : {});
 
 const formatTimestamp = (iso: string): string => {
   const d = new Date(iso);
@@ -150,7 +136,7 @@ const accountIdShort = computed(() => {
         :kind="record.kind"
         :color="record.color"
         variant="swatch"
-        class="!flex !size-10 !p-0 shrink-0 !items-center !justify-center !rounded-full"
+        class="size-10 shrink-0 rounded-full"
       >
         <i class="i-simple-icons-openai size-5" />
       </UpstreamBadge>
@@ -187,10 +173,12 @@ const accountIdShort = computed(() => {
                 </span>
               </div>
               <div class="h-1.5 overflow-hidden rounded-full bg-surface-700">
-                <div
-                  class="h-full transition-[width]"
-                  :class="[barClass, colorResolved.mode === 'class' ? 'bg-current' : '']"
-                  :style="{ ...barStyle, width: `${Math.max(0, Math.min(100, Math.round(w.percent ?? 0)))}%`, ...(colorResolved.mode === 'style' ? { backgroundColor: 'currentColor' } : {}) }"
+                <UpstreamBadge
+                  :kind="record.kind"
+                  :color="record.color"
+                  variant="fill"
+                  class="block h-full transition-[width]"
+                  :style="{ width: `${Math.max(0, Math.min(100, Math.round(w.percent ?? 0)))}%` }"
                 />
               </div>
               <p v-if="w.resetAt" class="text-[11px] text-gray-500">Resets at {{ formatTimestamp(w.resetAt) }}</p>

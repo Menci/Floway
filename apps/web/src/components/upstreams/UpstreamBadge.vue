@@ -1,58 +1,58 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 
-import { resolveUpstreamColor, providerMeta } from './provider-meta.ts';
+import { resolveUpstreamColor } from './upstream-paint.ts';
 import type { UpstreamColor, UpstreamProviderKind } from '../../api/types.ts';
 
-// Shared badge / swatch / text chip that reads an upstream's `(kind, color)`
-// pair and paints itself with either a static Uno accent class (preset) or an
-// inline `color-mix()` style (raw hex). Every upstream label site should go
-// through this component so preset + hex renderings stay consistent, and so
-// `RequestList` / `UpstreamPicker` stop maintaining their own drifted maps.
+// Shared badge / swatch / text / fill chip that reads an upstream's
+// `(kind, color)` pair and paints itself with either a static Uno accent
+// class (preset) or an inline `color-mix()` style (raw hex). Single
+// source of truth for the kind→color paint so preset and hex renderings
+// stay consistent.
+//
+// Variants:
+//   - `badge`: pill with border + padded label — the header/list chip.
+//   - `swatch`: centered filled box — the caller picks its own size + shape
+//     via utility classes (`size-8 rounded-full`, `size-10 rounded-md`, ...).
+//   - `text`: bare coloured text run — the request-log row label.
+//   - `fill`: `bg-current` surface for quantitative surfaces (progress
+//     bars, meters) where the caller supplies width / height via
+//     class or style. The wrapping element handles frame + sizing;
+//     this only paints.
 const props = withDefaults(defineProps<{
   kind: UpstreamProviderKind;
   color: UpstreamColor | null;
-  variant?: 'badge' | 'swatch' | 'text';
+  variant?: 'badge' | 'swatch' | 'text' | 'fill';
   size?: 'sm' | 'md';
-  // When true and no `<slot>` content is provided, the kind's label is
-  // rendered as the visible text. `<UpstreamBadge :kind :color />` in a
-  // header slot uses this; sites that pass their own label (e.g. the
-  // upstream's user-facing name) supply a slot and can leave the prop off.
-  showLabel?: boolean;
-}>(), { variant: 'badge', size: 'md', showLabel: false });
+}>(), { variant: 'badge', size: 'md' });
 
-const resolved = computed(() => resolveUpstreamColor({ kind: props.kind, color: props.color }));
-
-const chipClass = computed((): string => {
-  const r = resolved.value;
-  if (r.mode !== 'class') return '';
-  if (props.variant === 'swatch') return r.swatchClass;
-  if (props.variant === 'text') return r.textClass;
-  return r.badgeClass;
-});
-
-const chipStyle = computed((): Record<string, string> => {
-  const r = resolved.value;
-  if (r.mode !== 'style') return {};
-  if (props.variant === 'swatch') return r.swatchStyle;
-  if (props.variant === 'text') return r.textStyle;
-  return r.badgeStyle;
+// One dispatch — pulls the `${variant}Class` slot from the class branch or
+// the `${variant}Style` slot from the style branch, so class/style never
+// fall out of sync when a new variant is added. `fill` reuses `text`'s
+// slot: both paths write `color:`, and the consumer relies on `bg-current`
+// to pick that up.
+const paint = computed((): { class: string; style: Record<string, string> } => {
+  const r = resolveUpstreamColor({ kind: props.kind, color: props.color });
+  const slot = props.variant === 'fill' ? 'text' : props.variant;
+  if (r.mode === 'class') {
+    const key = `${slot}Class` as const;
+    return { class: r[key], style: {} };
+  }
+  const key = `${slot}Style` as const;
+  return { class: '', style: r[key] };
 });
 
 const frameClass = computed((): string => {
   if (props.variant === 'text') return '';
+  if (props.variant === 'swatch') return 'inline-flex items-center justify-center';
+  if (props.variant === 'fill') return 'bg-current';
   const size = props.size === 'sm' ? 'h-5 px-1.5 text-[10px]' : 'h-6 px-2 text-xs';
-  if (props.variant === 'swatch') {
-    return `inline-flex items-center justify-center rounded ${size}`;
-  }
   return `inline-flex items-center gap-1 rounded-full border font-medium ${size}`;
 });
 </script>
 
 <template>
-  <span :class="[frameClass, chipClass]" :style="chipStyle">
-    <slot>
-      <template v-if="showLabel">{{ providerMeta(kind).label }}</template>
-    </slot>
+  <span :class="[frameClass, paint.class]" :style="paint.style">
+    <slot />
   </span>
 </template>

@@ -1,11 +1,4 @@
 <script setup lang="ts">
-import { computed, ref, useTemplateRef, watch } from 'vue';
-
-import UpstreamBadge from './UpstreamBadge.vue';
-import { PROVIDER_META, providerMeta } from './provider-meta.ts';
-import { Input } from '@floway-dev/ui';
-import type { UpstreamColor, UpstreamColorPreset, UpstreamProviderKind } from '../../api/types.ts';
-
 // Per-upstream color override editor. Three tiers, top-to-bottom:
 //   - 6 preset tone swatches + a "no override" chip (dashed ring around the
 //     kind default) + a "custom hex" chip that expands the picker below.
@@ -17,63 +10,25 @@ import type { UpstreamColor, UpstreamColorPreset, UpstreamProviderKind } from '.
 // Preset keys are static so UnoCSS keeps their classes; the custom branch
 // stores `#RRGGBB` and the shared `UpstreamBadge` renders it via inline
 // `color-mix()` styles.
+
+import { computed, ref, useTemplateRef, watch } from 'vue';
+
+import UpstreamBadge from './UpstreamBadge.vue';
+import { providerMeta } from './provider-meta.ts';
+import { KIND_DEFAULT_TONES } from './upstream-paint.ts';
+import type { UpstreamColor, UpstreamColorPreset, UpstreamProviderKind } from '../../api/types.ts';
+import { clamp01, HEX_RE, hexToRgb, hsvToRgb, rgbToHex, rgbToHsv } from '../../utils/color.ts';
+import { UPSTREAM_COLOR_PRESETS } from '@floway-dev/provider/model';
+import { Input } from '@floway-dev/ui';
+
 const model = defineModel<UpstreamColor | null>({ required: true });
 
 const props = defineProps<{
   kind: UpstreamProviderKind;
 }>();
 
-const HEX_RE = /^#[0-9a-fA-F]{6}$/;
-
 const isHex = (v: UpstreamColor | null): v is `#${string}` =>
   v !== null && v.startsWith('#');
-
-const clamp01 = (n: number): number => Math.max(0, Math.min(1, n));
-
-// HSV ↔ RGB ↔ HEX. HSV is the picker's native coordinate system; hex is the
-// wire form; RGB is the intermediate. Zero external deps — the formulas are
-// short and standard.
-const hsvToRgb = (h: number, s: number, v: number): [number, number, number] => {
-  const c = v * s;
-  const hp = h / 60;
-  const x = c * (1 - Math.abs((hp % 2) - 1));
-  let r = 0, g = 0, b = 0;
-  if (hp >= 0 && hp < 1) [r, g, b] = [c, x, 0];
-  else if (hp < 2) [r, g, b] = [x, c, 0];
-  else if (hp < 3) [r, g, b] = [0, c, x];
-  else if (hp < 4) [r, g, b] = [0, x, c];
-  else if (hp < 5) [r, g, b] = [x, 0, c];
-  else [r, g, b] = [c, 0, x];
-  const m = v - c;
-  return [Math.round((r + m) * 255), Math.round((g + m) * 255), Math.round((b + m) * 255)];
-};
-
-const rgbToHex = (r: number, g: number, b: number): string =>
-  '#' + [r, g, b].map(n => n.toString(16).padStart(2, '0')).join('').toUpperCase();
-
-const hexToRgb = (hex: string): [number, number, number] | null => {
-  if (!HEX_RE.test(hex)) return null;
-  return [
-    parseInt(hex.slice(1, 3), 16),
-    parseInt(hex.slice(3, 5), 16),
-    parseInt(hex.slice(5, 7), 16),
-  ];
-};
-
-const rgbToHsv = (r: number, g: number, b: number): [number, number, number] => {
-  const rf = r / 255, gf = g / 255, bf = b / 255;
-  const max = Math.max(rf, gf, bf), min = Math.min(rf, gf, bf);
-  const d = max - min;
-  const v = max;
-  const s = max === 0 ? 0 : d / max;
-  let h = 0;
-  if (d !== 0) {
-    if (max === rf) h = ((gf - bf) / d + (gf < bf ? 6 : 0)) * 60;
-    else if (max === gf) h = ((bf - rf) / d + 2) * 60;
-    else h = ((rf - gf) / d + 4) * 60;
-  }
-  return [h, s, v];
-};
 
 // Picker state. When `model` is a hex, seed HSV from it; otherwise start on
 // a pleasant cyan default so the first custom-mode open shows a live colour
@@ -105,19 +60,26 @@ const commitFromHsv = (): void => {
   syncing = false;
 };
 
-const commitFromHex = (raw: string): void => {
-  hexDraft.value = raw;
-  if (!HEX_RE.test(raw)) return;
-  syncing = true;
+// Apply a valid hex string to the HSV state. Preserves the current hue
+// slider position for near-greyscale inputs (where the derived hue is
+// undefined and would jump to 0 on every keystroke). Callers must have
+// already validated `raw` against HEX_RE.
+const applyHsvFromHex = (raw: string): void => {
   const [r, g, b] = hexToRgb(raw)!;
   const [h, s, v] = rgbToHsv(r, g, b);
-  // Preserve the current hue slider position for near-greyscale inputs
-  // (where the derived hue is undefined and would jump to 0 on every
-  // keystroke).
   if (s > 0.01) hue.value = h;
   saturation.value = s;
   brightness.value = v;
-  model.value = raw.toUpperCase() as UpstreamColor;
+};
+
+const commitFromHex = (raw: string): void => {
+  hexDraft.value = raw;
+  if (!HEX_RE.test(raw)) return;
+  const canonical = raw.toUpperCase();
+  syncing = true;
+  applyHsvFromHex(raw);
+  hexDraft.value = canonical;
+  model.value = canonical as UpstreamColor;
   syncing = false;
 };
 
@@ -128,13 +90,7 @@ watch(model, next => {
   if (syncing) return;
   if (isHex(next)) {
     hexDraft.value = next;
-    const rgb = hexToRgb(next);
-    if (rgb) {
-      const [h, s, v] = rgbToHsv(rgb[0], rgb[1], rgb[2]);
-      if (s > 0.01) hue.value = h;
-      saturation.value = s;
-      brightness.value = v;
-    }
+    applyHsvFromHex(next);
   }
 });
 
@@ -198,12 +154,11 @@ const onHuePointerMove = (e: PointerEvent): void => {
   hueUpdateFromEvent(e);
 };
 
-// Derived visuals. `hueColor` is the pure fully-saturated colour that
-// backs the SV pad; the two crossed gradients then wash white into it
+// Derived visuals. The SV pad's backdrop is the current hue as a fully
+// saturated solid; the two crossed gradients then wash white into it
 // (saturation axis) and black over it (value axis).
-const hueColor = computed(() => `hsl(${hue.value}, 100%, 50%)`);
 const svBackground = computed(() => ({
-  backgroundColor: hueColor.value,
+  backgroundColor: `hsl(${hue.value}, 100%, 50%)`,
   backgroundImage: 'linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, transparent)',
 }));
 
@@ -216,9 +171,19 @@ const hueThumbStyle = computed(() => ({
   left: `${(hue.value / 360) * 100}%`,
 }));
 
-const presets = PROVIDER_META.map(m => m.tone);
-const uniquePresets = computed(() => [...new Set(presets)] as UpstreamColorPreset[]);
-const kindDefaultTone = computed(() => providerMeta(props.kind).tone);
+const presets: readonly UpstreamColorPreset[] = UPSTREAM_COLOR_PRESETS;
+const kindDefaultTone = computed(() => KIND_DEFAULT_TONES[props.kind]);
+
+// Preview always reflects what will be saved: the model when it is a hex
+// (custom mode's canonical value), the draft when the input is a valid
+// #RRGGBB in flight, otherwise the model verbatim (which may be a preset
+// key or null). The preview never disagrees with the current model — a
+// stale invalid hex in the input does not mask the saved value.
+const previewColor = computed<UpstreamColor | null>(() => {
+  if (isHex(model.value)) return model.value;
+  if (HEX_RE.test(hexDraft.value)) return hexDraft.value as UpstreamColor;
+  return model.value;
+});
 </script>
 
 <template>
@@ -232,12 +197,12 @@ const kindDefaultTone = computed(() => providerMeta(props.kind).tone);
         :title="`Kind default (${kindDefaultTone})`"
         @click="clearOverride"
       >
-        <UpstreamBadge :kind="kind" :color="null" variant="swatch" class="!size-4 !p-0 !rounded-full" />
+        <UpstreamBadge :kind="kind" :color="null" variant="swatch" class="size-4 rounded-full" />
       </button>
 
       <!-- Preset swatches -->
       <button
-        v-for="preset in uniquePresets"
+        v-for="preset in presets"
         :key="preset"
         type="button"
         class="size-7 rounded-full transition-transform hover:scale-110"
@@ -245,7 +210,7 @@ const kindDefaultTone = computed(() => providerMeta(props.kind).tone);
         :title="preset"
         @click="selectPreset(preset)"
       >
-        <UpstreamBadge :kind="kind" :color="preset" variant="swatch" class="!size-7 !rounded-full" />
+        <UpstreamBadge :kind="kind" :color="preset" variant="swatch" class="size-7 rounded-full" />
       </button>
 
       <!-- Custom HEX chip -->
@@ -311,11 +276,10 @@ const kindDefaultTone = computed(() => providerMeta(props.kind).tone);
         <span class="text-xs text-gray-500">Preview:</span>
         <UpstreamBadge
           :kind="kind"
-          :color="isHex(model) ? model : (HEX_RE.test(hexDraft) ? (hexDraft as UpstreamColor) : null)"
+          :color="previewColor"
           variant="badge"
           size="sm"
-          show-label
-        />
+        >{{ providerMeta(kind).label }}</UpstreamBadge>
       </div>
     </div>
   </div>

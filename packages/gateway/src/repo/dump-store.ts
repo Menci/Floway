@@ -10,6 +10,7 @@ import type {
   StoredDumpResponseBody,
 } from '../dump/types.ts';
 import type { FileProvider, SqlDatabase } from '@floway-dev/platform';
+import { parseUpstreamColor, parseUpstreamKind } from './upstream-parse.ts';
 
 // Bodies live at `dumps/v1/{keyId}/{YYYYMMDDHH}/{recordId}.{req|resp}.gz`.
 // The hour bucket lets the cron sweep `deletePrefix` whole expired hours.
@@ -39,14 +40,18 @@ interface DumpRow {
 // joined `upstream_name` means the referenced upstream was since deleted.
 // `upstreams.name`/`provider` are NOT NULL so checking name alone suffices.
 // `upstream_color` is nullable in the upstreams table itself (NULL means
-// "inherit the frontend's kind default").
+// "inherit the frontend's kind default"). Kind and color are both validated
+// at read time via the shared `upstream-parse.ts` helpers — the write path
+// already rejects bad values, but a manual DB edit / migration slip would
+// otherwise poison every read that renders the badge. Same policy the SQL
+// repo's own hydrator uses.
 const hydrateUpstream = (row: Pick<DumpRow, 'upstream_id' | 'upstream_name' | 'upstream_kind' | 'upstream_color'>): DumpUpstreamRef | null => {
   if (row.upstream_id === null || row.upstream_name === null) return null;
   return {
     id: row.upstream_id,
     name: row.upstream_name,
-    kind: row.upstream_kind!,
-    color: row.upstream_color as DumpUpstreamRef['color'],
+    kind: parseUpstreamKind(row.upstream_id, row.upstream_kind),
+    color: parseUpstreamColor(row.upstream_id, row.upstream_color),
   };
 };
 

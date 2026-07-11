@@ -18,7 +18,7 @@
 import { z } from 'zod';
 
 import { normalizeDisabledPublicModelIds } from '../repo/disabled-public-models.ts';
-import { type FlagOverrides, MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX, parseFlagOverridesWire, UPSTREAM_COLOR_PRESETS } from '@floway-dev/provider';
+import { type FlagOverrides, MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX, normalizeUpstreamColor, parseFlagOverridesWire } from '@floway-dev/provider';
 
 // --- shared atoms ---
 
@@ -278,14 +278,20 @@ const modelPrefixSchema = z.object({
 }).nullable();
 
 // Per-upstream badge color override. `null` inherits the frontend's kind
-// default. A preset key resolves to a static Uno accent class; a `#RRGGBB`
-// string renders via CSS custom properties on the badge. The wire regex only
-// permits the 6-digit lowercase-or-uppercase form; shorthand and alpha are
-// rejected so the resolver's `startsWith('#')` disambiguation stays sound.
-const upstreamColorSchema = z.union([
-  z.enum(UPSTREAM_COLOR_PRESETS),
-  z.string().regex(/^#[0-9a-fA-F]{6}$/, 'must be #RRGGBB'),
-]).nullable();
+// default. Delegates parsing entirely to `normalizeUpstreamColor` so the
+// wire accept-rules stay in one place (`@floway-dev/provider/model`);
+// widening / narrowing the accepted forms — new preset, alpha hex, etc.
+// — is a one-file change. The transform surfaces the normalizer's throw
+// as a Zod issue so the client-side error shape stays consistent with
+// the sibling flagOverridesSchema.
+const upstreamColorSchema = z.unknown().transform((value, ctx) => {
+  try {
+    return normalizeUpstreamColor(value);
+  } catch (e) {
+    ctx.issues.push({ code: 'custom', message: e instanceof Error ? e.message : String(e), input: value });
+    return z.NEVER;
+  }
+});
 
 const upstreamBaseFields = {
   name: z.string().min(1),

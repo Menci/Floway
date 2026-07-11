@@ -2,6 +2,7 @@ import { normalizeDisabledPublicModelIds } from './disabled-public-models.ts';
 import { normalizeFlagOverrides } from './flag-overrides.ts';
 import { normalizeProxyFallbackList } from './proxy-fallback-list.ts';
 import { deleteAllResponsesItemPayloadFiles, parseStoredResponsesPayload, RESPONSES_REFRESH_DEBOUNCE_MS, serializeStoredResponsesPayload } from './responses-payload.ts';
+import { parseUpstreamColor, parseUpstreamKind } from './upstream-parse.ts';
 import type {
   ApiKey,
   ApiKeyRepo,
@@ -41,8 +42,8 @@ import { generateSessionToken } from '../shared/session-tokens.ts';
 import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';
 import type { SqlDatabase, SqlPreparedStatement, SqlResult } from '@floway-dev/platform';
 import { BILLING_DIMENSIONS, type AliasSelection, type AliasTarget, type AnnouncedMetadata, type BillingDimension, type ModelKind, type ModelPricing, resolveEffectivePricing, unitPriceForDimension } from '@floway-dev/protocols/common';
-import type { ProviderModel, ProxyFallbackEntry, ModelPrefixConfig, UpstreamColor, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
-import { normalizeModelPrefix, UPSTREAM_COLOR_PRESETS } from '@floway-dev/provider';
+import type { ProviderModel, ProxyFallbackEntry, ModelPrefixConfig, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
+import { normalizeModelPrefix } from '@floway-dev/provider';
 
 const runStatements = async (db: SqlDatabase, statements: SqlPreparedStatement[]): Promise<SqlResult[]> => {
   if (statements.length === 0) return [];
@@ -1243,7 +1244,7 @@ const toUpstreamRecord = (row: UpstreamRow): UpstreamRecord => {
 
   return {
     id: row.id,
-    kind: assertUpstreamProviderKind(row.provider),
+    kind: parseUpstreamKind(row.id, row.provider),
     name: row.name,
     enabled: row.enabled !== 0,
     sortOrder: row.sort_order,
@@ -1257,11 +1258,6 @@ const toUpstreamRecord = (row: UpstreamRow): UpstreamRecord => {
     modelPrefix: parseModelPrefix(row.id, row.model_prefix_json),
     color: parseUpstreamColor(row.id, row.color),
   };
-};
-
-const assertUpstreamProviderKind = (provider: string): UpstreamProviderKind => {
-  if (provider === 'copilot' || provider === 'custom' || provider === 'azure' || provider === 'codex' || provider === 'claude-code' || provider === 'ollama') return provider;
-  throw new TypeError(`Invalid upstream provider kind: ${provider}`);
 };
 
 const parseFlagOverrides = (id: string, json: string): Record<string, boolean> => {
@@ -1353,15 +1349,6 @@ const parseModelPrefix = (id: string, json: string | null): ModelPrefixConfig | 
   } catch (cause) {
     throw new Error(`Invalid upstream model_prefix_json shape for ${id}`, { cause });
   }
-};
-
-const UPSTREAM_COLOR_HEX = /^#[0-9a-fA-F]{6}$/;
-
-const parseUpstreamColor = (id: string, value: string | null): UpstreamColor | null => {
-  if (value === null) return null;
-  if (UPSTREAM_COLOR_HEX.test(value)) return value as UpstreamColor;
-  if ((UPSTREAM_COLOR_PRESETS as readonly string[]).includes(value)) return value as UpstreamColor;
-  throw new Error(`Invalid upstream color for ${id}: ${JSON.stringify(value)}`);
 };
 
 class SqlProxyRepo implements ProxyRepo {

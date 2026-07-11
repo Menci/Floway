@@ -74,19 +74,26 @@ export const controlPlaneModels = async (c: Context) => {
     // data-plane access to.
     const isAdmin = userFromContext(c).isAdmin;
     const upstreamScope = isAdmin ? null : effectiveUpstreamIdsFromContext(c);
-    const fetcherForUpstream = await createPerRequestFetcher(getCurrentColo(c.req.raw));
+    // Fetch the upstream list ONCE at the request boundary and thread it
+    // into every downstream consumer that would otherwise re-fetch. Prior
+    // implementations paid up to four separate `upstreams.list()`
+    // round-trips per request (twice through `enumerateAddressableModelIds`
+    // — caller-scoped + gateway-wide — once for the color-join map, and
+    // once inside `createPerRequestFetcher` for the proxy-fallback graph);
+    // threading the pre-fetched list collapses this to one.
+    const upstreamRows = await getRepo().upstreams.list();
+    const fetcherForUpstream = await createPerRequestFetcher(getCurrentColo(c.req.raw), upstreamRows);
     // Two addressable surfaces: caller-scoped (drives visibility +
     // `aliasedFrom.targets` narrowing for non-admin) and gateway-wide
     // (drives the alias's metadata + endpoints + cost — every caller
     // sees the same numbers for the same alias). For admin the two are
     // the same, so skip the second fetch.
-    const [callerAddressable, gatewayAddressable, aliases, upstreamRows] = await Promise.all([
-      enumerateAddressableModelIds(upstreamScope, fetcherForUpstream, backgroundSchedulerFromContext(c)),
+    const [callerAddressable, gatewayAddressable, aliases] = await Promise.all([
+      enumerateAddressableModelIds(upstreamScope, fetcherForUpstream, backgroundSchedulerFromContext(c), upstreamRows),
       isAdmin
         ? Promise.resolve(null)
-        : enumerateAddressableModelIds(null, fetcherForUpstream, backgroundSchedulerFromContext(c)),
+        : enumerateAddressableModelIds(null, fetcherForUpstream, backgroundSchedulerFromContext(c), upstreamRows),
       includeAliases ? getRepo().modelAliases.list() : Promise.resolve([]),
-      getRepo().upstreams.list(),
     ]);
     const colorByUpstream = new Map<string, UpstreamColor | null>(upstreamRows.map(row => [row.id, row.color]));
     const gatewayAddressableModelIds = gatewayAddressable ?? callerAddressable;
@@ -106,7 +113,11 @@ export const controlPlaneModels = async (c: Context) => {
       : realModels;
     // Alias-synthesized rows never bind to an upstream — hand an empty
     // list; real rows read the reverse index built from `callerAddressable`.
-    const listedRows = merged.map(model => toControlPlaneModel(model, model.aliasedFrom !== undefined ? [] : (upstreamsByListedId.get(model.id) ?? []), colorByUpstream));
+    const listedRows = merged.map(model => toControlPlaneModel(
+      model,
+      model.aliasedFrom !== undefined ? [] : (upstreamsByListedId.get(model.id) ?? []),
+      colorByUpstream,
+    ));
     // Dedupe the unlisted half against the listed half on `id` — an alias
     // whose name coincides with an addressable-but-not-listed id (e.g. a
     // Copilot variant) would otherwise emit two rows with the same id but

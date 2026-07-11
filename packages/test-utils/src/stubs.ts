@@ -107,7 +107,6 @@ export const stubModelCandidate = (overrides: {
     name: 'Test Upstream',
     disabledPublicModelIds: [],
     modelPrefix: null,
-    color: null,
     instance: stubProvider(),
     supportsResponsesItemReference: false,
   };

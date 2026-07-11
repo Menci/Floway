@@ -259,7 +259,7 @@ const probeFetchedAtIso = computed<string | null>(() => {
         :kind="record.kind"
         :color="record.color"
         variant="swatch"
-        class="!flex !size-10 !p-0 shrink-0 !items-center !justify-center !rounded-full"
+        class="size-10 shrink-0 rounded-full"
       >
         <i class="i-simple-icons-claudecode size-5" />
       </UpstreamBadge>
