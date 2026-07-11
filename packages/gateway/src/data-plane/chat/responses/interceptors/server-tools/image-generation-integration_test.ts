@@ -255,7 +255,7 @@ test('consumes the exact Codex image_gen namespace and restores its tool and for
   const replacement = { type: 'function', name: SHIM_TOOL_NAME, parameters: {}, strict: false } as ResponsesTool;
   const run = scriptedRun([
     withResponseEcho(callTurn(0, 'call_1', 'a cat'), [replacement], { type: 'function', name: SHIM_TOOL_NAME }),
-    withResponseEcho(messageTurn('done'), [replacement], { type: 'function', name: SHIM_TOOL_NAME }),
+    withResponseEcho(messageTurn('done'), [replacement], 'auto'),
   ]);
   let firstUpstreamToolChoice: ResponsesToolChoice | undefined;
   const result = await shim(invocation, gatewayCtx(), async () => {
