@@ -295,21 +295,25 @@ export interface ResponsesLocalShellCallOutputItem extends ResponsesPermissiveIt
 export interface ResponsesShellCallItem extends ResponsesPermissiveItem<'shell_call'> {
   call_id: string;
   command?: string;
+  caller?: ResponsesToolCaller | null;
 }
 
 export interface ResponsesShellCallOutputItem extends ResponsesPermissiveItem<'shell_call_output'> {
   call_id: string;
   output?: unknown;
+  caller?: ResponsesToolCaller | null;
 }
 
 export interface ResponsesApplyPatchCallItem extends ResponsesPermissiveItem<'apply_patch_call'> {
   call_id: string;
   patch?: string;
+  caller?: ResponsesToolCaller | null;
 }
 
 export interface ResponsesApplyPatchCallOutputItem extends ResponsesPermissiveItem<'apply_patch_call_output'> {
   call_id: string;
   output?: unknown;
+  caller?: ResponsesToolCaller | null;
 }
 
 export interface ResponsesMcpCallItem extends ResponsesPermissiveItem<'mcp_call'> {
@@ -546,6 +550,7 @@ export interface ResponsesOutputFunctionCall {
   name: string;
   arguments: string;
   status: string;
+  caller?: ResponsesToolCaller | null;
 }
 
 export interface ResponsesOutputCustomToolCall {
@@ -556,6 +561,7 @@ export interface ResponsesOutputCustomToolCall {
   id?: string;
   namespace?: string;
   status?: string;
+  caller?: ResponsesToolCaller | null;
 }
 
 export interface ResponsesOutputReasoning {
