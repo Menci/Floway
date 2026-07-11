@@ -42,6 +42,9 @@
 // emits a `web.run` tool call and feeds the returned `output` string back to
 // the model. We execute the requested commands through Floway's configured
 // web-search provider instead of proxying chatgpt.com — see ./alpha-search.ts.
+// Codex derives the path differently across auth/provider modes, so the same
+// handler is also mounted at root `/alpha/search` and `/v1/alpha/search`;
+// the generated Floway config continues to use the namespaced route.
 //
 // Auth: this whole namespace is reached through the same `authMiddleware`
 // that protects every other API route. The operator forges
@@ -70,6 +73,11 @@ import { responsesHttp } from '../chat/responses/http.ts';
 import { responsesWebSocket } from '../chat/responses/websocket.ts';
 
 const CODEX_BASE_PATH = '/azure-api.codex';
+const CODEX_SEARCH_PATHS = [
+  `${CODEX_BASE_PATH}/alpha/search`,
+  '/alpha/search',
+  '/v1/alpha/search',
+] as const;
 
 export const mountCodexRoutes = (app: Hono<{ Variables: AuthVars }>) => {
   app.post(`${CODEX_BASE_PATH}/responses`, responsesHttp.generate);
@@ -79,7 +87,9 @@ export const mountCodexRoutes = (app: Hono<{ Variables: AuthVars }>) => {
   app.get(`${CODEX_BASE_PATH}/models`, codexModels);
   app.post(`${CODEX_BASE_PATH}/codex/analytics-events/events`, codexAnalyticsEventsEvents);
 
-  app.post(`${CODEX_BASE_PATH}/alpha/search`, zValidator('json', codexSearchRequestSchema), codexAlphaSearch);
+  for (const path of CODEX_SEARCH_PATHS) {
+    app.post(path, zValidator('json', codexSearchRequestSchema), codexAlphaSearch);
+  }
 
   app.post(`${CODEX_BASE_PATH}/api/codex/apps`, codexAppsMcp);
 
