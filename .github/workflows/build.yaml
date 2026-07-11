@@ -12,6 +12,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+    env:
+      PUSH_DOCKERHUB: ${{ secrets.DOCKERHUB_TOKEN != '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -28,7 +30,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
       - name: Login to DockerHub
-        if: ${{ secrets.DOCKERHUB_TOKEN != '' }}
+        if: env.PUSH_DOCKERHUB == 'true'
         uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -41,7 +43,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Generate Tag List
         run: |
-          echo "TAGS<<EOF" >> $GITHUB_ENV
+          echo "TAGS<<EOF" >> "$GITHUB_ENV"
 
           # OCI image names must be lowercase; GitHub owner casing varies by user
           OWNER_LC="${OWNER,,}"
@@ -54,16 +56,15 @@ jobs:
           fi
 
           for REGISTRY in "${REGISTRIES[@]}"; do
-              echo "${REGISTRY}${IMAGE_NAME}:latest" >> $GITHUB_ENV
-              echo "${REGISTRY}${IMAGE_NAME}:${DATE}.${RUN_ID}" >> $GITHUB_ENV
+              echo "${REGISTRY}${IMAGE_NAME}:latest" >> "$GITHUB_ENV"
+              echo "${REGISTRY}${IMAGE_NAME}:${DATE}.${RUN_ID}" >> "$GITHUB_ENV"
           done
 
-          echo "EOF" >> $GITHUB_ENV
+          echo "EOF" >> "$GITHUB_ENV"
         env:
           TARGET: ${{ matrix.target.name }}
           RUN_ID: ${{ github.run_id }}
           OWNER: ${{ github.repository_owner }}
-          PUSH_DOCKERHUB: ${{ secrets.DOCKERHUB_TOKEN != '' }}
       - name: Build and Push
         uses: docker/build-push-action@v7
         with:
