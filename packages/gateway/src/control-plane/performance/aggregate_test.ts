@@ -30,8 +30,6 @@ const record = (overrides: Partial<PerformanceTelemetryRecord> = {}): Performanc
   ttftMsSum: 100,
   tpotUsSum: 500,
   // Bucket edges here are illustrative test fixtures, not the production edge set.
-  // A singleton is the first of one uniformly distributed sample, so its
-  // expected order statistic lies at the interval midpoint.
   buckets: [
     { metric: 'ttft_ms', lower: 50, upper: 100, count: 1 },
     { metric: 'tpot_us', lower: 200, upper: 500, count: 1 },
@@ -39,6 +37,8 @@ const record = (overrides: Partial<PerformanceTelemetryRecord> = {}): Performanc
   ...overrides,
 });
 
+// A singleton bucket places its sole sample's expected order statistic at
+// the interval midpoint, so every percentile has the same estimate.
 const TTFT_MID = (50 + 100) / 2;
 const TPOT_MID = (200 + 500) / 2;
 
@@ -117,6 +117,7 @@ test('aggregatePerformanceForDisplay merges two hours under bucket: all', () => 
   assertEquals(rows[0].requests, 2);
   assertEquals(rows[0].ttftSamples, 2);
   assertEquals(rows[0].tpotSamples, 2);
+  // The merged bucket has count 2, so p50 is its first order statistic.
   assertEquals(rows[0].ttftMsP50, 50 + 50 / 3);
 });
 

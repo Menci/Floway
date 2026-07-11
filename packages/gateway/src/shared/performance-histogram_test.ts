@@ -96,6 +96,14 @@ describe('percentileFromBuckets', () => {
     expect(percentileFromBuckets(buckets, 0.5)).toBe(50);
   });
 
+  it('interpolates within a multi-sample bucket whose lower bound is zero', () => {
+    const buckets: HistogramBucket[] = [
+      { lower: 0, upper: 100, count: 10 },
+    ];
+
+    expect(percentileFromBuckets(buckets, 0.5)).toBeCloseTo(500 / 11, 10);
+  });
+
   it('uses the rank local to the selected bucket', () => {
     const buckets: HistogramBucket[] = [
       { lower: 0, upper: 50, count: 1 },

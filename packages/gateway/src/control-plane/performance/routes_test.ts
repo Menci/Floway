@@ -17,8 +17,8 @@ test('/api/performance/overview modelRows carry backend-aggregated base-model pe
   };
 
   // 90 fast samples (ttftMs=100 → bucket [0, 100]) + 10 slow samples (ttftMs=300 → bucket [200, 300]).
-  // Percentiles select a global nearest rank, then estimate that bucket's local
-  // order statistic under a uniform distribution over its stored bounds.
+  // TTFT p50 is local rank 50 of 90; p95 and p99 are local ranks 5 and 9 of
+  // 10. Every TPOT sample shares [0, 500], so its local rank is the global rank.
   for (let i = 0; i < 90; i++) {
     await repo.performance.recordSample({ ...sample, ttftMs: 100 });
   }
