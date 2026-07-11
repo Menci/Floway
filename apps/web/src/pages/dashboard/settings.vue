@@ -36,6 +36,7 @@ export const useSettingsPageData = defineBasicLoader(async () => {
     useModelAliases().load(),
     useRuntimeInfo().load(),
   ]);
+  await useRawModelsStore().load();
   return {
     searchConfig: searchRes.data ?? defaultSearchConfig,
     searchConfigError: searchRes.error?.message ?? null,
@@ -50,10 +51,6 @@ definePage({ meta: { requiresAdmin: true } });
 const router = useRouter();
 const { upstreams, loading: storeLoading, load } = useUpstreamsStore();
 const modelsStore = useRawModelsStore();
-// The model catalog enriches counts and alias target labels, but it is not a
-// prerequisite for editing upstreams or proxies. Start it after navigation
-// so an unreachable upstream cannot hold the entire Settings route open.
-void modelsStore.load();
 const proxiesStore = useProxiesStore();
 const aliasesStore = useModelAliases();
 const { load: loadProxies } = proxiesStore;
