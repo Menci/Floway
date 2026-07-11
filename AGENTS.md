@@ -120,6 +120,7 @@ reaching into any `apps/platform-*`.
 ```text
 Floway/
 ├── packages/
+│   ├── agent-setup/          # @floway-dev/agent-setup — Agent Setup domain: config schema, installers, route factories, lease repository contract
 │   ├── gateway/              # @floway-dev/gateway — Hono app, control/data planes, repo, migrations
 │   ├── http/                 # @floway-dev/http — HTTP/1.1 + userspace TLS + WebSocket upgrade over a duplex byte stream
 │   ├── interceptor/          # @floway-dev/interceptor — generic interceptor framework
@@ -145,7 +146,13 @@ Floway/
 Dependency direction is strict. The leaf-most packages are `protocols`,
 `interceptor`, and `http` (HTTP/1.1 over a duplex byte stream + userspace
 TLS + WebSocket upgrade, no runtime dependencies). `translate` depends on
-`protocols`. `proxy` depends on `http`; it parses subscription-style
+`protocols`. `agent-setup` is the self-contained Agent Setup domain —
+configuration schema, language-native installer prefix rendering, the
+canonical `setup.sh`/`setup.ps1` bodies, dependency-injected Hono public and
+control route factories, and the lease `AgentSetupRepository` contract — and
+depends only on `hono` / `zod` / `@hono/zod-validator`; it never imports the
+gateway or any app, and knows nothing of databases, HTTP auth/CORS/logging, or
+runtimes. `proxy` depends on `http`; it parses subscription-style
 proxy URIs, dispatches to per-protocol byte-stream dialers, and exposes a
 `runProxiedRequest` orchestrator that composes dial → optional userspace
 TLS → fetch-on-stream. All dialers — including `vless-ws`, which layers
@@ -155,9 +162,12 @@ runtime-agnostic by taking the raw TCP `socketDial` primitive through
 depends on `platform` + `protocols` + `interceptor`; the per-vendor
 `provider-*` packages depend on `provider`.
 `gateway` depends on `platform` + `protocols` + `translate` + `http` +
-`proxy` + all `provider-*`, and is the runtime-agnostic gateway core; it
-threads `getSocketDial()` from `@floway-dev/platform` into the proxy
-library at the dial-layer composition root. `apps/platform-*` depend on
+`proxy` + `agent-setup` + all `provider-*`, and is the runtime-agnostic
+gateway core; it threads `getSocketDial()` from `@floway-dev/platform` into
+the proxy library at the dial-layer composition root, and supplies the SQL /
+in-memory `AgentSetupRepository` implementations, the auth-derived user id,
+and the structural mount that places the public setup-script routes ahead of
+its logger / CORS / auth middleware. `apps/platform-*` depend on
 `platform` + `gateway` plus their target's runtime libraries
 (`@cloudflare/workers-types`; `sharp` + `@hono/node-server`); they are the
 only places runtime-specific symbols (D1, R2, Images, KV, ExecutionContext,
@@ -166,7 +176,10 @@ latter only via its `/url`, `/url-kind`, `/proxy-config`, and `/constants`
 subpath exports — chosen so the dashboard's proxy editor reuses URI
 parse/format and config types without pulling dialers, userspace TLS, or
 Node `crypto` into the SPA bundle), and type-imports
-`@floway-dev/gateway/app-type` for Hono RPC client typing.
+`@floway-dev/gateway/app-type` for Hono RPC client typing. It does not depend
+on `@floway-dev/agent-setup` — the dashboard derives the Agent Setup
+configuration type from the RPC client — and ESLint blocks a runtime import of
+that package from `apps/web`.
 
 ESLint forbids any workspace file from importing `@floway-dev/platform-*`
 by package name, plus a `no-restricted-paths` zone forbidding the
@@ -228,10 +241,10 @@ through `@hono/node-server`. Static-asset serving is Workers-only; the Node
 target serves no SPA.
 
 The public Agent Setup installers are checked in at
-`packages/gateway/src/control-plane/agent-setup/scripts/{setup.sh,setup.ps1}`
-and embedded verbatim into `script-assets.generated.ts`; regenerate with
-`pnpm jiti scripts/generate-agent-setup-assets.ts` (pass `--check` to fail on
-drift) after editing either script.
+`packages/agent-setup/installers/{setup.sh,setup.ps1}` and embedded verbatim
+into `packages/agent-setup/src/script-assets.generated.ts`; regenerate with
+`pnpm --filter @floway-dev/agent-setup run generate-assets` (pass `--check` to
+fail on drift) after editing either installer.
 
 Wrangler commands go through the local dependency with `pnpm wrangler` or
 package scripts. When deploying, do not pass `--dry-run`.
