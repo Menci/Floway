@@ -1,6 +1,6 @@
-# Floway agent setup installer (POSIX shell).
+# Floway agent setup installer (Bash 3.2+).
 #
-# Fixed, checked-in body. The language-native assignment prefix (the FLOWAY_*
+# Fixed, checked-in body. The Bash assignment prefix (the FLOWAY_*
 # variables and a trace-suppressing `set +x`) is prepended per request by the
 # gateway, so this file starts straight at the installer logic with no shebang.
 #
@@ -84,8 +84,9 @@ _sha256_of() {
 }
 
 # Run a command under a wall-clock limit. macOS ships no `timeout`, so the
-# portable fallback starts a watchdog that terminates the command when the
-# deadline expires, then reaps both processes and preserves the command status.
+# Bash-3.2 fallback starts a watchdog that records an explicit timeout marker,
+# terminates the command, then reaps both processes. All timeout paths return
+# 124, distinct from any command-specific failure status.
 _run_with_timeout() {
   _rwt_secs=$1
   shift
@@ -98,19 +99,33 @@ _run_with_timeout() {
     return $?
   fi
 
+  _rwt_marker=$(mktemp "$FLOWAY_SETUP_TMPDIR/timeout.XXXXXX") || return 1
+  rm -f "$_rwt_marker"
   "$@" &
   _rwt_pid=$!
   (
+    # The watchdog must not retain the installer's stdout/stderr descriptors
+    # after its parent shell is killed; otherwise a pipe consumer waits for the
+    # orphaned sleep to exit before receiving EOF.
+    exec </dev/null >/dev/null 2>&1
     sleep "$_rwt_secs"
-    kill -TERM "$_rwt_pid" 2>/dev/null || exit 0
-    sleep 1
-    kill -KILL "$_rwt_pid" 2>/dev/null || true
+    if kill -0 "$_rwt_pid" 2>/dev/null; then
+      : > "$_rwt_marker"
+      kill -TERM "$_rwt_pid" 2>/dev/null || true
+      sleep 1
+      kill -KILL "$_rwt_pid" 2>/dev/null || true
+    fi
   ) &
   _rwt_watchdog=$!
   wait "$_rwt_pid"
   _rwt_status=$?
   kill "$_rwt_watchdog" 2>/dev/null || true
   wait "$_rwt_watchdog" 2>/dev/null || true
+  if [ -e "$_rwt_marker" ]; then
+    rm -f "$_rwt_marker"
+    return 124
+  fi
+  rm -f "$_rwt_marker"
   return $_rwt_status
 }
 
@@ -215,7 +230,8 @@ _download_and_run_installer() {
     rm -f "$_dri_file"
     return 1
   fi
-  env -u FLOWAY_API_KEY sh "$_dri_file"
+  _dri_timeout=${FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS:-120}
+  _run_with_timeout "$_dri_timeout" env -u FLOWAY_API_KEY bash "$_dri_file"
   _dri_rc=$?
   rm -f "$_dri_file"
   return $_dri_rc
@@ -256,7 +272,8 @@ claude_discover() {
 # under test.
 install_claude() {
   if [ -n "${FLOWAY_INSTALLER_TEST_INSTALL_CLAUDE_SCRIPT:-}" ]; then
-    env -u FLOWAY_API_KEY sh "$FLOWAY_INSTALLER_TEST_INSTALL_CLAUDE_SCRIPT"
+    _ic_timeout=${FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS:-120}
+    _run_with_timeout "$_ic_timeout" env -u FLOWAY_API_KEY bash "$FLOWAY_INSTALLER_TEST_INSTALL_CLAUDE_SCRIPT"
     return $?
   fi
   # Ref: https://docs.claude.com/en/docs/claude-code/setup ("Native Install").
@@ -404,8 +421,17 @@ claude_verify() {
     return 1
   fi
 
-  if ! _cv_version=$("$CLAUDE_BIN" --version 2>&1); then
-    printf 'Floway: `claude --version` failed.\n' >&2
+  _cv_timeout=${FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS:-30}
+  _cv_version_file="$FLOWAY_SETUP_TMPDIR/claude-version.out"
+  if _run_with_timeout "$_cv_timeout" "$CLAUDE_BIN" --version > "$_cv_version_file" 2>&1; then
+    _cv_version=$(cat "$_cv_version_file")
+  else
+    _cv_version_status=$?
+    if [ "$_cv_version_status" -eq 124 ]; then
+      printf 'Floway: `claude --version` timed out.\n' >&2
+    else
+      printf 'Floway: `claude --version` failed.\n' >&2
+    fi
     return 1
   fi
   printf 'Floway: Claude Code version: %s\n' "$_cv_version"
@@ -416,17 +442,33 @@ claude_verify() {
   fi
   printf 'Floway: reached the authenticated model directory (no inference issued).\n'
 
-  _cv_timeout=${FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS:-30}
-  if _run_with_timeout "$_cv_timeout" "$CLAUDE_BIN" doctor --help </dev/null >/dev/null 2>&1; then
+  _cv_doctor_help="$FLOWAY_SETUP_TMPDIR/claude-doctor-help.out"
+  if _run_with_timeout "$_cv_timeout" "$CLAUDE_BIN" doctor --help </dev/null > "$_cv_doctor_help" 2>&1; then
     if _run_with_timeout "$_cv_timeout" "$CLAUDE_BIN" doctor </dev/null > "$FLOWAY_SETUP_TMPDIR/claude-doctor.out" 2>&1; then
       printf 'Floway: claude doctor reported no blocking issues.\n'
     else
-      printf 'Floway: claude doctor reported a problem:\n' >&2
-      redact_key < "$FLOWAY_SETUP_TMPDIR/claude-doctor.out" >&2
+      _cv_doctor_status=$?
+      if [ "$_cv_doctor_status" -eq 124 ]; then
+        printf 'Floway: claude doctor timed out.\n' >&2
+      else
+        printf 'Floway: claude doctor reported a problem:\n' >&2
+        redact_key < "$FLOWAY_SETUP_TMPDIR/claude-doctor.out" >&2
+      fi
       return 1
     fi
   else
-    printf 'Floway: this Claude Code build has no doctor command; skipping that check.\n'
+    _cv_help_status=$?
+    if [ "$_cv_help_status" -eq 124 ]; then
+      printf 'Floway: claude doctor capability check timed out.\n' >&2
+      return 1
+    fi
+    if grep -Eiq 'unknown (command|argument)|unrecognized (command|argument)|no such command|invalid (command|argument)' "$_cv_doctor_help"; then
+      printf 'Floway: this Claude Code build has no doctor command; skipping that check.\n'
+    else
+      printf 'Floway: claude doctor capability check failed.\n' >&2
+      redact_key < "$_cv_doctor_help" >&2
+      return 1
+    fi
   fi
 }
 

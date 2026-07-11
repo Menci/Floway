@@ -240,7 +240,7 @@ test('GET /api/setup/:token/setup.sh serves the prefix + fixed body with hardene
   expect(text).toContain("FLOWAY_API_KEY='raw-key'");
   expect(text).toContain("FLOWAY_BASE_URL='https://example.com'");
   expect(text).toContain(SETUP_SH_BODY);
-  expect(text).toContain('Floway agent setup installer (POSIX shell)');
+  expect(text).toContain('Floway agent setup installer (Bash 3.2+)');
 });
 
 test('GET /api/setup/:token/setup.ps1 serves the PowerShell prefix + fixed body', async () => {

@@ -106,7 +106,8 @@ function Invoke-FlowayRemoteInstaller {
   if ([string]::IsNullOrWhiteSpace($body) -or $looksLikeHtml) {
     throw "the installer download was HTML or empty, not an executable script (a login or region-block page?)."
   }
-  Invoke-FlowayPowerShellBody -Body $body -TimeoutSeconds 120
+  $timeoutSeconds = if ($env:FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS) { [int]$env:FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS } else { 120 }
+  Invoke-FlowayPowerShellBody -Body $body -TimeoutSeconds $timeoutSeconds
 }
 
 # --- Claude Code ------------------------------------------------------------
@@ -139,8 +140,9 @@ function Get-FlowayClaudeExe {
 # under test.
 function Install-FlowayClaude {
   if ($env:FLOWAY_INSTALLER_TEST_INSTALL_CLAUDE_SCRIPT) {
-    & $env:FLOWAY_INSTALLER_TEST_INSTALL_CLAUDE_SCRIPT
-    if ($LASTEXITCODE -ne 0) { throw "the test installer hook failed." }
+    $timeoutSeconds = if ($env:FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS) { [int]$env:FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS } else { 120 }
+    $installer = Invoke-FlowayProcess -Exe $env:FLOWAY_INSTALLER_TEST_INSTALL_CLAUDE_SCRIPT -Arguments @() -TimeoutSeconds $timeoutSeconds
+    if ($installer.ExitCode -ne 0) { throw "the test installer hook failed." }
     return
   }
   # Ref: https://docs.claude.com/en/docs/claude-code/setup ("Native Install").
@@ -154,6 +156,7 @@ function Restore-FlowayClaudeSettings {
   if ($script:ClaudeSettingsExisted) {
     if ($script:ClaudeSettingsBackup -and (Test-Path -LiteralPath $script:ClaudeSettingsBackup)) {
       Move-Item -LiteralPath $script:ClaudeSettingsBackup -Destination $script:ClaudeSettingsPath -Force
+      Protect-FlowayFile $script:ClaudeSettingsPath
     }
   } elseif (Test-Path -LiteralPath $script:ClaudeSettingsPath) {
     Remove-Item -LiteralPath $script:ClaudeSettingsPath -Force
@@ -184,6 +187,7 @@ function Write-FlowayClaudeSettings {
     $stamp = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
     $script:ClaudeSettingsBackup = "$($script:ClaudeSettingsPath).floway-backup.$stamp.$PID"
     Copy-Item -LiteralPath $script:ClaudeSettingsPath -Destination $script:ClaudeSettingsBackup
+    Protect-FlowayFile $script:ClaudeSettingsBackup
   } else {
     $document = [PSCustomObject]@{}
   }
@@ -202,6 +206,9 @@ function Write-FlowayClaudeSettings {
 
   $stage = "$($script:ClaudeSettingsPath).floway-stage.$PID"
   try {
+    # The stage exists and is owner-only before any secret JSON is written.
+    [System.IO.File]::Create($stage).Dispose()
+    Protect-FlowayFile $stage
     $json = $document | ConvertTo-Json -Depth 100
     # Write UTF-8 without a BOM on every PowerShell version so downstream JSON
     # parsers accept the file.
@@ -210,11 +217,13 @@ function Write-FlowayClaudeSettings {
     if (($check.env.ANTHROPIC_BASE_URL -ne $FlowayBaseUrl) -or ($check.env.ANTHROPIC_AUTH_TOKEN -ne $FlowayApiKey)) {
       throw "staged Claude settings failed validation."
     }
-    Protect-FlowayFile $stage
     # Windows PowerShell 5.1 only runs on Windows and has no $IsWindows
     # automatic variable; PowerShell 6+ exposes it on every platform.
     $runningOnWindows = ($PSVersionTable.PSVersion.Major -lt 6) -or $IsWindows
     if ($script:ClaudeSettingsExisted -and $runningOnWindows) {
+      # File.Replace preserves the destination ACL, so tighten it first rather
+      # than letting a permissive historical DACL survive the atomic replace.
+      Protect-FlowayFile $script:ClaudeSettingsPath
       [System.IO.File]::Replace($stage, $script:ClaudeSettingsPath, $null)
     } else {
       # Move-Item is an atomic same-filesystem rename on Unix and creates a new
@@ -302,8 +311,11 @@ function Invoke-FlowayClaudeVerify {
       throw "claude doctor reported a problem."
     }
     Write-Host "Floway: claude doctor reported no blocking issues."
-  } else {
+  } elseif ($doctorHelp.Output -match '(?i)unknown (command|argument)|unrecognized (command|argument)|no such command|invalid (command|argument)') {
     Write-Host "Floway: this Claude Code build has no doctor command; skipping that check."
+  } else {
+    Write-Host "Floway: claude doctor capability check failed:`n$(Protect-FlowaySecret $doctorHelp.Output)"
+    throw "claude doctor capability check failed."
   }
 }
 

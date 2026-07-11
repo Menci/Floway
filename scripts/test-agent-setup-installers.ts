@@ -14,7 +14,7 @@
 // lands in a later step; its cases self-skip here.
 
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -88,7 +88,7 @@ const resolveTool = (name: string): string | null => {
   const found = spawnSync('/bin/sh', ['-c', `command -v ${name}`], { encoding: 'utf8' }).stdout.trim();
   return found || null;
 };
-for (const tool of ['sh', 'bash', 'env', 'awk', 'cat', 'chmod', 'cp', 'date', 'mkdir', 'mktemp', 'mv', 'rm', 'shasum', 'sleep', 'uname', 'curl']) {
+for (const tool of ['sh', 'bash', 'env', 'awk', 'cat', 'chmod', 'cp', 'date', 'grep', 'mkdir', 'mktemp', 'mv', 'rm', 'shasum', 'sleep', 'uname', 'curl']) {
   const path = resolveTool(tool);
   if (!path) throw new Error(`required tool ${tool} is not available on the host; cannot run the installer harness`);
   symlinkSync(path, join(SHIM_BIN, tool));
@@ -103,6 +103,11 @@ for (const tool of ['sha256sum', 'openssl', 'timeout', 'gtimeout']) {
 // the same body the gateway serves, so the ConvertFrom/To-Json merge and
 // verification logic is exercised rather than merely syntax-checked.
 const hostPwsh = resolveTool('pwsh') ?? resolveTool('powershell');
+const NO_TIMEOUT_BIN = join(HARNESS_ROOT, 'no-timeout-bin');
+mkdirSync(NO_TIMEOUT_BIN);
+for (const tool of readdirSync(SHIM_BIN)) {
+  if (tool !== 'timeout' && tool !== 'gtimeout') symlinkSync(join(SHIM_BIN, tool), join(NO_TIMEOUT_BIN, tool));
+}
 
 // The fake `claude` mirrors the real CLI's observable surface: `--version`
 // prints `<semver> (Claude Code)`, `doctor` runs non-interactively and honors
@@ -115,6 +120,7 @@ if [ "\${FLOWAY_API_KEY+x}" = x ] || [ "\${FlowayApiKey+x}" = x ]; then
 fi
 case "$1" in
   --version)
+    if [ "\${FAKE_CLAUDE_VERSION_SLEEP:-0}" -gt 0 ]; then sleep "$FAKE_CLAUDE_VERSION_SLEEP"; fi
     printf '%s\\n' "\${FAKE_CLAUDE_VERSION:-9.9.9 (Claude Code)}"
     ;;
   doctor)
@@ -123,6 +129,7 @@ case "$1" in
       exit 1
     fi
     if [ "$2" = "--help" ]; then
+      if [ "\${FAKE_CLAUDE_DOCTOR_HELP_SLEEP:-0}" -gt 0 ]; then sleep "$FAKE_CLAUDE_DOCTOR_HELP_SLEEP"; fi
       printf 'Check the health of your Claude Code installation.\\n'
       exit 0
     fi
@@ -146,6 +153,7 @@ if [ "\${FLOWAY_API_KEY+x}" = x ] || [ "\${FlowayApiKey+x}" = x ]; then
   printf 'fake installer inherited the Floway API key environment variable\\n' >&2
   exit 92
 fi
+if [ "\${FAKE_INSTALLER_SLEEP:-0}" -gt 0 ]; then sleep "$FAKE_INSTALLER_SLEEP"; fi
 target="$HOME/.local/bin"
 mkdir -p "$target"
 cp "$FAKE_CLAUDE_SRC" "$target/claude"
@@ -199,7 +207,7 @@ const startModelServer = async (): Promise<ModelServer> => {
       }
       if (state.mode === 'installer-ps1') {
         res.writeHead(200, { 'content-type': 'text/plain' });
-        res.end(`if ($env:FLOWAY_API_KEY) { throw 'installer inherited secret' }\n$target = Join-Path $HOME '.local/bin'\nNew-Item -ItemType Directory -Path $target -Force | Out-Null\nCopy-Item -LiteralPath $env:FAKE_CLAUDE_SRC -Destination (Join-Path $target 'claude') -Force\n& chmod 755 (Join-Path $target 'claude')\nNew-Item -ItemType File -Path $env:FAKE_INSTALLER_MARKER -Force | Out-Null\n`);
+        res.end(`if ($env:FLOWAY_API_KEY) { throw 'installer inherited secret' }\nif ([int]$env:FAKE_INSTALLER_SLEEP -gt 0) { Start-Sleep -Seconds ([int]$env:FAKE_INSTALLER_SLEEP) }\n$target = Join-Path $HOME '.local/bin'\nNew-Item -ItemType Directory -Path $target -Force | Out-Null\nCopy-Item -LiteralPath $env:FAKE_CLAUDE_SRC -Destination (Join-Path $target 'claude') -Force\n& chmod 755 (Join-Path $target 'claude')\nNew-Item -ItemType File -Path $env:FAKE_INSTALLER_MARKER -Force | Out-Null\n`);
         return;
       }
     }
@@ -263,13 +271,17 @@ interface RunOptions {
   includeJq?: boolean;
   disableJqDownload?: boolean;
   fakeClaudeVersion?: string;
+  fakeClaudeVersionSleep?: number;
   fakeClaudeHasDoctor?: boolean;
+  fakeClaudeDoctorHelpSleep?: number;
   fakeClaudeDoctorExit?: number;
   fakeClaudeDoctorSleep?: number;
   withInstallHook?: boolean;
+  installerSleep?: number;
   installerUrl?: string;
   timeoutSeconds?: number;
   ambientApiKey?: boolean;
+  excludeTimeoutTools?: boolean;
 }
 interface RunResult { code: number; stdout: string; stderr: string; combined: string; }
 
@@ -283,16 +295,19 @@ const runShellInstaller = (options: RunOptions): Promise<RunResult> => {
   const scriptPath = join(workspace.root, 'setup.sh');
   writeFileSync(scriptPath, script);
 
-  const pathParts = [workspace.binDir, SHIM_BIN];
+  const pathParts = [workspace.binDir, options.excludeTimeoutTools ? NO_TIMEOUT_BIN : SHIM_BIN];
   if (options.includeJq !== false && hostJqDir) pathParts.push(hostJqDir);
 
   const env: Record<string, string> = {
     HOME: workspace.home,
     PATH: pathParts.join(':'),
     TMPDIR: workspace.root,
+    FAKE_CLAUDE_VERSION_SLEEP: String(options.fakeClaudeVersionSleep ?? 0),
     FAKE_CLAUDE_HAS_DOCTOR: options.fakeClaudeHasDoctor === false ? '0' : '1',
+    FAKE_CLAUDE_DOCTOR_HELP_SLEEP: String(options.fakeClaudeDoctorHelpSleep ?? 0),
     FAKE_CLAUDE_DOCTOR_EXIT: String(options.fakeClaudeDoctorExit ?? 0),
     FAKE_CLAUDE_DOCTOR_SLEEP: String(options.fakeClaudeDoctorSleep ?? 0),
+    FAKE_INSTALLER_SLEEP: String(options.installerSleep ?? 0),
     FAKE_CLAUDE_SRC,
     FAKE_INSTALLER_MARKER: join(workspace.root, 'installer-ran'),
   };
@@ -370,9 +385,12 @@ const runPowerShellInstaller = (options: RunOptions): Promise<RunResult> => {
   const env: Record<string, string> = {
     HOME: workspace.home,
     PATH: [workspace.binDir, SHIM_BIN].join(':'),
+    FAKE_CLAUDE_VERSION_SLEEP: String(options.fakeClaudeVersionSleep ?? 0),
     FAKE_CLAUDE_HAS_DOCTOR: options.fakeClaudeHasDoctor === false ? '0' : '1',
+    FAKE_CLAUDE_DOCTOR_HELP_SLEEP: String(options.fakeClaudeDoctorHelpSleep ?? 0),
     FAKE_CLAUDE_DOCTOR_EXIT: String(options.fakeClaudeDoctorExit ?? 0),
     FAKE_CLAUDE_DOCTOR_SLEEP: String(options.fakeClaudeDoctorSleep ?? 0),
+    FAKE_INSTALLER_SLEEP: String(options.installerSleep ?? 0),
     FAKE_CLAUDE_SRC,
     FAKE_INSTALLER_MARKER: join(workspace.root, 'installer-ran'),
   };
@@ -710,6 +728,19 @@ test('claude', 'PowerShell: optional keys are removed when unset', async t => {
   t.equal(settings.env.KEEP, 'yes', 'unrelated env key preserved');
 });
 
+test('claude', 'PowerShell: existing permissive settings are replaced with mode 0600 on Unix', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  placeFakeClaude(ws.binDir);
+  const configDir = join(ws.home, '.claude');
+  mkdirSync(configDir, { recursive: true });
+  writeFileSync(settingsPathFor(ws), JSON.stringify({ theme: 'light', env: { KEEP: '1' } }));
+  chmodSync(settingsPathFor(ws), 0o644);
+  const run = await runPowerShellInstaller({ workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url });
+  t.equal(run.code, 0, `should succeed:\n${run.combined}`);
+  t.equal(statSync(settingsPathFor(ws)).mode & 0o777, 0o600, 'replacement settings must be mode 0600');
+});
+
 test('claude', 'PowerShell: a pre-existing settings file is backed up', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
@@ -766,9 +797,16 @@ test('claude', 'PowerShell: verification failure rolls back to the original sett
   t.equal(readFileSync(settingsPathFor(ws), 'utf8'), original, 'settings are restored to the original on rollback');
 });
 
-test('claude', 'PowerShell existing-target path uses File.Replace while new-target path uses Move-Item', async t => {
+test('claude', 'PowerShell stages secret data only after protection and hardens Windows replacement targets', async t => {
+  const createIndex = PS1_BODY.indexOf('[System.IO.File]::Create($stage).Dispose()');
+  const protectStageIndex = PS1_BODY.indexOf('Protect-FlowayFile $stage', createIndex);
+  const writeIndex = PS1_BODY.indexOf('[System.IO.File]::WriteAllText($stage, $json', protectStageIndex);
+  const protectTargetIndex = PS1_BODY.indexOf('Protect-FlowayFile $script:ClaudeSettingsPath', writeIndex);
+  const replaceIndex = PS1_BODY.indexOf('[System.IO.File]::Replace($stage, $script:ClaudeSettingsPath, $null)', protectTargetIndex);
+  t.ok(createIndex >= 0 && createIndex < protectStageIndex, 'stage must be created before protection');
+  t.ok(protectStageIndex < writeIndex, 'stage must be protected before secret JSON is written');
+  t.ok(protectTargetIndex < replaceIndex, 'existing Windows target must be hardened before File.Replace');
   t.includes(PS1_BODY, '$runningOnWindows = ($PSVersionTable.PSVersion.Major -lt 6) -or $IsWindows', 'Windows PowerShell 5.1 must select the Windows branch without $IsWindows');
-  t.includes(PS1_BODY, '[System.IO.File]::Replace($stage, $script:ClaudeSettingsPath, $null)', 'existing target must use the Windows atomic replace API');
   t.includes(PS1_BODY, 'Move-Item -LiteralPath $stage -Destination $script:ClaudeSettingsPath', 'new target must use a same-directory move');
 });
 
@@ -781,7 +819,7 @@ test('claude', 'PowerShell: missing CLI triggers the installer', async t => {
   t.ok(existsSync(settingsPathFor(ws)), 'settings are written after installing');
 });
 
-test('claude', 'local POSIX installer accepts shell content and rejects HTML', async t => {
+test('claude', 'local Bash installer accepts shell content and rejects HTML', async t => {
   const accepted = makeWorkspace();
   modelServer.mode = 'installer-sh';
   const success = await runShellInstaller({
@@ -822,17 +860,119 @@ test('claude', 'local PowerShell installer accepts script content and rejects HT
   t.ok(!existsSync(installerMarker(rejected)), 'HTML response never executes');
 });
 
-test('claude', 'POSIX doctor is bounded without relying on an external timeout command', async t => {
+test('claude', 'Bash installer execution is bounded and leaves no running installer', async t => {
+  const ws = makeWorkspace();
+  const started = Date.now();
+  const run = await runShellInstaller({
+    workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url,
+    installerSleep: 5, timeoutSeconds: 1, excludeTimeoutTools: true,
+  });
+  t.ok(run.code !== 0, 'timed out installer must fail the agent');
+  t.ok(Date.now() - started < 4_000, 'installer deadline must fire before natural completion');
+  t.ok(!existsSync(installerMarker(ws)), 'timed-out installer must not reach its marker');
+});
+
+test('claude', 'Bash claude --version is bounded and rolls back settings', async t => {
   const ws = makeWorkspace();
   placeFakeClaude(ws.binDir);
   const started = Date.now();
   const run = await runShellInstaller({
     workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url,
-    fakeClaudeDoctorSleep: 5, timeoutSeconds: 1,
+    fakeClaudeVersionSleep: 5, timeoutSeconds: 1, excludeTimeoutTools: true,
+  });
+  t.ok(run.code !== 0, 'timed out version must fail the agent');
+  t.ok(Date.now() - started < 4_000, 'version deadline must fire before natural completion');
+  t.ok(!existsSync(settingsPathFor(ws)), 'timed-out version verification rolls back settings');
+});
+
+test('claude', 'Bash doctor capability-probe timeout fails instead of skipping doctor', async t => {
+  const ws = makeWorkspace();
+  placeFakeClaude(ws.binDir);
+  const started = Date.now();
+  const run = await runShellInstaller({
+    workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url,
+    fakeClaudeDoctorHelpSleep: 5, timeoutSeconds: 1, excludeTimeoutTools: true,
+  });
+  t.ok(run.code !== 0, 'timed out doctor capability probe must fail the agent');
+  t.ok(Date.now() - started < 4_000, 'capability deadline must fire before natural completion');
+  t.excludes(run.combined, 'has no doctor command', 'timeout must not be treated as an absent doctor command');
+  t.ok(!existsSync(settingsPathFor(ws)), 'timed-out capability probe rolls back settings');
+});
+
+test('claude', 'Bash doctor is bounded without relying on an external timeout command', async t => {
+  const ws = makeWorkspace();
+  placeFakeClaude(ws.binDir);
+  const started = Date.now();
+  const run = await runShellInstaller({
+    workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url,
+    fakeClaudeDoctorSleep: 5, timeoutSeconds: 1, excludeTimeoutTools: true,
   });
   t.ok(run.code !== 0, 'timed out doctor must fail the agent');
   t.ok(Date.now() - started < 4_000, 'deadline must terminate doctor before its natural completion');
   t.ok(!existsSync(settingsPathFor(ws)), 'timed-out verification rolls back settings');
+});
+
+test('claude', 'PowerShell downloaded installer is bounded', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  modelServer.mode = 'installer-ps1';
+  const started = Date.now();
+  const run = await runPowerShellInstaller({
+    workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url,
+    withInstallHook: false, installerUrl: `${modelServer.url}/install.ps1`, installerSleep: 5, timeoutSeconds: 1,
+  });
+  t.ok(run.code !== 0, 'timed out installer must fail the agent');
+  t.ok(Date.now() - started < 4_000, 'installer deadline must fire before natural completion');
+  t.ok(!existsSync(installerMarker(ws)), 'timed-out installer must not reach its marker');
+});
+
+test('claude', 'PowerShell claude --version is bounded', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  placeFakeClaude(ws.binDir);
+  const started = Date.now();
+  const run = await runPowerShellInstaller({
+    workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url,
+    fakeClaudeVersionSleep: 5, timeoutSeconds: 1,
+  });
+  t.ok(run.code !== 0, 'timed out version must fail the agent');
+  t.ok(Date.now() - started < 4_000, 'version deadline must fire before natural completion');
+  t.ok(!existsSync(settingsPathFor(ws)), 'timed-out version verification rolls back settings');
+});
+
+test('claude', 'PowerShell unexpected doctor capability failure fails closed', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  placeFakeClaude(ws.binDir);
+  const fakePath = join(ws.binDir, 'claude');
+  writeFileSync(fakePath, `#!/bin/bash
+case "$1" in
+  --version) printf '9.9.9 (Claude Code)\\n' ;;
+  doctor) printf 'doctor internal failure\\n' >&2; exit 1 ;;
+  *) exit 2 ;;
+esac
+`, { mode: 0o755 });
+  const run = await runPowerShellInstaller({
+    workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url, fakeClaudeHasDoctor: false,
+  });
+  t.ok(run.code !== 0, 'unexpected capability failure must fail the agent');
+  t.excludes(run.combined, 'has no doctor command', 'unexpected failure must not be treated as absence');
+  t.ok(!existsSync(settingsPathFor(ws)), 'failed capability check rolls back settings');
+});
+
+test('claude', 'PowerShell doctor capability-probe timeout fails instead of skipping doctor', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  placeFakeClaude(ws.binDir);
+  const started = Date.now();
+  const run = await runPowerShellInstaller({
+    workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url,
+    fakeClaudeDoctorHelpSleep: 5, timeoutSeconds: 1,
+  });
+  t.ok(run.code !== 0, 'timed out capability probe must fail the agent');
+  t.ok(Date.now() - started < 4_000, 'capability deadline must fire before natural completion');
+  t.excludes(run.combined, 'has no doctor command', 'timeout must not be treated as an absent doctor command');
+  t.ok(!existsSync(settingsPathFor(ws)), 'timed-out capability probe rolls back settings');
 });
 
 test('claude', 'PowerShell doctor is bounded', async t => {
@@ -875,16 +1015,14 @@ test('claude', 'PowerShell: the API key never appears in output and no inference
   }
 });
 
-// --- POSIX syntax check -----------------------------------------------------
+// --- Bash 3.2 syntax check --------------------------------------------------
 
-test('claude', 'POSIX installer body parses under bash 3.2 and the default shell', async t => {
+test('claude', 'Bash installer body parses under the macOS Bash 3.2 baseline', async t => {
   const script = renderShellPrefix({ apiKey: SENTINEL_KEY, publicBaseUrl: 'https://floway.example', configuration: claudeConfig({ model: 'm', effortLevel: 'high', modelDiscovery: true }) }) + SH_BODY;
   const scriptPath = join(HARNESS_ROOT, 'syntax-check.sh');
   writeFileSync(scriptPath, script);
-  for (const shell of ['/bin/bash', '/bin/sh']) {
-    const result = spawnSync(shell, ['-n', scriptPath], { encoding: 'utf8' });
-    t.equal(result.status, 0, `${shell} -n reported a syntax error:\n${result.stderr}`);
-  }
+  const result = spawnSync('/bin/bash', ['-n', scriptPath], { encoding: 'utf8' });
+  t.equal(result.status, 0, `/bin/bash -n reported a syntax error:\n${result.stderr}`);
 });
 
 // --- Codex placeholder (implemented in a later step) ------------------------
