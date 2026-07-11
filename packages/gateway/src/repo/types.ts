@@ -1,6 +1,6 @@
 import type { WebSearchProviderName } from '../shared/web-search-providers.ts';
 import type { AliasSelection, AliasTarget, AnnouncedMetadata, BillingDimension, ModelKind, ModelPricing } from '@floway-dev/protocols/common';
-import type { PerformanceOperation, PerformanceTelemetryContext, ProviderModel, UpstreamRecord } from '@floway-dev/provider';
+import type { PerformanceTelemetryContext, ProviderModel, UpstreamRecord } from '@floway-dev/provider';
 
 export interface ApiKey {
   id: string;
