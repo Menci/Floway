@@ -374,15 +374,17 @@ const validateApiKeyIdentities = (records: readonly ApiKey[], existing: readonly
   return null;
 };
 
-const parseImportedCost = (value: unknown): { type: 'ok'; cost: UsageRecord['cost'] } | { type: 'invalid' } => {
+const parseImportedCost = (value: unknown): { type: 'ok'; cost: UsageRecord['cost'] } | { type: 'invalid'; error: string } => {
   if (value === undefined || value === null) return { type: 'ok', cost: null };
-  if (typeof value !== 'object' || Array.isArray(value)) return { type: 'invalid' };
+  if (typeof value !== 'object' || Array.isArray(value)) return { type: 'invalid', error: 'cost must be an object or null' };
   const obj = value as Record<string, unknown>;
   const cost: PriceVector = {};
   for (const dimension of BILLING_DIMENSIONS) {
     const rate = obj[dimension];
     if (rate === undefined) continue;
-    if (typeof rate !== 'number' || !Number.isFinite(rate)) return { type: 'invalid' };
+    if (typeof rate !== 'number' || !Number.isFinite(rate) || rate < 0) {
+      return { type: 'invalid', error: `cost.${dimension} must be a finite non-negative number` };
+    }
     cost[dimension] = rate;
   }
   return { type: 'ok', cost: Object.keys(cost).length > 0 ? cost : null };
@@ -449,7 +451,7 @@ const parseUsageRecords = (value: unknown): { type: 'ok'; records: UsageRecord[]
     const tokensResult = parseImportedTokens(record.tokens);
     if (tokensResult.type === 'invalid') return { type: 'invalid', index: i, error: 'record has invalid token dimension counts' };
     const costResult = parseImportedCost(record.cost);
-    if (costResult.type === 'invalid') return { type: 'invalid', index: i, error: 'record has invalid cost dimension rates' };
+    if (costResult.type === 'invalid') return { type: 'invalid', index: i, error: costResult.error };
     records.push({
       keyId: record.keyId,
       model: record.model,

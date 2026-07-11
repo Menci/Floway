@@ -669,6 +669,16 @@ test('codex import rejects unknown keys in state', async () => {
   assertEquals(result.body.error.includes('unexpected key'), true);
 });
 
+test('import rejects negative historical unit prices with a dimension-specific error', async () => {
+  const { app } = setup();
+  const result = await doImport(app, 'replace', latestImportData({
+    usage: [{ ...USAGE_2, cost: { input: -0.01, output: 15 } }],
+  }));
+
+  assertEquals(result.status, 400);
+  assertEquals(result.body.error, 'invalid usage at index 0: cost.input must be a finite non-negative number');
+});
+
 test('import rejects invalid records before clearing existing data', async () => {
   const { app, repo } = setup();
   await repo.apiKeys.save(KEY_A);
