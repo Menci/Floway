@@ -409,6 +409,11 @@ test('near-miss public URLs are consumed before host middleware can log their to
     assertEquals(response.headers.get('cache-control'), 'no-store');
   }
   expect(downstream).not.toHaveBeenCalled();
+
+  const control = await app.request('/api/setup/heartbeat', { method: 'POST' });
+  assertEquals(control.status, 404);
+  expect(downstream).toHaveBeenCalledOnce();
+  expect(downstream).toHaveBeenCalledWith('/api/setup/heartbeat');
 });
 
 test('GET re-reads the current configuration each request', async () => {

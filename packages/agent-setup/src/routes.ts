@@ -138,7 +138,7 @@ export const createAgentSetupPublicRoutes = (deps: AgentSetupPublicDeps) => {
     // middleware. A mistyped filename or HTTP method still carries the live
     // credential in its URL segment and must not fall through to access logs.
     .all('/:token{[A-Za-z0-9_-]{43}}', notFound)
-    .all('/:token/*', notFound);
+    .all('/:token{[A-Za-z0-9_-]{43}}/*', notFound);
 };
 
 // --- authenticated control routes ---
