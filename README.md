@@ -153,7 +153,10 @@ the shim driving the internal multi-turn loop and replaying prior
 The Codex CLI's web-search endpoint runs on the same provider. Floway serves
 all paths Codex derives across its authentication and model-provider modes:
 `/azure-api.codex/alpha/search`, `/alpha/search`, and `/v1/alpha/search`.
-The generated dashboard config continues to recommend the namespaced path.
+The generated dashboard config continues to recommend the namespaced path
+and includes a non-secret provider-header marker that enables Codex's remote
+`web.run` extension for the custom `Floway` provider; Floway consumes that
+marker at the gateway boundary and never forwards it to an LLM upstream.
 Codex POSTs the `search_query` / `open` / `find` commands the model requested;
 Floway executes them against the configured provider and returns the combined
 text the CLI feeds back to the model, instead of proxying chatgpt.com. Command
