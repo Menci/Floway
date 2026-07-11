@@ -68,6 +68,25 @@ test('aggregateUsageForDisplay treats null cost as zero', () => {
   assertEquals(out[0].cost, 0);
 });
 
+test('aggregateUsageForDisplay prices each input-length tier from its own bucket', () => {
+  const gpt56Sol: ModelPricing = {
+    input: 5,
+    input_cache_read: 0.5,
+    input_cache_write: 6.25,
+    output: 30,
+    inputLengthTiers: [{ minInputTokens: 272000, input: 10, input_cache_read: 1, input_cache_write: 12.5, output: 45 }],
+  };
+  const records: UsageRecord[] = [
+    baseRecord({ model: 'gpt-5.6-sol', modelKey: 'gpt-5.6-sol', cost: gpt56Sol, inputTier: null, tokens: { input: 1_000_000 } }),
+    baseRecord({ model: 'gpt-5.6-sol', modelKey: 'gpt-5.6-sol', cost: gpt56Sol, inputTier: 272000, tokens: { input: 1_000_000 } }),
+  ];
+  const out = aggregateUsageForDisplay(records);
+  // Two hourly buckets for the same public model merge in display, but each raw
+  // record priced against its own tier: $5 (base) + $10 (>272k) = $15.
+  assertEquals(out.length, 1);
+  assertAlmostEquals(out[0].cost, 15, 1e-9);
+});
+
 test('aggregateUsageForDisplay falls back to the input rate when input_cache_read has no dedicated price', () => {
   const cost: ModelPricing = { input: 4, output: 8 };
   const out = aggregateUsageForDisplay([

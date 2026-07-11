@@ -673,6 +673,32 @@ test('translateResponsesToMessagesResult omits usage.speed when service_tier is 
   assertEquals(result.usage.speed, undefined);
 });
 
+test('translateResponsesToMessagesResult maps Responses cache-write onto Messages cache_creation_input_tokens', () => {
+  const result = translateResponsesToMessagesResult({
+    id: 'resp_cache',
+    object: 'response',
+    model: 'gpt-test',
+    output: [],
+    output_text: '',
+    status: 'completed',
+    error: null,
+    incomplete_details: null,
+    usage: {
+      input_tokens: 100,
+      output_tokens: 20,
+      total_tokens: 120,
+      input_tokens_details: { cached_tokens: 30, cache_write_tokens: 25 },
+    },
+  });
+
+  assertEquals(result.usage, {
+    input_tokens: 45,
+    output_tokens: 20,
+    cache_read_input_tokens: 30,
+    cache_creation_input_tokens: 25,
+  });
+});
+
 const responseFailedEvent = (error: { code: string; message: string }): Parameters<typeof translateResponsesStreamEventToMessagesEvents>[0] => ({
   type: 'response.failed',
   response: {

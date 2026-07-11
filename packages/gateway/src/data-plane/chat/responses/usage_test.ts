@@ -79,3 +79,32 @@ test('Responses usage forwards an unknown tier verbatim (forward-compat with a f
 test('Responses usage returns null when the upstream omits the usage object', () => {
   assertEquals(tokenUsageFromResponsesResult(minimalResult({})), null);
 });
+
+test('Responses usage splits cache-write into its own disjoint bucket', () => {
+  const result = minimalResult({
+    usage: {
+      input_tokens: 100,
+      output_tokens: 20,
+      total_tokens: 120,
+      input_tokens_details: { cached_tokens: 30, cache_write_tokens: 25 },
+    },
+  });
+  assertEquals(tokenUsageFromResponsesResult(result), {
+    input: 45,
+    input_cache_read: 30,
+    input_cache_write: 25,
+    output: 20,
+  });
+});
+
+test('Responses usage rejects a malformed payload whose cache splits exceed the input total', () => {
+  const result = minimalResult({
+    usage: {
+      input_tokens: 40,
+      output_tokens: 5,
+      total_tokens: 45,
+      input_tokens_details: { cached_tokens: 30, cache_write_tokens: 20 },
+    },
+  });
+  assertEquals(tokenUsageFromResponsesResult(result), null);
+});

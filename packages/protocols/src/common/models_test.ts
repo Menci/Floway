@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { resolveEffectivePricing, unitPriceForDimension, type ModelPricing } from './models.ts';
+import { resolveEffectivePricing, selectInputLengthTier, unitPriceForDimension, type ModelPricing } from './models.ts';
 import { assertEquals } from '../test-assert.ts';
 
 test('unitPriceForDimension returns null when pricing snapshot is null', () => {
@@ -98,4 +98,91 @@ test('resolveEffectivePricing folds an empty overlay to the base snapshot', () =
     tiers: { priority: {} },
   };
   assertEquals(resolveEffectivePricing(base, 'priority'), { input: 5, output: 25 });
+});
+
+const gpt56Sol: ModelPricing = {
+  input: 5,
+  input_cache_read: 0.5,
+  input_cache_write: 6.25,
+  output: 30,
+  tiers: { priority: { input: 10, input_cache_read: 1, output: 60 } },
+  inputLengthTiers: [{ minInputTokens: 272000, input: 10, input_cache_read: 1, input_cache_write: 12.5, output: 45 }],
+};
+
+test('selectInputLengthTier returns the marker only once the disjoint input total crosses the threshold', () => {
+  assertEquals(selectInputLengthTier(gpt56Sol, 271999), null);
+  assertEquals(selectInputLengthTier(gpt56Sol, 272000), 272000);
+  assertEquals(selectInputLengthTier(gpt56Sol, 500000), 272000);
+});
+
+test('selectInputLengthTier returns null when the model declares no input-length tiers', () => {
+  assertEquals(selectInputLengthTier({ input: 5, output: 25 }, 1_000_000), null);
+  assertEquals(selectInputLengthTier(null, 1_000_000), null);
+});
+
+test('selectInputLengthTier picks the highest threshold a request meets', () => {
+  const tiered: ModelPricing = {
+    input: 1,
+    inputLengthTiers: [
+      { minInputTokens: 128000, input: 2 },
+      { minInputTokens: 512000, input: 4 },
+    ],
+  };
+  assertEquals(selectInputLengthTier(tiered, 100000), null);
+  assertEquals(selectInputLengthTier(tiered, 200000), 128000);
+  assertEquals(selectInputLengthTier(tiered, 600000), 512000);
+});
+
+test('resolveEffectivePricing applies the input-length tier over base and strips both tier maps', () => {
+  assertEquals(resolveEffectivePricing(gpt56Sol, null, 272000), {
+    input: 10,
+    input_cache_read: 1,
+    input_cache_write: 12.5,
+    output: 45,
+  });
+});
+
+test('resolveEffectivePricing lets a complete input-length tier win over the service tier (documented default)', () => {
+  // A priority request that is also >272k has no separately-published combined
+  // rate, so the full-request long-context rate applies rather than stacking a
+  // priority multiplier on top of it.
+  assertEquals(resolveEffectivePricing(gpt56Sol, 'priority', 272000), {
+    input: 10,
+    input_cache_read: 1,
+    input_cache_write: 12.5,
+    output: 45,
+  });
+});
+
+test('resolveEffectivePricing composes service tier with a partial input-length tier per dimension', () => {
+  // The input-length tier names only output, so the service-tier input rate
+  // survives for the input dimension it does not touch.
+  const partial: ModelPricing = {
+    input: 5,
+    output: 30,
+    tiers: { priority: { input: 10, output: 60 } },
+    inputLengthTiers: [{ minInputTokens: 272000, output: 45 }],
+  };
+  assertEquals(resolveEffectivePricing(partial, 'priority', 272000), { input: 10, output: 45 });
+});
+
+test('resolveEffectivePricing honors an explicit (service x input-length) combination', () => {
+  const explicit: ModelPricing = {
+    input: 5,
+    output: 30,
+    tiers: { priority: { input: 10, output: 60 } },
+    inputLengthTiers: [{ minInputTokens: 272000, input: 10, output: 45, tiers: { priority: { input: 20, output: 90 } } }],
+  };
+  assertEquals(resolveEffectivePricing(explicit, 'priority', 272000), { input: 20, output: 90 });
+  // A base-tier >272k request still uses the plain long-context rate.
+  assertEquals(resolveEffectivePricing(explicit, null, 272000), { input: 10, output: 45 });
+});
+
+test('resolveEffectivePricing ignores an input-length marker with no matching tier', () => {
+  assertEquals(resolveEffectivePricing(gpt56Sol, null, 999999), {
+    input: 5,
+    input_cache_read: 0.5,
+    input_cache_write: 6.25,
+    output: 30,
+  });
 });
