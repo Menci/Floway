@@ -113,6 +113,12 @@ const stringField = (urlKey: string): UrlField<string> => ({
   serialize: v => (v === '' ? undefined : v),
 });
 
+const listField = (urlKey: string): UrlField<string[]> => ({
+  urlKey,
+  parse: v => v.split(',').map(decodeURIComponent).filter(Boolean),
+  serialize: v => (v.length > 0 ? v.map(encodeURIComponent).join(',') : undefined),
+});
+
 const URL_FIELDS = {
   metric: enumField('m', METRIC_VALUES, 'ttft'),
   percentile: enumField('pct', PERCENTILE_VALUES, 'p95'),
@@ -124,11 +130,7 @@ const URL_FIELDS = {
   filterRuntime: stringField('fr'),
   filterUserId: stringField('fusr'),
   filterKeyId: stringField('fk'),
-  hidden: {
-    urlKey: 'hide',
-    parse: (v: string): string[] => v.split(',').map(decodeURIComponent).filter(Boolean),
-    serialize: (v: string[]) => (v.length > 0 ? v.map(encodeURIComponent).join(',') : undefined),
-  },
+  hidden: listField('hide'),
   sortKey: enumField('sort', SORT_KEY_VALUES, 'requests'),
   sortDir: enumField('dir', SORT_DIR_VALUES, 'desc'),
 } satisfies { [K in keyof UrlState]: UrlField<UrlState[K]> };
