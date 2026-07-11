@@ -156,7 +156,10 @@ all paths Codex derives across its authentication and model-provider modes:
 The generated dashboard config continues to recommend the namespaced path
 and includes a non-secret provider-header marker that enables Codex's remote
 `web.run` extension for the custom `Floway` provider; Floway consumes that
-marker at the gateway boundary and never forwards it to an LLM upstream.
+marker at the gateway boundary and never forwards it to an LLM upstream. The
+same marker also makes Codex consider its remote image-generation extension,
+so the generated config explicitly sets `image_generation = false`; Floway
+does not serve Codex's provider-relative image path.
 Codex POSTs the `search_query` / `open` / `find` commands the model requested;
 Floway executes them against the configured provider and returns the combined
 text the CLI feeds back to the model, instead of proxying chatgpt.com. Command

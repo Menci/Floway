@@ -31,6 +31,7 @@ describe('CliSnippet Codex config', () => {
     expect(toml).toContain('name = "Floway"');
     expect(toml).toContain('base_url = "http://localhost:3000/azure-api.codex"');
     expect(toml).toContain('http_headers = { "x-openai-actor-authorization" = "floway-web-search" }');
+    expect(toml).toContain('[features]\napps = false\nimage_generation = false');
     expect(toml).not.toContain('name = "OpenAI"');
   });
 });
