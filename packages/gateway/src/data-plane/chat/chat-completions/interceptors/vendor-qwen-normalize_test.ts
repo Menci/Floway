@@ -7,7 +7,7 @@ import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completi
 import { eventResult, type FlagId } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
-const stubCtx = mockChatGatewayCtx({ apiKeyId: 'test-key' });
+const stubCtx = mockChatGatewayCtx();
 
 const invocation = (payload: ChatCompletionsPayload, enabledFlags: ReadonlySet<FlagId> = new Set(['vendor-qwen'])): ChatCompletionsInvocation => ({
   payload,

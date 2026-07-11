@@ -34,7 +34,7 @@ const makeInvocation = (payload: CanonicalResponsesPayload): ResponsesInvocation
 });
 
 const stubCtx = (overrides: Partial<ChatGatewayCtx> = {}): ChatGatewayCtx =>
-  mockChatGatewayCtx({ apiKeyId: 'test-key', wantsStream: true, ...overrides });
+  mockChatGatewayCtx({ wantsStream: true, ...overrides });
 
 type PromiseState<T> = { type: 'pending' } | { type: 'fulfilled'; value: T } | { type: 'rejected'; error: unknown };
 

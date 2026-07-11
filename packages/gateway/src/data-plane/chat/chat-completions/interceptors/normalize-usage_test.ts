@@ -8,7 +8,7 @@ import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols
 import { type ExecuteResult, eventResult } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
-const stubCtx = mockChatGatewayCtx({ apiKeyId: 'test-key' });
+const stubCtx = mockChatGatewayCtx();
 
 const invocation = (payload: ChatCompletionsPayload = { model: 'test-model', messages: [] }): ChatCompletionsInvocation => ({
   payload,

@@ -7,7 +7,7 @@ import type { GeminiPayload, GeminiStreamEvent } from '@floway-dev/protocols/gem
 import { type ExecuteResult, eventResult, type GeminiInvocation } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
-const stubCtx = mockChatGatewayCtx({ apiKeyId: 'test-key' });
+const stubCtx = mockChatGatewayCtx();
 
 const okEvents = (): Promise<ExecuteResult<ProtocolFrame<GeminiStreamEvent>>> =>
   Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<GeminiStreamEvent>> {})(), testTelemetryModelIdentity));

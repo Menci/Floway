@@ -12,7 +12,7 @@ type DeepseekReasoningDelta = ChatCompletionsStreamEvent['choices'][number]['del
   reasoning_content?: string;
 };
 
-const stubCtx = mockChatGatewayCtx({ apiKeyId: 'test-key' });
+const stubCtx = mockChatGatewayCtx();
 
 const invocation = (payload: ChatCompletionsPayload, enabledFlags: ReadonlySet<FlagId> = new Set(['vendor-deepseek'])): ChatCompletionsInvocation => ({
   payload,

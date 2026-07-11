@@ -10,7 +10,7 @@ import { eventResult, type ExecuteResult } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 import type { CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
 
-const stubCtx = mockChatGatewayCtx({ apiKeyId: 'test-key' });
+const stubCtx = mockChatGatewayCtx();
 
 const makeInvocation = (
   payload: Partial<ResponsesPayload> = {},

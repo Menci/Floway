@@ -9,7 +9,7 @@ import { type ExecuteResult, eventResult } from '@floway-dev/provider';
 import { stubModelCandidate, testTelemetryModelIdentity, assertEquals } from '@floway-dev/test-utils';
 import type { CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
 
-const stubCtx = mockChatGatewayCtx({ apiKeyId: 'test-key' });
+const stubCtx = mockChatGatewayCtx();
 
 const invocation = (): ResponsesInvocation => ({
   payload: { model: 'gpt-test', input: [{ type: 'message' as const, role: 'user' as const, content: 'hi' }] } as CanonicalResponsesPayload,

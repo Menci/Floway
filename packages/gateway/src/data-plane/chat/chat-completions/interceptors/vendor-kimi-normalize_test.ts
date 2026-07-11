@@ -8,7 +8,7 @@ import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { type ExecuteResult, eventResult, type FlagId } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
-const stubCtx = mockChatGatewayCtx({ apiKeyId: 'test-key' });
+const stubCtx = mockChatGatewayCtx();
 
 const invocation = (payload: ChatCompletionsPayload, enabledFlags: ReadonlySet<FlagId> = new Set(['vendor-kimi'])): ChatCompletionsInvocation => ({
   payload,

@@ -8,7 +8,7 @@ import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols
 import { type ExecuteResult, eventResult, type FlagId } from '@floway-dev/provider';
 import { stubModelCandidate, testTelemetryModelIdentity, assertEquals } from '@floway-dev/test-utils';
 
-const stubCtx = mockChatGatewayCtx({ apiKeyId: 'test-key' });
+const stubCtx = mockChatGatewayCtx();
 
 const okEvents = (): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>>> =>
   Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<MessagesStreamEvent>> {})(), testTelemetryModelIdentity));
