@@ -133,54 +133,49 @@ test('POST /api/keys creates a key under the actor with optional upstream_ids', 
     body: JSON.stringify({ name: 'side-key', upstream_ids: ['up_x'] }),
   });
   assertEquals(response.status, 201);
-  const body = (await response.json()) as { id: string; key: string; api_key_format: string; upstream_ids: string[] | null };
-  assertEquals(body.api_key_format, 'openai');
+  const body = (await response.json()) as { id: string; key: string; upstream_ids: string[] | null };
   assertEquals(/^sk-[A-Za-z0-9]{20}T3BlbkFJ[A-Za-z0-9]{20}$/.test(body.key), true);
   assertEquals(body.upstream_ids, ['up_x']);
   const stored = await repo.apiKeys.getById(body.id);
   assertExists(stored);
   assertEquals(stored.userId, apiKey.userId);
-  assertEquals(stored.apiKeyFormat, 'openai');
 });
 
-test('POST /api/keys creates OpenAI-format keys with dump retention', async () => {
+test('POST /api/keys mints a generated key when key_source is generate', async () => {
   const { repo, apiKey } = await setupAppTest();
   const response = await requestApp('/api/keys', {
     method: 'POST',
     headers: { 'x-api-key': apiKey.key, 'content-type': 'application/json' },
-    body: JSON.stringify({ name: 'openai-key', key_format: 'openai', dump_retention_seconds: 3600 }),
+    body: JSON.stringify({ name: 'generated-key', key_source: 'generate', dump_retention_seconds: 3600 }),
   });
   assertEquals(response.status, 201);
-  const body = (await response.json()) as { id: string; key: string; api_key_format: string; dump_retention_seconds: number | null };
-  assertEquals(body.api_key_format, 'openai');
+  const body = (await response.json()) as { id: string; key: string; dump_retention_seconds: number | null };
   assertEquals(/^sk-[A-Za-z0-9]{20}T3BlbkFJ[A-Za-z0-9]{20}$/.test(body.key), true);
   assertEquals(body.dump_retention_seconds, 3600);
 
   const stored = await repo.apiKeys.getById(body.id);
   assertExists(stored);
-  assertEquals(stored.apiKeyFormat, 'openai');
   assertEquals(stored.dumpRetentionSeconds, 3600);
 });
 
-test('POST /api/keys creates custom-format keys and rejects duplicates', async () => {
+test('POST /api/keys stores a custom key verbatim and rejects duplicates', async () => {
   const { repo, apiKey } = await setupAppTest();
   const response = await requestApp('/api/keys', {
     method: 'POST',
     headers: { 'x-api-key': apiKey.key, 'content-type': 'application/json' },
-    body: JSON.stringify({ name: 'custom-key', key_format: 'custom', custom_key: '  bring-your-own-key  ' }),
+    body: JSON.stringify({ name: 'custom-key', key_source: 'custom', custom_key: '  bring-your-own-key  ' }),
   });
   assertEquals(response.status, 201);
-  const body = (await response.json()) as { id: string; key: string; api_key_format: string };
+  const body = (await response.json()) as { id: string; key: string };
   assertEquals(body.key, 'bring-your-own-key');
-  assertEquals(body.api_key_format, 'custom');
   const stored = await repo.apiKeys.getById(body.id);
   assertExists(stored);
-  assertEquals(stored.apiKeyFormat, 'custom');
+  assertEquals(stored.key, 'bring-your-own-key');
 
   const duplicate = await requestApp('/api/keys', {
     method: 'POST',
     headers: { 'x-api-key': apiKey.key, 'content-type': 'application/json' },
-    body: JSON.stringify({ name: 'duplicate-key', key_format: 'custom', custom_key: 'bring-your-own-key' }),
+    body: JSON.stringify({ name: 'duplicate-key', key_source: 'custom', custom_key: 'bring-your-own-key' }),
   });
   assertEquals(duplicate.status, 409);
 });
@@ -190,57 +185,55 @@ test('POST /api/keys rejects malformed custom key requests', async () => {
   const missing = await requestApp('/api/keys', {
     method: 'POST',
     headers: { 'x-api-key': apiKey.key, 'content-type': 'application/json' },
-    body: JSON.stringify({ name: 'custom-key', key_format: 'custom' }),
+    body: JSON.stringify({ name: 'custom-key', key_source: 'custom' }),
   });
   assertEquals(missing.status, 400);
 
   const unexpected = await requestApp('/api/keys', {
     method: 'POST',
     headers: { 'x-api-key': apiKey.key, 'content-type': 'application/json' },
-    body: JSON.stringify({ name: 'openai-key', custom_key: 'not-allowed' }),
+    body: JSON.stringify({ name: 'generated-key', custom_key: 'not-allowed' }),
   });
   assertEquals(unexpected.status, 400);
 
-  const removedFormat = await requestApp('/api/keys', {
+  const unknownSource = await requestApp('/api/keys', {
     method: 'POST',
     headers: { 'x-api-key': apiKey.key, 'content-type': 'application/json' },
-    body: JSON.stringify({ name: 'removed-format', key_format: 'floway' }),
+    body: JSON.stringify({ name: 'removed-source', key_source: 'floway' }),
   });
-  assertEquals(removedFormat.status, 400);
+  assertEquals(unknownSource.status, 400);
 });
 
-test('POST /api/keys/:id/rotate follows stored generated key format', async () => {
-  const { repo, apiKey } = await setupAppTest();
-  await repo.apiKeys.save({ ...apiKey, apiKeyFormat: 'openai' });
+test('POST /api/keys/:id/rotate mints a generated key by default', async () => {
+  const { apiKey } = await setupAppTest();
   const response = await requestApp(`/api/keys/${apiKey.id}/rotate`, {
     method: 'POST',
-    headers: { 'x-api-key': apiKey.key },
+    headers: { 'x-api-key': apiKey.key, 'content-type': 'application/json' },
+    body: JSON.stringify({}),
   });
   assertEquals(response.status, 200);
-  const body = (await response.json()) as { key: string; api_key_format: string };
-  assertEquals(body.api_key_format, 'openai');
+  const body = (await response.json()) as { key: string };
   assertEquals(/^sk-[A-Za-z0-9]{20}T3BlbkFJ[A-Za-z0-9]{20}$/.test(body.key), true);
 });
 
-test('POST /api/keys/:id/rotate requires custom_key for custom-format keys', async () => {
-  const { repo, apiKey } = await setupAppTest();
-  await repo.apiKeys.save({ ...apiKey, apiKeyFormat: 'custom' });
+test('POST /api/keys/:id/rotate accepts a caller-provided key when key_source is custom', async () => {
+  const { apiKey } = await setupAppTest();
 
   const missing = await requestApp(`/api/keys/${apiKey.id}/rotate`, {
     method: 'POST',
-    headers: { 'x-api-key': apiKey.key },
+    headers: { 'x-api-key': apiKey.key, 'content-type': 'application/json' },
+    body: JSON.stringify({ key_source: 'custom' }),
   });
   assertEquals(missing.status, 400);
 
   const rotated = await requestApp(`/api/keys/${apiKey.id}/rotate`, {
     method: 'POST',
     headers: { 'x-api-key': apiKey.key, 'content-type': 'application/json' },
-    body: JSON.stringify({ custom_key: 'new-custom-key' }),
+    body: JSON.stringify({ key_source: 'custom', custom_key: 'new-custom-key' }),
   });
   assertEquals(rotated.status, 200);
-  const body = (await rotated.json()) as { key: string; api_key_format: string };
+  const body = (await rotated.json()) as { key: string };
   assertEquals(body.key, 'new-custom-key');
-  assertEquals(body.api_key_format, 'custom');
 });
 
 test('PATCH /api/keys/:id sets dump_retention_seconds on the column', async () => {

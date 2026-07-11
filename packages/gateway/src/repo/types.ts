@@ -1,4 +1,3 @@
-import type { ApiKeyFormat } from '../shared/api-key-tokens.ts';
 import type { HistogramBucket } from '../shared/performance-histogram.ts';
 import type { WebSearchProviderName } from '../shared/web-search-providers.ts';
 import type { AliasSelection, AliasTarget, AnnouncedMetadata, BillingDimension, ModelKind, ModelPricing } from '@floway-dev/protocols/common';
@@ -9,7 +8,6 @@ export interface ApiKey {
   userId: number;
   name: string;
   key: string;
-  apiKeyFormat: ApiKeyFormat;
   createdAt: string;
   lastUsedAt?: string;
   // null = inherit global upstream order; array = whitelist + priority order.

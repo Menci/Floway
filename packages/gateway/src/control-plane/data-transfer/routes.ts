@@ -23,7 +23,6 @@ import { DIRECT_PROXY_ID, normalizeProxyFallbackList } from '../../repo/proxy-fa
 import type { ApiKey, PerformanceMetricScope, PerformanceTelemetryRecord, SearchUsageRecord, TokenUsage, UsageRecord, User } from '../../repo/types.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getCurrentColo } from '../../runtime/runtime-info.ts';
-import { isApiKeyFormat } from '../../shared/api-key-tokens.ts';
 import { PASSWORD_HASH_SCHEME } from '../../shared/passwords.ts';
 import { isWebSearchProviderName } from '../../shared/web-search-providers.ts';
 import { parseUpstreamIdsValue } from '../api-keys/upstream-ids.ts';
@@ -259,12 +258,6 @@ const parseImportedDumpRetention = (value: unknown): number | null => {
   return value;
 };
 
-const parseImportedApiKeyFormat = (value: unknown) => {
-  if (value === undefined) return 'openai';
-  if (!isApiKeyFormat(value)) throw new Error('apiKeyFormat must be openai or custom');
-  return value;
-};
-
 const parseApiKeyRecords = (value: unknown): { type: 'ok'; records: ApiKey[] } | { type: 'invalid'; index: number; error: string } => {
   if (!Array.isArray(value)) return { type: 'invalid', index: -1, error: 'apiKeys must be an array' };
 
@@ -287,7 +280,6 @@ const parseApiKeyRecords = (value: unknown): { type: 'ok'; records: ApiKey[] } |
         userId: record.userId,
         name: nonEmptyString(record.name, 'name'),
         key: nonEmptyString(record.key, 'key'),
-        apiKeyFormat: parseImportedApiKeyFormat(record.apiKeyFormat),
         createdAt: nonEmptyString(record.createdAt, 'createdAt'),
         ...(record.lastUsedAt !== undefined ? { lastUsedAt: nonEmptyString(record.lastUsedAt, 'lastUsedAt') } : {}),
         upstreamIds: upstreamIdsParsed.value,

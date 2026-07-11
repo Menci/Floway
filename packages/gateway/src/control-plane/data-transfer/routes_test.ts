@@ -31,7 +31,6 @@ const KEY_A: ApiKey = {
   userId: 1,
   name: 'Alice',
   key: 'raw-a',
-  apiKeyFormat: 'openai',
   createdAt: '2026-01-01T00:00:00.000Z',
   lastUsedAt: '2026-01-02T00:00:00.000Z',
   upstreamIds: null,
@@ -44,7 +43,6 @@ const KEY_B: ApiKey = {
   userId: 1,
   name: 'Bob',
   key: 'raw-b',
-  apiKeyFormat: 'openai',
   createdAt: '2026-02-01T00:00:00.000Z',
   upstreamIds: null,
   deletedAt: null,
@@ -642,25 +640,6 @@ test('import preserves a positive dumpRetentionSeconds on api keys', async () =>
   assertEquals(result.status, 200);
   const restored = await repo.apiKeys.getById(KEY_A.id);
   assertEquals(restored?.dumpRetentionSeconds, 3600);
-});
-
-test('import defaults missing apiKeyFormat to openai for older exports', async () => {
-  const { app, repo } = setup();
-  const legacyKey = { ...KEY_A } as Partial<ApiKey>;
-  delete legacyKey.apiKeyFormat;
-  const result = await doImport(app, 'replace', latestImportData({ apiKeys: [legacyKey] }));
-  assertEquals(result.status, 200);
-  const restored = await repo.apiKeys.getById(KEY_A.id);
-  assertEquals(restored?.apiKeyFormat, 'openai');
-});
-
-test('import rejects removed apiKeyFormat values', async () => {
-  const { app } = setup();
-  const result = await doImport(app, 'replace', latestImportData({
-    apiKeys: [{ ...KEY_A, apiKeyFormat: 'floway' as any }],
-  }));
-  assertEquals(result.status, 400);
-  assertEquals(result.body.error, 'invalid apiKeys at index 0: apiKeyFormat must be openai or custom');
 });
 
 test('import rejects api keys whose dumpRetentionSeconds is out of range', async () => {

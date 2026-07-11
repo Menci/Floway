@@ -36,7 +36,6 @@ import type {
   UsersRepo,
 } from './types.ts';
 import { serializeStoredConfig, serializeStoredState } from './upstream-json.ts';
-import { isApiKeyFormat } from '../shared/api-key-tokens.ts';
 import { latencyBucketForMs } from '../shared/performance-histogram.ts';
 import { generateSessionToken } from '../shared/session-tokens.ts';
 import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';
@@ -58,7 +57,6 @@ interface ApiKeyRow {
   user_id: number;
   name: string;
   key: string;
-  api_key_format: string;
   created_at: string;
   last_used_at: string | null;
   upstream_ids: string | null;
@@ -66,7 +64,7 @@ interface ApiKeyRow {
   dump_retention_seconds: number | null;
 }
 
-const API_KEY_COLUMNS = 'id, user_id, name, key, api_key_format, created_at, last_used_at, upstream_ids, deleted_at, dump_retention_seconds';
+const API_KEY_COLUMNS = 'id, user_id, name, key, created_at, last_used_at, upstream_ids, deleted_at, dump_retention_seconds';
 
 const serializeUpstreamIds = (value: readonly string[] | null): string | null => (value === null ? null : JSON.stringify(value));
 
@@ -90,7 +88,6 @@ const toApiKey = (row: ApiKeyRow): ApiKey => ({
   userId: row.user_id,
   name: row.name,
   key: row.key,
-  apiKeyFormat: isApiKeyFormat(row.api_key_format) ? row.api_key_format : 'openai',
   createdAt: row.created_at,
   lastUsedAt: row.last_used_at ?? undefined,
   upstreamIds: parseUpstreamIds(row.upstream_ids, `api_keys.id=${row.id}`),
@@ -158,12 +155,11 @@ class SqlApiKeyRepo implements ApiKeyRepo {
   async save(key: ApiKey): Promise<void> {
     await this.db
       .prepare(
-        `INSERT INTO api_keys (${API_KEY_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO api_keys (${API_KEY_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE SET
            user_id = excluded.user_id,
            name = excluded.name,
            key = excluded.key,
-           api_key_format = excluded.api_key_format,
            last_used_at = excluded.last_used_at,
            upstream_ids = excluded.upstream_ids,
            deleted_at = excluded.deleted_at,
@@ -174,7 +170,6 @@ class SqlApiKeyRepo implements ApiKeyRepo {
         key.userId,
         key.name,
         key.key,
-        key.apiKeyFormat,
         key.createdAt,
         key.lastUsedAt ?? null,
         serializeUpstreamIds(key.upstreamIds),

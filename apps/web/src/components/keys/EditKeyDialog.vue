@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue';
 import { RouterLink } from 'vue-router';
 
+import { type KeySource, KEY_SOURCE_OPTIONS } from './keySource.ts';
 import { callApi, useApi } from '../../api/client.ts';
 import type { ApiKey } from '../../api/types.ts';
 import type { UpstreamOption } from '../../composables/useUpstreamOptions.ts';
@@ -12,18 +13,13 @@ import { Button, Dialog, Input, Select } from '@floway-dev/ui';
 
 const open = defineModel<boolean>('open');
 
-const props = defineProps<{
-  apiKey?: ApiKey;
-  mode?: 'create' | 'edit';
-  upstreams: UpstreamOption[];
-}>();
+const props = defineProps<{ upstreams: UpstreamOption[] } & ({ mode: 'create' } | { mode: 'edit'; apiKey: ApiKey })>();
 
 const emit = defineEmits<{ saved: [] }>();
 
 const api = useApi();
 const auth = useAuthStore();
-const mode = computed(() => props.mode ?? (props.apiKey ? 'edit' : 'create'));
-const isCreate = computed(() => mode.value === 'create');
+const isCreate = computed(() => props.mode === 'create');
 
 const visibleUpstreams = computed<UpstreamOption[]>(() => {
   if (!auth.currentUser) throw new Error('EditKeyDialog rendered without an authenticated user');
@@ -34,7 +30,6 @@ const visibleUpstreams = computed<UpstreamOption[]>(() => {
 });
 
 type RetentionPreset = 'off' | '1h' | '6h' | '24h' | '7d' | 'custom';
-type ApiKeyFormat = ApiKey['api_key_format'];
 
 const retentionPresetSeconds: Record<Exclude<RetentionPreset, 'off' | 'custom'>, number> = {
   '1h': 3600,
@@ -52,11 +47,6 @@ const retentionOptions: { value: RetentionPreset; label: string }[] = [
   { value: 'custom', label: 'Custom…' },
 ];
 
-const formatOptions: { value: ApiKeyFormat; label: string; description: string }[] = [
-  { value: 'openai', label: 'OpenAI', description: 'sk-...T3BlbkFJ... compatible token shape.' },
-  { value: 'custom', label: 'Custom', description: 'Use a key you provide.' },
-];
-
 const retentionPresetFromValue = (sec: number | null): { preset: RetentionPreset; custom: string } => {
   if (sec === null) return { preset: 'off', custom: '' };
   for (const [preset, value] of Object.entries(retentionPresetSeconds)) {
@@ -65,9 +55,8 @@ const retentionPresetFromValue = (sec: number | null): { preset: RetentionPreset
   if (sec % 86400 === 0) return { preset: 'custom', custom: `${sec / 86400}d` };
   if (sec % 3600 === 0) return { preset: 'custom', custom: `${sec / 3600}h` };
   if (sec % 60 === 0) return { preset: 'custom', custom: `${sec / 60}m` };
-  // Always carry the explicit `s` suffix when rendering raw seconds — the
-  // input placeholder shows mixed units (`30m, 2h, 3d, 1800`) so a bare
-  // integer like `45` reads ambiguously even though the parser accepts it.
+  // Emit an explicit 's' suffix so raw seconds don't collide with the
+  // mixed-unit placeholder shown in the custom retention Input.
   return { preset: 'custom', custom: `${sec}s` };
 };
 
@@ -75,22 +64,29 @@ const name = ref('');
 const upstreamSelection = ref<UpstreamPickerValue>({ override: false, ids: [] });
 const retentionPreset = ref<RetentionPreset>('off');
 const retentionCustom = ref('');
-const keyFormat = ref<ApiKeyFormat>('openai');
+const keySource = ref<KeySource>('generate');
 const customKey = ref('');
 const saving = ref(false);
 const error = ref<string | null>(null);
 
 const reset = () => {
-  name.value = props.apiKey?.name ?? '';
-  upstreamSelection.value = {
-    override: props.apiKey?.upstream_ids !== null && props.apiKey?.upstream_ids !== undefined,
-    ids: props.apiKey?.upstream_ids ?? [],
-  };
-  const { preset, custom } = retentionPresetFromValue(props.apiKey?.dump_retention_seconds ?? null);
-  retentionPreset.value = preset;
-  retentionCustom.value = custom;
-  keyFormat.value = props.apiKey?.api_key_format ?? 'openai';
-  customKey.value = '';
+  if (props.mode === 'create') {
+    name.value = '';
+    upstreamSelection.value = { override: false, ids: [] };
+    retentionPreset.value = 'off';
+    retentionCustom.value = '';
+    keySource.value = 'generate';
+    customKey.value = '';
+  } else {
+    name.value = props.apiKey.name;
+    upstreamSelection.value = {
+      override: props.apiKey.upstream_ids !== null,
+      ids: props.apiKey.upstream_ids ?? [],
+    };
+    const { preset, custom } = retentionPresetFromValue(props.apiKey.dump_retention_seconds);
+    retentionPreset.value = preset;
+    retentionCustom.value = custom;
+  }
   error.value = null;
 };
 
@@ -110,7 +106,8 @@ const retentionEnabled = computed(() => {
 });
 
 const retentionWarning = computed<string | null>(() => {
-  const previous = props.apiKey?.dump_retention_seconds ?? null;
+  if (props.mode === 'create') return null;
+  const previous = props.apiKey.dump_retention_seconds;
   if (previous === null) return null;
   const next = proposedRetentionSeconds.value;
   if (next === 'invalid') return null;
@@ -135,7 +132,7 @@ const save = async () => {
     return;
   }
   const custom = customKey.value.trim();
-  if (isCreate.value && keyFormat.value === 'custom' && !custom) {
+  if (props.mode === 'create' && keySource.value === 'custom' && !custom) {
     error.value = 'Custom API key is required.';
     return;
   }
@@ -147,16 +144,16 @@ const save = async () => {
     upstream_ids: upstreamSelection.value.override ? upstreamSelection.value.ids : null,
     dump_retention_seconds: proposedRetention,
   };
-  const { error: err } = isCreate.value
+  const { error: err } = props.mode === 'create'
     ? await callApi(() => api.api.keys.$post({
         json: {
           ...commonBody,
-          key_format: keyFormat.value,
-          ...(keyFormat.value === 'custom' ? { custom_key: custom } : {}),
+          key_source: keySource.value,
+          ...(keySource.value === 'custom' ? { custom_key: custom } : {}),
         },
       }))
     : await callApi(
-        () => api.api.keys[':id'].$patch({ param: { id: props.apiKey!.id }, json: commonBody }),
+        () => api.api.keys[':id'].$patch({ param: { id: props.apiKey.id }, json: commonBody }),
       );
   saving.value = false;
   if (err) {
@@ -184,14 +181,14 @@ const save = async () => {
       />
 
       <div v-if="isCreate" class="space-y-2">
-        <label class="block text-xs font-medium text-gray-500">API key format</label>
-        <Select v-model="keyFormat" :options="formatOptions">
+        <label class="block text-xs font-medium text-gray-500">New key</label>
+        <Select v-model="keySource" :options="KEY_SOURCE_OPTIONS">
           <template #description="{ option }">
             <span class="text-xs text-gray-500">{{ option.description }}</span>
           </template>
         </Select>
         <Input
-          v-if="keyFormat === 'custom'"
+          v-if="keySource === 'custom'"
           v-model="customKey"
           placeholder="Paste custom API key"
         />
@@ -212,8 +209,8 @@ const save = async () => {
         <p v-if="retentionWarning" class="rounded-md border border-accent-amber/40 bg-accent-amber/10 px-3 py-2 text-xs text-accent-amber">
           {{ retentionWarning }}
         </p>
-        <p v-if="retentionEnabled" class="text-xs text-gray-500">
-          <RouterLink v-if="apiKey" :to="`/dashboard/requests/${apiKey.id}`" class="text-accent-cyan hover:underline">
+        <p v-if="props.mode === 'edit' && retentionEnabled" class="text-xs text-gray-500">
+          <RouterLink :to="`/dashboard/requests/${props.apiKey.id}`" class="text-accent-cyan hover:underline">
             View captured requests →
           </RouterLink>
         </p>

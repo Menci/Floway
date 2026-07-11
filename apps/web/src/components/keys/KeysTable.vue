@@ -35,10 +35,6 @@ const truncateKey = (k: string) => k.length <= 12 ? k : `${k.slice(0, 6)}…${k.
 const shortDate = (s: string | null | undefined) => s ? dayjs(s).format('MMM D, YYYY') : '';
 const timeAgo = (s: string | null | undefined) => s ? dayjs(s).fromNow() : '';
 const fullDateTime = (s: string | null | undefined) => s ? dayjs(s).format('YYYY-MM-DD HH:mm:ss') : '';
-const formatLabel = (k: ApiKey) => {
-  if (k.api_key_format === 'openai') return 'OpenAI';
-  return 'Custom';
-};
 
 const upstreamsText = (k: ApiKey) => {
   if (!k.upstream_ids) return 'All';
@@ -67,12 +63,11 @@ const upstreamsTextClass = (k: ApiKey) => {
       No API keys yet. Create one above.
     </p>
 
-    <table v-else class="w-full min-w-[940px] text-sm">
+    <table v-else class="w-full min-w-[860px] text-sm">
       <thead>
         <tr class="border-b border-white/5">
           <th class="text-left py-2 pr-4 pl-7 text-xs font-medium text-gray-500 uppercase tracking-widest">Name</th>
           <th class="text-left py-2 pr-4 text-xs font-medium text-gray-500 uppercase tracking-widest">Key</th>
-          <th class="text-left py-2 pr-4 text-xs font-medium text-gray-500 uppercase tracking-widest">Format</th>
           <th class="text-left py-2 pr-4 text-xs font-medium text-gray-500 uppercase tracking-widest">Upstreams</th>
           <th class="text-left py-2 pr-4 text-xs font-medium text-gray-500 uppercase tracking-widest">Created</th>
           <th class="text-left py-2 pr-4 text-xs font-medium text-gray-500 uppercase tracking-widest">Last Used</th>
@@ -98,11 +93,6 @@ const upstreamsTextClass = (k: ApiKey) => {
           </td>
           <td class="py-3 pr-4">
             <code class="text-xs font-mono text-gray-500 bg-surface-800 rounded px-2 py-1">{{ truncateKey(k.key) }}</code>
-          </td>
-          <td class="py-3 pr-4">
-            <span class="rounded border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-[11px] font-medium uppercase text-gray-400">
-              {{ formatLabel(k) }}
-            </span>
           </td>
           <td class="py-3 pr-4">
             <span class="text-xs cursor-default" :class="upstreamsTextClass(k)" :title="upstreamsTitle(k)">

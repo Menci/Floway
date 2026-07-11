@@ -1,15 +1,16 @@
 <script lang="ts">
 import { defineBasicLoader } from 'unplugin-vue-router/data-loaders/basic';
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 
-import { authFetch, callApi, useApi } from '../../../api/client.ts';
+import { callApi, useApi } from '../../../api/client.ts';
 import type { ApiKey } from '../../../api/types.ts';
 import CliSnippet from '../../../components/keys/CliSnippet.vue';
 import EditKeyDialog from '../../../components/keys/EditKeyDialog.vue';
+import { type KeySource, KEY_SOURCE_OPTIONS } from '../../../components/keys/keySource.ts';
 import KeysTable from '../../../components/keys/KeysTable.vue';
 import { useModelsStore } from '../../../composables/useModels.ts';
 import { useUpstreamOptionsStore } from '../../../composables/useUpstreamOptions.ts';
-import { Button, Dialog, Input } from '@floway-dev/ui';
+import { Button, Dialog, Input, Select } from '@floway-dev/ui';
 
 export const useKeysPageData = defineBasicLoader(async () => {
   const api = useApi();
@@ -27,7 +28,6 @@ export const useKeysPageData = defineBasicLoader(async () => {
 </script>
 
 <script setup lang="ts">
-
 const api = useApi();
 const upstreamOptionsStore = useUpstreamOptionsStore();
 const modelsStore = useModelsStore();
@@ -36,9 +36,10 @@ const initialData = useKeysPageData();
 const keys = ref<ApiKey[]>(initialData.data.value.keys);
 const error = ref<string | null>(initialData.data.value.error);
 const createOpen = ref(false);
-const editTarget = ref<ApiKey | undefined>();
+const editTarget = ref<ApiKey | null>(null);
 const editOpen = ref(false);
 const rotateTarget = ref<ApiKey | null>(null);
+const rotateSource = ref<KeySource>('generate');
 const rotateCustomKey = ref('');
 const rotating = ref(false);
 const rotateError = ref<string | null>(null);
@@ -60,37 +61,37 @@ const loadAll = async () => {
   keys.value = keysRes.data;
 };
 
-const rotate = async (key: ApiKey) => {
-  if (key.api_key_format === 'custom') {
-    rotateTarget.value = key;
-    rotateCustomKey.value = '';
-    rotateError.value = null;
-    return;
-  }
-  if (!window.confirm(`Rotate key "${key.name}"? The old key will stop working immediately.`)) return;
-  const { error: err } = await callApi(() => api.api.keys[':id'].rotate.$post({ param: { id: key.id } }));
-  if (err) {
-    window.alert(`Rotate failed: ${err.message}`);
-    return;
-  }
-  await loadAll();
-};
+const rotateOpen = computed({
+  get: () => rotateTarget.value !== null,
+  set: () => { rotateTarget.value = null; },
+});
 
-const rotateCustom = async () => {
-  const target = rotateTarget.value;
-  if (!target) return;
+// Every time the rotate dialog opens, forget any state from the previous
+// rotation — otherwise a rejected custom key would linger into the next
+// target's dialog.
+watch(rotateOpen, v => {
+  if (!v) return;
+  rotateSource.value = 'generate';
+  rotateCustomKey.value = '';
+  rotateError.value = null;
+});
+
+const submitRotate = async () => {
+  // rotateOpen gates dialog mount and only becomes true once rotateTarget is
+  // set, so target cannot be null here.
+  const target = rotateTarget.value!;
+  const source = rotateSource.value;
   const customKey = rotateCustomKey.value.trim();
-  if (!customKey) {
+  if (source === 'custom' && !customKey) {
     rotateError.value = 'Custom API key is required.';
     return;
   }
   rotating.value = true;
   rotateError.value = null;
   const { error: err } = await callApi(
-    () => authFetch(`/api/keys/${encodeURIComponent(target.id)}/rotate`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ custom_key: customKey }),
+    () => api.api.keys[':id'].rotate.$post({
+      param: { id: target.id },
+      json: source === 'custom' ? { key_source: 'custom', custom_key: customKey } : { key_source: 'generate' },
     }),
   );
   rotating.value = false;
@@ -98,7 +99,7 @@ const rotateCustom = async () => {
     rotateError.value = err.message;
     return;
   }
-  rotateTarget.value = null;
+  rotateOpen.value = false;
   await loadAll();
 };
 
@@ -133,12 +134,6 @@ const selectedKey = computed(() => keys.value.find(k => k.id === selectedKeyId.v
 const configurationKey = computed(() => selectedKey.value?.key ?? keys.value[0]?.key ?? '<your-api-key>');
 const modelsForSnippets = computed(() => modelsStore.models.value ?? []);
 const upstreamOptions = computed(() => upstreamOptionsStore.options.value);
-const rotateOpen = computed({
-  get: () => rotateTarget.value !== null,
-  set: (value: boolean) => {
-    if (!value) rotateTarget.value = null;
-  },
-});
 </script>
 
 <template>
@@ -162,7 +157,7 @@ const rotateOpen = computed({
         @select="id => selectedKeyId = id"
         @copy="(text, tag) => copyToClipboard(text, tag)"
         @edit="openEdit"
-        @rotate="rotate"
+        @rotate="k => rotateTarget = k"
         @remove="remove"
       />
     </div>
@@ -200,21 +195,33 @@ const rotateOpen = computed({
       @saved="loadAll"
     />
 
-    <Dialog v-model:open="rotateOpen" title="Rotate Custom API Key" size="md" :auto-focus-on-open="false">
-      <div class="space-y-4">
-        <p class="text-sm text-gray-400">
-          Enter the replacement key for {{ rotateTarget?.name }}. The old key stops working immediately after rotation.
-        </p>
-        <div class="space-y-2">
-          <label class="block text-xs font-medium text-gray-500">New API key</label>
-          <Input v-model="rotateCustomKey" placeholder="Paste custom API key" @keydown.enter="rotateCustom" />
+    <Dialog v-model:open="rotateOpen" title="Rotate API Key" size="md" :auto-focus-on-open="false">
+      <template v-if="rotateTarget">
+        <div class="space-y-4">
+          <p class="text-sm text-gray-400">
+            Rotating replaces the raw key for {{ rotateTarget.name }}. The old key stops working immediately.
+          </p>
+          <div class="space-y-2">
+            <label class="block text-xs font-medium text-gray-500">New key</label>
+            <Select v-model="rotateSource" :options="KEY_SOURCE_OPTIONS">
+              <template #description="{ option }">
+                <span class="text-xs text-gray-500">{{ option.description }}</span>
+              </template>
+            </Select>
+            <Input
+              v-if="rotateSource === 'custom'"
+              v-model="rotateCustomKey"
+              placeholder="Paste custom API key"
+              @keydown.enter="submitRotate"
+            />
+          </div>
+          <p v-if="rotateError" class="rounded-md border border-accent-rose/40 bg-accent-rose/10 px-3 py-2 text-xs text-accent-rose">{{ rotateError }}</p>
+          <footer class="flex items-center justify-end gap-2">
+            <Button variant="secondary" :disabled="rotating" @click="rotateOpen = false">Cancel</Button>
+            <Button :loading="rotating" @click="submitRotate">Rotate key</Button>
+          </footer>
         </div>
-        <p v-if="rotateError" class="rounded-md border border-accent-rose/40 bg-accent-rose/10 px-3 py-2 text-xs text-accent-rose">{{ rotateError }}</p>
-        <footer class="flex items-center justify-end gap-2">
-          <Button variant="secondary" :disabled="rotating" @click="rotateTarget = null">Cancel</Button>
-          <Button :loading="rotating" @click="rotateCustom">Rotate key</Button>
-        </footer>
-      </div>
+      </template>
     </Dialog>
   </div>
 </template>
