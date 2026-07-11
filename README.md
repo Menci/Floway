@@ -150,6 +150,16 @@ Search**), and emitted back as Responses `web_search_call` items, with
 the shim driving the internal multi-turn loop and replaying prior
 `web_search_call` items across turns.
 
+The Codex CLI's web-search endpoint (`/alpha/search` under the
+`/azure-api.codex/*` namespace) runs on the same provider. Codex POSTs the
+`search_query` / `open` / `find` commands the model requested; Floway
+executes them against the configured provider and returns the combined text
+the CLI feeds back to the model, instead of proxying chatgpt.com. Command
+kinds Floway doesn't implement, and a disabled or unconfigured provider,
+come back as in-band tool-output text so the model can react rather than the
+call hard-failing.
+
+
 ## Stateful Responses
 
 `/v1/responses` stores replayable Responses input and output items for API-key
