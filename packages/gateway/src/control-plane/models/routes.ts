@@ -8,7 +8,7 @@ import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { effectiveUpstreamIdsFromContext, userFromContext } from '../../middleware/auth.ts';
 import { getRepo } from '../../repo/index.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
-import { getCurrentColo } from '../../runtime/runtime-info.ts';
+import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import type { PublicModel, PublicModelsResponse } from '@floway-dev/protocols/common';
 import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 import type { InternalModel, Provider, UpstreamProviderKind } from '@floway-dev/provider';
@@ -61,7 +61,7 @@ export const controlPlaneModels = async (c: Context) => {
     // data-plane access to.
     const isAdmin = userFromContext(c).isAdmin;
     const upstreamScope = isAdmin ? null : effectiveUpstreamIdsFromContext(c);
-    const fetcherForUpstream = await createPerRequestFetcher(getCurrentColo(c.req.raw));
+    const fetcherForUpstream = await createPerRequestFetcher(getRuntimeLocation(c.req.raw));
     // Two addressable surfaces: caller-scoped (drives visibility +
     // `aliasedFrom.targets` narrowing for non-admin) and gateway-wide
     // (drives the alias's metadata + endpoints + cost — every caller

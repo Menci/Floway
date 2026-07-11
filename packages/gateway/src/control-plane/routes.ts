@@ -6,7 +6,7 @@ import { exportData, importData } from './data-transfer/routes.ts';
 import { dumpRoutes } from './dump.ts';
 import { createAlias, deleteAlias, listAliases, updateAlias } from './model-aliases/routes.ts';
 import { controlPlaneModels } from './models/routes.ts';
-import { performanceOverview, performanceTelemetry } from './performance/routes.ts';
+import { performanceOverview } from './performance/routes.ts';
 import { createProxy, deleteProxy, listAllBackoffs, listProxies, listProxyBackoffs, resetProxyBackoffs, testProxy, updateProxy } from './proxies/routes.ts';
 import { authLoginBody, changeOwnPasswordBody, claudeCodeOauthAuthorizeUrlBody, claudeCodeOauthExchangeBody, claudeCodeOauthRefreshBody, claudeCodeProbeBody, claudeCodeSetupTokenAuthorizeUrlBody, claudeCodeSetupTokenExchangeBody, codexOauthAuthorizeUrlBody, codexOauthExchangeBody, codexOauthRefreshBody, copilotOauthDeviceLoginPollBody, copilotQuotaBody, createAliasBody, createKeyBody, createProxyBody, createUpstreamBody, createUserBody, exportQuery, importBody, listModelsBody, modelsQuery, performanceQuery, resetBackoffBody, searchConfigSchema, searchUsageQuery, testProxyBody, tokenUsageQuery, updateAliasBody, updateKeyBody, updateProxyBody, updateUpstreamBody, updateUserBody } from './schemas.ts';
 import { getSearchConfigRoute, putSearchConfigRoute, testSearchConfigRoute } from './search-config/routes.ts';
@@ -46,7 +46,6 @@ export const controlPlaneRoutes = new Hono<{ Variables: AuthVars }>()
   .delete('/api/keys/:id', deleteKey)
   .get('/api/token-usage', zValidator('query', tokenUsageQuery), tokenUsage)
   .get('/api/search-usage', zValidator('query', searchUsageQuery), searchUsage)
-  .get('/api/performance', zValidator('query', performanceQuery), performanceTelemetry)
   .get('/api/performance/overview', zValidator('query', performanceQuery), performanceOverview)
   .get('/api/models', zValidator('query', modelsQuery), controlPlaneModels)
   // Minimal upstream picker exposed to non-admin users so they can scope a key

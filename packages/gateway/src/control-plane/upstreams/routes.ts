@@ -11,7 +11,7 @@ import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { DIRECT_PROXY_ID, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
-import { getCurrentColo } from '../../runtime/runtime-info.ts';
+import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import { shortId } from '../../shared/short-id.ts';
 import { fetchGitHubUser, pollGitHubDeviceFlow, startGitHubDeviceFlow, type GitHubUser } from '../auth/github-device-flow.ts';
 import type { claudeCodeOauthAuthorizeUrlBody, claudeCodeOauthExchangeBody, claudeCodeOauthRefreshBody, claudeCodeProbeBody, claudeCodeSetupTokenAuthorizeUrlBody, claudeCodeSetupTokenExchangeBody, codexOauthAuthorizeUrlBody, codexOauthExchangeBody, codexOauthRefreshBody, copilotOauthDeviceLoginPollBody, copilotQuotaBody, createUpstreamBody, listModelsBody, updateUpstreamBody } from '../schemas.ts';
@@ -160,7 +160,7 @@ const normalizeModelPrefixField = (input: unknown): ValidationResult<ModelPrefix
 const warmModelsCache = async (record: UpstreamRecord, c: Context): Promise<void> => {
   const scheduler = backgroundSchedulerFromContext(c);
   const instance = createProviderInstance(record);
-  const fetcher = (await createPerRequestFetcher(getCurrentColo(c.req.raw)))(record.id);
+  const fetcher = (await createPerRequestFetcher(getRuntimeLocation(c.req.raw)))(record.id);
   try {
     await fetchUpstreamModelsCached(instance, { scheduler, fetcher, force: true });
   } catch (e) {
@@ -391,7 +391,7 @@ export const copilotOauthDeviceLoginPoll = async (c: CtxWithJson<typeof copilotO
   // as 400 — they belong to the caller, not to the upstream.
   let fetcher: Fetcher;
   try {
-    fetcher = await resolveControlPlaneFetcher({ override: record.proxy_fallback_list, runtimeLocation: getCurrentColo(c.req.raw) });
+    fetcher = await resolveControlPlaneFetcher({ override: record.proxy_fallback_list, runtimeLocation: getRuntimeLocation(c.req.raw) });
   } catch (err) {
     return c.json({ status: 'error' as const, error: errorMessage(err) }, 400);
   }
@@ -494,7 +494,7 @@ export const copilotQuota = async (c: CtxWithJson<typeof copilotQuotaBody>) => {
     const githubToken = config && typeof config.githubToken === 'string' ? config.githubToken : '';
     if (!githubToken) return c.json({ error: 'Copilot upstream has no GitHub token' }, 400);
 
-    const fetcher = await resolveControlPlaneFetcher({ override: record.proxy_fallback_list, runtimeLocation: getCurrentColo(c.req.raw) });
+    const fetcher = await resolveControlPlaneFetcher({ override: record.proxy_fallback_list, runtimeLocation: getRuntimeLocation(c.req.raw) });
     const resp = await fetcher('https://api.github.com/copilot_internal/user', { headers: githubHeaders(githubToken) });
 
     if (!resp.ok) {
@@ -540,7 +540,7 @@ export const codexOauthExchange = async (c: CtxWithJson<typeof codexOauthExchang
     fetcher = await resolveControlPlaneFetcher({
       override: record.proxy_fallback_list,
       upstreamId: record.id || undefined,
-      runtimeLocation: getCurrentColo(c.req.raw),
+      runtimeLocation: getRuntimeLocation(c.req.raw),
     });
   } catch (err) {
     return c.json({ error: errorMessage(err) }, 400);
@@ -603,7 +603,7 @@ export const codexOauthRefresh = async (c: CtxWithJson<typeof codexOauthRefreshB
     fetcher = await resolveControlPlaneFetcher({
       override: record.proxy_fallback_list,
       upstreamId: record.id,
-      runtimeLocation: getCurrentColo(c.req.raw),
+      runtimeLocation: getRuntimeLocation(c.req.raw),
     });
   } catch (err) {
     return c.json({ error: errorMessage(err) }, 400);
@@ -686,7 +686,7 @@ export const claudeCodeOauthExchange = async (c: CtxWithJson<typeof claudeCodeOa
     fetcher = await resolveControlPlaneFetcher({
       override: record.proxy_fallback_list,
       upstreamId: record.id || undefined,
-      runtimeLocation: getCurrentColo(c.req.raw),
+      runtimeLocation: getRuntimeLocation(c.req.raw),
     });
   } catch (err) {
     return c.json({ error: errorMessage(err) }, 400);
@@ -730,7 +730,7 @@ export const claudeCodeSetupTokenExchange = async (c: CtxWithJson<typeof claudeC
     fetcher = await resolveControlPlaneFetcher({
       override: record.proxy_fallback_list,
       upstreamId: record.id || undefined,
-      runtimeLocation: getCurrentColo(c.req.raw),
+      runtimeLocation: getRuntimeLocation(c.req.raw),
     });
   } catch (err) {
     return c.json({ error: errorMessage(err) }, 400);
@@ -790,7 +790,7 @@ export const claudeCodeOauthRefresh = async (c: CtxWithJson<typeof claudeCodeOau
     fetcher = await resolveControlPlaneFetcher({
       override: record.proxy_fallback_list,
       upstreamId: record.id,
-      runtimeLocation: getCurrentColo(c.req.raw),
+      runtimeLocation: getRuntimeLocation(c.req.raw),
     });
   } catch (err) {
     return c.json({ error: errorMessage(err) }, 400);
@@ -824,7 +824,7 @@ export const claudeCodeProbe = async (c: CtxWithJson<typeof claudeCodeProbeBody>
     fetcher = await resolveControlPlaneFetcher({
       override: record.proxy_fallback_list,
       upstreamId: record.id || undefined,
-      runtimeLocation: getCurrentColo(c.req.raw),
+      runtimeLocation: getRuntimeLocation(c.req.raw),
     });
   } catch (err) {
     return c.json({ error: errorMessage(err) }, 400);
@@ -961,7 +961,7 @@ export const listModels = async (c: CtxWithJson<typeof listModelsBody>) => {
     fetcher = await resolveControlPlaneFetcher({
       override: record.proxy_fallback_list,
       upstreamId: record.id || undefined,
-      runtimeLocation: getCurrentColo(c.req.raw),
+      runtimeLocation: getRuntimeLocation(c.req.raw),
     });
   } catch (err) {
     return c.json({ error: errorMessage(err) }, 400);

@@ -7,7 +7,7 @@ export const DIRECT_PROXY_ID = 'direct';
 // Treat the list as a SET by `id` semantics: a duplicate entry has no meaning
 // beyond "try once", so silently drop repeats. The first occurrence's `colos`
 // whitelist wins on conflict. Colo codes are uppercased so the dial-time
-// match against `getCurrentColo` (which uppercases CF's `request.cf.colo` and
+// match against `getRuntimeLocation` (which uppercases CF's `request.cf.colo` and
 // the Node `RUNTIME_LOCATION` env var) and the dashboard's free-form input
 // stay aligned.
 export const normalizeProxyFallbackList = (entries: readonly ProxyFallbackEntry[]): ProxyFallbackEntry[] => {

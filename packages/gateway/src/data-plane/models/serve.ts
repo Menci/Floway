@@ -9,12 +9,12 @@ import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import { getRepo } from '../../repo/index.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
-import { getCurrentColo } from '../../runtime/runtime-info.ts';
+import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 
 export const models = async (c: Context) => {
   try {
-    const fetcherForUpstream = await createPerRequestFetcher(getCurrentColo(c.req.raw));
+    const fetcherForUpstream = await createPerRequestFetcher(getRuntimeLocation(c.req.raw));
     return Response.json(await loadModels(effectiveUpstreamIdsFromContext(c), fetcherForUpstream, backgroundSchedulerFromContext(c), getRepo().modelAliases));
   } catch (e) {
     // Upstream HTTP/parse failures squash to a generic message so we do not

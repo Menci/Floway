@@ -1,7 +1,7 @@
 import type { RequestBody } from './request-body.ts';
 import { type DumpAccumulator, openDumpAccumulator } from '../../../dump/accumulator.ts';
 import { apiKeyFromContext, type AuthedContext, effectiveUpstreamIdsFromContext } from '../../../middleware/auth.ts';
-import { getCurrentColo } from '../../../runtime/runtime-info.ts';
+import { getRuntimeLocation } from '../../../runtime/runtime-info.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { PerformanceTelemetryContext } from '@floway-dev/provider';
@@ -124,7 +124,7 @@ export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCt
     downstreamAbortController: controller,
     backgroundScheduler: opts.backgroundScheduler,
     perfTiming: { firstOutputTokenAt: null, upstreamCallStartedAt: null, attemptTelemetry: undefined },
-    runtimeLocation: getCurrentColo(c.req.raw),
+    runtimeLocation: getRuntimeLocation(c.req.raw),
     dump,
     responseHeaders: new Headers(),
   };
