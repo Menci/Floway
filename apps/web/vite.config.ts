@@ -27,6 +27,7 @@ const wranglerProxiedPaths = [
   '/v1',
   '/v1beta',
   '/azure-api.codex',
+  '/alpha/search',
   '/completions',
   '/chat/completions',
   '/responses',
