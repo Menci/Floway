@@ -12,12 +12,14 @@ import type { ResponsesPayload, ResponsesTool, ResponsesToolChoice } from '@flow
  *   tools: [...] }`, which packages the same capability for client-side
  *   execution.
  *
- * Other Responses-capable upstreams (e.g. OpenAI direct) accept both and must
- * continue to see them. Every other hosted/deferred tool — `web_search`,
- * `tool_search`, and any namespace whose name is not `image_gen` — is left in
- * place: Codex relies on `tool_search` and its namespaces for client-executed
- * deferred tool discovery, and Copilot accepts `web_search`. We match the
- * namespace by its exact upstream name so unrelated namespaces survive.
+ * The gateway image shim normally consumes both shapes before this provider
+ * boundary. This strip is the disabled-shim fallback and remains Copilot-only;
+ * other providers own their behavior at their own boundaries. Every other
+ * hosted/deferred tool — `web_search`, `tool_search`, and any namespace whose
+ * name is not `image_gen` — is left in place: Codex relies on `tool_search` and
+ * its namespaces for client-executed deferred tool discovery, and Copilot
+ * accepts `web_search`. We match the namespace by its exact upstream name so
+ * unrelated namespaces survive.
  *
  * Copilot rejects both shapes before inference with an HTTP 400: the hosted
  * tool yields `The requested tool image_generation is not supported.`, and the
