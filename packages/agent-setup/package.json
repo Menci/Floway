@@ -8,6 +8,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
     "generate-assets": "jiti scripts/generate-assets.ts",
     "test:installers": "jiti scripts/test-installers.ts"
   },
