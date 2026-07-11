@@ -273,9 +273,9 @@ test('GET derives the base URL from a Node reverse proxy: X-Forwarded-Proto over
   const { apiKey } = await setupAppTest({ apiKey: testApiKey() });
   const lease = (await (await createLease(apiKey.key)).json()) as LeaseResponse;
 
-  // The bundled reverse proxy terminates TLS and forwards over plain HTTP with
-  // Host set to the public host and X-Forwarded-Proto set to the real scheme
-  // (docker/nginx.conf). The default 'node' runtime kind honors that header.
+  // A TLS terminator in front of the bundled plain-HTTP proxy (docker/nginx.conf)
+  // forwards over HTTP with Host set to the public host and X-Forwarded-Proto set
+  // to the real scheme. The default 'node' runtime kind honors that header.
   const response = await requestApp(`http://public-host${lease.scripts.sh}`, {
     method: 'GET',
     headers: { 'x-forwarded-proto': 'https' },

@@ -1,8 +1,10 @@
+import { readFileSync } from 'node:fs';
+
 import { afterEach, beforeEach, test } from 'vitest';
 
 import { getCurrentColo, getRequestOrigin, getRuntimeInfo } from './runtime-info.ts';
 import { initEnv, initRuntimeKind } from '@floway-dev/platform';
-import { assertEquals, assertThrows } from '@floway-dev/test-utils';
+import { assert, assertEquals, assertFalse, assertThrows } from '@floway-dev/test-utils';
 
 // vitest.setup primes the global env getter to return `''` for every key
 // and the runtime kind to `'node'`; restore those defaults after each test so
@@ -76,6 +78,19 @@ test('getRequestOrigin on Cloudflare ignores a spoofed X-Forwarded-Proto and use
   initRuntimeKind('cloudflare');
   const request = new Request('https://cf-host/api/setup/x/setup.sh', { headers: { 'x-forwarded-proto': 'http' } });
   assertEquals(getRequestOrigin(request), 'https://cf-host');
+});
+
+// Coherence guard: the bundled proxy must forward exactly the proto shape
+// getRequestOrigin trusts above — a single clean `http`/`https` token, else the
+// proxy's own `$scheme`. Asserted against the checked-in source, not a running
+// nginx, so drift is caught without a container.
+test('docker/nginx.conf forwards X-Forwarded-Proto through a validated http|https map matching getRequestOrigin', () => {
+  const conf = readFileSync(new URL('../../../../docker/nginx.conf', import.meta.url), 'utf8');
+
+  assert(/map\s+\$http_x_forwarded_proto\s+\$forwarded_proto\s*\{/.test(conf), 'nginx.conf must map $http_x_forwarded_proto to a validated $forwarded_proto');
+  assert(/default\s+\$scheme\s*;/.test(conf), 'the map must fall back to $scheme for anything but a clean http/https token');
+  assert(/proxy_set_header\s+X-Forwarded-Proto\s+\$forwarded_proto\s*;/.test(conf), 'X-Forwarded-Proto must forward the validated $forwarded_proto variable');
+  assertFalse(/proxy_set_header\s+X-Forwarded-Proto\s+\$scheme\s*;/.test(conf), 'X-Forwarded-Proto must not be set unconditionally from $scheme');
 });
 
 beforeEach(() => {

@@ -32,15 +32,18 @@ export const getRuntimeInfo = (request: Request): RuntimeInfo => ({
 // already carries the real public scheme and host, so it is authoritative and
 // a forwarded-proto header — which an untrusted client can spoof — is ignored.
 //
-// The Node target may sit behind the bundled reverse proxy, which terminates
-// TLS and forwards over plain HTTP to the app: `docker/nginx.conf` sets
-// `proxy_set_header X-Forwarded-Proto $scheme` and `proxy_pass`es to
-// `http://server:8788`, so the app sees `http://<public-host>` and only that
-// header recovers the real scheme. We therefore honor `X-Forwarded-Proto` on
-// Node alone, and only as a bounded single `http`/`https` value that overrides
-// the scheme while always keeping the request URL's own host — a forwarded
-// host is never trusted. A missing, comma-chained, or otherwise invalid value
-// falls back to the request URL's protocol.
+// The Node target typically sits behind a reverse proxy. The bundled
+// `docker/nginx.conf` is a plain HTTP reverse proxy — it only `listen 80` and
+// forwards to `http://server:8788`, so on its own the request URL the app sees
+// always reads `http://<host>`. TLS is terminated elsewhere: either in an
+// operator's own proxy in front of that nginx, or in a custom proxy pointed
+// straight at Node. The terminator's `X-Forwarded-Proto` is then the only
+// signal that recovers the real public scheme. nginx forwards that header only
+// as a validated single `http`/`https` token (else its own `$scheme`), and we
+// mirror the same bound here: on Node we honor `X-Forwarded-Proto` only as one
+// `http`/`https` value that overrides the scheme, always keeping the request
+// URL's own host — a forwarded host is never trusted. A missing, comma-chained,
+// or otherwise invalid value falls back to the request URL's protocol.
 export const getRequestOrigin = (request: Request): string => {
   const url = new URL(request.url);
   if (getRuntimeKind() === 'node') {
