@@ -1,14 +1,8 @@
-# Floway agent setup installer (PowerShell).
+# Floway agent setup installer (PowerShell). The gateway prepends the
+# language-native assignment prefix before this fixed body.
 #
-# Fixed, checked-in body. The language-native assignment prefix (the $Floway*
-# variables and a trace-suppressing `Set-PSDebug -Off`) is prepended per
-# request by the gateway, so this file starts straight at the installer logic.
-#
-# Claude Code and Codex are configured as independent transactional units: a
-# failure in one neither rolls back nor skips the other, and any selected-agent
-# failure makes the whole script exit non-zero. Each agent runs inside its own
-# try/catch so a terminating error is contained and rolled back rather than
-# aborting the other agent.
+# Each selected agent runs as an independent transaction so one failure does not
+# skip or roll back the other.
 
 $ErrorActionPreference = 'Stop'
 # Keep native (non-cmdlet) command failures from auto-throwing on PowerShell
@@ -21,13 +15,8 @@ $PSNativeCommandUseErrorActionPreference = $false
 Remove-Item Env:FLOWAY_API_KEY -ErrorAction SilentlyContinue
 Remove-Item Env:FlowayApiKey -ErrorAction SilentlyContinue
 
-# $FlowayBaseUrl is supplied by the wrapping one-line command
-# (`$FlowayBaseUrl = '<origin>'; irm "$FlowayBaseUrl/..." | iex`), never baked
-# into this body — the gateway that served this script never learns its own
-# public origin. It stays an in-process variable and is never exported to the
-# environment (iex runs in the same runspace, so no process boundary is
-# crossed). Require a non-empty http(s) origin before any configuration is
-# touched.
+# The wrapping command supplies $FlowayBaseUrl as an in-process variable.
+# Validate it before mutation; installer and CLI subprocesses never inherit it.
 if ([string]::IsNullOrWhiteSpace($FlowayBaseUrl)) {
   Write-Host "Floway: `$FlowayBaseUrl must be set to this gateway origin (e.g. https://gateway.example)."
   exit 1
@@ -148,29 +137,32 @@ function Invoke-FlowayRemoteInstaller {
   Invoke-FlowayPowerShellBody -Body $body -TimeoutSeconds $timeoutSeconds
 }
 
-# --- Claude Code ------------------------------------------------------------
-
-# Resolve the Claude Code executable. The PATH winner is authoritative; known
-# official user-local locations are also consulted so an install that is not on
-# PATH is still found, and so multiple installations can be flagged.
-# Ref: https://docs.claude.com/en/docs/claude-code/troubleshoot-install
-function Get-FlowayClaudeExe {
+function Get-FlowayCliExe {
+  param([string]$Name, [string]$Label, [string[]]$Candidates)
   $found = New-Object System.Collections.Generic.List[string]
-  $command = Get-Command claude -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+  $command = Get-Command $Name -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
   if ($command) { $found.Add($command.Source) }
-  $candidates = @(
-    (Join-Path $HOME '.local/bin/claude'),
-    (Join-Path $HOME '.local/bin/claude.exe'),
-    (Join-Path $HOME '.claude/local/claude')
-  )
-  if ($env:USERPROFILE) { $candidates += (Join-Path $env:USERPROFILE '.local\bin\claude.exe') }
-  foreach ($candidate in $candidates) {
+  foreach ($candidate in $Candidates) {
     if ((Test-Path -LiteralPath $candidate) -and (-not $found.Contains($candidate))) { $found.Add($candidate) }
   }
   if ($found.Count -eq 0) { return $null }
-  if ($found.Count -gt 1) { Write-Host "Floway: multiple Claude Code installations detected; using $($found[0])." }
+  if ($found.Count -gt 1) { Write-Host "Floway: multiple $Label installations detected; using $($found[0])." }
   return $found[0]
 }
+
+function Restore-FlowayManagedFile {
+  param([bool]$Existed, [string]$Backup, [string]$Path, [switch]$Protect)
+  if ($Existed) {
+    if ($Backup -and (Test-Path -LiteralPath $Backup)) {
+      Move-Item -LiteralPath $Backup -Destination $Path -Force
+      if ($Protect) { Protect-FlowayFile $Path }
+    }
+  } elseif (Test-Path -LiteralPath $Path) {
+    Remove-Item -LiteralPath $Path -Force
+  }
+}
+
+# --- Claude Code ------------------------------------------------------------
 
 # Install the official user-local Claude Code build. The
 # FLOWAY_INSTALLER_TEST_INSTALL_CLAUDE_SCRIPT hook — read from the ambient
@@ -188,17 +180,8 @@ function Install-FlowayClaude {
   Invoke-FlowayRemoteInstaller -Uri $installerUri
 }
 
-# Restore the settings file to its pre-run state: replace it from the backup
-# when one exists, or remove the file entirely when this run created it.
 function Restore-FlowayClaudeSettings {
-  if ($script:ClaudeSettingsExisted) {
-    if ($script:ClaudeSettingsBackup -and (Test-Path -LiteralPath $script:ClaudeSettingsBackup)) {
-      Move-Item -LiteralPath $script:ClaudeSettingsBackup -Destination $script:ClaudeSettingsPath -Force
-      Protect-FlowayFile $script:ClaudeSettingsPath
-    }
-  } elseif (Test-Path -LiteralPath $script:ClaudeSettingsPath) {
-    Remove-Item -LiteralPath $script:ClaudeSettingsPath -Force
-  }
+  Restore-FlowayManagedFile -Existed $script:ClaudeSettingsExisted -Backup $script:ClaudeSettingsBackup -Path $script:ClaudeSettingsPath -Protect
 }
 
 # Surgically merge the managed keys into the Claude settings file: validate the
@@ -316,28 +299,6 @@ function Invoke-FlowayProcess {
   [PSCustomObject]@{ ExitCode = $process.ExitCode; Output = ($stdout + $stderr) }
 }
 
-# Confirm the gateway's authenticated model directory answers. No inference
-# request is issued. The key travels in an in-process header table, never in a
-# process argument list.
-function Test-FlowayModelDirectory {
-  $headers = @{
-    'Authorization'     = "Bearer $FlowayApiKey"
-    'x-api-key'         = $FlowayApiKey
-    'anthropic-version' = '2023-06-01'
-  }
-  $uri = ($FlowayBaseUrl.TrimEnd('/')) + '/v1/models'
-  try {
-    Invoke-WebRequest -Uri $uri -Headers $headers -Method Get -UseBasicParsing -TimeoutSec 30 | Out-Null
-    return $true
-  } catch {
-    return $false
-  }
-}
-
-# Verify the Claude configuration without inference: reparse the written
-# settings, print the raw CLI version, reach the authenticated model directory,
-# and run `claude doctor` when the subcommand exists. Doctor output is redacted
-# before it is surfaced.
 function Invoke-FlowayClaudeVerify {
   param([string]$Exe)
   $document = Get-Content -Raw -LiteralPath $script:ClaudeSettingsPath | ConvertFrom-Json
@@ -350,8 +311,16 @@ function Invoke-FlowayClaudeVerify {
   if ($version.ExitCode -ne 0) { throw "``claude --version`` failed." }
   Write-Host "Floway: Claude Code version: $($version.Output.Trim())"
 
-  if (-not (Test-FlowayModelDirectory)) {
-    throw "could not reach the authenticated model directory at $($FlowayBaseUrl.TrimEnd('/'))/v1/models"
+  $headers = @{
+    'Authorization'     = "Bearer $FlowayApiKey"
+    'x-api-key'         = $FlowayApiKey
+    'anthropic-version' = '2023-06-01'
+  }
+  $modelUri = ($FlowayBaseUrl.TrimEnd('/')) + '/v1/models'
+  try {
+    Invoke-WebRequest -Uri $modelUri -Headers $headers -Method Get -UseBasicParsing -TimeoutSec 30 | Out-Null
+  } catch {
+    throw "could not reach the authenticated model directory at $modelUri"
   }
   Write-Host "Floway: reached the authenticated model directory (no inference issued)."
 
@@ -375,11 +344,18 @@ function Invoke-FlowayClaudeVerify {
 # back the settings write; a freshly installed CLI is never uninstalled.
 function Set-FlowayClaude {
   Write-Host "Floway: configuring Claude Code..."
-  $exe = Get-FlowayClaudeExe
+  # Ref: https://docs.claude.com/en/docs/claude-code/troubleshoot-install
+  $candidates = @(
+    (Join-Path $HOME '.local/bin/claude'),
+    (Join-Path $HOME '.local/bin/claude.exe'),
+    (Join-Path $HOME '.claude/local/claude')
+  )
+  if ($env:USERPROFILE) { $candidates += (Join-Path $env:USERPROFILE '.local\bin\claude.exe') }
+  $exe = Get-FlowayCliExe -Name claude -Label 'Claude Code' -Candidates $candidates
   if (-not $exe) {
     Write-Host "Floway: Claude Code CLI not found; installing the official user-local build..."
     Install-FlowayClaude
-    $exe = Get-FlowayClaudeExe
+    $exe = Get-FlowayCliExe -Name claude -Label 'Claude Code' -Candidates $candidates
     if (-not $exe) { throw "Claude Code CLI is unavailable and could not be installed." }
   }
   Write-FlowayClaudeSettings
@@ -400,15 +376,9 @@ function Set-FlowayClaude {
 # never rotates a ChatGPT refresh token. Codex only reads it back.
 $FlowayCodexRefreshNoop = 'floway-managed-no-refresh'
 
-# Build Floway's placeholder ChatGPT identity token from the gateway origin.
-# Codex decodes this alg=none JWT to render `codex login status`; it is never
-# verified because the gateway authenticates the data plane with the API key
-# carried as access_token, not with this token. The host-derived email keeps
-# multiple deployments distinguishable in the CLI's status output. Assembled
-# here — not by the gateway — so the server never learns its own public origin.
-# The payload JSON is concatenated rather than ConvertTo-Json'd so the byte
-# layout (and key order) is identical across PowerShell versions, matching the
-# Bash installer's jq output.
+# Codex only decodes this alg=none placeholder for login status; access_token
+# authenticates the gateway. Literal JSON keeps byte layout and key order stable
+# across PowerShell versions and matches the Bash installer.
 # Ref: packages/provider-codex/src/auth/jwt.ts (the decode-only claim reader).
 function Get-FlowayCodexIdToken {
   $authority = ([Uri]$FlowayBaseUrl).Authority
@@ -419,27 +389,6 @@ function Get-FlowayCodexIdToken {
   $headerJson = '{"alg":"none","typ":"JWT"}'
   $payloadJson = '{"email":"floway@' + $authority + '","https://api.openai.com/auth":{"chatgpt_plan_type":"pro_plus","chatgpt_user_id":"user-floway","chatgpt_account_id":"acct-floway"}}'
   return ((& $encode $headerJson) + '.' + (& $encode $payloadJson) + '.c2ln')
-}
-
-# Resolve the Codex executable. The PATH winner is authoritative; the official
-# user-local locations are also consulted so an off-PATH install is still found
-# and multiple installations can be flagged.
-# Ref: https://github.com/openai/codex/blob/main/scripts/install/install.sh
-function Get-FlowayCodexExe {
-  $found = New-Object System.Collections.Generic.List[string]
-  $command = Get-Command codex -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
-  if ($command) { $found.Add($command.Source) }
-  $candidates = @(
-    (Join-Path $HOME '.local/bin/codex'),
-    (Join-Path $HOME '.local/bin/codex.exe')
-  )
-  if ($env:USERPROFILE) { $candidates += (Join-Path $env:USERPROFILE '.local\bin\codex.exe') }
-  foreach ($candidate in $candidates) {
-    if ((Test-Path -LiteralPath $candidate) -and (-not $found.Contains($candidate))) { $found.Add($candidate) }
-  }
-  if ($found.Count -eq 0) { return $null }
-  if ($found.Count -gt 1) { Write-Host "Floway: multiple Codex installations detected; using $($found[0])." }
-  return $found[0]
 }
 
 # Install the official user-local Codex build. CODEX_NON_INTERACTIVE keeps the
@@ -464,15 +413,6 @@ function Install-FlowayCodex {
     if ($hadNonInteractive) { $env:CODEX_NON_INTERACTIVE = $previousNonInteractive }
     else { Remove-Item Env:CODEX_NON_INTERACTIVE -ErrorAction SilentlyContinue }
   }
-}
-
-# Resolve the Codex home and the two managed files. Codex reads CODEX_HOME the
-# same way, so the app-server writes config.toml at exactly this location.
-function Resolve-FlowayCodexPaths {
-  $codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME '.codex' }
-  $script:CodexHomeDir = $codexHome
-  $script:CodexConfigPath = Join-Path $codexHome 'config.toml'
-  $script:CodexAuthPath = Join-Path $codexHome 'auth.json'
 }
 
 # Back up both managed files before any mutation, recording the absence of each
@@ -512,24 +452,9 @@ function Backup-FlowayCodexFiles {
   }
 }
 
-# Restore both managed files to their pre-run state: replace from backup when
-# one existed, or remove the file when this run created it.
 function Restore-FlowayCodexFiles {
-  if ($script:CodexConfigExisted) {
-    if ($script:CodexConfigBackup -and (Test-Path -LiteralPath $script:CodexConfigBackup)) {
-      Move-Item -LiteralPath $script:CodexConfigBackup -Destination $script:CodexConfigPath -Force
-    }
-  } elseif (Test-Path -LiteralPath $script:CodexConfigPath) {
-    Remove-Item -LiteralPath $script:CodexConfigPath -Force
-  }
-  if ($script:CodexAuthExisted) {
-    if ($script:CodexAuthBackup -and (Test-Path -LiteralPath $script:CodexAuthBackup)) {
-      Move-Item -LiteralPath $script:CodexAuthBackup -Destination $script:CodexAuthPath -Force
-      Protect-FlowayFile $script:CodexAuthPath
-    }
-  } elseif (Test-Path -LiteralPath $script:CodexAuthPath) {
-    Remove-Item -LiteralPath $script:CodexAuthPath -Force
-  }
+  Restore-FlowayManagedFile -Existed $script:CodexConfigExisted -Backup $script:CodexConfigBackup -Path $script:CodexConfigPath
+  Restore-FlowayManagedFile -Existed $script:CodexAuthExisted -Backup $script:CodexAuthBackup -Path $script:CodexAuthPath -Protect
 }
 
 # Drive `codex app-server` over redirected stdin/stdout/stderr: initialize ->
@@ -721,14 +646,22 @@ function Invoke-FlowayCodexVerify {
 # uninstalled.
 function Set-FlowayCodex {
   Write-Host "Floway: configuring Codex..."
-  $exe = Get-FlowayCodexExe
+  # Ref: https://github.com/openai/codex/blob/main/scripts/install/install.sh
+  $candidates = @(
+    (Join-Path $HOME '.local/bin/codex'),
+    (Join-Path $HOME '.local/bin/codex.exe')
+  )
+  if ($env:USERPROFILE) { $candidates += (Join-Path $env:USERPROFILE '.local\bin\codex.exe') }
+  $exe = Get-FlowayCliExe -Name codex -Label Codex -Candidates $candidates
   if (-not $exe) {
     Write-Host "Floway: Codex CLI not found; installing the official user-local build..."
     Install-FlowayCodex
-    $exe = Get-FlowayCodexExe
+    $exe = Get-FlowayCliExe -Name codex -Label Codex -Candidates $candidates
     if (-not $exe) { throw "Codex CLI is unavailable and could not be installed." }
   }
-  Resolve-FlowayCodexPaths
+  $script:CodexHomeDir = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME '.codex' }
+  $script:CodexConfigPath = Join-Path $script:CodexHomeDir 'config.toml'
+  $script:CodexAuthPath = Join-Path $script:CodexHomeDir 'auth.json'
   $script:FlowayCodexIdToken = Get-FlowayCodexIdToken
   if (-not (Test-Path -LiteralPath $script:CodexHomeDir)) {
     New-Item -ItemType Directory -Path $script:CodexHomeDir -Force | Out-Null

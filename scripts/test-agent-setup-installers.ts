@@ -2181,16 +2181,27 @@ test('codex', 'PowerShell: Windows auth replacement and rollback preserve owner-
   t.ok(protectStage < writeSecret, 'Codex auth stage is protected before secret JSON is written');
   t.ok(protectTarget < replaceTarget, 'existing Windows auth target is hardened before File.Replace');
 
+  const restoreHelperStart = PS1_BODY.indexOf('function Restore-FlowayManagedFile');
+  const restoreHelperEnd = PS1_BODY.indexOf('# --- Claude Code', restoreHelperStart);
+  const restoreHelperBody = PS1_BODY.slice(restoreHelperStart, restoreHelperEnd);
+  const restoreMove = restoreHelperBody.indexOf('Move-Item -LiteralPath $Backup -Destination $Path -Force');
+  const restoreProtect = restoreHelperBody.indexOf('if ($Protect) { Protect-FlowayFile $Path }', restoreMove);
+  t.ok(restoreHelperStart >= 0, 'Restore-FlowayManagedFile marker exists');
+  t.ok(restoreHelperEnd >= 0, 'Claude section marker exists after restore helper');
+  t.ok(restoreMove >= 0, 'managed rollback move marker exists');
+  t.ok(restoreProtect >= 0, 'managed rollback protection marker exists');
+  t.ok(restoreMove < restoreProtect, 'rollback protects a restored target after moving it into place');
+
   const restoreStart = PS1_BODY.indexOf('function Restore-FlowayCodexFiles');
   const restoreEnd = PS1_BODY.indexOf('function Invoke-FlowayCodexAppServerBatchWrite', restoreStart);
   const restoreBody = PS1_BODY.slice(restoreStart, restoreEnd);
-  const restoreMove = restoreBody.indexOf('Move-Item -LiteralPath $script:CodexAuthBackup -Destination $script:CodexAuthPath -Force');
-  const restoreProtect = restoreBody.indexOf('Protect-FlowayFile $script:CodexAuthPath', restoreMove);
   t.ok(restoreStart >= 0, 'Restore-FlowayCodexFiles marker exists');
   t.ok(restoreEnd >= 0, 'app-server function marker exists after restore function');
-  t.ok(restoreMove >= 0, 'Codex auth rollback move marker exists');
-  t.ok(restoreProtect >= 0, 'Codex auth rollback protection marker exists');
-  t.ok(restoreMove < restoreProtect, 'rollback protects the restored auth target after moving it into place');
+  t.includes(
+    restoreBody,
+    'Restore-FlowayManagedFile -Existed $script:CodexAuthExisted -Backup $script:CodexAuthBackup -Path $script:CodexAuthPath -Protect',
+    'Codex auth rollback requests owner-only protection',
+  );
 });
 
 test('codex', 'PowerShell: a batchWrite error fails codex and rolls back auth', async t => {

@@ -1,15 +1,9 @@
-# Floway agent setup installer (Bash 3.2+).
+# Floway agent setup installer (Bash 3.2+). The gateway prepends the
+# language-native assignment prefix, so this fixed body has no shebang.
 #
-# Fixed, checked-in body. The Bash assignment prefix (the FLOWAY_*
-# variables and a trace-suppressing `set +x`) is prepended per request by the
-# gateway, so this file starts straight at the installer logic with no shebang.
-#
-# Claude Code and Codex are configured as independent transactional units: a
-# failure in one neither rolls back nor skips the other, and any selected-agent
-# failure makes the whole script exit non-zero. Errexit is deliberately NOT set
-# — Bash disables it inside the `if agent; then ... fi` guards used for that
-# independent aggregation, so control flow relies on explicit checks and
-# per-agent rollback instead.
+# Each selected agent is an independent transaction. Errexit stays disabled
+# because Bash suppresses it inside the aggregation guards at the bottom;
+# failures are checked explicitly and rolled back per agent.
 
 set -u
 umask 077
@@ -22,14 +16,8 @@ set -o pipefail 2>/dev/null || true
 # it.
 export -n FLOWAY_API_KEY 2>/dev/null || true
 
-# FLOWAY_BASE_URL is supplied by the wrapping one-line command's environment
-# (`export FLOWAY_BASE_URL='<origin>'; curl ... | bash`), never baked into this
-# body — the gateway that served this script never learns its own public origin.
-# Require a non-empty http(s) origin before any configuration is touched; a bare
-# `set -u` reference would otherwise abort later with an opaque "unbound
-# variable". Then `export -n` demotes it to a plain shell variable so the
-# official installers and the agent CLIs do not inherit it, exactly as the API
-# key is handled.
+# The wrapping command supplies FLOWAY_BASE_URL. Validate it before mutation,
+# then keep it out of installer and CLI subprocess environments.
 if [ -z "${FLOWAY_BASE_URL:-}" ]; then
   printf 'Floway: FLOWAY_BASE_URL must be set to this gateway origin (e.g. https://gateway.example).\n' >&2
   exit 1
@@ -97,18 +85,6 @@ redact_key() {
       print out line
     }
   '
-}
-
-# Print the SHA-256 of a file using whatever hashing tool is available; empty
-# output signals that none is.
-_sha256_of() {
-  if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum "$1" | awk '{ print $1 }'
-  elif command -v shasum >/dev/null 2>&1; then
-    shasum -a 256 "$1" | awk '{ print $1 }'
-  elif command -v openssl >/dev/null 2>&1; then
-    openssl dgst -sha256 "$1" | awk '{ print $NF }'
-  fi
 }
 
 # Run a command under a wall-clock limit. macOS ships no `timeout`, so the
@@ -203,7 +179,15 @@ _bootstrap_jq() {
     rm -f "$_bj_dest"
     return 1
   fi
-  _bj_actual=$(_sha256_of "$_bj_dest")
+  if command -v sha256sum >/dev/null 2>&1; then
+    _bj_actual=$(sha256sum "$_bj_dest" | awk '{ print $1 }')
+  elif command -v shasum >/dev/null 2>&1; then
+    _bj_actual=$(shasum -a 256 "$_bj_dest" | awk '{ print $1 }')
+  elif command -v openssl >/dev/null 2>&1; then
+    _bj_actual=$(openssl dgst -sha256 "$_bj_dest" | awk '{ print $NF }')
+  else
+    _bj_actual=""
+  fi
   if [ -z "$_bj_actual" ]; then
     printf 'Floway: no SHA-256 tool available to verify the jq download.\n' >&2
     rm -f "$_bj_dest"
@@ -274,87 +258,88 @@ _download_and_run_installer() {
   return $_dri_rc
 }
 
-# --- Claude Code ------------------------------------------------------------
-
-# Resolve the Claude Code executable. The PATH winner is authoritative; known
-# official user-local locations are also consulted so an install that is not on
-# PATH is still found, and so multiple installations can be flagged.
-# Ref: https://docs.claude.com/en/docs/claude-code/troubleshoot-install
-claude_discover() {
-  CLAUDE_BIN=""
-  CLAUDE_INSTALL_COUNT=0
-  _cd_path=$(command -v claude 2>/dev/null || true)
-  if [ -n "$_cd_path" ]; then
-    CLAUDE_BIN="$_cd_path"
-    CLAUDE_INSTALL_COUNT=1
+_discover_cli() {
+  _dc_name=$1
+  shift
+  DISCOVERED_BIN=$(command -v "$_dc_name" 2>/dev/null || true)
+  if [ -n "$DISCOVERED_BIN" ]; then
+    DISCOVERED_COUNT=1
+  else
+    DISCOVERED_COUNT=0
   fi
-  for _cd_cand in \
-    "$HOME/.local/bin/claude" \
-    "$HOME/.claude/local/claude" \
-    "$HOME/.bun/bin/claude" \
-    "/opt/homebrew/bin/claude" \
-    "/usr/local/bin/claude"; do
-    [ -x "$_cd_cand" ] || continue
-    [ "$_cd_cand" = "$_cd_path" ] && continue
-    CLAUDE_INSTALL_COUNT=$((CLAUDE_INSTALL_COUNT + 1))
-    if [ -z "$CLAUDE_BIN" ]; then
-      CLAUDE_BIN="$_cd_cand"
+  for _dc_candidate in "$@"; do
+    [ -x "$_dc_candidate" ] || continue
+    [ "$_dc_candidate" = "$DISCOVERED_BIN" ] && continue
+    DISCOVERED_COUNT=$((DISCOVERED_COUNT + 1))
+    if [ -z "$DISCOVERED_BIN" ]; then
+      DISCOVERED_BIN=$_dc_candidate
     fi
   done
 }
 
-# Install the official user-local Claude Code build. The
-# FLOWAY_INSTALLER_TEST_INSTALL_CLAUDE_SCRIPT hook — read from the ambient
-# environment, never emitted by the gateway — substitutes a fake installer
-# under test.
-install_claude() {
-  if [ -n "${FLOWAY_INSTALLER_TEST_INSTALL_CLAUDE_SCRIPT:-}" ]; then
-    _ic_timeout=${FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS:-120}
-    _run_with_timeout "$_ic_timeout" env -u FLOWAY_API_KEY bash "$FLOWAY_INSTALLER_TEST_INSTALL_CLAUDE_SCRIPT"
-    return $?
+# Rollback retains a backup when restoration fails so manual recovery remains
+# possible. Callers keep separate transaction boundaries and aggregate failures.
+_restore_managed_file() {
+  _rmf_existed=$1
+  _rmf_backup=$2
+  _rmf_path=$3
+  _rmf_original_label=$4
+  _rmf_created_label=$5
+  if [ "$_rmf_existed" -eq 1 ]; then
+    if [ -n "$_rmf_backup" ] && [ -e "$_rmf_backup" ] && ! mv "$_rmf_backup" "$_rmf_path" 2>/dev/null; then
+      printf 'Floway: WARNING could not restore %s from its backup; your original %s is preserved at %s — restore it by hand.\n' \
+        "$_rmf_path" "$_rmf_original_label" "$_rmf_backup" >&2
+      return 1
+    fi
+  elif ! rm -f "$_rmf_path" 2>/dev/null; then
+    printf 'Floway: WARNING could not remove the %s this run created at %s — remove it by hand.\n' \
+      "$_rmf_created_label" "$_rmf_path" >&2
+    return 1
   fi
-  # Ref: https://docs.claude.com/en/docs/claude-code/setup ("Native Install").
-  _download_and_run_installer "${FLOWAY_INSTALLER_TEST_CLAUDE_URL:-https://claude.ai/install.sh}"
+  return 0
 }
 
-# Ensure Claude Code is present, installing it only when absent. An existing
-# install is never upgraded or compatibility-checked.
+# --- Claude Code ------------------------------------------------------------
+
+# Ref: https://docs.claude.com/en/docs/claude-code/troubleshoot-install
 claude_ensure_installed() {
-  claude_discover
-  if [ "$CLAUDE_INSTALL_COUNT" -gt 1 ]; then
+  _discover_cli claude \
+    "$HOME/.local/bin/claude" \
+    "$HOME/.claude/local/claude" \
+    "$HOME/.bun/bin/claude" \
+    "/opt/homebrew/bin/claude" \
+    "/usr/local/bin/claude"
+  CLAUDE_BIN=$DISCOVERED_BIN
+  if [ "$DISCOVERED_COUNT" -gt 1 ]; then
     printf 'Floway: multiple Claude Code installations detected; using %s.\n' "$CLAUDE_BIN" >&2
   fi
-  if [ "$CLAUDE_INSTALL_COUNT" -ge 1 ]; then
+  if [ "$DISCOVERED_COUNT" -ge 1 ]; then
     return 0
   fi
+
   printf 'Floway: Claude Code CLI not found; installing the official user-local build...\n'
-  if ! install_claude; then
-    return 1
+  if [ -n "${FLOWAY_INSTALLER_TEST_INSTALL_CLAUDE_SCRIPT:-}" ]; then
+    _ic_timeout=${FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS:-120}
+    _run_with_timeout "$_ic_timeout" env -u FLOWAY_API_KEY bash "$FLOWAY_INSTALLER_TEST_INSTALL_CLAUDE_SCRIPT" || return 1
+  else
+    # Ref: https://docs.claude.com/en/docs/claude-code/setup ("Native Install").
+    _download_and_run_installer "${FLOWAY_INSTALLER_TEST_CLAUDE_URL:-https://claude.ai/install.sh}" || return 1
   fi
   hash -r 2>/dev/null || true
-  claude_discover
-  [ "$CLAUDE_INSTALL_COUNT" -ge 1 ]
+  _discover_cli claude \
+    "$HOME/.local/bin/claude" \
+    "$HOME/.claude/local/claude" \
+    "$HOME/.bun/bin/claude" \
+    "/opt/homebrew/bin/claude" \
+    "/usr/local/bin/claude"
+  CLAUDE_BIN=$DISCOVERED_BIN
+  [ "$DISCOVERED_COUNT" -ge 1 ]
 }
 
-# Restore the settings file to its pre-run state: replace it from the backup
-# when one exists, or remove the file entirely when this run created it. A
-# restoration that itself fails is never masked — the backup is left untouched
-# and a prominent, path-specific message tells the operator how to recover by
-# hand. Returns non-zero on such a failure so the caller can aggregate it.
 claude_rollback_settings() {
-  if [ "${CLAUDE_SETTINGS_EXISTED:-0}" -eq 1 ]; then
-    if [ -n "${CLAUDE_SETTINGS_BACKUP:-}" ] && [ -e "$CLAUDE_SETTINGS_BACKUP" ]; then
-      if ! mv "$CLAUDE_SETTINGS_BACKUP" "$CLAUDE_SETTINGS_PATH" 2>/dev/null; then
-        printf 'Floway: WARNING could not restore %s from its backup; your original file is preserved at %s — restore it by hand.\n' \
-          "$CLAUDE_SETTINGS_PATH" "$CLAUDE_SETTINGS_BACKUP" >&2
-        return 1
-      fi
-    fi
-  elif ! rm -f "$CLAUDE_SETTINGS_PATH" 2>/dev/null; then
-    printf 'Floway: WARNING could not remove the Claude settings this run created at %s — remove it by hand.\n' \
-      "$CLAUDE_SETTINGS_PATH" >&2
-    return 1
-  fi
+  _restore_managed_file \
+    "${CLAUDE_SETTINGS_EXISTED:-0}" "${CLAUDE_SETTINGS_BACKUP:-}" "$CLAUDE_SETTINGS_PATH" \
+    "file" "Claude settings"
 }
 
 # Surgically merge the managed keys into the Claude settings file: validate the
@@ -550,13 +535,9 @@ configure_claude() {
 # meaningless. Codex only reads it back; it is never sent upstream.
 CODEX_REFRESH_NOOP="floway-managed-no-refresh"
 
-# Build Floway's placeholder ChatGPT identity token from the gateway origin and
-# expose it as FLOWAY_CODEX_ID_TOKEN. Codex decodes this alg=none JWT to render
-# `codex login status`; it is never verified because the gateway authenticates
-# the data plane with the API key carried as access_token, not with this token.
-# The host-derived email keeps multiple deployments distinguishable in the CLI's
-# status output. Assembled here — not by the gateway — so the server never learns
-# its own public origin: jq's @base64 is post-processed into unpadded base64url.
+# Codex decodes this alg=none placeholder to render `codex login status`; the
+# gateway authenticates with access_token instead. The host-derived email
+# distinguishes deployments, and jq's @base64 is converted to base64url.
 # Ref: packages/provider-codex/src/auth/jwt.ts (the decode-only claim reader).
 codex_build_id_token() {
   _cbit_host="${FLOWAY_BASE_URL#*://}"
@@ -572,70 +553,35 @@ codex_build_id_token() {
   }
 }
 
-# Resolve the Codex executable. The PATH winner is authoritative; known official
-# user-local locations are also consulted so an install that is not on PATH is
-# still found, and so multiple installations can be flagged.
 # Ref: https://github.com/openai/codex/blob/main/scripts/install/install.sh
-codex_discover() {
-  CODEX_BIN=""
-  CODEX_INSTALL_COUNT=0
-  _cxd_path=$(command -v codex 2>/dev/null || true)
-  if [ -n "$_cxd_path" ]; then
-    CODEX_BIN="$_cxd_path"
-    CODEX_INSTALL_COUNT=1
-  fi
-  for _cxd_cand in \
+codex_ensure_installed() {
+  _discover_cli codex \
     "$HOME/.local/bin/codex" \
     "/opt/homebrew/bin/codex" \
-    "/usr/local/bin/codex"; do
-    [ -x "$_cxd_cand" ] || continue
-    [ "$_cxd_cand" = "$_cxd_path" ] && continue
-    CODEX_INSTALL_COUNT=$((CODEX_INSTALL_COUNT + 1))
-    if [ -z "$CODEX_BIN" ]; then
-      CODEX_BIN="$_cxd_cand"
-    fi
-  done
-}
-
-# Install the official user-local Codex build. CODEX_NON_INTERACTIVE keeps the
-# installer from prompting. The FLOWAY_INSTALLER_TEST_INSTALL_CODEX_SCRIPT hook —
-# read from the ambient environment, never emitted by the gateway — substitutes
-# a fake installer under test.
-install_codex() {
-  if [ -n "${FLOWAY_INSTALLER_TEST_INSTALL_CODEX_SCRIPT:-}" ]; then
-    _icx_timeout=${FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS:-120}
-    _run_with_timeout "$_icx_timeout" env -u FLOWAY_API_KEY CODEX_NON_INTERACTIVE=true bash "$FLOWAY_INSTALLER_TEST_INSTALL_CODEX_SCRIPT"
-    return $?
-  fi
-  # Ref: https://github.com/openai/codex README ("curl -fsSL https://chatgpt.com/codex/install.sh | sh").
-  CODEX_NON_INTERACTIVE=true _download_and_run_installer "${FLOWAY_INSTALLER_TEST_CODEX_URL:-https://chatgpt.com/codex/install.sh}"
-}
-
-# Ensure Codex is present, installing it only when absent. An existing install
-# is never upgraded or compatibility-checked.
-codex_ensure_installed() {
-  codex_discover
-  if [ "$CODEX_INSTALL_COUNT" -gt 1 ]; then
+    "/usr/local/bin/codex"
+  CODEX_BIN=$DISCOVERED_BIN
+  if [ "$DISCOVERED_COUNT" -gt 1 ]; then
     printf 'Floway: multiple Codex installations detected; using %s.\n' "$CODEX_BIN" >&2
   fi
-  if [ "$CODEX_INSTALL_COUNT" -ge 1 ]; then
+  if [ "$DISCOVERED_COUNT" -ge 1 ]; then
     return 0
   fi
+
   printf 'Floway: Codex CLI not found; installing the official user-local build...\n'
-  if ! install_codex; then
-    return 1
+  if [ -n "${FLOWAY_INSTALLER_TEST_INSTALL_CODEX_SCRIPT:-}" ]; then
+    _icx_timeout=${FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS:-120}
+    _run_with_timeout "$_icx_timeout" env -u FLOWAY_API_KEY CODEX_NON_INTERACTIVE=true bash "$FLOWAY_INSTALLER_TEST_INSTALL_CODEX_SCRIPT" || return 1
+  else
+    # Ref: https://github.com/openai/codex README ("curl -fsSL https://chatgpt.com/codex/install.sh | sh").
+    CODEX_NON_INTERACTIVE=true _download_and_run_installer "${FLOWAY_INSTALLER_TEST_CODEX_URL:-https://chatgpt.com/codex/install.sh}" || return 1
   fi
   hash -r 2>/dev/null || true
-  codex_discover
-  [ "$CODEX_INSTALL_COUNT" -ge 1 ]
-}
-
-# Resolve the Codex home and the two managed files. Codex reads CODEX_HOME the
-# same way, so the app-server writes config.toml at exactly this location.
-codex_resolve_home() {
-  CODEX_HOME_DIR="${CODEX_HOME:-$HOME/.codex}"
-  CODEX_CONFIG_PATH="$CODEX_HOME_DIR/config.toml"
-  CODEX_AUTH_PATH="$CODEX_HOME_DIR/auth.json"
+  _discover_cli codex \
+    "$HOME/.local/bin/codex" \
+    "/opt/homebrew/bin/codex" \
+    "/usr/local/bin/codex"
+  CODEX_BIN=$DISCOVERED_BIN
+  [ "$DISCOVERED_COUNT" -ge 1 ]
 }
 
 # Back up both managed files before any mutation, recording the absence of each
@@ -666,39 +612,15 @@ codex_backup_files() {
   fi
 }
 
-# Restore both managed files to their pre-run state: replace from backup when
-# one existed, or remove the file when this run created it. Each file is handled
-# independently so one failure does not abandon the other, and any restoration
-# that itself fails leaves its backup untouched, prints a prominent path-specific
-# message, and makes the function return non-zero for the caller to aggregate.
+# Both restores are attempted even when the first fails.
 codex_rollback() {
   _cxr_rc=0
-  if [ "${CODEX_CONFIG_EXISTED:-0}" -eq 1 ]; then
-    if [ -n "${CODEX_CONFIG_BACKUP:-}" ] && [ -e "$CODEX_CONFIG_BACKUP" ]; then
-      if ! mv "$CODEX_CONFIG_BACKUP" "$CODEX_CONFIG_PATH" 2>/dev/null; then
-        printf 'Floway: WARNING could not restore %s from its backup; your original file is preserved at %s — restore it by hand.\n' \
-          "$CODEX_CONFIG_PATH" "$CODEX_CONFIG_BACKUP" >&2
-        _cxr_rc=1
-      fi
-    fi
-  elif ! rm -f "$CODEX_CONFIG_PATH" 2>/dev/null; then
-    printf 'Floway: WARNING could not remove the Codex config this run created at %s — remove it by hand.\n' \
-      "$CODEX_CONFIG_PATH" >&2
-    _cxr_rc=1
-  fi
-  if [ "${CODEX_AUTH_EXISTED:-0}" -eq 1 ]; then
-    if [ -n "${CODEX_AUTH_BACKUP:-}" ] && [ -e "$CODEX_AUTH_BACKUP" ]; then
-      if ! mv "$CODEX_AUTH_BACKUP" "$CODEX_AUTH_PATH" 2>/dev/null; then
-        printf 'Floway: WARNING could not restore %s from its backup; your original ChatGPT login is preserved at %s — restore it by hand.\n' \
-          "$CODEX_AUTH_PATH" "$CODEX_AUTH_BACKUP" >&2
-        _cxr_rc=1
-      fi
-    fi
-  elif ! rm -f "$CODEX_AUTH_PATH" 2>/dev/null; then
-    printf 'Floway: WARNING could not remove the Codex auth this run created at %s — remove it by hand.\n' \
-      "$CODEX_AUTH_PATH" >&2
-    _cxr_rc=1
-  fi
+  _restore_managed_file \
+    "${CODEX_CONFIG_EXISTED:-0}" "${CODEX_CONFIG_BACKUP:-}" "$CODEX_CONFIG_PATH" \
+    "file" "Codex config" || _cxr_rc=1
+  _restore_managed_file \
+    "${CODEX_AUTH_EXISTED:-0}" "${CODEX_AUTH_BACKUP:-}" "$CODEX_AUTH_PATH" \
+    "ChatGPT login" "Codex auth" || _cxr_rc=1
   return "$_cxr_rc"
 }
 
@@ -988,7 +910,9 @@ configure_codex() {
     printf 'Floway: Codex CLI is unavailable and could not be installed.\n' >&2
     return 1
   fi
-  codex_resolve_home
+  CODEX_HOME_DIR="${CODEX_HOME:-$HOME/.codex}"
+  CODEX_CONFIG_PATH="$CODEX_HOME_DIR/config.toml"
+  CODEX_AUTH_PATH="$CODEX_HOME_DIR/auth.json"
   if ! mkdir -p "$CODEX_HOME_DIR"; then
     printf 'Floway: could not create %s\n' "$CODEX_HOME_DIR" >&2
     return 1
