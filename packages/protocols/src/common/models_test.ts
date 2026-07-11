@@ -147,8 +147,24 @@ test('resolveEffectivePricing resolves each Cartesian cell of the grid to its ex
   assertEquals(resolveEffectivePricing(GRID, 'priority', 272000), { input: 20, input_cache_read: 2, input_cache_write: 25, output: 90 });
 });
 
-test('resolveEffectivePricing returns null when both selectors are non-default but the combined cell is missing', () => {
-  // The model prices `priority` at base length and prices a long band, but
+test('resolveEffectivePricing lets an explicit combined cell inherit omitted dimensions from the long-context cell', () => {
+  const partialCombinedGrid: ModelPricing = {
+    input: 5, input_cache_read: 0.5, output: 30,
+    tiers: { priority: { input: 10, input_cache_read: 1, output: 60 } },
+    inputLengthTiers: [{
+      aboveInputTokens: 272000,
+      input: 10, input_cache_read: 1, output: 45,
+      tiers: { priority: { input: 20, output: 90 } },
+    }],
+  };
+  assertEquals(resolveEffectivePricing(partialCombinedGrid, 'priority', 272000), {
+    input: 20,
+    input_cache_read: 1,
+    output: 90,
+  });
+});
+
+test('resolveEffectivePricing returns null when both selectors are non-default but the combined cell is missing', () => {  // The model prices `priority` at base length and prices a long band, but
   // publishes no priority-long cell. Rather than let one axis silently win or
   // multiply the two, the (priority, long) request is unpriced.
   const partialGrid: ModelPricing = {

@@ -113,11 +113,13 @@ export const unitPriceForDimension = (pricing: PriceVector | null, dimension: Bi
 // When at most one selector is non-default the cell is base optionally overlaid
 // by that selector's vector (a per-dimension shallow merge: overlay keys win,
 // omitted keys inherit base and then flow through `unitPriceForDimension`'s
-// fallback chain). When BOTH are non-default the price comes only from the
-// explicit combined cell `inputLengthTiers[i].tiers[serviceTier]`; a missing
-// combination returns null (unpriced) rather than letting one axis silently win
-// or multiplying the two. Returns a fresh vector that never carries
-// `tiers`/`inputLengthTiers`. A null snapshot resolves to null.
+// fallback chain). When BOTH are non-default, an explicit combined cell MUST
+// exist; its dimensions overlay the selected input-length cell, so omitted
+// dimensions inherit the long-context rate rather than falling back to the
+// short base cell. A missing combination returns null (unpriced) rather than
+// letting one axis silently win or multiplying the two. Returns a fresh vector
+// that never carries `tiers`/`inputLengthTiers`. A null snapshot resolves to
+// null.
 export const resolveEffectivePricing = (
   pricing: ModelPricing | null,
   serviceTier: string | null | undefined,
@@ -135,7 +137,7 @@ export const resolveEffectivePricing = (
   if (!serviceCell) return { ...base, ...lengthDims };
 
   const combinedCell = lengthServiceCells?.[serviceTier as string];
-  return combinedCell ? { ...base, ...combinedCell } : null;
+  return combinedCell ? { ...base, ...lengthDims, ...combinedCell } : null;
 };
 
 // Pick the input-length band a request falls into, given the disjoint sum of
