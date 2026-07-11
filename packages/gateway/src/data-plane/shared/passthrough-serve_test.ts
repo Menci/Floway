@@ -368,7 +368,7 @@ test('passthrough-serve: throw during rollover attributes the error perf row to 
     );
 
     const perfRows = await repo.performance.listAll();
-    const errorRows = perfRows.filter(row => row.errors > 0);
+    const errorRows = perfRows.filter(row => row.errorsNoOutput + row.errorsWithOutput > 0);
     assertEquals(errorRows.length, 1);
     assertEquals(errorRows[0].upstream, 'up_b');
   } finally {

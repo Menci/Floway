@@ -51,6 +51,7 @@ const readPerformanceQuery = (
   }
 
   const blank = (v: string | undefined): string | undefined => (v === undefined || v === '' ? undefined : v);
+  const filterUserId = blank(query.filter_user_id);
 
   return {
     type: 'ok',
@@ -66,7 +67,7 @@ const readPerformanceQuery = (
         upstream: blank(query.filter_upstream),
         operation: blank(query.filter_operation),
         runtimeLocation: blank(query.filter_runtime_location),
-        userId: query.filter_user_id,
+        userId: filterUserId === undefined ? undefined : Number(filterUserId),
         keyId: blank(query.filter_key_id),
       },
     },
