@@ -6,7 +6,7 @@ import { assertEquals } from '@floway-dev/test-utils';
 
 // Every GPT-5.6 variant is a full (service tier × input length) grid:
 // standard/priority × short/long. `resolveEffectivePricing(pricing, tier,
-// aboveInputTokens)` must return the explicit rates for each of the four cells;
+// inputAboveTokens)` must return the explicit rates for each of the four cells;
 // there is no silent composition of one axis onto the other.
 const CODEX_GPT_5_6_GRID = {
   'gpt-5.6-sol': {

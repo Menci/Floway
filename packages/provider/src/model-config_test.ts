@@ -3,56 +3,29 @@ import { describe, expect, test } from 'vitest';
 import { chatField, modelsField, pricingField } from './model-config.ts';
 import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
-test('pricingField parses bare dimensions and drops empty objects', () => {
+test('pricingField parses explicit flat cells', () => {
   assertEquals(pricingField(undefined, 'cost'), undefined);
-  assertEquals(pricingField({}, 'cost'), undefined);
-  assertEquals(
-    pricingField({ input: 5, output: 25, input_cache_read: 0.5 }, 'cost'),
-    { input: 5, output: 25, input_cache_read: 0.5 },
-  );
-});
-
-test('pricingField parses per-tier overlays alongside base rates', () => {
-  const result = pricingField(
-    {
-      input: 5,
-      output: 25,
-      tiers: {
-        fast: { input: 30, output: 150 },
-        flex: { input: 2.5 },
-      },
-    },
-    'cost',
-  );
-  assertEquals(result, {
-    input: 5,
-    output: 25,
-    tiers: {
-      fast: { input: 30, output: 150 },
-      flex: { input: 2.5 },
-    },
+  const value = {
+    cells: [
+      { rates: { input: 5, output: 25, bogus: 99 } },
+      { selector: { serviceTier: 'fast', inputAboveTokens: 272000 }, rates: { input: 30, output: 150 } },
+    ],
+  };
+  assertEquals(pricingField(value, 'cost'), {
+    cells: [
+      { rates: { input: 5, output: 25 } },
+      { selector: { serviceTier: 'fast', inputAboveTokens: 272000 }, rates: { input: 30, output: 150 } },
+    ],
   });
 });
 
-test('pricingField preserves empty tier overlays and skips unknown keys inside them', () => {
-  const result = pricingField(
-    {
-      input: 5,
-      tiers: {
-        fast: { input: 30, bogus_key: 99 },
-        priority: {},
-      },
-    },
-    'cost',
-  );
-  assertEquals(result, { input: 5, tiers: { fast: { input: 30 }, priority: {} } });
-});
-
-test('pricingField rejects non-object tiers, empty names, and negative rates', () => {
-  assertThrows(() => pricingField({ tiers: 'nope' }, 'cost'), Error, 'tiers');
-  assertThrows(() => pricingField({ tiers: { '': { input: 5 } } }, 'cost'), Error, 'tier name');
-  assertThrows(() => pricingField({ tiers: { fast: 1 } }, 'cost'), Error, 'tiers.fast');
-  assertThrows(() => pricingField({ tiers: { fast: { input: -1 } } }, 'cost'), Error, 'non-negative');
+test('pricingField rejects malformed cells and duplicate coordinates', () => {
+  assertThrows(() => pricingField({}, 'cost'), Error, 'non-empty array');
+  assertThrows(() => pricingField({ cells: [{ rates: {} }] }, 'cost'), Error, 'at least one rate');
+  assertThrows(() => pricingField({ cells: [{ selector: { serviceTier: '' }, rates: { input: 1 } }] }, 'cost'), Error, 'non-empty string');
+  assertThrows(() => pricingField({ cells: [{ selector: { inputAboveTokens: 1.5 }, rates: { input: 1 } }] }, 'cost'), Error, 'positive safe integer');
+  assertThrows(() => pricingField({ cells: [{ rates: { input: 1 } }, { selector: {}, rates: { input: 2 } }] }, 'cost'), Error, 'duplicate selector coordinate');
+  assertThrows(() => pricingField({ cells: [{ rates: { input: -1 } }] }, 'cost'), Error, 'non-negative');
 });
 
 describe('chatField', () => {

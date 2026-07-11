@@ -1,8 +1,8 @@
 -- Add the per-request input-length pricing coordinate to `usage` +
 -- `usage_requests`.
 --
--- `input_above_tokens` is the `aboveInputTokens` band the request's total input
--- crossed (OpenAI charges a higher full-request rate past 272k input tokens for
+-- `input_above_tokens` is the `inputAboveTokens` selector the request's total
+-- input crossed (OpenAI charges a higher full-request rate past 272k input tokens for
 -- the GPT-5.6 family). It is orthogonal to `tier` (the upstream-stamped service
 -- tier): the two are the coordinates of a (service tier × input length) pricing
 -- grid, and each usage bucket is one grid cell. The band is selected before

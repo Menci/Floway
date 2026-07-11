@@ -249,18 +249,10 @@ test('/models returns the same superset payload as /v1/models', async () => {
             kind: 'chat',
             endpoints: { messages: {} },
             cost: {
-              input: 5,
-              output: 25,
-              input_cache_read: 0.5,
-              input_cache_write: 6.25,
-              tiers: {
-                fast: {
-                  input: 30,
-                  output: 150,
-                  input_cache_read: 3,
-                  input_cache_write: 37.5,
-                },
-              },
+              cells: [
+                { rates: { input: 5, output: 25, input_cache_read: 0.5, input_cache_write: 6.25 } },
+                { selector: { serviceTier: 'fast' }, rates: { input: 30, output: 150, input_cache_read: 3, input_cache_write: 37.5 } },
+              ],
             },
           },
           {

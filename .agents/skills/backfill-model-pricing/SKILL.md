@@ -12,7 +12,7 @@ The `usage` table holds one row per `(key_id, model, upstream, model_key, hour,
 tier, input_above_tokens, dimension)` with a `tokens` count and a `unit_price`
 snapshot (USD per million tokens for that billing dimension). `tier` is the
 upstream-stamped service tier and `input_above_tokens` is the input-length
-pricing coordinate (the `aboveInputTokens` band the request crossed, NULL for
+pricing coordinate (the `inputAboveTokens` band the request crossed, NULL for
 the base band) — together they are the (service tier × input length) grid cell
 the row was billed at. `unit_price` is captured at write time; NULL means
 pricing was unknown then. This skill recomputes it for a chosen slice using the

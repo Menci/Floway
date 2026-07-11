@@ -50,7 +50,7 @@ export interface UsageRecord {
   // for the same (keyId, model, upstream, modelKey, hour) are stored as
   // separate buckets so per-tier pricing overrides apply correctly.
   tier: string | null;
-  // Input-length pricing coordinate — the `aboveInputTokens` band the
+  // Input-length pricing coordinate — the `inputAboveTokens` band the
   // request's total input crossed (see `selectInputLengthTier`), or null for
   // the base band. Orthogonal to `tier`: it is selected per request from the
   // prompt size before persistence, so requests of different prompt sizes land
@@ -70,9 +70,8 @@ export interface UsageRecord {
 // Disjoint per-dimension token counts. Absent keys mean zero for that
 // dimension. No key's count overlaps another's. `tier` is the upstream-
 // reported service-tier marker (Anthropic `usage.speed`, OpenAI
-// `usage.service_tier`) that selects an override against `cost.tiers`
-// before any per-dimension unit-price lookup; absent / null = the model's
-// base pricing applies. The orthogonal input-length coordinate is not carried
+// `usage.service_tier`) used to exact-match a pricing cell; absent / null is
+// the default service-tier coordinate. The orthogonal input-length coordinate is not carried
 // here — it is derived from the disjoint input total at recording time.
 export interface TokenUsage extends Partial<Record<BillingDimension, number>> {
   tier?: string | null;
