@@ -23,20 +23,54 @@ export type BillingDimension = 'input' | 'input_cache_read' | 'input_cache_write
 // Iteration form of BillingDimension; the type union is the source of truth.
 export const BILLING_DIMENSIONS: readonly BillingDimension[] = ['input', 'input_cache_read', 'input_cache_write', 'input_cache_write_1h', 'input_image', 'output', 'output_image'];
 
-// Per-model pricing in USD per million tokens, aligned with the sst/models.dev
-// `Cost` schema (https://github.com/sst/models.dev/blob/main/packages/core/src/schema.ts).
-// Keys are billing dimensions: bare `input`/`output` are the text/fallback rate
-// and `_image` keys are the image modality. Every key is optional; an absent key
-// falls back per `unitPriceForDimension` (modality → bare, cached → uncached).
+// The input-side dimensions. Their disjoint sum is a request's total prompt
+// size, which selects the input-length pricing tier (see `selectInputLengthTier`).
+export const INPUT_BILLING_DIMENSIONS: readonly BillingDimension[] = ['input', 'input_cache_read', 'input_cache_write', 'input_cache_write_1h', 'input_image'];
+
+// A PriceVector is the per-dimension USD-per-million-token rate set for one
+// billing cell, aligned with the sst/models.dev `Cost` schema
+// (https://github.com/sst/models.dev/blob/main/packages/core/src/schema.ts).
+// Bare `input`/`output` are the text/fallback rate and `_image` keys are the
+// image modality; every key is optional and an absent key falls back per
+// `unitPriceForDimension` (modality → bare, cached → uncached).
+export type PriceVector = Partial<Record<BillingDimension, number>>;
+
+// Per-model pricing. The bare dimension keys are the base cell: the default
+// service tier at the base (short) input length. Two orthogonal selectors then
+// pick a different cell for a given request:
 //
-// `tiers` carries per-request service-tier overrides (Anthropic fast mode,
-// OpenAI priority/flex). Each tier key is the wire-value the upstream stamps
-// on the usage object (`fast`, `priority`, `flex`, ...). An overlay may be
-// empty — that acknowledges the tier without changing any rate, so every
-// dimension inherits base pricing. Resolve through
-// `resolveEffectivePricing(pricing, usage.tier)` before any unit-price lookup.
-export interface ModelPricing extends Partial<Record<BillingDimension, number>> {
-  tiers?: Record<string, Partial<Record<BillingDimension, number>>>;
+//   - service tier — the wire value the upstream stamps on the usage object
+//     (`fast`, `priority`, `flex`, ...). `tiers[value]` is that service tier's
+//     cell at the base input length. An empty cell acknowledges the tier
+//     without changing any rate.
+//   - input length — OpenAI charges a higher full-request rate once a prompt
+//     crosses a token threshold (272k for the GPT-5.6 family). Each
+//     `inputLengthTiers` entry is one input-length band; unlike a service tier,
+//     it depends on the per-request prompt size, so it is selected before
+//     persistence (see `selectInputLengthTier`) and stored as a coordinate on
+//     the usage row.
+//
+// The two selectors form a Cartesian grid, not a pair of overlays that
+// compose: each (service tier × input length) cell is priced explicitly. When
+// both selectors are non-default the price comes ONLY from the explicit
+// combined cell (`inputLengthTiers[i].tiers[value]`); a missing combination is
+// unpriced rather than a silent single-axis win or an auto-multiply. Resolve
+// through `resolveEffectivePricing(pricing, usage.tier, usage.inputAboveTokens)`
+// before any unit-price lookup.
+// https://developers.openai.com/api/docs/pricing
+export interface ModelPricing extends PriceVector {
+  tiers?: Record<string, PriceVector>;
+  inputLengthTiers?: readonly InputLengthTier[];
+}
+
+// One input-length band of the pricing grid. Its bare dimension keys are the
+// full-request rates for the default service tier once a request's total input
+// is STRICTLY GREATER than `aboveInputTokens`. `tiers` holds the explicit
+// (service tier × this input length) cells; a service tier absent from this map
+// has no published combined price and resolves to unpriced.
+export interface InputLengthTier extends PriceVector {
+  aboveInputTokens: number;
+  tiers?: Record<string, PriceVector>;
 }
 
 // Resolve the USD-per-million-tokens unit price for one dimension against a
@@ -46,7 +80,7 @@ export interface ModelPricing extends Partial<Record<BillingDimension, number>> 
 // cache write before reaching uncached input. Returns null when even the
 // fallback base is absent (or the whole snapshot is null), which aggregation
 // treats as cost 0.
-export const unitPriceForDimension = (pricing: ModelPricing | null, dimension: BillingDimension): number | null => {
+export const unitPriceForDimension = (pricing: PriceVector | null, dimension: BillingDimension): number | null => {
   if (!pricing) return null;
   switch (dimension) {
   case 'input':
@@ -66,19 +100,59 @@ export const unitPriceForDimension = (pricing: ModelPricing | null, dimension: B
   }
 };
 
-// Fold the per-tier override (if any) into a flat ModelPricing snapshot, so
-// every downstream `unitPriceForDimension` call sees one self-contained map.
-// Per-dimension shallow merge: overlay keys win, omitted keys inherit the
-// base rate (and then flow through `unitPriceForDimension`'s fallback chain).
-// Returns a fresh object that never carries `tiers` — recursion would not
-// match any real billing surface. An unknown or absent tier returns the base
-// snapshot unchanged (sans `tiers`), so old usage rows with no tier carry on
-// pricing identically to before.
-export const resolveEffectivePricing = (pricing: ModelPricing | null, tier: string | null | undefined): ModelPricing | null => {
+// Resolve a pricing snapshot to the flat PriceVector for one request's
+// (service tier × input length) grid cell, so every downstream
+// `unitPriceForDimension` call sees one self-contained rate set.
+//
+//   - service tier is a non-default selector only when the model prices it (a
+//     `tiers[serviceTier]` entry exists). An absent or unrecognized service
+//     tier prices as the base cell.
+//   - input length is a non-default selector when `aboveInputTokens` names an
+//     `inputLengthTiers` band (the coordinate `selectInputLengthTier` picked).
+//
+// When at most one selector is non-default the cell is base optionally overlaid
+// by that selector's vector (a per-dimension shallow merge: overlay keys win,
+// omitted keys inherit base and then flow through `unitPriceForDimension`'s
+// fallback chain). When BOTH are non-default the price comes only from the
+// explicit combined cell `inputLengthTiers[i].tiers[serviceTier]`; a missing
+// combination returns null (unpriced) rather than letting one axis silently win
+// or multiplying the two. Returns a fresh vector that never carries
+// `tiers`/`inputLengthTiers`. A null snapshot resolves to null.
+export const resolveEffectivePricing = (
+  pricing: ModelPricing | null,
+  serviceTier: string | null | undefined,
+  aboveInputTokens?: number | null,
+): PriceVector | null => {
   if (!pricing) return null;
-  const { tiers, ...base } = pricing;
-  const override = tier != null ? tiers?.[tier] : undefined;
-  return override ? { ...base, ...override } : base;
+  const { tiers, inputLengthTiers, ...base } = pricing;
+
+  const lengthTier = aboveInputTokens != null ? inputLengthTiers?.find(t => t.aboveInputTokens === aboveInputTokens) : undefined;
+  const serviceCell = serviceTier != null ? tiers?.[serviceTier] : undefined;
+
+  if (!lengthTier) return serviceCell ? { ...base, ...serviceCell } : base;
+
+  const { aboveInputTokens: _aboveInputTokens, tiers: lengthServiceCells, ...lengthDims } = lengthTier;
+  if (!serviceCell) return { ...base, ...lengthDims };
+
+  const combinedCell = lengthServiceCells?.[serviceTier as string];
+  return combinedCell ? { ...base, ...combinedCell } : null;
+};
+
+// Pick the input-length band a request falls into, given the disjoint sum of
+// its input dimensions. Returns the winning band's `aboveInputTokens` — the
+// coordinate persisted on the usage row and later fed back to
+// `resolveEffectivePricing` — or null when the model declares no bands or the
+// request stays at or below every threshold. Selection is strictly greater than
+// the threshold (a prompt of exactly `aboveInputTokens` stays in the band
+// below), and the highest threshold the request exceeds wins.
+export const selectInputLengthTier = (pricing: ModelPricing | null, totalInputTokens: number): number | null => {
+  let selected: number | null = null;
+  for (const tier of pricing?.inputLengthTiers ?? []) {
+    if (totalInputTokens > tier.aboveInputTokens && (selected === null || tier.aboveInputTokens > selected)) {
+      selected = tier.aboveInputTokens;
+    }
+  }
+  return selected;
 };
 
 // High-level endpoint-family discriminator. A model belongs to exactly one

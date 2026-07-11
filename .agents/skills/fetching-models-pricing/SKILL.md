@@ -87,6 +87,24 @@ first-hit-wins, where `key` is either a literal model id string or a RegExp.
    string keys; use a regex only when several versions genuinely share a
    single rate.
 
+   Pricing is a **(service tier × input length) grid**, not a stack of
+   overlays. The bare dimension keys are the base cell (default service
+   tier, base input length). `tiers[wireValue]` adds a service-tier cell
+   (`fast`, `priority`, `flex`); `inputLengthTiers` adds input-length
+   bands, each keyed by `aboveInputTokens` (the request's total input must
+   be STRICTLY greater to select it — e.g. OpenAI's 272k long-context
+   rate). When BOTH selectors are non-default the rate comes only from the
+   explicit combined cell `inputLengthTiers[i].tiers[wireValue]`; if the
+   upstream publishes no such combination, leave it absent — a request
+   that lands there is unpriced (NULL unit price) rather than silently
+   charged one axis's rate. So a model with a priority lane AND a
+   long-context band needs all four cells published to bill the
+   priority-long corner. `input_above_tokens` is a **price selector**, not
+   a token bucket: the whole request is charged at the selected cell's
+   rates, never split into a marginal overage. LiteLLM's
+   `_above_272k_tokens` / `_priority` price-key suffixes mirror this — they
+   are alternate rate columns, not separate models or token dimensions.
+
 5. **Leave NULL when there's no defensible reference.** Examples:
    - Versions whose name doesn't map to any upstream release.
    - Free-tier-only Labs SKUs with no commercial rate.
@@ -135,4 +153,6 @@ first-hit-wins, where `key` is either a literal model id string or a RegExp.
   into the comment so the next refresh doesn't have to re-derive it.
 - Pricing is USD per million tokens, single REAL per `BillingDimension`.
   Falls back per `unitPriceForDimension` (cached → uncached, image →
-  text). Don't pre-bake the fallback into the table.
+  text). Don't pre-bake that within-cell fallback into the table. The
+  cross-axis (service tier × input length) grid is the exception: those
+  cells are explicit — never rely on one axis inheriting the other's rate.

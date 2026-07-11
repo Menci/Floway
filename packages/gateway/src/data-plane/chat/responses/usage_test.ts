@@ -29,6 +29,25 @@ test('Responses usage maps disjoint input/cache/output counts and omits tier whe
   });
 });
 
+test('Responses usage splits cache-read and cache-write out of the inclusive input total', () => {
+  const result = minimalResult({
+    usage: { input_tokens: 100, output_tokens: 20, total_tokens: 120, input_tokens_details: { cached_tokens: 30, cache_write_tokens: 25 } },
+  });
+  assertEquals(tokenUsageFromResponsesResult(result), {
+    input: 45,
+    input_cache_read: 30,
+    input_cache_write: 25,
+    output: 20,
+  });
+});
+
+test('Responses usage rejects a malformed payload whose cache splits exceed the input total rather than clamping', () => {
+  const result = minimalResult({
+    usage: { input_tokens: 40, output_tokens: 20, total_tokens: 60, input_tokens_details: { cached_tokens: 30, cache_write_tokens: 25 } },
+  });
+  assertEquals(tokenUsageFromResponsesResult(result), null);
+});
+
 test('Responses usage drops service_tier=default (OpenAI base value) to no-tier', () => {
   const result = minimalResult({
     usage: { input_tokens: 10, output_tokens: 2, total_tokens: 12 },

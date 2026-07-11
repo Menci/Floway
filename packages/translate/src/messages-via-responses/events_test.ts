@@ -623,8 +623,7 @@ test('translateResponsesToMessagesResult projects whitespace-only reasoning summ
   assertEquals(result.content, [{ type: 'redacted_thinking', data: packReasoningSignature('rs_ws', '') }]);
 });
 
-test('translateResponsesToMessagesResult maps service_tier:fast to usage.speed:fast', () => {
-  const result = translateResponsesToMessagesResult({
+test('translateResponsesToMessagesResult maps service_tier:fast to usage.speed:fast', () => {  const result = translateResponsesToMessagesResult({
     id: 'resp_fast',
     object: 'response',
     model: 'gpt-test',
@@ -671,6 +670,50 @@ test('translateResponsesToMessagesResult omits usage.speed when service_tier is 
   });
 
   assertEquals(result.usage.speed, undefined);
+});
+
+test('translateResponsesToMessagesResult maps cache-read and cache-write onto the Messages cache fields and recovers bare input', () => {
+  const result = translateResponsesToMessagesResult({
+    id: 'resp_cache',
+    object: 'response',
+    model: 'gpt-test',
+    output: [],
+    output_text: '',
+    status: 'completed',
+    error: null,
+    incomplete_details: null,
+    usage: { input_tokens: 100, output_tokens: 20, total_tokens: 120, input_tokens_details: { cached_tokens: 30, cache_write_tokens: 25 } },
+  });
+
+  assertEquals(result.usage.input_tokens, 45);
+  assertEquals(result.usage.cache_read_input_tokens, 30);
+  assertEquals(result.usage.cache_creation_input_tokens, 25);
+});
+
+test('response.created carries cache-read and cache-write onto the initial message_start usage', () => {
+  const state = createResponsesToMessagesStreamState();
+  const events = translateResponsesStreamEventToMessagesEvents(
+    {
+      type: 'response.created',
+      response: {
+        id: 'resp_stream_cache',
+        object: 'response',
+        model: 'gpt-test',
+        output: [],
+        output_text: '',
+        status: 'in_progress',
+        error: null,
+        incomplete_details: null,
+        usage: { input_tokens: 100, output_tokens: 0, total_tokens: 100, input_tokens_details: { cached_tokens: 30, cache_write_tokens: 25 } },
+      },
+    },
+    state,
+  );
+
+  const start = events.find(e => e.type === 'message_start');
+  assertEquals(start?.type === 'message_start' ? start.message.usage.input_tokens : undefined, 45);
+  assertEquals(start?.type === 'message_start' ? start.message.usage.cache_read_input_tokens : undefined, 30);
+  assertEquals(start?.type === 'message_start' ? start.message.usage.cache_creation_input_tokens : undefined, 25);
 });
 
 const responseFailedEvent = (error: { code: string; message: string }): Parameters<typeof translateResponsesStreamEventToMessagesEvents>[0] => ({

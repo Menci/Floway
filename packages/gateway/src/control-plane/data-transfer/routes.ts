@@ -436,6 +436,16 @@ const parseUsageRecords = (value: unknown): { type: 'ok'; records: UsageRecord[]
     // index folds NULL/'' under COALESCE, so a '' import would silently
     // merge with base-tier rows.
     const tier: string | null = typeof record.tier === 'string' ? record.tier : null;
+    if (record.inputAboveTokens !== undefined && record.inputAboveTokens !== null && !isNonNegativeSafeInteger(record.inputAboveTokens)) {
+      return { type: 'invalid', index: i, error: 'inputAboveTokens, when present, must be a non-negative safe integer or null' };
+    }
+    // 0 folds with NULL under the bucket's COALESCE(input_above_tokens, 0) and
+    // the column's CHECK rejects it, so a real input-length band is always a
+    // positive threshold.
+    if (record.inputAboveTokens === 0) {
+      return { type: 'invalid', index: i, error: 'inputAboveTokens must be a positive integer or null/absent' };
+    }
+    const inputAboveTokens: number | null = typeof record.inputAboveTokens === 'number' ? record.inputAboveTokens : null;
     const tokensResult = parseImportedTokens(record.tokens);
     if (tokensResult.type === 'invalid') return { type: 'invalid', index: i, error: 'record has invalid token dimension counts' };
     const costResult = parseImportedCost(record.cost);
@@ -447,6 +457,7 @@ const parseUsageRecords = (value: unknown): { type: 'ok'; records: UsageRecord[]
       modelKey: record.modelKey,
       hour: record.hour,
       tier,
+      inputAboveTokens,
       requests: record.requests,
       tokens: tokensResult.tokens,
       cost: costResult.cost,

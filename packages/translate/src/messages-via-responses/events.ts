@@ -72,6 +72,7 @@ export const translateResponsesToMessagesResult = (response: ResponsesResult): M
 
   const inputTokens = response.usage?.input_tokens ?? 0;
   const cachedTokens = response.usage?.input_tokens_details?.cached_tokens;
+  const cacheWriteTokens = response.usage?.input_tokens_details?.cache_write_tokens;
 
   // Responses `service_tier: 'fast'` surfaces as Messages `speed: 'fast'`;
   // all other `service_tier` values have no Messages equivalent and are dropped.
@@ -86,9 +87,10 @@ export const translateResponsesToMessagesResult = (response: ResponsesResult): M
     stop_reason: mapResponsesStopReason(response),
     stop_sequence: null,
     usage: {
-      input_tokens: inputTokens - (cachedTokens ?? 0),
+      input_tokens: inputTokens - (cachedTokens ?? 0) - (cacheWriteTokens ?? 0),
       output_tokens: response.usage?.output_tokens ?? 0,
       ...(cachedTokens !== undefined ? { cache_read_input_tokens: cachedTokens } : {}),
+      ...(cacheWriteTokens !== undefined ? { cache_creation_input_tokens: cacheWriteTokens } : {}),
       ...(speed !== undefined ? { speed } : {}),
     },
   };
@@ -184,6 +186,7 @@ const closeAllBlocks = (state: ResponsesToMessagesStreamState, events: MessagesS
 
 const handleResponseCreated = (response: ResponsesResult): MessagesStreamEvent[] => {
   const cachedTokens = response.usage?.input_tokens_details?.cached_tokens;
+  const cacheWriteTokens = response.usage?.input_tokens_details?.cache_write_tokens;
 
   return [
     {
@@ -197,9 +200,10 @@ const handleResponseCreated = (response: ResponsesResult): MessagesStreamEvent[]
         stop_reason: null,
         stop_sequence: null,
         usage: {
-          input_tokens: (response.usage?.input_tokens ?? 0) - (cachedTokens ?? 0),
+          input_tokens: (response.usage?.input_tokens ?? 0) - (cachedTokens ?? 0) - (cacheWriteTokens ?? 0),
           output_tokens: 0,
           ...(cachedTokens !== undefined ? { cache_read_input_tokens: cachedTokens } : {}),
+          ...(cacheWriteTokens !== undefined ? { cache_creation_input_tokens: cacheWriteTokens } : {}),
         },
       },
     },

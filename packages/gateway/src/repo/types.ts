@@ -50,6 +50,12 @@ export interface UsageRecord {
   // for the same (keyId, model, upstream, modelKey, hour) are stored as
   // separate buckets so per-tier pricing overrides apply correctly.
   tier: string | null;
+  // Input-length pricing coordinate — the `aboveInputTokens` band the
+  // request's total input crossed (see `selectInputLengthTier`), or null for
+  // the base band. Orthogonal to `tier`: it is selected per request from the
+  // prompt size before persistence, so requests of different prompt sizes land
+  // in separate buckets and resolve distinct long-context unit prices.
+  inputAboveTokens: number | null;
   requests: number;
   // Disjoint per-dimension token counts for this bucket. The tier the bucket
   // was stamped under lives on the `tier` field above — do not encode it
@@ -58,9 +64,9 @@ export interface UsageRecord {
   // Pricing snapshot taken at write time. null means the provider did not
   // resolve pricing for this model (Custom upstreams, unknown Copilot
   // public id, etc.). The repo derives per-dimension unit prices from it via
-  // unitPriceForDimension after `resolveEffectivePricing(cost, tier)` folds
-  // in the bucket's tier override; aggregation treats a null snapshot as
-  // cost 0.
+  // unitPriceForDimension after
+  // `resolveEffectivePricing(cost, tier, inputAboveTokens)` folds in the
+  // bucket's grid cell; aggregation treats a null snapshot as cost 0.
   cost: ModelPricing | null;
 }
 
@@ -69,7 +75,8 @@ export interface UsageRecord {
 // reported service-tier marker (Anthropic `usage.speed`, OpenAI
 // `usage.service_tier`) that selects an override against `cost.tiers`
 // before any per-dimension unit-price lookup; absent / null = the model's
-// base pricing applies.
+// base pricing applies. The orthogonal input-length coordinate is not carried
+// here — it is derived from the disjoint input total at recording time.
 export interface TokenUsage extends Partial<Record<BillingDimension, number>> {
   tier?: string | null;
 }
@@ -179,10 +186,10 @@ export interface SessionsRepo {
 }
 
 export interface UsageRepo {
-  // Additive upsert: on (keyId, model, upstream, modelKey, hour, tier)
-  // conflict, token counts are summed. cost is COALESCED — the first write
-  // within a bucket establishes the pricing snapshot for that row, later
-  // writes that share the bucket keep the original snapshot.
+  // Additive upsert: on (keyId, model, upstream, modelKey, hour, tier,
+  // inputAboveTokens) conflict, token counts are summed. cost is COALESCED —
+  // the first write within a bucket establishes the pricing snapshot for that
+  // row, later writes that share the bucket keep the original snapshot.
   record(record: UsageRecord): Promise<void>;
   query(opts: { keyId?: string; start: string; end: string }): Promise<UsageRecord[]>;
   listAll(): Promise<UsageRecord[]>;

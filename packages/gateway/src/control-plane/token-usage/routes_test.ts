@@ -17,6 +17,7 @@ const seedUsage = async (
     modelKey: model,
     hour,
     tier: null,
+    inputAboveTokens: null,
     requests,
     tokens: { input: 100, output: 50 },
     cost: null,

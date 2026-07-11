@@ -187,6 +187,7 @@ const USAGE_1: UsageRecord = {
   modelKey: 'claude-opus-4.7',
   hour: '2026-01-01T10',
   tier: 'fast',
+  inputAboveTokens: null,
   requests: 5,
   tokens: { input: 1000, output: 500, input_cache_read: 120, input_cache_write: 80 },
   cost: null,
@@ -199,6 +200,7 @@ const USAGE_2: UsageRecord = {
   modelKey: 'gpt-prod',
   hour: '2026-01-01T11',
   tier: null,
+  inputAboveTokens: null,
   requests: 3,
   tokens: { input: 2000, output: 800, input_cache_read: 200, input_cache_write: 50 },
   cost: null,
@@ -311,8 +313,29 @@ const latestImportData = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-test('export emits the v8 envelope with users and upstreams', async () => {
+test('import round-trips a usage record carrying a positive input-length coordinate', async () => {
   const { app, repo } = setup();
+  const longRow: UsageRecord = { ...USAGE_2, inputAboveTokens: 272000 };
+  const result = await doImport(app, 'replace', latestImportData({ usage: [longRow] }));
+  assertEquals(result.status, 200);
+  assertEquals(await repo.usage.listAll(), [longRow]);
+});
+
+test('import rejects a usage record whose inputAboveTokens is 0 (folds with the base band under COALESCE)', async () => {
+  const { app } = setup();
+  const result = await doImport(app, 'replace', latestImportData({ usage: [{ ...USAGE_2, inputAboveTokens: 0 }] }));
+  assertEquals(result.status, 400);
+  assertEquals(result.body.error, 'invalid usage at index 0: inputAboveTokens must be a positive integer or null/absent');
+});
+
+test('import rejects a usage record whose inputAboveTokens is a negative or fractional value', async () => {
+  const { app } = setup();
+  const negative = await doImport(app, 'replace', latestImportData({ usage: [{ ...USAGE_2, inputAboveTokens: -1 }] }));
+  assertEquals(negative.status, 400);
+  assertEquals(negative.body.error, 'invalid usage at index 0: inputAboveTokens, when present, must be a non-negative safe integer or null');
+});
+
+test('export emits the v8 envelope with users and upstreams', async () => {  const { app, repo } = setup();
   await repo.users.save(SEED_ADMIN);
 
   const result = await doExport(app);

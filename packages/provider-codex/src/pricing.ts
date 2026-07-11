@@ -46,33 +46,74 @@ const GPT_5_4_PRICING: ModelPricing = {
 const CODEX_MODEL_PRICING: readonly (readonly [key: string | RegExp, pricing: ModelPricing])[] = [
   // GPT-5.6 family (Sol / Terra / Luna) shipped July 2026 and requires
   // codex-cli 0.144.0+ per the upstream models.json minimal_client_version.
-  // Standard rates match models.dev + OpenRouter; each variant's catalog
-  // entry advertises a `priority` service tier (no `flex` lane), and the
-  // priority per-token rate is a flat 2× standard across the family —
-  // distinct from GPT-5.5's 2.5× multiplier.
+  // Each variant is a full (service tier × input length) grid: standard/
+  // priority × short/long. Priority per-token rate is a flat 2× standard
+  // across the family (distinct from GPT-5.5's 2.5×). OpenAI charges a higher
+  // full-request rate once a prompt's total input is above 272k tokens
+  // (input/cache-read/cache-write double, output ×1.5). Cache-write is input ×
+  // 1.25 and cache-read is input × 0.10 in every cell.
+  //
+  // Sources for standard short/long (all four cross-agree): the OpenAI pricing
+  // page archive, models.dev, LiteLLM, and the caozhiyuan cross-check. Priority
+  // short matches models.dev's `experimental.modes.fast` (service_tier=priority)
+  // and LiteLLM's `_priority` keys. Priority long input/cache-read/output come
+  // from LiteLLM's `azure/gpt-5.6-*` `_above_272k_tokens_priority` keys; those
+  // Azure entries carry no cache-write key, so priority-long cache-write is
+  // derived from the family-wide cache_write = 1.25 × input ratio — OpenAI does
+  // not publish a standalone priority-long cache-write rate.
+  // https://web.archive.org/web/20260709205359/https://platform.openai.com/docs/pricing
+  // https://github.com/sst/models.dev/blob/6dfc39c81b6cd57a91c155aa7b4f68ed1b360da0/providers/openai/models/gpt-5.6-sol.toml
+  // https://github.com/BerriAI/litellm/blob/6fa088224bc2022c7541ee44cf02c0bd6dd2942e/model_prices_and_context_window.json
+  // https://github.com/openai/codex/blob/d2d00b6632dc991aa4471db0529773029cae5d68/codex-rs/models-manager/models.json
+  // Cross-checked against caozhiyuan/copilot-api:
+  // https://github.com/caozhiyuan/copilot-api/blob/5a28eee7ced4fda51b6b224fb8723df5e6534708/src/lib/token-usage/pricing.ts#L98-L148
   ['gpt-5.6-sol', {
     input: 5,
     input_cache_read: 0.5,
+    input_cache_write: 6.25,
     output: 30,
     tiers: {
-      priority: { input: 10, input_cache_read: 1, output: 60 },
+      priority: { input: 10, input_cache_read: 1, input_cache_write: 12.5, output: 60 },
     },
+    inputLengthTiers: [{
+      aboveInputTokens: 272000,
+      input: 10, input_cache_read: 1, input_cache_write: 12.5, output: 45,
+      tiers: {
+        priority: { input: 20, input_cache_read: 2, input_cache_write: 25, output: 90 },
+      },
+    }],
   }],
   ['gpt-5.6-terra', {
     input: 2.5,
     input_cache_read: 0.25,
+    input_cache_write: 3.125,
     output: 15,
     tiers: {
-      priority: { input: 5, input_cache_read: 0.5, output: 30 },
+      priority: { input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 30 },
     },
+    inputLengthTiers: [{
+      aboveInputTokens: 272000,
+      input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 22.5,
+      tiers: {
+        priority: { input: 10, input_cache_read: 1, input_cache_write: 12.5, output: 45 },
+      },
+    }],
   }],
   ['gpt-5.6-luna', {
     input: 1,
     input_cache_read: 0.1,
+    input_cache_write: 1.25,
     output: 6,
     tiers: {
-      priority: { input: 2, input_cache_read: 0.2, output: 12 },
+      priority: { input: 2, input_cache_read: 0.2, input_cache_write: 2.5, output: 12 },
     },
+    inputLengthTiers: [{
+      aboveInputTokens: 272000,
+      input: 2, input_cache_read: 0.2, input_cache_write: 2.5, output: 9,
+      tiers: {
+        priority: { input: 4, input_cache_read: 0.4, input_cache_write: 5, output: 18 },
+      },
+    }],
   }],
   ['gpt-5.5', {
     input: 5,

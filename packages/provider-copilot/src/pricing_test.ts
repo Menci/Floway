@@ -37,6 +37,21 @@ test('pricingForCopilotPublicModelId resolves embeddings with output 0', () => {
   assertEquals(pricingForCopilotPublicModelId('text-embedding-ada-002'), { input: 0.1, output: 0 });
 });
 
+test('pricingForCopilotPublicModelId resolves gpt-5.6 family with a standard short/long input-length grid', () => {
+  assertEquals(pricingForCopilotPublicModelId('gpt-5.6-sol'), {
+    input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 30,
+    inputLengthTiers: [{ aboveInputTokens: 272000, input: 10, input_cache_read: 1, input_cache_write: 12.5, output: 45 }],
+  });
+  assertEquals(pricingForCopilotPublicModelId('gpt-5.6-terra'), {
+    input: 2.5, input_cache_read: 0.25, input_cache_write: 3.125, output: 15,
+    inputLengthTiers: [{ aboveInputTokens: 272000, input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 22.5 }],
+  });
+  assertEquals(pricingForCopilotPublicModelId('gpt-5.6-luna'), {
+    input: 1, input_cache_read: 0.1, input_cache_write: 1.25, output: 6,
+    inputLengthTiers: [{ aboveInputTokens: 272000, input: 2, input_cache_read: 0.2, input_cache_write: 2.5, output: 9 }],
+  });
+});
+
 test('pricingForCopilotPublicModelId returns null for unknown ids', () => {
   assertEquals(pricingForCopilotPublicModelId('totally-made-up-model'), null);
 });

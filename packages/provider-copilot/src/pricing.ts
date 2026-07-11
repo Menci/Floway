@@ -105,9 +105,29 @@ const COPILOT_MODEL_PRICING: readonly PricingRule[] = [
   // all three with per-model billing blocks that agree exactly with
   // models.dev and OpenRouter — Sol matches the GPT-5.5 rate, Terra
   // matches GPT-5.4, and Luna sits between GPT-5.4-mini and GPT-4o-mini.
-  ['gpt-5.6-sol', { input: 5, input_cache_read: 0.5, output: 30 }],
-  ['gpt-5.6-terra', { input: 2.5, input_cache_read: 0.25, output: 15 }],
-  ['gpt-5.6-luna', { input: 1, input_cache_read: 0.1, output: 6 }],
+  //
+  // Cache-write is input × 1.25 and cache-read is input × 0.10 across the
+  // family. OpenAI charges a higher full-request rate once a prompt's total
+  // input is above 272k tokens (input/cache-read/cache-write double, output
+  // ×1.5); Copilot mirrors it. Copilot exposes no priority/flex lane on these
+  // models, so each is a two-cell (standard × short/long) grid.
+  // https://web.archive.org/web/20260709205359/https://platform.openai.com/docs/pricing
+  // https://github.com/sst/models.dev/blob/6dfc39c81b6cd57a91c155aa7b4f68ed1b360da0/providers/openai/models/gpt-5.6-sol.toml
+  // https://github.com/BerriAI/litellm/blob/6fa088224bc2022c7541ee44cf02c0bd6dd2942e/model_prices_and_context_window.json
+  // Cross-checked against caozhiyuan/copilot-api (a Copilot/Codex gateway):
+  // https://github.com/caozhiyuan/copilot-api/blob/5a28eee7ced4fda51b6b224fb8723df5e6534708/src/lib/token-usage/pricing.ts#L98-L148
+  ['gpt-5.6-sol', {
+    input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 30,
+    inputLengthTiers: [{ aboveInputTokens: 272000, input: 10, input_cache_read: 1, input_cache_write: 12.5, output: 45 }],
+  }],
+  ['gpt-5.6-terra', {
+    input: 2.5, input_cache_read: 0.25, input_cache_write: 3.125, output: 15,
+    inputLengthTiers: [{ aboveInputTokens: 272000, input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 22.5 }],
+  }],
+  ['gpt-5.6-luna', {
+    input: 1, input_cache_read: 0.1, input_cache_write: 1.25, output: 6,
+    inputLengthTiers: [{ aboveInputTokens: 272000, input: 2, input_cache_read: 0.2, input_cache_write: 2.5, output: 9 }],
+  }],
   ['gpt-5.5', { input: 5, input_cache_read: 0.5, output: 30 }],
   ['gpt-5.4', { input: 2.5, input_cache_read: 0.25, output: 15 }],
   ['gpt-5.4-mini', { input: 0.75, input_cache_read: 0.075, output: 4.5 }],

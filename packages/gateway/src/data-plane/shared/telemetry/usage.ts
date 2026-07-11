@@ -1,7 +1,7 @@
 import { currentHour } from './hour.ts';
 import { getRepo } from '../../../repo/index.ts';
 import type { TokenUsage } from '../../../repo/types.ts';
-import { BILLING_DIMENSIONS, type BillingDimension } from '@floway-dev/protocols/common';
+import { BILLING_DIMENSIONS, INPUT_BILLING_DIMENSIONS, type BillingDimension, selectInputLengthTier } from '@floway-dev/protocols/common';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
 
 export const hasTokenUsage = (usage: TokenUsage): boolean => BILLING_DIMENSIONS.some(dimension => (usage[dimension] ?? 0) > 0);
@@ -156,6 +156,11 @@ const splitModalityCounts = (
 
 export const recordTokenUsage = async (keyId: string, modelIdentity: TelemetryModelIdentity, usage: TokenUsage): Promise<void> => {
   const { tier, ...tokens } = usage;
+  // The input-length coordinate is a per-request property of the prompt size,
+  // not something the upstream stamps, so it is selected here — the persistence
+  // boundary that has both the pricing snapshot and the disjoint input counts.
+  const totalInput = INPUT_BILLING_DIMENSIONS.reduce((sum, dimension) => sum + (tokens[dimension] ?? 0), 0);
+  const inputAboveTokens = selectInputLengthTier(modelIdentity.cost, totalInput);
   await Promise.all([
     getRepo().usage.record({
       keyId,
@@ -164,6 +169,7 @@ export const recordTokenUsage = async (keyId: string, modelIdentity: TelemetryMo
       modelKey: modelIdentity.modelKey,
       hour: currentHour(),
       tier: tier ?? null,
+      inputAboveTokens,
       requests: 1,
       tokens,
       cost: modelIdentity.cost,
