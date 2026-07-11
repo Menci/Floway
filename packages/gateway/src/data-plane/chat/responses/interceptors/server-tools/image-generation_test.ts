@@ -22,7 +22,7 @@ import { initRepo } from '../../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../../../test-helpers/gateway-ctx.ts';
 import type { ResponsesInvocation } from '../types.ts';
-import type { ResponsesInputItem, ResponsesPayload, ResponsesTool } from '@floway-dev/protocols/responses';
+import type { ResponsesInputItem, ResponsesNamespaceFunctionTool, ResponsesPayload, ResponsesTool } from '@floway-dev/protocols/responses';
 import { assert, assertEquals, assertFalse, assertStringIncludes, stubModelCandidate } from '@floway-dev/test-utils';
 import type { CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
 
@@ -58,7 +58,7 @@ test('isHostedImageGenerationTool matches only the hosted image_generation type'
 });
 
 test('isImageGenerationDeclaration recognizes only the exact Codex image_gen namespace shape', () => {
-  const imagegen = { type: 'function', name: 'imagegen', parameters: { type: 'object' }, strict: false };
+  const imagegen: ResponsesNamespaceFunctionTool = { type: 'function', name: 'imagegen', parameters: { type: 'object' }, strict: false };
   assert(isImageGenerationDeclaration({ type: 'image_generation' }));
   assert(isImageGenerationDeclaration({ type: 'namespace', name: 'image_gen', tools: [imagegen] }));
 
