@@ -8,5 +8,5 @@ export { translateGeminiViaMessages } from './gemini-via-messages/translate.ts';
 export { translateGeminiViaResponses } from './gemini-via-responses/translate.ts';
 export { translateGeminiViaChatCompletions } from './gemini-via-chat-completions/translate.ts';
 
-export type { TranslationContext } from './types.ts';
+export type { TranslatedApiError, TranslationContext } from './types.ts';
 export { TranslatorInputError } from './translator-input-error.ts';
