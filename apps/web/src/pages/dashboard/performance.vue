@@ -6,12 +6,6 @@ import { defineBasicLoader } from 'unplugin-vue-router/data-loaders/basic';
 import { computed, ref, shallowRef, watch, watchEffect } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
-import { callApi, useApi } from '../../api/client.ts';
-import ChartCanvas from '../../components/charts/ChartCanvas.vue';
-import ChartSeriesControls from '../../components/charts/ChartSeriesControls.vue';
-import { chartColor, chartColorByName, chartFont, chartXAxisTick, dashboardBuckets, type DashboardRange } from '../../components/charts/dashboard-chart.ts';
-import { applySeriesSelection, chartEventsWithDoubleClick, chartSeriesIds, createSeriesIsolation, handleLegendClick } from '../../components/charts/series-selection.ts';
-import { useUpstreamsStore } from '../../composables/useUpstreams.ts';
 import {
   buildOverviewQuery,
   emptyDisplayRecord,
@@ -29,6 +23,12 @@ import {
   type TableSortKey,
   type UrlState,
 } from './performance-helpers.ts';
+import { callApi, useApi } from '../../api/client.ts';
+import ChartCanvas from '../../components/charts/ChartCanvas.vue';
+import ChartSeriesControls from '../../components/charts/ChartSeriesControls.vue';
+import { chartColor, chartColorByName, chartFont, chartXAxisTick, dashboardBuckets, type DashboardRange } from '../../components/charts/dashboard-chart.ts';
+import { applySeriesSelection, chartEventsWithDoubleClick, chartSeriesIds, createSeriesIsolation, handleLegendClick } from '../../components/charts/series-selection.ts';
+import { useUpstreamsStore } from '../../composables/useUpstreams.ts';
 import { useAuthStore } from '../../stores/auth.ts';
 import type { PerformanceDisplayRecord } from '@floway-dev/gateway/control-plane/performance/aggregate';
 import { OverlayScrollbars, Spinner } from '@floway-dev/ui';

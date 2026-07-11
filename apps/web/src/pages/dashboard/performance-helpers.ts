@@ -1,7 +1,7 @@
-import type { PerformanceDisplayRecord } from '@floway-dev/gateway/control-plane/performance/aggregate';
 import type { LocationQuery, LocationQueryValue } from 'vue-router';
 
 import { dashboardRangeQuery, type DashboardRange } from '../../components/charts/dashboard-chart.ts';
+import type { PerformanceDisplayRecord } from '@floway-dev/gateway/control-plane/performance/aggregate';
 
 // Pure helpers extracted from performance.vue so they can be exercised
 // directly by Vitest without mounting the whole page (auth store, route
