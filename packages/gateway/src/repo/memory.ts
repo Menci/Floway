@@ -310,6 +310,7 @@ class MemoryUsageRepo implements UsageRepo {
       modelKey: record.modelKey,
       hour: record.hour,
       tier: record.tier,
+      inputAboveTokens: record.inputAboveTokens,
       tokens: {},
       unitPrices: {},
       requests: record.requests,
