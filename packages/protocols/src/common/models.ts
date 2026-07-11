@@ -35,42 +35,36 @@ export const INPUT_BILLING_DIMENSIONS: readonly BillingDimension[] = ['input', '
 // `unitPriceForDimension` (modality → bare, cached → uncached).
 export type PriceVector = Partial<Record<BillingDimension, number>>;
 
-// Per-model pricing. The bare dimension keys are the base cell: the default
-// service tier at the base (short) input length. Two orthogonal selectors then
-// pick a different cell for a given request:
-//
-//   - service tier — the wire value the upstream stamps on the usage object
-//     (`fast`, `priority`, `flex`, ...). `tiers[value]` is that service tier's
-//     cell at the base input length. An empty cell acknowledges the tier
-//     without changing any rate.
-//   - input length — OpenAI charges a higher full-request rate once a prompt
-//     crosses a token threshold (272k for the GPT-5.6 family). Each
-//     `inputLengthTiers` entry is one input-length band; unlike a service tier,
-//     it depends on the per-request prompt size, so it is selected before
-//     persistence (see `selectInputLengthTier`) and stored as a coordinate on
-//     the usage row.
-//
-// The two selectors form a Cartesian grid, not a pair of overlays that
-// compose: each (service tier × input length) cell is priced explicitly. When
-// both selectors are non-default the price comes ONLY from the explicit
-// combined cell (`inputLengthTiers[i].tiers[value]`); a missing combination is
-// unpriced rather than a silent single-axis win or an auto-multiply. Resolve
-// through `resolveEffectivePricing(pricing, usage.tier, usage.inputAboveTokens)`
-// before any unit-price lookup.
-// https://developers.openai.com/api/docs/pricing
-export interface ModelPricing extends PriceVector {
-  tiers?: Record<string, PriceVector>;
-  inputLengthTiers?: readonly InputLengthTier[];
+// Pricing selectors are orthogonal coordinates. Service tier comes from the
+// upstream usage object; inputAboveTokens is selected per request from total
+// disjoint input. An omitted coordinate is the default on that axis.
+export interface PricingSelector {
+  serviceTier?: string;
+  inputAboveTokens?: number;
 }
 
-// One input-length band of the pricing grid. Its bare dimension keys are the
-// full-request rates for the default service tier once a request's total input
-// is STRICTLY GREATER than `aboveInputTokens`. `tiers` holds the explicit
-// (service tier × this input length) cells; a service tier absent from this map
-// has no published combined price and resolves to unpriced.
-export interface InputLengthTier extends PriceVector {
-  aboveInputTokens: number;
-  tiers?: Record<string, PriceVector>;
+// One explicit point in the selector Cartesian product. Rates never inherit
+// from another cell: every published coordinate carries its own PriceVector.
+// Within a vector, `unitPriceForDimension` still provides the documented
+// modality/cache fallback chain.
+export interface PricingCell {
+  selector?: PricingSelector;
+  rates: PriceVector;
+}
+
+// Per-model pricing as symmetric flat cells. `{ rates }` is the default service
+// tier at the base input length; non-default selectors use the same shape. This
+// keeps future selector axes independent instead of privileging one with nested
+// data. Duplicate coordinates and malformed selectors are authoring errors
+// rejected deterministically by the resolver.
+//
+// OpenAI's GPT-5.6 input-length selector uses `inputAboveTokens: 272000`: total
+// input must be STRICTLY greater than 272000, and the selected cell reprices the
+// whole request. Missing exact coordinates are unpriced; Floway never chooses
+// one selector over another or derives cross-cell rates.
+// https://developers.openai.com/api/docs/pricing
+export interface ModelPricing {
+  cells: readonly PricingCell[];
 }
 
 // Resolve the USD-per-million-tokens unit price for one dimension against a
@@ -100,61 +94,57 @@ export const unitPriceForDimension = (pricing: PriceVector | null, dimension: Bi
   }
 };
 
-// Resolve a pricing snapshot to the flat PriceVector for one request's
-// (service tier × input length) grid cell, so every downstream
-// `unitPriceForDimension` call sees one self-contained rate set.
-//
-//   - service tier is a non-default selector only when the model prices it (a
-//     `tiers[serviceTier]` entry exists). An absent or unrecognized service
-//     tier prices as the base cell.
-//   - input length is a non-default selector when `aboveInputTokens` names an
-//     `inputLengthTiers` band (the coordinate `selectInputLengthTier` picked).
-//
-// When at most one selector is non-default the cell is base optionally overlaid
-// by that selector's vector (a per-dimension shallow merge: overlay keys win,
-// omitted keys inherit base and then flow through `unitPriceForDimension`'s
-// fallback chain). When BOTH are non-default, an explicit combined cell MUST
-// exist; its dimensions overlay the selected input-length cell, so omitted
-// dimensions inherit the long-context rate rather than falling back to the
-// short base cell. A missing combination returns null (unpriced) rather than
-// letting one axis silently win or multiplying the two. Returns a fresh vector
-// that never carries `tiers`/`inputLengthTiers`. A null snapshot resolves to
-// null.
+const pricingCoordinateKey = (selector: PricingSelector | undefined): string =>
+  `${selector?.serviceTier ?? ''}\0${selector?.inputAboveTokens ?? ''}`;
+
+const validatePricingCells = (pricing: ModelPricing): void => {
+  const coordinates = new Set<string>();
+  for (const cell of pricing.cells) {
+    const { serviceTier, inputAboveTokens } = cell.selector ?? {};
+    if (serviceTier !== undefined && serviceTier.length === 0) {
+      throw new RangeError('pricing service-tier selector must be non-empty');
+    }
+    if (inputAboveTokens !== undefined && (!Number.isSafeInteger(inputAboveTokens) || inputAboveTokens <= 0)) {
+      throw new RangeError(`input-length pricing threshold must be a positive safe integer, received ${inputAboveTokens}`);
+    }
+    const coordinate = pricingCoordinateKey(cell.selector);
+    if (coordinates.has(coordinate)) {
+      throw new Error(`duplicate pricing cell coordinate: serviceTier=${serviceTier ?? 'default'}, inputAboveTokens=${inputAboveTokens ?? 'base'}`);
+    }
+    coordinates.add(coordinate);
+  }
+};
+
+// Resolve exactly one (service tier × input length) coordinate. Cells never
+// inherit from one another: an absent exact coordinate is unpriced. Default
+// protocol values are normalized to null before this function, so unknown wire
+// service tiers remain real coordinates and do not silently use base pricing.
 export const resolveEffectivePricing = (
   pricing: ModelPricing | null,
   serviceTier: string | null | undefined,
-  aboveInputTokens?: number | null,
+  inputAboveTokens?: number | null,
 ): PriceVector | null => {
   if (!pricing) return null;
-  const { tiers, inputLengthTiers, ...base } = pricing;
-
-  const lengthTier = aboveInputTokens != null ? inputLengthTiers?.find(t => t.aboveInputTokens === aboveInputTokens) : undefined;
-  const serviceCell = serviceTier != null ? tiers?.[serviceTier] : undefined;
-
-  if (!lengthTier) return serviceCell ? { ...base, ...serviceCell } : base;
-
-  const { aboveInputTokens: _aboveInputTokens, tiers: lengthServiceCells, ...lengthDims } = lengthTier;
-  if (!serviceCell) return { ...base, ...lengthDims };
-
-  const combinedCell = lengthServiceCells?.[serviceTier as string];
-  return combinedCell ? { ...base, ...lengthDims, ...combinedCell } : null;
+  validatePricingCells(pricing);
+  const coordinate = pricingCoordinateKey({
+    ...(serviceTier != null ? { serviceTier } : {}),
+    ...(inputAboveTokens != null ? { inputAboveTokens } : {}),
+  });
+  return pricing.cells.find(cell => pricingCoordinateKey(cell.selector) === coordinate)?.rates ?? null;
 };
 
-// Pick the input-length band a request falls into, given the disjoint sum of
-// its input dimensions. Returns the winning band's `aboveInputTokens` — the
-// coordinate persisted on the usage row and later fed back to
-// `resolveEffectivePricing` — or null when the model declares no bands or the
-// request stays at or below every threshold. Selection is strictly greater than
-// the threshold (a prompt of exactly `aboveInputTokens` stays in the band
-// below), and the highest threshold the request exceeds wins.
+// Pick the highest input threshold strictly crossed by the request, independent
+// of service tier. The returned coordinate is persisted with the request and
+// later exact-matched by `resolveEffectivePricing`; a service-tier combination
+// missing at that coordinate remains unpriced.
 export const selectInputLengthTier = (pricing: ModelPricing | null, totalInputTokens: number): number | null => {
+  if (!pricing) return null;
+  validatePricingCells(pricing);
   let selected: number | null = null;
-  for (const tier of pricing?.inputLengthTiers ?? []) {
-    if (!Number.isSafeInteger(tier.aboveInputTokens) || tier.aboveInputTokens <= 0) {
-      throw new RangeError(`input-length pricing threshold must be a positive safe integer, received ${tier.aboveInputTokens}`);
-    }
-    if (totalInputTokens > tier.aboveInputTokens && (selected === null || tier.aboveInputTokens > selected)) {
-      selected = tier.aboveInputTokens;
+  for (const cell of pricing.cells) {
+    const threshold = cell.selector?.inputAboveTokens;
+    if (threshold !== undefined && totalInputTokens > threshold && (selected === null || threshold > selected)) {
+      selected = threshold;
     }
   }
   return selected;
