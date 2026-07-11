@@ -11,7 +11,7 @@ import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import { getRepo } from '../../repo/index.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getCurrentColo } from '../../runtime/runtime-info.ts';
-import type { PublicModel, PublicModelsResponse } from '@floway-dev/protocols/common';
+import type { PublicModelsResponse } from '@floway-dev/protocols/common';
 import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 
 // Claude Code CLI's `/model` picker discovers gateway-served models by GET
@@ -30,11 +30,11 @@ import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 //
 // (2) The response follows Anthropic's official /v1/models shape —
 // `{data, first_id, has_more, last_id}` with `ModelInfo` rows — instead
-// of Floway's OpenAI-Anthropic superset. Other Anthropic-format callers
+// of the OpenAI-Anthropic superset. Other Anthropic-format callers
 // parse the same official shape, so mirroring it here also lets any
 // future Anthropic-native picker reuse the payload. `capabilities` is
-// nullable per the SDK type; Floway does not track every dimension the
-// SDK declares (batch, citations, code_execution, pdf_input,
+// nullable per the SDK type; we do not track every dimension the SDK
+// declares (batch, citations, code_execution, pdf_input,
 // structured_outputs), so returning null is honest — contrast with
 // fabricating {supported: false} rows for features we do not observe.
 // CLI-side the whole object is `.strip()`ed away regardless.
@@ -42,53 +42,29 @@ import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 // https://code.claude.com/docs/en/llm-gateway-protocol#model-discovery
 // https://docs.claude.com/en/api/models-list
 // https://github.com/anthropics/anthropic-sdk-typescript/blob/main/src/resources/models.ts
-const CLAUDE_CODE_UA_PREFIX = 'claude-cli/';
-
-// Anthropic /v1/models envelope + row shape. Kept local: the transform is
-// serve-time only; nothing downstream persists these rows.
-interface ClaudeCodeModelInfo {
-  id: string;
-  type: 'model';
-  display_name: string;
-  created_at: string;
-  max_input_tokens: number | null;
-  max_tokens: number | null;
-  capabilities: null;
-}
-
-interface ClaudeCodeModelsResponse {
-  data: ClaudeCodeModelInfo[];
-  first_id: string | null;
-  has_more: false;
-  last_id: string | null;
-}
-
-// Anthropic requires `created_at` on every row; Floway does not always
-// track a creation timestamp (Copilot catalog, custom upstreams). Epoch
-// is the least-lossy sentinel — never confuseable with a real release
-// date and stable across catalog fetches.
-const CREATED_AT_UNKNOWN = '1970-01-01T00:00:00Z';
-
-const toClaudeCodeModelInfo = (model: PublicModel): ClaudeCodeModelInfo => {
-  const max = model.limits.max_context_window_tokens;
-  const id = max !== undefined && max >= 1_000_000 ? `${model.id}[1m]` : model.id;
-  return {
-    id,
-    type: 'model',
-    display_name: model.display_name,
-    created_at: model.created_at ?? CREATED_AT_UNKNOWN,
-    max_input_tokens: max ?? null,
-    max_tokens: model.limits.max_output_tokens ?? null,
-    capabilities: null,
-  };
-};
-
-const toClaudeCodeShape = (response: PublicModelsResponse): ClaudeCodeModelsResponse => {
-  const data = response.data.map(toClaudeCodeModelInfo);
+const toClaudeCodeShape = (response: PublicModelsResponse, userAgent: string | undefined) => {
+  if (!userAgent?.startsWith('claude-cli/')) return response;
+  // Anthropic requires `created_at` on every row, but not every catalog
+  // (Copilot, custom upstreams) declares one. Epoch is the least-lossy
+  // sentinel — never confuseable with a real release date and stable
+  // across catalog fetches.
+  const CREATED_AT_UNKNOWN = '1970-01-01T00:00:00Z';
+  const data = response.data.map(model => {
+    const max = model.limits.max_context_window_tokens;
+    return {
+      id: max !== undefined && max >= 1_000_000 ? `${model.id}[1m]` : model.id,
+      type: 'model' as const,
+      display_name: model.display_name,
+      created_at: model.created_at ?? CREATED_AT_UNKNOWN,
+      max_input_tokens: max ?? null,
+      max_tokens: model.limits.max_output_tokens ?? null,
+      capabilities: null,
+    };
+  });
   return {
     data,
     first_id: data[0]?.id ?? null,
-    has_more: false,
+    has_more: false as const,
     last_id: data[data.length - 1]?.id ?? null,
   };
 };
@@ -97,11 +73,7 @@ export const models = async (c: Context) => {
   try {
     const fetcherForUpstream = await createPerRequestFetcher(getCurrentColo(c.req.raw));
     const response = await loadModels(effectiveUpstreamIdsFromContext(c), fetcherForUpstream, backgroundSchedulerFromContext(c), getRepo().modelAliases);
-    const userAgent = c.req.header('user-agent');
-    if (userAgent?.startsWith(CLAUDE_CODE_UA_PREFIX)) {
-      return Response.json(toClaudeCodeShape(response));
-    }
-    return Response.json(response);
+    return Response.json(toClaudeCodeShape(response, c.req.header('user-agent')));
   } catch (e) {
     // Upstream HTTP/parse failures squash to a generic message so we do not
     // leak upstream identity. Other registry-thrown errors (e.g. the "no
