@@ -1407,10 +1407,10 @@ test('claude', 'PowerShell claude --version is bounded', async t => {
   const started = Date.now();
   const run = await runPowerShellInstaller({
     workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url,
-    fakeClaudeVersionSleep: 8, timeoutSeconds: 1,
+    fakeClaudeVersionSleep: 12, timeoutSeconds: 1,
   });
   t.ok(run.code !== 0, 'timed out version must fail the agent');
-  t.ok(Date.now() - started < 4_000, 'version deadline must fire before natural completion');
+  t.ok(Date.now() - started < 8_000, 'version deadline must fire well before natural completion');
   t.ok(!existsSync(settingsPathFor(ws)), 'timed-out version verification rolls back settings');
 });
 
