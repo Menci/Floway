@@ -11,7 +11,7 @@
 
 import type { CustomUpstreamConfig } from './config.ts';
 import { customFetchModels } from './fetch.ts';
-import { BILLING_DIMENSIONS, type ModelKind, type ModelPricing } from '@floway-dev/protocols/common';
+import { BILLING_DIMENSIONS, type ModelKind, type ModelPricing, type PriceVector } from '@floway-dev/protocols/common';
 import { chatField, fetchUpstreamModels, type Fetcher, type UpstreamChatModelConfig, identityWrapUpstreamCall } from '@floway-dev/provider';
 
 export interface CustomRawModel {
@@ -62,15 +62,29 @@ const parseLimits = (value: unknown): CustomRawModel['limits'] => {
 };
 
 const parseCost = (value: unknown): ModelPricing | undefined => {
-  // Admit any subset of billing dimensions advertised on the upstream's
-  // /v1/models cost block; drop the whole block when none are present.
-  if (!isRecord(value)) return undefined;
-  const cost: ModelPricing = {};
-  for (const dimension of BILLING_DIMENSIONS) {
-    const rate = optionalNumberField(value[dimension]);
-    if (rate !== undefined) cost[dimension] = rate;
+  // A Floway-shaped upstream publishes the full cells shape. Plain OpenAI-
+  // compatible catalogs usually omit cost entirely; malformed pricing is
+  // ignored with the rest of best-effort catalog metadata.
+  if (!isRecord(value) || !Array.isArray(value.cells)) return undefined;
+  const cells: ModelPricing['cells'][number][] = [];
+  for (const rawCell of value.cells) {
+    if (!isRecord(rawCell) || !isRecord(rawCell.rates)) continue;
+    const rates: PriceVector = {};
+    for (const dimension of BILLING_DIMENSIONS) {
+      const rate = optionalNumberField(rawCell.rates[dimension]);
+      if (rate !== undefined) rates[dimension] = rate;
+    }
+    if (Object.keys(rates).length === 0) continue;
+    const selectorRecord = isRecord(rawCell.selector) ? rawCell.selector : undefined;
+    const serviceTier = optionalStringField(selectorRecord?.serviceTier);
+    const inputAboveTokens = optionalNumberField(selectorRecord?.inputAboveTokens);
+    const selector = {
+      ...(serviceTier !== undefined ? { serviceTier } : {}),
+      ...(inputAboveTokens !== undefined ? { inputAboveTokens } : {}),
+    };
+    cells.push({ ...(Object.keys(selector).length > 0 ? { selector } : {}), rates });
   }
-  return Object.keys(cost).length > 0 ? cost : undefined;
+  return cells.length > 0 ? { cells } : undefined;
 };
 
 const parseKind = (value: unknown): ModelKind | undefined => {

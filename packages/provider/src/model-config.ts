@@ -119,29 +119,37 @@ const nonNegativeNumberField = (value: unknown, label: string): number => {
 export const pricingField = (value: unknown, label: string): ModelPricing | undefined => {
   const record = optionalMetadataRecord(value, label);
   if (!record) return undefined;
-  const pricing: ModelPricing = {};
-  for (const dimension of BILLING_DIMENSIONS) {
-    if (record[dimension] !== undefined) pricing[dimension] = nonNegativeNumberField(record[dimension], `${label}.${dimension}`);
-  }
-  if (record.tiers !== undefined) {
-    if (!isRecord(record.tiers)) throw new Error(`Malformed ${label}.tiers: must be an object`);
-    const tiers: Record<string, Partial<Record<BillingDimension, number>>> = {};
-    for (const [tierName, overlay] of Object.entries(record.tiers)) {
-      if (tierName === '') throw new Error(`Malformed ${label}.tiers: tier name must be non-empty`);
-      if (!isRecord(overlay)) throw new Error(`Malformed ${label}.tiers.${tierName}: must be an object`);
-      const tierPricing: Partial<Record<BillingDimension, number>> = {};
-      for (const dimension of BILLING_DIMENSIONS) {
-        if (overlay[dimension] !== undefined) {
-          tierPricing[dimension] = nonNegativeNumberField(overlay[dimension], `${label}.tiers.${tierName}.${dimension}`);
-        }
-      }
-      // An empty overlay is a valid declaration: the tier exists but every
-      // dimension inherits base pricing. Preserve it verbatim.
-      tiers[tierName] = tierPricing;
+  if (!Array.isArray(record.cells) || record.cells.length === 0) throw new Error(`Malformed ${label}.cells: must be a non-empty array`);
+
+  const coordinates = new Set<string>();
+  const cells = record.cells.map((rawCell, index) => {
+    if (!isRecord(rawCell)) throw new Error(`Malformed ${label}.cells[${index}]: must be an object`);
+    const selectorRecord = rawCell.selector === undefined ? undefined : optionalMetadataRecord(rawCell.selector, `${label}.cells[${index}].selector`);
+    const serviceTier = selectorRecord?.serviceTier;
+    if (serviceTier !== undefined && (typeof serviceTier !== 'string' || serviceTier.length === 0)) {
+      throw new Error(`Malformed ${label}.cells[${index}].selector.serviceTier: must be a non-empty string`);
     }
-    if (Object.keys(tiers).length > 0) pricing.tiers = tiers;
-  }
-  return Object.keys(pricing).length > 0 ? pricing : undefined;
+    const inputAboveTokens = selectorRecord?.inputAboveTokens;
+    if (inputAboveTokens !== undefined && (!Number.isSafeInteger(inputAboveTokens) || (inputAboveTokens as number) <= 0)) {
+      throw new Error(`Malformed ${label}.cells[${index}].selector.inputAboveTokens: must be a positive safe integer`);
+    }
+    const coordinate = `${serviceTier ?? ''}\0${inputAboveTokens ?? ''}`;
+    if (coordinates.has(coordinate)) throw new Error(`Malformed ${label}.cells: duplicate selector coordinate`);
+    coordinates.add(coordinate);
+
+    if (!isRecord(rawCell.rates)) throw new Error(`Malformed ${label}.cells[${index}].rates: must be an object`);
+    const rates: Partial<Record<BillingDimension, number>> = {};
+    for (const dimension of BILLING_DIMENSIONS) {
+      if (rawCell.rates[dimension] !== undefined) rates[dimension] = nonNegativeNumberField(rawCell.rates[dimension], `${label}.cells[${index}].rates.${dimension}`);
+    }
+    if (Object.keys(rates).length === 0) throw new Error(`Malformed ${label}.cells[${index}].rates: must contain at least one rate`);
+    const selector = {
+      ...(serviceTier !== undefined ? { serviceTier } : {}),
+      ...(inputAboveTokens !== undefined ? { inputAboveTokens: inputAboveTokens as number } : {}),
+    };
+    return { ...(Object.keys(selector).length > 0 ? { selector } : {}), rates };
+  });
+  return { cells };
 };
 
 const MODEL_KINDS: ReadonlySet<ModelKind> = new Set<ModelKind>(['chat', 'embedding', 'image']);
