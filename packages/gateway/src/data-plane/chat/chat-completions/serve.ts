@@ -44,9 +44,7 @@ export const chatCompletionsServe = {
     // real upstream telemetry rather than a synthetic envelope. Normalize
     // `payload.model` to the candidate's real id — inbound may be an alias
     // name, a prefix-addressable variant, or a dated-suffix id, but every
-    // attempt sees the canonical resolved public id. `iterateCandidates`
-    // stamps `ctx.attempt.telemetry` before invoking `run`, preserving
-    // mid-attempt-throw attribution.
+    // attempt sees the canonical resolved public id.
     return await iterateCandidates(
       decision.candidates,
       'chatCompletionsServe.generate',

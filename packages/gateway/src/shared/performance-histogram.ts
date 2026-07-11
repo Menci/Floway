@@ -78,5 +78,5 @@ export const percentileFromBuckets = (buckets: readonly HistogramBucket[], perce
       return bucket.lower === 0 ? bucket.upper / 2 : Math.sqrt(bucket.lower * bucket.upper);
     }
   }
-  return null;
+  throw new Error('percentileFromBuckets: unreachable — total>0 and rank<=total should have terminated the loop');
 };

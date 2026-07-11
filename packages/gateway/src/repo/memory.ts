@@ -378,6 +378,24 @@ class MemorySearchUsageRepo implements SearchUsageRepo {
   }
 }
 
+type StoredPerformanceRow = Omit<PerformanceTelemetryRecord, 'buckets'> & { bucketMap: Map<string, PerformanceBucketRow> };
+
+const comparePerformanceRow = (a: StoredPerformanceRow, b: StoredPerformanceRow): number =>
+  a.hour.localeCompare(b.hour)
+  || a.keyId.localeCompare(b.keyId)
+  || a.model.localeCompare(b.model)
+  || a.upstream.localeCompare(b.upstream)
+  || a.operation.localeCompare(b.operation)
+  || a.runtimeLocation.localeCompare(b.runtimeLocation);
+
+const compareBucketRow = (a: PerformanceBucketRow, b: PerformanceBucketRow): number =>
+  a.metric.localeCompare(b.metric) || a.lower - b.lower;
+
+const freezePerformanceRow = ({ bucketMap, ...rest }: StoredPerformanceRow): PerformanceTelemetryRecord => ({
+  ...rest,
+  buckets: [...bucketMap.values()].map(b => ({ ...b })).sort(compareBucketRow),
+});
+
 class MemoryPerformanceRepo implements PerformanceRepo {
   private readonly summaries = new Map<string, StoredPerformanceRow>();
 
@@ -411,11 +429,11 @@ class MemoryPerformanceRepo implements PerformanceRepo {
     return [...this.summaries.values()]
       .filter(r => (opts.keyId ? r.keyId === opts.keyId : true) && r.hour >= opts.start && r.hour < opts.end)
       .sort(comparePerformanceRow)
-      .map(this.freeze);
+      .map(freezePerformanceRow);
   }
 
   async listAll(): Promise<PerformanceTelemetryRecord[]> {
-    return [...this.summaries.values()].sort(comparePerformanceRow).map(this.freeze);
+    return [...this.summaries.values()].sort(comparePerformanceRow).map(freezePerformanceRow);
   }
 
   async set(record: PerformanceTelemetryRecord): Promise<void> {
@@ -465,30 +483,7 @@ class MemoryPerformanceRepo implements PerformanceRepo {
     if (existing) { existing.count += 1; return; }
     row.bucketMap.set(key, { metric, lower: edges.lower, upper: edges.upper, count: 1 });
   }
-
-  private freeze = ({ bucketMap, ...rest }: StoredPerformanceRow): PerformanceTelemetryRecord => ({
-    ...rest,
-    buckets: [...bucketMap.values()].map(b => ({ ...b })).sort(compareBucketRow),
-  });
 }
-
-type StoredPerformanceRow = Omit<PerformanceTelemetryRecord, 'buckets'> & { bucketMap: Map<string, PerformanceBucketRow> };
-
-// Memory-side query/listAll and freeze produce a deterministic order across
-// the full dimension tuple; SQL's ORDER BY hour (summary) + ORDER BY hour,
-// metric, lower (buckets) already covers what tests compare on. Sorting by
-// the full 5-tuple + (metric, lower) here means a repo-output diff never
-// depends on Map insertion order.
-const comparePerformanceRow = (a: StoredPerformanceRow, b: StoredPerformanceRow): number =>
-  a.hour.localeCompare(b.hour)
-  || a.keyId.localeCompare(b.keyId)
-  || a.model.localeCompare(b.model)
-  || a.upstream.localeCompare(b.upstream)
-  || a.operation.localeCompare(b.operation)
-  || a.runtimeLocation.localeCompare(b.runtimeLocation);
-
-const compareBucketRow = (a: PerformanceBucketRow, b: PerformanceBucketRow): number =>
-  a.metric.localeCompare(b.metric) || a.lower - b.lower;
 
 class MemoryModelsCacheRepo implements ModelsCacheRepo {
   private rows = new Map<string, CachedModelsRow>();

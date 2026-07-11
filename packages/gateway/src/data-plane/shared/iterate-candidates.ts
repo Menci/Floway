@@ -1,4 +1,4 @@
-import { upstreamPerformanceContext } from './telemetry/upstream-telemetry.ts';
+import { upstreamPerformanceContext } from './telemetry/attempt-helpers.ts';
 import type { GatewayCtx } from '../chat/shared/gateway-ctx.ts';
 import type { ModelCandidate, PerformanceOperation } from '@floway-dev/provider';
 

@@ -36,9 +36,7 @@ export const chartColor = (slot: number): string =>
 // group into a different color). Java String.hashCode variant (seed 0,
 // multiplier 31, `>>> 0` to keep the accumulator in u32 range) into the
 // same palette so a name always renders in the same slot regardless of
-// which siblings are present. Distinct from chartColor(slot), which is
-// right when the caller owns a stable ordering (metadata-sorted keys /
-// models).
+// which siblings are present.
 export const chartColorByName = (name: string): string => {
   let h = 0;
   for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;

@@ -42,7 +42,7 @@ const api = useApi();
 const upstreamsStore = useUpstreamsStore();
 const { info: runtimeInfo } = useRuntimeInfo();
 const coloAware = computed(() => runtimeInfo.value?.kind === 'cloudflare');
-const currentColo = computed(() => runtimeInfo.value?.colo ?? null);
+const currentColo = computed(() => runtimeInfo.value?.runtimeLocation ?? null);
 
 // The single source of truth: draft is a mutable structuredClone of the
 // initial record. Every field in the form binds through this ref (either

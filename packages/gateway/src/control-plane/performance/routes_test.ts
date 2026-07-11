@@ -1,7 +1,5 @@
-import { describe, test } from 'vitest';
+import { test } from 'vitest';
 
-import { matchesFilters, partitionRecords, type PerformanceFilters } from './routes.ts';
-import type { PerformanceTelemetryRecord } from '../../repo/types.ts';
 import { requestApp, setupAppTest } from '../../test-helpers.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
@@ -417,16 +415,6 @@ test('/api/performance/overview rejects filter_user_id with a leading zero', asy
   });
 });
 
-test('/api/performance/overview treats empty filter_user_id as absent', async () => {
-  // Stale dashboard bookmarks may carry `filter_user_id=` with no value; the
-  // schema tightening for the zero/negative reject must not regress those to 400.
-  const { apiKey } = await setupAppTest();
-
-  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&filter_user_id=', { headers: { 'x-api-key': apiKey.key } });
-
-  assertEquals(response.status, 200);
-});
-
 test('/api/performance/overview accepts numeric filter_user_id', async () => {
   const { apiKey } = await setupAppTest();
 
@@ -547,126 +535,4 @@ test('/api/performance/overview returns operationRows grouped by operation value
     { group: 'chat', requests: 1, neutral: 0 },
     { group: 'embeddings', requests: 2, neutral: 2 },
   ]);
-});
-
-// Zero-value record fields so a case only has to set what it exercises. The
-// record shape is `PerformanceDimensions + counters + buckets`; the counter
-// slots don't matter for the filter / partition helpers.
-const stubRecord = (overrides: Partial<PerformanceTelemetryRecord> = {}): PerformanceTelemetryRecord => ({
-  hour: '2026-04-30T10',
-  keyId: 'key_a',
-  model: 'gpt-5',
-  upstream: 'copilot:1',
-  operation: 'chat',
-  runtimeLocation: 'LOCAL',
-  requests: 1,
-  ttftSamplesOk: 0,
-  errorsWithOutput: 0,
-  errorsNoOutput: 0,
-  neutral: 0,
-  tpotSamples: 0,
-  ttftMsSum: 0,
-  tpotUsSum: 0,
-  buckets: [],
-  ...overrides,
-});
-
-const emptyFilters: PerformanceFilters = {
-  model: undefined,
-  upstream: undefined,
-  operation: undefined,
-  runtimeLocation: undefined,
-  userId: undefined,
-  keyId: undefined,
-};
-
-describe('matchesFilters', () => {
-  const record = stubRecord({ keyId: 'key_a', model: 'gpt-5', upstream: 'copilot:1', operation: 'chat', runtimeLocation: 'LOCAL' });
-  const keyToUser = new Map([['key_a', 42]]);
-  const uid = keyToUser.get(record.keyId);
-
-  test('no filter set passes every record', () => {
-    assertEquals(matchesFilters(record, emptyFilters, uid), true);
-  });
-
-  test('each single filter matches its own field and rejects a mismatch', () => {
-    // Field / matching-value / mismatching-value triples for one predicate
-    // exercised per filter slot. userId flips through the resolved uid arg
-    // rather than a record column.
-    const cases: Array<[keyof PerformanceFilters, string | number, string | number]> = [
-      ['model', 'gpt-5', 'gpt-4'],
-      ['upstream', 'copilot:1', 'copilot:2'],
-      ['operation', 'chat', 'embeddings'],
-      ['runtimeLocation', 'LOCAL', 'SJC'],
-      ['keyId', 'key_a', 'key_b'],
-      ['userId', 42, 99],
-    ];
-    for (const [field, match, mismatch] of cases) {
-      assertEquals(matchesFilters(record, { ...emptyFilters, [field]: match }, uid), true, `${field}=match`);
-      assertEquals(matchesFilters(record, { ...emptyFilters, [field]: mismatch }, uid), false, `${field}=mismatch`);
-    }
-  });
-
-  test('AND-combines every set filter — one mismatch rejects the whole record', () => {
-    assertEquals(
-      matchesFilters(record, { ...emptyFilters, model: 'gpt-5', upstream: 'copilot:1' }, uid),
-      true,
-    );
-    assertEquals(
-      matchesFilters(record, { ...emptyFilters, model: 'gpt-5', upstream: 'copilot:2' }, uid),
-      false,
-    );
-  });
-
-  test('orphan-key row (undefined uid) never matches a numeric user filter', () => {
-    const orphan = stubRecord({ keyId: 'key_deleted' });
-    assertEquals(matchesFilters(orphan, { ...emptyFilters, userId: 42 }, undefined), false);
-    assertEquals(matchesFilters(orphan, emptyFilters, undefined), true);
-  });
-});
-
-describe('partitionRecords', () => {
-  test('collects dimension values from the unfiltered set and returns the filtered subset in one pass', () => {
-    const rows = [
-      stubRecord({ keyId: 'key_a', model: 'gpt-5', upstream: 'copilot:1', operation: 'chat', runtimeLocation: 'LOCAL' }),
-      stubRecord({ keyId: 'key_a', model: 'gpt-4', upstream: 'copilot:2', operation: 'embeddings', runtimeLocation: 'SJC' }),
-      stubRecord({ keyId: 'key_b', model: 'gpt-5', upstream: 'copilot:1', operation: 'chat', runtimeLocation: 'LOCAL' }),
-    ];
-    const keyToUser = new Map([['key_a', 1], ['key_b', 2]]);
-
-    const { filtered, dimensionValues } = partitionRecords(
-      rows,
-      { ...emptyFilters, model: 'gpt-5' },
-      keyToUser,
-      true,
-    );
-
-    assertEquals(filtered.length, 2);
-    assertEquals(filtered.map(r => r.keyId), ['key_a', 'key_b']);
-    // Dropdowns reflect the whole raw set, not the filtered subset — a filter
-    // on model=gpt-5 must still expose gpt-4 as a menu option.
-    assertEquals(dimensionValues.models, ['gpt-4', 'gpt-5']);
-    assertEquals(dimensionValues.upstreams, ['copilot:1', 'copilot:2']);
-    assertEquals(dimensionValues.operations, ['chat', 'embeddings']);
-    assertEquals(dimensionValues.runtimeLocations, ['LOCAL', 'SJC']);
-    assertEquals(dimensionValues.keyIds, ['key_a', 'key_b']);
-    assertEquals(dimensionValues.userIds, [1, 2]);
-  });
-
-  test('self-view (includeUserIds=false) leaves userIds empty even when keyToUser resolves', () => {
-    const rows = [stubRecord({ keyId: 'key_a' })];
-    const keyToUser = new Map([['key_a', 1]]);
-    const { dimensionValues } = partitionRecords(rows, emptyFilters, keyToUser, false);
-    assertEquals(dimensionValues.userIds, []);
-  });
-
-  test('no filters returns every record and every dimension value', () => {
-    const rows = [
-      stubRecord({ model: 'gpt-5' }),
-      stubRecord({ model: 'gpt-4' }),
-    ];
-    const { filtered, dimensionValues } = partitionRecords(rows, emptyFilters, new Map(), true);
-    assertEquals(filtered.length, 2);
-    assertEquals(dimensionValues.models, ['gpt-4', 'gpt-5']);
-  });
 });

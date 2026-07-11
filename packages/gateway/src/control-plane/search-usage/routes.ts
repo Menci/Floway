@@ -12,7 +12,7 @@ import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { isWebSearchProviderName } from '../../shared/web-search-providers.ts';
 import type { searchUsageQuery } from '../schemas.ts';
-import { loadTelemetryKeys, resolveTelemetryView } from '../telemetry-view.ts';
+import { loadTelemetryKeys, resolveTelemetryView, buildKeyToUserMap } from '../telemetry-view.ts';
 
 export const searchUsage = async (c: CtxWithQuery<typeof searchUsageQuery>) => {
   const query = c.req.valid('query');
@@ -34,12 +34,12 @@ export const searchUsage = async (c: CtxWithQuery<typeof searchUsageQuery>) => {
   const repo = getRepo();
 
   if (resolved.view === 'all-by-user') {
-    const [rawRecords, users, keysInfo] = await Promise.all([
+    const [rawRecords, users, keys] = await Promise.all([
       queryWebSearchUsage({ provider, start, end }),
       repo.users.listIncludingDeleted(),
       loadTelemetryKeys(repo, resolved),
     ]);
-    const records = aggregateSearchUsageByUser(rawRecords, keysInfo.keyToUser);
+    const records = aggregateSearchUsageByUser(rawRecords, buildKeyToUserMap(keys));
 
     if (query.include_user_metadata !== '1') return c.json(records);
     const userMetadata = users
@@ -53,11 +53,9 @@ export const searchUsage = async (c: CtxWithQuery<typeof searchUsageQuery>) => {
     });
   }
 
-  // self-view: scope rows to the actor's keys (active + soft-deleted).
-  // One api_keys listing feeds both the ownedSet gate and — when
-  // include_key_metadata=1 asks for it — the sorted keys[] block below.
-  const keysInfo = await loadTelemetryKeys(repo, resolved);
-  const ownedSet = new Set(keysInfo.keys.map(k => k.id));
+  // self-by-key: scope rows to the actor's keys (active + soft-deleted).
+  const keys = await loadTelemetryKeys(repo, resolved);
+  const ownedSet = new Set(keys.map(k => k.id));
   const explicitKeyId = query.key_id === '' ? undefined : query.key_id;
   if (explicitKeyId !== undefined && !ownedSet.has(explicitKeyId)) {
     return c.json({ error: 'Unknown key_id' }, 404);
@@ -72,18 +70,20 @@ export const searchUsage = async (c: CtxWithQuery<typeof searchUsageQuery>) => {
   const filtered = explicitKeyId ? rawRecords : rawRecords.filter(r => ownedSet.has(r.keyId));
   const aggregated = aggregateSearchUsageByKey(filtered);
 
-  // Aggregated-records-only callers (CI, automation) skip the
-  // sorted key-metadata block via include_key_metadata=0.
+  // Aggregated-records-only callers (CI, automation) skip the active-provider
+  // read and the sorted key-name/createdAt block via include_key_metadata=0.
+  // The api_keys listing above still runs — it gates ownership on the raw
+  // rows and cannot be elided.
   if (query.include_key_metadata !== '1') return c.json(aggregated);
 
   const searchConfig = await loadSearchConfig();
-  const keyMap = new Map(keysInfo.keys.map(k => [k.id, k]));
+  const keyMap = new Map(keys.map(k => [k.id, k]));
   const recordsWithKeyMetadata = aggregated.map(r => {
     const k = keyMap.get(r.keyId);
     if (!k) throw new Error(`telemetry row references unknown key ${r.keyId} for user ${resolved.scopeUserId}`);
     return { ...r, keyName: k.name, keyCreatedAt: k.createdAt };
   });
-  const keyMetadata = keysInfo.keys.map(k => ({ id: k.id, name: k.name, createdAt: k.createdAt })).sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+  const keyMetadata = keys.map(k => ({ id: k.id, name: k.name, createdAt: k.createdAt })).sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
 
   return c.json({
     records: recordsWithKeyMetadata,

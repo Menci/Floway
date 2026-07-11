@@ -55,9 +55,7 @@ export const geminiServe = {
     // real upstream telemetry rather than a synthetic envelope. The
     // Gemini URL-path model id is already in `model`; downstream dispatch
     // keys off `candidate.model.id`, so no payload rewrite is needed here
-    // even for alias-origin candidates. `iterateCandidates` stamps
-    // `ctx.attempt.telemetry` before invoking `run`, preserving
-    // mid-attempt-throw attribution.
+    // even for alias-origin candidates.
     return await iterateCandidates(
       decision.candidates,
       'geminiServe.generate',

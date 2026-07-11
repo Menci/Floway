@@ -21,11 +21,6 @@ const record = async (op: Promise<void>, label: string): Promise<void> => {
   }
 };
 
-const dimensions = (telemetry: PerformanceTelemetryContext): PerformanceDimensions => ({
-  ...telemetry,
-  hour: currentHour(),
-});
-
 // TTFT is measured from the provider's outbound-fetch stamp so it isolates
 // upstream round-trip latency from gateway-internal overhead. Any success
 // without a real upstream call or first-output-token stamp records as
@@ -54,18 +49,13 @@ export const recordPerformance = (
   if (!telemetry) return;
   if (outputTokens < 0) throw new Error(`recordPerformance: negative outputTokens=${outputTokens}`);
   const { attempt, backgroundScheduler: scheduler } = ctx;
-  const dims = dimensions(telemetry);
+  const dims: PerformanceDimensions = { ...telemetry, hour: currentHour() };
   if (
     telemetry.operation !== 'chat' ||
     attempt.upstreamCallStartedAt === null ||
     attempt.firstOutputTokenAt === null ||
     (failed && outputTokens === 0)
   ) {
-    // No TTFT stamp available (non-chat / no upstream call / no first-token
-    // frame), or a failure that produced no tokens: settle to the
-    // zero-output-error or neutral counter without a sample. TTFT + TPOT
-    // contribute only when a real inter-token window exists AND the stream
-    // actually produced tokens.
     const settle = failed ? getRepo().performance.recordZeroOutputError(dims) : getRepo().performance.recordNeutral(dims);
     scheduler(record(settle, failed ? 'zero-output-error' : 'neutral'));
     return;

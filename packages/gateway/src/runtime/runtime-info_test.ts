@@ -45,10 +45,10 @@ test('getRuntimeLocation on Node defaults to LOCAL when RUNTIME_LOCATION is empt
   assertEquals(getRuntimeLocation(new Request('https://example.test')), 'LOCAL');
 });
 
-test('getRuntimeInfo composes kind and colo from the same request', () => {
+test('getRuntimeInfo composes kind and runtimeLocation from the same request', () => {
   initEnv(name => (name === 'RUNTIME_LOCATION' ? 'home' : ''));
 
-  assertEquals(getRuntimeInfo(new Request('https://example.test')), { kind: 'node', colo: 'HOME' });
+  assertEquals(getRuntimeInfo(new Request('https://example.test')), { kind: 'node', runtimeLocation: 'HOME' });
 });
 
 beforeEach(() => {

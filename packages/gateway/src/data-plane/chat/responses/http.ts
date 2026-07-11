@@ -102,7 +102,7 @@ export const responsesHttp = {
         // shows up in the error column instead of masquerading as a success.
         const failed = result.result.status === 'failed';
         if (failed) {
-          ctx.dump?.failed(`compact envelope status=${result.result.status}`);
+          ctx.dump?.failed('compact envelope status=failed');
         } else {
           ctx.dump?.success(result.modelIdentity, result.usage);
         }

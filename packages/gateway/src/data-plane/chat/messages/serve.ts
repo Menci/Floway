@@ -48,9 +48,7 @@ export const messagesServe = {
     // transient 5xx/429/network failures. When the list is exhausted, the
     // most recent failure is forwarded verbatim. Normalize `payload.model`
     // to the candidate's real id so every attempt sees the canonical
-    // resolved public id. `iterateCandidates` stamps `ctx.attempt.telemetry`
-    // synchronously before invoking `run`, preserving mid-attempt-throw
-    // attribution — see the iterateCandidates comment.
+    // resolved public id.
     return await iterateCandidates(
       decision.candidates,
       'messagesServe.generate',

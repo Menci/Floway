@@ -20,7 +20,7 @@ import { type CtxWithJson, type CtxWithQuery } from '../../middleware/zod-valida
 import { parseDisabledPublicModelIdsWire } from '../../repo/disabled-public-models.ts';
 import { getRepo } from '../../repo/index.ts';
 import { DIRECT_PROXY_ID, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
-import type { ApiKey, PerformanceBucketRow, PerformanceMetric, PerformanceOperation, PerformanceTelemetryRecord, SearchUsageRecord, TokenUsage, UsageRecord, User } from '../../repo/types.ts';
+import type { ApiKey, PerformanceBucketRow, PerformanceMetric, PerformanceTelemetryRecord, SearchUsageRecord, TokenUsage, UsageRecord, User } from '../../repo/types.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import { PASSWORD_HASH_SCHEME } from '../../shared/passwords.ts';
@@ -31,7 +31,7 @@ import { copilotConfigField, isRecord, nonEmptyStringField } from '../shared/fie
 import { type SerializedUpstreamRecord, upstreamRecordToFullJson } from '../upstreams/serialize.ts';
 import { BILLING_DIMENSIONS, type ModelPricing } from '@floway-dev/protocols/common';
 import { ALL_PROVIDER_KINDS, normalizeModelPrefix, parseFlagOverridesWire } from '@floway-dev/provider';
-import type { ProxyFallbackEntry, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
+import type { PerformanceOperation, ProxyFallbackEntry, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
 import { assertClaudeCodeUpstreamRecord, assertClaudeCodeUpstreamState } from '@floway-dev/provider-claude-code';
 import { assertCodexUpstreamRecord, assertCodexUpstreamState } from '@floway-dev/provider-codex';
@@ -543,20 +543,20 @@ const parsePerformanceRecords = (value: unknown): { type: 'ok'; records: Perform
     // wrote. `tpotSamples` is orthogonal (a subset of TTFT-carrying rows —
     // ttftSamplesOk + errorsWithOutput — where at least two output tokens
     // streamed).
-    const ttftOkN = item.ttftSamplesOk as number;
-    const errWithOutN = item.errorsWithOutput as number;
-    const errNoOutN = item.errorsNoOutput as number;
-    const neutralN = item.neutral as number;
-    const requestsN = item.requests as number;
-    const tpotN = item.tpotSamples as number;
-    if (ttftOkN + errWithOutN + errNoOutN + neutralN !== requestsN) {
+    const ttftSamplesOk = item.ttftSamplesOk as number;
+    const errorsWithOutput = item.errorsWithOutput as number;
+    const errorsNoOutput = item.errorsNoOutput as number;
+    const neutral = item.neutral as number;
+    const requests = item.requests as number;
+    const tpotSamples = item.tpotSamples as number;
+    if (ttftSamplesOk + errorsWithOutput + errorsNoOutput + neutral !== requests) {
       return {
         type: 'invalid',
         index: i,
         error: 'ttftSamplesOk + errorsWithOutput + errorsNoOutput + neutral must equal requests',
       };
     }
-    if (tpotN > ttftOkN + errWithOutN) {
+    if (tpotSamples > ttftSamplesOk + errorsWithOutput) {
       return {
         type: 'invalid',
         index: i,
@@ -580,12 +580,12 @@ const parsePerformanceRecords = (value: unknown): { type: 'ok'; records: Perform
       ) {
         return { type: 'invalid', index: i, error: 'bucket metric/lower/upper/count fields are missing or malformed' };
       }
-      // Duplicate {metric, lower, upper} tuples would silently over-count in
+      // Duplicate {metric, lower} tuples would silently over-count in
       // aggregation because updateAggregate merges bucket entries by lower
       // edge and adds their counts.
-      const dedupKey = `${b.metric}\0${b.lower as number}\0${b.upper === null ? 'inf' : b.upper as number}`;
+      const dedupKey = `${b.metric}\0${b.lower as number}`;
       if (bucketKeys.has(dedupKey)) {
-        return { type: 'invalid', index: i, error: `duplicate bucket entry for {metric: ${b.metric}, lower: ${b.lower as number}, upper: ${b.upper === null ? 'null' : b.upper as number}}` };
+        return { type: 'invalid', index: i, error: `duplicate bucket entry for {metric: ${b.metric}, lower: ${b.lower as number}}` };
       }
       bucketKeys.add(dedupKey);
       if (b.metric === 'ttft_ms') ttftBucketCount += b.count as number;
@@ -599,11 +599,11 @@ const parsePerformanceRecords = (value: unknown): { type: 'ok'; records: Perform
     // counters and percentile queries would return misleading values. TTFT
     // buckets cover both healthy and partial-output-failure samples, so the
     // sum matches `ttftSamplesOk + errorsWithOutput`.
-    if (ttftBucketCount !== ttftOkN + errWithOutN) {
-      return { type: 'invalid', index: i, error: `ttft_ms bucket sum (${ttftBucketCount}) must equal ttftSamplesOk + errorsWithOutput (${ttftOkN + errWithOutN})` };
+    if (ttftBucketCount !== ttftSamplesOk + errorsWithOutput) {
+      return { type: 'invalid', index: i, error: `ttft_ms bucket sum (${ttftBucketCount}) must equal ttftSamplesOk + errorsWithOutput (${ttftSamplesOk + errorsWithOutput})` };
     }
-    if (tpotBucketCount !== tpotN) {
-      return { type: 'invalid', index: i, error: `tpot_us bucket sum (${tpotBucketCount}) must equal tpotSamples (${tpotN})` };
+    if (tpotBucketCount !== tpotSamples) {
+      return { type: 'invalid', index: i, error: `tpot_us bucket sum (${tpotBucketCount}) must equal tpotSamples (${tpotSamples})` };
     }
 
     records.push({
@@ -613,12 +613,12 @@ const parsePerformanceRecords = (value: unknown): { type: 'ok'; records: Perform
       upstream: item.upstream,
       operation: item.operation as PerformanceOperation,
       runtimeLocation: item.runtimeLocation,
-      requests: requestsN,
-      ttftSamplesOk: ttftOkN,
-      errorsWithOutput: errWithOutN,
-      errorsNoOutput: errNoOutN,
-      neutral: neutralN,
-      tpotSamples: tpotN,
+      requests,
+      ttftSamplesOk,
+      errorsWithOutput,
+      errorsNoOutput,
+      neutral,
+      tpotSamples,
       ttftMsSum: item.ttftMsSum,
       tpotUsSum: item.tpotUsSum,
       buckets,

@@ -105,7 +105,7 @@ const createResponsesWebSocketEvents = (c: AuthedContext): ResponsesWebSocketHan
   // upgrade, subsequent waitUntil calls made from message-event handlers
   // are silently dropped (the promise never runs, the isolate has no
   // registered reason to defer eviction for it). Every per-message background
-  // task — dump.finalize, recordFailedRequest — would therefore
+  // task — dump.finalize, settle, recordFailedRequest — would therefore
   // lose its write.
   //
   // Fix: give the ctx a scheduler that doesn't depend on the fetch's
@@ -118,7 +118,7 @@ const createResponsesWebSocketEvents = (c: AuthedContext): ResponsesWebSocketHan
   // The drain uses a `while (size > 0)` loop rather than a single
   // `Promise.allSettled(pendingWork)` snapshot: the in-flight message
   // handler running at close time may still enqueue a final
-  // dump.finalize / recordFailedRequest from its finally/catch after
+  // dump.finalize / settle / recordFailedRequest from its finally/catch after
   // `sessionClosed` resolves. The loop keeps going until the Set is
   // genuinely empty, which is bounded because `closed = true` short-
   // circuits future message handlers at the top of `handleClientMessage`.

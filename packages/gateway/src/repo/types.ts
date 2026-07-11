@@ -85,8 +85,6 @@ export interface SearchUsageRecord {
 
 export type PerformanceMetric = 'ttft_ms' | 'tpot_us';
 
-export type { PerformanceOperation } from '@floway-dev/provider';
-
 // A performance-summary row is a `PerformanceTelemetryContext` (the provider-
 // facing telemetry identity the recorder threads through the request) plus
 // the aggregation bucket. Keeping the shape a strict extension guarantees a
@@ -201,19 +199,21 @@ export interface SearchUsageRepo {
 }
 
 export interface PerformanceRepo {
-  // Bumps `requests` + one of {ttft_samples_ok, errors_with_output} based on
-  // `sample.success` (+ `ttft_ms_sum` + one TTFT bucket). When `sample.tpotUs`
-  // is set, also bumps `tpot_samples` (+ `tpot_us_sum` + one TPOT bucket) —
-  // a partial-output failure whose stream produced a real TTFT before dying
-  // still contributes latency data alongside its error accounting.
+  // Bumps `requests` + one of {ttftSamplesOk, errorsWithOutput} based on
+  // `sample.success`, and adds `sample.ttftMs` to `ttftMsSum` plus one TTFT
+  // bucket. When `sample.tpotUs` is set, also bumps `tpotSamples`, adds to
+  // `tpotUsSum`, and lands one TPOT bucket — a partial-output failure whose
+  // stream produced a real TTFT before dying still contributes latency data
+  // alongside its error accounting.
   recordSample(sample: PerformanceSample): Promise<void>;
-  // Increments `requests` and `errors_no_output`; does not touch sums,
-  // samples, or buckets. Used for failures that produced no output tokens
-  // (pre-stream / usage-never-arrived errors).
+  // Increments `requests` and `errorsNoOutput`; leaves the latency sums,
+  // sample counts, and buckets untouched. Used for failures that produced no
+  // output tokens (pre-stream / usage-never-arrived errors).
   recordZeroOutputError(dims: PerformanceDimensions): Promise<void>;
-  // Increments `requests` and `neutral`; does not touch errors, sums,
-  // samples, or buckets. Used for successful non-chat calls and chat
-  // successes that never got a first output token or a real upstream call.
+  // Increments `requests` and `neutral`; leaves the error counts, latency
+  // sums, sample counts, and buckets untouched. Used for successful non-chat
+  // calls and chat successes that never got a first output token or a real
+  // upstream call.
   recordNeutral(dims: PerformanceDimensions): Promise<void>;
   query(opts: { keyId?: string; start: string; end: string }): Promise<PerformanceTelemetryRecord[]>;
   listAll(): Promise<PerformanceTelemetryRecord[]>;

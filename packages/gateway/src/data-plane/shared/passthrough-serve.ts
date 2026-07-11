@@ -260,12 +260,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
         return forwarded;
       }
     }
-    // A throw from passthroughAttempt (or any post-iterate response
-    // handling below) attributes to the candidate iterateCandidates was
-    // working on when the throw fired — iterateCandidates stamped
-    // ctx.attempt.telemetry synchronously before invoking `run`, so the
-    // slot reflects that candidate. A throw before any candidate fired
-    // leaves telemetry undefined and recordFailedRequest short-circuits.
+    // Attributes to whichever candidate iterateCandidates was on (or short-circuits if none started).
     recordFailedRequest(ctx, ctx.attempt.telemetry);
     ctx.dump?.failed(e);
     return c.json({ error: toInternalDebugError(e) }, 502);

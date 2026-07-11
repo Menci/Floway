@@ -1,5 +1,5 @@
-// HTTP transport for the Ollama upstream. The Authorization header is omitted
-// when no API key is configured (unauthenticated local daemon).
+// HTTP transport for the Ollama upstream (ollama.com or a self-hosted daemon;
+// API key optional for the latter).
 //
 // Endpoint paths are fixed: ollama.com and a self-hosted daemon serve the
 // same routes from the same Go binary, so there is no pathOverrides escape

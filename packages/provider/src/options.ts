@@ -17,6 +17,5 @@ export interface UpstreamFetchOptions {
 
 // Identity wrapper for callers that don't participate in per-request TTFT
 // timing — model-listing helpers and interceptor sub-calls that dispatch
-// outside the primary data-plane fetch. Reusable so the identity closure
-// is not re-inlined at every non-participating call site.
+// outside the primary data-plane fetch.
 export const identityWrapUpstreamCall = <T>(dispatch: () => Promise<T>): Promise<T> => dispatch();

@@ -55,9 +55,12 @@ export interface TelemetryModelIdentity {
   cost: ModelPricing | null;
 }
 
-// Aligns with OTel `gen_ai.operation.name` well-known values plus the
-// concrete non-chat endpoints Floway routes. Extend only when a new route
-// lands — no wildcard string.
+// `chat`, `text_completion`, and `embeddings` are the OTel `gen_ai.operation.name`
+// well-known values we route; `image_generation` and `image_edit` are Floway
+// extensions covering the concrete non-chat endpoints OTel does not name. Extend
+// only when a new route lands — no wildcard string.
+// OTel canonical set:
+// https://github.com/open-telemetry/semantic-conventions/blob/v1.37.0/docs/gen-ai/gen-ai-spans.md#gen_aioperationname
 export type PerformanceOperation =
   | 'chat'
   | 'text_completion'

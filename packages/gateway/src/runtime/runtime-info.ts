@@ -2,7 +2,7 @@ import { getEnvOptional, getRuntimeKind, type RuntimeKind } from '@floway-dev/pl
 
 export interface RuntimeInfo {
   kind: RuntimeKind;
-  colo: string;
+  runtimeLocation: string;
 }
 
 // Location tag for the incoming request, always non-empty and uppercase.
@@ -24,5 +24,5 @@ export const getRuntimeLocation = (request: Request): string => {
 
 export const getRuntimeInfo = (request: Request): RuntimeInfo => ({
   kind: getRuntimeKind(),
-  colo: getRuntimeLocation(request),
+  runtimeLocation: getRuntimeLocation(request),
 });

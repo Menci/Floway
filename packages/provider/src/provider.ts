@@ -96,19 +96,12 @@ export interface UpstreamCallOptions {
   waitUntil: (promise: Promise<unknown>) => void;
   headers: Headers;
   // Providers wrap the dispatch that fires the outbound fetch. The wrap
-  // stamps `attempt.upstreamCallStartedAt` at dispatch entry and then
-  // invokes the factory, so TTFT is anchored to the actual data-plane
-  // request initiation (post-auth-exchange) rather than gateway arrival.
-  // A factory contract lets the stamp fire before the fetcher is even
-  // called — a Promise-taker contract could not, because `fetcher(...)`
-  // has to run first to produce the promise, and under a proxied fetcher
-  // the returned promise's async body already covers dial + TLS + CONNECT.
-  // The stamp is still pre-dial by design: TTFT from the user's viewpoint
-  // includes proxy handshake time, so keeping it in the interval matches
-  // observed client latency. Between fallback candidates iterateCandidates
-  // resets the slot to null, so a candidate that returns without ever
-  // dispatching (synthetic result, dry short-circuit) cannot inherit the
-  // prior fetch's stamp.
+  // runs synchronously and stamps `attempt.upstreamCallStartedAt` before
+  // invoking the factory, so the stamp fires ahead of dial + TLS + CONNECT
+  // (which live inside the returned promise's async body under a proxied
+  // fetcher). The pre-dial anchor is deliberate: TTFT from the user's
+  // viewpoint includes proxy handshake time, so keeping it in the interval
+  // matches observed client latency.
   wrapUpstreamCall: <T>(dispatch: () => Promise<T>) => Promise<T>;
 }
 

@@ -7,8 +7,7 @@ import { rewriteResponsesItemsForCandidate, type RewrittenResponsesPayload } fro
 import type { StatefulResponsesStore } from './items/store.ts';
 import { tokenUsageFromResponsesResult } from './usage.ts';
 import { applyRulesToUpstreamResponses } from '../../model-aliases/apply-rules.ts';
-import { providerStreamResultToExecuteResult, buildUpstreamCallOptions, telemetryModelIdentity, chatTargetPicker } from '../../shared/telemetry/attempt-helpers.ts';
-import { upstreamPerformanceContext } from '../../shared/telemetry/upstream-telemetry.ts';
+import { providerStreamResultToExecuteResult, buildUpstreamCallOptions, telemetryModelIdentity, chatTargetPicker, upstreamPerformanceContext } from '../../shared/telemetry/attempt-helpers.ts';
 import { chatCompletionsAttempt } from '../chat-completions/attempt.ts';
 import { messagesAttempt } from '../messages/attempt.ts';
 import { tryCatchChatServeFailure } from '../shared/errors.ts';

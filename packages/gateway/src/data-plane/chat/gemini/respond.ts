@@ -109,8 +109,6 @@ type GeminiErrorStatusPayload = {
   error: GeminiErrorResponse['error'] & GeminiErrorDebugFields;
 };
 
-// Coerces any out-of-range HTTP status to 500; used when forwarding upstream
-// or native Gemini errors.
 const googleRpcHttpStatusCode = (status: number): number => (Number.isInteger(status) && status >= 400 && status <= 599 ? status : 500);
 
 const geminiRpcErrorPayload = (status: number, message: string, debug: GeminiErrorDebugFields = {}): GeminiErrorStatusPayload => {

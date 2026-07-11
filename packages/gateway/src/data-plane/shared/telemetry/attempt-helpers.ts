@@ -1,24 +1,33 @@
-import { upstreamPerformanceContext, withUpstreamTelemetry } from './upstream-telemetry.ts';
+import { isFirstOutputTokenFrame } from '../../chat/shared/first-output-token.ts';
 import type { GatewayCtx } from '../../chat/shared/gateway-ctx.ts';
 import { stampUpstreamCallStart } from '../../chat/shared/gateway-ctx.ts';
 import type { ModelEndpoints, ProtocolFrame } from '@floway-dev/protocols/common';
-import { eventResult, readUpstreamApiError, type ChatTargetApi, type ExecuteResult, type ModelCandidate, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamCallOptions } from '@floway-dev/provider';
+import { eventResult, readUpstreamApiError, type ChatTargetApi, type ExecuteResult, type ModelCandidate, type PerformanceOperation, type PerformanceTelemetryContext, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamCallOptions } from '@floway-dev/provider';
 
-// Per-protocol chat-target picker. Serve calls `canServe` to filter
-// candidates whose upstream wire cannot satisfy any preferred target;
-// attempt calls `pick` once it has a viable candidate to choose which
-// upstream wire the dispatch goes out on. `pick` is contractually total —
-// a call that returns null would mean the serve-side filter was bypassed.
-export interface ChatTargetPicker {
-  canServe(endpoints: ModelEndpoints): boolean;
-  pick(endpoints: ModelEndpoints): ChatTargetApi;
-}
+export const upstreamPerformanceContext = (
+  ctx: GatewayCtx,
+  candidate: ModelCandidate,
+  operation: PerformanceOperation,
+): PerformanceTelemetryContext => ({
+  keyId: ctx.apiKeyId,
+  model: candidate.model.id,
+  upstream: candidate.provider.upstream,
+  operation,
+  runtimeLocation: ctx.runtimeLocation,
+});
 
 // Build a picker from an ordered preference list of chat-target keys. The
 // preference encodes which upstream wire the source protocol prefers to
 // translate to, in order. The first preference whose endpoint key exists
-// on the candidate wins. `canServe` is a 1-bit projection of `pick`.
-export const chatTargetPicker = (preference: readonly ChatTargetApi[]): ChatTargetPicker => {
+// on the candidate wins. Serve calls `canServe` to filter candidates whose
+// upstream wire cannot satisfy any preferred target; attempt calls `pick`
+// once it has a viable candidate to choose the dispatch wire. `pick` is
+// contractually total — a null return would mean the serve-side filter
+// was bypassed. `canServe` is a 1-bit projection of `pick`.
+export const chatTargetPicker = (preference: readonly ChatTargetApi[]): {
+  canServe: (endpoints: ModelEndpoints) => boolean;
+  pick: (endpoints: ModelEndpoints) => ChatTargetApi;
+} => {
   const find = (endpoints: ModelEndpoints): ChatTargetApi | null => {
     for (const key of preference) {
       switch (key) {
@@ -45,9 +54,6 @@ export const chatTargetPicker = (preference: readonly ChatTargetApi[]): ChatTarg
   };
 };
 
-// Pricing reads off the provider so the cost lookup respects any
-// provider-specific override.
-//
 // `model` is the upstream-facing bare id (`candidate.model.id`,
 // e.g. `gpt-4o`) regardless of which surface form the client called
 // (`or/gpt-4o` or `gpt-4o`). Usage and performance aggregates therefore key on
@@ -73,7 +79,6 @@ export const buildUpstreamCallOptions = (
   wrapUpstreamCall: stampUpstreamCallStart(ctx.attempt),
 });
 
-// Attaches the performance telemetry context every layer above reads.
 export const providerStreamResultToExecuteResult = async <TEvent>(
   providerResult: ProviderStreamResult<TEvent>,
   candidate: ModelCandidate,
@@ -84,8 +89,16 @@ export const providerStreamResultToExecuteResult = async <TEvent>(
   if (!providerResult.ok) {
     return { ...(await readUpstreamApiError(providerResult.response, candidate.provider.upstream)), performance: context };
   }
+  const stampedEvents = (async function* () {
+    for await (const frame of providerResult.events) {
+      if (ctx.attempt.firstOutputTokenAt === null && isFirstOutputTokenFrame(frame, targetApi)) {
+        ctx.attempt.firstOutputTokenAt = performance.now();
+      }
+      yield frame;
+    }
+  })();
   return eventResult(
-    withUpstreamTelemetry(providerResult.events, ctx, targetApi),
+    stampedEvents,
     telemetryModelIdentity(candidate, providerResult.modelKey),
     { performance: context, headers: providerResult.headers },
   );

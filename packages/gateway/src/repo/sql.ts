@@ -13,7 +13,6 @@ import type {
   PerformanceBucketRow,
   PerformanceDimensions,
   PerformanceMetric,
-  PerformanceOperation,
   PerformanceRepo,
   PerformanceSample,
   PerformanceTelemetryRecord,
@@ -42,7 +41,7 @@ import { generateSessionToken } from '../shared/session-tokens.ts';
 import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';
 import type { SqlDatabase, SqlPreparedStatement, SqlResult } from '@floway-dev/platform';
 import { BILLING_DIMENSIONS, type AliasSelection, type AliasTarget, type AnnouncedMetadata, type BillingDimension, type ModelKind, type ModelPricing, resolveEffectivePricing, unitPriceForDimension } from '@floway-dev/protocols/common';
-import type { ProviderModel, ProxyFallbackEntry, ModelPrefixConfig, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
+import type { ProviderModel, ProxyFallbackEntry, ModelPrefixConfig, PerformanceOperation, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { normalizeModelPrefix } from '@floway-dev/provider';
 
 const runStatements = async (db: SqlDatabase, statements: SqlPreparedStatement[]): Promise<SqlResult[]> => {
@@ -614,10 +613,6 @@ const performanceRecordKey = (dims: PerformanceDimensions): string =>
 const performanceDimensionBinds = (dims: PerformanceDimensions): unknown[] =>
   [dims.hour, dims.keyId, dims.model, dims.upstream, dims.operation, dims.runtimeLocation];
 
-// Column-order source of truth for the performance_summary upsert. Dimensions
-// form the composite PK and lead the VALUES tuple; counts trail in the exact
-// order the ON CONFLICT clause updates them. `upsertSummary` binds the two
-// lists together so any future column addition is a one-line edit here.
 const PERFORMANCE_SUMMARY_COUNT_COLUMNS = ['requests', 'ttft_samples_ok', 'errors_with_output', 'errors_no_output', 'neutral', 'tpot_samples', 'ttft_ms_sum', 'tpot_us_sum'] as const;
 type PerformanceSummaryCountColumn = typeof PERFORMANCE_SUMMARY_COUNT_COLUMNS[number];
 
@@ -664,13 +659,11 @@ class SqlPerformanceRepo implements PerformanceRepo {
   }
 
   async query(opts: { keyId?: string; start: string; end: string }): Promise<PerformanceTelemetryRecord[]> {
-    const where = opts.keyId ? 'hour >= ? AND hour < ? AND key_id = ?' : 'hour >= ? AND hour < ?';
-    const binds = opts.keyId ? [opts.start, opts.end, opts.keyId] : [opts.start, opts.end];
-    return await this.rowsFromWhere(where, binds);
+    return await this.rowsFor(opts);
   }
 
   async listAll(): Promise<PerformanceTelemetryRecord[]> {
-    return await this.rowsFromWhere('1=1', []);
+    return await this.rowsFor({});
   }
 
   async set(record: PerformanceTelemetryRecord): Promise<void> {
@@ -711,9 +704,6 @@ class SqlPerformanceRepo implements PerformanceRepo {
     const countBinds = PERFORMANCE_SUMMARY_COUNT_COLUMNS.map(col => {
       const value = counts[col];
       if (value === undefined) {
-        // The overload above guards 'set' at compile time; this runtime check
-        // catches an `as`-cast or widened caller slipping a partial through.
-        // 'add' treats a missing column as a no-op increment.
         if (mode === 'set') throw new Error(`upsertSummary('set'): missing count column ${col}`);
         return 0;
       }
@@ -736,10 +726,26 @@ class SqlPerformanceRepo implements PerformanceRepo {
     ).bind(...performanceDimensionBinds(dims), metric, edges.lower, edges.upper);
   }
 
-  private async rowsFromWhere(where: string, binds: readonly unknown[]): Promise<PerformanceTelemetryRecord[]> {
+  private async rowsFor(opts: { keyId?: string; start?: string; end?: string }): Promise<PerformanceTelemetryRecord[]> {
+    const clauses: string[] = [];
+    const binds: unknown[] = [];
+    if (opts.start !== undefined) {
+      clauses.push('hour >= ?');
+      binds.push(opts.start);
+    }
+    if (opts.end !== undefined) {
+      clauses.push('hour < ?');
+      binds.push(opts.end);
+    }
+    if (opts.keyId !== undefined) {
+      clauses.push('key_id = ?');
+      binds.push(opts.keyId);
+    }
+    const whereClause = clauses.length > 0 ? ` WHERE ${clauses.join(' AND ')}` : '';
+
     const { results: summaryRows } = await this.db.prepare(
       `SELECT hour, key_id, model, upstream, operation, runtime_location, requests, ttft_samples_ok, errors_with_output, errors_no_output, neutral, tpot_samples, ttft_ms_sum, tpot_us_sum
-       FROM performance_summary WHERE ${where} ORDER BY hour`,
+       FROM performance_summary${whereClause} ORDER BY hour`,
     ).bind(...binds).all<PerformanceDimensionRow & { requests: number; ttft_samples_ok: number; errors_with_output: number; errors_no_output: number; neutral: number; tpot_samples: number; ttft_ms_sum: number; tpot_us_sum: number }>();
 
     const records = new Map<string, Omit<PerformanceTelemetryRecord, 'buckets'> & { buckets: PerformanceBucketRow[] }>();
@@ -761,7 +767,7 @@ class SqlPerformanceRepo implements PerformanceRepo {
 
     const { results: bucketRows } = await this.db.prepare(
       `SELECT hour, key_id, model, upstream, operation, runtime_location, metric, lower, upper, count
-       FROM performance_buckets WHERE ${where} ORDER BY hour, metric, lower`,
+       FROM performance_buckets${whereClause} ORDER BY hour, metric, lower`,
     ).bind(...binds).all<PerformanceDimensionRow & { metric: PerformanceMetric; lower: number; upper: number | null; count: number }>();
     for (const row of bucketRows) {
       const dims = performanceDimensionsFromRow(row);

@@ -3,10 +3,9 @@ import type { LocationQuery, LocationQueryValue } from 'vue-router';
 import { dashboardRangeQuery, type DashboardRange } from '../../components/charts/dashboard-chart.ts';
 import type { PerformanceDisplayRecord } from '@floway-dev/gateway/control-plane/performance/aggregate';
 
-// Pure helpers extracted from performance.vue so they can be exercised
-// directly by Vitest without mounting the whole page (auth store, route
-// loader, chart libs). The .vue re-exports these unchanged; behavior lives
-// here.
+// Pure helpers backing the performance dashboard page. Isolated from the
+// .vue so they can be exercised by Vitest without mounting Vue, the auth
+// store, or chart libs.
 
 export type PerformanceView = 'all-by-user' | 'self-by-key';
 export type GroupBy = 'keyId' | 'userId' | 'model' | 'upstream' | 'operation' | 'runtimeLocation';
@@ -185,15 +184,6 @@ export const buildOverviewQuery = (state: UrlState, view: PerformanceView, at: n
   return q;
 };
 
-// Output speed is stored as tpotUs (smaller = faster), but the column
-// header labels it "Output speed" (tok/s, higher = better), so clicking
-// asc/desc must produce the ordering the label promises. Bake the invert
-// into a single effectiveSign so null-handling stays consistent — nulls
-// always sort last regardless of direction. Every row also carries its
-// resolved group label — resolveGroupName reads a Map per invocation, so
-// pre-resolving once per row keeps the group-column sort cheap AND lets
-// the template render `{{ row.groupLabel }}` without walking the Map on
-// every reactive tick across the 6 breakdown tables.
 export const sortRows = (
   rows: readonly PerformanceDisplayRecord[],
   key: TableSortKey,
@@ -201,8 +191,13 @@ export const sortRows = (
   groupBy: GroupBy,
   resolveGroupName: (group: string, groupBy: GroupBy) => string,
 ): DisplayRow[] => {
+  // Output speed shown as tok/s (higher = better) but stored as tpotUs
+  // (lower = better); invert on that key so asc/desc match the header
+  // semantics. Nulls always sort last regardless of direction.
   const invert = key === 'tpotUsP95' ? -1 : 1;
   const sign = (dir === 'asc' ? 1 : -1) * invert;
+  // Resolve group label once per row so the group-column sort and template
+  // reads don't call resolveGroupName repeatedly on every reactive tick.
   const withLabel: DisplayRow[] = rows.map(r => ({ ...r, groupLabel: resolveGroupName(r.group, groupBy) }));
   if (key === 'group') {
     return withLabel.sort((a, b) => a.groupLabel.localeCompare(b.groupLabel) * sign);

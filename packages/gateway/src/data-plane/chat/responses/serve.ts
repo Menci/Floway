@@ -30,9 +30,7 @@ export const responsesServe = {
     // 5xx/429/network does not become the request's verdict when another
     // candidate can serve. The last failure surfaces verbatim on exhaustion.
     // Normalize `prepared.model` to the candidate's real id so every
-    // attempt sees the canonical resolved public id. `iterateCandidates`
-    // stamps `ctx.attempt.telemetry` before invoking `run`, preserving
-    // mid-attempt-throw attribution.
+    // attempt sees the canonical resolved public id.
     return await iterateCandidates(
       plan.candidates,
       'responsesServe.generate',

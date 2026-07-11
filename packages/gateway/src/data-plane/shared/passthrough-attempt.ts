@@ -11,9 +11,8 @@
 // forwards the winning attempt (2xx) or the last failure (exhausted).
 
 import { inboundHeadersForUpstream } from './inbound-headers.ts';
-import { buildUpstreamCallOptions, telemetryModelIdentity } from './telemetry/attempt-helpers.ts';
+import { buildUpstreamCallOptions, telemetryModelIdentity, upstreamPerformanceContext } from './telemetry/attempt-helpers.ts';
 import type { PerformanceTelemetryContext } from './telemetry/performance.ts';
-import { upstreamPerformanceContext } from './telemetry/upstream-telemetry.ts';
 import type { AuthedContext } from '../../middleware/auth.ts';
 import type { GatewayCtx } from '../chat/shared/gateway-ctx.ts';
 import { providerModelOf } from '@floway-dev/provider';

@@ -7,8 +7,12 @@ import { assertEquals } from '@floway-dev/test-utils';
 // The production aggregator is multi-axis: one traversal produces every
 // per-axis breakdown. Every case here focuses on a single axis, so unwrap
 // it through a one-axis map to keep the test surface flat.
-const aggregateSingle = (records: readonly PerformanceTelemetryRecord[], options: AggregateOptions): PerformanceDisplayRecord[] =>
-  aggregatePerformanceForDisplay(records, { axis: options }).axis;
+const aggregateSingle = (
+  records: readonly PerformanceTelemetryRecord[],
+  options: AggregateOptions,
+  keyToUser: ReadonlyMap<string, number> = new Map(),
+): PerformanceDisplayRecord[] =>
+  aggregatePerformanceForDisplay(records, { axis: options }, keyToUser).axis;
 
 const record = (overrides: Partial<PerformanceTelemetryRecord> = {}): PerformanceTelemetryRecord => ({
   hour: '2026-04-30T10',
@@ -343,8 +347,8 @@ test('aggregatePerformanceForDisplay groups by userId via keyToUser and drops or
       bucket: 'all',
       groupBy: 'userId',
       timezoneOffsetMinutes: 0,
-      keyToUser: new Map([['key_a', 7], ['key_b', 42]]),
     },
+    new Map([['key_a', 7], ['key_b', 42]]),
   );
 
   assertEquals(rows.length, 2);
@@ -386,8 +390,8 @@ test('aggregatePerformanceForDisplay does not conflate a real userId 0 with orph
       bucket: 'all',
       groupBy: 'userId',
       timezoneOffsetMinutes: 0,
-      keyToUser: new Map([['key_zero', 0]]),
     },
+    new Map([['key_zero', 0]]),
   );
 
   assertEquals(rows.length, 1);

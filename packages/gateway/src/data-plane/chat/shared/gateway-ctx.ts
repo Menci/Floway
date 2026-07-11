@@ -8,37 +8,17 @@ import type { PerformanceTelemetryContext } from '@floway-dev/provider';
 
 // Per-attempt performance state. Reset at the start of every
 // iterateCandidates attempt so a candidate that short-circuits cannot inherit
-// the prior attempt's slots. Three collaborators fill them:
-//   - `upstreamCallStartedAt` — stamped inside wrapUpstreamCall the moment
-//     the provider hands its outbound-fetch dispatch off.
-//   - `firstOutputTokenAt` — stamped by upstream-telemetry.ts on the first
-//     stream frame carrying a model-generated token.
-//   - `telemetry` — the chat serve's synchronous pre-await stamp of
-//     the current candidate's PerformanceTelemetryContext. Used by the outer
-//     http.ts catch to attribute a mid-attempt throw (interceptor bug,
-//     translation error, provider-layer JS exception bypassing
-//     tryCatchChatServeFailure) to the throwing upstream — without it, the
-//     synthesized internal-error / translator-input-error result would carry
-//     no performance context and `recordFailedRequest` would short-circuit
-//     on the missing telemetry, dropping the failure from performance_summary.
-// The first two are read by recordPerformance in the respond-layer
-// finally; the third is read by the http.ts error-render helpers. The
-// numeric slots use `null` because a real timestamp of `0` would be
-// ambiguous; `telemetry` uses `undefined` so it flows straight into
-// the `PerformanceTelemetryContext | undefined` parameter of the result
-// constructors without translation.
+// the prior attempt's slots. The numeric slots use `null` because a real
+// timestamp of `0` would be ambiguous.
 export interface AttemptState {
   upstreamCallStartedAt: number | null;
   firstOutputTokenAt: number | null;
   telemetry: PerformanceTelemetryContext | undefined;
 }
 
-// Factory for the stamp closure providers plug into wrapUpstreamCall.
-// Callers wire this through the shared `buildUpstreamCallOptions` in
-// data-plane/shared/telemetry/attempt-helpers.ts. Stamps at dispatch
-// entry — pre-dial by design. See UpstreamCallOptions.wrapUpstreamCall
-// for why the interval includes proxy handshake time (the user waits
-// for it too).
+// Stamps at dispatch entry — pre-dial by design. See
+// UpstreamCallOptions.wrapUpstreamCall for why the interval includes proxy
+// handshake time (the user waits for it too).
 export const stampUpstreamCallStart = (attempt: AttemptState) =>
   <T>(dispatch: () => Promise<T>): Promise<T> => {
     attempt.upstreamCallStartedAt = performance.now();

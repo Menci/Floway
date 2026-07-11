@@ -8,12 +8,6 @@ export interface PerformanceDisplayRecord {
   bucket: string;
   group: string;
   requests: number;
-  // Derived from the partition-first counters carried on the raw record:
-  //   errors      = errorsWithOutput + errorsNoOutput
-  //   ttftSamples = ttftSamplesOk + errorsWithOutput
-  // (a partial-output failure contributes latency data AND counts against
-  // errors, so it lands in both totals.) `neutral` is a raw partition
-  // counter — successes with no TTFT stamp, distinct from ttft-sample rows.
   errors: number;
   ttftSamples: number;
   tpotSamples: number;
@@ -30,14 +24,6 @@ export interface AggregateOptions {
   bucket: PerformanceBucketGranularity;
   groupBy: PerformanceGroupBy;
   timezoneOffsetMinutes: number;
-  // Required when `groupBy === 'userId'` (orphan rows whose keyId no longer
-  // resolves are dropped there rather than collapsed onto userId 0, which
-  // both fabricates a phantom bucket and conflicts with any real user
-  // whose id is 0; soft-deleted keys still resolve because the map
-  // includes them). Ignored for every other groupBy — callers pass it
-  // unconditionally so the aggregate call sites don't ternary between
-  // two shapes.
-  keyToUser?: ReadonlyMap<string, number>;
 }
 
 interface MutableAggregate {
@@ -65,20 +51,20 @@ const displayBucket = (hour: string, options: Pick<AggregateOptions, 'bucket' | 
   return `${localIso.slice(0, 11)}${String(aligned).padStart(2, '0')}`;
 };
 
-const displayGroup = (record: PerformanceTelemetryRecord, options: AggregateOptions): string | null => {
+const displayGroup = (record: PerformanceTelemetryRecord, options: AggregateOptions, keyToUser: ReadonlyMap<string, number>): string | null => {
   if (options.groupBy === 'none') return 'all';
   if (options.groupBy === 'userId') {
-    if (!options.keyToUser) throw new Error("aggregatePerformanceForDisplay: groupBy='userId' requires keyToUser");
-    const userId = options.keyToUser.get(record.keyId);
+    const userId = keyToUser.get(record.keyId);
+    // Drop, don't collapse — userId 0 is a valid real user.
     if (userId === undefined) return null;
     return String(userId);
   }
   return String(record[options.groupBy]);
 };
 
-const updateAggregate = (aggregates: Map<string, MutableAggregate>, record: PerformanceTelemetryRecord, options: AggregateOptions): void => {
+const updateAggregate = (aggregates: Map<string, MutableAggregate>, record: PerformanceTelemetryRecord, options: AggregateOptions, keyToUser: ReadonlyMap<string, number>): void => {
   const bucket = displayBucket(record.hour, options);
-  const group = displayGroup(record, options);
+  const group = displayGroup(record, options, keyToUser);
   if (group === null) return;
   const key = `${bucket}\0${group}`;
   let aggregate = aggregates.get(key);
@@ -121,10 +107,7 @@ const toDisplayRecord = (a: MutableAggregate): PerformanceDisplayRecord => {
     bucket: a.bucket,
     group: a.group,
     requests: a.requests,
-    // Derived display totals: a partial-output failure (`errorsWithOutput`)
-    // contributes both an error AND a TTFT sample, so it appears in both
-    // sums by design — the partition-first counters keep the arithmetic
-    // total-preserving without an inclusion-exclusion step.
+    // Partial-output failures are counted in both `errors` and `ttftSamples` by design.
     errors: a.errorsWithOutput + a.errorsNoOutput,
     ttftSamples: a.ttftSamplesOk + a.errorsWithOutput,
     tpotSamples: a.tpotSamples,
@@ -138,9 +121,6 @@ const toDisplayRecord = (a: MutableAggregate): PerformanceDisplayRecord => {
   };
 };
 
-const finalizeAggregates = (aggregates: Map<string, MutableAggregate>): PerformanceDisplayRecord[] =>
-  [...aggregates.values()].map(toDisplayRecord).sort((a, b) => a.bucket.localeCompare(b.bucket) || a.group.localeCompare(b.group));
-
 // One-pass multi-axis aggregator. The dashboard overview asks for the same
 // records aggregated along 6-8 different (bucket, groupBy) axes; running a
 // single-axis loop once per axis walks the record set N times with an
@@ -149,13 +129,18 @@ const finalizeAggregates = (aggregates: Map<string, MutableAggregate>): Performa
 export const aggregatePerformanceForDisplay = <K extends string>(
   records: readonly PerformanceTelemetryRecord[],
   axes: Record<K, AggregateOptions>,
+  keyToUser: ReadonlyMap<string, number>,
 ): Record<K, PerformanceDisplayRecord[]> => {
   const entries = Object.entries(axes) as [K, AggregateOptions][];
   const maps = entries.map(() => new Map<string, MutableAggregate>());
   for (const record of records) {
-    for (let i = 0; i < entries.length; i++) updateAggregate(maps[i], record, entries[i][1]);
+    for (let i = 0; i < entries.length; i++) updateAggregate(maps[i], record, entries[i][1], keyToUser);
   }
   const result = {} as Record<K, PerformanceDisplayRecord[]>;
-  for (let i = 0; i < entries.length; i++) result[entries[i][0]] = finalizeAggregates(maps[i]);
+  for (let i = 0; i < entries.length; i++) {
+    result[entries[i][0]] = [...maps[i].values()]
+      .map(toDisplayRecord)
+      .sort((a, b) => a.bucket.localeCompare(b.bucket) || a.group.localeCompare(b.group));
+  }
   return result;
 };

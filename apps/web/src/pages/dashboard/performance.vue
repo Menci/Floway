@@ -13,7 +13,6 @@ import {
   parseUrlState,
   serializeUrlState,
   sortRows,
-  type DisplayRow,
   type GroupBy,
   type MetricView,
   type PercentileKey,
@@ -36,18 +35,19 @@ import { OverlayScrollbars, Spinner } from '@floway-dev/ui';
 export const usePerformancePageData = defineBasicLoader('/dashboard/performance', async route => {
   const api = useApi();
   const auth = useAuthStore();
-  const upstreamsStore = useUpstreamsStore();
   const view: PerformanceView = auth.canViewGlobalTelemetry ? 'all-by-user' : 'self-by-key';
   const initial = parseUrlState(route.query);
   const query = buildOverviewQuery(initial, view, Date.now());
   // Load upstream names in parallel with the perf overview so By-Upstream tables
   // and chart legends can resolve upstream ids to human-readable names. Store is
   // module-scoped, so this is a no-op when the user has already visited Settings.
+  // The setup script below owns the store handle; here it's touched purely for
+  // its side effect of populating that shared cache.
   const [overviewRes] = await Promise.all([
     callApi<PerformanceOverviewResponse>(() => api.api.performance.overview.$get({ query })),
-    upstreamsStore.upstreams.value
+    useUpstreamsStore().upstreams.value
       ? Promise.resolve()
-      : upstreamsStore.load().catch(err => {
+      : useUpstreamsStore().load().catch(err => {
           // Surface but don't fail the dashboard load — the By-Upstream table
           // falls back to raw ids. Operator sees the console warning if the
           // name-resolution API failed vs. an upstream genuinely being hard-deleted.
@@ -75,8 +75,8 @@ const initialOverview = usePerformancePageData();
 const performanceView: PerformanceView = initialOverview.data.value.view;
 
 // Initialize every ref from the URL so the page opens in the same state that
-// was captured when the URL was minted (bookmark / share). The subsequent
-// syncStateToUrl watchEffect writes changes back so refreshing preserves them.
+// was captured when the URL was minted (bookmark / share). The URL-sync
+// watchEffect below writes changes back so refreshing preserves them.
 const initial = parseUrlState(route.query);
 const filterModel = ref<string>(initial.filterModel);
 const filterUpstream = ref<string>(initial.filterUpstream);
@@ -166,32 +166,22 @@ watch(performanceGroupBy, groupBy => {
 // aggregation every 60s while nobody's looking. Gate the poll on document
 // visibility and resume the loop as soon as the user comes back. `resume()`
 // only re-arms the interval; without an immediate fetch a tab that came
-// back after 10 minutes would keep showing stale data for up to 60s. Force
-// a load on every visible-again transition — but skip the first invocation
-// (immediate: true fires it during setup, when the route loader has just
-// populated overview.value and a second identical request would waste a
-// round trip).
+// back after 10 minutes would keep showing stale data for up to 60s, so
+// force a load on every visible-again transition.
 const { pause: pausePoll, resume: resumePoll } = useIntervalFn(() => { void load(); }, 60_000);
 const documentVisibility = useDocumentVisibility();
-let visibilityInitialized = false;
+if (documentVisibility.value !== 'visible') pausePoll();
 watch(documentVisibility, v => {
   if (v === 'visible') {
     resumePoll();
-    if (visibilityInitialized) void load();
+    void load();
   } else {
     pausePoll();
   }
-  visibilityInitialized = true;
-}, { immediate: true });
+});
 
-// Sync every state field to the URL query via URL_FIELDS so a pristine
-// dashboard URL stays `/dashboard/performance` with no junk trailing it.
-// `router.replace` (not `push`) so click-heavy toggling doesn't flood the
-// browser history. vue-router 4's internal navigate() catches
-// NAVIGATION_CANCELLED and pushWithRedirect swallows every other
-// NavigationFailure via markAsReady, so this promise never rejects for
-// benign duplicated/aborted races — a real thrown error from a guard is
-// a real bug and should surface as an unhandled rejection.
+// Sync every state field to the URL query. `router.replace` (not `push`)
+// so click-heavy toggling doesn't flood the browser history.
 watchEffect(() => {
   void router.replace({ query: serializeUrlState(currentUrlState()) });
 });
@@ -257,21 +247,9 @@ const tableSortToggle = (key: TableSortKey): void => {
   tableSortDir.value = key === 'group' ? 'asc' : 'desc';
 };
 
-// Output speed is stored as tpotUs (smaller = faster), but the column
-// header labels it "Output speed" (tok/s, higher = better), so clicking
-// asc/desc must produce the ordering the label promises. `sortRows` bakes
-// the invert into an effectiveSign and pre-resolves group labels once per
-// row so the group-column sort stays cheap AND the template can render
-// `{{ row.groupLabel }}` without walking the name-resolver Map on every
-// reactive tick across the 6 breakdown tables.
-const sortedRows = (rows: readonly PerformanceDisplayRecord[], groupBy: GroupBy): DisplayRow[] =>
-  sortRows(rows, tableSortKey.value, tableSortDir.value, groupBy, resolveGroupName);
-
-// Every reactive tick — including loading-spinner opacity toggles — would
-// re-invoke sortedRows for all 6 tables if it stayed a template-called
-// function. Wrap the 6 rows arrays in a single computed so the sort only
-// re-runs when its actual inputs change (row snapshot, sort key/dir, or
-// any name-resolver map behind the group-column sort).
+// Memoise the six per-axis sorts (and their resolved group labels) per
+// snapshot so a reactive tick unrelated to the data — e.g. the loading
+// spinner opacity toggle — doesn't re-run sortRows on every table.
 const breakdownTables = computed(() => [
   { key: 'model' as const, label: 'By Model', rows: overview.value.axes.model, header: 'Model' },
   { key: 'upstream' as const, label: 'By Upstream', rows: overview.value.axes.upstream, header: 'Upstream' },
@@ -279,7 +257,7 @@ const breakdownTables = computed(() => [
   { key: 'operation' as const, label: 'By Operation', rows: overview.value.axes.operation, header: 'Operation' },
   { key: 'userId' as const, label: 'By User', rows: overview.value.axes.userId, header: 'User' },
   { key: 'keyId' as const, label: 'By API Key', rows: overview.value.axes.keyId, header: 'API Key' },
-].map(t => ({ ...t, sortedRows: sortedRows(t.rows, t.key) })));
+].map(t => ({ ...t, sortedRows: sortRows(t.rows, tableSortKey.value, tableSortDir.value, t.key, resolveGroupName) })));
 
 const sortIndicator = (key: TableSortKey): string => {
   if (tableSortKey.value !== key) return '';
@@ -300,7 +278,7 @@ const formatTps = (tps: number | null): string => {
   return `${tps.toFixed(2)} tok/s`;
 };
 
-const formatTokPerSec = (us: number | null): string =>
+const formatTpsFromUs = (us: number | null): string =>
   us === null || us <= 0 ? '—' : formatTps(1_000_000 / us);
 
 const getChartValue = (record: PerformanceDisplayRecord, p: PercentileKey): number | null => {
@@ -554,7 +532,7 @@ const performanceSummary = computed<PerformanceDisplayRecord>(() => overview.val
         </div>
         <div class="rounded-md border border-white/5 bg-surface-800/60 px-3 py-3 lg:order-6 xl:order-6">
           <span class="block text-xs text-gray-500 mb-1">Output speed p50</span>
-          <span class="block text-lg font-bold font-mono text-white">{{ formatTokPerSec(performanceSummary.tpotUsP50) }}</span>
+          <span class="block text-lg font-bold font-mono text-white">{{ formatTpsFromUs(performanceSummary.tpotUsP50) }}</span>
         </div>
         <div class="rounded-md border border-white/5 bg-surface-800/60 px-3 py-3 lg:order-3 xl:order-4">
           <span class="block text-xs text-gray-500 mb-1">TTFT p95</span>
@@ -562,7 +540,7 @@ const performanceSummary = computed<PerformanceDisplayRecord>(() => overview.val
         </div>
         <div class="rounded-md border border-white/5 bg-surface-800/60 px-3 py-3 lg:order-7 xl:order-7">
           <span class="block text-xs text-gray-500 mb-1">Output speed p95</span>
-          <span class="block text-lg font-bold font-mono text-white">{{ formatTokPerSec(performanceSummary.tpotUsP95) }}</span>
+          <span class="block text-lg font-bold font-mono text-white">{{ formatTpsFromUs(performanceSummary.tpotUsP95) }}</span>
         </div>
         <div class="rounded-md border border-white/5 bg-surface-800/60 px-3 py-3 lg:order-4 xl:order-5">
           <span class="block text-xs text-gray-500 mb-1">TTFT p99</span>
@@ -570,7 +548,7 @@ const performanceSummary = computed<PerformanceDisplayRecord>(() => overview.val
         </div>
         <div class="rounded-md border border-white/5 bg-surface-800/60 px-3 py-3 lg:order-8 xl:order-8">
           <span class="block text-xs text-gray-500 mb-1">Output speed p99</span>
-          <span class="block text-lg font-bold font-mono text-white">{{ formatTokPerSec(performanceSummary.tpotUsP99) }}</span>
+          <span class="block text-lg font-bold font-mono text-white">{{ formatTpsFromUs(performanceSummary.tpotUsP99) }}</span>
         </div>
       </div>
 
@@ -594,7 +572,7 @@ const performanceSummary = computed<PerformanceDisplayRecord>(() => overview.val
                   <td class="px-3 py-2 text-right font-mono text-gray-400">{{ row.requests.toLocaleString() }}</td>
                   <td class="px-3 py-2 text-right font-mono text-gray-400">{{ row.errors.toLocaleString() }}</td>
                   <td class="px-3 py-2 text-right font-mono text-white">{{ formatMs(row.ttftMsP95) }}</td>
-                  <td class="px-3 py-2 text-right font-mono text-white">{{ formatTokPerSec(row.tpotUsP95) }}</td>
+                  <td class="px-3 py-2 text-right font-mono text-white">{{ formatTpsFromUs(row.tpotUsP95) }}</td>
                 </tr>
               </tbody>
             </table>
