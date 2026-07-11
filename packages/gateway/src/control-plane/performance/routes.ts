@@ -18,7 +18,7 @@ import { loadTelemetryKeys, resolveTelemetryView, type ResolvedTelemetryView } f
 
 type Ctx = CtxWithQuery<typeof performanceQuery>;
 
-interface PerformanceFilters {
+export interface PerformanceFilters {
   model: string | undefined;
   upstream: string | undefined;
   operation: string | undefined;
@@ -119,7 +119,7 @@ const queryRecordsForView = async (
 // them rather than coercing undefined to 0. The caller pre-resolves `uid`
 // once per row so this predicate — and the neighbouring dimension-value
 // pass in `partitionRecords` — share a single Map.get per record.
-const matchesFilters = (
+export const matchesFilters = (
   r: PerformanceTelemetryRecord,
   filters: PerformanceFilters,
   uid: number | undefined,
@@ -138,7 +138,7 @@ const matchesFilters = (
 // currently applied. (Cross-filtering the dropdowns to the current selection
 // would be a follow-up if the "hide options that would empty the result"
 // UX becomes needed.)
-interface DimensionValues {
+export interface DimensionValues {
   models: string[];
   upstreams: string[];
   operations: string[];
@@ -156,7 +156,7 @@ interface DimensionValues {
 // aggregation) and the dimension-value dropdown menus (collected from
 // UNFILTERED rows so filters never narrow the menu). One traversal
 // produces both instead of walking the raw set twice.
-const partitionRecords = (
+export const partitionRecords = (
   rows: readonly PerformanceTelemetryRecord[],
   filters: PerformanceFilters,
   keyToUser: ReadonlyMap<string, number>,
