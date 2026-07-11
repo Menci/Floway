@@ -1,14 +1,12 @@
 import { test } from 'vitest';
 
 import {
-  buildPromptTooLongBody,
   isContextExceededError,
-  isContextExceededErrorObject,
-  isContextExceededErrorText,
   PROMPT_TOO_LONG_MESSAGE,
   rewriteContextExceededToPromptTooLong,
 } from './context-window-error.ts';
 import { assert, assertEquals, assertFalse } from '../../test-assert.ts';
+import { buildPromptTooLongBody } from '@floway-dev/protocols/messages';
 
 test('isContextExceededError — recognizes canonical code strings', () => {
   assert(isContextExceededError({ code: 'context_length_exceeded' }));
@@ -23,19 +21,6 @@ test('isContextExceededError — recognizes fallback message substrings', () => 
   assert(isContextExceededError({ message: "This model's maximum context length is 4097 tokens." }));
   assert(isContextExceededError({ message: 'Request body is too large for model context window' }));
   assertFalse(isContextExceededError({ message: 'a network hiccup' }));
-});
-
-test('isContextExceededErrorObject — walks the outer envelope', () => {
-  assert(isContextExceededErrorObject({ error: { code: 'context_length_exceeded', message: 'x' } }));
-  assert(isContextExceededErrorObject({ error: { code: 'model_max_prompt_tokens_exceeded', message: 'x' } }));
-  assertFalse(isContextExceededErrorObject({ error: { code: 'server_error', message: 'x' } }));
-  assertFalse(isContextExceededErrorObject({ nope: true }));
-});
-
-test('isContextExceededErrorText — parses JSON when it can, falls back to plain-text substring', () => {
-  assert(isContextExceededErrorText(JSON.stringify({ error: { code: 'context_length_exceeded' } })));
-  assert(isContextExceededErrorText('some non-json prefix: exceeds the context window of this model'));
-  assertFalse(isContextExceededErrorText('unrelated 502 body'));
 });
 
 test('buildPromptTooLongBody — Anthropic envelope with load-bearing prefix', () => {
@@ -76,6 +61,17 @@ test('rewriteContextExceededToPromptTooLong — rewrites Codex Responses shape',
   assert(result !== undefined);
 });
 
+test('rewriteContextExceededToPromptTooLong — recognizes bodies whose signal is in the message substring only', () => {
+  const upstream = {
+    status: 400,
+    headers: new Headers(),
+    body: new TextEncoder().encode(JSON.stringify({
+      error: { message: "This model's maximum context length is 4097 tokens. However, your messages resulted in 4498 tokens." },
+    })),
+  };
+  assert(rewriteContextExceededToPromptTooLong(upstream) !== undefined);
+});
+
 test('rewriteContextExceededToPromptTooLong — passes unrelated bodies through unchanged', () => {
   const upstream = {
     status: 401,
@@ -85,11 +81,18 @@ test('rewriteContextExceededToPromptTooLong — passes unrelated bodies through 
   assertEquals(rewriteContextExceededToPromptTooLong(upstream), undefined);
 });
 
-test('rewriteContextExceededToPromptTooLong — passes non-json bodies through unchanged', () => {
-  const upstream = {
+test('rewriteContextExceededToPromptTooLong — falls back to plain-text substring when the body is not JSON', () => {
+  const matching = {
+    status: 502,
+    headers: new Headers(),
+    body: new TextEncoder().encode('some upstream prose: exceeds the context window of this model'),
+  };
+  assert(rewriteContextExceededToPromptTooLong(matching) !== undefined);
+
+  const unrelated = {
     status: 502,
     headers: new Headers(),
     body: new TextEncoder().encode('Bad Gateway'),
   };
-  assertEquals(rewriteContextExceededToPromptTooLong(upstream), undefined);
+  assertEquals(rewriteContextExceededToPromptTooLong(unrelated), undefined);
 });

@@ -19,7 +19,7 @@ export type TranslationContext<TCaps = unknown> = {
 
 /**
  * A wire-shaped upstream error body handed to `TranslateTrip.apiError`. The
- * pair returns a same-shaped tuple to rewrite the outbound envelope, or
+ * pair returns a same-shaped object to rewrite the outbound envelope, or
  * `undefined` to pass it through unchanged. The provider layer's
  * `ApiErrorResult` shape is intentionally not imported here — translate is a
  * leaf below provider, so we express the contract in bare HTTP-response

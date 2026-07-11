@@ -1,4 +1,5 @@
 import type { CopilotMessagesBoundaryInterceptor } from './types.ts';
+import { buildPromptTooLongBody } from '@floway-dev/protocols/messages';
 
 const isContextWindowError = (text: string): boolean => text.includes('Request body is too large for model context window') || text.includes('context_length_exceeded');
 
@@ -7,12 +8,14 @@ const isContextWindowError = (text: string): boolean => text.includes('Request b
  * Anthropic-shape body carrying a Copilot-specific message string; Claude
  * Code's detector matches on the message substring alone (case-insensitive
  * `error.message.toLowerCase().includes('prompt is too long')`), so we
- * rewrite this body to lead with that phrase and trigger auto-compaction.
- * The detector, string constants, and matching envelope live in
- * `@floway-dev/translate/shared/messages/context-window-error.ts` — see the
- * comment on `PROMPT_TOO_LONG_MESSAGE` there for the client-bundle
- * evidence. This interceptor exists in addition because Copilot's Messages
- * endpoint never traverses the `messages-via-*` translation pairs.
+ * rewrite this body to the canonical prompt-too-long envelope and trigger
+ * auto-compaction. The envelope + client-bundle evidence live in
+ * `@floway-dev/protocols/messages` (`buildPromptTooLongBody` /
+ * `PROMPT_TOO_LONG_MESSAGE`). This interceptor exists in addition to the
+ * translate-layer rewriter because Copilot's Messages endpoint never
+ * traverses the `messages-via-*` translation pairs — the Copilot Messages
+ * substring set here (`Request body is too large...`) is disjoint from
+ * the Responses/Chat shapes those pairs match on.
  */
 export const rewriteContextWindowError: CopilotMessagesBoundaryInterceptor = async (_ctx, _request, run) => {
   const result = await run();
@@ -25,14 +28,6 @@ export const rewriteContextWindowError: CopilotMessagesBoundaryInterceptor = asy
     ...result,
     status: 400,
     headers: new Headers({ 'content-type': 'application/json' }),
-    body: new TextEncoder().encode(
-      JSON.stringify({
-        type: 'error',
-        error: {
-          type: 'invalid_request_error',
-          message: 'prompt is too long: your prompt is too long. Please reduce the number of messages or use a model with a larger context window.',
-        },
-      }),
-    ),
+    body: buildPromptTooLongBody(),
   };
 };
