@@ -410,10 +410,15 @@ export interface AgentSetupRepo {
     now: number;
     expiresAt: number;
   }): Promise<AgentSetupRecord>;
-  // PUT: write configuration under optimistic concurrency. Applies the token-
-  // mismatch check before the revision check. On success bumps the revision,
-  // extends expiry to replacementExpiresAt, and — only when the lease had
-  // already expired — rotates the token to replacementToken.
+  // PUT: write configuration under optimistic concurrency. The token-mismatch
+  // check is applied first, then the revision check. On success bumps the
+  // revision, extends expiry to replacementExpiresAt, and — only when the lease
+  // had already expired — rotates the token to replacementToken. Precedence is
+  // deliberate when a matching token is both expired and edited against a stale
+  // revision: the revision conflict wins, so the call returns `revision-conflict`
+  // and rotates nothing. The dashboard rebases onto the ride-along record and
+  // retries; that retry, still against the expired lease, is the write that
+  // rotates the token.
   updateConfiguration(input: {
     userId: number;
     token: string;

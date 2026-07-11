@@ -987,6 +987,9 @@ class MemoryAgentSetupRepo implements AgentSetupRepo {
   }): Promise<AgentSetupMutation> {
     const existing = this.byUser.get(input.userId);
     if (!existing || existing.token !== input.token) return Promise.resolve({ status: 'superseded' });
+    // The revision check runs before the expiry-driven rotation below, so a
+    // matching token that is both expired and stale reports revision-conflict
+    // and rotates nothing — the retry at the live revision is what rotates.
     if (existing.configurationRevision !== input.expectedRevision) {
       return Promise.resolve({ status: 'revision-conflict', record: { ...existing } });
     }

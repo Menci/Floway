@@ -168,6 +168,39 @@ test('PUT /api/setup returns revision-conflict 409 carrying the current lease', 
   assertEquals(body.configurationRevision, lease.configurationRevision);
 });
 
+test('PUT /api/setup rejecting an unavailable or foreign API key returns a 400 that leaks nothing', async () => {
+  const { repo, apiKey } = await setupAppTest({ apiKey: testApiKey() });
+  const lease = (await (await createLease(apiKey.key)).json()) as LeaseResponse;
+
+  // A key the caller once owned but soft-deleted: no longer selectable.
+  const retiredKey = { ...testApiKey(), id: 'key_retired', key: 'raw-retired' };
+  await repo.apiKeys.save(retiredKey);
+  await repo.apiKeys.softDelete(retiredKey.id);
+
+  // A key owned by another user: never selectable for this caller.
+  await repo.users.save({ id: 3, username: 'mallory', passwordHash: null, isAdmin: false, upstreamIds: null, canViewGlobalTelemetry: false, createdAt: '2026-03-15T00:00:00.000Z', deletedAt: null });
+  await repo.apiKeys.save({ ...testApiKey(), id: 'key_foreign', userId: 3, key: 'raw-foreign' });
+
+  for (const rejectedKeyId of ['key_retired', 'key_foreign']) {
+    const response = await requestApp('/api/setup', {
+      method: 'PUT',
+      headers: { 'x-api-key': apiKey.key, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        token: lease.token,
+        configuration: { ...lease.configuration, apiKeyId: rejectedKeyId },
+        expectedRevision: lease.configurationRevision,
+      }),
+    });
+    assertEquals(response.status, 400);
+    const errorBody = (await response.json()) as Record<string, unknown>;
+    // The rejection carries the fixed contract message only — no lease token,
+    // no revision, no key material rides along.
+    assertEquals(errorBody.error, 'The selected API key is not available on your account.');
+    expect(errorBody).not.toHaveProperty('token');
+    expect(JSON.stringify(errorBody)).not.toContain(lease.token);
+  }
+});
+
 test('POST /api/setup/heartbeat renews the lease without bumping the revision', async () => {
   const { apiKey } = await setupAppTest({ apiKey: testApiKey() });
   const lease = (await (await createLease(apiKey.key)).json()) as LeaseResponse;
@@ -215,11 +248,17 @@ test('POST /api/setup retries a unique-token collision without masking unrelated
   expect(calls).toBe(2);
 
   // An unrelated DB error must propagate as a 500, not be swallowed by retry.
+  // The expected stack is captured so it does not clutter the test output.
   repo.agentSetup.replaceForUser = async () => {
     throw new Error('disk I/O error');
   };
-  const failed = await createLease(apiKey.key);
-  assertEquals(failed.status, 500);
+  const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    const failed = await createLease(apiKey.key);
+    assertEquals(failed.status, 500);
+  } finally {
+    errorSpy.mockRestore();
+  }
 });
 
 // --- public script serving ---
@@ -305,6 +344,22 @@ test('unknown, expired, deleted-user, deleted-key, and mismatched tokens all ret
   assertEquals(bodies.size, 1);
 });
 
+test('GET on a lease whose own API key was soft-deleted collapses to the generic 404', async () => {
+  const { repo, apiKey } = await setupAppTest({ apiKey: testApiKey() });
+  const lease = (await (await createLease(apiKey.key)).json()) as LeaseResponse;
+
+  // The lease is live and its configuration points at the user's own key.
+  // Soft-deleting that key must collapse the public GET to the same generic 404
+  // as any other unserveable lease — never a 200 that would serve a dead key.
+  await repo.apiKeys.softDelete(apiKey.id);
+
+  const response = await requestApp(lease.scripts.sh, { method: 'GET' });
+  assertEquals(response.status, 404);
+  const raw = await response.text();
+  assertEquals(raw, '');
+  expect(raw).not.toContain(apiKey.key);
+});
+
 test('HEAD on an unknown token is a 404 with an empty body', async () => {
   await setupAppTest({ apiKey: testApiKey() });
   const response = await requestApp(`/api/setup/${'a'.repeat(43)}/setup.sh`, { method: 'HEAD' });
@@ -333,14 +388,20 @@ test('GET re-reads the current configuration each request', async () => {
   expect(after).not.toContain("FLOWAY_INSTALL_CODEX='1'");
 });
 
-// --- security: token never leaks through logs or the 500 body ---
+// --- security: a public-script failure reveals nothing; ordinary routes still surface stacks ---
 
-test('a forced internal failure on the script route leaks the token in neither logs nor the 500 body', async () => {
+test('a forced internal failure on the public script route returns and logs an opaque internal error', async () => {
   const { apiKey } = await setupAppTest({ apiKey: testApiKey() });
   const lease = (await (await createLease(apiKey.key)).json()) as LeaseResponse;
   const repo = getRepo();
+
+  // The thrown error embeds both the live lease token and an unrelated secret
+  // (standing in for the served API key or anything else a real failure might
+  // carry) so the assertions prove the response and log strip everything, not
+  // just the token that already lives in the request path.
+  const injectedSecret = 'INJECTED-SECRET-sk-abcdef0123456789';
   repo.agentSetup.findByToken = async () => {
-    throw new Error('forced failure');
+    throw new Error(`forced failure leaking ${lease.token} and ${injectedSecret}`);
   };
 
   const logged: string[] = [];
@@ -350,14 +411,42 @@ test('a forced internal failure on the script route leaks the token in neither l
     const response = await requestApp(lease.scripts.sh, { method: 'GET' });
     assertEquals(response.status, 500);
     const raw = await response.text();
+    // Fully opaque: no error name, message, stack, cause, method, or path.
+    expect(JSON.parse(raw)).toEqual({ error: { type: 'internal_error' } });
     expect(raw).not.toContain(lease.token);
-    const body = JSON.parse(raw) as { error: { path: string } };
-    assertEquals(body.error.path, '/api/setup/[redacted]/setup.sh');
+    expect(raw).not.toContain(injectedSecret);
   } finally {
     errorSpy.mockRestore();
     logSpy.mockRestore();
   }
-  expect(logged.join('\n')).not.toContain(lease.token);
+  const joined = logged.join('\n');
+  expect(joined).not.toContain(lease.token);
+  expect(joined).not.toContain(injectedSecret);
+  // The raw error object (its message and stack) never reaches the log either.
+  expect(joined).not.toContain('forced failure');
+});
+
+test('an ordinary route internal error still surfaces the full stack trace', async () => {
+  const { apiKey } = await setupAppTest({ apiKey: testApiKey() });
+  const repo = getRepo();
+  repo.agentSetup.replaceForUser = async () => {
+    throw new Error('ordinary-route-boom');
+  };
+
+  const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    const response = await createLease(apiKey.key);
+    assertEquals(response.status, 500);
+    const body = (await response.json()) as { error: { type: string; message: string; stack: string; path: string } };
+    assertEquals(body.error.type, 'internal_error');
+    assertEquals(body.error.message, 'ordinary-route-boom');
+    expect(body.error.stack).toContain('ordinary-route-boom');
+    // POST /api/setup is authenticated, not a public script path, so its path
+    // is preserved verbatim rather than redacted or dropped.
+    assertEquals(body.error.path, '/api/setup');
+  } finally {
+    errorSpy.mockRestore();
+  }
 });
 
 test('the request logger redacts the token from the logged path', async () => {
@@ -377,6 +466,43 @@ test('the request logger redacts the token from the logged path', async () => {
 });
 
 // --- the public matcher is exact; everything else stays authenticated ---
+
+test('OPTIONS on a script path is a CORS preflight that never resolves the lease, while GET stays no-CORS', async () => {
+  const { apiKey } = await setupAppTest({ apiKey: testApiKey() });
+  const lease = (await (await createLease(apiKey.key)).json()) as LeaseResponse;
+  const repo = getRepo();
+
+  // OPTIONS is not in the GET/HEAD public matcher, so it flows through the
+  // default CORS layer and is answered as a preflight before auth or the lease
+  // handler runs. It must never touch the lease store — OPTIONS cannot become
+  // an existence oracle — yet it still carries the default ACAO a browser
+  // preflight expects.
+  const findByTokenSpy = vi.spyOn(repo.agentSetup, 'findByToken');
+  const preflight = await requestApp(lease.scripts.sh, {
+    method: 'OPTIONS',
+    headers: { origin: 'https://cross.example', 'access-control-request-method': 'GET' },
+  });
+  assertEquals(preflight.status, 204);
+  assertExists(preflight.headers.get('access-control-allow-origin'));
+  assertEquals(await preflight.text(), '');
+
+  // A bogus token yields a byte-identical preflight: OPTIONS reveals nothing
+  // about whether the lease exists.
+  const bogus = await requestApp(`/api/setup/${'z'.repeat(43)}/setup.sh`, {
+    method: 'OPTIONS',
+    headers: { origin: 'https://cross.example', 'access-control-request-method': 'GET' },
+  });
+  assertEquals(bogus.status, 204);
+  assertEquals(bogus.headers.get('access-control-allow-origin'), preflight.headers.get('access-control-allow-origin'));
+  assertEquals(await bogus.text(), '');
+  expect(findByTokenSpy).not.toHaveBeenCalled();
+  findByTokenSpy.mockRestore();
+
+  // The real GET stays outside CORS: it serves the script body with no ACAO.
+  const get = await requestApp(lease.scripts.sh, { method: 'GET' });
+  assertEquals(get.status, 200);
+  assertEquals(get.headers.get('access-control-allow-origin'), null);
+});
 
 test('control routes still require authentication', async () => {
   await setupAppTest({ apiKey: testApiKey() });

@@ -1,10 +1,13 @@
-// The single classifier + redactor for the public Agent Setup script routes,
-// shared by auth (skip authentication), the CORS layer (skip CORS), the
-// request logger (redact the token before it reaches a log line), and the
-// internal-error response (redact the token before it reaches the 500 body).
-// Keeping one source of truth means the "what counts as a public script URL"
-// and "how is the token scrubbed" decisions can never drift between the layers
-// that must agree on them.
+// The single classifier + redactor for the public Agent Setup script routes.
+// The classifier is shared by auth (skip authentication), the CORS layer (skip
+// CORS), and the internal-error response (return a fully opaque 500 that
+// reveals neither the token nor any secret the thrown error carried). The
+// redactor is shared by the request logger (scrub the token before it reaches a
+// log line) and the internal-error response's non-setup branch (scrub a
+// near-miss, still script-shaped path before it reaches the 500 body). Keeping
+// one source of truth means the "what counts as a public script URL" and "how
+// is the token scrubbed" decisions can never drift between the layers that must
+// agree on them.
 
 // A setup token is 32 CSPRNG bytes as an unpadded base64url string — exactly 43
 // characters of the base64url alphabet. The public matcher is deliberately

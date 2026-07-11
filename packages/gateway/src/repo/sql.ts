@@ -1838,8 +1838,11 @@ class SqlAgentSetupRepo implements AgentSetupRepo {
     replacementToken: string;
     replacementExpiresAt: number;
   }): Promise<AgentSetupMutation> {
-    // Single-statement CAS on (user_id, token, revision). Expiry only decides
-    // whether the token rotates; the write itself is atomic.
+    // Single-statement CAS on (user_id, token, revision). The token rotation is
+    // a column write guarded by `expires_at <= now`, so it only happens as part
+    // of a row that the WHERE clause already matched: a stale revision fails the
+    // WHERE, nothing is written, and the revision conflict wins over the
+    // rotation the expiry would otherwise trigger. The write itself is atomic.
     const row = await this.db
       .prepare(
         `UPDATE agent_setup SET

@@ -153,6 +153,51 @@ describe.each(backends)('AgentSetupRepo (%s)', (_label, makeRepo) => {
     expect((await repo.agentSetup.findByToken('token-b'))?.userId).toBe(7);
   });
 
+  test('updateConfiguration lets a stale revision win over expiry: no rotation, then the retry rotates', async () => {
+    const repo = await makeRepo();
+    const created = await seed(repo);
+
+    // The lease is already expired (seed expiry 1_300, now 1_500) AND edited
+    // against a stale revision. The revision conflict wins over the rotation the
+    // expiry would otherwise trigger: the row is untouched and its token stays.
+    const conflict = await repo.agentSetup.updateConfiguration({
+      userId: 7,
+      token: 'token-a',
+      expectedRevision: 0,
+      apiKeyId: 'key-a',
+      configurationJson: '{"apiKeyId":"key-a","codex":{"enabled":false}}',
+      now: 1_500,
+      replacementToken: 'token-b',
+      replacementExpiresAt: 1_800,
+    });
+    expect(conflict.status).toBe('revision-conflict');
+    if (conflict.status !== 'revision-conflict') throw new Error('unreachable');
+    expect(conflict.record).toEqual(created);
+    // No rotation happened: the replacement token never became live.
+    expect(await repo.agentSetup.findByToken('token-b')).toBeNull();
+    expect((await repo.agentSetup.findByToken('token-a'))?.configurationRevision).toBe(1);
+
+    // Rebasing onto the live revision and retrying — still against the expired
+    // lease — is the write that finally rotates the token.
+    const retry = await repo.agentSetup.updateConfiguration({
+      userId: 7,
+      token: 'token-a',
+      expectedRevision: conflict.record.configurationRevision,
+      apiKeyId: 'key-a',
+      configurationJson: '{"apiKeyId":"key-a","codex":{"enabled":false}}',
+      now: 1_500,
+      replacementToken: 'token-c',
+      replacementExpiresAt: 1_900,
+    });
+    expect(retry.status).toBe('ok');
+    if (retry.status !== 'ok') throw new Error('unreachable');
+    expect(retry.record.token).toBe('token-c');
+    expect(retry.record.configurationRevision).toBe(2);
+    expect(retry.record.expiresAt).toBe(1_900);
+    expect(await repo.agentSetup.findByToken('token-a')).toBeNull();
+    expect((await repo.agentSetup.findByToken('token-c'))?.userId).toBe(7);
+  });
+
   test('renewLease extends a live lease without rotating the token or touching the revision', async () => {
     const repo = await makeRepo();
     await seed(repo);
