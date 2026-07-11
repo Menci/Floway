@@ -192,6 +192,13 @@ if (process.env.FLOWAY_API_KEY !== undefined || process.env.FlowayApiKey !== und
   process.stderr.write('fake codex inherited the Floway API key environment variable' + NL);
   process.exit(91);
 }
+const expectedNonInteractive = process.env.FAKE_CODEX_EXPECT_NON_INTERACTIVE;
+const actualNonInteractive = process.env.CODEX_NON_INTERACTIVE;
+if ((expectedNonInteractive === undefined && actualNonInteractive !== undefined)
+    || (expectedNonInteractive !== undefined && actualNonInteractive !== expectedNonInteractive)) {
+  process.stderr.write('fake codex observed unexpected CODEX_NON_INTERACTIVE after installation' + NL);
+  process.exit(92);
+}
 const argv = process.argv.slice(2);
 const cmd = argv[0];
 if (cmd === '--version') {
@@ -264,6 +271,13 @@ if [ "\${FLOWAY_API_KEY+x}" = x ] || [ "\${FlowayApiKey+x}" = x ]; then
   printf 'fake codex installer inherited the Floway API key environment variable\\n' >&2
   exit 92
 fi
+if [ "\${CODEX_NON_INTERACTIVE:-}" != true ]; then
+  printf 'fake codex installer did not receive CODEX_NON_INTERACTIVE=true\\n' >&2
+  exit 94
+fi
+if [ -n "\${FAKE_INSTALLER_OBSERVED_NON_INTERACTIVE:-}" ]; then
+  printf '%s' "$CODEX_NON_INTERACTIVE" > "$FAKE_INSTALLER_OBSERVED_NON_INTERACTIVE"
+fi
 if [ "\${FAKE_INSTALLER_SLEEP:-0}" -gt 0 ]; then
   bash -c '
     sleep "$FAKE_INSTALLER_SLEEP" &
@@ -295,7 +309,7 @@ writeFileSync(FAKE_CODEX_INSTALLER_SCRIPT, FAKE_CODEX_INSTALLER, { mode: 0o755 }
 // --- local model directory --------------------------------------------------
 
 type ModelServerMode =
-  | 'ok' | 'unauthorized'
+  | 'ok' | 'unauthorized' | 'malformed-codex-models'
   | 'installer-sh' | 'installer-ps1' | 'installer-html'
   | 'installer-codex-sh' | 'installer-codex-ps1';
 // Default Codex catalog served at /azure-api.codex/models. The real gateway
@@ -312,6 +326,8 @@ interface ModelServer {
 
 const PS1_FAKE_INSTALLER_BODY = (binName: string, src: string): string =>
   `if ($env:FLOWAY_API_KEY) { throw 'installer inherited secret' }
+if ($env:CODEX_NON_INTERACTIVE -ne 'true' -and '${binName}' -eq 'codex') { throw 'codex installer did not receive CODEX_NON_INTERACTIVE=true' }
+if ($env:FAKE_INSTALLER_OBSERVED_NON_INTERACTIVE -and '${binName}' -eq 'codex') { [IO.File]::WriteAllText($env:FAKE_INSTALLER_OBSERVED_NON_INTERACTIVE, [string]$env:CODEX_NON_INTERACTIVE) }
 if ([int]$env:FAKE_INSTALLER_SLEEP -gt 0) {
   $processInfo = New-Object System.Diagnostics.ProcessStartInfo
   $processInfo.FileName = '/bin/sleep'
@@ -389,7 +405,9 @@ const startModelServer = async (): Promise<ModelServer> => {
     }
     if (pathname === '/azure-api.codex/models') {
       res.writeHead(200, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ models: state.codexModels.map(slug => ({ slug })) }));
+      res.end(state.mode === 'malformed-codex-models'
+        ? '{not-json'
+        : JSON.stringify({ models: state.codexModels.map(slug => ({ slug })) }));
       return;
     }
     res.writeHead(404, { 'content-type': 'application/json' });
@@ -491,6 +509,8 @@ interface RunOptions {
   fakeCodexLargeStderr?: boolean;
   withCodexInstallHook?: boolean;
   codexInstallerUrl?: string;
+  ambientCodexNonInteractive?: string;
+  powerShellTimeSeparator?: string;
 }
 interface RunResult { code: number; stdout: string; stderr: string; combined: string; }
 
@@ -505,7 +525,12 @@ const codexEnv = (options: RunOptions): Record<string, string> => {
     FAKE_CODEX_VERSION_SLEEP: String(options.fakeCodexVersionSleep ?? 0),
     FAKE_CODEX_APP_SERVER_MODE: options.fakeCodexAppServerMode ?? 'ok',
     FAKE_CODEX_BATCH_DELAY: String(options.fakeCodexBatchDelay ?? 0),
+    FAKE_INSTALLER_OBSERVED_NON_INTERACTIVE: join(options.workspace.root, 'installer-non-interactive.txt'),
   };
+  if (options.ambientCodexNonInteractive !== undefined) {
+    env.CODEX_NON_INTERACTIVE = options.ambientCodexNonInteractive;
+    env.FAKE_CODEX_EXPECT_NON_INTERACTIVE = options.ambientCodexNonInteractive;
+  }
   if (options.fakeCodexVersion) env.FAKE_CODEX_VERSION = options.fakeCodexVersion;
   if (options.fakeCodexLargeStderr) env.FAKE_CODEX_LARGE_STDERR = '1';
   if (options.codexHome) env.CODEX_HOME = options.codexHome;
@@ -642,7 +667,10 @@ const networkReachable = (): boolean => {
 // this too must be async to keep the event loop free.
 const runPowerShellInstaller = (options: RunOptions): Promise<RunResult> => {
   const { workspace, configuration, baseUrl } = options;
-  const script = renderPowerShellPrefix({ apiKey: SENTINEL_KEY, publicBaseUrl: baseUrl, configuration }) + PS1_BODY;
+  const culturePrelude = options.powerShellTimeSeparator === undefined
+    ? ''
+    : `$culture = [Globalization.CultureInfo]::GetCultureInfo('en-US').Clone()\n$culture.DateTimeFormat.TimeSeparator = '${options.powerShellTimeSeparator.replace(/'/g, "''")}'\n[Threading.Thread]::CurrentThread.CurrentCulture = $culture\n`;
+  const script = renderPowerShellPrefix({ apiKey: SENTINEL_KEY, publicBaseUrl: baseUrl, configuration }) + culturePrelude + PS1_BODY;
   const scriptPath = join(workspace.root, 'setup.ps1');
   writeFileSync(scriptPath, script);
 
@@ -1777,6 +1805,20 @@ test('codex', 'PowerShell: existing CLI configures via the app-server and stages
   assertStagedAuth(t, ws, modelServer.url, started);
 });
 
+test('codex', 'PowerShell: last_refresh remains RFC3339 under a culture with a dot time separator', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  placeFakeCodex(ws.binDir);
+  const run = await runPowerShellInstaller({
+    workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url,
+    powerShellTimeSeparator: '.',
+  });
+  t.equal(run.code, 0, `culture-independent auth staging should succeed:\n${run.combined}`);
+  const timestamp = readCodexAuth(ws).last_refresh;
+  t.ok(RFC3339.test(timestamp), `last_refresh must remain RFC3339 under a dot time separator, got ${timestamp}`);
+  t.excludes(timestamp, '.', 'second precision timestamp must use literal colons rather than the culture time separator');
+});
+
 test('codex', 'PowerShell: the batch clears model and effort when unset', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
@@ -1796,6 +1838,63 @@ test('codex', 'PowerShell: okOverridden counts as success and reports non-secret
   t.equal(run.code, 0, `okOverridden must be treated as configured:\n${run.combined}`);
   t.includes(run.combined, 'Overridden by session flags', 'the override message is surfaced');
   t.excludes(run.combined, 'shadow-model', 'the overridden effective value is not echoed');
+});
+
+test('codex', 'PowerShell: selected model missing is distinguished from catalog transport and parse failures', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+
+  const missingWs = makeWorkspace();
+  placeFakeCodex(missingWs.binDir);
+  modelServer.codexModels = ['gpt-5.5'];
+  const missing = await runPowerShellInstaller({
+    workspace: missingWs, configuration: codexConfig({ model: 'gpt-5-codex' }), baseUrl: modelServer.url,
+  });
+  t.ok(missing.code !== 0, 'a selected model absent from the catalog must fail');
+  t.includes(missing.combined, 'selected Codex model gpt-5-codex is not in the gateway catalog', 'catalog miss names the selected model');
+  t.excludes(missing.combined, SENTINEL_KEY, 'catalog-miss output does not expose the key');
+
+  const transportWs = makeWorkspace();
+  placeFakeCodex(transportWs.binDir);
+  modelServer.mode = 'unauthorized';
+  const transport = await runPowerShellInstaller({
+    workspace: transportWs, configuration: codexConfig({ model: 'gpt-5-codex' }), baseUrl: modelServer.url,
+  });
+  t.ok(transport.code !== 0, 'an unauthorized catalog request must fail');
+  t.includes(transport.combined, 'could not reach the authenticated Codex model directory', 'transport/auth failure retains its distinct error');
+  t.excludes(transport.combined, 'is not in the gateway catalog', 'transport/auth failure is not mislabeled as a catalog miss');
+  t.excludes(transport.combined, SENTINEL_KEY, 'transport/auth failure does not expose the key');
+
+  const parseWs = makeWorkspace();
+  placeFakeCodex(parseWs.binDir);
+  modelServer.mode = 'malformed-codex-models';
+  const parse = await runPowerShellInstaller({
+    workspace: parseWs, configuration: codexConfig({ model: 'gpt-5-codex' }), baseUrl: modelServer.url,
+  });
+  t.ok(parse.code !== 0, 'a malformed model directory must fail');
+  t.includes(parse.combined, 'did not return valid JSON', 'parse failure has a distinct error');
+  t.excludes(parse.combined, 'is not in the gateway catalog', 'parse failure is not mislabeled as a catalog miss');
+  t.excludes(parse.combined, SENTINEL_KEY, 'parse failure does not expose the key');
+});
+
+test('codex', 'PowerShell: Windows auth replacement and rollback preserve owner-only ACL ordering', async t => {
+  const authFnStart = PS1_BODY.indexOf('function Write-FlowayCodexAuth');
+  const authFnEnd = PS1_BODY.indexOf('function Read-FlowayCodexModelCatalog', authFnStart);
+  const authBody = PS1_BODY.slice(authFnStart, authFnEnd);
+  const createStage = authBody.indexOf('[System.IO.File]::Create($stage).Dispose()');
+  const protectStage = authBody.indexOf('Protect-FlowayFile $stage', createStage);
+  const writeSecret = authBody.indexOf('[System.IO.File]::WriteAllText($stage, $json', protectStage);
+  const protectTarget = authBody.indexOf('Protect-FlowayFile $script:CodexAuthPath', writeSecret);
+  const replaceTarget = authBody.indexOf('[System.IO.File]::Replace($stage, $script:CodexAuthPath, $null)', protectTarget);
+  t.ok(createStage >= 0 && createStage < protectStage, 'Codex auth stage is created before protection');
+  t.ok(protectStage < writeSecret, 'Codex auth stage is protected before secret JSON is written');
+  t.ok(protectTarget < replaceTarget, 'existing Windows auth target is hardened before File.Replace');
+
+  const restoreStart = PS1_BODY.indexOf('function Restore-FlowayCodexFiles');
+  const restoreEnd = PS1_BODY.indexOf('function Invoke-FlowayCodexAppServerBatchWrite', restoreStart);
+  const restoreBody = PS1_BODY.slice(restoreStart, restoreEnd);
+  const restoreMove = restoreBody.indexOf('Move-Item -LiteralPath $script:CodexAuthBackup -Destination $script:CodexAuthPath -Force');
+  const restoreProtect = restoreBody.indexOf('Protect-FlowayFile $script:CodexAuthPath', restoreMove);
+  t.ok(restoreMove >= 0 && restoreMove < restoreProtect, 'rollback protects the restored auth target after moving it into place');
 });
 
 test('codex', 'PowerShell: a batchWrite error fails codex and rolls back auth', async t => {
@@ -1872,6 +1971,27 @@ test('codex', 'PowerShell: missing CLI triggers the installer', async t => {
   t.equal(run.code, 0, `should succeed after install:\n${run.combined}`);
   t.ok(existsSync(installerMarker(ws)), 'the installer runs when codex is absent');
   assertCodexBaseEdits(t, ws, modelServer.url);
+});
+
+test('codex', 'PowerShell: CODEX_NON_INTERACTIVE is scoped to installer invocation and removed afterward', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  const run = await runPowerShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url });
+  t.equal(run.code, 0, `missing CLI should install without leaking CODEX_NON_INTERACTIVE to codex:\n${run.combined}`);
+  t.equal(readFileSync(join(ws.root, 'installer-non-interactive.txt'), 'utf8'), 'true', 'the installer itself receives CODEX_NON_INTERACTIVE=true');
+  t.excludes(run.combined, 'unexpected CODEX_NON_INTERACTIVE', 'app-server and version subprocesses see no new ambient value');
+});
+
+test('codex', 'PowerShell: a pre-existing CODEX_NON_INTERACTIVE value is restored after installation', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  const run = await runPowerShellInstaller({
+    workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url,
+    ambientCodexNonInteractive: 'caller-value',
+  });
+  t.equal(run.code, 0, `missing CLI should restore the caller's environment value:\n${run.combined}`);
+  t.equal(readFileSync(join(ws.root, 'installer-non-interactive.txt'), 'utf8'), 'true', 'the installer receives the required temporary true value');
+  t.excludes(run.combined, 'unexpected CODEX_NON_INTERACTIVE', 'app-server and version subprocesses see the restored caller value');
 });
 
 test('codex', 'PowerShell: independent agents keep a configured Claude when codex fails', async t => {

@@ -406,16 +406,23 @@ function Get-FlowayCodexExe {
 # read from the ambient environment, never emitted by the gateway — substitutes
 # a fake installer under test.
 function Install-FlowayCodex {
-  $env:CODEX_NON_INTERACTIVE = 'true'
-  if ($env:FLOWAY_INSTALLER_TEST_INSTALL_CODEX_SCRIPT) {
-    $timeoutSeconds = if ($env:FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS) { [int]$env:FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS } else { 120 }
-    $installer = Invoke-FlowayProcess -Exe $env:FLOWAY_INSTALLER_TEST_INSTALL_CODEX_SCRIPT -Arguments @() -TimeoutSeconds $timeoutSeconds
-    if ($installer.ExitCode -ne 0) { throw "the test codex installer hook failed." }
-    return
+  $hadNonInteractive = Test-Path Env:CODEX_NON_INTERACTIVE
+  $previousNonInteractive = $env:CODEX_NON_INTERACTIVE
+  try {
+    $env:CODEX_NON_INTERACTIVE = 'true'
+    if ($env:FLOWAY_INSTALLER_TEST_INSTALL_CODEX_SCRIPT) {
+      $timeoutSeconds = if ($env:FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS) { [int]$env:FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS } else { 120 }
+      $installer = Invoke-FlowayProcess -Exe $env:FLOWAY_INSTALLER_TEST_INSTALL_CODEX_SCRIPT -Arguments @() -TimeoutSeconds $timeoutSeconds
+      if ($installer.ExitCode -ne 0) { throw "the test codex installer hook failed." }
+      return
+    }
+    # Ref: https://github.com/openai/codex README ("irm https://chatgpt.com/codex/install.ps1 | iex").
+    $installerUri = if ($env:FLOWAY_INSTALLER_TEST_CODEX_URL) { $env:FLOWAY_INSTALLER_TEST_CODEX_URL } else { 'https://chatgpt.com/codex/install.ps1' }
+    Invoke-FlowayRemoteInstaller -Uri $installerUri
+  } finally {
+    if ($hadNonInteractive) { $env:CODEX_NON_INTERACTIVE = $previousNonInteractive }
+    else { Remove-Item Env:CODEX_NON_INTERACTIVE -ErrorAction SilentlyContinue }
   }
-  # Ref: https://github.com/openai/codex README ("irm https://chatgpt.com/codex/install.ps1 | iex").
-  $installerUri = if ($env:FLOWAY_INSTALLER_TEST_CODEX_URL) { $env:FLOWAY_INSTALLER_TEST_CODEX_URL } else { 'https://chatgpt.com/codex/install.ps1' }
-  Invoke-FlowayRemoteInstaller -Uri $installerUri
 }
 
 # Resolve the Codex home and the two managed files. Codex reads CODEX_HOME the
@@ -568,7 +575,7 @@ function Write-FlowayCodexConfig {
 # RFC3339 timestamp. The stage is created and owner-only protected before any
 # secret is written, validated, then atomically moved into place.
 function Write-FlowayCodexAuth {
-  $now = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+  $now = [DateTime]::UtcNow.ToString("yyyy-MM-dd'T'HH':'mm':'ss'Z'", [Globalization.CultureInfo]::InvariantCulture)
   $auth = [ordered]@{
     OPENAI_API_KEY = $null
     tokens         = [ordered]@{
@@ -603,24 +610,34 @@ function Write-FlowayCodexAuth {
   }
 }
 
-# Confirm the gateway's authenticated Codex model directory answers. No inference
-# request is issued. When a model was selected, confirm it is in the catalog.
-function Test-FlowayCodexModelDirectory {
+# Read the gateway's authenticated Codex model directory. No inference request
+# is issued. Transport/auth and JSON-shape failures remain distinct from a valid
+# catalog that simply lacks the selected model; none of the errors carries the
+# in-process Authorization header.
+function Read-FlowayCodexModelCatalog {
   $headers = @{ 'Authorization' = "Bearer $FlowayApiKey" }
   $uri = ($FlowayBaseUrl.TrimEnd('/')) + '/azure-api.codex/models'
   try {
     $response = Invoke-WebRequest -Uri $uri -Headers $headers -Method Get -UseBasicParsing -TimeoutSec 30
   } catch {
-    return $false
+    throw "could not reach the authenticated Codex model directory at $uri"
   }
-  if (-not $FlowayCodexModel) { return $true }
   try {
     $body = [string]$response.Content | ConvertFrom-Json
-    foreach ($model in $body.models) { if ($model.slug -eq $FlowayCodexModel) { return $true } }
-    return $false
   } catch {
-    return $false
+    throw "the authenticated Codex model directory did not return valid JSON."
   }
+  if (($body -isnot [System.Management.Automation.PSCustomObject]) -or ($body.PSObject.Properties.Name -notcontains 'models') -or ($null -eq $body.models)) {
+    throw "the authenticated Codex model directory returned an invalid catalog shape."
+  }
+  $slugs = @()
+  foreach ($model in $body.models) {
+    if (($model -isnot [System.Management.Automation.PSCustomObject]) -or ($model.PSObject.Properties.Name -notcontains 'slug') -or ($model.slug -isnot [string])) {
+      throw "the authenticated Codex model directory returned an invalid catalog shape."
+    }
+    $slugs += [string]$model.slug
+  }
+  return $slugs
 }
 
 # Verify Codex without inference: reparse the staged auth and assert the identity
@@ -636,8 +653,9 @@ function Invoke-FlowayCodexVerify {
   $version = Invoke-FlowayProcess -Exe $Exe -Arguments @('--version') -TimeoutSeconds $timeoutSeconds
   if ($version.ExitCode -ne 0) { throw "``codex --version`` failed." }
   Write-Host "Floway: Codex version: $($version.Output.Trim())"
-  if (-not (Test-FlowayCodexModelDirectory)) {
-    throw "could not reach the authenticated Codex model directory at $($FlowayBaseUrl.TrimEnd('/'))/azure-api.codex/models"
+  $modelSlugs = @(Read-FlowayCodexModelCatalog)
+  if ($FlowayCodexModel -and ($modelSlugs -notcontains $FlowayCodexModel)) {
+    throw "the selected Codex model $FlowayCodexModel is not in the gateway catalog."
   }
   Write-Host "Floway: reached the authenticated Codex model directory (no inference issued)."
 }
