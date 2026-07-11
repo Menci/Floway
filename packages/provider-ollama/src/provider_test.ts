@@ -113,12 +113,12 @@ test('getPricingForModelKey resolves manual cost first, then falls back to the O
         upstreamModelId: 'gpt-oss:120b',
         kind: 'chat',
         endpoints: { chatCompletions: {} },
-        cost: { input: 99, output: 99 },
+        cost: { cells: [{ rates: { input: 99, output: 99 } }] },
       }],
     },
   }));
   // Manual cost wins for the pinned id.
-  assertEquals(instance.instance.getPricingForModelKey('gpt-oss:120b'), { input: 99, output: 99 });
+  assertEquals(instance.instance.getPricingForModelKey('gpt-oss:120b'), { cells: [{ rates: { input: 99, output: 99 } }] });
   // Unpinned model falls back to the table.
   assertEquals(instance.instance.getPricingForModelKey('deepseek-v4-flash')?.cells[0]?.rates.input, 0.14);
   // Unknown model returns null rather than fabricating a guess.
