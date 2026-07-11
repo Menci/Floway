@@ -33,6 +33,10 @@ interface BackendStub {
 // `next*` queues and read back the recorded calls.
 const stub = vi.hoisted((): BackendStub => ({ generationsCalls: [], editsForms: [], nextGenerations: [], nextEdits: [], nextResolutionOverride: null }));
 
+// Assigned per test in beforeEach and captured so the perf-attribution test
+// can read `repo.performance.listAll()` after the shim completes.
+let repo: InMemoryRepo;
+
 const defaultCandidates = vi.hoisted(() => () => [{
   provider: {
     upstream: 'u',
@@ -168,7 +172,7 @@ const drain = async (result: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>)
 };
 
 beforeEach(async () => {
-  const repo = new InMemoryRepo();
+  repo = new InMemoryRepo();
   // resolveImageCandidate still calls createPerRequestFetcher to satisfy the
   // production code path. Seed the in-memory repo with the mocked candidate's
   // upstream id so the fetcher mapper resolves it instead of throwing
@@ -396,4 +400,41 @@ test('resolveImageCandidate renders model_not_supported when image-kind candidat
   assertEquals(item.status, 'failed');
   assertEquals(item.error.code, 'model_not_supported');
   assert(item.error.message.includes('/images/generations endpoint'), `unexpected message: ${item.error.message}`);
+});
+
+test('an image sub-call records its own perf row attributed to the image backend, leaving the outer perfTiming untouched', async () => {
+  stub.nextGenerations = [jsonResponse('R0VO')];
+  // Real scheduler: capture the promises the shim fires so the test can
+  // await them before querying the repo (the default no-op scheduler in
+  // `gatewayCtx()` would drop the recordSample write).
+  const pending: Promise<unknown>[] = [];
+  const ctx: ChatGatewayCtx = {
+    apiKeyId: 'test-key',
+    upstreamIds: null,
+    wantsStream: true,
+    runtimeLocation: 'TEST',
+    dump: null,
+    responseHeaders: new Headers(),
+    backgroundScheduler: p => { pending.push(p); },
+    perfTiming: { firstOutputTokenAt: null, upstreamCallStartedAt: null, attemptTelemetry: undefined },
+    store: createNonResponsesSourceStore('test-key'),
+  };
+  const result = await shim(makeCtx([{ type: 'message', role: 'user', content: 'draw a cat' }]), ctx, scriptedRun([
+    callTurn(0, 'call_1', 'a cat'),
+    messageTurn('here it is'),
+  ]));
+  await drain(result);
+  await Promise.all(pending);
+
+  const perfRows = await repo.performance.listAll();
+  const imageRows = perfRows.filter(r => r.operation === 'image_generation');
+  assertEquals(imageRows.length, 1);
+  assertEquals(imageRows[0].upstream, 'u');
+  assertEquals(imageRows[0].keyId, 'test-key');
+  assertEquals(imageRows[0].model, 'gpt-image-2');
+  // The image shim runs on a local PerfTiming distinct from the outer
+  // Responses turn's — no image-call stamps may leak onto ctx.perfTiming.
+  assertEquals(ctx.perfTiming.upstreamCallStartedAt, null);
+  assertEquals(ctx.perfTiming.firstOutputTokenAt, null);
+  assertEquals(ctx.perfTiming.attemptTelemetry, undefined);
 });
