@@ -375,10 +375,301 @@ function Set-FlowayClaude {
 
 # --- Codex ------------------------------------------------------------------
 
-# Codex configuration is implemented in the next task. Throwing keeps a
-# selected-but-unconfigured Codex from being summarized as done.
+# The refresh_token slot is a fixed non-secret placeholder: the gateway
+# authenticates the data plane with the API key carried as access_token and
+# never rotates a ChatGPT refresh token. Codex only reads it back.
+$FlowayCodexRefreshNoop = 'floway-managed-no-refresh'
+
+# Resolve the Codex executable. The PATH winner is authoritative; the official
+# user-local locations are also consulted so an off-PATH install is still found
+# and multiple installations can be flagged.
+# Ref: https://github.com/openai/codex/blob/main/scripts/install/install.sh
+function Get-FlowayCodexExe {
+  $found = New-Object System.Collections.Generic.List[string]
+  $command = Get-Command codex -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+  if ($command) { $found.Add($command.Source) }
+  $candidates = @(
+    (Join-Path $HOME '.local/bin/codex'),
+    (Join-Path $HOME '.local/bin/codex.exe')
+  )
+  if ($env:USERPROFILE) { $candidates += (Join-Path $env:USERPROFILE '.local\bin\codex.exe') }
+  foreach ($candidate in $candidates) {
+    if ((Test-Path -LiteralPath $candidate) -and (-not $found.Contains($candidate))) { $found.Add($candidate) }
+  }
+  if ($found.Count -eq 0) { return $null }
+  if ($found.Count -gt 1) { Write-Host "Floway: multiple Codex installations detected; using $($found[0])." }
+  return $found[0]
+}
+
+# Install the official user-local Codex build. CODEX_NON_INTERACTIVE keeps the
+# installer from prompting. The FLOWAY_INSTALLER_TEST_INSTALL_CODEX_SCRIPT hook —
+# read from the ambient environment, never emitted by the gateway — substitutes
+# a fake installer under test.
+function Install-FlowayCodex {
+  $env:CODEX_NON_INTERACTIVE = 'true'
+  if ($env:FLOWAY_INSTALLER_TEST_INSTALL_CODEX_SCRIPT) {
+    $timeoutSeconds = if ($env:FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS) { [int]$env:FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS } else { 120 }
+    $installer = Invoke-FlowayProcess -Exe $env:FLOWAY_INSTALLER_TEST_INSTALL_CODEX_SCRIPT -Arguments @() -TimeoutSeconds $timeoutSeconds
+    if ($installer.ExitCode -ne 0) { throw "the test codex installer hook failed." }
+    return
+  }
+  # Ref: https://github.com/openai/codex README ("irm https://chatgpt.com/codex/install.ps1 | iex").
+  $installerUri = if ($env:FLOWAY_INSTALLER_TEST_CODEX_URL) { $env:FLOWAY_INSTALLER_TEST_CODEX_URL } else { 'https://chatgpt.com/codex/install.ps1' }
+  Invoke-FlowayRemoteInstaller -Uri $installerUri
+}
+
+# Resolve the Codex home and the two managed files. Codex reads CODEX_HOME the
+# same way, so the app-server writes config.toml at exactly this location.
+function Resolve-FlowayCodexPaths {
+  $codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME '.codex' }
+  $script:CodexHomeDir = $codexHome
+  $script:CodexConfigPath = Join-Path $codexHome 'config.toml'
+  $script:CodexAuthPath = Join-Path $codexHome 'auth.json'
+}
+
+# Back up both managed files before any mutation, recording the absence of each
+# so rollback can distinguish "restore" from "remove".
+function Backup-FlowayCodexFiles {
+  $script:CodexConfigExisted = $false
+  $script:CodexAuthExisted = $false
+  $script:CodexConfigBackup = $null
+  $script:CodexAuthBackup = $null
+  # DateTimeOffset.ToUnixTimeMilliseconds is unavailable on the .NET Framework
+  # version bundled with the Windows PowerShell 5.1 baseline.
+  $stamp = [long]([DateTimeOffset]::UtcNow - [DateTimeOffset]'1970-01-01T00:00:00Z').TotalMilliseconds
+  if (Test-Path -LiteralPath $script:CodexConfigPath) {
+    $script:CodexConfigExisted = $true
+    $script:CodexConfigBackup = "$($script:CodexConfigPath).floway-backup.$stamp.$PID"
+    Copy-Item -LiteralPath $script:CodexConfigPath -Destination $script:CodexConfigBackup
+  }
+  if (Test-Path -LiteralPath $script:CodexAuthPath) {
+    $script:CodexAuthExisted = $true
+    $script:CodexAuthBackup = "$($script:CodexAuthPath).floway-backup.$stamp.$PID"
+    Copy-Item -LiteralPath $script:CodexAuthPath -Destination $script:CodexAuthBackup
+    Protect-FlowayFile $script:CodexAuthBackup
+  }
+}
+
+# Restore both managed files to their pre-run state: replace from backup when
+# one existed, or remove the file when this run created it.
+function Restore-FlowayCodexFiles {
+  if ($script:CodexConfigExisted) {
+    if ($script:CodexConfigBackup -and (Test-Path -LiteralPath $script:CodexConfigBackup)) {
+      Move-Item -LiteralPath $script:CodexConfigBackup -Destination $script:CodexConfigPath -Force
+    }
+  } elseif (Test-Path -LiteralPath $script:CodexConfigPath) {
+    Remove-Item -LiteralPath $script:CodexConfigPath -Force
+  }
+  if ($script:CodexAuthExisted) {
+    if ($script:CodexAuthBackup -and (Test-Path -LiteralPath $script:CodexAuthBackup)) {
+      Move-Item -LiteralPath $script:CodexAuthBackup -Destination $script:CodexAuthPath -Force
+      Protect-FlowayFile $script:CodexAuthPath
+    }
+  } elseif (Test-Path -LiteralPath $script:CodexAuthPath) {
+    Remove-Item -LiteralPath $script:CodexAuthPath -Force
+  }
+}
+
+# Drive `codex app-server` over redirected stdin/stdout/stderr: initialize ->
+# initialized -> config/batchWrite. stderr is drained asynchronously so a chatty
+# server cannot fill the pipe buffer and deadlock. Each response read is bounded
+# by the remaining deadline; a timeout terminates the process tree. Unrelated
+# notifications are demultiplexed by id. Returns the batchWrite result object.
+function Invoke-FlowayCodexAppServerBatchWrite {
+  param([string]$Exe, $Edits, [int]$TimeoutSeconds)
+  $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+  $startInfo.FileName = $Exe
+  $startInfo.Arguments = 'app-server --listen stdio://'
+  $startInfo.UseShellExecute = $false
+  $startInfo.CreateNoWindow = $true
+  $startInfo.RedirectStandardInput = $true
+  $startInfo.RedirectStandardOutput = $true
+  $startInfo.RedirectStandardError = $true
+  $process = New-Object System.Diagnostics.Process
+  $process.StartInfo = $startInfo
+  if (-not $process.Start()) { throw "failed to start the Codex app-server." }
+  $stderrTask = $process.StandardError.ReadToEndAsync()
+  $watch = [System.Diagnostics.Stopwatch]::StartNew()
+  $budgetMs = $TimeoutSeconds * 1000
+  $result = $null
+  try {
+    $readMatching = {
+      param([int]$WantId)
+      while ($true) {
+        $remaining = $budgetMs - $watch.ElapsedMilliseconds
+        if ($remaining -le 0) { throw "the Codex app-server timed out before responding." }
+        $task = $process.StandardOutput.ReadLineAsync()
+        if (-not $task.Wait([int]$remaining)) { throw "the Codex app-server timed out before responding." }
+        $line = $task.GetAwaiter().GetResult()
+        if ($null -eq $line) { throw "the Codex app-server exited before responding." }
+        if ([string]::IsNullOrWhiteSpace($line)) { continue }
+        try { $msg = $line | ConvertFrom-Json } catch { throw "the Codex app-server returned a malformed response." }
+        if ($msg.id -ne $WantId) { continue }
+        if ($null -ne $msg.error) { throw "the Codex app-server reported an error writing the configuration." }
+        return $msg.result
+      }
+    }
+    $initReq = @{ jsonrpc = '2.0'; id = 1; method = 'initialize'; params = @{ clientInfo = @{ name = 'floway-setup'; title = $null; version = '1' }; capabilities = $null } } | ConvertTo-Json -Depth 10 -Compress
+    $process.StandardInput.WriteLine($initReq)
+    [void](& $readMatching 1)
+    $process.StandardInput.WriteLine('{"jsonrpc":"2.0","method":"initialized"}')
+    $batchReq = @{ jsonrpc = '2.0'; id = 2; method = 'config/batchWrite'; params = @{ edits = $Edits } } | ConvertTo-Json -Depth 10 -Compress
+    $process.StandardInput.WriteLine($batchReq)
+    $result = (& $readMatching 2)
+  } finally {
+    try { $process.StandardInput.Close() } catch { }
+    if (-not $process.WaitForExit(1000)) {
+      Stop-FlowayProcessTree $process
+      $process.WaitForExit()
+    }
+    $null = $stderrTask.GetAwaiter().GetResult()
+  }
+  return $result
+}
+
+# Build the base-config edit batch and write it through the app-server. Model
+# and effort are opaque, forwarded verbatim, and cleared with JSON null ($null)
+# when unset. A batch status of `ok` or `okOverridden` confirms the intended
+# base config; `okOverridden` is reported with its non-secret layer metadata.
+function Write-FlowayCodexConfig {
+  param([string]$Exe)
+  $codexBase = ($FlowayBaseUrl.TrimEnd('/')) + '/azure-api.codex'
+  $edits = @(
+    @{ keyPath = 'model_provider'; mergeStrategy = 'replace'; value = 'floway' },
+    @{ keyPath = 'model_providers.floway.name'; mergeStrategy = 'replace'; value = 'Floway' },
+    @{ keyPath = 'model_providers.floway.base_url'; mergeStrategy = 'replace'; value = $codexBase },
+    @{ keyPath = 'model_providers.floway.wire_api'; mergeStrategy = 'replace'; value = 'responses' },
+    @{ keyPath = 'model_providers.floway.supports_websockets'; mergeStrategy = 'replace'; value = $true },
+    @{ keyPath = 'chatgpt_base_url'; mergeStrategy = 'replace'; value = $codexBase },
+    @{ keyPath = 'features.apps'; mergeStrategy = 'replace'; value = $false },
+    @{ keyPath = 'cli_auth_credentials_store'; mergeStrategy = 'replace'; value = 'file' },
+    @{ keyPath = 'model'; mergeStrategy = 'replace'; value = $FlowayCodexModel },
+    @{ keyPath = 'model_reasoning_effort'; mergeStrategy = 'replace'; value = $FlowayCodexReasoningEffort }
+  )
+  $timeoutSeconds = if ($env:FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS) { [int]$env:FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS } else { 60 }
+  $result = Invoke-FlowayCodexAppServerBatchWrite -Exe $Exe -Edits $edits -TimeoutSeconds $timeoutSeconds
+  $status = [string]$result.status
+  if ($status -eq 'ok') {
+    Write-Host "Floway: Codex base configuration written."
+  } elseif ($status -eq 'okOverridden') {
+    $message = if ($result.overriddenMetadata -and $result.overriddenMetadata.message) { [string]$result.overriddenMetadata.message } else { 'an override layer applies' }
+    $layer = 'unknown'
+    if ($result.overriddenMetadata -and $result.overriddenMetadata.overridingLayer -and $result.overriddenMetadata.overridingLayer.name) {
+      $layer = [string]$result.overriddenMetadata.overridingLayer.name.type
+    }
+    Write-Host "Floway: Codex base configuration written, but a higher-precedence layer overrides it ($message; layer: $layer)."
+  } else {
+    throw "the Codex app-server did not confirm the configuration (status: $status)."
+  }
+}
+
+# Stage a minimal ChatGPT-mode auth.json: the server-rendered identity token, the
+# in-memory API key as access_token, a noop refresh placeholder, and a fresh
+# RFC3339 timestamp. The stage is created and owner-only protected before any
+# secret is written, validated, then atomically moved into place.
+function Write-FlowayCodexAuth {
+  $now = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+  $auth = [ordered]@{
+    OPENAI_API_KEY = $null
+    tokens         = [ordered]@{
+      id_token      = $FlowayCodexIdToken
+      access_token  = $FlowayApiKey
+      refresh_token = $FlowayCodexRefreshNoop
+    }
+    last_refresh   = $now
+  }
+  $json = $auth | ConvertTo-Json -Depth 10
+  $stage = "$($script:CodexAuthPath).floway-stage.$PID"
+  try {
+    # The stage exists and is owner-only before any secret JSON is written.
+    [System.IO.File]::Create($stage).Dispose()
+    Protect-FlowayFile $stage
+    [System.IO.File]::WriteAllText($stage, $json, (New-Object System.Text.UTF8Encoding($false)))
+    $check = Get-Content -Raw -LiteralPath $stage | ConvertFrom-Json
+    if (($check.tokens.id_token -ne $FlowayCodexIdToken) -or ($check.tokens.access_token -ne $FlowayApiKey)) {
+      throw "staged Codex auth failed validation."
+    }
+    $runningOnWindows = ($PSVersionTable.PSVersion.Major -lt 6) -or $IsWindows
+    if ($script:CodexAuthExisted -and $runningOnWindows) {
+      # File.Replace preserves the destination ACL, so tighten it first.
+      Protect-FlowayFile $script:CodexAuthPath
+      [System.IO.File]::Replace($stage, $script:CodexAuthPath, $null)
+    } else {
+      Move-Item -LiteralPath $stage -Destination $script:CodexAuthPath -Force
+    }
+  } catch {
+    if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Force }
+    throw
+  }
+}
+
+# Confirm the gateway's authenticated Codex model directory answers. No inference
+# request is issued. When a model was selected, confirm it is in the catalog.
+function Test-FlowayCodexModelDirectory {
+  $headers = @{ 'Authorization' = "Bearer $FlowayApiKey" }
+  $uri = ($FlowayBaseUrl.TrimEnd('/')) + '/azure-api.codex/models'
+  try {
+    $response = Invoke-WebRequest -Uri $uri -Headers $headers -Method Get -UseBasicParsing -TimeoutSec 30
+  } catch {
+    return $false
+  }
+  if (-not $FlowayCodexModel) { return $true }
+  try {
+    $body = [string]$response.Content | ConvertFrom-Json
+    foreach ($model in $body.models) { if ($model.slug -eq $FlowayCodexModel) { return $true } }
+    return $false
+  } catch {
+    return $false
+  }
+}
+
+# Verify Codex without inference: reparse the staged auth and assert the identity
+# token and key (never printing them), print the raw CLI version, and reach the
+# authenticated model directory (confirming the selected model when one is set).
+function Invoke-FlowayCodexVerify {
+  param([string]$Exe)
+  $auth = Get-Content -Raw -LiteralPath $script:CodexAuthPath | ConvertFrom-Json
+  if (($auth.tokens.id_token -ne $FlowayCodexIdToken) -or ($auth.tokens.access_token -ne $FlowayApiKey)) {
+    throw "the written Codex auth did not reparse as expected."
+  }
+  $timeoutSeconds = if ($env:FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS) { [int]$env:FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS } else { 30 }
+  $version = Invoke-FlowayProcess -Exe $Exe -Arguments @('--version') -TimeoutSeconds $timeoutSeconds
+  if ($version.ExitCode -ne 0) { throw "``codex --version`` failed." }
+  Write-Host "Floway: Codex version: $($version.Output.Trim())"
+  if (-not (Test-FlowayCodexModelDirectory)) {
+    throw "could not reach the authenticated Codex model directory at $($FlowayBaseUrl.TrimEnd('/'))/azure-api.codex/models"
+  }
+  Write-Host "Floway: reached the authenticated Codex model directory (no inference issued)."
+}
+
+# Configure Codex as one transactional unit. Both managed files are backed up
+# first; a failure in the config write, auth staging, or verification restores
+# both (or removes newly created files). A freshly installed CLI is never
+# uninstalled.
 function Set-FlowayCodex {
-  throw "Codex configuration is not implemented in this build yet."
+  Write-Host "Floway: configuring Codex..."
+  $exe = Get-FlowayCodexExe
+  if (-not $exe) {
+    Write-Host "Floway: Codex CLI not found; installing the official user-local build..."
+    Install-FlowayCodex
+    $exe = Get-FlowayCodexExe
+    if (-not $exe) { throw "Codex CLI is unavailable and could not be installed." }
+  }
+  Resolve-FlowayCodexPaths
+  if (-not (Test-Path -LiteralPath $script:CodexHomeDir)) {
+    New-Item -ItemType Directory -Path $script:CodexHomeDir -Force | Out-Null
+  }
+  Backup-FlowayCodexFiles
+  try {
+    Write-FlowayCodexConfig -Exe $exe
+    Write-FlowayCodexAuth
+    Invoke-FlowayCodexVerify -Exe $exe
+  } catch {
+    Write-Host "Floway: Codex configuration failed; rolling back configuration and auth."
+    Restore-FlowayCodexFiles
+    throw
+  }
+  Write-Host "Floway: Codex configured."
 }
 
 # --- run --------------------------------------------------------------------

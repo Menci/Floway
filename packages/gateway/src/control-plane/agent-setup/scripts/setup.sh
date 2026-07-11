@@ -507,11 +507,434 @@ configure_claude() {
 
 # --- Codex ------------------------------------------------------------------
 
-# Codex configuration is implemented in the next task. Reporting failure keeps a
-# selected-but-unconfigured Codex from being summarized as done.
+# The refresh_token slot is a fixed non-secret placeholder: the gateway
+# authenticates the data plane with the API key carried as access_token and
+# never rotates a ChatGPT refresh token, so a real refresh value would be
+# meaningless. Codex only reads it back; it is never sent upstream.
+CODEX_REFRESH_NOOP="floway-managed-no-refresh"
+
+# Resolve the Codex executable. The PATH winner is authoritative; known official
+# user-local locations are also consulted so an install that is not on PATH is
+# still found, and so multiple installations can be flagged.
+# Ref: https://github.com/openai/codex/blob/main/scripts/install/install.sh
+codex_discover() {
+  CODEX_BIN=""
+  CODEX_INSTALL_COUNT=0
+  _cxd_path=$(command -v codex 2>/dev/null || true)
+  if [ -n "$_cxd_path" ]; then
+    CODEX_BIN="$_cxd_path"
+    CODEX_INSTALL_COUNT=1
+  fi
+  for _cxd_cand in \
+    "$HOME/.local/bin/codex" \
+    "/opt/homebrew/bin/codex" \
+    "/usr/local/bin/codex"; do
+    [ -x "$_cxd_cand" ] || continue
+    [ "$_cxd_cand" = "$_cxd_path" ] && continue
+    CODEX_INSTALL_COUNT=$((CODEX_INSTALL_COUNT + 1))
+    if [ -z "$CODEX_BIN" ]; then
+      CODEX_BIN="$_cxd_cand"
+    fi
+  done
+}
+
+# Install the official user-local Codex build. CODEX_NON_INTERACTIVE keeps the
+# installer from prompting. The FLOWAY_INSTALLER_TEST_INSTALL_CODEX_SCRIPT hook —
+# read from the ambient environment, never emitted by the gateway — substitutes
+# a fake installer under test.
+install_codex() {
+  if [ -n "${FLOWAY_INSTALLER_TEST_INSTALL_CODEX_SCRIPT:-}" ]; then
+    _icx_timeout=${FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS:-120}
+    _run_with_timeout "$_icx_timeout" env -u FLOWAY_API_KEY CODEX_NON_INTERACTIVE=true bash "$FLOWAY_INSTALLER_TEST_INSTALL_CODEX_SCRIPT"
+    return $?
+  fi
+  # Ref: https://github.com/openai/codex README ("curl -fsSL https://chatgpt.com/codex/install.sh | sh").
+  CODEX_NON_INTERACTIVE=true _download_and_run_installer "${FLOWAY_INSTALLER_TEST_CODEX_URL:-https://chatgpt.com/codex/install.sh}"
+}
+
+# Ensure Codex is present, installing it only when absent. An existing install
+# is never upgraded or compatibility-checked.
+codex_ensure_installed() {
+  codex_discover
+  if [ "$CODEX_INSTALL_COUNT" -gt 1 ]; then
+    printf 'Floway: multiple Codex installations detected; using %s.\n' "$CODEX_BIN" >&2
+  fi
+  if [ "$CODEX_INSTALL_COUNT" -ge 1 ]; then
+    return 0
+  fi
+  printf 'Floway: Codex CLI not found; installing the official user-local build...\n'
+  if ! install_codex; then
+    return 1
+  fi
+  hash -r 2>/dev/null || true
+  codex_discover
+  [ "$CODEX_INSTALL_COUNT" -ge 1 ]
+}
+
+# Resolve the Codex home and the two managed files. Codex reads CODEX_HOME the
+# same way, so the app-server writes config.toml at exactly this location.
+codex_resolve_home() {
+  CODEX_HOME_DIR="${CODEX_HOME:-$HOME/.codex}"
+  CODEX_CONFIG_PATH="$CODEX_HOME_DIR/config.toml"
+  CODEX_AUTH_PATH="$CODEX_HOME_DIR/auth.json"
+}
+
+# Back up both managed files before any mutation, recording the absence of each
+# so rollback can distinguish "restore" from "remove". Fails before mutation if
+# a backup copy cannot be made.
+codex_backup_files() {
+  CODEX_CONFIG_EXISTED=0
+  CODEX_AUTH_EXISTED=0
+  CODEX_CONFIG_BACKUP=""
+  CODEX_AUTH_BACKUP=""
+  _cbf_stamp=$(date +%Y%m%d%H%M%S).$$
+  if [ -e "$CODEX_CONFIG_PATH" ]; then
+    CODEX_CONFIG_EXISTED=1
+    CODEX_CONFIG_BACKUP="$CODEX_CONFIG_PATH.floway-backup.$_cbf_stamp"
+    if ! cp "$CODEX_CONFIG_PATH" "$CODEX_CONFIG_BACKUP"; then
+      printf 'Floway: could not back up %s\n' "$CODEX_CONFIG_PATH" >&2
+      return 1
+    fi
+  fi
+  if [ -e "$CODEX_AUTH_PATH" ]; then
+    CODEX_AUTH_EXISTED=1
+    CODEX_AUTH_BACKUP="$CODEX_AUTH_PATH.floway-backup.$_cbf_stamp"
+    if ! cp "$CODEX_AUTH_PATH" "$CODEX_AUTH_BACKUP"; then
+      printf 'Floway: could not back up %s\n' "$CODEX_AUTH_PATH" >&2
+      return 1
+    fi
+    chmod 600 "$CODEX_AUTH_BACKUP" 2>/dev/null || true
+  fi
+}
+
+# Restore both managed files to their pre-run state: replace from backup when
+# one existed, or remove the file when this run created it.
+codex_rollback() {
+  if [ "${CODEX_CONFIG_EXISTED:-0}" -eq 1 ]; then
+    if [ -n "${CODEX_CONFIG_BACKUP:-}" ] && [ -e "$CODEX_CONFIG_BACKUP" ]; then
+      mv "$CODEX_CONFIG_BACKUP" "$CODEX_CONFIG_PATH" 2>/dev/null || true
+    fi
+  else
+    rm -f "$CODEX_CONFIG_PATH" 2>/dev/null || true
+  fi
+  if [ "${CODEX_AUTH_EXISTED:-0}" -eq 1 ]; then
+    if [ -n "${CODEX_AUTH_BACKUP:-}" ] && [ -e "$CODEX_AUTH_BACKUP" ]; then
+      mv "$CODEX_AUTH_BACKUP" "$CODEX_AUTH_PATH" 2>/dev/null || true
+    fi
+  else
+    rm -f "$CODEX_AUTH_PATH" 2>/dev/null || true
+  fi
+}
+
+# Terminate the app-server process group, giving a child whose stdin was just
+# closed a brief moment to exit on its own before escalating TERM then KILL. The
+# child is launched under job control so the whole descendant tree shares one
+# group. The natural-exit grace uses sub-second polling so a clean handshake
+# adds negligible latency.
+_codex_kill_group() {
+  _ckg_pid=$1
+  _ckg_n=0
+  while kill -0 "$_ckg_pid" 2>/dev/null && [ "$_ckg_n" -lt 5 ]; do
+    sleep 0.2
+    _ckg_n=$((_ckg_n + 1))
+  done
+  if kill -0 "$_ckg_pid" 2>/dev/null; then
+    kill -TERM -- "-$_ckg_pid" 2>/dev/null || kill -TERM "$_ckg_pid" 2>/dev/null || true
+    sleep 0.5
+    kill -KILL -- "-$_ckg_pid" 2>/dev/null || kill -KILL "$_ckg_pid" 2>/dev/null || true
+  fi
+  wait "$_ckg_pid" 2>/dev/null || true
+}
+
+# Read newline-delimited JSON-RPC from fd 4 until a response whose id matches
+# $1 arrives, demultiplexing unrelated notifications. Bounded by the absolute
+# CODEX_APPSERVER_DEADLINE. Returns 0 with the line in CODEX_APPSERVER_RESPONSE,
+# 124 on deadline, 1 on a premature stream EOF, 2 on a malformed (unparseable)
+# line, and 3 on a matching JSON-RPC error response.
+_codex_read_response() {
+  _crr_id=$1
+  while :; do
+    _crr_left=$(( CODEX_APPSERVER_DEADLINE - $(date +%s) ))
+    if [ "$_crr_left" -le 0 ]; then
+      return 124
+    fi
+    if IFS= read -r -t "$_crr_left" _crr_line <&4; then
+      [ -n "$_crr_line" ] || continue
+      _crr_kind=$(printf '%s\n' "$_crr_line" | "$JQ" -r --argjson want "$_crr_id" '
+        if (.id == $want) then (if has("error") then "error" elif has("result") then "result" else "pending" end) else "skip" end
+      ' 2>/dev/null)
+      if [ -z "$_crr_kind" ]; then
+        return 2
+      fi
+      case "$_crr_kind" in
+        result) CODEX_APPSERVER_RESPONSE=$_crr_line; return 0 ;;
+        error) CODEX_APPSERVER_RESPONSE=$_crr_line; return 3 ;;
+        *) continue ;;
+      esac
+    else
+      _crr_rc=$?
+      if [ "$_crr_rc" -gt 128 ]; then
+        return 124
+      fi
+      return 1
+    fi
+  done
+}
+
+# Drive `codex app-server` over two private FIFOs: initialize -> initialized ->
+# config/batchWrite. stdin is kept open (fd 3) until the batch response arrives
+# on fd 4, so a server that answers after a delay still completes. The child
+# runs in its own process group for tree-wide termination; trap-invoked cleanup
+# removes the working directory. On success the raw batchWrite result JSON is the
+# only thing written to stdout (progress and errors go to stderr).
+codex_app_server_batch_write() {
+  _cas_edits=$1
+  _cas_timeout=${FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS:-60}
+  _cas_dir=$(mktemp -d "$FLOWAY_SETUP_TMPDIR/codex-appserver.XXXXXX") || return 1
+  _cas_req="$_cas_dir/req"
+  _cas_res="$_cas_dir/res"
+  if ! mkfifo "$_cas_req" "$_cas_res"; then
+    rm -rf "$_cas_dir"
+    return 1
+  fi
+
+  set -m
+  "$CODEX_BIN" app-server --listen stdio:// <"$_cas_req" >"$_cas_res" 2>"$_cas_dir/stderr" &
+  _cas_pid=$!
+  set +m
+
+  # Open the write end of req first (this unblocks the child's stdin open), then
+  # the read end of res. This ordering is what keeps a FIFO pair from deadlocking.
+  exec 3>"$_cas_req"
+  exec 4<"$_cas_res"
+
+  CODEX_APPSERVER_DEADLINE=$(( $(date +%s) + _cas_timeout ))
+  CODEX_APPSERVER_RESPONSE=""
+  _cas_status=0
+
+  _cas_init=$("$JQ" -cn '{jsonrpc:"2.0",id:1,method:"initialize",params:{clientInfo:{name:"floway-setup",title:null,version:"1"},capabilities:null}}')
+  printf '%s\n' "$_cas_init" >&3 2>/dev/null || _cas_status=1
+  if [ "$_cas_status" -eq 0 ]; then
+    _codex_read_response 1
+    _cas_status=$?
+  fi
+  if [ "$_cas_status" -eq 0 ]; then
+    printf '%s\n' '{"jsonrpc":"2.0","method":"initialized"}' >&3 2>/dev/null || _cas_status=1
+  fi
+  if [ "$_cas_status" -eq 0 ]; then
+    _cas_batch=$("$JQ" -cn --argjson edits "$_cas_edits" '{jsonrpc:"2.0",id:2,method:"config/batchWrite",params:{edits:$edits}}')
+    printf '%s\n' "$_cas_batch" >&3 2>/dev/null || _cas_status=1
+  fi
+  _cas_result=""
+  if [ "$_cas_status" -eq 0 ]; then
+    _codex_read_response 2
+    _cas_status=$?
+    _cas_result=$CODEX_APPSERVER_RESPONSE
+  fi
+
+  exec 3>&- 2>/dev/null || true
+  exec 4<&- 2>/dev/null || true
+  _codex_kill_group "$_cas_pid"
+  rm -rf "$_cas_dir"
+
+  if [ "$_cas_status" -ne 0 ]; then
+    return "$_cas_status"
+  fi
+  printf '%s' "$_cas_result"
+}
+
+# Build the base-config edit batch and write it through the app-server. Model
+# and effort are opaque, forwarded verbatim, and cleared with JSON null when
+# unset. A batch status of `ok` or `okOverridden` confirms the intended base
+# config; `okOverridden` is reported with its non-secret layer metadata.
+codex_write_config() {
+  _cwc_base="${FLOWAY_BASE_URL%/}/azure-api.codex"
+  _cwc_edits=$("$JQ" -cn \
+    --arg base "$_cwc_base" \
+    --arg model "$FLOWAY_CODEX_MODEL" \
+    --arg effort "$FLOWAY_CODEX_REASONING_EFFORT" '
+    [
+      {keyPath:"model_provider",mergeStrategy:"replace",value:"floway"},
+      {keyPath:"model_providers.floway.name",mergeStrategy:"replace",value:"Floway"},
+      {keyPath:"model_providers.floway.base_url",mergeStrategy:"replace",value:$base},
+      {keyPath:"model_providers.floway.wire_api",mergeStrategy:"replace",value:"responses"},
+      {keyPath:"model_providers.floway.supports_websockets",mergeStrategy:"replace",value:true},
+      {keyPath:"chatgpt_base_url",mergeStrategy:"replace",value:$base},
+      {keyPath:"features.apps",mergeStrategy:"replace",value:false},
+      {keyPath:"cli_auth_credentials_store",mergeStrategy:"replace",value:"file"},
+      {keyPath:"model",mergeStrategy:"replace",value:(if $model == "" then null else $model end)},
+      {keyPath:"model_reasoning_effort",mergeStrategy:"replace",value:(if $effort == "" then null else $effort end)}
+    ]') || {
+    printf 'Floway: could not build the Codex configuration edits.\n' >&2
+    return 1
+  }
+
+  _cwc_result=$(codex_app_server_batch_write "$_cwc_edits")
+  _cwc_rc=$?
+  if [ "$_cwc_rc" -ne 0 ]; then
+    case "$_cwc_rc" in
+      124) printf 'Floway: the Codex app-server timed out before confirming the configuration.\n' >&2 ;;
+      3) printf 'Floway: the Codex app-server reported an error writing the configuration.\n' >&2 ;;
+      2) printf 'Floway: the Codex app-server returned a malformed response.\n' >&2 ;;
+      1) printf 'Floway: the Codex app-server exited before confirming the configuration.\n' >&2 ;;
+      *) printf 'Floway: the Codex app-server configuration failed.\n' >&2 ;;
+    esac
+    return 1
+  fi
+
+  _cwc_status=$(printf '%s' "$_cwc_result" | "$JQ" -r '.result.status // empty' 2>/dev/null)
+  case "$_cwc_status" in
+    ok)
+      printf 'Floway: Codex base configuration written.\n'
+      ;;
+    okOverridden)
+      _cwc_msg=$(printf '%s' "$_cwc_result" | "$JQ" -r '.result.overriddenMetadata.message // "an override layer applies"' 2>/dev/null)
+      _cwc_layer=$(printf '%s' "$_cwc_result" | "$JQ" -r '.result.overriddenMetadata.overridingLayer.name.type // "unknown"' 2>/dev/null)
+      printf 'Floway: Codex base configuration written, but a higher-precedence layer overrides it (%s; layer: %s).\n' "$_cwc_msg" "$_cwc_layer"
+      ;;
+    *)
+      printf 'Floway: the Codex app-server did not confirm the configuration (status: %s).\n' "${_cwc_status:-none}" >&2
+      return 1
+      ;;
+  esac
+}
+
+# Stage a minimal ChatGPT-mode auth.json: the server-rendered identity token, the
+# in-memory API key as access_token, a noop refresh placeholder, and a fresh
+# RFC3339 timestamp. The stage is created under umask 077 (owner-only from the
+# instant it exists), validated, and atomically renamed into place. The key is
+# read from the environment so it never reaches argv.
+codex_stage_auth() {
+  _csa_now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  _csa_stage="$CODEX_AUTH_PATH.floway-stage.$$"
+  if ! FLOWAY_API_KEY="$FLOWAY_API_KEY" "$JQ" -n \
+      --arg idToken "$FLOWAY_CODEX_ID_TOKEN" \
+      --arg refresh "$CODEX_REFRESH_NOOP" \
+      --arg lastRefresh "$_csa_now" \
+      '{OPENAI_API_KEY: null, tokens: {id_token: $idToken, access_token: env.FLOWAY_API_KEY, refresh_token: $refresh}, last_refresh: $lastRefresh}' > "$_csa_stage"; then
+    printf 'Floway: could not construct the Codex auth file.\n' >&2
+    rm -f "$_csa_stage"
+    return 1
+  fi
+  if ! FLOWAY_API_KEY="$FLOWAY_API_KEY" "$JQ" -e --arg idToken "$FLOWAY_CODEX_ID_TOKEN" '
+      (.tokens.id_token == $idToken) and (.tokens.access_token == env.FLOWAY_API_KEY)
+    ' "$_csa_stage" >/dev/null 2>&1; then
+    printf 'Floway: staged Codex auth failed validation.\n' >&2
+    rm -f "$_csa_stage"
+    return 1
+  fi
+  if ! chmod 600 "$_csa_stage"; then
+    rm -f "$_csa_stage"
+    return 1
+  fi
+  if ! mv "$_csa_stage" "$CODEX_AUTH_PATH"; then
+    printf 'Floway: could not replace %s\n' "$CODEX_AUTH_PATH" >&2
+    rm -f "$_csa_stage"
+    return 1
+  fi
+}
+
+# Confirm the gateway's authenticated Codex model directory answers. No inference
+# request is issued. When a model was selected, confirm it is present in the
+# returned catalog. The key is passed through a mode-0600 curl config file so it
+# never reaches the process argument list.
+codex_check_models() {
+  _ccm_base="${FLOWAY_BASE_URL%/}/azure-api.codex"
+  _ccm_cfg="$FLOWAY_SETUP_TMPDIR/codex-curl.cfg"
+  {
+    printf 'silent\n'
+    printf 'show-error\n'
+    printf 'fail\n'
+    printf 'header = "Authorization: Bearer %s"\n' "$FLOWAY_API_KEY"
+  } > "$_ccm_cfg"
+  chmod 600 "$_ccm_cfg" 2>/dev/null || true
+  _ccm_body="$FLOWAY_SETUP_TMPDIR/codex-models.json"
+  curl -K "$_ccm_cfg" --connect-timeout 10 --max-time 30 -o "$_ccm_body" "$_ccm_base/models"
+  _ccm_rc=$?
+  rm -f "$_ccm_cfg"
+  if [ "$_ccm_rc" -ne 0 ]; then
+    rm -f "$_ccm_body"
+    return 1
+  fi
+  if [ -n "$FLOWAY_CODEX_MODEL" ]; then
+    if ! "$JQ" -e --arg m "$FLOWAY_CODEX_MODEL" 'any(.models[]?; .slug == $m)' "$_ccm_body" >/dev/null 2>&1; then
+      printf 'Floway: the selected Codex model %s is not in the gateway catalog.\n' "$FLOWAY_CODEX_MODEL" >&2
+      rm -f "$_ccm_body"
+      return 1
+    fi
+  fi
+  rm -f "$_ccm_body"
+}
+
+# Verify Codex without inference: reparse the staged auth and assert the identity
+# token and key (never printing them), print the raw CLI version, and reach the
+# authenticated model directory (confirming the selected model when one is set).
+codex_verify() {
+  if ! FLOWAY_API_KEY="$FLOWAY_API_KEY" "$JQ" -e --arg idToken "$FLOWAY_CODEX_ID_TOKEN" '
+      (.tokens.id_token == $idToken) and (.tokens.access_token == env.FLOWAY_API_KEY)
+    ' "$CODEX_AUTH_PATH" >/dev/null 2>&1; then
+    printf 'Floway: the written Codex auth did not reparse as expected.\n' >&2
+    return 1
+  fi
+
+  _cv_timeout=${FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS:-30}
+  _cv_version_file="$FLOWAY_SETUP_TMPDIR/codex-version.out"
+  if _run_with_timeout "$_cv_timeout" "$CODEX_BIN" --version > "$_cv_version_file" 2>&1; then
+    printf 'Floway: Codex version: %s\n' "$(cat "$_cv_version_file")"
+  else
+    _cv_version_status=$?
+    if [ "$_cv_version_status" -eq 124 ]; then
+      printf 'Floway: `codex --version` timed out.\n' >&2
+    else
+      printf 'Floway: `codex --version` failed.\n' >&2
+    fi
+    return 1
+  fi
+
+  if ! codex_check_models; then
+    printf 'Floway: could not reach the authenticated Codex model directory at %s/azure-api.codex/models\n' "${FLOWAY_BASE_URL%/}" >&2
+    return 1
+  fi
+  printf 'Floway: reached the authenticated Codex model directory (no inference issued).\n'
+}
+
+# Configure Codex as one transactional unit. jq must resolve before any mutation.
+# Both managed files are backed up first; a failure in the config write, auth
+# staging, or verification restores both (or removes newly created files). A
+# freshly installed CLI is never uninstalled.
 configure_codex() {
-  printf 'Floway: Codex configuration is not implemented in this build yet.\n' >&2
-  return 1
+  printf 'Floway: configuring Codex...\n'
+  if ! ensure_jq; then
+    printf 'Floway: jq is required to configure Codex but is unavailable and could not be provisioned for this platform. Install jq and re-run.\n' >&2
+    return 1
+  fi
+  if ! codex_ensure_installed; then
+    printf 'Floway: Codex CLI is unavailable and could not be installed.\n' >&2
+    return 1
+  fi
+  codex_resolve_home
+  if ! mkdir -p "$CODEX_HOME_DIR"; then
+    printf 'Floway: could not create %s\n' "$CODEX_HOME_DIR" >&2
+    return 1
+  fi
+  if ! codex_backup_files; then
+    return 1
+  fi
+  if ! codex_write_config; then
+    codex_rollback
+    return 1
+  fi
+  if ! codex_stage_auth; then
+    printf 'Floway: Codex auth staging failed; rolling back configuration and auth.\n' >&2
+    codex_rollback
+    return 1
+  fi
+  if ! codex_verify; then
+    printf 'Floway: Codex verification failed; rolling back configuration and auth.\n' >&2
+    codex_rollback
+    return 1
+  fi
+  printf 'Floway: Codex configured.\n'
 }
 
 # --- run --------------------------------------------------------------------

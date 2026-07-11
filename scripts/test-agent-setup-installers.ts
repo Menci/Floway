@@ -21,7 +21,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import type { AgentSetupConfiguration } from '../packages/gateway/src/control-plane/agent-setup/configuration.ts';
-import { renderPowerShellPrefix, renderShellPrefix } from '../packages/gateway/src/control-plane/agent-setup/render.ts';
+import { renderCodexIdentityToken, renderPowerShellPrefix, renderShellPrefix } from '../packages/gateway/src/control-plane/agent-setup/render.ts';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SCRIPTS_DIR = join(HERE, '..', 'packages/gateway/src/control-plane/agent-setup/scripts');
@@ -85,7 +85,7 @@ const resolveTool = (name: string): string | null => {
   const found = spawnSync('/bin/sh', ['-c', `command -v ${name}`], { encoding: 'utf8' }).stdout.trim();
   return found || null;
 };
-for (const tool of ['sh', 'bash', 'env', 'awk', 'cat', 'chmod', 'cp', 'date', 'grep', 'mkdir', 'mktemp', 'mv', 'rm', 'shasum', 'sleep', 'uname', 'curl']) {
+for (const tool of ['sh', 'bash', 'env', 'awk', 'cat', 'chmod', 'cp', 'date', 'grep', 'mkdir', 'mkfifo', 'mktemp', 'mv', 'rm', 'shasum', 'sleep', 'uname', 'curl']) {
   const path = resolveTool(tool);
   if (!path) throw new Error(`required tool ${tool} is not available on the host; cannot run the installer harness`);
   symlinkSync(path, join(SHIM_BIN, tool));
@@ -168,53 +168,150 @@ chmod 755 "$target/claude"
 : > "$FAKE_INSTALLER_MARKER"
 `;
 
+// The fake `codex` mirrors the real CLI's observable surface for setup:
+// `--version` prints a raw version line, and `app-server` speaks the real
+// newline-delimited JSON-RPC handshake (initialize -> initialized ->
+// config/batchWrite) that the installer drives to write config.toml. It is a
+// Node script (shebang points at this run's interpreter) so JSON framing is
+// exact. Behavior is steered by FAKE_CODEX_* env vars: response status, an
+// injected delay, a malformed line, a JSON-RPC error, or a premature exit
+// before answering. It records every received message plus ordering markers to
+// FAKE_CODEX_RECORD so tests can assert the exact edits, the handshake order,
+// and that stdin stayed open until the batch response was sent. It refuses to
+// run if the API key ever reaches it through the environment or a request, and
+// exits cleanly on stdin EOF. Newlines are emitted via String.fromCharCode(10)
+// to keep the source free of escape hazards inside this template literal.
+const FAKE_CODEX = `#!${process.execPath}
+'use strict';
+const fs = require('fs');
+const NL = String.fromCharCode(10);
+const REC = process.env.FAKE_CODEX_RECORD || '';
+const rec = (o) => { if (REC) fs.appendFileSync(REC, JSON.stringify(o) + NL); };
+const SENTINEL = process.env.FAKE_CODEX_SENTINEL || '';
+if (process.env.FLOWAY_API_KEY !== undefined || process.env.FlowayApiKey !== undefined) {
+  process.stderr.write('fake codex inherited the Floway API key environment variable' + NL);
+  process.exit(91);
+}
+const argv = process.argv.slice(2);
+const cmd = argv[0];
+if (cmd === '--version') {
+  const sleep = Number(process.env.FAKE_CODEX_VERSION_SLEEP || 0);
+  const emit = () => { process.stdout.write((process.env.FAKE_CODEX_VERSION || 'codex-cli 9.9.9') + NL); process.exit(0); };
+  if (sleep > 0) setTimeout(emit, sleep * 1000); else emit();
+} else if (cmd === 'app-server') {
+  const mode = process.env.FAKE_CODEX_APP_SERVER_MODE || 'ok';
+  const batchDelay = Number(process.env.FAKE_CODEX_BATCH_DELAY || 0);
+  if (process.env.FAKE_CODEX_LARGE_STDERR) process.stderr.write('E'.repeat(300000) + NL);
+  const send = (o) => process.stdout.write(JSON.stringify(o) + NL);
+  const home = process.env.CODEX_HOME || '';
+  let buf = '';
+  process.stdin.setEncoding('utf8');
+  process.stdin.on('data', (chunk) => {
+    buf += chunk;
+    let idx;
+    while ((idx = buf.indexOf(NL)) >= 0) {
+      const line = buf.slice(0, idx);
+      buf = buf.slice(idx + 1);
+      if (line.trim() !== '') handleLine(line);
+    }
+  });
+  process.stdin.on('end', () => { rec({ marker: 'stdin-eof' }); process.exit(0); });
+  function handleLine(line) {
+    if (SENTINEL && line.indexOf(SENTINEL) >= 0) {
+      process.stderr.write('fake codex app-server received the API key in a request' + NL);
+      process.exit(93);
+    }
+    let msg;
+    try { msg = JSON.parse(line); } catch (e) { rec({ marker: 'unparseable', line: line }); return; }
+    rec({ received: { method: msg.method, id: msg.id, params: msg.params } });
+    if (msg.method === 'initialize') {
+      if (mode === 'no-initialize-response') return;
+      send({ id: msg.id, result: { userAgent: 'fake-codex/9.9.9', codexHome: home, platformFamily: 'unix', platformOs: 'linux' } });
+      send({ jsonrpc: '2.0', method: 'remoteControl/status/changed', params: { status: 'disabled' } });
+      return;
+    }
+    if (msg.method === 'initialized') { rec({ marker: 'initialized' }); return; }
+    if (msg.method === 'config/batchWrite') {
+      const respond = () => {
+        rec({ marker: 'batch-respond', edits: (msg.params && msg.params.edits) || null });
+        if (mode === 'premature-eof') { process.exit(0); }
+        if (mode === 'malformed') { process.stdout.write('this-is-not-json for id ' + msg.id + NL); return; }
+        if (mode === 'error') { send({ id: msg.id, error: { code: -32000, message: 'batchWrite exploded' } }); return; }
+        if (mode === 'okOverridden') {
+          send({ id: msg.id, result: { status: 'okOverridden', version: 'sha256:v', filePath: home + '/config.toml', overriddenMetadata: { message: 'Overridden by session flags', overridingLayer: { name: { type: 'sessionFlags' }, version: 'sha256:l' }, effectiveValue: 'shadow-model' } } });
+          return;
+        }
+        send({ id: msg.id, result: { status: 'ok', version: 'sha256:v', filePath: home + '/config.toml', overriddenMetadata: null } });
+      };
+      if (batchDelay > 0) setTimeout(respond, batchDelay * 1000); else respond();
+      return;
+    }
+    rec({ marker: 'other', method: msg.method });
+  }
+} else {
+  process.stderr.write('fake codex: unhandled args: ' + argv.join(' ') + NL);
+  process.exit(2);
+}
+`;
+
+// The fake Codex installer stands in for `curl https://chatgpt.com/codex/install.sh
+// | sh`: it drops the fake `codex` into the user-local native location and
+// records that it ran, mirroring the Claude installer fixture so the shared
+// timeout/process-tree assertions apply to both agents.
+const FAKE_CODEX_INSTALLER = `#!/bin/bash
+set -eu
+if [ "\${FLOWAY_API_KEY+x}" = x ] || [ "\${FlowayApiKey+x}" = x ]; then
+  printf 'fake codex installer inherited the Floway API key environment variable\\n' >&2
+  exit 92
+fi
+if [ "\${FAKE_INSTALLER_SLEEP:-0}" -gt 0 ]; then
+  bash -c '
+    sleep "$FAKE_INSTALLER_SLEEP" &
+    grandchild=$!
+    if [ -n "$FAKE_INSTALLER_CHILD_PID_FILE" ]; then printf "%s\\n" "$grandchild" > "$FAKE_INSTALLER_CHILD_PID_FILE"; fi
+    wait "$grandchild"
+  ' &
+  child=$!
+  wait "$child"
+fi
+target="$HOME/.local/bin"
+mkdir -p "$target"
+cp "$FAKE_CODEX_SRC" "$target/codex"
+chmod 755 "$target/codex"
+: > "$FAKE_INSTALLER_MARKER"
+`;
+
 const FIXTURES = join(HARNESS_ROOT, 'fixtures');
 mkdirSync(FIXTURES, { recursive: true });
 const FAKE_CLAUDE_SRC = join(FIXTURES, 'claude');
 writeFileSync(FAKE_CLAUDE_SRC, FAKE_CLAUDE, { mode: 0o755 });
 const FAKE_INSTALLER_SCRIPT = join(FIXTURES, 'install-claude.sh');
 writeFileSync(FAKE_INSTALLER_SCRIPT, FAKE_INSTALLER, { mode: 0o755 });
+const FAKE_CODEX_SRC = join(FIXTURES, 'codex');
+writeFileSync(FAKE_CODEX_SRC, FAKE_CODEX, { mode: 0o755 });
+const FAKE_CODEX_INSTALLER_SCRIPT = join(FIXTURES, 'install-codex.sh');
+writeFileSync(FAKE_CODEX_INSTALLER_SCRIPT, FAKE_CODEX_INSTALLER, { mode: 0o755 });
 
 // --- local model directory --------------------------------------------------
 
-type ModelServerMode = 'ok' | 'unauthorized' | 'installer-sh' | 'installer-ps1' | 'installer-html';
+type ModelServerMode =
+  | 'ok' | 'unauthorized'
+  | 'installer-sh' | 'installer-ps1' | 'installer-html'
+  | 'installer-codex-sh' | 'installer-codex-ps1';
+// Default Codex catalog served at /azure-api.codex/models. The real gateway
+// returns `{ models: [{ slug, ... }] }`; verification only reads the slugs.
+const DEFAULT_CODEX_MODELS = ['gpt-5-codex', 'gpt-5.5'];
 interface ModelServer {
   url: string;
   readonly requests: { method: string; path: string; auth: boolean }[];
   mode: ModelServerMode;
+  codexModels: string[];
   reset(): void;
   close(): Promise<void>;
 }
 
-const startModelServer = async (): Promise<ModelServer> => {
-  const state = { mode: 'ok' as ModelServerMode, requests: [] as { method: string; path: string; auth: boolean }[] };
-  const server: Server = createServer((req, res) => {
-    const pathname = new URL(req.url ?? '/', 'http://localhost').pathname;
-    const bearer = String(req.headers['authorization'] ?? '');
-    const apiKey = String(req.headers['x-api-key'] ?? '');
-    const auth = bearer.includes(SENTINEL_KEY) || apiKey === SENTINEL_KEY;
-    state.requests.push({ method: req.method ?? '', path: pathname, auth });
-    if (pathname === '/install.sh') {
-      if (state.mode === 'installer-html') {
-        res.writeHead(200, { 'content-type': 'text/html' });
-        res.end('<!DOCTYPE html><HTML><BODY>blocked</BODY></HTML>');
-        return;
-      }
-      if (state.mode === 'installer-sh') {
-        res.writeHead(200, { 'content-type': 'text/x-shellscript' });
-        res.end(FAKE_INSTALLER);
-        return;
-      }
-    }
-    if (pathname === '/install.ps1') {
-      if (state.mode === 'installer-html') {
-        res.writeHead(200, { 'content-type': 'text/html' });
-        res.end('<!DOCTYPE html><HTML><BODY>blocked</BODY></HTML>');
-        return;
-      }
-      if (state.mode === 'installer-ps1') {
-        res.writeHead(200, { 'content-type': 'text/plain' });
-        res.end(`if ($env:FLOWAY_API_KEY) { throw 'installer inherited secret' }
+const PS1_FAKE_INSTALLER_BODY = (binName: string, src: string): string =>
+  `if ($env:FLOWAY_API_KEY) { throw 'installer inherited secret' }
 if ([int]$env:FAKE_INSTALLER_SLEEP -gt 0) {
   $processInfo = New-Object System.Diagnostics.ProcessStartInfo
   $processInfo.FileName = '/bin/sleep'
@@ -228,10 +325,55 @@ if ([int]$env:FAKE_INSTALLER_SLEEP -gt 0) {
 }
 $target = Join-Path $HOME '.local/bin'
 New-Item -ItemType Directory -Path $target -Force | Out-Null
-Copy-Item -LiteralPath $env:FAKE_CLAUDE_SRC -Destination (Join-Path $target 'claude') -Force
-& chmod 755 (Join-Path $target 'claude')
+Copy-Item -LiteralPath $env:${src} -Destination (Join-Path $target '${binName}') -Force
+& chmod 755 (Join-Path $target '${binName}')
 New-Item -ItemType File -Path $env:FAKE_INSTALLER_MARKER -Force | Out-Null
-`);
+`;
+
+const startModelServer = async (): Promise<ModelServer> => {
+  const state = {
+    mode: 'ok' as ModelServerMode,
+    codexModels: [...DEFAULT_CODEX_MODELS],
+    requests: [] as { method: string; path: string; auth: boolean }[],
+  };
+  const HTML_BODY = '<!DOCTYPE html><HTML><BODY>blocked</BODY></HTML>';
+  const server: Server = createServer((req, res) => {
+    const pathname = new URL(req.url ?? '/', 'http://localhost').pathname;
+    const bearer = String(req.headers['authorization'] ?? '');
+    const apiKey = String(req.headers['x-api-key'] ?? '');
+    const auth = bearer.includes(SENTINEL_KEY) || apiKey === SENTINEL_KEY;
+    state.requests.push({ method: req.method ?? '', path: pathname, auth });
+    if (pathname === '/install.sh' || pathname === '/install-codex.sh') {
+      if (state.mode === 'installer-html') {
+        res.writeHead(200, { 'content-type': 'text/html' });
+        res.end(HTML_BODY);
+        return;
+      }
+      if (state.mode === 'installer-sh') {
+        res.writeHead(200, { 'content-type': 'text/x-shellscript' });
+        res.end(FAKE_INSTALLER);
+        return;
+      }
+      if (state.mode === 'installer-codex-sh') {
+        res.writeHead(200, { 'content-type': 'text/x-shellscript' });
+        res.end(FAKE_CODEX_INSTALLER);
+        return;
+      }
+    }
+    if (pathname === '/install.ps1' || pathname === '/install-codex.ps1') {
+      if (state.mode === 'installer-html') {
+        res.writeHead(200, { 'content-type': 'text/html' });
+        res.end(HTML_BODY);
+        return;
+      }
+      if (state.mode === 'installer-ps1') {
+        res.writeHead(200, { 'content-type': 'text/plain' });
+        res.end(PS1_FAKE_INSTALLER_BODY('claude', 'FAKE_CLAUDE_SRC'));
+        return;
+      }
+      if (state.mode === 'installer-codex-ps1') {
+        res.writeHead(200, { 'content-type': 'text/plain' });
+        res.end(PS1_FAKE_INSTALLER_BODY('codex', 'FAKE_CODEX_SRC'));
         return;
       }
     }
@@ -245,6 +387,11 @@ New-Item -ItemType File -Path $env:FAKE_INSTALLER_MARKER -Force | Out-Null
       res.end(JSON.stringify({ object: 'list', data: [{ id: 'claude-x', display_name: 'Claude X' }] }));
       return;
     }
+    if (pathname === '/azure-api.codex/models') {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ models: state.codexModels.map(slug => ({ slug })) }));
+      return;
+    }
     res.writeHead(404, { 'content-type': 'application/json' });
     res.end('{"error":"not found"}');
   });
@@ -256,7 +403,9 @@ New-Item -ItemType File -Path $env:FAKE_INSTALLER_MARKER -Force | Out-Null
     get requests() { return state.requests; },
     get mode() { return state.mode; },
     set mode(value) { state.mode = value; },
-    reset() { state.requests.length = 0; state.mode = 'ok'; },
+    get codexModels() { return state.codexModels; },
+    set codexModels(value) { state.codexModels = value; },
+    reset() { state.requests.length = 0; state.mode = 'ok'; state.codexModels = [...DEFAULT_CODEX_MODELS]; },
     close: () => new Promise<void>(resolve => server.close(() => resolve())),
   };
 };
@@ -278,6 +427,11 @@ const placeFakeClaude = (dir: string): void => {
   writeFileSync(join(dir, 'claude'), FAKE_CLAUDE, { mode: 0o755 });
 };
 
+const placeFakeCodex = (dir: string): void => {
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'codex'), FAKE_CODEX, { mode: 0o755 });
+};
+
 const claudeConfig = (overrides: Partial<AgentSetupConfiguration['claudeCode']> = {}): AgentSetupConfiguration => ({
   apiKeyId: 'key-a',
   claudeCode: {
@@ -285,6 +439,27 @@ const claudeConfig = (overrides: Partial<AgentSetupConfiguration['claudeCode']> 
     defaultHaikuModel: null, effortLevel: null, modelDiscovery: false, ...overrides,
   },
   codex: { enabled: false, model: null, reasoningEffort: null },
+});
+
+const codexConfig = (overrides: Partial<AgentSetupConfiguration['codex']> = {}): AgentSetupConfiguration => ({
+  apiKeyId: 'key-a',
+  claudeCode: {
+    enabled: false, model: null, defaultSonnetModel: null,
+    defaultHaikuModel: null, effortLevel: null, modelDiscovery: false,
+  },
+  codex: { enabled: true, model: null, reasoningEffort: null, ...overrides },
+});
+
+const bothConfig = (
+  claude: Partial<AgentSetupConfiguration['claudeCode']> = {},
+  codex: Partial<AgentSetupConfiguration['codex']> = {},
+): AgentSetupConfiguration => ({
+  apiKeyId: 'key-a',
+  claudeCode: {
+    enabled: true, model: null, defaultSonnetModel: null,
+    defaultHaikuModel: null, effortLevel: null, modelDiscovery: false, ...claude,
+  },
+  codex: { enabled: true, model: null, reasoningEffort: null, ...codex },
 });
 
 interface RunOptions {
@@ -307,8 +482,37 @@ interface RunOptions {
   ambientApiKey?: boolean;
   excludeTimeoutTools?: boolean;
   fakeChmodFailure?: boolean;
+  // Codex knobs.
+  codexHome?: string;
+  fakeCodexVersion?: string;
+  fakeCodexVersionSleep?: number;
+  fakeCodexAppServerMode?: string;
+  fakeCodexBatchDelay?: number;
+  fakeCodexLargeStderr?: boolean;
+  withCodexInstallHook?: boolean;
+  codexInstallerUrl?: string;
 }
 interface RunResult { code: number; stdout: string; stderr: string; combined: string; }
+
+// Environment shared by the shell run helpers: Codex fake-binary knobs, the
+// install hook, and CODEX_HOME. Callers merge this over the Claude env so a
+// single run can exercise either or both agents.
+const codexEnv = (options: RunOptions): Record<string, string> => {
+  const env: Record<string, string> = {
+    FAKE_CODEX_SRC,
+    FAKE_CODEX_SENTINEL: SENTINEL_KEY,
+    FAKE_CODEX_RECORD: codexRecordPath(options.workspace),
+    FAKE_CODEX_VERSION_SLEEP: String(options.fakeCodexVersionSleep ?? 0),
+    FAKE_CODEX_APP_SERVER_MODE: options.fakeCodexAppServerMode ?? 'ok',
+    FAKE_CODEX_BATCH_DELAY: String(options.fakeCodexBatchDelay ?? 0),
+  };
+  if (options.fakeCodexVersion) env.FAKE_CODEX_VERSION = options.fakeCodexVersion;
+  if (options.fakeCodexLargeStderr) env.FAKE_CODEX_LARGE_STDERR = '1';
+  if (options.codexHome) env.CODEX_HOME = options.codexHome;
+  if (options.withCodexInstallHook !== false) env.FLOWAY_INSTALLER_TEST_INSTALL_CODEX_SCRIPT = FAKE_CODEX_INSTALLER_SCRIPT;
+  if (options.codexInstallerUrl) env.FLOWAY_INSTALLER_TEST_CODEX_URL = options.codexInstallerUrl;
+  return env;
+};
 
 // Runs asynchronously via `spawn` (not `spawnSync`): the local model directory
 // lives in this process's event loop, and a synchronous child would deadlock
@@ -336,6 +540,7 @@ const runShellInstaller = (options: RunOptions): Promise<RunResult> => {
     FAKE_CLAUDE_SRC,
     FAKE_INSTALLER_MARKER: join(workspace.root, 'installer-ran'),
     FAKE_INSTALLER_CHILD_PID_FILE: join(workspace.root, 'installer-child.pid'),
+    ...codexEnv(options),
   };
   if (options.configDir) env.CLAUDE_CONFIG_DIR = options.configDir;
   if (options.fakeClaudeVersion) env.FAKE_CLAUDE_VERSION = options.fakeClaudeVersion;
@@ -400,6 +605,33 @@ const backupFiles = (dir: string): string[] =>
 const stagedFiles = (dir: string): string[] =>
   existsSync(dir) ? readdirSync(dir).filter(name => name.includes('.floway-stage.')) : [];
 
+// --- Codex inspection helpers -----------------------------------------------
+
+const codexRecordPath = (workspace: Workspace): string => join(workspace.root, 'codex-record.jsonl');
+const codexHomeFor = (workspace: Workspace, codexHome?: string): string => codexHome ?? join(workspace.home, '.codex');
+const codexConfigPath = (workspace: Workspace, codexHome?: string): string => join(codexHomeFor(workspace, codexHome), 'config.toml');
+const codexAuthPath = (workspace: Workspace, codexHome?: string): string => join(codexHomeFor(workspace, codexHome), 'auth.json');
+interface CodexRecord { received?: { method?: string; id?: number; params?: unknown }; marker?: string; edits?: unknown; line?: string; method?: string }
+const readCodexRecord = (workspace: Workspace): CodexRecord[] => {
+  const path = codexRecordPath(workspace);
+  if (!existsSync(path)) return [];
+  return readFileSync(path, 'utf8').split('\n').filter(l => l.trim() !== '').map(l => JSON.parse(l) as CodexRecord);
+};
+interface CodexEdit { keyPath: string; mergeStrategy: string; value: unknown }
+// The exact `edits` array the installer sent on config/batchWrite, as the fake
+// app-server recorded it. A map from keyPath to value makes leaf assertions
+// direct; `mergeStrategy` is asserted separately when it matters.
+const codexBatchEdits = (workspace: Workspace): CodexEdit[] => {
+  const entry = readCodexRecord(workspace).find(r => r.marker === 'batch-respond');
+  return (entry?.edits as CodexEdit[] | undefined) ?? [];
+};
+const codexEditMap = (workspace: Workspace): Map<string, unknown> =>
+  new Map(codexBatchEdits(workspace).map(e => [e.keyPath, e.value]));
+const codexBackupFiles = (dir: string, base: 'config.toml' | 'auth.json'): string[] =>
+  existsSync(dir) ? readdirSync(dir).filter(name => name.startsWith(`${base}.floway-backup.`)) : [];
+const readCodexAuth = (workspace: Workspace, codexHome?: string): { OPENAI_API_KEY: unknown; tokens: { id_token: string; access_token: string; refresh_token: string }; last_refresh: string } =>
+  JSON.parse(readFileSync(codexAuthPath(workspace, codexHome), 'utf8'));
+
 const networkReachable = (): boolean => {
   const probe = spawnSync('/usr/bin/curl', ['-fsSL', '-o', '/dev/null', '--max-time', '8', 'https://github.com/jqlang/jq/releases/download/jq-1.8.2/sha256sum.txt'], { encoding: 'utf8' });
   return probe.status === 0;
@@ -429,6 +661,7 @@ const runPowerShellInstaller = (options: RunOptions): Promise<RunResult> => {
     FAKE_CLAUDE_SRC,
     FAKE_INSTALLER_MARKER: join(workspace.root, 'installer-ran'),
     FAKE_INSTALLER_CHILD_PID_FILE: join(workspace.root, 'installer-child.pid'),
+    ...codexEnv(options),
   };
   if (options.configDir) env.CLAUDE_CONFIG_DIR = options.configDir;
   if (options.fakeClaudeVersion) env.FAKE_CLAUDE_VERSION = options.fakeClaudeVersion;
@@ -1123,10 +1356,557 @@ test('claude', 'Bash installer body parses under the macOS Bash 3.2 baseline', a
   t.equal(result.status, 0, `/bin/bash -n reported a syntax error:\n${result.stderr}`);
 });
 
-// --- Codex placeholder (implemented in a later step) ------------------------
+// --- Codex cases ------------------------------------------------------------
 
-test('codex', 'Codex configuration is implemented in a later step', () => {
-  skip('Codex installer behavior is implemented in the next task');
+// Every fixed leaf the installer must batch-write, independent of model/effort.
+// The base_url and chatgpt_base_url both carry the Codex data-plane path.
+const assertCodexBaseEdits = (t: Assert, ws: Workspace, baseUrl: string): void => {
+  const edits = codexEditMap(ws);
+  const codexBase = `${baseUrl.replace(/\/$/, '')}/azure-api.codex`;
+  t.equal(edits.get('model_provider'), 'floway', 'model_provider set to floway');
+  t.equal(edits.get('model_providers.floway.name'), 'Floway', 'provider name is Floway');
+  t.equal(edits.get('model_providers.floway.base_url'), codexBase, 'provider base_url targets the Codex data-plane path');
+  t.equal(edits.get('model_providers.floway.wire_api'), 'responses', 'provider wire_api is responses');
+  t.equal(edits.get('model_providers.floway.supports_websockets'), true, 'provider advertises websocket support');
+  t.equal(edits.get('chatgpt_base_url'), codexBase, 'chatgpt_base_url targets the Codex data-plane path');
+  t.equal(edits.get('features.apps'), false, 'features.apps disabled');
+  t.equal(edits.get('cli_auth_credentials_store'), 'file', 'credentials store is file');
+  t.ok(edits.has('model'), 'the model leaf is always part of the batch');
+  t.ok(edits.has('model_reasoning_effort'), 'the effort leaf is always part of the batch');
+};
+
+const RFC3339 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
+const assertStagedAuth = (t: Assert, ws: Workspace, baseUrl: string, startedMs: number, codexHome?: string): void => {
+  const auth = readCodexAuth(ws, codexHome);
+  t.equal(auth.OPENAI_API_KEY, null, 'ChatGPT-mode auth carries a null OPENAI_API_KEY');
+  t.equal(auth.tokens.id_token, renderCodexIdentityToken(baseUrl), 'id_token is the server-rendered identity token');
+  t.equal(auth.tokens.access_token, SENTINEL_KEY, 'access_token carries the Floway API key');
+  t.ok(typeof auth.tokens.refresh_token === 'string' && auth.tokens.refresh_token.length > 0, 'a non-empty refresh placeholder is present');
+  t.ok(RFC3339.test(auth.last_refresh), `last_refresh is RFC3339, got ${auth.last_refresh}`);
+  const stamp = Date.parse(auth.last_refresh);
+  t.ok(Number.isFinite(stamp) && stamp >= startedMs - 5 * 60_000 && stamp <= Date.now() + 60_000, 'last_refresh is freshly minted at run time');
+};
+
+// The real Codex 0.144.1 binary on the host, used by the end-to-end smoke test.
+// It must be exactly 0.144.1 so the wire protocol matches the version the
+// installer was built against; any other version self-skips rather than
+// asserting against an unverified protocol.
+const hostCodex = ((): string | null => {
+  const resolved = resolveTool('codex');
+  if (!resolved) return null;
+  const version = spawnSync(resolved, ['--version'], { encoding: 'utf8' }).stdout.trim();
+  return version.includes('0.144.1') ? resolved : null;
+})();
+
+// The two absolute locations `codex_discover` consults beyond $HOME and PATH.
+// The install-from-absent tests require discovery to find nothing, so they
+// self-skip on a host that already has a system Codex there — the same
+// host-condition guarding as the pwsh and network tests.
+const GLOBAL_CODEX_LOCATIONS = ['/opt/homebrew/bin/codex', '/usr/local/bin/codex'];
+const globalCodexPresent = (): boolean => GLOBAL_CODEX_LOCATIONS.some(p => existsSync(p));
+
+test('codex', 'existing CLI configures via the app-server and stages ChatGPT auth', async t => {
+  const ws = makeWorkspace();
+  placeFakeCodex(ws.binDir);
+  const started = Date.now();
+  const run = await runShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url });
+  t.equal(run.code, 0, `codex setup should succeed:\n${run.combined}`);
+  t.ok(!existsSync(installerMarker(ws)), 'the official installer must not run when codex is present');
+  assertCodexBaseEdits(t, ws, modelServer.url);
+  assertStagedAuth(t, ws, modelServer.url, started);
+});
+
+test('codex', 'the batch clears model and effort when unset', async t => {
+  const ws = makeWorkspace();
+  placeFakeCodex(ws.binDir);
+  const run = await runShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url });
+  t.equal(run.code, 0, `should succeed:\n${run.combined}`);
+  const edits = codexEditMap(ws);
+  t.equal(edits.get('model'), null, 'unset model clears via JSON null');
+  t.equal(edits.get('model_reasoning_effort'), null, 'unset effort clears via JSON null');
+});
+
+test('codex', 'the batch sets opaque model and effort verbatim and confirms the model in the catalog', async t => {
+  const ws = makeWorkspace();
+  placeFakeCodex(ws.binDir);
+  modelServer.codexModels = ['gpt-5-codex', 'weird/model:v2'];
+  const run = await runShellInstaller({
+    workspace: ws, baseUrl: modelServer.url,
+    configuration: codexConfig({ model: 'weird/model:v2', reasoningEffort: 'ultra' }),
+  });
+  t.equal(run.code, 0, `should succeed:\n${run.combined}`);
+  const edits = codexEditMap(ws);
+  t.equal(edits.get('model'), 'weird/model:v2', 'opaque model is written verbatim');
+  t.equal(edits.get('model_reasoning_effort'), 'ultra', 'opaque effort is written verbatim');
+});
+
+test('codex', 'a selected model missing from the catalog fails verification and rolls back', async t => {
+  const ws = makeWorkspace();
+  placeFakeCodex(ws.binDir);
+  modelServer.codexModels = ['gpt-5-codex'];
+  const run = await runShellInstaller({
+    workspace: ws, baseUrl: modelServer.url,
+    configuration: codexConfig({ model: 'not-in-catalog' }),
+  });
+  t.ok(run.code !== 0, 'a selected model absent from the catalog must fail');
+  t.ok(!existsSync(codexAuthPath(ws)), 'auth is rolled back when verification fails');
+});
+
+test('codex', 'the handshake runs initialize then initialized then config/batchWrite in order', async t => {
+  const ws = makeWorkspace();
+  placeFakeCodex(ws.binDir);
+  const run = await runShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url });
+  t.equal(run.code, 0, `should succeed:\n${run.combined}`);
+  const record = readCodexRecord(ws);
+  const order = record.map(r => r.received?.method ?? r.marker).filter(Boolean);
+  const initialize = order.indexOf('initialize');
+  const initialized = order.indexOf('initialized');
+  const batch = order.indexOf('config/batchWrite');
+  t.ok(initialize >= 0 && initialized > initialize, 'initialized follows initialize');
+  t.ok(batch > initialized, 'config/batchWrite follows initialized');
+  const initReq = record.find(r => r.received?.method === 'initialize');
+  t.ok(initReq !== undefined, 'initialize was received with params');
+});
+
+test('codex', 'okOverridden counts as success and reports non-secret override metadata only', async t => {
+  const ws = makeWorkspace();
+  placeFakeCodex(ws.binDir);
+  const run = await runShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url, fakeCodexAppServerMode: 'okOverridden' });
+  t.equal(run.code, 0, `okOverridden must be treated as configured:\n${run.combined}`);
+  t.includes(run.combined, 'Overridden by session flags', 'the override message is surfaced');
+  t.includes(run.combined.toLowerCase(), 'sessionflags', 'the overriding layer is surfaced');
+  t.excludes(run.combined, 'shadow-model', 'the overridden effective value is not echoed');
+  t.ok(existsSync(codexAuthPath(ws)), 'okOverridden still stages auth');
+});
+
+test('codex', 'a batchWrite JSON-RPC error fails codex and rolls back auth', async t => {
+  const ws = makeWorkspace();
+  placeFakeCodex(ws.binDir);
+  const configDir = codexHomeFor(ws);
+  mkdirSync(configDir, { recursive: true });
+  writeFileSync(codexAuthPath(ws), '{"tokens":{"id_token":"old","access_token":"old","refresh_token":"old"},"OPENAI_API_KEY":null,"last_refresh":"2020-01-01T00:00:00Z"}');
+  const run = await runShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url, fakeCodexAppServerMode: 'error' });
+  t.ok(run.code !== 0, 'a protocol error must fail codex');
+  t.equal(readCodexAuth(ws).tokens.id_token, 'old', 'prior auth is restored on rollback');
+});
+
+test('codex', 'a malformed app-server response fails codex', async t => {
+  const ws = makeWorkspace();
+  placeFakeCodex(ws.binDir);
+  const run = await runShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url, fakeCodexAppServerMode: 'malformed' });
+  t.ok(run.code !== 0, 'a malformed response line must fail codex');
+  t.ok(!existsSync(codexAuthPath(ws)), 'no auth is staged when the batch response is malformed');
+});
+
+test('codex', 'a premature app-server exit before responding fails codex', async t => {
+  const ws = makeWorkspace();
+  placeFakeCodex(ws.binDir);
+  const run = await runShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url, fakeCodexAppServerMode: 'premature-eof' });
+  t.ok(run.code !== 0, 'a premature EOF must fail codex');
+  t.ok(!existsSync(codexAuthPath(ws)), 'no auth is staged when the app-server exits early');
+});
+
+test('codex', 'a delayed batch response within the deadline succeeds because stdin stays open', async t => {
+  const ws = makeWorkspace();
+  placeFakeCodex(ws.binDir);
+  const run = await runShellInstaller({
+    workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url,
+    fakeCodexAppServerMode: 'ok', fakeCodexBatchDelay: 2, timeoutSeconds: 30,
+  });
+  t.equal(run.code, 0, `a response delayed under the deadline must still succeed:\n${run.combined}`);
+  const record = readCodexRecord(ws);
+  const respondIdx = record.findIndex(r => r.marker === 'batch-respond');
+  const eofIdx = record.findIndex(r => r.marker === 'stdin-eof');
+  t.ok(respondIdx >= 0, 'the batch response was produced');
+  t.ok(eofIdx === -1 || respondIdx < eofIdx, 'stdin remained open until the batch response was sent');
+});
+
+test('codex', 'a batch response past the deadline times out, kills the tree, and rolls back', async t => {
+  const ws = makeWorkspace();
+  placeFakeCodex(ws.binDir);
+  const started = Date.now();
+  const run = await runShellInstaller({
+    workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url,
+    fakeCodexAppServerMode: 'ok', fakeCodexBatchDelay: 8, timeoutSeconds: 1, excludeTimeoutTools: true,
+  });
+  t.ok(run.code !== 0, 'a batch response past the deadline must fail codex');
+  t.ok(Date.now() - started < 5_000, 'the deadline fires well before the fake would respond');
+  t.ok(!existsSync(codexAuthPath(ws)), 'a timed-out app-server rolls back');
+});
+
+test('codex', 'a missing initialize response times out and fails', async t => {
+  const ws = makeWorkspace();
+  placeFakeCodex(ws.binDir);
+  const started = Date.now();
+  const run = await runShellInstaller({
+    workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url,
+    fakeCodexAppServerMode: 'no-initialize-response', timeoutSeconds: 1, excludeTimeoutTools: true,
+  });
+  t.ok(run.code !== 0, 'a missing initialize response must fail codex');
+  t.ok(Date.now() - started < 5_000, 'the deadline bounds the missing-response wait');
+});
+
+test('codex', 'a large app-server stderr stream does not deadlock the exchange', async t => {
+  const ws = makeWorkspace();
+  placeFakeCodex(ws.binDir);
+  const run = await runShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url, fakeCodexLargeStderr: true });
+  t.equal(run.code, 0, `a chatty stderr must not block the JSON-RPC exchange:\n${run.combined.slice(0, 2000)}`);
+  assertCodexBaseEdits(t, ws, modelServer.url);
+});
+
+test('codex', 'honors an explicit CODEX_HOME for config and auth', async t => {
+  const ws = makeWorkspace();
+  placeFakeCodex(ws.binDir);
+  const codexHome = join(ws.root, 'custom-codex-home');
+  const started = Date.now();
+  const run = await runShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url, codexHome });
+  t.equal(run.code, 0, `should succeed:\n${run.combined}`);
+  t.ok(existsSync(codexAuthPath(ws, codexHome)), 'auth lands under CODEX_HOME');
+  t.ok(!existsSync(codexAuthPath(ws)), 'the default ~/.codex is not used when overridden');
+  assertStagedAuth(t, ws, modelServer.url, started, codexHome);
+});
+
+test('codex', 'missing CLI triggers the official user-local installer', async t => {
+  if (globalCodexPresent()) skip('a system Codex is installed at a known location; cannot simulate an absent CLI');
+  const ws = makeWorkspace();
+  const run = await runShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url });
+  t.equal(run.code, 0, `codex setup should succeed after install:\n${run.combined}`);
+  t.ok(existsSync(installerMarker(ws)), 'the official installer must run when codex is absent');
+  t.ok(existsSync(join(ws.home, '.local/bin/codex')), 'the installer places codex in the user-local location');
+  assertCodexBaseEdits(t, ws, modelServer.url);
+});
+
+test('codex', 'the staged auth.json is mode 0600', async t => {
+  const ws = makeWorkspace();
+  placeFakeCodex(ws.binDir);
+  const run = await runShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url });
+  t.equal(run.code, 0, `should succeed:\n${run.combined}`);
+  const mode = statSync(codexAuthPath(ws)).mode & 0o777;
+  t.equal(mode, 0o600, `auth.json should be 0600, got ${mode.toString(8)}`);
+});
+
+test('codex', 'pre-existing config and auth are backed up on success', async t => {
+  const ws = makeWorkspace();
+  placeFakeCodex(ws.binDir);
+  const home = codexHomeFor(ws);
+  mkdirSync(home, { recursive: true });
+  const priorConfig = 'model_provider = "old"\nkeep_me = "yes"\n';
+  const priorAuth = '{"tokens":{"id_token":"old","access_token":"old","refresh_token":"old"},"OPENAI_API_KEY":null,"last_refresh":"2020-01-01T00:00:00Z"}';
+  writeFileSync(codexConfigPath(ws), priorConfig);
+  writeFileSync(codexAuthPath(ws), priorAuth);
+  const run = await runShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url });
+  t.equal(run.code, 0, `should succeed:\n${run.combined}`);
+  t.equal(codexBackupFiles(home, 'config.toml').length, 1, 'config.toml was backed up');
+  const authBackups = codexBackupFiles(home, 'auth.json');
+  t.equal(authBackups.length, 1, 'auth.json was backed up');
+  t.equal(readFileSync(join(home, authBackups[0]!), 'utf8'), priorAuth, 'the auth backup captured the original bytes');
+});
+
+test('codex', 'verification failure restores both prior config and auth', async t => {
+  const ws = makeWorkspace();
+  placeFakeCodex(ws.binDir);
+  const home = codexHomeFor(ws);
+  mkdirSync(home, { recursive: true });
+  const priorConfig = 'model_provider = "old"\nkeep_me = "yes"\n';
+  const priorAuth = '{"tokens":{"id_token":"old","access_token":"old","refresh_token":"old"},"OPENAI_API_KEY":null,"last_refresh":"2020-01-01T00:00:00Z"}';
+  writeFileSync(codexConfigPath(ws), priorConfig);
+  writeFileSync(codexAuthPath(ws), priorAuth);
+  modelServer.mode = 'unauthorized';
+  try {
+    const run = await runShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url });
+    t.ok(run.code !== 0, 'an unauthorized model directory must fail verification');
+    t.equal(readFileSync(codexConfigPath(ws), 'utf8'), priorConfig, 'config.toml restored to the original');
+    t.equal(readFileSync(codexAuthPath(ws), 'utf8'), priorAuth, 'auth.json restored to the original');
+    t.equal(stagedFiles(home).length, 0, 'no staged file is left behind');
+  } finally {
+    modelServer.mode = 'ok';
+  }
+});
+
+test('codex', 'config write succeeds but an auth staging failure rolls back both', async t => {
+  const ws = makeWorkspace();
+  placeFakeCodex(ws.binDir);
+  const home = codexHomeFor(ws);
+  mkdirSync(home, { recursive: true });
+  const priorAuth = '{"tokens":{"id_token":"old","access_token":"old","refresh_token":"old"},"OPENAI_API_KEY":null,"last_refresh":"2020-01-01T00:00:00Z"}';
+  writeFileSync(codexAuthPath(ws), priorAuth);
+  // A failing chmod trips the auth-stage protection after the batch write has
+  // already succeeded, exercising the config-ok / auth-fail rollback branch.
+  writeFileSync(join(ws.binDir, 'chmod'), '#!/bin/bash\nexit 73\n', { mode: 0o755 });
+  const run = await runShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url });
+  t.ok(run.code !== 0, 'an auth staging failure must fail codex');
+  t.equal(readCodexAuth(ws).tokens.id_token, 'old', 'auth.json restored after the staging failure');
+  t.equal(stagedFiles(home).length, 0, 'the failed auth stage is removed');
+});
+
+test('codex', 'verification failure with no prior files removes the created auth', async t => {
+  const ws = makeWorkspace();
+  placeFakeCodex(ws.binDir);
+  modelServer.mode = 'unauthorized';
+  try {
+    const run = await runShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url });
+    t.ok(run.code !== 0, 'an unauthorized model directory must fail verification');
+    t.ok(!existsSync(codexAuthPath(ws)), 'the freshly staged auth is removed on rollback');
+    t.equal(codexBackupFiles(codexHomeFor(ws), 'auth.json').length, 0, 'no auth backup exists when none pre-existed');
+  } finally {
+    modelServer.mode = 'ok';
+  }
+});
+
+test('codex', 'raw codex --version output is displayed', async t => {
+  const ws = makeWorkspace();
+  placeFakeCodex(ws.binDir);
+  const run = await runShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url, fakeCodexVersion: 'codex-cli 0.144.1' });
+  t.equal(run.code, 0, `should succeed:\n${run.combined}`);
+  t.includes(run.combined, 'codex-cli 0.144.1', 'the raw version string is surfaced');
+});
+
+test('codex', 'a codex --version timeout is bounded and rolls back', async t => {
+  const ws = makeWorkspace();
+  placeFakeCodex(ws.binDir);
+  const started = Date.now();
+  const run = await runShellInstaller({
+    workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url,
+    fakeCodexVersionSleep: 8, timeoutSeconds: 1, excludeTimeoutTools: true,
+  });
+  t.ok(run.code !== 0, 'a timed-out version must fail codex');
+  t.ok(Date.now() - started < 5_000, 'the version deadline fires before natural completion');
+  t.ok(!existsSync(codexAuthPath(ws)), 'a timed-out verification rolls back auth');
+});
+
+test('codex', 'the API key never appears in output and never reaches the app-server', async t => {
+  const ws = makeWorkspace();
+  placeFakeCodex(ws.binDir);
+  const run = await runShellInstaller({
+    workspace: ws, baseUrl: modelServer.url,
+    configuration: codexConfig({ model: 'gpt-5-codex', reasoningEffort: 'high' }),
+  });
+  t.equal(run.code, 0, `should succeed:\n${run.combined}`);
+  t.excludes(run.combined, SENTINEL_KEY, 'the API key must never be printed');
+  t.excludes(run.combined, 'received the API key', 'the app-server must never observe the key in a request');
+  // Sanity: the key really was written to auth so the absence above is meaningful.
+  t.equal(readCodexAuth(ws).tokens.access_token, SENTINEL_KEY, 'the key was actually staged into auth.json');
+});
+
+test('codex', 'no model-inference request is issued during verification', async t => {
+  const ws = makeWorkspace();
+  placeFakeCodex(ws.binDir);
+  modelServer.reset();
+  const run = await runShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url });
+  t.equal(run.code, 0, `should succeed:\n${run.combined}`);
+  const dataPlane = modelServer.requests.filter(r => r.path.startsWith('/azure-api.codex') || r.path.startsWith('/v1'));
+  t.ok(dataPlane.length > 0, 'verification should reach the codex model directory');
+  for (const request of dataPlane) {
+    t.equal(request.path, '/azure-api.codex/models', `only the codex model directory may be requested, saw ${request.method} ${request.path}`);
+    t.ok(!INFERENCE_PATHS.includes(request.path), `no inference path may be requested, saw ${request.path}`);
+  }
+});
+
+test('codex', 'independent agents: codex failure keeps a configured Claude and exits nonzero', async t => {
+  const ws = makeWorkspace();
+  placeFakeClaude(ws.binDir);
+  placeFakeCodex(ws.binDir);
+  const run = await runShellInstaller({
+    workspace: ws, baseUrl: modelServer.url, configuration: bothConfig(),
+    fakeCodexAppServerMode: 'error',
+  });
+  t.ok(run.code !== 0, 'a codex failure must make the aggregate exit nonzero');
+  t.includes(run.combined, 'Claude Code: configured', 'Claude remains configured despite the codex failure');
+  t.includes(run.combined, 'Codex:       failed', 'Codex is reported as failed');
+  const settings = readSettings(settingsPathFor(ws)) as { env: Record<string, string> };
+  t.equal(settings.env.ANTHROPIC_AUTH_TOKEN, SENTINEL_KEY, 'Claude settings survive the codex failure');
+});
+
+test('codex', 'both agents configure independently when both succeed', async t => {
+  const ws = makeWorkspace();
+  placeFakeClaude(ws.binDir);
+  placeFakeCodex(ws.binDir);
+  const run = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: bothConfig() });
+  t.equal(run.code, 0, `both agents should configure:\n${run.combined}`);
+  t.includes(run.combined, 'Claude Code: configured', 'Claude configured');
+  t.includes(run.combined, 'Codex:       configured', 'Codex configured');
+  assertCodexBaseEdits(t, ws, modelServer.url);
+  t.ok(existsSync(settingsPathFor(ws)), 'Claude settings written');
+});
+
+test('codex', 'local Bash installer accepts shell content and rejects HTML for codex', async t => {
+  if (globalCodexPresent()) skip('a system Codex is installed at a known location; cannot simulate an absent CLI');
+  const accepted = makeWorkspace();
+  modelServer.mode = 'installer-codex-sh';
+  const success = await runShellInstaller({
+    workspace: accepted, configuration: codexConfig(), baseUrl: modelServer.url,
+    withCodexInstallHook: false, codexInstallerUrl: `${modelServer.url}/install-codex.sh`,
+  });
+  t.equal(success.code, 0, `a local codex shell installer should be accepted:\n${success.combined}`);
+  t.ok(existsSync(installerMarker(accepted)), 'accepted codex installer executed');
+
+  const rejected = makeWorkspace();
+  modelServer.mode = 'installer-html';
+  const failure = await runShellInstaller({
+    workspace: rejected, configuration: codexConfig(), baseUrl: modelServer.url,
+    withCodexInstallHook: false, codexInstallerUrl: `${modelServer.url}/install-codex.sh`,
+  });
+  t.ok(failure.code !== 0, 'HTML codex installer response must be rejected');
+  t.ok(!existsSync(installerMarker(rejected)), 'HTML response never executes');
+});
+
+test('codex', 'multiple installations produce a warning and PATH wins', async t => {
+  const ws = makeWorkspace();
+  placeFakeCodex(ws.binDir);
+  placeFakeCodex(join(ws.home, '.local/bin'));
+  const run = await runShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url });
+  t.equal(run.code, 0, `should succeed:\n${run.combined}`);
+  t.includes(run.combined.toLowerCase(), 'multiple', 'a multiple-installation warning is printed');
+  t.ok(!existsSync(installerMarker(ws)), 'no install happens when one is already present');
+});
+
+// --- Codex PowerShell parse + execution -------------------------------------
+
+test('codex', 'PowerShell: existing CLI configures via the app-server and stages auth', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  placeFakeCodex(ws.binDir);
+  const started = Date.now();
+  const run = await runPowerShellInstaller({ workspace: ws, configuration: codexConfig({ model: 'gpt-5-codex', reasoningEffort: 'high' }), baseUrl: modelServer.url });
+  t.equal(run.code, 0, `codex setup should succeed:\n${run.combined}`);
+  t.ok(!existsSync(installerMarker(ws)), 'installer must not run when codex is present');
+  assertCodexBaseEdits(t, ws, modelServer.url);
+  const edits = codexEditMap(ws);
+  t.equal(edits.get('model'), 'gpt-5-codex', 'model written verbatim');
+  t.equal(edits.get('model_reasoning_effort'), 'high', 'effort written verbatim');
+  assertStagedAuth(t, ws, modelServer.url, started);
+});
+
+test('codex', 'PowerShell: the batch clears model and effort when unset', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  placeFakeCodex(ws.binDir);
+  const run = await runPowerShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url });
+  t.equal(run.code, 0, `should succeed:\n${run.combined}`);
+  const edits = codexEditMap(ws);
+  t.equal(edits.get('model'), null, 'unset model clears via JSON null');
+  t.equal(edits.get('model_reasoning_effort'), null, 'unset effort clears via JSON null');
+});
+
+test('codex', 'PowerShell: okOverridden counts as success and reports non-secret metadata only', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  placeFakeCodex(ws.binDir);
+  const run = await runPowerShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url, fakeCodexAppServerMode: 'okOverridden' });
+  t.equal(run.code, 0, `okOverridden must be treated as configured:\n${run.combined}`);
+  t.includes(run.combined, 'Overridden by session flags', 'the override message is surfaced');
+  t.excludes(run.combined, 'shadow-model', 'the overridden effective value is not echoed');
+});
+
+test('codex', 'PowerShell: a batchWrite error fails codex and rolls back auth', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  placeFakeCodex(ws.binDir);
+  const home = codexHomeFor(ws);
+  mkdirSync(home, { recursive: true });
+  const priorAuth = '{"tokens":{"id_token":"old","access_token":"old","refresh_token":"old"},"OPENAI_API_KEY":null,"last_refresh":"2020-01-01T00:00:00Z"}';
+  writeFileSync(codexAuthPath(ws), priorAuth);
+  const run = await runPowerShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url, fakeCodexAppServerMode: 'error' });
+  t.ok(run.code !== 0, 'a protocol error must fail codex');
+  t.equal(readCodexAuth(ws).tokens.id_token, 'old', 'prior auth is restored on rollback');
+});
+
+test('codex', 'PowerShell: a malformed response fails codex', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  placeFakeCodex(ws.binDir);
+  const run = await runPowerShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url, fakeCodexAppServerMode: 'malformed' });
+  t.ok(run.code !== 0, 'a malformed response must fail codex');
+  t.ok(!existsSync(codexAuthPath(ws)), 'no auth is staged on a malformed response');
+});
+
+test('codex', 'PowerShell: a premature app-server exit fails codex', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  placeFakeCodex(ws.binDir);
+  const run = await runPowerShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url, fakeCodexAppServerMode: 'premature-eof' });
+  t.ok(run.code !== 0, 'a premature EOF must fail codex');
+  t.ok(!existsSync(codexAuthPath(ws)), 'no auth is staged on premature EOF');
+});
+
+test('codex', 'PowerShell: a batch response past the deadline times out and rolls back', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  placeFakeCodex(ws.binDir);
+  const started = Date.now();
+  const run = await runPowerShellInstaller({
+    workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url,
+    fakeCodexAppServerMode: 'ok', fakeCodexBatchDelay: 8, timeoutSeconds: 1,
+  });
+  t.ok(run.code !== 0, 'a batch response past the deadline must fail codex');
+  t.ok(Date.now() - started < 6_000, 'the deadline fires before the fake would respond');
+  t.ok(!existsSync(codexAuthPath(ws)), 'a timed-out app-server rolls back');
+});
+
+test('codex', 'PowerShell: honors an explicit CODEX_HOME', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  placeFakeCodex(ws.binDir);
+  const codexHome = join(ws.root, 'custom-codex-home');
+  const run = await runPowerShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url, codexHome });
+  t.equal(run.code, 0, `should succeed:\n${run.combined}`);
+  t.ok(existsSync(codexAuthPath(ws, codexHome)), 'auth lands under CODEX_HOME');
+  t.ok(!existsSync(codexAuthPath(ws)), 'the default ~/.codex is not used when overridden');
+});
+
+test('codex', 'PowerShell: the API key never appears in output and never reaches the app-server', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  placeFakeCodex(ws.binDir);
+  const run = await runPowerShellInstaller({ workspace: ws, configuration: codexConfig({ model: 'gpt-5-codex' }), baseUrl: modelServer.url });
+  t.equal(run.code, 0, `should succeed:\n${run.combined}`);
+  t.excludes(run.combined, SENTINEL_KEY, 'the API key must never be printed');
+  t.excludes(run.combined, 'received the API key', 'the app-server must never observe the key in a request');
+  t.equal(readCodexAuth(ws).tokens.access_token, SENTINEL_KEY, 'the key was actually staged into auth.json');
+});
+
+test('codex', 'PowerShell: missing CLI triggers the installer', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  const run = await runPowerShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url });
+  t.equal(run.code, 0, `should succeed after install:\n${run.combined}`);
+  t.ok(existsSync(installerMarker(ws)), 'the installer runs when codex is absent');
+  assertCodexBaseEdits(t, ws, modelServer.url);
+});
+
+test('codex', 'PowerShell: independent agents keep a configured Claude when codex fails', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  placeFakeClaude(ws.binDir);
+  placeFakeCodex(ws.binDir);
+  const run = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: bothConfig(), fakeCodexAppServerMode: 'error' });
+  t.ok(run.code !== 0, 'a codex failure must make the aggregate exit nonzero');
+  t.includes(run.combined, 'Claude Code: configured', 'Claude remains configured despite the codex failure');
+  t.includes(run.combined, 'Codex:       failed', 'Codex is reported as failed');
+});
+
+// --- Codex real-binary smoke test -------------------------------------------
+
+test('codex', 'end-to-end against the real pinned Codex 0.144.1 app-server writes config.toml', async t => {
+  if (!hostCodex) skip('real Codex 0.144.1 is not installed on this host');
+  const ws = makeWorkspace();
+  symlinkSync(hostCodex, join(ws.binDir, 'codex'));
+  const codexHome = join(ws.root, 'real-codex-home');
+  const started = Date.now();
+  const run = await runShellInstaller({
+    workspace: ws, baseUrl: modelServer.url,
+    configuration: codexConfig({ model: 'gpt-5-codex', reasoningEffort: 'high' }),
+    codexHome, withCodexInstallHook: false,
+  });
+  t.equal(run.code, 0, `real codex app-server configuration should succeed:\n${run.combined}`);
+  const configText = readFileSync(codexConfigPath(ws, codexHome), 'utf8');
+  const codexBase = `${modelServer.url.replace(/\/$/, '')}/azure-api.codex`;
+  t.includes(configText, 'model_provider = "floway"', 'real config.toml carries the provider selection');
+  t.includes(configText, 'wire_api = "responses"', 'real config.toml carries the wire_api');
+  t.includes(configText, 'supports_websockets = true', 'real config.toml carries websocket support');
+  t.includes(configText, `base_url = "${codexBase}"`, 'real config.toml carries the provider base_url');
+  t.includes(configText, 'model = "gpt-5-codex"', 'real config.toml carries the selected model');
+  assertStagedAuth(t, ws, modelServer.url, started, codexHome);
 });
 
 // --- run --------------------------------------------------------------------
