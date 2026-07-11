@@ -8,7 +8,7 @@ import { eventFrame } from '@floway-dev/protocols/common';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesResult, ResponsesStreamEvent, ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
 import { type EventResult, type ExecuteResult, type FlagId } from '@floway-dev/provider';
-import { assert, assertEquals, stubModelCandidate } from '@floway-dev/test-utils';
+import { assert, assertEquals, assertFalse, stubModelCandidate } from '@floway-dev/test-utils';
 
 // Dirty integration harness: mock the model registry so the image backend is a
 // pair of in-test stubs, then drive the whole shim (function-tool rewrite,
@@ -275,6 +275,30 @@ test('consumes the exact Codex image_gen namespace and restores its tool and for
   assertEquals(completed.response.tool_choice, namespaceChoice);
 });
 
+test('maps and restores a forced hosted image_generation choice across the demoted final turn', async () => {
+  stub.nextGenerations = [jsonResponse('R0VO')];
+  const hostedTool = { type: 'image_generation', quality: 'high' } as ResponsesTool;
+  const hostedChoice = { type: 'image_generation' } as ResponsesToolChoice;
+  const invocation = makeCtxWithTools([], [hostedTool], hostedChoice);
+  const replacement = { type: 'function', name: SHIM_TOOL_NAME, parameters: {}, strict: false } as ResponsesTool;
+  const run = scriptedRun([
+    withResponseEcho(callTurn(0, 'call_1', 'a cat'), [replacement], { type: 'function', name: SHIM_TOOL_NAME }),
+    withResponseEcho(messageTurn('done'), [replacement], 'auto'),
+  ]);
+  let firstUpstreamToolChoice: ResponsesToolChoice | undefined;
+  const result = await shim(invocation, gatewayCtx(), async () => {
+    firstUpstreamToolChoice ??= invocation.payload.tool_choice;
+    return await run();
+  });
+  const events = await drain(result);
+
+  assertEquals(firstUpstreamToolChoice, { type: 'function', name: SHIM_TOOL_NAME });
+  const completed = events.find(e => e.type === 'response.completed');
+  assert(completed?.type === 'response.completed');
+  assertEquals(completed.response.tools, [hostedTool]);
+  assertEquals(completed.response.tool_choice, hostedChoice);
+});
+
 test('resolves a client function-name collision while keeping the image namespace internal name off the wire', async () => {
   stub.nextGenerations = [jsonResponse('R0VO')];
   const clientFunction = { type: 'function', name: SHIM_TOOL_NAME, parameters: {}, strict: false } as ResponsesTool;
@@ -292,6 +316,8 @@ test('resolves a client function-name collision while keeping the image namespac
     { type: 'function', name: SHIM_TOOL_NAME },
     { type: 'function', name: resolvedName },
   ]);
+  assertFalse('tools' in invocation.payload.tools![1]);
+  assertFalse((invocation.payload.tools![1] as { name: string }).name.includes('imagegen'));
   assert(events.some(e => e.type === 'response.image_generation_call.completed'));
   const completed = events.find(e => e.type === 'response.completed');
   assert(completed?.type === 'response.completed');
