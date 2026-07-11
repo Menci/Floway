@@ -254,7 +254,6 @@ const restoreEchoedToolChoice = (
   toolChoice: ResponsesToolChoice | undefined,
   active: readonly ActiveServerTool[],
 ): ResponsesToolChoice | undefined => {
-  if (toolChoice === undefined) return undefined;
   for (const entry of active) {
     if (entry.originalToolChoice !== undefined) return entry.originalToolChoice;
   }
