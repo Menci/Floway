@@ -9,7 +9,7 @@
 //      user-agent, GitHub 404 (unreleased version), network error
 //
 // The bundled snapshot is a frozen copy of
-//   https://github.com/openai/codex/blob/rust-v0.136.0/codex-rs/models-manager/models.json
+//   https://github.com/openai/codex/blob/rust-v0.144.1/codex-rs/models-manager/models.json
 // (Apache-2.0). It is the working fallback for cold starts, clients running
 // unreleased prerelease builds, and operators behind network egress
 // restrictions. Refresh it whenever a newer codex release ships material

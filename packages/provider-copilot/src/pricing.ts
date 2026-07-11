@@ -100,6 +100,14 @@ const COPILOT_MODEL_PRICING: readonly PricingRule[] = [
       output: 5,
     },
   ],
+  // OpenAI's July 2026 GPT-5.6 launch splits the family into three
+  // named variants (Sol / Terra / Luna). Copilot's live catalog exposes
+  // all three with per-model billing blocks that agree exactly with
+  // models.dev and OpenRouter — Sol matches the GPT-5.5 rate, Terra
+  // matches GPT-5.4, and Luna sits between GPT-5.4-mini and GPT-4o-mini.
+  ['gpt-5.6-sol', { input: 5, input_cache_read: 0.5, output: 30 }],
+  ['gpt-5.6-terra', { input: 2.5, input_cache_read: 0.25, output: 15 }],
+  ['gpt-5.6-luna', { input: 1, input_cache_read: 0.1, output: 6 }],
   ['gpt-5.5', { input: 5, input_cache_read: 0.5, output: 30 }],
   ['gpt-5.4', { input: 2.5, input_cache_read: 0.25, output: 15 }],
   ['gpt-5.4-mini', { input: 0.75, input_cache_read: 0.075, output: 4.5 }],

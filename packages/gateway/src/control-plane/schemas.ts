@@ -18,6 +18,7 @@
 import { z } from 'zod';
 
 import { normalizeDisabledPublicModelIds } from '../repo/disabled-public-models.ts';
+import { CUSTOM_API_KEY_MAX_LENGTH, KEY_SOURCES } from '../shared/api-key-tokens.ts';
 import { type FlagOverrides, MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX, parseFlagOverridesWire } from '@floway-dev/provider';
 
 // --- shared atoms ---
@@ -238,10 +239,24 @@ export const changeOwnPasswordBody = z.object({
 export const DUMP_RETENTION_MAX_SECONDS = 10 * 365 * 24 * 60 * 60;
 const dumpRetentionSecondsSchema = z.number().int().positive().max(DUMP_RETENTION_MAX_SECONDS).nullable();
 
+// `key_source` picks how the raw key on this create/rotate request is
+// produced: 'generate' means the gateway mints an sk-...T3BlbkFJ... token
+// for this write; 'custom' means the request carries the token verbatim in
+// `custom_key`. The choice is per-call — the shape is not persisted, and a
+// later rotate is free to switch styles without any state on the row.
+const keySourceShape = {
+  key_source: z.enum(KEY_SOURCES).optional(),
+  custom_key: z.string().max(CUSTOM_API_KEY_MAX_LENGTH).optional(),
+};
+
 export const createKeyBody = z.object({
   name: z.string().min(1),
   upstream_ids: upstreamIdsValueSchema.optional(),
+  dump_retention_seconds: dumpRetentionSecondsSchema.optional(),
+  ...keySourceShape,
 });
+
+export const rotateKeyBody = z.object(keySourceShape);
 
 export const updateKeyBody = z.object({
   name: z.string().min(1).optional(),

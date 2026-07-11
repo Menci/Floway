@@ -672,3 +672,108 @@ test('translateResponsesToMessagesResult omits usage.speed when service_tier is 
 
   assertEquals(result.usage.speed, undefined);
 });
+
+const responseFailedEvent = (error: { code: string; message: string }): Parameters<typeof translateResponsesStreamEventToMessagesEvents>[0] => ({
+  type: 'response.failed',
+  response: {
+    id: 'resp_ctx',
+    object: 'response',
+    model: 'gpt-test',
+    output: [],
+    output_text: '',
+    status: 'failed',
+    error,
+    incomplete_details: null,
+    usage: undefined,
+  },
+});
+
+test('Codex-shaped response.failed with context_length_exceeded → invalid_request_error with prompt-too-long prefix', () => {
+  const state = createResponsesToMessagesStreamState();
+  const events = translateResponsesStreamEventToMessagesEvents(
+    responseFailedEvent({ code: 'context_length_exceeded', message: 'Your input exceeds the context window of this model. Please adjust your input and try again.' }),
+    state,
+  );
+
+  assertEquals(events, [{
+    type: 'error',
+    error: {
+      type: 'invalid_request_error',
+      message: 'prompt is too long: your prompt is too long. Please reduce the number of messages or use a model with a larger context window.',
+    },
+  }]);
+});
+
+test('Copilot-shaped response.failed with model_max_prompt_tokens_exceeded → invalid_request_error with prompt-too-long prefix', () => {
+  const state = createResponsesToMessagesStreamState();
+  const events = translateResponsesStreamEventToMessagesEvents(
+    responseFailedEvent({ code: 'model_max_prompt_tokens_exceeded', message: 'prompt token count of 1000000 exceeds the limit of 128000' }),
+    state,
+  );
+
+  assertEquals(events, [{
+    type: 'error',
+    error: {
+      type: 'invalid_request_error',
+      message: 'prompt is too long: your prompt is too long. Please reduce the number of messages or use a model with a larger context window.',
+    },
+  }]);
+});
+
+test('response.failed with an unrelated code passes through as api_error carrying the upstream message', () => {
+  const state = createResponsesToMessagesStreamState();
+  const events = translateResponsesStreamEventToMessagesEvents(
+    responseFailedEvent({ code: 'server_error', message: 'upstream failed' }),
+    state,
+  );
+
+  assertEquals(events, [{
+    type: 'error',
+    error: { type: 'api_error', message: 'upstream failed' },
+  }]);
+});
+
+test('stream `error` event with context_length_exceeded code → invalid_request_error with prompt-too-long prefix', () => {
+  const state = createResponsesToMessagesStreamState();
+  const events = translateResponsesStreamEventToMessagesEvents(
+    { type: 'error', code: 'context_length_exceeded', message: 'Your input exceeds the context window of this model.' },
+    state,
+  );
+
+  assertEquals(events, [{
+    type: 'error',
+    error: {
+      type: 'invalid_request_error',
+      message: 'prompt is too long: your prompt is too long. Please reduce the number of messages or use a model with a larger context window.',
+    },
+  }]);
+});
+
+test('stream `error` event without a matching code but with a matching message substring → invalid_request_error', () => {
+  const state = createResponsesToMessagesStreamState();
+  const events = translateResponsesStreamEventToMessagesEvents(
+    { type: 'error', message: "This model's maximum context length is 4097 tokens. However, your messages resulted in 4498 tokens." },
+    state,
+  );
+
+  assertEquals(events, [{
+    type: 'error',
+    error: {
+      type: 'invalid_request_error',
+      message: 'prompt is too long: your prompt is too long. Please reduce the number of messages or use a model with a larger context window.',
+    },
+  }]);
+});
+
+test('stream `error` event with a mundane message → api_error carrying that message', () => {
+  const state = createResponsesToMessagesStreamState();
+  const events = translateResponsesStreamEventToMessagesEvents(
+    { type: 'error', message: 'transient upstream hiccup' },
+    state,
+  );
+
+  assertEquals(events, [{
+    type: 'error',
+    error: { type: 'api_error', message: 'transient upstream hiccup' },
+  }]);
+});

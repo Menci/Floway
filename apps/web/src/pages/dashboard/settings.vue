@@ -32,11 +32,11 @@ export const useSettingsPageData = defineBasicLoader(async () => {
   const [searchRes] = await Promise.all([
     callApi<SearchConfig>(() => api.api['search-config'].$get()),
     useUpstreamsStore().load(),
-    useRawModelsStore().load(),
     useProxiesStore().load(),
     useModelAliases().load(),
     useRuntimeInfo().load(),
   ]);
+  await useRawModelsStore().load();
   return {
     searchConfig: searchRes.data ?? defaultSearchConfig,
     searchConfigError: searchRes.error?.message ?? null,
@@ -87,6 +87,12 @@ const openAliasDialog = (record: ModelAlias | null): void => {
 
 <template>
   <div>
+    <p
+      v-if="modelsStore.error.value"
+      class="mb-4 rounded-md border border-accent-rose/40 bg-accent-rose/10 px-3 py-2 text-sm text-accent-rose"
+    >
+      Model catalog unavailable: {{ modelsStore.error.value }}
+    </p>
     <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
       <div class="flex flex-col gap-5">
         <UpstreamsSettingsCard

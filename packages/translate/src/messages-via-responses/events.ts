@@ -1,3 +1,4 @@
+import { isContextExceededError, PROMPT_TOO_LONG_MESSAGE } from '../shared/messages/context-window-error.ts';
 import { parseToolArgumentsObject } from '../shared/messages/tool-arguments.ts';
 import { packReasoningSignature, responsesReasoningToMessagesBlock } from '../shared/messages-and-responses/reasoning.ts';
 import { createResponsesOutputOrderState, recordResponsesOutputOrderEvent, type ResponsesOutputOrderState, shouldDeferForEarlierResponsesOutput } from '../shared/via-responses/responses-stream-order.ts';
@@ -427,25 +428,36 @@ const handleCompleted = (response: ResponsesResult, state: ResponsesToMessagesSt
   return events;
 };
 
-const handleStreamError = (state: ResponsesToMessagesStreamState, message: string): MessagesStreamEvent[] => {
+// A Responses upstream can report a context-exceeded failure inside the SSE
+// stream (Codex emits `response.failed` with `error.code =
+// context_length_exceeded`; some Copilot fronts surface a stream `error`
+// event with the same code). We rewrite those into the same Anthropic
+// `invalid_request_error` + `prompt is too long:` envelope the unary path
+// uses, so a Messages client (Claude Code in particular) recognizes the
+// condition and triggers auto-compaction whether the failure arrived
+// pre-stream or mid-stream.
+const handleStreamError = (
+  state: ResponsesToMessagesStreamState,
+  error: { code?: string; message?: string } | undefined,
+  fallbackMessage: string,
+): MessagesStreamEvent[] => {
   const events: MessagesStreamEvent[] = [];
   closeAllBlocks(state, events);
   state.messageCompleted = true;
   events.push({
     type: 'error',
-    error: {
-      type: 'api_error',
-      message,
-    },
+    error: isContextExceededError(error)
+      ? { type: 'invalid_request_error', message: PROMPT_TOO_LONG_MESSAGE }
+      : { type: 'api_error', message: error?.message ?? fallbackMessage },
   });
   return events;
 };
 
 const handleFailed = (response: ResponsesResult, state: ResponsesToMessagesStreamState): MessagesStreamEvent[] =>
-  handleStreamError(state, response.error?.message ?? 'Response failed due to unknown error.');
+  handleStreamError(state, response.error ?? undefined, 'Response failed due to unknown error.');
 
 const handleError = (event: ResponsesEvent<'error'>, state: ResponsesToMessagesStreamState): MessagesStreamEvent[] =>
-  handleStreamError(state, typeof event.message === 'string' ? event.message : 'An unexpected error occurred during streaming.');
+  handleStreamError(state, { code: event.code, message: event.message }, 'An unexpected error occurred during streaming.');
 
 export const createResponsesToMessagesStreamState = (): ResponsesToMessagesStreamState => ({
   messageCompleted: false,

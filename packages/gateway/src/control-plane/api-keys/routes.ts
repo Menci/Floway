@@ -3,9 +3,11 @@ import { type AuthedContext, userFromContext, userUpstreamIdsFromContext } from 
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { ApiKey } from '../../repo/types.ts';
-import { generateApiKeyToken } from '../../shared/api-key-tokens.ts';
-import type { createKeyBody, updateKeyBody } from '../schemas.ts';
+import { CUSTOM_API_KEY_MAX_LENGTH, generateApiKeyToken, type KeySource } from '../../shared/api-key-tokens.ts';
+import type { createKeyBody, rotateKeyBody, updateKeyBody } from '../schemas.ts';
 import { ownedKeyOr404 } from '../shared/owned-key.ts';
+
+const GENERATED_KEY_RETRIES = 5;
 
 const apiKeyToJson = (key: ApiKey) => ({
   id: key.id,
@@ -16,6 +18,72 @@ const apiKeyToJson = (key: ApiKey) => ({
   upstream_ids: key.upstreamIds,
   dump_retention_seconds: key.dumpRetentionSeconds,
 });
+
+const normalizeCustomKey = (value: unknown): string | Response => {
+  if (typeof value !== 'string') {
+    return Response.json({ error: 'custom_key is required when key_source is custom' }, { status: 400 });
+  }
+  const trimmed = value.trim();
+  if (!trimmed) return Response.json({ error: 'custom_key is required when key_source is custom' }, { status: 400 });
+  if (trimmed.length > CUSTOM_API_KEY_MAX_LENGTH) {
+    return Response.json({ error: `custom_key must be at most ${CUSTOM_API_KEY_MAX_LENGTH} characters` }, { status: 400 });
+  }
+  return trimmed;
+};
+
+const duplicateKeyResponse = () =>
+  Response.json({ error: 'An API key with that raw key already exists.' }, { status: 409 });
+
+const findAnyByRawKey = async (rawKey: string): Promise<ApiKey | null> =>
+  (await getRepo().apiKeys.listIncludingDeleted()).find(key => key.key === rawKey) ?? null;
+
+const saveGeneratedKey = async (template: Omit<ApiKey, 'key'>): Promise<ApiKey | Response> => {
+  for (let i = 0; i < GENERATED_KEY_RETRIES; i++) {
+    const key: ApiKey = { ...template, key: generateApiKeyToken() };
+    if (await findAnyByRawKey(key.key)) continue;
+    try {
+      await getRepo().apiKeys.save(key);
+      return key;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.toLowerCase().includes('unique') || message.toLowerCase().includes('constraint')) continue;
+      throw error;
+    }
+  }
+  return Response.json({ error: 'Could not allocate a unique API key; retry the request.' }, { status: 500 });
+};
+
+const saveCustomKey = async (template: Omit<ApiKey, 'key'>, rawKey: string): Promise<ApiKey | Response> => {
+  const existing = await findAnyByRawKey(rawKey);
+  if (existing && existing.id !== template.id) return duplicateKeyResponse();
+  const key: ApiKey = { ...template, key: rawKey };
+  try {
+    await getRepo().apiKeys.save(key);
+    return key;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.toLowerCase().includes('unique') || message.toLowerCase().includes('constraint')) return duplicateKeyResponse();
+    throw error;
+  }
+};
+
+// Reject custom_key on a non-custom source so a caller cannot smuggle a
+// bring-your-own key past the picker they explicitly opted out of.
+const writeKeyForRequest = async (
+  template: Omit<ApiKey, 'key'>,
+  body: { key_source?: KeySource; custom_key?: string },
+): Promise<ApiKey | Response> => {
+  const source = body.key_source ?? 'generate';
+  if (source !== 'custom' && body.custom_key !== undefined) {
+    return Response.json({ error: 'custom_key is only valid when key_source is custom' }, { status: 400 });
+  }
+  if (source === 'custom') {
+    const customKey = normalizeCustomKey(body.custom_key);
+    if (customKey instanceof Response) return customKey;
+    return await saveCustomKey(template, customKey);
+  }
+  return await saveGeneratedKey(template);
+};
 
 const validateUpstreamIdsAgainstUserCap = async (
   c: AuthedContext,
@@ -49,17 +117,18 @@ export const createKey = async (c: CtxWithJson<typeof createKeyBody>) => {
   const upstreamErr = await validateUpstreamIdsAgainstUserCap(c, body.upstream_ids ?? null);
   if (upstreamErr) return c.json({ error: upstreamErr }, 400);
 
-  const key = {
+  const template = {
     id: crypto.randomUUID(),
     userId,
     name: body.name,
-    key: generateApiKeyToken(),
     createdAt: new Date().toISOString(),
     upstreamIds: body.upstream_ids ?? null,
     deletedAt: null,
-    dumpRetentionSeconds: null,
-  } satisfies ApiKey;
-  await getRepo().apiKeys.save(key);
+    dumpRetentionSeconds: body.dump_retention_seconds ?? null,
+  } satisfies Omit<ApiKey, 'key'>;
+
+  const key = await writeKeyForRequest(template, body);
+  if (key instanceof Response) return key;
   return c.json(apiKeyToJson(key), 201);
 };
 
@@ -79,13 +148,13 @@ export const deleteKey = async (c: AuthedContext) => {
   return c.json({ ok: true });
 };
 
-export const rotateKey = async (c: AuthedContext) => {
+export const rotateKey = async (c: CtxWithJson<typeof rotateKeyBody>) => {
   const id = c.req.param('id')!;
   const owned = await ownedKeyOr404(c, id);
   if (owned instanceof Response) return owned;
 
-  const updated = { ...owned, key: generateApiKeyToken() } satisfies ApiKey;
-  await getRepo().apiKeys.save(updated);
+  const updated = await writeKeyForRequest(owned, c.req.valid('json'));
+  if (updated instanceof Response) return updated;
   return c.json(apiKeyToJson(updated));
 };
 

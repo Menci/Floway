@@ -86,4 +86,75 @@ describe('traverseTranslation', () => {
 
     expect(result).toBe(inner);
   });
+
+  test('upstream api-error with trip.apiError rewrite — outer returns the rewritten envelope', async () => {
+    const inner: ExecuteResult<ProtocolFrame<TgtEvent>> = {
+      type: 'api-error',
+      source: 'upstream',
+      status: 400,
+      headers: new Headers({ 'x-upstream-request-id': 'abc' }),
+      body: new TextEncoder().encode('raw upstream'),
+    };
+    const translateWithRewrite = async (payload: string): Promise<{
+      target: string;
+      events: (e: AsyncIterable<ProtocolFrame<TgtEvent>>) => AsyncIterable<ProtocolFrame<SrcEvent>>;
+      apiError: (upstream: { status: number; headers: Headers; body: Uint8Array }) => { status: number; headers: Headers; body: Uint8Array };
+    }> => ({
+      ...(await translate(payload)),
+      apiError: () => ({ status: 400, headers: new Headers({ 'content-type': 'application/json' }), body: new TextEncoder().encode('rewritten') }),
+    });
+
+    const result = await traverseTranslation('payload', translateWithRewrite, async () => inner);
+    expect(result.type).toBe('api-error');
+    if (result.type !== 'api-error') throw new Error('unreachable');
+    expect(new TextDecoder().decode(result.body)).toBe('rewritten');
+    expect(result.headers.get('content-type')).toBe('application/json');
+    expect(result.headers.get('x-upstream-request-id')).toBeNull();
+    // Fields not touched by the rewriter (source, performance, upstream) survive.
+    expect(result.source).toBe('upstream');
+  });
+
+  test('upstream api-error with trip.apiError returning undefined — outer passes the envelope through', async () => {
+    const inner: ExecuteResult<ProtocolFrame<TgtEvent>> = {
+      type: 'api-error',
+      source: 'upstream',
+      status: 502,
+      headers: new Headers(),
+      body: new TextEncoder().encode('bad gateway'),
+    };
+    const translateWithRewrite = async (payload: string): Promise<{
+      target: string;
+      events: (e: AsyncIterable<ProtocolFrame<TgtEvent>>) => AsyncIterable<ProtocolFrame<SrcEvent>>;
+      apiError: () => undefined;
+    }> => ({ ...(await translate(payload)), apiError: () => undefined });
+
+    const result = await traverseTranslation('payload', translateWithRewrite, async () => inner);
+    expect(result).toBe(inner);
+  });
+
+  test('gateway-sourced api-error — trip.apiError is NOT invoked', async () => {
+    const inner: ExecuteResult<ProtocolFrame<TgtEvent>> = {
+      type: 'api-error',
+      source: 'gateway',
+      status: 400,
+      headers: new Headers(),
+      body: new TextEncoder().encode('synthesized'),
+    };
+    let called = false;
+    const translateWithRewrite = async (payload: string): Promise<{
+      target: string;
+      events: (e: AsyncIterable<ProtocolFrame<TgtEvent>>) => AsyncIterable<ProtocolFrame<SrcEvent>>;
+      apiError: () => { status: number; headers: Headers; body: Uint8Array };
+    }> => ({
+      ...(await translate(payload)),
+      apiError: () => {
+        called = true;
+        return { status: 999, headers: new Headers(), body: new Uint8Array() };
+      },
+    });
+
+    const result = await traverseTranslation('payload', translateWithRewrite, async () => inner);
+    expect(called).toBe(false);
+    expect(result).toBe(inner);
+  });
 });

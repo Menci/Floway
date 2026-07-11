@@ -25,10 +25,11 @@
 // actually-served tier in `usage.service_tier` and the gateway captures it
 // onto `TokenUsage.tier` so cost compute picks the right row.
 //
-// Coverage: every slug surfaced by /codex/models for ChatGPT Plus today
-// (gpt-5.5, gpt-5.4, gpt-5.4-mini, codex-auto-review). New slugs the upstream
-// rolls out at higher plans (Pro / Team / Enterprise) should be added here so
-// the dashboard reports their cost too.
+// Coverage: every slug the upstream catalog surfaces across current plans —
+// the GPT-5.6 Sol / Terra / Luna family that shipped in July 2026, the
+// preceding GPT-5.5 / 5.4 / 5.4-mini slugs, and the internal codex-auto-review
+// entry. New slugs the upstream rolls out at higher plans (Pro / Team /
+// Enterprise) should be added here so the dashboard reports their cost too.
 
 import type { ModelPricing } from '@floway-dev/protocols/common';
 
@@ -43,6 +44,36 @@ const GPT_5_4_PRICING: ModelPricing = {
 };
 
 const CODEX_MODEL_PRICING: readonly (readonly [key: string | RegExp, pricing: ModelPricing])[] = [
+  // GPT-5.6 family (Sol / Terra / Luna) shipped July 2026 and requires
+  // codex-cli 0.144.0+ per the upstream models.json minimal_client_version.
+  // Standard rates match models.dev + OpenRouter; each variant's catalog
+  // entry advertises a `priority` service tier (no `flex` lane), and the
+  // priority per-token rate is a flat 2× standard across the family —
+  // distinct from GPT-5.5's 2.5× multiplier.
+  ['gpt-5.6-sol', {
+    input: 5,
+    input_cache_read: 0.5,
+    output: 30,
+    tiers: {
+      priority: { input: 10, input_cache_read: 1, output: 60 },
+    },
+  }],
+  ['gpt-5.6-terra', {
+    input: 2.5,
+    input_cache_read: 0.25,
+    output: 15,
+    tiers: {
+      priority: { input: 5, input_cache_read: 0.5, output: 30 },
+    },
+  }],
+  ['gpt-5.6-luna', {
+    input: 1,
+    input_cache_read: 0.1,
+    output: 6,
+    tiers: {
+      priority: { input: 2, input_cache_read: 0.2, output: 12 },
+    },
+  }],
   ['gpt-5.5', {
     input: 5,
     input_cache_read: 0.5,
