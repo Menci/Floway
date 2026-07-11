@@ -244,19 +244,19 @@ const rewriteHostedToolChoice = (
   return toolChoice;
 };
 
-// Reverse of `rewriteHostedToolChoice` for the upstream-echoed
-// `tool_choice` on the synthesized envelope: a function-typed choice whose
-// name matches an active shim's `toolName` is restored to the exact client
-// choice captured before request rewriting.
+// Reverse of `rewriteHostedToolChoice` for the upstream-echoed `tool_choice`
+// on synthesized envelopes. After the first intercepted turn, the shim changes
+// its own request choice to `auto` to let the orchestrator finish, so the final
+// upstream echo no longer contains the injected function choice. Any echoed
+// choice is therefore restored from the exact client shape captured before the
+// first rewrite.
 const restoreEchoedToolChoice = (
   toolChoice: ResponsesToolChoice | undefined,
   active: readonly ActiveServerTool[],
 ): ResponsesToolChoice | undefined => {
-  if (toolChoice === undefined || typeof toolChoice === 'string' || toolChoice.type !== 'function') return toolChoice;
+  if (toolChoice === undefined) return undefined;
   for (const entry of active) {
-    if (entry.originalToolChoice === undefined) continue;
-    if (toolChoice.name !== entry.toolName) continue;
-    return entry.originalToolChoice;
+    if (entry.originalToolChoice !== undefined) return entry.originalToolChoice;
   }
   return toolChoice;
 };
