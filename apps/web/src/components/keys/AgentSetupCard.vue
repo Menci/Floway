@@ -140,10 +140,9 @@ const codexEffort = computed<string>({
 // The gateway never learns its own public origin, so each command injects this
 // dashboard's origin into the shell that runs the fetched installer and points
 // the fetch at that same variable — the origin literal appears exactly once.
-// `window.location.origin` is well-formed and carries no shell metacharacters,
-// yet it is still emitted as a single-quoted literal (POSIX escapes an embedded
-// quote by close/backslash/reopen; PowerShell doubles it) so it can never break
-// out of the assignment.
+// URL origin syntax excludes single quotes, but both commands still encode the
+// value as a single-quoted literal rather than making safety depend on that URL
+// invariant (POSIX uses close/backslash/reopen; PowerShell doubles the quote).
 const origin = window.location.origin;
 const shellCommand = computed(() => (scripts.value
   ? `export FLOWAY_BASE_URL='${origin.replace(/'/g, "'\\''")}'; curl -fsSL "$FLOWAY_BASE_URL${scripts.value.sh}" | bash`

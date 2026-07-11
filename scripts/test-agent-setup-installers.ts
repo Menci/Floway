@@ -25,9 +25,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import type { AgentSetupConfiguration } from '../packages/gateway/src/control-plane/agent-setup/configuration.ts';
-import { renderPowerShellPrefix, renderShellPrefix } from '../packages/gateway/src/control-plane/agent-setup/render.ts';
-import { buildPowerShellSetupCommand, buildShellSetupCommand } from '../apps/web/src/lib/agent-setup-command.ts';
-import { powerShellLiteral } from '../apps/web/src/lib/shell-literal.ts';
+import { powerShellLiteral, renderPowerShellPrefix, renderShellPrefix } from '../packages/gateway/src/control-plane/agent-setup/render.ts';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SCRIPTS_DIR = join(HERE, '..', 'packages/gateway/src/control-plane/agent-setup/scripts');
@@ -1540,7 +1538,7 @@ const runCommandLine = (exe: string, args: string[], command: string): Promise<R
 
 test('claude', 'the copyable Bash command exports the origin into the piped installer body', async t => {
   const origin = modelServer.url;
-  const command = buildShellSetupCommand(origin, '/probe/setup.sh');
+  const command = `export FLOWAY_BASE_URL='${origin.replace(/'/g, "'\\''")}'; curl -fsSL "$FLOWAY_BASE_URL/probe/setup.sh" | bash`;
   const run = await runCommandLine('/bin/bash', ['-c'], command);
   t.equal(run.code, 0, `the copyable Bash command should run cleanly:\n${run.combined}`);
   t.includes(run.stdout, `PROBE_BASE_URL=[${origin}]`, 'the exported origin reached the piped bash executing the fetched body');
@@ -1549,7 +1547,7 @@ test('claude', 'the copyable Bash command exports the origin into the piped inst
 test('claude', 'the copyable PowerShell command assigns the origin into the iex runspace', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const origin = modelServer.url;
-  const command = buildPowerShellSetupCommand(origin, '/probe/setup.ps1');
+  const command = `$FlowayBaseUrl = ${powerShellLiteral(origin)}; irm "$FlowayBaseUrl/probe/setup.ps1" | iex`;
   const run = await runCommandLine(hostPwsh, ['-NoProfile', '-Command'], command);
   t.equal(run.code, 0, `the copyable PowerShell command should run cleanly:\n${run.combined}`);
   t.includes(run.stdout, `PROBE_BASE_URL=[${origin}]`, 'the in-process origin reached the iex-executed fetched body');
