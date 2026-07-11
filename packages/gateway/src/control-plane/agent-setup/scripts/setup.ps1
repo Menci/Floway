@@ -452,8 +452,22 @@ function Backup-FlowayCodexFiles {
   if (Test-Path -LiteralPath $script:CodexAuthPath) {
     $script:CodexAuthExisted = $true
     $script:CodexAuthBackup = "$($script:CodexAuthPath).floway-backup.$stamp.$PID"
-    Copy-Item -LiteralPath $script:CodexAuthPath -Destination $script:CodexAuthBackup
-    Protect-FlowayFile $script:CodexAuthBackup
+    # The auth backup holds the original ChatGPT login. If hardening its ACL
+    # fails after the copy, the copy is an unprotected secret on disk — remove it
+    # before rethrowing rather than leaving a readable backup behind. The
+    # original is still untouched (backup runs before any mutation), and leaving
+    # CodexAuthExisted true keeps a later restore from deleting it: with a null
+    # backup, restore simply leaves the original in place.
+    try {
+      Copy-Item -LiteralPath $script:CodexAuthPath -Destination $script:CodexAuthBackup
+      Protect-FlowayFile $script:CodexAuthBackup
+    } catch {
+      if (Test-Path -LiteralPath $script:CodexAuthBackup) {
+        Remove-Item -LiteralPath $script:CodexAuthBackup -Force
+      }
+      $script:CodexAuthBackup = $null
+      throw
+    }
   }
 }
 

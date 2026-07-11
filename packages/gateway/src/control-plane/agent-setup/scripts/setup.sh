@@ -28,7 +28,14 @@ _cleanup() {
     rm -rf "$FLOWAY_SETUP_TMPDIR" 2>/dev/null || true
   fi
 }
-trap _cleanup EXIT INT TERM
+# EXIT owns cleanup. INT/TERM only translate the signal into the conventional
+# exit status (130 = 128+SIGINT, 143 = 128+SIGTERM) and let that exit fire the
+# EXIT trap. Cleaning up directly inside the INT/TERM handlers would delete the
+# working directory and then let the interrupted script resume into the next
+# agent's configuration; exiting instead stops all further agent work.
+trap _cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # Resolved lazily by ensure_jq: either `jq` on PATH or a verified pinned build.
 JQ=""
@@ -309,14 +316,23 @@ claude_ensure_installed() {
 }
 
 # Restore the settings file to its pre-run state: replace it from the backup
-# when one exists, or remove the file entirely when this run created it.
+# when one exists, or remove the file entirely when this run created it. A
+# restoration that itself fails is never masked — the backup is left untouched
+# and a prominent, path-specific message tells the operator how to recover by
+# hand. Returns non-zero on such a failure so the caller can aggregate it.
 claude_rollback_settings() {
   if [ "${CLAUDE_SETTINGS_EXISTED:-0}" -eq 1 ]; then
     if [ -n "${CLAUDE_SETTINGS_BACKUP:-}" ] && [ -e "$CLAUDE_SETTINGS_BACKUP" ]; then
-      mv "$CLAUDE_SETTINGS_BACKUP" "$CLAUDE_SETTINGS_PATH" 2>/dev/null || true
+      if ! mv "$CLAUDE_SETTINGS_BACKUP" "$CLAUDE_SETTINGS_PATH" 2>/dev/null; then
+        printf 'Floway: WARNING could not restore %s from its backup; your original file is preserved at %s — restore it by hand.\n' \
+          "$CLAUDE_SETTINGS_PATH" "$CLAUDE_SETTINGS_BACKUP" >&2
+        return 1
+      fi
     fi
-  else
-    rm -f "$CLAUDE_SETTINGS_PATH" 2>/dev/null || true
+  elif ! rm -f "$CLAUDE_SETTINGS_PATH" 2>/dev/null; then
+    printf 'Floway: WARNING could not remove the Claude settings this run created at %s — remove it by hand.\n' \
+      "$CLAUDE_SETTINGS_PATH" >&2
+    return 1
   fi
 }
 
@@ -608,22 +624,39 @@ codex_backup_files() {
 }
 
 # Restore both managed files to their pre-run state: replace from backup when
-# one existed, or remove the file when this run created it.
+# one existed, or remove the file when this run created it. Each file is handled
+# independently so one failure does not abandon the other, and any restoration
+# that itself fails leaves its backup untouched, prints a prominent path-specific
+# message, and makes the function return non-zero for the caller to aggregate.
 codex_rollback() {
+  _cxr_rc=0
   if [ "${CODEX_CONFIG_EXISTED:-0}" -eq 1 ]; then
     if [ -n "${CODEX_CONFIG_BACKUP:-}" ] && [ -e "$CODEX_CONFIG_BACKUP" ]; then
-      mv "$CODEX_CONFIG_BACKUP" "$CODEX_CONFIG_PATH" 2>/dev/null || true
+      if ! mv "$CODEX_CONFIG_BACKUP" "$CODEX_CONFIG_PATH" 2>/dev/null; then
+        printf 'Floway: WARNING could not restore %s from its backup; your original file is preserved at %s — restore it by hand.\n' \
+          "$CODEX_CONFIG_PATH" "$CODEX_CONFIG_BACKUP" >&2
+        _cxr_rc=1
+      fi
     fi
-  else
-    rm -f "$CODEX_CONFIG_PATH" 2>/dev/null || true
+  elif ! rm -f "$CODEX_CONFIG_PATH" 2>/dev/null; then
+    printf 'Floway: WARNING could not remove the Codex config this run created at %s — remove it by hand.\n' \
+      "$CODEX_CONFIG_PATH" >&2
+    _cxr_rc=1
   fi
   if [ "${CODEX_AUTH_EXISTED:-0}" -eq 1 ]; then
     if [ -n "${CODEX_AUTH_BACKUP:-}" ] && [ -e "$CODEX_AUTH_BACKUP" ]; then
-      mv "$CODEX_AUTH_BACKUP" "$CODEX_AUTH_PATH" 2>/dev/null || true
+      if ! mv "$CODEX_AUTH_BACKUP" "$CODEX_AUTH_PATH" 2>/dev/null; then
+        printf 'Floway: WARNING could not restore %s from its backup; your original ChatGPT login is preserved at %s — restore it by hand.\n' \
+          "$CODEX_AUTH_PATH" "$CODEX_AUTH_BACKUP" >&2
+        _cxr_rc=1
+      fi
     fi
-  else
-    rm -f "$CODEX_AUTH_PATH" 2>/dev/null || true
+  elif ! rm -f "$CODEX_AUTH_PATH" 2>/dev/null; then
+    printf 'Floway: WARNING could not remove the Codex auth this run created at %s — remove it by hand.\n' \
+      "$CODEX_AUTH_PATH" >&2
+    _cxr_rc=1
   fi
+  return "$_cxr_rc"
 }
 
 # Terminate the app-server process group, giving a child whose stdin was just

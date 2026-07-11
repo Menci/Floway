@@ -506,6 +506,12 @@ interface RunOptions {
   ambientApiKey?: boolean;
   excludeTimeoutTools?: boolean;
   fakeChmodFailure?: boolean;
+  // Shadows `mv` with a shim that fails only the rollback's restore-from-backup
+  // rename, to exercise the installer's rollback-failure path.
+  fakeRestoreFailure?: boolean;
+  // Group-signals the running installer once it is mid Claude install (the fake
+  // installer's child-pid file has appeared), to exercise the INT/TERM traps.
+  signalDuringInstall?: 'SIGINT' | 'SIGTERM';
   // Codex knobs.
   codexHome?: string;
   fakeCodexVersion?: string;
@@ -581,14 +587,40 @@ const runShellInstaller = (options: RunOptions): Promise<RunResult> => {
   if (options.excludeTimeoutTools) env.FLOWAY_INSTALLER_TEST_TRACE_TIMEOUT = '1';
   if (options.disableJqDownload) env.FLOWAY_INSTALLER_TEST_NO_JQ_DOWNLOAD = '1';
 
+  if (options.fakeRestoreFailure) {
+    // A `mv` shim (binDir precedes SHIM_BIN on PATH) that refuses only the
+    // rollback's restore rename — its source is the `.floway-backup.` file —
+    // and delegates every other rename (staging included) to the real mv.
+    writeFileSync(
+      join(workspace.binDir, 'mv'),
+      '#!/bin/bash\nfor arg in "$@"; do case "$arg" in *.floway-backup.*) exit 1 ;; esac; done\nexec "$FLOWAY_TEST_REAL_MV" "$@"\n',
+      { mode: 0o755 },
+    );
+    env.FLOWAY_TEST_REAL_MV = join(SHIM_BIN, 'mv');
+  }
+
+  const signal = options.signalDuringInstall;
   return new Promise<RunResult>((resolve) => {
-    const child = spawn('/bin/bash', [scriptPath], { env });
+    const child = spawn('/bin/bash', [scriptPath], { env, detached: signal !== undefined });
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', chunk => { stdout += chunk; });
     child.stderr.on('data', chunk => { stderr += chunk; });
     child.on('error', error => resolve({ code: -1, stdout, stderr: `${stderr}${String(error)}`, combined: `${stdout}${stderr}${String(error)}` }));
     child.on('close', code => resolve({ code: code ?? -1, stdout, stderr, combined: `${stdout}${stderr}` }));
+    if (signal !== undefined) {
+      // Wait until the fake installer records its child pid (we are mid Claude
+      // install), then signal the whole detached process group as a real Ctrl-C
+      // would. The deadline keeps a stuck run from hanging the harness.
+      const pidFile = join(workspace.root, 'installer-child.pid');
+      const deadline = Date.now() + 10_000;
+      const poll = setInterval(() => {
+        if (existsSync(pidFile) || Date.now() > deadline) {
+          clearInterval(poll);
+          try { if (child.pid !== undefined) process.kill(-child.pid, signal); } catch { /* group already exited */ }
+        }
+      }, 25);
+    }
   });
 };
 
@@ -875,6 +907,48 @@ test('claude', 'verification failure with no prior settings removes the created 
     t.ok(!existsSync(settingsPathFor(ws)), 'the freshly created settings file is removed on rollback');
   } finally {
     modelServer.mode = 'ok';
+  }
+});
+
+test('claude', 'a restore failure during rollback preserves the backup and warns instead of silently claiming success', async t => {
+  const ws = makeWorkspace();
+  placeFakeClaude(ws.binDir);
+  const configDir = join(ws.home, '.claude');
+  mkdirSync(configDir, { recursive: true });
+  const original = JSON.stringify({ theme: 'light', env: { KEEP: '1' } });
+  writeFileSync(settingsPathFor(ws), original);
+
+  // Verification fails (rollback is attempted) and the restore-from-backup mv
+  // itself fails. The run must not pretend the file was restored.
+  const run = await runShellInstaller({
+    workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url,
+    fakeClaudeDoctorExit: 1, fakeRestoreFailure: true,
+  });
+  t.ok(run.code !== 0, 'the agent still fails');
+  t.includes(run.combined, 'could not restore', 'a rollback-failure warning is printed');
+  t.includes(run.combined, settingsPathFor(ws), 'the warning names the settings path');
+  const backups = backupFiles(configDir);
+  t.equal(backups.length, 1, 'the backup is preserved for manual recovery');
+  t.equal(readFileSync(join(configDir, backups[0]!), 'utf8'), original, 'the preserved backup still holds the original content');
+  t.ok(readFileSync(settingsPathFor(ws), 'utf8') !== original, 'the settings were not silently restored to the original');
+});
+
+test('claude', 'an interrupt during the Claude install stops the run, skips Codex, and cleans up', async t => {
+  for (const [signal, expectedCode] of [['SIGINT', 130], ['SIGTERM', 143]] as const) {
+    const ws = makeWorkspace();
+    // No fake claude on PATH, so configure_claude runs the (sleeping) installer;
+    // the signal lands while it is mid-install.
+    const run = await runShellInstaller({
+      workspace: ws, baseUrl: modelServer.url, configuration: bothConfig(),
+      installerSleep: 5, signalDuringInstall: signal,
+    });
+    t.equal(run.code, expectedCode, `${signal} must exit ${expectedCode}, not resume:\n${run.combined}`);
+    t.includes(run.combined, 'configuring Claude Code', `${signal}: the run had entered the Claude phase`);
+    t.excludes(run.combined, 'configuring Codex', `${signal}: the run must never reach the Codex phase`);
+    t.ok(!existsSync(codexConfigPath(ws)), `${signal}: Codex config must not be written`);
+    t.ok(!existsSync(codexAuthPath(ws)), `${signal}: Codex auth must not be written`);
+    const remnants = readdirSync(ws.root).filter(name => name.startsWith('floway-setup.'));
+    t.equal(remnants.length, 0, `${signal}: the EXIT trap cleaned the private working directory`);
   }
 });
 
@@ -1683,6 +1757,32 @@ test('codex', 'config write succeeds but an auth staging failure rolls back both
   t.equal(stagedFiles(home).length, 0, 'the failed auth stage is removed');
 });
 
+test('codex', 'a restore failure during rollback preserves the auth backup and warns instead of silently claiming success', async t => {
+  const ws = makeWorkspace();
+  placeFakeCodex(ws.binDir);
+  const home = codexHomeFor(ws);
+  mkdirSync(home, { recursive: true });
+  const priorAuth = '{"tokens":{"id_token":"old","access_token":"old","refresh_token":"old"},"OPENAI_API_KEY":null,"last_refresh":"2020-01-01T00:00:00Z"}';
+  writeFileSync(codexAuthPath(ws), priorAuth);
+
+  // Verification fails (rollback is attempted) and the restore-from-backup mv
+  // itself fails. The original ChatGPT login must not be reported as restored.
+  modelServer.mode = 'unauthorized';
+  try {
+    const run = await runShellInstaller({
+      workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url, fakeRestoreFailure: true,
+    });
+    t.ok(run.code !== 0, 'an unauthorized model directory must fail verification');
+    t.includes(run.combined, 'could not restore', 'a rollback-failure warning is printed');
+    t.includes(run.combined, codexAuthPath(ws), 'the warning names the auth path');
+    const backups = codexBackupFiles(home, 'auth.json');
+    t.equal(backups.length, 1, 'the auth backup is preserved for manual recovery');
+    t.equal(readCodexAuth(ws).tokens.access_token, SENTINEL_KEY, 'auth.json still holds the managed token — it was not silently restored');
+  } finally {
+    modelServer.mode = 'ok';
+  }
+});
+
 test('codex', 'verification failure with no prior files removes the created auth', async t => {
   const ws = makeWorkspace();
   placeFakeCodex(ws.binDir);
@@ -1953,6 +2053,29 @@ test('codex', 'PowerShell: a batchWrite error fails codex and rolls back auth', 
   const run = await runPowerShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url, fakeCodexAppServerMode: 'error' });
   t.ok(run.code !== 0, 'a protocol error must fail codex');
   t.equal(readCodexAuth(ws).tokens.id_token, 'old', 'prior auth is restored on rollback');
+});
+
+test('codex', 'PowerShell: an auth-backup protection failure removes the unsafe backup and leaves the original intact', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  if (process.platform === 'win32') skip('the chmod-based protection-failure injection is Unix-only');
+  const ws = makeWorkspace();
+  placeFakeCodex(ws.binDir);
+  const home = codexHomeFor(ws);
+  mkdirSync(home, { recursive: true });
+  const priorAuth = '{"tokens":{"id_token":"old","access_token":"old","refresh_token":"old"},"OPENAI_API_KEY":null,"last_refresh":"2020-01-01T00:00:00Z"}';
+  writeFileSync(codexAuthPath(ws), priorAuth);
+
+  // chmod fails, so Protect-FlowayFile throws while hardening the auth backup —
+  // the first protected copy in the Codex flow, before any mutation.
+  const run = await runPowerShellInstaller({
+    workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url, fakeChmodFailure: true,
+  });
+  t.ok(run.code !== 0, 'a backup-protection failure must fail codex');
+  // The unsafe (unprotected) backup copy is removed rather than left on disk.
+  t.equal(codexBackupFiles(home, 'auth.json').length, 0, 'the unprotected auth backup is removed');
+  // The original ChatGPT login is untouched — the backup runs before any mutation.
+  t.equal(readFileSync(codexAuthPath(ws), 'utf8'), priorAuth, 'the original auth.json is unchanged');
+  t.excludes(run.combined, SENTINEL_KEY, 'the API key must never be printed');
 });
 
 test('codex', 'PowerShell: a malformed response fails codex', async t => {
