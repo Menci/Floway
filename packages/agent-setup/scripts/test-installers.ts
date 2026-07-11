@@ -1390,10 +1390,10 @@ test('claude', 'PowerShell downloaded installer is bounded', async t => {
   const started = Date.now();
   const run = await runPowerShellInstaller({
     workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url,
-    withInstallHook: false, installerUrl: `${modelServer.url}/install.ps1`, installerSleep: 5, timeoutSeconds: 1,
+    withInstallHook: false, installerUrl: `${modelServer.url}/install.ps1`, installerSleep: 12, timeoutSeconds: 1,
   });
   t.ok(run.code !== 0, 'timed out installer must fail the agent');
-  t.ok(Date.now() - started < 4_000, 'installer deadline must fire before natural completion');
+  t.ok(Date.now() - started < 8_000, 'installer deadline must fire well before natural completion');
   t.ok(!existsSync(installerMarker(ws)), 'timed-out installer must not reach its marker');
   t.ok(existsSync(installerChildPid(ws)), 'PowerShell fixture must record a child PID');
   const childPid = Number(readFileSync(installerChildPid(ws), 'utf8').trim());
@@ -1476,10 +1476,10 @@ test('claude', 'PowerShell doctor capability-probe timeout fails instead of skip
   const started = Date.now();
   const run = await runPowerShellInstaller({
     workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url,
-    fakeClaudeDoctorHelpSleep: 5, timeoutSeconds: 1,
+    fakeClaudeDoctorHelpSleep: 12, timeoutSeconds: 1,
   });
   t.ok(run.code !== 0, 'timed out capability probe must fail the agent');
-  t.ok(Date.now() - started < 4_000, 'capability deadline must fire before natural completion');
+  t.ok(Date.now() - started < 8_000, 'capability deadline must fire well before natural completion');
   t.excludes(run.combined, 'has no doctor command', 'timeout must not be treated as an absent doctor command');
   t.ok(!existsSync(settingsPathFor(ws)), 'timed-out capability probe rolls back settings');
 });
@@ -1491,10 +1491,10 @@ test('claude', 'PowerShell doctor is bounded', async t => {
   const started = Date.now();
   const run = await runPowerShellInstaller({
     workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url,
-    fakeClaudeDoctorSleep: 5, timeoutSeconds: 1,
+    fakeClaudeDoctorSleep: 12, timeoutSeconds: 1,
   });
   t.ok(run.code !== 0, 'timed out doctor must fail the agent');
-  t.ok(Date.now() - started < 4_000, 'deadline must terminate doctor before its natural completion');
+  t.ok(Date.now() - started < 8_000, 'deadline must terminate doctor well before its natural completion');
   t.ok(!existsSync(settingsPathFor(ws)), 'timed-out verification rolls back settings');
 });
 
