@@ -1,12 +1,12 @@
 import { Hono } from 'hono';
 import { describe, test } from 'vitest';
 
-import { createGatewayCtxFromHono } from './gateway-ctx.ts';
+import { createGatewayCtxFromHono, type PerfTiming, stampUpstreamCallStart } from './gateway-ctx.ts';
 import type { RequestBody } from './request-body.ts';
 import type { AuthVars } from '../../../middleware/auth.ts';
 import type { ApiKey, User } from '../../../repo/types.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import { assertEquals, assertExists } from '@floway-dev/test-utils';
+import { assert, assertEquals, assertExists } from '@floway-dev/test-utils';
 
 const EMPTY_REQUEST_BODY: RequestBody = { bytes: new Uint8Array(), streamError: null };
 const NOOP_SCHEDULER: BackgroundScheduler = () => {};
@@ -188,5 +188,78 @@ describe('createGatewayCtxFromHono', () => {
     assertEquals(collected.capOnly, ['up-a']);
     assertEquals(collected.both, ['up-b']);
     assertEquals(collected.keyOnly, ['up-x']);
+  });
+});
+
+describe('stampUpstreamCallStart', () => {
+  const freshPerfTiming = (): PerfTiming => ({
+    upstreamCallStartedAt: null,
+    firstOutputTokenAt: null,
+    attemptTelemetry: undefined,
+  });
+
+  test('stamps upstreamCallStartedAt synchronously before the dispatch runs', async () => {
+    const perfTiming = freshPerfTiming();
+    let stampedAtDispatchEntry: number | null = null;
+    const dispatch = () => {
+      // Sampled inside the dispatch: the factory must have stamped the slot
+      // before handing control off, so this read must see a real number.
+      stampedAtDispatchEntry = perfTiming.upstreamCallStartedAt;
+      return Promise.resolve('done');
+    };
+    const before = performance.now();
+    await stampUpstreamCallStart(perfTiming)(dispatch);
+    const after = performance.now();
+
+    assertExists(stampedAtDispatchEntry);
+    assert(stampedAtDispatchEntry >= before && stampedAtDispatchEntry <= after,
+      `stamp ${stampedAtDispatchEntry} outside [${before}, ${after}]`);
+  });
+
+  test('resolves to the dispatched value', async () => {
+    const perfTiming = freshPerfTiming();
+    const result = await stampUpstreamCallStart(perfTiming)(() => Promise.resolve({ payload: 42 }));
+    assertEquals(result, { payload: 42 });
+  });
+
+  test('propagates a rejection from the dispatch verbatim', async () => {
+    const perfTiming = freshPerfTiming();
+    const err = new Error('boom');
+    let caught: unknown;
+    await stampUpstreamCallStart(perfTiming)(() => Promise.reject(err)).catch(e => { caught = e; });
+    assertEquals(caught, err);
+    // Even a rejected dispatch reflects a real upstream-call start.
+    assertExists(perfTiming.upstreamCallStartedAt);
+  });
+
+  test('stamps exactly once per invocation of the returned factory', async () => {
+    const perfTiming = freshPerfTiming();
+    const factory = stampUpstreamCallStart(perfTiming);
+    let midDispatchReading: number | null = null;
+    await factory(() => {
+      midDispatchReading = perfTiming.upstreamCallStartedAt;
+      return Promise.resolve();
+    });
+    // The slot is stamped once at factory entry; the dispatch body must
+    // observe the same value, and the post-resolve value must match — no
+    // hidden re-stamp on completion.
+    assertEquals(perfTiming.upstreamCallStartedAt, midDispatchReading);
+  });
+
+  test('re-stamps on each invocation of the returned factory', async () => {
+    const perfTiming = freshPerfTiming();
+    const factory = stampUpstreamCallStart(perfTiming);
+
+    await factory(() => Promise.resolve());
+    const first = perfTiming.upstreamCallStartedAt;
+    assertExists(first);
+
+    // Force a monotonic gap so the second stamp is provably distinct.
+    await new Promise(resolve => setTimeout(resolve, 1));
+
+    await factory(() => Promise.resolve());
+    const second = perfTiming.upstreamCallStartedAt;
+    assertExists(second);
+    assert(second > first, `expected second stamp ${second} to exceed first ${first}`);
   });
 });
