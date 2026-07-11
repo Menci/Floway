@@ -83,9 +83,21 @@ first-hit-wins, where `key` is either a literal model id string or a RegExp.
 
 4. **Edit the pricing.ts.** Add/update entries with `input`,
    `input_cache_read` (when the upstream publishes one), `input_cache_write`
-   (Copilot exposes this on Anthropic models), `output`. Group exact
-   string keys; use a regex only when several versions genuinely share a
-   single rate.
+   (Copilot exposes this on Anthropic models; OpenAI charges input × 1.25 on
+   the GPT-5 families), `output`. Group exact string keys; use a regex only
+   when several versions genuinely share a single rate.
+
+   A `ModelPricing` entry can also carry two orthogonal per-request overlays,
+   both resolved by `resolveEffectivePricing` before any unit-price lookup:
+   - `tiers` — service-tier overrides keyed by the wire value the upstream
+     stamps on the usage object (`fast`, `priority`, `flex`). An overlay only
+     names the dimensions that change; the rest inherit base.
+   - `inputLengthTiers` — long-context full-request rates that kick in once a
+     request's total input crosses `minInputTokens` (OpenAI charges a higher
+     rate past 272k on the GPT-5.6 family). List each as
+     `{ minInputTokens, ...rates }`; a complete overlay wins over a service
+     tier for a request that hits both. Publish an explicit combination via the
+     input-length tier's own `tiers` only when the vendor documents one.
 
 5. **Leave NULL when there's no defensible reference.** Examples:
    - Versions whose name doesn't map to any upstream release.

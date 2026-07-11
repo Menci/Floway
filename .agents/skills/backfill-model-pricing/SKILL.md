@@ -9,10 +9,12 @@ description: Use when the human asks to write or rewrite `usage.unit_price` for
 # Backfill Model Pricing
 
 The `usage` table holds one row per `(key_id, model, upstream, model_key, hour,
-dimension)` with a `tokens` count and a `unit_price` snapshot (USD per million
-tokens for that billing dimension). `unit_price` is captured at write time;
-NULL means pricing was unknown then. This skill recomputes it for a chosen
-slice using the current provider pricing.
+tier, input_tier, dimension)` with a `tokens` count and a `unit_price` snapshot
+(USD per million tokens for that billing dimension). `tier` is the upstream-
+stamped service tier and `input_tier` is the input-length pricing marker; both
+select per-request overlays. `unit_price` is captured at write time; NULL means
+pricing was unknown then. This skill recomputes it for a chosen slice using the
+current provider pricing.
 
 ## Flow
 
@@ -38,18 +40,21 @@ slice using the current provider pricing.
    carrying a copy here. If a model has no rule, stop and report — do not
    invent one.
 
-5. **Derive the per-dimension unit price.** For each dimension present in the
-   slice, the price is `unitPriceForDimension(pricing, dimension)`
-   (`packages/protocols/src/common/models.ts`): a modality with no dedicated
+5. **Derive the per-dimension unit price.** Fold the row's overlays into the
+   snapshot first with `resolveEffectivePricing(pricing, tier, input_tier)`
+   (`packages/protocols/src/common/models.ts`) — this applies the service-tier
+   and input-length overrides for that bucket — then take
+   `unitPriceForDimension(effective, dimension)`: a modality with no dedicated
    rate falls back to the bare text rate (`input_image → input`,
    `output_image → output`) and cached input falls back to uncached
    (`input_cache_read`/`input_cache_write → input`). Mirror that fallback when
    computing the value to write; a `null` result means leave `unit_price` NULL.
 
 6. **Preview** the affected COUNT and a small sample, then write one UPDATE
-   per `(slice, dimension)`. The `WHERE` filter pins `dimension = ?` and
-   encodes the write mode (add `unit_price IS NULL` for fill-only; omit it to
-   overwrite). After each write, re-count the slice to prove it landed.
+   per `(slice, tier, input_tier, dimension)`. The `WHERE` filter pins
+   `dimension = ?` (and the row's `tier` / `input_tier`) and encodes the write
+   mode (add `unit_price IS NULL` for fill-only; omit it to overwrite). After
+   each write, re-count the slice to prove it landed.
 
 7. **Report** per slice: upstream, model_key, dimension, price written, rows
    updated.
