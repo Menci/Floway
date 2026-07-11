@@ -15,6 +15,12 @@ $ErrorActionPreference = 'Stop'
 # 7.3+, so explicit $LASTEXITCODE checks stay authoritative across versions.
 $PSNativeCommandUseErrorActionPreference = $false
 
+# The server prefix uses ordinary variables, but defensively remove identically
+# named ambient environment variables so installers and CLI subprocesses cannot
+# inherit the API key.
+Remove-Item Env:FLOWAY_API_KEY -ErrorAction SilentlyContinue
+Remove-Item Env:FlowayApiKey -ErrorAction SilentlyContinue
+
 # --- common helpers ---------------------------------------------------------
 
 function Set-FlowayProp {
@@ -56,15 +62,51 @@ function Protect-FlowayFile {
   Set-Acl -Path $Path -AclObject $acl
 }
 
+# Execute a downloaded PowerShell installer in a fresh interpreter. The script
+# travels through stdin, while the API key exists only as a variable in this
+# parent process and its identically named environment variables were removed.
+# The official installer therefore cannot read the credential.
+function Invoke-FlowayPowerShellBody {
+  param([string]$Body, [int]$TimeoutSeconds)
+  $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+  $startInfo.FileName = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+  $startInfo.Arguments = '-NoProfile -NonInteractive -Command -'
+  $startInfo.UseShellExecute = $false
+  $startInfo.CreateNoWindow = $true
+  $startInfo.RedirectStandardInput = $true
+  $startInfo.RedirectStandardOutput = $true
+  $startInfo.RedirectStandardError = $true
+  $process = New-Object System.Diagnostics.Process
+  $process.StartInfo = $startInfo
+  if (-not $process.Start()) { throw "failed to start the installer interpreter." }
+  $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+  $stderrTask = $process.StandardError.ReadToEndAsync()
+  $process.StandardInput.Write($Body)
+  $process.StandardInput.Close()
+  if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
+    try { $process.Kill() } catch {}
+    $process.WaitForExit()
+    throw "the installer timed out after $TimeoutSeconds seconds."
+  }
+  $stdout = $stdoutTask.GetAwaiter().GetResult()
+  $stderr = $stderrTask.GetAwaiter().GetResult()
+  if ($stdout) { Write-Host $stdout.TrimEnd() }
+  if ($stderr) { Write-Host $stderr.TrimEnd() }
+  if ($process.ExitCode -ne 0) { throw "the installer exited with status $($process.ExitCode)." }
+}
+
 # Download an installer, refuse anything that is not a script (region blocks and
 # captive portals serve HTML in place of the installer), then run it.
 function Invoke-FlowayRemoteInstaller {
   param([string]$Uri)
-  $body = [string](Invoke-RestMethod -Uri $Uri -TimeoutSec 60)
-  if ([string]::IsNullOrWhiteSpace($body) -or $body.TrimStart().StartsWith('<')) {
-    throw "the installer download was not an executable script (a login or region-block page?)."
+  $response = Invoke-WebRequest -Uri $Uri -UseBasicParsing -TimeoutSec 60
+  $body = [string]$response.Content
+  $contentType = [string]$response.Headers['Content-Type']
+  $looksLikeHtml = $contentType -match '(?i)^text/html(?:;|$)' -or $body -match '(?is)^\s*(?:<!doctype\s+html|<html(?:\s|>))'
+  if ([string]::IsNullOrWhiteSpace($body) -or $looksLikeHtml) {
+    throw "the installer download was HTML or empty, not an executable script (a login or region-block page?)."
   }
-  Invoke-Expression $body
+  Invoke-FlowayPowerShellBody -Body $body -TimeoutSeconds 120
 }
 
 # --- Claude Code ------------------------------------------------------------
@@ -102,7 +144,8 @@ function Install-FlowayClaude {
     return
   }
   # Ref: https://docs.claude.com/en/docs/claude-code/setup ("Native Install").
-  Invoke-FlowayRemoteInstaller -Uri 'https://claude.ai/install.ps1'
+  $installerUri = if ($env:FLOWAY_INSTALLER_TEST_CLAUDE_URL) { $env:FLOWAY_INSTALLER_TEST_CLAUDE_URL } else { 'https://claude.ai/install.ps1' }
+  Invoke-FlowayRemoteInstaller -Uri $installerUri
 }
 
 # Restore the settings file to its pre-run state: replace it from the backup
@@ -135,7 +178,7 @@ function Write-FlowayClaudeSettings {
     $raw = Get-Content -Raw -LiteralPath $script:ClaudeSettingsPath
     try { $document = $raw | ConvertFrom-Json } catch { throw "$($script:ClaudeSettingsPath) is not valid JSON; leaving it untouched." }
     if ($document -isnot [System.Management.Automation.PSCustomObject]) { throw "existing Claude settings root is not a JSON object." }
-    if (($document.PSObject.Properties.Name -contains 'env') -and ($null -ne $document.env) -and ($document.env -isnot [System.Management.Automation.PSCustomObject])) {
+    if (($document.PSObject.Properties.Name -contains 'env') -and ($document.env -isnot [System.Management.Automation.PSCustomObject])) {
       throw "existing Claude settings env is not a JSON object."
     }
     $stamp = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
@@ -145,8 +188,8 @@ function Write-FlowayClaudeSettings {
     $document = [PSCustomObject]@{}
   }
 
-  if (($document.PSObject.Properties.Name -notcontains 'env') -or ($null -eq $document.env)) {
-    $document | Add-Member -NotePropertyName env -NotePropertyValue ([PSCustomObject]@{}) -Force
+  if ($document.PSObject.Properties.Name -notcontains 'env') {
+    $document | Add-Member -NotePropertyName env -NotePropertyValue ([PSCustomObject]@{})
   }
   Set-FlowayProp $document.env 'ANTHROPIC_BASE_URL' $FlowayBaseUrl
   Set-FlowayProp $document.env 'ANTHROPIC_AUTH_TOKEN' $FlowayApiKey
@@ -168,7 +211,16 @@ function Write-FlowayClaudeSettings {
       throw "staged Claude settings failed validation."
     }
     Protect-FlowayFile $stage
-    Move-Item -LiteralPath $stage -Destination $script:ClaudeSettingsPath -Force
+    # Windows PowerShell 5.1 only runs on Windows and has no $IsWindows
+    # automatic variable; PowerShell 6+ exposes it on every platform.
+    $runningOnWindows = ($PSVersionTable.PSVersion.Major -lt 6) -or $IsWindows
+    if ($script:ClaudeSettingsExisted -and $runningOnWindows) {
+      [System.IO.File]::Replace($stage, $script:ClaudeSettingsPath, $null)
+    } else {
+      # Move-Item is an atomic same-filesystem rename on Unix and creates a new
+      # target on Windows. Windows replacing an existing target uses File.Replace.
+      Move-Item -LiteralPath $stage -Destination $script:ClaudeSettingsPath -Force
+    }
   } catch {
     if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Force }
     Restore-FlowayClaudeSettings
@@ -179,6 +231,33 @@ function Write-FlowayClaudeSettings {
 # Confirm the gateway's authenticated model directory answers. No inference
 # request is issued. The key travels in an in-process header table, never in a
 # process argument list.
+function Invoke-FlowayProcess {
+  param([string]$Exe, [string[]]$Arguments, [int]$TimeoutSeconds)
+  $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+  $startInfo.FileName = $Exe
+  $startInfo.UseShellExecute = $false
+  $startInfo.CreateNoWindow = $true
+  $startInfo.RedirectStandardOutput = $true
+  $startInfo.RedirectStandardError = $true
+  # ArgumentList is unavailable in Windows PowerShell 5.1. These arguments are
+  # fixed internal tokens, so quoting them with ProcessStartInfo.Arguments is
+  # safe and keeps external input out of the child command line.
+  $startInfo.Arguments = ($Arguments | ForEach-Object { '"' + $_.Replace('"', '\"') + '"' }) -join ' '
+  $process = New-Object System.Diagnostics.Process
+  $process.StartInfo = $startInfo
+  if (-not $process.Start()) { throw "failed to start $Exe." }
+  $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+  $stderrTask = $process.StandardError.ReadToEndAsync()
+  if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
+    try { $process.Kill() } catch {}
+    $process.WaitForExit()
+    throw "$Exe timed out after $TimeoutSeconds seconds."
+  }
+  $stdout = $stdoutTask.GetAwaiter().GetResult()
+  $stderr = $stderrTask.GetAwaiter().GetResult()
+  [PSCustomObject]@{ ExitCode = $process.ExitCode; Output = ($stdout + $stderr) }
+}
+
 function Test-FlowayModelDirectory {
   $headers = @{
     'Authorization'     = "Bearer $FlowayApiKey"
@@ -205,20 +284,21 @@ function Invoke-FlowayClaudeVerify {
     throw "the written Claude settings did not reparse as expected."
   }
 
-  $version = (& $Exe --version 2>&1 | Out-String).Trim()
-  if ($LASTEXITCODE -ne 0) { throw "``claude --version`` failed." }
-  Write-Host "Floway: Claude Code version: $version"
+  $timeoutSeconds = if ($env:FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS) { [int]$env:FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS } else { 30 }
+  $version = Invoke-FlowayProcess -Exe $Exe -Arguments @('--version') -TimeoutSeconds $timeoutSeconds
+  if ($version.ExitCode -ne 0) { throw "``claude --version`` failed." }
+  Write-Host "Floway: Claude Code version: $($version.Output.Trim())"
 
   if (-not (Test-FlowayModelDirectory)) {
     throw "could not reach the authenticated model directory at $($FlowayBaseUrl.TrimEnd('/'))/v1/models"
   }
   Write-Host "Floway: reached the authenticated model directory (no inference issued)."
 
-  & $Exe doctor --help *> $null
-  if ($LASTEXITCODE -eq 0) {
-    $doctorOutput = & $Exe doctor 2>&1 | Out-String
-    if ($LASTEXITCODE -ne 0) {
-      Write-Host "Floway: claude doctor reported a problem:`n$(Protect-FlowaySecret $doctorOutput)"
+  $doctorHelp = Invoke-FlowayProcess -Exe $Exe -Arguments @('doctor', '--help') -TimeoutSeconds $timeoutSeconds
+  if ($doctorHelp.ExitCode -eq 0) {
+    $doctor = Invoke-FlowayProcess -Exe $Exe -Arguments @('doctor') -TimeoutSeconds $timeoutSeconds
+    if ($doctor.ExitCode -ne 0) {
+      Write-Host "Floway: claude doctor reported a problem:`n$(Protect-FlowaySecret $doctor.Output)"
       throw "claude doctor reported a problem."
     }
     Write-Host "Floway: claude doctor reported no blocking issues."

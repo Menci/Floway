@@ -15,9 +15,12 @@ set -u
 umask 077
 set -o pipefail 2>/dev/null || true
 
-# jq (and awk, below) read the API key from the environment rather than argv so
-# the credential never lands in the process table.
-export FLOWAY_API_KEY
+# The API key remains a shell variable, not an exported process-environment
+# value. `export -n` also neutralizes an identically named exported variable
+# inherited from the caller. jq/awk receive it only on the individual
+# invocations that need it; the official installer and Claude CLI never inherit
+# it.
+export -n FLOWAY_API_KEY 2>/dev/null || true
 
 FLOWAY_SETUP_TMPDIR=""
 _cleanup() {
@@ -54,7 +57,7 @@ CLAUDE_MERGE_PROGRAM='
 # read from the environment (never argv) and matched with index() so arbitrary
 # key characters are treated literally rather than as a regex.
 redact_key() {
-  awk '
+  FLOWAY_API_KEY="$FLOWAY_API_KEY" awk '
     BEGIN { k = ENVIRON["FLOWAY_API_KEY"]; kl = length(k) }
     {
       if (kl == 0) { print; next }
@@ -80,18 +83,35 @@ _sha256_of() {
   fi
 }
 
-# Run a command under a wall-clock limit when a timeout tool exists; otherwise
-# run it directly (macOS ships no `timeout`).
+# Run a command under a wall-clock limit. macOS ships no `timeout`, so the
+# portable fallback starts a watchdog that terminates the command when the
+# deadline expires, then reaps both processes and preserves the command status.
 _run_with_timeout() {
   _rwt_secs=$1
   shift
   if command -v timeout >/dev/null 2>&1; then
     timeout "$_rwt_secs" "$@"
-  elif command -v gtimeout >/dev/null 2>&1; then
-    gtimeout "$_rwt_secs" "$@"
-  else
-    "$@"
+    return $?
   fi
+  if command -v gtimeout >/dev/null 2>&1; then
+    gtimeout "$_rwt_secs" "$@"
+    return $?
+  fi
+
+  "$@" &
+  _rwt_pid=$!
+  (
+    sleep "$_rwt_secs"
+    kill -TERM "$_rwt_pid" 2>/dev/null || exit 0
+    sleep 1
+    kill -KILL "$_rwt_pid" 2>/dev/null || true
+  ) &
+  _rwt_watchdog=$!
+  wait "$_rwt_pid"
+  _rwt_status=$?
+  kill "$_rwt_watchdog" 2>/dev/null || true
+  wait "$_rwt_watchdog" 2>/dev/null || true
+  return $_rwt_status
 }
 
 # Download the pinned official jq build for this platform into the private
@@ -126,7 +146,7 @@ _bootstrap_jq() {
   _bj_url="https://github.com/jqlang/jq/releases/download/jq-1.8.2/$_bj_asset"
   _bj_dest="$FLOWAY_SETUP_TMPDIR/$_bj_asset"
   printf 'Floway: jq not found on PATH; fetching the pinned jq-1.8.2 build...\n'
-  if ! curl -fsSL -o "$_bj_dest" "$_bj_url"; then
+  if ! curl -fsSL --connect-timeout 10 --max-time 120 -o "$_bj_dest" "$_bj_url"; then
     printf 'Floway: failed to download jq from %s\n' "$_bj_url" >&2
     rm -f "$_bj_dest"
     return 1
@@ -172,21 +192,30 @@ ensure_jq() {
 _download_and_run_installer() {
   _dri_url=$1
   _dri_file=$(mktemp "$FLOWAY_SETUP_TMPDIR/install.XXXXXX") || return 1
-  if ! curl -fsSL -o "$_dri_file" "$_dri_url"; then
+  if ! curl -fsSL --connect-timeout 10 --max-time 120 -o "$_dri_file" "$_dri_url"; then
     printf 'Floway: could not download the installer from %s\n' "$_dri_url" >&2
     rm -f "$_dri_file"
     return 1
   fi
-  IFS= read -r _dri_first < "$_dri_file" || true
-  case "$_dri_first" in
-    '#!'*) : ;;
-    *)
-      printf 'Floway: the installer download was not an executable script (a login or region-block page?).\n' >&2
-      rm -f "$_dri_file"
-      return 1
-      ;;
-  esac
-  sh "$_dri_file"
+  # Reject common HTML responses while allowing official shell content with or
+  # without a shebang (some installer CDNs prepend comments).
+  if awk '
+      NR <= 20 {
+        line = tolower($0)
+        if (line ~ /^[[:space:]]*(<!doctype[[:space:]]+html|<html([[:space:]>])|<head([[:space:]>])|<body([[:space:]>]))/) found = 1
+      }
+      END { exit found ? 0 : 1 }
+    ' "$_dri_file"; then
+    printf 'Floway: the installer download was HTML, not an executable script (a login or region-block page?).\n' >&2
+    rm -f "$_dri_file"
+    return 1
+  fi
+  if ! awk 'NF { found = 1 } END { exit found ? 0 : 1 }' "$_dri_file"; then
+    printf 'Floway: the installer download was empty.\n' >&2
+    rm -f "$_dri_file"
+    return 1
+  fi
+  env -u FLOWAY_API_KEY sh "$_dri_file"
   _dri_rc=$?
   rm -f "$_dri_file"
   return $_dri_rc
@@ -227,11 +256,11 @@ claude_discover() {
 # under test.
 install_claude() {
   if [ -n "${FLOWAY_INSTALLER_TEST_INSTALL_CLAUDE_SCRIPT:-}" ]; then
-    sh "$FLOWAY_INSTALLER_TEST_INSTALL_CLAUDE_SCRIPT"
+    env -u FLOWAY_API_KEY sh "$FLOWAY_INSTALLER_TEST_INSTALL_CLAUDE_SCRIPT"
     return $?
   fi
   # Ref: https://docs.claude.com/en/docs/claude-code/setup ("Native Install").
-  _download_and_run_installer 'https://claude.ai/install.sh'
+  _download_and_run_installer "${FLOWAY_INSTALLER_TEST_CLAUDE_URL:-https://claude.ai/install.sh}"
 }
 
 # Ensure Claude Code is present, installing it only when absent. An existing
@@ -300,7 +329,7 @@ claude_write_settings() {
   fi
 
   _cw_stage="$CLAUDE_SETTINGS_PATH.floway-stage.$$"
-  if ! printf '%s' "$_cw_base" | "$JQ" \
+  if ! printf '%s' "$_cw_base" | FLOWAY_API_KEY="$FLOWAY_API_KEY" "$JQ" \
       --arg baseUrl "$FLOWAY_BASE_URL" \
       --arg model "$FLOWAY_CLAUDE_MODEL" \
       --arg sonnet "$FLOWAY_CLAUDE_DEFAULT_SONNET_MODEL" \
@@ -314,7 +343,7 @@ claude_write_settings() {
     return 1
   fi
 
-  if ! "$JQ" -e --arg baseUrl "$FLOWAY_BASE_URL" '
+  if ! FLOWAY_API_KEY="$FLOWAY_API_KEY" "$JQ" -e --arg baseUrl "$FLOWAY_BASE_URL" '
       (type == "object")
       and ((.env | type) == "object")
       and (.env.ANTHROPIC_BASE_URL == $baseUrl)
@@ -354,7 +383,7 @@ claude_check_models() {
     printf 'header = "x-api-key: %s"\n' "$FLOWAY_API_KEY"
   } > "$_cm_cfg"
   chmod 600 "$_cm_cfg" 2>/dev/null || true
-  curl -K "$_cm_cfg" -o /dev/null "${FLOWAY_BASE_URL%/}/v1/models"
+  curl -K "$_cm_cfg" --connect-timeout 10 --max-time 30 -o /dev/null "${FLOWAY_BASE_URL%/}/v1/models"
   _cm_rc=$?
   rm -f "$_cm_cfg"
   return $_cm_rc
@@ -365,7 +394,7 @@ claude_check_models() {
 # and run `claude doctor` when the subcommand exists. Doctor output is redacted
 # before it is surfaced.
 claude_verify() {
-  if ! "$JQ" -e --arg baseUrl "$FLOWAY_BASE_URL" '
+  if ! FLOWAY_API_KEY="$FLOWAY_API_KEY" "$JQ" -e --arg baseUrl "$FLOWAY_BASE_URL" '
       (type == "object")
       and ((.env | type) == "object")
       and (.env.ANTHROPIC_BASE_URL == $baseUrl)
@@ -387,8 +416,9 @@ claude_verify() {
   fi
   printf 'Floway: reached the authenticated model directory (no inference issued).\n'
 
-  if "$CLAUDE_BIN" doctor --help >/dev/null 2>&1; then
-    if _run_with_timeout 30 "$CLAUDE_BIN" doctor </dev/null > "$FLOWAY_SETUP_TMPDIR/claude-doctor.out" 2>&1; then
+  _cv_timeout=${FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS:-30}
+  if _run_with_timeout "$_cv_timeout" "$CLAUDE_BIN" doctor --help </dev/null >/dev/null 2>&1; then
+    if _run_with_timeout "$_cv_timeout" "$CLAUDE_BIN" doctor </dev/null > "$FLOWAY_SETUP_TMPDIR/claude-doctor.out" 2>&1; then
       printf 'Floway: claude doctor reported no blocking issues.\n'
     else
       printf 'Floway: claude doctor reported a problem:\n' >&2
