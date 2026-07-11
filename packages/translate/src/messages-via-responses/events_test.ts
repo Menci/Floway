@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { createResponsesToMessagesStreamState, translateResponsesStreamEventToMessagesEvents, translateResponsesToMessagesResult } from './events.ts';
 import { packReasoningSignature } from '../shared/messages-and-responses/reasoning.ts';
-import { assertEquals } from '../test-assert.ts';
+import { assertEquals, assertThrows } from '../test-assert.ts';
 
 test('Responses reasoning stream without readable summary emits a redacted_thinking carrier', () => {
   const state = createResponsesToMessagesStreamState();
@@ -691,8 +691,25 @@ test('translateResponsesToMessagesResult maps cache-read and cache-write onto th
   assertEquals(result.usage.cache_creation_input_tokens, 25);
 });
 
-test('response.created carries cache-read and cache-write onto the initial message_start usage', () => {
-  const state = createResponsesToMessagesStreamState();
+test('translateResponsesToMessagesResult rejects cache splits that exceed input_tokens', () => {
+  assertThrows(
+    () => translateResponsesToMessagesResult({
+      id: 'resp_invalid_cache',
+      object: 'response',
+      model: 'gpt-test',
+      output: [],
+      output_text: '',
+      status: 'completed',
+      error: null,
+      incomplete_details: null,
+      usage: { input_tokens: 40, output_tokens: 20, total_tokens: 60, input_tokens_details: { cached_tokens: 30, cache_write_tokens: 25 } },
+    }),
+    RangeError,
+    'Responses cache token counts exceed input_tokens',
+  );
+});
+
+test('response.created carries cache-read and cache-write onto the initial message_start usage', () => {  const state = createResponsesToMessagesStreamState();
   const events = translateResponsesStreamEventToMessagesEvents(
     {
       type: 'response.created',
@@ -715,6 +732,31 @@ test('response.created carries cache-read and cache-write onto the initial messa
   assertEquals(start?.type === 'message_start' ? start.message.usage.input_tokens : undefined, 45);
   assertEquals(start?.type === 'message_start' ? start.message.usage.cache_read_input_tokens : undefined, 30);
   assertEquals(start?.type === 'message_start' ? start.message.usage.cache_creation_input_tokens : undefined, 25);
+});
+
+test('response.created rejects cache splits that exceed input_tokens', () => {
+  const state = createResponsesToMessagesStreamState();
+  assertThrows(
+    () => translateResponsesStreamEventToMessagesEvents(
+      {
+        type: 'response.created',
+        response: {
+          id: 'resp_stream_invalid_cache',
+          object: 'response',
+          model: 'gpt-test',
+          output: [],
+          output_text: '',
+          status: 'in_progress',
+          error: null,
+          incomplete_details: null,
+          usage: { input_tokens: 40, output_tokens: 0, total_tokens: 40, input_tokens_details: { cached_tokens: 30, cache_write_tokens: 25 } },
+        },
+      },
+      state,
+    ),
+    RangeError,
+    'Responses cache token counts exceed input_tokens',
+  );
 });
 
 const responseFailedEvent = (error: { code: string; message: string }): Parameters<typeof translateResponsesStreamEventToMessagesEvents>[0] => ({
