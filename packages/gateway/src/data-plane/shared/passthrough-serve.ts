@@ -134,12 +134,6 @@ export const passthroughApiError = (c: Context, message: string, status: Content
 
 export const passthroughServe = async (input: PassthroughServeContext): Promise<Response> => {
   const { c, ctx, sourceApi, operation, model, kind, modelServesEndpoint, call, response: responseHandling } = input;
-  // Populated as attempts land so a throw from `passthroughAttempt` (or
-  // the response handling below) can still attribute request-perf to the
-  // candidate the loop was working on when the throw fired. A throw
-  // before any candidate fired leaves this undefined; the outer catch
-  // below is happy with that.
-  let lastPerformance: PerformanceTelemetryContext | undefined;
 
   try {
     // The shared resolver returns every candidate of the requested kind:
@@ -197,17 +191,10 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
       'passthroughServe',
       ctx,
       operation,
-      async candidate => {
-        // iterateCandidates has already stamped `ctx.attempt.telemetry`
-        // for this candidate; capture the attempt's exact context on
-        // success so the outer branches keep working off the same value.
-        const attempted = await passthroughAttempt({
-          c, ctx, candidate, operation,
-          call,
-        });
-        lastPerformance = attempted.performance;
-        return attempted;
-      },
+      candidate => passthroughAttempt({
+        c, ctx, candidate, operation,
+        call,
+      }),
     );
     const { response, performance: performanceContext, identity } = result;
 
@@ -302,7 +289,13 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
         return forwarded;
       }
     }
-    recordFailedRequest(ctx, lastPerformance);
+    // A throw from passthroughAttempt (or any post-iterate response
+    // handling below) attributes to the candidate iterateCandidates was
+    // working on when the throw fired — iterateCandidates stamped
+    // ctx.attempt.telemetry synchronously before invoking `run`, so the
+    // slot reflects that candidate. A throw before any candidate fired
+    // leaves telemetry undefined and recordFailedRequest short-circuits.
+    recordFailedRequest(ctx, ctx.attempt.telemetry);
     ctx.dump?.failed(e);
     return c.json({ error: toInternalDebugError(e) }, 502);
   }
