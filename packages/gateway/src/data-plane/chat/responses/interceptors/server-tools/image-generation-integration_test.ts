@@ -87,7 +87,7 @@ vi.mock('../../../../providers/registry.ts', () => ({
 
 // Imported AFTER vi.mock so the mocked registry is in effect.
 const { withResponsesServerToolShim } = await import('../server-tool-shim.ts');
-const { imageGenerationServerTool } = await import('./image-generation.ts');
+const { imageGenerationServerTool, SHIM_TOOL_NAME } = await import('./image-generation.ts');
 
 const shim = withResponsesServerToolShim([imageGenerationServerTool]);
 
