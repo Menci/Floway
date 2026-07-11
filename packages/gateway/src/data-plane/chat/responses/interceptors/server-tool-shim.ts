@@ -302,23 +302,23 @@ const rewriteToolsForHostedShim = (
 ): { rewritten: ResponsesTool[]; canonicalHostedTool: ResponsesTool | undefined } => {
   const rewritten: ResponsesTool[] = [];
   let canonicalHostedTool: ResponsesTool | undefined = undefined;
-  let replacementIndex: number | undefined;
+  let replacementIndex = -1;
   for (const raw of tools) {
     const canonical = hosted.canonicalize(raw);
     if (canonical === undefined) {
       rewritten.push(raw);
       continue;
     }
-    if (canonicalHostedTool === undefined) {
-      canonicalHostedTool = canonical;
+    if (replacementIndex === -1) {
       replacementIndex = rewritten.length;
-      rewritten.push(hosted.buildFunctionTool(canonical, toolName));
-      continue;
+      rewritten.push(raw);
     }
-    if (hosted.declarationPrecedence === 'last') {
+    if (canonicalHostedTool === undefined || hosted.declarationPrecedence === 'last') {
       canonicalHostedTool = canonical;
-      rewritten[replacementIndex!] = hosted.buildFunctionTool(canonical, toolName);
     }
+  }
+  if (canonicalHostedTool !== undefined) {
+    rewritten[replacementIndex] = hosted.buildFunctionTool(canonicalHostedTool, toolName);
   }
   return { rewritten, canonicalHostedTool };
 };
