@@ -177,8 +177,7 @@ const rejectProgrammaticTooling = (payload: ResponsesPayload): void => {
   const programmaticTool = payload.tools?.find(tool =>
     tool.type === 'programmatic_tool_calling'
     || (tool.type === 'function' || tool.type === 'custom')
-    && tool.allowed_callers?.includes('programmatic'),
-  );
+    && tool.allowed_callers?.includes('programmatic'));
   const toolChoice = payload.tool_choice;
   if (programmaticTool !== undefined || (typeof toolChoice === 'object' && toolChoice.type === 'programmatic_tool_calling')) {
     throw new TranslatorInputError('Programmatic Responses tooling cannot be translated to Messages.');
