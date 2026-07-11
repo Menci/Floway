@@ -33,6 +33,7 @@ const baseRecord: UpstreamRecord = {
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
+  color: null,
 };
 
 test('typed transports use default /v1/* paths', async () => {

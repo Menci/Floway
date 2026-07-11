@@ -30,8 +30,8 @@ import { USERNAME_PATTERN, type exportQuery, type importBody, DUMP_RETENTION_MAX
 import { copilotConfigField, isRecord, nonEmptyStringField } from '../shared/field-validators.ts';
 import { type SerializedUpstreamRecord, upstreamRecordToFullJson } from '../upstreams/serialize.ts';
 import { BILLING_DIMENSIONS, type ModelPricing } from '@floway-dev/protocols/common';
-import { ALL_PROVIDER_KINDS, normalizeModelPrefix, parseFlagOverridesWire } from '@floway-dev/provider';
-import type { ProxyFallbackEntry, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
+import { ALL_PROVIDER_KINDS, normalizeModelPrefix, parseFlagOverridesWire, UPSTREAM_COLOR_PRESETS } from '@floway-dev/provider';
+import type { ProxyFallbackEntry, UpstreamColor, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
 import { assertClaudeCodeUpstreamRecord, assertClaudeCodeUpstreamState } from '@floway-dev/provider-claude-code';
 import { assertCodexUpstreamRecord, assertCodexUpstreamState } from '@floway-dev/provider-codex';
@@ -138,6 +138,16 @@ const parseProxyFallbackListField = (value: unknown): ProxyFallbackEntry[] => {
   return normalizeProxyFallbackList(entries);
 };
 
+const UPSTREAM_COLOR_HEX = /^#[0-9a-fA-F]{6}$/;
+
+const parseUpstreamColorField = (value: unknown): UpstreamColor | null => {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== 'string') throw new Error('color must be a string, null, or absent');
+  if (UPSTREAM_COLOR_HEX.test(value)) return value as UpstreamColor;
+  if ((UPSTREAM_COLOR_PRESETS as readonly string[]).includes(value)) return value as UpstreamColor;
+  throw new Error(`color must be #RRGGBB or one of ${UPSTREAM_COLOR_PRESETS.join(', ')}`);
+};
+
 const parseUpstreamRecords = (value: unknown): { type: 'ok'; records: UpstreamRecord[] } | { type: 'invalid'; index: number; error: string } => {
   if (!Array.isArray(value)) return { type: 'invalid', index: -1, error: 'upstreams must be an array' };
 
@@ -171,6 +181,7 @@ const parseUpstreamRecords = (value: unknown): { type: 'ok'; records: UpstreamRe
         disabledPublicModelIds: parseDisabledPublicModelIdsWire(item.disabled_public_model_ids),
         proxyFallbackList: parseProxyFallbackListField(item.proxy_fallback_list),
         modelPrefix: normalizeModelPrefix(item.model_prefix),
+        color: parseUpstreamColorField(item.color),
         config: item.config,
         state: normalizeUpstreamState(kind, item.state),
       };

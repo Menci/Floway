@@ -16,6 +16,7 @@ const azureUpstream = (): UpstreamRecord => ({
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
+  color: null,
   config: {
     endpoint: 'https://example.openai.azure.com',
     apiKey: 'az-key',

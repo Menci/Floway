@@ -6,6 +6,14 @@ import type { AliasSelection, AliasTarget, ModelKind, ModelEndpoints, ModelPrici
 export const ALL_PROVIDER_KINDS = ['copilot', 'custom', 'azure', 'codex', 'claude-code', 'ollama'] as const;
 export type UpstreamProviderKind = typeof ALL_PROVIDER_KINDS[number];
 
+// Per-upstream badge color override. `null` inherits the frontend's kind
+// default; a preset key resolves to a static Uno accent class; a `#RRGGBB`
+// string renders via CSS custom properties + color-mix() so any operator hex
+// works without extending the theme.
+export const UPSTREAM_COLOR_PRESETS = ['amber', 'emerald', 'cyan', 'violet', 'rose', 'orange'] as const;
+export type UpstreamColorPreset = typeof UPSTREAM_COLOR_PRESETS[number];
+export type UpstreamColor = UpstreamColorPreset | `#${string}`;
+
 // One entry in `UpstreamRecord.proxyFallbackList`. `id` is the proxy id from
 // the proxies catalog or the literal 'direct' sentinel. `colos` is an
 // optional whitelist of location tags (Cloudflare colos / the Node
@@ -44,6 +52,10 @@ export interface UpstreamRecord {
   // When set, the registry honors `addressable` and `listed` to expose /
   // accept either form (or both).
   modelPrefix: ModelPrefixConfig | null;
+  // Operator-chosen badge color. `null` falls back to the frontend's kind
+  // default. Otherwise: a preset key from `UPSTREAM_COLOR_PRESETS`, or a raw
+  // `#RRGGBB` string. Wire validation lives in the control-plane Zod schema.
+  color: UpstreamColor | null;
 }
 
 // Model identity attached to every provider result at the provider boundary

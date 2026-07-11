@@ -18,7 +18,7 @@
 import { z } from 'zod';
 
 import { normalizeDisabledPublicModelIds } from '../repo/disabled-public-models.ts';
-import { type FlagOverrides, MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX, parseFlagOverridesWire } from '@floway-dev/provider';
+import { type FlagOverrides, MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX, parseFlagOverridesWire, UPSTREAM_COLOR_PRESETS } from '@floway-dev/provider';
 
 // --- shared atoms ---
 
@@ -277,6 +277,16 @@ const modelPrefixSchema = z.object({
   listed: z.array(addressableFormSchema),
 }).nullable();
 
+// Per-upstream badge color override. `null` inherits the frontend's kind
+// default. A preset key resolves to a static Uno accent class; a `#RRGGBB`
+// string renders via CSS custom properties on the badge. The wire regex only
+// permits the 6-digit lowercase-or-uppercase form; shorthand and alpha are
+// rejected so the resolver's `startsWith('#')` disambiguation stays sound.
+const upstreamColorSchema = z.union([
+  z.enum(UPSTREAM_COLOR_PRESETS),
+  z.string().regex(/^#[0-9a-fA-F]{6}$/, 'must be #RRGGBB'),
+]).nullable();
+
 const upstreamBaseFields = {
   name: z.string().min(1),
   enabled: z.boolean().optional(),
@@ -285,6 +295,7 @@ const upstreamBaseFields = {
   disabled_public_model_ids: disabledPublicModelIdsSchema.optional(),
   proxy_fallback_list: proxyFallbackListSchema.optional(),
   model_prefix: modelPrefixSchema.optional(),
+  color: upstreamColorSchema.optional(),
 };
 
 // Create accepts a discriminated union on `kind` for per-provider config
@@ -323,6 +334,7 @@ export const updateUpstreamBody = z.object({
   disabled_public_model_ids: disabledPublicModelIdsSchema.optional(),
   proxy_fallback_list: proxyFallbackListSchema.optional(),
   model_prefix: modelPrefixSchema.optional(),
+  color: upstreamColorSchema.optional(),
   // Patches only carry field diffs, not per-kind shape validation — the
   // handler dispatches on the existing row's kind and enforces the shape
   // there (Copilot/Codex/Claude Code reject a config patch outright, since

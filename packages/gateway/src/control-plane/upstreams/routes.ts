@@ -274,6 +274,7 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
     disabledPublicModelIds: body.disabled_public_model_ids ?? [],
     proxyFallbackList,
     modelPrefix,
+    color: (body.color ?? null) as UpstreamRecord['color'],
     config: body.config,
     state: stateFromBody,
   };
@@ -341,6 +342,7 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '
     if (!result.ok) return c.json({ error: result.error }, 400);
     next = { ...next, modelPrefix: result.value };
   }
+  if (body.color !== undefined) next = { ...next, color: body.color as UpstreamRecord['color'] };
   if (body.config !== undefined) {
     const config = mergeConfigPatch(existing.kind, existing.config, body.config);
     if (!config.ok) return c.json({ error: config.error }, 400);
@@ -952,6 +954,7 @@ export const listModels = async (c: CtxWithJson<typeof listModelsBody>) => {
     disabledPublicModelIds: [],
     proxyFallbackList: (record.proxy_fallback_list ?? []) as ProxyFallbackEntry[],
     modelPrefix: null,
+    color: null,
     config: record.config,
     state: record.state,
   };

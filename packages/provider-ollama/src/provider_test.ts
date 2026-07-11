@@ -19,6 +19,7 @@ const buildRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord =>
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
+  color: null,
   ...overrides,
 });
 
