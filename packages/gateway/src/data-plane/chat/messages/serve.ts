@@ -2,7 +2,6 @@ import { messagesAttempt, messagesGenerateTarget, messagesCountTokensTarget } fr
 import { renderMessagesFailure } from './errors.ts';
 import { enumerateModelCandidates } from '../../providers/registry.ts';
 import { iterateCandidates } from '../../shared/iterate-candidates.ts';
-import { upstreamPerformanceContext } from '../../shared/telemetry/upstream-telemetry.ts';
 import { classifyResponsesItemAffinity } from '../responses/items/affinity.ts';
 import { noViableCandidateFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
@@ -49,17 +48,16 @@ export const messagesServe = {
     // transient 5xx/429/network failures. When the list is exhausted, the
     // most recent failure is forwarded verbatim. Normalize `payload.model`
     // to the candidate's real id so every attempt sees the canonical
-    // resolved public id. Stamping `telemetry` synchronously before
-    // awaiting the attempt is what preserves error attribution when the
-    // attempt throws mid-flight — see the AttemptState comment in
-    // gateway-ctx.ts.
+    // resolved public id. `iterateCandidates` stamps `ctx.attempt.telemetry`
+    // synchronously before invoking `run`, preserving mid-attempt-throw
+    // attribution — see the iterateCandidates comment.
     return await iterateCandidates(
       decision.candidates,
       'messagesServe.generate',
-      ctx.attempt,
+      ctx,
+      'chat',
       candidate => {
         payload.model = candidate.model.id;
-        ctx.attempt.telemetry = upstreamPerformanceContext(ctx, candidate, 'chat');
         return messagesAttempt.generate({ payload, ctx, candidate, headers });
       },
     );
@@ -87,12 +85,12 @@ export const messagesServe = {
     return await iterateCandidates(
       decision.candidates,
       'messagesServe.countTokens',
-      ctx.attempt,
+      ctx,
+      'chat',
       candidate => {
         // Same normalization as generate above — every attempt sees
         // payload.model === candidate.model.id regardless of inbound form.
         payload.model = candidate.model.id;
-        ctx.attempt.telemetry = upstreamPerformanceContext(ctx, candidate, 'chat');
         return messagesAttempt.countTokens({ payload, ctx, candidate, headers });
       },
     );

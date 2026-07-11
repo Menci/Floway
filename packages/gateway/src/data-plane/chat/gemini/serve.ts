@@ -2,7 +2,6 @@ import { geminiAttempt, geminiCountTokensTarget, geminiGenerateTarget } from './
 import { renderGeminiFailure } from './errors.ts';
 import { enumerateModelCandidates } from '../../providers/registry.ts';
 import { iterateCandidates } from '../../shared/iterate-candidates.ts';
-import { upstreamPerformanceContext } from '../../shared/telemetry/upstream-telemetry.ts';
 import { classifyResponsesItemAffinity } from '../responses/items/affinity.ts';
 import { noViableCandidateFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
@@ -56,18 +55,15 @@ export const geminiServe = {
     // real upstream telemetry rather than a synthetic envelope. The
     // Gemini URL-path model id is already in `model`; downstream dispatch
     // keys off `candidate.model.id`, so no payload rewrite is needed here
-    // even for alias-origin candidates. Stamping `telemetry`
-    // synchronously before awaiting the attempt is what preserves error
-    // attribution when the attempt throws mid-flight — see the AttemptState
-    // comment in gateway-ctx.ts.
+    // even for alias-origin candidates. `iterateCandidates` stamps
+    // `ctx.attempt.telemetry` before invoking `run`, preserving
+    // mid-attempt-throw attribution.
     return await iterateCandidates(
       decision.candidates,
       'geminiServe.generate',
-      ctx.attempt,
-      candidate => {
-        ctx.attempt.telemetry = upstreamPerformanceContext(ctx, candidate, 'chat');
-        return geminiAttempt.generate({ payload, ctx, candidate, headers });
-      },
+      ctx,
+      'chat',
+      candidate => geminiAttempt.generate({ payload, ctx, candidate, headers }),
     );
   },
 
@@ -93,11 +89,9 @@ export const geminiServe = {
     return await iterateCandidates(
       decision.candidates,
       'geminiServe.countTokens',
-      ctx.attempt,
-      candidate => {
-        ctx.attempt.telemetry = upstreamPerformanceContext(ctx, candidate, 'chat');
-        return geminiAttempt.countTokens({ payload, ctx, candidate, headers });
-      },
+      ctx,
+      'chat',
+      candidate => geminiAttempt.countTokens({ payload, ctx, candidate, headers }),
     );
   },
 };

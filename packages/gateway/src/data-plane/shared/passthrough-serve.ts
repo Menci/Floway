@@ -19,7 +19,6 @@ import { iterateCandidates } from './iterate-candidates.ts';
 import { passthroughAttempt } from './passthrough-attempt.ts';
 import type { PerformanceTelemetryContext } from './telemetry/performance.ts';
 import { recordFailedRequest, recordPerformance } from './telemetry/performance.ts';
-import { upstreamPerformanceContext } from './telemetry/upstream-telemetry.ts';
 import { recordTokenUsage } from './telemetry/usage.ts';
 import type { AuthedContext } from '../../middleware/auth.ts';
 import type { TokenUsage } from '../../repo/types.ts';
@@ -196,14 +195,12 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
     const result = await iterateCandidates(
       viable,
       'passthroughServe',
-      ctx.attempt,
+      ctx,
+      operation,
       async candidate => {
-        // Stamp the candidate's identity synchronously BEFORE awaiting the
-        // attempt, so a throw from `passthroughAttempt` (or the upstream
-        // call inside it) attributes the outer-catch error row to THIS
-        // candidate rather than to whichever one settled last. On success
-        // we overwrite with the attempt's exact context.
-        lastPerformance = upstreamPerformanceContext(ctx, candidate, operation);
+        // iterateCandidates has already stamped `ctx.attempt.telemetry`
+        // for this candidate; capture the attempt's exact context on
+        // success so the outer branches keep working off the same value.
         const attempted = await passthroughAttempt({
           c, ctx, candidate, operation,
           call,

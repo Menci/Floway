@@ -1,57 +1,68 @@
 import { describe, expect, it } from 'vitest';
 
 import { iterateCandidates } from './iterate-candidates.ts';
+import type { GatewayCtx } from '../chat/shared/gateway-ctx.ts';
 import type { ModelCandidate, PerformanceTelemetryContext } from '@floway-dev/provider';
 
-const stubCandidate = (id: string): ModelCandidate =>
-  ({ model: { id }, provider: { upstream: 'up' } } as unknown as ModelCandidate);
+const stubCandidate = (id: string, upstream = 'up'): ModelCandidate =>
+  ({ model: { id }, provider: { upstream } } as unknown as ModelCandidate);
 
 const stubTelemetry = (upstream: string): PerformanceTelemetryContext =>
   ({ upstream, model: { id: 'm', canonicalizedId: 'm' }, operation: 'chat' } as unknown as PerformanceTelemetryContext);
 
+// Minimal ctx stub — `iterateCandidates` reads only `attempt`,
+// `apiKeyId`, and `runtimeLocation` (the last two feed
+// `upstreamPerformanceContext` when stamping `attempt.telemetry`).
+const stubCtx = (attempt: GatewayCtx['attempt']): GatewayCtx =>
+  ({ apiKeyId: 'key-test', runtimeLocation: 'TEST', attempt } as unknown as GatewayCtx);
+
 describe('iterateCandidates', () => {
-  it('resets attempt to null/undefined at the start of every candidate attempt', async () => {
+  it('clears the timing slots and stamps telemetry from the current candidate on entry', async () => {
     const attempt = { upstreamCallStartedAt: 999, firstOutputTokenAt: 999, telemetry: stubTelemetry('carryover') as PerformanceTelemetryContext | undefined };
-    const observed: Array<{ upstreamCallStartedAt: number | null; firstOutputTokenAt: number | null; telemetry: PerformanceTelemetryContext | undefined }> = [];
+    const ctx = stubCtx(attempt);
+    const observed: Array<{ upstreamCallStartedAt: number | null; firstOutputTokenAt: number | null; upstream: string | undefined }> = [];
 
     await iterateCandidates(
-      [stubCandidate('a'), stubCandidate('b'), stubCandidate('c')],
+      [stubCandidate('a', 'up_a'), stubCandidate('b', 'up_b'), stubCandidate('c', 'up_c')],
       'test',
-      attempt,
+      ctx,
+      'chat',
       async candidate => {
         observed.push({
           upstreamCallStartedAt: attempt.upstreamCallStartedAt,
           firstOutputTokenAt: attempt.firstOutputTokenAt,
-          telemetry: attempt.telemetry,
+          upstream: attempt.telemetry?.upstream,
         });
-        // simulate an attempt that stamps then fails, so the loop advances
+        // Simulate an attempt that stamps timing then fails, so the loop
+        // advances to the next candidate.
         attempt.upstreamCallStartedAt = 100;
         attempt.firstOutputTokenAt = 200;
-        attempt.telemetry = stubTelemetry(candidate.model.id);
         return candidate.model.id === 'c'
           ? { type: 'events' as const }
           : { type: 'api-error' as const };
       },
     );
 
-    // Every attempt must observe cleared slots on entry — a prior candidate's
-    // stamps (or the caller-supplied carryover) must not survive into the next
-    // attempt. Regressing this reintroduces the mid-attempt-throw
-    // misattribution the reset was added to prevent.
+    // Every attempt must observe cleared timing slots on entry — a prior
+    // candidate's stamps (or the caller-supplied carryover) must not
+    // survive into the next attempt. Telemetry must reflect the CURRENT
+    // candidate: regressing this reintroduces the mid-attempt-throw
+    // misattribution the stamp was hoisted to prevent.
     expect(observed).toEqual([
-      { upstreamCallStartedAt: null, firstOutputTokenAt: null, telemetry: undefined },
-      { upstreamCallStartedAt: null, firstOutputTokenAt: null, telemetry: undefined },
-      { upstreamCallStartedAt: null, firstOutputTokenAt: null, telemetry: undefined },
+      { upstreamCallStartedAt: null, firstOutputTokenAt: null, upstream: 'up_a' },
+      { upstreamCallStartedAt: null, firstOutputTokenAt: null, upstream: 'up_b' },
+      { upstreamCallStartedAt: null, firstOutputTokenAt: null, upstream: 'up_c' },
     ]);
   });
 
   it('returns the first success and stops iterating', async () => {
-    const attempt = { upstreamCallStartedAt: null, firstOutputTokenAt: null, telemetry: undefined };
+    const ctx = stubCtx({ upstreamCallStartedAt: null, firstOutputTokenAt: null, telemetry: undefined });
     let calls = 0;
     const result = await iterateCandidates(
       [stubCandidate('a'), stubCandidate('b'), stubCandidate('c')],
       'test',
-      attempt,
+      ctx,
+      'chat',
       async () => {
         calls++;
         return { type: 'events' as const };
@@ -63,7 +74,7 @@ describe('iterateCandidates', () => {
   });
 
   it('returns the last failure once every candidate errors', async () => {
-    const attempt = { upstreamCallStartedAt: null, firstOutputTokenAt: null, telemetry: undefined };
+    const ctx = stubCtx({ upstreamCallStartedAt: null, firstOutputTokenAt: null, telemetry: undefined });
     let index = 0;
     const failures = [
       { type: 'api-error' as const, marker: 'first' },
@@ -72,7 +83,8 @@ describe('iterateCandidates', () => {
     const result = await iterateCandidates(
       [stubCandidate('a'), stubCandidate('b')],
       'test',
-      attempt,
+      ctx,
+      'chat',
       async () => failures[index++]!,
     );
 
@@ -80,12 +92,13 @@ describe('iterateCandidates', () => {
   });
 
   it('treats non-2xx plain results as failure so the next candidate runs', async () => {
-    const attempt = { upstreamCallStartedAt: null, firstOutputTokenAt: null, telemetry: undefined };
+    const ctx = stubCtx({ upstreamCallStartedAt: null, firstOutputTokenAt: null, telemetry: undefined });
     const attempts: number[] = [];
     const result = await iterateCandidates(
       [stubCandidate('a'), stubCandidate('b')],
       'test',
-      attempt,
+      ctx,
+      'chat',
       async candidate => {
         attempts.push(attempts.length);
         return candidate.model.id === 'a'

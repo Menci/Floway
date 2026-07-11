@@ -1,5 +1,6 @@
-import type { AttemptState } from '../chat/shared/gateway-ctx.ts';
-import type { ModelCandidate } from '@floway-dev/provider';
+import type { GatewayCtx } from '../chat/shared/gateway-ctx.ts';
+import { upstreamPerformanceContext } from './telemetry/upstream-telemetry.ts';
+import type { ModelCandidate, PerformanceOperation } from '@floway-dev/provider';
 
 // A serve-layer attempt result counts as success when:
 //   - The SSE event stream actually opened (`type: 'events'`). Mid-stream
@@ -45,25 +46,26 @@ const isAttemptSuccess = (result: IterableAttemptResult): boolean => {
 // caller's own protocol-shaped "no viable candidate" envelope at the
 // serve site.
 //
-// Resets `attempt.upstreamCallStartedAt` / `firstOutputTokenAt` to null
-// and `telemetry` to undefined before every attempt so a candidate
-// that short-circuits (synthetic result, dry stub, throws before writing)
-// cannot inherit the prior attempt's stamps. Chat serves overwrite
-// `telemetry` synchronously inside the callback before awaiting, so
-// a mid-attempt throw still attributes the failure to the throwing
-// candidate; passthrough serves manage attribution through their own local
-// closure and leave `telemetry` undefined.
+// Owns per-attempt AttemptState: clears the two timing slots and stamps
+// `ctx.attempt.telemetry` with the current candidate's
+// `PerformanceTelemetryContext` synchronously BEFORE handing control to
+// `run`. That way a mid-attempt throw (interceptor bug, translation
+// error, provider-layer JS exception bypassing tryCatchChatServeFailure)
+// still attributes the perf error row to the throwing candidate: the
+// outer catch reads `ctx.attempt.telemetry` and feeds it into
+// `recordFailedRequest`. Callsites don't need to duplicate this stamp.
 export const iterateCandidates = async <T extends IterableAttemptResult>(
   candidates: readonly ModelCandidate[],
   invocationLabel: string,
-  attempt: AttemptState,
+  ctx: GatewayCtx,
+  operation: PerformanceOperation,
   run: (candidate: ModelCandidate) => Promise<T>,
 ): Promise<T> => {
   let lastFailure: T | undefined;
   for (const candidate of candidates) {
-    attempt.upstreamCallStartedAt = null;
-    attempt.firstOutputTokenAt = null;
-    attempt.telemetry = undefined;
+    ctx.attempt.upstreamCallStartedAt = null;
+    ctx.attempt.firstOutputTokenAt = null;
+    ctx.attempt.telemetry = upstreamPerformanceContext(ctx, candidate, operation);
     const result = await run(candidate);
     if (isAttemptSuccess(result)) return result;
     lastFailure = result;

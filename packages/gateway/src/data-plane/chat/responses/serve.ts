@@ -2,7 +2,6 @@ import { responsesAttempt } from './attempt.ts';
 import type { ResponsesAttemptResult } from './interceptors/types.ts';
 import { prepareResponsesServePlan } from './serve-prep.ts';
 import { iterateCandidates } from '../../shared/iterate-candidates.ts';
-import { upstreamPerformanceContext } from '../../shared/telemetry/upstream-telemetry.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesStreamEvent } from '@floway-dev/protocols/responses';
@@ -31,17 +30,16 @@ export const responsesServe = {
     // 5xx/429/network does not become the request's verdict when another
     // candidate can serve. The last failure surfaces verbatim on exhaustion.
     // Normalize `prepared.model` to the candidate's real id so every
-    // attempt sees the canonical resolved public id. Stamping
-    // `telemetry` synchronously before awaiting the attempt is what
-    // preserves error attribution when the attempt throws mid-flight — see
-    // the AttemptState comment in gateway-ctx.ts.
+    // attempt sees the canonical resolved public id. `iterateCandidates`
+    // stamps `ctx.attempt.telemetry` before invoking `run`, preserving
+    // mid-attempt-throw attribution.
     return await iterateCandidates(
       plan.candidates,
       'responsesServe.generate',
-      ctx.attempt,
+      ctx,
+      'chat',
       candidate => {
         plan.prepared.model = candidate.model.id;
-        ctx.attempt.telemetry = upstreamPerformanceContext(ctx, candidate, 'chat');
         return responsesAttempt.generate({ payload: plan.prepared, ctx, candidate, headers });
       },
     );
@@ -62,10 +60,10 @@ export const responsesServe = {
     return await iterateCandidates(
       plan.candidates,
       'responsesServe.compact',
-      ctx.attempt,
+      ctx,
+      'chat',
       candidate => {
         plan.prepared.model = candidate.model.id;
-        ctx.attempt.telemetry = upstreamPerformanceContext(ctx, candidate, 'chat');
         return responsesAttempt.invoke({ payload: plan.prepared, action: 'compact', ctx, candidate, headers });
       },
     );
