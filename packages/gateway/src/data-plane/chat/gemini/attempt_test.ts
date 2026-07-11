@@ -23,7 +23,7 @@ const makeGatewayCtx = (): ChatGatewayCtx => ({
   dump: null,
   responseHeaders: new Headers(),
   backgroundScheduler: () => {},
-  perfTiming: { firstOutputTokenAt: null, upstreamCallStartedAt: null, attemptTelemetry: undefined },
+  attempt: { firstOutputTokenAt: null, upstreamCallStartedAt: null, telemetry: undefined },
   store: createNonResponsesSourceStore(API_KEY_ID),
 });
 

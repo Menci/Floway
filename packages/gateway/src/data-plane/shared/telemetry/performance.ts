@@ -9,9 +9,9 @@ export type { PerformanceTelemetryContext };
 // Structural view of the fields recordPerformance actually reads. Every chat /
 // passthrough call site passes its full `GatewayCtx`; the Responses image-
 // generation server tool synthesizes a per-dispatch object because each image
-// call carries its own TTFT window and can't share `ctx.perfTiming` with the
+// call carries its own TTFT window and can't share `ctx.attempt` with the
 // enclosing Responses turn.
-type PerformanceRecordScope = Pick<GatewayCtx, 'perfTiming' | 'backgroundScheduler'>;
+type PerformanceRecordScope = Pick<GatewayCtx, 'attempt' | 'backgroundScheduler'>;
 
 const record = async (op: Promise<void>, label: string): Promise<void> => {
   try {
@@ -58,12 +58,12 @@ export const recordPerformance = (
 ): void => {
   if (!telemetry) return;
   if (outputTokens < 0) throw new Error(`recordPerformance: negative outputTokens=${outputTokens}`);
-  const { perfTiming, backgroundScheduler: scheduler } = ctx;
+  const { attempt, backgroundScheduler: scheduler } = ctx;
   const dims = dimensions(telemetry);
   if (
     telemetry.operation !== 'chat' ||
-    perfTiming.upstreamCallStartedAt === null ||
-    perfTiming.firstOutputTokenAt === null ||
+    attempt.upstreamCallStartedAt === null ||
+    attempt.firstOutputTokenAt === null ||
     (failed && outputTokens === 0)
   ) {
     // No TTFT stamp available (non-chat / no upstream call / no first-token
@@ -74,7 +74,7 @@ export const recordPerformance = (
     scheduler(record(settle, failed ? 'error' : 'neutral'));
     return;
   }
-  const ttftMs = Math.round(perfTiming.firstOutputTokenAt - perfTiming.upstreamCallStartedAt);
+  const ttftMs = Math.round(attempt.firstOutputTokenAt - attempt.upstreamCallStartedAt);
   if (outputTokens < 2) {
     scheduler(record(getRepo().performance.recordSample({ ...dims, ttftMs, failed }), 'sample'));
     return;
@@ -86,7 +86,7 @@ export const recordPerformance = (
   // (https://github.com/open-telemetry/semantic-conventions-genai/blob/953dd22e3cecd3a397d742c349d2435d59c8b771/docs/gen-ai/gen-ai-metrics.md#metric-gen_aiservertime_per_output_token)
   // and Envoy AI Gateway
   // (https://aigateway.envoyproxy.io/docs/capabilities/observability/metrics/).
-  const streamDeltaMs = requestFinishedAt - perfTiming.firstOutputTokenAt;
+  const streamDeltaMs = requestFinishedAt - attempt.firstOutputTokenAt;
   const tpotUs = Math.round((streamDeltaMs * 1_000) / (outputTokens - 1));
   scheduler(record(getRepo().performance.recordSample({ ...dims, ttftMs, tpotUs, failed }), 'sample'));
 };

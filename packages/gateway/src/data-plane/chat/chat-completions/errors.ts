@@ -31,7 +31,7 @@ const openAiErrorResult = (
 // `messages` (the Chat Completions canonical messages field) when the
 // translator did not carry a more specific path. `performance` carries the
 // throwing candidate's telemetry attribution when the throw fired
-// mid-attempt (see PerfTiming.attemptTelemetry).
+// mid-attempt (see AttemptState.telemetry).
 export const translatorInputErrorResult = (
   error: TranslatorInputError,
   performance?: PerformanceTelemetryContext,

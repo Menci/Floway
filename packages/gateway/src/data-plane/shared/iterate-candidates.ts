@@ -1,4 +1,4 @@
-import type { PerfTiming } from '../chat/shared/gateway-ctx.ts';
+import type { AttemptState } from '../chat/shared/gateway-ctx.ts';
 import type { ModelCandidate } from '@floway-dev/provider';
 
 // A serve-layer attempt result counts as success when:
@@ -45,26 +45,26 @@ const isAttemptSuccess = (result: IterableAttemptResult): boolean => {
 // caller's own protocol-shaped "no viable candidate" envelope at the
 // serve site.
 //
-// Resets `perfTiming.upstreamCallStartedAt` / `firstOutputTokenAt` to null
-// and `attemptTelemetry` to undefined before every attempt so a candidate
+// Resets `attempt.upstreamCallStartedAt` / `firstOutputTokenAt` to null
+// and `telemetry` to undefined before every attempt so a candidate
 // that short-circuits (synthetic result, dry stub, throws before writing)
 // cannot inherit the prior attempt's stamps. Chat serves overwrite
-// `attemptTelemetry` synchronously inside the callback before awaiting, so
+// `telemetry` synchronously inside the callback before awaiting, so
 // a mid-attempt throw still attributes the failure to the throwing
 // candidate; passthrough serves manage attribution through their own local
-// closure and leave `attemptTelemetry` undefined.
+// closure and leave `telemetry` undefined.
 export const iterateCandidates = async <T extends IterableAttemptResult>(
   candidates: readonly ModelCandidate[],
   invocationLabel: string,
-  perfTiming: PerfTiming,
-  attempt: (candidate: ModelCandidate) => Promise<T>,
+  attempt: AttemptState,
+  run: (candidate: ModelCandidate) => Promise<T>,
 ): Promise<T> => {
   let lastFailure: T | undefined;
   for (const candidate of candidates) {
-    perfTiming.upstreamCallStartedAt = null;
-    perfTiming.firstOutputTokenAt = null;
-    perfTiming.attemptTelemetry = undefined;
-    const result = await attempt(candidate);
+    attempt.upstreamCallStartedAt = null;
+    attempt.firstOutputTokenAt = null;
+    attempt.telemetry = undefined;
+    const result = await run(candidate);
     if (isAttemptSuccess(result)) return result;
     lastFailure = result;
   }

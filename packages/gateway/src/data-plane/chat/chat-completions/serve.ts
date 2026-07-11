@@ -46,16 +46,16 @@ export const chatCompletionsServe = {
     // `payload.model` to the candidate's real id — inbound may be an alias
     // name, a prefix-addressable variant, or a dated-suffix id, but every
     // attempt sees the canonical resolved public id. Stamping
-    // `attemptTelemetry` synchronously before awaiting the attempt is what
+    // `telemetry` synchronously before awaiting the attempt is what
     // preserves error attribution when the attempt throws mid-flight — see
-    // the PerfTiming comment in gateway-ctx.ts.
+    // the AttemptState comment in gateway-ctx.ts.
     return await iterateCandidates(
       decision.candidates,
       'chatCompletionsServe.generate',
-      ctx.perfTiming,
+      ctx.attempt,
       candidate => {
         payload.model = candidate.model.id;
-        ctx.perfTiming.attemptTelemetry = upstreamPerformanceContext(ctx, candidate, 'chat');
+        ctx.attempt.telemetry = upstreamPerformanceContext(ctx, candidate, 'chat');
         return chatCompletionsAttempt.generate({ payload, ctx, candidate, headers });
       },
     );

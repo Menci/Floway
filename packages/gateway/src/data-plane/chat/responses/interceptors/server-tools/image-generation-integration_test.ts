@@ -160,7 +160,7 @@ const gatewayCtx = (): ChatGatewayCtx => ({
   dump: null,
   responseHeaders: new Headers(),
   backgroundScheduler: () => {},
-  perfTiming: { firstOutputTokenAt: null, upstreamCallStartedAt: null, attemptTelemetry: undefined },
+  attempt: { firstOutputTokenAt: null, upstreamCallStartedAt: null, telemetry: undefined },
   store: createNonResponsesSourceStore('test-key'),
 });
 
@@ -402,7 +402,7 @@ test('resolveImageCandidate renders model_not_supported when image-kind candidat
   assert(item.error.message.includes('/images/generations endpoint'), `unexpected message: ${item.error.message}`);
 });
 
-test('an image sub-call records its own perf row attributed to the image backend, leaving the outer perfTiming untouched', async () => {
+test('an image sub-call records its own perf row attributed to the image backend, leaving the outer attempt untouched', async () => {
   stub.nextGenerations = [jsonResponse('R0VO')];
   // Real scheduler: capture the promises the shim fires so the test can
   // await them before querying the repo (the default no-op scheduler in
@@ -416,7 +416,7 @@ test('an image sub-call records its own perf row attributed to the image backend
     dump: null,
     responseHeaders: new Headers(),
     backgroundScheduler: p => { pending.push(p); },
-    perfTiming: { firstOutputTokenAt: null, upstreamCallStartedAt: null, attemptTelemetry: undefined },
+    attempt: { firstOutputTokenAt: null, upstreamCallStartedAt: null, telemetry: undefined },
     store: createNonResponsesSourceStore('test-key'),
   };
   const result = await shim(makeCtx([{ type: 'message', role: 'user', content: 'draw a cat' }]), ctx, scriptedRun([
@@ -432,9 +432,9 @@ test('an image sub-call records its own perf row attributed to the image backend
   assertEquals(imageRows[0].upstream, 'u');
   assertEquals(imageRows[0].keyId, 'test-key');
   assertEquals(imageRows[0].model, 'gpt-image-2');
-  // The image shim runs on a local PerfTiming distinct from the outer
-  // Responses turn's — no image-call stamps may leak onto ctx.perfTiming.
-  assertEquals(ctx.perfTiming.upstreamCallStartedAt, null);
-  assertEquals(ctx.perfTiming.firstOutputTokenAt, null);
-  assertEquals(ctx.perfTiming.attemptTelemetry, undefined);
+  // The image shim runs on a local AttemptState distinct from the outer
+  // Responses turn's — no image-call stamps may leak onto ctx.attempt.
+  assertEquals(ctx.attempt.upstreamCallStartedAt, null);
+  assertEquals(ctx.attempt.firstOutputTokenAt, null);
+  assertEquals(ctx.attempt.telemetry, undefined);
 });

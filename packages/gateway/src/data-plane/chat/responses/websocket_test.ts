@@ -758,19 +758,19 @@ test('Responses WebSocket aborts the in-flight Responses request when the client
 // The four chat HTTP transports render a mid-attempt throw (interceptor
 // bug, translation error, provider-layer JS exception that bypassed
 // tryCatchChatServeFailure) through an
-// `internalErrorResult(..., ctx.perfTiming.attemptTelemetry)` envelope,
+// `internalErrorResult(..., ctx.attempt.telemetry)` envelope,
 // which internally reaches `recordFailedRequest` and lands an error row
 // attributed to the throwing candidate. The WS transport's outer catch
 // must do the same: alongside its sendError / dump.failed / dump.finalize,
-// it calls `recordFailedRequest(ctx, ctx.perfTiming.attemptTelemetry)` so
+// it calls `recordFailedRequest(ctx, ctx.attempt.telemetry)` so
 // the failure shows up in performance_summary.
 test('Responses WebSocket outer catch records a failed perf sample attributed to the throwing candidate', async () => {
   const { apiKey, repo } = await setupAppTest();
 
   // Mirror what responsesServe.generate would have stamped before failing
-  // — attemptTelemetry set for the throwing candidate — then throw.
+  // — telemetry set for the throwing candidate — then throw.
   const generateSpy = vi.spyOn(responsesServe, 'generate').mockImplementation(async ({ ctx }) => {
-    ctx.perfTiming.attemptTelemetry = {
+    ctx.attempt.telemetry = {
       keyId: apiKey.id,
       model: 'gpt-direct-responses',
       upstream: 'up_throwing',

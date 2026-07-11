@@ -3,7 +3,7 @@ import { enumerateModelCandidates } from '../../../../providers/registry.ts';
 import { appendFailedUpstreams } from '../../../../shared/failed-upstreams.ts';
 import { recordPerformance, type PerformanceTelemetryContext } from '../../../../shared/telemetry/performance.ts';
 import { recordTokenUsage, tokenUsageFromImagesBody } from '../../../../shared/telemetry/usage.ts';
-import { stampUpstreamCallStart, type PerfTiming } from '../../../shared/gateway-ctx.ts';
+import { stampUpstreamCallStart, type AttemptState } from '../../../shared/gateway-ctx.ts';
 import type { ServerToolLifecycleEvent, ServerToolOutputItem, ServerToolRegistration, ServerToolTerminal } from '../server-tool-shim.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { parseSSEStream } from '@floway-dev/protocols/common';
@@ -631,28 +631,28 @@ const issueImageCall = async (
   sources: readonly ImageSource[],
   state: ShimState,
   stream: boolean,
-  perfTiming: PerfTiming,
+  attempt: AttemptState,
 ): Promise<{ response: Response; modelKey: string }> => {
-  for (let attempt = 0; ; attempt++) {
+  for (let retry = 0; ; retry++) {
     const opts = {
       fetcher,
       waitUntil: state.backgroundScheduler,
       headers: new Headers(),
-      // Stamp this image sub-call's OWN perf slot — never ctx.perfTiming —
+      // Stamp this image sub-call's OWN perf slot — never ctx.attempt —
       // so the outer Responses turn's upstream-call stamp is preserved.
       // Perf recording lives at the sub-call's terminal boundary in
       // streamImageGeneration; the retry loop overwrites this slot each
-      // attempt so it reflects the dispatch that actually returned.
-      wrapUpstreamCall: stampUpstreamCallStart(perfTiming),
+      // retry so it reflects the dispatch that actually returned.
+      wrapUpstreamCall: stampUpstreamCallStart(attempt),
     };
     const { response, modelKey } = await (isEdit
       ? provider.instance.callImagesEdits(model, buildEditsForm(prompt, state.config, sources, stream), state.downstreamAbortSignal, opts)
       : provider.instance.callImagesGenerations(model, buildGenerationsBody(prompt, state.config, stream), state.downstreamAbortSignal, opts));
-    if (response.status !== 429 || attempt >= MAX_RATE_LIMIT_RETRIES) return { response, modelKey };
+    if (response.status !== 429 || retry >= MAX_RATE_LIMIT_RETRIES) return { response, modelKey };
 
     // 25% jitter desynchronizes parallel callers so a burst of orchestrator
     // turns doesn't all re-issue at the same instant.
-    const base = 1000 * 2 ** attempt;
+    const base = 1000 * 2 ** retry;
     const backoffMs = base + Math.random() * base * 0.25;
     const delayMs = Math.min(parseRetryAfterMs(response.headers) ?? backoffMs, RETRY_CAP_MS);
     await response.text().catch(() => undefined);
@@ -778,7 +778,7 @@ export const parseImageStreamEvent = (data: string): ImageStreamSignal => {
 // absent) takes a single non-streaming round-trip and yields no preview frames.
 //
 // Every sub-call records its OWN perf row under operation='image_generation'
-// or 'image_edit' via a local PerfTiming distinct from ctx.perfTiming (which
+// or 'image_edit' via a local AttemptState distinct from ctx.attempt (which
 // belongs to the outer Responses turn). firstOutputTokenAt stays null — image
 // backends are single-body from the perf model's point of view, so the row
 // lands in the neutral bucket with an honest requests + errors count and no
@@ -797,7 +797,7 @@ const streamImageGeneration = (
   const model = providerModelOf(resolved.candidate);
   const wantsPartials = (state.config.partial_images ?? 0) > 0;
 
-  const perfTiming: PerfTiming = { upstreamCallStartedAt: null, firstOutputTokenAt: null, attemptTelemetry: undefined };
+  const attempt: AttemptState = { upstreamCallStartedAt: null, firstOutputTokenAt: null, telemetry: undefined };
   const perfContext: PerformanceTelemetryContext = {
     keyId: state.apiKeyId,
     model: model.id,
@@ -806,14 +806,14 @@ const streamImageGeneration = (
     runtimeLocation: state.runtimeLocation,
   };
   const finish = (outcome: ImageOutcome): ServerToolTerminal => {
-    recordPerformance({ perfTiming, backgroundScheduler: state.backgroundScheduler }, perfContext, !outcome.ok, 0, performance.now());
+    recordPerformance({ attempt, backgroundScheduler: state.backgroundScheduler }, perfContext, !outcome.ok, 0, performance.now());
     return imageTerminal(prompt, action, outcome);
   };
 
   let response: Response;
   let modelKey: string;
   try {
-    ({ response, modelKey } = await issueImageCall(provider, model, fetcher, prompt, isEdit, sources, state, wantsPartials, perfTiming));
+    ({ response, modelKey } = await issueImageCall(provider, model, fetcher, prompt, isEdit, sources, state, wantsPartials, attempt));
   } catch (e) {
     return finish({ ok: false, error: serverError(e) });
   }

@@ -63,7 +63,7 @@ const makeGatewayCtx = (): ChatGatewayCtx => ({
   dump: null,
   responseHeaders: new Headers(),
   backgroundScheduler: () => {},
-  perfTiming: { firstOutputTokenAt: null, upstreamCallStartedAt: null, attemptTelemetry: undefined },
+  attempt: { firstOutputTokenAt: null, upstreamCallStartedAt: null, telemetry: undefined },
   store: createNonResponsesSourceStore(API_KEY_ID),
 });
 
@@ -199,7 +199,7 @@ test('generate falls through to the next candidate when the first yields an upst
 // JS exception bypassing tryCatchChatServeFailure) must attribute the perf
 // error row to the throwing candidate, not the previous one that already
 // failed cleanly with a 5xx.
-test('mid-attempt throw stamps attemptTelemetry with the throwing candidate, not the previous one', async () => {
+test('mid-attempt throw stamps telemetry with the throwing candidate, not the previous one', async () => {
   installRepo();
   const firstError = new Response(JSON.stringify({ error: { message: 'nope' } }), {
     status: 502, headers: new Headers({ 'content-type': 'application/json' }),
@@ -229,7 +229,7 @@ test('mid-attempt throw stamps attemptTelemetry with the throwing candidate, not
 
   assertEquals(firstCall.mock.calls.length, 1);
   assertEquals(secondCall.mock.calls.length, 1);
-  assertEquals(ctx.perfTiming.attemptTelemetry?.upstream, 'up_b');
+  assertEquals(ctx.attempt.telemetry?.upstream, 'up_b');
 });
 
 test('generate surfaces the last upstream error verbatim when every candidate fails', async () => {

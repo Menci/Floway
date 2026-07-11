@@ -49,17 +49,17 @@ export const messagesServe = {
     // transient 5xx/429/network failures. When the list is exhausted, the
     // most recent failure is forwarded verbatim. Normalize `payload.model`
     // to the candidate's real id so every attempt sees the canonical
-    // resolved public id. Stamping `attemptTelemetry` synchronously before
+    // resolved public id. Stamping `telemetry` synchronously before
     // awaiting the attempt is what preserves error attribution when the
-    // attempt throws mid-flight — see the PerfTiming comment in
+    // attempt throws mid-flight — see the AttemptState comment in
     // gateway-ctx.ts.
     return await iterateCandidates(
       decision.candidates,
       'messagesServe.generate',
-      ctx.perfTiming,
+      ctx.attempt,
       candidate => {
         payload.model = candidate.model.id;
-        ctx.perfTiming.attemptTelemetry = upstreamPerformanceContext(ctx, candidate, 'chat');
+        ctx.attempt.telemetry = upstreamPerformanceContext(ctx, candidate, 'chat');
         return messagesAttempt.generate({ payload, ctx, candidate, headers });
       },
     );
@@ -87,12 +87,12 @@ export const messagesServe = {
     return await iterateCandidates(
       decision.candidates,
       'messagesServe.countTokens',
-      ctx.perfTiming,
+      ctx.attempt,
       candidate => {
         // Same normalization as generate above — every attempt sees
         // payload.model === candidate.model.id regardless of inbound form.
         payload.model = candidate.model.id;
-        ctx.perfTiming.attemptTelemetry = upstreamPerformanceContext(ctx, candidate, 'chat');
+        ctx.attempt.telemetry = upstreamPerformanceContext(ctx, candidate, 'chat');
         return messagesAttempt.countTokens({ payload, ctx, candidate, headers });
       },
     );

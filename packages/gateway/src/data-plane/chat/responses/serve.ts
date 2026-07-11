@@ -32,16 +32,16 @@ export const responsesServe = {
     // candidate can serve. The last failure surfaces verbatim on exhaustion.
     // Normalize `prepared.model` to the candidate's real id so every
     // attempt sees the canonical resolved public id. Stamping
-    // `attemptTelemetry` synchronously before awaiting the attempt is what
+    // `telemetry` synchronously before awaiting the attempt is what
     // preserves error attribution when the attempt throws mid-flight — see
-    // the PerfTiming comment in gateway-ctx.ts.
+    // the AttemptState comment in gateway-ctx.ts.
     return await iterateCandidates(
       plan.candidates,
       'responsesServe.generate',
-      ctx.perfTiming,
+      ctx.attempt,
       candidate => {
         plan.prepared.model = candidate.model.id;
-        ctx.perfTiming.attemptTelemetry = upstreamPerformanceContext(ctx, candidate, 'chat');
+        ctx.attempt.telemetry = upstreamPerformanceContext(ctx, candidate, 'chat');
         return responsesAttempt.generate({ payload: plan.prepared, ctx, candidate, headers });
       },
     );
@@ -62,10 +62,10 @@ export const responsesServe = {
     return await iterateCandidates(
       plan.candidates,
       'responsesServe.compact',
-      ctx.perfTiming,
+      ctx.attempt,
       candidate => {
         plan.prepared.model = candidate.model.id;
-        ctx.perfTiming.attemptTelemetry = upstreamPerformanceContext(ctx, candidate, 'chat');
+        ctx.attempt.telemetry = upstreamPerformanceContext(ctx, candidate, 'chat');
         return responsesAttempt.invoke({ payload: plan.prepared, action: 'compact', ctx, candidate, headers });
       },
     );

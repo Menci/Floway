@@ -45,7 +45,7 @@ const geminiRpcErrorResult = (status: number, message: string, performance?: Per
 // INVALID_ARGUMENT envelope so the caller sees a Gemini-shaped failure
 // instead of the internal-error 500 envelope. `performance` carries the
 // throwing candidate's telemetry attribution when the throw fired
-// mid-attempt (see PerfTiming.attemptTelemetry).
+// mid-attempt (see AttemptState.telemetry).
 export const translatorInputErrorResult = (
   error: TranslatorInputError,
   performance?: PerformanceTelemetryContext,

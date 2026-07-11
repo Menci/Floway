@@ -96,7 +96,7 @@ export interface UpstreamCallOptions {
   waitUntil: (promise: Promise<unknown>) => void;
   headers: Headers;
   // Providers wrap the dispatch that fires the outbound fetch. The wrap
-  // stamps `perfTiming.upstreamCallStartedAt` at dispatch entry and then
+  // stamps `attempt.upstreamCallStartedAt` at dispatch entry and then
   // invokes the factory, so TTFT is anchored to the actual data-plane
   // request initiation (post-auth-exchange) rather than gateway arrival.
   // A factory contract lets the stamp fire before the fetcher is even

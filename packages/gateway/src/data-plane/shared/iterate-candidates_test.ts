@@ -10,24 +10,24 @@ const stubTelemetry = (upstream: string): PerformanceTelemetryContext =>
   ({ upstream, model: { id: 'm', canonicalizedId: 'm' }, operation: 'chat' } as unknown as PerformanceTelemetryContext);
 
 describe('iterateCandidates', () => {
-  it('resets perfTiming to null/undefined at the start of every candidate attempt', async () => {
-    const perfTiming = { upstreamCallStartedAt: 999, firstOutputTokenAt: 999, attemptTelemetry: stubTelemetry('carryover') as PerformanceTelemetryContext | undefined };
-    const observed: Array<{ upstreamCallStartedAt: number | null; firstOutputTokenAt: number | null; attemptTelemetry: PerformanceTelemetryContext | undefined }> = [];
+  it('resets attempt to null/undefined at the start of every candidate attempt', async () => {
+    const attempt = { upstreamCallStartedAt: 999, firstOutputTokenAt: 999, telemetry: stubTelemetry('carryover') as PerformanceTelemetryContext | undefined };
+    const observed: Array<{ upstreamCallStartedAt: number | null; firstOutputTokenAt: number | null; telemetry: PerformanceTelemetryContext | undefined }> = [];
 
     await iterateCandidates(
       [stubCandidate('a'), stubCandidate('b'), stubCandidate('c')],
       'test',
-      perfTiming,
+      attempt,
       async candidate => {
         observed.push({
-          upstreamCallStartedAt: perfTiming.upstreamCallStartedAt,
-          firstOutputTokenAt: perfTiming.firstOutputTokenAt,
-          attemptTelemetry: perfTiming.attemptTelemetry,
+          upstreamCallStartedAt: attempt.upstreamCallStartedAt,
+          firstOutputTokenAt: attempt.firstOutputTokenAt,
+          telemetry: attempt.telemetry,
         });
         // simulate an attempt that stamps then fails, so the loop advances
-        perfTiming.upstreamCallStartedAt = 100;
-        perfTiming.firstOutputTokenAt = 200;
-        perfTiming.attemptTelemetry = stubTelemetry(candidate.model.id);
+        attempt.upstreamCallStartedAt = 100;
+        attempt.firstOutputTokenAt = 200;
+        attempt.telemetry = stubTelemetry(candidate.model.id);
         return candidate.model.id === 'c'
           ? { type: 'events' as const }
           : { type: 'api-error' as const };
@@ -39,19 +39,19 @@ describe('iterateCandidates', () => {
     // attempt. Regressing this reintroduces the mid-attempt-throw
     // misattribution the reset was added to prevent.
     expect(observed).toEqual([
-      { upstreamCallStartedAt: null, firstOutputTokenAt: null, attemptTelemetry: undefined },
-      { upstreamCallStartedAt: null, firstOutputTokenAt: null, attemptTelemetry: undefined },
-      { upstreamCallStartedAt: null, firstOutputTokenAt: null, attemptTelemetry: undefined },
+      { upstreamCallStartedAt: null, firstOutputTokenAt: null, telemetry: undefined },
+      { upstreamCallStartedAt: null, firstOutputTokenAt: null, telemetry: undefined },
+      { upstreamCallStartedAt: null, firstOutputTokenAt: null, telemetry: undefined },
     ]);
   });
 
   it('returns the first success and stops iterating', async () => {
-    const perfTiming = { upstreamCallStartedAt: null, firstOutputTokenAt: null, attemptTelemetry: undefined };
+    const attempt = { upstreamCallStartedAt: null, firstOutputTokenAt: null, telemetry: undefined };
     let calls = 0;
     const result = await iterateCandidates(
       [stubCandidate('a'), stubCandidate('b'), stubCandidate('c')],
       'test',
-      perfTiming,
+      attempt,
       async () => {
         calls++;
         return { type: 'events' as const };
@@ -63,7 +63,7 @@ describe('iterateCandidates', () => {
   });
 
   it('returns the last failure once every candidate errors', async () => {
-    const perfTiming = { upstreamCallStartedAt: null, firstOutputTokenAt: null, attemptTelemetry: undefined };
+    const attempt = { upstreamCallStartedAt: null, firstOutputTokenAt: null, telemetry: undefined };
     let index = 0;
     const failures = [
       { type: 'api-error' as const, marker: 'first' },
@@ -72,7 +72,7 @@ describe('iterateCandidates', () => {
     const result = await iterateCandidates(
       [stubCandidate('a'), stubCandidate('b')],
       'test',
-      perfTiming,
+      attempt,
       async () => failures[index++]!,
     );
 
@@ -80,12 +80,12 @@ describe('iterateCandidates', () => {
   });
 
   it('treats non-2xx plain results as failure so the next candidate runs', async () => {
-    const perfTiming = { upstreamCallStartedAt: null, firstOutputTokenAt: null, attemptTelemetry: undefined };
+    const attempt = { upstreamCallStartedAt: null, firstOutputTokenAt: null, telemetry: undefined };
     const attempts: number[] = [];
     const result = await iterateCandidates(
       [stubCandidate('a'), stubCandidate('b')],
       'test',
-      perfTiming,
+      attempt,
       async candidate => {
         attempts.push(attempts.length);
         return candidate.model.id === 'a'

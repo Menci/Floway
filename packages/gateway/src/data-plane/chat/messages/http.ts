@@ -46,7 +46,7 @@ const respondWithInternalError = async (c: AuthedContext, error: unknown, reques
   const verbatim = providerModelsUnavailableResponse(error);
   if (verbatim !== null) return verbatim;
   const effectiveCtx = ctx ?? createGatewayCtxFromHono(c, { wantsStream: false, requestBody, backgroundScheduler: backgroundSchedulerFromContext(c) });
-  const result = internalErrorResult(502, toInternalDebugError(error), effectiveCtx.perfTiming.attemptTelemetry);
+  const result = internalErrorResult(502, toInternalDebugError(error), effectiveCtx.attempt.telemetry);
   const { response } = await respondMessages(c, result, false, effectiveCtx);
   return finalizeGatewayResponse(effectiveCtx, response);
 };
@@ -57,7 +57,7 @@ const respondWithInternalError = async (c: AuthedContext, error: unknown, reques
 const respondToThrow = async (c: AuthedContext, error: unknown, requestBody: RequestBody, ctx?: GatewayCtx): Promise<Response> => {
   if (!(error instanceof TranslatorInputError)) return await respondWithInternalError(c, error, requestBody, ctx);
   const effectiveCtx = ctx ?? createGatewayCtxFromHono(c, { wantsStream: false, requestBody, backgroundScheduler: backgroundSchedulerFromContext(c) });
-  const { response } = await respondMessages(c, translatorInputErrorResult(error, effectiveCtx.perfTiming.attemptTelemetry), false, effectiveCtx);
+  const { response } = await respondMessages(c, translatorInputErrorResult(error, effectiveCtx.attempt.telemetry), false, effectiveCtx);
   return (effectiveCtx.dump?.finalize(response) ?? response);
 };
 

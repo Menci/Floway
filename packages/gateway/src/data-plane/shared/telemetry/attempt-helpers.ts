@@ -70,7 +70,7 @@ export const buildUpstreamCallOptions = (
   fetcher: candidate.fetcher,
   waitUntil: ctx.backgroundScheduler,
   headers,
-  wrapUpstreamCall: stampUpstreamCallStart(ctx.perfTiming),
+  wrapUpstreamCall: stampUpstreamCallStart(ctx.attempt),
 });
 
 // Attaches the performance telemetry context every layer above reads.

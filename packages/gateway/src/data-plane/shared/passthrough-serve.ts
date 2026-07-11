@@ -196,7 +196,7 @@ export const passthroughServe = async (input: PassthroughServeContext): Promise<
     const result = await iterateCandidates(
       viable,
       'passthroughServe',
-      ctx.perfTiming,
+      ctx.attempt,
       async candidate => {
         // Stamp the candidate's identity synchronously BEFORE awaiting the
         // attempt, so a throw from `passthroughAttempt` (or the upstream

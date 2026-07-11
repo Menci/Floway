@@ -47,7 +47,7 @@ const setup = (): Harness => {
       dump: null,
       responseHeaders: new Headers(),
       backgroundScheduler: promise => { background.push(promise); },
-      perfTiming: { firstOutputTokenAt, upstreamCallStartedAt, attemptTelemetry: undefined },
+      attempt: { firstOutputTokenAt, upstreamCallStartedAt, telemetry: undefined },
     }),
   };
 };

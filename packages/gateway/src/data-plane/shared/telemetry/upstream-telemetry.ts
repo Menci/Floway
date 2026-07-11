@@ -22,8 +22,8 @@ export const withUpstreamTelemetry = <T>(
 ): AsyncIterable<ProtocolFrame<T>> => {
   return (async function* () {
     for await (const frame of events) {
-      if (ctx.perfTiming.firstOutputTokenAt === null && isFirstOutputTokenFrame(frame, targetApi)) {
-        ctx.perfTiming.firstOutputTokenAt = performance.now();
+      if (ctx.attempt.firstOutputTokenAt === null && isFirstOutputTokenFrame(frame, targetApi)) {
+        ctx.attempt.firstOutputTokenAt = performance.now();
       }
       yield frame;
     }

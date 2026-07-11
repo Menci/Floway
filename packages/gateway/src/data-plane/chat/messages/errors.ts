@@ -42,7 +42,7 @@ const anthropicErrorResult = (
 // invalid_request_error so the caller sees a protocol-shaped failure
 // instead of the internal-error 502 envelope. `performance` carries the
 // throwing candidate's telemetry attribution when the throw fired
-// mid-attempt (see PerfTiming.attemptTelemetry).
+// mid-attempt (see AttemptState.telemetry).
 export const translatorInputErrorResult = (
   error: TranslatorInputError,
   performance?: PerformanceTelemetryContext,

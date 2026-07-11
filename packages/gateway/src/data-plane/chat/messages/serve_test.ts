@@ -64,7 +64,7 @@ const makeGatewayCtx = (): ChatGatewayCtx => ({
   dump: null,
   responseHeaders: new Headers(),
   backgroundScheduler: () => {},
-  perfTiming: { firstOutputTokenAt: null, upstreamCallStartedAt: null, attemptTelemetry: undefined },
+  attempt: { firstOutputTokenAt: null, upstreamCallStartedAt: null, telemetry: undefined },
   store: createNonResponsesSourceStore(API_KEY_ID),
 });
 
@@ -573,12 +573,12 @@ test('alias whose targets have no kind-matching binding surfaces as the regular 
 // A mid-attempt throw (interceptor bug / translation error / provider-layer JS
 // exception bypassing tryCatchChatServeFailure) must attribute the perf error
 // row to the throwing candidate, not the previous one. The serve stamps
-// `ctx.perfTiming.attemptTelemetry` synchronously in the iterateCandidates
+// `ctx.attempt.telemetry` synchronously in the iterateCandidates
 // callback so the http.ts catch can build an internal-error result carrying
 // the correct upstream, and `recordFailedRequest` lands a row rather than
 // short-circuiting on missing telemetry. Passthrough's equivalent regression
 // lives in passthrough-serve_test.ts (R3 fix 303c4e89).
-test('mid-attempt throw stamps attemptTelemetry with the throwing candidate, not the previous one', async () => {
+test('mid-attempt throw stamps telemetry with the throwing candidate, not the previous one', async () => {
   installRepo();
   const firstError = new Response(JSON.stringify({ error: { message: 'nope' } }), {
     status: 502, headers: new Headers({ 'content-type': 'application/json' }),
@@ -611,5 +611,5 @@ test('mid-attempt throw stamps attemptTelemetry with the throwing candidate, not
   // The perf attribution slot reflects the throwing upstream, so the http.ts
   // catch synthesizes the internal-error result with performance context and
   // the error row lands against up_b.
-  assertEquals(ctx.perfTiming.attemptTelemetry?.upstream, 'up_b');
+  assertEquals(ctx.attempt.telemetry?.upstream, 'up_b');
 });

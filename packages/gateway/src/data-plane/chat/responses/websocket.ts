@@ -261,7 +261,7 @@ const handleClientMessage = async (
       // respondResponsesWebSocket result branches, so their `recordFailedRequest`
       // call would be skipped. Attribute the failure to the last upstream stamped
       // synchronously by `responsesServe.generate`, matching the HTTP transports.
-      recordFailedRequest(ctx, ctx.perfTiming.attemptTelemetry);
+      recordFailedRequest(ctx, ctx.attempt.telemetry);
       ctx.dump?.failed(error);
       ctx.dump?.finalize(500, []);
     }

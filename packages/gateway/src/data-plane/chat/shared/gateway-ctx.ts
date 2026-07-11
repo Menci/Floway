@@ -13,7 +13,7 @@ import type { PerformanceTelemetryContext } from '@floway-dev/provider';
 //     the provider hands its outbound-fetch dispatch off.
 //   - `firstOutputTokenAt` — stamped by upstream-telemetry.ts on the first
 //     stream frame carrying a model-generated token.
-//   - `attemptTelemetry` — the chat serve's synchronous pre-await stamp of
+//   - `telemetry` — the chat serve's synchronous pre-await stamp of
 //     the current candidate's PerformanceTelemetryContext. Used by the outer
 //     http.ts catch to attribute a mid-attempt throw (interceptor bug,
 //     translation error, provider-layer JS exception bypassing
@@ -24,13 +24,13 @@ import type { PerformanceTelemetryContext } from '@floway-dev/provider';
 // The first two are read by recordPerformance in the respond-layer
 // finally; the third is read by the http.ts error-render helpers. The
 // numeric slots use `null` because a real timestamp of `0` would be
-// ambiguous; `attemptTelemetry` uses `undefined` so it flows straight into
+// ambiguous; `telemetry` uses `undefined` so it flows straight into
 // the `PerformanceTelemetryContext | undefined` parameter of the result
 // constructors without translation.
-export interface PerfTiming {
+export interface AttemptState {
   upstreamCallStartedAt: number | null;
   firstOutputTokenAt: number | null;
-  attemptTelemetry: PerformanceTelemetryContext | undefined;
+  telemetry: PerformanceTelemetryContext | undefined;
 }
 
 // Factory for the stamp closure providers plug into wrapUpstreamCall.
@@ -39,9 +39,9 @@ export interface PerfTiming {
 // entry — pre-dial by design. See UpstreamCallOptions.wrapUpstreamCall
 // for why the interval includes proxy handshake time (the user waits
 // for it too).
-export const stampUpstreamCallStart = (perfTiming: PerfTiming) =>
+export const stampUpstreamCallStart = (attempt: AttemptState) =>
   <T>(dispatch: () => Promise<T>): Promise<T> => {
-    perfTiming.upstreamCallStartedAt = performance.now();
+    attempt.upstreamCallStartedAt = performance.now();
     return dispatch();
   };
 
@@ -52,7 +52,7 @@ export interface GatewayCtx {
   readonly wantsStream: boolean;
   readonly downstreamAbortController?: AbortController;
   readonly backgroundScheduler: BackgroundScheduler;
-  readonly perfTiming: PerfTiming;
+  readonly attempt: AttemptState;
   // The deployment colo / region, used both as the `runtimeLocation`
   // performance-telemetry dimension and as the dial-time colo whitelist key.
   // Request-scoped, so it is resolved once here rather than at the
@@ -123,7 +123,7 @@ export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCt
     wantsStream: opts.wantsStream,
     downstreamAbortController: controller,
     backgroundScheduler: opts.backgroundScheduler,
-    perfTiming: { firstOutputTokenAt: null, upstreamCallStartedAt: null, attemptTelemetry: undefined },
+    attempt: { firstOutputTokenAt: null, upstreamCallStartedAt: null, telemetry: undefined },
     runtimeLocation: getRuntimeLocation(c.req.raw),
     dump,
     responseHeaders: new Headers(),

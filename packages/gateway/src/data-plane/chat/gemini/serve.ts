@@ -56,16 +56,16 @@ export const geminiServe = {
     // real upstream telemetry rather than a synthetic envelope. The
     // Gemini URL-path model id is already in `model`; downstream dispatch
     // keys off `candidate.model.id`, so no payload rewrite is needed here
-    // even for alias-origin candidates. Stamping `attemptTelemetry`
+    // even for alias-origin candidates. Stamping `telemetry`
     // synchronously before awaiting the attempt is what preserves error
-    // attribution when the attempt throws mid-flight — see the PerfTiming
+    // attribution when the attempt throws mid-flight — see the AttemptState
     // comment in gateway-ctx.ts.
     return await iterateCandidates(
       decision.candidates,
       'geminiServe.generate',
-      ctx.perfTiming,
+      ctx.attempt,
       candidate => {
-        ctx.perfTiming.attemptTelemetry = upstreamPerformanceContext(ctx, candidate, 'chat');
+        ctx.attempt.telemetry = upstreamPerformanceContext(ctx, candidate, 'chat');
         return geminiAttempt.generate({ payload, ctx, candidate, headers });
       },
     );
@@ -93,9 +93,9 @@ export const geminiServe = {
     return await iterateCandidates(
       decision.candidates,
       'geminiServe.countTokens',
-      ctx.perfTiming,
+      ctx.attempt,
       candidate => {
-        ctx.perfTiming.attemptTelemetry = upstreamPerformanceContext(ctx, candidate, 'chat');
+        ctx.attempt.telemetry = upstreamPerformanceContext(ctx, candidate, 'chat');
         return geminiAttempt.countTokens({ payload, ctx, candidate, headers });
       },
     );

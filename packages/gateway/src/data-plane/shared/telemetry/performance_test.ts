@@ -4,7 +4,7 @@ import { recordPerformance } from './performance.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockGatewayCtx } from '../../../test-helpers/gateway-ctx.ts';
-import type { PerfTiming } from '../../chat/shared/gateway-ctx.ts';
+import type { AttemptState } from '../../chat/shared/gateway-ctx.ts';
 import { mockPerfTelemetryContext } from '@floway-dev/test-utils';
 
 const telemetry = mockPerfTelemetryContext({
@@ -18,7 +18,7 @@ describe('recordPerformance', () => {
   let repo: InMemoryRepo;
   const promises: Promise<unknown>[] = [];
   const scheduler = (p: Promise<unknown>) => { promises.push(p); };
-  const ctxWith = (perfTiming: PerfTiming) => mockGatewayCtx({ perfTiming, backgroundScheduler: scheduler });
+  const ctxWith = (attempt: AttemptState) => mockGatewayCtx({ attempt, backgroundScheduler: scheduler });
 
   beforeEach(() => {
     repo = new InMemoryRepo();
@@ -29,7 +29,7 @@ describe('recordPerformance', () => {
   // --- error ---
 
   it('records an error when failed=true', async () => {
-    const ctx = ctxWith({ firstOutputTokenAt: null, upstreamCallStartedAt: null, attemptTelemetry: undefined });
+    const ctx = ctxWith({ firstOutputTokenAt: null, upstreamCallStartedAt: null, telemetry: undefined });
     recordPerformance(ctx, telemetry, true, 0, 400);
     await Promise.all(promises);
     const [row] = await repo.performance.listAll();
@@ -39,7 +39,7 @@ describe('recordPerformance', () => {
   // --- neutral ---
 
   it('records a neutral row for non-chat operation on success', async () => {
-    const ctx = ctxWith({ firstOutputTokenAt: null, upstreamCallStartedAt: null, attemptTelemetry: undefined });
+    const ctx = ctxWith({ firstOutputTokenAt: null, upstreamCallStartedAt: null, telemetry: undefined });
     recordPerformance(ctx, { ...telemetry, operation: 'embeddings' }, false, 0, 500);
     await Promise.all(promises);
     const [row] = await repo.performance.listAll();
@@ -47,7 +47,7 @@ describe('recordPerformance', () => {
   });
 
   it('records an error row for non-chat operation on failure', async () => {
-    const ctx = ctxWith({ firstOutputTokenAt: null, upstreamCallStartedAt: null, attemptTelemetry: undefined });
+    const ctx = ctxWith({ firstOutputTokenAt: null, upstreamCallStartedAt: null, telemetry: undefined });
     recordPerformance(ctx, { ...telemetry, operation: 'embeddings' }, true, 0, 500);
     await Promise.all(promises);
     const [row] = await repo.performance.listAll();
@@ -56,7 +56,7 @@ describe('recordPerformance', () => {
 
   it('records neutral for chat with no upstream call (synthetic result)', async () => {
     // upstreamCallStartedAt === null means no real fetch was issued (e.g. cached / synthetic).
-    const ctx = ctxWith({ firstOutputTokenAt: 100, upstreamCallStartedAt: null, attemptTelemetry: undefined });
+    const ctx = ctxWith({ firstOutputTokenAt: 100, upstreamCallStartedAt: null, telemetry: undefined });
     recordPerformance(ctx, telemetry, false, 50, 400);
     await Promise.all(promises);
     const [row] = await repo.performance.listAll();
@@ -65,7 +65,7 @@ describe('recordPerformance', () => {
 
   it('records neutral for chat with upstream call but no first generated token', async () => {
     // Stream aborted or reasoning-only: upstream was called but no generated token arrived.
-    const ctx = ctxWith({ firstOutputTokenAt: null, upstreamCallStartedAt: 50, attemptTelemetry: undefined });
+    const ctx = ctxWith({ firstOutputTokenAt: null, upstreamCallStartedAt: 50, telemetry: undefined });
     recordPerformance(ctx, telemetry, false, 50, 400);
     await Promise.all(promises);
     const [row] = await repo.performance.listAll();
@@ -77,7 +77,7 @@ describe('recordPerformance', () => {
   it('records TTFT-only sample for outputTokens=1 (single-token stream)', async () => {
     // Single token gives no inter-token interval, so TPOT is skipped; TTFT is
     // still measurable and useful.
-    const ctx = ctxWith({ firstOutputTokenAt: 100, upstreamCallStartedAt: 50, attemptTelemetry: undefined });
+    const ctx = ctxWith({ firstOutputTokenAt: 100, upstreamCallStartedAt: 50, telemetry: undefined });
     recordPerformance(ctx, telemetry, false, 1, 400);
     await Promise.all(promises);
     const [row] = await repo.performance.listAll();
@@ -89,7 +89,7 @@ describe('recordPerformance', () => {
   it('records TTFT-only sample for outputTokens=0 when first-token stamp fired anyway', async () => {
     // Rare upstream mismatch: detector saw an output frame but usage reports 0.
     // Honour the detector — TTFT is real, TPOT can't be computed.
-    const ctx = ctxWith({ firstOutputTokenAt: 100, upstreamCallStartedAt: 50, attemptTelemetry: undefined });
+    const ctx = ctxWith({ firstOutputTokenAt: 100, upstreamCallStartedAt: 50, telemetry: undefined });
     recordPerformance(ctx, telemetry, false, 0, 400);
     await Promise.all(promises);
     const [row] = await repo.performance.listAll();
@@ -99,7 +99,7 @@ describe('recordPerformance', () => {
   // --- full ttft + tpot sample ---
 
   it('records sample with ttft measured from upstreamCallStartedAt', async () => {
-    const ctx = ctxWith({ firstOutputTokenAt: 500, upstreamCallStartedAt: 100, attemptTelemetry: undefined });
+    const ctx = ctxWith({ firstOutputTokenAt: 500, upstreamCallStartedAt: 100, telemetry: undefined });
     recordPerformance(ctx, telemetry, false, 200, 1000);
     await Promise.all(promises);
     const [row] = await repo.performance.listAll();
@@ -112,7 +112,7 @@ describe('recordPerformance', () => {
   });
 
   it('records sample with exactly 2 output tokens (boundary: outputTokens >= 2)', async () => {
-    const ctx = ctxWith({ firstOutputTokenAt: 200, upstreamCallStartedAt: 100, attemptTelemetry: undefined });
+    const ctx = ctxWith({ firstOutputTokenAt: 200, upstreamCallStartedAt: 100, telemetry: undefined });
     recordPerformance(ctx, telemetry, false, 2, 600);
     await Promise.all(promises);
     const [row] = await repo.performance.listAll();
@@ -131,7 +131,7 @@ describe('recordPerformance', () => {
     // the observed latency (TTFT + TPOT) as a sample AND increment errors,
     // in one atomic upsert. The `failed_with_output` counter tracks the
     // overlap so the aggregator can back it out of `neutral`.
-    const ctx = ctxWith({ firstOutputTokenAt: 500, upstreamCallStartedAt: 100, attemptTelemetry: undefined });
+    const ctx = ctxWith({ firstOutputTokenAt: 500, upstreamCallStartedAt: 100, telemetry: undefined });
     recordPerformance(ctx, telemetry, true, 200, 1000);
     await Promise.all(promises);
     const [row] = await repo.performance.listAll();
@@ -152,7 +152,7 @@ describe('recordPerformance', () => {
     // outputTokens=1 gives no inter-token interval so TPOT stays 0, but TTFT
     // is real and the failure still counts. failed_with_output tracks the
     // overlap with the ttft sample.
-    const ctx = ctxWith({ firstOutputTokenAt: 100, upstreamCallStartedAt: 50, attemptTelemetry: undefined });
+    const ctx = ctxWith({ firstOutputTokenAt: 100, upstreamCallStartedAt: 50, telemetry: undefined });
     recordPerformance(ctx, telemetry, true, 1, 400);
     await Promise.all(promises);
     const [row] = await repo.performance.listAll();
@@ -173,7 +173,7 @@ describe('recordPerformance', () => {
     // Even with a first-token stamp on the ctx (rare race), if usage reports
     // zero tokens the failure lands in the plain error bucket — nothing to
     // report a TTFT for, and `failed_with_output` stays 0.
-    const ctx = ctxWith({ firstOutputTokenAt: 100, upstreamCallStartedAt: 50, attemptTelemetry: undefined });
+    const ctx = ctxWith({ firstOutputTokenAt: 100, upstreamCallStartedAt: 50, telemetry: undefined });
     recordPerformance(ctx, telemetry, true, 0, 400);
     await Promise.all(promises);
     const [row] = await repo.performance.listAll();
@@ -191,7 +191,7 @@ describe('recordPerformance', () => {
   // --- no-op ---
 
   it('is a no-op when telemetry is undefined', async () => {
-    const ctx = ctxWith({ firstOutputTokenAt: 100, upstreamCallStartedAt: 50, attemptTelemetry: undefined });
+    const ctx = ctxWith({ firstOutputTokenAt: 100, upstreamCallStartedAt: 50, telemetry: undefined });
     recordPerformance(ctx, undefined, false, 200, 400);
     await Promise.all(promises);
     expect(await repo.performance.listAll()).toEqual([]);
@@ -200,7 +200,7 @@ describe('recordPerformance', () => {
   // --- invariants ---
 
   it('throws on negative outputTokens — an upstream that reports a negative token count is data corruption, not a value to floor', () => {
-    const ctx = ctxWith({ firstOutputTokenAt: 100, upstreamCallStartedAt: 50, attemptTelemetry: undefined });
+    const ctx = ctxWith({ firstOutputTokenAt: 100, upstreamCallStartedAt: 50, telemetry: undefined });
     expect(() => recordPerformance(ctx, telemetry, false, -1, 400))
       .toThrow(/negative outputTokens=-1/);
   });
