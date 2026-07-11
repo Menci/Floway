@@ -2441,8 +2441,8 @@ test('claude', 'Bash paints the box-line tree only when color is enabled and hon
   placeFakeClaude(ws.binDir);
   const forced = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: claudeConfig(), forceColor: true });
   t.equal(forced.code, 0, `forced-color run should succeed:\n${forced.combined}`);
-  t.includes(forced.stdout, '[36m┌─ Claude Code[0m', 'the phase header is painted cyan on stdout');
-  t.includes(forced.stdout, '[32m│  Claude Code configured.[0m', 'a success line is painted green on stdout');
+  t.includes(forced.stdout, '[96m┌─ Claude Code[0m', 'the phase header is painted bright cyan on stdout');
+  t.includes(forced.stdout, '[92m│  Claude Code configured.[0m', 'a success line is painted bright green on stdout');
   t.ok(!hasAnsi(forced.stderr), 'a successful run leaves stderr escape-free even under forced color');
 
   const suppressed = makeWorkspace();
@@ -2464,8 +2464,8 @@ test('claude', 'Bash routes errors and rollback notices to stderr in red and yel
     fakeClaudeDoctorExit: 1, forceColor: true,
   });
   t.ok(run.code !== 0, 'a failed doctor must fail the agent');
-  t.includes(run.stderr, '[31m│  claude doctor reported a problem:[0m', 'the primary error is painted red on stderr');
-  t.includes(run.stderr, '[33m│  Claude Code verification failed; rolling back settings.[0m', 'the rollback notice is painted yellow on stderr');
+  t.includes(run.stderr, '[91m│  claude doctor reported a problem:[0m', 'the primary error is painted red on stderr');
+  t.includes(run.stderr, '[93m│  Claude Code verification failed; rolling back settings.[0m', 'the rollback notice is painted yellow on stderr');
   t.excludes(run.stdout, 'claude doctor reported a problem', 'the error does not leak onto stdout');
   t.excludes(run.stdout, 'rolling back settings', 'the rollback notice does not leak onto stdout');
 });
@@ -2483,8 +2483,8 @@ test('claude', 'PowerShell colors stderr under forced color, keeps stdout escape
   });
   t.ok(forced.code !== 0, 'a failed doctor must fail the agent');
   t.ok(!hasAnsi(forced.stdout), 'host-colored stdout never carries escape codes even under forced color');
-  t.includes(forced.stderr, '[31m│  claude doctor reported a problem:[0m', 'stderr is painted red for the primary error');
-  t.includes(forced.stderr, '[33m│  Claude Code verification failed; rolling back settings.[0m', 'stderr is painted yellow for the rollback notice');
+  t.includes(forced.stderr, '[91m│  claude doctor reported a problem:[0m', 'stderr is painted red for the primary error');
+  t.includes(forced.stderr, '[93m│  Claude Code verification failed; rolling back settings.[0m', 'stderr is painted yellow for the rollback notice');
 
   const suppressed = makeWorkspace();
   placeFakeClaude(suppressed.binDir);

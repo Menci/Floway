@@ -32,7 +32,7 @@ Remove-Item Env:FlowayApiKey -ErrorAction SilentlyContinue
 try { [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false) } catch { }
 $script:FlowayNoColor = [bool]$env:NO_COLOR
 $script:FlowayForceColor = [bool]$env:FLOWAY_INSTALLER_TEST_FORCE_COLOR
-$script:FlowayErrColor = (-not [Console]::IsErrorRedirected -or $script:FlowayForceColor) -and (-not $script:FlowayNoColor)
+$script:FlowayErrColor = (-not [Console]::IsErrorRedirected) -and (-not $script:FlowayNoColor)
 $script:FlowayEsc = [char]27
 
 function Write-FlowayHostLine {
@@ -40,10 +40,20 @@ function Write-FlowayHostLine {
   if ($Plain -or $script:FlowayNoColor) { Write-Host $Text } else { Write-Host $Text -ForegroundColor $Color }
 }
 
+# Console.ForegroundColor works in Windows PowerShell 5.1 without requiring VT
+# mode and still writes the text to stderr. The forced-color branch is test-only:
+# redirected streams cannot expose host color, so it emits ANSI for assertions.
 function Write-FlowayErrLine {
-  param([string]$Text, [string]$AnsiCode)
-  if ($script:FlowayErrColor) { [Console]::Error.WriteLine("$($script:FlowayEsc)[${AnsiCode}m$Text$($script:FlowayEsc)[0m") }
-  else { [Console]::Error.WriteLine($Text) }
+  param([string]$Text, [System.ConsoleColor]$Color, [string]$TestAnsiCode)
+  if ($script:FlowayErrColor) {
+    $previous = [Console]::ForegroundColor
+    try { [Console]::ForegroundColor = $Color; [Console]::Error.WriteLine($Text) }
+    finally { [Console]::ForegroundColor = $previous }
+  } elseif ($script:FlowayForceColor -and (-not $script:FlowayNoColor)) {
+    [Console]::Error.WriteLine("$($script:FlowayEsc)[${TestAnsiCode}m$Text$($script:FlowayEsc)[0m")
+  } else {
+    [Console]::Error.WriteLine($Text)
+  }
 }
 
 function Write-FlowayTitle { Write-FlowayHostLine 'Floway agent setup' Cyan }
@@ -51,16 +61,18 @@ function Write-FlowayPhase { param([string]$Name) Write-Host ''; Write-FlowayHos
 function Write-FlowayStep { param([string]$Text) Write-FlowayHostLine "│  · $Text" DarkCyan }
 function Write-FlowayInfo { param([string]$Text) Write-FlowayHostLine "│  $Text" -Plain }
 function Write-FlowaySuccess { param([string]$Text) Write-FlowayHostLine "│  $Text" Green }
-function Write-FlowayWarn { param([string]$Text) Write-FlowayErrLine "│  $Text" '33' }
-function Write-FlowayError { param([string]$Text) Write-FlowayErrLine "│  $Text" '31' }
+function Write-FlowayWarn { param([string]$Text) Write-FlowayErrLine "│  $Text" Yellow '93' }
+function Write-FlowayError { param([string]$Text) Write-FlowayErrLine "│  $Text" Red '91' }
 # A fatal line raised before any phase is open carries no spine.
-function Write-FlowayFatal { param([string]$Text) Write-FlowayErrLine $Text '31' }
+function Write-FlowayFatal { param([string]$Text) Write-FlowayErrLine $Text Red '91' }
 
 # Re-emit captured official-tool output as a de-emphasized, redacted, spined
 # block on stderr so it never masquerades as a Floway line.
 function Write-FlowayCaptured {
   param([string]$Text)
-  foreach ($line in (Protect-FlowaySecret $Text) -split "`r?`n") { Write-FlowayErrLine "│    $line" '90' }
+  $redacted = (Protect-FlowaySecret $Text).TrimEnd()
+  if ($redacted.Length -eq 0) { return }
+  foreach ($line in $redacted -split "`r?`n") { Write-FlowayErrLine "│    $line" DarkGray '90' }
 }
 
 function Write-FlowaySummaryEntry {
@@ -216,13 +228,15 @@ function Get-FlowayCliExe {
 # ambient environment and never emitted by the gateway, forces the restore
 # rename to fail so the harness can assert that guidance.
 function Restore-FlowayManagedFile {
-  param([bool]$Existed, [string]$Backup, [string]$Path, [string]$OriginalLabel, [string]$CreatedLabel, [switch]$Protect)
+  param([bool]$Existed, [string]$Backup, [string]$Path, [string]$OriginalLabel, [string]$CreatedLabel)
   if ($Existed) {
     if ($Backup -and (Test-Path -LiteralPath $Backup)) {
       try {
         if ($env:FLOWAY_INSTALLER_TEST_FAIL_RESTORE) { throw 'test-injected restore failure' }
+        # Secret-bearing backups were already owner-only before any mutation.
+        # Moving one back preserves that protection without a second operation
+        # that could fail after the backup path has been consumed.
         Move-Item -LiteralPath $Backup -Destination $Path -Force
-        if ($Protect) { Protect-FlowayFile $Path }
       } catch {
         Write-FlowayWarn "could not restore $Path from its backup; your original $OriginalLabel is preserved at $Backup — restore it by hand."
       }
@@ -255,7 +269,7 @@ function Install-FlowayClaude {
 }
 
 function Restore-FlowayClaudeSettings {
-  Restore-FlowayManagedFile -Existed $script:ClaudeSettingsExisted -Backup $script:ClaudeSettingsBackup -Path $script:ClaudeSettingsPath -OriginalLabel 'file' -CreatedLabel 'Claude settings' -Protect
+  Restore-FlowayManagedFile -Existed $script:ClaudeSettingsExisted -Backup $script:ClaudeSettingsBackup -Path $script:ClaudeSettingsPath -OriginalLabel 'file' -CreatedLabel 'Claude settings'
 }
 
 # Surgically merge the managed keys into the Claude settings file: validate the
@@ -347,7 +361,7 @@ function Write-FlowayClaudeSettings {
 # and the call throws; otherwise the exit code and combined stdout+stderr are
 # returned. Arguments are fixed internal tokens, never external input.
 function Invoke-FlowayProcess {
-  param([string]$Exe, [string[]]$Arguments, [int]$TimeoutSeconds)
+  param([string]$Exe, [string[]]$Arguments, [int]$TimeoutSeconds, [string]$TimeoutMessage)
   $startInfo = New-Object System.Diagnostics.ProcessStartInfo
   $startInfo.FileName = $Exe
   $startInfo.UseShellExecute = $false
@@ -366,7 +380,7 @@ function Invoke-FlowayProcess {
   if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
     Stop-FlowayProcessTree $process
     $process.WaitForExit()
-    Stop-FlowaySetup "$Exe timed out after $TimeoutSeconds seconds."
+    Stop-FlowaySetup $(if ($TimeoutMessage) { $TimeoutMessage } else { "$Exe timed out after $TimeoutSeconds seconds." })
   }
   $stdout = $stdoutTask.GetAwaiter().GetResult()
   $stderr = $stderrTask.GetAwaiter().GetResult()
@@ -381,7 +395,7 @@ function Invoke-FlowayClaudeVerify {
   }
 
   $timeoutSeconds = if ($env:FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS) { [int]$env:FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS } else { 30 }
-  $version = Invoke-FlowayProcess -Exe $Exe -Arguments @('--version') -TimeoutSeconds $timeoutSeconds
+  $version = Invoke-FlowayProcess -Exe $Exe -Arguments @('--version') -TimeoutSeconds $timeoutSeconds -TimeoutMessage '``claude --version`` timed out.'
   if ($version.ExitCode -ne 0) { Stop-FlowaySetup "``claude --version`` failed." }
   Write-FlowayInfo "Claude Code version: $($version.Output.Trim())"
 
@@ -398,9 +412,9 @@ function Invoke-FlowayClaudeVerify {
   }
   Write-FlowaySuccess "reached the authenticated model directory (no inference issued)."
 
-  $doctorHelp = Invoke-FlowayProcess -Exe $Exe -Arguments @('doctor', '--help') -TimeoutSeconds $timeoutSeconds
+  $doctorHelp = Invoke-FlowayProcess -Exe $Exe -Arguments @('doctor', '--help') -TimeoutSeconds $timeoutSeconds -TimeoutMessage 'claude doctor capability check timed out.'
   if ($doctorHelp.ExitCode -eq 0) {
-    $doctor = Invoke-FlowayProcess -Exe $Exe -Arguments @('doctor') -TimeoutSeconds $timeoutSeconds
+    $doctor = Invoke-FlowayProcess -Exe $Exe -Arguments @('doctor') -TimeoutSeconds $timeoutSeconds -TimeoutMessage 'claude doctor timed out.'
     if ($doctor.ExitCode -ne 0) {
       Write-FlowayError "claude doctor reported a problem:"
       Write-FlowayCaptured $doctor.Output
@@ -530,7 +544,7 @@ function Backup-FlowayCodexFiles {
 
 function Restore-FlowayCodexFiles {
   Restore-FlowayManagedFile -Existed $script:CodexConfigExisted -Backup $script:CodexConfigBackup -Path $script:CodexConfigPath -OriginalLabel 'file' -CreatedLabel 'Codex config'
-  Restore-FlowayManagedFile -Existed $script:CodexAuthExisted -Backup $script:CodexAuthBackup -Path $script:CodexAuthPath -OriginalLabel 'ChatGPT login' -CreatedLabel 'Codex auth' -Protect
+  Restore-FlowayManagedFile -Existed $script:CodexAuthExisted -Backup $script:CodexAuthBackup -Path $script:CodexAuthPath -OriginalLabel 'ChatGPT login' -CreatedLabel 'Codex auth'
 }
 
 # Drive `codex app-server` over redirected stdin/stdout/stderr: initialize ->
@@ -706,7 +720,7 @@ function Invoke-FlowayCodexVerify {
     Stop-FlowaySetup "the written Codex auth did not reparse as expected."
   }
   $timeoutSeconds = if ($env:FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS) { [int]$env:FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS } else { 30 }
-  $version = Invoke-FlowayProcess -Exe $Exe -Arguments @('--version') -TimeoutSeconds $timeoutSeconds
+  $version = Invoke-FlowayProcess -Exe $Exe -Arguments @('--version') -TimeoutSeconds $timeoutSeconds -TimeoutMessage '``codex --version`` timed out.'
   if ($version.ExitCode -ne 0) { Stop-FlowaySetup "``codex --version`` failed." }
   Write-FlowayInfo "Codex version: $($version.Output.Trim())"
   $modelSlugs = @(Read-FlowayCodexModelCatalog)

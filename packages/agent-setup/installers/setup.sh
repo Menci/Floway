@@ -35,10 +35,11 @@ _floway_stream_color() {
 }
 if _floway_stream_color 1; then _OUT_COLOR=1; else _OUT_COLOR=0; fi
 if _floway_stream_color 2; then _ERR_COLOR=1; else _ERR_COLOR=0; fi
-_C_CYAN=$'\033[36m'
-_C_GREEN=$'\033[32m'
-_C_YELLOW=$'\033[33m'
-_C_RED=$'\033[31m'
+_C_CYAN=$'\033[96m'
+_C_DARK_CYAN=$'\033[36m'
+_C_GREEN=$'\033[92m'
+_C_YELLOW=$'\033[93m'
+_C_RED=$'\033[91m'
 _C_GRAY=$'\033[90m'
 _C_RESET=$'\033[0m'
 
@@ -56,7 +57,7 @@ _emit_line() {
 
 out_title() { _emit_line 1 "$_C_CYAN" 'Floway agent setup'; }
 out_phase() { printf '\n'; _emit_line 1 "$_C_CYAN" "┌─ $1"; }
-out_step() { _emit_line 1 "$_C_CYAN" "│  · $1"; }
+out_step() { _emit_line 1 "$_C_DARK_CYAN" "│  · $1"; }
 out_info() { _emit_line 1 '' "│  $1"; }
 out_success() { _emit_line 1 "$_C_GREEN" "│  $1"; }
 out_warn() { _emit_line 2 "$_C_YELLOW" "│  $1"; }
