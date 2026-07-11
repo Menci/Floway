@@ -112,8 +112,9 @@ export const codexAlphaSearch = async (c: CtxWithJson<typeof codexSearchRequestS
   }
 
   // One batched provider.fetchPage covers every open/find URL; each op then
-  // renders its own text block. Concatenated in command order so the model
-  // reads the results in the order it asked for them.
+  // renders its own text block. The shared parser's canonical order is
+  // search_query → open → find → unsupported keys, preserving array order
+  // within each command kind.
   const batch = await startBatchFetch(parsed, session);
   const blocks = await Promise.all(parsed.ops.map(op => executeOperationToText(op, session, batch)));
 

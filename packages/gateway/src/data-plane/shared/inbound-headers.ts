@@ -67,11 +67,11 @@ const SCRUBBED_INBOUND_HEADER_NAMES = [
   'x-api-key',
   'x-client-ip',
   'x-floway-session',
-  'x-openai-actor-authorization',
   'x-forwarded-for',
   'x-forwarded-host',
   'x-forwarded-proto',
   'x-goog-api-key',
+  'x-openai-actor-authorization',
   'x-real-ip',
 ];
 

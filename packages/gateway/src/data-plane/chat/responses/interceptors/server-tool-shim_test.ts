@@ -1613,6 +1613,8 @@ test('truncated page contents append the truncation sentinel', async () => {
   assert(lastOutput.type === 'function_call_output');
   const text = (lastOutput as { output: string }).output;
   assert(text.includes('[Content truncated; full page is 99999 bytes.'));
+  assert(text.includes('Use the `find` sub-property with a pattern'));
+  assertFalse(text.includes("web_search's"));
 });
 
 // ── Multi-turn SSE merge invariants ──────────────────────────────────

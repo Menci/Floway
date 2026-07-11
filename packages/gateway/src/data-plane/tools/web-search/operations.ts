@@ -732,7 +732,7 @@ const openPageSuccessIr = (url: string, cached: PageCacheEntry): WebSearchCallIR
   // sentinel so the model can choose to `find` for specific content.
   const body = cached.content
     + (cached.truncated
-      ? `\n\n[Content truncated; full page is ${cached.fullContentBytes} bytes. Use web_search's \`find\` sub-property with a pattern to locate specific content.]`
+      ? `\n\n[Content truncated; full page is ${cached.fullContentBytes} bytes. Use the \`find\` sub-property with a pattern to locate specific content.]`
       : '');
   return openPageIr(url, [{
     type: 'text_result',
