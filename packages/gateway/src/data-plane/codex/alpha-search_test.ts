@@ -63,10 +63,20 @@ const buildCodexApp = () => {
   return app;
 };
 
-const SEARCH_PATH = '/azure-api.codex/alpha/search';
+const SEARCH_PATHS = [
+  '/azure-api.codex/alpha/search',
+  '/alpha/search',
+  '/v1/alpha/search',
+] as const;
+const SEARCH_PATH = SEARCH_PATHS[0];
 
-const postSearch = (app: ReturnType<typeof buildCodexApp>, apiKey: string, body: unknown) =>
-  app.request(SEARCH_PATH, {
+const postSearch = (
+  app: ReturnType<typeof buildCodexApp>,
+  apiKey: string,
+  body: unknown,
+  path: (typeof SEARCH_PATHS)[number] = SEARCH_PATH,
+) =>
+  app.request(path, {
     method: 'POST',
     body: JSON.stringify(body),
     headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
@@ -82,34 +92,46 @@ beforeEach(() => {
 });
 
 describe('codex /alpha/search', () => {
-  describe('auth', () => {
-    it('rejects requests with no auth header (401)', async () => {
+  describe('routing and auth', () => {
+    it.each(SEARCH_PATHS)('serves the same handler at %s', async path => {
+      const { apiKey } = await setupAppTest({ searchConfig: TAVILY_CONFIG });
+      const stub = makeStubProvider();
+      mockResolveConfigured.mockReturnValue({ type: 'enabled', provider: 'tavily', impl: stub.provider });
+      const app = buildCodexApp();
+
+      const response = await postSearch(app, apiKey.key, { commands: { search_query: [{ q: 'route probe' }] } }, path);
+      expect(response.status).toBe(200);
+      const body = await response.json() as SearchResponseBody;
+      expect(body.output).toContain('Search results for "route probe"');
+    });
+
+    it.each(SEARCH_PATHS)('rejects missing auth at %s', async path => {
       await setupAppTest();
       const app = buildCodexApp();
-      const response = await app.request(SEARCH_PATH, { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } });
+      const response = await app.request(path, { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } });
       expect(response.status).toBe(401);
     });
 
-    it('rejects an unknown bearer (401)', async () => {
+    it.each(SEARCH_PATHS)('rejects an unknown bearer at %s', async path => {
       await setupAppTest();
       const app = buildCodexApp();
-      const response = await postSearch(app, 'not-an-api-key', {});
+      const response = await postSearch(app, 'not-an-api-key', {}, path);
       expect(response.status).toBe(401);
     });
   });
 
   describe('schema validation', () => {
-    it('rejects a non-object `commands` with 400', async () => {
+    it.each(SEARCH_PATHS)('rejects non-object `commands` at %s', async path => {
       const { apiKey } = await setupAppTest({ searchConfig: TAVILY_CONFIG });
       const app = buildCodexApp();
-      const response = await postSearch(app, apiKey.key, { commands: [] });
+      const response = await postSearch(app, apiKey.key, { commands: [] }, path);
       expect(response.status).toBe(400);
     });
 
-    it('rejects an unknown search_context_size with 400', async () => {
+    it.each(SEARCH_PATHS)('rejects unknown search_context_size at %s', async path => {
       const { apiKey } = await setupAppTest({ searchConfig: TAVILY_CONFIG });
       const app = buildCodexApp();
-      const response = await postSearch(app, apiKey.key, { settings: { search_context_size: 'huge' } });
+      const response = await postSearch(app, apiKey.key, { settings: { search_context_size: 'huge' } }, path);
       expect(response.status).toBe(400);
     });
 
