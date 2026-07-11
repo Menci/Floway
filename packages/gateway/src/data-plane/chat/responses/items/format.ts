@@ -4,12 +4,12 @@
 // "Named export 'buf' not found". Default-import the namespace and destructure.
 import crc32Mod from 'crc-32';
 
-import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
+import type { ResponsesInputItem, ResponsesOutputItem } from '@floway-dev/protocols/responses';
 
 const { buf: crc32 } = crc32Mod;
 
-type ResponsesInputItemType = ResponsesInputItem['type'];
-type StorableResponsesItemType = Exclude<ResponsesInputItemType, 'item_reference' | 'compaction_trigger'> | 'compaction_summary';
+type ResponsesItemType = ResponsesInputItem['type'] | ResponsesOutputItem['type'];
+type StorableResponsesItemType = Exclude<ResponsesItemType, 'item_reference' | 'compaction_trigger'> | 'compaction_summary';
 
 const itemTypePrefixes = {
   message: 'msg',
@@ -119,9 +119,8 @@ const isValidStoredId = (value: string, isPrefixValid: (prefix: string) => boole
 };
 
 const prefixForItemType = (itemType: string): string => {
-  const prefix = itemTypePrefixes[itemType as keyof typeof itemTypePrefixes];
-  if (!prefix) throw new TypeError(`Unknown Responses item type: ${itemType}`);
-  return prefix;
+  if (!Object.hasOwn(itemTypePrefixes, itemType)) throw new TypeError(`Unknown Responses item type: ${itemType}`);
+  return itemTypePrefixes[itemType as keyof typeof itemTypePrefixes];
 };
 
 const sha256Hex = async (value: string): Promise<string> => {

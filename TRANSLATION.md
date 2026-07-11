@@ -380,7 +380,9 @@ Request mapping:
   `program`, `program_output`, program callers and tool declarations, deferred
   tools, and forced programmatic choice are rejected rather than projected
   lossily. Native Responses paths retain these items, caller metadata, and
-  opaque fingerprints in stored snapshots.
+  opaque fingerprints whenever snapshot persistence is active; HTTP
+  `store: false` disables snapshots, while WebSocket `store: false` keeps them
+  only in the current session's memory.
 
 Response mapping:
 
@@ -553,7 +555,9 @@ Request mapping:
   `program`, `program_output`, program callers and tool declarations, deferred
   tools, and forced programmatic choice are rejected rather than projected
   lossily. Native Responses paths retain these items, caller metadata, and
-  opaque fingerprints in stored snapshots.
+  opaque fingerprints whenever snapshot persistence is active; HTTP
+  `store: false` disables snapshots, while WebSocket `store: false` keeps them
+  only in the current session's memory.
 
 Response mapping:
 

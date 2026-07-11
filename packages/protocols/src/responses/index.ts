@@ -143,8 +143,8 @@ export interface ResponsesInputReasoning {
   encrypted_content?: string;
 }
 
-// OpenAI Responses Programmatic Tool Calling item and caller shapes.
-// https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L4052-L4285
+// OpenAI Responses Programmatic Tool Calling caller shape.
+// https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L3394-L3407
 export type ResponsesToolCaller =
   | { type: 'direct' }
   | { type: 'program'; caller_id: string };
@@ -247,6 +247,7 @@ export interface ResponsesToolSearchOutputItem extends ResponsesPermissiveItem<'
   output?: unknown;
 }
 
+// https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L4265-L4285
 export interface ResponsesInputAdditionalToolsItem {
   type: 'additional_tools';
   role: 'developer';
@@ -254,6 +255,7 @@ export interface ResponsesInputAdditionalToolsItem {
   id?: string | null;
 }
 
+// https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L4919-L4971
 export interface ResponsesProgramItem {
   type: 'program';
   id: string;
@@ -348,6 +350,7 @@ export interface ResponsesInputImageGenerationCall {
   error?: { message: string; code: string; type?: string };
 }
 
+// https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L822-L851
 export type ResponsesToolAllowedCaller = 'direct' | 'programmatic';
 
 export interface ResponsesFunctionTool {
@@ -419,12 +422,50 @@ export interface ResponsesCustomTool {
   defer_loading?: boolean;
 }
 
+// https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L8110-L8115
 export interface ResponsesProgrammaticTool {
   type: 'programmatic_tool_calling';
 }
 
-export type ResponsesTool = ResponsesFunctionTool | ResponsesHostedTool | ResponsesCustomTool | ResponsesProgrammaticTool;
+// https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L7871-L8080
+export interface ResponsesMcpTool {
+  type: 'mcp';
+  server_label: string;
+  allowed_callers?: ResponsesToolAllowedCaller[] | null;
+  defer_loading?: boolean;
+  [key: string]: unknown;
+}
 
+export interface ResponsesCodeInterpreterTool {
+  type: 'code_interpreter';
+  container: string | Record<string, unknown>;
+  allowed_callers?: ResponsesToolAllowedCaller[] | null;
+}
+
+// https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L803-L815
+export interface ResponsesShellTool {
+  type: 'shell';
+  allowed_callers?: ResponsesToolAllowedCaller[] | null;
+  environment?: unknown;
+}
+
+// https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L245-L264
+export interface ResponsesApplyPatchTool {
+  type: 'apply_patch';
+  allowed_callers?: ResponsesToolAllowedCaller[] | null;
+}
+
+export type ResponsesTool =
+  | ResponsesFunctionTool
+  | ResponsesHostedTool
+  | ResponsesCustomTool
+  | ResponsesProgrammaticTool
+  | ResponsesMcpTool
+  | ResponsesCodeInterpreterTool
+  | ResponsesShellTool
+  | ResponsesApplyPatchTool;
+
+// https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L1302-L1307
 export type ResponsesToolChoice =
   | 'auto'
   | 'none'
