@@ -16,16 +16,81 @@ set -o pipefail 2>/dev/null || true
 # it.
 export -n FLOWAY_API_KEY 2>/dev/null || true
 
+# --- output layer -----------------------------------------------------------
+#
+# Structure is carried by a compact box-line tree, not banners or padded
+# columns: a blank line then `┌─ <name>` opens a phase, `│  ` continues its
+# body, `│  · ` marks a step, and the closing Summary phase lists each agent as
+# `<label>  [state]`. The PowerShell installer prints the identical text and the
+# same color semantics through its native host colors.
+#
+# Color is emitted only for an interactive terminal with NO_COLOR unset, probed
+# per stream so a redirected capture on either stdout or stderr stays free of
+# escape sequences. Informational, progress, and success lines go to stdout;
+# warnings, errors, rollback notices, and captured tool output go to stderr.
+_floway_stream_color() {
+  [ -z "${NO_COLOR:-}" ] || return 1
+  [ -n "${FLOWAY_INSTALLER_TEST_FORCE_COLOR:-}" ] && return 0
+  [ -t "$1" ]
+}
+if _floway_stream_color 1; then _OUT_COLOR=1; else _OUT_COLOR=0; fi
+if _floway_stream_color 2; then _ERR_COLOR=1; else _ERR_COLOR=0; fi
+_C_CYAN=$'\033[36m'
+_C_GREEN=$'\033[32m'
+_C_YELLOW=$'\033[33m'
+_C_RED=$'\033[31m'
+_C_GRAY=$'\033[90m'
+_C_RESET=$'\033[0m'
+
+# Emit one line to a stream, wrapping it in an ANSI color only when that stream
+# opted into color. $1 stream (1|2), $2 color, $3 text.
+_emit_line() {
+  if [ "$1" -eq 1 ]; then
+    if [ "$_OUT_COLOR" -eq 1 ]; then printf '%s%s%s\n' "$2" "$3" "$_C_RESET"; else printf '%s\n' "$3"; fi
+  else
+    if [ "$_ERR_COLOR" -eq 1 ]; then printf '%s%s%s\n' "$2" "$3" "$_C_RESET" >&2; else printf '%s\n' "$3" >&2; fi
+  fi
+}
+
+out_title() { _emit_line 1 "$_C_CYAN" 'Floway agent setup'; }
+out_phase() { printf '\n'; _emit_line 1 "$_C_CYAN" "┌─ $1"; }
+out_step() { _emit_line 1 "$_C_CYAN" "│  · $1"; }
+out_info() { _emit_line 1 '' "│  $1"; }
+out_success() { _emit_line 1 "$_C_GREEN" "│  $1"; }
+out_warn() { _emit_line 2 "$_C_YELLOW" "│  $1"; }
+out_error() { _emit_line 2 "$_C_RED" "│  $1"; }
+# A fatal line raised before any phase is open carries no spine.
+out_fatal() { _emit_line 2 "$_C_RED" "$1"; }
+
+# Re-emit captured official-tool output as a de-emphasized, redacted, spined
+# block on stderr so it never masquerades as a Floway line.
+out_captured() {
+  redact_key | while IFS= read -r _oc_line; do
+    _emit_line 2 "$_C_GRAY" "│    $_oc_line"
+  done
+}
+
+out_summary_entry() {
+  case "$2" in
+    configured) _os_color=$_C_GREEN ;;
+    failed) _os_color=$_C_RED ;;
+    *) _os_color=$_C_GRAY ;;
+  esac
+  _emit_line 1 "$_os_color" "│  $1  [$2]"
+}
+
+out_title
+
 # The wrapping command supplies FLOWAY_BASE_URL. Validate it before mutation,
 # then keep it out of installer and CLI subprocess environments.
 if [ -z "${FLOWAY_BASE_URL:-}" ]; then
-  printf 'Floway: FLOWAY_BASE_URL must be set to this gateway origin (e.g. https://gateway.example).\n' >&2
+  out_fatal 'FLOWAY_BASE_URL must be set to this gateway origin (e.g. https://gateway.example).'
   exit 1
 fi
 case "$FLOWAY_BASE_URL" in
   http://?* | https://?*) ;;
   *)
-    printf 'Floway: FLOWAY_BASE_URL must be an http(s) origin, got %s\n' "$FLOWAY_BASE_URL" >&2
+    out_fatal "FLOWAY_BASE_URL must be an http(s) origin, got $FLOWAY_BASE_URL"
     exit 1
     ;;
 esac
@@ -152,12 +217,12 @@ _bootstrap_jq() {
   case "$_bj_os" in
     Darwin) _bj_os_part=macos ;;
     Linux) _bj_os_part=linux ;;
-    *) printf 'Floway: no pinned jq build for OS %s.\n' "$_bj_os" >&2; return 1 ;;
+    *) out_error "no pinned jq build for OS $_bj_os."; return 1 ;;
   esac
   case "$_bj_arch" in
     x86_64 | amd64) _bj_arch_part=amd64 ;;
     arm64 | aarch64) _bj_arch_part=arm64 ;;
-    *) printf 'Floway: no pinned jq build for architecture %s.\n' "$_bj_arch" >&2; return 1 ;;
+    *) out_error "no pinned jq build for architecture $_bj_arch."; return 1 ;;
   esac
   _bj_asset="jq-$_bj_os_part-$_bj_arch_part"
   # Pinned to jqlang/jq release jq-1.8.2. Each digest was verified against the
@@ -173,9 +238,9 @@ _bootstrap_jq() {
   esac
   _bj_url="https://github.com/jqlang/jq/releases/download/jq-1.8.2/$_bj_asset"
   _bj_dest="$FLOWAY_SETUP_TMPDIR/$_bj_asset"
-  printf 'Floway: jq not found on PATH; fetching the pinned jq-1.8.2 build...\n'
+  out_step 'jq not found on PATH; fetching the pinned jq-1.8.2 build'
   if ! curl -fsSL --connect-timeout 10 --max-time 120 -o "$_bj_dest" "$_bj_url"; then
-    printf 'Floway: failed to download jq from %s\n' "$_bj_url" >&2
+    out_error "failed to download jq from $_bj_url"
     rm -f "$_bj_dest"
     return 1
   fi
@@ -189,12 +254,12 @@ _bootstrap_jq() {
     _bj_actual=""
   fi
   if [ -z "$_bj_actual" ]; then
-    printf 'Floway: no SHA-256 tool available to verify the jq download.\n' >&2
+    out_error 'no SHA-256 tool available to verify the jq download.'
     rm -f "$_bj_dest"
     return 1
   fi
   if [ "$_bj_actual" != "$_bj_sha" ]; then
-    printf 'Floway: jq checksum mismatch; refusing to use the download.\n' >&2
+    out_error 'jq checksum mismatch; refusing to use the download.'
     rm -f "$_bj_dest"
     return 1
   fi
@@ -229,7 +294,7 @@ _download_and_run_installer() {
   _dri_url=$1
   _dri_file=$(mktemp "$FLOWAY_SETUP_TMPDIR/install.XXXXXX") || return 1
   if ! curl -fsSL --connect-timeout 10 --max-time 120 -o "$_dri_file" "$_dri_url"; then
-    printf 'Floway: could not download the installer from %s\n' "$_dri_url" >&2
+    out_error "could not download the installer from $_dri_url"
     rm -f "$_dri_file"
     return 1
   fi
@@ -242,12 +307,12 @@ _download_and_run_installer() {
       }
       END { exit found ? 0 : 1 }
     ' "$_dri_file"; then
-    printf 'Floway: the installer download was HTML, not an executable script (a login or region-block page?).\n' >&2
+    out_error 'the installer download was HTML, not an executable script (a login or region-block page?).'
     rm -f "$_dri_file"
     return 1
   fi
   if ! awk 'NF { found = 1 } END { exit found ? 0 : 1 }' "$_dri_file"; then
-    printf 'Floway: the installer download was empty.\n' >&2
+    out_error 'the installer download was empty.'
     rm -f "$_dri_file"
     return 1
   fi
@@ -287,13 +352,11 @@ _restore_managed_file() {
   _rmf_created_label=$5
   if [ "$_rmf_existed" -eq 1 ]; then
     if [ -n "$_rmf_backup" ] && [ -e "$_rmf_backup" ] && ! mv "$_rmf_backup" "$_rmf_path" 2>/dev/null; then
-      printf 'Floway: WARNING could not restore %s from its backup; your original %s is preserved at %s — restore it by hand.\n' \
-        "$_rmf_path" "$_rmf_original_label" "$_rmf_backup" >&2
+      out_warn "could not restore $_rmf_path from its backup; your original $_rmf_original_label is preserved at $_rmf_backup — restore it by hand."
       return 1
     fi
   elif ! rm -f "$_rmf_path" 2>/dev/null; then
-    printf 'Floway: WARNING could not remove the %s this run created at %s — remove it by hand.\n' \
-      "$_rmf_created_label" "$_rmf_path" >&2
+    out_warn "could not remove the $_rmf_created_label this run created at $_rmf_path — remove it by hand."
     return 1
   fi
   return 0
@@ -311,13 +374,13 @@ claude_ensure_installed() {
     "/usr/local/bin/claude"
   CLAUDE_BIN=$DISCOVERED_BIN
   if [ "$DISCOVERED_COUNT" -gt 1 ]; then
-    printf 'Floway: multiple Claude Code installations detected; using %s.\n' "$CLAUDE_BIN" >&2
+    out_warn "multiple Claude Code installations detected; using $CLAUDE_BIN"
   fi
   if [ "$DISCOVERED_COUNT" -ge 1 ]; then
     return 0
   fi
 
-  printf 'Floway: Claude Code CLI not found; installing the official user-local build...\n'
+  out_step 'Claude Code CLI not found; installing the official build'
   if [ -n "${FLOWAY_INSTALLER_TEST_INSTALL_CLAUDE_SCRIPT:-}" ]; then
     _ic_timeout=${FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS:-120}
     _run_with_timeout "$_ic_timeout" env -u FLOWAY_API_KEY bash "$FLOWAY_INSTALLER_TEST_INSTALL_CLAUDE_SCRIPT" || return 1
@@ -352,7 +415,7 @@ claude_write_settings() {
   CLAUDE_SETTINGS_EXISTED=0
 
   if ! mkdir -p "$_cw_dir"; then
-    printf 'Floway: could not create %s\n' "$_cw_dir" >&2
+    out_error "could not create $_cw_dir"
     return 1
   fi
 
@@ -363,13 +426,13 @@ claude_write_settings() {
         elif (has("env") and ((.env | type) != "object")) then error("env is not a JSON object")
         else . end
       ' "$CLAUDE_SETTINGS_PATH" >/dev/null 2>&1; then
-      printf 'Floway: %s is not valid Claude settings; leaving it untouched.\n' "$CLAUDE_SETTINGS_PATH" >&2
+      out_error "$CLAUDE_SETTINGS_PATH is not valid Claude settings; leaving it untouched."
       return 1
     fi
     _cw_base=$(cat "$CLAUDE_SETTINGS_PATH")
     CLAUDE_SETTINGS_BACKUP="$CLAUDE_SETTINGS_PATH.floway-backup.$(date +%Y%m%d%H%M%S).$$"
     if ! cp "$CLAUDE_SETTINGS_PATH" "$CLAUDE_SETTINGS_BACKUP"; then
-      printf 'Floway: could not back up %s\n' "$CLAUDE_SETTINGS_PATH" >&2
+      out_error "could not back up $CLAUDE_SETTINGS_PATH"
       return 1
     fi
   else
@@ -385,7 +448,7 @@ claude_write_settings() {
       --arg discovery "$FLOWAY_CLAUDE_MODEL_DISCOVERY" \
       --arg effort "$FLOWAY_CLAUDE_EFFORT_LEVEL" \
       "$CLAUDE_MERGE_PROGRAM" > "$_cw_stage"; then
-    printf 'Floway: failed to construct updated Claude settings.\n' >&2
+    out_error 'failed to construct updated Claude settings.'
     rm -f "$_cw_stage"
     claude_rollback_settings
     return 1
@@ -397,7 +460,7 @@ claude_write_settings() {
       and (.env.ANTHROPIC_BASE_URL == $baseUrl)
       and (.env.ANTHROPIC_AUTH_TOKEN == env.FLOWAY_API_KEY)
     ' "$_cw_stage" >/dev/null 2>&1; then
-    printf 'Floway: staged Claude settings failed validation.\n' >&2
+    out_error 'staged Claude settings failed validation.'
     rm -f "$_cw_stage"
     claude_rollback_settings
     return 1
@@ -410,7 +473,7 @@ claude_write_settings() {
   fi
 
   if ! mv "$_cw_stage" "$CLAUDE_SETTINGS_PATH"; then
-    printf 'Floway: could not replace %s\n' "$CLAUDE_SETTINGS_PATH" >&2
+    out_error "could not replace $CLAUDE_SETTINGS_PATH"
     rm -f "$_cw_stage"
     claude_rollback_settings
     return 1
@@ -448,7 +511,7 @@ claude_verify() {
       and (.env.ANTHROPIC_BASE_URL == $baseUrl)
       and (.env.ANTHROPIC_AUTH_TOKEN == env.FLOWAY_API_KEY)
     ' "$CLAUDE_SETTINGS_PATH" >/dev/null 2>&1; then
-    printf 'Floway: the written Claude settings did not reparse as expected.\n' >&2
+    out_error 'the written Claude settings did not reparse as expected.'
     return 1
   fi
 
@@ -459,45 +522,45 @@ claude_verify() {
   else
     _cv_version_status=$?
     if [ "$_cv_version_status" -eq 124 ]; then
-      printf 'Floway: `claude --version` timed out.\n' >&2
+      out_error '`claude --version` timed out.'
     else
-      printf 'Floway: `claude --version` failed.\n' >&2
+      out_error '`claude --version` failed.'
     fi
     return 1
   fi
-  printf 'Floway: Claude Code version: %s\n' "$_cv_version"
+  out_info "Claude Code version: $_cv_version"
 
   if ! claude_check_models; then
-    printf 'Floway: could not reach the authenticated model directory at %s/v1/models\n' "${FLOWAY_BASE_URL%/}" >&2
+    out_error "could not reach the authenticated model directory at ${FLOWAY_BASE_URL%/}/v1/models"
     return 1
   fi
-  printf 'Floway: reached the authenticated model directory (no inference issued).\n'
+  out_success 'reached the authenticated model directory (no inference issued).'
 
   _cv_doctor_help="$FLOWAY_SETUP_TMPDIR/claude-doctor-help.out"
   if _run_with_timeout "$_cv_timeout" "$CLAUDE_BIN" doctor --help </dev/null > "$_cv_doctor_help" 2>&1; then
     if _run_with_timeout "$_cv_timeout" "$CLAUDE_BIN" doctor </dev/null > "$FLOWAY_SETUP_TMPDIR/claude-doctor.out" 2>&1; then
-      printf 'Floway: claude doctor reported no blocking issues.\n'
+      out_success 'claude doctor reported no blocking issues.'
     else
       _cv_doctor_status=$?
       if [ "$_cv_doctor_status" -eq 124 ]; then
-        printf 'Floway: claude doctor timed out.\n' >&2
+        out_error 'claude doctor timed out.'
       else
-        printf 'Floway: claude doctor reported a problem:\n' >&2
-        redact_key < "$FLOWAY_SETUP_TMPDIR/claude-doctor.out" >&2
+        out_error 'claude doctor reported a problem:'
+        out_captured < "$FLOWAY_SETUP_TMPDIR/claude-doctor.out"
       fi
       return 1
     fi
   else
     _cv_help_status=$?
     if [ "$_cv_help_status" -eq 124 ]; then
-      printf 'Floway: claude doctor capability check timed out.\n' >&2
+      out_error 'claude doctor capability check timed out.'
       return 1
     fi
     if grep -Eiq '(unknown|unrecognized|invalid|no such).*(command|subcommand).*doctor|doctor.*(unknown|unrecognized|invalid).*(command|subcommand)' "$_cv_doctor_help"; then
-      printf 'Floway: this Claude Code build has no doctor command; skipping that check.\n'
+      out_info 'this Claude Code build has no doctor command; skipping that check.'
     else
-      printf 'Floway: claude doctor capability check failed.\n' >&2
-      redact_key < "$_cv_doctor_help" >&2
+      out_error 'claude doctor capability check failed:'
+      out_captured < "$_cv_doctor_help"
       return 1
     fi
   fi
@@ -507,24 +570,24 @@ claude_verify() {
 # mutation. Verification failure rolls back the settings write; a freshly
 # installed CLI is never uninstalled.
 configure_claude() {
-  printf 'Floway: configuring Claude Code...\n'
+  out_phase 'Claude Code'
   if ! ensure_jq; then
-    printf 'Floway: jq is required to configure Claude Code but is unavailable and could not be provisioned for this platform. Install jq and re-run.\n' >&2
+    out_error 'jq is required to configure Claude Code but is unavailable and could not be provisioned for this platform. Install jq and re-run.'
     return 1
   fi
   if ! claude_ensure_installed; then
-    printf 'Floway: Claude Code CLI is unavailable and could not be installed.\n' >&2
+    out_error 'Claude Code CLI is unavailable and could not be installed.'
     return 1
   fi
   if ! claude_write_settings; then
     return 1
   fi
   if ! claude_verify; then
-    printf 'Floway: Claude Code verification failed; rolling back settings.\n' >&2
+    out_warn 'Claude Code verification failed; rolling back settings.'
     claude_rollback_settings
     return 1
   fi
-  printf 'Floway: Claude Code configured.\n'
+  out_success 'Claude Code configured.'
 }
 
 # --- Codex ------------------------------------------------------------------
@@ -548,7 +611,7 @@ codex_build_id_token() {
     | ({email: ("floway@" + $host), "https://api.openai.com/auth": {chatgpt_plan_type:"pro_plus", chatgpt_user_id:"user-floway", chatgpt_account_id:"acct-floway"}} | tojson | b64url) as $payload
     | $header + "." + $payload + ".c2ln"
   ') || {
-    printf 'Floway: could not construct the Codex identity token.\n' >&2
+    out_error 'could not construct the Codex identity token.'
     return 1
   }
 }
@@ -561,13 +624,13 @@ codex_ensure_installed() {
     "/usr/local/bin/codex"
   CODEX_BIN=$DISCOVERED_BIN
   if [ "$DISCOVERED_COUNT" -gt 1 ]; then
-    printf 'Floway: multiple Codex installations detected; using %s.\n' "$CODEX_BIN" >&2
+    out_warn "multiple Codex installations detected; using $CODEX_BIN"
   fi
   if [ "$DISCOVERED_COUNT" -ge 1 ]; then
     return 0
   fi
 
-  printf 'Floway: Codex CLI not found; installing the official user-local build...\n'
+  out_step 'Codex CLI not found; installing the official build'
   if [ -n "${FLOWAY_INSTALLER_TEST_INSTALL_CODEX_SCRIPT:-}" ]; then
     _icx_timeout=${FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS:-120}
     _run_with_timeout "$_icx_timeout" env -u FLOWAY_API_KEY CODEX_NON_INTERACTIVE=true bash "$FLOWAY_INSTALLER_TEST_INSTALL_CODEX_SCRIPT" || return 1
@@ -597,7 +660,7 @@ codex_backup_files() {
     CODEX_CONFIG_EXISTED=1
     CODEX_CONFIG_BACKUP="$CODEX_CONFIG_PATH.floway-backup.$_cbf_stamp"
     if ! cp "$CODEX_CONFIG_PATH" "$CODEX_CONFIG_BACKUP"; then
-      printf 'Floway: could not back up %s\n' "$CODEX_CONFIG_PATH" >&2
+      out_error "could not back up $CODEX_CONFIG_PATH"
       return 1
     fi
   fi
@@ -605,7 +668,7 @@ codex_backup_files() {
     CODEX_AUTH_EXISTED=1
     CODEX_AUTH_BACKUP="$CODEX_AUTH_PATH.floway-backup.$_cbf_stamp"
     if ! cp "$CODEX_AUTH_PATH" "$CODEX_AUTH_BACKUP"; then
-      printf 'Floway: could not back up %s\n' "$CODEX_AUTH_PATH" >&2
+      out_error "could not back up $CODEX_AUTH_PATH"
       return 1
     fi
     chmod 600 "$CODEX_AUTH_BACKUP" 2>/dev/null || true
@@ -763,7 +826,7 @@ codex_write_config() {
       {keyPath:"model",mergeStrategy:"replace",value:(if $model == "" then null else $model end)},
       {keyPath:"model_reasoning_effort",mergeStrategy:"replace",value:(if $effort == "" then null else $effort end)}
     ]') || {
-    printf 'Floway: could not build the Codex configuration edits.\n' >&2
+    out_error 'could not build the Codex configuration edits.'
     return 1
   }
 
@@ -771,11 +834,11 @@ codex_write_config() {
   _cwc_rc=$?
   if [ "$_cwc_rc" -ne 0 ]; then
     case "$_cwc_rc" in
-      124) printf 'Floway: the Codex app-server timed out before confirming the configuration.\n' >&2 ;;
-      3) printf 'Floway: the Codex app-server reported an error writing the configuration.\n' >&2 ;;
-      2) printf 'Floway: the Codex app-server returned a malformed response.\n' >&2 ;;
-      1) printf 'Floway: the Codex app-server exited before confirming the configuration.\n' >&2 ;;
-      *) printf 'Floway: the Codex app-server configuration failed.\n' >&2 ;;
+      124) out_error 'the Codex app-server timed out before confirming the configuration.' ;;
+      3) out_error 'the Codex app-server reported an error writing the configuration.' ;;
+      2) out_error 'the Codex app-server returned a malformed response.' ;;
+      1) out_error 'the Codex app-server exited before confirming the configuration.' ;;
+      *) out_error 'the Codex app-server configuration failed.' ;;
     esac
     return 1
   fi
@@ -783,15 +846,15 @@ codex_write_config() {
   _cwc_status=$(printf '%s' "$_cwc_result" | "$JQ" -r '.result.status // empty' 2>/dev/null)
   case "$_cwc_status" in
     ok)
-      printf 'Floway: Codex base configuration written.\n'
+      out_success 'Codex base configuration written.'
       ;;
     okOverridden)
       _cwc_msg=$(printf '%s' "$_cwc_result" | "$JQ" -r '.result.overriddenMetadata.message // "an override layer applies"' 2>/dev/null)
       _cwc_layer=$(printf '%s' "$_cwc_result" | "$JQ" -r '.result.overriddenMetadata.overridingLayer.name.type // "unknown"' 2>/dev/null)
-      printf 'Floway: Codex base configuration written, but a higher-precedence layer overrides it (%s; layer: %s).\n' "$_cwc_msg" "$_cwc_layer"
+      out_warn "Codex base configuration written, but a higher-precedence layer overrides it ($_cwc_msg; layer: $_cwc_layer)."
       ;;
     *)
-      printf 'Floway: the Codex app-server did not confirm the configuration (status: %s).\n' "${_cwc_status:-none}" >&2
+      out_error "the Codex app-server did not confirm the configuration (status: ${_cwc_status:-none})."
       return 1
       ;;
   esac
@@ -810,14 +873,14 @@ codex_stage_auth() {
       --arg refresh "$CODEX_REFRESH_NOOP" \
       --arg lastRefresh "$_csa_now" \
       '{OPENAI_API_KEY: null, tokens: {id_token: $idToken, access_token: env.FLOWAY_API_KEY, refresh_token: $refresh}, last_refresh: $lastRefresh}' > "$_csa_stage"; then
-    printf 'Floway: could not construct the Codex auth file.\n' >&2
+    out_error 'could not construct the Codex auth file.'
     rm -f "$_csa_stage"
     return 1
   fi
   if ! FLOWAY_API_KEY="$FLOWAY_API_KEY" "$JQ" -e --arg idToken "$FLOWAY_CODEX_ID_TOKEN" '
       (.tokens.id_token == $idToken) and (.tokens.access_token == env.FLOWAY_API_KEY)
     ' "$_csa_stage" >/dev/null 2>&1; then
-    printf 'Floway: staged Codex auth failed validation.\n' >&2
+    out_error 'staged Codex auth failed validation.'
     rm -f "$_csa_stage"
     return 1
   fi
@@ -826,7 +889,7 @@ codex_stage_auth() {
     return 1
   fi
   if ! mv "$_csa_stage" "$CODEX_AUTH_PATH"; then
-    printf 'Floway: could not replace %s\n' "$CODEX_AUTH_PATH" >&2
+    out_error "could not replace $CODEX_AUTH_PATH"
     rm -f "$_csa_stage"
     return 1
   fi
@@ -856,7 +919,7 @@ codex_check_models() {
   fi
   if [ -n "$FLOWAY_CODEX_MODEL" ]; then
     if ! "$JQ" -e --arg m "$FLOWAY_CODEX_MODEL" 'any(.models[]?; .slug == $m)' "$_ccm_body" >/dev/null 2>&1; then
-      printf 'Floway: the selected Codex model %s is not in the gateway catalog.\n' "$FLOWAY_CODEX_MODEL" >&2
+      out_error "the selected Codex model $FLOWAY_CODEX_MODEL is not in the gateway catalog."
       rm -f "$_ccm_body"
       return 1
     fi
@@ -871,29 +934,29 @@ codex_verify() {
   if ! FLOWAY_API_KEY="$FLOWAY_API_KEY" "$JQ" -e --arg idToken "$FLOWAY_CODEX_ID_TOKEN" '
       (.tokens.id_token == $idToken) and (.tokens.access_token == env.FLOWAY_API_KEY)
     ' "$CODEX_AUTH_PATH" >/dev/null 2>&1; then
-    printf 'Floway: the written Codex auth did not reparse as expected.\n' >&2
+    out_error 'the written Codex auth did not reparse as expected.'
     return 1
   fi
 
   _cv_timeout=${FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS:-30}
   _cv_version_file="$FLOWAY_SETUP_TMPDIR/codex-version.out"
   if _run_with_timeout "$_cv_timeout" "$CODEX_BIN" --version > "$_cv_version_file" 2>&1; then
-    printf 'Floway: Codex version: %s\n' "$(cat "$_cv_version_file")"
+    out_info "Codex version: $(cat "$_cv_version_file")"
   else
     _cv_version_status=$?
     if [ "$_cv_version_status" -eq 124 ]; then
-      printf 'Floway: `codex --version` timed out.\n' >&2
+      out_error '`codex --version` timed out.'
     else
-      printf 'Floway: `codex --version` failed.\n' >&2
+      out_error '`codex --version` failed.'
     fi
     return 1
   fi
 
   if ! codex_check_models; then
-    printf 'Floway: could not reach the authenticated Codex model directory at %s/azure-api.codex/models\n' "${FLOWAY_BASE_URL%/}" >&2
+    out_error "could not reach the authenticated Codex model directory at ${FLOWAY_BASE_URL%/}/azure-api.codex/models"
     return 1
   fi
-  printf 'Floway: reached the authenticated Codex model directory (no inference issued).\n'
+  out_success 'reached the authenticated Codex model directory (no inference issued).'
 }
 
 # Configure Codex as one transactional unit. jq must resolve before any mutation.
@@ -901,20 +964,20 @@ codex_verify() {
 # staging, or verification restores both (or removes newly created files). A
 # freshly installed CLI is never uninstalled.
 configure_codex() {
-  printf 'Floway: configuring Codex...\n'
+  out_phase 'Codex'
   if ! ensure_jq; then
-    printf 'Floway: jq is required to configure Codex but is unavailable and could not be provisioned for this platform. Install jq and re-run.\n' >&2
+    out_error 'jq is required to configure Codex but is unavailable and could not be provisioned for this platform. Install jq and re-run.'
     return 1
   fi
   if ! codex_ensure_installed; then
-    printf 'Floway: Codex CLI is unavailable and could not be installed.\n' >&2
+    out_error 'Codex CLI is unavailable and could not be installed.'
     return 1
   fi
   CODEX_HOME_DIR="${CODEX_HOME:-$HOME/.codex}"
   CODEX_CONFIG_PATH="$CODEX_HOME_DIR/config.toml"
   CODEX_AUTH_PATH="$CODEX_HOME_DIR/auth.json"
   if ! mkdir -p "$CODEX_HOME_DIR"; then
-    printf 'Floway: could not create %s\n' "$CODEX_HOME_DIR" >&2
+    out_error "could not create $CODEX_HOME_DIR"
     return 1
   fi
   if ! codex_build_id_token; then
@@ -928,22 +991,22 @@ configure_codex() {
     return 1
   fi
   if ! codex_stage_auth; then
-    printf 'Floway: Codex auth staging failed; rolling back configuration and auth.\n' >&2
+    out_warn 'Codex auth staging failed; rolling back configuration and auth.'
     codex_rollback
     return 1
   fi
   if ! codex_verify; then
-    printf 'Floway: Codex verification failed; rolling back configuration and auth.\n' >&2
+    out_warn 'Codex verification failed; rolling back configuration and auth.'
     codex_rollback
     return 1
   fi
-  printf 'Floway: Codex configured.\n'
+  out_success 'Codex configured.'
 }
 
 # --- run --------------------------------------------------------------------
 
 FLOWAY_SETUP_TMPDIR=$(mktemp -d "${TMPDIR:-/tmp}/floway-setup.XXXXXX") || {
-  printf 'Floway: could not create a private working directory.\n' >&2
+  out_fatal 'could not create a private working directory.'
   exit 1
 }
 chmod 700 "$FLOWAY_SETUP_TMPDIR" 2>/dev/null || true
@@ -970,8 +1033,8 @@ if [ -n "$FLOWAY_INSTALL_CODEX" ]; then
   fi
 fi
 
-printf '\nFloway agent setup summary:\n'
-printf '  Claude Code: %s\n' "$CLAUDE_RESULT"
-printf '  Codex:       %s\n' "$CODEX_RESULT"
+out_phase 'Summary'
+out_summary_entry 'Claude Code' "$CLAUDE_RESULT"
+out_summary_entry 'Codex' "$CODEX_RESULT"
 
 exit "$OVERALL"

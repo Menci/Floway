@@ -15,14 +15,74 @@ $PSNativeCommandUseErrorActionPreference = $false
 Remove-Item Env:FLOWAY_API_KEY -ErrorAction SilentlyContinue
 Remove-Item Env:FlowayApiKey -ErrorAction SilentlyContinue
 
+# --- output layer -----------------------------------------------------------
+#
+# Structure is carried by a compact box-line tree, identical in text to the Bash
+# installer: a blank line then `┌─ <name>` opens a phase, `│  ` continues its
+# body, `│  · ` marks a step, and the closing Summary phase lists each agent as
+# `<label>  [state]`. Informational, progress, and success lines go to stdout;
+# warnings, errors, rollback notices, and captured tool output go to stderr.
+#
+# stdout color rides the host: `Write-Host -ForegroundColor` colors an
+# interactive console yet writes no escape sequences when redirected/captured,
+# so it is the correct stdout mechanism on both Windows PowerShell 5.1 and
+# PowerShell 7. stderr goes through [Console]::Error, colored with ANSI only for
+# an interactive error stream with NO_COLOR unset — a redirected capture stays
+# escape-free. UTF-8 output makes the box-drawing glyphs render on 5.1 too.
+try { [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false) } catch { }
+$script:FlowayNoColor = [bool]$env:NO_COLOR
+$script:FlowayForceColor = [bool]$env:FLOWAY_INSTALLER_TEST_FORCE_COLOR
+$script:FlowayErrColor = (-not [Console]::IsErrorRedirected -or $script:FlowayForceColor) -and (-not $script:FlowayNoColor)
+$script:FlowayEsc = [char]27
+
+function Write-FlowayHostLine {
+  param([string]$Text, [System.ConsoleColor]$Color, [switch]$Plain)
+  if ($Plain -or $script:FlowayNoColor) { Write-Host $Text } else { Write-Host $Text -ForegroundColor $Color }
+}
+
+function Write-FlowayErrLine {
+  param([string]$Text, [string]$AnsiCode)
+  if ($script:FlowayErrColor) { [Console]::Error.WriteLine("$($script:FlowayEsc)[${AnsiCode}m$Text$($script:FlowayEsc)[0m") }
+  else { [Console]::Error.WriteLine($Text) }
+}
+
+function Write-FlowayTitle { Write-FlowayHostLine 'Floway agent setup' Cyan }
+function Write-FlowayPhase { param([string]$Name) Write-Host ''; Write-FlowayHostLine "┌─ $Name" Cyan }
+function Write-FlowayStep { param([string]$Text) Write-FlowayHostLine "│  · $Text" DarkCyan }
+function Write-FlowayInfo { param([string]$Text) Write-FlowayHostLine "│  $Text" -Plain }
+function Write-FlowaySuccess { param([string]$Text) Write-FlowayHostLine "│  $Text" Green }
+function Write-FlowayWarn { param([string]$Text) Write-FlowayErrLine "│  $Text" '33' }
+function Write-FlowayError { param([string]$Text) Write-FlowayErrLine "│  $Text" '31' }
+# A fatal line raised before any phase is open carries no spine.
+function Write-FlowayFatal { param([string]$Text) Write-FlowayErrLine $Text '31' }
+
+# Re-emit captured official-tool output as a de-emphasized, redacted, spined
+# block on stderr so it never masquerades as a Floway line.
+function Write-FlowayCaptured {
+  param([string]$Text)
+  foreach ($line in (Protect-FlowaySecret $Text) -split "`r?`n") { Write-FlowayErrLine "│    $line" '90' }
+}
+
+function Write-FlowaySummaryEntry {
+  param([string]$Label, [string]$State)
+  $color = switch ($State) { 'configured' { 'Green' } 'failed' { 'Red' } default { 'DarkGray' } }
+  Write-FlowayHostLine "│  $Label  [$State]" $color
+}
+
+# Report a primary error to stderr and unwind. The agent boundary recognizes the
+# 'floway-handled' marker as already reported, so no line is ever duplicated.
+function Stop-FlowaySetup { param([string]$Message) Write-FlowayError $Message; throw 'floway-handled' }
+
+Write-FlowayTitle
+
 # The wrapping command supplies $FlowayBaseUrl as an in-process variable.
 # Validate it before mutation; installer and CLI subprocesses never inherit it.
 if ([string]::IsNullOrWhiteSpace($FlowayBaseUrl)) {
-  Write-Host "Floway: `$FlowayBaseUrl must be set to this gateway origin (e.g. https://gateway.example)."
+  Write-FlowayFatal "`$FlowayBaseUrl must be set to this gateway origin (e.g. https://gateway.example)."
   exit 1
 }
 if ($FlowayBaseUrl -notmatch '^https?://.+') {
-  Write-Host "Floway: `$FlowayBaseUrl must be an http(s) origin, got $FlowayBaseUrl"
+  Write-FlowayFatal "`$FlowayBaseUrl must be an http(s) origin, got $FlowayBaseUrl"
   exit 1
 }
 
@@ -57,7 +117,7 @@ function Protect-FlowayFile {
   param([string]$Path)
   if (($PSVersionTable.PSVersion.Major -ge 6) -and (-not $IsWindows)) {
     & chmod 600 $Path
-    if ($LASTEXITCODE -ne 0) { throw "could not restrict $Path to mode 0600." }
+    if ($LASTEXITCODE -ne 0) { Stop-FlowaySetup "could not restrict $Path to owner-only access." }
     return
   }
   $acl = New-Object System.Security.AccessControl.FileSecurity
@@ -76,7 +136,7 @@ function Stop-FlowayProcessTree {
   if ($runningOnWindows) {
     & taskkill.exe /PID $Process.Id /T /F *> $null
     if ($LASTEXITCODE -ne 0 -and (-not $Process.HasExited)) {
-      throw "taskkill could not terminate process tree $($Process.Id)."
+      Stop-FlowaySetup "taskkill could not terminate process tree $($Process.Id)."
     }
     return
   }
@@ -84,7 +144,7 @@ function Stop-FlowayProcessTree {
     # .NET used by PowerShell 7 supports tree-aware termination on Unix.
     $Process.Kill($true)
   } catch {
-    if (-not $Process.HasExited) { throw "could not terminate process tree $($Process.Id)." }
+    if (-not $Process.HasExited) { Stop-FlowaySetup "could not terminate process tree $($Process.Id)." }
   }
 }
 
@@ -104,7 +164,7 @@ function Invoke-FlowayPowerShellBody {
   $startInfo.RedirectStandardError = $true
   $process = New-Object System.Diagnostics.Process
   $process.StartInfo = $startInfo
-  if (-not $process.Start()) { throw "failed to start the installer interpreter." }
+  if (-not $process.Start()) { Stop-FlowaySetup "failed to start the installer interpreter." }
   $stdoutTask = $process.StandardOutput.ReadToEndAsync()
   $stderrTask = $process.StandardError.ReadToEndAsync()
   $process.StandardInput.Write($Body)
@@ -113,13 +173,13 @@ function Invoke-FlowayPowerShellBody {
   if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
     Stop-FlowayProcessTree $process
     $process.WaitForExit()
-    throw "the installer timed out after $TimeoutSeconds seconds."
+    Stop-FlowaySetup "the installer timed out after $TimeoutSeconds seconds."
   }
   $stdout = $stdoutTask.GetAwaiter().GetResult()
   $stderr = $stderrTask.GetAwaiter().GetResult()
-  if ($stdout) { Write-Host $stdout.TrimEnd() }
-  if ($stderr) { Write-Host $stderr.TrimEnd() }
-  if ($process.ExitCode -ne 0) { throw "the installer exited with status $($process.ExitCode)." }
+  if ($stdout) { Write-FlowayCaptured $stdout.TrimEnd() }
+  if ($stderr) { Write-FlowayCaptured $stderr.TrimEnd() }
+  if ($process.ExitCode -ne 0) { Stop-FlowaySetup "the installer exited with status $($process.ExitCode)." }
 }
 
 # Download an installer, refuse anything that is not a script (region blocks and
@@ -131,7 +191,7 @@ function Invoke-FlowayRemoteInstaller {
   $contentType = [string]$response.Headers['Content-Type']
   $looksLikeHtml = $contentType -match '(?i)^text/html(?:;|$)' -or $body -match '(?is)^\s*(?:<!doctype\s+html|<html(?:\s|>))'
   if ([string]::IsNullOrWhiteSpace($body) -or $looksLikeHtml) {
-    throw "the installer download was HTML or empty, not an executable script (a login or region-block page?)."
+    Stop-FlowaySetup "the installer download was HTML or empty, not an executable script (a login or region-block page?)."
   }
   $timeoutSeconds = if ($env:FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS) { [int]$env:FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS } else { 120 }
   Invoke-FlowayPowerShellBody -Body $body -TimeoutSeconds $timeoutSeconds
@@ -146,19 +206,33 @@ function Get-FlowayCliExe {
     if ((Test-Path -LiteralPath $candidate) -and (-not $found.Contains($candidate))) { $found.Add($candidate) }
   }
   if ($found.Count -eq 0) { return $null }
-  if ($found.Count -gt 1) { Write-Host "Floway: multiple $Label installations detected; using $($found[0])." }
+  if ($found.Count -gt 1) { Write-FlowayWarn "multiple $Label installations detected; using $($found[0])" }
   return $found[0]
 }
 
+# Rollback retains a backup when restoration fails so manual recovery remains
+# possible, warning with the preserved path and the action to take — matching
+# the Bash installer. The FLOWAY_INSTALLER_TEST_FAIL_RESTORE hook, read from the
+# ambient environment and never emitted by the gateway, forces the restore
+# rename to fail so the harness can assert that guidance.
 function Restore-FlowayManagedFile {
-  param([bool]$Existed, [string]$Backup, [string]$Path, [switch]$Protect)
+  param([bool]$Existed, [string]$Backup, [string]$Path, [string]$OriginalLabel, [string]$CreatedLabel, [switch]$Protect)
   if ($Existed) {
     if ($Backup -and (Test-Path -LiteralPath $Backup)) {
-      Move-Item -LiteralPath $Backup -Destination $Path -Force
-      if ($Protect) { Protect-FlowayFile $Path }
+      try {
+        if ($env:FLOWAY_INSTALLER_TEST_FAIL_RESTORE) { throw 'test-injected restore failure' }
+        Move-Item -LiteralPath $Backup -Destination $Path -Force
+        if ($Protect) { Protect-FlowayFile $Path }
+      } catch {
+        Write-FlowayWarn "could not restore $Path from its backup; your original $OriginalLabel is preserved at $Backup — restore it by hand."
+      }
     }
   } elseif (Test-Path -LiteralPath $Path) {
-    Remove-Item -LiteralPath $Path -Force
+    try {
+      Remove-Item -LiteralPath $Path -Force
+    } catch {
+      Write-FlowayWarn "could not remove the $CreatedLabel this run created at $Path — remove it by hand."
+    }
   }
 }
 
@@ -172,7 +246,7 @@ function Install-FlowayClaude {
   if ($env:FLOWAY_INSTALLER_TEST_INSTALL_CLAUDE_SCRIPT) {
     $timeoutSeconds = if ($env:FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS) { [int]$env:FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS } else { 120 }
     $installer = Invoke-FlowayProcess -Exe $env:FLOWAY_INSTALLER_TEST_INSTALL_CLAUDE_SCRIPT -Arguments @() -TimeoutSeconds $timeoutSeconds
-    if ($installer.ExitCode -ne 0) { throw "the test installer hook failed." }
+    if ($installer.ExitCode -ne 0) { Stop-FlowaySetup "the test installer hook failed." }
     return
   }
   # Ref: https://docs.claude.com/en/docs/claude-code/setup ("Native Install").
@@ -181,7 +255,7 @@ function Install-FlowayClaude {
 }
 
 function Restore-FlowayClaudeSettings {
-  Restore-FlowayManagedFile -Existed $script:ClaudeSettingsExisted -Backup $script:ClaudeSettingsBackup -Path $script:ClaudeSettingsPath -Protect
+  Restore-FlowayManagedFile -Existed $script:ClaudeSettingsExisted -Backup $script:ClaudeSettingsBackup -Path $script:ClaudeSettingsPath -OriginalLabel 'file' -CreatedLabel 'Claude settings' -Protect
 }
 
 # Surgically merge the managed keys into the Claude settings file: validate the
@@ -200,10 +274,10 @@ function Write-FlowayClaudeSettings {
   if (Test-Path -LiteralPath $script:ClaudeSettingsPath) {
     $script:ClaudeSettingsExisted = $true
     $raw = Get-Content -Raw -LiteralPath $script:ClaudeSettingsPath
-    try { $document = $raw | ConvertFrom-Json } catch { throw "$($script:ClaudeSettingsPath) is not valid JSON; leaving it untouched." }
-    if ($document -isnot [System.Management.Automation.PSCustomObject]) { throw "existing Claude settings root is not a JSON object." }
+    try { $document = $raw | ConvertFrom-Json } catch { Stop-FlowaySetup "$($script:ClaudeSettingsPath) is not valid JSON; leaving it untouched." }
+    if ($document -isnot [System.Management.Automation.PSCustomObject]) { Stop-FlowaySetup "existing Claude settings root is not a JSON object." }
     if (($document.PSObject.Properties.Name -contains 'env') -and ($document.env -isnot [System.Management.Automation.PSCustomObject])) {
-      throw "existing Claude settings env is not a JSON object."
+      Stop-FlowaySetup "existing Claude settings env is not a JSON object."
     }
     # DateTimeOffset.ToUnixTimeMilliseconds is unavailable on the .NET
     # Framework version bundled with the Windows PowerShell 5.1 baseline.
@@ -246,7 +320,7 @@ function Write-FlowayClaudeSettings {
     [System.IO.File]::WriteAllText($stage, $json, (New-Object System.Text.UTF8Encoding($false)))
     $check = Get-Content -Raw -LiteralPath $stage | ConvertFrom-Json
     if (($check.env.ANTHROPIC_BASE_URL -ne $FlowayBaseUrl) -or ($check.env.ANTHROPIC_AUTH_TOKEN -ne $FlowayApiKey)) {
-      throw "staged Claude settings failed validation."
+      Stop-FlowaySetup "staged Claude settings failed validation."
     }
     # Windows PowerShell 5.1 only runs on Windows and has no $IsWindows
     # automatic variable; PowerShell 6+ exposes it on every platform.
@@ -286,13 +360,13 @@ function Invoke-FlowayProcess {
   $startInfo.Arguments = ($Arguments | ForEach-Object { '"' + $_.Replace('"', '\"') + '"' }) -join ' '
   $process = New-Object System.Diagnostics.Process
   $process.StartInfo = $startInfo
-  if (-not $process.Start()) { throw "failed to start $Exe." }
+  if (-not $process.Start()) { Stop-FlowaySetup "failed to start $Exe." }
   $stdoutTask = $process.StandardOutput.ReadToEndAsync()
   $stderrTask = $process.StandardError.ReadToEndAsync()
   if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
     Stop-FlowayProcessTree $process
     $process.WaitForExit()
-    throw "$Exe timed out after $TimeoutSeconds seconds."
+    Stop-FlowaySetup "$Exe timed out after $TimeoutSeconds seconds."
   }
   $stdout = $stdoutTask.GetAwaiter().GetResult()
   $stderr = $stderrTask.GetAwaiter().GetResult()
@@ -303,13 +377,13 @@ function Invoke-FlowayClaudeVerify {
   param([string]$Exe)
   $document = Get-Content -Raw -LiteralPath $script:ClaudeSettingsPath | ConvertFrom-Json
   if (($document.env.ANTHROPIC_BASE_URL -ne $FlowayBaseUrl) -or ($document.env.ANTHROPIC_AUTH_TOKEN -ne $FlowayApiKey)) {
-    throw "the written Claude settings did not reparse as expected."
+    Stop-FlowaySetup "the written Claude settings did not reparse as expected."
   }
 
   $timeoutSeconds = if ($env:FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS) { [int]$env:FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS } else { 30 }
   $version = Invoke-FlowayProcess -Exe $Exe -Arguments @('--version') -TimeoutSeconds $timeoutSeconds
-  if ($version.ExitCode -ne 0) { throw "``claude --version`` failed." }
-  Write-Host "Floway: Claude Code version: $($version.Output.Trim())"
+  if ($version.ExitCode -ne 0) { Stop-FlowaySetup "``claude --version`` failed." }
+  Write-FlowayInfo "Claude Code version: $($version.Output.Trim())"
 
   $headers = @{
     'Authorization'     = "Bearer $FlowayApiKey"
@@ -320,30 +394,32 @@ function Invoke-FlowayClaudeVerify {
   try {
     Invoke-WebRequest -Uri $modelUri -Headers $headers -Method Get -UseBasicParsing -TimeoutSec 30 | Out-Null
   } catch {
-    throw "could not reach the authenticated model directory at $modelUri"
+    Stop-FlowaySetup "could not reach the authenticated model directory at $modelUri"
   }
-  Write-Host "Floway: reached the authenticated model directory (no inference issued)."
+  Write-FlowaySuccess "reached the authenticated model directory (no inference issued)."
 
   $doctorHelp = Invoke-FlowayProcess -Exe $Exe -Arguments @('doctor', '--help') -TimeoutSeconds $timeoutSeconds
   if ($doctorHelp.ExitCode -eq 0) {
     $doctor = Invoke-FlowayProcess -Exe $Exe -Arguments @('doctor') -TimeoutSeconds $timeoutSeconds
     if ($doctor.ExitCode -ne 0) {
-      Write-Host "Floway: claude doctor reported a problem:`n$(Protect-FlowaySecret $doctor.Output)"
-      throw "claude doctor reported a problem."
+      Write-FlowayError "claude doctor reported a problem:"
+      Write-FlowayCaptured $doctor.Output
+      throw 'floway-handled'
     }
-    Write-Host "Floway: claude doctor reported no blocking issues."
+    Write-FlowaySuccess "claude doctor reported no blocking issues."
   } elseif ($doctorHelp.Output -match '(?i)(unknown|unrecognized|invalid|no such).*(command|subcommand).*doctor|doctor.*(unknown|unrecognized|invalid).*(command|subcommand)') {
-    Write-Host "Floway: this Claude Code build has no doctor command; skipping that check."
+    Write-FlowayInfo "this Claude Code build has no doctor command; skipping that check."
   } else {
-    Write-Host "Floway: claude doctor capability check failed:`n$(Protect-FlowaySecret $doctorHelp.Output)"
-    throw "claude doctor capability check failed."
+    Write-FlowayError "claude doctor capability check failed:"
+    Write-FlowayCaptured $doctorHelp.Output
+    throw 'floway-handled'
   }
 }
 
 # Configure Claude Code as one transactional unit. Verification failure rolls
 # back the settings write; a freshly installed CLI is never uninstalled.
 function Set-FlowayClaude {
-  Write-Host "Floway: configuring Claude Code..."
+  Write-FlowayPhase 'Claude Code'
   # Ref: https://docs.claude.com/en/docs/claude-code/troubleshoot-install
   $candidates = @(
     (Join-Path $HOME '.local/bin/claude'),
@@ -353,20 +429,20 @@ function Set-FlowayClaude {
   if ($env:USERPROFILE) { $candidates += (Join-Path $env:USERPROFILE '.local\bin\claude.exe') }
   $exe = Get-FlowayCliExe -Name claude -Label 'Claude Code' -Candidates $candidates
   if (-not $exe) {
-    Write-Host "Floway: Claude Code CLI not found; installing the official user-local build..."
+    Write-FlowayStep "Claude Code CLI not found; installing the official build"
     Install-FlowayClaude
     $exe = Get-FlowayCliExe -Name claude -Label 'Claude Code' -Candidates $candidates
-    if (-not $exe) { throw "Claude Code CLI is unavailable and could not be installed." }
+    if (-not $exe) { Stop-FlowaySetup "Claude Code CLI is unavailable and could not be installed." }
   }
   Write-FlowayClaudeSettings
   try {
     Invoke-FlowayClaudeVerify $exe
   } catch {
-    Write-Host "Floway: Claude Code verification failed; rolling back settings."
+    Write-FlowayWarn "Claude Code verification failed; rolling back settings."
     Restore-FlowayClaudeSettings
     throw
   }
-  Write-Host "Floway: Claude Code configured."
+  Write-FlowaySuccess "Claude Code configured."
 }
 
 # --- Codex ------------------------------------------------------------------
@@ -403,7 +479,7 @@ function Install-FlowayCodex {
     if ($env:FLOWAY_INSTALLER_TEST_INSTALL_CODEX_SCRIPT) {
       $timeoutSeconds = if ($env:FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS) { [int]$env:FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS } else { 120 }
       $installer = Invoke-FlowayProcess -Exe $env:FLOWAY_INSTALLER_TEST_INSTALL_CODEX_SCRIPT -Arguments @() -TimeoutSeconds $timeoutSeconds
-      if ($installer.ExitCode -ne 0) { throw "the test codex installer hook failed." }
+      if ($installer.ExitCode -ne 0) { Stop-FlowaySetup "the test codex installer hook failed." }
       return
     }
     # Ref: https://github.com/openai/codex README ("irm https://chatgpt.com/codex/install.ps1 | iex").
@@ -453,8 +529,8 @@ function Backup-FlowayCodexFiles {
 }
 
 function Restore-FlowayCodexFiles {
-  Restore-FlowayManagedFile -Existed $script:CodexConfigExisted -Backup $script:CodexConfigBackup -Path $script:CodexConfigPath
-  Restore-FlowayManagedFile -Existed $script:CodexAuthExisted -Backup $script:CodexAuthBackup -Path $script:CodexAuthPath -Protect
+  Restore-FlowayManagedFile -Existed $script:CodexConfigExisted -Backup $script:CodexConfigBackup -Path $script:CodexConfigPath -OriginalLabel 'file' -CreatedLabel 'Codex config'
+  Restore-FlowayManagedFile -Existed $script:CodexAuthExisted -Backup $script:CodexAuthBackup -Path $script:CodexAuthPath -OriginalLabel 'ChatGPT login' -CreatedLabel 'Codex auth' -Protect
 }
 
 # Drive `codex app-server` over redirected stdin/stdout/stderr: initialize ->
@@ -474,7 +550,7 @@ function Invoke-FlowayCodexAppServerBatchWrite {
   $startInfo.RedirectStandardError = $true
   $process = New-Object System.Diagnostics.Process
   $process.StartInfo = $startInfo
-  if (-not $process.Start()) { throw "failed to start the Codex app-server." }
+  if (-not $process.Start()) { Stop-FlowaySetup "failed to start the Codex app-server." }
   $stderrTask = $process.StandardError.ReadToEndAsync()
   $watch = [System.Diagnostics.Stopwatch]::StartNew()
   $budgetMs = $TimeoutSeconds * 1000
@@ -484,15 +560,15 @@ function Invoke-FlowayCodexAppServerBatchWrite {
       param([int]$WantId)
       while ($true) {
         $remaining = $budgetMs - $watch.ElapsedMilliseconds
-        if ($remaining -le 0) { throw "the Codex app-server timed out before responding." }
+        if ($remaining -le 0) { Stop-FlowaySetup "the Codex app-server timed out before confirming the configuration." }
         $task = $process.StandardOutput.ReadLineAsync()
-        if (-not $task.Wait([int]$remaining)) { throw "the Codex app-server timed out before responding." }
+        if (-not $task.Wait([int]$remaining)) { Stop-FlowaySetup "the Codex app-server timed out before confirming the configuration." }
         $line = $task.GetAwaiter().GetResult()
-        if ($null -eq $line) { throw "the Codex app-server exited before responding." }
+        if ($null -eq $line) { Stop-FlowaySetup "the Codex app-server exited before confirming the configuration." }
         if ([string]::IsNullOrWhiteSpace($line)) { continue }
-        try { $msg = $line | ConvertFrom-Json } catch { throw "the Codex app-server returned a malformed response." }
+        try { $msg = $line | ConvertFrom-Json } catch { Stop-FlowaySetup "the Codex app-server returned a malformed response." }
         if ($msg.id -ne $WantId) { continue }
-        if ($null -ne $msg.error) { throw "the Codex app-server reported an error writing the configuration." }
+        if ($null -ne $msg.error) { Stop-FlowaySetup "the Codex app-server reported an error writing the configuration." }
         return $msg.result
       }
     }
@@ -537,16 +613,16 @@ function Write-FlowayCodexConfig {
   $result = Invoke-FlowayCodexAppServerBatchWrite -Exe $Exe -Edits $edits -TimeoutSeconds $timeoutSeconds
   $status = [string]$result.status
   if ($status -eq 'ok') {
-    Write-Host "Floway: Codex base configuration written."
+    Write-FlowaySuccess "Codex base configuration written."
   } elseif ($status -eq 'okOverridden') {
     $message = if ($result.overriddenMetadata -and $result.overriddenMetadata.message) { [string]$result.overriddenMetadata.message } else { 'an override layer applies' }
     $layer = 'unknown'
     if ($result.overriddenMetadata -and $result.overriddenMetadata.overridingLayer -and $result.overriddenMetadata.overridingLayer.name) {
       $layer = [string]$result.overriddenMetadata.overridingLayer.name.type
     }
-    Write-Host "Floway: Codex base configuration written, but a higher-precedence layer overrides it ($message; layer: $layer)."
+    Write-FlowayWarn "Codex base configuration written, but a higher-precedence layer overrides it ($message; layer: $layer)."
   } else {
-    throw "the Codex app-server did not confirm the configuration (status: $status)."
+    Stop-FlowaySetup "the Codex app-server did not confirm the configuration (status: $status)."
   }
 }
 
@@ -574,7 +650,7 @@ function Write-FlowayCodexAuth {
     [System.IO.File]::WriteAllText($stage, $json, (New-Object System.Text.UTF8Encoding($false)))
     $check = Get-Content -Raw -LiteralPath $stage | ConvertFrom-Json
     if (($check.tokens.id_token -ne $FlowayCodexIdToken) -or ($check.tokens.access_token -ne $FlowayApiKey)) {
-      throw "staged Codex auth failed validation."
+      Stop-FlowaySetup "staged Codex auth failed validation."
     }
     $runningOnWindows = ($PSVersionTable.PSVersion.Major -lt 6) -or $IsWindows
     if ($script:CodexAuthExisted -and $runningOnWindows) {
@@ -600,20 +676,20 @@ function Read-FlowayCodexModelCatalog {
   try {
     $response = Invoke-WebRequest -Uri $uri -Headers $headers -Method Get -UseBasicParsing -TimeoutSec 30
   } catch {
-    throw "could not reach the authenticated Codex model directory at $uri"
+    Stop-FlowaySetup "could not reach the authenticated Codex model directory at $uri"
   }
   try {
     $body = [string]$response.Content | ConvertFrom-Json
   } catch {
-    throw "the authenticated Codex model directory did not return valid JSON."
+    Stop-FlowaySetup "the authenticated Codex model directory did not return valid JSON."
   }
   if (($body -isnot [System.Management.Automation.PSCustomObject]) -or ($body.PSObject.Properties.Name -notcontains 'models') -or ($body.models -isnot [System.Array])) {
-    throw "the authenticated Codex model directory returned an invalid catalog shape."
+    Stop-FlowaySetup "the authenticated Codex model directory returned an invalid catalog shape."
   }
   $slugs = @()
   foreach ($model in $body.models) {
     if (($model -isnot [System.Management.Automation.PSCustomObject]) -or ($model.PSObject.Properties.Name -notcontains 'slug') -or ($model.slug -isnot [string])) {
-      throw "the authenticated Codex model directory returned an invalid catalog shape."
+      Stop-FlowaySetup "the authenticated Codex model directory returned an invalid catalog shape."
     }
     $slugs += [string]$model.slug
   }
@@ -627,17 +703,17 @@ function Invoke-FlowayCodexVerify {
   param([string]$Exe)
   $auth = Get-Content -Raw -LiteralPath $script:CodexAuthPath | ConvertFrom-Json
   if (($auth.tokens.id_token -ne $FlowayCodexIdToken) -or ($auth.tokens.access_token -ne $FlowayApiKey)) {
-    throw "the written Codex auth did not reparse as expected."
+    Stop-FlowaySetup "the written Codex auth did not reparse as expected."
   }
   $timeoutSeconds = if ($env:FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS) { [int]$env:FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS } else { 30 }
   $version = Invoke-FlowayProcess -Exe $Exe -Arguments @('--version') -TimeoutSeconds $timeoutSeconds
-  if ($version.ExitCode -ne 0) { throw "``codex --version`` failed." }
-  Write-Host "Floway: Codex version: $($version.Output.Trim())"
+  if ($version.ExitCode -ne 0) { Stop-FlowaySetup "``codex --version`` failed." }
+  Write-FlowayInfo "Codex version: $($version.Output.Trim())"
   $modelSlugs = @(Read-FlowayCodexModelCatalog)
   if ($FlowayCodexModel -and ($modelSlugs -notcontains $FlowayCodexModel)) {
-    throw "the selected Codex model $FlowayCodexModel is not in the gateway catalog."
+    Stop-FlowaySetup "the selected Codex model $FlowayCodexModel is not in the gateway catalog."
   }
-  Write-Host "Floway: reached the authenticated Codex model directory (no inference issued)."
+  Write-FlowaySuccess "reached the authenticated Codex model directory (no inference issued)."
 }
 
 # Configure Codex as one transactional unit. Both managed files are backed up
@@ -645,7 +721,7 @@ function Invoke-FlowayCodexVerify {
 # both (or removes newly created files). A freshly installed CLI is never
 # uninstalled.
 function Set-FlowayCodex {
-  Write-Host "Floway: configuring Codex..."
+  Write-FlowayPhase 'Codex'
   # Ref: https://github.com/openai/codex/blob/main/scripts/install/install.sh
   $candidates = @(
     (Join-Path $HOME '.local/bin/codex'),
@@ -654,10 +730,10 @@ function Set-FlowayCodex {
   if ($env:USERPROFILE) { $candidates += (Join-Path $env:USERPROFILE '.local\bin\codex.exe') }
   $exe = Get-FlowayCliExe -Name codex -Label Codex -Candidates $candidates
   if (-not $exe) {
-    Write-Host "Floway: Codex CLI not found; installing the official user-local build..."
+    Write-FlowayStep "Codex CLI not found; installing the official build"
     Install-FlowayCodex
     $exe = Get-FlowayCliExe -Name codex -Label Codex -Candidates $candidates
-    if (-not $exe) { throw "Codex CLI is unavailable and could not be installed." }
+    if (-not $exe) { Stop-FlowaySetup "Codex CLI is unavailable and could not be installed." }
   }
   $script:CodexHomeDir = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME '.codex' }
   $script:CodexConfigPath = Join-Path $script:CodexHomeDir 'config.toml'
@@ -667,20 +743,38 @@ function Set-FlowayCodex {
     New-Item -ItemType Directory -Path $script:CodexHomeDir -Force | Out-Null
   }
   Backup-FlowayCodexFiles
+  # Each stage aligns its rollback cause with the Bash installer: a failed config
+  # write rolls back silently, a failed auth staging or verification announces the
+  # cause before restoring both managed files.
   try {
     Write-FlowayCodexConfig -Exe $exe
-    Write-FlowayCodexAuth
-    Invoke-FlowayCodexVerify -Exe $exe
   } catch {
-    Write-Host "Floway: Codex configuration failed; rolling back configuration and auth."
     Restore-FlowayCodexFiles
     throw
   }
-  Write-Host "Floway: Codex configured."
+  try {
+    Write-FlowayCodexAuth
+  } catch {
+    Write-FlowayWarn "Codex auth staging failed; rolling back configuration and auth."
+    Restore-FlowayCodexFiles
+    throw
+  }
+  try {
+    Invoke-FlowayCodexVerify -Exe $exe
+  } catch {
+    Write-FlowayWarn "Codex verification failed; rolling back configuration and auth."
+    Restore-FlowayCodexFiles
+    throw
+  }
+  Write-FlowaySuccess "Codex configured."
 }
 
 # --- run --------------------------------------------------------------------
 
+# Each agent's primary error is already reported at its detection site (the
+# 'floway-handled' marker), so the boundary only records the outcome. Any
+# unexpected exception that escaped without being reported is surfaced here,
+# redacted, so a failure is never silently swallowed.
 $script:ClaudeResult = 'skipped'
 $script:CodexResult = 'skipped'
 $overall = 0
@@ -690,7 +784,7 @@ if ($FlowayInstallClaude) {
     Set-FlowayClaude
     $script:ClaudeResult = 'configured'
   } catch {
-    Write-Host "Floway: Claude Code setup failed: $(Protect-FlowaySecret ([string]$_.Exception.Message))"
+    if ($_.Exception.Message -ne 'floway-handled') { Write-FlowayError (Protect-FlowaySecret ([string]$_.Exception.Message)) }
     $script:ClaudeResult = 'failed'
     $overall = 1
   }
@@ -701,15 +795,14 @@ if ($FlowayInstallCodex) {
     Set-FlowayCodex
     $script:CodexResult = 'configured'
   } catch {
-    Write-Host "Floway: Codex setup failed: $(Protect-FlowaySecret ([string]$_.Exception.Message))"
+    if ($_.Exception.Message -ne 'floway-handled') { Write-FlowayError (Protect-FlowaySecret ([string]$_.Exception.Message)) }
     $script:CodexResult = 'failed'
     $overall = 1
   }
 }
 
-Write-Host ""
-Write-Host "Floway agent setup summary:"
-Write-Host "  Claude Code: $($script:ClaudeResult)"
-Write-Host "  Codex:       $($script:CodexResult)"
+Write-FlowayPhase 'Summary'
+Write-FlowaySummaryEntry 'Claude Code' $script:ClaudeResult
+Write-FlowaySummaryEntry 'Codex' $script:CodexResult
 
 exit $overall

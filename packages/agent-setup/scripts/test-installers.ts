@@ -563,6 +563,14 @@ interface RunOptions {
   codexInstallerUrl?: string;
   ambientCodexNonInteractive?: string;
   powerShellTimeSeparator?: string;
+  // Output-contract knobs. `forceColor` sets FLOWAY_INSTALLER_TEST_FORCE_COLOR so
+  // the palette is emitted even though the harness captures (never a TTY);
+  // `noColor` sets NO_COLOR; `failRestore` sets FLOWAY_INSTALLER_TEST_FAIL_RESTORE
+  // so the PowerShell rollback restore rename fails, exercising its recovery
+  // guidance the way the Bash `mv` shim does for Bash.
+  forceColor?: boolean;
+  noColor?: boolean;
+  failRestore?: boolean;
 }
 interface RunResult { code: number; stdout: string; stderr: string; combined: string; }
 
@@ -642,6 +650,8 @@ const runShellInstaller = (options: RunOptions): Promise<RunResult> => {
   if (options.timeoutSeconds !== undefined) env.FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS = String(options.timeoutSeconds);
   if (options.excludeTimeoutTools) env.FLOWAY_INSTALLER_TEST_TRACE_TIMEOUT = '1';
   if (options.disableJqDownload) env.FLOWAY_INSTALLER_TEST_NO_JQ_DOWNLOAD = '1';
+  if (options.forceColor) env.FLOWAY_INSTALLER_TEST_FORCE_COLOR = '1';
+  if (options.noColor) env.NO_COLOR = '1';
 
   if (options.fakeRestoreFailure) {
     // A `mv` shim (binDir precedes SHIM_BIN on PATH) that refuses only the
@@ -792,6 +802,9 @@ const runPowerShellInstaller = (options: RunOptions): Promise<RunResult> => {
   if (options.installerUrl) env.FLOWAY_INSTALLER_TEST_CLAUDE_URL = options.installerUrl;
   if (options.timeoutSeconds !== undefined) env.FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS = String(options.timeoutSeconds);
   if (options.ambientApiKey) env.FLOWAY_API_KEY = SENTINEL_KEY;
+  if (options.forceColor) env.FLOWAY_INSTALLER_TEST_FORCE_COLOR = '1';
+  if (options.noColor) env.NO_COLOR = '1';
+  if (options.failRestore) env.FLOWAY_INSTALLER_TEST_FAIL_RESTORE = '1';
 
   return new Promise<RunResult>((resolve) => {
     const child = spawn(hostPwsh!, ['-NoProfile', '-File', scriptPath], { env });
@@ -1000,8 +1013,8 @@ test('claude', 'an interrupt during the Claude install stops the run, skips Code
       installerSleep: 5, signalDuringInstall: signal,
     });
     t.equal(run.code, expectedCode, `${signal} must exit ${expectedCode}, not resume:\n${run.combined}`);
-    t.includes(run.combined, 'configuring Claude Code', `${signal}: the run had entered the Claude phase`);
-    t.excludes(run.combined, 'configuring Codex', `${signal}: the run must never reach the Codex phase`);
+    t.includes(run.combined, '┌─ Claude Code', `${signal}: the run had entered the Claude phase`);
+    t.excludes(run.combined, '┌─ Codex', `${signal}: the run must never reach the Codex phase`);
     t.ok(!existsSync(codexConfigPath(ws)), `${signal}: Codex config must not be written`);
     t.ok(!existsSync(codexAuthPath(ws)), `${signal}: Codex auth must not be written`);
     const remnants = readdirSync(ws.root).filter(name => name.startsWith('floway-setup.'));
@@ -2008,8 +2021,8 @@ test('codex', 'independent agents: codex failure keeps a configured Claude and e
     fakeCodexAppServerMode: 'error',
   });
   t.ok(run.code !== 0, 'a codex failure must make the aggregate exit nonzero');
-  t.includes(run.combined, 'Claude Code: configured', 'Claude remains configured despite the codex failure');
-  t.includes(run.combined, 'Codex:       failed', 'Codex is reported as failed');
+  t.includes(run.combined, 'Claude Code  [configured]', 'Claude remains configured despite the codex failure');
+  t.includes(run.combined, 'Codex  [failed]', 'Codex is reported as failed');
   const settings = readSettings(settingsPathFor(ws)) as { env: Record<string, string> };
   t.equal(settings.env.ANTHROPIC_AUTH_TOKEN, SENTINEL_KEY, 'Claude settings survive the codex failure');
 });
@@ -2020,8 +2033,8 @@ test('codex', 'both agents configure independently when both succeed', async t =
   placeFakeCodex(ws.binDir);
   const run = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: bothConfig() });
   t.equal(run.code, 0, `both agents should configure:\n${run.combined}`);
-  t.includes(run.combined, 'Claude Code: configured', 'Claude configured');
-  t.includes(run.combined, 'Codex:       configured', 'Codex configured');
+  t.includes(run.combined, 'Claude Code  [configured]', 'Claude configured');
+  t.includes(run.combined, 'Codex  [configured]', 'Codex configured');
   assertCodexBaseEdits(t, ws, modelServer.url);
   t.ok(existsSync(settingsPathFor(ws)), 'Claude settings written');
 });
@@ -2201,7 +2214,7 @@ test('codex', 'PowerShell: Windows auth replacement and rollback preserve owner-
   t.ok(restoreEnd >= 0, 'app-server function marker exists after restore function');
   t.includes(
     restoreBody,
-    'Restore-FlowayManagedFile -Existed $script:CodexAuthExisted -Backup $script:CodexAuthBackup -Path $script:CodexAuthPath -Protect',
+    'Restore-FlowayManagedFile -Existed $script:CodexAuthExisted -Backup $script:CodexAuthBackup -Path $script:CodexAuthPath -OriginalLabel \'ChatGPT login\' -CreatedLabel \'Codex auth\' -Protect',
     'Codex auth rollback requests owner-only protection',
   );
 });
@@ -2333,8 +2346,8 @@ test('codex', 'PowerShell: independent agents keep a configured Claude when code
   placeFakeCodex(ws.binDir);
   const run = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: bothConfig(), fakeCodexAppServerMode: 'error' });
   t.ok(run.code !== 0, 'a codex failure must make the aggregate exit nonzero');
-  t.includes(run.combined, 'Claude Code: configured', 'Claude remains configured despite the codex failure');
-  t.includes(run.combined, 'Codex:       failed', 'Codex is reported as failed');
+  t.includes(run.combined, 'Claude Code  [configured]', 'Claude remains configured despite the codex failure');
+  t.includes(run.combined, 'Codex  [failed]', 'Codex is reported as failed');
 });
 
 // --- Codex real-binary smoke test -------------------------------------------
@@ -2359,6 +2372,214 @@ test('codex', 'end-to-end against the real pinned Codex 0.144.1 app-server write
   t.includes(configText, `base_url = "${codexBase}"`, 'real config.toml carries the provider base_url');
   t.includes(configText, 'model = "gpt-5-codex"', 'real config.toml carries the selected model');
   assertStagedAuth(t, ws, modelServer.url, started, codexHome);
+});
+
+// --- output contract --------------------------------------------------------
+
+// Escape sequences are stripped and CRLF normalized; each line is right-trimmed
+// and trailing blank lines dropped, but interior blank lines (the blank line
+// that precedes every `┌─` phase) are preserved so the tree structure is
+// compared, not just the words.
+const ANSI_PATTERN = /\[[0-9;]*m/g;
+const stripAnsi = (text: string): string => text.replace(ANSI_PATTERN, '');
+const normalizeLines = (text: string): string =>
+  stripAnsi(text).replace(/\r\n/g, '\n').replace(/[ \t]+$/gm, '').replace(/\n+$/, '');
+const hasAnsi = (text: string): boolean => new RegExp('\\x1b\\[[0-9;]*m').test(text);
+
+// A hermetic single-agent run needs the harness to fully control discovery. The
+// Codex CLI is discovered at absolute paths the sandbox cannot hide, so a host
+// with a system Codex would emit a legitimate "multiple installations" warning;
+// Claude's absolute candidates are absent here, so the clean-stderr contract is
+// asserted through the Claude phase and guarded against a stray global Claude.
+const GLOBAL_CLAUDE_LOCATIONS = ['/opt/homebrew/bin/claude', '/usr/local/bin/claude'];
+const globalClaudePresent = (): boolean => GLOBAL_CLAUDE_LOCATIONS.some(p => existsSync(p));
+
+test('claude', 'Bash and PowerShell emit an identical happy-path stdout line sequence', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const bashWs = makeWorkspace();
+  placeFakeClaude(bashWs.binDir);
+  placeFakeCodex(bashWs.binDir);
+  const bash = await runShellInstaller({ workspace: bashWs, baseUrl: modelServer.url, configuration: bothConfig() });
+  t.equal(bash.code, 0, `Bash happy path should succeed:\n${bash.combined}`);
+
+  modelServer.reset();
+  const psWs = makeWorkspace();
+  placeFakeClaude(psWs.binDir);
+  placeFakeCodex(psWs.binDir);
+  const ps = await runPowerShellInstaller({ workspace: psWs, baseUrl: modelServer.url, configuration: bothConfig() });
+  t.equal(ps.code, 0, `PowerShell happy path should succeed:\n${ps.combined}`);
+
+  t.equal(normalizeLines(ps.stdout), normalizeLines(bash.stdout), 'the two installers must print the same stdout tree');
+  // Sanity: the compared text is the real box-line tree, not an empty string.
+  t.includes(normalizeLines(bash.stdout), '\n┌─ Claude Code\n', 'the tree opens the Claude Code phase');
+  t.includes(normalizeLines(bash.stdout), '\n┌─ Summary\n', 'the tree closes with a Summary phase');
+  t.includes(normalizeLines(bash.stdout), '│  Claude Code  [configured]', 'Summary lists Claude Code with its state');
+  t.includes(normalizeLines(bash.stdout), '│  Codex  [configured]', 'Summary lists Codex with its state');
+});
+
+test('claude', 'a fully successful run keeps stderr empty and emits no escape codes when captured', async t => {
+  if (globalClaudePresent()) skip('a system Claude Code is installed at a known location; discovery is not hermetic');
+  const bashWs = makeWorkspace();
+  placeFakeClaude(bashWs.binDir);
+  const bash = await runShellInstaller({ workspace: bashWs, baseUrl: modelServer.url, configuration: claudeConfig() });
+  t.equal(bash.code, 0, `should succeed:\n${bash.combined}`);
+  t.equal(bash.stderr.trim(), '', 'a clean Bash run writes nothing to stderr');
+  t.ok(!hasAnsi(bash.combined), 'captured Bash output carries no escape sequences');
+
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  modelServer.reset();
+  const psWs = makeWorkspace();
+  placeFakeClaude(psWs.binDir);
+  const ps = await runPowerShellInstaller({ workspace: psWs, baseUrl: modelServer.url, configuration: claudeConfig() });
+  t.equal(ps.code, 0, `should succeed:\n${ps.combined}`);
+  t.equal(ps.stderr.trim(), '', 'a clean PowerShell run writes nothing to stderr');
+  t.ok(!hasAnsi(ps.combined), 'captured PowerShell output carries no escape sequences');
+});
+
+test('claude', 'Bash paints the box-line tree only when color is enabled and honors NO_COLOR', async t => {
+  const ws = makeWorkspace();
+  placeFakeClaude(ws.binDir);
+  const forced = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: claudeConfig(), forceColor: true });
+  t.equal(forced.code, 0, `forced-color run should succeed:\n${forced.combined}`);
+  t.includes(forced.stdout, '[36m┌─ Claude Code[0m', 'the phase header is painted cyan on stdout');
+  t.includes(forced.stdout, '[32m│  Claude Code configured.[0m', 'a success line is painted green on stdout');
+  t.ok(!hasAnsi(forced.stderr), 'a successful run leaves stderr escape-free even under forced color');
+
+  const suppressed = makeWorkspace();
+  placeFakeClaude(suppressed.binDir);
+  const noColor = await runShellInstaller({ workspace: suppressed, baseUrl: modelServer.url, configuration: claudeConfig(), forceColor: true, noColor: true });
+  t.equal(noColor.code, 0, `NO_COLOR run should succeed:\n${noColor.combined}`);
+  t.ok(!hasAnsi(noColor.combined), 'NO_COLOR wins over forced color on both streams');
+  t.includes(noColor.stdout, '┌─ Claude Code', 'the plain tree is still present without color');
+});
+
+test('claude', 'Bash routes errors and rollback notices to stderr in red and yellow under forced color', async t => {
+  const ws = makeWorkspace();
+  placeFakeClaude(ws.binDir);
+  const configDir = join(ws.home, '.claude');
+  mkdirSync(configDir, { recursive: true });
+  writeFileSync(settingsPathFor(ws), JSON.stringify({ theme: 'light', env: { KEEP: '1' } }));
+  const run = await runShellInstaller({
+    workspace: ws, baseUrl: modelServer.url, configuration: claudeConfig(),
+    fakeClaudeDoctorExit: 1, forceColor: true,
+  });
+  t.ok(run.code !== 0, 'a failed doctor must fail the agent');
+  t.includes(run.stderr, '[31m│  claude doctor reported a problem:[0m', 'the primary error is painted red on stderr');
+  t.includes(run.stderr, '[33m│  Claude Code verification failed; rolling back settings.[0m', 'the rollback notice is painted yellow on stderr');
+  t.excludes(run.stdout, 'claude doctor reported a problem', 'the error does not leak onto stdout');
+  t.excludes(run.stdout, 'rolling back settings', 'the rollback notice does not leak onto stdout');
+});
+
+test('claude', 'PowerShell colors stderr under forced color, keeps stdout escape-free, and honors NO_COLOR', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  placeFakeClaude(ws.binDir);
+  const configDir = join(ws.home, '.claude');
+  mkdirSync(configDir, { recursive: true });
+  writeFileSync(settingsPathFor(ws), JSON.stringify({ theme: 'light', env: { KEEP: '1' } }));
+  const forced = await runPowerShellInstaller({
+    workspace: ws, baseUrl: modelServer.url, configuration: claudeConfig(),
+    fakeClaudeDoctorExit: 1, forceColor: true,
+  });
+  t.ok(forced.code !== 0, 'a failed doctor must fail the agent');
+  t.ok(!hasAnsi(forced.stdout), 'host-colored stdout never carries escape codes even under forced color');
+  t.includes(forced.stderr, '[31m│  claude doctor reported a problem:[0m', 'stderr is painted red for the primary error');
+  t.includes(forced.stderr, '[33m│  Claude Code verification failed; rolling back settings.[0m', 'stderr is painted yellow for the rollback notice');
+
+  const suppressed = makeWorkspace();
+  placeFakeClaude(suppressed.binDir);
+  mkdirSync(join(suppressed.home, '.claude'), { recursive: true });
+  writeFileSync(settingsPathFor(suppressed), JSON.stringify({ theme: 'light', env: { KEEP: '1' } }));
+  const noColor = await runPowerShellInstaller({
+    workspace: suppressed, baseUrl: modelServer.url, configuration: claudeConfig(),
+    fakeClaudeDoctorExit: 1, forceColor: true, noColor: true,
+  });
+  t.ok(noColor.code !== 0, 'the failure still occurs');
+  t.ok(!hasAnsi(noColor.combined), 'NO_COLOR wins over forced color on stderr too');
+  t.includes(noColor.stderr, '│  claude doctor reported a problem:', 'the plain error is still on stderr');
+});
+
+test('claude', 'a multiple-installation warning is a stderr line on both installers', async t => {
+  const bashWs = makeWorkspace();
+  placeFakeClaude(bashWs.binDir);
+  placeFakeClaude(join(bashWs.home, '.local/bin'));
+  const bash = await runShellInstaller({ workspace: bashWs, baseUrl: modelServer.url, configuration: claudeConfig() });
+  t.equal(bash.code, 0, `should succeed:\n${bash.combined}`);
+  t.includes(bash.stderr, '│  multiple Claude Code installations detected;', 'Bash writes the warning to stderr');
+  t.excludes(bash.stdout, 'multiple Claude Code installations detected', 'the warning is not on stdout');
+
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  modelServer.reset();
+  const psWs = makeWorkspace();
+  placeFakeClaude(psWs.binDir);
+  placeFakeClaude(join(psWs.home, '.local/bin'));
+  const ps = await runPowerShellInstaller({ workspace: psWs, baseUrl: modelServer.url, configuration: claudeConfig() });
+  t.equal(ps.code, 0, `should succeed:\n${ps.combined}`);
+  t.includes(ps.stderr, '│  multiple Claude Code installations detected;', 'PowerShell writes the warning to stderr');
+  t.excludes(ps.stdout, 'multiple Claude Code installations detected', 'the warning is not on stdout');
+});
+
+test('claude', 'PowerShell surfaces one primary error and rollback status on stderr without a double wrapper', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  placeFakeClaude(ws.binDir);
+  mkdirSync(join(ws.home, '.claude'), { recursive: true });
+  writeFileSync(settingsPathFor(ws), JSON.stringify({ theme: 'light', env: { KEEP: '1' } }));
+  const run = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: claudeConfig(), fakeClaudeDoctorExit: 1 });
+  t.ok(run.code !== 0, 'a failed doctor must fail the agent');
+  t.excludes(run.combined, 'setup failed', 'the removed double-wrapper phrasing must not return');
+  const errorCount = run.stderr.split('\n').filter(line => line.includes('claude doctor reported a problem:')).length;
+  t.equal(errorCount, 1, 'the primary error is printed exactly once');
+  t.includes(run.stderr, '│  Claude Code verification failed; rolling back settings.', 'the rollback status accompanies the primary error');
+  t.excludes(run.stdout, 'claude doctor reported a problem', 'the error stays off stdout');
+});
+
+test('claude', 'PowerShell rollback restore failure preserves the backup and prints manual-recovery guidance', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  placeFakeClaude(ws.binDir);
+  const configDir = join(ws.home, '.claude');
+  mkdirSync(configDir, { recursive: true });
+  const original = JSON.stringify({ theme: 'light', env: { KEEP: '1' } });
+  writeFileSync(settingsPathFor(ws), original);
+  // Verification fails (rollback is attempted) and the restore-from-backup rename
+  // itself fails; the run must warn instead of silently claiming a restore.
+  const run = await runPowerShellInstaller({
+    workspace: ws, baseUrl: modelServer.url, configuration: claudeConfig(),
+    fakeClaudeDoctorExit: 1, failRestore: true,
+  });
+  t.ok(run.code !== 0, 'the agent still fails');
+  t.includes(run.stderr, '│  could not restore', 'a rollback-failure warning is printed to stderr');
+  t.includes(run.stderr, settingsPathFor(ws), 'the warning names the settings path');
+  t.includes(run.stderr, 'restore it by hand', 'the warning names the manual action');
+  const backups = backupFiles(configDir);
+  t.equal(backups.length, 1, 'the backup is preserved for manual recovery');
+  t.equal(readFileSync(join(configDir, backups[0]!), 'utf8'), original, 'the preserved backup still holds the original content');
+  t.ok(readFileSync(settingsPathFor(ws), 'utf8') !== original, 'the settings were not silently restored to the original');
+});
+
+test('codex', 'PowerShell rollback restore failure preserves the Codex auth backup and names the ChatGPT login', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  placeFakeCodex(ws.binDir);
+  const home = codexHomeFor(ws);
+  mkdirSync(home, { recursive: true });
+  const priorAuth = '{"tokens":{"id_token":"old","access_token":"old","refresh_token":"old"},"OPENAI_API_KEY":null,"last_refresh":"2020-01-01T00:00:00Z"}';
+  writeFileSync(codexAuthPath(ws), priorAuth);
+  modelServer.mode = 'unauthorized';
+  try {
+    const run = await runPowerShellInstaller({
+      workspace: ws, baseUrl: modelServer.url, configuration: codexConfig(), failRestore: true,
+    });
+    t.ok(run.code !== 0, 'an unauthorized model directory must fail verification');
+    t.includes(run.stderr, '│  could not restore', 'a rollback-failure warning is printed to stderr');
+    t.includes(run.stderr, 'ChatGPT login', 'the warning names the preserved ChatGPT login');
+    t.includes(run.stderr, 'restore it by hand', 'the warning names the manual action');
+    const backups = codexBackupFiles(home, 'auth.json');
+    t.equal(backups.length, 1, 'the auth backup is preserved for manual recovery');
+  } finally {
+    modelServer.mode = 'ok';
+  }
 });
 
 // --- run --------------------------------------------------------------------
