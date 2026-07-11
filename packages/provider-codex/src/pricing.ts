@@ -49,30 +49,48 @@ const CODEX_MODEL_PRICING: readonly (readonly [key: string | RegExp, pricing: Mo
   // Standard rates match models.dev + OpenRouter; each variant's catalog
   // entry advertises a `priority` service tier (no `flex` lane), and the
   // priority per-token rate is a flat 2× standard across the family —
-  // distinct from GPT-5.5's 2.5× multiplier.
+  // distinct from GPT-5.5's 2.5× multiplier. Cache-write is input × 1.25 and
+  // cache-read is input × 0.10; the priority overlay omits cache-write, so it
+  // inherits the base cache-write rate.
+  //
+  // OpenAI charges a higher full-request rate once a prompt crosses 272k input
+  // tokens (input/cache double, output ×1.5); the family context window is
+  // 372k, so the top ~100k lands in this tier. A request that is both priority
+  // and >272k has no separately-published combined rate, so it resolves to the
+  // long-context rate (the documented default in `resolveEffectivePricing`).
+  // https://developers.openai.com/api/docs/pricing
+  // https://github.com/openai/codex/blob/d2d00b6632dc991aa4471db0529773029cae5d68/codex-rs/models-manager/models.json
+  // Cross-checked against caozhiyuan/copilot-api:
+  // https://github.com/caozhiyuan/copilot-api/blob/5a28eee7ced4fda51b6b224fb8723df5e6534708/src/lib/token-usage/pricing.ts#L98-L145
   ['gpt-5.6-sol', {
     input: 5,
     input_cache_read: 0.5,
+    input_cache_write: 6.25,
     output: 30,
     tiers: {
       priority: { input: 10, input_cache_read: 1, output: 60 },
     },
+    inputLengthTiers: [{ minInputTokens: 272000, input: 10, input_cache_read: 1, input_cache_write: 12.5, output: 45 }],
   }],
   ['gpt-5.6-terra', {
     input: 2.5,
     input_cache_read: 0.25,
+    input_cache_write: 3.125,
     output: 15,
     tiers: {
       priority: { input: 5, input_cache_read: 0.5, output: 30 },
     },
+    inputLengthTiers: [{ minInputTokens: 272000, input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 22.5 }],
   }],
   ['gpt-5.6-luna', {
     input: 1,
     input_cache_read: 0.1,
+    input_cache_write: 1.25,
     output: 6,
     tiers: {
       priority: { input: 2, input_cache_read: 0.2, output: 12 },
     },
+    inputLengthTiers: [{ minInputTokens: 272000, input: 2, input_cache_read: 0.2, input_cache_write: 2.5, output: 9 }],
   }],
   ['gpt-5.5', {
     input: 5,

@@ -50,6 +50,12 @@ export interface UsageRecord {
   // for the same (keyId, model, upstream, modelKey, hour) are stored as
   // separate buckets so per-tier pricing overrides apply correctly.
   tier: string | null;
+  // Input-length pricing tier marker — the `minInputTokens` threshold the
+  // request's total input crossed (see `selectInputLengthTier`), or null for
+  // the base tier. Orthogonal to `tier`: it is selected per request from the
+  // prompt size before persistence, so requests of different prompt sizes land
+  // in separate buckets and resolve distinct long-context unit prices.
+  inputTier: number | null;
   requests: number;
   // Disjoint per-dimension token counts for this bucket. The tier the bucket
   // was stamped under lives on the `tier` field above — do not encode it
@@ -69,9 +75,11 @@ export interface UsageRecord {
 // reported service-tier marker (Anthropic `usage.speed`, OpenAI
 // `usage.service_tier`) that selects an override against `cost.tiers`
 // before any per-dimension unit-price lookup; absent / null = the model's
-// base pricing applies.
+// base pricing applies. `inputTier` is the orthogonal input-length marker,
+// derived from the disjoint input total at recording time.
 export interface TokenUsage extends Partial<Record<BillingDimension, number>> {
   tier?: string | null;
+  inputTier?: number | null;
 }
 
 export type SearchUsageAction = 'search' | 'fetch_page';
@@ -179,10 +187,10 @@ export interface SessionsRepo {
 }
 
 export interface UsageRepo {
-  // Additive upsert: on (keyId, model, upstream, modelKey, hour, tier)
-  // conflict, token counts are summed. cost is COALESCED — the first write
-  // within a bucket establishes the pricing snapshot for that row, later
-  // writes that share the bucket keep the original snapshot.
+  // Additive upsert: on (keyId, model, upstream, modelKey, hour, tier,
+  // inputTier) conflict, token counts are summed. cost is COALESCED — the
+  // first write within a bucket establishes the pricing snapshot for that row,
+  // later writes that share the bucket keep the original snapshot.
   record(record: UsageRecord): Promise<void>;
   query(opts: { keyId?: string; start: string; end: string }): Promise<UsageRecord[]>;
   listAll(): Promise<UsageRecord[]>;

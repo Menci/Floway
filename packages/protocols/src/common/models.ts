@@ -23,6 +23,10 @@ export type BillingDimension = 'input' | 'input_cache_read' | 'input_cache_write
 // Iteration form of BillingDimension; the type union is the source of truth.
 export const BILLING_DIMENSIONS: readonly BillingDimension[] = ['input', 'input_cache_read', 'input_cache_write', 'input_cache_write_1h', 'input_image', 'output', 'output_image'];
 
+// The input-side dimensions. Their disjoint sum is a request's total prompt
+// size, which selects the input-length pricing tier (see `selectInputLengthTier`).
+export const INPUT_BILLING_DIMENSIONS: readonly BillingDimension[] = ['input', 'input_cache_read', 'input_cache_write', 'input_cache_write_1h', 'input_image'];
+
 // Per-model pricing in USD per million tokens, aligned with the sst/models.dev
 // `Cost` schema (https://github.com/sst/models.dev/blob/main/packages/core/src/schema.ts).
 // Keys are billing dimensions: bare `input`/`output` are the text/fallback rate
@@ -33,9 +37,31 @@ export const BILLING_DIMENSIONS: readonly BillingDimension[] = ['input', 'input_
 // OpenAI priority/flex). Each tier key is the wire-value the upstream stamps
 // on the usage object (`fast`, `priority`, `flex`, ...). An overlay may be
 // empty — that acknowledges the tier without changing any rate, so every
-// dimension inherits base pricing. Resolve through
-// `resolveEffectivePricing(pricing, usage.tier)` before any unit-price lookup.
+// dimension inherits base pricing.
+//
+// `inputLengthTiers` is the orthogonal input-total axis: OpenAI's long-context
+// pricing charges a higher full-request rate once a prompt crosses a token
+// threshold (272k for the GPT-5.6 family). Unlike a service tier — which the
+// upstream stamps on the usage object and which aggregates identically across
+// requests — an input-length tier depends on the per-request prompt size, so
+// it is selected before persistence (see `selectInputLengthTier`) and stored
+// as a marker on the usage row. Both axes resolve through
+// `resolveEffectivePricing(pricing, usage.tier, usage.inputTier)` before any
+// unit-price lookup.
+// https://developers.openai.com/api/docs/pricing
 export interface ModelPricing extends Partial<Record<BillingDimension, number>> {
+  tiers?: Record<string, Partial<Record<BillingDimension, number>>>;
+  inputLengthTiers?: readonly InputLengthTier[];
+}
+
+// One input-length pricing tier. Its bare dimension keys are the full-request
+// rates that apply once a request's total input reaches `minInputTokens`. The
+// optional `tiers` map holds explicitly-priced (service-tier × input-length)
+// combinations for that upstream that publishes them; when absent, a request
+// that carries both a non-base service tier and this input-length tier falls
+// back to the documented default composition in `resolveEffectivePricing`.
+export interface InputLengthTier extends Partial<Record<BillingDimension, number>> {
+  minInputTokens: number;
   tiers?: Record<string, Partial<Record<BillingDimension, number>>>;
 }
 
@@ -66,19 +92,58 @@ export const unitPriceForDimension = (pricing: ModelPricing | null, dimension: B
   }
 };
 
-// Fold the per-tier override (if any) into a flat ModelPricing snapshot, so
+// Fold the per-tier overrides (if any) into a flat ModelPricing snapshot, so
 // every downstream `unitPriceForDimension` call sees one self-contained map.
-// Per-dimension shallow merge: overlay keys win, omitted keys inherit the
-// base rate (and then flow through `unitPriceForDimension`'s fallback chain).
-// Returns a fresh object that never carries `tiers` — recursion would not
-// match any real billing surface. An unknown or absent tier returns the base
-// snapshot unchanged (sans `tiers`), so old usage rows with no tier carry on
-// pricing identically to before.
-export const resolveEffectivePricing = (pricing: ModelPricing | null, tier: string | null | undefined): ModelPricing | null => {
+// Two orthogonal axes compose here, lowest precedence first:
+//   1. base rates
+//   2. service-tier overlay        — `tiers[tier]`
+//   3. input-length tier dimensions — the matched `inputLengthTiers` entry
+//   4. explicit (service × input-length) combination — that entry's `tiers[tier]`
+// Per-dimension shallow merge at each step: a later step's keys win, omitted
+// keys inherit the earlier rate (and then flow through
+// `unitPriceForDimension`'s fallback chain). The documented default when a
+// request carries both a non-base service tier and a non-base input-length
+// tier — and the upstream publishes no explicit combination — is that the
+// input-length rates win (long-context pricing is a full-request rate, not a
+// multiplier stacked on the service tier). An upstream that does publish a
+// combined price expresses it via the input-length tier's own `tiers` map.
+// Returns a fresh object that never carries `tiers`/`inputLengthTiers` —
+// recursion would not match any real billing surface. Unknown or absent
+// markers select no overlay, so old usage rows price identically to before.
+export const resolveEffectivePricing = (
+  pricing: ModelPricing | null,
+  tier: string | null | undefined,
+  inputTier?: number | null,
+): ModelPricing | null => {
   if (!pricing) return null;
-  const { tiers, ...base } = pricing;
-  const override = tier != null ? tiers?.[tier] : undefined;
-  return override ? { ...base, ...override } : base;
+  const { tiers, inputLengthTiers, ...base } = pricing;
+  const effective: Partial<Record<BillingDimension, number>> = { ...base };
+  const serviceOverlay = tier != null ? tiers?.[tier] : undefined;
+  if (serviceOverlay) Object.assign(effective, serviceOverlay);
+  const lengthTier = inputTier != null ? inputLengthTiers?.find(t => t.minInputTokens === inputTier) : undefined;
+  if (lengthTier) {
+    const { minInputTokens: _minInputTokens, tiers: lengthServiceTiers, ...lengthDims } = lengthTier;
+    Object.assign(effective, lengthDims);
+    const lengthServiceOverlay = tier != null ? lengthServiceTiers?.[tier] : undefined;
+    if (lengthServiceOverlay) Object.assign(effective, lengthServiceOverlay);
+  }
+  return effective;
+};
+
+// Pick the input-length tier a request falls into, given the disjoint sum of
+// its input dimensions. Returns the winning tier's `minInputTokens` — the
+// marker persisted on the usage row and later fed back to
+// `resolveEffectivePricing` — or null when the model declares no input-length
+// tiers or the request stays under every threshold. The highest threshold the
+// request meets wins, so overlapping tiers order themselves by size.
+export const selectInputLengthTier = (pricing: ModelPricing | null, totalInputTokens: number): number | null => {
+  let selected: number | null = null;
+  for (const tier of pricing?.inputLengthTiers ?? []) {
+    if (totalInputTokens >= tier.minInputTokens && (selected === null || tier.minInputTokens > selected)) {
+      selected = tier.minInputTokens;
+    }
+  }
+  return selected;
 };
 
 // High-level endpoint-family discriminator. A model belongs to exactly one

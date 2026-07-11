@@ -1,7 +1,7 @@
 import { currentHour } from './hour.ts';
 import { getRepo } from '../../../repo/index.ts';
 import type { TokenUsage } from '../../../repo/types.ts';
-import { BILLING_DIMENSIONS, type BillingDimension } from '@floway-dev/protocols/common';
+import { BILLING_DIMENSIONS, INPUT_BILLING_DIMENSIONS, type BillingDimension, selectInputLengthTier } from '@floway-dev/protocols/common';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
 
 export const hasTokenUsage = (usage: TokenUsage): boolean => BILLING_DIMENSIONS.some(dimension => (usage[dimension] ?? 0) > 0);
@@ -24,8 +24,8 @@ export const billableServiceTier = (tier: string | null | undefined): string | n
 };
 
 // Drop zero / undefined dimensions so a usage map only carries the dimensions
-// actually billed. `tier` (a non-numeric service-tier marker) survives the
-// filter so per-tier pricing overrides resolve at recording time.
+// actually billed. The non-numeric tier markers (`tier`, `inputTier`) survive
+// the filter so per-tier pricing overrides resolve at recording time.
 export const tokenUsage = (counts: TokenUsage): TokenUsage => {
   const out: TokenUsage = {};
   for (const dimension of BILLING_DIMENSIONS) {
@@ -33,6 +33,7 @@ export const tokenUsage = (counts: TokenUsage): TokenUsage => {
     if (value > 0) out[dimension] = value;
   }
   if (counts.tier != null) out.tier = counts.tier;
+  if (counts.inputTier != null) out.inputTier = counts.inputTier;
   return out;
 };
 
@@ -155,7 +156,12 @@ const splitModalityCounts = (
 };
 
 export const recordTokenUsage = async (keyId: string, modelIdentity: TelemetryModelIdentity, usage: TokenUsage): Promise<void> => {
-  const { tier, ...tokens } = usage;
+  const { tier, inputTier: _incomingInputTier, ...tokens } = usage;
+  // The input-length tier is a per-request property of the prompt size, not
+  // something the upstream stamps, so it is selected here — the persistence
+  // boundary that has both the pricing snapshot and the disjoint input counts.
+  const totalInput = INPUT_BILLING_DIMENSIONS.reduce((sum, dimension) => sum + (tokens[dimension] ?? 0), 0);
+  const inputTier = selectInputLengthTier(modelIdentity.cost, totalInput);
   await Promise.all([
     getRepo().usage.record({
       keyId,
@@ -164,6 +170,7 @@ export const recordTokenUsage = async (keyId: string, modelIdentity: TelemetryMo
       modelKey: modelIdentity.modelKey,
       hour: currentHour(),
       tier: tier ?? null,
+      inputTier,
       requests: 1,
       tokens,
       cost: modelIdentity.cost,

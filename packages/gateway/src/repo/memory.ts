@@ -229,6 +229,7 @@ interface UsageBucketIdentity {
   modelKey: string;
   hour: string;
   tier: string | null;
+  inputTier: number | null;
 }
 
 interface UsageBucketState extends UsageBucketIdentity {
@@ -241,11 +242,11 @@ class MemoryUsageRepo implements UsageRepo {
   private store = new Map<string, UsageBucketState>();
 
   private key(r: UsageBucketIdentity): string {
-    return [r.keyId, r.model, r.upstream ?? '', r.modelKey, r.hour, r.tier ?? ''].join('\0');
+    return [r.keyId, r.model, r.upstream ?? '', r.modelKey, r.hour, r.tier ?? '', r.inputTier ?? ''].join('\0');
   }
 
   private dimensionEntries(record: UsageRecord): { dimension: BillingDimension; tokens: number; unitPrice: number | null }[] {
-    const effective = resolveEffectivePricing(record.cost, record.tier);
+    const effective = resolveEffectivePricing(record.cost, record.tier, record.inputTier);
     return BILLING_DIMENSIONS.flatMap(dimension => {
       const tokens = record.tokens[dimension] ?? 0;
       return tokens > 0 ? [{ dimension, tokens, unitPrice: unitPriceForDimension(effective, dimension) }] : [];
@@ -261,14 +262,14 @@ class MemoryUsageRepo implements UsageRepo {
       const unitPrice = state.unitPrices[dimension];
       if (unitPrice !== undefined) (cost ??= {})[dimension] = unitPrice;
     }
-    return { keyId: state.keyId, model: state.model, upstream: state.upstream ?? null, modelKey: state.modelKey, hour: state.hour, tier: state.tier, requests: state.requests, tokens, cost };
+    return { keyId: state.keyId, model: state.model, upstream: state.upstream ?? null, modelKey: state.modelKey, hour: state.hour, tier: state.tier, inputTier: state.inputTier, requests: state.requests, tokens, cost };
   }
 
   private bucket(record: UsageRecord): UsageBucketState {
     const k = this.key(record);
     let state = this.store.get(k);
     if (!state) {
-      state = { keyId: record.keyId, model: record.model, upstream: record.upstream ?? null, modelKey: record.modelKey, hour: record.hour, tier: record.tier, tokens: {}, unitPrices: {}, requests: 0 };
+      state = { keyId: record.keyId, model: record.model, upstream: record.upstream ?? null, modelKey: record.modelKey, hour: record.hour, tier: record.tier, inputTier: record.inputTier, tokens: {}, unitPrices: {}, requests: 0 };
       this.store.set(k, state);
     }
     return state;

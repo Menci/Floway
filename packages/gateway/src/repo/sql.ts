@@ -368,7 +368,7 @@ class SqlSessionsRepo implements SessionsRepo {
 }
 
 const dimensionRows = (record: UsageRecord): { dimension: BillingDimension; tokens: number; unitPrice: number | null }[] => {
-  const effective = resolveEffectivePricing(record.cost, record.tier);
+  const effective = resolveEffectivePricing(record.cost, record.tier, record.inputTier);
   return BILLING_DIMENSIONS.flatMap(dimension => {
     const tokens = record.tokens[dimension] ?? 0;
     return tokens > 0 ? [{ dimension, tokens, unitPrice: unitPriceForDimension(effective, dimension) }] : [];
@@ -383,19 +383,19 @@ class SqlUsageRepo implements UsageRepo {
     const statements: SqlPreparedStatement[] = dimensionRows(record).map(row =>
       this.db
         .prepare(
-          `INSERT INTO usage (key_id, model, upstream, model_key, hour, tier, dimension, tokens, unit_price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `INSERT INTO usage (key_id, model, upstream, model_key, hour, tier, input_tier, dimension, tokens, unit_price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT DO UPDATE SET
              tokens = tokens + excluded.tokens,
              unit_price = COALESCE(unit_price, excluded.unit_price)`,
         )
-        .bind(record.keyId, record.model, upstream, record.modelKey, record.hour, record.tier, row.dimension, row.tokens, row.unitPrice));
+        .bind(record.keyId, record.model, upstream, record.modelKey, record.hour, record.tier, record.inputTier, row.dimension, row.tokens, row.unitPrice));
     statements.push(
       this.db
         .prepare(
-          `INSERT INTO usage_requests (key_id, model, upstream, model_key, hour, tier, requests) VALUES (?, ?, ?, ?, ?, ?, ?)
+          `INSERT INTO usage_requests (key_id, model, upstream, model_key, hour, tier, input_tier, requests) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT DO UPDATE SET requests = requests + excluded.requests`,
         )
-        .bind(record.keyId, record.model, upstream, record.modelKey, record.hour, record.tier, record.requests),
+        .bind(record.keyId, record.model, upstream, record.modelKey, record.hour, record.tier, record.inputTier, record.requests),
     );
     await runStatements(this.db, statements);
   }
@@ -405,11 +405,11 @@ class SqlUsageRepo implements UsageRepo {
     const binds = opts.keyId ? [opts.keyId, opts.start, opts.end] : [opts.start, opts.end];
     const [{ results: dimensions }, { results: requests }] = await Promise.all([
       this.db
-        .prepare(`SELECT key_id, model, upstream, model_key, hour, tier, dimension, tokens, unit_price FROM usage WHERE ${dimensionWhere}`)
+        .prepare(`SELECT key_id, model, upstream, model_key, hour, tier, input_tier, dimension, tokens, unit_price FROM usage WHERE ${dimensionWhere}`)
         .bind(...binds)
         .all<UsageDimensionRow>(),
       this.db
-        .prepare(`SELECT key_id, model, upstream, model_key, hour, tier, requests FROM usage_requests WHERE ${dimensionWhere}`)
+        .prepare(`SELECT key_id, model, upstream, model_key, hour, tier, input_tier, requests FROM usage_requests WHERE ${dimensionWhere}`)
         .bind(...binds)
         .all<UsageRequestRow>(),
     ]);
@@ -418,8 +418,8 @@ class SqlUsageRepo implements UsageRepo {
 
   async listAll(): Promise<UsageRecord[]> {
     const [{ results: dimensions }, { results: requests }] = await Promise.all([
-      this.db.prepare('SELECT key_id, model, upstream, model_key, hour, tier, dimension, tokens, unit_price FROM usage').all<UsageDimensionRow>(),
-      this.db.prepare('SELECT key_id, model, upstream, model_key, hour, tier, requests FROM usage_requests').all<UsageRequestRow>(),
+      this.db.prepare('SELECT key_id, model, upstream, model_key, hour, tier, input_tier, dimension, tokens, unit_price FROM usage').all<UsageDimensionRow>(),
+      this.db.prepare('SELECT key_id, model, upstream, model_key, hour, tier, input_tier, requests FROM usage_requests').all<UsageRequestRow>(),
     ]);
     return assembleUsageRecords(dimensions, requests);
   }
@@ -430,20 +430,20 @@ class SqlUsageRepo implements UsageRepo {
     // dimensions absent from the new record do not linger.
     const statements: SqlPreparedStatement[] = [
       this.db
-        .prepare("DELETE FROM usage WHERE key_id = ? AND model = ? AND COALESCE(upstream, '') = COALESCE(?, '') AND model_key = ? AND hour = ? AND COALESCE(tier, '') = COALESCE(?, '')")
-        .bind(record.keyId, record.model, upstream, record.modelKey, record.hour, record.tier),
+        .prepare("DELETE FROM usage WHERE key_id = ? AND model = ? AND COALESCE(upstream, '') = COALESCE(?, '') AND model_key = ? AND hour = ? AND COALESCE(tier, '') = COALESCE(?, '') AND COALESCE(input_tier, 0) = COALESCE(?, 0)")
+        .bind(record.keyId, record.model, upstream, record.modelKey, record.hour, record.tier, record.inputTier),
       ...dimensionRows(record).map(row =>
         this.db
-          .prepare('INSERT INTO usage (key_id, model, upstream, model_key, hour, tier, dimension, tokens, unit_price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-          .bind(record.keyId, record.model, upstream, record.modelKey, record.hour, record.tier, row.dimension, row.tokens, row.unitPrice)),
+          .prepare('INSERT INTO usage (key_id, model, upstream, model_key, hour, tier, input_tier, dimension, tokens, unit_price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+          .bind(record.keyId, record.model, upstream, record.modelKey, record.hour, record.tier, record.inputTier, row.dimension, row.tokens, row.unitPrice)),
     ];
     statements.push(
       this.db
         .prepare(
-          `INSERT INTO usage_requests (key_id, model, upstream, model_key, hour, tier, requests) VALUES (?, ?, ?, ?, ?, ?, ?)
+          `INSERT INTO usage_requests (key_id, model, upstream, model_key, hour, tier, input_tier, requests) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT DO UPDATE SET requests = excluded.requests`,
         )
-        .bind(record.keyId, record.model, upstream, record.modelKey, record.hour, record.tier, record.requests),
+        .bind(record.keyId, record.model, upstream, record.modelKey, record.hour, record.tier, record.inputTier, record.requests),
     );
     await runStatements(this.db, statements);
   }
@@ -460,6 +460,7 @@ interface UsageDimensionRow {
   model_key: string;
   hour: string;
   tier: string | null;
+  input_tier: number | null;
   dimension: string;
   tokens: number;
   unit_price: number | null;
@@ -472,11 +473,12 @@ interface UsageRequestRow {
   model_key: string;
   hour: string;
   tier: string | null;
+  input_tier: number | null;
   requests: number;
 }
 
-const usageBucketKey = (row: { key_id: string; model: string; upstream: string | null; model_key: string; hour: string; tier: string | null }): string =>
-  [row.key_id, row.model, row.upstream ?? '', row.model_key, row.hour, row.tier ?? ''].join('\0');
+const usageBucketKey = (row: { key_id: string; model: string; upstream: string | null; model_key: string; hour: string; tier: string | null; input_tier: number | null }): string =>
+  [row.key_id, row.model, row.upstream ?? '', row.model_key, row.hour, row.tier ?? '', row.input_tier ?? ''].join('\0');
 
 // Reassemble per-bucket UsageRecords from the two narrow tables. The dimension
 // rows carry the disjoint counts and the per-dimension unit_price snapshot,
@@ -485,11 +487,11 @@ const usageBucketKey = (row: { key_id: string; model: string; upstream: string |
 const assembleUsageRecords = (dimensions: readonly UsageDimensionRow[], requests: readonly UsageRequestRow[]): UsageRecord[] => {
   const byBucket = new Map<string, UsageRecord>();
 
-  const ensureRecord = (row: { key_id: string; model: string; upstream: string | null; model_key: string; hour: string; tier: string | null }): UsageRecord => {
+  const ensureRecord = (row: { key_id: string; model: string; upstream: string | null; model_key: string; hour: string; tier: string | null; input_tier: number | null }): UsageRecord => {
     const key = usageBucketKey(row);
     let record = byBucket.get(key);
     if (!record) {
-      record = { keyId: row.key_id, model: row.model, upstream: row.upstream, modelKey: row.model_key, hour: row.hour, tier: row.tier, requests: 0, tokens: {}, cost: null };
+      record = { keyId: row.key_id, model: row.model, upstream: row.upstream, modelKey: row.model_key, hour: row.hour, tier: row.tier, inputTier: row.input_tier, requests: 0, tokens: {}, cost: null };
       byBucket.set(key, record);
     }
     return record;
