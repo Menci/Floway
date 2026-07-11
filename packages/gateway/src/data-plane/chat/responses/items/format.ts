@@ -21,6 +21,15 @@ const itemTypePrefixes = {
   computer_call_output: 'cco',
   tool_search_call: 'ts',
   tool_search_output: 'tso',
+  // OpenAI's Programmatic Tool Calling guide uses `prog_` and `prog_out_`
+  // for these item ids. Codex independently uses `at_` for additional-tools
+  // items in its durable history. These are gateway-generated storage ids,
+  // not validation rules for opaque upstream ids.
+  // https://developers.openai.com/api/docs/guides/tools-programmatic-tool-calling
+  // https://github.com/openai/codex/blob/385c0a9351e2199929e01f7864ec78a8f7d5e580/codex-rs/protocol/src/models.rs#L1216-L1234
+  additional_tools: 'at',
+  program: 'prog',
+  program_output: 'prog_out',
   compaction: 'cmp',
   // `compaction_summary` is the Codex-side wire alias for `compaction` (the
   // protocol declares them as one variant via `#[serde(alias = ...)]`); both
@@ -105,14 +114,12 @@ export const isStoredResponseId = (value: string): boolean =>
 // predicate accepts the prefix, and the crc32 of `body` matches the
 // checksum.
 const isValidStoredId = (value: string, isPrefixValid: (prefix: string) => boolean): boolean => {
-  const firstSeparator = value.indexOf('_');
-  if (firstSeparator <= 0) return false;
-  const checksumStart = firstSeparator + 1;
-  const checksumEnd = checksumStart + 6;
-  if (value[checksumEnd] !== '_') return false;
-  const prefix = value.slice(0, firstSeparator);
-  const checksum = value.slice(checksumStart, checksumEnd);
-  const body = value.slice(checksumEnd + 1);
+  const bodySeparator = value.length - 23;
+  const checksumSeparator = bodySeparator - 7;
+  if (checksumSeparator <= 0 || value[checksumSeparator] !== '_' || value[bodySeparator] !== '_') return false;
+  const prefix = value.slice(0, checksumSeparator);
+  const checksum = value.slice(checksumSeparator + 1, bodySeparator);
+  const body = value.slice(bodySeparator + 1);
   if (!isPrefixValid(prefix)) return false;
   if (!checksumPattern.test(checksum) || !bodyPattern.test(body)) return false;
   return crc32Checksum(body) === checksum;

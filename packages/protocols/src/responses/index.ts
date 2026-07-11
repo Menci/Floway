@@ -92,6 +92,9 @@ export type ResponsesInputItem =
   | ResponsesComputerCallOutputItem
   | ResponsesToolSearchCallItem
   | ResponsesToolSearchOutputItem
+  | ResponsesInputAdditionalToolsItem
+  | ResponsesProgramItem
+  | ResponsesProgramOutputItem
   | ResponsesCompactionItem
   | ResponsesCompactionTriggerItem
   | ResponsesInputImageGenerationCall
@@ -140,6 +143,10 @@ export interface ResponsesInputReasoning {
   encrypted_content?: string;
 }
 
+export type ResponsesToolCaller =
+  | { type: 'direct' }
+  | { type: 'program'; caller_id: string };
+
 export interface ResponsesFunctionToolCallItem {
   type: 'function_call';
   id?: string;
@@ -147,6 +154,7 @@ export interface ResponsesFunctionToolCallItem {
   name: string;
   arguments: string;
   status: 'completed' | 'in_progress' | 'incomplete';
+  caller?: ResponsesToolCaller | null;
 }
 
 export interface ResponsesFunctionCallOutputItem {
@@ -157,6 +165,7 @@ export interface ResponsesFunctionCallOutputItem {
   // tool returning `input_image` parts) in addition to the plain-string form.
   output: string | ResponsesInputContent[];
   status?: 'completed' | 'incomplete';
+  caller?: ResponsesToolCaller | null;
 }
 
 // Freeform custom tool invocation echoed back to the model in conversation
@@ -170,6 +179,7 @@ export interface ResponsesCustomToolCallItem {
   id?: string;
   namespace?: string;
   status?: string;
+  caller?: ResponsesToolCaller | null;
 }
 
 export interface ResponsesCustomToolCallOutputItem {
@@ -178,6 +188,7 @@ export interface ResponsesCustomToolCallOutputItem {
   output: string;
   id?: string;
   status?: string;
+  caller?: ResponsesToolCaller | null;
 }
 
 export interface ResponsesItemReference {
@@ -232,6 +243,29 @@ export interface ResponsesToolSearchCallItem extends ResponsesPermissiveItem<'to
 export interface ResponsesToolSearchOutputItem extends ResponsesPermissiveItem<'tool_search_output'> {
   call_id?: string;
   output?: unknown;
+}
+
+export interface ResponsesInputAdditionalToolsItem {
+  type: 'additional_tools';
+  role: 'developer';
+  tools: ResponsesTool[];
+  id?: string | null;
+}
+
+export interface ResponsesProgramItem {
+  type: 'program';
+  id: string;
+  call_id: string;
+  code: string;
+  fingerprint: string;
+}
+
+export interface ResponsesProgramOutputItem {
+  type: 'program_output';
+  id: string;
+  call_id: string;
+  result: string;
+  status: 'completed' | 'incomplete';
 }
 
 export type ResponsesCompactionItem = ResponsesPermissiveItem<'compaction'>;
@@ -373,7 +407,11 @@ export interface ResponsesCustomTool {
   format?: Record<string, unknown>;
 }
 
-export type ResponsesTool = ResponsesFunctionTool | ResponsesHostedTool | ResponsesCustomTool;
+export interface ResponsesProgrammaticTool {
+  type: 'programmatic_tool_calling';
+}
+
+export type ResponsesTool = ResponsesFunctionTool | ResponsesHostedTool | ResponsesCustomTool | ResponsesProgrammaticTool;
 
 export type ResponsesToolChoice =
   | 'auto'
@@ -381,6 +419,7 @@ export type ResponsesToolChoice =
   | 'required'
   | { type: 'function'; name: string }
   | { type: 'custom'; name: string }
+  | { type: 'programmatic_tool_calling' }
   | { type: ResponsesHostedToolType };
 
 // ── Response types ──
@@ -433,6 +472,23 @@ export interface ResponsesResult {
   };
 }
 
+export type ResponsesAdditionalToolsRole =
+  | 'unknown'
+  | 'user'
+  | 'assistant'
+  | 'system'
+  | 'critic'
+  | 'discriminator'
+  | 'developer'
+  | 'tool';
+
+export interface ResponsesOutputAdditionalToolsItem {
+  type: 'additional_tools';
+  id: string;
+  role: ResponsesAdditionalToolsRole;
+  tools: ResponsesTool[];
+}
+
 export type ResponsesOutputItem =
   | ResponsesOutputMessage
   | ResponsesOutputFunctionCall
@@ -446,6 +502,9 @@ export type ResponsesOutputItem =
   | ResponsesComputerCallOutputItem
   | ResponsesToolSearchCallItem
   | ResponsesToolSearchOutputItem
+  | ResponsesOutputAdditionalToolsItem
+  | ResponsesProgramItem
+  | ResponsesProgramOutputItem
   | ResponsesCompactionItem
   | ResponsesCodeInterpreterCallItem
   | ResponsesLocalShellCallItem
