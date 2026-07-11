@@ -1,0 +1,46 @@
+// The only place that knows Agent Setup leases live in the gateway repository
+// and that the authenticated user comes from auth middleware. Everything else
+// about the feature — schema, rendering, lifecycle, route shape — belongs to
+// @floway-dev/agent-setup; this module injects the gateway's persistence and
+// identity into the package's route factories.
+//
+// The repository is threaded through a lazy adapter so the singleton repo is
+// resolved per request (via getRepo()), not at module-load time.
+
+import {
+  type AgentSetupRepository,
+  createAgentSetupControlRoutes,
+  createAgentSetupPublicRoutes,
+} from '@floway-dev/agent-setup';
+
+import { type AuthVars, userFromContext } from '../middleware/auth.ts';
+import { getRepo } from '../repo/index.ts';
+
+const repository: AgentSetupRepository = {
+  findByToken: token => getRepo().agentSetup.findByToken(token),
+  latestByUserId: userId => getRepo().agentSetup.latestByUserId(userId),
+  insertForUser: input => getRepo().agentSetup.insertForUser(input),
+  updateConfiguration: input => getRepo().agentSetup.updateConfiguration(input),
+  renewLease: input => getRepo().agentSetup.renewLease(input),
+};
+
+// Public GET/HEAD script routes — mounted structurally ahead of the logger,
+// CORS, and auth middleware in app.ts, so the API-key-bearing body reaches an
+// unauthenticated machine without any per-path bypass in those layers.
+export const agentSetupPublicRoutes = createAgentSetupPublicRoutes({
+  repository,
+  userExists: async userId => (await getRepo().users.getById(userId)) !== null,
+  resolveApiKeySecret: async (userId, apiKeyId) => {
+    const key = await getRepo().apiKeys.getById(apiKeyId);
+    return key && key.userId === userId ? key.key : null;
+  },
+});
+
+// Authenticated POST / PUT / heartbeat routes — mounted inside the control
+// plane behind auth. `listSelectableApiKeyIds` returns the caller's active,
+// owned key ids in priority order.
+export const agentSetupControlRoutes = createAgentSetupControlRoutes<{ Variables: AuthVars }>({
+  repository,
+  getUserId: c => userFromContext(c).id,
+  listSelectableApiKeyIds: async userId => (await getRepo().apiKeys.listByUserId(userId)).map(key => key.id),
+});

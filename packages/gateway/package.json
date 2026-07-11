@@ -38,6 +38,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@floway-dev/agent-setup": "workspace:*",
     "@floway-dev/http": "workspace:*",
     "@floway-dev/interceptor": "workspace:*",
     "@floway-dev/platform": "workspace:*",

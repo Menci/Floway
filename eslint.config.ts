@@ -11,6 +11,7 @@ const projectList = [
   './apps/platform-cloudflare/tsconfig.json',
   './apps/platform-node/tsconfig.json',
   './apps/web/tsconfig.json',
+  './packages/agent-setup/tsconfig.json',
   './packages/gateway/tsconfig.json',
   './packages/http/tsconfig.json',
   './packages/interceptor/tsconfig.json',
@@ -257,6 +258,9 @@ const config: Linter.Config[] = [
       'no-restricted-syntax': ['error', {
         selector: 'ImportDeclaration[importKind!="type"][source.value=/^@floway-dev\\u002Fgateway($|\\u002F)/]',
         message: 'apps/web may only type-import from @floway-dev/gateway. The SPA bundle must not pull gateway runtime code.',
+      }, {
+        selector: 'ImportDeclaration[importKind!="type"][source.value=/^@floway-dev\\u002Fagent-setup($|\\u002F)/]',
+        message: 'apps/web must not runtime-import @floway-dev/agent-setup. It carries the gateway-side route factories and persistence contract; the dashboard derives its configuration type from the RPC client.',
       }],
     },
   },
@@ -275,6 +279,8 @@ const config: Linter.Config[] = [
       'vitest.config.ts',
       'packages/*/vitest.config.ts',
       'scripts/**',
+      // jiti-run build/test scripts, run outside any package's TS project.
+      'packages/agent-setup/scripts/**',
     ],
   },
 ];

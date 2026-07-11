@@ -13,7 +13,7 @@ import type {
   ApiKeyRepo,
   AgentSetupMutation,
   AgentSetupRecord,
-  AgentSetupRepo,
+  AgentSetupRepository,
   BackoffRow,
   CachedModelsRow,
   ModelAliasesRepo,
@@ -47,6 +47,7 @@ import { serializeStoredState } from './upstream-json.ts';
 import { latencyBucketForMs } from '../shared/performance-histogram.ts';
 import { generateSessionToken } from '../shared/session-tokens.ts';
 import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';
+import { AgentSetupTokenCollisionError } from '@floway-dev/agent-setup';
 import { BILLING_DIMENSIONS, type BillingDimension, type ModelPricing, resolveEffectivePricing, unitPriceForDimension } from '@floway-dev/protocols/common';
 import type { ProviderModel, UpstreamRecord } from '@floway-dev/provider';
 
@@ -935,22 +936,25 @@ class MemoryModelAliasesRepo implements ModelAliasesRepo {
   }
 }
 
-class MemoryAgentSetupRepo implements AgentSetupRepo {
-  private byUser = new Map<number, AgentSetupRecord>();
+class MemoryAgentSetupRepo implements AgentSetupRepository {
+  // Keyed by token: a user may own many concurrent leases at once.
+  private byToken = new Map<string, AgentSetupRecord>();
 
-  getByUserId(userId: number): Promise<AgentSetupRecord | null> {
-    const found = this.byUser.get(userId);
+  findByToken(token: string): Promise<AgentSetupRecord | null> {
+    const found = this.byToken.get(token);
     return Promise.resolve(found ? { ...found } : null);
   }
 
-  findByToken(token: string): Promise<AgentSetupRecord | null> {
-    for (const record of this.byUser.values()) {
-      if (record.token === token) return Promise.resolve({ ...record });
-    }
-    return Promise.resolve(null);
+  latestByUserId(userId: number): Promise<AgentSetupRecord | null> {
+    const owned = [...this.byToken.values()]
+      .filter(record => record.userId === userId)
+      .sort((a, b) =>
+        b.updatedAt - a.updatedAt || b.createdAt - a.createdAt || (a.token < b.token ? 1 : -1));
+    const latest = owned[0];
+    return Promise.resolve(latest ? { ...latest } : null);
   }
 
-  replaceForUser(input: {
+  insertForUser(input: {
     userId: number;
     token: string;
     apiKeyId: string;
@@ -958,18 +962,23 @@ class MemoryAgentSetupRepo implements AgentSetupRepo {
     now: number;
     expiresAt: number;
   }): Promise<AgentSetupRecord> {
-    const existing = this.byUser.get(input.userId);
+    if (this.byToken.has(input.token)) throw new AgentSetupTokenCollisionError();
     const record: AgentSetupRecord = {
       userId: input.userId,
       token: input.token,
       apiKeyId: input.apiKeyId,
       configurationJson: input.configurationJson,
-      configurationRevision: (existing?.configurationRevision ?? 0) + 1,
+      configurationRevision: 1,
       expiresAt: input.expiresAt,
-      createdAt: existing?.createdAt ?? input.now,
+      createdAt: input.now,
       updatedAt: input.now,
     };
-    this.byUser.set(input.userId, record);
+    this.byToken.set(record.token, record);
+    // Mirror the AFTER INSERT trigger: sweep only this user's already-expired
+    // rows, measured against the new row's created_at, never the new row.
+    for (const [token, existing] of this.byToken) {
+      if (existing.userId === input.userId && token !== record.token && existing.expiresAt <= input.now) this.byToken.delete(token);
+    }
     return Promise.resolve({ ...record });
   }
 
@@ -980,53 +989,36 @@ class MemoryAgentSetupRepo implements AgentSetupRepo {
     apiKeyId: string;
     configurationJson: string;
     now: number;
-    replacementToken: string;
-    replacementExpiresAt: number;
+    expiresAt: number;
   }): Promise<AgentSetupMutation> {
-    const existing = this.byUser.get(input.userId);
-    if (!existing || existing.token !== input.token) return Promise.resolve({ status: 'superseded' });
-    // Revision check precedes the expiry-driven rotation, matching the SQL CAS:
-    // a matching-but-stale token conflicts and rotates nothing.
+    const existing = this.byToken.get(input.token);
+    if (!existing || existing.userId !== input.userId) return Promise.resolve({ status: 'missing' });
     if (existing.configurationRevision !== input.expectedRevision) {
       return Promise.resolve({ status: 'revision-conflict', record: { ...existing } });
     }
-    const rotated = existing.expiresAt <= input.now;
     const record: AgentSetupRecord = {
       ...existing,
       apiKeyId: input.apiKeyId,
       configurationJson: input.configurationJson,
       configurationRevision: existing.configurationRevision + 1,
-      token: rotated ? input.replacementToken : existing.token,
-      expiresAt: input.replacementExpiresAt,
+      expiresAt: input.expiresAt,
       updatedAt: input.now,
     };
-    this.byUser.set(input.userId, record);
+    this.byToken.set(record.token, record);
     return Promise.resolve({ status: 'ok', record: { ...record } });
   }
 
   renewLease(input: {
     userId: number;
     token: string;
-    now: number;
     expiresAt: number;
-    replacementToken: string;
   }): Promise<AgentSetupMutation> {
-    const existing = this.byUser.get(input.userId);
-    if (!existing || existing.token !== input.token) return Promise.resolve({ status: 'superseded' });
-    const rotated = existing.expiresAt <= input.now;
-    const record: AgentSetupRecord = {
-      ...existing,
-      token: rotated ? input.replacementToken : existing.token,
-      expiresAt: input.expiresAt,
-      updatedAt: input.now,
-    };
-    this.byUser.set(input.userId, record);
+    const existing = this.byToken.get(input.token);
+    if (!existing || existing.userId !== input.userId) return Promise.resolve({ status: 'missing' });
+    // Expiry-only: updated_at and the revision stay put.
+    const record: AgentSetupRecord = { ...existing, expiresAt: input.expiresAt };
+    this.byToken.set(record.token, record);
     return Promise.resolve({ status: 'ok', record: { ...record } });
-  }
-
-  deleteAll(): Promise<void> {
-    this.byUser.clear();
-    return Promise.resolve();
   }
 }
 
@@ -1045,7 +1037,7 @@ export class InMemoryRepo implements Repo {
   modelAliases: ModelAliasesRepo;
   responsesItems: ResponsesItemsRepo;
   responsesSnapshots: ResponsesSnapshotsRepo;
-  agentSetup: AgentSetupRepo;
+  agentSetup: AgentSetupRepository;
 
   constructor() {
     this.users = new MemoryUsersRepo();

@@ -1,6 +1,6 @@
 import { Hono, type Next } from 'hono';
 
-import { agentSetupRoutes } from './agent-setup/routes.ts';
+import { agentSetupControlRoutes } from './agent-setup.ts';
 import { createKey, deleteKey, listKeys, rotateKey, updateKey } from './api-keys/routes.ts';
 import { authLogin, authLogout, authMe } from './auth/routes.ts';
 import { exportData, importData } from './data-transfer/routes.ts';
@@ -57,10 +57,10 @@ export const controlPlaneRoutes = new Hono<{ Variables: AuthVars }>()
   // this endpoint just feeds the picker UI.
   .get('/api/upstream-options', listUpstreamOptions)
   .route('/api/dump', dumpRoutes)
-  // Per-user Agent Setup lease + public setup-script endpoints. Not admin-gated;
-  // auth exempts the GET/HEAD script routes by the exact matcher, not by their
-  // presence here.
-  .route('/api/setup', agentSetupRoutes)
+  // Per-user Agent Setup lease control routes (POST / PUT / heartbeat). Not
+  // admin-gated. The public GET/HEAD setup-script routes are mounted separately
+  // in app.ts, ahead of this middleware chain.
+  .route('/api/setup', agentSetupControlRoutes)
   // Self-service password change is session-only (the current-password check
   // pairs with a logged-in dashboard session); admins reset other users'
   // passwords through PATCH /api/users/:id below, which is admin-gated.

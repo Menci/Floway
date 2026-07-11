@@ -1,5 +1,6 @@
 import type { HistogramBucket } from '../shared/performance-histogram.ts';
 import type { WebSearchProviderName } from '../shared/web-search-providers.ts';
+import type { AgentSetupRepository } from '@floway-dev/agent-setup';
 import type { AliasSelection, AliasTarget, AnnouncedMetadata, BillingDimension, ModelKind, ModelPricing } from '@floway-dev/protocols/common';
 import type { ProviderModel, UpstreamRecord } from '@floway-dev/provider';
 
@@ -364,78 +365,10 @@ export interface ResponsesSnapshotsRepo {
   deleteAll(): Promise<void>;
 }
 
-// Persisted per-user Agent Setup lease. Times are Unix milliseconds.
-export interface AgentSetupRecord {
-  userId: number;
-  // Random lease token embedded in the public setup-script URL. Unique across
-  // users; a fresh lease or an expired-lease rotation replaces it, which is
-  // how a superseded tab's writes stop matching.
-  token: string;
-  apiKeyId: string;
-  configurationJson: string;
-  // Optimistic-concurrency counter for configuration edits. Bumped by
-  // replaceForUser (POST) and successful updateConfiguration (PUT); left
-  // untouched by lease renewal, so a heartbeat never invalidates an in-flight
-  // dashboard edit.
-  configurationRevision: number;
-  expiresAt: number;
-  createdAt: number;
-  updatedAt: number;
-}
-
-// Outcome of a conditional lease write. `superseded` means the caller's token
-// no longer owns the user's lease; `revision-conflict` means the token still
-// owns it but the caller edited against a stale revision — the current record
-// rides along so the caller can rebase.
-export type AgentSetupMutation =
-  | { status: 'ok'; record: AgentSetupRecord }
-  | { status: 'superseded' }
-  | { status: 'revision-conflict'; record: AgentSetupRecord };
-
-export interface AgentSetupRepo {
-  getByUserId(userId: number): Promise<AgentSetupRecord | null>;
-  findByToken(token: string): Promise<AgentSetupRecord | null>;
-  // POST: acquire or replace the user's lease with a fresh token, resetting
-  // expiry and configuration. Bumps configurationRevision (starting at 1) and
-  // preserves createdAt across replacement.
-  replaceForUser(input: {
-    userId: number;
-    token: string;
-    apiKeyId: string;
-    configurationJson: string;
-    now: number;
-    expiresAt: number;
-  }): Promise<AgentSetupRecord>;
-  // PUT: write configuration under optimistic concurrency, checking the token
-  // first, then the revision. On success bumps the revision, extends expiry to
-  // replacementExpiresAt, and rotates the token to replacementToken only when
-  // the lease had already expired. When a matching token is both expired and
-  // edited against a stale revision the revision conflict wins — the call
-  // returns `revision-conflict` and rotates nothing; the dashboard rebases on
-  // the ride-along record and retries, and that retry (still expired) is what
-  // rotates the token.
-  updateConfiguration(input: {
-    userId: number;
-    token: string;
-    expectedRevision: number;
-    apiKeyId: string;
-    configurationJson: string;
-    now: number;
-    replacementToken: string;
-    replacementExpiresAt: number;
-  }): Promise<AgentSetupMutation>;
-  // Heartbeat: extend expiry for the token's owner, leaving configuration and
-  // revision untouched. Rotates the token to replacementToken only when the
-  // lease had already expired; a non-matching token yields `superseded`.
-  renewLease(input: {
-    userId: number;
-    token: string;
-    now: number;
-    expiresAt: number;
-    replacementToken: string;
-  }): Promise<AgentSetupMutation>;
-  deleteAll(): Promise<void>;
-}
+// The Agent Setup lease store. Its shape, record, and mutation discriminants
+// are owned by @floway-dev/agent-setup; the SQL and in-memory implementations
+// here satisfy that contract. Re-exported so the repo layer imports one source.
+export type { AgentSetupMutation, AgentSetupRecord, AgentSetupRepository } from '@floway-dev/agent-setup';
 
 export interface Repo {
   apiKeys: ApiKeyRepo;
@@ -452,5 +385,5 @@ export interface Repo {
   modelAliases: ModelAliasesRepo;
   responsesItems: ResponsesItemsRepo;
   responsesSnapshots: ResponsesSnapshotsRepo;
-  agentSetup: AgentSetupRepo;
+  agentSetup: AgentSetupRepository;
 }

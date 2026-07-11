@@ -17,7 +17,6 @@
 
 import { z } from 'zod';
 
-import { agentSetupConfigurationSchema } from './agent-setup/configuration.ts';
 import { normalizeDisabledPublicModelIds } from '../repo/disabled-public-models.ts';
 import { type FlagOverrides, MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX, parseFlagOverridesWire } from '@floway-dev/provider';
 
@@ -434,21 +433,9 @@ export const listModelsBody = recordOnlyBody;
 
 // --- agent setup ---
 //
-// The one-command Agent Setup lease. `agentSetupConfigurationSchema` (in
-// agent-setup/configuration.ts) is the payload the dashboard saves and the
-// setup scripts read; `expectedRevision` drives the optimistic-concurrency CAS
-// on update. Acquisition (POST) carries no body — the lease stores no origin,
-// which reaches the scripts only through the dashboard's one-line command.
-
-export const agentSetupUpdateBody = z.object({
-  token: z.string().min(1),
-  configuration: agentSetupConfigurationSchema,
-  expectedRevision: z.number().int().nonnegative(),
-});
-
-export const agentSetupHeartbeatBody = z.object({
-  token: z.string().min(1),
-});
+// The lease update/heartbeat wire schemas live in @floway-dev/agent-setup
+// alongside the route factory that consumes them; the gateway mounts those
+// routes rather than re-declaring their bodies here.
 
 // --- proxies ---
 //

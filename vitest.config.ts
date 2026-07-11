@@ -6,6 +6,7 @@ export default defineConfig({
       'apps/platform-cloudflare/vitest.config.ts',
       'apps/platform-node/vitest.config.ts',
       'apps/web/vitest.config.ts',
+      'packages/agent-setup/vitest.config.ts',
       'packages/gateway/vitest.config.ts',
       'packages/http/vitest.config.ts',
       'packages/platform/vitest.config.ts',

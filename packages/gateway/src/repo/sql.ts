@@ -7,7 +7,7 @@ import type {
   ApiKeyRepo,
   AgentSetupMutation,
   AgentSetupRecord,
-  AgentSetupRepo,
+  AgentSetupRepository,
   BackoffRow,
   CachedModelsRow,
   ModelAliasesRepo,
@@ -42,6 +42,7 @@ import { serializeStoredConfig, serializeStoredState } from './upstream-json.ts'
 import { latencyBucketForMs } from '../shared/performance-histogram.ts';
 import { generateSessionToken } from '../shared/session-tokens.ts';
 import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';
+import { AgentSetupTokenCollisionError } from '@floway-dev/agent-setup';
 import type { SqlDatabase, SqlPreparedStatement, SqlResult } from '@floway-dev/platform';
 import { BILLING_DIMENSIONS, type AliasSelection, type AliasTarget, type AnnouncedMetadata, type BillingDimension, type ModelKind, type ModelPricing, resolveEffectivePricing, unitPriceForDimension } from '@floway-dev/protocols/common';
 import type { ProviderModel, ProxyFallbackEntry, ModelPrefixConfig, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
@@ -1762,7 +1763,7 @@ interface AgentSetupRow {
   updated_at: number;
 }
 
-const AGENT_SETUP_COLUMNS = 'user_id, token, api_key_id, configuration_json, configuration_revision, expires_at, created_at, updated_at';
+const AGENT_SETUP_COLUMNS = 'token, user_id, api_key_id, configuration_json, configuration_revision, expires_at, created_at, updated_at';
 
 const toAgentSetupRecord = (row: AgentSetupRow): AgentSetupRecord => ({
   userId: row.user_id,
@@ -1775,16 +1776,12 @@ const toAgentSetupRecord = (row: AgentSetupRow): AgentSetupRecord => ({
   updatedAt: row.updated_at,
 });
 
-class SqlAgentSetupRepo implements AgentSetupRepo {
-  constructor(private db: SqlDatabase) {}
+// The token PK's SQLite/D1 uniqueness message. Matching it lets the route retry
+// with a fresh token; any unrelated failure propagates untouched.
+const TOKEN_COLLISION_MESSAGE = /UNIQUE constraint failed: agent_setup\.token/i;
 
-  async getByUserId(userId: number): Promise<AgentSetupRecord | null> {
-    const row = await this.db
-      .prepare(`SELECT ${AGENT_SETUP_COLUMNS} FROM agent_setup WHERE user_id = ?`)
-      .bind(userId)
-      .first<AgentSetupRow>();
-    return row ? toAgentSetupRecord(row) : null;
-  }
+class SqlAgentSetupRepo implements AgentSetupRepository {
+  constructor(private db: SqlDatabase) {}
 
   async findByToken(token: string): Promise<AgentSetupRecord | null> {
     const row = await this.db
@@ -1794,7 +1791,15 @@ class SqlAgentSetupRepo implements AgentSetupRepo {
     return row ? toAgentSetupRecord(row) : null;
   }
 
-  async replaceForUser(input: {
+  async latestByUserId(userId: number): Promise<AgentSetupRecord | null> {
+    const row = await this.db
+      .prepare(`SELECT ${AGENT_SETUP_COLUMNS} FROM agent_setup WHERE user_id = ? ORDER BY updated_at DESC, created_at DESC, token DESC LIMIT 1`)
+      .bind(userId)
+      .first<AgentSetupRow>();
+    return row ? toAgentSetupRecord(row) : null;
+  }
+
+  async insertForUser(input: {
     userId: number;
     token: string;
     apiKeyId: string;
@@ -1802,25 +1807,24 @@ class SqlAgentSetupRepo implements AgentSetupRepo {
     now: number;
     expiresAt: number;
   }): Promise<AgentSetupRecord> {
-    // Upsert on the user PK: a fresh lease starts at revision 1, a replacement
-    // keeps created_at and advances the revision.
-    const row = await this.db
-      .prepare(
-        `INSERT INTO agent_setup (${AGENT_SETUP_COLUMNS})
-         VALUES (?, ?, ?, ?, 1, ?, ?, ?)
-         ON CONFLICT (user_id) DO UPDATE SET
-           token = excluded.token,
-           api_key_id = excluded.api_key_id,
-           configuration_json = excluded.configuration_json,
-           configuration_revision = agent_setup.configuration_revision + 1,
-           expires_at = excluded.expires_at,
-           updated_at = excluded.updated_at
-         RETURNING ${AGENT_SETUP_COLUMNS}`,
-      )
-      .bind(input.userId, input.token, input.apiKeyId, input.configurationJson, input.expiresAt, input.now, input.now)
-      .first<AgentSetupRow>();
-    if (!row) throw new Error('replaceForUser: upsert returned no rows');
-    return toAgentSetupRecord(row);
+    // A brand-new lease at revision 1; the AFTER INSERT trigger sweeps only this
+    // user's already-expired rows. A token PK collision is surfaced as the typed
+    // error so the route can retry with a fresh token.
+    try {
+      const row = await this.db
+        .prepare(
+          `INSERT INTO agent_setup (${AGENT_SETUP_COLUMNS})
+           VALUES (?, ?, ?, ?, 1, ?, ?, ?)
+           RETURNING ${AGENT_SETUP_COLUMNS}`,
+        )
+        .bind(input.token, input.userId, input.apiKeyId, input.configurationJson, input.expiresAt, input.now, input.now)
+        .first<AgentSetupRow>();
+      if (!row) throw new Error('insertForUser: insert returned no rows');
+      return toAgentSetupRecord(row);
+    } catch (error) {
+      if (error instanceof Error && TOKEN_COLLISION_MESSAGE.test(error.message)) throw new AgentSetupTokenCollisionError();
+      throw error;
+    }
   }
 
   async updateConfiguration(input: {
@@ -1830,67 +1834,47 @@ class SqlAgentSetupRepo implements AgentSetupRepo {
     apiKeyId: string;
     configurationJson: string;
     now: number;
-    replacementToken: string;
-    replacementExpiresAt: number;
+    expiresAt: number;
   }): Promise<AgentSetupMutation> {
-    // Single-statement CAS on (user_id, token, revision): a stale revision
-    // fails the WHERE so nothing is written, which is why the revision conflict
-    // wins over the expiry-driven token rotation in the CASE.
+    // Single-statement CAS on (user_id, token, revision). The token never
+    // changes; a stale revision fails the WHERE so nothing is written.
     const row = await this.db
       .prepare(
         `UPDATE agent_setup SET
            configuration_json = ?,
            api_key_id = ?,
            configuration_revision = configuration_revision + 1,
-           token = CASE WHEN expires_at <= ? THEN ? ELSE token END,
            expires_at = ?,
            updated_at = ?
          WHERE user_id = ? AND token = ? AND configuration_revision = ?
          RETURNING ${AGENT_SETUP_COLUMNS}`,
       )
-      .bind(
-        input.configurationJson,
-        input.apiKeyId,
-        input.now,
-        input.replacementToken,
-        input.replacementExpiresAt,
-        input.now,
-        input.userId,
-        input.token,
-        input.expectedRevision,
-      )
+      .bind(input.configurationJson, input.apiKeyId, input.expiresAt, input.now, input.userId, input.token, input.expectedRevision)
       .first<AgentSetupRow>();
     if (row) return { status: 'ok', record: toAgentSetupRecord(row) };
-    // The CAS matched nothing; read the live row only to classify the rejection:
-    // a missing or mismatched token is superseded, otherwise the revision was stale.
-    const current = await this.getByUserId(input.userId);
-    if (!current || current.token !== input.token) return { status: 'superseded' };
+    // The CAS matched nothing; read the live row to classify the rejection: a
+    // missing (or foreign) token is terminal, otherwise the revision was stale.
+    const current = await this.findByToken(input.token);
+    if (!current || current.userId !== input.userId) return { status: 'missing' };
     return { status: 'revision-conflict', record: current };
   }
 
   async renewLease(input: {
     userId: number;
     token: string;
-    now: number;
     expiresAt: number;
-    replacementToken: string;
   }): Promise<AgentSetupMutation> {
+    // Expiry-only: updated_at and the revision are left untouched so a heartbeat
+    // neither reorders the restore selection nor collides with an edit.
     const row = await this.db
       .prepare(
-        `UPDATE agent_setup SET
-           token = CASE WHEN expires_at <= ? THEN ? ELSE token END,
-           expires_at = ?,
-           updated_at = ?
+        `UPDATE agent_setup SET expires_at = ?
          WHERE user_id = ? AND token = ?
          RETURNING ${AGENT_SETUP_COLUMNS}`,
       )
-      .bind(input.now, input.replacementToken, input.expiresAt, input.now, input.userId, input.token)
+      .bind(input.expiresAt, input.userId, input.token)
       .first<AgentSetupRow>();
-    return row ? { status: 'ok', record: toAgentSetupRecord(row) } : { status: 'superseded' };
-  }
-
-  async deleteAll(): Promise<void> {
-    await this.db.prepare('DELETE FROM agent_setup').run();
+    return row ? { status: 'ok', record: toAgentSetupRecord(row) } : { status: 'missing' };
   }
 }
 
@@ -1909,7 +1893,7 @@ export class SqlRepo implements Repo {
   modelAliases: ModelAliasesRepo;
   responsesItems: ResponsesItemsRepo;
   responsesSnapshots: ResponsesSnapshotsRepo;
-  agentSetup: AgentSetupRepo;
+  agentSetup: AgentSetupRepository;
 
   constructor(db: SqlDatabase) {
     this.users = new SqlUsersRepo(db);
