@@ -14,9 +14,9 @@ import { getCurrentColo } from '../../runtime/runtime-info.ts';
 import type { PublicModelsResponse } from '@floway-dev/protocols/common';
 import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 
-// Claude Code CLI's `/model` picker discovers gateway-served models by GET
-// /v1/models?limit=1000, reads only `id` (+ optional `display_name`), and
-// adds each entry as-is. Two picker mechanics dictate the shape below.
+// Anthropic's official /v1/models shape — `{data, first_id, has_more,
+// last_id}` with `ModelInfo` rows — served to Claude Code CLI's `/model`
+// picker. Two picker mechanics dictate the fields below.
 //
 // (1) The CLI's `[1m]` suffix convention — append `[1m]` to a model id and
 // the CLI switches that pick to the 1M-context window — only reaches the
@@ -28,26 +28,22 @@ import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 // which providers already honor (Copilot's `context1m` variant selector;
 // Claude Code passes it through to the upstream).
 //
-// (2) The response follows Anthropic's official /v1/models shape —
-// `{data, first_id, has_more, last_id}` with `ModelInfo` rows — instead
-// of the OpenAI-Anthropic superset. Other Anthropic-format callers
-// parse the same official shape, so mirroring it here also lets any
-// future Anthropic-native picker reuse the payload. `capabilities` is
-// nullable per the SDK type; we do not track every dimension the SDK
-// declares (batch, citations, code_execution, pdf_input,
+// (2) Mirroring the official shape (instead of the OpenAI-Anthropic
+// superset the handler serves everyone else) also lets any future
+// Anthropic-native picker consume the payload verbatim. `capabilities`
+// is nullable per the SDK type; we do not track every dimension the
+// SDK declares (batch, citations, code_execution, pdf_input,
 // structured_outputs), so returning null is honest — contrast with
 // fabricating {supported: false} rows for features we do not observe.
-// CLI-side the whole object is `.strip()`ed away regardless.
+// CLI-side the whole object is `.strip()`ed away regardless. Similarly,
+// `created_at` falls back to the epoch when the upstream never declared
+// one — the least-lossy sentinel, never confuseable with a real release
+// date and stable across catalog fetches.
 //
 // https://code.claude.com/docs/en/llm-gateway-protocol#model-discovery
 // https://docs.claude.com/en/api/models-list
 // https://github.com/anthropics/anthropic-sdk-typescript/blob/main/src/resources/models.ts
-const toClaudeCodeShape = (response: PublicModelsResponse, userAgent: string | undefined) => {
-  if (!userAgent?.startsWith('claude-cli/')) return response;
-  // Anthropic requires `created_at` on every row, but not every catalog
-  // (Copilot, custom upstreams) declares one. Epoch is the least-lossy
-  // sentinel — never confuseable with a real release date and stable
-  // across catalog fetches.
+const toClaudeCodeShape = (response: PublicModelsResponse) => {
   const CREATED_AT_UNKNOWN = '1970-01-01T00:00:00Z';
   const data = response.data.map(model => {
     const max = model.limits.max_context_window_tokens;
@@ -73,7 +69,14 @@ export const models = async (c: Context) => {
   try {
     const fetcherForUpstream = await createPerRequestFetcher(getCurrentColo(c.req.raw));
     const response = await loadModels(effectiveUpstreamIdsFromContext(c), fetcherForUpstream, backgroundSchedulerFromContext(c), getRepo().modelAliases);
-    return Response.json(toClaudeCodeShape(response, c.req.header('user-agent')));
+    // The Claude Code CLI's model discovery request identifies itself with
+    // a `claude-cli/<version>` User-Agent prefix; every other caller
+    // (OpenAI SDKs, Anthropic SDKs, dashboards) receives the standard
+    // PublicModel superset.
+    if (c.req.header('user-agent')?.startsWith('claude-cli/')) {
+      return Response.json(toClaudeCodeShape(response));
+    }
+    return Response.json(response);
   } catch (e) {
     // Upstream HTTP/parse failures squash to a generic message so we do not
     // leak upstream identity. Other registry-thrown errors (e.g. the "no
