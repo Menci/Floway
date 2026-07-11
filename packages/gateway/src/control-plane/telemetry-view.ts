@@ -40,8 +40,8 @@ export const resolveTelemetryView = (
 // the api_keys row set that corresponds to the resolved view — the same
 // listing feeds both the key→user map (used by cross-user aggregation) and
 // the sorted key-metadata block (used by dashboard rendering). Sharing this
-// helper keeps the two derivations in lockstep and avoids the historic
-// pattern of fetching the table twice in the same handler.
+// helper keeps the two derivations in lockstep and avoids fetching the
+// table twice in the same handler.
 export const loadTelemetryKeys = async (
   repo: Repo,
   resolved: ResolvedTelemetryView,

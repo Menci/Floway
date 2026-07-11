@@ -207,8 +207,8 @@ export const performanceTelemetry = async (c: Ctx) => {
   // from the same list that later joins to key metadata, avoiding a
   // second api_keys SELECT; all-by-user gets the global list to feed the
   // key→user map (filter_user_id, group_by=userId). One round trip
-  // covers both concerns per view, and dropping the historic Promise.all
-  // pair costs one D1 hop we're eating anyway to gate the keyId check.
+  // covers both concerns per view — sharing the fetch costs one D1 hop
+  // we're eating anyway to gate the keyId check.
   const repo = getRepo();
   const keysInfo = await loadTelemetryKeys(repo, resolved);
   const ownedKeyIds = new Set(keysInfo.keys.map(k => k.id));
