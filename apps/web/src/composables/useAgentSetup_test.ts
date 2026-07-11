@@ -138,6 +138,69 @@ describe('useAgentSetup — lease acquisition', () => {
     expect(setup.state.initialized.value).toBe(false);
     expect(setup.canCopy.value).toBe(false);
   });
+
+  it('surfaces a failed create, ends the spinner, and recovers on retryCreate', async () => {
+    const { api, records } = makeApi();
+    const setup = run(() => useAgentSetup(api));
+
+    // The first create fails with a 500: no endless "Preparing" state — the
+    // error is surfaced and initialization stays false so the card can offer Retry.
+    records.post[0]!.deferred.resolve(errorBody(500, { error: 'server exploded' }));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(setup.state.initialized.value).toBe(false);
+    expect(setup.state.error.value).toBe('server exploded');
+
+    // retryCreate clears the error and posts exactly one more create.
+    setup.retryCreate();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(records.post.length).toBe(2);
+    expect(setup.state.error.value).toBeNull();
+
+    records.post[1]!.deferred.resolve(okBody(lease()));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(setup.state.initialized.value).toBe(true);
+    expect(setup.draft.value).toEqual(defaultConfig());
+  });
+
+  it('recovers from a timed-out create via retryCreate', async () => {
+    const { api, records } = makeApi();
+    const setup = run(() => useAgentSetup(api));
+
+    // Never resolve the first create; the 20s request timeout aborts it.
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(setup.state.initialized.value).toBe(false);
+    expect(setup.state.error.value).toBe('Agent setup request timed out');
+
+    setup.retryCreate();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(records.post.length).toBe(2);
+    records.post[1]!.deferred.resolve(okBody(lease()));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(setup.state.initialized.value).toBe(true);
+  });
+
+  it('retryCreate aborts the prior in-flight create and ignores its late response', async () => {
+    const { api, records } = makeApi();
+    const setup = run(() => useAgentSetup(api));
+    const firstSignal = signalArg(records.post[0]!);
+
+    // Retry while the first create is still in flight: it aborts and reposts once.
+    setup.retryCreate();
+    expect(firstSignal.aborted).toBe(true);
+    expect(records.post.length).toBe(2);
+
+    // A late resolve of the aborted create must not initialize or set state.
+    records.post[0]!.deferred.resolve(okBody(lease({ token: 'tok-stale' })));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(setup.state.token.value).toBeNull();
+    expect(setup.state.initialized.value).toBe(false);
+
+    // The fresh create wins.
+    records.post[1]!.deferred.resolve(okBody(lease({ token: 'tok-fresh' })));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(setup.state.token.value).toBe('tok-fresh');
+    expect(setup.state.initialized.value).toBe(true);
+  });
 });
 
 // Drive an initialized instance to the point where a lease is live and clean.
@@ -267,23 +330,62 @@ describe('useAgentSetup — debounced serialized saves', () => {
 });
 
 describe('useAgentSetup — revision conflict', () => {
-  it('adopts server state when no newer local edit exists', async () => {
+  it('confirms the generation when the conflict already holds our attempted configuration', async () => {
     const { records, setup } = await startInitialized();
     setup.draft.value!.codex.model = 'gpt-5-codex';
     setup.save();
     await vi.advanceTimersByTimeAsync(400);
 
-    const serverConfig = { ...defaultConfig(), claudeCode: { ...defaultConfig().claudeCode, model: 'claude-opus-4-8' } };
+    // A lost ack: the server committed exactly this edit, then rejected our PUT
+    // because our revision was stale. The conflict carries our attempted config
+    // with an advanced revision/token, so the generation is simply confirmed.
+    const attempted = { ...defaultConfig(), codex: { ...defaultConfig().codex, model: 'gpt-5-codex' } };
     records.put[0]!.deferred.resolve(conflictBody(lease({
-      status: 'revision-conflict', configuration: serverConfig, configurationRevision: 7, token: 'tok-9',
+      status: 'revision-conflict', configuration: attempted, configurationRevision: 7, token: 'tok-9',
     })));
     await vi.advanceTimersByTimeAsync(0);
 
-    expect(setup.draft.value).toEqual(serverConfig);
+    expect(setup.draft.value).toEqual(attempted);
     expect(setup.state.configurationRevision.value).toBe(7);
     expect(setup.state.token.value).toBe('tok-9');
     expect(setup.syncing.value).toBe(false);
+    // No resubmit — the server already holds our draft.
     expect(records.put.length).toBe(1);
+  });
+
+  it('retains the local draft and resubmits when the conflict carries a config we did not just attempt', async () => {
+    const { records, setup } = await startInitialized();
+    setup.draft.value!.codex.model = 'gpt-5-codex';
+    setup.save();
+    await vi.advanceTimersByTimeAsync(400);
+    expect(records.put.length).toBe(1);
+
+    // No edit happened during this request, yet the server's revision advanced
+    // under a different (earlier lost-ack) config. The current draft is the
+    // freshest intent and must win: keep it and resubmit against the adopted
+    // revision — never overwrite it with the server's older config.
+    const attempted = { ...defaultConfig(), codex: { ...defaultConfig().codex, model: 'gpt-5-codex' } };
+    const serverOlder = { ...defaultConfig(), claudeCode: { ...defaultConfig().claudeCode, model: 'claude-opus-4-8' } };
+    records.put[0]!.deferred.resolve(conflictBody(lease({
+      status: 'revision-conflict', configuration: serverOlder, configurationRevision: 5, token: 'tok-5',
+    })));
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Draft is unchanged (still our attempted config); metadata is adopted; dirty.
+    expect(setup.draft.value).toEqual(attempted);
+    expect(setup.state.configurationRevision.value).toBe(5);
+    expect(setup.state.token.value).toBe('tok-5');
+    expect(setup.syncing.value).toBe(true);
+
+    // The immediate resubmit carries the retained draft against the adopted revision.
+    expect(records.put.length).toBe(2);
+    expect(jsonArg(records.put[1]!)).toMatchObject({ token: 'tok-5', expectedRevision: 5 });
+    expect(jsonArg(records.put[1]!).configuration).toMatchObject({ codex: { model: 'gpt-5-codex' } });
+
+    records.put[1]!.deferred.resolve(okBody(lease({ configurationRevision: 6 })));
+    await vi.advanceTimersByTimeAsync(400);
+    expect(setup.syncing.value).toBe(false);
+    expect(records.put.length).toBe(2);
   });
 
   it('resubmits the latest draft when a newer local edit exists', async () => {

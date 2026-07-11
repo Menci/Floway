@@ -26,6 +26,7 @@ interface SetupStub {
   canCopy: Ref<boolean>;
   save: () => void;
   heartbeat: () => void;
+  retryCreate: () => void;
   dispose: () => void;
 }
 
@@ -56,6 +57,7 @@ const makeSetup = (over: Partial<{ config: AgentSetupConfiguration; initialized:
   canCopy: ref(over.canCopy ?? true),
   save: vi.fn(),
   heartbeat: vi.fn(),
+  retryCreate: vi.fn(),
   dispose: vi.fn(),
 });
 
@@ -277,5 +279,18 @@ describe('AgentSetupCard', () => {
   it('surfaces a synchronization error from the setup composable', () => {
     setupStub = makeSetup({ error: 'bad configuration' });
     expect(mountCard().text()).toContain('bad configuration');
+  });
+
+  it('renders a create failure with a Retry action instead of an endless spinner', async () => {
+    setupStub = makeSetup({ initialized: false, error: 'server exploded', scripts: null });
+    const w = mountCard();
+    const banner = w.get('[data-testid="agent-setup-create-error"]');
+    expect(banner.text()).toContain('server exploded');
+    // No "Preparing" spinner state while an error is shown.
+    expect(w.text()).not.toContain('Preparing setup');
+
+    const retry = banner.get('button');
+    await retry.trigger('click');
+    expect(setupStub.retryCreate).toHaveBeenCalledTimes(1);
   });
 });

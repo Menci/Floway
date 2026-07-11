@@ -52,11 +52,25 @@ export interface UseAgentSetup {
   // hook for forms that already call it after applying a batch of changes.
   save: () => void;
   heartbeat: () => void;
+  retryCreate: () => void;
   dispose: () => void;
 }
 
 const snapshot = (configuration: AgentSetupConfiguration): AgentSetupConfiguration =>
   JSON.parse(JSON.stringify(configuration)) as AgentSetupConfiguration;
+
+// Structural equality for two configurations, independent of key order (the
+// server re-serializes through its schema, so its key order need not match the
+// draft's). Used to decide whether a revision conflict already holds exactly
+// what we attempted.
+const configurationsEqual = (a: unknown, b: unknown): boolean => {
+  if (a === b) return true;
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
+  const aKeys = Object.keys(a as Record<string, unknown>);
+  const bKeys = Object.keys(b as Record<string, unknown>);
+  if (aKeys.length !== bKeys.length) return false;
+  return aKeys.every(key => configurationsEqual((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key]));
+};
 
 const rawStatus = (raw: unknown): string | null =>
   raw !== null && typeof raw === 'object' && typeof (raw as { status?: unknown }).status === 'string'
@@ -107,6 +121,7 @@ export const useAgentSetup = (
   let pumpRunning = false;
   let disposed = false;
   let installingDraft = false;
+  let createAttempt = 0;
 
   const clearTimer = (timer: ReturnType<typeof setTimeout> | null): null => {
     if (timer !== null) clearTimeout(timer);
@@ -219,7 +234,16 @@ export const useAgentSetup = (
     kickPump();
   };
 
-  const reconcileRevisionConflict = (raw: unknown, savedGeneration: number) => {
+  // Reconcile a revision conflict. Because a fresh lease (POST) rotates the
+  // token and supersedes every other tab, a conflict on a token we still own can
+  // only be a lost ack: an earlier PUT of ours committed but its response never
+  // arrived, so the server's revision moved on under one of our own past
+  // configurations. The freshest local intent must therefore win. We always
+  // adopt the server's lease metadata/revision, then confirm the generation only
+  // when the server already holds exactly what this request attempted and the
+  // user has not edited since; otherwise we keep the current draft and resubmit
+  // it against the freshly-adopted revision.
+  const reconcileRevisionConflict = (raw: unknown, attemptedConfiguration: AgentSetupConfiguration, savedGeneration: number) => {
     const lease = asLease(raw);
     if (lease === null) {
       saveError.value = 'Received an unexpected conflict response from the server.';
@@ -227,14 +251,16 @@ export const useAgentSetup = (
     }
     saveError.value = null;
     adoptLeaseMetadata(lease);
-    if (formGeneration.value > savedGeneration) {
-      // Cancel the newer edit's debounce before immediate resubmission; otherwise
-      // its stale timer would emit a duplicate PUT after the resubmit succeeds.
-      queueImmediateSave();
+
+    const serverConfiguration = (raw as LeaseOkResponse).configuration;
+    if (formGeneration.value === savedGeneration && configurationsEqual(serverConfiguration, attemptedConfiguration)) {
+      installDraft(serverConfiguration);
+      confirmedGeneration.value = formGeneration.value;
       return;
     }
-    installDraft((raw as LeaseOkResponse).configuration);
-    confirmedGeneration.value = formGeneration.value;
+    // Cancel any debounce the newer edit scheduled before resubmitting, so a
+    // stale timer cannot emit a duplicate PUT after the resubmit succeeds.
+    queueImmediateSave();
   };
 
   const runSave = async () => {
@@ -253,7 +279,7 @@ export const useAgentSetup = (
     if (result.error) {
       const status = rawStatus(result.error.raw);
       if (status === 'superseded') { markSuperseded(); return; }
-      if (status === 'revision-conflict') { reconcileRevisionConflict(result.error.raw, generation); return; }
+      if (status === 'revision-conflict') { reconcileRevisionConflict(result.error.raw, configuration, generation); return; }
       saveError.value = result.error.message;
       if (isRetryableHttpStatus(result.error.status)) scheduleSaveRetry();
       return;
@@ -343,9 +369,12 @@ export const useAgentSetup = (
   };
 
   const create = async () => {
+    const attempt = ++createAttempt;
     const result = await callApi<LeaseOkResponse>(() => requestWithTimeout(signal =>
       api.api.setup.$post({ json: { publicBaseUrl: window.location.origin } }, { init: { signal } })));
-    if (disposed) return;
+    // A retry (or dispose) that superseded this attempt owns the state now; drop
+    // this stale attempt's outcome so an aborted create cannot resurrect an error.
+    if (disposed || attempt !== createAttempt) return;
 
     if (result.error) {
       if (rawStatus(result.error.raw) === 'no-selectable-key') { noSelectableKey.value = true; return; }
@@ -360,6 +389,17 @@ export const useAgentSetup = (
     confirmedGeneration.value = 0;
     initialized.value = true;
     scheduleHeartbeat(HEARTBEAT_INTERVAL_MS);
+  };
+
+  // Explicit recovery from a failed initial acquisition: abort any lingering
+  // request, clear the surfaced error, and post exactly one more create. Guarded
+  // to the pre-initialized window so a live lease is never re-created underneath.
+  const retryCreate = () => {
+    if (disposed || initialized.value) return;
+    abortActiveRequest();
+    createError.value = null;
+    noSelectableKey.value = false;
+    void create();
   };
 
   watch(draft, () => {
@@ -420,6 +460,7 @@ export const useAgentSetup = (
     canCopy,
     save,
     heartbeat,
+    retryCreate,
     dispose,
   };
 };

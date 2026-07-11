@@ -19,7 +19,7 @@ import {
   normalizeEffortInput,
   rankAgentSetupModels,
 } from '../../lib/agent-setup-models.ts';
-import { Combobox, Select, Spinner, Switch } from '@floway-dev/ui';
+import { Combobox, Button, Select, Spinner, Switch } from '@floway-dev/ui';
 
 // The card needs only the identity of each key, never its secret — the raw key
 // is revealed solely by the setup script the user's own machine fetches.
@@ -37,7 +37,7 @@ const props = withDefaults(defineProps<{
 
 const api = useApi();
 const setup = useAgentSetup(api, () => props.keys.map(key => key.id));
-const { draft, syncing, superseded, canCopy } = setup;
+const { draft, syncing, superseded, canCopy, retryCreate } = setup;
 const { initialized, noSelectableKey, error: setupError, scripts } = setup.state;
 
 type ClaudeEffortLevel = NonNullable<AgentSetupConfiguration['claudeCode']['effortLevel']>;
@@ -159,6 +159,14 @@ const copyDisabled = computed(() => !canCopy.value);
 
     <div v-else-if="noSelectableKey" class="rounded-lg border border-white/10 bg-surface-800/60 px-4 py-6 text-center text-sm text-gray-400">
       Create an API key above to generate one-command agent setup.
+    </div>
+
+    <div v-else-if="!initialized && setupError" data-testid="agent-setup-create-error" class="rounded-lg border border-accent-rose/40 bg-accent-rose/10 px-4 py-4 text-sm text-accent-rose">
+      <p>Could not prepare agent setup: {{ setupError }}</p>
+      <Button variant="secondary" size="sm" class="mt-3" @click="retryCreate">
+        <i class="i-lucide-refresh-cw size-3.5" />
+        Retry
+      </Button>
     </div>
 
     <div v-else-if="!initialized" class="flex items-center gap-2 px-1 py-6 text-sm text-gray-500">
