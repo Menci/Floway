@@ -384,7 +384,8 @@ class MemoryPerformanceRepo implements PerformanceRepo {
   async recordSample(sample: PerformanceSample): Promise<void> {
     const row = this.upsertRow(sample);
     row.requests += 1;
-    row.ttftSamples += 1;
+    if (sample.success) row.ttftSamplesOk += 1;
+    else row.errorsWithOutput += 1;
     row.ttftMsSum += sample.ttftMs;
     this.incrementBucket(row, 'ttft_ms', bucketForTtftMs(sample.ttftMs));
     if (sample.tpotUs !== undefined) {
@@ -392,21 +393,18 @@ class MemoryPerformanceRepo implements PerformanceRepo {
       row.tpotUsSum += sample.tpotUs;
       this.incrementBucket(row, 'tpot_us', bucketForTpotUs(sample.tpotUs));
     }
-    if (sample.failed) {
-      row.errors += 1;
-      row.failedWithOutput += 1;
-    }
   }
 
-  async recordError(dims: PerformanceDimensions): Promise<void> {
+  async recordZeroOutputError(dims: PerformanceDimensions): Promise<void> {
     const row = this.upsertRow(dims);
     row.requests += 1;
-    row.errors += 1;
+    row.errorsNoOutput += 1;
   }
 
   async recordNeutral(dims: PerformanceDimensions): Promise<void> {
     const row = this.upsertRow(dims);
     row.requests += 1;
+    row.neutral += 1;
   }
 
   async query(opts: { keyId?: string; start: string; end: string }): Promise<PerformanceTelemetryRecord[]> {
@@ -447,10 +445,11 @@ class MemoryPerformanceRepo implements PerformanceRepo {
         operation: dims.operation,
         runtimeLocation: dims.runtimeLocation,
         requests: 0,
-        errors: 0,
-        ttftSamples: 0,
+        ttftSamplesOk: 0,
+        errorsWithOutput: 0,
+        errorsNoOutput: 0,
+        neutral: 0,
         tpotSamples: 0,
-        failedWithOutput: 0,
         ttftMsSum: 0,
         tpotUsSum: 0,
         bucketMap: new Map(),

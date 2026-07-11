@@ -242,10 +242,11 @@ const PERFORMANCE_1: PerformanceTelemetryRecord = {
   operation: 'chat',
   runtimeLocation: 'SJC',
   requests: 5,
-  errors: 1,
-  ttftSamples: 4,
+  ttftSamplesOk: 4,
+  errorsWithOutput: 0,
+  errorsNoOutput: 1,
+  neutral: 0,
   tpotSamples: 4,
-  failedWithOutput: 0,
   ttftMsSum: 1000,
   tpotUsSum: 4000,
   buckets: [
@@ -262,10 +263,11 @@ const PERFORMANCE_2: PerformanceTelemetryRecord = {
   operation: 'chat',
   runtimeLocation: 'LOCAL',
   requests: 3,
-  errors: 0,
-  ttftSamples: 3,
+  ttftSamplesOk: 3,
+  errorsWithOutput: 0,
+  errorsNoOutput: 0,
+  neutral: 0,
   tpotSamples: 3,
-  failedWithOutput: 0,
   ttftMsSum: 600,
   tpotUsSum: 1500,
   buckets: [
@@ -479,52 +481,29 @@ test('import rejects performance records that break the recorder invariants', as
     performance: [record],
   });
 
-  // errors + ttftSamples - failedWithOutput > requests (partition overrun)
-  const errorPlusTtftOverflow = await doImport(app, 'replace', withPerf({
+  // Partition sum ≠ requests. The four disjoint counters must add up to
+  // requests on any row the recorder wrote; anything else is corruption.
+  const partitionMismatch = await doImport(app, 'replace', withPerf({
     ...PERFORMANCE_1,
-    requests: 3,
-    errors: 2,
-    ttftSamples: 2,
+    requests: 5,
+    ttftSamplesOk: 4,
+    errorsWithOutput: 0,
+    errorsNoOutput: 0,
+    neutral: 0,
   }));
-  assertEquals(errorPlusTtftOverflow.status, 400);
-  assertEquals(String(errorPlusTtftOverflow.body.error).includes('errors + ttftSamples - failedWithOutput must not exceed requests'), true);
+  assertEquals(partitionMismatch.status, 400);
+  assertEquals(String(partitionMismatch.body.error).includes('ttftSamplesOk + errorsWithOutput + errorsNoOutput + neutral must equal requests'), true);
 
-  // failedWithOutput > errors — the overlap can't exceed either counter it lives in.
-  const failedBeyondErrors = await doImport(app, 'replace', withPerf({
-    ...PERFORMANCE_1,
-    requests: 10,
-    errors: 1,
-    ttftSamples: 4,
-    tpotSamples: 4,
-    failedWithOutput: 2,
-    buckets: [
-      { metric: 'ttft_ms', lower: 100, upper: 142, count: 4 },
-      { metric: 'tpot_us', lower: 1000, upper: 1250, count: 4 },
-    ],
-  }));
-  assertEquals(failedBeyondErrors.status, 400);
-  assertEquals(String(failedBeyondErrors.body.error).includes('failedWithOutput must not exceed errors'), true);
-
-  // failedWithOutput > ttftSamples — the overlap can't exceed either counter it lives in.
-  const failedBeyondTtft = await doImport(app, 'replace', withPerf({
-    ...PERFORMANCE_1,
-    requests: 10,
-    errors: 5,
-    ttftSamples: 2,
-    tpotSamples: 2,
-    failedWithOutput: 3,
-    buckets: [
-      { metric: 'ttft_ms', lower: 100, upper: 142, count: 2 },
-      { metric: 'tpot_us', lower: 1000, upper: 1250, count: 2 },
-    ],
-  }));
-  assertEquals(failedBeyondTtft.status, 400);
-  assertEquals(String(failedBeyondTtft.body.error).includes('failedWithOutput must not exceed ttftSamples'), true);
-
-  // tpotSamples > ttftSamples
+  // tpotSamples > ttftSamplesOk + errorsWithOutput — a TPOT sample requires a
+  // preceding TTFT stamp, so it can never exceed the union of healthy and
+  // partial-output TTFT rows.
   const tpotBeyondTtft = await doImport(app, 'replace', withPerf({
     ...PERFORMANCE_1,
-    ttftSamples: 2,
+    requests: 5,
+    ttftSamplesOk: 2,
+    errorsWithOutput: 0,
+    errorsNoOutput: 3,
+    neutral: 0,
     tpotSamples: 3,
     buckets: [
       { metric: 'ttft_ms', lower: 100, upper: 142, count: 2 },
@@ -532,19 +511,26 @@ test('import rejects performance records that break the recorder invariants', as
     ],
   }));
   assertEquals(tpotBeyondTtft.status, 400);
-  assertEquals(String(tpotBeyondTtft.body.error).includes('tpotSamples must not exceed ttftSamples'), true);
+  assertEquals(String(tpotBeyondTtft.body.error).includes('tpotSamples must not exceed ttftSamplesOk + errorsWithOutput'), true);
 
-  // ttft_ms bucket sum does not match ttftSamples
+  // ttft_ms bucket sum does not match ttftSamplesOk + errorsWithOutput. Every
+  // TTFT sample increments exactly one bucket entry, so the histogram sum has
+  // to equal the counter sum or percentile queries lie.
   const ttftBucketMismatch = await doImport(app, 'replace', withPerf({
     ...PERFORMANCE_1,
-    ttftSamples: 4,
+    requests: 5,
+    ttftSamplesOk: 4,
+    errorsWithOutput: 0,
+    errorsNoOutput: 1,
+    neutral: 0,
+    tpotSamples: 4,
     buckets: [
       { metric: 'ttft_ms', lower: 100, upper: 142, count: 3 },
       { metric: 'tpot_us', lower: 1000, upper: 1250, count: 4 },
     ],
   }));
   assertEquals(ttftBucketMismatch.status, 400);
-  assertEquals(String(ttftBucketMismatch.body.error).includes('ttft_ms bucket sum (3) must equal ttftSamples (4)'), true);
+  assertEquals(String(ttftBucketMismatch.body.error).includes('ttft_ms bucket sum (3) must equal ttftSamplesOk + errorsWithOutput (4)'), true);
 
   // tpot_us bucket sum does not match tpotSamples
   const tpotBucketMismatch = await doImport(app, 'replace', withPerf({
@@ -562,7 +548,12 @@ test('import rejects performance records that break the recorder invariants', as
   // the aggregator's per-bucket merge.
   const duplicateBucket = await doImport(app, 'replace', withPerf({
     ...PERFORMANCE_1,
-    ttftSamples: 4,
+    ttftSamplesOk: 4,
+    errorsWithOutput: 0,
+    errorsNoOutput: 1,
+    neutral: 0,
+    requests: 5,
+    tpotSamples: 4,
     buckets: [
       { metric: 'ttft_ms', lower: 100, upper: 142, count: 2 },
       { metric: 'ttft_ms', lower: 100, upper: 142, count: 2 },

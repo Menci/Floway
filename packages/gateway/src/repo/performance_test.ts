@@ -19,7 +19,7 @@ const sample = (over: Partial<PerformanceSample> = {}): PerformanceSample => ({
   runtimeLocation: 'hkg',
   ttftMs: 340,
   tpotUs: 15_000,
-  failed: false,
+  success: true,
   ...over,
 });
 
@@ -52,8 +52,10 @@ for (const impl of impls) {
         upstream: 'anthropic-1',
         runtimeLocation: 'hkg',
         requests: 1,
-        errors: 0,
-        ttftSamples: 1,
+        ttftSamplesOk: 1,
+        errorsWithOutput: 0,
+        errorsNoOutput: 0,
+        neutral: 0,
         tpotSamples: 1,
         ttftMsSum: 340,
         tpotUsSum: 15_000,
@@ -64,12 +66,30 @@ for (const impl of impls) {
       expect(tpot).toEqual({ metric: 'tpot_us', lower: 14_286, upper: 16_667, count: 1 });
     });
 
-    it('records an error into summary requests + errors only, no bucket rows', async () => {
+    it('records a zero-output error into summary requests + errorsNoOutput only, no bucket rows', async () => {
       const repo = await impl.open();
-      await repo.recordError(errSample());
+      await repo.recordZeroOutputError(errSample());
       const rows = await repo.listAll();
-      expect(rows[0]).toMatchObject({ requests: 1, errors: 1, ttftSamples: 0, tpotSamples: 0, ttftMsSum: 0, tpotUsSum: 0 });
+      expect(rows[0]).toMatchObject({ requests: 1, ttftSamplesOk: 0, errorsWithOutput: 0, errorsNoOutput: 1, neutral: 0, tpotSamples: 0, ttftMsSum: 0, tpotUsSum: 0 });
       expect(rows[0]!.buckets).toEqual([]);
+    });
+
+    it('routes a failed sample into errorsWithOutput (not ttftSamplesOk)', async () => {
+      const repo = await impl.open();
+      await repo.recordSample(sample({ success: false }));
+      const [row] = await repo.listAll();
+      expect(row).toMatchObject({
+        requests: 1,
+        ttftSamplesOk: 0,
+        errorsWithOutput: 1,
+        errorsNoOutput: 0,
+        neutral: 0,
+        tpotSamples: 1,
+        ttftMsSum: 340,
+        tpotUsSum: 15_000,
+      });
+      expect(row!.buckets.some(b => b.metric === 'ttft_ms')).toBe(true);
+      expect(row!.buckets.some(b => b.metric === 'tpot_us')).toBe(true);
     });
 
     it('additive upsert accumulates sums, samples, and bucket counts', async () => {
@@ -79,7 +99,7 @@ for (const impl of impls) {
       await repo.recordSample(sample({ ttftMs: 250, tpotUs: 10_500 }));
       await repo.recordSample(sample({ ttftMs: 260, tpotUs: 11_500 }));
       const [row] = await repo.listAll();
-      expect(row).toMatchObject({ requests: 2, ttftSamples: 2, tpotSamples: 2, ttftMsSum: 510, tpotUsSum: 22_000 });
+      expect(row).toMatchObject({ requests: 2, ttftSamplesOk: 2, tpotSamples: 2, ttftMsSum: 510, tpotUsSum: 22_000 });
       const ttft = row!.buckets.find(b => b.metric === 'ttft_ms' && b.lower === 200 && b.upper === 300)!;
       expect(ttft.count).toBe(2);
       const tpot = row!.buckets.find(b => b.metric === 'tpot_us' && b.lower === 10_000 && b.upper === 12_500)!;
@@ -110,10 +130,12 @@ for (const impl of impls) {
       const [orig] = await repo.listAll();
       await repo.set({
         ...orig!,
-        ttftSamples: 5,
-        tpotSamples: 5,
         requests: 5,
-        errors: 0,
+        ttftSamplesOk: 5,
+        errorsWithOutput: 0,
+        errorsNoOutput: 0,
+        neutral: 0,
+        tpotSamples: 5,
         ttftMsSum: 500,
         tpotUsSum: 40_000,
         buckets: [
@@ -122,7 +144,7 @@ for (const impl of impls) {
         ],
       });
       const [after] = await repo.listAll();
-      expect(after).toMatchObject({ ttftSamples: 5, tpotSamples: 5, ttftMsSum: 500, tpotUsSum: 40_000 });
+      expect(after).toMatchObject({ requests: 5, ttftSamplesOk: 5, tpotSamples: 5, ttftMsSum: 500, tpotUsSum: 40_000 });
       expect(after!.buckets).toHaveLength(2);
     });
 
@@ -139,17 +161,17 @@ for (const impl of impls) {
       const { tpotUs: _tpot, ...ttftOnly } = sample();
       await repo.recordSample(ttftOnly);
       const [row] = await repo.listAll();
-      expect(row).toMatchObject({ requests: 1, ttftSamples: 1, tpotSamples: 0, ttftMsSum: 340, tpotUsSum: 0 });
+      expect(row).toMatchObject({ requests: 1, ttftSamplesOk: 1, tpotSamples: 0, ttftMsSum: 340, tpotUsSum: 0 });
       expect(row!.buckets.some(b => b.metric === 'ttft_ms')).toBe(true);
       expect(row!.buckets.some(b => b.metric === 'tpot_us')).toBe(false);
     });
 
-    it('recordNeutral bumps requests only', async () => {
+    it('recordNeutral bumps requests and neutral', async () => {
       const repo = await impl.open();
       await repo.recordNeutral(errSample({ operation: 'embeddings' }));
       const rows = await repo.listAll();
       expect(rows).toHaveLength(1);
-      expect(rows[0]).toMatchObject({ requests: 1, errors: 0, ttftSamples: 0, tpotSamples: 0, ttftMsSum: 0, tpotUsSum: 0 });
+      expect(rows[0]).toMatchObject({ requests: 1, neutral: 1, ttftSamplesOk: 0, errorsWithOutput: 0, errorsNoOutput: 0, tpotSamples: 0, ttftMsSum: 0, tpotUsSum: 0 });
       expect(rows[0]!.buckets).toEqual([]);
     });
 
@@ -160,8 +182,9 @@ for (const impl of impls) {
       await repo.recordNeutral(errSample({ operation: 'embeddings' }));
       const [row] = await repo.listAll();
       expect(row!.requests).toBe(3);
-      expect(row!.errors).toBe(0);
-      expect(row!.ttftSamples).toBe(0);
+      expect(row!.neutral).toBe(3);
+      expect(row!.errorsNoOutput).toBe(0);
+      expect(row!.ttftSamplesOk).toBe(0);
       expect(row!.tpotSamples).toBe(0);
     });
 
@@ -184,10 +207,11 @@ describe('SqlPerformanceRepo upsertSummary set-mode guard', () => {
     const incomplete = {
       ...errSample(),
       requests: 5,
-      errors: 0,
-      ttftSamples: 5,
+      ttftSamplesOk: 5,
+      errorsWithOutput: 0,
+      errorsNoOutput: 0,
+      neutral: 0,
       tpotSamples: 5,
-      failedWithOutput: 0,
       // ttftMsSum omitted on purpose
       tpotUsSum: 40_000,
       buckets: [],

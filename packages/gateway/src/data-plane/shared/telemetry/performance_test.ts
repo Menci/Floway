@@ -26,14 +26,14 @@ describe('recordPerformance', () => {
     promises.length = 0;
   });
 
-  // --- error ---
+  // --- zero-output error ---
 
-  it('records an error when failed=true', async () => {
+  it('records a zero-output error when failed=true with no output tokens', async () => {
     const ctx = ctxWith({ firstOutputTokenAt: null, upstreamCallStartedAt: null, telemetry: undefined });
     recordPerformance(ctx, telemetry, true, 0, 400);
     await Promise.all(promises);
     const [row] = await repo.performance.listAll();
-    expect(row).toMatchObject({ errors: 1, ttftSamples: 0, tpotSamples: 0 });
+    expect(row).toMatchObject({ requests: 1, errorsNoOutput: 1, ttftSamplesOk: 0, errorsWithOutput: 0, neutral: 0, tpotSamples: 0 });
   });
 
   // --- neutral ---
@@ -43,15 +43,15 @@ describe('recordPerformance', () => {
     recordPerformance(ctx, { ...telemetry, operation: 'embeddings' }, false, 0, 500);
     await Promise.all(promises);
     const [row] = await repo.performance.listAll();
-    expect(row).toMatchObject({ requests: 1, errors: 0, ttftSamples: 0, tpotSamples: 0, ttftMsSum: 0, tpotUsSum: 0 });
+    expect(row).toMatchObject({ requests: 1, neutral: 1, ttftSamplesOk: 0, errorsWithOutput: 0, errorsNoOutput: 0, tpotSamples: 0, ttftMsSum: 0, tpotUsSum: 0 });
   });
 
-  it('records an error row for non-chat operation on failure', async () => {
+  it('records a zero-output error for non-chat operation on failure', async () => {
     const ctx = ctxWith({ firstOutputTokenAt: null, upstreamCallStartedAt: null, telemetry: undefined });
     recordPerformance(ctx, { ...telemetry, operation: 'embeddings' }, true, 0, 500);
     await Promise.all(promises);
     const [row] = await repo.performance.listAll();
-    expect(row).toMatchObject({ requests: 1, errors: 1, ttftSamples: 0, tpotSamples: 0 });
+    expect(row).toMatchObject({ requests: 1, errorsNoOutput: 1, ttftSamplesOk: 0, errorsWithOutput: 0, neutral: 0, tpotSamples: 0 });
   });
 
   it('records neutral for chat with no upstream call (synthetic result)', async () => {
@@ -60,7 +60,7 @@ describe('recordPerformance', () => {
     recordPerformance(ctx, telemetry, false, 50, 400);
     await Promise.all(promises);
     const [row] = await repo.performance.listAll();
-    expect(row).toMatchObject({ requests: 1, errors: 0, ttftSamples: 0, tpotSamples: 0, ttftMsSum: 0, tpotUsSum: 0 });
+    expect(row).toMatchObject({ requests: 1, neutral: 1, ttftSamplesOk: 0, errorsWithOutput: 0, errorsNoOutput: 0, tpotSamples: 0, ttftMsSum: 0, tpotUsSum: 0 });
   });
 
   it('records neutral for chat with upstream call but no first generated token', async () => {
@@ -69,7 +69,7 @@ describe('recordPerformance', () => {
     recordPerformance(ctx, telemetry, false, 50, 400);
     await Promise.all(promises);
     const [row] = await repo.performance.listAll();
-    expect(row).toMatchObject({ requests: 1, errors: 0, ttftSamples: 0, tpotSamples: 0, ttftMsSum: 0, tpotUsSum: 0 });
+    expect(row).toMatchObject({ requests: 1, neutral: 1, ttftSamplesOk: 0, errorsWithOutput: 0, errorsNoOutput: 0, tpotSamples: 0, ttftMsSum: 0, tpotUsSum: 0 });
   });
 
   // --- ttft-only sample ---
@@ -81,7 +81,7 @@ describe('recordPerformance', () => {
     recordPerformance(ctx, telemetry, false, 1, 400);
     await Promise.all(promises);
     const [row] = await repo.performance.listAll();
-    expect(row).toMatchObject({ requests: 1, errors: 0, ttftSamples: 1, tpotSamples: 0, ttftMsSum: 50, tpotUsSum: 0 });
+    expect(row).toMatchObject({ requests: 1, ttftSamplesOk: 1, errorsWithOutput: 0, errorsNoOutput: 0, neutral: 0, tpotSamples: 0, ttftMsSum: 50, tpotUsSum: 0 });
     expect(row!.buckets.some(b => b.metric === 'ttft_ms')).toBe(true);
     expect(row!.buckets.some(b => b.metric === 'tpot_us')).toBe(false);
   });
@@ -93,7 +93,7 @@ describe('recordPerformance', () => {
     recordPerformance(ctx, telemetry, false, 0, 400);
     await Promise.all(promises);
     const [row] = await repo.performance.listAll();
-    expect(row).toMatchObject({ requests: 1, errors: 0, ttftSamples: 1, tpotSamples: 0, ttftMsSum: 50 });
+    expect(row).toMatchObject({ requests: 1, ttftSamplesOk: 1, errorsWithOutput: 0, errorsNoOutput: 0, neutral: 0, tpotSamples: 0, ttftMsSum: 50 });
   });
 
   // --- full ttft + tpot sample ---
@@ -108,7 +108,7 @@ describe('recordPerformance', () => {
     // Stream = (1000 - 500) * 1000 = 500_000μs covers (N-1) = 199 inter-token intervals;
     // TPOT = 500_000 / 199 ≈ 2513 μs/tok.
     expect(row!.tpotUsSum).toBe(2_513);
-    expect(row).toMatchObject({ requests: 1, ttftSamples: 1, tpotSamples: 1, errors: 0 });
+    expect(row).toMatchObject({ requests: 1, ttftSamplesOk: 1, errorsWithOutput: 0, tpotSamples: 1 });
   });
 
   it('records sample with exactly 2 output tokens (boundary: outputTokens >= 2)', async () => {
@@ -121,26 +121,29 @@ describe('recordPerformance', () => {
     // Stream = (600 - 200) * 1000 = 400_000μs covers (N-1) = 1 inter-token interval;
     // TPOT = 400_000 / 1 = 400_000 μs/tok.
     expect(row!.tpotUsSum).toBe(400_000);
-    expect(row).toMatchObject({ requests: 1, ttftSamples: 1, tpotSamples: 1, errors: 0 });
+    expect(row).toMatchObject({ requests: 1, ttftSamplesOk: 1, errorsWithOutput: 0, tpotSamples: 1 });
   });
 
   // --- partial-output failure ---
 
-  it('records TTFT+TPOT sample AND bumps errors when a stream fails after emitting tokens', async () => {
+  it('records TTFT+TPOT sample AND routes to errorsWithOutput when a stream fails after emitting tokens', async () => {
     // Mid-stream failure that produced output: the recorder MUST expose
-    // the observed latency (TTFT + TPOT) as a sample AND increment errors,
-    // in one atomic upsert. The `failed_with_output` counter tracks the
-    // overlap so the aggregator can back it out of `neutral`.
+    // the observed latency (TTFT + TPOT) as a sample AND count against errors,
+    // in one atomic upsert. The partition-first partition lands it in
+    // `errorsWithOutput` — a disjoint counter that never overlaps
+    // `ttftSamplesOk`, so the aggregator derives `errors` and `ttftSamples`
+    // without inclusion-exclusion.
     const ctx = ctxWith({ firstOutputTokenAt: 500, upstreamCallStartedAt: 100, telemetry: undefined });
     recordPerformance(ctx, telemetry, true, 200, 1000);
     await Promise.all(promises);
     const [row] = await repo.performance.listAll();
     expect(row).toMatchObject({
       requests: 1,
-      errors: 1,
-      ttftSamples: 1,
+      ttftSamplesOk: 0,
+      errorsWithOutput: 1,
+      errorsNoOutput: 0,
+      neutral: 0,
       tpotSamples: 1,
-      failedWithOutput: 1,
     });
     expect(row!.ttftMsSum).toBe(400);
     expect(row!.tpotUsSum).toBe(2_513);
@@ -148,20 +151,21 @@ describe('recordPerformance', () => {
     expect(row!.buckets.some(b => b.metric === 'tpot_us')).toBe(true);
   });
 
-  it('records TTFT-only sample AND bumps errors when partial failure produced a single token', async () => {
+  it('records TTFT-only sample AND routes to errorsWithOutput when partial failure produced a single token', async () => {
     // outputTokens=1 gives no inter-token interval so TPOT stays 0, but TTFT
-    // is real and the failure still counts. failed_with_output tracks the
-    // overlap with the ttft sample.
+    // is real and the failure still counts. The row lands in the
+    // `errorsWithOutput` partition alongside its TTFT sample.
     const ctx = ctxWith({ firstOutputTokenAt: 100, upstreamCallStartedAt: 50, telemetry: undefined });
     recordPerformance(ctx, telemetry, true, 1, 400);
     await Promise.all(promises);
     const [row] = await repo.performance.listAll();
     expect(row).toMatchObject({
       requests: 1,
-      errors: 1,
-      ttftSamples: 1,
+      ttftSamplesOk: 0,
+      errorsWithOutput: 1,
+      errorsNoOutput: 0,
+      neutral: 0,
       tpotSamples: 0,
-      failedWithOutput: 1,
       ttftMsSum: 50,
       tpotUsSum: 0,
     });
@@ -169,20 +173,21 @@ describe('recordPerformance', () => {
     expect(row!.buckets.some(b => b.metric === 'tpot_us')).toBe(false);
   });
 
-  it('records pure error (no sample) when a failure produced zero output tokens', async () => {
+  it('records pure zero-output error (no sample) when a failure produced zero output tokens', async () => {
     // Even with a first-token stamp on the ctx (rare race), if usage reports
-    // zero tokens the failure lands in the plain error bucket — nothing to
-    // report a TTFT for, and `failed_with_output` stays 0.
+    // zero tokens the failure lands in the `errorsNoOutput` partition — no
+    // TTFT to report, no bucket rows.
     const ctx = ctxWith({ firstOutputTokenAt: 100, upstreamCallStartedAt: 50, telemetry: undefined });
     recordPerformance(ctx, telemetry, true, 0, 400);
     await Promise.all(promises);
     const [row] = await repo.performance.listAll();
     expect(row).toMatchObject({
       requests: 1,
-      errors: 1,
-      ttftSamples: 0,
+      ttftSamplesOk: 0,
+      errorsWithOutput: 0,
+      errorsNoOutput: 1,
+      neutral: 0,
       tpotSamples: 0,
-      failedWithOutput: 0,
       ttftMsSum: 0,
     });
     expect(row!.buckets).toEqual([]);

@@ -823,7 +823,7 @@ test('Responses WebSocket outer catch records a failed perf sample attributed to
     assertEquals(perfRows[0]?.upstream, 'up_throwing');
     assertEquals(perfRows[0]?.model, 'gpt-direct-responses');
     assertEquals(perfRows[0]?.operation, 'chat');
-    assertEquals(perfRows[0]?.errors, 1);
+    assertEquals(perfRows[0]?.errorsNoOutput, 1);
     assertEquals(perfRows[0]?.requests, 1);
   } finally {
     generateSpy.mockRestore();

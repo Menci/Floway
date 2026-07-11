@@ -526,10 +526,11 @@ const parsePerformanceRecords = (value: unknown): { type: 'ok'; records: Perform
       typeof item.runtimeLocation !== 'string' ||
       item.runtimeLocation.length === 0 ||
       !isNonNegativeSafeInteger(item.requests) ||
-      !isNonNegativeSafeInteger(item.errors) ||
-      !isNonNegativeSafeInteger(item.ttftSamples) ||
+      !isNonNegativeSafeInteger(item.ttftSamplesOk) ||
+      !isNonNegativeSafeInteger(item.errorsWithOutput) ||
+      !isNonNegativeSafeInteger(item.errorsNoOutput) ||
+      !isNonNegativeSafeInteger(item.neutral) ||
       !isNonNegativeSafeInteger(item.tpotSamples) ||
-      !isNonNegativeSafeInteger(item.failedWithOutput) ||
       !isNonNegativeSafeInteger(item.ttftMsSum) ||
       !isNonNegativeSafeInteger(item.tpotUsSum) ||
       !Array.isArray(item.buckets)
@@ -537,29 +538,30 @@ const parsePerformanceRecords = (value: unknown): { type: 'ok'; records: Perform
       return { type: 'invalid', index: i, error: 'record fields are missing or malformed' };
     }
 
-    // Cross-field invariants the recorder maintains and the aggregator relies
-    // on. `errors <= requests` and `ttftSamples <= requests` hold as independent
-    // caps; `failedWithOutput` is the overlap (a partial-output failure counts
-    // in both errors AND ttftSamples), so the tighter cap is
-    // `errors + ttftSamples - failedWithOutput <= requests`, which also implies
-    // `failedWithOutput <= min(errors, ttftSamples)`. `tpotSamples <=
-    // ttftSamples` because a TPOT sample requires a preceding TTFT stamp on
-    // the same stream.
-    const errorsN = item.errors as number;
-    const ttftN = item.ttftSamples as number;
-    const failedWithOutputN = item.failedWithOutput as number;
+    // Partition-first invariant: every request lands in exactly one of the
+    // four counters, so their sum equals `requests` on any row the recorder
+    // wrote. `tpotSamples` is orthogonal (a subset of TTFT-carrying rows —
+    // ttftSamplesOk + errorsWithOutput — where at least two output tokens
+    // streamed).
+    const ttftOkN = item.ttftSamplesOk as number;
+    const errWithOutN = item.errorsWithOutput as number;
+    const errNoOutN = item.errorsNoOutput as number;
+    const neutralN = item.neutral as number;
     const requestsN = item.requests as number;
-    if (failedWithOutputN > errorsN) {
-      return { type: 'invalid', index: i, error: 'failedWithOutput must not exceed errors' };
+    const tpotN = item.tpotSamples as number;
+    if (ttftOkN + errWithOutN + errNoOutN + neutralN !== requestsN) {
+      return {
+        type: 'invalid',
+        index: i,
+        error: 'ttftSamplesOk + errorsWithOutput + errorsNoOutput + neutral must equal requests',
+      };
     }
-    if (failedWithOutputN > ttftN) {
-      return { type: 'invalid', index: i, error: 'failedWithOutput must not exceed ttftSamples' };
-    }
-    if (errorsN + ttftN - failedWithOutputN > requestsN) {
-      return { type: 'invalid', index: i, error: 'errors + ttftSamples - failedWithOutput must not exceed requests' };
-    }
-    if ((item.tpotSamples as number) > ttftN) {
-      return { type: 'invalid', index: i, error: 'tpotSamples must not exceed ttftSamples' };
+    if (tpotN > ttftOkN + errWithOutN) {
+      return {
+        type: 'invalid',
+        index: i,
+        error: 'tpotSamples must not exceed ttftSamplesOk + errorsWithOutput',
+      };
     }
 
     const buckets: PerformanceBucketRow[] = [];
@@ -594,12 +596,14 @@ const parsePerformanceRecords = (value: unknown): { type: 'ok'; records: Perform
     // Every ttft/tpot sample the recorder logs also increments exactly one
     // bucket entry for its metric. If the per-metric bucket sum doesn't match
     // the declared sample count, the histogram is inconsistent with the
-    // counters and percentile queries would return misleading values.
-    if (ttftBucketCount !== (item.ttftSamples as number)) {
-      return { type: 'invalid', index: i, error: `ttft_ms bucket sum (${ttftBucketCount}) must equal ttftSamples (${item.ttftSamples as number})` };
+    // counters and percentile queries would return misleading values. TTFT
+    // buckets cover both healthy and partial-output-failure samples, so the
+    // sum matches `ttftSamplesOk + errorsWithOutput`.
+    if (ttftBucketCount !== ttftOkN + errWithOutN) {
+      return { type: 'invalid', index: i, error: `ttft_ms bucket sum (${ttftBucketCount}) must equal ttftSamplesOk + errorsWithOutput (${ttftOkN + errWithOutN})` };
     }
-    if (tpotBucketCount !== (item.tpotSamples as number)) {
-      return { type: 'invalid', index: i, error: `tpot_us bucket sum (${tpotBucketCount}) must equal tpotSamples (${item.tpotSamples as number})` };
+    if (tpotBucketCount !== tpotN) {
+      return { type: 'invalid', index: i, error: `tpot_us bucket sum (${tpotBucketCount}) must equal tpotSamples (${tpotN})` };
     }
 
     records.push({
@@ -609,11 +613,12 @@ const parsePerformanceRecords = (value: unknown): { type: 'ok'; records: Perform
       upstream: item.upstream,
       operation: item.operation as PerformanceOperation,
       runtimeLocation: item.runtimeLocation,
-      requests: item.requests,
-      errors: item.errors,
-      ttftSamples: item.ttftSamples,
-      tpotSamples: item.tpotSamples,
-      failedWithOutput: item.failedWithOutput,
+      requests: requestsN,
+      ttftSamplesOk: ttftOkN,
+      errorsWithOutput: errWithOutN,
+      errorsNoOutput: errNoOutN,
+      neutral: neutralN,
+      tpotSamples: tpotN,
       ttftMsSum: item.ttftMsSum,
       tpotUsSum: item.tpotUsSum,
       buckets,

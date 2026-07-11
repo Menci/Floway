@@ -618,7 +618,7 @@ const performanceDimensionBinds = (dims: PerformanceDimensions): unknown[] =>
 // form the composite PK and lead the VALUES tuple; counts trail in the exact
 // order the ON CONFLICT clause updates them. `upsertSummary` binds the two
 // lists together so any future column addition is a one-line edit here.
-const PERFORMANCE_SUMMARY_COUNT_COLUMNS = ['requests', 'errors', 'ttft_samples', 'tpot_samples', 'failed_with_output', 'ttft_ms_sum', 'tpot_us_sum'] as const;
+const PERFORMANCE_SUMMARY_COUNT_COLUMNS = ['requests', 'ttft_samples_ok', 'errors_with_output', 'errors_no_output', 'neutral', 'tpot_samples', 'ttft_ms_sum', 'tpot_us_sum'] as const;
 type PerformanceSummaryCountColumn = typeof PERFORMANCE_SUMMARY_COUNT_COLUMNS[number];
 
 const buildPerformanceSummarySql = (mode: 'add' | 'set'): string => {
@@ -642,10 +642,11 @@ class SqlPerformanceRepo implements PerformanceRepo {
   async recordSample(sample: PerformanceSample): Promise<void> {
     const summaryStmt = this.upsertSummary(sample, {
       requests: 1,
-      errors: sample.failed ? 1 : 0,
-      ttft_samples: 1,
+      ttft_samples_ok: sample.success ? 1 : 0,
+      errors_with_output: sample.success ? 0 : 1,
+      errors_no_output: 0,
+      neutral: 0,
       tpot_samples: sample.tpotUs === undefined ? 0 : 1,
-      failed_with_output: sample.failed ? 1 : 0,
       ttft_ms_sum: sample.ttftMs,
       tpot_us_sum: sample.tpotUs ?? 0,
     }, 'add');
@@ -654,12 +655,12 @@ class SqlPerformanceRepo implements PerformanceRepo {
     await runStatements(this.db, stmts);
   }
 
-  async recordError(dims: PerformanceDimensions): Promise<void> {
-    await this.upsertSummary(dims, { requests: 1, errors: 1 }, 'add').run();
+  async recordZeroOutputError(dims: PerformanceDimensions): Promise<void> {
+    await this.upsertSummary(dims, { requests: 1, errors_no_output: 1 }, 'add').run();
   }
 
   async recordNeutral(dims: PerformanceDimensions): Promise<void> {
-    await this.upsertSummary(dims, { requests: 1 }, 'add').run();
+    await this.upsertSummary(dims, { requests: 1, neutral: 1 }, 'add').run();
   }
 
   async query(opts: { keyId?: string; start: string; end: string }): Promise<PerformanceTelemetryRecord[]> {
@@ -675,10 +676,11 @@ class SqlPerformanceRepo implements PerformanceRepo {
   async set(record: PerformanceTelemetryRecord): Promise<void> {
     const summaryStmt = this.upsertSummary(record, {
       requests: record.requests,
-      errors: record.errors,
-      ttft_samples: record.ttftSamples,
+      ttft_samples_ok: record.ttftSamplesOk,
+      errors_with_output: record.errorsWithOutput,
+      errors_no_output: record.errorsNoOutput,
+      neutral: record.neutral,
       tpot_samples: record.tpotSamples,
-      failed_with_output: record.failedWithOutput,
       ttft_ms_sum: record.ttftMsSum,
       tpot_us_sum: record.tpotUsSum,
     }, 'set');
@@ -736,9 +738,9 @@ class SqlPerformanceRepo implements PerformanceRepo {
 
   private async rowsFromWhere(where: string, binds: readonly unknown[]): Promise<PerformanceTelemetryRecord[]> {
     const { results: summaryRows } = await this.db.prepare(
-      `SELECT hour, key_id, model, upstream, operation, runtime_location, requests, errors, ttft_samples, tpot_samples, failed_with_output, ttft_ms_sum, tpot_us_sum
+      `SELECT hour, key_id, model, upstream, operation, runtime_location, requests, ttft_samples_ok, errors_with_output, errors_no_output, neutral, tpot_samples, ttft_ms_sum, tpot_us_sum
        FROM performance_summary WHERE ${where} ORDER BY hour`,
-    ).bind(...binds).all<PerformanceDimensionRow & { requests: number; errors: number; ttft_samples: number; tpot_samples: number; failed_with_output: number; ttft_ms_sum: number; tpot_us_sum: number }>();
+    ).bind(...binds).all<PerformanceDimensionRow & { requests: number; ttft_samples_ok: number; errors_with_output: number; errors_no_output: number; neutral: number; tpot_samples: number; ttft_ms_sum: number; tpot_us_sum: number }>();
 
     const records = new Map<string, Omit<PerformanceTelemetryRecord, 'buckets'> & { buckets: PerformanceBucketRow[] }>();
     for (const row of summaryRows) {
@@ -746,10 +748,11 @@ class SqlPerformanceRepo implements PerformanceRepo {
       records.set(performanceRecordKey(dims), {
         ...dims,
         requests: row.requests,
-        errors: row.errors,
-        ttftSamples: row.ttft_samples,
+        ttftSamplesOk: row.ttft_samples_ok,
+        errorsWithOutput: row.errors_with_output,
+        errorsNoOutput: row.errors_no_output,
+        neutral: row.neutral,
         tpotSamples: row.tpot_samples,
-        failedWithOutput: row.failed_with_output,
         ttftMsSum: row.ttft_ms_sum,
         tpotUsSum: row.tpot_us_sum,
         buckets: [],

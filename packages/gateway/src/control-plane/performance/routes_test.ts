@@ -13,7 +13,7 @@ test('/api/performance/overview modelRows carry backend-aggregated base-model pe
     operation: 'chat' as const,
     runtimeLocation: 'LOCAL',
     tpotUs: 500,
-    failed: false,
+    success: true,
   };
 
   // 90 fast samples (ttftMs=100 → bucket [0, 100]) + 10 slow samples (ttftMs=300 → bucket [200, 300]).
@@ -40,7 +40,6 @@ test('/api/performance/overview modelRows carry backend-aggregated base-model pe
       errors: 0,
       ttftSamples: 100,
       tpotSamples: 100,
-      failedWithOutput: 0,
       neutral: 0,
       ttftMsP50: 50,
       ttftMsP95: slowMid,
@@ -74,7 +73,7 @@ test('/api/performance/overview scopes to actor\'s keys in self-by-key mode', as
     operation: 'chat' as const,
     runtimeLocation: 'LOCAL',
     tpotUs: 500,
-    failed: false,
+    success: true,
   };
 
   await repo.performance.recordSample({ ...sample, keyId: apiKey.id, ttftMs: 50 });
@@ -100,7 +99,7 @@ test('/api/performance/overview always returns key metadata', async () => {
     runtimeLocation: 'LOCAL',
     ttftMs: 50,
     tpotUs: 500,
-    failed: false,
+    success: true,
   });
 
   const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&bucket=hour', { headers: { 'x-api-key': apiKey.key } });
@@ -140,7 +139,7 @@ test('/api/performance/overview all-by-user view aggregates over every key', asy
     runtimeLocation: 'LOCAL',
     ttftMs: 100,
     tpotUs: 500,
-    failed: false,
+    success: true,
   };
   await repo.performance.recordSample({ ...sample, keyId: apiKey.id });
   await repo.performance.recordSample({ ...sample, keyId: 'key_other' });
@@ -183,7 +182,7 @@ test('/api/performance/overview all-by-user keyRows spans every user\'s keys', a
     runtimeLocation: 'LOCAL',
     ttftMs: 100,
     tpotUs: 500,
-    failed: false,
+    success: true,
   };
   await repo.performance.recordSample({ ...sample, keyId: apiKey.id });
   await repo.performance.recordSample({ ...sample, keyId: 'key_other' });
@@ -217,7 +216,7 @@ test('/api/performance/overview all-by-user userRows split rows per user', async
     runtimeLocation: 'LOCAL',
     ttftMs: 100,
     tpotUs: 500,
-    failed: false,
+    success: true,
   };
   await repo.performance.recordSample({ ...sample, keyId: apiKey.id });
   await repo.performance.recordSample({ ...sample, keyId: apiKey.id });
@@ -260,7 +259,7 @@ test('/api/performance/overview series stays per-model under all-by-user view', 
     runtimeLocation: 'LOCAL',
     ttftMs: 100,
     tpotUs: 500,
-    failed: false,
+    success: true,
   };
   await repo.performance.recordSample({ ...sample, keyId: apiKey.id });
   await repo.performance.recordSample({ ...sample, keyId: 'key_other' });
@@ -290,7 +289,7 @@ test('/api/performance/overview leaves dimensionValues.userIds empty under self-
     runtimeLocation: 'LOCAL',
     ttftMs: 100,
     tpotUs: 500,
-    failed: false,
+    success: true,
   });
 
   const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&bucket=hour', { headers: { 'x-api-key': apiKey.key } });
@@ -322,7 +321,7 @@ test('/api/performance/overview returns dashboard aggregates from one repo query
     runtimeLocation: 'SJC',
     ttftMs: 250,
     tpotUs: 1000,
-    failed: false,
+    success: true,
   });
 
   const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&bucket=hour', { headers: { 'x-api-key': apiKey.key } });
@@ -339,7 +338,7 @@ test('/api/performance/overview returns dashboard aggregates from one repo query
 
 test('/api/performance/overview counts failed attempts in dashboard request totals', async () => {
   const { repo, apiKey } = await setupAppTest();
-  await repo.performance.recordError({
+  await repo.performance.recordZeroOutputError({
     hour: '2026-04-30T10',
     keyId: apiKey.id,
     model: 'gpt-5.5-pro-2026-04-23',
@@ -448,7 +447,7 @@ test('/api/performance/overview all-by-user attributes soft-deleted keys to thei
     runtimeLocation: 'LOCAL',
     ttftMs: 100,
     tpotUs: 500,
-    failed: false,
+    success: true,
   });
   await repo.apiKeys.softDelete(apiKey.id);
 
@@ -474,7 +473,7 @@ test('/api/performance/overview self-by-key surfaces soft-deleted keys metadata 
     runtimeLocation: 'LOCAL',
     ttftMs: 200,
     tpotUs: 500,
-    failed: false,
+    success: true,
   });
   await repo.apiKeys.softDelete(apiKey.id);
   // The acting api key was the one that was soft-deleted; build a fresh
@@ -517,7 +516,7 @@ test('/api/performance/overview returns operationRows grouped by operation value
     runtimeLocation: 'LOCAL',
     ttftMs: 100,
     tpotUs: 500,
-    failed: false,
+    success: true,
   });
   await repo.performance.recordNeutral({
     hour: '2026-04-30T10',

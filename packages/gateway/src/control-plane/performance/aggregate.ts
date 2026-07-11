@@ -8,10 +8,15 @@ export interface PerformanceDisplayRecord {
   bucket: string;
   group: string;
   requests: number;
+  // Derived from the partition-first counters carried on the raw record:
+  //   errors      = errorsWithOutput + errorsNoOutput
+  //   ttftSamples = ttftSamplesOk + errorsWithOutput
+  // (a partial-output failure contributes latency data AND counts against
+  // errors, so it lands in both totals.) `neutral` is a raw partition
+  // counter — successes with no TTFT stamp, distinct from ttft-sample rows.
   errors: number;
   ttftSamples: number;
   tpotSamples: number;
-  failedWithOutput: number;
   neutral: number;
   ttftMsP50: number | null;
   ttftMsP95: number | null;
@@ -39,10 +44,11 @@ interface MutableAggregate {
   bucket: string;
   group: string;
   requests: number;
-  errors: number;
-  ttftSamples: number;
+  ttftSamplesOk: number;
+  errorsWithOutput: number;
+  errorsNoOutput: number;
+  neutral: number;
   tpotSamples: number;
-  failedWithOutput: number;
   bucketsByMetric: Record<PerformanceMetric, Map<string, HistogramBucket>>;
 }
 
@@ -81,19 +87,21 @@ const updateAggregate = (aggregates: Map<string, MutableAggregate>, record: Perf
       bucket,
       group,
       requests: 0,
-      errors: 0,
-      ttftSamples: 0,
+      ttftSamplesOk: 0,
+      errorsWithOutput: 0,
+      errorsNoOutput: 0,
+      neutral: 0,
       tpotSamples: 0,
-      failedWithOutput: 0,
       bucketsByMetric: { ttft_ms: new Map(), tpot_us: new Map() },
     };
     aggregates.set(key, aggregate);
   }
   aggregate.requests += record.requests;
-  aggregate.errors += record.errors;
-  aggregate.ttftSamples += record.ttftSamples;
+  aggregate.ttftSamplesOk += record.ttftSamplesOk;
+  aggregate.errorsWithOutput += record.errorsWithOutput;
+  aggregate.errorsNoOutput += record.errorsNoOutput;
+  aggregate.neutral += record.neutral;
   aggregate.tpotSamples += record.tpotSamples;
-  aggregate.failedWithOutput += record.failedWithOutput;
   for (const b of record.buckets) {
     const metricMap = aggregate.bucketsByMetric[b.metric];
     const bucketKey = String(b.lower);
@@ -113,22 +121,14 @@ const toDisplayRecord = (a: MutableAggregate): PerformanceDisplayRecord => {
     bucket: a.bucket,
     group: a.group,
     requests: a.requests,
-    errors: a.errors,
-    ttftSamples: a.ttftSamples,
+    // Derived display totals: a partial-output failure (`errorsWithOutput`)
+    // contributes both an error AND a TTFT sample, so it appears in both
+    // sums by design — the partition-first counters keep the arithmetic
+    // total-preserving without an inclusion-exclusion step.
+    errors: a.errorsWithOutput + a.errorsNoOutput,
+    ttftSamples: a.ttftSamplesOk + a.errorsWithOutput,
     tpotSamples: a.tpotSamples,
-    failedWithOutput: a.failedWithOutput,
-    // Neutral = requests that landed in neither the error bucket nor a TTFT
-    // sample. A partial-output failure (`failed_with_output`) counts in both
-    // `errors` AND `ttftSamples`, so we back the overlap out of the raw
-    // subtraction to keep neutral aligned with what the recorder actually
-    // wrote. Every recorder path atomically bumps `requests` plus one of
-    // {error-only, ttft-sample-only, partial-output overlap, neutral}, and
-    // parsePerformanceRecords enforces the same invariant at import, so this
-    // arithmetic is non-negative for any row Floway wrote. Pass the raw
-    // value through: a negative result means the underlying row was
-    // corrupted by something outside the recorder (manual D1 edit, future
-    // recorder bug) and should surface, not hide behind a floor.
-    neutral: a.requests - a.ttftSamples - a.errors + a.failedWithOutput,
+    neutral: a.neutral,
     ttftMsP50: percentileFromBuckets(ttftBuckets, 0.5),
     ttftMsP95: percentileFromBuckets(ttftBuckets, 0.95),
     ttftMsP99: percentileFromBuckets(ttftBuckets, 0.99),

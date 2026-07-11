@@ -1,6 +1,6 @@
 import type { WebSearchProviderName } from '../shared/web-search-providers.ts';
 import type { AliasSelection, AliasTarget, AnnouncedMetadata, BillingDimension, ModelKind, ModelPricing } from '@floway-dev/protocols/common';
-import type { PerformanceOperation, ProviderModel, UpstreamRecord } from '@floway-dev/provider';
+import type { PerformanceOperation, PerformanceTelemetryContext, ProviderModel, UpstreamRecord } from '@floway-dev/provider';
 
 export interface ApiKey {
   id: string;
@@ -87,27 +87,28 @@ export type PerformanceMetric = 'ttft_ms' | 'tpot_us';
 
 export type { PerformanceOperation } from '@floway-dev/provider';
 
-export interface PerformanceDimensions {
+// A performance-summary row is a `PerformanceTelemetryContext` (the provider-
+// facing telemetry identity the recorder threads through the request) plus
+// the aggregation bucket. Keeping the shape a strict extension guarantees a
+// context can be spread into a dimensions object without repeating field
+// names or drifting them out of sync.
+export interface PerformanceDimensions extends PerformanceTelemetryContext {
   hour: string;              // 'YYYY-MM-DDTHH'
-  keyId: string;
-  model: string;
-  upstream: string;
-  operation: PerformanceOperation;
-  runtimeLocation: string;
 }
 
 // TPOT is measurable only when at least two output tokens are streamed; the
-// caller (recordPerformance) enforces that gate before setting
-// `tpotUs`. A TTFT-only sample omits it entirely.
+// caller (recordPerformance) enforces that gate before setting `tpotUs`. A
+// TTFT-only sample omits it entirely.
 //
-// `failed` marks a partial-output failure — the stream produced enough to
-// yield a real TTFT (and possibly TPOT) sample before failing. The repo
-// bumps `errors` and `failed_with_output` in the same atomic upsert that
-// bumps `ttft_samples`, so the counters stay internally consistent.
+// `success` discriminates a healthy TTFT sample from a partial-output failure
+// — the stream produced enough to yield a real TTFT (and possibly TPOT)
+// sample before failing. The repo routes the row to `ttft_samples_ok` when
+// success is true, or `errors_with_output` when false, so the counter
+// partition stays disjoint by construction.
 export interface PerformanceSample extends PerformanceDimensions {
   ttftMs: number;
   tpotUs?: number;
-  failed: boolean;
+  success: boolean;
 }
 
 export interface PerformanceBucketRow {
@@ -117,12 +118,20 @@ export interface PerformanceBucketRow {
   count: number;
 }
 
+// Partition-first counters — exactly one of the four counters bumps per
+// request, and their sum equals `requests`. `tpotSamples` is orthogonal (a
+// subset of `ttftSamplesOk + errorsWithOutput` where the stream produced
+// at least two output tokens). Display-friendly totals derive at
+// aggregation time:
+//   ttftSamples = ttftSamplesOk + errorsWithOutput
+//   errors      = errorsWithOutput + errorsNoOutput
 export interface PerformanceTelemetryRecord extends PerformanceDimensions {
   requests: number;
-  errors: number;
-  ttftSamples: number;        // requests contributing to TTFT (any first-token stamp), including partial-output failures
-  tpotSamples: number;        // requests contributing to TPOT (outputTokens >= 2), a subset of ttftSamples
-  failedWithOutput: number;   // partial-output failures counted in both `errors` and `ttftSamples` (`failed_with_output`)
+  ttftSamplesOk: number;      // successful streams with a TTFT stamp
+  errorsWithOutput: number;   // failures that streamed at least one token (carry a TTFT sample)
+  errorsNoOutput: number;     // pre-stream / usage-never-arrived failures
+  neutral: number;            // successes with no TTFT (non-chat / no upstream call / no first-token frame)
+  tpotSamples: number;        // subset of TTFT-carrying rows with a measurable inter-token interval
   ttftMsSum: number;
   tpotUsSum: number;
   buckets: readonly PerformanceBucketRow[];
@@ -192,16 +201,19 @@ export interface SearchUsageRepo {
 }
 
 export interface PerformanceRepo {
-  // Bumps `requests` and `ttft_samples` (+ `ttft_ms_sum` + one TTFT bucket).
-  // When `sample.tpotUs` is set, also bumps `tpot_samples` (+ `tpot_us_sum` +
-  // one TPOT bucket). When `sample.failed`, additionally bumps `errors` and
-  // `failed_with_output` in the same atomic upsert — for a partial-output
-  // failure whose stream produced a real TTFT before dying.
+  // Bumps `requests` + one of {ttft_samples_ok, errors_with_output} based on
+  // `sample.success` (+ `ttft_ms_sum` + one TTFT bucket). When `sample.tpotUs`
+  // is set, also bumps `tpot_samples` (+ `tpot_us_sum` + one TPOT bucket) —
+  // a partial-output failure whose stream produced a real TTFT before dying
+  // still contributes latency data alongside its error accounting.
   recordSample(sample: PerformanceSample): Promise<void>;
-  // Increments summary requests and errors; does not touch sums, samples, buckets, or failed_with_output.
-  recordError(dims: PerformanceDimensions): Promise<void>;
-  // Increments summary requests; does not touch errors, sums, samples, buckets, or failed_with_output. Used for
-  // non-chat successes and chat successes that never got a first output token or a real upstream call.
+  // Increments `requests` and `errors_no_output`; does not touch sums,
+  // samples, or buckets. Used for failures that produced no output tokens
+  // (pre-stream / usage-never-arrived errors).
+  recordZeroOutputError(dims: PerformanceDimensions): Promise<void>;
+  // Increments `requests` and `neutral`; does not touch errors, sums,
+  // samples, or buckets. Used for successful non-chat calls and chat
+  // successes that never got a first output token or a real upstream call.
   recordNeutral(dims: PerformanceDimensions): Promise<void>;
   query(opts: { keyId?: string; start: string; end: string }): Promise<PerformanceTelemetryRecord[]>;
   listAll(): Promise<PerformanceTelemetryRecord[]>;

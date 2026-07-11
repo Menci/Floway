@@ -18,10 +18,11 @@ const record = (overrides: Partial<PerformanceTelemetryRecord> = {}): Performanc
   operation: 'chat',
   runtimeLocation: 'LOCAL',
   requests: 1,
-  errors: 0,
-  ttftSamples: 1,
+  ttftSamplesOk: 1,
+  errorsWithOutput: 0,
+  errorsNoOutput: 0,
+  neutral: 0,
   tpotSamples: 1,
-  failedWithOutput: 0,
   ttftMsSum: 100,
   tpotUsSum: 500,
   // Bucket edges here are illustrative test fixtures, not the production edge set.
@@ -52,7 +53,6 @@ test('aggregatePerformanceForDisplay produces correct averages and percentiles f
       errors: 0,
       ttftSamples: 1,
       tpotSamples: 1,
-      failedWithOutput: 0,
       neutral: 0,
       ttftMsP50: TTFT_MID,
       ttftMsP95: TTFT_MID,
@@ -64,15 +64,17 @@ test('aggregatePerformanceForDisplay produces correct averages and percentiles f
   ]);
 });
 
-test('aggregatePerformanceForDisplay counts error-only rows as displayed requests without fabricating latency', () => {
+test('aggregatePerformanceForDisplay counts zero-output-error rows as displayed requests without fabricating latency', () => {
   const rows = aggregateSingle(
     [
       record({
         model: 'gpt-5.5-pro-2026-04-23',
         upstream: 'codex:1',
         requests: 3,
-        errors: 3,
-        ttftSamples: 0,
+        ttftSamplesOk: 0,
+        errorsWithOutput: 0,
+        errorsNoOutput: 3,
+        neutral: 0,
         tpotSamples: 0,
         ttftMsSum: 0,
         tpotUsSum: 0,
@@ -90,7 +92,6 @@ test('aggregatePerformanceForDisplay counts error-only rows as displayed request
       errors: 3,
       ttftSamples: 0,
       tpotSamples: 0,
-      failedWithOutput: 0,
       neutral: 0,
       ttftMsP50: null,
       ttftMsP95: null,
@@ -139,7 +140,7 @@ test('aggregatePerformanceForDisplay returns lower edge for overflow-bucket perc
     [
       record({
         ttftMsSum: 600_000,
-        ttftSamples: 1,
+        ttftSamplesOk: 1,
         tpotSamples: 1,
         requests: 1,
         buckets: [{ metric: 'ttft_ms', lower: 300_000, upper: null, count: 1 }],
@@ -197,7 +198,18 @@ test('aggregatePerformanceForDisplay splits rows by operation when groupBy is op
   const rows = aggregateSingle(
     [
       record({ operation: 'chat' }),
-      record({ operation: 'embeddings', requests: 2, errors: 0, ttftSamples: 0, tpotSamples: 0, ttftMsSum: 0, tpotUsSum: 0, buckets: [] }),
+      record({
+        operation: 'embeddings',
+        requests: 2,
+        ttftSamplesOk: 0,
+        errorsWithOutput: 0,
+        errorsNoOutput: 0,
+        neutral: 2,
+        tpotSamples: 0,
+        ttftMsSum: 0,
+        tpotUsSum: 0,
+        buckets: [],
+      }),
     ],
     { bucket: 'all', groupBy: 'operation', timezoneOffsetMinutes: 0 },
   );
@@ -207,81 +219,59 @@ test('aggregatePerformanceForDisplay splits rows by operation when groupBy is op
   assertEquals(groups, ['chat', 'embeddings']);
 });
 
-test('aggregatePerformanceForDisplay derives neutral as requests - ttftSamples - errors + failedWithOutput', () => {
+test('aggregatePerformanceForDisplay derives errors and ttftSamples from the partition counters', () => {
+  // requests = ttftSamplesOk + errorsWithOutput + errorsNoOutput + neutral = 5
+  // Derived totals: errors = errorsWithOutput + errorsNoOutput = 2,
+  //                 ttftSamples = ttftSamplesOk + errorsWithOutput = 4.
   const rows = aggregateSingle(
     [
       record({
-        requests: 5, ttftSamples: 3, tpotSamples: 3, errors: 1, ttftMsSum: 300, tpotUsSum: 1500, buckets: [
-          { metric: 'ttft_ms', lower: 50, upper: 100, count: 3 },
+        requests: 5,
+        ttftSamplesOk: 3,
+        errorsWithOutput: 1,
+        errorsNoOutput: 1,
+        neutral: 0,
+        tpotSamples: 3,
+        ttftMsSum: 300,
+        tpotUsSum: 1500,
+        buckets: [
+          { metric: 'ttft_ms', lower: 50, upper: 100, count: 4 },
           { metric: 'tpot_us', lower: 200, upper: 500, count: 3 },
         ],
       }),
     ],
+    { bucket: 'all', groupBy: 'none', timezoneOffsetMinutes: 0 },
+  );
+
+  assertEquals(rows[0].requests, 5);
+  assertEquals(rows[0].errors, 2);
+  assertEquals(rows[0].ttftSamples, 4);
+  assertEquals(rows[0].tpotSamples, 3);
+  assertEquals(rows[0].neutral, 0);
+});
+
+test('aggregatePerformanceForDisplay carries neutral straight from the recorder partition', () => {
+  const rows = aggregateSingle(
+    [record({
+      requests: 5,
+      ttftSamplesOk: 3,
+      errorsWithOutput: 0,
+      errorsNoOutput: 1,
+      neutral: 1,
+      tpotSamples: 3,
+      ttftMsSum: 300,
+      tpotUsSum: 1500,
+      buckets: [
+        { metric: 'ttft_ms', lower: 50, upper: 100, count: 3 },
+        { metric: 'tpot_us', lower: 200, upper: 500, count: 3 },
+      ],
+    })],
     { bucket: 'all', groupBy: 'none', timezoneOffsetMinutes: 0 },
   );
 
   assertEquals(rows[0].neutral, 1);
-  assertEquals(rows[0].requests, 5);
-  assertEquals(rows[0].ttftSamples, 3);
-  assertEquals(rows[0].tpotSamples, 3);
   assertEquals(rows[0].errors, 1);
-});
-
-test('aggregatePerformanceForDisplay backs partial-output failures out of neutral via failedWithOutput', () => {
-  // A row where one of the two errors is a partial-output failure (both in
-  // errors AND ttftSamples). Without the overlap subtraction, neutral would
-  // read `4 - 3 - 2 = -1`; with `failedWithOutput = 1` the aggregator gets
-  // `4 - 3 - 2 + 1 = 0`, matching the recorder's actual partition.
-  const rows = aggregateSingle(
-    [
-      record({
-        requests: 4, ttftSamples: 3, tpotSamples: 3, errors: 2, failedWithOutput: 1, ttftMsSum: 300, tpotUsSum: 1500, buckets: [
-          { metric: 'ttft_ms', lower: 50, upper: 100, count: 3 },
-          { metric: 'tpot_us', lower: 200, upper: 500, count: 3 },
-        ],
-      }),
-    ],
-    { bucket: 'all', groupBy: 'none', timezoneOffsetMinutes: 0 },
-  );
-
-  assertEquals(rows[0].neutral, 0);
-  assertEquals(rows[0].failedWithOutput, 1);
-  assertEquals(rows[0].errors, 2);
   assertEquals(rows[0].ttftSamples, 3);
-});
-
-test('aggregatePerformanceForDisplay surfaces negative neutral when input row breaks the recorder invariant', () => {
-  // Recorder atomicity + parsePerformanceRecords guarantee
-  // `errors + ttftSamples - failedWithOutput <= requests` for anything Floway
-  // wrote. A negative neutral therefore indicates the row was corrupted outside
-  // the recorder path (manual D1 UPDATE, future recorder bug). We pass the raw
-  // subtraction through so the corruption surfaces on the dashboard rather than
-  // hiding behind a floor.
-  const rows = aggregateSingle(
-    [record({
-      requests: 2, ttftSamples: 3, tpotSamples: 3, errors: 1, ttftMsSum: 300, tpotUsSum: 1500, buckets: [
-        { metric: 'ttft_ms', lower: 50, upper: 100, count: 3 },
-        { metric: 'tpot_us', lower: 200, upper: 500, count: 3 },
-      ],
-    })],
-    { bucket: 'all', groupBy: 'none', timezoneOffsetMinutes: 0 },
-  );
-
-  assertEquals(rows[0].neutral, -2);
-});
-
-test('aggregatePerformanceForDisplay neutral is zero for pure chat rows (ttftSamples + errors - failedWithOutput = requests)', () => {
-  const rows = aggregateSingle(
-    [record({
-      requests: 4, ttftSamples: 3, tpotSamples: 3, errors: 1, ttftMsSum: 300, tpotUsSum: 1500, buckets: [
-        { metric: 'ttft_ms', lower: 50, upper: 100, count: 3 },
-        { metric: 'tpot_us', lower: 200, upper: 500, count: 3 },
-      ],
-    })],
-    { bucket: 'all', groupBy: 'none', timezoneOffsetMinutes: 0 },
-  );
-
-  assertEquals(rows[0].neutral, 0);
 });
 
 test('aggregatePerformanceForDisplay tpot percentiles derive from the tpot bucket set only, unaffected by TTFT-only samples', () => {
@@ -290,7 +280,10 @@ test('aggregatePerformanceForDisplay tpot percentiles derive from the tpot bucke
   // reflect that single point without dilution from the TTFT-only row.
   const rows = aggregateSingle(
     [record({
-      requests: 2, ttftSamples: 2, tpotSamples: 1, buckets: [
+      requests: 2,
+      ttftSamplesOk: 2,
+      tpotSamples: 1,
+      buckets: [
         { metric: 'ttft_ms', lower: 50, upper: 100, count: 2 },
         { metric: 'tpot_us', lower: 200, upper: 500, count: 1 },
       ],
@@ -309,9 +302,42 @@ test('aggregatePerformanceForDisplay groups by userId via keyToUser and drops or
   // The orphan row must not surface as a synthetic userId 0 bucket.
   const rows = aggregateSingle(
     [
-      record({ keyId: 'key_a', requests: 2, ttftSamples: 0, tpotSamples: 0, ttftMsSum: 0, tpotUsSum: 0, buckets: [] }),
-      record({ keyId: 'key_b', requests: 5, ttftSamples: 0, tpotSamples: 0, ttftMsSum: 0, tpotUsSum: 0, buckets: [] }),
-      record({ keyId: 'key_ghost', requests: 9, ttftSamples: 0, tpotSamples: 0, ttftMsSum: 0, tpotUsSum: 0, buckets: [] }),
+      record({
+        keyId: 'key_a',
+        requests: 2,
+        ttftSamplesOk: 0,
+        errorsWithOutput: 0,
+        errorsNoOutput: 0,
+        neutral: 2,
+        tpotSamples: 0,
+        ttftMsSum: 0,
+        tpotUsSum: 0,
+        buckets: [],
+      }),
+      record({
+        keyId: 'key_b',
+        requests: 5,
+        ttftSamplesOk: 0,
+        errorsWithOutput: 0,
+        errorsNoOutput: 0,
+        neutral: 5,
+        tpotSamples: 0,
+        ttftMsSum: 0,
+        tpotUsSum: 0,
+        buckets: [],
+      }),
+      record({
+        keyId: 'key_ghost',
+        requests: 9,
+        ttftSamplesOk: 0,
+        errorsWithOutput: 0,
+        errorsNoOutput: 0,
+        neutral: 9,
+        tpotSamples: 0,
+        ttftMsSum: 0,
+        tpotUsSum: 0,
+        buckets: [],
+      }),
     ],
     {
       bucket: 'all',
@@ -331,8 +357,30 @@ test('aggregatePerformanceForDisplay does not conflate a real userId 0 with orph
   // real user 0 row must appear, and its request count must exclude the ghost.
   const rows = aggregateSingle(
     [
-      record({ keyId: 'key_zero', requests: 3, ttftSamples: 0, tpotSamples: 0, ttftMsSum: 0, tpotUsSum: 0, buckets: [] }),
-      record({ keyId: 'key_ghost', requests: 11, ttftSamples: 0, tpotSamples: 0, ttftMsSum: 0, tpotUsSum: 0, buckets: [] }),
+      record({
+        keyId: 'key_zero',
+        requests: 3,
+        ttftSamplesOk: 0,
+        errorsWithOutput: 0,
+        errorsNoOutput: 0,
+        neutral: 3,
+        tpotSamples: 0,
+        ttftMsSum: 0,
+        tpotUsSum: 0,
+        buckets: [],
+      }),
+      record({
+        keyId: 'key_ghost',
+        requests: 11,
+        ttftSamplesOk: 0,
+        errorsWithOutput: 0,
+        errorsNoOutput: 0,
+        neutral: 11,
+        tpotSamples: 0,
+        ttftMsSum: 0,
+        tpotUsSum: 0,
+        buckets: [],
+      }),
     ],
     {
       bucket: 'all',

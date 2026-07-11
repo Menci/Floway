@@ -308,7 +308,7 @@ test('/v1/completions non-streaming records usage row, performance neutral row (
   assertEquals(performance.length, 1);
   assertEquals(performance[0]?.model, 'davinci-002');
   assertEquals(performance[0]?.requests, 1);
-  assertEquals(performance[0]?.errors, 0);
+  assertEquals(performance[0]?.errorsNoOutput, 0);
 
   assertEquals(dumpStubs.stored.length, 1);
   const dump = dumpStubs.stored[0]!.record;
@@ -351,7 +351,7 @@ test('/v1/completions streaming records usage row, performance neutral row (text
   const performance = await repo.performance.listAll();
   assertEquals(performance.length, 1);
   assertEquals(performance[0]?.requests, 1);
-  assertEquals(performance[0]?.errors, 0);
+  assertEquals(performance[0]?.errorsNoOutput, 0);
 
   assertEquals(dumpStubs.stored.length, 1);
   const dump = dumpStubs.stored[0]!.record;

@@ -22,33 +22,28 @@ const record = async (op: Promise<void>, label: string): Promise<void> => {
 };
 
 const dimensions = (telemetry: PerformanceTelemetryContext): PerformanceDimensions => ({
+  ...telemetry,
   hour: currentHour(),
-  keyId: telemetry.keyId,
-  model: telemetry.model,
-  upstream: telemetry.upstream,
-  operation: telemetry.operation,
-  runtimeLocation: telemetry.runtimeLocation,
 });
 
 // TTFT is measured from the provider's outbound-fetch stamp so it isolates
 // upstream round-trip latency from gateway-internal overhead. Any success
 // without a real upstream call or first-output-token stamp records as
 // neutral; only genuine upstream failures with no output land in a pure
-// error bucket. TPOT layers on top only when at least two output tokens
-// streamed — see the per-branch comments below.
+// zero-output-error bucket. TPOT layers on top only when at least two
+// output tokens streamed — see the per-branch comments below.
 //
 // A failure that produced output tokens (mid-stream failure that streamed
 // tokens before dying) records a partial-output sample: the row bumps
-// `errors` AND `ttft_samples` (and `tpot_samples` when applicable) in a
-// single atomic upsert, plus the `failed_with_output` counter so the
-// aggregator can back the overlap out of `neutral`. The alternative —
-// dropping the TTFT/TPOT reading — would hide upstream instability from
-// the dashboard whenever failures cluster on real streams.
+// `errors_with_output` (and `tpot_samples` when applicable) in a single
+// atomic upsert. The alternative — dropping the TTFT/TPOT reading — would
+// hide upstream instability from the dashboard whenever failures cluster
+// on real streams.
 //
 // `requestFinishedAt` is the caller's monotonic timestamp for the end of
-// the token stream. It MUST be sampled before any post-stream persistence
-// work (e.g. the usage D1 write in settleUsageAndPerformance) so TPOT
-// reflects the stream itself rather than the persistence path.
+// the token stream. Callers routing through `settle` inherit whatever
+// timestamp they pass it (or the settle-time default) and no persistence
+// work sits between the timestamp and the sample write.
 export const recordPerformance = (
   ctx: PerformanceRecordScope,
   telemetry: PerformanceTelemetryContext | undefined,
@@ -67,16 +62,18 @@ export const recordPerformance = (
     (failed && outputTokens === 0)
   ) {
     // No TTFT stamp available (non-chat / no upstream call / no first-token
-    // frame), or a failure that produced no tokens: settle to error or neutral
-    // without a sample. TTFT + TPOT contribute only when a real inter-token
-    // window exists AND the stream actually produced tokens.
-    const settle = failed ? getRepo().performance.recordError(dims) : getRepo().performance.recordNeutral(dims);
-    scheduler(record(settle, failed ? 'error' : 'neutral'));
+    // frame), or a failure that produced no tokens: settle to the
+    // zero-output-error or neutral counter without a sample. TTFT + TPOT
+    // contribute only when a real inter-token window exists AND the stream
+    // actually produced tokens.
+    const settle = failed ? getRepo().performance.recordZeroOutputError(dims) : getRepo().performance.recordNeutral(dims);
+    scheduler(record(settle, failed ? 'zero-output-error' : 'neutral'));
     return;
   }
   const ttftMs = Math.round(attempt.firstOutputTokenAt - attempt.upstreamCallStartedAt);
+  const success = !failed;
   if (outputTokens < 2) {
-    scheduler(record(getRepo().performance.recordSample({ ...dims, ttftMs, failed }), 'sample'));
+    scheduler(record(getRepo().performance.recordSample({ ...dims, ttftMs, success }), 'sample'));
     return;
   }
   // TPOT is the inter-token generation interval: streamDelta covers only the
@@ -88,7 +85,7 @@ export const recordPerformance = (
   // (https://aigateway.envoyproxy.io/docs/capabilities/observability/metrics/).
   const streamDeltaMs = requestFinishedAt - attempt.firstOutputTokenAt;
   const tpotUs = Math.round((streamDeltaMs * 1_000) / (outputTokens - 1));
-  scheduler(record(getRepo().performance.recordSample({ ...dims, ttftMs, tpotUs, failed }), 'sample'));
+  scheduler(record(getRepo().performance.recordSample({ ...dims, ttftMs, tpotUs, success }), 'sample'));
 };
 
 // Terminal-failure shortcut for every pre-stream / mid-stream error branch
