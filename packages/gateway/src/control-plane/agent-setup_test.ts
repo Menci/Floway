@@ -8,7 +8,7 @@ import { expect, test, vi } from 'vitest';
 import { getRepo } from '../repo/index.ts';
 import type { ApiKey } from '../repo/types.ts';
 import { requestApp, setupAppTest } from '../test-helpers.ts';
-import { assertEquals, assertExists } from '@floway-dev/test-utils';
+import { assertEquals } from '@floway-dev/test-utils';
 
 const RAW_KEY = 'raw-key';
 
@@ -42,10 +42,19 @@ test('control routes require authentication', async () => {
   assertEquals(response.status, 401);
 });
 
-test('a POST to a script-shaped path is not public and demands a credential', async () => {
+test('an unsupported method on a token-shaped path is contained before auth and logging', async () => {
   await setupAppTest({ apiKey: testApiKey() });
-  const response = await requestApp(`/api/setup/${'a'.repeat(43)}/setup.sh`, { method: 'POST' });
-  assertEquals(response.status, 401);
+  const token = 'a'.repeat(43);
+  const logged: string[] = [];
+  const logSpy = vi.spyOn(console, 'log').mockImplementation((...args) => { logged.push(args.map(String).join(' ')); });
+  try {
+    const response = await requestApp(`/api/setup/${token}/setup.sh`, { method: 'POST' });
+    assertEquals(response.status, 404);
+    assertEquals(response.headers.get('cache-control'), 'no-store');
+  } finally {
+    logSpy.mockRestore();
+  }
+  expect(logged.join('\n')).not.toContain(token);
 });
 
 test('the public GET serves the rendered script with hardened headers and no CORS, requiring no auth', async () => {
@@ -95,7 +104,7 @@ test('the public script route is mounted ahead of the logger, so the lease token
   expect(joined).not.toContain('/api/setup/');
 });
 
-test('OPTIONS on a script path is answered as a CORS preflight and never resolves the lease', async () => {
+test('OPTIONS on a script path is contained without resolving the lease or exposing CORS', async () => {
   const { apiKey } = await setupAppTest({ apiKey: testApiKey() });
   const lease = await createLease(apiKey.key);
   const repo = getRepo();
@@ -105,12 +114,12 @@ test('OPTIONS on a script path is answered as a CORS preflight and never resolve
     method: 'OPTIONS',
     headers: { origin: 'https://cross.example', 'access-control-request-method': 'GET' },
   });
-  assertEquals(preflight.status, 204);
-  assertExists(preflight.headers.get('access-control-allow-origin'));
+  assertEquals(preflight.status, 404);
+  assertEquals(preflight.headers.get('access-control-allow-origin'), null);
+  assertEquals(preflight.headers.get('cache-control'), 'no-store');
   expect(findByTokenSpy).not.toHaveBeenCalled();
   findByTokenSpy.mockRestore();
 
-  // The real GET stays outside CORS: no ACAO on the served body.
   const get = await requestApp(lease.scripts.sh, { method: 'GET' });
   assertEquals(get.headers.get('access-control-allow-origin'), null);
 });
