@@ -5,7 +5,8 @@
 import { computed } from 'vue';
 
 import type { CodexAccountCredentialState, CodexAccountIdentity, CodexQuotaSnapshot, UpstreamRecord } from '../../api/types.ts';
-import { providerSwatchClass } from '../upstreams/provider-meta.ts';
+import { resolveUpstreamColor } from '../upstreams/provider-meta.ts';
+import UpstreamBadge from '../upstreams/UpstreamBadge.vue';
 import { Badge, Card } from '@floway-dev/ui';
 
 const props = defineProps<{
@@ -46,6 +47,19 @@ const credential = computed<CodexAccountCredentialState | null>(() => {
 });
 
 const quotaMap = computed(() => codexRecord.value.codex_quota ?? null);
+
+// Resolve the Codex upstream's color once so the avatar swatch and each
+// quota progress bar paint with the operator's chosen shade. Preset →
+// class attached to the bar; hex → inline color-mix() bar with the
+// resolver's textStyle providing a hex `color:` (readable via
+// `currentColor` on the bar element).
+const colorResolved = computed(() => resolveUpstreamColor({
+  kind: codexRecord.value.kind,
+  color: codexRecord.value.color,
+}));
+
+const barClass = computed(() => colorResolved.value.mode === 'class' ? colorResolved.value.textClass : '');
+const barStyle = computed(() => colorResolved.value.mode === 'style' ? colorResolved.value.textStyle : {});
 
 const formatTimestamp = (iso: string): string => {
   const d = new Date(iso);
@@ -132,9 +146,14 @@ const accountIdShort = computed(() => {
 <template>
   <Card :padded="false" class="space-y-4 p-4">
     <div class="flex items-start gap-3">
-      <div class="flex size-10 shrink-0 items-center justify-center rounded-full" :class="providerSwatchClass('codex')">
+      <UpstreamBadge
+        :kind="record.kind"
+        :color="record.color"
+        variant="swatch"
+        class="!flex !size-10 !p-0 shrink-0 !items-center !justify-center !rounded-full"
+      >
         <i class="i-simple-icons-openai size-5" />
-      </div>
+      </UpstreamBadge>
       <div class="min-w-0 flex-1 space-y-1">
         <p class="truncate text-sm font-medium text-white">{{ account.email }}</p>
         <div class="flex flex-wrap items-center gap-2 text-xs text-gray-400">
@@ -169,8 +188,9 @@ const accountIdShort = computed(() => {
               </div>
               <div class="h-1.5 overflow-hidden rounded-full bg-surface-700">
                 <div
-                  class="h-full bg-accent-violet transition-[width]"
-                  :style="{ width: `${Math.max(0, Math.min(100, Math.round(w.percent ?? 0)))}%` }"
+                  class="h-full transition-[width]"
+                  :class="[barClass, colorResolved.mode === 'class' ? 'bg-current' : '']"
+                  :style="{ ...barStyle, width: `${Math.max(0, Math.min(100, Math.round(w.percent ?? 0)))}%`, ...(colorResolved.mode === 'style' ? { backgroundColor: 'currentColor' } : {}) }"
                 />
               </div>
               <p v-if="w.resetAt" class="text-[11px] text-gray-500">Resets at {{ formatTimestamp(w.resetAt) }}</p>

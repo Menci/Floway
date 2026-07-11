@@ -384,7 +384,7 @@ export interface ApiKey {
 }
 
 export interface ControlPlaneModel extends PublicModel {
-  upstreams: { kind: UpstreamProviderKind; id: string; name: string }[];
+  upstreams: { kind: UpstreamProviderKind; id: string; name: string; color: UpstreamColor | null }[];
 }
 
 export interface SearchConfig {

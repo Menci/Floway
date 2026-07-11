@@ -5,7 +5,8 @@ import type { UpstreamRecord } from '../../api/types.ts';
 import { formatClaudeCodeSubscriptionType } from '../../lib/claude-code-format.ts';
 import { assertNever } from '../../utils/assert-never.ts';
 import { copilotAccountTypeDisplay } from '../../utils/copilot.ts';
-import { providerBadgeClass, providerMeta } from '../upstreams/provider-meta.ts';
+import { providerMeta } from '../upstreams/provider-meta.ts';
+import UpstreamBadge from '../upstreams/UpstreamBadge.vue';
 
 const props = defineProps<{
   upstream: UpstreamRecord;
@@ -58,10 +59,12 @@ const subtitle = computed(() => {
     <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div class="min-w-0 flex-1">
         <div class="mb-1.5 flex min-w-0 flex-wrap items-center gap-2">
-          <span
-            class="rounded border px-2 py-0.5 text-xs font-semibold uppercase tracking-wide"
-            :class="providerBadgeClass(upstream.kind)"
-          >{{ providerMeta(upstream.kind).label }}</span>
+          <UpstreamBadge
+            :kind="upstream.kind"
+            :color="upstream.color"
+            variant="badge"
+            class="!rounded !uppercase tracking-wide !text-xs !font-semibold"
+          >{{ providerMeta(upstream.kind).label }}</UpstreamBadge>
           <span class="rounded bg-surface-900/70 px-2 py-0.5 text-[11px] font-medium text-gray-400">{{ modelSummary }}</span>
         </div>
         <p class="truncate text-sm font-semibold text-white">{{ upstream.name }}</p>
