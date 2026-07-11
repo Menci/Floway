@@ -125,6 +125,11 @@ const codexSnippet = computed(() => [
   `base_url = "${codexBaseUrl.value}"`,
   'wire_api = "responses"',
   'supports_websockets = true',
+  // Codex only contributes its remote web.run tool to OpenAI providers or
+  // custom providers carrying this header. A static marker is sufficient;
+  // Floway strips it before any provider call, so no credential is encoded in
+  // the generated config and no OpenAI-only provider behavior is enabled.
+  'http_headers = { "x-openai-actor-authorization" = "floway-web-search" }',
   '',
   '[features]',
   'apps = false',
