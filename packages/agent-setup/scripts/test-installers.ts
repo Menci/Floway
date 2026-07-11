@@ -2200,23 +2200,15 @@ test('codex', 'PowerShell: Windows auth replacement and rollback preserve owner-
   const restoreHelperEnd = PS1_BODY.indexOf('# --- Claude Code', restoreHelperStart);
   const restoreHelperBody = PS1_BODY.slice(restoreHelperStart, restoreHelperEnd);
   const restoreMove = restoreHelperBody.indexOf('Move-Item -LiteralPath $Backup -Destination $Path -Force');
-  const restoreProtect = restoreHelperBody.indexOf('if ($Protect) { Protect-FlowayFile $Path }', restoreMove);
   t.ok(restoreHelperStart >= 0, 'Restore-FlowayManagedFile marker exists');
   t.ok(restoreHelperEnd >= 0, 'Claude section marker exists after restore helper');
   t.ok(restoreMove >= 0, 'managed rollback move marker exists');
-  t.ok(restoreProtect >= 0, 'managed rollback protection marker exists');
-  t.ok(restoreMove < restoreProtect, 'rollback protects a restored target after moving it into place');
+  t.excludes(restoreHelperBody, 'Protect-FlowayFile $Path', 'rollback keeps the already-protected backup inode instead of adding a fallible post-move step');
 
   const restoreStart = PS1_BODY.indexOf('function Restore-FlowayCodexFiles');
   const restoreEnd = PS1_BODY.indexOf('function Invoke-FlowayCodexAppServerBatchWrite', restoreStart);
-  const restoreBody = PS1_BODY.slice(restoreStart, restoreEnd);
   t.ok(restoreStart >= 0, 'Restore-FlowayCodexFiles marker exists');
   t.ok(restoreEnd >= 0, 'app-server function marker exists after restore function');
-  t.includes(
-    restoreBody,
-    'Restore-FlowayManagedFile -Existed $script:CodexAuthExisted -Backup $script:CodexAuthBackup -Path $script:CodexAuthPath -OriginalLabel \'ChatGPT login\' -CreatedLabel \'Codex auth\' -Protect',
-    'Codex auth rollback requests owner-only protection',
-  );
 });
 
 test('codex', 'PowerShell: a batchWrite error fails codex and rolls back auth', async t => {
