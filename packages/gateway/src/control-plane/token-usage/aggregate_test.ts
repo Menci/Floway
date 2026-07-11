@@ -86,7 +86,8 @@ test('aggregateUsageForDisplay charges image dimensions separately', () => {
   assertAlmostEquals(out[0].cost, 85, 1e-9);
 });
 
-test('aggregateUsageForDisplay reads unit prices from the already-folded cost the repo writer hands back', () => {  // The repo write path (`repo/sql.ts:dimensionRows`, `repo/memory.ts:dimensionEntries`)
+test('aggregateUsageForDisplay reads unit prices from the already-folded cost the repo writer hands back', () => {
+  // The repo write path (`repo/sql.ts:dimensionRows`, `repo/memory.ts:dimensionEntries`)
   // resolves the bucket's tier into per-dimension unit prices BEFORE storing,
   // so by the time aggregate sees a UsageRecord the `cost` field is already
   // the effective pricing for that bucket's tier and tier resolution is a
