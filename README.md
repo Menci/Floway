@@ -158,7 +158,11 @@ a stored snapshot, or resend full input history; repeated full-history input is
 deduplicated by content hash instead of stored again. HTTP `store: false` does
 not create durable snapshots or input payload rows, but it keeps output item
 metadata for routing; if a later `store: true` request echoes that item with a
-full payload, the metadata row is filled in place.
+full payload, the metadata row is filled in place. Native Responses paths also
+round-trip Programmatic Tool Calling state (`additional_tools`, `program`,
+`program_output`, caller metadata, and opaque replay fingerprints). These
+Responses-only shapes are rejected when the resolved target requires Messages
+or Chat Completions translation.
 
 The same endpoint accepts `GET` WebSocket upgrades for streaming Responses
 events. WebSocket `store: false` keeps replay state only inside the open
