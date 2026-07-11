@@ -3,13 +3,16 @@ import type { CopilotMessagesBoundaryInterceptor } from './types.ts';
 const isContextWindowError = (text: string): boolean => text.includes('Request body is too large for model context window') || text.includes('context_length_exceeded');
 
 /**
- * Copilot can report context-window failures using non-Messages strings, but
- * Messages clients expect a Messages-shaped `invalid_request_error`; Claude
- * Code uses that shape to trigger compaction instead of surfacing a raw
- * upstream error.
- *
- * References:
- * - https://docs.claude.com/en/docs/claude-code/common-workflows#prompt-too-long
+ * Copilot's `/v1/messages` endpoint reports context-window failures with an
+ * Anthropic-shape body carrying a Copilot-specific message string; Claude
+ * Code's detector matches on the message substring alone (case-insensitive
+ * `error.message.toLowerCase().includes('prompt is too long')`), so we
+ * rewrite this body to lead with that phrase and trigger auto-compaction.
+ * The detector, string constants, and matching envelope live in
+ * `@floway-dev/translate/shared/messages/context-window-error.ts` — see the
+ * comment on `PROMPT_TOO_LONG_MESSAGE` there for the client-bundle
+ * evidence. This interceptor exists in addition because Copilot's Messages
+ * endpoint never traverses the `messages-via-*` translation pairs.
  */
 export const rewriteContextWindowError: CopilotMessagesBoundaryInterceptor = async (_ctx, _request, run) => {
   const result = await run();
