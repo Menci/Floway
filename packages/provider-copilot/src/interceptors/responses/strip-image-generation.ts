@@ -2,23 +2,51 @@ import type { ResponsesBoundaryCtx } from './types.ts';
 import type { ResponsesPayload, ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
 
 /**
- * Copilot's `/responses` endpoint rejects public `image_generation` tool
- * entries, so strip them once the planner has committed to a native Responses
- * target on a Copilot upstream. Other Responses-capable upstreams (e.g. OpenAI
- * direct) accept the entry and must continue to see it. Other public hosted
- * and deferred tools (`web_search`, `tool_search`, `namespace`) are left in
- * place: Codex relies on `tool_search` / `namespace` for client-executed
- * deferred tool discovery, and Copilot accepts `web_search`.
+ * Copilot's `/responses` endpoint rejects image-generation tool entries, so
+ * strip them once the planner has committed to a native Responses target on a
+ * Copilot upstream. Image generation reaches the wire in two shapes and both
+ * must go:
+ *
+ * - the public hosted tool `{ type: "image_generation" }`, and
+ * - Codex's deferred-tool namespace `{ type: "namespace", name: "image_gen",
+ *   tools: [...] }`, which packages the same capability for client-side
+ *   execution.
+ *
+ * Other Responses-capable upstreams (e.g. OpenAI direct) accept both and must
+ * continue to see them. Every other hosted/deferred tool — `web_search`,
+ * `tool_search`, and any namespace whose name is not `image_gen` — is left in
+ * place: Codex relies on `tool_search` and its namespaces for client-executed
+ * deferred tool discovery, and Copilot accepts `web_search`. We match the
+ * namespace by its exact upstream name so unrelated namespaces survive.
+ *
+ * Copilot rejects both shapes before inference with an HTTP 400: the hosted
+ * tool yields `The requested tool image_generation is not supported.`, and the
+ * `image_gen` namespace (emitted by recent Codex clients as
+ * `{ type: "namespace", name: "image_gen", tools: [{ type: "function", name:
+ * "imagegen" }] }`) yields `Invalid Value: 'tools.namespace'. User-defined
+ * namespace 'image_gen' collides with an existing tool namespace.`
  *
  * References:
  * - https://platform.openai.com/docs/guides/tools-image-generation
  * - https://github.com/openai/codex/blob/9f42c89c0112771dc29100a6f3fc904049b2655f/codex-rs/tools/src/tool_spec.rs#L17-L27
- * - https://github.com/caozhiyuan/copilot-api/blob/5d37d5b1ac6566c935a5c26d046396ee5fa423cc/src/routes/responses/handler.ts#L187-L204
+ * - https://github.com/caozhiyuan/copilot-api/issues/206 (hosted image_generation rejection)
+ * - https://github.com/caozhiyuan/copilot-api/issues/312 (image_gen namespace collision + wire shape)
+ * - https://github.com/caozhiyuan/copilot-api/commit/e260303a1ccc48390b0b710fa40631562f1a37fb (upstream fix filtering both)
  */
-const isImageGenerationTool = (tool: ResponsesTool): boolean => tool.type === 'image_generation';
+const IMAGE_GENERATION_NAMESPACE_NAME = 'image_gen';
 
-const isImageGenerationToolChoice = (choice: ResponsesToolChoice | undefined): boolean =>
-  typeof choice === 'object' && choice !== null && (choice as { type?: unknown }).type === 'image_generation';
+const isImageGenerationTool = (tool: ResponsesTool): boolean =>
+  tool.type === 'image_generation' ||
+  (tool.type === 'namespace' && (tool as { name?: unknown }).name === IMAGE_GENERATION_NAMESPACE_NAME);
+
+// A tool_choice that named one of the just-removed tools would tell Copilot to
+// invoke a tool that no longer exists. A bare `{ type: "namespace" }` without a
+// name, or one naming a surviving namespace, is untouched.
+const isImageGenerationToolChoice = (choice: ResponsesToolChoice | undefined): boolean => {
+  if (typeof choice !== 'object' || choice === null) return false;
+  const { type, name } = choice as { type?: unknown; name?: unknown };
+  return type === 'image_generation' || (type === 'namespace' && name === IMAGE_GENERATION_NAMESPACE_NAME);
+};
 
 export const stripImageGenerationFromPayload = (payload: ResponsesPayload): void => {
   let removedTool = false;
