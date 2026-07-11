@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
 import { resolveEffectivePricing, selectInputLengthTier, unitPriceForDimension, type ModelPricing } from './models.ts';
-import { assertEquals } from '../test-assert.ts';
+import { assertEquals, assertThrows } from '../test-assert.ts';
 
 test('unitPriceForDimension returns null when pricing snapshot is null', () => {
   assertEquals(unitPriceForDimension(null, 'input'), null);
@@ -134,6 +134,16 @@ test('selectInputLengthTier picks the highest band the request exceeds', () => {
   assertEquals(selectInputLengthTier(pricing, 128000), null);
   assertEquals(selectInputLengthTier(pricing, 128001), 128000);
   assertEquals(selectInputLengthTier(pricing, 272001), 272000);
+});
+
+test('selectInputLengthTier rejects malformed input-length thresholds deterministically', () => {
+  for (const aboveInputTokens of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+    assertThrows(
+      () => selectInputLengthTier({ inputLengthTiers: [{ aboveInputTokens, input: 2 }] }, 300000),
+      RangeError,
+      'input-length pricing threshold must be a positive safe integer',
+    );
+  }
 });
 
 test('resolveEffectivePricing resolves each Cartesian cell of the grid to its explicit rates', () => {

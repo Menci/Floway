@@ -150,6 +150,9 @@ export const resolveEffectivePricing = (
 export const selectInputLengthTier = (pricing: ModelPricing | null, totalInputTokens: number): number | null => {
   let selected: number | null = null;
   for (const tier of pricing?.inputLengthTiers ?? []) {
+    if (!Number.isSafeInteger(tier.aboveInputTokens) || tier.aboveInputTokens <= 0) {
+      throw new RangeError(`input-length pricing threshold must be a positive safe integer, received ${tier.aboveInputTokens}`);
+    }
     if (totalInputTokens > tier.aboveInputTokens && (selected === null || tier.aboveInputTokens > selected)) {
       selected = tier.aboveInputTokens;
     }
