@@ -125,6 +125,10 @@ const modelPrefix = computed({
   set: v => { draft.value = { ...draft.value, model_prefix: v }; },
 });
 const modelPrefixInvalid = ref(false);
+const color = computed({
+  get: () => draft.value.color,
+  set: v => { draft.value = { ...draft.value, color: v }; },
+});
 
 const upstreamModels = ref<UpstreamModelConfig[]>([]);
 const upstreamModelsError = ref<string | null>(null);
@@ -371,6 +375,7 @@ const save = async ({ openEdit = false }: { openEdit?: boolean } = {}) => {
       disabled_public_model_ids: draft.value.disabled_public_model_ids,
       proxy_fallback_list: draft.value.proxy_fallback_list,
       model_prefix: draft.value.model_prefix,
+      color: draft.value.color,
     };
 
     if (isCreate.value) {
@@ -572,6 +577,7 @@ const workbenchStyle = computed(() => ({ '--right-pane-h': `${Math.ceil(rightCon
         v-model:proxy-fallback-list="proxyFallbackList"
         v-model:model-prefix="modelPrefix"
         @update:model-prefix-invalid="v => modelPrefixInvalid = v"
+        v-model:color="color"
         v-model:custom="customDraft"
         v-model:azure="azureDraft"
         v-model:ollama="ollamaDraft"
