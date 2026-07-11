@@ -119,7 +119,7 @@ export const wrapResponsesOutputForStorage = async function* (
     }
 
     if (event.type === 'response.output_item.added') {
-      const upstreamId = itemId(event.item);
+      const upstreamId = responsesItemId(event.item);
       if (upstreamId === null) { yield frame; continue; }
       seenItemTypes.set(upstreamId, event.item.type);
       const newId = idMapper(upstreamId, event.item.type);
@@ -128,7 +128,7 @@ export const wrapResponsesOutputForStorage = async function* (
     }
 
     if (event.type === 'response.output_item.done') {
-      const upstreamId = itemId(event.item);
+      const upstreamId = responsesItemId(event.item);
       if (upstreamId === null) { yield frame; continue; }
       seenItemTypes.set(upstreamId, event.item.type);
       const newId = idMapper(upstreamId, event.item.type);
@@ -145,7 +145,7 @@ export const wrapResponsesOutputForStorage = async function* (
       const output: ResponsesInputItem[] = [];
       for (const item of event.response.output) {
         if (isCompactionItemType(item.type)) sawCompactionItem = true;
-        const upstreamId = itemId(item);
+        const upstreamId = responsesItemId(item);
         if (upstreamId === null) { output.push(item as unknown as ResponsesInputItem); continue; }
         seenItemTypes.set(upstreamId, item.type);
         const newId = idMapper(upstreamId, item.type);
@@ -192,11 +192,6 @@ export const wrapResponsesOutputForStorage = async function* (
     }
     yield frame;
   }
-};
-
-const itemId = (item: { id?: unknown }): string | null => {
-  const id = item.id;
-  return typeof id === 'string' && id.length > 0 ? id : null;
 };
 
 // `compaction` and `compaction_summary` are the same wire variant — Codex's

@@ -87,7 +87,7 @@ const translateResponsesTools = (tools: ResponsesTool[] | null | undefined, cust
   return out.length > 0 ? out : undefined;
 };
 
-const translateResponsesToolChoice = (choice?: ResponsesToolChoice): ChatCompletionsPayload['tool_choice'] => {
+const translateResponsesToolChoice = (choice?: ResponsesToolChoice | null): ChatCompletionsPayload['tool_choice'] => {
   if (choice == null) return undefined;
   if (typeof choice === 'string') return choice;
   // Both function and wrapped custom tools land on the target as named function

@@ -1414,6 +1414,11 @@ test.each([
   );
 });
 
+test('translateResponsesToChatCompletions accepts null tool_choice', () => {
+  const result = translateResponsesToChatCompletions({ model: 'gpt-test', input: 'hi', tool_choice: null });
+  assertEquals(result.target.tool_choice, undefined);
+});
+
 test.each([
   { name: 'programmatic tool', payload: { tools: [{ type: 'programmatic_tool_calling' as const }] } },
   { name: 'programmatic allowed caller', payload: { tools: [{ type: 'function' as const, name: 'lookup', parameters: {}, strict: true, allowed_callers: ['programmatic' as const] }] } },
@@ -1421,6 +1426,29 @@ test.each([
 ])('translateResponsesToChatCompletions rejects $name', ({ payload }) => {
   assertThrows(
     () => translateResponsesToChatCompletions({ model: 'gpt-test', input: 'hi', ...payload }),
+    Error,
+    'Programmatic',
+  );
+});
+
+test.each([
+  { type: 'function' as const, name: 'lookup', parameters: {}, strict: true, defer_loading: true },
+  { type: 'custom' as const, name: 'exec', defer_loading: true },
+])('translateResponsesToChatCompletions rejects deferred $type tools', tool => {
+  assertThrows(
+    () => translateResponsesToChatCompletions({ model: 'gpt-test', input: 'hi', tools: [tool] }),
+    Error,
+    'Deferred',
+  );
+});
+
+test('translateResponsesToChatCompletions rejects nested namespace programmatic callers', () => {
+  assertThrows(
+    () => translateResponsesToChatCompletions({
+      model: 'gpt-test',
+      input: 'hi',
+      tools: [{ type: 'namespace', name: 'ops', description: 'ops', tools: [{ type: 'custom', name: 'exec', allowed_callers: ['programmatic'] }] } as unknown as ResponsesTool],
+    }),
     Error,
     'Programmatic',
   );

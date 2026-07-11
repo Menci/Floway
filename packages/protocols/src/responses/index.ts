@@ -19,7 +19,7 @@ export interface ResponsesPayload {
   // https://github.com/openai/openai-python/blob/main/src/openai/types/responses/response_create_params.py
   max_tool_calls?: number | null;
   tools?: ResponsesTool[] | null;
-  tool_choice?: ResponsesToolChoice;
+  tool_choice?: ResponsesToolChoice | null;
   metadata?: Record<string, unknown> | null;
   stream?: boolean | null;
   store?: boolean | null;
@@ -474,7 +474,7 @@ export interface ResponsesResult {
   // declares both fields; observed upstream echoes (Copilot, Azure)
   // confirm they're populated with server-enriched defaults.
   tools?: ResponsesTool[];
-  tool_choice?: ResponsesToolChoice;
+  tool_choice?: ResponsesToolChoice | null;
   usage?: {
     input_tokens: number;
     output_tokens: number;
@@ -564,16 +564,7 @@ export interface ResponsesOutputFunctionCall {
   caller?: ResponsesToolCaller | null;
 }
 
-export interface ResponsesOutputCustomToolCall {
-  type: 'custom_tool_call';
-  call_id: string;
-  name: string;
-  input: string;
-  id?: string;
-  namespace?: string;
-  status?: string;
-  caller?: ResponsesToolCaller | null;
-}
+export type ResponsesOutputCustomToolCall = ResponsesCustomToolCallItem;
 
 export interface ResponsesOutputReasoning {
   type: 'reasoning';

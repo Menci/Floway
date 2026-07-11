@@ -230,10 +230,10 @@ const usageOf = (usage: ResponsesResult['usage']): MergeUsage => {
 };
 
 const rewriteHostedToolChoice = (
-  toolChoice: ResponsesToolChoice | undefined,
+  toolChoice: ResponsesToolChoice | null | undefined,
   active: readonly ActiveServerTool[],
-): ResponsesToolChoice | undefined => {
-  if (toolChoice === undefined || typeof toolChoice === 'string') return toolChoice;
+): ResponsesToolChoice | null | undefined => {
+  if (toolChoice == null || typeof toolChoice === 'string') return toolChoice;
   for (const entry of active) {
     if (!entry.hasHostedTool || entry.hosted === undefined) continue;
     if (entry.hosted.hostedTypes.includes(toolChoice.type)) return { type: 'function', name: entry.toolName };
@@ -248,10 +248,10 @@ const rewriteHostedToolChoice = (
 // to `{ type: <hosted-type> }` using the canonical hosted entry's
 // discriminant.
 const restoreEchoedToolChoice = (
-  toolChoice: ResponsesToolChoice | undefined,
+  toolChoice: ResponsesToolChoice | null | undefined,
   active: readonly ActiveServerTool[],
-): ResponsesToolChoice | undefined => {
-  if (toolChoice === undefined || typeof toolChoice === 'string' || toolChoice.type !== 'function') return toolChoice;
+): ResponsesToolChoice | null | undefined => {
+  if (toolChoice == null || typeof toolChoice === 'string' || toolChoice.type !== 'function') return toolChoice;
   for (const entry of active) {
     if (entry.canonicalHostedTool === undefined) continue;
     if (toolChoice.name !== entry.toolName) continue;

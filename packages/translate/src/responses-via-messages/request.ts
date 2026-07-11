@@ -310,7 +310,7 @@ const translateTools = (tools: ResponsesTool[] | null | undefined, customToolNam
   return out.length > 0 ? out : undefined;
 };
 
-const translateToolChoice = (toolChoice: ResponsesToolChoice | undefined): MessagesPayload['tool_choice'] => {
+const translateToolChoice = (toolChoice: ResponsesToolChoice | null | undefined): MessagesPayload['tool_choice'] => {
   if (!toolChoice) return undefined;
 
   if (typeof toolChoice === 'string') {

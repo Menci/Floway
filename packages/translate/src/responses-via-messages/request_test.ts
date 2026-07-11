@@ -47,6 +47,11 @@ test.each([
   );
 });
 
+test('translateResponsesToMessages accepts null tool_choice', async () => {
+  const result = await translateResponsesToMessages({ ...minimalPayload, tool_choice: null });
+  assertEquals(result.target.tool_choice, undefined);
+});
+
 test.each([
   { name: 'programmatic tool', payload: { tools: [{ type: 'programmatic_tool_calling' as const }] } },
   { name: 'programmatic allowed caller', payload: { tools: [{ type: 'function' as const, name: 'lookup', parameters: {}, strict: true, allowed_callers: ['programmatic' as const] }] } },
@@ -54,6 +59,28 @@ test.each([
 ])('translateResponsesToMessages rejects $name', async ({ payload }) => {
   await assertRejects(
     () => translateResponsesToMessages({ ...minimalPayload, ...payload }),
+    Error,
+    'Programmatic',
+  );
+});
+
+test.each([
+  { type: 'function' as const, name: 'lookup', parameters: {}, strict: true, defer_loading: true },
+  { type: 'custom' as const, name: 'exec', defer_loading: true },
+])('translateResponsesToMessages rejects deferred $type tools', async tool => {
+  await assertRejects(
+    () => translateResponsesToMessages({ ...minimalPayload, tools: [tool] }),
+    Error,
+    'Deferred',
+  );
+});
+
+test('translateResponsesToMessages rejects nested namespace programmatic callers', async () => {
+  await assertRejects(
+    () => translateResponsesToMessages({
+      ...minimalPayload,
+      tools: [{ type: 'namespace', name: 'ops', description: 'ops', tools: [{ type: 'custom', name: 'exec', allowed_callers: ['programmatic'] }] } as unknown as ResponsesTool],
+    }),
     Error,
     'Programmatic',
   );

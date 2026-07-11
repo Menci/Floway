@@ -157,13 +157,6 @@ steps.
 - preserves Freeform `custom` tools: native Responses targets receive them
   directly; translated targets wrap them as single-string function tools (see
   "Responses Custom Tool Wrapping").
-- preserves Programmatic Tool Calling on native Responses paths: the
-  `programmatic_tool_calling` tool and choice, `additional_tools`, `program`,
-  `program_output`, opaque replay fingerprints, and nested tool `caller`
-  metadata pass through and are retained in Responses snapshots. Targets that
-  require cross-protocol translation reject the item types, programmatic
-  caller metadata, tool declarations, and forced choice rather than
-  synthesizing a lossy equivalent.
 - retries intermittent upstream `cyber_policy` failures before the failed
   attempt reaches the source-shaped response
 
@@ -383,6 +376,11 @@ Request mapping:
 - Responses `tool_choice` maps to the corresponding Messages tool choice when
   representable. `{type:'custom', name}` collapses onto the wrapped function
   tool name.
+- Programmatic Tool Calling state is native-Responses-only: `additional_tools`,
+  `program`, `program_output`, program callers and tool declarations, deferred
+  tools, and forced programmatic choice are rejected rather than projected
+  lossily. Native Responses paths retain these items, caller metadata, and
+  opaque fingerprints in stored snapshots.
 
 Response mapping:
 
@@ -551,6 +549,11 @@ Request mapping:
 - Responses function tools become Chat function tools, preserving `strict`.
   Freeform `custom` tools are wrapped as single-string function tools; see
   "Responses Custom Tool Wrapping".
+- Programmatic Tool Calling state is native-Responses-only: `additional_tools`,
+  `program`, `program_output`, program callers and tool declarations, deferred
+  tools, and forced programmatic choice are rejected rather than projected
+  lossily. Native Responses paths retain these items, caller metadata, and
+  opaque fingerprints in stored snapshots.
 
 Response mapping:
 
