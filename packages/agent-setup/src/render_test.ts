@@ -82,7 +82,7 @@ describe('agentSetupConfigurationSchema', () => {
 
 describe('defaultAgentSetupConfiguration', () => {
   test('selects the first key, enables both agents, nulls overrides, enables discovery', () => {
-    expect(defaultAgentSetupConfiguration([{ id: 'key-a' }, { id: 'key-b' }])).toEqual({
+    expect(defaultAgentSetupConfiguration(['key-a', 'key-b'])).toEqual({
       apiKeyId: 'key-a',
       claudeCode: {
         enabled: true, model: null, defaultSonnetModel: null,
@@ -93,7 +93,7 @@ describe('defaultAgentSetupConfiguration', () => {
   });
 
   test('produces a value the schema accepts', () => {
-    const config = defaultAgentSetupConfiguration([{ id: 'key-a' }]);
+    const config = defaultAgentSetupConfiguration(['key-a']);
     expect(agentSetupConfigurationSchema.safeParse(config).success).toBe(true);
   });
 

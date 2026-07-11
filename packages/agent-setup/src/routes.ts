@@ -23,7 +23,7 @@ import {
   defaultAgentSetupConfiguration,
 } from './configuration.ts';
 import { renderPowerShellPrefix, renderShellPrefix } from './render.ts';
-import { type AgentSetupMutation, type AgentSetupRecord, type AgentSetupRepository, AgentSetupTokenCollisionError } from './repository.ts';
+import { type AgentSetupRecord, type AgentSetupRepository, AgentSetupTokenCollisionError } from './repository.ts';
 import { SETUP_PS1_BODY, SETUP_SH_BODY } from './script-assets.generated.ts';
 import { generateAgentSetupToken } from './token.ts';
 import { agentSetupHeartbeatBody, agentSetupUpdateBody } from './wire.ts';
@@ -144,18 +144,15 @@ export interface AgentSetupControlDeps<E extends Env> {
   listSelectableApiKeyIds: (userId: number) => Promise<readonly string[]>;
 }
 
-const respondToMutation = (c: Context, result: AgentSetupMutation) => {
-  if (result.status === 'ok') return c.json({ status: 'ok' as const, ...leaseProjection(result.record) });
-  if (result.status === 'revision-conflict') {
-    return c.json({ status: 'revision-conflict' as const, ...leaseProjection(result.record) }, 409);
-  }
-  return c.json({ status: 'missing' as const }, 409);
-};
+export const createAgentSetupControlRoutes = <E extends Env>(deps: AgentSetupControlDeps<E>) => {
+  // Hono narrows a validated route's handler context to an env that is
+  // structurally E but not provably so inside this generic factory, so the
+  // injected user id is read back through the declared env with one cast.
+  const readUserId = (c: Context): number => deps.getUserId(c as Context<E>);
 
-export const createAgentSetupControlRoutes = <E extends Env>(deps: AgentSetupControlDeps<E>) =>
-  new Hono<E>()
+  return new Hono<E>()
     .post('/', async c => {
-      const userId = deps.getUserId(c);
+      const userId = readUserId(c);
       const selectableKeyIds = await deps.listSelectableApiKeyIds(userId);
       const latest = await deps.repository.latestByUserId(userId);
       const restored = latest !== null ? restorableConfiguration(latest, selectableKeyIds) : null;
@@ -184,7 +181,7 @@ export const createAgentSetupControlRoutes = <E extends Env>(deps: AgentSetupCon
       return c.json({ status: 'ok' as const, ...leaseProjection(record) });
     })
     .put('/', zValidator('json', agentSetupUpdateBody), async c => {
-      const userId = deps.getUserId(c);
+      const userId = readUserId(c);
       const { token, configuration, expectedRevision } = c.req.valid('json');
 
       const selectableKeyIds = await deps.listSelectableApiKeyIds(userId);
@@ -202,15 +199,22 @@ export const createAgentSetupControlRoutes = <E extends Env>(deps: AgentSetupCon
         now,
         expiresAt: now + SETUP_LEASE_TTL_MS,
       });
-      return respondToMutation(c, result);
+      // 'ok' echoes the fresh lease; 'revision-conflict' rides the current lease
+      // along under a 409 so the caller can rebase; 'missing' is terminal.
+      if (result.status === 'ok') return c.json({ status: 'ok' as const, ...leaseProjection(result.record) });
+      if (result.status === 'revision-conflict') return c.json({ status: 'revision-conflict' as const, ...leaseProjection(result.record) }, 409);
+      return c.json({ status: 'missing' as const }, 409);
     })
     .post('/heartbeat', zValidator('json', agentSetupHeartbeatBody), async c => {
-      const userId = deps.getUserId(c);
+      const userId = readUserId(c);
       const { token } = c.req.valid('json');
       const result = await deps.repository.renewLease({
         userId,
         token,
         expiresAt: Date.now() + SETUP_LEASE_TTL_MS,
       });
-      return respondToMutation(c, result);
+      if (result.status === 'ok') return c.json({ status: 'ok' as const, ...leaseProjection(result.record) });
+      // Renewal never conflicts on a revision; a non-existent token is terminal.
+      return c.json({ status: 'missing' as const }, 409);
     });
+};

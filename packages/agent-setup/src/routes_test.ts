@@ -122,7 +122,7 @@ const harness = (options: {
     .route('/api/setup', createAgentSetupPublicRoutes(publicDeps))
     .route('/api/setup', createAgentSetupControlRoutes(controlDeps));
 
-  return { repo, request: (path, init) => app.request(path, init ?? {}) };
+  return { repo, request: (path, init) => app.request(path, init ?? {}) as Promise<Response> };
 };
 
 interface LeaseResponse {
@@ -138,10 +138,24 @@ interface LeaseResponse {
   scripts: { sh: string; ps1: string };
 }
 
-const jsonBody = (init?: object): RequestInit => ({
+// A full, schema-valid configuration for rows seeded directly into the repo
+// (leaseProjection and restore both parse the stored JSON through the schema).
+const FULL_CONFIG_JSON = (apiKeyId: string): string => JSON.stringify({
+  apiKeyId,
+  claudeCode: { enabled: true, model: null, defaultSonnetModel: null, defaultHaikuModel: null, effortLevel: null, modelDiscovery: true },
+  codex: { enabled: true, model: null, reasoningEffort: null },
+});
+
+const putJson = (body: object): RequestInit => ({
+  method: 'PUT',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify(body),
+});
+
+const heartbeatJson = (body: object): RequestInit => ({
   method: 'POST',
   headers: { 'content-type': 'application/json' },
-  ...(init ? { body: JSON.stringify(init) } : {}),
+  body: JSON.stringify(body),
 });
 
 const create = async (h: Harness): Promise<LeaseResponse> => {
@@ -179,7 +193,7 @@ test('POST restores the latest saved configuration whose key is still selectable
   const h = harness();
   const first = await create(h);
   const edited = { ...first.configuration, codex: { ...first.configuration.codex, enabled: false } };
-  await h.request('/api/setup', jsonBody({ token: first.token, configuration: edited, expectedRevision: first.configurationRevision }));
+  await h.request('/api/setup', putJson({ token: first.token, configuration: edited, expectedRevision: first.configurationRevision }));
 
   const reopened = await create(h);
   assertEquals(reopened.configuration.codex.enabled, false);
@@ -193,7 +207,7 @@ test('POST falls back to a first-use default when the latest config points at an
   const first = await create(h);
   // Persist a configuration whose key later becomes unselectable.
   const edited = { ...first.configuration, apiKeyId: 'key_primary', codex: { ...first.configuration.codex, enabled: false } };
-  await h.request('/api/setup', jsonBody({ token: first.token, configuration: edited, expectedRevision: first.configurationRevision }));
+  await h.request('/api/setup', putJson({ token: first.token, configuration: edited, expectedRevision: first.configurationRevision }));
 
   // Now only a different key is selectable; the saved config cannot be restored.
   const h2 = harness({ keys: ['key_other'], secrets: { key_other: 'raw-other' } });
@@ -218,7 +232,7 @@ test('inserting a new lease sweeps only the same user\'s already-expired rows', 
   const h = harness();
   const now = Date.now();
   // An expired sibling and a still-live sibling.
-  await h.repo.insertForUser({ userId: USER_ID, token: 'e'.repeat(43), apiKeyId: 'key_primary', configurationJson: '{"apiKeyId":"key_primary"}', now: now - 10_000, expiresAt: now - 1 });
+  await h.repo.insertForUser({ userId: USER_ID, token: 'e'.repeat(43), apiKeyId: 'key_primary', configurationJson: FULL_CONFIG_JSON('key_primary'), now: now - 10_000, expiresAt: now - 1 });
   const live = await create(h);
   // The expired row is gone; the live rows survive.
   assertEquals(await h.repo.findByToken('e'.repeat(43)), null);
@@ -231,7 +245,7 @@ test('PUT updates configuration, bumps the revision, and never rotates the token
   const h = harness();
   const lease = await create(h);
   const edited = { ...lease.configuration, claudeCode: { ...lease.configuration.claudeCode, enabled: false } };
-  const response = await h.request('/api/setup', jsonBody({ token: lease.token, configuration: edited, expectedRevision: lease.configurationRevision }));
+  const response = await h.request('/api/setup', putJson({ token: lease.token, configuration: edited, expectedRevision: lease.configurationRevision }));
   assertEquals(response.status, 200);
   const body = (await response.json()) as LeaseResponse;
   assertEquals(body.status, 'ok');
@@ -243,7 +257,7 @@ test('PUT updates configuration, bumps the revision, and never rotates the token
 test('PUT on a token that does not exist is a terminal 409 missing', async () => {
   const h = harness();
   const lease = await create(h);
-  const response = await h.request('/api/setup', jsonBody({ token: 'z'.repeat(43), configuration: lease.configuration, expectedRevision: lease.configurationRevision }));
+  const response = await h.request('/api/setup', putJson({ token: 'z'.repeat(43), configuration: lease.configuration, expectedRevision: lease.configurationRevision }));
   assertEquals(response.status, 409);
   assertEquals(((await response.json()) as { status: string }).status, 'missing');
 });
@@ -251,7 +265,7 @@ test('PUT on a token that does not exist is a terminal 409 missing', async () =>
 test('PUT with a stale revision returns revision-conflict carrying the current lease', async () => {
   const h = harness();
   const lease = await create(h);
-  const response = await h.request('/api/setup', jsonBody({ token: lease.token, configuration: lease.configuration, expectedRevision: lease.configurationRevision + 99 }));
+  const response = await h.request('/api/setup', putJson({ token: lease.token, configuration: lease.configuration, expectedRevision: lease.configurationRevision + 99 }));
   assertEquals(response.status, 409);
   const body = (await response.json()) as LeaseResponse;
   assertEquals(body.status, 'revision-conflict');
@@ -261,7 +275,7 @@ test('PUT with a stale revision returns revision-conflict carrying the current l
 test('PUT rejecting an unavailable key returns a 400 that leaks nothing', async () => {
   const h = harness();
   const lease = await create(h);
-  const response = await h.request('/api/setup', jsonBody({
+  const response = await h.request('/api/setup', putJson({
     token: lease.token,
     configuration: { ...lease.configuration, apiKeyId: 'key_foreign' },
     expectedRevision: lease.configurationRevision,
@@ -277,7 +291,7 @@ test('heartbeat renews expiry without bumping revision or updated_at', async () 
   const h = harness();
   const lease = await create(h);
   const before = await h.repo.findByToken(lease.token);
-  const response = await h.request('/api/setup/heartbeat', jsonBody({ token: lease.token }));
+  const response = await h.request('/api/setup/heartbeat', heartbeatJson({ token: lease.token }));
   assertEquals(response.status, 200);
   const body = (await response.json()) as LeaseResponse;
   assertEquals(body.status, 'ok');
@@ -290,7 +304,7 @@ test('heartbeat renews expiry without bumping revision or updated_at', async () 
 test('heartbeat on a missing token is a terminal 409 missing', async () => {
   const h = harness();
   await create(h);
-  const response = await h.request('/api/setup/heartbeat', jsonBody({ token: 'q'.repeat(43) }));
+  const response = await h.request('/api/setup/heartbeat', heartbeatJson({ token: 'q'.repeat(43) }));
   assertEquals(response.status, 409);
   assertEquals(((await response.json()) as { status: string }).status, 'missing');
 });
@@ -298,8 +312,8 @@ test('heartbeat on a missing token is a terminal 409 missing', async () => {
 test('heartbeat renews an expired-but-still-present lease', async () => {
   const h = harness();
   const now = Date.now();
-  await h.repo.insertForUser({ userId: USER_ID, token: 'p'.repeat(43), apiKeyId: 'key_primary', configurationJson: '{"apiKeyId":"key_primary"}', now: now - 10_000, expiresAt: now - 1 });
-  const response = await h.request('/api/setup/heartbeat', jsonBody({ token: 'p'.repeat(43) }));
+  await h.repo.insertForUser({ userId: USER_ID, token: 'p'.repeat(43), apiKeyId: 'key_primary', configurationJson: FULL_CONFIG_JSON('key_primary'), now: now - 10_000, expiresAt: now - 1 });
+  const response = await h.request('/api/setup/heartbeat', heartbeatJson({ token: 'p'.repeat(43) }));
   assertEquals(response.status, 200);
   const body = (await response.json()) as LeaseResponse;
   expect(body.expiresAt).toBeGreaterThan(now);
@@ -318,8 +332,18 @@ test('POST retries a token collision without masking unrelated failures', async 
   assertEquals(first.status, 'ok');
   expect(calls).toBe(2);
 
-  h.repo.insertForUser = () => { throw new Error('disk I/O error'); };
-  await expect(h.request('/api/setup', { method: 'POST' })).rejects.toThrow('disk I/O error');
+  // An unrelated failure is not a collision, so withFreshToken must not retry
+  // it away — it propagates out of the handler (surfaced by Hono as a 500).
+  let attempts = 0;
+  h.repo.insertForUser = () => { attempts += 1; throw new Error('disk I/O error'); };
+  const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    const failed = await h.request('/api/setup', { method: 'POST' });
+    assertEquals(failed.status, 500);
+    expect(attempts).toBe(1);
+  } finally {
+    errorSpy.mockRestore();
+  }
 });
 
 // --- public serve ---
@@ -365,7 +389,7 @@ test('GET re-reads the current configuration each request', async () => {
   const lease = await create(h);
   expect(await (await h.request(lease.scripts.sh, { method: 'GET' })).text()).toContain("FLOWAY_INSTALL_CODEX='1'");
   const edited = { ...lease.configuration, codex: { ...lease.configuration.codex, enabled: false } };
-  await h.request('/api/setup', jsonBody({ token: lease.token, configuration: edited, expectedRevision: lease.configurationRevision }));
+  await h.request('/api/setup', putJson({ token: lease.token, configuration: edited, expectedRevision: lease.configurationRevision }));
   const after = await (await h.request(lease.scripts.sh, { method: 'GET' })).text();
   expect(after).toContain("FLOWAY_INSTALL_CODEX=''");
 });
