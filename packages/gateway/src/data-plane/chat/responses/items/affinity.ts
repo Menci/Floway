@@ -185,12 +185,11 @@ export const classifyResponsesItemAffinity = async <TSourceItems, TCandidate ext
       });
       continue;
     }
-    if (requiresNativeResponses !== undefined && row.payload !== null && requiresNativeResponses(row.payload.item as ResponsesInputItem)) {
-      storedItemsRequireNativeResponses = true;
-      ref.affinity = 'forcing';
-    } else {
-      ref.affinity = classifyStoredResponsesAffinity(ref.type, row);
-    }
+    const requiresNative = requiresNativeResponses !== undefined
+      && row.payload !== null
+      && requiresNativeResponses(row.payload.item as ResponsesInputItem);
+    if (requiresNative) storedItemsRequireNativeResponses = true;
+    ref.affinity = classifyStoredResponsesAffinity(ref.type, row);
     if (ref.affinity === 'forcing' && !isUpstreamOwned(row)) {
       failures.push({ kind: 'item-not-found', itemId: row.id });
     }
