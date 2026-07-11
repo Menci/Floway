@@ -32,7 +32,6 @@ export const useSettingsPageData = defineBasicLoader(async () => {
   const [searchRes] = await Promise.all([
     callApi<SearchConfig>(() => api.api['search-config'].$get()),
     useUpstreamsStore().load(),
-    useRawModelsStore().load(),
     useProxiesStore().load(),
     useModelAliases().load(),
     useRuntimeInfo().load(),
@@ -51,6 +50,10 @@ definePage({ meta: { requiresAdmin: true } });
 const router = useRouter();
 const { upstreams, loading: storeLoading, load } = useUpstreamsStore();
 const modelsStore = useRawModelsStore();
+// The model catalog enriches counts and alias target labels, but it is not a
+// prerequisite for editing upstreams or proxies. Start it after navigation
+// so an unreachable upstream cannot hold the entire Settings route open.
+void modelsStore.load();
 const proxiesStore = useProxiesStore();
 const aliasesStore = useModelAliases();
 const { load: loadProxies } = proxiesStore;
@@ -87,6 +90,12 @@ const openAliasDialog = (record: ModelAlias | null): void => {
 
 <template>
   <div>
+    <p
+      v-if="modelsStore.error.value"
+      class="mb-4 rounded-md border border-accent-rose/40 bg-accent-rose/10 px-3 py-2 text-sm text-accent-rose"
+    >
+      Model catalog unavailable: {{ modelsStore.error.value }}
+    </p>
     <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
       <div class="flex flex-col gap-5">
         <UpstreamsSettingsCard

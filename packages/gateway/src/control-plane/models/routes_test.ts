@@ -30,6 +30,23 @@ const azureUpstream = (): UpstreamRecord => ({
   state: null,
 });
 
+test('/api/models returns an empty catalog when the gateway has no upstreams', async () => {
+  const { adminSession, repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+
+  const response = await requestApp('/api/models?aliases=false&include_unlisted=true', {
+    headers: { 'x-floway-session': adminSession },
+  });
+  assertEquals(response.status, 200);
+  assertEquals(await response.json(), {
+    object: 'list',
+    has_more: false,
+    first_id: null,
+    last_id: null,
+    data: [],
+  });
+});
+
 test('/api/models exposes each upstream as { kind, id } so multi-provider models are unambiguous', async () => {
   const { apiKey, repo } = await setupAppTest();
   await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_custom_models', sortOrder: 100 }));
