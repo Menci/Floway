@@ -371,7 +371,7 @@ export const useAgentSetup = (
   const create = async () => {
     const attempt = ++createAttempt;
     const result = await callApi<LeaseOkResponse>(() => requestWithTimeout(signal =>
-      api.api.setup.$post({ json: { publicBaseUrl: window.location.origin } }, { init: { signal } })));
+      api.api.setup.$post(undefined, { init: { signal } })));
     // A retry (or dispose) that superseded this attempt owns the state now; drop
     // this stale attempt's outcome so an aborted create cannot resurrect an error.
     if (disposed || attempt !== createAttempt) return;

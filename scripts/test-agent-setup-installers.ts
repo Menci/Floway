@@ -557,7 +557,7 @@ const codexEnv = (options: RunOptions): Record<string, string> => {
 // waiting on the child.
 const runShellInstaller = (options: RunOptions): Promise<RunResult> => {
   const { workspace, configuration, baseUrl } = options;
-  const script = renderShellPrefix({ apiKey: SENTINEL_KEY, publicBaseUrl: baseUrl, configuration }) + SH_BODY;
+  const script = renderShellPrefix({ apiKey: SENTINEL_KEY, baseUrl, configuration }) + SH_BODY;
   const scriptPath = join(workspace.root, 'setup.sh');
   writeFileSync(scriptPath, script);
 
@@ -626,7 +626,7 @@ const runShellInstaller = (options: RunOptions): Promise<RunResult> => {
 
 const runShellInstallerWithAmbientKey = (options: RunOptions): Promise<RunResult> => {
   const { workspace, configuration, baseUrl } = options;
-  const script = renderShellPrefix({ apiKey: SENTINEL_KEY, publicBaseUrl: baseUrl, configuration }) + SH_BODY;
+  const script = renderShellPrefix({ apiKey: SENTINEL_KEY, baseUrl, configuration }) + SH_BODY;
   const scriptPath = join(workspace.root, 'setup-ambient-key.sh');
   writeFileSync(scriptPath, script);
   const pathParts = [workspace.binDir, SHIM_BIN];
@@ -708,7 +708,7 @@ const runPowerShellInstaller = (options: RunOptions): Promise<RunResult> => {
   const culturePrelude = options.powerShellTimeSeparator === undefined
     ? ''
     : `$culture = [Globalization.CultureInfo]::GetCultureInfo('en-US').Clone()\n$culture.DateTimeFormat.TimeSeparator = '${options.powerShellTimeSeparator.replace(/'/g, "''")}'\n[Threading.Thread]::CurrentThread.CurrentCulture = $culture\n`;
-  const script = renderPowerShellPrefix({ apiKey: SENTINEL_KEY, publicBaseUrl: baseUrl, configuration }) + culturePrelude + PS1_BODY;
+  const script = renderPowerShellPrefix({ apiKey: SENTINEL_KEY, baseUrl, configuration }) + culturePrelude + PS1_BODY;
   const scriptPath = join(workspace.root, 'setup.ps1');
   writeFileSync(scriptPath, script);
 
@@ -1052,7 +1052,7 @@ test('claude', 'jq is bootstrapped from the pinned release when absent from PATH
 test('claude', 'PowerShell installer body parses without syntax errors', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const script = renderPowerShellPrefix({
-    apiKey: SENTINEL_KEY, publicBaseUrl: 'https://floway.example',
+    apiKey: SENTINEL_KEY, baseUrl: 'https://floway.example',
     configuration: claudeConfig({ model: 'claude-opus-x', effortLevel: 'high', modelDiscovery: true }),
   }) + PS1_BODY;
   const scriptPath = join(HARNESS_ROOT, 'parse-check.ps1');
@@ -1457,7 +1457,7 @@ test('claude', 'PowerShell: the API key never appears in output and no inference
 // --- Bash 3.2 syntax check --------------------------------------------------
 
 test('claude', 'Bash installer body parses under the macOS Bash 3.2 baseline', async t => {
-  const script = renderShellPrefix({ apiKey: SENTINEL_KEY, publicBaseUrl: 'https://floway.example', configuration: claudeConfig({ model: 'm', effortLevel: 'high', modelDiscovery: true }) }) + SH_BODY;
+  const script = renderShellPrefix({ apiKey: SENTINEL_KEY, baseUrl: 'https://floway.example', configuration: claudeConfig({ model: 'm', effortLevel: 'high', modelDiscovery: true }) }) + SH_BODY;
   const scriptPath = join(HARNESS_ROOT, 'syntax-check.sh');
   writeFileSync(scriptPath, script);
   const result = spawnSync('/bin/bash', ['-n', scriptPath], { encoding: 'utf8' });

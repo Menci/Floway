@@ -97,12 +97,14 @@ afterEach(() => {
 });
 
 describe('useAgentSetup — lease acquisition', () => {
-  it('posts exactly one create with the window origin and adopts the returned lease', async () => {
+  it('posts exactly one create with no request body and adopts the returned lease', async () => {
     const { api, records } = makeApi();
     const setup = run(() => useAgentSetup(api));
 
     expect(records.post.length).toBe(1);
-    expect(jsonArg(records.post[0]!)).toEqual({ publicBaseUrl: window.location.origin });
+    // The lease carries no origin: the create POST sends no request data, and
+    // the server derives the base URL from the public GET at serve time.
+    expect(records.post[0]!.args[0]).toBeUndefined();
     expect(setup.state.initialized.value).toBe(false);
 
     records.post[0]!.deferred.resolve(okBody(lease()));

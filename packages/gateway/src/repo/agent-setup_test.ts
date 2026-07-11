@@ -21,7 +21,6 @@ const seed = (repo: Repo) =>
     token: 'token-a',
     apiKeyId: 'key-a',
     configurationJson: '{"apiKeyId":"key-a"}',
-    publicBaseUrl: 'https://gateway.example',
     now: 1_000,
     expiresAt: 1_300,
   });
@@ -36,7 +35,6 @@ describe.each(backends)('AgentSetupRepo (%s)', (_label, makeRepo) => {
       apiKeyId: 'key-a',
       configurationJson: '{"apiKeyId":"key-a"}',
       configurationRevision: 1,
-      publicBaseUrl: 'https://gateway.example',
       expiresAt: 1_300,
       createdAt: 1_000,
       updatedAt: 1_000,
@@ -60,7 +58,6 @@ describe.each(backends)('AgentSetupRepo (%s)', (_label, makeRepo) => {
       token: 'token-b',
       apiKeyId: 'key-b',
       configurationJson: '{"apiKeyId":"key-b"}',
-      publicBaseUrl: 'https://gateway.example',
       now: 2_000,
       expiresAt: 2_300,
     });
@@ -92,7 +89,6 @@ describe.each(backends)('AgentSetupRepo (%s)', (_label, makeRepo) => {
     // Live lease: expiry is extended but the token is NOT rotated.
     expect(result.record.token).toBe('token-a');
     expect(result.record.expiresAt).toBe(1_310);
-    expect(result.record.publicBaseUrl).toBe('https://gateway.example');
   });
 
   test('updateConfiguration reports revision-conflict without mutating when the revision is stale', async () => {
@@ -214,7 +210,6 @@ describe.each(backends)('AgentSetupRepo (%s)', (_label, makeRepo) => {
     expect(renewed.record.expiresAt).toBe(1_400);
     expect(renewed.record.configurationRevision).toBe(1);
     expect(renewed.record.configurationJson).toBe('{"apiKeyId":"key-a"}');
-    expect(renewed.record.publicBaseUrl).toBe('https://gateway.example');
   });
 
   test('renewLease rotates an expired matching token while preserving the configuration and revision', async () => {
@@ -234,7 +229,6 @@ describe.each(backends)('AgentSetupRepo (%s)', (_label, makeRepo) => {
     // Rotation is not a configuration change: revision and config are preserved.
     expect(renewed.record.configurationRevision).toBe(1);
     expect(renewed.record.configurationJson).toBe('{"apiKeyId":"key-a"}');
-    expect(renewed.record.publicBaseUrl).toBe('https://gateway.example');
     expect(await repo.agentSetup.findByToken('token-a')).toBeNull();
   });
 

@@ -438,16 +438,10 @@ export const listModelsBody = recordOnlyBody;
 // alongside the render helpers so the persisted shape and its renderer stay
 // together) is the payload the dashboard saves and the setup scripts read.
 //
-// `publicBaseUrl` is the browser origin the setup URL is minted from; a Node
-// deployment behind a TLS-terminating proxy cannot recover the external scheme
-// from the inbound request, so the client sends it explicitly. Its strict
-// http(s)-origin validation (no userinfo, no path beyond `/`, no query or
-// fragment) lives in the route handler, which owns the canonical rejection
-// message. `expectedRevision` drives the optimistic-concurrency CAS on update.
-
-export const agentSetupCreateBody = z.object({
-  publicBaseUrl: z.string().min(1),
-});
+// Acquisition (POST) carries no body: the lease stores no origin, and the
+// public GET script handler derives the Floway base origin from the request at
+// serve time. `expectedRevision` drives the optimistic-concurrency CAS on
+// update.
 
 export const agentSetupUpdateBody = z.object({
   token: z.string().min(1),

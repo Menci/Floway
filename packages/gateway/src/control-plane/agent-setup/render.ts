@@ -13,9 +13,9 @@ import { encodeBase64UrlJson } from '../../shared/base64url-json.ts';
 export interface RenderPrefixInput {
   // The selected long-lived Floway API key, in the clear.
   apiKey: string;
-  // The externally visible origin the setup URL was created from; also the
-  // host source for the Codex identity token.
-  publicBaseUrl: string;
+  // The externally visible Floway origin (scheme + host), resolved from the
+  // request at serve time; also the host source for the Codex identity token.
+  baseUrl: string;
   configuration: AgentSetupConfiguration;
 }
 
@@ -60,8 +60,8 @@ const CODEX_IDENTITY_TOKEN_SIGNATURE = 'c2ln';
 // Assemble the parseable Codex identity token from the origin host. Kept on the
 // server so the installer performs no JWT/base64url assembly. Deterministic:
 // object key order fixes the encoded bytes for a given host.
-export const renderCodexIdentityToken = (publicBaseUrl: string): string => {
-  const host = new URL(publicBaseUrl).host;
+export const renderCodexIdentityToken = (baseUrl: string): string => {
+  const host = new URL(baseUrl).host;
   const header = encodeBase64UrlJson({ alg: 'none', typ: 'JWT' });
   const payload = encodeBase64UrlJson({
     email: `floway@${host}`,
@@ -79,11 +79,11 @@ const shellFlag = (enabled: boolean): string => (enabled ? '1' : '');
 const shellOptional = (value: string | null): string => value ?? '';
 
 const renderShellAssignments = (input: RenderPrefixInput): [name: string, value: string][] => {
-  const { apiKey, publicBaseUrl, configuration } = input;
+  const { apiKey, baseUrl, configuration } = input;
   const { claudeCode, codex } = configuration;
   return [
     ['FLOWAY_API_KEY', apiKey],
-    ['FLOWAY_BASE_URL', publicBaseUrl],
+    ['FLOWAY_BASE_URL', baseUrl],
     ['FLOWAY_INSTALL_CLAUDE', shellFlag(claudeCode.enabled)],
     ['FLOWAY_CLAUDE_MODEL', shellOptional(claudeCode.model)],
     ['FLOWAY_CLAUDE_DEFAULT_SONNET_MODEL', shellOptional(claudeCode.defaultSonnetModel)],
@@ -93,7 +93,7 @@ const renderShellAssignments = (input: RenderPrefixInput): [name: string, value:
     ['FLOWAY_INSTALL_CODEX', shellFlag(codex.enabled)],
     ['FLOWAY_CODEX_MODEL', shellOptional(codex.model)],
     ['FLOWAY_CODEX_REASONING_EFFORT', shellOptional(codex.reasoningEffort)],
-    ['FLOWAY_CODEX_ID_TOKEN', renderCodexIdentityToken(publicBaseUrl)],
+    ['FLOWAY_CODEX_ID_TOKEN', renderCodexIdentityToken(baseUrl)],
   ];
 };
 
@@ -113,11 +113,11 @@ const powerShellBool = (value: boolean): string => (value ? '$true' : '$false');
 const powerShellOptional = (value: string | null): string => (value === null ? '$null' : powerShellLiteral(value));
 
 const renderPowerShellAssignments = (input: RenderPrefixInput): [name: string, value: string][] => {
-  const { apiKey, publicBaseUrl, configuration } = input;
+  const { apiKey, baseUrl, configuration } = input;
   const { claudeCode, codex } = configuration;
   return [
     ['$FlowayApiKey', powerShellLiteral(apiKey)],
-    ['$FlowayBaseUrl', powerShellLiteral(publicBaseUrl)],
+    ['$FlowayBaseUrl', powerShellLiteral(baseUrl)],
     ['$FlowayInstallClaude', powerShellBool(claudeCode.enabled)],
     ['$FlowayClaudeModel', powerShellOptional(claudeCode.model)],
     ['$FlowayClaudeDefaultSonnetModel', powerShellOptional(claudeCode.defaultSonnetModel)],
@@ -127,7 +127,7 @@ const renderPowerShellAssignments = (input: RenderPrefixInput): [name: string, v
     ['$FlowayInstallCodex', powerShellBool(codex.enabled)],
     ['$FlowayCodexModel', powerShellOptional(codex.model)],
     ['$FlowayCodexReasoningEffort', powerShellOptional(codex.reasoningEffort)],
-    ['$FlowayCodexIdToken', powerShellLiteral(renderCodexIdentityToken(publicBaseUrl))],
+    ['$FlowayCodexIdToken', powerShellLiteral(renderCodexIdentityToken(baseUrl))],
   ];
 };
 

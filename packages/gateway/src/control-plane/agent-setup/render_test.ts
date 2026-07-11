@@ -178,7 +178,7 @@ describe('renderShellPrefix', () => {
   test('renders every assignment through the encoder and ends with a newline', () => {
     const prefix = renderShellPrefix({
       apiKey: 'sk-raw-key',
-      publicBaseUrl: 'https://floway.example',
+      baseUrl: 'https://floway.example',
       configuration: fullConfiguration,
     });
     expect(prefix).toBe([
@@ -202,7 +202,7 @@ describe('renderShellPrefix', () => {
   test('renders empty values for disabled agents and null overrides', () => {
     const prefix = renderShellPrefix({
       apiKey: 'sk-raw-key',
-      publicBaseUrl: 'https://floway.example',
+      baseUrl: 'https://floway.example',
       configuration: {
         apiKeyId: 'key-a',
         claudeCode: {
@@ -222,7 +222,7 @@ describe('renderShellPrefix', () => {
   test('propagates a NUL-rejecting failure from the API key', () => {
     expect(() => renderShellPrefix({
       apiKey: 'sk-\0-key',
-      publicBaseUrl: 'https://floway.example',
+      baseUrl: 'https://floway.example',
       configuration: fullConfiguration,
     })).toThrow();
   });
@@ -232,7 +232,7 @@ describe('renderPowerShellPrefix', () => {
   test('renders booleans, single-quoted strings, and $null for absent overrides', () => {
     const prefix = renderPowerShellPrefix({
       apiKey: 'sk-raw-key',
-      publicBaseUrl: 'https://floway.example',
+      baseUrl: 'https://floway.example',
       configuration: fullConfiguration,
     });
     expect(prefix).toBe([
@@ -256,7 +256,7 @@ describe('renderPowerShellPrefix', () => {
   test('renders $false and $null for disabled agents and null overrides', () => {
     const prefix = renderPowerShellPrefix({
       apiKey: 'sk-raw-key',
-      publicBaseUrl: 'https://floway.example',
+      baseUrl: 'https://floway.example',
       configuration: {
         apiKeyId: 'key-a',
         claudeCode: {

@@ -24,7 +24,8 @@ import { type AuthedContext, type AuthVars, userFromContext } from '../../middle
 import { type CtxWithJson, zValidator } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { AgentSetupMutation, AgentSetupRecord, ApiKey } from '../../repo/types.ts';
-import { agentSetupCreateBody, agentSetupHeartbeatBody, agentSetupUpdateBody } from '../schemas.ts';
+import { getRequestOrigin } from '../../runtime/runtime-info.ts';
+import { agentSetupHeartbeatBody, agentSetupUpdateBody } from '../schemas.ts';
 
 // A lease lives five minutes past the server's current time; the dashboard's
 // per-minute heartbeat keeps a visible page's lease renewed.
@@ -97,22 +98,6 @@ const leaseProjection = (record: AgentSetupRecord) => ({
   scripts: scriptUrls(record.token),
 });
 
-// Validate a browser-supplied public origin: a bare `http:`/`https:` origin with
-// no credentials, no path beyond `/`, no query, and no fragment. Returns the
-// canonical origin to store, or null when the input is not a bare origin.
-const normalizeHttpOrigin = (value: string): string | null => {
-  let url: URL;
-  try {
-    url = new URL(value);
-  } catch {
-    return null;
-  }
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
-  if (url.username !== '' || url.password !== '') return null;
-  if (url.pathname !== '/' || url.search !== '' || url.hash !== '') return null;
-  return url.origin;
-};
-
 // A saved configuration is restored on reopen only while its key stays
 // selectable; otherwise the caller falls back to a first-use default.
 const restorableConfiguration = (
@@ -151,21 +136,18 @@ const serveSetupScript = (language: ScriptLanguage) => async (c: AuthedContext) 
   // it never assembles the API-key-bearing body it would immediately drop.
   if (c.req.method === 'HEAD') return c.body(null, 200, SCRIPT_RESPONSE_HEADERS);
 
-  const input = { apiKey: resolved.apiKey.key, publicBaseUrl: resolved.record.publicBaseUrl, configuration: resolved.configuration };
+  // The lease stores no origin: it is resolved from the serving request so the
+  // script points back at the host the user actually reached, honoring a Node
+  // reverse proxy's forwarded scheme without ever trusting a forwarded host.
+  const input = { apiKey: resolved.apiKey.key, baseUrl: getRequestOrigin(c.req.raw), configuration: resolved.configuration };
   const body = language === 'sh'
     ? renderShellPrefix(input) + SETUP_SH_BODY
     : renderPowerShellPrefix(input) + SETUP_PS1_BODY;
   return c.body(body, 200, SCRIPT_RESPONSE_HEADERS);
 };
 
-const createSetupLease = async (c: CtxWithJson<typeof agentSetupCreateBody>) => {
+const createSetupLease = async (c: AuthedContext) => {
   const userId = userFromContext(c).id;
-  const { publicBaseUrl } = c.req.valid('json');
-
-  const origin = normalizeHttpOrigin(publicBaseUrl);
-  if (origin === null) {
-    return c.json({ error: 'publicBaseUrl must be a bare http(s) origin with no credentials, path, query, or fragment.' }, 400);
-  }
 
   // listByUserId returns the user's active keys in creation order — exactly the
   // "selectable" set the default picker and the restore check both consult.
@@ -191,7 +173,6 @@ const createSetupLease = async (c: CtxWithJson<typeof agentSetupCreateBody>) => 
     token,
     apiKeyId: configuration.apiKeyId,
     configurationJson: JSON.stringify(configuration),
-    publicBaseUrl: origin,
     now,
     expiresAt: now + SETUP_LEASE_TTL_MS,
   }));
@@ -249,7 +230,7 @@ const heartbeatSetupLease = async (c: CtxWithJson<typeof agentSetupHeartbeatBody
 // but carry no RPC contract — the dashboard reaches them by relative URL, and a
 // user's machine by curl.
 export const agentSetupRoutes = new Hono<{ Variables: AuthVars }>()
-  .post('/', zValidator('json', agentSetupCreateBody), createSetupLease)
+  .post('/', createSetupLease)
   .put('/', zValidator('json', agentSetupUpdateBody), updateSetupLease)
   .post('/heartbeat', zValidator('json', agentSetupHeartbeatBody), heartbeatSetupLease)
   .on(['GET', 'HEAD'], '/:token/setup.sh', serveSetupScript('sh'))

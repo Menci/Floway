@@ -1757,13 +1757,12 @@ interface AgentSetupRow {
   api_key_id: string;
   configuration_json: string;
   configuration_revision: number;
-  public_base_url: string;
   expires_at: number;
   created_at: number;
   updated_at: number;
 }
 
-const AGENT_SETUP_COLUMNS = 'user_id, token, api_key_id, configuration_json, configuration_revision, public_base_url, expires_at, created_at, updated_at';
+const AGENT_SETUP_COLUMNS = 'user_id, token, api_key_id, configuration_json, configuration_revision, expires_at, created_at, updated_at';
 
 const toAgentSetupRecord = (row: AgentSetupRow): AgentSetupRecord => ({
   userId: row.user_id,
@@ -1771,7 +1770,6 @@ const toAgentSetupRecord = (row: AgentSetupRow): AgentSetupRecord => ({
   apiKeyId: row.api_key_id,
   configurationJson: row.configuration_json,
   configurationRevision: row.configuration_revision,
-  publicBaseUrl: row.public_base_url,
   expiresAt: row.expires_at,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
@@ -1801,7 +1799,6 @@ class SqlAgentSetupRepo implements AgentSetupRepo {
     token: string;
     apiKeyId: string;
     configurationJson: string;
-    publicBaseUrl: string;
     now: number;
     expiresAt: number;
   }): Promise<AgentSetupRecord> {
@@ -1811,18 +1808,17 @@ class SqlAgentSetupRepo implements AgentSetupRepo {
     const row = await this.db
       .prepare(
         `INSERT INTO agent_setup (${AGENT_SETUP_COLUMNS})
-         VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?)
+         VALUES (?, ?, ?, ?, 1, ?, ?, ?)
          ON CONFLICT (user_id) DO UPDATE SET
            token = excluded.token,
            api_key_id = excluded.api_key_id,
            configuration_json = excluded.configuration_json,
            configuration_revision = agent_setup.configuration_revision + 1,
-           public_base_url = excluded.public_base_url,
            expires_at = excluded.expires_at,
            updated_at = excluded.updated_at
          RETURNING ${AGENT_SETUP_COLUMNS}`,
       )
-      .bind(input.userId, input.token, input.apiKeyId, input.configurationJson, input.publicBaseUrl, input.expiresAt, input.now, input.now)
+      .bind(input.userId, input.token, input.apiKeyId, input.configurationJson, input.expiresAt, input.now, input.now)
       .first<AgentSetupRow>();
     if (!row) throw new Error('replaceForUser: upsert returned no rows');
     return toAgentSetupRecord(row);

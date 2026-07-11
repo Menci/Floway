@@ -35,11 +35,10 @@ interface LeaseResponse {
   scripts: { sh: string; ps1: string };
 }
 
-const createLease = (rawKey: string, publicBaseUrl = 'https://example.com') =>
+const createLease = (rawKey: string) =>
   requestApp('/api/setup', {
     method: 'POST',
-    headers: { 'x-api-key': rawKey, 'content-type': 'application/json' },
-    body: JSON.stringify({ publicBaseUrl }),
+    headers: { 'x-api-key': rawKey },
   });
 
 // --- create (first use + restore) ---
@@ -76,8 +75,7 @@ test('POST /api/setup returns a typed no-key response when the account has no ac
 
   const response = await requestApp('/api/setup', {
     method: 'POST',
-    headers: { 'x-floway-session': session, 'content-type': 'application/json' },
-    body: JSON.stringify({ publicBaseUrl: 'https://example.com' }),
+    headers: { 'x-floway-session': session },
   });
   assertEquals(response.status, 409);
   const body = (await response.json()) as { status: string };
@@ -102,21 +100,6 @@ test('POST /api/setup restores a saved configuration whose key is still selectab
   assertEquals(reopened.configuration.codex.enabled, false);
   // Reopening rotates the token.
   expect(reopened.token).not.toBe(first.token);
-});
-
-test('POST /api/setup rejects a public base URL that is not a bare http(s) origin', async () => {
-  const { apiKey } = await setupAppTest({ apiKey: testApiKey() });
-  for (const bad of [
-    'ftp://example.com',
-    'https://user:pass@example.com',
-    'https://example.com/path',
-    'https://example.com/?q=1',
-    'https://example.com/#frag',
-    'not a url',
-  ]) {
-    const response = await createLease(apiKey.key, bad);
-    assertEquals(response.status, 400);
-  }
 });
 
 // --- update + heartbeat discriminants ---
@@ -279,9 +262,42 @@ test('GET /api/setup/:token/setup.sh serves the prefix + fixed body with hardene
 
   const text = await response.text();
   expect(text).toContain("FLOWAY_API_KEY='raw-key'");
-  expect(text).toContain("FLOWAY_BASE_URL='https://example.com'");
+  // The base URL is derived from the serving request's own origin, not from
+  // any persisted value. requestApp reaches the app at http://localhost.
+  expect(text).toContain("FLOWAY_BASE_URL='http://localhost'");
   expect(text).toContain(SETUP_SH_BODY);
   expect(text).toContain('Floway agent setup installer (Bash 3.2+)');
+});
+
+test('GET derives the base URL from a Node reverse proxy: X-Forwarded-Proto overrides the request scheme, keeping the public host', async () => {
+  const { apiKey } = await setupAppTest({ apiKey: testApiKey() });
+  const lease = (await (await createLease(apiKey.key)).json()) as LeaseResponse;
+
+  // The bundled reverse proxy terminates TLS and forwards over plain HTTP with
+  // Host set to the public host and X-Forwarded-Proto set to the real scheme
+  // (docker/nginx.conf). The default 'node' runtime kind honors that header.
+  const response = await requestApp(`http://public-host${lease.scripts.sh}`, {
+    method: 'GET',
+    headers: { 'x-forwarded-proto': 'https' },
+  });
+  assertEquals(response.status, 200);
+  const text = await response.text();
+  expect(text).toContain("FLOWAY_BASE_URL='https://public-host'");
+});
+
+test('GET ignores a comma-chained or invalid X-Forwarded-Proto, falling back to the request scheme', async () => {
+  const { apiKey } = await setupAppTest({ apiKey: testApiKey() });
+  const lease = (await (await createLease(apiKey.key)).json()) as LeaseResponse;
+
+  for (const forwardedProto of ['https, http', 'HTTPS', 'ftp']) {
+    const response = await requestApp(`http://public-host${lease.scripts.sh}`, {
+      method: 'GET',
+      headers: { 'x-forwarded-proto': forwardedProto },
+    });
+    assertEquals(response.status, 200);
+    const text = await response.text();
+    expect(text).toContain("FLOWAY_BASE_URL='http://public-host'");
+  }
 });
 
 test('GET /api/setup/:token/setup.ps1 serves the PowerShell prefix + fixed body', async () => {
@@ -321,13 +337,13 @@ test('unknown, expired, deleted-user, deleted-key, and mismatched tokens all ret
 
   // Expired lease.
   const expiredToken = 'b'.repeat(43);
-  await repo.agentSetup.replaceForUser({ userId: 2, token: expiredToken, apiKeyId: apiKey.id, configurationJson: configJson, publicBaseUrl: 'https://example.com', now, expiresAt: now - 1 });
+  await repo.agentSetup.replaceForUser({ userId: 2, token: expiredToken, apiKeyId: apiKey.id, configurationJson: configJson, now, expiresAt: now - 1 });
 
   // Config referencing a key owned by another user (config mismatch).
   await repo.users.save({ id: 3, username: 'mallory', passwordHash: null, isAdmin: false, upstreamIds: null, canViewGlobalTelemetry: false, createdAt: '2026-03-15T00:00:00.000Z', deletedAt: null });
   await repo.apiKeys.save({ ...testApiKey(), id: 'key_other', userId: 3, key: 'raw-other' });
   const mismatchToken = 'c'.repeat(43);
-  await repo.agentSetup.replaceForUser({ userId: 3, token: mismatchToken, apiKeyId: apiKey.id, configurationJson: configJson, publicBaseUrl: 'https://example.com', now, expiresAt: now + 300_000 });
+  await repo.agentSetup.replaceForUser({ userId: 3, token: mismatchToken, apiKeyId: apiKey.id, configurationJson: configJson, now, expiresAt: now + 300_000 });
 
   const bodies = new Set<string>();
   for (const token of [unknownToken, expiredToken, mismatchToken]) {
@@ -338,7 +354,7 @@ test('unknown, expired, deleted-user, deleted-key, and mismatched tokens all ret
 
   // Deleted user.
   const userToken = 'd'.repeat(43);
-  await repo.agentSetup.replaceForUser({ userId: 2, token: userToken, apiKeyId: apiKey.id, configurationJson: configJson, publicBaseUrl: 'https://example.com', now, expiresAt: now + 300_000 });
+  await repo.agentSetup.replaceForUser({ userId: 2, token: userToken, apiKeyId: apiKey.id, configurationJson: configJson, now, expiresAt: now + 300_000 });
   await repo.users.softDelete(2);
   const deletedUser = await requestApp(`/api/setup/${userToken}/setup.sh`, { method: 'GET' });
   assertEquals(deletedUser.status, 404);
@@ -510,11 +526,7 @@ test('OPTIONS on a script path is a CORS preflight that never resolves the lease
 
 test('control routes still require authentication', async () => {
   await setupAppTest({ apiKey: testApiKey() });
-  const response = await requestApp('/api/setup', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ publicBaseUrl: 'https://example.com' }),
-  });
+  const response = await requestApp('/api/setup', { method: 'POST' });
   assertEquals(response.status, 401);
 });
 

@@ -378,9 +378,6 @@ export interface AgentSetupRecord {
   // untouched by lease renewal, so a heartbeat never invalidates an in-flight
   // dashboard edit.
   configurationRevision: number;
-  // External origin the dashboard was loaded from, captured at lease
-  // creation and echoed into the rendered script. See migration 0050.
-  publicBaseUrl: string;
   expiresAt: number;
   createdAt: number;
   updatedAt: number;
@@ -406,7 +403,6 @@ export interface AgentSetupRepo {
     token: string;
     apiKeyId: string;
     configurationJson: string;
-    publicBaseUrl: string;
     now: number;
     expiresAt: number;
   }): Promise<AgentSetupRecord>;

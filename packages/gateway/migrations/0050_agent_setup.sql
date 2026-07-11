@@ -10,12 +10,6 @@ CREATE TABLE agent_setup (
   api_key_id TEXT NOT NULL,
   configuration_json TEXT NOT NULL,
   configuration_revision INTEGER NOT NULL,
-  -- External origin (scheme + host) the dashboard was loaded from, captured
-  -- at lease creation. A Node deployment behind a TLS-terminating reverse
-  -- proxy cannot recover the public scheme from the inbound request URL, so
-  -- the authenticated client sends `window.location.origin` explicitly and it
-  -- is echoed into the rendered setup script.
-  public_base_url TEXT NOT NULL,
   -- Unix milliseconds.
   expires_at INTEGER NOT NULL,
   created_at INTEGER NOT NULL,

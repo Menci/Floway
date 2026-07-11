@@ -955,7 +955,6 @@ class MemoryAgentSetupRepo implements AgentSetupRepo {
     token: string;
     apiKeyId: string;
     configurationJson: string;
-    publicBaseUrl: string;
     now: number;
     expiresAt: number;
   }): Promise<AgentSetupRecord> {
@@ -966,7 +965,6 @@ class MemoryAgentSetupRepo implements AgentSetupRepo {
       apiKeyId: input.apiKeyId,
       configurationJson: input.configurationJson,
       configurationRevision: (existing?.configurationRevision ?? 0) + 1,
-      publicBaseUrl: input.publicBaseUrl,
       expiresAt: input.expiresAt,
       createdAt: existing?.createdAt ?? input.now,
       updatedAt: input.now,
