@@ -166,7 +166,10 @@ The same boundary runs for both `/v1/responses` (streaming) and
 `/v1/responses/compact` (non-streaming).
 
 - strips unsupported `service_tier`
-- removes the `image_generation` tool entry (Copilot does not host it)
+- removes image-generation tool entries Copilot does not host — the hosted
+  `image_generation` tool and Codex's `image_gen` deferred-tool namespace
+  (`{ type: "namespace", name: "image_gen" }`) — plus any forced `tool_choice`
+  that named them. Every other namespace and tool is left in place
 - forces `store: false` on the wire — the gateway always owns Responses
   persistence; the original `store` is captured by the entry adapter before
   the chain runs, so durable storage is unaffected
