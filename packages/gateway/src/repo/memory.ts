@@ -962,7 +962,7 @@ class MemoryAgentSetupRepo implements AgentSetupRepository {
     now: number;
     expiresAt: number;
   }): Promise<AgentSetupRecord> {
-    if (this.byToken.has(input.token)) throw new AgentSetupTokenCollisionError();
+    if (this.byToken.has(input.token)) return Promise.reject(new AgentSetupTokenCollisionError());
     const record: AgentSetupRecord = {
       userId: input.userId,
       token: input.token,
