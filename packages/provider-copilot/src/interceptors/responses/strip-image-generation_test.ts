@@ -82,7 +82,7 @@ test('stripImageGenerationFromPayload removes a forced image_gen namespace tool_
     input: 'draw this',
     tools: [{ type: 'namespace', name: 'image_gen', tools: [] }],
     tool_choice: { type: 'namespace', name: 'image_gen' },
-  } as unknown as ResponsesPayload;
+  } as ResponsesPayload;
 
   stripImageGenerationFromPayload(payload);
 
@@ -99,7 +99,7 @@ test('stripImageGenerationFromPayload preserves a tool_choice naming a surviving
       { type: 'namespace', name: 'browser', tools: [] },
     ],
     tool_choice: { type: 'namespace', name: 'browser' },
-  } as unknown as ResponsesPayload;
+  } as ResponsesPayload;
 
   stripImageGenerationFromPayload(payload);
 
