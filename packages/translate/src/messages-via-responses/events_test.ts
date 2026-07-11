@@ -4,6 +4,42 @@ import { createResponsesToMessagesStreamState, translateResponsesStreamEventToMe
 import { packReasoningSignature } from '../shared/messages-and-responses/reasoning.ts';
 import { assertEquals } from '../test-assert.ts';
 
+test('Responses response.created maps cache-write onto Messages message_start cache_creation_input_tokens', () => {
+  const state = createResponsesToMessagesStreamState();
+
+  const events = translateResponsesStreamEventToMessagesEvents(
+    {
+      type: 'response.created',
+      response: {
+        id: 'resp_stream',
+        object: 'response',
+        model: 'gpt-test',
+        output: [],
+        output_text: '',
+        status: 'in_progress',
+        error: null,
+        incomplete_details: null,
+        usage: {
+          input_tokens: 100,
+          output_tokens: 0,
+          total_tokens: 100,
+          input_tokens_details: { cached_tokens: 30, cache_write_tokens: 25 },
+        },
+      },
+    },
+    state,
+  );
+
+  assertEquals(events[0].type, 'message_start');
+  const start = events[0] as Extract<typeof events[number], { type: 'message_start' }>;
+  assertEquals(start.message.usage, {
+    input_tokens: 45,
+    output_tokens: 0,
+    cache_read_input_tokens: 30,
+    cache_creation_input_tokens: 25,
+  });
+});
+
 test('Responses reasoning stream without readable summary emits a redacted_thinking carrier', () => {
   const state = createResponsesToMessagesStreamState();
 
