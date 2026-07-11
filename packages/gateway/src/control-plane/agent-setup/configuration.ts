@@ -83,31 +83,3 @@ export const defaultAgentSetupConfiguration = (
     },
   };
 };
-
-// Context-window limits as advertised on a public model. A model may publish
-// only the split prompt/output caps rather than a combined window, so both
-// forms are accepted and the combined window wins when present.
-export interface ModelContextLimits {
-  max_context_window_tokens?: number;
-  max_prompt_tokens?: number;
-  max_output_tokens?: number;
-}
-
-const ONE_MILLION_CONTEXT_TOKENS = 1_000_000;
-
-// Claude Code opts a session into a model's one-million-token context window
-// when the configured model id carries a `[1m]` suffix, so the suffix is baked
-// into the persisted override at selection time and the id stays opaque for all
-// downstream rendering and installer writes. Family-agnostic on purpose: the
-// caller decides which ids are Claude models; this reads only the advertised
-// context. Ref: https://code.claude.com/docs/en/model-config
-export const applyClaudeContextSuffix = (
-  modelId: string,
-  limits: ModelContextLimits,
-): string => {
-  const contextWindow = limits.max_context_window_tokens
-    ?? (limits.max_prompt_tokens ?? 0) + (limits.max_output_tokens ?? 0);
-  return contextWindow >= ONE_MILLION_CONTEXT_TOKENS && !modelId.endsWith('[1m]')
-    ? `${modelId}[1m]`
-    : modelId;
-};

@@ -269,9 +269,10 @@ function Write-FlowayClaudeSettings {
   }
 }
 
-# Confirm the gateway's authenticated model directory answers. No inference
-# request is issued. The key travels in an in-process header table, never in a
-# process argument list.
+# Run a child process with its stdout and stderr redirected into in-process
+# pipes, bounded by a deadline. On timeout the whole process tree is terminated
+# and the call throws; otherwise the exit code and combined stdout+stderr are
+# returned. Arguments are fixed internal tokens, never external input.
 function Invoke-FlowayProcess {
   param([string]$Exe, [string[]]$Arguments, [int]$TimeoutSeconds)
   $startInfo = New-Object System.Diagnostics.ProcessStartInfo
@@ -299,6 +300,9 @@ function Invoke-FlowayProcess {
   [PSCustomObject]@{ ExitCode = $process.ExitCode; Output = ($stdout + $stderr) }
 }
 
+# Confirm the gateway's authenticated model directory answers. No inference
+# request is issued. The key travels in an in-process header table, never in a
+# process argument list.
 function Test-FlowayModelDirectory {
   $headers = @{
     'Authorization'     = "Bearer $FlowayApiKey"

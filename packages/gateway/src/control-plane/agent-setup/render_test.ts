@@ -3,7 +3,6 @@ import { describe, expect, test } from 'vitest';
 import {
   AgentSetupNoSelectableKeyError,
   agentSetupConfigurationSchema,
-  applyClaudeContextSuffix,
   defaultAgentSetupConfiguration,
   type AgentSetupConfiguration,
 } from './configuration.ts';
@@ -107,33 +106,6 @@ describe('defaultAgentSetupConfiguration', () => {
 
   test('rejects an empty key list with a typed error', () => {
     expect(() => defaultAgentSetupConfiguration([])).toThrow(AgentSetupNoSelectableKeyError);
-  });
-});
-
-describe('applyClaudeContextSuffix', () => {
-  test('appends [1m] when the advertised window reaches one million', () => {
-    expect(applyClaudeContextSuffix('claude-opus-4-6', { max_context_window_tokens: 1_000_000 }))
-      .toBe('claude-opus-4-6[1m]');
-  });
-
-  test('leaves the id unchanged below one million', () => {
-    expect(applyClaudeContextSuffix('claude-sonnet-4-5', { max_context_window_tokens: 200_000 }))
-      .toBe('claude-sonnet-4-5');
-  });
-
-  test('derives the window from prompt + output tokens when no window is given', () => {
-    expect(applyClaudeContextSuffix('m', { max_prompt_tokens: 900_000, max_output_tokens: 100_000 }))
-      .toBe('m[1m]');
-  });
-
-  test('does not double-append when the suffix is already present', () => {
-    expect(applyClaudeContextSuffix('claude-opus-4-6[1m]', { max_context_window_tokens: 1_000_000 }))
-      .toBe('claude-opus-4-6[1m]');
-  });
-
-  test('does not family-filter: a non-Claude id still gets the suffix', () => {
-    expect(applyClaudeContextSuffix('vendor/gpt-mega', { max_context_window_tokens: 2_000_000 }))
-      .toBe('vendor/gpt-mega[1m]');
   });
 });
 

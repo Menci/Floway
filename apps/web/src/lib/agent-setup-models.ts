@@ -60,9 +60,9 @@ const ONE_MILLION_CONTEXT_TOKENS = 1_000_000;
 // `[1m]` id suffix, so the suffix is baked into the persisted override the moment
 // a one-million-token model is selected while the picker keeps showing the raw
 // id. Family-agnostic: the caller decides which ids are Claude models; this reads
-// only the advertised context. Mirrors the gateway's persist-time rule rather
-// than importing it — the gateway module is not part of the browser bundle's
-// dependency surface. Ref: https://code.claude.com/docs/en/model-config
+// only the advertised context. The browser is the single place this suffix is
+// applied — at selection time — while the gateway treats the persisted id as
+// opaque and renders it verbatim. Ref: https://code.claude.com/docs/en/model-config
 export const applyClaudeContextSuffix = (modelId: string, limits: PublicModelLimits): string => {
   const contextWindow = limits.max_context_window_tokens
     ?? (limits.max_prompt_tokens ?? 0) + (limits.max_output_tokens ?? 0);
