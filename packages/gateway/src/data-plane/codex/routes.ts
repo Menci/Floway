@@ -37,6 +37,12 @@
 // generic `/v1/responses` WS handler so codex's session-internal item
 // store works against this namespace too.
 //
+// `/alpha/search` is codex's web-search endpoint (codex-rs
+// codex-api/src/search.rs): the CLI POSTs a `SearchRequest` when the model
+// emits a `web.run` tool call and feeds the returned `output` string back to
+// the model. We execute the requested commands through Floway's configured
+// web-search provider instead of proxying chatgpt.com — see ./alpha-search.ts.
+//
 // Auth: this whole namespace is reached through the same `authMiddleware`
 // that protects every other API route. The operator forges
 // `~/.codex/auth.json` with `tokens.access_token` set to their Floway API
@@ -47,6 +53,7 @@
 
 import type { Hono } from 'hono';
 
+import { codexAlphaSearch, codexSearchRequestSchema } from './alpha-search.ts';
 import { codexAppsMcp } from './apps-mcp.ts';
 import {
   codexAnalyticsEventsEvents,
@@ -58,6 +65,7 @@ import {
 } from './chatgpt-backend.ts';
 import { codexModels } from './models.ts';
 import type { AuthVars } from '../../middleware/auth.ts';
+import { zValidator } from '../../middleware/zod-validator.ts';
 import { responsesHttp } from '../chat/responses/http.ts';
 import { responsesWebSocket } from '../chat/responses/websocket.ts';
 
@@ -70,6 +78,8 @@ export const mountCodexRoutes = (app: Hono<{ Variables: AuthVars }>) => {
 
   app.get(`${CODEX_BASE_PATH}/models`, codexModels);
   app.post(`${CODEX_BASE_PATH}/codex/analytics-events/events`, codexAnalyticsEventsEvents);
+
+  app.post(`${CODEX_BASE_PATH}/alpha/search`, zValidator('json', codexSearchRequestSchema), codexAlphaSearch);
 
   app.post(`${CODEX_BASE_PATH}/api/codex/apps`, codexAppsMcp);
 
