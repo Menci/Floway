@@ -253,16 +253,21 @@ test('consumes the exact Codex image_gen namespace and restores its tool and for
     namespaceChoice,
   );
   const replacement = { type: 'function', name: SHIM_TOOL_NAME, parameters: {}, strict: false } as ResponsesTool;
-  const result = await shim(invocation, gatewayCtx(), scriptedRun([
+  const run = scriptedRun([
     withResponseEcho(callTurn(0, 'call_1', 'a cat'), [replacement], { type: 'function', name: SHIM_TOOL_NAME }),
     withResponseEcho(messageTurn('done'), [replacement], { type: 'function', name: SHIM_TOOL_NAME }),
-  ]));
+  ]);
+  let firstUpstreamToolChoice: ResponsesToolChoice | undefined;
+  const result = await shim(invocation, gatewayCtx(), async () => {
+    firstUpstreamToolChoice ??= invocation.payload.tool_choice;
+    return await run();
+  });
   const events = await drain(result);
 
   assertEquals(invocation.payload.tools?.length, 1);
   assertEquals(invocation.payload.tools?.[0].type, 'function');
   assertEquals((invocation.payload.tools?.[0] as { name: string }).name, SHIM_TOOL_NAME);
-  assertEquals(invocation.payload.tool_choice, { type: 'function', name: SHIM_TOOL_NAME });
+  assertEquals(firstUpstreamToolChoice, { type: 'function', name: SHIM_TOOL_NAME });
   assert(events.some(e => e.type === 'response.image_generation_call.completed'));
   const completed = events.find(e => e.type === 'response.completed');
   assert(completed?.type === 'response.completed');
@@ -351,6 +356,22 @@ test('leaves unrelated namespaces untouched while consuming the exact image name
   const completed = events.find(e => e.type === 'response.completed');
   assert(completed?.type === 'response.completed');
   assertEquals(completed.response.tools, [unrelated, codexImageNamespace]);
+});
+
+test('leaves image_gen untouched when the image shim flag is disabled', async () => {
+  const invocation = makeCtxWithTools([], [codexImageNamespace], undefined, new Set());
+  let sawOriginalNamespace = false;
+  const result = await shim(invocation, gatewayCtx(), async () => {
+    sawOriginalNamespace = invocation.payload.tools?.[0] === codexImageNamespace;
+    const events: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> = (async function* () {
+      for (const frame of messageTurn('done')) yield frame;
+    })();
+    return { type: 'events', events, modelIdentity: MODEL_IDENTITY };
+  });
+  await drain(result);
+
+  assert(sawOriginalNamespace);
+  assertEquals(invocation.payload.tools, [codexImageNamespace]);
 });
 
 test('relays real partial_image frames when partial_images > 0', async () => {
