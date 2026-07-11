@@ -3,8 +3,7 @@ import { test, vi } from 'vitest';
 import { messagesAttempt } from './attempt.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
-import { createNonResponsesSourceStore } from '../responses/items/store.ts';
-import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
+import { mockChatGatewayCtx } from '../../../test-helpers/gateway-ctx.ts';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
@@ -14,17 +13,7 @@ import { assertEquals, assertExists, stubProvider, stubInternalModel } from '@fl
 
 const API_KEY_ID = 'key_messages_attempt_test';
 
-const makeGatewayCtx = (): ChatGatewayCtx => ({
-  apiKeyId: API_KEY_ID,
-  upstreamIds: null,
-  wantsStream: true,
-  runtimeLocation: 'TEST',
-  dump: null,
-  responseHeaders: new Headers(),
-  backgroundScheduler: () => {},
-  attempt: { firstOutputTokenAt: null, upstreamCallStartedAt: null, telemetry: undefined },
-  store: createNonResponsesSourceStore(API_KEY_ID),
-});
+const makeGatewayCtx = () => mockChatGatewayCtx({ apiKeyId: API_KEY_ID, wantsStream: true });
 
 const makePayload = (overrides: Partial<MessagesPayload> = {}): MessagesPayload => ({
   model: 'test-model',
@@ -186,11 +175,11 @@ test('countTokens refuses a non-messages candidate', async () => {
 
 test('generate attaches the performance context to the result', async () => {
   installRepo();
-  const ctx: ChatGatewayCtx = {
-    ...makeGatewayCtx(),
+  const ctx = mockChatGatewayCtx({
+    apiKeyId: API_KEY_ID,
+    wantsStream: true,
     runtimeLocation: 'SJC',
-    backgroundScheduler: () => {},
-  };
+  });
   const callMessages = vi.fn(async (): Promise<ProviderStreamResult<MessagesStreamEvent>> => ({
     ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'gpt-test', headers: new Headers(),
   }));

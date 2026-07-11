@@ -2,8 +2,7 @@ import { beforeEach, test, vi } from 'vitest';
 
 import { initRepo } from '../../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../../repo/memory.ts';
-import type { ChatGatewayCtx } from '../../../shared/gateway-ctx.ts';
-import { createNonResponsesSourceStore } from '../../items/store.ts';
+import { mockChatGatewayCtx } from '../../../../../test-helpers/gateway-ctx.ts';
 import type { ResponsesInvocation } from '../types.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -152,17 +151,7 @@ const makeCtx = (input: unknown[], action: 'generate' | 'edit' | 'auto' = 'auto'
   headers: new Headers(),
   action: 'generate',
 });
-const gatewayCtx = (): ChatGatewayCtx => ({
-  apiKeyId: 'test-key',
-  upstreamIds: null,
-  wantsStream: true,
-  runtimeLocation: 'TEST',
-  dump: null,
-  responseHeaders: new Headers(),
-  backgroundScheduler: () => {},
-  attempt: { firstOutputTokenAt: null, upstreamCallStartedAt: null, telemetry: undefined },
-  store: createNonResponsesSourceStore('test-key'),
-});
+const gatewayCtx = () => mockChatGatewayCtx({ wantsStream: true });
 
 const drain = async (result: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>): Promise<ResponsesStreamEvent[]> => {
   if (result.type !== 'events') throw new Error(`expected events, got ${result.type}`);
@@ -408,17 +397,10 @@ test('an image sub-call records its own perf row attributed to the image backend
   // await them before querying the repo (the default no-op scheduler in
   // `gatewayCtx()` would drop the recordSample write).
   const pending: Promise<unknown>[] = [];
-  const ctx: ChatGatewayCtx = {
-    apiKeyId: 'test-key',
-    upstreamIds: null,
+  const ctx = mockChatGatewayCtx({
     wantsStream: true,
-    runtimeLocation: 'TEST',
-    dump: null,
-    responseHeaders: new Headers(),
     backgroundScheduler: p => { pending.push(p); },
-    attempt: { firstOutputTokenAt: null, upstreamCallStartedAt: null, telemetry: undefined },
-    store: createNonResponsesSourceStore('test-key'),
-  };
+  });
   const result = await shim(makeCtx([{ type: 'message', role: 'user', content: 'draw a cat' }]), ctx, scriptedRun([
     callTurn(0, 'call_1', 'a cat'),
     messageTurn('here it is'),
@@ -430,7 +412,7 @@ test('an image sub-call records its own perf row attributed to the image backend
   const imageRows = perfRows.filter(r => r.operation === 'image_generation');
   assertEquals(imageRows.length, 1);
   assertEquals(imageRows[0].upstream, 'u');
-  assertEquals(imageRows[0].keyId, 'test-key');
+  assertEquals(imageRows[0].keyId, 'key_test');
   assertEquals(imageRows[0].model, 'gpt-image-2');
   // The image shim runs on a local AttemptState distinct from the outer
   // Responses turn's — no image-call stamps may leak onto ctx.attempt.

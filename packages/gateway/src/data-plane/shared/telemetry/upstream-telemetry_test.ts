@@ -1,23 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
 import { withUpstreamTelemetry } from './upstream-telemetry.ts';
-import type { GatewayCtx } from '../../chat/shared/gateway-ctx.ts';
+import { mockGatewayCtx } from '../../../test-helpers/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 
 const iter = <T>(items: readonly T[]): AsyncIterable<T> => ({
   async *[Symbol.asyncIterator]() { for (const item of items) yield item; },
 });
 
-const stubCtx = (): GatewayCtx => ({
-  apiKeyId: 'k',
-  upstreamIds: null,
-  wantsStream: true,
-  backgroundScheduler: (p: Promise<unknown>) => { void p; },
-  attempt: { firstOutputTokenAt: null, upstreamCallStartedAt: null, telemetry: undefined },
-  runtimeLocation: 'x',
-  dump: null,
-  responseHeaders: new Headers(),
-} as unknown as GatewayCtx);
+const stubCtx = () => mockGatewayCtx({ apiKeyId: 'k', runtimeLocation: 'x' });
 
 describe('withUpstreamTelemetry', () => {
   it('stamps firstOutputTokenAt on the first generated-token frame (messages thinking_delta)', async () => {
