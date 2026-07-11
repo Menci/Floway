@@ -376,6 +376,15 @@ const resolveGroupName = (group: string, groupBy: GroupBy): string => {
   return group;
 };
 
+// Which groupBy axes have server-sorted metadata (so we can assign stable
+// slot colors like /usage does). Other axes fall back to name-hash palette.
+// Declarative table — new metadata-backed axes only need a lookup entry, not
+// a new branch inside colorFor.
+const groupByColorSource: Partial<Record<GroupBy, (group: string) => number>> = {
+  userId: group => overview.value.users.findIndex(u => String(u.id) === group),
+  keyId: group => overview.value.keys.findIndex(k => k.id === group),
+};
+
 const tableSortToggle = (key: TableSortKey): void => {
   if (tableSortKey.value === key) {
     tableSortDir.value = tableSortDir.value === 'asc' ? 'desc' : 'asc';
@@ -481,15 +490,8 @@ const chartConfig = computed<ChartConfiguration<'line'>>(() => {
   // or non-user/key axes fall back to the name-hashed palette entry — still
   // stable, just not slot-aligned.
   const colorFor = (groupName: string): string => {
-    if (performanceGroupBy.value === 'userId') {
-      const slot = overview.value.users.findIndex(u => String(u.id) === groupName);
-      return slot >= 0 ? chartColor(slot) : chartColorByName(groupName);
-    }
-    if (performanceGroupBy.value === 'keyId') {
-      const slot = overview.value.keys.findIndex(k => k.id === groupName);
-      return slot >= 0 ? chartColor(slot) : chartColorByName(groupName);
-    }
-    return chartColorByName(groupName);
+    const slot = groupByColorSource[performanceGroupBy.value]?.(groupName);
+    return slot !== undefined && slot >= 0 ? chartColor(slot) : chartColorByName(groupName);
   };
   const datasets = [...groups.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([group, byBucket]) => {
     const color = colorFor(group);
