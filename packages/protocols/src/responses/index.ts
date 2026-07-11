@@ -317,13 +317,13 @@ export interface ResponsesFunctionTool {
 }
 
 // Codex and other Responses clients ship hosted server tools (web_search,
-// image_generation, tool_search, namespace) and Freeform `custom` tools
-// alongside ordinary function tools. Native Responses targets pass `custom`
-// through; translated targets wrap each `custom` as a single-string-parameter
-// function tool and unwrap matching function calls back into `custom_tool_call`
-// outputs. The wire-level tools array is still a heterogeneous union and
-// translators must narrow on `type === "function"` (or `"custom"`) before
-// reading `name` / `parameters`.
+// image_generation, tool_search), deferred-tool namespaces, and Freeform
+// `custom` tools alongside ordinary function tools. Native Responses targets
+// pass `custom` through; translated targets wrap each `custom` as a
+// single-string-parameter function tool and unwrap matching function calls
+// back into `custom_tool_call` outputs. The wire-level tools array is still a
+// heterogeneous union and translators must narrow on `type === "function"`
+// (or `"custom"`) before reading `name` / `parameters`.
 //
 // `web_search` ships under four equivalent type values (current + dated
 // + preview + dated-preview). All four name the same hosted tool. The
@@ -339,8 +339,7 @@ export const WEB_SEARCH_HOSTED_TYPE_NAMES = [
 export type ResponsesHostedToolType =
   | typeof WEB_SEARCH_HOSTED_TYPE_NAMES[number]
   | 'image_generation'
-  | 'tool_search'
-  | 'namespace';
+  | 'tool_search';
 
 export interface ResponsesHostedTool {
   type: ResponsesHostedToolType;
@@ -366,6 +365,23 @@ export interface ResponsesHostedTool {
   [key: string]: unknown;
 }
 
+export interface ResponsesNamespaceFunctionTool {
+  type: 'function';
+  name: string;
+  parameters?: Record<string, unknown>;
+  strict?: boolean;
+  description?: string;
+  [key: string]: unknown;
+}
+
+export interface ResponsesNamespaceTool {
+  type: 'namespace';
+  name: string;
+  tools: ResponsesNamespaceFunctionTool[];
+  description?: string;
+  [key: string]: unknown;
+}
+
 export interface ResponsesCustomTool {
   type: 'custom';
   name: string;
@@ -373,7 +389,7 @@ export interface ResponsesCustomTool {
   format?: Record<string, unknown>;
 }
 
-export type ResponsesTool = ResponsesFunctionTool | ResponsesHostedTool | ResponsesCustomTool;
+export type ResponsesTool = ResponsesFunctionTool | ResponsesHostedTool | ResponsesNamespaceTool | ResponsesCustomTool;
 
 export type ResponsesToolChoice =
   | 'auto'
@@ -381,6 +397,7 @@ export type ResponsesToolChoice =
   | 'required'
   | { type: 'function'; name: string }
   | { type: 'custom'; name: string }
+  | { type: 'namespace'; name?: string }
   | { type: ResponsesHostedToolType };
 
 // ── Response types ──

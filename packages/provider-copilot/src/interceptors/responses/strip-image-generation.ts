@@ -37,16 +37,16 @@ const IMAGE_GENERATION_NAMESPACE_NAME = 'image_gen';
 
 const isImageGenerationTool = (tool: ResponsesTool): boolean =>
   tool.type === 'image_generation' ||
-  (tool.type === 'namespace' && (tool as { name?: unknown }).name === IMAGE_GENERATION_NAMESPACE_NAME);
+  (tool.type === 'namespace' && tool.name === IMAGE_GENERATION_NAMESPACE_NAME);
 
 // A tool_choice that named one of the just-removed tools would tell Copilot to
 // invoke a tool that no longer exists. A bare `{ type: "namespace" }` without a
 // name, or one naming a surviving namespace, is untouched.
-const isImageGenerationToolChoice = (choice: ResponsesToolChoice | undefined): boolean => {
-  if (typeof choice !== 'object' || choice === null) return false;
-  const { type, name } = choice as { type?: unknown; name?: unknown };
-  return type === 'image_generation' || (type === 'namespace' && name === IMAGE_GENERATION_NAMESPACE_NAME);
-};
+const isImageGenerationToolChoice = (choice: ResponsesToolChoice | undefined): boolean =>
+  typeof choice === 'object'
+  && choice !== null
+  && (choice.type === 'image_generation'
+    || (choice.type === 'namespace' && choice.name === IMAGE_GENERATION_NAMESPACE_NAME));
 
 export const stripImageGenerationFromPayload = (payload: ResponsesPayload): void => {
   let removedTool = false;

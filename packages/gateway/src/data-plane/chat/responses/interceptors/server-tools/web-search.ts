@@ -66,9 +66,10 @@ const formatUserLocation = (loc: NonNullable<ShimToolFilters['userLocation']>): 
 // deliberately omits the unsupported ones.
 //   https://github.com/openai/harmony/blob/abd677f7ac962629c808197caa1feb9e3e95d2b0/src/chat.rs#L259-L313
 const buildShimFunctionTool = (
-  canonical: ResponsesHostedTool,
+  canonical: ResponsesTool,
   name: string,
 ): ResponsesFunctionTool => {
+  if (!isHostedWebSearchTool(canonical)) throw new Error(`Expected a hosted web_search tool, got ${canonical.type}`);
   const userLocation = canonical.user_location;
   const baseDescription
     = 'Accesses the web through three actions: searching, opening a page, and finding text inside a page. '
@@ -1348,8 +1349,8 @@ export const webSearchServerTool: ServerToolRegistration = (invocation, gatewayC
     ...(hasHostedWebSearch
       ? {
           hosted: {
-            hostedTypes: WEB_SEARCH_HOSTED_TYPE_NAMES,
             canonicalize: canonicalizeWebSearchTool,
+            matchToolChoice: choice => WEB_SEARCH_HOSTED_TYPES.has(choice.type),
             buildFunctionTool: buildShimFunctionTool,
             dispatcher: ({ intercepted, loopState }) => {
               const slot = planShimSlots(parseShimOperations(intercepted.arguments), intercepted.name, state, loopState);

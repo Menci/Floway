@@ -13,6 +13,7 @@ import type {
   ResponsesFunctionToolCallItem,
   ResponsesHostedTool,
   ResponsesInputContent,
+  ResponsesNamespaceTool,
   ResponsesInputImageGenerationCall,
   ResponsesInputItem,
   ResponsesOutputImageGenerationCall,
@@ -87,14 +88,25 @@ const KNOWN_TOOL_FIELDS = new Set([
 export const isHostedImageGenerationTool = (tool: ResponsesTool): tool is ResponsesHostedTool =>
   tool.type === 'image_generation';
 
-// Identity canonicalization for image_generation: the shim doesn't
-// depend on filled defaults to run, and the OpenAI spec defaults for
-// `background` / `quality` / `size` / etc. observed via Azure echo
-// (all `'auto'`) signal "backend decides" rather than concrete values
-// the model needs. Preserving the client's raw shape keeps the echo
-// round-trip minimal — anything the client didn't send stays absent.
-export const canonicalizeImageGenerationTool = (raw: ResponsesTool): ResponsesHostedTool | undefined =>
-  isHostedImageGenerationTool(raw) ? raw : undefined;
+const isCodexImageGenerationNamespace = (tool: ResponsesTool): tool is ResponsesNamespaceTool =>
+  tool.type === 'namespace'
+  && tool.name === 'image_gen'
+  && tool.tools.length === 1
+  && tool.tools[0].type === 'function'
+  && tool.tools[0].name === 'imagegen';
+
+export const isImageGenerationDeclaration = (tool: ResponsesTool): boolean =>
+  isHostedImageGenerationTool(tool) || isCodexImageGenerationNamespace(tool);
+
+// Identity canonicalization preserves the exact declaration selected for echo.
+// The namespace shape is a compatibility-only Codex form: Azure and Copilot
+// reject it before inference, so the shim consumes it rather than forwarding it.
+//
+// References:
+// - https://github.com/caozhiyuan/copilot-api/issues/312
+// - https://github.com/caozhiyuan/copilot-api/commit/e260303a1ccc48390b0b710fa40631562f1a37fb
+export const canonicalizeImageGenerationTool = (raw: ResponsesTool): ResponsesTool | undefined =>
+  isImageGenerationDeclaration(raw) ? raw : undefined;
 
 // A base64-data-URL or bare-base64 image source bound for an edit call.
 // Bytes are held in a concrete ArrayBuffer so they can be wrapped in a Blob.
@@ -291,17 +303,22 @@ const validateHostedImageGenerationEntry = (
   };
 };
 
-// Validate every hosted `image_generation` entry; the LAST entry's config
-// wins (most-recent declaration).
+// Validate every recognized image declaration; the LAST declaration's config
+// wins. The Codex namespace has no client-level image config, so selecting it
+// restores the native defaults rather than inheriting an earlier hosted entry.
 export const prepareImageGenerationConfig = (tools: readonly ResponsesTool[]): PrepareConfigResult => {
   let config: ImageGenerationConfig | undefined;
   for (const [i, tool] of tools.entries()) {
+    if (isCodexImageGenerationNamespace(tool)) {
+      config = { model: DEFAULT_IMAGE_MODEL, action: 'auto' };
+      continue;
+    }
     if (!isHostedImageGenerationTool(tool)) continue;
     const validated = validateHostedImageGenerationEntry(tool, i);
     if (!validated.ok) return validated;
     config = validated.config;
   }
-  if (config === undefined) return { ok: false, error: { message: 'No image_generation tool present.', param: 'tools', code: 'unknown_parameter' } };
+  if (config === undefined) return { ok: false, error: { message: 'No image-generation declaration present.', param: 'tools', code: 'unknown_parameter' } };
   return { ok: true, config };
 };
 
@@ -310,7 +327,7 @@ export const prepareImageGenerationConfig = (tools: readonly ResponsesTool[]): P
 // on from the client config, exactly like Azure). A minimal description
 // elicits native-quality refined prompts while costing ~50 input tokens vs
 // the native hosted tool's ~2300.
-export const buildImageGenerationFunctionTool = (_canonical: ResponsesHostedTool, name: string): ResponsesFunctionTool => ({
+export const buildImageGenerationFunctionTool = (_canonical: ResponsesTool, name: string): ResponsesFunctionTool => ({
   type: 'function',
   name,
   description:
@@ -934,11 +951,11 @@ export const imageGenerationServerTool: ServerToolRegistration = (invocation, ga
   }
 
   const tools = Array.isArray(invocation.payload.tools) ? invocation.payload.tools : [];
-  const hasHostedTool = tools.some(isHostedImageGenerationTool);
+  const hasImageDeclaration = tools.some(isImageGenerationDeclaration);
   const hasReplayInput = invocation.payload.input.some(i => i.type === 'image_generation_call');
-  if (!hasHostedTool && !hasReplayInput) return { type: 'inactive' };
+  if (!hasImageDeclaration && !hasReplayInput) return { type: 'inactive' };
 
-  if (!hasHostedTool) {
+  if (!hasImageDeclaration) {
     // Replay-only activation: rewrite echoed image_generation_call items so
     // the upstream can read them, but there is no hosted tool to dispatch.
     return {
@@ -1013,8 +1030,10 @@ export const imageGenerationServerTool: ServerToolRegistration = (invocation, ga
     baseToolName: SHIM_TOOL_NAME,
     transformItems: transformInputItemsForImageGeneration,
     hosted: {
-      hostedTypes: ['image_generation'],
       canonicalize: canonicalizeImageGenerationTool,
+      matchToolChoice: choice => choice.type === 'image_generation'
+        || (choice.type === 'namespace' && choice.name === 'image_gen'),
+      declarationPrecedence: 'last',
       buildFunctionTool: buildImageGenerationFunctionTool,
       dispatcher: ({ intercepted }) => {
         const promptArg = intercepted.arguments !== null && typeof intercepted.arguments.prompt === 'string'
