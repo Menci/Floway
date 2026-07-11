@@ -29,7 +29,7 @@ import { parseUpstreamIdsValue } from '../api-keys/upstream-ids.ts';
 import { USERNAME_PATTERN, type exportQuery, type importBody, DUMP_RETENTION_MAX_SECONDS } from '../schemas.ts';
 import { copilotConfigField, isRecord, nonEmptyStringField } from '../shared/field-validators.ts';
 import { type SerializedUpstreamRecord, upstreamRecordToFullJson } from '../upstreams/serialize.ts';
-import { BILLING_DIMENSIONS, type ModelPricing } from '@floway-dev/protocols/common';
+import { BILLING_DIMENSIONS, type PriceVector } from '@floway-dev/protocols/common';
 import { ALL_PROVIDER_KINDS, normalizeModelPrefix, parseFlagOverridesWire } from '@floway-dev/provider';
 import type { PerformanceOperation, ProxyFallbackEntry, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
@@ -378,7 +378,7 @@ const parseImportedCost = (value: unknown): { type: 'ok'; cost: UsageRecord['cos
   if (value === undefined || value === null) return { type: 'ok', cost: null };
   if (typeof value !== 'object' || Array.isArray(value)) return { type: 'invalid' };
   const obj = value as Record<string, unknown>;
-  const cost: ModelPricing = {};
+  const cost: PriceVector = {};
   for (const dimension of BILLING_DIMENSIONS) {
     const rate = obj[dimension];
     if (rate === undefined) continue;

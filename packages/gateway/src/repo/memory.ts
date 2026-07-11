@@ -45,7 +45,7 @@ import { serializeStoredState } from './upstream-json.ts';
 import { bucketForTtftMs, bucketForTpotUs } from '../shared/performance-histogram.ts';
 import { generateSessionToken } from '../shared/session-tokens.ts';
 import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';
-import { BILLING_DIMENSIONS, type BillingDimension, type ModelPricing, resolveEffectivePricing, unitPriceForDimension } from '@floway-dev/protocols/common';
+import { BILLING_DIMENSIONS, type BillingDimension, type PriceVector, unitPriceForDimension } from '@floway-dev/protocols/common';
 import type { ProviderModel, UpstreamRecord } from '@floway-dev/provider';
 
 const SEED_ADMIN_USER: User = {
@@ -246,7 +246,7 @@ class MemoryUsageRepo implements UsageRepo {
   }
 
   private dimensionEntries(record: UsageRecord): { dimension: BillingDimension; tokens: number; unitPrice: number | null }[] {
-    const effective = resolveEffectivePricing(record.cost, record.tier, record.inputAboveTokens);
+    const effective = record.cost;
     return BILLING_DIMENSIONS.flatMap(dimension => {
       const tokens = record.tokens[dimension] ?? 0;
       return tokens > 0 ? [{ dimension, tokens, unitPrice: unitPriceForDimension(effective, dimension) }] : [];
@@ -255,7 +255,7 @@ class MemoryUsageRepo implements UsageRepo {
 
   private toRecord(state: UsageBucketState): UsageRecord {
     const tokens: Partial<Record<BillingDimension, number>> = {};
-    let cost: ModelPricing | null = null;
+    let cost: PriceVector | null = null;
     for (const dimension of BILLING_DIMENSIONS) {
       const count = state.tokens[dimension];
       if (count !== undefined) tokens[dimension] = count;

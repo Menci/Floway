@@ -1,5 +1,5 @@
 import type { WebSearchProviderName } from '../shared/web-search-providers.ts';
-import type { AliasSelection, AliasTarget, AnnouncedMetadata, BillingDimension, ModelKind, ModelPricing } from '@floway-dev/protocols/common';
+import type { AliasSelection, AliasTarget, AnnouncedMetadata, BillingDimension, ModelKind, PriceVector } from '@floway-dev/protocols/common';
 import type { PerformanceTelemetryContext, ProviderModel, UpstreamRecord } from '@floway-dev/provider';
 
 export interface ApiKey {
@@ -61,13 +61,10 @@ export interface UsageRecord {
   // was stamped under lives on the `tier` field above — do not encode it
   // inside this map.
   tokens: Partial<Record<BillingDimension, number>>;
-  // Pricing snapshot taken at write time. null means the provider did not
-  // resolve pricing for this model (Custom upstreams, unknown Copilot
-  // public id, etc.). The repo derives per-dimension unit prices from it via
-  // unitPriceForDimension after
-  // `resolveEffectivePricing(cost, tier, inputAboveTokens)` folds in the
-  // bucket's grid cell; aggregation treats a null snapshot as cost 0.
-  cost: ModelPricing | null;
+  // Resolved per-dimension price snapshot for this exact selector coordinate.
+  // null means no explicit pricing cell matched. Repos persist one unit price
+  // per token-bearing dimension; aggregation treats null as cost 0.
+  cost: PriceVector | null;
 }
 
 // Disjoint per-dimension token counts. Absent keys mean zero for that

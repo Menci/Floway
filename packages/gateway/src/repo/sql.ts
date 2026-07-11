@@ -40,7 +40,7 @@ import { bucketForTtftMs, bucketForTpotUs } from '../shared/performance-histogra
 import { generateSessionToken } from '../shared/session-tokens.ts';
 import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';
 import type { SqlDatabase, SqlPreparedStatement, SqlResult } from '@floway-dev/platform';
-import { BILLING_DIMENSIONS, type AliasSelection, type AliasTarget, type AnnouncedMetadata, type BillingDimension, type ModelKind, type ModelPricing, resolveEffectivePricing, unitPriceForDimension } from '@floway-dev/protocols/common';
+import { BILLING_DIMENSIONS, type AliasSelection, type AliasTarget, type AnnouncedMetadata, type BillingDimension, type ModelKind, type PriceVector, unitPriceForDimension } from '@floway-dev/protocols/common';
 import type { ProviderModel, ProxyFallbackEntry, ModelPrefixConfig, PerformanceOperation, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { normalizeModelPrefix } from '@floway-dev/provider';
 
@@ -368,7 +368,7 @@ class SqlSessionsRepo implements SessionsRepo {
 }
 
 const dimensionRows = (record: UsageRecord): { dimension: BillingDimension; tokens: number; unitPrice: number | null }[] => {
-  const effective = resolveEffectivePricing(record.cost, record.tier, record.inputAboveTokens);
+  const effective = record.cost;
   return BILLING_DIMENSIONS.flatMap(dimension => {
     const tokens = record.tokens[dimension] ?? 0;
     return tokens > 0 ? [{ dimension, tokens, unitPrice: unitPriceForDimension(effective, dimension) }] : [];
@@ -482,7 +482,7 @@ const usageBucketKey = (row: { key_id: string; model: string; upstream: string |
 
 // Reassemble per-bucket UsageRecords from the two narrow tables. The dimension
 // rows carry the disjoint counts and the per-dimension unit_price snapshot,
-// which we fold back into a ModelPricing snapshot; usage_requests carries the
+// which we fold back into a PriceVector snapshot; usage_requests carries the
 // request count. A bucket may appear in either table independently.
 const assembleUsageRecords = (dimensions: readonly UsageDimensionRow[], requests: readonly UsageRequestRow[]): UsageRecord[] => {
   const byBucket = new Map<string, UsageRecord>();
@@ -497,7 +497,7 @@ const assembleUsageRecords = (dimensions: readonly UsageDimensionRow[], requests
     return record;
   };
 
-  const pricingByBucket = new Map<string, ModelPricing>();
+  const pricingByBucket = new Map<string, PriceVector>();
   for (const row of dimensions) {
     const record = ensureRecord(row);
     record.tokens[row.dimension as BillingDimension] = row.tokens;

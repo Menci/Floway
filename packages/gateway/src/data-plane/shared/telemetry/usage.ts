@@ -1,7 +1,7 @@
 import { currentHour } from './hour.ts';
 import { getRepo } from '../../../repo/index.ts';
 import type { TokenUsage } from '../../../repo/types.ts';
-import { BILLING_DIMENSIONS, INPUT_BILLING_DIMENSIONS, type BillingDimension, selectInputLengthTier } from '@floway-dev/protocols/common';
+import { BILLING_DIMENSIONS, INPUT_BILLING_DIMENSIONS, type BillingDimension, resolveEffectivePricing, selectInputLengthTier } from '@floway-dev/protocols/common';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
 
 export const hasTokenUsage = (usage: TokenUsage): boolean => BILLING_DIMENSIONS.some(dimension => (usage[dimension] ?? 0) > 0);
@@ -172,7 +172,7 @@ export const recordTokenUsage = async (keyId: string, modelIdentity: TelemetryMo
       inputAboveTokens,
       requests: 1,
       tokens,
-      cost: modelIdentity.cost,
+      cost: resolveEffectivePricing(modelIdentity.cost, tier, inputAboveTokens),
     }),
     (async () => {
       const key = await getRepo().apiKeys.getById(keyId);
