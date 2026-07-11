@@ -395,7 +395,7 @@ const save = async ({ openEdit = false }: { openEdit?: boolean } = {}) => {
       // per-provider "Save and load models" CTA sets openEdit so the newly-
       // saved row's edit page renders next, letting its mount-time list-models
       // populate the catalog for a review pass before the operator leaves.
-      await router.replace(openEdit ? `/dashboard/upstreams/${data.id}` : '/dashboard/upstreams');
+      await router.replace(openEdit ? `/dashboard/upstreams/${data.id}` : '/dashboard/settings');
     } else {
       // PATCH only user-owned fields. For OAuth providers the backend
       // rejects a `config` patch, so we skip config for them — their
