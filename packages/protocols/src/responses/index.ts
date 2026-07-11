@@ -27,6 +27,15 @@ export interface ResponsesPayload {
   reasoning?: {
     effort?: string;
     summary?: 'detailed' | 'auto' | 'concise' | (string & {});
+    // Controls which reasoning items are rendered back to the model on later
+    // turns; echoed on the response as the effective mode. Canonical values are
+    // `auto` / `current_turn` / `all_turns`, but the slot stays open-string so
+    // future upstream modes forward verbatim rather than being narrowed at this
+    // boundary. Reference (openai-python shared Reasoning.context):
+    // https://github.com/openai/openai-python/blob/f16fbbd2bd25dc1ff150b5f78dbd15ff6bab6d91/src/openai/types/shared/reasoning.py#L19-L25
+    // Reference (openai-node Reasoning.context):
+    // https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/shared.ts#L262-L269
+    context?: 'auto' | 'current_turn' | 'all_turns' | (string & {}) | null;
   };
   include?: string[];
   // `text.verbosity` is a native GPT-5-family Responses field that controls
