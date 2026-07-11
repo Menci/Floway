@@ -38,12 +38,11 @@ const hasDeferredTool = (tool: unknown): boolean => {
   return Array.isArray(record.tools) && record.tools.some(hasDeferredTool);
 };
 
-const isProgramCaller = (item: ResponsesInputItem): item is Extract<ResponsesInputItem, { call_id: string }> & { caller: { type: 'program'; caller_id: string } } =>
-  (item.type === 'function_call'
-    || item.type === 'function_call_output'
-    || item.type === 'custom_tool_call'
-    || item.type === 'custom_tool_call_output')
-  && item.caller?.type === 'program';
+const isProgramCaller = (item: ResponsesInputItem): item is ResponsesInputItem & { call_id: string; caller: { type: 'program'; caller_id: string } } => {
+  if (!('caller' in item)) return false;
+  const caller = item.caller;
+  return typeof caller === 'object' && caller !== null && 'type' in caller && caller.type === 'program';
+};
 
 export const rejectProgramCaller = (item: ResponsesInputItem): void => {
   if (isProgramCaller(item)) {
