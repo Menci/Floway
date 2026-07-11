@@ -848,7 +848,7 @@ test('/v1/models serves Anthropic-shape rows with a [1m] suffix on 1M-capable id
     },
     async () => {
       const claudeCodeResp = await requestApp('/v1/models', {
-        headers: { 'x-api-key': apiKey.key, 'user-agent': 'claude-cli/2.1.206 (external, cli)' },
+        headers: { 'x-api-key': apiKey.key, 'user-agent': 'claude-code/2.1.206' },
       });
       assertEquals(claudeCodeResp.status, 200);
       const claudeCodeBody = (await claudeCodeResp.json()) as {
@@ -966,7 +966,7 @@ test('/v1/models serves Anthropic-shape rows without a [1m] suffix when no model
     },
     async () => {
       const response = await requestApp('/v1/models', {
-        headers: { 'x-api-key': apiKey.key, 'user-agent': 'claude-cli/2.1.206' },
+        headers: { 'x-api-key': apiKey.key, 'user-agent': 'claude-code/2.1.206' },
       });
       assertEquals(response.status, 200);
       const body = (await response.json()) as {

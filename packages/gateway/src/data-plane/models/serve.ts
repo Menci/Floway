@@ -70,10 +70,13 @@ export const models = async (c: Context) => {
     const fetcherForUpstream = await createPerRequestFetcher(getCurrentColo(c.req.raw));
     const response = await loadModels(effectiveUpstreamIdsFromContext(c), fetcherForUpstream, backgroundSchedulerFromContext(c), getRepo().modelAliases);
     // The Claude Code CLI's model discovery request identifies itself with
-    // a `claude-cli/<version>` User-Agent prefix; every other caller
-    // (OpenAI SDKs, Anthropic SDKs, dashboards) receives the standard
-    // PublicModel superset.
-    if (c.req.header('user-agent')?.startsWith('claude-cli/')) {
+    // a `claude-code/<version>` User-Agent (built from the CLI's `n_()`
+    // helper — verified in the v2.1.206 binary). The CLI's other request
+    // paths use the Anthropic SDK's `claude-cli/*` UA, so match on the
+    // discovery UA specifically. Every other caller (OpenAI SDKs,
+    // Anthropic SDKs, dashboards) receives the standard PublicModel
+    // superset.
+    if (c.req.header('user-agent')?.startsWith('claude-code/')) {
       return Response.json(toClaudeCodeShape(response));
     }
     return Response.json(response);
