@@ -185,7 +185,7 @@ const copyDisabled = computed(() => !canCopy.value);
         <div>
           <div class="mb-3 flex items-center justify-between">
             <span class="text-sm font-semibold text-white">Claude Code</span>
-            <Switch v-model="draft.claudeCode.enabled" />
+            <Switch v-model="draft.claudeCode.enabled" aria-label="Enable Claude Code setup" />
           </div>
           <div class="space-y-3" :class="{ 'opacity-60': !draft.claudeCode.enabled }">
             <div data-testid="claude-model">
@@ -205,8 +205,12 @@ const copyDisabled = computed(() => !canCopy.value);
               <Select :id="fieldIds.claudeEffort" v-model="claudeEffort" :options="claudeEffortOptions" :disabled="!draft.claudeCode.enabled" />
             </div>
             <div class="flex items-center justify-between pt-1">
-              <label class="text-xs text-gray-500">Gateway model discovery</label>
-              <Switch v-model="draft.claudeCode.modelDiscovery" :disabled="!draft.claudeCode.enabled" />
+              <span class="text-xs text-gray-500">Gateway model discovery</span>
+              <Switch
+                v-model="draft.claudeCode.modelDiscovery"
+                aria-label="Enable Claude Code gateway model discovery"
+                :disabled="!draft.claudeCode.enabled"
+              />
             </div>
           </div>
         </div>
@@ -214,7 +218,7 @@ const copyDisabled = computed(() => !canCopy.value);
         <div>
           <div class="mb-3 flex items-center justify-between">
             <span class="text-sm font-semibold text-white">Codex</span>
-            <Switch v-model="draft.codex.enabled" />
+            <Switch v-model="draft.codex.enabled" aria-label="Enable Codex setup" />
           </div>
           <div class="space-y-3" :class="{ 'opacity-60': !draft.codex.enabled }">
             <div data-testid="codex-model">

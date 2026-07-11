@@ -131,11 +131,11 @@ describe('AgentSetupCard', () => {
     expect(codexEffortField.get('label').attributes('for')).toBe(codexEffortField.get('input').attributes('id'));
   });
 
-  it('renders both agent enable switches and the Claude discovery switch', () => {
+  it('gives every rendered switch an accurate accessible name', () => {
     const w = mountCard();
-    // Reka-UI renders Switch as button[role="switch"]: Claude enabled, Claude
-    // discovery, Codex enabled.
-    expect(w.findAll('button[role="switch"]').length).toBe(3);
+    expect(w.find('button[role="switch"][aria-label="Enable Claude Code setup"]').exists()).toBe(true);
+    expect(w.find('button[role="switch"][aria-label="Enable Codex setup"]').exists()).toBe(true);
+    expect(w.find('button[role="switch"][aria-label="Enable Claude Code gateway model discovery"]').exists()).toBe(true);
   });
 
   it('retains every addressable chat model, native-first per family, and skips non-chat models', () => {
