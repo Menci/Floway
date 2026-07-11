@@ -7,14 +7,13 @@
 // The repository is threaded through a lazy adapter so the singleton repo is
 // resolved per request (via getRepo()), not at module-load time.
 
+import { type AuthVars, userFromContext } from '../middleware/auth.ts';
+import { getRepo } from '../repo/index.ts';
 import {
   type AgentSetupRepository,
   createAgentSetupControlRoutes,
   createAgentSetupPublicRoutes,
 } from '@floway-dev/agent-setup';
-
-import { type AuthVars, userFromContext } from '../middleware/auth.ts';
-import { getRepo } from '../repo/index.ts';
 
 const repository: AgentSetupRepository = {
   findByToken: token => getRepo().agentSetup.findByToken(token),
@@ -32,7 +31,7 @@ export const agentSetupPublicRoutes = createAgentSetupPublicRoutes({
   userExists: async userId => (await getRepo().users.getById(userId)) !== null,
   resolveApiKeySecret: async (userId, apiKeyId) => {
     const key = await getRepo().apiKeys.getById(apiKeyId);
-    return key && key.userId === userId ? key.key : null;
+    return key?.userId === userId ? key.key : null;
   },
 });
 

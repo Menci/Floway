@@ -7,13 +7,13 @@
 import { Hono } from 'hono';
 import { expect, test, vi } from 'vitest';
 
+import { type AgentSetupMutation, type AgentSetupRecord, type AgentSetupRepository, AgentSetupTokenCollisionError } from './repository.ts';
 import {
   type AgentSetupControlDeps,
   type AgentSetupPublicDeps,
   createAgentSetupControlRoutes,
   createAgentSetupPublicRoutes,
 } from './routes.ts';
-import { type AgentSetupMutation, type AgentSetupRecord, type AgentSetupRepository, AgentSetupTokenCollisionError } from './repository.ts';
 import { SETUP_PS1_BODY, SETUP_SH_BODY } from './script-assets.generated.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 

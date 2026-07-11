@@ -245,8 +245,27 @@ importers:
         specifier: ^2.2.0
         version: 2.2.12(typescript@5.9.3)
 
+  packages/agent-setup:
+    dependencies:
+      '@hono/zod-validator':
+        specifier: ^0.8.0
+        version: 0.8.0(hono@4.12.22)(zod@4.4.3)
+      hono:
+        specifier: ^4
+        version: 4.12.22
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@floway-dev/test-utils':
+        specifier: workspace:*
+        version: link:../test-utils
+
   packages/gateway:
     dependencies:
+      '@floway-dev/agent-setup':
+        specifier: workspace:*
+        version: link:../agent-setup
       '@floway-dev/http':
         specifier: workspace:*
         version: link:../http
