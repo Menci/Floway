@@ -625,7 +625,7 @@ function Write-FlowayCodexConfig {
   }
 }
 
-# Stage a minimal ChatGPT-mode auth.json: the server-rendered identity token, the
+# Stage a minimal ChatGPT-mode auth.json: the locally assembled identity token, the
 # in-memory API key as access_token, a noop refresh placeholder, and a fresh
 # RFC3339 timestamp. The stage is created and owner-only protected before any
 # secret is written, validated, then atomically moved into place.

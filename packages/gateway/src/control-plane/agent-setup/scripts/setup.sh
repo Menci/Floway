@@ -875,7 +875,7 @@ codex_write_config() {
   esac
 }
 
-# Stage a minimal ChatGPT-mode auth.json: the server-rendered identity token, the
+# Stage a minimal ChatGPT-mode auth.json: the locally assembled identity token, the
 # in-memory API key as access_token, a noop refresh placeholder, and a fresh
 # RFC3339 timestamp. The stage is created under umask 077 (owner-only from the
 # instant it exists), validated, and atomically renamed into place. The key is

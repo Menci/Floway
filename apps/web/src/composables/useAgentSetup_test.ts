@@ -102,8 +102,9 @@ describe('useAgentSetup — lease acquisition', () => {
     const setup = run(() => useAgentSetup(api));
 
     expect(records.post.length).toBe(1);
-    // The lease carries no origin: the create POST sends no request data, and
-    // the server derives the base URL from the public GET at serve time.
+    // The create POST sends no request data: the lease carries no origin. The
+    // helper keeps the script URLs relative, and the command builder is what
+    // pairs them with this dashboard's origin.
     expect(records.post[0]!.args[0]).toBeUndefined();
     expect(setup.state.initialized.value).toBe(false);
 

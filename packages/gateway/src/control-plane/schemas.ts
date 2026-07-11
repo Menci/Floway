@@ -439,9 +439,9 @@ export const listModelsBody = recordOnlyBody;
 // together) is the payload the dashboard saves and the setup scripts read.
 //
 // Acquisition (POST) carries no body: the lease stores no origin, and the
-// public GET script handler derives the Floway base origin from the request at
-// serve time. `expectedRevision` drives the optimistic-concurrency CAS on
-// update.
+// gateway origin reaches the setup scripts only through the dashboard's
+// one-line command — no backend state or handler ever supplies it.
+// `expectedRevision` drives the optimistic-concurrency CAS on update.
 
 export const agentSetupUpdateBody = z.object({
   token: z.string().min(1),
