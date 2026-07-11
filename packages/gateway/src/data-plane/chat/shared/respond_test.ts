@@ -1,11 +1,12 @@
 import { beforeEach, expect, test } from 'vitest';
 
 import type { GatewayCtx } from './gateway-ctx.ts';
-import { SourceStreamState, recordUsage, settleUsageAndPerformance } from './respond.ts';
+import { SourceStreamState } from './respond.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { recordPerformance } from '../../shared/telemetry/performance.ts';
-import type { EventResultMetadata, TelemetryModelIdentity } from '@floway-dev/provider';
+import { settle } from '../../shared/telemetry/settle.ts';
+import type { TelemetryModelIdentity } from '@floway-dev/provider';
 import { assertEquals, mockPerfTelemetryContext } from '@floway-dev/test-utils';
 
 const testTelemetryModelIdentity: TelemetryModelIdentity = {
@@ -120,9 +121,10 @@ test('recordPerformance records a full sample when success with upstreamCallStar
 
   const rows = await harness.repo.performance.listAll();
   assertEquals(rows.length, 1);
-  assertEquals(rows[0].ttftSamples, 1);
+  assertEquals(rows[0].ttftSamplesOk, 1);
   assertEquals(rows[0].tpotSamples, 1);
-  assertEquals(rows[0].errors, 0);
+  assertEquals(rows[0].errorsWithOutput, 0);
+  assertEquals(rows[0].errorsNoOutput, 0);
   assertEquals(rows[0].requests, 1);
 });
 
@@ -132,9 +134,10 @@ test('recordPerformance records TTFT-only sample when outputTokens is zero but f
 
   const rows = await harness.repo.performance.listAll();
   assertEquals(rows.length, 1);
-  assertEquals(rows[0].ttftSamples, 1);
+  assertEquals(rows[0].ttftSamplesOk, 1);
   assertEquals(rows[0].tpotSamples, 0);
-  assertEquals(rows[0].errors, 0);
+  assertEquals(rows[0].errorsWithOutput, 0);
+  assertEquals(rows[0].errorsNoOutput, 0);
   assertEquals(rows[0].requests, 1);
 });
 
@@ -144,21 +147,24 @@ test('recordPerformance records neutral when success but firstOutputTokenAt is n
 
   const rows = await harness.repo.performance.listAll();
   assertEquals(rows.length, 1);
-  assertEquals(rows[0].ttftSamples, 0);
+  assertEquals(rows[0].ttftSamplesOk, 0);
   assertEquals(rows[0].tpotSamples, 0);
-  assertEquals(rows[0].errors, 0);
+  assertEquals(rows[0].neutral, 1);
+  assertEquals(rows[0].errorsWithOutput, 0);
+  assertEquals(rows[0].errorsNoOutput, 0);
   assertEquals(rows[0].requests, 1);
 });
 
-test('recordPerformance records an error when failed', async () => {
+test('recordPerformance records a zero-output error when failed without a real TTFT stamp', async () => {
   recordPerformance(harness.ctx({ firstOutputTokenAt: 100 }), testPerformanceContext, true, 50, 200);
   await Promise.all(harness.background);
 
   const rows = await harness.repo.performance.listAll();
   assertEquals(rows.length, 1);
-  assertEquals(rows[0].ttftSamples, 0);
+  assertEquals(rows[0].ttftSamplesOk, 0);
   assertEquals(rows[0].tpotSamples, 0);
-  assertEquals(rows[0].errors, 1);
+  assertEquals(rows[0].errorsNoOutput, 1);
+  assertEquals(rows[0].errorsWithOutput, 0);
   assertEquals(rows[0].requests, 1);
 });
 
@@ -169,10 +175,11 @@ test('recordPerformance skips when performance context is absent', async () => {
   assertEquals(await harness.repo.performance.listAll(), []);
 });
 
-// ── recordUsage ──
+// ── settle ──
 
-test('recordUsage records token usage for an api key', async () => {
-  await recordUsage(harness.ctx(), testTelemetryModelIdentity, { input: 10, output: 5 });
+test('settle records a usage row when the figure carries a billable dimension', async () => {
+  settle(harness.ctx(), testPerformanceContext, testTelemetryModelIdentity, { input: 10, output: 5 }, false);
+  await Promise.all(harness.background);
 
   const rows = await harness.repo.usage.listAll();
   assertEquals(rows.length, 1);
@@ -181,27 +188,28 @@ test('recordUsage records token usage for an api key', async () => {
   assertEquals(rows[0].requests, 1);
 });
 
-test('recordUsage is a no-op when usage is null', async () => {
-  await recordUsage(harness.ctx(), testTelemetryModelIdentity, null);
+test('settle skips the usage row when usage is null', async () => {
+  settle(harness.ctx(), testPerformanceContext, testTelemetryModelIdentity, null, false);
+  await Promise.all(harness.background);
 
   assertEquals(await harness.repo.usage.listAll(), []);
 });
 
-test('recordUsage is a no-op when usage carries no billable dimensions', async () => {
-  await recordUsage(harness.ctx(), testTelemetryModelIdentity, {});
+test('settle skips the usage row when usage carries no billable dimension', async () => {
+  settle(harness.ctx(), testPerformanceContext, testTelemetryModelIdentity, {}, false);
+  await Promise.all(harness.background);
 
   assertEquals(await harness.repo.usage.listAll(), []);
 });
 
-// ── settleUsageAndPerformance ──
-
-// TPOT reflects the token stream, not the D1 write that follows it. The
-// contract is that requestFinishedAt is stamped at settle entry, BEFORE
-// the awaited recordUsage — regressing that (moving the stamp past the
-// await, or letting a refactor accidentally re-derive it inside the
-// finally) would fold persistence latency into every stream's per-token
-// interval.
-test('settleUsageAndPerformance samples requestFinishedAt BEFORE the recordUsage await', async () => {
+// TPOT reflects the token stream, not the D1 write that follows it.
+// `settle` fires the usage record through backgroundScheduler and records
+// the perf sample synchronously — so a slow persistence path cannot leak
+// its latency into `tpotUs`. Regressing this (turning the usage record
+// back into an in-band await, or moving the perf record past the
+// scheduler call) would fold persistence latency into every stream's
+// per-token interval.
+test('settle records the perf sample without waiting on the usage write', async () => {
   const originalRecord = harness.repo.usage.record.bind(harness.repo.usage);
   const persistenceDelayMs = 200;
   harness.repo.usage.record = async row => {
@@ -211,20 +219,17 @@ test('settleUsageAndPerformance samples requestFinishedAt BEFORE the recordUsage
 
   const beforeSettle = performance.now();
   const ctx = harness.ctx({ upstreamCallStartedAt: beforeSettle - 10, firstOutputTokenAt: beforeSettle });
-  const metadata: EventResultMetadata = {
-    modelIdentity: testTelemetryModelIdentity,
-    performance: mockPerfTelemetryContext({ keyId: '', model: 'claude-test', upstream: 'copilot:1', runtimeLocation: 'SJC' }),
-  };
 
-  await settleUsageAndPerformance(ctx, metadata, { input: 5, output: 3 }, false, 'test');
+  settle(ctx, testPerformanceContext, testTelemetryModelIdentity, { input: 5, output: 3 }, false);
   await Promise.all(harness.background);
 
   const rows = await harness.repo.performance.listAll();
   assertEquals(rows.length, 1);
   // TPOT = (requestFinishedAt - firstOutputTokenAt) * 1000 / (outputTokens - 1).
-  // Stamped BEFORE the 200ms await: tpotUs reflects only the sub-millisecond
-  // gap between ctx construction and settle entry. Stamped AFTER: tpotUs
-  // would be ~100_000us (200ms / 2). 50_000us fences the regression while
+  // Recorded synchronously at settle entry: tpotUs reflects only the
+  // sub-millisecond gap between ctx construction and settle. Fold the
+  // 200ms usage write into it (in-band await) and tpotUs would be
+  // ~100_000us (200ms / 2). 50_000us fences the regression while
   // tolerating scheduler jitter.
   expect(rows[0].tpotUsSum).toBeLessThan(50_000);
 });

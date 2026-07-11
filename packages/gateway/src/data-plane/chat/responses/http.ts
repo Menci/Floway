@@ -8,7 +8,7 @@ import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
 import { createChatGatewayCtxFromHono, createGatewayCtxFromHono, finalizeGatewayResponse, type ChatGatewayCtx, type GatewayCtx } from '../shared/gateway-ctx.ts';
 import { readRequestBody, type RequestBody } from '../shared/request-body.ts';
-import { settleUsageAndPerformance } from '../shared/respond.ts';
+import { settle } from '../../shared/telemetry/settle.ts';
 import { providerModelsUnavailableResponse } from '../shared/upstream-models-error.ts';
 import type { ResponsesPayload } from '@floway-dev/protocols/responses';
 import { internalErrorResult, toInternalDebugError } from '@floway-dev/provider';
@@ -106,12 +106,12 @@ export const responsesHttp = {
         } else {
           ctx.dump?.success(result.modelIdentity, result.usage);
         }
-        await settleUsageAndPerformance(
+        settle(
           ctx,
-          { modelIdentity: result.modelIdentity, performance: result.performance },
+          result.performance,
+          result.modelIdentity,
           result.usage,
           failed,
-          'Responses HTTP (compact)',
         );
         const compactResponse = Response.json(result.result);
         return finalizeGatewayResponse(ctx, compactResponse);

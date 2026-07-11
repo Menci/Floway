@@ -3,8 +3,9 @@ import { streamSSE } from 'hono/streaming';
 
 import { tokenUsageFromChatCompletionsUsage } from './usage.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
+import { settle } from '../../shared/telemetry/settle.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
-import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse, settleUsageAndPerformance } from '../shared/respond.ts';
+import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse } from '../shared/respond.ts';
 import { type StreamCompletion, writeSSEFrames } from '../shared/stream/sse.ts';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { chatCompletionsProtocolFrameToSSEFrame, CHAT_COMPLETIONS_MISSING_TERMINAL_MESSAGE, collectChatCompletionsProtocolEventsToResult, chatCompletionsErrorPayloadMessage } from '@floway-dev/protocols/chat-completions';
@@ -47,7 +48,7 @@ export const respondChatCompletions = async (
       const metadata = await eventResultMetadata(result);
       const usage = response.usage ? tokenUsageFromChatCompletionsUsage(response.usage, response.service_tier) : null;
       ctx.dump?.success(metadata.modelIdentity, usage);
-      await settleUsageAndPerformance(ctx, metadata, usage, state.failed, 'Chat Completions');
+      settle(ctx, metadata.performance, metadata.modelIdentity, usage, state.failed);
       return { success: true, response: Response.json(response, { headers: mergeForwardedUpstreamHeaders(undefined, result.headers) }) };
     } catch (error) {
       recordFailedRequest(ctx, result.performance);
@@ -72,7 +73,7 @@ export const respondChatCompletions = async (
       } else {
         ctx.dump?.success(metadata.modelIdentity, state.usage);
       }
-      await settleUsageAndPerformance(ctx, metadata, state.usage, failed, 'Chat Completions');
+      settle(ctx, metadata.performance, metadata.modelIdentity, state.usage, failed);
     }
   });
 

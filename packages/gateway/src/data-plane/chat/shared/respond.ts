@@ -2,12 +2,10 @@ import type { Context } from 'hono';
 
 import type { StreamCompletion } from './stream/sse.ts';
 import type { TokenUsage } from '../../../repo/types.ts';
-import { recordPerformance } from '../../shared/telemetry/performance.ts';
-import { hasTokenUsage, recordTokenUsage } from '../../shared/telemetry/usage.ts';
-import type { GatewayCtx } from '../shared/gateway-ctx.ts';
+import { hasTokenUsage } from '../../shared/telemetry/usage.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { plainResult } from '@floway-dev/provider';
-import type { EventResultMetadata, ExecuteResult, PlainResult, TelemetryModelIdentity } from '@floway-dev/provider';
+import type { EventResultMetadata, ExecuteResult, PlainResult } from '@floway-dev/provider';
 
 // Emits a measurement endpoint's already-shaped body verbatim. The endpoint's
 // `attempt` owns all shaping — the success body and any source-specific error
@@ -49,33 +47,6 @@ export const eventResultMetadata = async <TEvent>(result: Extract<ExecuteResult<
     modelIdentity: result.modelIdentity,
     ...(result.performance ? { performance: result.performance } : {}),
   });
-
-export const recordUsage = async (ctx: GatewayCtx, modelIdentity: TelemetryModelIdentity, usage: TokenUsage | null): Promise<void> => {
-  if (usage && hasTokenUsage(usage)) await recordTokenUsage(ctx.apiKeyId, modelIdentity, usage);
-};
-
-// Settles token-usage recording (D1 write, non-fatal if it throws) and
-// perf sample recording as a pair. Usage errors are logged so the response
-// still returns; the finally clause guarantees a perf sample lands even
-// when persistence bounces. The TPOT end-time is stamped at entry, BEFORE
-// the usage write, so the persistence round-trip isn't charged to the
-// token stream.
-export const settleUsageAndPerformance = async (
-  ctx: GatewayCtx,
-  metadata: EventResultMetadata,
-  usage: TokenUsage | null,
-  failed: boolean,
-  protocolLabel: string,
-): Promise<void> => {
-  const requestFinishedAt = performance.now();
-  try {
-    await recordUsage(ctx, metadata.modelIdentity, usage);
-  } catch (error) {
-    console.error(`Failed to record ${protocolLabel} usage:`, error);
-  } finally {
-    recordPerformance(ctx, metadata.performance, failed, usage?.output ?? 0, requestFinishedAt);
-  }
-};
 
 // Upstream response headers we propagate verbatim to the downstream client.
 // A blocklist (not an allowlist): operators want to see what the upstream

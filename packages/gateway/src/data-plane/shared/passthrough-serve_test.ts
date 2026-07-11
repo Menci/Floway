@@ -11,7 +11,7 @@
 //   - its extractBilling reads the OpenAI-style `usage.prompt_tokens` off
 //     a 2xx JSON body, so a body with that shape triggers a real usage
 //     write;
-//   - it shares the exact same forwardUpstreamResponse + scheduleUsageRecord
+//   - it shares the exact same forwardUpstreamResponse + settle
 //     path as the images endpoints — the behaviors under test are owned by
 //     passthroughServe, not the endpoint shape.
 

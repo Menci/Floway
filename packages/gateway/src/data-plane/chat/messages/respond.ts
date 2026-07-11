@@ -2,9 +2,10 @@ import type { Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
 
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
+import { settle } from '../../shared/telemetry/settle.ts';
 import { billableServiceTier, tokenUsage } from '../../shared/telemetry/usage.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
-import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse, settleUsageAndPerformance } from '../shared/respond.ts';
+import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse } from '../shared/respond.ts';
 import { type StreamCompletion, writeSSEFrames } from '../shared/stream/sse.ts';
 import { type ProtocolFrame, sseFrame } from '@floway-dev/protocols/common';
 import { messagesProtocolFrameToSSEFrame, MESSAGES_MISSING_TERMINAL_MESSAGE, collectMessagesProtocolEventsToResult } from '@floway-dev/protocols/messages';
@@ -54,7 +55,7 @@ export const respondMessages = async (
       const metadata = await eventResultMetadata(result);
       const usage = tokenUsageFromMessagesUsage(response.usage);
       ctx.dump?.success(metadata.modelIdentity, usage);
-      await settleUsageAndPerformance(ctx, metadata, usage, state.failed, 'Messages');
+      settle(ctx, metadata.performance, metadata.modelIdentity, usage, state.failed);
       return { success: true, response: Response.json(response, { headers: mergeForwardedUpstreamHeaders(undefined, result.headers) }) };
     } catch (error) {
       recordFailedRequest(ctx, result.performance);
@@ -79,7 +80,7 @@ export const respondMessages = async (
       } else {
         ctx.dump?.success(metadata.modelIdentity, state.usage);
       }
-      await settleUsageAndPerformance(ctx, metadata, state.usage, failed, 'Messages');
+      settle(ctx, metadata.performance, metadata.modelIdentity, state.usage, failed);
     }
   });
 

@@ -8,8 +8,9 @@ import type { AuthedContext } from '../../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
+import { settle } from '../../shared/telemetry/settle.ts';
 import { createChatGatewayCtxFromHono, type ChatGatewayCtx, type GatewayCtx } from '../shared/gateway-ctx.ts';
-import { SourceStreamState, eventResultMetadata, settleUsageAndPerformance } from '../shared/respond.ts';
+import { SourceStreamState, eventResultMetadata } from '../shared/respond.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS, type StreamCompletion } from '../shared/stream/sse.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -104,7 +105,7 @@ const createResponsesWebSocketEvents = (c: AuthedContext): ResponsesWebSocketHan
   // upgrade, subsequent waitUntil calls made from message-event handlers
   // are silently dropped (the promise never runs, the isolate has no
   // registered reason to defer eviction for it). Every per-message background
-  // task — dump.finalize, recordFailedRequest, settleUsageAndPerformance — would therefore
+  // task — dump.finalize, recordFailedRequest — would therefore
   // lose its write.
   //
   // Fix: give the ctx a scheduler that doesn't depend on the fetch's
@@ -421,7 +422,7 @@ const respondResponsesWebSocket = async (input: {
     if (failed) ctx.dump?.failed(`responses ws turn failed (completion=${completion}, source-failed=${state.failed})`);
     else ctx.dump?.success(metadata.modelIdentity, state.usage);
     ctx.dump?.finalize(failed ? 500 : 200, []);
-    await settleUsageAndPerformance(ctx, metadata, state.usage, failed, 'Responses WebSocket');
+    settle(ctx, metadata.performance, metadata.modelIdentity, state.usage, failed);
   }
 };
 
