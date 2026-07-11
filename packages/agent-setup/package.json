@@ -1,0 +1,22 @@
+{
+  "name": "@floway-dev/agent-setup",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": { "import": "./src/index.ts", "types": "./src/index.ts" }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "generate-assets": "jiti scripts/generate-assets.ts",
+    "test:installers": "jiti scripts/test-installers.ts"
+  },
+  "dependencies": {
+    "@hono/zod-validator": "^0.8.0",
+    "hono": "^4",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@floway-dev/test-utils": "workspace:*"
+  }
+}

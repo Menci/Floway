@@ -7,7 +7,7 @@ import {
   type AgentSetupConfiguration,
 } from './configuration.ts';
 import { renderPowerShellPrefix, renderShellPrefix } from './render.ts';
-import { agentSetupHeartbeatBody, agentSetupUpdateBody } from '../schemas.ts';
+import { agentSetupHeartbeatBody, agentSetupUpdateBody } from './wire.ts';
 
 const fullConfiguration: AgentSetupConfiguration = {
   apiKeyId: 'key-a',

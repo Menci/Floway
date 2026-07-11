@@ -14,8 +14,8 @@
 // or an actually absent Codex at every known global location. The harness never
 // touches the user's real config or credentials.
 //
-// Run the whole suite with `pnpm jiti scripts/test-agent-setup-installers.ts`,
-// or scope it with `--agent claude` / `--agent codex`.
+// Run the whole suite with `pnpm run test:agent-setup-installers`, or scope it
+// with `--agent claude` / `--agent codex`.
 
 import { spawn, spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
@@ -24,15 +24,15 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import type { AgentSetupConfiguration } from '../packages/gateway/src/control-plane/agent-setup/configuration.ts';
-import { renderPowerShellPrefix, renderShellPrefix } from '../packages/gateway/src/control-plane/agent-setup/render.ts';
+import type { AgentSetupConfiguration } from '../src/configuration.ts';
+import { renderPowerShellPrefix, renderShellPrefix } from '../src/render.ts';
 
 const powerShellLiteral = (value: string): string => `'${value.replace(/'/g, "''")}'`;
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const SCRIPTS_DIR = join(HERE, '..', 'packages/gateway/src/control-plane/agent-setup/scripts');
-const SH_BODY = readFileSync(join(SCRIPTS_DIR, 'setup.sh'), 'utf8');
-const PS1_BODY = readFileSync(join(SCRIPTS_DIR, 'setup.ps1'), 'utf8');
+const INSTALLERS_DIR = join(HERE, '..', 'installers');
+const SH_BODY = readFileSync(join(INSTALLERS_DIR, 'setup.sh'), 'utf8');
+const PS1_BODY = readFileSync(join(INSTALLERS_DIR, 'setup.ps1'), 'utf8');
 
 // A fixed, highly greppable fake credential. Every test asserts this string
 // never reaches the installer's stdout/stderr, so a real leak is unmistakable.
