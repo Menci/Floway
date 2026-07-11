@@ -9,6 +9,7 @@ import {
   type ImageOutcome,
   imageGenerationServerTool,
   imageTerminal,
+  isImageGenerationDeclaration,
   isHostedImageGenerationTool,
   parseImageStreamEvent,
   parseRetryAfterMs,
@@ -54,6 +55,17 @@ test('isHostedImageGenerationTool matches only the hosted image_generation type'
   assert(isHostedImageGenerationTool({ type: 'image_generation' } as ResponsesTool));
   assertFalse(isHostedImageGenerationTool({ type: 'custom', name: 'x' } as ResponsesTool));
   assertFalse(isHostedImageGenerationTool({ type: 'function', name: 'x', parameters: {}, strict: false } as ResponsesTool));
+});
+
+test('isImageGenerationDeclaration recognizes only the exact Codex image_gen namespace shape', () => {
+  const imagegen = { type: 'function', name: 'imagegen', parameters: { type: 'object' }, strict: false };
+  assert(isImageGenerationDeclaration({ type: 'image_generation' }));
+  assert(isImageGenerationDeclaration({ type: 'namespace', name: 'image_gen', tools: [imagegen] }));
+
+  assertFalse(isImageGenerationDeclaration({ type: 'namespace', name: 'image_gen', tools: [] }));
+  assertFalse(isImageGenerationDeclaration({ type: 'namespace', name: 'image_gen', tools: [imagegen, imagegen] }));
+  assertFalse(isImageGenerationDeclaration({ type: 'namespace', name: 'image_gen', tools: [{ ...imagegen, name: 'other' }] }));
+  assertFalse(isImageGenerationDeclaration({ type: 'namespace', name: 'other', tools: [imagegen] }));
 });
 
 // ── prepareImageGenerationConfig ──
@@ -116,6 +128,33 @@ test('prepareImageGenerationConfig takes the last hosted entry when several are 
   const result = prepareImageGenerationConfig([
     { type: 'image_generation', quality: 'low' } as ResponsesTool,
     { type: 'image_generation', quality: 'high' } as ResponsesTool,
+  ]);
+  assert(result.ok);
+  assertEquals(result.config.quality, 'high');
+});
+
+test('prepareImageGenerationConfig uses namespace defaults when the exact Codex namespace is last', () => {
+  const result = prepareImageGenerationConfig([
+    { type: 'image_generation', quality: 'high' },
+    {
+      type: 'namespace',
+      name: 'image_gen',
+      tools: [{ type: 'function', name: 'imagegen', parameters: { type: 'object' }, strict: false }],
+    },
+  ]);
+  assert(result.ok);
+  assertEquals(result.config.model, DEFAULT_IMAGE_MODEL);
+  assertEquals(result.config.quality, undefined);
+});
+
+test('prepareImageGenerationConfig uses hosted config when a hosted declaration follows the namespace', () => {
+  const result = prepareImageGenerationConfig([
+    {
+      type: 'namespace',
+      name: 'image_gen',
+      tools: [{ type: 'function', name: 'imagegen', parameters: { type: 'object' }, strict: false }],
+    },
+    { type: 'image_generation', quality: 'high' },
   ]);
   assert(result.ok);
   assertEquals(result.config.quality, 'high');
