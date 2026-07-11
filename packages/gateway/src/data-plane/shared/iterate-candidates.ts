@@ -1,5 +1,5 @@
-import type { GatewayCtx } from '../chat/shared/gateway-ctx.ts';
 import { upstreamPerformanceContext } from './telemetry/upstream-telemetry.ts';
+import type { GatewayCtx } from '../chat/shared/gateway-ctx.ts';
 import type { ModelCandidate, PerformanceOperation } from '@floway-dev/provider';
 
 // A serve-layer attempt result counts as success when:
