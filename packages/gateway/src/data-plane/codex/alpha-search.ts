@@ -28,12 +28,12 @@
 
 import { z } from 'zod';
 
+import { apiKeyFromContext } from '../../middleware/auth.ts';
+import type { CtxWithJson } from '../../middleware/zod-validator.ts';
 import { executeOperationToText, maxResultsForContextSize, parseWebSearchOperations, startBatchFetch, type WebSearchExecutionSession, type WebSearchFilters } from '../tools/web-search/operations.ts';
 import { resolveConfiguredWebSearchProvider } from '../tools/web-search/provider.ts';
 import { loadSearchConfig } from '../tools/web-search/search-config.ts';
 import type { ConfiguredWebSearchProvider } from '../tools/web-search/types.ts';
-import { apiKeyFromContext } from '../../middleware/auth.ts';
-import type { CtxWithJson } from '../../middleware/zod-validator.ts';
 
 const domainListSchema = z.array(z.string());
 
