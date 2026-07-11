@@ -434,14 +434,11 @@ export const listModelsBody = recordOnlyBody;
 
 // --- agent setup ---
 //
-// The one-command Agent Setup lease. `agentSetupConfigurationSchema` (defined
-// alongside the render helpers so the persisted shape and its renderer stay
-// together) is the payload the dashboard saves and the setup scripts read.
-//
-// Acquisition (POST) carries no body: the lease stores no origin, and the
-// gateway origin reaches the setup scripts only through the dashboard's
-// one-line command — no backend state or handler ever supplies it.
-// `expectedRevision` drives the optimistic-concurrency CAS on update.
+// The one-command Agent Setup lease. `agentSetupConfigurationSchema` (in
+// agent-setup/configuration.ts) is the payload the dashboard saves and the
+// setup scripts read; `expectedRevision` drives the optimistic-concurrency CAS
+// on update. Acquisition (POST) carries no body — the lease stores no origin,
+// which reaches the scripts only through the dashboard's one-line command.
 
 export const agentSetupUpdateBody = z.object({
   token: z.string().min(1),

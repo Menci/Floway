@@ -1,18 +1,14 @@
-// Renders the language-native assignment prefix that precedes the fixed,
-// checked-in installer body in every setup-script response. Nothing here is
-// interpolated: every external value (the long-lived API key and each opaque
-// model / effort string) is emitted through a dedicated literal encoder, so a
-// value carrying quotes, whitespace, or shell metacharacters cannot break out
-// of its assignment. The prefix is the only place a setup-script response
-// reveals the API key, and it does so as executable source rather than in the
-// URL. The gateway never learns or renders its own public origin: the dashboard
-// injects it into the executing shell (`FLOWAY_BASE_URL` / `$FlowayBaseUrl`),
-// and the fixed installer body reads it from there.
+// Renders the language-native assignment prefix prepended to the fixed,
+// checked-in installer body in every setup-script response. Every external
+// value (the API key and each opaque model/effort string) is emitted through a
+// single-quoted literal encoder, so quotes, whitespace, or shell metacharacters
+// can never break out of an assignment — the real injection defense. The
+// gateway never renders its own public origin: the dashboard injects it into
+// the executing shell, and the fixed installer body reads it from there.
 
 import type { AgentSetupConfiguration } from './configuration.ts';
 
 export interface RenderPrefixInput {
-  // The selected long-lived Floway API key, in the clear.
   apiKey: string;
   configuration: AgentSetupConfiguration;
 }
@@ -21,40 +17,31 @@ const assertNoNul = (value: string): void => {
   if (value.includes('\0')) throw new Error('cannot render a value containing a NUL character');
 };
 
-// POSIX single-quoted literal: everything inside single quotes is literal
-// except the single quote itself, which is closed, escaped as `\'`, and
-// reopened. Newlines, tabs, and Unicode survive verbatim; NUL cannot be
-// represented in a shell word and is rejected.
-export const shellLiteral = (value: string): string => {
+// POSIX single-quoted literal: the single quote is closed, escaped as `\'`, and
+// reopened; every other character (newlines, tabs, Unicode) is literal. NUL
+// cannot exist in a shell word and is rejected.
+const shellLiteral = (value: string): string => {
   assertNoNul(value);
   return `'${value.replace(/'/g, "'\\''")}'`;
 };
 
-// PowerShell single-quoted literal: single quotes are the only escape and are
-// doubled; every other character (including newlines and Unicode) is literal.
-// NUL is rejected for the same reason as the POSIX encoder.
-export const powerShellLiteral = (value: string): string => {
+// PowerShell single-quoted literal: single quotes are the only escape, doubled.
+const powerShellLiteral = (value: string): string => {
   assertNoNul(value);
   return `'${value.replace(/'/g, "''")}'`;
 };
 
-// Floway's placeholder ChatGPT identity is assembled by the installer body
-// itself from `FLOWAY_BASE_URL` / `$FlowayBaseUrl`, so the gateway never needs
-// the origin to render it. See the `codex_build_id_token` / `Get-FlowayCodexIdToken`
-// helpers in scripts/{setup.sh,setup.ps1}.
-
-// POSIX: `1` for a set flag, empty (which the installer reads as "remove this
-// managed key") otherwise.
+// An unset override renders empty, which the installer reads as "remove this
+// managed key"; a set flag renders `1`.
 const shellFlag = (enabled: boolean): string => (enabled ? '1' : '');
-
-// POSIX: an unset override renders as an empty value, matching the flag
-// convention the installer uses to remove a managed key.
 const shellOptional = (value: string | null): string => value ?? '';
 
-const renderShellAssignments = (input: RenderPrefixInput): [name: string, value: string][] => {
-  const { apiKey, configuration } = input;
-  const { claudeCode, codex } = configuration;
-  return [
+// `set +x` leads so a caller who piped us into `set -x` cannot echo the API-key
+// assignment to its trace stream; the trailing newline lets the fixed installer
+// body concatenate cleanly beneath.
+export const renderShellPrefix = (input: RenderPrefixInput): string => {
+  const { apiKey, configuration: { claudeCode, codex } } = input;
+  const assignments: [name: string, value: string][] = [
     ['FLOWAY_API_KEY', apiKey],
     ['FLOWAY_INSTALL_CLAUDE', shellFlag(claudeCode.enabled)],
     ['FLOWAY_CLAUDE_MODEL', shellOptional(claudeCode.model)],
@@ -66,27 +53,19 @@ const renderShellAssignments = (input: RenderPrefixInput): [name: string, value:
     ['FLOWAY_CODEX_MODEL', shellOptional(codex.model)],
     ['FLOWAY_CODEX_REASONING_EFFORT', shellOptional(codex.reasoningEffort)],
   ];
-};
-
-// `set +x` leads so a caller who piped us into `set -x` cannot echo the API
-// key assignment to its trace stream. The prefix ends with a trailing newline
-// so the fixed installer body concatenates cleanly beneath it.
-export const renderShellPrefix = (input: RenderPrefixInput): string => {
-  const lines = renderShellAssignments(input).map(([name, value]) => `${name}=${shellLiteral(value)}`);
+  const lines = assignments.map(([name, value]) => `${name}=${shellLiteral(value)}`);
   return `set +x\n${lines.join('\n')}\n`;
 };
 
-// PowerShell: `$true` / `$false` for a set flag.
+// PowerShell: booleans and $null render bare; only strings are quoted, so the
+// encoder cannot be applied uniformly the way the POSIX renderer applies it.
 const powerShellBool = (value: boolean): string => (value ? '$true' : '$false');
-
-// PowerShell: an unset override renders as `$null`, which the installer reads
-// as "remove this managed key".
 const powerShellOptional = (value: string | null): string => (value === null ? '$null' : powerShellLiteral(value));
 
-const renderPowerShellAssignments = (input: RenderPrefixInput): [name: string, value: string][] => {
-  const { apiKey, configuration } = input;
-  const { claudeCode, codex } = configuration;
-  return [
+// `Set-PSDebug -Off` leads for the same reason `set +x` does in POSIX.
+export const renderPowerShellPrefix = (input: RenderPrefixInput): string => {
+  const { apiKey, configuration: { claudeCode, codex } } = input;
+  const assignments: [name: string, value: string][] = [
     ['$FlowayApiKey', powerShellLiteral(apiKey)],
     ['$FlowayInstallClaude', powerShellBool(claudeCode.enabled)],
     ['$FlowayClaudeModel', powerShellOptional(claudeCode.model)],
@@ -98,11 +77,6 @@ const renderPowerShellAssignments = (input: RenderPrefixInput): [name: string, v
     ['$FlowayCodexModel', powerShellOptional(codex.model)],
     ['$FlowayCodexReasoningEffort', powerShellOptional(codex.reasoningEffort)],
   ];
-};
-
-// `Set-PSDebug -Off` leads for the same reason `set +x` does in POSIX: it
-// suppresses script tracing so the API key assignment is not echoed.
-export const renderPowerShellPrefix = (input: RenderPrefixInput): string => {
-  const lines = renderPowerShellAssignments(input).map(([name, value]) => `${name} = ${value}`);
+  const lines = assignments.map(([name, value]) => `${name} = ${value}`);
   return `Set-PSDebug -Off\n${lines.join('\n')}\n`;
 };

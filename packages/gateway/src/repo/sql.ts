@@ -1802,9 +1802,8 @@ class SqlAgentSetupRepo implements AgentSetupRepo {
     now: number;
     expiresAt: number;
   }): Promise<AgentSetupRecord> {
-    // Upsert on the user PK. A fresh lease starts at revision 1; replacing an
-    // existing lease keeps created_at and advances the revision so a stale
-    // tab's cached revision can never coincide with the new one.
+    // Upsert on the user PK: a fresh lease starts at revision 1, a replacement
+    // keeps created_at and advances the revision.
     const row = await this.db
       .prepare(
         `INSERT INTO agent_setup (${AGENT_SETUP_COLUMNS})
@@ -1834,11 +1833,9 @@ class SqlAgentSetupRepo implements AgentSetupRepo {
     replacementToken: string;
     replacementExpiresAt: number;
   }): Promise<AgentSetupMutation> {
-    // Single-statement CAS on (user_id, token, revision). The token rotation is
-    // a column write guarded by `expires_at <= now`, so it only happens as part
-    // of a row that the WHERE clause already matched: a stale revision fails the
-    // WHERE, nothing is written, and the revision conflict wins over the
-    // rotation the expiry would otherwise trigger. The write itself is atomic.
+    // Single-statement CAS on (user_id, token, revision): a stale revision
+    // fails the WHERE so nothing is written, which is why the revision conflict
+    // wins over the expiry-driven token rotation in the CASE.
     const row = await this.db
       .prepare(
         `UPDATE agent_setup SET
@@ -1864,9 +1861,8 @@ class SqlAgentSetupRepo implements AgentSetupRepo {
       )
       .first<AgentSetupRow>();
     if (row) return { status: 'ok', record: toAgentSetupRecord(row) };
-    // The atomic write matched nothing. Read the live row purely to classify
-    // the rejection: a mismatched (or absent) token is superseded, otherwise
-    // the token still owns the lease and only the revision was stale.
+    // The CAS matched nothing; read the live row only to classify the rejection:
+    // a missing or mismatched token is superseded, otherwise the revision was stale.
     const current = await this.getByUserId(input.userId);
     if (!current || current.token !== input.token) return { status: 'superseded' };
     return { status: 'revision-conflict', record: current };

@@ -57,11 +57,9 @@ export const controlPlaneRoutes = new Hono<{ Variables: AuthVars }>()
   // this endpoint just feeds the picker UI.
   .get('/api/upstream-options', listUpstreamOptions)
   .route('/api/dump', dumpRoutes)
-  // Per-user Agent Setup lease + public setup-script endpoints. Not admin-gated
-  // — every user configures their own one-command setup — so it mounts at the
-  // top level alongside the other per-user routes. The GET/HEAD script routes
-  // inside are the only unauthenticated surface; auth exempts them by the exact
-  // matcher, not by their presence here.
+  // Per-user Agent Setup lease + public setup-script endpoints. Not admin-gated;
+  // auth exempts the GET/HEAD script routes by the exact matcher, not by their
+  // presence here.
   .route('/api/setup', agentSetupRoutes)
   // Self-service password change is session-only (the current-password check
   // pairs with a logged-in dashboard session); admins reset other users'

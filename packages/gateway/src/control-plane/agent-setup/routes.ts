@@ -1,14 +1,7 @@
-// The Agent Setup lease routes: the authenticated control surface the dashboard
-// drives (acquire / edit / heartbeat a lease) and the unauthenticated public
-// endpoints a user's machine curls to fetch a ready-to-run setup script.
-//
-// The public GET/HEAD endpoints reveal the selected long-lived API key as
-// executable source, so they are deliberately the only routes auth lets through
-// without a credential — gated by the exact matcher in middleware/request-path,
-// bounded to a five-minute lease, and never echoing the token into an error.
-// The script body itself is the fixed, checked-in installer embedded at build
-// time (script-assets.generated.ts); only the language-native assignment prefix
-// is rendered per request.
+// The public GET/HEAD script endpoints reveal the selected API key as executable
+// source, so they are the only routes auth lets through without a credential —
+// gated by the exact matcher in middleware/request-path, bounded to a
+// five-minute lease, and never echoing the token into an error.
 
 import { Hono } from 'hono';
 
@@ -26,26 +19,21 @@ import { getRepo } from '../../repo/index.ts';
 import type { AgentSetupMutation, AgentSetupRecord, ApiKey } from '../../repo/types.ts';
 import { agentSetupHeartbeatBody, agentSetupUpdateBody } from '../schemas.ts';
 
-// A lease lives five minutes past the server's current time; the dashboard's
-// per-minute heartbeat keeps a visible page's lease renewed.
 const SETUP_LEASE_TTL_MS = 5 * 60 * 1000;
 
-// Retry ceiling for a token-uniqueness collision. A 43-char base64url token has
-// 256 bits of entropy, so a collision is a practical impossibility — the bound
-// exists only to keep an unforeseen degenerate case from looping forever, not
-// because collisions are expected.
+// A 43-char base64url token carries 256 bits of entropy, so a collision is a
+// practical impossibility; the bound only stops an unforeseen degenerate case
+// from looping forever.
 const SETUP_TOKEN_MAX_ATTEMPTS = 5;
 
-// The SQLite/D1 message the unique token index raises. Matching it lets a token
-// collision be retried with a fresh token while any unrelated DB failure still
-// propagates untouched.
+// The unique token index's SQLite/D1 message. Matching it retries a collision
+// with a fresh token while any unrelated DB failure still propagates untouched.
 const TOKEN_COLLISION_MESSAGE = /UNIQUE constraint failed: agent_setup\.token/i;
 
 const SCRIPT_RESPONSE_HEADERS = {
   'content-type': 'text/plain; charset=utf-8',
-  // The rendered script carries a live API key: it must never be cached by any
-  // hop. cache-control:no-store covers HTTP/1.1; Pragma and Expires cover the
-  // HTTP/1.0 proxies and clients that ignore Cache-Control.
+  // The rendered script carries a live API key and must never be cached by any
+  // hop: no-store covers HTTP/1.1, Pragma/Expires cover HTTP/1.0.
   'cache-control': 'no-store',
   'pragma': 'no-cache',
   'expires': '0',
@@ -53,8 +41,8 @@ const SCRIPT_RESPONSE_HEADERS = {
   'x-content-type-options': 'nosniff',
 } as const;
 
-// 32 CSPRNG bytes as an unpadded base64url string — exactly 43 characters, the
-// shape the public matcher accepts.
+// 32 CSPRNG bytes as unpadded base64url — exactly the 43-char shape the public
+// matcher accepts.
 const generateSetupToken = (): string => {
   const bytes = new Uint8Array(32);
   crypto.getRandomValues(bytes);
@@ -63,9 +51,8 @@ const generateSetupToken = (): string => {
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
 };
 
-// Run a lease write that consumes a freshly minted token, retrying only when the
-// unique token index rejects the value. Every other error — including any other
-// DB failure — surfaces immediately.
+// Retry a lease write only when the unique token index rejects the token; every
+// other error surfaces immediately.
 const withFreshToken = async <T>(write: (token: string) => Promise<T>): Promise<T> => {
   for (let attempt = 1; ; attempt++) {
     try {
@@ -78,24 +65,15 @@ const withFreshToken = async <T>(write: (token: string) => Promise<T>): Promise<
   }
 };
 
-// Origin-relative script URLs: the dashboard appends them to its own
-// `window.location.origin` to build both the fetch URL and the base URL it
-// injects into the executing shell, so the gateway never has to know or render
-// its own public origin.
-const scriptUrls = (token: string) => ({
-  sh: `/api/setup/${token}/setup.sh`,
-  ps1: `/api/setup/${token}/setup.ps1`,
-});
-
-// The shape the dashboard receives for a live lease: the token it heartbeats
-// against, the persisted configuration, the CAS revision, the expiry, and the
-// relative script URLs.
 const leaseProjection = (record: AgentSetupRecord) => ({
   token: record.token,
   configuration: agentSetupConfigurationSchema.parse(JSON.parse(record.configurationJson)),
   configurationRevision: record.configurationRevision,
   expiresAt: record.expiresAt,
-  scripts: scriptUrls(record.token),
+  scripts: {
+    sh: `/api/setup/${record.token}/setup.sh`,
+    ps1: `/api/setup/${record.token}/setup.ps1`,
+  },
 });
 
 // A saved configuration is restored on reopen only while its key stays
@@ -108,10 +86,9 @@ const restorableConfiguration = (
   return selectableKeys.some(key => key.id === configuration.apiKeyId) ? configuration : null;
 };
 
-// Resolve a token to a serveable lease, applying every public-serving check.
-// Any failure — unknown token, expired lease, deleted user, deleted key, or a
-// configuration pointing at a key the lease's user no longer owns — collapses
-// to null so the caller returns one indistinguishable 404.
+// Every failure — unknown token, expired lease, deleted user or key, or a
+// configuration pointing at a key the user no longer owns — collapses to null
+// so the caller returns one indistinguishable 404.
 const resolveServeableLease = async (
   token: string,
 ): Promise<{ record: AgentSetupRecord; apiKey: ApiKey; configuration: AgentSetupConfiguration } | null> => {
@@ -132,14 +109,9 @@ const serveSetupScript = (language: ScriptLanguage) => async (c: AuthedContext) 
   const token = c.req.param('token')!;
   const resolved = await resolveServeableLease(token);
   if (!resolved) return c.body(null, 404, SCRIPT_RESPONSE_HEADERS);
-  // GET and HEAD run the identical lookup; HEAD stops here, before rendering, so
-  // it never assembles the API-key-bearing body it would immediately drop.
+  // HEAD stops before rendering so it never assembles the API-key-bearing body.
   if (c.req.method === 'HEAD') return c.body(null, 200, SCRIPT_RESPONSE_HEADERS);
 
-  // The gateway never learns its own public origin: the response is only the
-  // API key, the selected configuration, and the fixed body. The dashboard
-  // injects the origin into the executing shell (`FLOWAY_BASE_URL` /
-  // `$FlowayBaseUrl`), from which the installer builds its own base URL.
   const input = { apiKey: resolved.apiKey.key, configuration: resolved.configuration };
   const body = language === 'sh'
     ? renderShellPrefix(input) + SETUP_SH_BODY
@@ -150,8 +122,6 @@ const serveSetupScript = (language: ScriptLanguage) => async (c: AuthedContext) 
 const createSetupLease = async (c: AuthedContext) => {
   const userId = userFromContext(c).id;
 
-  // listByUserId returns the user's active keys in creation order — exactly the
-  // "selectable" set the default picker and the restore check both consult.
   const selectableKeys = await getRepo().apiKeys.listByUserId(userId);
   const existing = await getRepo().agentSetup.getByUserId(userId);
   const restored = existing !== null ? restorableConfiguration(existing, selectableKeys) : null;
@@ -226,10 +196,8 @@ const heartbeatSetupLease = async (c: CtxWithJson<typeof agentSetupHeartbeatBody
   return respondToMutation(c, result);
 };
 
-// Chained so the control routes flow their request/response types into the RPC
-// client. The public GET/HEAD script routes are registered on the same sub-app
-// but carry no RPC contract — the dashboard reaches them by relative URL, and a
-// user's machine by curl.
+// Chained so the control routes flow their types into the RPC client; the public
+// GET/HEAD script routes carry no RPC contract.
 export const agentSetupRoutes = new Hono<{ Variables: AuthVars }>()
   .post('/', createSetupLease)
   .put('/', zValidator('json', agentSetupUpdateBody), updateSetupLease)

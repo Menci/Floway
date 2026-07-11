@@ -6,12 +6,7 @@ import {
   defaultAgentSetupConfiguration,
   type AgentSetupConfiguration,
 } from './configuration.ts';
-import {
-  powerShellLiteral,
-  renderPowerShellPrefix,
-  renderShellPrefix,
-  shellLiteral,
-} from './render.ts';
+import { renderPowerShellPrefix, renderShellPrefix } from './render.ts';
 import { agentSetupHeartbeatBody, agentSetupUpdateBody } from '../schemas.ts';
 
 const fullConfiguration: AgentSetupConfiguration = {
@@ -107,42 +102,6 @@ describe('defaultAgentSetupConfiguration', () => {
   });
 });
 
-describe('shellLiteral', () => {
-  test('single-quotes and escapes embedded single quotes', () => {
-    expect(shellLiteral("a'b")).toBe("'a'\\''b'");
-  });
-
-  test('wraps an empty string in bare quotes', () => {
-    expect(shellLiteral('')).toBe("''");
-  });
-
-  test('preserves newlines, tabs, and Unicode inside the quotes', () => {
-    expect(shellLiteral('a\nb\t€🚀')).toBe("'a\nb\t€🚀'");
-  });
-
-  test('rejects a NUL character', () => {
-    expect(() => shellLiteral('a\0b')).toThrow();
-  });
-});
-
-describe('powerShellLiteral', () => {
-  test('single-quotes and doubles embedded single quotes', () => {
-    expect(powerShellLiteral("a'b")).toBe("'a''b'");
-  });
-
-  test('wraps an empty string in bare quotes', () => {
-    expect(powerShellLiteral('')).toBe("''");
-  });
-
-  test('preserves newlines, tabs, and Unicode inside the quotes', () => {
-    expect(powerShellLiteral('a\nb\t€🚀')).toBe("'a\nb\t€🚀'");
-  });
-
-  test('rejects a NUL character', () => {
-    expect(() => powerShellLiteral('a\0b')).toThrow();
-  });
-});
-
 describe('renderShellPrefix', () => {
   test('renders every assignment through the encoder and ends with a newline', () => {
     const prefix = renderShellPrefix({
@@ -169,6 +128,15 @@ describe('renderShellPrefix', () => {
     const prefix = renderShellPrefix({ apiKey: 'sk-raw-key', configuration: fullConfiguration });
     expect(prefix).not.toContain('FLOWAY_BASE_URL');
     expect(prefix).not.toContain('FLOWAY_CODEX_ID_TOKEN');
+  });
+
+  test('single-quotes each value, escaping embedded quotes and preserving newlines, tabs, and Unicode', () => {
+    const prefix = renderShellPrefix({
+      apiKey: "a'b",
+      configuration: { ...fullConfiguration, codex: { ...fullConfiguration.codex, model: 'x\ny\t€🚀' } },
+    });
+    expect(prefix).toContain("FLOWAY_API_KEY='a'\\''b'");
+    expect(prefix).toContain("FLOWAY_CODEX_MODEL='x\ny\t€🚀'");
   });
 
   test('renders empty values for disabled agents and null overrides', () => {
@@ -224,6 +192,19 @@ describe('renderPowerShellPrefix', () => {
     const prefix = renderPowerShellPrefix({ apiKey: 'sk-raw-key', configuration: fullConfiguration });
     expect(prefix).not.toContain('$FlowayBaseUrl');
     expect(prefix).not.toContain('$FlowayCodexIdToken');
+  });
+
+  test('single-quotes each string, doubling embedded quotes and preserving newlines, tabs, and Unicode', () => {
+    const prefix = renderPowerShellPrefix({
+      apiKey: "a'b",
+      configuration: { ...fullConfiguration, codex: { ...fullConfiguration.codex, model: 'x\ny\t€🚀' } },
+    });
+    expect(prefix).toContain("$FlowayApiKey = 'a''b'");
+    expect(prefix).toContain("$FlowayCodexModel = 'x\ny\t€🚀'");
+  });
+
+  test('propagates a NUL-rejecting failure from the API key', () => {
+    expect(() => renderPowerShellPrefix({ apiKey: 'sk-\0-key', configuration: fullConfiguration })).toThrow();
   });
 
   test('renders $false and $null for disabled agents and null overrides', () => {
