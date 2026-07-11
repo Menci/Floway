@@ -1389,6 +1389,48 @@ test('translateResponsesToChatCompletions projects custom_tool_call history into
   });
 });
 
+test.each([
+  { name: 'additional_tools', input: [{ type: 'additional_tools', role: 'developer', tools: [] as ResponsesTool[] }] },
+  { name: 'program', input: [{ type: 'program', id: 'prog_1', call_id: 'call_prog_1', code: 'return 1', fingerprint: 'opaque' }] },
+  { name: 'program_output', input: [{ type: 'program_output', id: 'prog_out_1', call_id: 'call_prog_1', result: '1', status: 'completed' }] },
+] as const)('translateResponsesToChatCompletions rejects Responses-only $name input', ({ name, input }) => {
+  assertThrows(
+    () => translateResponsesToChatCompletions({ model: 'gpt-test', input: [...input] }),
+    Error,
+    `Invalid input item type '${name}'`,
+  );
+});
+
+test('translateResponsesToChatCompletions rejects programmatic caller metadata', () => {
+  assertThrows(
+    () => translateResponsesToChatCompletions({
+      model: 'gpt-test',
+      input: [{
+        type: 'function_call',
+        call_id: 'call_1',
+        name: 'lookup',
+        arguments: '{}',
+        status: 'completed',
+        caller: { type: 'program', caller_id: 'call_prog_1' },
+      }],
+    }),
+    Error,
+    'program caller',
+  );
+});
+
+test.each([
+  { name: 'programmatic tool', payload: { tools: [{ type: 'programmatic_tool_calling' as const }] } },
+  { name: 'programmatic allowed caller', payload: { tools: [{ type: 'function' as const, name: 'lookup', parameters: {}, strict: true, allowed_callers: ['programmatic' as const] }] } },
+  { name: 'programmatic tool choice', payload: { tool_choice: { type: 'programmatic_tool_calling' as const } } },
+])('translateResponsesToChatCompletions rejects $name', ({ payload }) => {
+  assertThrows(
+    () => translateResponsesToChatCompletions({ model: 'gpt-test', input: 'hi', ...payload }),
+    Error,
+    'Programmatic',
+  );
+});
+
 test('translateResponsesToChatCompletions throws on a stray web_search_call input item (shim owns the reverse path)', () => {
   // The Responses web-search shim rewrites web_search_call input items into
   // upstream function_call + function_call_output pairs before this

@@ -3,6 +3,7 @@ import { test } from 'vitest';
 import { translateResponsesToMessages } from './request.ts';
 import { assert, assertEquals, assertFalse, assertRejects } from '../test-assert.ts';
 import { MESSAGES_FALLBACK_MAX_TOKENS, type MessagesClientTool, type MessagesToolResultBlock, type MessagesUserContentBlock } from '@floway-dev/protocols/messages';
+import type { ResponsesTool } from '@floway-dev/protocols/responses';
 
 const stubRemoteImageLoader = (result: { mediaType: string | null; data: Uint8Array } | null) => () => Promise.resolve(result);
 
@@ -20,6 +21,48 @@ const minimalPayload = {
   store: false,
   parallel_tool_calls: true,
 };
+
+test.each([
+  { name: 'additional_tools', input: [{ type: 'additional_tools', role: 'developer', tools: [] as ResponsesTool[] }] },
+  { name: 'program', input: [{ type: 'program', id: 'prog_1', call_id: 'call_prog_1', code: 'return 1', fingerprint: 'opaque' }] },
+  { name: 'program_output', input: [{ type: 'program_output', id: 'prog_out_1', call_id: 'call_prog_1', result: '1', status: 'completed' }] },
+] as const)('translateResponsesToMessages rejects Responses-only $name input', async ({ name, input }) => {
+  await assertRejects(
+    () => translateResponsesToMessages({ ...minimalPayload, input: [...input] }),
+    Error,
+    name,
+  );
+});
+
+test('translateResponsesToMessages rejects programmatic caller metadata', async () => {
+  await assertRejects(
+    () => translateResponsesToMessages({
+      ...minimalPayload,
+      input: [{
+        type: 'function_call',
+        call_id: 'call_1',
+        name: 'lookup',
+        arguments: '{}',
+        status: 'completed',
+        caller: { type: 'program', caller_id: 'call_prog_1' },
+      }],
+    }),
+    Error,
+    'program caller',
+  );
+});
+
+test.each([
+  { name: 'programmatic tool', payload: { tools: [{ type: 'programmatic_tool_calling' as const }] } },
+  { name: 'programmatic allowed caller', payload: { tools: [{ type: 'function' as const, name: 'lookup', parameters: {}, strict: true, allowed_callers: ['programmatic' as const] }] } },
+  { name: 'programmatic tool choice', payload: { tool_choice: { type: 'programmatic_tool_calling' as const } } },
+])('translateResponsesToMessages rejects $name', async ({ payload }) => {
+  await assertRejects(
+    () => translateResponsesToMessages({ ...minimalPayload, ...payload }),
+    Error,
+    'Programmatic',
+  );
+});
 
 // ── service_tier → speed mapping ──
 

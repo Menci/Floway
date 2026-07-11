@@ -161,8 +161,9 @@ steps.
   `programmatic_tool_calling` tool and choice, `additional_tools`, `program`,
   `program_output`, opaque replay fingerprints, and nested tool `caller`
   metadata pass through and are retained in Responses snapshots. Targets that
-  require cross-protocol translation reject these Responses-only input items
-  rather than synthesizing a lossy equivalent.
+  require cross-protocol translation reject the item types, programmatic
+  caller metadata, tool declarations, and forced choice rather than
+  synthesizing a lossy equivalent.
 - retries intermittent upstream `cyber_policy` failures before the failed
   attempt reaches the source-shaped response
 

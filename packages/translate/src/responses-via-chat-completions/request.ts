@@ -131,7 +131,20 @@ export interface ResponsesToChatCompletionsResult {
   customToolNames: Set<string>;
 }
 
+const rejectProgrammaticTooling = (payload: ResponsesPayload): void => {
+  const programmaticTool = payload.tools?.find(tool =>
+    tool.type === 'programmatic_tool_calling'
+    || (tool.type === 'function' || tool.type === 'custom')
+    && tool.allowed_callers?.includes('programmatic'),
+  );
+  const toolChoice = payload.tool_choice;
+  if (programmaticTool !== undefined || (typeof toolChoice === 'object' && toolChoice.type === 'programmatic_tool_calling')) {
+    throw new TranslatorInputError('Programmatic Responses tooling cannot be translated to Chat Completions.');
+  }
+};
+
 export const translateResponsesToChatCompletions = (payload: ResponsesPayload): ResponsesToChatCompletionsResult => {
+  rejectProgrammaticTooling(payload);
   const customToolNames = new Set<string>();
   const responseFormat = buildChatCompletionsResponseFormat(payload.text);
   const messages: ChatCompletionsMessage[] = payload.instructions ? [{ role: 'system', content: payload.instructions }] : [];
@@ -157,6 +170,9 @@ export const translateResponsesToChatCompletions = (payload: ResponsesPayload): 
       }
 
       if (item.type === 'function_call') {
+        if (item.caller?.type === 'program') {
+          throw new TranslatorInputError(`Cannot translate function_call '${item.call_id}' with a program caller.`);
+        }
         assistant = appendAssistantToolCall(assistant, item);
         continue;
       }

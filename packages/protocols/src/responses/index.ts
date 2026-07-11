@@ -346,12 +346,16 @@ export interface ResponsesInputImageGenerationCall {
   error?: { message: string; code: string; type?: string };
 }
 
+export type ResponsesToolAllowedCaller = 'direct' | 'programmatic';
+
 export interface ResponsesFunctionTool {
   type: 'function';
   name: string;
   parameters: Record<string, unknown>;
   strict: boolean;
   description?: string;
+  allowed_callers?: ResponsesToolAllowedCaller[] | null;
+  defer_loading?: boolean;
 }
 
 // Codex and other Responses clients ship hosted server tools (web_search,
@@ -409,6 +413,8 @@ export interface ResponsesCustomTool {
   name: string;
   description?: string;
   format?: Record<string, unknown>;
+  allowed_callers?: ResponsesToolAllowedCaller[] | null;
+  defer_loading?: boolean;
 }
 
 export interface ResponsesProgrammaticTool {
