@@ -49,7 +49,7 @@ interface SerializedProxy {
 }
 
 interface ExportPayload {
-  version: 8;
+  version: 9;
   exportedAt: string;
   data: {
     users: User[];
