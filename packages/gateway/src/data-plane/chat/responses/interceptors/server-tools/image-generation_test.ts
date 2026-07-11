@@ -63,6 +63,7 @@ test('isImageGenerationDeclaration recognizes only the exact Codex image_gen nam
   assert(isImageGenerationDeclaration({ type: 'namespace', name: 'image_gen', tools: [imagegen] }));
 
   assertFalse(isImageGenerationDeclaration({ type: 'namespace', name: 'image_gen' } as ResponsesTool));
+  assertFalse(isImageGenerationDeclaration({ type: 'namespace', name: 'image_gen', tools: [null] } as unknown as ResponsesTool));
   assertFalse(isImageGenerationDeclaration({ type: 'namespace', name: 'image_gen', tools: [] }));
   assertFalse(isImageGenerationDeclaration({ type: 'namespace', name: 'image_gen', tools: [imagegen, imagegen] }));
   assertFalse(isImageGenerationDeclaration({ type: 'namespace', name: 'image_gen', tools: [{ ...imagegen, name: 'other' }] }));
