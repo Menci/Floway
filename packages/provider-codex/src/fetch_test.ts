@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { CODEX_ORIGINATOR, CODEX_USER_AGENT } from './constants.ts';
 import { callCodexResponses, callCodexResponsesCompact, type CodexCallEffects } from './fetch.ts';
 import type { CodexAccessTokenEntry, CodexAccountCredential, CodexQuotaSnapshotMapEntry, CodexUpstreamState } from './state.ts';
-import type { ResponsesResult } from '@floway-dev/protocols/responses';
+import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
 import { noopUpstreamCallOptions, stubProviderModel } from '@floway-dev/test-utils';
 
@@ -859,4 +860,222 @@ describe('callCodexResponsesCompact', () => {
     expect(effects.persistRefreshTokenRotation).not.toHaveBeenCalled();
   });
 
+});
+
+const sseStreamResponse = (
+  frames: readonly string[],
+  init: { status?: number; headers?: Record<string, string>; onCancel?: (reason?: unknown) => void } = {},
+): Response => new Response(
+  new ReadableStream({
+    start(controller) {
+      for (const frame of frames) controller.enqueue(new TextEncoder().encode(frame));
+      controller.close();
+    },
+    cancel(reason) { init.onCancel?.(reason); },
+  }),
+  { status: init.status ?? 200, headers: new Headers({ 'content-type': 'text/event-stream', ...(init.headers ?? {}) }) },
+);
+
+const dataFrame = (event: unknown): string => `data: ${JSON.stringify(event)}\n\n`;
+
+const collectFrameTypes = async (events: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>): Promise<string[]> => {
+  const types: string[] = [];
+  for await (const frame of events) types.push(frame.type === 'event' ? frame.event.type : 'done');
+  return types;
+};
+
+const runResponses = () => callCodexResponses({
+  upstreamId, account: activeAccount,
+  model, body: { input: [], stream: true }, headers: new Headers(), effects: makeEffects(), call: noopUpstreamCallOptions(),
+});
+
+describe('callCodexResponses — first-frame tunneled-error promotion', () => {
+  beforeEach(() => seedFreshAccessToken());
+
+  test('promotes a first-frame tunneled error with a valid status_code to ok:false', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseStreamResponse([
+      dataFrame({ type: 'error', status_code: 429, error: { type: 'usage_limit_reached', message: 'cap reached', plan_type: 'pro' } }),
+    ]));
+    const result = await runResponses();
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.response.status).toBe(429);
+      expect(result.response.headers.get('content-type')).toBe('application/json');
+      const body = await result.response.json() as { error: Record<string, unknown> };
+      expect(body.error).toEqual({ type: 'usage_limit_reached', message: 'cap reached', plan_type: 'pro' });
+    }
+  });
+
+  test('accepts the canonical `status` key as an alias for status_code', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseStreamResponse([
+      dataFrame({ type: 'error', status: 400, error: { type: 'invalid_request_error', message: 'bad' } }),
+    ]));
+    const result = await runResponses();
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.response.status).toBe(400);
+  });
+
+  test('a tunneled error without a status collapses to 502 while preserving the body', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseStreamResponse([
+      dataFrame({ type: 'error', error: { message: 'no status here' } }),
+    ]));
+    const result = await runResponses();
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.response.status).toBe(502);
+      const body = await result.response.json() as { error: { message: string } };
+      expect(body.error.message).toBe('no status here');
+    }
+  });
+
+  test('an out-of-band status_code (2xx) collapses to 502', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseStreamResponse([
+      dataFrame({ type: 'error', status_code: 200, headers: {}, error: { message: 'nonsense' } }),
+    ]));
+    const result = await runResponses();
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.response.status).toBe(502);
+  });
+
+  test('falls back to the event message/code when there is no nested error object', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseStreamResponse([
+      dataFrame({ type: 'error', status_code: 503, message: 'upstream down', code: 'unavailable' }),
+    ]));
+    const result = await runResponses();
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.response.status).toBe(503);
+      const body = await result.response.json() as { error: { message: string; code: string } };
+      expect(body.error).toEqual({ message: 'upstream down', code: 'unavailable' });
+    }
+  });
+
+  test('merges upstream and event headers, stripping hop-by-hop/body-framing and stringifying numbers', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseStreamResponse([
+      dataFrame({
+        type: 'error',
+        status_code: 429,
+        headers: {
+          'x-codex-primary-window-minutes': 15,
+          'retry-after': '30',
+          'content-length': '999',
+          'transfer-encoding': 'chunked',
+        },
+        error: { message: 'rate limited' },
+      }),
+    ], { headers: { 'x-request-id': 'req-123', 'content-encoding': 'gzip' } }));
+    const result = await runResponses();
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.response.headers.get('x-request-id')).toBe('req-123');
+      expect(result.response.headers.get('x-codex-primary-window-minutes')).toBe('15');
+      expect(result.response.headers.get('retry-after')).toBe('30');
+      expect(result.response.headers.get('content-length')).toBeNull();
+      expect(result.response.headers.get('transfer-encoding')).toBeNull();
+      expect(result.response.headers.get('content-encoding')).toBeNull();
+      expect(result.response.headers.get('content-type')).toBe('application/json');
+    }
+  });
+
+  test('an empty stream (no frames) becomes an ok:false 502 JSON', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseStreamResponse([]));
+    const result = await runResponses();
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.response.status).toBe(502);
+      const body = await result.response.json() as { error: { type: string } };
+      expect(body.error.type).toBe('codex_upstream_error');
+    }
+  });
+
+  test('replays a normal first frame exactly once and streams the rest', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseStreamResponse([
+      dataFrame({ type: 'response.created', response: { id: 'resp_1' } }),
+      dataFrame({ type: 'response.output_text.delta', item_id: 'i', output_index: 0, content_index: 0, delta: 'hi' }),
+      'data: [DONE]\n\n',
+    ]));
+    const result = await runResponses();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const types = await collectFrameTypes(result.events);
+      expect(types).toEqual(['response.created', 'response.output_text.delta', 'done']);
+    }
+  });
+
+  test('does not promote a first-frame response.failed envelope', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseStreamResponse([
+      dataFrame({ type: 'response.failed', response: { id: 'r', status: 'failed', output: [], error: { code: 'rate_limit_exceeded', message: 'slow down' } } }),
+    ]));
+    const result = await runResponses();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const types = await collectFrameTypes(result.events);
+      expect(types).toContain('response.failed');
+    }
+  });
+
+  test('does not promote a first-frame response.incomplete envelope', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseStreamResponse([
+      dataFrame({ type: 'response.incomplete', response: { id: 'r', status: 'incomplete', output: [], incomplete_details: { reason: 'max_output_tokens' } } }),
+    ]));
+    const result = await runResponses();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const types = await collectFrameTypes(result.events);
+      expect(types).toContain('response.incomplete');
+    }
+  });
+
+  test('does not promote a first-frame plain error without HTTP metadata', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseStreamResponse([
+      dataFrame({ type: 'error', message: 'mid-stream glitch', code: 'server_error' }),
+    ]));
+    const result = await runResponses();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const types = await collectFrameTypes(result.events);
+      expect(types).toEqual(['error']);
+    }
+  });
+
+  test('does not promote a tunneled error that arrives after a prior frame', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseStreamResponse([
+      dataFrame({ type: 'response.created', response: { id: 'resp_1' } }),
+      dataFrame({ type: 'error', status_code: 500, error: { message: 'late failure' } }),
+    ]));
+    const result = await runResponses();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const types = await collectFrameTypes(result.events);
+      expect(types).toEqual(['response.created', 'error']);
+    }
+  });
+
+  test('propagates client cancellation to the underlying upstream stream', async () => {
+    const onCancel = vi.fn();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseStreamResponse([
+      dataFrame({ type: 'response.created', response: { id: 'resp_1' } }),
+      dataFrame({ type: 'response.output_text.delta', item_id: 'i', output_index: 0, content_index: 0, delta: 'hi' }),
+      dataFrame({ type: 'response.output_text.delta', item_id: 'i', output_index: 0, content_index: 0, delta: 'there' }),
+    ], { onCancel }));
+    const result = await runResponses();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const iterator = result.events[Symbol.asyncIterator]();
+      const first = await iterator.next();
+      expect(first.done).toBe(false);
+      await iterator.return?.();
+      expect(onCancel).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  test('surfaces an error thrown while reading the first frame', async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      pull() { throw new Error('upstream socket blew up'); },
+    });
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(stream, {
+      status: 200, headers: new Headers({ 'content-type': 'text/event-stream' }),
+    }));
+    await expect(runResponses()).rejects.toThrow('upstream socket blew up');
+  });
 });

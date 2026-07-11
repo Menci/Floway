@@ -726,6 +726,23 @@ type ResponsesStreamEventVariant =
     stack?: string;
     cause?: unknown;
     target_api?: string;
+    // Tunneled-HTTP-error extension. The ChatGPT backend's Responses transport
+    // restores an HTTP error that surfaced *after* the response stream already
+    // opened as a single first-frame `error` event carrying the original HTTP
+    // status, response headers, and error body — instead of the standard
+    // `response.failed` envelope. `status` is the canonical key with
+    // `status_code` accepted as an alias; `headers` values arrive as strings or
+    // numbers on the wire. These fields are absent on the standard streaming
+    // `error` event; only the Codex provider boundary reads them, to promote
+    // the frame back to a real HTTP failure.
+    // openai/codex WrappedWebsocketErrorEvent (canonical shape + `status_code`
+    // alias): https://github.com/openai/codex/blob/385c0a9351e2199929e01f7864ec78a8f7d5e580/codex-rs/codex-api/src/endpoint/responses_websocket.rs#L585-L596
+    // caozhiyuan/copilot-api first-frame restoration (commit 141f86fa):
+    // https://github.com/caozhiyuan/copilot-api/blob/0353da479b1612c82629086dccdbca56621e5958/src/services/copilot/create-responses.ts#L411-L423
+    status?: number;
+    status_code?: number;
+    headers?: Record<string, string | number>;
+    error?: unknown;
   }
   | { type: 'ping' };
 

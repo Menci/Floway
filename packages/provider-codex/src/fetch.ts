@@ -15,6 +15,7 @@ import {
 import type { CodexAccountCredential } from './state.ts';
 import type { ResponsesCompactPayload, ResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { parseResponsesStream } from '@floway-dev/protocols/responses';
+import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { type ProviderModel, type ProviderStreamResult, streamingProviderCall, uuidV7, type UpstreamCallOptions } from '@floway-dev/provider';
 
 export type ProviderCompactionResult =
@@ -411,14 +412,167 @@ const performStreamingResponsesCall = async (
 
   const result = await streamingProviderCall(upstreamFetch, parseResponsesStream, opts.model.id, opts.signal);
 
-  if (!result.ok && result.response.status === 401 && !alreadyRetried) {
-    const fresh = await refreshAccessTokenForRetry(opts);
-    if (!fresh.ok) return { ok: false, modelKey: opts.model.id, response: fresh.response };
-    return await performStreamingResponsesCall(opts, fresh.accessToken, true);
+  if (!result.ok) {
+    if (result.response.status === 401 && !alreadyRetried) {
+      const fresh = await refreshAccessTokenForRetry(opts);
+      if (!fresh.ok) return { ok: false, modelKey: opts.model.id, response: fresh.response };
+      return await performStreamingResponsesCall(opts, fresh.accessToken, true);
+    }
+    return result;
   }
 
-  return result;
+  return await promoteTunneledResponsesError(result);
 };
+
+type ResponsesErrorEvent = Extract<ResponsesStreamEvent, { type: 'error' }>;
+
+// Headers that must never survive onto the promoted HTTP response: hop-by-hop
+// (RFC 7230 §6.1) and the body-framing set the streaming layer re-derives. The
+// promoted body is a fresh JSON payload, so the upstream's framing headers
+// would mis-describe it. We deliberately keep everything else — vendor traces,
+// rate-limit counters — so operators see what the tunneled error carried.
+const TUNNELED_ERROR_STRIPPED_HEADERS: ReadonlySet<string> = new Set([
+  'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization',
+  'te', 'trailer', 'transfer-encoding', 'upgrade',
+  'content-length', 'content-encoding', 'content-type',
+]);
+
+// The Codex backend answers 200 + text/event-stream and then, when the real
+// upstream call fails after the stream is already open, tunnels the HTTP error
+// as a first-frame `{ type: 'error', status, headers, error }` event instead of
+// the standard `response.failed` envelope. We restore it to a real ok:false
+// HTTP response here so the gateway's existing candidate fallback treats it
+// like any other upstream failure. Only the FIRST parsed frame is eligible —
+// once a normal frame has been replayed the stream is committed and a later
+// `error` is mid-stream failure that belongs to the client.
+//
+// Standard OpenAI `codex` recognizes this frame only on its WebSocket
+// transport; its plain-SSE handler drops a generic `type: 'error'` into a
+// catch-all and keys failure off `response.failed` / `response.incomplete`.
+// We add the promotion at the SSE boundary so the tunneled error is not lost.
+// caozhiyuan/copilot-api restores the identical first frame (commits 141f86fa
+// / 0034feb9):
+// https://github.com/caozhiyuan/copilot-api/blob/0353da479b1612c82629086dccdbca56621e5958/src/routes/provider/responses/handler.ts#L191-L211
+// openai/codex plain-SSE handler has no generic-error arm:
+// https://github.com/openai/codex/blob/385c0a9351e2199929e01f7864ec78a8f7d5e580/codex-rs/codex-api/src/sse/responses.rs#L466-L468
+//
+// Peeking one frame delays the downstream TTFB to the arrival of the first
+// event; the TTFT output-token metric is unchanged because it stamps on the
+// first output-bearing frame, which is at or after this point either way.
+const promoteTunneledResponsesError = async (
+  result: Extract<ProviderStreamResult<ResponsesStreamEvent>, { ok: true }>,
+): Promise<ProviderStreamResult<ResponsesStreamEvent>> => {
+  const iterator = result.events[Symbol.asyncIterator]();
+  let first: IteratorResult<ProtocolFrame<ResponsesStreamEvent>>;
+  try {
+    first = await iterator.next();
+  } catch (err) {
+    await iterator.return?.();
+    throw err;
+  }
+
+  if (first.done) {
+    await iterator.return?.();
+    return { ok: false, modelKey: result.modelKey, response: emptyResponsesStreamResponse() };
+  }
+
+  const frame = first.value;
+  if (frame.type === 'event' && isTunneledHttpError(frame.event)) {
+    await iterator.return?.();
+    return { ok: false, modelKey: result.modelKey, response: tunneledErrorResponse(frame.event, result.headers) };
+  }
+
+  return {
+    ok: true,
+    modelKey: result.modelKey,
+    events: replayFirstFrame(frame, iterator),
+    ...(result.headers ? { headers: result.headers } : {}),
+  };
+};
+
+// A tunneled HTTP error is distinguished from a normal in-stream `error` event
+// (which carries only `message` / `code`) by the presence of the HTTP-response
+// metadata the backend restores: the status (`status`, canonical, or its
+// `status_code` alias), the response headers, or the nested error body.
+const isTunneledHttpError = (event: ResponsesStreamEvent): event is ResponsesErrorEvent =>
+  event.type === 'error'
+  && (typeof event.status === 'number' || typeof event.status_code === 'number' || isPlainObject(event.headers) || event.error !== undefined);
+
+const tunneledErrorResponse = (event: ResponsesErrorEvent, upstreamHeaders: Headers | undefined): Response =>
+  new Response(tunneledErrorBody(event), {
+    status: tunneledErrorStatus(event),
+    headers: tunneledErrorHeaders(upstreamHeaders, event.headers),
+  });
+
+// The restored status is only trusted when it is a real HTTP error code;
+// anything else (missing, non-integer, out of the 4xx/5xx band) collapses to
+// 502 — the gateway is reporting a failed upstream leg, not a success. The
+// canonical `status` key wins over the `status_code` alias when both appear.
+const tunneledErrorStatus = (event: ResponsesErrorEvent): number => {
+  const raw = typeof event.status === 'number' ? event.status : event.status_code;
+  return typeof raw === 'number' && Number.isInteger(raw) && raw >= 400 && raw <= 599 ? raw : 502;
+};
+
+// Preserve the upstream error body verbatim when it ships a nested `error`
+// object; otherwise rebuild one from the event's own `message` / `code` so the
+// client still receives a well-formed `{ error: { … } }` envelope.
+const tunneledErrorBody = (event: ResponsesErrorEvent): string => {
+  if (isPlainObject(event.error)) return JSON.stringify({ error: event.error });
+  const error: Record<string, unknown> = {};
+  if (typeof event.message === 'string') error.message = event.message;
+  if (typeof event.code === 'string') error.code = event.code;
+  return JSON.stringify({ error });
+};
+
+const tunneledErrorHeaders = (upstreamHeaders: Headers | undefined, eventHeaders: Record<string, string | number> | undefined): Headers => {
+  const headers = new Headers();
+  if (upstreamHeaders) {
+    for (const [name, value] of upstreamHeaders) {
+      if (!TUNNELED_ERROR_STRIPPED_HEADERS.has(name.toLowerCase())) headers.set(name, value);
+    }
+  }
+  // The tunneled headers describe the real failed HTTP response, so they win
+  // over the outer SSE envelope's headers on any collision. Values arrive as
+  // strings or numbers on the wire; stringify before setting.
+  if (isPlainObject(eventHeaders)) {
+    for (const [name, value] of Object.entries(eventHeaders)) {
+      if ((typeof value === 'string' || typeof value === 'number') && !TUNNELED_ERROR_STRIPPED_HEADERS.has(name.toLowerCase())) {
+        headers.set(name, String(value));
+      }
+    }
+  }
+  headers.set('content-type', 'application/json');
+  return headers;
+};
+
+// Re-emits the already-consumed first frame, then delegates to the parser's
+// own iterator. Forwarding `return` keeps client cancellation / abort wired
+// through to the parser generator, so the underlying SSE body is still
+// released when the consumer breaks early.
+const replayFirstFrame = (
+  first: ProtocolFrame<ResponsesStreamEvent>,
+  rest: AsyncIterator<ProtocolFrame<ResponsesStreamEvent>>,
+): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> => ({
+  [Symbol.asyncIterator]() {
+    let replayed = false;
+    return {
+      next: async () => {
+        if (replayed) return await rest.next();
+        replayed = true;
+        return { done: false, value: first };
+      },
+      return: async () => {
+        await rest.return?.();
+        return { done: true, value: undefined };
+      },
+    };
+  },
+});
+
+const emptyResponsesStreamResponse = (): Response => new Response(
+  JSON.stringify({ error: { type: 'codex_upstream_error', message: 'Codex upstream closed the stream without emitting any event' } }),
+  { status: 502, headers: { 'content-type': 'application/json' } },
+);
 
 const performUnaryCompactCall = async (
   opts: CallCodexResponsesCompactOptions,

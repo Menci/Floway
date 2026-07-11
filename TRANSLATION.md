@@ -196,6 +196,19 @@ inline and rebuilds the envelope client-side).
   `(instructions + first user-message text)` so the upstream prompt cache
   hits across turns of the same conversation (~88% input-token cache hit
   measured against gpt-5.4)
+- promotes a tunneled HTTP error back to a real failure. The Codex backend
+  answers `200 text/event-stream` and, when the call fails after the stream
+  is open, emits a first-frame `{ type: "error", status, headers, error }`
+  event instead of `response.failed`. The provider peeks exactly the first
+  parsed frame: an empty stream becomes `502`; a first-frame tunneled error
+  becomes an `ok:false` HTTP response (status from `status`/`status_code`
+  when a valid `400..599`, else `502`; body preserving the upstream error;
+  headers merged from the upstream response and the event, minus hop-by-hop
+  and body-framing), which flows into the normal candidate fallback. A
+  normal first frame is replayed unchanged. Only the first frame is
+  eligible — a later `error` is mid-stream failure owned by the client. The
+  one-frame lookahead delays downstream TTFB to the first event; the TTFT
+  output-token metric is unchanged.
 
 ### Chat Completions — gateway interceptors
 
