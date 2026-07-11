@@ -14,6 +14,7 @@
     "lint": "cross-env NODE_OPTIONS=\"--max-old-space-size=8192\" eslint --cache .",
     "lint:fix": "cross-env NODE_OPTIONS=\"--max-old-space-size=8192\" eslint --cache . --fix",
     "test": "cross-env NODE_OPTIONS=\"--max-old-space-size=8192\" vitest run",
+    "test:agent-setup-installers": "jiti scripts/test-agent-setup-installers.ts",
     "typecheck": "pnpm -r run typecheck",
     "prepare": "husky"
   },
