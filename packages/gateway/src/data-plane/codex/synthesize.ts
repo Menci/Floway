@@ -31,20 +31,10 @@
 //      modality list so they cannot drift from it.
 //   6. `supported_reasoning_levels` / `default_reasoning_level` — same
 //      `chat.reasoning.effort ?? source's` precedence as the modalities.
-//   7. `supports_reasoning_summaries` — forced `true` when the registry
-//      declares effort tiers (the model reasons, so codex must render its
-//      summary stream); otherwise the source's value rides through.
-//   8. `visibility` / `supported_in_api` — always forced to `'list'` /
-//      `true`. Every registry chat model we surface is meant to be pickable
-//      and API-usable, so a bundled source's hidden state (e.g.
-//      codex-auto-review's `visibility: 'hide'`) must not leak through.
 //
 // Fields not listed above ride through from `source` unchanged: the base
 // pass supplies bundled defaults for bundled-hit and hardcoded baselines
-// for the miss path. `priority` is one such ride-through here — an exact
-// bundled match keeps its native priority, while the deterministic
-// variant / unrelated bands are assigned by the caller (models.ts) across
-// the whole catalog.
+// for the miss path.
 
 import type { CatalogModel } from './catalog.ts';
 import { synthesizedBaseInstructions } from './synthesized-base-instructions.ts';
@@ -161,23 +151,14 @@ export const synthesizeCatalogEntry = (model: InternalModel, base?: CatalogModel
     service_tiers: deriveServiceTiers(model),
     context_window: contextWindow,
     max_context_window: maxContextWindow,
-    // Every registry chat model we surface is meant to be picked in codex and
-    // usable over the API. A bundled source may ship `visibility: 'hide'`
-    // (e.g. codex-auto-review) or an unusual `supported_in_api`; force both so
-    // that hidden state never rides through onto a registry-addressable model.
-    visibility: 'list',
-    supported_in_api: true,
   };
 
   // `default_reasoning_level` pairs with `supported_reasoning_levels` — both
   // come from the same source. When registry supplied `effort`, its schema
-  // requires both fields together, and the model demonstrably reasons, so its
-  // catalog entry must also advertise reasoning summaries; otherwise the
-  // bundled pair (and the source's summary capability) ride through from the
-  // spread untouched.
+  // requires both fields together; otherwise the bundled pair rides through
+  // from the spread untouched.
   if (registryEffort !== undefined) {
     entry.default_reasoning_level = registryEffort.default;
-    entry.supports_reasoning_summaries = true;
   }
 
   // Miss-path `base_instructions` names the underlying model id so
