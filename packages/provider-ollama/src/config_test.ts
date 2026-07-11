@@ -71,23 +71,23 @@ test('assertOllamaUpstreamRecord rejects a missing base URL', () => {
 
 test('pricingForOllamaModelKey returns table rates for known model ids', () => {
   const gptOss = pricingForOllamaModelKey('gpt-oss:120b');
-  assertEquals(gptOss?.input, 0.15);
-  assertEquals(gptOss?.output, 0.6);
+  assertEquals(gptOss?.cells[0]?.rates.input, 0.15);
+  assertEquals(gptOss?.cells[0]?.rates.output, 0.6);
 });
 
 test('pricingForOllamaModelKey matches regex-keyed families', () => {
   // GLM 5 split: bare `glm-5` is cheaper than `glm-5.1` / `glm-5.2`.
-  assertEquals(pricingForOllamaModelKey('glm-5')?.input, 1.0);
-  assertEquals(pricingForOllamaModelKey('glm-5')?.output, 3.2);
-  assertEquals(pricingForOllamaModelKey('glm-5.1')?.input, 1.4);
-  assertEquals(pricingForOllamaModelKey('glm-5.2')?.output, 4.4);
+  assertEquals(pricingForOllamaModelKey('glm-5')?.cells[0]?.rates.input, 1.0);
+  assertEquals(pricingForOllamaModelKey('glm-5')?.cells[0]?.rates.output, 3.2);
+  assertEquals(pricingForOllamaModelKey('glm-5.1')?.cells[0]?.rates.input, 1.4);
+  assertEquals(pricingForOllamaModelKey('glm-5.2')?.cells[0]?.rates.output, 4.4);
 
   // MiniMax split: m2 / m2.1 / m2.5 carry cache_read 0.03; m2.7 / m3 carry
   // cache_read 0.06. Input/output are identical across both branches.
-  assertEquals(pricingForOllamaModelKey('minimax-m2.1')?.input_cache_read, 0.03);
-  assertEquals(pricingForOllamaModelKey('minimax-m2.5')?.input_cache_read, 0.03);
-  assertEquals(pricingForOllamaModelKey('minimax-m2.7')?.input_cache_read, 0.06);
-  assertEquals(pricingForOllamaModelKey('minimax-m3')?.input_cache_read, 0.06);
+  assertEquals(pricingForOllamaModelKey('minimax-m2.1')?.cells[0]?.rates.input_cache_read, 0.03);
+  assertEquals(pricingForOllamaModelKey('minimax-m2.5')?.cells[0]?.rates.input_cache_read, 0.03);
+  assertEquals(pricingForOllamaModelKey('minimax-m2.7')?.cells[0]?.rates.input_cache_read, 0.06);
+  assertEquals(pricingForOllamaModelKey('minimax-m3')?.cells[0]?.rates.input_cache_read, 0.06);
 });
 
 test('pricingForOllamaModelKey returns null for ids without a defensible reference', () => {

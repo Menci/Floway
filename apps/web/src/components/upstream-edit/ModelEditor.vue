@@ -86,6 +86,7 @@ const pricingCellDraftsFor = (cost: ModelPricing | undefined): PricingCellDraft[
   }));
 
 const pricingCellDrafts = ref<PricingCellDraft[]>(pricingCellDraftsFor(config.value?.cost));
+const lastFlagOverrides = ref<FlagOverrides>({});
 
 const coordinateKey = (draft: PricingCellDraft): string =>
   `${draft.serviceTier.trim()}\0${draft.inputAboveTokens ?? ''}`;

@@ -101,7 +101,7 @@ test('getProvidedModels remembers pricing from the fetched response so getPricin
   const record = buildCustomUpstream();
   const instance = createCustomProvider(record);
 
-  const upstreamCost: ModelPricing = { input: 3, output: 12 };
+  const upstreamCost: ModelPricing = { cells: [{ rates: { input: 3, output: 12 } }] };
   await withMockedFetch(
     () => jsonResponse({
       object: 'list',
@@ -117,7 +117,7 @@ test('getProvidedModels remembers pricing from the fetched response so getPricin
 });
 
 test('A manual model whose upstreamModelId matches an auto-fetched id overrides the auto entry', async () => {
-  const manualCost: ModelPricing = { input: 1, output: 2 };
+  const manualCost: ModelPricing = { cells: [{ rates: { input: 1, output: 2 } }] };
   const record = buildCustomUpstream({
     models: [
       {
@@ -135,7 +135,7 @@ test('A manual model whose upstreamModelId matches an auto-fetched id overrides 
     () => jsonResponse({
       object: 'list',
       data: [
-        { id: 'shared-id', display_name: 'Auto Version', cost: { input: 99, output: 99 } },
+        { id: 'shared-id', display_name: 'Auto Version', cost: { cells: [{ rates: { input: 99, output: 99 } }] } },
         { id: 'auto-only' },
       ],
     }),

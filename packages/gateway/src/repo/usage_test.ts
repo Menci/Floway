@@ -4,7 +4,7 @@ import { InMemoryRepo } from './memory.ts';
 import { SqlRepo } from './sql.ts';
 import { createSqliteTestDb } from './test-sqlite.ts';
 import type { Repo, UsageRecord } from './types.ts';
-import type { ModelPricing } from '@floway-dev/protocols/common';
+import type { PriceVector } from '@floway-dev/protocols/common';
 import { assertEquals } from '@floway-dev/test-utils';
 
 // The usage repo threads the (service tier × input length) grid coordinate
@@ -17,16 +17,7 @@ const backends: { name: string; make: () => Promise<Repo> }[] = [
   { name: 'memory', make: () => Promise.resolve(new InMemoryRepo()) },
 ];
 
-// A (service tier × input length) grid, modeled after GPT-5.6 Sol.
-const gridPricing: ModelPricing = {
-  input: 5, input_cache_read: 0.5, output: 30,
-  tiers: { priority: { input: 10, input_cache_read: 1, output: 60 } },
-  inputLengthTiers: [{
-    aboveInputTokens: 272000,
-    input: 10, input_cache_read: 1, output: 45,
-    tiers: { priority: { input: 20, input_cache_read: 2, output: 90 } },
-  }],
-};
+const longPricing: PriceVector = { input: 10, input_cache_read: 1, output: 45 };
 
 const record = (overrides: Partial<UsageRecord>): UsageRecord => ({
   keyId: 'key-1',
@@ -38,7 +29,7 @@ const record = (overrides: Partial<UsageRecord>): UsageRecord => ({
   inputAboveTokens: null,
   requests: 1,
   tokens: { input: 300_000, input_cache_read: 20_000, output: 100_000 },
-  cost: gridPricing,
+  cost: longPricing,
   ...overrides,
 });
 
@@ -57,7 +48,7 @@ for (const backend of backends) {
 
   test(`${backend.name} usage repo keeps different input-length bands in separate buckets`, async () => {
     const repo = await backend.make();
-    await repo.usage.record(record({ inputAboveTokens: null, tokens: { input: 100, input_cache_read: 20, output: 50 } }));
+    await repo.usage.record(record({ cost: { input: 5, input_cache_read: 0.5, output: 30 }, inputAboveTokens: null, tokens: { input: 100, input_cache_read: 20, output: 50 } }));
     await repo.usage.record(record({ inputAboveTokens: 272000, tokens: { input: 300_000, input_cache_read: 20_000, output: 100_000 } }));
     const rows = (await query(repo)).sort((a, b) => (a.inputAboveTokens ?? 0) - (b.inputAboveTokens ?? 0));
     assertEquals(rows.length, 2);
@@ -79,12 +70,7 @@ for (const backend of backends) {
 
   test(`${backend.name} usage repo stores a missing (service tier × input length) combination as unpriced`, async () => {
     const repo = await backend.make();
-    const partialGrid: ModelPricing = {
-      input: 5, output: 30,
-      tiers: { priority: { input: 10, output: 60 } },
-      inputLengthTiers: [{ aboveInputTokens: 272000, input: 10, output: 45 }],
-    };
-    await repo.usage.record(record({ cost: partialGrid, tier: 'priority', inputAboveTokens: 272000 }));
+    await repo.usage.record(record({ cost: null, tier: 'priority', inputAboveTokens: 272000 }));
     const [row] = await query(repo);
     // No priority-long cell exists, so no dimension resolves a unit price.
     assertEquals(row.cost, null);

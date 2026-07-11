@@ -2,11 +2,11 @@ import { test } from 'vitest';
 
 import { aggregateUsageForDisplay } from './aggregate.ts';
 import type { UsageRecord } from '../../repo/types.ts';
-import type { ModelPricing } from '@floway-dev/protocols/common';
+import type { PriceVector } from '@floway-dev/protocols/common';
 import { assertAlmostEquals, assertEquals } from '@floway-dev/test-utils';
 
-const opus47Pricing: ModelPricing = { input: 5, output: 25, input_cache_read: 0.5, input_cache_write: 6.25 };
-const gpt54Pricing: ModelPricing = { input: 2.5, output: 15, input_cache_read: 0.25 };
+const opus47Pricing: PriceVector = { input: 5, output: 25, input_cache_read: 0.5, input_cache_write: 6.25 };
+const gpt54Pricing: PriceVector = { input: 2.5, output: 15, input_cache_read: 0.25 };
 
 const baseRecord = (overrides: Partial<UsageRecord>): UsageRecord => ({
   keyId: 'key-1',
@@ -69,7 +69,7 @@ test('aggregateUsageForDisplay treats null cost as zero', () => {
 });
 
 test('aggregateUsageForDisplay falls back to the input rate when input_cache_read has no dedicated price', () => {
-  const cost: ModelPricing = { input: 4, output: 8 };
+  const cost: PriceVector = { input: 4, output: 8 };
   const out = aggregateUsageForDisplay([
     baseRecord({ cost, tokens: { input: 500_000, input_cache_read: 500_000 } }),
   ]);
@@ -78,7 +78,7 @@ test('aggregateUsageForDisplay falls back to the input rate when input_cache_rea
 });
 
 test('aggregateUsageForDisplay charges image dimensions separately', () => {
-  const cost: ModelPricing = { input: 10, input_image: 5, output: 40, output_image: 30 };
+  const cost: PriceVector = { input: 10, input_image: 5, output: 40, output_image: 30 };
   const out = aggregateUsageForDisplay([
     baseRecord({ cost, tokens: { input: 1_000_000, input_image: 1_000_000, output: 1_000_000, output_image: 1_000_000 } }),
   ]);
@@ -113,51 +113,17 @@ test('aggregateUsageForDisplay reads unit prices from the already-folded cost th
   assertAlmostEquals(standardOut[0].cost, 30, 1e-9);
 });
 
-// A (service tier × input length) grid, modeled after GPT-5.6 Sol.
-const gridPricing: ModelPricing = {
-  input: 5, input_cache_read: 0.5, output: 30,
-  tiers: { priority: { input: 10, input_cache_read: 1, output: 60 } },
-  inputLengthTiers: [{
-    aboveInputTokens: 272000,
-    input: 10, input_cache_read: 1, output: 45,
-    tiers: { priority: { input: 20, input_cache_read: 2, output: 90 } },
-  }],
-};
-
-test('aggregateUsageForDisplay charges the whole request at the selected input-length cell, not a marginal overage', () => {
-  // 300k input tokens crossed the 272k band, so the entire 300k is charged at
-  // the long rate ($10/MTok) — not 272k at $5 plus a 28k overage at $10.
+test('aggregateUsageForDisplay charges the whole request at the selected cell, not a marginal overage', () => {
   const out = aggregateUsageForDisplay([
-    baseRecord({ cost: gridPricing, tier: null, inputAboveTokens: 272000, tokens: { input: 300_000, output: 100_000 } }),
+    baseRecord({ cost: { input: 10, output: 45 }, inputAboveTokens: 272000, tokens: { input: 300_000, output: 100_000 } }),
   ]);
-  // 300k * $10 + 100k * $45 = 3 + 4.5 = 7.5.
-  assertAlmostEquals(out[0].cost, 3 + 4.5, 1e-9);
+  assertAlmostEquals(out[0].cost, 7.5, 1e-9);
 });
 
-test('aggregateUsageForDisplay prices the base band lower for the same token counts', () => {
+test('aggregateUsageForDisplay prices different resolved selector snapshots independently', () => {
   const out = aggregateUsageForDisplay([
-    baseRecord({ cost: gridPricing, tier: null, inputAboveTokens: null, tokens: { input: 300_000, output: 100_000 } }),
+    baseRecord({ cost: { input: 5, output: 30 }, tokens: { input: 300_000, output: 100_000 } }),
+    baseRecord({ cost: { input: 20, output: 90 }, tier: 'priority', inputAboveTokens: 272000, tokens: { input: 300_000, output: 100_000 } }),
   ]);
-  // 300k * $5 + 100k * $30 = 1.5 + 3 = 4.5.
-  assertAlmostEquals(out[0].cost, 1.5 + 3, 1e-9);
-});
-
-test('aggregateUsageForDisplay charges the explicit priority-long cell for a two-non-default-selector request', () => {
-  const out = aggregateUsageForDisplay([
-    baseRecord({ cost: gridPricing, tier: 'priority', inputAboveTokens: 272000, tokens: { input: 300_000, output: 100_000 } }),
-  ]);
-  // 300k * $20 + 100k * $90 = 6 + 9 = 15.
-  assertAlmostEquals(out[0].cost, 6 + 9, 1e-9);
-});
-
-test('aggregateUsageForDisplay treats a missing (service tier × input length) combination as unpriced (cost 0)', () => {
-  const partialGrid: ModelPricing = {
-    input: 5, output: 30,
-    tiers: { priority: { input: 10, output: 60 } },
-    inputLengthTiers: [{ aboveInputTokens: 272000, input: 10, output: 45 }],
-  };
-  const out = aggregateUsageForDisplay([
-    baseRecord({ cost: partialGrid, tier: 'priority', inputAboveTokens: 272000, tokens: { input: 300_000, output: 100_000 } }),
-  ]);
-  assertAlmostEquals(out[0].cost, 0, 1e-9);
+  assertAlmostEquals(out[0].cost, 4.5 + 15, 1e-9);
 });

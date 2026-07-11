@@ -38,9 +38,9 @@ for (const [modelKey, cells] of Object.entries(CODEX_GPT_5_6_GRID)) {
     assertEquals(resolveEffectivePricing(pricing, 'priority', 272000), cells.priorityLong);
   });
 
-  test(`Codex ${modelKey} declares its long band at aboveInputTokens 272000`, () => {
+  test(`Codex ${modelKey} declares both explicit inputAboveTokens 272000 cells`, () => {
     const pricing = pricingForCodexModelKey(modelKey);
-    assertEquals(pricing?.inputLengthTiers?.map(t => t.aboveInputTokens), [272000]);
+    assertEquals(pricing?.cells.filter(cell => cell.selector?.inputAboveTokens === 272000).length, 2);
   });
 }
 
