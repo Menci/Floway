@@ -9,4 +9,5 @@ export { translateGeminiViaResponses } from './gemini-via-responses/translate.ts
 export { translateGeminiViaChatCompletions } from './gemini-via-chat-completions/translate.ts';
 
 export type { TranslatedApiError, TranslationContext } from './types.ts';
+export { requiresNativeResponses } from './shared/responses-via/programmatic-tooling.ts';
 export { TranslatorInputError } from './translator-input-error.ts';

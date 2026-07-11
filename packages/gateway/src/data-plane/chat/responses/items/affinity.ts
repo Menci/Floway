@@ -26,9 +26,21 @@ const classifyStoredResponsesAffinity = (
 ): StoredResponsesAffinity => {
   if (itemType === 'item_reference' && row.payload === null) return 'forcing';
   if (!isUpstreamOwned(row)) return 'non_affinity';
-  if (row.itemType === 'compaction') return 'forcing';
+  if (row.itemType === 'compaction' || row.itemType === 'program' || row.itemType === 'program_output') return 'forcing';
+  if (hasProgramCaller(row)) return 'forcing';
   if (row.itemType === 'reasoning') return 'downgradable';
   return 'portable';
+};
+
+const hasProgramCaller = (row: StoredResponsesItem): boolean => {
+  const item = row.payload?.item;
+  return typeof item === 'object'
+    && item !== null
+    && 'caller' in item
+    && typeof item.caller === 'object'
+    && item.caller !== null
+    && 'type' in item.caller
+    && item.caller.type === 'program';
 };
 
 const collectForcingUpstreams = (

@@ -86,6 +86,17 @@ test('translateResponsesToMessages rejects nested namespace programmatic callers
   );
 });
 
+test('translateResponsesToMessages rejects multimodal custom tool output', async () => {
+  await assertRejects(
+    () => translateResponsesToMessages({
+      ...minimalPayload,
+      input: [{ type: 'custom_tool_call_output', call_id: 'call_1', output: [{ type: 'input_file', file_id: 'file_1' }] }],
+    }),
+    Error,
+    'multimodal custom_tool_call_output',
+  );
+});
+
 // ── service_tier → speed mapping ──
 
 test('translateResponsesToMessages maps service_tier:fast to speed:fast (no service_tier on target)', async () => {

@@ -1,6 +1,18 @@
 import { TranslatorInputError } from '../../translator-input-error.ts';
 import type { ResponsesInputItem, ResponsesPayload } from '@floway-dev/protocols/responses';
 
+export const requiresNativeResponses = (payload: ResponsesPayload): boolean => {
+  const toolChoice = payload.tool_choice;
+  return Array.isArray(payload.input) && payload.input.some(item =>
+    item.type === 'additional_tools'
+    || item.type === 'program'
+    || item.type === 'program_output'
+    || isProgramCaller(item))
+    || payload.tools?.some(hasProgrammaticCaller) === true
+    || payload.tools?.some(hasDeferredTool) === true
+    || toolChoice !== null && typeof toolChoice === 'object' && toolChoice.type === 'programmatic_tool_calling';
+};
+
 export const rejectProgrammaticResponsesPayload = (payload: ResponsesPayload, target: string): void => {
   const toolChoice = payload.tool_choice;
   if (payload.tools?.some(hasProgrammaticCaller) === true || (toolChoice !== null && typeof toolChoice === 'object' && toolChoice.type === 'programmatic_tool_calling')) {
@@ -26,14 +38,15 @@ const hasDeferredTool = (tool: unknown): boolean => {
   return Array.isArray(record.tools) && record.tools.some(hasDeferredTool);
 };
 
+const isProgramCaller = (item: ResponsesInputItem): item is Extract<ResponsesInputItem, { call_id: string }> & { caller: { type: 'program'; caller_id: string } } =>
+  (item.type === 'function_call'
+    || item.type === 'function_call_output'
+    || item.type === 'custom_tool_call'
+    || item.type === 'custom_tool_call_output')
+  && item.caller?.type === 'program';
+
 export const rejectProgramCaller = (item: ResponsesInputItem): void => {
-  if (
-    (item.type === 'function_call'
-      || item.type === 'function_call_output'
-      || item.type === 'custom_tool_call'
-      || item.type === 'custom_tool_call_output')
-    && item.caller?.type === 'program'
-  ) {
+  if (isProgramCaller(item)) {
     throw new TranslatorInputError(`Cannot translate ${item.type} '${item.call_id}' with a program caller.`);
   }
 };

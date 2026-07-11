@@ -131,6 +131,18 @@ export interface ResponsesInputImage {
   detail: 'auto' | 'low' | 'high';
 }
 
+export type ResponsesToolOutputContent = ResponsesInputText | ResponsesInputImage | ResponsesInputFile;
+
+export interface ResponsesInputFile {
+  type: 'input_file';
+  detail?: 'auto' | 'low' | 'high';
+  file_data?: string;
+  file_id?: string | null;
+  file_url?: string;
+  filename?: string;
+  [key: string]: unknown;
+}
+
 export interface ResponsesInputReasoning {
   type: 'reasoning';
   id: string;
@@ -187,7 +199,7 @@ export interface ResponsesCustomToolCallItem {
 export interface ResponsesCustomToolCallOutputItem {
   type: 'custom_tool_call_output';
   call_id: string;
-  output: string;
+  output: string | ResponsesToolOutputContent[];
   id?: string;
   status?: string;
   caller?: ResponsesToolCaller | null;
@@ -361,6 +373,7 @@ export interface ResponsesFunctionTool {
   description?: string;
   allowed_callers?: ResponsesToolAllowedCaller[] | null;
   defer_loading?: boolean;
+  output_schema?: Record<string, unknown> | null;
 }
 
 // Codex and other Responses clients ship hosted server tools (web_search,

@@ -189,6 +189,9 @@ export const translateResponsesToChatCompletions = (payload: ResponsesPayload): 
       }
 
       if (item.type === 'custom_tool_call_output') {
+        if (typeof item.output !== 'string') {
+          throw new TranslatorInputError(`Cannot translate multimodal custom_tool_call_output '${item.call_id}'.`);
+        }
         flushAssistant();
         messages.push({
           role: 'tool',

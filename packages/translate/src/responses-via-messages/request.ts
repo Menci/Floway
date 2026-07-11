@@ -242,6 +242,9 @@ const translateResponsesInput = async (input: string | ResponsesInputItem[], loa
       });
       break;
     case 'custom_tool_call_output':
+      if (typeof item.output !== 'string') {
+        throw new TranslatorInputError(`Cannot translate multimodal custom_tool_call_output '${item.call_id}'.`);
+      }
       appendUserBlock(messages, {
         type: 'tool_result',
         tool_use_id: item.call_id,
