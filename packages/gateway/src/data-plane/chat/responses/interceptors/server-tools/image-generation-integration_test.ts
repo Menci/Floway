@@ -299,6 +299,22 @@ test('maps and restores a forced hosted image_generation choice across the demot
   assertEquals(completed.response.tool_choice, hostedChoice);
 });
 
+test('restores a forced image namespace choice when the terminal upstream envelope omits tool_choice', async () => {
+  stub.nextGenerations = [jsonResponse('R0VO')];
+  const namespaceChoice = { type: 'namespace', name: 'image_gen' } as ResponsesToolChoice;
+  const invocation = makeCtxWithTools([], [codexImageNamespace], namespaceChoice);
+  const replacement = { type: 'function', name: SHIM_TOOL_NAME, parameters: {}, strict: false } as ResponsesTool;
+  const result = await shim(invocation, gatewayCtx(), scriptedRun([
+    withResponseEcho(callTurn(0, 'call_1', 'a cat'), [replacement], { type: 'function', name: SHIM_TOOL_NAME }),
+    withResponseEcho(messageTurn('done'), [replacement]),
+  ]));
+  const events = await drain(result);
+
+  const completed = events.find(e => e.type === 'response.completed');
+  assert(completed?.type === 'response.completed');
+  assertEquals(completed.response.tool_choice, namespaceChoice);
+});
+
 test('resolves a client function-name collision while keeping the image namespace internal name off the wire', async () => {
   stub.nextGenerations = [jsonResponse('R0VO')];
   const clientFunction = { type: 'function', name: SHIM_TOOL_NAME, parameters: {}, strict: false } as ResponsesTool;
