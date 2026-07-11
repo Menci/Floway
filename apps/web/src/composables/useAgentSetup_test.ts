@@ -278,8 +278,8 @@ describe('useAgentSetup — debounced serialized saves', () => {
     const { records, setup } = await startInitialized();
     expect(setup.canCopy.value).toBe(true);
 
-    // Task 6 may bind controls directly to nested draft fields. The deep watcher
-    // owns dirtying and autosave; callers do not need to remember save().
+    // A control bound directly to a nested draft field dirties and autosaves
+    // through the deep watcher; callers do not need to remember save().
     setup.draft.value!.claudeCode.effortLevel = 'high';
     expect(setup.syncing.value).toBe(true);
     expect(setup.canCopy.value).toBe(false);

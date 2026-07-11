@@ -1,9 +1,8 @@
 <script setup lang="ts">
-// One copyable setup command (shell or PowerShell). The command body carries the
-// user's long-lived API key indirectly through a five-minute setup link, so the
-// copy affordance stays a first-class, persistent button rather than the Code
-// block's hover-only one — it must remain visible while disabled so the card can
-// gate it during a draft sync, an expired lease, or a superseded session.
+// One copyable setup command (shell or PowerShell). The copy affordance is a
+// persistent, first-class button rather than the Code block's hover-only one so
+// it can stay visible while disabled — the card gates it during a draft sync, an
+// expired lease, or a superseded session.
 import { onScopeDispose, ref } from 'vue';
 
 import { Button, Code } from '@floway-dev/ui';

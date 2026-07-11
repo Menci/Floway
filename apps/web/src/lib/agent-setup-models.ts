@@ -1,11 +1,11 @@
-// Pure model-selection helpers for the Agent Setup page. Every selector retains
+// Pure model-selection helpers for the Agent Setup card. Every selector retains
 // the full addressable chat catalog; family matching only re-orders it so the
 // agent's own family surfaces first. Model ids and Codex reasoning-effort values
 // stay opaque — nothing here narrows a protocol slot to a fixed vendor family.
 
 import type { PublicModel, PublicModelLimits } from '../api/types.ts';
 
-export type AgentFamily = 'claude' | 'codex';
+type AgentFamily = 'claude' | 'codex';
 
 // A model select binds v-model to this `value`. The empty sentinel maps to the
 // configuration's `null` ("no override"); a real option carries the id in the
@@ -15,7 +15,6 @@ export const MODEL_OVERRIDE_NONE = '';
 
 export interface ModelOption {
   value: string;
-  // The raw, opaque model id for display, or null for the "no override" option.
   modelId: string | null;
   unavailable: boolean;
 }
@@ -59,11 +58,10 @@ const ONE_MILLION_CONTEXT_TOKENS = 1_000_000;
 // Claude Code opts a session into a model's one-million-token window through a
 // `[1m]` id suffix, so the suffix is baked into the persisted override the moment
 // a one-million-token model is selected while the picker keeps showing the raw
-// id. Family-agnostic: the caller decides which ids are Claude models; this reads
-// only the advertised context. The browser is the single place this suffix is
-// applied — at selection time — while the gateway treats the persisted id as
-// opaque and renders it verbatim. Ref: https://code.claude.com/docs/en/model-config
-export const applyClaudeContextSuffix = (modelId: string, limits: PublicModelLimits): string => {
+// id. The browser is the single place this suffix is applied — at selection time
+// — while the gateway treats the persisted id as opaque and renders it verbatim.
+// Ref: https://code.claude.com/docs/en/model-config
+const applyClaudeContextSuffix = (modelId: string, limits: PublicModelLimits): string => {
   const contextWindow = limits.max_context_window_tokens
     ?? (limits.max_prompt_tokens ?? 0) + (limits.max_output_tokens ?? 0);
   return contextWindow >= ONE_MILLION_CONTEXT_TOKENS && !modelId.endsWith('[1m]')
@@ -106,8 +104,7 @@ export const codexEffortSuggestions = (model: PublicModel | null | undefined): s
   return supported ? [...supported] : [];
 };
 
-// Normalize a Codex effort text input into its persisted form: only the exact
-// empty UI sentinel clears the override. Every nonempty upstream-owned value —
-// including surrounding whitespace — is preserved byte-for-byte.
+// Only the exact empty UI sentinel clears the override; every nonempty
+// upstream-owned value — including surrounding whitespace — is preserved verbatim.
 export const normalizeEffortInput = (value: string): string | null =>
   value === '' ? null : value;

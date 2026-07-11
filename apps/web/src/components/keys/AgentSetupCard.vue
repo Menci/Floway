@@ -11,7 +11,6 @@ import AgentSetupCommand from './AgentSetupCommand.vue';
 import { useApi } from '../../api/client.ts';
 import type { ControlPlaneModel } from '../../api/types.ts';
 import { type AgentSetupConfiguration, useAgentSetup } from '../../composables/useAgentSetup.ts';
-import { buildPowerShellSetupCommand, buildShellSetupCommand } from '../../lib/agent-setup-command.ts';
 import {
   buildModelOptions,
   codexEffortSuggestions,
@@ -138,10 +137,20 @@ const codexEffort = computed<string>({
   set: value => { if (draft.value) draft.value.codex.reasoningEffort = normalizeEffortInput(value); },
 });
 
+// The gateway never learns its own public origin, so each command injects this
+// dashboard's origin into the shell that runs the fetched installer and points
+// the fetch at that same variable — the origin literal appears exactly once.
+// `window.location.origin` is well-formed and carries no shell metacharacters,
+// yet it is still emitted as a single-quoted literal (POSIX escapes an embedded
+// quote by close/backslash/reopen; PowerShell doubles it) so it can never break
+// out of the assignment.
 const origin = window.location.origin;
-const shellCommand = computed(() => (scripts.value ? buildShellSetupCommand(origin, scripts.value.sh) : ''));
-const powerShellCommand = computed(() => (scripts.value ? buildPowerShellSetupCommand(origin, scripts.value.ps1) : ''));
-const copyDisabled = computed(() => !canCopy.value);
+const shellCommand = computed(() => (scripts.value
+  ? `export FLOWAY_BASE_URL='${origin.replace(/'/g, "'\\''")}'; curl -fsSL "$FLOWAY_BASE_URL${scripts.value.sh}" | bash`
+  : ''));
+const powerShellCommand = computed(() => (scripts.value
+  ? `$FlowayBaseUrl = '${origin.replace(/'/g, "''")}'; irm "$FlowayBaseUrl${scripts.value.ps1}" | iex`
+  : ''));
 </script>
 
 <template>
@@ -257,8 +266,8 @@ const copyDisabled = computed(() => !canCopy.value);
         <p class="text-[11px] text-gray-600">
           These commands install the selected agents and point them at this gateway. The setup link refreshes automatically while this page stays open and expires a few minutes after you leave.
         </p>
-        <AgentSetupCommand label="macOS · Linux · WSL" :command="shellCommand" language="bash" :disabled="copyDisabled" />
-        <AgentSetupCommand label="Windows PowerShell" :command="powerShellCommand" language="text" :disabled="copyDisabled" />
+        <AgentSetupCommand label="macOS · Linux · WSL" :command="shellCommand" language="bash" :disabled="!canCopy" />
+        <AgentSetupCommand label="Windows PowerShell" :command="powerShellCommand" language="text" :disabled="!canCopy" />
       </div>
     </template>
   </section>

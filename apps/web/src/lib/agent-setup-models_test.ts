@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  applyClaudeContextSuffix,
   buildModelOptions,
   codexEffortSuggestions,
   MODEL_OVERRIDE_NONE,
@@ -111,25 +110,6 @@ describe('rankAgentSetupModels', () => {
   });
 });
 
-describe('applyClaudeContextSuffix', () => {
-  it('appends [1m] once a model advertises a one-million-token window', () => {
-    expect(applyClaudeContextSuffix('claude-sonnet-4-5', { max_context_window_tokens: 1_000_000 }))
-      .toBe('claude-sonnet-4-5[1m]');
-  });
-
-  it('sums split prompt/output caps when no combined window is published', () => {
-    expect(applyClaudeContextSuffix('claude-sonnet-4-5', { max_prompt_tokens: 900_000, max_output_tokens: 100_000 }))
-      .toBe('claude-sonnet-4-5[1m]');
-  });
-
-  it('leaves smaller windows untouched and never double-suffixes', () => {
-    expect(applyClaudeContextSuffix('claude-sonnet-4-5', { max_context_window_tokens: 200_000 }))
-      .toBe('claude-sonnet-4-5');
-    expect(applyClaudeContextSuffix('claude-sonnet-4-5[1m]', { max_context_window_tokens: 1_000_000 }))
-      .toBe('claude-sonnet-4-5[1m]');
-  });
-});
-
 describe('buildModelOptions', () => {
   it('always exposes a nullable "no override" option first', () => {
     const options = buildModelOptions([buildRealModel({ id: 'claude-sonnet-4-5' })], null, 'claude');
@@ -154,6 +134,20 @@ describe('buildModelOptions', () => {
     expect(options.slice(1)).toEqual([
       { value: 'gpt-5-codex', modelId: 'gpt-5-codex', unavailable: false },
     ]);
+  });
+
+  it('sums split prompt/output caps when no combined window is published, then applies [1m]', () => {
+    const options = buildModelOptions([
+      buildRealModel({ id: 'claude-sonnet-4-5', limits: { max_prompt_tokens: 900_000, max_output_tokens: 100_000 } }),
+    ], null, 'claude');
+    expect(options[1]).toEqual({ value: 'claude-sonnet-4-5[1m]', modelId: 'claude-sonnet-4-5', unavailable: false });
+  });
+
+  it('never double-suffixes a catalog id that already carries [1m]', () => {
+    const options = buildModelOptions([
+      buildRealModel({ id: 'claude-sonnet-4-5[1m]', limits: { max_context_window_tokens: 1_000_000 } }),
+    ], null, 'claude');
+    expect(options[1]!.value).toBe('claude-sonnet-4-5[1m]');
   });
 
   it('preserves a restored value missing from the catalog as an unavailable-current option', () => {
