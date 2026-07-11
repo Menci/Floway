@@ -43,12 +43,14 @@ _C_GRAY=$'\033[90m'
 _C_RESET=$'\033[0m'
 
 # Emit one line to a stream, wrapping it in an ANSI color only when that stream
-# opted into color. $1 stream (1|2), $2 color, $3 text.
+# opted into color and a non-empty color was given (default-color lines, like
+# tree detail, stay uncolored rather than carrying a bare reset). $1 stream
+# (1|2), $2 color, $3 text.
 _emit_line() {
   if [ "$1" -eq 1 ]; then
-    if [ "$_OUT_COLOR" -eq 1 ]; then printf '%s%s%s\n' "$2" "$3" "$_C_RESET"; else printf '%s\n' "$3"; fi
+    if [ "$_OUT_COLOR" -eq 1 ] && [ -n "$2" ]; then printf '%s%s%s\n' "$2" "$3" "$_C_RESET"; else printf '%s\n' "$3"; fi
   else
-    if [ "$_ERR_COLOR" -eq 1 ]; then printf '%s%s%s\n' "$2" "$3" "$_C_RESET" >&2; else printf '%s\n' "$3" >&2; fi
+    if [ "$_ERR_COLOR" -eq 1 ] && [ -n "$2" ]; then printf '%s%s%s\n' "$2" "$3" "$_C_RESET" >&2; else printf '%s\n' "$3" >&2; fi
   fi
 }
 
