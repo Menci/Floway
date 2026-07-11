@@ -59,6 +59,25 @@ const emptyOverview = (): PerformanceOverviewResponse => ({
   users: [], keys: [],
 });
 
+// Zero-counter, null-percentile record for the summary fallback when the
+// backend returns no `none` axis row (empty selection). Kept next to the
+// PerformanceDisplayRecord shape so a field rename lands here, not in a
+// silently-drifting inline literal.
+const emptyDisplayRecord = (bucket: string, group: string): PerformanceDisplayRecord => ({
+  bucket, group,
+  requests: 0,
+  errors: 0,
+  ttftSamples: 0,
+  tpotSamples: 0,
+  neutral: 0,
+  ttftMsP50: null,
+  ttftMsP95: null,
+  ttftMsP99: null,
+  tpotUsP50: null,
+  tpotUsP95: null,
+  tpotUsP99: null,
+});
+
 // URL <-> state (de)serialization. Every widget's state lives in the URL query
 // so refreshing / copying the URL restores the same view. Only non-default
 // values are written so pristine URLs stay clean.
@@ -570,22 +589,7 @@ const chartConfig = computed<ChartConfiguration<'line'>>(() => {
 
 const performanceSeriesIds = computed(() => chartSeriesIds(chartConfig.value));
 
-const performanceSummary = computed<PerformanceDisplayRecord>(() => overview.value.axes.none[0] ?? {
-  bucket: 'all',
-  group: 'all',
-  requests: 0,
-  errors: 0,
-  ttftSamples: 0,
-  tpotSamples: 0,
-  failedWithOutput: 0,
-  neutral: 0,
-  ttftMsP50: null,
-  ttftMsP95: null,
-  ttftMsP99: null,
-  tpotUsP50: null,
-  tpotUsP95: null,
-  tpotUsP99: null,
-});
+const performanceSummary = computed<PerformanceDisplayRecord>(() => overview.value.axes.none[0] ?? emptyDisplayRecord('all', 'all'));
 </script>
 
 <template>
