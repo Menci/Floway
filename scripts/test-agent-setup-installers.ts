@@ -1,17 +1,21 @@
 // Isolated integration harness for the fixed Agent Setup installer bodies.
 //
-// The gateway serves each public setup script as a language-native assignment
-// prefix (rendered here through the real `render.ts`) concatenated with a
-// fixed, checked-in installer body. This harness reproduces that concatenation
-// and executes it inside a throwaway HOME / CLAUDE_CONFIG_DIR / PATH against
-// fake `claude` binaries, a fake official installer, and a local model
-// directory, then inspects the resulting files. It never touches the real
-// user environment and never reaches the network except for the explicitly
-// gated jq-bootstrap test, which self-skips when GitHub is unreachable.
+// The gateway serves each setup script as a language-native assignment prefix
+// (rendered here through the real `render.ts`) plus a fixed checked-in body.
+// This harness executes that exact concatenation inside throwaway HOME,
+// CLAUDE_CONFIG_DIR, CODEX_HOME, and PATH roots against fake Claude Code and
+// Codex CLIs, fake official installers, and local authenticated model catalogs,
+// then inspects files, protocol records, permissions, rollback, and output.
+// The full host run exercises more than 90 behavior cases across Bash and
+// PowerShell, including a real Codex 0.144.1 app-server smoke when that exact
+// CLI is present.
+// Individual cases skip only when their host prerequisite is absent or blocks
+// isolation: PowerShell, the pinned Codex binary, jq-bootstrap network access,
+// or an actually absent Codex at every known global location. The harness never
+// touches the user's real config or credentials.
 //
 // Run the whole suite with `pnpm jiti scripts/test-agent-setup-installers.ts`,
-// or scope it with `--agent claude` / `--agent codex`. Codex configuration
-// lands in a later step; its cases self-skip here.
+// or scope it with `--agent claude` / `--agent codex`.
 
 import { spawn, spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
@@ -309,7 +313,7 @@ writeFileSync(FAKE_CODEX_INSTALLER_SCRIPT, FAKE_CODEX_INSTALLER, { mode: 0o755 }
 // --- local model directory --------------------------------------------------
 
 type ModelServerMode =
-  | 'ok' | 'unauthorized' | 'malformed-codex-models'
+  | 'ok' | 'unauthorized' | 'malformed-codex-models' | 'invalid-shape-codex-models'
   | 'installer-sh' | 'installer-ps1' | 'installer-html'
   | 'installer-codex-sh' | 'installer-codex-ps1';
 // Default Codex catalog served at /azure-api.codex/models. The real gateway
@@ -407,7 +411,9 @@ const startModelServer = async (): Promise<ModelServer> => {
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(state.mode === 'malformed-codex-models'
         ? '{not-json'
-        : JSON.stringify({ models: state.codexModels.map(slug => ({ slug })) }));
+        : state.mode === 'invalid-shape-codex-models'
+          ? JSON.stringify({ models: { slug: 'gpt-5-codex' } })
+          : JSON.stringify({ models: state.codexModels.map(slug => ({ slug })) }));
       return;
     }
     res.writeHead(404, { 'content-type': 'application/json' });
@@ -1419,11 +1425,14 @@ const assertStagedAuth = (t: Assert, ws: Workspace, baseUrl: string, startedMs: 
 // It must be exactly 0.144.1 so the wire protocol matches the version the
 // installer was built against; any other version self-skips rather than
 // asserting against an unverified protocol.
+const PINNED_CODEX_VERSION = '0.144.1';
+const parseCodexCliVersion = (output: string): string | null =>
+  /^codex-cli ([0-9]+\.[0-9]+\.[0-9]+)$/.exec(output.trim())?.[1] ?? null;
 const hostCodex = ((): string | null => {
   const resolved = resolveTool('codex');
   if (!resolved) return null;
-  const version = spawnSync(resolved, ['--version'], { encoding: 'utf8' }).stdout.trim();
-  return version.includes('0.144.1') ? resolved : null;
+  const probe = spawnSync(resolved, ['--version'], { encoding: 'utf8' });
+  return probe.status === 0 && parseCodexCliVersion(probe.stdout) === PINNED_CODEX_VERSION ? resolved : null;
 })();
 
 // The two absolute locations `codex_discover` consults beyond $HOME and PATH.
@@ -1432,6 +1441,13 @@ const hostCodex = ((): string | null => {
 // host-condition guarding as the pwsh and network tests.
 const GLOBAL_CODEX_LOCATIONS = ['/opt/homebrew/bin/codex', '/usr/local/bin/codex'];
 const globalCodexPresent = (): boolean => GLOBAL_CODEX_LOCATIONS.some(p => existsSync(p));
+
+test('codex', 'real app-server smoke version guard requires exact codex-cli semantic version', t => {
+  t.equal(parseCodexCliVersion('codex-cli 0.144.1'), '0.144.1', 'the pinned output parses exactly');
+  t.equal(parseCodexCliVersion('codex-cli 0.144.10'), '0.144.10', 'a longer patch version stays distinct');
+  t.ok(parseCodexCliVersion('codex-cli 0.144.10') !== PINNED_CODEX_VERSION, '0.144.10 cannot pass the 0.144.1 guard');
+  t.equal(parseCodexCliVersion('codex-cli 0.144.1 extra'), null, 'extra output invalidates the exact version contract');
+});
 
 test('codex', 'existing CLI configures via the app-server and stages ChatGPT auth', async t => {
   const ws = makeWorkspace();
@@ -1874,6 +1890,24 @@ test('codex', 'PowerShell: selected model missing is distinguished from catalog 
   t.includes(parse.combined, 'did not return valid JSON', 'parse failure has a distinct error');
   t.excludes(parse.combined, 'is not in the gateway catalog', 'parse failure is not mislabeled as a catalog miss');
   t.excludes(parse.combined, SENTINEL_KEY, 'parse failure does not expose the key');
+
+  const shapeWs = makeWorkspace();
+  placeFakeCodex(shapeWs.binDir);
+  const priorConfig = 'model_provider = "old"\nkeep_me = "yes"\n';
+  const priorAuth = '{"tokens":{"id_token":"old","access_token":"old","refresh_token":"old"},"OPENAI_API_KEY":null,"last_refresh":"2020-01-01T00:00:00Z"}';
+  mkdirSync(codexHomeFor(shapeWs), { recursive: true });
+  writeFileSync(codexConfigPath(shapeWs), priorConfig);
+  writeFileSync(codexAuthPath(shapeWs), priorAuth);
+  modelServer.mode = 'invalid-shape-codex-models';
+  const shape = await runPowerShellInstaller({
+    workspace: shapeWs, configuration: codexConfig({ model: 'gpt-5-codex' }), baseUrl: modelServer.url,
+  });
+  t.ok(shape.code !== 0, 'a valid-JSON non-array model catalog must fail');
+  t.includes(shape.combined, 'returned an invalid catalog shape', 'invalid shape has its exact safe error');
+  t.excludes(shape.combined, 'is not in the gateway catalog', 'invalid shape is not mislabeled as a catalog miss');
+  t.excludes(shape.combined, SENTINEL_KEY, 'invalid-shape failure does not expose the key');
+  t.equal(readFileSync(codexConfigPath(shapeWs), 'utf8'), priorConfig, 'invalid-shape verification restores prior config');
+  t.equal(readFileSync(codexAuthPath(shapeWs), 'utf8'), priorAuth, 'invalid-shape verification restores prior auth');
 });
 
 test('codex', 'PowerShell: Windows auth replacement and rollback preserve owner-only ACL ordering', async t => {
@@ -1885,7 +1919,14 @@ test('codex', 'PowerShell: Windows auth replacement and rollback preserve owner-
   const writeSecret = authBody.indexOf('[System.IO.File]::WriteAllText($stage, $json', protectStage);
   const protectTarget = authBody.indexOf('Protect-FlowayFile $script:CodexAuthPath', writeSecret);
   const replaceTarget = authBody.indexOf('[System.IO.File]::Replace($stage, $script:CodexAuthPath, $null)', protectTarget);
-  t.ok(createStage >= 0 && createStage < protectStage, 'Codex auth stage is created before protection');
+  t.ok(authFnStart >= 0, 'Write-FlowayCodexAuth marker exists');
+  t.ok(authFnEnd >= 0, 'Read-FlowayCodexModelCatalog marker exists after auth function');
+  t.ok(createStage >= 0, 'Codex auth stage creation marker exists');
+  t.ok(protectStage >= 0, 'Codex auth stage protection marker exists');
+  t.ok(writeSecret >= 0, 'Codex auth secret-write marker exists');
+  t.ok(protectTarget >= 0, 'Codex auth target protection marker exists');
+  t.ok(replaceTarget >= 0, 'Codex auth File.Replace marker exists');
+  t.ok(createStage < protectStage, 'Codex auth stage is created before protection');
   t.ok(protectStage < writeSecret, 'Codex auth stage is protected before secret JSON is written');
   t.ok(protectTarget < replaceTarget, 'existing Windows auth target is hardened before File.Replace');
 
@@ -1894,7 +1935,11 @@ test('codex', 'PowerShell: Windows auth replacement and rollback preserve owner-
   const restoreBody = PS1_BODY.slice(restoreStart, restoreEnd);
   const restoreMove = restoreBody.indexOf('Move-Item -LiteralPath $script:CodexAuthBackup -Destination $script:CodexAuthPath -Force');
   const restoreProtect = restoreBody.indexOf('Protect-FlowayFile $script:CodexAuthPath', restoreMove);
-  t.ok(restoreMove >= 0 && restoreMove < restoreProtect, 'rollback protects the restored auth target after moving it into place');
+  t.ok(restoreStart >= 0, 'Restore-FlowayCodexFiles marker exists');
+  t.ok(restoreEnd >= 0, 'app-server function marker exists after restore function');
+  t.ok(restoreMove >= 0, 'Codex auth rollback move marker exists');
+  t.ok(restoreProtect >= 0, 'Codex auth rollback protection marker exists');
+  t.ok(restoreMove < restoreProtect, 'rollback protects the restored auth target after moving it into place');
 });
 
 test('codex', 'PowerShell: a batchWrite error fails codex and rolls back auth', async t => {

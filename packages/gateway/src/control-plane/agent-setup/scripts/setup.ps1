@@ -627,7 +627,7 @@ function Read-FlowayCodexModelCatalog {
   } catch {
     throw "the authenticated Codex model directory did not return valid JSON."
   }
-  if (($body -isnot [System.Management.Automation.PSCustomObject]) -or ($body.PSObject.Properties.Name -notcontains 'models') -or ($null -eq $body.models)) {
+  if (($body -isnot [System.Management.Automation.PSCustomObject]) -or ($body.PSObject.Properties.Name -notcontains 'models') -or ($body.models -isnot [System.Array])) {
     throw "the authenticated Codex model directory returned an invalid catalog shape."
   }
   $slugs = @()
