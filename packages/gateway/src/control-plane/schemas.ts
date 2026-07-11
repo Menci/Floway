@@ -686,6 +686,6 @@ export const performanceQuery = z.object(usageBaseQuery).omit({ include_key_meta
   // User ids are auto-increment starting at 1, so zero and leading-zero forms
   // can never resolve and are rejected up front rather than silently returning
   // an empty result.
-  filter_user_id: z.string().regex(/^[1-9]\d*$/, 'filter_user_id must be a positive integer').optional(),
+  filter_user_id: z.union([z.literal(''), z.string().regex(/^[1-9]\d*$/, 'filter_user_id must be a positive integer')]).optional(),
   filter_key_id: z.string().optional(),
 });

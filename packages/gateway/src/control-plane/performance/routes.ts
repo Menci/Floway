@@ -66,7 +66,7 @@ const readPerformanceQuery = (
         upstream: blank(query.filter_upstream),
         operation: blank(query.filter_operation),
         runtimeLocation: blank(query.filter_runtime_location),
-        userId: query.filter_user_id === undefined ? undefined : Number(query.filter_user_id),
+        userId: blank(query.filter_user_id) === undefined ? undefined : Number(query.filter_user_id),
         keyId: blank(query.filter_key_id),
       },
     },
