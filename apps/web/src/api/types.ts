@@ -28,6 +28,12 @@ export type {
 
 export type UpstreamProviderKind = 'custom' | 'azure' | 'copilot' | 'codex' | 'claude-code' | 'ollama';
 
+// Kept in lockstep with `UPSTREAM_COLOR_PRESETS` in `@floway-dev/provider`
+// (redeclared here to avoid the SPA importing runtime provider code).
+export const UPSTREAM_COLOR_PRESETS = ['amber', 'emerald', 'cyan', 'violet', 'rose', 'orange'] as const;
+export type UpstreamColorPreset = typeof UPSTREAM_COLOR_PRESETS[number];
+export type UpstreamColor = UpstreamColorPreset | `#${string}`;
+
 export interface ProxyFallbackEntry {
   id: string;
   colos?: string[];
@@ -311,6 +317,11 @@ interface UpstreamRecordBase {
   // means "no prefix configured; the upstream advertises and accepts only
   // the bare upstream id."
   model_prefix: ModelPrefixConfig | null;
+  // Operator-chosen badge color override. `null` inherits the kind default;
+  // a preset key from `UPSTREAM_COLOR_PRESETS` resolves to a static UnoCSS
+  // accent class; a `#RRGGBB` string renders via inline CSS custom
+  // properties so any operator hex works without extending the theme.
+  color: UpstreamColor | null;
   // SWR models-cache freshness joined from the models_cache table. Both inner
   // values are null on a row that has never been warmed; lastError is set
   // when the most recent warm failed but a prior fetch still populates
