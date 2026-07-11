@@ -261,43 +261,17 @@ test('GET /api/setup/:token/setup.sh serves the prefix + fixed body with hardene
   assertEquals(response.headers.get('access-control-allow-origin'), null);
 
   const text = await response.text();
-  expect(text).toContain("FLOWAY_API_KEY='raw-key'");
-  // The base URL is derived from the serving request's own origin, not from
-  // any persisted value. requestApp reaches the app at http://localhost.
-  expect(text).toContain("FLOWAY_BASE_URL='http://localhost'");
+  // The gateway-rendered prefix (everything before the fixed body) reveals only
+  // the API key and the selected configuration. It never assigns a base URL or a
+  // host-derived Codex identity token — the gateway does not know its own origin.
+  // The fixed body still reads FLOWAY_BASE_URL and assembles the token locally,
+  // so the check is scoped to the prefix.
+  const prefix = text.slice(0, text.indexOf(SETUP_SH_BODY));
+  expect(prefix).toContain("FLOWAY_API_KEY='raw-key'");
+  expect(prefix).not.toContain('FLOWAY_BASE_URL');
+  expect(prefix).not.toContain('FLOWAY_CODEX_ID_TOKEN');
   expect(text).toContain(SETUP_SH_BODY);
   expect(text).toContain('Floway agent setup installer (Bash 3.2+)');
-});
-
-test('GET derives the base URL from a Node reverse proxy: X-Forwarded-Proto overrides the request scheme, keeping the public host', async () => {
-  const { apiKey } = await setupAppTest({ apiKey: testApiKey() });
-  const lease = (await (await createLease(apiKey.key)).json()) as LeaseResponse;
-
-  // A TLS terminator in front of the bundled plain-HTTP proxy (docker/nginx.conf)
-  // forwards over HTTP with Host set to the public host and X-Forwarded-Proto set
-  // to the real scheme. The default 'node' runtime kind honors that header.
-  const response = await requestApp(`http://public-host${lease.scripts.sh}`, {
-    method: 'GET',
-    headers: { 'x-forwarded-proto': 'https' },
-  });
-  assertEquals(response.status, 200);
-  const text = await response.text();
-  expect(text).toContain("FLOWAY_BASE_URL='https://public-host'");
-});
-
-test('GET ignores a comma-chained or invalid X-Forwarded-Proto, falling back to the request scheme', async () => {
-  const { apiKey } = await setupAppTest({ apiKey: testApiKey() });
-  const lease = (await (await createLease(apiKey.key)).json()) as LeaseResponse;
-
-  for (const forwardedProto of ['https, http', 'HTTPS', 'ftp']) {
-    const response = await requestApp(`http://public-host${lease.scripts.sh}`, {
-      method: 'GET',
-      headers: { 'x-forwarded-proto': forwardedProto },
-    });
-    assertEquals(response.status, 200);
-    const text = await response.text();
-    expect(text).toContain("FLOWAY_BASE_URL='http://public-host'");
-  }
 });
 
 test('GET /api/setup/:token/setup.ps1 serves the PowerShell prefix + fixed body', async () => {
@@ -307,7 +281,10 @@ test('GET /api/setup/:token/setup.ps1 serves the PowerShell prefix + fixed body'
   const response = await requestApp(lease.scripts.ps1, { method: 'GET' });
   assertEquals(response.status, 200);
   const text = await response.text();
-  expect(text).toContain("$FlowayApiKey = 'raw-key'");
+  const prefix = text.slice(0, text.indexOf(SETUP_PS1_BODY));
+  expect(prefix).toContain("$FlowayApiKey = 'raw-key'");
+  expect(prefix).not.toContain('$FlowayBaseUrl');
+  expect(prefix).not.toContain('$FlowayCodexIdToken');
   expect(text).toContain(SETUP_PS1_BODY);
 });
 

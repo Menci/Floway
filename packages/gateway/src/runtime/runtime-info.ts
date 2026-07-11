@@ -26,29 +26,3 @@ export const getRuntimeInfo = (request: Request): RuntimeInfo => ({
   kind: getRuntimeKind(),
   colo: getCurrentColo(request),
 });
-
-// Resolve the externally visible Floway origin (scheme + host, no trailing
-// slash) the request reached us on. On Cloudflare the inbound request URL
-// already carries the real public scheme and host, so it is authoritative and
-// a forwarded-proto header — which an untrusted client can spoof — is ignored.
-//
-// The Node target typically sits behind a reverse proxy. The bundled
-// `docker/nginx.conf` is a plain HTTP reverse proxy — it only `listen 80` and
-// forwards to `http://server:8788`, so on its own the request URL the app sees
-// always reads `http://<host>`. TLS is terminated elsewhere: either in an
-// operator's own proxy in front of that nginx, or in a custom proxy pointed
-// straight at Node. The terminator's `X-Forwarded-Proto` is then the only
-// signal that recovers the real public scheme. nginx normalizes a single
-// case-insensitive `http`/`https` token (else its own `$scheme`), and we mirror
-// that boundary here: on Node we normalize and honor one such value while
-// always keeping the request URL's own host — a forwarded host is never trusted.
-// A missing, comma-chained, or otherwise invalid value falls back to the request
-// URL's protocol.
-export const getRequestOrigin = (request: Request): string => {
-  const url = new URL(request.url);
-  if (getRuntimeKind() === 'node') {
-    const forwardedProto = request.headers.get('x-forwarded-proto')?.toLowerCase();
-    if (forwardedProto === 'http' || forwardedProto === 'https') url.protocol = `${forwardedProto}:`;
-  }
-  return url.origin;
-};

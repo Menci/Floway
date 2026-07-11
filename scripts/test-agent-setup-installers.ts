@@ -25,7 +25,9 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import type { AgentSetupConfiguration } from '../packages/gateway/src/control-plane/agent-setup/configuration.ts';
-import { renderCodexIdentityToken, renderPowerShellPrefix, renderShellPrefix } from '../packages/gateway/src/control-plane/agent-setup/render.ts';
+import { renderPowerShellPrefix, renderShellPrefix } from '../packages/gateway/src/control-plane/agent-setup/render.ts';
+import { buildPowerShellSetupCommand, buildShellSetupCommand } from '../apps/web/src/lib/agent-setup-command.ts';
+import { powerShellLiteral } from '../apps/web/src/lib/shell-literal.ts';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SCRIPTS_DIR = join(HERE, '..', 'packages/gateway/src/control-plane/agent-setup/scripts');
@@ -39,6 +41,23 @@ const SENTINEL_KEY = 'sk-floway-SENTINEL-Do-Not-Log-9f3c1a7b2e4d6058';
 // Paths a leak-free installer must never request: verification reads only the
 // authenticated model directory and issues no inference.
 const INFERENCE_PATHS = ['/v1/messages', '/v1/chat/completions', '/v1/complete', '/v1/responses'];
+
+// The exact Codex identity token each installer must assemble locally from the
+// injected base URL — the gateway no longer renders it. Mirrors both installers'
+// algorithm (unpadded base64url of compact JSON with the host-derived email),
+// so byte-equality proves the Bash jq and PowerShell Convert paths agree.
+const CODEX_AUTH_CLAIM = {
+  chatgpt_plan_type: 'pro_plus',
+  chatgpt_user_id: 'user-floway',
+  chatgpt_account_id: 'acct-floway',
+} as const;
+const expectedCodexIdentityToken = (baseUrl: string): string => {
+  const host = new URL(baseUrl).host;
+  const b64url = (payload: unknown): string => Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const header = b64url({ alg: 'none', typ: 'JWT' });
+  const payload = b64url({ email: `floway@${host}`, 'https://api.openai.com/auth': CODEX_AUTH_CLAIM });
+  return `${header}.${payload}.c2ln`;
+};
 
 // --- tiny test runner -------------------------------------------------------
 
@@ -363,6 +382,20 @@ const startModelServer = async (): Promise<ModelServer> => {
     const apiKey = String(req.headers['x-api-key'] ?? '');
     const auth = bearer.includes(SENTINEL_KEY) || apiKey === SENTINEL_KEY;
     state.requests.push({ method: req.method ?? '', path: pathname, auth });
+    // Unauthenticated probe bodies for the command-injection-semantics tests:
+    // each echoes the base URL the wrapping command injected into the executing
+    // shell, so the harness can confirm `export FLOWAY_BASE_URL` / `$FlowayBaseUrl`
+    // actually reached the piped `bash` / the `iex` runspace.
+    if (pathname === '/probe/setup.sh') {
+      res.writeHead(200, { 'content-type': 'text/x-shellscript' });
+      res.end('printf \'PROBE_BASE_URL=[%s]\\n\' "${FLOWAY_BASE_URL:-UNSET}"\n');
+      return;
+    }
+    if (pathname === '/probe/setup.ps1') {
+      res.writeHead(200, { 'content-type': 'text/plain' });
+      res.end('Write-Output "PROBE_BASE_URL=[$(if ($null -eq $FlowayBaseUrl) { \'UNSET\' } else { $FlowayBaseUrl })]"\n');
+      return;
+    }
     if (pathname === '/install.sh' || pathname === '/install-codex.sh') {
       if (state.mode === 'installer-html') {
         res.writeHead(200, { 'content-type': 'text/html' });
@@ -490,6 +523,13 @@ interface RunOptions {
   workspace: Workspace;
   configuration: AgentSetupConfiguration;
   baseUrl: string;
+  // The wrapping one-line command injects the gateway origin into the executing
+  // shell (Bash exports FLOWAY_BASE_URL; PowerShell assigns $FlowayBaseUrl in the
+  // iex runspace); the harness mirrors that. `baseUrlOverride` injects a
+  // different value than the model-server URL (used for the invalid-origin
+  // guard); `omitBaseUrl` injects nothing at all (the missing-origin guard).
+  baseUrlOverride?: string;
+  omitBaseUrl?: boolean;
   configDir?: string;
   includeJq?: boolean;
   disableJqDownload?: boolean;
@@ -551,13 +591,28 @@ const codexEnv = (options: RunOptions): Record<string, string> => {
   return env;
 };
 
+// The origin the wrapping one-line command injects into the executing shell.
+const injectedBaseUrlValue = (options: RunOptions): string => options.baseUrlOverride ?? options.baseUrl;
+
+// Bash's downstream `bash` is a child process, so the origin crosses the
+// boundary through the exported environment — mirror the `export FLOWAY_BASE_URL`
+// the copyable command performs. Omitted entirely for the missing-origin guard.
+const injectedBaseUrlEnv = (options: RunOptions): Record<string, string> =>
+  options.omitBaseUrl ? {} : { FLOWAY_BASE_URL: injectedBaseUrlValue(options) };
+
+// PowerShell's `iex` runs in the caller's runspace, so the origin is a plain
+// in-process variable assigned ahead of the served body — mirror the
+// `$FlowayBaseUrl = '...'` the copyable command performs.
+const powerShellBaseUrlPrelude = (options: RunOptions): string =>
+  options.omitBaseUrl ? '' : `$FlowayBaseUrl = ${powerShellLiteral(injectedBaseUrlValue(options))}\n`;
+
 // Runs asynchronously via `spawn` (not `spawnSync`): the local model directory
 // lives in this process's event loop, and a synchronous child would deadlock
 // it — the installer's `curl` could never be answered while the loop is blocked
 // waiting on the child.
 const runShellInstaller = (options: RunOptions): Promise<RunResult> => {
-  const { workspace, configuration, baseUrl } = options;
-  const script = renderShellPrefix({ apiKey: SENTINEL_KEY, baseUrl, configuration }) + SH_BODY;
+  const { workspace, configuration } = options;
+  const script = renderShellPrefix({ apiKey: SENTINEL_KEY, configuration }) + SH_BODY;
   const scriptPath = join(workspace.root, 'setup.sh');
   writeFileSync(scriptPath, script);
 
@@ -568,6 +623,7 @@ const runShellInstaller = (options: RunOptions): Promise<RunResult> => {
     HOME: workspace.home,
     PATH: pathParts.join(':'),
     TMPDIR: workspace.root,
+    ...injectedBaseUrlEnv(options),
     FAKE_CLAUDE_VERSION_SLEEP: String(options.fakeClaudeVersionSleep ?? 0),
     FAKE_CLAUDE_HAS_DOCTOR: options.fakeClaudeHasDoctor === false ? '0' : '1',
     FAKE_CLAUDE_DOCTOR_HELP_SLEEP: String(options.fakeClaudeDoctorHelpSleep ?? 0),
@@ -625,8 +681,8 @@ const runShellInstaller = (options: RunOptions): Promise<RunResult> => {
 };
 
 const runShellInstallerWithAmbientKey = (options: RunOptions): Promise<RunResult> => {
-  const { workspace, configuration, baseUrl } = options;
-  const script = renderShellPrefix({ apiKey: SENTINEL_KEY, baseUrl, configuration }) + SH_BODY;
+  const { workspace, configuration } = options;
+  const script = renderShellPrefix({ apiKey: SENTINEL_KEY, configuration }) + SH_BODY;
   const scriptPath = join(workspace.root, 'setup-ambient-key.sh');
   writeFileSync(scriptPath, script);
   const pathParts = [workspace.binDir, SHIM_BIN];
@@ -635,6 +691,7 @@ const runShellInstallerWithAmbientKey = (options: RunOptions): Promise<RunResult
     HOME: workspace.home,
     PATH: pathParts.join(':'),
     TMPDIR: workspace.root,
+    ...injectedBaseUrlEnv(options),
     FLOWAY_API_KEY: SENTINEL_KEY,
     FAKE_CLAUDE_HAS_DOCTOR: '1',
     FAKE_CLAUDE_DOCTOR_EXIT: '0',
@@ -704,11 +761,11 @@ const networkReachable = (): boolean => {
 // but rendering the PowerShell prefix. Model-directory traffic is in-process, so
 // this too must be async to keep the event loop free.
 const runPowerShellInstaller = (options: RunOptions): Promise<RunResult> => {
-  const { workspace, configuration, baseUrl } = options;
+  const { workspace, configuration } = options;
   const culturePrelude = options.powerShellTimeSeparator === undefined
     ? ''
     : `$culture = [Globalization.CultureInfo]::GetCultureInfo('en-US').Clone()\n$culture.DateTimeFormat.TimeSeparator = '${options.powerShellTimeSeparator.replace(/'/g, "''")}'\n[Threading.Thread]::CurrentThread.CurrentCulture = $culture\n`;
-  const script = renderPowerShellPrefix({ apiKey: SENTINEL_KEY, baseUrl, configuration }) + culturePrelude + PS1_BODY;
+  const script = powerShellBaseUrlPrelude(options) + renderPowerShellPrefix({ apiKey: SENTINEL_KEY, configuration }) + culturePrelude + PS1_BODY;
   const scriptPath = join(workspace.root, 'setup.ps1');
   writeFileSync(scriptPath, script);
 
@@ -1052,7 +1109,7 @@ test('claude', 'jq is bootstrapped from the pinned release when absent from PATH
 test('claude', 'PowerShell installer body parses without syntax errors', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const script = renderPowerShellPrefix({
-    apiKey: SENTINEL_KEY, baseUrl: 'https://floway.example',
+    apiKey: SENTINEL_KEY,
     configuration: claudeConfig({ model: 'claude-opus-x', effortLevel: 'high', modelDiscovery: true }),
   }) + PS1_BODY;
   const scriptPath = join(HARNESS_ROOT, 'parse-check.ps1');
@@ -1457,11 +1514,103 @@ test('claude', 'PowerShell: the API key never appears in output and no inference
 // --- Bash 3.2 syntax check --------------------------------------------------
 
 test('claude', 'Bash installer body parses under the macOS Bash 3.2 baseline', async t => {
-  const script = renderShellPrefix({ apiKey: SENTINEL_KEY, baseUrl: 'https://floway.example', configuration: claudeConfig({ model: 'm', effortLevel: 'high', modelDiscovery: true }) }) + SH_BODY;
+  const script = renderShellPrefix({ apiKey: SENTINEL_KEY, configuration: claudeConfig({ model: 'm', effortLevel: 'high', modelDiscovery: true }) }) + SH_BODY;
   const scriptPath = join(HARNESS_ROOT, 'syntax-check.sh');
   writeFileSync(scriptPath, script);
   const result = spawnSync('/bin/bash', ['-n', scriptPath], { encoding: 'utf8' });
   t.equal(result.status, 0, `/bin/bash -n reported a syntax error:\n${result.stderr}`);
+});
+
+// --- base URL injection -----------------------------------------------------
+
+// A raw shell run of an arbitrary command line, sharing the async model-server
+// event loop. Used to exercise the exact copyable command a user pastes, so the
+// `export FLOWAY_BASE_URL` / `$FlowayBaseUrl` injection and the `| bash` / `| iex`
+// pipeline scoping are verified end to end rather than assumed.
+const runCommandLine = (exe: string, args: string[], command: string): Promise<RunResult> =>
+  new Promise<RunResult>((resolve) => {
+    const child = spawn(exe, [...args, command], { env: { PATH: `${SHIM_BIN}:${process.env.PATH ?? ''}` } });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', chunk => { stdout += chunk; });
+    child.stderr.on('data', chunk => { stderr += chunk; });
+    child.on('error', error => resolve({ code: -1, stdout, stderr: `${stderr}${String(error)}`, combined: `${stdout}${stderr}${String(error)}` }));
+    child.on('close', code => resolve({ code: code ?? -1, stdout, stderr, combined: `${stdout}${stderr}` }));
+  });
+
+test('claude', 'the copyable Bash command exports the origin into the piped installer body', async t => {
+  const origin = modelServer.url;
+  const command = buildShellSetupCommand(origin, '/probe/setup.sh');
+  const run = await runCommandLine('/bin/bash', ['-c'], command);
+  t.equal(run.code, 0, `the copyable Bash command should run cleanly:\n${run.combined}`);
+  t.includes(run.stdout, `PROBE_BASE_URL=[${origin}]`, 'the exported origin reached the piped bash executing the fetched body');
+});
+
+test('claude', 'the copyable PowerShell command assigns the origin into the iex runspace', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const origin = modelServer.url;
+  const command = buildPowerShellSetupCommand(origin, '/probe/setup.ps1');
+  const run = await runCommandLine(hostPwsh, ['-NoProfile', '-Command'], command);
+  t.equal(run.code, 0, `the copyable PowerShell command should run cleanly:\n${run.combined}`);
+  t.includes(run.stdout, `PROBE_BASE_URL=[${origin}]`, 'the in-process origin reached the iex-executed fetched body');
+});
+
+test('claude', 'a missing FLOWAY_BASE_URL fails before any mutation', async t => {
+  const ws = makeWorkspace();
+  placeFakeClaude(ws.binDir);
+  const configDir = join(ws.home, '.claude');
+  mkdirSync(configDir, { recursive: true });
+  const original = JSON.stringify({ theme: 'light' });
+  writeFileSync(settingsPathFor(ws), original);
+  const run = await runShellInstaller({ workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url, omitBaseUrl: true });
+  t.ok(run.code !== 0, 'a missing base URL must fail the run');
+  t.includes(run.combined, 'FLOWAY_BASE_URL', 'the failure names the required base URL');
+  t.equal(readFileSync(settingsPathFor(ws), 'utf8'), original, 'settings are left untouched');
+  t.equal(backupFiles(configDir).length, 0, 'no backup is created before the base-URL guard');
+});
+
+test('claude', 'a non-http(s) FLOWAY_BASE_URL fails before any mutation', async t => {
+  const ws = makeWorkspace();
+  placeFakeClaude(ws.binDir);
+  const configDir = join(ws.home, '.claude');
+  mkdirSync(configDir, { recursive: true });
+  const original = JSON.stringify({ theme: 'light' });
+  writeFileSync(settingsPathFor(ws), original);
+  const run = await runShellInstaller({ workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url, baseUrlOverride: 'ftp://not-http' });
+  t.ok(run.code !== 0, 'a non-http(s) base URL must fail the run');
+  t.includes(run.combined, 'http(s) origin', 'the failure explains the origin requirement');
+  t.equal(readFileSync(settingsPathFor(ws), 'utf8'), original, 'settings are left untouched');
+  t.equal(backupFiles(configDir).length, 0, 'no backup is created before the base-URL guard');
+});
+
+test('claude', 'PowerShell: a missing $FlowayBaseUrl fails before any mutation', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  placeFakeClaude(ws.binDir);
+  const configDir = join(ws.home, '.claude');
+  mkdirSync(configDir, { recursive: true });
+  const original = JSON.stringify({ theme: 'light' });
+  writeFileSync(settingsPathFor(ws), original);
+  const run = await runPowerShellInstaller({ workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url, omitBaseUrl: true });
+  t.ok(run.code !== 0, 'a missing base URL must fail the run');
+  t.includes(run.combined, 'FlowayBaseUrl', 'the failure names the required base URL');
+  t.equal(readFileSync(settingsPathFor(ws), 'utf8'), original, 'settings are left untouched');
+  t.equal(backupFiles(configDir).length, 0, 'no backup is created before the base-URL guard');
+});
+
+test('claude', 'PowerShell: a non-http(s) $FlowayBaseUrl fails before any mutation', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  placeFakeClaude(ws.binDir);
+  const configDir = join(ws.home, '.claude');
+  mkdirSync(configDir, { recursive: true });
+  const original = JSON.stringify({ theme: 'light' });
+  writeFileSync(settingsPathFor(ws), original);
+  const run = await runPowerShellInstaller({ workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url, baseUrlOverride: 'ftp://not-http' });
+  t.ok(run.code !== 0, 'a non-http(s) base URL must fail the run');
+  t.includes(run.combined, 'http(s) origin', 'the failure explains the origin requirement');
+  t.equal(readFileSync(settingsPathFor(ws), 'utf8'), original, 'settings are left untouched');
+  t.equal(backupFiles(configDir).length, 0, 'no backup is created before the base-URL guard');
 });
 
 // --- Codex cases ------------------------------------------------------------
@@ -1487,7 +1636,11 @@ const RFC3339 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d
 const assertStagedAuth = (t: Assert, ws: Workspace, baseUrl: string, startedMs: number, codexHome?: string): void => {
   const auth = readCodexAuth(ws, codexHome);
   t.equal(auth.OPENAI_API_KEY, null, 'ChatGPT-mode auth carries a null OPENAI_API_KEY');
-  t.equal(auth.tokens.id_token, renderCodexIdentityToken(baseUrl), 'id_token is the server-rendered identity token');
+  t.equal(auth.tokens.id_token, expectedCodexIdentityToken(baseUrl), 'id_token is the locally-assembled identity token');
+  // The identity token is derived from the injected origin, not the gateway: its
+  // email claim embeds the base URL host.
+  const claims = JSON.parse(Buffer.from(auth.tokens.id_token.split('.')[1]!, 'base64url').toString('utf8')) as { email: string };
+  t.equal(claims.email, `floway@${new URL(baseUrl).host}`, 'the identity token claims the injected origin host');
   t.equal(auth.tokens.access_token, SENTINEL_KEY, 'access_token carries the Floway API key');
   t.ok(typeof auth.tokens.refresh_token === 'string' && auth.tokens.refresh_token.length > 0, 'a non-empty refresh placeholder is present');
   t.ok(RFC3339.test(auth.last_refresh), `last_refresh is RFC3339, got ${auth.last_refresh}`);

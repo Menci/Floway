@@ -21,6 +21,22 @@ $PSNativeCommandUseErrorActionPreference = $false
 Remove-Item Env:FLOWAY_API_KEY -ErrorAction SilentlyContinue
 Remove-Item Env:FlowayApiKey -ErrorAction SilentlyContinue
 
+# $FlowayBaseUrl is supplied by the wrapping one-line command
+# (`$FlowayBaseUrl = '<origin>'; irm "$FlowayBaseUrl/..." | iex`), never baked
+# into this body — the gateway that served this script never learns its own
+# public origin. It stays an in-process variable and is never exported to the
+# environment (iex runs in the same runspace, so no process boundary is
+# crossed). Require a non-empty http(s) origin before any configuration is
+# touched.
+if ([string]::IsNullOrWhiteSpace($FlowayBaseUrl)) {
+  Write-Host "Floway: `$FlowayBaseUrl must be set to this gateway origin (e.g. https://gateway.example)."
+  exit 1
+}
+if ($FlowayBaseUrl -notmatch '^https?://.+') {
+  Write-Host "Floway: `$FlowayBaseUrl must be an http(s) origin, got $FlowayBaseUrl"
+  exit 1
+}
+
 # --- common helpers ---------------------------------------------------------
 
 function Set-FlowayProp {
@@ -384,6 +400,27 @@ function Set-FlowayClaude {
 # never rotates a ChatGPT refresh token. Codex only reads it back.
 $FlowayCodexRefreshNoop = 'floway-managed-no-refresh'
 
+# Build Floway's placeholder ChatGPT identity token from the gateway origin.
+# Codex decodes this alg=none JWT to render `codex login status`; it is never
+# verified because the gateway authenticates the data plane with the API key
+# carried as access_token, not with this token. The host-derived email keeps
+# multiple deployments distinguishable in the CLI's status output. Assembled
+# here — not by the gateway — so the server never learns its own public origin.
+# The payload JSON is concatenated rather than ConvertTo-Json'd so the byte
+# layout (and key order) is identical across PowerShell versions, matching the
+# Bash installer's jq output.
+# Ref: packages/provider-codex/src/auth/jwt.ts (the decode-only claim reader).
+function Get-FlowayCodexIdToken {
+  $authority = ([Uri]$FlowayBaseUrl).Authority
+  $encode = {
+    param([string]$Json)
+    [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($Json)).TrimEnd('=').Replace('+', '-').Replace('/', '_')
+  }
+  $headerJson = '{"alg":"none","typ":"JWT"}'
+  $payloadJson = '{"email":"floway@' + $authority + '","https://api.openai.com/auth":{"chatgpt_plan_type":"pro_plus","chatgpt_user_id":"user-floway","chatgpt_account_id":"acct-floway"}}'
+  return ((& $encode $headerJson) + '.' + (& $encode $payloadJson) + '.c2ln')
+}
+
 # Resolve the Codex executable. The PATH winner is authoritative; the official
 # user-local locations are also consulted so an off-PATH install is still found
 # and multiple installations can be flagged.
@@ -692,6 +729,7 @@ function Set-FlowayCodex {
     if (-not $exe) { throw "Codex CLI is unavailable and could not be installed." }
   }
   Resolve-FlowayCodexPaths
+  $script:FlowayCodexIdToken = Get-FlowayCodexIdToken
   if (-not (Test-Path -LiteralPath $script:CodexHomeDir)) {
     New-Item -ItemType Directory -Path $script:CodexHomeDir -Force | Out-Null
   }

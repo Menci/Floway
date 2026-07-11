@@ -22,6 +22,27 @@ set -o pipefail 2>/dev/null || true
 # it.
 export -n FLOWAY_API_KEY 2>/dev/null || true
 
+# FLOWAY_BASE_URL is supplied by the wrapping one-line command's environment
+# (`export FLOWAY_BASE_URL='<origin>'; curl ... | bash`), never baked into this
+# body — the gateway that served this script never learns its own public origin.
+# Require a non-empty http(s) origin before any configuration is touched; a bare
+# `set -u` reference would otherwise abort later with an opaque "unbound
+# variable". Then `export -n` demotes it to a plain shell variable so the
+# official installers and the agent CLIs do not inherit it, exactly as the API
+# key is handled.
+if [ -z "${FLOWAY_BASE_URL:-}" ]; then
+  printf 'Floway: FLOWAY_BASE_URL must be set to this gateway origin (e.g. https://gateway.example).\n' >&2
+  exit 1
+fi
+case "$FLOWAY_BASE_URL" in
+  http://?* | https://?*) ;;
+  *)
+    printf 'Floway: FLOWAY_BASE_URL must be an http(s) origin, got %s\n' "$FLOWAY_BASE_URL" >&2
+    exit 1
+    ;;
+esac
+export -n FLOWAY_BASE_URL 2>/dev/null || true
+
 FLOWAY_SETUP_TMPDIR=""
 _cleanup() {
   if [ -n "$FLOWAY_SETUP_TMPDIR" ]; then
@@ -529,6 +550,28 @@ configure_claude() {
 # meaningless. Codex only reads it back; it is never sent upstream.
 CODEX_REFRESH_NOOP="floway-managed-no-refresh"
 
+# Build Floway's placeholder ChatGPT identity token from the gateway origin and
+# expose it as FLOWAY_CODEX_ID_TOKEN. Codex decodes this alg=none JWT to render
+# `codex login status`; it is never verified because the gateway authenticates
+# the data plane with the API key carried as access_token, not with this token.
+# The host-derived email keeps multiple deployments distinguishable in the CLI's
+# status output. Assembled here — not by the gateway — so the server never learns
+# its own public origin: jq's @base64 is post-processed into unpadded base64url.
+# Ref: packages/provider-codex/src/auth/jwt.ts (the decode-only claim reader).
+codex_build_id_token() {
+  _cbit_host="${FLOWAY_BASE_URL#*://}"
+  _cbit_host="${_cbit_host%%/*}"
+  FLOWAY_CODEX_ID_TOKEN=$("$JQ" -rn --arg host "$_cbit_host" '
+    def b64url: @base64 | gsub("=";"") | gsub("\\+";"-") | gsub("/";"_");
+    ({alg:"none",typ:"JWT"} | tojson | b64url) as $header
+    | ({email: ("floway@" + $host), "https://api.openai.com/auth": {chatgpt_plan_type:"pro_plus", chatgpt_user_id:"user-floway", chatgpt_account_id:"acct-floway"}} | tojson | b64url) as $payload
+    | $header + "." + $payload + ".c2ln"
+  ') || {
+    printf 'Floway: could not construct the Codex identity token.\n' >&2
+    return 1
+  }
+}
+
 # Resolve the Codex executable. The PATH winner is authoritative; known official
 # user-local locations are also consulted so an install that is not on PATH is
 # still found, and so multiple installations can be flagged.
@@ -948,6 +991,9 @@ configure_codex() {
   codex_resolve_home
   if ! mkdir -p "$CODEX_HOME_DIR"; then
     printf 'Floway: could not create %s\n' "$CODEX_HOME_DIR" >&2
+    return 1
+  fi
+  if ! codex_build_id_token; then
     return 1
   fi
   if ! codex_backup_files; then

@@ -8,12 +8,10 @@ import {
 } from './configuration.ts';
 import {
   powerShellLiteral,
-  renderCodexIdentityToken,
   renderPowerShellPrefix,
   renderShellPrefix,
   shellLiteral,
 } from './render.ts';
-import { decodeBase64UrlJson } from '../../shared/base64url-json.ts';
 import { agentSetupHeartbeatBody, agentSetupUpdateBody } from '../schemas.ts';
 
 const fullConfiguration: AgentSetupConfiguration = {
@@ -145,46 +143,15 @@ describe('powerShellLiteral', () => {
   });
 });
 
-describe('renderCodexIdentityToken', () => {
-  test('is deterministic for a given origin', () => {
-    expect(renderCodexIdentityToken('https://floway.example'))
-      .toBe(renderCodexIdentityToken('https://floway.example'));
-  });
-
-  test('emits a three-segment alg=none JWT with host-derived Floway claims', () => {
-    const token = renderCodexIdentityToken('https://floway.example');
-    const segments = token.split('.');
-    expect(segments).toHaveLength(3);
-    expect(segments[2]).toBe('c2ln');
-    expect(decodeBase64UrlJson(segments[0]!)).toEqual({ alg: 'none', typ: 'JWT' });
-    expect(decodeBase64UrlJson(segments[1]!)).toEqual({
-      email: 'floway@floway.example',
-      'https://api.openai.com/auth': {
-        chatgpt_plan_type: 'pro_plus',
-        chatgpt_user_id: 'user-floway',
-        chatgpt_account_id: 'acct-floway',
-      },
-    });
-  });
-
-  test('keeps the port in the host-derived email', () => {
-    const token = renderCodexIdentityToken('http://localhost:8788');
-    const claims = decodeBase64UrlJson(token.split('.')[1]!) as { email: string };
-    expect(claims.email).toBe('floway@localhost:8788');
-  });
-});
-
 describe('renderShellPrefix', () => {
   test('renders every assignment through the encoder and ends with a newline', () => {
     const prefix = renderShellPrefix({
       apiKey: 'sk-raw-key',
-      baseUrl: 'https://floway.example',
       configuration: fullConfiguration,
     });
     expect(prefix).toBe([
       'set +x',
       "FLOWAY_API_KEY='sk-raw-key'",
-      "FLOWAY_BASE_URL='https://floway.example'",
       "FLOWAY_INSTALL_CLAUDE='1'",
       "FLOWAY_CLAUDE_MODEL='claude-opus-4-6[1m]'",
       "FLOWAY_CLAUDE_DEFAULT_SONNET_MODEL='claude-sonnet-4-5'",
@@ -194,15 +161,19 @@ describe('renderShellPrefix', () => {
       "FLOWAY_INSTALL_CODEX='1'",
       "FLOWAY_CODEX_MODEL='gpt-5.6-terra'",
       "FLOWAY_CODEX_REASONING_EFFORT='xhigh'",
-      `FLOWAY_CODEX_ID_TOKEN=${shellLiteral(renderCodexIdentityToken('https://floway.example'))}`,
       '',
     ].join('\n'));
+  });
+
+  test('never emits the base URL or a Codex identity token — the gateway does not know its origin', () => {
+    const prefix = renderShellPrefix({ apiKey: 'sk-raw-key', configuration: fullConfiguration });
+    expect(prefix).not.toContain('FLOWAY_BASE_URL');
+    expect(prefix).not.toContain('FLOWAY_CODEX_ID_TOKEN');
   });
 
   test('renders empty values for disabled agents and null overrides', () => {
     const prefix = renderShellPrefix({
       apiKey: 'sk-raw-key',
-      baseUrl: 'https://floway.example',
       configuration: {
         apiKeyId: 'key-a',
         claudeCode: {
@@ -222,7 +193,6 @@ describe('renderShellPrefix', () => {
   test('propagates a NUL-rejecting failure from the API key', () => {
     expect(() => renderShellPrefix({
       apiKey: 'sk-\0-key',
-      baseUrl: 'https://floway.example',
       configuration: fullConfiguration,
     })).toThrow();
   });
@@ -232,13 +202,11 @@ describe('renderPowerShellPrefix', () => {
   test('renders booleans, single-quoted strings, and $null for absent overrides', () => {
     const prefix = renderPowerShellPrefix({
       apiKey: 'sk-raw-key',
-      baseUrl: 'https://floway.example',
       configuration: fullConfiguration,
     });
     expect(prefix).toBe([
       'Set-PSDebug -Off',
       "$FlowayApiKey = 'sk-raw-key'",
-      "$FlowayBaseUrl = 'https://floway.example'",
       '$FlowayInstallClaude = $true',
       "$FlowayClaudeModel = 'claude-opus-4-6[1m]'",
       "$FlowayClaudeDefaultSonnetModel = 'claude-sonnet-4-5'",
@@ -248,15 +216,19 @@ describe('renderPowerShellPrefix', () => {
       '$FlowayInstallCodex = $true',
       "$FlowayCodexModel = 'gpt-5.6-terra'",
       "$FlowayCodexReasoningEffort = 'xhigh'",
-      `$FlowayCodexIdToken = ${powerShellLiteral(renderCodexIdentityToken('https://floway.example'))}`,
       '',
     ].join('\n'));
+  });
+
+  test('never emits the base URL or a Codex identity token — the gateway does not know its origin', () => {
+    const prefix = renderPowerShellPrefix({ apiKey: 'sk-raw-key', configuration: fullConfiguration });
+    expect(prefix).not.toContain('$FlowayBaseUrl');
+    expect(prefix).not.toContain('$FlowayCodexIdToken');
   });
 
   test('renders $false and $null for disabled agents and null overrides', () => {
     const prefix = renderPowerShellPrefix({
       apiKey: 'sk-raw-key',
-      baseUrl: 'https://floway.example',
       configuration: {
         apiKeyId: 'key-a',
         claudeCode: {

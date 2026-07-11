@@ -123,8 +123,10 @@ Open the deployed URL (or `http://localhost:8788` for Node), log in with
    gateway model discovery. For Codex, choose the model and optionally enter
    any reasoning-effort value. Edits autosave to a short-lived setup lease;
    wait for the "Saving…" spinner to clear, then copy the shell command
-   (`curl -fsSL … | bash`) or the PowerShell command (`irm … | iex`) and run it
-   on the target machine.
+   (`export FLOWAY_BASE_URL=… ; curl -fsSL … | bash`) or the PowerShell command
+   (`$FlowayBaseUrl = …; irm … | iex`) and run it on the target machine. The
+   command injects this dashboard's own origin into the shell it runs; the
+   gateway never learns or stores its public URL.
 
    The command's setup URL stays the same while the panel is open. The visible
    panel renews its five-minute lease once a minute, and the URL expires about

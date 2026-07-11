@@ -236,8 +236,11 @@ describe('AgentSetupCard', () => {
   it('renders the shell and PowerShell commands with distinct copy-button names', () => {
     const w = mountCard();
     const text = w.text();
-    expect(text).toContain(`curl -fsSL ${window.location.origin}/api/setup/tok-1/setup.sh | bash`);
-    expect(text).toContain(`irm ${window.location.origin}/api/setup/tok-1/setup.ps1 | iex`);
+    // The origin is injected into the executing shell (exported for the piped
+    // bash; an in-runspace variable for iex) and the fetch URL references that
+    // same variable, so the origin literal appears exactly once per command.
+    expect(text).toContain(`export FLOWAY_BASE_URL='${window.location.origin}'; curl -fsSL "$FLOWAY_BASE_URL/api/setup/tok-1/setup.sh" | bash`);
+    expect(text).toContain(`$FlowayBaseUrl = '${window.location.origin}'; irm "$FlowayBaseUrl/api/setup/tok-1/setup.ps1" | iex`);
     expect(w.find('button[aria-label="Copy macOS · Linux · WSL command"]').exists()).toBe(true);
     expect(w.find('button[aria-label="Copy Windows PowerShell command"]').exists()).toBe(true);
     // The PowerShell command must not touch Execution Policy.
@@ -273,7 +276,7 @@ describe('AgentSetupCard', () => {
     const writeText = (navigator.clipboard as unknown as { writeText: ReturnType<typeof vi.fn> }).writeText;
     await w.findAll('button[aria-label^="Copy "][aria-label$=" command"]')[0]!.trigger('click');
     await nextTick();
-    expect(writeText).toHaveBeenCalledWith(`curl -fsSL ${window.location.origin}/api/setup/tok-1/setup.sh | bash`);
+    expect(writeText).toHaveBeenCalledWith(`export FLOWAY_BASE_URL='${window.location.origin}'; curl -fsSL "$FLOWAY_BASE_URL/api/setup/tok-1/setup.sh" | bash`);
   });
 
   it('surfaces a synchronization error from the setup composable', () => {

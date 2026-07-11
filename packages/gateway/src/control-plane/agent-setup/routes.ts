@@ -24,7 +24,6 @@ import { type AuthedContext, type AuthVars, userFromContext } from '../../middle
 import { type CtxWithJson, zValidator } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { AgentSetupMutation, AgentSetupRecord, ApiKey } from '../../repo/types.ts';
-import { getRequestOrigin } from '../../runtime/runtime-info.ts';
 import { agentSetupHeartbeatBody, agentSetupUpdateBody } from '../schemas.ts';
 
 // A lease lives five minutes past the server's current time; the dashboard's
@@ -79,9 +78,10 @@ const withFreshToken = async <T>(write: (token: string) => Promise<T>): Promise<
   }
 };
 
-// Origin-relative script URLs: the dashboard combines them with its own origin,
-// and a Node deployment behind a TLS-terminating proxy never has to trust a
-// forwarded host/proto to build them.
+// Origin-relative script URLs: the dashboard appends them to its own
+// `window.location.origin` to build both the fetch URL and the base URL it
+// injects into the executing shell, so the gateway never has to know or render
+// its own public origin.
 const scriptUrls = (token: string) => ({
   sh: `/api/setup/${token}/setup.sh`,
   ps1: `/api/setup/${token}/setup.ps1`,
@@ -136,10 +136,11 @@ const serveSetupScript = (language: ScriptLanguage) => async (c: AuthedContext) 
   // it never assembles the API-key-bearing body it would immediately drop.
   if (c.req.method === 'HEAD') return c.body(null, 200, SCRIPT_RESPONSE_HEADERS);
 
-  // The lease stores no origin: it is resolved from the serving request so the
-  // script points back at the host the user actually reached, honoring a Node
-  // reverse proxy's forwarded scheme without ever trusting a forwarded host.
-  const input = { apiKey: resolved.apiKey.key, baseUrl: getRequestOrigin(c.req.raw), configuration: resolved.configuration };
+  // The gateway never learns its own public origin: the response is only the
+  // API key, the selected configuration, and the fixed body. The dashboard
+  // injects the origin into the executing shell (`FLOWAY_BASE_URL` /
+  // `$FlowayBaseUrl`), from which the installer builds its own base URL.
+  const input = { apiKey: resolved.apiKey.key, configuration: resolved.configuration };
   const body = language === 'sh'
     ? renderShellPrefix(input) + SETUP_SH_BODY
     : renderPowerShellPrefix(input) + SETUP_PS1_BODY;

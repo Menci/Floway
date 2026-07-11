@@ -11,6 +11,7 @@ import AgentSetupCommand from './AgentSetupCommand.vue';
 import { useApi } from '../../api/client.ts';
 import type { ControlPlaneModel } from '../../api/types.ts';
 import { type AgentSetupConfiguration, useAgentSetup } from '../../composables/useAgentSetup.ts';
+import { buildPowerShellSetupCommand, buildShellSetupCommand } from '../../lib/agent-setup-command.ts';
 import {
   buildModelOptions,
   codexEffortSuggestions,
@@ -138,8 +139,8 @@ const codexEffort = computed<string>({
 });
 
 const origin = window.location.origin;
-const shellCommand = computed(() => (scripts.value ? `curl -fsSL ${origin}${scripts.value.sh} | bash` : ''));
-const powerShellCommand = computed(() => (scripts.value ? `irm ${origin}${scripts.value.ps1} | iex` : ''));
+const shellCommand = computed(() => (scripts.value ? buildShellSetupCommand(origin, scripts.value.sh) : ''));
+const powerShellCommand = computed(() => (scripts.value ? buildPowerShellSetupCommand(origin, scripts.value.ps1) : ''));
 const copyDisabled = computed(() => !canCopy.value);
 </script>
 
