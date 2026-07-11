@@ -25,7 +25,9 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import type { AgentSetupConfiguration } from '../packages/gateway/src/control-plane/agent-setup/configuration.ts';
-import { powerShellLiteral, renderPowerShellPrefix, renderShellPrefix } from '../packages/gateway/src/control-plane/agent-setup/render.ts';
+import { renderPowerShellPrefix, renderShellPrefix } from '../packages/gateway/src/control-plane/agent-setup/render.ts';
+
+const powerShellLiteral = (value: string): string => `'${value.replace(/'/g, "''")}'`;
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SCRIPTS_DIR = join(HERE, '..', 'packages/gateway/src/control-plane/agent-setup/scripts');
