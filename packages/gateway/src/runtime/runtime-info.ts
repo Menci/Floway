@@ -38,16 +38,16 @@ export const getRuntimeInfo = (request: Request): RuntimeInfo => ({
 // always reads `http://<host>`. TLS is terminated elsewhere: either in an
 // operator's own proxy in front of that nginx, or in a custom proxy pointed
 // straight at Node. The terminator's `X-Forwarded-Proto` is then the only
-// signal that recovers the real public scheme. nginx forwards that header only
-// as a validated single `http`/`https` token (else its own `$scheme`), and we
-// mirror the same bound here: on Node we honor `X-Forwarded-Proto` only as one
-// `http`/`https` value that overrides the scheme, always keeping the request
-// URL's own host — a forwarded host is never trusted. A missing, comma-chained,
-// or otherwise invalid value falls back to the request URL's protocol.
+// signal that recovers the real public scheme. nginx normalizes a single
+// case-insensitive `http`/`https` token (else its own `$scheme`), and we mirror
+// that boundary here: on Node we normalize and honor one such value while
+// always keeping the request URL's own host — a forwarded host is never trusted.
+// A missing, comma-chained, or otherwise invalid value falls back to the request
+// URL's protocol.
 export const getRequestOrigin = (request: Request): string => {
   const url = new URL(request.url);
   if (getRuntimeKind() === 'node') {
-    const forwardedProto = request.headers.get('x-forwarded-proto');
+    const forwardedProto = request.headers.get('x-forwarded-proto')?.toLowerCase();
     if (forwardedProto === 'http' || forwardedProto === 'https') url.protocol = `${forwardedProto}:`;
   }
   return url.origin;

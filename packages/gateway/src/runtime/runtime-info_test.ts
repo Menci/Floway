@@ -62,8 +62,12 @@ test('getRequestOrigin on Node honors a single X-Forwarded-Proto value, keeping 
   assertEquals(getRequestOrigin(request), 'https://public-host');
 });
 
-test('getRequestOrigin on Node ignores a comma-chained or invalid X-Forwarded-Proto', () => {
-  for (const forwardedProto of ['https, http', 'HTTPS', 'ftp', '']) {
+test('getRequestOrigin on Node normalizes a single X-Forwarded-Proto value and rejects chains or invalid schemes', () => {
+  for (const forwardedProto of ['https', 'HTTPS', 'Https']) {
+    const request = new Request('http://public-host/x', { headers: { 'x-forwarded-proto': forwardedProto } });
+    assertEquals(getRequestOrigin(request), 'https://public-host');
+  }
+  for (const forwardedProto of ['https, http', 'ftp', '']) {
     const request = new Request('http://public-host/x', { headers: { 'x-forwarded-proto': forwardedProto } });
     assertEquals(getRequestOrigin(request), 'http://public-host');
   }
@@ -80,10 +84,10 @@ test('getRequestOrigin on Cloudflare ignores a spoofed X-Forwarded-Proto and use
   assertEquals(getRequestOrigin(request), 'https://cf-host');
 });
 
-// Coherence guard: the bundled proxy must forward exactly the proto shape
-// getRequestOrigin trusts above — a single clean `http`/`https` token, else the
-// proxy's own `$scheme`. Asserted against the checked-in source, not a running
-// nginx, so drift is caught without a container.
+// Coherence guard: the bundled proxy must normalize one case-insensitive
+// `http`/`https` token, else use its own `$scheme`; getRequestOrigin mirrors that
+// boundary. Asserted against the checked-in source so drift is caught without a
+// container.
 test('docker/nginx.conf forwards X-Forwarded-Proto through a validated http|https map matching getRequestOrigin', () => {
   const conf = readFileSync(new URL('../../../../docker/nginx.conf', import.meta.url), 'utf8');
 
