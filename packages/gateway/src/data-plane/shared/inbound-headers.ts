@@ -7,8 +7,10 @@ import type { Context } from 'hono';
 //   content-type on the wire (Azure's `api-key`, Anthropic's `x-api-key`,
 //   `Authorization: Bearer`, each provider's body-derived `content-type`,
 //   the runtime's freshly-derived multipart boundary for FormData
-//   passthrough). Letting any of these survive would clobber a pinned
-//   value or leak a private one.
+//   passthrough). `x-openai-actor-authorization` is also gateway-owned: the
+//   dashboard's Codex config uses a non-secret marker in that slot to enable
+//   Codex's remote web tool for a custom provider. Letting any of these
+//   survive would clobber a pinned value or leak a private one.
 //
 // - HTTP/1.1 framing + hop-by-hop (RFC 9110 §7.6.1). `content-length`,
 //   `content-encoding`, and `transfer-encoding` describe the inbound body
@@ -65,6 +67,7 @@ const SCRUBBED_INBOUND_HEADER_NAMES = [
   'x-api-key',
   'x-client-ip',
   'x-floway-session',
+  'x-openai-actor-authorization',
   'x-forwarded-for',
   'x-forwarded-host',
   'x-forwarded-proto',
