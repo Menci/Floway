@@ -32,7 +32,7 @@ test('/api/performance/overview modelRows carry backend-aggregated base-model pe
   assertEquals(response.status, 200);
   const body = await response.json();
   const slowMid = Math.sqrt(200 * 300);
-  assertEquals(body.modelRows, [
+  assertEquals(body.axes.model, [
     {
       bucket: 'all',
       group: 'claude-opus-4-7',
@@ -85,8 +85,8 @@ test('/api/performance/overview scopes to actor\'s keys in self-by-key mode', as
   assertEquals(response.status, 200);
   const body = await response.json();
   // Only the actor's key surfaces in keyRows; the other user's row is filtered out.
-  assertEquals(body.keyRows.length, 1);
-  assertEquals(body.keyRows[0].group, apiKey.id);
+  assertEquals(body.axes.keyId.length, 1);
+  assertEquals(body.axes.keyId[0].group, apiKey.id);
 });
 
 test('/api/performance/overview always returns key metadata', async () => {
@@ -149,9 +149,9 @@ test('/api/performance/overview all-by-user view aggregates over every key', asy
 
   assertEquals(response.status, 200);
   const body = await response.json();
-  assertEquals(body.modelRows.length, 1);
-  assertEquals(body.modelRows[0].group, 'gpt-5');
-  assertEquals(body.modelRows[0].requests, 2);
+  assertEquals(body.axes.model.length, 1);
+  assertEquals(body.axes.model[0].group, 'gpt-5');
+  assertEquals(body.axes.model[0].requests, 2);
 });
 
 test('/api/performance/overview rejects all-by-user from a user without canViewGlobalTelemetry', async () => {
@@ -192,7 +192,7 @@ test('/api/performance/overview all-by-user keyRows spans every user\'s keys', a
 
   assertEquals(response.status, 200);
   const body = await response.json();
-  const groups = body.keyRows.map((r: { group: string; requests: number }) => [r.group, r.requests]).sort();
+  const groups = body.axes.keyId.map((r: { group: string; requests: number }) => [r.group, r.requests]).sort();
   assertEquals(groups, [[apiKey.id, 1], ['key_other', 1]].sort());
 });
 
@@ -227,7 +227,7 @@ test('/api/performance/overview all-by-user userRows split rows per user', async
 
   assertEquals(response.status, 200);
   const body = await response.json();
-  const groups = body.userRows.map((r: { group: string; requests: number }) => [r.group, r.requests]).sort();
+  const groups = body.axes.userId.map((r: { group: string; requests: number }) => [r.group, r.requests]).sort();
   assertEquals(groups, [['1', 1], ['2', 2]]);
 });
 
@@ -331,10 +331,10 @@ test('/api/performance/overview returns dashboard aggregates from one repo query
   const body = await response.json();
   assertEquals(queryCount, 1);
   assertEquals(body.series[0].group, 'claude-sonnet-4-5');
-  assertEquals(body.summaryRows[0].bucket, 'all');
-  assertEquals(body.modelRows[0].group, 'claude-sonnet-4-5');
-  assertEquals(body.upstreamRows[0].group, 'copilot:1');
-  assertEquals(body.runtimeRows[0].group, 'SJC');
+  assertEquals(body.axes.none[0].bucket, 'all');
+  assertEquals(body.axes.model[0].group, 'claude-sonnet-4-5');
+  assertEquals(body.axes.upstream[0].group, 'copilot:1');
+  assertEquals(body.axes.runtimeLocation[0].group, 'SJC');
 });
 
 test('/api/performance/overview counts failed attempts in dashboard request totals', async () => {
@@ -352,13 +352,13 @@ test('/api/performance/overview counts failed attempts in dashboard request tota
 
   assertEquals(response.status, 200);
   const body = await response.json();
-  assertEquals(body.summaryRows[0].requests, 1);
-  assertEquals(body.summaryRows[0].errors, 1);
-  assertEquals(body.summaryRows[0].ttftSamples, 0);
-  assertEquals(body.modelRows[0].group, 'gpt-5.5-pro-2026-04-23');
-  assertEquals(body.modelRows[0].requests, 1);
-  assertEquals(body.modelRows[0].errors, 1);
-  assertEquals(body.modelRows[0].ttftMsP95, null);
+  assertEquals(body.axes.none[0].requests, 1);
+  assertEquals(body.axes.none[0].errors, 1);
+  assertEquals(body.axes.none[0].ttftSamples, 0);
+  assertEquals(body.axes.model[0].group, 'gpt-5.5-pro-2026-04-23');
+  assertEquals(body.axes.model[0].requests, 1);
+  assertEquals(body.axes.model[0].errors, 1);
+  assertEquals(body.axes.model[0].ttftMsP95, null);
 });
 
 test('/api/performance/overview rejects out-of-range timezone offsets', async () => {
@@ -459,7 +459,7 @@ test('/api/performance/overview all-by-user attributes soft-deleted keys to thei
 
   assertEquals(response.status, 200);
   const body = await response.json();
-  const groups = body.userRows.map((r: { group: string; requests: number }) => [r.group, r.requests]);
+  const groups = body.axes.userId.map((r: { group: string; requests: number }) => [r.group, r.requests]);
   assertEquals(groups, [[String(apiKey.userId), 1]]);
 });
 
@@ -501,7 +501,7 @@ test('/api/performance/overview self-by-key surfaces soft-deleted keys metadata 
   // would have hidden it; the row attributes back to its keyId in keyRows.
   const ids = body.keys.map((k: { id: string }) => k.id).sort();
   assertEquals(ids.includes(apiKey.id), true);
-  const matched = body.keyRows.find((r: { group: string }) => r.group === apiKey.id);
+  const matched = body.axes.keyId.find((r: { group: string }) => r.group === apiKey.id);
   assertEquals(matched?.requests, 1);
 });
 
@@ -540,8 +540,8 @@ test('/api/performance/overview returns operationRows grouped by operation value
 
   assertEquals(response.status, 200);
   const body = await response.json();
-  assertEquals(typeof body.operationRows, 'object');
-  const opGroups = body.operationRows.map((r: { group: string; requests: number; neutral: number }) => ({ group: r.group, requests: r.requests, neutral: r.neutral })).sort((a: { group: string }, b: { group: string }) => a.group.localeCompare(b.group));
+  assertEquals(typeof body.axes.operation, 'object');
+  const opGroups = body.axes.operation.map((r: { group: string; requests: number; neutral: number }) => ({ group: r.group, requests: r.requests, neutral: r.neutral })).sort((a: { group: string }, b: { group: string }) => a.group.localeCompare(b.group));
   assertEquals(opGroups, [
     { group: 'chat', requests: 1, neutral: 0 },
     { group: 'embeddings', requests: 2, neutral: 2 },

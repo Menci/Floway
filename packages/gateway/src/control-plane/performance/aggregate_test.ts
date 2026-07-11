@@ -1,8 +1,14 @@
 import { test } from 'vitest';
 
-import { aggregatePerformanceForDisplay } from './aggregate.ts';
+import { aggregatePerformanceForDisplay, type AggregateOptions, type PerformanceDisplayRecord } from './aggregate.ts';
 import type { PerformanceTelemetryRecord } from '../../repo/types.ts';
 import { assertEquals } from '@floway-dev/test-utils';
+
+// The production aggregator is multi-axis: one traversal produces every
+// per-axis breakdown. Every case here focuses on a single axis, so unwrap
+// it through a one-axis map to keep the test surface flat.
+const aggregateSingle = (records: readonly PerformanceTelemetryRecord[], options: AggregateOptions): PerformanceDisplayRecord[] =>
+  aggregatePerformanceForDisplay(records, { axis: options }).axis;
 
 const record = (overrides: Partial<PerformanceTelemetryRecord> = {}): PerformanceTelemetryRecord => ({
   hour: '2026-04-30T10',
@@ -33,7 +39,7 @@ const TTFT_MID = Math.sqrt(50 * 100);
 const TPOT_MID = Math.sqrt(200 * 500);
 
 test('aggregatePerformanceForDisplay produces correct averages and percentiles for a single record', () => {
-  const rows = aggregatePerformanceForDisplay(
+  const rows = aggregateSingle(
     [record()],
     { bucket: 'hour', groupBy: 'model', timezoneOffsetMinutes: 0 },
   );
@@ -59,7 +65,7 @@ test('aggregatePerformanceForDisplay produces correct averages and percentiles f
 });
 
 test('aggregatePerformanceForDisplay counts error-only rows as displayed requests without fabricating latency', () => {
-  const rows = aggregatePerformanceForDisplay(
+  const rows = aggregateSingle(
     [
       record({
         model: 'gpt-5.5-pro-2026-04-23',
@@ -97,7 +103,7 @@ test('aggregatePerformanceForDisplay counts error-only rows as displayed request
 });
 
 test('aggregatePerformanceForDisplay merges two hours under bucket: all', () => {
-  const rows = aggregatePerformanceForDisplay(
+  const rows = aggregateSingle(
     [record({ hour: '2026-04-30T10' }), record({ hour: '2026-04-30T11' })],
     { bucket: 'all', groupBy: 'model', timezoneOffsetMinutes: 0 },
   );
@@ -111,7 +117,7 @@ test('aggregatePerformanceForDisplay merges two hours under bucket: all', () => 
 });
 
 test('aggregatePerformanceForDisplay splits rows by upstream when groupBy is upstream', () => {
-  const rows = aggregatePerformanceForDisplay(
+  const rows = aggregateSingle(
     [
       record({ upstream: 'copilot:1' }),
       record({ upstream: 'codex:2' }),
@@ -129,7 +135,7 @@ test('aggregatePerformanceForDisplay returns lower edge for overflow-bucket perc
   // { lower: <top-finite-edge>, upper: null }. percentileFromBuckets returns
   // bucket.lower when upper is null (geometric midpoint is undefined without an
   // upper edge).
-  const rows = aggregatePerformanceForDisplay(
+  const rows = aggregateSingle(
     [
       record({
         ttftMsSum: 600_000,
@@ -147,19 +153,19 @@ test('aggregatePerformanceForDisplay returns lower edge for overflow-bucket perc
 });
 
 test('aggregatePerformanceForDisplay groups days using caller timezone offset', () => {
-  const rows = aggregatePerformanceForDisplay([record({ hour: '2026-04-30T16' })], { bucket: 'day', groupBy: 'none', timezoneOffsetMinutes: -480 });
+  const rows = aggregateSingle([record({ hour: '2026-04-30T16' })], { bucket: 'day', groupBy: 'none', timezoneOffsetMinutes: -480 });
 
   assertEquals(rows[0].bucket, '2026-05-01');
 });
 
 test('aggregatePerformanceForDisplay groups hours using caller timezone offset', () => {
-  const rows = aggregatePerformanceForDisplay([record({ hour: '2026-04-30T16' })], { bucket: 'hour', groupBy: 'none', timezoneOffsetMinutes: -480 });
+  const rows = aggregateSingle([record({ hour: '2026-04-30T16' })], { bucket: 'hour', groupBy: 'none', timezoneOffsetMinutes: -480 });
 
   assertEquals(rows[0].bucket, '2026-05-01T00');
 });
 
 test('aggregatePerformanceForDisplay aligns 4h buckets to {00,04,08,12,16,20}', () => {
-  const rows = aggregatePerformanceForDisplay([record({ hour: '2026-04-30T09' }), record({ hour: '2026-04-30T11' }), record({ hour: '2026-04-30T15' })], {
+  const rows = aggregateSingle([record({ hour: '2026-04-30T09' }), record({ hour: '2026-04-30T11' }), record({ hour: '2026-04-30T15' })], {
     bucket: '4h',
     groupBy: 'none',
     timezoneOffsetMinutes: 0,
@@ -173,7 +179,7 @@ test('aggregatePerformanceForDisplay aligns 4h buckets to {00,04,08,12,16,20}', 
 });
 
 test('aggregatePerformanceForDisplay aligns 8h buckets to {00,08,16}', () => {
-  const rows = aggregatePerformanceForDisplay([record({ hour: '2026-04-30T09' }), record({ hour: '2026-04-30T15' })], { bucket: '8h', groupBy: 'none', timezoneOffsetMinutes: 0 });
+  const rows = aggregateSingle([record({ hour: '2026-04-30T09' }), record({ hour: '2026-04-30T15' })], { bucket: '8h', groupBy: 'none', timezoneOffsetMinutes: 0 });
 
   assertEquals(rows.length, 1);
   assertEquals(rows[0].bucket, '2026-04-30T08');
@@ -182,13 +188,13 @@ test('aggregatePerformanceForDisplay aligns 8h buckets to {00,08,16}', () => {
 
 test('aggregatePerformanceForDisplay aligns 8h buckets in caller timezone', () => {
   // local = UTC-08:00; UTC 16:00 -> local 08:00 -> 8h bucket starts at 08:00.
-  const rows = aggregatePerformanceForDisplay([record({ hour: '2026-04-30T16' })], { bucket: '8h', groupBy: 'none', timezoneOffsetMinutes: 480 });
+  const rows = aggregateSingle([record({ hour: '2026-04-30T16' })], { bucket: '8h', groupBy: 'none', timezoneOffsetMinutes: 480 });
 
   assertEquals(rows[0].bucket, '2026-04-30T08');
 });
 
 test('aggregatePerformanceForDisplay splits rows by operation when groupBy is operation', () => {
-  const rows = aggregatePerformanceForDisplay(
+  const rows = aggregateSingle(
     [
       record({ operation: 'chat' }),
       record({ operation: 'embeddings', requests: 2, errors: 0, ttftSamples: 0, tpotSamples: 0, ttftMsSum: 0, tpotUsSum: 0, buckets: [] }),
@@ -202,7 +208,7 @@ test('aggregatePerformanceForDisplay splits rows by operation when groupBy is op
 });
 
 test('aggregatePerformanceForDisplay derives neutral as requests - ttftSamples - errors + failedWithOutput', () => {
-  const rows = aggregatePerformanceForDisplay(
+  const rows = aggregateSingle(
     [
       record({
         requests: 5, ttftSamples: 3, tpotSamples: 3, errors: 1, ttftMsSum: 300, tpotUsSum: 1500, buckets: [
@@ -226,7 +232,7 @@ test('aggregatePerformanceForDisplay backs partial-output failures out of neutra
   // errors AND ttftSamples). Without the overlap subtraction, neutral would
   // read `4 - 3 - 2 = -1`; with `failedWithOutput = 1` the aggregator gets
   // `4 - 3 - 2 + 1 = 0`, matching the recorder's actual partition.
-  const rows = aggregatePerformanceForDisplay(
+  const rows = aggregateSingle(
     [
       record({
         requests: 4, ttftSamples: 3, tpotSamples: 3, errors: 2, failedWithOutput: 1, ttftMsSum: 300, tpotUsSum: 1500, buckets: [
@@ -251,7 +257,7 @@ test('aggregatePerformanceForDisplay surfaces negative neutral when input row br
   // the recorder path (manual D1 UPDATE, future recorder bug). We pass the raw
   // subtraction through so the corruption surfaces on the dashboard rather than
   // hiding behind a floor.
-  const rows = aggregatePerformanceForDisplay(
+  const rows = aggregateSingle(
     [record({
       requests: 2, ttftSamples: 3, tpotSamples: 3, errors: 1, ttftMsSum: 300, tpotUsSum: 1500, buckets: [
         { metric: 'ttft_ms', lower: 50, upper: 100, count: 3 },
@@ -265,7 +271,7 @@ test('aggregatePerformanceForDisplay surfaces negative neutral when input row br
 });
 
 test('aggregatePerformanceForDisplay neutral is zero for pure chat rows (ttftSamples + errors - failedWithOutput = requests)', () => {
-  const rows = aggregatePerformanceForDisplay(
+  const rows = aggregateSingle(
     [record({
       requests: 4, ttftSamples: 3, tpotSamples: 3, errors: 1, ttftMsSum: 300, tpotUsSum: 1500, buckets: [
         { metric: 'ttft_ms', lower: 50, upper: 100, count: 3 },
@@ -282,7 +288,7 @@ test('aggregatePerformanceForDisplay tpot percentiles derive from the tpot bucke
   // Mix: one full sample (contributes ttft + tpot) + one TTFT-only sample (ttft only).
   // The tpot histogram carries only the full sample's bucket, so tpot percentiles
   // reflect that single point without dilution from the TTFT-only row.
-  const rows = aggregatePerformanceForDisplay(
+  const rows = aggregateSingle(
     [record({
       requests: 2, ttftSamples: 2, tpotSamples: 1, buckets: [
         { metric: 'ttft_ms', lower: 50, upper: 100, count: 2 },
@@ -301,7 +307,7 @@ test('aggregatePerformanceForDisplay tpot percentiles derive from the tpot bucke
 test('aggregatePerformanceForDisplay groups by userId via keyToUser and drops orphan-key rows', () => {
   // key_a → user 7, key_b → user 42, key_ghost → hard-deleted (not in map).
   // The orphan row must not surface as a synthetic userId 0 bucket.
-  const rows = aggregatePerformanceForDisplay(
+  const rows = aggregateSingle(
     [
       record({ keyId: 'key_a', requests: 2, ttftSamples: 0, tpotSamples: 0, ttftMsSum: 0, tpotUsSum: 0, buckets: [] }),
       record({ keyId: 'key_b', requests: 5, ttftSamples: 0, tpotSamples: 0, ttftMsSum: 0, tpotUsSum: 0, buckets: [] }),
@@ -323,7 +329,7 @@ test('aggregatePerformanceForDisplay groups by userId via keyToUser and drops or
 test('aggregatePerformanceForDisplay does not conflate a real userId 0 with orphan-key rows', () => {
   // key_zero legitimately maps to user 0; key_ghost is hard-deleted. Only the
   // real user 0 row must appear, and its request count must exclude the ghost.
-  const rows = aggregatePerformanceForDisplay(
+  const rows = aggregateSingle(
     [
       record({ keyId: 'key_zero', requests: 3, ttftSamples: 0, tpotSamples: 0, ttftMsSum: 0, tpotUsSum: 0, buckets: [] }),
       record({ keyId: 'key_ghost', requests: 11, ttftSamples: 0, tpotSamples: 0, ttftMsSum: 0, tpotUsSum: 0, buckets: [] }),

@@ -9,7 +9,7 @@
 //   `canViewGlobalTelemetry`). `group_by=keyId` is rejected so we never leak
 //   another user's key id into a global response.
 
-import { aggregatePerformanceForDisplayMulti, type PerformanceBucketGranularity, type PerformanceGroupBy } from './aggregate.ts';
+import { aggregatePerformanceForDisplay, type PerformanceBucketGranularity, type PerformanceGroupBy } from './aggregate.ts';
 import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { PerformanceTelemetryRecord } from '../../repo/types.ts';
@@ -232,17 +232,19 @@ export const performanceOverview = async (c: Ctx) => {
 
   const tzOnly = { timezoneOffsetMinutes: params.value.timezoneOffsetMinutes };
   // One traversal of `filtered` feeds every breakdown (chart series +
-  // summary + per-dimension By-X panels).
+  // per-axis breakdown tables). The 'none' axis carries the summary row —
+  // same all-buckets, no-groupBy aggregate the dashboard's summary stat
+  // cards read.
   const axisBase = { ...tzOnly, keyToUser: keysInfo.keyToUser };
-  const breakdowns = aggregatePerformanceForDisplayMulti(filtered, {
+  const { series, ...axes } = aggregatePerformanceForDisplay(filtered, {
     series: { ...axisBase, bucket: params.value.bucket, groupBy: params.value.groupBy },
-    summaryRows: { ...axisBase, bucket: 'all', groupBy: 'none' },
-    modelRows: { ...axisBase, bucket: 'all', groupBy: 'model' },
-    upstreamRows: { ...axisBase, bucket: 'all', groupBy: 'upstream' },
-    runtimeRows: { ...axisBase, bucket: 'all', groupBy: 'runtimeLocation' },
-    operationRows: { ...axisBase, bucket: 'all', groupBy: 'operation' },
-    keyRows: { ...axisBase, bucket: 'all', groupBy: 'keyId' },
-    userRows: { ...axisBase, bucket: 'all', groupBy: 'userId' },
+    none: { ...axisBase, bucket: 'all', groupBy: 'none' as const },
+    model: { ...axisBase, bucket: 'all', groupBy: 'model' as const },
+    upstream: { ...axisBase, bucket: 'all', groupBy: 'upstream' as const },
+    runtimeLocation: { ...axisBase, bucket: 'all', groupBy: 'runtimeLocation' as const },
+    operation: { ...axisBase, bucket: 'all', groupBy: 'operation' as const },
+    keyId: { ...axisBase, bucket: 'all', groupBy: 'keyId' as const },
+    userId: { ...axisBase, bucket: 'all', groupBy: 'userId' as const },
   });
 
   // User/key name metadata is always returned so the dashboard can render
@@ -257,14 +259,14 @@ export const performanceOverview = async (c: Ctx) => {
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
 
   return c.json({
-    series: breakdowns.series,
-    summaryRows: breakdowns.summaryRows,
-    modelRows: breakdowns.modelRows,
-    upstreamRows: breakdowns.upstreamRows,
-    runtimeRows: breakdowns.runtimeRows,
-    operationRows: breakdowns.operationRows,
-    keyRows: breakdowns.keyRows,
-    userRows: includeUserRows ? breakdowns.userRows : [],
+    series,
+    axes: {
+      ...axes,
+      // By-User panel is only meaningful in all-by-user; every self-view
+      // row belongs to the actor by construction, so both the panel and
+      // the user-filter dropdown are collapsed for that view.
+      userId: includeUserRows ? axes.userId : [],
+    },
     dimensionValues,
     users: userMetadata,
     keys,

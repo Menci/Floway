@@ -21,7 +21,7 @@ export interface PerformanceDisplayRecord {
   tpotUsP99: number | null;
 }
 
-interface AggregateOptions {
+export interface AggregateOptions {
   bucket: PerformanceBucketGranularity;
   groupBy: PerformanceGroupBy;
   timezoneOffsetMinutes: number;
@@ -141,18 +141,12 @@ const toDisplayRecord = (a: MutableAggregate): PerformanceDisplayRecord => {
 const finalizeAggregates = (aggregates: Map<string, MutableAggregate>): PerformanceDisplayRecord[] =>
   [...aggregates.values()].map(toDisplayRecord).sort((a, b) => a.bucket.localeCompare(b.bucket) || a.group.localeCompare(b.group));
 
-export const aggregatePerformanceForDisplay = (records: readonly PerformanceTelemetryRecord[], options: AggregateOptions): PerformanceDisplayRecord[] => {
-  const aggregates = new Map<string, MutableAggregate>();
-  for (const record of records) updateAggregate(aggregates, record, options);
-  return finalizeAggregates(aggregates);
-};
-
-// One-pass multi-axis variant. The dashboard overview asks for the same
-// records aggregated along 6-8 different (bucket, groupBy) axes; running
-// the single-axis function once per axis walks the record set N times
-// with an identical outer loop. This visits each record once and updates
-// every axis's Map in-place.
-export const aggregatePerformanceForDisplayMulti = <K extends string>(
+// One-pass multi-axis aggregator. The dashboard overview asks for the same
+// records aggregated along 6-8 different (bucket, groupBy) axes; running a
+// single-axis loop once per axis walks the record set N times with an
+// identical outer traversal. This visits each record once and updates every
+// axis's Map in-place, then finalizes them into per-axis display arrays.
+export const aggregatePerformanceForDisplay = <K extends string>(
   records: readonly PerformanceTelemetryRecord[],
   axes: Record<K, AggregateOptions>,
 ): Record<K, PerformanceDisplayRecord[]> => {

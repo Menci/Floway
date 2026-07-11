@@ -43,20 +43,18 @@ interface KeyMetadata { id: string; name: string; createdAt: string }
 
 interface PerformanceOverviewResponse {
   series: PerformanceDisplayRecord[];
-  summaryRows: PerformanceDisplayRecord[];
-  modelRows: PerformanceDisplayRecord[];
-  upstreamRows: PerformanceDisplayRecord[];
-  runtimeRows: PerformanceDisplayRecord[];
-  operationRows: PerformanceDisplayRecord[];
-  keyRows: PerformanceDisplayRecord[];
-  userRows: PerformanceDisplayRecord[];
+  // Backend produces one breakdown per PerformanceGroupBy axis in a single
+  // record traversal. 'none' is the summary (all buckets, no group split);
+  // every other key is the equivalent By-X panel row set.
+  axes: Record<GroupBy | 'none', PerformanceDisplayRecord[]>;
   dimensionValues: DimensionValues;
   users: UserMetadata[];
   keys: KeyMetadata[];
 }
 
 const emptyOverview = (): PerformanceOverviewResponse => ({
-  series: [], summaryRows: [], modelRows: [], upstreamRows: [], runtimeRows: [], operationRows: [], keyRows: [], userRows: [],
+  series: [],
+  axes: { none: [], model: [], upstream: [], runtimeLocation: [], operation: [], keyId: [], userId: [] },
   dimensionValues: { models: [], upstreams: [], operations: [], runtimeLocations: [], keyIds: [], userIds: [] },
   users: [], keys: [],
 });
@@ -422,12 +420,12 @@ const sortedRows = (rows: readonly PerformanceDisplayRecord[], groupBy: GroupBy)
 // re-runs when its actual inputs change (row snapshot, sort key/dir, or
 // any name-resolver map behind the group-column sort).
 const breakdownTables = computed(() => [
-  { key: 'model' as const, label: 'By Model', rows: overview.value.modelRows, header: 'Model' },
-  { key: 'upstream' as const, label: 'By Upstream', rows: overview.value.upstreamRows, header: 'Upstream' },
-  { key: 'runtimeLocation' as const, label: 'By Region', rows: overview.value.runtimeRows, header: 'Region' },
-  { key: 'operation' as const, label: 'By Operation', rows: overview.value.operationRows, header: 'Operation' },
-  { key: 'userId' as const, label: 'By User', rows: overview.value.userRows, header: 'User' },
-  { key: 'keyId' as const, label: 'By API Key', rows: overview.value.keyRows, header: 'API Key' },
+  { key: 'model' as const, label: 'By Model', rows: overview.value.axes.model, header: 'Model' },
+  { key: 'upstream' as const, label: 'By Upstream', rows: overview.value.axes.upstream, header: 'Upstream' },
+  { key: 'runtimeLocation' as const, label: 'By Region', rows: overview.value.axes.runtimeLocation, header: 'Region' },
+  { key: 'operation' as const, label: 'By Operation', rows: overview.value.axes.operation, header: 'Operation' },
+  { key: 'userId' as const, label: 'By User', rows: overview.value.axes.userId, header: 'User' },
+  { key: 'keyId' as const, label: 'By API Key', rows: overview.value.axes.keyId, header: 'API Key' },
 ].map(t => ({ ...t, sortedRows: sortedRows(t.rows, t.key) })));
 
 const sortIndicator = (key: TableSortKey): string => {
@@ -568,7 +566,7 @@ const chartConfig = computed<ChartConfiguration<'line'>>(() => {
 
 const performanceSeriesIds = computed(() => chartSeriesIds(chartConfig.value));
 
-const performanceSummary = computed<PerformanceDisplayRecord>(() => overview.value.summaryRows[0] ?? {
+const performanceSummary = computed<PerformanceDisplayRecord>(() => overview.value.axes.none[0] ?? {
   bucket: 'all',
   group: 'all',
   requests: 0,
