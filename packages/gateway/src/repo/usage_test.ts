@@ -37,7 +37,7 @@ const record = (overrides: Partial<UsageRecord>): UsageRecord => ({
   tier: null,
   inputAboveTokens: null,
   requests: 1,
-  tokens: { input: 300_000, output: 100_000 },
+  tokens: { input: 300_000, input_cache_read: 20_000, output: 100_000 },
   cost: gridPricing,
   ...overrides,
 });
@@ -51,28 +51,29 @@ for (const backend of backends) {
     const [row] = await query(repo);
     assertEquals(row.inputAboveTokens, 272000);
     // The whole bucket is priced at the long-band rates, not the base rates.
+    // Only dimensions that carry tokens get a unit-price snapshot.
     assertEquals(row.cost, { input: 10, input_cache_read: 1, output: 45 });
   });
 
   test(`${backend.name} usage repo keeps different input-length bands in separate buckets`, async () => {
     const repo = await backend.make();
-    await repo.usage.record(record({ inputAboveTokens: null, tokens: { input: 100, output: 50 } }));
-    await repo.usage.record(record({ inputAboveTokens: 272000, tokens: { input: 300_000, output: 100_000 } }));
+    await repo.usage.record(record({ inputAboveTokens: null, tokens: { input: 100, input_cache_read: 20, output: 50 } }));
+    await repo.usage.record(record({ inputAboveTokens: 272000, tokens: { input: 300_000, input_cache_read: 20_000, output: 100_000 } }));
     const rows = (await query(repo)).sort((a, b) => (a.inputAboveTokens ?? 0) - (b.inputAboveTokens ?? 0));
     assertEquals(rows.length, 2);
     assertEquals(rows[0].inputAboveTokens, null);
-    assertEquals(rows[0].cost, { input: 5, output: 30 });
+    assertEquals(rows[0].cost, { input: 5, input_cache_read: 0.5, output: 30 });
     assertEquals(rows[1].inputAboveTokens, 272000);
     assertEquals(rows[1].cost, { input: 10, input_cache_read: 1, output: 45 });
   });
 
   test(`${backend.name} usage repo sums additive writes within one grid cell`, async () => {
     const repo = await backend.make();
-    await repo.usage.record(record({ inputAboveTokens: 272000, tokens: { input: 300_000, output: 100_000 } }));
-    await repo.usage.record(record({ inputAboveTokens: 272000, tokens: { input: 300_000, output: 100_000 } }));
+    await repo.usage.record(record({ inputAboveTokens: 272000 }));
+    await repo.usage.record(record({ inputAboveTokens: 272000 }));
     const rows = await query(repo);
     assertEquals(rows.length, 1);
-    assertEquals(rows[0].tokens, { input: 600_000, output: 200_000 });
+    assertEquals(rows[0].tokens, { input: 600_000, input_cache_read: 40_000, output: 200_000 });
     assertEquals(rows[0].requests, 2);
   });
 
