@@ -43,7 +43,12 @@ const TOKEN_COLLISION_MESSAGE = /UNIQUE constraint failed: agent_setup\.token/i;
 
 const SCRIPT_RESPONSE_HEADERS = {
   'content-type': 'text/plain; charset=utf-8',
+  // The rendered script carries a live API key: it must never be cached by any
+  // hop. cache-control:no-store covers HTTP/1.1; Pragma and Expires cover the
+  // HTTP/1.0 proxies and clients that ignore Cache-Control.
   'cache-control': 'no-store',
+  'pragma': 'no-cache',
+  'expires': '0',
   'referrer-policy': 'no-referrer',
   'x-content-type-options': 'nosniff',
 } as const;

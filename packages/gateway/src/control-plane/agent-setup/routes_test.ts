@@ -271,6 +271,8 @@ test('GET /api/setup/:token/setup.sh serves the prefix + fixed body with hardene
   assertEquals(response.status, 200);
   assertEquals(response.headers.get('content-type'), 'text/plain; charset=utf-8');
   assertEquals(response.headers.get('cache-control'), 'no-store');
+  assertEquals(response.headers.get('pragma'), 'no-cache');
+  assertEquals(response.headers.get('expires'), '0');
   assertEquals(response.headers.get('referrer-policy'), 'no-referrer');
   assertEquals(response.headers.get('x-content-type-options'), 'nosniff');
   assertEquals(response.headers.get('access-control-allow-origin'), null);
@@ -300,6 +302,8 @@ test('HEAD /api/setup/:token/setup.sh validates but returns an empty body', asyn
   const response = await requestApp(lease.scripts.sh, { method: 'HEAD' });
   assertEquals(response.status, 200);
   assertEquals(response.headers.get('cache-control'), 'no-store');
+  assertEquals(response.headers.get('pragma'), 'no-cache');
+  assertEquals(response.headers.get('expires'), '0');
   assertEquals(await response.text(), '');
 });
 
