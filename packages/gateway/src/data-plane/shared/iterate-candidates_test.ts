@@ -2,23 +2,33 @@ import { describe, expect, it } from 'vitest';
 
 import { iterateCandidates } from './iterate-candidates.ts';
 import type { GatewayCtx } from '../chat/shared/gateway-ctx.ts';
+import { mockGatewayCtx } from '../../test-helpers/gateway-ctx.ts';
 import type { ModelCandidate, PerformanceTelemetryContext } from '@floway-dev/provider';
+import { mockPerfTelemetryContext, stubModelCandidate, stubProvider } from '@floway-dev/test-utils';
 
 const stubCandidate = (id: string, upstream = 'up'): ModelCandidate =>
-  ({ model: { id }, provider: { upstream } } as unknown as ModelCandidate);
+  stubModelCandidate({
+    model: { id },
+    provider: {
+      upstream,
+      kind: 'custom',
+      name: upstream,
+      disabledPublicModelIds: [],
+      modelPrefix: null,
+      instance: stubProvider(),
+      supportsResponsesItemReference: false,
+    },
+  });
 
-const stubTelemetry = (upstream: string): PerformanceTelemetryContext =>
-  ({ upstream, model: { id: 'm', canonicalizedId: 'm' }, operation: 'chat' } as unknown as PerformanceTelemetryContext);
-
-// Minimal ctx stub — `iterateCandidates` reads only `attempt`,
-// `apiKeyId`, and `runtimeLocation` (the last two feed
-// `upstreamPerformanceContext` when stamping `attempt.telemetry`).
-const stubCtx = (attempt: GatewayCtx['attempt']): GatewayCtx =>
-  ({ apiKeyId: 'key-test', runtimeLocation: 'TEST', attempt } as unknown as GatewayCtx);
+// iterateCandidates reads `attempt`, `apiKeyId`, and `runtimeLocation` from
+// ctx — the last two feed `upstreamPerformanceContext` when stamping
+// `attempt.telemetry`. Building through mockGatewayCtx keeps the stub aligned
+// with the real GatewayCtx shape.
+const stubCtx = (attempt: GatewayCtx['attempt']): GatewayCtx => mockGatewayCtx({ attempt });
 
 describe('iterateCandidates', () => {
   it('clears the timing slots and stamps telemetry from the current candidate on entry', async () => {
-    const attempt = { upstreamCallStartedAt: 999, firstOutputTokenAt: 999, telemetry: stubTelemetry('carryover') as PerformanceTelemetryContext | undefined };
+    const attempt = { upstreamCallStartedAt: 999, firstOutputTokenAt: 999, telemetry: mockPerfTelemetryContext({ upstream: 'carryover' }) as PerformanceTelemetryContext | undefined };
     const ctx = stubCtx(attempt);
     const observed: Array<{ upstreamCallStartedAt: number | null; firstOutputTokenAt: number | null; upstream: string | undefined }> = [];
 
