@@ -208,6 +208,7 @@ export const listUpstreamOptions = async (c: Context) => {
       name: upstream.name,
       kind: upstream.kind,
       enabled: upstream.enabled,
+      color: upstream.color,
     })));
 };
 
