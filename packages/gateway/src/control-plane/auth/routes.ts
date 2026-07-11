@@ -18,14 +18,10 @@ const resolveLoginUser = async (c: CtxWithJson<typeof authLoginBody>): Promise<U
       const utf8 = new TextEncoder();
       if (!timingSafeEqual(utf8.encode(password), utf8.encode(adminKey))) return null;
     } else if (isProductionRequest(c)) {
-      // Zero-config passwordless admin login is a dev-only shortcut so
-      // brand-new local instances (no .dev.vars, no ADMIN_KEY set) still
-      // let the operator into the dashboard. A production deployment
-      // that shipped without ADMIN_KEY would otherwise be world-open;
-      // refuse instead. The Node target additionally hard-fails at boot
-      // under NODE_ENV=production with no ADMIN_KEY (apps/platform-node/
-      // entry.ts) so this branch is the Cloudflare-side gate plus Node
-      // defence-in-depth.
+      // Empty ADMIN_KEY grants zero-config passwordless admin login on
+      // dev instances (no .dev.vars needed) but would leave a production
+      // deployment world-open. Refuse when the request signals prod —
+      // per-runtime detection lives in isProductionRequest.
       return null;
     }
     const user = await repo.users.getById(1);
