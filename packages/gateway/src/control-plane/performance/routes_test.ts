@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { requestApp, setupAppTest } from '../../test-helpers.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
-test('/api/performance returns backend-aggregated base-model percentiles', async () => {
+test('/api/performance/overview modelRows carry backend-aggregated base-model percentiles', async () => {
   const { repo, apiKey } = await setupAppTest();
   const sample = {
     hour: '2026-04-30T10',
@@ -27,14 +27,14 @@ test('/api/performance returns backend-aggregated base-model percentiles', async
     await repo.performance.recordSample({ ...sample, ttftMs: 300 });
   }
 
-  const response = await requestApp('/api/performance?start=2026-04-30T00&end=2026-05-01T00&bucket=hour&group_by=model', { headers: { 'x-api-key': apiKey.key } });
+  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&bucket=hour', { headers: { 'x-api-key': apiKey.key } });
 
   assertEquals(response.status, 200);
   const body = await response.json();
   const slowMid = Math.sqrt(200 * 300);
-  assertEquals(body.records, [
+  assertEquals(body.modelRows, [
     {
-      bucket: '2026-04-30T10',
+      bucket: 'all',
       group: 'claude-opus-4-7',
       requests: 100,
       errors: 0,
@@ -52,7 +52,7 @@ test('/api/performance returns backend-aggregated base-model percentiles', async
   ]);
 });
 
-test('/api/performance scopes to actor\'s keys in self-by-key mode', async () => {
+test('/api/performance/overview scopes to actor\'s keys in self-by-key mode', async () => {
   const { repo, apiKey } = await setupAppTest();
   // A key owned by user 1 with usage in the same window — must NOT surface to
   // the actor (user 2) under the default self-by-key view.
@@ -80,16 +80,16 @@ test('/api/performance scopes to actor\'s keys in self-by-key mode', async () =>
   await repo.performance.recordSample({ ...sample, keyId: apiKey.id, ttftMs: 50 });
   await repo.performance.recordSample({ ...sample, keyId: 'key_other', ttftMs: 250 });
 
-  const response = await requestApp('/api/performance?start=2026-04-30T00&end=2026-05-01T00&bucket=hour&group_by=keyId', { headers: { 'x-api-key': apiKey.key } });
+  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&bucket=hour', { headers: { 'x-api-key': apiKey.key } });
 
   assertEquals(response.status, 200);
   const body = await response.json();
-  // Only the actor's key surfaces; the other user's row is filtered out.
-  assertEquals(body.records.length, 1);
-  assertEquals(body.records[0].group, apiKey.id);
+  // Only the actor's key surfaces in keyRows; the other user's row is filtered out.
+  assertEquals(body.keyRows.length, 1);
+  assertEquals(body.keyRows[0].group, apiKey.id);
 });
 
-test('/api/performance can include key metadata', async () => {
+test('/api/performance/overview always returns key metadata', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.performance.recordSample({
     hour: '2026-04-30T10',
@@ -103,7 +103,7 @@ test('/api/performance can include key metadata', async () => {
     failed: false,
   });
 
-  const response = await requestApp('/api/performance?start=2026-04-30T00&end=2026-05-01T00&include_key_metadata=1', { headers: { 'x-api-key': apiKey.key } });
+  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&bucket=hour', { headers: { 'x-api-key': apiKey.key } });
 
   assertEquals(response.status, 200);
   const body = await response.json();
@@ -116,7 +116,7 @@ test('/api/performance can include key metadata', async () => {
   ]);
 });
 
-test('/api/performance all-by-user view aggregates over every key', async () => {
+test('/api/performance/overview all-by-user view aggregates over every key', async () => {
   const { repo, adminSession, apiKey } = await setupAppTest();
   // Two users' rows in the same hour. The admin session has
   // canViewGlobalTelemetry=true and defaults to all-by-user; both rows must
@@ -145,26 +145,25 @@ test('/api/performance all-by-user view aggregates over every key', async () => 
   await repo.performance.recordSample({ ...sample, keyId: apiKey.id });
   await repo.performance.recordSample({ ...sample, keyId: 'key_other' });
 
-  const response = await requestApp('/api/performance?start=2026-04-30T00&end=2026-05-01T00&group_by=model&view=all-by-user', { headers: { 'x-floway-session': adminSession } });
+  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&bucket=hour&view=all-by-user', { headers: { 'x-floway-session': adminSession } });
 
   assertEquals(response.status, 200);
   const body = await response.json();
-  assertEquals(body.records.length, 1);
-  assertEquals(body.records[0].group, 'gpt-5');
-  assertEquals(body.records[0].requests, 2);
+  assertEquals(body.modelRows.length, 1);
+  assertEquals(body.modelRows[0].group, 'gpt-5');
+  assertEquals(body.modelRows[0].requests, 2);
 });
 
-test('/api/performance rejects all-by-user from a user without canViewGlobalTelemetry', async () => {
+test('/api/performance/overview rejects all-by-user from a user without canViewGlobalTelemetry', async () => {
   const { apiKey } = await setupAppTest();
-  const response = await requestApp('/api/performance?start=2026-04-30T00&end=2026-05-01T00&view=all-by-user', { headers: { 'x-api-key': apiKey.key } });
+  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&view=all-by-user', { headers: { 'x-api-key': apiKey.key } });
   assertEquals(response.status, 403);
 });
 
-test('/api/performance all-by-user view supports group_by=keyId across every user\'s keys', async () => {
+test('/api/performance/overview all-by-user keyRows spans every user\'s keys', async () => {
   const { repo, adminSession, apiKey } = await setupAppTest();
-  // Two keys owned by different users; admin group_by=keyId should surface
-  // both rows without leaking to a self-scoped user (that path is covered
-  // by the self-by-key gate test above).
+  // Two keys owned by different users; admin overview should surface both
+  // rows in keyRows without leaking to a self-scoped user.
   await repo.apiKeys.save({
     id: 'key_other',
     userId: 1,
@@ -189,15 +188,15 @@ test('/api/performance all-by-user view supports group_by=keyId across every use
   await repo.performance.recordSample({ ...sample, keyId: apiKey.id });
   await repo.performance.recordSample({ ...sample, keyId: 'key_other' });
 
-  const response = await requestApp('/api/performance?start=2026-04-30T00&end=2026-05-01T00&view=all-by-user&group_by=keyId', { headers: { 'x-floway-session': adminSession } });
+  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&view=all-by-user', { headers: { 'x-floway-session': adminSession } });
 
   assertEquals(response.status, 200);
   const body = await response.json();
-  const groups = body.records.map((r: { group: string; requests: number }) => [r.group, r.requests]).sort();
+  const groups = body.keyRows.map((r: { group: string; requests: number }) => [r.group, r.requests]).sort();
   assertEquals(groups, [[apiKey.id, 1], ['key_other', 1]].sort());
 });
 
-test('/api/performance all-by-user view supports group_by=userId', async () => {
+test('/api/performance/overview all-by-user userRows split rows per user', async () => {
   const { repo, adminSession, apiKey } = await setupAppTest();
   await repo.apiKeys.save({
     id: 'key_other',
@@ -224,17 +223,17 @@ test('/api/performance all-by-user view supports group_by=userId', async () => {
   await repo.performance.recordSample({ ...sample, keyId: apiKey.id });
   await repo.performance.recordSample({ ...sample, keyId: 'key_other' });
 
-  const response = await requestApp('/api/performance?start=2026-04-30T00&end=2026-05-01T00&group_by=userId&view=all-by-user', { headers: { 'x-floway-session': adminSession } });
+  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&view=all-by-user', { headers: { 'x-floway-session': adminSession } });
 
   assertEquals(response.status, 200);
   const body = await response.json();
-  const groups = body.records.map((r: { group: string; requests: number }) => [r.group, r.requests]).sort();
+  const groups = body.userRows.map((r: { group: string; requests: number }) => [r.group, r.requests]).sort();
   assertEquals(groups, [['1', 1], ['2', 2]]);
 });
 
-test('/api/performance rejects group_by=userId in self-by-key mode', async () => {
+test('/api/performance/overview rejects group_by=userId in self-by-key mode', async () => {
   const { apiKey } = await setupAppTest();
-  const response = await requestApp('/api/performance?start=2026-04-30T00&end=2026-05-01T00&group_by=userId', { headers: { 'x-api-key': apiKey.key } });
+  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&group_by=userId', { headers: { 'x-api-key': apiKey.key } });
   assertEquals(response.status, 400);
   const body = await response.json();
   assertEquals(body.error, 'group_by=userId is not allowed in self-by-key mode');
@@ -266,7 +265,7 @@ test('/api/performance/overview series stays per-model under all-by-user view', 
   await repo.performance.recordSample({ ...sample, keyId: apiKey.id });
   await repo.performance.recordSample({ ...sample, keyId: 'key_other' });
 
-  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&bucket=hour&group_by=model&view=all-by-user&include_user_metadata=1', { headers: { 'x-floway-session': adminSession } });
+  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&bucket=hour&group_by=model&view=all-by-user', { headers: { 'x-floway-session': adminSession } });
 
   assertEquals(response.status, 200);
   const body = await response.json();
@@ -362,10 +361,10 @@ test('/api/performance/overview counts failed attempts in dashboard request tota
   assertEquals(body.modelRows[0].ttftMsP95, null);
 });
 
-test('/api/performance rejects out-of-range timezone offsets', async () => {
+test('/api/performance/overview rejects out-of-range timezone offsets', async () => {
   const { apiKey } = await setupAppTest();
 
-  const response = await requestApp('/api/performance?start=2026-04-30T00&end=2026-05-01T00&bucket=day&timezone_offset_minutes=100000000000000000000', { headers: { 'x-api-key': apiKey.key } });
+  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&bucket=day&timezone_offset_minutes=100000000000000000000', { headers: { 'x-api-key': apiKey.key } });
 
   assertEquals(response.status, 400);
   assertEquals(await response.json(), {
@@ -373,10 +372,10 @@ test('/api/performance rejects out-of-range timezone offsets', async () => {
   });
 });
 
-test('/api/performance rejects non-numeric filter_user_id at the schema boundary', async () => {
+test('/api/performance/overview rejects non-numeric filter_user_id at the schema boundary', async () => {
   const { apiKey } = await setupAppTest();
 
-  const response = await requestApp('/api/performance?start=2026-04-30T00&end=2026-05-01T00&filter_user_id=abc', { headers: { 'x-api-key': apiKey.key } });
+  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&filter_user_id=abc', { headers: { 'x-api-key': apiKey.key } });
 
   assertEquals(response.status, 400);
   assertEquals(await response.json(), {
@@ -384,10 +383,10 @@ test('/api/performance rejects non-numeric filter_user_id at the schema boundary
   });
 });
 
-test('/api/performance rejects negative filter_user_id', async () => {
+test('/api/performance/overview rejects negative filter_user_id', async () => {
   const { apiKey } = await setupAppTest();
 
-  const response = await requestApp('/api/performance?start=2026-04-30T00&end=2026-05-01T00&filter_user_id=-5', { headers: { 'x-api-key': apiKey.key } });
+  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&filter_user_id=-5', { headers: { 'x-api-key': apiKey.key } });
 
   assertEquals(response.status, 400);
   assertEquals(await response.json(), {
@@ -395,10 +394,10 @@ test('/api/performance rejects negative filter_user_id', async () => {
   });
 });
 
-test('/api/performance rejects filter_user_id=0 (user ids start at 1)', async () => {
+test('/api/performance/overview rejects filter_user_id=0 (user ids start at 1)', async () => {
   const { apiKey } = await setupAppTest();
 
-  const response = await requestApp('/api/performance?start=2026-04-30T00&end=2026-05-01T00&filter_user_id=0', { headers: { 'x-api-key': apiKey.key } });
+  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&filter_user_id=0', { headers: { 'x-api-key': apiKey.key } });
 
   assertEquals(response.status, 400);
   assertEquals(await response.json(), {
@@ -406,10 +405,10 @@ test('/api/performance rejects filter_user_id=0 (user ids start at 1)', async ()
   });
 });
 
-test('/api/performance rejects filter_user_id with a leading zero', async () => {
+test('/api/performance/overview rejects filter_user_id with a leading zero', async () => {
   const { apiKey } = await setupAppTest();
 
-  const response = await requestApp('/api/performance?start=2026-04-30T00&end=2026-05-01T00&filter_user_id=01', { headers: { 'x-api-key': apiKey.key } });
+  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&filter_user_id=01', { headers: { 'x-api-key': apiKey.key } });
 
   assertEquals(response.status, 400);
   assertEquals(await response.json(), {
@@ -417,25 +416,25 @@ test('/api/performance rejects filter_user_id with a leading zero', async () => 
   });
 });
 
-test('/api/performance treats empty filter_user_id as absent', async () => {
+test('/api/performance/overview treats empty filter_user_id as absent', async () => {
   // Stale dashboard bookmarks may carry `filter_user_id=` with no value; the
   // schema tightening for the zero/negative reject must not regress those to 400.
   const { apiKey } = await setupAppTest();
 
-  const response = await requestApp('/api/performance?start=2026-04-30T00&end=2026-05-01T00&filter_user_id=', { headers: { 'x-api-key': apiKey.key } });
+  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&filter_user_id=', { headers: { 'x-api-key': apiKey.key } });
 
   assertEquals(response.status, 200);
 });
 
-test('/api/performance accepts numeric filter_user_id', async () => {
+test('/api/performance/overview accepts numeric filter_user_id', async () => {
   const { apiKey } = await setupAppTest();
 
-  const response = await requestApp('/api/performance?start=2026-04-30T00&end=2026-05-01T00&filter_user_id=42', { headers: { 'x-api-key': apiKey.key } });
+  const response = await requestApp('/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&filter_user_id=42', { headers: { 'x-api-key': apiKey.key } });
 
   assertEquals(response.status, 200);
 });
 
-test('/api/performance all-by-user attributes soft-deleted keys to their original owner', async () => {
+test('/api/performance/overview all-by-user attributes soft-deleted keys to their original owner', async () => {
   const { repo, adminSession, apiKey } = await setupAppTest();
   // Latency sample on apiKey, then soft-delete the key. The aggregator must
   // still resolve the row to apiKey.userId rather than the synthetic userId 0
@@ -454,17 +453,17 @@ test('/api/performance all-by-user attributes soft-deleted keys to their origina
   await repo.apiKeys.softDelete(apiKey.id);
 
   const response = await requestApp(
-    '/api/performance?start=2026-04-30T00&end=2026-05-01T00&group_by=userId&view=all-by-user',
+    '/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00&view=all-by-user',
     { headers: { 'x-floway-session': adminSession } },
   );
 
   assertEquals(response.status, 200);
   const body = await response.json();
-  const groups = body.records.map((r: { group: string; requests: number }) => [r.group, r.requests]);
+  const groups = body.userRows.map((r: { group: string; requests: number }) => [r.group, r.requests]);
   assertEquals(groups, [[String(apiKey.userId), 1]]);
 });
 
-test('/api/performance self-by-key surfaces soft-deleted keys metadata to their owner', async () => {
+test('/api/performance/overview self-by-key surfaces soft-deleted keys metadata to their owner', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.performance.recordSample({
     hour: '2026-04-30T10',
@@ -492,17 +491,17 @@ test('/api/performance self-by-key surfaces soft-deleted keys metadata to their 
   });
 
   const response = await requestApp(
-    '/api/performance?start=2026-04-30T00&end=2026-05-01T00&group_by=keyId&include_key_metadata=1',
+    '/api/performance/overview?start=2026-04-30T00&end=2026-05-01T00',
     { headers: { 'x-api-key': 'raw_fresh_key' } },
   );
 
   assertEquals(response.status, 200);
   const body = await response.json();
   // The deleted key surfaces in keys[] even though listByUserId active-only
-  // would have hidden it; the row attributes back to its keyId.
+  // would have hidden it; the row attributes back to its keyId in keyRows.
   const ids = body.keys.map((k: { id: string }) => k.id).sort();
   assertEquals(ids.includes(apiKey.id), true);
-  const matched = body.records.find((r: { group: string }) => r.group === apiKey.id);
+  const matched = body.keyRows.find((r: { group: string }) => r.group === apiKey.id);
   assertEquals(matched?.requests, 1);
 });
 
@@ -547,43 +546,4 @@ test('/api/performance/overview returns operationRows grouped by operation value
     { group: 'chat', requests: 1, neutral: 0 },
     { group: 'embeddings', requests: 2, neutral: 2 },
   ]);
-});
-
-test('/api/performance with group_by=operation splits rows by operation value', async () => {
-  const { repo, apiKey } = await setupAppTest();
-
-  await repo.performance.recordSample({
-    hour: '2026-04-30T10',
-    keyId: apiKey.id,
-    model: 'claude-sonnet-4-5',
-    upstream: 'copilot:1',
-    operation: 'chat',
-    runtimeLocation: 'LOCAL',
-    ttftMs: 100,
-    tpotUs: 500,
-    failed: false,
-  });
-  await repo.performance.recordNeutral({
-    hour: '2026-04-30T10',
-    keyId: apiKey.id,
-    model: 'text-embedding-3-small',
-    upstream: 'copilot:1',
-    operation: 'embeddings',
-    runtimeLocation: 'LOCAL',
-  });
-
-  const response = await requestApp(
-    '/api/performance?start=2026-04-30T00&end=2026-05-01T00&bucket=hour&group_by=operation',
-    { headers: { 'x-api-key': apiKey.key } },
-  );
-
-  assertEquals(response.status, 200);
-  const body = await response.json();
-  assertEquals(body.records.length, 2);
-  const groups = body.records.map((r: { group: string }) => r.group).sort();
-  assertEquals(groups, ['chat', 'embeddings']);
-  const embRow = body.records.find((r: { group: string }) => r.group === 'embeddings');
-  assertEquals(embRow.neutral, 1);
-  assertEquals(embRow.ttftSamples, 0);
-  assertEquals(embRow.tpotSamples, 0);
 });

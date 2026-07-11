@@ -1,4 +1,6 @@
-// GET /api/performance — query backend-aggregated latency telemetry.
+// GET /api/performance/overview — dashboard aggregate: chart series, summary,
+// six per-dimension breakdown tables, and dropdown menus, all built from a
+// single raw record query.
 //
 // View semantics mirror /api/token-usage and /api/search-usage:
 // - `self-by-key` scopes rows to the actor's keys (active + soft-deleted).
@@ -7,7 +9,7 @@
 //   `canViewGlobalTelemetry`). `group_by=keyId` is rejected so we never leak
 //   another user's key id into a global response.
 
-import { aggregatePerformanceForDisplay, aggregatePerformanceForDisplayMulti, type PerformanceBucketGranularity, type PerformanceGroupBy } from './aggregate.ts';
+import { aggregatePerformanceForDisplayMulti, type PerformanceBucketGranularity, type PerformanceGroupBy } from './aggregate.ts';
 import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { PerformanceTelemetryRecord } from '../../repo/types.ts';
@@ -194,50 +196,6 @@ const partitionRecords = (
       userIds: [...userIds].sort((a, b) => a - b),
     },
   };
-};
-
-export const performanceTelemetry = async (c: Ctx) => {
-  const params = readPerformanceQuery(c);
-  if (params.type === 'error') return c.json({ error: params.error }, 400);
-
-  const resolved = resolveView(c, params.value);
-  if ('error' in resolved) return c.json({ error: resolved.message }, resolved.error === 'forbidden' ? 403 : 400);
-
-  // Load the actor's key listing up front. Self-view derives ownedKeyIds
-  // from the same list that later joins to key metadata, avoiding a
-  // second api_keys SELECT; all-by-user gets the global list to feed the
-  // key→user map (filter_user_id, group_by=userId). One round trip
-  // covers both concerns per view — sharing the fetch costs one D1 hop
-  // we're eating anyway to gate the keyId check.
-  const repo = getRepo();
-  const keysInfo = await loadTelemetryKeys(repo, resolved);
-  const ownedKeyIds = new Set(keysInfo.keys.map(k => k.id));
-  const rawRecords = await queryRecordsForView(resolved, params.value, ownedKeyIds);
-  if (rawRecords === null) return c.json({ error: 'Unknown key_id' }, 404);
-
-  const filtered = rawRecords.filter(r => matchesFilters(r, params.value.filters, keysInfo.keyToUser.get(r.keyId)));
-
-  const baseOptions = { bucket: params.value.bucket, timezoneOffsetMinutes: params.value.timezoneOffsetMinutes };
-  const records = aggregatePerformanceForDisplay(
-    filtered,
-    { ...baseOptions, groupBy: params.value.groupBy, keyToUser: keysInfo.keyToUser },
-  );
-
-  const query = c.req.valid('query');
-
-  if (resolved.view === 'all-by-user') {
-    if (query.include_user_metadata !== '1') return c.json({ records });
-    const users = await repo.users.listIncludingDeleted();
-    const userMetadata = users
-      .map(u => ({ id: u.id, username: u.username }))
-      .sort((a, b) => a.id - b.id);
-    return c.json({ records, users: userMetadata });
-  }
-
-  if (query.include_key_metadata !== '1') return c.json({ records });
-  const keyMetadata = keysInfo.keys.map(k => ({ id: k.id, name: k.name, createdAt: k.createdAt }))
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
-  return c.json({ records, keys: keyMetadata });
 };
 
 export const performanceOverview = async (c: Ctx) => {
