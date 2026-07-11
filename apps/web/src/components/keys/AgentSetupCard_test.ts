@@ -22,7 +22,7 @@ interface SetupStub {
   };
   draft: Ref<AgentSetupConfiguration | null>;
   syncing: Ref<boolean>;
-  superseded: Ref<boolean>;
+  terminated: Ref<boolean>;
   canCopy: Ref<boolean>;
   save: () => void;
   heartbeat: () => void;
@@ -41,7 +41,7 @@ const defaultConfig = (): AgentSetupConfiguration => ({
   codex: { enabled: true, model: null, reasoningEffort: null },
 });
 
-const makeSetup = (over: Partial<{ config: AgentSetupConfiguration; initialized: boolean; scripts: { sh: string; ps1: string } | null; noSelectableKey: boolean; syncing: boolean; superseded: boolean; canCopy: boolean; error: string | null; expiresAt: number | null }> = {}): SetupStub => ({
+const makeSetup = (over: Partial<{ config: AgentSetupConfiguration; initialized: boolean; scripts: { sh: string; ps1: string } | null; noSelectableKey: boolean; syncing: boolean; terminated: boolean; canCopy: boolean; error: string | null; expiresAt: number | null }> = {}): SetupStub => ({
   state: {
     initialized: ref(over.initialized ?? true),
     token: ref('tok-1'),
@@ -53,7 +53,7 @@ const makeSetup = (over: Partial<{ config: AgentSetupConfiguration; initialized:
   },
   draft: ref(over.config ?? defaultConfig()),
   syncing: ref(over.syncing ?? false),
-  superseded: ref(over.superseded ?? false),
+  terminated: ref(over.terminated ?? false),
   canCopy: ref(over.canCopy ?? true),
   save: vi.fn(),
   heartbeat: vi.fn(),
@@ -264,8 +264,8 @@ describe('AgentSetupCard', () => {
     expect(w.findAll('button[aria-label^="Copy "][aria-label$=" command"]').length).toBe(0);
   });
 
-  it('renders a superseded terminal state that tells the user to reload and shows no copy affordance', () => {
-    setupStub = makeSetup({ superseded: true, canCopy: false });
+  it('renders a terminated terminal state that tells the user to reload and shows no copy affordance', () => {
+    setupStub = makeSetup({ terminated: true, canCopy: false });
     const w = mountCard();
     expect(w.text().toLowerCase()).toContain('reload');
     expect(w.findAll('button[aria-label^="Copy "][aria-label$=" command"]').length).toBe(0);

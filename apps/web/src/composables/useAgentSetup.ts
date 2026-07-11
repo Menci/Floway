@@ -2,9 +2,13 @@
 // it acquires a setup lease, keeps the editable draft in sync with the server
 // under optimistic concurrency, and renews the lease while the tab is visible.
 //
-// One serialized pump owns every PUT and heartbeat, so mutations never overlap.
-// Local form generations are independent of server configuration revisions: an
-// old response may advance lease metadata, but cannot overwrite a newer draft.
+// Every page owns an independent lease keyed by its own token; pages never
+// supersede one another. One serialized pump owns every PUT and heartbeat, so
+// this page's mutations never overlap. Local form generations are independent
+// of server configuration revisions: an old response may advance lease
+// metadata, but cannot overwrite a newer draft. A lease becomes terminal only
+// when the server no longer recognizes this page's token (it expired and was
+// swept) — reported as `terminated`.
 
 import type { InferResponseType } from 'hono/client';
 import { computed, onScopeDispose, ref, toValue, watch, type MaybeRefOrGetter, type Ref } from 'vue';
@@ -46,7 +50,7 @@ export interface UseAgentSetup {
   state: AgentSetupState;
   draft: Ref<AgentSetupConfiguration | null>;
   syncing: Ref<boolean>;
-  superseded: Ref<boolean>;
+  terminated: Ref<boolean>;
   canCopy: Ref<boolean>;
   // Deep draft mutations auto-save. `save` remains an ergonomic explicit flush
   // hook for forms that already call it after applying a batch of changes.
@@ -107,7 +111,7 @@ export const useAgentSetup = (
   const draft = ref<AgentSetupConfiguration | null>(null);
   const formGeneration = ref(0);
   const confirmedGeneration = ref(0);
-  const superseded = ref(false);
+  const terminated = ref(false);
   const nowMs = ref(Date.now());
 
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -193,8 +197,8 @@ export const useAgentSetup = (
     });
   };
 
-  const markSuperseded = () => {
-    superseded.value = true;
+  const markTerminated = () => {
+    terminated.value = true;
     debounceTimer = clearTimer(debounceTimer);
     heartbeatTimer = clearTimer(heartbeatTimer);
     saveRetryTimer = clearTimer(saveRetryTimer);
@@ -205,7 +209,7 @@ export const useAgentSetup = (
 
   const scheduleHeartbeat = (delay: number) => {
     heartbeatTimer = clearTimer(heartbeatTimer);
-    if (disposed || superseded.value || document.visibilityState === 'hidden') return;
+    if (disposed || terminated.value || document.visibilityState === 'hidden') return;
     heartbeatTimer = setTimeout(() => {
       heartbeatTimer = null;
       heartbeatDue = true;
@@ -215,7 +219,7 @@ export const useAgentSetup = (
 
   const scheduleSaveRetry = () => {
     saveRetryTimer = clearTimer(saveRetryTimer);
-    if (disposed || superseded.value) return;
+    if (disposed || terminated.value) return;
     saveRetryTimer = setTimeout(() => {
       saveRetryTimer = null;
       savePending = true;
@@ -234,15 +238,15 @@ export const useAgentSetup = (
     kickPump();
   };
 
-  // Reconcile a revision conflict. Because a fresh lease (POST) rotates the
-  // token and supersedes every other tab, a conflict on a token we still own can
-  // only be a lost ack: an earlier PUT of ours committed but its response never
-  // arrived, so the server's revision moved on under one of our own past
-  // configurations. The freshest local intent must therefore win. We always
-  // adopt the server's lease metadata/revision, then confirm the generation only
-  // when the server already holds exactly what this request attempted and the
-  // user has not edited since; otherwise we keep the current draft and resubmit
-  // it against the freshly-adopted revision.
+  // Reconcile a revision conflict. Each page owns its own token and is the only
+  // writer of that token's configuration, so a conflict on our token can only be
+  // a lost ack: an earlier PUT of ours committed but its response never arrived,
+  // so the server's revision moved on under one of our own past configurations.
+  // The freshest local intent must therefore win. We always adopt the server's
+  // lease metadata/revision, then confirm the generation only when the server
+  // already holds exactly what this request attempted and the user has not
+  // edited since; otherwise we keep the current draft and resubmit it against
+  // the freshly-adopted revision.
   const reconcileRevisionConflict = (raw: unknown, attemptedConfiguration: AgentSetupConfiguration, savedGeneration: number) => {
     const lease = asLease(raw);
     if (lease === null) {
@@ -278,7 +282,7 @@ export const useAgentSetup = (
 
     if (result.error) {
       const status = rawStatus(result.error.raw);
-      if (status === 'superseded') { markSuperseded(); return; }
+      if (status === 'missing') { markTerminated(); return; }
       if (status === 'revision-conflict') { reconcileRevisionConflict(result.error.raw, configuration, generation); return; }
       saveError.value = result.error.message;
       if (isRetryableHttpStatus(result.error.status)) scheduleSaveRetry();
@@ -302,16 +306,7 @@ export const useAgentSetup = (
 
     if (result.error) {
       const status = rawStatus(result.error.raw);
-      if (status === 'superseded') { markSuperseded(); return; }
-      if (status === 'revision-conflict') {
-        const lease = asLease(result.error.raw);
-        if (lease !== null) {
-          adoptLeaseMetadata(lease);
-          heartbeatError.value = null;
-          scheduleHeartbeat(HEARTBEAT_INTERVAL_MS);
-          return;
-        }
-      }
+      if (status === 'missing') { markTerminated(); return; }
       heartbeatError.value = result.error.message;
       if (isRetryableHttpStatus(result.error.status)) scheduleHeartbeat(RETRY_DELAY_MS);
       return;
@@ -322,11 +317,11 @@ export const useAgentSetup = (
   };
 
   const kickPump = () => {
-    if (pumpRunning || disposed || superseded.value) return;
+    if (pumpRunning || disposed || terminated.value) return;
     pumpRunning = true;
     void (async () => {
       try {
-        while (!disposed && !superseded.value && (savePending || heartbeatDue)) {
+        while (!disposed && !terminated.value && (savePending || heartbeatDue)) {
           if (savePending) {
             savePending = false;
             await runSave();
@@ -351,7 +346,7 @@ export const useAgentSetup = (
   };
 
   const save = () => {
-    if (disposed || superseded.value || !initialized.value) return;
+    if (disposed || terminated.value || !initialized.value) return;
     if (formGeneration.value === confirmedGeneration.value) return;
     // The deep watcher already queued this generation. Calling save() while its
     // PUT is active is an idempotent flush, not a request for a second PUT.
@@ -360,7 +355,7 @@ export const useAgentSetup = (
   };
 
   const heartbeat = () => {
-    if (disposed || superseded.value || !initialized.value) return;
+    if (disposed || terminated.value || !initialized.value) return;
     // An explicit reconciliation replaces the scheduled cadence tick. Keeping
     // both would make a permanent 4xx appear to retry when the old timer fires.
     heartbeatTimer = clearTimer(heartbeatTimer);
@@ -372,7 +367,7 @@ export const useAgentSetup = (
     const attempt = ++createAttempt;
     const result = await callApi<LeaseOkResponse>(() => requestWithTimeout(signal =>
       api.api.setup.$post(undefined, { init: { signal } })));
-    // A retry (or dispose) that superseded this attempt owns the state now; drop
+    // A retry (or dispose) that replaced this attempt owns the state now; drop
     // this stale attempt's outcome so an aborted create cannot resurrect an error.
     if (disposed || attempt !== createAttempt) return;
 
@@ -403,13 +398,13 @@ export const useAgentSetup = (
   };
 
   watch(draft, () => {
-    if (disposed || superseded.value || !initialized.value || installingDraft) return;
+    if (disposed || terminated.value || !initialized.value || installingDraft) return;
     formGeneration.value += 1;
     scheduleDebouncedSave();
   }, { deep: true, flush: 'sync' });
 
   const onVisibilityChange = () => {
-    if (disposed || superseded.value) return;
+    if (disposed || terminated.value) return;
     if (document.visibilityState === 'hidden') {
       heartbeatTimer = clearTimer(heartbeatTimer);
       return;
@@ -440,7 +435,7 @@ export const useAgentSetup = (
   const syncing = computed(() => initialized.value && formGeneration.value !== confirmedGeneration.value);
 
   const canCopy = computed(() => {
-    if (!initialized.value || superseded.value) return false;
+    if (!initialized.value || terminated.value) return false;
     if (formGeneration.value !== confirmedGeneration.value) return false;
     if (expiresAt.value === null || expiresAt.value <= nowMs.value) return false;
     const ids = toValue(selectableKeyIds);
@@ -456,7 +451,7 @@ export const useAgentSetup = (
     state: { initialized, token, configurationRevision, expiresAt, scripts, noSelectableKey, error },
     draft,
     syncing,
-    superseded,
+    terminated,
     canCopy,
     save,
     heartbeat,

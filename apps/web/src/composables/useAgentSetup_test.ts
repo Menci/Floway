@@ -434,19 +434,21 @@ describe('useAgentSetup — heartbeat', () => {
     expect(records.heartbeat.length).toBe(2);
   });
 
-  it('adopts a rotated token and script URLs when the heartbeat renews an expired lease', async () => {
-    const { records, setup } = await startInitialized();
+  it('renews an expired lease in place: the token is unchanged and copy is re-enabled', async () => {
+    const { records, setup } = await startInitialized({ expiresAt: 1_000 });
+    // Let the lease lapse locally, then the 60s heartbeat renews it.
     await vi.advanceTimersByTimeAsync(60_000);
+    expect(setup.canCopy.value).toBe(false);
 
     records.heartbeat[0]!.deferred.resolve(okBody(lease({
-      token: 'tok-rotated',
-      scripts: { sh: '/api/setup/tok-rotated/setup.sh', ps1: '/api/setup/tok-rotated/setup.ps1' },
+      token: 'tok-1',
       expiresAt: Date.now() + 5 * 60 * 1000,
     })));
     await vi.advanceTimersByTimeAsync(0);
 
-    expect(setup.state.token.value).toBe('tok-rotated');
-    expect(setup.state.scripts.value!.sh).toBe('/api/setup/tok-rotated/setup.sh');
+    // The token never rotates; renewal only extends expiry, re-enabling copy.
+    expect(setup.state.token.value).toBe('tok-1');
+    expect(setup.state.scripts.value!.sh).toBe('/api/setup/tok-1/setup.sh');
     expect(setup.canCopy.value).toBe(true);
   });
 
@@ -554,16 +556,16 @@ describe('useAgentSetup — heartbeat', () => {
 });
 
 describe('useAgentSetup — terminal + lifecycle', () => {
-  it('marks the instance superseded and stops scheduling on a superseded response', async () => {
+  it('marks the instance terminated and stops scheduling on a missing response', async () => {
     const { records, setup } = await startInitialized();
     setup.draft.value!.codex.model = 'gpt-5-codex';
     setup.save();
     await vi.advanceTimersByTimeAsync(400);
 
-    records.put[0]!.deferred.resolve(conflictBody({ status: 'superseded' }));
+    records.put[0]!.deferred.resolve(conflictBody({ status: 'missing' }));
     await vi.advanceTimersByTimeAsync(0);
 
-    expect(setup.superseded.value).toBe(true);
+    expect(setup.terminated.value).toBe(true);
     expect(setup.canCopy.value).toBe(false);
 
     await vi.advanceTimersByTimeAsync(120_000);

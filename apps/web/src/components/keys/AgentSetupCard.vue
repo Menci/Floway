@@ -37,7 +37,7 @@ const props = withDefaults(defineProps<{
 
 const api = useApi();
 const setup = useAgentSetup(api, () => props.keys.map(key => key.id));
-const { draft, syncing, superseded, canCopy, retryCreate } = setup;
+const { draft, syncing, terminated, canCopy, retryCreate } = setup;
 const { initialized, noSelectableKey, error: setupError, scripts } = setup.state;
 
 type ClaudeEffortLevel = NonNullable<AgentSetupConfiguration['claudeCode']['effortLevel']>;
@@ -162,8 +162,8 @@ const powerShellCommand = computed(() => (scripts.value
       </span>
     </div>
 
-    <div v-if="superseded" class="rounded-lg border border-accent-amber/40 bg-accent-amber/10 px-4 py-3 text-sm text-accent-amber">
-      This setup session was taken over by another tab or device. Reload the page to continue.
+    <div v-if="terminated" class="rounded-lg border border-accent-amber/40 bg-accent-amber/10 px-4 py-3 text-sm text-accent-amber">
+      This setup link has expired and is no longer valid. Reload the page to get a fresh link.
     </div>
 
     <div v-else-if="noSelectableKey" class="rounded-lg border border-white/10 bg-surface-800/60 px-4 py-6 text-center text-sm text-gray-400">
