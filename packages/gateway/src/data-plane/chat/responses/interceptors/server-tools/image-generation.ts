@@ -93,6 +93,7 @@ export const isHostedImageGenerationTool = (tool: ResponsesTool): tool is Respon
 const isCodexImageGenerationNamespace = (tool: ResponsesTool): tool is ResponsesNamespaceTool =>
   tool.type === 'namespace'
   && tool.name === 'image_gen'
+  && Array.isArray(tool.tools)
   && tool.tools.length === 1
   && tool.tools[0].type === 'function'
   && tool.tools[0].name === 'imagegen';
