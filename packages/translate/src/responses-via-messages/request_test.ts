@@ -34,19 +34,14 @@ test.each([
   );
 });
 
-test('translateResponsesToMessages rejects programmatic caller metadata', async () => {
+test.each([
+  { type: 'function_call', call_id: 'call_1', name: 'lookup', arguments: '{}', status: 'completed', caller: { type: 'program', caller_id: 'call_prog_1' } },
+  { type: 'function_call_output', call_id: 'call_1', output: 'ok', caller: { type: 'program', caller_id: 'call_prog_1' } },
+  { type: 'custom_tool_call', call_id: 'call_1', name: 'exec', input: 'run', caller: { type: 'program', caller_id: 'call_prog_1' } },
+  { type: 'custom_tool_call_output', call_id: 'call_1', output: 'ok', caller: { type: 'program', caller_id: 'call_prog_1' } },
+] as const)('translateResponsesToMessages rejects $type program caller metadata', async item => {
   await assertRejects(
-    () => translateResponsesToMessages({
-      ...minimalPayload,
-      input: [{
-        type: 'function_call',
-        call_id: 'call_1',
-        name: 'lookup',
-        arguments: '{}',
-        status: 'completed',
-        caller: { type: 'program', caller_id: 'call_prog_1' },
-      }],
-    }),
+    () => translateResponsesToMessages({ ...minimalPayload, input: [item] }),
     Error,
     'program caller',
   );

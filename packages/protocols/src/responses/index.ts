@@ -143,6 +143,8 @@ export interface ResponsesInputReasoning {
   encrypted_content?: string;
 }
 
+// OpenAI Responses Programmatic Tool Calling item and caller shapes.
+// https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L4052-L4285
 export type ResponsesToolCaller =
   | { type: 'direct' }
   | { type: 'program'; caller_id: string };
@@ -482,6 +484,9 @@ export interface ResponsesResult {
   };
 }
 
+// Stored/output additional-tools roles are wider than the input-only
+// `developer` role.
+// https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L5116-L5136
 export type ResponsesAdditionalToolsRole =
   | 'unknown'
   | 'user'

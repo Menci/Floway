@@ -1401,19 +1401,14 @@ test.each([
   );
 });
 
-test('translateResponsesToChatCompletions rejects programmatic caller metadata', () => {
+test.each([
+  { type: 'function_call', call_id: 'call_1', name: 'lookup', arguments: '{}', status: 'completed', caller: { type: 'program', caller_id: 'call_prog_1' } },
+  { type: 'function_call_output', call_id: 'call_1', output: 'ok', caller: { type: 'program', caller_id: 'call_prog_1' } },
+  { type: 'custom_tool_call', call_id: 'call_1', name: 'exec', input: 'run', caller: { type: 'program', caller_id: 'call_prog_1' } },
+  { type: 'custom_tool_call_output', call_id: 'call_1', output: 'ok', caller: { type: 'program', caller_id: 'call_prog_1' } },
+] as const)('translateResponsesToChatCompletions rejects $type program caller metadata', item => {
   assertThrows(
-    () => translateResponsesToChatCompletions({
-      model: 'gpt-test',
-      input: [{
-        type: 'function_call',
-        call_id: 'call_1',
-        name: 'lookup',
-        arguments: '{}',
-        status: 'completed',
-        caller: { type: 'program', caller_id: 'call_prog_1' },
-      }],
-    }),
+    () => translateResponsesToChatCompletions({ model: 'gpt-test', input: [item] }),
     Error,
     'program caller',
   );

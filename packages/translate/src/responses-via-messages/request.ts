@@ -1,6 +1,7 @@
 import { parseToolArgumentsObject } from '../shared/messages/tool-arguments.ts';
 import { responsesReasoningToMessagesUpstreamBlock } from '../shared/messages-and-responses/reasoning.ts';
 import { buildCustomToolInputSchema } from '../shared/responses-via/custom-tool-wrap.ts';
+import { rejectProgramCaller, rejectProgrammaticResponsesPayload } from '../shared/responses-via/programmatic-tooling.ts';
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../shared/via-messages/cache-breakpoints.ts';
 import { fetchRemoteImage, type RemoteImageLoader, resolveImageUrlToMessagesImage } from '../shared/via-messages/remote-images.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
@@ -173,17 +174,6 @@ const unexpectedResponsesInputItem = (value: ResponsesInputItem): never => {
   throw new TranslatorInputError(`Invalid input item: ${JSON.stringify(value)}`);
 };
 
-const rejectProgrammaticTooling = (payload: ResponsesPayload): void => {
-  const programmaticTool = payload.tools?.find(tool =>
-    tool.type === 'programmatic_tool_calling'
-    || (tool.type === 'function' || tool.type === 'custom')
-    && tool.allowed_callers?.includes('programmatic'));
-  const toolChoice = payload.tool_choice;
-  if (programmaticTool !== undefined || (typeof toolChoice === 'object' && toolChoice.type === 'programmatic_tool_calling')) {
-    throw new TranslatorInputError('Programmatic Responses tooling cannot be translated to Messages.');
-  }
-};
-
 const translateResponsesInput = async (input: string | ResponsesInputItem[], loadRemoteImage: RemoteImageLoader): Promise<{ messages: MessagesMessage[]; systemBlocks: MessagesTextBlock[] }> => {
   if (typeof input === 'string') {
     return {
@@ -207,6 +197,7 @@ const translateResponsesInput = async (input: string | ResponsesInputItem[], loa
   const messages: MessagesMessage[] = [];
 
   for (const item of input.slice(prefixEnd)) {
+    rejectProgramCaller(item);
     switch (item.type) {
     case 'message':
       switch (item.role) {
@@ -225,9 +216,6 @@ const translateResponsesInput = async (input: string | ResponsesInputItem[], loa
       }
       break;
     case 'function_call':
-      if (item.caller?.type === 'program') {
-        throw new TranslatorInputError(`Cannot translate function_call '${item.call_id}' with a program caller.`);
-      }
       appendAssistantBlock(messages, {
         type: 'tool_use',
         id: item.call_id,
@@ -347,7 +335,7 @@ const translateToolChoice = (toolChoice: ResponsesToolChoice | undefined): Messa
 };
 
 export const translateResponsesToMessages = async (payload: ResponsesPayload, options: TranslateResponsesToMessagesOptions = {}): Promise<ResponsesToMessagesResult> => {
-  rejectProgrammaticTooling(payload);
+  rejectProgrammaticResponsesPayload(payload, 'Messages');
   const customToolNames = new Set<string>();
   const { messages, systemBlocks: hoistedSystemBlocks } = await translateResponsesInput(payload.input, options.loadRemoteImage ?? fetchRemoteImage);
   const tools = translateTools(payload.tools, customToolNames);
