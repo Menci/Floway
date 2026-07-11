@@ -194,6 +194,7 @@ Run from the repo root:
 pnpm run test                # vitest across all packages
 pnpm run lint                # eslint across the workspace
 pnpm run typecheck           # tsc --noEmit per package
+pnpm run test:agent-setup-installers  # Agent Setup setup.sh/.ps1 vs. fake installers (not in `test`)
 pnpm run dev                 # parallel wrangler dev (8788) + Vite dev (5174)
 pnpm run dev:node            # Node.js entry (tsx apps/platform-node/entry.ts)
 pnpm run deploy              # builds apps/web, then wrangler deploys apps/platform-cloudflare
@@ -225,6 +226,12 @@ uppercased on read, defaults to `LOCAL` when unset). Default ports/paths in
 `packages/gateway/migrations/*.sql` at boot, then serves the same Hono app
 through `@hono/node-server`. Static-asset serving is Workers-only; the Node
 target serves no SPA.
+
+The public Agent Setup installers are checked in at
+`packages/gateway/src/control-plane/agent-setup/scripts/{setup.sh,setup.ps1}`
+and embedded verbatim into `script-assets.generated.ts`; regenerate with
+`pnpm jiti scripts/generate-agent-setup-assets.ts` (pass `--check` to fail on
+drift) after editing either script.
 
 Wrangler commands go through the local dependency with `pnpm wrangler` or
 package scripts. When deploying, do not pass `--dry-run`.

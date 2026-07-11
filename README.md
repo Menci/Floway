@@ -114,9 +114,27 @@ Open the deployed URL (or `http://localhost:8788` for Node), log in with
    Token flow, or paste `~/.claude/.credentials.json`), or *Ollama* (base
    URL + optional API key — ollama.com or a self-hosted daemon). List
    order is routing order; earlier providers win for a shared public model id.
-2. **API Keys -> New Key**. Give the generated key to your client.
-3. Copy the Claude Code or Codex CLI snippet from the API Keys panel into the
-   agent config.
+2. **API Keys -> New Key**. Generate a long-lived key and use it directly as
+   the `x-api-key` / bearer token in any client.
+3. **API Keys -> Agent Setup** installs the Claude Code and Codex CLIs and
+   points them at this gateway with a single command. Pick the API key the
+   setup link should carry, toggle Claude Code and/or Codex on, and tune each
+   agent's model, reasoning effort, Claude Sonnet/Haiku aliases, and gateway
+   model discovery. Edits autosave to a short-lived setup lease; wait for the
+   "Saving…" spinner to clear, then copy the shell command
+   (`curl -fsSL … | bash`) or the PowerShell command (`irm … | iex`) and run it
+   on the target machine.
+
+   The setup link refreshes while the panel stays open and expires about five
+   minutes after you leave, so copy the command shortly before running it. The
+   installer installs only a missing CLI — through the official user-local
+   installer, never `sudo`, and never upgrading an existing install — then
+   surgically merges Floway's managed keys into `~/.claude/settings.json` and
+   Codex's `config.toml`/`auth.json`, backing up each touched file first.
+   Running the Codex step replaces the current ChatGPT login in
+   `$CODEX_HOME/auth.json` after writing a timestamped backup. Verification only
+   reaches the gateway's authenticated model directory; it never issues an
+   inference request.
 
 Import/export of upstreams, keys, and search config is in Settings. The
 payload format is tied to the running deployment, so import only accepts a
