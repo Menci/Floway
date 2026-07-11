@@ -709,7 +709,8 @@ test('translateResponsesToMessagesResult rejects cache splits that exceed input_
   );
 });
 
-test('response.created carries cache-read and cache-write onto the initial message_start usage', () => {  const state = createResponsesToMessagesStreamState();
+test('response.created carries cache-read and cache-write onto the initial message_start usage', () => {
+  const state = createResponsesToMessagesStreamState();
   const events = translateResponsesStreamEventToMessagesEvents(
     {
       type: 'response.created',
