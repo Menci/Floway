@@ -49,6 +49,18 @@ initResponsesWebSocketUpgradeResolver((c, events) =>
 const { db } = bootstrapNodePlatform();
 const port = Number(getEnvOptional('PORT', '8788'));
 
+// Passwordless admin login is granted when ADMIN_KEY is unset so a fresh
+// local instance is immediately usable, but that shortcut has no place in
+// a real deployment. Refuse to boot the production target with an empty
+// ADMIN_KEY so a misconfiguration surfaces at start instead of at first
+// login. The per-request check in packages/gateway/src/shared/
+// is-production-request.ts gates the same combination on Cloudflare and
+// backstops Node here.
+if (process.env.NODE_ENV === 'production' && !process.env.ADMIN_KEY) {
+  console.error('FATAL: NODE_ENV=production requires ADMIN_KEY. Passwordless admin login is only allowed on dev instances.');
+  process.exit(1);
+}
+
 const SCHEDULED_INTERVAL_MS = 60 * 60 * 1000;
 
 await applyMigrations(db);

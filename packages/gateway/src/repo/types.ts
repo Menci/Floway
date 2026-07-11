@@ -20,8 +20,9 @@ export interface ApiKey {
 export interface User {
   id: number;
   username: string;
-  // null = the row is not a credential — sign-in is only possible through
-  // the ADMIN_KEY backdoor.
+  // null = the row is not a credential — sign-in is only possible via
+  // the blank-username /auth/login path (ADMIN_KEY match, or the
+  // dev-only passwordless shortcut when ADMIN_KEY is unset).
   passwordHash: string | null;
   isAdmin: boolean;
   // null = unrestricted at the user level; an array intersects with the

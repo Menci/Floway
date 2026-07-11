@@ -1,4 +1,4 @@
-import { expect, test, vi } from 'vitest';
+import { afterEach, expect, test, vi } from 'vitest';
 
 // Copilot OAuth poll handler warms the SWR models cache after rotating the PAT.
 // The warm calls Copilot's /models which the existing fetch mock here doesn't
@@ -12,7 +12,15 @@ vi.mock('../../data-plane/providers/models-cache.ts', () => ({
 
 import { hashPassword } from '../../shared/passwords.ts';
 import { buildCopilotUpstreamRecord, requestApp, setupAppTest } from '../../test-helpers.ts';
+import { initRuntimeKind } from '@floway-dev/platform';
 import { assertEquals, assertStringIncludes, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
+
+// vitest.setup pins the runtime kind to 'node'; the CF-side tests below
+// re-init and this restores the default so they don't leak.
+afterEach(() => {
+  initRuntimeKind('node');
+  vi.unstubAllEnvs();
+});
 
 const githubUser = {
   id: 777,
@@ -43,6 +51,64 @@ test('/auth/login with blank username + wrong ADMIN_KEY rejects', async () => {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ username: '', password: 'wrong-admin' }),
+  });
+  assertEquals(response.status, 401);
+});
+
+// Zero-config passwordless admin login: with no ADMIN_KEY set, a brand-new
+// local instance still lets the operator in. The four cases below cover the
+// dev/prod matrix on both runtimes — dev accepts, prod refuses. Node prod
+// additionally hard-fails at boot (see apps/platform-node/entry.ts), but
+// this per-request guard is the Cloudflare-side gate and Node
+// defence-in-depth.
+
+test('/auth/login on Node dev (empty ADMIN_KEY, NODE_ENV != production) grants passwordless admin login', async () => {
+  await setupAppTest({ adminKey: '' });
+  const response = await requestApp('/auth/login', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ username: '', password: '' }),
+  });
+  assertEquals(response.status, 200);
+  const body = (await response.json()) as { user: { id: number; isAdmin: boolean } };
+  assertEquals(body.user.id, 1);
+  assertEquals(body.user.isAdmin, true);
+});
+
+test('/auth/login on Node with NODE_ENV=production refuses passwordless login when ADMIN_KEY is empty', async () => {
+  await setupAppTest({ adminKey: '' });
+  vi.stubEnv('NODE_ENV', 'production');
+  const response = await requestApp('/auth/login', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ username: '', password: '' }),
+  });
+  assertEquals(response.status, 401);
+});
+
+test('/auth/login on Cloudflare wrangler dev (empty ADMIN_KEY, no CF-Ray) grants passwordless admin login', async () => {
+  await setupAppTest({ adminKey: '' });
+  initRuntimeKind('cloudflare');
+  const response = await requestApp('/auth/login', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ username: '', password: '' }),
+  });
+  assertEquals(response.status, 200);
+  const body = (await response.json()) as { user: { id: number } };
+  assertEquals(body.user.id, 1);
+});
+
+test('/auth/login on Cloudflare edge (CF-Ray present) refuses passwordless login when ADMIN_KEY is empty', async () => {
+  await setupAppTest({ adminKey: '' });
+  initRuntimeKind('cloudflare');
+  const response = await requestApp('/auth/login', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'cf-ray': '9a1b2c3d4e5f6789-SJC',
+    },
+    body: JSON.stringify({ username: '', password: '' }),
   });
   assertEquals(response.status, 401);
 });

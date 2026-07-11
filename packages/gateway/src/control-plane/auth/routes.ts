@@ -2,18 +2,32 @@ import { type AuthedContext, sessionIdFromContext, userFromContext } from '../..
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { User } from '../../repo/types.ts';
+import { isProductionRequest } from '../../shared/is-production-request.ts';
 import { dummyPasswordHash, timingSafeEqual, verifyPassword } from '../../shared/passwords.ts';
 import type { authLoginBody } from '../schemas.ts';
 import { userToEffectiveWire } from '../users/wire.ts';
 import { getEnv } from '@floway-dev/platform';
 
-const resolveLoginUser = async (username: string, password: string): Promise<User | null> => {
+const resolveLoginUser = async (c: CtxWithJson<typeof authLoginBody>): Promise<User | null> => {
+  const { username, password } = c.req.valid('json');
   const repo = getRepo();
 
   if (username === '') {
     const adminKey = getEnv('ADMIN_KEY');
-    const utf8 = new TextEncoder();
-    if (!adminKey || !timingSafeEqual(utf8.encode(password), utf8.encode(adminKey))) return null;
+    if (adminKey) {
+      const utf8 = new TextEncoder();
+      if (!timingSafeEqual(utf8.encode(password), utf8.encode(adminKey))) return null;
+    } else if (isProductionRequest(c)) {
+      // Zero-config passwordless admin login is a dev-only shortcut so
+      // brand-new local instances (no .dev.vars, no ADMIN_KEY set) still
+      // let the operator into the dashboard. A production deployment
+      // that shipped without ADMIN_KEY would otherwise be world-open;
+      // refuse instead. The Node target additionally hard-fails at boot
+      // under NODE_ENV=production with no ADMIN_KEY (apps/platform-node/
+      // entry.ts) so this branch is the Cloudflare-side gate plus Node
+      // defence-in-depth.
+      return null;
+    }
     const user = await repo.users.getById(1);
     if (!user) throw new Error('ADMIN_KEY login: seed admin (user 1) is missing');
     return user;
@@ -31,8 +45,7 @@ const resolveLoginUser = async (username: string, password: string): Promise<Use
 };
 
 export const authLogin = async (c: CtxWithJson<typeof authLoginBody>) => {
-  const { username, password } = c.req.valid('json');
-  const user = await resolveLoginUser(username, password);
+  const user = await resolveLoginUser(c);
   if (!user) return c.json({ error: 'Invalid username or password' }, 401);
   const session = await getRepo().sessions.create(user.id);
   return c.json({ token: session.id, user: userToEffectiveWire(user) });

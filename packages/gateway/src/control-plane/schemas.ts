@@ -188,11 +188,12 @@ const ollamaConfigSchema = z.object({
 // JSON-parse + zod + pre-hash work is still worth bounding.
 const passwordSchema = z.string().min(1).max(1024);
 
-// Username is allowed empty so the ADMIN_KEY-only login path passes
-// validation; the login handler dispatches on the empty value.
+// Both fields are allowed empty so the blank-username login path (ADMIN_KEY
+// match, or the dev-only passwordless shortcut when ADMIN_KEY is unset)
+// passes validation; the login handler dispatches on the empty values.
 export const authLoginBody = z.object({
   username: z.string().regex(/^[a-zA-Z0-9_.\-]{0,64}$/, 'username must be 0-64 chars of [A-Za-z0-9_.-] (empty for ADMIN_KEY login)'),
-  password: passwordSchema,
+  password: z.string().max(1024),
 });
 
 // --- users ---
