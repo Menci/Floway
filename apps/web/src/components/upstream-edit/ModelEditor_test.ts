@@ -66,6 +66,31 @@ describe('ModelEditor row synchronization', () => {
     expect(wrapper.emitted('validity-change')?.at(-1)).toEqual([true]);
   });
 
+  it('resets drafts and validity when manual switches to its auto twin with the same uiId', async () => {
+    const manual = row('shared', 'model-manual', 1, undefined);
+    const auto: Row = {
+      ...row('shared', 'model-auto', 9, undefined),
+      kind: 'auto',
+    };
+    auto.config.cost = { cells: [{ rates: {} }] };
+
+    const wrapper = mountEditor(manual);
+    await pricingInput(wrapper, 'unpriced').setValue('7');
+    expect(wrapper.emitted('validity-change')?.at(-1)).toEqual([true]);
+
+    await wrapper.setProps({ row: auto });
+    await nextTick();
+
+    const autoPricing = pricingInput(wrapper, 'unpriced');
+    expect((autoPricing.element as HTMLInputElement).value).toBe('');
+    expect((autoPricing.element as HTMLInputElement).readOnly).toBe(true);
+    expect(wrapper.emitted('validity-change')?.at(-1)).toEqual([false]);
+
+    const patchCount = wrapper.emitted('patch-config')?.length ?? 0;
+    await autoPricing.setValue('11');
+    expect(wrapper.emitted('patch-config')?.length ?? 0).toBe(patchCount);
+  });
+
   it('clears cached flag overrides when switching rows', async () => {
     const first = row('first', 'model-first', 1, { 'flag-a': true });
     const second = row('second', 'model-second', 2, undefined);

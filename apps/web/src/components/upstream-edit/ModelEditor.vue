@@ -88,7 +88,7 @@ const pricingCellDraftsFor = (cost: ModelPricing | undefined): PricingCellDraft[
 const pricingCellDrafts = ref<PricingCellDraft[]>(pricingCellDraftsFor(config.value?.cost));
 const lastFlagOverrides = ref<FlagOverrides>({});
 
-watch(() => props.row?.uiId, () => {
+watch(() => [props.row?.uiId, props.row?.kind] as const, () => {
   pricingCellDrafts.value = pricingCellDraftsFor(config.value?.cost);
   lastFlagOverrides.value = {};
 });
