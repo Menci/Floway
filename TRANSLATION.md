@@ -147,13 +147,23 @@ steps.
 
 ### Responses — gateway interceptors
 
-- removes unsupported `image_generation` Responses tool entries and forced
-  tool choices that targeted them before target request construction. Other
-  hosted/deferred Responses tools, including `web_search`, `tool_search`, and
-  `namespace`, remain visible to native Responses targets. Translated
-  Messages/Chat targets currently narrow tool conversion to `function` and
-  Freeform `custom` tools; the hosted/deferred translated semantics are
-  tracked separately.
+- executes hosted `image_generation` through the gateway image backend when
+  `responses-image-generation-shim` is enabled for a native Responses target,
+  and unconditionally for translated targets that cannot carry the hosted
+  tool. The shim also recognizes Codex's exact deferred declaration
+  `{ type: "namespace", name: "image_gen", tools: [{ type: "function", name:
+  "imagegen", ... }] }` as the same capability. It consumes all recognized
+  declarations before the provider boundary, exposes one collision-resolved
+  plain function to the orchestrator, intercepts that function call, emits the
+  normal `image_generation_call` lifecycle, and restores the selected original
+  tool and forced `tool_choice` in response echoes. Other namespaces are
+  untouched. When several recognized declarations are present, the last one
+  supplies hosted config and the canonical echo; this matches a 2026-07-12
+  production Azure probe where duplicate hosted entries deduplicated with the
+  last config winning. The same probe found that `image_gen` is a reserved
+  namespace rejected alone or alongside a hosted entry in either order. Azure's
+  native hosted path requires `x-ms-oai-image-generation-deployment` for the
+  image deployment ([official sample](https://github.com/Azure-Samples/azure-openai-responses-api-samples/blob/bd1d4fa776ced664d24ed35f691e4b9e0602af69/python/responses-image-generate-aoai-v1.py#L9-L18)).
 - preserves Freeform `custom` tools: native Responses targets receive them
   directly; translated targets wrap them as single-string function tools (see
   "Responses Custom Tool Wrapping").
@@ -166,10 +176,11 @@ The same boundary runs for both `/v1/responses` (streaming) and
 `/v1/responses/compact` (non-streaming).
 
 - strips unsupported `service_tier`
-- removes image-generation tool entries Copilot does not host — the hosted
-  `image_generation` tool and Codex's `image_gen` deferred-tool namespace
-  (`{ type: "namespace", name: "image_gen" }`) — plus any forced `tool_choice`
-  that named them. Every other namespace and tool is left in place
+- as a disabled-shim fallback, removes image-generation declarations Copilot
+  cannot accept — the hosted `image_generation` tool and Codex's `image_gen`
+  deferred-tool namespace — plus any forced `tool_choice` that named them.
+  Normally the gateway image shim consumes these first; every other namespace
+  and tool is left in place
 - forces `store: false` on the wire — the gateway always owns Responses
   persistence; the original `store` is captured by the entry adapter before
   the chain runs, so durable storage is unaffected

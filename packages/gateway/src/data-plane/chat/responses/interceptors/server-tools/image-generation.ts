@@ -23,9 +23,11 @@ import { providerModelOf, type Fetcher, type Provider, type ModelCandidate, type
 
 export const SHIM_TOOL_NAME = 'image_generation';
 
-// Default image backend when the hosted tool omits `model`. gpt-image-2 is
-// the reference backend Azure's native Responses `image_generation` routes
-// to; operators provision it under this public id (or alias it).
+// Default image backend when the hosted tool omits `model`. Microsoft's native
+// Azure Responses example pairs an orchestrator with `gpt-image-2` through the
+// `x-ms-oai-image-generation-deployment` header; operators provision it under
+// this public id (or alias it).
+// https://github.com/Azure-Samples/azure-openai-responses-api-samples/blob/bd1d4fa776ced664d24ed35f691e4b9e0602af69/python/responses-image-generate-aoai-v1.py#L9-L18
 export const DEFAULT_IMAGE_MODEL = 'gpt-image-2';
 
 // Safety valve on the multi-turn ReAct loop: cap how many real image backend
@@ -304,8 +306,14 @@ const validateHostedImageGenerationEntry = (
 };
 
 // Validate every recognized image declaration; the LAST declaration's config
-// wins. The Codex namespace has no client-level image config, so selecting it
-// restores the native defaults rather than inheriting an earlier hosted entry.
+// wins. A 2026-07-12 production Azure `gpt-5.4` + `gpt-image-2` probe found that
+// duplicate hosted declarations collapse to one and the last entry supplies its
+// config, while the Codex namespace is rejected as reserved whether sent alone
+// or with a hosted declaration in either order. The namespace is therefore a
+// compatibility-only alternate declaration with native defaults, not something
+// forwarded to Azure. Microsoft's documented native path requires the image
+// deployment header shown here:
+// https://github.com/MicrosoftDocs/azure-ai-docs/blob/04c093649faec3beea023e8407d5af4c8119f7be/articles/foundry/agents/how-to/tools/image-generation.md#L310-L316
 export const prepareImageGenerationConfig = (tools: readonly ResponsesTool[]): PrepareConfigResult => {
   let config: ImageGenerationConfig | undefined;
   for (const [i, tool] of tools.entries()) {
