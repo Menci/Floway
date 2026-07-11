@@ -52,6 +52,7 @@ function Protect-FlowayFile {
   param([string]$Path)
   if (($PSVersionTable.PSVersion.Major -ge 6) -and (-not $IsWindows)) {
     & chmod 600 $Path
+    if ($LASTEXITCODE -ne 0) { throw "could not restrict $Path to mode 0600." }
     return
   }
   $acl = New-Object System.Security.AccessControl.FileSecurity
@@ -60,6 +61,26 @@ function Protect-FlowayFile {
   $acl.SetAccessRuleProtection($true, $false)
   $acl.AddAccessRule($rule)
   Set-Acl -Path $Path -AclObject $acl
+}
+
+# Terminate a process and its descendants. PowerShell 7's runtime exposes the
+# tree-aware Kill(bool) overload; Windows PowerShell 5.1 uses taskkill /T.
+function Stop-FlowayProcessTree {
+  param([System.Diagnostics.Process]$Process)
+  $runningOnWindows = ($PSVersionTable.PSVersion.Major -lt 6) -or $IsWindows
+  if ($runningOnWindows) {
+    & taskkill.exe /PID $Process.Id /T /F *> $null
+    if ($LASTEXITCODE -ne 0 -and (-not $Process.HasExited)) {
+      throw "taskkill could not terminate process tree $($Process.Id)."
+    }
+    return
+  }
+  try {
+    # .NET used by PowerShell 7 supports tree-aware termination on Unix.
+    $Process.Kill($true)
+  } catch {
+    if (-not $Process.HasExited) { throw "could not terminate process tree $($Process.Id)." }
+  }
 }
 
 # Execute a downloaded PowerShell installer in a fresh interpreter. The script
@@ -82,9 +103,10 @@ function Invoke-FlowayPowerShellBody {
   $stdoutTask = $process.StandardOutput.ReadToEndAsync()
   $stderrTask = $process.StandardError.ReadToEndAsync()
   $process.StandardInput.Write($Body)
+  $process.StandardInput.WriteLine()
   $process.StandardInput.Close()
   if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
-    try { $process.Kill() } catch {}
+    Stop-FlowayProcessTree $process
     $process.WaitForExit()
     throw "the installer timed out after $TimeoutSeconds seconds."
   }
@@ -184,10 +206,20 @@ function Write-FlowayClaudeSettings {
     if (($document.PSObject.Properties.Name -contains 'env') -and ($document.env -isnot [System.Management.Automation.PSCustomObject])) {
       throw "existing Claude settings env is not a JSON object."
     }
-    $stamp = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+    # DateTimeOffset.ToUnixTimeMilliseconds is unavailable on the .NET
+    # Framework version bundled with the Windows PowerShell 5.1 baseline.
+    $stamp = [long]([DateTimeOffset]::UtcNow - [DateTimeOffset]'1970-01-01T00:00:00Z').TotalMilliseconds
     $script:ClaudeSettingsBackup = "$($script:ClaudeSettingsPath).floway-backup.$stamp.$PID"
-    Copy-Item -LiteralPath $script:ClaudeSettingsPath -Destination $script:ClaudeSettingsBackup
-    Protect-FlowayFile $script:ClaudeSettingsBackup
+    try {
+      Copy-Item -LiteralPath $script:ClaudeSettingsPath -Destination $script:ClaudeSettingsBackup
+      Protect-FlowayFile $script:ClaudeSettingsBackup
+    } catch {
+      if (Test-Path -LiteralPath $script:ClaudeSettingsBackup) {
+        Remove-Item -LiteralPath $script:ClaudeSettingsBackup -Force
+      }
+      $script:ClaudeSettingsBackup = $null
+      throw
+    }
   } else {
     $document = [PSCustomObject]@{}
   }
@@ -258,7 +290,7 @@ function Invoke-FlowayProcess {
   $stdoutTask = $process.StandardOutput.ReadToEndAsync()
   $stderrTask = $process.StandardError.ReadToEndAsync()
   if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
-    try { $process.Kill() } catch {}
+    Stop-FlowayProcessTree $process
     $process.WaitForExit()
     throw "$Exe timed out after $TimeoutSeconds seconds."
   }
@@ -311,7 +343,7 @@ function Invoke-FlowayClaudeVerify {
       throw "claude doctor reported a problem."
     }
     Write-Host "Floway: claude doctor reported no blocking issues."
-  } elseif ($doctorHelp.Output -match '(?i)unknown (command|argument)|unrecognized (command|argument)|no such command|invalid (command|argument)') {
+  } elseif ($doctorHelp.Output -match '(?i)(unknown|unrecognized|invalid|no such).*(command|subcommand).*doctor|doctor.*(unknown|unrecognized|invalid).*(command|subcommand)') {
     Write-Host "Floway: this Claude Code build has no doctor command; skipping that check."
   } else {
     Write-Host "Floway: claude doctor capability check failed:`n$(Protect-FlowaySecret $doctorHelp.Output)"

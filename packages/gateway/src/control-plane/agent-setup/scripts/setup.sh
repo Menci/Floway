@@ -84,9 +84,10 @@ _sha256_of() {
 }
 
 # Run a command under a wall-clock limit. macOS ships no `timeout`, so the
-# Bash-3.2 fallback starts a watchdog that records an explicit timeout marker,
-# terminates the command, then reaps both processes. All timeout paths return
-# 124, distinct from any command-specific failure status.
+# Bash-3.2 fallback enables job control for one launch, placing the command and
+# all ordinary descendants in a dedicated process group. The watchdog signals
+# that group with TERM then KILL, retains its process-group id across root exit,
+# and the parent waits for escalation to finish before returning 124.
 _run_with_timeout() {
   _rwt_secs=$1
   shift
@@ -101,8 +102,13 @@ _run_with_timeout() {
 
   _rwt_marker=$(mktemp "$FLOWAY_SETUP_TMPDIR/timeout.XXXXXX") || return 1
   rm -f "$_rwt_marker"
+  if [ -n "${FLOWAY_INSTALLER_TEST_TRACE_TIMEOUT:-}" ]; then
+    printf 'Floway test: timeout fallback: process-tree\n'
+  fi
+  set -m
   "$@" &
   _rwt_pid=$!
+  set +m
   (
     # The watchdog must not retain the installer's stdout/stderr descriptors
     # after its parent shell is killed; otherwise a pipe consumer waits for the
@@ -111,20 +117,23 @@ _run_with_timeout() {
     sleep "$_rwt_secs"
     if kill -0 "$_rwt_pid" 2>/dev/null; then
       : > "$_rwt_marker"
-      kill -TERM "$_rwt_pid" 2>/dev/null || true
+      kill -TERM -- "-$_rwt_pid" 2>/dev/null || true
       sleep 1
-      kill -KILL "$_rwt_pid" 2>/dev/null || true
+      kill -KILL -- "-$_rwt_pid" 2>/dev/null || true
     fi
   ) &
   _rwt_watchdog=$!
   wait "$_rwt_pid"
   _rwt_status=$?
-  kill "$_rwt_watchdog" 2>/dev/null || true
-  wait "$_rwt_watchdog" 2>/dev/null || true
   if [ -e "$_rwt_marker" ]; then
+    # The timeout path waits through TERM→KILL escalation; the process-group id
+    # remains valid even after its original leader exits.
+    wait "$_rwt_watchdog" 2>/dev/null || true
     rm -f "$_rwt_marker"
     return 124
   fi
+  kill "$_rwt_watchdog" 2>/dev/null || true
+  wait "$_rwt_watchdog" 2>/dev/null || true
   rm -f "$_rwt_marker"
   return $_rwt_status
 }
@@ -462,7 +471,7 @@ claude_verify() {
       printf 'Floway: claude doctor capability check timed out.\n' >&2
       return 1
     fi
-    if grep -Eiq 'unknown (command|argument)|unrecognized (command|argument)|no such command|invalid (command|argument)' "$_cv_doctor_help"; then
+    if grep -Eiq '(unknown|unrecognized|invalid|no such).*(command|subcommand).*doctor|doctor.*(unknown|unrecognized|invalid).*(command|subcommand)' "$_cv_doctor_help"; then
       printf 'Floway: this Claude Code build has no doctor command; skipping that check.\n'
     else
       printf 'Floway: claude doctor capability check failed.\n' >&2
