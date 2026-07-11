@@ -384,6 +384,33 @@ test('HEAD validates but returns an empty body', async () => {
   assertEquals(await response.text(), '');
 });
 
+test('near-miss public URLs are consumed before host middleware can log their token', async () => {
+  const token = 'a'.repeat(43);
+  const downstream = vi.fn();
+  const app = new Hono()
+    .route('/api/setup', createAgentSetupPublicRoutes({
+      repository: { findByToken: () => Promise.resolve(null) },
+      userExists: () => Promise.resolve(false),
+      resolveApiKeySecret: () => Promise.resolve(null),
+    }))
+    .use('*', async (c, next) => {
+      downstream(c.req.path);
+      await next();
+    });
+
+  for (const [path, method] of [
+    [`/api/setup/${token}/setup.txt`, 'GET'],
+    [`/api/setup/${token}/setup.sh/extra`, 'GET'],
+    [`/api/setup/${token}/setup.sh`, 'POST'],
+    [`/api/setup/${token}`, 'GET'],
+  ] as const) {
+    const response = await app.request(path, { method });
+    assertEquals(response.status, 404);
+    assertEquals(response.headers.get('cache-control'), 'no-store');
+  }
+  expect(downstream).not.toHaveBeenCalled();
+});
+
 test('GET re-reads the current configuration each request', async () => {
   const h = harness();
   const lease = await create(h);

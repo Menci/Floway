@@ -129,9 +129,16 @@ export const createAgentSetupPublicRoutes = (deps: AgentSetupPublicDeps) => {
     }
   };
 
+  const notFound = (c: Context) => c.body(null, 404, SCRIPT_RESPONSE_HEADERS);
+
   return new Hono()
     .on(['GET', 'HEAD'], '/:token/setup.sh', serveSetupScript('sh'))
-    .on(['GET', 'HEAD'], '/:token/setup.ps1', serveSetupScript('ps1'));
+    .on(['GET', 'HEAD'], '/:token/setup.ps1', serveSetupScript('ps1'))
+    // Consume every near-miss beneath a token-shaped path before the host's
+    // middleware. A mistyped filename or HTTP method still carries the live
+    // credential in its URL segment and must not fall through to access logs.
+    .all('/:token{[A-Za-z0-9_-]{43}}', notFound)
+    .all('/:token/*', notFound);
 };
 
 // --- authenticated control routes ---
