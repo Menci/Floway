@@ -4,194 +4,34 @@ import type { TooltipItem } from 'chart.js';
 import type { ChartConfiguration } from 'chart.js/auto';
 import { defineBasicLoader } from 'unplugin-vue-router/data-loaders/basic';
 import { computed, ref, shallowRef, watch, watchEffect } from 'vue';
-import { useRoute, useRouter, type LocationQuery, type LocationQueryValue } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 
 import { callApi, useApi } from '../../api/client.ts';
 import ChartCanvas from '../../components/charts/ChartCanvas.vue';
 import ChartSeriesControls from '../../components/charts/ChartSeriesControls.vue';
-import { chartColor, chartColorByName, chartFont, chartXAxisTick, dashboardBuckets, dashboardRangeQuery, type DashboardRange } from '../../components/charts/dashboard-chart.ts';
+import { chartColor, chartColorByName, chartFont, chartXAxisTick, dashboardBuckets, type DashboardRange } from '../../components/charts/dashboard-chart.ts';
 import { applySeriesSelection, chartEventsWithDoubleClick, chartSeriesIds, createSeriesIsolation, handleLegendClick } from '../../components/charts/series-selection.ts';
 import { useUpstreamsStore } from '../../composables/useUpstreams.ts';
+import {
+  buildOverviewQuery,
+  emptyDisplayRecord,
+  emptyOverview,
+  parseUrlState,
+  serializeUrlState,
+  sortRows,
+  type DisplayRow,
+  type GroupBy,
+  type MetricView,
+  type PercentileKey,
+  type PerformanceOverviewResponse,
+  type PerformanceView,
+  type SortDir,
+  type TableSortKey,
+  type UrlState,
+} from './performance-helpers.ts';
 import { useAuthStore } from '../../stores/auth.ts';
 import type { PerformanceDisplayRecord } from '@floway-dev/gateway/control-plane/performance/aggregate';
 import { OverlayScrollbars, Spinner } from '@floway-dev/ui';
-
-type PerformanceView = 'all-by-user' | 'self-by-key';
-type GroupBy = 'keyId' | 'userId' | 'model' | 'upstream' | 'operation' | 'runtimeLocation';
-type MetricView = 'ttft' | 'tokPerSec';
-type PercentileKey = 'p50' | 'p95' | 'p99';
-type TableSortKey = 'group' | 'requests' | 'errors' | 'ttftMsP95' | 'tpotUsP95';
-type SortDir = 'asc' | 'desc';
-
-// PerformanceDisplayRecord + the human label resolved once at sort time so
-// the template never re-invokes resolveGroupName per render tick.
-interface DisplayRow extends PerformanceDisplayRecord {
-  groupLabel: string;
-}
-
-interface DimensionValues {
-  models: string[];
-  upstreams: string[];
-  operations: string[];
-  runtimeLocations: string[];
-  keyIds: string[];
-  userIds: number[];
-}
-
-interface UserMetadata { id: number; username: string }
-interface KeyMetadata { id: string; name: string; createdAt: string }
-
-interface PerformanceOverviewResponse {
-  series: PerformanceDisplayRecord[];
-  // Backend produces one breakdown per PerformanceGroupBy axis in a single
-  // record traversal. 'none' is the summary (all buckets, no group split);
-  // every other key is the equivalent By-X panel row set.
-  axes: Record<GroupBy | 'none', PerformanceDisplayRecord[]>;
-  dimensionValues: DimensionValues;
-  users: UserMetadata[];
-  keys: KeyMetadata[];
-}
-
-const emptyOverview = (): PerformanceOverviewResponse => ({
-  series: [],
-  axes: { none: [], model: [], upstream: [], runtimeLocation: [], operation: [], keyId: [], userId: [] },
-  dimensionValues: { models: [], upstreams: [], operations: [], runtimeLocations: [], keyIds: [], userIds: [] },
-  users: [], keys: [],
-});
-
-// Zero-counter, null-percentile record for the summary fallback when the
-// backend returns no `none` axis row (empty selection). Kept next to the
-// PerformanceDisplayRecord shape so a field rename lands here, not in a
-// silently-drifting inline literal.
-const emptyDisplayRecord = (bucket: string, group: string): PerformanceDisplayRecord => ({
-  bucket, group,
-  requests: 0,
-  errors: 0,
-  ttftSamples: 0,
-  tpotSamples: 0,
-  neutral: 0,
-  ttftMsP50: null,
-  ttftMsP95: null,
-  ttftMsP99: null,
-  tpotUsP50: null,
-  tpotUsP95: null,
-  tpotUsP99: null,
-});
-
-// URL <-> state (de)serialization. Every widget's state lives in the URL query
-// so refreshing / copying the URL restores the same view. Only non-default
-// values are written so pristine URLs stay clean.
-const GROUP_BY_VALUES = ['model', 'upstream', 'operation', 'runtimeLocation', 'keyId', 'userId'] as const;
-const METRIC_VALUES = ['ttft', 'tokPerSec'] as const;
-const PERCENTILE_VALUES = ['p50', 'p95', 'p99'] as const;
-const RANGE_VALUES = ['today', '7d', '30d'] as const;
-const SORT_KEY_VALUES = ['group', 'requests', 'errors', 'ttftMsP95', 'tpotUsP95'] as const;
-const SORT_DIR_VALUES = ['asc', 'desc'] as const;
-
-const asStr = (v: LocationQueryValue | LocationQueryValue[] | undefined): string =>
-  (typeof v === 'string' ? v : '');
-const asOneOf = <T extends string>(v: string, allowed: readonly T[], fallback: T): T =>
-  (allowed as readonly string[]).includes(v) ? (v as T) : fallback;
-
-interface UrlState {
-  metric: MetricView;
-  percentile: PercentileKey;
-  groupBy: GroupBy;
-  range: DashboardRange;
-  filterModel: string;
-  filterUpstream: string;
-  filterOperation: string;
-  filterRuntime: string;
-  filterUserId: string;
-  filterKeyId: string;
-  hidden: string[];
-  sortKey: TableSortKey;
-  sortDir: SortDir;
-}
-
-// Single source of truth for URL <-> UrlState. Every field declares its
-// query key, how to parse a raw string, and how to serialize back — returning
-// `undefined` from `serialize` elides the key so pristine defaults leave no
-// query string behind. parseUrlState and serializeUrlState both loop over
-// this map, so read and write can never drift.
-interface UrlField<T> {
-  urlKey: string;
-  parse: (v: string) => T;
-  serialize: (v: T) => string | undefined;
-}
-
-const enumField = <T extends string>(urlKey: string, allowed: readonly T[], fallback: T): UrlField<T> => ({
-  urlKey,
-  parse: v => asOneOf(v, allowed, fallback),
-  serialize: v => (v === fallback ? undefined : v),
-});
-
-const stringField = (urlKey: string): UrlField<string> => ({
-  urlKey,
-  parse: v => v,
-  serialize: v => (v === '' ? undefined : v),
-});
-
-const listField = (urlKey: string): UrlField<string[]> => ({
-  urlKey,
-  parse: v => v.split(',').map(decodeURIComponent).filter(Boolean),
-  serialize: v => (v.length > 0 ? v.map(encodeURIComponent).join(',') : undefined),
-});
-
-const URL_FIELDS = {
-  metric: enumField('m', METRIC_VALUES, 'ttft'),
-  percentile: enumField('pct', PERCENTILE_VALUES, 'p95'),
-  groupBy: enumField('g', GROUP_BY_VALUES, 'model'),
-  range: enumField('r', RANGE_VALUES, 'today'),
-  filterModel: stringField('fm'),
-  filterUpstream: stringField('fu'),
-  filterOperation: stringField('fo'),
-  filterRuntime: stringField('fr'),
-  filterUserId: stringField('fusr'),
-  filterKeyId: stringField('fk'),
-  hidden: listField('hide'),
-  sortKey: enumField('sort', SORT_KEY_VALUES, 'requests'),
-  sortDir: enumField('dir', SORT_DIR_VALUES, 'desc'),
-} satisfies { [K in keyof UrlState]: UrlField<UrlState[K]> };
-
-const parseUrlState = (q: LocationQuery): UrlState => {
-  const out: Partial<Record<keyof UrlState, unknown>> = {};
-  for (const key of Object.keys(URL_FIELDS) as (keyof UrlState)[]) {
-    const field = URL_FIELDS[key];
-    out[key] = field.parse(asStr(q[field.urlKey]));
-  }
-  return out as UrlState;
-};
-
-const serializeUrlState = (state: UrlState): Record<string, string> => {
-  const out: Record<string, string> = {};
-  for (const key of Object.keys(URL_FIELDS) as (keyof UrlState)[]) {
-    const field = URL_FIELDS[key];
-    // Union-of-serialize collapses its param type to `never` under
-    // contravariance; cast state[key] so the loop compiles. Runtime call is
-    // sound because the `satisfies` clause pairs each key with its own field.
-    const value = field.serialize(state[key] as never);
-    if (value !== undefined) out[field.urlKey] = value;
-  }
-  return out;
-};
-
-const buildOverviewQuery = (state: UrlState, view: PerformanceView, at: number): Record<string, string> => {
-  const { start, end, bucket } = dashboardRangeQuery(state.range, at);
-  const q: Record<string, string> = {
-    start, end, bucket,
-    timezone_offset_minutes: String(new Date().getTimezoneOffset()),
-    view,
-    group_by: state.groupBy,
-  };
-  if (state.filterModel !== '') q.filter_model = state.filterModel;
-  if (state.filterUpstream !== '') q.filter_upstream = state.filterUpstream;
-  if (state.filterOperation !== '') q.filter_operation = state.filterOperation;
-  if (state.filterRuntime !== '') q.filter_runtime_location = state.filterRuntime;
-  if (state.filterUserId !== '') q.filter_user_id = state.filterUserId;
-  if (state.filterKeyId !== '') q.filter_key_id = state.filterKeyId;
-  return q;
-};
 
 export const usePerformancePageData = defineBasicLoader('/dashboard/performance', async route => {
   const api = useApi();
@@ -419,30 +259,13 @@ const tableSortToggle = (key: TableSortKey): void => {
 
 // Output speed is stored as tpotUs (smaller = faster), but the column
 // header labels it "Output speed" (tok/s, higher = better), so clicking
-// asc/desc must produce the ordering the label promises. Bake the invert
-// into a single effectiveSign so null-handling stays consistent — nulls
-// always sort last regardless of direction. Every row also carries its
-// resolved group label — resolveGroupName reads a Map per invocation, so
-// pre-resolving once per row keeps the group-column sort cheap AND lets
-// the template render `{{ row.groupLabel }}` without walking the Map on
-// every reactive tick across the 6 breakdown tables.
-const sortedRows = (rows: readonly PerformanceDisplayRecord[], groupBy: GroupBy): DisplayRow[] => {
-  const key = tableSortKey.value;
-  const dir = tableSortDir.value;
-  const invert = key === 'tpotUsP95' ? -1 : 1;
-  const sign = (dir === 'asc' ? 1 : -1) * invert;
-  const withLabel: DisplayRow[] = rows.map(r => ({ ...r, groupLabel: resolveGroupName(r.group, groupBy) }));
-  if (key === 'group') {
-    return withLabel.sort((a, b) => a.groupLabel.localeCompare(b.groupLabel) * sign);
-  }
-  const compareNumbers = (a: number | null, b: number | null): number => {
-    if (a === null && b === null) return 0;
-    if (a === null) return 1;
-    if (b === null) return -1;
-    return (a - b) * sign;
-  };
-  return withLabel.sort((a, b) => compareNumbers(a[key], b[key]));
-};
+// asc/desc must produce the ordering the label promises. `sortRows` bakes
+// the invert into an effectiveSign and pre-resolves group labels once per
+// row so the group-column sort stays cheap AND the template can render
+// `{{ row.groupLabel }}` without walking the name-resolver Map on every
+// reactive tick across the 6 breakdown tables.
+const sortedRows = (rows: readonly PerformanceDisplayRecord[], groupBy: GroupBy): DisplayRow[] =>
+  sortRows(rows, tableSortKey.value, tableSortDir.value, groupBy, resolveGroupName);
 
 // Every reactive tick — including loading-spinner opacity toggles — would
 // re-invoke sortedRows for all 6 tables if it stayed a template-called
