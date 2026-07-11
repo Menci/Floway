@@ -93,6 +93,7 @@ export const prepareResponsesServePlan = async (args: {
     view: responsesItemsView,
     store,
     candidates: viable,
+    requiresNativeResponses: item => requiresNativeResponses({ ...prepared, input: [item] }),
     // Hash-preload covers any user item carried directly on this turn — once
     // `expandPreviousResponseId` has run, those are the items after the
     // snapshot's item_reference prefix, which IS `payload.input` (verbatim,

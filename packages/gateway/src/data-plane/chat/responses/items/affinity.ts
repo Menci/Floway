@@ -130,13 +130,14 @@ export const classifyResponsesItemAffinity = async <TSourceItems, TCandidate ext
   view: ResponsesItemsView<TSourceItems>;
   store: StatefulResponsesStore;
   candidates: readonly TCandidate[];
+  requiresNativeResponses?: (item: ResponsesInputItem) => boolean;
   // Items the caller will stage as inputs after the affinity walk; passed
   // here so `loadInputItems` can pre-load any stored row whose content hash
   // matches one of them. Without this, a duplicate user message resent on
   // a later turn cannot be reused — it would mint a fresh row each time.
   inputItemsToStage?: readonly ResponsesInputItem[];
 }): Promise<RoutingDecision<TCandidate>> => {
-  const { sourceItems, view, store, candidates, inputItemsToStage } = input;
+  const { sourceItems, view, store, candidates, inputItemsToStage, requiresNativeResponses } = input;
   await store.loadInputItems({
     sourceItems,
     view,
@@ -151,6 +152,7 @@ export const classifyResponsesItemAffinity = async <TSourceItems, TCandidate ext
   ));
 
   const failures: ChatServeFailure[] = [];
+  let storedItemsRequireNativeResponses = false;
   for (const ref of references) {
     const row = (ref.id !== undefined ? store.getItemById(ref.id) : undefined)
       ?? (ref.encryptedContent !== undefined
@@ -183,7 +185,12 @@ export const classifyResponsesItemAffinity = async <TSourceItems, TCandidate ext
       });
       continue;
     }
-    ref.affinity = classifyStoredResponsesAffinity(ref.type, row);
+    if (requiresNativeResponses !== undefined && row.payload !== null && requiresNativeResponses(row.payload.item as ResponsesInputItem)) {
+      storedItemsRequireNativeResponses = true;
+      ref.affinity = 'forcing';
+    } else {
+      ref.affinity = classifyStoredResponsesAffinity(ref.type, row);
+    }
     if (ref.affinity === 'forcing' && !isUpstreamOwned(row)) {
       failures.push({ kind: 'item-not-found', itemId: row.id });
     }
@@ -191,6 +198,9 @@ export const classifyResponsesItemAffinity = async <TSourceItems, TCandidate ext
 
   if (failures.length > 0) return { kind: 'failure', failure: failures[0] };
 
+  const eligibleCandidates = storedItemsRequireNativeResponses
+    ? candidates.filter(candidate => candidate.model.endpoints.responses !== undefined)
+    : candidates;
   const forcingUpstreamList = [...collectForcingUpstreams(references)];
 
   if (forcingUpstreamList.length > 1) {
@@ -205,7 +215,7 @@ export const classifyResponsesItemAffinity = async <TSourceItems, TCandidate ext
 
   if (forcingUpstreamList.length === 1) {
     const [upstreamId] = forcingUpstreamList;
-    const matching = candidates.filter(cand => cand.provider.upstream === upstreamId);
+    const matching = eligibleCandidates.filter(cand => cand.provider.upstream === upstreamId);
     if (matching.length === 0) {
       return {
         kind: 'failure',
@@ -227,5 +237,5 @@ export const classifyResponsesItemAffinity = async <TSourceItems, TCandidate ext
   }
 
   const preferredUpstreamIds = collectPreferredUpstreams(references);
-  return { kind: 'success', candidates: orderCandidatesByStoredResponsesAffinity(candidates, preferredUpstreamIds) };
+  return { kind: 'success', candidates: orderCandidatesByStoredResponsesAffinity(eligibleCandidates, preferredUpstreamIds) };
 };
