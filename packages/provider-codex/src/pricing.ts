@@ -1,153 +1,75 @@
 // Per-public-model pricing table for the Codex (ChatGPT subscription)
 // provider. Codex itself bills as a flat-fee subscription rather than per-token,
-// but the gateway tracks usage cost as if the operator were paying OpenAI's
-// public API rates — that lets the dashboard surface "value consumed vs. flat
-// fee" so the operator can see whether a subscription is paying off relative
-// to direct API spend. Values are USD per million tokens, aligned with
-// the `Cost` schema in models.dev:
-// https://github.com/anomalyco/models.dev/blob/8e6d393c01cb42d41a92f18725eef545e7190efb/packages/core/src/schema.ts
+// but Floway tracks usage cost as if the operator were paying OpenAI's public
+// API rates. Values are USD per million tokens.
 //
-// Source of truth for OpenAI public API prices the table is derived from:
+// Sources and refresh procedure:
 // https://developers.openai.com/api/docs/pricing
-// Refresh procedure: .agents/skills/fetching-models-pricing/.
-//
-// Per-tier overrides cover the two OpenAI service-tier wire values reachable
-// through the Codex CLI's `ServiceTier` enum (`priority` / `flex`):
-//   - `flex` — discounted, latency-tolerant; the CLI sets `service_tier: "flex"`.
-//     https://developers.openai.com/api/docs/guides/flex-processing
-//   - `priority` — premium-priced, lower-latency lane; the CLI's `/fast` toggle
-//     stamps `service_tier: "priority"`.
-//     https://developers.openai.com/api/docs/guides/priority-processing
-// https://github.com/openai/codex/blob/f774455c3a831dfab2c6f37a1f624b8097f6f2c2/codex-rs/protocol/src/config_types.rs#L445
-// Whether a request actually goes through at the requested tier depends on
-// what each model's catalog entry (`service_tiers` block in upstream
-// `models.json`) accepts and on remaining capacity; OpenAI reports the
-// actually-served tier in `usage.service_tier` and the gateway captures it
-// onto `TokenUsage.tier` so cost compute picks the right row.
-//
-// Coverage: every slug the upstream catalog surfaces across current plans —
-// the GPT-5.6 Sol / Terra / Luna family that shipped in July 2026, the
-// preceding GPT-5.5 / 5.4 / 5.4-mini slugs, and the internal codex-auto-review
-// entry. New slugs the upstream rolls out at higher plans (Pro / Team /
-// Enterprise) should be added here so the dashboard reports their cost too.
+// https://github.com/anomalyco/models.dev/blob/8e6d393c01cb42d41a92f18725eef545e7190efb/packages/core/src/schema.ts
+// .agents/skills/fetching-models-pricing/
 
-import type { ModelPricing } from '@floway-dev/protocols/common';
+import type { ModelPricing, PriceVector, PricingSelector } from '@floway-dev/protocols/common';
 
-const GPT_5_4_PRICING: ModelPricing = {
-  input: 2.5,
-  input_cache_read: 0.25,
-  output: 15,
-  tiers: {
-    flex: { input: 1.25, input_cache_read: 0.13, output: 7.5 },
-    priority: { input: 5, input_cache_read: 0.5, output: 30 },
-  },
-};
+const cell = (rates: PriceVector, selector?: PricingSelector) => ({ ...(selector ? { selector } : {}), rates });
+const pricing = (...cells: ReturnType<typeof cell>[]): ModelPricing => ({ cells });
+
+const GPT_5_4_PRICING = pricing(
+  cell({ input: 2.5, input_cache_read: 0.25, output: 15 }),
+  cell({ input: 1.25, input_cache_read: 0.13, output: 7.5 }, { serviceTier: 'flex' }),
+  cell({ input: 5, input_cache_read: 0.5, output: 30 }, { serviceTier: 'priority' }),
+);
 
 const CODEX_MODEL_PRICING: readonly (readonly [key: string | RegExp, pricing: ModelPricing])[] = [
-  // GPT-5.6 family (Sol / Terra / Luna) shipped July 2026 and requires
-  // codex-cli 0.144.0+ per the upstream models.json minimal_client_version.
-  // Each variant is a full (service tier × input length) grid: standard/
-  // priority × short/long. Priority per-token rate is a flat 2× standard
-  // across the family (distinct from GPT-5.5's 2.5×). OpenAI charges a higher
-  // full-request rate once a prompt's total input is above 272k tokens
-  // (input/cache-read/cache-write double, output ×1.5). Cache-write is input ×
-  // 1.25 and cache-read is input × 0.10 in every cell.
-  //
-  // Sources for standard short/long (all four cross-agree): the OpenAI pricing
-  // page archive, models.dev, LiteLLM, and the caozhiyuan cross-check. Priority
-  // short matches models.dev's `experimental.modes.fast` (service_tier=priority)
-  // and LiteLLM's `_priority` keys. Priority long input/cache-read/output come
-  // from LiteLLM's `azure/gpt-5.6-*` `_above_272k_tokens_priority` keys; those
-  // Azure entries carry no cache-write key, so priority-long cache-write is
-  // derived from the family-wide cache_write = 1.25 × input ratio — OpenAI does
-  // not publish a standalone priority-long cache-write rate.
+  // GPT-5.6 is an explicit standard/priority × short/long grid. Standard
+  // short/long values agree across the OpenAI pricing archive, models.dev and
+  // LiteLLM. Priority-short agrees between models.dev's fast mode and
+  // LiteLLM's `_priority` keys. Priority-long input/cache-read/output use
+  // LiteLLM's `_above_272k_tokens_priority` entries; cache-write is explicitly
+  // recorded as 1.25 × that cell's published input rate, following OpenAI's
+  // family-wide cache-write formula. These are authored constants, not rates
+  // derived by the resolver.
   // https://web.archive.org/web/20260709205359/https://platform.openai.com/docs/pricing
   // https://github.com/sst/models.dev/blob/6dfc39c81b6cd57a91c155aa7b4f68ed1b360da0/providers/openai/models/gpt-5.6-sol.toml
   // https://github.com/BerriAI/litellm/blob/6fa088224bc2022c7541ee44cf02c0bd6dd2942e/model_prices_and_context_window.json
   // https://github.com/openai/codex/blob/d2d00b6632dc991aa4471db0529773029cae5d68/codex-rs/models-manager/models.json
-  // Cross-checked against caozhiyuan/copilot-api:
+  // Cross-check only:
   // https://github.com/caozhiyuan/copilot-api/blob/5a28eee7ced4fda51b6b224fb8723df5e6534708/src/lib/token-usage/pricing.ts#L98-L148
-  ['gpt-5.6-sol', {
-    input: 5,
-    input_cache_read: 0.5,
-    input_cache_write: 6.25,
-    output: 30,
-    tiers: {
-      priority: { input: 10, input_cache_read: 1, input_cache_write: 12.5, output: 60 },
-    },
-    inputLengthTiers: [{
-      aboveInputTokens: 272000,
-      input: 10, input_cache_read: 1, input_cache_write: 12.5, output: 45,
-      tiers: {
-        priority: { input: 20, input_cache_read: 2, input_cache_write: 25, output: 90 },
-      },
-    }],
-  }],
-  ['gpt-5.6-terra', {
-    input: 2.5,
-    input_cache_read: 0.25,
-    input_cache_write: 3.125,
-    output: 15,
-    tiers: {
-      priority: { input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 30 },
-    },
-    inputLengthTiers: [{
-      aboveInputTokens: 272000,
-      input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 22.5,
-      tiers: {
-        priority: { input: 10, input_cache_read: 1, input_cache_write: 12.5, output: 45 },
-      },
-    }],
-  }],
-  ['gpt-5.6-luna', {
-    input: 1,
-    input_cache_read: 0.1,
-    input_cache_write: 1.25,
-    output: 6,
-    tiers: {
-      priority: { input: 2, input_cache_read: 0.2, input_cache_write: 2.5, output: 12 },
-    },
-    inputLengthTiers: [{
-      aboveInputTokens: 272000,
-      input: 2, input_cache_read: 0.2, input_cache_write: 2.5, output: 9,
-      tiers: {
-        priority: { input: 4, input_cache_read: 0.4, input_cache_write: 5, output: 18 },
-      },
-    }],
-  }],
-  ['gpt-5.5', {
-    input: 5,
-    input_cache_read: 0.5,
-    output: 30,
-    tiers: {
-      flex: { input: 2.5, input_cache_read: 0.25, output: 15 },
-      priority: { input: 12.5, input_cache_read: 1.25, output: 75 },
-    },
-  }],
+  ['gpt-5.6-sol', pricing(
+    cell({ input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 30 }),
+    cell({ input: 10, input_cache_read: 1, input_cache_write: 12.5, output: 60 }, { serviceTier: 'priority' }),
+    cell({ input: 10, input_cache_read: 1, input_cache_write: 12.5, output: 45 }, { inputAboveTokens: 272000 }),
+    cell({ input: 20, input_cache_read: 2, input_cache_write: 25, output: 90 }, { serviceTier: 'priority', inputAboveTokens: 272000 }),
+  )],
+  ['gpt-5.6-terra', pricing(
+    cell({ input: 2.5, input_cache_read: 0.25, input_cache_write: 3.125, output: 15 }),
+    cell({ input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 30 }, { serviceTier: 'priority' }),
+    cell({ input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 22.5 }, { inputAboveTokens: 272000 }),
+    cell({ input: 10, input_cache_read: 1, input_cache_write: 12.5, output: 45 }, { serviceTier: 'priority', inputAboveTokens: 272000 }),
+  )],
+  ['gpt-5.6-luna', pricing(
+    cell({ input: 1, input_cache_read: 0.1, input_cache_write: 1.25, output: 6 }),
+    cell({ input: 2, input_cache_read: 0.2, input_cache_write: 2.5, output: 12 }, { serviceTier: 'priority' }),
+    cell({ input: 2, input_cache_read: 0.2, input_cache_write: 2.5, output: 9 }, { inputAboveTokens: 272000 }),
+    cell({ input: 4, input_cache_read: 0.4, input_cache_write: 5, output: 18 }, { serviceTier: 'priority', inputAboveTokens: 272000 }),
+  )],
+  ['gpt-5.5', pricing(
+    cell({ input: 5, input_cache_read: 0.5, output: 30 }),
+    cell({ input: 2.5, input_cache_read: 0.25, output: 15 }, { serviceTier: 'flex' }),
+    cell({ input: 12.5, input_cache_read: 1.25, output: 75 }, { serviceTier: 'priority' }),
+  )],
   ['gpt-5.4', GPT_5_4_PRICING],
-  ['gpt-5.4-mini', {
-    input: 0.75,
-    input_cache_read: 0.075,
-    output: 4.5,
-    tiers: {
-      flex: { input: 0.375, input_cache_read: 0.0375, output: 2.25 },
-      priority: { input: 1.5, input_cache_read: 0.15, output: 9 },
-    },
-  }],
-  // Internal review model gated under codex_cli_rs's auto-review feature. No
-  // public price surface; billed as a notional clone of gpt-5.4 (closest
-  // analogue we have).
+  ['gpt-5.4-mini', pricing(
+    cell({ input: 0.75, input_cache_read: 0.075, output: 4.5 }),
+    cell({ input: 0.375, input_cache_read: 0.0375, output: 2.25 }, { serviceTier: 'flex' }),
+    cell({ input: 1.5, input_cache_read: 0.15, output: 9 }, { serviceTier: 'priority' }),
+  )],
+  // No public price surface; notional clone of gpt-5.4.
   ['codex-auto-review', GPT_5_4_PRICING],
 ];
 
-// Codex doesn't apply variant suffixes to model ids — the upstream's slug is
-// the public id verbatim — so the modelKey persisted in `usage.model_key`
-// matches the table key directly.
 export const pricingForCodexModelKey = (modelKey: string): ModelPricing | null => {
-  for (const [key, pricing] of CODEX_MODEL_PRICING) {
-    if (typeof key === 'string' ? modelKey === key : key.test(modelKey)) {
-      return pricing;
-    }
+  for (const [key, modelPricing] of CODEX_MODEL_PRICING) {
+    if (typeof key === 'string' ? modelKey === key : key.test(modelKey)) return modelPricing;
   }
   return null;
 };

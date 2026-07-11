@@ -17,152 +17,75 @@
 //
 // Refresh procedure: .agents/skills/fetching-models-pricing/.
 import { copilotPublicModelId } from './model-name.ts';
-import type { ModelPricing } from '@floway-dev/protocols/common';
+import type { ModelPricing, PriceVector, PricingSelector } from '@floway-dev/protocols/common';
+
+const cell = (rates: PriceVector, selector?: PricingSelector) => ({ ...(selector ? { selector } : {}), rates });
+const pricing = (...cells: ReturnType<typeof cell>[]): ModelPricing => ({ cells });
+const base = (rates: PriceVector): ModelPricing => pricing(cell(rates));
 
 type PricingRule = readonly [key: string | RegExp, pricing: ModelPricing];
 
 const COPILOT_MODEL_PRICING: readonly PricingRule[] = [
-  // Opus 4.5 — no Fast Mode variant exposed by Copilot.
-  [
-    'claude-opus-4-5',
-    {
-      input: 5,
-      input_cache_read: 0.5,
-      input_cache_write: 6.25,
-      output: 25,
-    },
-  ],
-  // Opus 4.6 / 4.7 — Anthropic public Fast Mode pricing is 6× base.
+  ['claude-opus-4-5', base({ input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 25 })],
+  // Anthropic public Fast Mode pricing is 6× base for Opus 4.6 / 4.7.
   // https://docs.claude.com/en/build-with-claude/fast-mode
-  [
-    /^claude-opus-4-[67]$/,
-    {
-      input: 5,
-      input_cache_read: 0.5,
-      input_cache_write: 6.25,
-      output: 25,
-      tiers: {
-        fast: {
-          input: 30,
-          input_cache_read: 3,
-          input_cache_write: 37.5,
-          output: 150,
-        },
-      },
-    },
-  ],
-  // Opus 4.8 — Anthropic public Fast Mode pricing is 2× base.
-  [
-    'claude-opus-4-8',
-    {
-      input: 5,
-      input_cache_read: 0.5,
-      input_cache_write: 6.25,
-      output: 25,
-      tiers: {
-        fast: {
-          input: 10,
-          input_cache_read: 1,
-          input_cache_write: 12.5,
-          output: 50,
-        },
-      },
-    },
-  ],
-  // Sonnet 5 — Anthropic introductory pricing through 2026-08-31; sticker is
-  // $3/$15 (same as Sonnet 4 family) afterwards. Cross-checked against
-  // OpenRouter (openrouter.ai/api/v1/models) and models.dev, both mirroring
-  // Anthropic's live rate.
-  [
-    'claude-sonnet-5',
-    {
-      input: 2,
-      input_cache_read: 0.2,
-      input_cache_write: 2.5,
-      output: 10,
-    },
-  ],
-  [
-    /^claude-sonnet-4(-[56])?$/,
-    {
-      input: 3,
-      input_cache_read: 0.3,
-      input_cache_write: 3.75,
-      output: 15,
-    },
-  ],
-  [
-    'claude-haiku-4-5',
-    {
-      input: 1,
-      input_cache_read: 0.1,
-      input_cache_write: 1.25,
-      output: 5,
-    },
-  ],
-  // OpenAI's July 2026 GPT-5.6 launch splits the family into three
-  // named variants (Sol / Terra / Luna). Copilot's live catalog exposes
-  // all three with per-model billing blocks that agree exactly with
-  // models.dev and OpenRouter — Sol matches the GPT-5.5 rate, Terra
-  // matches GPT-5.4, and Luna sits between GPT-5.4-mini and GPT-4o-mini.
-  //
-  // Cache-write is input × 1.25 and cache-read is input × 0.10 across the
-  // family. OpenAI charges a higher full-request rate once a prompt's total
-  // input is above 272k tokens (input/cache-read/cache-write double, output
-  // ×1.5); Copilot mirrors it. Copilot exposes no priority/flex lane on these
-  // models, so each is a two-cell (standard × short/long) grid.
+  [/^claude-opus-4-[67]$/, pricing(
+    cell({ input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 25 }),
+    cell({ input: 30, input_cache_read: 3, input_cache_write: 37.5, output: 150 }, { serviceTier: 'fast' }),
+  )],
+  ['claude-opus-4-8', pricing(
+    cell({ input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 25 }),
+    cell({ input: 10, input_cache_read: 1, input_cache_write: 12.5, output: 50 }, { serviceTier: 'fast' }),
+  )],
+  ['claude-sonnet-5', base({ input: 2, input_cache_read: 0.2, input_cache_write: 2.5, output: 10 })],
+  [/^claude-sonnet-4(-[56])?$/, base({ input: 3, input_cache_read: 0.3, input_cache_write: 3.75, output: 15 })],
+  ['claude-haiku-4-5', base({ input: 1, input_cache_read: 0.1, input_cache_write: 1.25, output: 5 })],
+  // GPT-5.6 standard short/long cells. Copilot exposes no priority/flex lane.
   // https://web.archive.org/web/20260709205359/https://platform.openai.com/docs/pricing
   // https://github.com/sst/models.dev/blob/6dfc39c81b6cd57a91c155aa7b4f68ed1b360da0/providers/openai/models/gpt-5.6-sol.toml
   // https://github.com/BerriAI/litellm/blob/6fa088224bc2022c7541ee44cf02c0bd6dd2942e/model_prices_and_context_window.json
-  // Cross-checked against caozhiyuan/copilot-api (a Copilot/Codex gateway):
+  // Cross-check only:
   // https://github.com/caozhiyuan/copilot-api/blob/5a28eee7ced4fda51b6b224fb8723df5e6534708/src/lib/token-usage/pricing.ts#L98-L148
-  ['gpt-5.6-sol', {
-    input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 30,
-    inputLengthTiers: [{ aboveInputTokens: 272000, input: 10, input_cache_read: 1, input_cache_write: 12.5, output: 45 }],
-  }],
-  ['gpt-5.6-terra', {
-    input: 2.5, input_cache_read: 0.25, input_cache_write: 3.125, output: 15,
-    inputLengthTiers: [{ aboveInputTokens: 272000, input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 22.5 }],
-  }],
-  ['gpt-5.6-luna', {
-    input: 1, input_cache_read: 0.1, input_cache_write: 1.25, output: 6,
-    inputLengthTiers: [{ aboveInputTokens: 272000, input: 2, input_cache_read: 0.2, input_cache_write: 2.5, output: 9 }],
-  }],
-  ['gpt-5.5', { input: 5, input_cache_read: 0.5, output: 30 }],
-  ['gpt-5.4', { input: 2.5, input_cache_read: 0.25, output: 15 }],
-  ['gpt-5.4-mini', { input: 0.75, input_cache_read: 0.075, output: 4.5 }],
-  ['gpt-5.4-nano', { input: 0.2, input_cache_read: 0.02, output: 1.25 }],
-  [/^gpt-5[.][23](-codex)?$/, { input: 1.75, input_cache_read: 0.175, output: 14 }],
-  ['gpt-5.1-codex-mini', { input: 0.25, input_cache_read: 0.025, output: 2 }],
-  [/^gpt-5[.]1/, { input: 1.25, input_cache_read: 0.125, output: 10 }],
-  ['gpt-5-mini', { input: 0.25, input_cache_read: 0.025, output: 2 }],
-  [/^gpt-4[.]1/, { input: 2, input_cache_read: 0.5, output: 8 }],
-  ['gpt-41-copilot', { input: 2, input_cache_read: 0.5, output: 8 }],
-  [
-    /^gpt-4o(-[0-9]{4}-[0-9]{2}-[0-9]{2})?$/,
-    {
-      input: 2.5,
-      input_cache_read: 1.25,
-      output: 10,
-    },
-  ],
-  ['gpt-4-o-preview', { input: 2.5, input_cache_read: 1.25, output: 10 }],
-  [/^gpt-4o-mini/, { input: 0.15, input_cache_read: 0.075, output: 0.6 }],
-  [/^gpt-4(-0613)?$/, { input: 30, output: 60 }],
-  ['gpt-4-0125-preview', { input: 10, output: 30 }],
-  ['gpt-3.5-turbo', { input: 0.5, output: 1.5 }],
-  ['gpt-3.5-turbo-0613', { input: 1.5, output: 2 }],
-  ['gemini-2.5-pro', { input: 1.25, input_cache_read: 0.125, output: 10 }],
-  ['gemini-3-flash-preview', { input: 0.5, input_cache_read: 0.05, output: 3 }],
-  ['gemini-3.1-pro-preview', { input: 2, input_cache_read: 0.2, output: 12 }],
-  ['gemini-3.5-flash', { input: 1.5, input_cache_read: 0.15, output: 9 }],
-  [/^grok-code-fast/, { input: 0.2, output: 1.5 }],
-  ['goldeneye', { input: 1.25, input_cache_read: 0.125, output: 10 }],
-  ['raptor-mini', { input: 0.25, input_cache_read: 0.025, output: 2 }],
-  ['minimax-m2.5', { input: 0.3, output: 1.2 }],
-  [/^mai-code-1-flash/, { input: 0.75, input_cache_read: 0.075, output: 4.5 }],
-  [/^text-embedding-3-small/, { input: 0.02, output: 0 }],
-  ['text-embedding-ada-002', { input: 0.1, output: 0 }],
+  ['gpt-5.6-sol', pricing(
+    cell({ input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 30 }),
+    cell({ input: 10, input_cache_read: 1, input_cache_write: 12.5, output: 45 }, { inputAboveTokens: 272000 }),
+  )],
+  ['gpt-5.6-terra', pricing(
+    cell({ input: 2.5, input_cache_read: 0.25, input_cache_write: 3.125, output: 15 }),
+    cell({ input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 22.5 }, { inputAboveTokens: 272000 }),
+  )],
+  ['gpt-5.6-luna', pricing(
+    cell({ input: 1, input_cache_read: 0.1, input_cache_write: 1.25, output: 6 }),
+    cell({ input: 2, input_cache_read: 0.2, input_cache_write: 2.5, output: 9 }, { inputAboveTokens: 272000 }),
+  )],
+  ['gpt-5.5', base({ input: 5, input_cache_read: 0.5, output: 30 })],
+  ['gpt-5.4', base({ input: 2.5, input_cache_read: 0.25, output: 15 })],
+  ['gpt-5.4-mini', base({ input: 0.75, input_cache_read: 0.075, output: 4.5 })],
+  ['gpt-5.4-nano', base({ input: 0.2, input_cache_read: 0.02, output: 1.25 })],
+  [/^gpt-5[.][23](-codex)?$/, base({ input: 1.75, input_cache_read: 0.175, output: 14 })],
+  ['gpt-5.1-codex-mini', base({ input: 0.25, input_cache_read: 0.025, output: 2 })],
+  [/^gpt-5[.]1/, base({ input: 1.25, input_cache_read: 0.125, output: 10 })],
+  ['gpt-5-mini', base({ input: 0.25, input_cache_read: 0.025, output: 2 })],
+  [/^gpt-4[.]1/, base({ input: 2, input_cache_read: 0.5, output: 8 })],
+  ['gpt-41-copilot', base({ input: 2, input_cache_read: 0.5, output: 8 })],
+  [/^gpt-4o(-[0-9]{4}-[0-9]{2}-[0-9]{2})?$/, base({ input: 2.5, input_cache_read: 1.25, output: 10 })],
+  ['gpt-4-o-preview', base({ input: 2.5, input_cache_read: 1.25, output: 10 })],
+  [/^gpt-4o-mini/, base({ input: 0.15, input_cache_read: 0.075, output: 0.6 })],
+  [/^gpt-4(-0613)?$/, base({ input: 30, output: 60 })],
+  ['gpt-4-0125-preview', base({ input: 10, output: 30 })],
+  ['gpt-3.5-turbo', base({ input: 0.5, output: 1.5 })],
+  ['gpt-3.5-turbo-0613', base({ input: 1.5, output: 2 })],
+  ['gemini-2.5-pro', base({ input: 1.25, input_cache_read: 0.125, output: 10 })],
+  ['gemini-3-flash-preview', base({ input: 0.5, input_cache_read: 0.05, output: 3 })],
+  ['gemini-3.1-pro-preview', base({ input: 2, input_cache_read: 0.2, output: 12 })],
+  ['gemini-3.5-flash', base({ input: 1.5, input_cache_read: 0.15, output: 9 })],
+  [/^grok-code-fast/, base({ input: 0.2, output: 1.5 })],
+  ['goldeneye', base({ input: 1.25, input_cache_read: 0.125, output: 10 })],
+  ['raptor-mini', base({ input: 0.25, input_cache_read: 0.025, output: 2 })],
+  ['minimax-m2.5', base({ input: 0.3, output: 1.2 })],
+  [/^mai-code-1-flash/, base({ input: 0.75, input_cache_read: 0.075, output: 4.5 })],
+  [/^text-embedding-3-small/, base({ input: 0.02, output: 0 })],
+  ['text-embedding-ada-002', base({ input: 0.1, output: 0 })],
 ];
 
 const matchPricing = (publicName: string): ModelPricing | null => {
