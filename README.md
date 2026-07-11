@@ -118,23 +118,24 @@ Open the deployed URL (or `http://localhost:8788` for Node), log in with
    the `x-api-key` / bearer token in any client.
 3. **API Keys -> Agent Setup** installs the Claude Code and Codex CLIs and
    points them at this gateway with a single command. Pick the API key the
-   setup link should carry, toggle Claude Code and/or Codex on, and tune each
-   agent's model, reasoning effort, Claude Sonnet/Haiku aliases, and gateway
-   model discovery. Edits autosave to a short-lived setup lease; wait for the
-   "Saving…" spinner to clear, then copy the shell command
+   setup link should carry and enable either or both agents. For Claude Code,
+   choose the main model, Sonnet and Haiku aliases, reasoning effort, and
+   gateway model discovery. For Codex, choose the model and optionally enter
+   any reasoning-effort value. Edits autosave to a short-lived setup lease;
+   wait for the "Saving…" spinner to clear, then copy the shell command
    (`curl -fsSL … | bash`) or the PowerShell command (`irm … | iex`) and run it
    on the target machine.
 
-   The setup link refreshes while the panel stays open and expires about five
-   minutes after you leave, so copy the command shortly before running it. The
-   installer installs only a missing CLI — through the official user-local
-   installer, never `sudo`, and never upgrading an existing install — then
-   surgically merges Floway's managed keys into `~/.claude/settings.json` and
-   Codex's `config.toml`/`auth.json`, backing up each touched file first.
-   Running the Codex step replaces the current ChatGPT login in
-   `$CODEX_HOME/auth.json` after writing a timestamped backup. Verification only
-   reaches the gateway's authenticated model directory; it never issues an
-   inference request.
+   The command's setup URL stays the same while the panel is open. The visible
+   panel renews its five-minute lease once a minute, and the URL expires about
+   five minutes after you leave. The installer installs only a missing CLI —
+   through the official user-local installer, never `sudo`, and never upgrading
+   an existing install. It backs up each file before surgically merging
+   Floway's managed keys into Claude Code's `~/.claude/settings.json` and
+   Codex's `$CODEX_HOME/config.toml`. The Codex step backs up and then replaces
+   `$CODEX_HOME/auth.json`, including any current ChatGPT login. Verification
+   only reaches the gateway's authenticated model directory; it never issues
+   an inference request.
 
 Import/export of upstreams, keys, and search config is in Settings. The
 payload format is tied to the running deployment, so import only accepts a
