@@ -68,165 +68,97 @@ const setKind = (k: ModelKind) => {
   patch({ kind: k, endpoints: defaultEndpointsForKind(k, config.value.endpoints) });
 };
 
-const updateCost = (key: BillingDimension, raw: string | number | null | undefined) => {
-  if (!config.value) return;
-  const cost = { ...(config.value.cost ?? {}) } as ModelPricing;
-  const num = parseOptionalNumber(raw);
-  if (num === undefined) delete cost[key];
-  else cost[key] = num;
-  // Every dimension is independently optional. The row stores `cost: undefined`
-  // rather than an empty stub when every base dimension AND the tiers overlay
-  // are empty. A bare check on `Object.values(cost)` would keep the row alive
-  // forever once any tier was added, because `cost.tiers` is a populated object
-  // even when every base rate is cleared.
-  const { tiers, ...base } = cost;
-  const hasBase = Object.values(base).some(v => v !== undefined);
-  const hasTiers = tiers !== undefined && Object.keys(tiers).length > 0;
-  patch({ cost: hasBase || hasTiers ? cost : undefined });
-};
+interface PricingCellDraft {
+  id: number;
+  serviceTier: string;
+  inputAboveTokens: number | undefined;
+  rates: Partial<Record<BillingDimension, number>>;
+}
 
-// Per-tier overlays. A tier overlay is a sparse pricing snapshot keyed by
-// dimension; declared fields shadow the base rate, absent fields fall
-// through. We hold drafts in local state (rather than recomputing from the
-// stored cost on every keystroke) so an in-progress tier whose name is still
-// empty stays on screen — `writeTierDrafts` skips empty-name entries, so a
-// purely-derived list would lose newly-added rows. Each draft also carries
-// a stable `id` separate from its name so removing a middle row doesn't
-// re-key its neighbors mid-edit (Vue would otherwise reuse one input's DOM
-// for another row's value).
-interface TierDraft { id: number; name: string; rates: Partial<Record<BillingDimension, number>> }
+let pricingCellDraftIdSeq = 0;
 
-let tierDraftIdSeq = 0;
+const pricingCellDraftsFor = (cost: ModelPricing | undefined): PricingCellDraft[] =>
+  (cost?.cells ?? []).map(cell => ({
+    id: ++pricingCellDraftIdSeq,
+    serviceTier: cell.selector?.serviceTier ?? '',
+    inputAboveTokens: cell.selector?.inputAboveTokens,
+    rates: { ...cell.rates },
+  }));
 
-const hasFiniteRate = (rates: TierDraft['rates']): boolean =>
-  Object.values(rates).some(v => typeof v === 'number' && Number.isFinite(v));
+const pricingCellDrafts = ref<PricingCellDraft[]>(pricingCellDraftsFor(config.value?.cost));
 
-const tierDraftsFor = (cost: ModelPricing | undefined): TierDraft[] => {
-  const tiers = cost?.tiers;
-  if (!tiers) return [];
-  return Object.entries(tiers).map(([name, rates]) => ({ id: ++tierDraftIdSeq, name, rates: { ...rates } }));
-};
+const coordinateKey = (draft: PricingCellDraft): string =>
+  `${draft.serviceTier.trim()}\0${draft.inputAboveTokens ?? ''}`;
 
-const tierDrafts = ref<TierDraft[]>(tierDraftsFor(config.value?.cost));
-
-// Per-tier overrides are a niche editing surface — most operators stay on the
-// base pricing for the model's lifetime. Default the section collapsed on a
-// row with no overrides so the page reads as a base-pricing form; on a row
-// that already has overrides, default expanded so the operator sees them
-// without an extra click. An Add Tier click also auto-expands.
-const tierSectionExpanded = ref(tierDrafts.value.length > 0);
-
-// Preserve the operator's per-flag choices when they toggle the whole
-// override off then back on for the same row — otherwise a stray click
-// would clear the map they had built up. Reset on row change so a fresh
-// row starts empty.
-const lastFlagOverrides = ref<FlagOverrides>({});
-
-// Resync the local drafts whenever the active row changes (a different model's
-// cost replaces the working set). Edits within the same row leave the drafts
-// alone — `writeTierDrafts` writes both local state and stored cost in lockstep.
-watch(() => props.row?.uiId, () => {
-  tierDrafts.value = tierDraftsFor(config.value?.cost);
-  tierSectionExpanded.value = tierDrafts.value.length > 0;
-  lastFlagOverrides.value = {};
-});
-
-const writeTierDrafts = (drafts: readonly TierDraft[]) => {
-  if (!config.value) return;
-  tierDrafts.value = drafts.map(d => ({ id: d.id, name: d.name, rates: { ...d.rates } }));
-  const base = { ...(config.value.cost ?? {}) } as ModelPricing;
-  delete base.tiers;
-  const tiers: Record<string, Partial<Record<BillingDimension, number>>> = {};
-  for (const draft of drafts) {
-    const trimmed = draft.name.trim();
-    if (!trimmed) continue;
-    // Last write wins on duplicate names — the validation message in the
-    // template tells the operator to rename collisions.
-    const rates: Partial<Record<BillingDimension, number>> = {};
-    for (const [k, v] of Object.entries(draft.rates)) {
-      if (typeof v === 'number' && Number.isFinite(v)) rates[k as BillingDimension] = v;
-    }
-    if (Object.keys(rates).length > 0) tiers[trimmed] = rates;
-  }
-  const next: ModelPricing = { ...base };
-  if (Object.keys(tiers).length > 0) next.tiers = tiers;
-  patch({ cost: Object.keys(next).length > 0 ? next : undefined });
-};
-
-const duplicateTierNames = computed<Set<string>>(() => {
+const duplicatePricingCoordinates = computed(() => {
   const seen = new Set<string>();
-  const dupes = new Set<string>();
-  for (const draft of tierDrafts.value) {
-    const name = draft.name.trim();
-    if (!name) continue;
-    if (seen.has(name)) dupes.add(name);
-    else seen.add(name);
+  const duplicates = new Set<string>();
+  for (const draft of pricingCellDrafts.value) {
+    const key = coordinateKey(draft);
+    if (seen.has(key)) duplicates.add(key);
+    else seen.add(key);
   }
-  return dupes;
+  return duplicates;
 });
 
-// Same predicate `writeTierDrafts` uses to decide whether a draft survives
-// into the persisted shape. The badge and any "this row will not save" hint
-// both key off this so what the dashboard surfaces matches what gets written.
-const isTierDraftPersistable = (draft: TierDraft): boolean =>
-  draft.name.trim() !== '' && hasFiniteRate(draft.rates);
+const hasRates = (draft: PricingCellDraft): boolean => Object.keys(draft.rates).length > 0;
+const hasValidThreshold = (draft: PricingCellDraft): boolean =>
+  draft.inputAboveTokens === undefined || (Number.isSafeInteger(draft.inputAboveTokens) && draft.inputAboveTokens > 0);
 
-const effectiveTierCount = computed(() => {
-  const names = new Set<string>();
-  for (const draft of tierDrafts.value) {
-    if (isTierDraftPersistable(draft)) names.add(draft.name.trim());
+const isPricingValid = computed(() => pricingCellDrafts.value.every(draft =>
+  hasRates(draft) && hasValidThreshold(draft) && !duplicatePricingCoordinates.value.has(coordinateKey(draft)),
+));
+
+const writePricingCells = (drafts: readonly PricingCellDraft[]) => {
+  if (!config.value) return;
+  pricingCellDrafts.value = drafts.map(draft => ({ ...draft, rates: { ...draft.rates } }));
+  if (drafts.length === 0) {
+    patch({ cost: undefined });
+    return;
   }
-  return names.size;
-});
-
-const draftHasOrphanRates = (draft: TierDraft): boolean =>
-  draft.name.trim() === '' && hasFiniteRate(draft.rates);
-
-// Inverse of orphan-rates: name supplied but every rate left blank. Such a
-// row is silently dropped on save because `isTierDraftPersistable` requires
-// at least one finite rate. Surface the same inline warning so the operator
-// is not surprised when their tier "disappears" after reload.
-const draftHasOnlyName = (draft: TierDraft): boolean =>
-  draft.name.trim() !== '' && !hasFiniteRate(draft.rates);
-
-const updateTierName = (index: number, name: string) => {
-  const next = tierDrafts.value.map((draft, i) => i === index ? { ...draft, name } : draft);
-  writeTierDrafts(next);
+  const cells = drafts.map(draft => {
+    const serviceTier = draft.serviceTier.trim();
+    const selector = {
+      ...(serviceTier !== '' ? { serviceTier } : {}),
+      ...(draft.inputAboveTokens !== undefined ? { inputAboveTokens: draft.inputAboveTokens } : {}),
+    };
+    return { ...(Object.keys(selector).length > 0 ? { selector } : {}), rates: { ...draft.rates } };
+  });
+  patch({ cost: { cells } });
 };
 
-const updateTierRate = (index: number, dim: BillingDimension, raw: string | number | null | undefined) => {
-  const num = parseOptionalNumber(raw);
-  const next = tierDrafts.value.map((draft, i) => {
+const updatePricingSelector = (index: number, field: 'serviceTier' | 'inputAboveTokens', raw: string | number | null | undefined) => {
+  const next = pricingCellDrafts.value.map((draft, i) => {
+    if (i !== index) return draft;
+    if (field === 'serviceTier') return { ...draft, serviceTier: String(raw ?? '') };
+    return { ...draft, inputAboveTokens: parseOptionalNumber(raw) };
+  });
+  writePricingCells(next);
+};
+
+const updatePricingRate = (index: number, dimension: BillingDimension, raw: string | number | null | undefined) => {
+  const value = parseOptionalNumber(raw);
+  const next = pricingCellDrafts.value.map((draft, i) => {
     if (i !== index) return draft;
     const rates = { ...draft.rates };
-    if (num === undefined) delete rates[dim];
-    else rates[dim] = num;
+    if (value === undefined) delete rates[dimension];
+    else rates[dimension] = value;
     return { ...draft, rates };
   });
-  writeTierDrafts(next);
+  writePricingCells(next);
 };
 
-const addTier = () => {
-  writeTierDrafts([...tierDrafts.value, { id: ++tierDraftIdSeq, name: '', rates: {} }]);
-  tierSectionExpanded.value = true;
-};
-
-const removeTier = (index: number) => {
-  writeTierDrafts(tierDrafts.value.filter((_, i) => i !== index));
-};
-
-const moveTierUp = (index: number) => {
-  if (index <= 0) return;
-  const next = [...tierDrafts.value];
-  [next[index - 1], next[index]] = [next[index]!, next[index - 1]!];
-  writeTierDrafts(next);
-};
-
-const moveTierDown = (index: number) => {
-  if (index >= tierDrafts.value.length - 1) return;
-  const next = [...tierDrafts.value];
-  [next[index], next[index + 1]] = [next[index + 1]!, next[index]!];
-  writeTierDrafts(next);
+const addPricingCell = () => writePricingCells([
+  ...pricingCellDrafts.value,
+  { id: ++pricingCellDraftIdSeq, serviceTier: '', inputAboveTokens: undefined, rates: {} },
+]);
+const removePricingCell = (index: number) => writePricingCells(pricingCellDrafts.value.filter((_, i) => i !== index));
+const movePricingCell = (index: number, offset: -1 | 1) => {
+  const target = index + offset;
+  if (target < 0 || target >= pricingCellDrafts.value.length) return;
+  const next = [...pricingCellDrafts.value];
+  [next[index], next[target]] = [next[target]!, next[index]!];
+  writePricingCells(next);
 };
 
 const toggleFlagOverridesEnabled = () => {
@@ -281,7 +213,8 @@ const isReasoningValid = computed<boolean>(() => {
   return true;
 });
 
-watch(isReasoningValid, valid => { emit('validity-change', valid); }, { immediate: true });
+const isValid = computed(() => isReasoningValid.value && isPricingValid.value);
+watch(isValid, valid => { emit('validity-change', valid); }, { immediate: true });
 </script>
 
 <template>
@@ -397,135 +330,63 @@ watch(isReasoningValid, valid => { emit('validity-change', valid); }, { immediat
 
         <section>
           <div class="mb-3 flex items-baseline gap-3">
-            <h3 class="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Pricing</h3>
-            <span class="text-[11px] text-gray-500">$ per million tokens — used for usage attribution</span>
+            <h3 class="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Pricing Cells</h3>
+            <span class="text-[11px] text-gray-500">explicit service-tier × input-length coordinates; blank selectors mean the base cell</span>
+            <Button v-if="editable" variant="secondary" size="sm" class="ml-auto" @click="addPricingCell">+ Add Cell</Button>
           </div>
-          <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <label v-for="dim in PRICING_BY_KIND[rowKind]" :key="dim" class="block space-y-1.5">
-              <span class="block text-xs font-medium text-gray-500">{{ PRICING_LABELS[dim] }}</span>
-              <Input
-                type="number"
-                min="0"
-                :model-value="config.cost?.[dim]"
-                :readonly="!editable"
-                placeholder="$/MTok"
-                class="font-mono"
-                @update:model-value="v => updateCost(dim, v)"
-              />
-            </label>
+          <div v-if="pricingCellDrafts.length === 0" class="text-[11px] text-gray-600">
+            No pricing cells configured.
           </div>
-        </section>
-
-        <section>
-          <div class="mb-3 flex items-baseline gap-3">
-            <button
-              type="button"
-              class="flex items-baseline gap-2 text-[11px] font-semibold uppercase tracking-wider text-gray-500 hover:text-gray-300 transition-colors"
-              :aria-expanded="tierSectionExpanded"
-              aria-controls="tier-overrides-panel"
-              @click="tierSectionExpanded = !tierSectionExpanded"
-            >
-              <i :class="tierSectionExpanded ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'" class="size-3 self-center" />
-              <span>Per-Tier Pricing Overrides</span>
-              <span
-                v-if="effectiveTierCount > 0"
-                class="text-accent-cyan"
-                :aria-label="`${effectiveTierCount} tier override${effectiveTierCount === 1 ? '' : 's'} configured`"
-              >({{ effectiveTierCount }})</span>
-            </button>
-            <Button
-              v-if="editable"
-              variant="secondary"
-              size="sm"
-              class="ml-auto"
-              @click="addTier"
-            >+ Add Tier</Button>
-          </div>
-          <div id="tier-overrides-panel" v-show="tierSectionExpanded">
-            <div v-if="tierDrafts.length === 0" class="text-[11px] text-gray-600">
-              <template v-if="editable">No tiers defined. Add one to override pricing for requests stamped with a service tier.</template>
-              <template v-else>No tier overrides on this model.</template>
-            </div>
-            <div v-else class="space-y-6">
-              <div
-                v-for="(draft, index) in tierDrafts"
-                :key="draft.id"
-              >
-                <div class="mb-3 flex items-center gap-3">
-                  <span class="shrink-0 text-xs font-medium text-gray-500">Tier</span>
+          <div v-else class="space-y-6">
+            <div v-for="(draft, index) in pricingCellDrafts" :key="draft.id" class="rounded-lg border border-white/[0.06] p-4">
+              <div class="mb-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-[1fr_1fr_auto]">
+                <label class="block space-y-1.5">
+                  <span class="block text-xs font-medium text-gray-500">Service Tier</span>
                   <Input
-                    :model-value="draft.name"
+                    :model-value="draft.serviceTier"
                     :readonly="!editable"
-                    :invalid="duplicateTierNames.has(draft.name.trim()) || draftHasOrphanRates(draft) || draftHasOnlyName(draft)"
-                    placeholder="e.g. fast"
-                    class="max-w-xs font-mono"
-                    @update:model-value="v => updateTierName(index, v)"
+                    :invalid="duplicatePricingCoordinates.has(coordinateKey(draft))"
+                    placeholder="default"
+                    class="font-mono"
+                    @update:model-value="v => updatePricingSelector(index, 'serviceTier', v)"
                   />
-                  <div v-if="editable" class="ml-auto flex items-center gap-1">
-                    <Tooltip content="Move up">
-                      <button
-                        type="button"
-                        class="inline-flex h-7 w-7 items-center justify-center rounded-md text-gray-600 transition-colors hover:bg-white/[0.04] hover:text-accent-cyan disabled:pointer-events-none disabled:opacity-30"
-                        :disabled="index === 0"
-                        aria-label="Move tier up"
-                        @click="moveTierUp(index)"
-                      >
-                        <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                          <path d="m18 15-6-6-6 6" />
-                        </svg>
-                      </button>
-                    </Tooltip>
-                    <Tooltip content="Move down">
-                      <button
-                        type="button"
-                        class="inline-flex h-7 w-7 items-center justify-center rounded-md text-gray-600 transition-colors hover:bg-white/[0.04] hover:text-accent-cyan disabled:pointer-events-none disabled:opacity-30"
-                        :disabled="index === tierDrafts.length - 1"
-                        aria-label="Move tier down"
-                        @click="moveTierDown(index)"
-                      >
-                        <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                          <path d="m6 9 6 6 6-6" />
-                        </svg>
-                      </button>
-                    </Tooltip>
-                    <Tooltip content="Remove">
-                      <button
-                        type="button"
-                        class="inline-flex h-7 w-7 items-center justify-center rounded-md text-gray-600 transition-colors hover:bg-white/[0.04] hover:text-accent-rose"
-                        aria-label="Remove tier"
-                        @click="removeTier(index)"
-                      >
-                        <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                          <path d="M18 6 6 18" />
-                          <path d="m6 6 12 12" />
-                        </svg>
-                      </button>
-                    </Tooltip>
-                  </div>
+                </label>
+                <label class="block space-y-1.5">
+                  <span class="block text-xs font-medium text-gray-500">Input Above Tokens</span>
+                  <Input
+                    type="number"
+                    min="1"
+                    step="1"
+                    :model-value="draft.inputAboveTokens"
+                    :readonly="!editable"
+                    :invalid="!hasValidThreshold(draft) || duplicatePricingCoordinates.has(coordinateKey(draft))"
+                    placeholder="base"
+                    class="font-mono"
+                    @update:model-value="v => updatePricingSelector(index, 'inputAboveTokens', v)"
+                  />
+                </label>
+                <div v-if="editable" class="flex items-end gap-1">
+                  <Button variant="secondary" size="sm" :disabled="index === 0" @click="movePricingCell(index, -1)">↑</Button>
+                  <Button variant="secondary" size="sm" :disabled="index === pricingCellDrafts.length - 1" @click="movePricingCell(index, 1)">↓</Button>
+                  <Button variant="danger" size="sm" @click="removePricingCell(index)">Remove</Button>
                 </div>
-                <p v-if="duplicateTierNames.has(draft.name.trim())" class="mb-2 text-[11px] text-accent-rose">
-                  Duplicate tier name — only the last entry with this name is saved.
-                </p>
-                <p v-else-if="draftHasOrphanRates(draft)" class="mb-2 text-[11px] text-accent-rose">
-                  Tier name required — this row's rates will not save.
-                </p>
-                <p v-else-if="draftHasOnlyName(draft)" class="mb-2 text-[11px] text-accent-rose">
-                  Set at least one rate — this row will not save.
-                </p>
-                <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                  <label v-for="dim in PRICING_BY_KIND[rowKind]" :key="dim" class="block space-y-1.5">
-                    <span class="block text-xs font-medium text-gray-500">{{ PRICING_LABELS[dim] }}</span>
-                    <Input
-                      type="number"
-                      min="0"
-                      :model-value="draft.rates[dim]"
-                      :readonly="!editable"
-                      placeholder="inherit"
-                      class="font-mono"
-                      @update:model-value="v => updateTierRate(index, dim, v)"
-                    />
-                  </label>
-                </div>
+              </div>
+              <p v-if="duplicatePricingCoordinates.has(coordinateKey(draft))" class="mb-2 text-[11px] text-accent-rose">Duplicate selector coordinate.</p>
+              <p v-else-if="!hasValidThreshold(draft)" class="mb-2 text-[11px] text-accent-rose">Input threshold must be a positive integer.</p>
+              <p v-else-if="!hasRates(draft)" class="mb-2 text-[11px] text-accent-rose">Set at least one rate.</p>
+              <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <label v-for="dim in PRICING_BY_KIND[rowKind]" :key="dim" class="block space-y-1.5">
+                  <span class="block text-xs font-medium text-gray-500">{{ PRICING_LABELS[dim] }}</span>
+                  <Input
+                    type="number"
+                    min="0"
+                    :model-value="draft.rates[dim]"
+                    :readonly="!editable"
+                    placeholder="unpriced"
+                    class="font-mono"
+                    @update:model-value="v => updatePricingRate(index, dim, v)"
+                  />
+                </label>
               </div>
             </div>
           </div>
