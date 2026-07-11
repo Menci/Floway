@@ -124,7 +124,7 @@ test('Custom provider projects display_name / created / limits / cost from a Flo
         display_name: 'Rich Model',
         created_at: '2026-04-01T00:00:00Z',
         limits: { max_output_tokens: 8192, max_context_window_tokens: 200000 },
-        cost: { input: 3, output: 15, input_cache_read: 0.3 },
+        cost: { cells: [{ rates: { input: 3, output: 15, input_cache_read: 0.3 } }] },
       }],
     }),
     async () => {
@@ -268,7 +268,7 @@ test('Custom provider with modelsFetch disabled serves only manual models and ne
               endpoints: { chatCompletions: {} },
               display_name: 'Pinned Chat',
               limits: { max_output_tokens: 4096 },
-              cost: { input: 1, output: 2 },
+              cost: { cells: [{ rates: { input: 1, output: 2 } }] },
             },
           ],
         },
@@ -300,7 +300,7 @@ test('Custom provider with a manual override sharing an upstream id wins over th
         return jsonResponse({
           object: 'list',
           data: [
-            { id: 'shared', cost: { input: 9, output: 9 } },
+            { id: 'shared', cost: { cells: [{ rates: { input: 9, output: 9 } }] } },
             { id: 'auto-only' },
           ],
         });
@@ -321,7 +321,7 @@ test('Custom provider with a manual override sharing an upstream id wins over th
               upstreamModelId: 'shared',
               endpoints: { chatCompletions: {} },
               display_name: 'Manual Shared',
-              cost: { input: 1, output: 2 },
+              cost: { cells: [{ rates: { input: 1, output: 2 } }] },
             },
           ],
         },

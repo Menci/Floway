@@ -8,7 +8,7 @@ import type { AnnouncedMetadata, BillingDimension, ModelKind, ModelPricing, Upst
 import { parseOptionalNumber } from '../../utils/parse-optional-number.ts';
 import ChatMetadataEditor from '../shared/ChatMetadataEditor.vue';
 import type { Flag, FlagDefaults, FlagOverrides } from '@floway-dev/provider/flags';
-import { Button, Input, Select, Switch, Tooltip } from '@floway-dev/ui';
+import { Button, Input, Select, Switch } from '@floway-dev/ui';
 
 const props = defineProps<{
   row: Row | null;
@@ -107,8 +107,7 @@ const hasValidThreshold = (draft: PricingCellDraft): boolean =>
   draft.inputAboveTokens === undefined || (Number.isSafeInteger(draft.inputAboveTokens) && draft.inputAboveTokens > 0);
 
 const isPricingValid = computed(() => pricingCellDrafts.value.every(draft =>
-  hasRates(draft) && hasValidThreshold(draft) && !duplicatePricingCoordinates.value.has(coordinateKey(draft)),
-));
+  hasRates(draft) && hasValidThreshold(draft) && !duplicatePricingCoordinates.value.has(coordinateKey(draft))));
 
 const writePricingCells = (drafts: readonly PricingCellDraft[]) => {
   if (!config.value) return;

@@ -101,7 +101,7 @@ const validatePricingCells = (pricing: ModelPricing): void => {
   const coordinates = new Set<string>();
   for (const cell of pricing.cells) {
     const { serviceTier, inputAboveTokens } = cell.selector ?? {};
-    if (serviceTier !== undefined && serviceTier.length === 0) {
+    if (serviceTier?.length === 0) {
       throw new RangeError('pricing service-tier selector must be non-empty');
     }
     if (inputAboveTokens !== undefined && (!Number.isSafeInteger(inputAboveTokens) || inputAboveTokens <= 0)) {

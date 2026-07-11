@@ -875,7 +875,7 @@ test('import validates mode and data before mutating', async () => {
     body: JSON.stringify({ mode: 'replace', version: 9 }),
   });
   const missingUpstreams = await doImport(app, 'merge', {}, 9);
-  const emptyMerge = await doImport(app, 'merge', latestImportData(), 8);
+  const emptyMerge = await doImport(app, 'merge', latestImportData(), 9);
 
   assertEquals(invalidMode.status, 400);
   assertEquals(invalidMode.body.error, "mode must be 'merge' or 'replace'");
@@ -1027,7 +1027,7 @@ test('v9 export/import round-trips users and per-key user_id', async () => {
   assertEquals(exportResult.version, 9);
   assertEquals(exportResult.data.users.map((u: any) => u.id).sort(), [SEED_ADMIN.id, USER_BOB.id]);
 
-  const result = await doImport(app, 'replace', exportResult.data, 8);
+  const result = await doImport(app, 'replace', exportResult.data, 9);
   assertEquals(result.status, 200);
   assertEquals(result.body.imported.users, 2);
   assertEquals(result.body.imported.apiKeys, 2);
@@ -1201,7 +1201,7 @@ test('a full v9 export re-imports verbatim — the export→import round trip is
   // Replace-import the export's own `data`, verbatim. If the export emits any
   // shape the import parser rejects, this 400s — the round trip is the
   // invariant, so this test fails the moment the two sides drift.
-  const result = await doImport(app, 'replace', exported.data, 8);
+  const result = await doImport(app, 'replace', exported.data, 9);
   assertEquals(result.status, 200);
   assertEquals(result.body.imported, { users: 2, apiKeys: 2, upstreams: 4, proxies: 0, usage: 2, searchUsage: 2, performance: 2 });
 
