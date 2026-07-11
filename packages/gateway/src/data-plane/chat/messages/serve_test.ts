@@ -608,8 +608,8 @@ test('mid-attempt throw stamps attemptTelemetry with the throwing candidate, not
 
   assertEquals(firstCall.mock.calls.length, 1);
   assertEquals(secondCall.mock.calls.length, 1);
-  // The whole point of R4-3: the perf attribution slot reflects the throwing
-  // upstream, so the http.ts catch synthesizes the internal-error result with
-  // performance context and the error row lands against up_b.
+  // The perf attribution slot reflects the throwing upstream, so the http.ts
+  // catch synthesizes the internal-error result with performance context and
+  // the error row lands against up_b.
   assertEquals(ctx.perfTiming.attemptTelemetry?.upstream, 'up_b');
 });

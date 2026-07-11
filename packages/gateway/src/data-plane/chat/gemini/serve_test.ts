@@ -260,8 +260,8 @@ test('generate falls through to the next candidate when the first yields an upst
 
 // A mid-attempt throw (interceptor bug / translation error / provider-layer
 // JS exception bypassing tryCatchChatServeFailure) must attribute the perf
-// error row to the throwing candidate — see the R4-3 comment in
-// messages/serve_test.ts for the full rationale.
+// error row to the throwing candidate, not the previous one that already
+// failed cleanly with a 5xx.
 test('mid-attempt throw stamps attemptTelemetry with the throwing candidate, not the previous one', async () => {
   installRepo();
   const firstError = new Response(JSON.stringify({ error: { message: 'nope' } }), {

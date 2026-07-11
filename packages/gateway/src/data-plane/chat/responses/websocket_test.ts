@@ -755,17 +755,15 @@ test('Responses WebSocket aborts the in-flight Responses request when the client
   );
 });
 
-// R5-1: the four chat HTTP transports render a mid-attempt throw
-// (interceptor bug, translation error, provider-layer JS exception that
-// bypassed tryCatchChatServeFailure) through an
+// The four chat HTTP transports render a mid-attempt throw (interceptor
+// bug, translation error, provider-layer JS exception that bypassed
+// tryCatchChatServeFailure) through an
 // `internalErrorResult(..., ctx.perfTiming.attemptTelemetry)` envelope,
 // which internally reaches `recordFailedRequest` and lands an error row
 // attributed to the throwing candidate. The WS transport's outer catch
-// used to serialize the same error to a 500 close frame but skipped
-// `recordFailedRequest`, so the failure disappeared from
-// performance_summary. Pin the attribution now that the WS catch calls
-// `recordFailedRequest(ctx, ctx.perfTiming.attemptTelemetry)` alongside
-// its sendError / dump.failed / dump.finalize.
+// must do the same: alongside its sendError / dump.failed / dump.finalize,
+// it calls `recordFailedRequest(ctx, ctx.perfTiming.attemptTelemetry)` so
+// the failure shows up in performance_summary.
 test('Responses WebSocket outer catch records a failed perf sample attributed to the throwing candidate', async () => {
   const { apiKey, repo } = await setupAppTest();
 
