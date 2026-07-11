@@ -623,7 +623,8 @@ test('translateResponsesToMessagesResult projects whitespace-only reasoning summ
   assertEquals(result.content, [{ type: 'redacted_thinking', data: packReasoningSignature('rs_ws', '') }]);
 });
 
-test('translateResponsesToMessagesResult maps service_tier:fast to usage.speed:fast', () => {  const result = translateResponsesToMessagesResult({
+test('translateResponsesToMessagesResult maps service_tier:fast to usage.speed:fast', () => {
+  const result = translateResponsesToMessagesResult({
     id: 'resp_fast',
     object: 'response',
     model: 'gpt-test',

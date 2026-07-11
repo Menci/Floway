@@ -335,7 +335,8 @@ test('import rejects a usage record whose inputAboveTokens is a negative or frac
   assertEquals(negative.body.error, 'invalid usage at index 0: inputAboveTokens, when present, must be a non-negative safe integer or null');
 });
 
-test('export emits the v8 envelope with users and upstreams', async () => {  const { app, repo } = setup();
+test('export emits the v8 envelope with users and upstreams', async () => {
+  const { app, repo } = setup();
   await repo.users.save(SEED_ADMIN);
 
   const result = await doExport(app);
