@@ -11,7 +11,12 @@ import type { UpstreamRecord } from '@floway-dev/provider';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 
 interface SetupOptions {
-  adminKey?: string;
+  // `null` models an unset ADMIN_KEY — the platform EnvGetter contract says
+  // missing vars surface as `undefined`, which is what a fresh Node dev
+  // checkout hits (`process.env.ADMIN_KEY` is unset). The `?? ''` default and
+  // the raw `string` type below cannot express that state, so tests targeting
+  // the "no ADMIN_KEY at all" path need this explicit third value.
+  adminKey?: string | null;
   apiKey?: ApiKey;
   githubAccount?: CopilotAccountFixture;
   copilotUpstream?: UpstreamRecord;
@@ -105,8 +110,12 @@ export async function setupAppTest(options: SetupOptions = {}): Promise<AppTestC
   // can deterministically await them — see test-helpers/background-tracker.ts.
   initBackgroundSchedulerResolver(_c => trackBackground);
 
-  const adminKey = options.adminKey ?? 'admin-test-key';
-  initEnv(name => (name === 'ADMIN_KEY' ? adminKey : ''));
+  const adminKeyProvided = 'adminKey' in options;
+  const adminKey = adminKeyProvided ? options.adminKey : 'admin-test-key';
+  initEnv(name => {
+    if (name !== 'ADMIN_KEY') return '';
+    return adminKey === null ? undefined : adminKey;
+  });
 
   clearInProcessCopilotTokenCache();
   clearInFlightForTesting();
@@ -158,7 +167,7 @@ export async function setupAppTest(options: SetupOptions = {}): Promise<AppTestC
   // `x-floway-session: adminSession`.
   const adminSession = (await repo.sessions.create(1)).id;
 
-  return { repo, adminKey, adminSession, apiKey, githubAccount, copilotUpstream };
+  return { repo, adminKey: adminKey ?? '', adminSession, apiKey, githubAccount, copilotUpstream };
 }
 
 export function sseResponse(chunks: SSEChunk[], status = 200): Response {
