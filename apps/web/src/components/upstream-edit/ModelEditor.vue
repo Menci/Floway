@@ -7,7 +7,7 @@ import { defaultEndpointsForKind, publicIdOf, titleFor, type Row } from './model
 import type { AnnouncedMetadata, BillingDimension, ModelKind, ModelPricing, UpstreamChatConfig, UpstreamModelConfig } from '../../api/types.ts';
 import { parseOptionalNumber } from '../../utils/parse-optional-number.ts';
 import ChatMetadataEditor from '../shared/ChatMetadataEditor.vue';
-import { PRICING_AXES, canonicalPricingSelectorKey, type ModelPricing as ProtocolModelPricing, type PricingCoordinateValue, type PricingSelector, type PricingThresholdCoordinate, validateModelPricing } from '@floway-dev/protocols/common';
+import { BILLING_DIMENSIONS, PRICING_AXES, canonicalPricingSelectorKey, type ModelPricing as ProtocolModelPricing, type PricingCoordinateValue, type PricingSelector, type PricingThresholdOperator, validateModelPricing } from '@floway-dev/protocols/common';
 import type { Flag, FlagDefaults, FlagOverrides } from '@floway-dev/provider/flags';
 import { Button, Input, Select, Switch } from '@floway-dev/ui';
 
@@ -69,9 +69,14 @@ const setKind = (k: ModelKind) => {
   patch({ kind: k, endpoints: defaultEndpointsForKind(k, config.value.endpoints) });
 };
 
+interface PricingThresholdDraft {
+  operator: PricingThresholdOperator;
+  value?: number;
+}
+
 interface PricingCellDraft {
   id: number;
-  selector: Record<string, PricingCoordinateValue | undefined>;
+  selector: Record<string, string | PricingThresholdDraft | undefined>;
   rates: Partial<Record<BillingDimension, number>>;
 }
 
@@ -97,9 +102,14 @@ watch(() => [props.row?.uiId, props.row?.kind] as const, () => {
 const selectedPricingCellIndex = computed(() => pricingCellDrafts.value.findIndex(draft => draft.id === selectedPricingCellId.value));
 const selectedPricingCell = computed(() => pricingCellDrafts.value[selectedPricingCellIndex.value] ?? null);
 
-const compactSelector = (draft: PricingCellDraft): PricingSelector => Object.fromEntries(
-  Object.entries(draft.selector).filter((entry): entry is [string, PricingCoordinateValue] => entry[1] !== undefined),
-);
+const compactSelector = (draft: PricingCellDraft): PricingSelector => {
+  const selector: Record<string, PricingCoordinateValue> = {};
+  for (const [axisId, coordinate] of Object.entries(draft.selector)) {
+    if (typeof coordinate === 'string') selector[axisId] = coordinate;
+    else if (coordinate?.value !== undefined) selector[axisId] = { operator: coordinate.operator, value: coordinate.value };
+  }
+  return selector;
+};
 
 const coordinateKey = (draft: PricingCellDraft): string | null => {
   try {
@@ -121,7 +131,9 @@ const duplicatePricingCoordinates = computed(() => {
   return duplicates;
 });
 
-const hasRates = (draft: PricingCellDraft): boolean => Object.keys(draft.rates).length > 0;
+const hasRates = (draft: PricingCellDraft): boolean => BILLING_DIMENSIONS.some(dimension => draft.rates[dimension] !== undefined);
+const rateDimensionKey = (draft: PricingCellDraft): string =>
+  BILLING_DIMENSIONS.filter(dimension => draft.rates[dimension] !== undefined).join('\0');
 const hasValidSelector = (draft: PricingCellDraft): boolean => {
   try {
     canonicalPricingSelectorKey(compactSelector(draft));
@@ -136,6 +148,7 @@ const pricingValidationError = computed<string | null>(() => {
   if (invalidDraft) return !hasRates(invalidDraft) ? 'Set at least one rate.' : 'Selector values are invalid.';
   if (duplicatePricingCoordinates.value.size > 0) return 'Duplicate selector coordinate.';
   if (pricingCellDrafts.value.length === 0) return null;
+  if (new Set(pricingCellDrafts.value.map(rateDimensionKey)).size > 1) return 'All pricing entries must set the same rate fields.';
   try {
     validateModelPricing({
       cells: pricingCellDrafts.value.map(draft => ({ selector: compactSelector(draft), rates: draft.rates })),
@@ -150,7 +163,7 @@ const isPricingValid = computed(() => pricingValidationError.value === null);
 
 const writePricingCells = (drafts: readonly PricingCellDraft[]) => {
   if (!config.value) return;
-  pricingCellDrafts.value = drafts.map(draft => ({ ...draft, rates: { ...draft.rates } }));
+  pricingCellDrafts.value = drafts.map(draft => ({ ...draft, selector: { ...draft.selector }, rates: { ...draft.rates } }));
   if (drafts.length === 0) {
     patch({ cost: undefined });
     return;
@@ -169,19 +182,26 @@ const updateEqualityCoordinate = (index: number, axisId: string, raw: string | n
     : draft));
 };
 
-const thresholdCoordinate = (draft: PricingCellDraft, axisId: string): PricingThresholdCoordinate | undefined => {
+const thresholdCoordinate = (draft: PricingCellDraft, axisId: string): PricingThresholdDraft | undefined => {
   const value = draft.selector[axisId];
   return value && typeof value === 'object' ? value : undefined;
 };
 
-const updateThresholdCoordinate = (index: number, axisId: string, patch: Partial<PricingThresholdCoordinate>) => {
+const updateThresholdCoordinate = (index: number, axisId: string, patch: Partial<PricingThresholdDraft>) => {
   writePricingCells(pricingCellDrafts.value.map((draft, i) => {
     if (i !== index) return draft;
     const current = thresholdCoordinate(draft, axisId);
     const operator = patch.operator ?? current?.operator ?? 'gt';
     const value = 'value' in patch ? patch.value : current?.value;
-    return { ...draft, selector: { ...draft.selector, [axisId]: value === undefined ? undefined : { operator, value } } };
+    return { ...draft, selector: { ...draft.selector, [axisId]: { operator, ...(value !== undefined ? { value } : {}) } } };
   }));
+};
+
+const toggleThresholdOperator = (index: number, axisId: string) => {
+  const draft = pricingCellDrafts.value[index];
+  if (!draft) return;
+  const operator = thresholdCoordinate(draft, axisId)?.operator === 'gte' ? 'gt' : 'gte';
+  updateThresholdCoordinate(index, axisId, { operator });
 };
 
 const updatePricingRate = (index: number, dimension: BillingDimension, raw: string | number | null | undefined) => {
@@ -201,14 +221,10 @@ const pricingCellCoordinateLabel = (draft: PricingCellDraft): string => {
     const coordinate = draft.selector[axis.id];
     if (axis.kind === 'equality') return typeof coordinate === 'string' && coordinate !== '' ? [coordinate] : [];
     if (!coordinate || typeof coordinate !== 'object') return [];
-    return [`${coordinate.operator === 'gte' ? '≥' : '>'} ${coordinate.value} tokens`];
+    if (coordinate.value === undefined) return [];
+    return [`${coordinate.operator === 'gte' ? '>=' : '>'} ${coordinate.value} tokens`];
   });
-  return labels.length > 0 ? labels.join(' · ') : 'Base cell';
-};
-
-const pricingCellRateCountLabel = (draft: PricingCellDraft): string => {
-  const count = Object.keys(draft.rates).length;
-  return `${count} ${count === 1 ? 'rate' : 'rates'}`;
+  return labels.length > 0 ? labels.join(' · ') : 'Base';
 };
 
 const addPricingCell = () => {
@@ -405,7 +421,7 @@ watch(isValid, valid => { emit('validity-change', valid); }, { immediate: true }
           </div>
           <p v-if="pricingValidationError" class="mb-3 text-[11px] text-accent-rose">{{ pricingValidationError }}</p>
           <div class="overflow-hidden rounded-lg border border-white/[0.06]">
-            <div class="grid md:grid-cols-[17rem_minmax(0,1fr)]">
+            <div class="grid md:grid-cols-[13rem_minmax(0,1fr)]">
               <aside class="flex min-w-0 flex-col border-b border-white/[0.06] bg-surface-800/25 md:border-b-0 md:border-r" aria-label="Pricing cell navigation">
                 <ul v-if="pricingCellDrafts.length > 0" class="divide-y divide-white/[0.04]" aria-label="Pricing cells">
                   <li
@@ -417,42 +433,39 @@ watch(isValid, valid => { emit('validity-change', valid); }, { immediate: true }
                     <button
                       type="button"
                       class="min-w-0 flex-1 px-3 py-2.5 text-left outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent-cyan/60"
-                      :aria-label="`Edit pricing cell ${index + 1}`"
+                      :aria-label="`Edit pricing cell ${index + 1}: ${pricingCellCoordinateLabel(draft)}`"
                       :aria-current="selectedPricingCellId === draft.id ? 'true' : undefined"
+                      :title="pricingCellCoordinateLabel(draft)"
                       @click="selectedPricingCellId = draft.id"
                     >
-                      <span class="flex items-center gap-2">
-                        <span class="text-[10px] font-semibold uppercase tracking-wider" :class="selectedPricingCellId === draft.id ? 'text-accent-cyan' : 'text-gray-500'">Cell {{ index + 1 }}</span>
-                        <span class="text-[10px] text-gray-600">{{ pricingCellRateCountLabel(draft) }}</span>
-                      </span>
-                      <span class="mt-0.5 block truncate font-mono text-[11px] text-gray-300">{{ pricingCellCoordinateLabel(draft) }}</span>
+                      <span class="block truncate font-mono text-[11px]" :class="selectedPricingCellId === draft.id ? 'text-accent-cyan' : 'text-gray-300'">{{ pricingCellCoordinateLabel(draft) }}</span>
                     </button>
                     <div v-if="editable" class="mr-1 flex shrink-0 items-center gap-0.5">
                       <button
                         type="button"
-                        class="grid size-7 place-items-center rounded text-gray-600 transition-colors hover:bg-white/[0.04] hover:text-accent-cyan disabled:pointer-events-none disabled:opacity-30"
+                        class="grid size-6 place-items-center rounded text-gray-600 transition-colors hover:bg-white/[0.04] hover:text-accent-cyan disabled:pointer-events-none disabled:opacity-30"
                         :disabled="index === 0"
                         :aria-label="`Move pricing cell ${index + 1} up`"
                         @click="movePricingCell(index, -1)"
                       >
-                        <i class="i-lucide-arrow-up size-3.5" />
+                        <i class="i-lucide-arrow-up size-3" />
                       </button>
                       <button
                         type="button"
-                        class="grid size-7 place-items-center rounded text-gray-600 transition-colors hover:bg-white/[0.04] hover:text-accent-cyan disabled:pointer-events-none disabled:opacity-30"
+                        class="grid size-6 place-items-center rounded text-gray-600 transition-colors hover:bg-white/[0.04] hover:text-accent-cyan disabled:pointer-events-none disabled:opacity-30"
                         :disabled="index === pricingCellDrafts.length - 1"
                         :aria-label="`Move pricing cell ${index + 1} down`"
                         @click="movePricingCell(index, 1)"
                       >
-                        <i class="i-lucide-arrow-down size-3.5" />
+                        <i class="i-lucide-arrow-down size-3" />
                       </button>
                       <button
                         type="button"
-                        class="grid size-7 place-items-center rounded text-gray-600 transition-colors hover:bg-white/[0.04] hover:text-accent-rose"
+                        class="grid size-6 place-items-center rounded text-gray-600 transition-colors hover:bg-white/[0.04] hover:text-accent-rose"
                         :aria-label="`Remove pricing cell ${index + 1}`"
                         @click="removePricingCell(index)"
                       >
-                        <i class="i-lucide-x size-3.5" />
+                        <i class="i-lucide-x size-3" />
                       </button>
                     </div>
                   </li>
@@ -479,13 +492,14 @@ watch(isValid, valid => { emit('validity-change', valid); }, { immediate: true }
                       class="font-mono"
                       @update:model-value="v => updateEqualityCoordinate(selectedPricingCellIndex, axis.id, v)"
                     />
-                    <div v-else class="grid grid-cols-[7rem_1fr] gap-2">
-                      <Select
-                        :model-value="thresholdCoordinate(selectedPricingCell, axis.id)?.operator ?? 'gt'"
-                        :options="[{ value: 'gt', label: '>' }, { value: 'gte', label: '≥' }]"
+                    <div v-else class="grid grid-cols-[2.75rem_minmax(0,1fr)] gap-2">
+                      <button
+                        type="button"
+                        class="inline-flex h-9 items-center justify-center rounded-[10px] border border-white/[0.08] bg-surface-700 font-mono text-xs text-gray-300 transition-colors hover:border-white/[0.15] hover:bg-white/[0.08] disabled:cursor-default disabled:opacity-60 disabled:hover:border-white/[0.08] disabled:hover:bg-surface-700"
                         :disabled="!editable"
-                        @update:model-value="v => updateThresholdCoordinate(selectedPricingCellIndex, axis.id, { operator: v as 'gt' | 'gte' })"
-                      />
+                        :aria-label="`${axis.label} operator ${thresholdCoordinate(selectedPricingCell, axis.id)?.operator === 'gte' ? '>=' : '>'}; click to toggle`"
+                        @click="toggleThresholdOperator(selectedPricingCellIndex, axis.id)"
+                      >{{ thresholdCoordinate(selectedPricingCell, axis.id)?.operator === 'gte' ? '>=' : '>' }}</button>
                       <Input
                         type="number"
                         min="1"

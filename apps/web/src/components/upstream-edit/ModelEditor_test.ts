@@ -121,7 +121,7 @@ describe('ModelEditor row synchronization', () => {
     expect(wrapper.text()).toContain('Service Tier');
     expect(wrapper.text()).toContain('Input Tokens');
 
-    await wrapper.get('button[aria-label="Edit pricing cell 2"]').trigger('click');
+    await wrapper.get('button[aria-label="Edit pricing cell 2: priority"]').trigger('click');
     expect((pricingInput(wrapper, 'unpriced').element as HTMLInputElement).value).toBe('2');
 
     await navigation.get('button[aria-label="Move pricing cell 2 up"]').trigger('click');
@@ -134,6 +134,42 @@ describe('ModelEditor row synchronization', () => {
       },
     });
     expect((pricingInput(wrapper, 'unpriced').element as HTMLInputElement).value).toBe('2');
+  });
+
+  it('toggles the compact threshold operator before a value is entered', async () => {
+    const selected = row('operator', 'model-operator', 1, undefined);
+    const wrapper = mountEditor(selected);
+    const operator = wrapper.get('button[aria-label="Input Tokens operator >; click to toggle"]');
+
+    expect(operator.text()).toBe('>');
+    await operator.trigger('click');
+    expect(wrapper.get('button[aria-label="Input Tokens operator >=; click to toggle"]').text()).toBe('>=');
+
+    await pricingInput(wrapper, 'base').setValue('100');
+    expect(wrapper.emitted('patch-config')?.at(-1)?.[0]).toEqual({
+      cost: { cells: [{ selector: { inputTokens: { operator: 'gte', value: 100 } }, rates: { input: 1 } }] },
+    });
+  });
+
+  it('requires every pricing cell to set the same rate fields', async () => {
+    const selected = row('rate-shape', 'model-rate-shape', 1, undefined);
+    selected.config.cost = {
+      cells: [
+        { rates: { input: 1, output: 4 } },
+        { selector: { serviceTier: 'priority' }, rates: { input: 2 } },
+      ],
+    };
+    const wrapper = mountEditor(selected);
+
+    expect(wrapper.text()).toContain('All pricing entries must set the same rate fields.');
+    expect(wrapper.emitted('validity-change')?.at(-1)).toEqual([false]);
+
+    await wrapper.get('button[aria-label="Edit pricing cell 2: priority"]').trigger('click');
+    const output = wrapper.findAll('label').find(label => label.text().includes('Output ($/MTok)'))!.get('input');
+    await output.setValue('8');
+
+    expect(wrapper.text()).not.toContain('All pricing entries must set the same rate fields.');
+    expect(wrapper.emitted('validity-change')?.at(-1)).toEqual([true]);
   });
 
   it.each(['0', '1.5'])('shows validation instead of throwing for threshold %s', async value => {
