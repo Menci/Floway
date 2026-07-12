@@ -85,12 +85,17 @@ const pricingCellDraftsFor = (cost: ModelPricing | undefined): PricingCellDraft[
   }));
 
 const pricingCellDrafts = ref<PricingCellDraft[]>(pricingCellDraftsFor(config.value?.cost));
+const selectedPricingCellId = ref<number | null>(pricingCellDrafts.value[0]?.id ?? null);
 const lastFlagOverrides = ref<FlagOverrides>({});
 
 watch(() => [props.row?.uiId, props.row?.kind] as const, () => {
   pricingCellDrafts.value = pricingCellDraftsFor(config.value?.cost);
+  selectedPricingCellId.value = pricingCellDrafts.value[0]?.id ?? null;
   lastFlagOverrides.value = {};
 });
+
+const selectedPricingCellIndex = computed(() => pricingCellDrafts.value.findIndex(draft => draft.id === selectedPricingCellId.value));
+const selectedPricingCell = computed(() => pricingCellDrafts.value[selectedPricingCellIndex.value] ?? null);
 
 const compactSelector = (draft: PricingCellDraft): PricingSelector => Object.fromEntries(
   Object.entries(draft.selector).filter((entry): entry is [string, PricingCoordinateValue] => entry[1] !== undefined),
@@ -191,11 +196,34 @@ const updatePricingRate = (index: number, dimension: BillingDimension, raw: stri
   writePricingCells(next);
 };
 
-const addPricingCell = () => writePricingCells([
-  ...pricingCellDrafts.value,
-  { id: ++pricingCellDraftIdSeq, selector: {}, rates: {} },
-]);
-const removePricingCell = (index: number) => writePricingCells(pricingCellDrafts.value.filter((_, i) => i !== index));
+const pricingCellCoordinateLabel = (draft: PricingCellDraft): string => {
+  const labels = PRICING_AXES.flatMap(axis => {
+    const coordinate = draft.selector[axis.id];
+    if (axis.kind === 'equality') return typeof coordinate === 'string' && coordinate !== '' ? [coordinate] : [];
+    if (!coordinate || typeof coordinate !== 'object') return [];
+    return [`${coordinate.operator === 'gte' ? '≥' : '>'} ${coordinate.value} tokens`];
+  });
+  return labels.length > 0 ? labels.join(' · ') : 'Base cell';
+};
+
+const pricingCellRateCountLabel = (draft: PricingCellDraft): string => {
+  const count = Object.keys(draft.rates).length;
+  return `${count} ${count === 1 ? 'rate' : 'rates'}`;
+};
+
+const addPricingCell = () => {
+  const draft: PricingCellDraft = { id: ++pricingCellDraftIdSeq, selector: {}, rates: {} };
+  selectedPricingCellId.value = draft.id;
+  writePricingCells([...pricingCellDrafts.value, draft]);
+};
+const removePricingCell = (index: number) => {
+  const removed = pricingCellDrafts.value[index];
+  const next = pricingCellDrafts.value.filter((_, i) => i !== index);
+  if (removed?.id === selectedPricingCellId.value) {
+    selectedPricingCellId.value = next[index]?.id ?? next[index - 1]?.id ?? null;
+  }
+  writePricingCells(next);
+};
 const movePricingCell = (index: number, offset: -1 | 1) => {
   const target = index + offset;
   if (target < 0 || target >= pricingCellDrafts.value.length) return;
@@ -372,68 +400,123 @@ watch(isValid, valid => { emit('validity-change', valid); }, { immediate: true }
         />
 
         <section>
-          <div class="mb-3 flex items-baseline gap-3">
+          <div class="mb-3">
             <h3 class="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Pricing Cells</h3>
-            <span class="text-[11px] text-gray-500">explicit service-tier × input-length coordinates; blank selectors mean the base cell</span>
-            <Button v-if="editable" variant="secondary" size="sm" class="ml-auto" @click="addPricingCell">+ Add Cell</Button>
           </div>
-          <div v-if="pricingCellDrafts.length === 0" class="text-[11px] text-gray-600">
-            No pricing cells configured.
-          </div>
-          <div v-else class="space-y-4">
-            <p v-if="pricingValidationError" class="text-[11px] text-accent-rose">{{ pricingValidationError }}</p>
-            <div v-for="(draft, index) in pricingCellDrafts" :key="draft.id" class="rounded-lg border border-white/[0.06] p-4">
-              <div class="mb-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-[repeat(2,minmax(0,1fr))_auto]">
-                <label v-for="axis in PRICING_AXES" :key="axis.id" class="block space-y-1.5">
-                  <span class="block text-xs font-medium text-gray-500">{{ axis.label }}</span>
-                  <Input
-                    v-if="axis.kind === 'equality'"
-                    :model-value="typeof draft.selector[axis.id] === 'string' ? draft.selector[axis.id] as string : ''"
-                    :readonly="!editable"
-                    :invalid="!hasValidSelector(draft) || coordinateKey(draft) !== null && duplicatePricingCoordinates.has(coordinateKey(draft)!)"
-                    placeholder="default"
-                    class="font-mono"
-                    @update:model-value="v => updateEqualityCoordinate(index, axis.id, v)"
-                  />
-                  <div v-else class="grid grid-cols-[7rem_1fr] gap-2">
-                    <Select
-                      :model-value="thresholdCoordinate(draft, axis.id)?.operator ?? 'gt'"
-                      :options="[{ value: 'gt', label: '>' }, { value: 'gte', label: '≥' }]"
-                      :disabled="!editable"
-                      @update:model-value="v => updateThresholdCoordinate(index, axis.id, { operator: v as 'gt' | 'gte' })"
+          <p v-if="pricingValidationError" class="mb-3 text-[11px] text-accent-rose">{{ pricingValidationError }}</p>
+          <div class="overflow-hidden rounded-lg border border-white/[0.06]">
+            <div class="grid md:grid-cols-[17rem_minmax(0,1fr)]">
+              <aside class="flex min-w-0 flex-col border-b border-white/[0.06] bg-surface-800/25 md:border-b-0 md:border-r" aria-label="Pricing cell navigation">
+                <ul v-if="pricingCellDrafts.length > 0" class="divide-y divide-white/[0.04]" aria-label="Pricing cells">
+                  <li
+                    v-for="(draft, index) in pricingCellDrafts"
+                    :key="draft.id"
+                    class="flex min-w-0 items-center transition-colors"
+                    :class="selectedPricingCellId === draft.id ? 'bg-accent-cyan/[0.06]' : 'hover:bg-white/[0.025]'"
+                  >
+                    <button
+                      type="button"
+                      class="min-w-0 flex-1 px-3 py-2.5 text-left outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent-cyan/60"
+                      :aria-label="`Edit pricing cell ${index + 1}`"
+                      :aria-current="selectedPricingCellId === draft.id ? 'true' : undefined"
+                      @click="selectedPricingCellId = draft.id"
+                    >
+                      <span class="flex items-center gap-2">
+                        <span class="text-[10px] font-semibold uppercase tracking-wider" :class="selectedPricingCellId === draft.id ? 'text-accent-cyan' : 'text-gray-500'">Cell {{ index + 1 }}</span>
+                        <span class="text-[10px] text-gray-600">{{ pricingCellRateCountLabel(draft) }}</span>
+                      </span>
+                      <span class="mt-0.5 block truncate font-mono text-[11px] text-gray-300">{{ pricingCellCoordinateLabel(draft) }}</span>
+                    </button>
+                    <div v-if="editable" class="mr-1 flex shrink-0 items-center gap-0.5">
+                      <button
+                        type="button"
+                        class="grid size-7 place-items-center rounded text-gray-600 transition-colors hover:bg-white/[0.04] hover:text-accent-cyan disabled:pointer-events-none disabled:opacity-30"
+                        :disabled="index === 0"
+                        :aria-label="`Move pricing cell ${index + 1} up`"
+                        @click="movePricingCell(index, -1)"
+                      >
+                        <i class="i-lucide-arrow-up size-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        class="grid size-7 place-items-center rounded text-gray-600 transition-colors hover:bg-white/[0.04] hover:text-accent-cyan disabled:pointer-events-none disabled:opacity-30"
+                        :disabled="index === pricingCellDrafts.length - 1"
+                        :aria-label="`Move pricing cell ${index + 1} down`"
+                        @click="movePricingCell(index, 1)"
+                      >
+                        <i class="i-lucide-arrow-down size-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        class="grid size-7 place-items-center rounded text-gray-600 transition-colors hover:bg-white/[0.04] hover:text-accent-rose"
+                        :aria-label="`Remove pricing cell ${index + 1}`"
+                        @click="removePricingCell(index)"
+                      >
+                        <i class="i-lucide-x size-3.5" />
+                      </button>
+                    </div>
+                  </li>
+                </ul>
+                <p v-else class="px-3 py-4 text-[11px] text-gray-600">No pricing cells configured.</p>
+                <div v-if="editable" class="mt-auto border-t border-white/[0.06] p-2">
+                  <Button variant="secondary" size="sm" class="w-full" @click="addPricingCell">
+                    <i class="i-lucide-plus size-3.5" />
+                    Add Cell
+                  </Button>
+                </div>
+              </aside>
+
+              <div v-if="selectedPricingCell && selectedPricingCellIndex >= 0" class="min-w-0 p-4">
+                <div class="mb-4 grid gap-3 sm:grid-cols-2">
+                  <label v-for="axis in PRICING_AXES" :key="axis.id" class="block space-y-1.5">
+                    <span class="block text-xs font-medium text-gray-500">{{ axis.label }}</span>
+                    <Input
+                      v-if="axis.kind === 'equality'"
+                      :model-value="typeof selectedPricingCell.selector[axis.id] === 'string' ? selectedPricingCell.selector[axis.id] as string : ''"
+                      :readonly="!editable"
+                      :invalid="!hasValidSelector(selectedPricingCell) || coordinateKey(selectedPricingCell) !== null && duplicatePricingCoordinates.has(coordinateKey(selectedPricingCell)!)"
+                      placeholder="default"
+                      class="font-mono"
+                      @update:model-value="v => updateEqualityCoordinate(selectedPricingCellIndex, axis.id, v)"
                     />
+                    <div v-else class="grid grid-cols-[7rem_1fr] gap-2">
+                      <Select
+                        :model-value="thresholdCoordinate(selectedPricingCell, axis.id)?.operator ?? 'gt'"
+                        :options="[{ value: 'gt', label: '>' }, { value: 'gte', label: '≥' }]"
+                        :disabled="!editable"
+                        @update:model-value="v => updateThresholdCoordinate(selectedPricingCellIndex, axis.id, { operator: v as 'gt' | 'gte' })"
+                      />
+                      <Input
+                        type="number"
+                        min="1"
+                        step="1"
+                        :model-value="thresholdCoordinate(selectedPricingCell, axis.id)?.value"
+                        :readonly="!editable"
+                        :invalid="!hasValidSelector(selectedPricingCell) || coordinateKey(selectedPricingCell) !== null && duplicatePricingCoordinates.has(coordinateKey(selectedPricingCell)!)"
+                        placeholder="base"
+                        class="font-mono"
+                        @update:model-value="v => updateThresholdCoordinate(selectedPricingCellIndex, axis.id, { value: parseOptionalNumber(v) })"
+                      />
+                    </div>
+                  </label>
+                </div>
+                <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <label v-for="dim in PRICING_BY_KIND[rowKind]" :key="dim" class="block space-y-1.5">
+                    <span class="block text-xs font-medium text-gray-500">{{ PRICING_LABELS[dim] }}</span>
                     <Input
                       type="number"
-                      min="1"
-                      step="1"
-                      :model-value="thresholdCoordinate(draft, axis.id)?.value"
+                      min="0"
+                      :model-value="selectedPricingCell.rates[dim]"
                       :readonly="!editable"
-                      :invalid="!hasValidSelector(draft) || coordinateKey(draft) !== null && duplicatePricingCoordinates.has(coordinateKey(draft)!)"
-                      placeholder="base"
+                      placeholder="unpriced"
                       class="font-mono"
-                      @update:model-value="v => updateThresholdCoordinate(index, axis.id, { value: parseOptionalNumber(v) })"
+                      @update:model-value="v => updatePricingRate(selectedPricingCellIndex, dim, v)"
                     />
-                  </div>
-                </label>
-                <div v-if="editable" class="flex items-end gap-1">
-                  <Button variant="secondary" size="sm" :disabled="index === 0" @click="movePricingCell(index, -1)">↑</Button>
-                  <Button variant="secondary" size="sm" :disabled="index === pricingCellDrafts.length - 1" @click="movePricingCell(index, 1)">↓</Button>
-                  <Button variant="danger" size="sm" @click="removePricingCell(index)">Remove</Button>
+                  </label>
                 </div>
               </div>
-              <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <label v-for="dim in PRICING_BY_KIND[rowKind]" :key="dim" class="block space-y-1.5">
-                  <span class="block text-xs font-medium text-gray-500">{{ PRICING_LABELS[dim] }}</span>
-                  <Input
-                    type="number"
-                    min="0"
-                    :model-value="draft.rates[dim]"
-                    :readonly="!editable"
-                    placeholder="unpriced"
-                    class="font-mono"
-                    @update:model-value="v => updatePricingRate(index, dim, v)"
-                  />
-                </label>
+              <div v-else class="flex min-h-52 items-center justify-center p-6 text-center text-[11px] text-gray-600">
+                Add a pricing cell to edit its selector and rates.
               </div>
             </div>
           </div>

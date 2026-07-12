@@ -102,6 +102,40 @@ describe('ModelEditor row synchronization', () => {
     expect(wrapper.emitted('patch-config')?.at(-1)?.[0]).toEqual({ cost: { cells: [{ rates: { input: 1 } }] } });
   });
 
+  it('navigates pricing cells from the left while rendering one editor on the right', async () => {
+    const selected = row('cells', 'model-cells', 1, undefined);
+    selected.config.cost = {
+      cells: [
+        { rates: { input: 1 } },
+        { selector: { serviceTier: 'priority' }, rates: { input: 2 } },
+      ],
+    };
+    const wrapper = mountEditor(selected);
+    const navigation = wrapper.get('[aria-label="Pricing cell navigation"]');
+
+    expect(wrapper.text()).not.toContain('explicit service-tier');
+    expect(navigation.text()).toContain('Add Cell');
+    expect(navigation.findAll('li')).toHaveLength(2);
+    expect(wrapper.findAll('input[placeholder="unpriced"]')).toHaveLength(5);
+    expect((pricingInput(wrapper, 'unpriced').element as HTMLInputElement).value).toBe('1');
+    expect(wrapper.text()).toContain('Service Tier');
+    expect(wrapper.text()).toContain('Input Tokens');
+
+    await wrapper.get('button[aria-label="Edit pricing cell 2"]').trigger('click');
+    expect((pricingInput(wrapper, 'unpriced').element as HTMLInputElement).value).toBe('2');
+
+    await navigation.get('button[aria-label="Move pricing cell 2 up"]').trigger('click');
+    expect(wrapper.emitted('patch-config')?.at(-1)?.[0]).toEqual({
+      cost: {
+        cells: [
+          { selector: { serviceTier: 'priority' }, rates: { input: 2 } },
+          { rates: { input: 1 } },
+        ],
+      },
+    });
+    expect((pricingInput(wrapper, 'unpriced').element as HTMLInputElement).value).toBe('2');
+  });
+
   it.each(['0', '1.5'])('shows validation instead of throwing for threshold %s', async value => {
     const selected = row('invalid-threshold', 'model-invalid', 1, undefined);
     selected.config.cost = { cells: [{ rates: { input: 1 } }, { selector: { serviceTier: 'priority' }, rates: { input: 2 } }] };
