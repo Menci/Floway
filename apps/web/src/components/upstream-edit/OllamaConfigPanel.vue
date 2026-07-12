@@ -4,9 +4,10 @@
 // /api/show — no toggle, no path overrides, no auth-style choice. The
 // model-overrides list lives in a separate panel.
 //
-// In create mode the panel exposes a Fetch button so the operator can preview
-// the upstream's resolved catalog before saving; on edit mode the cache-status
-// panel above already drives a force-refresh.
+// The Fetch button re-runs the live catalog fetch against the in-flight form
+// config (baseUrl / apiKey), so the operator can preview the resolved list
+// before saving on both create and edit. In edit mode an untyped apiKey
+// falls back to the stored secret (handled by the parent).
 
 import type { OllamaDraft } from './customConfig.ts';
 import SecretInput from '../shared/SecretInput.vue';
@@ -56,7 +57,7 @@ const emit = defineEmits<{ 'fetch-models': [] }>();
       </p>
     </div>
 
-    <div v-if="!editMode">
+    <div>
       <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
         <p class="text-xs font-medium text-gray-500">Fetch models</p>
         <div class="flex items-center gap-3">

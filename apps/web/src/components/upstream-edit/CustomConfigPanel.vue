@@ -115,7 +115,7 @@ const setAuthStyle = (style: CustomAuthStyle) => {
     <div>
       <div class="mb-2 flex items-baseline justify-between gap-3">
         <p class="text-xs font-medium text-gray-500">Fetch <code class="font-mono">/models</code></p>
-        <p v-if="fetchStatus && !editMode" class="text-[11px] text-gray-500">{{ fetchStatus }}</p>
+        <p v-if="fetchStatus" class="text-[11px] text-gray-500">{{ fetchStatus }}</p>
       </div>
       <div class="flex items-center gap-2">
         <Switch
@@ -131,7 +131,6 @@ const setAuthStyle = (style: CustomAuthStyle) => {
           @update:model-value="v => draft = { ...draft, modelsFetch: { ...draft.modelsFetch, endpoint: v } }"
         />
         <Button
-          v-if="!editMode"
           variant="secondary"
           size="sm"
           :loading="fetchLoading"

@@ -247,15 +247,25 @@ export const getUpstreamBlueprint = (c: Context): Response => {
 // Single-record read for the edit page. Returns the FULL record — no
 // secret redaction — because every editor-scoped action posts the record
 // back to a helper endpoint that needs the same credentials the data plane
-// uses (refresh tokens, api keys, etc.). Codex quota is a response-only
-// projection, so it is attached here as well.
+// uses (refresh tokens, api keys, etc.). Codex quota and modelsCache are
+// response-only projections, so they are attached here alongside the
+// unredacted config/state — the edit page relies on `modelsCache` to
+// render the "last fetched / last error" panel on mount.
 export const getUpstream = async (c: AuthedContext<'/:id'>) => {
   const id = c.req.param('id');
   const record = await getRepo().upstreams.getById(id);
   if (!record) return c.json({ error: 'upstream not found' }, 404);
-  const response: UpstreamResponse = {
+  const [cacheRow, codexQuota] = await Promise.all([
+    getRepo().modelsCache.get(record.id),
+    codexQuotaForResponse(record),
+  ]);
+  const response: UpstreamWithCacheResponse = {
     ...upstreamRecordToFullJson(record),
-    ...await codexQuotaForResponse(record),
+    modelsCache: {
+      fetchedAt: cacheRow?.fetchedAt ?? null,
+      lastError: cacheRow?.lastError ?? null,
+    },
+    ...codexQuota,
   };
   return c.json(response);
 };
