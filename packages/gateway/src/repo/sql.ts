@@ -369,10 +369,9 @@ class SqlSessionsRepo implements SessionsRepo {
 }
 
 const dimensionRows = (record: UsageRecord): { dimension: BillingDimension; tokens: number; unitPrice: number | null }[] => {
-  const effective = record.cost;
   return BILLING_DIMENSIONS.flatMap(dimension => {
     const tokens = record.tokens[dimension] ?? 0;
-    return tokens > 0 ? [{ dimension, tokens, unitPrice: unitPriceForDimension(effective, dimension) }] : [];
+    return tokens > 0 ? [{ dimension, tokens, unitPrice: unitPriceForDimension(record.cost, dimension) }] : [];
   });
 };
 

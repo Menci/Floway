@@ -108,6 +108,22 @@ test('fetchCustomModels keeps a `cost` block with any subset of billing dimensio
   );
 });
 
+test('fetchCustomModels keeps models but omits one malformed cost block', async () => {
+  const { config } = assertCustomUpstreamRecord(upstreamRecord());
+  await withMockedFetch(
+    () => jsonResponse({ object: 'list', data: [
+      { id: 'bad-cost', cost: { cells: [{ rates: { input: -1 }, selector: { unknown: 'x' } }] } },
+      { id: 'good-cost', cost: { cells: [{ rates: { input: 1 } }] } },
+    ] }),
+    async () => {
+      const result = await fetchCustomModels(config, directFetcher);
+      assertEquals(result.data.map(model => model.id), ['bad-cost', 'good-cost']);
+      assertEquals(result.data[0].cost, undefined);
+      assertEquals(result.data[1].cost, { cells: [{ rates: { input: 1 } }] });
+    },
+  );
+});
+
 test('fetchCustomModels drops a `cost` block with no recognized dimensions', async () => {
   const { config } = assertCustomUpstreamRecord(upstreamRecord());
   await withMockedFetch(

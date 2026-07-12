@@ -63,7 +63,7 @@ const GRID: ModelPricing = {
 };
 
 test('priceRequest applies gt boundaries and selects the highest matching threshold', () => {
-  assertEquals(priceRequest(GRID, { inputTokens: 128000 }), { selector: {}, selectorKey: '{}', rates: { input: 5, output: 30 } });
+  assertEquals(priceRequest(GRID, { inputTokens: 128000 }), { selector: {}, rates: { input: 5, output: 30 } });
   assertEquals(priceRequest(GRID, { inputTokens: 128001 }).rates, { input: 7, output: 40 });
   assertEquals(priceRequest(GRID, { inputTokens: 272000 }).rates, { input: 7, output: 40 });
   assertEquals(priceRequest(GRID, { inputTokens: 272001 }).rates, { input: 10, output: 45 });
@@ -91,7 +91,6 @@ test('priceRequest exact-matches every axis and leaves missing combinations unpr
 test('unknown runtime service tier remains a coordinate and exact-missing is unpriced', () => {
   assertEquals(priceRequest(GRID, { inputTokens: 0, serviceTier: 'future' }), {
     selector: { serviceTier: 'future' },
-    selectorKey: '{"serviceTier":"future"}',
     rates: null,
   });
 });
@@ -99,7 +98,6 @@ test('unknown runtime service tier remains a coordinate and exact-missing is unp
 test('priceRequest preserves equality facts even when pricing is unavailable', () => {
   assertEquals(priceRequest(null, { inputTokens: 1, serviceTier: 'future' }), {
     selector: { serviceTier: 'future' },
-    selectorKey: '{"serviceTier":"future"}',
     rates: null,
   });
 });

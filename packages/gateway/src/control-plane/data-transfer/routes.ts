@@ -29,7 +29,7 @@ import { parseUpstreamIdsValue } from '../api-keys/upstream-ids.ts';
 import { USERNAME_PATTERN, type exportQuery, type importBody, DUMP_RETENTION_MAX_SECONDS } from '../schemas.ts';
 import { copilotConfigField, isRecord, nonEmptyStringField } from '../shared/field-validators.ts';
 import { type SerializedUpstreamRecord, upstreamRecordToFullJson } from '../upstreams/serialize.ts';
-import { BILLING_DIMENSIONS, canonicalizePricingSelector, type PriceVector, type PricingSelector } from '@floway-dev/protocols/common';
+import { BILLING_DIMENSIONS, canonicalizePricingSelector, type PriceVector, type PricingSelector, validatePriceVector } from '@floway-dev/protocols/common';
 import { ALL_PROVIDER_KINDS, normalizeModelPrefix, normalizeUpstreamColor, parseFlagOverridesWire } from '@floway-dev/provider';
 import type { PerformanceOperation, ProxyFallbackEntry, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
@@ -383,12 +383,15 @@ const parseImportedCost = (value: unknown): { type: 'ok'; cost: UsageRecord['cos
   for (const dimension of BILLING_DIMENSIONS) {
     const rate = obj[dimension];
     if (rate === undefined) continue;
-    if (typeof rate !== 'number' || !Number.isFinite(rate) || rate < 0) {
-      return { type: 'invalid', error: `cost.${dimension} must be a finite non-negative number` };
-    }
-    cost[dimension] = rate;
+    cost[dimension] = rate as number;
   }
-  return { type: 'ok', cost: Object.keys(cost).length > 0 ? cost : null };
+  if (Object.keys(cost).length === 0) return { type: 'ok', cost: null };
+  try {
+    validatePriceVector(cost, 'cost');
+    return { type: 'ok', cost };
+  } catch (error) {
+    return { type: 'invalid', error: error instanceof Error ? error.message : String(error) };
+  }
 };
 
 const parseImportedTokens = (value: unknown): { type: 'ok'; tokens: TokenUsage } | { type: 'invalid' } => {

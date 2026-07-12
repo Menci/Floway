@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import { tokenUsageFromResponsesResult } from './usage.ts';
 import type { ResponsesResult } from '@floway-dev/protocols/responses';
@@ -45,7 +45,7 @@ test('Responses usage rejects a malformed payload whose cache splits exceed the 
   const result = minimalResult({
     usage: { input_tokens: 40, output_tokens: 20, total_tokens: 60, input_tokens_details: { cached_tokens: 30, cache_write_tokens: 25 } },
   });
-  assertEquals(tokenUsageFromResponsesResult(result), null);
+  expect(() => tokenUsageFromResponsesResult(result)).toThrowError(RangeError);
 });
 
 test('Responses usage drops service_tier=default (OpenAI base value) to no-tier', () => {

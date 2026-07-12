@@ -79,7 +79,6 @@ export interface ModelPricing {
 
 export interface PricedRequest {
   selector: PricingSelector;
-  selectorKey: string;
   rates: PriceVector | null;
 }
 
@@ -90,6 +89,15 @@ export interface PricedRequest {
 // cache write before reaching uncached input. Returns null when even the
 // fallback base is absent (or the whole snapshot is null), which aggregation
 // treats as cost 0.
+export const validatePriceVector = (pricing: PriceVector, path = 'price vector'): void => {
+  const dimensions = BILLING_DIMENSIONS.filter(dimension => pricing[dimension] !== undefined);
+  if (dimensions.length === 0) throw new Error(`${path} must contain at least one rate`);
+  for (const dimension of dimensions) {
+    const rate = pricing[dimension]!;
+    if (!Number.isFinite(rate) || rate < 0) throw new RangeError(`${path}.${dimension} must be a finite non-negative number`);
+  }
+};
+
 export const unitPriceForDimension = (pricing: PriceVector | null, dimension: BillingDimension): number | null => {
   if (!pricing) return null;
   switch (dimension) {
@@ -149,10 +157,13 @@ export const parsePricingSelectorKey = (key: string): PricingSelector => {
 
 export const validateModelPricing = (pricing: ModelPricing): void => {
   if (pricing.cells.length === 0) throw new Error('model pricing must declare at least one cell');
+  const selectors = pricing.cells.map((cell, index) => {
+    validatePriceVector(cell.rates, `model pricing cell ${index}.rates`);
+    return canonicalizePricingSelector(cell.selector);
+  });
   const cellKeys = new Set<string>();
   const thresholds = new Map<string, Map<number, PricingThresholdOperator>>();
-  for (const cell of pricing.cells) {
-    const selector = canonicalizePricingSelector(cell.selector);
+  for (const selector of selectors) {
     const key = JSON.stringify(selector);
     if (cellKeys.has(key)) throw new Error(`duplicate pricing cell selector: ${key}`);
     cellKeys.add(key);
@@ -160,39 +171,70 @@ export const validateModelPricing = (pricing: ModelPricing): void => {
       if (typeof coordinate === 'string') continue;
       const values = thresholds.get(axisId) ?? new Map<number, PricingThresholdOperator>();
       const existing = values.get(coordinate.value);
-      if (existing !== undefined && existing !== coordinate.operator) {
-        throw new Error(`conflicting pricing threshold operators for ${axisId} at ${coordinate.value}`);
-      }
+      if (existing !== undefined && existing !== coordinate.operator) throw new Error(`conflicting pricing threshold operators for ${axisId} at ${coordinate.value}`);
       values.set(coordinate.value, coordinate.operator);
       thresholds.set(axisId, values);
     }
   }
+  for (const selector of selectors) {
+    const hasEquality = Object.keys(selector).some(axisId => axisById.get(axisId)?.kind === 'equality');
+    if (!hasEquality) continue;
+    const thresholdOnly = Object.fromEntries(Object.entries(selector).filter(([axisId]) => axisById.get(axisId)?.kind === 'threshold'));
+    if (Object.keys(thresholdOnly).length > 0 && !cellKeys.has(JSON.stringify(thresholdOnly))) {
+      throw new Error(`pricing threshold selector ${JSON.stringify(thresholdOnly)} must be declared without equality coordinates`);
+    }
+  }
 };
+
+interface CompiledModelPricing {
+  cellByKey: ReadonlyMap<string, PriceVector>;
+  inputBands: readonly PricingThresholdCoordinate[];
+}
+
+const compiledPricing = new WeakMap<ModelPricing, CompiledModelPricing>();
+
+// Pricing objects are immutable after provider/config construction. Compilation
+// validates and canonicalizes once per stable object identity.
+export const compileModelPricing = (pricing: ModelPricing): CompiledModelPricing => {
+  const existing = compiledPricing.get(pricing);
+  if (existing) return existing;
+  validateModelPricing(pricing);
+  const cellByKey = new Map<string, PriceVector>();
+  const bands = new Map<number, PricingThresholdCoordinate>();
+  for (const cell of pricing.cells) {
+    const selector = canonicalizePricingSelector(cell.selector);
+    cellByKey.set(JSON.stringify(selector), cell.rates);
+    const input = selector.inputTokens;
+    if (typeof input === 'object') bands.set(input.value, input);
+  }
+  const compiled = { cellByKey, inputBands: [...bands.values()].toSorted((a, b) => b.value - a.value) };
+  compiledPricing.set(pricing, compiled);
+  return compiled;
+};
+
+export const pricingCell = (rates: PriceVector, selector?: PricingSelector): PricingCell => {
+  validatePriceVector(rates);
+  const canonicalSelector = canonicalizePricingSelector(selector);
+  return { ...(Object.keys(canonicalSelector).length > 0 ? { selector: canonicalSelector } : {}), rates };
+};
+export const modelPricing = (...cells: PricingCell[]): ModelPricing => {
+  const pricing: ModelPricing = { cells };
+  compileModelPricing(pricing);
+  return pricing;
+};
+export const basePricing = (rates: PriceVector): ModelPricing => modelPricing(pricingCell(rates));
 
 const thresholdMatches = (coordinate: PricingThresholdCoordinate, fact: number): boolean =>
   coordinate.operator === 'gt' ? fact > coordinate.value : fact >= coordinate.value;
 
-// Project one canonical coordinate per axis from runtime facts, then exact-match
-// the resulting Cartesian point. Equality facts are retained even when unknown,
-// so an unrecognized upstream service tier produces an unpriced coordinate.
 export const priceRequest = (pricing: ModelPricing | null, facts: PricingRuntimeFacts): PricedRequest => {
-  if (pricing) validateModelPricing(pricing);
+  const compiled = pricing ? compileModelPricing(pricing) : undefined;
   const selector: Record<string, PricingCoordinateValue> = {};
   if (facts.serviceTier != null) selector.serviceTier = facts.serviceTier;
-
-  let selectedInput: PricingThresholdCoordinate | undefined;
-  for (const cell of pricing?.cells ?? []) {
-    const coordinate = canonicalizePricingSelector(cell.selector).inputTokens;
-    if (typeof coordinate === 'object' && thresholdMatches(coordinate, facts.inputTokens) && (!selectedInput || coordinate.value > selectedInput.value)) {
-      selectedInput = coordinate;
-    }
-  }
-  if (selectedInput) selector.inputTokens = selectedInput;
-
+  const band = compiled?.inputBands.find(coordinate => thresholdMatches(coordinate, facts.inputTokens));
+  if (band) selector.inputTokens = band;
   const canonicalSelector = canonicalizePricingSelector(selector);
-  const selectorKey = JSON.stringify(canonicalSelector);
-  const rates = pricing?.cells.find(cell => canonicalPricingSelectorKey(cell.selector) === selectorKey)?.rates ?? null;
-  return { selector: canonicalSelector, selectorKey, rates };
+  return { selector: canonicalSelector, rates: compiled?.cellByKey.get(JSON.stringify(canonicalSelector)) ?? null };
 };
 
 // High-level endpoint-family discriminator. A model belongs to exactly one

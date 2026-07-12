@@ -100,7 +100,7 @@ const OLLAMA_MODEL_PRICING: readonly PricingRule[] = [
   // older trio (m2 / m2.1 / m2.5) and $0.06/M for the newer m2.7 / m3 — the
   // M3 ≤512k row is currently flagged "Permanent 50% off" on MiniMax's page
   // and would otherwise be $0.60/$0.12/$2.40, the same as M3's >512k tier
-  // (which is not encodable in flat per-model pricing).
+  // (recorded by the explicit >512k threshold cell below).
   // https://platform.minimax.io/docs/guides/pricing-paygo
   [/^minimax-m2(\.[15])?$/, base({ input: 0.3, input_cache_read: 0.03, output: 1.2 })],
   ['minimax-m2.7', base({ input: 0.3, input_cache_read: 0.06, output: 1.2 })],

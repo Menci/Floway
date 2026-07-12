@@ -91,6 +91,24 @@ describe('ModelEditor row synchronization', () => {
     expect(wrapper.emitted('patch-config')?.length ?? 0).toBe(patchCount);
   });
 
+  it('clears a threshold value while preserving operator-only updates', async () => {
+    const selected = row('threshold', 'model-threshold', 1, undefined);
+    selected.config.cost = { cells: [{ selector: { inputTokens: { operator: 'gte', value: 100 } }, rates: { input: 1 } }] };
+    const wrapper = mountEditor(selected);
+    const threshold = pricingInput(wrapper, 'base');
+    expect((threshold.element as HTMLInputElement).value).toBe('100');
+
+    await threshold.setValue('');
+    expect(wrapper.emitted('patch-config')?.at(-1)?.[0]).toEqual({ cost: { cells: [{ rates: { input: 1 } }] } });
+  });
+
+  it.each(['0', '1.5'])('shows validation instead of throwing for threshold %s', async value => {
+    const wrapper = mountEditor(row('invalid-threshold', 'model-invalid', 1, undefined));
+    await pricingInput(wrapper, 'base').setValue(value);
+    expect(wrapper.text()).toContain('Selector values are invalid.');
+    expect(wrapper.emitted('validity-change')?.at(-1)).toEqual([false]);
+  });
+
   it('clears cached flag overrides when switching rows', async () => {
     const first = row('first', 'model-first', 1, { 'flag-a': true });
     const second = row('second', 'model-second', 2, undefined);

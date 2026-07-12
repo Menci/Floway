@@ -1,5 +1,5 @@
 import { billableServiceTier, tokenUsage } from '../../shared/telemetry/usage.ts';
-import type { ResponsesResult } from '@floway-dev/protocols/responses';
+import { splitResponsesInputTokens, type ResponsesResult } from '@floway-dev/protocols/responses';
 
 // OpenAI Responses reports input_tokens inclusive of the cache-read and
 // cache-write splits; subtract both to recover the disjoint bare input. A
@@ -17,10 +17,11 @@ import type { ResponsesResult } from '@floway-dev/protocols/responses';
 export const tokenUsageFromResponsesResult = (response: ResponsesResult) => {
   const usage = response.usage;
   if (!usage) return null;
-  const cacheRead = usage.input_tokens_details?.cached_tokens ?? 0;
-  const cacheWrite = usage.input_tokens_details?.cache_write_tokens ?? 0;
-  const input = usage.input_tokens - cacheRead - cacheWrite;
-  if (input < 0) return null;
+  const { input, cacheRead, cacheWrite } = splitResponsesInputTokens(
+    usage.input_tokens,
+    usage.input_tokens_details?.cached_tokens,
+    usage.input_tokens_details?.cache_write_tokens,
+  );
   return tokenUsage({
     input,
     input_cache_read: cacheRead,

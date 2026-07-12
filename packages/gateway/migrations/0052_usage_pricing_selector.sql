@@ -9,7 +9,7 @@ CREATE TABLE usage_new (
   upstream TEXT,
   model_key TEXT NOT NULL,
   hour TEXT NOT NULL,
-  pricing_selector TEXT NOT NULL DEFAULT '{}',
+  pricing_selector TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(pricing_selector) AND json_type(pricing_selector) = 'object'),
   dimension TEXT NOT NULL CHECK (dimension IN (
     'input', 'input_cache_read', 'input_cache_write', 'input_cache_write_1h', 'input_image', 'output', 'output_image'
   )),
@@ -19,7 +19,7 @@ CREATE TABLE usage_new (
 
 INSERT INTO usage_new (key_id, model, upstream, model_key, hour, pricing_selector, dimension, tokens, unit_price)
 SELECT key_id, model, upstream, model_key, hour,
-  CASE WHEN tier IS NULL THEN '{}' ELSE json_object('serviceTier', tier) END,
+  CASE WHEN tier IS NULL OR trim(tier) = '' THEN '{}' ELSE json_object('serviceTier', tier) END,
   dimension, tokens, unit_price
 FROM usage;
 
@@ -35,13 +35,13 @@ CREATE TABLE usage_requests_new (
   upstream TEXT,
   model_key TEXT NOT NULL,
   hour TEXT NOT NULL,
-  pricing_selector TEXT NOT NULL DEFAULT '{}',
+  pricing_selector TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(pricing_selector) AND json_type(pricing_selector) = 'object'),
   requests INTEGER NOT NULL DEFAULT 0
 );
 
 INSERT INTO usage_requests_new (key_id, model, upstream, model_key, hour, pricing_selector, requests)
 SELECT key_id, model, upstream, model_key, hour,
-  CASE WHEN tier IS NULL THEN '{}' ELSE json_object('serviceTier', tier) END,
+  CASE WHEN tier IS NULL OR trim(tier) = '' THEN '{}' ELSE json_object('serviceTier', tier) END,
   requests
 FROM usage_requests;
 

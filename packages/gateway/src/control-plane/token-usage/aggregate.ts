@@ -23,12 +23,11 @@ export interface DisplayUsageByUserRecord {
 // Cost is a pure sum over disjoint per-dimension token counts:
 // Σ tokens × unit_price / 1e6. No subtraction needed.
 const recordCostUsd = (record: UsageRecord): number => {
-  const effective = record.cost;
   let total = 0;
   for (const dimension of BILLING_DIMENSIONS) {
     const tokens = record.tokens[dimension] ?? 0;
     if (tokens === 0) continue;
-    const unitPrice = unitPriceForDimension(effective, dimension);
+    const unitPrice = unitPriceForDimension(record.cost, dimension);
     if (unitPrice !== null) total += tokens * unitPrice;
   }
   return total / 1e6;

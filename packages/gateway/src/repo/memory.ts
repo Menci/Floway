@@ -45,7 +45,7 @@ import { serializeStoredState } from './upstream-json.ts';
 import { bucketForTtftMs, bucketForTpotUs } from '../shared/performance-histogram.ts';
 import { generateSessionToken } from '../shared/session-tokens.ts';
 import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';
-import { BILLING_DIMENSIONS, canonicalPricingSelectorKey, type BillingDimension, type PriceVector, type PricingSelector, unitPriceForDimension } from '@floway-dev/protocols/common';
+import { BILLING_DIMENSIONS, canonicalPricingSelectorKey, canonicalizePricingSelector, type BillingDimension, type PriceVector, type PricingSelector, unitPriceForDimension } from '@floway-dev/protocols/common';
 import type { ProviderModel, UpstreamRecord } from '@floway-dev/provider';
 
 const SEED_ADMIN_USER: User = {
@@ -245,10 +245,9 @@ class MemoryUsageRepo implements UsageRepo {
   }
 
   private dimensionEntries(record: UsageRecord): { dimension: BillingDimension; tokens: number; unitPrice: number | null }[] {
-    const effective = record.cost;
     return BILLING_DIMENSIONS.flatMap(dimension => {
       const tokens = record.tokens[dimension] ?? 0;
-      return tokens > 0 ? [{ dimension, tokens, unitPrice: unitPriceForDimension(effective, dimension) }] : [];
+      return tokens > 0 ? [{ dimension, tokens, unitPrice: unitPriceForDimension(record.cost, dimension) }] : [];
     });
   }
 
@@ -265,10 +264,11 @@ class MemoryUsageRepo implements UsageRepo {
   }
 
   private bucket(record: UsageRecord): UsageBucketState {
-    const k = this.key(record);
+    const pricingSelector = canonicalizePricingSelector(record.pricingSelector);
+    const k = this.key({ ...record, pricingSelector });
     let state = this.store.get(k);
     if (!state) {
-      state = { keyId: record.keyId, model: record.model, upstream: record.upstream ?? null, modelKey: record.modelKey, hour: record.hour, pricingSelector: record.pricingSelector, tokens: {}, unitPrices: {}, requests: 0 };
+      state = { keyId: record.keyId, model: record.model, upstream: record.upstream ?? null, modelKey: record.modelKey, hour: record.hour, pricingSelector, tokens: {}, unitPrices: {}, requests: 0 };
       this.store.set(k, state);
     }
     return state;
@@ -301,14 +301,15 @@ class MemoryUsageRepo implements UsageRepo {
   }
 
   set(record: UsageRecord): Promise<void> {
-    const k = this.key(record);
+    const pricingSelector = canonicalizePricingSelector(record.pricingSelector);
+    const k = this.key({ ...record, pricingSelector });
     const state: UsageBucketState = {
       keyId: record.keyId,
       model: record.model,
       upstream: record.upstream ?? null,
       modelKey: record.modelKey,
       hour: record.hour,
-      pricingSelector: record.pricingSelector,
+      pricingSelector,
       tokens: {},
       unitPrices: {},
       requests: record.requests,

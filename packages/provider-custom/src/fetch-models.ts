@@ -62,26 +62,29 @@ const parseLimits = (value: unknown): CustomRawModel['limits'] => {
 };
 
 const parseCost = (value: unknown): ModelPricing | undefined => {
-  // A Floway-shaped upstream publishes the full cells shape. Plain OpenAI-
-  // compatible catalogs usually omit cost entirely; malformed pricing is
-  // ignored with the rest of best-effort catalog metadata.
+  // Pricing is best-effort catalog metadata: malformed cost omits only the cost
+  // block, never the enclosing model or the rest of the catalog.
   if (!isRecord(value) || !Array.isArray(value.cells)) return undefined;
-  const cells: ModelPricing['cells'][number][] = [];
-  for (const rawCell of value.cells) {
-    if (!isRecord(rawCell) || !isRecord(rawCell.rates)) continue;
-    const rates: PriceVector = {};
-    for (const dimension of BILLING_DIMENSIONS) {
-      const rate = optionalNumberField(rawCell.rates[dimension]);
-      if (rate !== undefined) rates[dimension] = rate;
+  try {
+    const cells: ModelPricing['cells'][number][] = [];
+    for (const rawCell of value.cells) {
+      if (!isRecord(rawCell) || !isRecord(rawCell.rates)) continue;
+      const rates: PriceVector = {};
+      for (const dimension of BILLING_DIMENSIONS) {
+        const rate = optionalNumberField(rawCell.rates[dimension]);
+        if (rate !== undefined) rates[dimension] = rate;
+      }
+      if (Object.keys(rates).length === 0) continue;
+      const selector = canonicalizePricingSelector(isRecord(rawCell.selector) ? rawCell.selector as PricingSelector : undefined);
+      cells.push({ ...(Object.keys(selector).length > 0 ? { selector } : {}), rates });
     }
-    if (Object.keys(rates).length === 0) continue;
-    const selector = canonicalizePricingSelector(isRecord(rawCell.selector) ? rawCell.selector as PricingSelector : undefined);
-    cells.push({ ...(Object.keys(selector).length > 0 ? { selector } : {}), rates });
+    if (cells.length === 0) return undefined;
+    const pricing = { cells };
+    validateModelPricing(pricing);
+    return pricing;
+  } catch {
+    return undefined;
   }
-  if (cells.length === 0) return undefined;
-  const pricing = { cells };
-  validateModelPricing(pricing);
-  return pricing;
 };
 
 const parseKind = (value: unknown): ModelKind | undefined => {

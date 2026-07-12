@@ -1,5 +1,5 @@
 import { type FlagOverrides, validateFlagOverridesRecord } from './flags.ts';
-import { BILLING_DIMENSIONS, canonicalizePricingSelector, type BillingDimension, type ChatModelInfo, type ModelEndpointKey, type ModelEndpoints, type ModelKind, type Modality, type ModelPricing, type PricingSelector, validateModelPricing } from '@floway-dev/protocols/common';
+import { BILLING_DIMENSIONS, canonicalizePricingSelector, compileModelPricing, type BillingDimension, type ChatModelInfo, type ModelEndpointKey, type ModelEndpoints, type ModelKind, type Modality, type ModelPricing, type PricingSelector } from '@floway-dev/protocols/common';
 import { kindForEndpoints } from '@floway-dev/protocols/common';
 
 export type { Modality } from '@floway-dev/protocols/common';
@@ -121,7 +121,6 @@ export const pricingField = (value: unknown, label: string): ModelPricing | unde
   if (!record) return undefined;
   if (!Array.isArray(record.cells) || record.cells.length === 0) throw new Error(`Malformed ${label}.cells: must be a non-empty array`);
 
-  const coordinates = new Set<string>();
   const cells = record.cells.map((rawCell, index) => {
     if (!isRecord(rawCell)) throw new Error(`Malformed ${label}.cells[${index}]: must be an object`);
     const selectorRecord = rawCell.selector === undefined ? undefined : optionalMetadataRecord(rawCell.selector, `${label}.cells[${index}].selector`);
@@ -131,21 +130,16 @@ export const pricingField = (value: unknown, label: string): ModelPricing | unde
     } catch (cause) {
       throw new Error(`Malformed ${label}.cells[${index}].selector: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
     }
-    const coordinate = JSON.stringify(selector);
-    if (coordinates.has(coordinate)) throw new Error(`Malformed ${label}.cells: duplicate selector coordinate`);
-    coordinates.add(coordinate);
-
     if (!isRecord(rawCell.rates)) throw new Error(`Malformed ${label}.cells[${index}].rates: must be an object`);
     const rates: Partial<Record<BillingDimension, number>> = {};
     for (const dimension of BILLING_DIMENSIONS) {
-      if (rawCell.rates[dimension] !== undefined) rates[dimension] = nonNegativeNumberField(rawCell.rates[dimension], `${label}.cells[${index}].rates.${dimension}`);
+      if (rawCell.rates[dimension] !== undefined) rates[dimension] = rawCell.rates[dimension] as number;
     }
-    if (Object.keys(rates).length === 0) throw new Error(`Malformed ${label}.cells[${index}].rates: must contain at least one rate`);
     return { ...(Object.keys(selector).length > 0 ? { selector } : {}), rates };
   });
   const pricing = { cells };
   try {
-    validateModelPricing(pricing);
+    compileModelPricing(pricing);
   } catch (cause) {
     throw new Error(`Malformed ${label}: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
   }

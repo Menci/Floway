@@ -19,13 +19,13 @@ export const hasTokenUsage = (usage: TokenUsage): boolean => BILLING_DIMENSIONS.
 // https://docs.claude.com/en/build-with-claude/fast-mode
 export const billableServiceTier = (tier: string | null | undefined): string | null => {
   if (tier == null) return null;
-  const normalized = tier.toLowerCase();
-  return normalized === 'default' || normalized === 'standard' ? null : tier;
+  const normalized = tier.trim().toLowerCase();
+  return normalized === '' || normalized === 'default' || normalized === 'standard' ? null : tier;
 };
 
 // Drop zero / undefined dimensions so a usage map only carries the dimensions
 // actually billed. `tier` (a non-numeric service-tier marker) survives the
-// filter so per-tier pricing overrides resolve at recording time.
+// filter so service-tier selector cells resolve at recording time.
 export const tokenUsage = (counts: TokenUsage): TokenUsage => {
   const out: TokenUsage = {};
   for (const dimension of BILLING_DIMENSIONS) {

@@ -86,10 +86,8 @@ const COPILOT_MODEL_PRICING: readonly PricingRule[] = [
   ['gpt-3.5-turbo-0613', base({ input: 1.5, output: 2 })],
   // Google charges higher whole-request rates above 200k input tokens.
   // https://ai.google.dev/gemini-api/docs/pricing
-  ['gemini-2.5-pro', pricing(
-    cell({ input: 1.25, input_cache_read: 0.125, output: 10 }),
-    cell({ input: 2.5, input_cache_read: 0.25, output: 15 }, { inputTokens: { operator: 'gt', value: 200000 } }),
-  )],
+  // https://github.com/sst/models.dev/blob/6dfc39c81b6cd57a91c155aa7b4f68ed1b360da0/providers/google/models/gemini-3.1-pro-preview.toml
+  ['gemini-2.5-pro', base({ input: 1.25, input_cache_read: 0.125, output: 10 })],
   ['gemini-3-flash-preview', base({ input: 0.5, input_cache_read: 0.05, output: 3 })],
   ['gemini-3.1-pro-preview', pricing(
     cell({ input: 2, input_cache_read: 0.2, output: 12 }),

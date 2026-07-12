@@ -96,13 +96,20 @@ const compactSelector = (draft: PricingCellDraft): PricingSelector => Object.fro
   Object.entries(draft.selector).filter((entry): entry is [string, PricingCoordinateValue] => entry[1] !== undefined),
 );
 
-const coordinateKey = (draft: PricingCellDraft): string => canonicalPricingSelectorKey(compactSelector(draft));
+const coordinateKey = (draft: PricingCellDraft): string | null => {
+  try {
+    return canonicalPricingSelectorKey(compactSelector(draft));
+  } catch {
+    return null;
+  }
+};
 
 const duplicatePricingCoordinates = computed(() => {
   const seen = new Set<string>();
   const duplicates = new Set<string>();
   for (const draft of pricingCellDrafts.value) {
     const key = coordinateKey(draft);
+    if (key === null) continue;
     if (seen.has(key)) duplicates.add(key);
     else seen.add(key);
   }
@@ -119,18 +126,22 @@ const hasValidSelector = (draft: PricingCellDraft): boolean => {
   }
 };
 
-const isPricingValid = computed(() => {
-  if (!pricingCellDrafts.value.every(draft => hasRates(draft) && hasValidSelector(draft) && !duplicatePricingCoordinates.value.has(coordinateKey(draft)))) return false;
-  if (pricingCellDrafts.value.length === 0) return true;
+const pricingValidationError = computed<string | null>(() => {
+  const invalidDraft = pricingCellDrafts.value.find(draft => !hasRates(draft) || !hasValidSelector(draft));
+  if (invalidDraft) return !hasRates(invalidDraft) ? 'Set at least one rate.' : 'Selector values are invalid.';
+  if (duplicatePricingCoordinates.value.size > 0) return 'Duplicate selector coordinate.';
+  if (pricingCellDrafts.value.length === 0) return null;
   try {
     validateModelPricing({
       cells: pricingCellDrafts.value.map(draft => ({ selector: compactSelector(draft), rates: draft.rates })),
     } as ProtocolModelPricing);
-    return true;
-  } catch {
-    return false;
+    return null;
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
   }
 });
+
+const isPricingValid = computed(() => pricingValidationError.value === null);
 
 const writePricingCells = (drafts: readonly PricingCellDraft[]) => {
   if (!config.value) return;
@@ -163,7 +174,7 @@ const updateThresholdCoordinate = (index: number, axisId: string, patch: Partial
     if (i !== index) return draft;
     const current = thresholdCoordinate(draft, axisId);
     const operator = patch.operator ?? current?.operator ?? 'gt';
-    const value = patch.value ?? current?.value;
+    const value = 'value' in patch ? patch.value : current?.value;
     return { ...draft, selector: { ...draft.selector, [axisId]: value === undefined ? undefined : { operator, value } } };
   }));
 };
@@ -378,7 +389,7 @@ watch(isValid, valid => { emit('validity-change', valid); }, { immediate: true }
                     v-if="axis.kind === 'equality'"
                     :model-value="typeof draft.selector[axis.id] === 'string' ? draft.selector[axis.id] as string : ''"
                     :readonly="!editable"
-                    :invalid="!hasValidSelector(draft) || duplicatePricingCoordinates.has(coordinateKey(draft))"
+                    :invalid="!hasValidSelector(draft) || coordinateKey(draft) !== null && duplicatePricingCoordinates.has(coordinateKey(draft)!)"
                     placeholder="default"
                     class="font-mono"
                     @update:model-value="v => updateEqualityCoordinate(index, axis.id, v)"
@@ -396,7 +407,7 @@ watch(isValid, valid => { emit('validity-change', valid); }, { immediate: true }
                       step="1"
                       :model-value="thresholdCoordinate(draft, axis.id)?.value"
                       :readonly="!editable"
-                      :invalid="!hasValidSelector(draft) || duplicatePricingCoordinates.has(coordinateKey(draft))"
+                      :invalid="!hasValidSelector(draft) || coordinateKey(draft) !== null && duplicatePricingCoordinates.has(coordinateKey(draft)!)"
                       placeholder="base"
                       class="font-mono"
                       @update:model-value="v => updateThresholdCoordinate(index, axis.id, { value: parseOptionalNumber(v) })"
@@ -409,9 +420,7 @@ watch(isValid, valid => { emit('validity-change', valid); }, { immediate: true }
                   <Button variant="danger" size="sm" @click="removePricingCell(index)">Remove</Button>
                 </div>
               </div>
-              <p v-if="duplicatePricingCoordinates.has(coordinateKey(draft))" class="mb-2 text-[11px] text-accent-rose">Duplicate selector coordinate.</p>
-              <p v-else-if="!hasValidSelector(draft)" class="mb-2 text-[11px] text-accent-rose">Selector values are invalid.</p>
-              <p v-else-if="!hasRates(draft)" class="mb-2 text-[11px] text-accent-rose">Set at least one rate.</p>
+              <p v-if="pricingValidationError" class="mb-2 text-[11px] text-accent-rose">{{ pricingValidationError }}</p>
               <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <label v-for="dim in PRICING_BY_KIND[rowKind]" :key="dim" class="block space-y-1.5">
                   <span class="block text-xs font-medium text-gray-500">{{ PRICING_LABELS[dim] }}</span>

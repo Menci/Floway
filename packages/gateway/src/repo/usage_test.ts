@@ -1,8 +1,9 @@
+import initSqlJs from 'sql.js';
 import { test } from 'vitest';
 
 import { InMemoryRepo } from './memory.ts';
 import { SqlRepo } from './sql.ts';
-import { createSqliteTestDb } from './test-sqlite.ts';
+import { createSqliteTestDb, migrationSqlByFilename } from './test-sqlite.ts';
 import type { Repo, UsageRecord } from './types.ts';
 import type { PriceVector } from '@floway-dev/protocols/common';
 import { assertEquals } from '@floway-dev/test-utils';
@@ -32,6 +33,19 @@ const record = (overrides: Partial<UsageRecord>): UsageRecord => ({
 });
 
 const query = (repo: Repo) => repo.usage.query({ keyId: 'key-1', start: '2026-07-12T00', end: '2026-07-12T01' });
+
+test('0052 migrates blank and special-character service tiers to readable canonical selectors', async () => {
+  const SQL = await initSqlJs();
+  const db = new SQL.Database();
+  for (const [filename, sql] of migrationSqlByFilename) {
+    if (filename === '0052_usage_pricing_selector.sql') {
+      db.run("INSERT INTO usage_requests (key_id, model, upstream, model_key, hour, tier, requests) VALUES ('k', 'm', NULL, 'mk', '2026-01-01T00', '  ', 1), ('k', 'm', NULL, 'mk', '2026-01-01T01', 'pri\"雪', 1)");
+    }
+    db.run(sql);
+  }
+  const rows = db.exec('SELECT pricing_selector FROM usage_requests ORDER BY hour')[0]!.values;
+  assertEquals(rows, [['{}'], ['{"serviceTier":"pri\\"雪"}']]);
+});
 
 for (const backend of backends) {
   test(`${backend.name} usage repo folds the selected input-length cell into per-dimension unit prices at write time`, async () => {
