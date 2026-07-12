@@ -301,7 +301,7 @@ test('assertAzureUpstreamRecord rejects model.cost with negative input', () => {
         },
       }),
     Error,
-    'azure models[0].cost.cells[0].rates.input: must be a finite non-negative number',
+    'model pricing cell 0.rates.input must be a finite non-negative number',
   );
 });
 
@@ -322,6 +322,6 @@ test('assertAzureUpstreamRecord rejects model.cost with non-number input_cache_r
         },
       }),
     Error,
-    'azure models[0].cost.cells[0].rates.input_cache_read: must be a finite non-negative number',
+    'model pricing cell 0.rates.input_cache_read must be a finite non-negative number',
   );
 });

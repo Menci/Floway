@@ -124,7 +124,7 @@ test('modelsField rejects cost with a negative input', () => {
         'azure',
       ),
     Error,
-    'Malformed azure models[0].cost.cells[0].rates.input: must be a finite non-negative number',
+    'Malformed model pricing cell 0.rates.input must be a finite non-negative number',
   );
 });
 
