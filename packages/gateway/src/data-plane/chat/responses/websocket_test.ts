@@ -100,6 +100,18 @@ const waitForMessages = async (
   });
 };
 
+const recordRawMessages = (socket: TestWorkerWebSocket) => {
+  const messages: string[] = [];
+  const onMessage = (event: Event): void => {
+    messages.push((event as MessageEvent<string>).data);
+  };
+  socket.addEventListener('message', onMessage);
+  return {
+    messages,
+    stop: () => socket.removeEventListener('message', onMessage),
+  };
+};
+
 const waitForMicrotasks = async (): Promise<void> => {
   for (let i = 0; i < 10; i++) await Promise.resolve();
 };
@@ -300,6 +312,34 @@ test('Responses WebSocket stops capturing on the next turn when dump retention i
 
       assertEquals(dumps.stored.length, 1);
       client.close();
+    }),
+  );
+});
+
+test('Responses WebSocket dump responseBytes equals the UTF-8 payload bytes sent downstream', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
+  const dumps = installDumpStubs(initDumpStore, initDumpBroker);
+
+  await withSuccessfulResponsesUpstream(
+    async () => await withWorkerWebSocketRuntime(async () => {
+      const client = await connectResponsesWebSocket(apiKey.key);
+      const recorded = recordRawMessages(client);
+      try {
+        await completeResponsesTurn(client, '响应-byte-count');
+        await vi.waitFor(() => assertEquals(dumps.stored.length, 1));
+
+        const expectedBytes = recorded.messages.reduce(
+          (total, message) => total + new TextEncoder().encode(message).byteLength,
+          0,
+        );
+        const utf16CodeUnits = recorded.messages.reduce((total, message) => total + message.length, 0);
+        assert(expectedBytes > utf16CodeUnits, 'non-ASCII event_id must be counted as UTF-8 bytes');
+        assertEquals(dumps.stored[0]?.record.meta.responseBytes, expectedBytes);
+      } finally {
+        recorded.stop();
+        client.close();
+      }
     }),
   );
 });
@@ -604,6 +644,50 @@ test('Responses WebSocket forwards HTTP failures with status_code, error.code, a
           message: 'Model missing-model is not available on any configured upstream.',
         },
       }]);
+    }),
+  );
+});
+
+test('Responses WebSocket dump responseBytes counts an error envelope sent downstream', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
+  const dumps = installDumpStubs(initDumpStore, initDumpBroker);
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models') return jsonResponse(copilotModels([]));
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => await withWorkerWebSocketRuntime(async () => {
+      const client = await connectResponsesWebSocket(apiKey.key);
+      const recorded = recordRawMessages(client);
+      try {
+        const received = waitForMessages(client, messages => messages.length === 1);
+        client.send(JSON.stringify({
+          type: 'response.create',
+          event_id: '错误-byte-count',
+          response: {
+            model: 'missing-model',
+            input: 'hello',
+          },
+        }));
+
+        assertEquals((await received)[0]?.status_code, 404);
+        await vi.waitFor(() => assertEquals(dumps.stored.length, 1));
+        const expectedBytes = recorded.messages.reduce(
+          (total, message) => total + new TextEncoder().encode(message).byteLength,
+          0,
+        );
+        assertEquals(dumps.stored[0]?.record.meta.responseBytes, expectedBytes);
+      } finally {
+        recorded.stop();
+        client.close();
+      }
     }),
   );
 });
