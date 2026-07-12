@@ -195,7 +195,7 @@ describe('ModelEditor row synchronization', () => {
     expect(wrapper.emitted('validity-change')?.at(-1)).toEqual([false]);
   });
 
-  it('requires exactly one Base entry before comparing rate fields', () => {
+  it('requires exactly one Base entry before comparing rate fields', async () => {
     const withoutBase = row('without-base', 'model-without-base', 1, undefined);
     withoutBase.config.pricing = {
       entries: [{ selector: { serviceTier: 'priority' }, rates: { input: 2 } }],

@@ -116,7 +116,11 @@ test('shared pricing helpers canonicalize and eagerly validate catalogs', () => 
     ],
   });
   assertThrows(
-    () => modelPricing(pricingEntry({ input: 1 }), pricingEntry({ input: 2 })),
+    () => modelPricing(
+      pricingEntry({ input: 1 }),
+      pricingEntry({ input: 2 }, { serviceTier: 'priority' }),
+      pricingEntry({ input: 3 }, { serviceTier: 'priority' }),
+    ),
     Error,
     'duplicate pricing entry selector',
   );
