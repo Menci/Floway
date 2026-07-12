@@ -2,8 +2,8 @@ import { test } from 'vitest';
 
 import { assertOllamaUpstreamRecord } from './config.ts';
 import { pricingForOllamaModelKey } from './pricing.ts';
-import type { UpstreamRecord } from '@floway-dev/provider';
 import { priceRequest } from '@floway-dev/protocols/common';
+import type { UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
 const baseRecord: UpstreamRecord = {
