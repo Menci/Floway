@@ -47,7 +47,7 @@ test('model validation rejects duplicate selectors and equal numeric thresholds 
   assertThrows(() => validateModelPricing({ cells: [
     { selector: { inputTokens: { operator: 'gt', value: 272000 } }, rates: { input: 1 } },
     { selector: { inputTokens: { operator: 'gte', value: 272000 } }, rates: { input: 2 } },
-  ] }), Error, 'duplicate pricing threshold value');
+  ] }), Error, 'conflicting pricing threshold operators');
 });
 
 const GRID: ModelPricing = {
@@ -92,6 +92,10 @@ test('unknown runtime service tier remains a coordinate and exact-missing is unp
   });
 });
 
-test('priceRequest returns the canonical base coordinate for null pricing', () => {
-  assertEquals(priceRequest(null, { inputTokens: 1 }), { selector: {}, selectorKey: '{}', rates: null });
+test('priceRequest preserves equality facts even when pricing is unavailable', () => {
+  assertEquals(priceRequest(null, { inputTokens: 1, serviceTier: 'future' }), {
+    selector: { serviceTier: 'future' },
+    selectorKey: '{"serviceTier":"future"}',
+    rates: null,
+  });
 });

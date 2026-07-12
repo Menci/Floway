@@ -59,11 +59,9 @@ export interface UsageRecord {
 }
 
 // Disjoint per-dimension token counts. Absent keys mean zero for that
-// dimension. No key's count overlaps another's. `tier` is the upstream-
-// reported service-tier marker (Anthropic `usage.speed`, OpenAI
-// `usage.service_tier`) used to exact-match a pricing cell; absent / null is
-// the default service-tier coordinate. The orthogonal input-length coordinate is not carried
-// here — it is derived from the disjoint input total at recording time.
+// dimension. No key's count overlaps another's. `tier` is only the normalized
+// upstream observation used as a runtime pricing fact; it is projected into the
+// generic `pricingSelector` at recording time and is not persisted directly.
 export interface TokenUsage extends Partial<Record<BillingDimension, number>> {
   tier?: string | null;
 }

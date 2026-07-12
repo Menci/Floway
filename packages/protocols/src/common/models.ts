@@ -150,7 +150,7 @@ export const parsePricingSelectorKey = (key: string): PricingSelector => {
 export const validateModelPricing = (pricing: ModelPricing): void => {
   if (pricing.cells.length === 0) throw new Error('model pricing must declare at least one cell');
   const cellKeys = new Set<string>();
-  const thresholds = new Map<string, Set<number>>();
+  const thresholds = new Map<string, Map<number, PricingThresholdOperator>>();
   for (const cell of pricing.cells) {
     const selector = canonicalizePricingSelector(cell.selector);
     const key = JSON.stringify(selector);
@@ -158,9 +158,12 @@ export const validateModelPricing = (pricing: ModelPricing): void => {
     cellKeys.add(key);
     for (const [axisId, coordinate] of Object.entries(selector)) {
       if (typeof coordinate === 'string') continue;
-      const values = thresholds.get(axisId) ?? new Set<number>();
-      if (values.has(coordinate.value)) throw new Error(`duplicate pricing threshold value for ${axisId}: ${coordinate.value}`);
-      values.add(coordinate.value);
+      const values = thresholds.get(axisId) ?? new Map<number, PricingThresholdOperator>();
+      const existing = values.get(coordinate.value);
+      if (existing !== undefined && existing !== coordinate.operator) {
+        throw new Error(`conflicting pricing threshold operators for ${axisId} at ${coordinate.value}`);
+      }
+      values.set(coordinate.value, coordinate.operator);
       thresholds.set(axisId, values);
     }
   }
@@ -173,13 +176,12 @@ const thresholdMatches = (coordinate: PricingThresholdCoordinate, fact: number):
 // the resulting Cartesian point. Equality facts are retained even when unknown,
 // so an unrecognized upstream service tier produces an unpriced coordinate.
 export const priceRequest = (pricing: ModelPricing | null, facts: PricingRuntimeFacts): PricedRequest => {
-  if (!pricing) return { selector: {}, selectorKey: '{}', rates: null };
-  validateModelPricing(pricing);
+  if (pricing) validateModelPricing(pricing);
   const selector: Record<string, PricingCoordinateValue> = {};
   if (facts.serviceTier != null) selector.serviceTier = facts.serviceTier;
 
   let selectedInput: PricingThresholdCoordinate | undefined;
-  for (const cell of pricing.cells) {
+  for (const cell of pricing?.cells ?? []) {
     const coordinate = canonicalizePricingSelector(cell.selector).inputTokens;
     if (typeof coordinate === 'object' && thresholdMatches(coordinate, facts.inputTokens) && (!selectedInput || coordinate.value > selectedInput.value)) {
       selectedInput = coordinate;
@@ -189,7 +191,7 @@ export const priceRequest = (pricing: ModelPricing | null, facts: PricingRuntime
 
   const canonicalSelector = canonicalizePricingSelector(selector);
   const selectorKey = JSON.stringify(canonicalSelector);
-  const rates = pricing.cells.find(cell => canonicalPricingSelectorKey(cell.selector) === selectorKey)?.rates ?? null;
+  const rates = pricing?.cells.find(cell => canonicalPricingSelectorKey(cell.selector) === selectorKey)?.rates ?? null;
   return { selector: canonicalSelector, selectorKey, rates };
 };
 

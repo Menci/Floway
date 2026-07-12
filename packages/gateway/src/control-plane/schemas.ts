@@ -57,7 +57,7 @@ const modelEndpointsSchema = z.object({
   imagesEdits: z.object({}).optional(),
 });
 
-// Shared between base pricing and per-tier overlays so the two always carry
+// Shared by every explicit pricing cell so all coordinates carry
 // the same dimension set.
 const pricingDimensionShape = {
   input: z.number().nonnegative().optional(),

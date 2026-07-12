@@ -87,10 +87,8 @@ test('aggregateUsageForDisplay charges image dimensions separately', () => {
 
 test('aggregateUsageForDisplay reads unit prices from the already-folded cost the repo writer hands back', () => {
   // The repo write path (`repo/sql.ts:dimensionRows`, `repo/memory.ts:dimensionEntries`)
-  // resolves the bucket's tier into per-dimension unit prices BEFORE storing,
-  // so by the time aggregate sees a UsageRecord the `cost` field is already
-  // the effective pricing for that bucket's tier and tier resolution is a
-  // no-op. Two same-tier records below model the post-write shape.
+  // receives the request's resolved per-dimension rates, so by the time aggregate
+  // sees a UsageRecord the `cost` field is already the effective snapshot.
   // Opus 4.8: standard $5 / $25, fast $10 / $50.
   const fastRow = baseRecord({
     pricingSelector: { serviceTier: 'fast' },
