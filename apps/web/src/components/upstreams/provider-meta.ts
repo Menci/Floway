@@ -1,8 +1,7 @@
-// Per-provider identity for SPA rendering: label, dropdown subtitle,
-// default name suggestion, and iconify class. Rendering technique (Uno
-// class tables, hex `color-mix()`, kind→tone fallback) lives in
-// `upstream-paint.ts` — this module is UI-technique agnostic so a
-// rewrite of the theming layer does not touch brand metadata.
+// Rendering technique (Uno class tables, hex `color-mix()`, kind→tone
+// fallback) lives in `upstream-paint.ts` — this module is UI-technique
+// agnostic so a rewrite of the theming layer does not touch brand
+// metadata.
 //
 // Iconify classes resolve via UnoCSS preset-icons (see uno.config.ts);
 // brand marks from simple-icons, generic `custom` from lucide.

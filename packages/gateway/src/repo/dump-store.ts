@@ -1,3 +1,4 @@
+import { parseUpstreamColor, parseUpstreamKind } from './upstream-parse.ts';
 import type { DumpListOptions, DumpStore } from '../dump/store-contract.ts';
 import type {
   DumpMetadata,
@@ -10,7 +11,6 @@ import type {
   StoredDumpResponseBody,
 } from '../dump/types.ts';
 import type { FileProvider, SqlDatabase } from '@floway-dev/platform';
-import { parseUpstreamColor, parseUpstreamKind } from './upstream-parse.ts';
 
 // Bodies live at `dumps/v1/{keyId}/{YYYYMMDDHH}/{recordId}.{req|resp}.gz`.
 // The hour bucket lets the cron sweep `deletePrefix` whole expired hours.

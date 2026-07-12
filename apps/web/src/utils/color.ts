@@ -26,7 +26,7 @@ export const hsvToRgb = (h: number, s: number, v: number): [number, number, numb
 };
 
 export const rgbToHex = (r: number, g: number, b: number): string =>
-  '#' + [r, g, b].map(n => n.toString(16).padStart(2, '0')).join('').toUpperCase();
+  `#${  [r, g, b].map(n => n.toString(16).padStart(2, '0')).join('').toUpperCase()}`;
 
 export const hexToRgb = (hex: string): [number, number, number] | null => {
   if (!HEX_RE.test(hex)) return null;

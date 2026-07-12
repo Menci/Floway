@@ -74,13 +74,10 @@ export const controlPlaneModels = async (c: Context) => {
     // data-plane access to.
     const isAdmin = userFromContext(c).isAdmin;
     const upstreamScope = isAdmin ? null : effectiveUpstreamIdsFromContext(c);
-    // Fetch the upstream list ONCE at the request boundary and thread it
-    // into every downstream consumer that would otherwise re-fetch. Prior
-    // implementations paid up to four separate `upstreams.list()`
-    // round-trips per request (twice through `enumerateAddressableModelIds`
-    // — caller-scoped + gateway-wide — once for the color-join map, and
-    // once inside `createPerRequestFetcher` for the proxy-fallback graph);
-    // threading the pre-fetched list collapses this to one.
+    // Fetch the upstream list once at the request boundary and thread it
+    // into every downstream consumer (`createPerRequestFetcher`,
+    // `enumerateAddressableModelIds`, the color-join map) so this request
+    // pays a single `upstreams.list()` round-trip.
     const upstreamRows = await getRepo().upstreams.list();
     const fetcherForUpstream = await createPerRequestFetcher(getCurrentColo(c.req.raw), upstreamRows);
     // Two addressable surfaces: caller-scoped (drives visibility +

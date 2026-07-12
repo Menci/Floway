@@ -1,10 +1,3 @@
-// Rendering-technique layer for upstream badge colour. Owns the UnoCSS
-// class tables for preset tones, the `color-mix()` style builder for
-// raw hex, the kind→tone fallback table, and dispatches between them
-// via `resolveUpstreamColor`. Consumers pass the record's `(kind, color)`
-// tuple and receive either a class-string bundle or an inline-style
-// bundle depending on which branch the record's color lands on.
-
 import type { UpstreamColor, UpstreamColorPreset, UpstreamProviderKind } from '../../api/types.ts';
 
 // Kind default tone — the fallback the resolver picks when a row has no
@@ -25,7 +18,7 @@ export const KIND_DEFAULT_TONES: Record<UpstreamProviderKind, UpstreamColorPrese
 // every entry stays statically visible and survives purge. A separate `text`
 // variant covers name-only surfaces (e.g. RequestList) that need color
 // without the badge frame.
-export const TONE_CLASSES: Record<UpstreamColorPreset, { badge: string; swatch: string; text: string }> = {
+const TONE_CLASSES: Record<UpstreamColorPreset, { badge: string; swatch: string; text: string }> = {
   amber: {
     badge: 'border-accent-amber/30 bg-accent-amber/10 text-accent-amber',
     swatch: 'bg-accent-amber/15 text-accent-amber',
@@ -58,7 +51,7 @@ export const TONE_CLASSES: Record<UpstreamColorPreset, { badge: string; swatch: 
   },
 };
 
-export type UpstreamColorResolved =
+type UpstreamColorResolved =
   | { mode: 'class'; badgeClass: string; swatchClass: string; textClass: string }
   | { mode: 'style'; badgeStyle: Record<string, string>; swatchStyle: Record<string, string>; textStyle: Record<string, string> };
 
@@ -83,15 +76,12 @@ const styleFor = (hex: string): Extract<UpstreamColorResolved, { mode: 'style' }
   },
 });
 
-// Resolve an upstream's badge color into either a class-string bundle
-// (preset branch) or an inline-style bundle (raw HEX branch).
-// `color === null` falls back to the kind default from `KIND_DEFAULT_TONES`.
 export const resolveUpstreamColor = (input: {
   kind: UpstreamProviderKind;
   color: UpstreamColor | null;
 }): UpstreamColorResolved => {
   const raw = input.color;
-  if (raw !== null && raw.startsWith('#')) return styleFor(raw);
+  if (raw?.startsWith('#')) return styleFor(raw);
   const preset: UpstreamColorPreset = raw === null ? KIND_DEFAULT_TONES[input.kind] : (raw as UpstreamColorPreset);
   const classes = TONE_CLASSES[preset];
   return {

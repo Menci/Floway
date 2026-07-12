@@ -13,9 +13,9 @@
 
 import { computed, ref, useTemplateRef, watch } from 'vue';
 
-import UpstreamBadge from './UpstreamBadge.vue';
 import { providerMeta } from './provider-meta.ts';
 import { KIND_DEFAULT_TONES } from './upstream-paint.ts';
+import UpstreamBadge from './UpstreamBadge.vue';
 import type { UpstreamColor, UpstreamColorPreset, UpstreamProviderKind } from '../../api/types.ts';
 import { clamp01, HEX_RE, hexToRgb, hsvToRgb, rgbToHex, rgbToHsv } from '../../utils/color.ts';
 import { UPSTREAM_COLOR_PRESETS } from '@floway-dev/provider/model';
@@ -28,7 +28,7 @@ const props = defineProps<{
 }>();
 
 const isHex = (v: UpstreamColor | null): v is `#${string}` =>
-  v !== null && v.startsWith('#');
+  v?.startsWith('#') ?? false;
 
 // Picker state. When `model` is a hex, seed HSV from it; otherwise start on
 // a pleasant cyan default so the first custom-mode open shows a live colour
@@ -132,8 +132,6 @@ const onSvPointerMove = (e: PointerEvent): void => {
   svUpdateFromEvent(e);
 };
 
-// Hue strip drag: horizontal position → hue (0..360). Same pointer-capture
-// pattern as the SV pad.
 const hueStrip = useTemplateRef<HTMLDivElement>('hueStrip');
 
 const hueUpdateFromEvent = (e: PointerEvent): void => {

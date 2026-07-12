@@ -7,8 +7,6 @@
 import type { UpstreamColor, UpstreamProviderKind } from '@floway-dev/provider';
 import { assertUpstreamProviderKind, normalizeUpstreamColor } from '@floway-dev/provider';
 
-// Narrow the raw `provider` column value to the `UpstreamProviderKind`
-// enum, re-throwing with the row id attributed for diagnostics.
 export const parseUpstreamKind = (id: string, value: string | null): UpstreamProviderKind => {
   try {
     return assertUpstreamProviderKind(value ?? '');
@@ -17,8 +15,6 @@ export const parseUpstreamKind = (id: string, value: string | null): UpstreamPro
   }
 };
 
-// Parse the raw `color` column value into the domain shape, re-throwing
-// with the row id attributed for diagnostics.
 export const parseUpstreamColor = (id: string, value: string | null): UpstreamColor | null => {
   try {
     return normalizeUpstreamColor(value);

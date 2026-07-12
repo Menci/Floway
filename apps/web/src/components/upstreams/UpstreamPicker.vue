@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 
-import type { UpstreamColor, UpstreamProviderKind } from '../../api/types.ts';
-import type { UpstreamOption } from '../../composables/useUpstreamOptions.ts';
 import { providerMeta } from './provider-meta.ts';
 import UpstreamBadge from './UpstreamBadge.vue';
+import type { UpstreamColor, UpstreamProviderKind } from '../../api/types.ts';
+import type { UpstreamOption } from '../../composables/useUpstreamOptions.ts';
 import { Sortable, Switch } from '@floway-dev/ui';
 
 export interface UpstreamPickerValue {
