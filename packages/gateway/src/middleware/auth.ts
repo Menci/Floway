@@ -3,7 +3,7 @@ import type { Context, Next } from 'hono';
 import { getRepo } from '../repo/index.ts';
 import type { ApiKey, User } from '../repo/types.ts';
 import { timingSafeEqual } from '../shared/passwords.ts';
-import { getEnv } from '@floway-dev/platform';
+import { getEnvOptional } from '@floway-dev/platform';
 
 const PUBLIC_PATHS = new Set(['/api/health', '/favicon.ico']);
 const AUTH_VALIDATE_PATHS = new Set(['/auth/login']);
@@ -56,7 +56,7 @@ export const authMiddleware = async (c: AuthedContext, next: Next) => {
   const rawKey = extractApiKey(c);
   if (!rawKey) return c.json({ error: 'Unauthorized' }, 401);
 
-  const adminKey = getEnv('ADMIN_KEY');
+  const adminKey = getEnvOptional('ADMIN_KEY', '');
   if (adminKey) {
     const utf8 = new TextEncoder();
     if (timingSafeEqual(utf8.encode(rawKey), utf8.encode(adminKey))) {
