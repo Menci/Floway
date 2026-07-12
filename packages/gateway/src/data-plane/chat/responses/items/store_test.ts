@@ -140,7 +140,6 @@ test('snapshots with upstream-owned metadata-only rows remain replayable', async
 test('createNonResponsesSourceStore reads items for affinity but does not write snapshots', async () => {
   const repo = new InMemoryRepo();
   initRepo(repo);
-  const inputItem: ResponsesInputItem = { type: 'message', id: 'history_1', role: 'assistant', content: [] };
   const item = storedRow({
     id: createStoredResponsesItemId('message'),
     itemType: 'message',
@@ -218,6 +217,7 @@ test('createResponsesHttpStore with store=true writes snapshots', async () => {
 test('committing a snapshot refreshes durable history without rewriting it', async () => {
   const repo = new InMemoryRepo();
   initRepo(repo);
+  const inputItem: ResponsesInputItem = { type: 'message', id: 'history_1', role: 'assistant', content: [] };
   const item = storedRow({
     id: createStoredResponsesItemId('message'),
     itemType: 'message',
