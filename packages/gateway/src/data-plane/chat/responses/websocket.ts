@@ -4,6 +4,7 @@ import { createResponsesWsSession } from './items/store.ts';
 import { PreviousResponseNotFoundError } from './serve-prep.ts';
 import { responsesServe } from './serve.ts';
 import { tokenUsageFromResponsesResult } from './usage.ts';
+import type { DumpAccumulator } from '../../../dump/accumulator.ts';
 import { apiKeyFromContext, authenticateApiKey, type AuthedContext } from '../../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
@@ -28,6 +29,8 @@ interface ResponsesWebSocketSocket {
   readonly readyState: number;
   send(data: string): void;
 }
+
+const UTF8_ENCODER = new TextEncoder();
 
 export interface ResponsesWebSocketEvents {
   onOpen?(event: Event, socket: ResponsesWebSocketSocket): void;
@@ -250,7 +253,7 @@ const handleClientMessage = async (
           type: 'invalid_request_error',
           param: 'previous_response_id',
           code: 'previous_response_not_found',
-        }, eventId);
+        }, eventId, ctx.dump);
         ctx.dump?.failed(error);
         ctx.dump?.finalize(400, []);
         return;
@@ -269,7 +272,7 @@ const handleClientMessage = async (
       }, eventId);
       return;
     }
-    sendError(socket, 500, serverErrorEnvelope(error), eventId);
+    sendError(socket, 500, serverErrorEnvelope(error), eventId, ctx?.dump);
     if (ctx !== undefined) {
       // Mid-attempt throws (interceptor bug, translation error, provider-layer JS
       // exception that bypassed tryCatchChatServeFailure) never reach the
@@ -323,16 +326,16 @@ const respondResponsesWebSocket = async (input: {
   if (result.type === 'api-error') {
     recordFailedRequest(ctx, result.performance);
     ctx.dump?.error(result.source, result.upstream);
+    sendError(socket, result.status, normalizeErrorBody(parseMaybeJson(result.body, result.headers), result.status), eventId, ctx.dump);
     ctx.dump?.finalize(result.status, []);
-    sendError(socket, result.status, normalizeErrorBody(parseMaybeJson(result.body, result.headers), result.status), eventId);
     return;
   }
 
   if (result.type === 'internal-error') {
     recordFailedRequest(ctx, result.performance);
     ctx.dump?.failed(result.error.message);
+    sendError(socket, result.status, internalErrorEnvelope(result.error), eventId, ctx.dump);
     ctx.dump?.finalize(result.status, []);
-    sendError(socket, result.status, internalErrorEnvelope(result.error), eventId);
     return;
   }
 
@@ -360,7 +363,7 @@ const respondResponsesWebSocket = async (input: {
         const next = await nextFrameOrKeepAlive(pendingNext);
 
         if (next.type === 'keep-alive') {
-          if (!sendJson(socket, { type: 'ping' }, eventId)) {
+          if (!sendJson(socket, { type: 'ping' }, eventId, ctx.dump)) {
             stopForDownstream();
             return;
           }
@@ -392,7 +395,7 @@ const respondResponsesWebSocket = async (input: {
         if (terminalEvent !== undefined) continue;
 
         if (isResponsesTerminalEvent(event)) {
-          if (!sendJson(socket, event, eventId)) {
+          if (!sendJson(socket, event, eventId, ctx.dump)) {
             completion = 'cancel';
             continue;
           }
@@ -401,7 +404,7 @@ const respondResponsesWebSocket = async (input: {
           continue;
         }
 
-        if (!sendJson(socket, event, eventId)) {
+        if (!sendJson(socket, event, eventId, ctx.dump)) {
           stopForDownstream();
           return;
         }
@@ -418,7 +421,7 @@ const respondResponsesWebSocket = async (input: {
       throw new Error(RESPONSES_MISSING_TERMINAL_MESSAGE);
     }
     const done = responseDoneSummary(terminalEvent);
-    if (done !== null && !sendJson(socket, { type: 'response.done', response: done }, eventId)) {
+    if (done !== null && !sendJson(socket, { type: 'response.done', response: done }, eventId, ctx.dump)) {
       completion = 'cancel';
       return;
     }
@@ -429,7 +432,7 @@ const respondResponsesWebSocket = async (input: {
       return;
     }
     state.failed = true;
-    sendError(socket, 500, serverErrorEnvelope(error), eventId);
+    sendError(socket, 500, serverErrorEnvelope(error), eventId, ctx.dump);
   } finally {
     const metadata = await eventResultMetadata(result);
     const failed = state.failedAfter(completion);
@@ -514,17 +517,30 @@ const normalizeErrorBody = (body: unknown, statusCode: number): Record<string, u
   };
 };
 
-const sendError = (socket: ResponsesWebSocketSocket, statusCode: number, error: Record<string, unknown>, eventId?: string): void => {
-  sendJson(socket, { type: 'error', status_code: statusCode, error }, eventId);
+const sendError = (
+  socket: ResponsesWebSocketSocket,
+  statusCode: number,
+  error: Record<string, unknown>,
+  eventId?: string,
+  dump?: DumpAccumulator | null,
+): void => {
+  sendJson(socket, { type: 'error', status_code: statusCode, error }, eventId, dump);
 };
 
-const sendJson = (socket: ResponsesWebSocketSocket, value: unknown, eventId?: string): boolean => {
+const sendJson = (
+  socket: ResponsesWebSocketSocket,
+  value: unknown,
+  eventId?: string,
+  dump?: DumpAccumulator | null,
+): boolean => {
   if (socket.readyState !== 1) return false;
   const payload = eventId === undefined || !value || typeof value !== 'object'
     ? value
     : { ...value, event_id: eventId };
+  const text = JSON.stringify(payload);
   try {
-    socket.send(JSON.stringify(payload));
+    socket.send(text);
+    dump?.recordResponsePayload(UTF8_ENCODER.encode(text).byteLength);
     return true;
   } catch {
     return false;

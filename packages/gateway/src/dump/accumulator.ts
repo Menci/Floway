@@ -97,6 +97,7 @@ const resolveUpstreamRef = async (id: string | null): Promise<DumpUpstreamRef | 
 
 export class DumpAccumulator {
   private readonly events: DumpStreamEvent[] = [];
+  private responsePayloadBytes = 0;
   private model: string | null = null;
   private upstreamId: string | null = null;
   private inputTokens: number | null = null;
@@ -133,6 +134,10 @@ export class DumpAccumulator {
     this.events.push({ frame, ts: Date.now() - this.startedAt });
   }
 
+  recordResponsePayload(byteLength: number): void {
+    this.responsePayloadBytes += byteLength;
+  }
+
   success(identity: TelemetryModelIdentity, usage: TokenUsage | null): void {
     this.model = identity.model;
     this.upstreamId = identity.upstream;
@@ -147,8 +152,8 @@ export class DumpAccumulator {
   //
   //   • `(status, headers)` — no HTTP Response object to tee. The WebSocket
   //     Responses path uses this: its "response" is the stream of frames
-  //     already captured via `frame()` and the terminal status is supplied
-  //     by the caller.
+  //     already captured via `frame()`, while the send seam records their
+  //     actual UTF-8 payload bytes via `recordResponsePayload()`.
   //   • `(response)` — tees the response body so the client gets bytes
   //     flowing while a background reader accumulates the other half. The
   //     returned Response streams the client-side bytes; status, statusText,
@@ -244,7 +249,7 @@ export class DumpAccumulator {
       inputTokens: this.inputTokens,
       outputTokens: this.outputTokens,
       requestBytes: this.requestSnapshot.body.byteLength,
-      responseBytes: response.bytes.byteLength,
+      responseBytes: response.bytes.byteLength + this.responsePayloadBytes,
       durationMs: completedAt - this.startedAt,
       // Precedence: an explicit error stamp from the respond path wins;
       // otherwise a request-body read failure (operator-side payload didn't
