@@ -165,10 +165,11 @@ function Stop-FlowayProcessTree {
 # parent process and its identically named environment variables were removed.
 # The official installer therefore cannot read the credential.
 function Invoke-FlowayPowerShellBody {
-  param([string]$Body, [int]$TimeoutSeconds)
+  param([string]$Body, [int]$TimeoutSeconds, [switch]$BypassExecutionPolicy)
   $startInfo = New-Object System.Diagnostics.ProcessStartInfo
   $startInfo.FileName = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
-  $startInfo.Arguments = '-NoProfile -NonInteractive -Command -'
+  $executionPolicy = if ($BypassExecutionPolicy) { '-ExecutionPolicy Bypass ' } else { '' }
+  $startInfo.Arguments = "-NoProfile -NonInteractive ${executionPolicy}-Command -"
   $startInfo.UseShellExecute = $false
   $startInfo.CreateNoWindow = $true
   $startInfo.RedirectStandardInput = $true
@@ -197,7 +198,7 @@ function Invoke-FlowayPowerShellBody {
 # Download an installer, refuse anything that is not a script (region blocks and
 # captive portals serve HTML in place of the installer), then run it.
 function Invoke-FlowayRemoteInstaller {
-  param([string]$Uri)
+  param([string]$Uri, [switch]$BypassExecutionPolicy)
   $response = Invoke-WebRequest -Uri $Uri -UseBasicParsing -TimeoutSec 60
   $body = [string]$response.Content
   $contentType = [string]$response.Headers['Content-Type']
@@ -206,7 +207,7 @@ function Invoke-FlowayRemoteInstaller {
     Stop-FlowaySetup "the installer download was HTML or empty, not an executable script (a login or region-block page?)."
   }
   $timeoutSeconds = if ($env:FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS) { [int]$env:FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS } else { 120 }
-  Invoke-FlowayPowerShellBody -Body $body -TimeoutSeconds $timeoutSeconds
+  Invoke-FlowayPowerShellBody -Body $body -TimeoutSeconds $timeoutSeconds -BypassExecutionPolicy:$BypassExecutionPolicy
 }
 
 function Get-FlowayCliExe {
@@ -496,9 +497,11 @@ function Install-FlowayCodex {
       if ($installer.ExitCode -ne 0) { Stop-FlowaySetup "the test codex installer hook failed." }
       return
     }
-    # Ref: https://github.com/openai/codex README ("irm https://chatgpt.com/codex/install.ps1 | iex").
+    # Match Codex's documented Windows invocation, including its process-scoped
+    # ExecutionPolicy override. This does not persist a policy change.
+    # Ref: https://github.com/openai/codex/blob/9e552e9d15ba52bed7077d5357f3e18e330f8f38/README.md#L23-L26
     $installerUri = if ($env:FLOWAY_INSTALLER_TEST_CODEX_URL) { $env:FLOWAY_INSTALLER_TEST_CODEX_URL } else { 'https://chatgpt.com/codex/install.ps1' }
-    Invoke-FlowayRemoteInstaller -Uri $installerUri
+    Invoke-FlowayRemoteInstaller -Uri $installerUri -BypassExecutionPolicy
   } finally {
     if ($hadNonInteractive) { $env:CODEX_NON_INTERACTIVE = $previousNonInteractive }
     else { Remove-Item Env:CODEX_NON_INTERACTIVE -ErrorAction SilentlyContinue }

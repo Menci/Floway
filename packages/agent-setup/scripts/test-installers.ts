@@ -351,6 +351,7 @@ const PS1_FAKE_INSTALLER_BODY = (binName: string, src: string): string =>
   `if ($env:FLOWAY_API_KEY) { throw 'installer inherited secret' }
 if ($env:CODEX_NON_INTERACTIVE -ne 'true' -and '${binName}' -eq 'codex') { throw 'codex installer did not receive CODEX_NON_INTERACTIVE=true' }
 if ($env:FAKE_INSTALLER_OBSERVED_NON_INTERACTIVE -and '${binName}' -eq 'codex') { [IO.File]::WriteAllText($env:FAKE_INSTALLER_OBSERVED_NON_INTERACTIVE, [string]$env:CODEX_NON_INTERACTIVE) }
+if ($env:FAKE_INSTALLER_OBSERVED_COMMAND_LINE -and '${binName}' -eq 'codex') { [IO.File]::WriteAllText($env:FAKE_INSTALLER_OBSERVED_COMMAND_LINE, [Environment]::CommandLine) }
 if ([int]$env:FAKE_INSTALLER_SLEEP -gt 0) {
   $processInfo = New-Object System.Diagnostics.ProcessStartInfo
   $processInfo.FileName = '/bin/sleep'
@@ -586,6 +587,7 @@ const codexEnv = (options: RunOptions): Record<string, string> => {
     FAKE_CODEX_APP_SERVER_MODE: options.fakeCodexAppServerMode ?? 'ok',
     FAKE_CODEX_BATCH_DELAY: String(options.fakeCodexBatchDelay ?? 0),
     FAKE_INSTALLER_OBSERVED_NON_INTERACTIVE: join(options.workspace.root, 'installer-non-interactive.txt'),
+    FAKE_INSTALLER_OBSERVED_COMMAND_LINE: join(options.workspace.root, 'installer-command-line.txt'),
   };
   if (options.ambientCodexNonInteractive !== undefined) {
     env.CODEX_NON_INTERACTIVE = options.ambientCodexNonInteractive;
@@ -2307,6 +2309,8 @@ test('codex', 'PowerShell: missing CLI triggers the installer', async t => {
   const run = await runPowerShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url });
   t.equal(run.code, 0, `should succeed after install:\n${run.combined}`);
   t.ok(existsSync(installerMarker(ws)), 'the installer runs when codex is absent');
+  const installerCommandLine = readFileSync(join(ws.root, 'installer-command-line.txt'), 'utf8');
+  t.includes(installerCommandLine, '-ExecutionPolicy Bypass', 'the Codex installer subprocess matches the documented process-scoped execution-policy override');
   assertCodexBaseEdits(t, ws, modelServer.url);
 });
 
