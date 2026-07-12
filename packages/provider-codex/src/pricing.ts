@@ -8,7 +8,7 @@
 // https://github.com/anomalyco/models.dev/blob/8e6d393c01cb42d41a92f18725eef545e7190efb/packages/core/src/schema.ts
 // .agents/skills/fetching-models-pricing/
 
-import { basePricing, modelPricing, pricingCell, type ModelPricing } from '@floway-dev/protocols/common';
+import { modelPricing, pricingCell, type ModelPricing } from '@floway-dev/protocols/common';
 
 const GPT_5_4_PRICING = modelPricing(
   pricingCell({ input: 2.5, input_cache_read: 0.25, output: 15 }),
