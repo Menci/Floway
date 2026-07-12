@@ -2303,15 +2303,26 @@ test('codex', 'PowerShell: the API key never appears in output and never reaches
   t.equal(readCodexAuth(ws).tokens.access_token, SENTINEL_KEY, 'the key was actually staged into auth.json');
 });
 
-test('codex', 'PowerShell: missing CLI triggers the installer', async t => {
+test('codex', 'PowerShell: missing CLI triggers the documented remote installer invocation', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
-  const run = await runPowerShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url });
-  t.equal(run.code, 0, `should succeed after install:\n${run.combined}`);
-  t.ok(existsSync(installerMarker(ws)), 'the installer runs when codex is absent');
-  const installerCommandLine = readFileSync(join(ws.root, 'installer-command-line.txt'), 'utf8');
-  t.includes(installerCommandLine, '-ExecutionPolicy Bypass', 'the Codex installer subprocess matches the documented process-scoped execution-policy override');
-  assertCodexBaseEdits(t, ws, modelServer.url);
+  modelServer.mode = 'installer-codex-ps1';
+  try {
+    const run = await runPowerShellInstaller({
+      workspace: ws,
+      configuration: codexConfig(),
+      baseUrl: modelServer.url,
+      withCodexInstallHook: false,
+      codexInstallerUrl: `${modelServer.url}/install-codex.ps1`,
+    });
+    t.equal(run.code, 0, `should succeed after install:\n${run.combined}`);
+    t.ok(existsSync(installerMarker(ws)), 'the installer runs when codex is absent');
+    const installerCommandLine = readFileSync(join(ws.root, 'installer-command-line.txt'), 'utf8');
+    t.includes(installerCommandLine, '-ExecutionPolicy Bypass', 'the Codex installer subprocess matches the documented process-scoped execution-policy override');
+    assertCodexBaseEdits(t, ws, modelServer.url);
+  } finally {
+    modelServer.mode = 'ok';
+  }
 });
 
 test('codex', 'PowerShell: CODEX_NON_INTERACTIVE is scoped to installer invocation and removed afterward', async t => {
