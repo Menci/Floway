@@ -59,6 +59,7 @@ defineEmits<{
   'save-and-open-edit': [];
   error: [message: string];
   'update:model-prefix-invalid': [invalid: boolean];
+  'update:color-invalid': [invalid: boolean];
 }>();
 
 const kind = computed(() => props.draft.kind);
@@ -135,7 +136,7 @@ onBeforeUnmount(() => floorObserver?.disconnect());
 
       <section class="shrink-0">
         <label class="mb-1.5 block text-xs font-medium text-gray-500">Color</label>
-        <ColorPicker v-model="color" :kind="kind" />
+        <ColorPicker v-model="color" :kind="kind" @update:invalid="v => $emit('update:color-invalid', v)" />
       </section>
 
       <!-- Proxy chain sits at the top so the operator decides on egress
