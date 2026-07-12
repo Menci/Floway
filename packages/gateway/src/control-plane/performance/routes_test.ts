@@ -17,9 +17,8 @@ test('/api/performance/overview modelRows carry backend-aggregated base-model pe
   };
 
   // 90 fast samples (ttftMs=100 → bucket [0, 100]) + 10 slow samples (ttftMs=300 → bucket [200, 300]).
-  // Rank(p50, 100) = 50 lands in the first bucket → arithmetic midpoint 100/2 = 50 (geometric midpoint
-  // is undefined when lower=0). Rank(p95, 100) = 95 lands in [200, 300] → geometric midpoint sqrt(60000).
-  // Every tpotUs=500 falls in [0, 500] → arithmetic midpoint 250.
+  // TTFT p50 is local rank 50 of 90; p95 and p99 are local ranks 5 and 9 of
+  // 10. Every TPOT sample shares [0, 500], so its local rank is the global rank.
   for (let i = 0; i < 90; i++) {
     await repo.performance.recordSample({ ...sample, ttftMs: 100 });
   }
@@ -31,7 +30,6 @@ test('/api/performance/overview modelRows carry backend-aggregated base-model pe
 
   assertEquals(response.status, 200);
   const body = await response.json();
-  const slowMid = Math.sqrt(200 * 300);
   assertEquals(body.axes.model, [
     {
       bucket: 'all',
@@ -41,12 +39,12 @@ test('/api/performance/overview modelRows carry backend-aggregated base-model pe
       ttftSamples: 100,
       tpotSamples: 100,
       neutral: 0,
-      ttftMsP50: 50,
-      ttftMsP95: slowMid,
-      ttftMsP99: slowMid,
-      tpotUsP50: 250,
-      tpotUsP95: 250,
-      tpotUsP99: 250,
+      ttftMsP50: 100 * 50 / 91,
+      ttftMsP95: 200 + 100 * 5 / 11,
+      ttftMsP99: 200 + 100 * 9 / 11,
+      tpotUsP50: 500 * 50 / 101,
+      tpotUsP95: 500 * 95 / 101,
+      tpotUsP99: 500 * 99 / 101,
     },
   ]);
 });
