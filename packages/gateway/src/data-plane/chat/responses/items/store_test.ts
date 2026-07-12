@@ -217,9 +217,10 @@ test('createResponsesHttpStore with store=true writes snapshots', async () => {
 test('committing a snapshot refreshes durable history without rewriting it', async () => {
   const repo = new InMemoryRepo();
   initRepo(repo);
-  const inputItem: ResponsesInputItem = { type: 'message', id: 'history_1', role: 'assistant', content: [] };
+  const itemId = createStoredResponsesItemId('message');
+  const inputItem: ResponsesInputItem = { type: 'message', id: itemId, role: 'assistant', content: [] };
   const item = storedRow({
-    id: createStoredResponsesItemId('message'),
+    id: itemId,
     itemType: 'message',
     upstreamId: 'up_history',
     upstreamItemId: 'raw_history',
