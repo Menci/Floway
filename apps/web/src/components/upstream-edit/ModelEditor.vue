@@ -7,7 +7,7 @@ import { defaultEndpointsForKind, publicIdOf, titleFor, type Row } from './model
 import type { AnnouncedMetadata, BillingDimension, ModelKind, ModelPricing, UpstreamChatConfig, UpstreamModelConfig } from '../../api/types.ts';
 import { parseOptionalNumber } from '../../utils/parse-optional-number.ts';
 import ChatMetadataEditor from '../shared/ChatMetadataEditor.vue';
-import { PRICING_AXES, canonicalPricingSelectorKey, type PricingCoordinateValue, type PricingSelector, type PricingThresholdCoordinate } from '@floway-dev/protocols/common';
+import { PRICING_AXES, canonicalPricingSelectorKey, type ModelPricing as ProtocolModelPricing, type PricingCoordinateValue, type PricingSelector, type PricingThresholdCoordinate, validateModelPricing } from '@floway-dev/protocols/common';
 import type { Flag, FlagDefaults, FlagOverrides } from '@floway-dev/provider/flags';
 import { Button, Input, Select, Switch } from '@floway-dev/ui';
 
@@ -119,8 +119,18 @@ const hasValidSelector = (draft: PricingCellDraft): boolean => {
   }
 };
 
-const isPricingValid = computed(() => pricingCellDrafts.value.every(draft =>
-  hasRates(draft) && hasValidSelector(draft) && !duplicatePricingCoordinates.value.has(coordinateKey(draft))));
+const isPricingValid = computed(() => {
+  if (!pricingCellDrafts.value.every(draft => hasRates(draft) && hasValidSelector(draft) && !duplicatePricingCoordinates.value.has(coordinateKey(draft)))) return false;
+  if (pricingCellDrafts.value.length === 0) return true;
+  try {
+    validateModelPricing({
+      cells: pricingCellDrafts.value.map(draft => ({ selector: compactSelector(draft), rates: draft.rates })),
+    } as ProtocolModelPricing);
+    return true;
+  } catch {
+    return false;
+  }
+});
 
 const writePricingCells = (drafts: readonly PricingCellDraft[]) => {
   if (!config.value) return;
