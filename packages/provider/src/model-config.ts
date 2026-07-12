@@ -109,13 +109,6 @@ export const flagOverridesField = (value: unknown, label: string): FlagOverrides
   });
 };
 
-const nonNegativeNumberField = (value: unknown, label: string): number => {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
-    throw new Error(`Malformed ${label}: must be a finite non-negative number`);
-  }
-  return value;
-};
-
 export const pricingField = (value: unknown, label: string): ModelPricing | undefined => {
   const record = optionalMetadataRecord(value, label);
   if (!record) return undefined;
