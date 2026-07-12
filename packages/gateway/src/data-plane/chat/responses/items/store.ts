@@ -401,10 +401,10 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
         const writable = write.durable ? pending.filter(row => this.needsDurableWrite(row)) : pending;
         const payloadUpgrades = writable.filter(row => this.payloadUpgradeIds.has(row.id) && (!write.durable || this.durableItemIds.has(row.id)));
         const inserts = writable.filter(row => !this.payloadUpgradeIds.has(row.id) || (write.durable && !this.durableItemIds.has(row.id)));
-        await Promise.all([
-          write.backing.insertItems(inserts, { durable: write.durable }),
-          write.backing.fillPayloads(payloadUpgrades, { durable: write.durable }),
-        ]);
+        const operations: Promise<unknown>[] = [];
+        if (inserts.length > 0) operations.push(write.backing.insertItems(inserts, { durable: write.durable }));
+        if (payloadUpgrades.length > 0) operations.push(write.backing.fillPayloads(payloadUpgrades, { durable: write.durable }));
+        await Promise.all(operations);
         if (write.durable) {
           for (const row of writable) this.markDurable(row.apiKeyId, row.id);
         }
