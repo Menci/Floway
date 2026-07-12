@@ -17,6 +17,8 @@
 
 import { z } from 'zod';
 
+import { canonicalizePricingSelector } from '@floway-dev/protocols/common';
+
 import { normalizeDisabledPublicModelIds } from '../repo/disabled-public-models.ts';
 import { CUSTOM_API_KEY_MAX_LENGTH, KEY_SOURCES } from '../shared/api-key-tokens.ts';
 import { type FlagOverrides, MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX, normalizeUpstreamColor, parseFlagOverridesWire } from '@floway-dev/provider';
@@ -135,10 +137,13 @@ const upstreamModelSchema = z.object({
   display_name: z.string().optional(),
   cost: z.object({
     cells: z.array(z.object({
-      selector: z.object({
-        serviceTier: z.string().min(1).optional(),
-        inputAboveTokens: z.number().int().positive().safe().optional(),
-      }).optional(),
+      selector: z.record(z.string(), z.unknown()).optional().superRefine((selector, ctx) => {
+        try {
+          canonicalizePricingSelector(selector);
+        } catch (error) {
+          ctx.addIssue({ code: 'custom', message: error instanceof Error ? error.message : String(error) });
+        }
+      }),
       rates: z.object(pricingDimensionShape).refine(rates => Object.values(rates).some(rate => rate !== undefined), { message: 'pricing cell must contain at least one rate' }),
     })).min(1),
   }).optional(),

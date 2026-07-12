@@ -1,5 +1,5 @@
 import { type FlagOverrides, validateFlagOverridesRecord } from './flags.ts';
-import { BILLING_DIMENSIONS, type BillingDimension, type ChatModelInfo, type ModelEndpointKey, type ModelEndpoints, type ModelKind, type Modality, type ModelPricing } from '@floway-dev/protocols/common';
+import { BILLING_DIMENSIONS, canonicalizePricingSelector, type BillingDimension, type ChatModelInfo, type ModelEndpointKey, type ModelEndpoints, type ModelKind, type Modality, type ModelPricing, type PricingSelector, validateModelPricing } from '@floway-dev/protocols/common';
 import { kindForEndpoints } from '@floway-dev/protocols/common';
 
 export type { Modality } from '@floway-dev/protocols/common';
@@ -125,15 +125,13 @@ export const pricingField = (value: unknown, label: string): ModelPricing | unde
   const cells = record.cells.map((rawCell, index) => {
     if (!isRecord(rawCell)) throw new Error(`Malformed ${label}.cells[${index}]: must be an object`);
     const selectorRecord = rawCell.selector === undefined ? undefined : optionalMetadataRecord(rawCell.selector, `${label}.cells[${index}].selector`);
-    const serviceTier = selectorRecord?.serviceTier;
-    if (serviceTier !== undefined && (typeof serviceTier !== 'string' || serviceTier.length === 0)) {
-      throw new Error(`Malformed ${label}.cells[${index}].selector.serviceTier: must be a non-empty string`);
+    let selector: PricingSelector;
+    try {
+      selector = canonicalizePricingSelector(selectorRecord as PricingSelector | undefined);
+    } catch (cause) {
+      throw new Error(`Malformed ${label}.cells[${index}].selector: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
     }
-    const inputAboveTokens = selectorRecord?.inputAboveTokens;
-    if (inputAboveTokens !== undefined && (!Number.isSafeInteger(inputAboveTokens) || (inputAboveTokens as number) <= 0)) {
-      throw new Error(`Malformed ${label}.cells[${index}].selector.inputAboveTokens: must be a positive safe integer`);
-    }
-    const coordinate = `${serviceTier ?? ''}\0${inputAboveTokens ?? ''}`;
+    const coordinate = JSON.stringify(selector);
     if (coordinates.has(coordinate)) throw new Error(`Malformed ${label}.cells: duplicate selector coordinate`);
     coordinates.add(coordinate);
 
@@ -143,13 +141,15 @@ export const pricingField = (value: unknown, label: string): ModelPricing | unde
       if (rawCell.rates[dimension] !== undefined) rates[dimension] = nonNegativeNumberField(rawCell.rates[dimension], `${label}.cells[${index}].rates.${dimension}`);
     }
     if (Object.keys(rates).length === 0) throw new Error(`Malformed ${label}.cells[${index}].rates: must contain at least one rate`);
-    const selector = {
-      ...(serviceTier !== undefined ? { serviceTier } : {}),
-      ...(inputAboveTokens !== undefined ? { inputAboveTokens: inputAboveTokens as number } : {}),
-    };
     return { ...(Object.keys(selector).length > 0 ? { selector } : {}), rates };
   });
-  return { cells };
+  const pricing = { cells };
+  try {
+    validateModelPricing(pricing);
+  } catch (cause) {
+    throw new Error(`Malformed ${label}: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
+  }
+  return pricing;
 };
 
 const MODEL_KINDS: ReadonlySet<ModelKind> = new Set<ModelKind>(['chat', 'embedding', 'image']);
