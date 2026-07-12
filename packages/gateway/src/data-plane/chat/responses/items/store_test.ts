@@ -63,6 +63,27 @@ test('stages programmatic tool items with their documented id prefixes and prese
   assertEquals(rows.map(row => row.payload?.item), input);
 });
 
+test('stages agent and context-compaction items with stable prefixes and preserves every field', async () => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  const input: ResponsesInputItem[] = [
+    { type: 'agent_message', author: '/root/a', recipient: '/root', content: [{ type: 'input_text', text: 'done' }] },
+    { type: 'multi_agent_call', action: 'spawn_agent', arguments: '{}', call_id: 'call_1' },
+    { type: 'multi_agent_call_output', action: 'spawn_agent', call_id: 'call_1', output: [] },
+    { type: 'context_compaction', encrypted_content: 'opaque' },
+  ];
+  const store = createResponsesHttpStore(API_KEY_ID, true);
+
+  await store.stageInputItems(input);
+  await store.commitSnapshot('resp_agents', 'append');
+
+  const snapshot = await repo.responsesSnapshots.lookup(API_KEY_ID, 'resp_agents');
+  assertExists(snapshot);
+  assertEquals(snapshot.itemIds.map(id => id.slice(0, id.indexOf('_'))), ['amsg', 'mac', 'maco', 'cmp']);
+  const rows = await repo.responsesItems.lookupMany(API_KEY_ID, snapshot.itemIds);
+  assertEquals(rows.map(row => row.payload?.item), input);
+});
+
 test('snapshots with non-replayable metadata-only rows load as missing', async () => {
   const repo = new InMemoryRepo();
   initRepo(repo);
