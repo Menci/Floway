@@ -166,11 +166,11 @@ const showEmpty = computed(() => !props.loading && props.records.length === 0 &&
                 <i class="i-lucide-timer size-3" />
                 {{ formatDuration(record.durationMs) }}
               </span>
-              <span class="inline-flex items-center gap-0.5" :title="`Request body ${record.requestBytes} bytes`">
+              <span class="inline-flex items-center gap-0.5" :title="`Request payload ${record.requestBytes} bytes`">
                 <i class="i-lucide-arrow-up size-3" />
                 {{ formatBytes(record.requestBytes) }}
               </span>
-              <span class="inline-flex items-center gap-0.5" :title="`Response body ${record.responseBytes} bytes`">
+              <span class="inline-flex items-center gap-0.5" :title="`Response payload ${record.responseBytes} bytes`">
                 <i class="i-lucide-arrow-down size-3" />
                 {{ formatBytes(record.responseBytes) }}
               </span>
