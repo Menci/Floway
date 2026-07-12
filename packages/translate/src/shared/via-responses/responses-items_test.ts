@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { chatCompletionsViaResponsesItemsView, geminiViaResponsesItemsView, messagesViaResponsesItemsView, responsesItemsView } from './responses-items.ts';
+import { chatCompletionsViaResponsesItemsView, canonicalizeResponsesPayload, geminiViaResponsesItemsView, messagesViaResponsesItemsView, responsesItemsView } from './responses-items.ts';
 import { assertEquals } from '../../test-assert.ts';
 import { packReasoningSignature } from '../messages-and-responses/reasoning.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
@@ -181,4 +181,22 @@ test('mapAsResponsesItems does not treat Gemini thought signatures as Responses 
   assertEquals(calls, 0);
   assertEquals(mapped, payload.contents);
   assertEquals(mapped === payload.contents, false);
+});
+
+test('canonicalizeResponsesPayload preserves reasoning.context verbatim, including future modes', () => {
+  const canonicalCurrent = canonicalizeResponsesPayload({
+    model: 'gpt-test',
+    input: [{ type: 'message', role: 'user', content: 'hi' }],
+    reasoning: { effort: 'high', context: 'current_turn' },
+  });
+  assertEquals(canonicalCurrent.reasoning, { effort: 'high', context: 'current_turn' });
+
+  // An unknown/future context string rides through the wire→canonical boundary
+  // untouched — the upstream owns the accept/reject decision.
+  const canonicalFuture = canonicalizeResponsesPayload({
+    model: 'gpt-test',
+    input: 'hi',
+    reasoning: { context: 'future_mode' },
+  });
+  assertEquals(canonicalFuture.reasoning, { context: 'future_mode' });
 });

@@ -6,7 +6,7 @@ import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import type { StoredResponsesItem } from '../../../../repo/types.ts';
 import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
-import { assertEquals, assertExists } from '@floway-dev/test-utils';
+import { assert, assertEquals, assertExists } from '@floway-dev/test-utils';
 import { responsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
 const API_KEY_ID = 'key_stateful_store';
@@ -22,6 +22,45 @@ const storedRow = (overrides: Partial<StoredResponsesItem> & Pick<StoredResponse
   createdAt: 1_000,
   refreshedAt: 1_000,
   ...overrides,
+});
+
+test('stages programmatic tool items with their documented id prefixes and preserves every field', async () => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  const input: ResponsesInputItem[] = [
+    {
+      type: 'additional_tools',
+      role: 'developer',
+      tools: [{ type: 'custom', name: 'exec', format: { type: 'text' } }],
+    },
+    {
+      type: 'program',
+      id: 'program_input_1',
+      call_id: 'program_call_1',
+      code: 'await exec("hello")',
+      fingerprint: 'opaque-fingerprint',
+    },
+    {
+      type: 'program_output',
+      id: 'program_output_input_1',
+      call_id: 'program_call_1',
+      result: 'hello',
+      status: 'completed',
+    },
+  ];
+  const store = createResponsesHttpStore(API_KEY_ID, true);
+
+  await store.stageInputItems(input);
+  await store.commitSnapshot('resp_programmatic', 'append');
+
+  const snapshot = await repo.responsesSnapshots.lookup(API_KEY_ID, 'resp_programmatic');
+  assertExists(snapshot);
+  assertEquals(snapshot.itemIds.length, 3);
+  assert(snapshot.itemIds[0].startsWith('at_'));
+  assert(snapshot.itemIds[1].startsWith('prog_'));
+  assert(snapshot.itemIds[2].startsWith('prog_out_'));
+  const rows = await repo.responsesItems.lookupMany(API_KEY_ID, snapshot.itemIds);
+  assertEquals(rows.map(row => row.payload?.item), input);
 });
 
 test('snapshots with non-replayable metadata-only rows load as missing', async () => {

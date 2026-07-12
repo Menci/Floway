@@ -43,6 +43,7 @@ const defaultCandidates = vi.hoisted(() => () => [{
     name: 'mock-image',
     disabledPublicModelIds: [],
     modelPrefix: null,
+    color: null,
     supportsResponsesItemReference: false,
     instance: {
       getPricingForModelKey: () => null,
@@ -178,6 +179,7 @@ beforeEach(async () => {
     disabledPublicModelIds: [],
     proxyFallbackList: [],
     modelPrefix: null,
+    color: null,
     config: {
       baseUrl: 'https://unused.example.com',
       authStyle: 'bearer',

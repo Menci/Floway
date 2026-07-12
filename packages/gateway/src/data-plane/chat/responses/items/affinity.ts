@@ -26,7 +26,10 @@ const classifyStoredResponsesAffinity = (
 ): StoredResponsesAffinity => {
   if (itemType === 'item_reference' && row.payload === null) return 'forcing';
   if (!isUpstreamOwned(row)) return 'non_affinity';
-  if (row.itemType === 'compaction') return 'forcing';
+  // Direct Copilot probes show the opaque item id on each program variant is
+  // account-bound: same-account replay succeeds after token refresh, while
+  // cross-account replay fails with "item ID does not belong to this connection".
+  if (row.itemType === 'compaction' || row.itemType === 'program' || row.itemType === 'program_output') return 'forcing';
   if (row.itemType === 'reasoning') return 'downgradable';
   return 'portable';
 };

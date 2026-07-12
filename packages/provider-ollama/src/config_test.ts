@@ -22,6 +22,7 @@ const baseRecord: UpstreamRecord = {
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
+  color: null,
 };
 
 test('assertOllamaUpstreamRecord parses a minimum cloud config', () => {

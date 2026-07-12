@@ -1,8 +1,10 @@
+import { parseUpstreamColor, parseUpstreamKind } from './upstream-parse.ts';
 import type { DumpListOptions, DumpStore } from '../dump/store-contract.ts';
 import type {
   DumpMetadata,
   DumpRecordId,
   DumpStreamEvent,
+  DumpUpstreamRef,
   StoredDumpRecord,
   StoredDumpRequest,
   StoredDumpResponse,
@@ -25,6 +27,7 @@ interface DumpRow {
   upstream_id: string | null;
   upstream_name: string | null;
   upstream_kind: string | null;
+  upstream_color: string | null;
   meta_json: string;
   request_headers_json: string;
   response_headers_json: string | null;
@@ -36,9 +39,20 @@ interface DumpRow {
 // (auth/validation reject, no candidate matched); a non-null id with a null
 // joined `upstream_name` means the referenced upstream was since deleted.
 // `upstreams.name`/`provider` are NOT NULL so checking name alone suffices.
-const hydrateUpstream = (row: Pick<DumpRow, 'upstream_id' | 'upstream_name' | 'upstream_kind'>) => {
+// `upstream_color` is nullable in the upstreams table itself (NULL means
+// "inherit the frontend's kind default"). Kind and color are both validated
+// at read time via the shared `upstream-parse.ts` helpers — the write path
+// already rejects bad values, but a manual DB edit / migration slip would
+// otherwise poison every read that renders the badge. Same policy the SQL
+// repo's own hydrator uses.
+const hydrateUpstream = (row: Pick<DumpRow, 'upstream_id' | 'upstream_name' | 'upstream_kind' | 'upstream_color'>): DumpUpstreamRef | null => {
   if (row.upstream_id === null || row.upstream_name === null) return null;
-  return { id: row.upstream_id, name: row.upstream_name, kind: row.upstream_kind! };
+  return {
+    id: row.upstream_id,
+    name: row.upstream_name,
+    kind: parseUpstreamKind(row.upstream_id, row.upstream_kind),
+    color: parseUpstreamColor(row.upstream_id, row.upstream_color),
+  };
 };
 
 const hourBucket = (ms: number): string => {
@@ -145,7 +159,7 @@ export class FileDumpStore implements DumpStore {
     // millisecond still page deterministically — ULID lex order matches
     // creation order within the ms.
     const select
-      = 'SELECT d.meta_json, d.upstream_id, u.name AS upstream_name, u.provider AS upstream_kind '
+      = 'SELECT d.meta_json, d.upstream_id, u.name AS upstream_name, u.provider AS upstream_kind, u.color AS upstream_color '
       + 'FROM dump_records d LEFT JOIN upstreams u ON u.id = d.upstream_id';
     const sql = beforeTs === null
       ? `${select} WHERE d.key_id = ? ORDER BY d.created_at DESC, d.id DESC LIMIT ?`
@@ -153,7 +167,7 @@ export class FileDumpStore implements DumpStore {
     const stmt = beforeTs === null
       ? this.db.prepare(sql).bind(keyId, opts.limit)
       : this.db.prepare(sql).bind(keyId, beforeTs, beforeTs, beforeId, opts.limit);
-    const { results } = await stmt.all<Pick<DumpRow, 'meta_json' | 'upstream_id' | 'upstream_name' | 'upstream_kind'>>();
+    const { results } = await stmt.all<Pick<DumpRow, 'meta_json' | 'upstream_id' | 'upstream_name' | 'upstream_kind' | 'upstream_color'>>();
     return results.map(row => ({
       ...JSON.parse(row.meta_json) as Omit<DumpMetadata, 'upstream'>,
       upstream: hydrateUpstream(row),
@@ -162,7 +176,7 @@ export class FileDumpStore implements DumpStore {
 
   async get(keyId: string, recordId: DumpRecordId): Promise<StoredDumpRecord | null> {
     const row = await this.db.prepare(
-      'SELECT d.upstream_id, u.name AS upstream_name, u.provider AS upstream_kind, '
+      'SELECT d.upstream_id, u.name AS upstream_name, u.provider AS upstream_kind, u.color AS upstream_color, '
       + 'd.meta_json, d.request_headers_json, d.response_headers_json, d.request_body_descriptor, d.response_body_descriptor '
       + 'FROM dump_records d LEFT JOIN upstreams u ON u.id = d.upstream_id '
       + 'WHERE d.key_id = ? AND d.id = ?',

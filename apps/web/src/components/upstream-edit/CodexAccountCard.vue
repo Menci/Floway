@@ -5,7 +5,7 @@
 import { computed } from 'vue';
 
 import type { CodexAccountCredentialState, CodexAccountIdentity, CodexQuotaSnapshot, UpstreamRecord } from '../../api/types.ts';
-import { providerSwatchClass } from '../upstreams/provider-meta.ts';
+import UpstreamBadge from '../upstreams/UpstreamBadge.vue';
 import { Badge, Card } from '@floway-dev/ui';
 
 const props = defineProps<{
@@ -132,9 +132,14 @@ const accountIdShort = computed(() => {
 <template>
   <Card :padded="false" class="space-y-4 p-4">
     <div class="flex items-start gap-3">
-      <div class="flex size-10 shrink-0 items-center justify-center rounded-full" :class="providerSwatchClass('codex')">
+      <UpstreamBadge
+        :kind="record.kind"
+        :color="record.color"
+        variant="swatch"
+        class="size-10 shrink-0 rounded-full"
+      >
         <i class="i-simple-icons-openai size-5" />
-      </div>
+      </UpstreamBadge>
       <div class="min-w-0 flex-1 space-y-1">
         <p class="truncate text-sm font-medium text-white">{{ account.email }}</p>
         <div class="flex flex-wrap items-center gap-2 text-xs text-gray-400">
@@ -168,8 +173,11 @@ const accountIdShort = computed(() => {
                 </span>
               </div>
               <div class="h-1.5 overflow-hidden rounded-full bg-surface-700">
-                <div
-                  class="h-full bg-accent-violet transition-[width]"
+                <UpstreamBadge
+                  :kind="record.kind"
+                  :color="record.color"
+                  variant="fill"
+                  class="block h-full transition-[width]"
                   :style="{ width: `${Math.max(0, Math.min(100, Math.round(w.percent ?? 0)))}%` }"
                 />
               </div>

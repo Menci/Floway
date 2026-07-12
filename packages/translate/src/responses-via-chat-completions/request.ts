@@ -1,6 +1,7 @@
 import { responsesContentToChatCompletionsContent, responsesContentToText } from '../shared/chat-completions-and-responses/content.ts';
 import { addResponsesReasoningToChatCompletionsProjection, type ChatCompletionsReasoningProjection, chatCompletionsReasoningProjectionFields, createChatCompletionsReasoningProjection } from '../shared/chat-completions-and-responses/reasoning.ts';
 import { buildCustomToolInputSchema } from '../shared/responses-via/custom-tool-wrap.ts';
+import { rejectProgramCaller, rejectProgrammaticResponsesPayload } from '../shared/responses-via/programmatic-tooling.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
 import type { ChatCompletionsPayload, ChatCompletionsMessage, ChatCompletionsTool, ChatCompletionsToolCall } from '@floway-dev/protocols/chat-completions';
 import type { ResponsesPayload, ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
@@ -86,7 +87,7 @@ const translateResponsesTools = (tools: ResponsesTool[] | null | undefined, cust
   return out.length > 0 ? out : undefined;
 };
 
-const translateResponsesToolChoice = (choice?: ResponsesToolChoice): ChatCompletionsPayload['tool_choice'] => {
+const translateResponsesToolChoice = (choice?: ResponsesToolChoice | null): ChatCompletionsPayload['tool_choice'] => {
   if (choice == null) return undefined;
   if (typeof choice === 'string') return choice;
   // Both function and wrapped custom tools land on the target as named function
@@ -132,6 +133,7 @@ export interface ResponsesToChatCompletionsResult {
 }
 
 export const translateResponsesToChatCompletions = (payload: ResponsesPayload): ResponsesToChatCompletionsResult => {
+  rejectProgrammaticResponsesPayload(payload, 'Chat Completions');
   const customToolNames = new Set<string>();
   const responseFormat = buildChatCompletionsResponseFormat(payload.text);
   const messages: ChatCompletionsMessage[] = payload.instructions ? [{ role: 'system', content: payload.instructions }] : [];
@@ -150,6 +152,7 @@ export const translateResponsesToChatCompletions = (payload: ResponsesPayload): 
     };
 
     for (const item of payload.input) {
+      rejectProgramCaller(item);
       if (item.type === 'reasoning') {
         assistant = ensureAssistant(assistant);
         addResponsesReasoningToChatCompletionsProjection(assistant.reasoning, item);
@@ -186,6 +189,9 @@ export const translateResponsesToChatCompletions = (payload: ResponsesPayload): 
       }
 
       if (item.type === 'custom_tool_call_output') {
+        if (typeof item.output !== 'string') {
+          throw new TranslatorInputError(`Cannot translate multimodal custom_tool_call_output '${item.call_id}'.`);
+        }
         flushAssistant();
         messages.push({
           role: 'tool',

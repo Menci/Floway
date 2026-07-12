@@ -2,7 +2,7 @@ import { createFetcher, type ProxyEntry } from './fetcher.ts';
 import { getRepo } from '../repo/index.ts';
 import { DIRECT_PROXY_ID } from '../repo/proxy-fallback-list.ts';
 import { getSocketDial } from '@floway-dev/platform';
-import { directFetcher, type Fetcher } from '@floway-dev/provider';
+import { directFetcher, type Fetcher, type UpstreamRecord } from '@floway-dev/provider';
 import { parseProxyUri, type ProxyUriError, runProxiedRequest } from '@floway-dev/proxy';
 
 // Parse failures on individual proxy rows are isolated to the upstreams that
@@ -10,9 +10,15 @@ import { parseProxyUri, type ProxyUriError, runProxiedRequest } from '@floway-de
 // other upstream in the same request. Per-upstream fetchers built against a
 // bad row throw at call time rather than at build time, mirroring how the
 // dial layer surfaces other dial-time failures.
-export const createPerRequestFetcher = async (runtimeLocation: string): Promise<(upstreamId: string) => Fetcher> => {
+//
+// `preFetchedUpstreams` lets a caller reuse a list it already loaded on
+// this request instead of paying a second `upstreams.list()` round-trip.
+export const createPerRequestFetcher = async (
+  runtimeLocation: string,
+  preFetchedUpstreams?: readonly UpstreamRecord[],
+): Promise<(upstreamId: string) => Fetcher> => {
   const repo = getRepo();
-  const upstreams = await repo.upstreams.list();
+  const upstreams = preFetchedUpstreams ?? await repo.upstreams.list();
   const fallbackById = new Map(upstreams.map(u => [u.id, u.proxyFallbackList] as const));
 
   const referencedProxyIds = new Set<string>();

@@ -83,6 +83,7 @@ const CUSTOM_UPSTREAM: UpstreamRecord = {
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
+  color: null,
   config: {
     baseUrl: 'https://custom.example.com',
     authStyle: 'bearer',
@@ -105,6 +106,7 @@ const COPILOT_UPSTREAM: UpstreamRecord = {
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
+  color: null,
   config: {
     githubToken: 'ghu-alice',
     user: {
@@ -129,6 +131,7 @@ const AZURE_UPSTREAM: UpstreamRecord = {
   disabledPublicModelIds: ['gpt-public'],
   proxyFallbackList: [],
   modelPrefix: null,
+  color: null,
   config: {
     endpoint: 'https://example.openai.azure.com',
     apiKey: 'az-key',
@@ -161,6 +164,7 @@ const CODEX_UPSTREAM: UpstreamRecord = {
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
+  color: null,
   config: {
     accounts: [{
       email: 'alice@example.com',

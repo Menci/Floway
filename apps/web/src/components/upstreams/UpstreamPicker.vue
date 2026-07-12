@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 
-import type { UpstreamProviderKind } from '../../api/types.ts';
+import { providerMeta } from './provider-meta.ts';
+import UpstreamBadge from './UpstreamBadge.vue';
+import type { UpstreamColor, UpstreamProviderKind } from '../../api/types.ts';
 import type { UpstreamOption } from '../../composables/useUpstreamOptions.ts';
-import { assertNever } from '../../utils/assert-never.ts';
-import { Badge, Sortable, Switch } from '@floway-dev/ui';
+import { Sortable, Switch } from '@floway-dev/ui';
 
 export interface UpstreamPickerValue {
   override: boolean;
@@ -15,6 +16,7 @@ interface RowState {
   id: string;
   name: string;
   kind: UpstreamProviderKind | null;
+  color: UpstreamColor | null;
   enabled: boolean;
 }
 
@@ -35,9 +37,15 @@ const reset = () => {
   rows.value = [
     ...orderedIds.map(id => {
       const u = props.available.find(x => x.id === id);
-      return { id, name: u?.name ?? `Unknown (${id})`, kind: u?.kind ?? null, enabled: true };
+      return {
+        id,
+        name: u?.name ?? `Unknown (${id})`,
+        kind: u?.kind ?? null,
+        color: u?.color ?? null,
+        enabled: true,
+      };
     }),
-    ...rest.map(u => ({ id: u.id, name: u.name, kind: u.kind, enabled: false })),
+    ...rest.map(u => ({ id: u.id, name: u.name, kind: u.kind, color: u.color, enabled: false })),
   ];
 };
 
@@ -58,21 +66,10 @@ const toggleRow = (id: string, enabled: boolean) => {
 
 const badgeCount = computed(() => value.value.override ? rows.value.filter(r => r.enabled).length : props.available.length);
 
-interface ProviderMeta { tone: 'amber' | 'emerald' | 'cyan' | 'rose' | 'zinc'; label: string }
-const providerMeta = (kind: UpstreamProviderKind | null): ProviderMeta => {
-  // The row's kind goes null when an upstream id in the saved value list
-  // no longer matches anything in `available` (e.g. a deleted upstream).
-  if (kind === null) return { tone: 'zinc', label: 'Unknown' };
-  switch (kind) {
-  case 'custom': return { tone: 'amber', label: 'Custom' };
-  case 'azure': return { tone: 'emerald', label: 'Azure' };
-  case 'copilot': return { tone: 'cyan', label: 'Copilot' };
-  case 'codex': return { tone: 'cyan', label: 'Codex' };
-  case 'claude-code': return { tone: 'rose', label: 'Claude Code' };
-  case 'ollama': return { tone: 'rose', label: 'Ollama' };
-  }
-  return assertNever(kind);
-};
+// Deleted-upstream rows retain a saved id but have no matching option, so
+// `kind` goes null. Show a plain neutral badge for those.
+const kindLabel = (kind: UpstreamProviderKind | null): string =>
+  kind === null ? 'Unknown' : providerMeta(kind).label;
 </script>
 
 <template>
@@ -107,7 +104,18 @@ const providerMeta = (kind: UpstreamProviderKind | null): ProviderMeta => {
             <i class="i-lucide-grip-vertical size-4" />
           </button>
           <Switch :model-value="row.enabled" @update:model-value="v => toggleRow(row.id, !!v)" />
-          <Badge :tone="providerMeta(row.kind).tone" size="sm" class="shrink-0 !rounded !uppercase tracking-wide">{{ providerMeta(row.kind).label }}</Badge>
+          <UpstreamBadge
+            v-if="row.kind !== null"
+            :kind="row.kind"
+            :color="row.color"
+            variant="badge"
+            size="sm"
+            class="shrink-0 !rounded !uppercase tracking-wide"
+          >{{ kindLabel(row.kind) }}</UpstreamBadge>
+          <span
+            v-else
+            class="shrink-0 rounded border border-white/[0.1] bg-surface-700 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-gray-300"
+          >Unknown</span>
           <span class="min-w-0 flex-1 truncate text-sm text-white">{{ row.name }}</span>
           <code class="text-xs text-gray-500">{{ row.id }}</code>
         </li>

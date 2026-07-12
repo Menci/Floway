@@ -17,16 +17,16 @@ import type {
   PublicModelLimits,
 } from '@floway-dev/protocols/common';
 import type { FlagDefaults, FlagOverrides } from '@floway-dev/provider/flags';
+import type { UpstreamColor, UpstreamColorPreset, UpstreamProviderKind } from '@floway-dev/provider/model';
 import type { AddressableForm, ModelPrefixConfig } from '@floway-dev/provider/model-prefix';
 
 export type { BillingDimension, ModelEndpointKey, ModelEndpoints, ModelKind, ModelPricing };
 export type { AddressableForm, ModelPrefixConfig };
+export type { UpstreamColor, UpstreamColorPreset, UpstreamProviderKind };
 export type {
   AliasRules, AliasSelection, AliasTarget, AnnouncedMetadata, ChatAliasRules, ChatModelInfo, ModelAlias,
   PublicModel, PublicModelLimits,
 };
-
-export type UpstreamProviderKind = 'custom' | 'azure' | 'copilot' | 'codex' | 'claude-code' | 'ollama';
 
 export interface ProxyFallbackEntry {
   id: string;
@@ -311,6 +311,11 @@ interface UpstreamRecordBase {
   // means "no prefix configured; the upstream advertises and accepts only
   // the bare upstream id."
   model_prefix: ModelPrefixConfig | null;
+  // Operator-chosen badge color override. `null` inherits the kind default;
+  // a preset key from `UPSTREAM_COLOR_PRESETS` resolves to a static UnoCSS
+  // accent class; a `#RRGGBB` string renders via inline CSS custom
+  // properties so any operator hex works without extending the theme.
+  color: UpstreamColor | null;
   // SWR models-cache freshness joined from the models_cache table. Both inner
   // values are null on a row that has never been warmed; lastError is set
   // when the most recent warm failed but a prior fetch still populates
@@ -373,7 +378,7 @@ export interface ApiKey {
 }
 
 export interface ControlPlaneModel extends PublicModel {
-  upstreams: { kind: UpstreamProviderKind; id: string; name: string }[];
+  upstreams: { kind: UpstreamProviderKind; id: string; name: string; color: UpstreamColor | null }[];
 }
 
 export interface SearchConfig {

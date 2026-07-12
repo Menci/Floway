@@ -11,13 +11,15 @@
 // `DumpMetadata` and `DumpStreamEvent` are body-free and shared verbatim.
 
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
+import type { UpstreamColor, UpstreamProviderKind } from '@floway-dev/provider';
 
 export type DumpRecordId = string;
 
 export interface DumpUpstreamRef {
   id: string;
   name: string;
-  kind: string;
+  kind: UpstreamProviderKind;
+  color: UpstreamColor | null;
 }
 
 // What went wrong on a failed turn. Either a categorized api-error envelope

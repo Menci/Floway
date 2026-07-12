@@ -21,6 +21,9 @@ const explicitPrefixes = [
   ['computer_call_output', 'cco'],
   ['tool_search_call', 'ts'],
   ['tool_search_output', 'tso'],
+  ['additional_tools', 'at'],
+  ['program', 'prog'],
+  ['program_output', 'prog_out'],
   ['compaction', 'cmp'],
   ['compaction_summary', 'cmp'],
   ['image_generation_call', 'ig'],
@@ -58,9 +61,9 @@ test('generates a valid stored id for every explicit supported item type', () =>
   }
 });
 
-test('throws for unknown item types instead of using a generic fallback prefix', () => {
-  assertThrows(() => createStoredResponsesItemId('unknown_item'), TypeError, 'Unknown Responses item type');
-  assertThrows(() => createTemporaryResponsesItemId('unknown_item'), TypeError, 'Unknown Responses item type');
+test.each(['unknown_item', '__proto__', 'constructor', 'toString'])('throws for unknown item type %s instead of using a generic fallback prefix', itemType => {
+  assertThrows(() => createStoredResponsesItemId(itemType), TypeError, 'Unknown Responses item type');
+  assertThrows(() => createTemporaryResponsesItemId(itemType), TypeError, 'Unknown Responses item type');
 });
 
 // `compaction_trigger` is intentionally absent from the prefix map. It is a

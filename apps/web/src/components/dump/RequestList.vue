@@ -5,6 +5,7 @@ import relativeTime from 'dayjs/plugin/relativeTime';
 import { computed, onBeforeUnmount, useTemplateRef, watch } from 'vue';
 
 import { errorLabel, rowTintClass, statusIcon } from './badge.ts';
+import UpstreamBadge from '../upstreams/UpstreamBadge.vue';
 import type { DumpMetadata } from '@floway-dev/gateway/dump-types';
 import { OverlayScrollbars, Spinner } from '@floway-dev/ui';
 
@@ -68,17 +69,6 @@ const formatTokens = (n: number): string => {
   if (n < 10_000) return `${(n / 1000).toFixed(1)} K`;
   if (n < 1_000_000) return `${Math.round(n / 1000)} K`;
   return `${(n / 1_000_000).toFixed(1)} M`;
-};
-
-const upstreamKindTextClass = (kind: string): string => {
-  switch (kind) {
-  case 'copilot': return 'text-accent-cyan';
-  case 'codex': return 'text-accent-violet';
-  case 'azure': return 'text-accent-emerald';
-  case 'custom': return 'text-accent-amber';
-  case 'ollama': return 'text-accent-rose';
-  default: return 'text-gray-500';
-  }
 };
 
 // `inputTokens` / `outputTokens` are null when the upstream didn't report
@@ -188,14 +178,16 @@ const showEmpty = computed(() => !props.loading && props.records.length === 0 &&
           </div>
 
           <div class="mt-1 flex items-center gap-2 text-[11px]">
-            <span
+            <UpstreamBadge
               v-if="record.upstream"
-              :class="upstreamKindTextClass(record.upstream.kind)"
+              :kind="record.upstream.kind"
+              :color="record.upstream.color"
+              variant="text"
               class="min-w-0 truncate"
               :title="`${record.upstream.kind} · ${record.upstream.id}`"
             >
               {{ record.upstream.name }}
-            </span>
+            </UpstreamBadge>
             <span
               v-if="errorLabel(record.error, record.status)"
               class="ml-auto min-w-0 truncate text-accent-rose"

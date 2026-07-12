@@ -168,6 +168,47 @@ test('rewrites output item ids consistently across added, child, done, and termi
   assertEquals(row.payload, { item: original });
 });
 
+test('rewrites and persists programmatic tool output items without changing their payload', async () => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  const program: Extract<ResponsesOutputItem, { type: 'program' }> = {
+    type: 'program',
+    id: 'program_native_1',
+    call_id: 'program_call_1',
+    code: 'await exec("hello")',
+    fingerprint: 'opaque-fingerprint',
+  };
+  const programOutput: Extract<ResponsesOutputItem, { type: 'program_output' }> = {
+    type: 'program_output',
+    id: 'program_output_native_1',
+    call_id: 'program_call_1',
+    result: 'hello',
+    status: 'completed',
+  };
+  const additionalTools: Extract<ResponsesOutputItem, { type: 'additional_tools' }> = {
+    type: 'additional_tools',
+    id: 'additional_tools_native_1',
+    role: 'developer',
+    tools: [{ type: 'custom', name: 'exec', format: { type: 'text' } }],
+  };
+
+  const { events } = wrap(framesFrom([
+    { type: 'response.completed', response: response([additionalTools, program, programOutput]) },
+  ]));
+
+  const completed = eventAt(await collectEvents(events), 'response.completed');
+  const [storedAdditionalTools, storedProgram, storedProgramOutput] = completed.response.output;
+  assert(storedAdditionalTools.id?.startsWith('at_'));
+  assert(storedProgram.id?.startsWith('prog_'));
+  assert(storedProgramOutput.id?.startsWith('prog_out_'));
+  assertEquals(storedAdditionalTools, { ...additionalTools, id: storedAdditionalTools.id });
+  assertEquals(storedProgram, { ...program, id: storedProgram.id });
+  assertEquals(storedProgramOutput, { ...programOutput, id: storedProgramOutput.id });
+
+  const rows = await repo.responsesItems.lookupMany(apiKeyId, completed.response.output.map(item => item.id!));
+  assertEquals(rows.map(row => row.payload?.item), [additionalTools, program, programOutput]);
+});
+
 test('persists each row before yielding the item-done frame', async () => {
   const repo = new InMemoryRepo();
   const controlled = new ControlledResponsesItemsRepo();

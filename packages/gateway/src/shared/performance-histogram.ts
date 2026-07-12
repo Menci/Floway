@@ -44,16 +44,14 @@ const bucketForValue = (edges: readonly number[], value: number): Omit<Histogram
 export const bucketForTtftMs = (ttftMs: number) => bucketForValue(TTFT_UPPER_EDGES_MS, ttftMs);
 export const bucketForTpotUs = (tpotUs: number) => bucketForValue(TPOT_UPPER_EDGES_US, tpotUs);
 
-// Nearest-rank percentile that returns the bucket's GEOMETRIC MIDPOINT
-// rather than the upper edge, so a bucket [a, b] contributes sqrt(a*b) —
-// the log-scale center. Rationale: our edges form a near-geometric series,
-// so geometric mean is the unbiased estimate of "typical value in this
-// bucket" per DDSketch (Masson et al., VLDB 2019,
-// https://www.vldb.org/pvldb/vol12/p2195-masson.pdf). Returning the upper
-// edge (pessimistic bound) instead concentrates all reported values at the
-// slowest end of the bucket, which for TPOT-inverted tok/s underreports
-// speed by the full bucket factor. The overflow bucket has no upper, so
-// it falls back to lower (still pessimistic for the overflow tail).
+// Nearest-rank selects one global order statistic. Within a finite bucket,
+// only its interval and sample count survive aggregation, so we estimate the
+// selected sample as the corresponding uniform order statistic: the x-th of
+// n samples from Uniform(lower, upper) has expectation
+// lower + (upper - lower) * x / (n + 1). This preserves the selected sample's
+// position instead of collapsing every percentile in the bucket to one value.
+// The overflow bucket has no finite distribution to interpolate, so it returns
+// its lower bound.
 export const percentileFromBuckets = (buckets: readonly HistogramBucket[], percentile: number): number | null => {
   const total = buckets.reduce((sum, bucket) => sum + bucket.count, 0);
   if (total <= 0) return null;
@@ -70,13 +68,12 @@ export const percentileFromBuckets = (buckets: readonly HistogramBucket[], perce
 
   let seen = 0;
   for (const bucket of ordered) {
-    seen += bucket.count;
-    if (seen >= rank) {
+    if (seen + bucket.count >= rank) {
       if (bucket.upper === null) return bucket.lower;
-      // Geometric midpoint; falls back to arithmetic when lower is 0 (the
-      // first bucket, since a 0-lower log midpoint is undefined).
-      return bucket.lower === 0 ? bucket.upper / 2 : Math.sqrt(bucket.lower * bucket.upper);
+      const rankWithinBucket = rank - seen;
+      return bucket.lower + (bucket.upper - bucket.lower) * rankWithinBucket / (bucket.count + 1);
     }
+    seen += bucket.count;
   }
   throw new Error('percentileFromBuckets: unreachable — total>0 and rank<=total should have terminated the loop');
 };
