@@ -44,10 +44,12 @@ test('selector validation rejects unknown axes, empty equality values, and malfo
 
 test('model validation rejects duplicate selectors and equal numeric thresholds even with different operators', () => {
   assertThrows(() => validateModelPricing({ cells: [{ rates: { input: 1 } }, { selector: {}, rates: { input: 2 } }] }), Error, 'duplicate pricing cell selector');
-  assertThrows(() => validateModelPricing({ cells: [
-    { selector: { inputTokens: { operator: 'gt', value: 272000 } }, rates: { input: 1 } },
-    { selector: { inputTokens: { operator: 'gte', value: 272000 } }, rates: { input: 2 } },
-  ] }), Error, 'conflicting pricing threshold operators');
+  assertThrows(() => validateModelPricing({
+    cells: [
+      { selector: { inputTokens: { operator: 'gt', value: 272000 } }, rates: { input: 1 } },
+      { selector: { inputTokens: { operator: 'gte', value: 272000 } }, rates: { input: 2 } },
+    ],
+  }), Error, 'conflicting pricing threshold operators');
 });
 
 const GRID: ModelPricing = {
@@ -68,10 +70,12 @@ test('priceRequest applies gt boundaries and selects the highest matching thresh
 });
 
 test('priceRequest applies gte at the exact boundary', () => {
-  const pricing: ModelPricing = { cells: [
-    { rates: { input: 1 } },
-    { selector: { inputTokens: { operator: 'gte', value: 100 } }, rates: { input: 2 } },
-  ] };
+  const pricing: ModelPricing = {
+    cells: [
+      { rates: { input: 1 } },
+      { selector: { inputTokens: { operator: 'gte', value: 100 } }, rates: { input: 2 } },
+    ],
+  };
   assertEquals(priceRequest(pricing, { inputTokens: 99 }).rates, { input: 1 });
   assertEquals(priceRequest(pricing, { inputTokens: 100 }).rates, { input: 2 });
 });

@@ -5,9 +5,9 @@ import EndpointsField from './EndpointsField.vue';
 import FlagOverridesEditor from './FlagOverridesEditor.vue';
 import { defaultEndpointsForKind, publicIdOf, titleFor, type Row } from './modelRows.ts';
 import type { AnnouncedMetadata, BillingDimension, ModelKind, ModelPricing, UpstreamChatConfig, UpstreamModelConfig } from '../../api/types.ts';
-import { PRICING_AXES, canonicalPricingSelectorKey, type PricingCoordinateValue, type PricingSelector, type PricingThresholdCoordinate } from '@floway-dev/protocols/common';
 import { parseOptionalNumber } from '../../utils/parse-optional-number.ts';
 import ChatMetadataEditor from '../shared/ChatMetadataEditor.vue';
+import { PRICING_AXES, canonicalPricingSelectorKey, type PricingCoordinateValue, type PricingSelector, type PricingThresholdCoordinate } from '@floway-dev/protocols/common';
 import type { Flag, FlagDefaults, FlagOverrides } from '@floway-dev/provider/flags';
 import { Button, Input, Select, Switch } from '@floway-dev/ui';
 
