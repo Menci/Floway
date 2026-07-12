@@ -8,7 +8,7 @@ import { InMemoryRepo } from '../../../../repo/memory.ts';
 import type { ResponsesItemsRepo, StoredResponsesItem } from '../../../../repo/types.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesOutputItem, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { assert, assertEquals } from '@floway-dev/test-utils';
+import { assert, assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 const apiKeyId = 'key_output_new';
 
@@ -236,47 +236,25 @@ test('persists each row before yielding the item-done frame', async () => {
   assertEquals(((await doneFrame).value as ProtocolFrame<ResponsesStreamEvent>).type, 'event');
 });
 
-test('insert failure does not sink the stream', async () => {
+test('insert failure rejects before yielding the item-done frame', async () => {
   const repo = new InMemoryRepo();
   const controlled = new ControlledResponsesItemsRepo();
   repo.responsesItems = controlled;
   initRepo(repo);
-  const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-  try {
-    const original = messageItem('raw_msg_native', 'hello');
-    // The controlled repo holds insertMany pending until told to resolve.
-    // To keep this test focused on item-insert failure handling, configure
-    // the store without snapshotWrites so the terminal frame does not
-    // re-trigger the controlled insertMany via the snapshot commit path.
-    const repoBacking = new RepoStatefulResponsesBacking(() => repo);
-    const store = new LayeredStatefulResponsesStore({
-      apiKeyId,
-      reads: [repoBacking],
-      itemWrites: [{ backing: repoBacking, durable: true }],
-      snapshotWrites: [],
-      stageInputs: false,
-    });
-    const iterator = wrapWithStore(framesFrom([
-      { type: 'response.output_item.added', output_index: 0, item: { ...original, content: [] } },
-      { type: 'response.output_item.done', output_index: 0, item: original },
-      { type: 'response.completed', response: response([original]) },
-    ]), store)[Symbol.asyncIterator]();
+  const original = messageItem('raw_msg_native', 'hello');
+  const iterator = wrapWithStore(framesFrom([
+    { type: 'response.output_item.added', output_index: 0, item: { ...original, content: [] } },
+    { type: 'response.output_item.done', output_index: 0, item: original },
+    { type: 'response.completed', response: response([original]) },
+  ]), createResponsesHttpStore(apiKeyId, undefined))[Symbol.asyncIterator]();
 
-    assertEquals(((await iterator.next()).value as ProtocolFrame<ResponsesStreamEvent>).type, 'event');
+  assertEquals(((await iterator.next()).value as ProtocolFrame<ResponsesStreamEvent>).type, 'event');
 
-    const doneFrame = iterator.next();
-    assertEquals(await promiseStateAfterMicrotasks(doneFrame), 'pending');
-    await waitForInsertCall(controlled);
-    controlled.rejectInsert?.(new Error('insert failed'));
-    assertEquals(((await doneFrame).value as ProtocolFrame<ResponsesStreamEvent>).type, 'event');
-
-    const completed = (await iterator.next()).value as ProtocolFrame<ResponsesStreamEvent>;
-    assert(completed.type === 'event' && completed.event.type === 'response.completed');
-    assert((await iterator.next()).done);
-    assert(errorSpy.mock.calls.length > 0);
-  } finally {
-    errorSpy.mockRestore();
-  }
+  const doneFrame = iterator.next();
+  assertEquals(await promiseStateAfterMicrotasks(doneFrame), 'pending');
+  await waitForInsertCall(controlled);
+  controlled.rejectInsert?.(new Error('insert failed'));
+  await assertRejects(() => doneFrame, Error, 'insert failed');
 });
 
 test('does not insert rows for failed streams without observed items', async () => {
@@ -563,43 +541,36 @@ test('no snapshot is written when the store has no snapshotWrites configured', a
   assertEquals(snapshot, null);
 });
 
-test('snapshot commit error does not sink the stream', async () => {
+test('snapshot commit failure rejects before yielding the terminal frame', async () => {
   const repo = new InMemoryRepo();
   initRepo(repo);
   const original = messageItem('raw_msg_snap_err', 'hi');
-  const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-  try {
-    const repoBacking = new RepoStatefulResponsesBacking(() => repo);
-    const faultyBacking: StatefulResponsesBacking = {
-      lookupItems: args => repoBacking.lookupItems(args),
-      insertItems: items => repoBacking.insertItems(items),
-      fillPayloads: items => repoBacking.fillPayloads(items),
-      refreshItems: (aid, ids, at) => repoBacking.refreshItems(aid, ids, at),
-      lookupSnapshot: async () => null,
-      insertSnapshot: async () => { throw new Error('snapshot write failed'); },
-      refreshSnapshot: async () => {},
-    };
+  const repoBacking = new RepoStatefulResponsesBacking(() => repo);
+  const faultyBacking: StatefulResponsesBacking = {
+    lookupItems: args => repoBacking.lookupItems(args),
+    insertItems: items => repoBacking.insertItems(items),
+    fillPayloads: items => repoBacking.fillPayloads(items),
+    refreshItems: (aid, ids, at) => repoBacking.refreshItems(aid, ids, at),
+    lookupSnapshot: async () => null,
+    insertSnapshot: async () => { throw new Error('snapshot write failed'); },
+    refreshSnapshot: async () => {},
+  };
 
-    const faultyStore = new LayeredStatefulResponsesStore({
-      apiKeyId,
-      reads: [repoBacking],
-      itemWrites: [{ backing: repoBacking, durable: true }],
-      snapshotWrites: [{ backing: faultyBacking, durable: false }],
-      stageInputs: true,
-    });
+  const faultyStore = new LayeredStatefulResponsesStore({
+    apiKeyId,
+    reads: [repoBacking],
+    itemWrites: [{ backing: repoBacking, durable: true }],
+    snapshotWrites: [{ backing: faultyBacking, durable: false }],
+    stageInputs: true,
+  });
 
-    const events = wrapWithStore(framesFrom([
-      { type: 'response.output_item.done', output_index: 0, item: original },
-      { type: 'response.completed', response: { ...response([original]), id: 'resp_snap_fail' } },
-    ]), faultyStore);
+  const events = wrapWithStore(framesFrom([
+    { type: 'response.output_item.done', output_index: 0, item: original },
+    { type: 'response.completed', response: { ...response([original]), id: 'resp_snap_fail' } },
+  ]), faultyStore);
 
-    const collected = await collectEvents(events);
-    // Stream should complete despite snapshot failure
-    assert(collected.at(-1)?.type === 'response.completed');
-    assert(errorSpy.mock.calls.some(call => String(call[0]).includes('snapshot')));
-  } finally {
-    errorSpy.mockRestore();
-  }
+  await assertRejects(() => collectEvents(events), Error, 'snapshot write failed');
+  assertEquals(await repo.responsesSnapshots.lookup(apiKeyId, TEST_RESPONSE_ID), null);
 });
 
 test('in-stream commit: row is visible immediately after done frame', async () => {
