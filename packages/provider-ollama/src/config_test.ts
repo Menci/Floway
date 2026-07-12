@@ -3,6 +3,7 @@ import { test } from 'vitest';
 import { assertOllamaUpstreamRecord } from './config.ts';
 import { pricingForOllamaModelKey } from './pricing.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
+import { priceRequest } from '@floway-dev/protocols/common';
 import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
 const baseRecord: UpstreamRecord = {
@@ -88,7 +89,9 @@ test('pricingForOllamaModelKey matches regex-keyed families', () => {
   assertEquals(pricingForOllamaModelKey('minimax-m2.1')?.cells[0]?.rates.input_cache_read, 0.03);
   assertEquals(pricingForOllamaModelKey('minimax-m2.5')?.cells[0]?.rates.input_cache_read, 0.03);
   assertEquals(pricingForOllamaModelKey('minimax-m2.7')?.cells[0]?.rates.input_cache_read, 0.06);
-  assertEquals(pricingForOllamaModelKey('minimax-m3')?.cells[0]?.rates.input_cache_read, 0.06);
+  const m3 = pricingForOllamaModelKey('minimax-m3');
+  assertEquals(priceRequest(m3, { inputTokens: 512000 }).rates, { input: 0.3, input_cache_read: 0.06, output: 1.2 });
+  assertEquals(priceRequest(m3, { inputTokens: 512001 }).rates, { input: 0.6, input_cache_read: 0.12, output: 2.4 });
 });
 
 test('pricingForOllamaModelKey returns null for ids without a defensible reference', () => {

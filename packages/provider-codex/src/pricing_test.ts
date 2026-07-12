@@ -58,6 +58,8 @@ test('Codex gpt-5.4 and gpt-5.4-mini keep their explicit flex and priority cells
   const gpt54 = pricingForCodexModelKey('gpt-5.4');
   assertEquals(priceRequest(gpt54, { serviceTier: 'flex', inputTokens: 0 }).rates, { input: 1.25, input_cache_read: 0.13, output: 7.5 });
   assertEquals(priceRequest(gpt54, { serviceTier: 'priority', inputTokens: 0 }).rates, { input: 5, input_cache_read: 0.5, output: 30 });
+  assertEquals(priceRequest(gpt54, { inputTokens: 272001 }).rates, { input: 5, input_cache_read: 0.5, output: 22.5 });
+  assertEquals(priceRequest(gpt54, { serviceTier: 'priority', inputTokens: 272001 }).rates, null);
 
   const mini = pricingForCodexModelKey('gpt-5.4-mini');
   assertEquals(priceRequest(mini, { inputTokens: 0 }).rates, { input: 0.75, input_cache_read: 0.075, output: 4.5 });

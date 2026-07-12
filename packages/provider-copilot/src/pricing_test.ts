@@ -35,6 +35,13 @@ test('Copilot GPT-5.6 pricing resolves standard short and long cells', () => {
   }
 });
 
+test('Copilot GPT and Gemini threshold cells apply whole-request rates', () => {
+  assertEquals(priceRequest(pricingForCopilotPublicModelId('gpt-5.5'), { inputTokens: 272001 }).rates, { input: 10, input_cache_read: 1, output: 45 });
+  assertEquals(priceRequest(pricingForCopilotPublicModelId('gpt-5.4'), { inputTokens: 272001 }).rates, { input: 5, input_cache_read: 0.5, output: 22.5 });
+  assertEquals(priceRequest(pricingForCopilotPublicModelId('gemini-2.5-pro'), { inputTokens: 200001 }).rates, { input: 2.5, input_cache_read: 0.25, output: 15 });
+  assertEquals(priceRequest(pricingForCopilotPublicModelId('gemini-3.1-pro-preview'), { inputTokens: 200001 }).rates, { input: 4, input_cache_read: 0.4, output: 18 });
+});
+
 test('Copilot pricing resolves exact and regex model families', () => {
   assertEquals(priceRequest(pricingForCopilotPublicModelId('gpt-5.4'), { inputTokens: 0 }).rates, { input: 2.5, input_cache_read: 0.25, output: 15 });
   assertEquals(priceRequest(pricingForCopilotPublicModelId('gpt-5.3-codex'), { inputTokens: 0 }).rates, { input: 1.75, input_cache_read: 0.175, output: 14 });
