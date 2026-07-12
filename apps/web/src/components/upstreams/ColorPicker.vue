@@ -198,7 +198,7 @@ const previewColor = computed<UpstreamColor | null>(() => {
         <UpstreamBadge :kind="kind" :color="null" variant="swatch" class="size-4 rounded-full" />
       </button>
 
-      <!-- Preset swatches -->
+      <!-- Preset chips -->
       <button
         v-for="preset in presets"
         :key="preset"
@@ -208,7 +208,7 @@ const previewColor = computed<UpstreamColor | null>(() => {
         :title="preset"
         @click="selectPreset(preset)"
       >
-        <UpstreamBadge :kind="kind" :color="preset" variant="swatch" class="size-7 rounded-full" />
+        <UpstreamBadge :kind="kind" :color="preset" variant="chip" class="size-7 rounded-full" />
       </button>
 
       <!-- Custom HEX chip -->

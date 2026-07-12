@@ -4,25 +4,28 @@ import { computed } from 'vue';
 import { resolveUpstreamColor } from './upstream-paint.ts';
 import type { UpstreamColor, UpstreamProviderKind } from '../../api/types.ts';
 
-// Shared badge / swatch / text / fill chip that reads an upstream's
-// `(kind, color)` pair and paints itself with either a static Uno accent
-// class (preset) or an inline `color-mix()` style (raw hex). Single
-// source of truth for the kind→color paint so preset and hex renderings
-// stay consistent.
+// Shared badge / swatch / text / fill / chip surface that reads an
+// upstream's `(kind, color)` pair and paints itself with either a static
+// Uno accent class (preset) or an inline `color-mix()` style (raw hex).
+// Single source of truth for the kind→color paint so preset and hex
+// renderings stay consistent.
 //
 // Variants:
 //   - `badge`: pill with border + padded label — the header/list chip.
-//   - `swatch`: centered filled box — the caller picks its own size + shape
-//     via utility classes (`size-8 rounded-full`, `size-10 rounded-md`, ...).
+//   - `swatch`: centered filled box, subtly tinted — icon backdrop; the
+//     caller picks its own size + shape via utility classes
+//     (`size-8 rounded-full`, `size-10 rounded-md`, ...).
 //   - `text`: bare coloured text run — the request-log row label.
 //   - `fill`: `bg-current` surface for quantitative surfaces (progress
 //     bars, meters) where the caller supplies width / height via
 //     class or style. The wrapping element handles frame + sizing;
 //     this only paints.
+//   - `chip`: saturated fill for the picker's preset swatches — reads
+//     as the tone itself rather than as a background tinted by the tone.
 const props = withDefaults(defineProps<{
   kind: UpstreamProviderKind;
   color: UpstreamColor | null;
-  variant?: 'badge' | 'swatch' | 'text' | 'fill';
+  variant?: 'badge' | 'swatch' | 'text' | 'fill' | 'chip';
   size?: 'sm' | 'md';
 }>(), { variant: 'badge', size: 'md' });
 
@@ -44,7 +47,7 @@ const paint = computed((): { class: string; style: Record<string, string> } => {
 
 const frameClass = computed((): string => {
   if (props.variant === 'text') return '';
-  if (props.variant === 'swatch') return 'inline-flex items-center justify-center';
+  if (props.variant === 'swatch' || props.variant === 'chip') return 'inline-flex items-center justify-center';
   if (props.variant === 'fill') return 'bg-current';
   const size = props.size === 'sm' ? 'h-5 px-1.5 text-[10px]' : 'h-6 px-2 text-xs';
   return `inline-flex items-center gap-1 rounded-full border font-medium ${size}`;
