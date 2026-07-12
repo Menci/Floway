@@ -135,6 +135,7 @@ describe('codexRawToProviderModel', () => {
         { rates: { input: 2.5, input_cache_read: 0.25, output: 15 } },
         { selector: { serviceTier: 'flex' }, rates: { input: 1.25, input_cache_read: 0.13, output: 7.5 } },
         { selector: { serviceTier: 'priority' }, rates: { input: 5, input_cache_read: 0.5, output: 30 } },
+        { selector: { inputTokens: { operator: 'gt', value: 272000 } }, rates: { input: 5, input_cache_read: 0.5, output: 22.5 } },
       ],
     });
     const review = codexRawToProviderModel({ id: 'codex-auto-review', display_name: 'Codex Auto Review', context_window: 272000 }, noFlags);

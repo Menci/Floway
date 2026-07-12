@@ -48,7 +48,7 @@ for (const backend of backends) {
     const repo = await backend.make();
     await repo.usage.record(record({ cost: { input: 5, input_cache_read: 0.5, output: 30 }, pricingSelector: {}, tokens: { input: 100, input_cache_read: 20, output: 50 } }));
     await repo.usage.record(record({ pricingSelector: { inputTokens: { operator: 'gt', value: 272000 } }, tokens: { input: 300_000, input_cache_read: 20_000, output: 100_000 } }));
-    const rows = (await query(repo)).sort((a, b) => JSON.stringify(a.pricingSelector).localeCompare(JSON.stringify(b.pricingSelector)));
+    const rows = (await query(repo)).sort((a, b) => Object.keys(a.pricingSelector).length - Object.keys(b.pricingSelector).length);
     assertEquals(rows.length, 2);
     assertEquals(rows[0].pricingSelector, {});
     assertEquals(rows[0].cost, { input: 5, input_cache_read: 0.5, output: 30 });
