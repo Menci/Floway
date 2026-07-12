@@ -10,7 +10,6 @@
 
 import { basePricing, modelPricing, pricingCell, type ModelPricing } from '@floway-dev/protocols/common';
 
-
 const GPT_5_4_PRICING = modelPricing(
   pricingCell({ input: 2.5, input_cache_read: 0.25, output: 15 }),
   pricingCell({ input: 1.25, input_cache_read: 0.13, output: 7.5 }, { serviceTier: 'flex' }),

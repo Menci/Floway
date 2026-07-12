@@ -19,7 +19,6 @@
 import { copilotPublicModelId } from './model-name.ts';
 import { basePricing, modelPricing, pricingCell, type ModelPricing } from '@floway-dev/protocols/common';
 
-
 type PricingRule = readonly [key: string | RegExp, pricing: ModelPricing];
 
 const COPILOT_MODEL_PRICING: readonly PricingRule[] = [

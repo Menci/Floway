@@ -32,7 +32,6 @@
 
 import { basePricing, modelPricing, pricingCell, type ModelPricing } from '@floway-dev/protocols/common';
 
-
 type PricingRule = readonly [key: string | RegExp, pricing: ModelPricing];
 
 const OLLAMA_MODEL_PRICING: readonly PricingRule[] = [
