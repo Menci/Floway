@@ -48,18 +48,27 @@ const COPILOT_MODEL_PRICING: readonly PricingRule[] = [
   // https://github.com/caozhiyuan/copilot-api/blob/5a28eee7ced4fda51b6b224fb8723df5e6534708/src/lib/token-usage/pricing.ts#L98-L148
   ['gpt-5.6-sol', pricing(
     cell({ input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 30 }),
-    cell({ input: 10, input_cache_read: 1, input_cache_write: 12.5, output: 45 }, { inputAboveTokens: 272000 }),
+    cell({ input: 10, input_cache_read: 1, input_cache_write: 12.5, output: 45 }, { inputTokens: { operator: 'gt', value: 272000 } }),
   )],
   ['gpt-5.6-terra', pricing(
     cell({ input: 2.5, input_cache_read: 0.25, input_cache_write: 3.125, output: 15 }),
-    cell({ input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 22.5 }, { inputAboveTokens: 272000 }),
+    cell({ input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 22.5 }, { inputTokens: { operator: 'gt', value: 272000 } }),
   )],
   ['gpt-5.6-luna', pricing(
     cell({ input: 1, input_cache_read: 0.1, input_cache_write: 1.25, output: 6 }),
-    cell({ input: 2, input_cache_read: 0.2, input_cache_write: 2.5, output: 9 }, { inputAboveTokens: 272000 }),
+    cell({ input: 2, input_cache_read: 0.2, input_cache_write: 2.5, output: 9 }, { inputTokens: { operator: 'gt', value: 272000 } }),
   )],
-  ['gpt-5.5', base({ input: 5, input_cache_read: 0.5, output: 30 })],
-  ['gpt-5.4', base({ input: 2.5, input_cache_read: 0.25, output: 15 })],
+  // Copilot's live catalog exposes a 1.05M context window for GPT-5.5/5.4;
+  // OpenAI reprices the whole request above 272k input tokens.
+  // https://web.archive.org/web/20260709205359/https://platform.openai.com/docs/pricing
+  ['gpt-5.5', pricing(
+    cell({ input: 5, input_cache_read: 0.5, output: 30 }),
+    cell({ input: 10, input_cache_read: 1, output: 45 }, { inputTokens: { operator: 'gt', value: 272000 } }),
+  )],
+  ['gpt-5.4', pricing(
+    cell({ input: 2.5, input_cache_read: 0.25, output: 15 }),
+    cell({ input: 5, input_cache_read: 0.5, output: 22.5 }, { inputTokens: { operator: 'gt', value: 272000 } }),
+  )],
   ['gpt-5.4-mini', base({ input: 0.75, input_cache_read: 0.075, output: 4.5 })],
   ['gpt-5.4-nano', base({ input: 0.2, input_cache_read: 0.02, output: 1.25 })],
   [/^gpt-5[.][23](-codex)?$/, base({ input: 1.75, input_cache_read: 0.175, output: 14 })],
@@ -75,9 +84,17 @@ const COPILOT_MODEL_PRICING: readonly PricingRule[] = [
   ['gpt-4-0125-preview', base({ input: 10, output: 30 })],
   ['gpt-3.5-turbo', base({ input: 0.5, output: 1.5 })],
   ['gpt-3.5-turbo-0613', base({ input: 1.5, output: 2 })],
-  ['gemini-2.5-pro', base({ input: 1.25, input_cache_read: 0.125, output: 10 })],
+  // Google charges higher whole-request rates above 200k input tokens.
+  // https://ai.google.dev/gemini-api/docs/pricing
+  ['gemini-2.5-pro', pricing(
+    cell({ input: 1.25, input_cache_read: 0.125, output: 10 }),
+    cell({ input: 2.5, input_cache_read: 0.25, output: 15 }, { inputTokens: { operator: 'gt', value: 200000 } }),
+  )],
   ['gemini-3-flash-preview', base({ input: 0.5, input_cache_read: 0.05, output: 3 })],
-  ['gemini-3.1-pro-preview', base({ input: 2, input_cache_read: 0.2, output: 12 })],
+  ['gemini-3.1-pro-preview', pricing(
+    cell({ input: 2, input_cache_read: 0.2, output: 12 }),
+    cell({ input: 4, input_cache_read: 0.4, output: 18 }, { inputTokens: { operator: 'gt', value: 200000 } }),
+  )],
   ['gemini-3.5-flash', base({ input: 1.5, input_cache_read: 0.15, output: 9 })],
   [/^grok-code-fast/, base({ input: 0.2, output: 1.5 })],
   ['goldeneye', base({ input: 1.25, input_cache_read: 0.125, output: 10 })],

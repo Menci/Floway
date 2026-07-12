@@ -17,17 +17,16 @@ const GPT_5_4_PRICING = pricing(
   cell({ input: 2.5, input_cache_read: 0.25, output: 15 }),
   cell({ input: 1.25, input_cache_read: 0.13, output: 7.5 }, { serviceTier: 'flex' }),
   cell({ input: 5, input_cache_read: 0.5, output: 30 }, { serviceTier: 'priority' }),
+  // OpenAI's whole-request long-context rate. No flex/priority combination is
+  // published, so those exact coordinates remain unpriced.
+  // https://web.archive.org/web/20260709205359/https://platform.openai.com/docs/pricing
+  cell({ input: 5, input_cache_read: 0.5, output: 22.5 }, { inputTokens: { operator: 'gt', value: 272000 } }),
 );
 
 const CODEX_MODEL_PRICING: readonly (readonly [key: string | RegExp, pricing: ModelPricing])[] = [
-  // GPT-5.6 is an explicit standard/priority × short/long grid. Standard
-  // short/long values agree across the OpenAI pricing archive, models.dev and
-  // LiteLLM. Priority-short agrees between models.dev's fast mode and
-  // LiteLLM's `_priority` keys. Priority-long input/cache-read/output use
-  // LiteLLM's `_above_272k_tokens_priority` entries; cache-write is explicitly
-  // recorded as 1.25 × that cell's published input rate, following OpenAI's
-  // family-wide cache-write formula. These are authored constants, not rates
-  // derived by the resolver.
+  // GPT-5.6 publishes standard short/long and priority-short cells. OpenAI-
+  // direct does not publish priority-long rates, so that exact combination is
+  // deliberately absent and remains unpriced.
   // https://web.archive.org/web/20260709205359/https://platform.openai.com/docs/pricing
   // https://github.com/sst/models.dev/blob/6dfc39c81b6cd57a91c155aa7b4f68ed1b360da0/providers/openai/models/gpt-5.6-sol.toml
   // https://github.com/BerriAI/litellm/blob/6fa088224bc2022c7541ee44cf02c0bd6dd2942e/model_prices_and_context_window.json
@@ -37,20 +36,17 @@ const CODEX_MODEL_PRICING: readonly (readonly [key: string | RegExp, pricing: Mo
   ['gpt-5.6-sol', pricing(
     cell({ input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 30 }),
     cell({ input: 10, input_cache_read: 1, input_cache_write: 12.5, output: 60 }, { serviceTier: 'priority' }),
-    cell({ input: 10, input_cache_read: 1, input_cache_write: 12.5, output: 45 }, { inputAboveTokens: 272000 }),
-    cell({ input: 20, input_cache_read: 2, input_cache_write: 25, output: 90 }, { serviceTier: 'priority', inputAboveTokens: 272000 }),
+    cell({ input: 10, input_cache_read: 1, input_cache_write: 12.5, output: 45 }, { inputTokens: { operator: 'gt', value: 272000 } }),
   )],
   ['gpt-5.6-terra', pricing(
     cell({ input: 2.5, input_cache_read: 0.25, input_cache_write: 3.125, output: 15 }),
     cell({ input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 30 }, { serviceTier: 'priority' }),
-    cell({ input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 22.5 }, { inputAboveTokens: 272000 }),
-    cell({ input: 10, input_cache_read: 1, input_cache_write: 12.5, output: 45 }, { serviceTier: 'priority', inputAboveTokens: 272000 }),
+    cell({ input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 22.5 }, { inputTokens: { operator: 'gt', value: 272000 } }),
   )],
   ['gpt-5.6-luna', pricing(
     cell({ input: 1, input_cache_read: 0.1, input_cache_write: 1.25, output: 6 }),
     cell({ input: 2, input_cache_read: 0.2, input_cache_write: 2.5, output: 12 }, { serviceTier: 'priority' }),
-    cell({ input: 2, input_cache_read: 0.2, input_cache_write: 2.5, output: 9 }, { inputAboveTokens: 272000 }),
-    cell({ input: 4, input_cache_read: 0.4, input_cache_write: 5, output: 18 }, { serviceTier: 'priority', inputAboveTokens: 272000 }),
+    cell({ input: 2, input_cache_read: 0.2, input_cache_write: 2.5, output: 9 }, { inputTokens: { operator: 'gt', value: 272000 } }),
   )],
   ['gpt-5.5', pricing(
     cell({ input: 5, input_cache_read: 0.5, output: 30 }),

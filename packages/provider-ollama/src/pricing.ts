@@ -30,9 +30,11 @@
 //
 // Refresh procedure: .agents/skills/fetching-models-pricing/.
 
-import type { ModelPricing, PriceVector } from '@floway-dev/protocols/common';
+import type { ModelPricing, PriceVector, PricingSelector } from '@floway-dev/protocols/common';
 
-const base = (rates: PriceVector): ModelPricing => ({ cells: [{ rates }] });
+const cell = (rates: PriceVector, selector?: PricingSelector) => ({ ...(selector ? { selector } : {}), rates });
+const pricing = (...cells: ReturnType<typeof cell>[]): ModelPricing => ({ cells });
+const base = (rates: PriceVector): ModelPricing => pricing(cell(rates));
 
 type PricingRule = readonly [key: string | RegExp, pricing: ModelPricing];
 
@@ -101,7 +103,11 @@ const OLLAMA_MODEL_PRICING: readonly PricingRule[] = [
   // (which is not encodable in flat per-model pricing).
   // https://platform.minimax.io/docs/guides/pricing-paygo
   [/^minimax-m2(\.[15])?$/, base({ input: 0.3, input_cache_read: 0.03, output: 1.2 })],
-  [/^minimax-(m2\.7|m3)$/, base({ input: 0.3, input_cache_read: 0.06, output: 1.2 })],
+  ['minimax-m2.7', base({ input: 0.3, input_cache_read: 0.06, output: 1.2 })],
+  ['minimax-m3', pricing(
+    cell({ input: 0.3, input_cache_read: 0.06, output: 1.2 }),
+    cell({ input: 0.6, input_cache_read: 0.12, output: 2.4 }, { inputTokens: { operator: 'gt', value: 512000 } }),
+  )],
 
   // Mistral La Plateforme — Mistral Large 3 is the MoE flagship (41B
   // active / 675B total per https://mistral.ai/news/mistral-3); Devstral 2
