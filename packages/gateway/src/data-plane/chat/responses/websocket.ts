@@ -537,12 +537,13 @@ const sendJson = (
   const payload = eventId === undefined || !value || typeof value !== 'object'
     ? value
     : { ...value, event_id: eventId };
-  const text = JSON.stringify(payload);
+  let text: string;
   try {
+    text = JSON.stringify(payload);
     socket.send(text);
-    dump?.recordResponsePayload(UTF8_ENCODER.encode(text).byteLength);
-    return true;
   } catch {
     return false;
   }
+  dump?.recordSentPayloadBytes(UTF8_ENCODER.encode(text).byteLength);
+  return true;
 };
