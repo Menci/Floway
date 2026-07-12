@@ -172,6 +172,29 @@ describe('ModelEditor row synchronization', () => {
     expect(wrapper.emitted('validity-change')?.at(-1)).toEqual([true]);
   });
 
+  it('groups every pricing validation error below the form', () => {
+    const selected = row('errors', 'model-errors', 1, undefined);
+    selected.config.cost = {
+      entries: [
+        { selector: { serviceTier: '' }, rates: {} },
+        { rates: { input: 1 } },
+        { selector: {}, rates: { input: 2 } },
+      ],
+    };
+    const wrapper = mountEditor(selected);
+    const form = wrapper.get('[aria-label="Pricing entry form"]');
+    const errors = wrapper.get('[aria-label="Pricing validation errors"]');
+
+    expect(errors.findAll('p').map(error => error.text())).toEqual([
+      'Set at least one rate.',
+      'Selector values are invalid.',
+      'Duplicate selector coordinate.',
+      'All pricing entries must set the same rate fields.',
+    ]);
+    expect(form.element.compareDocumentPosition(errors.element) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    expect(wrapper.emitted('validity-change')?.at(-1)).toEqual([false]);
+  });
+
   it.each(['0', '1.5'])('shows validation instead of throwing for threshold %s', async value => {
     const selected = row('invalid-threshold', 'model-invalid', 1, undefined);
     selected.config.cost = { entries: [{ rates: { input: 1 } }, { selector: { serviceTier: 'priority' }, rates: { input: 2 } }] };

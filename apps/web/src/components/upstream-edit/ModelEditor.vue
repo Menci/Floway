@@ -143,23 +143,36 @@ const hasValidSelector = (draft: PricingEntryDraft): boolean => {
   }
 };
 
-const pricingValidationError = computed<string | null>(() => {
-  const invalidDraft = pricingEntryDrafts.value.find(draft => !hasRates(draft) || !hasValidSelector(draft));
-  if (invalidDraft) return !hasRates(invalidDraft) ? 'Set at least one rate.' : 'Selector values are invalid.';
-  if (duplicatePricingCoordinates.value.size > 0) return 'Duplicate selector coordinate.';
-  if (pricingEntryDrafts.value.length === 0) return null;
-  if (new Set(pricingEntryDrafts.value.map(rateDimensionKey)).size > 1) return 'All pricing entries must set the same rate fields.';
-  try {
-    validateModelPricing({
-      entries: pricingEntryDrafts.value.map(draft => ({ selector: compactSelector(draft), rates: draft.rates })),
-    } as ProtocolModelPricing);
-    return null;
-  } catch (error) {
-    return error instanceof Error ? error.message : String(error);
+const pricingValidationErrors = computed<readonly string[]>(() => {
+  const errors = new Set<string>();
+  const hasMissingRates = pricingEntryDrafts.value.some(draft => !hasRates(draft));
+  const hasInvalidSelector = pricingEntryDrafts.value.some(draft => !hasValidSelector(draft));
+  const hasDuplicateCoordinates = duplicatePricingCoordinates.value.size > 0;
+  const hasInconsistentRateFields = new Set(pricingEntryDrafts.value.map(rateDimensionKey)).size > 1;
+
+  if (hasMissingRates) errors.add('Set at least one rate.');
+  if (hasInvalidSelector) errors.add('Selector values are invalid.');
+  if (hasDuplicateCoordinates) errors.add('Duplicate selector coordinate.');
+  if (hasInconsistentRateFields) errors.add('All pricing entries must set the same rate fields.');
+
+  const canValidateCatalog = pricingEntryDrafts.value.length > 0
+    && !hasMissingRates
+    && !hasInvalidSelector
+    && !hasDuplicateCoordinates
+    && !hasInconsistentRateFields;
+  if (canValidateCatalog) {
+    try {
+      validateModelPricing({
+        entries: pricingEntryDrafts.value.map(draft => ({ selector: compactSelector(draft), rates: draft.rates })),
+      } as ProtocolModelPricing);
+    } catch (error) {
+      errors.add(error instanceof Error ? error.message : String(error));
+    }
   }
+  return [...errors];
 });
 
-const isPricingValid = computed(() => pricingValidationError.value === null);
+const isPricingValid = computed(() => pricingValidationErrors.value.length === 0);
 
 const writePricingEntries = (drafts: readonly PricingEntryDraft[]) => {
   if (!config.value) return;
@@ -419,8 +432,7 @@ watch(isValid, valid => { emit('validity-change', valid); }, { immediate: true }
           <div class="mb-3">
             <h3 class="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Pricing Entries</h3>
           </div>
-          <p v-if="pricingValidationError" class="mb-3 text-[11px] text-accent-rose">{{ pricingValidationError }}</p>
-          <div class="overflow-hidden rounded-lg border border-white/[0.06]">
+          <div class="overflow-hidden rounded-lg border border-white/[0.06]" aria-label="Pricing entry form">
             <div class="grid md:grid-cols-[13rem_minmax(0,1fr)]">
               <aside class="flex min-w-0 flex-col border-b border-white/[0.06] bg-surface-800/25 md:border-b-0 md:border-r" aria-label="Pricing entry navigation">
                 <ul v-if="pricingEntryDrafts.length > 0" class="divide-y divide-white/[0.04]" aria-label="Pricing entries">
@@ -533,6 +545,14 @@ watch(isValid, valid => { emit('validity-change', valid); }, { immediate: true }
                 Add a pricing entry to edit its selector and rates.
               </div>
             </div>
+          </div>
+          <div
+            v-if="pricingValidationErrors.length > 0"
+            role="alert"
+            aria-label="Pricing validation errors"
+            class="mt-3 space-y-1 text-[11px] text-accent-rose"
+          >
+            <p v-for="error in pricingValidationErrors" :key="error">{{ error }}</p>
           </div>
         </section>
 
