@@ -27,6 +27,8 @@ const props = defineProps<{
   kind: UpstreamProviderKind;
 }>();
 
+const emit = defineEmits<{ 'update:invalid': [invalid: boolean] }>();
+
 const isHex = (v: UpstreamColor | null): v is `#${string}` =>
   v?.startsWith('#') ?? false;
 
@@ -85,14 +87,17 @@ const commitFromHex = (raw: string): void => {
 
 // When the model changes from outside (preset click, reset), pull the hex
 // draft and HSV coordinates back in sync so re-entering custom mode starts
-// from the last hex value the user had.
+// from the last hex value the user had. `flush: 'sync'` keeps the `syncing`
+// reentrancy guard effective — it is set synchronously around the model
+// write in commitFromHsv/commitFromHex, so the handler must also run
+// synchronously to observe it.
 watch(model, next => {
   if (syncing) return;
   if (isHex(next)) {
     hexDraft.value = next;
     applyHsvFromHex(next);
   }
-});
+}, { flush: 'sync' });
 
 const selectPreset = (preset: UpstreamColorPreset): void => {
   customMode.value = false;
@@ -182,6 +187,12 @@ const previewColor = computed<UpstreamColor | null>(() => {
   if (HEX_RE.test(hexDraft.value)) return hexDraft.value as UpstreamColor;
   return model.value;
 });
+
+// Signal invalid only while the user is actively editing hex; a stale
+// invalid draft left over from a prior custom-mode session must not block
+// Save in preset mode where the hex input is hidden.
+const invalid = computed(() => customMode.value && hexInvalid.value);
+watch(invalid, v => emit('update:invalid', v), { immediate: true });
 </script>
 
 <template>
