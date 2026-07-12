@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { test, vi } from 'vitest';
 
 import { createStoredResponsesItemId } from './format.ts';
 import { createNonResponsesSourceStore, createResponsesHttpStore } from './store.ts';
@@ -140,6 +140,7 @@ test('snapshots with upstream-owned metadata-only rows remain replayable', async
 test('createNonResponsesSourceStore reads items for affinity but does not write snapshots', async () => {
   const repo = new InMemoryRepo();
   initRepo(repo);
+  const inputItem: ResponsesInputItem = { type: 'message', id: 'history_1', role: 'assistant', content: [] };
   const item = storedRow({
     id: createStoredResponsesItemId('message'),
     itemType: 'message',
@@ -212,4 +213,33 @@ test('createResponsesHttpStore with store=true writes snapshots', async () => {
   const snapshot = await repo.responsesSnapshots.lookup(API_KEY_ID, 'resp_with_store');
   assertExists(snapshot);
   assertEquals(snapshot.itemIds, [outputItem.id]);
+});
+
+test('committing a snapshot refreshes durable history without rewriting it', async () => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  const item = storedRow({
+    id: createStoredResponsesItemId('message'),
+    itemType: 'message',
+    upstreamId: 'up_history',
+    upstreamItemId: 'raw_history',
+    payload: { item: inputItem },
+  });
+  await repo.responsesItems.insertMany([item]);
+  const insertMany = vi.spyOn(repo.responsesItems, 'insertMany');
+  const refreshMany = vi.spyOn(repo.responsesItems, 'refreshMany');
+  const store = createResponsesHttpStore(API_KEY_ID, true);
+  const input = [inputItem];
+
+  await store.loadInputItems({ sourceItems: input, view: responsesItemsView });
+  await store.stageInputItems(input);
+  await store.commitSnapshot('resp_history', 'append');
+
+  assertEquals(insertMany.mock.calls, []);
+  assertEquals(refreshMany.mock.calls.length, 1);
+  assertEquals(refreshMany.mock.calls[0]![0], API_KEY_ID);
+  assertEquals(refreshMany.mock.calls[0]![1], [item.id]);
+  const snapshot = await repo.responsesSnapshots.lookup(API_KEY_ID, 'resp_history');
+  assertExists(snapshot);
+  assertEquals(snapshot.itemIds, [item.id]);
 });
