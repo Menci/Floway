@@ -96,6 +96,11 @@ export const OPTIONAL_FLAGS = [
     label: 'Strip prompt_cache_key from request',
     description: 'Drop the top-level `prompt_cache_key` field from Chat Completions and Responses requests before forwarding upstream. Pick this when the upstream rejects `prompt_cache_key` as an unknown argument (e.g. Azure DeepSeek). OpenAI-native and truly OpenAI-compatible upstreams accept the field for prefix-cache attribution, so this stays off by default.',
   },
+  {
+    id: 'flatten-tool-search-family',
+    label: 'Flatten tool_search family to legacy shape',
+    description: "Desugar the gpt-5.4+ Responses API tool_search feature family into a legacy tools[]-only shape before dispatch: move every `type: 'additional_tools'` input item's `tools[]` into top-level `payload.tools[]` and remove the item; unpack any `type: 'namespace'` container into its nested tools (sub-tool names prefixed `<namespace>__`); drop `type: 'tool_search'` and `type: 'programmatic_tool_calling'` entries; strip `defer_loading` and `allowed_callers` fields from remaining function/custom tools. Enable for upstreams that do not implement the family (translated Chat Completions / Messages targets; Responses endpoints stuck below gpt-5.4). Loses `defer_loading` eager-vs-lazy semantics, PTC orchestration, and `custom_tool_call.namespace` round-trip fidelity.",
+  },
 ] as const satisfies readonly Flag[];
 
 export type FlagId = (typeof OPTIONAL_FLAGS)[number]['id'];

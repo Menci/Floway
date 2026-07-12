@@ -18,15 +18,16 @@ import {
   type MessagesUserContentBlock,
   type MessagesUserMessage,
 } from '@floway-dev/protocols/messages';
-import type {
-  ResponsesInputContent,
-  ResponsesInputImage,
-  ResponsesInputItem,
-  ResponsesInputMessage,
-  ResponsesInputText,
-  ResponsesPayload,
-  ResponsesTool,
-  ResponsesToolChoice,
+import {
+  flattenToolSearchFamilyTools,
+  type ResponsesInputContent,
+  type ResponsesInputImage,
+  type ResponsesInputItem,
+  type ResponsesInputMessage,
+  type ResponsesInputText,
+  type ResponsesPayload,
+  type ResponsesTool,
+  type ResponsesToolChoice,
 } from '@floway-dev/protocols/responses';
 
 interface TranslateResponsesToMessagesOptions {
@@ -274,18 +275,25 @@ const translateResponsesInput = async (input: string | ResponsesInputItem[], loa
 };
 
 const translateTools = (tools: ResponsesTool[] | null | undefined, customToolNames: Set<string>): MessagesTool[] | undefined => {
-  // Translated Messages targets do not currently have a faithful bridge
-  // for hosted/deferred Responses tools (`web_search`, `tool_search`,
-  // `namespace`, `image_generation`, and future builtin names). Native
-  // Responses targets receive those entries unchanged; this translator
-  // narrows to function and Freeform `custom` tools, recording the latter
-  // in `customToolNames` so the events translator can reverse the wrap.
-  // The shim's web_search function tool reaches this code under
-  // its resolved name as an ordinary function tool — no special carve-out
-  // needed.
+  // The Messages wire has no analogue for the gpt-5.4+ tool_search feature
+  // family (hosted `tool_search` / `programmatic_tool_calling` entries;
+  // `namespace` container groupings; `defer_loading` / `allowed_callers`
+  // fields). Desugar unconditionally via `flattenToolSearchFamilyTools`:
+  // hosted family entries are dropped, `namespace` containers are expanded
+  // into flat sub-tools (with sub-tool names prefixed `<namespace>__` — the
+  // response-side events translator strips the prefix back), and
+  // `defer_loading` / `allowed_callers` are stripped.
+  //
+  // Leaf hosted tools (`web_search`, `image_generation`) fall through — no
+  // sub-tools to expand, no faithful bridge onto Messages. The shim's
+  // web_search function tool reaches this code under its resolved name as
+  // an ordinary function tool. Freeform `custom` tools are wrapped as
+  // single-string function tools and their names recorded in
+  // `customToolNames` so the events translator can reverse the wrap.
+  const flat = flattenToolSearchFamilyTools(tools ?? []);
   const out: MessagesTool[] = [];
 
-  for (const tool of tools ?? []) {
+  for (const tool of flat) {
     if (tool.type === 'function') {
       out.push({
         name: tool.name,

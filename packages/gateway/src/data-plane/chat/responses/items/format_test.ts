@@ -35,6 +35,8 @@ const explicitPrefixes = [
   ['mcp_list_tools', 'mcpl'],
   ['mcp_approval_request', 'mcpar'],
   ['mcp_approval_response', 'mcpa'],
+  ['program', 'pg'],
+  ['program_output', 'pgo'],
 ] as const;
 
 test('accepts the design-spec examples (CRC32 over only the body segment)', () => {
@@ -71,6 +73,15 @@ test('throws for unknown item types instead of using a generic fallback prefix',
 test('rejects compaction_trigger — a control signal that should never be stored', () => {
   assertThrows(() => createStoredResponsesItemId('compaction_trigger'), TypeError, 'Unknown Responses item type');
   assertThrows(() => createTemporaryResponsesItemId('compaction_trigger'), TypeError, 'Unknown Responses item type');
+});
+
+// `additional_tools` is a turn-scoped developer directive the client re-sends
+// every turn (no cross-turn persistence value). `stageInputItem` filters it
+// out before minting a stored row, so — like `compaction_trigger` — no prefix
+// exists. The throw pins the invariant.
+test('rejects additional_tools — a turn-scoped directive that should never be stored', () => {
+  assertThrows(() => createStoredResponsesItemId('additional_tools'), TypeError, 'Unknown Responses item type');
+  assertThrows(() => createTemporaryResponsesItemId('additional_tools'), TypeError, 'Unknown Responses item type');
 });
 
 test('successive stored ids for the same item type collide-free under random body', () => {

@@ -3,7 +3,7 @@ import { addResponsesReasoningToChatCompletionsProjection, type ChatCompletionsR
 import { buildCustomToolInputSchema } from '../shared/responses-via/custom-tool-wrap.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
 import type { ChatCompletionsPayload, ChatCompletionsMessage, ChatCompletionsTool, ChatCompletionsToolCall } from '@floway-dev/protocols/chat-completions';
-import type { ResponsesPayload, ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
+import { flattenToolSearchFamilyTools, type ResponsesPayload, type ResponsesTool, type ResponsesToolChoice } from '@floway-dev/protocols/responses';
 
 interface AssistantAccumulator {
   message: ChatCompletionsMessage;
@@ -44,19 +44,28 @@ const appendAssistantToolCall = (
 };
 
 const translateResponsesTools = (tools: ResponsesTool[] | null | undefined, customToolNames: Set<string>): ChatCompletionsTool[] | undefined => {
-  // Translated Chat Completions targets do not currently have a faithful
-  // bridge for hosted/deferred Responses tools (`web_search`,
-  // `tool_search`, `namespace`, `image_generation`, and future builtin
-  // names). Native Responses targets receive those entries unchanged; this
-  // translator narrows to function and Freeform `custom` tools, recording
-  // the latter in `customToolNames` so the events translator can recover
-  // the freeform shape on the way back. The shim's web_search
-  // function tool is in `payload.tools` under its resolved name (the shim
-  // injects it on every request that uses hosted web_search) and reaches
-  // here as an ordinary function tool — no special carve-out needed.
+  // The Chat Completions wire has no analogue for the gpt-5.4+ tool_search
+  // feature family (hosted `tool_search` / `programmatic_tool_calling`
+  // entries; `namespace` container groupings; `defer_loading` /
+  // `allowed_callers` fields). Desugar unconditionally via
+  // `flattenToolSearchFamilyTools`: hosted family entries are dropped,
+  // `namespace` containers are expanded into flat sub-tools (with sub-tool
+  // names prefixed `<namespace>__` — the response-side events translator
+  // strips the prefix back, mirroring `withUnprefixNamespaceToolCalls` on
+  // the native path), and `defer_loading` / `allowed_callers` are stripped.
+  //
+  // Leaf hosted tools (`web_search`, `image_generation`) fall through — no
+  // sub-tools to expand, no faithful bridge onto Chat Completions. The
+  // shim's web_search function tool arrives here under its resolved name
+  // as an ordinary function tool (the shim injects it on every request
+  // that uses hosted web_search) — no special carve-out needed. Freeform
+  // `custom` tools are wrapped as single-string function tools and their
+  // names recorded in `customToolNames` so the events translator can
+  // recover the `custom_tool_call` shape on the way back.
+  const flat = flattenToolSearchFamilyTools(tools ?? []);
   const out: ChatCompletionsTool[] = [];
 
-  for (const tool of tools ?? []) {
+  for (const tool of flat) {
     if (tool.type === 'function') {
       out.push({
         type: 'function',

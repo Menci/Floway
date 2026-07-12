@@ -39,6 +39,12 @@ const itemTypePrefixes = {
   mcp_list_tools: 'mcpl',
   mcp_approval_request: 'mcpar',
   mcp_approval_response: 'mcpa',
+  // Programmatic Tool Calling output items — persisted for `previous_response_id`
+  // snapshot stitching so the model sees its own prior program execution on
+  // subsequent turns. See `packages/protocols/src/responses/tool-search-family.ts`
+  // for the surrounding tool_search family design.
+  program: 'pg',
+  program_output: 'pgo',
 } as const satisfies Record<string, string>;
 
 const knownPrefixes = new Set<string>(Object.values(itemTypePrefixes));

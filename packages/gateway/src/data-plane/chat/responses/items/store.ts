@@ -283,6 +283,13 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     // type that never needs one.
     if (item.type === 'compaction_trigger') return;
 
+    // `additional_tools` is a turn-scoped developer directive re-declared
+    // verbatim by the client on every request (no other client type emits it,
+    // and Codex always re-sends fresh). Persisting has no reader; skip
+    // mirrors `compaction_trigger` and keeps `createStoredResponsesItemId`
+    // from needing a prefix for a type with no storage semantics.
+    if (item.type === 'additional_tools') return;
+
     if (item.type === 'item_reference') {
       const row = this.getItemById(item.id);
       if (row === undefined) throw new Error(`Cannot stage unresolved Responses item_reference id=${item.id}`);

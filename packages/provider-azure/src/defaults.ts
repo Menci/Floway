@@ -15,4 +15,5 @@ export const AZURE_DEFAULT_FLAGS: FlagDefaults = {
   'demote-developer-to-system': false,
   'strip-billing-attribution': true,
   'strip-prompt-cache-key': false,
+  'flatten-tool-search-family': false,
 };

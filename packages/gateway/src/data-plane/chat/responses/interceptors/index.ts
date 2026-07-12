@@ -3,12 +3,14 @@ import { withResponsesCompactShim } from './compact-shim.ts';
 import { withDemoteDeveloperToSystem } from './demote-developer-to-system.ts';
 import { withInterleavedSystemDemotedToUser } from './demote-interleaved-system-to-user.ts';
 import { withReasoningDisabledOnForcedToolChoice } from './disable-reasoning-on-forced-tool-choice.ts';
+import { withFlattenToolSearchFamily } from './flatten-tool-search-family.ts';
 import { withCyberPolicyRetried } from './retry-cyber-policy.ts';
 import { withResponsesServerToolShim } from './server-tool-shim.ts';
 import { imageGenerationServerTool } from './server-tools/image-generation.ts';
 import { webSearchServerTool } from './server-tools/web-search.ts';
 import { withPromptCacheKeyStripped } from './strip-prompt-cache-key.ts';
 import type { ResponsesInterceptor } from './types.ts';
+import { withUnprefixNamespaceToolCalls } from './unprefix-namespace-tool-calls.ts';
 import { withVendorDeepseekResponsesNormalize } from './vendor-deepseek-normalize.ts';
 import { withVendorQwenResponsesNormalize } from './vendor-qwen-normalize.ts';
 
@@ -27,6 +29,14 @@ import { withVendorQwenResponsesNormalize } from './vendor-qwen-normalize.ts';
 //   - withCyberPolicyRetried: gated by `retry-cyber-policy`.
 //   - withReasoningDisabledOnForcedToolChoice: gated by
 //     `disable-reasoning-on-forced-tool-choice`.
+//   - withFlattenToolSearchFamily: gated by `flatten-tool-search-family`.
+//     Runs before `withDemoteDeveloperToSystem` because the `additional_tools`
+//     input items it drops carry `role: 'developer'`; leaving them in place
+//     would have the role demoter needlessly rewrite them to `role: 'system'`
+//     right before this interceptor deletes them anyway. Also runs before
+//     server-tool-shim's ReAct loop so the shim sees the already-desugared
+//     tools list (it can't do anything sensible with a `namespace` container
+//     or a `programmatic_tool_calling` entry).
 //   - withDemoteDeveloperToSystem: gated by `demote-developer-to-system`.
 //     Runs before withInterleavedSystemDemotedToUser so when both flags are
 //     on, a `developer` role first lands as `system`, then any system that
@@ -52,6 +62,11 @@ import { withVendorQwenResponsesNormalize } from './vendor-qwen-normalize.ts';
 //     view and the terminal `response.completed` envelope; downstream
 //     consumers (server-tool shim, storage layer's id mapper, replay
 //     affinity) then see a single canonical pair per item.
+//   - withUnprefixNamespaceToolCalls: gated by `flatten-tool-search-family`.
+//     Response-side pair of withFlattenToolSearchFamily. Placed adjacent to
+//     the canonical-output-items step (both operate on the raw stream); runs
+//     just outside the canonicalizer so id/encrypted-content pinning
+//     completes before name rewriting.
 export const responsesInterceptors: readonly ResponsesInterceptor[] = [
   withResponsesCompactShim,
   withResponsesServerToolShim([
@@ -60,10 +75,12 @@ export const responsesInterceptors: readonly ResponsesInterceptor[] = [
   ]),
   withCyberPolicyRetried,
   withReasoningDisabledOnForcedToolChoice,
+  withFlattenToolSearchFamily,
   withDemoteDeveloperToSystem,
   withInterleavedSystemDemotedToUser,
   withPromptCacheKeyStripped,
   withVendorDeepseekResponsesNormalize,
   withVendorQwenResponsesNormalize,
+  withUnprefixNamespaceToolCalls,
   withResponsesOutputItemsCanonicalized,
 ];

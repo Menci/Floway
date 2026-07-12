@@ -27,4 +27,5 @@ export const CLAUDE_CODE_DEFAULT_FLAGS: FlagDefaults = {
   'demote-developer-to-system': false,
   'strip-billing-attribution': false,
   'strip-prompt-cache-key': false,
+  'flatten-tool-search-family': true,
 };

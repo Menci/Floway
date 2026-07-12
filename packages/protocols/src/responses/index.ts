@@ -105,7 +105,10 @@ export type ResponsesInputItem =
   | ResponsesMcpCallItem
   | ResponsesMcpListToolsItem
   | ResponsesMcpApprovalRequestItem
-  | ResponsesMcpApprovalResponseItem;
+  | ResponsesMcpApprovalResponseItem
+  | ResponsesInputAdditionalToolsItem
+  | ResponsesInputProgramItem
+  | ResponsesInputProgramOutputItem;
 
 export interface ResponsesInputMessage {
   type: 'message';
@@ -147,6 +150,10 @@ export interface ResponsesFunctionToolCallItem {
   name: string;
   arguments: string;
   status: 'completed' | 'in_progress' | 'incomplete';
+  // Set when the call was emitted from inside a Programmatic Tool Calling
+  // program (`{caller: {type: 'program'}}`). Absent on model-direct calls.
+  // Ref: https://developers.openai.com/api/docs/guides/tools-programmatic-tool-calling
+  caller?: { type: string; [key: string]: unknown };
 }
 
 export interface ResponsesFunctionCallOutputItem {
@@ -298,6 +305,32 @@ export interface ResponsesMcpApprovalResponseItem extends ResponsesPermissiveIte
   output?: unknown;
 }
 
+// Official OpenAI Responses API input item introduced with the gpt-5.4+
+// tool_search feature family: declares turn-scoped tools at a specific
+// conversation point without mutating persistent `payload.tools[]`. `tools[]`
+// mirrors the top-level `tools[]` schema (function / custom / hosted incl.
+// `namespace`). The gateway `withFlattenToolSearchFamily` interceptor may
+// desugar the whole family to legacy tools[]-only shape when the resolved
+// candidate has the `flatten-tool-search-family` flag enabled.
+//
+// Ref: https://developers.openai.com/api/docs/guides/tools-tool-search
+export interface ResponsesInputAdditionalToolsItem
+  extends ResponsesPermissiveItem<'additional_tools'> {
+  role?: 'developer';
+  tools?: ResponsesTool[];
+}
+
+// Programmatic Tool Calling (PTC) output items echoed back into a subsequent
+// turn's input (manual conversation replay by clients that don't use
+// `previous_response_id`). Permissive base — the wire schema carries the
+// generated code, program status, and result payload; the gateway treats
+// them as opaque and forwards verbatim to upstream on `previous_response_id`
+// stitching or client-replay flows.
+//
+// Ref: https://developers.openai.com/api/docs/guides/tools-programmatic-tool-calling
+export type ResponsesInputProgramItem = ResponsesPermissiveItem<'program'>;
+export type ResponsesInputProgramOutputItem = ResponsesPermissiveItem<'program_output'>;
+
 export interface ResponsesInputImageGenerationCall {
   type: 'image_generation_call';
   id?: string;
@@ -314,6 +347,18 @@ export interface ResponsesFunctionTool {
   parameters: Record<string, unknown>;
   strict: boolean;
   description?: string;
+  // `defer_loading: true` on a function tool inside a `namespace` container
+  // marks it as unavailable at request start; the model must issue a
+  // `tool_search` call to load its definition. Only meaningful when the
+  // upstream supports tool_search (gpt-5.4+); forwarded verbatim on native
+  // paths, stripped by `withFlattenToolSearchFamily` on flag-on legacy paths.
+  defer_loading?: boolean;
+  // `allowed_callers: ["programmatic"]` restricts a tool to invocation from
+  // Programmatic Tool Calling generated code only (never model-direct).
+  // Forwarded verbatim on native paths, stripped by
+  // `withFlattenToolSearchFamily` on flag-on legacy paths (so the tool
+  // becomes freely callable).
+  allowed_callers?: string[];
 }
 
 // Codex and other Responses clients ship hosted server tools (web_search,
@@ -340,6 +385,7 @@ export type ResponsesHostedToolType =
   | typeof WEB_SEARCH_HOSTED_TYPE_NAMES[number]
   | 'image_generation'
   | 'tool_search'
+  | 'programmatic_tool_calling'
   | 'namespace';
 
 export interface ResponsesHostedTool {
@@ -371,6 +417,10 @@ export interface ResponsesCustomTool {
   name: string;
   description?: string;
   format?: Record<string, unknown>;
+  // Mirror of `ResponsesFunctionTool.defer_loading` / `allowed_callers` for
+  // Freeform custom tools; identical semantics.
+  defer_loading?: boolean;
+  allowed_callers?: string[];
 }
 
 export type ResponsesTool = ResponsesFunctionTool | ResponsesHostedTool | ResponsesCustomTool;
@@ -458,7 +508,9 @@ export type ResponsesOutputItem =
   | ResponsesMcpListToolsItem
   | ResponsesMcpApprovalRequestItem
   | ResponsesMcpApprovalResponseItem
-  | ResponsesOutputImageGenerationCall;
+  | ResponsesOutputImageGenerationCall
+  | ResponsesOutputProgramItem
+  | ResponsesOutputProgramOutputItem;
 
 export interface ResponsesOutputMessage {
   type: 'message';
@@ -487,6 +539,9 @@ export interface ResponsesOutputFunctionCall {
   name: string;
   arguments: string;
   status: string;
+  // Set to `{type: 'program'}` when the call was emitted from inside a
+  // Programmatic Tool Calling program; absent on model-direct calls.
+  caller?: { type: string; [key: string]: unknown };
 }
 
 export interface ResponsesOutputCustomToolCall {
@@ -556,6 +611,15 @@ export interface ResponsesOutputImageGenerationCall {
   size?: string;
   error?: { message: string; code: string; type?: string };
 }
+
+// Programmatic Tool Calling output items emitted by the upstream during PTC
+// execution. Kept as permissive base — the gateway treats the code, program
+// status, and results as opaque and forwards them verbatim through canonicalize
+// / snapshot storage / client egress.
+//
+// Ref: https://developers.openai.com/api/docs/guides/tools-programmatic-tool-calling
+export type ResponsesOutputProgramItem = ResponsesPermissiveItem<'program'>;
+export type ResponsesOutputProgramOutputItem = ResponsesPermissiveItem<'program_output'>;
 
 // ── Stream event types ──
 
@@ -752,3 +816,9 @@ export { parseResponsesStream, type ParseResponsesStreamOptions } from './stream
 export { RESPONSES_MISSING_TERMINAL_MESSAGE, collectResponsesProtocolEventsToResult } from './to-result.ts';
 export { reassembleResponsesEvents } from './reassemble.ts';
 export { responsesProtocolFrameToSSEFrame } from './to-sse.ts';
+export {
+  NAMESPACE_NAME_DELIMITER,
+  unpackNamespaceTools,
+  unprefixNamespaceToolCall,
+  flattenToolSearchFamilyTools,
+} from './tool-search-family.ts';
