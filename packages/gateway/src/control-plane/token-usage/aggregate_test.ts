@@ -14,8 +14,7 @@ const baseRecord = (overrides: Partial<UsageRecord>): UsageRecord => ({
   model: 'claude-opus-4-7',
   upstream: 'up_copilot',
   modelKey: 'claude-opus-4-7',
-  tier: null,
-  inputAboveTokens: null,
+  pricingSelector: {},
   requests: 1,
   tokens: { input: 100, output: 50 },
   cost: opus47Pricing,
@@ -94,12 +93,12 @@ test('aggregateUsageForDisplay reads unit prices from the already-folded cost th
   // no-op. Two same-tier records below model the post-write shape.
   // Opus 4.8: standard $5 / $25, fast $10 / $50.
   const fastRow = baseRecord({
-    tier: 'fast',
+    pricingSelector: { serviceTier: 'fast' },
     cost: { input: 10, output: 50 },
     tokens: { input: 1_000_000, output: 1_000_000 },
   });
   const standardRow = baseRecord({
-    tier: null,
+    pricingSelector: {},
     cost: { input: 5, output: 25 },
     tokens: { input: 1_000_000, output: 1_000_000 },
   });
@@ -115,7 +114,7 @@ test('aggregateUsageForDisplay reads unit prices from the already-folded cost th
 
 test('aggregateUsageForDisplay charges the whole request at the selected cell, not a marginal overage', () => {
   const out = aggregateUsageForDisplay([
-    baseRecord({ cost: { input: 10, output: 45 }, inputAboveTokens: 272000, tokens: { input: 300_000, output: 100_000 } }),
+    baseRecord({ cost: { input: 10, output: 45 }, pricingSelector: { inputTokens: { operator: 'gt', value: 272000 } }, tokens: { input: 300_000, output: 100_000 } }),
   ]);
   assertAlmostEquals(out[0].cost, 7.5, 1e-9);
 });
@@ -123,7 +122,7 @@ test('aggregateUsageForDisplay charges the whole request at the selected cell, n
 test('aggregateUsageForDisplay prices different resolved selector snapshots independently', () => {
   const out = aggregateUsageForDisplay([
     baseRecord({ cost: { input: 5, output: 30 }, tokens: { input: 300_000, output: 100_000 } }),
-    baseRecord({ cost: { input: 20, output: 90 }, tier: 'priority', inputAboveTokens: 272000, tokens: { input: 300_000, output: 100_000 } }),
+    baseRecord({ cost: { input: 20, output: 90 }, pricingSelector: { inputTokens: { operator: 'gt', value: 272000 }, serviceTier: 'priority' }, tokens: { input: 300_000, output: 100_000 } }),
   ]);
   assertAlmostEquals(out[0].cost, 4.5 + 15, 1e-9);
 });

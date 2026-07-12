@@ -11,7 +11,7 @@
 
 import type { CustomUpstreamConfig } from './config.ts';
 import { customFetchModels } from './fetch.ts';
-import { BILLING_DIMENSIONS, type ModelKind, type ModelPricing, type PriceVector } from '@floway-dev/protocols/common';
+import { BILLING_DIMENSIONS, canonicalizePricingSelector, type ModelKind, type ModelPricing, type PriceVector, type PricingSelector, validateModelPricing } from '@floway-dev/protocols/common';
 import { chatField, fetchUpstreamModels, type Fetcher, type UpstreamChatModelConfig, identityWrapUpstreamCall } from '@floway-dev/provider';
 
 export interface CustomRawModel {
@@ -75,16 +75,13 @@ const parseCost = (value: unknown): ModelPricing | undefined => {
       if (rate !== undefined) rates[dimension] = rate;
     }
     if (Object.keys(rates).length === 0) continue;
-    const selectorRecord = isRecord(rawCell.selector) ? rawCell.selector : undefined;
-    const serviceTier = optionalStringField(selectorRecord?.serviceTier);
-    const inputAboveTokens = optionalNumberField(selectorRecord?.inputAboveTokens);
-    const selector = {
-      ...(serviceTier !== undefined ? { serviceTier } : {}),
-      ...(inputAboveTokens !== undefined ? { inputAboveTokens } : {}),
-    };
+    const selector = canonicalizePricingSelector(isRecord(rawCell.selector) ? rawCell.selector as PricingSelector : undefined);
     cells.push({ ...(Object.keys(selector).length > 0 ? { selector } : {}), rates });
   }
-  return cells.length > 0 ? { cells } : undefined;
+  if (cells.length === 0) return undefined;
+  const pricing = { cells };
+  validateModelPricing(pricing);
+  return pricing;
 };
 
 const parseKind = (value: unknown): ModelKind | undefined => {

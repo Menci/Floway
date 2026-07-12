@@ -5,6 +5,7 @@ import EndpointsField from './EndpointsField.vue';
 import FlagOverridesEditor from './FlagOverridesEditor.vue';
 import { defaultEndpointsForKind, publicIdOf, titleFor, type Row } from './modelRows.ts';
 import type { AnnouncedMetadata, BillingDimension, ModelKind, ModelPricing, UpstreamChatConfig, UpstreamModelConfig } from '../../api/types.ts';
+import { PRICING_AXES, canonicalPricingSelectorKey, type PricingCoordinateValue, type PricingSelector, type PricingThresholdCoordinate } from '@floway-dev/protocols/common';
 import { parseOptionalNumber } from '../../utils/parse-optional-number.ts';
 import ChatMetadataEditor from '../shared/ChatMetadataEditor.vue';
 import type { Flag, FlagDefaults, FlagOverrides } from '@floway-dev/provider/flags';
@@ -70,8 +71,7 @@ const setKind = (k: ModelKind) => {
 
 interface PricingCellDraft {
   id: number;
-  serviceTier: string;
-  inputAboveTokens: number | undefined;
+  selector: Record<string, PricingCoordinateValue | undefined>;
   rates: Partial<Record<BillingDimension, number>>;
 }
 
@@ -80,8 +80,7 @@ let pricingCellDraftIdSeq = 0;
 const pricingCellDraftsFor = (cost: ModelPricing | undefined): PricingCellDraft[] =>
   (cost?.cells ?? []).map(cell => ({
     id: ++pricingCellDraftIdSeq,
-    serviceTier: cell.selector?.serviceTier ?? '',
-    inputAboveTokens: cell.selector?.inputAboveTokens,
+    selector: { ...(cell.selector ?? {}) },
     rates: { ...cell.rates },
   }));
 
@@ -93,8 +92,11 @@ watch(() => [props.row?.uiId, props.row?.kind] as const, () => {
   lastFlagOverrides.value = {};
 });
 
-const coordinateKey = (draft: PricingCellDraft): string =>
-  `${draft.serviceTier.trim()}\0${draft.inputAboveTokens ?? ''}`;
+const compactSelector = (draft: PricingCellDraft): PricingSelector => Object.fromEntries(
+  Object.entries(draft.selector).filter((entry): entry is [string, PricingCoordinateValue] => entry[1] !== undefined),
+);
+
+const coordinateKey = (draft: PricingCellDraft): string => canonicalPricingSelectorKey(compactSelector(draft));
 
 const duplicatePricingCoordinates = computed(() => {
   const seen = new Set<string>();
@@ -108,11 +110,17 @@ const duplicatePricingCoordinates = computed(() => {
 });
 
 const hasRates = (draft: PricingCellDraft): boolean => Object.keys(draft.rates).length > 0;
-const hasValidThreshold = (draft: PricingCellDraft): boolean =>
-  draft.inputAboveTokens === undefined || (Number.isSafeInteger(draft.inputAboveTokens) && draft.inputAboveTokens > 0);
+const hasValidSelector = (draft: PricingCellDraft): boolean => {
+  try {
+    canonicalPricingSelectorKey(compactSelector(draft));
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 const isPricingValid = computed(() => pricingCellDrafts.value.every(draft =>
-  hasRates(draft) && hasValidThreshold(draft) && !duplicatePricingCoordinates.value.has(coordinateKey(draft))));
+  hasRates(draft) && hasValidSelector(draft) && !duplicatePricingCoordinates.value.has(coordinateKey(draft))));
 
 const writePricingCells = (drafts: readonly PricingCellDraft[]) => {
   if (!config.value) return;
@@ -122,23 +130,32 @@ const writePricingCells = (drafts: readonly PricingCellDraft[]) => {
     return;
   }
   const cells = drafts.map(draft => {
-    const serviceTier = draft.serviceTier.trim();
-    const selector = {
-      ...(serviceTier !== '' ? { serviceTier } : {}),
-      ...(draft.inputAboveTokens !== undefined ? { inputAboveTokens: draft.inputAboveTokens } : {}),
-    };
+    const selector = compactSelector(draft);
     return { ...(Object.keys(selector).length > 0 ? { selector } : {}), rates: { ...draft.rates } };
   });
   patch({ cost: { cells } });
 };
 
-const updatePricingSelector = (index: number, field: 'serviceTier' | 'inputAboveTokens', raw: string | number | null | undefined) => {
-  const next = pricingCellDrafts.value.map((draft, i) => {
+const updateEqualityCoordinate = (index: number, axisId: string, raw: string | number | null | undefined) => {
+  const value = String(raw ?? '').trim();
+  writePricingCells(pricingCellDrafts.value.map((draft, i) => i === index
+    ? { ...draft, selector: { ...draft.selector, [axisId]: value || undefined } }
+    : draft));
+};
+
+const thresholdCoordinate = (draft: PricingCellDraft, axisId: string): PricingThresholdCoordinate | undefined => {
+  const value = draft.selector[axisId];
+  return value && typeof value === 'object' ? value : undefined;
+};
+
+const updateThresholdCoordinate = (index: number, axisId: string, patch: Partial<PricingThresholdCoordinate>) => {
+  writePricingCells(pricingCellDrafts.value.map((draft, i) => {
     if (i !== index) return draft;
-    if (field === 'serviceTier') return { ...draft, serviceTier: String(raw ?? '') };
-    return { ...draft, inputAboveTokens: parseOptionalNumber(raw) };
-  });
-  writePricingCells(next);
+    const current = thresholdCoordinate(draft, axisId);
+    const operator = patch.operator ?? current?.operator ?? 'gt';
+    const value = patch.value ?? current?.value;
+    return { ...draft, selector: { ...draft.selector, [axisId]: value === undefined ? undefined : { operator, value } } };
+  }));
 };
 
 const updatePricingRate = (index: number, dimension: BillingDimension, raw: string | number | null | undefined) => {
@@ -155,7 +172,7 @@ const updatePricingRate = (index: number, dimension: BillingDimension, raw: stri
 
 const addPricingCell = () => writePricingCells([
   ...pricingCellDrafts.value,
-  { id: ++pricingCellDraftIdSeq, serviceTier: '', inputAboveTokens: undefined, rates: {} },
+  { id: ++pricingCellDraftIdSeq, selector: {}, rates: {} },
 ]);
 const removePricingCell = (index: number) => writePricingCells(pricingCellDrafts.value.filter((_, i) => i !== index));
 const movePricingCell = (index: number, offset: -1 | 1) => {
@@ -344,31 +361,37 @@ watch(isValid, valid => { emit('validity-change', valid); }, { immediate: true }
           </div>
           <div v-else class="space-y-6">
             <div v-for="(draft, index) in pricingCellDrafts" :key="draft.id" class="rounded-lg border border-white/[0.06] p-4">
-              <div class="mb-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-[1fr_1fr_auto]">
-                <label class="block space-y-1.5">
-                  <span class="block text-xs font-medium text-gray-500">Service Tier</span>
+              <div class="mb-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-[repeat(2,minmax(0,1fr))_auto]">
+                <label v-for="axis in PRICING_AXES" :key="axis.id" class="block space-y-1.5">
+                  <span class="block text-xs font-medium text-gray-500">{{ axis.label }}</span>
                   <Input
-                    :model-value="draft.serviceTier"
+                    v-if="axis.kind === 'equality'"
+                    :model-value="typeof draft.selector[axis.id] === 'string' ? draft.selector[axis.id] as string : ''"
                     :readonly="!editable"
-                    :invalid="duplicatePricingCoordinates.has(coordinateKey(draft))"
+                    :invalid="!hasValidSelector(draft) || duplicatePricingCoordinates.has(coordinateKey(draft))"
                     placeholder="default"
                     class="font-mono"
-                    @update:model-value="v => updatePricingSelector(index, 'serviceTier', v)"
+                    @update:model-value="v => updateEqualityCoordinate(index, axis.id, v)"
                   />
-                </label>
-                <label class="block space-y-1.5">
-                  <span class="block text-xs font-medium text-gray-500">Input Above Tokens</span>
-                  <Input
-                    type="number"
-                    min="1"
-                    step="1"
-                    :model-value="draft.inputAboveTokens"
-                    :readonly="!editable"
-                    :invalid="!hasValidThreshold(draft) || duplicatePricingCoordinates.has(coordinateKey(draft))"
-                    placeholder="base"
-                    class="font-mono"
-                    @update:model-value="v => updatePricingSelector(index, 'inputAboveTokens', v)"
-                  />
+                  <div v-else class="grid grid-cols-[7rem_1fr] gap-2">
+                    <Select
+                      :model-value="thresholdCoordinate(draft, axis.id)?.operator ?? 'gt'"
+                      :options="[{ value: 'gt', label: '>' }, { value: 'gte', label: '≥' }]"
+                      :disabled="!editable"
+                      @update:model-value="v => updateThresholdCoordinate(index, axis.id, { operator: v as 'gt' | 'gte' })"
+                    />
+                    <Input
+                      type="number"
+                      min="1"
+                      step="1"
+                      :model-value="thresholdCoordinate(draft, axis.id)?.value"
+                      :readonly="!editable"
+                      :invalid="!hasValidSelector(draft) || duplicatePricingCoordinates.has(coordinateKey(draft))"
+                      placeholder="base"
+                      class="font-mono"
+                      @update:model-value="v => updateThresholdCoordinate(index, axis.id, { value: parseOptionalNumber(v) })"
+                    />
+                  </div>
                 </label>
                 <div v-if="editable" class="flex items-end gap-1">
                   <Button variant="secondary" size="sm" :disabled="index === 0" @click="movePricingCell(index, -1)">↑</Button>
@@ -377,7 +400,7 @@ watch(isValid, valid => { emit('validity-change', valid); }, { immediate: true }
                 </div>
               </div>
               <p v-if="duplicatePricingCoordinates.has(coordinateKey(draft))" class="mb-2 text-[11px] text-accent-rose">Duplicate selector coordinate.</p>
-              <p v-else-if="!hasValidThreshold(draft)" class="mb-2 text-[11px] text-accent-rose">Input threshold must be a positive integer.</p>
+              <p v-else-if="!hasValidSelector(draft)" class="mb-2 text-[11px] text-accent-rose">Selector values are invalid.</p>
               <p v-else-if="!hasRates(draft)" class="mb-2 text-[11px] text-accent-rose">Set at least one rate.</p>
               <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <label v-for="dim in PRICING_BY_KIND[rowKind]" :key="dim" class="block space-y-1.5">

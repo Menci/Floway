@@ -139,7 +139,7 @@ const upstreamModelSchema = z.object({
     cells: z.array(z.object({
       selector: z.record(z.string(), z.unknown()).optional().superRefine((selector, ctx) => {
         try {
-          canonicalizePricingSelector(selector);
+          canonicalizePricingSelector(selector as import('@floway-dev/protocols/common').PricingSelector | undefined);
         } catch (error) {
           ctx.addIssue({ code: 'custom', message: error instanceof Error ? error.message : String(error) });
         }

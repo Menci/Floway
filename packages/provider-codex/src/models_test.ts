@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import { CODEX_CLI_VERSION, CODEX_ORIGINATOR, CODEX_USER_AGENT } from './constants.ts';
 import { codexRawToProviderModel, fetchCodexCatalog } from './models.ts';
-import { resolveEffectivePricing } from '@floway-dev/protocols/common';
+import { priceRequest } from '@floway-dev/protocols/common';
 import { directFetcher, type FlagId } from '@floway-dev/provider';
 
 const okJson = (body: unknown): Response => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
@@ -147,17 +147,17 @@ describe('codexRawToProviderModel', () => {
     const flagship = codexRawToProviderModel({ id: 'gpt-5.4', display_name: 'GPT-5.4', context_window: 272000 }, noFlags);
     if (!flagship.cost) throw new Error('expected cost to be defined');
 
-    expect(resolveEffectivePricing(flagship.cost, 'priority')).toEqual({
+    expect(priceRequest(flagship.cost, { serviceTier: 'priority', inputTokens: 0 }).rates).toEqual({
       input: 5,
       input_cache_read: 0.5,
       output: 30,
     });
-    expect(resolveEffectivePricing(flagship.cost, 'flex')).toEqual({
+    expect(priceRequest(flagship.cost, { serviceTier: 'flex', inputTokens: 0 }).rates).toEqual({
       input: 1.25,
       input_cache_read: 0.13,
       output: 7.5,
     });
-    expect(resolveEffectivePricing(flagship.cost, null)).toEqual({
+    expect(priceRequest(flagship.cost, { inputTokens: 0 }).rates).toEqual({
       input: 2.5,
       input_cache_read: 0.25,
       output: 15,

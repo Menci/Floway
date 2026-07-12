@@ -29,7 +29,7 @@ import { parseUpstreamIdsValue } from '../api-keys/upstream-ids.ts';
 import { USERNAME_PATTERN, type exportQuery, type importBody, DUMP_RETENTION_MAX_SECONDS } from '../schemas.ts';
 import { copilotConfigField, isRecord, nonEmptyStringField } from '../shared/field-validators.ts';
 import { type SerializedUpstreamRecord, upstreamRecordToFullJson } from '../upstreams/serialize.ts';
-import { BILLING_DIMENSIONS, type PriceVector } from '@floway-dev/protocols/common';
+import { BILLING_DIMENSIONS, canonicalizePricingSelector, type PriceVector, type PricingSelector } from '@floway-dev/protocols/common';
 import { ALL_PROVIDER_KINDS, normalizeModelPrefix, normalizeUpstreamColor, parseFlagOverridesWire } from '@floway-dev/provider';
 import type { PerformanceOperation, ProxyFallbackEntry, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
@@ -429,26 +429,13 @@ const parseUsageRecords = (value: unknown): { type: 'ok'; records: UsageRecord[]
     if (typeof record.upstream === 'string' && isLegacyUpstreamIdentity(record.upstream)) {
       return { type: 'invalid', index: i, error: 'upstream must use a raw upstream id, not a legacy provider-prefixed identity' };
     }
-    if (record.tier !== undefined && record.tier !== null && typeof record.tier !== 'string') {
-      return { type: 'invalid', index: i, error: 'tier, when present, must be a string or null' };
+    if (!isRecord(record.pricingSelector)) return { type: 'invalid', index: i, error: 'pricingSelector must be an object' };
+    let pricingSelector: PricingSelector;
+    try {
+      pricingSelector = canonicalizePricingSelector(record.pricingSelector as PricingSelector);
+    } catch (cause) {
+      return { type: 'invalid', index: i, error: `invalid pricingSelector: ${cause instanceof Error ? cause.message : String(cause)}` };
     }
-    if (record.tier === '') {
-      return { type: 'invalid', index: i, error: 'tier must be a non-empty string or null/absent' };
-    }
-    // Empty-string is rejected rather than normalized to null: the unique
-    // index folds NULL/'' under COALESCE, so a '' import would silently
-    // merge with base-tier rows.
-    const tier: string | null = typeof record.tier === 'string' ? record.tier : null;
-    if (record.inputAboveTokens !== undefined && record.inputAboveTokens !== null && !isNonNegativeSafeInteger(record.inputAboveTokens)) {
-      return { type: 'invalid', index: i, error: 'inputAboveTokens, when present, must be a non-negative safe integer or null' };
-    }
-    // 0 folds with NULL under the bucket's COALESCE(input_above_tokens, 0) and
-    // the column's CHECK rejects it, so a real input-length band is always a
-    // positive threshold.
-    if (record.inputAboveTokens === 0) {
-      return { type: 'invalid', index: i, error: 'inputAboveTokens must be a positive integer or null/absent' };
-    }
-    const inputAboveTokens: number | null = typeof record.inputAboveTokens === 'number' ? record.inputAboveTokens : null;
     const tokensResult = parseImportedTokens(record.tokens);
     if (tokensResult.type === 'invalid') return { type: 'invalid', index: i, error: 'record has invalid token dimension counts' };
     const costResult = parseImportedCost(record.cost);
@@ -459,8 +446,7 @@ const parseUsageRecords = (value: unknown): { type: 'ok'; records: UsageRecord[]
       upstream: record.upstream,
       modelKey: record.modelKey,
       hour: record.hour,
-      tier,
-      inputAboveTokens,
+      pricingSelector,
       requests: record.requests,
       tokens: tokensResult.tokens,
       cost: costResult.cost,
