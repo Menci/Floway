@@ -30,6 +30,7 @@ const classifyStoredResponsesAffinity = (
   // account-bound: same-account replay succeeds after token refresh, while
   // cross-account replay fails with "item ID does not belong to this connection".
   if (row.itemType === 'compaction' || row.itemType === 'program' || row.itemType === 'program_output') return 'forcing';
+  if (row.itemType === 'context_compaction' && row.encryptedContentHash !== null) return 'forcing';
   if (row.itemType === 'reasoning') return 'downgradable';
   return 'portable';
 };

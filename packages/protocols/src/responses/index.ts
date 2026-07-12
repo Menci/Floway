@@ -104,6 +104,10 @@ export type ResponsesInputItem =
   | ResponsesInputAdditionalToolsItem
   | ResponsesProgramItem
   | ResponsesProgramOutputItem
+  | ResponsesInputAgentMessageItem
+  | ResponsesInputMultiAgentCallItem
+  | ResponsesInputMultiAgentCallOutputItem
+  | ResponsesContextCompactionItem
   | ResponsesCompactionItem
   | ResponsesCompactionTriggerItem
   | ResponsesInputImageGenerationCall
@@ -291,6 +295,52 @@ export interface ResponsesProgramOutputItem {
   call_id: string;
   result: string;
   status: 'completed' | 'incomplete';
+}
+
+export type ResponsesAgentMessageContent =
+  | { type: 'input_text'; text: string }
+  | { type: 'encrypted_content'; encrypted_content: string }
+  | (Record<string, unknown> & { type: string });
+
+export interface ResponsesInputAgentMessageItem {
+  type: 'agent_message';
+  author: string;
+  recipient: string;
+  content: ResponsesAgentMessageContent[];
+  id?: string | null;
+  agent?: { agent_name: string } | null;
+  internal_chat_message_metadata_passthrough?: Record<string, unknown>;
+}
+
+export type ResponsesMultiAgentAction =
+  | 'spawn_agent'
+  | 'interrupt_agent'
+  | 'list_agents'
+  | 'send_message'
+  | 'followup_task'
+  | 'wait_agent';
+
+export interface ResponsesInputMultiAgentCallItem {
+  type: 'multi_agent_call';
+  action: ResponsesMultiAgentAction;
+  arguments: string;
+  call_id: string;
+  id?: string | null;
+  agent?: { agent_name: string } | null;
+}
+
+export interface ResponsesInputMultiAgentCallOutputItem {
+  type: 'multi_agent_call_output';
+  action: ResponsesMultiAgentAction;
+  call_id: string;
+  output: Array<Record<string, unknown> & { type: 'output_text'; text: string }>;
+  id?: string | null;
+  agent?: { agent_name: string } | null;
+}
+
+export interface ResponsesContextCompactionItem extends ResponsesPermissiveItem<'context_compaction'> {
+  encrypted_content?: string;
+  internal_chat_message_metadata_passthrough?: Record<string, unknown>;
 }
 
 export type ResponsesCompactionItem = ResponsesPermissiveItem<'compaction'>;
@@ -567,6 +617,21 @@ export interface ResponsesOutputAdditionalToolsItem {
   tools: ResponsesTool[];
 }
 
+export type ResponsesOutputAgentMessageItem = Omit<ResponsesInputAgentMessageItem, 'id' | 'agent'> & {
+  id: string;
+  agent?: { agent_name: string };
+};
+
+export type ResponsesOutputMultiAgentCallItem = Omit<ResponsesInputMultiAgentCallItem, 'id' | 'agent'> & {
+  id: string;
+  agent?: { agent_name: string };
+};
+
+export type ResponsesOutputMultiAgentCallOutputItem = Omit<ResponsesInputMultiAgentCallOutputItem, 'id' | 'agent'> & {
+  id: string;
+  agent?: { agent_name: string };
+};
+
 export type ResponsesOutputItem =
   | ResponsesOutputMessage
   | ResponsesOutputFunctionCall
@@ -583,6 +648,10 @@ export type ResponsesOutputItem =
   | ResponsesOutputAdditionalToolsItem
   | ResponsesProgramItem
   | ResponsesProgramOutputItem
+  | ResponsesOutputAgentMessageItem
+  | ResponsesOutputMultiAgentCallItem
+  | ResponsesOutputMultiAgentCallOutputItem
+  | ResponsesContextCompactionItem
   | ResponsesCompactionItem
   | ResponsesCodeInterpreterCallItem
   | ResponsesLocalShellCallItem
