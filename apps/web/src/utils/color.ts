@@ -6,7 +6,11 @@
 // HSV coordinates: hue in [0, 360), saturation/value in [0, 1]. HEX is
 // the canonical wire form (`#RRGGBB`, upper-or-lower case accepted).
 
-export const HEX_RE = /^#[0-9a-fA-F]{6}$/;
+import { UPSTREAM_COLOR_HEX_REGEX } from '@floway-dev/provider/model';
+
+// Alias for the canonical wire regex so the picker validates hex against
+// the same rule the control-plane schema enforces.
+export const HEX_RE = UPSTREAM_COLOR_HEX_REGEX;
 
 export const clamp01 = (n: number): number => Math.max(0, Math.min(1, n));
 

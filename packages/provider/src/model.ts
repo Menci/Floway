@@ -6,10 +6,9 @@ import type { AliasSelection, AliasTarget, ModelKind, ModelEndpoints, ModelPrici
 export const ALL_PROVIDER_KINDS = ['copilot', 'custom', 'azure', 'codex', 'claude-code', 'ollama'] as const;
 export type UpstreamProviderKind = typeof ALL_PROVIDER_KINDS[number];
 
-// Runtime narrow of an unvalidated string to `UpstreamProviderKind`. Every
-// upstream-row hydrator (SQL repo, dump-store JOIN, data-transfer import)
-// must call this before treating a wire/DB value as a kind — the DB CHECK
-// constraint mirrors this set but the type system does not know that.
+// Runtime narrow of an unvalidated string to `UpstreamProviderKind`. The
+// DB CHECK constraint mirrors `ALL_PROVIDER_KINDS`, but the type system
+// does not know that — narrow at every wire/DB boundary.
 export const assertUpstreamProviderKind = (provider: string): UpstreamProviderKind => {
   if ((ALL_PROVIDER_KINDS as readonly string[]).includes(provider)) return provider as UpstreamProviderKind;
   throw new TypeError(`Invalid upstream provider kind: ${provider}`);

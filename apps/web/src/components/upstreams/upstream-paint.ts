@@ -14,6 +14,17 @@ export const KIND_DEFAULT_TONES: Record<UpstreamProviderKind, UpstreamColorPrese
   ollama: 'rose',
 };
 
+type Slot = 'badge' | 'swatch' | 'text' | 'chip';
+
+// Opacity percentages twinned with the `/NN` suffixes in TONE_CLASSES.
+// UnoCSS purge requires the class strings to be literal, so a change to
+// any constant here must be paired with a matching `/NN` edit in every
+// TONE_CLASSES entry below.
+const BADGE_BORDER_PCT = 30;
+const BADGE_BG_PCT = 10;
+const SWATCH_BG_PCT = 15;
+const CHIP_BG_PCT = 60;
+
 // Class-string table for the preset branch. UnoCSS scans this source file so
 // every entry stays statically visible and survives purge. A separate `text`
 // variant covers name-only surfaces (e.g. RequestList) that need color
@@ -21,7 +32,7 @@ export const KIND_DEFAULT_TONES: Record<UpstreamProviderKind, UpstreamColorPrese
 // preset swatches — brighter than `swatch` (a subtle tinted background
 // under icons) but shy of full-saturation `text`, so the disc reads as
 // the tone itself rather than as "some element tinted by this tone".
-const TONE_CLASSES: Record<UpstreamColorPreset, { badge: string; swatch: string; text: string; chip: string }> = {
+const TONE_CLASSES: Record<UpstreamColorPreset, Record<Slot, string>> = {
   amber: {
     badge: 'border-accent-amber/30 bg-accent-amber/10 text-accent-amber',
     swatch: 'bg-accent-amber/15 text-accent-amber',
@@ -60,38 +71,37 @@ const TONE_CLASSES: Record<UpstreamColorPreset, { badge: string; swatch: string;
   },
 };
 
-type UpstreamColorResolved =
-  | { mode: 'class'; badgeClass: string; swatchClass: string; textClass: string; chipClass: string }
-  | {
-    mode: 'style';
-    badgeStyle: Record<string, string>;
-    swatchStyle: Record<string, string>;
-    textStyle: Record<string, string>;
-    chipStyle: Record<string, string>;
-  };
+export type UpstreamColorResolved =
+  | { mode: 'class'; classes: Record<Slot, string> }
+  | { mode: 'style'; styles: Record<Slot, Record<string, string>> };
 
 // Rebuild the translucent-bg + border + text look from a raw hex using
 // `color-mix()`. Widely supported since 2023 (Chrome 111, Safari 16.2,
 // Firefox 113). CSS custom property indirection keeps the templates DRY.
+const mix = (pct: number): string =>
+  `color-mix(in srgb, var(--u-color) ${pct}%, transparent)`;
+
 const styleFor = (hex: string): Extract<UpstreamColorResolved, { mode: 'style' }> => ({
   mode: 'style',
-  badgeStyle: {
-    '--u-color': hex,
-    color: 'var(--u-color)',
-    borderColor: 'color-mix(in srgb, var(--u-color) 30%, transparent)',
-    backgroundColor: 'color-mix(in srgb, var(--u-color) 10%, transparent)',
-  },
-  swatchStyle: {
-    '--u-color': hex,
-    color: 'var(--u-color)',
-    backgroundColor: 'color-mix(in srgb, var(--u-color) 15%, transparent)',
-  },
-  textStyle: {
-    color: hex,
-  },
-  chipStyle: {
-    '--u-color': hex,
-    backgroundColor: 'color-mix(in srgb, var(--u-color) 60%, transparent)',
+  styles: {
+    badge: {
+      '--u-color': hex,
+      color: 'var(--u-color)',
+      borderColor: mix(BADGE_BORDER_PCT),
+      backgroundColor: mix(BADGE_BG_PCT),
+    },
+    swatch: {
+      '--u-color': hex,
+      color: 'var(--u-color)',
+      backgroundColor: mix(SWATCH_BG_PCT),
+    },
+    text: {
+      color: hex,
+    },
+    chip: {
+      '--u-color': hex,
+      backgroundColor: mix(CHIP_BG_PCT),
+    },
   },
 });
 
@@ -102,12 +112,5 @@ export const resolveUpstreamColor = (input: {
   const raw = input.color;
   if (raw?.startsWith('#')) return styleFor(raw);
   const preset: UpstreamColorPreset = raw === null ? KIND_DEFAULT_TONES[input.kind] : (raw as UpstreamColorPreset);
-  const classes = TONE_CLASSES[preset];
-  return {
-    mode: 'class',
-    badgeClass: classes.badge,
-    swatchClass: classes.swatch,
-    textClass: classes.text,
-    chipClass: classes.chip,
-  };
+  return { mode: 'class', classes: TONE_CLASSES[preset] };
 };

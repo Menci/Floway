@@ -1,8 +1,7 @@
-// Row-hydration helpers shared between the primary SQL repo (`sql.ts`) and
-// the dump-store's LEFT JOIN reader (`dump-store.ts`). Both read the same
-// `upstreams` columns but from different SELECTs — sharing the parsers
-// keeps the error attribution and validation policy uniform so a poisoned
-// upstream row surfaces the same diagnostic on every read path.
+// Row-hydration helpers for the `upstreams` table. Centralised so a
+// poisoned upstream row surfaces the same diagnostic on every read path —
+// error attribution and validation policy stay uniform across SELECT
+// shapes.
 
 import type { UpstreamColor, UpstreamProviderKind } from '@floway-dev/provider';
 import { assertUpstreamProviderKind, normalizeUpstreamColor } from '@floway-dev/provider';

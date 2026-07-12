@@ -50,11 +50,8 @@ export const flagDefaultsForKind = (kind: UpstreamProviderKind): FlagDefaults =>
 // full, unscoped catalog — a missing scope is a compile error, not a runtime
 // leak. Pass `null` to deliberately request every enabled upstream.
 //
-// `preFetchedUpstreams` lets callers that have already loaded the upstreams
-// list (e.g. control-plane routes that also need a per-id join for display
-// enrichment) reuse it instead of paying a second `upstreams.list()`
-// round-trip — see the "pass providers through to avoid the duplicate
-// upstreams.list()" convention below.
+// `preFetchedUpstreams` lets a caller reuse a list it already loaded on
+// this request instead of paying a second `upstreams.list()` round-trip.
 export const listModelProviders = async (
   upstreamFilter: readonly string[] | null,
   preFetchedUpstreams?: readonly UpstreamRecord[],

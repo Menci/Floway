@@ -29,20 +29,16 @@ const props = withDefaults(defineProps<{
   size?: 'sm' | 'md';
 }>(), { variant: 'badge', size: 'md' });
 
-// One dispatch — pulls the `${variant}Class` slot from the class branch or
-// the `${variant}Style` slot from the style branch, so class/style never
-// fall out of sync when a new variant is added. `fill` reuses `text`'s
-// slot: both paths write `color:`, and the consumer relies on `bg-current`
-// to pick that up.
+// One dispatch — indexes the resolver's slot-keyed records so class and
+// style never fall out of sync when a new variant is added. `fill` reuses
+// `text`'s slot: both paths write `color:`, and the consumer relies on
+// `bg-current` to pick that up.
 const paint = computed((): { class: string; style: Record<string, string> } => {
   const r = resolveUpstreamColor({ kind: props.kind, color: props.color });
   const slot = props.variant === 'fill' ? 'text' : props.variant;
-  if (r.mode === 'class') {
-    const key = `${slot}Class` as const;
-    return { class: r[key], style: {} };
-  }
-  const key = `${slot}Style` as const;
-  return { class: '', style: r[key] };
+  return r.mode === 'class'
+    ? { class: r.classes[slot], style: {} }
+    : { class: '', style: r.styles[slot] };
 });
 
 const frameClass = computed((): string => {

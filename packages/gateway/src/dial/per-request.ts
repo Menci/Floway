@@ -11,12 +11,8 @@ import { parseProxyUri, type ProxyUriError, runProxiedRequest } from '@floway-de
 // bad row throw at call time rather than at build time, mirroring how the
 // dial layer surfaces other dial-time failures.
 //
-// `preFetchedUpstreams` lets callers that have already loaded the upstreams
-// list (e.g. control-plane routes that also drive `enumerateAddressableModelIds`
-// or build a per-id color-join map) reuse it instead of paying a second
-// `upstreams.list()` round-trip on the same request — mirrors the same
-// opt-in memoisation pattern applied to `listModelProviders` and
-// `enumerateAddressableModelIds`.
+// `preFetchedUpstreams` lets a caller reuse a list it already loaded on
+// this request instead of paying a second `upstreams.list()` round-trip.
 export const createPerRequestFetcher = async (
   currentColo: string,
   preFetchedUpstreams?: readonly UpstreamRecord[],
