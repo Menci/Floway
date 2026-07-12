@@ -61,8 +61,8 @@ const CODEX_MODEL_PRICING: readonly (readonly [key: string | RegExp, pricing: Mo
 ];
 
 export const pricingForCodexModelKey = (modelKey: string): ModelPricing | null => {
-  for (const [key, modelPricing] of CODEX_MODEL_PRICING) {
-    if (typeof key === 'string' ? modelKey === key : key.test(modelKey)) return modelPricing;
+  for (const [key, pricing] of CODEX_MODEL_PRICING) {
+    if (typeof key === 'string' ? modelKey === key : key.test(modelKey)) return pricing;
   }
   return null;
 };

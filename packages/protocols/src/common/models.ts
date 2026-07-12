@@ -82,13 +82,7 @@ export interface PricedRequest {
   rates: PriceVector | null;
 }
 
-// Resolve the USD-per-million-tokens unit price for one dimension against a
-// pricing snapshot, applying the LiteLLM-style fallback chain: a modality with
-// no dedicated rate falls back to the bare text rate, cached input falls back
-// to uncached input, and the 1-hour cache write falls back to the 5-minute
-// cache write before reaching uncached input. Returns null when even the
-// fallback base is absent (or the whole snapshot is null), which aggregation
-// treats as cost 0.
+// Validate one cell's rates before the catalog is compiled or imported.
 export const validatePriceVector = (pricing: PriceVector, path = 'price vector'): void => {
   const dimensions = BILLING_DIMENSIONS.filter(dimension => pricing[dimension] !== undefined);
   if (dimensions.length === 0) throw new Error(`${path} must contain at least one rate`);
@@ -98,6 +92,13 @@ export const validatePriceVector = (pricing: PriceVector, path = 'price vector')
   }
 };
 
+// Resolve the USD-per-million-tokens unit price for one dimension against a
+// pricing snapshot, applying the LiteLLM-style fallback chain: a modality with
+// no dedicated rate falls back to the bare text rate, cached input falls back
+// to uncached input, and the 1-hour cache write falls back to the 5-minute
+// cache write before reaching uncached input. Returns null when even the
+// fallback base is absent (or the whole snapshot is null), which aggregation
+// treats as cost 0.
 export const unitPriceForDimension = (pricing: PriceVector | null, dimension: BillingDimension): number | null => {
   if (!pricing) return null;
   switch (dimension) {
