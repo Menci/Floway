@@ -172,34 +172,37 @@ const pricingValidationErrors = computed<readonly string[]>(() => {
   const errors = new Set<string>();
   const hasMissingRates = pricingEntryDrafts.value.some(draft => !hasRates(draft));
   const hasInvalidSelector = pricingEntryDrafts.value.some(draft => !hasValidSelector(draft));
+  const baseEntries = pricingEntryDrafts.value.filter(draft => coordinateKey(draft) === '{}');
+  const hasInvalidBaseCount = pricingEntryDrafts.value.length > 0 && baseEntries.length !== 1;
   const hasDuplicateCoordinates = duplicatePricingCoordinateGroups.value.length > 0;
-  const hasInconsistentRateFields = new Set(pricingEntryDrafts.value.map(rateDimensionKey)).size > 1;
+  const baseEntry = baseEntries.length === 1 ? baseEntries[0]! : null;
+  const hasInconsistentRateFields = baseEntry !== null
+    && pricingEntryDrafts.value.some(draft => rateDimensionKey(draft) !== rateDimensionKey(baseEntry));
 
   if (hasMissingRates && !hasInconsistentRateFields) errors.add('Set at least one rate.');
   if (hasInvalidSelector) errors.add('Selector values are invalid.');
-  if (hasDuplicateCoordinates) {
-    const labels = duplicatePricingCoordinateGroups.value.map(([, drafts]) => JSON.stringify(pricingEntryCoordinateLabel(drafts[0]!)));
-    const subject = labels.length === 1 ? 'Duplicate selector coordinate' : 'Duplicate selector coordinates';
-    const predicate = labels.length === 1 ? 'is' : 'are each';
-    errors.add(`${subject}: ${formatList(labels)} ${predicate} used more than once.`);
+  if (hasInvalidBaseCount) {
+    const detail = baseEntries.length === 0 ? 'none is configured' : `${baseEntries.length} are configured`;
+    errors.add(`Pricing must contain exactly one Base entry: ${detail}.`);
   }
-  if (hasInconsistentRateFields) {
-    const shapes = new Map<string, { dimensions: readonly BillingDimension[]; count: number; firstIndex: number }>();
-    pricingEntryDrafts.value.forEach((draft, index) => {
-      const key = rateDimensionKey(draft);
-      const shape = shapes.get(key);
-      if (shape) shape.count++;
-      else shapes.set(key, { dimensions: rateDimensions(draft), count: 1, firstIndex: index });
-    });
-    const expected = [...shapes.values()].toSorted((a, b) =>
-      b.count - a.count
-      || Number(b.dimensions.length > 0) - Number(a.dimensions.length > 0)
-      || a.firstIndex - b.firstIndex)[0]!;
-    const expectedSet = new Set(expected.dimensions);
+  if (hasDuplicateCoordinates) {
+    const labels = duplicatePricingCoordinateGroups.value
+      .map(([, drafts]) => pricingEntryCoordinateLabel(drafts[0]!))
+      .filter(label => label !== 'Base')
+      .map(JSON.stringify);
+    if (labels.length > 0) {
+      const subject = labels.length === 1 ? 'Duplicate selector coordinate' : 'Duplicate selector coordinates';
+      const predicate = labels.length === 1 ? 'is' : 'are each';
+      errors.add(`${subject}: ${formatList(labels)} ${predicate} used more than once.`);
+    }
+  }
+  if (hasInconsistentRateFields && baseEntry) {
+    const expectedDimensions = rateDimensions(baseEntry);
+    const expectedSet = new Set(expectedDimensions);
     const differences = pricingEntryDrafts.value.flatMap(draft => {
-      if (rateDimensionKey(draft) === expected.dimensions.join('\0')) return [];
+      if (draft === baseEntry || rateDimensionKey(draft) === rateDimensionKey(baseEntry)) return [];
       const actual = new Set(rateDimensions(draft));
-      const missing = expected.dimensions.filter(dimension => !actual.has(dimension)).map(rateFieldName);
+      const missing = expectedDimensions.filter(dimension => !actual.has(dimension)).map(rateFieldName);
       const added = rateDimensions(draft).filter(dimension => !expectedSet.has(dimension)).map(rateFieldName);
       const changes = [
         ...(missing.length > 0 ? [`is missing ${formatList(missing)}`] : []),
@@ -213,6 +216,7 @@ const pricingValidationErrors = computed<readonly string[]>(() => {
   const canValidateCatalog = pricingEntryDrafts.value.length > 0
     && !hasMissingRates
     && !hasInvalidSelector
+    && !hasInvalidBaseCount
     && !hasDuplicateCoordinates
     && !hasInconsistentRateFields;
   if (canValidateCatalog) {

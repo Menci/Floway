@@ -178,7 +178,8 @@ describe('ModelEditor row synchronization', () => {
       entries: [
         { selector: { serviceTier: '' }, rates: {} },
         { rates: { input: 1 } },
-        { selector: {}, rates: { input: 2 } },
+        { selector: { serviceTier: 'priority' }, rates: { input: 2 } },
+        { selector: { serviceTier: 'priority' }, rates: { input: 3 } },
       ],
     };
     const wrapper = mountEditor(selected);
@@ -187,11 +188,30 @@ describe('ModelEditor row synchronization', () => {
 
     expect(errors.findAll('p').map(error => error.text())).toEqual([
       'Selector values are invalid.',
-      'Duplicate selector coordinate: "Base" is used more than once.',
+      'Duplicate selector coordinate: "priority" is used more than once.',
       'All pricing entries must set the same rate fields: "Base" is missing Input.',
     ]);
     expect(form.element.compareDocumentPosition(errors.element) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
     expect(wrapper.emitted('validity-change')?.at(-1)).toEqual([false]);
+  });
+
+  it('requires exactly one Base entry before comparing rate fields', () => {
+    const withoutBase = row('without-base', 'model-without-base', 1, undefined);
+    withoutBase.config.pricing = {
+      entries: [{ selector: { serviceTier: 'priority' }, rates: { input: 2 } }],
+    };
+    const wrapper = mountEditor(withoutBase);
+    expect(wrapper.get('[aria-label="Pricing validation errors"]').text()).toBe(
+      'Pricing must contain exactly one Base entry: none is configured.',
+    );
+
+    const duplicateBase = row('duplicate-base', 'model-duplicate-base', 1, undefined);
+    duplicateBase.config.pricing = { entries: [{ rates: { input: 1 } }, { selector: {}, rates: { input: 2 } }] };
+    await wrapper.setProps({ row: duplicateBase });
+    await nextTick();
+    expect(wrapper.get('[aria-label="Pricing validation errors"]').text()).toBe(
+      'Pricing must contain exactly one Base entry: 2 are configured.',
+    );
   });
 
   it('shows the empty-rate error when every pricing entry has the same empty rate shape', () => {

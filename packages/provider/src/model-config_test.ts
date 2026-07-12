@@ -26,7 +26,13 @@ test('pricingField rejects malformed entries and duplicate coordinates', () => {
   assertThrows(() => pricingField({ entries: [{ rates: {} }] }, 'pricing'), Error, 'at least one rate');
   assertThrows(() => pricingField({ entries: [{ selector: { serviceTier: '' }, rates: { input: 1 } }] }, 'pricing'), Error, 'non-empty string');
   assertThrows(() => pricingField({ entries: [{ selector: { inputTokens: { operator: 'gt', value: 1.5 } }, rates: { input: 1 } }] }, 'pricing'), Error, 'positive safe integer');
-  assertThrows(() => pricingField({ entries: [{ rates: { input: 1 } }, { selector: {}, rates: { input: 2 } }] }, 'pricing'), Error, 'duplicate pricing entry selector');
+  assertThrows(() => pricingField({
+    entries: [
+      { rates: { input: 1 } },
+      { selector: { serviceTier: 'priority' }, rates: { input: 2 } },
+      { selector: { serviceTier: 'priority' }, rates: { input: 3 } },
+    ],
+  }, 'pricing'), Error, 'duplicate pricing entry selector');
   assertThrows(() => pricingField({ entries: [{ rates: { input: -1 } }] }, 'pricing'), Error, 'non-negative');
 });
 

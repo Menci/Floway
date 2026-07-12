@@ -38,13 +38,35 @@ test('selector validation rejects unknown axes, empty equality values, and malfo
 });
 
 test('model validation rejects duplicate selectors and equal numeric thresholds even with different operators', () => {
-  assertThrows(() => validateModelPricing({ entries: [{ rates: { input: 1 } }, { selector: {}, rates: { input: 2 } }] }), Error, 'duplicate pricing entry selector');
   assertThrows(() => validateModelPricing({
     entries: [
+      { rates: { input: 1 } },
+      { selector: { serviceTier: 'priority' }, rates: { input: 2 } },
+      { selector: { serviceTier: 'priority' }, rates: { input: 3 } },
+    ],
+  }), Error, 'duplicate pricing entry selector');
+  assertThrows(() => validateModelPricing({
+    entries: [
+      { rates: { input: 1 } },
       { selector: { inputTokens: { operator: 'gt', value: 272000 } }, rates: { input: 1 } },
       { selector: { inputTokens: { operator: 'gte', value: 272000 } }, rates: { input: 2 } },
     ],
   }), Error, 'conflicting pricing threshold operators');
+});
+
+test('model validation requires exactly one base entry and uses it as the rate-field reference', () => {
+  assertThrows(() => validateModelPricing({
+    entries: [{ selector: { serviceTier: 'priority' }, rates: { input: 2 } }],
+  }), Error, 'exactly one base entry');
+  assertThrows(() => validateModelPricing({
+    entries: [{ rates: { input: 1 } }, { selector: {}, rates: { input: 2 } }],
+  }), Error, 'exactly one base entry');
+  validateModelPricing({
+    entries: [
+      { selector: { serviceTier: 'priority' }, rates: { input: 2, output: 8 } },
+      { rates: { input: 1, output: 4 } },
+    ],
+  });
 });
 
 test('model validation requires every entry to price the same dimensions', () => {
@@ -56,7 +78,7 @@ test('model validation requires every entry to price the same dimensions', () =>
       ],
     }),
     Error,
-    'must define the same dimensions as entry 0 (input, output)',
+    'must define the same dimensions as the base entry (input, output)',
   );
   validateModelPricing({
     entries: [

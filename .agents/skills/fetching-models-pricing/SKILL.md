@@ -49,6 +49,8 @@ modelPricing(
 Rules:
 
 - Every entry for one model must define the same rate dimensions.
+- Declare exactly one Base entry with no selector; compare every other entry's
+  rate fields against Base.
 - Absence means unpriced. Never inherit cache/image rates from input/output,
   and never inherit rates between selector coordinates.
 - `serviceTier` is an open-string equality coordinate.

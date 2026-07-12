@@ -197,9 +197,9 @@ ModelPricing
   → realized USD cost
 ```
 
-`ModelPricing.entries` is a sparse Cartesian map. Each entry contains a
-canonical selector and explicit rates. Every entry for one model declares the
-same rate dimensions. Missing selector combinations and missing rate dimensions
+`ModelPricing.entries` is a sparse Cartesian map. Exactly one entry has the
+empty selector and acts as Base; every other entry declares the same rate
+dimensions as Base. Missing selector combinations and missing rate dimensions
 are unpriced; there is no inheritance, precedence, multiplier, or cache/image
 rate fallback.
 

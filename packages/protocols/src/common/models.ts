@@ -131,13 +131,17 @@ export const validateModelPricing = (pricing: ModelPricing): void => {
     validatePriceVector(entry.rates, `model pricing entry ${index}.rates`);
     return canonicalizePricingSelector(entry.selector);
   });
+  const baseIndexes = selectors.flatMap((selector, index) => Object.keys(selector).length === 0 ? [index] : []);
+  if (baseIndexes.length !== 1) throw new Error('model pricing must declare exactly one base entry');
+  const baseIndex = baseIndexes[0]!;
   const dimensionsFor = (rates: PriceVector): readonly BillingDimension[] =>
     BILLING_DIMENSIONS.filter(dimension => rates[dimension] !== undefined);
-  const expectedDimensions = dimensionsFor(pricing.entries[0]!.rates);
-  for (let index = 1; index < pricing.entries.length; index++) {
+  const expectedDimensions = dimensionsFor(pricing.entries[baseIndex]!.rates);
+  for (let index = 0; index < pricing.entries.length; index++) {
+    if (index === baseIndex) continue;
     const dimensions = dimensionsFor(pricing.entries[index]!.rates);
     if (dimensions.length !== expectedDimensions.length || dimensions.some((dimension, i) => dimension !== expectedDimensions[i])) {
-      throw new Error(`model pricing entry ${index}.rates must define the same dimensions as entry 0 (${expectedDimensions.join(', ')})`);
+      throw new Error(`model pricing entry ${index}.rates must define the same dimensions as the base entry (${expectedDimensions.join(', ')})`);
     }
   }
   const selectorKeys = new Set<string>();
