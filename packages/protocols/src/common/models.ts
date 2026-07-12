@@ -35,13 +35,29 @@ export const INPUT_BILLING_DIMENSIONS: readonly BillingDimension[] = ['input', '
 // `unitPriceForDimension` (modality → bare, cached → uncached).
 export type PriceVector = Partial<Record<BillingDimension, number>>;
 
-// Pricing selectors are orthogonal coordinates. Service tier comes from the
-// upstream usage object; inputAboveTokens is selected per request from total
-// disjoint input. An omitted coordinate is the default on that axis.
-export interface PricingSelector {
-  serviceTier?: string;
-  inputAboveTokens?: number;
+export type PricingThresholdOperator = 'gt' | 'gte';
+
+export interface PricingThresholdCoordinate {
+  operator: PricingThresholdOperator;
+  value: number;
 }
+
+export type PricingCoordinateValue = string | PricingThresholdCoordinate;
+export type PricingSelector = Readonly<Record<string, PricingCoordinateValue>>;
+
+// The registry is the single source of truth for selector authoring and runtime
+// projection. It is exported as plain metadata so the dashboard can render the
+// same generic axes without duplicating their ids or value kinds.
+export const PRICING_AXES = [
+  { id: 'serviceTier', kind: 'equality', label: 'Service Tier' },
+  { id: 'inputTokens', kind: 'threshold', label: 'Input Tokens' },
+] as const;
+
+export type PricingAxis = typeof PRICING_AXES[number];
+export type PricingRuntimeFacts = Readonly<{
+  serviceTier?: string | null;
+  inputTokens: number;
+}>;
 
 // One explicit point in the selector Cartesian product. Rates never inherit
 // from another cell: every published coordinate carries its own PriceVector.
@@ -52,19 +68,19 @@ export interface PricingCell {
   rates: PriceVector;
 }
 
-// Per-model pricing as symmetric flat cells. `{ rates }` is the default service
-// tier at the base input length; non-default selectors use the same shape. This
-// keeps future selector axes independent instead of privileging one with nested
-// data. Duplicate coordinates and malformed selectors are authoring errors
-// rejected deterministically by the resolver.
-//
-// OpenAI's GPT-5.6 input-length selector uses `inputAboveTokens: 272000`: total
-// input must be STRICTLY greater than 272000, and the selected cell reprices the
-// whole request. Missing exact coordinates are unpriced; Floway never chooses
-// one selector over another or derives cross-cell rates.
-// https://developers.openai.com/api/docs/pricing
+// Per-model pricing as symmetric flat cells. `{ rates }` is the base cell;
+// non-default coordinates use the same shape. Threshold bands are implied by
+// selectors rather than maintained as a second catalog. Missing exact
+// coordinates are unpriced; Floway never chooses one selector over another or
+// derives rates across cells.
 export interface ModelPricing {
   cells: readonly PricingCell[];
+}
+
+export interface PricedRequest {
+  selector: PricingSelector;
+  selectorKey: string;
+  rates: PriceVector | null;
 }
 
 // Resolve the USD-per-million-tokens unit price for one dimension against a
@@ -94,60 +110,87 @@ export const unitPriceForDimension = (pricing: PriceVector | null, dimension: Bi
   }
 };
 
-const pricingCoordinateKey = (selector: PricingSelector | undefined): string =>
-  `${selector?.serviceTier ?? ''}\0${selector?.inputAboveTokens ?? ''}`;
+const axisById = new Map<string, PricingAxis>(PRICING_AXES.map(axis => [axis.id, axis]));
 
-const validatePricingCells = (pricing: ModelPricing): void => {
-  const coordinates = new Set<string>();
+const canonicalThreshold = (value: PricingCoordinateValue, path: string): PricingThresholdCoordinate => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError(`${path} must be a threshold object`);
+  const { operator, value: threshold } = value;
+  if (operator !== 'gt' && operator !== 'gte') throw new RangeError(`${path}.operator must be "gt" or "gte"`);
+  if (!Number.isSafeInteger(threshold) || threshold <= 0) throw new RangeError(`${path}.value must be a positive safe integer`);
+  return { operator, value: threshold };
+};
+
+export const canonicalizePricingSelector = (selector: PricingSelector | undefined): PricingSelector => {
+  const canonical: Record<string, PricingCoordinateValue> = {};
+  for (const axisId of Object.keys(selector ?? {}).toSorted()) {
+    const axis = axisById.get(axisId);
+    if (!axis) throw new RangeError(`unknown pricing selector axis: ${axisId}`);
+    const value = selector![axisId];
+    if (axis.kind === 'equality') {
+      if (typeof value !== 'string' || value.length === 0) throw new RangeError(`pricing selector ${axisId} must be a non-empty string`);
+      canonical[axisId] = value;
+    } else {
+      canonical[axisId] = canonicalThreshold(value, `pricing selector ${axisId}`);
+    }
+  }
+  return canonical;
+};
+
+export const canonicalPricingSelectorKey = (selector: PricingSelector | undefined): string =>
+  JSON.stringify(canonicalizePricingSelector(selector));
+
+export const parsePricingSelectorKey = (key: string): PricingSelector => {
+  const parsed: unknown = JSON.parse(key);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new TypeError('pricing selector key must encode an object');
+  const selector = canonicalizePricingSelector(parsed as PricingSelector);
+  if (JSON.stringify(selector) !== key) throw new Error('pricing selector key is not canonical');
+  return selector;
+};
+
+export const validateModelPricing = (pricing: ModelPricing): void => {
+  if (pricing.cells.length === 0) throw new Error('model pricing must declare at least one cell');
+  const cellKeys = new Set<string>();
+  const thresholds = new Map<string, Set<number>>();
   for (const cell of pricing.cells) {
-    const { serviceTier, inputAboveTokens } = cell.selector ?? {};
-    if (serviceTier?.length === 0) {
-      throw new RangeError('pricing service-tier selector must be non-empty');
+    const selector = canonicalizePricingSelector(cell.selector);
+    const key = JSON.stringify(selector);
+    if (cellKeys.has(key)) throw new Error(`duplicate pricing cell selector: ${key}`);
+    cellKeys.add(key);
+    for (const [axisId, coordinate] of Object.entries(selector)) {
+      if (typeof coordinate === 'string') continue;
+      const values = thresholds.get(axisId) ?? new Set<number>();
+      if (values.has(coordinate.value)) throw new Error(`duplicate pricing threshold value for ${axisId}: ${coordinate.value}`);
+      values.add(coordinate.value);
+      thresholds.set(axisId, values);
     }
-    if (inputAboveTokens !== undefined && (!Number.isSafeInteger(inputAboveTokens) || inputAboveTokens <= 0)) {
-      throw new RangeError(`input-length pricing threshold must be a positive safe integer, received ${inputAboveTokens}`);
-    }
-    const coordinate = pricingCoordinateKey(cell.selector);
-    if (coordinates.has(coordinate)) {
-      throw new Error(`duplicate pricing cell coordinate: serviceTier=${serviceTier ?? 'default'}, inputAboveTokens=${inputAboveTokens ?? 'base'}`);
-    }
-    coordinates.add(coordinate);
   }
 };
 
-// Resolve exactly one (service tier × input length) coordinate. Cells never
-// inherit from one another: an absent exact coordinate is unpriced. Default
-// protocol values are normalized to null before this function, so unknown wire
-// service tiers remain real coordinates and do not silently use base pricing.
-export const resolveEffectivePricing = (
-  pricing: ModelPricing | null,
-  serviceTier: string | null | undefined,
-  inputAboveTokens?: number | null,
-): PriceVector | null => {
-  if (!pricing) return null;
-  validatePricingCells(pricing);
-  const coordinate = pricingCoordinateKey({
-    ...(serviceTier != null ? { serviceTier } : {}),
-    ...(inputAboveTokens != null ? { inputAboveTokens } : {}),
-  });
-  return pricing.cells.find(cell => pricingCoordinateKey(cell.selector) === coordinate)?.rates ?? null;
-};
+const thresholdMatches = (coordinate: PricingThresholdCoordinate, fact: number): boolean =>
+  coordinate.operator === 'gt' ? fact > coordinate.value : fact >= coordinate.value;
 
-// Pick the highest input threshold strictly crossed by the request, independent
-// of service tier. The returned coordinate is persisted with the request and
-// later exact-matched by `resolveEffectivePricing`; a service-tier combination
-// missing at that coordinate remains unpriced.
-export const selectInputLengthTier = (pricing: ModelPricing | null, totalInputTokens: number): number | null => {
-  if (!pricing) return null;
-  validatePricingCells(pricing);
-  let selected: number | null = null;
+// Project one canonical coordinate per axis from runtime facts, then exact-match
+// the resulting Cartesian point. Equality facts are retained even when unknown,
+// so an unrecognized upstream service tier produces an unpriced coordinate.
+export const priceRequest = (pricing: ModelPricing | null, facts: PricingRuntimeFacts): PricedRequest => {
+  if (!pricing) return { selector: {}, selectorKey: '{}', rates: null };
+  validateModelPricing(pricing);
+  const selector: Record<string, PricingCoordinateValue> = {};
+  if (facts.serviceTier != null) selector.serviceTier = facts.serviceTier;
+
+  let selectedInput: PricingThresholdCoordinate | undefined;
   for (const cell of pricing.cells) {
-    const threshold = cell.selector?.inputAboveTokens;
-    if (threshold !== undefined && totalInputTokens > threshold && (selected === null || threshold > selected)) {
-      selected = threshold;
+    const coordinate = canonicalizePricingSelector(cell.selector).inputTokens;
+    if (typeof coordinate === 'object' && thresholdMatches(coordinate, facts.inputTokens) && (!selectedInput || coordinate.value > selectedInput.value)) {
+      selectedInput = coordinate;
     }
   }
-  return selected;
+  if (selectedInput) selector.inputTokens = selectedInput;
+
+  const canonicalSelector = canonicalizePricingSelector(selector);
+  const selectorKey = JSON.stringify(canonicalSelector);
+  const rates = pricing.cells.find(cell => canonicalPricingSelectorKey(cell.selector) === selectorKey)?.rates ?? null;
+  return { selector: canonicalSelector, selectorKey, rates };
 };
 
 // High-level endpoint-family discriminator. A model belongs to exactly one

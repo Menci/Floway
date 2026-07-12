@@ -1,112 +1,97 @@
 import { test } from 'vitest';
 
-import { resolveEffectivePricing, selectInputLengthTier, unitPriceForDimension, type ModelPricing } from './models.ts';
+import {
+  canonicalPricingSelectorKey,
+  canonicalizePricingSelector,
+  parsePricingSelectorKey,
+  priceRequest,
+  unitPriceForDimension,
+  validateModelPricing,
+  type ModelPricing,
+  type PricingSelector,
+} from './models.ts';
 import { assertEquals, assertThrows } from '../test-assert.ts';
 
-test('unitPriceForDimension returns null when pricing snapshot is null', () => {
-  assertEquals(unitPriceForDimension(null, 'input'), null);
-  assertEquals(unitPriceForDimension(null, 'input_cache_write_1h'), null);
-});
-
-test('unitPriceForDimension prefers dimension-specific rates', () => {
-  const pricing = { input: 1, input_cache_read: 0.1, input_cache_write: 1.25, input_cache_write_1h: 2, output: 5 };
-  assertEquals(unitPriceForDimension(pricing, 'input'), 1);
-  assertEquals(unitPriceForDimension(pricing, 'input_cache_read'), 0.1);
-  assertEquals(unitPriceForDimension(pricing, 'input_cache_write'), 1.25);
-  assertEquals(unitPriceForDimension(pricing, 'input_cache_write_1h'), 2);
-  assertEquals(unitPriceForDimension(pricing, 'output'), 5);
-});
-
 test('unitPriceForDimension applies only the within-vector fallback chain', () => {
+  assertEquals(unitPriceForDimension(null, 'input'), null);
   assertEquals(unitPriceForDimension({ input: 1, input_cache_write: 1.25 }, 'input_cache_write_1h'), 1.25);
-  assertEquals(unitPriceForDimension({ input: 1 }, 'input_cache_write_1h'), 1);
-  assertEquals(unitPriceForDimension({}, 'input_cache_write_1h'), null);
+  assertEquals(unitPriceForDimension({ input: 1 }, 'input_cache_read'), 1);
+  assertEquals(unitPriceForDimension({}, 'output'), null);
+});
+
+test('canonical selector JSON sorts axis keys and threshold object keys deterministically', () => {
+  const first: PricingSelector = { serviceTier: 'priority', inputTokens: { value: 272000, operator: 'gt' } };
+  const second: PricingSelector = { inputTokens: { operator: 'gt', value: 272000 }, serviceTier: 'priority' };
+  const expected = '{"inputTokens":{"operator":"gt","value":272000},"serviceTier":"priority"}';
+  assertEquals(canonicalPricingSelectorKey(first), expected);
+  assertEquals(canonicalPricingSelectorKey(second), expected);
+  assertEquals(canonicalPricingSelectorKey(undefined), '{}');
+  assertEquals(parsePricingSelectorKey(expected), { inputTokens: { operator: 'gt', value: 272000 }, serviceTier: 'priority' });
+});
+
+test('parsePricingSelectorKey rejects noncanonical JSON', () => {
+  assertThrows(() => parsePricingSelectorKey('{"serviceTier":"priority","inputTokens":{"operator":"gt","value":272000}}'), Error, 'not canonical');
+});
+
+test('selector validation rejects unknown axes, empty equality values, and malformed thresholds', () => {
+  assertThrows(() => canonicalizePricingSelector({ unknown: 'x' }), RangeError, 'unknown pricing selector axis');
+  assertThrows(() => canonicalizePricingSelector({ serviceTier: '' }), RangeError, 'non-empty string');
+  assertThrows(() => canonicalizePricingSelector({ inputTokens: { operator: 'eq' as 'gt', value: 1 } }), RangeError, '"gt" or "gte"');
+  for (const value of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+    assertThrows(() => canonicalizePricingSelector({ inputTokens: { operator: 'gt', value } }), RangeError, 'positive safe integer');
+  }
+});
+
+test('model validation rejects duplicate selectors and equal numeric thresholds even with different operators', () => {
+  assertThrows(() => validateModelPricing({ cells: [{ rates: { input: 1 } }, { selector: {}, rates: { input: 2 } }] }), Error, 'duplicate pricing cell selector');
+  assertThrows(() => validateModelPricing({ cells: [
+    { selector: { inputTokens: { operator: 'gt', value: 272000 } }, rates: { input: 1 } },
+    { selector: { inputTokens: { operator: 'gte', value: 272000 } }, rates: { input: 2 } },
+  ] }), Error, 'duplicate pricing threshold value');
 });
 
 const GRID: ModelPricing = {
   cells: [
-    { rates: { input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 30 } },
-    { selector: { serviceTier: 'priority' }, rates: { input: 10, input_cache_read: 1, input_cache_write: 12.5, output: 60 } },
-    { selector: { inputAboveTokens: 272000 }, rates: { input: 10, input_cache_read: 1, input_cache_write: 12.5, output: 45 } },
-    { selector: { serviceTier: 'priority', inputAboveTokens: 272000 }, rates: { input: 20, input_cache_read: 2, input_cache_write: 25, output: 90 } },
+    { rates: { input: 5, output: 30 } },
+    { selector: { serviceTier: 'priority' }, rates: { input: 10, output: 60 } },
+    { selector: { inputTokens: { operator: 'gt', value: 128000 } }, rates: { input: 7, output: 40 } },
+    { selector: { inputTokens: { operator: 'gt', value: 272000 } }, rates: { input: 10, output: 45 } },
+    { selector: { serviceTier: 'priority', inputTokens: { operator: 'gt', value: 128000 } }, rates: { input: 14, output: 80 } },
   ],
 };
 
-test('selectInputLengthTier treats input thresholds as strictly greater', () => {
-  assertEquals(selectInputLengthTier(GRID, 271999), null);
-  assertEquals(selectInputLengthTier(GRID, 272000), null);
-  assertEquals(selectInputLengthTier(GRID, 272001), 272000);
+test('priceRequest applies gt boundaries and selects the highest matching threshold', () => {
+  assertEquals(priceRequest(GRID, { inputTokens: 128000 }), { selector: {}, selectorKey: '{}', rates: { input: 5, output: 30 } });
+  assertEquals(priceRequest(GRID, { inputTokens: 128001 }).rates, { input: 7, output: 40 });
+  assertEquals(priceRequest(GRID, { inputTokens: 272000 }).rates, { input: 7, output: 40 });
+  assertEquals(priceRequest(GRID, { inputTokens: 272001 }).rates, { input: 10, output: 45 });
 });
 
-test('selectInputLengthTier discovers the highest crossed threshold independently of service tier', () => {
-  const pricing: ModelPricing = {
-    cells: [
-      { rates: { input: 1 } },
-      { selector: { serviceTier: 'fast', inputAboveTokens: 128000 }, rates: { input: 2 } },
-      { selector: { inputAboveTokens: 272000 }, rates: { input: 4 } },
-    ],
-  };
-  assertEquals(selectInputLengthTier(pricing, 128000), null);
-  assertEquals(selectInputLengthTier(pricing, 128001), 128000);
-  assertEquals(selectInputLengthTier(pricing, 272001), 272000);
-  assertEquals(selectInputLengthTier(null, 300000), null);
+test('priceRequest applies gte at the exact boundary', () => {
+  const pricing: ModelPricing = { cells: [
+    { rates: { input: 1 } },
+    { selector: { inputTokens: { operator: 'gte', value: 100 } }, rates: { input: 2 } },
+  ] };
+  assertEquals(priceRequest(pricing, { inputTokens: 99 }).rates, { input: 1 });
+  assertEquals(priceRequest(pricing, { inputTokens: 100 }).rates, { input: 2 });
 });
 
-test('resolveEffectivePricing exact-matches every Cartesian coordinate', () => {
-  assertEquals(resolveEffectivePricing(GRID, null, null), { input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 30 });
-  assertEquals(resolveEffectivePricing(GRID, 'priority', null), { input: 10, input_cache_read: 1, input_cache_write: 12.5, output: 60 });
-  assertEquals(resolveEffectivePricing(GRID, null, 272000), { input: 10, input_cache_read: 1, input_cache_write: 12.5, output: 45 });
-  assertEquals(resolveEffectivePricing(GRID, 'priority', 272000), { input: 20, input_cache_read: 2, input_cache_write: 25, output: 90 });
+test('priceRequest exact-matches every axis and leaves missing combinations unpriced', () => {
+  assertEquals(priceRequest(GRID, { inputTokens: 0, serviceTier: 'priority' }).rates, { input: 10, output: 60 });
+  assertEquals(priceRequest(GRID, { inputTokens: 128001, serviceTier: 'priority' }).rates, { input: 14, output: 80 });
+  const missing = priceRequest(GRID, { inputTokens: 272001, serviceTier: 'priority' });
+  assertEquals(missing.rates, null);
+  assertEquals(missing.selector, { inputTokens: { operator: 'gt', value: 272000 }, serviceTier: 'priority' });
 });
 
-test('resolveEffectivePricing never inherits rates across cells', () => {
-  const pricing: ModelPricing = {
-    cells: [
-      { rates: { input: 5, input_cache_read: 0.5, output: 30 } },
-      { selector: { serviceTier: 'priority' }, rates: { input: 10 } },
-    ],
-  };
-  assertEquals(resolveEffectivePricing(pricing, 'priority', null), { input: 10 });
+test('unknown runtime service tier remains a coordinate and exact-missing is unpriced', () => {
+  assertEquals(priceRequest(GRID, { inputTokens: 0, serviceTier: 'future' }), {
+    selector: { serviceTier: 'future' },
+    selectorKey: '{"serviceTier":"future"}',
+    rates: null,
+  });
 });
 
-test('resolveEffectivePricing returns null for every missing exact coordinate', () => {
-  const pricing: ModelPricing = {
-    cells: [
-      { rates: { input: 5, output: 30 } },
-      { selector: { serviceTier: 'priority' }, rates: { input: 10, output: 60 } },
-      { selector: { inputAboveTokens: 272000 }, rates: { input: 10, output: 45 } },
-    ],
-  };
-  assertEquals(resolveEffectivePricing(pricing, 'priority', 272000), null);
-  assertEquals(resolveEffectivePricing(pricing, 'batch', null), null);
-  assertEquals(resolveEffectivePricing(pricing, null, 999), null);
-  assertEquals(resolveEffectivePricing(null, null, null), null);
-});
-
-test('pricing resolution rejects duplicate coordinates deterministically', () => {
-  const duplicateBase: ModelPricing = { cells: [{ rates: { input: 1 } }, { selector: {}, rates: { input: 2 } }] };
-  assertThrows(() => resolveEffectivePricing(duplicateBase, null, null), Error, 'duplicate pricing cell coordinate');
-
-  const duplicateCombined: ModelPricing = {
-    cells: [
-      { selector: { serviceTier: 'priority', inputAboveTokens: 272000 }, rates: { input: 1 } },
-      { selector: { inputAboveTokens: 272000, serviceTier: 'priority' }, rates: { input: 2 } },
-    ],
-  };
-  assertThrows(() => selectInputLengthTier(duplicateCombined, 300000), Error, 'duplicate pricing cell coordinate');
-});
-
-test('pricing resolution rejects malformed selectors deterministically', () => {
-  assertThrows(
-    () => resolveEffectivePricing({ cells: [{ selector: { serviceTier: '' }, rates: { input: 1 } }] }, null, null),
-    RangeError,
-    'pricing service-tier selector must be non-empty',
-  );
-  for (const inputAboveTokens of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
-    assertThrows(
-      () => selectInputLengthTier({ cells: [{ selector: { inputAboveTokens }, rates: { input: 2 } }] }, 300000),
-      RangeError,
-      'input-length pricing threshold must be a positive safe integer',
-    );
-  }
+test('priceRequest returns the canonical base coordinate for null pricing', () => {
+  assertEquals(priceRequest(null, { inputTokens: 1 }), { selector: {}, selectorKey: '{}', rates: null });
 });
