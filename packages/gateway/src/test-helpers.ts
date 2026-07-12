@@ -110,8 +110,7 @@ export async function setupAppTest(options: SetupOptions = {}): Promise<AppTestC
   // can deterministically await them — see test-helpers/background-tracker.ts.
   initBackgroundSchedulerResolver(_c => trackBackground);
 
-  const adminKeyProvided = 'adminKey' in options;
-  const adminKey = adminKeyProvided ? options.adminKey : 'admin-test-key';
+  const adminKey = 'adminKey' in options ? options.adminKey : 'admin-test-key';
   initEnv(name => {
     if (name !== 'ADMIN_KEY') return '';
     return adminKey === null ? undefined : adminKey;
