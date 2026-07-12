@@ -119,21 +119,37 @@ const coordinateKey = (draft: PricingEntryDraft): string | null => {
   }
 };
 
-const duplicatePricingCoordinates = computed(() => {
-  const seen = new Set<string>();
-  const duplicates = new Set<string>();
+const pricingEntryCoordinateLabel = (draft: PricingEntryDraft): string => {
+  const labels = PRICING_AXES.flatMap(axis => {
+    const coordinate = draft.selector[axis.id];
+    if (axis.kind === 'equality') return typeof coordinate === 'string' && coordinate !== '' ? [coordinate] : [];
+    if (!coordinate || typeof coordinate !== 'object') return [];
+    if (coordinate.value === undefined) return [];
+    return [`${coordinate.operator === 'gte' ? '>=' : '>'} ${coordinate.value} tokens`];
+  });
+  return labels.length > 0 ? labels.join(' · ') : 'Base';
+};
+
+const duplicatePricingCoordinateGroups = computed(() => {
+  const draftsByKey = new Map<string, PricingEntryDraft[]>();
   for (const draft of pricingEntryDrafts.value) {
     const key = coordinateKey(draft);
     if (key === null) continue;
-    if (seen.has(key)) duplicates.add(key);
-    else seen.add(key);
+    const drafts = draftsByKey.get(key) ?? [];
+    drafts.push(draft);
+    draftsByKey.set(key, drafts);
   }
-  return duplicates;
+  return [...draftsByKey].filter(([, drafts]) => drafts.length > 1);
 });
 
+const duplicatePricingCoordinates = computed(() =>
+  new Set(duplicatePricingCoordinateGroups.value.map(([key]) => key)));
+
 const hasRates = (draft: PricingEntryDraft): boolean => BILLING_DIMENSIONS.some(dimension => draft.rates[dimension] !== undefined);
+const rateDimensions = (draft: PricingEntryDraft): readonly BillingDimension[] =>
+  BILLING_DIMENSIONS.filter(dimension => draft.rates[dimension] !== undefined);
 const rateDimensionKey = (draft: PricingEntryDraft): string =>
-  BILLING_DIMENSIONS.filter(dimension => draft.rates[dimension] !== undefined).join('\0');
+  rateDimensions(draft).join('\0');
 const hasValidSelector = (draft: PricingEntryDraft): boolean => {
   try {
     canonicalPricingSelectorKey(compactSelector(draft));
@@ -143,17 +159,56 @@ const hasValidSelector = (draft: PricingEntryDraft): boolean => {
   }
 };
 
+const formatList = (values: readonly string[]): string => {
+  if (values.length <= 1) return values[0] ?? '';
+  if (values.length === 2) return `${values[0]} and ${values[1]}`;
+  return `${values.slice(0, -1).join(', ')}, and ${values.at(-1)}`;
+};
+
+const rateFieldName = (dimension: BillingDimension): string =>
+  PRICING_LABELS[dimension].replace(/ \(\$\/MTok\)$/, '');
+
 const pricingValidationErrors = computed<readonly string[]>(() => {
   const errors = new Set<string>();
   const hasMissingRates = pricingEntryDrafts.value.some(draft => !hasRates(draft));
   const hasInvalidSelector = pricingEntryDrafts.value.some(draft => !hasValidSelector(draft));
-  const hasDuplicateCoordinates = duplicatePricingCoordinates.value.size > 0;
+  const hasDuplicateCoordinates = duplicatePricingCoordinateGroups.value.length > 0;
   const hasInconsistentRateFields = new Set(pricingEntryDrafts.value.map(rateDimensionKey)).size > 1;
 
-  if (hasMissingRates) errors.add('Set at least one rate.');
+  if (hasMissingRates && !hasInconsistentRateFields) errors.add('Set at least one rate.');
   if (hasInvalidSelector) errors.add('Selector values are invalid.');
-  if (hasDuplicateCoordinates) errors.add('Duplicate selector coordinate.');
-  if (hasInconsistentRateFields) errors.add('All pricing entries must set the same rate fields.');
+  if (hasDuplicateCoordinates) {
+    const labels = duplicatePricingCoordinateGroups.value.map(([, drafts]) => JSON.stringify(pricingEntryCoordinateLabel(drafts[0]!)));
+    const subject = labels.length === 1 ? 'Duplicate selector coordinate' : 'Duplicate selector coordinates';
+    const predicate = labels.length === 1 ? 'is' : 'are each';
+    errors.add(`${subject}: ${formatList(labels)} ${predicate} used more than once.`);
+  }
+  if (hasInconsistentRateFields) {
+    const shapes = new Map<string, { dimensions: readonly BillingDimension[]; count: number; firstIndex: number }>();
+    pricingEntryDrafts.value.forEach((draft, index) => {
+      const key = rateDimensionKey(draft);
+      const shape = shapes.get(key);
+      if (shape) shape.count++;
+      else shapes.set(key, { dimensions: rateDimensions(draft), count: 1, firstIndex: index });
+    });
+    const expected = [...shapes.values()].toSorted((a, b) =>
+      b.count - a.count
+      || Number(b.dimensions.length > 0) - Number(a.dimensions.length > 0)
+      || a.firstIndex - b.firstIndex)[0]!;
+    const expectedSet = new Set(expected.dimensions);
+    const differences = pricingEntryDrafts.value.flatMap(draft => {
+      if (rateDimensionKey(draft) === expected.dimensions.join('\0')) return [];
+      const actual = new Set(rateDimensions(draft));
+      const missing = expected.dimensions.filter(dimension => !actual.has(dimension)).map(rateFieldName);
+      const added = rateDimensions(draft).filter(dimension => !expectedSet.has(dimension)).map(rateFieldName);
+      const changes = [
+        ...(missing.length > 0 ? [`is missing ${formatList(missing)}`] : []),
+        ...(added.length > 0 ? [`adds ${formatList(added)}`] : []),
+      ];
+      return [`${JSON.stringify(pricingEntryCoordinateLabel(draft))} ${changes.join(' and ')}`];
+    });
+    errors.add(`All pricing entries must set the same rate fields: ${differences.join('; ')}.`);
+  }
 
   const canValidateCatalog = pricingEntryDrafts.value.length > 0
     && !hasMissingRates
@@ -227,17 +282,6 @@ const updatePricingRate = (index: number, dimension: BillingDimension, raw: stri
     return { ...draft, rates };
   });
   writePricingEntries(next);
-};
-
-const pricingEntryCoordinateLabel = (draft: PricingEntryDraft): string => {
-  const labels = PRICING_AXES.flatMap(axis => {
-    const coordinate = draft.selector[axis.id];
-    if (axis.kind === 'equality') return typeof coordinate === 'string' && coordinate !== '' ? [coordinate] : [];
-    if (!coordinate || typeof coordinate !== 'object') return [];
-    if (coordinate.value === undefined) return [];
-    return [`${coordinate.operator === 'gte' ? '>=' : '>'} ${coordinate.value} tokens`];
-  });
-  return labels.length > 0 ? labels.join(' · ') : 'Base';
 };
 
 const addPricingEntry = () => {

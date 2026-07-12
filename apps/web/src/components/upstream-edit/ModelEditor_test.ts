@@ -161,14 +161,14 @@ describe('ModelEditor row synchronization', () => {
     };
     const wrapper = mountEditor(selected);
 
-    expect(wrapper.text()).toContain('All pricing entries must set the same rate fields.');
+    expect(wrapper.text()).toContain('All pricing entries must set the same rate fields: "priority" is missing Output.');
     expect(wrapper.emitted('validity-change')?.at(-1)).toEqual([false]);
 
     await wrapper.get('button[aria-label="Edit pricing entry 2: priority"]').trigger('click');
     const output = wrapper.findAll('label').find(label => label.text().includes('Output ($/MTok)'))!.get('input');
     await output.setValue('8');
 
-    expect(wrapper.text()).not.toContain('All pricing entries must set the same rate fields.');
+    expect(wrapper.text()).not.toContain('All pricing entries must set the same rate fields:');
     expect(wrapper.emitted('validity-change')?.at(-1)).toEqual([true]);
   });
 
@@ -186,13 +186,27 @@ describe('ModelEditor row synchronization', () => {
     const errors = wrapper.get('[aria-label="Pricing validation errors"]');
 
     expect(errors.findAll('p').map(error => error.text())).toEqual([
-      'Set at least one rate.',
       'Selector values are invalid.',
-      'Duplicate selector coordinate.',
-      'All pricing entries must set the same rate fields.',
+      'Duplicate selector coordinate: "Base" is used more than once.',
+      'All pricing entries must set the same rate fields: "Base" is missing Input.',
     ]);
     expect(form.element.compareDocumentPosition(errors.element) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
     expect(wrapper.emitted('validity-change')?.at(-1)).toEqual([false]);
+  });
+
+  it('shows the empty-rate error when every pricing entry has the same empty rate shape', () => {
+    const selected = row('empty-rates', 'model-empty-rates', 1, undefined);
+    selected.config.pricing = {
+      entries: [
+        { rates: {} },
+        { selector: { serviceTier: 'priority' }, rates: {} },
+      ],
+    };
+    const wrapper = mountEditor(selected);
+
+    expect(wrapper.get('[aria-label="Pricing validation errors"]').findAll('p').map(error => error.text())).toEqual([
+      'Set at least one rate.',
+    ]);
   });
 
   it.each(['0', '1.5'])('shows validation instead of throwing for threshold %s', async value => {
