@@ -45,7 +45,7 @@ import { serializeStoredState } from './upstream-json.ts';
 import { bucketForTtftMs, bucketForTpotUs } from '../shared/performance-histogram.ts';
 import { generateSessionToken } from '../shared/session-tokens.ts';
 import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';
-import { BILLING_DIMENSIONS, canonicalPricingSelectorKey, canonicalizePricingSelector, type BillingDimension, type PriceVector, type PricingSelector, unitPriceForDimension } from '@floway-dev/protocols/common';
+import { BILLING_DIMENSIONS, canonicalPricingSelectorKey, canonicalizePricingSelector, type BillingDimension, type PriceVector, type PricingSelector } from '@floway-dev/protocols/common';
 import type { ProviderModel, UpstreamRecord } from '@floway-dev/provider';
 
 const SEED_ADMIN_USER: User = {
@@ -247,7 +247,7 @@ class MemoryUsageRepo implements UsageRepo {
   private dimensionEntries(record: UsageRecord): { dimension: BillingDimension; tokens: number; unitPrice: number | null }[] {
     return BILLING_DIMENSIONS.flatMap(dimension => {
       const tokens = record.tokens[dimension] ?? 0;
-      return tokens > 0 ? [{ dimension, tokens, unitPrice: unitPriceForDimension(record.cost, dimension) }] : [];
+      return tokens > 0 ? [{ dimension, tokens, unitPrice: record.cost?.[dimension] ?? null }] : [];
     });
   }
 

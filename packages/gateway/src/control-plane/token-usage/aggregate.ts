@@ -1,5 +1,5 @@
 import type { UsageRecord } from '../../repo/types.ts';
-import { BILLING_DIMENSIONS, type BillingDimension, unitPriceForDimension } from '@floway-dev/protocols/common';
+import { BILLING_DIMENSIONS, type BillingDimension } from '@floway-dev/protocols/common';
 
 export interface DisplayUsageRecord {
   keyId: string;
@@ -27,7 +27,7 @@ const recordCostUsd = (record: UsageRecord): number => {
   for (const dimension of BILLING_DIMENSIONS) {
     const tokens = record.tokens[dimension] ?? 0;
     if (tokens === 0) continue;
-    const unitPrice = unitPriceForDimension(record.cost, dimension);
+    const unitPrice = record.cost?.[dimension] ?? null;
     if (unitPrice !== null) total += tokens * unitPrice;
   }
   return total / 1e6;

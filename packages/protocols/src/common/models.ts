@@ -7,10 +7,10 @@ import type { ModelEndpoints } from './capabilities.ts';
 // `input_cache_write_1h`, or `input_image`, never several at once.
 //
 // Convention borrowed from models.dev and LiteLLM: bare `input`/`output` mean
-// the text modality AND act as the fallback rate for any modality without a
-// dedicated rate; the `_image` variants are the image modality. There are no
-// image cache dimensions on purpose — a live probe of Azure gpt-image-2
-// confirmed its usage object never emits cached fields.
+// the text modality and the `_image` variants mean the image modality. Every
+// dimension is priced explicitly; an absent rate leaves that dimension
+// unpriced. There are no image cache dimensions on purpose — a live probe of
+// Azure gpt-image-2 confirmed its usage object never emits cached fields.
 //
 // `input_cache_write` is the generic cache-write bucket — protocols without
 // a TTL distinction land all their writes here, and on Anthropic it covers
@@ -30,9 +30,8 @@ export const INPUT_BILLING_DIMENSIONS: readonly BillingDimension[] = ['input', '
 // A PriceVector is the per-dimension USD-per-million-token rate set for one
 // billing cell, aligned with the sst/models.dev `Cost` schema
 // (https://github.com/sst/models.dev/blob/main/packages/core/src/schema.ts).
-// Bare `input`/`output` are the text/fallback rate and `_image` keys are the
-// image modality; every key is optional and an absent key falls back per
-// `unitPriceForDimension` (modality → bare, cached → uncached).
+// Bare `input`/`output` are the text rates and `_image` keys are the image
+// modality. Every key is optional; absence means that dimension is unpriced.
 export type PriceVector = Partial<Record<BillingDimension, number>>;
 
 export type PricingThresholdOperator = 'gt' | 'gte';
@@ -61,8 +60,6 @@ export type PricingRuntimeFacts = Readonly<{
 
 // One explicit point in the selector Cartesian product. Rates never inherit
 // from another cell: every published coordinate carries its own PriceVector.
-// Within a vector, `unitPriceForDimension` still provides the documented
-// modality/cache fallback chain.
 export interface PricingCell {
   selector?: PricingSelector;
   rates: PriceVector;
@@ -89,33 +86,6 @@ export const validatePriceVector = (pricing: PriceVector, path = 'price vector')
   for (const dimension of dimensions) {
     const rate = pricing[dimension]!;
     if (!Number.isFinite(rate) || rate < 0) throw new RangeError(`${path}.${dimension} must be a finite non-negative number`);
-  }
-};
-
-// Resolve the USD-per-million-tokens unit price for one dimension against a
-// pricing snapshot, applying the LiteLLM-style fallback chain: a modality with
-// no dedicated rate falls back to the bare text rate, cached input falls back
-// to uncached input, and the 1-hour cache write falls back to the 5-minute
-// cache write before reaching uncached input. Returns null when even the
-// fallback base is absent (or the whole snapshot is null), which aggregation
-// treats as cost 0.
-export const unitPriceForDimension = (pricing: PriceVector | null, dimension: BillingDimension): number | null => {
-  if (!pricing) return null;
-  switch (dimension) {
-  case 'input':
-    return pricing.input ?? null;
-  case 'input_cache_read':
-    return pricing.input_cache_read ?? pricing.input ?? null;
-  case 'input_cache_write':
-    return pricing.input_cache_write ?? pricing.input ?? null;
-  case 'input_cache_write_1h':
-    return pricing.input_cache_write_1h ?? pricing.input_cache_write ?? pricing.input ?? null;
-  case 'input_image':
-    return pricing.input_image ?? pricing.input ?? null;
-  case 'output':
-    return pricing.output ?? null;
-  case 'output_image':
-    return pricing.output_image ?? pricing.output ?? null;
   }
 };
 
@@ -162,6 +132,15 @@ export const validateModelPricing = (pricing: ModelPricing): void => {
     validatePriceVector(cell.rates, `model pricing cell ${index}.rates`);
     return canonicalizePricingSelector(cell.selector);
   });
+  const dimensionsFor = (rates: PriceVector): readonly BillingDimension[] =>
+    BILLING_DIMENSIONS.filter(dimension => rates[dimension] !== undefined);
+  const expectedDimensions = dimensionsFor(pricing.cells[0]!.rates);
+  for (let index = 1; index < pricing.cells.length; index++) {
+    const dimensions = dimensionsFor(pricing.cells[index]!.rates);
+    if (dimensions.length !== expectedDimensions.length || dimensions.some((dimension, i) => dimension !== expectedDimensions[i])) {
+      throw new Error(`model pricing cell ${index}.rates must define the same dimensions as cell 0 (${expectedDimensions.join(', ')})`);
+    }
+  }
   const cellKeys = new Set<string>();
   const thresholds = new Map<string, Map<number, PricingThresholdOperator>>();
   for (const selector of selectors) {

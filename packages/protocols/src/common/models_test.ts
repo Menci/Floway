@@ -8,19 +8,11 @@ import {
   parsePricingSelectorKey,
   priceRequest,
   pricingCell,
-  unitPriceForDimension,
   validateModelPricing,
   type ModelPricing,
   type PricingSelector,
 } from './models.ts';
 import { assertEquals, assertThrows } from '../test-assert.ts';
-
-test('unitPriceForDimension applies only the within-vector fallback chain', () => {
-  assertEquals(unitPriceForDimension(null, 'input'), null);
-  assertEquals(unitPriceForDimension({ input: 1, input_cache_write: 1.25 }, 'input_cache_write_1h'), 1.25);
-  assertEquals(unitPriceForDimension({ input: 1 }, 'input_cache_read'), 1);
-  assertEquals(unitPriceForDimension({}, 'output'), null);
-});
 
 test('canonical selector JSON sorts axis keys and threshold object keys deterministically', () => {
   const first: PricingSelector = { serviceTier: 'priority', inputTokens: { value: 272000, operator: 'gt' } };
@@ -53,6 +45,25 @@ test('model validation rejects duplicate selectors and equal numeric thresholds 
       { selector: { inputTokens: { operator: 'gte', value: 272000 } }, rates: { input: 2 } },
     ],
   }), Error, 'conflicting pricing threshold operators');
+});
+
+test('model validation requires every cell to price the same dimensions', () => {
+  assertThrows(
+    () => validateModelPricing({
+      cells: [
+        { rates: { input: 1, output: 4 } },
+        { selector: { serviceTier: 'priority' }, rates: { input: 2 } },
+      ],
+    }),
+    Error,
+    'must define the same dimensions as cell 0 (input, output)',
+  );
+  validateModelPricing({
+    cells: [
+      { rates: { input: 1, output: 4 } },
+      { selector: { serviceTier: 'priority' }, rates: { output: 8, input: 2 } },
+    ],
+  });
 });
 
 test('model validation rejects service-specific thresholds without a global band', () => {

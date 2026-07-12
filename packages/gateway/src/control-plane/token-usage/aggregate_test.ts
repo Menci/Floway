@@ -67,13 +67,13 @@ test('aggregateUsageForDisplay treats null cost as zero', () => {
   assertEquals(out[0].cost, 0);
 });
 
-test('aggregateUsageForDisplay falls back to the input rate when input_cache_read has no dedicated price', () => {
+test('aggregateUsageForDisplay leaves dimensions without an explicit rate unpriced', () => {
   const cost: PriceVector = { input: 4, output: 8 };
   const out = aggregateUsageForDisplay([
     baseRecord({ cost, tokens: { input: 500_000, input_cache_read: 500_000 } }),
   ]);
-  // input = 500_000 * $4 = 2; input_cache_read = 500_000 * $4 (fallback) = 2; total $4.
-  assertAlmostEquals(out[0].cost, 4, 1e-9);
+  // Only input has a rate: 500_000 * $4 = $2. Cache reads remain unpriced.
+  assertAlmostEquals(out[0].cost, 2, 1e-9);
 });
 
 test('aggregateUsageForDisplay charges image dimensions separately', () => {
