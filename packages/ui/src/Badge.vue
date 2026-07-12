@@ -3,7 +3,7 @@ import { computed } from 'vue';
 
 import { cn } from './utils/cn.ts';
 
-type Tone = 'neutral' | 'cyan' | 'emerald' | 'amber' | 'rose' | 'violet' | 'orange' | 'zinc';
+type Tone = 'neutral' | 'cyan' | 'emerald' | 'amber' | 'rose' | 'violet' | 'zinc';
 
 const props = withDefaults(defineProps<{
   tone?: Tone;
@@ -17,7 +17,6 @@ const toneClass: Record<Tone, string> = {
   amber: 'bg-accent-amber/10 text-accent-amber border-accent-amber/30',
   rose: 'bg-accent-rose/10 text-accent-rose border-accent-rose/30',
   violet: 'bg-accent-violet/10 text-accent-violet border-accent-violet/30',
-  orange: 'bg-accent-orange/10 text-accent-orange border-accent-orange/30',
   zinc: 'bg-surface-600 text-gray-200 border-white/[0.1]',
 };
 

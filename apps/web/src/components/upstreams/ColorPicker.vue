@@ -187,7 +187,6 @@ const previewColor = computed<UpstreamColor | null>(() => {
 <template>
   <div class="flex flex-col gap-3">
     <div class="flex flex-wrap items-center gap-2">
-      <!-- No override: dashed ring wraps the kind default swatch -->
       <button
         type="button"
         class="relative size-7 rounded-full border-2 border-dashed border-white/40 flex items-center justify-center transition-colors hover:border-white/70"
@@ -198,7 +197,6 @@ const previewColor = computed<UpstreamColor | null>(() => {
         <UpstreamBadge :kind="kind" :color="null" variant="swatch" class="size-4 rounded-full" />
       </button>
 
-      <!-- Preset chips -->
       <button
         v-for="preset in presets"
         :key="preset"
@@ -211,7 +209,6 @@ const previewColor = computed<UpstreamColor | null>(() => {
         <UpstreamBadge :kind="kind" :color="preset" variant="chip" class="size-7 rounded-full" />
       </button>
 
-      <!-- Custom HEX chip -->
       <button
         type="button"
         class="relative size-7 rounded-full border border-white/20 overflow-hidden transition-colors hover:border-white/50 flex items-center justify-center"
@@ -229,10 +226,6 @@ const previewColor = computed<UpstreamColor | null>(() => {
     </div>
 
     <div v-if="customMode" class="flex flex-col gap-2">
-      <!-- Saturation / value pad. Backed by the current hue as a solid
-           colour; a white-to-transparent horizontal wash pulls the
-           saturation axis in, a black-to-transparent vertical wash lays
-           the value axis on top. -->
       <div
         ref="svPad"
         class="relative h-32 w-52 cursor-crosshair overflow-hidden rounded-md border border-white/[0.1]"
@@ -246,8 +239,6 @@ const previewColor = computed<UpstreamColor | null>(() => {
         />
       </div>
 
-      <!-- Hue strip. Rainbow gradient sits under a thin marker that
-           tracks the current hue's horizontal position. -->
       <div
         ref="hueStrip"
         class="relative h-3 w-52 cursor-ew-resize overflow-hidden rounded-full border border-white/[0.1]"
