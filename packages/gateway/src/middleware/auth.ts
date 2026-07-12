@@ -68,12 +68,8 @@ export const authMiddleware = async (c: AuthedContext, next: Next) => {
   await next();
 };
 
-// Resolves a data-plane credential into the current key and owner rows, then
-// replaces the auth snapshot on the Hono context. The initial HTTP middleware
-// calls this once; long-lived WebSocket transports call it again at each
-// logical request boundary. Keeping the raw credential as the lookup key means
-// rotation and deletion revoke an existing socket, while metadata, retention,
-// and upstream-scope changes take effect on its next turn.
+// Re-resolving the presented credential at each logical WebSocket request
+// revokes rotated/deleted keys and applies the current key and user policies.
 export const authenticateApiKey = async (c: AuthedContext, rawKey: string): Promise<boolean> => {
   const apiKey = await getRepo().apiKeys.findByRawKey(rawKey);
   if (!apiKey) return false;
