@@ -28,7 +28,7 @@ const record = (overrides: Partial<UsageRecord>): UsageRecord => ({
   pricingSelector: {},
   requests: 1,
   tokens: { input: 300_000, input_cache_read: 20_000, output: 100_000 },
-  cost: longPricing,
+  rates: longPricing,
   ...overrides,
 });
 
@@ -55,19 +55,19 @@ for (const backend of backends) {
     assertEquals(row.pricingSelector, { inputTokens: { operator: 'gt', value: 272000 } });
     // The whole bucket is priced at the long-band rates, not the base rates.
     // Only dimensions that carry tokens get a unit-price snapshot.
-    assertEquals(row.cost, { input: 10, input_cache_read: 1, output: 45 });
+    assertEquals(row.rates, { input: 10, input_cache_read: 1, output: 45 });
   });
 
   test(`${backend.name} usage repo keeps different input-length bands in separate buckets`, async () => {
     const repo = await backend.make();
-    await repo.usage.record(record({ cost: { input: 5, input_cache_read: 0.5, output: 30 }, pricingSelector: {}, tokens: { input: 100, input_cache_read: 20, output: 50 } }));
+    await repo.usage.record(record({ rates: { input: 5, input_cache_read: 0.5, output: 30 }, pricingSelector: {}, tokens: { input: 100, input_cache_read: 20, output: 50 } }));
     await repo.usage.record(record({ pricingSelector: { inputTokens: { operator: 'gt', value: 272000 } }, tokens: { input: 300_000, input_cache_read: 20_000, output: 100_000 } }));
     const rows = (await query(repo)).sort((a, b) => Object.keys(a.pricingSelector).length - Object.keys(b.pricingSelector).length);
     assertEquals(rows.length, 2);
     assertEquals(rows[0].pricingSelector, {});
-    assertEquals(rows[0].cost, { input: 5, input_cache_read: 0.5, output: 30 });
+    assertEquals(rows[0].rates, { input: 5, input_cache_read: 0.5, output: 30 });
     assertEquals(rows[1].pricingSelector, { inputTokens: { operator: 'gt', value: 272000 } });
-    assertEquals(rows[1].cost, { input: 10, input_cache_read: 1, output: 45 });
+    assertEquals(rows[1].rates, { input: 10, input_cache_read: 1, output: 45 });
   });
 
   test(`${backend.name} usage repo sums additive writes within one pricing entry`, async () => {
@@ -82,9 +82,9 @@ for (const backend of backends) {
 
   test(`${backend.name} usage repo stores a missing (service tier × input length) combination as unpriced`, async () => {
     const repo = await backend.make();
-    await repo.usage.record(record({ cost: null, pricingSelector: { inputTokens: { operator: 'gt', value: 272000 }, serviceTier: 'priority' } }));
+    await repo.usage.record(record({ rates: null, pricingSelector: { inputTokens: { operator: 'gt', value: 272000 }, serviceTier: 'priority' } }));
     const [row] = await query(repo);
     // No priority-long entry exists, so no dimension resolves a unit price.
-    assertEquals(row.cost, null);
+    assertEquals(row.rates, null);
   });
 }

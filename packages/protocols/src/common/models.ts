@@ -28,8 +28,7 @@ export const BILLING_DIMENSIONS: readonly BillingDimension[] = ['input', 'input_
 export const INPUT_BILLING_DIMENSIONS: readonly BillingDimension[] = ['input', 'input_cache_read', 'input_cache_write', 'input_cache_write_1h', 'input_image'];
 
 // A PriceVector is the per-dimension USD-per-million-token rate set for one
-// billing entry, aligned with the models.dev `Cost` schema.
-// https://github.com/anomalyco/models.dev/blob/cecf31aa5b174c482591613818c53663effce44a/packages/core/src/schema.ts#L94-L110
+// pricing entry.
 // Bare `input`/`output` are the text rates and `_image` keys are the image
 // modality. Every key is optional; absence means that dimension is unpriced.
 export type PriceVector = Partial<Record<BillingDimension, number>>;
@@ -306,7 +305,7 @@ export interface PublicModel {
   // so any endpoint advertised here is reachable through at least one
   // target.
   endpoints: ModelEndpoints;
-  cost?: ModelPricing;
+  pricing?: ModelPricing;
   chat?: ChatModelInfo;
   // Present only on entries the gateway synthesized from an operator-defined
   // alias; absent for entries that came from an upstream catalog.

@@ -3,9 +3,8 @@
 // `claude-opus-4-7`, `gpt-5.4`). `pricingForCopilotModelKey` strips raw-id
 // variant suffixes (`-high`, `-xhigh`, `-1m`, `-1m-internal`, trailing date)
 // using the same rules as `copilotPublicModelId` in model-name.ts so it can be
-// fed the modelKey persisted in `usage.model_key`. Values are USD per million
-// tokens, aligned with sst/models.dev `Cost`:
-// https://github.com/sst/models.dev/blob/main/packages/core/src/schema.ts
+// fed the modelKey persisted in `usage.model_key`. Every entry carries
+// explicit USD-per-million-token rates for its selector coordinate.
 //
 // Source of truth for Copilot pricing updates:
 // https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing
@@ -13,7 +12,7 @@
 // pricing changes. migrations/0011_usage_cost_snapshot.sql holds a frozen
 // snapshot for one-shot historical cleanup and is deliberately not kept in
 // sync — historical rows for newly-priced models are recovered by re-running
-// the cost backfill against live D1, not by editing that migration.
+// the unit-price backfill against live D1, not by editing that migration.
 //
 // Refresh procedure: .agents/skills/fetching-models-pricing/.
 import { copilotPublicModelId } from './model-name.ts';

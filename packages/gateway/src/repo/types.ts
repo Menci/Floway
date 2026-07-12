@@ -54,8 +54,8 @@ export interface UsageRecord {
   tokens: Partial<Record<BillingDimension, number>>;
   // Resolved per-dimension price snapshot for this exact selector coordinate.
   // null means no explicit pricing entry matched. Repos persist one unit price
-  // per token-bearing dimension; aggregation treats null as cost 0.
-  cost: PriceVector | null;
+  // per token-bearing dimension; null contributes zero realized cost.
+  rates: PriceVector | null;
 }
 
 // Disjoint per-dimension token counts. Absent keys mean zero for that
@@ -172,13 +172,13 @@ export interface SessionsRepo {
 
 export interface UsageRepo {
   // Additive upsert: on (keyId, model, upstream, modelKey, hour,
-  // pricingSelector) conflict, token counts are summed. cost is COALESCED —
+  // pricingSelector) conflict, token counts are summed. rates is COALESCED —
   // the first write within a bucket establishes the pricing snapshot for that
   // row, later writes that share the bucket keep the original snapshot.
   record(record: UsageRecord): Promise<void>;
   query(opts: { keyId?: string; start: string; end: string }): Promise<UsageRecord[]>;
   listAll(): Promise<UsageRecord[]>;
-  // Replacement upsert: counts and cost are both overwritten from the record.
+  // Replacement upsert: counts and rates are both overwritten from the record.
   set(record: UsageRecord): Promise<void>;
   deleteAll(): Promise<void>;
 }

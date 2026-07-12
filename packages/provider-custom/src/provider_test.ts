@@ -102,11 +102,11 @@ test('getProvidedModels remembers pricing from the fetched response so getPricin
   const record = buildCustomUpstream();
   const instance = createCustomProvider(record);
 
-  const upstreamCost: ModelPricing = { entries: [{ rates: { input: 3, output: 12 } }] };
+  const upstreamPricing: ModelPricing = { entries: [{ rates: { input: 3, output: 12 } }] };
   await withMockedFetch(
     () => jsonResponse({
       object: 'list',
-      data: [{ id: 'priced-model', cost: upstreamCost }],
+      data: [{ id: 'priced-model', pricing: upstreamPricing }],
     }),
     async () => {
       await instance.instance.getProvidedModels(directFetcher);
@@ -114,11 +114,11 @@ test('getProvidedModels remembers pricing from the fetched response so getPricin
   );
 
   const pricing = instance.instance.getPricingForModelKey('priced-model');
-  assertEquals(pricing, upstreamCost);
+  assertEquals(pricing, upstreamPricing);
 });
 
 test('A manual model whose upstreamModelId matches an auto-fetched id overrides the auto entry', async () => {
-  const manualCost: ModelPricing = { entries: [{ rates: { input: 1, output: 2 } }] };
+  const manualPricing: ModelPricing = { entries: [{ rates: { input: 1, output: 2 } }] };
   const record = buildCustomUpstream({
     models: [
       {
@@ -126,7 +126,7 @@ test('A manual model whose upstreamModelId matches an auto-fetched id overrides 
         kind: 'chat',
         endpoints: { chatCompletions: {} },
         display_name: 'Manual Override',
-        cost: manualCost,
+        pricing: manualPricing,
       },
     ],
   });
@@ -136,7 +136,7 @@ test('A manual model whose upstreamModelId matches an auto-fetched id overrides 
     () => jsonResponse({
       object: 'list',
       data: [
-        { id: 'shared-id', display_name: 'Auto Version', cost: { entries: [{ rates: { input: 99, output: 99 } }] } },
+        { id: 'shared-id', display_name: 'Auto Version', pricing: { entries: [{ rates: { input: 99, output: 99 } }] } },
         { id: 'auto-only' },
       ],
     }),
@@ -147,5 +147,5 @@ test('A manual model whose upstreamModelId matches an auto-fetched id overrides 
     },
   );
 
-  assertEquals(instance.instance.getPricingForModelKey('shared-id'), manualCost);
+  assertEquals(instance.instance.getPricingForModelKey('shared-id'), manualPricing);
 });

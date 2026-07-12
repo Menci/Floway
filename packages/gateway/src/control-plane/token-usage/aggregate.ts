@@ -27,7 +27,7 @@ const recordCostUsd = (record: UsageRecord): number => {
   for (const dimension of BILLING_DIMENSIONS) {
     const tokens = record.tokens[dimension] ?? 0;
     if (tokens === 0) continue;
-    const unitPrice = record.cost?.[dimension] ?? null;
+    const unitPrice = record.rates?.[dimension] ?? null;
     if (unitPrice !== null) total += tokens * unitPrice;
   }
   return total / 1e6;

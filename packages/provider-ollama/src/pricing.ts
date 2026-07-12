@@ -7,9 +7,8 @@
 // the vendor operates one (DeepSeek, Z.ai, Moonshot, MiniMax, Mistral,
 // Alibaba, Google), or the cheapest credible commodity host (DeepInfra,
 // Groq, OpenRouter, Together) when the model is open-weights-only (OpenAI
-// gpt-oss, NVIDIA Nemotron, Essential AI Rnj-1). Values are USD per million
-// tokens, aligned with the `Cost` schema in models.dev:
-// https://github.com/sst/models.dev/blob/main/packages/core/src/schema.ts
+// gpt-oss, NVIDIA Nemotron, Essential AI Rnj-1). Every entry carries explicit
+// USD-per-million-token rates for its selector coordinate.
 //
 // Coverage: every model in https://ollama.com/search that has a published
 // per-token price from a credible host. Models without a defensible reference

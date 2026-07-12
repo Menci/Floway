@@ -92,7 +92,7 @@ const { imageGenerationServerTool } = await import('./image-generation.ts');
 
 const shim = withResponsesServerToolShim([imageGenerationServerTool]);
 
-const MODEL_IDENTITY = { model: 'orchestrator', upstream: 'u', modelKey: 'orchestrator', cost: null };
+const MODEL_IDENTITY = { model: 'orchestrator', upstream: 'u', modelKey: 'orchestrator', pricing: null };
 
 const emptyResult = (status: ResponsesResult['status']): ResponsesResult => ({
   id: 'upstream', object: 'response', model: 'orchestrator', output: [], output_text: '', status, error: null, incomplete_details: null,

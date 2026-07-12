@@ -133,7 +133,7 @@ const upstreamModelSchema = z.object({
   kind: z.enum(['chat', 'embedding', 'image']).optional(),
   endpoints: modelEndpointsSchema,
   display_name: z.string().optional(),
-  cost: z.object({
+  pricing: z.object({
     entries: z.array(z.object({
       selector: z.record(z.string(), z.unknown()).optional(),
       rates: z.object(pricingDimensionShape),

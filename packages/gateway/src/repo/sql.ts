@@ -371,7 +371,7 @@ class SqlSessionsRepo implements SessionsRepo {
 const dimensionRows = (record: UsageRecord): { dimension: BillingDimension; tokens: number; unitPrice: number | null }[] => {
   return BILLING_DIMENSIONS.flatMap(dimension => {
     const tokens = record.tokens[dimension] ?? 0;
-    return tokens > 0 ? [{ dimension, tokens, unitPrice: record.cost?.[dimension] ?? null }] : [];
+    return tokens > 0 ? [{ dimension, tokens, unitPrice: record.rates?.[dimension] ?? null }] : [];
   });
 };
 
@@ -452,24 +452,24 @@ const assembleUsageRecords = (dimensions: readonly UsageDimensionRow[], requests
     const key = usageBucketKey(row);
     let record = byBucket.get(key);
     if (!record) {
-      record = { keyId: row.key_id, model: row.model, upstream: row.upstream, modelKey: row.model_key, hour: row.hour, pricingSelector: parsePricingSelectorKey(row.pricing_selector), requests: 0, tokens: {}, cost: null };
+      record = { keyId: row.key_id, model: row.model, upstream: row.upstream, modelKey: row.model_key, hour: row.hour, pricingSelector: parsePricingSelectorKey(row.pricing_selector), requests: 0, tokens: {}, rates: null };
       byBucket.set(key, record);
     }
     return record;
   };
-  const pricingByBucket = new Map<string, PriceVector>();
+  const ratesByBucket = new Map<string, PriceVector>();
   for (const row of dimensions) {
     const record = ensureRecord(row);
     record.tokens[row.dimension as BillingDimension] = row.tokens;
     if (row.unit_price !== null) {
       const key = usageBucketKey(row);
-      const pricing = pricingByBucket.get(key) ?? {};
-      pricing[row.dimension as BillingDimension] = row.unit_price;
-      pricingByBucket.set(key, pricing);
+      const rates = ratesByBucket.get(key) ?? {};
+      rates[row.dimension as BillingDimension] = row.unit_price;
+      ratesByBucket.set(key, rates);
     }
   }
   for (const row of requests) ensureRecord(row).requests = row.requests;
-  for (const [key, pricing] of pricingByBucket) byBucket.get(key)!.cost = pricing;
+  for (const [key, rates] of ratesByBucket) byBucket.get(key)!.rates = rates;
   return [...byBucket.values()].sort((a, b) => a.hour.localeCompare(b.hour));
 };
 

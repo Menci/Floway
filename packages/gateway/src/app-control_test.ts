@@ -113,7 +113,7 @@ test('/api/token-usage scopes to the actor\'s keys when called with an API key',
     pricingSelector: {},
     requests: 2,
     tokens: { input: 10, output: 5, input_cache_read: 4, input_cache_write: 1 },
-    cost: null,
+    rates: null,
   });
   await repo.usage.set({
     keyId: 'key_other',
@@ -124,7 +124,7 @@ test('/api/token-usage scopes to the actor\'s keys when called with an API key',
     pricingSelector: {},
     requests: 1,
     tokens: { input: 20, output: 8, input_cache_read: 6, input_cache_write: 2 },
-    cost: null,
+    rates: null,
   });
 
   const response = await requestApp('/api/token-usage?start=2026-03-15T00&end=2026-03-16T00', {
@@ -163,7 +163,7 @@ test('/api/token-usage in self-by-key mode includes per-key metadata for the act
     pricingSelector: {},
     requests: 1,
     tokens: { input: 20, output: 8 },
-    cost: null,
+    rates: null,
   });
 
   const response = await requestApp('/api/token-usage?start=2026-03-16T00&end=2026-03-17T00&include_key_metadata=1', {
@@ -191,7 +191,7 @@ test('/api/token-usage all-by-user view aggregates across keys per user', async 
     pricingSelector: {},
     requests: 1,
     tokens: { input: 10, output: 5 },
-    cost: null,
+    rates: null,
   });
 
   const response = await requestApp(
@@ -229,26 +229,26 @@ test('/api/token-usage merges Claude variants into backend base model records', 
     ...shared,
     model: 'claude-opus-4-7',
     modelKey: 'claude-opus-4.7',
-    cost: null,
+    rates: null,
   });
   await repo.usage.set({
     ...shared,
     model: 'claude-opus-4-7',
     modelKey: 'claude-opus-4.7-xhigh',
-    cost: null,
+    rates: null,
   });
   await repo.usage.set({
     ...shared,
     model: 'claude-opus-4-7',
     modelKey: 'claude-opus-4.7-1m-internal',
-    cost: null,
+    rates: null,
   });
   await repo.usage.set({
     ...shared,
     model: 'gpt-5.3-codex',
     modelKey: 'gpt-5.3-codex',
     tokens: { input: 3, output: 4 },
-    cost: null,
+    rates: null,
   });
 
   const response = await requestApp('/api/token-usage?start=2026-03-17T00&end=2026-03-18T00', { headers: { 'x-api-key': apiKey.key } });

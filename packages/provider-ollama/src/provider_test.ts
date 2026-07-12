@@ -63,10 +63,10 @@ test('getProvidedModels surfaces chat models with all three OpenAI/Anthropic-com
     assertEquals(Object.keys(gptoss.endpoints).sort(), ['chatCompletions', 'completions', 'messages', 'responses']);
     assertEquals(gptoss.owned_by, 'ollama');
     assertEquals(gptoss.limits.max_context_window_tokens, 131072);
-    // OLLAMA_MODEL_PRICING covers gpt-oss:120b, so cost flows through into
+    // OLLAMA_MODEL_PRICING covers gpt-oss:120b, so pricing flows through into
     // the ProviderModel on the auto path.
-    assertEquals(gptoss.cost?.entries[0]?.rates.input, 0.15);
-    assertEquals(gptoss.cost?.entries[0]?.rates.output, 0.6);
+    assertEquals(gptoss.pricing?.entries[0]?.rates.input, 0.15);
+    assertEquals(gptoss.pricing?.entries[0]?.rates.output, 0.6);
   });
 });
 
@@ -105,7 +105,7 @@ test('getProvidedModels merges manual overrides in front of auto-fetched models 
   });
 });
 
-test('getPricingForModelKey resolves manual cost first, then falls back to the OLLAMA_MODEL_PRICING table', () => {
+test('getPricingForModelKey resolves manual pricing first, then falls back to the OLLAMA_MODEL_PRICING table', () => {
   const instance = createOllamaProvider(buildRecord({
     config: {
       baseUrl: 'https://ollama.com',
@@ -114,11 +114,11 @@ test('getPricingForModelKey resolves manual cost first, then falls back to the O
         upstreamModelId: 'gpt-oss:120b',
         kind: 'chat',
         endpoints: { chatCompletions: {} },
-        cost: { entries: [{ rates: { input: 99, output: 99 } }] },
+        pricing: { entries: [{ rates: { input: 99, output: 99 } }] },
       }],
     },
   }));
-  // Manual cost wins for the pinned id.
+  // Manual pricing wins for the pinned id.
   assertEquals(instance.instance.getPricingForModelKey('gpt-oss:120b'), { entries: [{ rates: { input: 99, output: 99 } }] });
   // Unpinned model falls back to the table.
   assertEquals(instance.instance.getPricingForModelKey('deepseek-v4-flash')?.entries[0]?.rates.input, 0.14);

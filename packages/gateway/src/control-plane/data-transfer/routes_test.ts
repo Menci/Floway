@@ -193,7 +193,7 @@ const USAGE_1: UsageRecord = {
   pricingSelector: { serviceTier: 'fast' },
   requests: 5,
   tokens: { input: 1000, output: 500, input_cache_read: 120, input_cache_write: 80 },
-  cost: null,
+  rates: null,
 };
 
 const USAGE_2: UsageRecord = {
@@ -205,7 +205,7 @@ const USAGE_2: UsageRecord = {
   pricingSelector: {},
   requests: 3,
   tokens: { input: 2000, output: 800, input_cache_read: 200, input_cache_write: 50 },
-  cost: null,
+  rates: null,
 };
 
 const SEARCH_USAGE_1: SearchUsageRecord = {
@@ -666,11 +666,11 @@ test('codex import rejects unknown keys in state', async () => {
 test('import rejects negative historical unit prices with a dimension-specific error', async () => {
   const { app } = setup();
   const result = await doImport(app, 'replace', latestImportData({
-    usage: [{ ...USAGE_2, cost: { input: -0.01, output: 15 } }],
+    usage: [{ ...USAGE_2, rates: { input: -0.01, output: 15 } }],
   }));
 
   assertEquals(result.status, 400);
-  assertEquals(result.body.error, 'invalid usage at index 0: cost.input must be a finite non-negative number');
+  assertEquals(result.body.error, 'invalid usage at index 0: rates.input must be a finite non-negative number');
 });
 
 test('import rejects invalid records before clearing existing data', async () => {

@@ -4,7 +4,7 @@
 //   2. Anthropic:    { data: [{ type: 'model', id, display_name?, created_at? }],
 //                      has_more, first_id, last_id }     (no top-level `object`)
 //   3. OpenAI/Anthropic superset with optional display_name, created_at,
-//      limits, cost, kind on the model and a `data` array on the container.
+//      limits, pricing, kind on the model and a `data` array on the container.
 //
 // A model is admitted if it has a string `id`; everything else is best-
 // effort metadata. The container is admitted if `data` is an array.
@@ -30,7 +30,7 @@ export interface CustomRawModel {
     max_context_window_tokens?: number;
     max_prompt_tokens?: number;
   };
-  cost?: ModelPricing;
+  pricing?: ModelPricing;
   // Optional ModelKind published by Floway upstreams; absent on plain
   // OpenAI-compat upstreams.
   kind?: ModelKind;
@@ -61,8 +61,8 @@ const parseLimits = (value: unknown): CustomRawModel['limits'] => {
   return Object.keys(limits).length > 0 ? limits : undefined;
 };
 
-const parseCost = (value: unknown): ModelPricing | undefined => {
-  // Pricing is best-effort catalog metadata: malformed cost omits only the cost
+const parsePricing = (value: unknown): ModelPricing | undefined => {
+  // Pricing is best-effort catalog metadata: malformed pricing omits only the pricing
   // block, never the enclosing model or the rest of the catalog.
   if (!isRecord(value) || !Array.isArray(value.entries)) return undefined;
   try {
@@ -108,8 +108,8 @@ const parseRawModel = (value: unknown): CustomRawModel | null => {
   if (owned_by !== undefined) model.owned_by = owned_by;
   const limits = parseLimits(value.limits);
   if (limits !== undefined) model.limits = limits;
-  const cost = parseCost(value.cost);
-  if (cost !== undefined) model.cost = cost;
+  const pricing = parsePricing(value.pricing);
+  if (pricing !== undefined) model.pricing = pricing;
   const kind = parseKind(value.kind);
   if (kind !== undefined) model.kind = kind;
   // Attempt to parse chat metadata; silently skip on malformed data.

@@ -375,20 +375,20 @@ const validateApiKeyIdentities = (records: readonly ApiKey[], existing: readonly
   return null;
 };
 
-const parseImportedCost = (value: unknown): { type: 'ok'; cost: UsageRecord['cost'] } | { type: 'invalid'; error: string } => {
-  if (value === undefined || value === null) return { type: 'ok', cost: null };
-  if (typeof value !== 'object' || Array.isArray(value)) return { type: 'invalid', error: 'cost must be an object or null' };
+const parseImportedRates = (value: unknown): { type: 'ok'; rates: UsageRecord['rates'] } | { type: 'invalid'; error: string } => {
+  if (value === undefined || value === null) return { type: 'ok', rates: null };
+  if (typeof value !== 'object' || Array.isArray(value)) return { type: 'invalid', error: 'rates must be an object or null' };
   const obj = value as Record<string, unknown>;
-  const cost: PriceVector = {};
+  const rates: PriceVector = {};
   for (const dimension of BILLING_DIMENSIONS) {
     const rate = obj[dimension];
     if (rate === undefined) continue;
-    cost[dimension] = rate as number;
+    rates[dimension] = rate as number;
   }
-  if (Object.keys(cost).length === 0) return { type: 'ok', cost: null };
+  if (Object.keys(rates).length === 0) return { type: 'ok', rates: null };
   try {
-    validatePriceVector(cost, 'cost');
-    return { type: 'ok', cost };
+    validatePriceVector(rates, 'rates');
+    return { type: 'ok', rates };
   } catch (error) {
     return { type: 'invalid', error: error instanceof Error ? error.message : String(error) };
   }
@@ -441,8 +441,8 @@ const parseUsageRecords = (value: unknown): { type: 'ok'; records: UsageRecord[]
     }
     const tokensResult = parseImportedTokens(record.tokens);
     if (tokensResult.type === 'invalid') return { type: 'invalid', index: i, error: 'record has invalid token dimension counts' };
-    const costResult = parseImportedCost(record.cost);
-    if (costResult.type === 'invalid') return { type: 'invalid', index: i, error: costResult.error };
+    const ratesResult = parseImportedRates(record.rates);
+    if (ratesResult.type === 'invalid') return { type: 'invalid', index: i, error: ratesResult.error };
     records.push({
       keyId: record.keyId,
       model: record.model,
@@ -452,7 +452,7 @@ const parseUsageRecords = (value: unknown): { type: 'ok'; records: UsageRecord[]
       pricingSelector,
       requests: record.requests,
       tokens: tokensResult.tokens,
-      cost: costResult.cost,
+      rates: ratesResult.rates,
     });
   }
 

@@ -217,7 +217,7 @@ const testTelemetryModelIdentity = {
   model: 'test-model',
   upstream: 'test-upstream',
   modelKey: 'test-model-key',
-  cost: null,
+  pricing: null,
 };
 
 interface ProviderOverrides {
@@ -2800,7 +2800,7 @@ test('finalMetadata resolves with the LATEST turn modelIdentity, not turn 1', as
         model: 'gpt-5',
         upstream: 'test-upstream',
         modelKey: `turn-${runCalls}-key`,
-        cost: null,
+        pricing: null,
       },
     };
   };

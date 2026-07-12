@@ -35,7 +35,7 @@ const testTelemetryModelIdentity = {
   model: 'test-model',
   upstream: 'test-upstream',
   modelKey: 'test-model-key',
-  cost: null,
+  pricing: null,
 };
 
 const invocation = (payload: MessagesPayload): MessagesInvocation => ({

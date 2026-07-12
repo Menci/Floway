@@ -13,7 +13,7 @@ const row = (uiId: string, model: string, input: number, flagOverrides: Record<s
     upstreamModelId: model,
     kind: 'chat',
     endpoints: { chatCompletions: {} },
-    cost: { entries: [{ rates: { input } }] },
+    pricing: { entries: [{ rates: { input } }] },
     flagOverrides,
   },
 });
@@ -47,7 +47,7 @@ describe('ModelEditor row synchronization', () => {
     const second = row('second', 'model-second', 2, undefined);
     // An invalid second-row entry proves validity is recomputed from the new row,
     // rather than remaining true from the first row's valid draft.
-    second.config.cost = { entries: [{ rates: {} }] };
+    second.config.pricing = { entries: [{ rates: {} }] };
 
     const wrapper = mountEditor(first);
     expect((pricingInput(wrapper, 'unpriced').element as HTMLInputElement).value).toBe('1');
@@ -61,8 +61,8 @@ describe('ModelEditor row synchronization', () => {
 
     await pricingInput(wrapper, 'unpriced').setValue('7');
     const pricingPatch = wrapper.emitted('patch-config')?.at(-1)?.[0];
-    expect(pricingPatch).toEqual({ cost: { entries: [{ rates: { input: 7 } }] } });
-    expect(pricingPatch).not.toEqual({ cost: { entries: [{ rates: { input: 1 } }] } });
+    expect(pricingPatch).toEqual({ pricing: { entries: [{ rates: { input: 7 } }] } });
+    expect(pricingPatch).not.toEqual({ pricing: { entries: [{ rates: { input: 1 } }] } });
     expect(wrapper.emitted('validity-change')?.at(-1)).toEqual([true]);
   });
 
@@ -72,7 +72,7 @@ describe('ModelEditor row synchronization', () => {
       ...row('shared', 'model-auto', 9, undefined),
       kind: 'auto',
     };
-    auto.config.cost = { entries: [{ rates: {} }] };
+    auto.config.pricing = { entries: [{ rates: {} }] };
 
     const wrapper = mountEditor(manual);
     await pricingInput(wrapper, 'unpriced').setValue('7');
@@ -93,18 +93,18 @@ describe('ModelEditor row synchronization', () => {
 
   it('clears a threshold value while preserving operator-only updates', async () => {
     const selected = row('threshold', 'model-threshold', 1, undefined);
-    selected.config.cost = { entries: [{ selector: { inputTokens: { operator: 'gte', value: 100 } }, rates: { input: 1 } }] };
+    selected.config.pricing = { entries: [{ selector: { inputTokens: { operator: 'gte', value: 100 } }, rates: { input: 1 } }] };
     const wrapper = mountEditor(selected);
     const threshold = pricingInput(wrapper, 'base');
     expect((threshold.element as HTMLInputElement).value).toBe('100');
 
     await threshold.setValue('');
-    expect(wrapper.emitted('patch-config')?.at(-1)?.[0]).toEqual({ cost: { entries: [{ rates: { input: 1 } }] } });
+    expect(wrapper.emitted('patch-config')?.at(-1)?.[0]).toEqual({ pricing: { entries: [{ rates: { input: 1 } }] } });
   });
 
   it('navigates pricing entries from the left while rendering one editor on the right', async () => {
     const selected = row('entries', 'model-entries', 1, undefined);
-    selected.config.cost = {
+    selected.config.pricing = {
       entries: [
         { rates: { input: 1 } },
         { selector: { serviceTier: 'priority' }, rates: { input: 2 } },
@@ -126,7 +126,7 @@ describe('ModelEditor row synchronization', () => {
 
     await navigation.get('button[aria-label="Move pricing entry 2 up"]').trigger('click');
     expect(wrapper.emitted('patch-config')?.at(-1)?.[0]).toEqual({
-      cost: {
+      pricing: {
         entries: [
           { selector: { serviceTier: 'priority' }, rates: { input: 2 } },
           { rates: { input: 1 } },
@@ -147,13 +147,13 @@ describe('ModelEditor row synchronization', () => {
 
     await pricingInput(wrapper, 'base').setValue('100');
     expect(wrapper.emitted('patch-config')?.at(-1)?.[0]).toEqual({
-      cost: { entries: [{ selector: { inputTokens: { operator: 'gte', value: 100 } }, rates: { input: 1 } }] },
+      pricing: { entries: [{ selector: { inputTokens: { operator: 'gte', value: 100 } }, rates: { input: 1 } }] },
     });
   });
 
   it('requires every pricing entry to set the same rate fields', async () => {
     const selected = row('rate-shape', 'model-rate-shape', 1, undefined);
-    selected.config.cost = {
+    selected.config.pricing = {
       entries: [
         { rates: { input: 1, output: 4 } },
         { selector: { serviceTier: 'priority' }, rates: { input: 2 } },
@@ -174,7 +174,7 @@ describe('ModelEditor row synchronization', () => {
 
   it('groups every pricing validation error below the form', () => {
     const selected = row('errors', 'model-errors', 1, undefined);
-    selected.config.cost = {
+    selected.config.pricing = {
       entries: [
         { selector: { serviceTier: '' }, rates: {} },
         { rates: { input: 1 } },
@@ -197,7 +197,7 @@ describe('ModelEditor row synchronization', () => {
 
   it.each(['0', '1.5'])('shows validation instead of throwing for threshold %s', async value => {
     const selected = row('invalid-threshold', 'model-invalid', 1, undefined);
-    selected.config.cost = { entries: [{ rates: { input: 1 } }, { selector: { serviceTier: 'priority' }, rates: { input: 2 } }] };
+    selected.config.pricing = { entries: [{ rates: { input: 1 } }, { selector: { serviceTier: 'priority' }, rates: { input: 2 } }] };
     const wrapper = mountEditor(selected);
     await pricingInput(wrapper, 'base').setValue(value);
     expect(wrapper.text()).toContain('Selector values are invalid.');

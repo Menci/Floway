@@ -247,20 +247,20 @@ class MemoryUsageRepo implements UsageRepo {
   private dimensionEntries(record: UsageRecord): { dimension: BillingDimension; tokens: number; unitPrice: number | null }[] {
     return BILLING_DIMENSIONS.flatMap(dimension => {
       const tokens = record.tokens[dimension] ?? 0;
-      return tokens > 0 ? [{ dimension, tokens, unitPrice: record.cost?.[dimension] ?? null }] : [];
+      return tokens > 0 ? [{ dimension, tokens, unitPrice: record.rates?.[dimension] ?? null }] : [];
     });
   }
 
   private toRecord(state: UsageBucketState): UsageRecord {
     const tokens: Partial<Record<BillingDimension, number>> = {};
-    let cost: PriceVector | null = null;
+    let rates: PriceVector | null = null;
     for (const dimension of BILLING_DIMENSIONS) {
       const count = state.tokens[dimension];
       if (count !== undefined) tokens[dimension] = count;
       const unitPrice = state.unitPrices[dimension];
-      if (unitPrice !== undefined) (cost ??= {})[dimension] = unitPrice;
+      if (unitPrice !== undefined) (rates ??= {})[dimension] = unitPrice;
     }
-    return { keyId: state.keyId, model: state.model, upstream: state.upstream ?? null, modelKey: state.modelKey, hour: state.hour, pricingSelector: state.pricingSelector, requests: state.requests, tokens, cost };
+    return { keyId: state.keyId, model: state.model, upstream: state.upstream ?? null, modelKey: state.modelKey, hour: state.hour, pricingSelector: state.pricingSelector, requests: state.requests, tokens, rates };
   }
 
   private bucket(record: UsageRecord): UsageBucketState {

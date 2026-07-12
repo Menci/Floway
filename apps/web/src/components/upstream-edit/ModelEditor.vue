@@ -82,19 +82,19 @@ interface PricingEntryDraft {
 
 let pricingEntryDraftIdSeq = 0;
 
-const pricingEntryDraftsFor = (cost: ModelPricing | undefined): PricingEntryDraft[] =>
-  (cost?.entries ?? []).map(entry => ({
+const pricingEntryDraftsFor = (pricing: ModelPricing | undefined): PricingEntryDraft[] =>
+  (pricing?.entries ?? []).map(entry => ({
     id: ++pricingEntryDraftIdSeq,
     selector: { ...(entry.selector ?? {}) },
     rates: { ...entry.rates },
   }));
 
-const pricingEntryDrafts = ref<PricingEntryDraft[]>(pricingEntryDraftsFor(config.value?.cost));
+const pricingEntryDrafts = ref<PricingEntryDraft[]>(pricingEntryDraftsFor(config.value?.pricing));
 const selectedPricingEntryId = ref<number | null>(pricingEntryDrafts.value[0]?.id ?? null);
 const lastFlagOverrides = ref<FlagOverrides>({});
 
 watch(() => [props.row?.uiId, props.row?.kind] as const, () => {
-  pricingEntryDrafts.value = pricingEntryDraftsFor(config.value?.cost);
+  pricingEntryDrafts.value = pricingEntryDraftsFor(config.value?.pricing);
   selectedPricingEntryId.value = pricingEntryDrafts.value[0]?.id ?? null;
   lastFlagOverrides.value = {};
 });
@@ -178,14 +178,14 @@ const writePricingEntries = (drafts: readonly PricingEntryDraft[]) => {
   if (!config.value) return;
   pricingEntryDrafts.value = drafts.map(draft => ({ ...draft, selector: { ...draft.selector }, rates: { ...draft.rates } }));
   if (drafts.length === 0) {
-    patch({ cost: undefined });
+    patch({ pricing: undefined });
     return;
   }
   const entries = drafts.map(draft => {
     const selector = compactSelector(draft);
     return { ...(Object.keys(selector).length > 0 ? { selector } : {}), rates: { ...draft.rates } };
   });
-  patch({ cost: { entries } });
+  patch({ pricing: { entries } });
 };
 
 const updateEqualityCoordinate = (index: number, axisId: string, raw: string | number | null | undefined) => {

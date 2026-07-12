@@ -53,7 +53,7 @@ export interface UpstreamModelConfig {
   endpoints: ModelEndpoints;
   display_name?: string;
   limits?: PublicModelLimits;
-  cost?: ModelPricing;
+  pricing?: ModelPricing;
   chat?: UpstreamChatConfig;
   // Layer 3 per-model flag map. On a manual row (from
   // `upstreams.config.models[]`) this is the operator-declared
@@ -81,7 +81,7 @@ export interface CustomRawModel {
   created?: number;
   owned_by?: string;
   limits?: PublicModelLimits;
-  cost?: ModelPricing;
+  pricing?: ModelPricing;
   kind?: ModelKind;
 }
 

@@ -128,9 +128,9 @@ describe('codexRawToProviderModel', () => {
     expect(m.owned_by).toBe('openai');
   });
 
-  test('attaches OpenAI-API-rate cost for known slugs and treats codex-auto-review as gpt-5.4', () => {
+  test('attaches OpenAI-API-rate pricing for known slugs and treats codex-auto-review as gpt-5.4', () => {
     const flagship = codexRawToProviderModel({ id: 'gpt-5.4', display_name: 'GPT-5.4', context_window: 272000 }, noFlags);
-    expect(flagship.cost).toEqual({
+    expect(flagship.pricing).toEqual({
       entries: [
         { rates: { input: 2.5, input_cache_read: 0.25, output: 15 } },
         { selector: { serviceTier: 'flex' }, rates: { input: 1.25, input_cache_read: 0.13, output: 7.5 } },
@@ -139,35 +139,35 @@ describe('codexRawToProviderModel', () => {
       ],
     });
     const review = codexRawToProviderModel({ id: 'codex-auto-review', display_name: 'Codex Auto Review', context_window: 272000 }, noFlags);
-    expect(review.cost).toEqual(flagship.cost);
+    expect(review.pricing).toEqual(flagship.pricing);
   });
 
   // End-to-end resolution check: serviceTier selectors must match the wire
   // values billableServiceTier persists, not Codex's Rust enum names.
   test('service-tier entries resolve through the wire-value strings', () => {
     const flagship = codexRawToProviderModel({ id: 'gpt-5.4', display_name: 'GPT-5.4', context_window: 272000 }, noFlags);
-    if (!flagship.cost) throw new Error('expected cost to be defined');
+    if (!flagship.pricing) throw new Error('expected pricing to be defined');
 
-    expect(priceRequest(flagship.cost, { serviceTier: 'priority', inputTokens: 0 }).rates).toEqual({
+    expect(priceRequest(flagship.pricing, { serviceTier: 'priority', inputTokens: 0 }).rates).toEqual({
       input: 5,
       input_cache_read: 0.5,
       output: 30,
     });
-    expect(priceRequest(flagship.cost, { serviceTier: 'flex', inputTokens: 0 }).rates).toEqual({
+    expect(priceRequest(flagship.pricing, { serviceTier: 'flex', inputTokens: 0 }).rates).toEqual({
       input: 1.25,
       input_cache_read: 0.13,
       output: 7.5,
     });
-    expect(priceRequest(flagship.cost, { inputTokens: 0 }).rates).toEqual({
+    expect(priceRequest(flagship.pricing, { inputTokens: 0 }).rates).toEqual({
       input: 2.5,
       input_cache_read: 0.25,
       output: 15,
     });
   });
 
-  test('omits cost for unknown slugs (forward-compat with new upstream models)', () => {
+  test('omits pricing for unknown slugs (forward-compat with new upstream models)', () => {
     const m = codexRawToProviderModel({ id: 'gpt-future-unreleased', display_name: 'X', context_window: 1 }, noFlags);
-    expect(m.cost).toBeUndefined();
+    expect(m.pricing).toBeUndefined();
   });
 
   test('threads the supplied enabledFlags onto the produced model', () => {

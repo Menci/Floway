@@ -19,7 +19,7 @@ const seedUsage = async (
     pricingSelector: {},
     requests,
     tokens: { input: 100, output: 50 },
-    cost: null,
+    rates: null,
   });
 };
 

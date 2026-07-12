@@ -155,13 +155,13 @@ const finalizeCopilotModels = (
   for (const mergedModel of merged.data) {
     const variants = groups.get(mergedModel.id) ?? [mergedModel];
     const endpoints = copilotModelEndpoints(variants);
-    const cost = pricingForCopilotPublicModelId(mergedModel.id);
+    const pricing = pricingForCopilotPublicModelId(mergedModel.id);
     const draft: Omit<ProviderModel, 'enabledFlags'> = {
       ...copilotRawToProviderModel(mergedModel),
       kind: kindForEndpoints(endpoints),
       endpoints,
       providerData: { rawModels: variants } satisfies CopilotProviderData,
-      ...(cost ? { cost } : {}),
+      ...(pricing ? { pricing } : {}),
     };
     // Layer order: provider upstream default → operator upstream override
     // → per-model provider default. Placing the per-model layer last
@@ -239,7 +239,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
     model: modelKey,
     upstream: copilot.id,
     modelKey,
-    cost: pricingForCopilotModelKey(modelKey),
+    pricing: pricingForCopilotModelKey(modelKey),
   });
 
   // Materialize an upstream error body up-front so any interceptor that

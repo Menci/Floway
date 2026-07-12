@@ -21,7 +21,7 @@ export interface UpstreamModelConfig {
   endpoints: ModelEndpoints;
   display_name?: string;
   limits?: UpstreamModelLimits;
-  cost?: ModelPricing;
+  pricing?: ModelPricing;
   chat?: UpstreamChatModelConfig;
   // Floway-internal (camelCase, not surfaced on PublicModel).
   upstreamModelId: string;
@@ -251,7 +251,7 @@ const kindField = (value: unknown, endpoints: ModelEndpoints, label: string): Mo
 
 const modelField = (value: unknown, label: string): UpstreamModelConfig => {
   if (!isRecord(value)) throw new Error(`Malformed ${label}: must be an object`);
-  const cost = pricingField(value.cost, `${label}.cost`);
+  const pricing = pricingField(value.pricing, `${label}.pricing`);
   const endpoints = endpointsField(value.endpoints, `${label}.endpoints`);
   const kind = kindField(value.kind, endpoints, `${label}.kind`);
   const chat = chatField(value.chat, `${label}.chat`);
@@ -263,7 +263,7 @@ const modelField = (value: unknown, label: string): UpstreamModelConfig => {
     endpoints,
     ...(value.display_name !== undefined ? { display_name: optionalStringField(value.display_name, `${label}.display_name`) } : {}),
     ...(value.limits !== undefined ? { limits: limitsField(value.limits, `${label}.limits`) } : {}),
-    ...(cost ? { cost } : {}),
+    ...(pricing ? { pricing } : {}),
     ...(chat ? { chat } : {}),
     upstreamModelId: nonEmptyStringField(value.upstreamModelId, `${label}.upstreamModelId`),
     ...(value.publicModelId !== undefined ? { publicModelId: optionalStringField(value.publicModelId, `${label}.publicModelId`) } : {}),

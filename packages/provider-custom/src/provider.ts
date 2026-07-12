@@ -30,7 +30,7 @@ const customRawToProviderModel = (model: CustomRawModel): Omit<ProviderModel, 'k
   }
   const display = model.display_name ?? model.name;
   if (display !== undefined) partial.display_name = display;
-  if (model.cost) partial.cost = model.cost;
+  if (model.pricing) partial.pricing = model.pricing;
   return partial;
 };
 
@@ -89,12 +89,12 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
       enabledFlags,
     };
     if (model.display_name !== undefined) internal.display_name = model.display_name;
-    if (model.cost) internal.cost = model.cost;
+    if (model.pricing) internal.pricing = model.pricing;
     if (model.chat) internal.chat = model.chat;
     return internal;
   });
   const manualPricingByUpstreamId = new Map<string, ModelPricing>(
-    config.models.flatMap(m => (m.cost ? [[m.upstreamModelId, m.cost] as const] : [])),
+    config.models.flatMap(m => (m.pricing ? [[m.upstreamModelId, m.pricing] as const] : [])),
   );
 
   // Last-known pricing keyed by raw model id from the auto-fetch path. Read
@@ -103,16 +103,16 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
   //   1. `getProvidedModels` re-stamps the whole table from a fresh /models
   //      response (cold path / cache miss).
   //   2. Every `call*` re-stamps the entry for the model it is dispatching
-  //      against, sourced from the `ProviderModel.cost` already carried on
+  //      against, sourced from the `ProviderModel.pricing` already carried on
   //      the candidate's model. This second writer is what saves us in any isolate
   //      where the SWR layer (`fetchUpstreamModelsCached`) returns the cached
   //      `ProviderModel[]` row directly without ever calling
-  //      `getProvidedModels` — without it, telemetry would see `null` cost
+  //      `getProvidedModels` — without it, telemetry would see `null` pricing
   //      for auto-fetched models on every isolate that started cold against
   //      a SOFT-fresh cache row.
   const pricingByRawId = new Map<string, ModelPricing>();
   const rememberPricingForModel = (model: ProviderModel): void => {
-    if (model.cost) pricingByRawId.set(rawModelIdOf(model), model.cost);
+    if (model.pricing) pricingByRawId.set(rawModelIdOf(model), model.pricing);
   };
 
   const call = (
@@ -161,7 +161,7 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
       const response = await fetchCustomModels(config, fetcher);
       pricingByRawId.clear();
       for (const raw of response.data) {
-        if (raw.id && raw.cost) pricingByRawId.set(raw.id, raw.cost);
+        if (raw.id && raw.pricing) pricingByRawId.set(raw.id, raw.pricing);
       }
       // Drop any auto-fetched model whose id is pinned by a manual
       // override so the manual copy is the only one emitted for that id.

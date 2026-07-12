@@ -169,7 +169,7 @@ const customAutoModelsFromDraft = computed<UpstreamModelConfig[]>(() => fetchedR
     endpoints: endpointsForKind(m.kind),
     ...(label ? { display_name: label } : {}),
     ...(m.limits ? { limits: m.limits } : {}),
-    ...(m.cost ? { cost: m.cost } : {}),
+    ...(m.pricing ? { pricing: m.pricing } : {}),
   };
 }));
 

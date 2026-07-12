@@ -157,7 +157,7 @@ const splitModalityCounts = (
 export const recordTokenUsage = async (keyId: string, modelIdentity: TelemetryModelIdentity, usage: TokenUsage): Promise<void> => {
   const { tier, ...tokens } = usage;
   const inputTokens = INPUT_BILLING_DIMENSIONS.reduce((sum, dimension) => sum + (tokens[dimension] ?? 0), 0);
-  const priced = priceRequest(modelIdentity.cost, { serviceTier: tier, inputTokens });
+  const priced = priceRequest(modelIdentity.pricing, { serviceTier: tier, inputTokens });
   await Promise.all([
     getRepo().usage.record({
       keyId,
@@ -168,7 +168,7 @@ export const recordTokenUsage = async (keyId: string, modelIdentity: TelemetryMo
       pricingSelector: priced.selector,
       requests: 1,
       tokens,
-      cost: priced.rates,
+      rates: priced.rates,
     }),
     (async () => {
       const key = await getRepo().apiKeys.getById(keyId);
