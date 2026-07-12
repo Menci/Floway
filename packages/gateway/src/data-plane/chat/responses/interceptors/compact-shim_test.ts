@@ -3,26 +3,14 @@ import { test } from 'vitest';
 import { SUMMARY_PREFIX, expandShimCompactionItems, withResponsesCompactShim } from './compact-shim.ts';
 import type { ResponsesInvocation } from './types.ts';
 import { encodeBase64UrlJson } from '../../../../shared/base64url-json.ts';
-import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
-import { createNonResponsesSourceStore } from '../items/store.ts';
+import { mockChatGatewayCtx } from '../../../../test-helpers/gateway-ctx.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectResponsesProtocolEventsToResult, type ResponsesInputItem, type ResponsesPayload, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { eventResult, type ExecuteResult } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 import type { CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
 
-const stubCtx: ChatGatewayCtx = {
-  apiKeyId: 'test-key',
-  upstreamIds: null,
-  wantsStream: false,
-  runtimeLocation: 'TEST',
-  currentColo: 'TEST',
-  dump: null,
-  backgroundScheduler: () => {},
-  requestStartedAt: 0,
-  responseHeaders: new Headers(),
-  store: createNonResponsesSourceStore('test-key'),
-};
+const stubCtx = mockChatGatewayCtx();
 
 const makeInvocation = (
   payload: Partial<ResponsesPayload> = {},

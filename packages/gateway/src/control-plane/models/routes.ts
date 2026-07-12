@@ -8,7 +8,7 @@ import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { effectiveUpstreamIdsFromContext, userFromContext } from '../../middleware/auth.ts';
 import { getRepo } from '../../repo/index.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
-import { getCurrentColo } from '../../runtime/runtime-info.ts';
+import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import type { PublicModel, PublicModelsResponse } from '@floway-dev/protocols/common';
 import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 import type { InternalModel, Provider, UpstreamColor, UpstreamProviderKind } from '@floway-dev/provider';
@@ -79,7 +79,7 @@ export const controlPlaneModels = async (c: Context) => {
     // `enumerateAddressableModelIds`, the color-join map) so this request
     // pays a single `upstreams.list()` round-trip.
     const upstreamRows = await getRepo().upstreams.list();
-    const fetcherForUpstream = await createPerRequestFetcher(getCurrentColo(c.req.raw), upstreamRows);
+    const fetcherForUpstream = await createPerRequestFetcher(getRuntimeLocation(c.req.raw), upstreamRows);
     // Two addressable surfaces: caller-scoped (drives visibility +
     // `aliasedFrom.targets` narrowing for non-admin) and gateway-wide
     // (drives the alias's metadata + endpoints + cost — every caller

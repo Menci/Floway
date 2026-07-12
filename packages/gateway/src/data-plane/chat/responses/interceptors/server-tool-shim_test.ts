@@ -16,6 +16,7 @@ import { SHIM_TOOL_NAME, webSearchServerTool } from './server-tools/web-search.t
 import type { ResponsesInterceptor, ResponsesInvocation } from './types.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
+import { mockChatGatewayCtx } from '../../../../test-helpers/gateway-ctx.ts';
 import { resolveConfiguredWebSearchProvider } from '../../../tools/web-search/provider.ts';
 import type {
   ConfiguredWebSearchProvider,
@@ -27,7 +28,6 @@ import type {
   WebSearchProviderResult,
 } from '../../../tools/web-search/types.ts';
 import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
-import { createNonResponsesSourceStore } from '../items/store.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type {
@@ -330,18 +330,8 @@ const makeInvocation = (overrides: InvocationOverrides = {}): ResponsesInvocatio
   action: 'generate',
 });
 
-const makeGatewayCtx = (apiKeyId: string = 'k1'): ChatGatewayCtx => ({
-  apiKeyId,
-  upstreamIds: null,
-  wantsStream: true,
-  runtimeLocation: 'TEST',
-  currentColo: 'TEST',
-  dump: null,
-  responseHeaders: new Headers(),
-  backgroundScheduler: () => {},
-  requestStartedAt: 0,
-  store: createNonResponsesSourceStore(apiKeyId),
-});
+const makeGatewayCtx = (apiKeyId: string = 'k1') =>
+  mockChatGatewayCtx({ apiKeyId, wantsStream: true });
 
 const collectFrames = async <T>(iter: AsyncIterable<T>): Promise<T[]> => {
   const out: T[] = [];
@@ -4481,19 +4471,11 @@ test('downstream AbortSignal threads through to provider search / fetchPage and 
   });
   const shim = withResponsesWebSearchShim;
   const inv = makeInvocation();
-  const gatewayCtx: ChatGatewayCtx = {
+  const gatewayCtx = mockChatGatewayCtx({
     apiKeyId: 'k1',
-    upstreamIds: null,
     wantsStream: true,
-    runtimeLocation: 'TEST',
-    currentColo: 'TEST',
-    dump: null,
-    responseHeaders: new Headers(),
-    backgroundScheduler: () => {},
-    requestStartedAt: 0,
-    store: createNonResponsesSourceStore('k1'),
     abortSignal: controller.signal,
-  };
+  });
   const script = scriptedRun([
     searchCallTurn(0, 'call_1', 'will-be-aborted'),
   ]);

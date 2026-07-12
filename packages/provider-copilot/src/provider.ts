@@ -201,7 +201,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
         body: JSON.stringify({ ...body, model: rawModel.id }),
         signal,
       },
-      { extraHeaders: headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency },
+      { extraHeaders: headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
     );
     return { response, modelKey: rawModel.id };
   };
@@ -223,7 +223,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
           body: JSON.stringify({ ...body, stream: true, model: rawModel.id }),
           signal,
         },
-        { extraHeaders: headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency },
+        { extraHeaders: headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
       ),
       parser,
       rawModel.id,
@@ -367,7 +367,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
             const response = await copilotFetchResponses(
               upstreamConfig,
               { method: 'POST', body: JSON.stringify(triggered), signal },
-              { extraHeaders: ctx.headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency },
+              { extraHeaders: ctx.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
             );
             if (!response.ok) return { action: 'compact', ok: false, response, modelKey: rawModel.id };
             const generated = (await response.json()) as ResponsesResult;

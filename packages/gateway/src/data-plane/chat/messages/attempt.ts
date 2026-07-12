@@ -1,17 +1,15 @@
 import { messagesInterceptors, messagesCountTokensInterceptors } from './interceptors/index.ts';
 import type { MessagesInvocation } from './interceptors/types.ts';
 import { applyRulesToUpstreamMessages } from '../../model-aliases/apply-rules.ts';
-import { requireRecordedDurationMs } from '../../shared/telemetry/performance.ts';
+import { providerStreamResultToExecuteResult, buildUpstreamCallOptions, chatTargetPicker } from '../../shared/telemetry/attempt-helpers.ts';
 import { chatCompletionsAttempt } from '../chat-completions/attempt.ts';
 import { responsesAttempt } from '../responses/attempt.ts';
 import { rewriteStoredResponsesItemsForCandidate } from '../responses/items/rewrite.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
-import { providerStreamResultToExecuteResult, buildUpstreamCallOptions, chatTargetPicker } from '../shared/attempt-helpers.ts';
 import { tryCatchChatServeFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { plainResultFromResponse } from '../shared/respond.ts';
 import { traverseTranslation } from '../shared/translate-traverse.ts';
-import { createUpstreamLatencyRecorder } from '../shared/upstream-telemetry.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesMessage, MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
@@ -28,14 +26,7 @@ export const messagesGenerateTarget = chatTargetPicker(['messages', 'responses',
 // satisfies the operation.
 export const messagesCountTokensTarget = chatTargetPicker(['messages']);
 
-export interface MessagesAttemptGenerateArgs {
-  readonly payload: MessagesPayload;
-  readonly ctx: ChatGatewayCtx;
-  readonly candidate: ModelCandidate;
-  readonly headers: Headers;
-}
-
-export interface MessagesAttemptCountTokensArgs {
+export interface MessagesAttemptArgs {
   readonly payload: MessagesPayload;
   readonly ctx: ChatGatewayCtx;
   readonly candidate: ModelCandidate;
@@ -43,7 +34,7 @@ export interface MessagesAttemptCountTokensArgs {
 }
 
 export const messagesAttempt = {
-  generate: async (args: MessagesAttemptGenerateArgs): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>>> => {
+  generate: async (args: MessagesAttemptArgs): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>>> => {
     const { payload, ctx, candidate, headers } = args;
     const { store } = ctx;
     const targetApi = messagesGenerateTarget.pick(candidate.model.endpoints);
@@ -59,14 +50,13 @@ export const messagesAttempt = {
       if (targetApi === 'messages') {
         if (candidate.rules !== undefined) applyRulesToUpstreamMessages(invocation.payload, candidate.rules);
         const { model: _model, ...body } = invocation.payload;
-        const recorder = createUpstreamLatencyRecorder();
         const providerResult = await candidate.provider.instance.callMessages(
           providerModelOf(candidate),
           body,
           ctx.abortSignal,
-          buildUpstreamCallOptions(candidate, ctx, recorder.record, invocation.headers),
+          buildUpstreamCallOptions(candidate, ctx, invocation.headers),
         );
-        return await providerStreamResultToExecuteResult(providerResult, candidate, targetApi, ctx, recorder);
+        return await providerStreamResultToExecuteResult(providerResult, candidate, targetApi, ctx);
       }
       if (targetApi === 'responses') {
         return await traverseTranslation(
@@ -90,7 +80,7 @@ export const messagesAttempt = {
     });
   },
 
-  countTokens: async (args: MessagesAttemptCountTokensArgs): Promise<PlainResult> => {
+  countTokens: async (args: MessagesAttemptArgs): Promise<PlainResult> => {
     const { payload, ctx, candidate, headers } = args;
     const { store } = ctx;
     // `pick` here is contractually total — serve filtered with
@@ -109,7 +99,6 @@ export const messagesAttempt = {
       targetApi,
       headers,
     };
-    const recorder = createUpstreamLatencyRecorder();
     const response = await runInterceptors(invocation, ctx, messagesCountTokensInterceptors, async () => {
       if (candidate.rules !== undefined) applyRulesToUpstreamMessages(invocation.payload, candidate.rules);
       const { model: _model, ...body } = invocation.payload;
@@ -117,15 +106,10 @@ export const messagesAttempt = {
         providerModelOf(candidate),
         body,
         ctx.abortSignal,
-        buildUpstreamCallOptions(candidate, ctx, recorder.record, invocation.headers),
+        buildUpstreamCallOptions(candidate, ctx, invocation.headers),
       );
       return response;
     });
-    // count_tokens is excluded from the `upstream_success` metric — that
-    // metric only covers generation-shaped traffic — but the recorder
-    // contract still has to fire so a provider that forgets to wrap fails
-    // loud on the happy path.
-    requireRecordedDurationMs(recorder, 'callMessagesCountTokens');
     return await plainResultFromResponse(response, candidate.provider.upstream);
   },
 };

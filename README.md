@@ -50,14 +50,20 @@ cp wrangler.example.jsonc wrangler.jsonc
 pnpm wrangler login
 pnpm wrangler d1 create <DB_NAME>
 
-# Apply schema and set the admin secret.
+# Apply schema. Prod also needs an admin secret; wrangler dev doesn't.
 pnpm run db:migrate
-pnpm wrangler secret put ADMIN_KEY
+pnpm wrangler secret put ADMIN_KEY   # production only
 
 # Run locally or deploy. In dev, open the Vite SPA at http://localhost:5174.
 pnpm run dev
 pnpm run deploy
 ```
+
+`ADMIN_KEY` is required on production deploys — a live Worker that
+receives requests from Cloudflare's edge (detected via the `CF-Ray`
+header) refuses passwordless logins. A local `wrangler dev` instance
+without `.dev.vars` has no `ADMIN_KEY`, and the login page then accepts a
+blank username with any (or empty) password as the seed admin.
 
 ### Node.js (self-hosted)
 
@@ -72,6 +78,12 @@ FLOWAY_FILES_DIR=./data/files \
 PORT=8788 \
 pnpm run dev:node
 ```
+
+`ADMIN_KEY` may be omitted on a dev machine — the login page then accepts
+a blank username with any (or empty) password as the seed admin. Setting
+`NODE_ENV=production` makes `ADMIN_KEY` mandatory: the entry point
+refuses to boot without it, and the running server also rejects
+passwordless logins.
 
 Optionally set `RUNTIME_LOCATION=<tag>` to label this instance in the
 performance telemetry's `runtimeLocation` dimension and as the dial-time
@@ -103,7 +115,8 @@ use.
 ### After the first boot
 
 Open the deployed URL (or `http://localhost:8788` for Node), log in with
-`ADMIN_KEY`, and:
+`ADMIN_KEY` (or leave the password blank on a dev instance with no
+`ADMIN_KEY` set), and:
 
 1. **Settings -> Upstreams -> Add Upstream**. Upstreams are *Custom*
    (OpenAI/Anthropic-shaped, static credential), *Azure* (one endpoint, API key,

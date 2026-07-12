@@ -9,7 +9,7 @@ const ANTHROPIC_VERSION = '2023-06-01';
 // messages count-tokens and responses compact endpoints append a suffix
 // to their parent's resolved path so an override of the parent ripples
 // down to both.
-type EndpointKey = NonNullable<CustomUpstreamConfig['pathOverrides']> extends Partial<Record<infer K, string>> ? K : never;
+type EndpointKey = keyof NonNullable<CustomUpstreamConfig['pathOverrides']>;
 
 const resolveOverridable = (config: CustomUpstreamConfig, key: EndpointKey): string =>
   config.pathOverrides?.[key] ?? `/v1${key}`;
@@ -36,8 +36,7 @@ const customFetchInternal = async (
   if (options.extraHeaders) {
     for (const [k, v] of options.extraHeaders) headers.set(k, v);
   }
-  const dispatch = options.fetcher;
-  return await dispatch(joinBaseAndPath(config.baseUrl, path), { ...init, headers }, options.recordUpstreamLatency);
+  return await options.wrapUpstreamCall(() => options.fetcher(joinBaseAndPath(config.baseUrl, path), { ...init, headers }));
 };
 
 export const customFetchChatCompletions = (config: CustomUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>

@@ -799,3 +799,188 @@ test('/v1/models folds a real-id collision onto the alias even when the alias po
     },
   );
 });
+
+// Claude Code CLI's `/model` picker discovers gateway-served models by GET
+// /v1/models?limit=1000. Its `[1m]` suffix — which flips a pick to the
+// 1M-context window — only reaches the picker when the discovered id
+// carries the suffix, and the CLI does not synthesize the variant on
+// discovered ids in gateway mode. So the handler rewrites 1M-capable ids
+// on the wire only for callers that identify as the Claude Code CLI, and
+// translates the payload into the official Anthropic /v1/models shape
+// (`{data, first_id, has_more, last_id}` with `ModelInfo` rows).
+// Non-Claude-Code callers still see Floway's PublicModel superset.
+test('/v1/models serves Anthropic-shape rows with a [1m] suffix on 1M-capable ids to Claude Code CLI callers', async () => {
+  const { apiKey } = await setupAppTest();
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({
+          token: 'copilot-access-token',
+          expires_at: 4102444800,
+          refresh_in: 3600,
+          endpoints: { api: 'https://api.individual.githubcopilot.com' },
+        });
+      }
+      if (url.pathname === '/models' && url.hostname === 'api.individual.githubcopilot.com') {
+        return jsonResponse(
+          copilotModels([
+            {
+              id: 'claude-opus-4.7',
+              display_name: 'Claude Opus 4.7',
+              supported_endpoints: ['/v1/messages'],
+              maxContextWindowTokens: 1_000_000,
+              maxOutputTokens: 128_000,
+            },
+            {
+              id: 'claude-haiku-4.5',
+              display_name: 'Claude Haiku 4.5',
+              supported_endpoints: ['/v1/messages'],
+              maxContextWindowTokens: 200_000,
+              maxOutputTokens: 64_000,
+            },
+          ]),
+        );
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const claudeCodeResp = await requestApp('/v1/models', {
+        headers: { 'x-api-key': apiKey.key, 'user-agent': 'claude-code/2.1.206' },
+      });
+      assertEquals(claudeCodeResp.status, 200);
+      const claudeCodeBody = (await claudeCodeResp.json()) as {
+        object?: unknown;
+        first_id: string | null;
+        has_more: boolean;
+        last_id: string | null;
+        data: Array<{
+          id: string;
+          type: string;
+          display_name: string;
+          created_at: string;
+          max_input_tokens: number | null;
+          max_tokens: number | null;
+          capabilities: unknown;
+          // Floway superset leftovers that must not reach the wire in this branch.
+          object?: unknown;
+          kind?: unknown;
+          endpoints?: unknown;
+          limits?: unknown;
+          cost?: unknown;
+          chat?: unknown;
+        }>;
+      };
+      // Anthropic envelope: no `object` field, has_more literal false,
+      // container edges reflect the rewritten id order (Copilot merges in
+      // input order, so `claude-opus-4.7` lands first).
+      assertEquals(claudeCodeBody.object, undefined);
+      assertEquals(claudeCodeBody.has_more, false);
+      assertEquals(claudeCodeBody.first_id, 'claude-opus-4-7[1m]');
+      assertEquals(claudeCodeBody.last_id, 'claude-haiku-4-5');
+
+      // 1M model gains the suffix; display_name and token limits mirror
+      // upstream, so the picker keeps rendering the original label and
+      // downstream Anthropic-shape consumers still see accurate windows.
+      const opus = claudeCodeBody.data.find(m => m.display_name === 'Claude Opus 4.7')!;
+      assertEquals(opus.id, 'claude-opus-4-7[1m]');
+      assertEquals(opus.type, 'model');
+      assertEquals(opus.max_input_tokens, 1_000_000);
+      assertEquals(opus.max_tokens, 128_000);
+      // `capabilities` is intentionally null: Floway does not track every
+      // dimension the SDK declares; nulling out is honest, and the CLI
+      // strips the field anyway.
+      assertEquals(opus.capabilities, null);
+      // Unknown upstream release date collapses to the epoch sentinel.
+      assertEquals(opus.created_at, '1970-01-01T00:00:00Z');
+      // Floway superset fields are dropped from this branch.
+      assertEquals(opus.object, undefined);
+      assertEquals(opus.kind, undefined);
+      assertEquals(opus.endpoints, undefined);
+      assertEquals(opus.limits, undefined);
+      assertEquals(opus.cost, undefined);
+      assertEquals(opus.chat, undefined);
+
+      // 200K model stays bare and carries the same Anthropic-shape fields.
+      const haiku = claudeCodeBody.data.find(m => m.display_name === 'Claude Haiku 4.5')!;
+      assertEquals(haiku.id, 'claude-haiku-4-5');
+      assertEquals(haiku.max_input_tokens, 200_000);
+      assertEquals(haiku.max_tokens, 64_000);
+
+      // Non-Claude-Code caller: Floway's PublicModel superset is unchanged.
+      const openAiResp = await requestApp('/v1/models', {
+        headers: { 'x-api-key': apiKey.key, 'user-agent': 'openai-python/1.42.0' },
+      });
+      assertEquals(openAiResp.status, 200);
+      const openAiBody = (await openAiResp.json()) as {
+        object: string;
+        first_id: string | null;
+        last_id: string | null;
+        data: Array<{ id: string; kind?: string; limits?: Record<string, number>; type?: string; display_name?: string }>;
+      };
+      assertEquals(openAiBody.object, 'list');
+      assertEquals(openAiBody.data.map(m => m.id).sort(), ['claude-haiku-4-5', 'claude-opus-4-7']);
+      assertEquals(openAiBody.first_id, 'claude-opus-4-7');
+      assertEquals(openAiBody.last_id, 'claude-haiku-4-5');
+      const openAiOpus = openAiBody.data.find(m => m.id === 'claude-opus-4-7')!;
+      // Superset fields (kind, limits) still present on the default branch.
+      assertEquals(openAiOpus.kind, 'chat');
+      assertEquals(openAiOpus.limits?.max_context_window_tokens, 1_000_000);
+    },
+  );
+});
+
+// The Anthropic-shape branch also applies when nothing in the catalog
+// hits the 1M threshold: the caller must still get the official envelope
+// with bare ids, not the Floway superset.
+test('/v1/models serves Anthropic-shape rows without a [1m] suffix when no model advertises 1M context', async () => {
+  const { apiKey } = await setupAppTest();
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({
+          token: 'copilot-access-token',
+          expires_at: 4102444800,
+          refresh_in: 3600,
+          endpoints: { api: 'https://api.individual.githubcopilot.com' },
+        });
+      }
+      if (url.pathname === '/models' && url.hostname === 'api.individual.githubcopilot.com') {
+        return jsonResponse(
+          copilotModels([
+            {
+              id: 'claude-haiku-4.5',
+              display_name: 'Claude Haiku 4.5',
+              supported_endpoints: ['/v1/messages'],
+              maxContextWindowTokens: 200_000,
+            },
+          ]),
+        );
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const response = await requestApp('/v1/models', {
+        headers: { 'x-api-key': apiKey.key, 'user-agent': 'claude-code/2.1.206' },
+      });
+      assertEquals(response.status, 200);
+      const body = (await response.json()) as {
+        object?: unknown;
+        has_more: boolean;
+        data: Array<{ id: string; type: string; capabilities: unknown; max_input_tokens: number | null }>;
+      };
+      assertEquals(body.object, undefined);
+      assertEquals(body.has_more, false);
+      assertEquals(body.data.length, 1);
+      assertEquals(body.data[0].id, 'claude-haiku-4-5');
+      assertEquals(body.data[0].type, 'model');
+      assertEquals(body.data[0].max_input_tokens, 200_000);
+      assertEquals(body.data[0].capabilities, null);
+    },
+  );
+});

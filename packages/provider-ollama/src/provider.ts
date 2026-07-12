@@ -13,7 +13,7 @@
 //
 // Vision, tool calling, and reasoning/thinking are request-time features, not
 // per-endpoint capabilities, so they do not change routing. They surface to
-// the dashboard via providerData for display purposes only.
+// the dashboard via the model's `chat` field for display purposes only.
 //
 // Manual config.models[] entries override auto-fetched models with the same
 // upstreamModelId, mirroring the custom provider's pinning behavior.
@@ -40,16 +40,13 @@ const rawModelIdOf = (model: ProviderModel): string => model.providerData as str
 const CHAT_ENDPOINTS: ModelEndpoints = { completions: {}, chatCompletions: {}, responses: {}, messages: {} };
 const EMBEDDING_ENDPOINTS: ModelEndpoints = { embeddings: {} };
 
-const endpointsForCapabilities = (capabilities: ReadonlySet<string>): ModelEndpoints =>
-  (capabilities.has('embedding') ? EMBEDDING_ENDPOINTS : CHAT_ENDPOINTS);
-
 const finalizeOllamaModels = (
   catalog: OllamaCatalog,
   enabledFlags: ReadonlySet<FlagId>,
 ): ProviderModel[] => {
   const models: ProviderModel[] = [];
   for (const raw of catalog.data) {
-    const endpoints = endpointsForCapabilities(raw.capabilities);
+    const endpoints = raw.capabilities.has('embedding') ? EMBEDDING_ENDPOINTS : CHAT_ENDPOINTS;
     const limits: ProviderModel['limits'] = {};
     if (raw.contextLength !== undefined) limits.max_context_window_tokens = raw.contextLength;
     const model: ProviderModel = {
@@ -109,7 +106,7 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
     return transport(
       config,
       { method: 'POST', body: JSON.stringify({ ...body, model: rawModelId }), signal },
-      { extraHeaders: opts.headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency },
+      { extraHeaders: opts.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
     ).then(response => ({ response, modelKey: rawModelId }));
   };
 
@@ -126,7 +123,7 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
       transport(
         config,
         { method: 'POST', body: JSON.stringify({ ...body, stream: true, model: rawModelId }), signal },
-        { extraHeaders: opts.headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency },
+        { extraHeaders: opts.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
       ),
       parser,
       rawModelId,
@@ -162,7 +159,7 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
         const response = await ollamaFetchResponsesCompact(
           config,
           { method: 'POST', body: JSON.stringify({ ...toCompactPayloadShape(body), model: rawModelId }), signal },
-          { extraHeaders: opts.headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency },
+          { extraHeaders: opts.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
         );
         return response.ok
           ? { action: 'compact', ok: true, result: (await response.json()) as ResponsesResult, modelKey: rawModelId }

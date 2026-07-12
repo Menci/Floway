@@ -21,7 +21,7 @@ import { synthesizeCatalogEntry } from './synthesize.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
-import { getCurrentColo } from '../../runtime/runtime-info.ts';
+import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import { enumerateAddressableModelIds, type AddressableIdEntry } from '../shared/listing/addressable.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { Fetcher } from '@floway-dev/provider';
@@ -80,7 +80,7 @@ const computeCatalog = async (
 export const codexModels = async (c: Context): Promise<Response> => {
   const userAgent = c.req.header('user-agent');
   const upstreamIds = effectiveUpstreamIdsFromContext(c);
-  const fetcherForUpstream = await createPerRequestFetcher(getCurrentColo(c.req.raw));
+  const fetcherForUpstream = await createPerRequestFetcher(getRuntimeLocation(c.req.raw));
   const scheduler = backgroundSchedulerFromContext(c);
   return Response.json(await computeCatalog(userAgent, upstreamIds, fetcherForUpstream, scheduler));
 };

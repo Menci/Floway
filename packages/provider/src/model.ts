@@ -110,12 +110,24 @@ export interface TelemetryModelIdentity {
   cost: ModelPricing | null;
 }
 
+// `chat`, `text_completion`, and `embeddings` are the OTel `gen_ai.operation.name`
+// well-known values we route; `image_generation` and `image_edit` are Floway
+// extensions covering the concrete non-chat endpoints OTel does not name. Extend
+// only when a new route lands — no wildcard string.
+// OTel canonical set:
+// https://github.com/open-telemetry/semantic-conventions/blob/v1.37.0/docs/gen-ai/gen-ai-spans.md#gen_aioperationname
+export type PerformanceOperation =
+  | 'chat'
+  | 'text_completion'
+  | 'embeddings'
+  | 'image_generation'
+  | 'image_edit';
+
 export interface PerformanceTelemetryContext {
   keyId: string;
   model: string;
-  upstream: string | null;
-  modelKey: string;
-  stream: boolean;
+  upstream: string;
+  operation: PerformanceOperation;
   runtimeLocation: string;
 }
 
@@ -202,8 +214,8 @@ export interface ProviderModel extends ModelMetadata {
   // model. Absent when the provider has no per-model call on this
   // model; when present, the map is non-empty (producers elide empty
   // overlays before emission). Populated only for providers with a
-  // per-model rule (Copilot's Claude < 4.8 demote clause is the current
-  // example); other providers leave it undefined.
+  // per-model rule (e.g., Copilot's Claude < 4.8 demote clause); other
+  // providers leave it undefined.
   //
   // The data plane consumes the already-resolved `enabledFlags` and
   // never re-layers this. The field exists so the dashboard's

@@ -24,7 +24,7 @@ export const chatCompletionsServe = {
       model: payload.model,
       kind: 'chat',
       scheduler: ctx.backgroundScheduler,
-      currentColo: ctx.currentColo,
+      runtimeLocation: ctx.runtimeLocation,
     });
     const viable = enumerated.filter(c => chatCompletionsTarget.canServe(c.model.endpoints));
     const decision = await classifyResponsesItemAffinity({
@@ -48,6 +48,8 @@ export const chatCompletionsServe = {
     return await iterateCandidates(
       decision.candidates,
       'chatCompletionsServe.generate',
+      ctx,
+      'chat',
       candidate => {
         payload.model = candidate.model.id;
         return chatCompletionsAttempt.generate({ payload, ctx, candidate, headers });

@@ -20,9 +20,9 @@ import { type CtxWithJson, type CtxWithQuery } from '../../middleware/zod-valida
 import { parseDisabledPublicModelIdsWire } from '../../repo/disabled-public-models.ts';
 import { getRepo } from '../../repo/index.ts';
 import { DIRECT_PROXY_ID, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
-import type { ApiKey, PerformanceMetricScope, PerformanceTelemetryRecord, SearchUsageRecord, TokenUsage, UsageRecord, User } from '../../repo/types.ts';
+import type { ApiKey, PerformanceBucketRow, PerformanceMetric, PerformanceTelemetryRecord, SearchUsageRecord, TokenUsage, UsageRecord, User } from '../../repo/types.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
-import { getCurrentColo } from '../../runtime/runtime-info.ts';
+import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import { PASSWORD_HASH_SCHEME } from '../../shared/passwords.ts';
 import { isWebSearchProviderName } from '../../shared/web-search-providers.ts';
 import { parseUpstreamIdsValue } from '../api-keys/upstream-ids.ts';
@@ -31,7 +31,7 @@ import { copilotConfigField, isRecord, nonEmptyStringField } from '../shared/fie
 import { type SerializedUpstreamRecord, upstreamRecordToFullJson } from '../upstreams/serialize.ts';
 import { BILLING_DIMENSIONS, type ModelPricing } from '@floway-dev/protocols/common';
 import { ALL_PROVIDER_KINDS, normalizeModelPrefix, normalizeUpstreamColor, parseFlagOverridesWire } from '@floway-dev/provider';
-import type { ProxyFallbackEntry, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
+import type { PerformanceOperation, ProxyFallbackEntry, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
 import { assertClaudeCodeUpstreamRecord, assertClaudeCodeUpstreamState } from '@floway-dev/provider-claude-code';
 import { assertCodexUpstreamRecord, assertCodexUpstreamState } from '@floway-dev/provider-codex';
@@ -49,7 +49,7 @@ interface SerializedProxy {
 }
 
 interface ExportPayload {
-  version: 7;
+  version: 8;
   exportedAt: string;
   data: {
     users: User[];
@@ -64,9 +64,9 @@ interface ExportPayload {
   };
 }
 
-const EXPORT_VERSION = 7;
+const EXPORT_VERSION = 8;
 const SEARCH_USAGE_HOUR_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}$/;
-const PERFORMANCE_METRIC_SCOPES = new Set<PerformanceMetricScope>(['request_total', 'upstream_success']);
+const PERFORMANCE_METRICS = new Set<PerformanceMetric>(['ttft_ms', 'tpot_us']);
 const UPSTREAM_PROVIDERS = new Set<UpstreamProviderKind>(ALL_PROVIDER_KINDS);
 const LEGACY_UPSTREAM_PREFIXES = ['openai:', 'copilot:'];
 
@@ -76,7 +76,10 @@ const isLegacyUpstreamIdentity = (value: string): boolean => LEGACY_UPSTREAM_PRE
 
 const isNonNegativeSafeInteger = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 
-const isPerformanceMetricScope = (value: unknown): value is PerformanceMetricScope => typeof value === 'string' && PERFORMANCE_METRIC_SCOPES.has(value as PerformanceMetricScope);
+const isPerformanceMetric = (value: unknown): value is PerformanceMetric => typeof value === 'string' && PERFORMANCE_METRICS.has(value as PerformanceMetric);
+
+const PERFORMANCE_OPERATIONS = new Set<PerformanceOperation>(['chat', 'text_completion', 'embeddings', 'image_generation', 'image_edit']);
+const isPerformanceOperation = (value: unknown): value is PerformanceOperation => typeof value === 'string' && PERFORMANCE_OPERATIONS.has(value as PerformanceOperation);
 
 const importErrorBuilder = (field: string, expected: string) => new Error(`${field} must be ${expected}`);
 
@@ -513,48 +516,112 @@ const parsePerformanceRecords = (value: unknown): { type: 'ok'; records: Perform
     if (
       typeof item.hour !== 'string' ||
       !SEARCH_USAGE_HOUR_PATTERN.test(item.hour) ||
-      !isPerformanceMetricScope(item.metricScope) ||
       typeof item.keyId !== 'string' ||
       item.keyId.length === 0 ||
       typeof item.model !== 'string' ||
       item.model.length === 0 ||
-      (item.upstream !== null && typeof item.upstream !== 'string') ||
-      (typeof item.upstream === 'string' && isLegacyUpstreamIdentity(item.upstream)) ||
-      typeof item.modelKey !== 'string' ||
-      item.modelKey.length === 0 ||
-      typeof item.stream !== 'boolean' ||
+      typeof item.upstream !== 'string' ||
+      item.upstream.length === 0 ||
+      isLegacyUpstreamIdentity(item.upstream) ||
+      !isPerformanceOperation(item.operation) ||
       typeof item.runtimeLocation !== 'string' ||
       item.runtimeLocation.length === 0 ||
       !isNonNegativeSafeInteger(item.requests) ||
-      !isNonNegativeSafeInteger(item.errors) ||
-      !isNonNegativeSafeInteger(item.totalMsSum) ||
+      !isNonNegativeSafeInteger(item.ttftSamplesOk) ||
+      !isNonNegativeSafeInteger(item.errorsWithOutput) ||
+      !isNonNegativeSafeInteger(item.errorsNoOutput) ||
+      !isNonNegativeSafeInteger(item.neutral) ||
+      !isNonNegativeSafeInteger(item.tpotSamples) ||
+      !isNonNegativeSafeInteger(item.ttftMsSum) ||
+      !isNonNegativeSafeInteger(item.tpotUsSum) ||
       !Array.isArray(item.buckets)
     ) {
       return { type: 'invalid', index: i, error: 'record fields are missing or malformed' };
     }
 
-    const buckets = [];
+    // Partition-first invariant: every request lands in exactly one of the
+    // four counters, so their sum equals `requests` on any row the recorder
+    // wrote. `tpotSamples` is orthogonal (a subset of TTFT-carrying rows —
+    // ttftSamplesOk + errorsWithOutput — where at least two output tokens
+    // streamed).
+    const ttftSamplesOk = item.ttftSamplesOk as number;
+    const errorsWithOutput = item.errorsWithOutput as number;
+    const errorsNoOutput = item.errorsNoOutput as number;
+    const neutral = item.neutral as number;
+    const requests = item.requests as number;
+    const tpotSamples = item.tpotSamples as number;
+    if (ttftSamplesOk + errorsWithOutput + errorsNoOutput + neutral !== requests) {
+      return {
+        type: 'invalid',
+        index: i,
+        error: 'ttftSamplesOk + errorsWithOutput + errorsNoOutput + neutral must equal requests',
+      };
+    }
+    if (tpotSamples > ttftSamplesOk + errorsWithOutput) {
+      return {
+        type: 'invalid',
+        index: i,
+        error: 'tpotSamples must not exceed ttftSamplesOk + errorsWithOutput',
+      };
+    }
+
+    const buckets: PerformanceBucketRow[] = [];
+    const bucketKeys = new Set<string>();
+    let ttftBucketCount = 0;
+    let tpotBucketCount = 0;
     for (const bucket of item.buckets) {
       if (!bucket || typeof bucket !== 'object') return { type: 'invalid', index: i, error: 'bucket is not an object' };
-      const bucketItem = bucket as Record<string, unknown>;
-      if (!isNonNegativeSafeInteger(bucketItem.lowerMs) || !isNonNegativeSafeInteger(bucketItem.upperMs) || !isNonNegativeSafeInteger(bucketItem.count) || bucketItem.upperMs <= bucketItem.lowerMs) {
-        return { type: 'invalid', index: i, error: 'bucket lowerMs/upperMs/count fields are missing or malformed' };
+      const b = bucket as Record<string, unknown>;
+      if (
+        !isPerformanceMetric(b.metric) ||
+        !isNonNegativeSafeInteger(b.lower) ||
+        (b.upper !== null && !isNonNegativeSafeInteger(b.upper)) ||
+        (b.upper !== null && (b.upper as number) <= (b.lower as number)) ||
+        !isNonNegativeSafeInteger(b.count)
+      ) {
+        return { type: 'invalid', index: i, error: 'bucket metric/lower/upper/count fields are missing or malformed' };
       }
-      buckets.push({ lowerMs: bucketItem.lowerMs, upperMs: bucketItem.upperMs, count: bucketItem.count });
+      // Duplicate {metric, lower} tuples would silently over-count in
+      // aggregation because updateAggregate merges bucket entries by lower
+      // edge and adds their counts.
+      const dedupKey = `${b.metric}\0${b.lower as number}`;
+      if (bucketKeys.has(dedupKey)) {
+        return { type: 'invalid', index: i, error: `duplicate bucket entry for {metric: ${b.metric}, lower: ${b.lower as number}}` };
+      }
+      bucketKeys.add(dedupKey);
+      if (b.metric === 'ttft_ms') ttftBucketCount += b.count as number;
+      else tpotBucketCount += b.count as number;
+      buckets.push({ metric: b.metric, lower: b.lower as number, upper: b.upper as number | null, count: b.count as number });
+    }
+
+    // Every ttft/tpot sample the recorder logs also increments exactly one
+    // bucket entry for its metric. If the per-metric bucket sum doesn't match
+    // the declared sample count, the histogram is inconsistent with the
+    // counters and percentile queries would return misleading values. TTFT
+    // buckets cover both healthy and partial-output-failure samples, so the
+    // sum matches `ttftSamplesOk + errorsWithOutput`.
+    if (ttftBucketCount !== ttftSamplesOk + errorsWithOutput) {
+      return { type: 'invalid', index: i, error: `ttft_ms bucket sum (${ttftBucketCount}) must equal ttftSamplesOk + errorsWithOutput (${ttftSamplesOk + errorsWithOutput})` };
+    }
+    if (tpotBucketCount !== tpotSamples) {
+      return { type: 'invalid', index: i, error: `tpot_us bucket sum (${tpotBucketCount}) must equal tpotSamples (${tpotSamples})` };
     }
 
     records.push({
       hour: item.hour,
-      metricScope: item.metricScope,
       keyId: item.keyId,
       model: item.model,
       upstream: item.upstream,
-      modelKey: item.modelKey,
-      stream: item.stream,
+      operation: item.operation as PerformanceOperation,
       runtimeLocation: item.runtimeLocation,
-      requests: item.requests,
-      errors: item.errors,
-      totalMsSum: item.totalMsSum,
+      requests,
+      ttftSamplesOk,
+      errorsWithOutput,
+      errorsNoOutput,
+      neutral,
+      tpotSamples,
+      ttftMsSum: item.ttftMsSum,
+      tpotUsSum: item.tpotUsSum,
       buckets,
     });
   }
@@ -576,7 +643,7 @@ const parsePerformanceRecords = (value: unknown): { type: 'ok'; records: Perform
 const warmModelsCache = async (record: UpstreamRecord, c: Context): Promise<void> => {
   const scheduler = backgroundSchedulerFromContext(c);
   const instance = createProviderInstance(record);
-  const fetcher = (await createPerRequestFetcher(getCurrentColo(c.req.raw)))(record.id);
+  const fetcher = (await createPerRequestFetcher(getRuntimeLocation(c.req.raw)))(record.id);
   try {
     await fetchUpstreamModelsCached(instance, { scheduler, fetcher, force: true });
   } catch {}

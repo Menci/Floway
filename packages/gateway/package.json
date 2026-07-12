@@ -21,6 +21,9 @@
     "./control-plane/pricing/types": {
       "types": "./src/control-plane/pricing/types.ts"
     },
+    "./control-plane/performance/aggregate": {
+      "types": "./src/control-plane/performance/aggregate.ts"
+    },
     "./data-plane/tools/web-search/types": {
       "import": "./src/data-plane/tools/web-search/types.ts",
       "types": "./src/data-plane/tools/web-search/types.ts"

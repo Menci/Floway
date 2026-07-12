@@ -7,8 +7,10 @@ import { tokenUsageFromResponsesResult } from './usage.ts';
 import type { AuthedContext } from '../../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
+import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
+import { settle } from '../../shared/telemetry/settle.ts';
 import { createChatGatewayCtxFromHono, type ChatGatewayCtx, type GatewayCtx } from '../shared/gateway-ctx.ts';
-import { SourceStreamState, eventResultMetadata, recordPerformance, recordUsage } from '../shared/respond.ts';
+import { SourceStreamState, eventResultMetadata } from '../shared/respond.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS, type StreamCompletion } from '../shared/stream/sse.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -103,7 +105,7 @@ const createResponsesWebSocketEvents = (c: AuthedContext): ResponsesWebSocketHan
   // upgrade, subsequent waitUntil calls made from message-event handlers
   // are silently dropped (the promise never runs, the isolate has no
   // registered reason to defer eviction for it). Every per-message background
-  // task — dump.finalize, recordPerformance, recordUsage — would therefore
+  // task — dump.finalize, settle, recordFailedRequest — would therefore
   // lose its write.
   //
   // Fix: give the ctx a scheduler that doesn't depend on the fetch's
@@ -116,7 +118,7 @@ const createResponsesWebSocketEvents = (c: AuthedContext): ResponsesWebSocketHan
   // The drain uses a `while (size > 0)` loop rather than a single
   // `Promise.allSettled(pendingWork)` snapshot: the in-flight message
   // handler running at close time may still enqueue a final
-  // dump.finalize / recordPerformance from its finally/catch after
+  // dump.finalize / settle / recordFailedRequest from its finally/catch after
   // `sessionClosed` resolves. The loop keeps going until the Set is
   // genuinely empty, which is bounded because `closed = true` short-
   // circuits future message handlers at the top of `handleClientMessage`.
@@ -255,6 +257,12 @@ const handleClientMessage = async (
     }
     sendError(socket, 500, serverErrorEnvelope(error), eventId);
     if (ctx !== undefined) {
+      // Mid-attempt throws (interceptor bug, translation error, provider-layer JS
+      // exception that bypassed tryCatchChatServeFailure) never reach the
+      // respondResponsesWebSocket result branches, so their `recordFailedRequest`
+      // call would be skipped. Attribute the failure to the last upstream stamped
+      // synchronously by `responsesServe.generate`, matching the HTTP transports.
+      recordFailedRequest(ctx, ctx.attempt.telemetry);
       ctx.dump?.failed(error);
       ctx.dump?.finalize(500, []);
     }
@@ -285,8 +293,7 @@ const responsesPayloadFromClientSource = (source: object): CanonicalResponsesPay
   if (typeof candidate.input !== 'string' && !Array.isArray(candidate.input)) {
     throw new WebSocketClientMessageError('response.create requires response.input to be a string or an array.');
   }
-  // Feed the wire shape through the same canonicalization the HTTP entry uses,
-  // then stamp `stream: true` — the WS transport streams every turn.
+  // stamp stream: true — the WS transport always streams.
   return { ...canonicalizeResponsesPayload(source as ResponsesPayload), stream: true };
 };
 
@@ -300,7 +307,7 @@ const respondResponsesWebSocket = async (input: {
 }): Promise<void> => {
   const { socket, eventId, signal, isClosed, result, ctx } = input;
   if (result.type === 'api-error') {
-    recordPerformance(ctx, result.performance, true);
+    recordFailedRequest(ctx, result.performance);
     ctx.dump?.error(result.source, result.upstream);
     ctx.dump?.finalize(result.status, []);
     sendError(socket, result.status, normalizeErrorBody(parseMaybeJson(result.body, result.headers), result.status), eventId);
@@ -308,7 +315,7 @@ const respondResponsesWebSocket = async (input: {
   }
 
   if (result.type === 'internal-error') {
-    recordPerformance(ctx, result.performance, true);
+    recordFailedRequest(ctx, result.performance);
     ctx.dump?.failed(result.error.message);
     ctx.dump?.finalize(result.status, []);
     sendError(socket, result.status, internalErrorEnvelope(result.error), eventId);
@@ -415,13 +422,7 @@ const respondResponsesWebSocket = async (input: {
     if (failed) ctx.dump?.failed(`responses ws turn failed (completion=${completion}, source-failed=${state.failed})`);
     else ctx.dump?.success(metadata.modelIdentity, state.usage);
     ctx.dump?.finalize(failed ? 500 : 200, []);
-    try {
-      await recordUsage(ctx, metadata.modelIdentity, state.usage);
-    } catch (error) {
-      console.error('Failed to record Responses WebSocket usage:', error);
-    } finally {
-      recordPerformance(ctx, metadata.performance, failed);
-    }
+    settle(ctx, metadata.performance, metadata.modelIdentity, state.usage, failed);
   }
 };
 
@@ -473,15 +474,9 @@ const serverErrorEnvelope = (error: unknown): Record<string, unknown> => ({
   code: 'internal_error',
 });
 
-const responseDoneSummary = (event: unknown) => {
-  if (!event || typeof event !== 'object') return null;
-  const type = (event as { type?: unknown }).type;
-  if (type !== 'response.completed' && type !== 'response.failed' && type !== 'response.incomplete') return null;
-  const response = (event as { response?: unknown }).response;
-  if (!response || typeof response !== 'object') return null;
-  const id = (response as { id?: unknown }).id;
-  if (typeof id !== 'string') return null;
-  const usage = (response as { usage?: ResponsesResult['usage'] }).usage;
+const responseDoneSummary = (event: ResponsesStreamEvent) => {
+  if (event.type !== 'response.completed' && event.type !== 'response.failed' && event.type !== 'response.incomplete') return null;
+  const { id, usage } = event.response;
   return usage === undefined ? { id } : { id, usage };
 };
 

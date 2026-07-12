@@ -2,25 +2,13 @@ import { test } from 'vitest';
 
 import { demoteInterleavedSystemToUser } from './demote-interleaved-system-to-user.ts';
 import type { MessagesInvocation } from './types.ts';
-import { createNonResponsesSourceStore } from '../../responses/items/store.ts';
-import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
+import { mockChatGatewayCtx } from '../../../../test-helpers/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import { type ExecuteResult, eventResult } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
-const stubCtx: ChatGatewayCtx = {
-  apiKeyId: 'test-key',
-  upstreamIds: null,
-  wantsStream: false,
-  runtimeLocation: 'TEST',
-  currentColo: 'TEST',
-  dump: null,
-  responseHeaders: new Headers(),
-  backgroundScheduler: () => {},
-  requestStartedAt: 0,
-  store: createNonResponsesSourceStore('test-key'),
-};
+const stubCtx = mockChatGatewayCtx();
 
 const okEvents = (): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>>> =>
   Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<MessagesStreamEvent>> {})(), testTelemetryModelIdentity));

@@ -11,7 +11,7 @@ import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import { DIRECT_PROXY_ID, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
-import { getCurrentColo } from '../../runtime/runtime-info.ts';
+import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import { shortId } from '../../shared/short-id.ts';
 import { fetchGitHubUser, pollGitHubDeviceFlow, startGitHubDeviceFlow, type GitHubUser } from '../auth/github-device-flow.ts';
 import type { claudeCodeOauthAuthorizeUrlBody, claudeCodeOauthExchangeBody, claudeCodeOauthRefreshBody, claudeCodeProbeBody, claudeCodeSetupTokenAuthorizeUrlBody, claudeCodeSetupTokenExchangeBody, codexOauthAuthorizeUrlBody, codexOauthExchangeBody, codexOauthRefreshBody, copilotOauthDeviceLoginPollBody, copilotQuotaBody, createUpstreamBody, listModelsBody, updateUpstreamBody } from '../schemas.ts';
@@ -65,25 +65,40 @@ import { clearInProcessCopilotTokenCache, emptyCopilotUpstreamState, exchangeCop
 import { assertCustomUpstreamRecord, fetchCustomModels } from '@floway-dev/provider-custom';
 import { assertOllamaUpstreamRecord, createOllamaProvider } from '@floway-dev/provider-ollama';
 
-// Serialize for the HTTP response, attaching the live codex_quota snapshot map
-// when the row is a Codex upstream and the SWR models-cache freshness for
-// every row. Keeps serialize.ts free of provider I/O and a global repo handle,
-// while ensuring every response shape carries the panels the dashboard
-// expects.
-const serializeForResponse = async (record: UpstreamRecord): Promise<SerializedUpstreamRecord> => {
-  let codexQuotaPromise: Promise<CodexQuotaSnapshotMap | null> | null = null;
-  if (record.kind === 'codex') {
-    assertCodexUpstreamRecord(record);
-    codexQuotaPromise = getCodexQuota(record.id, record.config.accounts[0].chatgptAccountId);
-  }
-  const cacheRow = await getRepo().modelsCache.get(record.id);
-  const serialized = upstreamRecordToJson(record);
-  serialized.modelsCache = {
-    fetchedAt: cacheRow?.fetchedAt ?? null,
-    lastError: cacheRow?.lastError ?? null,
+type CodexQuotaProjection = { codex_quota?: CodexQuotaSnapshotMap | null };
+
+type UpstreamResponse = SerializedUpstreamRecord & CodexQuotaProjection;
+
+type UpstreamWithCacheResponse = UpstreamResponse & {
+  modelsCache: {
+    fetchedAt: number | null;
+    lastError: { message: string; at: number } | null;
   };
-  if (codexQuotaPromise) serialized.codex_quota = await codexQuotaPromise;
-  return serialized;
+};
+
+const codexQuotaForResponse = async (record: UpstreamRecord): Promise<CodexQuotaProjection> => {
+  if (record.kind !== 'codex') return {};
+  assertCodexUpstreamRecord(record);
+  return {
+    codex_quota: await getCodexQuota(record.id, record.config.accounts[0].chatgptAccountId),
+  };
+};
+
+// These projections need repository/provider I/O, which serialize.ts excludes
+// so it stays a pure persisted-record transform.
+const serializeForResponse = async (record: UpstreamRecord): Promise<UpstreamWithCacheResponse> => {
+  const [cacheRow, codexQuota] = await Promise.all([
+    getRepo().modelsCache.get(record.id),
+    codexQuotaForResponse(record),
+  ]);
+  return {
+    ...upstreamRecordToJson(record),
+    modelsCache: {
+      fetchedAt: cacheRow?.fetchedAt ?? null,
+      lastError: cacheRow?.lastError ?? null,
+    },
+    ...codexQuota,
+  };
 };
 
 type ValidationResult<T> = { ok: true; value: T } | { ok: false; error: string };
@@ -160,7 +175,7 @@ const normalizeModelPrefixField = (input: unknown): ValidationResult<ModelPrefix
 const warmModelsCache = async (record: UpstreamRecord, c: Context): Promise<void> => {
   const scheduler = backgroundSchedulerFromContext(c);
   const instance = createProviderInstance(record);
-  const fetcher = (await createPerRequestFetcher(getCurrentColo(c.req.raw)))(record.id);
+  const fetcher = (await createPerRequestFetcher(getRuntimeLocation(c.req.raw)))(record.id);
   try {
     await fetchUpstreamModelsCached(instance, { scheduler, fetcher, force: true });
   } catch (e) {
@@ -233,13 +248,17 @@ export const getUpstreamBlueprint = (c: Context): Response => {
 // Single-record read for the edit page. Returns the FULL record — no
 // secret redaction — because every editor-scoped action posts the record
 // back to a helper endpoint that needs the same credentials the data plane
-// uses (refresh tokens, api keys, etc.). The list endpoint continues to
-// serve the redacted projection for surfaces that don't need secrets.
+// uses (refresh tokens, api keys, etc.). Codex quota is a response-only
+// projection, so it is attached here as well.
 export const getUpstream = async (c: AuthedContext<'/:id'>) => {
   const id = c.req.param('id');
   const record = await getRepo().upstreams.getById(id);
   if (!record) return c.json({ error: 'upstream not found' }, 404);
-  return c.json(upstreamRecordToFullJson(record));
+  const response: UpstreamResponse = {
+    ...upstreamRecordToFullJson(record),
+    ...await codexQuotaForResponse(record),
+  };
+  return c.json(response);
 };
 
 export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) => {
@@ -394,7 +413,7 @@ export const copilotOauthDeviceLoginPoll = async (c: CtxWithJson<typeof copilotO
   // as 400 — they belong to the caller, not to the upstream.
   let fetcher: Fetcher;
   try {
-    fetcher = await resolveControlPlaneFetcher({ override: record.proxy_fallback_list, currentColo: getCurrentColo(c.req.raw) });
+    fetcher = await resolveControlPlaneFetcher({ override: record.proxy_fallback_list, runtimeLocation: getRuntimeLocation(c.req.raw) });
   } catch (err) {
     return c.json({ status: 'error' as const, error: errorMessage(err) }, 400);
   }
@@ -497,7 +516,7 @@ export const copilotQuota = async (c: CtxWithJson<typeof copilotQuotaBody>) => {
     const githubToken = config && typeof config.githubToken === 'string' ? config.githubToken : '';
     if (!githubToken) return c.json({ error: 'Copilot upstream has no GitHub token' }, 400);
 
-    const fetcher = await resolveControlPlaneFetcher({ override: record.proxy_fallback_list, currentColo: getCurrentColo(c.req.raw) });
+    const fetcher = await resolveControlPlaneFetcher({ override: record.proxy_fallback_list, runtimeLocation: getRuntimeLocation(c.req.raw) });
     const resp = await fetcher('https://api.github.com/copilot_internal/user', { headers: githubHeaders(githubToken) });
 
     if (!resp.ok) {
@@ -543,7 +562,7 @@ export const codexOauthExchange = async (c: CtxWithJson<typeof codexOauthExchang
     fetcher = await resolveControlPlaneFetcher({
       override: record.proxy_fallback_list,
       upstreamId: record.id || undefined,
-      currentColo: getCurrentColo(c.req.raw),
+      runtimeLocation: getRuntimeLocation(c.req.raw),
     });
   } catch (err) {
     return c.json({ error: errorMessage(err) }, 400);
@@ -606,7 +625,7 @@ export const codexOauthRefresh = async (c: CtxWithJson<typeof codexOauthRefreshB
     fetcher = await resolveControlPlaneFetcher({
       override: record.proxy_fallback_list,
       upstreamId: record.id,
-      currentColo: getCurrentColo(c.req.raw),
+      runtimeLocation: getRuntimeLocation(c.req.raw),
     });
   } catch (err) {
     return c.json({ error: errorMessage(err) }, 400);
@@ -689,7 +708,7 @@ export const claudeCodeOauthExchange = async (c: CtxWithJson<typeof claudeCodeOa
     fetcher = await resolveControlPlaneFetcher({
       override: record.proxy_fallback_list,
       upstreamId: record.id || undefined,
-      currentColo: getCurrentColo(c.req.raw),
+      runtimeLocation: getRuntimeLocation(c.req.raw),
     });
   } catch (err) {
     return c.json({ error: errorMessage(err) }, 400);
@@ -733,7 +752,7 @@ export const claudeCodeSetupTokenExchange = async (c: CtxWithJson<typeof claudeC
     fetcher = await resolveControlPlaneFetcher({
       override: record.proxy_fallback_list,
       upstreamId: record.id || undefined,
-      currentColo: getCurrentColo(c.req.raw),
+      runtimeLocation: getRuntimeLocation(c.req.raw),
     });
   } catch (err) {
     return c.json({ error: errorMessage(err) }, 400);
@@ -793,7 +812,7 @@ export const claudeCodeOauthRefresh = async (c: CtxWithJson<typeof claudeCodeOau
     fetcher = await resolveControlPlaneFetcher({
       override: record.proxy_fallback_list,
       upstreamId: record.id,
-      currentColo: getCurrentColo(c.req.raw),
+      runtimeLocation: getRuntimeLocation(c.req.raw),
     });
   } catch (err) {
     return c.json({ error: errorMessage(err) }, 400);
@@ -827,7 +846,7 @@ export const claudeCodeProbe = async (c: CtxWithJson<typeof claudeCodeProbeBody>
     fetcher = await resolveControlPlaneFetcher({
       override: record.proxy_fallback_list,
       upstreamId: record.id || undefined,
-      currentColo: getCurrentColo(c.req.raw),
+      runtimeLocation: getRuntimeLocation(c.req.raw),
     });
   } catch (err) {
     return c.json({ error: errorMessage(err) }, 400);
@@ -965,7 +984,7 @@ export const listModels = async (c: CtxWithJson<typeof listModelsBody>) => {
     fetcher = await resolveControlPlaneFetcher({
       override: record.proxy_fallback_list,
       upstreamId: record.id || undefined,
-      currentColo: getCurrentColo(c.req.raw),
+      runtimeLocation: getRuntimeLocation(c.req.raw),
     });
   } catch (err) {
     return c.json({ error: errorMessage(err) }, 400);

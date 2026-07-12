@@ -42,7 +42,7 @@ const api = useApi();
 const upstreamsStore = useUpstreamsStore();
 const { info: runtimeInfo } = useRuntimeInfo();
 const coloAware = computed(() => runtimeInfo.value?.kind === 'cloudflare');
-const currentColo = computed(() => runtimeInfo.value?.colo ?? null);
+const currentColo = computed(() => runtimeInfo.value?.runtimeLocation ?? null);
 
 // The single source of truth: draft is a mutable structuredClone of the
 // initial record. Every field in the form binds through this ref (either
@@ -400,7 +400,7 @@ const save = async ({ openEdit = false }: { openEdit?: boolean } = {}) => {
       // per-provider "Save and load models" CTA sets openEdit so the newly-
       // saved row's edit page renders next, letting its mount-time list-models
       // populate the catalog for a review pass before the operator leaves.
-      await router.replace(openEdit ? `/dashboard/upstreams/${data.id}` : '/dashboard/upstreams');
+      await router.replace(openEdit ? `/dashboard/upstreams/${data.id}` : '/dashboard/settings');
     } else {
       // PATCH only user-owned fields. For OAuth providers the backend
       // rejects a `config` patch, so we skip config for them — their

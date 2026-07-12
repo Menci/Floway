@@ -13,10 +13,9 @@ import {
 } from './web-search-shim.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
+import { mockChatGatewayCtx } from '../../../../test-helpers/gateway-ctx.ts';
 import { DEFAULT_SEARCH_CONFIG } from '../../../tools/web-search/search-config.ts';
 import type { WebSearchProvider, WebSearchProviderResult } from '../../../tools/web-search/types.ts';
-import { createNonResponsesSourceStore } from '../../responses/items/store.ts';
-import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
 import { type ProtocolFrame, eventFrame } from '@floway-dev/protocols/common';
 import { messagesProtocolFrameToSSEFrame } from '@floway-dev/protocols/messages';
 import type {
@@ -47,19 +46,6 @@ const invocation = (payload: MessagesPayload): MessagesInvocation => ({
   }),
   targetApi: 'messages',
   headers: new Headers(),
-});
-
-const gatewayCtx = (apiKeyId: string = 'test-key'): ChatGatewayCtx => ({
-  apiKeyId,
-  upstreamIds: null,
-  wantsStream: false,
-  runtimeLocation: 'TEST',
-  currentColo: 'TEST',
-  dump: null,
-  responseHeaders: new Headers(),
-  backgroundScheduler: () => {},
-  requestStartedAt: 0,
-  store: createNonResponsesSourceStore(apiKeyId),
 });
 
 const encodeUnsignedPayload = (payload: unknown): string => btoa(JSON.stringify(payload)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
@@ -589,7 +575,7 @@ const runReplayOnlyShim = async (messageId: string): Promise<ProtocolFrame<Messa
 
   const { tools: _tools, ...payload } = makeNativeReplayPayload();
 
-  const result = await withMessagesWebSearchShim(invocation(payload), gatewayCtx(), () =>
+  const result = await withMessagesWebSearchShim(invocation(payload), mockChatGatewayCtx(), () =>
     Promise.resolve({
       type: 'events',
       events: toAsyncIterable(
@@ -638,7 +624,7 @@ test('withMessagesWebSearchShim returns internal-error when request requires dis
       max_tokens: 64,
       messages: [{ role: 'user', content: 'latest React docs' }],
       tools: [{ type: 'web_search_20260209' }],
-    }), gatewayCtx(),
+    }), mockChatGatewayCtx(),
     () => Promise.reject(new Error('run should not be called')),
   );
 

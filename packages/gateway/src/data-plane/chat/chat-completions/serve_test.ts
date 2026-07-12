@@ -2,8 +2,7 @@ import { afterEach, test, vi } from 'vitest';
 
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
-import { createNonResponsesSourceStore } from '../responses/items/store.ts';
-import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
+import { mockChatGatewayCtx } from '../../../test-helpers/gateway-ctx.ts';
 import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { type ModelCandidate, directFetcher, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
@@ -55,18 +54,7 @@ const installRepo = (): InMemoryRepo => {
   return repo;
 };
 
-const makeGatewayCtx = (): ChatGatewayCtx => ({
-  apiKeyId: API_KEY_ID,
-  upstreamIds: null,
-  wantsStream: true,
-  runtimeLocation: 'TEST',
-  currentColo: 'TEST',
-  dump: null,
-  responseHeaders: new Headers(),
-  backgroundScheduler: () => {},
-  requestStartedAt: 0,
-  store: createNonResponsesSourceStore(API_KEY_ID),
-});
+const makeGatewayCtx = () => mockChatGatewayCtx({ apiKeyId: API_KEY_ID, wantsStream: true });
 
 const makePayload = (overrides: Partial<ChatCompletionsPayload> = {}): ChatCompletionsPayload => ({
   model: 'test-model',
@@ -194,6 +182,43 @@ test('generate falls through to the next candidate when the first yields an upst
   assertEquals(result.type, 'events');
   assertEquals(firstCall.mock.calls.length, 1);
   assertEquals(secondCall.mock.calls.length, 1);
+});
+
+// A mid-attempt throw (interceptor bug / translation error / provider-layer
+// JS exception bypassing tryCatchChatServeFailure) must attribute the perf
+// error row to the throwing candidate, not the previous one that already
+// failed cleanly with a 5xx.
+test('mid-attempt throw stamps telemetry with the throwing candidate, not the previous one', async () => {
+  installRepo();
+  const firstError = new Response(JSON.stringify({ error: { message: 'nope' } }), {
+    status: 502, headers: new Headers({ 'content-type': 'application/json' }),
+  });
+  const firstCall = vi.fn(async (): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => ({
+    ok: false, response: firstError, modelKey: 'first-key',
+  }));
+  const secondCall = vi.fn(async (): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => {
+    throw new Error('simulated provider-layer JS exception');
+  });
+  queueResolution([
+    makeCandidate({ upstream: 'up_a', callChatCompletions: firstCall }),
+    makeCandidate({ upstream: 'up_b', callChatCompletions: secondCall }),
+  ]);
+
+  const ctx = makeGatewayCtx();
+  await chatCompletionsServe.generate({
+    payload: makePayload(),
+    ctx,
+    headers: new Headers(),
+  }).then(
+    () => { throw new Error('expected chatCompletionsServe.generate to throw'); },
+    (error: unknown) => {
+      assertEquals((error as Error).message, 'simulated provider-layer JS exception');
+    },
+  );
+
+  assertEquals(firstCall.mock.calls.length, 1);
+  assertEquals(secondCall.mock.calls.length, 1);
+  assertEquals(ctx.attempt.telemetry?.upstream, 'up_b');
 });
 
 test('generate surfaces the last upstream error verbatim when every candidate fails', async () => {

@@ -1,8 +1,9 @@
 import { sleep } from '../../../../../shared/sleep.ts';
 import { enumerateModelCandidates } from '../../../../providers/registry.ts';
 import { appendFailedUpstreams } from '../../../../shared/failed-upstreams.ts';
-import { createUpstreamLatencyRecorder, recordPerformanceError, recordPerformanceLatency, requireRecordedDurationMs } from '../../../../shared/telemetry/performance.ts';
+import { recordPerformance, type PerformanceTelemetryContext } from '../../../../shared/telemetry/performance.ts';
 import { recordTokenUsage, tokenUsageFromImagesBody } from '../../../../shared/telemetry/usage.ts';
+import { stampUpstreamCallStart, type AttemptState } from '../../../shared/gateway-ctx.ts';
 import type { ServerToolLifecycleEvent, ServerToolOutputItem, ServerToolRegistration, ServerToolTerminal } from '../server-tool-shim.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { parseSSEStream } from '@floway-dev/protocols/common';
@@ -17,7 +18,7 @@ import type {
   ResponsesOutputImageGenerationCall,
   ResponsesTool,
 } from '@floway-dev/protocols/responses';
-import { providerModelOf, type Fetcher, type Provider, type PerformanceTelemetryContext, type ModelCandidate, type ProviderModel } from '@floway-dev/provider';
+import { providerModelOf, type Fetcher, type Provider, type ModelCandidate, type ProviderModel } from '@floway-dev/provider';
 
 export const SHIM_TOOL_NAME = 'image_generation';
 
@@ -453,7 +454,6 @@ interface ShimState {
   upstreamIds: readonly string[] | null;
   backgroundScheduler: BackgroundScheduler;
   runtimeLocation: string;
-  currentColo: string;
   downstreamAbortSignal: AbortSignal | undefined;
   imageDispatchCount: number;
 }
@@ -545,7 +545,7 @@ const resolveImageCandidate = async (
       model: state.config.model,
       kind: 'image',
       scheduler: state.backgroundScheduler,
-      currentColo: state.currentColo,
+      runtimeLocation: state.runtimeLocation,
     });
   } catch (e) {
     return { ok: false, error: serverError(e) };
@@ -617,12 +617,6 @@ export const parseRetryAfterMs = (headers: Headers): number | null => {
   return null;
 };
 
-// The image-generation sub-call is a real upstream HTTP request that lands
-// under its own `(model, upstream, modelKey)` dimensions in
-// `upstream_success` — distinct from the outer Responses orchestrator's
-// recording. Each attempt of the 429-retry loop records on its own; the
-// intermediate failures land as error counters and the final outcome's
-// latency (success or failure) is the one operators see at the dimension.
 // On 429, sleep for the upstream's retry hint (or jittered exponential
 // backoff when absent) and replay the same backend call up to
 // MAX_RATE_LIMIT_RETRIES times. The returned `response` always has a fresh,
@@ -637,37 +631,28 @@ const issueImageCall = async (
   sources: readonly ImageSource[],
   state: ShimState,
   stream: boolean,
+  attempt: AttemptState,
 ): Promise<{ response: Response; modelKey: string }> => {
-  for (let attempt = 0; ; attempt++) {
-    const recorder = createUpstreamLatencyRecorder();
+  for (let retry = 0; ; retry++) {
     const opts = {
       fetcher,
-      recordUpstreamLatency: recorder.record,
       waitUntil: state.backgroundScheduler,
       headers: new Headers(),
+      // Stamp this image sub-call's OWN perf slot — never ctx.attempt —
+      // so the outer Responses turn's upstream-call stamp is preserved.
+      // Perf recording lives at the sub-call's terminal boundary in
+      // streamImageGeneration; the retry loop overwrites this slot each
+      // retry so it reflects the dispatch that actually returned.
+      wrapUpstreamCall: stampUpstreamCallStart(attempt),
     };
     const { response, modelKey } = await (isEdit
       ? provider.instance.callImagesEdits(model, buildEditsForm(prompt, state.config, sources, stream), state.downstreamAbortSignal, opts)
       : provider.instance.callImagesGenerations(model, buildGenerationsBody(prompt, state.config, stream), state.downstreamAbortSignal, opts));
-    const context: PerformanceTelemetryContext = {
-      keyId: state.apiKeyId,
-      model: model.id,
-      upstream: provider.upstream,
-      modelKey,
-      stream: false,
-      runtimeLocation: state.runtimeLocation,
-    };
-    if (response.ok) {
-      const durationMs = requireRecordedDurationMs(recorder, isEdit ? 'callImagesEdits' : 'callImagesGenerations');
-      state.backgroundScheduler(recordPerformanceLatency(context, 'upstream_success', durationMs));
-    } else {
-      state.backgroundScheduler(recordPerformanceError(context, 'upstream_success'));
-    }
-    if (response.status !== 429 || attempt >= MAX_RATE_LIMIT_RETRIES) return { response, modelKey };
+    if (response.status !== 429 || retry >= MAX_RATE_LIMIT_RETRIES) return { response, modelKey };
 
     // 25% jitter desynchronizes parallel callers so a burst of orchestrator
     // turns doesn't all re-issue at the same instant.
-    const base = 1000 * 2 ** attempt;
+    const base = 1000 * 2 ** retry;
     const backoffMs = base + Math.random() * base * 0.25;
     const delayMs = Math.min(parseRetryAfterMs(response.headers) ?? backoffMs, RETRY_CAP_MS);
     await response.text().catch(() => undefined);
@@ -791,6 +776,14 @@ export const parseImageStreamEvent = (data: string): ImageStreamSignal => {
 // progressively-rendered preview as a native `partial_image` frame, then
 // return the terminal `image_generation_call` item. partial_images = 0 (or
 // absent) takes a single non-streaming round-trip and yields no preview frames.
+//
+// Every sub-call records its OWN perf row under operation='image_generation'
+// or 'image_edit' via a local AttemptState distinct from ctx.attempt (which
+// belongs to the outer Responses turn). firstOutputTokenAt stays null — image
+// backends are single-body from the perf model's point of view, so the row
+// lands in the neutral bucket with an honest requests + errors count and no
+// synthesized TTFT. Resolution failures record no row: no upstream was ever
+// dispatched.
 const streamImageGeneration = (
   prompt: string,
   action: 'generate' | 'edit',
@@ -804,24 +797,37 @@ const streamImageGeneration = (
   const model = providerModelOf(resolved.candidate);
   const wantsPartials = (state.config.partial_images ?? 0) > 0;
 
+  const attempt: AttemptState = { upstreamCallStartedAt: null, firstOutputTokenAt: null, telemetry: undefined };
+  const perfContext: PerformanceTelemetryContext = {
+    keyId: state.apiKeyId,
+    model: model.id,
+    upstream: provider.upstream,
+    operation: isEdit ? 'image_edit' : 'image_generation',
+    runtimeLocation: state.runtimeLocation,
+  };
+  const finish = (outcome: ImageOutcome): ServerToolTerminal => {
+    recordPerformance({ attempt, backgroundScheduler: state.backgroundScheduler }, perfContext, !outcome.ok, 0, performance.now());
+    return imageTerminal(prompt, action, outcome);
+  };
+
   let response: Response;
   let modelKey: string;
   try {
-    ({ response, modelKey } = await issueImageCall(provider, model, fetcher, prompt, isEdit, sources, state, wantsPartials));
+    ({ response, modelKey } = await issueImageCall(provider, model, fetcher, prompt, isEdit, sources, state, wantsPartials, attempt));
   } catch (e) {
-    return imageTerminal(prompt, action, { ok: false, error: serverError(e) });
+    return finish({ ok: false, error: serverError(e) });
   }
 
   if (!wantsPartials) {
-    return imageTerminal(prompt, action, await consumeImageResponse(provider, model, modelKey, response, state));
+    return finish(await consumeImageResponse(provider, model, modelKey, response, state));
   }
 
   if (!response.ok) {
     const { type, code, message } = errorFromBody(await response.text(), response.status);
-    return imageTerminal(prompt, action, { ok: false, error: { type: type ?? 'image_generation_error', code, message, retryable: isRetryableImageError(code, type) } });
+    return finish({ ok: false, error: { type: type ?? 'image_generation_error', code, message, retryable: isRetryableImageError(code, type) } });
   }
   if (response.body === null) {
-    return imageTerminal(prompt, action, { ok: false, error: { type: 'image_generation_error', message: 'Image backend returned a streaming response with no body.', code: 'server_error', retryable: true } });
+    return finish({ ok: false, error: { type: 'image_generation_error', message: 'Image backend returned a streaming response with no body.', code: 'server_error', retryable: true } });
   }
 
   let finalB64: string | undefined;
@@ -837,14 +843,14 @@ const streamImageGeneration = (
       finalEcho = signal.echo;
       usage = signal.usage;
     } else {
-      return imageTerminal(prompt, action, { ok: false, error: signal.error });
+      return finish({ ok: false, error: signal.error });
     }
   }
   if (finalB64 === undefined) {
-    return imageTerminal(prompt, action, { ok: false, error: { type: 'image_generation_error', message: 'Image backend stream ended without a completed image.', code: 'server_error', retryable: true } });
+    return finish({ ok: false, error: { type: 'image_generation_error', message: 'Image backend stream ended without a completed image.', code: 'server_error', retryable: true } });
   }
   recordImageUsage(state, provider, model, modelKey, { usage });
-  return imageTerminal(prompt, action, { ok: true, b64: finalB64, echo: finalEcho });
+  return finish({ ok: true, b64: finalB64, echo: finalEcho });
 };
 
 // Output-as-input round-trip: the multi-turn loop feeds accumulated
@@ -998,7 +1004,6 @@ export const imageGenerationServerTool: ServerToolRegistration = (invocation, ga
     upstreamIds: gatewayCtx.upstreamIds,
     backgroundScheduler: gatewayCtx.backgroundScheduler,
     runtimeLocation: gatewayCtx.runtimeLocation,
-    currentColo: gatewayCtx.currentColo,
     downstreamAbortSignal: gatewayCtx.abortSignal,
     imageDispatchCount: 0,
   };

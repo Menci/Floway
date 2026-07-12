@@ -1,17 +1,24 @@
 import { readCopilotUpstreamState, type CopilotTokenEntry, type CopilotUpstreamState } from './state.ts';
 import { getProviderRepo as getRepo, isAbortError, type Fetcher } from '@floway-dev/provider';
 
-// Version constants pinned to a known-good set. GitHub Copilot rejects too-new
-// editor-plugin-version values (caozhiyuan/copilot-api@80e17dfd downgraded
-// 0.48.0 → 0.47.1 after upstream broke on the newer one); dynamically tracking
-// the latest VSCode release in a server-side gateway buys no realism and adds
-// a startup HTTP dependency, so we pin both.
-const COPILOT_VERSION = '0.47.1';
-const VSCODE_VERSION = '1.119.1';
+// Version constants pinned to a known-good fingerprint that mirrors what a
+// current VSCode Copilot Chat install sends. The Copilot Chat plugin version,
+// the VSCode host version, and the Copilot data-plane api version are one
+// coordinated set — they ship together in a real editor build and Copilot
+// validates the combination, so they move together on every bump. We track a
+// maintained reference implementation rather than fetching these at startup: a
+// server-side gateway gains no realism from chasing the latest editor release,
+// and a boot-time HTTP dependency is a needless failure mode. Sourced from
+// caozhiyuan/copilot-api@b16e019 (COPILOT_VERSION, USER_AGENT, api version):
+//   https://github.com/caozhiyuan/copilot-api/blob/b16e01909e747b5ad49ce38137a6c1453e0052a6/src/lib/api-config.ts#L148-L156
+// and its VSCode host version fallback:
+//   https://github.com/caozhiyuan/copilot-api/blob/b16e01909e747b5ad49ce38137a6c1453e0052a6/src/services/get-vscode-version.ts#L1
+const COPILOT_VERSION = '0.52.0';
+const VSCODE_VERSION = '1.124.2';
 const EDITOR_VERSION = `vscode/${VSCODE_VERSION}`;
 const EDITOR_PLUGIN_VERSION = `copilot-chat/${COPILOT_VERSION}`;
 const USER_AGENT = `GitHubCopilotChat/${COPILOT_VERSION}`;
-const COPILOT_API_VERSION = '2026-01-09';
+const COPILOT_API_VERSION = '2026-06-01';
 const GITHUB_API_VERSION = '2025-04-01';
 
 // User-agent VSCode Copilot Chat sends on its Claude Code SDK proxy path.
@@ -221,10 +228,9 @@ export interface CopilotFetchOptions {
    *  request and the api.github.com token exchange so a single fallback
    *  chain covers both paths under restricted egress. */
   fetcher: Fetcher;
-  /** Recorder threaded through the data-plane fetcher's per-attempt wrap.
-   *  Deliberately not applied to the GitHub→Copilot token exchange: that
-   *  hop is the gateway's own auth maintenance, not the user's request. */
-  recordUpstreamLatency?: <T>(promise: Promise<T>) => Promise<T>;
+  /** See UpstreamCallOptions.wrapUpstreamCall. Fires on the data-plane
+   *  request only, after any token-exchange round trip. */
+  wrapUpstreamCall: <T>(dispatch: () => Promise<T>) => Promise<T>;
 }
 
 export interface CopilotAuth {
@@ -272,7 +278,7 @@ export async function copilotAuthedFetch(path: string, init: RequestInit, auth: 
     }
   }
 
-  return await options.fetcher(`${entry.baseUrl}${path}`, { ...init, headers }, options.recordUpstreamLatency);
+  return await options.wrapUpstreamCall(() => options.fetcher(`${entry.baseUrl}${path}`, { ...init, headers }));
 }
 
 // Headers for api.github.com calls — token exchange and /copilot_internal/user.

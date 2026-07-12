@@ -3,8 +3,7 @@ import { test, vi } from 'vitest';
 import { messagesAttempt } from './attempt.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
-import { createNonResponsesSourceStore } from '../responses/items/store.ts';
-import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
+import { mockChatGatewayCtx } from '../../../test-helpers/gateway-ctx.ts';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
@@ -14,18 +13,7 @@ import { assertEquals, assertExists, stubProvider, stubInternalModel } from '@fl
 
 const API_KEY_ID = 'key_messages_attempt_test';
 
-const makeGatewayCtx = (): ChatGatewayCtx => ({
-  apiKeyId: API_KEY_ID,
-  upstreamIds: null,
-  wantsStream: true,
-  runtimeLocation: 'TEST',
-  currentColo: 'TEST',
-  dump: null,
-  responseHeaders: new Headers(),
-  backgroundScheduler: () => {},
-  requestStartedAt: 0,
-  store: createNonResponsesSourceStore(API_KEY_ID),
-});
+const makeGatewayCtx = () => mockChatGatewayCtx({ apiKeyId: API_KEY_ID, wantsStream: true });
 
 const makePayload = (overrides: Partial<MessagesPayload> = {}): MessagesPayload => ({
   model: 'test-model',
@@ -185,14 +173,13 @@ test('countTokens refuses a non-messages candidate', async () => {
   assertEquals(thrown.message.includes('chatTargetPicker.pick'), true);
 });
 
-test('generate attaches the performance context and records upstream_success', async () => {
-  const repo = installRepo();
-  const background: Promise<unknown>[] = [];
-  const ctx: ChatGatewayCtx = {
-    ...makeGatewayCtx(),
+test('generate attaches the performance context to the result', async () => {
+  installRepo();
+  const ctx = mockChatGatewayCtx({
+    apiKeyId: API_KEY_ID,
+    wantsStream: true,
     runtimeLocation: 'SJC',
-    backgroundScheduler: (promise: Promise<unknown>) => { background.push(promise); },
-  };
+  });
   const callMessages = vi.fn(async (): Promise<ProviderStreamResult<MessagesStreamEvent>> => ({
     ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'gpt-test', headers: new Headers(),
   }));
@@ -206,22 +193,15 @@ test('generate attaches the performance context and records upstream_success', a
 
   assertEquals(result.type, 'events');
   if (result.type !== 'events') throw new Error('unreachable');
-  // The full performance dimension set rides every chat result so both
-  // telemetry scopes record.
+  // result.performance carries the full dimension set that respond.ts will
+  // use to record telemetry once the stream settles.
   assertExists(result.performance);
   assertEquals(result.performance.keyId, API_KEY_ID);
   assertEquals(result.performance.model, 'test-model');
   assertEquals(result.performance.upstream, 'up_perf');
-  assertEquals(result.performance.modelKey, 'gpt-test');
-  assertEquals(result.performance.stream, true);
   assertEquals(result.performance.runtimeLocation, 'SJC');
 
   await collectEvents(result.events);
-  await Promise.all(background);
-  const upstreamSamples = await repo.performance.query({ metricScope: 'upstream_success', start: '0000', end: '9999' });
-  assertEquals(upstreamSamples.length, 1);
-  assertEquals(upstreamSamples[0]?.upstream, 'up_perf');
-  assertEquals(upstreamSamples[0]?.requests, 1);
 });
 
 test('generate propagates upstream response headers onto the EventResult so respond can forward them', async () => {

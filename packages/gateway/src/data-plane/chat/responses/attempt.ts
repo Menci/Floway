@@ -7,14 +7,12 @@ import { rewriteResponsesItemsForCandidate, type RewrittenResponsesPayload } fro
 import type { StatefulResponsesStore } from './items/store.ts';
 import { tokenUsageFromResponsesResult } from './usage.ts';
 import { applyRulesToUpstreamResponses } from '../../model-aliases/apply-rules.ts';
-import { recordPerformanceLatency, requireRecordedDurationMs } from '../../shared/telemetry/performance.ts';
+import { providerStreamResultToExecuteResult, buildUpstreamCallOptions, telemetryModelIdentity, chatTargetPicker, upstreamPerformanceContext } from '../../shared/telemetry/attempt-helpers.ts';
 import { chatCompletionsAttempt } from '../chat-completions/attempt.ts';
 import { messagesAttempt } from '../messages/attempt.ts';
-import { providerStreamResultToExecuteResult, buildUpstreamCallOptions, telemetryModelIdentity, chatTargetPicker } from '../shared/attempt-helpers.ts';
 import { tryCatchChatServeFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { traverseTranslation } from '../shared/translate-traverse.ts';
-import { createUpstreamLatencyRecorder, recordUpstreamHttpFailure, upstreamPerformanceContext } from '../shared/upstream-telemetry.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectResponsesProtocolEventsToResult } from '@floway-dev/protocols/responses';
@@ -133,6 +131,7 @@ export const responsesAttempt = {
         result: { ...upstreamCompacted, id: responseId },
         modelIdentity: chainResult.modelIdentity,
         usage: tokenUsageFromResponsesResult(upstreamCompacted),
+        performance: chainResult.performance,
       };
     }
 
@@ -222,34 +221,28 @@ const dispatchResponses = async (
   const { candidate, targetApi } = invocation;
   switch (targetApi) {
   case 'responses': {
-    const recorder = createUpstreamLatencyRecorder();
     if (candidate.rules !== undefined) applyRulesToUpstreamResponses(invocation.payload, candidate.rules);
+    // Compact drops `stream` and `store` before hitting the wire: `store` is a
+    // gateway-only snapshot-persistence hint the upstream compact endpoint
+    // rejects, and `stream` is irrelevant on a non-streaming call. The generate
+    // branch leaves both fields on the body — every provider's streaming call
+    // forces stream=true anyway.
+    let body: Omit<CanonicalResponsesPayload, 'model'>;
     if (invocation.action === 'compact') {
-      // The compact wire body drops `stream` and `store` — `store` is a
-      // gateway-only snapshot-persistence hint that the upstream compact
-      // endpoint rejects, and `stream` is irrelevant on a non-streaming
-      // call. The generate branch leaves both fields on the body so the
-      // provider can decide for itself (every provider's streaming call
-      // forces stream=true anyway).
-      const { model: _model, stream: _stream, store: _store, ...body } = invocation.payload;
-      const providerResult = await candidate.provider.instance.callResponses(
-        providerModelOf(candidate),
-        body,
-        invocation.action,
-        ctx.abortSignal,
-        buildUpstreamCallOptions(candidate, ctx, recorder.record, invocation.headers),
-      );
-      return await providerResponsesResultToExecuteResult(providerResult, candidate, targetApi, ctx, recorder);
+      const { model: _model, stream: _stream, store: _store, ...rest } = invocation.payload;
+      body = rest;
+    } else {
+      const { model: _model, ...rest } = invocation.payload;
+      body = rest;
     }
-    const { model: _model, ...body } = invocation.payload;
     const providerResult = await candidate.provider.instance.callResponses(
       providerModelOf(candidate),
       body,
       invocation.action,
       ctx.abortSignal,
-      buildUpstreamCallOptions(candidate, ctx, recorder.record, invocation.headers),
+      buildUpstreamCallOptions(candidate, ctx, invocation.headers),
     );
-    return await providerResponsesResultToExecuteResult(providerResult, candidate, targetApi, ctx, recorder);
+    return await providerResponsesResultToExecuteResult(providerResult, candidate, targetApi, ctx);
   }
   case 'messages':
     if (invocation.action === 'compact') {
@@ -299,7 +292,6 @@ const providerResponsesResultToExecuteResult = async (
   candidate: ModelCandidate,
   targetApi: ChatTargetApi,
   ctx: ChatGatewayCtx,
-  recorder: ReturnType<typeof createUpstreamLatencyRecorder>,
 ): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
   if (providerResult.action === 'generate') {
     return await providerStreamResultToExecuteResult(
@@ -309,17 +301,12 @@ const providerResponsesResultToExecuteResult = async (
       candidate,
       targetApi,
       ctx,
-      recorder,
     );
   }
-  // action === 'compact'. The non-streaming envelope expands into the same
-  // event stream wrap-output-storage consumes for the streaming path.
-  const context = upstreamPerformanceContext(ctx, candidate, providerResult.modelKey);
+  const context = upstreamPerformanceContext(ctx, candidate, 'chat');
   if (!providerResult.ok) {
-    recordUpstreamHttpFailure(ctx, context);
     return { ...(await readUpstreamApiError(providerResult.response, candidate.provider.upstream)), performance: context };
   }
-  ctx.backgroundScheduler(recordPerformanceLatency(context, 'upstream_success', requireRecordedDurationMs(recorder, 'callResponses(action=compact)')));
   return eventResult(
     syntheticEventsFromResult(providerResult.result),
     telemetryModelIdentity(candidate, providerResult.modelKey),

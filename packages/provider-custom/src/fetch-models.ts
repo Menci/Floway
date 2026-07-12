@@ -12,7 +12,7 @@
 import type { CustomUpstreamConfig } from './config.ts';
 import { customFetchModels } from './fetch.ts';
 import { BILLING_DIMENSIONS, type ModelKind, type ModelPricing } from '@floway-dev/protocols/common';
-import { chatField, fetchUpstreamModels, type Fetcher, type UpstreamChatModelConfig } from '@floway-dev/provider';
+import { chatField, fetchUpstreamModels, type Fetcher, type UpstreamChatModelConfig, identityWrapUpstreamCall } from '@floway-dev/provider';
 
 export interface CustomRawModel {
   id: string;
@@ -118,6 +118,6 @@ const parseCustomModelsResponse = (value: unknown): CustomModelsResponse | null 
 
 export const fetchCustomModels = (config: CustomUpstreamConfig, fetcher: Fetcher): Promise<CustomModelsResponse> =>
   fetchUpstreamModels(
-    () => customFetchModels(config, { method: 'GET' }, { fetcher }),
+    () => customFetchModels(config, { method: 'GET' }, { fetcher, wrapUpstreamCall: identityWrapUpstreamCall }),
     parseCustomModelsResponse,
   );

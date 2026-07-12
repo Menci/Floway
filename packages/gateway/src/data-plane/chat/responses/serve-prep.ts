@@ -81,7 +81,7 @@ export const prepareResponsesServePlan = async (args: {
     model: prepared.model,
     kind: 'chat',
     scheduler: ctx.backgroundScheduler,
-    currentColo: ctx.currentColo,
+    runtimeLocation: ctx.runtimeLocation,
   });
   const viable = candidates.filter(c => responsesTarget.canServe(c.model.endpoints));
   const decision = await classifyResponsesItemAffinity({

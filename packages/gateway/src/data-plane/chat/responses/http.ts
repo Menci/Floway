@@ -6,6 +6,7 @@ import { responsesServe } from './serve.ts';
 import type { AuthedContext } from '../../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
+import { settle } from '../../shared/telemetry/settle.ts';
 import { createChatGatewayCtxFromHono, createGatewayCtxFromHono, finalizeGatewayResponse, type ChatGatewayCtx, type GatewayCtx } from '../shared/gateway-ctx.ts';
 import { readRequestBody, type RequestBody } from '../shared/request-body.ts';
 import { providerModelsUnavailableResponse } from '../shared/upstream-models-error.ts';
@@ -37,13 +38,14 @@ const previousResponseNotFoundResponse = (id: string): Response =>
 // that body verbatim — the upstream's `/models` 401 IS the diagnostic. The
 // caller passes its outer `ctx` when one was already constructed (so the
 // dump row preserves the model attribution the request-time
-// `requestedModel` stamped); a fresh ctx is minted only for pre-parse
-// failures where no payload was available to read model from.
+// `requestedModel` stamped, and the throwing-candidate telemetry stamped
+// in serve.ts survives onto the error row); a fresh ctx is minted only
+// for pre-parse failures where no payload was available to read model from.
 const respondWithInternalError = async (c: AuthedContext, error: unknown, requestBody: RequestBody, ctx?: GatewayCtx): Promise<Response> => {
   const verbatim = providerModelsUnavailableResponse(error);
   if (verbatim !== null) return verbatim;
   const effectiveCtx = ctx ?? createGatewayCtxFromHono(c, { wantsStream: false, requestBody, backgroundScheduler: backgroundSchedulerFromContext(c) });
-  const result = internalErrorResult(502, toInternalDebugError(error));
+  const result = internalErrorResult(502, toInternalDebugError(error), effectiveCtx.attempt.telemetry);
   const { response } = await respondResponses(c, result, false, effectiveCtx);
   return finalizeGatewayResponse(effectiveCtx, response);
 };
@@ -59,7 +61,7 @@ const respondToThrow = async (c: AuthedContext, error: unknown, requestBody: Req
   }
   if (error instanceof TranslatorInputError) {
     const effectiveCtx = ctx ?? createGatewayCtxFromHono(c, { wantsStream: false, requestBody, backgroundScheduler: backgroundSchedulerFromContext(c) });
-    const { response } = await respondResponses(c, translatorInputErrorResult(error), false, effectiveCtx);
+    const { response } = await respondResponses(c, translatorInputErrorResult(error, effectiveCtx.attempt.telemetry), false, effectiveCtx);
     return finalizeGatewayResponse(effectiveCtx, response);
   }
   return await respondWithInternalError(c, error, requestBody, ctx);
@@ -92,7 +94,25 @@ export const responsesHttp = {
       ctx = createChatGatewayCtxFromHono(c, { wantsStream: false, requestBody, model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) }, apiKeyId => createResponsesHttpStore(apiKeyId, payload.store ?? undefined));
       const result = await responsesServe.compact({ payload, ctx, headers: inboundHeadersForUpstream(c) });
       if (result.type === 'result') {
-        ctx.dump?.success(result.modelIdentity, result.usage);
+        // Compact drains the upstream stream into a single envelope with
+        // no per-token stamps; recordPerformance therefore lands in
+        // the neutral bucket (request counted, no TTFT/TPOT sample). The
+        // envelope's own `status` is authoritative for failure — a compact
+        // that surfaced as `response.failed` must be recorded as such so it
+        // shows up in the error column instead of masquerading as a success.
+        const failed = result.result.status === 'failed';
+        if (failed) {
+          ctx.dump?.failed('compact envelope status=failed');
+        } else {
+          ctx.dump?.success(result.modelIdentity, result.usage);
+        }
+        settle(
+          ctx,
+          result.performance,
+          result.modelIdentity,
+          result.usage,
+          failed,
+        );
         const compactResponse = Response.json(result.result);
         return finalizeGatewayResponse(ctx, compactResponse);
       }

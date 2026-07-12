@@ -30,9 +30,9 @@ export interface CodexCallEffects {
   persistTerminalState(state: 'session_terminated' | 'refresh_failed', message: string): Promise<void>;
 }
 
-// Account selection + per-call observation hooks. Both Codex endpoints share
-// the same OAuth credential, the same quota row, and the same retry/recorder
-// contract; only the wire body and the response decoding differ.
+// Account selection for one Codex call. Both Codex endpoints share the same
+// OAuth credential, the same quota row, and the same retry contract; only the
+// wire body and the response decoding differ.
 interface CodexBackendCallBase {
   upstreamId: string;
   account: CodexAccountCredential;
@@ -64,16 +64,10 @@ export const callCodexResponsesCompact = async (opts: CallCodexResponsesCompactO
   return await performUnaryCompactCall(opts, ready.accessToken, false);
 };
 
-// Pre-fetch gates + initial access-token mint. Each synthetic failure rides
-// through the per-call latency recorder once so the gateway's wrap-once
-// contract holds even when no upstream HTTP ever leaves the process — the
-// captured ~0 ms is never read (gateway records `upstream_success` failures
-// as a counter), but a missing wrap is a contract violation.
+// Pre-fetch gates + initial access-token mint.
 const prepareCodexCall = async (opts: CodexBackendCallBase): Promise<{ ok: true; accessToken: string } | { ok: false; response: Response }> => {
-  const wrapSynthetic = (response: Response) => opts.call.recordUpstreamLatency(Promise.resolve(response));
-
   if (opts.account.state !== 'active') {
-    return { ok: false, response: await wrapSynthetic(synthetic503(`Codex upstream is ${opts.account.state}`)) };
+    return { ok: false, response: synthetic503(`Codex upstream is ${opts.account.state}`) };
   }
 
   try {
@@ -82,7 +76,7 @@ const prepareCodexCall = async (opts: CodexBackendCallBase): Promise<{ ok: true;
   } catch (err) {
     if (err instanceof CodexOAuthSessionTerminatedError) {
       await opts.effects.persistTerminalState('refresh_failed', err.upstreamMessage);
-      return { ok: false, response: await wrapSynthetic(synthetic503(`Codex refresh failed: ${err.upstreamMessage}`)) };
+      return { ok: false, response: synthetic503(`Codex refresh failed: ${err.upstreamMessage}`) };
     }
     throw err;
   }
@@ -306,12 +300,6 @@ const buildCodexResponsesBody = (
   return body;
 };
 
-const codexTurnMetadataOptions = (opts: CallCodexResponsesOptions): CodexTurnMetadataOptions =>
-  opts.turnMetadata ?? (containsCompactionTrigger(opts.body.input) ? CODEX_RESPONSES_COMPACTION_V2_TURN_METADATA : { requestKind: 'turn' });
-
-const containsCompactionTrigger = (input: ResponsesPayload['input']): boolean =>
-  Array.isArray(input) && input.some(item => item.type === 'compaction_trigger');
-
 // One upstream round-trip with quota-header persistence and terminal-401
 // classification. The returned Response is what the caller relays:
 //   - 2xx: caller decodes the body (SSE for /responses, JSON for /responses/compact)
@@ -327,10 +315,8 @@ const dispatchCodexHttpCall = async (
   accept: string,
   body: Record<string, unknown>,
   identity: CodexRequestIdentity,
-  metadata: CodexTurnMetadataOptions,
-  clientTurnMetadata: Record<string, unknown> | null,
+  turnMetadataJson: string,
 ): Promise<Response> => {
-  const turnMetadataJson = buildCodexTurnMetadataJson(identity, metadata, clientTurnMetadata);
   const headers = new Headers();
   headers.set('authorization', `Bearer ${accessToken}`);
   headers.set('chatgpt-account-id', opts.account.chatgptAccountId);
@@ -344,12 +330,12 @@ const dispatchCodexHttpCall = async (
   headers.set('x-codex-window-id', identity.windowId);
   headers.set('x-codex-turn-metadata', turnMetadataJson);
 
-  const response = await opts.call.fetcher(`${CODEX_BACKEND_BASE}${path}`, {
+  const response = await opts.call.wrapUpstreamCall(() => opts.call.fetcher(`${CODEX_BACKEND_BASE}${path}`, {
     method: 'POST',
     headers,
     body: JSON.stringify(body),
     signal: opts.signal,
-  }, opts.call.recordUpstreamLatency);
+  }));
 
   if (response.ok) {
     const responseNow = new Date();
@@ -411,7 +397,7 @@ const performStreamingResponsesCall = async (
   const clientTurnMetadata = parseClientTurnMetadataJson(trimHeader(opts.headers, 'x-codex-turn-metadata'));
   const clientMetadata = clientCodexClientMetadata(opts.body);
   const identity = await buildCodexRequestIdentity(opts, opts.body, clientMetadata, clientTurnMetadata);
-  const metadata = codexTurnMetadataOptions(opts);
+  const metadata = opts.turnMetadata ?? (Array.isArray(opts.body.input) && opts.body.input.some(item => item.type === 'compaction_trigger') ? CODEX_RESPONSES_COMPACTION_V2_TURN_METADATA : { requestKind: 'turn' });
   const turnMetadataJson = buildCodexTurnMetadataJson(identity, metadata, clientTurnMetadata);
   const upstreamFetch = dispatchCodexHttpCall(
     opts,
@@ -420,8 +406,7 @@ const performStreamingResponsesCall = async (
     'text/event-stream',
     buildCodexResponsesBody(opts, identity, turnMetadataJson),
     identity,
-    metadata,
-    clientTurnMetadata,
+    turnMetadataJson,
   ).then(ensureSseContentType);
 
   const result = await streamingProviderCall(upstreamFetch, parseResponsesStream, opts.model.id, opts.signal);
@@ -444,6 +429,7 @@ const performUnaryCompactCall = async (
   const clientMetadata = clientCodexClientMetadata(opts.body);
   const identity = await buildCodexRequestIdentity(opts, opts.body, clientMetadata, clientTurnMetadata);
   const metadata = opts.turnMetadata ?? { requestKind: 'compaction' };
+  const turnMetadataJson = buildCodexTurnMetadataJson(identity, metadata, clientTurnMetadata);
   const response = await dispatchCodexHttpCall(
     opts,
     accessToken,
@@ -451,8 +437,7 @@ const performUnaryCompactCall = async (
     'application/json',
     { ...opts.body, model: opts.model.id },
     identity,
-    metadata,
-    clientTurnMetadata,
+    turnMetadataJson,
   );
 
   if (response.status === 401 && !alreadyRetried) {

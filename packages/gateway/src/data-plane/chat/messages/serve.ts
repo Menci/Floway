@@ -30,7 +30,7 @@ export const messagesServe = {
       model: payload.model,
       kind: 'chat',
       scheduler: ctx.backgroundScheduler,
-      currentColo: ctx.currentColo,
+      runtimeLocation: ctx.runtimeLocation,
     });
     const viable = enumerated.filter(c => messagesGenerateTarget.canServe(c.model.endpoints));
     const decision = await classifyResponsesItemAffinity({
@@ -52,6 +52,8 @@ export const messagesServe = {
     return await iterateCandidates(
       decision.candidates,
       'messagesServe.generate',
+      ctx,
+      'chat',
       candidate => {
         payload.model = candidate.model.id;
         return messagesAttempt.generate({ payload, ctx, candidate, headers });
@@ -66,7 +68,7 @@ export const messagesServe = {
       model: payload.model,
       kind: 'chat',
       scheduler: ctx.backgroundScheduler,
-      currentColo: ctx.currentColo,
+      runtimeLocation: ctx.runtimeLocation,
     });
     const viable = enumerated.filter(c => messagesCountTokensTarget.canServe(c.model.endpoints));
     const decision = await classifyResponsesItemAffinity({
@@ -81,6 +83,8 @@ export const messagesServe = {
     return await iterateCandidates(
       decision.candidates,
       'messagesServe.countTokens',
+      ctx,
+      'chat',
       candidate => {
         // Same normalization as generate above — every attempt sees
         // payload.model === candidate.model.id regardless of inbound form.

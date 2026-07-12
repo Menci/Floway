@@ -1,93 +1,89 @@
 import { currentHour } from './hour.ts';
 import { getRepo } from '../../../repo/index.ts';
-import type { PerformanceDimensions, PerformanceMetricScope } from '../../../repo/types.ts';
-import type { BackgroundScheduler } from '@floway-dev/platform';
+import type { PerformanceDimensions } from '../../../repo/types.ts';
+import type { GatewayCtx } from '../../chat/shared/gateway-ctx.ts';
 import type { PerformanceTelemetryContext } from '@floway-dev/provider';
 
 export type { PerformanceTelemetryContext };
 
-const performanceDimensions = (context: PerformanceTelemetryContext, metricScope: PerformanceMetricScope): PerformanceDimensions => ({
-  hour: currentHour(),
-  metricScope,
-  keyId: context.keyId,
-  model: context.model,
-  upstream: context.upstream,
-  modelKey: context.modelKey,
-  stream: context.stream,
-  runtimeLocation: context.runtimeLocation,
-});
+// Structural view of the fields recordPerformance actually reads. Every chat /
+// passthrough call site passes its full `GatewayCtx`; the Responses image-
+// generation server tool synthesizes a per-dispatch object because each image
+// call carries its own TTFT window and can't share `ctx.attempt` with the
+// enclosing Responses turn.
+type PerformanceRecordScope = Pick<GatewayCtx, 'attempt' | 'backgroundScheduler'>;
 
-export async function recordPerformanceLatency(context: PerformanceTelemetryContext, metricScope: PerformanceMetricScope, durationMs: number): Promise<void> {
+const record = async (op: Promise<void>, label: string): Promise<void> => {
   try {
-    await getRepo().performance.recordLatency({
-      ...performanceDimensions(context, metricScope),
-      durationMs,
-    });
+    await op;
   } catch (error) {
-    console.warn('Failed to record performance latency:', error);
+    console.warn(`Failed to record performance ${label}:`, error);
   }
-}
+};
 
-export async function recordPerformanceError(context: PerformanceTelemetryContext, metricScope: PerformanceMetricScope): Promise<void> {
-  try {
-    await getRepo().performance.recordError(performanceDimensions(context, metricScope));
-  } catch (error) {
-    console.warn('Failed to record performance error:', error);
-  }
-}
-
-export const recordRequestPerformance = (
-  scheduler: BackgroundScheduler,
-  context: PerformanceTelemetryContext | undefined,
+// TTFT is measured from the provider's outbound-fetch stamp so it isolates
+// upstream round-trip latency from gateway-internal overhead. Any success
+// without a real upstream call or first-output-token stamp records as
+// neutral; only genuine upstream failures with no output land in a pure
+// zero-output-error bucket. TPOT layers on top only when at least two
+// output tokens streamed — see the per-branch comments below.
+//
+// A failure that produced output tokens (mid-stream failure that streamed
+// tokens before dying) records a partial-output sample: the row bumps
+// `errors_with_output` (and `tpot_samples` when applicable) in a single
+// atomic upsert. The alternative — dropping the TTFT/TPOT reading — would
+// hide upstream instability from the dashboard whenever failures cluster
+// on real streams.
+//
+// `requestFinishedAt` is the caller's monotonic timestamp for the end of
+// the token stream. Callers routing through `settle` inherit whatever
+// timestamp they pass it (or the settle-time default) and no persistence
+// work sits between the timestamp and the sample write.
+export const recordPerformance = (
+  ctx: PerformanceRecordScope,
+  telemetry: PerformanceTelemetryContext | undefined,
   failed: boolean,
-  durationMs: number,
+  outputTokens: number,
+  requestFinishedAt: number,
 ): void => {
-  if (!context) return;
-  scheduler(failed ? recordPerformanceError(context, 'request_total') : recordPerformanceLatency(context, 'request_total', durationMs));
+  if (!telemetry) return;
+  if (outputTokens < 0) throw new Error(`recordPerformance: negative outputTokens=${outputTokens}`);
+  const { attempt, backgroundScheduler: scheduler } = ctx;
+  const dims: PerformanceDimensions = { ...telemetry, hour: currentHour() };
+  if (
+    telemetry.operation !== 'chat' ||
+    attempt.upstreamCallStartedAt === null ||
+    attempt.firstOutputTokenAt === null ||
+    (failed && outputTokens === 0)
+  ) {
+    const settle = failed ? getRepo().performance.recordZeroOutputError(dims) : getRepo().performance.recordNeutral(dims);
+    scheduler(record(settle, failed ? 'zero-output-error' : 'neutral'));
+    return;
+  }
+  const ttftMs = Math.round(attempt.firstOutputTokenAt - attempt.upstreamCallStartedAt);
+  const success = !failed;
+  if (outputTokens < 2) {
+    scheduler(record(getRepo().performance.recordSample({ ...dims, ttftMs, success }), 'sample'));
+    return;
+  }
+  // TPOT is the inter-token generation interval: streamDelta covers only the
+  // (N-1) tokens that arrived AFTER firstOutputTokenAt, so the divisor is
+  // outputTokens - 1. Matches the OpenTelemetry GenAI spec
+  // gen_ai.server.time_per_output_token
+  // (https://github.com/open-telemetry/semantic-conventions-genai/blob/953dd22e3cecd3a397d742c349d2435d59c8b771/docs/gen-ai/gen-ai-metrics.md#metric-gen_aiservertime_per_output_token)
+  // and Envoy AI Gateway
+  // (https://aigateway.envoyproxy.io/docs/capabilities/observability/metrics/).
+  const streamDeltaMs = requestFinishedAt - attempt.firstOutputTokenAt;
+  const tpotUs = Math.round((streamDeltaMs * 1_000) / (outputTokens - 1));
+  scheduler(record(getRepo().performance.recordSample({ ...dims, ttftMs, tpotUs, success }), 'sample'));
 };
 
-export interface UpstreamLatencyRecorder {
-  record: <T>(promise: Promise<T>) => Promise<T>;
-  durationMs: () => number | null;
-}
-
-// Gateway-side counterpart to `UpstreamCallOptions.recordUpstreamLatency`
-// (see the contract docstring on that interface). Mints a fresh `record`
-// for one provider call and reports back whether the wrap happened and
-// what it measured. Kept separate from `UpstreamCallOptions` so future
-// per-call hooks added to the options bag don't expand the recorder's
-// surface.
-//
-// `durationMs()` returns `null` when the provider never wrapped a fetch.
-// Consumers decide what the absence means:
-//   - success-path consumers MUST treat null as a bug (a real upstream
-//     call must instrument its round-trip),
-//   - failure-path consumers may receive null because the provider
-//     short-circuited at the gateway before any upstream call (e.g. a
-//     request-side 400). When a failure path does have a duration, it is
-//     free to record it.
-//
-// Per-call-site asserts (instead of a recorder-side throw) keep the
-// "you forgot to wrap" error attached to the exact line that depends on
-// the value.
-export const createUpstreamLatencyRecorder = (): UpstreamLatencyRecorder => {
-  let last: number | null = null;
-  return {
-    record: <T>(promise: Promise<T>): Promise<T> => {
-      const startedAt = performance.now();
-      return promise.finally(() => {
-        last = performance.now() - startedAt;
-      });
-    },
-    durationMs: () => last,
-  };
-};
-
-// Asserts a recorded duration; throws if the wrap never happened. Use at
-// any call site whose semantics require the value (every success-side
-// record, plus the count_tokens contract guard).
-export const requireRecordedDurationMs = (recorder: UpstreamLatencyRecorder, what: string): number => {
-  const value = recorder.durationMs();
-  if (value === null) throw new Error(`${what} returned without wrapping its fetch promise in opts.recordUpstreamLatency`);
-  return value;
-};
+// Terminal-failure shortcut for every pre-stream / mid-stream error branch
+// whose failure produced no output tokens (or whose caller doesn't have a
+// token count in hand). Callers with a real usage figure should invoke
+// `recordPerformance` directly so a partial-output failure can still
+// contribute a TTFT / TPOT sample.
+export const recordFailedRequest = (
+  ctx: GatewayCtx,
+  telemetry: PerformanceTelemetryContext | undefined,
+): void => recordPerformance(ctx, telemetry, true, 0, performance.now());

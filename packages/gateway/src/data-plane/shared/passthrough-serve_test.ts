@@ -11,7 +11,7 @@
 //   - its extractBilling reads the OpenAI-style `usage.prompt_tokens` off
 //     a 2xx JSON body, so a body with that shape triggers a real usage
 //     write;
-//   - it shares the exact same forwardUpstreamResponse + scheduleUsageRecord
+//   - it shares the exact same forwardUpstreamResponse + settle
 //     path as the images endpoints — the behaviors under test are owned by
 //     passthroughServe, not the endpoint shape.
 
@@ -330,4 +330,48 @@ test('passthrough-serve: when every candidate returns non-2xx the most recent up
       await flushAsyncWork();
     },
   );
+});
+
+// A throw during candidate rollover attributes the error row to the
+// throwing candidate, not the previously-succeeded one.
+test('passthrough-serve: throw during rollover attributes the error perf row to the throwing candidate, not the previous one', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await registerTwoEmbeddingsUpstreams(repo);
+
+  const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+  try {
+    await withMockedFetch(
+      request => {
+        const url = new URL(request.url);
+        if (url.pathname === '/v1/models') {
+          return jsonResponse({ object: 'list', data: [{ id: 'custom-embed-model' }] });
+        }
+        if (url.hostname === 'up-a.example.com' && url.pathname === '/v1/embeddings') {
+          return new Response('first upstream unavailable', { status: 503 });
+        }
+        if (url.hostname === 'up-b.example.com' && url.pathname === '/v1/embeddings') {
+          throw new Error('simulated network error to up_b');
+        }
+        throw new Error(`Unhandled fetch ${request.url}`);
+      },
+      async () => {
+        const response = await requestApp('/v1/embeddings', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-api-key': apiKey.key },
+          body: JSON.stringify({ model: 'custom-embed-model', input: 'hi' }),
+        });
+
+        assertEquals(response.status, 502);
+        await flushAsyncWork();
+      },
+    );
+
+    const perfRows = await repo.performance.listAll();
+    const errorRows = perfRows.filter(row => row.errorsNoOutput + row.errorsWithOutput > 0);
+    assertEquals(errorRows.length, 1);
+    assertEquals(errorRows[0].upstream, 'up_b');
+  } finally {
+    errorSpy.mockRestore();
+  }
 });

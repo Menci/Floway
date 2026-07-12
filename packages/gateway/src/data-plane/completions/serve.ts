@@ -101,6 +101,7 @@ export const completions = async (c: Context): Promise<Response> => {
     c,
     ctx,
     sourceApi: '/completions',
+    operation: 'text_completion',
     model: request.model,
     kind: 'chat',
     modelServesEndpoint: model => model.endpoints.completions !== undefined,

@@ -35,7 +35,7 @@ export const geminiServe = {
       model,
       kind: 'chat',
       scheduler: ctx.backgroundScheduler,
-      currentColo: ctx.currentColo,
+      runtimeLocation: ctx.runtimeLocation,
     });
     const viable = enumerated.filter(c => geminiGenerateTarget.canServe(c.model.endpoints));
     const decision = await classifyResponsesItemAffinity({
@@ -59,6 +59,8 @@ export const geminiServe = {
     return await iterateCandidates(
       decision.candidates,
       'geminiServe.generate',
+      ctx,
+      'chat',
       candidate => geminiAttempt.generate({ payload, ctx, candidate, headers }),
     );
   },
@@ -70,7 +72,7 @@ export const geminiServe = {
       model,
       kind: 'chat',
       scheduler: ctx.backgroundScheduler,
-      currentColo: ctx.currentColo,
+      runtimeLocation: ctx.runtimeLocation,
     });
     const viable = enumerated.filter(c => geminiCountTokensTarget.canServe(c.model.endpoints));
     const decision = await classifyResponsesItemAffinity({
@@ -85,6 +87,8 @@ export const geminiServe = {
     return await iterateCandidates(
       decision.candidates,
       'geminiServe.countTokens',
+      ctx,
+      'chat',
       candidate => geminiAttempt.countTokens({ payload, ctx, candidate, headers }),
     );
   },

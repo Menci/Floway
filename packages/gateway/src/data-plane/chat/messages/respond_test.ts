@@ -4,7 +4,7 @@ import { test } from 'vitest';
 import { createMessagesStreamUsageState, respondMessages, tokenUsageFromMessagesFrame } from './respond.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
-import { createNonResponsesSourceStore } from '../responses/items/store.ts';
+import { mockChatGatewayCtx } from '../../../test-helpers/gateway-ctx.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
@@ -529,18 +529,7 @@ const forwardedHeadersFixture = (): Headers => new Headers({
   'set-cookie': 'session=secret',
 });
 
-const makeRespondCtx = (): ChatGatewayCtx => ({
-  apiKeyId: 'key_respond_test',
-  upstreamIds: null,
-  wantsStream: false,
-  runtimeLocation: 'TEST',
-  backgroundScheduler: () => {},
-  requestStartedAt: 0,
-  currentColo: 'TEST',
-  dump: null,
-  responseHeaders: new Headers(),
-  store: createNonResponsesSourceStore('key_respond_test'),
-});
+const makeRespondCtx = (): ChatGatewayCtx => mockChatGatewayCtx({ apiKeyId: 'key_respond_test' });
 
 const messagesEventsForRespond = (): readonly MessagesStreamEvent[] => [
   {

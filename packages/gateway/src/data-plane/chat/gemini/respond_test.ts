@@ -2,8 +2,7 @@ import { Hono } from 'hono';
 import { test } from 'vitest';
 
 import { respondGemini } from './respond.ts';
-import { createNonResponsesSourceStore } from '../responses/items/store.ts';
-import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
+import { mockChatGatewayCtx } from '../../../test-helpers/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { eventFrame } from '@floway-dev/protocols/common';
 import type { GeminiErrorResponse } from '@floway-dev/protocols/gemini';
@@ -19,18 +18,7 @@ const testTelemetryModelIdentity = {
   cost: null,
 };
 
-const ctx = (): ChatGatewayCtx => ({
-  apiKeyId: 'test-key',
-  upstreamIds: null,
-  wantsStream: false,
-  runtimeLocation: 'TEST',
-  currentColo: 'TEST',
-  dump: null,
-  responseHeaders: new Headers(),
-  backgroundScheduler: () => {},
-  requestStartedAt: 0,
-  store: createNonResponsesSourceStore('test-key'),
-});
+const ctx = () => mockChatGatewayCtx();
 
 const requestGeminiResponse = async (result: ExecuteResult<ProtocolFrame<GeminiErrorResponse>>): Promise<Response> => {
   const app = new Hono();

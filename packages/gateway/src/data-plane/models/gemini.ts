@@ -6,7 +6,7 @@ import { effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { ModelAliasesRepo } from '../../repo/types.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
-import { getCurrentColo } from '../../runtime/runtime-info.ts';
+import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import { geminiStatusForHttpStatus } from '../chat/gemini/errors.ts';
 import { enumerateAddressableModelIds, listedRealModels } from '../shared/listing/addressable.ts';
 import { mergeAliasesIntoModels } from '../shared/listing/alias.ts';
@@ -98,7 +98,7 @@ const loadGeminiModels = async (
 
 export const serveGeminiModels = async (c: Context): Promise<Response> => {
   try {
-    const fetcherForUpstream = await createPerRequestFetcher(getCurrentColo(c.req.raw));
+    const fetcherForUpstream = await createPerRequestFetcher(getRuntimeLocation(c.req.raw));
     return Response.json({ models: await loadGeminiModels(effectiveUpstreamIdsFromContext(c), fetcherForUpstream, backgroundSchedulerFromContext(c), getRepo().modelAliases) });
   } catch (error) {
     return geminiModelLoadError(error);
@@ -111,7 +111,7 @@ export const serveGeminiModelInfo = async (c: Context): Promise<Response> => {
 
   const modelId = rawModelId.replace(/^models\//, '');
   try {
-    const fetcherForUpstream = await createPerRequestFetcher(getCurrentColo(c.req.raw));
+    const fetcherForUpstream = await createPerRequestFetcher(getRuntimeLocation(c.req.raw));
     const model = (await loadGeminiModels(effectiveUpstreamIdsFromContext(c), fetcherForUpstream, backgroundSchedulerFromContext(c), getRepo().modelAliases)).find(candidate => candidate.baseModelId === modelId || candidate.name === `models/${modelId}`);
     if (!model) return geminiError(404, `Model not found: ${modelId}`);
     return Response.json(model);

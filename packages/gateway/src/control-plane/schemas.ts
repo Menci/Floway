@@ -18,6 +18,7 @@
 import { z } from 'zod';
 
 import { normalizeDisabledPublicModelIds } from '../repo/disabled-public-models.ts';
+import { CUSTOM_API_KEY_MAX_LENGTH, KEY_SOURCES } from '../shared/api-key-tokens.ts';
 import { type FlagOverrides, MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX, normalizeUpstreamColor, parseFlagOverridesWire } from '@floway-dev/provider';
 
 // --- shared atoms ---
@@ -187,11 +188,12 @@ const ollamaConfigSchema = z.object({
 // JSON-parse + zod + pre-hash work is still worth bounding.
 const passwordSchema = z.string().min(1).max(1024);
 
-// Username is allowed empty so the ADMIN_KEY-only login path passes
-// validation; the login handler dispatches on the empty value.
+// Both fields are allowed empty so the blank-username login path (ADMIN_KEY
+// match, or the dev-only passwordless shortcut when ADMIN_KEY is unset)
+// passes validation; the login handler dispatches on the empty values.
 export const authLoginBody = z.object({
   username: z.string().regex(/^[a-zA-Z0-9_.\-]{0,64}$/, 'username must be 0-64 chars of [A-Za-z0-9_.-] (empty for ADMIN_KEY login)'),
-  password: passwordSchema,
+  password: z.string().max(1024),
 });
 
 // --- users ---
@@ -238,10 +240,24 @@ export const changeOwnPasswordBody = z.object({
 export const DUMP_RETENTION_MAX_SECONDS = 10 * 365 * 24 * 60 * 60;
 const dumpRetentionSecondsSchema = z.number().int().positive().max(DUMP_RETENTION_MAX_SECONDS).nullable();
 
+// `key_source` picks how the raw key on this create/rotate request is
+// produced: 'generate' means the gateway mints an sk-...T3BlbkFJ... token
+// for this write; 'custom' means the request carries the token verbatim in
+// `custom_key`. The choice is per-call — the shape is not persisted, and a
+// later rotate is free to switch styles without any state on the row.
+const keySourceShape = {
+  key_source: z.enum(KEY_SOURCES).optional(),
+  custom_key: z.string().max(CUSTOM_API_KEY_MAX_LENGTH).optional(),
+};
+
 export const createKeyBody = z.object({
   name: z.string().min(1),
   upstream_ids: upstreamIdsValueSchema.optional(),
+  dump_retention_seconds: dumpRetentionSecondsSchema.optional(),
+  ...keySourceShape,
 });
+
+export const rotateKeyBody = z.object(keySourceShape);
 
 export const updateKeyBody = z.object({
   name: z.string().min(1).optional(),
@@ -631,7 +647,7 @@ export const updateAliasBody = aliasBodyCore.superRefine(aliasBodyRulesRefinemen
 // --- data transfer ---
 
 export const importBody = z.object({
-  version: z.literal(7, { error: 'version must be 7 — older export formats are not supported; re-export from the current deployment' }),
+  version: z.literal(8, { error: 'version must be 8 — older export formats are not supported; re-export from the current deployment' }),
   mode: z.enum(['merge', 'replace'], { error: "mode must be 'merge' or 'replace'" }),
   data: z.unknown().optional(),
 });
@@ -675,10 +691,20 @@ export const searchUsageQuery = z.object({
   provider: z.string().optional(),
 });
 
-export const performanceQuery = z.object({
-  ...usageBaseQuery,
-  metric_scope: z.enum(['request_total', 'upstream_success']).optional(),
-  group_by: z.enum(['none', 'keyId', 'userId', 'model', 'runtimeLocation']).optional(),
+export const performanceQuery = z.object(usageBaseQuery).omit({ include_key_metadata: true, include_user_metadata: true }).extend({
+  group_by: z.enum(['keyId', 'userId', 'model', 'upstream', 'operation', 'runtimeLocation']).optional(),
   bucket: z.enum(['hour', '4h', '8h', 'day', 'all']).optional(),
   timezone_offset_minutes: z.string().optional(),
+  // Cross-cutting filters applied to raw records before aggregation. Each is
+  // a single value (dashboard dropdown is single-select); combining filters
+  // is AND.
+  filter_model: z.string().optional(),
+  filter_upstream: z.string().optional(),
+  filter_operation: z.string().optional(),
+  filter_runtime_location: z.string().optional(),
+  // User ids are auto-increment starting at 1, so zero and leading-zero forms
+  // can never resolve and are rejected up front rather than silently returning
+  // an empty result.
+  filter_user_id: z.union([z.literal(''), z.string().regex(/^[1-9]\d*$/, 'filter_user_id must be a positive integer')]).optional(),
+  filter_key_id: z.string().optional(),
 });

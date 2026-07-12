@@ -126,16 +126,11 @@ test('/v1/embeddings records usage under request model when upstream omits model
   assertEquals(usage[0].tokens.input, 1);
 
   const performanceRows = await repo.performance.listAll();
-  const requestTotal = performanceRows.find(row => row.metricScope === 'request_total');
-  const upstreamSuccess = performanceRows.find(row => row.metricScope === 'upstream_success');
-  assertExists(requestTotal);
-  assertExists(upstreamSuccess);
-  assertEquals(requestTotal.model, 'text-embedding-real');
-  assertEquals(requestTotal.requests, 1);
-  assertEquals(requestTotal.errors, 0);
-  assertEquals(upstreamSuccess.model, 'text-embedding-real');
-  assertEquals(upstreamSuccess.requests, 1);
-  assertEquals(upstreamSuccess.errors, 0);
+  assertEquals(performanceRows.length, 1);
+  assertEquals(performanceRows[0]?.model, 'text-embedding-real');
+  assertEquals(performanceRows[0]?.requests, 1);
+  assertEquals(performanceRows[0]?.errorsNoOutput, 0);
+  assertEquals(performanceRows[0]?.errorsWithOutput, 0);
 });
 
 test('/v1/embeddings records request and upstream performance', async () => {
@@ -189,17 +184,12 @@ test('/v1/embeddings records request and upstream performance', async () => {
   await flushAsyncWork();
 
   const records = await repo.performance.listAll();
-  const scopes = records.map(record => record.metricScope).sort();
-  assertEquals(scopes, ['request_total', 'upstream_success']);
-  for (const record of records) {
-    assertEquals(record.keyId, apiKey.id);
-    assertEquals(record.model, 'text-embedding-real');
-    assertEquals(record.upstream, copilotUpstream.id);
-    assertEquals(record.modelKey, 'text-embedding-real');
-    assertEquals(record.stream, false);
-    assertEquals(record.requests, 1);
-    assertEquals(record.errors, 0);
-  }
+  assertEquals(records.length, 1);
+  assertEquals(records[0]?.keyId, apiKey.id);
+  assertEquals(records[0]?.model, 'text-embedding-real');
+  assertEquals(records[0]?.upstream, copilotUpstream.id);
+  assertEquals(records[0]?.requests, 1);
+  assertEquals(records[0]?.errorsNoOutput, 0);
 });
 
 test('/v1/embeddings routes to custom upstream when model is only declared there', async () => {

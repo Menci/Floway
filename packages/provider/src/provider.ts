@@ -24,7 +24,6 @@ export interface Provider {
   upstream: string;
   kind: UpstreamProviderKind;
   name: string;
-  // Public model ids the operator switched off for this upstream.
   disabledPublicModelIds: readonly string[];
   // Per-upstream model name prefix policy mirrored from the source upstream
   // record so registry helpers — routing and listing — read it from the
@@ -72,21 +71,12 @@ export type ProviderResponsesResult =
   | { action: 'compact'; ok: true; result: ResponsesResult; modelKey: string }
   | { action: 'compact'; ok: false; response: Response; modelKey: string };
 
-// Per-call observation hooks the gateway threads through to the provider.
+// Per-call options the gateway threads through to the provider.
 //
 // `fetcher` is the per-upstream proxy-aware indirection for outbound HTTP.
 // Every upstream call (data-plane request, OAuth refresh, etc.) must go
 // through this fetcher so a single fallback chain governs every leg of the
 // call under restricted egress.
-//
-// `recordUpstreamLatency` measures the precise upstream round-trip — request
-// leaves the gateway, response returns to the gateway — and explicitly excludes
-// in-process work the provider does around the call (boundary interceptors,
-// auth-token refresh, request/response shaping, SSE parsing). The provider is
-// required to wrap the actual upstream fetch promise with this helper at least
-// once; the gateway throws on a violation so missing wraps fail loud. On
-// retries (e.g. invalidate-token-and-redo), only the most recent invocation's
-// measurement is kept.
 //
 // `waitUntil` registers a fire-and-forget promise that must outlive the
 // response. On workerd it maps to `ExecutionContext.waitUntil` so the
@@ -103,9 +93,16 @@ export type ProviderResponsesResult =
 // the bag and the provider must not retain a reference past the call.
 export interface UpstreamCallOptions {
   fetcher: Fetcher;
-  recordUpstreamLatency: <T>(promise: Promise<T>) => Promise<T>;
   waitUntil: (promise: Promise<unknown>) => void;
   headers: Headers;
+  // Providers wrap the dispatch that fires the outbound fetch. The wrap
+  // runs synchronously and stamps `attempt.upstreamCallStartedAt` before
+  // invoking the factory, so the stamp fires ahead of dial + TLS + CONNECT
+  // (which live inside the returned promise's async body under a proxied
+  // fetcher). The pre-dial anchor is deliberate: TTFT from the user's
+  // viewpoint includes proxy handshake time, so keeping it in the interval
+  // matches observed client latency.
+  wrapUpstreamCall: <T>(dispatch: () => Promise<T>) => Promise<T>;
 }
 
 export interface ProviderInstance {

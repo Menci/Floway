@@ -1,381 +1,221 @@
-import { test } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import { InMemoryRepo } from './memory.ts';
 import { SqlRepo } from './sql.ts';
-import type { PerformanceRepo } from './types.ts';
-import { latencyBucketForMs } from '../shared/performance-histogram.ts';
-import type { SqlDatabase } from '@floway-dev/platform';
-import { assertEquals } from '@floway-dev/test-utils';
+import { createSqliteTestDb } from './test-sqlite.ts';
+import type {
+  PerformanceDimensions,
+  PerformanceRepo,
+  PerformanceSample,
+  PerformanceTelemetryRecord,
+} from './types.ts';
 
-const baseSample = {
-  hour: '2026-04-30T10',
+const sample = (over: Partial<PerformanceSample> = {}): PerformanceSample => ({
+  hour: '2026-06-30T09',
   keyId: 'key_a',
-  model: 'claude-opus-4-7',
-  upstream: 'copilot:1',
-  modelKey: 'claude-opus-4.7-xhigh',
-  stream: true,
-  runtimeLocation: 'LOCAL',
-};
-
-async function exercisePerformanceRepo(repo: PerformanceRepo) {
-  await repo.deleteAll();
-  await repo.recordLatency({
-    ...baseSample,
-    metricScope: 'request_total',
-    durationMs: 120,
-  });
-  await repo.recordLatency({
-    ...baseSample,
-    metricScope: 'request_total',
-    durationMs: 130,
-  });
-  await repo.recordError({
-    ...baseSample,
-    metricScope: 'request_total',
-  });
-  await repo.recordLatency({
-    ...baseSample,
-    metricScope: 'upstream_success',
-    durationMs: 500,
-  });
-  await repo.recordLatency({
-    ...baseSample,
-    hour: '2026-04-30T11',
-    metricScope: 'request_total',
-    durationMs: 1000,
-  });
-
-  const requestRows = await repo.query({
-    start: '2026-04-30T10',
-    end: '2026-04-30T11',
-    metricScope: 'request_total',
-  });
-  assertEquals(requestRows.length, 1);
-  assertEquals(requestRows[0].requests, 2);
-  assertEquals(requestRows[0].errors, 1);
-  assertEquals(requestRows[0].totalMsSum, 250);
-  assertEquals(requestRows[0].buckets, [{ ...latencyBucketForMs(120), count: 2 }]);
-
-  const upstreamRows = await repo.query({
-    start: '2026-04-30T10',
-    end: '2026-04-30T11',
-    metricScope: 'upstream_success',
-  });
-  assertEquals(upstreamRows.length, 1);
-  assertEquals(upstreamRows[0].requests, 1);
-  assertEquals(upstreamRows[0].errors, 0);
-  assertEquals(upstreamRows[0].totalMsSum, 500);
-  assertEquals(upstreamRows[0].buckets, [{ ...latencyBucketForMs(500), count: 1 }]);
-
-  const replacement = {
-    ...baseSample,
-    metricScope: 'request_total' as const,
-    requests: 7,
-    errors: 2,
-    totalMsSum: 1400,
-    buckets: [{ lowerMs: 100, upperMs: 142, count: 7 }],
-  };
-  await repo.set(replacement);
-  assertEquals(await repo.listAll(), [
-    replacement,
-    {
-      ...baseSample,
-      metricScope: 'upstream_success',
-      requests: 1,
-      errors: 0,
-      totalMsSum: 500,
-      buckets: [{ ...latencyBucketForMs(500), count: 1 }],
-    },
-    {
-      ...baseSample,
-      hour: '2026-04-30T11',
-      metricScope: 'request_total',
-      requests: 1,
-      errors: 0,
-      totalMsSum: 1000,
-      buckets: [{ ...latencyBucketForMs(1000), count: 1 }],
-    },
-  ]);
-
-  await repo.deleteAll();
-  assertEquals(
-    await repo.query({
-      start: '2026-04-30T10',
-      end: '2026-04-30T12',
-    }),
-    [],
-  );
-}
-
-test('memory performance repo records, queries, and clears telemetry', async () => {
-  await exercisePerformanceRepo(new InMemoryRepo().performance);
+  model: 'claude-opus-4-8',
+  upstream: 'anthropic-1',
+  operation: 'chat',
+  runtimeLocation: 'hkg',
+  ttftMs: 340,
+  tpotUs: 15_000,
+  success: true,
+  ...over,
 });
 
-class FakePerformanceSqlPreparedStatement {
-  private binds: unknown[] = [];
+const errSample = (over: Partial<PerformanceDimensions> = {}): PerformanceDimensions => ({
+  hour: '2026-06-30T09',
+  keyId: 'key_a',
+  model: 'claude-opus-4-8',
+  upstream: 'anthropic-1',
+  operation: 'chat',
+  runtimeLocation: 'hkg',
+  ...over,
+});
 
-  constructor(private db: FakePerformanceSqlDatabase, private query: string) {}
+const impls: Array<{ name: string; open: () => Promise<PerformanceRepo> }> = [
+  { name: 'memory', open: async () => new InMemoryRepo().performance },
+  { name: 'sqlite', open: async () => new SqlRepo(await createSqliteTestDb()).performance },
+];
 
-  bind(...values: unknown[]): FakePerformanceSqlPreparedStatement {
-    this.binds = values;
-    return this;
-  }
-
-  first(): Promise<null> {
-    throw new Error(`Unsupported first() query in performance test: ${this.query}`);
-  }
-
-  all<T>(): Promise<{ results: T[]; success: true; meta: Record<string, unknown> }> {
-    if (this.query.includes('FROM performance_summary')) {
-      return Promise.resolve({
-        results: this.db.selectSummaries(this.query, this.binds) as T[],
-        success: true,
-        meta: {},
+for (const impl of impls) {
+  describe(`PerformanceRepo (${impl.name})`, () => {
+    it('records a sample into summary + one TTFT bucket + one TPOT bucket', async () => {
+      const repo = await impl.open();
+      await repo.recordSample(sample());
+      const rows = await repo.listAll();
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        hour: '2026-06-30T09',
+        keyId: 'key_a',
+        model: 'claude-opus-4-8',
+        upstream: 'anthropic-1',
+        runtimeLocation: 'hkg',
+        requests: 1,
+        ttftSamplesOk: 1,
+        errorsWithOutput: 0,
+        errorsNoOutput: 0,
+        neutral: 0,
+        tpotSamples: 1,
+        ttftMsSum: 340,
+        tpotUsSum: 15_000,
       });
-    }
-    if (this.query.includes('FROM performance_latency_buckets')) {
-      return Promise.resolve({
-        results: this.db.selectBuckets(this.query, this.binds) as T[],
-        success: true,
-        meta: {},
+      const ttft = rows[0]!.buckets.find(b => b.metric === 'ttft_ms')!;
+      const tpot = rows[0]!.buckets.find(b => b.metric === 'tpot_us')!;
+      expect(ttft).toEqual({ metric: 'ttft_ms', lower: 300, upper: 500, count: 1 });
+      expect(tpot).toEqual({ metric: 'tpot_us', lower: 14_286, upper: 16_667, count: 1 });
+    });
+
+    it('records a zero-output error into summary requests + errorsNoOutput only, no bucket rows', async () => {
+      const repo = await impl.open();
+      await repo.recordZeroOutputError(errSample());
+      const rows = await repo.listAll();
+      expect(rows[0]).toMatchObject({ requests: 1, ttftSamplesOk: 0, errorsWithOutput: 0, errorsNoOutput: 1, neutral: 0, tpotSamples: 0, ttftMsSum: 0, tpotUsSum: 0 });
+      expect(rows[0]!.buckets).toEqual([]);
+    });
+
+    it('routes a failed sample into errorsWithOutput (not ttftSamplesOk)', async () => {
+      const repo = await impl.open();
+      await repo.recordSample(sample({ success: false }));
+      const [row] = await repo.listAll();
+      expect(row).toMatchObject({
+        requests: 1,
+        ttftSamplesOk: 0,
+        errorsWithOutput: 1,
+        errorsNoOutput: 0,
+        neutral: 0,
+        tpotSamples: 1,
+        ttftMsSum: 340,
+        tpotUsSum: 15_000,
       });
-    }
+      expect(row!.buckets.some(b => b.metric === 'ttft_ms')).toBe(true);
+      expect(row!.buckets.some(b => b.metric === 'tpot_us')).toBe(true);
+    });
 
-    throw new Error(`Unsupported all() query in performance test: ${this.query}`);
-  }
+    it('additive upsert accumulates sums, samples, and bucket counts', async () => {
+      const repo = await impl.open();
+      // Both samples fall in the same TTFT bucket [200, 300] and same TPOT bucket [10000, 12500]
+      // so a single (lower, upper) entry accumulates count=2 for each metric.
+      await repo.recordSample(sample({ ttftMs: 250, tpotUs: 10_500 }));
+      await repo.recordSample(sample({ ttftMs: 260, tpotUs: 11_500 }));
+      const [row] = await repo.listAll();
+      expect(row).toMatchObject({ requests: 2, ttftSamplesOk: 2, tpotSamples: 2, ttftMsSum: 510, tpotUsSum: 22_000 });
+      const ttft = row!.buckets.find(b => b.metric === 'ttft_ms' && b.lower === 200 && b.upper === 300)!;
+      expect(ttft.count).toBe(2);
+      const tpot = row!.buckets.find(b => b.metric === 'tpot_us' && b.lower === 10_000 && b.upper === 12_500)!;
+      expect(tpot.count).toBe(2);
+    });
 
-  run(): Promise<{ results: never[]; success: true; meta: Record<string, unknown> }> {
-    if (this.query.startsWith('INSERT INTO performance_summary')) {
-      this.db.upsertSummary(this.query, this.binds);
-      return Promise.resolve({ results: [], success: true, meta: {} });
-    }
-    if (this.query.startsWith('INSERT INTO performance_latency_buckets')) {
-      this.db.upsertBucket(this.binds);
-      return Promise.resolve({ results: [], success: true, meta: {} });
-    }
-    if (this.query === 'DELETE FROM performance_latency_buckets') {
-      this.db.buckets = [];
-      return Promise.resolve({ results: [], success: true, meta: {} });
-    }
-    if (this.query.startsWith('DELETE FROM performance_latency_buckets')) {
-      this.db.deleteBuckets(this.binds);
-      return Promise.resolve({ results: [], success: true, meta: {} });
-    }
-    if (this.query === 'DELETE FROM performance_summary') {
-      this.db.summaries = [];
-      return Promise.resolve({ results: [], success: true, meta: {} });
-    }
+    it('separates rows by any dimension change (upstream)', async () => {
+      const repo = await impl.open();
+      await repo.recordSample(sample({ upstream: 'anthropic-1' }));
+      await repo.recordSample(sample({ upstream: 'anthropic-2' }));
+      const rows = await repo.listAll();
+      expect(rows).toHaveLength(2);
+      expect(new Set(rows.map(r => r.upstream))).toEqual(new Set(['anthropic-1', 'anthropic-2']));
+    });
 
-    throw new Error(`Unsupported run() query in performance test: ${this.query}`);
-  }
+    it('query filters by keyId and time range', async () => {
+      const repo = await impl.open();
+      await repo.recordSample(sample({ hour: '2026-06-30T08', keyId: 'key_a' }));
+      await repo.recordSample(sample({ hour: '2026-06-30T09', keyId: 'key_b' }));
+      const scoped = await repo.query({ keyId: 'key_a', start: '2026-06-30T00', end: '2026-06-30T23' });
+      expect(scoped).toHaveLength(1);
+      expect(scoped[0]!.keyId).toBe('key_a');
+    });
+
+    it('set() replaces (not adds) a row and its buckets', async () => {
+      const repo = await impl.open();
+      await repo.recordSample(sample({ ttftMs: 100, tpotUs: 8_000 }));
+      const [orig] = await repo.listAll();
+      await repo.set({
+        ...orig!,
+        requests: 5,
+        ttftSamplesOk: 5,
+        errorsWithOutput: 0,
+        errorsNoOutput: 0,
+        neutral: 0,
+        tpotSamples: 5,
+        ttftMsSum: 500,
+        tpotUsSum: 40_000,
+        buckets: [
+          { metric: 'ttft_ms', lower: 0, upper: 50, count: 5 },
+          { metric: 'tpot_us', lower: 5_000, upper: 10_000, count: 5 },
+        ],
+      });
+      const [after] = await repo.listAll();
+      expect(after).toMatchObject({ requests: 5, ttftSamplesOk: 5, tpotSamples: 5, ttftMsSum: 500, tpotUsSum: 40_000 });
+      expect(after!.buckets).toHaveLength(2);
+    });
+
+    it('records TTFT overflow bucket for very slow requests beyond the top edge', async () => {
+      const repo = await impl.open();
+      await repo.recordSample(sample({ ttftMs: 600_000 }));
+      const [row] = await repo.listAll();
+      const overflow = row!.buckets.find(b => b.metric === 'ttft_ms' && b.upper === null)!;
+      expect(overflow).toEqual({ metric: 'ttft_ms', lower: 300_000, upper: null, count: 1 });
+    });
+
+    it('TTFT-only sample (no tpotUs) records TTFT bucket without touching TPOT columns', async () => {
+      const repo = await impl.open();
+      const { tpotUs: _tpot, ...ttftOnly } = sample();
+      await repo.recordSample(ttftOnly);
+      const [row] = await repo.listAll();
+      expect(row).toMatchObject({ requests: 1, ttftSamplesOk: 1, tpotSamples: 0, ttftMsSum: 340, tpotUsSum: 0 });
+      expect(row!.buckets.some(b => b.metric === 'ttft_ms')).toBe(true);
+      expect(row!.buckets.some(b => b.metric === 'tpot_us')).toBe(false);
+    });
+
+    it('recordNeutral bumps requests and neutral', async () => {
+      const repo = await impl.open();
+      await repo.recordNeutral(errSample({ operation: 'embeddings' }));
+      const rows = await repo.listAll();
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ requests: 1, neutral: 1, ttftSamplesOk: 0, errorsWithOutput: 0, errorsNoOutput: 0, tpotSamples: 0, ttftMsSum: 0, tpotUsSum: 0 });
+      expect(rows[0]!.buckets).toEqual([]);
+    });
+
+    it('recordNeutral is additive across calls', async () => {
+      const repo = await impl.open();
+      await repo.recordNeutral(errSample({ operation: 'embeddings' }));
+      await repo.recordNeutral(errSample({ operation: 'embeddings' }));
+      await repo.recordNeutral(errSample({ operation: 'embeddings' }));
+      const [row] = await repo.listAll();
+      expect(row!.requests).toBe(3);
+      expect(row!.neutral).toBe(3);
+      expect(row!.errorsNoOutput).toBe(0);
+      expect(row!.ttftSamplesOk).toBe(0);
+      expect(row!.tpotSamples).toBe(0);
+    });
+
+    it('different operations create different rows', async () => {
+      const repo = await impl.open();
+      await repo.recordSample(sample({ operation: 'chat' }));
+      await repo.recordNeutral(errSample({ operation: 'embeddings' }));
+      const rows = await repo.listAll();
+      expect(rows).toHaveLength(2);
+      expect(new Set(rows.map(r => r.operation))).toEqual(new Set(['chat', 'embeddings']));
+    });
+  });
 }
 
-type FakePerformanceDimensionsRow = {
-  hour: string;
-  metric_scope: string;
-  key_id: string;
-  model: string;
-  upstream: string | null;
-  model_key: string;
-  stream: number;
-  runtime_location: string;
-};
-
-type FakePerformanceSummaryRow = FakePerformanceDimensionsRow & {
-  requests: number;
-  errors: number;
-  total_ms_sum: number;
-};
-
-type FakePerformanceBucketRow = FakePerformanceDimensionsRow & {
-  lower_ms: number;
-  upper_ms: number;
-  count: number;
-};
-
-class FakePerformanceSqlDatabase implements SqlDatabase {
-  exec(): Promise<unknown> { return Promise.resolve(undefined); }
-
-  summaries: FakePerformanceSummaryRow[] = [];
-  buckets: FakePerformanceBucketRow[] = [];
-
-  prepare(query: string): FakePerformanceSqlPreparedStatement {
-    return new FakePerformanceSqlPreparedStatement(this, query);
-  }
-
-  async batch(statements: Parameters<NonNullable<SqlDatabase['batch']>>[0]) {
-    const results = [];
-    for (const statement of statements) results.push(await statement.run());
-    return results;
-  }
-
-  upsertSummary(query: string, binds: unknown[]): void {
-    const row = summaryRowFromBinds(binds);
-    const existing = this.summaries.find(candidate => sameDimensions(candidate, row));
-    if (existing) {
-      if (query.includes('requests = excluded.requests')) {
-        existing.requests = row.requests;
-        existing.errors = row.errors;
-        existing.total_ms_sum = row.total_ms_sum;
-      } else {
-        existing.requests += row.requests;
-        existing.errors += row.errors;
-        existing.total_ms_sum += row.total_ms_sum;
-      }
-      return;
-    }
-    this.summaries.push(row);
-  }
-
-  upsertBucket(binds: unknown[]): void {
-    const row = bucketRowFromBinds(binds);
-    const existing = this.buckets.find(candidate => sameDimensions(candidate, row) && candidate.lower_ms === row.lower_ms && candidate.upper_ms === row.upper_ms);
-    if (existing) {
-      existing.count += row.count;
-      return;
-    }
-    this.buckets.push(row);
-  }
-
-  deleteBuckets(binds: unknown[]): void {
-    const dimensions = dimensionsRowFromBinds(binds);
-    this.buckets = this.buckets.filter(row => !sameDimensions(row, dimensions));
-  }
-
-  selectSummaries(query: string, binds: unknown[]): FakePerformanceSummaryRow[] {
-    return this.summaries.filter(row => matchesPerformanceWhere(row, query, binds)).toSorted(compareFakePerformanceRows);
-  }
-
-  selectBuckets(query: string, binds: unknown[]): FakePerformanceBucketRow[] {
-    return this.buckets.filter(row => matchesPerformanceWhere(row, query, binds)).toSorted((a, b) => compareFakePerformanceRows(a, b) || a.upper_ms - b.upper_ms);
-  }
-}
-
-function summaryRowFromBinds(binds: unknown[]): FakePerformanceSummaryRow {
-  const [hour, metricScope, keyId, model, upstream, modelKey, stream, runtimeLocation, requests, errors, totalMsSum] = binds as [
-    string,
-    string,
-    string,
-    string,
-    string | null,
-    string,
-    number,
-    string,
-    number,
-    number,
-    number,
-  ];
-  return {
-    hour,
-    metric_scope: metricScope,
-    key_id: keyId,
-    model,
-    upstream,
-    model_key: modelKey,
-    stream,
-    runtime_location: runtimeLocation,
-    requests,
-    errors,
-    total_ms_sum: totalMsSum,
-  };
-}
-
-function dimensionsRowFromBinds(binds: unknown[]): FakePerformanceDimensionsRow {
-  const [hour, metricScope, keyId, model, upstream, modelKey, stream, runtimeLocation] = binds as [
-    string,
-    string,
-    string,
-    string,
-    string | null,
-    string,
-    number,
-    string,
-  ];
-  return {
-    hour,
-    metric_scope: metricScope,
-    key_id: keyId,
-    model,
-    upstream,
-    model_key: modelKey,
-    stream,
-    runtime_location: runtimeLocation,
-  };
-}
-
-function bucketRowFromBinds(binds: unknown[]): FakePerformanceBucketRow {
-  const [hour, metricScope, keyId, model, upstream, modelKey, stream, runtimeLocation, lowerMs, upperMs, count] = binds as [
-    string,
-    string,
-    string,
-    string,
-    string | null,
-    string,
-    number,
-    string,
-    number,
-    number,
-    number,
-  ];
-  return {
-    hour,
-    metric_scope: metricScope,
-    key_id: keyId,
-    model,
-    upstream,
-    model_key: modelKey,
-    stream,
-    runtime_location: runtimeLocation,
-    lower_ms: lowerMs,
-    upper_ms: upperMs,
-    count,
-  };
-}
-
-function sameDimensions(a: FakePerformanceDimensionsRow, b: FakePerformanceDimensionsRow): boolean {
-  return (
-    a.hour === b.hour &&
-    a.metric_scope === b.metric_scope &&
-    a.key_id === b.key_id &&
-    a.model === b.model &&
-    a.upstream === b.upstream &&
-    a.model_key === b.model_key &&
-    a.stream === b.stream &&
-    a.runtime_location === b.runtime_location
-  );
-}
-
-function matchesPerformanceWhere(row: FakePerformanceDimensionsRow, query: string, binds: unknown[]): boolean {
-  if (!query.includes('hour >= ?')) return true;
-
-  const [start, end, ...rest] = binds as string[];
-  if (row.hour < start || row.hour >= end) return false;
-
-  let index = 0;
-  if (query.includes('key_id = ?')) {
-    const keyId = rest[index++];
-    if (row.key_id !== keyId) return false;
-  }
-  if (query.includes('metric_scope = ?')) {
-    const metricScope = rest[index++];
-    if (row.metric_scope !== metricScope) return false;
-  }
-  return true;
-}
-
-function compareFakePerformanceRows(a: FakePerformanceDimensionsRow, b: FakePerformanceDimensionsRow): number {
-  return (
-    a.hour.localeCompare(b.hour) ||
-    a.metric_scope.localeCompare(b.metric_scope) ||
-    a.key_id.localeCompare(b.key_id) ||
-    a.model.localeCompare(b.model) ||
-    (a.upstream ?? '').localeCompare(b.upstream ?? '') ||
-    a.model_key.localeCompare(b.model_key) ||
-    a.stream - b.stream ||
-    a.runtime_location.localeCompare(b.runtime_location)
-  );
-}
-
-test('SQL performance repo records, queries, and clears telemetry', async () => {
-  await exercisePerformanceRepo(new SqlRepo(new FakePerformanceSqlDatabase()).performance);
+describe('SqlPerformanceRepo upsertSummary set-mode guard', () => {
+  it('throws when set() is handed a record missing a count column', async () => {
+    const repo = new SqlRepo(await createSqliteTestDb()).performance;
+    // TS enforces every count on the public shape; test the runtime guard by
+    // casting a partial through, mirroring an `as`-cast slipping past compile.
+    const incomplete = {
+      ...errSample(),
+      requests: 5,
+      ttftSamplesOk: 5,
+      errorsWithOutput: 0,
+      errorsNoOutput: 0,
+      neutral: 0,
+      tpotSamples: 5,
+      // ttftMsSum omitted on purpose
+      tpotUsSum: 40_000,
+      buckets: [],
+    } as unknown as PerformanceTelemetryRecord;
+    await expect(repo.set(incomplete)).rejects.toThrow(/missing count column ttft_ms_sum/);
+  });
 });

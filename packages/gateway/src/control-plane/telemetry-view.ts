@@ -1,4 +1,5 @@
 import { type AuthedContext, canViewGlobalTelemetry, userFromContext } from '../middleware/auth.ts';
+import type { ApiKey, Repo } from '../repo/types.ts';
 
 export type TelemetryView = 'all-by-user' | 'self-by-key';
 
@@ -34,3 +35,17 @@ export const resolveTelemetryView = (
     ? { view: 'self-by-key', scopeUserId: user.id }
     : { view: 'all-by-user' };
 };
+
+export const loadTelemetryKeys = async (
+  repo: Repo,
+  resolved: ResolvedTelemetryView,
+): Promise<readonly ApiKey[]> => resolved.view === 'all-by-user'
+  ? await repo.apiKeys.listIncludingDeleted()
+  : await repo.apiKeys.listByUserIdIncludingDeleted(resolved.scopeUserId);
+
+// Only callers that fan telemetry rows out across users (all-by-user views,
+// or performance's cross-cutting group_by=userId) need this map. self-by-key
+// callers pay nothing since every row's user is fixed by construction.
+export const buildKeyToUserMap = (
+  keys: readonly ApiKey[],
+): ReadonlyMap<string, number> => new Map(keys.map(k => [k.id, k.userId] as const));

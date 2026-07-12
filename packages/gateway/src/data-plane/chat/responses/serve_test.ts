@@ -5,6 +5,7 @@ import { createResponsesHttpStore, MemoryStatefulResponsesBacking, LayeredStatef
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import type { StoredResponsesItem, StoredResponsesSnapshot } from '../../../repo/types.ts';
+import { mockChatGatewayCtx } from '../../../test-helpers/gateway-ctx.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
@@ -64,18 +65,12 @@ const installRepo = (): InMemoryRepo => {
   return repo;
 };
 
-const makeGatewayCtx = (store?: ChatGatewayCtx['store']): ChatGatewayCtx => ({
-  apiKeyId: API_KEY_ID,
-  upstreamIds: null,
-  wantsStream: true,
-  runtimeLocation: 'TEST',
-  currentColo: 'TEST',
-  dump: null,
-  responseHeaders: new Headers(),
-  backgroundScheduler: () => {},
-  requestStartedAt: 0,
-  store: store ?? createResponsesHttpStore(API_KEY_ID, true),
-});
+const makeGatewayCtx = (store?: ChatGatewayCtx['store']) =>
+  mockChatGatewayCtx({
+    apiKeyId: API_KEY_ID,
+    wantsStream: true,
+    store: store ?? createResponsesHttpStore(API_KEY_ID, true),
+  });
 
 const makePayload = (overrides: Partial<CanonicalResponsesPayload> = {}): CanonicalResponsesPayload => ({
   model: 'test-model',
@@ -239,6 +234,43 @@ test('generate falls through to the next candidate when the first yields an upst
   assertEquals(result.type, 'events');
   assertEquals(firstCall.mock.calls.length, 1);
   assertEquals(secondCall.mock.calls.length, 1);
+});
+
+// A mid-attempt throw (interceptor bug / translation error / provider-layer
+// JS exception bypassing tryCatchChatServeFailure) must attribute the perf
+// error row to the throwing candidate, not the previous one that already
+// failed cleanly with a 5xx.
+test('mid-attempt throw stamps telemetry with the throwing candidate, not the previous one', async () => {
+  installRepo();
+  const firstError = new Response(JSON.stringify({ error: { message: 'nope' } }), {
+    status: 502, headers: new Headers({ 'content-type': 'application/json' }),
+  });
+  const firstCall = vi.fn(async (): Promise<ProviderResponsesResult> => ({
+    action: 'generate', ok: false, response: firstError, modelKey: 'first-key',
+  }));
+  const secondCall = vi.fn(async (): Promise<ProviderResponsesResult> => {
+    throw new Error('simulated provider-layer JS exception');
+  });
+  queueResolution([
+    makeCandidate({ upstream: 'up_a', callResponses: firstCall }),
+    makeCandidate({ upstream: 'up_b', callResponses: secondCall }),
+  ]);
+
+  const ctx = makeGatewayCtx();
+  await responsesServe.generate({
+    payload: makePayload(),
+    ctx,
+    headers: new Headers(),
+  }).then(
+    () => { throw new Error('expected responsesServe.generate to throw'); },
+    (error: unknown) => {
+      assertEquals((error as Error).message, 'simulated provider-layer JS exception');
+    },
+  );
+
+  assertEquals(firstCall.mock.calls.length, 1);
+  assertEquals(secondCall.mock.calls.length, 1);
+  assertEquals(ctx.attempt.telemetry?.upstream, 'up_b');
 });
 
 test('generate renders model-missing when no candidates are available', async () => {

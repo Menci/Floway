@@ -14,7 +14,7 @@ import { parseProxyUri, type ProxyUriError, runProxiedRequest } from '@floway-de
 // `preFetchedUpstreams` lets a caller reuse a list it already loaded on
 // this request instead of paying a second `upstreams.list()` round-trip.
 export const createPerRequestFetcher = async (
-  currentColo: string,
+  runtimeLocation: string,
   preFetchedUpstreams?: readonly UpstreamRecord[],
 ): Promise<(upstreamId: string) => Fetcher> => {
   const repo = getRepo();
@@ -69,7 +69,7 @@ export const createPerRequestFetcher = async (
       repo,
       upstreamId,
       fallbackList: list,
-      currentColo,
+      runtimeLocation,
       proxyById,
       runProxied: runProxiedRequest,
       runDirect: directFetcher,

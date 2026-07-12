@@ -10,7 +10,7 @@ import { pricingForCodexModelKey } from './pricing.ts';
 import { assertCodexUpstreamState, type CodexUpstreamState } from './state.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import { toCompactPayloadShape } from '@floway-dev/protocols/responses';
-import { getProviderRepo, resolveEffectiveFlags, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderResponsesResult, type ProviderStreamResult, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
+import { getProviderRepo, resolveEffectiveFlags, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderResponsesResult, type ProviderStreamResult, type UpstreamRecord } from '@floway-dev/provider';
 
 export const createCodexProvider = (record: UpstreamRecord): Provider => {
   assertCodexUpstreamRecord(record);
@@ -99,7 +99,7 @@ export const createCodexProvider = (record: UpstreamRecord): Provider => {
 
     // Codex itself is a flat-fee subscription, but the dashboard reports
     // notional cost per request as if the operator were paying OpenAI's
-    // public API rates. The table lives in ./pricing.ts.
+    // public API rates.
     getPricingForModelKey: pricingForCodexModelKey,
 
     callResponses: async (model, body, action, signal, opts) => {
@@ -135,16 +135,14 @@ export const createCodexProvider = (record: UpstreamRecord): Provider => {
     // that single endpoint and no other entry point is reachable. The data
     // plane never routes these surfaces here in practice, but a stray
     // dispatch must surface as a 405 carrying a proper JSON error rather
-    // than letting a raw stack trace bubble up the boundary. The synthetic
-    // response still flows through the per-call latency recorder so the
-    // gateway's wrap-once contract holds even for these stubs.
-    callMessages: (_model, _body, _signal, opts) => unsupportedStreamResult(opts),
-    callMessagesCountTokens: (_model, _body, _signal, opts) => unsupportedCallResult(opts),
-    callCompletions: (_model, _body, _signal, opts) => unsupportedCallResult(opts),
-    callChatCompletions: (_model, _body, _signal, opts) => unsupportedStreamResult(opts),
-    callEmbeddings: (_model, _body, _signal, opts) => unsupportedCallResult(opts),
-    callImagesGenerations: (_model, _body, _signal, opts) => unsupportedCallResult(opts),
-    callImagesEdits: (_model, _body, _signal, opts) => unsupportedCallResult(opts),
+    // than letting a raw stack trace bubble up the boundary.
+    callMessages: () => unsupportedStreamResult(),
+    callMessagesCountTokens: () => unsupportedCallResult(),
+    callCompletions: () => unsupportedCallResult(),
+    callChatCompletions: () => unsupportedStreamResult(),
+    callEmbeddings: () => unsupportedCallResult(),
+    callImagesGenerations: () => unsupportedCallResult(),
+    callImagesEdits: () => unsupportedCallResult(),
   };
 
   return {
@@ -163,13 +161,8 @@ const synthetic405 = (): Response => new Response(
   { status: 405, headers: { 'content-type': 'application/json' } },
 );
 
-const unsupportedStreamResult = async <TEvent>(opts: UpstreamCallOptions): Promise<ProviderStreamResult<TEvent>> => ({
-  ok: false,
-  modelKey: '',
-  response: await opts.recordUpstreamLatency(Promise.resolve(synthetic405())),
-});
+const unsupportedStreamResult = <TEvent>(): Promise<ProviderStreamResult<TEvent>> =>
+  Promise.resolve({ ok: false, modelKey: '', response: synthetic405() });
 
-const unsupportedCallResult = async (opts: UpstreamCallOptions): Promise<ProviderCallResult> => ({
-  modelKey: '',
-  response: await opts.recordUpstreamLatency(Promise.resolve(synthetic405())),
-});
+const unsupportedCallResult = (): Promise<ProviderCallResult> =>
+  Promise.resolve({ modelKey: '', response: synthetic405() });

@@ -59,7 +59,7 @@ const data = useNewUpstreamData();
 const store = useUpstreamsStore();
 
 if (data.data.value.initialRecord === null) {
-  void router.replace('/dashboard/upstreams');
+  void router.replace('/dashboard/settings');
 }
 
 const onSaved = async () => {

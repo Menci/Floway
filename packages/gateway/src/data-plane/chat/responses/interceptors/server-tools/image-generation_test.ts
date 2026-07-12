@@ -19,8 +19,7 @@ import {
 } from './image-generation.ts';
 import { initRepo } from '../../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../../repo/memory.ts';
-import type { ChatGatewayCtx } from '../../../shared/gateway-ctx.ts';
-import { createNonResponsesSourceStore } from '../../items/store.ts';
+import { mockChatGatewayCtx } from '../../../../../test-helpers/gateway-ctx.ts';
 import type { ResponsesInvocation } from '../types.ts';
 import type { ResponsesInputItem, ResponsesPayload, ResponsesTool } from '@floway-dev/protocols/responses';
 import { assert, assertEquals, assertFalse, assertStringIncludes, stubModelCandidate } from '@floway-dev/test-utils';
@@ -39,18 +38,7 @@ const makeCtx = (payload: Partial<ResponsesPayload>): ResponsesInvocation => ({
   headers: new Headers(),
   action: 'generate',
 });
-const gatewayCtx = (): ChatGatewayCtx => ({
-  apiKeyId: 'test-key',
-  upstreamIds: null,
-  wantsStream: true,
-  runtimeLocation: 'TEST',
-  currentColo: 'TEST',
-  dump: null,
-  responseHeaders: new Headers(),
-  backgroundScheduler: () => {},
-  requestStartedAt: 0,
-  store: createNonResponsesSourceStore('test-key'),
-});
+const gatewayCtx = () => mockChatGatewayCtx({ wantsStream: true });
 
 beforeEach(() => {
   initRepo(new InMemoryRepo());

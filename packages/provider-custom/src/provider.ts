@@ -39,8 +39,7 @@ const customRawToProviderModel = (model: CustomRawModel): Omit<ProviderModel, 'k
 // verbatim. With no/unrecognized published kind, the id heuristic (Tier 2) runs
 // and falls back to the configured endpoints when it does not match. The
 // configured set may be empty, leaving the model listed but unroutable until
-// the operator declares an endpoint. The result is the model's `endpoints`;
-// `kind` is derived back from it.
+// the operator declares an endpoint. `kind` is derived back from the endpoints.
 const autoModelEndpoints = (model: CustomRawModel, configured: ModelEndpoints): ModelEndpoints => {
   if (model.kind === 'embedding') return { embeddings: {} };
   if (model.kind === 'image') return { imagesGenerations: {}, imagesEdits: {} };
@@ -126,7 +125,7 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
   ): Promise<ProviderCallResult> => {
     rememberPricingForModel(model);
     const rawModelId = rawModelIdOf(model);
-    return transport(config, { method: 'POST', body: JSON.stringify({ ...body, model: rawModelId }), signal }, { extraHeaders: headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency })
+    return transport(config, { method: 'POST', body: JSON.stringify({ ...body, model: rawModelId }), signal }, { extraHeaders: headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall })
       .then(response => ({
         response,
         modelKey: rawModelId,
@@ -148,7 +147,7 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
       transport(
         config,
         { method: 'POST', body: JSON.stringify({ ...body, stream: true, model: rawModelId }), signal },
-        { extraHeaders: headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency },
+        { extraHeaders: headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
       ),
       parser,
       rawModelId,
@@ -186,7 +185,7 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
         const response = await customFetchResponsesCompact(
           config,
           { method: 'POST', body: JSON.stringify({ ...toCompactPayloadShape(body), model: rawModelId }), signal },
-          { extraHeaders: opts.headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency },
+          { extraHeaders: opts.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
         );
         return response.ok
           ? { action: 'compact', ok: true, result: (await response.json()) as ResponsesResult, modelKey: rawModelId }
@@ -203,11 +202,11 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
     callImagesGenerations: (model, body, signal, opts) => call(customFetchImagesGenerations, model, body, signal, opts.headers, opts),
     callImagesEdits: async (model, body, signal, opts) => {
       rememberPricingForModel(model);
-      // Custom forwards the resolved upstream model id. The runtime auto-encodes
-      // the FormData with a fresh boundary and sets Content-Type itself.
+      // The runtime auto-encodes the FormData with a fresh boundary and sets
+      // Content-Type itself.
       const rawModelId = rawModelIdOf(model);
       body.append('model', rawModelId);
-      const response = await customFetchImagesEdits(config, { method: 'POST', body, signal }, { extraHeaders: opts.headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency });
+      const response = await customFetchImagesEdits(config, { method: 'POST', body, signal }, { extraHeaders: opts.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall });
       return { response, modelKey: rawModelId };
     },
   };

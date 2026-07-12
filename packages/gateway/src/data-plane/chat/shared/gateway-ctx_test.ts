@@ -1,12 +1,12 @@
 import { Hono } from 'hono';
 import { describe, test } from 'vitest';
 
-import { createGatewayCtxFromHono } from './gateway-ctx.ts';
+import { createGatewayCtxFromHono, type AttemptState, stampUpstreamCallStart } from './gateway-ctx.ts';
 import type { RequestBody } from './request-body.ts';
 import type { AuthVars } from '../../../middleware/auth.ts';
 import type { ApiKey, User } from '../../../repo/types.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import { assertEquals, assertExists } from '@floway-dev/test-utils';
+import { assert, assertEquals, assertExists } from '@floway-dev/test-utils';
 
 const EMPTY_REQUEST_BODY: RequestBody = { bytes: new Uint8Array(), streamError: null };
 const NOOP_SCHEDULER: BackgroundScheduler = () => {};
@@ -189,20 +189,77 @@ describe('createGatewayCtxFromHono', () => {
     assertEquals(collected.both, ['up-b']);
     assertEquals(collected.keyOnly, ['up-x']);
   });
+});
 
-  test('stamps requestStartedAt from performance.now() at construction', async () => {
-    const app = makeApp();
-    let ctx: ReturnType<typeof createGatewayCtxFromHono> | undefined;
+describe('stampUpstreamCallStart', () => {
+  const freshAttempt = (): AttemptState => ({
+    upstreamCallStartedAt: null,
+    firstOutputTokenAt: null,
+    telemetry: undefined,
+  });
+
+  test('stamps upstreamCallStartedAt synchronously before the dispatch runs', async () => {
+    const attempt = freshAttempt();
+    let stampedAtDispatchEntry: number | null = null;
+    const dispatch = () => {
+      // Sampled inside the dispatch: the factory must have stamped the slot
+      // before handing control off, so this read must see a real number.
+      stampedAtDispatchEntry = attempt.upstreamCallStartedAt;
+      return Promise.resolve('done');
+    };
     const before = performance.now();
-    app.get('/test', c => {
-      ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: EMPTY_REQUEST_BODY, backgroundScheduler: NOOP_SCHEDULER });
-      return c.text('ok');
-    });
-    await app.request('/test');
+    await stampUpstreamCallStart(attempt)(dispatch);
     const after = performance.now();
-    assertExists(ctx);
-    if (!(ctx.requestStartedAt >= before && ctx.requestStartedAt <= after)) {
-      throw new Error(`requestStartedAt ${ctx.requestStartedAt} not in [${before}, ${after}]`);
-    }
+
+    assertExists(stampedAtDispatchEntry);
+    assert(stampedAtDispatchEntry >= before && stampedAtDispatchEntry <= after,
+      `stamp ${stampedAtDispatchEntry} outside [${before}, ${after}]`);
+  });
+
+  test('resolves to the dispatched value', async () => {
+    const attempt = freshAttempt();
+    const result = await stampUpstreamCallStart(attempt)(() => Promise.resolve({ payload: 42 }));
+    assertEquals(result, { payload: 42 });
+  });
+
+  test('propagates a rejection from the dispatch verbatim', async () => {
+    const attempt = freshAttempt();
+    const err = new Error('boom');
+    let caught: unknown;
+    await stampUpstreamCallStart(attempt)(() => Promise.reject(err)).catch(e => { caught = e; });
+    assertEquals(caught, err);
+    // Even a rejected dispatch reflects a real upstream-call start.
+    assertExists(attempt.upstreamCallStartedAt);
+  });
+
+  test('stamps exactly once per invocation of the returned factory', async () => {
+    const attempt = freshAttempt();
+    const factory = stampUpstreamCallStart(attempt);
+    let midDispatchReading: number | null = null;
+    await factory(() => {
+      midDispatchReading = attempt.upstreamCallStartedAt;
+      return Promise.resolve();
+    });
+    // The slot is stamped once at factory entry; the dispatch body must
+    // observe the same value, and the post-resolve value must match — no
+    // hidden re-stamp on completion.
+    assertEquals(attempt.upstreamCallStartedAt, midDispatchReading);
+  });
+
+  test('re-stamps on each invocation of the returned factory', async () => {
+    const attempt = freshAttempt();
+    const factory = stampUpstreamCallStart(attempt);
+
+    await factory(() => Promise.resolve());
+    const first = attempt.upstreamCallStartedAt;
+    assertExists(first);
+
+    // Force a monotonic gap so the second stamp is provably distinct.
+    await new Promise(resolve => setTimeout(resolve, 1));
+
+    await factory(() => Promise.resolve());
+    const second = attempt.upstreamCallStartedAt;
+    assertExists(second);
+    assert(second > first, `expected second stamp ${second} to exceed first ${first}`);
   });
 });

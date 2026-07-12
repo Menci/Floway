@@ -1,9 +1,10 @@
 import type { ExecutionContext } from 'hono';
-import { test } from 'vitest';
+import { test, vi } from 'vitest';
 
 import { hashResponsesItemContent, isStoredResponseId } from './items/format.ts';
+import { responsesServe } from './serve.ts';
 import { app } from '../../../app.ts';
-import { copilotModels, setupAppTest, sseResponsesResponse } from '../../../test-helpers.ts';
+import { copilotModels, flushAsyncWork, setupAppTest, sseResponsesResponse } from '../../../test-helpers.ts';
 import { FakeTime } from '../../../test-time.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS } from '../shared/stream/sse.ts';
 import { assert, assertEquals, assertExists, assertStringIncludes, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
@@ -752,4 +753,79 @@ test('Responses WebSocket aborts the in-flight Responses request when the client
       await upstreamAborted;
     }),
   );
+});
+
+// The four chat HTTP transports render a mid-attempt throw (interceptor
+// bug, translation error, provider-layer JS exception that bypassed
+// tryCatchChatServeFailure) through an
+// `internalErrorResult(..., ctx.attempt.telemetry)` envelope,
+// which internally reaches `recordFailedRequest` and lands an error row
+// attributed to the throwing candidate. The WS transport's outer catch
+// must do the same: alongside its sendError / dump.failed / dump.finalize,
+// it calls `recordFailedRequest(ctx, ctx.attempt.telemetry)` so
+// the failure shows up in performance_summary.
+test('Responses WebSocket outer catch records a failed perf sample attributed to the throwing candidate', async () => {
+  const { apiKey, repo } = await setupAppTest();
+
+  // Mirror what responsesServe.generate would have stamped before failing
+  // — telemetry set for the throwing candidate — then throw.
+  const generateSpy = vi.spyOn(responsesServe, 'generate').mockImplementation(async ({ ctx }) => {
+    ctx.attempt.telemetry = {
+      keyId: apiKey.id,
+      model: 'gpt-direct-responses',
+      upstream: 'up_throwing',
+      operation: 'chat',
+      runtimeLocation: 'TEST',
+    };
+    throw new Error('simulated mid-attempt provider throw');
+  });
+
+  try {
+    await withMockedFetch(
+      async request => {
+        const url = new URL(request.url);
+        if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+        if (url.pathname === '/copilot_internal/v2/token') {
+          return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+        }
+        if (url.pathname === '/models') {
+          return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'] }]));
+        }
+        throw new Error(`Unhandled fetch ${request.url}`);
+      },
+      async () => await withWorkerWebSocketRuntime(async () => {
+        const client = await connectResponsesWebSocket(apiKey.key);
+        const received = waitForMessages(client, messages => messages.length === 1);
+        client.send(JSON.stringify({
+          type: 'response.create',
+          event_id: 'evt_throw',
+          response: { model: 'gpt-direct-responses', input: 'hello' },
+        }));
+
+        const [errorMessage] = await received;
+        assertExists(errorMessage);
+        assertEquals(errorMessage.type, 'error');
+        assertEquals(errorMessage.status_code, 500);
+        assertEquals(errorMessage.event_id, 'evt_throw');
+      }),
+    );
+
+    await flushAsyncWork();
+
+    // Filter to the throwing upstream: earlier WS tests in the same file
+    // schedule background recordFailedRequest calls through the session
+    // scheduler, and the shared `getRepo()` global resolves them against
+    // whichever repo `setupAppTest` last installed — so cross-test rows can
+    // land here. Only the row from the mocked generate is load-bearing for
+    // this fix.
+    const perfRows = (await repo.performance.listAll()).filter(row => row.upstream === 'up_throwing');
+    assertEquals(perfRows.length, 1);
+    assertEquals(perfRows[0]?.upstream, 'up_throwing');
+    assertEquals(perfRows[0]?.model, 'gpt-direct-responses');
+    assertEquals(perfRows[0]?.operation, 'chat');
+    assertEquals(perfRows[0]?.errorsNoOutput, 1);
+    assertEquals(perfRows[0]?.requests, 1);
+  } finally {
+    generateSpy.mockRestore();
+  }
 });

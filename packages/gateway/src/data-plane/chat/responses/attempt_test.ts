@@ -3,10 +3,11 @@ import { test, vi } from 'vitest';
 import { responsesAttempt } from './attempt.ts';
 import { createStoredResponsesItemId, isStoredResponseId } from './items/format.ts';
 import * as outputModule from './items/output.ts';
-import { createResponsesHttpStore, createNonResponsesSourceStore } from './items/store.ts';
+import { createResponsesHttpStore } from './items/store.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import type { StoredResponsesItem } from '../../../repo/types.ts';
+import { mockChatGatewayCtx } from '../../../test-helpers/gateway-ctx.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
@@ -17,18 +18,8 @@ import type { CanonicalResponsesPayload } from '@floway-dev/translate/via-respon
 
 const API_KEY_ID = 'key_attempt_test';
 
-const makeGatewayCtx = (store?: ChatGatewayCtx['store']): ChatGatewayCtx => ({
-  apiKeyId: API_KEY_ID,
-  upstreamIds: null,
-  wantsStream: true,
-  runtimeLocation: 'TEST',
-  currentColo: 'TEST',
-  dump: null,
-  responseHeaders: new Headers(),
-  backgroundScheduler: () => {},
-  requestStartedAt: 0,
-  store: store ?? createNonResponsesSourceStore(API_KEY_ID),
-});
+const makeGatewayCtx = (store?: ChatGatewayCtx['store']) =>
+  mockChatGatewayCtx({ apiKeyId: API_KEY_ID, wantsStream: true, ...(store ? { store } : {}) });
 
 const makePayload = (overrides: Partial<CanonicalResponsesPayload> = {}): CanonicalResponsesPayload => ({
   model: 'test-model',

@@ -28,7 +28,7 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
       transport(
         azure.config,
         { method: 'POST', body: JSON.stringify({ ...body, stream: true, model: upstreamModelId }), signal },
-        { extraHeaders: headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency },
+        { extraHeaders: headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
       ),
       parser,
       upstreamModelId,
@@ -38,7 +38,7 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
 
   const callNonStreaming = async (transport: AzureTypedFetch, model: ProviderModel, body: Record<string, unknown>, signal: AbortSignal | undefined, headers: Headers, opts: UpstreamCallOptions) => {
     const upstreamModelId = upstreamModelIdOf(model);
-    const response = await transport(azure.config, { method: 'POST', body: JSON.stringify({ ...body, model: upstreamModelId }), signal }, { extraHeaders: headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency });
+    const response = await transport(azure.config, { method: 'POST', body: JSON.stringify({ ...body, model: upstreamModelId }), signal }, { extraHeaders: headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall });
     return { response, modelKey: upstreamModelId };
   };
 
@@ -78,7 +78,7 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
         const response = await azureFetchResponsesCompact(
           azure.config,
           { method: 'POST', body: JSON.stringify({ ...toCompactPayloadShape(body), model: upstreamModelId }), signal },
-          { extraHeaders: opts.headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency },
+          { extraHeaders: opts.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
         );
         return response.ok
           ? { action: 'compact', ok: true, result: (await response.json()) as ResponsesResult, modelKey: upstreamModelId }
@@ -99,7 +99,7 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
       // Content-Type itself.
       const upstreamModelId = upstreamModelIdOf(model);
       body.append('model', upstreamModelId);
-      const response = await azureFetchImagesEdits(azure.config, { method: 'POST', body, signal }, { extraHeaders: opts.headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency });
+      const response = await azureFetchImagesEdits(azure.config, { method: 'POST', body, signal }, { extraHeaders: opts.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall });
       return { response, modelKey: upstreamModelId };
     },
   };

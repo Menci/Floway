@@ -49,6 +49,16 @@ initResponsesWebSocketUpgradeResolver((c, events) =>
 const { db } = bootstrapNodePlatform();
 const port = Number(getEnvOptional('PORT', '8788'));
 
+// Passwordless admin login is a dev-only shortcut (empty ADMIN_KEY on a
+// local instance grants seed-admin access). Refuse to boot the Node
+// target under NODE_ENV=production without ADMIN_KEY so misconfiguration
+// surfaces at start, not at first login. The Cloudflare side gates the
+// same combination per-request via isProductionRequest.
+if (process.env.NODE_ENV === 'production' && !process.env.ADMIN_KEY) {
+  console.error('FATAL: NODE_ENV=production requires ADMIN_KEY. Passwordless admin login is only allowed on dev instances.');
+  process.exit(1);
+}
+
 const SCHEDULED_INTERVAL_MS = 60 * 60 * 1000;
 
 await applyMigrations(db);

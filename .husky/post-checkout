@@ -1,9 +1,9 @@
 #!/bin/sh
-# Keep the main worktree pinned to `main`. Linked worktrees under
-# <repo_root>/.worktrees/ are free to be on any branch, tag, or revision —
-# the agent rules forbid in-flight work on main itself, so any checkout that
-# moves the main worktree off `main` is reverted immediately and reported as
-# an error.
+# Keep the main worktree pinned to `main`. Linked worktrees — wherever they
+# live on disk — are free to be on any branch, tag, or revision; the agent
+# rules forbid in-flight work on main itself, so any checkout that moves
+# the main worktree off `main` is reverted immediately and reported as an
+# error.
 
 prev_head="$1"
 new_head="$2"
@@ -16,18 +16,16 @@ branch_flag="$3"
 # Nothing actually moved (e.g. `git checkout` of the current branch).
 [ "$prev_head" = "$new_head" ] && exit 0
 
-toplevel=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+# A linked worktree's per-worktree git dir sits under the main repo's
+# .git/worktrees/<name>/, so --git-dir and --git-common-dir differ. In the
+# main worktree they point at the same .git directory.
+git_dir=$(git rev-parse --absolute-git-dir 2>/dev/null) || exit 0
 common_dir=$(git rev-parse --git-common-dir 2>/dev/null) || exit 0
 case "$common_dir" in
   /*) ;;
   *) common_dir=$(cd "$common_dir" 2>/dev/null && pwd) || exit 0 ;;
 esac
-main_root=$(dirname "$common_dir")
-
-# A linked worktree — anything goes.
-case "$toplevel" in
-  "$main_root"/.worktrees/*) exit 0 ;;
-esac
+[ "$git_dir" = "$common_dir" ] || exit 0
 
 # In the main worktree. `main` is the only acceptable HEAD. Husky runs us
 # under `sh -e`, so detached-HEAD failures from `git symbolic-ref` must be

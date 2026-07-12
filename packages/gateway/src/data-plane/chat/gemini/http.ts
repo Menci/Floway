@@ -53,7 +53,10 @@ const parseGeminiBodyBytes = <T>(requestBody: RequestBody, project: (body: unkno
 // carrying an upstream HTTP body relays that body through the `api-error`
 // path with `source: 'upstream'`; everything else collapses to an
 // `internal-error` result rendered as the Gemini internal-error envelope
-// (status, code, message, stack, cause, target_api).
+// (status, code, message, stack, cause, target_api). The throwing-
+// candidate telemetry stamped in serve.ts survives onto the error row via
+// `ctx.attempt.telemetry` so a mid-attempt throw still lands in
+// performance_summary against the throwing upstream.
 const respondWithGeminiError = async (
   c: AuthedContext,
   error: unknown,
@@ -61,7 +64,7 @@ const respondWithGeminiError = async (
   wantsStream: boolean,
 ): Promise<Response> => {
   if (error instanceof TranslatorInputError) {
-    const { response } = await respondGemini(c, translatorInputErrorResult(error), wantsStream, ctx);
+    const { response } = await respondGemini(c, translatorInputErrorResult(error, ctx.attempt.telemetry), wantsStream, ctx);
     return (ctx.dump?.finalize(response) ?? response);
   }
   if (error instanceof ProviderModelsUnavailableError && error.httpResponse) {
@@ -76,7 +79,7 @@ const respondWithGeminiError = async (
     const { response } = await respondGemini(c, apiErrorResult, wantsStream, ctx);
     return finalizeGatewayResponse(ctx, response);
   }
-  const internalResult = internalErrorResult(500, toInternalDebugError(error));
+  const internalResult = internalErrorResult(500, toInternalDebugError(error), ctx.attempt.telemetry);
   const { response } = await respondGemini(c, internalResult, wantsStream, ctx);
   return finalizeGatewayResponse(ctx, response);
 };

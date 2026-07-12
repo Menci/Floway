@@ -2,8 +2,7 @@ import { beforeEach, test, vi } from 'vitest';
 
 import { initRepo } from '../../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../../repo/memory.ts';
-import type { ChatGatewayCtx } from '../../../shared/gateway-ctx.ts';
-import { createNonResponsesSourceStore } from '../../items/store.ts';
+import { mockChatGatewayCtx } from '../../../../../test-helpers/gateway-ctx.ts';
 import type { ResponsesInvocation } from '../types.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -33,6 +32,10 @@ interface BackendStub {
 // `next*` queues and read back the recorded calls.
 const stub = vi.hoisted((): BackendStub => ({ generationsCalls: [], editsForms: [], nextGenerations: [], nextEdits: [], nextResolutionOverride: null }));
 
+// Assigned per test in beforeEach and captured so the perf-attribution test
+// can read `repo.performance.listAll()` after the shim completes.
+let repo: InMemoryRepo;
+
 const defaultCandidates = vi.hoisted(() => () => [{
   provider: {
     upstream: 'u',
@@ -44,17 +47,17 @@ const defaultCandidates = vi.hoisted(() => () => [{
     supportsResponsesItemReference: false,
     instance: {
       getPricingForModelKey: () => null,
-      callImagesGenerations: async (_model: unknown, body: Record<string, unknown>, _signal: unknown, opts: { recordUpstreamLatency: <T>(p: Promise<T>) => Promise<T> }) => {
+      callImagesGenerations: async (_model: unknown, body: Record<string, unknown>) => {
         stub.generationsCalls.push(body);
         const response = stub.nextGenerations.shift();
         if (response === undefined) throw new Error('test did not enqueue a generations response');
-        return { response: await opts.recordUpstreamLatency(Promise.resolve(response)), modelKey: 'gpt-image-2' };
+        return { response, modelKey: 'gpt-image-2' };
       },
-      callImagesEdits: async (_model: unknown, form: FormData, _signal: unknown, opts: { recordUpstreamLatency: <T>(p: Promise<T>) => Promise<T> }) => {
+      callImagesEdits: async (_model: unknown, form: FormData) => {
         stub.editsForms.push(form);
         const response = stub.nextEdits.shift();
         if (response === undefined) throw new Error('test did not enqueue an edits response');
-        return { response: await opts.recordUpstreamLatency(Promise.resolve(response)), modelKey: 'gpt-image-2' };
+        return { response, modelKey: 'gpt-image-2' };
       },
     },
   },
@@ -149,18 +152,7 @@ const makeCtx = (input: unknown[], action: 'generate' | 'edit' | 'auto' = 'auto'
   headers: new Headers(),
   action: 'generate',
 });
-const gatewayCtx = (): ChatGatewayCtx => ({
-  apiKeyId: 'test-key',
-  upstreamIds: null,
-  wantsStream: true,
-  runtimeLocation: 'TEST',
-  currentColo: 'TEST',
-  dump: null,
-  responseHeaders: new Headers(),
-  backgroundScheduler: () => {},
-  requestStartedAt: 0,
-  store: createNonResponsesSourceStore('test-key'),
-});
+const gatewayCtx = () => mockChatGatewayCtx({ wantsStream: true });
 
 const drain = async (result: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>): Promise<ResponsesStreamEvent[]> => {
   if (result.type !== 'events') throw new Error(`expected events, got ${result.type}`);
@@ -170,7 +162,7 @@ const drain = async (result: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>)
 };
 
 beforeEach(async () => {
-  const repo = new InMemoryRepo();
+  repo = new InMemoryRepo();
   // resolveImageCandidate still calls createPerRequestFetcher to satisfy the
   // production code path. Seed the in-memory repo with the mocked candidate's
   // upstream id so the fetcher mapper resolves it instead of throwing
@@ -399,4 +391,34 @@ test('resolveImageCandidate renders model_not_supported when image-kind candidat
   assertEquals(item.status, 'failed');
   assertEquals(item.error.code, 'model_not_supported');
   assert(item.error.message.includes('/images/generations endpoint'), `unexpected message: ${item.error.message}`);
+});
+
+test('an image sub-call records its own perf row attributed to the image backend, leaving the outer attempt untouched', async () => {
+  stub.nextGenerations = [jsonResponse('R0VO')];
+  // Real scheduler: capture the promises the shim fires so the test can
+  // await them before querying the repo (the default no-op scheduler in
+  // `gatewayCtx()` would drop the recordSample write).
+  const pending: Promise<unknown>[] = [];
+  const ctx = mockChatGatewayCtx({
+    wantsStream: true,
+    backgroundScheduler: p => { pending.push(p); },
+  });
+  const result = await shim(makeCtx([{ type: 'message', role: 'user', content: 'draw a cat' }]), ctx, scriptedRun([
+    callTurn(0, 'call_1', 'a cat'),
+    messageTurn('here it is'),
+  ]));
+  await drain(result);
+  await Promise.all(pending);
+
+  const perfRows = await repo.performance.listAll();
+  const imageRows = perfRows.filter(r => r.operation === 'image_generation');
+  assertEquals(imageRows.length, 1);
+  assertEquals(imageRows[0].upstream, 'u');
+  assertEquals(imageRows[0].keyId, 'key_test');
+  assertEquals(imageRows[0].model, 'gpt-image-2');
+  // The image shim runs on a local AttemptState distinct from the outer
+  // Responses turn's — no image-call stamps may leak onto ctx.attempt.
+  assertEquals(ctx.attempt.upstreamCallStartedAt, null);
+  assertEquals(ctx.attempt.firstOutputTokenAt, null);
+  assertEquals(ctx.attempt.telemetry, undefined);
 });

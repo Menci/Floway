@@ -1,9 +1,11 @@
 import type { Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
 
+import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
+import { settle } from '../../shared/telemetry/settle.ts';
 import { billableServiceTier, tokenUsage } from '../../shared/telemetry/usage.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
-import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse, recordPerformance, recordUsage } from '../shared/respond.ts';
+import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse } from '../shared/respond.ts';
 import { type StreamCompletion, writeSSEFrames } from '../shared/stream/sse.ts';
 import { type ProtocolFrame, sseFrame } from '@floway-dev/protocols/common';
 import { messagesProtocolFrameToSSEFrame, MESSAGES_MISSING_TERMINAL_MESSAGE, collectMessagesProtocolEventsToResult } from '@floway-dev/protocols/messages';
@@ -25,13 +27,13 @@ export const respondMessages = async (
   ctx: GatewayCtx,
 ): Promise<{ success: boolean; response: Response }> => {
   if (result.type === 'api-error') {
-    recordPerformance(ctx, result.performance, true);
+    recordFailedRequest(ctx, result.performance);
     ctx.dump?.error(result.source, result.upstream);
     return { success: false, response: apiErrorToResponse(result) };
   }
 
   if (result.type === 'internal-error') {
-    recordPerformance(ctx, result.performance, true);
+    recordFailedRequest(ctx, result.performance);
     ctx.dump?.failed(result.error.message);
     return { success: false, response: internalMessagesErrorResponse(result.status, result.error) };
   }
@@ -53,11 +55,10 @@ export const respondMessages = async (
       const metadata = await eventResultMetadata(result);
       const usage = tokenUsageFromMessagesUsage(response.usage);
       ctx.dump?.success(metadata.modelIdentity, usage);
-      await recordUsage(ctx, metadata.modelIdentity, usage);
-      recordPerformance(ctx, metadata.performance, state.failed);
+      settle(ctx, metadata.performance, metadata.modelIdentity, usage, state.failed);
       return { success: true, response: Response.json(response, { headers: mergeForwardedUpstreamHeaders(undefined, result.headers) }) };
     } catch (error) {
-      recordPerformance(ctx, result.performance, true);
+      recordFailedRequest(ctx, result.performance);
       ctx.dump?.failed(error);
       return { success: false, response: internalMessagesErrorResponse(502, toInternalDebugError(error)) };
     }
@@ -79,13 +80,7 @@ export const respondMessages = async (
       } else {
         ctx.dump?.success(metadata.modelIdentity, state.usage);
       }
-      try {
-        await recordUsage(ctx, metadata.modelIdentity, state.usage);
-      } catch (error) {
-        console.error('Failed to record Messages usage:', error);
-      } finally {
-        recordPerformance(ctx, metadata.performance, failed);
-      }
+      settle(ctx, metadata.performance, metadata.modelIdentity, state.usage, failed);
     }
   });
 
