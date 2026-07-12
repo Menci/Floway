@@ -17,7 +17,7 @@ vi.mock('@floway-dev/ui', () => ({
 const { default: CliSnippet } = await import('./CliSnippet.vue');
 
 describe('CliSnippet Codex config', () => {
-  it('keeps the Floway provider identity while enabling Codex remote web.run', () => {
+  it('keeps the Floway provider identity and namespaced base URL', () => {
     const wrapper = mount(CliSnippet, {
       props: {
         apiKey: 'sk-test',
@@ -30,8 +30,9 @@ describe('CliSnippet Codex config', () => {
     expect(toml).toContain('[model_providers.floway]');
     expect(toml).toContain('name = "Floway"');
     expect(toml).toContain('base_url = "http://localhost:3000/azure-api.codex"');
-    expect(toml).toContain('http_headers = { "x-openai-actor-authorization" = "floway-web-search" }');
-    expect(toml).toContain('[features]\napps = false\nimage_generation = false');
+    expect(toml).toContain('[features]\napps = false');
+    expect(toml).not.toContain('http_headers');
+    expect(toml).not.toContain('image_generation');
     expect(toml).not.toContain('name = "OpenAI"');
   });
 });

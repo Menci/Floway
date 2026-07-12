@@ -125,18 +125,9 @@ const codexSnippet = computed(() => [
   `base_url = "${codexBaseUrl.value}"`,
   'wire_api = "responses"',
   'supports_websockets = true',
-  // Codex only contributes its remote web.run tool to OpenAI providers or
-  // custom providers carrying this header. A static marker is sufficient;
-  // Floway strips it before any provider call, so no credential is encoded in
-  // the generated config and no OpenAI-only provider behavior is enabled.
-  'http_headers = { "x-openai-actor-authorization" = "floway-web-search" }',
   '',
   '[features]',
   'apps = false',
-  // The actor-auth marker also makes Codex consider its remote image tool.
-  // Floway does not serve the provider-relative `images/generations` path,
-  // so keep that extension out of the generated configuration.
-  'image_generation = false',
 ].join('\n'));
 
 // Unquoted heredoc so `$(date -u +...)` runs in the user's shell to stamp
