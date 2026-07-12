@@ -30,7 +30,7 @@
 //
 // Refresh procedure: .agents/skills/fetching-models-pricing/.
 
-import { basePricing, modelPricing, pricingCell, type ModelPricing } from '@floway-dev/protocols/common';
+import { basePricing, modelPricing, pricingEntry, type ModelPricing } from '@floway-dev/protocols/common';
 
 type PricingRule = readonly [key: string | RegExp, pricing: ModelPricing];
 
@@ -96,13 +96,13 @@ const OLLAMA_MODEL_PRICING: readonly PricingRule[] = [
   // older trio (m2 / m2.1 / m2.5) and $0.06/M for the newer m2.7 / m3 — the
   // M3 ≤512k row is currently flagged "Permanent 50% off" on MiniMax's page
   // and would otherwise be $0.60/$0.12/$2.40, the same as M3's >512k tier
-  // (recorded by the explicit >512k threshold cell below).
+  // (recorded by the explicit >512k threshold entry below).
   // https://platform.minimax.io/docs/guides/pricing-paygo
   [/^minimax-m2(\.[15])?$/, basePricing({ input: 0.3, input_cache_read: 0.03, output: 1.2 })],
   ['minimax-m2.7', basePricing({ input: 0.3, input_cache_read: 0.06, output: 1.2 })],
   ['minimax-m3', modelPricing(
-    pricingCell({ input: 0.3, input_cache_read: 0.06, output: 1.2 }),
-    pricingCell({ input: 0.6, input_cache_read: 0.12, output: 2.4 }, { inputTokens: { operator: 'gt', value: 512000 } }),
+    pricingEntry({ input: 0.3, input_cache_read: 0.06, output: 1.2 }),
+    pricingEntry({ input: 0.6, input_cache_read: 0.12, output: 2.4 }, { inputTokens: { operator: 'gt', value: 512000 } }),
   )],
 
   // Mistral La Plateforme — Mistral Large 3 is the MoE flagship (41B

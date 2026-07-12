@@ -25,7 +25,7 @@ export const billableServiceTier = (tier: string | null | undefined): string | n
 
 // Drop zero / undefined dimensions so a usage map only carries the dimensions
 // actually billed. `tier` (a non-numeric service-tier marker) survives the
-// filter so service-tier selector cells resolve at recording time.
+// filter so service-tier selector entries resolve at recording time.
 export const tokenUsage = (counts: TokenUsage): TokenUsage => {
   const out: TokenUsage = {};
   for (const dimension of BILLING_DIMENSIONS) {

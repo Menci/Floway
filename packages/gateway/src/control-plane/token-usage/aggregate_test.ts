@@ -110,7 +110,7 @@ test('aggregateUsageForDisplay reads unit prices from the already-folded cost th
   assertAlmostEquals(standardOut[0].cost, 30, 1e-9);
 });
 
-test('aggregateUsageForDisplay charges the whole request at the selected cell, not a marginal overage', () => {
+test('aggregateUsageForDisplay charges the whole request at the selected pricing entry, not a marginal overage', () => {
   const out = aggregateUsageForDisplay([
     baseRecord({ cost: { input: 10, output: 45 }, pricingSelector: { inputTokens: { operator: 'gt', value: 272000 } }, tokens: { input: 300_000, output: 100_000 } }),
   ]);

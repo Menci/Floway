@@ -131,7 +131,7 @@ describe('codexRawToProviderModel', () => {
   test('attaches OpenAI-API-rate cost for known slugs and treats codex-auto-review as gpt-5.4', () => {
     const flagship = codexRawToProviderModel({ id: 'gpt-5.4', display_name: 'GPT-5.4', context_window: 272000 }, noFlags);
     expect(flagship.cost).toEqual({
-      cells: [
+      entries: [
         { rates: { input: 2.5, input_cache_read: 0.25, output: 15 } },
         { selector: { serviceTier: 'flex' }, rates: { input: 1.25, input_cache_read: 0.13, output: 7.5 } },
         { selector: { serviceTier: 'priority' }, rates: { input: 5, input_cache_read: 0.5, output: 30 } },
@@ -144,7 +144,7 @@ describe('codexRawToProviderModel', () => {
 
   // End-to-end resolution check: serviceTier selectors must match the wire
   // values billableServiceTier persists, not Codex's Rust enum names.
-  test('service-tier cells resolve through the wire-value strings', () => {
+  test('service-tier entries resolve through the wire-value strings', () => {
     const flagship = codexRawToProviderModel({ id: 'gpt-5.4', display_name: 'GPT-5.4', context_window: 272000 }, noFlags);
     if (!flagship.cost) throw new Error('expected cost to be defined');
 

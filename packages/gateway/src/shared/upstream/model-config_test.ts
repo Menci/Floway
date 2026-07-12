@@ -12,7 +12,7 @@ test('modelsField parses a full model entry', () => {
         endpoints: { chatCompletions: {}, responses: {} },
         display_name: 'GPT Prod',
         limits: { max_context_window_tokens: 128000, max_output_tokens: 4096 },
-        cost: { cells: [{ rates: { input: 2.5, output: 15, input_cache_read: 0.25, input_cache_write: 3.75 } }] },
+        cost: { entries: [{ rates: { input: 2.5, output: 15, input_cache_read: 0.25, input_cache_write: 3.75 } }] },
         flagOverrides: { 'vendor-deepseek': false },
       },
     ],
@@ -27,7 +27,7 @@ test('modelsField parses a full model entry', () => {
       endpoints: { chatCompletions: {}, responses: {} },
       display_name: 'GPT Prod',
       limits: { max_context_window_tokens: 128000, max_output_tokens: 4096 },
-      cost: { cells: [{ rates: { input: 2.5, output: 15, input_cache_read: 0.25, input_cache_write: 3.75 } }] },
+      cost: { entries: [{ rates: { input: 2.5, output: 15, input_cache_read: 0.25, input_cache_write: 3.75 } }] },
       flagOverrides: { 'vendor-deepseek': false },
     },
   ]);
@@ -110,21 +110,21 @@ test('modelsField accepts a valid kind and rejects an unknown one', () => {
 
 test('modelsField accepts cost with only a subset of dimensions set', () => {
   const models = modelsField(
-    [{ upstreamModelId: 'gpt-prod', endpoints: { chatCompletions: {} }, cost: { cells: [{ rates: { input: 2.5 } }] } }],
+    [{ upstreamModelId: 'gpt-prod', endpoints: { chatCompletions: {} }, cost: { entries: [{ rates: { input: 2.5 } }] } }],
     'azure',
   );
-  assertEquals(models[0].cost, { cells: [{ rates: { input: 2.5 } }] });
+  assertEquals(models[0].cost, { entries: [{ rates: { input: 2.5 } }] });
 });
 
 test('modelsField rejects cost with a negative input', () => {
   assertThrows(
     () =>
       modelsField(
-        [{ upstreamModelId: 'gpt-prod', endpoints: { chatCompletions: {} }, cost: { cells: [{ rates: { input: -1, output: 1 } }] } }],
+        [{ upstreamModelId: 'gpt-prod', endpoints: { chatCompletions: {} }, cost: { entries: [{ rates: { input: -1, output: 1 } }] } }],
         'azure',
       ),
     Error,
-    'model pricing cell 0.rates.input must be a finite non-negative number',
+    'model pricing entry 0.rates.input must be a finite non-negative number',
   );
 });
 

@@ -74,35 +74,35 @@ interface PricingThresholdDraft {
   value?: number;
 }
 
-interface PricingCellDraft {
+interface PricingEntryDraft {
   id: number;
   selector: Record<string, string | PricingThresholdDraft | undefined>;
   rates: Partial<Record<BillingDimension, number>>;
 }
 
-let pricingCellDraftIdSeq = 0;
+let pricingEntryDraftIdSeq = 0;
 
-const pricingCellDraftsFor = (cost: ModelPricing | undefined): PricingCellDraft[] =>
-  (cost?.cells ?? []).map(cell => ({
-    id: ++pricingCellDraftIdSeq,
-    selector: { ...(cell.selector ?? {}) },
-    rates: { ...cell.rates },
+const pricingEntryDraftsFor = (cost: ModelPricing | undefined): PricingEntryDraft[] =>
+  (cost?.entries ?? []).map(entry => ({
+    id: ++pricingEntryDraftIdSeq,
+    selector: { ...(entry.selector ?? {}) },
+    rates: { ...entry.rates },
   }));
 
-const pricingCellDrafts = ref<PricingCellDraft[]>(pricingCellDraftsFor(config.value?.cost));
-const selectedPricingCellId = ref<number | null>(pricingCellDrafts.value[0]?.id ?? null);
+const pricingEntryDrafts = ref<PricingEntryDraft[]>(pricingEntryDraftsFor(config.value?.cost));
+const selectedPricingEntryId = ref<number | null>(pricingEntryDrafts.value[0]?.id ?? null);
 const lastFlagOverrides = ref<FlagOverrides>({});
 
 watch(() => [props.row?.uiId, props.row?.kind] as const, () => {
-  pricingCellDrafts.value = pricingCellDraftsFor(config.value?.cost);
-  selectedPricingCellId.value = pricingCellDrafts.value[0]?.id ?? null;
+  pricingEntryDrafts.value = pricingEntryDraftsFor(config.value?.cost);
+  selectedPricingEntryId.value = pricingEntryDrafts.value[0]?.id ?? null;
   lastFlagOverrides.value = {};
 });
 
-const selectedPricingCellIndex = computed(() => pricingCellDrafts.value.findIndex(draft => draft.id === selectedPricingCellId.value));
-const selectedPricingCell = computed(() => pricingCellDrafts.value[selectedPricingCellIndex.value] ?? null);
+const selectedPricingEntryIndex = computed(() => pricingEntryDrafts.value.findIndex(draft => draft.id === selectedPricingEntryId.value));
+const selectedPricingEntry = computed(() => pricingEntryDrafts.value[selectedPricingEntryIndex.value] ?? null);
 
-const compactSelector = (draft: PricingCellDraft): PricingSelector => {
+const compactSelector = (draft: PricingEntryDraft): PricingSelector => {
   const selector: Record<string, PricingCoordinateValue> = {};
   for (const [axisId, coordinate] of Object.entries(draft.selector)) {
     if (typeof coordinate === 'string') selector[axisId] = coordinate;
@@ -111,7 +111,7 @@ const compactSelector = (draft: PricingCellDraft): PricingSelector => {
   return selector;
 };
 
-const coordinateKey = (draft: PricingCellDraft): string | null => {
+const coordinateKey = (draft: PricingEntryDraft): string | null => {
   try {
     return canonicalPricingSelectorKey(compactSelector(draft));
   } catch {
@@ -122,7 +122,7 @@ const coordinateKey = (draft: PricingCellDraft): string | null => {
 const duplicatePricingCoordinates = computed(() => {
   const seen = new Set<string>();
   const duplicates = new Set<string>();
-  for (const draft of pricingCellDrafts.value) {
+  for (const draft of pricingEntryDrafts.value) {
     const key = coordinateKey(draft);
     if (key === null) continue;
     if (seen.has(key)) duplicates.add(key);
@@ -131,10 +131,10 @@ const duplicatePricingCoordinates = computed(() => {
   return duplicates;
 });
 
-const hasRates = (draft: PricingCellDraft): boolean => BILLING_DIMENSIONS.some(dimension => draft.rates[dimension] !== undefined);
-const rateDimensionKey = (draft: PricingCellDraft): string =>
+const hasRates = (draft: PricingEntryDraft): boolean => BILLING_DIMENSIONS.some(dimension => draft.rates[dimension] !== undefined);
+const rateDimensionKey = (draft: PricingEntryDraft): string =>
   BILLING_DIMENSIONS.filter(dimension => draft.rates[dimension] !== undefined).join('\0');
-const hasValidSelector = (draft: PricingCellDraft): boolean => {
+const hasValidSelector = (draft: PricingEntryDraft): boolean => {
   try {
     canonicalPricingSelectorKey(compactSelector(draft));
     return true;
@@ -144,14 +144,14 @@ const hasValidSelector = (draft: PricingCellDraft): boolean => {
 };
 
 const pricingValidationError = computed<string | null>(() => {
-  const invalidDraft = pricingCellDrafts.value.find(draft => !hasRates(draft) || !hasValidSelector(draft));
+  const invalidDraft = pricingEntryDrafts.value.find(draft => !hasRates(draft) || !hasValidSelector(draft));
   if (invalidDraft) return !hasRates(invalidDraft) ? 'Set at least one rate.' : 'Selector values are invalid.';
   if (duplicatePricingCoordinates.value.size > 0) return 'Duplicate selector coordinate.';
-  if (pricingCellDrafts.value.length === 0) return null;
-  if (new Set(pricingCellDrafts.value.map(rateDimensionKey)).size > 1) return 'All pricing entries must set the same rate fields.';
+  if (pricingEntryDrafts.value.length === 0) return null;
+  if (new Set(pricingEntryDrafts.value.map(rateDimensionKey)).size > 1) return 'All pricing entries must set the same rate fields.';
   try {
     validateModelPricing({
-      cells: pricingCellDrafts.value.map(draft => ({ selector: compactSelector(draft), rates: draft.rates })),
+      entries: pricingEntryDrafts.value.map(draft => ({ selector: compactSelector(draft), rates: draft.rates })),
     } as ProtocolModelPricing);
     return null;
   } catch (error) {
@@ -161,34 +161,34 @@ const pricingValidationError = computed<string | null>(() => {
 
 const isPricingValid = computed(() => pricingValidationError.value === null);
 
-const writePricingCells = (drafts: readonly PricingCellDraft[]) => {
+const writePricingEntries = (drafts: readonly PricingEntryDraft[]) => {
   if (!config.value) return;
-  pricingCellDrafts.value = drafts.map(draft => ({ ...draft, selector: { ...draft.selector }, rates: { ...draft.rates } }));
+  pricingEntryDrafts.value = drafts.map(draft => ({ ...draft, selector: { ...draft.selector }, rates: { ...draft.rates } }));
   if (drafts.length === 0) {
     patch({ cost: undefined });
     return;
   }
-  const cells = drafts.map(draft => {
+  const entries = drafts.map(draft => {
     const selector = compactSelector(draft);
     return { ...(Object.keys(selector).length > 0 ? { selector } : {}), rates: { ...draft.rates } };
   });
-  patch({ cost: { cells } });
+  patch({ cost: { entries } });
 };
 
 const updateEqualityCoordinate = (index: number, axisId: string, raw: string | number | null | undefined) => {
   const value = String(raw ?? '').trim();
-  writePricingCells(pricingCellDrafts.value.map((draft, i) => i === index
+  writePricingEntries(pricingEntryDrafts.value.map((draft, i) => i === index
     ? { ...draft, selector: { ...draft.selector, [axisId]: value || undefined } }
     : draft));
 };
 
-const thresholdCoordinate = (draft: PricingCellDraft, axisId: string): PricingThresholdDraft | undefined => {
+const thresholdCoordinate = (draft: PricingEntryDraft, axisId: string): PricingThresholdDraft | undefined => {
   const value = draft.selector[axisId];
   return value && typeof value === 'object' ? value : undefined;
 };
 
 const updateThresholdCoordinate = (index: number, axisId: string, patch: Partial<PricingThresholdDraft>) => {
-  writePricingCells(pricingCellDrafts.value.map((draft, i) => {
+  writePricingEntries(pricingEntryDrafts.value.map((draft, i) => {
     if (i !== index) return draft;
     const current = thresholdCoordinate(draft, axisId);
     const operator = patch.operator ?? current?.operator ?? 'gt';
@@ -198,7 +198,7 @@ const updateThresholdCoordinate = (index: number, axisId: string, patch: Partial
 };
 
 const toggleThresholdOperator = (index: number, axisId: string) => {
-  const draft = pricingCellDrafts.value[index];
+  const draft = pricingEntryDrafts.value[index];
   if (!draft) return;
   const operator = thresholdCoordinate(draft, axisId)?.operator === 'gte' ? 'gt' : 'gte';
   updateThresholdCoordinate(index, axisId, { operator });
@@ -206,17 +206,17 @@ const toggleThresholdOperator = (index: number, axisId: string) => {
 
 const updatePricingRate = (index: number, dimension: BillingDimension, raw: string | number | null | undefined) => {
   const value = parseOptionalNumber(raw);
-  const next = pricingCellDrafts.value.map((draft, i) => {
+  const next = pricingEntryDrafts.value.map((draft, i) => {
     if (i !== index) return draft;
     const rates = { ...draft.rates };
     if (value === undefined) delete rates[dimension];
     else rates[dimension] = value;
     return { ...draft, rates };
   });
-  writePricingCells(next);
+  writePricingEntries(next);
 };
 
-const pricingCellCoordinateLabel = (draft: PricingCellDraft): string => {
+const pricingEntryCoordinateLabel = (draft: PricingEntryDraft): string => {
   const labels = PRICING_AXES.flatMap(axis => {
     const coordinate = draft.selector[axis.id];
     if (axis.kind === 'equality') return typeof coordinate === 'string' && coordinate !== '' ? [coordinate] : [];
@@ -227,25 +227,25 @@ const pricingCellCoordinateLabel = (draft: PricingCellDraft): string => {
   return labels.length > 0 ? labels.join(' · ') : 'Base';
 };
 
-const addPricingCell = () => {
-  const draft: PricingCellDraft = { id: ++pricingCellDraftIdSeq, selector: {}, rates: {} };
-  selectedPricingCellId.value = draft.id;
-  writePricingCells([...pricingCellDrafts.value, draft]);
+const addPricingEntry = () => {
+  const draft: PricingEntryDraft = { id: ++pricingEntryDraftIdSeq, selector: {}, rates: {} };
+  selectedPricingEntryId.value = draft.id;
+  writePricingEntries([...pricingEntryDrafts.value, draft]);
 };
-const removePricingCell = (index: number) => {
-  const removed = pricingCellDrafts.value[index];
-  const next = pricingCellDrafts.value.filter((_, i) => i !== index);
-  if (removed?.id === selectedPricingCellId.value) {
-    selectedPricingCellId.value = next[index]?.id ?? next[index - 1]?.id ?? null;
+const removePricingEntry = (index: number) => {
+  const removed = pricingEntryDrafts.value[index];
+  const next = pricingEntryDrafts.value.filter((_, i) => i !== index);
+  if (removed?.id === selectedPricingEntryId.value) {
+    selectedPricingEntryId.value = next[index]?.id ?? next[index - 1]?.id ?? null;
   }
-  writePricingCells(next);
+  writePricingEntries(next);
 };
-const movePricingCell = (index: number, offset: -1 | 1) => {
+const movePricingEntry = (index: number, offset: -1 | 1) => {
   const target = index + offset;
-  if (target < 0 || target >= pricingCellDrafts.value.length) return;
-  const next = [...pricingCellDrafts.value];
+  if (target < 0 || target >= pricingEntryDrafts.value.length) return;
+  const next = [...pricingEntryDrafts.value];
   [next[index], next[target]] = [next[target]!, next[index]!];
-  writePricingCells(next);
+  writePricingEntries(next);
 };
 
 const toggleFlagOverridesEnabled = () => {
@@ -417,99 +417,99 @@ watch(isValid, valid => { emit('validity-change', valid); }, { immediate: true }
 
         <section>
           <div class="mb-3">
-            <h3 class="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Pricing Cells</h3>
+            <h3 class="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Pricing Entries</h3>
           </div>
           <p v-if="pricingValidationError" class="mb-3 text-[11px] text-accent-rose">{{ pricingValidationError }}</p>
           <div class="overflow-hidden rounded-lg border border-white/[0.06]">
             <div class="grid md:grid-cols-[13rem_minmax(0,1fr)]">
-              <aside class="flex min-w-0 flex-col border-b border-white/[0.06] bg-surface-800/25 md:border-b-0 md:border-r" aria-label="Pricing cell navigation">
-                <ul v-if="pricingCellDrafts.length > 0" class="divide-y divide-white/[0.04]" aria-label="Pricing cells">
+              <aside class="flex min-w-0 flex-col border-b border-white/[0.06] bg-surface-800/25 md:border-b-0 md:border-r" aria-label="Pricing entry navigation">
+                <ul v-if="pricingEntryDrafts.length > 0" class="divide-y divide-white/[0.04]" aria-label="Pricing entries">
                   <li
-                    v-for="(draft, index) in pricingCellDrafts"
+                    v-for="(draft, index) in pricingEntryDrafts"
                     :key="draft.id"
                     class="flex min-w-0 items-center transition-colors"
-                    :class="selectedPricingCellId === draft.id ? 'bg-accent-cyan/[0.06]' : 'hover:bg-white/[0.025]'"
+                    :class="selectedPricingEntryId === draft.id ? 'bg-accent-cyan/[0.06]' : 'hover:bg-white/[0.025]'"
                   >
                     <button
                       type="button"
                       class="min-w-0 flex-1 px-3 py-2.5 text-left outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent-cyan/60"
-                      :aria-label="`Edit pricing cell ${index + 1}: ${pricingCellCoordinateLabel(draft)}`"
-                      :aria-current="selectedPricingCellId === draft.id ? 'true' : undefined"
-                      :title="pricingCellCoordinateLabel(draft)"
-                      @click="selectedPricingCellId = draft.id"
+                      :aria-label="`Edit pricing entry ${index + 1}: ${pricingEntryCoordinateLabel(draft)}`"
+                      :aria-current="selectedPricingEntryId === draft.id ? 'true' : undefined"
+                      :title="pricingEntryCoordinateLabel(draft)"
+                      @click="selectedPricingEntryId = draft.id"
                     >
-                      <span class="block truncate font-mono text-[11px]" :class="selectedPricingCellId === draft.id ? 'text-accent-cyan' : 'text-gray-300'">{{ pricingCellCoordinateLabel(draft) }}</span>
+                      <span class="block truncate font-mono text-[11px]" :class="selectedPricingEntryId === draft.id ? 'text-accent-cyan' : 'text-gray-300'">{{ pricingEntryCoordinateLabel(draft) }}</span>
                     </button>
                     <div v-if="editable" class="mr-1 flex shrink-0 items-center gap-0.5">
                       <button
                         type="button"
                         class="grid size-6 place-items-center rounded text-gray-600 transition-colors hover:bg-white/[0.04] hover:text-accent-cyan disabled:pointer-events-none disabled:opacity-30"
                         :disabled="index === 0"
-                        :aria-label="`Move pricing cell ${index + 1} up`"
-                        @click="movePricingCell(index, -1)"
+                        :aria-label="`Move pricing entry ${index + 1} up`"
+                        @click="movePricingEntry(index, -1)"
                       >
                         <i class="i-lucide-arrow-up size-3" />
                       </button>
                       <button
                         type="button"
                         class="grid size-6 place-items-center rounded text-gray-600 transition-colors hover:bg-white/[0.04] hover:text-accent-cyan disabled:pointer-events-none disabled:opacity-30"
-                        :disabled="index === pricingCellDrafts.length - 1"
-                        :aria-label="`Move pricing cell ${index + 1} down`"
-                        @click="movePricingCell(index, 1)"
+                        :disabled="index === pricingEntryDrafts.length - 1"
+                        :aria-label="`Move pricing entry ${index + 1} down`"
+                        @click="movePricingEntry(index, 1)"
                       >
                         <i class="i-lucide-arrow-down size-3" />
                       </button>
                       <button
                         type="button"
                         class="grid size-6 place-items-center rounded text-gray-600 transition-colors hover:bg-white/[0.04] hover:text-accent-rose"
-                        :aria-label="`Remove pricing cell ${index + 1}`"
-                        @click="removePricingCell(index)"
+                        :aria-label="`Remove pricing entry ${index + 1}`"
+                        @click="removePricingEntry(index)"
                       >
                         <i class="i-lucide-x size-3" />
                       </button>
                     </div>
                   </li>
                 </ul>
-                <p v-else class="px-3 py-4 text-[11px] text-gray-600">No pricing cells configured.</p>
+                <p v-else class="px-3 py-4 text-[11px] text-gray-600">No pricing entries configured.</p>
                 <div v-if="editable" class="mt-auto border-t border-white/[0.06] p-2">
-                  <Button variant="secondary" size="sm" class="w-full" @click="addPricingCell">
+                  <Button variant="secondary" size="sm" class="w-full" @click="addPricingEntry">
                     <i class="i-lucide-plus size-3.5" />
-                    Add Cell
+                    Add Entry
                   </Button>
                 </div>
               </aside>
 
-              <div v-if="selectedPricingCell && selectedPricingCellIndex >= 0" class="min-w-0 p-4">
+              <div v-if="selectedPricingEntry && selectedPricingEntryIndex >= 0" class="min-w-0 p-4">
                 <div class="mb-4 grid gap-3 sm:grid-cols-2">
                   <label v-for="axis in PRICING_AXES" :key="axis.id" class="block space-y-1.5">
                     <span class="block text-xs font-medium text-gray-500">{{ axis.label }}</span>
                     <Input
                       v-if="axis.kind === 'equality'"
-                      :model-value="typeof selectedPricingCell.selector[axis.id] === 'string' ? selectedPricingCell.selector[axis.id] as string : ''"
+                      :model-value="typeof selectedPricingEntry.selector[axis.id] === 'string' ? selectedPricingEntry.selector[axis.id] as string : ''"
                       :readonly="!editable"
-                      :invalid="!hasValidSelector(selectedPricingCell) || coordinateKey(selectedPricingCell) !== null && duplicatePricingCoordinates.has(coordinateKey(selectedPricingCell)!)"
+                      :invalid="!hasValidSelector(selectedPricingEntry) || coordinateKey(selectedPricingEntry) !== null && duplicatePricingCoordinates.has(coordinateKey(selectedPricingEntry)!)"
                       placeholder="default"
                       class="font-mono"
-                      @update:model-value="v => updateEqualityCoordinate(selectedPricingCellIndex, axis.id, v)"
+                      @update:model-value="v => updateEqualityCoordinate(selectedPricingEntryIndex, axis.id, v)"
                     />
                     <div v-else class="grid grid-cols-[2.75rem_minmax(0,1fr)] gap-2">
                       <button
                         type="button"
                         class="inline-flex h-9 items-center justify-center rounded-[10px] border border-white/[0.08] bg-surface-700 font-mono text-xs text-gray-300 transition-colors hover:border-white/[0.15] hover:bg-white/[0.08] disabled:cursor-default disabled:opacity-60 disabled:hover:border-white/[0.08] disabled:hover:bg-surface-700"
                         :disabled="!editable"
-                        :aria-label="`${axis.label} operator ${thresholdCoordinate(selectedPricingCell, axis.id)?.operator === 'gte' ? '>=' : '>'}; click to toggle`"
-                        @click="toggleThresholdOperator(selectedPricingCellIndex, axis.id)"
-                      >{{ thresholdCoordinate(selectedPricingCell, axis.id)?.operator === 'gte' ? '>=' : '>' }}</button>
+                        :aria-label="`${axis.label} operator ${thresholdCoordinate(selectedPricingEntry, axis.id)?.operator === 'gte' ? '>=' : '>'}; click to toggle`"
+                        @click="toggleThresholdOperator(selectedPricingEntryIndex, axis.id)"
+                      >{{ thresholdCoordinate(selectedPricingEntry, axis.id)?.operator === 'gte' ? '>=' : '>' }}</button>
                       <Input
                         type="number"
                         min="1"
                         step="1"
-                        :model-value="thresholdCoordinate(selectedPricingCell, axis.id)?.value"
+                        :model-value="thresholdCoordinate(selectedPricingEntry, axis.id)?.value"
                         :readonly="!editable"
-                        :invalid="!hasValidSelector(selectedPricingCell) || coordinateKey(selectedPricingCell) !== null && duplicatePricingCoordinates.has(coordinateKey(selectedPricingCell)!)"
+                        :invalid="!hasValidSelector(selectedPricingEntry) || coordinateKey(selectedPricingEntry) !== null && duplicatePricingCoordinates.has(coordinateKey(selectedPricingEntry)!)"
                         placeholder="base"
                         class="font-mono"
-                        @update:model-value="v => updateThresholdCoordinate(selectedPricingCellIndex, axis.id, { value: parseOptionalNumber(v) })"
+                        @update:model-value="v => updateThresholdCoordinate(selectedPricingEntryIndex, axis.id, { value: parseOptionalNumber(v) })"
                       />
                     </div>
                   </label>
@@ -520,17 +520,17 @@ watch(isValid, valid => { emit('validity-change', valid); }, { immediate: true }
                     <Input
                       type="number"
                       min="0"
-                      :model-value="selectedPricingCell.rates[dim]"
+                      :model-value="selectedPricingEntry.rates[dim]"
                       :readonly="!editable"
                       placeholder="unpriced"
                       class="font-mono"
-                      @update:model-value="v => updatePricingRate(selectedPricingCellIndex, dim, v)"
+                      @update:model-value="v => updatePricingRate(selectedPricingEntryIndex, dim, v)"
                     />
                   </label>
                 </div>
               </div>
               <div v-else class="flex min-h-52 items-center justify-center p-6 text-center text-[11px] text-gray-600">
-                Add a pricing cell to edit its selector and rates.
+                Add a pricing entry to edit its selector and rates.
               </div>
             </div>
           </div>

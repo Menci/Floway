@@ -243,13 +243,13 @@ test('assertAzureUpstreamRecord round-trips model.cost with full pricing fields'
         {
           upstreamModelId: 'gpt-prod',
           endpoints: { chatCompletions: {} },
-          cost: { cells: [{ rates: { input: 2.5, input_cache_read: 0.25, input_cache_write: 3.75, input_image: 8, output: 15, output_image: 30 } }] },
+          cost: { entries: [{ rates: { input: 2.5, input_cache_read: 0.25, input_cache_write: 3.75, input_image: 8, output: 15, output_image: 30 } }] },
         },
       ],
     },
   });
   assertEquals(parsed.config.models[0].cost, {
-    cells: [{ rates: { input: 2.5, input_cache_read: 0.25, input_cache_write: 3.75, input_image: 8, output: 15, output_image: 30 } }],
+    entries: [{ rates: { input: 2.5, input_cache_read: 0.25, input_cache_write: 3.75, input_image: 8, output: 15, output_image: 30 } }],
   });
 });
 
@@ -277,7 +277,7 @@ test('assertAzureUpstreamRecord accepts model.cost with only input set', () => {
         {
           upstreamModelId: 'gpt-prod',
           endpoints: { chatCompletions: {} },
-          cost: { cells: [{ rates: { input: 2.5 } }] },
+          cost: { entries: [{ rates: { input: 2.5 } }] },
         },
       ],
     },
@@ -295,13 +295,13 @@ test('assertAzureUpstreamRecord rejects model.cost with negative input', () => {
             {
               upstreamModelId: 'gpt-prod',
               endpoints: { chatCompletions: {} },
-              cost: { cells: [{ rates: { input: -1, output: 1 } }] },
+              cost: { entries: [{ rates: { input: -1, output: 1 } }] },
             },
           ],
         },
       }),
     Error,
-    'model pricing cell 0.rates.input must be a finite non-negative number',
+    'model pricing entry 0.rates.input must be a finite non-negative number',
   );
 });
 
@@ -316,12 +316,12 @@ test('assertAzureUpstreamRecord rejects model.cost with non-number input_cache_r
             {
               upstreamModelId: 'gpt-prod',
               endpoints: { chatCompletions: {} },
-              cost: { cells: [{ rates: { input: 2, output: 8, input_cache_read: 'cheap' } }] },
+              cost: { entries: [{ rates: { input: 2, output: 8, input_cache_read: 'cheap' } }] },
             },
           ],
         },
       }),
     Error,
-    'model pricing cell 0.rates.input_cache_read must be a finite non-negative number',
+    'model pricing entry 0.rates.input_cache_read must be a finite non-negative number',
   );
 });

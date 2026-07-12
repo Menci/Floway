@@ -11,7 +11,7 @@ describe('pricingForClaudeCodeModelKey', () => {
     expect(priceRequest(pricingForClaudeCodeModelKey('claude-fable-5'), { inputTokens: 0 }).rates).toEqual({ input: 10, input_cache_read: 1, input_cache_write: 12.5, input_cache_write_1h: 20, output: 50 });
   });
 
-  test('returns explicit fast cells for supported Opus models', () => {
+  test('returns explicit fast entries for supported Opus models', () => {
     expect(priceRequest(pricingForClaudeCodeModelKey('claude-opus-4-8'), { serviceTier: 'fast', inputTokens: 0 }).rates).toEqual({ input: 10, input_cache_read: 1, input_cache_write: 12.5, input_cache_write_1h: 20, output: 50 });
     expect(priceRequest(pricingForClaudeCodeModelKey('claude-opus-4-7'), { serviceTier: 'fast', inputTokens: 0 }).rates).toEqual({ input: 30, input_cache_read: 3, input_cache_write: 37.5, input_cache_write_1h: 60, output: 150 });
     expect(priceRequest(pricingForClaudeCodeModelKey('claude-opus-4-6'), { serviceTier: 'fast', inputTokens: 0 }).rates).toEqual({ input: 30, input_cache_read: 3, input_cache_write: 37.5, input_cache_write_1h: 60, output: 150 });

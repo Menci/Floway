@@ -28,8 +28,8 @@ export const BILLING_DIMENSIONS: readonly BillingDimension[] = ['input', 'input_
 export const INPUT_BILLING_DIMENSIONS: readonly BillingDimension[] = ['input', 'input_cache_read', 'input_cache_write', 'input_cache_write_1h', 'input_image'];
 
 // A PriceVector is the per-dimension USD-per-million-token rate set for one
-// billing cell, aligned with the sst/models.dev `Cost` schema
-// (https://github.com/sst/models.dev/blob/main/packages/core/src/schema.ts).
+// billing entry, aligned with the models.dev `Cost` schema.
+// https://github.com/anomalyco/models.dev/blob/cecf31aa5b174c482591613818c53663effce44a/packages/core/src/schema.ts#L94-L110
 // Bare `input`/`output` are the text rates and `_image` keys are the image
 // modality. Every key is optional; absence means that dimension is unpriced.
 export type PriceVector = Partial<Record<BillingDimension, number>>;
@@ -59,19 +59,19 @@ export type PricingRuntimeFacts = Readonly<{
 }>;
 
 // One explicit point in the selector Cartesian product. Rates never inherit
-// from another cell: every published coordinate carries its own PriceVector.
-export interface PricingCell {
+// from another entry: every published coordinate carries its own PriceVector.
+export interface PricingEntry {
   selector?: PricingSelector;
   rates: PriceVector;
 }
 
-// Per-model pricing as symmetric flat cells. `{ rates }` is the base cell;
+// Per-model pricing as symmetric flat entries. `{ rates }` is the base entry;
 // non-default coordinates use the same shape. Threshold bands are implied by
 // selectors rather than maintained as a second catalog. Missing exact
 // coordinates are unpriced; Floway never chooses one selector over another or
-// derives rates across cells.
+// derives rates across entries.
 export interface ModelPricing {
-  cells: readonly PricingCell[];
+  entries: readonly PricingEntry[];
 }
 
 export interface PricedRequest {
@@ -79,7 +79,7 @@ export interface PricedRequest {
   rates: PriceVector | null;
 }
 
-// Validate one cell's rates before the catalog is compiled or imported.
+// Validate one entry's rates before the catalog is compiled or imported.
 export const validatePriceVector = (pricing: PriceVector, path = 'price vector'): void => {
   const dimensions = BILLING_DIMENSIONS.filter(dimension => pricing[dimension] !== undefined);
   if (dimensions.length === 0) throw new Error(`${path} must contain at least one rate`);
@@ -127,26 +127,26 @@ export const parsePricingSelectorKey = (key: string): PricingSelector => {
 };
 
 export const validateModelPricing = (pricing: ModelPricing): void => {
-  if (pricing.cells.length === 0) throw new Error('model pricing must declare at least one cell');
-  const selectors = pricing.cells.map((cell, index) => {
-    validatePriceVector(cell.rates, `model pricing cell ${index}.rates`);
-    return canonicalizePricingSelector(cell.selector);
+  if (pricing.entries.length === 0) throw new Error('model pricing must declare at least one entry');
+  const selectors = pricing.entries.map((entry, index) => {
+    validatePriceVector(entry.rates, `model pricing entry ${index}.rates`);
+    return canonicalizePricingSelector(entry.selector);
   });
   const dimensionsFor = (rates: PriceVector): readonly BillingDimension[] =>
     BILLING_DIMENSIONS.filter(dimension => rates[dimension] !== undefined);
-  const expectedDimensions = dimensionsFor(pricing.cells[0]!.rates);
-  for (let index = 1; index < pricing.cells.length; index++) {
-    const dimensions = dimensionsFor(pricing.cells[index]!.rates);
+  const expectedDimensions = dimensionsFor(pricing.entries[0]!.rates);
+  for (let index = 1; index < pricing.entries.length; index++) {
+    const dimensions = dimensionsFor(pricing.entries[index]!.rates);
     if (dimensions.length !== expectedDimensions.length || dimensions.some((dimension, i) => dimension !== expectedDimensions[i])) {
-      throw new Error(`model pricing cell ${index}.rates must define the same dimensions as cell 0 (${expectedDimensions.join(', ')})`);
+      throw new Error(`model pricing entry ${index}.rates must define the same dimensions as entry 0 (${expectedDimensions.join(', ')})`);
     }
   }
-  const cellKeys = new Set<string>();
+  const selectorKeys = new Set<string>();
   const thresholds = new Map<string, Map<number, PricingThresholdOperator>>();
   for (const selector of selectors) {
     const key = JSON.stringify(selector);
-    if (cellKeys.has(key)) throw new Error(`duplicate pricing cell selector: ${key}`);
-    cellKeys.add(key);
+    if (selectorKeys.has(key)) throw new Error(`duplicate pricing entry selector: ${key}`);
+    selectorKeys.add(key);
     for (const [axisId, coordinate] of Object.entries(selector)) {
       if (typeof coordinate === 'string') continue;
       const values = thresholds.get(axisId) ?? new Map<number, PricingThresholdOperator>();
@@ -160,14 +160,14 @@ export const validateModelPricing = (pricing: ModelPricing): void => {
     const hasEquality = Object.keys(selector).some(axisId => axisById.get(axisId)?.kind === 'equality');
     if (!hasEquality) continue;
     const thresholdOnly = Object.fromEntries(Object.entries(selector).filter(([axisId]) => axisById.get(axisId)?.kind === 'threshold'));
-    if (Object.keys(thresholdOnly).length > 0 && !cellKeys.has(JSON.stringify(thresholdOnly))) {
+    if (Object.keys(thresholdOnly).length > 0 && !selectorKeys.has(JSON.stringify(thresholdOnly))) {
       throw new Error(`pricing threshold selector ${JSON.stringify(thresholdOnly)} must be declared without equality coordinates`);
     }
   }
 };
 
 interface CompiledModelPricing {
-  cellByKey: ReadonlyMap<string, PriceVector>;
+  ratesBySelectorKey: ReadonlyMap<string, PriceVector>;
   inputBands: readonly PricingThresholdCoordinate[];
 }
 
@@ -179,30 +179,30 @@ export const compileModelPricing = (pricing: ModelPricing): CompiledModelPricing
   const existing = compiledPricing.get(pricing);
   if (existing) return existing;
   validateModelPricing(pricing);
-  const cellByKey = new Map<string, PriceVector>();
+  const ratesBySelectorKey = new Map<string, PriceVector>();
   const bands = new Map<number, PricingThresholdCoordinate>();
-  for (const cell of pricing.cells) {
-    const selector = canonicalizePricingSelector(cell.selector);
-    cellByKey.set(JSON.stringify(selector), cell.rates);
+  for (const entry of pricing.entries) {
+    const selector = canonicalizePricingSelector(entry.selector);
+    ratesBySelectorKey.set(JSON.stringify(selector), entry.rates);
     const input = selector.inputTokens;
     if (typeof input === 'object') bands.set(input.value, input);
   }
-  const compiled = { cellByKey, inputBands: [...bands.values()].toSorted((a, b) => b.value - a.value) };
+  const compiled = { ratesBySelectorKey, inputBands: [...bands.values()].toSorted((a, b) => b.value - a.value) };
   compiledPricing.set(pricing, compiled);
   return compiled;
 };
 
-export const pricingCell = (rates: PriceVector, selector?: PricingSelector): PricingCell => {
+export const pricingEntry = (rates: PriceVector, selector?: PricingSelector): PricingEntry => {
   validatePriceVector(rates);
   const canonicalSelector = canonicalizePricingSelector(selector);
   return { ...(Object.keys(canonicalSelector).length > 0 ? { selector: canonicalSelector } : {}), rates };
 };
-export const modelPricing = (...cells: PricingCell[]): ModelPricing => {
-  const pricing: ModelPricing = { cells };
+export const modelPricing = (...entries: PricingEntry[]): ModelPricing => {
+  const pricing: ModelPricing = { entries };
   compileModelPricing(pricing);
   return pricing;
 };
-export const basePricing = (rates: PriceVector): ModelPricing => modelPricing(pricingCell(rates));
+export const basePricing = (rates: PriceVector): ModelPricing => modelPricing(pricingEntry(rates));
 
 const thresholdMatches = (coordinate: PricingThresholdCoordinate, fact: number): boolean =>
   coordinate.operator === 'gt' ? fact > coordinate.value : fact >= coordinate.value;
@@ -214,7 +214,7 @@ export const priceRequest = (pricing: ModelPricing | null, facts: PricingRuntime
   const band = compiled?.inputBands.find(coordinate => thresholdMatches(coordinate, facts.inputTokens));
   if (band) selector.inputTokens = band;
   const canonicalSelector = canonicalizePricingSelector(selector);
-  return { selector: canonicalSelector, rates: compiled?.cellByKey.get(JSON.stringify(canonicalSelector)) ?? null };
+  return { selector: canonicalSelector, rates: compiled?.ratesBySelectorKey.get(JSON.stringify(canonicalSelector)) ?? null };
 };
 
 // High-level endpoint-family discriminator. A model belongs to exactly one

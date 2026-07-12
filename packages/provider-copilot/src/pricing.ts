@@ -17,7 +17,7 @@
 //
 // Refresh procedure: .agents/skills/fetching-models-pricing/.
 import { copilotPublicModelId } from './model-name.ts';
-import { basePricing, modelPricing, pricingCell, type ModelPricing } from '@floway-dev/protocols/common';
+import { basePricing, modelPricing, pricingEntry, type ModelPricing } from '@floway-dev/protocols/common';
 
 type PricingRule = readonly [key: string | RegExp, pricing: ModelPricing];
 
@@ -26,44 +26,44 @@ const COPILOT_MODEL_PRICING: readonly PricingRule[] = [
   // Anthropic public Fast Mode pricing is 6× base for Opus 4.6 / 4.7.
   // https://docs.claude.com/en/build-with-claude/fast-mode
   [/^claude-opus-4-[67]$/, modelPricing(
-    pricingCell({ input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 25 }),
-    pricingCell({ input: 30, input_cache_read: 3, input_cache_write: 37.5, output: 150 }, { serviceTier: 'fast' }),
+    pricingEntry({ input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 25 }),
+    pricingEntry({ input: 30, input_cache_read: 3, input_cache_write: 37.5, output: 150 }, { serviceTier: 'fast' }),
   )],
   ['claude-opus-4-8', modelPricing(
-    pricingCell({ input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 25 }),
-    pricingCell({ input: 10, input_cache_read: 1, input_cache_write: 12.5, output: 50 }, { serviceTier: 'fast' }),
+    pricingEntry({ input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 25 }),
+    pricingEntry({ input: 10, input_cache_read: 1, input_cache_write: 12.5, output: 50 }, { serviceTier: 'fast' }),
   )],
   ['claude-sonnet-5', basePricing({ input: 2, input_cache_read: 0.2, input_cache_write: 2.5, output: 10 })],
   [/^claude-sonnet-4(-[56])?$/, basePricing({ input: 3, input_cache_read: 0.3, input_cache_write: 3.75, output: 15 })],
   ['claude-haiku-4-5', basePricing({ input: 1, input_cache_read: 0.1, input_cache_write: 1.25, output: 5 })],
-  // GPT-5.6 standard short/long cells. Copilot exposes no priority/flex lane.
+  // GPT-5.6 standard short/long entries. Copilot exposes no priority/flex lane.
   // https://web.archive.org/web/20260709205359/https://platform.openai.com/docs/pricing
   // https://github.com/sst/models.dev/blob/6dfc39c81b6cd57a91c155aa7b4f68ed1b360da0/providers/openai/models/gpt-5.6-sol.toml
   // https://github.com/BerriAI/litellm/blob/6fa088224bc2022c7541ee44cf02c0bd6dd2942e/model_prices_and_context_window.json
   // Cross-check only:
   // https://github.com/caozhiyuan/copilot-api/blob/5a28eee7ced4fda51b6b224fb8723df5e6534708/src/lib/token-usage/pricing.ts#L98-L148
   ['gpt-5.6-sol', modelPricing(
-    pricingCell({ input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 30 }),
-    pricingCell({ input: 10, input_cache_read: 1, input_cache_write: 12.5, output: 45 }, { inputTokens: { operator: 'gt', value: 272000 } }),
+    pricingEntry({ input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 30 }),
+    pricingEntry({ input: 10, input_cache_read: 1, input_cache_write: 12.5, output: 45 }, { inputTokens: { operator: 'gt', value: 272000 } }),
   )],
   ['gpt-5.6-terra', modelPricing(
-    pricingCell({ input: 2.5, input_cache_read: 0.25, input_cache_write: 3.125, output: 15 }),
-    pricingCell({ input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 22.5 }, { inputTokens: { operator: 'gt', value: 272000 } }),
+    pricingEntry({ input: 2.5, input_cache_read: 0.25, input_cache_write: 3.125, output: 15 }),
+    pricingEntry({ input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 22.5 }, { inputTokens: { operator: 'gt', value: 272000 } }),
   )],
   ['gpt-5.6-luna', modelPricing(
-    pricingCell({ input: 1, input_cache_read: 0.1, input_cache_write: 1.25, output: 6 }),
-    pricingCell({ input: 2, input_cache_read: 0.2, input_cache_write: 2.5, output: 9 }, { inputTokens: { operator: 'gt', value: 272000 } }),
+    pricingEntry({ input: 1, input_cache_read: 0.1, input_cache_write: 1.25, output: 6 }),
+    pricingEntry({ input: 2, input_cache_read: 0.2, input_cache_write: 2.5, output: 9 }, { inputTokens: { operator: 'gt', value: 272000 } }),
   )],
   // Copilot's live catalog exposes a 1.05M context window for GPT-5.5/5.4;
   // OpenAI reprices the whole request above 272k input tokens.
   // https://web.archive.org/web/20260709205359/https://platform.openai.com/docs/pricing
   ['gpt-5.5', modelPricing(
-    pricingCell({ input: 5, input_cache_read: 0.5, output: 30 }),
-    pricingCell({ input: 10, input_cache_read: 1, output: 45 }, { inputTokens: { operator: 'gt', value: 272000 } }),
+    pricingEntry({ input: 5, input_cache_read: 0.5, output: 30 }),
+    pricingEntry({ input: 10, input_cache_read: 1, output: 45 }, { inputTokens: { operator: 'gt', value: 272000 } }),
   )],
   ['gpt-5.4', modelPricing(
-    pricingCell({ input: 2.5, input_cache_read: 0.25, output: 15 }),
-    pricingCell({ input: 5, input_cache_read: 0.5, output: 22.5 }, { inputTokens: { operator: 'gt', value: 272000 } }),
+    pricingEntry({ input: 2.5, input_cache_read: 0.25, output: 15 }),
+    pricingEntry({ input: 5, input_cache_read: 0.5, output: 22.5 }, { inputTokens: { operator: 'gt', value: 272000 } }),
   )],
   ['gpt-5.4-mini', basePricing({ input: 0.75, input_cache_read: 0.075, output: 4.5 })],
   ['gpt-5.4-nano', basePricing({ input: 0.2, input_cache_read: 0.02, output: 1.25 })],
@@ -86,8 +86,8 @@ const COPILOT_MODEL_PRICING: readonly PricingRule[] = [
   ['gemini-2.5-pro', basePricing({ input: 1.25, input_cache_read: 0.125, output: 10 })],
   ['gemini-3-flash-preview', basePricing({ input: 0.5, input_cache_read: 0.05, output: 3 })],
   ['gemini-3.1-pro-preview', modelPricing(
-    pricingCell({ input: 2, input_cache_read: 0.2, output: 12 }),
-    pricingCell({ input: 4, input_cache_read: 0.4, output: 18 }, { inputTokens: { operator: 'gt', value: 200000 } }),
+    pricingEntry({ input: 2, input_cache_read: 0.2, output: 12 }),
+    pricingEntry({ input: 4, input_cache_read: 0.4, output: 18 }, { inputTokens: { operator: 'gt', value: 200000 } }),
   )],
   ['gemini-3.5-flash', basePricing({ input: 1.5, input_cache_read: 0.15, output: 9 })],
   [/^grok-code-fast/, basePricing({ input: 0.2, output: 1.5 })],

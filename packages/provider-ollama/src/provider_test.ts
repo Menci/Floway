@@ -65,8 +65,8 @@ test('getProvidedModels surfaces chat models with all three OpenAI/Anthropic-com
     assertEquals(gptoss.limits.max_context_window_tokens, 131072);
     // OLLAMA_MODEL_PRICING covers gpt-oss:120b, so cost flows through into
     // the ProviderModel on the auto path.
-    assertEquals(gptoss.cost?.cells[0]?.rates.input, 0.15);
-    assertEquals(gptoss.cost?.cells[0]?.rates.output, 0.6);
+    assertEquals(gptoss.cost?.entries[0]?.rates.input, 0.15);
+    assertEquals(gptoss.cost?.entries[0]?.rates.output, 0.6);
   });
 });
 
@@ -114,14 +114,14 @@ test('getPricingForModelKey resolves manual cost first, then falls back to the O
         upstreamModelId: 'gpt-oss:120b',
         kind: 'chat',
         endpoints: { chatCompletions: {} },
-        cost: { cells: [{ rates: { input: 99, output: 99 } }] },
+        cost: { entries: [{ rates: { input: 99, output: 99 } }] },
       }],
     },
   }));
   // Manual cost wins for the pinned id.
-  assertEquals(instance.instance.getPricingForModelKey('gpt-oss:120b'), { cells: [{ rates: { input: 99, output: 99 } }] });
+  assertEquals(instance.instance.getPricingForModelKey('gpt-oss:120b'), { entries: [{ rates: { input: 99, output: 99 } }] });
   // Unpinned model falls back to the table.
-  assertEquals(instance.instance.getPricingForModelKey('deepseek-v4-flash')?.cells[0]?.rates.input, 0.14);
+  assertEquals(instance.instance.getPricingForModelKey('deepseek-v4-flash')?.entries[0]?.rates.input, 0.14);
   // Unknown model returns null rather than fabricating a guess.
   assertEquals(instance.instance.getPricingForModelKey('devstral-small-2:24b'), null);
 });

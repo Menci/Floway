@@ -7,7 +7,7 @@ import type { ChatCompletionsResult } from '@floway-dev/protocols/chat-completio
 // Moonshot flat, OpenRouter cache_write_tokens) onto a single (read, write)
 // pair, which we subtract from prompt_tokens to recover the disjoint bare
 // input. The top-level `service_tier` echoes the actual processing tier;
-// surface it via `billableServiceTier` so service-tier selector cells resolve
+// surface it via `billableServiceTier` so service-tier selector entries resolve
 // at recording time.
 // https://developers.openai.com/api/docs/guides/priority-processing
 export const tokenUsageFromChatCompletionsUsage = (u: NonNullable<ChatCompletionsResult['usage']>, serviceTier: string | null | undefined) => {

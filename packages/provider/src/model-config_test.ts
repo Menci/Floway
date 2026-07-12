@@ -3,17 +3,17 @@ import { describe, expect, test } from 'vitest';
 import { chatField, modelsField, pricingField } from './model-config.ts';
 import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
-test('pricingField parses explicit flat cells', () => {
+test('pricingField parses explicit flat entries', () => {
   assertEquals(pricingField(undefined, 'cost'), undefined);
   const value = {
-    cells: [
+    entries: [
       { rates: { input: 5, output: 25, bogus: 99 } },
       { selector: { inputTokens: { operator: 'gt', value: 272000 } }, rates: { input: 15, output: 75 } },
       { selector: { serviceTier: 'fast', inputTokens: { operator: 'gt', value: 272000 } }, rates: { input: 30, output: 150 } },
     ],
   };
   assertEquals(pricingField(value, 'cost'), {
-    cells: [
+    entries: [
       { rates: { input: 5, output: 25 } },
       { selector: { inputTokens: { operator: 'gt', value: 272000 } }, rates: { input: 15, output: 75 } },
       { selector: { serviceTier: 'fast', inputTokens: { operator: 'gt', value: 272000 } }, rates: { input: 30, output: 150 } },
@@ -21,13 +21,13 @@ test('pricingField parses explicit flat cells', () => {
   });
 });
 
-test('pricingField rejects malformed cells and duplicate coordinates', () => {
+test('pricingField rejects malformed entries and duplicate coordinates', () => {
   assertThrows(() => pricingField({}, 'cost'), Error, 'non-empty array');
-  assertThrows(() => pricingField({ cells: [{ rates: {} }] }, 'cost'), Error, 'at least one rate');
-  assertThrows(() => pricingField({ cells: [{ selector: { serviceTier: '' }, rates: { input: 1 } }] }, 'cost'), Error, 'non-empty string');
-  assertThrows(() => pricingField({ cells: [{ selector: { inputTokens: { operator: 'gt', value: 1.5 } }, rates: { input: 1 } }] }, 'cost'), Error, 'positive safe integer');
-  assertThrows(() => pricingField({ cells: [{ rates: { input: 1 } }, { selector: {}, rates: { input: 2 } }] }, 'cost'), Error, 'duplicate pricing cell selector');
-  assertThrows(() => pricingField({ cells: [{ rates: { input: -1 } }] }, 'cost'), Error, 'non-negative');
+  assertThrows(() => pricingField({ entries: [{ rates: {} }] }, 'cost'), Error, 'at least one rate');
+  assertThrows(() => pricingField({ entries: [{ selector: { serviceTier: '' }, rates: { input: 1 } }] }, 'cost'), Error, 'non-empty string');
+  assertThrows(() => pricingField({ entries: [{ selector: { inputTokens: { operator: 'gt', value: 1.5 } }, rates: { input: 1 } }] }, 'cost'), Error, 'positive safe integer');
+  assertThrows(() => pricingField({ entries: [{ rates: { input: 1 } }, { selector: {}, rates: { input: 2 } }] }, 'cost'), Error, 'duplicate pricing entry selector');
+  assertThrows(() => pricingField({ entries: [{ rates: { input: -1 } }] }, 'cost'), Error, 'non-negative');
 });
 
 describe('chatField', () => {

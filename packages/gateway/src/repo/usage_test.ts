@@ -48,7 +48,7 @@ test('0052 migrates blank and special-character service tiers to readable canoni
 });
 
 for (const backend of backends) {
-  test(`${backend.name} usage repo folds the selected input-length cell into per-dimension unit prices at write time`, async () => {
+  test(`${backend.name} usage repo folds the selected input-length pricing entry into per-dimension unit prices at write time`, async () => {
     const repo = await backend.make();
     await repo.usage.record(record({ pricingSelector: { inputTokens: { operator: 'gt', value: 272000 } } }));
     const [row] = await query(repo);
@@ -70,7 +70,7 @@ for (const backend of backends) {
     assertEquals(rows[1].cost, { input: 10, input_cache_read: 1, output: 45 });
   });
 
-  test(`${backend.name} usage repo sums additive writes within one grid cell`, async () => {
+  test(`${backend.name} usage repo sums additive writes within one pricing entry`, async () => {
     const repo = await backend.make();
     await repo.usage.record(record({ pricingSelector: { inputTokens: { operator: 'gt', value: 272000 } } }));
     await repo.usage.record(record({ pricingSelector: { inputTokens: { operator: 'gt', value: 272000 } } }));
@@ -84,7 +84,7 @@ for (const backend of backends) {
     const repo = await backend.make();
     await repo.usage.record(record({ cost: null, pricingSelector: { inputTokens: { operator: 'gt', value: 272000 }, serviceTier: 'priority' } }));
     const [row] = await query(repo);
-    // No priority-long cell exists, so no dimension resolves a unit price.
+    // No priority-long entry exists, so no dimension resolves a unit price.
     assertEquals(row.cost, null);
   });
 }

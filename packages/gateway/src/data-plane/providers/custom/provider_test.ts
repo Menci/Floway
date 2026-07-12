@@ -125,7 +125,7 @@ test('Custom provider projects display_name / created / limits / cost from a Flo
         display_name: 'Rich Model',
         created_at: '2026-04-01T00:00:00Z',
         limits: { max_output_tokens: 8192, max_context_window_tokens: 200000 },
-        cost: { cells: [{ rates: { input: 3, output: 15, input_cache_read: 0.3 } }] },
+        cost: { entries: [{ rates: { input: 3, output: 15, input_cache_read: 0.3 } }] },
       }],
     }),
     async () => {
@@ -135,13 +135,13 @@ test('Custom provider projects display_name / created / limits / cost from a Flo
       assertEquals(model.created, Math.floor(Date.parse('2026-04-01T00:00:00Z') / 1000));
       assertEquals(model.limits.max_output_tokens, 8192);
       assertEquals(model.limits.max_context_window_tokens, 200000);
-      assertEquals(model.cost?.cells[0]?.rates.input, 3);
-      assertEquals(model.cost?.cells[0]?.rates.output, 15);
-      assertEquals(model.cost?.cells[0]?.rates.input_cache_read, 0.3);
+      assertEquals(model.cost?.entries[0]?.rates.input, 3);
+      assertEquals(model.cost?.entries[0]?.rates.output, 15);
+      assertEquals(model.cost?.entries[0]?.rates.input_cache_read, 0.3);
 
       const pricing = instance.instance.getPricingForModelKey('m-rich');
-      assertEquals(pricing?.cells[0]?.rates.input, 3);
-      assertEquals(pricing?.cells[0]?.rates.output, 15);
+      assertEquals(pricing?.entries[0]?.rates.input, 3);
+      assertEquals(pricing?.entries[0]?.rates.output, 15);
 
       assertEquals(instance.instance.getPricingForModelKey('unknown'), null);
     },
@@ -269,7 +269,7 @@ test('Custom provider with modelsFetch disabled serves only manual models and ne
               endpoints: { chatCompletions: {} },
               display_name: 'Pinned Chat',
               limits: { max_output_tokens: 4096 },
-              cost: { cells: [{ rates: { input: 1, output: 2 } }] },
+              cost: { entries: [{ rates: { input: 1, output: 2 } }] },
             },
           ],
         },
@@ -282,11 +282,11 @@ test('Custom provider with modelsFetch disabled serves only manual models and ne
       assertEquals(models[0].endpoints, { chatCompletions: {} });
       assertEquals(models[0].display_name, 'Pinned Chat');
       assertEquals(models[0].limits.max_output_tokens, 4096);
-      assertEquals(models[0].cost?.cells[0]?.rates.input, 1);
+      assertEquals(models[0].cost?.entries[0]?.rates.input, 1);
 
       const pricing = provider.getPricingForModelKey('pinned-chat');
-      assertEquals(pricing?.cells[0]?.rates.input, 1);
-      assertEquals(pricing?.cells[0]?.rates.output, 2);
+      assertEquals(pricing?.entries[0]?.rates.input, 1);
+      assertEquals(pricing?.entries[0]?.rates.output, 2);
     },
   );
 });
@@ -301,7 +301,7 @@ test('Custom provider with a manual override sharing an upstream id wins over th
         return jsonResponse({
           object: 'list',
           data: [
-            { id: 'shared', cost: { cells: [{ rates: { input: 9, output: 9 } }] } },
+            { id: 'shared', cost: { entries: [{ rates: { input: 9, output: 9 } }] } },
             { id: 'auto-only' },
           ],
         });
@@ -322,7 +322,7 @@ test('Custom provider with a manual override sharing an upstream id wins over th
               upstreamModelId: 'shared',
               endpoints: { chatCompletions: {} },
               display_name: 'Manual Shared',
-              cost: { cells: [{ rates: { input: 1, output: 2 } }] },
+              cost: { entries: [{ rates: { input: 1, output: 2 } }] },
             },
           ],
         },
@@ -337,8 +337,8 @@ test('Custom provider with a manual override sharing an upstream id wins over th
 
       // Pricing resolves from the manual config first, not the cached upstream cost.
       const sharedPricing = provider.getPricingForModelKey('shared');
-      assertEquals(sharedPricing?.cells[0]?.rates.input, 1);
-      assertEquals(sharedPricing?.cells[0]?.rates.output, 2);
+      assertEquals(sharedPricing?.entries[0]?.rates.input, 1);
+      assertEquals(sharedPricing?.entries[0]?.rates.output, 2);
 
       // Auto models without upstream cost data resolve to null pricing.
       const autoOnly = provider.getPricingForModelKey('auto-only');

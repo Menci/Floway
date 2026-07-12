@@ -112,25 +112,25 @@ export const flagOverridesField = (value: unknown, label: string): FlagOverrides
 export const pricingField = (value: unknown, label: string): ModelPricing | undefined => {
   const record = optionalMetadataRecord(value, label);
   if (!record) return undefined;
-  if (!Array.isArray(record.cells) || record.cells.length === 0) throw new Error(`Malformed ${label}.cells: must be a non-empty array`);
+  if (!Array.isArray(record.entries) || record.entries.length === 0) throw new Error(`Malformed ${label}.entries: must be a non-empty array`);
 
-  const cells = record.cells.map((rawCell, index) => {
-    if (!isRecord(rawCell)) throw new Error(`Malformed ${label}.cells[${index}]: must be an object`);
-    const selectorRecord = rawCell.selector === undefined ? undefined : optionalMetadataRecord(rawCell.selector, `${label}.cells[${index}].selector`);
+  const entries = record.entries.map((rawEntry, index) => {
+    if (!isRecord(rawEntry)) throw new Error(`Malformed ${label}.entries[${index}]: must be an object`);
+    const selectorRecord = rawEntry.selector === undefined ? undefined : optionalMetadataRecord(rawEntry.selector, `${label}.entries[${index}].selector`);
     let selector: PricingSelector;
     try {
       selector = canonicalizePricingSelector(selectorRecord as PricingSelector | undefined);
     } catch (cause) {
-      throw new Error(`Malformed ${label}.cells[${index}].selector: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
+      throw new Error(`Malformed ${label}.entries[${index}].selector: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
     }
-    if (!isRecord(rawCell.rates)) throw new Error(`Malformed ${label}.cells[${index}].rates: must be an object`);
+    if (!isRecord(rawEntry.rates)) throw new Error(`Malformed ${label}.entries[${index}].rates: must be an object`);
     const rates: Partial<Record<BillingDimension, number>> = {};
     for (const dimension of BILLING_DIMENSIONS) {
-      if (rawCell.rates[dimension] !== undefined) rates[dimension] = rawCell.rates[dimension] as number;
+      if (rawEntry.rates[dimension] !== undefined) rates[dimension] = rawEntry.rates[dimension] as number;
     }
     return { ...(Object.keys(selector).length > 0 ? { selector } : {}), rates };
   });
-  const pricing = { cells };
+  const pricing = { entries };
   try {
     compileModelPricing(pricing);
   } catch (cause) {

@@ -334,7 +334,7 @@ test('createAzureProvider attaches cost field from model config', async () => {
             upstreamModelId: 'gpt-prod',
             publicModelId: 'gpt-public',
             endpoints: { chatCompletions: {} },
-            cost: { cells: [{ rates: { input: 2.5, output: 15, input_cache_read: 0.25 } }] },
+            cost: { entries: [{ rates: { input: 2.5, output: 15, input_cache_read: 0.25 } }] },
           },
           {
             upstreamModelId: 'gpt-small',
@@ -345,7 +345,7 @@ test('createAzureProvider attaches cost field from model config', async () => {
     }),
   );
   const models = await instance.instance.getProvidedModels(directFetcher);
-  assertEquals(models[0].cost, { cells: [{ rates: { input: 2.5, output: 15, input_cache_read: 0.25 } }] });
+  assertEquals(models[0].cost, { entries: [{ rates: { input: 2.5, output: 15, input_cache_read: 0.25 } }] });
   assertEquals(models[1].cost, undefined);
 });
 
@@ -359,7 +359,7 @@ test('createAzureProvider getPricingForModelKey resolves by upstream model id', 
           {
             upstreamModelId: 'gpt-prod',
             endpoints: { chatCompletions: {} },
-            cost: { cells: [{ rates: { input: 2.5, output: 15 } }] },
+            cost: { entries: [{ rates: { input: 2.5, output: 15 } }] },
           },
           {
             upstreamModelId: 'gpt-small',
@@ -369,7 +369,7 @@ test('createAzureProvider getPricingForModelKey resolves by upstream model id', 
       },
     }),
   );
-  assertEquals(instance.instance.getPricingForModelKey('gpt-prod'), { cells: [{ rates: { input: 2.5, output: 15 } }] });
+  assertEquals(instance.instance.getPricingForModelKey('gpt-prod'), { entries: [{ rates: { input: 2.5, output: 15 } }] });
   assertEquals(instance.instance.getPricingForModelKey('gpt-small'), null);
   assertEquals(instance.instance.getPricingForModelKey('unknown'), null);
 });

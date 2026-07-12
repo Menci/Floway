@@ -75,7 +75,7 @@ test('fetchCustomModels reads superset fields (display_name, limits, cost) from 
           owned_by: 'me',
           limits: { max_output_tokens: 4096, max_context_window_tokens: 200000 },
           kind: 'chat',
-          cost: { cells: [{ rates: { input: 1, output: 2, input_cache_read: 0.1, input_cache_write: 1.25 } }] },
+          cost: { entries: [{ rates: { input: 1, output: 2, input_cache_read: 0.1, input_cache_write: 1.25 } }] },
         },
       ],
     }),
@@ -89,10 +89,10 @@ test('fetchCustomModels reads superset fields (display_name, limits, cost) from 
       assertEquals(model.owned_by, 'me');
       assertEquals(model.limits?.max_output_tokens, 4096);
       assertEquals(model.limits?.max_context_window_tokens, 200000);
-      assertEquals(model.cost?.cells[0]?.rates.input, 1);
-      assertEquals(model.cost?.cells[0]?.rates.output, 2);
-      assertEquals(model.cost?.cells[0]?.rates.input_cache_read, 0.1);
-      assertEquals(model.cost?.cells[0]?.rates.input_cache_write, 1.25);
+      assertEquals(model.cost?.entries[0]?.rates.input, 1);
+      assertEquals(model.cost?.entries[0]?.rates.output, 2);
+      assertEquals(model.cost?.entries[0]?.rates.input_cache_read, 0.1);
+      assertEquals(model.cost?.entries[0]?.rates.input_cache_write, 1.25);
     },
   );
 });
@@ -100,10 +100,10 @@ test('fetchCustomModels reads superset fields (display_name, limits, cost) from 
 test('fetchCustomModels keeps a `cost` block with any subset of billing dimensions', async () => {
   const { config } = assertCustomUpstreamRecord(upstreamRecord());
   await withMockedFetch(
-    () => jsonResponse({ object: 'list', data: [{ id: 'm-1', cost: { cells: [{ rates: { input: 1 } }] } }] }),
+    () => jsonResponse({ object: 'list', data: [{ id: 'm-1', cost: { entries: [{ rates: { input: 1 } }] } }] }),
     async () => {
       const result = await fetchCustomModels(config, directFetcher);
-      assertEquals(result.data[0].cost, { cells: [{ rates: { input: 1 } }] });
+      assertEquals(result.data[0].cost, { entries: [{ rates: { input: 1 } }] });
     },
   );
 });
@@ -113,15 +113,15 @@ test('fetchCustomModels keeps models but omits one malformed cost block', async 
   await withMockedFetch(
     () => jsonResponse({
       object: 'list', data: [
-        { id: 'bad-cost', cost: { cells: [{ rates: { input: -1 }, selector: { unknown: 'x' } }] } },
-        { id: 'good-cost', cost: { cells: [{ rates: { input: 1 } }] } },
+        { id: 'bad-cost', cost: { entries: [{ rates: { input: -1 }, selector: { unknown: 'x' } }] } },
+        { id: 'good-cost', cost: { entries: [{ rates: { input: 1 } }] } },
       ],
     }),
     async () => {
       const result = await fetchCustomModels(config, directFetcher);
       assertEquals(result.data.map(model => model.id), ['bad-cost', 'good-cost']);
       assertEquals(result.data[0].cost, undefined);
-      assertEquals(result.data[1].cost, { cells: [{ rates: { input: 1 } }] });
+      assertEquals(result.data[1].cost, { entries: [{ rates: { input: 1 } }] });
     },
   );
 });

@@ -7,7 +7,7 @@ import type { InternalModel } from '@floway-dev/provider';
 const bundled = {
   models: [
     // Bundled entries seeded with a non-empty `service_tiers` so the
-    // "hard override" assertion below (registry cost.cells replaces
+    // "hard override" assertion below (registry cost.entries replaces
     // bundled) is an end-to-end proof rather than a `[] === []` no-op.
     { slug: 'gpt-5.5', display_name: 'GPT-5.5', context_window: 272000, priority: 1, visibility: 'list', extra: 'keep', service_tiers: [{ id: 'auto', name: 'auto', description: '' }] },
     { slug: 'gpt-5.4', display_name: 'GPT-5.4', context_window: 272000, priority: 2, visibility: 'list', service_tiers: [{ id: 'auto', name: 'auto', description: '' }] },
@@ -123,16 +123,16 @@ describe('assembleCatalog', () => {
     expect(out.models.map(m => m.slug)).toEqual(['gpt-5.4']);
   });
 
-  test('bundled reuse: registry cost.cells replaces bundled service_tiers', () => {
+  test('bundled reuse: registry cost.entries replaces bundled service_tiers', () => {
     const im: InternalModel = {
       ...chat('openrouter/gpt-5.5:nitro'),
-      cost: { cells: [{ rates: { input: 1 } }, { selector: { serviceTier: 'fast' }, rates: { input: 1 } }] },
+      cost: { entries: [{ rates: { input: 1 } }, { selector: { serviceTier: 'fast' }, rates: { input: 1 } }] },
     };
     const out = assembleCatalog(bundled, entries(im));
     expect(out.models[0].service_tiers).toEqual([{ id: 'fast', name: 'fast', description: '' }]);
   });
 
-  test('bundled reuse: no registry cost.cells yields service_tiers: []', () => {
+  test('bundled reuse: no registry cost.entries yields service_tiers: []', () => {
     const out = assembleCatalog(bundled, entries(chat('openrouter/gpt-5.5:nitro')));
     expect(out.models[0].service_tiers).toEqual([]);
   });

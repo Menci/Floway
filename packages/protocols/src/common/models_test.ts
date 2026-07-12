@@ -7,7 +7,7 @@ import {
   modelPricing,
   parsePricingSelectorKey,
   priceRequest,
-  pricingCell,
+  pricingEntry,
   validateModelPricing,
   type ModelPricing,
   type PricingSelector,
@@ -38,28 +38,28 @@ test('selector validation rejects unknown axes, empty equality values, and malfo
 });
 
 test('model validation rejects duplicate selectors and equal numeric thresholds even with different operators', () => {
-  assertThrows(() => validateModelPricing({ cells: [{ rates: { input: 1 } }, { selector: {}, rates: { input: 2 } }] }), Error, 'duplicate pricing cell selector');
+  assertThrows(() => validateModelPricing({ entries: [{ rates: { input: 1 } }, { selector: {}, rates: { input: 2 } }] }), Error, 'duplicate pricing entry selector');
   assertThrows(() => validateModelPricing({
-    cells: [
+    entries: [
       { selector: { inputTokens: { operator: 'gt', value: 272000 } }, rates: { input: 1 } },
       { selector: { inputTokens: { operator: 'gte', value: 272000 } }, rates: { input: 2 } },
     ],
   }), Error, 'conflicting pricing threshold operators');
 });
 
-test('model validation requires every cell to price the same dimensions', () => {
+test('model validation requires every entry to price the same dimensions', () => {
   assertThrows(
     () => validateModelPricing({
-      cells: [
+      entries: [
         { rates: { input: 1, output: 4 } },
         { selector: { serviceTier: 'priority' }, rates: { input: 2 } },
       ],
     }),
     Error,
-    'must define the same dimensions as cell 0 (input, output)',
+    'must define the same dimensions as entry 0 (input, output)',
   );
   validateModelPricing({
-    cells: [
+    entries: [
       { rates: { input: 1, output: 4 } },
       { selector: { serviceTier: 'priority' }, rates: { output: 8, input: 2 } },
     ],
@@ -69,7 +69,7 @@ test('model validation requires every cell to price the same dimensions', () => 
 test('model validation rejects service-specific thresholds without a global band', () => {
   assertThrows(
     () => validateModelPricing({
-      cells: [
+      entries: [
         { rates: { input: 1 } },
         {
           selector: { serviceTier: 'priority', inputTokens: { operator: 'gt', value: 272000 } },
@@ -83,25 +83,25 @@ test('model validation rejects service-specific thresholds without a global band
 });
 
 test('shared pricing helpers canonicalize and eagerly validate catalogs', () => {
-  assertEquals(basePricing({ input: 1 }), { cells: [{ rates: { input: 1 } }] });
+  assertEquals(basePricing({ input: 1 }), { entries: [{ rates: { input: 1 } }] });
   assertEquals(modelPricing(
-    pricingCell({ input: 1 }),
-    pricingCell({ input: 2 }, { serviceTier: 'priority' }),
+    pricingEntry({ input: 1 }),
+    pricingEntry({ input: 2 }, { serviceTier: 'priority' }),
   ), {
-    cells: [
+    entries: [
       { rates: { input: 1 } },
       { selector: { serviceTier: 'priority' }, rates: { input: 2 } },
     ],
   });
   assertThrows(
-    () => modelPricing(pricingCell({ input: 1 }), pricingCell({ input: 2 })),
+    () => modelPricing(pricingEntry({ input: 1 }), pricingEntry({ input: 2 })),
     Error,
-    'duplicate pricing cell selector',
+    'duplicate pricing entry selector',
   );
 });
 
 const GRID: ModelPricing = {
-  cells: [
+  entries: [
     { rates: { input: 5, output: 30 } },
     { selector: { serviceTier: 'priority' }, rates: { input: 10, output: 60 } },
     { selector: { inputTokens: { operator: 'gt', value: 128000 } }, rates: { input: 7, output: 40 } },
@@ -119,7 +119,7 @@ test('priceRequest applies gt boundaries and selects the highest matching thresh
 
 test('priceRequest applies gte at the exact boundary', () => {
   const pricing: ModelPricing = {
-    cells: [
+    entries: [
       { rates: { input: 1 } },
       { selector: { inputTokens: { operator: 'gte', value: 100 } }, rates: { input: 2 } },
     ],

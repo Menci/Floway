@@ -13,7 +13,7 @@ const row = (uiId: string, model: string, input: number, flagOverrides: Record<s
     upstreamModelId: model,
     kind: 'chat',
     endpoints: { chatCompletions: {} },
-    cost: { cells: [{ rates: { input } }] },
+    cost: { entries: [{ rates: { input } }] },
     flagOverrides,
   },
 });
@@ -45,9 +45,9 @@ describe('ModelEditor row synchronization', () => {
   it('replaces pricing drafts and validity when the selected row changes without remounting', async () => {
     const first = row('first', 'model-first', 1, { 'flag-a': true });
     const second = row('second', 'model-second', 2, undefined);
-    // An invalid second-row cell proves validity is recomputed from the new row,
+    // An invalid second-row entry proves validity is recomputed from the new row,
     // rather than remaining true from the first row's valid draft.
-    second.config.cost = { cells: [{ rates: {} }] };
+    second.config.cost = { entries: [{ rates: {} }] };
 
     const wrapper = mountEditor(first);
     expect((pricingInput(wrapper, 'unpriced').element as HTMLInputElement).value).toBe('1');
@@ -61,8 +61,8 @@ describe('ModelEditor row synchronization', () => {
 
     await pricingInput(wrapper, 'unpriced').setValue('7');
     const pricingPatch = wrapper.emitted('patch-config')?.at(-1)?.[0];
-    expect(pricingPatch).toEqual({ cost: { cells: [{ rates: { input: 7 } }] } });
-    expect(pricingPatch).not.toEqual({ cost: { cells: [{ rates: { input: 1 } }] } });
+    expect(pricingPatch).toEqual({ cost: { entries: [{ rates: { input: 7 } }] } });
+    expect(pricingPatch).not.toEqual({ cost: { entries: [{ rates: { input: 1 } }] } });
     expect(wrapper.emitted('validity-change')?.at(-1)).toEqual([true]);
   });
 
@@ -72,7 +72,7 @@ describe('ModelEditor row synchronization', () => {
       ...row('shared', 'model-auto', 9, undefined),
       kind: 'auto',
     };
-    auto.config.cost = { cells: [{ rates: {} }] };
+    auto.config.cost = { entries: [{ rates: {} }] };
 
     const wrapper = mountEditor(manual);
     await pricingInput(wrapper, 'unpriced').setValue('7');
@@ -93,41 +93,41 @@ describe('ModelEditor row synchronization', () => {
 
   it('clears a threshold value while preserving operator-only updates', async () => {
     const selected = row('threshold', 'model-threshold', 1, undefined);
-    selected.config.cost = { cells: [{ selector: { inputTokens: { operator: 'gte', value: 100 } }, rates: { input: 1 } }] };
+    selected.config.cost = { entries: [{ selector: { inputTokens: { operator: 'gte', value: 100 } }, rates: { input: 1 } }] };
     const wrapper = mountEditor(selected);
     const threshold = pricingInput(wrapper, 'base');
     expect((threshold.element as HTMLInputElement).value).toBe('100');
 
     await threshold.setValue('');
-    expect(wrapper.emitted('patch-config')?.at(-1)?.[0]).toEqual({ cost: { cells: [{ rates: { input: 1 } }] } });
+    expect(wrapper.emitted('patch-config')?.at(-1)?.[0]).toEqual({ cost: { entries: [{ rates: { input: 1 } }] } });
   });
 
-  it('navigates pricing cells from the left while rendering one editor on the right', async () => {
-    const selected = row('cells', 'model-cells', 1, undefined);
+  it('navigates pricing entries from the left while rendering one editor on the right', async () => {
+    const selected = row('entries', 'model-entries', 1, undefined);
     selected.config.cost = {
-      cells: [
+      entries: [
         { rates: { input: 1 } },
         { selector: { serviceTier: 'priority' }, rates: { input: 2 } },
       ],
     };
     const wrapper = mountEditor(selected);
-    const navigation = wrapper.get('[aria-label="Pricing cell navigation"]');
+    const navigation = wrapper.get('[aria-label="Pricing entry navigation"]');
 
     expect(wrapper.text()).not.toContain('explicit service-tier');
-    expect(navigation.text()).toContain('Add Cell');
+    expect(navigation.text()).toContain('Add Entry');
     expect(navigation.findAll('li')).toHaveLength(2);
     expect(wrapper.findAll('input[placeholder="unpriced"]')).toHaveLength(5);
     expect((pricingInput(wrapper, 'unpriced').element as HTMLInputElement).value).toBe('1');
     expect(wrapper.text()).toContain('Service Tier');
     expect(wrapper.text()).toContain('Input Tokens');
 
-    await wrapper.get('button[aria-label="Edit pricing cell 2: priority"]').trigger('click');
+    await wrapper.get('button[aria-label="Edit pricing entry 2: priority"]').trigger('click');
     expect((pricingInput(wrapper, 'unpriced').element as HTMLInputElement).value).toBe('2');
 
-    await navigation.get('button[aria-label="Move pricing cell 2 up"]').trigger('click');
+    await navigation.get('button[aria-label="Move pricing entry 2 up"]').trigger('click');
     expect(wrapper.emitted('patch-config')?.at(-1)?.[0]).toEqual({
       cost: {
-        cells: [
+        entries: [
           { selector: { serviceTier: 'priority' }, rates: { input: 2 } },
           { rates: { input: 1 } },
         ],
@@ -147,14 +147,14 @@ describe('ModelEditor row synchronization', () => {
 
     await pricingInput(wrapper, 'base').setValue('100');
     expect(wrapper.emitted('patch-config')?.at(-1)?.[0]).toEqual({
-      cost: { cells: [{ selector: { inputTokens: { operator: 'gte', value: 100 } }, rates: { input: 1 } }] },
+      cost: { entries: [{ selector: { inputTokens: { operator: 'gte', value: 100 } }, rates: { input: 1 } }] },
     });
   });
 
-  it('requires every pricing cell to set the same rate fields', async () => {
+  it('requires every pricing entry to set the same rate fields', async () => {
     const selected = row('rate-shape', 'model-rate-shape', 1, undefined);
     selected.config.cost = {
-      cells: [
+      entries: [
         { rates: { input: 1, output: 4 } },
         { selector: { serviceTier: 'priority' }, rates: { input: 2 } },
       ],
@@ -164,7 +164,7 @@ describe('ModelEditor row synchronization', () => {
     expect(wrapper.text()).toContain('All pricing entries must set the same rate fields.');
     expect(wrapper.emitted('validity-change')?.at(-1)).toEqual([false]);
 
-    await wrapper.get('button[aria-label="Edit pricing cell 2: priority"]').trigger('click');
+    await wrapper.get('button[aria-label="Edit pricing entry 2: priority"]').trigger('click');
     const output = wrapper.findAll('label').find(label => label.text().includes('Output ($/MTok)'))!.get('input');
     await output.setValue('8');
 
@@ -174,7 +174,7 @@ describe('ModelEditor row synchronization', () => {
 
   it.each(['0', '1.5'])('shows validation instead of throwing for threshold %s', async value => {
     const selected = row('invalid-threshold', 'model-invalid', 1, undefined);
-    selected.config.cost = { cells: [{ rates: { input: 1 } }, { selector: { serviceTier: 'priority' }, rates: { input: 2 } }] };
+    selected.config.cost = { entries: [{ rates: { input: 1 } }, { selector: { serviceTier: 'priority' }, rates: { input: 2 } }] };
     const wrapper = mountEditor(selected);
     await pricingInput(wrapper, 'base').setValue(value);
     expect(wrapper.text()).toContain('Selector values are invalid.');

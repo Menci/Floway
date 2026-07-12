@@ -64,22 +64,22 @@ const parseLimits = (value: unknown): CustomRawModel['limits'] => {
 const parseCost = (value: unknown): ModelPricing | undefined => {
   // Pricing is best-effort catalog metadata: malformed cost omits only the cost
   // block, never the enclosing model or the rest of the catalog.
-  if (!isRecord(value) || !Array.isArray(value.cells)) return undefined;
+  if (!isRecord(value) || !Array.isArray(value.entries)) return undefined;
   try {
-    const cells: ModelPricing['cells'][number][] = [];
-    for (const rawCell of value.cells) {
-      if (!isRecord(rawCell) || !isRecord(rawCell.rates)) continue;
+    const entries: ModelPricing['entries'][number][] = [];
+    for (const rawEntry of value.entries) {
+      if (!isRecord(rawEntry) || !isRecord(rawEntry.rates)) continue;
       const rates: PriceVector = {};
       for (const dimension of BILLING_DIMENSIONS) {
-        const rate = optionalNumberField(rawCell.rates[dimension]);
+        const rate = optionalNumberField(rawEntry.rates[dimension]);
         if (rate !== undefined) rates[dimension] = rate;
       }
       if (Object.keys(rates).length === 0) continue;
-      const selector = canonicalizePricingSelector(isRecord(rawCell.selector) ? rawCell.selector as PricingSelector : undefined);
-      cells.push({ ...(Object.keys(selector).length > 0 ? { selector } : {}), rates });
+      const selector = canonicalizePricingSelector(isRecord(rawEntry.selector) ? rawEntry.selector as PricingSelector : undefined);
+      entries.push({ ...(Object.keys(selector).length > 0 ? { selector } : {}), rates });
     }
-    if (cells.length === 0) return undefined;
-    const pricing = { cells };
+    if (entries.length === 0) return undefined;
+    const pricing = { entries };
     validateModelPricing(pricing);
     return pricing;
   } catch {

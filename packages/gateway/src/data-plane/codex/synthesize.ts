@@ -101,7 +101,7 @@ const BASELINE: CatalogModel = {
 // Names mirror ids and descriptions are blank — Floway does not carry separate
 // tier metadata, and Codex only needs the id to round-trip the selection.
 const deriveServiceTiers = (model: InternalModel): { id: string; name: string; description: string }[] => {
-  const ids = new Set(model.cost?.cells.flatMap(cell => typeof cell.selector?.serviceTier === 'string' ? [cell.selector.serviceTier] : []) ?? []);
+  const ids = new Set(model.cost?.entries.flatMap(entry => typeof entry.selector?.serviceTier === 'string' ? [entry.selector.serviceTier] : []) ?? []);
   return [...ids].map(id => ({ id, name: id, description: '' }));
 };
 

@@ -129,15 +129,15 @@ describe('synthesizeCatalogEntry', () => {
     expect(entry.default_reasoning_level).toBe('medium');
   });
 
-  test('service_tiers derived from cost.cells keys', () => {
+  test('service_tiers derived from cost.entries keys', () => {
     const entry = synthesizeCatalogEntry({
       ...base,
-      cost: { cells: [{ rates: { input: 1 } }, { selector: { serviceTier: 'fast' }, rates: { input: 1 } }] },
+      cost: { entries: [{ rates: { input: 1 } }, { selector: { serviceTier: 'fast' }, rates: { input: 1 } }] },
     });
     expect(entry.service_tiers).toEqual([{ id: 'fast', name: 'fast', description: '' }]);
   });
 
-  test('service_tiers empty when no cost.cells', () => {
+  test('service_tiers empty when no cost.entries', () => {
     const entry = synthesizeCatalogEntry(base);
     expect(entry.service_tiers).toEqual([]);
   });
@@ -145,7 +145,7 @@ describe('synthesizeCatalogEntry', () => {
   test('service_tiers preserves key order for multiple tiers', () => {
     const entry = synthesizeCatalogEntry({
       ...base,
-      cost: { cells: [{ rates: { input: 1 } }, { selector: { serviceTier: 'flex' }, rates: { input: 1 } }, { selector: { serviceTier: 'priority' }, rates: { input: 2 } }] },
+      cost: { entries: [{ rates: { input: 1 } }, { selector: { serviceTier: 'flex' }, rates: { input: 1 } }, { selector: { serviceTier: 'priority' }, rates: { input: 2 } }] },
     });
     expect(entry.service_tiers).toEqual([
       { id: 'flex', name: 'flex', description: '' },
@@ -242,7 +242,7 @@ describe('synthesizeCatalogEntry', () => {
       // Bundled entries may advertise OpenAI 1p tiers Floway cannot bill;
       // publishing them without registry-side unit prices would surface a
       // toggle we could not honor. Registry-derived tiers (from
-      // model.cost.cells) always win, even when the registry list is empty.
+      // model.cost.entries) always win, even when the registry list is empty.
       const entry = synthesizeCatalogEntry(base, bundledBase);
       expect(entry.service_tiers).toEqual([]);
     });
@@ -250,7 +250,7 @@ describe('synthesizeCatalogEntry', () => {
     test('service_tiers picks up the registry-configured tiers', () => {
       const entry = synthesizeCatalogEntry({
         ...base,
-        cost: { cells: [{ rates: { input: 1 } }, { selector: { serviceTier: 'fast' }, rates: { input: 1 } }] },
+        cost: { entries: [{ rates: { input: 1 } }, { selector: { serviceTier: 'fast' }, rates: { input: 1 } }] },
       }, bundledBase);
       expect(entry.service_tiers).toEqual([{ id: 'fast', name: 'fast', description: '' }]);
     });

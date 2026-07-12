@@ -5,13 +5,13 @@
 // https://docs.claude.com/en/docs/about-claude/pricing
 //
 // Prompt-cache ratios are input × 0.1 (read), × 1.25 (5-minute write), and
-// × 2 (1-hour write). Fast mode is an explicit `serviceTier: 'fast'` cell for
-// Opus 4.6–4.8; each cell records its own cache rates.
+// × 2 (1-hour write). Fast mode is an explicit `serviceTier: 'fast'` entry for
+// Opus 4.6–4.8; each entry records its own cache rates.
 
-import { basePricing, modelPricing, pricingCell, type ModelPricing, type PriceVector } from '@floway-dev/protocols/common';
+import { basePricing, modelPricing, pricingEntry, type ModelPricing, type PriceVector } from '@floway-dev/protocols/common';
 
 const fastPricing = (rates: PriceVector, fastRates: PriceVector): ModelPricing =>
-  modelPricing(pricingCell(rates), pricingCell(fastRates, { serviceTier: 'fast' }));
+  modelPricing(pricingEntry(rates), pricingEntry(fastRates, { serviceTier: 'fast' }));
 
 const OPUS_RATES = { input: 5, input_cache_read: 0.5, input_cache_write: 6.25, input_cache_write_1h: 10, output: 25 };
 const SONNET_PRICING = basePricing({ input: 3, input_cache_read: 0.3, input_cache_write: 3.75, input_cache_write_1h: 6, output: 15 });

@@ -55,7 +55,7 @@ const modelEndpointsSchema = z.object({
   imagesEdits: z.object({}).optional(),
 });
 
-// Shared by every explicit pricing cell so all coordinates carry
+// Shared by every explicit pricing entry so all coordinates carry
 // the same dimension set.
 const pricingDimensionShape = {
   input: z.number().nonnegative().optional(),
@@ -134,7 +134,7 @@ const upstreamModelSchema = z.object({
   endpoints: modelEndpointsSchema,
   display_name: z.string().optional(),
   cost: z.object({
-    cells: z.array(z.object({
+    entries: z.array(z.object({
       selector: z.record(z.string(), z.unknown()).optional(),
       rates: z.object(pricingDimensionShape),
     })).min(1),

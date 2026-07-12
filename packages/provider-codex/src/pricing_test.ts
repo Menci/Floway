@@ -6,7 +6,7 @@ import { assertEquals } from '@floway-dev/test-utils';
 
 // Every GPT-5.6 variant is a full (service tier × input length) grid:
 // standard/priority × short/long. `priceRequest(pricing, tier,
-// inputTokens threshold)` must return the explicit rates for each of the four cells;
+// inputTokens threshold)` must return the explicit rates for each of the four entries;
 // there is no silent composition of one axis onto the other.
 const CODEX_GPT_5_6_GRID = {
   'gpt-5.6-sol': {
@@ -29,32 +29,32 @@ const CODEX_GPT_5_6_GRID = {
   },
 } as const;
 
-for (const [modelKey, cells] of Object.entries(CODEX_GPT_5_6_GRID)) {
-  test(`Codex ${modelKey} resolves every (service tier × input length) grid cell`, () => {
+for (const [modelKey, entries] of Object.entries(CODEX_GPT_5_6_GRID)) {
+  test(`Codex ${modelKey} resolves every (service tier × input length) grid entry`, () => {
     const pricing = pricingForCodexModelKey(modelKey);
-    assertEquals(priceRequest(pricing, { inputTokens: 0 }).rates, cells.standardShort);
-    assertEquals(priceRequest(pricing, { serviceTier: 'priority', inputTokens: 0 }).rates, cells.priorityShort);
-    assertEquals(priceRequest(pricing, { inputTokens: 272000 + 1 }).rates, cells.standardLong);
-    assertEquals(priceRequest(pricing, { serviceTier: 'priority', inputTokens: 272000 + 1 }).rates, cells.priorityLong);
+    assertEquals(priceRequest(pricing, { inputTokens: 0 }).rates, entries.standardShort);
+    assertEquals(priceRequest(pricing, { serviceTier: 'priority', inputTokens: 0 }).rates, entries.priorityShort);
+    assertEquals(priceRequest(pricing, { inputTokens: 272000 + 1 }).rates, entries.standardLong);
+    assertEquals(priceRequest(pricing, { serviceTier: 'priority', inputTokens: 272000 + 1 }).rates, entries.priorityLong);
   });
 
-  test(`Codex ${modelKey} declares one standard inputTokens >272000 cell`, () => {
+  test(`Codex ${modelKey} declares one standard inputTokens >272000 entry`, () => {
     const pricing = pricingForCodexModelKey(modelKey);
-    assertEquals(pricing?.cells.filter(cell => {
-      const coordinate = cell.selector?.inputTokens;
+    assertEquals(pricing?.entries.filter(entry => {
+      const coordinate = entry.selector?.inputTokens;
       return typeof coordinate === 'object' && coordinate.operator === 'gt' && coordinate.value === 272000;
     }).length, 1);
   });
 }
 
-test('Codex gpt-5.5 keeps its explicit flex and priority cells', () => {
+test('Codex gpt-5.5 keeps its explicit flex and priority entries', () => {
   const pricing = pricingForCodexModelKey('gpt-5.5');
   assertEquals(priceRequest(pricing, { inputTokens: 0 }).rates, { input: 5, input_cache_read: 0.5, output: 30 });
   assertEquals(priceRequest(pricing, { serviceTier: 'flex', inputTokens: 0 }).rates, { input: 2.5, input_cache_read: 0.25, output: 15 });
   assertEquals(priceRequest(pricing, { serviceTier: 'priority', inputTokens: 0 }).rates, { input: 12.5, input_cache_read: 1.25, output: 75 });
 });
 
-test('Codex gpt-5.4 and gpt-5.4-mini keep their explicit flex and priority cells', () => {
+test('Codex gpt-5.4 and gpt-5.4-mini keep their explicit flex and priority entries', () => {
   const gpt54 = pricingForCodexModelKey('gpt-5.4');
   assertEquals(priceRequest(gpt54, { serviceTier: 'flex', inputTokens: 0 }).rates, { input: 1.25, input_cache_read: 0.13, output: 7.5 });
   assertEquals(priceRequest(gpt54, { serviceTier: 'priority', inputTokens: 0 }).rates, { input: 5, input_cache_read: 0.5, output: 30 });
