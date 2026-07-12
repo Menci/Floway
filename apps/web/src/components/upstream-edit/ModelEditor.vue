@@ -380,7 +380,8 @@ watch(isValid, valid => { emit('validity-change', valid); }, { immediate: true }
           <div v-if="pricingCellDrafts.length === 0" class="text-[11px] text-gray-600">
             No pricing cells configured.
           </div>
-          <div v-else class="space-y-6">
+          <div v-else class="space-y-4">
+            <p v-if="pricingValidationError" class="text-[11px] text-accent-rose">{{ pricingValidationError }}</p>
             <div v-for="(draft, index) in pricingCellDrafts" :key="draft.id" class="rounded-lg border border-white/[0.06] p-4">
               <div class="mb-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-[repeat(2,minmax(0,1fr))_auto]">
                 <label v-for="axis in PRICING_AXES" :key="axis.id" class="block space-y-1.5">
@@ -420,7 +421,6 @@ watch(isValid, valid => { emit('validity-change', valid); }, { immediate: true }
                   <Button variant="danger" size="sm" @click="removePricingCell(index)">Remove</Button>
                 </div>
               </div>
-              <p v-if="pricingValidationError" class="mb-2 text-[11px] text-accent-rose">{{ pricingValidationError }}</p>
               <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <label v-for="dim in PRICING_BY_KIND[rowKind]" :key="dim" class="block space-y-1.5">
                   <span class="block text-xs font-medium text-gray-500">{{ PRICING_LABELS[dim] }}</span>

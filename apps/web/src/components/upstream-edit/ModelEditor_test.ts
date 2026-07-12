@@ -103,9 +103,12 @@ describe('ModelEditor row synchronization', () => {
   });
 
   it.each(['0', '1.5'])('shows validation instead of throwing for threshold %s', async value => {
-    const wrapper = mountEditor(row('invalid-threshold', 'model-invalid', 1, undefined));
+    const selected = row('invalid-threshold', 'model-invalid', 1, undefined);
+    selected.config.cost = { cells: [{ rates: { input: 1 } }, { selector: { serviceTier: 'priority' }, rates: { input: 2 } }] };
+    const wrapper = mountEditor(selected);
     await pricingInput(wrapper, 'base').setValue(value);
     expect(wrapper.text()).toContain('Selector values are invalid.');
+    expect(wrapper.findAll('p').filter(node => node.text() === 'Selector values are invalid.')).toHaveLength(1);
     expect(wrapper.emitted('validity-change')?.at(-1)).toEqual([false]);
   });
 

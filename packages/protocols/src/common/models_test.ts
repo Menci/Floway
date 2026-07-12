@@ -1,10 +1,13 @@
 import { test } from 'vitest';
 
 import {
+  basePricing,
   canonicalPricingSelectorKey,
   canonicalizePricingSelector,
+  modelPricing,
   parsePricingSelectorKey,
   priceRequest,
+  pricingCell,
   unitPriceForDimension,
   validateModelPricing,
   type ModelPricing,
@@ -50,6 +53,40 @@ test('model validation rejects duplicate selectors and equal numeric thresholds 
       { selector: { inputTokens: { operator: 'gte', value: 272000 } }, rates: { input: 2 } },
     ],
   }), Error, 'conflicting pricing threshold operators');
+});
+
+test('model validation rejects service-specific thresholds without a global band', () => {
+  assertThrows(
+    () => validateModelPricing({
+      cells: [
+        { rates: { input: 1 } },
+        {
+          selector: { serviceTier: 'priority', inputTokens: { operator: 'gt', value: 272000 } },
+          rates: { input: 4 },
+        },
+      ],
+    }),
+    Error,
+    'pricing threshold selector {"inputTokens":{"operator":"gt","value":272000}} must be declared without equality coordinates',
+  );
+});
+
+test('shared pricing helpers canonicalize and eagerly validate catalogs', () => {
+  assertEquals(basePricing({ input: 1 }), { cells: [{ rates: { input: 1 } }] });
+  assertEquals(modelPricing(
+    pricingCell({ input: 1 }),
+    pricingCell({ input: 2 }, { serviceTier: 'priority' }),
+  ), {
+    cells: [
+      { rates: { input: 1 } },
+      { selector: { serviceTier: 'priority' }, rates: { input: 2 } },
+    ],
+  });
+  assertThrows(
+    () => modelPricing(pricingCell({ input: 1 }), pricingCell({ input: 2 })),
+    Error,
+    'duplicate pricing cell selector',
+  );
 });
 
 const GRID: ModelPricing = {

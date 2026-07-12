@@ -8,12 +8,10 @@
 // × 2 (1-hour write). Fast mode is an explicit `serviceTier: 'fast'` cell for
 // Opus 4.6–4.8; each cell records its own cache rates.
 
-import type { ModelPricing, PriceVector } from '@floway-dev/protocols/common';
+import { basePricing, modelPricing, pricingCell, type ModelPricing, type PriceVector } from '@floway-dev/protocols/common';
 
-const basePricing = (rates: PriceVector): ModelPricing => ({ cells: [{ rates }] });
-const fastPricing = (rates: PriceVector, fastRates: PriceVector): ModelPricing => ({
-  cells: [{ rates }, { selector: { serviceTier: 'fast' }, rates: fastRates }],
-});
+const fastPricing = (rates: PriceVector, fastRates: PriceVector): ModelPricing =>
+  modelPricing(pricingCell(rates), pricingCell(fastRates, { serviceTier: 'fast' }));
 
 const OPUS_RATES = { input: 5, input_cache_read: 0.5, input_cache_write: 6.25, input_cache_write_1h: 10, output: 25 };
 const SONNET_PRICING = basePricing({ input: 3, input_cache_read: 0.3, input_cache_write: 3.75, input_cache_write_1h: 6, output: 15 });
