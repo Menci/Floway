@@ -4,6 +4,8 @@ import { test, vi } from 'vitest';
 import { hashResponsesItemContent, isStoredResponseId } from './items/format.ts';
 import { responsesServe } from './serve.ts';
 import { app } from '../../../app.ts';
+import { initDumpBroker, initDumpStore } from '../../../dump/registry.ts';
+import { installDumpStubs } from '../../../dump/test-fixtures.ts';
 import { copilotModels, flushAsyncWork, setupAppTest, sseResponsesResponse } from '../../../test-helpers.ts';
 import { FakeTime } from '../../../test-time.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS } from '../shared/stream/sse.ts';
@@ -151,6 +153,50 @@ const withWorkerWebSocketRuntime = async <T>(run: () => Promise<T>): Promise<T> 
   }
 };
 
+const withSuccessfulResponsesUpstream = async <T>(run: () => Promise<T>): Promise<T> =>
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models') {
+        return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'] }]));
+      }
+      if (url.pathname === '/responses') {
+        return sseResponsesResponse({
+          id: 'resp_ws_policy_refresh',
+          object: 'response',
+          model: 'gpt-direct-responses',
+          status: 'completed',
+          output: [],
+          output_text: 'done',
+          usage: { input_tokens: 3, output_tokens: 5, total_tokens: 8 },
+        });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    run,
+  );
+
+const completeResponsesTurn = async (
+  client: TestWorkerWebSocket,
+  eventId: string,
+): Promise<void> => {
+  const received = waitForMessages(client, messages => messages.some(message => message.type === 'response.done'));
+  client.send(JSON.stringify({
+    type: 'response.create',
+    event_id: eventId,
+    response: {
+      model: 'gpt-direct-responses',
+      input: eventId,
+    },
+  }));
+  await received;
+  await waitForMicrotasks();
+};
+
 test('Responses WebSocket forwards stream events, echoes event_id, and sends response.done', async () => {
   const { apiKey } = await setupAppTest();
   await withMockedFetch(
@@ -204,6 +250,88 @@ test('Responses WebSocket forwards stream events, echoes event_id, and sends res
           usage: { input_tokens: 3, output_tokens: 5, total_tokens: 8 },
         },
       });
+    }),
+  );
+});
+
+test('Responses WebSocket starts capturing on the next turn when dump retention is enabled after upgrade', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  const dumps = installDumpStubs(initDumpStore, initDumpBroker);
+
+  await withSuccessfulResponsesUpstream(
+    async () => await withWorkerWebSocketRuntime(async () => {
+      const client = await connectResponsesWebSocket(apiKey.key);
+      await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
+
+      await completeResponsesTurn(client, 'capture-after-enable');
+      await vi.waitFor(() => assertEquals(dumps.stored.length, 1));
+
+      const stored = dumps.stored[0];
+      assertExists(stored);
+      assertEquals(stored.keyId, apiKey.id);
+      assertEquals(stored.record.request.method, 'WS');
+      assertEquals(stored.record.request.path, '/v1/responses');
+      assertEquals(JSON.parse(new TextDecoder().decode(stored.record.request.body)), {
+        type: 'response.create',
+        event_id: 'capture-after-enable',
+        response: {
+          model: 'gpt-direct-responses',
+          input: 'capture-after-enable',
+        },
+      });
+      client.close();
+    }),
+  );
+});
+
+test('Responses WebSocket stops capturing on the next turn when dump retention is disabled after upgrade', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
+  const dumps = installDumpStubs(initDumpStore, initDumpBroker);
+
+  await withSuccessfulResponsesUpstream(
+    async () => await withWorkerWebSocketRuntime(async () => {
+      const client = await connectResponsesWebSocket(apiKey.key);
+      await completeResponsesTurn(client, 'captured-before-disable');
+      await vi.waitFor(() => assertEquals(dumps.stored.length, 1));
+
+      await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: null });
+      await completeResponsesTurn(client, 'not-captured-after-disable');
+
+      assertEquals(dumps.stored.length, 1);
+      client.close();
+    }),
+  );
+});
+
+test('Responses WebSocket rejects the next turn after its API key is rotated', async () => {
+  const { apiKey, repo } = await setupAppTest();
+
+  await withSuccessfulResponsesUpstream(
+    async () => await withWorkerWebSocketRuntime(async () => {
+      const client = await connectResponsesWebSocket(apiKey.key);
+      await repo.apiKeys.save({ ...apiKey, key: 'rotated-api-key' });
+      const received = waitForMessages(client, messages => messages.length === 1);
+
+      client.send(JSON.stringify({
+        type: 'response.create',
+        event_id: 'after-key-rotation',
+        response: {
+          model: 'gpt-direct-responses',
+          input: 'must not reach the upstream',
+        },
+      }));
+
+      assertEquals(await received, [{
+        type: 'error',
+        status_code: 401,
+        error: {
+          type: 'authentication_error',
+          code: 'invalid_api_key',
+          message: 'Invalid API key.',
+        },
+      }]);
+      client.close();
     }),
   );
 });
