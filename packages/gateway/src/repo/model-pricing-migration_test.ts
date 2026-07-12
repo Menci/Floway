@@ -4,6 +4,8 @@ import { test } from 'vitest';
 import { migrationSqlByFilename } from './test-sqlite.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
+const sqlString = (value: string): string => `'${value.replaceAll("'", "''")}'`;
+
 test('0053 renames persisted model pricing metadata and clears the derived model cache', async () => {
   const SQL = await initSqlJs();
   const db = new SQL.Database();
@@ -26,12 +28,10 @@ test('0053 renames persisted model pricing metadata and clears the derived model
       const cacheJson = JSON.stringify([{ id: 'cached', [legacyKey]: { input: 1 } }]);
       db.run(
         `INSERT INTO upstreams (id, provider, name, created_at, updated_at, config_json)
-         VALUES ('up_pricing', 'custom', 'Pricing migration', '2026-07-13T00:00:00.000Z', '2026-07-13T00:00:00.000Z', ?)`,
-        [configJson],
+         VALUES ('up_pricing', 'custom', 'Pricing migration', '2026-07-13T00:00:00.000Z', '2026-07-13T00:00:00.000Z', ${sqlString(configJson)})`,
       );
       db.run(
-        "INSERT INTO models_cache (upstream_id, fetched_at, models_json) VALUES ('up_pricing', 1, ?)",
-        [cacheJson],
+        `INSERT INTO models_cache (upstream_id, fetched_at, models_json) VALUES ('up_pricing', 1, ${sqlString(cacheJson)})`,
       );
     }
     db.run(sql);
