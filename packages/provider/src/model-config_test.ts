@@ -8,13 +8,13 @@ test('pricingField parses explicit flat cells', () => {
   const value = {
     cells: [
       { rates: { input: 5, output: 25, bogus: 99 } },
-      { selector: { serviceTier: 'fast', inputAboveTokens: 272000 }, rates: { input: 30, output: 150 } },
+      { selector: { serviceTier: 'fast', inputTokens: { operator: 'gt', value: 272000 } }, rates: { input: 30, output: 150 } },
     ],
   };
   assertEquals(pricingField(value, 'cost'), {
     cells: [
       { rates: { input: 5, output: 25 } },
-      { selector: { serviceTier: 'fast', inputAboveTokens: 272000 }, rates: { input: 30, output: 150 } },
+      { selector: { serviceTier: 'fast', inputTokens: { operator: 'gt', value: 272000 } }, rates: { input: 30, output: 150 } },
     ],
   });
 });
@@ -23,7 +23,7 @@ test('pricingField rejects malformed cells and duplicate coordinates', () => {
   assertThrows(() => pricingField({}, 'cost'), Error, 'non-empty array');
   assertThrows(() => pricingField({ cells: [{ rates: {} }] }, 'cost'), Error, 'at least one rate');
   assertThrows(() => pricingField({ cells: [{ selector: { serviceTier: '' }, rates: { input: 1 } }] }, 'cost'), Error, 'non-empty string');
-  assertThrows(() => pricingField({ cells: [{ selector: { inputAboveTokens: 1.5 }, rates: { input: 1 } }] }, 'cost'), Error, 'positive safe integer');
+  assertThrows(() => pricingField({ cells: [{ selector: { inputTokens: { operator: 'gt', value: 1.5 } }, rates: { input: 1 } }] }, 'cost'), Error, 'positive safe integer');
   assertThrows(() => pricingField({ cells: [{ rates: { input: 1 } }, { selector: {}, rates: { input: 2 } }] }, 'cost'), Error, 'duplicate selector coordinate');
   assertThrows(() => pricingField({ cells: [{ rates: { input: -1 } }] }, 'cost'), Error, 'non-negative');
 });

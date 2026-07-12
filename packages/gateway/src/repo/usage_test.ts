@@ -9,8 +9,7 @@ import { assertEquals } from '@floway-dev/test-utils';
 
 // The usage repo threads the (service tier × input length) grid coordinate
 // through persistence. These cases run against both backends — the SQL repo
-// applies every migration (including the input_above_tokens column and its
-// CHECK) against a real sql.js database, and the in-memory repo mirrors the
+// applies every migration (including canonical pricing selector storage) against a real sql.js database, and the in-memory repo mirrors the
 // same bucket identity — so the two stay behaviorally identical.
 const backends: { name: string; make: () => Promise<Repo> }[] = [
   { name: 'sql', make: async () => new SqlRepo(await createSqliteTestDb()) },

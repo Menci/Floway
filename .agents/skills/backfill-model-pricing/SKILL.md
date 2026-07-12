@@ -9,12 +9,10 @@ description: Use when the human asks to write or rewrite `usage.unit_price` for
 # Backfill Model Pricing
 
 The `usage` table holds one row per `(key_id, model, upstream, model_key, hour,
-tier, input_above_tokens, dimension)` with a `tokens` count and a `unit_price`
-snapshot (USD per million tokens for that billing dimension). `tier` is the
-upstream-stamped service tier and `input_above_tokens` is the input-length
-pricing coordinate (the `inputAboveTokens` band the request crossed, NULL for
-the base band) — together they are the (service tier × input length) grid cell
-the row was billed at. `unit_price` is captured at write time; NULL means
+pricing_selector, dimension)` with a `tokens` count and a `unit_price`
+snapshot (USD per million tokens for that billing dimension). `pricing_selector` is canonical sorted-key JSON for the request’s projected
+selector coordinate (`{}` for the base cell). It is self-describing and may
+carry any axis registered by the pricing domain. `unit_price` is captured at write time; NULL means
 pricing was unknown then. This skill recomputes it for a chosen slice using the
 current provider pricing.
 
@@ -43,7 +41,7 @@ current provider pricing.
    invent one.
 
 5. **Derive the per-dimension unit price.** First fold the row's grid cell:
-   `resolveEffectivePricing(pricing, tier, input_above_tokens)`
+   `priceRequest(pricing, facts)`
    (`packages/protocols/src/common/models.ts`) picks the (service tier × input
    length) cell — and returns `null` when both coordinates are non-default but
    the table publishes no combined cell, meaning that slice is legitimately
@@ -52,21 +50,18 @@ current provider pricing.
    falls back to the bare text rate (`input_image → input`,
    `output_image → output`) and cached input falls back to uncached
    (`input_cache_read`/`input_cache_write → input`). Because the cell depends on
-   `tier` and `input_above_tokens`, slice those two into the aggregation menu in
-   step 3 and resolve per distinct cell — a single `(upstream, model_key)` can
+   `pricing_selector`, slice that canonical coordinate into the aggregation menu
+   in step 3 and resolve per distinct cell — a single `(upstream, model_key)` can
    carry several cells at different rates. Mirror that fallback when computing
    the value to write; a `null` result means leave `unit_price` NULL.
 
 6. **Preview** the affected COUNT and a small sample, then write one UPDATE
-   per `(slice, tier, input_above_tokens, dimension)`. The `WHERE` filter pins
-   `dimension = ?`, matches the cell coordinates with
-   `COALESCE(tier, '') = COALESCE(?, '')` and
-   `COALESCE(input_above_tokens, 0) = COALESCE(?, 0)`, and encodes the write
+   per `(slice, pricing_selector, dimension)`. The `WHERE` filter pins
+   `dimension = ?`, matches the cell coordinate with `pricing_selector = ?`, and encodes the write
    mode (add `unit_price IS NULL` for fill-only; omit it to overwrite). After
    each write, re-count the slice to prove it landed.
 
-7. **Report** per slice: upstream, model_key, tier, input_above_tokens,
-   dimension, price written, rows updated.
+7. **Report** per slice: upstream, model_key, pricing_selector, dimension, price written, rows updated.
 
 ## Cautions
 

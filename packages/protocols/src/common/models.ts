@@ -24,7 +24,7 @@ export type BillingDimension = 'input' | 'input_cache_read' | 'input_cache_write
 export const BILLING_DIMENSIONS: readonly BillingDimension[] = ['input', 'input_cache_read', 'input_cache_write', 'input_cache_write_1h', 'input_image', 'output', 'output_image'];
 
 // The input-side dimensions. Their disjoint sum is a request's total prompt
-// size, which selects the input-length pricing tier (see `selectInputLengthTier`).
+// size, which projects the request onto the declared inputTokens thresholds.
 export const INPUT_BILLING_DIMENSIONS: readonly BillingDimension[] = ['input', 'input_cache_read', 'input_cache_write', 'input_cache_write_1h', 'input_image'];
 
 // A PriceVector is the per-dimension USD-per-million-token rate set for one

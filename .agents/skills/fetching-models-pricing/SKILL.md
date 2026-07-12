@@ -88,8 +88,8 @@ first-hit-wins, where `key` is either a literal model id string or a RegExp.
    single rate.
 
    Pricing is a **flat list of explicit cells**. Each cell has `rates` and an
-   optional `selector` with independent `serviceTier` and `inputAboveTokens`
-   coordinates. No selector is the base cell. A request's total disjoint input
+   optional `selector` with registry-defined coordinates (`serviceTier` equality and `inputTokens`
+   `{ operator, value }` threshold today). No selector is the base cell. A request's total disjoint input
    selects the highest threshold it strictly exceeds; that coordinate and the
    upstream-stamped service tier then exact-match one cell. Missing coordinates
    are unpriced: never copy, multiply, or inherit a rate from another cell.
@@ -97,7 +97,7 @@ first-hit-wins, where `key` is either a literal model id string or a RegExp.
    applies through `unitPriceForDimension`.
 
    LiteLLM's `_above_272k_tokens` / `_priority` suffixes are flat composite price
-   keys, not token buckets. `inputAboveTokens` is likewise a price selector: the
+   keys, not token buckets. `inputTokens` thresholds are likewise price selectors: the
    whole request uses the matched cell, never a marginal overage. Explicitly list
    every published Cartesian coordinate, even when its values happen to follow a
    vendor formula.
