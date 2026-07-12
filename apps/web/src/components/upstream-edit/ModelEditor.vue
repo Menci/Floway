@@ -189,7 +189,7 @@ const pricingValidationErrors = computed<readonly string[]>(() => {
     const labels = duplicatePricingCoordinateGroups.value
       .map(([, drafts]) => pricingEntryCoordinateLabel(drafts[0]!))
       .filter(label => label !== 'Base')
-      .map(JSON.stringify);
+      .map(label => JSON.stringify(label));
     if (labels.length > 0) {
       const subject = labels.length === 1 ? 'Duplicate selector coordinate' : 'Duplicate selector coordinates';
       const predicate = labels.length === 1 ? 'is' : 'are each';
