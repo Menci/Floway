@@ -41,9 +41,11 @@
 // that protects every other API route. The operator forges
 // `~/.codex/auth.json` with `tokens.access_token` set to their Floway API
 // key string; codex's `CodexAuth::get_token()` returns access_token verbatim
-// and sends it as `Authorization: Bearer <key>`; `extractKey()` in
-// middleware/auth.ts already accepts that header, so the namespace inherits
-// API-key auth with no new code.
+// and sends it as `Authorization: Bearer <key>`, which middleware/auth.ts
+// accepts. The WebSocket handler retains that presented credential and
+// resolves its current key + owner rows before every response.create, so a
+// connection reused across turns observes rotation, deletion, upstream-scope,
+// and dump-retention changes without reconnecting.
 
 import type { Hono } from 'hono';
 
