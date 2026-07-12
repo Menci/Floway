@@ -1,10 +1,15 @@
-import { expect, test } from 'vitest';
+import { expect, expectTypeOf, test } from 'vitest';
 
-import { upstreamRecordToFullJson, upstreamRecordToJson } from './serialize.ts';
+import { upstreamRecordToFullJson, upstreamRecordToJson, type SerializedUpstreamRecord } from './serialize.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const timestamp = '2026-04-29T00:00:00.000Z';
+
+test('SerializedUpstreamRecord excludes route-layer response projections', () => {
+  expectTypeOf<'modelsCache' extends keyof SerializedUpstreamRecord ? true : false>().toEqualTypeOf<false>();
+  expectTypeOf<'codex_quota' extends keyof SerializedUpstreamRecord ? true : false>().toEqualTypeOf<false>();
+});
 
 const custom: UpstreamRecord = {
   id: 'up_custom_test',

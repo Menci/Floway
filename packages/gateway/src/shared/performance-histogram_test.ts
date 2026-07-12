@@ -78,38 +78,52 @@ describe('bucketForTpotUs', () => {
 });
 
 describe('percentileFromBuckets', () => {
-  it('returns the bucket geometric midpoint sqrt(lower*upper), not the upper edge', () => {
+  it('estimates the selected order statistic within a finite bucket', () => {
     const buckets: HistogramBucket[] = [
       { lower: 100, upper: 200, count: 10 },
     ];
-    // sqrt(100 * 200) ≈ 141.42, not 200
-    expect(percentileFromBuckets(buckets, 0.5)).toBeCloseTo(Math.sqrt(20_000), 5);
+
+    expect(percentileFromBuckets(buckets, 0.01)).toBeCloseTo(100 + 100 / 11, 10);
+    expect(percentileFromBuckets(buckets, 0.5)).toBeCloseTo(100 + 500 / 11, 10);
+    expect(percentileFromBuckets(buckets, 1)).toBeCloseTo(100 + 1_000 / 11, 10);
   });
 
-  it('first bucket (lower=0) falls back to arithmetic midpoint to avoid sqrt(0)', () => {
+  it('estimates a singleton sample at the bucket midpoint', () => {
     const buckets: HistogramBucket[] = [
-      { lower: 0, upper: 100, count: 10 },
+      { lower: 0, upper: 100, count: 1 },
     ];
+
     expect(percentileFromBuckets(buckets, 0.5)).toBe(50);
   });
 
-  it('p50 lands in the highest-count bucket', () => {
+  it('interpolates within a multi-sample bucket whose lower bound is zero', () => {
     const buckets: HistogramBucket[] = [
-      { lower: 0, upper: 50, count: 1 },
-      { lower: 50, upper: 100, count: 2 },
-      { lower: 100, upper: 200, count: 7 },
+      { lower: 0, upper: 100, count: 10 },
     ];
-    // p50 rank = ceil(10 * 0.5) = 5; falls in the third bucket. Geometric mid sqrt(100*200) ≈ 141.42.
-    expect(percentileFromBuckets(buckets, 0.5)).toBeCloseTo(Math.sqrt(20_000), 5);
+
+    expect(percentileFromBuckets(buckets, 0.5)).toBeCloseTo(500 / 11, 10);
   });
 
-  it('p99 lands in the top bucket', () => {
+  it('uses the rank local to the selected bucket', () => {
     const buckets: HistogramBucket[] = [
       { lower: 0, upper: 50, count: 1 },
       { lower: 50, upper: 100, count: 2 },
       { lower: 100, upper: 200, count: 7 },
     ];
-    expect(percentileFromBuckets(buckets, 0.99)).toBeCloseTo(Math.sqrt(20_000), 5);
+
+    // Global p50 rank 5 is the second of seven samples in the third bucket.
+    expect(percentileFromBuckets(buckets, 0.5)).toBe(125);
+  });
+
+  it('places a high local rank near the top of its bucket', () => {
+    const buckets: HistogramBucket[] = [
+      { lower: 0, upper: 50, count: 1 },
+      { lower: 50, upper: 100, count: 2 },
+      { lower: 100, upper: 200, count: 7 },
+    ];
+
+    // Global p99 rank 10 is the seventh of seven samples in the third bucket.
+    expect(percentileFromBuckets(buckets, 0.99)).toBe(187.5);
   });
 
   it('empty histogram returns null', () => {
@@ -132,8 +146,8 @@ describe('percentileFromBuckets', () => {
       upper: (i + 1) * 50,
       count: 50,
     }));
-    // rank(0.29, 200) = ceil(58 - ε) = 58; cumulative counts 50/100/150/200 → hits second bucket [50, 100].
-    // Geometric mid sqrt(50 * 100) ≈ 70.71.
-    expect(percentileFromBuckets(flat, 0.29)).toBeCloseTo(Math.sqrt(5_000), 5);
+    // rank(0.29, 200) = ceil(58 - ε) = 58; cumulative counts 50/100/150/200,
+    // so this is the eighth of 50 uniformly distributed samples in [50, 100].
+    expect(percentileFromBuckets(flat, 0.29)).toBeCloseTo(50 + 400 / 51, 10);
   });
 });

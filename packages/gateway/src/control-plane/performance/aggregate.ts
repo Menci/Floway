@@ -130,11 +130,16 @@ export const aggregatePerformanceForDisplay = <K extends string>(
   records: readonly PerformanceTelemetryRecord[],
   axes: Record<K, AggregateOptions>,
   keyToUser: ReadonlyMap<string, number>,
+  visibleKeyIds: ReadonlySet<string>,
 ): Record<K, PerformanceDisplayRecord[]> => {
   const entries = Object.entries(axes) as [K, AggregateOptions][];
   const maps = entries.map(() => new Map<string, MutableAggregate>());
   for (const record of records) {
-    for (let i = 0; i < entries.length; i++) updateAggregate(maps[i], record, entries[i][1], keyToUser);
+    for (let i = 0; i < entries.length; i++) {
+      const options = entries[i][1];
+      if (options.groupBy === 'keyId' && !visibleKeyIds.has(record.keyId)) continue;
+      updateAggregate(maps[i], record, options, keyToUser);
+    }
   }
   const result = {} as Record<K, PerformanceDisplayRecord[]>;
   for (let i = 0; i < entries.length; i++) {

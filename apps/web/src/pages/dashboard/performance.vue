@@ -186,10 +186,8 @@ watchEffect(() => {
   void router.replace({ query: serializeUrlState(currentUrlState()) });
 });
 
-// Group-by dropdown: By User is admin-only (every self-view row belongs
-// to the actor by construction, so splitting by user is a no-op there).
-// By API Key is available in both views — admins see every user's keys,
-// self-scoped users see only their own.
+// By User is available only with global telemetry access. By API Key is
+// always scoped to the actor's own keys, including inside the global view.
 const groupByOptions: { value: GroupBy; label: string }[] = [
   { value: 'model', label: 'By Model' },
   { value: 'upstream', label: 'By Upstream' },

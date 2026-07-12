@@ -2150,20 +2150,58 @@ test('GET /api/upstreams/blueprint serves a pure-blank record with provider flag
   assertEquals(ccPreview.flag_defaults['strip-billing-attribution'], false);
 });
 
-test('GET /api/upstreams/:id returns the full unredacted record so the edit page can post it back to action endpoints', async () => {
+test('GET /api/upstreams/:id returns the full record with fresh Codex quota for the edit page', async () => {
   const { repo, adminSession } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
   const created = await createCodexUpstreamViaExchange(adminSession);
+  const stored = await getRecord(repo, created.id);
+  const quota = {
+    observed_at: new Date().toISOString(),
+    active_limit: 'premium',
+    primary_used_percent: 7,
+    primary_window_minutes: 300,
+  };
+  const state = structuredClone(stored.state) as JsonObject;
+  state.accounts[0].quotaSnapshot = {
+    premium: { fetchedAt: Date.now(), data: quota },
+  };
+  const saved = await repo.upstreams.saveState(created.id, state, { expectedState: stored.state });
+  assertEquals(saved.updated, true);
 
   const resp = await requestApp(`/api/upstreams/${created.id}`, { headers: { 'x-floway-session': adminSession } });
   assertEquals(resp.status, 200);
   const body = (await resp.json()) as JsonObject;
   assertEquals(body.id, created.id);
+  assertEquals(body.codex_quota, { premium: quota });
   // Unredacted: the refresh_token secret is present verbatim, not projected
   // as the list-view's `refresh_token_set` boolean.
   assertEquals(body.state.accounts[0].refresh_token, 'rt_test');
   assertEquals('refresh_token_set' in body.state.accounts[0], false);
+});
+
+test('GET /api/upstreams/:id returns null Codex quota when no fresh snapshot exists', async () => {
+  const { repo, adminSession } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+
+  const created = await createCodexUpstreamViaExchange(adminSession);
+  const resp = await requestApp(`/api/upstreams/${created.id}`, { headers: { 'x-floway-session': adminSession } });
+  assertEquals(resp.status, 200);
+  const body = (await resp.json()) as JsonObject;
+  assertEquals('codex_quota' in body, true);
+  assertEquals(body.codex_quota, null);
+});
+
+test('GET /api/upstreams/:id omits Codex quota from non-Codex responses', async () => {
+  const { adminSession } = await setupAppTest();
+  const createdResp = await requestApp('/api/upstreams', authed(adminSession, createBody()));
+  assertEquals(createdResp.status, 201);
+  const created = (await createdResp.json()) as JsonObject;
+
+  const resp = await requestApp(`/api/upstreams/${created.id}`, { headers: { 'x-floway-session': adminSession } });
+  assertEquals(resp.status, 200);
+  const body = (await resp.json()) as JsonObject;
+  assertEquals('codex_quota' in body, false);
 });
 
 test('GET /api/upstreams/:id returns 404 for an unknown id', async () => {
