@@ -1,5 +1,5 @@
 import type { WebSearchProviderName } from '../shared/web-search-providers.ts';
-import type { AliasSelection, AliasTarget, AnnouncedMetadata, BillingDimension, ModelKind, PriceVector } from '@floway-dev/protocols/common';
+import type { AliasSelection, AliasTarget, AnnouncedMetadata, BillingDimension, ModelKind, PriceVector, PricingSelector } from '@floway-dev/protocols/common';
 import type { PerformanceTelemetryContext, ProviderModel, UpstreamRecord } from '@floway-dev/provider';
 
 export interface ApiKey {
@@ -45,21 +45,12 @@ export interface UsageRecord {
   upstream: string | null;
   modelKey: string;
   hour: string;
-  // Service tier the upstream stamped on this bucket (Anthropic `speed`,
-  // OpenAI `service_tier`). null = the base / default tier. Distinct tiers
-  // for the same (keyId, model, upstream, modelKey, hour) are stored as
-  // separate buckets so per-tier pricing overrides apply correctly.
-  tier: string | null;
-  // Input-length pricing coordinate — the `inputAboveTokens` band the
-  // request's total input crossed (see `selectInputLengthTier`), or null for
-  // the base band. Orthogonal to `tier`: it is selected per request from the
-  // prompt size before persistence, so requests of different prompt sizes land
-  // in separate buckets and resolve distinct long-context unit prices.
-  inputAboveTokens: number | null;
+  // Canonical, self-describing selector coordinate for this bucket. The SQL
+  // identity stores its sorted-key JSON form; repository reads expose the typed
+  // object. `{}` is the base coordinate.
+  pricingSelector: PricingSelector;
   requests: number;
-  // Disjoint per-dimension token counts for this bucket. The tier the bucket
-  // was stamped under lives on the `tier` field above — do not encode it
-  // inside this map.
+  // Disjoint per-dimension token counts for this selector bucket.
   tokens: Partial<Record<BillingDimension, number>>;
   // Resolved per-dimension price snapshot for this exact selector coordinate.
   // null means no explicit pricing cell matched. Repos persist one unit price
@@ -182,8 +173,8 @@ export interface SessionsRepo {
 }
 
 export interface UsageRepo {
-  // Additive upsert: on (keyId, model, upstream, modelKey, hour, tier,
-  // inputAboveTokens) conflict, token counts are summed. cost is COALESCED —
+  // Additive upsert: on (keyId, model, upstream, modelKey, hour,
+  // pricingSelector) conflict, token counts are summed. cost is COALESCED —
   // the first write within a bucket establishes the pricing snapshot for that
   // row, later writes that share the bucket keep the original snapshot.
   record(record: UsageRecord): Promise<void>;

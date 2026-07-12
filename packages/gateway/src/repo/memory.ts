@@ -45,7 +45,7 @@ import { serializeStoredState } from './upstream-json.ts';
 import { bucketForTtftMs, bucketForTpotUs } from '../shared/performance-histogram.ts';
 import { generateSessionToken } from '../shared/session-tokens.ts';
 import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';
-import { BILLING_DIMENSIONS, type BillingDimension, type PriceVector, unitPriceForDimension } from '@floway-dev/protocols/common';
+import { BILLING_DIMENSIONS, canonicalPricingSelectorKey, type BillingDimension, type PriceVector, type PricingSelector, unitPriceForDimension } from '@floway-dev/protocols/common';
 import type { ProviderModel, UpstreamRecord } from '@floway-dev/provider';
 
 const SEED_ADMIN_USER: User = {
@@ -228,8 +228,7 @@ interface UsageBucketIdentity {
   upstream: string | null;
   modelKey: string;
   hour: string;
-  tier: string | null;
-  inputAboveTokens: number | null;
+  pricingSelector: PricingSelector;
 }
 
 interface UsageBucketState extends UsageBucketIdentity {
@@ -242,7 +241,7 @@ class MemoryUsageRepo implements UsageRepo {
   private store = new Map<string, UsageBucketState>();
 
   private key(r: UsageBucketIdentity): string {
-    return [r.keyId, r.model, r.upstream ?? '', r.modelKey, r.hour, r.tier ?? '', r.inputAboveTokens ?? ''].join('\0');
+    return [r.keyId, r.model, r.upstream ?? '', r.modelKey, r.hour, canonicalPricingSelectorKey(r.pricingSelector)].join('\0');
   }
 
   private dimensionEntries(record: UsageRecord): { dimension: BillingDimension; tokens: number; unitPrice: number | null }[] {
@@ -262,14 +261,14 @@ class MemoryUsageRepo implements UsageRepo {
       const unitPrice = state.unitPrices[dimension];
       if (unitPrice !== undefined) (cost ??= {})[dimension] = unitPrice;
     }
-    return { keyId: state.keyId, model: state.model, upstream: state.upstream ?? null, modelKey: state.modelKey, hour: state.hour, tier: state.tier, inputAboveTokens: state.inputAboveTokens, requests: state.requests, tokens, cost };
+    return { keyId: state.keyId, model: state.model, upstream: state.upstream ?? null, modelKey: state.modelKey, hour: state.hour, pricingSelector: state.pricingSelector, requests: state.requests, tokens, cost };
   }
 
   private bucket(record: UsageRecord): UsageBucketState {
     const k = this.key(record);
     let state = this.store.get(k);
     if (!state) {
-      state = { keyId: record.keyId, model: record.model, upstream: record.upstream ?? null, modelKey: record.modelKey, hour: record.hour, tier: record.tier, inputAboveTokens: record.inputAboveTokens, tokens: {}, unitPrices: {}, requests: 0 };
+      state = { keyId: record.keyId, model: record.model, upstream: record.upstream ?? null, modelKey: record.modelKey, hour: record.hour, pricingSelector: record.pricingSelector, tokens: {}, unitPrices: {}, requests: 0 };
       this.store.set(k, state);
     }
     return state;
@@ -309,8 +308,7 @@ class MemoryUsageRepo implements UsageRepo {
       upstream: record.upstream ?? null,
       modelKey: record.modelKey,
       hour: record.hour,
-      tier: record.tier,
-      inputAboveTokens: record.inputAboveTokens,
+      pricingSelector: record.pricingSelector,
       tokens: {},
       unitPrices: {},
       requests: record.requests,
