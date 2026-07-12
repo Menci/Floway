@@ -4,7 +4,7 @@ import { createResponsesWsSession } from './items/store.ts';
 import { PreviousResponseNotFoundError } from './serve-prep.ts';
 import { responsesServe } from './serve.ts';
 import { tokenUsageFromResponsesResult } from './usage.ts';
-import type { AuthedContext } from '../../../middleware/auth.ts';
+import { apiKeyFromContext, authenticateApiKey, type AuthedContext } from '../../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
@@ -92,6 +92,11 @@ export const responsesWebSocket = async (c: AuthedContext): Promise<Response> =>
 };
 
 const createResponsesWebSocketEvents = (c: AuthedContext): ResponsesWebSocketHandlers => {
+  // The upgrade authenticates the connection, but every response.create is a
+  // separate data-plane request. Codex deliberately reuses one socket across
+  // turns, so retain the presented credential and resolve it again before each
+  // turn rather than freezing key/user policy at upgrade time.
+  const authenticatedRawKey = apiKeyFromContext(c).key;
   const session = createResponsesWsSession();
   let closed = false;
   let activeAbortController: AbortController | undefined;
@@ -154,7 +159,7 @@ const createResponsesWebSocketEvents = (c: AuthedContext): ResponsesWebSocketHan
           const abortController = new AbortController();
           activeAbortController = abortController;
           try {
-            await handleClientMessage(c, socket, session, event.data, abortController, () => closed, sessionScheduler);
+            await handleClientMessage(c, socket, session, event.data, authenticatedRawKey, abortController, () => closed, sessionScheduler);
           } finally {
             if (activeAbortController === abortController) activeAbortController = undefined;
           }
@@ -174,6 +179,7 @@ const handleClientMessage = async (
   socket: ResponsesWebSocketSocket,
   session: ReturnType<typeof createResponsesWsSession>,
   data: unknown,
+  authenticatedRawKey: string,
   downstreamAbortController: AbortController,
   isClosed: () => boolean,
   backgroundScheduler: BackgroundScheduler,
@@ -187,6 +193,14 @@ const handleClientMessage = async (
     // parse never reach ctx construction, so no dump record is emitted for
     // them — there is no api-key-scoped turn to attribute them to.
     const requestBytes = wsDataToBytes(data);
+    if (!(await authenticateApiKey(c, authenticatedRawKey))) {
+      sendError(socket, 401, {
+        type: 'authentication_error',
+        code: 'invalid_api_key',
+        message: 'Invalid API key.',
+      });
+      return;
+    }
     let parsed: unknown;
     try {
       parsed = JSON.parse(new TextDecoder().decode(requestBytes)) as unknown;
