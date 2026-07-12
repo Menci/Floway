@@ -8,7 +8,6 @@ import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { ModelCandidate, ExecuteResult } from '@floway-dev/provider';
-import { requiresNativeResponses } from '@floway-dev/translate';
 import { responsesItemsView, type CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
 
 // Thrown when a request names a `previous_response_id` that the store cannot
@@ -84,16 +83,12 @@ export const prepareResponsesServePlan = async (args: {
     scheduler: ctx.backgroundScheduler,
     runtimeLocation: ctx.runtimeLocation,
   });
-  const viable = candidates.filter(c =>
-    requiresNativeResponses(prepared)
-      ? c.model.endpoints.responses !== undefined
-      : responsesTarget.canServe(c.model.endpoints));
+  const viable = candidates.filter(c => responsesTarget.canServe(c.model.endpoints));
   const decision = await classifyResponsesItemAffinity({
     sourceItems: prepared.input,
     view: responsesItemsView,
     store,
     candidates: viable,
-    requiresNativeResponses: item => requiresNativeResponses({ model: prepared.model, input: [item] }),
     // Hash-preload covers any user item carried directly on this turn — once
     // `expandPreviousResponseId` has run, those are the items after the
     // snapshot's item_reference prefix, which IS `payload.input` (verbatim,

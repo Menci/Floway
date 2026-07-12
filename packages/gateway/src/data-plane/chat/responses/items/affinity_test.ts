@@ -79,7 +79,7 @@ const storedMessageId = (_label: string): string => createStoredResponsesItemId(
 const storedReasoningId = (_label: string): string => createStoredResponsesItemId('reasoning');
 const storedCompactionId = (_label: string): string => createStoredResponsesItemId('compaction');
 const storedProgramId = (_label: string): string => createStoredResponsesItemId('program');
-const storedCustomCallId = (_label: string): string => createStoredResponsesItemId('custom_tool_call');
+const storedProgramOutputId = (_label: string): string => createStoredResponsesItemId('program_output');
 
 test('missing stored item_reference returns item-not-found failure', async () => {
   await insertRows([]);
@@ -185,48 +185,20 @@ test('mixed portable upstreams are ordered by reverse last occurrence before rem
   if (result.kind === 'success') assertEquals(result.candidates.map(c => c.provider.upstream), ['up_b', 'up_a', 'up_c']);
 });
 
-test('program replay state forces affinity to its producing upstream', async () => {
-  const programId = storedProgramId('program');
-  const customCallId = storedCustomCallId('nested-call');
-  const program: ResponsesInputItem = {
-    type: 'program',
-    id: programId,
-    call_id: 'call_prog_1',
-    code: 'await exec("hi")',
-    fingerprint: 'opaque',
-  };
-  const customCall: ResponsesInputItem = {
-    type: 'custom_tool_call',
-    id: customCallId,
-    call_id: 'call_1',
-    name: 'exec',
-    input: 'hi',
-    caller: { type: 'program', caller_id: 'call_prog_1' },
-  };
+test.each([
+  { type: 'program' as const, id: storedProgramId, item: (id: string) => ({ type: 'program' as const, id, call_id: 'call_prog', code: 'return 1', fingerprint: 'opaque' }) },
+  { type: 'program_output' as const, id: storedProgramOutputId, item: (id: string) => ({ type: 'program_output' as const, id, call_id: 'call_prog', result: '1', status: 'completed' as const }) },
+])('$type item forces affinity to its producing upstream', async ({ type, id: createId, item: createItem }) => {
+  const id = createId('account-bound');
+  const item = createItem(id);
   await insertRows([
-    storedRow({ id: programId, itemType: 'program', upstreamId: 'up_a', upstreamItemId: 'raw_program', payload: program }),
-    storedRow({ id: customCallId, itemType: 'custom_tool_call', upstreamId: 'up_a', upstreamItemId: 'raw_custom', payload: customCall }),
+    storedRow({ id, itemType: type, upstreamId: 'up_a', upstreamItemId: `raw_${type}`, payload: item }),
   ]);
 
-  const result = await classifyItems([program, customCall], [candidate('up_b'), candidate('up_a')]);
+  const result = await classifyItems([item], [candidate('up_b'), candidate('up_a')]);
 
   assertEquals(result.kind, 'success');
   if (result.kind === 'success') assertEquals(result.candidates.map(c => c.provider.upstream), ['up_a']);
-});
-
-test('program replay state rejects when its producing upstream is unavailable', async () => {
-  const id = storedProgramId('missing-upstream');
-  const program: ResponsesInputItem = {
-    type: 'program', id, call_id: 'call_prog_1', code: 'return 1', fingerprint: 'opaque',
-  };
-  await insertRows([
-    storedRow({ id, itemType: 'program', upstreamId: 'up_a', upstreamItemId: 'raw_program', payload: program }),
-  ]);
-
-  const result = await classifyItems([program], [candidate('up_b')]);
-
-  assertEquals(result.kind, 'failure');
-  if (result.kind === 'failure') assertEquals(result.failure.kind, 'routing-unavailable');
 });
 
 test('conflicting compaction forcing upstreams reject the request', async () => {

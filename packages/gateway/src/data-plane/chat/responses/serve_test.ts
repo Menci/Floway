@@ -174,37 +174,6 @@ test('generate routes a native Responses candidate end to end', async () => {
   assertEquals(callResponses.mock.calls.length, 1);
 });
 
-test('programmatic input skips translated candidates and reaches native Responses', async () => {
-  installRepo();
-  const callMessages = vi.fn();
-  const callResponses = vi.fn(async (): Promise<ProviderResponsesResult> => ({
-    action: 'generate',
-    ok: true,
-    events: makeProtocolFrames([{ type: 'response.completed', sequence_number: 0, response: makeResponsesResult() }]),
-    modelKey: 'native-key',
-    headers: new Headers(),
-  }));
-  queueResolution([
-    makeCandidate({ upstream: 'up_messages', endpoints: { messages: {} }, callMessages }),
-    makeCandidate({ upstream: 'up_responses', endpoints: { responses: {} }, callResponses }),
-  ]);
-
-  const result = await responsesServe.generate({
-    payload: makePayload({
-      input: [
-        { type: 'additional_tools', role: 'developer', tools: [] },
-        { type: 'message', role: 'user', content: 'hello' },
-      ],
-    }),
-    ctx: makeGatewayCtx(),
-    headers: new Headers(),
-  });
-
-  assertEquals(result.type, 'events');
-  assertEquals(callMessages.mock.calls.length, 0);
-  assertEquals(callResponses.mock.calls.length, 1);
-});
-
 test('compact returns a result envelope from the wrapped attempt', async () => {
   installRepo();
   const compactionItem = { type: 'compaction' as const, id: 'cmp_1', encrypted_content: 'ENC' };
