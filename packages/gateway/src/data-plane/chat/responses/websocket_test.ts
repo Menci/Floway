@@ -208,6 +208,66 @@ test('Responses WebSocket forwards stream events, echoes event_id, and sends res
   );
 });
 
+test('Responses WebSocket reports a failed turn when an output item cannot be persisted', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  const persistence = vi.spyOn(repo.responsesItems, 'insertMany').mockRejectedValue(new Error('simulated item persistence failure'));
+  try {
+    await withMockedFetch(
+      async request => {
+        const url = new URL(request.url);
+        if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+        if (url.pathname === '/copilot_internal/v2/token') {
+          return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+        }
+        if (url.pathname === '/models') {
+          return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'] }]));
+        }
+        if (url.pathname === '/responses') {
+          return sseResponsesResponse({
+            id: 'resp_ws_persist_failure',
+            object: 'response',
+            model: 'gpt-direct-responses',
+            status: 'completed',
+            output: [{
+              type: 'message',
+              id: 'msg_upstream',
+              role: 'assistant',
+              status: 'completed',
+              content: [{ type: 'output_text', text: 'done' }],
+            }],
+            output_text: 'done',
+            usage: { input_tokens: 3, output_tokens: 5, total_tokens: 8 },
+          });
+        }
+        throw new Error(`Unhandled fetch ${request.url}`);
+      },
+      async () => await withWorkerWebSocketRuntime(async () => {
+        const client = await connectResponsesWebSocket(apiKey.key);
+        const received = waitForMessages(client, messages => messages.some(message => message.type === 'error'));
+
+        client.send(JSON.stringify({
+          type: 'response.create',
+          event_id: 'evt_persist_failure',
+          response: {
+            model: 'gpt-direct-responses',
+            input: 'hello',
+          },
+        }));
+
+        const messages = await received;
+        const error = messages.find(message => message.type === 'error') as { status_code?: unknown; error?: { message?: unknown } } | undefined;
+        assertExists(error);
+        assertEquals(error.status_code, 500);
+        assertEquals(error.error?.message, 'simulated item persistence failure');
+        assert(!messages.some(message => message.type === 'response.completed'));
+        assert(!messages.some(message => message.type === 'response.done'));
+      }),
+    );
+  } finally {
+    persistence.mockRestore();
+  }
+});
+
 test('Responses WebSocket keepalive during an in-flight request does not drop the pending upstream frame', async () => {
   const { apiKey } = await setupAppTest();
   const time = new FakeTime();

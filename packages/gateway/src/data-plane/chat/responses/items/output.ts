@@ -12,8 +12,11 @@ import type { ChatTargetApi } from '@floway-dev/provider';
 //
 // Items are committed at their `done` frame and the snapshot is committed
 // at the terminal `response.completed` / `response.incomplete` frame.
-// `onItemFinalized` is awaited before the terminal frame is yielded, so a
-// client that has seen the frame can reference the row on its next turn.
+// Both writes are protocol state, not best-effort telemetry: their failures
+// propagate so the client never receives `done` / a successful terminal frame
+// for ids that cannot be referenced on its next turn. Streaming clients may
+// already have seen the item's `added` frame and deltas, but without `done`
+// they must treat that partial item as failed.
 //
 // Wrap is also the single source of truth for the response envelope id the
 // client sees. The caller mints a `resp_<crc>_<body>` once and passes it
@@ -87,11 +90,7 @@ export const wrapResponsesOutputForStorage = async function* (
       refreshedAt: now,
     };
     store.stageOutputItem(row);
-    try {
-      await store.commitOutputItems();
-    } catch (error) {
-      console.error('Failed to persist stored Responses items:', error);
-    }
+    await store.commitOutputItems();
   };
 
   // `seenItemTypes` records item type for every upstream id we have mapped
@@ -164,11 +163,7 @@ export const wrapResponsesOutputForStorage = async function* (
       // generator another tick, so any post-yield work would be lost.
       // The downstream HTTP entry has nothing to observe pre-snapshot —
       // ordering matches a synchronous emit.
-      try {
-        await store.commitSnapshot(responseId, sawCompactionItem ? 'replace' : 'append');
-      } catch (error) {
-        console.error('Failed to persist stored Responses snapshot:', error);
-      }
+      await store.commitSnapshot(responseId, sawCompactionItem ? 'replace' : 'append');
       yield rewritten;
       return;
     }

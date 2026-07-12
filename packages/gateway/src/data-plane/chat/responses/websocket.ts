@@ -370,11 +370,11 @@ const respondResponsesWebSocket = async (input: {
         if (failed) state.failed = true;
         state.rememberUsage('response' in event ? tokenUsageFromResponsesResult((event as { response: ResponsesResult }).response) : null);
 
-        // The upstream terminal event flushes immediately; we then drain the
-        // remainder of the generator (storage commit, any post-terminal frames)
-        // before emitting the WS-only `response.done` envelope, so the client
-        // sees `response.done` last and treats it as the stable signal that the
-        // stored response can be referenced by a follow-up message.
+        // The wrapped terminal event arrives only after its item and snapshot
+        // writes have committed. Flush it immediately, then drain the remainder
+        // of the generator before emitting the WS-only `response.done` envelope,
+        // so `response.done` remains the stable signal that a follow-up message
+        // can reference the stored response.
         if (terminalEvent !== undefined) continue;
 
         if (isResponsesTerminalEvent(event)) {
