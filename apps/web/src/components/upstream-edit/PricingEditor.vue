@@ -349,7 +349,7 @@ const movePricingEntry = (index: number, offset: -1 | 1) => {
                 :model-value="typeof selectedPricingEntry.selector[axis.id] === 'string' ? selectedPricingEntry.selector[axis.id] as string : ''"
                 :readonly="!editable"
                 :invalid="invalidPricingSelectorEntries.has(selectedPricingEntryIndex) || coordinateKey(selectedPricingEntry) !== null && duplicatePricingCoordinates.has(coordinateKey(selectedPricingEntry)!)"
-                placeholder="default"
+                placeholder="blank = Base; e.g. priority"
                 class="font-mono"
                 @update:model-value="value => updateEqualityCoordinate(selectedPricingEntryIndex, axis.id, value)"
               />

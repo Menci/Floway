@@ -41,6 +41,16 @@ export interface PricingThresholdCoordinate {
 export type PricingCoordinateValue = string | PricingThresholdCoordinate;
 export type PricingSelector = Readonly<Record<string, PricingCoordinateValue>>;
 
+// Response-side `default` (OpenAI) and `standard` (Anthropic) identify Base;
+// other open-string values remain byte-preserving selector coordinates.
+// https://developers.openai.com/api/docs/guides/priority-processing
+// https://docs.claude.com/en/api/service-tiers
+export const billableServiceTier = (tier: string | null | undefined): string | null => {
+  if (tier == null) return null;
+  const normalized = tier.trim().toLowerCase();
+  return normalized === '' || normalized === 'default' || normalized === 'standard' ? null : tier;
+};
+
 export type PricingRuntimeFacts = Readonly<{
   serviceTier?: string | null;
   inputTokens: number;
@@ -188,7 +198,11 @@ export const collectModelPricingIssues = (pricing: ModelPricing): readonly Model
       }
     }
     try {
-      selectors[entryIndex] = canonicalizePricingSelector(entry.selector);
+      const selector = canonicalizePricingSelector(entry.selector);
+      if (typeof selector.serviceTier === 'string' && billableServiceTier(selector.serviceTier) === null) {
+        throw new RangeError('pricing selector serviceTier must not denote Base; omit the coordinate instead');
+      }
+      selectors[entryIndex] = selector;
     } catch (cause) {
       issues.push({
         code: 'invalid-selector',

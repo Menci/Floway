@@ -131,6 +131,21 @@ test('structured pricing issues identify entries, selectors, and rate-dimension 
   ]);
 });
 
+test('catalog validation rejects Base-equivalent tiers without narrowing historical selector parsing', () => {
+  for (const serviceTier of ['default', ' Standard ', '  ']) {
+    const issues = collectModelPricingIssues({
+      entries: [
+        { rates: { input: 1 } },
+        { selector: { serviceTier }, rates: { input: 2 } },
+      ],
+    });
+    assertEquals(issues.map(issue => ({ code: issue.code, ...('entryIndex' in issue ? { entryIndex: issue.entryIndex } : {}) })), [
+      { code: 'invalid-selector', entryIndex: 1 },
+    ]);
+    assertEquals(canonicalizePricingSelector({ serviceTier }), { serviceTier });
+  }
+});
+
 test('service-specific thresholds remain scoped while global thresholds apply to every service tier', () => {
   const pricing: ModelPricing = {
     entries: [

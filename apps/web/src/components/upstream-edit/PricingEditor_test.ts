@@ -201,6 +201,17 @@ describe('PricingEditor', () => {
     );
   });
 
+  it.each(['default', ' Standard ', '  '])('rejects Base-equivalent service tier %j', serviceTier => {
+    const wrapper = mountEditor({
+      entries: [
+        { rates: { input: 1 } },
+        { selector: { serviceTier }, rates: { input: 2 } },
+      ],
+    });
+    expect(wrapper.get('[aria-label="Pricing validation errors"]').text()).toBe('Selector values are invalid: entry 2.');
+    expect(wrapper.emitted('validity-change')?.at(-1)).toEqual([false]);
+  });
+
   it('shows the empty-rate error when every pricing entry has the same empty rate shape', () => {
     const wrapper = mountEditor({
       entries: [
