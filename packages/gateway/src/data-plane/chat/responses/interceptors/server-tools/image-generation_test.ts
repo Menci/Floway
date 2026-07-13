@@ -56,6 +56,10 @@ const remoteImageMessage: ResponsesInputItem = {
   type: 'message', role: 'user', content: [{ type: 'input_image', image_url: 'https://example.com/a.png', detail: 'auto' }],
 };
 
+const malformedImageMessage: ResponsesInputItem = {
+  type: 'message', role: 'user', content: [{ type: 'input_image', image_url: 'data:image/png;base64,%%%', detail: 'auto' }],
+};
+
 // ── isHostedImageGenerationTool ──
 
 test('isHostedImageGenerationTool matches only the hosted image_generation type', () => {
@@ -527,6 +531,15 @@ test('imageGenerationServerTool rejects remote images when action may edit', asy
   assertEquals(result.code, 'invalid_value');
 });
 
+test('imageGenerationServerTool rejects malformed inline images when action may edit', async () => {
+  const result = await imageGenerationServerTool(
+    makeCtx({ tools: [{ type: 'image_generation' }], input: [malformedImageMessage] }),
+    gatewayCtx(),
+  );
+  assert(result.type === 'invalid-request');
+  assertEquals(result.code, 'invalid_value');
+});
+
 test('imageGenerationServerTool accepts file_id-only context for explicit generation', async () => {
   const result = await imageGenerationServerTool(
     makeCtx({ tools: [{ type: 'image_generation', action: 'generate' }], input: [fileIdImageMessage] }),
@@ -538,6 +551,14 @@ test('imageGenerationServerTool accepts file_id-only context for explicit genera
 test('imageGenerationServerTool accepts remote image context for explicit generation', async () => {
   const result = await imageGenerationServerTool(
     makeCtx({ tools: [{ type: 'image_generation', action: 'generate' }], input: [remoteImageMessage] }),
+    gatewayCtx(),
+  );
+  assert(result.type === 'active');
+});
+
+test('imageGenerationServerTool accepts malformed image context for explicit generation', async () => {
+  const result = await imageGenerationServerTool(
+    makeCtx({ tools: [{ type: 'image_generation', action: 'generate' }], input: [malformedImageMessage] }),
     gatewayCtx(),
   );
   assert(result.type === 'active');
