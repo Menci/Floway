@@ -90,6 +90,9 @@ const buildResult = (state: MessagesToResponsesStreamState, status: ResponsesRes
   const { cacheWrite, cacheWrite1h } = splitMessagesCacheCreationTokens(state.usage);
   const cacheRead = state.usage.cache_read_input_tokens ?? 0;
   const cacheCreation = cacheWrite + cacheWrite1h;
+  const hasCacheCreation = state.usage.cache_creation_input_tokens !== undefined
+    || state.usage.cache_creation?.ephemeral_5m_input_tokens !== undefined
+    || state.usage.cache_creation?.ephemeral_1h_input_tokens !== undefined;
   const inputTokens = (state.usage.input_tokens ?? 0) + cacheRead + cacheCreation;
   // Anthropic's `speed: 'fast'` surfaces as OpenAI `service_tier: 'fast'`;
   // all other Anthropic service_tier values pass through directly.
@@ -106,7 +109,12 @@ const buildResult = (state: MessagesToResponsesStreamState, status: ResponsesRes
     // `handleMessageStop` in this file). Other Anthropic stop_reasons
     // don't map to incomplete.
     ...(status === 'incomplete' ? { incompleteDetails: { reason: 'max_output_tokens' as const } } : {}),
-    usage: responses.usage(inputTokens, state.usage.output_tokens, state.usage.cache_read_input_tokens, cacheCreation),
+    usage: responses.usage(
+      inputTokens,
+      state.usage.output_tokens,
+      state.usage.cache_read_input_tokens,
+      hasCacheCreation ? cacheCreation : undefined,
+    ),
     ...(serviceTier !== undefined ? { serviceTier } : {}),
   });
 };
