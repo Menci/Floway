@@ -174,9 +174,9 @@ export interface SessionsRepo {
 
 export interface UsageRepo {
   // Additive upsert: on (keyId, model, upstream, modelKey, hour,
-  // pricingSelector) conflict, token counts are summed. rates is COALESCED —
-  // the first write within a bucket establishes the pricing snapshot for that
-  // row, later writes that share the bucket keep the original snapshot.
+  // pricingSelector) conflict, token counts are summed. The first write for
+  // each dimension establishes its pricing snapshot, including an unpriced
+  // snapshot; later writes that share the bucket keep it unchanged.
   record(record: UsageRecord): Promise<void>;
   query(opts: { keyId?: string; start: string; end: string }): Promise<UsageRecord[]>;
   listAll(): Promise<UsageRecord[]>;

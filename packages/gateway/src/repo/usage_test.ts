@@ -103,4 +103,13 @@ for (const backend of backends) {
     const [row] = await query(repo);
     assertEquals(row.rates, null);
   });
+
+  test(`${backend.name} usage repo keeps an unpriced first-write snapshot when later writes are priced`, async () => {
+    const repo = await backend.make();
+    await repo.usage.record(record({ rates: null, tokens: { input: 100 } }));
+    await repo.usage.record(record({ rates: { input: 7 }, tokens: { input: 200 } }));
+    const [row] = await query(repo);
+    assertEquals(row.tokens, { input: 300 });
+    assertEquals(row.rates, null);
+  });
 }

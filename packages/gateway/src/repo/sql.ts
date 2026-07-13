@@ -384,7 +384,7 @@ class SqlUsageRepo implements UsageRepo {
     const statements: SqlPreparedStatement[] = dimensionRows(record).map(row =>
       this.db.prepare(
         `INSERT INTO usage (key_id, model, upstream, model_key, hour, pricing_selector, dimension, tokens, unit_price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT DO UPDATE SET tokens = tokens + excluded.tokens, unit_price = COALESCE(unit_price, excluded.unit_price)`,
+         ON CONFLICT DO UPDATE SET tokens = tokens + excluded.tokens`,
       ).bind(record.keyId, record.model, upstream, record.modelKey, record.hour, selector, row.dimension, row.tokens, row.unitPrice));
     statements.push(this.db.prepare(
       `INSERT INTO usage_requests (key_id, model, upstream, model_key, hour, pricing_selector, requests) VALUES (?, ?, ?, ?, ?, ?, ?)

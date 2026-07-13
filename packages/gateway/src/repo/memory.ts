@@ -278,8 +278,9 @@ class MemoryUsageRepo implements UsageRepo {
     const state = this.bucket(record);
     state.requests += record.requests;
     for (const { dimension, tokens, unitPrice } of this.dimensionEntries(record)) {
+      const isFirstWrite = state.tokens[dimension] === undefined;
       state.tokens[dimension] = (state.tokens[dimension] ?? 0) + tokens;
-      if (state.unitPrices[dimension] === undefined && unitPrice !== null) state.unitPrices[dimension] = unitPrice;
+      if (isFirstWrite && unitPrice !== null) state.unitPrices[dimension] = unitPrice;
     }
     return Promise.resolve();
   }
