@@ -80,6 +80,29 @@ export interface PricedRequest {
   rates: PriceVector | null;
 }
 
+export type ModelPricingIssue =
+  | { code: 'empty-catalog'; error: Error }
+  | { code: 'empty-rates'; entryIndex: number; error: Error }
+  | { code: 'invalid-rate'; entryIndex: number; dimension: BillingDimension; error: RangeError }
+  | { code: 'invalid-selector'; entryIndex: number; error: Error }
+  | { code: 'base-count'; entryIndexes: readonly number[]; error: Error }
+  | {
+      code: 'rate-dimensions';
+      entryIndex: number;
+      baseIndex: number;
+      missingDimensions: readonly BillingDimension[];
+      addedDimensions: readonly BillingDimension[];
+      error: Error;
+    }
+  | { code: 'duplicate-selector'; selector: PricingSelector; selectorKey: string; entryIndexes: readonly number[]; error: Error }
+  | {
+      code: 'threshold-operator-conflict';
+      axisId: string;
+      value: number;
+      entryIndexes: readonly [number, number];
+      error: Error;
+    };
+
 export const validatePriceVector = (pricing: PriceVector, path = 'price vector'): void => {
   const dimensions = BILLING_DIMENSIONS.filter(dimension => pricing[dimension] !== undefined);
   if (dimensions.length === 0) throw new Error(`${path} must contain at least one rate`);
@@ -132,37 +155,116 @@ const selectorCoordinatesByKind = (selector: PricingSelector, kind: PricingAxis[
 const equalityScopeKey = (selector: PricingSelector): string =>
   JSON.stringify(selectorCoordinatesByKind(selector, 'equality'));
 
-export const validateModelPricing = (pricing: ModelPricing): void => {
-  if (pricing.entries.length === 0) throw new Error('model pricing must declare at least one entry');
-  const selectors = pricing.entries.map((entry, index) => {
-    validatePriceVector(entry.rates, `model pricing entry ${index}.rates`);
-    return canonicalizePricingSelector(entry.selector);
-  });
-  const baseIndexes = selectors.flatMap((selector, index) => Object.keys(selector).length === 0 ? [index] : []);
-  if (baseIndexes.length !== 1) throw new Error('model pricing must declare exactly one base entry');
-  const baseIndex = baseIndexes[0]!;
-  const dimensionsFor = (rates: PriceVector): readonly BillingDimension[] =>
-    BILLING_DIMENSIONS.filter(dimension => rates[dimension] !== undefined);
-  const expectedDimensions = dimensionsFor(pricing.entries[baseIndex]!.rates);
-  for (let index = 0; index < pricing.entries.length; index++) {
-    if (index === baseIndex) continue;
-    const dimensions = dimensionsFor(pricing.entries[index]!.rates);
-    if (dimensions.length !== expectedDimensions.length || dimensions.some((dimension, i) => dimension !== expectedDimensions[i])) {
-      throw new Error(`model pricing entry ${index}.rates must define the same dimensions as the base entry (${expectedDimensions.join(', ')})`);
+const pricingDimensions = (rates: PriceVector): readonly BillingDimension[] =>
+  BILLING_DIMENSIONS.filter(dimension => rates[dimension] !== undefined);
+
+export const collectModelPricingIssues = (pricing: ModelPricing): readonly ModelPricingIssue[] => {
+  const issues: ModelPricingIssue[] = [];
+  if (pricing.entries.length === 0) {
+    issues.push({ code: 'empty-catalog', error: new Error('model pricing must declare at least one entry') });
+    return issues;
+  }
+
+  const selectors: (PricingSelector | undefined)[] = [];
+  for (let entryIndex = 0; entryIndex < pricing.entries.length; entryIndex++) {
+    const entry = pricing.entries[entryIndex]!;
+    const dimensions = pricingDimensions(entry.rates);
+    if (dimensions.length === 0) {
+      issues.push({
+        code: 'empty-rates',
+        entryIndex,
+        error: new Error(`model pricing entry ${entryIndex}.rates must contain at least one rate`),
+      });
+    }
+    for (const dimension of dimensions) {
+      const rate = entry.rates[dimension]!;
+      if (!Number.isFinite(rate) || rate < 0) {
+        issues.push({
+          code: 'invalid-rate',
+          entryIndex,
+          dimension,
+          error: new RangeError(`model pricing entry ${entryIndex}.rates.${dimension} must be a finite non-negative number`),
+        });
+      }
+    }
+    try {
+      selectors[entryIndex] = canonicalizePricingSelector(entry.selector);
+    } catch (cause) {
+      issues.push({
+        code: 'invalid-selector',
+        entryIndex,
+        error: cause instanceof Error ? cause : new Error(String(cause)),
+      });
     }
   }
+
+  const baseIndexes = selectors.flatMap((selector, index) =>
+    selector !== undefined && Object.keys(selector).length === 0 ? [index] : []);
+  if (baseIndexes.length !== 1) {
+    issues.push({
+      code: 'base-count',
+      entryIndexes: baseIndexes,
+      error: new Error('model pricing must declare exactly one base entry'),
+    });
+  }
+
+  if (baseIndexes.length === 1) {
+    const baseIndex = baseIndexes[0]!;
+    const expectedDimensions = pricingDimensions(pricing.entries[baseIndex]!.rates);
+    const expectedSet = new Set(expectedDimensions);
+    for (let entryIndex = 0; entryIndex < pricing.entries.length; entryIndex++) {
+      if (entryIndex === baseIndex) continue;
+      const dimensions = pricingDimensions(pricing.entries[entryIndex]!.rates);
+      const dimensionSet = new Set(dimensions);
+      const missingDimensions = expectedDimensions.filter(dimension => !dimensionSet.has(dimension));
+      const addedDimensions = dimensions.filter(dimension => !expectedSet.has(dimension));
+      if (missingDimensions.length > 0 || addedDimensions.length > 0) {
+        issues.push({
+          code: 'rate-dimensions',
+          entryIndex,
+          baseIndex,
+          missingDimensions,
+          addedDimensions,
+          error: new Error(`model pricing entry ${entryIndex}.rates must define the same dimensions as the base entry (${expectedDimensions.join(', ')})`),
+        });
+      }
+    }
+  }
+
+  const selectorIndexesByKey = new Map<string, number[]>();
+  for (let entryIndex = 0; entryIndex < selectors.length; entryIndex++) {
+    const selector = selectors[entryIndex];
+    if (selector === undefined) continue;
+    const key = JSON.stringify(selector);
+    const indexes = selectorIndexesByKey.get(key) ?? [];
+    indexes.push(entryIndex);
+    selectorIndexesByKey.set(key, indexes);
+  }
+  for (const [selectorKey, entryIndexes] of selectorIndexesByKey) {
+    if (entryIndexes.length < 2) continue;
+    issues.push({
+      code: 'duplicate-selector',
+      selector: selectors[entryIndexes[0]!]!,
+      selectorKey,
+      entryIndexes,
+      error: new Error(`duplicate pricing entry selector: ${selectorKey}`),
+    });
+  }
+
   const selectorKeys = new Set<string>();
-  const thresholdOperatorsByScope = new Map<string, Map<string, Map<number, PricingThresholdOperator>>>();
-  const operatorsFor = (scopeKey: string, axisId: string): Map<number, PricingThresholdOperator> => {
-    const byAxis = thresholdOperatorsByScope.get(scopeKey) ?? new Map<string, Map<number, PricingThresholdOperator>>();
+  const thresholdOperatorsByScope = new Map<string, Map<string, Map<number, { operator: PricingThresholdOperator; entryIndex: number }>>>();
+  const operatorsFor = (scopeKey: string, axisId: string): Map<number, { operator: PricingThresholdOperator; entryIndex: number }> => {
+    const byAxis = thresholdOperatorsByScope.get(scopeKey) ?? new Map<string, Map<number, { operator: PricingThresholdOperator; entryIndex: number }>>();
     thresholdOperatorsByScope.set(scopeKey, byAxis);
-    const operators = byAxis.get(axisId) ?? new Map<number, PricingThresholdOperator>();
+    const operators = byAxis.get(axisId) ?? new Map<number, { operator: PricingThresholdOperator; entryIndex: number }>();
     byAxis.set(axisId, operators);
     return operators;
   };
-  for (const selector of selectors) {
+  for (let entryIndex = 0; entryIndex < selectors.length; entryIndex++) {
+    const selector = selectors[entryIndex];
+    if (selector === undefined) continue;
     const key = JSON.stringify(selector);
-    if (selectorKeys.has(key)) throw new Error(`duplicate pricing entry selector: ${key}`);
+    if (selectorKeys.has(key)) continue;
     selectorKeys.add(key);
     const scopeKey = equalityScopeKey(selector);
     for (const [axisId, coordinate] of Object.entries(selector)) {
@@ -172,13 +274,25 @@ export const validateModelPricing = (pricing: ModelPricing): void => {
         : ['{}', scopeKey];
       for (const overlappingScope of overlappingScopes) {
         const existing = thresholdOperatorsByScope.get(overlappingScope)?.get(axisId)?.get(coordinate.value);
-        if (existing !== undefined && existing !== coordinate.operator) {
-          throw new Error(`conflicting pricing threshold operators for ${axisId} at ${coordinate.value} in overlapping equality scopes`);
+        if (existing !== undefined && existing.operator !== coordinate.operator) {
+          issues.push({
+            code: 'threshold-operator-conflict',
+            axisId,
+            value: coordinate.value,
+            entryIndexes: [existing.entryIndex, entryIndex],
+            error: new Error(`conflicting pricing threshold operators for ${axisId} at ${coordinate.value} in overlapping equality scopes`),
+          });
         }
       }
-      operatorsFor(scopeKey, axisId).set(coordinate.value, coordinate.operator);
+      operatorsFor(scopeKey, axisId).set(coordinate.value, { operator: coordinate.operator, entryIndex });
     }
   }
+  return issues;
+};
+
+export const validateModelPricing = (pricing: ModelPricing): void => {
+  const issue = collectModelPricingIssues(pricing)[0];
+  if (issue) throw issue.error;
 };
 
 interface CompiledModelPricing {

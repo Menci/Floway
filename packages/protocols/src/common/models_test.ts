@@ -4,6 +4,7 @@ import {
   basePricing,
   canonicalPricingSelectorKey,
   canonicalizePricingSelector,
+  collectModelPricingIssues,
   modelPricing,
   parsePricingSelectorKey,
   priceRequest,
@@ -100,6 +101,34 @@ test('model validation requires every entry to price the same dimensions', () =>
       { selector: { serviceTier: 'priority' }, rates: { output: 8, input: 2 } },
     ],
   });
+});
+
+test('structured pricing issues identify entries, selectors, and rate-dimension differences', () => {
+  const issues = collectModelPricingIssues({
+    entries: [
+      { rates: { input: 1, output: 4 } },
+      { selector: { serviceTier: 'priority' }, rates: { input: 2 } },
+      { selector: { serviceTier: 'priority' }, rates: { input: 3 } },
+    ],
+  }).map(({ error: _error, ...issue }) => issue);
+  assertEquals(issues, [
+    { code: 'rate-dimensions', entryIndex: 1, baseIndex: 0, missingDimensions: ['output'], addedDimensions: [] },
+    { code: 'rate-dimensions', entryIndex: 2, baseIndex: 0, missingDimensions: ['output'], addedDimensions: [] },
+    {
+      code: 'duplicate-selector',
+      selector: { serviceTier: 'priority' },
+      selectorKey: '{"serviceTier":"priority"}',
+      entryIndexes: [1, 2],
+    },
+  ]);
+  assertEquals(collectModelPricingIssues({
+    entries: [
+      { rates: { input: 1 } },
+      { selector: { serviceTier: '' }, rates: { input: 2 } },
+    ],
+  }).map(issue => ({ code: issue.code, ...('entryIndex' in issue ? { entryIndex: issue.entryIndex } : {}) })), [
+    { code: 'invalid-selector', entryIndex: 1 },
+  ]);
 });
 
 test('service-specific thresholds remain scoped while global thresholds apply to every service tier', () => {
