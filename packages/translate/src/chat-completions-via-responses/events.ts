@@ -292,11 +292,14 @@ export const translateResponsesEventToChatCompletionsChunks = (event: ResponsesS
     chunks.push(...flushPendingReasoningChunks(state));
     chunks.push(...flushReadyDeferredChatChunks(state));
 
-    const chunk = makeChunk(state, {}, mapResponsesFinishReasonToChatCompletionsFinishReason(response));
+    const chunk = {
+      ...makeChunk(state, {}, mapResponsesFinishReasonToChatCompletionsFinishReason(response)),
+      ...(response.service_tier !== undefined ? { service_tier: response.service_tier } : {}),
+    };
 
     state.done = true;
     chunks.push(chunk);
-    if (response.usage) chunks.push(makeUsageChunk(state, response.usage));
+    if (response.usage) chunks.push(makeUsageChunk(state, response.usage, response.service_tier));
     return chunks;
   }
 
@@ -323,12 +326,17 @@ const makeChunk = (state: ResponsesToChatCompletionsStreamState, delta: ChatComp
   ],
 });
 
-const makeUsageChunk = (state: ResponsesToChatCompletionsStreamState, usage: NonNullable<ResponsesResult['usage']>): ChatCompletionsStreamEvent => ({
+const makeUsageChunk = (
+  state: ResponsesToChatCompletionsStreamState,
+  usage: NonNullable<ResponsesResult['usage']>,
+  serviceTier: ResponsesResult['service_tier'],
+): ChatCompletionsStreamEvent => ({
   id: state.messageId,
   object: 'chat.completion.chunk',
   created: state.created,
   model: state.model,
   choices: [],
+  ...(serviceTier !== undefined ? { service_tier: serviceTier } : {}),
   usage: {
     prompt_tokens: usage.input_tokens,
     completion_tokens: usage.output_tokens,

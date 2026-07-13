@@ -165,6 +165,16 @@ test.each([
   assertEquals(completed?.response.usage?.input_tokens_details, { cached_tokens: 0, cache_write_tokens: expectedWrite });
 });
 
+test('translateChatCompletionsChunkToResponsesEvents preserves response service_tier', () => {
+  const terminal = {
+    ...chunk({}, 'stop', { prompt_tokens: 4, completion_tokens: 1, total_tokens: 5 }),
+    service_tier: 'priority',
+  } satisfies ChatCompletionsStreamEvent;
+  const events = translate([chunk({ role: 'assistant' }), terminal]);
+  const completed = events.find(event => event.type === 'response.completed') as ResponsesCompletedEvent | undefined;
+  assertEquals(completed?.response.service_tier, 'priority');
+});
+
 test('translateToSourceEvents rejects Chat streams without DONE', async () => {
   async function* stream() {
     yield eventFrame({

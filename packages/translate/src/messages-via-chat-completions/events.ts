@@ -319,9 +319,8 @@ const emitFinalMessageIfReady = (state: ChatCompletionsToMessagesStreamState, ev
 
   const usage = mapChatCompletionsUsageToMessagesUsage(state.pendingUsage);
 
-  // Chat Completions `service_tier: 'fast'` surfaces as Messages `speed: 'fast'`;
-  // all other `service_tier` values have no Messages equivalent and are dropped.
   if (state.upstreamServiceTier === 'fast') usage.speed = 'fast';
+  else if (state.upstreamServiceTier !== undefined) usage.service_tier = state.upstreamServiceTier;
 
   events.push(
     {

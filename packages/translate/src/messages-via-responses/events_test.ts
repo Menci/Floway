@@ -638,6 +638,7 @@ test('translateResponsesToMessagesResult maps service_tier:fast to usage.speed:f
   });
 
   assertEquals(result.usage.speed, 'fast');
+  assertEquals(result.usage.service_tier, undefined);
 });
 
 test('translateResponsesToMessagesResult omits usage.speed when service_tier is not fast', () => {
@@ -655,6 +656,7 @@ test('translateResponsesToMessagesResult omits usage.speed when service_tier is 
   });
 
   assertEquals(result.usage.speed, undefined);
+  assertEquals(result.usage.service_tier, 'default');
 });
 
 test('translateResponsesToMessagesResult omits usage.speed when service_tier is absent', () => {
@@ -723,6 +725,7 @@ test('response.created carries cache-read and cache-write onto the initial messa
         status: 'in_progress',
         error: null,
         incomplete_details: null,
+        service_tier: 'priority',
         usage: { input_tokens: 100, output_tokens: 0, total_tokens: 100, input_tokens_details: { cached_tokens: 30, cache_write_tokens: 25 } },
       },
     },
@@ -733,6 +736,7 @@ test('response.created carries cache-read and cache-write onto the initial messa
   assertEquals(start?.type === 'message_start' ? start.message.usage.input_tokens : undefined, 45);
   assertEquals(start?.type === 'message_start' ? start.message.usage.cache_read_input_tokens : undefined, 30);
   assertEquals(start?.type === 'message_start' ? start.message.usage.cache_creation_input_tokens : undefined, 25);
+  assertEquals(start?.type === 'message_start' ? start.message.usage.service_tier : undefined, 'priority');
 });
 
 test('response.created rejects cache splits that exceed input_tokens', () => {
