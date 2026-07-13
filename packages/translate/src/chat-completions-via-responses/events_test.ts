@@ -238,7 +238,7 @@ test('translateToSourceEvents preserves deferred reasoning and stream usage', as
             input_tokens: 12,
             output_tokens: 4,
             total_tokens: 16,
-            input_tokens_details: { cached_tokens: 3 },
+            input_tokens_details: { cached_tokens: 3, cache_write_tokens: 2 },
           },
         },
       }),
@@ -275,7 +275,7 @@ test('translateToSourceEvents preserves deferred reasoning and stream usage', as
     prompt_tokens: 12,
     completion_tokens: 4,
     total_tokens: 16,
-    prompt_tokens_details: { cached_tokens: 3 },
+    prompt_tokens_details: { cached_tokens: 3, cache_creation_input_tokens: 2 },
   });
   assertEquals(frames.at(-1)?.type, 'done');
 });

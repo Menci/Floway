@@ -492,6 +492,27 @@ test('mapChatCompletionsUsageToMessagesUsage surfaces cache_creation_input_token
   assertEquals(usage.cache_creation_input_tokens, 50);
 });
 
+test('mapChatCompletionsUsageToMessagesUsage accepts cache_write_tokens from OpenRouter-shaped upstreams', () => {
+  const usage = mapChatCompletionsUsageToMessagesUsage({
+    prompt_tokens: 80,
+    completion_tokens: 10,
+    prompt_tokens_details: { cached_tokens: 20, cache_write_tokens: 30 },
+  });
+  assertEquals(usage.input_tokens, 30);
+  assertEquals(usage.cache_read_input_tokens, 20);
+  assertEquals(usage.cache_creation_input_tokens, 30);
+});
+
+test('mapChatCompletionsUsageToMessagesUsage prefers canonical cache_creation_input_tokens', () => {
+  const usage = mapChatCompletionsUsageToMessagesUsage({
+    prompt_tokens: 80,
+    completion_tokens: 10,
+    prompt_tokens_details: { cache_creation_input_tokens: 30, cache_write_tokens: 20 },
+  });
+  assertEquals(usage.input_tokens, 50);
+  assertEquals(usage.cache_creation_input_tokens, 30);
+});
+
 test('translateChatCompletionsChunkToMessagesEvents surfaces service_tier:fast as usage.speed:fast in message_delta', () => {
   const state = createChatCompletionsToMessagesStreamState();
   const events = [

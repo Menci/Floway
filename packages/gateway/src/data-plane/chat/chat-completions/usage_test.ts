@@ -55,7 +55,7 @@ test('Chat usage reads OpenRouter cache_write_tokens as the write counter', () =
   // standard wrapper when it routes to Anthropic / explicit-Gemini / Alibaba.
   assertEquals(
     tokenUsageFromChatCompletionsUsage(
-      { prompt_tokens: 100, completion_tokens: 4, total_tokens: 104, prompt_tokens_details: { cached_tokens: 30, cache_write_tokens: 50 } } as never,
+      { prompt_tokens: 100, completion_tokens: 4, total_tokens: 104, prompt_tokens_details: { cached_tokens: 30, cache_write_tokens: 50 } },
       null,
     ),
     {

@@ -92,7 +92,7 @@ test('includes cache_creation_input_tokens in input_tokens', () => {
   assertEquals(result.usage!.input_tokens, 150); // 100 + 20 + 30
   assertEquals(result.usage!.output_tokens, 50);
   assertEquals(result.usage!.total_tokens, 200);
-  assertEquals(result.usage!.input_tokens_details!.cached_tokens, 20);
+  assertEquals(result.usage!.input_tokens_details, { cached_tokens: 20, cache_write_tokens: 30 });
 });
 
 test('handles cache_creation without cache_read', () => {
@@ -104,7 +104,7 @@ test('handles cache_creation without cache_read', () => {
 
   assertEquals(result.usage!.input_tokens, 130); // 100 + 0 + 30
   assertEquals(result.usage!.total_tokens, 180);
-  assertEquals(result.usage!.input_tokens_details, undefined);
+  assertEquals(result.usage!.input_tokens_details, { cached_tokens: 0, cache_write_tokens: 30 });
 });
 
 test('handles no cache fields (backward compat)', () => {

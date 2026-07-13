@@ -5,21 +5,25 @@ import type { ChatCompletionsStreamEvent, ChatCompletionsResult } from '@floway-
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesOutputItem, ResponsesOutputReasoning, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
-const mapChatCompletionsUsageToResponsesUsage = (usage: ChatCompletionsResult['usage'] | undefined): ResponsesResult['usage'] | undefined =>
-  usage
-    ? {
-        input_tokens: usage.prompt_tokens,
-        output_tokens: usage.completion_tokens,
-        total_tokens: usage.total_tokens,
-        ...(usage.prompt_tokens_details?.cached_tokens !== undefined
-          ? {
-              input_tokens_details: {
-                cached_tokens: usage.prompt_tokens_details.cached_tokens,
-              },
-            }
-          : {}),
-      }
-    : undefined;
+const mapChatCompletionsUsageToResponsesUsage = (usage: ChatCompletionsResult['usage'] | undefined): ResponsesResult['usage'] | undefined => {
+  if (!usage) return undefined;
+  const cachedTokens = usage.prompt_tokens_details?.cached_tokens;
+  const cacheWriteTokens = usage.prompt_tokens_details?.cache_creation_input_tokens
+    ?? usage.prompt_tokens_details?.cache_write_tokens;
+  return {
+    input_tokens: usage.prompt_tokens,
+    output_tokens: usage.completion_tokens,
+    total_tokens: usage.total_tokens,
+    ...(cachedTokens !== undefined || cacheWriteTokens !== undefined
+      ? {
+          input_tokens_details: {
+            cached_tokens: cachedTokens ?? 0,
+            ...(cacheWriteTokens !== undefined ? { cache_write_tokens: cacheWriteTokens } : {}),
+          },
+        }
+      : {}),
+  };
+};
 
 const UPSTREAM_CHAT_COMPLETIONS_MISSING_DONE_MESSAGE = 'Upstream Chat Completions stream ended without a DONE sentinel.';
 

@@ -898,6 +898,7 @@ test('message_start captures cache_creation_input_tokens', () => {
   );
   assertEquals(state.promptTokens, 130);
   assertEquals(state.cachedPromptTokens, 20);
+  assertEquals(state.cacheCreationPromptTokens, 30);
 });
 
 test('message_delta usage includes cache_creation_input_tokens in prompt_tokens', () => {
@@ -937,6 +938,7 @@ test('message_delta usage includes cache_creation_input_tokens in prompt_tokens'
   assertEquals(chunk.usage!.prompt_tokens, 130); // 80 + 20 + 30
   assertEquals(chunk.usage!.completion_tokens, 50);
   assertEquals(chunk.usage!.total_tokens, 180);
+  assertEquals(chunk.usage!.prompt_tokens_details, { cached_tokens: 20, cache_creation_input_tokens: 30 });
 });
 
 // ── speed / service_tier pass-through ──

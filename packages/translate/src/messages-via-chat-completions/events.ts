@@ -22,7 +22,7 @@ const mapChatCompletionsFinishReasonToMessagesStopReason = (finishReason: 'stop'
 interface ChatCompletionsUsage {
   prompt_tokens?: number;
   completion_tokens?: number;
-  prompt_tokens_details?: { cached_tokens?: number; cache_creation_input_tokens?: number };
+  prompt_tokens_details?: { cached_tokens?: number; cache_creation_input_tokens?: number; cache_write_tokens?: number };
 }
 
 // OpenAI-shaped upstreams piggyback Anthropic-style cache buckets on
@@ -37,7 +37,8 @@ interface ChatCompletionsUsage {
 // https://github.com/caozhiyuan/copilot-api/commit/a99c23551b0f3198d78dd51142dd0096cc6da049
 export const mapChatCompletionsUsageToMessagesUsage = (usage?: ChatCompletionsUsage): MessagesResult['usage'] => {
   const cachedTokens = usage?.prompt_tokens_details?.cached_tokens;
-  const cacheCreationTokens = usage?.prompt_tokens_details?.cache_creation_input_tokens;
+  const cacheCreationTokens = usage?.prompt_tokens_details?.cache_creation_input_tokens
+    ?? usage?.prompt_tokens_details?.cache_write_tokens;
 
   return {
     // `cached_tokens` and `cache_creation_input_tokens` are disjoint subsets of
