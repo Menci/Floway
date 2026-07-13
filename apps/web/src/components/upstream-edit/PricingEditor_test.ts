@@ -21,6 +21,17 @@ const pricingInput = (wrapper: ReturnType<typeof mountEditor>, placeholder: stri
   wrapper.findAll('input').find(input => input.attributes('placeholder') === placeholder)!;
 
 describe('PricingEditor', () => {
+  it('distinguishes absent pricing from a present empty catalog', async () => {
+    const wrapper = mountEditor(undefined);
+    expect(wrapper.find('[aria-label="Pricing validation errors"]').exists()).toBe(false);
+    expect(wrapper.emitted('validity-change')?.at(-1)).toEqual([true]);
+
+    await wrapper.setProps({ modelValue: { entries: [] }, resetKey: 'empty:manual' });
+    await nextTick();
+    expect(wrapper.get('[aria-label="Pricing validation errors"]').text()).toBe('model pricing must declare at least one entry');
+    expect(wrapper.emitted('validity-change')?.at(-1)).toEqual([false]);
+  });
+
   it('resets drafts and validity when the owning model changes', async () => {
     const wrapper = mountEditor({ entries: [{ rates: { input: 1 } }] });
     expect((pricingInput(wrapper, 'unpriced').element as HTMLInputElement).value).toBe('1');

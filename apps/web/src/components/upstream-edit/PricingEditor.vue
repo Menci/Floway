@@ -108,11 +108,14 @@ const pricingEntryCoordinateLabel = (draft: PricingEntryDraft): string => {
   return labels.length > 0 ? labels.join(', ') : 'Base';
 };
 
-const pricingIssues = computed<readonly ModelPricingIssue[]>(() => pricingEntryDrafts.value.length === 0
-  ? []
-  : collectModelPricingIssues({
+const pricingIssues = computed<readonly ModelPricingIssue[]>(() => {
+  if (pricingEntryDrafts.value.length > 0) {
+    return collectModelPricingIssues({
       entries: pricingEntryDrafts.value.map(draft => ({ selector: compactSelector(draft), rates: draft.rates })),
-    }));
+    });
+  }
+  return pricing.value === undefined ? [] : collectModelPricingIssues(pricing.value);
+});
 
 const duplicatePricingCoordinates = computed(() => new Set(pricingIssues.value.flatMap(issue =>
   issue.code === 'duplicate-selector' ? [issue.selectorKey] : [])));
