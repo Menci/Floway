@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { translateToSourceEvents } from './events.ts';
 import { assertEquals, assertRejects } from '../test-assert.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { GeminiStreamEvent } from '@floway-dev/protocols/gemini';
+import { GEMINI_USAGE_BILLING, type GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 const response = (status: ResponsesResult['status'], extra: Partial<ResponsesResult> = {}): ResponsesResult => ({
@@ -364,16 +364,17 @@ test('translateToSourceEvents throws on Responses error stream events', async ()
   );
 });
 
-test('translateToSourceEvents surfaces input cached_tokens as cachedContentTokenCount', async () => {
+test('translateToSourceEvents preserves Responses cache and tier billing facts', async () => {
   const frames = await collect([
     eventFrame({
       type: 'response.completed',
       response: response('completed', {
+        service_tier: 'priority',
         usage: {
           input_tokens: 100,
           output_tokens: 8,
           total_tokens: 108,
-          input_tokens_details: { cached_tokens: 30 },
+          input_tokens_details: { cached_tokens: 30, cache_write_tokens: 25 },
         },
       }),
     }),
@@ -393,6 +394,7 @@ test('translateToSourceEvents surfaces input cached_tokens as cachedContentToken
         candidatesTokenCount: 8,
         totalTokenCount: 108,
         cachedContentTokenCount: 30,
+        [GEMINI_USAGE_BILLING]: { cacheWriteTokenCount: 25, serviceTier: 'priority' },
       },
     }),
   ]);

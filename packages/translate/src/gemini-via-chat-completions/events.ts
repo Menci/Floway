@@ -1,8 +1,8 @@
 import { appendGeminiThoughtSignature, flushGeminiThoughtSignature, type GeminiThoughtSignatureState, parseStrictJsonObject, signGeminiPart } from '../shared/gemini-via/gemini.ts';
 import { chatCompletionsErrorPayloadMessage } from '@floway-dev/protocols/chat-completions';
 import type { ChatCompletionsStreamEvent, ChatCompletionsDelta } from '@floway-dev/protocols/chat-completions';
-import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { GeminiCandidate, GeminiFinishReason, GeminiResult, GeminiPart, GeminiStreamEvent, GeminiUsageMetadata } from '@floway-dev/protocols/gemini';
+import { billableServiceTier, eventFrame, splitInclusiveInputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { GEMINI_USAGE_BILLING, type GeminiCandidate, type GeminiFinishReason, type GeminiResult, type GeminiPart, type GeminiStreamEvent, type GeminiUsageMetadata } from '@floway-dev/protocols/gemini';
 
 type ChatCompletionsStreamChoice = ChatCompletionsStreamEvent['choices'][0];
 
@@ -30,8 +30,18 @@ const reasoningTokensFromUsage = (usage: NonNullable<ChatCompletionsStreamEvent[
 // matching Gemini's inclusive promptTokenCount semantics. Pass both through
 // directly — no folding. Contrast with gemini-via-messages, where Anthropic's
 // input_tokens excludes cache buckets and must be summed.
-const mapUsage = (usage?: ChatCompletionsStreamEvent['usage']): GeminiUsageMetadata | undefined => {
+const mapUsage = (
+  chunk: ChatCompletionsStreamEvent,
+  upstreamServiceTier: ChatCompletionsStreamEvent['service_tier'],
+): GeminiUsageMetadata | undefined => {
+  const usage = chunk.usage;
   if (!usage) return undefined;
+
+  const cachedTokens = usage.prompt_tokens_details?.cached_tokens;
+  const cacheWriteTokens = usage.prompt_tokens_details?.cache_creation_input_tokens
+    ?? usage.prompt_tokens_details?.cache_write_tokens;
+  splitInclusiveInputTokens(usage.prompt_tokens, cachedTokens, cacheWriteTokens);
+  const serviceTier = billableServiceTier(upstreamServiceTier);
 
   const metadata: GeminiUsageMetadata = {
     promptTokenCount: usage.prompt_tokens,
@@ -44,9 +54,14 @@ const mapUsage = (usage?: ChatCompletionsStreamEvent['usage']): GeminiUsageMetad
     metadata.thoughtsTokenCount = thoughtsTokenCount;
   }
 
-  const cachedTokens = usage.prompt_tokens_details?.cached_tokens;
   if (cachedTokens !== undefined) {
     metadata.cachedContentTokenCount = cachedTokens;
+  }
+  if (cacheWriteTokens !== undefined || serviceTier !== null) {
+    metadata[GEMINI_USAGE_BILLING] = {
+      ...(cacheWriteTokens !== undefined ? { cacheWriteTokenCount: cacheWriteTokens } : {}),
+      ...(serviceTier !== null ? { serviceTier } : {}),
+    };
   }
 
   return metadata;
@@ -147,7 +162,11 @@ const buildCandidate = (choice: ChatCompletionsStreamChoice, state: ChatCompleti
   };
 };
 
-const translateChunk = (chunk: ChatCompletionsStreamEvent, states: Record<number, ChatCompletionsToGeminiStreamState>): GeminiResult | null => {
+const translateChunk = (
+  chunk: ChatCompletionsStreamEvent,
+  states: Record<number, ChatCompletionsToGeminiStreamState>,
+  upstreamServiceTier: ChatCompletionsStreamEvent['service_tier'],
+): GeminiResult | null => {
   const candidates: GeminiCandidate[] = [];
 
   for (const choice of chunk.choices) {
@@ -156,7 +175,7 @@ const translateChunk = (chunk: ChatCompletionsStreamEvent, states: Record<number
     if (candidate) candidates.push(candidate);
   }
 
-  const usageMetadata = mapUsage(chunk.usage);
+  const usageMetadata = mapUsage(chunk, upstreamServiceTier);
 
   if (!candidates.length && !usageMetadata) return null;
 
@@ -178,12 +197,14 @@ const throwOnChatCompletionsErrorPayload = (chunk: ChatCompletionsStreamEvent): 
 export const translateToSourceEvents = async function* (frames: AsyncIterable<ProtocolFrame<ChatCompletionsStreamEvent>>): AsyncGenerator<ProtocolFrame<GeminiStreamEvent>> {
   const states: Record<number, ChatCompletionsToGeminiStreamState> = {};
   let pendingUsageMetadata: GeminiUsageMetadata | undefined;
+  let upstreamServiceTier: ChatCompletionsStreamEvent['service_tier'];
   const deferredFinalCandidates: GeminiCandidate[] = [];
 
   for await (const chunk of upstreamChatCompletionEventsUntilDone(frames)) {
     throwOnChatCompletionsErrorPayload(chunk);
+    if (chunk.service_tier !== undefined) upstreamServiceTier = chunk.service_tier;
 
-    const result = translateChunk(chunk, states);
+    const result = translateChunk(chunk, states, upstreamServiceTier);
     if (!result) continue;
 
     if (result.usageMetadata) {

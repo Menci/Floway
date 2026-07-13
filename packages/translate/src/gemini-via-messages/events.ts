@@ -1,6 +1,6 @@
 import { appendGeminiThoughtSignature, flushGeminiThoughtSignature, type GeminiThoughtSignatureState, geminiCandidateEvent, parseStrictJsonObject, signGeminiPart } from '../shared/gemini-via/gemini.ts';
-import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { GeminiFinishReason, GeminiStreamEvent, GeminiUsageMetadata } from '@floway-dev/protocols/gemini';
+import { billableServiceTier, eventFrame, splitInclusiveInputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { GEMINI_USAGE_BILLING, type GeminiFinishReason, type GeminiStreamEvent, type GeminiUsageMetadata } from '@floway-dev/protocols/gemini';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 
 const messagesStopReasonToGemini = (stopReason: Extract<MessagesStreamEvent, { type: 'message_delta' }>['delta']['stop_reason']): GeminiFinishReason => {
@@ -44,6 +44,8 @@ interface MessagesToGeminiStreamState extends GeminiThoughtSignatureState {
   inputTokens: number;
   cacheReadInputTokens: number;
   cacheCreationInputTokens: number;
+  upstreamSpeed?: string;
+  upstreamServiceTier?: string;
   toolUses: Record<number, MessagesToolUseDraft>;
 }
 
@@ -56,12 +58,23 @@ const mapUsage = (state: MessagesToGeminiStreamState, usage?: Extract<MessagesSt
 
   const promptTokenCount = state.inputTokens + state.cacheReadInputTokens + state.cacheCreationInputTokens;
   const candidatesTokenCount = usage.output_tokens;
+  splitInclusiveInputTokens(promptTokenCount, state.cacheReadInputTokens, state.cacheCreationInputTokens);
+  const serviceTier = billableServiceTier(usage.speed ?? state.upstreamSpeed)
+    ?? billableServiceTier(usage.service_tier ?? state.upstreamServiceTier);
 
   return {
     promptTokenCount,
     candidatesTokenCount,
     totalTokenCount: promptTokenCount + candidatesTokenCount,
     ...(state.cacheReadInputTokens > 0 ? { cachedContentTokenCount: state.cacheReadInputTokens } : {}),
+    ...(state.cacheCreationInputTokens > 0 || serviceTier !== null
+      ? {
+          [GEMINI_USAGE_BILLING]: {
+            ...(state.cacheCreationInputTokens > 0 ? { cacheWriteTokenCount: state.cacheCreationInputTokens } : {}),
+            ...(serviceTier !== null ? { serviceTier } : {}),
+          },
+        }
+      : {}),
   };
 };
 
@@ -87,6 +100,8 @@ export const translateToSourceEvents = async function* (frames: AsyncIterable<Pr
       state.inputTokens = event.message.usage.input_tokens;
       state.cacheReadInputTokens = event.message.usage.cache_read_input_tokens ?? 0;
       state.cacheCreationInputTokens = event.message.usage.cache_creation_input_tokens ?? 0;
+      state.upstreamSpeed = event.message.usage.speed;
+      state.upstreamServiceTier = event.message.usage.service_tier;
       break;
 
     case 'content_block_start':
@@ -171,6 +186,8 @@ export const translateToSourceEvents = async function* (frames: AsyncIterable<Pr
     }
 
     case 'message_delta': {
+      if (event.usage?.speed !== undefined) state.upstreamSpeed = event.usage.speed;
+      if (event.usage?.service_tier !== undefined) state.upstreamServiceTier = event.usage.service_tier;
       yield eventFrame(geminiCandidateEvent(flushGeminiThoughtSignature(state), messagesStopReasonToGemini(event.delta.stop_reason), mapUsage(state, event.usage)));
       break;
     }
