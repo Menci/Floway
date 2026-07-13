@@ -1,4 +1,4 @@
-import { createStoredResponsesItemId, hashResponsesItemContent, hashResponsesItemEncryptedContent, responsesItemEncryptedContent, responsesItemId } from './format.ts';
+import { createStoredResponsesItemId, responsesItemEncryptedContent, responsesItemId } from './format.ts';
 import type { StatefulResponsesStore } from './store.ts';
 import type { StoredResponsesItem } from '../../../../repo/types.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
@@ -84,8 +84,8 @@ export const wrapResponsesOutputForStorage = async function* (
       itemType: originalItem.type,
       origin: upstreamOwned ? 'upstream' : 'synthetic',
       payload: store.shouldStorePayload ? persistedPayload : null,
-      contentHash: await hashResponsesItemContent(originalItem),
-      encryptedContentHash: encryptedContent === null ? null : await hashResponsesItemEncryptedContent(encryptedContent),
+      contentHash: await store.hashItemContent(originalItem),
+      encryptedContentHash: encryptedContent === null ? null : await store.hashEncryptedContent(encryptedContent),
       createdAt: now,
       refreshedAt: now,
     };

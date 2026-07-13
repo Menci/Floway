@@ -1,4 +1,4 @@
-import { hashResponsesItemEncryptedContent, isStoredResponsesItemId, responsesItemEncryptedContent, responsesItemId } from './format.ts';
+import { isStoredResponsesItemId, responsesItemEncryptedContent, responsesItemId } from './format.ts';
 import type { StatefulResponsesStore } from './store.ts';
 import type { StoredResponsesItemMetadata } from '../../../../repo/types.ts';
 import type { ChatServeFailure } from '../../shared/errors.ts';
@@ -125,7 +125,7 @@ export const classifyResponsesItemAffinity = async <TSourceItems, TCandidate ext
   const queryableIds = new Set(references.flatMap(ref => ref.id !== undefined && isStoredResponsesItemId(ref.id) ? [ref.id] : []));
   const hashByContent = new Map(await Promise.all(
     [...new Set(references.flatMap(ref => ref.encryptedContent !== undefined ? [ref.encryptedContent] : []))]
-      .map(async content => [content, await hashResponsesItemEncryptedContent(content)] as const),
+      .map(async content => [content, await store.hashEncryptedContent(content)] as const),
   ));
 
   const failures: ChatServeFailure[] = [];

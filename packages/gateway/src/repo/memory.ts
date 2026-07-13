@@ -496,8 +496,8 @@ class MemoryModelsCacheRepo implements ModelsCacheRepo {
     return Promise.resolve(row ? { ...row, models: [...row.models] } : null);
   }
 
-  put(upstreamId: string, row: { fetchedAt: number; models: ProviderModel[] }): Promise<void> {
-    this.rows.set(upstreamId, { fetchedAt: row.fetchedAt, models: [...row.models], lastError: null });
+  put(upstreamId: string, row: { revision: number; fetchedAt: number; models: ProviderModel[] }): Promise<void> {
+    this.rows.set(upstreamId, { revision: row.revision, fetchedAt: row.fetchedAt, models: [...row.models], lastError: null });
     return Promise.resolve();
   }
 

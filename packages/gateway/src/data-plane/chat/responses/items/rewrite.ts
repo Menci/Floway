@@ -1,4 +1,4 @@
-import { createTemporaryResponsesItemId, hashResponsesItemContent, hashResponsesItemEncryptedContent, responsesItemEncryptedContent, responsesItemId } from './format.ts';
+import { createTemporaryResponsesItemId, responsesItemEncryptedContent, responsesItemId } from './format.ts';
 import type { StatefulResponsesStore } from './store.ts';
 import type { StoredResponsesItemMetadata, StoredResponsesItemPayload } from '../../../../repo/types.ts';
 import { throwChatServeFailure } from '../../shared/errors.ts';
@@ -63,6 +63,7 @@ const resolveStoredRow = (
 const shouldHydrate = async (
   resolved: ResolvedItem,
   candidate: ModelCandidate,
+  store: StatefulResponsesStore,
 ): Promise<boolean> => {
   const { item, row } = resolved;
   if (!row?.hasPayload) return false;
@@ -70,7 +71,7 @@ const shouldHydrate = async (
   if (item.type === 'item_reference') return true;
   if (row.origin === 'synthetic') return true;
   const canonical = canonicalStoredEcho(item, row);
-  if (row.contentHash !== null && await hashResponsesItemContent(canonical) === row.contentHash) {
+  if (row.contentHash !== null && await store.hashItemContent(canonical) === row.contentHash) {
     resolved.canonical = canonical;
     return false;
   }
@@ -104,13 +105,16 @@ const rewriteItemForCandidate = (
   return replacement;
 };
 
-const collectEncryptedContents = async (items: Iterable<ResponsesInputItem>): Promise<Map<string, string>> => {
+const collectEncryptedContents = async (
+  items: Iterable<ResponsesInputItem>,
+  store: StatefulResponsesStore,
+): Promise<Map<string, string>> => {
   const encryptedContents = new Set<string>();
   for (const item of items) {
     const encryptedContent = responsesItemEncryptedContent(item);
     if (encryptedContent !== null) encryptedContents.add(encryptedContent);
   }
-  return new Map(await Promise.all([...encryptedContents].map(async value => [value, await hashResponsesItemEncryptedContent(value)] as const)));
+  return new Map(await Promise.all([...encryptedContents].map(async value => [value, await store.hashEncryptedContent(value)] as const)));
 };
 
 const rewriteResponsesItemListForCandidate = async (
@@ -118,11 +122,11 @@ const rewriteResponsesItemListForCandidate = async (
   store: StatefulResponsesStore,
   candidate: ModelCandidate,
 ): Promise<{ readonly items: Array<ResponsesInputItem | null>; readonly privatePayloads: ReadonlyMap<string, unknown> }> => {
-  const hashByEncryptedContent = await collectEncryptedContents(items);
+  const hashByEncryptedContent = await collectEncryptedContents(items, store);
   const resolved = items.map(item => ({ item, row: resolveStoredRow(item, store, hashByEncryptedContent) }));
   const rowsToHydrate: StoredResponsesItemMetadata[] = [];
   for (const item of resolved) {
-    if (await shouldHydrate(item, candidate) && item.row !== undefined) rowsToHydrate.push(item.row);
+    if (await shouldHydrate(item, candidate, store) && item.row !== undefined) rowsToHydrate.push(item.row);
   }
   const payloads = await store.loadItemPayloads(rowsToHydrate);
   const privatePayloads = new Map<string, unknown>();
@@ -133,6 +137,10 @@ const rewriteResponsesItemListForCandidate = async (
     if (wireId !== null && payload?.private !== undefined) privatePayloads.set(wireId, structuredClone(payload.private));
     return result;
   });
+  // The outbound objects no longer need hashes from their source inputs. Drop
+  // those values before the upstream wait; output persistence starts a fresh
+  // cache through the same turn-local store.
+  store.clearItemHashes();
   return { items: rewritten, privatePayloads };
 };
 

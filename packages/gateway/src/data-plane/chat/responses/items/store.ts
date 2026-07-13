@@ -1,4 +1,5 @@
-import { createStoredResponsesItemId, hashResponsesItemContent, hashResponsesItemEncryptedContent, isStoredResponsesItemId, responsesItemEncryptedContent, responsesItemId } from './format.ts';
+import { createStoredResponsesItemId, isStoredResponsesItemId, responsesItemEncryptedContent, responsesItemId } from './format.ts';
+import { ResponsesItemHashCache } from './hash-cache.ts';
 import { getRepo } from '../../../../repo/index.ts';
 import {
   cloneStoredResponsesItem,
@@ -86,6 +87,9 @@ export interface StatefulResponsesStore {
   }): Promise<void>;
   getItemById(id: string): StoredResponsesItemMetadata | undefined;
   getItemsByEncryptedContentHash(hash: string): StoredResponsesItemMetadata[];
+  hashItemContent(item: ResponsesInputItem): Promise<string>;
+  hashEncryptedContent(encryptedContent: string): Promise<string>;
+  clearItemHashes(): void;
   loadItemPayloads(items: readonly StoredResponsesItemMetadata[]): Promise<ReadonlyMap<string, StoredResponsesItemPayload>>;
   touchItem(id: string): void;
   stageInputItems(items: readonly ResponsesInputItem[]): Promise<void>;
@@ -120,7 +124,10 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   private readonly refreshedItemIds = new Set<string>();
   private readonly durableItemIds = new Set<string>();
 
-  constructor(private readonly options: LayeredStatefulResponsesStoreOptions) {}
+  constructor(
+    private readonly options: LayeredStatefulResponsesStoreOptions,
+    private readonly hashes = new ResponsesItemHashCache(),
+  ) {}
 
   get apiKeyId(): string | null {
     return this.options.apiKeyId;
@@ -128,6 +135,18 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
 
   get shouldStorePayload(): boolean {
     return this.options.shouldStorePayload !== false;
+  }
+
+  hashItemContent(item: ResponsesInputItem): Promise<string> {
+    return this.hashes.content(item);
+  }
+
+  hashEncryptedContent(encryptedContent: string): Promise<string> {
+    return this.hashes.encryptedContent(encryptedContent);
+  }
+
+  clearItemHashes(): void {
+    this.hashes.clear();
   }
 
   async loadSnapshot(id: string): Promise<StoredResponsesSnapshot | null> {
@@ -169,10 +188,17 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     });
 
     const contentHashes = new Set<string>();
-    for (const item of options.inputItemsToStage ?? []) contentHashes.add(await hashResponsesItemContent(item));
+    for (const item of options.inputItemsToStage ?? []) {
+      const id = responsesItemId(item);
+      // A gateway-owned id is authoritative: affinity rejects it when the row
+      // is absent, while staging reuses or repairs that exact row. A content
+      // lookup cannot change either outcome.
+      if (id !== null && isStoredResponsesItemId(id)) continue;
+      contentHashes.add(await this.hashItemContent(item));
+    }
 
     const encryptedContentHashes = new Set<string>();
-    for (const encryptedContent of encryptedContents) encryptedContentHashes.add(await hashResponsesItemEncryptedContent(encryptedContent));
+    for (const encryptedContent of encryptedContents) encryptedContentHashes.add(await this.hashEncryptedContent(encryptedContent));
 
     await this.loadItems({
       ids: [...ids],
@@ -334,7 +360,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
 
     const encryptedContent = responsesItemEncryptedContent(item);
     if (encryptedContent !== null) {
-      const row = this.getItemsByEncryptedContentHash(await hashResponsesItemEncryptedContent(encryptedContent))
+      const row = this.getItemsByEncryptedContentHash(await this.hashEncryptedContent(encryptedContent))
         .find(candidate => candidate.itemType === item.type);
       if (row !== undefined) {
         this.touchItem(row.id);
@@ -347,7 +373,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
       }
     }
 
-    const contentHash = await hashResponsesItemContent(item);
+    const contentHash = await this.hashItemContent(item);
     const existing = this.reusableItemByContentHash(contentHash);
     if (existing) {
       this.touchItem(existing.id);
@@ -365,7 +391,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
       origin: 'input',
       payload: { item: structuredClone(item) },
       contentHash,
-      encryptedContentHash: encryptedContent === null ? null : await hashResponsesItemEncryptedContent(encryptedContent),
+      encryptedContentHash: encryptedContent === null ? null : await this.hashEncryptedContent(encryptedContent),
       createdAt: now,
       refreshedAt: now,
     };
@@ -380,8 +406,8 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     const upgraded: StoredResponsesItem = {
       ...metadata,
       payload: { item: structuredClone(item) },
-      contentHash: await hashResponsesItemContent(item),
-      encryptedContentHash: encryptedContent === null ? row.encryptedContentHash : await hashResponsesItemEncryptedContent(encryptedContent),
+      contentHash: await this.hashItemContent(item),
+      encryptedContentHash: encryptedContent === null ? row.encryptedContentHash : await this.hashEncryptedContent(encryptedContent),
       createdAt: now,
       refreshedAt: now,
     };
