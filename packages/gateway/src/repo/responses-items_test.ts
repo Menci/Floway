@@ -1,10 +1,10 @@
 import initSqlJs from 'sql.js';
-import { test } from 'vitest';
+import { test, vi } from 'vitest';
 
 import { InMemoryRepo } from './memory.ts';
 import { SqlRepo } from './sql.ts';
 import type { ResponsesItemsRepo, StoredResponsesItem } from './types.ts';
-import { initFileProvider, MemoryFileProvider, type SqlDatabase } from '@floway-dev/platform';
+import { initFileProvider, MemoryFileProvider, sha256Hex, type FileProvider, type SqlDatabase } from '@floway-dev/platform';
 import { assert, assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 // `refreshMany` debounces writes within a 24h window, so refresh-related
@@ -36,6 +36,88 @@ const storedItem = (overrides: Partial<StoredResponsesItem> & Pick<StoredRespons
   refreshedAt: overrides.createdAt,
   ...overrides,
 });
+
+const createDeferred = <T>(): { promise: Promise<T>; resolve: (value: T) => void } => {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>(accept => { resolve = accept; });
+  return { promise, resolve };
+};
+
+class GatedReadFileProvider implements FileProvider {
+  private readonly bodies = new Map<string, Uint8Array>();
+  private readonly firstGet = createDeferred<void>();
+  private readonly release = createDeferred<void>();
+  private released = false;
+  getCalls = 0;
+
+  put(key: string, body: Uint8Array): Promise<void> {
+    this.bodies.set(key, body.slice());
+    return Promise.resolve();
+  }
+
+  async get(key: string): Promise<Uint8Array | null> {
+    this.getCalls++;
+    this.firstGet.resolve();
+    if (!this.released) await this.release.promise;
+    return this.bodies.get(key)?.slice() ?? null;
+  }
+
+  deletePrefix(prefix: string): Promise<void> {
+    for (const key of this.bodies.keys()) {
+      if (key.startsWith(prefix)) this.bodies.delete(key);
+    }
+    return Promise.resolve();
+  }
+
+  listKeys(prefix: string): Promise<string[]> {
+    return Promise.resolve([...this.bodies.keys()].filter(key => key.startsWith(prefix)));
+  }
+
+  waitForFirstGet(): Promise<void> {
+    return this.firstGet.promise;
+  }
+
+  releaseAll(): void {
+    this.released = true;
+    this.release.resolve();
+  }
+}
+
+const runWithCompressionBlocked = async <T>(run: () => Promise<T>): Promise<{ started: number; result: T }> => {
+  const NativeCompressionStream = globalThis.CompressionStream;
+  const release = createDeferred<void>();
+  let started = 0;
+
+  class GatedCompressionStream {
+    readonly readable: ReadableStream<Uint8Array>;
+    readonly writable: WritableStream<BufferSource>;
+
+    constructor(format: CompressionFormat) {
+      started++;
+      const native = new NativeCompressionStream(format);
+      const writer = native.writable.getWriter();
+      this.readable = native.readable;
+      this.writable = new WritableStream<BufferSource>({
+        async write(chunk) {
+          await release.promise;
+          await writer.write(chunk);
+        },
+        async close() { await writer.close(); },
+        async abort(reason) { await writer.abort(reason); },
+      });
+    }
+  }
+
+  vi.stubGlobal('CompressionStream', GatedCompressionStream);
+  try {
+    const pending = run();
+    const startedBeforeRelease = started;
+    release.resolve();
+    return { started: startedBeforeRelease, result: await pending };
+  } finally {
+    vi.unstubAllGlobals();
+  }
+};
 
 const exerciseResponsesItemsRepo = async (repo: ResponsesItemsRepo) => {
   initFileProvider(new MemoryFileProvider());
@@ -285,6 +367,76 @@ test('SQL responses items repo chunks lookups exceeding the 100-parameter limit 
 
   const byHash = await repo.lookupManyByEncryptedContentHash('key_a', items.map(item => item.encryptedContentHash!));
   assertEquals(new Set(byHash.map(row => row.id)).size, 200);
+});
+
+test('SQL responses items repo hydrates one payload at a time across query chunks', async () => {
+  const db = new FakeResponsesItemsSqlDatabase();
+  const files = new GatedReadFileProvider();
+  initFileProvider(files);
+  const ids: string[] = [];
+  const encoder = new TextEncoder();
+  for (let index = 0; index < 91; index++) {
+    const id = `msg_codec_${index.toString().padStart(3, '0')}`;
+    const key = `codec/${id}.json`;
+    const body = encoder.encode(JSON.stringify({ item: { type: 'message', id, role: 'assistant', content: `payload ${index}` } }));
+    await files.put(key, body);
+    db.rows.push({
+      id,
+      api_key_id: 'key_a',
+      upstream_id: 'up_a',
+      upstream_item_id: `raw_${index}`,
+      item_type: 'message',
+      origin: 'upstream',
+      payload_json: JSON.stringify({ version: 1, storage: 'file', key, sha256: await sha256Hex(body), byteLength: body.byteLength }),
+      content_hash: null,
+      encrypted_content_hash: null,
+      created_at: index,
+      refreshed_at: index,
+    });
+    ids.push(id);
+  }
+  const lookup = new SqlRepo(db).responsesItems.lookupMany('key_a', ids);
+
+  await files.waitForFirstGet();
+  const startedBeforeRelease = files.getCalls;
+  files.releaseAll();
+  const rows = await lookup;
+
+  assertEquals(startedBeforeRelease, 1);
+  assertEquals(rows.map(row => row.id), ids);
+});
+
+test('SQL responses items repo serializes one payload at a time within write batches', async () => {
+  initFileProvider(new MemoryFileProvider());
+  const db = new FakeResponsesItemsSqlDatabase();
+  const repo = new SqlRepo(db).responsesItems;
+  const inserts = Array.from({ length: 3 }, (_, index) => storedItem({
+    id: `msg_insert_${index}`,
+    apiKeyId: 'key_a',
+    createdAt: 1_000 + index,
+  }));
+
+  const insert = await runWithCompressionBlocked(async () => await repo.insertMany(inserts));
+
+  assertEquals(insert.started, 1);
+  assertEquals((await repo.lookupMany('key_a', inserts.map(item => item.id))).map(row => row.id), inserts.map(item => item.id));
+
+  const metadata = Array.from({ length: 3 }, (_, index) => storedItem({
+    id: `msg_fill_${index}`,
+    apiKeyId: 'key_a',
+    payload: null,
+    createdAt: 2_000 + index,
+  }));
+  await repo.insertMany(metadata);
+  const fills = metadata.map((item, index) => ({
+    ...item,
+    payload: { item: { type: 'message', id: item.id, role: 'assistant', content: `filled ${index}` } },
+  }));
+
+  const fill = await runWithCompressionBlocked(async () => await repo.fillPayloads(fills));
+
+  assertEquals(fill.started, 1);
+  assertEquals(fill.result, 3);
 });
 
 test('SQL responses items repo spills large payloads through the runtime file provider without storing backend identity', async () => {
