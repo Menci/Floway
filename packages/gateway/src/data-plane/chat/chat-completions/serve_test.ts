@@ -103,7 +103,7 @@ const makeCandidate = (overrides: {
 
 const setCandidateModelId = (candidate: ModelCandidate, id: string): void => {
   Object.assign(candidate.model, { id });
-  const providerModel = candidate.model.providerModels[candidate.provider.upstream];
+  const providerModel = candidate.model.providerModels?.[candidate.provider.upstream];
   if (providerModel === undefined) throw new Error('expected candidate provider model');
   Object.assign(providerModel, { id });
 };
