@@ -135,10 +135,18 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
     getProvidedModels: async fetcher => {
       if (!config.modelsFetch.enabled) return manualModels;
       const response = await fetchCustomModels(config, fetcher);
+      const fetchedPricing = new Map(
+        response.data.flatMap(model => model.pricing ? [[model.id, model.pricing] as const] : []),
+      );
+      const effectiveManualModels = manualModels.map(model => {
+        if (model.pricing !== undefined) return model;
+        const pricing = fetchedPricing.get(rawModelIdOf(model));
+        return pricing === undefined ? model : { ...model, pricing };
+      });
       // Drop any auto-fetched model whose id is pinned by a manual
       // override so the manual copy is the only one emitted for that id.
       const filtered: CustomModelsResponse = { data: response.data.filter(raw => !overriddenIds.has(raw.id)) };
-      return [...manualModels, ...finalizeCustomModels(filtered, configuredEndpoints, upstreamFlags)];
+      return [...effectiveManualModels, ...finalizeCustomModels(filtered, configuredEndpoints, upstreamFlags)];
     },
     callCompletions: (model, body, signal, opts) => call(customFetchCompletions, model, body, signal, opts.headers, opts),
     callChatCompletions: (model, body, signal, opts) => callStreaming(customFetchChatCompletions, model, body, signal, opts.headers, parseChatCompletionsStream, opts),
