@@ -206,7 +206,8 @@ The same boundary runs for both `/v1/responses` (streaming) and
   unchanged
 - injects `copilot-vision-request` when any of those canonical content arrays
   carries an image, and derives `x-initiator` from the final canonical item
-  (`assistant` messages and non-message items are agent turns)
+  (missing/falsy roles and `assistant` are agent turns; other role-bearing
+  items are user turns)
 - on `/v1/responses` only: retries expired connection-bound input IDs once
   with deterministic rewrites, and synchronizes mismatched stream output
   item IDs

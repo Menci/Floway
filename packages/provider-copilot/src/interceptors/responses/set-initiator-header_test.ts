@@ -45,6 +45,21 @@ test('Responses initiator is user when input is an empty array', async () => {
   assertEquals(ctx.headers.get('x-initiator'), 'user');
 });
 
+test('Responses initiator is user for the role-bearing additional_tools item', async () => {
+  const ctx = invocation({
+    model: 'gpt-test',
+    input: [{
+      type: 'additional_tools',
+      role: 'developer',
+      tools: [{ type: 'function', name: 'lookup', parameters: {}, strict: false }],
+    }],
+  });
+
+  await withInitiatorHeaderSet(ctx, stubRequest, okEvents);
+
+  assertEquals(ctx.headers.get('x-initiator'), 'user');
+});
+
 test('Responses initiator is agent when the last input item is a function_call_output', async () => {
   const ctx = invocation({
     model: 'gpt-test',
