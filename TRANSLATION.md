@@ -189,12 +189,13 @@ steps.
 - executes hosted `image_generation` through the gateway server-tool shim for
   translated targets and native Responses providers that opt into the shim.
   Edit sources are flattened in declaration order from message content,
-  function/custom tool output, and replayed image-generation results. `auto`
-  and `edit` accept only decodable inline data URLs and reject the whole edit
-  when any source is remote, `file_id`-only, or malformed; explicit `generate`
-  keeps those images as model context without forwarding them to the edits
-  backend. An input mask is valid only when the resolved operation has a
-  decodable edit source.
+  function/custom tool output, and replayed image-generation results. Invalid
+  image data URLs receive Azure's native request error and exact field path.
+  Native Responses can resolve remote URLs and Files API IDs, but the shim
+  cannot materialize them as standalone edit bytes, so `auto`/`edit` return an
+  explicit `unsupported_image_source`; forced `generate` leaves them as model
+  context. Raster formats unsupported by `/images/edits` are transcoded to
+  WebP, and an inline mask alone is sufficient edit context for `auto`/`edit`.
 - removes unsupported `image_generation` Responses tool entries and forced
   tool choices that targeted them before target request construction. Other
   hosted/deferred Responses tools, including `web_search`, `tool_search`, and

@@ -4,8 +4,8 @@ import { appendFailedUpstreams } from '../../../../shared/failed-upstreams.ts';
 import { recordPerformance, type PerformanceTelemetryContext } from '../../../../shared/telemetry/performance.ts';
 import { recordTokenUsage, tokenUsageFromImagesBody } from '../../../../shared/telemetry/usage.ts';
 import { stampUpstreamCallStart, type AttemptState } from '../../../shared/gateway-ctx.ts';
-import type { ServerToolLifecycleEvent, ServerToolOutputItem, ServerToolRegistration, ServerToolResultSlot, ServerToolTerminal } from '../server-tool-shim.ts';
-import type { BackgroundScheduler } from '@floway-dev/platform';
+import type { ServerToolLifecycleEvent, ServerToolOutputItem, ServerToolRegistration, ServerToolTerminal } from '../server-tool-shim.ts';
+import { getImageProcessor, type BackgroundScheduler } from '@floway-dev/platform';
 import { parseSSEStream } from '@floway-dev/protocols/common';
 import type {
   ResponsesFunctionCallOutputItem,
@@ -47,11 +47,11 @@ const ALLOWED_MODERATIONS = new Set(['auto', 'low']);
 const ALLOWED_ACTIONS = new Set(['generate', 'edit', 'auto']);
 const ALLOWED_INPUT_FIDELITY = new Set(['high', 'low']);
 
-// gpt-image-* `/images/edits` accepts only these input image mimetypes; probing
-// Azure confirmed png/jpeg/webp succeed while gif/bmp/tiff are rejected with
-// `unsupported_file_mimetype`. The backend gates on the multipart content-type
-// before it decodes the bytes, so the mime we forward must already be one of
-// these. Common aliases are folded onto the canonical form the backend expects.
+// gpt-image-* `/images/edits` accepts only these input image mimetypes; a live
+// Azure probe confirmed png/jpeg/webp succeed while gif is rejected with
+// `unsupported_file_mimetype`. Native Responses accepts the same GIF and
+// re-encodes it before editing, so the shim mirrors that behavior through the
+// platform image processor. Common aliases are folded onto the backend form.
 const EDIT_MIME_ALIASES: Record<string, string> = {
   'image/jpg': 'image/jpeg',
   'image/pjpeg': 'image/jpeg',
@@ -59,12 +59,8 @@ const EDIT_MIME_ALIASES: Record<string, string> = {
 };
 const EDIT_SUPPORTED_MIMES = new Set(['image/png', 'image/jpeg', 'image/webp']);
 
-// The canonical edit-supported mimetype for a source, or null when gpt-image
-// edit cannot accept the format. Native Responses runs the input through its
-// multimodal pipeline and re-encodes it, so it edits e.g. a gif input that
-// this endpoint would reject; we forward bytes verbatim and have no image
-// codec available through @floway-dev/platform contracts, so an unsupported
-// format is rejected up front.
+// The canonical edit-supported mimetype for a source, or null when the
+// standalone endpoint requires local WebP transcoding first.
 const editSupportedMime = (mime: string): string | null => {
   const canonical = EDIT_MIME_ALIASES[mime] ?? mime;
   return EDIT_SUPPORTED_MIMES.has(canonical) ? canonical : null;
@@ -102,6 +98,18 @@ interface ImageSource {
   bytes: ArrayBuffer;
   mimeType: string;
 }
+
+export const prepareEditSources = async (sources: readonly ImageSource[]): Promise<readonly ImageSource[]> =>
+  await Promise.all(sources.map(async source => {
+    if (editSupportedMime(source.mimeType) !== null) return source;
+    // Native Responses accepts formats such as GIF through its multimodal
+    // preprocessing, while the standalone edits endpoint accepts only
+    // PNG/JPEG/WebP. Re-encode locally to preserve the hosted-tool behavior.
+    // https://github.com/openai/openai-node/blob/ec2f57fd0d66e94782656b986d7b3eb03225369c/src/resources/images.ts#L560-L572
+    const encoded = await getImageProcessor().compressToWebp(new Uint8Array(source.bytes), null);
+    const bytes = encoded.buffer.slice(encoded.byteOffset, encoded.byteOffset + encoded.byteLength) as ArrayBuffer;
+    return { bytes, mimeType: 'image/webp' };
+  }));
 
 const base64ToArrayBuffer = (b64: string): ArrayBuffer => {
   const binary = atob(b64);
@@ -149,6 +157,49 @@ const decodeInlineImage = (
   return decoded;
 };
 
+type InputImageDecodeResult =
+  | { ok: true; source: ImageSource }
+  | {
+    ok: false;
+    reason: 'invalid_format' | 'missing_base64_separator' | 'unsupported_mime' | 'invalid_base64';
+    mimeType?: string;
+  };
+
+// Responses input_image.image_url is stricter than an internal replayed
+// image_generation_call.result: it must be a fully qualified URL or an image
+// data URL. Bare base64 remains valid only for the internal replay path.
+const decodeInputImageDataUrl = (
+  imageUrl: string,
+  decodedSources: Map<string, ImageSource | null>,
+): InputImageDecodeResult => {
+  const dataUrlMatch = /^data:([^;,]+)?(;base64)?,(.*)$/s.exec(imageUrl);
+  if (dataUrlMatch === null) return { ok: false, reason: 'invalid_format' };
+
+  const mimeType = dataUrlMatch[1] ?? '';
+  if (!mimeType.toLowerCase().startsWith('image/')) {
+    return { ok: false, reason: 'unsupported_mime', mimeType };
+  }
+  if (dataUrlMatch[2] === undefined) return { ok: false, reason: 'missing_base64_separator' };
+
+  const payload = dataUrlMatch[3];
+  const cacheKey = `${mimeType}\u0000${payload}`;
+  if (decodedSources.has(cacheKey)) {
+    const source = decodedSources.get(cacheKey);
+    return source === null || source === undefined
+      ? { ok: false, reason: 'invalid_base64' }
+      : { ok: true, source };
+  }
+
+  try {
+    const source = { bytes: base64ToArrayBuffer(payload), mimeType };
+    decodedSources.set(cacheKey, source);
+    return { ok: true, source };
+  } catch {
+    decodedSources.set(cacheKey, null);
+    return { ok: false, reason: 'invalid_base64' };
+  }
+};
+
 // The orchestrator-visible tool config the shim layers onto the backend
 // call. Mirrors Azure: the orchestrator only chooses `prompt`; everything
 // here is read from the client's hosted-tool entry and applied by the shim.
@@ -176,7 +227,7 @@ export interface ImageGenerationConfig {
 interface PrepareConfigError {
   message: string;
   param: string;
-  code: 'unknown_parameter' | 'invalid_value' | 'integer_below_min_value' | 'integer_above_max_value';
+  code: 'unknown_parameter' | 'invalid_value' | 'integer_below_min_value' | 'integer_above_max_value' | 'unsupported_image_source';
 }
 
 type PrepareConfigResult =
@@ -270,11 +321,22 @@ const validateHostedImageGenerationEntry = (
     if (typeof maskField !== 'object' || Array.isArray(maskField)) {
       return { ok: false, error: invalidValue(path('input_image_mask'), maskField, ['{ image_url }']) };
     }
-    const maskUrl = (maskField as { image_url?: unknown }).image_url;
+    const maskInput = maskField as { image_url?: unknown; file_id?: unknown };
+    const maskUrl = maskInput.image_url;
     if (typeof maskUrl !== 'string' || maskUrl.length === 0) {
+      if (typeof maskInput.file_id === 'string' && maskInput.file_id.length > 0) {
+        return {
+          ok: false,
+          error: {
+            message: "Floway cannot use file IDs for input_image_mask; provide an inline image data URL.",
+            param: path('input_image_mask.file_id'),
+            code: 'unsupported_image_source',
+          },
+        };
+      }
       return {
         ok: false,
-        error: { message: 'image_generation input_image_mask requires an inline `image_url`; `file_id` masks are not supported by this gateway.', param: path('input_image_mask'), code: 'invalid_value' },
+        error: invalidValue(path('input_image_mask'), maskField, ['{ image_url }']),
       };
     }
     const decodedMask = decodeInlineImage(maskUrl);
@@ -360,18 +422,57 @@ export const synthesizeImageGenerationCallId = (): string =>
 // against the order received — and native flattens every image across messages
 // and tool results into this same forward order. Preserving declaration order
 // therefore makes "the Nth image" mean the same thing here as it does natively.
-const inputImagesOf = (item: ResponsesInputItem): ResponsesInputImage[] => {
+interface InputImageEntry {
+  image: ResponsesInputImage;
+  path: string;
+}
+
+const inputImagesOf = (item: ResponsesInputItem, inputIndex: number): InputImageEntry[] => {
   const content = item.type === 'message'
     ? item.content
     : item.type === 'function_call_output' || item.type === 'custom_tool_call_output' ? item.output : undefined;
-  return Array.isArray(content)
-    ? content.filter((block): block is ResponsesInputImage => block.type === 'input_image')
-    : [];
+  if (!Array.isArray(content)) return [];
+  const field = item.type === 'message' ? 'content' : 'output';
+  return content.flatMap((block, contentIndex) => block.type === 'input_image'
+    ? [{ image: block, path: `input[${inputIndex}].${field}[${contentIndex}]` }]
+    : []);
+};
+
+interface ImageOperationError {
+  message: string;
+  errorType: string;
+  param: string | null;
+  code: string | null;
+}
+
+type ImageSourceIssue =
+  | { kind: 'native'; error: ImageOperationError }
+  | { kind: 'gateway'; error: ImageOperationError }
+  | { kind: 'invariant'; message: string };
+
+const inputImageDecodeError = (
+  path: string,
+  failure: Exclude<InputImageDecodeResult, { ok: true }>,
+): ImageOperationError => {
+  const expected = `Invalid '${path}'. Expected a base64-encoded data URL with an image MIME type (e.g. 'data:image/png;base64,aW1nIGJ5dGVzIGhlcmU=')`;
+  const detail = failure.reason === 'invalid_format'
+    ? 'a value with an invalid format.'
+    : failure.reason === 'missing_base64_separator'
+      ? "a value without the ';base64' separator."
+      : failure.reason === 'unsupported_mime'
+        ? `unsupported MIME type '${failure.mimeType ?? ''}'.`
+        : 'an invalid base64-encoded value.';
+  return {
+    message: `${expected}, but got ${detail}`,
+    errorType: 'invalid_request_error',
+    param: path,
+    code: 'invalid_value',
+  };
 };
 
 interface ImageSourceInspection {
   sources: ImageSource[];
-  hasUnresolvableInputImage: boolean;
+  issue?: ImageSourceIssue;
 }
 
 const inspectImageSourcesWithCache = (
@@ -379,19 +480,41 @@ const inspectImageSourcesWithCache = (
   decodedSources: Map<string, ImageSource | null>,
 ): ImageSourceInspection => {
   const sources: ImageSource[] = [];
-  let hasUnresolvableInputImage = false;
-  for (const item of input) {
-    for (const image of inputImagesOf(item)) {
-      if (typeof image.image_url !== 'string') {
-        hasUnresolvableInputImage = true;
+  let issue: ImageSourceIssue | undefined;
+  for (const [inputIndex, item] of input.entries()) {
+    for (const { image, path } of inputImagesOf(item, inputIndex)) {
+      if (typeof image.image_url === 'string') {
+        if (/^https?:\/\//i.test(image.image_url)) {
+          issue ??= {
+            kind: 'gateway',
+            error: {
+              message: "Floway cannot use remote image URLs as edit sources; provide an inline image data URL or set image_generation.action to 'generate'.",
+              errorType: 'invalid_request_error',
+              param: `${path}.image_url`,
+              code: 'unsupported_image_source',
+            },
+          };
+          continue;
+        }
+        const decoded = decodeInputImageDataUrl(image.image_url, decodedSources);
+        if (!decoded.ok) {
+          return {
+            sources,
+            issue: { kind: 'native', error: inputImageDecodeError(`${path}.image_url`, decoded) },
+          };
+        }
+        sources.push(decoded.source);
         continue;
       }
-      const decoded = decodeInlineImage(image.image_url, 'image/png', decodedSources);
-      if (decoded === null) {
-        hasUnresolvableInputImage = true;
-        continue;
-      }
-      sources.push(decoded);
+      issue ??= {
+        kind: 'gateway',
+        error: {
+          message: "Floway cannot use file IDs as edit sources; provide an inline image data URL or set image_generation.action to 'generate'.",
+          errorType: 'invalid_request_error',
+          param: `${path}.file_id`,
+          code: 'unsupported_image_source',
+        },
+      };
     }
     if (item.type === 'image_generation_call' && typeof item.result === 'string' && item.result.length > 0) {
       // A prior generated image carries no MIME prefix on its bare-base64
@@ -400,13 +523,19 @@ const inspectImageSourcesWithCache = (
       const fallbackMime = item.output_format === 'jpeg' ? 'image/jpeg' : 'image/png';
       const decoded = decodeInlineImage(item.result, fallbackMime, decodedSources);
       if (decoded === null) {
-        hasUnresolvableInputImage = true;
+        return {
+          sources,
+          issue: {
+            kind: 'invariant',
+            message: `Stored image_generation_call at input[${inputIndex}] contains invalid result bytes.`,
+          },
+        };
       } else {
         sources.push(decoded);
       }
     }
   }
-  return { sources, hasUnresolvableInputImage };
+  return { sources, ...(issue === undefined ? {} : { issue }) };
 };
 
 export const createImageSourceInspector = (): ((input: readonly ResponsesInputItem[]) => ImageSourceInspection) => {
@@ -417,13 +546,6 @@ export const createImageSourceInspector = (): ((input: readonly ResponsesInputIt
 export const inspectImageSources = (input: readonly ResponsesInputItem[]): ImageSourceInspection =>
   createImageSourceInspector()(input);
 
-interface ImageOperationError {
-  message: string;
-  param: 'input' | 'tools';
-  code: 'invalid_value' | 'unsupported_file_mimetype';
-  action: 'generate' | 'edit';
-}
-
 type ImageOperation =
   | { ok: true; action: 'generate' | 'edit'; sources: readonly ImageSource[] }
   | { ok: false; error: ImageOperationError };
@@ -432,64 +554,32 @@ export const resolveImageOperation = (
   config: ImageGenerationConfig,
   inspection: ImageSourceInspection,
 ): ImageOperation => {
-  const { sources, hasUnresolvableInputImage } = inspection;
-  if (config.action !== 'generate' && hasUnresolvableInputImage) {
-    return {
-      ok: false,
-      error: {
-        message: 'image_generation cannot edit an input image unless it is an inline decodable data URL. Set action to "generate" to use remote, file_id, or malformed images only as model context.',
-        param: 'input',
-        code: 'invalid_value',
-        action: 'edit',
-      },
-    };
-  }
+  const { sources, issue } = inspection;
+  if (issue?.kind === 'native') return { ok: false, error: issue.error };
+  if (issue?.kind === 'invariant') throw new Error(issue.message);
+  if (issue?.kind === 'gateway' && config.action !== 'generate') return { ok: false, error: issue.error };
 
-  const action = config.action === 'edit' || (config.action === 'auto' && sources.length > 0)
+  const hasEditContext = sources.length > 0 || config.mask !== undefined;
+  const action = config.action === 'edit' || (config.action === 'auto' && hasEditContext)
     ? 'edit'
     : 'generate';
 
-  if (config.action === 'edit' && sources.length === 0) {
+  if (config.action === 'edit' && !hasEditContext) {
     return {
       ok: false,
       error: {
-        message: 'image_generation action "edit" requires at least one input image, but none was found in the request input.',
+        message: "ImageGenTool action 'edit' requires an image, mask, or previous context",
+        errorType: 'image_generation_user_error',
         param: 'input',
-        code: 'invalid_value',
-        action: 'edit',
+        code: null,
       },
     };
   }
 
-  if (config.mask !== undefined && action === 'generate') {
-    return {
-      ok: false,
-      error: {
-        message: 'image_generation input_image_mask requires a decodable edit source; it cannot be used with action "generate" or action "auto" without an input image.',
-        param: 'tools',
-        code: 'invalid_value',
-        action,
-      },
-    };
-  }
-
-  if (action === 'edit') {
-    for (const source of sources) {
-      if (editSupportedMime(source.mimeType) === null) {
-        return {
-          ok: false,
-          error: {
-            message: `image_generation input image format '${source.mimeType}' is not supported for editing. Supported formats are 'image/png', 'image/jpeg', and 'image/webp'. Set the tool's action to "generate" if the image is only context.`,
-            param: 'input',
-            code: 'unsupported_file_mimetype',
-            action,
-          },
-        };
-      }
-    }
-  }
-
-  return { ok: true, action, sources: action === 'edit' ? sources : [] };
+  const editSources = action === 'edit' && sources.length === 0 && config.mask !== undefined
+    ? [config.mask]
+    : sources;
+  return { ok: true, action, sources: action === 'edit' ? editSources : [] };
 };
 
 // The successfully-resolved image, or a normalized failure. Failures are
@@ -844,30 +934,6 @@ export const imageTerminal = (
   return { item, endEvents: [{ type: 'response.image_generation_call.completed' }] };
 };
 
-const immediateImageFailureSlot = (
-  id: string,
-  prompt: string,
-  error: ImageOperationError,
-): ServerToolResultSlot => ({
-  id,
-  startItem: { type: 'image_generation_call', status: 'in_progress' },
-  startEvents: [
-    { type: 'response.image_generation_call.in_progress' },
-    { type: 'response.image_generation_call.generating' },
-  ],
-  async *run() {
-    return imageTerminal(prompt, error.action, {
-      ok: false,
-      error: {
-        type: 'invalid_request_error',
-        code: error.code,
-        message: error.message,
-        retryable: false,
-      },
-    });
-  },
-});
-
 // One standalone-images SSE data line, folded into a backend-agnostic signal.
 // The generations and edits endpoints use distinct event prefixes
 // (`image_generation.*` vs `image_edit.*`); only the suffix is matched here.
@@ -929,6 +995,7 @@ const streamImageGeneration = (
 ) => async function* (): AsyncGenerator<ServerToolLifecycleEvent, ServerToolTerminal> {
   const resolved = await resolveImageCandidate(isEdit, state);
   if (!resolved.ok) return imageTerminal(prompt, action, { ok: false, error: resolved.error });
+  const wireSources = isEdit ? await prepareEditSources(sources) : sources;
   const { provider, fetcher } = resolved.candidate;
   const model = providerModelOf(resolved.candidate);
   const wantsPartials = (state.config.partial_images ?? 0) > 0;
@@ -949,7 +1016,7 @@ const streamImageGeneration = (
   let response: Response;
   let modelKey: string;
   try {
-    ({ response, modelKey } = await issueImageCall(provider, model, fetcher, prompt, isEdit, sources, state, wantsPartials, attempt));
+    ({ response, modelKey } = await issueImageCall(provider, model, fetcher, prompt, isEdit, wireSources, state, wantsPartials, attempt));
   } catch (e) {
     return finish({ ok: false, error: serverError(e) });
   }
@@ -1096,6 +1163,7 @@ export const imageGenerationServerTool: ServerToolRegistration = (invocation, ga
       type: 'invalid-request',
       message: initialOperation.error.message,
       param: initialOperation.error.param,
+      errorType: initialOperation.error.errorType,
       code: initialOperation.error.code,
     };
   }
@@ -1129,7 +1197,9 @@ export const imageGenerationServerTool: ServerToolRegistration = (invocation, ga
         // The per-request inspector cache reuses bytes already decoded during
         // registration and earlier turns.
         const operation = resolveImageOperation(config, inspectSources(invocation.payload.input));
-        if (!operation.ok) return [immediateImageFailureSlot(id, promptArg, operation.error)];
+        if (!operation.ok) {
+          throw new Error(`image_generation live source invariant violated after request validation: ${operation.error.message}`);
+        }
 
         // Safety valve against an unbounded backend-call loop (the model
         // retrying after repeated {ok:false} outcomes): once this response has

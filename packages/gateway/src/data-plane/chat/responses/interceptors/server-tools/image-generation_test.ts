@@ -13,6 +13,7 @@ import {
   isHostedImageGenerationTool,
   parseImageStreamEvent,
   parseRetryAfterMs,
+  prepareEditSources,
   prepareImageGenerationConfig,
   resolveImageOperation,
   SHIM_TOOL_NAME,
@@ -23,8 +24,9 @@ import { initRepo } from '../../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../../../test-helpers/gateway-ctx.ts';
 import type { ResponsesInvocation } from '../types.ts';
+import { initImageProcessor } from '@floway-dev/platform';
 import type { CanonicalResponsesPayload, ResponsesInputImage, ResponsesInputItem, ResponsesPayload, ResponsesTool } from '@floway-dev/protocols/responses';
-import { assert, assertEquals, assertFalse, assertStringIncludes, stubModelCandidate } from '@floway-dev/test-utils';
+import { assert, assertEquals, assertFalse, assertStringIncludes, assertThrows, stubModelCandidate } from '@floway-dev/test-utils';
 
 const PNG_B64 = 'aGVsbG8='; // "hello" — any decodable base64 works for source tests.
 
@@ -63,7 +65,13 @@ const unresolvableImages = {
 
 const unresolvableSourceCases = Object.entries(unresolvableImages).flatMap(([source, image]) =>
   Object.entries(imageInputContainers).flatMap(([container, wrap]) =>
-    (['auto', 'edit', 'generate'] as const).map(action => ({ source, container, action, input: wrap(image) }))));
+    (['auto', 'edit', 'generate'] as const).map(action => ({
+      source,
+      container,
+      action,
+      input: wrap(image),
+      path: `input[0].${container === 'message' ? 'content' : 'output'}[0].${source === 'file_id' ? 'file_id' : 'image_url'}`,
+    }))));
 
 // ── isHostedImageGenerationTool ──
 
@@ -190,7 +198,7 @@ test('prepareImageGenerationConfig validates input_fidelity and partial_images',
   assertEquals(badPartial.error.param, 'tools[0].partial_images');
 });
 
-test('prepareImageGenerationConfig decodes an inline mask once but rejects a file_id mask', () => {
+test('prepareImageGenerationConfig decodes an inline mask and reports file_id as a Floway limitation', () => {
   const ok = prepareImageGenerationConfig([{ type: 'image_generation', input_image_mask: { image_url: `data:image/png;base64,${PNG_B64}` } } as ResponsesTool]);
   assert(ok.ok);
   assert(ok.config.mask !== undefined);
@@ -199,8 +207,9 @@ test('prepareImageGenerationConfig decodes an inline mask once but rejects a fil
 
   const fileId = prepareImageGenerationConfig([{ type: 'image_generation', input_image_mask: { file_id: 'file_123' } } as ResponsesTool]);
   assert(!fileId.ok);
-  assertEquals(fileId.error.code, 'invalid_value');
-  assertEquals(fileId.error.param, 'tools[0].input_image_mask');
+  assertEquals(fileId.error.code, 'unsupported_image_source');
+  assertEquals(fileId.error.param, 'tools[0].input_image_mask.file_id');
+  assertStringIncludes(fileId.error.message, 'Floway cannot use file IDs');
 });
 
 // ── buildImageGenerationFunctionTool ──
@@ -228,9 +237,9 @@ test('inspectImageSources reads input_image blocks and image_generation_call res
     },
     { type: 'image_generation_call', id: 'ig_prev', status: 'completed', result: PNG_B64 },
   ];
-  const { sources, hasUnresolvableInputImage } = inspectImageSources(input);
+  const { sources, issue } = inspectImageSources(input);
   assertEquals(sources.length, 2);
-  assertEquals(hasUnresolvableInputImage, false);
+  assertEquals(issue, undefined);
 });
 
 test('inspectImageSources marks http(s) image urls as unresolvable', () => {
@@ -241,9 +250,32 @@ test('inspectImageSources marks http(s) image urls as unresolvable', () => {
       ],
     },
   ];
-  const { sources, hasUnresolvableInputImage } = inspectImageSources(input);
+  const { sources, issue } = inspectImageSources(input);
   assertEquals(sources.length, 0);
-  assertEquals(hasUnresolvableInputImage, true);
+  assertEquals(issue, {
+    kind: 'gateway',
+    error: {
+      message: "Floway cannot use remote image URLs as edit sources; provide an inline image data URL or set image_generation.action to 'generate'.",
+      errorType: 'invalid_request_error',
+      param: 'input[0].content[0].image_url',
+      code: 'unsupported_image_source',
+    },
+  });
+});
+
+test('inspectImageSources rejects bare base64 with the native input_image error', () => {
+  const inspection = inspectImageSources([imageInputContainers.message({
+    type: 'input_image', image_url: 'AAAA', detail: 'auto',
+  })]);
+  assertEquals(inspection.issue, {
+    kind: 'native',
+    error: {
+      message: "Invalid 'input[0].content[0].image_url'. Expected a base64-encoded data URL with an image MIME type (e.g. 'data:image/png;base64,aW1nIGJ5dGVzIGhlcmU='), but got a value with an invalid format.",
+      errorType: 'invalid_request_error',
+      param: 'input[0].content[0].image_url',
+      code: 'invalid_value',
+    },
+  });
 });
 
 test('inspectImageSources reads tool-result images and preserves forward order', () => {
@@ -259,12 +291,33 @@ test('inspectImageSources reads tool-result images and preserves forward order',
   assertEquals(sources[2].mimeType, 'image/webp');
 });
 
-test('inspectImageSources marks malformed echoed image results as unresolvable', () => {
+test('prepareEditSources transcodes formats accepted by native Responses but rejected by images edits', async () => {
+  let observedTarget: unknown = undefined;
+  initImageProcessor({
+    compressToWebp: (_input, target) => {
+      observedTarget = target;
+      return Promise.resolve(Uint8Array.of(1, 2, 3));
+    },
+  });
+  const [source] = await prepareEditSources([{
+    bytes: Uint8Array.of(4, 5, 6).buffer,
+    mimeType: 'image/gif',
+  }]);
+  assertEquals(source.mimeType, 'image/webp');
+  assertEquals([...new Uint8Array(source.bytes)], [1, 2, 3]);
+  assertEquals(observedTarget, null);
+});
+
+test('resolveImageOperation exposes a malformed replayed result as an invariant failure', () => {
   const inspection = inspectImageSources([
     { type: 'image_generation_call', id: 'ig_bad', status: 'completed', result: '%%%' },
   ]);
   assertEquals(inspection.sources, []);
-  assertEquals(inspection.hasUnresolvableInputImage, true);
+  assertThrows(
+    () => resolveImageOperation({ model: DEFAULT_IMAGE_MODEL, action: 'auto' }, inspection),
+    Error,
+    'Stored image_generation_call at input[0] contains invalid result bytes.',
+  );
 });
 
 test('a request inspector reuses decoded bytes after generated results become replay images', () => {
@@ -543,36 +596,42 @@ test('synthesizeImageGenerationCallId produces an ig_gw_-prefixed id', () => {
 
 // ── imageGenerationServerTool: unsupported input format (C) ──
 
-test('imageGenerationServerTool rejects an unsupported edit input format up front', async () => {
+test('imageGenerationServerTool accepts GIF edit input for local WebP transcoding', async () => {
   const result = await imageGenerationServerTool(
     makeCtx({ tools: [{ type: 'image_generation' }], input: [imageMessage('image/gif')] }),
     gatewayCtx(),
   );
-  assert(result.type === 'invalid-request');
-  assertEquals(result.code, 'unsupported_file_mimetype');
-  assertEquals(result.param, 'input');
-  assertStringIncludes(result.message, 'image/gif');
+  assert(result.type === 'active');
 });
 
 test.each(unresolvableSourceCases)(
   'imageGenerationServerTool handles $source images in $container for action $action',
-  async ({ action, input }) => {
+  async ({ source, action, input, path }) => {
     const result = await imageGenerationServerTool(
       makeCtx({ tools: [{ type: 'image_generation', action }], input: [input] }),
       gatewayCtx(),
     );
-    if (action === 'generate') {
+    if (source !== 'malformed' && action === 'generate') {
       assert(result.type === 'active');
     } else {
       assert(result.type === 'invalid-request');
-      assertEquals(result.code, 'invalid_value');
-      assertEquals(result.param, 'input');
-      assertStringIncludes(result.message, 'inline decodable data URL');
+      assertEquals(result.errorType, 'invalid_request_error');
+      assertEquals(result.param, path);
+      if (source === 'malformed') {
+        assertEquals(result.code, 'invalid_value');
+        assertEquals(
+          result.message,
+          `Invalid '${path}'. Expected a base64-encoded data URL with an image MIME type (e.g. 'data:image/png;base64,aW1nIGJ5dGVzIGhlcmU='), but got an invalid base64-encoded value.`,
+        );
+      } else {
+        assertEquals(result.code, 'unsupported_image_source');
+        assertStringIncludes(result.message, 'Floway cannot use');
+      }
     }
   },
 );
 
-test.each(['generate', 'auto'] as const)('imageGenerationServerTool rejects a mask when action %s has no edit source', async action => {
+test.each(['generate', 'auto', 'edit'] as const)('imageGenerationServerTool accepts a mask without a separate image for action %s', async action => {
   const result = await imageGenerationServerTool(
     makeCtx({
       tools: [{
@@ -583,10 +642,24 @@ test.each(['generate', 'auto'] as const)('imageGenerationServerTool rejects a ma
     }),
     gatewayCtx(),
   );
-  assert(result.type === 'invalid-request');
-  assertEquals(result.code, 'invalid_value');
-  assertEquals(result.param, 'tools');
-  assertStringIncludes(result.message, 'requires a decodable edit source');
+  assert(result.type === 'active');
+});
+
+test.each([
+  { requested: 'generate' as const, resolved: 'generate' as const, sourceCount: 0 },
+  { requested: 'auto' as const, resolved: 'edit' as const, sourceCount: 1 },
+  { requested: 'edit' as const, resolved: 'edit' as const, sourceCount: 1 },
+])('mask-only action $requested resolves to $resolved', ({ requested, resolved, sourceCount }) => {
+  const prepared = prepareImageGenerationConfig([{
+    type: 'image_generation',
+    action: requested,
+    input_image_mask: { image_url: `data:image/png;base64,${PNG_B64}` },
+  }]);
+  assert(prepared.ok);
+  const operation = resolveImageOperation(prepared.config, inspectImageSources([]));
+  assert(operation.ok);
+  assertEquals(operation.action, resolved);
+  assertEquals(operation.sources.length, sourceCount);
 });
 
 test('imageGenerationServerTool accepts an auto-action mask with an edit source', async () => {
@@ -610,7 +683,9 @@ test('imageGenerationServerTool rejects explicit edit without an input image', a
     gatewayCtx(),
   );
   assert(result.type === 'invalid-request');
-  assertEquals(result.code, 'invalid_value');
+  assertEquals(result.message, "ImageGenTool action 'edit' requires an image, mask, or previous context");
+  assertEquals(result.errorType, 'image_generation_user_error');
+  assertEquals(result.code, null);
   assertEquals(result.param, 'input');
 });
 
@@ -632,7 +707,7 @@ test('imageGenerationServerTool ignores input format when action is generate', a
   assert(result.type === 'active');
 });
 
-test('image dispatcher turns a newly introduced invalid edit source into a terminal tool error', async () => {
+test('image dispatcher exposes a newly introduced invalid edit source as an invariant failure', async () => {
   const invocation = makeCtx({ tools: [{ type: 'image_generation', action: 'auto' }] });
   const result = await imageGenerationServerTool(invocation, gatewayCtx());
   assert(result.type === 'active' && result.hosted !== undefined);
@@ -641,18 +716,14 @@ test('image dispatcher turns a newly introduced invalid edit source into a termi
     ...invocation.payload,
     input: [imageInputContainers.custom_output(unresolvableImages.remote)],
   };
-  const [slot] = result.hosted.dispatcher({
-    intercepted: { callId: 'call_live_invalid', name: SHIM_TOOL_NAME, arguments: { prompt: 'edit it' } },
-    loopState: { iterationCount: 2, remainingToolCalls: undefined },
-  });
-  const lifecycle = slot.run();
-  let step = await lifecycle.next();
-  while (!step.done) step = await lifecycle.next();
-  const item = step.value.item as { status?: string; error?: { type?: string; code?: string; message?: string } };
-  assertEquals(item.status, 'failed');
-  assertEquals(item.error?.type, 'invalid_request_error');
-  assertEquals(item.error?.code, 'invalid_value');
-  assertStringIncludes(item.error?.message ?? '', 'inline decodable data URL');
+  assertThrows(
+    () => result.hosted?.dispatcher({
+      intercepted: { callId: 'call_live_invalid', name: SHIM_TOOL_NAME, arguments: { prompt: 'edit it' } },
+      loopState: { iterationCount: 2, remainingToolCalls: undefined },
+    }),
+    Error,
+    'image_generation live source invariant violated after request validation: Floway cannot use remote image URLs as edit sources',
+  );
 });
 
 // ── imageGenerationServerTool: per-response dispatch budget (B) ──
