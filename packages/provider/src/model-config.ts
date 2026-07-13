@@ -1,5 +1,5 @@
 import { type FlagOverrides, validateFlagOverridesRecord } from './flags.ts';
-import { BILLING_DIMENSIONS, type BillingDimension, type ChatModelInfo, type ModelEndpointKey, type ModelEndpoints, type ModelKind, type Modality, type ModelPricing } from '@floway-dev/protocols/common';
+import { BILLING_DIMENSIONS, canonicalizePricingSelector, type BillingDimension, type ChatModelInfo, type ModelEndpointKey, type ModelEndpoints, type ModelKind, type Modality, type ModelPricing, type PricingSelector, validateModelPricing } from '@floway-dev/protocols/common';
 import { kindForEndpoints } from '@floway-dev/protocols/common';
 
 export type { Modality } from '@floway-dev/protocols/common';
@@ -21,7 +21,7 @@ export interface UpstreamModelConfig {
   endpoints: ModelEndpoints;
   display_name?: string;
   limits?: UpstreamModelLimits;
-  cost?: ModelPricing;
+  pricing?: ModelPricing;
   chat?: UpstreamChatModelConfig;
   // Floway-internal (camelCase, not surfaced on PublicModel).
   upstreamModelId: string;
@@ -109,39 +109,40 @@ export const flagOverridesField = (value: unknown, label: string): FlagOverrides
   });
 };
 
-const nonNegativeNumberField = (value: unknown, label: string): number => {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
-    throw new Error(`Malformed ${label}: must be a finite non-negative number`);
-  }
-  return value;
-};
-
 export const pricingField = (value: unknown, label: string): ModelPricing | undefined => {
   const record = optionalMetadataRecord(value, label);
   if (!record) return undefined;
-  const pricing: ModelPricing = {};
-  for (const dimension of BILLING_DIMENSIONS) {
-    if (record[dimension] !== undefined) pricing[dimension] = nonNegativeNumberField(record[dimension], `${label}.${dimension}`);
-  }
-  if (record.tiers !== undefined) {
-    if (!isRecord(record.tiers)) throw new Error(`Malformed ${label}.tiers: must be an object`);
-    const tiers: Record<string, Partial<Record<BillingDimension, number>>> = {};
-    for (const [tierName, overlay] of Object.entries(record.tiers)) {
-      if (tierName === '') throw new Error(`Malformed ${label}.tiers: tier name must be non-empty`);
-      if (!isRecord(overlay)) throw new Error(`Malformed ${label}.tiers.${tierName}: must be an object`);
-      const tierPricing: Partial<Record<BillingDimension, number>> = {};
-      for (const dimension of BILLING_DIMENSIONS) {
-        if (overlay[dimension] !== undefined) {
-          tierPricing[dimension] = nonNegativeNumberField(overlay[dimension], `${label}.tiers.${tierName}.${dimension}`);
-        }
-      }
-      // An empty overlay is a valid declaration: the tier exists but every
-      // dimension inherits base pricing. Preserve it verbatim.
-      tiers[tierName] = tierPricing;
+  const unknownPricingKeys = Object.keys(record).filter(key => key !== 'entries');
+  if (unknownPricingKeys.length > 0) throw new Error(`Malformed ${label}: unknown fields: ${unknownPricingKeys.join(', ')}`);
+  if (!Array.isArray(record.entries) || record.entries.length === 0) throw new Error(`Malformed ${label}.entries: must be a non-empty array`);
+
+  const entries = record.entries.map((rawEntry, index) => {
+    if (!isRecord(rawEntry)) throw new Error(`Malformed ${label}.entries[${index}]: must be an object`);
+    const unknownEntryKeys = Object.keys(rawEntry).filter(key => key !== 'selector' && key !== 'rates');
+    if (unknownEntryKeys.length > 0) throw new Error(`Malformed ${label}.entries[${index}]: unknown fields: ${unknownEntryKeys.join(', ')}`);
+    const selectorRecord = rawEntry.selector === undefined ? undefined : optionalMetadataRecord(rawEntry.selector, `${label}.entries[${index}].selector`);
+    let selector: PricingSelector;
+    try {
+      selector = canonicalizePricingSelector(selectorRecord as PricingSelector | undefined);
+    } catch (cause) {
+      throw new Error(`Malformed ${label}.entries[${index}].selector: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
     }
-    if (Object.keys(tiers).length > 0) pricing.tiers = tiers;
+    if (!isRecord(rawEntry.rates)) throw new Error(`Malformed ${label}.entries[${index}].rates: must be an object`);
+    const unknownRateKeys = Object.keys(rawEntry.rates).filter(key => !BILLING_DIMENSIONS.includes(key as BillingDimension));
+    if (unknownRateKeys.length > 0) throw new Error(`Malformed ${label}.entries[${index}].rates: unknown dimensions: ${unknownRateKeys.join(', ')}`);
+    const rates: Partial<Record<BillingDimension, number>> = {};
+    for (const dimension of BILLING_DIMENSIONS) {
+      if (rawEntry.rates[dimension] !== undefined) rates[dimension] = rawEntry.rates[dimension] as number;
+    }
+    return { ...(Object.keys(selector).length > 0 ? { selector } : {}), rates };
+  });
+  const pricing = { entries };
+  try {
+    validateModelPricing(pricing);
+  } catch (cause) {
+    throw new Error(`Malformed ${label}: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
   }
-  return Object.keys(pricing).length > 0 ? pricing : undefined;
+  return pricing;
 };
 
 const MODEL_KINDS: ReadonlySet<ModelKind> = new Set<ModelKind>(['chat', 'embedding', 'image']);
@@ -256,7 +257,7 @@ const kindField = (value: unknown, endpoints: ModelEndpoints, label: string): Mo
 
 const modelField = (value: unknown, label: string): UpstreamModelConfig => {
   if (!isRecord(value)) throw new Error(`Malformed ${label}: must be an object`);
-  const cost = pricingField(value.cost, `${label}.cost`);
+  const pricing = pricingField(value.pricing, `${label}.pricing`);
   const endpoints = endpointsField(value.endpoints, `${label}.endpoints`);
   const kind = kindField(value.kind, endpoints, `${label}.kind`);
   const chat = chatField(value.chat, `${label}.chat`);
@@ -268,7 +269,7 @@ const modelField = (value: unknown, label: string): UpstreamModelConfig => {
     endpoints,
     ...(value.display_name !== undefined ? { display_name: optionalStringField(value.display_name, `${label}.display_name`) } : {}),
     ...(value.limits !== undefined ? { limits: limitsField(value.limits, `${label}.limits`) } : {}),
-    ...(cost ? { cost } : {}),
+    ...(pricing ? { pricing } : {}),
     ...(chat ? { chat } : {}),
     upstreamModelId: nonEmptyStringField(value.upstreamModelId, `${label}.upstreamModelId`),
     ...(value.publicModelId !== undefined ? { publicModelId: optionalStringField(value.publicModelId, `${label}.publicModelId`) } : {}),

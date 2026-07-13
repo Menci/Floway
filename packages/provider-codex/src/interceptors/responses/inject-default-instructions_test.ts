@@ -34,6 +34,14 @@ test('injects the default when instructions is an empty string', async () => {
   assertEquals(ctx.payload.instructions, "You're a helpful assistant.");
 });
 
+test('injects the default when instructions is null', async () => {
+  const ctx = invocation({ model: 'gpt-test', input: 'hello', instructions: null });
+
+  await injectDefaultInstructions(ctx, stubRequest, okEvents);
+
+  assertEquals(ctx.payload.instructions, "You're a helpful assistant.");
+});
+
 test('preserves a caller-supplied instructions string', async () => {
   const ctx = invocation({ model: 'gpt-test', input: [{ type: 'message', role: 'user', content: 'hello' }], instructions: 'You are a pirate.' });
 
@@ -41,6 +49,26 @@ test('preserves a caller-supplied instructions string', async () => {
 
   assertEquals(ctx.payload.instructions, 'You are a pirate.');
 });
+
+test.each([
+  { name: 'number', value: 42 },
+  { name: 'boolean', value: false },
+  { name: 'object', value: { text: 'invalid' } },
+  { name: 'array', value: ['invalid'] },
+])(
+  'preserves malformed $name instructions for upstream validation',
+  async ({ value }) => {
+    const ctx = invocation({
+      model: 'gpt-test',
+      input: 'hello',
+      instructions: value as unknown as string,
+    });
+
+    await injectDefaultInstructions(ctx, stubRequest, okEvents);
+
+    assertEquals(ctx.payload.instructions, value);
+  },
+);
 
 test('injects the default and preserves in-array role:"system" items when no top-level instructions are supplied', async () => {
   // Behavior validated after removing hoist-system-input-to-instructions:

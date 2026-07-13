@@ -147,7 +147,7 @@ const applyGenerationConfig = (request: CanonicalResponsesPayload, generationCon
   }
 
   const effort = geminiReasoningEffort(generationConfig.thinkingConfig);
-  if (!effort) return;
+  if (effort === null) return;
 
   request.reasoning = {
     effort,

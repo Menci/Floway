@@ -1,6 +1,7 @@
 import { test } from 'vitest';
 
 import { blueprintUpstreamRecord, upstreamRecordToFullJson } from './serialize.ts';
+import { MODEL_CATALOG_REVISION } from '../../data-plane/providers/models-cache.ts';
 import { requestApp, setupAppTest } from '../../test-helpers.ts';
 import type { UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
@@ -260,7 +261,7 @@ test('PATCH /api/upstreams preserves omitted secrets and re-warms the models cac
   // it with the new upstream-supplied catalog rather than leaving the old
   // models in place.
   await repo.modelsCache.put(created.id, {
-    revision: 1,
+    revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1,
     models: [{ id: 'stale-model', kind: 'chat', endpoints: {}, enabledFlags: new Set(), limits: {} }],
   });
@@ -409,12 +410,12 @@ test('GET /api/upstreams attaches models-cache freshness to every row', async ()
   await repo.upstreams.save({ ...baseRow, id: 'up_failed', name: 'Failed', sortOrder: 2 });
 
   await repo.modelsCache.put('up_warm', {
-    revision: 1,
+    revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1_700_000_000_000,
     models: [{ id: 'm1', kind: 'chat', endpoints: {}, enabledFlags: new Set(), limits: {} }],
   });
   await repo.modelsCache.put('up_failed', {
-    revision: 1,
+    revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1_700_000_000_000,
     models: [{ id: 'm1', kind: 'chat', endpoints: {}, enabledFlags: new Set(), limits: {} }],
   });

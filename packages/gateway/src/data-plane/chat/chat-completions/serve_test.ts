@@ -84,6 +84,7 @@ const makeProtocolFrames = async function* <TEvent>(events: readonly TEvent[]): 
 
 const makeCandidate = (overrides: {
   upstream?: string;
+  modelId?: string;
   endpoints?: ModelEndpoints;
   callChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
 } = {}): ModelCandidate => {
@@ -96,7 +97,10 @@ const makeCandidate = (overrides: {
       upstream, kind: 'custom', name: upstream,
       disabledPublicModelIds: [], modelPrefix: null, instance: provider,
     },
-    model: stubInternalModel(overrides.endpoints ? { endpoints: overrides.endpoints } : {}, upstream),
+    model: stubInternalModel({
+      id: overrides.modelId ?? 'test-model',
+      ...(overrides.endpoints ? { endpoints: overrides.endpoints } : {}),
+    }, upstream),
     fetcher: directFetcher,
   };
 };
@@ -156,22 +160,36 @@ test('generate filters out candidates that do not expose any chat-completions-ta
 
 test('generate falls through to the next candidate when the first yields an upstream error', async () => {
   installRepo();
+  const originalImageUrl = 'data:image/png;base64,AQID';
+  const payload = makePayload({
+    messages: [{
+      role: 'user',
+      content: [{ type: 'image_url', image_url: { url: originalImageUrl, detail: 'auto' } }],
+    }],
+  });
   const firstError = new Response(JSON.stringify({ error: { message: 'nope' } }), {
     status: 502, headers: new Headers({ 'content-type': 'application/json' }),
   });
-  const firstCall = vi.fn(async (): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => ({
-    ok: false, response: firstError, modelKey: 'first-key',
-  }));
-  const secondCall = vi.fn(async (): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'second-key', headers: new Headers(),
-  }));
+  const firstCall = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => {
+    const message = (body as Omit<ChatCompletionsPayload, 'model'>).messages[0];
+    if (!Array.isArray(message.content) || message.content[0]?.type !== 'image_url') throw new Error('expected image content');
+    message.content[0].image_url.url = 'data:image/webp;base64,COMPRESSED';
+    return { ok: false, response: firstError, modelKey: 'first-key' };
+  });
+  let fallbackImageUrl: string | undefined;
+  const secondCall = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => {
+    const message = (body as Omit<ChatCompletionsPayload, 'model'>).messages[0];
+    if (!Array.isArray(message.content) || message.content[0]?.type !== 'image_url') throw new Error('expected image content');
+    fallbackImageUrl = message.content[0].image_url.url;
+    return { ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'second-key', headers: new Headers() };
+  });
   queueResolution([
     makeCandidate({ upstream: 'up_a', callChatCompletions: firstCall }),
     makeCandidate({ upstream: 'up_b', callChatCompletions: secondCall }),
   ]);
 
   const result = await chatCompletionsServe.generate({
-    payload: makePayload(),
+    payload,
     ctx: makeGatewayCtx(),
     headers: new Headers(),
   });
@@ -182,6 +200,10 @@ test('generate falls through to the next candidate when the first yields an upst
   assertEquals(result.type, 'events');
   assertEquals(firstCall.mock.calls.length, 1);
   assertEquals(secondCall.mock.calls.length, 1);
+  assertEquals(fallbackImageUrl, originalImageUrl);
+  const sourceMessage = payload.messages[0];
+  if (!Array.isArray(sourceMessage.content) || sourceMessage.content[0]?.type !== 'image_url') throw new Error('expected source image content');
+  assertEquals(sourceMessage.content[0].image_url.url, originalImageUrl);
 });
 
 // A mid-attempt throw (interceptor bug / translation error / provider-layer
@@ -288,16 +310,17 @@ test('generate renders model-missing when no candidates are available', async ()
 test('alias resolution swaps the inbound model id for the target and overlays rules onto the IR', async () => {
   installRepo();
   const capturedBodies: ChatCompletionsPayload[] = [];
-  const callChatCompletions = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => {
+  const observedModelIds: string[] = [];
+  const callChatCompletions = vi.fn(async (model: unknown, body: unknown): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => {
+    observedModelIds.push((model as { id: string }).id);
     capturedBodies.push(body as ChatCompletionsPayload);
     return { ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'gpt-5.4', headers: new Headers() };
   });
   // Alias flow shape: the resolver returns candidates carrying the target's
   // upstream catalog id AND the alias's rule overlay on `candidate.rules`.
-  // Serve normalizes `payload.model` to `candidate.model.id`; the attempt
-  // reads the overlay directly off `candidate.rules` at wire-call time.
-  const candidate = makeCandidate({ upstream: 'up_a', callChatCompletions });
-  Object.assign(candidate.model, { id: 'gpt-5.4' });
+  // The attempt stamps its private clone with `candidate.model.id` and reads
+  // the overlay directly off `candidate.rules` at wire-call time.
+  const candidate = makeCandidate({ upstream: 'up_a', modelId: 'gpt-5.4', callChatCompletions });
   queueResolution([candidate], { aliasRules: { reasoning: { effort: 'low' }, verbosity: 'low' } });
 
   const payload = makePayload({ model: 'gpt-fast' });
@@ -314,11 +337,8 @@ test('alias resolution swaps the inbound model id for the target and overlays ru
   // The resolver saw the inbound alias id verbatim — target-id walking
   // happens inside the resolver, not in serve.
   assertEquals(lastResolveCall.model, 'gpt-fast');
-  // Serve normalized payload.model to the candidate's real id before the
-  // attempt. Every attempt sees the canonical resolved public id — for an
-  // alias inbound the change is visible (gpt-fast → gpt-5.4); for a direct
-  // inbound the rewrite is a no-op.
-  assertEquals(payload.model, 'gpt-5.4');
+  assertEquals(observedModelIds, ['gpt-5.4']);
+  assertEquals(payload.model, 'gpt-fast');
   // Alias rules land on the IR through candidate.rules → the attempt's
   // applyRulesToUpstreamChatCompletions call.
   const observed = capturedBodies[0]!;
@@ -326,17 +346,17 @@ test('alias resolution swaps the inbound model id for the target and overlays ru
   assertEquals(observed.verbosity, 'low');
 });
 
-test('direct dispatch normalizes payload.model to the resolved public id', async () => {
+test('direct dispatch uses the resolved public id without mutating the addressed model', async () => {
   // A prefix-addressable id ('cop/gpt-5.4') resolves to the catalog's
-  // 'gpt-5.4' — the resolver strips the prefix internally. Serve then
-  // pins payload.model to the candidate's real id so every attempt sees
-  // the canonical form regardless of how the client addressed the model.
+  // 'gpt-5.4' — the resolver strips the prefix internally. The attempt pins
+  // only its private clone to that canonical id.
   installRepo();
-  const callChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'gpt-5.4', headers: new Headers(),
-  }));
-  const candidate = makeCandidate({ upstream: 'up_a', callChatCompletions });
-  Object.assign(candidate.model, { id: 'gpt-5.4' });
+  const observedModelIds: string[] = [];
+  const callChatCompletions = vi.fn(async (model: unknown): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => {
+    observedModelIds.push((model as { id: string }).id);
+    return { ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'gpt-5.4', headers: new Headers() };
+  });
+  const candidate = makeCandidate({ upstream: 'up_a', modelId: 'gpt-5.4', callChatCompletions });
   queueResolution([candidate]);
 
   const payload = makePayload({ model: 'cop/gpt-5.4' });
@@ -349,9 +369,11 @@ test('direct dispatch normalizes payload.model to the resolved public id', async
   if (result.type !== 'events') throw new Error('unreachable');
   await collectEvents(result.events);
 
-  // Resolver saw the prefixed inbound; serve normalized to the catalog id.
+  // Resolver and caller payload retain the prefixed address while dispatch
+  // uses the catalog id.
   assertEquals(lastResolveCall.model, 'cop/gpt-5.4');
-  assertEquals(payload.model, 'gpt-5.4');
+  assertEquals(observedModelIds, ['gpt-5.4']);
+  assertEquals(payload.model, 'cop/gpt-5.4');
 });
 
 test('alias whose targets have no kind-matching binding surfaces as the regular model-missing 404', async () => {
