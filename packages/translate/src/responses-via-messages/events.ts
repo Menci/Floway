@@ -1,6 +1,6 @@
 import { unwrapCustomToolInput } from '../shared/responses-via/custom-tool-wrap.ts';
 import * as responses from '../shared/responses-via/responses-event-builder.ts';
-import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { eventFrame, USAGE_BILLING, type ProtocolFrame } from '@floway-dev/protocols/common';
 import {
   mergeMessagesUsageSnapshot,
   messagesUsageSnapshot,
@@ -109,13 +109,20 @@ const buildResult = (state: MessagesToResponsesStreamState, status: ResponsesRes
     // `handleMessageStop` in this file). Other Anthropic stop_reasons
     // don't map to incomplete.
     ...(status === 'incomplete' ? { incompleteDetails: { reason: 'max_output_tokens' as const } } : {}),
-    usage: responses.usage(
-      inputTokens,
-      state.usage.output_tokens,
-      state.usage.cache_read_input_tokens,
-      hasCacheCreation ? cacheCreation : undefined,
-      cacheWrite1h > 0 ? cacheWrite1h : undefined,
-    ),
+    usage: {
+      input_tokens: inputTokens,
+      output_tokens: state.usage.output_tokens,
+      total_tokens: inputTokens + state.usage.output_tokens,
+      ...(state.usage.cache_read_input_tokens !== undefined || hasCacheCreation
+        ? {
+            input_tokens_details: {
+              cached_tokens: state.usage.cache_read_input_tokens ?? 0,
+              ...(hasCacheCreation ? { cache_write_tokens: cacheCreation } : {}),
+            },
+          }
+        : {}),
+      ...(cacheWrite1h > 0 ? { [USAGE_BILLING]: { cacheWrite1hTokenCount: cacheWrite1h } } : {}),
+    },
     ...(serviceTier !== undefined ? { serviceTier } : {}),
   });
 };

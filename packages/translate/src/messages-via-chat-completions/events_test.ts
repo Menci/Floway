@@ -442,6 +442,7 @@ test('mapChatCompletionsUsageToMessagesUsage maps OpenAI cached_tokens to cache_
   const usage = mapChatCompletionsUsageToMessagesUsage({
     prompt_tokens: 100,
     completion_tokens: 20,
+    total_tokens: 120,
     prompt_tokens_details: { cached_tokens: 60 },
   });
   assertEquals(usage.input_tokens, 40);
@@ -453,6 +454,7 @@ test('mapChatCompletionsUsageToMessagesUsage omits cache_read_input_tokens when 
   const usage = mapChatCompletionsUsageToMessagesUsage({
     prompt_tokens: 100,
     completion_tokens: 20,
+    total_tokens: 120,
   });
   assertEquals(usage.input_tokens, 100);
   assertEquals(usage.cache_read_input_tokens, undefined);
@@ -473,6 +475,7 @@ test('mapChatCompletionsUsageToMessagesUsage surfaces cache_creation_input_token
   const usage = mapChatCompletionsUsageToMessagesUsage({
     prompt_tokens: 100,
     completion_tokens: 20,
+    total_tokens: 120,
     prompt_tokens_details: { cached_tokens: 30, cache_creation_input_tokens: 40 },
   });
   assertEquals(usage.input_tokens, 30);
@@ -485,6 +488,7 @@ test('mapChatCompletionsUsageToMessagesUsage surfaces cache_creation_input_token
   const usage = mapChatCompletionsUsageToMessagesUsage({
     prompt_tokens: 80,
     completion_tokens: 10,
+    total_tokens: 90,
     prompt_tokens_details: { cache_creation_input_tokens: 50 },
   });
   assertEquals(usage.input_tokens, 30);
@@ -496,6 +500,7 @@ test('mapChatCompletionsUsageToMessagesUsage accepts cache_write_tokens from Ope
   const usage = mapChatCompletionsUsageToMessagesUsage({
     prompt_tokens: 80,
     completion_tokens: 10,
+    total_tokens: 90,
     prompt_tokens_details: { cached_tokens: 20, cache_write_tokens: 30 },
   });
   assertEquals(usage.input_tokens, 30);
@@ -507,6 +512,7 @@ test('mapChatCompletionsUsageToMessagesUsage prefers canonical cache_creation_in
   const usage = mapChatCompletionsUsageToMessagesUsage({
     prompt_tokens: 80,
     completion_tokens: 10,
+    total_tokens: 90,
     prompt_tokens_details: { cache_creation_input_tokens: 30, cache_write_tokens: 20 },
   });
   assertEquals(usage.input_tokens, 50);
@@ -517,6 +523,7 @@ test('mapChatCompletionsUsageToMessagesUsage rejects malformed inclusive cache c
   expect(() => mapChatCompletionsUsageToMessagesUsage({
     prompt_tokens: 40,
     completion_tokens: 10,
+    total_tokens: 50,
     prompt_tokens_details: { cached_tokens: 30, cache_write_tokens: 25 },
   })).toThrowError(RangeError);
 });
