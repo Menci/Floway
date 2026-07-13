@@ -9,7 +9,7 @@ import { isBase64ImageDataUrl, memoizedDataUrlCompressor } from '@floway-dev/pro
 // for our output. The non-enumerable property stays off the wire and does not
 // cross an object-spread/JSON ownership boundary.
 const compressedImageUrl = Symbol('compressedImageUrl');
-type CompressibleImagePart = ResponsesInputImage & { [compressedImageUrl]?: string };
+type CompressibleImagePart = ResponsesInputImage & { image_url: string; [compressedImageUrl]?: string };
 
 // Recompresses every inline base64 image in the outgoing Responses payload to
 // WebP before the Copilot upstream call. Images appear both as `input_image`
