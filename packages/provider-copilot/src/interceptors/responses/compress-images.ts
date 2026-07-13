@@ -28,14 +28,10 @@ export const withInlineImagesCompressed = async <TResult>(
     const parts = item.type === 'message' ? item.content : item.type === 'function_call_output' ? item.output : undefined;
     if (!Array.isArray(parts)) continue;
     for (const part of parts) {
-      if (
-        part.type === 'input_image'
-        && typeof part.image_url === 'string'
-        && part[compressedImageUrl] !== part.image_url
-        && isBase64ImageDataUrl(part.image_url)
-      ) {
-        targets.push({ part, imageUrl: part.image_url });
-      }
+      if (part.type !== 'input_image' || typeof part.image_url !== 'string') continue;
+      const imagePart = part as CompressibleImagePart;
+      if (imagePart[compressedImageUrl] === imagePart.image_url || !isBase64ImageDataUrl(imagePart.image_url)) continue;
+      targets.push({ part: imagePart, imageUrl: imagePart.image_url });
     }
   }
 
