@@ -5,7 +5,6 @@
 //
 // Sources and refresh procedure:
 // https://developers.openai.com/api/docs/pricing
-// https://github.com/anomalyco/models.dev/blob/8e6d393c01cb42d41a92f18725eef545e7190efb/packages/core/src/schema.ts
 // .agents/skills/fetching-models-pricing/
 
 import { modelPricing, pricingEntry, type ModelPricing } from '@floway-dev/protocols/common';

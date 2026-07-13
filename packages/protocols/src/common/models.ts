@@ -27,10 +27,8 @@ export const BILLING_DIMENSIONS: readonly BillingDimension[] = ['input', 'input_
 // size, which projects the request onto the declared inputTokens thresholds.
 export const INPUT_BILLING_DIMENSIONS: readonly BillingDimension[] = ['input', 'input_cache_read', 'input_cache_write', 'input_cache_write_1h', 'input_image'];
 
-// A PriceVector is the per-dimension USD-per-million-token rate set for one
-// pricing entry.
-// Bare `input`/`output` are the text rates and `_image` keys are the image
-// modality. Every key is optional; absence means that dimension is unpriced.
+// USD-per-million-token rates for one entry; input/output are text rates and
+// the _image keys are image rates.
 export type PriceVector = Partial<Record<BillingDimension, number>>;
 
 export type PricingThresholdOperator = 'gt' | 'gte';
@@ -57,8 +55,6 @@ export type PricingRuntimeFacts = Readonly<{
   inputTokens: number;
 }>;
 
-// One explicit point in the selector Cartesian product. Rates never inherit
-// from another entry: every published coordinate carries its own PriceVector.
 export interface PricingEntry {
   selector?: PricingSelector;
   rates: PriceVector;
@@ -78,7 +74,6 @@ export interface PricedRequest {
   rates: PriceVector | null;
 }
 
-// Validate one entry's rates before the catalog is compiled or imported.
 export const validatePriceVector = (pricing: PriceVector, path = 'price vector'): void => {
   const dimensions = BILLING_DIMENSIONS.filter(dimension => pricing[dimension] !== undefined);
   if (dimensions.length === 0) throw new Error(`${path} must contain at least one rate`);

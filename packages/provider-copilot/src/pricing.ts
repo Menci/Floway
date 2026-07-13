@@ -8,12 +8,7 @@
 //
 // Source of truth for Copilot pricing updates:
 // https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing
-// This table is the single source of truth going forward; edit it here when
-// pricing changes. migrations/0011_usage_cost_snapshot.sql holds a frozen
-// snapshot for one-shot historical cleanup and is deliberately not kept in
-// sync — historical rows for newly-priced models are recovered by re-running
-// the unit-price backfill against live D1, not by editing that migration.
-//
+// After changing this table, run the unit-price backfill for existing rows.
 // Refresh procedure: .agents/skills/fetching-models-pricing/.
 import { copilotPublicModelId } from './model-name.ts';
 import { basePricing, modelPricing, pricingEntry, type ModelPricing } from '@floway-dev/protocols/common';

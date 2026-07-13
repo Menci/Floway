@@ -296,9 +296,6 @@ const synthesizeOne = (
   // model-missing / model-unsupported error.
   const endpoints = unionEndpoints(gatewayAvailable.map(({ real }) => real.endpoints));
 
-  // Gateway-wide single-target chat pricing rides along when available.
-  // Stable across callers — same alias publishes the same pricing
-  // everywhere.
   const singleTargetPricing = gatewayAvailable.length === 1 ? gatewayAvailable[0].real.pricing : undefined;
 
   const entry: InternalModel = {
