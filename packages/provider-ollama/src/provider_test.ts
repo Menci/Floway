@@ -100,12 +100,13 @@ test('getProvidedModels merges manual overrides in front of auto-fetched models 
     assertEquals(models[0].id, 'gpt-oss:120b');
     assertEquals(models[0].display_name, 'Pinned 120B');
     assertEquals(Object.keys(models[0].endpoints), ['chatCompletions']);
+    assertEquals(models[0].cost, { input: 0.15, input_cache_read: 0.075, output: 0.6 });
     // No duplicate gpt-oss:120b further down.
     assertEquals(models.filter(m => m.id === 'gpt-oss:120b').length, 1);
   });
 });
 
-test('getPricingForModelKey resolves manual cost first, then falls back to the OLLAMA_MODEL_PRICING table', () => {
+test('getProvidedModels preserves explicit manual cost over built-in cost', async () => {
   const instance = createOllamaProvider(buildRecord({
     config: {
       baseUrl: 'https://ollama.com',
@@ -118,12 +119,10 @@ test('getPricingForModelKey resolves manual cost first, then falls back to the O
       }],
     },
   }));
-  // Manual cost wins for the pinned id.
-  assertEquals(instance.instance.getPricingForModelKey('gpt-oss:120b'), { input: 99, output: 99 });
-  // Unpinned model falls back to the table.
-  assertEquals(instance.instance.getPricingForModelKey('deepseek-v4-flash')?.input, 0.14);
-  // Unknown model returns null rather than fabricating a guess.
-  assertEquals(instance.instance.getPricingForModelKey('devstral-small-2:24b'), null);
+  await withMockedFetch(tagsAndShow, async () => {
+    const models = await instance.instance.getProvidedModels(directFetcher);
+    assertEquals(models[0].cost, { input: 99, output: 99 });
+  });
 });
 
 test('call* methods POST to /v1/<endpoint> with the upstream model id and Bearer header', async () => {
