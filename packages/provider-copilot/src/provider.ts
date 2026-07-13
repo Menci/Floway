@@ -13,7 +13,7 @@ import { emptyKnownModels, mergeKnownModels, projectKnownModels } from './known-
 import { mergeClaudeVariants } from './merge-claude-variants.ts';
 import { copilotPublicModelId } from './model-name.ts';
 import { CONTEXT_1M_BETA, copilotModelSupportsFastMode, type ModelSelectionHints, resolveCopilotRawModel } from './model-selection.ts';
-import { pricingForCopilotModelKey, pricingForCopilotPublicModelId } from './pricing.ts';
+import { pricingForCopilotPublicModelId } from './pricing.ts';
 import { readCopilotUpstreamState, type CopilotUpstreamState } from './state.ts';
 import type { CopilotRawModel } from './types.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
@@ -239,7 +239,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
     model: modelKey,
     upstream: copilot.id,
     modelKey,
-    cost: pricingForCopilotModelKey(modelKey),
+    cost: null,
   });
 
   // Materialize an upstream error body up-front so any interceptor that
@@ -312,7 +312,6 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
       }
       return finalizeCopilotModels(projectKnownModels(merged, now), copilot.flagOverrides);
     },
-    getPricingForModelKey: pricingForCopilotModelKey,
     // Copilot's catalog never declares endpoints.completions, so this
     // stub is unreachable; the rejection surfaces a routing bug.
     callCompletions: rejectUnsupported('callCompletions'),

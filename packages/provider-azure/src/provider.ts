@@ -60,9 +60,6 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
         };
       }));
     },
-    getPricingForModelKey(modelKey) {
-      return azure.config.models.find(model => model.upstreamModelId === modelKey)?.cost ?? null;
-    },
     callCompletions: (model, body, signal, opts) => callNonStreaming(azureFetchCompletions, model, body, signal, opts.headers, opts),
     callChatCompletions: (model, body, signal, opts) => callStreaming(azureFetchChatCompletions, model, body, signal, opts.headers, parseChatCompletionsStream, opts),
     callResponses: async (model, body, action, signal, opts) => {

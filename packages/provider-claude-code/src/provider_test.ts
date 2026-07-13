@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { buildClaudeCodeCatalog, type ClaudeCodeApiModel } from './models.ts';
-import { pricingForClaudeCodeModelKey } from './pricing.ts';
 import { createClaudeCodeProvider } from './provider.ts';
 import type { ClaudeCodeAccessTokenEntry, ClaudeCodeAccountCredential, ClaudeCodeUpstreamState } from './state.ts';
 import { initProviderRepo, type FlagId, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
@@ -133,13 +132,6 @@ describe('createClaudeCodeProvider — factory surface', () => {
       expect(m.enabledFlags.has('strip-billing-attribution')).toBe(false);
       expect(m.enabledFlags.has('responses-compact-shim')).toBe(true);
     }
-  });
-
-  test('getPricingForModelKey wires through the pricing table (keyed by dated upstream id)', async () => {
-    const instance = createClaudeCodeProvider(currentRecord);
-    expect(instance.instance.getPricingForModelKey('claude-sonnet-4-5-20250929'))
-      .toEqual(pricingForClaudeCodeModelKey('claude-sonnet-4-5-20250929'));
-    expect(instance.instance.getPricingForModelKey('unknown-id')).toBeNull();
   });
 
   test('kind is "claude-code"', async () => {
