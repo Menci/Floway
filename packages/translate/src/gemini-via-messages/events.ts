@@ -53,12 +53,13 @@ interface MessagesToGeminiStreamState extends GeminiThoughtSignatureState {
 // promptTokenCount is an inclusive total like OpenAI's prompt_tokens. Fold all
 // three Anthropic buckets into the Gemini total, then surface cache reads
 // separately as cachedContentTokenCount.
-const mapUsage = (state: MessagesToGeminiStreamState, usage?: Extract<MessagesStreamEvent, { type: 'message_delta' }>['usage']): GeminiUsageMetadata => {
+const mapUsage = (state: MessagesToGeminiStreamState, usage?: Extract<MessagesStreamEvent, { type: 'message_delta' }>['usage']): GeminiUsageMetadata | undefined => {
   const promptTokenCount = state.inputTokens + state.cacheReadInputTokens + state.cacheCreationInputTokens;
   const candidatesTokenCount = usage?.output_tokens ?? 0;
   splitInclusiveInputTokens(promptTokenCount, state.cacheReadInputTokens, state.cacheCreationInputTokens);
   const serviceTier = billableServiceTier(usage?.speed ?? state.upstreamSpeed)
     ?? billableServiceTier(usage?.service_tier ?? state.upstreamServiceTier);
+  if (usage === undefined && promptTokenCount === 0 && serviceTier === null) return undefined;
 
   return {
     promptTokenCount,
