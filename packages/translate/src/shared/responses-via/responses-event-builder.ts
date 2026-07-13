@@ -1,4 +1,5 @@
 import type * as Responses from '@floway-dev/protocols/responses';
+import { USAGE_BILLING } from '@floway-dev/protocols/common';
 
 type ResponsesOutputContentBlock = Responses.ResponsesOutputContentBlock;
 type ResponsesOutputCustomToolCall = Responses.ResponsesOutputCustomToolCall;
@@ -77,7 +78,13 @@ export const seq = (state: ResponsesSequenceState, events: ResponsesStreamEvent[
     sequence_number: state.sequenceNumber++,
   }));
 
-export const usage = (inputTokens: number, outputTokens: number, cacheReadInputTokens?: number, cacheWriteInputTokens?: number): ResponsesUsage => ({
+export const usage = (
+  inputTokens: number,
+  outputTokens: number,
+  cacheReadInputTokens?: number,
+  cacheWriteInputTokens?: number,
+  cacheWrite1hInputTokens?: number,
+): ResponsesUsage => ({
   input_tokens: inputTokens,
   output_tokens: outputTokens,
   total_tokens: inputTokens + outputTokens,
@@ -89,6 +96,7 @@ export const usage = (inputTokens: number, outputTokens: number, cacheReadInputT
         },
       }
     : {}),
+  ...(cacheWrite1hInputTokens !== undefined ? { [USAGE_BILLING]: { cacheWrite1hTokenCount: cacheWrite1hInputTokens } } : {}),
 });
 
 // `incompleteDetails` is an explicit caller-supplied input. Inferring

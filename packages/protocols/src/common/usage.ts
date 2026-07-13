@@ -1,3 +1,9 @@
+export const USAGE_BILLING = Symbol('usage-billing');
+
+export interface UsageBillingMetadata {
+  cacheWrite1hTokenCount?: number;
+}
+
 export const splitInclusiveInputTokens = (
   inputTokens: number,
   cacheReadTokens: number | undefined,

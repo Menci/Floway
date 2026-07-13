@@ -1,5 +1,5 @@
 import type { ChatCompletionsStreamEvent, ChatCompletionsResult, ChatCompletionsDelta } from '@floway-dev/protocols/chat-completions';
-import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { doneFrame, eventFrame, USAGE_BILLING, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { mergeMessagesUsageSnapshot, messagesUsageSnapshot, splitMessagesCacheCreationTokens, type MessagesResult, type MessagesStreamEvent, type MessagesUsageSnapshot } from '@floway-dev/protocols/messages';
 
 const mapMessagesStopReasonToChatCompletionsFinishReason = (stopReason: MessagesResult['stop_reason']): ChatCompletionsResult['choices'][0]['finish_reason'] => {
@@ -95,6 +95,7 @@ const makeUsageChunk = (state: MessagesToChatCompletionsStreamState): ChatComple
             },
           }
         : {}),
+      ...(cacheWrite1h > 0 ? { [USAGE_BILLING]: { cacheWrite1hTokenCount: cacheWrite1h } } : {}),
     },
     ...(serviceTier !== undefined ? { service_tier: serviceTier } : {}),
   };

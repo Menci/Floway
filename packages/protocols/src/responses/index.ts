@@ -1,6 +1,8 @@
 // Responses API type definitions
 // Used for translating Messages ↔ Responses APIs
 
+import { USAGE_BILLING, type UsageBillingMetadata } from '../common/usage.ts';
+
 // ── Request types ──
 
 export interface ResponsesPayload {
@@ -594,6 +596,7 @@ export interface ResponsesResult {
     total_tokens: number;
     input_tokens_details?: { cached_tokens: number };
     output_tokens_details?: { reasoning_tokens: number };
+    [USAGE_BILLING]?: UsageBillingMetadata;
   };
 }
 

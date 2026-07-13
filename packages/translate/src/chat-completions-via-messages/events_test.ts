@@ -3,6 +3,7 @@ import { test } from 'vitest';
 import { createMessagesToChatCompletionsStreamState, translateMessagesEventToChatCompletionsChunks } from './events.ts';
 import { assertEquals } from '../test-assert.ts';
 import type { ChatCompletionsStreamEvent, ChatCompletionsDelta } from '@floway-dev/protocols/chat-completions';
+import { USAGE_BILLING } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 
 // ── Helpers ──
@@ -1047,5 +1048,6 @@ test('message_delta atomically replaces tier and merges late cache accounting', 
     completion_tokens: 2,
     total_tokens: 22,
     prompt_tokens_details: { cache_creation_input_tokens: 9 },
+    [USAGE_BILLING]: { cacheWrite1hTokenCount: 5 },
   });
 });
