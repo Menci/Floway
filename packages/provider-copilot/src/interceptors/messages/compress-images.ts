@@ -1,6 +1,6 @@
 import type { MessagesBoundaryCtx, MessagesCountTokensBoundaryCtx } from './types.ts';
 import { type ImageSizeCalculator, type SizeCaps, fitWithin } from '@floway-dev/platform';
-import type { MessagesImageBlock, MessagesMessage } from '@floway-dev/protocols/messages';
+import type { MessagesImageBlock, MessagesMessage, MessagesToolResultBlock, MessagesToolResultContentBlock, MessagesUserContentBlock } from '@floway-dev/protocols/messages';
 import { memoizedBase64Compressor } from '@floway-dev/provider';
 
 // Per-model image caps for the Claude (Messages) egress, measured from the real
@@ -63,12 +63,47 @@ export const withInlineImagesCompressed = async <TResult>(
     const caps = claudeImageCaps(ctx.model.id);
     const targetSize: ImageSizeCalculator = source => fitWithin(source, caps);
     const compress = memoizedBase64Compressor(targetSize);
+    const compressedData = new Map<MessagesImageBlock, string>();
     await Promise.all(
       blocks.map(async block => {
-        block.source.data = await compress(block.source.data);
-        block.source.media_type = 'image/webp';
+        compressedData.set(block, await compress(block.source.data));
       }),
     );
+    const hasCompressedImage = (block: MessagesToolResultContentBlock | MessagesUserContentBlock): block is MessagesImageBlock =>
+      block.type === 'image' && compressedData.has(block);
+    const hasCompressedToolResultImage = (
+      block: MessagesUserContentBlock,
+    ): block is MessagesToolResultBlock & { content: MessagesToolResultContentBlock[] } =>
+      block.type === 'tool_result'
+      && Array.isArray(block.content)
+      && block.content.some(hasCompressedImage);
+    const rewriteImage = (block: MessagesImageBlock): MessagesImageBlock => {
+      const data = compressedData.get(block);
+      if (data === undefined) throw new Error('Missing compressed Messages image data');
+      return {
+        ...block,
+        source: { ...block.source, media_type: 'image/webp', data },
+      };
+    };
+    const rewriteUserContent = (content: MessagesUserContentBlock[]): MessagesUserContentBlock[] =>
+      content.map(block => {
+        if (hasCompressedImage(block)) return rewriteImage(block);
+        if (!hasCompressedToolResultImage(block)) return block;
+        return {
+          ...block,
+          content: block.content.map(inner => hasCompressedImage(inner) ? rewriteImage(inner) : inner),
+        };
+      });
+
+    ctx.payload = {
+      ...ctx.payload,
+      messages: ctx.payload.messages.map(message =>
+        message.role === 'user'
+        && Array.isArray(message.content)
+        && message.content.some(block => hasCompressedImage(block) || hasCompressedToolResultImage(block))
+          ? { ...message, content: rewriteUserContent(message.content) }
+          : message),
+    };
   }
 
   return await run();

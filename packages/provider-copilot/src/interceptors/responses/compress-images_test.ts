@@ -4,10 +4,10 @@ import { withInlineImagesCompressed } from './compress-images.ts';
 import type { ResponsesBoundaryCtx } from './types.ts';
 import { type ImageProcessor, initImageProcessor } from '@floway-dev/platform';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { CanonicalResponsesPayload, ResponsesInputContent, ResponsesInputItem, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { CanonicalResponsesPayload, ResponsesInputContent, ResponsesInputImage, ResponsesInputItem, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
-import { assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import { assert, assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const stubRequest = {};
 
@@ -38,31 +38,55 @@ const imageUrlOf = (item: ResponsesInputItem): string | null | undefined => {
   return Array.isArray(content) ? content.find(part => part.type === 'input_image')?.image_url : undefined;
 };
 
+const contentOf = (item: ResponsesInputItem): string | ResponsesInputContent[] | undefined =>
+  item.type === 'message'
+    ? item.content
+    : item.type === 'function_call_output' || item.type === 'custom_tool_call_output' ? item.output : undefined;
+
 test.each(Object.entries(contentContainers))('compresses inline images in %s', async (_name, wrap) => {
   initImageProcessor(fixedProcessor);
-  const ctx = invocation({
+  const textPart = { type: 'input_text' as const, text: 'look' };
+  const imagePart: ResponsesInputImage = { type: 'input_image', image_url: 'data:image/png;base64,AAAA', detail: 'auto' };
+  const sourceItem = wrap([textPart, imagePart]);
+  const untouchedItem: ResponsesInputItem = { type: 'function_call', call_id: 'call_unchanged', name: 'noop', arguments: '{}' };
+  const payload: CanonicalResponsesPayload = {
     model: 'gpt-test',
-    input: [wrap([
-      { type: 'input_text', text: 'look' },
-      { type: 'input_image', image_url: 'data:image/png;base64,AAAA', detail: 'auto' },
-    ])],
-  });
+    input: [sourceItem, untouchedItem],
+  };
+  const ctx = invocation(payload);
 
   await withInlineImagesCompressed(ctx, stubRequest, okEvents);
 
   assertEquals(imageUrlOf(ctx.payload.input[0]), 'data:image/webp;base64,AQID');
+  assertEquals(imageUrlOf(sourceItem), 'data:image/png;base64,AAAA');
+  assert(ctx.payload !== payload);
+  assert(ctx.payload.input !== payload.input);
+  assert(ctx.payload.input[0] !== sourceItem);
+  assert(ctx.payload.input[1] === untouchedItem);
+  const rewrittenContent = contentOf(ctx.payload.input[0]);
+  const sourceContent = contentOf(sourceItem);
+  if (!Array.isArray(rewrittenContent) || !Array.isArray(sourceContent)) throw new Error('expected multipart Responses content');
+  assert(rewrittenContent !== sourceContent);
+  assert(rewrittenContent[0] === textPart);
+  assert(rewrittenContent[1] !== imagePart);
 });
 
 test.each(Object.entries(contentContainers))('leaves remote images in %s untouched', async (_name, wrap) => {
   initImageProcessor(fixedProcessor);
-  const ctx = invocation({
+  const imagePart: ResponsesInputImage = { type: 'input_image', image_url: 'https://example.com/cat.png', detail: 'auto' };
+  const sourceItem = wrap([imagePart]);
+  const payload: CanonicalResponsesPayload = {
     model: 'gpt-test',
-    input: [wrap([{ type: 'input_image', image_url: 'https://example.com/cat.png', detail: 'auto' }])],
-  });
+    input: [sourceItem],
+  };
+  const ctx = invocation(payload);
 
   await withInlineImagesCompressed(ctx, stubRequest, okEvents);
 
   assertEquals(imageUrlOf(ctx.payload.input[0]), 'https://example.com/cat.png');
+  assert(ctx.payload === payload);
+  assert(ctx.payload.input[0] === sourceItem);
+  assert(contentOf(ctx.payload.input[0])?.[0] === imagePart);
 });
 
 test('compresses each unique inline image only once when the same data URL appears multiple times', async () => {

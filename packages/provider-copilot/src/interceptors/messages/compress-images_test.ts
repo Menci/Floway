@@ -4,10 +4,10 @@ import { withInlineImagesCompressed } from './compress-images.ts';
 import type { MessagesBoundaryCtx } from './types.ts';
 import { type ImageDimensions, type ImageProcessor, initImageProcessor } from '@floway-dev/platform';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
+import type { MessagesImageBlock, MessagesPayload, MessagesStreamEvent, MessagesToolResultBlock } from '@floway-dev/protocols/messages';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
-import { assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
+import { assert, assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const stubRequest = {};
 
@@ -39,25 +39,43 @@ test('compresses a top-level image block to WebP', async () => {
   const { processor, inputs } = spyProcessor();
   initImageProcessor(processor);
 
-  const ctx = invocation({
+  const textBlock = { type: 'text' as const, text: 'look' };
+  const imageBlock: MessagesImageBlock = { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AAAA' } };
+  const untouchedMessage = { role: 'assistant' as const, content: 'untouched' };
+  const payload: MessagesPayload = {
     model: 'claude-test',
     max_tokens: 10,
     messages: [
       {
         role: 'user',
         content: [
-          { type: 'text', text: 'look' },
-          { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AAAA' } },
+          textBlock,
+          imageBlock,
         ],
       },
+      untouchedMessage,
     ],
-  });
+  };
+  const ctx = invocation(payload);
 
   await withInlineImagesCompressed(ctx, stubRequest, okEvents);
 
   const block = (ctx.payload.messages[0].content as Array<{ type: string; source?: { media_type: string; data: string } }>)[1];
   assertEquals(block.source?.media_type, 'image/webp');
   assertEquals(block.source?.data, 'AQID');
+  assertEquals(imageBlock.source.media_type, 'image/png');
+  assertEquals(imageBlock.source.data, 'AAAA');
+  assert(ctx.payload !== payload);
+  assert(ctx.payload.messages !== payload.messages);
+  assert(ctx.payload.messages[0] !== payload.messages[0]);
+  assert(ctx.payload.messages[1] === untouchedMessage);
+  const rewritten = ctx.payload.messages[0].content;
+  if (!Array.isArray(rewritten)) throw new Error('expected rewritten user content');
+  assert(rewritten !== payload.messages[0].content);
+  assert(rewritten[0] === textBlock);
+  assert(rewritten[1] !== imageBlock);
+  if (rewritten[1]?.type !== 'image') throw new Error('expected rewritten image block');
+  assert(rewritten[1].source !== imageBlock.source);
   // "AAAA" decodes to three zero bytes.
   assertEquals([...inputs[0]], [0, 0, 0]);
 });
@@ -66,43 +84,69 @@ test('compresses an image nested inside tool_result content', async () => {
   const { processor } = spyProcessor();
   initImageProcessor(processor);
 
-  const ctx = invocation({
+  const outerText = { type: 'text' as const, text: 'before tool result' };
+  const innerText = { type: 'text' as const, text: 'screenshot' };
+  const nestedImage: MessagesImageBlock = { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AAAA' } };
+  const toolResult: MessagesToolResultBlock = {
+    type: 'tool_result',
+    tool_use_id: 'toolu_image',
+    content: [innerText, nestedImage],
+  };
+  const untouchedMessage = { role: 'system' as const, content: 'unchanged' };
+  const payload: MessagesPayload = {
     model: 'claude-test',
     max_tokens: 10,
     messages: [
       {
         role: 'user',
         content: [
-          {
-            type: 'tool_result',
-            tool_use_id: 'toolu_image',
-            content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AAAA' } }],
-          },
+          outerText,
+          toolResult,
         ],
       },
+      untouchedMessage,
     ],
-  });
+  };
+  const ctx = invocation(payload);
 
   await withInlineImagesCompressed(ctx, stubRequest, okEvents);
 
-  const toolResult = (ctx.payload.messages[0].content as Array<{ content: Array<{ source?: { media_type: string; data: string } }> }>)[0];
-  assertEquals(toolResult.content[0].source?.media_type, 'image/webp');
-  assertEquals(toolResult.content[0].source?.data, 'AQID');
+  const rewrittenContent = ctx.payload.messages[0].content;
+  if (!Array.isArray(rewrittenContent)) throw new Error('expected rewritten user content');
+  const rewrittenToolResult = rewrittenContent[1];
+  if (rewrittenToolResult?.type !== 'tool_result' || !Array.isArray(rewrittenToolResult.content)) throw new Error('expected rewritten tool result');
+  const rewrittenImage = rewrittenToolResult.content[1];
+  if (rewrittenImage?.type !== 'image') throw new Error('expected rewritten nested image');
+  assertEquals(rewrittenImage.source.media_type, 'image/webp');
+  assertEquals(rewrittenImage.source.data, 'AQID');
+  assertEquals(nestedImage.source.media_type, 'image/png');
+  assertEquals(nestedImage.source.data, 'AAAA');
+  assert(ctx.payload !== payload);
+  assert(ctx.payload.messages[0] !== payload.messages[0]);
+  assert(ctx.payload.messages[1] === untouchedMessage);
+  assert(rewrittenContent[0] === outerText);
+  assert(rewrittenToolResult !== toolResult);
+  assert(rewrittenToolResult.content !== toolResult.content);
+  assert(rewrittenToolResult.content[0] === innerText);
+  assert(rewrittenImage !== nestedImage);
+  assert(rewrittenImage.source !== nestedImage.source);
 });
 
 test('leaves image-free payloads untouched and does not invoke the processor', async () => {
   const { processor, inputs } = spyProcessor();
   initImageProcessor(processor);
 
-  const ctx = invocation({
+  const payload: MessagesPayload = {
     model: 'claude-test',
     max_tokens: 10,
     messages: [{ role: 'user', content: [{ type: 'text', text: 'plain' }] }],
-  });
+  };
+  const ctx = invocation(payload);
 
   await withInlineImagesCompressed(ctx, stubRequest, okEvents);
 
   assertEquals(inputs.length, 0);
+  assert(ctx.payload === payload);
 });
 
 test('compresses each unique inline image only once when the same base64 data repeats', async () => {
