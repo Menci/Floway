@@ -5,7 +5,7 @@ import type { Context } from 'hono';
 
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { createGatewayCtxFromHono, finalizeGatewayResponse } from '../chat/shared/gateway-ctx.ts';
-import { readRequestBody } from '../chat/shared/request-body.ts';
+import { readRequestBody, takeRequestBody } from '../chat/shared/request-body.ts';
 import { passthroughApiError, passthroughServe } from '../shared/passthrough-serve.ts';
 import { tokenUsageFromEmbeddingsBody } from '../shared/telemetry/usage.ts';
 
@@ -46,8 +46,8 @@ const prepareEmbeddingsRequest = (bytes: Uint8Array): { type: 'ok'; body: Record
 
 export const embeddings = async (c: Context): Promise<Response> => {
   const requestBody = await readRequestBody(c);
-  const ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody, backgroundScheduler: backgroundSchedulerFromContext(c) });
   const request = prepareEmbeddingsRequest(requestBody.bytes);
+  const ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
   if (request.type === 'invalid') {
     ctx.dump?.error('gateway');
     return finalizeGatewayResponse(ctx, passthroughApiError(c, request.message, 400));

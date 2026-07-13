@@ -1,4 +1,4 @@
-import { takeRequestBody, type RequestBody } from './request-body.ts';
+import type { RequestBody } from './request-body.ts';
 import { type DumpAccumulator, openDumpAccumulator } from '../../../dump/accumulator.ts';
 import { apiKeyFromContext, type AuthedContext, effectiveUpstreamIdsFromContext } from '../../../middleware/auth.ts';
 import { getRuntimeLocation } from '../../../runtime/runtime-info.ts';
@@ -94,7 +94,7 @@ export const createGatewayCtxFromHono = (c: AuthedContext, opts: CreateGatewayCt
   const controller = opts.downstreamAbortController ?? (opts.wantsStream ? new AbortController() : undefined);
   const apiKey = apiKeyFromContext(c);
   const upstreamIds = effectiveUpstreamIdsFromContext(c);
-  const dump = openDumpAccumulator(c, opts.method ?? c.req.method, apiKey, takeRequestBody(opts.requestBody), opts.backgroundScheduler);
+  const dump = openDumpAccumulator(c, opts.method ?? c.req.method, apiKey, opts.requestBody, opts.backgroundScheduler);
   if (opts.model !== undefined) dump?.requestedModel(opts.model);
   return {
     apiKeyId: apiKey.id,
