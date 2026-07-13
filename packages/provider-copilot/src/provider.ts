@@ -153,7 +153,11 @@ const finalizeCopilotModels = (
 
   const models: ProviderModel[] = [];
   for (const mergedModel of merged.data) {
-    const variants = groups.get(mergedModel.id) ?? [mergedModel];
+    const variants = groups.get(mergedModel.id);
+    if (variants === undefined) {
+      const rawIds = rawModels.length === 0 ? 'none' : rawModels.map(model => model.id).join(', ');
+      throw new Error(`Copilot model projection invariant violated: merged model '${mergedModel.id}' has no raw variant group (raw model ids: ${rawIds})`);
+    }
     const endpoints = copilotModelEndpoints(variants);
     const cost = pricingForCopilotPublicModelId(mergedModel.id);
     const draft: Omit<ProviderModel, 'enabledFlags'> = {
