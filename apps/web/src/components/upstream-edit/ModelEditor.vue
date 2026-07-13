@@ -166,7 +166,10 @@ const pricingValidationErrors = computed<readonly string[]>(() => {
   const invalidSelectorIssues = pricingIssues.value.filter(issue => issue.code === 'invalid-selector');
   const rateDimensionIssues = pricingIssues.value.filter(issue => issue.code === 'rate-dimensions');
   const baseIssue = pricingIssues.value.find(issue => issue.code === 'base-count');
-  const duplicateIssues = pricingIssues.value.filter(issue => issue.code === 'duplicate-selector' && issue.selectorKey !== '{}');
+  const duplicateIssues = pricingIssues.value.filter(
+    (issue): issue is Extract<ModelPricingIssue, { code: 'duplicate-selector' }> =>
+      issue.code === 'duplicate-selector' && issue.selectorKey !== '{}',
+  );
 
   if (emptyRateIssues.length > 0 && rateDimensionIssues.length === 0) {
     const entries = emptyRateIssues.map(issue => numberedEntries[issue.entryIndex]!).map(formatEntry);
