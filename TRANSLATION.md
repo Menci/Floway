@@ -79,6 +79,32 @@ the gateway returns a Gemini-shaped unsupported-model error.
   final wire shaping after the protocol events have been translated back to
   the source-protocol shape.
 
+## Usage And Billing Facts
+
+Usage translation keeps billing dimensions disjoint. OpenAI-style inclusive
+input totals are checked and split into uncached input, cache read, and cache
+write counts; inclusive output totals are likewise split into visible output
+and reasoning where the target exposes both. Negative, fractional, or
+overlapping counts are rejected rather than clamped.
+
+Messages already reports disjoint input dimensions. Its flat cache-creation
+total and optional 5-minute / 1-hour detail are normalized into two cache-write
+buckets. Streaming `message_start` and `message_delta` usage is accumulated as
+one snapshot, including late input counts and atomic replacement of the
+`speed` / `service_tier` pair.
+
+Some billing facts have no native field in every protocol. A symbol-keyed
+`USAGE_BILLING` sidecar carries cache-write TTL detail and the served tier only
+inside Floway's typed event pipeline. Translation and stream reassembly retain
+it, while JSON serialization omits it from client responses. Consequently a
+fact may survive a Chat, Responses, Messages, or Gemini intermediate shape
+without inventing a private wire field.
+
+Response-side blank, `default`, and `standard` tier markers identify base
+service. Every other open-string tier is preserved byte-for-byte. Gemini
+candidate and thought counts remain disjoint in `usageMetadata`; thought tokens
+are billed as reasoning/output exactly once.
+
 ## Boundary Workarounds
 
 ### Messages — gateway interceptors
@@ -266,8 +292,9 @@ Response mapping shared by the Gemini source translation pairs:
   part. Responses targets do not emit opaque Gemini signatures; only readable
   reasoning summaries become thought-summary parts.
 - Target tool/function calls become Gemini `functionCall` parts.
-- Target usage maps to Gemini `usageMetadata`; reasoning/thinking tokens map to
-  `thoughtsTokenCount` when available.
+- Target usage maps to Gemini `usageMetadata`; cache reads and writes remain
+  separate, while reasoning/thinking tokens map to `thoughtsTokenCount` and do
+  not overlap `candidatesTokenCount`.
 - Gemini streaming emits data-only SSE chunks containing full
   `GenerateContentResponse` objects and does not emit a `[DONE]` sentinel.
 - Gemini non-streaming responses are assembled from source-shaped Gemini event
@@ -335,7 +362,9 @@ Response mapping:
 - assistant `tool_use` becomes `function_call` output items.
 - `max_tokens` stop maps to `status: "incomplete"`; other normal stops map to
   `status: "completed"`.
-- cache read tokens map to Responses `input_tokens_details.cached_tokens`.
+- cache reads and total cache writes map to Responses
+  `input_tokens_details`; 1-hour write detail remains in the internal billing
+  sidecar.
 - Output item order follows the original assistant block order.
 
 Known losses:
@@ -395,8 +424,9 @@ Response mapping:
 - `function_call` maps to `tool_use`.
 - `completed` maps to `end_turn` or `tool_use`; max-output incomplete maps to
   `max_tokens`.
-- cached input tokens are subtracted from Anthropic `input_tokens` and exposed
-  as `cache_read_input_tokens`.
+- cached reads and writes are subtracted from Anthropic `input_tokens` and
+  exposed as `cache_read_input_tokens` and cache-creation usage, retaining
+  1-hour write detail.
 
 Known losses:
 
@@ -441,8 +471,9 @@ Response mapping:
 - `tool_use` blocks become `tool_calls`.
 - only the first source-order reasoning group is projected into scalar Chat
   reasoning fields.
-- usage maps to Chat prompt/completion tokens; cache read tokens become
-  `prompt_tokens_details.cached_tokens`.
+- usage maps to Chat prompt/completion tokens; cache reads and total cache
+  writes use the OpenAI usage fields, with 1-hour write detail carried
+  internally.
 - `tool_use` stop maps to `tool_calls`; `max_tokens` maps to `length`; other
   normal stops map to `stop`.
 
@@ -478,8 +509,8 @@ Response mapping:
 - scalar reasoning blocks are emitted before text, and text before tool use.
 - scalar opaque-only reasoning becomes `redacted_thinking` rather than fake
   readable thinking.
-- Chat usage maps to Messages usage; cached prompt tokens become
-  `cache_read_input_tokens`.
+- Chat usage maps to Messages usage; cached prompt reads and writes become the
+  corresponding disjoint Messages cache fields.
 
 Known losses:
 
