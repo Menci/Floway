@@ -2,6 +2,7 @@ import { test } from 'vitest';
 
 import {
   basePricing,
+  billableServiceTier,
   canonicalPricingSelectorKey,
   canonicalizePricingSelector,
   collectModelPricingIssues,
@@ -14,6 +15,13 @@ import {
   type PricingSelector,
 } from './models.ts';
 import { assertEquals, assertThrows } from '../test-assert.ts';
+
+test('billableServiceTier collapses blank/base values but preserves non-empty bytes', () => {
+  assertEquals(billableServiceTier(''), null);
+  assertEquals(billableServiceTier('  \t'), null);
+  assertEquals(billableServiceTier(' Default '), null);
+  assertEquals(billableServiceTier(' priority '), ' priority ');
+});
 
 test('canonical selector JSON sorts axis keys and threshold object keys deterministically', () => {
   const first: PricingSelector = { serviceTier: 'priority', inputTokens: { value: 272000, operator: 'gt' } };

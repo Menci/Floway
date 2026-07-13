@@ -1,6 +1,6 @@
-import { billableServiceTier, openAICacheTokensFromUsage, tokenUsage } from '../../shared/telemetry/usage.ts';
+import { openAICacheTokensFromUsage, tokenUsage } from '../../shared/telemetry/usage.ts';
 import type { ChatCompletionsResult } from '@floway-dev/protocols/chat-completions';
-import { splitInclusiveInputTokens } from '@floway-dev/protocols/common';
+import { billableServiceTier, splitInclusiveInputTokens } from '@floway-dev/protocols/common';
 
 // OpenAI Chat usage reports prompt_tokens inclusive of cached and cache-
 // creation tokens; the shared `openAICacheTokensFromUsage` helper resolves

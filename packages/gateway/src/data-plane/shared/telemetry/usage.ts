@@ -1,12 +1,10 @@
 import { currentHour } from './hour.ts';
 import { getRepo } from '../../../repo/index.ts';
 import type { TokenUsage } from '../../../repo/types.ts';
-import { BILLING_DIMENSIONS, INPUT_BILLING_DIMENSIONS, billableServiceTier, type BillingDimension, priceRequest } from '@floway-dev/protocols/common';
+import { BILLING_DIMENSIONS, INPUT_BILLING_DIMENSIONS, type BillingDimension, priceRequest } from '@floway-dev/protocols/common';
 import type { TelemetryModelIdentity } from '@floway-dev/provider';
 
 export const hasTokenUsage = (usage: TokenUsage): boolean => BILLING_DIMENSIONS.some(dimension => (usage[dimension] ?? 0) > 0);
-
-export { billableServiceTier };
 
 // Drop zero / undefined dimensions so a usage map only carries the dimensions
 // actually billed. `tier` (a non-numeric service-tier marker) survives the

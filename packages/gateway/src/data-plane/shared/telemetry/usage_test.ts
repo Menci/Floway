@@ -1,14 +1,7 @@
 import { test } from 'vitest';
 
-import { billableServiceTier, openAICacheTokensFromUsage } from './usage.ts';
+import { openAICacheTokensFromUsage } from './usage.ts';
 import { assertEquals } from '@floway-dev/test-utils';
-
-test('billableServiceTier collapses blank/base values but preserves non-empty bytes', () => {
-  assertEquals(billableServiceTier(''), null);
-  assertEquals(billableServiceTier('  \t'), null);
-  assertEquals(billableServiceTier(' Default '), null);
-  assertEquals(billableServiceTier(' priority '), ' priority ');
-});
 
 test('OpenAI canonical shape — prompt_tokens_details.cached_tokens lands in cacheRead', () => {
   assertEquals(
