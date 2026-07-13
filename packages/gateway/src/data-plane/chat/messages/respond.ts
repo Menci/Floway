@@ -152,8 +152,9 @@ export const tokenUsageFromMessagesFrame = (frame: ProtocolFrame<MessagesStreamE
       ...(event.usage.cache_read_input_tokens === undefined ? {} : { cache_read_input_tokens: event.usage.cache_read_input_tokens }),
       ...(event.usage.cache_creation_input_tokens === undefined ? {} : { cache_creation_input_tokens: event.usage.cache_creation_input_tokens }),
       ...(event.usage.cache_creation === undefined ? {} : { cache_creation: { ...event.usage.cache_creation } }),
-      ...(event.usage.speed === undefined ? {} : { speed: event.usage.speed }),
-      ...(event.usage.service_tier === undefined ? {} : { service_tier: event.usage.service_tier }),
+      ...(event.usage.speed === undefined && event.usage.service_tier === undefined
+        ? {}
+        : { speed: event.usage.speed, service_tier: event.usage.service_tier }),
     };
     state.current = tokenUsageFromMessagesUsage(state.raw);
     return { ...state.current };
