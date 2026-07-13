@@ -65,6 +65,8 @@ the gateway returns a Gemini-shaped unsupported-model error.
   `prompt_cache_retention` through the canonical/provider boundary for native
   compact targets. Provider-specific rejection remains a boundary workaround
   (Codex strips `prompt_cache_retention`).
+- Explicit `prompt_cache_breakpoint` metadata on text, image, and file content
+  survives canonicalization and retained-message compaction.
 - Translators do not synthesize defaults merely to satisfy a target shape.
   Examples: no translated-only `temperature: 1`, `store: false`,
   `parallel_tool_calls: true`, or `reasoning.summary: "detailed"`.

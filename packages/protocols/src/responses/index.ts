@@ -183,9 +183,20 @@ export type CanonicalResponsesPayload = Omit<ResponsesPayload, 'input'> & {
 
 export type ResponsesInputContent = ResponsesInputText | ResponsesInputImage | ResponsesInputFile;
 
+// Explicit content breakpoints inherit their lifetime from
+// `prompt_cache_options.ttl`. The mode stays open-string for forward
+// compatibility.
+// https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L5009-L5038
+// https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L3973-L3993
+// https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L3864-L3884
+export interface ResponsesPromptCacheBreakpoint {
+  mode: 'explicit' | (string & {});
+}
+
 export interface ResponsesInputText {
   type: 'input_text' | 'output_text';
   text: string;
+  prompt_cache_breakpoint?: ResponsesPromptCacheBreakpoint | null;
 }
 
 export interface ResponsesInputImage {
@@ -194,6 +205,7 @@ export interface ResponsesInputImage {
   image_url?: string | null;
   file_id?: string | null;
   detail: 'auto' | 'low' | 'high' | 'original' | (string & {});
+  prompt_cache_breakpoint?: ResponsesPromptCacheBreakpoint | null;
 }
 
 export type ResponsesToolOutputContent = ResponsesInputText | ResponsesInputImage | ResponsesInputFile;
@@ -205,6 +217,7 @@ export interface ResponsesInputFile {
   file_id?: string | null;
   file_url?: string;
   filename?: string;
+  prompt_cache_breakpoint?: ResponsesPromptCacheBreakpoint | null;
   [key: string]: unknown;
 }
 
