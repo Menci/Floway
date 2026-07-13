@@ -13,7 +13,7 @@ import {
   putCodexQuota,
 } from './quota.ts';
 import type { CodexAccountCredential } from './state.ts';
-import type { ResponsesCompactPayload, ResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { CanonicalResponsesCompactPayload, CanonicalResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { parseResponsesStream } from '@floway-dev/protocols/responses';
 import { type ProviderModel, type ProviderStreamResult, streamingProviderCall, uuidV7, type UpstreamCallOptions } from '@floway-dev/provider';
 
@@ -45,11 +45,11 @@ interface CodexBackendCallBase {
 }
 
 export interface CallCodexResponsesOptions extends CodexBackendCallBase {
-  body: Omit<ResponsesPayload, 'model'>;
+  body: Omit<CanonicalResponsesPayload, 'model'>;
 }
 
 export interface CallCodexResponsesCompactOptions extends CodexBackendCallBase {
-  body: Omit<ResponsesCompactPayload, 'model' | 'store'>;
+  body: Omit<CanonicalResponsesCompactPayload, 'model' | 'store'>;
 }
 
 export const callCodexResponses = async (opts: CallCodexResponsesOptions): Promise<ProviderStreamResult<ResponsesStreamEvent>> => {

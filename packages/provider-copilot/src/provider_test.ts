@@ -376,6 +376,7 @@ test('Copilot provider runs the Responses boundary chain on the compact path', a
       const result = await provider.callResponses(providerModel, {
         input: [
           {
+            type: 'message',
             role: 'user',
             content: [
               { type: 'input_text', text: 'compact me' },

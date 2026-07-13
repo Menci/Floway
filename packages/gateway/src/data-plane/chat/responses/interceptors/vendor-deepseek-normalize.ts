@@ -20,7 +20,7 @@
 
 import type { ResponsesInterceptor } from './types.ts';
 import { providerModelOf } from '@floway-dev/provider';
-import type { CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
+import type { CanonicalResponsesPayload } from '@floway-dev/protocols/responses';
 
 interface DeepseekDisableField {
   thinking?: { type: 'disabled' };

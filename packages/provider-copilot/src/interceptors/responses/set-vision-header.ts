@@ -32,10 +32,7 @@ export const withVisionHeaderSet = async <TResult>(
   _request: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
-  const input = ctx.payload.input;
-  if (!Array.isArray(input)) return await run();
-
-  if (containsVisionContent(input)) ctx.headers.set('copilot-vision-request', 'true');
+  if (containsVisionContent(ctx.payload.input)) ctx.headers.set('copilot-vision-request', 'true');
 
   return await run();
 };
