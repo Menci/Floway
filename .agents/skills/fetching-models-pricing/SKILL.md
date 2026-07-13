@@ -1,6 +1,6 @@
 ---
 name: fetching-models-pricing
-description: Refresh per-model pricing tables for Floway providers whose upstream does not bill per token or publish usable token rates, especially Copilot, Codex, and Ollama. Manual research procedure; no script.
+description: Refresh per-model pricing tables for Floway providers whose upstream does not bill per token or publish usable token rates, especially Copilot, Codex, Claude Code, and Ollama. Manual research procedure; no script.
 ---
 
 # Fetching Models Pricing
@@ -11,6 +11,7 @@ Maintain the notional per-token rate cards in:
 |---|---|---|
 | Copilot | `packages/provider-copilot/src/pricing.ts` | Copilot `/models` |
 | Codex | `packages/provider-codex/src/pricing.ts` | authenticated `/codex/models` |
+| Claude Code | `packages/provider-claude-code/src/pricing.ts` | authenticated Anthropic `/v1/models` |
 | Ollama | `packages/provider-ollama/src/pricing.ts` | `/api/tags` + `/api/show` |
 
 These providers are subscription-backed or self-hosted. Floway records
@@ -18,8 +19,8 @@ notional API-equivalent value so the usage dashboard remains comparable.
 
 ## Procedure
 
-1. Fetch the live provider catalog and diff its ids against the table's string
-   and RegExp keys. Record new, retired, and renamed models.
+1. Fetch each maintained provider's live catalog and diff its ids against the
+   table's string and RegExp keys. Record new, retired, and renamed models.
 2. Find a defensible rate source for every new id:
    - Prefer the model vendor's first-party API.
    - For open weights with no vendor API, use a credible commodity host.
@@ -66,12 +67,13 @@ Rules:
   adjacent model.
 
 5. Increment `MODEL_CATALOG_REVISION` in
-   `packages/gateway/src/data-plane/providers/models-cache.ts`. Static rates are
-   embedded in cached `ProviderModel` rows; the revision makes every older row
-   cold on the next request.
+   `packages/gateway/src/data-plane/providers/models-cache.ts` whenever any of
+   the four embedded pricing tables changes. Static rates are persisted inside
+   cached `ProviderModel` rows; the revision makes every older row cold on the
+   next request.
 6. Add boundary tests and prove selector misses return Base wholesale through
    `priceRequest`.
-7. Run provider tests, typecheck, lint, and the full test suite.
+7. Run all four provider test suites, typecheck, lint, and the full test suite.
 8. If an existing rate changed, use `backfill-model-pricing` for the intended
    historical slice.
 
@@ -79,6 +81,8 @@ Rules:
 
 - Copilot usage stores raw variant suffixes in `model_key`;
   `pricingForCopilotModelKey` normalizes them to the public id.
+- Claude Code resolves pricing from the dated raw upstream id before catalog
+  aliases are merged into public ids.
 - Codex and Ollama use the raw upstream slug directly.
 
 ## Source cautions
