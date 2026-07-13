@@ -23,11 +23,10 @@ test('drops every field Codex rejects with Unsupported parameter', async () => {
   // path rejects; keeping the assertion exhaustive guards against silent
   // drift if the constant inside the interceptor is edited without updating
   // its rationale. Several entries (frequency_penalty, presence_penalty,
-  // user, prompt_cache_retention, stream_options) are not on the canonical
-  // `CanonicalResponsesPayload` shape — they reach Codex only when an upstream
-  // translator or a permissive caller smuggles them in, which is exactly
-  // the case the interceptor exists to handle, so we widen the literal
-  // through `unknown` for the test.
+  // user, stream_options) are not on the canonical payload; they reach Codex
+  // only through a permissive caller. `prompt_cache_retention` is compact-only
+  // and is explicitly rejected by this provider. Widen through `unknown` so
+  // the test covers the complete strip set.
   const ctx = invocation({
     model: 'gpt-test',
     input: [{ type: 'message', role: 'user', content: 'hello' }],

@@ -86,14 +86,13 @@ export type CanonicalResponsesCompactPayload = Omit<ResponsesCompactPayload, 'in
 // post-chain action pivot that arrived carrying generate-only fields
 // (tools/temperature/reasoning/...) cannot leak them onto the compact wire.
 // `model` and `store` are caller-supplied at the dispatch site (model is
-// the resolved upstream id; store is gateway-only). `prompt_cache_retention`
-// only exists on the compact payload type today, so there is no
-// generate-side value to forward.
+// the resolved upstream id; store is gateway-only).
 export const toCompactPayloadShape = (payload: Omit<CanonicalResponsesPayload, 'model'>): Omit<CanonicalResponsesCompactPayload, 'model' | 'store'> => ({
   input: payload.input,
   ...(payload.instructions !== undefined && { instructions: payload.instructions }),
   ...(payload.previous_response_id !== undefined && { previous_response_id: payload.previous_response_id }),
   ...(payload.prompt_cache_key !== undefined && { prompt_cache_key: payload.prompt_cache_key }),
+  ...(payload.prompt_cache_retention !== undefined && { prompt_cache_retention: payload.prompt_cache_retention }),
   ...(payload.service_tier !== undefined && { service_tier: payload.service_tier }),
 });
 
@@ -166,6 +165,7 @@ export type ResponsesRequestPayload = Omit<ResponsesPayload, 'input'> & {
 
 export type CanonicalResponsesPayload = Omit<ResponsesPayload, 'input'> & {
   input: ResponsesInputItem[];
+  prompt_cache_retention?: ResponsesCompactPayload['prompt_cache_retention'];
 };
 
 export type ResponsesInputContent = ResponsesInputText | ResponsesInputImage | ResponsesInputFile;
