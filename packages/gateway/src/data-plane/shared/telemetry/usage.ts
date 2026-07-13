@@ -6,23 +6,6 @@ import type { TelemetryModelIdentity } from '@floway-dev/provider';
 
 export const hasTokenUsage = (usage: TokenUsage): boolean => BILLING_DIMENSIONS.some(dimension => (usage[dimension] ?? 0) > 0);
 
-// Map an upstream-reported service tier onto the tier marker the gateway
-// stores on the usage row. `default` (OpenAI's response-side base value) and
-// `standard` (Anthropic's response-side base value) both denote base pricing
-// and collapse to null so they aggregate with rows that carry no tier at all.
-// Compared case-insensitively in case a future upstream stamps `'Default'`
-// or `'STANDARD'` (defensive — both protocols' SDKs ship the values in
-// lowercase today); non-base values pass through with their original
-// casing so per-tier overrides match the wire-stamped string verbatim.
-// https://developers.openai.com/api/docs/guides/priority-processing
-// https://docs.claude.com/en/api/service-tiers
-// https://docs.claude.com/en/build-with-claude/fast-mode
-export const billableServiceTier = (tier: string | null | undefined): string | null => {
-  if (tier == null) return null;
-  const normalized = tier.toLowerCase();
-  return normalized === 'default' || normalized === 'standard' ? null : tier;
-};
-
 // Drop zero / undefined dimensions so a usage map only carries the dimensions
 // actually billed. `tier` (a non-numeric service-tier marker) survives the
 // filter so per-tier pricing overrides resolve at recording time.

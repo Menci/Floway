@@ -3,11 +3,11 @@ import { streamSSE } from 'hono/streaming';
 
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
-import { billableServiceTier, tokenUsage } from '../../shared/telemetry/usage.ts';
+import { tokenUsage } from '../../shared/telemetry/usage.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse } from '../shared/respond.ts';
 import { type StreamCompletion, writeSSEFrames } from '../shared/stream/sse.ts';
-import { type ProtocolFrame, sseFrame } from '@floway-dev/protocols/common';
+import { billableServiceTier, type ProtocolFrame, sseFrame } from '@floway-dev/protocols/common';
 import { messagesProtocolFrameToSSEFrame, MESSAGES_MISSING_TERMINAL_MESSAGE, collectMessagesProtocolEventsToResult, mergeMessagesUsageSnapshot, messagesUsageSnapshot, splitMessagesCacheCreationTokens } from '@floway-dev/protocols/messages';
 import type { MessagesMessageDeltaEvent, MessagesStreamEvent, MessagesUsage } from '@floway-dev/protocols/messages';
 import { type ExecuteResult, type PlainResult, type InternalDebugError, toInternalDebugError } from '@floway-dev/provider';
