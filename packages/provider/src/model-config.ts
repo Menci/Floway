@@ -112,6 +112,8 @@ export const flagOverridesField = (value: unknown, label: string): FlagOverrides
 export const pricingField = (value: unknown, label: string): ModelPricing | undefined => {
   const record = optionalMetadataRecord(value, label);
   if (!record) return undefined;
+  const unknownPricingKeys = Object.keys(record).filter(key => key !== 'entries');
+  if (unknownPricingKeys.length > 0) throw new Error(`Malformed ${label}: unknown fields: ${unknownPricingKeys.join(', ')}`);
   if (!Array.isArray(record.entries) || record.entries.length === 0) throw new Error(`Malformed ${label}.entries: must be a non-empty array`);
 
   const entries = record.entries.map((rawEntry, index) => {
