@@ -53,6 +53,12 @@ const runStatements = async (db: SqlDatabase, statements: SqlPreparedStatement[]
   return results;
 };
 
+const mapSequentially = async <T, U>(values: readonly T[], mapper: (value: T) => Promise<U>): Promise<U[]> => {
+  const mapped: U[] = [];
+  for (const value of values) mapped.push(await mapper(value));
+  return mapped;
+};
+
 interface ApiKeyRow {
   id: string;
   user_id: number;
@@ -890,13 +896,17 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
         .prepare(`SELECT ${RESPONSES_ITEM_COLUMNS} FROM responses_items WHERE ${scopeSql} AND ${column} IN (${placeholders})${orderSql}`)
         .bind(apiKeyId, ...chunk)
         .all<ResponsesItemRow>();
-      return await Promise.all(results.map(toStoredResponsesItem));
+      return results;
     }));
-    return perChunk.flat();
+    // Payload codecs hold compressed bytes, expanded JSON, and the parsed clone
+    // at once. Keep D1 chunk reads parallel, then bound that transient working
+    // set to one item per lookup under Workers' 128 MB isolate limit.
+    // https://developers.cloudflare.com/workers/platform/limits/#memory
+    return await mapSequentially(perChunk.flat(), toStoredResponsesItem);
   }
 
   async insertMany(items: readonly StoredResponsesItem[]): Promise<void> {
-    const statements = await Promise.all(items.map(async item => {
+    const statements = await mapSequentially(items, async item => {
       const payload = await serializeStoredResponsesPayload(item.id, item.apiKeyId, item.createdAt, item.payload);
       return this.db
         .prepare(
@@ -904,22 +914,21 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
            ON CONFLICT (id, COALESCE(api_key_id, '')) DO NOTHING`,
         )
         .bind(item.id, item.apiKeyId, item.upstreamId, item.upstreamItemId, item.itemType, item.origin, payload, item.contentHash, item.encryptedContentHash, item.createdAt, item.refreshedAt);
-    }));
+    });
     await runStatements(this.db, statements);
   }
 
   async fillPayloads(items: readonly StoredResponsesItem[]): Promise<number> {
-    const statements = await Promise.all(items.flatMap(item => {
-      if (item.payload === null) return [];
-      return [serializeStoredResponsesPayload(item.id, item.apiKeyId, item.createdAt, item.payload).then(payload =>
-        this.db
-          .prepare(
-            `UPDATE responses_items
-             SET payload_json = ?, content_hash = ?, encrypted_content_hash = ?, created_at = ?, refreshed_at = ?
-             WHERE ${RESPONSES_ITEM_ID_SCOPE_SQL} AND id = ? AND payload_json IS NULL`,
-          )
-          .bind(payload, item.contentHash, item.encryptedContentHash, item.createdAt, item.refreshedAt, item.apiKeyId, item.id))];
-    }));
+    const statements = await mapSequentially(items.filter(item => item.payload !== null), async item => {
+      const payload = await serializeStoredResponsesPayload(item.id, item.apiKeyId, item.createdAt, item.payload);
+      return this.db
+        .prepare(
+          `UPDATE responses_items
+           SET payload_json = ?, content_hash = ?, encrypted_content_hash = ?, created_at = ?, refreshed_at = ?
+           WHERE ${RESPONSES_ITEM_ID_SCOPE_SQL} AND id = ? AND payload_json IS NULL`,
+        )
+        .bind(payload, item.contentHash, item.encryptedContentHash, item.createdAt, item.refreshedAt, item.apiKeyId, item.id);
+    });
     const results = await runStatements(this.db, statements);
     return results.reduce((sum, result) => sum + (result.meta.changes ?? 0), 0);
   }
