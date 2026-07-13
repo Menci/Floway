@@ -17,8 +17,8 @@ import type { ResponsesPayload, ResponsesTool, ResponsesToolChoice } from '@flow
  */
 const isImageGenerationTool = (tool: ResponsesTool): boolean => tool.type === 'image_generation';
 
-const isImageGenerationToolChoice = (choice: ResponsesToolChoice | undefined): boolean =>
-  typeof choice === 'object' && choice !== null && (choice as { type?: unknown }).type === 'image_generation';
+const isImageGenerationToolChoice = (choice: ResponsesToolChoice | null | undefined): boolean =>
+  typeof choice === 'object' && choice !== null && choice.type === 'image_generation';
 
 export const stripImageGenerationFromPayload = (payload: ResponsesPayload): void => {
   let removedTool = false;

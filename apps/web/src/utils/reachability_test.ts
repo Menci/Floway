@@ -6,7 +6,7 @@ import type { ControlPlaneModel } from '../api/types.ts';
 
 const realWithUpstreams = (id: string, upstreams: { id: string }[]): ControlPlaneModel => buildRealModel({
   id,
-  upstreams: upstreams.map(u => ({ id: u.id, name: u.id.toUpperCase(), kind: 'custom' })),
+  upstreams: upstreams.map(u => ({ id: u.id, name: u.id.toUpperCase(), kind: 'custom', color: null })),
 });
 
 const aliasWithTargets = (id: string, targetIds: string[]): ControlPlaneModel => buildAliasModel({
@@ -105,7 +105,7 @@ describe('reachableTargets', () => {
     // at the variant id still matches the real-model lookup.
     const opus = buildUnlistedModel({
       id: 'claude-opus-4.7',
-      upstreams: [{ id: 'up_1', name: 'UP1', kind: 'copilot' }],
+      upstreams: [{ id: 'up_1', name: 'UP1', kind: 'copilot', color: null }],
     });
     const alias = aliasWithTargets('opus-fast', ['claude-opus-4.7']);
     const reachable = reachableTargets(alias, [opus, alias], ['up_1']);

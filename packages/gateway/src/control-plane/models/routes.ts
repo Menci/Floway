@@ -11,26 +11,36 @@ import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import type { PublicModel, PublicModelsResponse } from '@floway-dev/protocols/common';
 import { ProviderModelsUnavailableError } from '@floway-dev/provider';
-import type { InternalModel, Provider, UpstreamProviderKind } from '@floway-dev/provider';
+import type { InternalModel, Provider, UpstreamColor, UpstreamProviderKind } from '@floway-dev/provider';
 
 // Same DTO as the public /models endpoint, plus one dashboard-only field:
-// `upstreams` lists every upstream that surfaces this model as { kind, id, name }
-// triples. A single model id can be served by mixed provider kinds (e.g. one
+// `upstreams` lists every upstream that surfaces this model as { kind, id, name, color }
+// tuples. A single model id can be served by mixed provider kinds (e.g. one
 // azure deployment + one custom upstream both expose `gpt-5.5`), so a flat
 // `provider`/`upstream_ids` split would misrepresent that. Alias-synthesized
 // rows carry an empty list — they do not bind to an upstream directly; their
-// targets live under `aliasedFrom`.
+// targets live under `aliasedFrom`. `color` is the per-upstream override the
+// dashboard uses to paint each chip; `null` inherits the kind default.
 interface ControlPlaneModel extends PublicModel {
-  upstreams: { kind: UpstreamProviderKind; id: string; name: string }[];
+  upstreams: { kind: UpstreamProviderKind; id: string; name: string; color: UpstreamColor | null }[];
 }
 
 interface ControlPlaneModelsResponse extends Omit<PublicModelsResponse, 'data'> {
   data: ControlPlaneModel[];
 }
 
-const toControlPlaneModel = (model: InternalModel, instances: readonly Provider[]): ControlPlaneModel => ({
+const toControlPlaneModel = (
+  model: InternalModel,
+  instances: readonly Provider[],
+  colorByUpstream: ReadonlyMap<string, UpstreamColor | null>,
+): ControlPlaneModel => ({
   ...toPublicModel(model),
-  upstreams: instances.map(instance => ({ kind: instance.kind, id: instance.upstream, name: instance.name })),
+  upstreams: instances.map(instance => ({
+    kind: instance.kind,
+    id: instance.upstream,
+    name: instance.name,
+    color: colorByUpstream.get(instance.upstream) ?? null,
+  })),
 });
 
 // Wrap an addressable-but-not-listed entry as a control-plane row. The
@@ -40,8 +50,11 @@ const toControlPlaneModel = (model: InternalModel, instances: readonly Provider[
 // combobox renders the actual id the operator can type. `unlisted: true`
 // carries the addressability tag through to the dashboard so a future UI
 // badge does not need a second registry call.
-const toUnlistedControlPlaneModel = (entry: AddressableIdEntry): ControlPlaneModel => ({
-  ...toControlPlaneModel(entry.model, entry.upstreams),
+const toUnlistedControlPlaneModel = (
+  entry: AddressableIdEntry,
+  colorByUpstream: ReadonlyMap<string, UpstreamColor | null>,
+): ControlPlaneModel => ({
+  ...toControlPlaneModel(entry.model, entry.upstreams, colorByUpstream),
   id: entry.id,
   display_name: entry.model.display_name ?? entry.id,
   unlisted: true,
@@ -61,19 +74,25 @@ export const controlPlaneModels = async (c: Context) => {
     // data-plane access to.
     const isAdmin = userFromContext(c).isAdmin;
     const upstreamScope = isAdmin ? null : effectiveUpstreamIdsFromContext(c);
-    const fetcherForUpstream = await createPerRequestFetcher(getRuntimeLocation(c.req.raw));
+    // Fetch the upstream list once at the request boundary and thread it
+    // into every downstream consumer (`createPerRequestFetcher`,
+    // `enumerateAddressableModelIds`, the color-join map) so this request
+    // pays a single `upstreams.list()` round-trip.
+    const upstreamRows = await getRepo().upstreams.list();
+    const fetcherForUpstream = await createPerRequestFetcher(getRuntimeLocation(c.req.raw), upstreamRows);
     // Two addressable surfaces: caller-scoped (drives visibility +
     // `aliasedFrom.targets` narrowing for non-admin) and gateway-wide
     // (drives the alias's metadata + endpoints + cost — every caller
     // sees the same numbers for the same alias). For admin the two are
     // the same, so skip the second fetch.
     const [callerAddressable, gatewayAddressable, aliases] = await Promise.all([
-      enumerateAddressableModelIds(upstreamScope, fetcherForUpstream, backgroundSchedulerFromContext(c)),
+      enumerateAddressableModelIds(upstreamScope, fetcherForUpstream, backgroundSchedulerFromContext(c), upstreamRows),
       isAdmin
         ? Promise.resolve(null)
-        : enumerateAddressableModelIds(null, fetcherForUpstream, backgroundSchedulerFromContext(c)),
+        : enumerateAddressableModelIds(null, fetcherForUpstream, backgroundSchedulerFromContext(c), upstreamRows),
       includeAliases ? getRepo().modelAliases.list() : Promise.resolve([]),
     ]);
+    const colorByUpstream = new Map<string, UpstreamColor | null>(upstreamRows.map(row => [row.id, row.color]));
     const gatewayAddressableModelIds = gatewayAddressable ?? callerAddressable;
     const upstreamsByListedId = new Map(callerAddressable.map(entry => [entry.id, entry.upstreams] as const));
     const realModels = listedRealModels(callerAddressable);
@@ -91,7 +110,11 @@ export const controlPlaneModels = async (c: Context) => {
       : realModels;
     // Alias-synthesized rows never bind to an upstream — hand an empty
     // list; real rows read the reverse index built from `callerAddressable`.
-    const listedRows = merged.map(model => toControlPlaneModel(model, model.aliasedFrom !== undefined ? [] : (upstreamsByListedId.get(model.id) ?? [])));
+    const listedRows = merged.map(model => toControlPlaneModel(
+      model,
+      model.aliasedFrom !== undefined ? [] : (upstreamsByListedId.get(model.id) ?? []),
+      colorByUpstream,
+    ));
     // Dedupe the unlisted half against the listed half on `id` — an alias
     // whose name coincides with an addressable-but-not-listed id (e.g. a
     // Copilot variant) would otherwise emit two rows with the same id but
@@ -101,7 +124,7 @@ export const controlPlaneModels = async (c: Context) => {
     const unlistedRows = includeUnlisted
       ? callerAddressable
           .filter(entry => entry.unlisted === true && !listedIds.has(entry.id))
-          .map(toUnlistedControlPlaneModel)
+          .map(entry => toUnlistedControlPlaneModel(entry, colorByUpstream))
       : [];
     const data = [...listedRows, ...unlistedRows];
     const response: ControlPlaneModelsResponse = {

@@ -1,6 +1,7 @@
 import { parseToolArgumentsObject } from '../shared/messages/tool-arguments.ts';
 import { responsesReasoningToMessagesUpstreamBlock } from '../shared/messages-and-responses/reasoning.ts';
 import { buildCustomToolInputSchema } from '../shared/responses-via/custom-tool-wrap.ts';
+import { rejectProgramCaller, rejectProgrammaticResponsesPayload } from '../shared/responses-via/programmatic-tooling.ts';
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../shared/via-messages/cache-breakpoints.ts';
 import { fetchRemoteImage, type RemoteImageLoader, resolveImageUrlToMessagesImage } from '../shared/via-messages/remote-images.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
@@ -196,6 +197,7 @@ const translateResponsesInput = async (input: string | ResponsesInputItem[], loa
   const messages: MessagesMessage[] = [];
 
   for (const item of input.slice(prefixEnd)) {
+    rejectProgramCaller(item);
     switch (item.type) {
     case 'message':
       switch (item.role) {
@@ -240,6 +242,9 @@ const translateResponsesInput = async (input: string | ResponsesInputItem[], loa
       });
       break;
     case 'custom_tool_call_output':
+      if (typeof item.output !== 'string') {
+        throw new TranslatorInputError(`Cannot translate multimodal custom_tool_call_output '${item.call_id}'.`);
+      }
       appendUserBlock(messages, {
         type: 'tool_result',
         tool_use_id: item.call_id,
@@ -308,7 +313,7 @@ const translateTools = (tools: ResponsesTool[] | null | undefined, customToolNam
   return out.length > 0 ? out : undefined;
 };
 
-const translateToolChoice = (toolChoice: ResponsesToolChoice | undefined): MessagesPayload['tool_choice'] => {
+const translateToolChoice = (toolChoice: ResponsesToolChoice | null | undefined): MessagesPayload['tool_choice'] => {
   if (!toolChoice) return undefined;
 
   if (typeof toolChoice === 'string') {
@@ -333,6 +338,7 @@ const translateToolChoice = (toolChoice: ResponsesToolChoice | undefined): Messa
 };
 
 export const translateResponsesToMessages = async (payload: ResponsesPayload, options: TranslateResponsesToMessagesOptions = {}): Promise<ResponsesToMessagesResult> => {
+  rejectProgrammaticResponsesPayload(payload, 'Messages');
   const customToolNames = new Set<string>();
   const { messages, systemBlocks: hoistedSystemBlocks } = await translateResponsesInput(payload.input, options.loadRemoteImage ?? fetchRemoteImage);
   const tools = translateTools(payload.tools, customToolNames);

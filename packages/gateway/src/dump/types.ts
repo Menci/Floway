@@ -11,13 +11,15 @@
 // `DumpMetadata` and `DumpStreamEvent` are body-free and shared verbatim.
 
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
+import type { UpstreamColor, UpstreamProviderKind } from '@floway-dev/provider';
 
 export type DumpRecordId = string;
 
 export interface DumpUpstreamRef {
   id: string;
   name: string;
-  kind: string;
+  kind: UpstreamProviderKind;
+  color: UpstreamColor | null;
 }
 
 // What went wrong on a failed turn. Either a categorized api-error envelope
@@ -42,7 +44,9 @@ export interface DumpMetadata {
   model: string | null;
   inputTokens: number | null;
   outputTokens: number | null;
-  // Raw (pre-gzip) byte counts of the captured bodies.
+  // Captured application-payload bytes. HTTP counts body bytes; WebSocket
+  // counts UTF-8 message payloads. Transport framing/compression and the
+  // dump store's gzip encoding are excluded.
   requestBytes: number;
   responseBytes: number;
   durationMs: number;

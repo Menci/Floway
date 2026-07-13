@@ -143,6 +143,18 @@ test('translateChatCompletionsToResponses preserves translated OpenAI request fi
   assertFalse('include' in result);
 });
 
+test('translateChatCompletionsToResponses never invents reasoning.context from reasoning_effort', () => {
+  const result = translateChatCompletionsToResponses({
+    model: 'gpt-test',
+    messages: [{ role: 'user', content: 'hello' }],
+    reasoning_effort: 'high',
+  });
+
+  assertEquals(result.reasoning, { effort: 'high' });
+  assertEquals(result.reasoning?.context, undefined);
+  assertFalse('context' in (result.reasoning ?? {}));
+});
+
 test('translateChatCompletionsToResponses omits store when Chat omits store', () => {
   const result = translateChatCompletionsToResponses({
     model: 'gpt-test',

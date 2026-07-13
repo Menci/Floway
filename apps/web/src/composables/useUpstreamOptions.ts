@@ -1,7 +1,7 @@
 import { ref, shallowRef } from 'vue';
 
 import { callApi, useApi } from '../api/client.ts';
-import type { UpstreamProviderKind } from '../api/types.ts';
+import type { UpstreamColor, UpstreamProviderKind } from '../api/types.ts';
 
 // Minimal picker shape for the per-key upstream whitelist editor. Backed by
 // /api/upstream-options, which is mounted outside the admin-only zone so non-
@@ -12,6 +12,7 @@ export interface UpstreamOption {
   name: string;
   kind: UpstreamProviderKind;
   enabled: boolean;
+  color: UpstreamColor | null;
 }
 
 const options = shallowRef<UpstreamOption[]>([]);

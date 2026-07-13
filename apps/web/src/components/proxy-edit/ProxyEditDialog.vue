@@ -135,6 +135,14 @@ const saveError = ref<string | null>(null);
 const testing = ref(false);
 const testError = ref<string | null>(null);
 
+// Any operator edit invalidates the last Save/Test diagnostic — clear
+// the banner so it reflects the current form state instead of freezing
+// at the moment the operator hit Save or Test.
+watch([name, url, config, dialTimeoutInput], () => {
+  saveError.value = null;
+  testError.value = null;
+});
+
 const deleting = ref(false);
 const deleteError = ref<{ message: string; referencingUpstreamIds: string[] } | null>(null);
 

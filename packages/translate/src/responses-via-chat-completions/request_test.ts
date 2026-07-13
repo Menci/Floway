@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { translateResponsesToChatCompletions } from './request.ts';
 import { createResponsesToChatCompletionsStreamState, translateResponsesEventToChatCompletionsChunks } from '../chat-completions-via-responses/events.ts';
 import { assertEquals, assertThrows } from '../test-assert.ts';
-import type { ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
+import type { ResponsesAgentMessageContent, ResponsesInputMultiAgentCallOutputItem, ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
 
 test('translateResponsesToChatCompletions merges adjacent assistant reasoning text and tool calls', () => {
   const result = translateResponsesToChatCompletions({
@@ -1387,6 +1387,86 @@ test('translateResponsesToChatCompletions projects custom_tool_call history into
     tool_call_id: 'call_1',
     content: 'ok',
   });
+});
+
+test.each([
+  { name: 'additional_tools', input: [{ type: 'additional_tools', role: 'developer', tools: [] as ResponsesTool[] }] },
+  { name: 'program', input: [{ type: 'program', id: 'prog_1', call_id: 'call_prog_1', code: 'return 1', fingerprint: 'opaque' }] },
+  { name: 'program_output', input: [{ type: 'program_output', id: 'prog_out_1', call_id: 'call_prog_1', result: '1', status: 'completed' }] },
+  { name: 'agent_message', input: [{ type: 'agent_message', author: '/root/a', recipient: '/root', content: [{ type: 'input_text', text: 'done' }] as ResponsesAgentMessageContent[] }] },
+  { name: 'multi_agent_call', input: [{ type: 'multi_agent_call', action: 'spawn_agent', arguments: '{}', call_id: 'call_1' }] },
+  { name: 'multi_agent_call_output', input: [{ type: 'multi_agent_call_output', action: 'spawn_agent', call_id: 'call_1', output: [] as ResponsesInputMultiAgentCallOutputItem['output'] }] },
+  { name: 'context_compaction', input: [{ type: 'context_compaction', encrypted_content: 'opaque' }] },
+] as const)('translateResponsesToChatCompletions rejects Responses-only $name input', ({ name, input }) => {
+  assertThrows(
+    () => translateResponsesToChatCompletions({ model: 'gpt-test', input: [...input] }),
+    Error,
+    `Invalid input item type '${name}'`,
+  );
+});
+
+test.each([
+  { type: 'function_call', call_id: 'call_1', name: 'lookup', arguments: '{}', status: 'completed', caller: { type: 'program', caller_id: 'call_prog_1' } },
+  { type: 'function_call_output', call_id: 'call_1', output: 'ok', caller: { type: 'program', caller_id: 'call_prog_1' } },
+  { type: 'custom_tool_call', call_id: 'call_1', name: 'exec', input: 'run', caller: { type: 'program', caller_id: 'call_prog_1' } },
+  { type: 'custom_tool_call_output', call_id: 'call_1', output: 'ok', caller: { type: 'program', caller_id: 'call_prog_1' } },
+] as const)('translateResponsesToChatCompletions rejects $type program caller metadata', item => {
+  assertThrows(
+    () => translateResponsesToChatCompletions({ model: 'gpt-test', input: [item] }),
+    Error,
+    'program caller',
+  );
+});
+
+test('translateResponsesToChatCompletions accepts null tool_choice', () => {
+  const result = translateResponsesToChatCompletions({ model: 'gpt-test', input: 'hi', tool_choice: null });
+  assertEquals(result.target.tool_choice, undefined);
+});
+
+test.each([
+  { name: 'programmatic tool', payload: { tools: [{ type: 'programmatic_tool_calling' as const }] } },
+  { name: 'programmatic allowed caller', payload: { tools: [{ type: 'function' as const, name: 'lookup', parameters: {}, strict: true, allowed_callers: ['programmatic' as const] }] } },
+  { name: 'programmatic tool choice', payload: { tool_choice: { type: 'programmatic_tool_calling' as const } } },
+])('translateResponsesToChatCompletions rejects $name', ({ payload }) => {
+  assertThrows(
+    () => translateResponsesToChatCompletions({ model: 'gpt-test', input: 'hi', ...payload }),
+    Error,
+    'Programmatic',
+  );
+});
+
+test.each([
+  { type: 'function' as const, name: 'lookup', parameters: {}, strict: true, defer_loading: true },
+  { type: 'custom' as const, name: 'exec', defer_loading: true },
+])('translateResponsesToChatCompletions rejects deferred $type tools', tool => {
+  assertThrows(
+    () => translateResponsesToChatCompletions({ model: 'gpt-test', input: 'hi', tools: [tool] }),
+    Error,
+    'Deferred',
+  );
+});
+
+test('translateResponsesToChatCompletions rejects nested namespace programmatic callers', () => {
+  assertThrows(
+    () => translateResponsesToChatCompletions({
+      model: 'gpt-test',
+      input: 'hi',
+      tools: [{ type: 'namespace', name: 'ops', description: 'ops', tools: [{ type: 'custom', name: 'exec', allowed_callers: ['programmatic'] }] } as unknown as ResponsesTool],
+    }),
+    Error,
+    'Programmatic',
+  );
+});
+
+test('translateResponsesToChatCompletions rejects multimodal custom tool output', () => {
+  assertThrows(
+    () => translateResponsesToChatCompletions({
+      model: 'gpt-test',
+      input: [{ type: 'custom_tool_call_output', call_id: 'call_1', output: [{ type: 'input_file', file_id: 'file_1' }] }],
+    }),
+    Error,
+    'multimodal custom_tool_call_output',
+  );
 });
 
 test('translateResponsesToChatCompletions throws on a stray web_search_call input item (shim owns the reverse path)', () => {

@@ -64,14 +64,20 @@ export const authMiddleware = async (c: AuthedContext, next: Next) => {
     }
   }
 
-  const apiKey = await getRepo().apiKeys.findByRawKey(rawKey);
-  if (!apiKey) return c.json({ error: 'Unauthorized' }, 401);
-  const user = await getRepo().users.getById(apiKey.userId);
-  if (!user) return c.json({ error: 'Unauthorized' }, 401);
+  if (!(await authenticateApiKey(c, rawKey))) return c.json({ error: 'Unauthorized' }, 401);
+  await next();
+};
 
+// Re-resolving the presented credential at each logical WebSocket request
+// revokes rotated/deleted keys and applies the current key and user policies.
+export const authenticateApiKey = async (c: AuthedContext, rawKey: string): Promise<boolean> => {
+  const apiKey = await getRepo().apiKeys.findByRawKey(rawKey);
+  if (!apiKey) return false;
+  const user = await getRepo().users.getById(apiKey.userId);
+  if (!user) return false;
   c.set('apiKey', apiKey);
   c.set('user', user);
-  await next();
+  return true;
 };
 
 // Normalize a present-but-empty / whitespace-only credential source to

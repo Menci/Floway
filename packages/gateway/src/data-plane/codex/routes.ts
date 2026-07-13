@@ -1,49 +1,38 @@
-// Codex 1p-compatibility namespace.
+// Codex compatibility namespace.
 //
-// The OpenAI Codex CLI in OAuth ("ChatGPT") mode talks to two base URLs that
-// must be configured side-by-side in `~/.codex/config.toml`:
+// OAuth ("ChatGPT") mode has two independently configured bases:
 //
-//   chatgpt_base_url           — backend endpoints (jwks, plugins, analytics,
-//                                wham, codex-namespaced catalog/compact)
-//   [model_providers.x].base_url — responses endpoint
+//   chatgpt_base_url             — analytics, plugins, agent identity, Apps MCP
+//   model_providers.x.base_url   — models, Responses HTTP/WS, remote compaction
 //
-// Pointing both at the same prefix lets a single Floway deployment serve every
-// surface codex expects. The prefix must contain an Azure marker so codex's
-// `is_azure_responses_endpoint()` returns true; that unlocks `store: true` +
-// `attach_item_ids` in codex's client (model-provider-info substring scan
-// against `openai.azure.`, `cognitiveservices.azure.`, `aoai.azure.`,
-// `azure-api.`, `azurefd.`, `windows.net/openai`), which is what restores
-// ResponseItem ids on the wire so server-side state (encrypted reasoning
-// content, web search results, prompt cache) is correctly bound across turns.
+// The dashboard points both at this namespace. Codex appends `models`,
+// `responses`, and `responses/compact` directly to the model-provider base:
+// https://github.com/openai/codex/blob/44918ea10c0f99151c6710411b4322c2f5c96bea/codex-rs/codex-api/src/endpoint/models.rs#L31-L43
+// https://github.com/openai/codex/blob/44918ea10c0f99151c6710411b4322c2f5c96bea/codex-rs/codex-api/src/endpoint/responses.rs#L100-L102
+// https://github.com/openai/codex/blob/44918ea10c0f99151c6710411b4322c2f5c96bea/codex-rs/codex-api/src/endpoint/compact.rs#L35-L57
+// GET on `/responses` is the WebSocket upgrade entry; POST uses the generic
+// Responses handler, and `/responses/compact` uses its compaction counterpart.
+// Mounting the generic WS handler here preserves its session-local item chain.
 //
-// Path-prefix split: the chat data plane is reached through `model_providers`
-// and codex sends to `<provider.base_url>/responses` verbatim — no extra
-// prefix. The ChatGPT-backend surface, in contrast, prefixes a `/codex/`
-// segment for the catalog / analytics endpoints
-// (`<chatgpt_base_url>/codex/models`, `…/codex/analytics-events/events`)
-// while leaving `wham/*`, `plugins/*`, and `ps/plugins/*` directly under
-// the base. The Apps MCP server lives at `/api/codex/apps` — when the
-// chatgpt base contains neither `/backend-api` nor `/api/codex`, codex's
-// `codex_apps_mcp_url_for_base_url`
-// (codex-rs/codex-mcp/src/mcp/mod.rs:422-446) appends `/api/codex` itself
-// and uses `apps` as the path; the mount below mirrors that derivation
-// exactly. `responses/compact` reuses the generic `responsesHttp.compact`
-// handler — codex's request shape on this path is the same one the OpenAI
-// client uses against `/v1/responses/compact`, and the Copilot-aware path
-// inside the generic handler synthesises an upstream-compatible response
-// for backends that have no native compaction. GET on the same `/responses`
-// path is the WebSocket upgrade entry — codex flips to wss when its
-// `[model_providers.x].supports_websockets = true` and we mirror the
-// generic `/v1/responses` WS handler so codex's session-internal item
-// store works against this namespace too.
+// The `azure-api.` marker in this prefix deliberately makes Codex classify the
+// provider as Azure. Azure requests set `store: true`, which preserves
+// ResponseItem IDs needed to bind encrypted reasoning, web-search results, and
+// prompt-cache state across turns:
+// https://github.com/openai/codex/blob/44918ea10c0f99151c6710411b4322c2f5c96bea/codex-rs/codex-api/src/provider.rs#L106-L126
+// https://github.com/openai/codex/blob/44918ea10c0f99151c6710411b4322c2f5c96bea/codex-rs/core/src/client.rs#L897-L923
 //
-// Auth: this whole namespace is reached through the same `authMiddleware`
-// that protects every other API route. The operator forges
-// `~/.codex/auth.json` with `tokens.access_token` set to their Floway API
-// key string; codex's `CodexAuth::get_token()` returns access_token verbatim
-// and sends it as `Authorization: Bearer <key>`; `extractKey()` in
-// middleware/auth.ts already accepts that header, so the namespace inherits
-// API-key auth with no new code.
+// `chatgpt_base_url` supplies the auxiliary routes mounted below. Analytics
+// appends `/codex/analytics-events/events`; Apps MCP appends `/api/codex/apps`
+// when the base contains neither `/backend-api` nor `/api/codex`:
+// https://github.com/openai/codex/blob/44918ea10c0f99151c6710411b4322c2f5c96bea/codex-rs/analytics/src/client.rs#L99-L108
+// https://github.com/openai/codex/blob/44918ea10c0f99151c6710411b4322c2f5c96bea/codex-rs/codex-mcp/src/mcp/mod.rs#L469-L490
+//
+// Auth: Codex reads `tokens.access_token` from `~/.codex/auth.json` and sends
+// it as `Authorization: Bearer <key>`, which authMiddleware accepts as a Floway
+// API key. The WebSocket binds that credential at upgrade, then re-resolves its
+// key and owner before each logical request; rotating or deleting the key makes
+// the next turn return 401, while upstream-scope and dump-retention changes
+// take effect on the next turn.
 
 import type { Hono } from 'hono';
 

@@ -19,7 +19,7 @@ import { z } from 'zod';
 
 import { normalizeDisabledPublicModelIds } from '../repo/disabled-public-models.ts';
 import { CUSTOM_API_KEY_MAX_LENGTH, KEY_SOURCES } from '../shared/api-key-tokens.ts';
-import { type FlagOverrides, MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX, parseFlagOverridesWire } from '@floway-dev/provider';
+import { type FlagOverrides, MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX, normalizeUpstreamColor, parseFlagOverridesWire } from '@floway-dev/provider';
 
 // --- shared atoms ---
 
@@ -293,6 +293,22 @@ const modelPrefixSchema = z.object({
   listed: z.array(addressableFormSchema),
 }).nullable();
 
+// Per-upstream badge color override. `null` inherits the frontend's kind
+// default. Delegates parsing entirely to `normalizeUpstreamColor` so the
+// wire accept-rules stay in one place (`@floway-dev/provider/model`);
+// widening / narrowing the accepted forms — new preset, alpha hex, etc.
+// — is a one-file change. The transform surfaces the normalizer's throw
+// as a Zod issue so the client-side error shape stays consistent with
+// the sibling flagOverridesSchema.
+const upstreamColorSchema = z.unknown().transform((value, ctx) => {
+  try {
+    return normalizeUpstreamColor(value);
+  } catch (e) {
+    ctx.issues.push({ code: 'custom', message: e instanceof Error ? e.message : String(e), input: value });
+    return z.NEVER;
+  }
+});
+
 const upstreamBaseFields = {
   name: z.string().min(1),
   enabled: z.boolean().optional(),
@@ -301,6 +317,7 @@ const upstreamBaseFields = {
   disabled_public_model_ids: disabledPublicModelIdsSchema.optional(),
   proxy_fallback_list: proxyFallbackListSchema.optional(),
   model_prefix: modelPrefixSchema.optional(),
+  color: upstreamColorSchema.optional(),
 };
 
 // Create accepts a discriminated union on `kind` for per-provider config
@@ -339,6 +356,7 @@ export const updateUpstreamBody = z.object({
   disabled_public_model_ids: disabledPublicModelIdsSchema.optional(),
   proxy_fallback_list: proxyFallbackListSchema.optional(),
   model_prefix: modelPrefixSchema.optional(),
+  color: upstreamColorSchema.optional(),
   // Patches only carry field diffs, not per-kind shape validation — the
   // handler dispatches on the existing row's kind and enforces the shape
   // there (Copilot/Codex/Claude Code reject a config patch outright, since

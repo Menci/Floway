@@ -12,8 +12,10 @@ import ModelPrefixEditor from './ModelPrefixEditor.vue';
 import ModelsCacheStatus from './ModelsCacheStatus.vue';
 import OllamaConfigPanel from './OllamaConfigPanel.vue';
 import ProxyFallbackListPanel from './ProxyFallbackListPanel.vue';
-import type { ModelPrefixConfig, ProxyFallbackEntry, UpstreamRecord } from '../../api/types.ts';
-import { providerBadgeClass, providerMeta } from '../upstreams/provider-meta.ts';
+import type { ModelPrefixConfig, ProxyFallbackEntry, UpstreamColor, UpstreamRecord } from '../../api/types.ts';
+import ColorPicker from '../upstreams/ColorPicker.vue';
+import { providerMeta } from '../upstreams/provider-meta.ts';
+import UpstreamBadge from '../upstreams/UpstreamBadge.vue';
 import type { Flag, FlagOverrides } from '@floway-dev/provider/flags';
 import { Input, Switch, TagCombobox } from '@floway-dev/ui';
 
@@ -26,6 +28,7 @@ const azureDraft = defineModel<AzureDraft>('azure', { required: true });
 const ollamaDraft = defineModel<OllamaDraft>('ollama', { required: true });
 const proxyFallbackList = defineModel<ProxyFallbackEntry[]>('proxyFallbackList', { required: true });
 const modelPrefix = defineModel<ModelPrefixConfig | null>('modelPrefix', { required: true });
+const color = defineModel<UpstreamColor | null>('color', { required: true });
 
 // `draft` is the parent's single source of truth; wizards emit patches
 // through `patched` for the parent to merge.
@@ -56,6 +59,7 @@ defineEmits<{
   'save-and-open-edit': [];
   error: [message: string];
   'update:model-prefix-invalid': [invalid: boolean];
+  'update:color-invalid': [invalid: boolean];
 }>();
 
 const kind = computed(() => props.draft.kind);
@@ -110,10 +114,13 @@ onBeforeUnmount(() => floorObserver?.disconnect());
     :style="{ minHeight: `${Math.ceil(intrinsicFloorPx)}px` }"
   >
     <header ref="headerRef" class="flex shrink-0 items-center gap-3 border-b border-white/[0.06] px-5 py-4">
-      <span
-        class="rounded border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider"
-        :class="providerBadgeClass(kind)"
-      >{{ providerMeta(kind).label }}</span>
+      <UpstreamBadge
+        :kind="kind"
+        :color="color"
+        variant="badge"
+        size="sm"
+        class="!rounded !uppercase tracking-wider !text-[10px] !font-semibold"
+      >{{ providerMeta(kind).label }}</UpstreamBadge>
       <h2 class="min-w-0 truncate text-sm font-semibold text-white">
         {{ name || (isCreate ? 'New upstream' : 'Upstream') }}
       </h2>
@@ -125,6 +132,11 @@ onBeforeUnmount(() => floorObserver?.disconnect());
       <section class="shrink-0">
         <label class="mb-1.5 block text-xs font-medium text-gray-500">Name</label>
         <Input v-model="name" placeholder="e.g. OpenAI Production" />
+      </section>
+
+      <section class="shrink-0">
+        <label class="mb-1.5 block text-xs font-medium text-gray-500">Color</label>
+        <ColorPicker v-model="color" :kind="kind" @update:invalid="v => $emit('update:color-invalid', v)" />
       </section>
 
       <!-- Proxy chain sits at the top so the operator decides on egress

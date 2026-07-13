@@ -248,8 +248,10 @@ export const translateMessagesToResponses = (payload: MessagesPayload): Canonica
   const serviceTier = payload.speed === 'fast' ? 'fast' : payload.speed === undefined ? payload.service_tier : undefined;
 
   // Keep fallback semantics strict: do not synthesize `temperature: 1`,
-  // `store: false`, `parallel_tool_calls: true`, or `reasoning.summary` when the
-  // Messages source did not express those knobs.
+  // `store: false`, `parallel_tool_calls: true`, `reasoning.summary`, or
+  // `reasoning.context` when the Messages source did not express those knobs.
+  // The source thinking block carries no reasoning-context mode, so we never
+  // invent `all_turns` (or any other value) on the target reasoning object.
   return {
     model: payload.model,
     input: [...prependItems, ...translateMessagesInput(payload.messages)],

@@ -6,6 +6,57 @@ import type { AliasSelection, AliasTarget, ModelKind, ModelEndpoints, ModelPrici
 export const ALL_PROVIDER_KINDS = ['copilot', 'custom', 'azure', 'codex', 'claude-code', 'ollama'] as const;
 export type UpstreamProviderKind = typeof ALL_PROVIDER_KINDS[number];
 
+// Runtime narrow of an unvalidated string to `UpstreamProviderKind`. The
+// DB CHECK constraint mirrors `ALL_PROVIDER_KINDS`, but the type system
+// does not know that — narrow at every wire/DB boundary.
+export const assertUpstreamProviderKind = (provider: string): UpstreamProviderKind => {
+  if ((ALL_PROVIDER_KINDS as readonly string[]).includes(provider)) return provider as UpstreamProviderKind;
+  throw new TypeError(`Invalid upstream provider kind: ${provider}`);
+};
+
+// Per-upstream badge color override. `null` inherits the frontend's kind
+// default; a preset key resolves to a static Uno accent class; a `#RRGGBB`
+// string renders via CSS custom properties + color-mix() so any operator hex
+// works without extending the theme.
+export const UPSTREAM_COLOR_PRESETS = ['amber', 'emerald', 'cyan', 'violet', 'rose', 'orange'] as const;
+export type UpstreamColorPreset = typeof UPSTREAM_COLOR_PRESETS[number];
+export type UpstreamColor = UpstreamColorPreset | `#${string}`;
+
+// The frontend resolver (`apps/web/src/components/upstreams/upstream-paint.ts`)
+// disambiguates hex from preset by `raw.startsWith('#')`; a preset that
+// begins with '#' would silently route to the hex renderer and produce
+// invalid CSS. `Extract<>` collects any offending members of the union;
+// the assertion fails to compile if that projection is not `never`. (A
+// naive `T extends \`#${string}\` ? never : true` distributes across the
+// union and collapses to `true`, providing no guard.)
+//
+// If this compile error fires, DO NOT delete the assertion — either
+// rename the offending preset to drop the '#' prefix, or (only if the
+// hex-vs-preset disambiguation gets a different mechanism) update the
+// resolver first and then this guard together.
+type _NoHashPresets = Extract<UpstreamColorPreset, `#${string}`> extends never ? true : never;
+const _noHashPresets: _NoHashPresets = true;
+void _noHashPresets;
+
+// Canonical hex form accepted at every wire boundary. Uppercase-or-lowercase
+// #RRGGBB only; shorthand and 8-digit alpha are rejected so the resolver's
+// `startsWith('#')` disambiguation vs preset keys stays sound.
+export const UPSTREAM_COLOR_HEX_REGEX = /^#[0-9a-fA-F]{6}$/;
+
+// Parse a wire / persisted upstream color into the domain shape. `null`
+// and `undefined` collapse to `null` (inherit). A valid preset key or
+// hex-6 string passes through; anything else throws. Callers that want
+// row-attributed error messages wrap this in a try/catch and re-throw,
+// mirroring the normalize*/parse* split used by every other row
+// hydrator in `packages/gateway/src/repo/sql.ts`.
+export const normalizeUpstreamColor = (value: unknown): UpstreamColor | null => {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== 'string') throw new Error(`upstreamColor must be a string or null, got ${typeof value}`);
+  if (UPSTREAM_COLOR_HEX_REGEX.test(value)) return value as UpstreamColor;
+  if ((UPSTREAM_COLOR_PRESETS as readonly string[]).includes(value)) return value as UpstreamColor;
+  throw new Error(`upstreamColor is invalid: ${JSON.stringify(value)}`);
+};
+
 // One entry in `UpstreamRecord.proxyFallbackList`. `id` is the proxy id from
 // the proxies catalog or the literal 'direct' sentinel. `colos` is an
 // optional whitelist of location tags (Cloudflare colos / the Node
@@ -44,6 +95,10 @@ export interface UpstreamRecord {
   // When set, the registry honors `addressable` and `listed` to expose /
   // accept either form (or both).
   modelPrefix: ModelPrefixConfig | null;
+  // Operator-chosen badge color. `null` falls back to the frontend's kind
+  // default. Otherwise: a preset key from `UPSTREAM_COLOR_PRESETS`, or a raw
+  // `#RRGGBB` string. Wire validation lives in the control-plane Zod schema.
+  color: UpstreamColor | null;
 }
 
 // Model identity attached to every provider result at the provider boundary

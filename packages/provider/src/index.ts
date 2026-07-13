@@ -36,10 +36,12 @@ export type {
   ProviderModel,
   ProxyFallbackEntry,
   TelemetryModelIdentity,
+  UpstreamColor,
+  UpstreamColorPreset,
   UpstreamProviderKind,
   UpstreamRecord,
 } from './model.ts';
-export { ALL_PROVIDER_KINDS } from './model.ts';
+export { ALL_PROVIDER_KINDS, assertUpstreamProviderKind, normalizeUpstreamColor, UPSTREAM_COLOR_HEX_REGEX, UPSTREAM_COLOR_PRESETS } from './model.ts';
 
 export type { AddressableForm, ModelPrefixConfig } from './model-prefix.ts';
 export { MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX, normalizeModelPrefix } from './model-prefix.ts';

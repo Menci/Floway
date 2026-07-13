@@ -18,16 +18,17 @@ import { assertEquals, assertExists } from '@floway-dev/test-utils';
 // Node app's wrapper just enough to back the dump-store schema.
 //
 // `dump_records` LEFT JOINs `upstreams` to resolve each row's current
-// upstream name and kind at read time. The test schema therefore needs
-// both tables present; we synthesise a minimal `upstreams` shape (only
-// the columns the join reads) so the test stays decoupled from the full
-// production upstreams migration.
+// upstream name, kind, and color at read time. The test schema therefore
+// needs both tables present; we synthesise a minimal `upstreams` shape
+// (only the columns the join reads) so the test stays decoupled from
+// the full production upstreams migration.
 const MIGRATION_PATH = resolve(fileURLToPath(import.meta.url), '..', '..', '..', 'migrations', '0041_dump_records.sql');
 const UPSTREAMS_STUB_SQL = `
   CREATE TABLE upstreams (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
-    provider TEXT NOT NULL
+    provider TEXT NOT NULL,
+    color TEXT NULL
   );
 `;
 

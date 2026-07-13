@@ -19,7 +19,7 @@ export interface ResponsesPayload {
   // https://github.com/openai/openai-python/blob/main/src/openai/types/responses/response_create_params.py
   max_tool_calls?: number | null;
   tools?: ResponsesTool[] | null;
-  tool_choice?: ResponsesToolChoice;
+  tool_choice?: ResponsesToolChoice | null;
   metadata?: Record<string, unknown> | null;
   stream?: boolean | null;
   store?: boolean | null;
@@ -27,6 +27,15 @@ export interface ResponsesPayload {
   reasoning?: {
     effort?: string;
     summary?: 'detailed' | 'auto' | 'concise' | (string & {});
+    // Controls which reasoning items are rendered back to the model on later
+    // turns; echoed on the response as the effective mode. Canonical values are
+    // `auto` / `current_turn` / `all_turns`, but the slot stays open-string so
+    // future upstream modes forward verbatim rather than being narrowed at this
+    // boundary. Reference (openai-python shared Reasoning.context):
+    // https://github.com/openai/openai-python/blob/f16fbbd2bd25dc1ff150b5f78dbd15ff6bab6d91/src/openai/types/shared/reasoning.py#L19-L25
+    // Reference (openai-node Reasoning.context):
+    // https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/shared.ts#L262-L269
+    context?: 'auto' | 'current_turn' | 'all_turns' | (string & {}) | null;
   };
   include?: string[];
   // `text.verbosity` is a native GPT-5-family Responses field that controls
@@ -92,6 +101,13 @@ export type ResponsesInputItem =
   | ResponsesComputerCallOutputItem
   | ResponsesToolSearchCallItem
   | ResponsesToolSearchOutputItem
+  | ResponsesInputAdditionalToolsItem
+  | ResponsesProgramItem
+  | ResponsesProgramOutputItem
+  | ResponsesInputAgentMessageItem
+  | ResponsesInputMultiAgentCallItem
+  | ResponsesInputMultiAgentCallOutputItem
+  | ResponsesContextCompactionItem
   | ResponsesCompactionItem
   | ResponsesCompactionTriggerItem
   | ResponsesInputImageGenerationCall
@@ -128,6 +144,18 @@ export interface ResponsesInputImage {
   detail: 'auto' | 'low' | 'high';
 }
 
+export type ResponsesToolOutputContent = ResponsesInputText | ResponsesInputImage | ResponsesInputFile;
+
+export interface ResponsesInputFile {
+  type: 'input_file';
+  detail?: 'auto' | 'low' | 'high';
+  file_data?: string;
+  file_id?: string | null;
+  file_url?: string;
+  filename?: string;
+  [key: string]: unknown;
+}
+
 export interface ResponsesInputReasoning {
   type: 'reasoning';
   id: string;
@@ -140,6 +168,12 @@ export interface ResponsesInputReasoning {
   encrypted_content?: string;
 }
 
+// OpenAI Responses Programmatic Tool Calling caller shape.
+// https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L3394-L3407
+export type ResponsesToolCaller =
+  | { type: 'direct' }
+  | { type: 'program'; caller_id: string };
+
 export interface ResponsesFunctionToolCallItem {
   type: 'function_call';
   id?: string;
@@ -147,6 +181,7 @@ export interface ResponsesFunctionToolCallItem {
   name: string;
   arguments: string;
   status: 'completed' | 'in_progress' | 'incomplete';
+  caller?: ResponsesToolCaller | null;
 }
 
 export interface ResponsesFunctionCallOutputItem {
@@ -157,6 +192,7 @@ export interface ResponsesFunctionCallOutputItem {
   // tool returning `input_image` parts) in addition to the plain-string form.
   output: string | ResponsesInputContent[];
   status?: 'completed' | 'incomplete';
+  caller?: ResponsesToolCaller | null;
 }
 
 // Freeform custom tool invocation echoed back to the model in conversation
@@ -170,14 +206,16 @@ export interface ResponsesCustomToolCallItem {
   id?: string;
   namespace?: string;
   status?: string;
+  caller?: ResponsesToolCaller | null;
 }
 
 export interface ResponsesCustomToolCallOutputItem {
   type: 'custom_tool_call_output';
   call_id: string;
-  output: string;
+  output: string | ResponsesToolOutputContent[];
   id?: string;
   status?: string;
+  caller?: ResponsesToolCaller | null;
 }
 
 export interface ResponsesItemReference {
@@ -234,6 +272,77 @@ export interface ResponsesToolSearchOutputItem extends ResponsesPermissiveItem<'
   output?: unknown;
 }
 
+// https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L4265-L4285
+export interface ResponsesInputAdditionalToolsItem {
+  type: 'additional_tools';
+  role: 'developer';
+  tools: ResponsesTool[];
+  id?: string | null;
+}
+
+// https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L4919-L4971
+export interface ResponsesProgramItem {
+  type: 'program';
+  id: string;
+  call_id: string;
+  code: string;
+  fingerprint: string;
+}
+
+export interface ResponsesProgramOutputItem {
+  type: 'program_output';
+  id: string;
+  call_id: string;
+  result: string;
+  status: 'completed' | 'incomplete';
+}
+
+export type ResponsesAgentMessageContent =
+  | { type: 'input_text'; text: string }
+  | { type: 'encrypted_content'; encrypted_content: string }
+  | (Record<string, unknown> & { type: string });
+
+export interface ResponsesInputAgentMessageItem {
+  type: 'agent_message';
+  author: string;
+  recipient: string;
+  content: ResponsesAgentMessageContent[];
+  id?: string | null;
+  agent?: { agent_name: string } | null;
+  internal_chat_message_metadata_passthrough?: Record<string, unknown>;
+}
+
+export type ResponsesMultiAgentAction =
+  | 'spawn_agent'
+  | 'interrupt_agent'
+  | 'list_agents'
+  | 'send_message'
+  | 'followup_task'
+  | 'wait_agent';
+
+export interface ResponsesInputMultiAgentCallItem {
+  type: 'multi_agent_call';
+  action: ResponsesMultiAgentAction;
+  arguments: string;
+  call_id: string;
+  id?: string | null;
+  agent?: { agent_name: string } | null;
+}
+
+export interface ResponsesInputMultiAgentCallOutputItem {
+  type: 'multi_agent_call_output';
+  action: ResponsesMultiAgentAction;
+  call_id: string;
+  output: Array<Record<string, unknown> & { type: 'output_text'; text: string }>;
+  id?: string | null;
+  agent?: { agent_name: string } | null;
+}
+
+export interface ResponsesContextCompactionItem extends ResponsesPermissiveItem<'context_compaction'> {
+  encrypted_content?: string;
+  internal_chat_message_metadata_passthrough?: Record<string, unknown>;
+}
+
 export type ResponsesCompactionItem = ResponsesPermissiveItem<'compaction'>;
 
 // Trailing input item recognised by codex's RemoteCompactionV2: the upstream
@@ -261,21 +370,25 @@ export interface ResponsesLocalShellCallOutputItem extends ResponsesPermissiveIt
 export interface ResponsesShellCallItem extends ResponsesPermissiveItem<'shell_call'> {
   call_id: string;
   command?: string;
+  caller?: ResponsesToolCaller | null;
 }
 
 export interface ResponsesShellCallOutputItem extends ResponsesPermissiveItem<'shell_call_output'> {
   call_id: string;
   output?: unknown;
+  caller?: ResponsesToolCaller | null;
 }
 
 export interface ResponsesApplyPatchCallItem extends ResponsesPermissiveItem<'apply_patch_call'> {
   call_id: string;
   patch?: string;
+  caller?: ResponsesToolCaller | null;
 }
 
 export interface ResponsesApplyPatchCallOutputItem extends ResponsesPermissiveItem<'apply_patch_call_output'> {
   call_id: string;
   output?: unknown;
+  caller?: ResponsesToolCaller | null;
 }
 
 export interface ResponsesMcpCallItem extends ResponsesPermissiveItem<'mcp_call'> {
@@ -308,12 +421,18 @@ export interface ResponsesInputImageGenerationCall {
   error?: { message: string; code: string; type?: string };
 }
 
+// https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L822-L851
+export type ResponsesToolAllowedCaller = 'direct' | 'programmatic';
+
 export interface ResponsesFunctionTool {
   type: 'function';
   name: string;
   parameters: Record<string, unknown>;
   strict: boolean;
   description?: string;
+  allowed_callers?: ResponsesToolAllowedCaller[] | null;
+  defer_loading?: boolean;
+  output_schema?: Record<string, unknown> | null;
 }
 
 // Codex and other Responses clients ship hosted server tools (web_search,
@@ -371,16 +490,61 @@ export interface ResponsesCustomTool {
   name: string;
   description?: string;
   format?: Record<string, unknown>;
+  allowed_callers?: ResponsesToolAllowedCaller[] | null;
+  defer_loading?: boolean;
 }
 
-export type ResponsesTool = ResponsesFunctionTool | ResponsesHostedTool | ResponsesCustomTool;
+// https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L8110-L8115
+export interface ResponsesProgrammaticTool {
+  type: 'programmatic_tool_calling';
+}
 
+// https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L7871-L8080
+export interface ResponsesMcpTool {
+  type: 'mcp';
+  server_label: string;
+  allowed_callers?: ResponsesToolAllowedCaller[] | null;
+  defer_loading?: boolean;
+  [key: string]: unknown;
+}
+
+export interface ResponsesCodeInterpreterTool {
+  type: 'code_interpreter';
+  container: string | Record<string, unknown>;
+  allowed_callers?: ResponsesToolAllowedCaller[] | null;
+}
+
+// https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L803-L815
+export interface ResponsesShellTool {
+  type: 'shell';
+  allowed_callers?: ResponsesToolAllowedCaller[] | null;
+  environment?: unknown;
+}
+
+// https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L245-L264
+export interface ResponsesApplyPatchTool {
+  type: 'apply_patch';
+  allowed_callers?: ResponsesToolAllowedCaller[] | null;
+}
+
+export type ResponsesTool =
+  | ResponsesFunctionTool
+  | ResponsesHostedTool
+  | ResponsesCustomTool
+  | ResponsesProgrammaticTool
+  | ResponsesMcpTool
+  | ResponsesCodeInterpreterTool
+  | ResponsesShellTool
+  | ResponsesApplyPatchTool;
+
+// https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L1302-L1307
 export type ResponsesToolChoice =
   | 'auto'
   | 'none'
   | 'required'
   | { type: 'function'; name: string }
   | { type: 'custom'; name: string }
+  | { type: 'programmatic_tool_calling' }
   | { type: ResponsesHostedToolType };
 
 // ── Response types ──
@@ -423,7 +587,7 @@ export interface ResponsesResult {
   // declares both fields; observed upstream echoes (Copilot, Azure)
   // confirm they're populated with server-enriched defaults.
   tools?: ResponsesTool[];
-  tool_choice?: ResponsesToolChoice;
+  tool_choice?: ResponsesToolChoice | null;
   usage?: {
     input_tokens: number;
     output_tokens: number;
@@ -432,6 +596,41 @@ export interface ResponsesResult {
     output_tokens_details?: { reasoning_tokens: number };
   };
 }
+
+// Stored/output additional-tools roles are wider than the input-only
+// `developer` role.
+// https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L5116-L5136
+export type ResponsesAdditionalToolsRole =
+  | 'unknown'
+  | 'user'
+  | 'assistant'
+  | 'system'
+  | 'critic'
+  | 'discriminator'
+  | 'developer'
+  | 'tool';
+
+export interface ResponsesOutputAdditionalToolsItem {
+  type: 'additional_tools';
+  id: string;
+  role: ResponsesAdditionalToolsRole;
+  tools: ResponsesTool[];
+}
+
+export type ResponsesOutputAgentMessageItem = Omit<ResponsesInputAgentMessageItem, 'id' | 'agent'> & {
+  id: string;
+  agent?: { agent_name: string };
+};
+
+export type ResponsesOutputMultiAgentCallItem = Omit<ResponsesInputMultiAgentCallItem, 'id' | 'agent'> & {
+  id: string;
+  agent?: { agent_name: string };
+};
+
+export type ResponsesOutputMultiAgentCallOutputItem = Omit<ResponsesInputMultiAgentCallOutputItem, 'id' | 'agent'> & {
+  id: string;
+  agent?: { agent_name: string };
+};
 
 export type ResponsesOutputItem =
   | ResponsesOutputMessage
@@ -446,6 +645,13 @@ export type ResponsesOutputItem =
   | ResponsesComputerCallOutputItem
   | ResponsesToolSearchCallItem
   | ResponsesToolSearchOutputItem
+  | ResponsesOutputAdditionalToolsItem
+  | ResponsesProgramItem
+  | ResponsesProgramOutputItem
+  | ResponsesOutputAgentMessageItem
+  | ResponsesOutputMultiAgentCallItem
+  | ResponsesOutputMultiAgentCallOutputItem
+  | ResponsesContextCompactionItem
   | ResponsesCompactionItem
   | ResponsesCodeInterpreterCallItem
   | ResponsesLocalShellCallItem
@@ -487,17 +693,10 @@ export interface ResponsesOutputFunctionCall {
   name: string;
   arguments: string;
   status: string;
+  caller?: ResponsesToolCaller | null;
 }
 
-export interface ResponsesOutputCustomToolCall {
-  type: 'custom_tool_call';
-  call_id: string;
-  name: string;
-  input: string;
-  id?: string;
-  namespace?: string;
-  status?: string;
-}
+export type ResponsesOutputCustomToolCall = ResponsesCustomToolCallItem;
 
 export interface ResponsesOutputReasoning {
   type: 'reasoning';

@@ -189,6 +189,22 @@ test('translateMessagesToResponses maps thinking.adaptive to reasoning.effort me
   assertEquals(result.reasoning, { effort: 'medium' });
 });
 
+test('translateMessagesToResponses never invents reasoning.context from a source thinking block', () => {
+  // The Messages thinking shape carries no reasoning-context mode, so the
+  // target reasoning object must expose effort only — never a synthesized
+  // `all_turns` (or any other) context value.
+  const result = translateMessagesToResponses({
+    model: 'gpt-test',
+    max_tokens: 4096,
+    thinking: { type: 'enabled', budget_tokens: 8192 },
+    messages: [{ role: 'user', content: 'hi' }],
+  });
+
+  assertEquals(result.reasoning, { effort: 'medium' });
+  assertEquals(result.reasoning?.context, undefined);
+  assertFalse('context' in (result.reasoning ?? {}));
+});
+
 test('translateMessagesToResponses preserves max_tokens at the translation boundary', () => {
   const result = translateMessagesToResponses({
     model: 'gpt-test',

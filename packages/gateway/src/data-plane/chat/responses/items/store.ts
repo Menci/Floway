@@ -396,21 +396,27 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
 
   private async commitItems(rows: readonly StoredResponsesItem[]): Promise<void> {
     const pending = rows.filter(row => !this.committedItemIds.has(row.id));
-    if (pending.length === 0) return;
-    await Promise.all(this.options.itemWrites.map(async write => {
-      const writable = write.durable ? pending.filter(row => this.isDurableWriteEligible(row)) : pending;
-      const payloadUpgrades = writable.filter(row => this.payloadUpgradeIds.has(row.id) && (!write.durable || this.durableItemIds.has(row.id)));
-      const inserts = writable.filter(row => !this.payloadUpgradeIds.has(row.id) || (write.durable && !this.durableItemIds.has(row.id)));
-      await Promise.all([
-        write.backing.insertItems(inserts, { durable: write.durable }),
-        write.backing.fillPayloads(payloadUpgrades, { durable: write.durable }),
-      ]);
-      if (write.durable) {
-        for (const row of writable) this.markDurable(row.apiKeyId, row.id);
-      }
-    }));
-    for (const row of pending) this.committedItemIds.add(row.id);
+    if (pending.length > 0) {
+      await Promise.all(this.options.itemWrites.map(async write => {
+        const writable = write.durable ? pending.filter(row => this.needsDurableWrite(row)) : pending;
+        const payloadUpgrades = writable.filter(row => this.payloadUpgradeIds.has(row.id) && (!write.durable || this.durableItemIds.has(row.id)));
+        const inserts = writable.filter(row => !this.payloadUpgradeIds.has(row.id) || (write.durable && !this.durableItemIds.has(row.id)));
+        const operations: Promise<unknown>[] = [];
+        if (inserts.length > 0) operations.push(write.backing.insertItems(inserts, { durable: write.durable }));
+        if (payloadUpgrades.length > 0) operations.push(write.backing.fillPayloads(payloadUpgrades, { durable: write.durable }));
+        await Promise.all(operations);
+        if (write.durable) {
+          for (const row of writable) this.markDurable(row.apiKeyId, row.id);
+        }
+      }));
+      for (const row of pending) this.committedItemIds.add(row.id);
+    }
     await this.refreshTouchedItems();
+  }
+
+  private needsDurableWrite(row: StoredResponsesItem): boolean {
+    return this.isDurableWriteEligible(row)
+      && (!this.durableItemIds.has(row.id) || this.payloadUpgradeIds.has(row.id));
   }
 
   private isDurableWriteEligible(row: StoredResponsesItem): boolean {
