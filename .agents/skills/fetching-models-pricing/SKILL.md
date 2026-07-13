@@ -45,8 +45,8 @@ notional API-equivalent value so the usage dashboard remains comparable.
    `packages/gateway/src/data-plane/providers/models-cache.ts`. Static pricing
    is serialized inside cached `ProviderModel` rows; a revision mismatch makes
    every older row cold before TTL evaluation.
-7. Add boundary tests for exact ids, aliases, dated releases, and threshold
-   edges encoded by the table.
+7. Add boundary tests for exact ids, aliases, dated releases, and RegExp
+   coverage boundaries encoded by the table.
 8. Run the affected provider tests, typecheck, lint, and the full test suite.
 9. If an existing rate changed, use `backfill-model-pricing` for the intended
    historical usage slice. Cache revisioning changes future catalog snapshots;
