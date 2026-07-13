@@ -355,13 +355,26 @@ const inputImagesOf = (item: ResponsesInputItem): ResponsesInputImage[] => {
     : [];
 };
 
-export const collectImageSources = (input: readonly ResponsesInputItem[]): ImageSource[] => {
+interface ImageSourceInspection {
+  sources: ImageSource[];
+  hasUnresolvableInputImage: boolean;
+}
+
+export const inspectImageSources = (input: readonly ResponsesInputItem[]): ImageSourceInspection => {
   const sources: ImageSource[] = [];
+  let hasUnresolvableInputImage = false;
   for (const item of input) {
     for (const image of inputImagesOf(item)) {
-      if (typeof image.image_url !== 'string') continue;
+      if (typeof image.image_url !== 'string') {
+        hasUnresolvableInputImage = true;
+        continue;
+      }
       const decoded = decodeInlineImage(image.image_url);
-      if (decoded !== null) sources.push(decoded);
+      if (decoded === null) {
+        hasUnresolvableInputImage = true;
+        continue;
+      }
+      sources.push(decoded);
     }
     if (item.type === 'image_generation_call' && typeof item.result === 'string' && item.result.length > 0) {
       // A prior generated image carries no MIME prefix on its bare-base64
@@ -372,7 +385,7 @@ export const collectImageSources = (input: readonly ResponsesInputItem[]): Image
       if (decoded !== null) sources.push(decoded);
     }
   }
-  return sources;
+  return { sources, hasUnresolvableInputImage };
 };
 
 // The successfully-resolved image, or a normalized failure. Failures are
@@ -507,7 +520,7 @@ const buildEditsForm = (prompt: string, config: ImageGenerationConfig, sources: 
     // keeps a stray unsupported byte stream failing loud at the backend.
     const mime = editSupportedMime(source.mimeType) ?? source.mimeType;
     // `image[]` repeated parts: gpt-image accepts multiple, resolving "the
-    // Nth image" against attach order (see `collectImageSources`).
+    // Nth image" against attach order (see `inspectImageSources`).
     form.append('image[]', new Blob([source.bytes], { type: mime }), `image_${i}.${editFileExt(mime)}`);
   }
   if (config.mask !== undefined) {
@@ -861,7 +874,7 @@ const streamImageGeneration = (
 //
 // Fidelity across requests: a client may echo a prior call back as a bare id
 // with the bytes dropped. By the time this seam runs the input item already
-// carries the full result payload — collectImageSources can bind result bytes
+// carries the full result payload — inspectImageSources can bind result bytes
 // directly without any out-of-band lookup. The `image_generation_call` shape
 // needs no out-of-band payload for this to be lossless: every field required
 // to rebuild the pair, INCLUDING the error (`status` + `error{message,code,
@@ -948,8 +961,10 @@ export const imageGenerationServerTool: ServerToolRegistration = (invocation, ga
     return { type: 'invalid-request', message: prepared.error.message, param: prepared.error.param, code: prepared.error.code };
   }
   const config = prepared.config;
-  const hasUnresolvableInputImage = invocation.payload.input.some(item =>
-    inputImagesOf(item).some(image => typeof image.image_url !== 'string' || decodeInlineImage(image.image_url) === null));
+  const {
+    sources: originalImageSources,
+    hasUnresolvableInputImage,
+  } = inspectImageSources(invocation.payload.input);
   if (config.action !== 'generate' && hasUnresolvableInputImage) {
     return {
       type: 'invalid-request',
@@ -958,8 +973,6 @@ export const imageGenerationServerTool: ServerToolRegistration = (invocation, ga
       code: 'invalid_value',
     };
   }
-  const originalImageSources = collectImageSources(invocation.payload.input);
-
   // `action:"edit"` with no bindable image is a client request-shape error,
   // surfaced before the model loop because it is not a runtime backend
   // failure.
@@ -1050,7 +1063,7 @@ export const imageGenerationServerTool: ServerToolRegistration = (invocation, ga
         // Re-collect edit sources from the live input so an image generated in
         // an earlier turn (fed back as an `input_image`) is editable now, and
         // resolve edit-vs-generate against the current sources for action:auto.
-        const sources = collectImageSources(invocation.payload.input);
+        const { sources } = inspectImageSources(invocation.payload.input);
         const isEdit = config.action === 'edit' || (config.action === 'auto' && sources.length > 0);
         const action: 'generate' | 'edit' = isEdit ? 'edit' : 'generate';
 

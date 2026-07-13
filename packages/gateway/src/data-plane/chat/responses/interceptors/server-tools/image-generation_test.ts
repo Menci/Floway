@@ -3,7 +3,7 @@ import { beforeEach, test } from 'vitest';
 import {
   buildGenerationsBody,
   buildImageGenerationFunctionTool,
-  collectImageSources,
+  inspectImageSources,
   DEFAULT_IMAGE_MODEL,
   type ImageGenerationConfig,
   type ImageOutcome,
@@ -207,9 +207,9 @@ test('buildImageGenerationFunctionTool exposes only an optional prompt and is no
   assertEquals(params.additionalProperties, false);
 });
 
-// ── collectImageSources ──
+// ── inspectImageSources ──
 
-test('collectImageSources reads input_image blocks and image_generation_call results', () => {
+test('inspectImageSources reads input_image blocks and image_generation_call results', () => {
   const input: ResponsesInputItem[] = [
     {
       type: 'message', role: 'user', content: [
@@ -219,11 +219,12 @@ test('collectImageSources reads input_image blocks and image_generation_call res
     },
     { type: 'image_generation_call', id: 'ig_prev', status: 'completed', result: PNG_B64 },
   ];
-  const sources = collectImageSources(input);
+  const { sources, hasUnresolvableInputImage } = inspectImageSources(input);
   assertEquals(sources.length, 2);
+  assertEquals(hasUnresolvableInputImage, false);
 });
 
-test('collectImageSources skips http(s) image urls (remote fetch unsupported)', () => {
+test('inspectImageSources marks http(s) image urls as unresolvable', () => {
   const input: ResponsesInputItem[] = [
     {
       type: 'message', role: 'user', content: [
@@ -231,16 +232,18 @@ test('collectImageSources skips http(s) image urls (remote fetch unsupported)', 
       ],
     },
   ];
-  assertEquals(collectImageSources(input).length, 0);
+  const { sources, hasUnresolvableInputImage } = inspectImageSources(input);
+  assertEquals(sources.length, 0);
+  assertEquals(hasUnresolvableInputImage, true);
 });
 
-test('collectImageSources reads tool-result images and preserves forward order', () => {
+test('inspectImageSources reads tool-result images and preserves forward order', () => {
   const input: ResponsesInputItem[] = [
     { type: 'function_call_output', call_id: 'c1', output: [{ type: 'input_image', image_url: `data:image/png;base64,${PNG_B64}`, detail: 'auto' }] },
     { type: 'custom_tool_call_output', call_id: 'c2', output: [{ type: 'input_image', image_url: `data:image/jpeg;base64,${PNG_B64}`, detail: 'auto' }] },
     { type: 'message', role: 'user', content: [{ type: 'input_image', image_url: `data:image/webp;base64,${PNG_B64}`, detail: 'auto' }] },
   ];
-  const sources = collectImageSources(input);
+  const { sources } = inspectImageSources(input);
   assertEquals(sources.length, 3);
   assertEquals(sources[0].mimeType, 'image/png');
   assertEquals(sources[1].mimeType, 'image/jpeg');
