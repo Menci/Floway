@@ -182,7 +182,15 @@ Header shaping (UA, `X-Stainless-*`, `anthropic-beta`) and the dated
 upstream model id are set in the provider's fetch path, not as interceptor
 steps.
 
-### Responses — gateway interceptors
+### Responses — gateway flow and interceptors
+
+- resolves `previous_response_id` and every `item_reference` through the
+  gateway's Responses store before candidate dispatch. Affinity is classified
+  from each referenced item's stored type, then the candidate rewrite replaces
+  every reference with its durable payload. Same-upstream items recover their
+  upstream wire id; portable items receive a temporary id when needed. A
+  missing durable payload returns `item_not_found`, and no provider receives an
+  `item_reference` carrier.
 
 - removes unsupported `image_generation` Responses tool entries and forced
   tool choices that targeted them before target request construction. Other
@@ -209,9 +217,7 @@ The same boundary runs for both `/v1/responses` (streaming) and
   the chain runs, so durable storage is unaffected
 - compresses inline base64 image data URLs to WebP
 - injects `x-vision-request` and `x-initiator` headers
-- on `/v1/responses` only: retries expired connection-bound input IDs once
-  with deterministic rewrites, and synchronizes mismatched stream output
-  item IDs
+- on `/v1/responses` only: synchronizes mismatched stream output item IDs
 
 ### Responses — Codex provider boundary chain
 
@@ -223,8 +229,11 @@ inline and rebuilds the envelope client-side).
 
 - hoists `role: "system"` items out of `input` into top-level `instructions`
   (the upstream rejects system messages inside `input`)
-- injects a default `instructions` string when none is supplied (the upstream
-  rejects empty / missing `instructions`)
+- injects a neutral default only when `instructions` is absent, `null`, or an
+  empty string. Other malformed external values pass through so the upstream
+  owns validation. Current ChatGPT-subscription catalog models reject empty or
+  missing instructions (implementation record:
+  https://github.com/im4codes/imcodes/blob/5f769d933dfd679e3a4d670183b0384a1baf62cd/src/agent/providers/codex-sdk.ts#L560-L579)
 - strips fields the upstream rejects with `Unsupported parameter`:
   `max_output_tokens`, `temperature`, `top_p`, `frequency_penalty`,
   `presence_penalty`, `user`, `metadata`, `prompt_cache_retention`,
@@ -284,7 +293,11 @@ Request mapping shared by the Gemini source translation pairs:
   thinking controls. Budget `0` disables thinking via Messages
   `thinking.disabled`, Responses `reasoning.effort: "none"`, or Chat
   `reasoning_effort: "none"`; positive budgets choose low/medium/high effort
-  where the target only supports effort levels.
+  where the target only supports effort levels. When both controls are present,
+  the numeric budget takes precedence on Chat and Responses; Messages preserves
+  its native budget and the level in separate fields. Without a budget,
+  explicit `thinkingLevel` strings, including empty and future values, pass
+  verbatim to the target's open-string effort slot for upstream validation.
 - `maxOutputTokens`, `temperature`, `topP`, `topK`, `stopSequences`,
   `presencePenalty`, `frequencyPenalty`, `seed`, `responseMimeType`, and
   `responseSchema` are passed through when the selected target has a natural

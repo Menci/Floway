@@ -1,14 +1,28 @@
-import { test } from 'vitest';
+import { test, vi } from 'vitest';
 
 import { clearInProcessCopilotTokenCache } from './auth.ts';
 import { emptyKnownModels, mergeKnownModels } from './known-models.ts';
 import { createCopilotProvider } from './provider.ts';
 import { readCopilotUpstreamState, type CopilotUpstreamState } from './state.ts';
+import type { CopilotModelsResponse } from './types.ts';
 import { createInMemoryImageProcessor, initImageProcessor } from '@floway-dev/platform';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { directFetcher, initProviderRepo } from '@floway-dev/provider';
 import { assertEquals, assertRejects, jsonResponse, noopUpstreamCallOptions, sseResponse, withMockedFetch } from '@floway-dev/test-utils';
+
+const mergeClaudeVariantsControl = vi.hoisted<{
+  override: ((models: CopilotModelsResponse) => CopilotModelsResponse) | null;
+}>(() => ({ override: null }));
+
+vi.mock('./merge-claude-variants.ts', async importOriginal => {
+  const original = await importOriginal<typeof import('./merge-claude-variants.ts')>();
+  return {
+    ...original,
+    mergeClaudeVariants: (models: CopilotModelsResponse): CopilotModelsResponse =>
+      mergeClaudeVariantsControl.override?.(models) ?? original.mergeClaudeVariants(models),
+  };
+});
 
 const buildCopilotUpstream = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => {
   const { config: overrideConfig, ...rest } = overrides;
@@ -702,6 +716,39 @@ const copilotPreflight = (request: Request): Response | null => {
   }
   return null;
 };
+
+test('Copilot provider rejects a merged public model without a raw variant group', async () => {
+  const harness = await setupCopilotTest();
+  const instance = createCopilotProvider(harness.copilotUpstream);
+  mergeClaudeVariantsControl.override = models => {
+    const rawModel = models.data[0];
+    if (rawModel === undefined) throw new Error('expected a raw model fixture');
+    return { ...models, data: [{ ...rawModel, id: 'orphan-public-model' }] };
+  };
+
+  try {
+    await withMockedFetch(
+      request => {
+        const preflight = copilotPreflight(request);
+        if (preflight !== null) return preflight;
+        const url = new URL(request.url);
+        if (url.pathname === '/models') {
+          return jsonResponse(copilotModels([{ id: 'gpt-raw-model', supported_endpoints: ['/responses'] }]));
+        }
+        throw new Error(`Unhandled fetch ${request.url}`);
+      },
+      async () => {
+        await assertRejects(
+          () => instance.instance.getProvidedModels(directFetcher),
+          Error,
+          "Copilot model projection invariant violated: merged model 'orphan-public-model' has no raw variant group (raw model ids: gpt-raw-model)",
+        );
+      },
+    );
+  } finally {
+    mergeClaudeVariantsControl.override = null;
+  }
+});
 
 test('Copilot provider persists merged known-models view via saveState CAS keyed on the read state', async () => {
   const harness = await setupCopilotTest();

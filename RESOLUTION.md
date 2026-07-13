@@ -1,7 +1,7 @@
 # Model Resolution
 
 This document describes how the gateway turns an inbound `model` string into a
-provider candidate the dispatch layer can call. Three concerns are kept apart:
+provider candidate the dispatch layer can call. Four concerns are kept apart:
 
 - **Catalog assembly** — every enabled upstream's catalog is collapsed into
   one gateway-wide list of public model ids keyed by public id, with a
@@ -17,6 +17,9 @@ provider candidate the dispatch layer can call. Three concerns are kept apart:
   its inbound-protocol preference table. A candidate that cannot serve the
   current operation is filtered out at serve time, before dispatch sees
   it.
+- **Pricing** — each provider model carries a reusable rate schedule. Request
+  telemetry projects runtime facts onto one exact entry and snapshots its rates;
+  only aggregation converts token counts and rates into realized cost.
 
 ## Catalog Assembly
 
@@ -55,7 +58,7 @@ always reads the per-upstream `ProviderModel` off the chosen candidate via
 Catalog assembly returns two artefacts together:
 
 - `models: InternalModel[]` — public-id-keyed metadata (id, kind, limits,
-  cost, plus the merged `endpoints`). `toPublicModel` projects each row
+  pricing, plus the merged `endpoints`). `toPublicModel` projects each row
   onto the wire DTO at `/v1/models` and `/models`.
 - `upstreamsByPublicId: Map<string, Provider[]>` — every
   upstream instance that emitted an entry under the given public id, in
@@ -238,16 +241,17 @@ alias-origin candidates through the same iteration but never observe
 non-empty rules (passthrough alias kinds — `embedding`, `image` — carry
 `{}` by schema; the apply-rules call is a no-op).
 
-The `payload.model` normalization is unconditional across every chat
-serve site (`chat-completions`, `messages`, `responses`): each attempt
-sees `payload.model === candidate.model.id`, whether the inbound id was
-an alias name, a prefix-addressable variant like `cop/gpt-5.4`, a dated
-suffix like `claude-opus-4-7-20250929`, or a bare public id. The wire
-body drops `payload.model` at the last step; the provider layer stamps
-the emitting upstream's own id from `providerModelOf(candidate)`.
-Gemini omits the normalization because its inbound model rides on the
-URL path, not the body — dispatch keys off `candidate.model.id`
-directly.
+Every chat attempt owns a `structuredClone` of the source payload and a
+fresh `Headers` object, so rewrites and provider-boundary mutations cannot
+leak into a fallback candidate or the caller-owned request. Chat Completions,
+Messages, and Responses stamp `candidate.model.id` only onto that private
+clone, whether the inbound id was an alias name, a prefix-addressable variant
+like `cop/gpt-5.4`, a dated suffix like `claude-opus-4-7-20250929`, or a bare
+public id. The wire body drops `payload.model` at the last step; the provider
+layer stamps the emitting upstream's own id from `providerModelOf(candidate)`.
+Gemini clones for the same attempt isolation but needs no body-model stamp:
+its inbound model rides on the URL path and dispatch keys off
+`candidate.model.id` directly.
 
 By construction alias names never re-enter the alias layer: the target
 id is a real model id, so the shadow pattern (an alias whose first
@@ -276,14 +280,15 @@ interface ModelCandidate {
 }
 ```
 
-- `provider` is the resolved upstream provider instance — every wire call and
-  pricing lookup reads off `provider.*` directly (upstream id, upstream name,
-  and provider kind).
+- `provider` is the resolved upstream provider instance — every wire call reads
+  its upstream id, upstream name, provider kind, and implementation from this
+  binding.
 - `model` is the merged public row for this id, projected to a single
   contributing upstream: `providerModels` carries exactly one entry keyed
   on `provider.upstream`. That entry is the `ProviderModel` the upstream
   emitted verbatim — its `providerData` carries the per-provider wire id,
-  its `enabledFlags` carries the operator's per-model flag set. Dispatch
+  its `enabledFlags` carries the operator's per-model flag set, and its
+  `pricing` carries the exact schedule for this candidate. Dispatch, telemetry,
   and interceptor gates read the entry through `providerModelOf(candidate)`.
 - `fetcher` is the per-request proxy-chain-bound `Fetcher` for the
   candidate's upstream, minted once at resolution time and carried with
@@ -345,6 +350,39 @@ preference list. The kind-filter at resolution time guarantees a
 chat-kind candidate is never offered to a passthrough endpoint and vice
 versa; the endpoint-key check at attempt time then narrows within the
 kind.
+
+## Pricing and Cost
+
+Model metadata uses `pricing?: ModelPricing`. A schedule contains symmetric
+entries: exactly one Base entry has no selector, while every non-Base entry
+declares the same rate dimensions at an explicit coordinate.
+
+```text
+ModelPricing
+  → runtime facts (service tier, input-token count)
+  → exact PricingEntry
+  → PriceVector rates snapshot
+  → token counts × rates
+  → realized USD cost
+```
+
+`serviceTier` is an open-string equality axis. `inputTokens` thresholds reprice
+the whole request rather than a marginal suffix. Threshold-only entries are
+global; thresholds combined with equality coordinates apply only within that
+scope. Runtime selects the highest matching global or scoped threshold and then
+performs one exact selector lookup. A missing full coordinate selects the whole
+Base vector, never a field-by-field merge or a lower threshold band.
+
+The naming boundary is enforced in code and on the wire:
+
+- `pricing` is reusable model metadata and operator-authored configuration;
+- `rates` is the resolved `PriceVector` stored with one usage bucket;
+- `unit_price` is the persisted scalar for one billing dimension;
+- `cost` is the aggregatable USD result exposed by usage views.
+
+Telemetry snapshots the selected coordinate and rates from the exact dispatched
+`ProviderModel`. Later catalog changes therefore cannot rewrite historical
+usage, and SQL bucket identity remains stable through canonical selector JSON.
 
 ## Candidate Ordering
 
