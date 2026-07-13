@@ -12,7 +12,7 @@ import type {
   ResponsesFunctionTool,
   ResponsesFunctionToolCallItem,
   ResponsesHostedTool,
-  ResponsesInputContent,
+  ResponsesInputImage,
   ResponsesInputImageGenerationCall,
   ResponsesInputItem,
   ResponsesOutputImageGenerationCall,
@@ -337,8 +337,8 @@ export const synthesizeImageGenerationCallId = (): string =>
   `ig_gw_${crypto.randomUUID().replace(/-/g, '')}`;
 
 // Collect all inline image sources from the request input in forward
-// declaration order: `input_image` blocks in messages, `input_image` blocks in
-// `function_call_output` (tool-result) content, and full-echo
+// declaration order: `input_image` blocks in messages and function/custom tool
+// outputs, and full-echo
 // `image_generation_call` items carrying `result` bytes, each in the order they
 // appear. Order is load-bearing: probing both the standalone /images/edits
 // endpoint and native Responses showed gpt-image numbers the attached images
@@ -346,27 +346,22 @@ export const synthesizeImageGenerationCallId = (): string =>
 // against the order received — and native flattens every image across messages
 // and tool results into this same forward order. Preserving declaration order
 // therefore makes "the Nth image" mean the same thing here as it does natively.
+const inputImagesOf = (item: ResponsesInputItem): ResponsesInputImage[] => {
+  const content = item.type === 'message'
+    ? item.content
+    : item.type === 'function_call_output' || item.type === 'custom_tool_call_output' ? item.output : undefined;
+  return Array.isArray(content)
+    ? content.filter((block): block is ResponsesInputImage => block.type === 'input_image')
+    : [];
+};
+
 export const collectImageSources = (input: readonly ResponsesInputItem[]): ImageSource[] => {
   const sources: ImageSource[] = [];
-  const collectFromContent = (content: string | ResponsesInputContent[]): void => {
-    if (!Array.isArray(content)) return;
-    for (const block of content) {
-      if (block.type === 'input_image' && typeof block.image_url === 'string') {
-        const decoded = decodeInlineImage(block.image_url);
-        if (decoded !== null) sources.push(decoded);
-      }
-    }
-  };
   for (const item of input) {
-    if (item.type === 'message') {
-      collectFromContent(item.content);
-      continue;
-    }
-    // A tool result may carry images as structured `input_image` content; read
-    // them so a tool-returned image is editable, matching native's flattening.
-    if (item.type === 'function_call_output') {
-      collectFromContent(item.output);
-      continue;
+    for (const image of inputImagesOf(item)) {
+      if (typeof image.image_url !== 'string') continue;
+      const decoded = decodeInlineImage(image.image_url);
+      if (decoded !== null) sources.push(decoded);
     }
     if (item.type === 'image_generation_call' && typeof item.result === 'string' && item.result.length > 0) {
       // A prior generated image carries no MIME prefix on its bare-base64
@@ -953,13 +948,8 @@ export const imageGenerationServerTool: ServerToolRegistration = (invocation, ga
     return { type: 'invalid-request', message: prepared.error.message, param: prepared.error.param, code: prepared.error.code };
   }
   const config = prepared.config;
-  const hasFileIdOnlyImage = invocation.payload.input.some(item => {
-    const content = item.type === 'message'
-      ? item.content
-      : item.type === 'function_call_output' || item.type === 'custom_tool_call_output' ? item.output : undefined;
-    return Array.isArray(content) && content.some(block =>
-      block.type === 'input_image' && typeof block.image_url !== 'string' && typeof block.file_id === 'string');
-  });
+  const hasFileIdOnlyImage = invocation.payload.input.some(item =>
+    inputImagesOf(item).some(image => typeof image.image_url !== 'string' && typeof image.file_id === 'string'));
   if (config.action !== 'generate' && hasFileIdOnlyImage) {
     return {
       type: 'invalid-request',
