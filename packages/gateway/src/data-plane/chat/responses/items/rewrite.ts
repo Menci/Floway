@@ -113,7 +113,7 @@ const collectEncryptedContents = async (items: Iterable<ResponsesInputItem>): Pr
   return new Map(await Promise.all([...encryptedContents].map(async value => [value, await hashResponsesItemEncryptedContent(value)] as const)));
 };
 
-const rewriteItems = async (
+const rewriteResponsesItemListForCandidate = async (
   items: readonly ResponsesInputItem[],
   store: StatefulResponsesStore,
   candidate: ModelCandidate,
@@ -141,16 +141,16 @@ export interface RewrittenResponsesPayload {
   readonly privatePayloads: ReadonlyMap<string, unknown>;
 }
 
-export const rewriteResponsesItemsForCandidate = async (
+export const rewriteResponsesPayloadForCandidate = async (
   payload: CanonicalResponsesPayload,
   store: StatefulResponsesStore,
   candidate: ModelCandidate,
 ): Promise<RewrittenResponsesPayload> => {
-  const rewritten = await rewriteItems(payload.input, store, candidate);
+  const rewritten = await rewriteResponsesItemListForCandidate(payload.input, store, candidate);
   return { payload: { ...payload, input: rewritten.items.filter(item => item !== null) }, privatePayloads: rewritten.privatePayloads };
 };
 
-export const rewriteStoredResponsesItemsForCandidate = async <TSourceItems>(
+export const rewriteStoredItemsInSourceForCandidate = async <TSourceItems>(
   sourceItems: TSourceItems,
   view: ResponsesItemsView<TSourceItems>,
   store: StatefulResponsesStore,
@@ -158,7 +158,7 @@ export const rewriteStoredResponsesItemsForCandidate = async <TSourceItems>(
 ): Promise<TSourceItems> => {
   const visited: ResponsesInputItem[] = [];
   await view.visitAsResponsesItems(sourceItems, item => { visited.push(item); });
-  const rewritten = await rewriteItems(visited, store, candidate);
+  const rewritten = await rewriteResponsesItemListForCandidate(visited, store, candidate);
   let index = 0;
   return (await view.mapAsResponsesItems(sourceItems, () => rewritten.items[index++])) as TSourceItems;
 };

@@ -3,7 +3,7 @@ import type { ResponsesAttemptResult, ResponsesInvocation } from './interceptors
 import { createStoredResponseId } from './items/format.ts';
 import { normalizeAssistantInputText } from './items/normalize-assistant-content.ts';
 import { drainAsync, syntheticEventsFromResult, wrapResponsesOutputForStorage } from './items/output.ts';
-import { rewriteResponsesItemsForCandidate, type RewrittenResponsesPayload } from './items/rewrite.ts';
+import { rewriteResponsesPayloadForCandidate, type RewrittenResponsesPayload } from './items/rewrite.ts';
 import type { StatefulResponsesStore } from './items/store.ts';
 import { tokenUsageFromResponsesResult } from './usage.ts';
 import { applyRulesToUpstreamResponses } from '../../model-aliases/apply-rules.ts';
@@ -184,7 +184,7 @@ const rewriteOrRenderFailure = async (
   candidate: ModelCandidate,
 ): Promise<RewriteOutcome> => {
   try {
-    return await rewriteResponsesItemsForCandidate(payload, store, candidate);
+    return await rewriteResponsesPayloadForCandidate(payload, store, candidate);
   } catch (error) {
     const failure = tryCatchChatServeFailure(error);
     if (failure === null) throw error;

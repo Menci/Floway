@@ -2,7 +2,7 @@ import { test, vi } from 'vitest';
 
 import { classifyResponsesItemAffinity } from './affinity.ts';
 import { createStoredResponsesItemId, hashResponsesItemContent, hashResponsesItemEncryptedContent, isStoredResponsesItemId } from './format.ts';
-import { rewriteResponsesItemsForCandidate } from './rewrite.ts';
+import { rewriteResponsesPayloadForCandidate } from './rewrite.ts';
 import { createNonResponsesSourceStore } from './store.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
@@ -80,7 +80,7 @@ const rewrite = async (
   await store.loadInputItems({ sourceItems: input, view: responsesItemsView });
   // Simulate the affinity classification that populates the store cache.
   await classifyResponsesItemAffinity({ sourceItems: input, view: responsesItemsView, store, candidates: [cand] });
-  const result = await rewriteResponsesItemsForCandidate(makePayload(input), store, cand);
+  const result = await rewriteResponsesPayloadForCandidate(makePayload(input), store, cand);
   return result.payload.input as ResponsesInputItem[];
 };
 
