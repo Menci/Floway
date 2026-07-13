@@ -4,6 +4,7 @@ import { computed, ref, watch } from 'vue';
 import { parseOptionalNumber } from '../../utils/parse-optional-number.ts';
 import {
   collectModelPricingIssues,
+  BILLING_DIMENSIONS,
   PRICING_AXES,
   canonicalPricingSelectorKey,
   type BillingDimension,
@@ -96,6 +97,10 @@ const coordinateKey = (draft: PricingEntryDraft): string | null => {
     return null;
   }
 };
+
+const basePricingEntry = computed(() => pricingEntryDrafts.value.find(draft => coordinateKey(draft) === '{}'));
+const visiblePricingDimensions = computed(() => BILLING_DIMENSIONS.filter(dimension =>
+  PRICING_BY_KIND[props.kind].includes(dimension) || basePricingEntry.value?.rates[dimension] !== undefined));
 
 const pricingEntryCoordinateLabel = (draft: PricingEntryDraft): string => {
   const labels = PRICING_AXES.flatMap(axis => {
@@ -253,7 +258,11 @@ const updatePricingRate = (index: number, dimension: BillingDimension, raw: stri
 };
 
 const addPricingEntry = () => {
-  const draft: PricingEntryDraft = { id: ++pricingEntryDraftIdSequence, selector: {}, rates: {} };
+  const draft: PricingEntryDraft = {
+    id: ++pricingEntryDraftIdSequence,
+    selector: {},
+    rates: basePricingEntry.value ? { ...basePricingEntry.value.rates } : {},
+  };
   selectedPricingEntryId.value = draft.id;
   writePricingEntries([...pricingEntryDrafts.value, draft]);
 };
@@ -376,7 +385,7 @@ const movePricingEntry = (index: number, offset: -1 | 1) => {
             </label>
           </div>
           <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <label v-for="dimension in PRICING_BY_KIND[kind]" :key="dimension" class="block space-y-1.5">
+            <label v-for="dimension in visiblePricingDimensions" :key="dimension" class="block space-y-1.5">
               <span class="block text-xs font-medium text-gray-500">{{ PRICING_LABELS[dimension] }}</span>
               <Input
                 type="number"

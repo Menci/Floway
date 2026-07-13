@@ -113,6 +113,22 @@ describe('PricingEditor', () => {
     expect((pricingInput(wrapper, 'unpriced').element as HTMLInputElement).value).toBe('2');
   });
 
+  it('shows Base dimensions outside the kind defaults and clones Base rates into new entries', async () => {
+    const baseRates = { input: 1, input_image: 2, output: 3, output_image: 4 };
+    const wrapper = mountEditor({ entries: [{ rates: baseRates }] }, { kind: 'chat' });
+
+    expect(wrapper.text()).toContain('Image Input ($/MTok)');
+    expect(wrapper.text()).toContain('Image Output ($/MTok)');
+    await wrapper.findAll('button').find(button => button.text().includes('Add Entry'))!.trigger('click');
+
+    expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toEqual({
+      entries: [
+        { rates: baseRates },
+        { rates: baseRates },
+      ],
+    });
+  });
+
   it('toggles the compact threshold operator before a value is entered', async () => {
     const wrapper = mountEditor({ entries: [{ rates: { input: 1 } }] });
     const operator = wrapper.get('button[aria-label="Input Tokens operator >; click to toggle"]');
