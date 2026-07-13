@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { translateToSourceEvents } from './events.ts';
 import { assertEquals, assertRejects } from '../test-assert.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { GeminiStreamEvent } from '@floway-dev/protocols/gemini';
+import { GEMINI_USAGE_BILLING, type GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 import type { MessagesResult, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 
 const messageStart = (usage: MessagesResult['usage'] = { input_tokens: 0, output_tokens: 0 }): MessagesStreamEvent => ({
@@ -316,7 +316,7 @@ test('translateToSourceEvents folds Anthropic cache fields into Gemini promptTok
     eventFrame({
       type: 'message_delta',
       delta: { stop_reason: 'end_turn' },
-      usage: { output_tokens: 7 },
+      usage: { output_tokens: 7, speed: 'fast' },
     }),
     eventFrame({ type: 'message_stop' }),
   ]);
@@ -335,6 +335,7 @@ test('translateToSourceEvents folds Anthropic cache fields into Gemini promptTok
         candidatesTokenCount: 7,
         totalTokenCount: 52,
         cachedContentTokenCount: 30,
+        [GEMINI_USAGE_BILLING]: { cacheWriteTokenCount: 5, serviceTier: 'fast' },
       },
     }),
   ]);

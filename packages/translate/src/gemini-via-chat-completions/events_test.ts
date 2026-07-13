@@ -4,7 +4,7 @@ import { translateToSourceEvents } from './events.ts';
 import { assertEquals, assertRejects } from '../test-assert.ts';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { GeminiStreamEvent } from '@floway-dev/protocols/gemini';
+import { GEMINI_USAGE_BILLING, type GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 
 const chunk = (
   delta: ChatCompletionsStreamEvent['choices'][0]['delta'],
@@ -267,15 +267,15 @@ test('translateToSourceEvents throws on upstream Chat error payloads', async () 
   );
 });
 
-test('translateToSourceEvents surfaces cached_tokens as cachedContentTokenCount', async () => {
+test('translateToSourceEvents preserves Chat cache and tier billing facts', async () => {
   const usage = {
     prompt_tokens: 100,
     completion_tokens: 8,
     total_tokens: 108,
-    prompt_tokens_details: { cached_tokens: 30 },
+    prompt_tokens_details: { cached_tokens: 30, cache_write_tokens: 25 },
   };
 
-  const frames = await collect([eventFrame(chunk({}, 'stop', usage)), doneFrame()]);
+  const frames = await collect([eventFrame({ ...chunk({}, 'stop', usage), service_tier: 'priority' }), doneFrame()]);
 
   assertEquals(frames, [
     geminiFrame({
@@ -291,6 +291,7 @@ test('translateToSourceEvents surfaces cached_tokens as cachedContentTokenCount'
         candidatesTokenCount: 8,
         totalTokenCount: 108,
         cachedContentTokenCount: 30,
+        [GEMINI_USAGE_BILLING]: { cacheWriteTokenCount: 25, serviceTier: 'priority' },
       },
     }),
   ]);
