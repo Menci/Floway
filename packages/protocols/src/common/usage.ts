@@ -1,7 +1,11 @@
+// Symbol-keyed billing facts survive in-process translation and reassembly but
+// are omitted by JSON serialization, so protocol clients see only native fields.
 export const USAGE_BILLING = Symbol('usage-billing');
 
 export interface UsageBillingMetadata {
+  cacheWriteTokenCount?: number;
   cacheWrite1hTokenCount?: number;
+  serviceTier?: string;
 }
 
 export const splitInclusiveInputTokens = (

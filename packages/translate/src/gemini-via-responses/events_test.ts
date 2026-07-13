@@ -2,8 +2,8 @@ import { test } from 'vitest';
 
 import { translateToSourceEvents } from './events.ts';
 import { assertEquals, assertRejects } from '../test-assert.ts';
-import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { GEMINI_USAGE_BILLING, type GeminiStreamEvent } from '@floway-dev/protocols/gemini';
+import { doneFrame, eventFrame, USAGE_BILLING, type ProtocolFrame } from '@floway-dev/protocols/common';
+import type { GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 const response = (status: ResponsesResult['status'], extra: Partial<ResponsesResult> = {}): ResponsesResult => ({
@@ -394,7 +394,7 @@ test('translateToSourceEvents preserves Responses cache and tier billing facts',
         candidatesTokenCount: 8,
         totalTokenCount: 108,
         cachedContentTokenCount: 30,
-        [GEMINI_USAGE_BILLING]: { cacheWriteTokenCount: 25, serviceTier: 'priority' },
+        [USAGE_BILLING]: { cacheWriteTokenCount: 25, serviceTier: 'priority' },
       },
     }),
   ]);

@@ -1,8 +1,8 @@
 import { appendGeminiThoughtSignature, flushGeminiThoughtSignature, type GeminiThoughtSignatureState, parseStrictJsonObject, signGeminiPart } from '../shared/gemini-via/gemini.ts';
 import { chatCompletionsErrorPayloadMessage } from '@floway-dev/protocols/chat-completions';
 import type { ChatCompletionsStreamEvent, ChatCompletionsDelta } from '@floway-dev/protocols/chat-completions';
-import { billableServiceTier, eventFrame, splitInclusiveInputTokens, splitInclusiveOutputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { GEMINI_USAGE_BILLING, type GeminiCandidate, type GeminiFinishReason, type GeminiResult, type GeminiPart, type GeminiStreamEvent, type GeminiUsageMetadata } from '@floway-dev/protocols/gemini';
+import { billableServiceTier, eventFrame, splitInclusiveInputTokens, splitInclusiveOutputTokens, USAGE_BILLING, type ProtocolFrame } from '@floway-dev/protocols/common';
+import type { GeminiCandidate, GeminiFinishReason, GeminiResult, GeminiPart, GeminiStreamEvent, GeminiUsageMetadata } from '@floway-dev/protocols/gemini';
 
 type ChatCompletionsStreamChoice = ChatCompletionsStreamEvent['choices'][0];
 
@@ -55,7 +55,7 @@ const mapUsage = (
     metadata.cachedContentTokenCount = cachedTokens;
   }
   if (cacheWriteTokens !== undefined || serviceTier !== null) {
-    metadata[GEMINI_USAGE_BILLING] = {
+    metadata[USAGE_BILLING] = {
       ...(cacheWriteTokens !== undefined ? { cacheWriteTokenCount: cacheWriteTokens } : {}),
       ...(serviceTier !== null ? { serviceTier } : {}),
     };
