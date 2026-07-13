@@ -185,6 +185,45 @@ test('canonical projected echo rewrites from metadata without loading its payloa
   assertEquals(rewritten, [canonical]);
 });
 
+test('canonical projected echo shares unchanged attempt-owned content blocks', async () => {
+  const id = storedMessageId('metadata-structural-sharing');
+  const inputImage = { type: 'input_image', image_url: 'data:image/png;base64,AA==' } as const;
+  const outputText = { type: 'output_text', text: 'hello' } as const;
+  const canonical = {
+    type: 'message',
+    id: 'raw_msg_a',
+    role: 'assistant',
+    status: 'completed',
+    content: [{ ...outputText, annotations: [], logprobs: [] }, inputImage],
+  } as unknown as ResponsesInputItem;
+  await insertRows([storedRow({
+    id,
+    itemType: 'message',
+    upstreamId: 'up_a',
+    upstreamItemId: 'raw_msg_a',
+    contentHash: await hashResponsesItemContent(canonical),
+    payload: canonical,
+  })]);
+  const input = [{
+    type: 'message',
+    id,
+    role: 'assistant',
+    content: [outputText, inputImage],
+  }] as unknown as ResponsesInputItem[];
+
+  const [rewritten] = await rewrite(input, candidate('up_a'));
+  assert(rewritten.type === 'message' && Array.isArray(rewritten.content));
+
+  assert(rewritten.content[0] !== outputText, 'the block receiving defaults must be copied');
+  assert(rewritten.content[1] === inputImage, 'unchanged attempt-owned blocks should be shared');
+  assertEquals(input[0], {
+    type: 'message',
+    id,
+    role: 'assistant',
+    content: [outputText, inputImage],
+  });
+});
+
 // Case 6: cross-upstream owned → mint tmp id
 test('non-matching portable owned item gets a temporary id without leaking raw upstream ids', async () => {
   const id = storedMessageId('portable');
