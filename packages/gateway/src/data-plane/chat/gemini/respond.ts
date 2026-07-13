@@ -2,15 +2,15 @@ import type { Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
 
 import { geminiStatusForHttpStatus } from './errors.ts';
+import { tokenUsageFromGeminiUsageMetadata } from './usage.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
-import { tokenUsage } from '../../shared/telemetry/usage.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse } from '../shared/respond.ts';
 import { type StreamCompletion, writeSSEFrames } from '../shared/stream/sse.ts';
 import { type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import { geminiProtocolFrameToSSEFrame, GEMINI_MISSING_TERMINAL_MESSAGE, isGeminiErrorEvent, isGeminiTerminalEvent, collectGeminiProtocolEventsToResult } from '@floway-dev/protocols/gemini';
-import type { GeminiErrorResponse, GeminiResult, GeminiStreamEvent, GeminiUsageMetadata } from '@floway-dev/protocols/gemini';
+import type { GeminiErrorResponse, GeminiResult, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 import { type ExecuteResult, type PlainResult, type ApiErrorResult, type InternalDebugError, toInternalDebugError, decodeApiErrorBody } from '@floway-dev/provider';
 
 // Renders an upstream Gemini result into the client HTTP/SSE response, in the
@@ -83,20 +83,6 @@ export const respondGemini = async (
   });
 
   return { success: true, response };
-};
-
-// --- token usage ---
-
-// Gemini reports promptTokenCount inclusive of cachedContentTokenCount
-// (verified against the Google GenAI SDK docs); subtract it for disjoint input.
-// Reasoning (thoughts) tokens are billed as output.
-const tokenUsageFromGeminiUsageMetadata = (m: GeminiUsageMetadata) => {
-  const cacheRead = m.cachedContentTokenCount ?? 0;
-  return tokenUsage({
-    input: (m.promptTokenCount ?? 0) - cacheRead,
-    input_cache_read: cacheRead,
-    output: (m.candidatesTokenCount ?? 0) + (m.thoughtsTokenCount ?? 0),
-  });
 };
 
 const tokenUsageFromGeminiResponse = (r: GeminiResult) => (r.usageMetadata ? tokenUsageFromGeminiUsageMetadata(r.usageMetadata) : null);

@@ -7,7 +7,7 @@ import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import type { ApiKey, StoredResponsesItem, User } from '../../../repo/types.ts';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { CanonicalResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { type ModelCandidate, directFetcher, type ProviderResponsesResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
 
@@ -175,6 +175,57 @@ test('POST /v1/responses streams a successful SSE body', async () => {
   assert(completedMatch !== null, 'expected a Floway-minted resp_ id in the SSE body');
   assert(isStoredResponseId(completedMatch[1]));
   assertEquals(callResponses.mock.calls.length, 1);
+});
+
+test('POST /v1/responses canonicalizes implicit messages before provider dispatch', async () => {
+  installRepo();
+  let observedBody: Omit<CanonicalResponsesPayload, 'model'> | undefined;
+  const callResponses = vi.fn(async (_model, body): Promise<ProviderResponsesResult> => {
+    observedBody = body as Omit<CanonicalResponsesPayload, 'model'>;
+    return {
+      action: 'generate',
+      ok: true,
+      events: makeProviderEvents([completedEvent()]),
+      modelKey: 'test-model-key',
+      headers: new Headers(),
+    };
+  });
+  queueResolution([makeCandidate({ callResponses })]);
+
+  const response = await makeApp().request('/v1/responses', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({
+      model: 'test-model',
+      input: [
+        { role: 'system', content: 'rules' },
+        { role: 'user', content: 'hello' },
+      ],
+      store: false,
+      stream: true,
+    }),
+  });
+
+  assertEquals(response.status, 200);
+  await response.text();
+  assertEquals(observedBody?.input, [
+    { type: 'message', role: 'system', content: 'rules' },
+    { type: 'message', role: 'user', content: 'hello' },
+  ]);
+});
+
+test('POST /v1/responses rejects a malformed untyped input item', async () => {
+  installRepo();
+  const response = await makeApp().request('/v1/responses', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({ model: 'test-model', input: [null] }),
+  });
+
+  assertEquals(response.status, 400);
+  const body = await response.json() as { error: { message: string; param: string } };
+  assertEquals(body.error.message, 'Untyped Responses input items require a valid role and content.');
+  assertEquals(body.error.param, 'input[0]');
 });
 
 test('POST /v1/responses returns a single JSON body when stream is omitted', async () => {
@@ -346,11 +397,10 @@ test('POST /v1/responses renders a routing-unavailable 400 when a forcing item n
   assertEquals(body.error.code, 'responses_item_routing_unavailable');
 });
 
-// Alias flow: the resolver returns a candidate whose upstream catalog id
-// is the target model id, plus the alias's rule overlay. Serve rewrites
-// `payload.model` to `candidate.model.id` before dispatching, and the
-// attempt's leaf wire call reads `candidate.rules` to overlay the rules
-// onto the target IR.
+// Alias flow: the resolver returns a candidate whose upstream catalog id is
+// the target model id, plus the alias's rule overlay. The attempt stamps its
+// private clone with `candidate.model.id`, and the leaf wire call reads
+// `candidate.rules` to overlay the rules onto the target IR.
 const queueCodexAutoReviewCandidate = (
   callResponses: (model: unknown, body: unknown, action: ResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderResponsesResult>,
 ): void => {
@@ -362,9 +412,9 @@ const queueCodexAutoReviewCandidate = (
 test('POST /v1/responses routes a codex-auto-review request through the seeded alias: rewrites the model to gpt-5.4 and stamps reasoning.effort=low', async () => {
   installRepo();
   lastSeenModel.value = null;
-  const observedBodies: ResponsesPayload[] = [];
+  const observedBodies: Omit<CanonicalResponsesPayload, 'model'>[] = [];
   queueCodexAutoReviewCandidate(async (_model, body): Promise<ProviderResponsesResult> => {
-    observedBodies.push(body as ResponsesPayload);
+    observedBodies.push(body as Omit<CanonicalResponsesPayload, 'model'>);
     return {
       action: 'generate', ok: true,
       events: makeProviderEvents([completedEvent()]),
@@ -394,7 +444,7 @@ test('POST /v1/responses routes a codex-auto-review request through the seeded a
 test('POST /v1/responses/compact routes a codex-auto-review request through the seeded alias: rewrites the model to gpt-5.4 and stamps reasoning.effort=low (the alias rule overlays the compact body too)', async () => {
   installRepo();
   lastSeenModel.value = null;
-  const observedBodies: ResponsesPayload[] = [];
+  const observedBodies: Omit<CanonicalResponsesPayload, 'model'>[] = [];
   const compactionItem = { type: 'compaction' as const, id: 'cmp_1', encrypted_content: 'ENC' };
   const compactionResult: ResponsesResult = {
     ...makeResponsesResult(),
@@ -403,7 +453,7 @@ test('POST /v1/responses/compact routes a codex-auto-review request through the 
   };
   queueCodexAutoReviewCandidate(async (_model, body, action): Promise<ProviderResponsesResult> => {
     if (action !== 'compact') throw new Error(`expected compact, got ${action}`);
-    observedBodies.push(body as ResponsesPayload);
+    observedBodies.push(body as Omit<CanonicalResponsesPayload, 'model'>);
     return { action: 'compact', ok: true, result: compactionResult, modelKey: 'test-model-key' };
   });
 

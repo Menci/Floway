@@ -22,6 +22,20 @@ const minimalPayload = {
   parallel_tool_calls: true,
 };
 
+test('translateResponsesToMessages accepts an implicit message discriminator', async () => {
+  const result = await translateResponsesToMessages({
+    ...minimalPayload,
+    input: [{ role: 'user', content: 'hello' }],
+  });
+
+  assertEquals(result.target.messages, [
+    {
+      role: 'user',
+      content: [{ type: 'text', text: 'hello', cache_control: { type: 'ephemeral' } }],
+    },
+  ]);
+});
+
 test.each([
   { name: 'additional_tools', input: [{ type: 'additional_tools', role: 'developer', tools: [] as ResponsesTool[] }] },
   { name: 'program', input: [{ type: 'program', id: 'prog_1', call_id: 'call_prog_1', code: 'return 1', fingerprint: 'opaque' }] },
@@ -30,6 +44,7 @@ test.each([
   { name: 'multi_agent_call', input: [{ type: 'multi_agent_call', action: 'spawn_agent', arguments: '{}', call_id: 'call_1' }] },
   { name: 'multi_agent_call_output', input: [{ type: 'multi_agent_call_output', action: 'spawn_agent', call_id: 'call_1', output: [] as ResponsesInputMultiAgentCallOutputItem['output'] }] },
   { name: 'context_compaction', input: [{ type: 'context_compaction', encrypted_content: 'opaque' }] },
+  { name: 'item_reference', input: [{ type: 'item_reference', id: 'msg_1' }] },
 ] as const)('translateResponsesToMessages rejects Responses-only $name input', async ({ name, input }) => {
   await assertRejects(
     () => translateResponsesToMessages({ ...minimalPayload, input: [...input] }),
@@ -98,6 +113,83 @@ test('translateResponsesToMessages rejects multimodal custom tool output', async
     }),
     Error,
     'multimodal custom_tool_call_output',
+  );
+});
+
+test('translateResponsesToMessages rejects file tool output', async () => {
+  await assertRejects(
+    () => translateResponsesToMessages({
+      ...minimalPayload,
+      input: [{ type: 'function_call_output', call_id: 'call_1', output: [{ type: 'input_file', file_id: 'file_1' }] }],
+    }),
+    Error,
+    'input_file tool output',
+  );
+});
+
+test('translateResponsesToMessages rejects file message content', async () => {
+  await assertRejects(
+    () => translateResponsesToMessages({
+      ...minimalPayload,
+      input: [{ type: 'message', role: 'user', content: [{ type: 'input_file', file_id: 'file_1' }] }],
+    }),
+    Error,
+    'input_file message content',
+  );
+});
+
+test('translateResponsesToMessages rejects file assistant content', async () => {
+  await assertRejects(
+    () => translateResponsesToMessages({
+      ...minimalPayload,
+      input: [{ type: 'message', role: 'assistant', content: [{ type: 'input_file', file_id: 'file_1' }] }],
+    }),
+    Error,
+    'input_file assistant content',
+  );
+});
+
+test('translateResponsesToMessages preserves assistant input_text', async () => {
+  const result = await translateResponsesToMessages({
+    ...minimalPayload,
+    input: [{ type: 'message', role: 'assistant', content: [{ type: 'input_text', text: 'prior reply' }] }],
+  });
+
+  assertEquals(result.target.messages, [
+    { role: 'assistant', content: [{ type: 'text', text: 'prior reply', cache_control: { type: 'ephemeral' } }] },
+  ]);
+});
+
+test('translateResponsesToMessages rejects assistant images', async () => {
+  await assertRejects(
+    () => translateResponsesToMessages({
+      ...minimalPayload,
+      input: [{ type: 'message', role: 'assistant', content: [{ type: 'input_image', image_url: 'https://example.com/a.png', detail: 'auto' }] }],
+    }),
+    Error,
+    'input_image assistant content',
+  );
+});
+
+test('translateResponsesToMessages rejects file_id-only images', async () => {
+  await assertRejects(
+    () => translateResponsesToMessages({
+      ...minimalPayload,
+      input: [{ type: 'message', role: 'user', content: [{ type: 'input_image', file_id: 'file_1', detail: 'auto' }] }],
+    }),
+    Error,
+    'file_id-only image content',
+  );
+});
+
+test('translateResponsesToMessages rejects file_id-only image tool output', async () => {
+  await assertRejects(
+    () => translateResponsesToMessages({
+      ...minimalPayload,
+      input: [{ type: 'function_call_output', call_id: 'call_1', output: [{ type: 'input_image', file_id: 'file_1', detail: 'auto' }] }],
+    }),
+    Error,
+    'file_id-only image tool output',
   );
 });
 

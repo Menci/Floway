@@ -1,6 +1,11 @@
 import { unwrapCustomToolInput } from '../shared/responses-via/custom-tool-wrap.ts';
 import * as responses from '../shared/responses-via/responses-event-builder.ts';
-import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { eventFrame, USAGE_BILLING, type ProtocolFrame } from '@floway-dev/protocols/common';
+import {
+  mergeMessagesUsageSnapshot,
+  messagesUsageSnapshot,
+  splitMessagesCacheCreationTokens,
+} from '@floway-dev/protocols/messages';
 import type {
   MessagesContentBlockDeltaEvent,
   MessagesContentBlockStartEvent,
@@ -9,6 +14,7 @@ import type {
   MessagesMessageStartEvent,
   MessagesStreamEvent,
   MessagesTextCitation,
+  MessagesUsageSnapshot,
 } from '@floway-dev/protocols/messages';
 import type { ResponsesOutputItem, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
@@ -75,22 +81,22 @@ interface MessagesToResponsesStreamState {
   blockMap: Map<number, OutputBlockInfo>;
   accumulatedText: string;
   completedItems: ResponsesOutputItem[];
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadInputTokens?: number;
-  cacheCreationInputTokens?: number;
+  usage: MessagesUsageSnapshot;
   stopReason?: MessagesMessageDeltaEvent['delta']['stop_reason'];
-  // Captured from message_delta usage for service_tier pass-through.
-  upstreamSpeed?: string;
-  upstreamServiceTier?: string;
   customToolNames: ReadonlySet<string>;
 }
 
 const buildResult = (state: MessagesToResponsesStreamState, status: ResponsesResult['status']): ResponsesResult => {
-  const inputTokens = state.inputTokens + (state.cacheReadInputTokens ?? 0) + (state.cacheCreationInputTokens ?? 0);
+  const { cacheWrite, cacheWrite1h } = splitMessagesCacheCreationTokens(state.usage);
+  const cacheRead = state.usage.cache_read_input_tokens ?? 0;
+  const cacheCreation = cacheWrite + cacheWrite1h;
+  const hasCacheCreation = state.usage.cache_creation_input_tokens !== undefined
+    || state.usage.cache_creation?.ephemeral_5m_input_tokens !== undefined
+    || state.usage.cache_creation?.ephemeral_1h_input_tokens !== undefined;
+  const inputTokens = (state.usage.input_tokens ?? 0) + cacheRead + cacheCreation;
   // Anthropic's `speed: 'fast'` surfaces as OpenAI `service_tier: 'fast'`;
   // all other Anthropic service_tier values pass through directly.
-  const serviceTier = state.upstreamSpeed === 'fast' ? 'fast' : state.upstreamServiceTier;
+  const serviceTier = state.usage.speed === 'fast' ? 'fast' : state.usage.service_tier;
 
   return responses.result({
     id: state.responseId,
@@ -103,15 +109,26 @@ const buildResult = (state: MessagesToResponsesStreamState, status: ResponsesRes
     // `handleMessageStop` in this file). Other Anthropic stop_reasons
     // don't map to incomplete.
     ...(status === 'incomplete' ? { incompleteDetails: { reason: 'max_output_tokens' as const } } : {}),
-    usage: responses.usage(inputTokens, state.outputTokens, state.cacheReadInputTokens),
+    usage: {
+      input_tokens: inputTokens,
+      output_tokens: state.usage.output_tokens,
+      total_tokens: inputTokens + state.usage.output_tokens,
+      ...(state.usage.cache_read_input_tokens !== undefined || hasCacheCreation
+        ? {
+            input_tokens_details: {
+              cached_tokens: state.usage.cache_read_input_tokens ?? 0,
+              ...(hasCacheCreation ? { cache_write_tokens: cacheCreation } : {}),
+            },
+          }
+        : {}),
+      ...(cacheWrite1h > 0 ? { [USAGE_BILLING]: { cacheWrite1hTokenCount: cacheWrite1h } } : {}),
+    },
     ...(serviceTier !== undefined ? { serviceTier } : {}),
   });
 };
 
 const handleMessageStart = (event: MessagesMessageStartEvent, state: MessagesToResponsesStreamState): ResponsesStreamEvent[] => {
-  state.inputTokens = event.message.usage.input_tokens;
-  state.cacheReadInputTokens = event.message.usage.cache_read_input_tokens;
-  state.cacheCreationInputTokens = event.message.usage.cache_creation_input_tokens;
+  state.usage = messagesUsageSnapshot(event.message.usage);
 
   const response = buildResult(state, 'in_progress');
 
@@ -338,8 +355,7 @@ export const createMessagesToResponsesStreamState = (responseId: string, model: 
   blockMap: new Map(),
   accumulatedText: '',
   completedItems: [],
-  inputTokens: 0,
-  outputTokens: 0,
+  usage: messagesUsageSnapshot(),
   customToolNames,
 });
 
@@ -358,9 +374,7 @@ export const translateMessagesEventToResponsesEvents = (event: MessagesStreamEve
       state.stopReason = event.delta.stop_reason;
     }
     if (event.usage) {
-      state.outputTokens = event.usage.output_tokens;
-      if (event.usage.speed !== undefined) state.upstreamSpeed = event.usage.speed;
-      if (event.usage.service_tier !== undefined) state.upstreamServiceTier = event.usage.service_tier;
+      state.usage = mergeMessagesUsageSnapshot(state.usage, event.usage);
     }
     return [];
   }

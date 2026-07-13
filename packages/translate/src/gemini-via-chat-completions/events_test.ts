@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { translateToSourceEvents } from './events.ts';
 import { assertEquals, assertRejects } from '../test-assert.ts';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
-import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { doneFrame, eventFrame, USAGE_BILLING, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 
 const chunk = (
@@ -209,7 +209,7 @@ test('translateToSourceEvents maps finish reasons and usage metadata', async () 
       ],
       usageMetadata: {
         promptTokenCount: 10,
-        candidatesTokenCount: 5,
+        candidatesTokenCount: 3,
         totalTokenCount: 15,
         thoughtsTokenCount: 2,
       },
@@ -267,15 +267,16 @@ test('translateToSourceEvents throws on upstream Chat error payloads', async () 
   );
 });
 
-test('translateToSourceEvents surfaces cached_tokens as cachedContentTokenCount', async () => {
+test('translateToSourceEvents preserves Chat cache and tier billing facts', async () => {
   const usage = {
     prompt_tokens: 100,
     completion_tokens: 8,
     total_tokens: 108,
-    prompt_tokens_details: { cached_tokens: 30 },
+    prompt_tokens_details: { cached_tokens: 30, cache_write_tokens: 25 },
+    [USAGE_BILLING]: { cacheWrite1hTokenCount: 5 },
   };
 
-  const frames = await collect([eventFrame(chunk({}, 'stop', usage)), doneFrame()]);
+  const frames = await collect([eventFrame({ ...chunk({}, 'stop', usage), service_tier: 'priority' }), doneFrame()]);
 
   assertEquals(frames, [
     geminiFrame({
@@ -291,6 +292,7 @@ test('translateToSourceEvents surfaces cached_tokens as cachedContentTokenCount'
         candidatesTokenCount: 8,
         totalTokenCount: 108,
         cachedContentTokenCount: 30,
+        [USAGE_BILLING]: { cacheWriteTokenCount: 20, cacheWrite1hTokenCount: 5, serviceTier: 'priority' },
       },
     }),
   ]);

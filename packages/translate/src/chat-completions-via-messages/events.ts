@@ -1,6 +1,6 @@
 import type { ChatCompletionsStreamEvent, ChatCompletionsResult, ChatCompletionsDelta } from '@floway-dev/protocols/chat-completions';
-import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { MessagesResult, MessagesStreamEvent } from '@floway-dev/protocols/messages';
+import { doneFrame, eventFrame, USAGE_BILLING, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { mergeMessagesUsageSnapshot, messagesUsageSnapshot, splitMessagesCacheCreationTokens, type MessagesResult, type MessagesStreamEvent, type MessagesUsageSnapshot } from '@floway-dev/protocols/messages';
 
 const mapMessagesStopReasonToChatCompletionsFinishReason = (stopReason: MessagesResult['stop_reason']): ChatCompletionsResult['choices'][0]['finish_reason'] => {
   switch (stopReason) {
@@ -37,12 +37,8 @@ interface MessagesToChatCompletionsStreamState {
   model: string;
   created: number;
   nextToolCallIndex: number;
-  promptTokens: number;
-  cachedPromptTokens: number;
+  usage: MessagesUsageSnapshot;
   reasoningBlockIndex?: number;
-  // Captured from message_delta usage for service_tier pass-through.
-  upstreamSpeed?: string;
-  upstreamServiceTier?: string;
 }
 
 export const createMessagesToChatCompletionsStreamState = (): MessagesToChatCompletionsStreamState => ({
@@ -50,8 +46,7 @@ export const createMessagesToChatCompletionsStreamState = (): MessagesToChatComp
   model: '',
   created: Math.floor(Date.now() / 1000),
   nextToolCallIndex: 0,
-  promptTokens: 0,
-  cachedPromptTokens: 0,
+  usage: messagesUsageSnapshot(),
 });
 
 const claimReasoningBlock = (state: MessagesToChatCompletionsStreamState, index: number): boolean => {
@@ -73,10 +68,14 @@ const makeChunk = (state: MessagesToChatCompletionsStreamState, delta: ChatCompl
   ],
 });
 
-const makeUsageChunk = (state: MessagesToChatCompletionsStreamState, outputTokens: number): ChatCompletionsStreamEvent => {
+const makeUsageChunk = (state: MessagesToChatCompletionsStreamState): ChatCompletionsStreamEvent => {
+  const { cacheWrite, cacheWrite1h } = splitMessagesCacheCreationTokens(state.usage);
+  const cachedPromptTokens = state.usage.cache_read_input_tokens ?? 0;
+  const cacheCreationPromptTokens = cacheWrite + cacheWrite1h;
+  const promptTokens = (state.usage.input_tokens ?? 0) + cachedPromptTokens + cacheCreationPromptTokens;
   // Anthropic's `speed: 'fast'` surfaces as OpenAI `service_tier: 'fast'`;
   // all other Anthropic service_tier values pass through directly.
-  const serviceTier = state.upstreamSpeed === 'fast' ? 'fast' : state.upstreamServiceTier;
+  const serviceTier = state.usage.speed === 'fast' ? 'fast' : state.usage.service_tier;
 
   return {
     id: state.messageId,
@@ -85,16 +84,18 @@ const makeUsageChunk = (state: MessagesToChatCompletionsStreamState, outputToken
     model: state.model,
     choices: [],
     usage: {
-      prompt_tokens: state.promptTokens,
-      completion_tokens: outputTokens,
-      total_tokens: state.promptTokens + outputTokens,
-      ...(state.cachedPromptTokens > 0
+      prompt_tokens: promptTokens,
+      completion_tokens: state.usage.output_tokens,
+      total_tokens: promptTokens + state.usage.output_tokens,
+      ...(cachedPromptTokens > 0 || cacheCreationPromptTokens > 0
         ? {
             prompt_tokens_details: {
-              cached_tokens: state.cachedPromptTokens,
+              ...(cachedPromptTokens > 0 ? { cached_tokens: cachedPromptTokens } : {}),
+              ...(cacheCreationPromptTokens > 0 ? { cache_creation_input_tokens: cacheCreationPromptTokens } : {}),
             },
           }
         : {}),
+      ...(cacheWrite1h > 0 ? { [USAGE_BILLING]: { cacheWrite1hTokenCount: cacheWrite1h } } : {}),
     },
     ...(serviceTier !== undefined ? { service_tier: serviceTier } : {}),
   };
@@ -109,8 +110,7 @@ export const translateMessagesEventToChatCompletionsChunks = (event: MessagesStr
   case 'message_start': {
     state.messageId = event.message.id;
     state.model = event.message.model;
-    state.cachedPromptTokens = event.message.usage.cache_read_input_tokens ?? 0;
-    state.promptTokens = event.message.usage.input_tokens + state.cachedPromptTokens + (event.message.usage.cache_creation_input_tokens ?? 0);
+    state.usage = messagesUsageSnapshot(event.message.usage);
     return [makeChunk(state, { role: 'assistant' })];
   }
 
@@ -192,9 +192,8 @@ export const translateMessagesEventToChatCompletionsChunks = (event: MessagesStr
     const chunk = makeChunk(state, {}, mapMessagesStopReasonToChatCompletionsFinishReason(event.delta.stop_reason ?? null));
 
     if (event.usage) {
-      if (event.usage.speed !== undefined) state.upstreamSpeed = event.usage.speed;
-      if (event.usage.service_tier !== undefined) state.upstreamServiceTier = event.usage.service_tier;
-      return [chunk, makeUsageChunk(state, event.usage.output_tokens)];
+      state.usage = mergeMessagesUsageSnapshot(state.usage, event.usage);
+      return [chunk, makeUsageChunk(state)];
     }
 
     return [chunk];

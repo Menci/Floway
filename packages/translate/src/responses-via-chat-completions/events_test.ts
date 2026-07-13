@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import { createChatCompletionsToResponsesStreamState, flushChatCompletionsToResponsesEvents, translateChatCompletionsChunkToResponsesEvents, translateToSourceEvents } from './events.ts';
 import { assertEquals, assertRejects } from '../test-assert.ts';
@@ -125,7 +125,7 @@ test('translateChatCompletionsChunkToResponsesEvents maps usage on incomplete le
       prompt_tokens: 4,
       completion_tokens: 6,
       total_tokens: 10,
-      prompt_tokens_details: { cached_tokens: 1 },
+      prompt_tokens_details: { cached_tokens: 1, cache_creation_input_tokens: 2 },
       completion_tokens_details: {
         accepted_prediction_tokens: 0,
         rejected_prediction_tokens: 0,
@@ -144,8 +144,47 @@ test('translateChatCompletionsChunkToResponsesEvents maps usage on incomplete le
     input_tokens: 4,
     output_tokens: 6,
     total_tokens: 10,
-    input_tokens_details: { cached_tokens: 1 },
+    input_tokens_details: { cached_tokens: 1, cache_write_tokens: 2 },
   });
+});
+
+test.each([
+  [{ cache_write_tokens: 2 }, 2],
+  [{ cache_creation_input_tokens: 3, cache_write_tokens: 2 }, 3],
+] as const)('translateChatCompletionsChunkToResponsesEvents maps Chat cache-write detail %o', (promptTokensDetails, expectedWrite) => {
+  const events = translate([
+    chunk({ role: 'assistant' }),
+    chunk({}, 'stop', {
+      prompt_tokens: 4,
+      completion_tokens: 1,
+      total_tokens: 5,
+      prompt_tokens_details: promptTokensDetails,
+    }),
+  ]);
+  const completed = events.find(event => event.type === 'response.completed') as ResponsesCompletedEvent | undefined;
+  assertEquals(completed?.response.usage?.input_tokens_details, { cached_tokens: 0, cache_write_tokens: expectedWrite });
+});
+
+test('translateChatCompletionsChunkToResponsesEvents rejects malformed inclusive cache counts', () => {
+  expect(() => translate([
+    chunk({ role: 'assistant' }),
+    chunk({}, 'stop', {
+      prompt_tokens: 40,
+      completion_tokens: 1,
+      total_tokens: 41,
+      prompt_tokens_details: { cached_tokens: 30, cache_write_tokens: 25 },
+    }),
+  ])).toThrowError(RangeError);
+});
+
+test('translateChatCompletionsChunkToResponsesEvents preserves response service_tier', () => {
+  const terminal = {
+    ...chunk({}, 'stop', { prompt_tokens: 4, completion_tokens: 1, total_tokens: 5 }),
+    service_tier: 'priority',
+  } satisfies ChatCompletionsStreamEvent;
+  const events = translate([chunk({ role: 'assistant' }), terminal]);
+  const completed = events.find(event => event.type === 'response.completed') as ResponsesCompletedEvent | undefined;
+  assertEquals(completed?.response.service_tier, 'priority');
 });
 
 test('translateToSourceEvents rejects Chat streams without DONE', async () => {

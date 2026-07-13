@@ -1,12 +1,12 @@
 // Synthesizes the alias entries that join the real-model catalog inside
 // the listing pipeline. Every visible alias becomes one `InternalModel`
 // row on the alias-row branch of the discriminated union: metadata
-// (`limits`, `chat`, `endpoints`, `cost`) is computed against the
+// (`limits`, `chat`, `endpoints`, `pricing`) is computed against the
 // currently-available targets, and the `aliasedFrom` sidecar carries the
 // operator's alias record so wire-projection layers can render the
 // alias-of relationship without a second round trip.
 //
-// `limits`, `chat`, `endpoints`, and `cost` are computed against the
+// `limits`, `chat`, `endpoints`, and `pricing` are computed against the
 // GATEWAY-WIDE addressable surface — every caller sees the same numbers
 // for the same alias, independent of their data-plane cap. The operator's
 // stored `announced_metadata` override still wins at sub-block
@@ -44,7 +44,7 @@ import type { InternalAliasedFrom, InternalModel } from '@floway-dev/provider';
 export interface ListedAliasInputs {
   readonly aliases: readonly ModelAliasRecord[];
   // Gateway-wide addressable surface — used for the metadata + endpoints
-  // + cost computations that must be stable across callers. A target
+  // + pricing computations that must be stable across callers. A target
   // resolvable only via an upstream the current caller cannot reach
   // STILL contributes to the safe-lower-bound intersection the catalog
   // publishes, because the same alias must look the same to every
@@ -279,7 +279,7 @@ const synthesizeOne = (
     ? composeAliasDisplayName(alias.targets[0].target_model_id, alias.targets[0].rules)
     : alias.name);
 
-  // Metadata + endpoints + cost computed against gateway-wide — every
+  // Metadata + endpoints + pricing computed against gateway-wide — every
   // caller sees the same numbers for the same alias, so a non-admin
   // restricted to a subset of upstreams never sees a more permissive
   // limit than the admin who knows the alias's true safe-lower-bound.
@@ -296,10 +296,7 @@ const synthesizeOne = (
   // model-missing / model-unsupported error.
   const endpoints = unionEndpoints(gatewayAvailable.map(({ real }) => real.endpoints));
 
-  // Gateway-wide single-target chat pricing rides along when available.
-  // Stable across callers — same alias publishes the same cost
-  // everywhere.
-  const singleTargetCost = gatewayAvailable.length === 1 ? gatewayAvailable[0].real.cost : undefined;
+  const singleTargetPricing = gatewayAvailable.length === 1 ? gatewayAvailable[0].real.pricing : undefined;
 
   const entry: InternalModel = {
     id: alias.name,
@@ -309,7 +306,7 @@ const synthesizeOne = (
     endpoints,
     aliasedFrom: buildAliasedFrom(alias, callerAddressableModelIds, narrowTargets),
     ...(chat !== undefined ? { chat } : {}),
-    ...(singleTargetCost !== undefined ? { cost: singleTargetCost } : {}),
+    ...(singleTargetPricing !== undefined ? { pricing: singleTargetPricing } : {}),
   };
   return entry;
 };

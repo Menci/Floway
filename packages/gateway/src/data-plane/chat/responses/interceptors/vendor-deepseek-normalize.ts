@@ -19,8 +19,8 @@
 // - https://api-docs.deepseek.com/zh-cn/guides/thinking_mode
 
 import type { ResponsesInterceptor } from './types.ts';
+import type { CanonicalResponsesPayload } from '@floway-dev/protocols/responses';
 import { providerModelOf } from '@floway-dev/provider';
-import type { CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
 
 interface DeepseekDisableField {
   thinking?: { type: 'disabled' };

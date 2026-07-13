@@ -3,6 +3,7 @@ import { test } from 'vitest';
 import { createMessagesToChatCompletionsStreamState, translateMessagesEventToChatCompletionsChunks } from './events.ts';
 import { assertEquals } from '../test-assert.ts';
 import type { ChatCompletionsStreamEvent, ChatCompletionsDelta } from '@floway-dev/protocols/chat-completions';
+import { USAGE_BILLING } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 
 // ── Helpers ──
@@ -49,8 +50,7 @@ test('initial state has correct defaults', () => {
   assertEquals(state.messageId, '');
   assertEquals(state.model, '');
   assertEquals(state.nextToolCallIndex, 0);
-  assertEquals(state.promptTokens, 0);
-  assertEquals(state.cachedPromptTokens, 0);
+  assertEquals(state.usage, { output_tokens: 0 });
   assertEquals(typeof state.created, 'number');
 });
 
@@ -73,8 +73,8 @@ test('message_start sets state including usage', () => {
   translateMessagesEventToChatCompletionsChunks(MSG_START, state);
   assertEquals(state.messageId, 'msg_test');
   assertEquals(state.model, 'claude-sonnet-4-20250514');
-  assertEquals(state.promptTokens, 10);
-  assertEquals(state.cachedPromptTokens, 0);
+  assertEquals(state.usage.input_tokens, 10);
+  assertEquals(state.usage.cache_read_input_tokens, undefined);
 });
 
 test('message_start captures cache_read_input_tokens', () => {
@@ -97,8 +97,8 @@ test('message_start captures cache_read_input_tokens', () => {
     } as MessagesStreamEvent,
     state,
   );
-  assertEquals(state.promptTokens, 100);
-  assertEquals(state.cachedPromptTokens, 20);
+  assertEquals(state.usage.input_tokens, 80);
+  assertEquals(state.usage.cache_read_input_tokens, 20);
 });
 
 // ── content_block_start: text ──
@@ -896,8 +896,9 @@ test('message_start captures cache_creation_input_tokens', () => {
     } as MessagesStreamEvent,
     state,
   );
-  assertEquals(state.promptTokens, 130);
-  assertEquals(state.cachedPromptTokens, 20);
+  assertEquals(state.usage.input_tokens, 80);
+  assertEquals(state.usage.cache_read_input_tokens, 20);
+  assertEquals(state.usage.cache_creation_input_tokens, 30);
 });
 
 test('message_delta usage includes cache_creation_input_tokens in prompt_tokens', () => {
@@ -937,6 +938,7 @@ test('message_delta usage includes cache_creation_input_tokens in prompt_tokens'
   assertEquals(chunk.usage!.prompt_tokens, 130); // 80 + 20 + 30
   assertEquals(chunk.usage!.completion_tokens, 50);
   assertEquals(chunk.usage!.total_tokens, 180);
+  assertEquals(chunk.usage!.prompt_tokens_details, { cached_tokens: 20, cache_creation_input_tokens: 30 });
 });
 
 // ── speed / service_tier pass-through ──
@@ -990,4 +992,62 @@ test('no speed or service_tier on message_delta → no service_tier on usage chu
 
   const usageChunk = result[1];
   assertEquals(usageChunk.service_tier, undefined);
+});
+
+test('message_start service_tier survives when message_delta omits it', () => {
+  const state = createMessagesToChatCompletionsStreamState();
+  translateMessagesEventToChatCompletionsChunks(
+    {
+      ...MSG_START,
+      message: {
+        ...MSG_START.message,
+        usage: { ...MSG_START.message.usage, service_tier: 'priority' },
+      },
+    },
+    state,
+  );
+  const result = translateMessagesEventToChatCompletionsChunks(
+    {
+      type: 'message_delta',
+      delta: { stop_reason: 'end_turn' },
+      usage: { output_tokens: 5 },
+    } as MessagesStreamEvent,
+    state,
+  ) as ChatCompletionsStreamEvent[];
+  assertEquals(result[1].service_tier, 'priority');
+});
+
+test('message_delta atomically replaces tier and merges late cache accounting', () => {
+  const state = createMessagesToChatCompletionsStreamState();
+  translateMessagesEventToChatCompletionsChunks(
+    {
+      ...MSG_START,
+      message: {
+        ...MSG_START.message,
+        usage: { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 9, speed: 'fast' },
+      },
+    },
+    state,
+  );
+  const result = translateMessagesEventToChatCompletionsChunks(
+    {
+      type: 'message_delta',
+      delta: { stop_reason: 'end_turn' },
+      usage: {
+        input_tokens: 11,
+        output_tokens: 2,
+        cache_creation: { ephemeral_1h_input_tokens: 5 },
+        service_tier: 'priority',
+      },
+    } as MessagesStreamEvent,
+    state,
+  ) as ChatCompletionsStreamEvent[];
+  assertEquals(result[1].service_tier, 'priority');
+  assertEquals(result[1].usage, {
+    prompt_tokens: 20,
+    completion_tokens: 2,
+    total_tokens: 22,
+    prompt_tokens_details: { cache_creation_input_tokens: 9 },
+    [USAGE_BILLING]: { cacheWrite1hTokenCount: 5 },
+  });
 });

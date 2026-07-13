@@ -51,7 +51,7 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
           id: publicModelId(model),
           limits: { ...(model.limits ?? {}) },
           ...(model.display_name !== undefined ? { display_name: model.display_name } : {}),
-          ...(model.cost ? { cost: model.cost } : {}),
+          ...(model.pricing ? { pricing: model.pricing } : {}),
           ...(model.chat ? { chat: model.chat } : {}),
           kind: kindForEndpoints(endpoints),
           endpoints,
@@ -59,9 +59,6 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
           enabledFlags: effective,
         };
       }));
-    },
-    getPricingForModelKey(modelKey) {
-      return azure.config.models.find(model => model.upstreamModelId === modelKey)?.cost ?? null;
     },
     callCompletions: (model, body, signal, opts) => callNonStreaming(azureFetchCompletions, model, body, signal, opts.headers, opts),
     callChatCompletions: (model, body, signal, opts) => callStreaming(azureFetchChatCompletions, model, body, signal, opts.headers, parseChatCompletionsStream, opts),

@@ -1,3 +1,4 @@
+import { TranslatorInputError } from '../../translator-input-error.ts';
 import type { ChatCompletionsContentPart } from '@floway-dev/protocols/chat-completions';
 import type { ResponsesInputContent } from '@floway-dev/protocols/responses';
 
@@ -33,19 +34,35 @@ export const responsesContentToText = (content: string | ResponsesInputContent[]
 
 export const responsesContentToChatCompletionsContent = (content: string | ResponsesInputContent[]): string | ChatCompletionsContentPart[] => {
   if (typeof content === 'string') return content;
+  if (!content.every((part): part is Exclude<ResponsesInputContent, { type: 'input_file' }> => part.type !== 'input_file')) {
+    throw new TranslatorInputError('Cannot translate input_file content to Chat Completions.');
+  }
 
   return content.some(part => part.type === 'input_image')
     ? content.map(
-        (part): ChatCompletionsContentPart =>
-          part.type === 'input_image'
-            ? {
-                type: 'image_url',
-                image_url: {
-                  url: part.image_url,
-                  detail: part.detail,
-                },
-              }
-            : { type: 'text', text: part.text },
+        (part): ChatCompletionsContentPart => {
+          if (part.type === 'input_image') {
+            if (typeof part.image_url !== 'string') {
+              throw new TranslatorInputError('Cannot translate file_id-only image content to Chat Completions.');
+            }
+            let detail: 'auto' | 'low' | 'high';
+            switch (part.detail) {
+            case 'auto': detail = 'auto'; break;
+            case 'low': detail = 'low'; break;
+            case 'high': detail = 'high'; break;
+            default:
+              throw new TranslatorInputError(`Cannot translate image detail '${part.detail}' to Chat Completions.`);
+            }
+            return {
+              type: 'image_url',
+              image_url: {
+                url: part.image_url,
+                detail,
+              },
+            };
+          }
+          return { type: 'text', text: part.text };
+        },
       )
     : contentPartsToText(content);
 };
