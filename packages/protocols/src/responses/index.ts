@@ -1,6 +1,8 @@
 // Responses API type definitions
 // Used for translating Messages ↔ Responses APIs
 
+import type { USAGE_BILLING, UsageBillingMetadata } from '../common/usage.ts';
+
 // ── Request types ──
 
 export interface ResponsesPayload {
@@ -70,6 +72,14 @@ export interface ResponsesCompactPayload {
   store?: boolean | null;
 }
 
+export type ResponsesCompactRequestPayload = Omit<ResponsesCompactPayload, 'input'> & {
+  input: string | ResponsesRequestInputItem[];
+};
+
+export type CanonicalResponsesCompactPayload = Omit<ResponsesCompactPayload, 'input'> & {
+  input: ResponsesInputItem[];
+};
+
 // Project a (possibly-wider) ResponsesPayload-shaped object into the strict
 // compact wire shape. Every native-compact provider terminal calls this
 // before dispatching to its upstream's `/responses/compact` endpoint, so a
@@ -79,7 +89,7 @@ export interface ResponsesCompactPayload {
 // the resolved upstream id; store is gateway-only). `prompt_cache_retention`
 // only exists on the compact payload type today, so there is no
 // generate-side value to forward.
-export const toCompactPayloadShape = (payload: Omit<ResponsesPayload, 'model'>): Omit<ResponsesCompactPayload, 'model' | 'store'> => ({
+export const toCompactPayloadShape = (payload: Omit<CanonicalResponsesPayload, 'model'>): Omit<CanonicalResponsesCompactPayload, 'model' | 'store'> => ({
   input: payload.input,
   ...(payload.instructions !== undefined && { instructions: payload.instructions }),
   ...(payload.previous_response_id !== undefined && { previous_response_id: payload.previous_response_id }),
@@ -123,15 +133,42 @@ export type ResponsesInputItem =
   | ResponsesMcpApprovalRequestItem
   | ResponsesMcpApprovalResponseItem;
 
+export type ResponsesMessagePhase = 'commentary' | 'final_answer' | (string & {}) | null;
+
 export interface ResponsesInputMessage {
   type: 'message';
   id?: string;
   status?: string;
   role: 'user' | 'assistant' | 'system' | 'developer';
   content: string | ResponsesInputContent[];
+  phase?: ResponsesMessagePhase;
 }
 
-export type ResponsesInputContent = ResponsesInputText | ResponsesInputImage;
+// The Responses request schema's EasyInputMessage makes the constant
+// `type: "message"` discriminator optional. Wire-facing payloads accept that
+// shorthand; gateway and translator boundaries normalize it before internal
+// item processing so the canonical union remains explicitly discriminated.
+// https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L697-L721
+export interface ResponsesEasyInputMessage {
+  content: string | ResponsesInputContent[];
+  role: 'user' | 'assistant' | 'system' | 'developer';
+  phase?: ResponsesMessagePhase;
+  type?: 'message';
+}
+
+export type ResponsesRequestInputItem =
+  | ResponsesEasyInputMessage
+  | ResponsesInputItem;
+
+export type ResponsesRequestPayload = Omit<ResponsesPayload, 'input'> & {
+  input: string | ResponsesRequestInputItem[];
+};
+
+export type CanonicalResponsesPayload = Omit<ResponsesPayload, 'input'> & {
+  input: ResponsesInputItem[];
+};
+
+export type ResponsesInputContent = ResponsesInputText | ResponsesInputImage | ResponsesInputFile;
 
 export interface ResponsesInputText {
   type: 'input_text' | 'output_text';
@@ -139,9 +176,11 @@ export interface ResponsesInputText {
 }
 
 export interface ResponsesInputImage {
+  // https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L3947-L3979
   type: 'input_image';
-  image_url: string;
-  detail: 'auto' | 'low' | 'high';
+  image_url?: string | null;
+  file_id?: string | null;
+  detail: 'auto' | 'low' | 'high' | 'original' | (string & {});
 }
 
 export type ResponsesToolOutputContent = ResponsesInputText | ResponsesInputImage | ResponsesInputFile;
@@ -592,8 +631,13 @@ export interface ResponsesResult {
     input_tokens: number;
     output_tokens: number;
     total_tokens: number;
-    input_tokens_details?: { cached_tokens: number };
+    // Both fields are disjoint subsets of input_tokens. Older compatible
+    // upstreams may omit cache_write_tokens even when they provide details.
+    // https://github.com/openai/openai-python/blob/f16fbbd2bd25dc1ff150b5f78dbd15ff6bab6d91/src/openai/types/responses/response_usage.py
+    // https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L7259-L7269
+    input_tokens_details?: { cached_tokens: number; cache_write_tokens?: number };
     output_tokens_details?: { reasoning_tokens: number };
+    [USAGE_BILLING]?: UsageBillingMetadata;
   };
 }
 
@@ -672,6 +716,7 @@ export interface ResponsesOutputMessage {
   status?: string;
   role: 'assistant';
   content: ResponsesOutputContentBlock[];
+  phase?: ResponsesMessagePhase;
 }
 
 export type ResponsesOutputContentBlock = ResponsesOutputText | ResponsesOutputRefusal;

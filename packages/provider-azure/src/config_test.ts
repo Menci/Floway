@@ -234,7 +234,7 @@ test('assertAzureUpstreamRecord reports all unknown per-model flag ids in one er
   );
 });
 
-test('assertAzureUpstreamRecord round-trips model.cost with full pricing fields', () => {
+test('assertAzureUpstreamRecord round-trips model.pricing with full pricing fields', () => {
   const parsed = assertAzureUpstreamRecord({
     ...baseRecord,
     config: {
@@ -243,22 +243,17 @@ test('assertAzureUpstreamRecord round-trips model.cost with full pricing fields'
         {
           upstreamModelId: 'gpt-prod',
           endpoints: { chatCompletions: {} },
-          cost: { input: 2.5, input_cache_read: 0.25, input_cache_write: 3.75, input_image: 8, output: 15, output_image: 30 },
+          pricing: { entries: [{ rates: { input: 2.5, input_cache_read: 0.25, input_cache_write: 3.75, input_image: 8, output: 15, output_image: 30 } }] },
         },
       ],
     },
   });
-  assertEquals(parsed.config.models[0].cost, {
-    input: 2.5,
-    input_cache_read: 0.25,
-    input_cache_write: 3.75,
-    input_image: 8,
-    output: 15,
-    output_image: 30,
+  assertEquals(parsed.config.models[0].pricing, {
+    entries: [{ rates: { input: 2.5, input_cache_read: 0.25, input_cache_write: 3.75, input_image: 8, output: 15, output_image: 30 } }],
   });
 });
 
-test('assertAzureUpstreamRecord accepts model without cost field', () => {
+test('assertAzureUpstreamRecord accepts model without pricing field', () => {
   assertAzureUpstreamRecord({
     ...baseRecord,
     config: {
@@ -273,7 +268,7 @@ test('assertAzureUpstreamRecord accepts model without cost field', () => {
   });
 });
 
-test('assertAzureUpstreamRecord accepts model.cost with only input set', () => {
+test('assertAzureUpstreamRecord accepts model.pricing with only input set', () => {
   assertAzureUpstreamRecord({
     ...baseRecord,
     config: {
@@ -282,14 +277,14 @@ test('assertAzureUpstreamRecord accepts model.cost with only input set', () => {
         {
           upstreamModelId: 'gpt-prod',
           endpoints: { chatCompletions: {} },
-          cost: { input: 2.5 },
+          pricing: { entries: [{ rates: { input: 2.5 } }] },
         },
       ],
     },
   });
 });
 
-test('assertAzureUpstreamRecord rejects model.cost with negative input', () => {
+test('assertAzureUpstreamRecord rejects model.pricing with negative input', () => {
   assertThrows(
     () =>
       assertAzureUpstreamRecord({
@@ -300,17 +295,17 @@ test('assertAzureUpstreamRecord rejects model.cost with negative input', () => {
             {
               upstreamModelId: 'gpt-prod',
               endpoints: { chatCompletions: {} },
-              cost: { input: -1, output: 1 },
+              pricing: { entries: [{ rates: { input: -1, output: 1 } }] },
             },
           ],
         },
       }),
     Error,
-    'azure models[0].cost.input: must be a finite non-negative number',
+    'model pricing entry 0.rates.input must be a finite non-negative number',
   );
 });
 
-test('assertAzureUpstreamRecord rejects model.cost with non-number input_cache_read', () => {
+test('assertAzureUpstreamRecord rejects model.pricing with non-number input_cache_read', () => {
   assertThrows(
     () =>
       assertAzureUpstreamRecord({
@@ -321,12 +316,12 @@ test('assertAzureUpstreamRecord rejects model.cost with non-number input_cache_r
             {
               upstreamModelId: 'gpt-prod',
               endpoints: { chatCompletions: {} },
-              cost: { input: 2, output: 8, input_cache_read: 'cheap' },
+              pricing: { entries: [{ rates: { input: 2, output: 8, input_cache_read: 'cheap' } }] },
             },
           ],
         },
       }),
     Error,
-    'azure models[0].cost.input_cache_read: must be a finite non-negative number',
+    'model pricing entry 0.rates.input_cache_read must be a finite non-negative number',
   );
 });

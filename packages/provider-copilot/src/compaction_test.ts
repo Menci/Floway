@@ -50,13 +50,6 @@ test('normalizes every retained text part to input_text — assistant output_tex
   expect(userPart.type).toBe('input_text');
 });
 
-test('accepts input messages with the type field omitted (implicit message)', () => {
-  // OpenAI accepts `{role, content}` without `type`; we follow.
-  const input = [{ role: 'user', content: 'hi' }] as unknown as ResponsesInputItem[];
-  const result = compactionResponse(input, generatedResult([compaction]));
-  expect(shape(result)).toEqual(['message:user', 'compaction']);
-});
-
 test('throws when the trigger turn did not return exactly one compaction item', () => {
   expect(() => compactionResponse([], generatedResult([]))).toThrow(/exactly one compaction/);
   expect(() => compactionResponse([], generatedResult([compaction, { type: 'compaction', id: 'cmp_2', encrypted_content: 'X' }]))).toThrow(/exactly one compaction/);
@@ -129,6 +122,37 @@ test('preserves input_image parts verbatim in retained content', () => {
     { type: 'input_image', image_url: 'data:image/png;base64,AAA', detail: 'auto' },
     { type: 'input_text', text: 'and tell me' },
   ]);
+});
+
+test('preserves input_file parts', () => {
+  const input: ResponsesInputItem[] = [{
+    type: 'message',
+    role: 'user',
+    content: [{
+      type: 'input_file',
+      file_id: 'file_1',
+    }],
+  }];
+
+  const result = compactionResponse(input, generatedResult([compaction]));
+
+  expect((result.output[0] as unknown as { content: unknown[] }).content).toEqual([{
+    type: 'input_file',
+    file_id: 'file_1',
+  }]);
+});
+
+test('preserves retained message phase', () => {
+  const input: ResponsesInputItem[] = [{
+    type: 'message',
+    role: 'assistant',
+    phase: 'commentary',
+    content: [{ type: 'output_text', text: 'working' }],
+  }];
+
+  const result = compactionResponse(input, generatedResult([compaction]));
+
+  expect((result.output[0] as unknown as { phase?: string }).phase).toBe('commentary');
 });
 
 test('input_image parts do not consume token budget', () => {

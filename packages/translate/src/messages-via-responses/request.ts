@@ -2,7 +2,6 @@ import { openAiJsonSchemaCoreFromMessagesFormat } from '../shared/messages/struc
 import { messagesReasoningBlockToResponsesReasoning } from '../shared/messages-and-responses/reasoning.ts';
 import { resolveMessagesReasoningEffort } from '../shared/messages-via/reasoning-effort.ts';
 import { normalizeMessagesToolInputSchema } from '../shared/messages-via/tool-schema.ts';
-import { type CanonicalResponsesPayload } from '../shared/via-responses/responses-items.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
 import {
   type MessagesAssistantMessage,
@@ -18,7 +17,7 @@ import {
   type MessagesUserMessage,
   type MessagesWebSearchToolResultBlock,
 } from '@floway-dev/protocols/messages';
-import type { ResponsesInputContent, ResponsesInputItem, ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
+import type { CanonicalResponsesPayload, ResponsesInputContent, ResponsesInputItem, ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
 
 const flushPendingContent = (pending: ResponsesInputContent[], input: ResponsesInputItem[], role: 'user' | 'assistant'): void => {
   if (pending.length === 0) return;

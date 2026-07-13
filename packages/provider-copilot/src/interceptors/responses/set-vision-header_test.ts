@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { withVisionHeaderSet } from './set-vision-header.ts';
 import type { ResponsesBoundaryCtx } from './types.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ResponsesInputItem, ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { CanonicalResponsesPayload, ResponsesInputItem, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
 import { assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
@@ -13,7 +13,7 @@ const stubRequest = {};
 const okEvents = (): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> =>
   Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {})(), testTelemetryModelIdentity));
 
-const invocation = (payload: ResponsesPayload): ResponsesBoundaryCtx => ({
+const invocation = (payload: CanonicalResponsesPayload): ResponsesBoundaryCtx => ({
   payload,
   headers: new Headers(),
   model: stubProviderModel({ endpoints: { responses: {} } }),
@@ -77,17 +77,6 @@ test('Responses vision header absent when content is pure text', async () => {
         content: [{ type: 'input_text', text: 'plain text only' }],
       },
     ],
-  });
-
-  await withVisionHeaderSet(ctx, stubRequest, okEvents);
-
-  assertEquals(ctx.headers.has('copilot-vision-request'), false);
-});
-
-test('Responses vision header absent when input is a plain string', async () => {
-  const ctx = invocation({
-    model: 'gpt-test',
-    input: 'plain string input',
   });
 
   await withVisionHeaderSet(ctx, stubRequest, okEvents);

@@ -31,6 +31,7 @@ import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type {
+  CanonicalResponsesPayload,
   ResponsesOutputItem,
   ResponsesInputItem,
   ResponsesInputWebSearchCall,
@@ -44,7 +45,6 @@ import type {
 } from '@floway-dev/protocols/responses';
 import { type EventResult, type ExecuteResult, type FlagId } from '@floway-dev/provider';
 import { assert, assertEquals, assertFalse, stubModelCandidate } from '@floway-dev/test-utils';
-import type { CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
 
 const withResponsesWebSearchShim = withResponsesServerToolShim([webSearchServerTool]);
 
@@ -217,7 +217,7 @@ const testTelemetryModelIdentity = {
   model: 'test-model',
   upstream: 'test-upstream',
   modelKey: 'test-model-key',
-  cost: null,
+  pricing: null,
 };
 
 interface ProviderOverrides {
@@ -2800,7 +2800,7 @@ test('finalMetadata resolves with the LATEST turn modelIdentity, not turn 1', as
         model: 'gpt-5',
         upstream: 'test-upstream',
         modelKey: `turn-${runCalls}-key`,
-        cost: null,
+        pricing: null,
       },
     };
   };

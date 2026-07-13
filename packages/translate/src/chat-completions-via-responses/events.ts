@@ -2,7 +2,7 @@ import { toChatCompletionsReasoningItem } from '../shared/chat-completions-and-r
 import { createResponsesOutputOrderState, recordResponsesOutputOrderEvent, type ResponsesOutputOrderState, shouldDeferForEarlierResponsesOutput } from '../shared/via-responses/responses-stream-order.ts';
 import { type ResponsesEvent, responsesPartKey } from '../shared/via-responses/responses-stream.ts';
 import type { ChatCompletionsStreamEvent, ChatCompletionsResult, ChatCompletionsReasoningItem, ChatCompletionsDelta } from '@floway-dev/protocols/chat-completions';
-import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { doneFrame, eventFrame, splitInclusiveInputTokens, USAGE_BILLING, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesOutputItem, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 const mapResponsesFinishReasonToChatCompletionsFinishReason = (response: ResponsesResult): ChatCompletionsResult['choices'][0]['finish_reason'] =>
@@ -47,6 +47,7 @@ interface ResponsesToChatCompletionsStreamState {
   emittedTextContentKeys: Set<string>;
   emittedFunctionArgumentOutputIndexes: Set<number>;
   outputOrder: ResponsesOutputOrderState;
+  serviceTier?: ChatCompletionsStreamEvent['service_tier'];
   done: boolean;
 }
 
@@ -159,6 +160,7 @@ export const translateResponsesEventToChatCompletionsChunks = (event: ResponsesS
     const { response } = event as ResponsesEvent<'response.created'>;
     state.messageId = response.id;
     state.model = response.model;
+    if (response.service_tier !== undefined) state.serviceTier = response.service_tier;
     return [makeChunk(state, { role: 'assistant' })];
   }
 
@@ -287,6 +289,7 @@ export const translateResponsesEventToChatCompletionsChunks = (event: ResponsesS
   case 'response.incomplete': {
     const { response } = event as ResponsesEvent<'response.completed' | 'response.incomplete'>;
     const chunks: ChatCompletionsStreamEvent[] = [];
+    if (response.service_tier !== undefined) state.serviceTier = response.service_tier;
 
     chunks.push(...flushReasoningSummaryDoneFallbacks(state));
     chunks.push(...flushPendingReasoningChunks(state));
@@ -314,6 +317,7 @@ const makeChunk = (state: ResponsesToChatCompletionsStreamState, delta: ChatComp
   object: 'chat.completion.chunk',
   created: state.created,
   model: state.model,
+  ...(state.serviceTier !== undefined ? { service_tier: state.serviceTier } : {}),
   choices: [
     {
       index: 0,
@@ -323,25 +327,40 @@ const makeChunk = (state: ResponsesToChatCompletionsStreamState, delta: ChatComp
   ],
 });
 
-const makeUsageChunk = (state: ResponsesToChatCompletionsStreamState, usage: NonNullable<ResponsesResult['usage']>): ChatCompletionsStreamEvent => ({
-  id: state.messageId,
-  object: 'chat.completion.chunk',
-  created: state.created,
-  model: state.model,
-  choices: [],
-  usage: {
-    prompt_tokens: usage.input_tokens,
-    completion_tokens: usage.output_tokens,
-    total_tokens: usage.total_tokens,
-    ...(usage.input_tokens_details?.cached_tokens !== undefined
-      ? {
-          prompt_tokens_details: {
-            cached_tokens: usage.input_tokens_details.cached_tokens,
-          },
-        }
-      : {}),
-  },
-});
+const makeUsageChunk = (
+  state: ResponsesToChatCompletionsStreamState,
+  usage: NonNullable<ResponsesResult['usage']>,
+): ChatCompletionsStreamEvent => {
+  splitInclusiveInputTokens(
+    usage.input_tokens,
+    usage.input_tokens_details?.cached_tokens,
+    usage.input_tokens_details?.cache_write_tokens,
+  );
+  return {
+    id: state.messageId,
+    object: 'chat.completion.chunk',
+    created: state.created,
+    model: state.model,
+    choices: [],
+    ...(state.serviceTier !== undefined ? { service_tier: state.serviceTier } : {}),
+    usage: {
+      prompt_tokens: usage.input_tokens,
+      completion_tokens: usage.output_tokens,
+      total_tokens: usage.total_tokens,
+      ...(usage.input_tokens_details?.cached_tokens !== undefined || usage.input_tokens_details?.cache_write_tokens !== undefined
+        ? {
+            prompt_tokens_details: {
+              ...(usage.input_tokens_details.cached_tokens !== undefined ? { cached_tokens: usage.input_tokens_details.cached_tokens } : {}),
+              ...(usage.input_tokens_details.cache_write_tokens !== undefined
+                ? { cache_creation_input_tokens: usage.input_tokens_details.cache_write_tokens }
+                : {}),
+            },
+          }
+        : {}),
+      ...(usage[USAGE_BILLING] !== undefined ? { [USAGE_BILLING]: usage[USAGE_BILLING] } : {}),
+    },
+  };
+};
 
 interface ChatCompletionsErrorPayload {
   error: {

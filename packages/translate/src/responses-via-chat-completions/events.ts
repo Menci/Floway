@@ -2,24 +2,30 @@ import { hasReadableSummary, toResponsesReasoningItem } from '../shared/chat-com
 import { unwrapCustomToolInput } from '../shared/responses-via/custom-tool-wrap.ts';
 import * as responses from '../shared/responses-via/responses-event-builder.ts';
 import type { ChatCompletionsStreamEvent, ChatCompletionsResult } from '@floway-dev/protocols/chat-completions';
-import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { eventFrame, splitInclusiveInputTokens, USAGE_BILLING, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesOutputItem, ResponsesOutputReasoning, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
-const mapChatCompletionsUsageToResponsesUsage = (usage: ChatCompletionsResult['usage'] | undefined): ResponsesResult['usage'] | undefined =>
-  usage
-    ? {
-        input_tokens: usage.prompt_tokens,
-        output_tokens: usage.completion_tokens,
-        total_tokens: usage.total_tokens,
-        ...(usage.prompt_tokens_details?.cached_tokens !== undefined
-          ? {
-              input_tokens_details: {
-                cached_tokens: usage.prompt_tokens_details.cached_tokens,
-              },
-            }
-          : {}),
-      }
-    : undefined;
+const mapChatCompletionsUsageToResponsesUsage = (usage: ChatCompletionsResult['usage'] | undefined): ResponsesResult['usage'] | undefined => {
+  if (!usage) return undefined;
+  const cachedTokens = usage.prompt_tokens_details?.cached_tokens;
+  const cacheWriteTokens = usage.prompt_tokens_details?.cache_creation_input_tokens
+    ?? usage.prompt_tokens_details?.cache_write_tokens;
+  splitInclusiveInputTokens(usage.prompt_tokens, cachedTokens, cacheWriteTokens);
+  return {
+    input_tokens: usage.prompt_tokens,
+    output_tokens: usage.completion_tokens,
+    total_tokens: usage.total_tokens,
+    ...(cachedTokens !== undefined || cacheWriteTokens !== undefined
+      ? {
+          input_tokens_details: {
+            cached_tokens: cachedTokens ?? 0,
+            ...(cacheWriteTokens !== undefined ? { cache_write_tokens: cacheWriteTokens } : {}),
+          },
+        }
+      : {}),
+    ...(usage[USAGE_BILLING] !== undefined ? { [USAGE_BILLING]: usage[USAGE_BILLING] } : {}),
+  };
+};
 
 const UPSTREAM_CHAT_COMPLETIONS_MISSING_DONE_MESSAGE = 'Upstream Chat Completions stream ended without a DONE sentinel.';
 
@@ -81,6 +87,7 @@ interface ChatCompletionsToResponsesStreamState {
   deferredAfterReasoning: DeferredAfterReasoning[];
   reasoningItemsSeen: boolean;
   usage?: ResponsesResult['usage'];
+  serviceTier?: ResponsesResult['service_tier'];
   pendingFinishReason?: ChatCompletionsFinishReason;
   completed: boolean;
   customToolNames: ReadonlySet<string>;
@@ -115,11 +122,13 @@ const buildResult = (state: ChatCompletionsToResponsesStreamState, status: Respo
     // Chat Completions and don't reach this builder.
     ...(status === 'incomplete' ? { incompleteDetails: { reason: 'max_output_tokens' as const } } : {}),
     ...(state.usage !== undefined ? { usage: state.usage } : {}),
+    ...(state.serviceTier !== undefined ? { serviceTier: state.serviceTier } : {}),
   });
 
 const ensureResponseCreated = (chunk: ChatCompletionsStreamEvent, state: ChatCompletionsToResponsesStreamState): ResponsesStreamEvent[] => {
   state.responseId = chunk.id;
   state.model = chunk.model;
+  if (chunk.service_tier !== undefined) state.serviceTier = chunk.service_tier;
 
   if (chunk.usage) {
     state.usage = mapChatCompletionsUsageToResponsesUsage(chunk.usage);

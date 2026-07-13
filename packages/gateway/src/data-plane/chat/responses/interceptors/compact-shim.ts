@@ -56,9 +56,8 @@ import { isJsonObject } from '../../../../shared/json-helpers.ts';
 import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
 import { syntheticEventsFromResult } from '../items/output.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import { collectResponsesProtocolEventsToResult, type ResponsesInputItem, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { collectResponsesProtocolEventsToResult, type CanonicalResponsesPayload, type ResponsesInputItem, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { providerModelOf, type ExecuteResult } from '@floway-dev/provider';
-import type { CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
 
 // The two vendored constants below (SUMMARIZATION_PROMPT and SUMMARY_PREFIX)
 // are the compactor system prompt and the handoff prefix openai/codex ships

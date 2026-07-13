@@ -5,6 +5,17 @@ import { createResponsesToChatCompletionsStreamState, translateResponsesEventToC
 import { assertEquals, assertThrows } from '../test-assert.ts';
 import type { ResponsesAgentMessageContent, ResponsesInputMultiAgentCallOutputItem, ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
 
+test('translateResponsesToChatCompletions accepts an implicit message discriminator', () => {
+  const result = translateResponsesToChatCompletions({
+    model: 'gpt-test',
+    input: [{ role: 'system', content: 'rules' }],
+  });
+
+  assertEquals(result.target.messages, [
+    { role: 'system', content: 'rules' },
+  ]);
+});
+
 test('translateResponsesToChatCompletions merges adjacent assistant reasoning text and tool calls', () => {
   const result = translateResponsesToChatCompletions({
     model: 'gpt-test',
@@ -1397,6 +1408,7 @@ test.each([
   { name: 'multi_agent_call', input: [{ type: 'multi_agent_call', action: 'spawn_agent', arguments: '{}', call_id: 'call_1' }] },
   { name: 'multi_agent_call_output', input: [{ type: 'multi_agent_call_output', action: 'spawn_agent', call_id: 'call_1', output: [] as ResponsesInputMultiAgentCallOutputItem['output'] }] },
   { name: 'context_compaction', input: [{ type: 'context_compaction', encrypted_content: 'opaque' }] },
+  { name: 'item_reference', input: [{ type: 'item_reference', id: 'msg_1' }] },
 ] as const)('translateResponsesToChatCompletions rejects Responses-only $name input', ({ name, input }) => {
   assertThrows(
     () => translateResponsesToChatCompletions({ model: 'gpt-test', input: [...input] }),
@@ -1466,6 +1478,61 @@ test('translateResponsesToChatCompletions rejects multimodal custom tool output'
     }),
     Error,
     'multimodal custom_tool_call_output',
+  );
+});
+
+test('translateResponsesToChatCompletions rejects file tool output', () => {
+  assertThrows(
+    () => translateResponsesToChatCompletions({
+      model: 'gpt-test',
+      input: [{ type: 'function_call_output', call_id: 'call_1', output: [{ type: 'input_file', file_id: 'file_1' }] }],
+    }),
+    Error,
+    'input_file content',
+  );
+});
+
+test('translateResponsesToChatCompletions rejects file assistant content', () => {
+  assertThrows(
+    () => translateResponsesToChatCompletions({
+      model: 'gpt-test',
+      input: [{ type: 'message', role: 'assistant', content: [{ type: 'input_file', file_id: 'file_1' }] }],
+    }),
+    Error,
+    'input_file assistant content',
+  );
+});
+
+test('translateResponsesToChatCompletions rejects image assistant content', () => {
+  assertThrows(
+    () => translateResponsesToChatCompletions({
+      model: 'gpt-test',
+      input: [{ type: 'message', role: 'assistant', content: [{ type: 'input_image', image_url: 'https://example.com/a.png', detail: 'auto' }] }],
+    }),
+    Error,
+    'input_image assistant content',
+  );
+});
+
+test('translateResponsesToChatCompletions rejects file_id-only images', () => {
+  assertThrows(
+    () => translateResponsesToChatCompletions({
+      model: 'gpt-test',
+      input: [{ type: 'message', role: 'user', content: [{ type: 'input_image', file_id: 'file_1', detail: 'auto' }] }],
+    }),
+    Error,
+    'file_id-only image content',
+  );
+});
+
+test('translateResponsesToChatCompletions rejects Responses-only original image detail', () => {
+  assertThrows(
+    () => translateResponsesToChatCompletions({
+      model: 'gpt-test',
+      input: [{ type: 'message', role: 'user', content: [{ type: 'input_image', image_url: 'https://example.com/a.png', detail: 'original' }] }],
+    }),
+    Error,
+    "image detail 'original'",
   );
 });
 

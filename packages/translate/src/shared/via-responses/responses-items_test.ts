@@ -1,22 +1,71 @@
 import { test } from 'vitest';
 
 import { chatCompletionsViaResponsesItemsView, canonicalizeResponsesPayload, geminiViaResponsesItemsView, messagesViaResponsesItemsView, responsesItemsView } from './responses-items.ts';
-import { assertEquals } from '../../test-assert.ts';
+import { assertEquals, assertThrows } from '../../test-assert.ts';
+import { TranslatorInputError } from '../../translator-input-error.ts';
 import { packReasoningSignature } from '../messages-and-responses/reasoning.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import type { GeminiPayload } from '@floway-dev/protocols/gemini';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
 import type { ResponsesInputItem, ResponsesPayload } from '@floway-dev/protocols/responses';
 
+test('canonicalizes string and implicit-message wire inputs', () => {
+  assertEquals(canonicalizeResponsesPayload({ model: 'gpt-test', input: 'hello' }), {
+    model: 'gpt-test',
+    input: [{ type: 'message', role: 'user', content: 'hello' }],
+  });
+
+  assertEquals(canonicalizeResponsesPayload({
+    model: 'gpt-test',
+    input: [
+      { role: 'system', content: 'rules', phase: 'future_phase' },
+      { role: 'user', content: [{ type: 'input_image', file_id: 'file_1', detail: 'original' }] },
+      { type: 'message', role: 'user', content: 'hello' },
+      { type: 'function_call_output', call_id: 'call_1', output: 'result' },
+    ],
+  }), {
+    model: 'gpt-test',
+    input: [
+      { type: 'message', role: 'system', content: 'rules', phase: 'future_phase' },
+      { type: 'message', role: 'user', content: [{ type: 'input_image', file_id: 'file_1', detail: 'original' }] },
+      { type: 'message', role: 'user', content: 'hello' },
+      { type: 'function_call_output', call_id: 'call_1', output: 'result' },
+    ],
+  });
+});
+
+test('rejects malformed untyped input items at the canonical boundary', () => {
+  for (const malformed of [
+    null,
+    42,
+    { content: 'missing role' },
+    { role: 'unknown', content: 'invalid role' },
+    { role: 'user', content: [null] },
+    { role: 'user', content: [{}] },
+    { role: 'user', content: [{ type: 'input_text' }] },
+    { role: 'user', content: 'invalid phase', phase: 42 },
+  ]) {
+    const error = assertThrows(
+      () => canonicalizeResponsesPayload({
+        model: 'gpt-test',
+        input: [malformed] as unknown as ResponsesPayload['input'],
+      }),
+      TranslatorInputError,
+      'valid role and content',
+    ) as TranslatorInputError;
+    assertEquals(error.param, 'input[0]');
+  }
+});
+
 test('mapAsResponsesItems maps Responses input items through the callback', async () => {
-  const payload: ResponsesPayload = {
+  const payload = canonicalizeResponsesPayload({
     model: 'gpt-test',
     input: [
       { type: 'item_reference', id: 'msg_stored' },
       { type: 'reasoning', id: 'rs_stored', summary: [{ type: 'summary_text', text: 'trace' }] },
       { type: 'function_call', call_id: 'call_stored', name: 'lookup', arguments: '{}', status: 'completed' },
     ],
-  };
+  });
 
   const mapped = await responsesItemsView.mapAsResponsesItems(payload.input, item => {
     if (item.type === 'item_reference') return { type: 'message', role: 'user', content: 'expanded' };

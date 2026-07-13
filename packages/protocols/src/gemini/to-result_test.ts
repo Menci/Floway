@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import type { GeminiResult, GeminiStreamEvent } from './index.ts';
 import { collectGeminiProtocolEventsToResult } from './to-result.ts';
-import { eventFrame } from '../common/index.ts';
+import { eventFrame, USAGE_BILLING } from '../common/index.ts';
 import { assertEquals, assertRejects } from '@floway-dev/test-utils';
 
 test('collectGeminiProtocolEventsToResult assembles candidate parts and final metadata', async () => {
@@ -118,6 +118,21 @@ test('collectGeminiProtocolEventsToResult throws Gemini error events', async () 
   );
 
   assertEquals(error.cause, errorEvent);
+});
+
+test('Gemini billing metadata survives reassembly without entering JSON', async () => {
+  const usageMetadata = {
+    promptTokenCount: 10,
+    [USAGE_BILLING]: { cacheWriteTokenCount: 4, serviceTier: 'priority' },
+  };
+  const result = await collectGeminiProtocolEventsToResult((async function* () {
+    yield eventFrame({
+      candidates: [{ index: 0, content: { role: 'model', parts: [] }, finishReason: 'STOP' }],
+      usageMetadata,
+    });
+  })());
+  assertEquals(result.usageMetadata?.[USAGE_BILLING], { cacheWriteTokenCount: 4, serviceTier: 'priority' });
+  assertEquals(JSON.parse(JSON.stringify(result.usageMetadata)), { promptTokenCount: 10 });
 });
 
 test('collectGeminiProtocolEventsToResult preserves unknown candidate-level and result-level fields', async () => {

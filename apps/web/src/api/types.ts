@@ -16,11 +16,13 @@ import type {
   PublicModel,
   PublicModelLimits,
 } from '@floway-dev/protocols/common';
+import type { UpstreamModelConfig } from '@floway-dev/provider';
 import type { FlagDefaults, FlagOverrides } from '@floway-dev/provider/flags';
 import type { UpstreamColor, UpstreamColorPreset, UpstreamProviderKind } from '@floway-dev/provider/model';
 import type { AddressableForm, ModelPrefixConfig } from '@floway-dev/provider/model-prefix';
 
 export type { BillingDimension, ModelEndpointKey, ModelEndpoints, ModelKind, ModelPricing };
+export type { UpstreamModelConfig };
 export type { AddressableForm, ModelPrefixConfig };
 export type { UpstreamColor, UpstreamColorPreset, UpstreamProviderKind };
 export type {
@@ -31,40 +33,6 @@ export type {
 export interface ProxyFallbackEntry {
   id: string;
   colos?: string[];
-}
-
-// Mutable variant of @floway-dev/protocols/common ChatModelInfo. The editor
-// mutates these arrays in place during reasoning-level/modality edits, so
-// dropping `readonly` here is intentional — the wire shape stays readonly.
-export interface UpstreamChatConfig {
-  modalities?: { input: ('text' | 'image')[]; output: ('text' | 'image')[] };
-  reasoning?: {
-    effort?: { supported: string[]; default: string };
-    budget_tokens?: { min?: number; max?: number };
-    adaptive?: true;
-    mandatory?: true;
-  };
-}
-
-export interface UpstreamModelConfig {
-  upstreamModelId: string;
-  publicModelId?: string;
-  kind: ModelKind;
-  endpoints: ModelEndpoints;
-  display_name?: string;
-  limits?: PublicModelLimits;
-  cost?: ModelPricing;
-  chat?: UpstreamChatConfig;
-  // Layer 3 per-model flag map. On a manual row (from
-  // `upstreams.config.models[]`) this is the operator-declared
-  // override that PATCH writes back to the DB; on an auto row (from
-  // `POST /api/upstreams/list-models`, reshaped from `ProviderModel`
-  // by the backend) it is the provider's per-model rule as a live
-  // read-only projection. The shape is the same in both cases; the
-  // source (and whether the row persists) is not carried on the wire —
-  // the consuming UI knows it from which list it is iterating (the
-  // config models[] array vs. the list-models response).
-  flagOverrides?: FlagOverrides;
 }
 
 export interface CustomModelsFetch {
@@ -81,7 +49,7 @@ export interface CustomRawModel {
   created?: number;
   owned_by?: string;
   limits?: PublicModelLimits;
-  cost?: ModelPricing;
+  pricing?: ModelPricing;
   kind?: ModelKind;
 }
 

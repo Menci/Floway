@@ -21,7 +21,7 @@ import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
  *   - When the caller asked for Fast Mode, stamp `usage.speed = 'fast'`
  *     onto every `message_start` and `message_delta` frame on the way out
  *     so downstream sees the marker the billing path (`speed` → tier='fast'
- *     → `pricing.tiers.fast`) and Anthropic-compatible clients expect.
+ *     → the `serviceTier: 'fast'` pricing entry) and Anthropic-compatible clients expect.
  *
  * References:
  * - https://docs.claude.com/en/build-with-claude/fast-mode

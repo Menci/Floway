@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { translateToSourceEvents } from './events.ts';
 import { assertEquals, assertRejects } from '../test-assert.ts';
-import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { doneFrame, eventFrame, USAGE_BILLING, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 import type { MessagesResult, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 
@@ -311,12 +311,14 @@ test('translateToSourceEvents folds Anthropic cache fields into Gemini promptTok
         output_tokens: 0,
         cache_read_input_tokens: 30,
         cache_creation_input_tokens: 5,
+        cache_creation: { ephemeral_1h_input_tokens: 3 },
+        speed: 'fast',
       }),
     ),
     eventFrame({
       type: 'message_delta',
       delta: { stop_reason: 'end_turn' },
-      usage: { output_tokens: 7 },
+      usage: { output_tokens: 7, service_tier: 'priority' },
     }),
     eventFrame({ type: 'message_stop' }),
   ]);
@@ -335,7 +337,44 @@ test('translateToSourceEvents folds Anthropic cache fields into Gemini promptTok
         candidatesTokenCount: 7,
         totalTokenCount: 52,
         cachedContentTokenCount: 30,
+        [USAGE_BILLING]: { cacheWriteTokenCount: 2, cacheWrite1hTokenCount: 3, serviceTier: 'priority' },
       },
     }),
   ]);
+});
+
+test('translateToSourceEvents accepts late input accounting from message_delta', async () => {
+  const frames = await collect([
+    eventFrame(messageStart()),
+    eventFrame({
+      type: 'message_delta',
+      delta: { stop_reason: 'end_turn' },
+      usage: {
+        input_tokens: 10,
+        output_tokens: 7,
+        cache_read_input_tokens: 30,
+        cache_creation_input_tokens: 5,
+      },
+    }),
+    eventFrame({ type: 'message_stop' }),
+  ]);
+  const usage = frames[0]?.type === 'event' && !('error' in frames[0].event) ? frames[0].event.usageMetadata : undefined;
+  assertEquals(usage?.promptTokenCount, 45);
+  assertEquals(usage?.cachedContentTokenCount, 30);
+  assertEquals(usage?.[USAGE_BILLING]?.cacheWriteTokenCount, 5);
+});
+
+test('translateToSourceEvents emits known input usage when terminal usage is absent', async () => {
+  const frames = await collect([
+    eventFrame(messageStart({ input_tokens: 10, output_tokens: 0, cache_read_input_tokens: 2 })),
+    eventFrame({ type: 'message_delta', delta: { stop_reason: 'end_turn' } }),
+    eventFrame({ type: 'message_stop' }),
+  ]);
+  const usage = frames[0]?.type === 'event' && !('error' in frames[0].event) ? frames[0].event.usageMetadata : undefined;
+  assertEquals(usage, {
+    promptTokenCount: 12,
+    candidatesTokenCount: 0,
+    totalTokenCount: 12,
+    cachedContentTokenCount: 2,
+  });
 });

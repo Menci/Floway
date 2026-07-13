@@ -1,5 +1,6 @@
 import type { TokenUsage } from '../../repo/types.ts';
-import { billableServiceTier, openAICacheTokensFromUsage, tokenUsage } from '../shared/telemetry/usage.ts';
+import { openAICacheTokensFromUsage, tokenUsage } from '../shared/telemetry/usage.ts';
+import { billableServiceTier, splitInclusiveInputTokens } from '@floway-dev/protocols/common';
 
 // `/v1/completions` shares OpenAI's CompletionUsage schema with
 // `/v1/chat/completions`. Both routes hand off to the shared
@@ -23,10 +24,11 @@ export const tokenUsageFromCompletionsUsage = (usage: unknown, serviceTier: stri
   };
   if (typeof promptTokens !== 'number' || typeof completionTokens !== 'number') return null;
   const { cacheRead, cacheWrite } = openAICacheTokensFromUsage(usage);
+  const split = splitInclusiveInputTokens(promptTokens, cacheRead, cacheWrite);
   return tokenUsage({
-    input: promptTokens - cacheRead - cacheWrite,
-    input_cache_read: cacheRead,
-    input_cache_write: cacheWrite,
+    input: split.input,
+    input_cache_read: split.cacheRead,
+    input_cache_write: split.cacheWrite,
     output: completionTokens,
     tier: billableServiceTier(serviceTier),
   });

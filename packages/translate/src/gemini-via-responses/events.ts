@@ -1,5 +1,5 @@
 import { geminiCandidateEvent, parseStrictJsonObject } from '../shared/gemini-via/gemini.ts';
-import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { billableServiceTier, eventFrame, splitCacheWriteTokens, splitInclusiveInputTokens, splitInclusiveOutputTokens, USAGE_BILLING, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiFinishReason, GeminiPart, GeminiStreamEvent, GeminiUsageMetadata } from '@floway-dev/protocols/gemini';
 import type { ResponsesOutputFunctionCall, ResponsesOutputReasoning, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
@@ -9,21 +9,41 @@ type ResponsesTerminalEvent = Extract<ResponsesStreamEvent, { type: 'response.co
 // matching Gemini's inclusive promptTokenCount semantics. Pass both through
 // directly — no folding. Contrast with gemini-via-messages, where Anthropic's
 // input_tokens excludes cache buckets and must be summed.
-const mapUsage = (usage: ResponsesResult['usage']): GeminiUsageMetadata | undefined => {
+const mapUsage = (response: ResponsesResult, upstreamServiceTier: ResponsesResult['service_tier']): GeminiUsageMetadata | undefined => {
+  const usage = response.usage;
   if (!usage) return undefined;
+
+  const cachedTokens = usage.input_tokens_details?.cached_tokens;
+  const cacheWriteTokens = usage.input_tokens_details?.cache_write_tokens;
+  const writes = splitCacheWriteTokens(cacheWriteTokens, usage[USAGE_BILLING]);
+  splitInclusiveInputTokens(usage.input_tokens, cachedTokens, cacheWriteTokens);
+  const { output: candidatesTokenCount, reasoning: thoughtsTokenCount } = splitInclusiveOutputTokens(
+    usage.output_tokens,
+    usage.output_tokens_details?.reasoning_tokens,
+  );
+  const serviceTier = billableServiceTier(upstreamServiceTier);
 
   return {
     promptTokenCount: usage.input_tokens,
-    candidatesTokenCount: usage.output_tokens,
+    candidatesTokenCount,
     totalTokenCount: usage.total_tokens,
     ...(usage.output_tokens_details?.reasoning_tokens !== undefined
       ? {
-          thoughtsTokenCount: usage.output_tokens_details.reasoning_tokens,
+          thoughtsTokenCount,
         }
       : {}),
-    ...(usage.input_tokens_details?.cached_tokens !== undefined
+    ...(cachedTokens !== undefined
       ? {
-          cachedContentTokenCount: usage.input_tokens_details.cached_tokens,
+          cachedContentTokenCount: cachedTokens,
+        }
+      : {}),
+    ...(cacheWriteTokens !== undefined || serviceTier !== null
+      ? {
+          [USAGE_BILLING]: {
+            ...(cacheWriteTokens !== undefined ? { cacheWriteTokenCount: writes.cacheWrite } : {}),
+            ...(writes.cacheWrite1h > 0 ? { cacheWrite1hTokenCount: writes.cacheWrite1h } : {}),
+            ...(serviceTier !== null ? { serviceTier } : {}),
+          },
         }
       : {}),
   };
@@ -73,6 +93,7 @@ interface ResponsesToGeminiStreamState {
   functionCalls: Map<number, ResponsesFunctionCallDraft>;
   emittedReasoningKeys: Set<string>;
   emittedTextKeys: Set<string>;
+  serviceTier?: ResponsesResult['service_tier'];
 }
 
 const responsesPartKey = (outputIndex: number, partIndex: number): string => `${outputIndex}:${partIndex}`;
@@ -116,8 +137,10 @@ const functionCallDoneFrame = (item: ResponsesOutputFunctionCall, outputIndex: n
   );
 };
 
-const handleTerminal = (event: ResponsesTerminalEvent): ProtocolFrame<GeminiStreamEvent> =>
-  eventFrame(geminiCandidateEvent([], mapTerminalFinishReason(event), mapUsage(event.response.usage)));
+const handleTerminal = (event: ResponsesTerminalEvent, state: ResponsesToGeminiStreamState): ProtocolFrame<GeminiStreamEvent> => {
+  if (event.response.service_tier !== undefined) state.serviceTier = event.response.service_tier;
+  return eventFrame(geminiCandidateEvent([], mapTerminalFinishReason(event), mapUsage(event.response, state.serviceTier)));
+};
 
 export const translateToSourceEvents = async function* (frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>): AsyncGenerator<ProtocolFrame<GeminiStreamEvent>> {
   const state: ResponsesToGeminiStreamState = {
@@ -128,6 +151,12 @@ export const translateToSourceEvents = async function* (frames: AsyncIterable<Pr
 
   for await (const event of upstreamResponsesEventsUntilTerminal(frames)) {
     switch (event.type) {
+    case 'response.created': {
+      const response = (event as ResponsesEvent<'response.created'>).response;
+      if (response.service_tier !== undefined) state.serviceTier = response.service_tier;
+      break;
+    }
+
     case 'response.reasoning_summary_text.delta':
     case 'response.reasoning_summary_text.done': {
       const textEvent = event as ResponsesEvent<'response.reasoning_summary_text.delta'> | ResponsesEvent<'response.reasoning_summary_text.done'>;
@@ -195,7 +224,7 @@ export const translateToSourceEvents = async function* (frames: AsyncIterable<Pr
     case 'response.completed':
     case 'response.incomplete':
     case 'response.failed':
-      yield handleTerminal(event as ResponsesTerminalEvent);
+      yield handleTerminal(event as ResponsesTerminalEvent, state);
       break;
 
     case 'error': {
