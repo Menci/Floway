@@ -224,6 +224,30 @@ export interface ImageGenerationConfig {
   action: 'generate' | 'edit' | 'auto';
 }
 
+const prepareEditRequest = async (
+  sources: readonly ImageSource[],
+  config: ImageGenerationConfig,
+): Promise<{ sources: readonly ImageSource[]; config: ImageGenerationConfig }> => {
+  const originals = [...sources];
+  if (config.mask !== undefined && !originals.includes(config.mask)) originals.push(config.mask);
+  const prepared = await prepareEditSources(originals);
+  const bySource = new Map<ImageSource, ImageSource>();
+  for (const [index, source] of originals.entries()) {
+    const wireSource = prepared[index];
+    if (wireSource === undefined) throw new Error('Missing prepared image edit source');
+    bySource.set(source, wireSource);
+  }
+  const wireSources = sources.map(source => {
+    const wireSource = bySource.get(source);
+    if (wireSource === undefined) throw new Error('Missing prepared image edit source');
+    return wireSource;
+  });
+  if (config.mask === undefined) return { sources: wireSources, config };
+  const mask = bySource.get(config.mask);
+  if (mask === undefined) throw new Error('Missing prepared image edit mask');
+  return { sources: wireSources, config: { ...config, mask } };
+};
+
 interface PrepareConfigError {
   message: string;
   param: string;
@@ -454,14 +478,20 @@ const inputImageDecodeError = (
   path: string,
   failure: Exclude<InputImageDecodeResult, { ok: true }>,
 ): ImageOperationError => {
+  if (failure.reason === 'invalid_format') {
+    return {
+      message: `Invalid '${path}'. Expected a valid URL, but got a value with an invalid format.`,
+      errorType: 'invalid_request_error',
+      param: path,
+      code: 'invalid_value',
+    };
+  }
   const expected = `Invalid '${path}'. Expected a base64-encoded data URL with an image MIME type (e.g. 'data:image/png;base64,aW1nIGJ5dGVzIGhlcmU=')`;
-  const detail = failure.reason === 'invalid_format'
-    ? 'a value with an invalid format.'
-    : failure.reason === 'missing_base64_separator'
-      ? "a value without the ';base64' separator."
-      : failure.reason === 'unsupported_mime'
-        ? `unsupported MIME type '${failure.mimeType ?? ''}'.`
-        : 'an invalid base64-encoded value.';
+  const detail = failure.reason === 'missing_base64_separator'
+    ? "a value without the ';base64' separator."
+    : failure.reason === 'unsupported_mime'
+      ? `unsupported MIME type '${failure.mimeType ?? ''}'.`
+      : 'an invalid base64-encoded value.';
   return {
     message: `${expected}, but got ${detail}`,
     errorType: 'invalid_request_error',
@@ -506,15 +536,30 @@ const inspectImageSourcesWithCache = (
         sources.push(decoded.source);
         continue;
       }
-      issue ??= {
-        kind: 'gateway',
-        error: {
-          message: "Floway cannot use file IDs as edit sources; provide an inline image data URL or set image_generation.action to 'generate'.",
-          errorType: 'invalid_request_error',
-          param: `${path}.file_id`,
-          code: 'unsupported_image_source',
-        },
-      };
+      if (typeof image.file_id === 'string' && image.file_id.length > 0) {
+        issue ??= {
+          kind: 'gateway',
+          error: {
+            message: "Floway cannot use file IDs as edit sources; provide an inline image data URL or set image_generation.action to 'generate'.",
+            errorType: 'invalid_request_error',
+            param: `${path}.file_id`,
+            code: 'unsupported_image_source',
+          },
+        };
+      } else {
+        return {
+          sources,
+          issue: {
+            kind: 'native',
+            error: {
+              message: `Missing mutually exclusive parameters: '${path}'. Ensure you are providing exactly one of: 'file_id' or 'image_url'.`,
+              errorType: 'invalid_request_error',
+              param: path,
+              code: 'missing_mutually_exclusive_parameters',
+            },
+          },
+        };
+      }
     }
     if (item.type === 'image_generation_call' && typeof item.result === 'string' && item.result.length > 0) {
       // A prior generated image carries no MIME prefix on its bare-base64
@@ -831,6 +876,7 @@ const issueImageCall = async (
   prompt: string,
   isEdit: boolean,
   sources: readonly ImageSource[],
+  config: ImageGenerationConfig,
   state: ShimState,
   stream: boolean,
   attempt: AttemptState,
@@ -848,8 +894,8 @@ const issueImageCall = async (
       wrapUpstreamCall: stampUpstreamCallStart(attempt),
     };
     const { response, modelKey } = await (isEdit
-      ? provider.instance.callImagesEdits(model, buildEditsForm(prompt, state.config, sources, stream), state.downstreamAbortSignal, opts)
-      : provider.instance.callImagesGenerations(model, buildGenerationsBody(prompt, state.config, stream), state.downstreamAbortSignal, opts));
+      ? provider.instance.callImagesEdits(model, buildEditsForm(prompt, config, sources, stream), state.downstreamAbortSignal, opts)
+      : provider.instance.callImagesGenerations(model, buildGenerationsBody(prompt, config, stream), state.downstreamAbortSignal, opts));
     if (response.status !== 429 || retry >= MAX_RATE_LIMIT_RETRIES) return { response, modelKey };
 
     // 25% jitter desynchronizes parallel callers so a burst of orchestrator
@@ -995,7 +1041,6 @@ const streamImageGeneration = (
 ) => async function* (): AsyncGenerator<ServerToolLifecycleEvent, ServerToolTerminal> {
   const resolved = await resolveImageCandidate(isEdit, state);
   if (!resolved.ok) return imageTerminal(prompt, action, { ok: false, error: resolved.error });
-  const wireSources = isEdit ? await prepareEditSources(sources) : sources;
   const { provider, fetcher } = resolved.candidate;
   const model = providerModelOf(resolved.candidate);
   const wantsPartials = (state.config.partial_images ?? 0) > 0;
@@ -1016,7 +1061,21 @@ const streamImageGeneration = (
   let response: Response;
   let modelKey: string;
   try {
-    ({ response, modelKey } = await issueImageCall(provider, model, fetcher, prompt, isEdit, wireSources, state, wantsPartials, attempt));
+    const prepared = isEdit
+      ? await prepareEditRequest(sources, state.config)
+      : { sources, config: state.config };
+    ({ response, modelKey } = await issueImageCall(
+      provider,
+      model,
+      fetcher,
+      prompt,
+      isEdit,
+      prepared.sources,
+      prepared.config,
+      state,
+      wantsPartials,
+      attempt,
+    ));
   } catch (e) {
     return finish({ ok: false, error: serverError(e) });
   }

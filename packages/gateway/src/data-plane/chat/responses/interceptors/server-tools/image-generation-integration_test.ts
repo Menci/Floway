@@ -4,11 +4,12 @@ import { initRepo } from '../../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../../../test-helpers/gateway-ctx.ts';
 import type { ResponsesInvocation } from '../types.ts';
+import { createInMemoryImageProcessor, initImageProcessor } from '@floway-dev/platform';
 import { eventFrame } from '@floway-dev/protocols/common';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { type EventResult, type ExecuteResult, type FlagId } from '@floway-dev/provider';
-import { assert, assertEquals, stubModelCandidate } from '@floway-dev/test-utils';
+import { assert, assertEquals, assertStringIncludes, stubModelCandidate } from '@floway-dev/test-utils';
 
 // Dirty integration harness: mock the model registry so the image backend is a
 // pair of in-test stubs, then drive the whole shim (function-tool rewrite,
@@ -189,6 +190,7 @@ beforeEach(async () => {
     state: null,
   });
   initRepo(repo);
+  initImageProcessor(createInMemoryImageProcessor());
   stub.generationsCalls = [];
   stub.editsForms = [];
   stub.nextGenerations = [];
@@ -254,6 +256,59 @@ test('an image generated in turn 1 is re-collected as an edit source in turn 2',
   assertEquals(images.length, 1);
   const bytes = await (images[0] as Blob).text();
   assertEquals(bytes, 'AAAA');
+});
+
+test('mask-only GIF edit transcodes one shared image and mask to WebP', async () => {
+  let processorCalls = 0;
+  initImageProcessor({
+    compressToWebp: () => {
+      processorCalls += 1;
+      return Promise.resolve(new TextEncoder().encode('WEBP'));
+    },
+  });
+  const gif = 'R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
+  stub.nextEdits = [jsonResponse('RURJVA==')];
+  const result = await shim(makeCtx([], 'edit', {
+    input_image_mask: { image_url: `data:image/gif;base64,${gif}` },
+  }), gatewayCtx(), scriptedRun([
+    callTurn(0, 'call_1', 'edit from the mask'),
+    messageTurn('done'),
+  ]));
+  await drain(result);
+
+  assertEquals(processorCalls, 1);
+  assertEquals(stub.editsForms.length, 1);
+  const form = stub.editsForms[0];
+  const image = form.getAll('image[]')[0] as Blob;
+  const mask = form.get('mask') as Blob;
+  assertEquals(image.type, 'image/webp');
+  assertEquals(mask.type, 'image/webp');
+  assertEquals(await image.text(), 'WEBP');
+  assertEquals(await mask.text(), 'WEBP');
+});
+
+test('image transcoding failure becomes a terminal image tool failure', async () => {
+  initImageProcessor({
+    compressToWebp: () => Promise.reject(new Error('codec down')),
+  });
+  const gif = 'R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
+  const result = await shim(makeCtx([{
+    type: 'message', role: 'user',
+    content: [{ type: 'input_image', image_url: `data:image/gif;base64,${gif}`, detail: 'auto' }],
+  }], 'edit'), gatewayCtx(), scriptedRun([
+    callTurn(0, 'call_1', 'edit the image'),
+    messageTurn('done'),
+  ]));
+  const events = await drain(result);
+
+  assertEquals(stub.editsForms.length, 0);
+  const done = events.find(event => event.type === 'response.output_item.done'
+    && (event as { item: { type: string } }).item.type === 'image_generation_call');
+  assert(done !== undefined);
+  const item = (done as { item: { status: string; error: { code: string; message: string } } }).item;
+  assertEquals(item.status, 'failed');
+  assertEquals(item.error.code, 'server_error');
+  assertStringIncludes(item.error.message, 'codec down');
 });
 
 test('retries on 429 and surfaces the eventual success', async () => {

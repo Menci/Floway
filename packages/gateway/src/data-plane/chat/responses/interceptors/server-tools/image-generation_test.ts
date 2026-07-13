@@ -270,10 +270,25 @@ test('inspectImageSources rejects bare base64 with the native input_image error'
   assertEquals(inspection.issue, {
     kind: 'native',
     error: {
-      message: "Invalid 'input[0].content[0].image_url'. Expected a base64-encoded data URL with an image MIME type (e.g. 'data:image/png;base64,aW1nIGJ5dGVzIGhlcmU='), but got a value with an invalid format.",
+      message: "Invalid 'input[0].content[0].image_url'. Expected a valid URL, but got a value with an invalid format.",
       errorType: 'invalid_request_error',
       param: 'input[0].content[0].image_url',
       code: 'invalid_value',
+    },
+  });
+});
+
+test('inspectImageSources mirrors the native error when input_image has no source field', () => {
+  const inspection = inspectImageSources([imageInputContainers.message({
+    type: 'input_image', detail: 'auto',
+  })]);
+  assertEquals(inspection.issue, {
+    kind: 'native',
+    error: {
+      message: "Missing mutually exclusive parameters: 'input[0].content[0]'. Ensure you are providing exactly one of: 'file_id' or 'image_url'.",
+      errorType: 'invalid_request_error',
+      param: 'input[0].content[0]',
+      code: 'missing_mutually_exclusive_parameters',
     },
   });
 });
