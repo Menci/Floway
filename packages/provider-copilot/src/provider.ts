@@ -362,7 +362,9 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
               : { action: 'generate', ok: false, response: stream.response, modelKey: stream.modelKey };
           }
           case 'compact': {
-            const input: ResponsesInputItem[] = typeof wireBody.input === 'string' ? [{ type: 'message', role: 'user', content: wireBody.input }] : wireBody.input;
+            const input: ResponsesInputItem[] = typeof wireBody.input === 'string'
+              ? [{ type: 'message', role: 'user', content: wireBody.input }]
+              : wireBody.input.map(item => item.type === undefined ? { ...item, type: 'message' } : item);
             const triggered = { ...wireBody, input: [...input, COMPACTION_TRIGGER], stream: false, model: rawModel.id };
             const response = await copilotFetchResponses(
               upstreamConfig,
