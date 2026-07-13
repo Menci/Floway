@@ -260,6 +260,7 @@ test('PATCH /api/upstreams preserves omitted secrets and re-warms the models cac
   // it with the new upstream-supplied catalog rather than leaving the old
   // models in place.
   await repo.modelsCache.put(created.id, {
+    revision: 1,
     fetchedAt: 1,
     models: [{ id: 'stale-model', kind: 'chat', endpoints: {}, enabledFlags: new Set(), limits: {} }],
   });
@@ -408,10 +409,12 @@ test('GET /api/upstreams attaches models-cache freshness to every row', async ()
   await repo.upstreams.save({ ...baseRow, id: 'up_failed', name: 'Failed', sortOrder: 2 });
 
   await repo.modelsCache.put('up_warm', {
+    revision: 1,
     fetchedAt: 1_700_000_000_000,
     models: [{ id: 'm1', kind: 'chat', endpoints: {}, enabledFlags: new Set(), limits: {} }],
   });
   await repo.modelsCache.put('up_failed', {
+    revision: 1,
     fetchedAt: 1_700_000_000_000,
     models: [{ id: 'm1', kind: 'chat', endpoints: {}, enabledFlags: new Set(), limits: {} }],
   });

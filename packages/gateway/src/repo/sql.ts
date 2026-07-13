@@ -819,27 +819,29 @@ class SqlModelsCacheRepo implements ModelsCacheRepo {
 
   async get(upstreamId: string): Promise<CachedModelsRow | null> {
     const row = await this.db
-      .prepare('SELECT fetched_at, models_json, last_error_json FROM models_cache WHERE upstream_id = ?')
+      .prepare('SELECT revision, fetched_at, models_json, last_error_json FROM models_cache WHERE upstream_id = ?')
       .bind(upstreamId)
-      .first<{ fetched_at: number; models_json: string; last_error_json: string | null }>();
+      .first<{ revision: number; fetched_at: number; models_json: string; last_error_json: string | null }>();
     if (!row) return null;
     return {
+      revision: row.revision,
       fetchedAt: row.fetched_at,
       models: JSON.parse(row.models_json, modelsReviver) as ProviderModel[],
       lastError: row.last_error_json ? JSON.parse(row.last_error_json) as { message: string; at: number } : null,
     };
   }
 
-  async put(upstreamId: string, row: { fetchedAt: number; models: ProviderModel[] }): Promise<void> {
+  async put(upstreamId: string, row: { revision: number; fetchedAt: number; models: ProviderModel[] }): Promise<void> {
     await this.db
       .prepare(
-        `INSERT INTO models_cache (upstream_id, fetched_at, models_json, last_error_json) VALUES (?, ?, ?, NULL)
+        `INSERT INTO models_cache (upstream_id, revision, fetched_at, models_json, last_error_json) VALUES (?, ?, ?, ?, NULL)
          ON CONFLICT (upstream_id) DO UPDATE SET
+           revision = excluded.revision,
            fetched_at = excluded.fetched_at,
            models_json = excluded.models_json,
            last_error_json = NULL`,
       )
-      .bind(upstreamId, row.fetchedAt, JSON.stringify(row.models, modelsReplacer))
+      .bind(upstreamId, row.revision, row.fetchedAt, JSON.stringify(row.models, modelsReplacer))
       .run();
   }
 
