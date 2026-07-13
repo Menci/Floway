@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'vitest';
 
-import { clearInFlightForTesting } from './models-cache.ts';
 import { compareModelIds, enumerateModelCandidates, enumerateRealModelCandidates, getModels, listModelProviders } from './registry.ts';
 import { buildCopilotUpstreamRecord, buildCustomUpstreamRecord, copilotModels, setupAppTest } from '../../test-helpers.ts';
 import { directFetcher, type InternalModel, type ProviderModel } from '@floway-dev/provider';
@@ -532,7 +531,6 @@ test('listModelProviders throws on unknown upstream ids in the whitelist', async
 // timer noise eats into a tight `< sum` comparison; what matters is the
 // ratio.
 test('getModels fans out per-upstream catalog fetches in parallel', async () => {
-  clearInFlightForTesting();
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
@@ -582,7 +580,6 @@ test('getModels fans out per-upstream catalog fetches in parallel', async () => 
 // recorded against `sawSuccess === true`; the public catalog still includes
 // every successful upstream's models.
 test('getModels: a rejected provider does not block other providers', async () => {
-  clearInFlightForTesting();
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
@@ -631,7 +628,6 @@ test('getModels: a rejected provider does not block other providers', async () =
 // still resolve. The broken upstream's display name flows back via
 // `failedUpstreams` so the eventual error renderer can mention it.
 test('enumerateModelCandidates: healthy upstream still resolves alongside a rejecting one, with failedUpstreams reported', async () => {
-  clearInFlightForTesting();
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
 
@@ -975,7 +971,6 @@ describe('catalog listing under modelPrefix', () => {
 // attempt, so the resolver returns immediately rather than walking the
 // stripped form.
 test('enumerateModelCandidates does NOT trigger the dated-suffix retry on a wrong-kind sawAnyId match', async () => {
-  clearInFlightForTesting();
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
   await repo.upstreams.save(buildCustomUpstreamRecord({
@@ -1016,7 +1011,6 @@ test('enumerateModelCandidates does NOT trigger the dated-suffix retry on a wron
 // failedUpstreams across the two retry attempts must dedupe: a single broken
 // upstream that rejects both walks reports its name once, not twice.
 test('enumerateModelCandidates deduplicates failedUpstreams across the dated-suffix retry attempts', async () => {
-  clearInFlightForTesting();
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
   await repo.upstreams.save(buildCustomUpstreamRecord({
@@ -1058,7 +1052,6 @@ test('enumerateModelCandidates deduplicates failedUpstreams across the dated-suf
 // fetch error in a ProviderModelsUnavailableError with the AbortError as
 // its cause, so the resolver's detection walks the cause chain.
 test('enumerateModelCandidates rethrows AbortError from a per-upstream catalog fetch', async () => {
-  clearInFlightForTesting();
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
   await repo.upstreams.save(buildCustomUpstreamRecord({
@@ -1109,7 +1102,6 @@ test('enumerateModelCandidates rethrows AbortError from a per-upstream catalog f
 // upstream fetch. The failure renderer surfaces this as a model-missing 404
 // without re-deriving the empty-cap branch.
 test('enumerateModelCandidates returns the empty triple when the visible upstream list is empty', async () => {
-  clearInFlightForTesting();
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();
   // Save one upstream so `listModelProviders([])` (empty filter) can return
@@ -1167,7 +1159,6 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
   };
 
   test('flattens across targets in declaration order for first-available', async () => {
-    clearInFlightForTesting();
     const { repo } = await setupAppTest();
     await seedUpstreams(repo);
     await repo.modelAliases.insert({
@@ -1194,7 +1185,6 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
   });
 
   test('shuffles the outer walk for random selection but keeps intra-target order', async () => {
-    clearInFlightForTesting();
     const { repo } = await setupAppTest();
     await seedUpstreams(repo);
     await repo.modelAliases.insert({
@@ -1226,7 +1216,6 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
   });
 
   test('dedups (model, upstream, rules) when two targets hit the same binding with identical rules', async () => {
-    clearInFlightForTesting();
     const { repo } = await setupAppTest();
     await seedUpstreams(repo);
     await repo.modelAliases.insert({
@@ -1252,7 +1241,6 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
   });
 
   test('keeps two entries for the same (model, upstream) with distinct rules', async () => {
-    clearInFlightForTesting();
     const { repo } = await setupAppTest();
     await seedUpstreams(repo);
     await repo.modelAliases.insert({
@@ -1277,7 +1265,6 @@ describe('enumerateModelCandidates alias walk (flat + dedup)', () => {
   });
 
   test('falls through to a later target when an earlier one has no kind-matching binding', async () => {
-    clearInFlightForTesting();
     const { repo } = await setupAppTest();
     await seedUpstreams(repo);
     await repo.modelAliases.insert({

@@ -1,5 +1,4 @@
 import { app } from './app.ts';
-import { clearInFlightForTesting } from './data-plane/providers/models-cache.ts';
 import type { SearchConfig } from './data-plane/tools/web-search/types.ts';
 import { initRepo } from './repo/index.ts';
 import { InMemoryRepo } from './repo/memory.ts';
@@ -111,7 +110,6 @@ export async function setupAppTest(options: SetupOptions = {}): Promise<AppTestC
   initEnv(name => (name === 'ADMIN_KEY' ? adminKey : ''));
 
   clearInProcessCopilotTokenCache();
-  clearInFlightForTesting();
 
   // The default API key is owned by a non-admin user so tests can assert
   // "non-admin via API key" behavior straight away. Tests that need an

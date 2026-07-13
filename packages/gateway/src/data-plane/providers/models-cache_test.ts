@@ -1,6 +1,6 @@
-import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 
-import { clearInFlightForTesting, fetchUpstreamModelsCached, MODEL_CATALOG_REVISION } from './models-cache.ts';
+import { fetchUpstreamModelsCached, MODEL_CATALOG_REVISION } from './models-cache.ts';
 import { initRepo } from '../../repo/index.ts';
 import { InMemoryRepo } from '../../repo/memory.ts';
 import { directFetcher, type Provider, type ProviderModel } from '@floway-dev/provider';
@@ -26,10 +26,6 @@ const setupRepo = (): InMemoryRepo => {
   initRepo(repo);
   return repo;
 };
-
-beforeEach(() => {
-  clearInFlightForTesting();
-});
 
 describe('fetchUpstreamModelsCached', () => {
   test('cold cache: fetches, stores, returns models', async () => {

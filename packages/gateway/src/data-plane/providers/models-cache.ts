@@ -94,9 +94,3 @@ export const fetchUpstreamModelsCached = async (
 
   return await memoInFlight(key, () => runFetch(instance, fetcher, key));
 };
-
-// Test-only: drop the L1 map so a test's setup is independent of any
-// promise the previous test left mid-settle.
-export const clearInFlightForTesting = (): void => {
-  inFlight.clear();
-};
