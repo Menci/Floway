@@ -48,7 +48,7 @@ test.each(Object.entries(contentContainers))('compresses inline images in %s', a
   const textPart = { type: 'input_text' as const, text: 'look' };
   const imagePart: ResponsesInputImage = { type: 'input_image', image_url: 'data:image/png;base64,AAAA', detail: 'auto' };
   const sourceItem = wrap([textPart, imagePart]);
-  const untouchedItem: ResponsesInputItem = { type: 'function_call', call_id: 'call_unchanged', name: 'noop', arguments: '{}' };
+  const untouchedItem: ResponsesInputItem = { type: 'function_call', call_id: 'call_unchanged', name: 'noop', arguments: '{}', status: 'completed' };
   const payload: CanonicalResponsesPayload = {
     model: 'gpt-test',
     input: [sourceItem, untouchedItem],
