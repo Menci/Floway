@@ -507,7 +507,7 @@ const terminalUsage = (response: ResponsesResult): MessagesUsage => {
     createResponsesToMessagesStreamState(),
   );
   const delta = events.find(event => event.type === 'message_delta');
-  if (delta?.type !== 'message_delta') throw new Error('Expected message_delta');
+  if (delta?.type !== 'message_delta' || delta.usage === undefined) throw new Error('Expected message_delta usage');
   return delta.usage;
 };
 
