@@ -15,6 +15,10 @@ const mapUsage = (response: ResponsesResult, upstreamServiceTier: ResponsesResul
 
   const cachedTokens = usage.input_tokens_details?.cached_tokens;
   const cacheWriteTokens = usage.input_tokens_details?.cache_write_tokens;
+  const cacheWrite1hTokens = usage[USAGE_BILLING]?.cacheWrite1hTokenCount ?? 0;
+  if (cacheWrite1hTokens > (cacheWriteTokens ?? 0)) {
+    throw new RangeError('1-hour cache-write tokens exceed total cache-write tokens');
+  }
   splitInclusiveInputTokens(usage.input_tokens, cachedTokens, cacheWriteTokens);
   const { output: candidatesTokenCount, reasoning: thoughtsTokenCount } = splitInclusiveOutputTokens(
     usage.output_tokens,
@@ -39,7 +43,8 @@ const mapUsage = (response: ResponsesResult, upstreamServiceTier: ResponsesResul
     ...(cacheWriteTokens !== undefined || serviceTier !== null
       ? {
           [USAGE_BILLING]: {
-            ...(cacheWriteTokens !== undefined ? { cacheWriteTokenCount: cacheWriteTokens } : {}),
+            ...(cacheWriteTokens !== undefined ? { cacheWriteTokenCount: cacheWriteTokens - cacheWrite1hTokens } : {}),
+            ...(cacheWrite1hTokens > 0 ? { cacheWrite1hTokenCount: cacheWrite1hTokens } : {}),
             ...(serviceTier !== null ? { serviceTier } : {}),
           },
         }
