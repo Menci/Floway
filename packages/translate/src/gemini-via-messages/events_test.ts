@@ -311,7 +311,7 @@ test('translateToSourceEvents folds Anthropic cache fields into Gemini promptTok
         output_tokens: 0,
         cache_read_input_tokens: 30,
         cache_creation_input_tokens: 5,
-        cache_creation: { ephemeral_5m_input_tokens: 2, ephemeral_1h_input_tokens: 3 },
+        cache_creation: { ephemeral_1h_input_tokens: 3 },
       }),
     ),
     eventFrame({
