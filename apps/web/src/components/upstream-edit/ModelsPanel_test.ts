@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils';
-import { nextTick } from 'vue';
 import { expect, test } from 'vitest';
+import { nextTick } from 'vue';
 
 import ModelsPanel from './ModelsPanel.vue';
 import type { UpstreamModelConfig } from '../../api/types.ts';

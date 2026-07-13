@@ -6,8 +6,8 @@ import { computed, reactive, ref, watch } from 'vue';
 
 import ModelEditor from './ModelEditor.vue';
 import { newUiId, type Row, seedFromAuto } from './modelRows.ts';
-import { isModelConfigValid } from './modelValidation.ts';
 import ModelsGrid from './ModelsGrid.vue';
+import { isModelConfigValid } from './modelValidation.ts';
 import type { UpstreamModelConfig } from '../../api/types.ts';
 import { modelsField } from '@floway-dev/provider';
 import type { Flag, FlagDefaults, FlagOverrides } from '@floway-dev/provider/flags';

@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils';
-import { nextTick } from 'vue';
 import { describe, expect, it } from 'vitest';
+import { nextTick } from 'vue';
 
 import PricingEditor from './PricingEditor.vue';
 import type { ModelKind, ModelPricing } from '@floway-dev/protocols/common';

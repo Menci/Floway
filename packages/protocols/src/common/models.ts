@@ -97,21 +97,21 @@ export type ModelPricingIssue =
   | { code: 'invalid-selector'; entryIndex: number; error: Error }
   | { code: 'base-count'; entryIndexes: readonly number[]; error: Error }
   | {
-      code: 'rate-dimensions';
-      entryIndex: number;
-      baseIndex: number;
-      missingDimensions: readonly BillingDimension[];
-      addedDimensions: readonly BillingDimension[];
-      error: Error;
-    }
+    code: 'rate-dimensions';
+    entryIndex: number;
+    baseIndex: number;
+    missingDimensions: readonly BillingDimension[];
+    addedDimensions: readonly BillingDimension[];
+    error: Error;
+  }
   | { code: 'duplicate-selector'; selector: PricingSelector; selectorKey: string; entryIndexes: readonly number[]; error: Error }
   | {
-      code: 'threshold-operator-conflict';
-      axisId: string;
-      value: number;
-      entryIndexes: readonly [number, number];
-      error: Error;
-    };
+    code: 'threshold-operator-conflict';
+    axisId: string;
+    value: number;
+    entryIndexes: readonly [number, number];
+    error: Error;
+  };
 
 export const validatePriceVector = (pricing: PriceVector, path = 'price vector'): void => {
   const dimensions = BILLING_DIMENSIONS.filter(dimension => pricing[dimension] !== undefined);

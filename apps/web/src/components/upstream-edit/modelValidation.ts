@@ -11,5 +11,5 @@ export const isModelConfigValid = (config: UpstreamModelConfig): boolean => {
     if (reasoning.effort.default === '' || !reasoning.effort.supported.includes(reasoning.effort.default)) return false;
   }
   const budget = reasoning.budget_tokens;
-  return budget === undefined || budget.min === undefined || budget.max === undefined || budget.max >= budget.min;
+  return budget?.min === undefined || budget.max === undefined || budget.max >= budget.min;
 };
