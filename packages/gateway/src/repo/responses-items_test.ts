@@ -2,6 +2,7 @@ import initSqlJs from 'sql.js';
 import { test, vi } from 'vitest';
 
 import { InMemoryRepo } from './memory.ts';
+import { storedResponsesItemMetadata } from './responses-clone.ts';
 import { SqlRepo } from './sql.ts';
 import type { ResponsesItemsRepo, StoredResponsesItem } from './types.ts';
 import { initFileProvider, MemoryFileProvider, sha256Hex, type FileProvider, type SqlDatabase } from '@floway-dev/platform';
@@ -149,11 +150,11 @@ const exerciseResponsesItemsRepo = async (repo: ResponsesItemsRepo) => {
 
   await repo.insertMany([first, second, adminScoped]);
 
-  assertEquals(await repo.lookupMany('key_a', [second.id, adminScoped.id, first.id, 'missing']), [second, first]);
-  assertEquals(await repo.lookupMany(null, [first.id, adminScoped.id]), [adminScoped]);
+  assertEquals(await repo.lookupMany('key_a', [second.id, adminScoped.id, first.id, 'missing']), [second, first].map(storedResponsesItemMetadata));
+  assertEquals(await repo.lookupMany(null, [first.id, adminScoped.id]), [storedResponsesItemMetadata(adminScoped)]);
   assertEquals(await repo.lookupMany('key_b', [first.id, second.id, adminScoped.id]), []);
   assertEquals(await repo.lookupMany('key_a', []), []);
-  assertEquals(await repo.lookupManyByContentHash('key_a', ['content_hash_a']), [first]);
+  assertEquals(await repo.lookupManyByContentHash('key_a', ['content_hash_a']), [storedResponsesItemMetadata(first)]);
   assertEquals(await repo.lookupManyByContentHash('key_b', ['content_hash_a']), []);
 
   assertEquals(await repo.refreshMany('key_a', [first.id, first.id, second.id, adminScoped.id, 'missing'], 4_000 * DAY_MS), 2);
@@ -162,7 +163,7 @@ const exerciseResponsesItemsRepo = async (repo: ResponsesItemsRepo) => {
     [
       { ...first, refreshedAt: 4_000 * DAY_MS },
       { ...second, refreshedAt: 4_000 * DAY_MS },
-    ],
+    ].map(storedResponsesItemMetadata),
   );
   // Smaller-than-stored refreshedAt: rejected for two overlapping reasons —
   // the never-go-backwards guard, and (since 3_500*DAY < 4_000*DAY - debounce)
@@ -179,14 +180,14 @@ const exerciseResponsesItemsRepo = async (repo: ResponsesItemsRepo) => {
     [
       { ...first, payload: null, refreshedAt: 4_000 * DAY_MS },
       { ...second, payload: null, refreshedAt: 4_000 * DAY_MS },
-    ],
+    ].map(storedResponsesItemMetadata),
   );
-  assertEquals(await repo.lookupMany(null, [adminScoped.id]), [refreshedAdminScoped]);
+  assertEquals(await repo.lookupMany(null, [adminScoped.id]), [storedResponsesItemMetadata(refreshedAdminScoped)]);
 
   assertEquals(await repo.deleteOlderThan(3_000 * DAY_MS), 0);
   assertEquals(await repo.deleteOlderThan(4_500 * DAY_MS), 2);
   assertEquals(await repo.lookupMany('key_a', [first.id, second.id]), []);
-  assertEquals(await repo.lookupMany(null, [adminScoped.id]), [refreshedAdminScoped]);
+  assertEquals(await repo.lookupMany(null, [adminScoped.id]), [storedResponsesItemMetadata(refreshedAdminScoped)]);
 
   await repo.deleteAll();
   assertEquals(await repo.lookupMany(null, [adminScoped.id]), []);
@@ -282,9 +283,9 @@ test('memory responses items repo scopes ids by api key and treats duplicate sco
   // Same scope: the duplicate insert is a no-op; row reflects the first
   // write. Stored ids use random bodies, so colliding writes only happen
   // within one stream's mapper retries, which the wrap dedupes upstream.
-  assertEquals(await repo.lookupMany('key_a', [item.id]), [item]);
+  assertEquals(await repo.lookupMany('key_a', [item.id]), [storedResponsesItemMetadata(item)]);
   // Different scope: a parallel row is created.
-  assertEquals(await repo.lookupMany('key_b', [item.id]), [{ ...item, apiKeyId: 'key_b' }]);
+  assertEquals(await repo.lookupMany('key_b', [item.id]), [storedResponsesItemMetadata({ ...item, apiKeyId: 'key_b' })]);
 });
 
 const exerciseResponsesItemsRepoPayloadFill = async (repo: ResponsesItemsRepo) => {
@@ -309,9 +310,9 @@ const exerciseResponsesItemsRepoPayloadFill = async (repo: ResponsesItemsRepo) =
   await repo.insertMany([metadata]);
 
   assertEquals(await repo.fillPayloads([filled]), 1);
-  assertEquals(await repo.lookupMany('key_a', [metadata.id]), [filled]);
+  assertEquals(await repo.lookupMany('key_a', [metadata.id]), [storedResponsesItemMetadata(filled)]);
   assertEquals(await repo.fillPayloads([{ ...filled, payload: { item: { changed: true } }, createdAt: 3_000, refreshedAt: 3_000 }]), 0);
-  assertEquals(await repo.lookupMany('key_a', [metadata.id]), [filled]);
+  assertEquals(await repo.lookupMany('key_a', [metadata.id]), [storedResponsesItemMetadata(filled)]);
 };
 
 test('memory responses items repo fills metadata-only payloads once', async () => {
@@ -338,7 +339,10 @@ test('SQL responses items repo rejects malformed stored payload_json', async () 
     refreshed_at: 1_000,
   });
 
-  await assertRejects(() => new SqlRepo(db).responsesItems.lookupMany('key_a', ['msg_z1mVjw_0xVvS8c_KjD1sBkZk5qbdA']), Error, 'Malformed responses_items.payload_json JSON');
+  const repo = new SqlRepo(db).responsesItems;
+  const [metadata] = await repo.lookupMany('key_a', ['msg_z1mVjw_0xVvS8c_KjD1sBkZk5qbdA']);
+  assertEquals(metadata.hasPayload, true);
+  await assertRejects(() => repo.lookupPayloads('key_a', [metadata.id]), Error, 'Malformed responses_items.payload_json JSON');
 });
 
 test('SQL responses items repo scopes ids by api key and treats duplicate scoped writes as no-ops', async () => {
@@ -350,8 +354,8 @@ test('SQL responses items repo scopes ids by api key and treats duplicate scoped
     { ...item, payload: { item: { changed: true } }, createdAt: 2_000 },
   ]);
 
-  assertEquals(await repo.lookupMany('key_a', [item.id]), [item]);
-  assertEquals(await repo.lookupMany('key_b', [item.id]), [{ ...item, apiKeyId: 'key_b' }]);
+  assertEquals(await repo.lookupMany('key_a', [item.id]), [storedResponsesItemMetadata(item)]);
+  assertEquals(await repo.lookupMany('key_b', [item.id]), [storedResponsesItemMetadata({ ...item, apiKeyId: 'key_b' })]);
 });
 
 test('SQL responses items repo fills metadata-only payloads once', async () => {
@@ -397,15 +401,18 @@ test('SQL responses items repo hydrates one payload at a time across query chunk
     });
     ids.push(id);
   }
-  const lookup = new SqlRepo(db).responsesItems.lookupMany('key_a', ids);
-
+  const repo = new SqlRepo(db).responsesItems;
+  const metadata = await repo.lookupMany('key_a', ids);
+  assertEquals(files.getCalls, 0);
+  const lookup = repo.lookupPayloads('key_a', ids);
   await files.waitForFirstGet();
   const startedBeforeRelease = files.getCalls;
   files.releaseAll();
-  const rows = await lookup;
+  const payloads = await lookup;
 
   assertEquals(startedBeforeRelease, 1);
-  assertEquals(rows.map(row => row.id), ids);
+  assertEquals(metadata.map(row => row.id), ids);
+  assertEquals(payloads.map(row => row.id), ids);
 });
 
 test('SQL responses items repo serializes one payload at a time within write batches', async () => {
@@ -462,7 +469,8 @@ test('SQL responses items repo spills large payloads through the runtime file pr
   assertEquals(typeof descriptor.key, 'string');
   assertEquals((descriptor.key as string).startsWith('responses-items/v1/expires/2026/06/27/12/'), true);
   assert((await files.get(descriptor.key as string)) !== null);
-  assertEquals(await repo.lookupMany('key_a', [item.id]), [item]);
+  assertEquals(await repo.lookupMany('key_a', [item.id]), [storedResponsesItemMetadata(item)]);
+  assertEquals((await repo.lookupPayloads('key_a', [item.id]))[0].payload, payload);
 });
 
 test('SQL responses items deleteAll removes spilled payload files alongside the rows', async () => {
@@ -775,24 +783,29 @@ class FakeResponsesItemsSqlDatabase implements SqlDatabase {
     return 1;
   }
 
-  lookup(query: string, binds: unknown[]): FakeResponsesItemRow[] {
+  lookup(query: string, binds: unknown[]): unknown[] {
     const [apiKeyId, ...keys] = binds as [string | null, ...string[]];
     const wanted = new Set(keys);
+    let matches: FakeResponsesItemRow[];
     if (query.includes('encrypted_content_hash IN')) {
-      return this.rows
+      matches = this.rows
         .filter(row => row.api_key_id === apiKeyId && row.encrypted_content_hash !== null && wanted.has(row.encrypted_content_hash))
         .map(row => ({ ...row }))
         .toSorted(compareFakeResponsesItemsByFreshness);
-    }
-    if (query.includes('content_hash IN')) {
-      return this.rows
+    } else if (query.includes('content_hash IN')) {
+      matches = this.rows
         .filter(row => row.api_key_id === apiKeyId && row.content_hash !== null && wanted.has(row.content_hash))
         .map(row => ({ ...row }))
         .toSorted(compareFakeResponsesItemsByFreshness);
+    } else {
+      matches = this.rows.filter(row => wanted.has(row.id) && row.api_key_id === apiKeyId);
+      const order = new Map(keys.map((id, index) => [id, index]));
+      matches = matches.map(row => ({ ...row })).toSorted((a, b) => order.get(a.id)! - order.get(b.id)!);
     }
-    const matches = this.rows.filter(row => wanted.has(row.id) && row.api_key_id === apiKeyId);
-    const order = new Map(keys.map((id, index) => [id, index]));
-    return matches.map(row => ({ ...row })).toSorted((a, b) => order.get(a.id)! - order.get(b.id)!);
+    if (query.startsWith('SELECT id, payload_json')) {
+      return matches.map(row => ({ id: row.id, payload_json: row.payload_json }));
+    }
+    return matches.map(({ payload_json: payloadJson, ...row }) => ({ ...row, has_payload: payloadJson === null ? 0 : 1 }));
   }
 
   clearPayloadOlderThan(createdBefore: number): number {

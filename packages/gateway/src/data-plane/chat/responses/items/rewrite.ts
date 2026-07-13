@@ -59,7 +59,7 @@ const shouldHydrate = async (
 ): Promise<boolean> => {
   const { item, row } = resolved;
   if (row === undefined || !row.hasPayload) return false;
-  if (row.itemType === 'reasoning' && row.upstreamId !== candidate.provider.upstream) return false;
+  if (isUpstreamOwned(row) && row.itemType === 'reasoning' && row.upstreamId !== candidate.provider.upstream) return false;
   if (item.type === 'item_reference') {
     return !(row.upstreamId === candidate.provider.upstream
       && row.upstreamItemId !== null
