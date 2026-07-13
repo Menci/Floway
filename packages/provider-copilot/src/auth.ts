@@ -287,6 +287,9 @@ export async function copilotAuthedFetch(path: string, init: RequestInit, auth: 
 
   const request = { ...ownedInit, headers };
   ownedInit = undefined;
+  // Do not await here: the dispatch owner clears its body synchronously, then
+  // this async frame can disappear while the upstream network wait continues.
+  // eslint-disable-next-line @typescript-eslint/return-await
   return dispatchUpstreamFetch(options, `${entry.baseUrl}${path}`, request);
 }
 

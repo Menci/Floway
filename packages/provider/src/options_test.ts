@@ -1,7 +1,7 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import { dispatchUpstreamFetch } from './options.ts';
-import { assertEquals, assertRejects } from '@floway-dev/test-utils';
+import { assertEquals } from '@floway-dev/test-utils';
 
 test('dispatchUpstreamFetch transfers the request through the timing wrapper once', async () => {
   const init: RequestInit = { method: 'POST', body: 'payload' };
@@ -24,11 +24,11 @@ test('dispatchUpstreamFetch transfers the request through the timing wrapper onc
 });
 
 test('dispatchUpstreamFetch rejects a timing wrapper that dispatches twice', async () => {
-  await assertRejects(() => dispatchUpstreamFetch({
+  await expect(dispatchUpstreamFetch({
     fetcher: () => Promise.resolve(new Response('ok')),
     wrapUpstreamCall: async dispatch => {
       await dispatch();
       return await dispatch();
     },
-  }, 'https://example.com', { method: 'POST', body: 'payload' }), /invoked more than once/);
+  }, 'https://example.com', { method: 'POST', body: 'payload' })).rejects.toThrow('invoked more than once');
 });

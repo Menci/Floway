@@ -11,10 +11,10 @@ const copilotFetchInternal = (
   options: UpstreamFetchOptions,
 ): Promise<Response> =>
   copilotAuthedFetch(path, init, config, {
-      headers: options.extraHeaders,
-      fetcher: options.fetcher,
-      wrapUpstreamCall: options.wrapUpstreamCall,
-    }).catch(error => {
+    headers: options.extraHeaders,
+    fetcher: options.fetcher,
+    wrapUpstreamCall: options.wrapUpstreamCall,
+  }).catch(error => {
     if (!isCopilotTokenFetchError(error)) throw error;
     return new Response(error.body, {
       status: error.status,
