@@ -118,8 +118,8 @@ const tokenUsageFromMessagesUsage = (u: MessagesUsageLike) => {
 };
 
 export const createMessagesStreamUsageState = () => ({
+  raw: { output_tokens: 0 } as NonNullable<MessagesMessageDeltaEvent['usage']>,
   current: tokenUsage({}),
-  gotInputFromStart: false,
 });
 
 type MessagesStreamUsageState = ReturnType<typeof createMessagesStreamUsageState>;
@@ -135,32 +135,27 @@ export const tokenUsageFromMessagesFrame = (frame: ProtocolFrame<MessagesStreamE
   if (frame.type !== 'event') return null;
   const { event } = frame;
   if (event.type === 'message_start') {
-    state.current = tokenUsageFromMessagesUsage(event.message.usage);
-    // A fully cache-hit prompt reports message_start with input=0 but non-zero
-    // cache reads; the input accounting still arrived, so the flag must reflect
-    // every input-side dimension, not bare input alone — otherwise a later
-    // delta carrying input_tokens re-merges and drops the cache counts.
-    state.gotInputFromStart ||= (state.current.input ?? 0) + (state.current.input_cache_read ?? 0) + (state.current.input_cache_write ?? 0) + (state.current.input_cache_write_1h ?? 0) > 0;
+    state.raw = {
+      ...event.message.usage,
+      ...(event.message.usage.cache_creation === undefined
+        ? {}
+        : { cache_creation: { ...event.message.usage.cache_creation } }),
+    };
+    state.current = tokenUsageFromMessagesUsage(state.raw);
     return { ...state.current };
   }
   if (event.type === 'message_delta' && event.usage) {
-    // Anthropic's wire schema lets a delta re-stamp `speed`/`service_tier`,
-    // and both fields are per-message properties of this billing bucket. A
-    // delta-supplied tier therefore wins; absent that, message_start's tier
-    // carries forward across the bucket. Two branches below: the cache-hit
-    // prompt path (message_start carried zero input, this delta now carries
-    // the real input accounting) rebuilds state.current from the delta and
-    // backfills tier from the prior; the normal path updates the running
-    // output and restamps tier when the delta provides one.
-    const deltaResolved = tokenUsageFromMessagesUsage(event.usage);
-    if (!state.gotInputFromStart && event.usage.input_tokens !== undefined) {
-      const priorTier = state.current.tier;
-      state.current = deltaResolved;
-      state.current.tier ??= priorTier;
-    } else {
-      state.current.output = event.usage.output_tokens;
-      if (deltaResolved.tier != null) state.current.tier = deltaResolved.tier;
-    }
+    state.raw = {
+      ...state.raw,
+      output_tokens: event.usage.output_tokens,
+      ...(event.usage.input_tokens === undefined ? {} : { input_tokens: event.usage.input_tokens }),
+      ...(event.usage.cache_read_input_tokens === undefined ? {} : { cache_read_input_tokens: event.usage.cache_read_input_tokens }),
+      ...(event.usage.cache_creation_input_tokens === undefined ? {} : { cache_creation_input_tokens: event.usage.cache_creation_input_tokens }),
+      ...(event.usage.cache_creation === undefined ? {} : { cache_creation: { ...event.usage.cache_creation } }),
+      ...(event.usage.speed === undefined ? {} : { speed: event.usage.speed }),
+      ...(event.usage.service_tier === undefined ? {} : { service_tier: event.usage.service_tier }),
+    };
+    state.current = tokenUsageFromMessagesUsage(state.raw);
     return { ...state.current };
   }
   return event.type === 'message_stop' ? { ...state.current } : null;
