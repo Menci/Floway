@@ -192,6 +192,38 @@ const jsonError = ref<string | null>(null);
 
 const serializeManual = () => JSON.stringify(manualModels.value, null, 2);
 
+const editableModelConfig = (model: ReturnType<typeof modelsField>[number]): UpstreamModelConfig => {
+  const chat = model.chat === undefined
+    ? undefined
+    : {
+        ...model.chat,
+        ...(model.chat.modalities === undefined
+          ? {}
+          : {
+              modalities: {
+                input: [...model.chat.modalities.input],
+                output: [...model.chat.modalities.output],
+              },
+            }),
+        ...(model.chat.reasoning === undefined
+          ? {}
+          : {
+              reasoning: {
+                ...model.chat.reasoning,
+                ...(model.chat.reasoning.effort === undefined
+                  ? {}
+                  : {
+                      effort: {
+                        ...model.chat.reasoning.effort,
+                        supported: [...model.chat.reasoning.effort.supported],
+                      },
+                    }),
+              },
+            }),
+      };
+  return { ...model, ...(chat === undefined ? {} : { chat }) };
+};
+
 const switchEditorMode = (next: 'ui' | 'json') => {
   if (editorMode.value === next) return;
   if (next === 'json') {
@@ -204,7 +236,7 @@ const switchEditorMode = (next: 'ui' | 'json') => {
   // parse error so unsaved text is preserved.
   try {
     const parsed = JSON.parse(jsonText.value);
-    manualModels.value = modelsField(parsed, 'dashboard');
+    manualModels.value = modelsField(parsed, 'dashboard').map(editableModelConfig);
     jsonError.value = null;
     editorMode.value = 'ui';
   } catch (e) {
