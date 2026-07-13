@@ -3,9 +3,9 @@ import { parseToolArgumentsObject } from '../shared/messages/tool-arguments.ts';
 import { packReasoningSignature, responsesReasoningToMessagesBlock } from '../shared/messages-and-responses/reasoning.ts';
 import { createResponsesOutputOrderState, recordResponsesOutputOrderEvent, type ResponsesOutputOrderState, shouldDeferForEarlierResponsesOutput } from '../shared/via-responses/responses-stream-order.ts';
 import { type ResponsesEvent, responsesPartKey } from '../shared/via-responses/responses-stream.ts';
-import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { eventFrame, splitInclusiveInputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesAssistantContentBlock, MessagesResult, MessagesStreamEvent, MessagesUsage } from '@floway-dev/protocols/messages';
-import { splitResponsesInputTokens, type ResponsesOutputContentBlock, type ResponsesOutputItem, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { ResponsesOutputContentBlock, ResponsesOutputItem, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 const combineMessageTextContent = (content: ResponsesOutputContentBlock[] | undefined): string => {
   if (!Array.isArray(content)) return '';
@@ -66,7 +66,7 @@ const mapResponsesStopReason = (response: ResponsesResult): MessagesResult['stop
 const responsesUsageToMessagesUsage = (response: ResponsesResult, outputTokens: number): MessagesUsage => {
   const cachedTokens = response.usage?.input_tokens_details?.cached_tokens;
   const cacheWriteTokens = response.usage?.input_tokens_details?.cache_write_tokens;
-  const { input: uncachedInputTokens } = splitResponsesInputTokens(response.usage?.input_tokens ?? 0, cachedTokens, cacheWriteTokens);
+  const { input: uncachedInputTokens } = splitInclusiveInputTokens(response.usage?.input_tokens ?? 0, cachedTokens, cacheWriteTokens);
 
   return {
     input_tokens: uncachedInputTokens,

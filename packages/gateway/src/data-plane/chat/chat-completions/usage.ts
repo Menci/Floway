@@ -1,5 +1,6 @@
 import { billableServiceTier, openAICacheTokensFromUsage, tokenUsage } from '../../shared/telemetry/usage.ts';
 import type { ChatCompletionsResult } from '@floway-dev/protocols/chat-completions';
+import { splitInclusiveInputTokens } from '@floway-dev/protocols/common';
 
 // OpenAI Chat usage reports prompt_tokens inclusive of cached and cache-
 // creation tokens; the shared `openAICacheTokensFromUsage` helper resolves
@@ -12,10 +13,11 @@ import type { ChatCompletionsResult } from '@floway-dev/protocols/chat-completio
 // https://developers.openai.com/api/docs/guides/priority-processing
 export const tokenUsageFromChatCompletionsUsage = (u: NonNullable<ChatCompletionsResult['usage']>, serviceTier: string | null | undefined) => {
   const { cacheRead, cacheWrite } = openAICacheTokensFromUsage(u);
+  const split = splitInclusiveInputTokens(u.prompt_tokens, cacheRead, cacheWrite);
   return tokenUsage({
-    input: u.prompt_tokens - cacheRead - cacheWrite,
-    input_cache_read: cacheRead,
-    input_cache_write: cacheWrite,
+    input: split.input,
+    input_cache_read: split.cacheRead,
+    input_cache_write: split.cacheWrite,
     output: u.completion_tokens,
     tier: billableServiceTier(serviceTier),
   });

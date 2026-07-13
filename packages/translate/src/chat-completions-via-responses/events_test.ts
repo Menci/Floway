@@ -142,6 +142,29 @@ test('response.created service_tier survives when the terminal response omits it
   assertEquals(events.at(-1)?.service_tier, 'priority');
 });
 
+test('Responses to Chat translation rejects malformed inclusive cache counts', async () => {
+  async function* stream() {
+    yield toProtocolFrame({
+      type: 'response.completed',
+      response: {
+        ...makeResponse('completed'),
+        usage: {
+          input_tokens: 40,
+          output_tokens: 1,
+          total_tokens: 41,
+          input_tokens_details: { cached_tokens: 30, cache_write_tokens: 25 },
+        },
+      },
+    });
+  }
+
+  await assertRejects(
+    async () => await drain(translateToSourceEvents(stream())),
+    RangeError,
+    'cache token counts exceed inclusive input tokens',
+  );
+});
+
 test('translateToSourceEvents emits exactly one [DONE] for fallback completion stream', async () => {
   const doneCount = await countDoneSentinels([
     toProtocolFrame({

@@ -707,7 +707,7 @@ test('translateResponsesToMessagesResult rejects cache splits that exceed input_
       usage: { input_tokens: 40, output_tokens: 20, total_tokens: 60, input_tokens_details: { cached_tokens: 30, cache_write_tokens: 25 } },
     }),
     RangeError,
-    'Responses cache token counts exceed input_tokens',
+    'cache token counts exceed inclusive input tokens',
   );
 });
 
@@ -760,7 +760,7 @@ test('response.created rejects cache splits that exceed input_tokens', () => {
       state,
     ),
     RangeError,
-    'Responses cache token counts exceed input_tokens',
+    'cache token counts exceed inclusive input tokens',
   );
 });
 

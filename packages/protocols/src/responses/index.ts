@@ -889,5 +889,3 @@ export { parseResponsesStream, type ParseResponsesStreamOptions } from './stream
 export { RESPONSES_MISSING_TERMINAL_MESSAGE, collectResponsesProtocolEventsToResult } from './to-result.ts';
 export { reassembleResponsesEvents } from './reassemble.ts';
 export { responsesProtocolFrameToSSEFrame } from './to-sse.ts';
-
-export { splitResponsesInputTokens } from './usage.ts';

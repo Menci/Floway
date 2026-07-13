@@ -1,5 +1,6 @@
 import { billableServiceTier, tokenUsage } from '../../shared/telemetry/usage.ts';
-import { splitResponsesInputTokens, type ResponsesResult } from '@floway-dev/protocols/responses';
+import { splitInclusiveInputTokens } from '@floway-dev/protocols/common';
+import type { ResponsesResult } from '@floway-dev/protocols/responses';
 
 // service_tier reports the tier actually served and therefore selects the
 // matching pricing entry rather than the tier originally requested.
@@ -7,7 +8,7 @@ import { splitResponsesInputTokens, type ResponsesResult } from '@floway-dev/pro
 export const tokenUsageFromResponsesResult = (response: ResponsesResult) => {
   const usage = response.usage;
   if (!usage) return null;
-  const { input, cacheRead, cacheWrite } = splitResponsesInputTokens(
+  const { input, cacheRead, cacheWrite } = splitInclusiveInputTokens(
     usage.input_tokens,
     usage.input_tokens_details?.cached_tokens,
     usage.input_tokens_details?.cache_write_tokens,

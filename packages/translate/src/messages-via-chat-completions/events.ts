@@ -1,5 +1,5 @@
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
-import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { eventFrame, splitInclusiveInputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesContentBlockDeltaEvent, MessagesContentBlockStartEvent, MessagesResult, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 
 const toMessagesId = (id: string): string => (id.startsWith('msg_') ? id : `msg_${id.replace(/^chatcmpl-/, '')}`);
@@ -39,16 +39,21 @@ export const mapChatCompletionsUsageToMessagesUsage = (usage?: ChatCompletionsUs
   const cachedTokens = usage?.prompt_tokens_details?.cached_tokens;
   const cacheCreationTokens = usage?.prompt_tokens_details?.cache_creation_input_tokens
     ?? usage?.prompt_tokens_details?.cache_write_tokens;
+  const { input, cacheRead, cacheWrite } = splitInclusiveInputTokens(
+    usage?.prompt_tokens ?? 0,
+    cachedTokens,
+    cacheCreationTokens,
+  );
 
   return {
     // `cached_tokens` and `cache_creation_input_tokens` are disjoint subsets of
     // `prompt_tokens`, so the subtraction cannot go negative under any
     // standards-conforming upstream. Do NOT clamp with Math.max(0, ...) — that
     // would mask a real upstream contract violation rather than fix anything.
-    input_tokens: (usage?.prompt_tokens ?? 0) - (cachedTokens ?? 0) - (cacheCreationTokens ?? 0),
+    input_tokens: input,
     output_tokens: usage?.completion_tokens ?? 0,
-    ...(cachedTokens !== undefined ? { cache_read_input_tokens: cachedTokens } : {}),
-    ...(cacheCreationTokens !== undefined ? { cache_creation_input_tokens: cacheCreationTokens } : {}),
+    ...(cachedTokens !== undefined ? { cache_read_input_tokens: cacheRead } : {}),
+    ...(cacheCreationTokens !== undefined ? { cache_creation_input_tokens: cacheWrite } : {}),
   };
 };
 

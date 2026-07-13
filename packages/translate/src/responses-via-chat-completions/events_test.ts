@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import { createChatCompletionsToResponsesStreamState, flushChatCompletionsToResponsesEvents, translateChatCompletionsChunkToResponsesEvents, translateToSourceEvents } from './events.ts';
 import { assertEquals, assertRejects } from '../test-assert.ts';
@@ -163,6 +163,18 @@ test.each([
   ]);
   const completed = events.find(event => event.type === 'response.completed') as ResponsesCompletedEvent | undefined;
   assertEquals(completed?.response.usage?.input_tokens_details, { cached_tokens: 0, cache_write_tokens: expectedWrite });
+});
+
+test('translateChatCompletionsChunkToResponsesEvents rejects malformed inclusive cache counts', () => {
+  expect(() => translate([
+    chunk({ role: 'assistant' }),
+    chunk({}, 'stop', {
+      prompt_tokens: 40,
+      completion_tokens: 1,
+      total_tokens: 41,
+      prompt_tokens_details: { cached_tokens: 30, cache_write_tokens: 25 },
+    }),
+  ])).toThrowError(RangeError);
 });
 
 test('translateChatCompletionsChunkToResponsesEvents preserves response service_tier', () => {
