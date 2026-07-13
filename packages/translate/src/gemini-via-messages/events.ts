@@ -53,11 +53,9 @@ interface MessagesToGeminiStreamState extends GeminiThoughtSignatureState {
 // promptTokenCount is an inclusive total like OpenAI's prompt_tokens. Fold all
 // three Anthropic buckets into the Gemini total, then surface cache reads
 // separately as cachedContentTokenCount.
-const mapUsage = (state: MessagesToGeminiStreamState, usage?: Extract<MessagesStreamEvent, { type: 'message_delta' }>['usage']): GeminiUsageMetadata | undefined => {
-  if (!usage) return undefined;
-
+const mapUsage = (state: MessagesToGeminiStreamState, usage?: Extract<MessagesStreamEvent, { type: 'message_delta' }>['usage']): GeminiUsageMetadata => {
   const promptTokenCount = state.inputTokens + state.cacheReadInputTokens + state.cacheCreationInputTokens;
-  const candidatesTokenCount = usage.output_tokens;
+  const candidatesTokenCount = usage?.output_tokens ?? 0;
   splitInclusiveInputTokens(promptTokenCount, state.cacheReadInputTokens, state.cacheCreationInputTokens);
   const serviceTier = billableServiceTier(usage.speed ?? state.upstreamSpeed)
     ?? billableServiceTier(usage.service_tier ?? state.upstreamServiceTier);
@@ -186,6 +184,15 @@ export const translateToSourceEvents = async function* (frames: AsyncIterable<Pr
     }
 
     case 'message_delta': {
+      if (event.usage?.input_tokens !== undefined) {
+        state.inputTokens = event.usage.input_tokens;
+      }
+      if (event.usage?.cache_read_input_tokens !== undefined) {
+        state.cacheReadInputTokens = event.usage.cache_read_input_tokens;
+      }
+      if (event.usage?.cache_creation_input_tokens !== undefined) {
+        state.cacheCreationInputTokens = event.usage.cache_creation_input_tokens;
+      }
       if (event.usage?.speed !== undefined) state.upstreamSpeed = event.usage.speed;
       if (event.usage?.service_tier !== undefined) state.upstreamServiceTier = event.usage.service_tier;
       yield eventFrame(geminiCandidateEvent(flushGeminiThoughtSignature(state), messagesStopReasonToGemini(event.delta.stop_reason), mapUsage(state, event.usage)));
