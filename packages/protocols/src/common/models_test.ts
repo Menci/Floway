@@ -33,6 +33,14 @@ test('canonical selector JSON sorts axis keys and threshold object keys determin
   assertEquals(parsePricingSelectorKey(expected), { inputTokens: { operator: 'gt', value: 272000 }, serviceTier: 'priority' });
 });
 
+test('canonical selectors reject unknown threshold fields', () => {
+  assertThrows(
+    () => canonicalizePricingSelector({ inputTokens: { operator: 'gt', value: 100, unit: 'tokens' } } as never),
+    RangeError,
+    'unknown fields: unit',
+  );
+});
+
 test('parsePricingSelectorKey rejects noncanonical JSON', () => {
   assertThrows(() => parsePricingSelectorKey('{"serviceTier":"priority","inputTokens":{"operator":"gt","value":272000}}'), Error, 'not canonical');
 });

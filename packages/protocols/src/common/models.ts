@@ -126,6 +126,8 @@ const axisById = new Map<string, PricingAxis>(PRICING_AXES.map(axis => [axis.id,
 
 const canonicalThreshold = (value: PricingCoordinateValue, path: string): PricingThresholdCoordinate => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError(`${path} must be a threshold object`);
+  const unknownKeys = Object.keys(value).filter(key => key !== 'operator' && key !== 'value');
+  if (unknownKeys.length > 0) throw new RangeError(`${path} has unknown fields: ${unknownKeys.join(', ')}`);
   const { operator, value: threshold } = value;
   if (operator !== 'gt' && operator !== 'gte') throw new RangeError(`${path}.operator must be "gt" or "gte"`);
   if (!Number.isSafeInteger(threshold) || threshold <= 0) throw new RangeError(`${path}.value must be a positive safe integer`);
