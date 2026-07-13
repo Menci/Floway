@@ -42,23 +42,20 @@ const pricingInput = (wrapper: ReturnType<typeof mountEditor>) =>
   wrapper.findAll('input').find(input => input.attributes('placeholder') === 'unpriced')!;
 
 describe('ModelEditor', () => {
-  it('resets its pricing child on row changes and forwards pricing validity and updates', async () => {
+  it('resets its pricing child on row changes and forwards pricing updates', async () => {
     const first = row('first', 'model-first', 1, undefined);
     const second = row('second', 'model-second', 2, undefined);
     second.config.pricing = { entries: [{ rates: {} }] };
 
     const wrapper = mountEditor(first);
     expect((pricingInput(wrapper).element as HTMLInputElement).value).toBe('1');
-    expect(wrapper.emitted('validity-change')?.at(-1)).toEqual([true]);
 
     await wrapper.setProps({ row: second });
     await nextTick();
     expect((pricingInput(wrapper).element as HTMLInputElement).value).toBe('');
-    expect(wrapper.emitted('validity-change')?.at(-1)).toEqual([false]);
 
     await pricingInput(wrapper).setValue('7');
     expect(wrapper.emitted('patch-config')?.at(-1)?.[0]).toEqual({ pricing: { entries: [{ rates: { input: 7 } }] } });
-    expect(wrapper.emitted('validity-change')?.at(-1)).toEqual([true]);
   });
 
   it('clears cached flag overrides when switching rows', async () => {

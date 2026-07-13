@@ -29,7 +29,6 @@ const emit = defineEmits<{
   'patch-config': [patch: Partial<UpstreamModelConfig>];
   'set-mode': [next: 'auto' | 'manual'];
   remove: [];
-  'validity-change': [valid: boolean];
 }>();
 
 const kindOptions: { value: ModelKind; label: string }[] = [
@@ -42,7 +41,6 @@ const config = computed<UpstreamModelConfig | null>(() => props.row?.config ?? n
 const editable = computed(() => props.row?.kind === 'manual');
 const rowKind = computed<ModelKind>(() => config.value?.kind ?? 'chat');
 const lastFlagOverrides = ref<FlagOverrides>({});
-const pricingValid = ref(true);
 
 const patch = (next: Partial<UpstreamModelConfig>) => {
   if (!editable.value) return;
@@ -88,30 +86,6 @@ const onChatMetadataChange = (next: AnnouncedMetadata | undefined) => {
   patch({ limits: next?.limits, chat: next?.chat as UpstreamChatConfig | undefined });
 };
 
-// A chat row is invalid when:
-// - effort is enabled but supported list is empty
-// - effort is enabled but default is empty or not in supported
-// - budget_tokens is enabled but max < min (when both are set)
-const isReasoningValid = computed<boolean>(() => {
-  const reasoning = config.value?.chat?.reasoning;
-  if (reasoning === undefined) return true;
-
-  if (reasoning.effort !== undefined) {
-    const effort = reasoning.effort;
-    if (effort.supported.length === 0) return false;
-    if (effort.default === '' || !effort.supported.includes(effort.default)) return false;
-  }
-
-  if (reasoning.budget_tokens !== undefined) {
-    const bt = reasoning.budget_tokens;
-    if (bt.min !== undefined && bt.max !== undefined && bt.max < bt.min) return false;
-  }
-
-  return true;
-});
-
-const isValid = computed(() => isReasoningValid.value && pricingValid.value);
-watch(isValid, valid => { emit('validity-change', valid); }, { immediate: true });
 </script>
 
 <template>
@@ -231,7 +205,6 @@ watch(isValid, valid => { emit('validity-change', valid); }, { immediate: true }
           :editable="editable"
           :reset-key="row.uiId + ':' + row.kind"
           @update:model-value="value => patch({ pricing: value })"
-          @validity-change="valid => pricingValid = valid"
         />
 
         <section>
