@@ -190,6 +190,9 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     const contentHashes = new Set<string>();
     for (const item of options.inputItemsToStage ?? []) {
       const id = responsesItemId(item);
+      // A gateway-owned id is authoritative: affinity rejects it when the row
+      // is absent, while staging reuses or repairs that exact row. A content
+      // lookup cannot change either outcome.
       if (id !== null && isStoredResponsesItemId(id)) continue;
       contentHashes.add(await this.hashItemContent(item));
     }
