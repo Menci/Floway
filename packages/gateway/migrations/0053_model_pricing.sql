@@ -30,6 +30,7 @@ SET config_json = json_set(
 
                 SELECT 1 + tier.id, tier.key, json_patch(base.rates, tier.value)
                 FROM base, json_each(json_extract(model.value, '$.cost'), '$.tiers') AS tier
+                WHERE lower(trim(tier.key)) NOT IN ('', 'default', 'standard')
               ),
               rates AS (
                 SELECT

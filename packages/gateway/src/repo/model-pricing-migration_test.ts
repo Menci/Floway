@@ -66,6 +66,14 @@ test('0053 materializes legacy pricing semantics and clears the derived model ca
             upstreamModelId: 'tier-order',
             [legacyKey]: { input: 1, tiers: { priority: { input: 2 }, flex: { input: 0.5 } } },
           },
+          {
+            upstreamModelId: 'base-equivalent-tiers',
+            [legacyKey]: { input: 1, tiers: { default: { input: 2 }, ' Standard ': { output: 8 }, '  ': { input: 3 } } },
+          },
+          {
+            upstreamModelId: 'base-equivalent-tier-only',
+            [legacyKey]: { tiers: { Standard: { input: 2 } } },
+          },
           { upstreamModelId: 'unpriced', display_name: 'Unpriced' },
         ],
       });
@@ -179,6 +187,11 @@ test('0053 materializes legacy pricing semantics and clears the derived model ca
           ],
         },
       },
+      {
+        upstreamModelId: 'base-equivalent-tiers',
+        pricing: { entries: [{ rates: inputRates(1) }] },
+      },
+      { upstreamModelId: 'base-equivalent-tier-only' },
       { upstreamModelId: 'unpriced', display_name: 'Unpriced' },
     ],
   });
