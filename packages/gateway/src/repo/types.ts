@@ -350,14 +350,14 @@ export interface ModelAliasesRepo {
   deleteAll(): Promise<void>;
 }
 
-export interface StoredResponsesItem {
+export interface StoredResponsesItemMetadata {
   id: string;
   apiKeyId: string | null;
   upstreamId: string | null;
   upstreamItemId: string | null;
   itemType: string;
   origin: 'input' | 'upstream' | 'synthetic';
-  payload: StoredResponsesItemPayload | null;
+  hasPayload: boolean;
   contentHash: string | null;
   // sha256 of the item's `encrypted_content`, when it carries one (reasoning /
   // compaction). Lets a later turn that echoes the blob without a gateway id
@@ -365,6 +365,10 @@ export interface StoredResponsesItem {
   encryptedContentHash: string | null;
   createdAt: number;
   refreshedAt: number;
+}
+
+export interface StoredResponsesItem extends Omit<StoredResponsesItemMetadata, 'hasPayload'> {
+  payload: StoredResponsesItemPayload | null;
 }
 
 export interface StoredResponsesItemPayload {
@@ -376,10 +380,16 @@ export interface StoredResponsesItemPayload {
   private?: unknown;
 }
 
+export interface StoredResponsesItemPayloadRecord {
+  id: string;
+  payload: StoredResponsesItemPayload;
+}
+
 export interface ResponsesItemsRepo {
-  lookupMany(apiKeyId: string | null, ids: readonly string[]): Promise<StoredResponsesItem[]>;
-  lookupManyByContentHash(apiKeyId: string | null, hashes: readonly string[]): Promise<StoredResponsesItem[]>;
-  lookupManyByEncryptedContentHash(apiKeyId: string | null, hashes: readonly string[]): Promise<StoredResponsesItem[]>;
+  lookupMany(apiKeyId: string | null, ids: readonly string[]): Promise<StoredResponsesItemMetadata[]>;
+  lookupManyByContentHash(apiKeyId: string | null, hashes: readonly string[]): Promise<StoredResponsesItemMetadata[]>;
+  lookupManyByEncryptedContentHash(apiKeyId: string | null, hashes: readonly string[]): Promise<StoredResponsesItemMetadata[]>;
+  lookupPayloads(apiKeyId: string | null, ids: readonly string[]): Promise<StoredResponsesItemPayloadRecord[]>;
   insertMany(items: readonly StoredResponsesItem[]): Promise<void>;
   fillPayloads(items: readonly StoredResponsesItem[]): Promise<number>;
   refreshMany(apiKeyId: string | null, ids: readonly string[], refreshedAt: number): Promise<number>;
