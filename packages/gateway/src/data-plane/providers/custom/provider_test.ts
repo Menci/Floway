@@ -138,12 +138,6 @@ test('Custom provider projects display_name / created / limits / pricing from a 
       assertEquals(model.pricing?.entries[0]?.rates.input, 3);
       assertEquals(model.pricing?.entries[0]?.rates.output, 15);
       assertEquals(model.pricing?.entries[0]?.rates.input_cache_read, 0.3);
-
-      const pricing = instance.instance.getPricingForModelKey('m-rich');
-      assertEquals(pricing?.entries[0]?.rates.input, 3);
-      assertEquals(pricing?.entries[0]?.rates.output, 15);
-
-      assertEquals(instance.instance.getPricingForModelKey('unknown'), null);
     },
   );
 });
@@ -284,9 +278,6 @@ test('Custom provider with modelsFetch disabled serves only manual models and ne
       assertEquals(models[0].limits.max_output_tokens, 4096);
       assertEquals(models[0].pricing?.entries[0]?.rates.input, 1);
 
-      const pricing = provider.getPricingForModelKey('pinned-chat');
-      assertEquals(pricing?.entries[0]?.rates.input, 1);
-      assertEquals(pricing?.entries[0]?.rates.output, 2);
     },
   );
 });
@@ -335,14 +326,9 @@ test('Custom provider with a manual override sharing an upstream id wins over th
       assertExists(shared);
       assertEquals(shared.display_name, 'Manual Shared');
 
-      // Pricing resolves from the manual config first, not the cached upstream pricing.
-      const sharedPricing = provider.getPricingForModelKey('shared');
-      assertEquals(sharedPricing?.entries[0]?.rates.input, 1);
-      assertEquals(sharedPricing?.entries[0]?.rates.output, 2);
-
-      // Auto models without upstream pricing data resolve to null pricing.
-      const autoOnly = provider.getPricingForModelKey('auto-only');
-      assertEquals(autoOnly, null);
+      assertEquals(shared.pricing?.entries[0]?.rates.input, 1);
+      assertEquals(shared.pricing?.entries[0]?.rates.output, 2);
+      assertEquals(models.find(model => model.id === 'auto-only')?.pricing, undefined);
     },
   );
 });

@@ -349,31 +349,6 @@ test('createAzureProvider attaches pricing field from model config', async () =>
   assertEquals(models[1].pricing, undefined);
 });
 
-test('createAzureProvider getPricingForModelKey resolves by upstream model id', () => {
-  const instance = createAzureProvider(
-    azureRecord({
-      config: {
-        endpoint: 'https://example.openai.azure.com',
-        apiKey: 'az-key',
-        models: [
-          {
-            upstreamModelId: 'gpt-prod',
-            endpoints: { chatCompletions: {} },
-            pricing: { entries: [{ rates: { input: 2.5, output: 15 } }] },
-          },
-          {
-            upstreamModelId: 'gpt-small',
-            endpoints: { chatCompletions: {} },
-          },
-        ],
-      },
-    }),
-  );
-  assertEquals(instance.instance.getPricingForModelKey('gpt-prod'), { entries: [{ rates: { input: 2.5, output: 15 } }] });
-  assertEquals(instance.instance.getPricingForModelKey('gpt-small'), null);
-  assertEquals(instance.instance.getPricingForModelKey('unknown'), null);
-});
-
 test('createAzureProvider exposes image models and routes generations with api-version=preview', async () => {
   const record: UpstreamRecord = {
     id: 'az-image',

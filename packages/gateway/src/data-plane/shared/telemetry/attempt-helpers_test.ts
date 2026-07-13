@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { chatTargetPicker, providerStreamResultToExecuteResult } from './attempt-helpers.ts';
+import { chatTargetPicker, providerStreamResultToExecuteResult, telemetryModelIdentity } from './attempt-helpers.ts';
 import { mockGatewayCtx } from '../../../test-helpers/gateway-ctx.ts';
 import { setupAppTest } from '../../../test-helpers.ts';
 import { enumerateModelCandidates } from '../../providers/registry.ts';
@@ -136,6 +136,17 @@ const drainEvents = async <T>(result: Awaited<ReturnType<typeof providerStreamRe
 };
 
 describe('providerStreamResultToExecuteResult (first-output-token stamping)', () => {
+  test('captures pricing from the exact dispatched provider model', () => {
+    const pricing = { entries: [{ rates: { input: 3, output: 12 } }] };
+    const candidate = stubModelCandidate({ model: { pricing } });
+    expect(telemetryModelIdentity(candidate, 'raw-model')).toEqual({
+      model: 'test-model',
+      upstream: 'test-upstream',
+      modelKey: 'raw-model',
+      pricing,
+    });
+  });
+
   test('stamps firstOutputTokenAt on the first generated-token frame (messages thinking_delta)', async () => {
     const ctx = mockGatewayCtx();
     const frames: ProtocolFrame<unknown>[] = [

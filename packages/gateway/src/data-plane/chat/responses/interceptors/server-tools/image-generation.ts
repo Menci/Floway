@@ -465,7 +465,7 @@ const recordImageUsage = (state: ShimState, provider: Provider, model: ProviderM
     model: model.id,
     upstream: provider.upstream,
     modelKey,
-    pricing: provider.instance.getPricingForModelKey(modelKey) ?? null,
+    pricing: model.pricing ?? null,
   }, usage).catch((error: unknown) => {
     console.error('Failed to record image generation usage:', error);
   });

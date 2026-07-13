@@ -90,6 +90,7 @@ test('getProvidedModels merges manual overrides in front of auto-fetched models 
         kind: 'chat',
         endpoints: { chatCompletions: {} },
         display_name: 'Pinned 120B',
+        pricing: { entries: [{ rates: { input: 99, output: 99 } }] },
       }],
     },
   }));
@@ -100,30 +101,10 @@ test('getProvidedModels merges manual overrides in front of auto-fetched models 
     assertEquals(models[0].id, 'gpt-oss:120b');
     assertEquals(models[0].display_name, 'Pinned 120B');
     assertEquals(Object.keys(models[0].endpoints), ['chatCompletions']);
+    assertEquals(models[0].pricing, { entries: [{ rates: { input: 99, output: 99 } }] });
     // No duplicate gpt-oss:120b further down.
     assertEquals(models.filter(m => m.id === 'gpt-oss:120b').length, 1);
   });
-});
-
-test('getPricingForModelKey resolves manual pricing first, then falls back to the OLLAMA_MODEL_PRICING table', () => {
-  const instance = createOllamaProvider(buildRecord({
-    config: {
-      baseUrl: 'https://ollama.com',
-      apiKey: 'ollama_test',
-      models: [{
-        upstreamModelId: 'gpt-oss:120b',
-        kind: 'chat',
-        endpoints: { chatCompletions: {} },
-        pricing: { entries: [{ rates: { input: 99, output: 99 } }] },
-      }],
-    },
-  }));
-  // Manual pricing wins for the pinned id.
-  assertEquals(instance.instance.getPricingForModelKey('gpt-oss:120b'), { entries: [{ rates: { input: 99, output: 99 } }] });
-  // Unpinned model falls back to the table.
-  assertEquals(instance.instance.getPricingForModelKey('deepseek-v4-flash')?.entries[0]?.rates.input, 0.14);
-  // Unknown model returns null rather than fabricating a guess.
-  assertEquals(instance.instance.getPricingForModelKey('devstral-small-2:24b'), null);
 });
 
 test('call* methods POST to /v1/<endpoint> with the upstream model id and Bearer header', async () => {
