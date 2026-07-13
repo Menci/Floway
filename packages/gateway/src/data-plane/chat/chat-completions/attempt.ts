@@ -30,7 +30,7 @@ export interface ChatCompletionsAttemptArgs {
 export const chatCompletionsAttempt = {
   generate: async (args: ChatCompletionsAttemptArgs): Promise<ExecuteResult<ProtocolFrame<ChatCompletionsStreamEvent>>> => {
     const { payload: sourcePayload, ctx, candidate, headers: sourceHeaders } = args;
-    const payload = structuredClone(sourcePayload);
+    const payload = { ...structuredClone(sourcePayload), model: candidate.model.id };
     const headers = new Headers(sourceHeaders);
     const targetApi = chatCompletionsTarget.pick(candidate.model.endpoints);
     const rewritten = await rewriteOrRenderChatCompletionsFailure(payload, ctx.store, candidate);

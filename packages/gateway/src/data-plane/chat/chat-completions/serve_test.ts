@@ -306,14 +306,16 @@ test('generate renders model-missing when no candidates are available', async ()
 test('alias resolution swaps the inbound model id for the target and overlays rules onto the IR', async () => {
   installRepo();
   const capturedBodies: ChatCompletionsPayload[] = [];
-  const callChatCompletions = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => {
+  const observedModelIds: string[] = [];
+  const callChatCompletions = vi.fn(async (model: unknown, body: unknown): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => {
+    observedModelIds.push((model as { id: string }).id);
     capturedBodies.push(body as ChatCompletionsPayload);
     return { ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'gpt-5.4', headers: new Headers() };
   });
   // Alias flow shape: the resolver returns candidates carrying the target's
   // upstream catalog id AND the alias's rule overlay on `candidate.rules`.
-  // Serve normalizes `payload.model` to `candidate.model.id`; the attempt
-  // reads the overlay directly off `candidate.rules` at wire-call time.
+  // The attempt stamps its private clone with `candidate.model.id` and reads
+  // the overlay directly off `candidate.rules` at wire-call time.
   const candidate = makeCandidate({ upstream: 'up_a', callChatCompletions });
   Object.assign(candidate.model, { id: 'gpt-5.4' });
   queueResolution([candidate], { aliasRules: { reasoning: { effort: 'low' }, verbosity: 'low' } });
@@ -332,11 +334,8 @@ test('alias resolution swaps the inbound model id for the target and overlays ru
   // The resolver saw the inbound alias id verbatim — target-id walking
   // happens inside the resolver, not in serve.
   assertEquals(lastResolveCall.model, 'gpt-fast');
-  // Serve normalized payload.model to the candidate's real id before the
-  // attempt. Every attempt sees the canonical resolved public id — for an
-  // alias inbound the change is visible (gpt-fast → gpt-5.4); for a direct
-  // inbound the rewrite is a no-op.
-  assertEquals(payload.model, 'gpt-5.4');
+  assertEquals(observedModelIds, ['gpt-5.4']);
+  assertEquals(payload.model, 'gpt-fast');
   // Alias rules land on the IR through candidate.rules → the attempt's
   // applyRulesToUpstreamChatCompletions call.
   const observed = capturedBodies[0]!;
@@ -344,15 +343,16 @@ test('alias resolution swaps the inbound model id for the target and overlays ru
   assertEquals(observed.verbosity, 'low');
 });
 
-test('direct dispatch normalizes payload.model to the resolved public id', async () => {
+test('direct dispatch uses the resolved public id without mutating the addressed model', async () => {
   // A prefix-addressable id ('cop/gpt-5.4') resolves to the catalog's
-  // 'gpt-5.4' — the resolver strips the prefix internally. Serve then
-  // pins payload.model to the candidate's real id so every attempt sees
-  // the canonical form regardless of how the client addressed the model.
+  // 'gpt-5.4' — the resolver strips the prefix internally. The attempt pins
+  // only its private clone to that canonical id.
   installRepo();
-  const callChatCompletions = vi.fn(async (): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'gpt-5.4', headers: new Headers(),
-  }));
+  const observedModelIds: string[] = [];
+  const callChatCompletions = vi.fn(async (model: unknown): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => {
+    observedModelIds.push((model as { id: string }).id);
+    return { ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'gpt-5.4', headers: new Headers() };
+  });
   const candidate = makeCandidate({ upstream: 'up_a', callChatCompletions });
   Object.assign(candidate.model, { id: 'gpt-5.4' });
   queueResolution([candidate]);
@@ -367,9 +367,11 @@ test('direct dispatch normalizes payload.model to the resolved public id', async
   if (result.type !== 'events') throw new Error('unreachable');
   await collectEvents(result.events);
 
-  // Resolver saw the prefixed inbound; serve normalized to the catalog id.
+  // Resolver and caller payload retain the prefixed address while dispatch
+  // uses the catalog id.
   assertEquals(lastResolveCall.model, 'cop/gpt-5.4');
-  assertEquals(payload.model, 'gpt-5.4');
+  assertEquals(observedModelIds, ['gpt-5.4']);
+  assertEquals(payload.model, 'cop/gpt-5.4');
 });
 
 test('alias whose targets have no kind-matching binding surfaces as the regular model-missing 404', async () => {

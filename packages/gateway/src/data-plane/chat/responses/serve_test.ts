@@ -181,15 +181,19 @@ test('compact returns a result envelope from the wrapped attempt', async () => {
     object: 'response.compaction',
     output: [compactionItem] as unknown as ResponsesResult['output'],
   };
-  const callResponses = vi.fn(async (_model: unknown, _body: unknown, action: ResponsesAction): Promise<ProviderResponsesResult> => {
+  const observedModelIds: string[] = [];
+  const callResponses = vi.fn(async (model: unknown, _body: unknown, action: ResponsesAction): Promise<ProviderResponsesResult> => {
     if (action !== 'compact') throw new Error(`expected compact, got ${action}`);
+    observedModelIds.push((model as { id: string }).id);
     return { action: 'compact', ok: true, result: compactionResult, modelKey: 'test-model-key' };
   });
   const candidate = makeCandidate({ upstream: 'up_a', callResponses });
+  Object.assign(candidate.model, { id: 'gpt-target' });
   queueResolution([candidate]);
+  const payload = compactPayload({ model: 'gpt-alias' });
 
   const result = await responsesServe.compact({
-    payload: compactPayload(),
+    payload,
     ctx: makeGatewayCtx(),
     headers: new Headers(),
   });
@@ -199,6 +203,8 @@ test('compact returns a result envelope from the wrapped attempt', async () => {
   assertEquals(result.result.object, 'response.compaction');
   assertEquals(callResponses.mock.calls.length, 1);
   assertEquals(callResponses.mock.calls[0][2], 'compact');
+  assertEquals(observedModelIds, ['gpt-target']);
+  assertEquals(payload.model, 'gpt-alias');
 });
 
 test('generate falls through to the next candidate when the first yields an upstream error', async () => {
@@ -739,7 +745,9 @@ test('generate treats compaction_trigger-bearing input as compaction: snapshot r
 test('alias resolution swaps the inbound model id for the target and overlays rules onto the Responses IR', async () => {
   installRepo();
   const capturedBodies: ResponsesPayload[] = [];
-  const callResponses = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderResponsesResult> => {
+  const observedModelIds: string[] = [];
+  const callResponses = vi.fn(async (model: unknown, body: unknown): Promise<ProviderResponsesResult> => {
+    observedModelIds.push((model as { id: string }).id);
     capturedBodies.push(body as ResponsesPayload);
     return { action: 'generate', ok: true, events: makeProtocolFrames([{ type: 'response.completed', sequence_number: 0, response: makeResponsesResult() }]), modelKey: 'gpt-5.4', headers: new Headers() };
   });
@@ -760,12 +768,11 @@ test('alias resolution swaps the inbound model id for the target and overlays ru
   if (result.type !== 'events') throw new Error('unreachable');
   await collectEvents(result.events);
 
-  // Resolver saw the inbound alias id; serve rewrote the prepared payload's
-  // model to the target id before dispatching. (The attempt strips `model`
-  // from the body — the provider re-stamps it from `candidate.model.id` —
-  // so we only verify payload rewriting via `payload.model` here.)
+  // Resolver and caller payload retain the inbound alias; the provider model
+  // argument carries the resolved target id while the body omits `model`.
   assertEquals(lastResolveCall.model, 'gpt-fast');
-  assertEquals(payload.model, 'gpt-5.4');
+  assertEquals(observedModelIds, ['gpt-5.4']);
+  assertEquals(payload.model, 'gpt-fast');
   const observed = capturedBodies[0]!;
   assertEquals(observed.reasoning?.effort, 'high');
   assertEquals(observed.reasoning?.summary, 'detailed');

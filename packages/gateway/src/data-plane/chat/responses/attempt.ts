@@ -76,7 +76,7 @@ export interface ResponsesAttemptInvokeArgs {
 export const responsesAttempt = {
   invoke: async (args: ResponsesAttemptInvokeArgs): Promise<ResponsesAttemptResult> => {
     const { payload: sourcePayload, action, ctx, candidate, headers: sourceHeaders } = args;
-    const payload = structuredClone(sourcePayload);
+    const payload = { ...structuredClone(sourcePayload), model: candidate.model.id };
     const headers = new Headers(sourceHeaders);
     const { store } = ctx;
     const targetApi = responsesTarget.pick(candidate.model.endpoints);

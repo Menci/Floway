@@ -333,17 +333,24 @@ test('generate filters out candidates whose endpoints do not satisfy the message
 
 test('countTokens proxies the upstream measurement response as a plain result', async () => {
   installRepo();
-  const callMessagesCountTokens = vi.fn(async (): Promise<ProviderCallResult> => ({
-    response: new Response(JSON.stringify({ input_tokens: 42 }), {
-      status: 200,
-      headers: new Headers({ 'content-type': 'application/json' }),
-    }),
-    modelKey: 'test-model-key',
-  }));
-  queueResolution([makeCandidate({ upstream: 'up_a', callMessagesCountTokens })]);
+  const observedModelIds: string[] = [];
+  const callMessagesCountTokens = vi.fn(async (model: unknown): Promise<ProviderCallResult> => {
+    observedModelIds.push((model as { id: string }).id);
+    return {
+      response: new Response(JSON.stringify({ input_tokens: 42 }), {
+        status: 200,
+        headers: new Headers({ 'content-type': 'application/json' }),
+      }),
+      modelKey: 'test-model-key',
+    };
+  });
+  const candidate = makeCandidate({ upstream: 'up_a', callMessagesCountTokens });
+  Object.assign(candidate.model, { id: 'claude-target' });
+  queueResolution([candidate]);
+  const payload = makePayload({ model: 'claude-alias' });
 
   const result = await messagesServe.countTokens({
-    payload: makePayload(),
+    payload,
     ctx: makeGatewayCtx(),
     headers: new Headers(),
   });
@@ -353,6 +360,8 @@ test('countTokens proxies the upstream measurement response as a plain result', 
   const body = JSON.parse(new TextDecoder().decode(plain.body));
   assertEquals(body.input_tokens, 42);
   assertEquals(callMessagesCountTokens.mock.calls.length, 1);
+  assertEquals(observedModelIds, ['claude-target']);
+  assertEquals(payload.model, 'claude-alias');
 });
 
 test('countTokens renders model-missing as a 404 when no candidates are available', async () => {
@@ -615,14 +624,16 @@ test('countTokens failover preserves billing blocks for a strip-off candidate', 
 test('alias resolution swaps the inbound model id for the target and overlays rules onto the Messages IR', async () => {
   installRepo();
   const capturedBodies: MessagesPayload[] = [];
-  const callMessages = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
+  const observedModelIds: string[] = [];
+  const callMessages = vi.fn(async (model: unknown, body: unknown): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
+    observedModelIds.push((model as { id: string }).id);
     capturedBodies.push({ ...(body as Omit<MessagesPayload, 'model'>), model: 'claude-opus-4-7' });
     return { ok: true, events: makeProtocolFrames(makeMessagesResultEvents()), modelKey: 'claude-opus-4-7' };
   });
   // Alias flow shape: the resolver returns candidates carrying the target's
   // upstream catalog id AND the alias's rule overlay on `candidate.rules`.
-  // Serve normalizes `payload.model` to `candidate.model.id`; the attempt
-  // reads the overlay directly off `candidate.rules` at wire-call time.
+  // The attempt stamps its private clone with `candidate.model.id` and reads
+  // the overlay directly off `candidate.rules` at wire-call time.
   const candidate = makeCandidate({ upstream: 'up_cf', callMessages });
   Object.assign(candidate.model, { id: 'claude-opus-4-7' });
   queueResolution([candidate], { aliasRules: { reasoning: { effort: 'high', budget_tokens: 2048 }, serviceTier: 'fast' } });
@@ -636,10 +647,11 @@ test('alias resolution swaps the inbound model id for the target and overlays ru
 
   await collectEvents(assertResultType(result, 'events').events);
 
-  // The resolver saw the inbound alias id verbatim; serve rewrote
-  // payload.model to the target id before the attempt.
+  // The resolver and caller payload retain the inbound alias while dispatch
+  // uses the resolved target id.
   assertEquals(lastResolveCall.model, 'claude-fast');
-  assertEquals(payload.model, 'claude-opus-4-7');
+  assertEquals(observedModelIds, ['claude-opus-4-7']);
+  assertEquals(payload.model, 'claude-fast');
   const observed = capturedBodies[0]!;
   assertEquals(observed.output_config?.effort, 'high');
   assertEquals(observed.thinking?.budget_tokens, 2048);

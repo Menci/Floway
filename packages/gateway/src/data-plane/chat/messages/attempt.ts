@@ -36,7 +36,7 @@ export interface MessagesAttemptArgs {
 export const messagesAttempt = {
   generate: async (args: MessagesAttemptArgs): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>>> => {
     const { payload: sourcePayload, ctx, candidate, headers: sourceHeaders } = args;
-    const payload = structuredClone(sourcePayload);
+    const payload = { ...structuredClone(sourcePayload), model: candidate.model.id };
     const headers = new Headers(sourceHeaders);
     const { store } = ctx;
     const targetApi = messagesGenerateTarget.pick(candidate.model.endpoints);
@@ -84,7 +84,7 @@ export const messagesAttempt = {
 
   countTokens: async (args: MessagesAttemptArgs): Promise<PlainResult> => {
     const { payload: sourcePayload, ctx, candidate, headers: sourceHeaders } = args;
-    const payload = structuredClone(sourcePayload);
+    const payload = { ...structuredClone(sourcePayload), model: candidate.model.id };
     const headers = new Headers(sourceHeaders);
     const { store } = ctx;
     // `pick` here is contractually total — serve filtered with

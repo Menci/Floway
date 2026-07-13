@@ -29,17 +29,14 @@ export const responsesServe = {
     // final answer; per-candidate failures fall through so a transient
     // 5xx/429/network does not become the request's verdict when another
     // candidate can serve. The last failure surfaces verbatim on exhaustion.
-    // Normalize `prepared.model` to the candidate's real id so every
-    // attempt sees the canonical resolved public id.
+    // Each attempt stamps its private prepared-payload clone with the
+    // candidate's canonical model id.
     return await iterateCandidates(
       plan.candidates,
       'responsesServe.generate',
       ctx,
       'chat',
-      candidate => {
-        plan.prepared.model = candidate.model.id;
-        return responsesAttempt.generate({ payload: plan.prepared, ctx, candidate, headers });
-      },
+      candidate => responsesAttempt.generate({ payload: plan.prepared, ctx, candidate, headers }),
     );
   },
 
@@ -60,10 +57,7 @@ export const responsesServe = {
       'responsesServe.compact',
       ctx,
       'chat',
-      candidate => {
-        plan.prepared.model = candidate.model.id;
-        return responsesAttempt.invoke({ payload: plan.prepared, action: 'compact', ctx, candidate, headers });
-      },
+      candidate => responsesAttempt.invoke({ payload: plan.prepared, action: 'compact', ctx, candidate, headers }),
     );
   },
 };

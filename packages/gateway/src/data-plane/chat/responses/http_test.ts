@@ -397,11 +397,10 @@ test('POST /v1/responses renders a routing-unavailable 400 when a forcing item n
   assertEquals(body.error.code, 'responses_item_routing_unavailable');
 });
 
-// Alias flow: the resolver returns a candidate whose upstream catalog id
-// is the target model id, plus the alias's rule overlay. Serve rewrites
-// `payload.model` to `candidate.model.id` before dispatching, and the
-// attempt's leaf wire call reads `candidate.rules` to overlay the rules
-// onto the target IR.
+// Alias flow: the resolver returns a candidate whose upstream catalog id is
+// the target model id, plus the alias's rule overlay. The attempt stamps its
+// private clone with `candidate.model.id`, and the leaf wire call reads
+// `candidate.rules` to overlay the rules onto the target IR.
 const queueCodexAutoReviewCandidate = (
   callResponses: (model: unknown, body: unknown, action: ResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderResponsesResult>,
 ): void => {

@@ -238,16 +238,17 @@ alias-origin candidates through the same iteration but never observe
 non-empty rules (passthrough alias kinds — `embedding`, `image` — carry
 `{}` by schema; the apply-rules call is a no-op).
 
-The `payload.model` normalization is unconditional across every chat
-serve site (`chat-completions`, `messages`, `responses`): each attempt
-sees `payload.model === candidate.model.id`, whether the inbound id was
-an alias name, a prefix-addressable variant like `cop/gpt-5.4`, a dated
-suffix like `claude-opus-4-7-20250929`, or a bare public id. The wire
-body drops `payload.model` at the last step; the provider layer stamps
-the emitting upstream's own id from `providerModelOf(candidate)`.
-Gemini omits the normalization because its inbound model rides on the
-URL path, not the body — dispatch keys off `candidate.model.id`
-directly.
+Every chat attempt owns a `structuredClone` of the source payload and a
+fresh `Headers` object, so rewrites and provider-boundary mutations cannot
+leak into a fallback candidate or the caller-owned request. Chat Completions,
+Messages, and Responses stamp `candidate.model.id` only onto that private
+clone, whether the inbound id was an alias name, a prefix-addressable variant
+like `cop/gpt-5.4`, a dated suffix like `claude-opus-4-7-20250929`, or a bare
+public id. The wire body drops `payload.model` at the last step; the provider
+layer stamps the emitting upstream's own id from `providerModelOf(candidate)`.
+Gemini clones for the same attempt isolation but needs no body-model stamp:
+its inbound model rides on the URL path and dispatch keys off
+`candidate.model.id` directly.
 
 By construction alias names never re-enter the alias layer: the target
 id is a real model id, so the shadow pattern (an alias whose first
