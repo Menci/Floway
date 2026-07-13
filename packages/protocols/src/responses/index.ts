@@ -594,7 +594,11 @@ export interface ResponsesResult {
     input_tokens: number;
     output_tokens: number;
     total_tokens: number;
-    input_tokens_details?: { cached_tokens: number };
+    // Both fields are disjoint subsets of input_tokens. Older compatible
+    // upstreams may omit cache_write_tokens even when they provide details.
+    // https://github.com/openai/openai-python/blob/f16fbbd2bd25dc1ff150b5f78dbd15ff6bab6d91/src/openai/types/responses/response_usage.py
+    // https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L7259-L7269
+    input_tokens_details?: { cached_tokens: number; cache_write_tokens?: number };
     output_tokens_details?: { reasoning_tokens: number };
     [USAGE_BILLING]?: UsageBillingMetadata;
   };
