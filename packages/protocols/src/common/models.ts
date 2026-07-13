@@ -360,7 +360,7 @@ export const priceRequest = (pricing: ModelPricing | null, facts: PricingRuntime
     const fact = facts[axis.fact];
     if (fact != null) selector[axis.id] = fact;
   }
-  const scopeKey = JSON.stringify(selector);
+  const scopeKey = equalityScopeKey(canonicalizePricingSelector(selector));
   for (const axis of PRICING_AXES) {
     if (axis.kind !== 'threshold') continue;
     const fact = facts[axis.fact];
