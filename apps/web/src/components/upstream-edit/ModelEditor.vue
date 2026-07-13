@@ -7,7 +7,7 @@ import { defaultEndpointsForKind, publicIdOf, titleFor, type Row } from './model
 import type { AnnouncedMetadata, BillingDimension, ModelKind, ModelPricing, UpstreamChatConfig, UpstreamModelConfig } from '../../api/types.ts';
 import { parseOptionalNumber } from '../../utils/parse-optional-number.ts';
 import ChatMetadataEditor from '../shared/ChatMetadataEditor.vue';
-import { BILLING_DIMENSIONS, PRICING_AXES, canonicalPricingSelectorKey, type ModelPricing as ProtocolModelPricing, type PricingCoordinateValue, type PricingSelector, type PricingThresholdOperator, validateModelPricing } from '@floway-dev/protocols/common';
+import { collectModelPricingIssues, PRICING_AXES, canonicalPricingSelectorKey, type ModelPricingIssue, type PricingCoordinateValue, type PricingSelector, type PricingThresholdOperator } from '@floway-dev/protocols/common';
 import type { Flag, FlagDefaults, FlagOverrides } from '@floway-dev/provider/flags';
 import { Button, Input, Select, Switch } from '@floway-dev/ui';
 
@@ -135,34 +135,17 @@ const pricingEntryCoordinateLabel = (draft: PricingEntryDraft): string => {
   return labels.length > 0 ? labels.join(', ') : 'Base';
 };
 
-const duplicatePricingCoordinateGroups = computed(() => {
-  const entriesByKey = new Map<string, NumberedPricingEntryDraft[]>();
-  for (const [index, draft] of pricingEntryDrafts.value.entries()) {
-    const key = coordinateKey(draft);
-    if (key === null) continue;
-    const entries = entriesByKey.get(key) ?? [];
-    entries.push({ draft, number: index + 1 });
-    entriesByKey.set(key, entries);
-  }
-  return [...entriesByKey].filter(([, entries]) => entries.length > 1);
-});
+const pricingIssues = computed<readonly ModelPricingIssue[]>(() => pricingEntryDrafts.value.length === 0
+  ? []
+  : collectModelPricingIssues({
+      entries: pricingEntryDrafts.value.map(draft => ({ selector: compactSelector(draft), rates: draft.rates })),
+    }));
 
-const duplicatePricingCoordinates = computed(() =>
-  new Set(duplicatePricingCoordinateGroups.value.map(([key]) => key)));
+const duplicatePricingCoordinates = computed(() => new Set(pricingIssues.value.flatMap(issue =>
+  issue.code === 'duplicate-selector' ? [issue.selectorKey] : [])));
 
-const hasRates = (draft: PricingEntryDraft): boolean => BILLING_DIMENSIONS.some(dimension => draft.rates[dimension] !== undefined);
-const rateDimensions = (draft: PricingEntryDraft): readonly BillingDimension[] =>
-  BILLING_DIMENSIONS.filter(dimension => draft.rates[dimension] !== undefined);
-const rateDimensionKey = (draft: PricingEntryDraft): string =>
-  rateDimensions(draft).join('\0');
-const hasValidSelector = (draft: PricingEntryDraft): boolean => {
-  try {
-    canonicalPricingSelectorKey(compactSelector(draft));
-    return true;
-  } catch {
-    return false;
-  }
-};
+const invalidPricingSelectorEntries = computed(() => new Set(pricingIssues.value.flatMap(issue =>
+  issue.code === 'invalid-selector' ? [issue.entryIndex] : [])));
 
 const formatList = (values: readonly string[]): string => {
   if (values.length === 0) throw new Error('formatList requires at least one value');
@@ -179,73 +162,56 @@ const pricingValidationErrors = computed<readonly string[]>(() => {
   const numberedEntries = pricingEntryDrafts.value.map((draft, index): NumberedPricingEntryDraft => ({ draft, number: index + 1 }));
   const formatEntry = ({ draft, number }: NumberedPricingEntryDraft): string =>
     `entry ${number} (${JSON.stringify(pricingEntryCoordinateLabel(draft))})`;
-  const missingRateEntries = numberedEntries.filter(({ draft }) => !hasRates(draft));
-  const invalidSelectorEntries = numberedEntries.filter(({ draft }) => !hasValidSelector(draft));
-  const baseEntries = numberedEntries.filter(({ draft }) => coordinateKey(draft) === '{}');
-  const hasMissingRates = missingRateEntries.length > 0;
-  const hasInvalidSelector = invalidSelectorEntries.length > 0;
-  const hasInvalidBaseCount = pricingEntryDrafts.value.length > 0 && baseEntries.length !== 1;
-  const hasDuplicateCoordinates = duplicatePricingCoordinateGroups.value.length > 0;
-  const baseEntry = baseEntries.length === 1 ? baseEntries[0]!.draft : null;
-  const hasInconsistentRateFields = baseEntry !== null
-    && pricingEntryDrafts.value.some(draft => rateDimensionKey(draft) !== rateDimensionKey(baseEntry));
+  const emptyRateIssues = pricingIssues.value.filter(issue => issue.code === 'empty-rates');
+  const invalidSelectorIssues = pricingIssues.value.filter(issue => issue.code === 'invalid-selector');
+  const rateDimensionIssues = pricingIssues.value.filter(issue => issue.code === 'rate-dimensions');
+  const baseIssue = pricingIssues.value.find(issue => issue.code === 'base-count');
+  const duplicateIssues = pricingIssues.value.filter(issue => issue.code === 'duplicate-selector' && issue.selectorKey !== '{}');
 
-  if (hasMissingRates && !hasInconsistentRateFields) {
-    const predicate = missingRateEntries.length === 1 ? 'has' : 'have';
-    errors.add(`Set at least one rate: ${formatList(missingRateEntries.map(formatEntry))} ${predicate} no rates.`);
+  if (emptyRateIssues.length > 0 && rateDimensionIssues.length === 0) {
+    const entries = emptyRateIssues.map(issue => numberedEntries[issue.entryIndex]!).map(formatEntry);
+    const predicate = entries.length === 1 ? 'has' : 'have';
+    errors.add(`Set at least one rate: ${formatList(entries)} ${predicate} no rates.`);
   }
-  if (hasInvalidSelector) {
-    errors.add(`Selector values are invalid: ${formatList(invalidSelectorEntries.map(({ number }) => `entry ${number}`))}.`);
+  if (invalidSelectorIssues.length > 0) {
+    const entries = invalidSelectorIssues.map(issue => `entry ${issue.entryIndex + 1}`);
+    errors.add(`Selector values are invalid: ${formatList(entries)}.`);
   }
-  if (hasInvalidBaseCount) {
-    const detail = baseEntries.length === 0
+  if (baseIssue?.code === 'base-count') {
+    const detail = baseIssue.entryIndexes.length === 0
       ? 'none is configured'
-      : `entries ${formatList(baseEntries.map(({ number }) => String(number)))} are Base`;
+      : `entries ${formatList(baseIssue.entryIndexes.map(index => String(index + 1)))} are Base`;
     errors.add(`Pricing must contain exactly one Base entry: ${detail}.`);
   }
-  if (hasDuplicateCoordinates) {
-    const details = duplicatePricingCoordinateGroups.value.flatMap(([, entries]) => {
-      const label = pricingEntryCoordinateLabel(entries[0]!.draft);
-      return label === 'Base'
-        ? []
-        : [`entries ${formatList(entries.map(({ number }) => String(number)))} use ${JSON.stringify(label)}`];
-    });
-    if (details.length > 0) {
-      const subject = details.length === 1 ? 'Duplicate selector coordinate' : 'Duplicate selector coordinates';
-      errors.add(`${subject}: ${details.join('; ')}.`);
-    }
+  if (duplicateIssues.length > 0) {
+    const details = duplicateIssues.map(issue =>
+      `entries ${formatList(issue.entryIndexes.map(index => String(index + 1)))} use ${JSON.stringify(pricingEntryCoordinateLabel(numberedEntries[issue.entryIndexes[0]!]!.draft))}`);
+    const subject = details.length === 1 ? 'Duplicate selector coordinate' : 'Duplicate selector coordinates';
+    errors.add(`${subject}: ${details.join('; ')}.`);
   }
-  if (hasInconsistentRateFields && baseEntry) {
-    const expectedDimensions = rateDimensions(baseEntry);
-    const expectedSet = new Set(expectedDimensions);
-    const differences = numberedEntries.flatMap(entry => {
-      const { draft } = entry;
-      if (draft === baseEntry || rateDimensionKey(draft) === rateDimensionKey(baseEntry)) return [];
-      const actual = new Set(rateDimensions(draft));
-      const missing = expectedDimensions.filter(dimension => !actual.has(dimension)).map(rateFieldName);
-      const added = rateDimensions(draft).filter(dimension => !expectedSet.has(dimension)).map(rateFieldName);
+  if (rateDimensionIssues.length > 0) {
+    const differences = rateDimensionIssues.map(issue => {
+      const entry = numberedEntries[issue.entryIndex]!;
+      const missing = issue.missingDimensions.map(rateFieldName);
+      const added = issue.addedDimensions.map(rateFieldName);
       const changes = [
         ...(missing.length > 0 ? [`is missing ${formatList(missing)}`] : []),
         ...(added.length > 0 ? [`adds ${formatList(added)}`] : []),
       ];
-      return [`${formatEntry(entry)} ${changes.join(' and ')}`];
+      return `${formatEntry(entry)} ${changes.join(' and ')}`;
     });
     errors.add(`All pricing entries must set the same rate fields: ${differences.join('; ')}.`);
   }
 
-  const canValidateCatalog = pricingEntryDrafts.value.length > 0
-    && !hasMissingRates
-    && !hasInvalidSelector
-    && !hasInvalidBaseCount
-    && !hasDuplicateCoordinates
-    && !hasInconsistentRateFields;
-  if (canValidateCatalog) {
-    try {
-      validateModelPricing({
-        entries: pricingEntryDrafts.value.map(draft => ({ selector: compactSelector(draft), rates: draft.rates })),
-      } as ProtocolModelPricing);
-    } catch (error) {
-      errors.add(error instanceof Error ? error.message : String(error));
+  for (const issue of pricingIssues.value) {
+    if (issue.code === 'invalid-rate') {
+      errors.add(`Pricing rate is invalid: ${formatEntry(numberedEntries[issue.entryIndex]!)} has invalid ${rateFieldName(issue.dimension)}.`);
+    } else if (issue.code === 'threshold-operator-conflict') {
+      const entries = issue.entryIndexes.map(index => String(index + 1));
+      const axis = PRICING_AXES.find(candidate => candidate.id === issue.axisId)!;
+      errors.add(`Conflicting pricing threshold operators: entries ${formatList(entries)} disagree at ${axis.label} ${issue.value}.`);
+    } else if (issue.code === 'empty-catalog') {
+      errors.add(issue.error.message);
     }
   }
   return [...errors];
@@ -565,7 +531,7 @@ watch(isValid, valid => { emit('validity-change', valid); }, { immediate: true }
                       v-if="axis.kind === 'equality'"
                       :model-value="typeof selectedPricingEntry.selector[axis.id] === 'string' ? selectedPricingEntry.selector[axis.id] as string : ''"
                       :readonly="!editable"
-                      :invalid="!hasValidSelector(selectedPricingEntry) || coordinateKey(selectedPricingEntry) !== null && duplicatePricingCoordinates.has(coordinateKey(selectedPricingEntry)!)"
+                      :invalid="invalidPricingSelectorEntries.has(selectedPricingEntryIndex) || coordinateKey(selectedPricingEntry) !== null && duplicatePricingCoordinates.has(coordinateKey(selectedPricingEntry)!)"
                       placeholder="default"
                       class="font-mono"
                       @update:model-value="v => updateEqualityCoordinate(selectedPricingEntryIndex, axis.id, v)"
@@ -584,7 +550,7 @@ watch(isValid, valid => { emit('validity-change', valid); }, { immediate: true }
                         step="1"
                         :model-value="thresholdCoordinate(selectedPricingEntry, axis.id)?.value"
                         :readonly="!editable"
-                        :invalid="!hasValidSelector(selectedPricingEntry) || coordinateKey(selectedPricingEntry) !== null && duplicatePricingCoordinates.has(coordinateKey(selectedPricingEntry)!)"
+                        :invalid="invalidPricingSelectorEntries.has(selectedPricingEntryIndex) || coordinateKey(selectedPricingEntry) !== null && duplicatePricingCoordinates.has(coordinateKey(selectedPricingEntry)!)"
                         placeholder="base"
                         class="font-mono"
                         @update:model-value="v => updateThresholdCoordinate(selectedPricingEntryIndex, axis.id, { value: parseOptionalNumber(v) })"
