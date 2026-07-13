@@ -64,6 +64,13 @@ export interface ResponsesCompactPayload {
   instructions?: string | null;
   previous_response_id?: string | null;
   prompt_cache_key?: string | null;
+  // Supported for gpt-5.6+. Both slots remain open-string so future modes and
+  // lifetimes reach the upstream unchanged.
+  // https://github.com/openai/openai-python/blob/f16fbbd2bd25dc1ff150b5f78dbd15ff6bab6d91/src/openai/types/responses/response_compact_params.py#L144-L184
+  prompt_cache_options?: {
+    mode?: 'implicit' | 'explicit' | (string & {});
+    ttl?: '30m' | (string & {});
+  } | null;
   prompt_cache_retention?: 'in_memory' | '24h' | null;
   service_tier?: 'default' | 'auto' | 'flex' | 'priority' | 'scale' | (string & {}) | null;
   // Gateway-only: controls whether the compact response's output items + the
@@ -92,6 +99,7 @@ export const toCompactPayloadShape = (payload: Omit<CanonicalResponsesPayload, '
   ...(payload.instructions !== undefined && { instructions: payload.instructions }),
   ...(payload.previous_response_id !== undefined && { previous_response_id: payload.previous_response_id }),
   ...(payload.prompt_cache_key !== undefined && { prompt_cache_key: payload.prompt_cache_key }),
+  ...(payload.prompt_cache_options !== undefined && { prompt_cache_options: payload.prompt_cache_options }),
   ...(payload.prompt_cache_retention !== undefined && { prompt_cache_retention: payload.prompt_cache_retention }),
   ...(payload.service_tier !== undefined && { service_tier: payload.service_tier }),
 });
@@ -165,6 +173,7 @@ export type ResponsesRequestPayload = Omit<ResponsesPayload, 'input'> & {
 
 export type CanonicalResponsesPayload = Omit<ResponsesPayload, 'input'> & {
   input: ResponsesInputItem[];
+  prompt_cache_options?: ResponsesCompactPayload['prompt_cache_options'];
   prompt_cache_retention?: ResponsesCompactPayload['prompt_cache_retention'];
 };
 

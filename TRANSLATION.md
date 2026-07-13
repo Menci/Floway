@@ -61,9 +61,10 @@ the gateway returns a Gemini-shaped unsupported-model error.
   boundaries normalize it to an explicit `type: "message"` before storage,
   interception, or translation. Malformed untyped items are rejected as caller
   input errors at the same boundary.
-- Responses compact requests retain `prompt_cache_retention` through the
-  canonical/provider boundary for native compact targets. Provider-specific
-  rejection remains a boundary workaround (Codex strips the field).
+- Responses compact requests retain `prompt_cache_options` and the deprecated
+  `prompt_cache_retention` through the canonical/provider boundary for native
+  compact targets. Provider-specific rejection remains a boundary workaround
+  (Codex strips `prompt_cache_retention`).
 - Translators do not synthesize defaults merely to satisfy a target shape.
   Examples: no translated-only `temperature: 1`, `store: false`,
   `parallel_tool_calls: true`, or `reasoning.summary: "detailed"`.
