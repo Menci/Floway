@@ -556,7 +556,9 @@ test('translateChatCompletionsChunkToMessagesEvents omits usage.speed when servi
   ];
 
   const messageDelta = events.find(event => event.type === 'message_delta');
-  assertFalse('speed' in (messageDelta as { usage: Record<string, unknown> }).usage);
+  const usage = (messageDelta as { usage: Record<string, unknown> }).usage;
+  assertFalse('speed' in usage);
+  assertEquals(usage.service_tier, 'default');
 });
 
 test('translateChatCompletionsChunkToMessagesEvents omits usage.speed when service_tier is absent', () => {

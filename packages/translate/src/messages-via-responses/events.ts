@@ -73,6 +73,9 @@ const responsesUsageToMessagesUsage = (response: ResponsesResult, outputTokens: 
     output_tokens: outputTokens,
     ...(cachedTokens !== undefined ? { cache_read_input_tokens: cachedTokens } : {}),
     ...(cacheWriteTokens !== undefined ? { cache_creation_input_tokens: cacheWriteTokens } : {}),
+    ...(response.service_tier === 'fast'
+      ? { speed: 'fast' as const }
+      : response.service_tier != null ? { service_tier: response.service_tier } : {}),
   };
 };
 
@@ -83,10 +86,6 @@ export const translateResponsesToMessagesResult = (response: ResponsesResult): M
   const content = mapOutputToMessagesContent(response.output);
   const finalContent = content.length > 0 ? content : response.output_text ? [{ type: 'text' as const, text: response.output_text }] : [];
 
-  // Responses `service_tier: 'fast'` surfaces as Messages `speed: 'fast'`;
-  // all other `service_tier` values have no Messages equivalent and are dropped.
-  const speed = response.service_tier === 'fast' ? 'fast' : undefined;
-
   return {
     id: response.id,
     type: 'message',
@@ -95,10 +94,7 @@ export const translateResponsesToMessagesResult = (response: ResponsesResult): M
     model: response.model,
     stop_reason: mapResponsesStopReason(response),
     stop_sequence: null,
-    usage: {
-      ...responsesUsageToMessagesUsage(response, response.usage?.output_tokens ?? 0),
-      ...(speed !== undefined ? { speed } : {}),
-    },
+    usage: responsesUsageToMessagesUsage(response, response.usage?.output_tokens ?? 0),
   };
 };
 

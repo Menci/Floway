@@ -234,6 +234,7 @@ test('translateToSourceEvents preserves deferred reasoning and stream usage', as
           id: 'resp_deferred_reasoning',
           output_text: 'answer',
           output: [],
+          service_tier: 'priority',
           usage: {
             input_tokens: 12,
             output_tokens: 4,
@@ -277,6 +278,8 @@ test('translateToSourceEvents preserves deferred reasoning and stream usage', as
     total_tokens: 16,
     prompt_tokens_details: { cached_tokens: 3, cache_creation_input_tokens: 2 },
   });
+  assertEquals(events.at(-2)?.service_tier, 'priority');
+  assertEquals(events.at(-1)?.service_tier, 'priority');
   assertEquals(frames.at(-1)?.type, 'done');
 });
 

@@ -85,6 +85,7 @@ interface ChatCompletionsToResponsesStreamState {
   deferredAfterReasoning: DeferredAfterReasoning[];
   reasoningItemsSeen: boolean;
   usage?: ResponsesResult['usage'];
+  serviceTier?: ResponsesResult['service_tier'];
   pendingFinishReason?: ChatCompletionsFinishReason;
   completed: boolean;
   customToolNames: ReadonlySet<string>;
@@ -119,11 +120,13 @@ const buildResult = (state: ChatCompletionsToResponsesStreamState, status: Respo
     // Chat Completions and don't reach this builder.
     ...(status === 'incomplete' ? { incompleteDetails: { reason: 'max_output_tokens' as const } } : {}),
     ...(state.usage !== undefined ? { usage: state.usage } : {}),
+    ...(state.serviceTier !== undefined ? { serviceTier: state.serviceTier } : {}),
   });
 
 const ensureResponseCreated = (chunk: ChatCompletionsStreamEvent, state: ChatCompletionsToResponsesStreamState): ResponsesStreamEvent[] => {
   state.responseId = chunk.id;
   state.model = chunk.model;
+  if (chunk.service_tier !== undefined) state.serviceTier = chunk.service_tier;
 
   if (chunk.usage) {
     state.usage = mapChatCompletionsUsageToResponsesUsage(chunk.usage);
