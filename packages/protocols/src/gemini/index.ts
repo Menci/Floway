@@ -1,3 +1,5 @@
+import { USAGE_BILLING, type UsageBillingMetadata } from '../common/usage.ts';
+
 export interface GeminiPayload {
   contents?: GeminiContent[];
   systemInstruction?: GeminiContent;
@@ -89,23 +91,13 @@ export interface GeminiCandidate {
 
 export type GeminiFinishReason = 'STOP' | 'MAX_TOKENS' | 'SAFETY' | 'RECITATION' | 'OTHER' | 'MALFORMED_FUNCTION_CALL' | 'FINISH_REASON_UNSPECIFIED';
 
-// Symbol-keyed billing facts survive in-process translation and reassembly but
-// are omitted by JSON serialization, so Gemini clients see only native fields.
-export const GEMINI_USAGE_BILLING = Symbol('gemini-usage-billing');
-
-export interface GeminiUsageBilling {
-  cacheWriteTokenCount?: number;
-  cacheWrite1hTokenCount?: number;
-  serviceTier?: string;
-}
-
 export interface GeminiUsageMetadata {
   promptTokenCount?: number;
   candidatesTokenCount?: number;
   totalTokenCount?: number;
   thoughtsTokenCount?: number;
   cachedContentTokenCount?: number;
-  [GEMINI_USAGE_BILLING]?: GeminiUsageBilling;
+  [USAGE_BILLING]?: UsageBillingMetadata;
 }
 
 export interface GeminiErrorResponse {

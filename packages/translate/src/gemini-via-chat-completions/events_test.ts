@@ -3,8 +3,8 @@ import { test } from 'vitest';
 import { translateToSourceEvents } from './events.ts';
 import { assertEquals, assertRejects } from '../test-assert.ts';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
-import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { GEMINI_USAGE_BILLING, type GeminiStreamEvent } from '@floway-dev/protocols/gemini';
+import { doneFrame, eventFrame, USAGE_BILLING, type ProtocolFrame } from '@floway-dev/protocols/common';
+import type { GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 
 const chunk = (
   delta: ChatCompletionsStreamEvent['choices'][0]['delta'],
@@ -291,7 +291,7 @@ test('translateToSourceEvents preserves Chat cache and tier billing facts', asyn
         candidatesTokenCount: 8,
         totalTokenCount: 108,
         cachedContentTokenCount: 30,
-        [GEMINI_USAGE_BILLING]: { cacheWriteTokenCount: 25, serviceTier: 'priority' },
+        [USAGE_BILLING]: { cacheWriteTokenCount: 25, serviceTier: 'priority' },
       },
     }),
   ]);

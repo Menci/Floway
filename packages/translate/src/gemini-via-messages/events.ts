@@ -1,6 +1,6 @@
 import { appendGeminiThoughtSignature, flushGeminiThoughtSignature, type GeminiThoughtSignatureState, geminiCandidateEvent, parseStrictJsonObject, signGeminiPart } from '../shared/gemini-via/gemini.ts';
-import { billableServiceTier, eventFrame, splitInclusiveInputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { GEMINI_USAGE_BILLING, type GeminiFinishReason, type GeminiStreamEvent, type GeminiUsageMetadata } from '@floway-dev/protocols/gemini';
+import { billableServiceTier, eventFrame, splitInclusiveInputTokens, USAGE_BILLING, type ProtocolFrame } from '@floway-dev/protocols/common';
+import type { GeminiFinishReason, GeminiStreamEvent, GeminiUsageMetadata } from '@floway-dev/protocols/gemini';
 import { mergeMessagesUsageSnapshot, messagesUsageSnapshot, splitMessagesCacheCreationTokens, type MessagesStreamEvent, type MessagesUsageSnapshot } from '@floway-dev/protocols/messages';
 
 const messagesStopReasonToGemini = (stopReason: Extract<MessagesStreamEvent, { type: 'message_delta' }>['delta']['stop_reason']): GeminiFinishReason => {
@@ -66,7 +66,7 @@ const mapUsage = (state: MessagesToGeminiStreamState, hasTerminalUsage: boolean)
     ...(cacheRead > 0 ? { cachedContentTokenCount: cacheRead } : {}),
     ...(cacheWrite > 0 || cacheWrite1h > 0 || serviceTier !== null
       ? {
-          [GEMINI_USAGE_BILLING]: {
+          [USAGE_BILLING]: {
             ...(cacheWrite > 0 ? { cacheWriteTokenCount: cacheWrite } : {}),
             ...(cacheWrite1h > 0 ? { cacheWrite1hTokenCount: cacheWrite1h } : {}),
             ...(serviceTier !== null ? { serviceTier } : {}),

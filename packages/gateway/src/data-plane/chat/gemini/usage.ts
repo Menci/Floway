@@ -1,9 +1,9 @@
 import { tokenUsage } from '../../shared/telemetry/usage.ts';
-import { splitInclusiveInputTokens } from '@floway-dev/protocols/common';
-import { GEMINI_USAGE_BILLING, type GeminiUsageMetadata } from '@floway-dev/protocols/gemini';
+import { splitInclusiveInputTokens, USAGE_BILLING } from '@floway-dev/protocols/common';
+import type { GeminiUsageMetadata } from '@floway-dev/protocols/gemini';
 
 export const tokenUsageFromGeminiUsageMetadata = (metadata: GeminiUsageMetadata) => {
-  const billing = metadata[GEMINI_USAGE_BILLING];
+  const billing = metadata[USAGE_BILLING];
   const cacheWrite = billing?.cacheWriteTokenCount ?? 0;
   const cacheWrite1h = billing?.cacheWrite1hTokenCount ?? 0;
   const { input, cacheRead } = splitInclusiveInputTokens(

@@ -1,6 +1,6 @@
 import { geminiCandidateEvent, parseStrictJsonObject } from '../shared/gemini-via/gemini.ts';
-import { billableServiceTier, eventFrame, splitInclusiveInputTokens, splitInclusiveOutputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { GEMINI_USAGE_BILLING, type GeminiFinishReason, type GeminiPart, type GeminiStreamEvent, type GeminiUsageMetadata } from '@floway-dev/protocols/gemini';
+import { billableServiceTier, eventFrame, splitInclusiveInputTokens, splitInclusiveOutputTokens, USAGE_BILLING, type ProtocolFrame } from '@floway-dev/protocols/common';
+import type { GeminiFinishReason, GeminiPart, GeminiStreamEvent, GeminiUsageMetadata } from '@floway-dev/protocols/gemini';
 import type { ResponsesOutputFunctionCall, ResponsesOutputReasoning, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 type ResponsesTerminalEvent = Extract<ResponsesStreamEvent, { type: 'response.completed' } | { type: 'response.incomplete' } | { type: 'response.failed' }>;
@@ -38,7 +38,7 @@ const mapUsage = (response: ResponsesResult, upstreamServiceTier: ResponsesResul
       : {}),
     ...(cacheWriteTokens !== undefined || serviceTier !== null
       ? {
-          [GEMINI_USAGE_BILLING]: {
+          [USAGE_BILLING]: {
             ...(cacheWriteTokens !== undefined ? { cacheWriteTokenCount: cacheWriteTokens } : {}),
             ...(serviceTier !== null ? { serviceTier } : {}),
           },
