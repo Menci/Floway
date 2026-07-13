@@ -218,6 +218,7 @@ export interface PerformanceRepo {
 }
 
 export interface CachedModelsRow {
+  revision: number;
   fetchedAt: number;
   models: ProviderModel[];
   lastError: { message: string; at: number } | null;
@@ -225,7 +226,7 @@ export interface CachedModelsRow {
 
 export interface ModelsCacheRepo {
   get(upstreamId: string): Promise<CachedModelsRow | null>;
-  put(upstreamId: string, row: { fetchedAt: number; models: ProviderModel[] }): Promise<void>;
+  put(upstreamId: string, row: { revision: number; fetchedAt: number; models: ProviderModel[] }): Promise<void>;
   setLastError(upstreamId: string, error: { message: string; at: number } | null): Promise<void>;
   delete(upstreamId: string): Promise<void>;
 }

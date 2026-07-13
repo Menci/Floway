@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 
-import { clearInFlightForTesting, fetchUpstreamModelsCached } from './models-cache.ts';
+import { clearInFlightForTesting, fetchUpstreamModelsCached, MODEL_CATALOG_REVISION } from './models-cache.ts';
 import { initRepo } from '../../repo/index.ts';
 import { InMemoryRepo } from '../../repo/memory.ts';
 import { directFetcher, type Provider, type ProviderModel } from '@floway-dev/provider';
@@ -49,7 +49,7 @@ describe('fetchUpstreamModelsCached', () => {
 
   test('within SOFT: no fetch, returns stored', async () => {
     const repo = setupRepo();
-    await repo.modelsCache.put('up_a', { fetchedAt: Date.now() - 1000, models: [aModel('cached')] });
+    await repo.modelsCache.put('up_a', { revision: MODEL_CATALOG_REVISION, fetchedAt: Date.now() - 1000, models: [aModel('cached')] });
     const fetchFn = vi.fn(async () => [aModel('fresh')]);
 
     const result = await fetchUpstreamModelsCached(
@@ -63,7 +63,7 @@ describe('fetchUpstreamModelsCached', () => {
 
   test('past SOFT within HARD: returns stored + schedules revalidate', async () => {
     const repo = setupRepo();
-    await repo.modelsCache.put('up_a', { fetchedAt: Date.now() - 20 * 60_000, models: [aModel('stale')] });
+    await repo.modelsCache.put('up_a', { revision: MODEL_CATALOG_REVISION, fetchedAt: Date.now() - 20 * 60_000, models: [aModel('stale')] });
     const fetchFn = vi.fn(async () => [aModel('fresh')]);
     let scheduled: Promise<unknown> | null = null;
 
@@ -81,7 +81,7 @@ describe('fetchUpstreamModelsCached', () => {
 
   test('past HARD: blocks on fetch', async () => {
     const repo = setupRepo();
-    await repo.modelsCache.put('up_a', { fetchedAt: Date.now() - 25 * 60 * 60_000, models: [aModel('stale')] });
+    await repo.modelsCache.put('up_a', { revision: MODEL_CATALOG_REVISION, fetchedAt: Date.now() - 25 * 60 * 60_000, models: [aModel('stale')] });
     const fetchFn = vi.fn(async () => [aModel('fresh')]);
 
     const result = await fetchUpstreamModelsCached(
@@ -96,7 +96,7 @@ describe('fetchUpstreamModelsCached', () => {
 
   test('force=true: bypasses cache and blocks on fetch', async () => {
     const repo = setupRepo();
-    await repo.modelsCache.put('up_a', { fetchedAt: Date.now() - 1000, models: [aModel('stored')] });
+    await repo.modelsCache.put('up_a', { revision: MODEL_CATALOG_REVISION, fetchedAt: Date.now() - 1000, models: [aModel('stored')] });
     const fetchFn = vi.fn(async () => [aModel('fresh')]);
 
     const result = await fetchUpstreamModelsCached(
@@ -130,7 +130,7 @@ describe('fetchUpstreamModelsCached', () => {
 
   test('background revalidate failure preserves stored row and writes lastError', async () => {
     const repo = setupRepo();
-    await repo.modelsCache.put('up_a', { fetchedAt: Date.now() - 20 * 60_000, models: [aModel('stale')] });
+    await repo.modelsCache.put('up_a', { revision: MODEL_CATALOG_REVISION, fetchedAt: Date.now() - 20 * 60_000, models: [aModel('stale')] });
     const fetchFn = vi.fn(async () => { throw new Error('boom'); });
     let scheduled: Promise<unknown> | null = null;
 
@@ -161,7 +161,7 @@ describe('fetchUpstreamModelsCached', () => {
 
   test('force=true + fetch failure: throws (no fallback) and annotates lastError', async () => {
     const repo = setupRepo();
-    await repo.modelsCache.put('up_a', { fetchedAt: Date.now() - 1000, models: [aModel('stored')] });
+    await repo.modelsCache.put('up_a', { revision: MODEL_CATALOG_REVISION, fetchedAt: Date.now() - 1000, models: [aModel('stored')] });
     const fetchFn = vi.fn(async () => { throw new Error('boom'); });
 
     await expect(fetchUpstreamModelsCached(
@@ -172,5 +172,24 @@ describe('fetchUpstreamModelsCached', () => {
     const row = await repo.modelsCache.get('up_a');
     expect(row?.models.map(m => m.id)).toEqual(['stored']);
     expect(row?.lastError?.message).toContain('boom');
+  });
+
+  test('catalog revision mismatch bypasses a soft-fresh stored row', async () => {
+    const repo = setupRepo();
+    await repo.modelsCache.put('up_a', {
+      revision: MODEL_CATALOG_REVISION - 1,
+      fetchedAt: Date.now() - 1000,
+      models: [aModel('old-pricing')],
+    });
+    const fetchFn = vi.fn(async () => [aModel('current-pricing')]);
+
+    const result = await fetchUpstreamModelsCached(
+      stubInstance('up_a', fetchFn),
+      { scheduler: () => {}, fetcher: directFetcher },
+    );
+
+    expect(result.map(model => model.id)).toEqual(['current-pricing']);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect((await repo.modelsCache.get('up_a'))?.revision).toBe(MODEL_CATALOG_REVISION);
   });
 });

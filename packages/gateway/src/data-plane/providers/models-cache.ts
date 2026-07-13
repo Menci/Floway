@@ -11,6 +11,7 @@ import type { Fetcher, Provider, ProviderModel } from '@floway-dev/provider';
 // rather than introducing a separate fail-back tier.
 const SOFT_MS = 10 * 60 * 1000;
 const HARD_MS = 24 * 60 * 60 * 1000;
+export const MODEL_CATALOG_REVISION = 1;
 
 export interface ModelsCacheFetchOptions {
   scheduler: BackgroundScheduler;
@@ -51,7 +52,7 @@ const runFetch = async (
 ): Promise<ProviderModel[]> => {
   try {
     const models = [...await instance.instance.getProvidedModels(fetcher)];
-    await getRepo().modelsCache.put(key, { fetchedAt: Date.now(), models });
+    await getRepo().modelsCache.put(key, { revision: MODEL_CATALOG_REVISION, fetchedAt: Date.now(), models });
     return models;
   } catch (err) {
     // `setLastError` is a no-op when no stored row exists; a brand-new
@@ -74,7 +75,8 @@ export const fetchUpstreamModelsCached = async (
     return await memoInFlight(key, () => runFetch(instance, fetcher, key));
   }
 
-  const cached = await getRepo().modelsCache.get(key);
+  const stored = await getRepo().modelsCache.get(key);
+  const cached = stored?.revision === MODEL_CATALOG_REVISION ? stored : null;
 
   if (cached && now - cached.fetchedAt < SOFT_MS) {
     return cached.models;

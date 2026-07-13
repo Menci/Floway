@@ -65,10 +65,14 @@ Rules:
 - Return `null` when no defensible rate exists. Do not extrapolate from an
   adjacent model.
 
-5. Add boundary tests and prove selector misses return Base wholesale through
+5. Increment `MODEL_CATALOG_REVISION` in
+   `packages/gateway/src/data-plane/providers/models-cache.ts`. Static rates are
+   embedded in cached `ProviderModel` rows; the revision makes every older row
+   cold on the next request.
+6. Add boundary tests and prove selector misses return Base wholesale through
    `priceRequest`.
-6. Run provider tests, typecheck, lint, and the full test suite.
-7. If an existing rate changed, use `backfill-model-pricing` for the intended
+7. Run provider tests, typecheck, lint, and the full test suite.
+8. If an existing rate changed, use `backfill-model-pricing` for the intended
    historical slice.
 
 ## Provider-specific identity
