@@ -271,7 +271,7 @@ const prepareEditRequest = async (
 interface PrepareConfigError {
   message: string;
   param: string;
-  code: 'unknown_parameter' | 'invalid_value' | 'integer_below_min_value' | 'integer_above_max_value' | 'unsupported_image_source';
+  code: 'unknown_parameter' | 'invalid_value' | 'integer_below_min_value' | 'integer_above_max_value' | 'unsupported_image_source' | 'mutually_exclusive_parameters';
 }
 
 type PrepareConfigResult =
@@ -366,6 +366,17 @@ const validateHostedImageGenerationEntry = (
       return { ok: false, error: invalidValue(path('input_image_mask'), maskField, ['{ image_url }']) };
     }
     const maskInput = maskField as { image_url?: unknown; file_id?: unknown };
+    if (typeof maskInput.image_url === 'string' && maskInput.image_url.length > 0
+      && typeof maskInput.file_id === 'string' && maskInput.file_id.length > 0) {
+      return {
+        ok: false,
+        error: {
+          message: 'Floway requires exactly one of file_id or image_url for input_image_mask; both were provided.',
+          param: path('input_image_mask'),
+          code: 'mutually_exclusive_parameters',
+        },
+      };
+    }
     const maskUrl = maskInput.image_url;
     if (typeof maskUrl !== 'string' || maskUrl.length === 0) {
       if (typeof maskInput.file_id === 'string' && maskInput.file_id.length > 0) {
@@ -533,7 +544,23 @@ const inspectImageSourcesWithCache = (
   let issue: ImageSourceIssue | undefined;
   for (const [inputIndex, item] of input.entries()) {
     for (const { image, path } of inputImagesOf(item, inputIndex)) {
-      if (typeof image.image_url === 'string') {
+      const hasImageUrl = typeof image.image_url === 'string' && image.image_url.length > 0;
+      const hasFileId = typeof image.file_id === 'string' && image.file_id.length > 0;
+      if (hasImageUrl && hasFileId) {
+        return {
+          sources,
+          issue: {
+            kind: 'native',
+            error: {
+              message: `Mutually exclusive parameters: '${path}'. Ensure you are only providing one of: 'file_id' or 'image_url'.`,
+              errorType: 'invalid_request_error',
+              param: path,
+              code: 'mutually_exclusive_parameters',
+            },
+          },
+        };
+      }
+      if (hasImageUrl) {
         if (/^https?:\/\//i.test(image.image_url)) {
           issue ??= {
             kind: 'gateway',
@@ -556,7 +583,7 @@ const inspectImageSourcesWithCache = (
         sources.push(decoded.source);
         continue;
       }
-      if (typeof image.file_id === 'string' && image.file_id.length > 0) {
+      if (hasFileId) {
         issue ??= {
           kind: 'gateway',
           error: {

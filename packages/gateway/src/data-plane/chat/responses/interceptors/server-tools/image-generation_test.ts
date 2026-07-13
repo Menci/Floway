@@ -210,6 +210,18 @@ test('prepareImageGenerationConfig decodes an inline mask and reports file_id as
   assertEquals(fileId.error.code, 'unsupported_image_source');
   assertEquals(fileId.error.param, 'tools[0].input_image_mask.file_id');
   assertStringIncludes(fileId.error.message, 'Floway cannot use file IDs');
+
+  const both = prepareImageGenerationConfig([{
+    type: 'image_generation',
+    input_image_mask: {
+      image_url: `data:image/png;base64,${PNG_B64}`,
+      file_id: 'file_123',
+    },
+  } as ResponsesTool]);
+  assert(!both.ok);
+  assertEquals(both.error.code, 'mutually_exclusive_parameters');
+  assertEquals(both.error.param, 'tools[0].input_image_mask');
+  assertStringIncludes(both.error.message, 'Floway requires exactly one');
 });
 
 // ── buildImageGenerationFunctionTool ──
@@ -292,6 +304,28 @@ test('inspectImageSources mirrors the native error when input_image has no sourc
     },
   });
 });
+
+test.each(Object.entries(imageInputContainers))(
+  'inspectImageSources mirrors the native mutually-exclusive error in %s',
+  (container, wrap) => {
+    const inspection = inspectImageSources([wrap({
+      type: 'input_image',
+      image_url: `data:image/png;base64,${PNG_B64}`,
+      file_id: 'assistant-file_1',
+      detail: 'auto',
+    })]);
+    const path = `input[0].${container === 'message' ? 'content' : 'output'}[0]`;
+    assertEquals(inspection.issue, {
+      kind: 'native',
+      error: {
+        message: `Mutually exclusive parameters: '${path}'. Ensure you are only providing one of: 'file_id' or 'image_url'.`,
+        errorType: 'invalid_request_error',
+        param: path,
+        code: 'mutually_exclusive_parameters',
+      },
+    });
+  },
+);
 
 test('inspectImageSources reads tool-result images and preserves forward order', () => {
   const input: ResponsesInputItem[] = [
