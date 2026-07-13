@@ -278,7 +278,9 @@ Request mapping shared by the Gemini source translation pairs:
   thinking controls. Budget `0` disables thinking via Messages
   `thinking.disabled`, Responses `reasoning.effort: "none"`, or Chat
   `reasoning_effort: "none"`; positive budgets choose low/medium/high effort
-  where the target only supports effort levels.
+  where the target only supports effort levels. Explicit `thinkingLevel`
+  strings, including empty and future values, pass verbatim to the target's
+  open-string effort slot for upstream validation.
 - `maxOutputTokens`, `temperature`, `topP`, `topK`, `stopSequences`,
   `presencePenalty`, `frequencyPenalty`, `seed`, `responseMimeType`, and
   `responseSchema` are passed through when the selected target has a natural

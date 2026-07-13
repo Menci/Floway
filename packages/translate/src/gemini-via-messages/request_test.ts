@@ -9,6 +9,14 @@ const noOptions = {};
 
 const withMaxOutputTokens = (maxOutputTokens: number) => ({ fallbackMaxOutputTokens: maxOutputTokens });
 
+test('buildTargetRequest forwards an empty thinkingLevel verbatim', () => {
+  const request = buildTargetRequest({
+    generationConfig: { thinkingConfig: { thinkingLevel: '' } },
+  }, 'claude-test', noOptions);
+
+  assertEquals(request.output_config, { effort: '' });
+});
+
 test('buildTargetRequest maps system, default max tokens, and multimodal user content', () => {
   const payload: GeminiPayload = {
     systemInstruction: {
