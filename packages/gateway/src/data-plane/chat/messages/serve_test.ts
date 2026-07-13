@@ -124,6 +124,7 @@ const makeProtocolFrames = async function* <TEvent>(events: readonly TEvent[]): 
 
 const makeCandidate = (overrides: {
   upstream?: string;
+  modelId?: string;
   endpoints?: ModelEndpoints;
   kind?: ModelCandidate['provider']['kind'];
   enabledFlags?: ReadonlySet<FlagId>;
@@ -132,6 +133,7 @@ const makeCandidate = (overrides: {
   callMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderCallResult>;
 } = {}): ModelCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
+  const modelId = overrides.modelId ?? 'test-model';
   const kind = overrides.kind ?? 'custom';
   const provider = stubProvider({
     callMessages: overrides.callMessages,
@@ -144,9 +146,11 @@ const makeCandidate = (overrides: {
       disabledPublicModelIds: [], modelPrefix: null, instance: provider,
     },
     model: stubInternalModel({
+      id: modelId,
       ...(overrides.endpoints ? { endpoints: overrides.endpoints } : {}),
       providerModels: {
         [upstream]: stubProviderModel({
+          id: modelId,
           ...(overrides.endpoints ? { endpoints: overrides.endpoints } : {}),
           ...(overrides.enabledFlags ? { enabledFlags: overrides.enabledFlags } : {}),
         }),
@@ -154,13 +158,6 @@ const makeCandidate = (overrides: {
     }, upstream),
     fetcher: directFetcher,
   };
-};
-
-const setCandidateModelId = (candidate: ModelCandidate, id: string): void => {
-  Object.assign(candidate.model, { id });
-  const providerModel = candidate.model.providerModels?.[candidate.provider.upstream];
-  if (providerModel === undefined) throw new Error('expected candidate provider model');
-  Object.assign(providerModel, { id });
 };
 
 const collectEvents = async <TEvent>(events: AsyncIterable<ProtocolFrame<TEvent>>): Promise<TEvent[]> => {
@@ -351,8 +348,7 @@ test('countTokens proxies the upstream measurement response as a plain result', 
       modelKey: 'test-model-key',
     };
   });
-  const candidate = makeCandidate({ upstream: 'up_a', callMessagesCountTokens });
-  setCandidateModelId(candidate, 'claude-target');
+  const candidate = makeCandidate({ upstream: 'up_a', modelId: 'claude-target', callMessagesCountTokens });
   queueResolution([candidate]);
   const payload = makePayload({ model: 'claude-alias' });
 
@@ -641,8 +637,7 @@ test('alias resolution swaps the inbound model id for the target and overlays ru
   // upstream catalog id AND the alias's rule overlay on `candidate.rules`.
   // The attempt stamps its private clone with `candidate.model.id` and reads
   // the overlay directly off `candidate.rules` at wire-call time.
-  const candidate = makeCandidate({ upstream: 'up_cf', callMessages });
-  setCandidateModelId(candidate, 'claude-opus-4-7');
+  const candidate = makeCandidate({ upstream: 'up_cf', modelId: 'claude-opus-4-7', callMessages });
   queueResolution([candidate], { aliasRules: { reasoning: { effort: 'high', budget_tokens: 2048 }, serviceTier: 'fast' } });
 
   const payload = makePayload({ model: 'claude-fast' });

@@ -84,6 +84,7 @@ const makeProtocolFrames = async function* <TEvent>(events: readonly TEvent[]): 
 
 const makeCandidate = (overrides: {
   upstream?: string;
+  modelId?: string;
   endpoints?: ModelEndpoints;
   callChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
 } = {}): ModelCandidate => {
@@ -96,16 +97,12 @@ const makeCandidate = (overrides: {
       upstream, kind: 'custom', name: upstream,
       disabledPublicModelIds: [], modelPrefix: null, instance: provider,
     },
-    model: stubInternalModel(overrides.endpoints ? { endpoints: overrides.endpoints } : {}, upstream),
+    model: stubInternalModel({
+      id: overrides.modelId ?? 'test-model',
+      ...(overrides.endpoints ? { endpoints: overrides.endpoints } : {}),
+    }, upstream),
     fetcher: directFetcher,
   };
-};
-
-const setCandidateModelId = (candidate: ModelCandidate, id: string): void => {
-  Object.assign(candidate.model, { id });
-  const providerModel = candidate.model.providerModels?.[candidate.provider.upstream];
-  if (providerModel === undefined) throw new Error('expected candidate provider model');
-  Object.assign(providerModel, { id });
 };
 
 const collectEvents = async <TEvent>(events: AsyncIterable<ProtocolFrame<TEvent>>): Promise<TEvent[]> => {
@@ -323,8 +320,7 @@ test('alias resolution swaps the inbound model id for the target and overlays ru
   // upstream catalog id AND the alias's rule overlay on `candidate.rules`.
   // The attempt stamps its private clone with `candidate.model.id` and reads
   // the overlay directly off `candidate.rules` at wire-call time.
-  const candidate = makeCandidate({ upstream: 'up_a', callChatCompletions });
-  setCandidateModelId(candidate, 'gpt-5.4');
+  const candidate = makeCandidate({ upstream: 'up_a', modelId: 'gpt-5.4', callChatCompletions });
   queueResolution([candidate], { aliasRules: { reasoning: { effort: 'low' }, verbosity: 'low' } });
 
   const payload = makePayload({ model: 'gpt-fast' });
@@ -360,8 +356,7 @@ test('direct dispatch uses the resolved public id without mutating the addressed
     observedModelIds.push((model as { id: string }).id);
     return { ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'gpt-5.4', headers: new Headers() };
   });
-  const candidate = makeCandidate({ upstream: 'up_a', callChatCompletions });
-  setCandidateModelId(candidate, 'gpt-5.4');
+  const candidate = makeCandidate({ upstream: 'up_a', modelId: 'gpt-5.4', callChatCompletions });
   queueResolution([candidate]);
 
   const payload = makePayload({ model: 'cop/gpt-5.4' });

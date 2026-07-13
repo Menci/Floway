@@ -109,6 +109,7 @@ const makeProtocolFrames = async function* <E>(events: readonly E[]): AsyncGener
 
 const makeCandidate = (overrides: {
   upstream?: string;
+  modelId?: string;
   endpoints?: ModelEndpoints;
   callResponses?: (model: unknown, body: unknown, action: ResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderResponsesResult>;
   callMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<MessagesStreamEvent>>;
@@ -131,16 +132,12 @@ const makeCandidate = (overrides: {
     },
     // Default keeps stubInternalModel's three-endpoint map intact; tests that
     // need a rejected candidate pass an explicit `endpoints` override.
-    model: stubInternalModel(overrides.endpoints ? { endpoints: overrides.endpoints } : {}, upstream),
+    model: stubInternalModel({
+      id: overrides.modelId ?? 'test-model',
+      ...(overrides.endpoints ? { endpoints: overrides.endpoints } : {}),
+    }, upstream),
     fetcher: directFetcher,
   };
-};
-
-const setCandidateModelId = (candidate: ModelCandidate, id: string): void => {
-  Object.assign(candidate.model, { id });
-  const providerModel = candidate.model.providerModels?.[candidate.provider.upstream];
-  if (providerModel === undefined) throw new Error('expected candidate provider model');
-  Object.assign(providerModel, { id });
 };
 
 const collectEvents = async (events: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>): Promise<ResponsesStreamEvent[]> => {
@@ -194,8 +191,7 @@ test('compact returns a result envelope from the wrapped attempt', async () => {
     observedModelIds.push((model as { id: string }).id);
     return { action: 'compact', ok: true, result: compactionResult, modelKey: 'test-model-key' };
   });
-  const candidate = makeCandidate({ upstream: 'up_a', callResponses });
-  setCandidateModelId(candidate, 'gpt-target');
+  const candidate = makeCandidate({ upstream: 'up_a', modelId: 'gpt-target', callResponses });
   queueResolution([candidate]);
   const payload = compactPayload({ model: 'gpt-alias' });
 
@@ -758,8 +754,7 @@ test('alias resolution swaps the inbound model id for the target and overlays ru
     capturedBodies.push(body as ResponsesPayload);
     return { action: 'generate', ok: true, events: makeProtocolFrames([{ type: 'response.completed', sequence_number: 0, response: makeResponsesResult() }]), modelKey: 'gpt-5.4', headers: new Headers() };
   });
-  const candidate = makeCandidate({ upstream: 'up_a', callResponses });
-  setCandidateModelId(candidate, 'gpt-5.4');
+  const candidate = makeCandidate({ upstream: 'up_a', modelId: 'gpt-5.4', callResponses });
   queueResolution([candidate], {
     aliasRules: { reasoning: { effort: 'high', summary: 'detailed' }, verbosity: 'medium', serviceTier: 'priority' },
   });
