@@ -179,7 +179,7 @@ describe('ModelEditor row synchronization', () => {
     };
     const wrapper = mountEditor(selected);
 
-    expect(wrapper.text()).toContain('All pricing entries must set the same rate fields: "priority" is missing Output.');
+    expect(wrapper.text()).toContain('All pricing entries must set the same rate fields: entry 2 ("priority") is missing Output.');
     expect(wrapper.emitted('validity-change')?.at(-1)).toEqual([false]);
 
     await wrapper.get('button[aria-label="Edit pricing entry 2: priority"]').trigger('click');
@@ -252,8 +252,8 @@ describe('ModelEditor row synchronization', () => {
     selected.config.pricing = { entries: [{ rates: { input: 1 } }, { selector: { serviceTier: 'priority' }, rates: { input: 2 } }] };
     const wrapper = mountEditor(selected);
     await pricingInput(wrapper, 'base').setValue(value);
-    expect(wrapper.text()).toContain('Selector values are invalid: entry 2.');
-    expect(wrapper.findAll('p').filter(node => node.text() === 'Selector values are invalid: entry 2.')).toHaveLength(1);
+    expect(wrapper.text()).toContain('Selector values are invalid: entry 1.');
+    expect(wrapper.findAll('p').filter(node => node.text() === 'Selector values are invalid: entry 1.')).toHaveLength(1);
     expect(wrapper.emitted('validity-change')?.at(-1)).toEqual([false]);
   });
 
