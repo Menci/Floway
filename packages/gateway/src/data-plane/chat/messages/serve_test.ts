@@ -156,6 +156,13 @@ const makeCandidate = (overrides: {
   };
 };
 
+const setCandidateModelId = (candidate: ModelCandidate, id: string): void => {
+  Object.assign(candidate.model, { id });
+  const providerModel = candidate.model.providerModels[candidate.provider.upstream];
+  if (providerModel === undefined) throw new Error('expected candidate provider model');
+  Object.assign(providerModel, { id });
+};
+
 const collectEvents = async <TEvent>(events: AsyncIterable<ProtocolFrame<TEvent>>): Promise<TEvent[]> => {
   const out: TEvent[] = [];
   for await (const frame of events) {
@@ -345,7 +352,7 @@ test('countTokens proxies the upstream measurement response as a plain result', 
     };
   });
   const candidate = makeCandidate({ upstream: 'up_a', callMessagesCountTokens });
-  Object.assign(candidate.model, { id: 'claude-target' });
+  setCandidateModelId(candidate, 'claude-target');
   queueResolution([candidate]);
   const payload = makePayload({ model: 'claude-alias' });
 
@@ -635,7 +642,7 @@ test('alias resolution swaps the inbound model id for the target and overlays ru
   // The attempt stamps its private clone with `candidate.model.id` and reads
   // the overlay directly off `candidate.rules` at wire-call time.
   const candidate = makeCandidate({ upstream: 'up_cf', callMessages });
-  Object.assign(candidate.model, { id: 'claude-opus-4-7' });
+  setCandidateModelId(candidate, 'claude-opus-4-7');
   queueResolution([candidate], { aliasRules: { reasoning: { effort: 'high', budget_tokens: 2048 }, serviceTier: 'fast' } });
 
   const payload = makePayload({ model: 'claude-fast' });

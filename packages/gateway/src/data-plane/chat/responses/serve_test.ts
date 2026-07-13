@@ -136,6 +136,13 @@ const makeCandidate = (overrides: {
   };
 };
 
+const setCandidateModelId = (candidate: ModelCandidate, id: string): void => {
+  Object.assign(candidate.model, { id });
+  const providerModel = candidate.model.providerModels[candidate.provider.upstream];
+  if (providerModel === undefined) throw new Error('expected candidate provider model');
+  Object.assign(providerModel, { id });
+};
+
 const collectEvents = async (events: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>): Promise<ResponsesStreamEvent[]> => {
   const out: ResponsesStreamEvent[] = [];
   for await (const frame of events) {
@@ -188,7 +195,7 @@ test('compact returns a result envelope from the wrapped attempt', async () => {
     return { action: 'compact', ok: true, result: compactionResult, modelKey: 'test-model-key' };
   });
   const candidate = makeCandidate({ upstream: 'up_a', callResponses });
-  Object.assign(candidate.model, { id: 'gpt-target' });
+  setCandidateModelId(candidate, 'gpt-target');
   queueResolution([candidate]);
   const payload = compactPayload({ model: 'gpt-alias' });
 
@@ -752,7 +759,7 @@ test('alias resolution swaps the inbound model id for the target and overlays ru
     return { action: 'generate', ok: true, events: makeProtocolFrames([{ type: 'response.completed', sequence_number: 0, response: makeResponsesResult() }]), modelKey: 'gpt-5.4', headers: new Headers() };
   });
   const candidate = makeCandidate({ upstream: 'up_a', callResponses });
-  Object.assign(candidate.model, { id: 'gpt-5.4' });
+  setCandidateModelId(candidate, 'gpt-5.4');
   queueResolution([candidate], {
     aliasRules: { reasoning: { effort: 'high', summary: 'detailed' }, verbosity: 'medium', serviceTier: 'priority' },
   });
