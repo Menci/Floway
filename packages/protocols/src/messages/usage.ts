@@ -28,17 +28,16 @@ export const splitMessagesCacheCreationTokens = (
   if (flat === undefined) {
     return { cacheWrite: cacheWrite5m ?? 0, cacheWrite1h: cacheWrite1h ?? 0 };
   }
-  if (cacheWrite5m === undefined && cacheWrite1h !== undefined) {
-    if (cacheWrite1h > flat) throw new RangeError('cache creation TTL counts exceed cache_creation_input_tokens');
-    return { cacheWrite: flat - cacheWrite1h, cacheWrite1h };
+  if (cacheWrite5m !== undefined && cacheWrite1h !== undefined) {
+    if (cacheWrite5m + cacheWrite1h !== flat) {
+      throw new RangeError('cache creation TTL counts must sum to cache_creation_input_tokens');
+    }
+    return { cacheWrite: cacheWrite5m, cacheWrite1h };
   }
-  if (cacheWrite5m !== undefined && cacheWrite1h === undefined) {
+  if (cacheWrite5m !== undefined) {
     if (cacheWrite5m > flat) throw new RangeError('cache creation TTL counts exceed cache_creation_input_tokens');
     return { cacheWrite: cacheWrite5m, cacheWrite1h: flat - cacheWrite5m };
   }
-  if (cacheWrite5m === undefined || cacheWrite1h === undefined) throw new Error('unreachable cache creation split');
-  if (cacheWrite5m + cacheWrite1h !== flat) {
-    throw new RangeError('cache creation TTL counts must sum to cache_creation_input_tokens');
-  }
-  return { cacheWrite: cacheWrite5m, cacheWrite1h };
+  if (cacheWrite1h > flat) throw new RangeError('cache creation TTL counts exceed cache_creation_input_tokens');
+  return { cacheWrite: flat - cacheWrite1h, cacheWrite1h };
 };
