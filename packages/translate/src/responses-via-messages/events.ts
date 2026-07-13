@@ -112,6 +112,8 @@ const handleMessageStart = (event: MessagesMessageStartEvent, state: MessagesToR
   state.inputTokens = event.message.usage.input_tokens;
   state.cacheReadInputTokens = event.message.usage.cache_read_input_tokens;
   state.cacheCreationInputTokens = event.message.usage.cache_creation_input_tokens;
+  if (event.message.usage.speed !== undefined) state.upstreamSpeed = event.message.usage.speed;
+  if (event.message.usage.service_tier !== undefined) state.upstreamServiceTier = event.message.usage.service_tier;
 
   const response = buildResult(state, 'in_progress');
 
