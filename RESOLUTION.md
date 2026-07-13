@@ -276,15 +276,16 @@ interface ModelCandidate {
 }
 ```
 
-- `provider` is the resolved upstream provider instance — every wire call and
-  pricing lookup reads off `provider.*` directly (upstream id, upstream name,
-  and provider kind).
+- `provider` is the resolved upstream provider instance — every wire call reads
+  its upstream id, upstream name, provider kind, and implementation from this
+  binding.
 - `model` is the merged public row for this id, projected to a single
   contributing upstream: `providerModels` carries exactly one entry keyed
   on `provider.upstream`. That entry is the `ProviderModel` the upstream
   emitted verbatim — its `providerData` carries the per-provider wire id,
-  its `enabledFlags` carries the operator's per-model flag set. Dispatch
-  and interceptor gates read the entry through `providerModelOf(candidate)`.
+  its `enabledFlags` carries the operator's per-model flag set, and its `cost`
+  carries the exact schedule for this candidate. Dispatch, telemetry, and
+  interceptor gates read the entry through `providerModelOf(candidate)`.
 - `fetcher` is the per-request proxy-chain-bound `Fetcher` for the
   candidate's upstream, minted once at resolution time and carried with
   the candidate that dispatches.
