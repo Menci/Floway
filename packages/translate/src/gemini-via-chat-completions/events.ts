@@ -1,7 +1,7 @@
 import { appendGeminiThoughtSignature, flushGeminiThoughtSignature, type GeminiThoughtSignatureState, parseStrictJsonObject, signGeminiPart } from '../shared/gemini-via/gemini.ts';
 import { chatCompletionsErrorPayloadMessage } from '@floway-dev/protocols/chat-completions';
 import type { ChatCompletionsStreamEvent, ChatCompletionsDelta } from '@floway-dev/protocols/chat-completions';
-import { billableServiceTier, eventFrame, splitInclusiveInputTokens, splitInclusiveOutputTokens, USAGE_BILLING, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { billableServiceTier, eventFrame, splitCacheWriteTokens, splitInclusiveInputTokens, splitInclusiveOutputTokens, USAGE_BILLING, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiCandidate, GeminiFinishReason, GeminiResult, GeminiPart, GeminiStreamEvent, GeminiUsageMetadata } from '@floway-dev/protocols/gemini';
 
 type ChatCompletionsStreamChoice = ChatCompletionsStreamEvent['choices'][0];
@@ -34,10 +34,7 @@ const mapUsage = (
   const cachedTokens = usage.prompt_tokens_details?.cached_tokens;
   const cacheWriteTokens = usage.prompt_tokens_details?.cache_creation_input_tokens
     ?? usage.prompt_tokens_details?.cache_write_tokens;
-  const cacheWrite1hTokens = usage[USAGE_BILLING]?.cacheWrite1hTokenCount ?? 0;
-  if (cacheWrite1hTokens > (cacheWriteTokens ?? 0)) {
-    throw new RangeError('1-hour cache-write tokens exceed total cache-write tokens');
-  }
+  const writes = splitCacheWriteTokens(cacheWriteTokens, usage[USAGE_BILLING]);
   splitInclusiveInputTokens(usage.prompt_tokens, cachedTokens, cacheWriteTokens);
   const { output: candidatesTokenCount, reasoning: thoughtsTokenCount } = splitInclusiveOutputTokens(
     usage.completion_tokens,
@@ -60,8 +57,8 @@ const mapUsage = (
   }
   if (cacheWriteTokens !== undefined || serviceTier !== null) {
     metadata[USAGE_BILLING] = {
-      ...(cacheWriteTokens !== undefined ? { cacheWriteTokenCount: cacheWriteTokens - cacheWrite1hTokens } : {}),
-      ...(cacheWrite1hTokens > 0 ? { cacheWrite1hTokenCount: cacheWrite1hTokens } : {}),
+      ...(cacheWriteTokens !== undefined ? { cacheWriteTokenCount: writes.cacheWrite } : {}),
+      ...(writes.cacheWrite1h > 0 ? { cacheWrite1hTokenCount: writes.cacheWrite1h } : {}),
       ...(serviceTier !== null ? { serviceTier } : {}),
     };
   }

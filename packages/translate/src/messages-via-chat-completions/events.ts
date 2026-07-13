@@ -1,5 +1,5 @@
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
-import { eventFrame, splitInclusiveInputTokens, USAGE_BILLING, type ProtocolFrame, type UsageBillingMetadata } from '@floway-dev/protocols/common';
+import { eventFrame, splitCacheWriteTokens, splitInclusiveInputTokens, USAGE_BILLING, type ProtocolFrame, type UsageBillingMetadata } from '@floway-dev/protocols/common';
 import type { MessagesContentBlockDeltaEvent, MessagesContentBlockStartEvent, MessagesResult, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 
 const toMessagesId = (id: string): string => (id.startsWith('msg_') ? id : `msg_${id.replace(/^chatcmpl-/, '')}`);
@@ -40,10 +40,7 @@ export const mapChatCompletionsUsageToMessagesUsage = (usage?: ChatCompletionsUs
   const cachedTokens = usage?.prompt_tokens_details?.cached_tokens;
   const cacheCreationTokens = usage?.prompt_tokens_details?.cache_creation_input_tokens
     ?? usage?.prompt_tokens_details?.cache_write_tokens;
-  const cacheWrite1h = usage?.[USAGE_BILLING]?.cacheWrite1hTokenCount ?? 0;
-  if (cacheWrite1h > 0 && (cacheCreationTokens === undefined || cacheWrite1h > cacheCreationTokens)) {
-    throw new RangeError('1-hour cache-write tokens exceed total cache-write tokens');
-  }
+  const writes = splitCacheWriteTokens(cacheCreationTokens, usage?.[USAGE_BILLING]);
   const { input, cacheRead, cacheWrite } = splitInclusiveInputTokens(
     usage?.prompt_tokens ?? 0,
     cachedTokens,
@@ -59,11 +56,11 @@ export const mapChatCompletionsUsageToMessagesUsage = (usage?: ChatCompletionsUs
     output_tokens: usage?.completion_tokens ?? 0,
     ...(cachedTokens !== undefined ? { cache_read_input_tokens: cacheRead } : {}),
     ...(cacheCreationTokens !== undefined ? { cache_creation_input_tokens: cacheWrite } : {}),
-    ...(cacheWrite1h > 0
+    ...(writes.cacheWrite1h > 0
       ? {
           cache_creation: {
-            ephemeral_5m_input_tokens: cacheWrite - cacheWrite1h,
-            ephemeral_1h_input_tokens: cacheWrite1h,
+            ephemeral_5m_input_tokens: writes.cacheWrite,
+            ephemeral_1h_input_tokens: writes.cacheWrite1h,
           },
         }
       : {}),

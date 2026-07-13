@@ -8,6 +8,27 @@ export interface UsageBillingMetadata {
   serviceTier?: string;
 }
 
+export const splitCacheWriteTokens = (
+  totalCacheWriteTokens: number | undefined,
+  billing: UsageBillingMetadata | undefined,
+): { cacheWrite: number; cacheWrite1h: number } => {
+  const cacheWrite1h = billing?.cacheWrite1hTokenCount ?? 0;
+  if (!Number.isSafeInteger(cacheWrite1h) || cacheWrite1h < 0) {
+    throw new RangeError(`1-hour cache-write tokens must be a non-negative safe integer: ${cacheWrite1h}`);
+  }
+  if (totalCacheWriteTokens === undefined) {
+    if (cacheWrite1h > 0) throw new RangeError('1-hour cache-write tokens require a total cache-write count');
+    return { cacheWrite: 0, cacheWrite1h: 0 };
+  }
+  if (!Number.isSafeInteger(totalCacheWriteTokens) || totalCacheWriteTokens < 0) {
+    throw new RangeError(`total cache-write tokens must be a non-negative safe integer: ${totalCacheWriteTokens}`);
+  }
+  if (cacheWrite1h > totalCacheWriteTokens) {
+    throw new RangeError('1-hour cache-write tokens exceed total cache-write tokens');
+  }
+  return { cacheWrite: totalCacheWriteTokens - cacheWrite1h, cacheWrite1h };
+};
+
 export const splitInclusiveInputTokens = (
   inputTokens: number,
   cacheReadTokens: number | undefined,

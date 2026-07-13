@@ -2,7 +2,7 @@ import { isContextExceededError, PROMPT_TOO_LONG_MESSAGE } from '../shared/messa
 import { packReasoningSignature } from '../shared/messages-and-responses/reasoning.ts';
 import { createResponsesOutputOrderState, recordResponsesOutputOrderEvent, type ResponsesOutputOrderState, shouldDeferForEarlierResponsesOutput } from '../shared/via-responses/responses-stream-order.ts';
 import { type ResponsesEvent, responsesPartKey } from '../shared/via-responses/responses-stream.ts';
-import { eventFrame, splitInclusiveInputTokens, USAGE_BILLING, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { eventFrame, splitCacheWriteTokens, splitInclusiveInputTokens, USAGE_BILLING, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesResult, MessagesStreamEvent, MessagesUsage } from '@floway-dev/protocols/messages';
 import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
@@ -21,10 +21,7 @@ const mapResponsesStopReason = (response: ResponsesResult): MessagesResult['stop
 const responsesUsageToMessagesUsage = (response: ResponsesResult, outputTokens: number): MessagesUsage => {
   const cachedTokens = response.usage?.input_tokens_details?.cached_tokens;
   const cacheWriteTokens = response.usage?.input_tokens_details?.cache_write_tokens;
-  const cacheWrite1h = response.usage?.[USAGE_BILLING]?.cacheWrite1hTokenCount ?? 0;
-  if (cacheWrite1h > 0 && (cacheWriteTokens === undefined || cacheWrite1h > cacheWriteTokens)) {
-    throw new RangeError('1-hour cache-write tokens exceed total cache-write tokens');
-  }
+  const writes = splitCacheWriteTokens(cacheWriteTokens, response.usage?.[USAGE_BILLING]);
   const { input: uncachedInputTokens } = splitInclusiveInputTokens(response.usage?.input_tokens ?? 0, cachedTokens, cacheWriteTokens);
 
   return {
@@ -32,11 +29,11 @@ const responsesUsageToMessagesUsage = (response: ResponsesResult, outputTokens: 
     output_tokens: outputTokens,
     ...(cachedTokens !== undefined ? { cache_read_input_tokens: cachedTokens } : {}),
     ...(cacheWriteTokens !== undefined ? { cache_creation_input_tokens: cacheWriteTokens } : {}),
-    ...(cacheWrite1h > 0
+    ...(writes.cacheWrite1h > 0
       ? {
           cache_creation: {
-            ephemeral_5m_input_tokens: (cacheWriteTokens ?? 0) - cacheWrite1h,
-            ephemeral_1h_input_tokens: cacheWrite1h,
+            ephemeral_5m_input_tokens: writes.cacheWrite,
+            ephemeral_1h_input_tokens: writes.cacheWrite1h,
           },
         }
       : {}),
