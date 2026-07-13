@@ -4,7 +4,7 @@ import { appendFailedUpstreams } from '../../../../shared/failed-upstreams.ts';
 import { recordPerformance, type PerformanceTelemetryContext } from '../../../../shared/telemetry/performance.ts';
 import { recordTokenUsage, tokenUsageFromImagesBody } from '../../../../shared/telemetry/usage.ts';
 import { stampUpstreamCallStart, type AttemptState } from '../../../shared/gateway-ctx.ts';
-import type { ServerToolLifecycleEvent, ServerToolOutputItem, ServerToolRegistration, ServerToolTerminal } from '../server-tool-shim.ts';
+import type { ServerToolLifecycleEvent, ServerToolOutputItem, ServerToolRegistration, ServerToolResultSlot, ServerToolTerminal } from '../server-tool-shim.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { parseSSEStream } from '@floway-dev/protocols/common';
 import type {
@@ -115,24 +115,38 @@ const base64ToArrayBuffer = (b64: string): ArrayBuffer => {
 // emitted in `image_generation_call.result`) into raw bytes. Returns null
 // for non-data URLs (e.g. http(s)): fetching remote images at edit time is
 // not supported — only inline image bytes are accepted.
-const decodeInlineImage = (imageUrl: string, fallbackMime = 'image/png'): ImageSource | null => {
+const decodeInlineImage = (
+  imageUrl: string,
+  fallbackMime = 'image/png',
+  cache?: Map<string, ImageSource | null>,
+): ImageSource | null => {
   const dataUrlMatch = /^data:([^;,]+)?(;base64)?,(.*)$/s.exec(imageUrl);
+  let payload: string;
+  let mimeType: string;
   if (dataUrlMatch === null) {
     if (/^https?:\/\//i.test(imageUrl)) return null;
-    try {
-      return { bytes: base64ToArrayBuffer(imageUrl), mimeType: fallbackMime };
-    } catch {
-      return null;
-    }
+    payload = imageUrl;
+    mimeType = fallbackMime;
+  } else {
+    if (dataUrlMatch[2] === undefined) return null;
+    payload = dataUrlMatch[3];
+    mimeType = dataUrlMatch[1] ?? fallbackMime;
   }
-  const isBase64 = dataUrlMatch[2] !== undefined;
-  const payload = dataUrlMatch[3];
-  if (!isBase64) return null;
+
+  // A generated result is bare base64 on its first appearance and a data URL
+  // after the server-tool replay transform. Keying by decoded wire identity
+  // lets both representations reuse the same bytes on later ReAct turns.
+  const cacheKey = `${mimeType}\u0000${payload}`;
+  if (cache?.has(cacheKey)) return cache.get(cacheKey) ?? null;
+
+  let decoded: ImageSource | null;
   try {
-    return { bytes: base64ToArrayBuffer(payload), mimeType: dataUrlMatch[1] ?? fallbackMime };
+    decoded = { bytes: base64ToArrayBuffer(payload), mimeType };
   } catch {
-    return null;
+    decoded = null;
   }
+  cache?.set(cacheKey, decoded);
+  return decoded;
 };
 
 // The orchestrator-visible tool config the shim layers onto the backend
@@ -360,7 +374,10 @@ interface ImageSourceInspection {
   hasUnresolvableInputImage: boolean;
 }
 
-export const inspectImageSources = (input: readonly ResponsesInputItem[]): ImageSourceInspection => {
+const inspectImageSourcesWithCache = (
+  input: readonly ResponsesInputItem[],
+  decodedSources: Map<string, ImageSource | null>,
+): ImageSourceInspection => {
   const sources: ImageSource[] = [];
   let hasUnresolvableInputImage = false;
   for (const item of input) {
@@ -369,7 +386,7 @@ export const inspectImageSources = (input: readonly ResponsesInputItem[]): Image
         hasUnresolvableInputImage = true;
         continue;
       }
-      const decoded = decodeInlineImage(image.image_url);
+      const decoded = decodeInlineImage(image.image_url, 'image/png', decodedSources);
       if (decoded === null) {
         hasUnresolvableInputImage = true;
         continue;
@@ -381,11 +398,98 @@ export const inspectImageSources = (input: readonly ResponsesInputItem[]): Image
       // `result`; pick the fallback from the echoed `output_format` so a
       // JPEG output is not mislabeled PNG on the edit form.
       const fallbackMime = item.output_format === 'jpeg' ? 'image/jpeg' : 'image/png';
-      const decoded = decodeInlineImage(item.result, fallbackMime);
-      if (decoded !== null) sources.push(decoded);
+      const decoded = decodeInlineImage(item.result, fallbackMime, decodedSources);
+      if (decoded === null) {
+        hasUnresolvableInputImage = true;
+      } else {
+        sources.push(decoded);
+      }
     }
   }
   return { sources, hasUnresolvableInputImage };
+};
+
+export const createImageSourceInspector = (): ((input: readonly ResponsesInputItem[]) => ImageSourceInspection) => {
+  const decodedSources = new Map<string, ImageSource | null>();
+  return input => inspectImageSourcesWithCache(input, decodedSources);
+};
+
+export const inspectImageSources = (input: readonly ResponsesInputItem[]): ImageSourceInspection =>
+  createImageSourceInspector()(input);
+
+interface ImageOperationError {
+  message: string;
+  param: 'input' | 'tools';
+  code: 'invalid_value' | 'unsupported_file_mimetype';
+  action: 'generate' | 'edit';
+}
+
+type ImageOperation =
+  | { ok: true; action: 'generate' | 'edit'; sources: readonly ImageSource[] }
+  | { ok: false; error: ImageOperationError };
+
+export const resolveImageOperation = (
+  config: ImageGenerationConfig,
+  inspection: ImageSourceInspection,
+): ImageOperation => {
+  const { sources, hasUnresolvableInputImage } = inspection;
+  if (config.action !== 'generate' && hasUnresolvableInputImage) {
+    return {
+      ok: false,
+      error: {
+        message: 'image_generation cannot edit an input image unless it is an inline decodable data URL. Set action to "generate" to use remote, file_id, or malformed images only as model context.',
+        param: 'input',
+        code: 'invalid_value',
+        action: 'edit',
+      },
+    };
+  }
+
+  const action = config.action === 'edit' || (config.action === 'auto' && sources.length > 0)
+    ? 'edit'
+    : 'generate';
+
+  if (config.action === 'edit' && sources.length === 0) {
+    return {
+      ok: false,
+      error: {
+        message: 'image_generation action "edit" requires at least one input image, but none was found in the request input.',
+        param: 'input',
+        code: 'invalid_value',
+        action: 'edit',
+      },
+    };
+  }
+
+  if (config.mask !== undefined && action === 'generate') {
+    return {
+      ok: false,
+      error: {
+        message: 'image_generation input_image_mask requires a decodable edit source; it cannot be used with action "generate" or action "auto" without an input image.',
+        param: 'tools',
+        code: 'invalid_value',
+        action,
+      },
+    };
+  }
+
+  if (action === 'edit') {
+    for (const source of sources) {
+      if (editSupportedMime(source.mimeType) === null) {
+        return {
+          ok: false,
+          error: {
+            message: `image_generation input image format '${source.mimeType}' is not supported for editing. Supported formats are 'image/png', 'image/jpeg', and 'image/webp'. Set the tool's action to "generate" if the image is only context.`,
+            param: 'input',
+            code: 'unsupported_file_mimetype',
+            action,
+          },
+        };
+      }
+    }
+  }
+
+  return { ok: true, action, sources: action === 'edit' ? sources : [] };
 };
 
 // The successfully-resolved image, or a normalized failure. Failures are
@@ -740,6 +844,30 @@ export const imageTerminal = (
   return { item, endEvents: [{ type: 'response.image_generation_call.completed' }] };
 };
 
+const immediateImageFailureSlot = (
+  id: string,
+  prompt: string,
+  error: ImageOperationError,
+): ServerToolResultSlot => ({
+  id,
+  startItem: { type: 'image_generation_call', status: 'in_progress' },
+  startEvents: [
+    { type: 'response.image_generation_call.in_progress' },
+    { type: 'response.image_generation_call.generating' },
+  ],
+  async *run() {
+    return imageTerminal(prompt, error.action, {
+      ok: false,
+      error: {
+        type: 'invalid_request_error',
+        code: error.code,
+        message: error.message,
+        retryable: false,
+      },
+    });
+  },
+});
+
 // One standalone-images SSE data line, folded into a backend-agnostic signal.
 // The generations and edits endpoints use distinct event prefixes
 // (`image_generation.*` vs `image_edit.*`); only the suffix is matched here.
@@ -961,58 +1089,14 @@ export const imageGenerationServerTool: ServerToolRegistration = (invocation, ga
     return { type: 'invalid-request', message: prepared.error.message, param: prepared.error.param, code: prepared.error.code };
   }
   const config = prepared.config;
-  const {
-    sources: originalImageSources,
-    hasUnresolvableInputImage,
-  } = inspectImageSources(invocation.payload.input);
-  if (config.action !== 'generate' && hasUnresolvableInputImage) {
+  const inspectSources = createImageSourceInspector();
+  const initialOperation = resolveImageOperation(config, inspectSources(invocation.payload.input));
+  if (!initialOperation.ok) {
     return {
       type: 'invalid-request',
-      message: 'image_generation cannot edit an input image unless it is an inline decodable data URL. Set action to "generate" to use remote, file_id, or malformed images only as model context.',
-      param: 'input',
-      code: 'invalid_value',
-    };
-  }
-  // `action:"edit"` with no bindable image is a client request-shape error,
-  // surfaced before the model loop because it is not a runtime backend
-  // failure.
-  if (config.action === 'edit' && originalImageSources.length === 0) {
-    return {
-      type: 'invalid-request',
-      message: 'image_generation action "edit" requires at least one input image, but none was found in the request input.',
-      param: 'input',
-      code: 'invalid_value',
-    };
-  }
-
-  // gpt-image edit only accepts png/jpeg/webp inputs; reject an unsupported
-  // format up front (Azure-strict `unsupported_file_mimetype`) when the request
-  // could edit. action:"generate" never forwards input images to the backend,
-  // so their format is irrelevant there. Generated images fed back in later
-  // turns are always png/jpeg, so validating the original request input here
-  // covers every client-supplied source. See `editSupportedMime` for why an
-  // unsupported format is rejected rather than transcoded.
-  if (config.action !== 'generate') {
-    for (const source of originalImageSources) {
-      if (editSupportedMime(source.mimeType) === null) {
-        return {
-          type: 'invalid-request',
-          message: `image_generation input image format '${source.mimeType}' is not supported for editing. Supported formats are 'image/png', 'image/jpeg', and 'image/webp'. Set the tool's action to "generate" if the image is only context.`,
-          param: 'input',
-          code: 'unsupported_file_mimetype',
-        };
-      }
-    }
-  }
-
-  // A mask only applies to an edit; with action:"generate" it could never be
-  // used, so reject rather than silently dropping it.
-  if (config.mask !== undefined && config.action === 'generate') {
-    return {
-      type: 'invalid-request',
-      message: 'image_generation input_image_mask is only valid for an edit; do not force action "generate" when supplying a mask.',
-      param: 'tools',
-      code: 'invalid_value',
+      message: initialOperation.error.message,
+      param: initialOperation.error.param,
+      code: initialOperation.error.code,
     };
   }
 
@@ -1039,6 +1123,14 @@ export const imageGenerationServerTool: ServerToolRegistration = (invocation, ga
           ? intercepted.arguments.prompt
           : '';
         const id = synthesizeImageGenerationCallId();
+        // Later ReAct turns include prior server-tool output in the live input.
+        // Resolve and validate again so action:auto can pivot from generation
+        // to editing without bypassing the same source policy used at ingress.
+        // The per-request inspector cache reuses bytes already decoded during
+        // registration and earlier turns.
+        const operation = resolveImageOperation(config, inspectSources(invocation.payload.input));
+        if (!operation.ok) return [immediateImageFailureSlot(id, promptArg, operation.error)];
+
         // Safety valve against an unbounded backend-call loop (the model
         // retrying after repeated {ok:false} outcomes): once this response has
         // issued IMAGE_ITERATION_CAP real backend image calls, stop hitting the
@@ -1060,13 +1152,6 @@ export const imageGenerationServerTool: ServerToolRegistration = (invocation, ga
         }
         state.imageDispatchCount += 1;
 
-        // Re-collect edit sources from the live input so an image generated in
-        // an earlier turn (fed back as an `input_image`) is editable now, and
-        // resolve edit-vs-generate against the current sources for action:auto.
-        const { sources } = inspectImageSources(invocation.payload.input);
-        const isEdit = config.action === 'edit' || (config.action === 'auto' && sources.length > 0);
-        const action: 'generate' | 'edit' = isEdit ? 'edit' : 'generate';
-
         return [{
           id,
           startItem: { type: 'image_generation_call', status: 'in_progress' },
@@ -1074,7 +1159,13 @@ export const imageGenerationServerTool: ServerToolRegistration = (invocation, ga
             { type: 'response.image_generation_call.in_progress' },
             { type: 'response.image_generation_call.generating' },
           ],
-          run: streamImageGeneration(promptArg, action, isEdit, sources, state),
+          run: streamImageGeneration(
+            promptArg,
+            operation.action,
+            operation.action === 'edit',
+            operation.sources,
+            state,
+          ),
         }];
       },
     },

@@ -3,6 +3,7 @@ import { beforeEach, test } from 'vitest';
 import {
   buildGenerationsBody,
   buildImageGenerationFunctionTool,
+  createImageSourceInspector,
   inspectImageSources,
   DEFAULT_IMAGE_MODEL,
   type ImageGenerationConfig,
@@ -13,6 +14,7 @@ import {
   parseImageStreamEvent,
   parseRetryAfterMs,
   prepareImageGenerationConfig,
+  resolveImageOperation,
   SHIM_TOOL_NAME,
   synthesizeImageGenerationCallId,
   transformInputItemsForImageGeneration,
@@ -21,7 +23,7 @@ import { initRepo } from '../../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../../../test-helpers/gateway-ctx.ts';
 import type { ResponsesInvocation } from '../types.ts';
-import type { ResponsesInputItem, ResponsesPayload, ResponsesTool } from '@floway-dev/protocols/responses';
+import type { ResponsesInputImage, ResponsesInputItem, ResponsesPayload, ResponsesTool } from '@floway-dev/protocols/responses';
 import { assert, assertEquals, assertFalse, assertStringIncludes, stubModelCandidate } from '@floway-dev/test-utils';
 import type { CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
 
@@ -48,17 +50,21 @@ const imageMessage = (mime: string): ResponsesInputItem => ({
   type: 'message', role: 'user', content: [{ type: 'input_image', image_url: `data:${mime};base64,${PNG_B64}`, detail: 'auto' }],
 });
 
-const fileIdImageMessage: ResponsesInputItem = {
-  type: 'message', role: 'user', content: [{ type: 'input_image', file_id: 'file_1', detail: 'auto' }],
+const imageInputContainers = {
+  message: (image: ResponsesInputImage): ResponsesInputItem => ({ type: 'message', role: 'user', content: [image] }),
+  function_output: (image: ResponsesInputImage): ResponsesInputItem => ({ type: 'function_call_output', call_id: 'call_function', output: [image] }),
+  custom_output: (image: ResponsesInputImage): ResponsesInputItem => ({ type: 'custom_tool_call_output', call_id: 'call_custom', output: [image] }),
 };
 
-const remoteImageMessage: ResponsesInputItem = {
-  type: 'message', role: 'user', content: [{ type: 'input_image', image_url: 'https://example.com/a.png', detail: 'auto' }],
-};
+const unresolvableImages = {
+  file_id: { type: 'input_image', file_id: 'file_1', detail: 'auto' },
+  remote: { type: 'input_image', image_url: 'https://example.com/a.png', detail: 'auto' },
+  malformed: { type: 'input_image', image_url: 'data:image/png;base64,%%%', detail: 'auto' },
+} as const satisfies Record<string, ResponsesInputImage>;
 
-const malformedImageMessage: ResponsesInputItem = {
-  type: 'message', role: 'user', content: [{ type: 'input_image', image_url: 'data:image/png;base64,%%%', detail: 'auto' }],
-};
+const unresolvableSourceCases = Object.entries(unresolvableImages).flatMap(([source, image]) =>
+  Object.entries(imageInputContainers).flatMap(([container, wrap]) =>
+    (['auto', 'edit', 'generate'] as const).map(action => ({ source, container, action, input: wrap(image) }))));
 
 // ── isHostedImageGenerationTool ──
 
@@ -252,6 +258,44 @@ test('inspectImageSources reads tool-result images and preserves forward order',
   assertEquals(sources[0].mimeType, 'image/png');
   assertEquals(sources[1].mimeType, 'image/jpeg');
   assertEquals(sources[2].mimeType, 'image/webp');
+});
+
+test('inspectImageSources marks malformed echoed image results as unresolvable', () => {
+  const inspection = inspectImageSources([
+    { type: 'image_generation_call', id: 'ig_bad', status: 'completed', result: '%%%' },
+  ]);
+  assertEquals(inspection.sources, []);
+  assertEquals(inspection.hasUnresolvableInputImage, true);
+});
+
+test('a request inspector reuses decoded bytes after generated results become replay images', () => {
+  const inspect = createImageSourceInspector();
+  const generated: ResponsesInputItem = {
+    type: 'image_generation_call',
+    id: 'ig_cached',
+    status: 'completed',
+    result: PNG_B64,
+    output_format: 'jpeg',
+  };
+  const initial = inspect([generated]);
+  const replay = inspect(transformInputItemsForImageGeneration([generated], SHIM_TOOL_NAME));
+  assert(initial.sources[0] === replay.sources[0]);
+});
+
+test('auto generation pivots to edit when a generated image is fed back', () => {
+  const config: ImageGenerationConfig = { model: DEFAULT_IMAGE_MODEL, action: 'auto' };
+  const inspect = createImageSourceInspector();
+  const initial = resolveImageOperation(config, inspect([]));
+  assert(initial.ok);
+  assertEquals(initial.action, 'generate');
+
+  const replayInput = transformInputItemsForImageGeneration([
+    { type: 'image_generation_call', id: 'ig_replay', status: 'completed', result: PNG_B64 },
+  ], SHIM_TOOL_NAME);
+  const replay = resolveImageOperation(config, inspect(replayInput));
+  assert(replay.ok);
+  assertEquals(replay.action, 'edit');
+  assertEquals(replay.sources.length, 1);
 });
 
 // ── transformInputItemsForImageGeneration ──
@@ -511,57 +555,64 @@ test('imageGenerationServerTool rejects an unsupported edit input format up fron
   assertStringIncludes(result.message, 'image/gif');
 });
 
-test('imageGenerationServerTool rejects file_id-only images when action may edit', async () => {
+test.each(unresolvableSourceCases)(
+  'imageGenerationServerTool handles $source images in $container for action $action',
+  async ({ action, input }) => {
+    const result = await imageGenerationServerTool(
+      makeCtx({ tools: [{ type: 'image_generation', action }], input: [input] }),
+      gatewayCtx(),
+    );
+    if (action === 'generate') {
+      assert(result.type === 'active');
+    } else {
+      assert(result.type === 'invalid-request');
+      assertEquals(result.code, 'invalid_value');
+      assertEquals(result.param, 'input');
+      assertStringIncludes(result.message, 'inline decodable data URL');
+    }
+  },
+);
+
+test.each(['generate', 'auto'] as const)('imageGenerationServerTool rejects a mask when action %s has no edit source', async action => {
   const result = await imageGenerationServerTool(
-    makeCtx({ tools: [{ type: 'image_generation' }], input: [fileIdImageMessage] }),
+    makeCtx({
+      tools: [{
+        type: 'image_generation',
+        action,
+        input_image_mask: { image_url: `data:image/png;base64,${PNG_B64}` },
+      }],
+    }),
+    gatewayCtx(),
+  );
+  assert(result.type === 'invalid-request');
+  assertEquals(result.code, 'invalid_value');
+  assertEquals(result.param, 'tools');
+  assertStringIncludes(result.message, 'requires a decodable edit source');
+});
+
+test('imageGenerationServerTool accepts an auto-action mask with an edit source', async () => {
+  const result = await imageGenerationServerTool(
+    makeCtx({
+      tools: [{
+        type: 'image_generation',
+        action: 'auto',
+        input_image_mask: { image_url: `data:image/png;base64,${PNG_B64}` },
+      }],
+      input: [imageMessage('image/png')],
+    }),
+    gatewayCtx(),
+  );
+  assert(result.type === 'active');
+});
+
+test('imageGenerationServerTool rejects explicit edit without an input image', async () => {
+  const result = await imageGenerationServerTool(
+    makeCtx({ tools: [{ type: 'image_generation', action: 'edit' }] }),
     gatewayCtx(),
   );
   assert(result.type === 'invalid-request');
   assertEquals(result.code, 'invalid_value');
   assertEquals(result.param, 'input');
-  assertStringIncludes(result.message, 'inline decodable data URL');
-});
-
-test('imageGenerationServerTool rejects remote images when action may edit', async () => {
-  const result = await imageGenerationServerTool(
-    makeCtx({ tools: [{ type: 'image_generation' }], input: [remoteImageMessage] }),
-    gatewayCtx(),
-  );
-  assert(result.type === 'invalid-request');
-  assertEquals(result.code, 'invalid_value');
-});
-
-test('imageGenerationServerTool rejects malformed inline images when action may edit', async () => {
-  const result = await imageGenerationServerTool(
-    makeCtx({ tools: [{ type: 'image_generation' }], input: [malformedImageMessage] }),
-    gatewayCtx(),
-  );
-  assert(result.type === 'invalid-request');
-  assertEquals(result.code, 'invalid_value');
-});
-
-test('imageGenerationServerTool accepts file_id-only context for explicit generation', async () => {
-  const result = await imageGenerationServerTool(
-    makeCtx({ tools: [{ type: 'image_generation', action: 'generate' }], input: [fileIdImageMessage] }),
-    gatewayCtx(),
-  );
-  assert(result.type === 'active');
-});
-
-test('imageGenerationServerTool accepts remote image context for explicit generation', async () => {
-  const result = await imageGenerationServerTool(
-    makeCtx({ tools: [{ type: 'image_generation', action: 'generate' }], input: [remoteImageMessage] }),
-    gatewayCtx(),
-  );
-  assert(result.type === 'active');
-});
-
-test('imageGenerationServerTool accepts malformed image context for explicit generation', async () => {
-  const result = await imageGenerationServerTool(
-    makeCtx({ tools: [{ type: 'image_generation', action: 'generate' }], input: [malformedImageMessage] }),
-    gatewayCtx(),
-  );
-  assert(result.type === 'active');
 });
 
 test('imageGenerationServerTool accepts webp input for editing', async () => {
@@ -580,6 +631,27 @@ test('imageGenerationServerTool ignores input format when action is generate', a
     gatewayCtx(),
   );
   assert(result.type === 'active');
+});
+
+test('image dispatcher turns a newly introduced invalid edit source into a terminal tool error', async () => {
+  const invocation = makeCtx({ tools: [{ type: 'image_generation', action: 'auto' }] });
+  const result = await imageGenerationServerTool(invocation, gatewayCtx());
+  assert(result.type === 'active' && result.hosted !== undefined);
+
+  invocation.payload = {
+    ...invocation.payload,
+    input: [imageInputContainers.custom_output(unresolvableImages.remote)],
+  };
+  const [slot] = result.hosted.dispatcher({
+    intercepted: { callId: 'call_live_invalid', name: SHIM_TOOL_NAME, arguments: { prompt: 'edit it' } },
+    loopState: { iterationCount: 2, remainingToolCalls: undefined },
+  });
+  const lifecycle = slot.run();
+  let step = await lifecycle.next();
+  while (!step.done) step = await lifecycle.next();
+  const item = step.value.item as { status?: string; error?: { type?: string; code?: string } };
+  assertEquals(item.status, 'failed');
+  assertEquals(item.error, { type: 'invalid_request_error', code: 'invalid_value' });
 });
 
 // ── imageGenerationServerTool: per-response dispatch budget (B) ──

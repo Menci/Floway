@@ -178,6 +178,15 @@ steps.
 
 ### Responses — gateway interceptors
 
+- executes hosted `image_generation` through the gateway server-tool shim for
+  translated targets and native Responses providers that opt into the shim.
+  Edit sources are flattened in declaration order from message content,
+  function/custom tool output, and replayed image-generation results. `auto`
+  and `edit` accept only decodable inline data URLs and reject the whole edit
+  when any source is remote, `file_id`-only, or malformed; explicit `generate`
+  keeps those images as model context without forwarding them to the edits
+  backend. An input mask is valid only when the resolved operation has a
+  decodable edit source.
 - removes unsupported `image_generation` Responses tool entries and forced
   tool choices that targeted them before target request construction. Other
   hosted/deferred Responses tools, including `web_search`, `tool_search`, and
