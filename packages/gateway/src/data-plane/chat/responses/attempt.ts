@@ -88,7 +88,7 @@ export const responsesAttempt = {
     // wire shape against an empty privatePayload map.
     const rewritten = await rewriteOrRenderFailure(payload, store, candidate);
     if (!('payload' in rewritten)) return rewritten.failure;
-    store.beginAttempt(rewritten.references);
+    store.beginAttempt(rewritten.privatePayloads);
     // Copilot compaction and Azure-native compaction both emit assistant
     // messages whose content blocks have `type: 'input_text'`, then refuse
     // the same items echoed back as input on the next turn. Normalising

@@ -1,6 +1,6 @@
 import { hashResponsesItemEncryptedContent, isStoredResponsesItemId, responsesItemEncryptedContent, responsesItemId } from './format.ts';
 import type { StatefulResponsesStore } from './store.ts';
-import type { StoredResponsesItem } from '../../../../repo/types.ts';
+import type { StoredResponsesItemMetadata } from '../../../../repo/types.ts';
 import type { ChatServeFailure } from '../../shared/errors.ts';
 import type { RoutingDecision } from '../../shared/routing.ts';
 import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
@@ -13,18 +13,18 @@ interface ResolvedStoredResponsesItemRef {
   type: string;
   id?: string;
   encryptedContent?: string;
-  row?: StoredResponsesItem;
+  row?: StoredResponsesItemMetadata;
   affinity?: StoredResponsesAffinity;
 }
 
-const isUpstreamOwned = (row: StoredResponsesItem): row is StoredResponsesItem & { upstreamId: string } =>
+const isUpstreamOwned = (row: StoredResponsesItemMetadata): row is StoredResponsesItemMetadata & { upstreamId: string } =>
   row.upstreamId !== null;
 
 const classifyStoredResponsesAffinity = (
   itemType: string,
-  row: StoredResponsesItem,
+  row: StoredResponsesItemMetadata,
 ): StoredResponsesAffinity => {
-  if (itemType === 'item_reference' && row.payload === null) return 'forcing';
+  if (itemType === 'item_reference' && !row.hasPayload) return 'forcing';
   if (!isUpstreamOwned(row)) return 'non_affinity';
   // Direct Copilot probes show the opaque item id on each program variant is
   // account-bound: same-account replay succeeds after token refresh, while
@@ -70,7 +70,7 @@ const findUnexpandedItemReferenceForcingId = (
     ref.affinity === 'forcing'
     && ref.type === 'item_reference'
     && ref.row?.upstreamId === upstreamId
-    && ref.row.payload === null)?.id ?? null;
+    && !ref.row.hasPayload)?.id ?? null;
 
 const collectStoredResponsesItemRefs = async <TSourceItems>(
   sourceItems: TSourceItems,
@@ -164,7 +164,7 @@ export const classifyResponsesItemAffinity = async <TSourceItems, TCandidate ext
 
     store.touchItem(row.id);
     ref.row = row;
-    if (ref.type === 'item_reference' && row.payload === null && row.upstreamItemId === null) {
+    if (ref.type === 'item_reference' && !row.hasPayload && row.upstreamItemId === null) {
       failures.push({ kind: 'item-not-found', itemId: row.id });
       continue;
     }
