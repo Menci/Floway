@@ -2,7 +2,7 @@ import { isFirstOutputTokenFrame } from '../../chat/shared/first-output-token.ts
 import type { GatewayCtx } from '../../chat/shared/gateway-ctx.ts';
 import { stampUpstreamCallStart } from '../../chat/shared/gateway-ctx.ts';
 import type { ModelEndpoints, ProtocolFrame } from '@floway-dev/protocols/common';
-import { eventResult, readUpstreamApiError, type ChatTargetApi, type ExecuteResult, type ModelCandidate, type PerformanceOperation, type PerformanceTelemetryContext, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamCallOptions } from '@floway-dev/provider';
+import { eventResult, providerModelOf, readUpstreamApiError, type ChatTargetApi, type ExecuteResult, type ModelCandidate, type PerformanceOperation, type PerformanceTelemetryContext, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamCallOptions } from '@floway-dev/provider';
 
 export const upstreamPerformanceContext = (
   ctx: GatewayCtx,
@@ -63,7 +63,7 @@ export const telemetryModelIdentity = (candidate: ModelCandidate, modelKey: stri
   model: candidate.model.id,
   upstream: candidate.provider.upstream,
   modelKey,
-  cost: candidate.provider.instance.getPricingForModelKey(modelKey),
+  cost: providerModelOf(candidate).cost ?? null,
 });
 
 // See UpstreamCallOptions in `@floway-dev/provider` for the contract on each

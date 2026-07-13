@@ -69,7 +69,6 @@ export const mockPerfTelemetryContext = (overrides: Partial<PerformanceTelemetry
 
 export const stubProvider = (overrides: Partial<ProviderInstance> = {}): ProviderInstance => ({
   getProvidedModels: overrides.getProvidedModels ?? (() => Promise.resolve([])),
-  getPricingForModelKey: overrides.getPricingForModelKey ?? (() => null),
   callCompletions: overrides.callCompletions ?? (() => Promise.reject(new Error('stubProvider.callCompletions was called'))),
   callChatCompletions: overrides.callChatCompletions ?? (() => Promise.reject(new Error('stubProvider.callChatCompletions was called'))),
   callResponses: overrides.callResponses ?? (() => Promise.reject(new Error('stubProvider.callResponses was called'))),
@@ -115,6 +114,7 @@ export const stubModelCandidate = (overrides: {
     kind: outerMeta.kind,
     endpoints: outerMeta.endpoints,
     enabledFlags: overrides.enabledFlags ?? new Set<FlagId>(),
+    ...(modelOverrides.cost !== undefined ? { cost: modelOverrides.cost } : {}),
     ...(overrides.providerData !== undefined ? { providerData: overrides.providerData } : {}),
   });
   return {

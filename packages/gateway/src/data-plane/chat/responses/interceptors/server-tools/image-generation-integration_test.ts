@@ -45,7 +45,6 @@ const defaultCandidates = vi.hoisted(() => () => [{
     modelPrefix: null,
     color: null,
     instance: {
-      getPricingForModelKey: () => null,
       callImagesGenerations: async (_model: unknown, body: Record<string, unknown>) => {
         stub.generationsCalls.push(body);
         const response = stub.nextGenerations.shift();
