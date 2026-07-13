@@ -116,6 +116,8 @@ export const pricingField = (value: unknown, label: string): ModelPricing | unde
 
   const entries = record.entries.map((rawEntry, index) => {
     if (!isRecord(rawEntry)) throw new Error(`Malformed ${label}.entries[${index}]: must be an object`);
+    const unknownEntryKeys = Object.keys(rawEntry).filter(key => key !== 'selector' && key !== 'rates');
+    if (unknownEntryKeys.length > 0) throw new Error(`Malformed ${label}.entries[${index}]: unknown fields: ${unknownEntryKeys.join(', ')}`);
     const selectorRecord = rawEntry.selector === undefined ? undefined : optionalMetadataRecord(rawEntry.selector, `${label}.entries[${index}].selector`);
     let selector: PricingSelector;
     try {
@@ -124,6 +126,8 @@ export const pricingField = (value: unknown, label: string): ModelPricing | unde
       throw new Error(`Malformed ${label}.entries[${index}].selector: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
     }
     if (!isRecord(rawEntry.rates)) throw new Error(`Malformed ${label}.entries[${index}].rates: must be an object`);
+    const unknownRateKeys = Object.keys(rawEntry.rates).filter(key => !BILLING_DIMENSIONS.includes(key as BillingDimension));
+    if (unknownRateKeys.length > 0) throw new Error(`Malformed ${label}.entries[${index}].rates: unknown dimensions: ${unknownRateKeys.join(', ')}`);
     const rates: Partial<Record<BillingDimension, number>> = {};
     for (const dimension of BILLING_DIMENSIONS) {
       if (rawEntry.rates[dimension] !== undefined) rates[dimension] = rawEntry.rates[dimension] as number;

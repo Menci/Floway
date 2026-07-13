@@ -135,9 +135,9 @@ const upstreamModelSchema = z.object({
   pricing: z.object({
     entries: z.array(z.object({
       selector: z.record(z.string(), z.unknown()).optional(),
-      rates: z.object(pricingDimensionShape),
-    })).min(1),
-  }).optional(),
+      rates: z.object(pricingDimensionShape).strict(),
+    }).strict()).min(1),
+  }).strict().optional(),
   flagOverrides: flagOverridesSchema.optional(),
   limits: limitsSchema.optional(),
   chat: chatSchema.optional(),
