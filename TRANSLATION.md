@@ -217,8 +217,11 @@ inline and rebuilds the envelope client-side).
 
 - hoists `role: "system"` items out of `input` into top-level `instructions`
   (the upstream rejects system messages inside `input`)
-- injects a default `instructions` string when none is supplied (the upstream
-  rejects empty / missing `instructions`)
+- injects a neutral default only when `instructions` is absent, `null`, or an
+  empty string. Other malformed external values pass through so the upstream
+  owns validation. Current ChatGPT-subscription catalog models reject empty or
+  missing instructions (implementation record:
+  https://github.com/im4codes/imcodes/blob/5f769d933dfd679e3a4d670183b0384a1baf62cd/src/agent/providers/codex-sdk.ts#L560-L579)
 - strips fields the upstream rejects with `Unsupported parameter`:
   `max_output_tokens`, `temperature`, `top_p`, `frequency_penalty`,
   `presence_penalty`, `user`, `metadata`, `prompt_cache_retention`,
