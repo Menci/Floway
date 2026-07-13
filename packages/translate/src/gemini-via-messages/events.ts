@@ -44,6 +44,9 @@ interface MessagesToGeminiStreamState extends GeminiThoughtSignatureState {
   inputTokens: number;
   cacheReadInputTokens: number;
   cacheCreationInputTokens: number;
+  cacheCreation5mInputTokens: number;
+  cacheCreation1hInputTokens: number;
+  hasCacheCreationBreakdown: boolean;
   upstreamSpeed?: string;
   upstreamServiceTier?: string;
   toolUses: Record<number, MessagesToolUseDraft>;
@@ -54,9 +57,13 @@ interface MessagesToGeminiStreamState extends GeminiThoughtSignatureState {
 // three Anthropic buckets into the Gemini total, then surface cache reads
 // separately as cachedContentTokenCount.
 const mapUsage = (state: MessagesToGeminiStreamState, usage?: Extract<MessagesStreamEvent, { type: 'message_delta' }>['usage']): GeminiUsageMetadata | undefined => {
-  const promptTokenCount = state.inputTokens + state.cacheReadInputTokens + state.cacheCreationInputTokens;
+  const cacheWriteInputTokens = state.hasCacheCreationBreakdown
+    ? state.cacheCreation5mInputTokens
+    : state.cacheCreationInputTokens;
+  const cacheWriteTotal = cacheWriteInputTokens + state.cacheCreation1hInputTokens;
+  const promptTokenCount = state.inputTokens + state.cacheReadInputTokens + cacheWriteTotal;
   const candidatesTokenCount = usage?.output_tokens ?? 0;
-  splitInclusiveInputTokens(promptTokenCount, state.cacheReadInputTokens, state.cacheCreationInputTokens);
+  splitInclusiveInputTokens(promptTokenCount, state.cacheReadInputTokens, cacheWriteTotal);
   const serviceTier = billableServiceTier(usage?.speed ?? state.upstreamSpeed)
     ?? billableServiceTier(usage?.service_tier ?? state.upstreamServiceTier);
   if (usage === undefined && promptTokenCount === 0 && serviceTier === null) return undefined;
@@ -66,10 +73,11 @@ const mapUsage = (state: MessagesToGeminiStreamState, usage?: Extract<MessagesSt
     candidatesTokenCount,
     totalTokenCount: promptTokenCount + candidatesTokenCount,
     ...(state.cacheReadInputTokens > 0 ? { cachedContentTokenCount: state.cacheReadInputTokens } : {}),
-    ...(state.cacheCreationInputTokens > 0 || serviceTier !== null
+    ...(cacheWriteInputTokens > 0 || state.cacheCreation1hInputTokens > 0 || serviceTier !== null
       ? {
           [GEMINI_USAGE_BILLING]: {
-            ...(state.cacheCreationInputTokens > 0 ? { cacheWriteTokenCount: state.cacheCreationInputTokens } : {}),
+            ...(cacheWriteInputTokens > 0 ? { cacheWriteTokenCount: cacheWriteInputTokens } : {}),
+            ...(state.cacheCreation1hInputTokens > 0 ? { cacheWrite1hTokenCount: state.cacheCreation1hInputTokens } : {}),
             ...(serviceTier !== null ? { serviceTier } : {}),
           },
         }
@@ -88,6 +96,9 @@ export const translateToSourceEvents = async function* (frames: AsyncIterable<Pr
     inputTokens: 0,
     cacheReadInputTokens: 0,
     cacheCreationInputTokens: 0,
+    cacheCreation5mInputTokens: 0,
+    cacheCreation1hInputTokens: 0,
+    hasCacheCreationBreakdown: false,
     toolUses: {},
   };
 
@@ -99,6 +110,11 @@ export const translateToSourceEvents = async function* (frames: AsyncIterable<Pr
       state.inputTokens = event.message.usage.input_tokens;
       state.cacheReadInputTokens = event.message.usage.cache_read_input_tokens ?? 0;
       state.cacheCreationInputTokens = event.message.usage.cache_creation_input_tokens ?? 0;
+      if (event.message.usage.cache_creation !== undefined) {
+        state.hasCacheCreationBreakdown = true;
+        state.cacheCreation5mInputTokens = event.message.usage.cache_creation.ephemeral_5m_input_tokens ?? 0;
+        state.cacheCreation1hInputTokens = event.message.usage.cache_creation.ephemeral_1h_input_tokens ?? 0;
+      }
       state.upstreamSpeed = event.message.usage.speed;
       state.upstreamServiceTier = event.message.usage.service_tier;
       break;
@@ -193,6 +209,11 @@ export const translateToSourceEvents = async function* (frames: AsyncIterable<Pr
       }
       if (event.usage?.cache_creation_input_tokens !== undefined) {
         state.cacheCreationInputTokens = event.usage.cache_creation_input_tokens;
+      }
+      if (event.usage?.cache_creation !== undefined) {
+        state.hasCacheCreationBreakdown = true;
+        state.cacheCreation5mInputTokens = event.usage.cache_creation.ephemeral_5m_input_tokens ?? 0;
+        state.cacheCreation1hInputTokens = event.usage.cache_creation.ephemeral_1h_input_tokens ?? 0;
       }
       if (event.usage?.speed !== undefined) state.upstreamSpeed = event.usage.speed;
       if (event.usage?.service_tier !== undefined) state.upstreamServiceTier = event.usage.service_tier;

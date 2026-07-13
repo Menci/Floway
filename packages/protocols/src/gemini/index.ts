@@ -95,6 +95,7 @@ export const GEMINI_USAGE_BILLING = Symbol('gemini-usage-billing');
 
 export interface GeminiUsageBilling {
   cacheWriteTokenCount?: number;
+  cacheWrite1hTokenCount?: number;
   serviceTier?: string;
 }
 

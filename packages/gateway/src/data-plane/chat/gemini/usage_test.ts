@@ -9,11 +9,12 @@ test('Gemini usage records translated cache writes and service tier', () => {
     cachedContentTokenCount: 30,
     candidatesTokenCount: 20,
     thoughtsTokenCount: 5,
-    [GEMINI_USAGE_BILLING]: { cacheWriteTokenCount: 25, serviceTier: 'priority' },
+    [GEMINI_USAGE_BILLING]: { cacheWriteTokenCount: 20, cacheWrite1hTokenCount: 5, serviceTier: 'priority' },
   })).toEqual({
     input: 45,
     input_cache_read: 30,
-    input_cache_write: 25,
+    input_cache_write: 20,
+    input_cache_write_1h: 5,
     output: 25,
     tier: 'priority',
   });
