@@ -218,6 +218,5 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
     disabledPublicModelIds: record.disabledPublicModelIds,
     modelPrefix: record.modelPrefix,
     instance,
-    supportsResponsesItemReference: true,
   };
 };

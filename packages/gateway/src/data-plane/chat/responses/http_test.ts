@@ -133,7 +133,6 @@ const makeCandidate = (overrides: {
       disabledPublicModelIds: [],
       modelPrefix: null,
       instance: provider,
-      supportsResponsesItemReference: true,
     },
     model: stubInternalModel(overrides.endpoints ? { endpoints: overrides.endpoints } : {}, upstream),
     fetcher: directFetcher,
@@ -326,7 +325,7 @@ test('POST /v1/responses renders a routing-unavailable 400 when a forcing item n
     origin: 'upstream',
     contentHash: null,
     encryptedContentHash: null,
-    payload: null,
+    payload: { item: { type: 'compaction', id } },
     createdAt: 1_000,
     refreshedAt: 1_000,
   };

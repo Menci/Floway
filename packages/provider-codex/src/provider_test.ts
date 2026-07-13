@@ -75,7 +75,6 @@ describe('createCodexProvider', () => {
     expect(instance.kind).toBe('codex');
     expect(instance.upstream).toBe('up_codex');
     expect(instance.name).toBe('Codex Plus');
-    expect(instance.supportsResponsesItemReference).toBe(false);
   });
 
   test('getProvidedModels uses the cached access token when fresh and surfaces every catalog entry', async () => {

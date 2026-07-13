@@ -111,6 +111,5 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
     disabledPublicModelIds: azure.disabledPublicModelIds,
     modelPrefix: azure.modelPrefix,
     instance,
-    supportsResponsesItemReference: true,
   };
 };

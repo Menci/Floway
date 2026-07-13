@@ -44,7 +44,6 @@ const defaultCandidates = vi.hoisted(() => () => [{
     disabledPublicModelIds: [],
     modelPrefix: null,
     color: null,
-    supportsResponsesItemReference: false,
     instance: {
       getPricingForModelKey: () => null,
       callImagesGenerations: async (_model: unknown, body: Record<string, unknown>) => {

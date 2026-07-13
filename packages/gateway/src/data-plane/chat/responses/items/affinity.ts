@@ -20,11 +20,7 @@ interface ResolvedStoredResponsesItemRef {
 const isUpstreamOwned = (row: StoredResponsesItemMetadata): row is StoredResponsesItemMetadata & { upstreamId: string } =>
   row.upstreamId !== null;
 
-const classifyStoredResponsesAffinity = (
-  itemType: string,
-  row: StoredResponsesItemMetadata,
-): StoredResponsesAffinity => {
-  if (itemType === 'item_reference' && !row.hasPayload) return 'forcing';
+const classifyStoredResponsesAffinity = (row: StoredResponsesItemMetadata): StoredResponsesAffinity => {
   if (!isUpstreamOwned(row)) return 'non_affinity';
   // Direct Copilot probes show the opaque item id on each program variant is
   // account-bound: same-account replay succeeds after token refresh, while
@@ -61,16 +57,6 @@ const collectPreferredUpstreams = (
   }
   return preferred;
 };
-
-const findUnexpandedItemReferenceForcingId = (
-  references: readonly ResolvedStoredResponsesItemRef[],
-  upstreamId: string,
-): string | null =>
-  references.find(ref =>
-    ref.affinity === 'forcing'
-    && ref.type === 'item_reference'
-    && ref.row?.upstreamId === upstreamId
-    && !ref.row.hasPayload)?.id ?? null;
 
 const collectStoredResponsesItemRefs = async <TSourceItems>(
   sourceItems: TSourceItems,
@@ -164,7 +150,7 @@ export const classifyResponsesItemAffinity = async <TSourceItems, TCandidate ext
 
     store.touchItem(row.id);
     ref.row = row;
-    if (ref.type === 'item_reference' && !row.hasPayload && row.upstreamItemId === null) {
+    if (ref.type === 'item_reference' && !row.hasPayload) {
       failures.push({ kind: 'item-not-found', itemId: row.id });
       continue;
     }
@@ -175,7 +161,7 @@ export const classifyResponsesItemAffinity = async <TSourceItems, TCandidate ext
       });
       continue;
     }
-    ref.affinity = classifyStoredResponsesAffinity(ref.type, row);
+    ref.affinity = classifyStoredResponsesAffinity(row);
     if (ref.affinity === 'forcing' && !isUpstreamOwned(row)) {
       failures.push({ kind: 'item-not-found', itemId: row.id });
     }
@@ -206,14 +192,6 @@ export const classifyResponsesItemAffinity = async <TSourceItems, TCandidate ext
           message: `Stored Responses items in this request require upstream '${upstreamId}', which is not available for the selected model.`,
         },
       };
-    }
-    const unexpandedReferenceId = findUnexpandedItemReferenceForcingId(references, upstreamId);
-    if (unexpandedReferenceId !== null) {
-      const itemReferenceCapable = matching.filter(cand => cand.provider.supportsResponsesItemReference);
-      if (itemReferenceCapable.length === 0) {
-        return { kind: 'failure', failure: { kind: 'item-not-found', itemId: unexpandedReferenceId } };
-      }
-      return { kind: 'success', candidates: itemReferenceCapable };
     }
     return { kind: 'success', candidates: matching };
   }

@@ -15,7 +15,7 @@ import { responsesItemsView, type CanonicalResponsesPayload } from '@floway-dev/
 
 const API_KEY_ID = 'key_rewrite_test';
 
-const candidate = (upstream: string, supportsResponsesItemReference = true): ModelCandidate => {
+const candidate = (upstream: string): ModelCandidate => {
   const modelProvider = stubProvider({
     getProvidedModels: () => Promise.resolve([stubProviderModel()]),
   });
@@ -27,7 +27,6 @@ const candidate = (upstream: string, supportsResponsesItemReference = true): Mod
       disabledPublicModelIds: [],
       modelPrefix: null,
       instance: modelProvider,
-      supportsResponsesItemReference,
     },
     model: stubInternalModel({}, upstream),
     fetcher: directFetcher,
@@ -92,8 +91,8 @@ test('item with no stored row is kept as-is', async () => {
   assertEquals(rewritten, [item]);
 });
 
-// Case 2: item_reference + row.payload === null + provider doesn't support item_reference → throw item-not-found
-test('item_reference with null payload throws item-not-found when provider does not support item_reference', async () => {
+// Case 2: item_reference + row.payload === null → throw item-not-found
+test('item_reference with null payload throws item-not-found', async () => {
   const id = storedMessageId('no-payload-ref');
   await insertRows([
     storedRow({ id, itemType: 'message', upstreamId: 'up_a', upstreamItemId: 'raw_msg_a', payload: null }),
@@ -101,7 +100,7 @@ test('item_reference with null payload throws item-not-found when provider does 
 
   let threw = false;
   try {
-    await rewrite([{ type: 'item_reference', id }], candidate('up_a', false));
+    await rewrite([{ type: 'item_reference', id }], candidate('up_a'));
   } catch {
     threw = true;
   }
@@ -233,7 +232,7 @@ test('stored payload replaces stale caller content before provider id rewrite', 
   }]);
 });
 
-test('matching upstream keeps item_reference shape and rewrites to upstream item id', async () => {
+test('matching upstream expands item_reference and rewrites to upstream item id', async () => {
   const id = storedMessageId('origin-reference');
   await insertRows([
     storedRow({
@@ -253,11 +252,16 @@ test('matching upstream keeps item_reference shape and rewrites to upstream item
   const input: ResponsesInputItem[] = [{ type: 'item_reference', id }];
   const rewritten = await rewrite(input, candidate('up_a'));
 
-  assertEquals(rewritten, [{ type: 'item_reference', id: 'raw_msg_a' }]);
+  assertEquals(rewritten, [{
+    type: 'message',
+    id: 'raw_msg_a',
+    role: 'assistant',
+    content: [{ type: 'output_text', text: 'stored content' }],
+  }]);
 });
 
-test('matching upstream without item_reference support expands the stored item body', async () => {
-  const id = storedMessageId('origin-reference-expanded');
+test('non-matching upstream expands item_reference and mints a temporary id', async () => {
+  const id = storedMessageId('cross-upstream-reference');
   await insertRows([
     storedRow({
       id,
@@ -274,14 +278,15 @@ test('matching upstream without item_reference support expands the stored item b
   ]);
 
   const input: ResponsesInputItem[] = [{ type: 'item_reference', id }];
-  const rewritten = await rewrite(input, candidate('up_a', false));
+  const rewritten = await rewrite(input, candidate('up_b'));
 
-  assertEquals(rewritten, [{
-    type: 'message',
-    id: 'raw_msg_a',
-    role: 'assistant',
-    content: [{ type: 'output_text', text: 'stored content' }],
-  }]);
+  assertEquals(rewritten.length, 1);
+  const [item] = rewritten;
+  assert(item.type === 'message');
+  assert(typeof item.id === 'string');
+  assert(item.id.startsWith('msg_tmp_'), item.id);
+  assertEquals(item.role, 'assistant');
+  assertEquals(item.content, [{ type: 'output_text', text: 'stored content' }]);
 });
 
 test('id-less reasoning matched by encrypted_content routes to owner and stamps upstream id', async () => {

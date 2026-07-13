@@ -276,9 +276,9 @@ interface ModelCandidate {
 }
 ```
 
-- `provider` is the resolved upstream provider instance — every wire call,
-  capability flag, and pricing lookup reads off `provider.*` directly
-  (upstream id, upstream name, provider kind, `supportsResponsesItemReference`).
+- `provider` is the resolved upstream provider instance — every wire call and
+  pricing lookup reads off `provider.*` directly (upstream id, upstream name,
+  and provider kind).
 - `model` is the merged public row for this id, projected to a single
   contributing upstream: `providerModels` carries exactly one entry keyed
   on `provider.upstream`. That entry is the `ProviderModel` the upstream
@@ -358,11 +358,12 @@ Candidates are ordered before they reach dispatch:
 
 For Responses-shape inbound, the affinity walk
 (`classifyResponsesItemAffinity`) adjusts the ordering by stored-item
-affinity before dispatch sees it. The walk reads
-`provider.supportsResponsesItemReference` to decide whether a candidate
-can absorb an unexpanded `item_reference` carrier and rejects a request
-that names a forcing upstream the candidate list does not include. The
-affinity walk never invents new candidates; it only narrows or re-orders
+affinity before dispatch sees it. It resolves stored ids from metadata,
+rejects an `item_reference` whose durable payload is unavailable, and uses
+the referenced row's actual item type to determine upstream affinity. The
+candidate rewrite then bulk-loads the payloads it needs and replaces every
+`item_reference` with the stored item before the upstream request is built.
+The affinity walk never invents new candidates; it only narrows or re-orders
 the list the resolver produced.
 
 Serve dispatches the first candidate of the ordered list exactly once.

@@ -142,10 +142,9 @@ describe('createClaudeCodeProvider — factory surface', () => {
     expect(instance.instance.getPricingForModelKey('unknown-id')).toBeNull();
   });
 
-  test('kind is "claude-code" and supportsResponsesItemReference is false', async () => {
+  test('kind is "claude-code"', async () => {
     const instance = createClaudeCodeProvider(currentRecord);
     expect(instance.kind).toBe('claude-code');
-    expect(instance.supportsResponsesItemReference).toBe(false);
     expect(instance.upstream).toBe(upstreamId);
   });
 });

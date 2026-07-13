@@ -67,11 +67,7 @@ const shouldHydrate = async (
   const { item, row } = resolved;
   if (!row?.hasPayload) return false;
   if (isUpstreamOwned(row) && row.itemType === 'reasoning' && row.upstreamId !== candidate.provider.upstream) return false;
-  if (item.type === 'item_reference') {
-    return !(row.upstreamId === candidate.provider.upstream
-      && row.upstreamItemId !== null
-      && candidate.provider.supportsResponsesItemReference);
-  }
+  if (item.type === 'item_reference') return true;
   if (row.origin === 'synthetic') return true;
   const canonical = canonicalStoredEcho(item, row);
   if (row.contentHash !== null && await hashResponsesItemContent(canonical) === row.contentHash) {
@@ -87,18 +83,22 @@ const rewriteItemForCandidate = (
   candidate: ModelCandidate,
 ): ResponsesInputItem | null => {
   const { item, row } = resolved;
-  if (row === undefined) return item;
-  if (item.type === 'item_reference' && payload === undefined && !candidate.provider.supportsResponsesItemReference) {
+  if (row === undefined) {
+    if (item.type === 'item_reference') throwChatServeFailure({ kind: 'item-not-found', itemId: item.id });
+    return item;
+  }
+  if (item.type === 'item_reference' && !row.hasPayload) {
+    throwChatServeFailure({ kind: 'item-not-found', itemId: row.id });
+  }
+  if (isUpstreamOwned(row) && row.itemType === 'reasoning' && row.upstreamId !== candidate.provider.upstream) return null;
+  if (item.type === 'item_reference' && payload === undefined) {
     throwChatServeFailure({ kind: 'item-not-found', itemId: row.id });
   }
   const replacement = resolved.canonical
     ?? (payload === undefined ? item : structuredClone(payload.item) as ResponsesInputItem);
   if (!isUpstreamOwned(row)) return replacement;
-  if (row.itemType === 'reasoning' && row.upstreamId !== candidate.provider.upstream) return null;
   if (row.upstreamId === candidate.provider.upstream && row.upstreamItemId !== null) {
-    return item.type === 'item_reference' && candidate.provider.supportsResponsesItemReference
-      ? itemWithId(item, row.upstreamItemId)
-      : itemWithId(replacement, row.upstreamItemId);
+    return itemWithId(replacement, row.upstreamItemId);
   }
   if (responsesItemId(replacement) !== null) return itemWithId(replacement, createTemporaryResponsesItemId(row.itemType));
   return replacement;
