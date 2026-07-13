@@ -312,12 +312,13 @@ test('translateToSourceEvents folds Anthropic cache fields into Gemini promptTok
         cache_read_input_tokens: 30,
         cache_creation_input_tokens: 5,
         cache_creation: { ephemeral_1h_input_tokens: 3 },
+        speed: 'fast',
       }),
     ),
     eventFrame({
       type: 'message_delta',
       delta: { stop_reason: 'end_turn' },
-      usage: { output_tokens: 7, speed: 'fast' },
+      usage: { output_tokens: 7, service_tier: 'priority' },
     }),
     eventFrame({ type: 'message_stop' }),
   ]);
@@ -336,7 +337,7 @@ test('translateToSourceEvents folds Anthropic cache fields into Gemini promptTok
         candidatesTokenCount: 7,
         totalTokenCount: 52,
         cachedContentTokenCount: 30,
-        [GEMINI_USAGE_BILLING]: { cacheWriteTokenCount: 2, cacheWrite1hTokenCount: 3, serviceTier: 'fast' },
+        [GEMINI_USAGE_BILLING]: { cacheWriteTokenCount: 2, cacheWrite1hTokenCount: 3, serviceTier: 'priority' },
       },
     }),
   ]);

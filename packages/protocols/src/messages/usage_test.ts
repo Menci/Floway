@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { splitMessagesCacheCreationTokens } from './usage.ts';
+import { mergeMessagesUsageSnapshot, messagesUsageSnapshot, splitMessagesCacheCreationTokens } from './usage.ts';
 
 test.each([
   [{ cache_creation_input_tokens: 9 }, { cacheWrite: 9, cacheWrite1h: 0 }],
@@ -21,4 +21,26 @@ test('Messages cache creation rejects inconsistent totals', () => {
     cache_creation_input_tokens: 4,
     cache_creation: { ephemeral_1h_input_tokens: 5 },
   })).toThrowError('exceed');
+});
+
+test('Messages usage snapshots merge late counters and atomically replace the tier pair', () => {
+  const start = messagesUsageSnapshot({
+    input_tokens: 0,
+    output_tokens: 0,
+    cache_creation_input_tokens: 9,
+    speed: 'fast',
+  });
+  expect(mergeMessagesUsageSnapshot(start, {
+    input_tokens: 11,
+    output_tokens: 2,
+    cache_creation: { ephemeral_1h_input_tokens: 5 },
+    service_tier: 'priority',
+  })).toEqual({
+    input_tokens: 11,
+    output_tokens: 2,
+    cache_creation_input_tokens: 9,
+    cache_creation: { ephemeral_1h_input_tokens: 5 },
+    speed: undefined,
+    service_tier: 'priority',
+  });
 });

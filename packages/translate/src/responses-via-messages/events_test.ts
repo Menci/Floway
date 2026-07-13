@@ -20,7 +20,14 @@ const runToCompletion = (
     speed?: string;
     service_tier?: string;
   },
-  deltaUsageExtras?: { speed?: string; service_tier?: string },
+  deltaUsageExtras?: {
+    input_tokens?: number;
+    cache_read_input_tokens?: number;
+    cache_creation_input_tokens?: number;
+    cache_creation?: { ephemeral_5m_input_tokens?: number; ephemeral_1h_input_tokens?: number };
+    speed?: string;
+    service_tier?: string;
+  },
 ): ResponsesResult => {
   const state = createMessagesToResponsesStreamState('resp_test', 'claude-sonnet-4-20250514');
 
@@ -794,4 +801,22 @@ test('Messages message_start service_tier survives when message_delta omits it',
 test('Messages message_start speed:fast survives when message_delta omits it', () => {
   const result = runToCompletion({ input_tokens: 10, output_tokens: 5, speed: 'fast' });
   assertEquals(result.service_tier, 'fast');
+});
+
+test('Messages delta atomically replaces tier and merges late cache accounting into Responses', () => {
+  const result = runToCompletion(
+    { input_tokens: 0, output_tokens: 2, cache_creation_input_tokens: 9, speed: 'fast' },
+    {
+      input_tokens: 11,
+      cache_creation: { ephemeral_1h_input_tokens: 5 },
+      service_tier: 'priority',
+    },
+  );
+  assertEquals(result.service_tier, 'priority');
+  assertEquals(result.usage, {
+    input_tokens: 20,
+    output_tokens: 2,
+    total_tokens: 22,
+    input_tokens_details: { cached_tokens: 0, cache_write_tokens: 9 },
+  });
 });
