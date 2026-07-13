@@ -8,7 +8,7 @@ import ModelEditor from './ModelEditor.vue';
 import { newUiId, type Row, seedFromAuto } from './modelRows.ts';
 import { isModelConfigValid } from './modelValidation.ts';
 import ModelsGrid from './ModelsGrid.vue';
-import type { UpstreamModelConfig } from '../../api/types.ts';
+import type { UpstreamChatConfig, UpstreamModelConfig } from '../../api/types.ts';
 import { modelsField } from '@floway-dev/provider';
 import type { Flag, FlagDefaults, FlagOverrides } from '@floway-dev/provider/flags';
 import { Button } from '@floway-dev/ui';
@@ -193,10 +193,25 @@ const jsonError = ref<string | null>(null);
 const serializeManual = () => JSON.stringify(manualModels.value, null, 2);
 
 const editableModelConfig = (model: ReturnType<typeof modelsField>[number]): UpstreamModelConfig => {
-  const chat = model.chat === undefined
+  const reasoning = model.chat?.reasoning;
+  const editableReasoning: UpstreamChatConfig['reasoning'] = reasoning === undefined
     ? undefined
     : {
-        ...model.chat,
+        ...(reasoning.effort === undefined
+          ? {}
+          : {
+              effort: {
+                default: reasoning.effort.default,
+                supported: [...reasoning.effort.supported],
+              },
+            }),
+        ...(reasoning.budget_tokens === undefined ? {} : { budget_tokens: { ...reasoning.budget_tokens } }),
+        ...(reasoning.adaptive === true ? { adaptive: true as const } : {}),
+        ...(reasoning.mandatory === true ? { mandatory: true as const } : {}),
+      };
+  const chat: UpstreamChatConfig | undefined = model.chat === undefined
+    ? undefined
+    : {
         ...(model.chat.modalities === undefined
           ? {}
           : {
@@ -205,23 +220,10 @@ const editableModelConfig = (model: ReturnType<typeof modelsField>[number]): Ups
                 output: [...model.chat.modalities.output],
               },
             }),
-        ...(model.chat.reasoning === undefined
-          ? {}
-          : {
-              reasoning: {
-                ...model.chat.reasoning,
-                ...(model.chat.reasoning.effort === undefined
-                  ? {}
-                  : {
-                      effort: {
-                        ...model.chat.reasoning.effort,
-                        supported: [...model.chat.reasoning.effort.supported],
-                      },
-                    }),
-              },
-            }),
+        ...(editableReasoning === undefined ? {} : { reasoning: editableReasoning }),
       };
-  return { ...model, ...(chat === undefined ? {} : { chat }) };
+  const { chat: _readonlyChat, ...fields } = model;
+  return { ...fields, ...(chat === undefined ? {} : { chat }) };
 };
 
 const switchEditorMode = (next: 'ui' | 'json') => {
