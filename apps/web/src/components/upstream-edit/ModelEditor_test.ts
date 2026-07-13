@@ -151,6 +151,24 @@ describe('ModelEditor row synchronization', () => {
     });
   });
 
+  it('separates combined pricing coordinates with commas', () => {
+    const selected = row('coordinate-label', 'model-coordinate-label', 1, undefined);
+    selected.config.pricing = {
+      entries: [
+        { rates: { input: 1 } },
+        {
+          selector: { serviceTier: 'priority', inputTokens: { operator: 'gt', value: 512_000 } },
+          rates: { input: 2 },
+        },
+      ],
+    };
+    const wrapper = mountEditor(selected);
+
+    expect(wrapper.get('button[aria-label="Edit pricing entry 2: priority, > 512000 tokens"]').text()).toBe(
+      'priority, > 512000 tokens',
+    );
+  });
+
   it('requires every pricing entry to set the same rate fields', async () => {
     const selected = row('rate-shape', 'model-rate-shape', 1, undefined);
     selected.config.pricing = {
@@ -187,9 +205,9 @@ describe('ModelEditor row synchronization', () => {
     const errors = wrapper.get('[aria-label="Pricing validation errors"]');
 
     expect(errors.findAll('p').map(error => error.text())).toEqual([
-      'Selector values are invalid.',
-      'Duplicate selector coordinate: "priority" is used more than once.',
-      'All pricing entries must set the same rate fields: "Base" is missing Input.',
+      'Selector values are invalid: entry 1.',
+      'Duplicate selector coordinate: entries 3 and 4 use "priority".',
+      'All pricing entries must set the same rate fields: entry 1 ("Base") is missing Input.',
     ]);
     expect(form.element.compareDocumentPosition(errors.element) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
     expect(wrapper.emitted('validity-change')?.at(-1)).toEqual([false]);
@@ -210,7 +228,7 @@ describe('ModelEditor row synchronization', () => {
     await wrapper.setProps({ row: duplicateBase });
     await nextTick();
     expect(wrapper.get('[aria-label="Pricing validation errors"]').text()).toBe(
-      'Pricing must contain exactly one Base entry: 2 are configured.',
+      'Pricing must contain exactly one Base entry: entries 1 and 2 are Base.',
     );
   });
 
@@ -225,7 +243,7 @@ describe('ModelEditor row synchronization', () => {
     const wrapper = mountEditor(selected);
 
     expect(wrapper.get('[aria-label="Pricing validation errors"]').findAll('p').map(error => error.text())).toEqual([
-      'Set at least one rate.',
+      'Set at least one rate: entry 1 ("Base") and entry 2 ("priority") have no rates.',
     ]);
   });
 
@@ -234,8 +252,8 @@ describe('ModelEditor row synchronization', () => {
     selected.config.pricing = { entries: [{ rates: { input: 1 } }, { selector: { serviceTier: 'priority' }, rates: { input: 2 } }] };
     const wrapper = mountEditor(selected);
     await pricingInput(wrapper, 'base').setValue(value);
-    expect(wrapper.text()).toContain('Selector values are invalid.');
-    expect(wrapper.findAll('p').filter(node => node.text() === 'Selector values are invalid.')).toHaveLength(1);
+    expect(wrapper.text()).toContain('Selector values are invalid: entry 2.');
+    expect(wrapper.findAll('p').filter(node => node.text() === 'Selector values are invalid: entry 2.')).toHaveLength(1);
     expect(wrapper.emitted('validity-change')?.at(-1)).toEqual([false]);
   });
 

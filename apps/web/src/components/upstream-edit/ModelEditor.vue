@@ -80,6 +80,11 @@ interface PricingEntryDraft {
   rates: Partial<Record<BillingDimension, number>>;
 }
 
+interface NumberedPricingEntryDraft {
+  draft: PricingEntryDraft;
+  number: number;
+}
+
 let pricingEntryDraftIdSeq = 0;
 
 const pricingEntryDraftsFor = (pricing: ModelPricing | undefined): PricingEntryDraft[] =>
@@ -127,19 +132,19 @@ const pricingEntryCoordinateLabel = (draft: PricingEntryDraft): string => {
     if (coordinate.value === undefined) return [];
     return [`${coordinate.operator === 'gte' ? '>=' : '>'} ${coordinate.value} tokens`];
   });
-  return labels.length > 0 ? labels.join(' · ') : 'Base';
+  return labels.length > 0 ? labels.join(', ') : 'Base';
 };
 
 const duplicatePricingCoordinateGroups = computed(() => {
-  const draftsByKey = new Map<string, PricingEntryDraft[]>();
-  for (const draft of pricingEntryDrafts.value) {
+  const entriesByKey = new Map<string, NumberedPricingEntryDraft[]>();
+  for (const [index, draft] of pricingEntryDrafts.value.entries()) {
     const key = coordinateKey(draft);
     if (key === null) continue;
-    const drafts = draftsByKey.get(key) ?? [];
-    drafts.push(draft);
-    draftsByKey.set(key, drafts);
+    const entries = entriesByKey.get(key) ?? [];
+    entries.push({ draft, number: index + 1 });
+    entriesByKey.set(key, entries);
   }
-  return [...draftsByKey].filter(([, drafts]) => drafts.length > 1);
+  return [...entriesByKey].filter(([, entries]) => entries.length > 1);
 });
 
 const duplicatePricingCoordinates = computed(() =>
@@ -170,36 +175,50 @@ const rateFieldName = (dimension: BillingDimension): string =>
 
 const pricingValidationErrors = computed<readonly string[]>(() => {
   const errors = new Set<string>();
-  const hasMissingRates = pricingEntryDrafts.value.some(draft => !hasRates(draft));
-  const hasInvalidSelector = pricingEntryDrafts.value.some(draft => !hasValidSelector(draft));
-  const baseEntries = pricingEntryDrafts.value.filter(draft => coordinateKey(draft) === '{}');
+  const numberedEntries = pricingEntryDrafts.value.map((draft, index): NumberedPricingEntryDraft => ({ draft, number: index + 1 }));
+  const formatEntry = ({ draft, number }: NumberedPricingEntryDraft): string =>
+    `entry ${number} (${JSON.stringify(pricingEntryCoordinateLabel(draft))})`;
+  const missingRateEntries = numberedEntries.filter(({ draft }) => !hasRates(draft));
+  const invalidSelectorEntries = numberedEntries.filter(({ draft }) => !hasValidSelector(draft));
+  const baseEntries = numberedEntries.filter(({ draft }) => coordinateKey(draft) === '{}');
+  const hasMissingRates = missingRateEntries.length > 0;
+  const hasInvalidSelector = invalidSelectorEntries.length > 0;
   const hasInvalidBaseCount = pricingEntryDrafts.value.length > 0 && baseEntries.length !== 1;
   const hasDuplicateCoordinates = duplicatePricingCoordinateGroups.value.length > 0;
-  const baseEntry = baseEntries.length === 1 ? baseEntries[0]! : null;
+  const baseEntry = baseEntries.length === 1 ? baseEntries[0]!.draft : null;
   const hasInconsistentRateFields = baseEntry !== null
     && pricingEntryDrafts.value.some(draft => rateDimensionKey(draft) !== rateDimensionKey(baseEntry));
 
-  if (hasMissingRates && !hasInconsistentRateFields) errors.add('Set at least one rate.');
-  if (hasInvalidSelector) errors.add('Selector values are invalid.');
+  if (hasMissingRates && !hasInconsistentRateFields) {
+    const predicate = missingRateEntries.length === 1 ? 'has' : 'have';
+    errors.add(`Set at least one rate: ${formatList(missingRateEntries.map(formatEntry))} ${predicate} no rates.`);
+  }
+  if (hasInvalidSelector) {
+    errors.add(`Selector values are invalid: ${formatList(invalidSelectorEntries.map(({ number }) => `entry ${number}`))}.`);
+  }
   if (hasInvalidBaseCount) {
-    const detail = baseEntries.length === 0 ? 'none is configured' : `${baseEntries.length} are configured`;
+    const detail = baseEntries.length === 0
+      ? 'none is configured'
+      : `entries ${formatList(baseEntries.map(({ number }) => String(number)))} are Base`;
     errors.add(`Pricing must contain exactly one Base entry: ${detail}.`);
   }
   if (hasDuplicateCoordinates) {
-    const labels = duplicatePricingCoordinateGroups.value
-      .map(([, drafts]) => pricingEntryCoordinateLabel(drafts[0]!))
-      .filter(label => label !== 'Base')
-      .map(label => JSON.stringify(label));
-    if (labels.length > 0) {
-      const subject = labels.length === 1 ? 'Duplicate selector coordinate' : 'Duplicate selector coordinates';
-      const predicate = labels.length === 1 ? 'is' : 'are each';
-      errors.add(`${subject}: ${formatList(labels)} ${predicate} used more than once.`);
+    const details = duplicatePricingCoordinateGroups.value.flatMap(([, entries]) => {
+      const label = pricingEntryCoordinateLabel(entries[0]!.draft);
+      return label === 'Base'
+        ? []
+        : [`entries ${formatList(entries.map(({ number }) => String(number)))} use ${JSON.stringify(label)}`];
+    });
+    if (details.length > 0) {
+      const subject = details.length === 1 ? 'Duplicate selector coordinate' : 'Duplicate selector coordinates';
+      errors.add(`${subject}: ${details.join('; ')}.`);
     }
   }
   if (hasInconsistentRateFields && baseEntry) {
     const expectedDimensions = rateDimensions(baseEntry);
     const expectedSet = new Set(expectedDimensions);
-    const differences = pricingEntryDrafts.value.flatMap(draft => {
+    const differences = numberedEntries.flatMap(entry => {
+      const { draft } = entry;
       if (draft === baseEntry || rateDimensionKey(draft) === rateDimensionKey(baseEntry)) return [];
       const actual = new Set(rateDimensions(draft));
       const missing = expectedDimensions.filter(dimension => !actual.has(dimension)).map(rateFieldName);
@@ -208,7 +227,7 @@ const pricingValidationErrors = computed<readonly string[]>(() => {
         ...(missing.length > 0 ? [`is missing ${formatList(missing)}`] : []),
         ...(added.length > 0 ? [`adds ${formatList(added)}`] : []),
       ];
-      return [`${JSON.stringify(pricingEntryCoordinateLabel(draft))} ${changes.join(' and ')}`];
+      return [`${formatEntry(entry)} ${changes.join(' and ')}`];
     });
     errors.add(`All pricing entries must set the same rate fields: ${differences.join('; ')}.`);
   }
