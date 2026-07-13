@@ -115,7 +115,6 @@ test('translateResponsesToChatCompletions merges adjacent assistant reasoning te
       content: '42',
     },
   ]);
-  assertEquals(result.target[CHAT_COMPLETIONS_INTERNAL_METADATA], { liftedToolOutputImages: true });
 });
 
 test('translateResponsesToChatCompletions preserves all reasoning items and projects only the first scalar group', () => {
@@ -1672,6 +1671,7 @@ test('translateResponsesToChatCompletions lifts tool-output images into a follow
       ],
     },
   ]);
+  assertEquals(result.target[CHAT_COMPLETIONS_INTERNAL_METADATA], { liftedToolOutputImages: true });
 });
 
 test('translateResponsesToChatCompletions keeps grouped tool results contiguous before lifted images', () => {
