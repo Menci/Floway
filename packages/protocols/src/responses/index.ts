@@ -106,6 +106,10 @@ export type ResponsesInputItem =
   | ResponsesInputAdditionalToolsItem
   | ResponsesProgramItem
   | ResponsesProgramOutputItem
+  | ResponsesInputAgentMessageItem
+  | ResponsesInputMultiAgentCallItem
+  | ResponsesInputMultiAgentCallOutputItem
+  | ResponsesContextCompactionItem
   | ResponsesCompactionItem
   | ResponsesCompactionTriggerItem
   | ResponsesInputImageGenerationCall
@@ -293,6 +297,52 @@ export interface ResponsesProgramOutputItem {
   call_id: string;
   result: string;
   status: 'completed' | 'incomplete';
+}
+
+export type ResponsesAgentMessageContent =
+  | { type: 'input_text'; text: string }
+  | { type: 'encrypted_content'; encrypted_content: string }
+  | (Record<string, unknown> & { type: string });
+
+export interface ResponsesInputAgentMessageItem {
+  type: 'agent_message';
+  author: string;
+  recipient: string;
+  content: ResponsesAgentMessageContent[];
+  id?: string | null;
+  agent?: { agent_name: string } | null;
+  internal_chat_message_metadata_passthrough?: Record<string, unknown>;
+}
+
+export type ResponsesMultiAgentAction =
+  | 'spawn_agent'
+  | 'interrupt_agent'
+  | 'list_agents'
+  | 'send_message'
+  | 'followup_task'
+  | 'wait_agent';
+
+export interface ResponsesInputMultiAgentCallItem {
+  type: 'multi_agent_call';
+  action: ResponsesMultiAgentAction;
+  arguments: string;
+  call_id: string;
+  id?: string | null;
+  agent?: { agent_name: string } | null;
+}
+
+export interface ResponsesInputMultiAgentCallOutputItem {
+  type: 'multi_agent_call_output';
+  action: ResponsesMultiAgentAction;
+  call_id: string;
+  output: Array<Record<string, unknown> & { type: 'output_text'; text: string }>;
+  id?: string | null;
+  agent?: { agent_name: string } | null;
+}
+
+export interface ResponsesContextCompactionItem extends ResponsesPermissiveItem<'context_compaction'> {
+  encrypted_content?: string;
+  internal_chat_message_metadata_passthrough?: Record<string, unknown>;
 }
 
 export type ResponsesCompactionItem = ResponsesPermissiveItem<'compaction'>;
@@ -544,11 +594,8 @@ export interface ResponsesResult {
     input_tokens: number;
     output_tokens: number;
     total_tokens: number;
-    // `cached_tokens` is cache-read; `cache_write_tokens` is cache-creation.
-    // Both are disjoint subsets of `input_tokens`. The official SDK types both
-    // as required `int`, but Copilot/Azure echoes have been observed to omit
-    // the details block (and older upstreams predate `cache_write_tokens`), so
-    // both are optional-compatible here.
+    // Both fields are disjoint subsets of input_tokens. Older compatible
+    // upstreams may omit cache_write_tokens even when they provide details.
     // https://github.com/openai/openai-python/blob/f16fbbd2bd25dc1ff150b5f78dbd15ff6bab6d91/src/openai/types/responses/response_usage.py
     // https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/responses/responses.ts#L7259-L7269
     input_tokens_details?: { cached_tokens: number; cache_write_tokens?: number };
@@ -577,6 +624,21 @@ export interface ResponsesOutputAdditionalToolsItem {
   tools: ResponsesTool[];
 }
 
+export type ResponsesOutputAgentMessageItem = Omit<ResponsesInputAgentMessageItem, 'id' | 'agent'> & {
+  id: string;
+  agent?: { agent_name: string };
+};
+
+export type ResponsesOutputMultiAgentCallItem = Omit<ResponsesInputMultiAgentCallItem, 'id' | 'agent'> & {
+  id: string;
+  agent?: { agent_name: string };
+};
+
+export type ResponsesOutputMultiAgentCallOutputItem = Omit<ResponsesInputMultiAgentCallOutputItem, 'id' | 'agent'> & {
+  id: string;
+  agent?: { agent_name: string };
+};
+
 export type ResponsesOutputItem =
   | ResponsesOutputMessage
   | ResponsesOutputFunctionCall
@@ -593,6 +655,10 @@ export type ResponsesOutputItem =
   | ResponsesOutputAdditionalToolsItem
   | ResponsesProgramItem
   | ResponsesProgramOutputItem
+  | ResponsesOutputAgentMessageItem
+  | ResponsesOutputMultiAgentCallItem
+  | ResponsesOutputMultiAgentCallOutputItem
+  | ResponsesContextCompactionItem
   | ResponsesCompactionItem
   | ResponsesCodeInterpreterCallItem
   | ResponsesLocalShellCallItem

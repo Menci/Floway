@@ -28,6 +28,8 @@ import type {
   Session,
   SessionsRepo,
   StoredResponsesItem,
+  StoredResponsesItemMetadata,
+  StoredResponsesItemPayloadRecord,
   StoredResponsesSnapshot,
   UpstreamRepo,
   UsageRecord,
@@ -52,6 +54,12 @@ const runStatements = async (db: SqlDatabase, statements: SqlPreparedStatement[]
   const results: SqlResult[] = [];
   for (const statement of statements) results.push(await statement.run());
   return results;
+};
+
+const mapSequentially = async <T, U>(values: readonly T[], mapper: (value: T) => Promise<U>): Promise<U[]> => {
+  const mapped: U[] = [];
+  for (const value of values) mapped.push(await mapper(value));
+  return mapped;
 };
 
 interface ApiKeyRow {
@@ -800,23 +808,24 @@ class SqlModelsCacheRepo implements ModelsCacheRepo {
   }
 }
 
-const RESPONSES_ITEM_COLUMNS = 'id, api_key_id, upstream_id, upstream_item_id, item_type, origin, payload_json, content_hash, encrypted_content_hash, created_at, refreshed_at';
+const RESPONSES_ITEM_WRITE_COLUMNS = 'id, api_key_id, upstream_id, upstream_item_id, item_type, origin, payload_json, content_hash, encrypted_content_hash, created_at, refreshed_at';
+const RESPONSES_ITEM_METADATA_COLUMNS = 'id, api_key_id, upstream_id, upstream_item_id, item_type, origin, payload_json IS NOT NULL AS has_payload, content_hash, encrypted_content_hash, created_at, refreshed_at';
 const RESPONSES_ITEM_ID_SCOPE_SQL = "COALESCE(api_key_id, '') = COALESCE(?, '')";
 
 class SqlResponsesItemsRepo implements ResponsesItemsRepo {
   constructor(private db: SqlDatabase) {}
 
-  async lookupMany(apiKeyId: string | null, ids: readonly string[]): Promise<StoredResponsesItem[]> {
+  async lookupMany(apiKeyId: string | null, ids: readonly string[]): Promise<StoredResponsesItemMetadata[]> {
     const rows = await this.lookupByColumn(apiKeyId, 'id', ids);
     const order = new Map([...new Set(ids)].map((id, index) => [id, index]));
     return rows.toSorted((a, b) => order.get(a.id)! - order.get(b.id)!);
   }
 
-  async lookupManyByEncryptedContentHash(apiKeyId: string | null, hashes: readonly string[]): Promise<StoredResponsesItem[]> {
+  async lookupManyByEncryptedContentHash(apiKeyId: string | null, hashes: readonly string[]): Promise<StoredResponsesItemMetadata[]> {
     return await this.lookupByColumn(apiKeyId, 'encrypted_content_hash', hashes);
   }
 
-  async lookupManyByContentHash(apiKeyId: string | null, hashes: readonly string[]): Promise<StoredResponsesItem[]> {
+  async lookupManyByContentHash(apiKeyId: string | null, hashes: readonly string[]): Promise<StoredResponsesItemMetadata[]> {
     return await this.lookupByColumn(apiKeyId, 'content_hash', hashes);
   }
 
@@ -826,7 +835,7 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
   // reasoning/compaction item each turn — so chunk the IN-list well under
   // the tightest backend (the `api_key_id` bind shares the budget) and union
   // the results.
-  private async lookupByColumn(apiKeyId: string | null, column: 'id' | 'content_hash' | 'encrypted_content_hash', values: readonly string[]): Promise<StoredResponsesItem[]> {
+  private async lookupByColumn(apiKeyId: string | null, column: 'id' | 'content_hash' | 'encrypted_content_hash', values: readonly string[]): Promise<StoredResponsesItemMetadata[]> {
     const unique = [...new Set(values)];
     if (unique.length === 0) return [];
 
@@ -839,39 +848,61 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
       const orderSql = column === 'id' ? '' : ' ORDER BY refreshed_at DESC, created_at DESC, id ASC';
       const scopeSql = column === 'id' ? RESPONSES_ITEM_ID_SCOPE_SQL : 'api_key_id IS ?';
       const { results } = await this.db
-        .prepare(`SELECT ${RESPONSES_ITEM_COLUMNS} FROM responses_items WHERE ${scopeSql} AND ${column} IN (${placeholders})${orderSql}`)
+        .prepare(`SELECT ${RESPONSES_ITEM_METADATA_COLUMNS} FROM responses_items WHERE ${scopeSql} AND ${column} IN (${placeholders})${orderSql}`)
         .bind(apiKeyId, ...chunk)
-        .all<ResponsesItemRow>();
-      return await Promise.all(results.map(toStoredResponsesItem));
+        .all<ResponsesItemMetadataRow>();
+      return results;
     }));
-    return perChunk.flat();
+    return perChunk.flat().map(toStoredResponsesItemMetadata);
+  }
+
+  async lookupPayloads(apiKeyId: string | null, ids: readonly string[]): Promise<StoredResponsesItemPayloadRecord[]> {
+    const unique = [...new Set(ids)];
+    const chunks: string[][] = [];
+    for (let index = 0; index < unique.length; index += 90) chunks.push(unique.slice(index, index + 90));
+    const perChunk = await Promise.all(chunks.map(async chunk => {
+      const placeholders = chunk.map(() => '?').join(', ');
+      const { results } = await this.db
+        .prepare(`SELECT id, payload_json FROM responses_items WHERE ${RESPONSES_ITEM_ID_SCOPE_SQL} AND id IN (${placeholders})`)
+        .bind(apiKeyId, ...chunk)
+        .all<{ id: string; payload_json: string | null }>();
+      return results;
+    }));
+    const rowsById = new Map(perChunk.flat().map(row => [row.id, row]));
+    const records: StoredResponsesItemPayloadRecord[] = [];
+    for (const id of unique) {
+      const payloadJson = rowsById.get(id)?.payload_json;
+      if (payloadJson === undefined || payloadJson === null) continue;
+      const payload = await parseStoredResponsesPayload(id, payloadJson);
+      if (payload !== null) records.push({ id, payload });
+    }
+    return records;
   }
 
   async insertMany(items: readonly StoredResponsesItem[]): Promise<void> {
-    const statements = await Promise.all(items.map(async item => {
+    const statements = await mapSequentially(items, async item => {
       const payload = await serializeStoredResponsesPayload(item.id, item.apiKeyId, item.createdAt, item.payload);
       return this.db
         .prepare(
-          `INSERT INTO responses_items (${RESPONSES_ITEM_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `INSERT INTO responses_items (${RESPONSES_ITEM_WRITE_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT (id, COALESCE(api_key_id, '')) DO NOTHING`,
         )
         .bind(item.id, item.apiKeyId, item.upstreamId, item.upstreamItemId, item.itemType, item.origin, payload, item.contentHash, item.encryptedContentHash, item.createdAt, item.refreshedAt);
-    }));
+    });
     await runStatements(this.db, statements);
   }
 
   async fillPayloads(items: readonly StoredResponsesItem[]): Promise<number> {
-    const statements = await Promise.all(items.flatMap(item => {
-      if (item.payload === null) return [];
-      return [serializeStoredResponsesPayload(item.id, item.apiKeyId, item.createdAt, item.payload).then(payload =>
-        this.db
-          .prepare(
-            `UPDATE responses_items
-             SET payload_json = ?, content_hash = ?, encrypted_content_hash = ?, created_at = ?, refreshed_at = ?
-             WHERE ${RESPONSES_ITEM_ID_SCOPE_SQL} AND id = ? AND payload_json IS NULL`,
-          )
-          .bind(payload, item.contentHash, item.encryptedContentHash, item.createdAt, item.refreshedAt, item.apiKeyId, item.id))];
-    }));
+    const statements = await mapSequentially(items.filter(item => item.payload !== null), async item => {
+      const payload = await serializeStoredResponsesPayload(item.id, item.apiKeyId, item.createdAt, item.payload);
+      return this.db
+        .prepare(
+          `UPDATE responses_items
+           SET payload_json = ?, content_hash = ?, encrypted_content_hash = ?, created_at = ?, refreshed_at = ?
+           WHERE ${RESPONSES_ITEM_ID_SCOPE_SQL} AND id = ? AND payload_json IS NULL`,
+        )
+        .bind(payload, item.contentHash, item.encryptedContentHash, item.createdAt, item.refreshedAt, item.apiKeyId, item.id);
+    });
     const results = await runStatements(this.db, statements);
     return results.reduce((sum, result) => sum + (result.meta.changes ?? 0), 0);
   }
@@ -909,28 +940,28 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
   }
 }
 
-interface ResponsesItemRow {
+interface ResponsesItemMetadataRow {
   id: string;
   api_key_id: string | null;
   upstream_id: string | null;
   upstream_item_id: string | null;
   item_type: string;
   origin: StoredResponsesItem['origin'];
-  payload_json: string | null;
+  has_payload: number;
   content_hash: string | null;
   encrypted_content_hash: string | null;
   created_at: number;
   refreshed_at: number;
 }
 
-const toStoredResponsesItem = async (row: ResponsesItemRow): Promise<StoredResponsesItem> => ({
+const toStoredResponsesItemMetadata = (row: ResponsesItemMetadataRow): StoredResponsesItemMetadata => ({
   id: row.id,
   apiKeyId: row.api_key_id,
   upstreamId: row.upstream_id,
   upstreamItemId: row.upstream_item_id,
   itemType: row.item_type,
   origin: row.origin,
-  payload: await parseStoredResponsesPayload(row.id, row.payload_json),
+  hasPayload: row.has_payload !== 0,
   contentHash: row.content_hash,
   encryptedContentHash: row.encrypted_content_hash,
   createdAt: row.created_at,

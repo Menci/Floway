@@ -3,7 +3,7 @@ import type { ResponsesAttemptResult, ResponsesInvocation } from './interceptors
 import { createStoredResponseId } from './items/format.ts';
 import { normalizeAssistantInputText } from './items/normalize-assistant-content.ts';
 import { drainAsync, syntheticEventsFromResult, wrapResponsesOutputForStorage } from './items/output.ts';
-import { rewriteResponsesItemsForCandidate, type RewrittenResponsesPayload } from './items/rewrite.ts';
+import { rewriteResponsesPayloadForCandidate, type RewrittenResponsesPayload } from './items/rewrite.ts';
 import type { StatefulResponsesStore } from './items/store.ts';
 import { tokenUsageFromResponsesResult } from './usage.ts';
 import { applyRulesToUpstreamResponses } from '../../model-aliases/apply-rules.ts';
@@ -88,7 +88,7 @@ export const responsesAttempt = {
     // wire shape against an empty privatePayload map.
     const rewritten = await rewriteOrRenderFailure(payload, store, candidate);
     if (!('payload' in rewritten)) return rewritten.failure;
-    store.beginAttempt(rewritten.references);
+    store.beginAttempt(rewritten.privatePayloads);
     // Copilot compaction and Azure-native compaction both emit assistant
     // messages whose content blocks have `type: 'input_text'`, then refuse
     // the same items echoed back as input on the next turn. Normalising
@@ -184,7 +184,7 @@ const rewriteOrRenderFailure = async (
   candidate: ModelCandidate,
 ): Promise<RewriteOutcome> => {
   try {
-    return await rewriteResponsesItemsForCandidate(payload, store, candidate);
+    return await rewriteResponsesPayloadForCandidate(payload, store, candidate);
   } catch (error) {
     const failure = tryCatchChatServeFailure(error);
     if (failure === null) throw error;

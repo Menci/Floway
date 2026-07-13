@@ -4,7 +4,7 @@ import { applyRulesToUpstreamMessages } from '../../model-aliases/apply-rules.ts
 import { providerStreamResultToExecuteResult, buildUpstreamCallOptions, chatTargetPicker } from '../../shared/telemetry/attempt-helpers.ts';
 import { chatCompletionsAttempt } from '../chat-completions/attempt.ts';
 import { responsesAttempt } from '../responses/attempt.ts';
-import { rewriteStoredResponsesItemsForCandidate } from '../responses/items/rewrite.ts';
+import { rewriteStoredItemsInSourceForCandidate } from '../responses/items/rewrite.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import { tryCatchChatServeFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
@@ -126,7 +126,7 @@ const rewriteOrRenderMessagesFailure = async (
   candidate: ModelCandidate,
 ): Promise<{ payload: MessagesPayload; failure?: undefined } | { payload?: undefined; failure: ExecuteResult<ProtocolFrame<MessagesStreamEvent>> & { type: 'api-error' } }> => {
   try {
-    const rewrittenMessages = await rewriteStoredResponsesItemsForCandidate(
+    const rewrittenMessages = await rewriteStoredItemsInSourceForCandidate(
       payload.messages as readonly MessagesMessage[],
       messagesViaResponsesItemsView,
       store,

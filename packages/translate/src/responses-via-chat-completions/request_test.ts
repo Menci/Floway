@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { translateResponsesToChatCompletions } from './request.ts';
 import { createResponsesToChatCompletionsStreamState, translateResponsesEventToChatCompletionsChunks } from '../chat-completions-via-responses/events.ts';
 import { assertEquals, assertThrows } from '../test-assert.ts';
-import type { ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
+import type { ResponsesAgentMessageContent, ResponsesInputMultiAgentCallOutputItem, ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
 
 test('translateResponsesToChatCompletions merges adjacent assistant reasoning text and tool calls', () => {
   const result = translateResponsesToChatCompletions({
@@ -1393,6 +1393,10 @@ test.each([
   { name: 'additional_tools', input: [{ type: 'additional_tools', role: 'developer', tools: [] as ResponsesTool[] }] },
   { name: 'program', input: [{ type: 'program', id: 'prog_1', call_id: 'call_prog_1', code: 'return 1', fingerprint: 'opaque' }] },
   { name: 'program_output', input: [{ type: 'program_output', id: 'prog_out_1', call_id: 'call_prog_1', result: '1', status: 'completed' }] },
+  { name: 'agent_message', input: [{ type: 'agent_message', author: '/root/a', recipient: '/root', content: [{ type: 'input_text', text: 'done' }] as ResponsesAgentMessageContent[] }] },
+  { name: 'multi_agent_call', input: [{ type: 'multi_agent_call', action: 'spawn_agent', arguments: '{}', call_id: 'call_1' }] },
+  { name: 'multi_agent_call_output', input: [{ type: 'multi_agent_call_output', action: 'spawn_agent', call_id: 'call_1', output: [] as ResponsesInputMultiAgentCallOutputItem['output'] }] },
+  { name: 'context_compaction', input: [{ type: 'context_compaction', encrypted_content: 'opaque' }] },
 ] as const)('translateResponsesToChatCompletions rejects Responses-only $name input', ({ name, input }) => {
   assertThrows(
     () => translateResponsesToChatCompletions({ model: 'gpt-test', input: [...input] }),

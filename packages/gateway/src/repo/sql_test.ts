@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { SqlRepo } from './sql.ts';
 import { createSqliteTestDb } from './test-sqlite.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
-import { assertEquals } from '@floway-dev/test-utils';
+import { assertEquals, stubProviderModel } from '@floway-dev/test-utils';
 
 const goodAccount = { chatgptAccountId: 'aid', refresh_token: 'rt_v1', state: 'active' as const, state_updated_at: '2026-01-01T00:00:00Z' };
 const baseRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => ({
@@ -22,6 +22,20 @@ const baseRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => 
   modelPrefix: null,
   color: null,
   ...overrides,
+});
+
+test('SQL models cache round-trips the catalog revision', async () => {
+  const repo = new SqlRepo(await createSqliteTestDb());
+  await repo.upstreams.save(baseRecord());
+  await repo.modelsCache.put('up_test', {
+    revision: 7,
+    fetchedAt: 1_700_000_000_000,
+    models: [stubProviderModel({ id: 'cached-model' })],
+  });
+
+  const cached = await repo.modelsCache.get('up_test');
+  assertEquals(cached?.revision, 7);
+  assertEquals(cached?.models.map(model => model.id), ['cached-model']);
 });
 
 test('SQL upstream repo round-trips state_json on save/list/getById', async () => {

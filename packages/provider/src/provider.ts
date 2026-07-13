@@ -30,7 +30,6 @@ export interface Provider {
   // instance instead of re-fetching the row. `null` keeps the bare-id behavior.
   modelPrefix: ModelPrefixConfig | null;
   instance: ProviderInstance;
-  supportsResponsesItemReference: boolean;
 }
 
 export interface ProviderCallResult {

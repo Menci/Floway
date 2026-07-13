@@ -7,6 +7,10 @@ export const requiresNativeResponses = (payload: ResponsesPayload): boolean => {
     item.type === 'additional_tools'
     || item.type === 'program'
     || item.type === 'program_output'
+    || item.type === 'agent_message'
+    || item.type === 'multi_agent_call'
+    || item.type === 'multi_agent_call_output'
+    || item.type === 'context_compaction'
     || isProgramCaller(item))
     || payload.tools?.some(hasProgrammaticCaller) === true
     || payload.tools?.some(hasDeferredTool) === true

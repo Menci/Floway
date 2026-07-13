@@ -16,7 +16,6 @@ const stubCandidate = (id: string, upstream = 'up'): ModelCandidate =>
       disabledPublicModelIds: [],
       modelPrefix: null,
       instance: stubProvider(),
-      supportsResponsesItemReference: false,
     },
   });
 

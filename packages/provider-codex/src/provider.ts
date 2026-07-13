@@ -146,7 +146,6 @@ export const createCodexProvider = (record: UpstreamRecord): Provider => {
     disabledPublicModelIds: record.disabledPublicModelIds,
     modelPrefix: record.modelPrefix,
     instance,
-    supportsResponsesItemReference: false,
   };
 };
 

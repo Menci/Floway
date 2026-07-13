@@ -100,7 +100,6 @@ export const stubModelCandidate = (overrides: {
     disabledPublicModelIds: [],
     modelPrefix: null,
     instance: stubProvider(),
-    supportsResponsesItemReference: false,
   };
   const modelOverrides = overrides.model ?? {};
   const outerMeta = {

@@ -1,3 +1,14 @@
+// Response-side `default` (OpenAI), `standard` (Anthropic), and blank values
+// identify base service. Other open-string values remain byte-preserving.
+// https://developers.openai.com/api/docs/guides/priority-processing
+// https://docs.claude.com/en/api/service-tiers
+// https://docs.claude.com/en/build-with-claude/fast-mode
+export const billableServiceTier = (tier: string | null | undefined): string | null => {
+  if (tier == null) return null;
+  const normalized = tier.trim().toLowerCase();
+  return normalized === '' || normalized === 'default' || normalized === 'standard' ? null : tier;
+};
+
 // Symbol-keyed billing facts survive in-process translation and reassembly but
 // are omitted by JSON serialization, so protocol clients see only native fields.
 export const USAGE_BILLING = Symbol('usage-billing');

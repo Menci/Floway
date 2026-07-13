@@ -1,5 +1,6 @@
 import type { AliasSelection, AliasTarget } from './aliases.ts';
 import type { ModelEndpoints } from './capabilities.ts';
+import { billableServiceTier } from './usage.ts';
 
 // Disjoint billing dimensions a single request can be charged on. Every count
 // keyed by these is non-overlapping: a prompt token is counted under exactly
@@ -40,16 +41,6 @@ export interface PricingThresholdCoordinate {
 
 export type PricingCoordinateValue = string | PricingThresholdCoordinate;
 export type PricingSelector = Readonly<Record<string, PricingCoordinateValue>>;
-
-// Response-side `default` (OpenAI) and `standard` (Anthropic) identify Base;
-// other open-string values remain byte-preserving selector coordinates.
-// https://developers.openai.com/api/docs/guides/priority-processing
-// https://docs.claude.com/en/api/service-tiers
-export const billableServiceTier = (tier: string | null | undefined): string | null => {
-  if (tier == null) return null;
-  const normalized = tier.trim().toLowerCase();
-  return normalized === '' || normalized === 'default' || normalized === 'standard' ? null : tier;
-};
 
 export type PricingRuntimeFacts = Readonly<{
   serviceTier?: string | null;

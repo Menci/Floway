@@ -63,7 +63,6 @@ const makeCandidate = (
       disabledPublicModelIds: [],
       modelPrefix: null,
       instance: provider,
-      supportsResponsesItemReference: true,
     },
     model: stubInternalModel({
       providerModels: { [upstream]: stubProviderModel({ enabledFlags }) },
@@ -213,14 +212,10 @@ test('generate returns failure when rewrite throws item-not-found', async () => 
     throw new Error('callResponses should not be called when rewrite fails');
   });
   const candidate = makeCandidate(callResponses);
-  // Force `supportsResponsesItemReference: false` so a stored row with no
-  // inline payload triggers the rewrite-side throw.
-  candidate.provider.supportsResponsesItemReference = false;
 
   const missingId = createStoredResponsesItemId('message');
-  // Pre-seed the store cache: a row with no inline payload, referenced as
-  // `item_reference`. The store will resolve the id, and rewrite will throw
-  // because the candidate cannot accept `item_reference`.
+  // Pre-seed the store cache with a row whose payload is unavailable so the
+  // rewrite cannot expand the reference.
   const store = createResponsesHttpStore(API_KEY_ID, true);
   // Insert into the underlying repo so `loadInputItems` populates the cache.
   // The store uses `getRepo()` lazily, so the repo installed via `installRepo`
@@ -373,7 +368,7 @@ test('generate inherits invocation headers across translation to Messages', asyn
   const candidate: ModelCandidate = {
     provider: {
       upstream: 'up_test', kind: 'custom', name: 'up_test',
-      disabledPublicModelIds: [], modelPrefix: null, instance: messagesProvider, supportsResponsesItemReference: true,
+      disabledPublicModelIds: [], modelPrefix: null, instance: messagesProvider,
     },
     model: upstreamModel,
     fetcher: directFetcher,

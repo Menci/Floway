@@ -14,7 +14,7 @@ import { responsesItemsView } from '@floway-dev/translate/via-responses/response
 
 const API_KEY_ID = 'key_affinity_test';
 
-const candidate = (upstream: string, supportsResponsesItemReference = true): ModelCandidate => {
+const candidate = (upstream: string): ModelCandidate => {
   const modelProvider = stubProvider({
     getProvidedModels: () => Promise.resolve([stubProviderModel()]),
   });
@@ -26,7 +26,6 @@ const candidate = (upstream: string, supportsResponsesItemReference = true): Mod
       disabledPublicModelIds: [],
       modelPrefix: null,
       instance: modelProvider,
-      supportsResponsesItemReference,
     },
     model: stubInternalModel({}, upstream),
     fetcher: directFetcher,
@@ -232,13 +231,13 @@ test('row item type must match source item type', async () => {
   if (result.kind === 'failure') assertEquals(result.failure.kind, 'routing-unavailable');
 });
 
-test('metadata-only item_reference rejects when the origin upstream does not support item_reference', async () => {
-  const id = storedMessageId('metadata-only-reference-unsupported');
+test('metadata-only item_reference rejects even with an upstream item id', async () => {
+  const id = storedMessageId('metadata-only-reference-with-upstream-item-id');
   await insertRows([
     storedRow({ id, itemType: 'message', upstreamId: 'up_a', upstreamItemId: 'raw_msg_a', payload: null }),
   ]);
 
-  const result = await classifyItems([{ type: 'item_reference', id }], [candidate('up_a', false)]);
+  const result = await classifyItems([{ type: 'item_reference', id }], [candidate('up_a')]);
 
   assertEquals(result.kind, 'failure');
   if (result.kind === 'failure') {

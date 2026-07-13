@@ -145,12 +145,24 @@ interface ModelCandidate {
 }
 ```
 
-- `provider` owns the upstream id, provider kind, provider capabilities, and
-  provider instance.
-- `model` is the public row narrowed to one contributing upstream.
-- `fetcher` is bound to that upstream's proxy fallback chain for the current
-  request.
-- `rules` is present only for alias-origin candidates.
+- `provider` is the resolved upstream provider instance — every wire call and
+  pricing lookup reads off `provider.*` directly (upstream id, upstream name,
+  and provider kind).
+- `model` is the merged public row for this id, projected to a single
+  contributing upstream: `providerModels` carries exactly one entry keyed
+  on `provider.upstream`. That entry is the `ProviderModel` the upstream
+  emitted verbatim — its `providerData` carries the per-provider wire id,
+  its `enabledFlags` carries the operator's per-model flag set. Dispatch
+  and interceptor gates read the entry through `providerModelOf(candidate)`.
+- `fetcher` is the per-request proxy-chain-bound `Fetcher` for the
+  candidate's upstream, minted once at resolution time and carried with
+  the candidate that dispatches.
+- `rules` is present only on candidates minted by the alias walk — it
+  carries the picked target's rule overlay so each attempt's terminal
+  wire call can apply it against the target IR via
+  `applyRulesToUpstream{ChatCompletions,Responses,Messages}`. Absent
+  (undefined) on direct-resolution candidates; present (possibly `{}`)
+  on alias-origin candidates.
 
 The candidate deliberately carries no target protocol. Protocol selection is
 an attempt-time concern.
@@ -229,6 +241,12 @@ canonical selector JSON.
 Candidates preserve configured upstream order. Within one upstream, the
 unprefixed addressable path precedes the prefix-stripped path. Responses item
 affinity may narrow or reorder this list but never creates candidates.
+
+For Responses-shaped inbound, `classifyResponsesItemAffinity` resolves stored
+ids from metadata, rejects an `item_reference` whose durable payload is
+unavailable, and uses the referenced row's actual item type to determine
+upstream affinity. Candidate rewriting then bulk-loads the required payloads
+and replaces every reference before constructing the upstream request.
 
 Dispatch stops on the first candidate's non-throwing result. Successful
 responses, upstream-shaped API errors, and internal-debug failures are final;

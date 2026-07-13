@@ -38,7 +38,7 @@ test('0052 preserves distinct open-string service tiers as canonical selectors',
   const SQL = await initSqlJs();
   const db = new SQL.Database();
   for (const [filename, sql] of migrationSqlByFilename) {
-    if (filename === '0052_usage_pricing_selector.sql') {
+    if (filename === '0053_usage_pricing_selector.sql') {
       db.run(`INSERT INTO usage (key_id, model, upstream, model_key, hour, tier, dimension, tokens, unit_price) VALUES
         ('k', 'm', NULL, 'mk', '2026-01-01T00', NULL, 'input', 10, 1),
         ('k', 'm', NULL, 'mk', '2026-01-01T00', '  ', 'input', 20, 2),

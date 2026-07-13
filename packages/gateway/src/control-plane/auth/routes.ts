@@ -6,14 +6,14 @@ import { isProductionRequest } from '../../shared/is-production-request.ts';
 import { dummyPasswordHash, timingSafeEqual, verifyPassword } from '../../shared/passwords.ts';
 import type { authLoginBody } from '../schemas.ts';
 import { userToEffectiveWire } from '../users/wire.ts';
-import { getEnv } from '@floway-dev/platform';
+import { getEnvOptional } from '@floway-dev/platform';
 
 const resolveLoginUser = async (c: CtxWithJson<typeof authLoginBody>): Promise<User | null> => {
   const { username, password } = c.req.valid('json');
   const repo = getRepo();
 
   if (username === '') {
-    const adminKey = getEnv('ADMIN_KEY');
+    const adminKey = getEnvOptional('ADMIN_KEY', '');
     if (adminKey) {
       const utf8 = new TextEncoder();
       if (!timingSafeEqual(utf8.encode(password), utf8.encode(adminKey))) return null;

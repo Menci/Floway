@@ -1,6 +1,6 @@
-import { describe, expect, test, vi } from 'vitest';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
 
-import { fetchUpstreamModelsCached, MODEL_CATALOG_REVISION } from './models-cache.ts';
+import { clearInFlightForTesting, fetchUpstreamModelsCached, MODEL_CATALOG_REVISION } from './models-cache.ts';
 import { initRepo } from '../../repo/index.ts';
 import { InMemoryRepo } from '../../repo/memory.ts';
 import { directFetcher, type Provider, type ProviderModel } from '@floway-dev/provider';
@@ -17,7 +17,6 @@ const stubInstance = (
   name: upstreamId,
   disabledPublicModelIds: [],
   modelPrefix: null,
-  supportsResponsesItemReference: false,
   instance: stubProvider({ getProvidedModels: fetchFn }),
 });
 
@@ -26,6 +25,10 @@ const setupRepo = (): InMemoryRepo => {
   initRepo(repo);
   return repo;
 };
+
+beforeEach(() => {
+  clearInFlightForTesting();
+});
 
 describe('fetchUpstreamModelsCached', () => {
   test('cold cache: fetches, stores, returns models', async () => {
@@ -175,16 +178,16 @@ describe('fetchUpstreamModelsCached', () => {
     await repo.modelsCache.put('up_a', {
       revision: MODEL_CATALOG_REVISION - 1,
       fetchedAt: Date.now() - 1000,
-      models: [aModel('old-pricing')],
+      models: [aModel('old-catalog')],
     });
-    const fetchFn = vi.fn(async () => [aModel('current-pricing')]);
+    const fetchFn = vi.fn(async () => [aModel('current-catalog')]);
 
     const result = await fetchUpstreamModelsCached(
       stubInstance('up_a', fetchFn),
       { scheduler: () => {}, fetcher: directFetcher },
     );
 
-    expect(result.map(model => model.id)).toEqual(['current-pricing']);
+    expect(result.map(model => model.id)).toEqual(['current-catalog']);
     expect(fetchFn).toHaveBeenCalledTimes(1);
     expect((await repo.modelsCache.get('up_a'))?.revision).toBe(MODEL_CATALOG_REVISION);
   });

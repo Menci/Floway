@@ -182,6 +182,5 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
     disabledPublicModelIds: record.disabledPublicModelIds,
     modelPrefix: record.modelPrefix,
     instance,
-    supportsResponsesItemReference: true,
   };
 };

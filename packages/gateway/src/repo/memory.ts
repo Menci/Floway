@@ -6,6 +6,7 @@ import {
   cloneStoredResponsesSnapshot,
   compareResponsesItemsByFreshness,
   responsesItemStoreKey,
+  storedResponsesItemMetadata,
 } from './responses-clone.ts';
 import { RESPONSES_REFRESH_DEBOUNCE_MS } from './responses-payload.ts';
 import type {
@@ -34,6 +35,8 @@ import type {
   Session,
   SessionsRepo,
   StoredResponsesItem,
+  StoredResponsesItemMetadata,
+  StoredResponsesItemPayloadRecord,
   StoredResponsesSnapshot,
   UpstreamRepo,
   UsageRecord,
@@ -574,40 +577,53 @@ const cloneUpstreamRecord = (upstream: UpstreamRecord): UpstreamRecord => ({
 class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
   private store = new Map<string, StoredResponsesItem>();
 
-  lookupMany(apiKeyId: string | null, ids: readonly string[]): Promise<StoredResponsesItem[]> {
-    const rows: StoredResponsesItem[] = [];
+  lookupMany(apiKeyId: string | null, ids: readonly string[]): Promise<StoredResponsesItemMetadata[]> {
+    return Promise.resolve(this.lookupManySync(apiKeyId, ids));
+  }
+
+  lookupManyByEncryptedContentHash(apiKeyId: string | null, hashes: readonly string[]): Promise<StoredResponsesItemMetadata[]> {
+    const wanted = new Set(hashes);
+    if (wanted.size === 0) return Promise.resolve([]);
+    const rows: StoredResponsesItemMetadata[] = [];
+    for (const row of this.store.values()) {
+      if (row.apiKeyId === apiKeyId && row.encryptedContentHash !== null && wanted.has(row.encryptedContentHash)) {
+        rows.push(storedResponsesItemMetadata(row));
+      }
+    }
+    return Promise.resolve(rows.toSorted(compareResponsesItemsByFreshness));
+  }
+
+  lookupManyByContentHash(apiKeyId: string | null, hashes: readonly string[]): Promise<StoredResponsesItemMetadata[]> {
+    const wanted = new Set(hashes);
+    if (wanted.size === 0) return Promise.resolve([]);
+    const rows: StoredResponsesItemMetadata[] = [];
+    for (const row of this.store.values()) {
+      if (row.apiKeyId === apiKeyId && row.contentHash !== null && wanted.has(row.contentHash)) {
+        rows.push(storedResponsesItemMetadata(row));
+      }
+    }
+    return Promise.resolve(rows.toSorted(compareResponsesItemsByFreshness));
+  }
+
+  lookupPayloads(apiKeyId: string | null, ids: readonly string[]): Promise<StoredResponsesItemPayloadRecord[]> {
+    const records: StoredResponsesItemPayloadRecord[] = [];
+    for (const metadata of this.lookupManySync(apiKeyId, ids)) {
+      const row = this.store.get(responsesItemStoreKey(apiKeyId, metadata.id));
+      if (row !== undefined && row.payload !== null) records.push({ id: row.id, payload: structuredClone(row.payload) });
+    }
+    return Promise.resolve(records);
+  }
+
+  private lookupManySync(apiKeyId: string | null, ids: readonly string[]): StoredResponsesItemMetadata[] {
+    const rows: StoredResponsesItemMetadata[] = [];
     const seen = new Set<string>();
     for (const id of ids) {
       if (seen.has(id)) continue;
       seen.add(id);
       const row = this.store.get(responsesItemStoreKey(apiKeyId, id));
-      if (row?.apiKeyId === apiKeyId) rows.push(cloneStoredResponsesItem(row));
+      if (row?.apiKeyId === apiKeyId) rows.push(storedResponsesItemMetadata(row));
     }
-    return Promise.resolve(rows);
-  }
-
-  lookupManyByEncryptedContentHash(apiKeyId: string | null, hashes: readonly string[]): Promise<StoredResponsesItem[]> {
-    const wanted = new Set(hashes);
-    if (wanted.size === 0) return Promise.resolve([]);
-    const rows: StoredResponsesItem[] = [];
-    for (const row of this.store.values()) {
-      if (row.apiKeyId === apiKeyId && row.encryptedContentHash !== null && wanted.has(row.encryptedContentHash)) {
-        rows.push(cloneStoredResponsesItem(row));
-      }
-    }
-    return Promise.resolve(rows.toSorted(compareResponsesItemsByFreshness));
-  }
-
-  lookupManyByContentHash(apiKeyId: string | null, hashes: readonly string[]): Promise<StoredResponsesItem[]> {
-    const wanted = new Set(hashes);
-    if (wanted.size === 0) return Promise.resolve([]);
-    const rows: StoredResponsesItem[] = [];
-    for (const row of this.store.values()) {
-      if (row.apiKeyId === apiKeyId && row.contentHash !== null && wanted.has(row.contentHash)) {
-        rows.push(cloneStoredResponsesItem(row));
-      }
-    }
-    return Promise.resolve(rows.toSorted(compareResponsesItemsByFreshness));
+    return rows;
   }
 
   insertMany(items: readonly StoredResponsesItem[]): Promise<void> {

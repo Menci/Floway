@@ -128,7 +128,6 @@ const makeCandidate = (overrides: {
       disabledPublicModelIds: [],
       modelPrefix: null,
       instance: provider,
-      supportsResponsesItemReference: true,
     },
     // Default keeps stubInternalModel's three-endpoint map intact; tests that
     // need a rejected candidate pass an explicit `endpoints` override.
@@ -325,7 +324,7 @@ test('generate renders routing-unavailable as a 400 when a forcing item names an
     origin: 'upstream',
     contentHash: null,
     encryptedContentHash: null,
-    payload: null,
+    payload: { item: { type: 'compaction', id } },
     createdAt: 1_000,
     refreshedAt: 1_000,
   };
@@ -358,7 +357,7 @@ test('compact renders routing-unavailable when no candidate exposes the response
     origin: 'upstream',
     contentHash: null,
     encryptedContentHash: null,
-    payload: null,
+    payload: { item: { type: 'compaction', id } },
     createdAt: 1_000,
     refreshedAt: 1_000,
   }]);
@@ -711,9 +710,10 @@ test('generate treats compaction_trigger-bearing input as compaction: snapshot r
   assertEquals(onlyItemId.startsWith('cmp_'), true);
 
   // The trigger still reaches the upstream — the gateway only intercepts at
-  // the storage seam, not on the wire. The expanded prefix puts item_reference
-  // first, the trigger last.
+  // the storage seam, not on the wire. The stored message is expanded first
+  // and the trigger remains last.
   if (!Array.isArray(receivedInput)) throw new Error('expected the wire input to be an array');
+  assertEquals(receivedInput[0], { type: 'message', id: priorMessageId, role: 'user', content: 'old turn' });
   assertEquals((receivedInput.at(-1) as { type?: unknown })?.type, 'compaction_trigger');
 });
 

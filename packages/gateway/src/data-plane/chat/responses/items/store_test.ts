@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { test, vi } from 'vitest';
 
 import { createStoredResponsesItemId } from './format.ts';
 import { createNonResponsesSourceStore, createResponsesHttpStore } from './store.ts';
@@ -59,8 +59,46 @@ test('stages programmatic tool items with their documented id prefixes and prese
   assert(snapshot.itemIds[0].startsWith('at_'));
   assert(snapshot.itemIds[1].startsWith('prog_'));
   assert(snapshot.itemIds[2].startsWith('prog_out_'));
-  const rows = await repo.responsesItems.lookupMany(API_KEY_ID, snapshot.itemIds);
-  assertEquals(rows.map(row => row.payload?.item), input);
+  const payloads = await repo.responsesItems.lookupPayloads(API_KEY_ID, snapshot.itemIds);
+  assertEquals(payloads.map(record => record.payload.item), input);
+});
+
+test('stages agent and context-compaction items with stable prefixes and preserves every field', async () => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  const input: ResponsesInputItem[] = [
+    { type: 'agent_message', author: '/root/a', recipient: '/root', content: [{ type: 'input_text', text: 'done' }] },
+    { type: 'multi_agent_call', action: 'spawn_agent', arguments: '{}', call_id: 'call_1' },
+    { type: 'multi_agent_call_output', action: 'spawn_agent', call_id: 'call_1', output: [] },
+    { type: 'context_compaction', encrypted_content: 'opaque' },
+  ];
+  const store = createResponsesHttpStore(API_KEY_ID, true);
+
+  await store.stageInputItems(input);
+  await store.commitSnapshot('resp_agents', 'append');
+
+  const snapshot = await repo.responsesSnapshots.lookup(API_KEY_ID, 'resp_agents');
+  assertExists(snapshot);
+  assertEquals(snapshot.itemIds.map(id => id.slice(0, id.indexOf('_'))), ['amsg', 'mac', 'maco', 'cmp']);
+  const payloads = await repo.responsesItems.lookupPayloads(API_KEY_ID, snapshot.itemIds);
+  assertEquals(payloads.map(record => record.payload.item), input);
+});
+
+test('content-hash preload skips items already addressed by a stored id', async () => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  const lookupByContentHash = vi.spyOn(repo.responsesItems, 'lookupManyByContentHash');
+  const storedId = createStoredResponsesItemId('message');
+  const input: ResponsesInputItem[] = [
+    { type: 'message', id: storedId, role: 'assistant', content: 'stored' },
+    { type: 'message', id: 'client-message', role: 'user', content: 'new' },
+  ];
+  const store = createResponsesHttpStore(API_KEY_ID, true);
+
+  await store.loadInputItems({ sourceItems: input, view: responsesItemsView, inputItemsToStage: input });
+
+  assertEquals(lookupByContentHash.mock.calls.length, 1);
+  assertEquals(lookupByContentHash.mock.calls[0][1].length, 1);
 });
 
 test('snapshots with non-replayable metadata-only rows load as missing', async () => {
@@ -143,7 +181,7 @@ test('createNonResponsesSourceStore reads items for affinity but does not write 
     origin: 'upstream',
     payload: { item: { type: 'message', id: 'out_1', role: 'assistant', content: [] } },
   };
-  store.beginAttempt([]);
+  store.beginAttempt(new Map());
   store.stageOutputItem(outputItem);
   await store.commitOutputItems();
   await store.commitSnapshot('resp_new', 'append');
@@ -162,7 +200,7 @@ test('createResponsesHttpStore with store=false does not write snapshots', async
     itemType: 'message',
     origin: 'upstream',
   });
-  store.beginAttempt([]);
+  store.beginAttempt(new Map());
   store.stageOutputItem(outputItem);
   await store.commitOutputItems();
   await store.commitSnapshot('resp_no_store', 'append');
@@ -183,7 +221,7 @@ test('createResponsesHttpStore with store=true writes snapshots', async () => {
     upstreamItemId: 'raw_snap',
     payload: { item: { type: 'message', id: 'snap_1', role: 'assistant', content: [] } },
   });
-  store.beginAttempt([]);
+  store.beginAttempt(new Map());
   store.stageOutputItem(outputItem);
   await store.commitOutputItems();
   await store.commitSnapshot('resp_with_store', 'append');
@@ -191,4 +229,35 @@ test('createResponsesHttpStore with store=true writes snapshots', async () => {
   const snapshot = await repo.responsesSnapshots.lookup(API_KEY_ID, 'resp_with_store');
   assertExists(snapshot);
   assertEquals(snapshot.itemIds, [outputItem.id]);
+});
+
+test('committing a snapshot refreshes durable history without rewriting it', async () => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  const itemId = createStoredResponsesItemId('message');
+  const inputItem: ResponsesInputItem = { type: 'message', id: itemId, role: 'assistant', content: [] };
+  const item = storedRow({
+    id: itemId,
+    itemType: 'message',
+    upstreamId: 'up_history',
+    upstreamItemId: 'raw_history',
+    payload: { item: inputItem },
+  });
+  await repo.responsesItems.insertMany([item]);
+  const insertMany = vi.spyOn(repo.responsesItems, 'insertMany');
+  const refreshMany = vi.spyOn(repo.responsesItems, 'refreshMany');
+  const store = createResponsesHttpStore(API_KEY_ID, true);
+  const input = [inputItem];
+
+  await store.loadInputItems({ sourceItems: input, view: responsesItemsView });
+  await store.stageInputItems(input);
+  await store.commitSnapshot('resp_history', 'append');
+
+  assertEquals(insertMany.mock.calls, []);
+  assertEquals(refreshMany.mock.calls.length, 1);
+  assertEquals(refreshMany.mock.calls[0]![0], API_KEY_ID);
+  assertEquals(refreshMany.mock.calls[0]![1], [item.id]);
+  const snapshot = await repo.responsesSnapshots.lookup(API_KEY_ID, 'resp_history');
+  assertExists(snapshot);
+  assertEquals(snapshot.itemIds, [item.id]);
 });

@@ -51,7 +51,6 @@ test('createAzureProvider projects configured models into upstream models', asyn
 
   assertEquals(instance.upstream, 'up_azure');
   assertEquals(instance.name, 'Azure Resource');
-  assertEquals(instance.supportsResponsesItemReference, true);
   assertEquals(models[0]?.enabledFlags.has('vendor-kimi'), true);
   assertEquals(
     models.map(model => ({ id: model.id, displayName: model.display_name, endpoints: model.endpoints, providerData: model.providerData })),

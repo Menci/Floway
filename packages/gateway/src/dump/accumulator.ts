@@ -38,6 +38,7 @@ interface ResponseSnapshot {
   readonly headers: ReadonlyArray<readonly [string, string]>;
   readonly isStream: boolean;
   readonly bytes: Uint8Array;
+  readonly payloadBytes: number;
   readonly streamError: string | null;
 }
 
@@ -97,6 +98,7 @@ const resolveUpstreamRef = async (id: string | null): Promise<DumpUpstreamRef | 
 
 export class DumpAccumulator {
   private readonly events: DumpStreamEvent[] = [];
+  private sentPayloadBytes = 0;
   private model: string | null = null;
   private upstreamId: string | null = null;
   private inputTokens: number | null = null;
@@ -133,6 +135,10 @@ export class DumpAccumulator {
     this.events.push({ frame, ts: Date.now() - this.startedAt });
   }
 
+  recordSentPayloadBytes(byteLength: number): void {
+    this.sentPayloadBytes += byteLength;
+  }
+
   success(identity: TelemetryModelIdentity, usage: TokenUsage | null): void {
     this.model = identity.model;
     this.upstreamId = identity.upstream;
@@ -147,8 +153,8 @@ export class DumpAccumulator {
   //
   //   • `(status, headers)` — no HTTP Response object to tee. The WebSocket
   //     Responses path uses this: its "response" is the stream of frames
-  //     already captured via `frame()` and the terminal status is supplied
-  //     by the caller.
+  //     already captured via `frame()`, while the send seam records their
+  //     actual UTF-8 payload bytes via `recordSentPayloadBytes()`.
   //   • `(response)` — tees the response body so the client gets bytes
   //     flowing while a background reader accumulates the other half. The
   //     returned Response streams the client-side bytes; status, statusText,
@@ -168,6 +174,7 @@ export class DumpAccumulator {
         headers: headers.map(([k, v]) => [k, v]),
         isStream: this.events.length > 0,
         bytes: new Uint8Array(),
+        payloadBytes: this.sentPayloadBytes,
         streamError: null,
       }));
       return;
@@ -202,7 +209,14 @@ export class DumpAccumulator {
       const bytes = new Uint8Array(total);
       let offset = 0;
       for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
-      await this.write({ status: responseStatus, headers: responseHeaders, isStream, bytes, streamError });
+      await this.write({
+        status: responseStatus,
+        headers: responseHeaders,
+        isStream,
+        bytes,
+        payloadBytes: bytes.byteLength,
+        streamError,
+      });
     })());
 
     return new Response(forClient, {
@@ -244,7 +258,7 @@ export class DumpAccumulator {
       inputTokens: this.inputTokens,
       outputTokens: this.outputTokens,
       requestBytes: this.requestSnapshot.body.byteLength,
-      responseBytes: response.bytes.byteLength,
+      responseBytes: response.payloadBytes,
       durationMs: completedAt - this.startedAt,
       // Precedence: an explicit error stamp from the respond path wins;
       // otherwise a request-body read failure (operator-side payload didn't

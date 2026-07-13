@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { translateResponsesToMessages } from './request.ts';
 import { assert, assertEquals, assertFalse, assertRejects } from '../test-assert.ts';
 import { MESSAGES_FALLBACK_MAX_TOKENS, type MessagesClientTool, type MessagesToolResultBlock, type MessagesUserContentBlock } from '@floway-dev/protocols/messages';
-import type { ResponsesTool } from '@floway-dev/protocols/responses';
+import type { ResponsesAgentMessageContent, ResponsesInputMultiAgentCallOutputItem, ResponsesTool } from '@floway-dev/protocols/responses';
 
 const stubRemoteImageLoader = (result: { mediaType: string | null; data: Uint8Array } | null) => () => Promise.resolve(result);
 
@@ -26,6 +26,10 @@ test.each([
   { name: 'additional_tools', input: [{ type: 'additional_tools', role: 'developer', tools: [] as ResponsesTool[] }] },
   { name: 'program', input: [{ type: 'program', id: 'prog_1', call_id: 'call_prog_1', code: 'return 1', fingerprint: 'opaque' }] },
   { name: 'program_output', input: [{ type: 'program_output', id: 'prog_out_1', call_id: 'call_prog_1', result: '1', status: 'completed' }] },
+  { name: 'agent_message', input: [{ type: 'agent_message', author: '/root/a', recipient: '/root', content: [{ type: 'input_text', text: 'done' }] as ResponsesAgentMessageContent[] }] },
+  { name: 'multi_agent_call', input: [{ type: 'multi_agent_call', action: 'spawn_agent', arguments: '{}', call_id: 'call_1' }] },
+  { name: 'multi_agent_call_output', input: [{ type: 'multi_agent_call_output', action: 'spawn_agent', call_id: 'call_1', output: [] as ResponsesInputMultiAgentCallOutputItem['output'] }] },
+  { name: 'context_compaction', input: [{ type: 'context_compaction', encrypted_content: 'opaque' }] },
 ] as const)('translateResponsesToMessages rejects Responses-only $name input', async ({ name, input }) => {
   await assertRejects(
     () => translateResponsesToMessages({ ...minimalPayload, input: [...input] }),

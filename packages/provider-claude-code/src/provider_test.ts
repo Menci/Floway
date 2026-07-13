@@ -143,10 +143,9 @@ describe('createClaudeCodeProvider — factory surface', () => {
       .toEqual(pricingForClaudeCodeModelKey('claude-sonnet-4-5-20250929'));
   });
 
-  test('kind is "claude-code" and supportsResponsesItemReference is false', async () => {
+  test('kind is "claude-code"', async () => {
     const instance = createClaudeCodeProvider(currentRecord);
     expect(instance.kind).toBe('claude-code');
-    expect(instance.supportsResponsesItemReference).toBe(false);
     expect(instance.upstream).toBe(upstreamId);
   });
 });

@@ -33,7 +33,16 @@ const itemTypePrefixes = {
   additional_tools: 'at',
   program: 'prog',
   program_output: 'prog_out',
+  // OpenAI beta fixtures use `mac_` / `maco_`; Codex uses `amsg_` for its
+  // Responses inter-agent envelope. `context_compaction` shares `cmp_` with
+  // the distinct `compaction` variant.
+  // https://github.com/openai/openai-java/blob/46917cce69b57721187b50313256488ed81bb023/openai-java-core/src/test/kotlin/com/openai/models/beta/responses/BetaResponseInputItemTest.kt#L1001-L1110
+  // https://github.com/openai/codex/blob/9e552e9d15ba52bed7077d5357f3e18e330f8f38/codex-rs/protocol/src/models.rs#L1217-L1233
+  agent_message: 'amsg',
+  multi_agent_call: 'mac',
+  multi_agent_call_output: 'maco',
   compaction: 'cmp',
+  context_compaction: 'cmp',
   // `compaction_summary` is the Codex-side wire alias for `compaction` (the
   // protocol declares them as one variant via `#[serde(alias = ...)]`); both
   // mint the same `cmp_` prefix so a row written under either spelling

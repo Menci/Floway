@@ -1,6 +1,14 @@
 import { expect, test } from 'vitest';
 
-import { splitCacheWriteTokens, splitInclusiveInputTokens, splitInclusiveOutputTokens } from './usage.ts';
+import { billableServiceTier, splitCacheWriteTokens, splitInclusiveInputTokens, splitInclusiveOutputTokens } from './usage.ts';
+
+test('service-tier normalization preserves authored open strings and maps base markers to null', () => {
+  expect(billableServiceTier(undefined)).toBeNull();
+  expect(billableServiceTier(' Default ')).toBeNull();
+  expect(billableServiceTier('\tstandard\n')).toBeNull();
+  expect(billableServiceTier('  ')).toBeNull();
+  expect(billableServiceTier(' Priority ')).toBe(' Priority ');
+});
 
 test('inclusive input usage splits cache reads and writes into disjoint counts', () => {
   expect(splitInclusiveInputTokens(100, 30, 25)).toEqual({ input: 45, cacheRead: 30, cacheWrite: 25 });

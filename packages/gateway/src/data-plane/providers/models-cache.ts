@@ -11,7 +11,11 @@ import type { Fetcher, Provider, ProviderModel } from '@floway-dev/provider';
 // rather than introducing a separate fail-back tier.
 const SOFT_MS = 10 * 60 * 1000;
 const HARD_MS = 24 * 60 * 60 * 1000;
-export const MODEL_CATALOG_REVISION = 1;
+
+// Persisted ProviderModel rows contain code-derived metadata as well as the
+// upstream response. Increment this whenever that derived catalog contract or
+// its serialization changes so older rows become cold across deployments.
+export const MODEL_CATALOG_REVISION = 2;
 
 export interface ModelsCacheFetchOptions {
   scheduler: BackgroundScheduler;
@@ -93,4 +97,10 @@ export const fetchUpstreamModelsCached = async (
   }
 
   return await memoInFlight(key, () => runFetch(instance, fetcher, key));
+};
+
+// Test-only: drop the L1 map so a test's setup is independent of any
+// promise the previous test left mid-settle.
+export const clearInFlightForTesting = (): void => {
+  inFlight.clear();
 };

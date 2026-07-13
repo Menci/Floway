@@ -16,11 +16,11 @@ const inputRates = (input: number, output?: number) => ({
   ...(output === undefined ? {} : { output, output_image: output }),
 });
 
-test('0053 materializes legacy pricing semantics and clears the derived model cache', async () => {
+test('0054 materializes legacy pricing semantics', async () => {
   const SQL = await initSqlJs();
   const db = new SQL.Database();
   for (const [filename, sql] of migrationSqlByFilename) {
-    if (filename === '0053_model_pricing.sql') {
+    if (filename === '0054_model_pricing.sql') {
       const legacyKey = ['co', 'st'].join('');
       const configJson = JSON.stringify({
         models: [
@@ -86,13 +86,9 @@ test('0053 materializes legacy pricing semantics and clears the derived model ca
           { upstreamModelId: 'unpriced', display_name: 'Unpriced' },
         ],
       });
-      const cacheJson = JSON.stringify([{ id: 'cached', [legacyKey]: { input: 1 } }]);
       db.run(
         `INSERT INTO upstreams (id, provider, name, created_at, updated_at, config_json)
          VALUES ('up_pricing', 'custom', 'Pricing migration', '2026-07-13T00:00:00.000Z', '2026-07-13T00:00:00.000Z', ${sqlString(configJson)})`,
-      );
-      db.run(
-        `INSERT INTO models_cache (upstream_id, fetched_at, models_json) VALUES ('up_pricing', 1, ${sqlString(cacheJson)})`,
       );
     }
     db.run(sql);
@@ -211,5 +207,4 @@ test('0053 materializes legacy pricing semantics and clears the derived model ca
     const base = model.pricing.entries.find(entry => entry.selector === undefined)!.rates;
     assertEquals(priceRequest(model.pricing, { inputTokens: 1, serviceTier: 'unknown' }), { selector: {}, rates: base });
   }
-  assertEquals(db.exec('SELECT COUNT(*) FROM models_cache')[0]!.values, [[0]]);
 });

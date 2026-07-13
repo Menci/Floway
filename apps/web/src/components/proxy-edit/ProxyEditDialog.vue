@@ -74,10 +74,10 @@ watch(url, next => {
   if (lastSource === 'form') { lastSource = null; return; }
   const parsed = tryParse(next);
   if (parsed === null) {
-    lastSource = 'url';
-    config.value = null;
+    // URL cleared: leave config untouched so v-if keeps the form panel
+    // mounted and the reverse watch does not fire and re-fill URL from
+    // the stale config.
     urlError.value = null;
-    void nextTick(() => { if (lastSource === 'url') lastSource = null; });
     return;
   }
   if (parsed.ok) {
@@ -134,6 +134,14 @@ const saveError = ref<string | null>(null);
 
 const testing = ref(false);
 const testError = ref<string | null>(null);
+
+// Any operator edit invalidates the last Save/Test diagnostic — clear
+// the banner so it reflects the current form state instead of freezing
+// at the moment the operator hit Save or Test.
+watch([name, url, config, dialTimeoutInput], () => {
+  saveError.value = null;
+  testError.value = null;
+});
 
 const deleting = ref(false);
 const deleteError = ref<{ message: string; referencingUpstreamIds: string[] } | null>(null);

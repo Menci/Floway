@@ -144,5 +144,3 @@ SET config_json = json_set(
   )
 )
 WHERE json_type(upstream.config_json, '$.models') = 'array';
-
-DELETE FROM models_cache;

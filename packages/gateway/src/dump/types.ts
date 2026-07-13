@@ -44,7 +44,9 @@ export interface DumpMetadata {
   model: string | null;
   inputTokens: number | null;
   outputTokens: number | null;
-  // Raw (pre-gzip) byte counts of the captured bodies.
+  // Captured application-payload bytes. HTTP counts body bytes; WebSocket
+  // counts UTF-8 message payloads. Transport framing/compression and the
+  // dump store's gzip encoding are excluded.
   requestBytes: number;
   responseBytes: number;
   durationMs: number;

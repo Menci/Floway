@@ -1,6 +1,6 @@
-import { hashResponsesItemEncryptedContent, isStoredResponsesItemId, responsesItemEncryptedContent, responsesItemId } from './format.ts';
+import { isStoredResponsesItemId, responsesItemEncryptedContent, responsesItemId } from './format.ts';
 import type { StatefulResponsesStore } from './store.ts';
-import type { StoredResponsesItem } from '../../../../repo/types.ts';
+import type { StoredResponsesItemMetadata } from '../../../../repo/types.ts';
 import type { ChatServeFailure } from '../../shared/errors.ts';
 import type { RoutingDecision } from '../../shared/routing.ts';
 import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
@@ -13,23 +13,20 @@ interface ResolvedStoredResponsesItemRef {
   type: string;
   id?: string;
   encryptedContent?: string;
-  row?: StoredResponsesItem;
+  row?: StoredResponsesItemMetadata;
   affinity?: StoredResponsesAffinity;
 }
 
-const isUpstreamOwned = (row: StoredResponsesItem): row is StoredResponsesItem & { upstreamId: string } =>
+const isUpstreamOwned = (row: StoredResponsesItemMetadata): row is StoredResponsesItemMetadata & { upstreamId: string } =>
   row.upstreamId !== null;
 
-const classifyStoredResponsesAffinity = (
-  itemType: string,
-  row: StoredResponsesItem,
-): StoredResponsesAffinity => {
-  if (itemType === 'item_reference' && row.payload === null) return 'forcing';
+const classifyStoredResponsesAffinity = (row: StoredResponsesItemMetadata): StoredResponsesAffinity => {
   if (!isUpstreamOwned(row)) return 'non_affinity';
   // Direct Copilot probes show the opaque item id on each program variant is
   // account-bound: same-account replay succeeds after token refresh, while
   // cross-account replay fails with "item ID does not belong to this connection".
   if (row.itemType === 'compaction' || row.itemType === 'program' || row.itemType === 'program_output') return 'forcing';
+  if (row.itemType === 'context_compaction' && row.encryptedContentHash !== null) return 'forcing';
   if (row.itemType === 'reasoning') return 'downgradable';
   return 'portable';
 };
@@ -60,16 +57,6 @@ const collectPreferredUpstreams = (
   }
   return preferred;
 };
-
-const findUnexpandedItemReferenceForcingId = (
-  references: readonly ResolvedStoredResponsesItemRef[],
-  upstreamId: string,
-): string | null =>
-  references.find(ref =>
-    ref.affinity === 'forcing'
-    && ref.type === 'item_reference'
-    && ref.row?.upstreamId === upstreamId
-    && ref.row.payload === null)?.id ?? null;
 
 const collectStoredResponsesItemRefs = async <TSourceItems>(
   sourceItems: TSourceItems,
@@ -138,7 +125,7 @@ export const classifyResponsesItemAffinity = async <TSourceItems, TCandidate ext
   const queryableIds = new Set(references.flatMap(ref => ref.id !== undefined && isStoredResponsesItemId(ref.id) ? [ref.id] : []));
   const hashByContent = new Map(await Promise.all(
     [...new Set(references.flatMap(ref => ref.encryptedContent !== undefined ? [ref.encryptedContent] : []))]
-      .map(async content => [content, await hashResponsesItemEncryptedContent(content)] as const),
+      .map(async content => [content, await store.hashEncryptedContent(content)] as const),
   ));
 
   const failures: ChatServeFailure[] = [];
@@ -163,7 +150,7 @@ export const classifyResponsesItemAffinity = async <TSourceItems, TCandidate ext
 
     store.touchItem(row.id);
     ref.row = row;
-    if (ref.type === 'item_reference' && row.payload === null && row.upstreamItemId === null) {
+    if (ref.type === 'item_reference' && !row.hasPayload) {
       failures.push({ kind: 'item-not-found', itemId: row.id });
       continue;
     }
@@ -174,7 +161,7 @@ export const classifyResponsesItemAffinity = async <TSourceItems, TCandidate ext
       });
       continue;
     }
-    ref.affinity = classifyStoredResponsesAffinity(ref.type, row);
+    ref.affinity = classifyStoredResponsesAffinity(row);
     if (ref.affinity === 'forcing' && !isUpstreamOwned(row)) {
       failures.push({ kind: 'item-not-found', itemId: row.id });
     }
@@ -205,14 +192,6 @@ export const classifyResponsesItemAffinity = async <TSourceItems, TCandidate ext
           message: `Stored Responses items in this request require upstream '${upstreamId}', which is not available for the selected model.`,
         },
       };
-    }
-    const unexpandedReferenceId = findUnexpandedItemReferenceForcingId(references, upstreamId);
-    if (unexpandedReferenceId !== null) {
-      const itemReferenceCapable = matching.filter(cand => cand.provider.supportsResponsesItemReference);
-      if (itemReferenceCapable.length === 0) {
-        return { kind: 'failure', failure: { kind: 'item-not-found', itemId: unexpandedReferenceId } };
-      }
-      return { kind: 'success', candidates: itemReferenceCapable };
     }
     return { kind: 'success', candidates: matching };
   }
