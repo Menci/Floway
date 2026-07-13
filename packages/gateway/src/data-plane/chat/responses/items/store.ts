@@ -89,6 +89,7 @@ export interface StatefulResponsesStore {
   getItemsByEncryptedContentHash(hash: string): StoredResponsesItemMetadata[];
   hashItemContent(item: ResponsesInputItem): Promise<string>;
   hashEncryptedContent(encryptedContent: string): Promise<string>;
+  clearItemHashes(): void;
   loadItemPayloads(items: readonly StoredResponsesItemMetadata[]): Promise<ReadonlyMap<string, StoredResponsesItemPayload>>;
   touchItem(id: string): void;
   stageInputItems(items: readonly ResponsesInputItem[]): Promise<void>;
@@ -142,6 +143,10 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
 
   hashEncryptedContent(encryptedContent: string): Promise<string> {
     return this.hashes.encryptedContent(encryptedContent);
+  }
+
+  clearItemHashes(): void {
+    this.hashes.clear();
   }
 
   async loadSnapshot(id: string): Promise<StoredResponsesSnapshot | null> {
@@ -247,10 +252,6 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   }
 
   beginAttempt(privatePayloads: ReadonlyMap<string, unknown>): void {
-    // Candidate rewrite has consumed every source-input hash. Release its
-    // encrypted string keys before the upstream wait and start a fresh cache
-    // for output items produced by this attempt.
-    this.hashes.clear();
     this.stagedOutputItems.clear();
     this.stagedOutputItemIds.length = 0;
     this.privatePayload.clear();

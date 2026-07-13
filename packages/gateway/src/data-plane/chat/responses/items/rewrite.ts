@@ -137,6 +137,10 @@ const rewriteResponsesItemListForCandidate = async (
     if (wireId !== null && payload?.private !== undefined) privatePayloads.set(wireId, structuredClone(payload.private));
     return result;
   });
+  // The outbound objects no longer need hashes from their source inputs. Drop
+  // those values before the upstream wait; output persistence starts a fresh
+  // cache through the same turn-local store.
+  store.clearItemHashes();
   return { items: rewritten, privatePayloads };
 };
 
