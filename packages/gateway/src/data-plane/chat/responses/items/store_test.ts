@@ -84,6 +84,23 @@ test('stages agent and context-compaction items with stable prefixes and preserv
   assertEquals(payloads.map(record => record.payload.item), input);
 });
 
+test('content-hash preload skips items already addressed by a stored id', async () => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  const lookupByContentHash = vi.spyOn(repo.responsesItems, 'lookupManyByContentHash');
+  const storedId = createStoredResponsesItemId('message');
+  const input: ResponsesInputItem[] = [
+    { type: 'message', id: storedId, role: 'assistant', content: 'stored' },
+    { type: 'message', id: 'client-message', role: 'user', content: 'new' },
+  ];
+  const store = createResponsesHttpStore(API_KEY_ID, true);
+
+  await store.loadInputItems({ sourceItems: input, view: responsesItemsView, inputItemsToStage: input });
+
+  assertEquals(lookupByContentHash.mock.calls.length, 1);
+  assertEquals(lookupByContentHash.mock.calls[0][1].length, 1);
+});
+
 test('snapshots with non-replayable metadata-only rows load as missing', async () => {
   const repo = new InMemoryRepo();
   initRepo(repo);
