@@ -673,6 +673,27 @@ test('import rejects negative historical unit prices with a dimension-specific e
   assertEquals(result.body.error, 'invalid usage at index 0: rates.input must be a finite non-negative number');
 });
 
+test('v9 import requires exact usage token and rate maps', async () => {
+  const { app } = setup();
+  const missingTokens = await doImport(app, 'replace', latestImportData({
+    usage: [{ ...USAGE_2, tokens: undefined }],
+  }));
+  const missingRates = await doImport(app, 'replace', latestImportData({
+    usage: [{ ...USAGE_2, rates: undefined }],
+  }));
+  const unknownTokens = await doImport(app, 'replace', latestImportData({
+    usage: [{ ...USAGE_2, tokens: { ...USAGE_2.tokens, imput: 1 } }],
+  }));
+  const unknownRates = await doImport(app, 'replace', latestImportData({
+    usage: [{ ...USAGE_2, rates: { input: 2, ouput: 8 } }],
+  }));
+
+  assertEquals(missingTokens.body.error, 'invalid usage at index 0: tokens is required');
+  assertEquals(missingRates.body.error, 'invalid usage at index 0: rates is required');
+  assertEquals(unknownTokens.body.error, 'invalid usage at index 0: tokens has unknown dimensions: imput');
+  assertEquals(unknownRates.body.error, 'invalid usage at index 0: rates has unknown dimensions: ouput');
+});
+
 test('import rejects invalid records before clearing existing data', async () => {
   const { app, repo } = setup();
   await repo.apiKeys.save(KEY_A);

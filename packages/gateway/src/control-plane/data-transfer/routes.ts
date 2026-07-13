@@ -29,7 +29,7 @@ import { parseUpstreamIdsValue } from '../api-keys/upstream-ids.ts';
 import { USERNAME_PATTERN, type exportQuery, type importBody, DUMP_RETENTION_MAX_SECONDS } from '../schemas.ts';
 import { copilotConfigField, isRecord, nonEmptyStringField } from '../shared/field-validators.ts';
 import { type SerializedUpstreamRecord, upstreamRecordToFullJson } from '../upstreams/serialize.ts';
-import { BILLING_DIMENSIONS, canonicalizePricingSelector, type PriceVector, type PricingSelector, validatePriceVector } from '@floway-dev/protocols/common';
+import { BILLING_DIMENSIONS, canonicalizePricingSelector, type BillingDimension, type PriceVector, type PricingSelector, validatePriceVector } from '@floway-dev/protocols/common';
 import { ALL_PROVIDER_KINDS, normalizeModelPrefix, normalizeUpstreamColor, parseFlagOverridesWire } from '@floway-dev/provider';
 import type { PerformanceOperation, ProxyFallbackEntry, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
@@ -376,9 +376,12 @@ const validateApiKeyIdentities = (records: readonly ApiKey[], existing: readonly
 };
 
 const parseImportedRates = (value: unknown): { type: 'ok'; rates: UsageRecord['rates'] } | { type: 'invalid'; error: string } => {
-  if (value === undefined || value === null) return { type: 'ok', rates: null };
+  if (value === undefined) return { type: 'invalid', error: 'rates is required' };
+  if (value === null) return { type: 'ok', rates: null };
   if (typeof value !== 'object' || Array.isArray(value)) return { type: 'invalid', error: 'rates must be an object or null' };
   const obj = value as Record<string, unknown>;
+  const unknownDimensions = Object.keys(obj).filter(key => !BILLING_DIMENSIONS.includes(key as BillingDimension));
+  if (unknownDimensions.length > 0) return { type: 'invalid', error: `rates has unknown dimensions: ${unknownDimensions.join(', ')}` };
   const rates: PriceVector = {};
   for (const dimension of BILLING_DIMENSIONS) {
     const rate = obj[dimension];
@@ -394,15 +397,17 @@ const parseImportedRates = (value: unknown): { type: 'ok'; rates: UsageRecord['r
   }
 };
 
-const parseImportedTokens = (value: unknown): { type: 'ok'; tokens: TokenUsage } | { type: 'invalid' } => {
-  if (value === undefined || value === null) return { type: 'ok', tokens: {} };
-  if (typeof value !== 'object' || Array.isArray(value)) return { type: 'invalid' };
+const parseImportedTokens = (value: unknown): { type: 'ok'; tokens: TokenUsage } | { type: 'invalid'; error: string } => {
+  if (value === undefined) return { type: 'invalid', error: 'tokens is required' };
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return { type: 'invalid', error: 'tokens must be an object' };
   const obj = value as Record<string, unknown>;
+  const unknownDimensions = Object.keys(obj).filter(key => !BILLING_DIMENSIONS.includes(key as BillingDimension));
+  if (unknownDimensions.length > 0) return { type: 'invalid', error: `tokens has unknown dimensions: ${unknownDimensions.join(', ')}` };
   const tokens: TokenUsage = {};
   for (const dimension of BILLING_DIMENSIONS) {
     const count = obj[dimension];
     if (count === undefined) continue;
-    if (!isNonNegativeSafeInteger(count)) return { type: 'invalid' };
+    if (!isNonNegativeSafeInteger(count)) return { type: 'invalid', error: 'tokens must contain non-negative safe integers' };
     if (count > 0) tokens[dimension] = count;
   }
   return { type: 'ok', tokens };
@@ -440,7 +445,7 @@ const parseUsageRecords = (value: unknown): { type: 'ok'; records: UsageRecord[]
       return { type: 'invalid', index: i, error: `invalid pricingSelector: ${cause instanceof Error ? cause.message : String(cause)}` };
     }
     const tokensResult = parseImportedTokens(record.tokens);
-    if (tokensResult.type === 'invalid') return { type: 'invalid', index: i, error: 'record has invalid token dimension counts' };
+    if (tokensResult.type === 'invalid') return { type: 'invalid', index: i, error: tokensResult.error };
     const ratesResult = parseImportedRates(record.rates);
     if (ratesResult.type === 'invalid') return { type: 'invalid', index: i, error: ratesResult.error };
     records.push({
