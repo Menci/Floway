@@ -1,32 +1,5 @@
 import type { CopilotChatCompletionsBoundaryInterceptor } from './types.ts';
-import type { ChatCompletionsMessage } from '@floway-dev/protocols/chat-completions';
-
-const TOOL_OUTPUT_IMAGE_LABEL = /^Image output from tool call (.+):$/;
-
-const isLiftedToolOutputImageMessage = (messages: ChatCompletionsMessage[]): boolean => {
-  const lastMessage = messages.at(-1);
-  if (lastMessage?.role !== 'user' || !Array.isArray(lastMessage.content)) return false;
-
-  const callIds = new Set<string>();
-  let hasImage = false;
-  for (const part of lastMessage.content) {
-    if (part.type === 'image_url') {
-      hasImage = true;
-      continue;
-    }
-    const match = TOOL_OUTPUT_IMAGE_LABEL.exec(part.text);
-    if (match === null) return false;
-    callIds.add(match[1]);
-  }
-  if (!hasImage || callIds.size === 0) return false;
-
-  const precedingToolCallIds = new Set<string>();
-  for (let i = messages.length - 2; i >= 0 && messages[i].role === 'tool'; i--) {
-    const callId = messages[i].tool_call_id;
-    if (callId !== undefined) precedingToolCallIds.add(callId);
-  }
-  return [...callIds].every(callId => precedingToolCallIds.has(callId));
-};
+import { CHAT_COMPLETIONS_INTERNAL_METADATA } from '@floway-dev/protocols/chat-completions';
 
 /**
  * Copilot's `x-initiator` header distinguishes user-triggered turns from
@@ -36,7 +9,9 @@ const isLiftedToolOutputImageMessage = (messages: ChatCompletionsMessage[]): boo
  * is driving the turn. Responses tool-output images are the exception to the
  * role check: Chat tool messages cannot carry images, so translation lifts
  * them into a final user message after the contiguous tool results; that
- * synthesized message retains the source turn's agent initiator.
+ * synthesized message retains the source turn's agent initiator through
+ * symbol-keyed internal metadata that direct JSON clients cannot supply and
+ * JSON wire serialization cannot expose.
  *
  * The header name is lowercase `x-initiator`; HTTP header names are
  * case-insensitive on the wire, so the casing is cosmetic.
@@ -49,7 +24,7 @@ export const withInitiatorHeaderSet: CopilotChatCompletionsBoundaryInterceptor =
   const lastMessage = ctx.payload.messages.at(-1);
   const agentInitiated = lastMessage?.role === 'assistant'
     || lastMessage?.role === 'tool'
-    || isLiftedToolOutputImageMessage(ctx.payload.messages);
+    || ctx.payload[CHAT_COMPLETIONS_INTERNAL_METADATA]?.liftedToolOutputImages === true;
   ctx.headers.set('x-initiator', agentInitiated ? 'agent' : 'user');
 
   return await run();

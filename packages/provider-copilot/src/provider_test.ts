@@ -5,6 +5,7 @@ import { emptyKnownModels, mergeKnownModels } from './known-models.ts';
 import { createCopilotProvider } from './provider.ts';
 import { readCopilotUpstreamState, type CopilotUpstreamState } from './state.ts';
 import { createInMemoryImageProcessor, initImageProcessor } from '@floway-dev/platform';
+import { CHAT_COMPLETIONS_INTERNAL_METADATA, type ChatCompletionsMessage } from '@floway-dev/protocols/chat-completions';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { directFetcher, initProviderRepo } from '@floway-dev/provider';
@@ -645,11 +646,11 @@ test('Copilot provider sets copilot-vision-request when an image is nested insid
   assertEquals(visionHeaders, ['true', null]);
 });
 
-test('Copilot Chat marks lifted tool-output images as vision and agent initiated', async () => {
+test('Copilot Chat derives lifted-image initiator from internal provenance, not visible content', async () => {
   const { copilotUpstream } = await setupCopilotTest();
   const provider = createCopilotProvider(copilotUpstream).instance;
-  let visionHeader: string | null = null;
-  let initiatorHeader: string | null = null;
+  const visionHeaders: Array<string | null> = [];
+  const initiatorHeaders: Array<string | null> = [];
 
   await withMockedFetch(
     async request => {
@@ -662,8 +663,8 @@ test('Copilot Chat marks lifted tool-output images as vision and agent initiated
         return jsonResponse(copilotModels([{ id: 'gpt-chat', supported_endpoints: ['/chat/completions'] }]));
       }
       if (url.pathname === '/chat/completions') {
-        visionHeader = request.headers.get('copilot-vision-request');
-        initiatorHeader = request.headers.get('x-initiator');
+        visionHeaders.push(request.headers.get('copilot-vision-request'));
+        initiatorHeaders.push(request.headers.get('x-initiator'));
         await request.text();
         return sseResponse();
       }
@@ -671,28 +672,31 @@ test('Copilot Chat marks lifted tool-output images as vision and agent initiated
     },
     async () => {
       const [model] = await provider.getProvidedModels(directFetcher);
+      const messages: ChatCompletionsMessage[] = [
+        {
+          role: 'assistant',
+          content: null,
+          tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'capture', arguments: '{}' } }],
+        },
+        { role: 'tool', tool_call_id: 'call_1', content: 'captured' },
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'Image output from tool call call_1:' },
+            { type: 'image_url', image_url: { url: 'https://example.com/capture.png' } },
+          ],
+        },
+      ];
       await provider.callChatCompletions(model, {
-        messages: [
-          {
-            role: 'assistant',
-            content: null,
-            tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'capture', arguments: '{}' } }],
-          },
-          { role: 'tool', tool_call_id: 'call_1', content: 'captured' },
-          {
-            role: 'user',
-            content: [
-              { type: 'text', text: 'Image output from tool call call_1:' },
-              { type: 'image_url', image_url: { url: 'https://example.com/capture.png' } },
-            ],
-          },
-        ],
+        messages,
+        [CHAT_COMPLETIONS_INTERNAL_METADATA]: { liftedToolOutputImages: true },
       }, undefined, noopUpstreamCallOptions());
+      await provider.callChatCompletions(model, { messages: structuredClone(messages) }, undefined, noopUpstreamCallOptions());
     },
   );
 
-  assertEquals(visionHeader, 'true');
-  assertEquals(initiatorHeader, 'agent');
+  assertEquals(visionHeaders, ['true', 'true']);
+  assertEquals(initiatorHeaders, ['agent', 'user']);
 });
 
 test('Copilot Messages boundary chain does NOT fire on the Chat Completions wire (translated path)', async () => {

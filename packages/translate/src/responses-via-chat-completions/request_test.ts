@@ -3,6 +3,7 @@ import { test } from 'vitest';
 import { translateResponsesToChatCompletions } from './request.ts';
 import { createResponsesToChatCompletionsStreamState, translateResponsesEventToChatCompletionsChunks } from '../chat-completions-via-responses/events.ts';
 import { assertEquals, assertThrows } from '../test-assert.ts';
+import { CHAT_COMPLETIONS_INTERNAL_METADATA } from '@floway-dev/protocols/chat-completions';
 import type { ResponsesAgentMessageContent, ResponsesInputMultiAgentCallOutputItem, ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
 
 test('translateResponsesToChatCompletions accepts an implicit message discriminator', () => {
@@ -114,6 +115,7 @@ test('translateResponsesToChatCompletions merges adjacent assistant reasoning te
       content: '42',
     },
   ]);
+  assertEquals(result.target[CHAT_COMPLETIONS_INTERNAL_METADATA], { liftedToolOutputImages: true });
 });
 
 test('translateResponsesToChatCompletions preserves all reasoning items and projects only the first scalar group', () => {

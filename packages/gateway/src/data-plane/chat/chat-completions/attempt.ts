@@ -10,7 +10,7 @@ import { tryCatchChatServeFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { traverseTranslation } from '../shared/translate-traverse.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
-import type { ChatCompletionsMessage, ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
+import { CHAT_COMPLETIONS_INTERNAL_METADATA, type ChatCompletionsMessage, type ChatCompletionsPayload, type ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { type ModelCandidate, type ExecuteResult, providerModelOf } from '@floway-dev/provider';
 import { translateChatCompletionsViaMessages, translateChatCompletionsViaResponses } from '@floway-dev/translate';
@@ -30,7 +30,14 @@ export interface ChatCompletionsAttemptArgs {
 export const chatCompletionsAttempt = {
   generate: async (args: ChatCompletionsAttemptArgs): Promise<ExecuteResult<ProtocolFrame<ChatCompletionsStreamEvent>>> => {
     const { payload: sourcePayload, ctx, candidate, headers: sourceHeaders } = args;
-    const payload = { ...structuredClone(sourcePayload), model: candidate.model.id };
+    const internalMetadata = sourcePayload[CHAT_COMPLETIONS_INTERNAL_METADATA];
+    const payload: ChatCompletionsPayload = {
+      ...structuredClone(sourcePayload),
+      model: candidate.model.id,
+      ...(internalMetadata === undefined
+        ? {}
+        : { [CHAT_COMPLETIONS_INTERNAL_METADATA]: structuredClone(internalMetadata) }),
+    };
     const headers = new Headers(sourceHeaders);
     const targetApi = chatCompletionsTarget.pick(candidate.model.endpoints);
     const rewritten = await rewriteOrRenderChatCompletionsFailure(payload, ctx.store, candidate);

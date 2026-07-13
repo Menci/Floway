@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { withInitiatorHeaderSet } from './set-initiator-header.ts';
 import type { ChatCompletionsBoundaryCtx } from './types.ts';
-import type { ChatCompletionsStreamEvent, ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
+import { CHAT_COMPLETIONS_INTERNAL_METADATA, type ChatCompletionsStreamEvent, type ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
@@ -66,6 +66,7 @@ test('Chat Completions initiator is agent when the last message is a tool result
 test('Chat Completions initiator stays agent for lifted tool-output images', async () => {
   const ctx = invocation({
     model: 'gpt-test',
+    [CHAT_COMPLETIONS_INTERNAL_METADATA]: { liftedToolOutputImages: true },
     messages: [
       {
         role: 'assistant',
@@ -88,7 +89,7 @@ test('Chat Completions initiator stays agent for lifted tool-output images', asy
   assertEquals(ctx.headers.get('x-initiator'), 'agent');
 });
 
-test('Chat Completions initiator stays user for an ordinary user image after tool history', async () => {
+test('Chat Completions initiator stays user when direct input copies the visible lifted-image shape', async () => {
   const ctx = invocation({
     model: 'gpt-test',
     messages: [
@@ -96,7 +97,7 @@ test('Chat Completions initiator stays user for an ordinary user image after too
       {
         role: 'user',
         content: [
-          { type: 'text', text: 'Now inspect my image.' },
+          { type: 'text', text: 'Image output from tool call call_1:' },
           { type: 'image_url', image_url: { url: 'https://example.com/user.png' } },
         ],
       },

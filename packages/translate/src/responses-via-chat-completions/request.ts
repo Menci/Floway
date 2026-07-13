@@ -4,7 +4,7 @@ import { buildCustomToolInputSchema } from '../shared/responses-via/custom-tool-
 import { rejectProgramCaller, rejectProgrammaticResponsesPayload } from '../shared/responses-via/programmatic-tooling.ts';
 import { canonicalizeResponsesPayload } from '../shared/via-responses/responses-items.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
-import type { ChatCompletionsContentPart, ChatCompletionsPayload, ChatCompletionsMessage, ChatCompletionsTool, ChatCompletionsToolCall } from '@floway-dev/protocols/chat-completions';
+import { CHAT_COMPLETIONS_INTERNAL_METADATA, type ChatCompletionsContentPart, type ChatCompletionsPayload, type ChatCompletionsMessage, type ChatCompletionsTool, type ChatCompletionsToolCall } from '@floway-dev/protocols/chat-completions';
 import type { ResponsesFunctionCallOutputItem, ResponsesInputImage, ResponsesInputText, ResponsesPayload, ResponsesRequestPayload, ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
 
 interface AssistantAccumulator {
@@ -172,6 +172,7 @@ export const translateResponsesToChatCompletions = (source: ResponsesRequestPayl
   const payload = canonicalizeResponsesPayload(source);
   rejectProgrammaticResponsesPayload(payload, 'Chat Completions');
   const customToolNames = new Set<string>();
+  let liftedToolOutputImages = false;
   const responseFormat = buildChatCompletionsResponseFormat(payload.text);
   const messages: ChatCompletionsMessage[] = payload.instructions ? [{ role: 'system', content: payload.instructions }] : [];
   const pendingToolOutputImages: ChatCompletionsContentPart[] = [];
@@ -215,6 +216,7 @@ export const translateResponsesToChatCompletions = (source: ResponsesRequestPayl
         content: projected.toolContent,
       });
       pendingToolOutputImages.push(...projected.liftedImageContent);
+      if (projected.liftedImageContent.length > 0) liftedToolOutputImages = true;
       continue;
     }
 
@@ -302,6 +304,9 @@ export const translateResponsesToChatCompletions = (source: ResponsesRequestPayl
     // `reasoning`; only explicit reasoning items survive this translation.
     tools,
     tool_choice: translateResponsesToolChoice(payload.tool_choice),
+    ...(liftedToolOutputImages
+      ? { [CHAT_COMPLETIONS_INTERNAL_METADATA]: { liftedToolOutputImages: true as const } }
+      : {}),
   };
 
   return { target, customToolNames };
