@@ -107,7 +107,7 @@ test('translateToSourceEvents maps readable reasoning text without opaque Respon
       ],
       usageMetadata: {
         promptTokenCount: 10,
-        candidatesTokenCount: 5,
+        candidatesTokenCount: 3,
         totalTokenCount: 15,
         thoughtsTokenCount: 2,
       },
