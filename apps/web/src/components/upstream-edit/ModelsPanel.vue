@@ -8,7 +8,7 @@ import ModelEditor from './ModelEditor.vue';
 import { newUiId, type Row, seedFromAuto } from './modelRows.ts';
 import { isModelConfigValid } from './modelValidation.ts';
 import ModelsGrid from './ModelsGrid.vue';
-import type { UpstreamChatConfig, UpstreamModelConfig } from '../../api/types.ts';
+import type { UpstreamModelConfig } from '../../api/types.ts';
 import { modelsField } from '@floway-dev/provider';
 import type { Flag, FlagDefaults, FlagOverrides } from '@floway-dev/provider/flags';
 import { Button } from '@floway-dev/ui';
@@ -192,40 +192,6 @@ const jsonError = ref<string | null>(null);
 
 const serializeManual = () => JSON.stringify(manualModels.value, null, 2);
 
-const editableModelConfig = (model: ReturnType<typeof modelsField>[number]): UpstreamModelConfig => {
-  const reasoning = model.chat?.reasoning;
-  const editableReasoning: UpstreamChatConfig['reasoning'] = reasoning === undefined
-    ? undefined
-    : {
-        ...(reasoning.effort === undefined
-          ? {}
-          : {
-              effort: {
-                default: reasoning.effort.default,
-                supported: [...reasoning.effort.supported],
-              },
-            }),
-        ...(reasoning.budget_tokens === undefined ? {} : { budget_tokens: { ...reasoning.budget_tokens } }),
-        ...(reasoning.adaptive === true ? { adaptive: true as const } : {}),
-        ...(reasoning.mandatory === true ? { mandatory: true as const } : {}),
-      };
-  const chat: UpstreamChatConfig | undefined = model.chat === undefined
-    ? undefined
-    : {
-        ...(model.chat.modalities === undefined
-          ? {}
-          : {
-              modalities: {
-                input: [...model.chat.modalities.input],
-                output: [...model.chat.modalities.output],
-              },
-            }),
-        ...(editableReasoning === undefined ? {} : { reasoning: editableReasoning }),
-      };
-  const { chat: _readonlyChat, ...fields } = model;
-  return { ...fields, ...(chat === undefined ? {} : { chat }) };
-};
-
 const switchEditorMode = (next: 'ui' | 'json') => {
   if (editorMode.value === next) return;
   if (next === 'json') {
@@ -238,7 +204,7 @@ const switchEditorMode = (next: 'ui' | 'json') => {
   // parse error so unsaved text is preserved.
   try {
     const parsed = JSON.parse(jsonText.value);
-    manualModels.value = modelsField(parsed, 'dashboard').map(editableModelConfig);
+    manualModels.value = modelsField(parsed, 'dashboard');
     jsonError.value = null;
     editorMode.value = 'ui';
   } catch (e) {

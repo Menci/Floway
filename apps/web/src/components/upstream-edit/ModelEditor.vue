@@ -5,7 +5,7 @@ import EndpointsField from './EndpointsField.vue';
 import FlagOverridesEditor from './FlagOverridesEditor.vue';
 import { defaultEndpointsForKind, publicIdOf, titleFor, type Row } from './modelRows.ts';
 import PricingEditor from './PricingEditor.vue';
-import type { AnnouncedMetadata, ModelKind, UpstreamChatConfig, UpstreamModelConfig } from '../../api/types.ts';
+import type { AnnouncedMetadata, ModelKind, UpstreamModelConfig } from '../../api/types.ts';
 import ChatMetadataEditor from '../shared/ChatMetadataEditor.vue';
 import type { Flag, FlagDefaults, FlagOverrides } from '@floway-dev/provider/flags';
 import { Button, Input, Select, Switch } from '@floway-dev/ui';
@@ -80,10 +80,7 @@ const chatMetadataValue = computed<AnnouncedMetadata | undefined>(() => {
 });
 
 const onChatMetadataChange = (next: AnnouncedMetadata | undefined) => {
-  // The editor builds `chat` through fresh object literals — its
-  // `readonly` modality arrays are nominally typed, never frozen, so the
-  // mutable `UpstreamChatConfig` shape held in `config` accepts them.
-  patch({ limits: next?.limits, chat: next?.chat as UpstreamChatConfig | undefined });
+  patch({ limits: next?.limits, chat: next?.chat });
 };
 
 </script>
