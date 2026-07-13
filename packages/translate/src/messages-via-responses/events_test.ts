@@ -1,8 +1,10 @@
 import { test } from 'vitest';
 
-import { createResponsesToMessagesStreamState, translateResponsesStreamEventToMessagesEvents, translateResponsesToMessagesResult } from './events.ts';
+import { createResponsesToMessagesStreamState, translateResponsesStreamEventToMessagesEvents } from './events.ts';
 import { packReasoningSignature } from '../shared/messages-and-responses/reasoning.ts';
 import { assertEquals, assertThrows } from '../test-assert.ts';
+import type { MessagesUsage } from '@floway-dev/protocols/messages';
+import type { ResponsesResult } from '@floway-dev/protocols/responses';
 
 test('Responses reasoning stream without readable summary emits a redacted_thinking carrier', () => {
   const state = createResponsesToMessagesStreamState();
@@ -499,132 +501,18 @@ test('reasoning stream with whitespace-only summary emits a redacted_thinking ca
   ]);
 });
 
-test('translateResponsesToMessagesResult carries reasoning id in thinking signature', () => {
-  const result = translateResponsesToMessagesResult({
-    id: 'resp_123',
-    object: 'response',
-    model: 'gpt-test',
-    output: [
-      {
-        type: 'reasoning',
-        id: 'rs_1',
-        summary: [{ type: 'summary_text', text: 'trace' }],
-      },
-    ],
-    output_text: '',
-    status: 'completed',
-    error: null,
-    incomplete_details: null,
-    usage: {
-      input_tokens: 10,
-      output_tokens: 2,
-      total_tokens: 12,
-    },
-  });
+const terminalUsage = (response: ResponsesResult): MessagesUsage => {
+  const events = translateResponsesStreamEventToMessagesEvents(
+    { type: 'response.completed', response },
+    createResponsesToMessagesStreamState(),
+  );
+  const delta = events.find(event => event.type === 'message_delta');
+  if (delta?.type !== 'message_delta') throw new Error('Expected message_delta');
+  return delta.usage;
+};
 
-  const block = result.content[0];
-  assertEquals(block, { type: 'thinking', thinking: 'trace', signature: packReasoningSignature('rs_1', '') });
-});
-
-test('translateResponsesToMessagesResult projects opaque-only reasoning into redacted_thinking', () => {
-  const result = translateResponsesToMessagesResult({
-    id: 'resp_123',
-    object: 'response',
-    model: 'gpt-test',
-    output: [
-      {
-        type: 'reasoning',
-        id: 'rs_1',
-        summary: [],
-        encrypted_content: 'opaque',
-      },
-    ],
-    output_text: '',
-    status: 'completed',
-    error: null,
-    incomplete_details: null,
-    usage: {
-      input_tokens: 10,
-      output_tokens: 2,
-      total_tokens: 12,
-    },
-  });
-
-  assertEquals(result.content, [{ type: 'redacted_thinking', data: packReasoningSignature('rs_1', 'opaque') }]);
-});
-
-test('translateResponsesToMessagesResult round-trips an id-only reasoning as packed redacted_thinking', () => {
-  const result = translateResponsesToMessagesResult({
-    id: 'resp_drop',
-    object: 'response',
-    model: 'gpt-test',
-    output: [
-      { type: 'reasoning', id: 'rs_empty', summary: [] },
-      {
-        type: 'message',
-        role: 'assistant',
-        content: [{ type: 'output_text', text: 'hello' }],
-      },
-    ],
-    output_text: 'hello',
-    status: 'completed',
-    error: null,
-    incomplete_details: null,
-    usage: { input_tokens: 5, output_tokens: 1, total_tokens: 6 },
-  });
-
-  assertEquals(result.content, [
-    { type: 'redacted_thinking', data: packReasoningSignature('rs_empty', '') },
-    { type: 'text', text: 'hello' },
-  ]);
-});
-
-test('translateResponsesToMessagesResult round-trips an id-only reasoning with no readable summary', () => {
-  const result = translateResponsesToMessagesResult({
-    id: 'resp_undef',
-    object: 'response',
-    model: 'gpt-test',
-    output: [
-      {
-        type: 'reasoning',
-        id: 'rs_undef',
-        summary: [],
-      },
-    ],
-    output_text: '',
-    status: 'completed',
-    error: null,
-    incomplete_details: null,
-    usage: { input_tokens: 5, output_tokens: 0, total_tokens: 5 },
-  });
-
-  assertEquals(result.content, [{ type: 'redacted_thinking', data: packReasoningSignature('rs_undef', '') }]);
-});
-
-test('translateResponsesToMessagesResult projects whitespace-only reasoning summary as packed redacted_thinking', () => {
-  const result = translateResponsesToMessagesResult({
-    id: 'resp_ws',
-    object: 'response',
-    model: 'gpt-test',
-    output: [
-      {
-        type: 'reasoning',
-        id: 'rs_ws',
-        summary: [{ type: 'summary_text', text: '   \n  ' }],
-      },
-    ],
-    output_text: '',
-    status: 'completed',
-    error: null,
-    incomplete_details: null,
-    usage: { input_tokens: 5, output_tokens: 0, total_tokens: 5 },
-  });
-
-  assertEquals(result.content, [{ type: 'redacted_thinking', data: packReasoningSignature('rs_ws', '') }]);
-});
-
-test('translateResponsesToMessagesResult maps service_tier:fast to usage.speed:fast', () => {
-  const result = translateResponsesToMessagesResult({
+test('terminal Responses service_tier:fast maps to usage.speed:fast', () => {
+  const usage = terminalUsage({
     id: 'resp_fast',
     object: 'response',
     model: 'gpt-test',
@@ -637,12 +525,12 @@ test('translateResponsesToMessagesResult maps service_tier:fast to usage.speed:f
     usage: { input_tokens: 5, output_tokens: 2, total_tokens: 7 },
   });
 
-  assertEquals(result.usage.speed, 'fast');
-  assertEquals(result.usage.service_tier, undefined);
+  assertEquals(usage.speed, 'fast');
+  assertEquals(usage.service_tier, undefined);
 });
 
-test('translateResponsesToMessagesResult omits usage.speed when service_tier is not fast', () => {
-  const result = translateResponsesToMessagesResult({
+test('terminal Responses usage preserves a non-fast service_tier', () => {
+  const usage = terminalUsage({
     id: 'resp_default',
     object: 'response',
     model: 'gpt-test',
@@ -655,12 +543,12 @@ test('translateResponsesToMessagesResult omits usage.speed when service_tier is 
     usage: { input_tokens: 5, output_tokens: 2, total_tokens: 7 },
   });
 
-  assertEquals(result.usage.speed, undefined);
-  assertEquals(result.usage.service_tier, 'default');
+  assertEquals(usage.speed, undefined);
+  assertEquals(usage.service_tier, 'default');
 });
 
-test('translateResponsesToMessagesResult omits usage.speed when service_tier is absent', () => {
-  const result = translateResponsesToMessagesResult({
+test('terminal Responses usage omits speed when service_tier is absent', () => {
+  const usage = terminalUsage({
     id: 'resp_no_tier',
     object: 'response',
     model: 'gpt-test',
@@ -672,11 +560,11 @@ test('translateResponsesToMessagesResult omits usage.speed when service_tier is 
     usage: { input_tokens: 5, output_tokens: 2, total_tokens: 7 },
   });
 
-  assertEquals(result.usage.speed, undefined);
+  assertEquals(usage.speed, undefined);
 });
 
-test('translateResponsesToMessagesResult maps cache-read and cache-write onto the Messages cache fields and recovers bare input', () => {
-  const result = translateResponsesToMessagesResult({
+test('terminal Responses usage maps cache-read and cache-write onto Messages fields', () => {
+  const usage = terminalUsage({
     id: 'resp_cache',
     object: 'response',
     model: 'gpt-test',
@@ -688,14 +576,14 @@ test('translateResponsesToMessagesResult maps cache-read and cache-write onto th
     usage: { input_tokens: 100, output_tokens: 20, total_tokens: 120, input_tokens_details: { cached_tokens: 30, cache_write_tokens: 25 } },
   });
 
-  assertEquals(result.usage.input_tokens, 45);
-  assertEquals(result.usage.cache_read_input_tokens, 30);
-  assertEquals(result.usage.cache_creation_input_tokens, 25);
+  assertEquals(usage.input_tokens, 45);
+  assertEquals(usage.cache_read_input_tokens, 30);
+  assertEquals(usage.cache_creation_input_tokens, 25);
 });
 
-test('translateResponsesToMessagesResult rejects cache splits that exceed input_tokens', () => {
+test('terminal Responses usage rejects cache splits that exceed input_tokens', () => {
   assertThrows(
-    () => translateResponsesToMessagesResult({
+    () => terminalUsage({
       id: 'resp_invalid_cache',
       object: 'response',
       model: 'gpt-test',
