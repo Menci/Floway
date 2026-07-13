@@ -7,7 +7,6 @@ import { computed, reactive, ref, watch } from 'vue';
 import ModelEditor from './ModelEditor.vue';
 import { newUiId, type Row, seedFromAuto } from './modelRows.ts';
 import ModelsGrid from './ModelsGrid.vue';
-import { isModelConfigValid } from './modelValidation.ts';
 import type { UpstreamModelConfig } from '../../api/types.ts';
 import { modelsField } from '@floway-dev/provider';
 import type { Flag, FlagDefaults, FlagOverrides } from '@floway-dev/provider/flags';
@@ -42,7 +41,15 @@ const selectedUiId = ref<string | null>(null);
 // and must keep shadowing it). Pure-manual rows have no such constraint.
 const lockedUpstreamId = reactive(new Set<string>());
 
-const anyInvalid = computed(() => rows.value.some(row => row.kind === 'manual' && !isModelConfigValid(row.config)));
+const anyInvalid = computed(() => {
+  const models = rows.value.filter(row => row.kind === 'manual').map(row => row.config);
+  try {
+    modelsField(models, 'dashboard');
+    return false;
+  } catch {
+    return true;
+  }
+});
 watch(anyInvalid, v => emit('update:invalid', v), { immediate: true });
 
 // Reconcile the unified row list from the persisted manual models and the
