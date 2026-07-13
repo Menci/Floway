@@ -82,7 +82,7 @@ export const controlPlaneModels = async (c: Context) => {
     const fetcherForUpstream = await createPerRequestFetcher(getRuntimeLocation(c.req.raw), upstreamRows);
     // Two addressable surfaces: caller-scoped (drives visibility +
     // `aliasedFrom.targets` narrowing for non-admin) and gateway-wide
-    // (drives the alias's metadata + endpoints + cost — every caller
+    // (drives the alias's metadata + endpoints + pricing — every caller
     // sees the same numbers for the same alias). For admin the two are
     // the same, so skip the second fetch.
     const [callerAddressable, gatewayAddressable, aliases] = await Promise.all([

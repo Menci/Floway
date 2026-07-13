@@ -6,7 +6,6 @@ import { callCodexResponses, callCodexResponsesCompact, type CodexCallEffects } 
 import { CODEX_RESPONSES_BOUNDARY } from './interceptors/responses/index.ts';
 import type { ResponsesBoundaryCtx } from './interceptors/responses/types.ts';
 import { codexRawToProviderModel, fetchCodexCatalog } from './models.ts';
-import { pricingForCodexModelKey } from './pricing.ts';
 import { assertCodexUpstreamState, type CodexUpstreamState } from './state.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import { toCompactPayloadShape } from '@floway-dev/protocols/responses';
@@ -96,11 +95,6 @@ export const createCodexProvider = (record: UpstreamRecord): Provider => {
       // toggles them per-upstream when needed.
       return raw.map(r => codexRawToProviderModel(r, enabledFlags));
     },
-
-    // Codex itself is a flat-fee subscription, but the dashboard reports
-    // notional cost per request as if the operator were paying OpenAI's
-    // public API rates.
-    getPricingForModelKey: pricingForCodexModelKey,
 
     callResponses: async (model, body, action, signal, opts) => {
       const ctx: ResponsesBoundaryCtx = {

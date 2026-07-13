@@ -196,9 +196,9 @@ describe('buildClaudeCodeCatalog', () => {
 
   test('wires pricing through pricingForClaudeCodeModelKey keyed by the upstream id', () => {
     const byAlias = new Map(models.map(m => [m.id, m]));
-    expect(byAlias.get('claude-opus-4-7')!.cost).toEqual(pricingForClaudeCodeModelKey('claude-opus-4-7'));
-    expect(byAlias.get('claude-sonnet-4-5')!.cost).toEqual(pricingForClaudeCodeModelKey('claude-sonnet-4-5-20250929'));
-    expect(byAlias.get('claude-fable-5')!.cost).toEqual(pricingForClaudeCodeModelKey('claude-fable-5'));
+    expect(byAlias.get('claude-opus-4-7')!.pricing).toEqual(pricingForClaudeCodeModelKey('claude-opus-4-7'));
+    expect(byAlias.get('claude-sonnet-4-5')!.pricing).toEqual(pricingForClaudeCodeModelKey('claude-sonnet-4-5-20250929'));
+    expect(byAlias.get('claude-fable-5')!.pricing).toEqual(pricingForClaudeCodeModelKey('claude-fable-5'));
   });
 
   test('forwards the supplied enabledFlags set onto every model', () => {

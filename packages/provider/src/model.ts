@@ -107,7 +107,7 @@ export interface TelemetryModelIdentity {
   model: string;
   upstream: string;
   modelKey: string;
-  cost: ModelPricing | null;
+  pricing: ModelPricing | null;
 }
 
 // `chat`, `text_completion`, and `embeddings` are the OTel `gen_ai.operation.name`
@@ -154,7 +154,7 @@ interface ModelMetadata {
     max_prompt_tokens?: number;
   };
   kind: ModelKind;
-  cost?: ModelPricing;
+  pricing?: ModelPricing;
   chat?: UpstreamChatModelConfig;
   endpoints: ModelEndpoints;
 }

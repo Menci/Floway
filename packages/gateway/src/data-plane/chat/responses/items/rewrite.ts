@@ -2,9 +2,9 @@ import { createTemporaryResponsesItemId, responsesItemEncryptedContent, response
 import type { StatefulResponsesStore } from './store.ts';
 import type { StoredResponsesItemMetadata, StoredResponsesItemPayload } from '../../../../repo/types.ts';
 import { throwChatServeFailure } from '../../shared/errors.ts';
-import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
+import type { CanonicalResponsesPayload, ResponsesInputItem } from '@floway-dev/protocols/responses';
 import type { ModelCandidate } from '@floway-dev/provider';
-import type { CanonicalResponsesPayload, ResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
+import type { ResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
 const isUpstreamOwned = (row: StoredResponsesItemMetadata): row is StoredResponsesItemMetadata & { upstreamId: string } =>
   row.upstreamId !== null;
