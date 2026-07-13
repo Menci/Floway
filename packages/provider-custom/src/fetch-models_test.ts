@@ -126,6 +126,32 @@ test('fetchCustomModels keeps models but omits one malformed pricing block', asy
   );
 });
 
+test('fetchCustomModels omits complete pricing blocks instead of salvaging valid fragments', async () => {
+  const { config } = assertCustomUpstreamRecord(upstreamRecord());
+  await withMockedFetch(
+    () => jsonResponse({
+      object: 'list', data: [
+        {
+          id: 'bad-rate',
+          pricing: { entries: [{ rates: { input: 1, output: 'unknown' } }] },
+        },
+        {
+          id: 'bad-entry',
+          pricing: { entries: [{ rates: { input: 1 } }, { rates: null }] },
+        },
+        {
+          id: 'bad-selector',
+          pricing: { entries: [{ rates: { input: 1 }, selector: 'priority' }] },
+        },
+      ],
+    }),
+    async () => {
+      const result = await fetchCustomModels(config, directFetcher);
+      assertEquals(result.data.map(model => model.pricing), [undefined, undefined, undefined]);
+    },
+  );
+});
+
 test('fetchCustomModels drops a `pricing` block with no recognized dimensions', async () => {
   const { config } = assertCustomUpstreamRecord(upstreamRecord());
   await withMockedFetch(

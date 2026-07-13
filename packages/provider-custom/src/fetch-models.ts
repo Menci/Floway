@@ -68,14 +68,18 @@ const parsePricing = (value: unknown): ModelPricing | undefined => {
   try {
     const entries: ModelPricing['entries'][number][] = [];
     for (const rawEntry of value.entries) {
-      if (!isRecord(rawEntry) || !isRecord(rawEntry.rates)) continue;
+      if (!isRecord(rawEntry) || !isRecord(rawEntry.rates)) throw new TypeError('Malformed pricing entry');
       const rates: PriceVector = {};
       for (const dimension of BILLING_DIMENSIONS) {
-        const rate = optionalNumberField(rawEntry.rates[dimension]);
-        if (rate !== undefined) rates[dimension] = rate;
+        const rawRate = rawEntry.rates[dimension];
+        if (rawRate === undefined) continue;
+        const rate = optionalNumberField(rawRate);
+        if (rate === undefined) throw new TypeError(`Malformed pricing rate: ${dimension}`);
+        rates[dimension] = rate;
       }
-      if (Object.keys(rates).length === 0) continue;
-      const selector = canonicalizePricingSelector(isRecord(rawEntry.selector) ? rawEntry.selector as PricingSelector : undefined);
+      if (Object.keys(rates).length === 0) throw new TypeError('Pricing entry has no recognized rates');
+      if (rawEntry.selector !== undefined && !isRecord(rawEntry.selector)) throw new TypeError('Malformed pricing selector');
+      const selector = canonicalizePricingSelector(rawEntry.selector as PricingSelector | undefined);
       entries.push({ ...(Object.keys(selector).length > 0 ? { selector } : {}), rates });
     }
     if (entries.length === 0) return undefined;
