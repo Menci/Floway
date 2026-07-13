@@ -172,10 +172,10 @@ export const translateResponsesToChatCompletions = (source: ResponsesRequestPayl
   const payload = canonicalizeResponsesPayload(source);
   rejectProgrammaticResponsesPayload(payload, 'Chat Completions');
   const customToolNames = new Set<string>();
-  let liftedToolOutputImages = false;
   const responseFormat = buildChatCompletionsResponseFormat(payload.text);
   const messages: ChatCompletionsMessage[] = payload.instructions ? [{ role: 'system', content: payload.instructions }] : [];
   const pendingToolOutputImages: ChatCompletionsContentPart[] = [];
+  let lastLiftedToolOutputMessage: ChatCompletionsMessage | undefined;
 
   let assistant: AssistantAccumulator | null = null;
   const flushAssistant = () => {
@@ -189,7 +189,8 @@ export const translateResponsesToChatCompletions = (source: ResponsesRequestPayl
 
   const flushToolOutputImages = () => {
     if (pendingToolOutputImages.length === 0) return;
-    messages.push({ role: 'user', content: [...pendingToolOutputImages] });
+    lastLiftedToolOutputMessage = { role: 'user', content: [...pendingToolOutputImages] };
+    messages.push(lastLiftedToolOutputMessage);
     pendingToolOutputImages.length = 0;
   };
 
@@ -216,7 +217,6 @@ export const translateResponsesToChatCompletions = (source: ResponsesRequestPayl
         content: projected.toolContent,
       });
       pendingToolOutputImages.push(...projected.liftedImageContent);
-      if (projected.liftedImageContent.length > 0) liftedToolOutputImages = true;
       continue;
     }
 
@@ -282,6 +282,8 @@ export const translateResponsesToChatCompletions = (source: ResponsesRequestPayl
   flushToolOutputImages();
 
   const tools = translateResponsesTools(payload.tools, customToolNames);
+  const endsWithLiftedToolOutputImages = lastLiftedToolOutputMessage !== undefined
+    && messages.at(-1) === lastLiftedToolOutputMessage;
   // Same-purpose OpenAI fields pass through directly here, while broader
   // Responses-only state such as `previous_response_id` remains native-only.
   const target: ChatCompletionsPayload = {
@@ -304,7 +306,7 @@ export const translateResponsesToChatCompletions = (source: ResponsesRequestPayl
     // `reasoning`; only explicit reasoning items survive this translation.
     tools,
     tool_choice: translateResponsesToolChoice(payload.tool_choice),
-    ...(liftedToolOutputImages
+    ...(endsWithLiftedToolOutputImages
       ? { [CHAT_COMPLETIONS_INTERNAL_METADATA]: { liftedToolOutputImages: true as const } }
       : {}),
   };
