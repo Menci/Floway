@@ -651,6 +651,7 @@ test('Copilot Chat derives lifted-image initiator from internal provenance, not 
   const provider = createCopilotProvider(copilotUpstream).instance;
   const visionHeaders: Array<string | null> = [];
   const initiatorHeaders: Array<string | null> = [];
+  const wireBodies: string[] = [];
 
   await withMockedFetch(
     async request => {
@@ -665,7 +666,7 @@ test('Copilot Chat derives lifted-image initiator from internal provenance, not 
       if (url.pathname === '/chat/completions') {
         visionHeaders.push(request.headers.get('copilot-vision-request'));
         initiatorHeaders.push(request.headers.get('x-initiator'));
-        await request.text();
+        wireBodies.push(await request.text());
         return sseResponse();
       }
       throw new Error(`Unhandled fetch ${request.url}`);
@@ -697,6 +698,7 @@ test('Copilot Chat derives lifted-image initiator from internal provenance, not 
 
   assertEquals(visionHeaders, ['true', 'true']);
   assertEquals(initiatorHeaders, ['agent', 'user']);
+  assertEquals(wireBodies.every(body => !body.includes('chat-completions-lifted-tool-output-images')), true);
 });
 
 test('Copilot Messages boundary chain does NOT fire on the Chat Completions wire (translated path)', async () => {

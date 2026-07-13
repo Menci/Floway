@@ -1684,7 +1684,10 @@ test('translateResponsesToChatCompletions keeps grouped tool results contiguous 
       {
         type: 'function_call_output',
         call_id: 'call_a',
-        output: [{ type: 'input_image', image_url: 'data:image/png;base64,AAAA', detail: 'low' }],
+        output: [
+          { type: 'input_image', image_url: 'data:image/png;base64,AAAA', detail: 'low' },
+          { type: 'input_image', image_url: 'data:image/png;base64,AAAB', detail: 'high' },
+        ],
       },
       {
         type: 'function_call_output',
@@ -1705,6 +1708,7 @@ test('translateResponsesToChatCompletions keeps grouped tool results contiguous 
   assertEquals(result.target.messages[4].content, [
     { type: 'text', text: 'Image output from tool call call_a:' },
     { type: 'image_url', image_url: { url: 'data:image/png;base64,AAAA', detail: 'low' } },
+    { type: 'image_url', image_url: { url: 'data:image/png;base64,AAAB', detail: 'high' } },
     { type: 'text', text: 'Image output from tool call call_b:' },
     { type: 'image_url', image_url: { url: 'data:image/png;base64,BBBB', detail: 'auto' } },
   ]);
@@ -1729,7 +1733,7 @@ test('translateResponsesToChatCompletions clears lifted-image provenance when a 
       ],
     });
 
-    assertEquals(result.target.messages.at(-1)?.role, trailing.role);
+    assertEquals(result.target.messages.map(message => message.role), ['assistant', 'tool', 'user', trailing.role]);
     assertEquals(result.target[CHAT_COMPLETIONS_LIFTED_TOOL_OUTPUT_IMAGES], undefined);
   }
 });
