@@ -14,6 +14,13 @@ const itemWithId = (item: ResponsesInputItem, id: string): ResponsesInputItem =>
   id,
 } as ResponsesInputItem);
 
+// Codex stores output items in an input-shaped history model: message/function
+// status and output-text annotations/logprobs are absent, while reasoning keeps
+// an optional content carrier. Restore the server defaults only for the durable
+// content-hash comparison; the normalized object is used only when that hash
+// proves it is exactly the persisted canonical payload.
+// https://github.com/openai/codex/blob/c888e8e75a9f0e90ce7d5517f8b9540832cbbf76/codex-rs/protocol/src/models.rs#L843-L858
+// https://github.com/openai/codex/blob/c888e8e75a9f0e90ce7d5517f8b9540832cbbf76/codex-rs/protocol/src/models.rs#L933-L1012
 const canonicalStoredEcho = (item: ResponsesInputItem, row: StoredResponsesItemMetadata): ResponsesInputItem => {
   const canonical = structuredClone(item) as ResponsesInputItem & Record<string, unknown>;
   if (row.upstreamItemId !== null) canonical.id = row.upstreamItemId;
