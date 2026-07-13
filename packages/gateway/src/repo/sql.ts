@@ -37,6 +37,7 @@ import type {
 } from './types.ts';
 import { serializeStoredConfig, serializeStoredState } from './upstream-json.ts';
 import { parseUpstreamColor, parseUpstreamKind } from './upstream-parse.ts';
+import { usageDimensionRows } from './usage-dimensions.ts';
 import { bucketForTtftMs, bucketForTpotUs } from '../shared/performance-histogram.ts';
 import { generateSessionToken } from '../shared/session-tokens.ts';
 import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';
@@ -368,20 +369,13 @@ class SqlSessionsRepo implements SessionsRepo {
   }
 }
 
-const dimensionRows = (record: UsageRecord): { dimension: BillingDimension; tokens: number; unitPrice: number | null }[] => {
-  return BILLING_DIMENSIONS.flatMap(dimension => {
-    const tokens = record.tokens[dimension] ?? 0;
-    return tokens > 0 ? [{ dimension, tokens, unitPrice: record.rates?.[dimension] ?? null }] : [];
-  });
-};
-
 class SqlUsageRepo implements UsageRepo {
   constructor(private db: SqlDatabase) {}
 
   async record(record: UsageRecord): Promise<void> {
     const upstream = record.upstream ?? null;
     const selector = canonicalPricingSelectorKey(record.pricingSelector);
-    const statements: SqlPreparedStatement[] = dimensionRows(record).map(row =>
+    const statements: SqlPreparedStatement[] = usageDimensionRows(record).map(row =>
       this.db.prepare(
         `INSERT INTO usage (key_id, model, upstream, model_key, hour, pricing_selector, dimension, tokens, unit_price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT DO UPDATE SET tokens = tokens + excluded.tokens`,
@@ -417,7 +411,7 @@ class SqlUsageRepo implements UsageRepo {
     const statements: SqlPreparedStatement[] = [
       this.db.prepare("DELETE FROM usage WHERE key_id = ? AND model = ? AND COALESCE(upstream, '') = COALESCE(?, '') AND model_key = ? AND hour = ? AND pricing_selector = ?")
         .bind(record.keyId, record.model, upstream, record.modelKey, record.hour, selector),
-      ...dimensionRows(record).map(row => this.db.prepare(
+      ...usageDimensionRows(record).map(row => this.db.prepare(
         'INSERT INTO usage (key_id, model, upstream, model_key, hour, pricing_selector, dimension, tokens, unit_price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
       ).bind(record.keyId, record.model, upstream, record.modelKey, record.hour, selector, row.dimension, row.tokens, row.unitPrice)),
     ];

@@ -42,6 +42,7 @@ import type {
   UsersRepo,
 } from './types.ts';
 import { serializeStoredState } from './upstream-json.ts';
+import { usageDimensionRows } from './usage-dimensions.ts';
 import { bucketForTtftMs, bucketForTpotUs } from '../shared/performance-histogram.ts';
 import { generateSessionToken } from '../shared/session-tokens.ts';
 import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';
@@ -244,13 +245,6 @@ class MemoryUsageRepo implements UsageRepo {
     return [r.keyId, r.model, r.upstream ?? '', r.modelKey, r.hour, canonicalPricingSelectorKey(r.pricingSelector)].join('\0');
   }
 
-  private dimensionEntries(record: UsageRecord): { dimension: BillingDimension; tokens: number; unitPrice: number | null }[] {
-    return BILLING_DIMENSIONS.flatMap(dimension => {
-      const tokens = record.tokens[dimension] ?? 0;
-      return tokens > 0 ? [{ dimension, tokens, unitPrice: record.rates?.[dimension] ?? null }] : [];
-    });
-  }
-
   private toRecord(state: UsageBucketState): UsageRecord {
     const tokens: Partial<Record<BillingDimension, number>> = {};
     let rates: PriceVector | null = null;
@@ -277,7 +271,7 @@ class MemoryUsageRepo implements UsageRepo {
   record(record: UsageRecord): Promise<void> {
     const state = this.bucket(record);
     state.requests += record.requests;
-    for (const { dimension, tokens, unitPrice } of this.dimensionEntries(record)) {
+    for (const { dimension, tokens, unitPrice } of usageDimensionRows(record)) {
       const isFirstWrite = state.tokens[dimension] === undefined;
       state.tokens[dimension] = (state.tokens[dimension] ?? 0) + tokens;
       if (isFirstWrite && unitPrice !== null) state.unitPrices[dimension] = unitPrice;
@@ -315,7 +309,7 @@ class MemoryUsageRepo implements UsageRepo {
       unitPrices: {},
       requests: record.requests,
     };
-    for (const { dimension, tokens, unitPrice } of this.dimensionEntries(record)) {
+    for (const { dimension, tokens, unitPrice } of usageDimensionRows(record)) {
       state.tokens[dimension] = tokens;
       if (unitPrice !== null) state.unitPrices[dimension] = unitPrice;
     }
