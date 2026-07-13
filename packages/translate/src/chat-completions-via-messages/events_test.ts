@@ -49,8 +49,7 @@ test('initial state has correct defaults', () => {
   assertEquals(state.messageId, '');
   assertEquals(state.model, '');
   assertEquals(state.nextToolCallIndex, 0);
-  assertEquals(state.promptTokens, 0);
-  assertEquals(state.cachedPromptTokens, 0);
+  assertEquals(state.usage, { output_tokens: 0 });
   assertEquals(typeof state.created, 'number');
 });
 
@@ -73,8 +72,8 @@ test('message_start sets state including usage', () => {
   translateMessagesEventToChatCompletionsChunks(MSG_START, state);
   assertEquals(state.messageId, 'msg_test');
   assertEquals(state.model, 'claude-sonnet-4-20250514');
-  assertEquals(state.promptTokens, 10);
-  assertEquals(state.cachedPromptTokens, 0);
+  assertEquals(state.usage.input_tokens, 10);
+  assertEquals(state.usage.cache_read_input_tokens, undefined);
 });
 
 test('message_start captures cache_read_input_tokens', () => {
@@ -97,8 +96,8 @@ test('message_start captures cache_read_input_tokens', () => {
     } as MessagesStreamEvent,
     state,
   );
-  assertEquals(state.promptTokens, 100);
-  assertEquals(state.cachedPromptTokens, 20);
+  assertEquals(state.usage.input_tokens, 80);
+  assertEquals(state.usage.cache_read_input_tokens, 20);
 });
 
 // ── content_block_start: text ──
@@ -896,9 +895,9 @@ test('message_start captures cache_creation_input_tokens', () => {
     } as MessagesStreamEvent,
     state,
   );
-  assertEquals(state.promptTokens, 130);
-  assertEquals(state.cachedPromptTokens, 20);
-  assertEquals(state.cacheCreationPromptTokens, 30);
+  assertEquals(state.usage.input_tokens, 80);
+  assertEquals(state.usage.cache_read_input_tokens, 20);
+  assertEquals(state.usage.cache_creation_input_tokens, 30);
 });
 
 test('message_delta usage includes cache_creation_input_tokens in prompt_tokens', () => {
@@ -1015,4 +1014,38 @@ test('message_start service_tier survives when message_delta omits it', () => {
     state,
   ) as ChatCompletionsStreamEvent[];
   assertEquals(result[1].service_tier, 'priority');
+});
+
+test('message_delta atomically replaces tier and merges late cache accounting', () => {
+  const state = createMessagesToChatCompletionsStreamState();
+  translateMessagesEventToChatCompletionsChunks(
+    {
+      ...MSG_START,
+      message: {
+        ...MSG_START.message,
+        usage: { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 9, speed: 'fast' },
+      },
+    },
+    state,
+  );
+  const result = translateMessagesEventToChatCompletionsChunks(
+    {
+      type: 'message_delta',
+      delta: { stop_reason: 'end_turn' },
+      usage: {
+        input_tokens: 11,
+        output_tokens: 2,
+        cache_creation: { ephemeral_1h_input_tokens: 5 },
+        service_tier: 'priority',
+      },
+    } as MessagesStreamEvent,
+    state,
+  ) as ChatCompletionsStreamEvent[];
+  assertEquals(result[1].service_tier, 'priority');
+  assertEquals(result[1].usage, {
+    prompt_tokens: 20,
+    completion_tokens: 2,
+    total_tokens: 22,
+    prompt_tokens_details: { cache_creation_input_tokens: 9 },
+  });
 });

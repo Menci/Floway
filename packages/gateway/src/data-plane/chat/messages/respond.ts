@@ -8,7 +8,7 @@ import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse } from '../shared/respond.ts';
 import { type StreamCompletion, writeSSEFrames } from '../shared/stream/sse.ts';
 import { type ProtocolFrame, sseFrame } from '@floway-dev/protocols/common';
-import { messagesProtocolFrameToSSEFrame, MESSAGES_MISSING_TERMINAL_MESSAGE, collectMessagesProtocolEventsToResult, splitMessagesCacheCreationTokens } from '@floway-dev/protocols/messages';
+import { messagesProtocolFrameToSSEFrame, MESSAGES_MISSING_TERMINAL_MESSAGE, collectMessagesProtocolEventsToResult, mergeMessagesUsageSnapshot, messagesUsageSnapshot, splitMessagesCacheCreationTokens } from '@floway-dev/protocols/messages';
 import type { MessagesMessageDeltaEvent, MessagesStreamEvent, MessagesUsage } from '@floway-dev/protocols/messages';
 import { type ExecuteResult, type PlainResult, type InternalDebugError, toInternalDebugError } from '@floway-dev/provider';
 import { apiErrorToResponse } from '@floway-dev/provider';
@@ -118,7 +118,7 @@ const tokenUsageFromMessagesUsage = (u: MessagesUsageLike) => {
 };
 
 export const createMessagesStreamUsageState = () => ({
-  raw: { output_tokens: 0 } as NonNullable<MessagesMessageDeltaEvent['usage']>,
+  raw: messagesUsageSnapshot(),
   current: tokenUsage({}),
 });
 
@@ -135,27 +135,12 @@ export const tokenUsageFromMessagesFrame = (frame: ProtocolFrame<MessagesStreamE
   if (frame.type !== 'event') return null;
   const { event } = frame;
   if (event.type === 'message_start') {
-    state.raw = {
-      ...event.message.usage,
-      ...(event.message.usage.cache_creation === undefined
-        ? {}
-        : { cache_creation: { ...event.message.usage.cache_creation } }),
-    };
+    state.raw = messagesUsageSnapshot(event.message.usage);
     state.current = tokenUsageFromMessagesUsage(state.raw);
     return { ...state.current };
   }
   if (event.type === 'message_delta' && event.usage) {
-    state.raw = {
-      ...state.raw,
-      output_tokens: event.usage.output_tokens,
-      ...(event.usage.input_tokens === undefined ? {} : { input_tokens: event.usage.input_tokens }),
-      ...(event.usage.cache_read_input_tokens === undefined ? {} : { cache_read_input_tokens: event.usage.cache_read_input_tokens }),
-      ...(event.usage.cache_creation_input_tokens === undefined ? {} : { cache_creation_input_tokens: event.usage.cache_creation_input_tokens }),
-      ...(event.usage.cache_creation === undefined ? {} : { cache_creation: { ...event.usage.cache_creation } }),
-      ...(event.usage.speed === undefined && event.usage.service_tier === undefined
-        ? {}
-        : { speed: event.usage.speed, service_tier: event.usage.service_tier }),
-    };
+    state.raw = mergeMessagesUsageSnapshot(state.raw, event.usage);
     state.current = tokenUsageFromMessagesUsage(state.raw);
     return { ...state.current };
   }

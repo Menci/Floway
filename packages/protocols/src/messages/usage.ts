@@ -6,6 +6,36 @@ export interface MessagesCacheCreationUsage {
   };
 }
 
+export interface MessagesUsageSnapshot extends MessagesCacheCreationUsage {
+  input_tokens?: number;
+  output_tokens: number;
+  cache_read_input_tokens?: number;
+  service_tier?: string;
+  speed?: string;
+}
+
+export const messagesUsageSnapshot = (usage?: MessagesUsageSnapshot): MessagesUsageSnapshot => usage === undefined
+  ? { output_tokens: 0 }
+  : {
+      ...usage,
+      ...(usage.cache_creation === undefined ? {} : { cache_creation: { ...usage.cache_creation } }),
+    };
+
+export const mergeMessagesUsageSnapshot = (
+  current: MessagesUsageSnapshot,
+  delta: MessagesUsageSnapshot,
+): MessagesUsageSnapshot => ({
+  ...current,
+  output_tokens: delta.output_tokens,
+  ...(delta.input_tokens === undefined ? {} : { input_tokens: delta.input_tokens }),
+  ...(delta.cache_read_input_tokens === undefined ? {} : { cache_read_input_tokens: delta.cache_read_input_tokens }),
+  ...(delta.cache_creation_input_tokens === undefined ? {} : { cache_creation_input_tokens: delta.cache_creation_input_tokens }),
+  ...(delta.cache_creation === undefined ? {} : { cache_creation: { ...delta.cache_creation } }),
+  ...(delta.speed === undefined && delta.service_tier === undefined
+    ? {}
+    : { speed: delta.speed, service_tier: delta.service_tier }),
+});
+
 export const splitMessagesCacheCreationTokens = (
   usage: MessagesCacheCreationUsage,
 ): { cacheWrite: number; cacheWrite1h: number } => {
