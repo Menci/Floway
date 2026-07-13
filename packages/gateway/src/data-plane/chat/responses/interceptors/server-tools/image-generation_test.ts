@@ -48,6 +48,10 @@ const imageMessage = (mime: string): ResponsesInputItem => ({
   type: 'message', role: 'user', content: [{ type: 'input_image', image_url: `data:${mime};base64,${PNG_B64}`, detail: 'auto' }],
 });
 
+const fileIdImageMessage: ResponsesInputItem = {
+  type: 'message', role: 'user', content: [{ type: 'input_image', file_id: 'file_1', detail: 'auto' }],
+};
+
 // ── isHostedImageGenerationTool ──
 
 test('isHostedImageGenerationTool matches only the hosted image_generation type', () => {
@@ -492,6 +496,25 @@ test('imageGenerationServerTool rejects an unsupported edit input format up fron
   assertEquals(result.code, 'unsupported_file_mimetype');
   assertEquals(result.param, 'input');
   assertStringIncludes(result.message, 'image/gif');
+});
+
+test('imageGenerationServerTool rejects file_id-only images when action may edit', async () => {
+  const result = await imageGenerationServerTool(
+    makeCtx({ tools: [{ type: 'image_generation' }], input: [fileIdImageMessage] }),
+    gatewayCtx(),
+  );
+  assert(result.type === 'invalid-request');
+  assertEquals(result.code, 'invalid_value');
+  assertEquals(result.param, 'input');
+  assertStringIncludes(result.message, 'file_id-only');
+});
+
+test('imageGenerationServerTool accepts file_id-only context for explicit generation', async () => {
+  const result = await imageGenerationServerTool(
+    makeCtx({ tools: [{ type: 'image_generation', action: 'generate' }], input: [fileIdImageMessage] }),
+    gatewayCtx(),
+  );
+  assert(result.type === 'active');
 });
 
 test('imageGenerationServerTool accepts webp input for editing', async () => {

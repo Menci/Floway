@@ -953,6 +953,21 @@ export const imageGenerationServerTool: ServerToolRegistration = (invocation, ga
     return { type: 'invalid-request', message: prepared.error.message, param: prepared.error.param, code: prepared.error.code };
   }
   const config = prepared.config;
+  const hasFileIdOnlyImage = invocation.payload.input.some(item => {
+    const content = item.type === 'message'
+      ? item.content
+      : item.type === 'function_call_output' || item.type === 'custom_tool_call_output' ? item.output : undefined;
+    return Array.isArray(content) && content.some(block =>
+      block.type === 'input_image' && typeof block.image_url !== 'string' && typeof block.file_id === 'string');
+  });
+  if (config.action !== 'generate' && hasFileIdOnlyImage) {
+    return {
+      type: 'invalid-request',
+      message: 'image_generation cannot edit file_id-only input images because their bytes are unavailable. Set action to "generate" to use them only as model context.',
+      param: 'input',
+      code: 'invalid_value',
+    };
+  }
   const originalImageSources = collectImageSources(invocation.payload.input);
 
   // `action:"edit"` with no bindable image is a client request-shape error,
