@@ -87,7 +87,8 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
       enabledFlags,
     };
     if (model.display_name !== undefined) internal.display_name = model.display_name;
-    if (model.pricing) internal.pricing = model.pricing;
+    const pricing = model.pricing ?? pricingForOllamaModelKey(model.upstreamModelId);
+    if (pricing) internal.pricing = pricing;
     if (model.chat) internal.chat = model.chat;
     return internal;
   });

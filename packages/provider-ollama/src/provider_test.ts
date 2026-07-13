@@ -107,6 +107,24 @@ test('getProvidedModels merges manual overrides in front of auto-fetched models 
   });
 });
 
+test('manual known models inherit built-in pricing when no override is configured', async () => {
+  const instance = createOllamaProvider(buildRecord({
+    config: {
+      baseUrl: 'https://ollama.com',
+      apiKey: 'ollama_test',
+      models: [{
+        upstreamModelId: 'deepseek-v4-flash',
+        kind: 'chat',
+        endpoints: { chatCompletions: {} },
+      }],
+    },
+  }));
+  await withMockedFetch(tagsAndShow, async () => {
+    const models = await instance.instance.getProvidedModels(directFetcher);
+    assertEquals(models.find(model => model.id === 'deepseek-v4-flash')?.pricing?.entries[0]?.rates.input, 0.14);
+  });
+});
+
 test('call* methods POST to /v1/<endpoint> with the upstream model id and Bearer header', async () => {
   const instance = createOllamaProvider(buildRecord());
   let chatRequest: Request | null = null;
