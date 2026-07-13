@@ -1,7 +1,7 @@
 import type { UsageRecord } from './types.ts';
 import { BILLING_DIMENSIONS, type BillingDimension } from '@floway-dev/protocols/common';
 
-export interface UsageDimensionWrite {
+interface UsageDimensionWrite {
   dimension: BillingDimension;
   tokens: number;
   unitPrice: number | null;

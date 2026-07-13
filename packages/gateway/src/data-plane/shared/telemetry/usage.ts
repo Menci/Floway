@@ -45,7 +45,7 @@ export const tokenUsage = (counts: TokenUsage): TokenUsage => {
 // no cache fields at all (Together, Perplexity, SiliconFlow, TGI, Ollama-
 // compat, plus most providers without a cache layer) fall through to zero,
 // leaving the whole prompt count on the bare input bucket.
-export interface OpenAICacheTokens {
+interface OpenAICacheTokens {
   readonly cacheRead: number;
   readonly cacheWrite: number;
 }
