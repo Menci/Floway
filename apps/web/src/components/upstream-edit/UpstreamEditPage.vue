@@ -344,7 +344,7 @@ const save = async ({ openEdit = false }: { openEdit?: boolean } = {}) => {
   if (!trimmedName) { saveError.value = 'Name is required'; return; }
   if (modelPrefixInvalid.value) { saveError.value = 'Model name prefix is invalid'; return; }
   if (colorInvalid.value) { saveError.value = 'Color hex is invalid'; return; }
-  if (modelsPanelInvalid.value) { saveError.value = 'One or more models have invalid configuration — check model reasoning settings'; return; }
+  if (modelsPanelInvalid.value) { saveError.value = 'One or more models have invalid configuration — review each model\'s highlighted fields and validation errors'; return; }
   // OAuth providers can only persist an initial record once the wizard has
   // populated the credential slice; without it the backend's per-kind
   // asserter rejects the POST with an opaque error. Fail early so the
