@@ -12,6 +12,14 @@ test('buildTargetRequest forwards an empty thinkingLevel verbatim', () => {
   assertEquals(request.reasoning_effort, '');
 });
 
+test('buildTargetRequest gives thinkingBudget precedence over an empty thinkingLevel', () => {
+  const request = buildTargetRequest({
+    generationConfig: { thinkingConfig: { thinkingBudget: 2048, thinkingLevel: '' } },
+  }, 'gpt-test');
+
+  assertEquals(request.reasoning_effort, 'low');
+});
+
 test('buildTargetRequest maps system instruction and multimodal user content', () => {
   const payload: GeminiPayload = {
     systemInstruction: {

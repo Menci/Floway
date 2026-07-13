@@ -17,6 +17,15 @@ test('buildTargetRequest forwards an empty thinkingLevel verbatim', () => {
   assertEquals(request.output_config, { effort: '' });
 });
 
+test('buildTargetRequest preserves native thinkingBudget beside an empty thinkingLevel', () => {
+  const request = buildTargetRequest({
+    generationConfig: { thinkingConfig: { thinkingBudget: 2048, thinkingLevel: '' } },
+  }, 'claude-test', noOptions);
+
+  assertEquals(request.thinking, { type: 'enabled', budget_tokens: 2048 });
+  assertEquals(request.output_config, { effort: '' });
+});
+
 test('buildTargetRequest maps system, default max tokens, and multimodal user content', () => {
   const payload: GeminiPayload = {
     systemInstruction: {
