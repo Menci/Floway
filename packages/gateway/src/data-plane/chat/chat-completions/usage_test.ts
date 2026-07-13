@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import { tokenUsageFromChatCompletionsUsage } from './usage.ts';
 import { assertEquals } from '@floway-dev/test-utils';
@@ -65,6 +65,14 @@ test('Chat usage reads OpenRouter cache_write_tokens as the write counter', () =
       output: 4,
     },
   );
+});
+
+test.each([
+  { prompt_tokens: 40, completion_tokens: 1, total_tokens: 41, prompt_tokens_details: { cached_tokens: 30, cache_write_tokens: 25 } },
+  { prompt_tokens: 40, completion_tokens: 1, total_tokens: 41, prompt_tokens_details: { cached_tokens: -1 } },
+  { prompt_tokens: 40, completion_tokens: 1, total_tokens: 41, prompt_tokens_details: { cached_tokens: 1.5 } },
+])('Chat usage rejects malformed inclusive cache counts', usage => {
+  expect(() => tokenUsageFromChatCompletionsUsage(usage, null)).toThrowError(RangeError);
 });
 
 test('Chat usage drops service_tier=default to no-tier', () => {

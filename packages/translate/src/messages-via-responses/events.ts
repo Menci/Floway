@@ -3,7 +3,7 @@ import { parseToolArgumentsObject } from '../shared/messages/tool-arguments.ts';
 import { packReasoningSignature, responsesReasoningToMessagesBlock } from '../shared/messages-and-responses/reasoning.ts';
 import { createResponsesOutputOrderState, recordResponsesOutputOrderEvent, type ResponsesOutputOrderState, shouldDeferForEarlierResponsesOutput } from '../shared/via-responses/responses-stream-order.ts';
 import { type ResponsesEvent, responsesPartKey } from '../shared/via-responses/responses-stream.ts';
-import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { eventFrame, splitInclusiveInputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesAssistantContentBlock, MessagesResult, MessagesStreamEvent, MessagesUsage } from '@floway-dev/protocols/messages';
 import type { ResponsesOutputContentBlock, ResponsesOutputItem, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
@@ -64,13 +64,9 @@ const mapResponsesStopReason = (response: ResponsesResult): MessagesResult['stop
 };
 
 const responsesUsageToMessagesUsage = (response: ResponsesResult, outputTokens: number): MessagesUsage => {
-  const inputTokens = response.usage?.input_tokens ?? 0;
   const cachedTokens = response.usage?.input_tokens_details?.cached_tokens;
   const cacheWriteTokens = response.usage?.input_tokens_details?.cache_write_tokens;
-  const uncachedInputTokens = inputTokens - (cachedTokens ?? 0) - (cacheWriteTokens ?? 0);
-  if (uncachedInputTokens < 0) {
-    throw new RangeError(`Responses cache token counts exceed input_tokens: ${inputTokens} - ${cachedTokens ?? 0} - ${cacheWriteTokens ?? 0}`);
-  }
+  const { input: uncachedInputTokens } = splitInclusiveInputTokens(response.usage?.input_tokens ?? 0, cachedTokens, cacheWriteTokens);
 
   return {
     input_tokens: uncachedInputTokens,

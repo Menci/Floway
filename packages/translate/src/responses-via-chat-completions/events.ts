@@ -2,7 +2,7 @@ import { hasReadableSummary, toResponsesReasoningItem } from '../shared/chat-com
 import { unwrapCustomToolInput } from '../shared/responses-via/custom-tool-wrap.ts';
 import * as responses from '../shared/responses-via/responses-event-builder.ts';
 import type { ChatCompletionsStreamEvent, ChatCompletionsResult } from '@floway-dev/protocols/chat-completions';
-import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { eventFrame, splitInclusiveInputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesOutputItem, ResponsesOutputReasoning, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 const mapChatCompletionsUsageToResponsesUsage = (usage: ChatCompletionsResult['usage'] | undefined): ResponsesResult['usage'] | undefined => {
@@ -10,6 +10,7 @@ const mapChatCompletionsUsageToResponsesUsage = (usage: ChatCompletionsResult['u
   const cachedTokens = usage.prompt_tokens_details?.cached_tokens;
   const cacheWriteTokens = usage.prompt_tokens_details?.cache_creation_input_tokens
     ?? usage.prompt_tokens_details?.cache_write_tokens;
+  splitInclusiveInputTokens(usage.prompt_tokens, cachedTokens, cacheWriteTokens);
   return {
     input_tokens: usage.prompt_tokens,
     output_tokens: usage.completion_tokens,

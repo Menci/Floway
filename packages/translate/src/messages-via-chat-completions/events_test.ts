@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import { createChatCompletionsToMessagesStreamState, flushChatCompletionsToMessagesEvents, mapChatCompletionsUsageToMessagesUsage, translateChatCompletionsChunkToMessagesEvents } from './events.ts';
 import { assertEquals, assertFalse } from '../test-assert.ts';
@@ -511,6 +511,14 @@ test('mapChatCompletionsUsageToMessagesUsage prefers canonical cache_creation_in
   });
   assertEquals(usage.input_tokens, 50);
   assertEquals(usage.cache_creation_input_tokens, 30);
+});
+
+test('mapChatCompletionsUsageToMessagesUsage rejects malformed inclusive cache counts', () => {
+  expect(() => mapChatCompletionsUsageToMessagesUsage({
+    prompt_tokens: 40,
+    completion_tokens: 10,
+    prompt_tokens_details: { cached_tokens: 30, cache_write_tokens: 25 },
+  })).toThrowError(RangeError);
 });
 
 test('translateChatCompletionsChunkToMessagesEvents surfaces service_tier:fast as usage.speed:fast in message_delta', () => {

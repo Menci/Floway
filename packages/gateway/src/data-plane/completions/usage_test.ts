@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { expect, test } from 'vitest';
 
 import { tokenUsageFromCompletionsUsage } from './usage.ts';
 import { assertEquals } from '@floway-dev/test-utils';
@@ -44,6 +44,14 @@ test('tokenUsageFromCompletionsUsage reads the flat top-level cached_tokens (Moo
     ),
     { input: 18, input_cache_read: 32, output: 3 },
   );
+});
+
+test.each([
+  { prompt_tokens: 40, completion_tokens: 1, total_tokens: 41, prompt_tokens_details: { cached_tokens: 50 } },
+  { prompt_tokens: 40, completion_tokens: 1, total_tokens: 41, cached_tokens: -1 },
+  { prompt_tokens: 40, completion_tokens: 1, total_tokens: 41, prompt_cache_hit_tokens: 1.5 },
+])('tokenUsageFromCompletionsUsage rejects malformed inclusive cache counts', usage => {
+  expect(() => tokenUsageFromCompletionsUsage(usage, null)).toThrowError(RangeError);
 });
 
 test('tokenUsageFromCompletionsUsage runs serviceTier through billableServiceTier', () => {

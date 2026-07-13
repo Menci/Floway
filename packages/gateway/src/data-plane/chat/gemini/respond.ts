@@ -8,7 +8,7 @@ import { tokenUsage } from '../../shared/telemetry/usage.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse } from '../shared/respond.ts';
 import { type StreamCompletion, writeSSEFrames } from '../shared/stream/sse.ts';
-import { type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
+import { type ProtocolFrame, splitInclusiveInputTokens, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import { geminiProtocolFrameToSSEFrame, GEMINI_MISSING_TERMINAL_MESSAGE, isGeminiErrorEvent, isGeminiTerminalEvent, collectGeminiProtocolEventsToResult } from '@floway-dev/protocols/gemini';
 import type { GeminiErrorResponse, GeminiResult, GeminiStreamEvent, GeminiUsageMetadata } from '@floway-dev/protocols/gemini';
 import { type ExecuteResult, type PlainResult, type ApiErrorResult, type InternalDebugError, toInternalDebugError, decodeApiErrorBody } from '@floway-dev/provider';
@@ -91,9 +91,9 @@ export const respondGemini = async (
 // (verified against the Google GenAI SDK docs); subtract it for disjoint input.
 // Reasoning (thoughts) tokens are billed as output.
 const tokenUsageFromGeminiUsageMetadata = (m: GeminiUsageMetadata) => {
-  const cacheRead = m.cachedContentTokenCount ?? 0;
+  const { input, cacheRead } = splitInclusiveInputTokens(m.promptTokenCount ?? 0, m.cachedContentTokenCount, undefined);
   return tokenUsage({
-    input: (m.promptTokenCount ?? 0) - cacheRead,
+    input,
     input_cache_read: cacheRead,
     output: (m.candidatesTokenCount ?? 0) + (m.thoughtsTokenCount ?? 0),
   });
