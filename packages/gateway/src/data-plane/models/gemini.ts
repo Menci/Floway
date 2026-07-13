@@ -30,7 +30,7 @@ interface GeminiModel {
   maxTemperature?: number;
   topP?: number;
   topK?: number;
-  cost?: ModelPricing;
+  pricing?: ModelPricing;
 }
 
 const toGeminiModel = (model: InternalModel): GeminiModel => {
@@ -48,7 +48,7 @@ const toGeminiModel = (model: InternalModel): GeminiModel => {
     temperature: 1,
     topP: 0.95,
     topK: 40,
-    ...(model.cost ? { cost: model.cost } : {}),
+    ...(model.pricing ? { pricing: model.pricing } : {}),
   };
 };
 

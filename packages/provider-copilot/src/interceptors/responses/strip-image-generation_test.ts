@@ -1,13 +1,13 @@
 import { test } from 'vitest';
 
 import { stripImageGenerationFromPayload } from './strip-image-generation.ts';
-import type { ResponsesPayload } from '@floway-dev/protocols/responses';
+import type { CanonicalResponsesPayload } from '@floway-dev/protocols/responses';
 import { assertEquals, assertFalse } from '@floway-dev/test-utils';
 
 test('stripImageGenerationFromPayload removes image_generation tools', () => {
   const payload = {
     model: 'gpt-test',
-    input: 'draw this',
+    input: [{ type: 'message', role: 'user', content: 'draw this' }],
     tools: [
       { type: 'image_generation' },
       {
@@ -18,7 +18,7 @@ test('stripImageGenerationFromPayload removes image_generation tools', () => {
       },
     ],
     tool_choice: 'auto',
-  } as ResponsesPayload;
+  } as CanonicalResponsesPayload;
 
   stripImageGenerationFromPayload(payload);
 
@@ -30,10 +30,10 @@ test('stripImageGenerationFromPayload removes image_generation tools', () => {
 test('stripImageGenerationFromPayload removes forced image_generation tool_choice', () => {
   const payload = {
     model: 'gpt-test',
-    input: 'draw this',
+    input: [{ type: 'message', role: 'user', content: 'draw this' }],
     tools: [{ type: 'image_generation' }],
     tool_choice: { type: 'image_generation' },
-  } as ResponsesPayload;
+  } as CanonicalResponsesPayload;
 
   stripImageGenerationFromPayload(payload);
 
@@ -44,10 +44,10 @@ test('stripImageGenerationFromPayload removes forced image_generation tool_choic
 test('stripImageGenerationFromPayload removes required tool_choice when no tools remain', () => {
   const payload = {
     model: 'gpt-test',
-    input: 'draw this',
+    input: [{ type: 'message', role: 'user', content: 'draw this' }],
     tools: [{ type: 'image_generation' }],
     tool_choice: 'required',
-  } as ResponsesPayload;
+  } as CanonicalResponsesPayload;
 
   stripImageGenerationFromPayload(payload);
 
@@ -61,7 +61,7 @@ test('stripImageGenerationFromPayload preserves Copilot-accepted hosted and defe
   // must still see those entries even after image_generation is dropped.
   const payload = {
     model: 'gpt-test',
-    input: 'search the web',
+    input: [{ type: 'message', role: 'user', content: 'search the web' }],
     tools: [
       {
         type: 'function',
@@ -75,7 +75,7 @@ test('stripImageGenerationFromPayload preserves Copilot-accepted hosted and defe
       { type: 'image_generation', output_format: 'png' },
     ],
     tool_choice: 'auto',
-  } as ResponsesPayload;
+  } as CanonicalResponsesPayload;
 
   stripImageGenerationFromPayload(payload);
 
@@ -87,10 +87,10 @@ test('stripImageGenerationFromPayload preserves forced non-image hosted and defe
   for (const type of ['web_search', 'tool_search', 'namespace'] as const) {
     const payload = {
       model: 'gpt-test',
-      input: 'search',
+      input: [{ type: 'message', role: 'user', content: 'search' }],
       tools: [{ type }],
       tool_choice: { type },
-    } as ResponsesPayload;
+    } as CanonicalResponsesPayload;
 
     stripImageGenerationFromPayload(payload);
 
@@ -102,7 +102,7 @@ test('stripImageGenerationFromPayload preserves forced non-image hosted and defe
 test('stripImageGenerationFromPayload preserves custom Freeform tools for downstream wrapping', () => {
   const payload = {
     model: 'gpt-test',
-    input: 'do x',
+    input: [{ type: 'message', role: 'user', content: 'do x' }],
     tools: [
       {
         type: 'function',
@@ -113,7 +113,7 @@ test('stripImageGenerationFromPayload preserves custom Freeform tools for downst
       { type: 'custom', name: 'freeform_other', description: 'x' },
     ],
     tool_choice: { type: 'custom', name: 'freeform_other' },
-  } as ResponsesPayload;
+  } as CanonicalResponsesPayload;
 
   stripImageGenerationFromPayload(payload);
 

@@ -4,9 +4,9 @@ import type { ResponsesInvocation } from './types.ts';
 import { withVendorQwenResponsesNormalize } from './vendor-qwen-normalize.ts';
 import { mockChatGatewayCtx } from '../../../../test-helpers/gateway-ctx.ts';
 import { doneFrame } from '@floway-dev/protocols/common';
+import type { CanonicalResponsesPayload } from '@floway-dev/protocols/responses';
 import { eventResult, type FlagId } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
-import type { CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
 
 const stubCtx = mockChatGatewayCtx();
 
