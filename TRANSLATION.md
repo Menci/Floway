@@ -176,7 +176,15 @@ Header shaping (UA, `X-Stainless-*`, `anthropic-beta`) and the dated
 upstream model id are set in the provider's fetch path, not as interceptor
 steps.
 
-### Responses — gateway interceptors
+### Responses — gateway flow and interceptors
+
+- resolves `previous_response_id` and every `item_reference` through the
+  gateway's Responses store before candidate dispatch. Affinity is classified
+  from each referenced item's stored type, then the candidate rewrite replaces
+  every reference with its durable payload. Same-upstream items recover their
+  upstream wire id; portable items receive a temporary id when needed. A
+  missing durable payload returns `item_not_found`, and no provider receives an
+  `item_reference` carrier.
 
 - removes unsupported `image_generation` Responses tool entries and forced
   tool choices that targeted them before target request construction. Other
@@ -203,9 +211,7 @@ The same boundary runs for both `/v1/responses` (streaming) and
   the chain runs, so durable storage is unaffected
 - compresses inline base64 image data URLs to WebP
 - injects `x-vision-request` and `x-initiator` headers
-- on `/v1/responses` only: retries expired connection-bound input IDs once
-  with deterministic rewrites, and synchronizes mismatched stream output
-  item IDs
+- on `/v1/responses` only: synchronizes mismatched stream output item IDs
 
 ### Responses — Codex provider boundary chain
 

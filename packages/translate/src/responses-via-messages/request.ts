@@ -255,9 +255,7 @@ const translateResponsesInput = async (input: ResponsesInputItem[], loadRemoteIm
       break;
     }
     case 'item_reference':
-      // Connection-bound pointer with no inline content to translate; drop it.
-      // Mirrors the responses-via-chat-completions translator behaviour.
-      break;
+      throw new TranslatorInputError("Invalid input item type 'item_reference'.");
     case 'web_search_call':
       // The shim must translate echoed web_search_call input items
       // into function_call + function_call_output pairs before this
