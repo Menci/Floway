@@ -328,7 +328,7 @@ const validateHostedImageGenerationEntry = (
         return {
           ok: false,
           error: {
-            message: "Floway cannot use file IDs for input_image_mask; provide an inline image data URL.",
+            message: 'Floway cannot use file IDs for input_image_mask; provide an inline image data URL.',
             param: path('input_image_mask.file_id'),
             code: 'unsupported_image_source',
           },
