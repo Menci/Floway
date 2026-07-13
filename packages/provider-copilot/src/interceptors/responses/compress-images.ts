@@ -3,6 +3,9 @@ import type { ResponsesBoundaryCtx } from './types.ts';
 import type { ResponsesInputImage } from '@floway-dev/protocols/responses';
 import { isBase64ImageDataUrl, memoizedDataUrlCompressor } from '@floway-dev/provider';
 
+const compressedImageUrl = Symbol('compressedImageUrl');
+type CompressibleImagePart = ResponsesInputImage & { [compressedImageUrl]?: string };
+
 // Recompresses every inline base64 image in the outgoing Responses payload to
 // WebP before the Copilot upstream call. Images appear both as `input_image`
 // parts inside message content and inside `function_call_output` outputs
@@ -15,12 +18,17 @@ export const withInlineImagesCompressed = async <TResult>(
   _request: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
-  const targets: Array<{ part: ResponsesInputImage; imageUrl: string }> = [];
+  const targets: Array<{ part: CompressibleImagePart; imageUrl: string }> = [];
   for (const item of ctx.payload.input) {
     const parts = item.type === 'message' ? item.content : item.type === 'function_call_output' ? item.output : undefined;
     if (!Array.isArray(parts)) continue;
     for (const part of parts) {
-      if (part.type === 'input_image' && typeof part.image_url === 'string' && isBase64ImageDataUrl(part.image_url)) {
+      if (
+        part.type === 'input_image'
+        && typeof part.image_url === 'string'
+        && part[compressedImageUrl] !== part.image_url
+        && isBase64ImageDataUrl(part.image_url)
+      ) {
         targets.push({ part, imageUrl: part.image_url });
       }
     }
@@ -31,6 +39,11 @@ export const withInlineImagesCompressed = async <TResult>(
     await Promise.all(
       targets.map(async target => {
         target.part.image_url = await compress(target.imageUrl);
+        Object.defineProperty(target.part, compressedImageUrl, {
+          configurable: true,
+          value: target.part.image_url,
+          writable: true,
+        });
       }),
     );
   }
