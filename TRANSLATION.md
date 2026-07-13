@@ -56,6 +56,11 @@ the gateway returns a Gemini-shaped unsupported-model error.
 
 - Pairwise translators preserve source semantics where the target API has a
   natural counterpart.
+- Responses wire input accepts OpenAI's EasyInputMessage shorthand without a
+  `type` field. HTTP, WebSocket, and direct Responses-source translator
+  boundaries normalize it to an explicit `type: "message"` before storage,
+  interception, or translation. Malformed untyped items are rejected as caller
+  input errors at the same boundary.
 - Translators do not synthesize defaults merely to satisfy a target shape.
   Examples: no translated-only `temperature: 1`, `store: false`,
   `parallel_tool_calls: true`, or `reasoning.summary: "detailed"`.
@@ -440,6 +445,8 @@ Known losses:
   other `format` fields are not preserved.
 - Remote image fetch failures and unsupported image media types drop that image
   rather than failing the request.
+- `input_file` content and assistant-side images have no Messages counterpart
+  and are rejected.
 
 ## Messages To Chat Completions
 
@@ -614,6 +621,11 @@ Known losses:
 - Freeform `custom` tool `format.definition` is preserved as a
   `Lark grammar: ${definition}` description on the wrapped `input` parameter;
   other `format` fields are not preserved.
+- `input_file` message/tool-output content and assistant-side files or images
+  have no Chat counterpart and are rejected.
+- File-id-only images cannot be materialized by the pure translator and are
+  rejected. Chat image detail supports only `auto`, `low`, and `high`; other
+  Responses values such as `original` are rejected.
 - opaque Responses reasoning state is not requested, translated, or preserved on
   Chat fallback paths.
 

@@ -16,9 +16,10 @@ import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS, type StreamCompletion } from '../sha
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { RESPONSES_MISSING_TERMINAL_MESSAGE } from '@floway-dev/protocols/responses';
-import { isResponsesTerminalEvent, type ResponsesPayload, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { isResponsesTerminalEvent, type ResponsesRequestPayload, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { toInternalDebugError } from '@floway-dev/provider';
+import { TranslatorInputError } from '@floway-dev/translate';
 import { canonicalizeResponsesPayload, type CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
 
 interface WorkerWebSocket extends WebSocket {
@@ -68,7 +69,7 @@ declare const WebSocketPair: {
 interface ResponsesWebSocketClientEvent {
   type: string;
   event_id?: string;
-  response?: Partial<ResponsesPayload>;
+  response?: Partial<ResponsesRequestPayload>;
   [key: string]: unknown;
 }
 
@@ -264,6 +265,15 @@ const handleClientMessage = async (
     await respondResponsesWebSocket({ socket, eventId, signal, isClosed, result, ctx });
   } catch (error) {
     if (signal.aborted || isClosed()) return;
+    if (error instanceof TranslatorInputError) {
+      sendError(socket, 400, {
+        type: 'invalid_request_error',
+        code: 'invalid_request_error',
+        message: error.message,
+        param: error.param,
+      }, eventId);
+      return;
+    }
     if (error instanceof WebSocketClientMessageError) {
       sendError(socket, 400, {
         type: 'invalid_request_error',
@@ -311,7 +321,7 @@ const responsesPayloadFromClientSource = (source: object): CanonicalResponsesPay
     throw new WebSocketClientMessageError('response.create requires response.input to be a string or an array.');
   }
   // stamp stream: true — the WS transport always streams.
-  return { ...canonicalizeResponsesPayload(source as ResponsesPayload), stream: true };
+  return { ...canonicalizeResponsesPayload(source as ResponsesRequestPayload), stream: true };
 };
 
 const respondResponsesWebSocket = async (input: {

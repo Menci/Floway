@@ -10,7 +10,7 @@ import { settle } from '../../shared/telemetry/settle.ts';
 import { createChatGatewayCtxFromHono, createGatewayCtxFromHono, finalizeGatewayResponse, type ChatGatewayCtx, type GatewayCtx } from '../shared/gateway-ctx.ts';
 import { readRequestBody, type RequestBody } from '../shared/request-body.ts';
 import { providerModelsUnavailableResponse } from '../shared/upstream-models-error.ts';
-import type { ResponsesPayload } from '@floway-dev/protocols/responses';
+import type { ResponsesRequestPayload } from '@floway-dev/protocols/responses';
 import { internalErrorResult, toInternalDebugError } from '@floway-dev/provider';
 import { TranslatorInputError } from '@floway-dev/translate';
 import { canonicalizeResponsesPayload, type CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
@@ -68,7 +68,7 @@ const respondToThrow = async (c: AuthedContext, error: unknown, requestBody: Req
 };
 
 const parsePayload = (requestBody: RequestBody): CanonicalResponsesPayload =>
-  canonicalizeResponsesPayload(JSON.parse(new TextDecoder().decode(requestBody.bytes)) as ResponsesPayload);
+  canonicalizeResponsesPayload(JSON.parse(new TextDecoder().decode(requestBody.bytes)) as ResponsesRequestPayload);
 
 export const responsesHttp = {
   generate: async (c: AuthedContext): Promise<Response> => {

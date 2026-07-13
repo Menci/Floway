@@ -4,6 +4,7 @@ import { buildCustomToolInputSchema } from '../shared/responses-via/custom-tool-
 import { rejectProgramCaller, rejectProgrammaticResponsesPayload } from '../shared/responses-via/programmatic-tooling.ts';
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../shared/via-messages/cache-breakpoints.ts';
 import { fetchRemoteImage, type RemoteImageLoader, resolveImageUrlToMessagesImage } from '../shared/via-messages/remote-images.ts';
+import { canonicalizeResponsesPayload } from '../shared/via-responses/responses-items.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
 import {
   MESSAGES_FALLBACK_MAX_TOKENS,
@@ -11,7 +12,6 @@ import {
   type MessagesAssistantMessage,
   type MessagesMessage,
   type MessagesPayload,
-  type MessagesSystemMessage,
   type MessagesTextBlock,
   type MessagesTool,
   type MessagesToolResultBlock,
@@ -25,7 +25,7 @@ import type {
   ResponsesInputItem,
   ResponsesInputMessage,
   ResponsesInputText,
-  ResponsesPayload,
+  ResponsesRequestPayload,
   ResponsesTool,
   ResponsesToolChoice,
 } from '@floway-dev/protocols/responses';
@@ -65,9 +65,17 @@ const translateUserMessage = async (message: ResponsesInputMessage, loadRemoteIm
       continue;
     }
 
+    if (block.type === 'input_file') {
+      throw new TranslatorInputError('Cannot translate input_file message content to Messages.');
+    }
+
     if (block.type !== 'input_image') continue;
 
-    const image = await resolveImageUrlToMessagesImage((block as ResponsesInputImage).image_url, loadRemoteImage);
+    const imageUrl = (block as ResponsesInputImage).image_url;
+    if (typeof imageUrl !== 'string') {
+      throw new TranslatorInputError('Cannot translate file_id-only image content to Messages.');
+    }
+    const image = await resolveImageUrlToMessagesImage(imageUrl, loadRemoteImage);
     if (image) content.push(image);
   }
 
@@ -83,8 +91,13 @@ const translateToolOutput = async (output: string | ResponsesInputContent[], loa
   const blocks: MessagesToolResultContentBlock[] = [];
   for (const part of output) {
     if (part.type === 'input_image') {
+      if (typeof part.image_url !== 'string') {
+        throw new TranslatorInputError('Cannot translate file_id-only image tool output to Messages.');
+      }
       const image = await resolveImageUrlToMessagesImage(part.image_url, loadRemoteImage);
       if (image) blocks.push(image);
+    } else if (part.type === 'input_file') {
+      throw new TranslatorInputError('Cannot translate input_file tool output to Messages.');
     } else {
       blocks.push({ type: 'text', text: part.text });
     }
@@ -101,7 +114,13 @@ const translateAssistantMessage = (message: ResponsesInputMessage): MessagesAssi
   const content: MessagesAssistantContentBlock[] = [];
 
   for (const block of message.content) {
-    if (block.type === 'output_text') {
+    if (block.type === 'input_image') {
+      throw new TranslatorInputError('Cannot translate input_image assistant content to Messages.');
+    }
+    if (block.type === 'input_file') {
+      throw new TranslatorInputError('Cannot translate input_file assistant content to Messages.');
+    }
+    if (block.type === 'input_text' || block.type === 'output_text') {
       content.push({ type: 'text', text: (block as ResponsesInputText).text });
     }
   }
@@ -125,27 +144,13 @@ const responsesSystemBlocks = (message: ResponsesInputMessage): MessagesTextBloc
       throw new TranslatorInputError(`Invalid 'input_image' content part in ${message.role} message. Only 'input_text' content parts are supported in ${message.role} messages on this model.`);
     }
     if (block.type !== 'input_text' && block.type !== 'output_text') {
-      // Exhaustiveness guard: today ResponsesInputContent is
-      // input_text|input_image|output_text; a future variant must opt into
-      // translator behavior rather than be silently dropped from system
-      // content.
+      // Every non-text content variant must opt into translator behavior
+      // rather than be silently dropped from system content.
       throw new TranslatorInputError(`Invalid content block type '${(block as { type: string }).type}' in ${message.role} message.`);
     }
     blocks.push({ type: 'text', text: block.text });
   }
   return blocks;
-};
-
-// Inline path for non-leading system / developer Responses input messages
-// (the leading prefix was hoisted earlier). Anthropic upstreams diverge on
-// inline role:'system' here (Bedrock accepts it under placement rules;
-// Vertex rejects it outright), so the gateway's
-// `demote-interleaved-system-to-user` interceptor flag is the safety net
-// for any inline system that would otherwise reach an upstream that does
-// not accept it.
-const translateSystemMessage = (message: ResponsesInputMessage): MessagesSystemMessage => {
-  const blocks = responsesSystemBlocks(message);
-  return { role: 'system', content: blocks.length > 0 ? blocks : '' };
 };
 
 const appendAssistantBlock = (messages: MessagesMessage[], block: MessagesAssistantContentBlock): void => {
@@ -170,18 +175,7 @@ const appendUserBlock = (messages: MessagesMessage[], block: MessagesToolResultB
   messages.push({ role: 'user', content: [block] });
 };
 
-const unexpectedResponsesInputItem = (value: ResponsesInputItem): never => {
-  throw new TranslatorInputError(`Invalid input item: ${JSON.stringify(value)}`);
-};
-
-const translateResponsesInput = async (input: string | ResponsesInputItem[], loadRemoteImage: RemoteImageLoader): Promise<{ messages: MessagesMessage[]; systemBlocks: MessagesTextBlock[] }> => {
-  if (typeof input === 'string') {
-    return {
-      messages: [{ role: 'user', content: input }],
-      systemBlocks: [],
-    };
-  }
-
+const translateResponsesInput = async (input: ResponsesInputItem[], loadRemoteImage: RemoteImageLoader): Promise<{ messages: MessagesMessage[]; systemBlocks: MessagesTextBlock[] }> => {
   // Hoist the leading contiguous run of system/developer input messages into
   // systemBlocks (→ top-level Messages.system), preserving each input_text
   // part as its own MessagesTextBlock so part boundaries survive the hoist.
@@ -208,9 +202,13 @@ const translateResponsesInput = async (input: string | ResponsesInputItem[], loa
         messages.push(translateAssistantMessage(item));
         break;
       case 'system':
-      case 'developer':
-        messages.push(translateSystemMessage(item));
+      case 'developer': {
+        // The leading prefix was lifted above; keep later instruction messages
+        // inline to preserve chronology.
+        const blocks = responsesSystemBlocks(item);
+        messages.push({ role: 'system', content: blocks.length > 0 ? blocks : '' });
         break;
+      }
       default:
         throw new TranslatorInputError(`Invalid role '${(item as { role: string }).role}' in input message.`);
       }
@@ -271,7 +269,7 @@ const translateResponsesInput = async (input: string | ResponsesInputItem[], loa
     default:
       // Exhaustiveness guard: a future ResponsesInputItem variant must
       // explicitly opt into translator behavior.
-      unexpectedResponsesInputItem(item);
+      throw new TranslatorInputError(`Invalid input item: ${JSON.stringify(item)}`);
     }
   }
 
@@ -337,7 +335,8 @@ const translateToolChoice = (toolChoice: ResponsesToolChoice | null | undefined)
   return undefined;
 };
 
-export const translateResponsesToMessages = async (payload: ResponsesPayload, options: TranslateResponsesToMessagesOptions = {}): Promise<ResponsesToMessagesResult> => {
+export const translateResponsesToMessages = async (source: ResponsesRequestPayload, options: TranslateResponsesToMessagesOptions = {}): Promise<ResponsesToMessagesResult> => {
+  const payload = canonicalizeResponsesPayload(source);
   rejectProgrammaticResponsesPayload(payload, 'Messages');
   const customToolNames = new Set<string>();
   const { messages, systemBlocks: hoistedSystemBlocks } = await translateResponsesInput(payload.input, options.loadRemoteImage ?? fetchRemoteImage);
@@ -409,5 +408,5 @@ export const translateResponsesToMessages = async (payload: ResponsesPayload, op
   return { target, customToolNames };
 };
 
-export const buildTargetRequest = (payload: ResponsesPayload, options: { fallbackMaxOutputTokens?: number }): Promise<ResponsesToMessagesResult> =>
+export const buildTargetRequest = (payload: ResponsesRequestPayload, options: { fallbackMaxOutputTokens?: number }): Promise<ResponsesToMessagesResult> =>
   translateResponsesToMessages(payload, options);

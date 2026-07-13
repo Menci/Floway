@@ -606,6 +606,25 @@ test('Responses WebSocket returns invalid_request_error for malformed client mes
         message: 'response.create requires response.model to be a non-empty string.',
       },
     }]);
+
+    const invalidItem = waitForMessages(client, messages => messages.length === 1);
+    client.send(JSON.stringify({
+      type: 'response.create',
+      event_id: 'evt_item',
+      response: { model: 'test-model', input: [null] },
+    }));
+
+    assertEquals(await invalidItem, [{
+      type: 'error',
+      event_id: 'evt_item',
+      status_code: 400,
+      error: {
+        type: 'invalid_request_error',
+        code: 'invalid_request_error',
+        message: 'Untyped Responses input items require a valid role and content.',
+        param: 'input[0]',
+      },
+    }]);
   });
 });
 

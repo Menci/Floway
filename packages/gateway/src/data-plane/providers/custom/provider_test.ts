@@ -323,7 +323,6 @@ test('Custom provider with a manual override sharing an upstream id wins over th
       const shared = models.find(m => m.id === 'shared');
       assertExists(shared);
       assertEquals(shared.display_name, 'Manual Shared');
-
       assertEquals(shared.pricing?.entries[0]?.rates.input, 1);
       assertEquals(shared.pricing?.entries[0]?.rates.output, 2);
       assertEquals(models.find(model => model.id === 'auto-only')?.pricing, undefined);

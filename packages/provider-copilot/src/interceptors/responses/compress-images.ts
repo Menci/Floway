@@ -15,13 +15,15 @@ export const withInlineImagesCompressed = async <TResult>(
   _request: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
-  const targets: ResponsesInputImage[] = [];
+  const targets: Array<{ part: ResponsesInputImage; imageUrl: string }> = [];
   if (Array.isArray(ctx.payload.input)) {
     for (const item of ctx.payload.input) {
       const parts = item.type === 'message' ? item.content : item.type === 'function_call_output' ? item.output : undefined;
       if (!Array.isArray(parts)) continue;
       for (const part of parts) {
-        if (part.type === 'input_image' && isBase64ImageDataUrl(part.image_url)) targets.push(part);
+        if (part.type === 'input_image' && typeof part.image_url === 'string' && isBase64ImageDataUrl(part.image_url)) {
+          targets.push({ part, imageUrl: part.image_url });
+        }
       }
     }
   }
@@ -30,7 +32,7 @@ export const withInlineImagesCompressed = async <TResult>(
     const compress = memoizedDataUrlCompressor(targetSizeForResponsesChat(ctx.model.id));
     await Promise.all(
       targets.map(async target => {
-        target.image_url = await compress(target.image_url);
+        target.part.image_url = await compress(target.imageUrl);
       }),
     );
   }
