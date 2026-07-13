@@ -1,5 +1,5 @@
 import type { Interceptor } from '@floway-dev/interceptor';
-import type { ResponsesPayload } from '@floway-dev/protocols/responses';
+import type { CanonicalResponsesPayload } from '@floway-dev/protocols/responses';
 import type { ProviderModel, ProviderResponsesResult, ResponsesAction } from '@floway-dev/provider';
 
 // Boundary ctx for Copilot Responses interceptors. See messages/types.ts for
@@ -9,7 +9,7 @@ import type { ProviderModel, ProviderResponsesResult, ResponsesAction } from '@f
 // `action` mirrors the gateway-side ResponsesInvocation.action — interceptors
 // MAY mutate it during the chain to re-route dispatch in the terminal.
 export interface ResponsesBoundaryCtx {
-  payload: ResponsesPayload;
+  payload: CanonicalResponsesPayload;
   headers: Headers;
   readonly model: ProviderModel;
   action: ResponsesAction;

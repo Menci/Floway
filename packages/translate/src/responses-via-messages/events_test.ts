@@ -2,6 +2,7 @@ import { test } from 'vitest';
 
 import { createMessagesToResponsesStreamState, translateMessagesEventToResponsesEvents } from './events.ts';
 import { assertEquals } from '../test-assert.ts';
+import { USAGE_BILLING } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
@@ -12,8 +13,22 @@ type ResponsesOutputItemDoneEvent = Extract<ResponsesStreamEvent, { type: 'respo
 // ── Helpers ──
 
 const runToCompletion = (
-  usage: { input_tokens: number; output_tokens: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number },
-  deltaUsageExtras?: { speed?: string; service_tier?: string },
+  usage: {
+    input_tokens: number;
+    output_tokens: number;
+    cache_read_input_tokens?: number;
+    cache_creation_input_tokens?: number;
+    speed?: string;
+    service_tier?: string;
+  },
+  deltaUsageExtras?: {
+    input_tokens?: number;
+    cache_read_input_tokens?: number;
+    cache_creation_input_tokens?: number;
+    cache_creation?: { ephemeral_5m_input_tokens?: number; ephemeral_1h_input_tokens?: number };
+    speed?: string;
+    service_tier?: string;
+  },
 ): ResponsesResult => {
   const state = createMessagesToResponsesStreamState('resp_test', 'claude-sonnet-4-20250514');
 
@@ -33,6 +48,8 @@ const runToCompletion = (
           output_tokens: 0,
           cache_read_input_tokens: usage.cache_read_input_tokens,
           cache_creation_input_tokens: usage.cache_creation_input_tokens,
+          speed: usage.speed,
+          service_tier: usage.service_tier,
         },
       },
     } as MessagesStreamEvent,
@@ -92,7 +109,7 @@ test('includes cache_creation_input_tokens in input_tokens', () => {
   assertEquals(result.usage!.input_tokens, 150); // 100 + 20 + 30
   assertEquals(result.usage!.output_tokens, 50);
   assertEquals(result.usage!.total_tokens, 200);
-  assertEquals(result.usage!.input_tokens_details!.cached_tokens, 20);
+  assertEquals(result.usage!.input_tokens_details, { cached_tokens: 20, cache_write_tokens: 30 });
 });
 
 test('handles cache_creation without cache_read', () => {
@@ -104,7 +121,7 @@ test('handles cache_creation without cache_read', () => {
 
   assertEquals(result.usage!.input_tokens, 130); // 100 + 0 + 30
   assertEquals(result.usage!.total_tokens, 180);
-  assertEquals(result.usage!.input_tokens_details, undefined);
+  assertEquals(result.usage!.input_tokens_details, { cached_tokens: 0, cache_write_tokens: 30 });
 });
 
 test('handles no cache fields (backward compat)', () => {
@@ -775,4 +792,33 @@ test('Anthropic service_tier absent results in no service_tier on the Responses 
   const result = runToCompletion({ input_tokens: 10, output_tokens: 5 });
 
   assertEquals(result.service_tier, undefined);
+});
+
+test('Messages message_start service_tier survives when message_delta omits it', () => {
+  const result = runToCompletion({ input_tokens: 10, output_tokens: 5, service_tier: 'priority' });
+  assertEquals(result.service_tier, 'priority');
+});
+
+test('Messages message_start speed:fast survives when message_delta omits it', () => {
+  const result = runToCompletion({ input_tokens: 10, output_tokens: 5, speed: 'fast' });
+  assertEquals(result.service_tier, 'fast');
+});
+
+test('Messages delta atomically replaces tier and merges late cache accounting into Responses', () => {
+  const result = runToCompletion(
+    { input_tokens: 0, output_tokens: 2, cache_creation_input_tokens: 9, speed: 'fast' },
+    {
+      input_tokens: 11,
+      cache_creation: { ephemeral_1h_input_tokens: 5 },
+      service_tier: 'priority',
+    },
+  );
+  assertEquals(result.service_tier, 'priority');
+  assertEquals(result.usage, {
+    input_tokens: 20,
+    output_tokens: 2,
+    total_tokens: 22,
+    input_tokens_details: { cached_tokens: 0, cache_write_tokens: 9 },
+    [USAGE_BILLING]: { cacheWrite1hTokenCount: 5 },
+  });
 });

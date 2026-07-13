@@ -1,20 +1,16 @@
 import type { ResponsesBoundaryCtx } from './types.ts';
 
-// Codex backend rejects /responses requests that lack a non-empty
-// `instructions` field with a 4xx ("Instructions are required"). Native
-// /v1/responses callers may legitimately omit it, and the
-// Messages/ChatCompletions/Gemini translators only synthesize it from a
-// caller-supplied system message — so when no system message exists we still
-// need a fallback string. We inject a neutral default at the Codex target
-// boundary so every request shape (native + every translated source
-// protocol) satisfies the upstream contract.
+// ChatGPT-subscription catalog models reject missing or empty `instructions`.
+// Native and translated callers may omit the field, so the provider supplies a
+// neutral value at its boundary. Other values remain upstream-owned validation.
+// https://github.com/im4codes/imcodes/blob/5f769d933dfd679e3a4d670183b0384a1baf62cd/src/agent/providers/codex-sdk.ts#L560-L579
 export const injectDefaultInstructions = async <TResult>(
   ctx: ResponsesBoundaryCtx,
   _request: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
   const instructions = ctx.payload.instructions;
-  if (typeof instructions !== 'string' || instructions.length === 0) {
+  if (instructions === undefined || instructions === null || instructions === '') {
     ctx.payload = { ...ctx.payload, instructions: "You're a helpful assistant." };
   }
   return await run();

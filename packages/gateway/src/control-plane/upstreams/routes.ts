@@ -940,7 +940,7 @@ const reshapeModelForDashboard = (model: ProviderModel): Record<string, unknown>
     endpoints: model.endpoints,
     ...(model.display_name !== undefined ? { display_name: model.display_name } : {}),
     ...(Object.keys(model.limits).length > 0 ? { limits: model.limits } : {}),
-    ...(model.cost ? { cost: model.cost } : {}),
+    ...(model.pricing ? { pricing: model.pricing } : {}),
     ...(model.chat ? { chat: model.chat } : {}),
     ...(model.flagOverrides ? { flagOverrides: model.flagOverrides } : {}),
   };

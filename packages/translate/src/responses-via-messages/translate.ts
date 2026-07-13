@@ -2,7 +2,7 @@ import { translateToSourceEvents } from './events.ts';
 import { buildTargetRequest } from './request.ts';
 import type { TranslateTrip } from '../types.ts';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
-import type { ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { ResponsesRequestPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 // Synthetic response id generated once per trip so that downstream events
 // referencing the response carry a stable id. Built fresh per call — never
@@ -10,7 +10,7 @@ import type { ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protoco
 const synthesizeResponseId = (): string => `resp_${crypto.randomUUID().replace(/-/g, '').slice(0, 24)}`;
 
 export const translateResponsesViaMessages: TranslateTrip<
-  ResponsesPayload, ResponsesStreamEvent, MessagesPayload, MessagesStreamEvent,
+  ResponsesRequestPayload, ResponsesStreamEvent, MessagesPayload, MessagesStreamEvent,
   { fallbackMaxOutputTokens?: number }
 > = async (src, ctx) => {
   const responseId = synthesizeResponseId();

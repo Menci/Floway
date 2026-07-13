@@ -1,5 +1,5 @@
 import type { ResponsesBoundaryCtx } from './types.ts';
-import type { ResponsesPayload, ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
+import type { CanonicalResponsesPayload, ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
 
 /**
  * Copilot's `/responses` endpoint rejects public `image_generation` tool
@@ -20,7 +20,7 @@ const isImageGenerationTool = (tool: ResponsesTool): boolean => tool.type === 'i
 const isImageGenerationToolChoice = (choice: ResponsesToolChoice | null | undefined): boolean =>
   typeof choice === 'object' && choice !== null && choice.type === 'image_generation';
 
-export const stripImageGenerationFromPayload = (payload: ResponsesPayload): void => {
+export const stripImageGenerationFromPayload = (payload: CanonicalResponsesPayload): void => {
   let removedTool = false;
 
   if (Array.isArray(payload.tools)) {

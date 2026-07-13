@@ -56,6 +56,11 @@ the gateway returns a Gemini-shaped unsupported-model error.
 
 - Pairwise translators preserve source semantics where the target API has a
   natural counterpart.
+- Responses wire input accepts OpenAI's EasyInputMessage shorthand without a
+  `type` field. HTTP, WebSocket, and direct Responses-source translator
+  boundaries normalize it to an explicit `type: "message"` before storage,
+  interception, or translation. Malformed untyped items are rejected as caller
+  input errors at the same boundary.
 - Translators do not synthesize defaults merely to satisfy a target shape.
   Examples: no translated-only `temperature: 1`, `store: false`,
   `parallel_tool_calls: true`, or `reasoning.summary: "detailed"`.
@@ -78,6 +83,32 @@ the gateway returns a Gemini-shaped unsupported-model error.
   SSE bytes. The HTTP / WebSocket adapter at the gateway boundary owns the
   final wire shaping after the protocol events have been translated back to
   the source-protocol shape.
+
+## Usage And Billing Facts
+
+Usage translation keeps billing dimensions disjoint. OpenAI-style inclusive
+input totals are checked and split into uncached input, cache read, and cache
+write counts; inclusive output totals are likewise split into visible output
+and reasoning where the target exposes both. Negative, fractional, or
+overlapping counts are rejected rather than clamped.
+
+Messages already reports disjoint input dimensions. Its flat cache-creation
+total and optional 5-minute / 1-hour detail are normalized into two cache-write
+buckets. Streaming `message_start` and `message_delta` usage is accumulated as
+one snapshot, including late input counts and atomic replacement of the
+`speed` / `service_tier` pair.
+
+Some billing facts have no native field in every protocol. A symbol-keyed
+`USAGE_BILLING` sidecar carries cache-write TTL detail and the served tier only
+inside Floway's typed event pipeline. Translation and stream reassembly retain
+it, while JSON serialization omits it from client responses. Consequently a
+fact may survive a Chat, Responses, Messages, or Gemini intermediate shape
+without inventing a private wire field.
+
+Response-side blank, `default`, and `standard` tier markers identify base
+service. Every other open-string tier is preserved byte-for-byte. Gemini
+candidate and thought counts remain disjoint in `usageMetadata`; thought tokens
+are billed as reasoning/output exactly once.
 
 ## Boundary Workarounds
 
@@ -145,7 +176,15 @@ Header shaping (UA, `X-Stainless-*`, `anthropic-beta`) and the dated
 upstream model id are set in the provider's fetch path, not as interceptor
 steps.
 
-### Responses — gateway interceptors
+### Responses — gateway flow and interceptors
+
+- resolves `previous_response_id` and every `item_reference` through the
+  gateway's Responses store before candidate dispatch. Affinity is classified
+  from each referenced item's stored type, then the candidate rewrite replaces
+  every reference with its durable payload. Same-upstream items recover their
+  upstream wire id; portable items receive a temporary id when needed. A
+  missing durable payload returns `item_not_found`, and no provider receives an
+  `item_reference` carrier.
 
 - removes unsupported `image_generation` Responses tool entries and forced
   tool choices that targeted them before target request construction. Other
@@ -172,9 +211,7 @@ The same boundary runs for both `/v1/responses` (streaming) and
   the chain runs, so durable storage is unaffected
 - compresses inline base64 image data URLs to WebP
 - injects `x-vision-request` and `x-initiator` headers
-- on `/v1/responses` only: retries expired connection-bound input IDs once
-  with deterministic rewrites, and synchronizes mismatched stream output
-  item IDs
+- on `/v1/responses` only: synchronizes mismatched stream output item IDs
 
 ### Responses — Codex provider boundary chain
 
@@ -186,8 +223,11 @@ inline and rebuilds the envelope client-side).
 
 - hoists `role: "system"` items out of `input` into top-level `instructions`
   (the upstream rejects system messages inside `input`)
-- injects a default `instructions` string when none is supplied (the upstream
-  rejects empty / missing `instructions`)
+- injects a neutral default only when `instructions` is absent, `null`, or an
+  empty string. Other malformed external values pass through so the upstream
+  owns validation. Current ChatGPT-subscription catalog models reject empty or
+  missing instructions (implementation record:
+  https://github.com/im4codes/imcodes/blob/5f769d933dfd679e3a4d670183b0384a1baf62cd/src/agent/providers/codex-sdk.ts#L560-L579)
 - strips fields the upstream rejects with `Unsupported parameter`:
   `max_output_tokens`, `temperature`, `top_p`, `frequency_penalty`,
   `presence_penalty`, `user`, `metadata`, `prompt_cache_retention`,
@@ -247,7 +287,11 @@ Request mapping shared by the Gemini source translation pairs:
   thinking controls. Budget `0` disables thinking via Messages
   `thinking.disabled`, Responses `reasoning.effort: "none"`, or Chat
   `reasoning_effort: "none"`; positive budgets choose low/medium/high effort
-  where the target only supports effort levels.
+  where the target only supports effort levels. When both controls are present,
+  the numeric budget takes precedence on Chat and Responses; Messages preserves
+  its native budget and the level in separate fields. Without a budget,
+  explicit `thinkingLevel` strings, including empty and future values, pass
+  verbatim to the target's open-string effort slot for upstream validation.
 - `maxOutputTokens`, `temperature`, `topP`, `topK`, `stopSequences`,
   `presencePenalty`, `frequencyPenalty`, `seed`, `responseMimeType`, and
   `responseSchema` are passed through when the selected target has a natural
@@ -266,8 +310,9 @@ Response mapping shared by the Gemini source translation pairs:
   part. Responses targets do not emit opaque Gemini signatures; only readable
   reasoning summaries become thought-summary parts.
 - Target tool/function calls become Gemini `functionCall` parts.
-- Target usage maps to Gemini `usageMetadata`; reasoning/thinking tokens map to
-  `thoughtsTokenCount` when available.
+- Target usage maps to Gemini `usageMetadata`; cache reads and writes remain
+  separate, while reasoning/thinking tokens map to `thoughtsTokenCount` and do
+  not overlap `candidatesTokenCount`.
 - Gemini streaming emits data-only SSE chunks containing full
   `GenerateContentResponse` objects and does not emit a `[DONE]` sentinel.
 - Gemini non-streaming responses are assembled from source-shaped Gemini event
@@ -335,7 +380,9 @@ Response mapping:
 - assistant `tool_use` becomes `function_call` output items.
 - `max_tokens` stop maps to `status: "incomplete"`; other normal stops map to
   `status: "completed"`.
-- cache read tokens map to Responses `input_tokens_details.cached_tokens`.
+- cache reads and total cache writes map to Responses
+  `input_tokens_details`; 1-hour write detail remains in the internal billing
+  sidecar.
 - Output item order follows the original assistant block order.
 
 Known losses:
@@ -395,8 +442,9 @@ Response mapping:
 - `function_call` maps to `tool_use`.
 - `completed` maps to `end_turn` or `tool_use`; max-output incomplete maps to
   `max_tokens`.
-- cached input tokens are subtracted from Anthropic `input_tokens` and exposed
-  as `cache_read_input_tokens`.
+- cached reads and writes are subtracted from Anthropic `input_tokens` and
+  exposed as `cache_read_input_tokens` and cache-creation usage, retaining
+  1-hour write detail.
 
 Known losses:
 
@@ -410,6 +458,8 @@ Known losses:
   other `format` fields are not preserved.
 - Remote image fetch failures and unsupported image media types drop that image
   rather than failing the request.
+- `input_file` content and assistant-side images have no Messages counterpart
+  and are rejected.
 
 ## Messages To Chat Completions
 
@@ -441,8 +491,9 @@ Response mapping:
 - `tool_use` blocks become `tool_calls`.
 - only the first source-order reasoning group is projected into scalar Chat
   reasoning fields.
-- usage maps to Chat prompt/completion tokens; cache read tokens become
-  `prompt_tokens_details.cached_tokens`.
+- usage maps to Chat prompt/completion tokens; cache reads and total cache
+  writes use the OpenAI usage fields, with 1-hour write detail carried
+  internally.
 - `tool_use` stop maps to `tool_calls`; `max_tokens` maps to `length`; other
   normal stops map to `stop`.
 
@@ -478,8 +529,8 @@ Response mapping:
 - scalar reasoning blocks are emitted before text, and text before tool use.
 - scalar opaque-only reasoning becomes `redacted_thinking` rather than fake
   readable thinking.
-- Chat usage maps to Messages usage; cached prompt tokens become
-  `cache_read_input_tokens`.
+- Chat usage maps to Messages usage; cached prompt reads and writes become the
+  corresponding disjoint Messages cache fields.
 
 Known losses:
 
@@ -583,6 +634,11 @@ Known losses:
 - Freeform `custom` tool `format.definition` is preserved as a
   `Lark grammar: ${definition}` description on the wrapped `input` parameter;
   other `format` fields are not preserved.
+- `input_file` message/tool-output content and assistant-side files or images
+  have no Chat counterpart and are rejected.
+- File-id-only images cannot be materialized by the pure translator and are
+  rejected. Chat image detail supports only `auto`, `low`, and `high`; other
+  Responses values such as `original` are rejected.
 - opaque Responses reasoning state is not requested, translated, or preserved on
   Chat fallback paths.
 

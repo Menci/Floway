@@ -12,7 +12,7 @@ import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
  *   plus any future hosted-tool output shape). Classify all of them as agent.
  * - An assistant message replayed back into `input` is also agent-driven.
  *
- * Everything else (user / system / developer messages, plain string input)
+ * Everything else (a user / system / developer message, or no input item)
  * means the user just spoke, so initiator = user.
  *
  * The header name is lowercase `x-initiator`; HTTP header names are
@@ -36,8 +36,7 @@ export const withInitiatorHeaderSet = async <TResult>(
   _request: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
-  const input = ctx.payload.input;
-  const initiator: 'user' | 'agent' = Array.isArray(input) && isAgentInitiated(input.at(-1)) ? 'agent' : 'user';
+  const initiator: 'user' | 'agent' = isAgentInitiated(ctx.payload.input.at(-1)) ? 'agent' : 'user';
   ctx.headers.set('x-initiator', initiator);
 
   return await run();

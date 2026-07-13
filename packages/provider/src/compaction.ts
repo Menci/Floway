@@ -22,28 +22,24 @@ const RETAINED_ROLES = new Set(['user', 'assistant', 'developer', 'system']);
 
 // codex's retained-message budget (its comment notes it mirrors the server-side
 // `/responses/compact` default) and its token heuristic `ceil(utf8_bytes / 4)`,
-// with images costing nothing.
+// with non-text content costing nothing.
 const RETAINED_BUDGET_TOKENS = 64_000;
 const APPROX_BYTES_PER_TOKEN = 4;
 const encoder = new TextEncoder();
 
 // Native compact echoes every text part — including assistant `output_text` —
 // as `input_text` so the client can resend `output` verbatim as next-turn
-// `input`. Normalize unconditionally; images pass through (and cost 0 tokens
-// against the retained budget).
+// `input`. Normalize unconditionally; non-text content passes through and costs
+// 0 tokens against the retained budget.
 const normalizeContent = (content: ResponsesInputMessage['content']): ResponsesInputContent[] => {
   if (typeof content === 'string') return [{ type: 'input_text', text: content }];
-  return content.map(part => (part.type === 'input_image' ? part : { type: 'input_text', text: part.text }));
+  return content.map(part => (part.type === 'output_text' ? { ...part, type: 'input_text' } : part));
 };
 
-// OpenAI accepts input messages with the `type` field omitted (implicit
-// `type: "message"`); accept the same so a hand-rolled client that emits
-// `{role, content}` without `type` still routes correctly.
 const isRetainedMessage = (item: ResponsesInputItem): item is ResponsesInputMessage =>
-  (item.type === 'message' || (item.type === undefined && 'role' in (item as { role?: unknown })))
-  && RETAINED_ROLES.has((item as ResponsesInputMessage).role);
+  item.type === 'message' && RETAINED_ROLES.has(item.role);
 
-// The retained items are input-shaped messages (role + `input_text` content),
+// The retained items are input-shaped messages with canonical input content,
 // which is what `/responses/compact` echoes so the client can resend `output`
 // as the next turn's `input`. `ResponsesOutputItem` does not model user/system
 // roles, so the final cast records that the compaction envelope's `output` is
@@ -63,7 +59,10 @@ export const compactionResponse = (input: ResponsesInputItem[], generated: Respo
     if (!isRetainedMessage(item)) continue;
 
     const content = normalizeContent(item.content);
-    const tokens = content.reduce((sum, part) => (part.type === 'input_image' ? sum : sum + Math.ceil(encoder.encode(part.text).length / APPROX_BYTES_PER_TOKEN)), 0);
+    const tokens = content.reduce((sum, part) =>
+      part.type === 'input_text'
+        ? sum + Math.ceil(encoder.encode(part.text).length / APPROX_BYTES_PER_TOKEN)
+        : sum, 0);
     used += Math.max(tokens, 1);
     if (used > RETAINED_BUDGET_TOKENS && kept.length > 0) break;
 
@@ -73,6 +72,7 @@ export const compactionResponse = (input: ResponsesInputItem[], generated: Respo
       status: item.status ?? 'completed',
       role: item.role,
       content,
+      ...(item.phase !== undefined ? { phase: item.phase } : {}),
     });
   }
 

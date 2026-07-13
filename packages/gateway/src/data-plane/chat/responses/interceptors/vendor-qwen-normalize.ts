@@ -14,8 +14,8 @@
 // - https://www.alibabacloud.com/help/en/model-studio/deep-thinking
 
 import type { ResponsesInterceptor } from './types.ts';
+import type { CanonicalResponsesPayload } from '@floway-dev/protocols/responses';
 import { providerModelOf } from '@floway-dev/provider';
-import type { CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
 
 export const withVendorQwenResponsesNormalize: ResponsesInterceptor = async (ctx, _request, run) => {
   if (!providerModelOf(ctx.candidate).enabledFlags.has('vendor-qwen')) return await run();

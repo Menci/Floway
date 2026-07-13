@@ -5,7 +5,7 @@ import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completi
 import type { AliasRules } from '@floway-dev/protocols/common';
 import type { GeminiPayload } from '@floway-dev/protocols/gemini';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
-import type { ResponsesPayload } from '@floway-dev/protocols/responses';
+import type { CanonicalResponsesPayload } from '@floway-dev/protocols/responses';
 
 export type ChatTargetApi = 'messages' | 'responses' | 'chat-completions';
 
@@ -75,7 +75,7 @@ export interface MessagesInvocation {
 }
 
 export interface ResponsesInvocation {
-  payload: ResponsesPayload;
+  payload: CanonicalResponsesPayload;
   // Mutable action tag — interceptors can flip 'compact' to 'generate' so the
   // inner provider call runs a normal summarization turn (see the
   // responses-compact-shim) and the gateway derives snapshot mode from the

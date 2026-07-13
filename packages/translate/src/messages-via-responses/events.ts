@@ -1,55 +1,10 @@
 import { isContextExceededError, PROMPT_TOO_LONG_MESSAGE } from '../shared/messages/context-window-error.ts';
-import { parseToolArgumentsObject } from '../shared/messages/tool-arguments.ts';
-import { packReasoningSignature, responsesReasoningToMessagesBlock } from '../shared/messages-and-responses/reasoning.ts';
+import { packReasoningSignature } from '../shared/messages-and-responses/reasoning.ts';
 import { createResponsesOutputOrderState, recordResponsesOutputOrderEvent, type ResponsesOutputOrderState, shouldDeferForEarlierResponsesOutput } from '../shared/via-responses/responses-stream-order.ts';
 import { type ResponsesEvent, responsesPartKey } from '../shared/via-responses/responses-stream.ts';
-import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { MessagesAssistantContentBlock, MessagesResult, MessagesStreamEvent } from '@floway-dev/protocols/messages';
-import type { ResponsesOutputContentBlock, ResponsesOutputItem, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-
-const combineMessageTextContent = (content: ResponsesOutputContentBlock[] | undefined): string => {
-  if (!Array.isArray(content)) return '';
-
-  // Compromise: our local Messages/Chat shapes have no dedicated refusal block,
-  // so keep Responses refusal text visible rather than inventing extra
-  // translated semantics at this boundary.
-  return content
-    .map(block => {
-      if (block.type === 'output_text') return block.text;
-      if (block.type === 'refusal') return block.refusal;
-      return '';
-    })
-    .join('');
-};
-
-const mapOutputToMessagesContent = (output: ResponsesOutputItem[]): MessagesAssistantContentBlock[] => {
-  const content: MessagesAssistantContentBlock[] = [];
-
-  for (const item of output) {
-    switch (item.type) {
-    case 'reasoning':
-      content.push(responsesReasoningToMessagesBlock(item));
-      break;
-    case 'function_call':
-      if (item.name && item.call_id) {
-        content.push({
-          type: 'tool_use',
-          id: item.call_id,
-          name: item.name,
-          input: parseToolArgumentsObject(item.arguments),
-        });
-      }
-      break;
-    case 'message': {
-      const text = combineMessageTextContent(item.content);
-      if (text.length > 0) content.push({ type: 'text', text });
-      break;
-    }
-    }
-  }
-
-  return content;
-};
+import { eventFrame, splitCacheWriteTokens, splitInclusiveInputTokens, USAGE_BILLING, type ProtocolFrame } from '@floway-dev/protocols/common';
+import type { MessagesResult, MessagesStreamEvent, MessagesUsage } from '@floway-dev/protocols/messages';
+import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 const mapResponsesStopReason = (response: ResponsesResult): MessagesResult['stop_reason'] => {
   if (response.status === 'completed') {
@@ -63,34 +18,28 @@ const mapResponsesStopReason = (response: ResponsesResult): MessagesResult['stop
   return null;
 };
 
-// Exported for the unit tests under `events_test.ts`; the only production
-// caller is `handleCompleted` below, which uses it for terminal Responses ->
-// Messages projection of usage and stop_reason at stream close.
-export const translateResponsesToMessagesResult = (response: ResponsesResult): MessagesResult => {
-  const content = mapOutputToMessagesContent(response.output);
-  const finalContent = content.length > 0 ? content : response.output_text ? [{ type: 'text' as const, text: response.output_text }] : [];
-
-  const inputTokens = response.usage?.input_tokens ?? 0;
+const responsesUsageToMessagesUsage = (response: ResponsesResult, outputTokens: number): MessagesUsage => {
   const cachedTokens = response.usage?.input_tokens_details?.cached_tokens;
-
-  // Responses `service_tier: 'fast'` surfaces as Messages `speed: 'fast'`;
-  // all other `service_tier` values have no Messages equivalent and are dropped.
-  const speed = response.service_tier === 'fast' ? 'fast' : undefined;
+  const cacheWriteTokens = response.usage?.input_tokens_details?.cache_write_tokens;
+  const writes = splitCacheWriteTokens(cacheWriteTokens, response.usage?.[USAGE_BILLING]);
+  const { input: uncachedInputTokens } = splitInclusiveInputTokens(response.usage?.input_tokens ?? 0, cachedTokens, cacheWriteTokens);
 
   return {
-    id: response.id,
-    type: 'message',
-    role: 'assistant',
-    content: finalContent,
-    model: response.model,
-    stop_reason: mapResponsesStopReason(response),
-    stop_sequence: null,
-    usage: {
-      input_tokens: inputTokens - (cachedTokens ?? 0),
-      output_tokens: response.usage?.output_tokens ?? 0,
-      ...(cachedTokens !== undefined ? { cache_read_input_tokens: cachedTokens } : {}),
-      ...(speed !== undefined ? { speed } : {}),
-    },
+    input_tokens: uncachedInputTokens,
+    output_tokens: outputTokens,
+    ...(cachedTokens !== undefined ? { cache_read_input_tokens: cachedTokens } : {}),
+    ...(cacheWriteTokens !== undefined ? { cache_creation_input_tokens: cacheWriteTokens } : {}),
+    ...(writes.cacheWrite1h > 0
+      ? {
+          cache_creation: {
+            ephemeral_5m_input_tokens: writes.cacheWrite,
+            ephemeral_1h_input_tokens: writes.cacheWrite1h,
+          },
+        }
+      : {}),
+    ...(response.service_tier === 'fast'
+      ? { speed: 'fast' as const }
+      : response.service_tier != null ? { service_tier: response.service_tier } : {}),
   };
 };
 
@@ -182,29 +131,21 @@ const closeAllBlocks = (state: ResponsesToMessagesStreamState, events: MessagesS
   state.functionCallState.clear();
 };
 
-const handleResponseCreated = (response: ResponsesResult): MessagesStreamEvent[] => {
-  const cachedTokens = response.usage?.input_tokens_details?.cached_tokens;
-
-  return [
-    {
-      type: 'message_start',
-      message: {
-        id: response.id,
-        type: 'message',
-        role: 'assistant',
-        content: [],
-        model: response.model,
-        stop_reason: null,
-        stop_sequence: null,
-        usage: {
-          input_tokens: (response.usage?.input_tokens ?? 0) - (cachedTokens ?? 0),
-          output_tokens: 0,
-          ...(cachedTokens !== undefined ? { cache_read_input_tokens: cachedTokens } : {}),
-        },
-      },
+const handleResponseCreated = (response: ResponsesResult): MessagesStreamEvent[] => [
+  {
+    type: 'message_start',
+    message: {
+      id: response.id,
+      type: 'message',
+      role: 'assistant',
+      content: [],
+      model: response.model,
+      stop_reason: null,
+      stop_sequence: null,
+      usage: responsesUsageToMessagesUsage(response, 0),
     },
-  ];
-};
+  },
+];
 
 const handleOutputItemAdded = (event: ResponsesEvent<'response.output_item.added'>, state: ResponsesToMessagesStreamState): MessagesStreamEvent[] => {
   if (event.item.type !== 'function_call') return [];
@@ -412,15 +353,14 @@ const handleCompleted = (response: ResponsesResult, state: ResponsesToMessagesSt
   const events: MessagesStreamEvent[] = [];
   closeAllBlocks(state, events);
 
-  const messagesResult = translateResponsesToMessagesResult(response);
   events.push(
     {
       type: 'message_delta',
       delta: {
-        stop_reason: messagesResult.stop_reason,
-        stop_sequence: messagesResult.stop_sequence,
+        stop_reason: mapResponsesStopReason(response),
+        stop_sequence: null,
       },
-      usage: messagesResult.usage,
+      usage: responsesUsageToMessagesUsage(response, response.usage?.output_tokens ?? 0),
     },
     { type: 'message_stop' },
   );
