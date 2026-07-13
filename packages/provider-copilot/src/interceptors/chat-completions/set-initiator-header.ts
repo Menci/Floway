@@ -1,5 +1,5 @@
 import type { CopilotChatCompletionsBoundaryInterceptor } from './types.ts';
-import { CHAT_COMPLETIONS_INTERNAL_METADATA } from '@floway-dev/protocols/chat-completions';
+import { CHAT_COMPLETIONS_LIFTED_TOOL_OUTPUT_IMAGES } from '@floway-dev/protocols/chat-completions';
 
 /**
  * Copilot's `x-initiator` header distinguishes user-triggered turns from
@@ -24,7 +24,7 @@ export const withInitiatorHeaderSet: CopilotChatCompletionsBoundaryInterceptor =
   const lastMessage = ctx.payload.messages.at(-1);
   const agentInitiated = lastMessage?.role === 'assistant'
     || lastMessage?.role === 'tool'
-    || ctx.payload[CHAT_COMPLETIONS_INTERNAL_METADATA]?.liftedToolOutputImages === true;
+    || ctx.payload[CHAT_COMPLETIONS_LIFTED_TOOL_OUTPUT_IMAGES] === true;
   ctx.headers.set('x-initiator', agentInitiated ? 'agent' : 'user');
 
   return await run();

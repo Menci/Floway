@@ -4,7 +4,7 @@ import { chatCompletionsAttempt } from './attempt.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../test-helpers/gateway-ctx.ts';
-import { CHAT_COMPLETIONS_INTERNAL_METADATA, type ChatCompletionsPayload, type ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
+import { CHAT_COMPLETIONS_LIFTED_TOOL_OUTPUT_IMAGES, type ChatCompletionsPayload, type ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesResult } from '@floway-dev/protocols/responses';
@@ -96,13 +96,13 @@ const installRepo = (): InMemoryRepo => {
 
 test('generate native chat-completions target calls provider.callChatCompletions', async () => {
   installRepo();
-  let observedMetadata: ChatCompletionsPayload[typeof CHAT_COMPLETIONS_INTERNAL_METADATA];
+  let observedLiftedToolOutputImages: ChatCompletionsPayload[typeof CHAT_COMPLETIONS_LIFTED_TOOL_OUTPUT_IMAGES];
   const callChatCompletions = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => {
-    observedMetadata = (body as Omit<ChatCompletionsPayload, 'model'>)[CHAT_COMPLETIONS_INTERNAL_METADATA];
+    observedLiftedToolOutputImages = (body as Omit<ChatCompletionsPayload, 'model'>)[CHAT_COMPLETIONS_LIFTED_TOOL_OUTPUT_IMAGES];
     return { ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'k', headers: new Headers() };
   });
   const result = await chatCompletionsAttempt.generate({
-    payload: makePayload({ [CHAT_COMPLETIONS_INTERNAL_METADATA]: { liftedToolOutputImages: true } }),
+    payload: makePayload({ [CHAT_COMPLETIONS_LIFTED_TOOL_OUTPUT_IMAGES]: true }),
     ctx: makeGatewayCtx(),
     candidate: makeCandidate({ callChatCompletions }),
     headers: new Headers(),
@@ -112,7 +112,7 @@ test('generate native chat-completions target calls provider.callChatCompletions
   if (result.type !== 'events') throw new Error('unreachable');
   await collectEvents(result.events);
   assertEquals(callChatCompletions.mock.calls.length, 1);
-  assertEquals(observedMetadata, { liftedToolOutputImages: true });
+  assertEquals(observedLiftedToolOutputImages, true);
 });
 
 test('generate translates through the Messages target when only that endpoint is exposed', async () => {

@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { withInitiatorHeaderSet } from './set-initiator-header.ts';
 import type { ChatCompletionsBoundaryCtx } from './types.ts';
-import { CHAT_COMPLETIONS_INTERNAL_METADATA, type ChatCompletionsStreamEvent, type ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
+import { CHAT_COMPLETIONS_LIFTED_TOOL_OUTPUT_IMAGES, type ChatCompletionsStreamEvent, type ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
@@ -66,7 +66,7 @@ test('Chat Completions initiator is agent when the last message is a tool result
 test('Chat Completions initiator stays agent for lifted tool-output images', async () => {
   const ctx = invocation({
     model: 'gpt-test',
-    [CHAT_COMPLETIONS_INTERNAL_METADATA]: { liftedToolOutputImages: true },
+    [CHAT_COMPLETIONS_LIFTED_TOOL_OUTPUT_IMAGES]: true,
     messages: [
       {
         role: 'assistant',

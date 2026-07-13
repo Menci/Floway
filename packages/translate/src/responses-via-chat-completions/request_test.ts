@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { translateResponsesToChatCompletions } from './request.ts';
 import { createResponsesToChatCompletionsStreamState, translateResponsesEventToChatCompletionsChunks } from '../chat-completions-via-responses/events.ts';
 import { assertEquals, assertThrows } from '../test-assert.ts';
-import { CHAT_COMPLETIONS_INTERNAL_METADATA } from '@floway-dev/protocols/chat-completions';
+import { CHAT_COMPLETIONS_LIFTED_TOOL_OUTPUT_IMAGES } from '@floway-dev/protocols/chat-completions';
 import type { ResponsesAgentMessageContent, ResponsesInputMultiAgentCallOutputItem, ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
 
 test('translateResponsesToChatCompletions accepts an implicit message discriminator', () => {
@@ -1671,7 +1671,7 @@ test('translateResponsesToChatCompletions lifts tool-output images into a follow
       ],
     },
   ]);
-  assertEquals(result.target[CHAT_COMPLETIONS_INTERNAL_METADATA], { liftedToolOutputImages: true });
+  assertEquals(result.target[CHAT_COMPLETIONS_LIFTED_TOOL_OUTPUT_IMAGES], true);
 });
 
 test('translateResponsesToChatCompletions keeps grouped tool results contiguous before lifted images', () => {
@@ -1708,7 +1708,7 @@ test('translateResponsesToChatCompletions keeps grouped tool results contiguous 
     { type: 'text', text: 'Image output from tool call call_b:' },
     { type: 'image_url', image_url: { url: 'data:image/png;base64,BBBB', detail: 'auto' } },
   ]);
-  assertEquals(result.target[CHAT_COMPLETIONS_INTERNAL_METADATA], { liftedToolOutputImages: true });
+  assertEquals(result.target[CHAT_COMPLETIONS_LIFTED_TOOL_OUTPUT_IMAGES], true);
 });
 
 test('translateResponsesToChatCompletions clears lifted-image provenance when a later source message wins', () => {
@@ -1730,7 +1730,7 @@ test('translateResponsesToChatCompletions clears lifted-image provenance when a 
     });
 
     assertEquals(result.target.messages.at(-1)?.role, trailing.role);
-    assertEquals(result.target[CHAT_COMPLETIONS_INTERNAL_METADATA], undefined);
+    assertEquals(result.target[CHAT_COMPLETIONS_LIFTED_TOOL_OUTPUT_IMAGES], undefined);
   }
 });
 

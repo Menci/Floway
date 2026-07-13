@@ -5,7 +5,7 @@ import { emptyKnownModels, mergeKnownModels } from './known-models.ts';
 import { createCopilotProvider } from './provider.ts';
 import { readCopilotUpstreamState, type CopilotUpstreamState } from './state.ts';
 import { createInMemoryImageProcessor, initImageProcessor } from '@floway-dev/platform';
-import { CHAT_COMPLETIONS_INTERNAL_METADATA, type ChatCompletionsMessage } from '@floway-dev/protocols/chat-completions';
+import { CHAT_COMPLETIONS_LIFTED_TOOL_OUTPUT_IMAGES, type ChatCompletionsMessage } from '@floway-dev/protocols/chat-completions';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { directFetcher, initProviderRepo } from '@floway-dev/provider';
@@ -689,7 +689,7 @@ test('Copilot Chat derives lifted-image initiator from internal provenance, not 
       ];
       await provider.callChatCompletions(model, {
         messages,
-        [CHAT_COMPLETIONS_INTERNAL_METADATA]: { liftedToolOutputImages: true },
+        [CHAT_COMPLETIONS_LIFTED_TOOL_OUTPUT_IMAGES]: true,
       }, undefined, noopUpstreamCallOptions());
       await provider.callChatCompletions(model, { messages: structuredClone(messages) }, undefined, noopUpstreamCallOptions());
     },
