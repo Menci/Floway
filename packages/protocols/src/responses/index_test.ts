@@ -17,3 +17,15 @@ test('toCompactPayloadShape preserves compact cache controls', () => {
     prompt_cache_retention: '24h',
   });
 });
+
+test('toCompactPayloadShape forwards future cache control values verbatim', () => {
+  assertEquals(toCompactPayloadShape({
+    input: [],
+    prompt_cache_options: { mode: 'future_mode', ttl: '1h' },
+    prompt_cache_retention: 'future_retention',
+  }), {
+    input: [],
+    prompt_cache_options: { mode: 'future_mode', ttl: '1h' },
+    prompt_cache_retention: 'future_retention',
+  });
+});

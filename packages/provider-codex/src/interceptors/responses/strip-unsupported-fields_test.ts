@@ -23,10 +23,10 @@ test('drops every field Codex rejects with Unsupported parameter', async () => {
   // path rejects; keeping the assertion exhaustive guards against silent
   // drift if the constant inside the interceptor is edited without updating
   // its rationale. Several entries (frequency_penalty, presence_penalty,
-  // user, stream_options) are not on the canonical payload; they reach Codex
-  // only through a permissive caller. `prompt_cache_retention` is compact-only
-  // and is explicitly rejected by this provider. Widen through `unknown` so
-  // the test covers the complete strip set.
+  // user, stream_options) are not on the canonical payload and reach Codex only
+  // through a permissive caller. `prompt_cache_retention` is modeled but
+  // explicitly rejected by this provider. Widen through `unknown` so the test
+  // covers the complete strip set.
   const ctx = invocation({
     model: 'gpt-test',
     input: [{ type: 'message', role: 'user', content: 'hello' }],
@@ -61,6 +61,7 @@ test('leaves supported fields intact', async () => {
     model: 'gpt-test',
     input: [{ type: 'message', role: 'user', content: 'hello' }],
     instructions: 'be terse',
+    prompt_cache_options: { mode: 'future_mode', ttl: '1h' },
     stream: true,
     store: false,
     temperature: 0.7,
@@ -71,6 +72,7 @@ test('leaves supported fields intact', async () => {
   assertEquals(ctx.payload.model, 'gpt-test');
   assertEquals(ctx.payload.input, [{ type: 'message', role: 'user', content: 'hello' }]);
   assertEquals(ctx.payload.instructions, 'be terse');
+  assertEquals(ctx.payload.prompt_cache_options, { mode: 'future_mode', ttl: '1h' });
   assertEquals(ctx.payload.stream, true);
   assertEquals(ctx.payload.store, false);
   assertFalse('temperature' in ctx.payload);
