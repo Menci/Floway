@@ -1,5 +1,5 @@
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
-import { eventFrame, splitCacheWriteTokens, splitInclusiveInputTokens, USAGE_BILLING, type ProtocolFrame, type UsageBillingMetadata } from '@floway-dev/protocols/common';
+import { eventFrame, splitCacheWriteTokens, splitInclusiveInputTokens, USAGE_BILLING, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesContentBlockDeltaEvent, MessagesContentBlockStartEvent, MessagesResult, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 
 const toMessagesId = (id: string): string => (id.startsWith('msg_') ? id : `msg_${id.replace(/^chatcmpl-/, '')}`);
@@ -19,12 +19,7 @@ const mapChatCompletionsFinishReasonToMessagesStopReason = (finishReason: 'stop'
   }
 };
 
-interface ChatCompletionsUsage {
-  prompt_tokens?: number;
-  completion_tokens?: number;
-  prompt_tokens_details?: { cached_tokens?: number; cache_creation_input_tokens?: number; cache_write_tokens?: number };
-  [USAGE_BILLING]?: UsageBillingMetadata;
-}
+type ChatCompletionsUsage = NonNullable<ChatCompletionsStreamEvent['usage']>;
 
 // OpenAI-shaped upstreams piggyback Anthropic-style cache buckets on
 // `prompt_tokens_details`. `prompt_tokens` already includes both
