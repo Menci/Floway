@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { buildClaudeCodeCatalog, type ClaudeCodeApiModel } from './models.ts';
+import { pricingForClaudeCodeModelKey } from './pricing.ts';
 import { createClaudeCodeProvider } from './provider.ts';
 import type { ClaudeCodeAccessTokenEntry, ClaudeCodeAccountCredential, ClaudeCodeUpstreamState } from './state.ts';
 import { initProviderRepo, type FlagId, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
