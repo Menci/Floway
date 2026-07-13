@@ -28,7 +28,8 @@ import { withMessagesWebSearchRequestPrepared, withMessagesWebSearchShim } from 
 //
 // The remaining three entries mutate only the request payload and are shared
 // with count_tokens in the same order. Token counting therefore observes the
-// exact billing-attribution, reasoning, and role shape sent by generation.
+// same gateway-level billing-attribution, reasoning, and role shape as
+// generation.
 const messagesPayloadInterceptors: readonly MessagesPayloadInterceptor[] = [
   stripBillingAttribution,
   withReasoningDisabledOnForcedToolChoice,

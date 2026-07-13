@@ -133,8 +133,9 @@ are billed as reasoning/output exactly once.
 
 Messages generation and `count_tokens` apply billing-attribution stripping,
 forced-tool reasoning compatibility, inline-system role compatibility, and
-web-search request preparation in the same order. Token counts therefore
-measure the exact request shape sent by generation.
+web-search request preparation in the same order. Token counts therefore see
+the same gateway-level compatibility shape as generation; each provider still
+owns any operation-specific wire-boundary transforms.
 
 ### Messages — Copilot provider boundary chain
 
