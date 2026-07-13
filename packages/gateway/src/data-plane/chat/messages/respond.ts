@@ -8,7 +8,7 @@ import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse } from '../shared/respond.ts';
 import { type StreamCompletion, writeSSEFrames } from '../shared/stream/sse.ts';
 import { billableServiceTier, type ProtocolFrame, sseFrame } from '@floway-dev/protocols/common';
-import { messagesProtocolFrameToSSEFrame, MESSAGES_MISSING_TERMINAL_MESSAGE, collectMessagesProtocolEventsToResult } from '@floway-dev/protocols/messages';
+import { messagesProtocolFrameToSSEFrame, MESSAGES_MISSING_TERMINAL_MESSAGE, collectMessagesProtocolEventsToResult, splitMessagesCacheCreationTokens } from '@floway-dev/protocols/messages';
 import type { MessagesMessageDeltaEvent, MessagesStreamEvent, MessagesUsage } from '@floway-dev/protocols/messages';
 import { type ExecuteResult, type PlainResult, type InternalDebugError, toInternalDebugError } from '@floway-dev/provider';
 import { apiErrorToResponse } from '@floway-dev/provider';
@@ -105,15 +105,13 @@ export const respondMessages = async (
 //   * https://docs.claude.com/en/build-with-claude/fast-mode
 //   * https://docs.claude.com/en/api/service-tiers
 const tokenUsageFromMessagesUsage = (u: MessagesUsageLike) => {
-  const cacheWrite5m = u.cache_creation?.ephemeral_5m_input_tokens;
-  const cacheWrite1h = u.cache_creation?.ephemeral_1h_input_tokens;
-  const cacheWriteRolledUp = u.cache_creation_input_tokens ?? 0;
+  const { cacheWrite, cacheWrite1h } = splitMessagesCacheCreationTokens(u);
   const tier = billableServiceTier(u.speed) ?? billableServiceTier(u.service_tier);
   return tokenUsage({
     input: u.input_tokens ?? 0,
     input_cache_read: u.cache_read_input_tokens ?? 0,
-    input_cache_write: cacheWrite5m ?? cacheWriteRolledUp,
-    input_cache_write_1h: cacheWrite1h ?? 0,
+    input_cache_write: cacheWrite,
+    input_cache_write_1h: cacheWrite1h,
     output: u.output_tokens,
     tier,
   });

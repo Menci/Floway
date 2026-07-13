@@ -256,6 +256,8 @@ export interface MessagesUsage {
   server_tool_use?: MessagesUsageServerToolUse;
 }
 
+export { splitMessagesCacheCreationTokens, type MessagesCacheCreationUsage } from './usage.ts';
+
 export interface MessagesResult {
   id: string;
   type: 'message';
