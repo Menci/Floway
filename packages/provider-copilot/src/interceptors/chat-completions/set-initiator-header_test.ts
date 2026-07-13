@@ -62,3 +62,48 @@ test('Chat Completions initiator is agent when the last message is a tool result
 
   assertEquals(ctx.headers.get('x-initiator'), 'agent');
 });
+
+test('Chat Completions initiator stays agent for lifted tool-output images', async () => {
+  const ctx = invocation({
+    model: 'gpt-test',
+    messages: [
+      {
+        role: 'assistant',
+        content: null,
+        tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'capture', arguments: '{}' } }],
+      },
+      { role: 'tool', tool_call_id: 'call_1', content: 'captured' },
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'Image output from tool call call_1:' },
+          { type: 'image_url', image_url: { url: 'https://example.com/capture.png' } },
+        ],
+      },
+    ],
+  });
+
+  await withInitiatorHeaderSet(ctx, stubRequest, okEvents);
+
+  assertEquals(ctx.headers.get('x-initiator'), 'agent');
+});
+
+test('Chat Completions initiator stays user for an ordinary user image after tool history', async () => {
+  const ctx = invocation({
+    model: 'gpt-test',
+    messages: [
+      { role: 'tool', tool_call_id: 'call_1', content: 'done' },
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'Now inspect my image.' },
+          { type: 'image_url', image_url: { url: 'https://example.com/user.png' } },
+        ],
+      },
+    ],
+  });
+
+  await withInitiatorHeaderSet(ctx, stubRequest, okEvents);
+
+  assertEquals(ctx.headers.get('x-initiator'), 'user');
+});
