@@ -1,5 +1,5 @@
 import { geminiCandidateEvent, parseStrictJsonObject } from '../shared/gemini-via/gemini.ts';
-import { billableServiceTier, eventFrame, splitInclusiveInputTokens, splitInclusiveOutputTokens, USAGE_BILLING, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { billableServiceTier, eventFrame, splitCacheWriteTokens, splitInclusiveInputTokens, splitInclusiveOutputTokens, USAGE_BILLING, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiFinishReason, GeminiPart, GeminiStreamEvent, GeminiUsageMetadata } from '@floway-dev/protocols/gemini';
 import type { ResponsesOutputFunctionCall, ResponsesOutputReasoning, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
@@ -15,10 +15,7 @@ const mapUsage = (response: ResponsesResult, upstreamServiceTier: ResponsesResul
 
   const cachedTokens = usage.input_tokens_details?.cached_tokens;
   const cacheWriteTokens = usage.input_tokens_details?.cache_write_tokens;
-  const cacheWrite1hTokens = usage[USAGE_BILLING]?.cacheWrite1hTokenCount ?? 0;
-  if (cacheWrite1hTokens > (cacheWriteTokens ?? 0)) {
-    throw new RangeError('1-hour cache-write tokens exceed total cache-write tokens');
-  }
+  const writes = splitCacheWriteTokens(cacheWriteTokens, usage[USAGE_BILLING]);
   splitInclusiveInputTokens(usage.input_tokens, cachedTokens, cacheWriteTokens);
   const { output: candidatesTokenCount, reasoning: thoughtsTokenCount } = splitInclusiveOutputTokens(
     usage.output_tokens,
@@ -43,8 +40,8 @@ const mapUsage = (response: ResponsesResult, upstreamServiceTier: ResponsesResul
     ...(cacheWriteTokens !== undefined || serviceTier !== null
       ? {
           [USAGE_BILLING]: {
-            ...(cacheWriteTokens !== undefined ? { cacheWriteTokenCount: cacheWriteTokens - cacheWrite1hTokens } : {}),
-            ...(cacheWrite1hTokens > 0 ? { cacheWrite1hTokenCount: cacheWrite1hTokens } : {}),
+            ...(cacheWriteTokens !== undefined ? { cacheWriteTokenCount: writes.cacheWrite } : {}),
+            ...(writes.cacheWrite1h > 0 ? { cacheWrite1hTokenCount: writes.cacheWrite1h } : {}),
             ...(serviceTier !== null ? { serviceTier } : {}),
           },
         }

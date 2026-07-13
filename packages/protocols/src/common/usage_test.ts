@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { splitInclusiveInputTokens, splitInclusiveOutputTokens } from './usage.ts';
+import { splitCacheWriteTokens, splitInclusiveInputTokens, splitInclusiveOutputTokens } from './usage.ts';
 
 test('inclusive input usage splits cache reads and writes into disjoint counts', () => {
   expect(splitInclusiveInputTokens(100, 30, 25)).toEqual({ input: 45, cacheRead: 30, cacheWrite: 25 });
@@ -27,4 +27,11 @@ test('inclusive output usage splits reasoning into a disjoint count', () => {
   expect(splitInclusiveOutputTokens(5, 2)).toEqual({ output: 3, reasoning: 2 });
   expect(() => splitInclusiveOutputTokens(5, 6)).toThrowError('reasoning tokens exceed inclusive output tokens');
   expect(() => splitInclusiveOutputTokens(5, 1.5)).toThrowError('reasoning tokens must be a non-negative safe integer');
+});
+
+test('cache-write usage splits the 1-hour subset from the wire total', () => {
+  expect(splitCacheWriteTokens(9, { cacheWrite1hTokenCount: 5 })).toEqual({ cacheWrite: 4, cacheWrite1h: 5 });
+  expect(splitCacheWriteTokens(undefined, undefined)).toEqual({ cacheWrite: 0, cacheWrite1h: 0 });
+  expect(() => splitCacheWriteTokens(4, { cacheWrite1hTokenCount: 5 })).toThrowError('exceed');
+  expect(() => splitCacheWriteTokens(undefined, { cacheWrite1hTokenCount: 1 })).toThrowError('require');
 });
