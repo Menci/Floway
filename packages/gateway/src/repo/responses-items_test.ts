@@ -90,18 +90,21 @@ const runWithCompressionBlocked = async <T>(run: () => Promise<T>): Promise<{ st
 
   class GatedCompressionStream {
     readonly readable: ReadableStream<Uint8Array>;
-    readonly writable: WritableStream<Uint8Array>;
+    readonly writable: WritableStream<BufferSource>;
 
     constructor(format: CompressionFormat) {
       started++;
-      const gate = new TransformStream<Uint8Array, Uint8Array>({
-        async transform(chunk, controller) {
+      const native = new NativeCompressionStream(format);
+      const writer = native.writable.getWriter();
+      this.readable = native.readable;
+      this.writable = new WritableStream<BufferSource>({
+        async write(chunk) {
           await release.promise;
-          controller.enqueue(chunk);
+          await writer.write(chunk);
         },
+        async close() { await writer.close(); },
+        async abort(reason) { await writer.abort(reason); },
       });
-      this.writable = gate.writable;
-      this.readable = gate.readable.pipeThrough(new NativeCompressionStream(format));
     }
   }
 
