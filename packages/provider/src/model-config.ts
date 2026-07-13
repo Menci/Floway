@@ -1,5 +1,5 @@
 import { type FlagOverrides, validateFlagOverridesRecord } from './flags.ts';
-import { BILLING_DIMENSIONS, canonicalizePricingSelector, compileModelPricing, type BillingDimension, type ChatModelInfo, type ModelEndpointKey, type ModelEndpoints, type ModelKind, type Modality, type ModelPricing, type PricingSelector } from '@floway-dev/protocols/common';
+import { BILLING_DIMENSIONS, canonicalizePricingSelector, type BillingDimension, type ChatModelInfo, type ModelEndpointKey, type ModelEndpoints, type ModelKind, type Modality, type ModelPricing, type PricingSelector, validateModelPricing } from '@floway-dev/protocols/common';
 import { kindForEndpoints } from '@floway-dev/protocols/common';
 
 export type { Modality } from '@floway-dev/protocols/common';
@@ -132,7 +132,7 @@ export const pricingField = (value: unknown, label: string): ModelPricing | unde
   });
   const pricing = { entries };
   try {
-    compileModelPricing(pricing);
+    validateModelPricing(pricing);
   } catch (cause) {
     throw new Error(`Malformed ${label}: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
   }

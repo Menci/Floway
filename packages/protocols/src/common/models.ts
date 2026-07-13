@@ -184,7 +184,7 @@ const compiledPricing = new WeakMap<ModelPricing, CompiledModelPricing>();
 
 // Pricing objects are immutable after provider/config construction. Compilation
 // validates and canonicalizes once per stable object identity.
-export const compileModelPricing = (pricing: ModelPricing): CompiledModelPricing => {
+const compileModelPricing = (pricing: ModelPricing): CompiledModelPricing => {
   const existing = compiledPricing.get(pricing);
   if (existing) return existing;
   validateModelPricing(pricing);
