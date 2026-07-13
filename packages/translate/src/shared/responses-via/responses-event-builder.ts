@@ -77,11 +77,18 @@ export const seq = (state: ResponsesSequenceState, events: ResponsesStreamEvent[
     sequence_number: state.sequenceNumber++,
   }));
 
-export const usage = (inputTokens: number, outputTokens: number, cacheReadInputTokens?: number): ResponsesUsage => ({
+export const usage = (inputTokens: number, outputTokens: number, cacheReadInputTokens?: number, cacheWriteInputTokens?: number): ResponsesUsage => ({
   input_tokens: inputTokens,
   output_tokens: outputTokens,
   total_tokens: inputTokens + outputTokens,
-  ...(cacheReadInputTokens !== undefined ? { input_tokens_details: { cached_tokens: cacheReadInputTokens } } : {}),
+  ...(cacheReadInputTokens !== undefined || cacheWriteInputTokens !== undefined
+    ? {
+        input_tokens_details: {
+          cached_tokens: cacheReadInputTokens ?? 0,
+          ...(cacheWriteInputTokens !== undefined ? { cache_write_tokens: cacheWriteInputTokens } : {}),
+        },
+      }
+    : {}),
 });
 
 // `incompleteDetails` is an explicit caller-supplied input. Inferring

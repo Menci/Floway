@@ -103,7 +103,7 @@ const buildResult = (state: MessagesToResponsesStreamState, status: ResponsesRes
     // `handleMessageStop` in this file). Other Anthropic stop_reasons
     // don't map to incomplete.
     ...(status === 'incomplete' ? { incompleteDetails: { reason: 'max_output_tokens' as const } } : {}),
-    usage: responses.usage(inputTokens, state.outputTokens, state.cacheReadInputTokens),
+    usage: responses.usage(inputTokens, state.outputTokens, state.cacheReadInputTokens, state.cacheCreationInputTokens),
     ...(serviceTier !== undefined ? { serviceTier } : {}),
   });
 };

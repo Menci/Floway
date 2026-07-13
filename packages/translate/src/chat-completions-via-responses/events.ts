@@ -333,10 +333,13 @@ const makeUsageChunk = (state: ResponsesToChatCompletionsStreamState, usage: Non
     prompt_tokens: usage.input_tokens,
     completion_tokens: usage.output_tokens,
     total_tokens: usage.total_tokens,
-    ...(usage.input_tokens_details?.cached_tokens !== undefined
+    ...(usage.input_tokens_details?.cached_tokens !== undefined || usage.input_tokens_details?.cache_write_tokens !== undefined
       ? {
           prompt_tokens_details: {
-            cached_tokens: usage.input_tokens_details.cached_tokens,
+            ...(usage.input_tokens_details.cached_tokens !== undefined ? { cached_tokens: usage.input_tokens_details.cached_tokens } : {}),
+            ...(usage.input_tokens_details.cache_write_tokens !== undefined
+              ? { cache_creation_input_tokens: usage.input_tokens_details.cache_write_tokens }
+              : {}),
           },
         }
       : {}),

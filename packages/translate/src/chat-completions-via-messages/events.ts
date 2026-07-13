@@ -39,6 +39,7 @@ interface MessagesToChatCompletionsStreamState {
   nextToolCallIndex: number;
   promptTokens: number;
   cachedPromptTokens: number;
+  cacheCreationPromptTokens: number;
   reasoningBlockIndex?: number;
   // Captured from message_delta usage for service_tier pass-through.
   upstreamSpeed?: string;
@@ -52,6 +53,7 @@ export const createMessagesToChatCompletionsStreamState = (): MessagesToChatComp
   nextToolCallIndex: 0,
   promptTokens: 0,
   cachedPromptTokens: 0,
+  cacheCreationPromptTokens: 0,
 });
 
 const claimReasoningBlock = (state: MessagesToChatCompletionsStreamState, index: number): boolean => {
@@ -88,10 +90,11 @@ const makeUsageChunk = (state: MessagesToChatCompletionsStreamState, outputToken
       prompt_tokens: state.promptTokens,
       completion_tokens: outputTokens,
       total_tokens: state.promptTokens + outputTokens,
-      ...(state.cachedPromptTokens > 0
+      ...(state.cachedPromptTokens > 0 || state.cacheCreationPromptTokens > 0
         ? {
             prompt_tokens_details: {
-              cached_tokens: state.cachedPromptTokens,
+              ...(state.cachedPromptTokens > 0 ? { cached_tokens: state.cachedPromptTokens } : {}),
+              ...(state.cacheCreationPromptTokens > 0 ? { cache_creation_input_tokens: state.cacheCreationPromptTokens } : {}),
             },
           }
         : {}),
@@ -110,7 +113,8 @@ export const translateMessagesEventToChatCompletionsChunks = (event: MessagesStr
     state.messageId = event.message.id;
     state.model = event.message.model;
     state.cachedPromptTokens = event.message.usage.cache_read_input_tokens ?? 0;
-    state.promptTokens = event.message.usage.input_tokens + state.cachedPromptTokens + (event.message.usage.cache_creation_input_tokens ?? 0);
+    state.cacheCreationPromptTokens = event.message.usage.cache_creation_input_tokens ?? 0;
+    state.promptTokens = event.message.usage.input_tokens + state.cachedPromptTokens + state.cacheCreationPromptTokens;
     return [makeChunk(state, { role: 'assistant' })];
   }
 
