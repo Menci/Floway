@@ -19,6 +19,13 @@ SET config_json = json_set(
                   (5, 'output'),
                   (6, 'output_image')
               ),
+              ecmascript_whitespace(chars) AS (
+                VALUES (char(
+                  9, 10, 11, 12, 13, 32, 160, 5760,
+                  8192, 8193, 8194, 8195, 8196, 8197, 8198, 8199, 8200, 8201, 8202,
+                  8232, 8233, 8239, 8287, 12288, 65279
+                ))
+              ),
               base AS (
                 SELECT json_remove(json_extract(model.value, '$.cost'), '$.tiers') AS rates
               ),
@@ -29,8 +36,8 @@ SET config_json = json_set(
                 UNION ALL
 
                 SELECT 1 + tier.id, tier.key, json_patch(base.rates, tier.value)
-                FROM base, json_each(json_extract(model.value, '$.cost'), '$.tiers') AS tier
-                WHERE lower(trim(tier.key)) NOT IN ('', 'default', 'standard')
+                FROM base, ecmascript_whitespace, json_each(json_extract(model.value, '$.cost'), '$.tiers') AS tier
+                WHERE lower(trim(tier.key, ecmascript_whitespace.chars)) NOT IN ('', 'default', 'standard')
               ),
               rates AS (
                 SELECT

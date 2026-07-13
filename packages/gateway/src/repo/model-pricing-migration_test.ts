@@ -68,7 +68,16 @@ test('0053 materializes legacy pricing semantics and clears the derived model ca
           },
           {
             upstreamModelId: 'base-equivalent-tiers',
-            [legacyKey]: { input: 1, tiers: { default: { input: 2 }, ' Standard ': { output: 8 }, '  ': { input: 3 } } },
+            [legacyKey]: {
+              input: 1,
+              tiers: {
+                default: { input: 2 },
+                '\tDefault\n': { input: 3 },
+                '\u00a0standard\u00a0': { output: 8 },
+                '\u3000default\u3000': { input: 4 },
+                '\t\n': { input: 5 },
+              },
+            },
           },
           {
             upstreamModelId: 'base-equivalent-tier-only',
