@@ -544,9 +544,9 @@ const inspectImageSourcesWithCache = (
   let issue: ImageSourceIssue | undefined;
   for (const [inputIndex, item] of input.entries()) {
     for (const { image, path } of inputImagesOf(item, inputIndex)) {
-      const hasImageUrl = typeof image.image_url === 'string' && image.image_url.length > 0;
-      const hasFileId = typeof image.file_id === 'string' && image.file_id.length > 0;
-      if (hasImageUrl && hasFileId) {
+      const imageUrl = typeof image.image_url === 'string' && image.image_url.length > 0 ? image.image_url : null;
+      const fileId = typeof image.file_id === 'string' && image.file_id.length > 0 ? image.file_id : null;
+      if (imageUrl !== null && fileId !== null) {
         return {
           sources,
           issue: {
@@ -560,8 +560,8 @@ const inspectImageSourcesWithCache = (
           },
         };
       }
-      if (hasImageUrl) {
-        if (/^https?:\/\//i.test(image.image_url)) {
+      if (imageUrl !== null) {
+        if (/^https?:\/\//i.test(imageUrl)) {
           issue ??= {
             kind: 'gateway',
             error: {
@@ -573,7 +573,7 @@ const inspectImageSourcesWithCache = (
           };
           continue;
         }
-        const decoded = decodeInputImageDataUrl(image.image_url, decodedSources);
+        const decoded = decodeInputImageDataUrl(imageUrl, decodedSources);
         if (!decoded.ok) {
           return {
             sources,
@@ -583,7 +583,7 @@ const inspectImageSourcesWithCache = (
         sources.push(decoded.source);
         continue;
       }
-      if (hasFileId) {
+      if (fileId !== null) {
         issue ??= {
           kind: 'gateway',
           error: {
