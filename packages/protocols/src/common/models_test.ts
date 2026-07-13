@@ -109,6 +109,7 @@ test('service-specific thresholds remain scoped while global thresholds apply to
       { selector: { serviceTier: 'fast' }, rates: { input: 2 } },
       { selector: { serviceTier: 'fast', inputTokens: { operator: 'gt', value: 16 } }, rates: { input: 3 } },
       { selector: { inputTokens: { operator: 'gt', value: 100 } }, rates: { input: 4 } },
+      { selector: { serviceTier: 'fast', inputTokens: { operator: 'gt', value: 200 } }, rates: { input: 5 } },
     ],
   };
   assertEquals(priceRequest(pricing, { inputTokens: 17 }), { selector: {}, rates: { input: 1 } });
@@ -118,6 +119,10 @@ test('service-specific thresholds remain scoped while global thresholds apply to
     rates: { input: 3 },
   });
   assertEquals(priceRequest(pricing, { serviceTier: 'fast', inputTokens: 101 }), { selector: {}, rates: { input: 1 } });
+  assertEquals(priceRequest(pricing, { serviceTier: 'fast', inputTokens: 201 }), {
+    selector: { inputTokens: { operator: 'gt', value: 200 }, serviceTier: 'fast' },
+    rates: { input: 5 },
+  });
 });
 
 test('shared pricing helpers canonicalize and eagerly validate catalogs', () => {

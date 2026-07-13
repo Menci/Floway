@@ -41,19 +41,25 @@ export interface PricingThresholdCoordinate {
 export type PricingCoordinateValue = string | PricingThresholdCoordinate;
 export type PricingSelector = Readonly<Record<string, PricingCoordinateValue>>;
 
-// The registry is the single source of truth for selector authoring and runtime
-// projection. It is exported as plain metadata so the dashboard can render the
-// same generic axes without duplicating their ids or value kinds.
-export const PRICING_AXES = [
-  { id: 'serviceTier', kind: 'equality', label: 'Service Tier' },
-  { id: 'inputTokens', kind: 'threshold', label: 'Input Tokens' },
-] as const;
-
-export type PricingAxis = typeof PRICING_AXES[number];
 export type PricingRuntimeFacts = Readonly<{
   serviceTier?: string | null;
   inputTokens: number;
 }>;
+
+type PricingRuntimeFactKey<Value> = {
+  [Key in keyof PricingRuntimeFacts]-?: Exclude<PricingRuntimeFacts[Key], null | undefined> extends Value ? Key : never;
+}[keyof PricingRuntimeFacts] & string;
+
+export type PricingAxis =
+  | { id: string; kind: 'equality'; label: string; fact: PricingRuntimeFactKey<string> }
+  | { id: string; kind: 'threshold'; label: string; fact: PricingRuntimeFactKey<number> };
+
+// Each axis binds its authoring metadata to the runtime fact used for request
+// projection, so a new registry entry cannot silently remain runtime-inert.
+export const PRICING_AXES = [
+  { id: 'serviceTier', kind: 'equality', label: 'Service Tier', fact: 'serviceTier' },
+  { id: 'inputTokens', kind: 'threshold', label: 'Input Tokens', fact: 'inputTokens' },
+] as const satisfies readonly PricingAxis[];
 
 export interface PricingEntry {
   selector?: PricingSelector;
@@ -177,7 +183,7 @@ export const validateModelPricing = (pricing: ModelPricing): void => {
 
 interface CompiledModelPricing {
   ratesBySelectorKey: ReadonlyMap<string, PriceVector>;
-  inputBandsByEqualityScope: ReadonlyMap<string, readonly PricingThresholdCoordinate[]>;
+  thresholdBandsByAxisAndEqualityScope: ReadonlyMap<string, ReadonlyMap<string, readonly PricingThresholdCoordinate[]>>;
 }
 
 const compiledPricing = new WeakMap<ModelPricing, CompiledModelPricing>();
@@ -189,23 +195,30 @@ const compileModelPricing = (pricing: ModelPricing): CompiledModelPricing => {
   if (existing) return existing;
   validateModelPricing(pricing);
   const ratesBySelectorKey = new Map<string, PriceVector>();
-  const bandsByEqualityScope = new Map<string, Map<number, PricingThresholdCoordinate>>();
+  const bandsByAxisAndEqualityScope = new Map<string, Map<string, Map<number, PricingThresholdCoordinate>>>();
   for (const entry of pricing.entries) {
     const selector = canonicalizePricingSelector(entry.selector);
     ratesBySelectorKey.set(JSON.stringify(selector), entry.rates);
-    const input = selector.inputTokens;
-    if (typeof input === 'object') {
+    for (const axis of PRICING_AXES) {
+      if (axis.kind !== 'threshold') continue;
+      const coordinate = selector[axis.id];
+      if (typeof coordinate !== 'object') continue;
       const scopeKey = equalityScopeKey(selector);
-      const bands = bandsByEqualityScope.get(scopeKey) ?? new Map<number, PricingThresholdCoordinate>();
-      bands.set(input.value, input);
-      bandsByEqualityScope.set(scopeKey, bands);
+      const bandsByScope = bandsByAxisAndEqualityScope.get(axis.id) ?? new Map<string, Map<number, PricingThresholdCoordinate>>();
+      bandsByAxisAndEqualityScope.set(axis.id, bandsByScope);
+      const bands = bandsByScope.get(scopeKey) ?? new Map<number, PricingThresholdCoordinate>();
+      bands.set(coordinate.value, coordinate);
+      bandsByScope.set(scopeKey, bands);
     }
   }
-  const inputBandsByEqualityScope = new Map(
-    [...bandsByEqualityScope].map(([scopeKey, bands]) =>
-      [scopeKey, [...bands.values()].toSorted((a, b) => b.value - a.value)] as const),
+  const thresholdBandsByAxisAndEqualityScope = new Map(
+    [...bandsByAxisAndEqualityScope].map(([axisId, bandsByScope]) => [
+      axisId,
+      new Map([...bandsByScope].map(([scopeKey, bands]) =>
+        [scopeKey, [...bands.values()].toSorted((a, b) => b.value - a.value)] as const)),
+    ] as const),
   );
-  const compiled = { ratesBySelectorKey, inputBandsByEqualityScope };
+  const compiled = { ratesBySelectorKey, thresholdBandsByAxisAndEqualityScope };
   compiledPricing.set(pricing, compiled);
   return compiled;
 };
@@ -228,14 +241,24 @@ const thresholdMatches = (coordinate: PricingThresholdCoordinate, fact: number):
 export const priceRequest = (pricing: ModelPricing | null, facts: PricingRuntimeFacts): PricedRequest => {
   const compiled = pricing ? compileModelPricing(pricing) : undefined;
   const selector: Record<string, PricingCoordinateValue> = {};
-  if (facts.serviceTier != null) selector.serviceTier = facts.serviceTier;
+  for (const axis of PRICING_AXES) {
+    if (axis.kind !== 'equality') continue;
+    const fact = facts[axis.fact];
+    if (fact != null) selector[axis.id] = fact;
+  }
   const scopeKey = JSON.stringify(selector);
-  const inputBands = [
-    ...(compiled?.inputBandsByEqualityScope.get('{}') ?? []),
-    ...(scopeKey === '{}' ? [] : (compiled?.inputBandsByEqualityScope.get(scopeKey) ?? [])),
-  ].toSorted((a, b) => b.value - a.value);
-  const band = inputBands.find(coordinate => thresholdMatches(coordinate, facts.inputTokens));
-  if (band) selector.inputTokens = band;
+  for (const axis of PRICING_AXES) {
+    if (axis.kind !== 'threshold') continue;
+    const fact = facts[axis.fact];
+    if (fact === undefined) continue;
+    const bandsByScope = compiled?.thresholdBandsByAxisAndEqualityScope.get(axis.id);
+    const bands = [
+      ...(bandsByScope?.get('{}') ?? []),
+      ...(scopeKey === '{}' ? [] : (bandsByScope?.get(scopeKey) ?? [])),
+    ].toSorted((a, b) => b.value - a.value);
+    const band = bands.find(coordinate => thresholdMatches(coordinate, fact));
+    if (band) selector[axis.id] = band;
+  }
   const canonicalSelector = canonicalizePricingSelector(selector);
   const exactRates = compiled?.ratesBySelectorKey.get(JSON.stringify(canonicalSelector));
   if (exactRates !== undefined) return { selector: canonicalSelector, rates: exactRates };
