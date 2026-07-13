@@ -13,19 +13,19 @@ const CODEX_GPT_5_6_GRID = {
     standardShort: { input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 30 },
     priorityShort: { input: 10, input_cache_read: 1, input_cache_write: 12.5, output: 60 },
     standardLong: { input: 10, input_cache_read: 1, input_cache_write: 12.5, output: 45 },
-    priorityLong: null,
+    priorityLong: { input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 30 },
   },
   'gpt-5.6-terra': {
     standardShort: { input: 2.5, input_cache_read: 0.25, input_cache_write: 3.125, output: 15 },
     priorityShort: { input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 30 },
     standardLong: { input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 22.5 },
-    priorityLong: null,
+    priorityLong: { input: 2.5, input_cache_read: 0.25, input_cache_write: 3.125, output: 15 },
   },
   'gpt-5.6-luna': {
     standardShort: { input: 1, input_cache_read: 0.1, input_cache_write: 1.25, output: 6 },
     priorityShort: { input: 2, input_cache_read: 0.2, input_cache_write: 2.5, output: 12 },
     standardLong: { input: 2, input_cache_read: 0.2, input_cache_write: 2.5, output: 9 },
-    priorityLong: null,
+    priorityLong: { input: 1, input_cache_read: 0.1, input_cache_write: 1.25, output: 6 },
   },
 } as const;
 
@@ -59,7 +59,8 @@ test('Codex gpt-5.4 and gpt-5.4-mini keep their explicit flex and priority entri
   assertEquals(priceRequest(gpt54, { serviceTier: 'flex', inputTokens: 0 }).rates, { input: 1.25, input_cache_read: 0.13, output: 7.5 });
   assertEquals(priceRequest(gpt54, { serviceTier: 'priority', inputTokens: 0 }).rates, { input: 5, input_cache_read: 0.5, output: 30 });
   assertEquals(priceRequest(gpt54, { inputTokens: 272001 }).rates, { input: 5, input_cache_read: 0.5, output: 22.5 });
-  assertEquals(priceRequest(gpt54, { serviceTier: 'priority', inputTokens: 272001 }).rates, null);
+  assertEquals(priceRequest(gpt54, { serviceTier: 'priority', inputTokens: 272001 }).rates, { input: 2.5, input_cache_read: 0.25, output: 15 });
+  assertEquals(priceRequest(gpt54, { serviceTier: 'flex', inputTokens: 272001 }).rates, { input: 2.5, input_cache_read: 0.25, output: 15 });
 
   const mini = pricingForCodexModelKey('gpt-5.4-mini');
   assertEquals(priceRequest(mini, { inputTokens: 0 }).rates, { input: 0.75, input_cache_read: 0.075, output: 4.5 });

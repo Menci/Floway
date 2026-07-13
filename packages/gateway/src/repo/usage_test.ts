@@ -80,11 +80,10 @@ for (const backend of backends) {
     assertEquals(rows[0].requests, 2);
   });
 
-  test(`${backend.name} usage repo stores a missing (service tier × input length) combination as unpriced`, async () => {
+  test(`${backend.name} usage repo stores requests from models without pricing as unpriced`, async () => {
     const repo = await backend.make();
-    await repo.usage.record(record({ rates: null, pricingSelector: { inputTokens: { operator: 'gt', value: 272000 }, serviceTier: 'priority' } }));
+    await repo.usage.record(record({ rates: null, pricingSelector: {} }));
     const [row] = await query(repo);
-    // No priority-long entry exists, so no dimension resolves a unit price.
     assertEquals(row.rates, null);
   });
 }

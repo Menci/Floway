@@ -8,7 +8,7 @@ const OPUS_BASE = { input: 5, input_cache_read: 0.5, input_cache_write: 6.25, ou
 
 test('Copilot Claude pricing uses explicit base and fast entries', () => {
   assertEquals(priceRequest(pricingForCopilotPublicModelId('claude-opus-4-5'), { inputTokens: 0 }).rates, OPUS_BASE);
-  assertEquals(priceRequest(pricingForCopilotPublicModelId('claude-opus-4-5'), { serviceTier: 'fast', inputTokens: 0 }).rates, null);
+  assertEquals(priceRequest(pricingForCopilotPublicModelId('claude-opus-4-5'), { serviceTier: 'fast', inputTokens: 0 }).rates, OPUS_BASE);
   assertEquals(priceRequest(pricingForCopilotPublicModelId('claude-opus-4-7'), { serviceTier: 'fast', inputTokens: 0 }).rates, { input: 30, input_cache_read: 3, input_cache_write: 37.5, output: 150 });
   assertEquals(priceRequest(pricingForCopilotPublicModelId('claude-opus-4-8'), { serviceTier: 'fast', inputTokens: 0 }).rates, { input: 10, input_cache_read: 1, input_cache_write: 12.5, output: 50 });
 });

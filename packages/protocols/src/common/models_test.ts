@@ -37,7 +37,7 @@ test('selector validation rejects unknown axes, empty equality values, and malfo
   }
 });
 
-test('model validation rejects duplicate selectors and equal numeric thresholds even with different operators', () => {
+test('model validation rejects duplicate selectors and conflicting threshold operators in overlapping scopes', () => {
   assertThrows(() => validateModelPricing({
     entries: [
       { rates: { input: 1 } },
@@ -52,6 +52,20 @@ test('model validation rejects duplicate selectors and equal numeric thresholds 
       { selector: { inputTokens: { operator: 'gte', value: 272000 } }, rates: { input: 2 } },
     ],
   }), Error, 'conflicting pricing threshold operators');
+  validateModelPricing({
+    entries: [
+      { rates: { input: 1 } },
+      { selector: { serviceTier: 'fast', inputTokens: { operator: 'gt', value: 16 } }, rates: { input: 2 } },
+      { selector: { serviceTier: 'priority', inputTokens: { operator: 'gte', value: 16 } }, rates: { input: 3 } },
+    ],
+  });
+  assertThrows(() => validateModelPricing({
+    entries: [
+      { rates: { input: 1 } },
+      { selector: { inputTokens: { operator: 'gt', value: 16 } }, rates: { input: 2 } },
+      { selector: { serviceTier: 'fast', inputTokens: { operator: 'gte', value: 16 } }, rates: { input: 3 } },
+    ],
+  }), Error, 'overlapping equality scopes');
 });
 
 test('model validation requires exactly one base entry and uses it as the rate-field reference', () => {
@@ -88,20 +102,22 @@ test('model validation requires every entry to price the same dimensions', () =>
   });
 });
 
-test('model validation rejects service-specific thresholds without a global band', () => {
-  assertThrows(
-    () => validateModelPricing({
-      entries: [
-        { rates: { input: 1 } },
-        {
-          selector: { serviceTier: 'priority', inputTokens: { operator: 'gt', value: 272000 } },
-          rates: { input: 4 },
-        },
-      ],
-    }),
-    Error,
-    'pricing threshold selector {"inputTokens":{"operator":"gt","value":272000}} must be declared without equality coordinates',
-  );
+test('service-specific thresholds remain scoped while global thresholds apply to every service tier', () => {
+  const pricing: ModelPricing = {
+    entries: [
+      { rates: { input: 1 } },
+      { selector: { serviceTier: 'fast' }, rates: { input: 2 } },
+      { selector: { serviceTier: 'fast', inputTokens: { operator: 'gt', value: 16 } }, rates: { input: 3 } },
+      { selector: { inputTokens: { operator: 'gt', value: 100 } }, rates: { input: 4 } },
+    ],
+  };
+  assertEquals(priceRequest(pricing, { inputTokens: 17 }), { selector: {}, rates: { input: 1 } });
+  assertEquals(priceRequest(pricing, { serviceTier: 'fast', inputTokens: 16 }).rates, { input: 2 });
+  assertEquals(priceRequest(pricing, { serviceTier: 'fast', inputTokens: 17 }), {
+    selector: { inputTokens: { operator: 'gt', value: 16 }, serviceTier: 'fast' },
+    rates: { input: 3 },
+  });
+  assertEquals(priceRequest(pricing, { serviceTier: 'fast', inputTokens: 101 }), { selector: {}, rates: { input: 1 } });
 });
 
 test('shared pricing helpers canonicalize and eagerly validate catalogs', () => {
@@ -154,22 +170,21 @@ test('priceRequest applies gte at the exact boundary', () => {
   assertEquals(priceRequest(pricing, { inputTokens: 100 }).rates, { input: 2 });
 });
 
-test('priceRequest exact-matches every axis and leaves missing combinations unpriced', () => {
+test('priceRequest exact-matches every axis and falls back wholesale to Base on a missing combination', () => {
   assertEquals(priceRequest(GRID, { inputTokens: 0, serviceTier: 'priority' }).rates, { input: 10, output: 60 });
   assertEquals(priceRequest(GRID, { inputTokens: 128001, serviceTier: 'priority' }).rates, { input: 14, output: 80 });
   const missing = priceRequest(GRID, { inputTokens: 272001, serviceTier: 'priority' });
-  assertEquals(missing.rates, null);
-  assertEquals(missing.selector, { inputTokens: { operator: 'gt', value: 272000 }, serviceTier: 'priority' });
+  assertEquals(missing, { selector: {}, rates: { input: 5, output: 30 } });
 });
 
-test('unknown runtime service tier remains a coordinate and exact-missing is unpriced', () => {
+test('unknown runtime service tier falls back to Base', () => {
   assertEquals(priceRequest(GRID, { inputTokens: 0, serviceTier: 'future' }), {
-    selector: { serviceTier: 'future' },
-    rates: null,
+    selector: {},
+    rates: { input: 5, output: 30 },
   });
 });
 
-test('priceRequest preserves equality facts even when pricing is unavailable', () => {
+test('priceRequest preserves equality facts only when model pricing is unavailable', () => {
   assertEquals(priceRequest(null, { inputTokens: 1, serviceTier: 'future' }), {
     selector: { serviceTier: 'future' },
     rates: null,

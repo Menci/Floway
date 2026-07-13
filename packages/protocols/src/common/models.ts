@@ -64,11 +64,11 @@ export interface PricingEntry {
   rates: PriceVector;
 }
 
-// Per-model pricing as symmetric flat entries. `{ rates }` is the base entry;
-// non-default coordinates use the same shape. Threshold bands are implied by
-// selectors rather than maintained as a second catalog. Missing exact
-// coordinates are unpriced; Floway never chooses one selector over another or
-// derives rates across entries.
+// Per-model pricing as symmetric flat entries. `{ rates }` is the unique Base
+// entry; non-default coordinates use the same shape. Threshold bands are
+// implied by selectors rather than maintained as a second catalog. An exact
+// selector miss resolves to the whole Base vector; rates are never merged or
+// inherited field-by-field across entries.
 export interface ModelPricing {
   entries: readonly PricingEntry[];
 }
@@ -125,6 +125,12 @@ export const parsePricingSelectorKey = (key: string): PricingSelector => {
   return selector;
 };
 
+const selectorCoordinatesByKind = (selector: PricingSelector, kind: PricingAxis['kind']): PricingSelector =>
+  Object.fromEntries(Object.entries(selector).filter(([axisId]) => axisById.get(axisId)?.kind === kind));
+
+const equalityScopeKey = (selector: PricingSelector): string =>
+  JSON.stringify(selectorCoordinatesByKind(selector, 'equality'));
+
 export const validateModelPricing = (pricing: ModelPricing): void => {
   if (pricing.entries.length === 0) throw new Error('model pricing must declare at least one entry');
   const selectors = pricing.entries.map((entry, index) => {
@@ -145,33 +151,38 @@ export const validateModelPricing = (pricing: ModelPricing): void => {
     }
   }
   const selectorKeys = new Set<string>();
-  const thresholds = new Map<string, Map<number, PricingThresholdOperator>>();
+  const thresholdOperatorsByScope = new Map<string, Map<string, Map<number, PricingThresholdOperator>>>();
+  const operatorsFor = (scopeKey: string, axisId: string): Map<number, PricingThresholdOperator> => {
+    const byAxis = thresholdOperatorsByScope.get(scopeKey) ?? new Map<string, Map<number, PricingThresholdOperator>>();
+    thresholdOperatorsByScope.set(scopeKey, byAxis);
+    const operators = byAxis.get(axisId) ?? new Map<number, PricingThresholdOperator>();
+    byAxis.set(axisId, operators);
+    return operators;
+  };
   for (const selector of selectors) {
     const key = JSON.stringify(selector);
     if (selectorKeys.has(key)) throw new Error(`duplicate pricing entry selector: ${key}`);
     selectorKeys.add(key);
+    const scopeKey = equalityScopeKey(selector);
     for (const [axisId, coordinate] of Object.entries(selector)) {
       if (typeof coordinate === 'string') continue;
-      const values = thresholds.get(axisId) ?? new Map<number, PricingThresholdOperator>();
-      const existing = values.get(coordinate.value);
-      if (existing !== undefined && existing !== coordinate.operator) throw new Error(`conflicting pricing threshold operators for ${axisId} at ${coordinate.value}`);
-      values.set(coordinate.value, coordinate.operator);
-      thresholds.set(axisId, values);
-    }
-  }
-  for (const selector of selectors) {
-    const hasEquality = Object.keys(selector).some(axisId => axisById.get(axisId)?.kind === 'equality');
-    if (!hasEquality) continue;
-    const thresholdOnly = Object.fromEntries(Object.entries(selector).filter(([axisId]) => axisById.get(axisId)?.kind === 'threshold'));
-    if (Object.keys(thresholdOnly).length > 0 && !selectorKeys.has(JSON.stringify(thresholdOnly))) {
-      throw new Error(`pricing threshold selector ${JSON.stringify(thresholdOnly)} must be declared without equality coordinates`);
+      const overlappingScopes = scopeKey === '{}'
+        ? [...thresholdOperatorsByScope.keys()]
+        : ['{}', scopeKey];
+      for (const overlappingScope of overlappingScopes) {
+        const existing = thresholdOperatorsByScope.get(overlappingScope)?.get(axisId)?.get(coordinate.value);
+        if (existing !== undefined && existing !== coordinate.operator) {
+          throw new Error(`conflicting pricing threshold operators for ${axisId} at ${coordinate.value} in overlapping equality scopes`);
+        }
+      }
+      operatorsFor(scopeKey, axisId).set(coordinate.value, coordinate.operator);
     }
   }
 };
 
 interface CompiledModelPricing {
   ratesBySelectorKey: ReadonlyMap<string, PriceVector>;
-  inputBands: readonly PricingThresholdCoordinate[];
+  inputBandsByEqualityScope: ReadonlyMap<string, readonly PricingThresholdCoordinate[]>;
 }
 
 const compiledPricing = new WeakMap<ModelPricing, CompiledModelPricing>();
@@ -183,14 +194,23 @@ export const compileModelPricing = (pricing: ModelPricing): CompiledModelPricing
   if (existing) return existing;
   validateModelPricing(pricing);
   const ratesBySelectorKey = new Map<string, PriceVector>();
-  const bands = new Map<number, PricingThresholdCoordinate>();
+  const bandsByEqualityScope = new Map<string, Map<number, PricingThresholdCoordinate>>();
   for (const entry of pricing.entries) {
     const selector = canonicalizePricingSelector(entry.selector);
     ratesBySelectorKey.set(JSON.stringify(selector), entry.rates);
     const input = selector.inputTokens;
-    if (typeof input === 'object') bands.set(input.value, input);
+    if (typeof input === 'object') {
+      const scopeKey = equalityScopeKey(selector);
+      const bands = bandsByEqualityScope.get(scopeKey) ?? new Map<number, PricingThresholdCoordinate>();
+      bands.set(input.value, input);
+      bandsByEqualityScope.set(scopeKey, bands);
+    }
   }
-  const compiled = { ratesBySelectorKey, inputBands: [...bands.values()].toSorted((a, b) => b.value - a.value) };
+  const inputBandsByEqualityScope = new Map(
+    [...bandsByEqualityScope].map(([scopeKey, bands]) =>
+      [scopeKey, [...bands.values()].toSorted((a, b) => b.value - a.value)] as const),
+  );
+  const compiled = { ratesBySelectorKey, inputBandsByEqualityScope };
   compiledPricing.set(pricing, compiled);
   return compiled;
 };
@@ -214,10 +234,18 @@ export const priceRequest = (pricing: ModelPricing | null, facts: PricingRuntime
   const compiled = pricing ? compileModelPricing(pricing) : undefined;
   const selector: Record<string, PricingCoordinateValue> = {};
   if (facts.serviceTier != null) selector.serviceTier = facts.serviceTier;
-  const band = compiled?.inputBands.find(coordinate => thresholdMatches(coordinate, facts.inputTokens));
+  const scopeKey = JSON.stringify(selector);
+  const inputBands = [
+    ...(compiled?.inputBandsByEqualityScope.get('{}') ?? []),
+    ...(scopeKey === '{}' ? [] : (compiled?.inputBandsByEqualityScope.get(scopeKey) ?? [])),
+  ].toSorted((a, b) => b.value - a.value);
+  const band = inputBands.find(coordinate => thresholdMatches(coordinate, facts.inputTokens));
   if (band) selector.inputTokens = band;
   const canonicalSelector = canonicalizePricingSelector(selector);
-  return { selector: canonicalSelector, rates: compiled?.ratesBySelectorKey.get(JSON.stringify(canonicalSelector)) ?? null };
+  const exactRates = compiled?.ratesBySelectorKey.get(JSON.stringify(canonicalSelector));
+  if (exactRates !== undefined) return { selector: canonicalSelector, rates: exactRates };
+  const baseRates = compiled?.ratesBySelectorKey.get('{}');
+  return baseRates !== undefined ? { selector: {}, rates: baseRates } : { selector: canonicalSelector, rates: null };
 };
 
 // High-level endpoint-family discriminator. A model belongs to exactly one

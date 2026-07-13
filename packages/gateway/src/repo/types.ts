@@ -53,8 +53,10 @@ export interface UsageRecord {
   // Disjoint per-dimension token counts for this selector bucket.
   tokens: Partial<Record<BillingDimension, number>>;
   // Resolved per-dimension price snapshot for this exact selector coordinate.
-  // null means no explicit pricing entry matched. Repos persist one unit price
-  // per token-bearing dimension; null contributes zero realized cost.
+  // null means the model had no pricing metadata. Selector misses inside a
+  // configured rate card resolve to Base before reaching the repo. Repos
+  // persist one unit price per token-bearing dimension; null contributes zero
+  // realized cost.
   rates: PriceVector | null;
 }
 

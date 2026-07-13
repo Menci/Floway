@@ -200,8 +200,17 @@ ModelPricing
 `ModelPricing.entries` is a sparse Cartesian map. Exactly one entry has the
 empty selector and acts as Base; every other entry declares the same rate
 dimensions as Base. Missing selector combinations and missing rate dimensions
-are unpriced; there is no inheritance, precedence, multiplier, or cache/image
-rate fallback.
+have distinct behavior: an exact selector miss chooses the whole Base vector,
+while a rate dimension absent from every entry is unpriced. There is no
+field-by-field inheritance, precedence, multiplier, or cache/image rate
+fallback.
+
+Threshold-only entries define global bands. A threshold combined with equality
+coordinates applies only within that equality scope. Runtime selects the
+highest matching threshold from the union of global bands and the current
+scope's bands, then exact-matches the resulting full selector. A missing full
+coordinate selects Base wholesale; it never merges Base with a tier entry or
+falls back to a lower threshold band.
 
 The naming boundary is enforced in code and on the wire:
 

@@ -26,10 +26,12 @@ is the base coordinate.
    `(upstream, model_key)`.
 5. Match the stored `pricing_selector` exactly against
    `ModelPricing.entries` using canonical selector JSON.
-   - No matching entry means the slice is legitimately unpriced.
+   - Current runtime selector misses are stored as `{}` with Base rates.
+   - A historical non-Base selector absent from today's catalog indicates
+     catalog drift; stop and investigate rather than guessing its old rates.
    - Read only `entry.rates[dimension]`.
-   - A missing dimension is unpriced; there is no cache, image, or cross-entry
-     fallback.
+   - A missing dimension is unpriced; there is no cache, image, or other
+     field-by-field fallback.
 6. Preview the affected count and representative rows.
 7. Execute one UPDATE per exact
    `(slice, pricing_selector, dimension)`. Include

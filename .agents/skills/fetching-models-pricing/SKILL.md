@@ -51,18 +51,22 @@ Rules:
 - Every entry for one model must define the same rate dimensions.
 - Declare exactly one Base entry with no selector; compare every other entry's
   rate fields against Base.
-- Absence means unpriced. Never inherit cache/image rates from input/output,
-  and never inherit rates between selector coordinates.
+- A missing exact selector uses the whole Base vector. Never merge entries or
+  inherit individual cache/image rates from input/output. A rate dimension
+  absent from Base is unpriced everywhere.
 - `serviceTier` is an open-string equality coordinate.
 - `inputTokens` is a whole-request `gt` or `gte` threshold, not a
   marginal token bucket.
-- A service-specific threshold entry requires the corresponding threshold-only
-  entry. Publish every documented Cartesian combination; leave undocumented
-  combinations absent.
+- Threshold-only entries define global bands. Thresholds combined with
+  equality coordinates apply only within that exact scope. Runtime selects the
+  highest matching threshold from the union of global and matching-scope bands,
+  then performs one exact rate lookup. Publish every documented Cartesian
+  combination; leave undocumented combinations absent.
 - Return `null` when no defensible rate exists. Do not extrapolate from an
   adjacent model.
 
-5. Add boundary and exact-missing tests through `priceRequest`.
+5. Add boundary tests and prove selector misses return Base wholesale through
+   `priceRequest`.
 6. Run provider tests, typecheck, lint, and the full test suite.
 7. If an existing rate changed, use `backfill-model-pricing` for the intended
    historical slice.

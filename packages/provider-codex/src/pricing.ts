@@ -15,7 +15,7 @@ const GPT_5_4_PRICING = modelPricing(
   pricingEntry({ input: 1.25, input_cache_read: 0.13, output: 7.5 }, { serviceTier: 'flex' }),
   pricingEntry({ input: 5, input_cache_read: 0.5, output: 30 }, { serviceTier: 'priority' }),
   // OpenAI's whole-request long-context rate. No flex/priority combination is
-  // published, so those exact coordinates remain unpriced.
+  // published, so those selector misses resolve to the whole Base vector.
   // https://web.archive.org/web/20260709205359/https://platform.openai.com/docs/pricing
   pricingEntry({ input: 5, input_cache_read: 0.5, output: 22.5 }, { inputTokens: { operator: 'gt', value: 272000 } }),
 );
@@ -23,7 +23,7 @@ const GPT_5_4_PRICING = modelPricing(
 const CODEX_MODEL_PRICING: readonly (readonly [key: string | RegExp, pricing: ModelPricing])[] = [
   // GPT-5.6 publishes standard short/long and priority-short entries. OpenAI-
   // direct does not publish priority-long rates, so that exact combination is
-  // deliberately absent and remains unpriced.
+  // deliberately absent and resolves to the whole Base vector.
   // https://web.archive.org/web/20260709205359/https://platform.openai.com/docs/pricing
   // https://github.com/sst/models.dev/blob/6dfc39c81b6cd57a91c155aa7b4f68ed1b360da0/providers/openai/models/gpt-5.6-sol.toml
   // https://github.com/BerriAI/litellm/blob/6fa088224bc2022c7541ee44cf02c0bd6dd2942e/model_prices_and_context_window.json
