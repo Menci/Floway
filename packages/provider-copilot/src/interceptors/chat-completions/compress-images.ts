@@ -1,8 +1,8 @@
 import { targetSizeForResponsesChat } from '../image-size.ts';
-import type { CopilotChatCompletionsBoundaryInterceptor } from './types.ts';
+import type { ChatCompletionsBoundaryCtx, CopilotChatCompletionsBoundaryInterceptor } from './types.ts';
 import { isBase64ImageDataUrl, memoizedDataUrlCompressor } from '@floway-dev/provider';
 
-const compressInlineImages = async (ctx: Parameters<CopilotChatCompletionsBoundaryInterceptor>[0]): Promise<void> => {
+const compressInlineImages = async (ctx: ChatCompletionsBoundaryCtx): Promise<void> => {
   const targets: { url: string }[] = [];
   for (const message of ctx.payload.messages) {
     if (!Array.isArray(message.content)) continue;
