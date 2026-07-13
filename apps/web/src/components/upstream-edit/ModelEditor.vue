@@ -480,9 +480,9 @@ watch(isValid, valid => { emit('validity-change', valid); }, { immediate: true }
           <div class="mb-3">
             <h3 class="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Pricing Entries</h3>
           </div>
-          <div class="overflow-hidden rounded-lg border border-white/[0.06]" aria-label="Pricing entry form">
-            <div class="grid md:grid-cols-[13rem_minmax(0,1fr)]">
-              <aside class="flex min-w-0 flex-col border-b border-white/[0.06] bg-surface-800/25 md:border-b-0 md:border-r" aria-label="Pricing entry navigation">
+          <div class="pricing-entry-container overflow-hidden rounded-lg border border-white/[0.06]" aria-label="Pricing entry form">
+            <div class="pricing-entry-layout">
+              <aside class="pricing-entry-navigation flex min-w-0 flex-col bg-surface-800/25" aria-label="Pricing entry navigation">
                 <ul v-if="pricingEntryDrafts.length > 0" class="divide-y divide-white/[0.04]" aria-label="Pricing entries">
                   <li
                     v-for="(draft, index) in pricingEntryDrafts"
@@ -635,3 +635,29 @@ watch(isValid, valid => { emit('validity-change', valid); }, { immediate: true }
     </template>
   </div>
 </template>
+
+<style scoped>
+.pricing-entry-container {
+  container-type: inline-size;
+}
+
+.pricing-entry-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.pricing-entry-navigation {
+  border-bottom: 1px solid rgb(255 255 255 / 0.06);
+}
+
+@container (min-width: 50rem) {
+  .pricing-entry-layout {
+    grid-template-columns: minmax(16rem, 1fr) minmax(34rem, 2fr);
+  }
+
+  .pricing-entry-navigation {
+    border-right: 1px solid rgb(255 255 255 / 0.06);
+    border-bottom: 0;
+  }
+}
+</style>
