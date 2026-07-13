@@ -4,8 +4,8 @@ import { buildCustomToolInputSchema } from '../shared/responses-via/custom-tool-
 import { rejectProgramCaller, rejectProgrammaticResponsesPayload } from '../shared/responses-via/programmatic-tooling.ts';
 import { canonicalizeResponsesPayload } from '../shared/via-responses/responses-items.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
-import type { ChatCompletionsPayload, ChatCompletionsMessage, ChatCompletionsTool, ChatCompletionsToolCall } from '@floway-dev/protocols/chat-completions';
-import type { ResponsesPayload, ResponsesRequestPayload, ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
+import type { ChatCompletionsContentPart, ChatCompletionsPayload, ChatCompletionsMessage, ChatCompletionsTool, ChatCompletionsToolCall } from '@floway-dev/protocols/chat-completions';
+import type { ResponsesFunctionCallOutputItem, ResponsesInputImage, ResponsesInputText, ResponsesPayload, ResponsesRequestPayload, ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
 
 interface AssistantAccumulator {
   message: ChatCompletionsMessage;
@@ -43,6 +43,41 @@ const appendAssistantToolCall = (
     } satisfies ChatCompletionsToolCall,
   ];
   return next;
+};
+
+interface FunctionCallOutputProjection {
+  toolContent: string;
+  liftedImageContent: ChatCompletionsContentPart[];
+}
+
+// Chat tool messages admit only strings or text parts, while Responses tool
+// output also admits images. Keep every tool result contiguous with its
+// assistant tool-call group, then lift its images into one following user
+// message so vision targets receive a legal, usable shape.
+// https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/chat/completions/completions.ts#L1893-L1908
+// https://github.com/vercel/ai/blob/c093ee7458ccd5dada05d8461041e47c24ee55c0/packages/google/src/convert-to-google-messages.ts#L137-L180
+const projectFunctionCallOutput = (item: ResponsesFunctionCallOutputItem): FunctionCallOutputProjection => {
+  if (typeof item.output === 'string') return { toolContent: item.output, liftedImageContent: [] };
+  if (item.output.some(part => part.type === 'input_file')) {
+    throw new TranslatorInputError('Cannot translate input_file tool output to Chat Completions.');
+  }
+
+  const images = item.output.filter((part): part is ResponsesInputImage => part.type === 'input_image');
+  const textParts = item.output.filter((part): part is ResponsesInputText =>
+    part.type === 'input_text' || part.type === 'output_text');
+  if (images.length === 0) {
+    return { toolContent: responsesContentToText(textParts), liftedImageContent: [] };
+  }
+
+  const lifted = responsesContentToChatCompletionsContent([
+    { type: 'input_text', text: `Image output from tool call ${item.call_id}:` },
+    ...images,
+  ]);
+  if (typeof lifted === 'string') throw new Error('Image tool output projection lost its image content');
+  return {
+    toolContent: responsesContentToText(textParts) || 'Image output is attached in the following user message.',
+    liftedImageContent: lifted,
+  };
 };
 
 const translateResponsesTools = (tools: ResponsesTool[] | null | undefined, customToolNames: Set<string>): ChatCompletionsTool[] | undefined => {
@@ -139,6 +174,7 @@ export const translateResponsesToChatCompletions = (source: ResponsesRequestPayl
   const customToolNames = new Set<string>();
   const responseFormat = buildChatCompletionsResponseFormat(payload.text);
   const messages: ChatCompletionsMessage[] = payload.instructions ? [{ role: 'system', content: payload.instructions }] : [];
+  const pendingToolOutputImages: ChatCompletionsContentPart[] = [];
 
   let assistant: AssistantAccumulator | null = null;
   const flushAssistant = () => {
@@ -150,7 +186,14 @@ export const translateResponsesToChatCompletions = (source: ResponsesRequestPayl
     assistant = null;
   };
 
+  const flushToolOutputImages = () => {
+    if (pendingToolOutputImages.length === 0) return;
+    messages.push({ role: 'user', content: [...pendingToolOutputImages] });
+    pendingToolOutputImages.length = 0;
+  };
+
   for (const item of payload.input) {
+    if (item.type !== 'function_call_output' && item.type !== 'custom_tool_call_output') flushToolOutputImages();
     rejectProgramCaller(item);
     if (item.type === 'reasoning') {
       assistant = ensureAssistant(assistant);
@@ -165,14 +208,13 @@ export const translateResponsesToChatCompletions = (source: ResponsesRequestPayl
 
     if (item.type === 'function_call_output') {
       flushAssistant();
-      // FIXME: a multimodal function_call_output becomes a tool-role message
-      // with image_url content parts. Verify GitHub Copilot's chat upstream
-      // accepts image content on tool messages before relying on this path.
+      const projected = projectFunctionCallOutput(item);
       messages.push({
         role: 'tool',
         tool_call_id: item.call_id,
-        content: responsesContentToChatCompletionsContent(item.output),
+        content: projected.toolContent,
       });
+      pendingToolOutputImages.push(...projected.liftedImageContent);
       continue;
     }
 
@@ -235,6 +277,7 @@ export const translateResponsesToChatCompletions = (source: ResponsesRequestPayl
   }
 
   flushAssistant();
+  flushToolOutputImages();
 
   const tools = translateResponsesTools(payload.tools, customToolNames);
   // Same-purpose OpenAI fields pass through directly here, while broader

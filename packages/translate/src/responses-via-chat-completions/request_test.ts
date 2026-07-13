@@ -1487,7 +1487,7 @@ test('translateResponsesToChatCompletions rejects file tool output', () => {
       input: [{ type: 'function_call_output', call_id: 'call_1', output: [{ type: 'input_file', file_id: 'file_1' }] }],
     }),
     Error,
-    'input_file content',
+    'input_file tool output',
   );
 });
 
@@ -1625,7 +1625,7 @@ test('translateResponsesToChatCompletions throws on a stray compaction input ite
   );
 });
 
-test('translateResponsesToChatCompletions maps multimodal function_call_output into a tool message with image content', () => {
+test('translateResponsesToChatCompletions lifts tool-output images into a following user message', () => {
   const result = translateResponsesToChatCompletions({
     model: 'gpt-test',
     input: [
@@ -1651,10 +1651,57 @@ test('translateResponsesToChatCompletions maps multimodal function_call_output i
     parallel_tool_calls: true,
   });
 
-  const toolMessage = result.target.messages.find(message => message.role === 'tool');
-  assertEquals(toolMessage?.content, [
-    { type: 'text', text: 'captured' },
-    { type: 'image_url', image_url: { url: 'data:image/png;base64,AQID', detail: 'high' } },
+  assertEquals(result.target.messages, [
+    {
+      role: 'assistant',
+      content: null,
+      tool_calls: [{
+        id: 'call_1',
+        type: 'function',
+        function: { name: 'screenshot', arguments: '{}' },
+      }],
+    },
+    { role: 'tool', tool_call_id: 'call_1', content: 'captured' },
+    {
+      role: 'user',
+      content: [
+        { type: 'text', text: 'Image output from tool call call_1:' },
+        { type: 'image_url', image_url: { url: 'data:image/png;base64,AQID', detail: 'high' } },
+      ],
+    },
+  ]);
+});
+
+test('translateResponsesToChatCompletions keeps grouped tool results contiguous before lifted images', () => {
+  const result = translateResponsesToChatCompletions({
+    model: 'gpt-test',
+    input: [
+      { type: 'function_call', call_id: 'call_a', name: 'capture_a', arguments: '{}', status: 'completed' },
+      { type: 'function_call', call_id: 'call_b', name: 'capture_b', arguments: '{}', status: 'completed' },
+      {
+        type: 'function_call_output',
+        call_id: 'call_a',
+        output: [{ type: 'input_image', image_url: 'data:image/png;base64,AAAA', detail: 'low' }],
+      },
+      {
+        type: 'function_call_output',
+        call_id: 'call_b',
+        output: [
+          { type: 'input_text', text: 'second capture' },
+          { type: 'input_image', image_url: 'data:image/png;base64,BBBB', detail: 'auto' },
+        ],
+      },
+    ],
+  });
+
+  assertEquals(result.target.messages.map(message => message.role), ['assistant', 'tool', 'tool', 'user']);
+  assertEquals(result.target.messages[1].content, 'Image output is attached in the following user message.');
+  assertEquals(result.target.messages[2].content, 'second capture');
+  assertEquals(result.target.messages[3].content, [
+    { type: 'text', text: 'Image output from tool call call_a:' },
+    { type: 'image_url', image_url: { url: 'data:image/png;base64,AAAA', detail: 'low' } },
+    { type: 'text', text: 'Image output from tool call call_b:' },
+    { type: 'image_url', image_url: { url: 'data:image/png;base64,BBBB', detail: 'auto' } },
   ]);
 });
 
