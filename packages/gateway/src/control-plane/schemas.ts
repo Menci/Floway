@@ -55,7 +55,6 @@ const modelEndpointsSchema = z.object({
   imagesEdits: z.object({}).optional(),
 });
 
-// Reused across pricing entries so every rate object accepts the same billing dimensions.
 const pricingDimensionShape = {
   input: z.number().nonnegative().optional(),
   output: z.number().nonnegative().optional(),
