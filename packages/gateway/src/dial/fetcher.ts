@@ -53,6 +53,12 @@ interface ProxiedRequest {
   request: HttpRequest;
 }
 
+interface ReplayableRequest {
+  readonly signal: AbortSignal | undefined;
+  directInit(): RequestInit;
+  proxied(): Promise<ProxiedRequest>;
+}
+
 // Two-pass dial strategy. First pass walks the fallback list skipping any
 // entry whose (proxy, upstream) backoff row is still active, so a flaky
 // proxy gets shed in steady state. The second pass walks the entries that
@@ -78,60 +84,85 @@ export const createFetcher = (input: CreateFetcherInput): Fetcher => {
   // (direct-only list) keeps the runtime's native body handling intact —
   // FormData, Blob, etc. don't need to be buffered.
   const hasNonDirect = list.some(id => id !== DIRECT_PROXY_ID);
-  const directBeforeProxy = hasNonDirect && list.includes(DIRECT_PROXY_ID) && list.indexOf(DIRECT_PROXY_ID) < list.length - 1;
-  return async (url, init) => {
+  const hasDirect = list.includes(DIRECT_PROXY_ID);
+  const directBeforeProxy = hasNonDirect && hasDirect && list.indexOf(DIRECT_PROXY_ID) < list.length - 1;
+  return (url, init) => {
     // Reject streaming bodies upfront whenever any non-direct entry is in
     // play. The two-pass dial can replay a request and a stream is
     // single-shot; for a list like ['a','direct'] where 'a' is in active
     // backoff, pass 1 would consume the stream via the runtime fetch and
     // strand pass 2 with empty bytes.
     if (hasNonDirect && init.body instanceof ReadableStream) {
-      throw new Error('streaming request bodies are not supported through proxies — buffer before calling');
-    }
-    let proxied: ProxiedRequest | undefined;
-    let effectiveInit = init;
-    if (directBeforeProxy) {
-      // Pre-build the proxied request so the same buffered bytes feed both
-      // the direct path (via a synthesised init) and any proxy retry.
-      proxied = await buildProxiedRequest(url, init);
-      effectiveInit = rebuildInitFromProxied(init, proxied);
-    }
-    const proxiedFor = async (): Promise<ProxiedRequest> => {
-      proxied ??= await buildProxiedRequest(url, effectiveInit);
-      return proxied;
-    };
-    const errors: unknown[] = [];
-
-    const active = await input.repo.proxyBackoffs.listForUpstream(input.upstreamId);
-    const now = Math.floor(Date.now() / 1000);
-    const skip = new Set(active.filter(b => b.expiresAt > now).map(b => b.proxyId));
-
-    // Track which entries have already been attempted in this call so the
-    // second pass only retries the ones we actively skipped. Without this,
-    // a single dial failure would record TWO recordDialFailure calls — the
-    // backoff schedule advertised in proxy-backoffs would double-step on
-    // every real failure.
-    const triedThisCall = new Set<string>();
-    for (const id of list) {
-      if (skip.has(id)) continue;
-      triedThisCall.add(id);
-      const result = await tryOne(id, input, proxiedFor, url, effectiveInit, errors);
-      if (result) return result;
+      return Promise.reject(new Error('streaming request bodies are not supported through proxies — buffer before calling'));
     }
 
-    for (const id of list) {
-      if (triedThisCall.has(id)) continue;
-      const result = await tryOne(id, input, proxiedFor, url, effectiveInit, errors);
-      if (result) return result;
-    }
+    return runFallbacks(input, list, url, createReplayableRequest(url, init, hasDirect), directBeforeProxy);
+  };
+};
 
-    // A single fallback entry that failed once still produces just one
-    // ProxyDialError in `errors` — surface it directly so callers don't see
-    // a meaningless AggregateError wrapper.
-    if (errors.length === 1) {
-      throw errors[0];
-    }
-    throw new AggregateError(errors, 'all proxies failed at the dial layer');
+const runFallbacks = async (
+  input: CreateFetcherInput,
+  list: readonly string[],
+  url: string,
+  request: ReplayableRequest,
+  directBeforeProxy: boolean,
+): Promise<Response> => {
+  // A direct attempt before any proxy can consume Blob/FormData bodies. Build
+  // the replayable byte form first so every later attempt observes one body.
+  if (directBeforeProxy) await request.proxied();
+  const errors: unknown[] = [];
+
+  const active = await input.repo.proxyBackoffs.listForUpstream(input.upstreamId);
+  const now = Math.floor(Date.now() / 1000);
+  const skip = new Set(active.filter(b => b.expiresAt > now).map(b => b.proxyId));
+
+  // Track which entries have already been attempted in this call so the
+  // second pass only retries the ones we actively skipped. Without this,
+  // a single dial failure would record TWO recordDialFailure calls — the
+  // backoff schedule advertised in proxy-backoffs would double-step on
+  // every real failure.
+  const triedThisCall = new Set<string>();
+  for (const id of list) {
+    if (skip.has(id)) continue;
+    triedThisCall.add(id);
+    const result = await tryOne(id, input, request, url, errors);
+    if (result) return result;
+  }
+
+  for (const id of list) {
+    if (triedThisCall.has(id)) continue;
+    const result = await tryOne(id, input, request, url, errors);
+    if (result) return result;
+  }
+
+  // A single fallback entry that failed once still produces just one
+  // ProxyDialError in `errors` — surface it directly so callers don't see
+  // a meaningless AggregateError wrapper.
+  if (errors.length === 1) throw errors[0];
+  throw new AggregateError(errors, 'all proxies failed at the dial layer');
+};
+
+const createReplayableRequest = (
+  url: string,
+  init: RequestInit,
+  hasDirect: boolean,
+): ReplayableRequest => {
+  let directInit = init;
+  let materialized: ProxiedRequest | undefined;
+  return {
+    signal: init.signal ?? undefined,
+    directInit: () => directInit,
+    proxied: async () => {
+      if (materialized !== undefined) return materialized;
+      materialized = await buildProxiedRequest(url, directInit);
+      // Once bytes exist, the original BodyInit must not remain captured by
+      // the retry closure for the duration of the upstream request. Preserve
+      // an owned byte body only when a later direct fallback can consume it.
+      directInit = hasDirect
+        ? rebuildInitFromProxied(directInit, materialized)
+        : { ...directInit, body: null };
+      return materialized;
+    },
   };
 };
 
@@ -161,16 +192,15 @@ const rebuildInitFromProxied = (original: RequestInit, proxied: ProxiedRequest):
 const tryOne = async (
   id: string,
   input: CreateFetcherInput,
-  proxiedFor: () => Promise<ProxiedRequest>,
+  request: ReplayableRequest,
   url: string,
-  init: RequestInit,
   errors: unknown[],
 ): Promise<Response | null> => {
   try {
     if (id === DIRECT_PROXY_ID) {
       // Direct egress is the runtime's fetch — it never raises ProxyDialError,
       // so we don't touch the backoff table for this entry.
-      return await input.runDirect(url, init);
+      return await input.runDirect(url, request.directInit());
     }
     const config = input.proxyById.get(id);
     if (!config) {
@@ -184,13 +214,13 @@ const tryOne = async (
       errors.push(new ProxyDialError(`unknown proxy id in fallback list: ${id}`, 'config'));
       return null;
     }
-    const proxied = await proxiedFor();
+    const proxied = await request.proxied();
     // Caller cancellation flows through init.signal into the dialer's
     // combined controller so a disconnected client tears down any
     // in-flight handshake instead of waiting for the per-proxy deadline.
     const options: RunProxiedRequestOptions = {
       socketDial: input.socketDial(),
-      signal: init.signal ?? undefined,
+      signal: request.signal,
     };
     if (config.dialTimeoutMs !== null) options.dialTimeoutMs = config.dialTimeoutMs;
     const response = await input.runProxied(
