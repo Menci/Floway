@@ -124,6 +124,24 @@ test('translateToSourceEvents emits exactly one [DONE] for structured responses 
   assertEquals(doneCount, 1);
 });
 
+test('response.created service_tier survives when the terminal response omits it', async () => {
+  async function* stream() {
+    yield toProtocolFrame({
+      type: 'response.created',
+      response: { ...makeResponse('in_progress'), service_tier: 'priority' },
+    });
+    yield toProtocolFrame({
+      type: 'response.completed',
+      response: makeResponse('completed'),
+    });
+  }
+
+  const frames = await collect(translateToSourceEvents(stream()));
+  const events = frames.flatMap(frame => frame.type === 'event' ? [frame.event] : []);
+  assertEquals(events[0].service_tier, 'priority');
+  assertEquals(events.at(-1)?.service_tier, 'priority');
+});
+
 test('translateToSourceEvents emits exactly one [DONE] for fallback completion stream', async () => {
   const doneCount = await countDoneSentinels([
     toProtocolFrame({

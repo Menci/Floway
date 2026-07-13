@@ -115,6 +115,8 @@ export const translateMessagesEventToChatCompletionsChunks = (event: MessagesStr
     state.cachedPromptTokens = event.message.usage.cache_read_input_tokens ?? 0;
     state.cacheCreationPromptTokens = event.message.usage.cache_creation_input_tokens ?? 0;
     state.promptTokens = event.message.usage.input_tokens + state.cachedPromptTokens + state.cacheCreationPromptTokens;
+    if (event.message.usage.speed !== undefined) state.upstreamSpeed = event.message.usage.speed;
+    if (event.message.usage.service_tier !== undefined) state.upstreamServiceTier = event.message.usage.service_tier;
     return [makeChunk(state, { role: 'assistant' })];
   }
 

@@ -47,6 +47,7 @@ interface ResponsesToChatCompletionsStreamState {
   emittedTextContentKeys: Set<string>;
   emittedFunctionArgumentOutputIndexes: Set<number>;
   outputOrder: ResponsesOutputOrderState;
+  serviceTier?: ChatCompletionsStreamEvent['service_tier'];
   done: boolean;
 }
 
@@ -159,6 +160,7 @@ export const translateResponsesEventToChatCompletionsChunks = (event: ResponsesS
     const { response } = event as ResponsesEvent<'response.created'>;
     state.messageId = response.id;
     state.model = response.model;
+    if (response.service_tier !== undefined) state.serviceTier = response.service_tier;
     return [makeChunk(state, { role: 'assistant' })];
   }
 
@@ -287,19 +289,17 @@ export const translateResponsesEventToChatCompletionsChunks = (event: ResponsesS
   case 'response.incomplete': {
     const { response } = event as ResponsesEvent<'response.completed' | 'response.incomplete'>;
     const chunks: ChatCompletionsStreamEvent[] = [];
+    if (response.service_tier !== undefined) state.serviceTier = response.service_tier;
 
     chunks.push(...flushReasoningSummaryDoneFallbacks(state));
     chunks.push(...flushPendingReasoningChunks(state));
     chunks.push(...flushReadyDeferredChatChunks(state));
 
-    const chunk = {
-      ...makeChunk(state, {}, mapResponsesFinishReasonToChatCompletionsFinishReason(response)),
-      ...(response.service_tier !== undefined ? { service_tier: response.service_tier } : {}),
-    };
+    const chunk = makeChunk(state, {}, mapResponsesFinishReasonToChatCompletionsFinishReason(response));
 
     state.done = true;
     chunks.push(chunk);
-    if (response.usage) chunks.push(makeUsageChunk(state, response.usage, response.service_tier));
+    if (response.usage) chunks.push(makeUsageChunk(state, response.usage));
     return chunks;
   }
 
@@ -317,6 +317,7 @@ const makeChunk = (state: ResponsesToChatCompletionsStreamState, delta: ChatComp
   object: 'chat.completion.chunk',
   created: state.created,
   model: state.model,
+  ...(state.serviceTier !== undefined ? { service_tier: state.serviceTier } : {}),
   choices: [
     {
       index: 0,
@@ -329,14 +330,13 @@ const makeChunk = (state: ResponsesToChatCompletionsStreamState, delta: ChatComp
 const makeUsageChunk = (
   state: ResponsesToChatCompletionsStreamState,
   usage: NonNullable<ResponsesResult['usage']>,
-  serviceTier: ResponsesResult['service_tier'],
 ): ChatCompletionsStreamEvent => ({
   id: state.messageId,
   object: 'chat.completion.chunk',
   created: state.created,
   model: state.model,
   choices: [],
-  ...(serviceTier !== undefined ? { service_tier: serviceTier } : {}),
+  ...(state.serviceTier !== undefined ? { service_tier: state.serviceTier } : {}),
   usage: {
     prompt_tokens: usage.input_tokens,
     completion_tokens: usage.output_tokens,

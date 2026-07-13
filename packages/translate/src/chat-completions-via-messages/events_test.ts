@@ -993,3 +993,26 @@ test('no speed or service_tier on message_delta → no service_tier on usage chu
   const usageChunk = result[1];
   assertEquals(usageChunk.service_tier, undefined);
 });
+
+test('message_start service_tier survives when message_delta omits it', () => {
+  const state = createMessagesToChatCompletionsStreamState();
+  translateMessagesEventToChatCompletionsChunks(
+    {
+      ...MSG_START,
+      message: {
+        ...MSG_START.message,
+        usage: { ...MSG_START.message.usage, service_tier: 'priority' },
+      },
+    },
+    state,
+  );
+  const result = translateMessagesEventToChatCompletionsChunks(
+    {
+      type: 'message_delta',
+      delta: { stop_reason: 'end_turn' },
+      usage: { output_tokens: 5 },
+    } as MessagesStreamEvent,
+    state,
+  ) as ChatCompletionsStreamEvent[];
+  assertEquals(result[1].service_tier, 'priority');
+});

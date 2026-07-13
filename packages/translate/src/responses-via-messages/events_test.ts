@@ -12,7 +12,14 @@ type ResponsesOutputItemDoneEvent = Extract<ResponsesStreamEvent, { type: 'respo
 // ── Helpers ──
 
 const runToCompletion = (
-  usage: { input_tokens: number; output_tokens: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number },
+  usage: {
+    input_tokens: number;
+    output_tokens: number;
+    cache_read_input_tokens?: number;
+    cache_creation_input_tokens?: number;
+    speed?: string;
+    service_tier?: string;
+  },
   deltaUsageExtras?: { speed?: string; service_tier?: string },
 ): ResponsesResult => {
   const state = createMessagesToResponsesStreamState('resp_test', 'claude-sonnet-4-20250514');
@@ -33,6 +40,8 @@ const runToCompletion = (
           output_tokens: 0,
           cache_read_input_tokens: usage.cache_read_input_tokens,
           cache_creation_input_tokens: usage.cache_creation_input_tokens,
+          speed: usage.speed,
+          service_tier: usage.service_tier,
         },
       },
     } as MessagesStreamEvent,
@@ -775,4 +784,14 @@ test('Anthropic service_tier absent results in no service_tier on the Responses 
   const result = runToCompletion({ input_tokens: 10, output_tokens: 5 });
 
   assertEquals(result.service_tier, undefined);
+});
+
+test('Messages message_start service_tier survives when message_delta omits it', () => {
+  const result = runToCompletion({ input_tokens: 10, output_tokens: 5, service_tier: 'priority' });
+  assertEquals(result.service_tier, 'priority');
+});
+
+test('Messages message_start speed:fast survives when message_delta omits it', () => {
+  const result = runToCompletion({ input_tokens: 10, output_tokens: 5, speed: 'fast' });
+  assertEquals(result.service_tier, 'fast');
 });
