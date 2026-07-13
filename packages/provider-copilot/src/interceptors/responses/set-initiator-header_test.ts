@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { withInitiatorHeaderSet } from './set-initiator-header.ts';
 import type { ResponsesBoundaryCtx } from './types.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { CanonicalResponsesPayload, ResponsesInputItem, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { CanonicalResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
 import { assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
@@ -20,13 +20,13 @@ const invocation = (payload: CanonicalResponsesPayload): ResponsesBoundaryCtx =>
   action: 'generate',
 });
 
-test('Responses initiator is user when the last input item is a plain user message', async () => {
+test.each(['user', 'system', 'developer'] as const)('Responses initiator is user for a final %s message', async role => {
   const ctx = invocation({
     model: 'gpt-test',
     input: [
       {
         type: 'message',
-        role: 'user',
+        role,
         content: [{ type: 'input_text', text: 'hello' }],
       },
     ],
@@ -102,11 +102,7 @@ test('Responses initiator is agent when the last input item is a custom_tool_cal
   assertEquals(ctx.headers.get('x-initiator'), 'agent');
 });
 
-test('Responses initiator is agent when the last input item is a hosted-tool output without a role field', async () => {
-  // Future / non-canonical hosted-tool output shapes (e.g. `tool_search_output`)
-  // are not in our `ResponsesInputItem` union but they reach Copilot's wire shape
-  // in the wild. They have no `role` field, which is exactly the discriminator
-  // caozhiyuan/copilot-api uses to classify them as agent-initiated.
+test('Responses initiator is agent when the last canonical item is reasoning', async () => {
   const ctx = invocation({
     model: 'gpt-test',
     input: [
@@ -115,7 +111,7 @@ test('Responses initiator is agent when the last input item is a hosted-tool out
         role: 'user',
         content: [{ type: 'input_text', text: 'search the web' }],
       },
-      { type: 'tool_search_output', output: 'result' } as unknown as ResponsesInputItem,
+      { type: 'reasoning', id: 'rs_1', summary: [] },
     ],
   });
 
