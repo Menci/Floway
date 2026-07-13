@@ -33,3 +33,19 @@ test('encrypted content hashes are cached by string value', async () => {
   assertEquals(await first, 'encrypted-1');
   assertEquals(calls, 1);
 });
+
+test('clear starts a new hash lifetime', async () => {
+  let contentCalls = 0;
+  let encryptedCalls = 0;
+  const cache = new ResponsesItemHashCache({
+    content: async () => `content-${++contentCalls}`,
+    encryptedContent: async () => `encrypted-${++encryptedCalls}`,
+  });
+  const item: ResponsesInputItem = { type: 'message', role: 'user', content: 'hello' };
+
+  assertEquals(await cache.content(item), 'content-1');
+  assertEquals(await cache.encryptedContent('opaque'), 'encrypted-1');
+  cache.clear();
+  assertEquals(await cache.content(item), 'content-2');
+  assertEquals(await cache.encryptedContent('opaque'), 'encrypted-2');
+});

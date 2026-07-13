@@ -15,7 +15,7 @@ export class ResponsesItemHashCache {
   // Serve prep hashes and stages the same source-item objects before attempts
   // can clone or mutate them. Keep identity caching on that turn-local store
   // boundary; values created inside an attempt intentionally miss this cache.
-  private readonly contentByItem = new WeakMap<ResponsesInputItem, Promise<string>>();
+  private contentByItem = new WeakMap<ResponsesInputItem, Promise<string>>();
   private readonly encryptedByValue = new Map<string, Promise<string>>();
 
   constructor(private readonly functions: ResponsesItemHashFunctions = defaultHashFunctions) {}
@@ -34,5 +34,10 @@ export class ResponsesItemHashCache {
     const hash = this.functions.encryptedContent(value);
     this.encryptedByValue.set(value, hash);
     return hash;
+  }
+
+  clear(): void {
+    this.contentByItem = new WeakMap();
+    this.encryptedByValue.clear();
   }
 }

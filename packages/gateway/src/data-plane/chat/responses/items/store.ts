@@ -247,6 +247,10 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   }
 
   beginAttempt(privatePayloads: ReadonlyMap<string, unknown>): void {
+    // Candidate rewrite has consumed every source-input hash. Release its
+    // encrypted string keys before the upstream wait and start a fresh cache
+    // for output items produced by this attempt.
+    this.hashes.clear();
     this.stagedOutputItems.clear();
     this.stagedOutputItemIds.length = 0;
     this.privatePayload.clear();
