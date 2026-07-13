@@ -165,7 +165,8 @@ const hasValidSelector = (draft: PricingEntryDraft): boolean => {
 };
 
 const formatList = (values: readonly string[]): string => {
-  if (values.length <= 1) return values[0] ?? '';
+  if (values.length === 0) throw new Error('formatList requires at least one value');
+  if (values.length === 1) return values[0]!;
   if (values.length === 2) return `${values[0]} and ${values[1]}`;
   return `${values.slice(0, -1).join(', ')}, and ${values.at(-1)}`;
 };
@@ -253,7 +254,6 @@ const pricingValidationErrors = computed<readonly string[]>(() => {
 const isPricingValid = computed(() => pricingValidationErrors.value.length === 0);
 
 const writePricingEntries = (drafts: readonly PricingEntryDraft[]) => {
-  if (!config.value) return;
   pricingEntryDrafts.value = drafts.map(draft => ({ ...draft, selector: { ...draft.selector }, rates: { ...draft.rates } }));
   if (drafts.length === 0) {
     patch({ pricing: undefined });
@@ -289,8 +289,7 @@ const updateThresholdCoordinate = (index: number, axisId: string, patch: Partial
 };
 
 const toggleThresholdOperator = (index: number, axisId: string) => {
-  const draft = pricingEntryDrafts.value[index];
-  if (!draft) return;
+  const draft = pricingEntryDrafts.value[index]!;
   const operator = thresholdCoordinate(draft, axisId)?.operator === 'gte' ? 'gt' : 'gte';
   updateThresholdCoordinate(index, axisId, { operator });
 };
@@ -313,9 +312,9 @@ const addPricingEntry = () => {
   writePricingEntries([...pricingEntryDrafts.value, draft]);
 };
 const removePricingEntry = (index: number) => {
-  const removed = pricingEntryDrafts.value[index];
+  const removed = pricingEntryDrafts.value[index]!;
   const next = pricingEntryDrafts.value.filter((_, i) => i !== index);
-  if (removed?.id === selectedPricingEntryId.value) {
+  if (removed.id === selectedPricingEntryId.value) {
     selectedPricingEntryId.value = next[index]?.id ?? next[index - 1]?.id ?? null;
   }
   writePricingEntries(next);

@@ -121,7 +121,7 @@ export const parsePricingSelectorKey = (key: string): PricingSelector => {
 };
 
 const selectorCoordinatesByKind = (selector: PricingSelector, kind: PricingAxis['kind']): PricingSelector =>
-  Object.fromEntries(Object.entries(selector).filter(([axisId]) => axisById.get(axisId)?.kind === kind));
+  Object.fromEntries(Object.entries(selector).filter(([axisId]) => axisById.get(axisId)!.kind === kind));
 
 const equalityScopeKey = (selector: PricingSelector): string =>
   JSON.stringify(selectorCoordinatesByKind(selector, 'equality'));
