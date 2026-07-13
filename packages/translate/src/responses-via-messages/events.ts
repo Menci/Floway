@@ -114,6 +114,7 @@ const buildResult = (state: MessagesToResponsesStreamState, status: ResponsesRes
       state.usage.output_tokens,
       state.usage.cache_read_input_tokens,
       hasCacheCreation ? cacheCreation : undefined,
+      cacheWrite1h > 0 ? cacheWrite1h : undefined,
     ),
     ...(serviceTier !== undefined ? { serviceTier } : {}),
   });

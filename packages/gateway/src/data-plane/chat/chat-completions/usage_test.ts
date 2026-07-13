@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest';
 
 import { tokenUsageFromChatCompletionsUsage } from './usage.ts';
+import { USAGE_BILLING } from '@floway-dev/protocols/common';
 import { assertEquals } from '@floway-dev/test-utils';
 
 test('Chat usage maps disjoint input/cache/output counts and omits tier when service_tier is absent', () => {
@@ -65,6 +66,21 @@ test('Chat usage reads OpenRouter cache_write_tokens as the write counter', () =
       output: 4,
     },
   );
+});
+
+test('Chat usage preserves translated 1-hour cache writes', () => {
+  expect(tokenUsageFromChatCompletionsUsage({
+    prompt_tokens: 20,
+    completion_tokens: 2,
+    total_tokens: 22,
+    prompt_tokens_details: { cache_creation_input_tokens: 9 },
+    [USAGE_BILLING]: { cacheWrite1hTokenCount: 5 },
+  }, null)).toEqual({
+    input: 11,
+    input_cache_write: 4,
+    input_cache_write_1h: 5,
+    output: 2,
+  });
 });
 
 test.each([

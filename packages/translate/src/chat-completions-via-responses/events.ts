@@ -2,7 +2,7 @@ import { toChatCompletionsReasoningItem } from '../shared/chat-completions-and-r
 import { createResponsesOutputOrderState, recordResponsesOutputOrderEvent, type ResponsesOutputOrderState, shouldDeferForEarlierResponsesOutput } from '../shared/via-responses/responses-stream-order.ts';
 import { type ResponsesEvent, responsesPartKey } from '../shared/via-responses/responses-stream.ts';
 import type { ChatCompletionsStreamEvent, ChatCompletionsResult, ChatCompletionsReasoningItem, ChatCompletionsDelta } from '@floway-dev/protocols/chat-completions';
-import { doneFrame, eventFrame, splitInclusiveInputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { doneFrame, eventFrame, splitInclusiveInputTokens, USAGE_BILLING, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesOutputItem, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 const mapResponsesFinishReasonToChatCompletionsFinishReason = (response: ResponsesResult): ChatCompletionsResult['choices'][0]['finish_reason'] =>
@@ -357,6 +357,7 @@ const makeUsageChunk = (
             },
           }
         : {}),
+      ...(usage[USAGE_BILLING] !== undefined ? { [USAGE_BILLING]: usage[USAGE_BILLING] } : {}),
     },
   };
 };

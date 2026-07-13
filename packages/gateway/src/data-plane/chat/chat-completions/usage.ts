@@ -1,6 +1,6 @@
 import { openAICacheTokensFromUsage, tokenUsage } from '../../shared/telemetry/usage.ts';
 import type { ChatCompletionsResult } from '@floway-dev/protocols/chat-completions';
-import { billableServiceTier, splitInclusiveInputTokens } from '@floway-dev/protocols/common';
+import { billableServiceTier, splitInclusiveInputTokens, USAGE_BILLING } from '@floway-dev/protocols/common';
 
 // OpenAI Chat usage reports prompt_tokens inclusive of cached and cache-
 // creation tokens; the shared `openAICacheTokensFromUsage` helper resolves
@@ -13,11 +13,14 @@ import { billableServiceTier, splitInclusiveInputTokens } from '@floway-dev/prot
 // https://developers.openai.com/api/docs/guides/priority-processing
 export const tokenUsageFromChatCompletionsUsage = (u: NonNullable<ChatCompletionsResult['usage']>, serviceTier: string | null | undefined) => {
   const { cacheRead, cacheWrite } = openAICacheTokensFromUsage(u);
+  const cacheWrite1h = u[USAGE_BILLING]?.cacheWrite1hTokenCount ?? 0;
+  if (cacheWrite1h > cacheWrite) throw new RangeError('1-hour cache-write tokens exceed total cache-write tokens');
   const split = splitInclusiveInputTokens(u.prompt_tokens, cacheRead, cacheWrite);
   return tokenUsage({
     input: split.input,
     input_cache_read: split.cacheRead,
-    input_cache_write: split.cacheWrite,
+    input_cache_write: split.cacheWrite - cacheWrite1h,
+    input_cache_write_1h: cacheWrite1h,
     output: u.completion_tokens,
     tier: billableServiceTier(serviceTier),
   });

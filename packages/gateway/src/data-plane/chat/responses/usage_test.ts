@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest';
 
 import { tokenUsageFromResponsesResult } from './usage.ts';
+import { USAGE_BILLING } from '@floway-dev/protocols/common';
 import type { ResponsesResult } from '@floway-dev/protocols/responses';
 import { assertEquals } from '@floway-dev/test-utils';
 
@@ -38,6 +39,24 @@ test('Responses usage splits cache-read and cache-write out of the inclusive inp
     input_cache_read: 30,
     input_cache_write: 25,
     output: 20,
+  });
+});
+
+test('Responses usage preserves translated 1-hour cache writes', () => {
+  const result = minimalResult({
+    usage: {
+      input_tokens: 20,
+      output_tokens: 2,
+      total_tokens: 22,
+      input_tokens_details: { cached_tokens: 0, cache_write_tokens: 9 },
+      [USAGE_BILLING]: { cacheWrite1hTokenCount: 5 },
+    },
+  });
+  assertEquals(tokenUsageFromResponsesResult(result), {
+    input: 11,
+    input_cache_write: 4,
+    input_cache_write_1h: 5,
+    output: 2,
   });
 });
 
