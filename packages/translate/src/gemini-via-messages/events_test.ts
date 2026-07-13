@@ -356,7 +356,7 @@ test('translateToSourceEvents accepts late input accounting from message_delta',
     }),
     eventFrame({ type: 'message_stop' }),
   ]);
-  const usage = frames[0]?.type === 'event' ? frames[0].event.usageMetadata : undefined;
+  const usage = frames[0]?.type === 'event' && !('error' in frames[0].event) ? frames[0].event.usageMetadata : undefined;
   assertEquals(usage?.promptTokenCount, 45);
   assertEquals(usage?.cachedContentTokenCount, 30);
   assertEquals(usage?.[GEMINI_USAGE_BILLING]?.cacheWriteTokenCount, 5);
@@ -368,7 +368,7 @@ test('translateToSourceEvents emits known input usage when terminal usage is abs
     eventFrame({ type: 'message_delta', delta: { stop_reason: 'end_turn' } }),
     eventFrame({ type: 'message_stop' }),
   ]);
-  const usage = frames[0]?.type === 'event' ? frames[0].event.usageMetadata : undefined;
+  const usage = frames[0]?.type === 'event' && !('error' in frames[0].event) ? frames[0].event.usageMetadata : undefined;
   assertEquals(usage, {
     promptTokenCount: 12,
     candidatesTokenCount: 0,
