@@ -2,9 +2,9 @@ import type { Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
 
 import { geminiStatusForHttpStatus } from './errors.ts';
+import { tokenUsageFromGeminiUsageMetadata } from './usage.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
-import { tokenUsageFromGeminiUsageMetadata } from './usage.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse } from '../shared/respond.ts';
 import { type StreamCompletion, writeSSEFrames } from '../shared/stream/sse.ts';

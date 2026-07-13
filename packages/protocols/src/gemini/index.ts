@@ -1,4 +1,4 @@
-import { USAGE_BILLING, type UsageBillingMetadata } from '../common/usage.ts';
+import type { USAGE_BILLING, UsageBillingMetadata } from '../common/usage.ts';
 
 export interface GeminiPayload {
   contents?: GeminiContent[];
