@@ -4,15 +4,18 @@ import { GEMINI_USAGE_BILLING, type GeminiUsageMetadata } from '@floway-dev/prot
 
 export const tokenUsageFromGeminiUsageMetadata = (metadata: GeminiUsageMetadata) => {
   const billing = metadata[GEMINI_USAGE_BILLING];
-  const { input, cacheRead, cacheWrite } = splitInclusiveInputTokens(
+  const cacheWrite = billing?.cacheWriteTokenCount ?? 0;
+  const cacheWrite1h = billing?.cacheWrite1hTokenCount ?? 0;
+  const { input, cacheRead } = splitInclusiveInputTokens(
     metadata.promptTokenCount ?? 0,
     metadata.cachedContentTokenCount,
-    billing?.cacheWriteTokenCount,
+    cacheWrite + cacheWrite1h,
   );
   return tokenUsage({
     input,
     input_cache_read: cacheRead,
     input_cache_write: cacheWrite,
+    input_cache_write_1h: cacheWrite1h,
     output: (metadata.candidatesTokenCount ?? 0) + (metadata.thoughtsTokenCount ?? 0),
     tier: billing?.serviceTier,
   });
