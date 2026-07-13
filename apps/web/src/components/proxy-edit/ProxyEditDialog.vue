@@ -74,10 +74,10 @@ watch(url, next => {
   if (lastSource === 'form') { lastSource = null; return; }
   const parsed = tryParse(next);
   if (parsed === null) {
-    lastSource = 'url';
-    config.value = null;
+    // URL cleared: leave config untouched so v-if keeps the form panel
+    // mounted and the reverse watch does not fire and re-fill URL from
+    // the stale config.
     urlError.value = null;
-    void nextTick(() => { if (lastSource === 'url') lastSource = null; });
     return;
   }
   if (parsed.ok) {
