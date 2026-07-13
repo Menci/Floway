@@ -84,7 +84,8 @@ const rewriteItemForCandidate = (
   if (item.type === 'item_reference' && payload === undefined && !candidate.provider.supportsResponsesItemReference) {
     throwChatServeFailure({ kind: 'item-not-found', itemId: row.id });
   }
-  const replacement = resolved.canonical ?? (payload?.item as ResponsesInputItem | undefined) ?? item;
+  const replacement = resolved.canonical
+    ?? (payload === undefined ? item : structuredClone(payload.item) as ResponsesInputItem);
   if (!isUpstreamOwned(row)) return replacement;
   if (row.itemType === 'reasoning' && row.upstreamId !== candidate.provider.upstream) return null;
   if (row.upstreamId === candidate.provider.upstream && row.upstreamItemId !== null) {
@@ -122,7 +123,7 @@ const rewriteItems = async (
     const payload = item.row === undefined ? undefined : payloads.get(item.row.id);
     const result = rewriteItemForCandidate(item, payload, candidate);
     const wireId = result === null ? null : responsesItemId(result);
-    if (wireId !== null && payload?.private !== undefined) privatePayloads.set(wireId, payload.private);
+    if (wireId !== null && payload?.private !== undefined) privatePayloads.set(wireId, structuredClone(payload.private));
     return result;
   });
   return { items: rewritten, privatePayloads };
