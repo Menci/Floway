@@ -85,7 +85,7 @@ test('FileDumpStore prepares request gzip before terminal persistence', async ()
   const db = await openDb();
   const files = new MemoryFileProvider();
   const store = new FileDumpStore(db, files);
-  const raw = utf8('{"content":"' + 'repeatable '.repeat(4096) + '"}');
+  const raw = utf8(`{"content":"${'repeatable '.repeat(4096)}"}`);
   const prepared = await store.prepareRequestBody(raw);
   const base = baseRecord('01HZZ0000000000000000000P1', Date.UTC(2026, 5, 1, 12, 0, 0));
   const record: DumpWriteRecord = {
