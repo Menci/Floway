@@ -649,9 +649,11 @@ test('image dispatcher turns a newly introduced invalid edit source into a termi
   const lifecycle = slot.run();
   let step = await lifecycle.next();
   while (!step.done) step = await lifecycle.next();
-  const item = step.value.item as { status?: string; error?: { type?: string; code?: string } };
+  const item = step.value.item as { status?: string; error?: { type?: string; code?: string; message?: string } };
   assertEquals(item.status, 'failed');
-  assertEquals(item.error, { type: 'invalid_request_error', code: 'invalid_value' });
+  assertEquals(item.error?.type, 'invalid_request_error');
+  assertEquals(item.error?.code, 'invalid_value');
+  assertStringIncludes(item.error?.message ?? '', 'inline decodable data URL');
 });
 
 // ── imageGenerationServerTool: per-response dispatch budget (B) ──
