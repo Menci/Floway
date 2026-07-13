@@ -100,7 +100,8 @@ const coordinateKey = (draft: PricingEntryDraft): string | null => {
 
 const basePricingEntry = computed(() => pricingEntryDrafts.value.find(draft => coordinateKey(draft) === '{}'));
 const visiblePricingDimensions = computed(() => BILLING_DIMENSIONS.filter(dimension =>
-  PRICING_BY_KIND[props.kind].includes(dimension) || basePricingEntry.value?.rates[dimension] !== undefined));
+  PRICING_BY_KIND[props.kind].includes(dimension)
+  || pricingEntryDrafts.value.some(draft => draft.rates[dimension] !== undefined)));
 
 const pricingEntryCoordinateLabel = (draft: PricingEntryDraft): string => {
   const labels = PRICING_AXES.flatMap(axis => {

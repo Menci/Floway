@@ -129,6 +129,13 @@ describe('PricingEditor', () => {
     });
   });
 
+  it('keeps out-of-kind dimensions editable while a catalog has no Base', () => {
+    const wrapper = mountEditor({
+      entries: [{ selector: { serviceTier: 'priority' }, rates: { input_image: 2 } }],
+    }, { kind: 'chat' });
+    expect(wrapper.text()).toContain('Image Input ($/MTok)');
+  });
+
   it('toggles the compact threshold operator before a value is entered', async () => {
     const wrapper = mountEditor({ entries: [{ rates: { input: 1 } }] });
     const operator = wrapper.get('button[aria-label="Input Tokens operator >; click to toggle"]');
