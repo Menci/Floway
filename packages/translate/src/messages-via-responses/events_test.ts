@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { createResponsesToMessagesStreamState, translateResponsesStreamEventToMessagesEvents } from './events.ts';
 import { packReasoningSignature } from '../shared/messages-and-responses/reasoning.ts';
 import { assertEquals, assertThrows } from '../test-assert.ts';
-import type { MessagesUsage } from '@floway-dev/protocols/messages';
+import type { MessagesMessageDeltaEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesResult } from '@floway-dev/protocols/responses';
 
 test('Responses reasoning stream without readable summary emits a redacted_thinking carrier', () => {
@@ -501,7 +501,7 @@ test('reasoning stream with whitespace-only summary emits a redacted_thinking ca
   ]);
 });
 
-const terminalUsage = (response: ResponsesResult): MessagesUsage => {
+const terminalUsage = (response: ResponsesResult): NonNullable<MessagesMessageDeltaEvent['usage']> => {
   const events = translateResponsesStreamEventToMessagesEvents(
     { type: 'response.completed', response },
     createResponsesToMessagesStreamState(),
