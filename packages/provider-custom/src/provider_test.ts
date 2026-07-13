@@ -98,23 +98,22 @@ test('getProvidedModels rethrows when the upstream fetch fails — no fallback i
   );
 });
 
-test('getProvidedModels remembers pricing from the fetched response so getPricingForModelKey resolves auto models', async () => {
+test('getProvidedModels carries cost on auto models', async () => {
   const record = buildCustomUpstream();
   const instance = createCustomProvider(record);
 
   const upstreamCost: ModelPricing = { input: 3, output: 12 };
-  await withMockedFetch(
+  const models = await withMockedFetch(
     () => jsonResponse({
       object: 'list',
       data: [{ id: 'priced-model', cost: upstreamCost }],
     }),
     async () => {
-      await instance.instance.getProvidedModels(directFetcher);
+      return await instance.instance.getProvidedModels(directFetcher);
     },
   );
 
-  const pricing = instance.instance.getPricingForModelKey('priced-model');
-  assertEquals(pricing, upstreamCost);
+  assertEquals(models[0]?.cost, upstreamCost);
 });
 
 test('A manual model whose upstreamModelId matches an auto-fetched id overrides the auto entry', async () => {
@@ -144,8 +143,27 @@ test('A manual model whose upstreamModelId matches an auto-fetched id overrides 
       const models = await instance.instance.getProvidedModels(directFetcher);
       assertEquals(models.map(m => m.id), ['shared-id', 'auto-only']);
       assertEquals(models[0].display_name, 'Manual Override');
+      assertEquals(models[0].cost, manualCost);
     },
   );
+});
 
-  assertEquals(instance.instance.getPricingForModelKey('shared-id'), manualCost);
+test('a manual model without explicit cost inherits cost from its shadowed auto row', async () => {
+  const inheritedCost: ModelPricing = { input: 3, output: 12 };
+  const instance = createCustomProvider(buildCustomUpstream({
+    models: [{ upstreamModelId: 'shared-id', kind: 'chat', endpoints: { chatCompletions: {} } }],
+  }));
+
+  await withMockedFetch(
+    () => jsonResponse({
+      object: 'list',
+      data: [{ id: 'shared-id', cost: inheritedCost }],
+    }),
+    async () => {
+      const models = await instance.instance.getProvidedModels(directFetcher);
+      assertEquals(models.length, 1);
+      assertEquals(models[0]?.id, 'shared-id');
+      assertEquals(models[0]?.cost, inheritedCost);
+    },
+  );
 });

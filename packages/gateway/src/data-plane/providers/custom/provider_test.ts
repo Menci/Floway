@@ -137,11 +137,6 @@ test('Custom provider projects display_name / created / limits / cost from a Flo
       assertEquals(model.cost?.output, 15);
       assertEquals(model.cost?.input_cache_read, 0.3);
 
-      const pricing = instance.instance.getPricingForModelKey('m-rich');
-      assertEquals(pricing?.input, 3);
-      assertEquals(pricing?.output, 15);
-
-      assertEquals(instance.instance.getPricingForModelKey('unknown'), null);
     },
   );
 });
@@ -282,9 +277,6 @@ test('Custom provider with modelsFetch disabled serves only manual models and ne
       assertEquals(models[0].limits.max_output_tokens, 4096);
       assertEquals(models[0].cost?.input, 1);
 
-      const pricing = provider.getPricingForModelKey('pinned-chat');
-      assertEquals(pricing?.input, 1);
-      assertEquals(pricing?.output, 2);
     },
   );
 });
@@ -332,15 +324,8 @@ test('Custom provider with a manual override sharing an upstream id wins over th
       const shared = models.find(m => m.id === 'shared');
       assertExists(shared);
       assertEquals(shared.display_name, 'Manual Shared');
-
-      // Pricing resolves from the manual config first, not the cached upstream cost.
-      const sharedPricing = provider.getPricingForModelKey('shared');
-      assertEquals(sharedPricing?.input, 1);
-      assertEquals(sharedPricing?.output, 2);
-
-      // Auto models without upstream cost data resolve to null pricing.
-      const autoOnly = provider.getPricingForModelKey('auto-only');
-      assertEquals(autoOnly, null);
+      assertEquals(shared.cost, { input: 1, output: 2 });
+      assertEquals(models.find(m => m.id === 'auto-only')?.cost, undefined);
     },
   );
 });
