@@ -9,6 +9,7 @@ import { newUiId, type Row, seedFromAuto } from './modelRows.ts';
 import { isModelConfigValid } from './modelValidation.ts';
 import ModelsGrid from './ModelsGrid.vue';
 import type { UpstreamModelConfig } from '../../api/types.ts';
+import { modelsField } from '@floway-dev/provider';
 import type { Flag, FlagDefaults, FlagOverrides } from '@floway-dev/provider/flags';
 import { Button } from '@floway-dev/ui';
 
@@ -203,8 +204,7 @@ const switchEditorMode = (next: 'ui' | 'json') => {
   // parse error so unsaved text is preserved.
   try {
     const parsed = JSON.parse(jsonText.value);
-    if (!Array.isArray(parsed)) throw new Error('Models JSON must be an array');
-    manualModels.value = parsed as UpstreamModelConfig[];
+    manualModels.value = modelsField(parsed, 'dashboard');
     jsonError.value = null;
     editorMode.value = 'ui';
   } catch (e) {

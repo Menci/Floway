@@ -41,3 +41,30 @@ test('ModelsPanel validates every manual row before it is selected', async () =>
   await nextTick();
   expect(wrapper.emitted('update:invalid')?.at(-1)).toEqual([false]);
 });
+
+test('ModelsPanel refuses malformed pricing from JSON mode', async () => {
+  const wrapper = mount(ModelsPanel, {
+    props: {
+      modelValue: [],
+      disabledIds: [],
+      flags: [],
+      upstreamFlagOverrides: {},
+      providerFlagDefaults: {} as FlagDefaults,
+      upstreamIdLabel: 'Upstream Model ID',
+      'onUpdate:modelValue': () => {},
+      'onUpdate:disabledIds': () => {},
+    },
+    global: { stubs: { ModelsGrid: true, ModelEditor: true } },
+  });
+
+  await wrapper.findAll('button').find(button => button.text() === 'Edit as JSON')!.trigger('click');
+  await wrapper.get('textarea[aria-label="Models JSON"]').setValue(JSON.stringify([{
+    upstreamModelId: 'broken',
+    endpoints: { chatCompletions: {} },
+    pricing: { entries: 'not-an-array' },
+  }]));
+  await wrapper.findAll('button').find(button => button.text() === 'Edit with UI')!.trigger('click');
+
+  expect(wrapper.text()).toContain('Cannot leave JSON mode:');
+  expect(wrapper.find('textarea[aria-label="Models JSON"]').exists()).toBe(true);
+});
