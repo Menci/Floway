@@ -6,7 +6,7 @@ import { mockChatGatewayCtx } from '../../../../test-helpers/gateway-ctx.ts';
 import { doneFrame } from '@floway-dev/protocols/common';
 import { eventResult, type FlagId } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
-import type { CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
+import type { CanonicalResponsesPayload } from '@floway-dev/protocols/responses';
 
 const stubCtx = mockChatGatewayCtx();
 
