@@ -9,6 +9,7 @@ import {
   type MessagesWebSearchShimState,
   prepareMessagesWebSearchShimRequest,
   rewriteMessagesWebSearchEventsToNative,
+  withMessagesWebSearchRequestPrepared,
   withMessagesWebSearchShim,
 } from './web-search-shim.ts';
 import { initRepo } from '../../../../repo/index.ts';
@@ -569,6 +570,62 @@ const initDisabledSearchRepo = async (): Promise<void> => {
   initRepo(repo);
   await repo.searchConfig.save(DEFAULT_SEARCH_CONFIG);
 };
+
+const initEnabledSearchRepo = async (): Promise<void> => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  await repo.searchConfig.save({
+    ...DEFAULT_SEARCH_CONFIG,
+    provider: 'tavily',
+    tavily: { apiKey: 'test-key' },
+  });
+};
+
+test('generation and count_tokens prepare identical web-search request payloads', async () => {
+  await initEnabledSearchRepo();
+  const source = makeNativeReplayPayload();
+  const generationInvocation = invocation(structuredClone(source));
+  const countInvocation = invocation(structuredClone(source));
+
+  await withMessagesWebSearchShim(generationInvocation, mockChatGatewayCtx(), () => Promise.resolve({
+    type: 'events',
+    events: toAsyncIterable<ProtocolFrame<MessagesStreamEvent>>([]),
+    modelIdentity: testTelemetryModelIdentity,
+  }));
+  const countResponse = await withMessagesWebSearchRequestPrepared(
+    countInvocation,
+    mockChatGatewayCtx(),
+    () => Promise.resolve(new Response(null, { status: 204 })),
+  );
+
+  assertEquals(countResponse.status, 204);
+  assertEquals(countInvocation.payload, generationInvocation.payload);
+  const rewrittenTool = generationInvocation.payload.tools?.[0] as MessagesClientTool;
+  assertEquals(rewrittenTool.name, 'web_search');
+  assertEquals('type' in rewrittenTool, false);
+});
+
+test('count_tokens returns a native error response for invalid web-search tools', async () => {
+  const response = await withMessagesWebSearchRequestPrepared(
+    invocation({
+      model: 'claude-test',
+      max_tokens: 64,
+      messages: [{ role: 'user', content: 'search' }],
+      tools: [{ type: 'web_search_20260209' }, { type: 'web_search_20260209' }],
+    }),
+    mockChatGatewayCtx(),
+    () => Promise.reject(new Error('run should not be called')),
+  );
+
+  assertEquals(response.status, 400);
+  assertEquals(await response.json(), {
+    type: 'error',
+    error: {
+      type: 'invalid_request_error',
+      message: 'Only one native web search tool definition is supported per request.',
+    },
+  });
+});
 
 const runReplayOnlyShim = async (messageId: string): Promise<ProtocolFrame<MessagesStreamEvent>[]> => {
   await initDisabledSearchRepo();

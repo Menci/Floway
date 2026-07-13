@@ -505,6 +505,76 @@ test('copilot candidate strips x-anthropic-billing-header system block via the d
   assertEquals(observed.system[0].text, 'You are a helpful assistant.');
 });
 
+test('generate failover preserves billing blocks for a strip-off candidate', async () => {
+  installRepo();
+  const system = [
+    { type: 'text' as const, text: 'x-anthropic-billing-header: per-turn-token\ncch=deadbeef1234;' },
+    { type: 'text' as const, text: 'Keep this prompt.' },
+  ];
+  const expectedSystem = structuredClone(system);
+  const firstBodies: Array<Omit<MessagesPayload, 'model'>> = [];
+  const secondBodies: Array<Omit<MessagesPayload, 'model'>> = [];
+  const firstCall = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
+    firstBodies.push(body as Omit<MessagesPayload, 'model'>);
+    return { ok: false, response: new Response('unavailable', { status: 503 }), modelKey: 'first-key' };
+  });
+  const secondCall = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
+    secondBodies.push(body as Omit<MessagesPayload, 'model'>);
+    return { ok: true, events: makeProtocolFrames(makeMessagesResultEvents('msg_second')), modelKey: 'second-key' };
+  });
+  queueResolution([
+    makeCandidate({
+      upstream: 'up_strip_on',
+      enabledFlags: new Set(['strip-billing-attribution']),
+      callMessages: firstCall,
+    }),
+    makeCandidate({ upstream: 'up_strip_off', enabledFlags: new Set(), callMessages: secondCall }),
+  ]);
+
+  const payload = makePayload({ system });
+  const result = await messagesServe.generate({ payload, ctx: makeGatewayCtx(), headers: new Headers() });
+  await collectEvents(assertResultType(result, 'events').events);
+
+  assertEquals(firstBodies[0]?.system, [{ type: 'text', text: 'Keep this prompt.' }]);
+  assertEquals(secondBodies[0]?.system, expectedSystem);
+  assertEquals(payload.system, expectedSystem);
+});
+
+test('countTokens failover preserves billing blocks for a strip-off candidate', async () => {
+  installRepo();
+  const system = [
+    { type: 'text' as const, text: 'x-anthropic-billing-header: per-turn-token\ncch=deadbeef1234;' },
+    { type: 'text' as const, text: 'Count this prompt.' },
+  ];
+  const expectedSystem = structuredClone(system);
+  const firstBodies: Array<Omit<MessagesPayload, 'model'>> = [];
+  const secondBodies: Array<Omit<MessagesPayload, 'model'>> = [];
+  const firstCall = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderCallResult> => {
+    firstBodies.push(body as Omit<MessagesPayload, 'model'>);
+    return { response: new Response('unavailable', { status: 503 }), modelKey: 'first-key' };
+  });
+  const secondCall = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderCallResult> => {
+    secondBodies.push(body as Omit<MessagesPayload, 'model'>);
+    return { response: Response.json({ input_tokens: 12 }), modelKey: 'second-key' };
+  });
+  queueResolution([
+    makeCandidate({
+      upstream: 'up_strip_on',
+      enabledFlags: new Set(['strip-billing-attribution']),
+      callMessagesCountTokens: firstCall,
+    }),
+    makeCandidate({ upstream: 'up_strip_off', enabledFlags: new Set(), callMessagesCountTokens: secondCall }),
+  ]);
+
+  const payload = makePayload({ system });
+  const result = await messagesServe.countTokens({ payload, ctx: makeGatewayCtx(), headers: new Headers() });
+
+  assertEquals(assertResultType(result, 'plain').status, 200);
+  assertEquals(firstBodies[0]?.system, [{ type: 'text', text: 'Count this prompt.' }]);
+  assertEquals(secondBodies[0]?.system, expectedSystem);
+  assertEquals(payload.system, expectedSystem);
+});
+
 test('alias resolution swaps the inbound model id for the target and overlays rules onto the Messages IR', async () => {
   installRepo();
   const capturedBodies: MessagesPayload[] = [];
