@@ -99,17 +99,37 @@ interface ImageSource {
   mimeType: string;
 }
 
-export const prepareEditSources = async (sources: readonly ImageSource[]): Promise<readonly ImageSource[]> =>
-  await Promise.all(sources.map(async source => {
+export const prepareEditSources = async (sources: readonly ImageSource[]): Promise<readonly ImageSource[]> => {
+  const keyBySource = new Map<ImageSource, Promise<string>>();
+  const preparedByContent = new Map<string, Promise<ImageSource>>();
+  return await Promise.all(sources.map(async source => {
     if (editSupportedMime(source.mimeType) !== null) return source;
-    // Native Responses accepts formats such as GIF through its multimodal
-    // preprocessing, while the standalone edits endpoint accepts only
-    // PNG/JPEG/WebP. Re-encode locally to preserve the hosted-tool behavior.
-    // https://github.com/openai/openai-node/blob/ec2f57fd0d66e94782656b986d7b3eb03225369c/src/resources/images.ts#L560-L572
-    const encoded = await getImageProcessor().compressToWebp(new Uint8Array(source.bytes), null);
-    const bytes = encoded.buffer.slice(encoded.byteOffset, encoded.byteOffset + encoded.byteLength) as ArrayBuffer;
-    return { bytes, mimeType: 'image/webp' };
+
+    let keyPromise = keyBySource.get(source);
+    if (keyPromise === undefined) {
+      keyPromise = crypto.subtle.digest('SHA-256', source.bytes).then(buffer => {
+        const digest = [...new Uint8Array(buffer)].map(byte => byte.toString(16).padStart(2, '0')).join('');
+        return `${source.mimeType}\u0000${digest}`;
+      });
+      keyBySource.set(source, keyPromise);
+    }
+    const key = await keyPromise;
+
+    let prepared = preparedByContent.get(key);
+    if (prepared === undefined) {
+      // Native Responses accepts formats such as GIF through its multimodal
+      // preprocessing, while the standalone edits endpoint accepts only
+      // PNG/JPEG/WebP. Re-encode locally to preserve the hosted-tool behavior.
+      // https://github.com/openai/openai-node/blob/ec2f57fd0d66e94782656b986d7b3eb03225369c/src/resources/images.ts#L560-L572
+      prepared = getImageProcessor().compressToWebp(new Uint8Array(source.bytes), null).then(encoded => {
+        const bytes = encoded.buffer.slice(encoded.byteOffset, encoded.byteOffset + encoded.byteLength) as ArrayBuffer;
+        return { bytes, mimeType: 'image/webp' };
+      });
+      preparedByContent.set(key, prepared);
+    }
+    return await prepared;
   }));
+};
 
 const base64ToArrayBuffer = (b64: string): ArrayBuffer => {
   const binary = atob(b64);

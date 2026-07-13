@@ -308,18 +308,25 @@ test('inspectImageSources reads tool-result images and preserves forward order',
 
 test('prepareEditSources transcodes formats accepted by native Responses but rejected by images edits', async () => {
   let observedTarget: unknown = undefined;
+  let processorCalls = 0;
   initImageProcessor({
     compressToWebp: (_input, target) => {
+      processorCalls += 1;
       observedTarget = target;
       return Promise.resolve(Uint8Array.of(1, 2, 3));
     },
   });
-  const [source] = await prepareEditSources([{
+  const first = {
     bytes: Uint8Array.of(4, 5, 6).buffer,
     mimeType: 'image/gif',
-  }]);
-  assertEquals(source.mimeType, 'image/webp');
-  assertEquals([...new Uint8Array(source.bytes)], [1, 2, 3]);
+  };
+  const sameBytes = { bytes: Uint8Array.of(4, 5, 6).buffer, mimeType: 'image/gif' };
+  const prepared = await prepareEditSources([first, first, sameBytes]);
+  assertEquals(processorCalls, 1);
+  assert(prepared[0] === prepared[1]);
+  assert(prepared[0] === prepared[2]);
+  assertEquals(prepared[0].mimeType, 'image/webp');
+  assertEquals([...new Uint8Array(prepared[0].bytes)], [1, 2, 3]);
   assertEquals(observedTarget, null);
 });
 

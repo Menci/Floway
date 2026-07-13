@@ -287,6 +287,33 @@ test('mask-only GIF edit transcodes one shared image and mask to WebP', async ()
   assertEquals(await mask.text(), 'WEBP');
 });
 
+test('identical GIF source and mask share one transcode', async () => {
+  let processorCalls = 0;
+  initImageProcessor({
+    compressToWebp: () => {
+      processorCalls += 1;
+      return Promise.resolve(new TextEncoder().encode('WEBP'));
+    },
+  });
+  const gif = 'R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
+  stub.nextEdits = [jsonResponse('RURJVA==')];
+  const result = await shim(makeCtx([{
+    type: 'message', role: 'user',
+    content: [{ type: 'input_image', image_url: `data:image/gif;base64,${gif}`, detail: 'auto' }],
+  }], 'edit', {
+    input_image_mask: { image_url: `data:image/gif;base64,${gif}` },
+  }), gatewayCtx(), scriptedRun([
+    callTurn(0, 'call_1', 'edit with the same mask'),
+    messageTurn('done'),
+  ]));
+  await drain(result);
+
+  assertEquals(processorCalls, 1);
+  const form = stub.editsForms[0];
+  assertEquals(await (form.getAll('image[]')[0] as Blob).text(), 'WEBP');
+  assertEquals(await (form.get('mask') as Blob).text(), 'WEBP');
+});
+
 test('image transcoding failure becomes a terminal image tool failure', async () => {
   initImageProcessor({
     compressToWebp: () => Promise.reject(new Error('codec down')),
