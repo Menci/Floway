@@ -919,9 +919,9 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
     const rowsById = new Map(perChunk.flat().map(row => [row.id, row]));
     const records: StoredResponsesItemPayloadRecord[] = [];
     for (const id of unique) {
-      const row = rowsById.get(id);
-      if (row === undefined || row.payload_json === null) continue;
-      const payload = await parseStoredResponsesPayload(id, row.payload_json);
+      const payloadJson = rowsById.get(id)?.payload_json;
+      if (payloadJson === undefined || payloadJson === null) continue;
+      const payload = await parseStoredResponsesPayload(id, payloadJson);
       if (payload !== null) records.push({ id, payload });
     }
     return records;
