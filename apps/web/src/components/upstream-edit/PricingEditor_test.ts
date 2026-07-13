@@ -1,4 +1,5 @@
 import { mount } from '@vue/test-utils';
+import { nextTick } from 'vue';
 import { describe, expect, it } from 'vitest';
 
 import PricingEditor from './PricingEditor.vue';
@@ -35,6 +36,15 @@ describe('PricingEditor', () => {
     const updateCount = wrapper.emitted('update:modelValue')?.length ?? 0;
     await autoPricing.setValue('11');
     expect(wrapper.emitted('update:modelValue')?.length ?? 0).toBe(updateCount);
+  });
+
+  it('refreshes read-only drafts when an auto catalog snapshot changes', async () => {
+    const wrapper = mountEditor({ entries: [{ rates: { input: 1 } }] }, { editable: false });
+    expect((pricingInput(wrapper, 'unpriced').element as HTMLInputElement).value).toBe('1');
+
+    await wrapper.setProps({ modelValue: { entries: [{ rates: { input: 2 } }] } });
+    await nextTick();
+    expect((pricingInput(wrapper, 'unpriced').element as HTMLInputElement).value).toBe('2');
   });
 
   it('clears a threshold value while preserving operator-only updates', async () => {

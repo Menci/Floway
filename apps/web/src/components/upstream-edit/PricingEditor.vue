@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 
 import { parseOptionalNumber } from '../../utils/parse-optional-number.ts';
 import {
@@ -67,6 +67,12 @@ const pricingEntryDraftsFor = (value: ModelPricing | undefined): PricingEntryDra
 
 const pricingEntryDrafts = ref<PricingEntryDraft[]>(pricingEntryDraftsFor(pricing.value));
 const selectedPricingEntryId = ref<number | null>(pricingEntryDrafts.value[0]?.id ?? null);
+
+watch(pricing, value => {
+  if (props.editable) return;
+  pricingEntryDrafts.value = pricingEntryDraftsFor(value);
+  selectedPricingEntryId.value = pricingEntryDrafts.value[0]?.id ?? null;
+});
 
 const selectedPricingEntryIndex = computed(() => pricingEntryDrafts.value.findIndex(draft => draft.id === selectedPricingEntryId.value));
 const selectedPricingEntry = computed(() => pricingEntryDrafts.value[selectedPricingEntryIndex.value] ?? null);
