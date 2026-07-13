@@ -57,8 +57,8 @@ const mapUsage = (state: MessagesToGeminiStreamState, usage?: Extract<MessagesSt
   const promptTokenCount = state.inputTokens + state.cacheReadInputTokens + state.cacheCreationInputTokens;
   const candidatesTokenCount = usage?.output_tokens ?? 0;
   splitInclusiveInputTokens(promptTokenCount, state.cacheReadInputTokens, state.cacheCreationInputTokens);
-  const serviceTier = billableServiceTier(usage.speed ?? state.upstreamSpeed)
-    ?? billableServiceTier(usage.service_tier ?? state.upstreamServiceTier);
+  const serviceTier = billableServiceTier(usage?.speed ?? state.upstreamSpeed)
+    ?? billableServiceTier(usage?.service_tier ?? state.upstreamServiceTier);
 
   return {
     promptTokenCount,
