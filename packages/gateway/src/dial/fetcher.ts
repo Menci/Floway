@@ -142,29 +142,39 @@ const runFallbacks = async (
   throw new AggregateError(errors, 'all proxies failed at the dial layer');
 };
 
-const createReplayableRequest = (
-  url: string,
-  init: RequestInit,
-  hasDirect: boolean,
-): ReplayableRequest => {
-  let directInit = init;
-  let materialized: ProxiedRequest | undefined;
-  return {
-    signal: init.signal ?? undefined,
-    directInit: () => directInit,
-    proxied: async () => {
-      if (materialized !== undefined) return materialized;
-      materialized = await buildProxiedRequest(url, directInit);
-      // Once bytes exist, the original BodyInit must not remain captured by
-      // the retry closure for the duration of the upstream request. Preserve
-      // an owned byte body only when a later direct fallback can consume it.
-      directInit = hasDirect
-        ? rebuildInitFromProxied(directInit, materialized)
-        : { ...directInit, body: null };
-      return materialized;
-    },
-  };
-};
+class ReplayableRequestOwner implements ReplayableRequest {
+  readonly signal: AbortSignal | undefined;
+  private direct: RequestInit;
+  private materialized: ProxiedRequest | undefined;
+
+  constructor(
+    private readonly url: string,
+    init: RequestInit,
+    private readonly hasDirect: boolean,
+  ) {
+    this.signal = init.signal ?? undefined;
+    this.direct = init;
+  }
+
+  directInit(): RequestInit {
+    return this.direct;
+  }
+
+  async proxied(): Promise<ProxiedRequest> {
+    if (this.materialized !== undefined) return this.materialized;
+    this.materialized = await buildProxiedRequest(this.url, this.direct);
+    // Once bytes exist, the original BodyInit must not remain captured for the
+    // duration of the upstream request. Preserve an owned byte body only when
+    // a later direct fallback can consume it.
+    this.direct = this.hasDirect
+      ? rebuildInitFromProxied(this.direct, this.materialized)
+      : { ...this.direct, body: null };
+    return this.materialized;
+  }
+}
+
+const createReplayableRequest = (url: string, init: RequestInit, hasDirect: boolean): ReplayableRequest =>
+  new ReplayableRequestOwner(url, init, hasDirect);
 
 const rebuildInitFromProxied = (original: RequestInit, proxied: ProxiedRequest): RequestInit => {
   const headers = new Headers(original.headers);
