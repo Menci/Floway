@@ -1,7 +1,7 @@
-import { test } from 'vitest';
+import { test, vi } from 'vitest';
 
 import { classifyResponsesItemAffinity } from './affinity.ts';
-import { createStoredResponsesItemId, hashResponsesItemEncryptedContent, isStoredResponsesItemId } from './format.ts';
+import { createStoredResponsesItemId, hashResponsesItemContent, hashResponsesItemEncryptedContent, isStoredResponsesItemId } from './format.ts';
 import { rewriteResponsesItemsForCandidate } from './rewrite.ts';
 import { createNonResponsesSourceStore } from './store.ts';
 import { initRepo } from '../../../../repo/index.ts';
@@ -153,6 +153,37 @@ test('matching upstream rewrites to upstream_item_id', async () => {
   const rewritten = await rewrite(input, candidate('up_a'));
 
   assertEquals(rewritten, [{ type: 'message', id: 'raw_msg_a', role: 'assistant', content: 'stale' }]);
+});
+
+test('canonical projected echo rewrites from metadata without loading its payload', async () => {
+  const id = storedMessageId('metadata-fast-path');
+  const canonical = {
+    type: 'message',
+    id: 'raw_msg_a',
+    role: 'assistant',
+    status: 'completed',
+    content: [{ type: 'output_text', text: 'hello', annotations: [], logprobs: [] }],
+  } as unknown as ResponsesInputItem;
+  const repo = await insertRows([storedRow({
+    id,
+    itemType: 'message',
+    upstreamId: 'up_a',
+    upstreamItemId: 'raw_msg_a',
+    contentHash: await hashResponsesItemContent(canonical),
+    payload: canonical,
+  })]);
+  const loadPayloads = vi.spyOn(repo.responsesItems, 'lookupPayloads');
+  const input: ResponsesInputItem[] = [{
+    type: 'message',
+    id,
+    role: 'assistant',
+    content: [{ type: 'output_text', text: 'hello' }],
+  }];
+
+  const rewritten = await rewrite(input, candidate('up_a'));
+
+  assertEquals(loadPayloads.mock.calls, []);
+  assertEquals(rewritten, [canonical]);
 });
 
 // Case 6: cross-upstream owned → mint tmp id
