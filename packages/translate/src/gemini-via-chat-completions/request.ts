@@ -188,7 +188,7 @@ const applyGenerationConfig = (request: ChatCompletionsPayload, generationConfig
   }
 
   const reasoningEffort = geminiReasoningEffort(generationConfig.thinkingConfig);
-  if (reasoningEffort) request.reasoning_effort = reasoningEffort;
+  if (reasoningEffort !== null) request.reasoning_effort = reasoningEffort;
 };
 
 const buildTools = (payload: GeminiPayload): ChatCompletionsTool[] | undefined => {

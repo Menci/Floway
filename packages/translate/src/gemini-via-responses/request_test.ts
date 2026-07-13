@@ -4,6 +4,14 @@ import { buildTargetRequest } from './request.ts';
 import { assertEquals, assertFalse, assertThrows } from '../test-assert.ts';
 import type { GeminiContent, GeminiPayload } from '@floway-dev/protocols/gemini';
 
+test('buildTargetRequest forwards an empty thinkingLevel verbatim', () => {
+  const request = buildTargetRequest({
+    generationConfig: { thinkingConfig: { thinkingLevel: '' } },
+  }, 'gpt-test');
+
+  assertEquals(request.reasoning, { effort: '' });
+});
+
 test('buildTargetRequest maps instructions and multimodal user input without defaults', () => {
   const payload: GeminiPayload = {
     systemInstruction: {
