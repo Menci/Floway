@@ -52,6 +52,10 @@ const fileIdImageMessage: ResponsesInputItem = {
   type: 'message', role: 'user', content: [{ type: 'input_image', file_id: 'file_1', detail: 'auto' }],
 };
 
+const remoteImageMessage: ResponsesInputItem = {
+  type: 'message', role: 'user', content: [{ type: 'input_image', image_url: 'https://example.com/a.png', detail: 'auto' }],
+};
+
 // ── isHostedImageGenerationTool ──
 
 test('isHostedImageGenerationTool matches only the hosted image_generation type', () => {
@@ -508,12 +512,29 @@ test('imageGenerationServerTool rejects file_id-only images when action may edit
   assert(result.type === 'invalid-request');
   assertEquals(result.code, 'invalid_value');
   assertEquals(result.param, 'input');
-  assertStringIncludes(result.message, 'file_id-only');
+  assertStringIncludes(result.message, 'inline decodable data URL');
+});
+
+test('imageGenerationServerTool rejects remote images when action may edit', async () => {
+  const result = await imageGenerationServerTool(
+    makeCtx({ tools: [{ type: 'image_generation' }], input: [remoteImageMessage] }),
+    gatewayCtx(),
+  );
+  assert(result.type === 'invalid-request');
+  assertEquals(result.code, 'invalid_value');
 });
 
 test('imageGenerationServerTool accepts file_id-only context for explicit generation', async () => {
   const result = await imageGenerationServerTool(
     makeCtx({ tools: [{ type: 'image_generation', action: 'generate' }], input: [fileIdImageMessage] }),
+    gatewayCtx(),
+  );
+  assert(result.type === 'active');
+});
+
+test('imageGenerationServerTool accepts remote image context for explicit generation', async () => {
+  const result = await imageGenerationServerTool(
+    makeCtx({ tools: [{ type: 'image_generation', action: 'generate' }], input: [remoteImageMessage] }),
     gatewayCtx(),
   );
   assert(result.type === 'active');

@@ -948,12 +948,12 @@ export const imageGenerationServerTool: ServerToolRegistration = (invocation, ga
     return { type: 'invalid-request', message: prepared.error.message, param: prepared.error.param, code: prepared.error.code };
   }
   const config = prepared.config;
-  const hasFileIdOnlyImage = invocation.payload.input.some(item =>
-    inputImagesOf(item).some(image => typeof image.image_url !== 'string' && typeof image.file_id === 'string'));
-  if (config.action !== 'generate' && hasFileIdOnlyImage) {
+  const hasUnresolvableInputImage = invocation.payload.input.some(item =>
+    inputImagesOf(item).some(image => typeof image.image_url !== 'string' || decodeInlineImage(image.image_url) === null));
+  if (config.action !== 'generate' && hasUnresolvableInputImage) {
     return {
       type: 'invalid-request',
-      message: 'image_generation cannot edit file_id-only input images because their bytes are unavailable. Set action to "generate" to use them only as model context.',
+      message: 'image_generation cannot edit an input image unless it is an inline decodable data URL. Set action to "generate" to use remote, file_id, or malformed images only as model context.',
       param: 'input',
       code: 'invalid_value',
     };
