@@ -156,22 +156,36 @@ test('generate filters out candidates that do not expose any chat-completions-ta
 
 test('generate falls through to the next candidate when the first yields an upstream error', async () => {
   installRepo();
+  const originalImageUrl = 'data:image/png;base64,AQID';
+  const payload = makePayload({
+    messages: [{
+      role: 'user',
+      content: [{ type: 'image_url', image_url: { url: originalImageUrl, detail: 'auto' } }],
+    }],
+  });
   const firstError = new Response(JSON.stringify({ error: { message: 'nope' } }), {
     status: 502, headers: new Headers({ 'content-type': 'application/json' }),
   });
-  const firstCall = vi.fn(async (): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => ({
-    ok: false, response: firstError, modelKey: 'first-key',
-  }));
-  const secondCall = vi.fn(async (): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => ({
-    ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'second-key', headers: new Headers(),
-  }));
+  const firstCall = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => {
+    const message = (body as Omit<ChatCompletionsPayload, 'model'>).messages[0];
+    if (!Array.isArray(message.content) || message.content[0]?.type !== 'image_url') throw new Error('expected image content');
+    message.content[0].image_url.url = 'data:image/webp;base64,COMPRESSED';
+    return { ok: false, response: firstError, modelKey: 'first-key' };
+  });
+  let fallbackImageUrl: string | undefined;
+  const secondCall = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => {
+    const message = (body as Omit<ChatCompletionsPayload, 'model'>).messages[0];
+    if (!Array.isArray(message.content) || message.content[0]?.type !== 'image_url') throw new Error('expected image content');
+    fallbackImageUrl = message.content[0].image_url.url;
+    return { ok: true, events: makeProtocolFrames(makeChatCompletionsEvents()), modelKey: 'second-key', headers: new Headers() };
+  });
   queueResolution([
     makeCandidate({ upstream: 'up_a', callChatCompletions: firstCall }),
     makeCandidate({ upstream: 'up_b', callChatCompletions: secondCall }),
   ]);
 
   const result = await chatCompletionsServe.generate({
-    payload: makePayload(),
+    payload,
     ctx: makeGatewayCtx(),
     headers: new Headers(),
   });
@@ -182,6 +196,10 @@ test('generate falls through to the next candidate when the first yields an upst
   assertEquals(result.type, 'events');
   assertEquals(firstCall.mock.calls.length, 1);
   assertEquals(secondCall.mock.calls.length, 1);
+  assertEquals(fallbackImageUrl, originalImageUrl);
+  const sourceMessage = payload.messages[0];
+  if (!Array.isArray(sourceMessage.content) || sourceMessage.content[0]?.type !== 'image_url') throw new Error('expected source image content');
+  assertEquals(sourceMessage.content[0].image_url.url, originalImageUrl);
 });
 
 // A mid-attempt throw (interceptor bug / translation error / provider-layer

@@ -75,7 +75,9 @@ export interface ResponsesAttemptInvokeArgs {
 // no-op at the store-write layer.
 export const responsesAttempt = {
   invoke: async (args: ResponsesAttemptInvokeArgs): Promise<ResponsesAttemptResult> => {
-    const { payload, action, ctx, candidate, headers } = args;
+    const { payload: sourcePayload, action, ctx, candidate, headers: sourceHeaders } = args;
+    const payload = structuredClone(sourcePayload);
+    const headers = new Headers(sourceHeaders);
     const { store } = ctx;
     const targetApi = responsesTarget.pick(candidate.model.endpoints);
     // Rewrite + privatePayload seed + assistant-content normalization all run

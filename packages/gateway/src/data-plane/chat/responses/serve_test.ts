@@ -203,26 +203,41 @@ test('compact returns a result envelope from the wrapped attempt', async () => {
 
 test('generate falls through to the next candidate when the first yields an upstream error', async () => {
   installRepo();
+  const originalImageUrl = 'data:image/png;base64,AQID';
+  const payload = makePayload({
+    input: [{
+      type: 'message',
+      role: 'user',
+      content: [{ type: 'input_image', image_url: originalImageUrl, detail: 'auto' }],
+    }],
+  });
   const firstError = new Response(JSON.stringify({ error: { message: 'nope' } }), {
     status: 502, headers: new Headers({ 'content-type': 'application/json' }),
   });
-  const firstCall = vi.fn(async (): Promise<ProviderResponsesResult> => ({
-    action: 'generate', ok: false, response: firstError, modelKey: 'first-key',
-  }));
+  const firstCall = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderResponsesResult> => {
+    const item = (body as Omit<CanonicalResponsesPayload, 'model'>).input[0];
+    if (item.type !== 'message' || !Array.isArray(item.content) || item.content[0]?.type !== 'input_image') throw new Error('expected image content');
+    item.content[0].image_url = 'data:image/webp;base64,COMPRESSED';
+    return { action: 'generate', ok: false, response: firstError, modelKey: 'first-key' };
+  });
   const completed: ResponsesStreamEvent = {
     type: 'response.completed',
     sequence_number: 0,
     response: makeResponsesResult('resp_second'),
   };
-  const secondCall = vi.fn(async (): Promise<ProviderResponsesResult> => ({
-    action: 'generate', ok: true, events: makeProtocolFrames([completed]), modelKey: 'second-key', headers: new Headers(),
-  }));
+  let fallbackImageUrl: string | null | undefined;
+  const secondCall = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderResponsesResult> => {
+    const item = (body as Omit<CanonicalResponsesPayload, 'model'>).input[0];
+    if (item.type !== 'message' || !Array.isArray(item.content) || item.content[0]?.type !== 'input_image') throw new Error('expected image content');
+    fallbackImageUrl = item.content[0].image_url;
+    return { action: 'generate', ok: true, events: makeProtocolFrames([completed]), modelKey: 'second-key', headers: new Headers() };
+  });
   const first = makeCandidate({ upstream: 'up_a', callResponses: firstCall });
   const second = makeCandidate({ upstream: 'up_b', callResponses: secondCall });
   queueResolution([first, second]);
 
   const result = await responsesServe.generate({
-    payload: makePayload(),
+    payload,
     ctx: makeGatewayCtx(),
     headers: new Headers(),
   });
@@ -233,6 +248,10 @@ test('generate falls through to the next candidate when the first yields an upst
   assertEquals(result.type, 'events');
   assertEquals(firstCall.mock.calls.length, 1);
   assertEquals(secondCall.mock.calls.length, 1);
+  assertEquals(fallbackImageUrl, originalImageUrl);
+  const sourceItem = payload.input[0];
+  if (sourceItem.type !== 'message' || !Array.isArray(sourceItem.content) || sourceItem.content[0]?.type !== 'input_image') throw new Error('expected source image content');
+  assertEquals(sourceItem.content[0].image_url, originalImageUrl);
 });
 
 // A mid-attempt throw (interceptor bug / translation error / provider-layer
