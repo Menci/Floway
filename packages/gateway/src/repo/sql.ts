@@ -908,20 +908,21 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
     const unique = [...new Set(ids)];
     const chunks: string[][] = [];
     for (let index = 0; index < unique.length; index += 90) chunks.push(unique.slice(index, index + 90));
-    const records: StoredResponsesItemPayloadRecord[] = [];
-    for (const chunk of chunks) {
+    const perChunk = await Promise.all(chunks.map(async chunk => {
       const placeholders = chunk.map(() => '?').join(', ');
       const { results } = await this.db
         .prepare(`SELECT id, payload_json FROM responses_items WHERE ${RESPONSES_ITEM_ID_SCOPE_SQL} AND id IN (${placeholders})`)
         .bind(apiKeyId, ...chunk)
         .all<{ id: string; payload_json: string | null }>();
-      const rowsById = new Map(results.map(row => [row.id, row]));
-      for (const id of chunk) {
-        const row = rowsById.get(id);
-        if (row?.payload_json === null || row === undefined) continue;
-        const payload = await parseStoredResponsesPayload(id, row.payload_json);
-        if (payload !== null) records.push({ id, payload });
-      }
+      return results;
+    }));
+    const rowsById = new Map(perChunk.flat().map(row => [row.id, row]));
+    const records: StoredResponsesItemPayloadRecord[] = [];
+    for (const id of unique) {
+      const row = rowsById.get(id);
+      if (row === undefined || row.payload_json === null) continue;
+      const payload = await parseStoredResponsesPayload(id, row.payload_json);
+      if (payload !== null) records.push({ id, payload });
     }
     return records;
   }
