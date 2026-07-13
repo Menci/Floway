@@ -1,7 +1,7 @@
 import { appendGeminiThoughtSignature, flushGeminiThoughtSignature, type GeminiThoughtSignatureState, parseStrictJsonObject, signGeminiPart } from '../shared/gemini-via/gemini.ts';
 import { chatCompletionsErrorPayloadMessage } from '@floway-dev/protocols/chat-completions';
 import type { ChatCompletionsStreamEvent, ChatCompletionsDelta } from '@floway-dev/protocols/chat-completions';
-import { billableServiceTier, eventFrame, splitInclusiveInputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { billableServiceTier, eventFrame, splitInclusiveInputTokens, splitInclusiveOutputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { GEMINI_USAGE_BILLING, type GeminiCandidate, type GeminiFinishReason, type GeminiResult, type GeminiPart, type GeminiStreamEvent, type GeminiUsageMetadata } from '@floway-dev/protocols/gemini';
 
 type ChatCompletionsStreamChoice = ChatCompletionsStreamEvent['choices'][0];
@@ -20,12 +20,6 @@ const mapFinishReason = (finishReason: ChatCompletionsStreamChoice['finish_reaso
   }
 };
 
-const reasoningTokensFromUsage = (usage: NonNullable<ChatCompletionsStreamEvent['usage']>): number | undefined => {
-  const reasoningTokens = usage.completion_tokens_details?.reasoning_tokens;
-
-  return typeof reasoningTokens === 'number' ? reasoningTokens : undefined;
-};
-
 // OpenAI prompt_tokens already includes prompt_tokens_details.cached_tokens,
 // matching Gemini's inclusive promptTokenCount semantics. Pass both through
 // directly — no folding. Contrast with gemini-via-messages, where Anthropic's
@@ -41,16 +35,19 @@ const mapUsage = (
   const cacheWriteTokens = usage.prompt_tokens_details?.cache_creation_input_tokens
     ?? usage.prompt_tokens_details?.cache_write_tokens;
   splitInclusiveInputTokens(usage.prompt_tokens, cachedTokens, cacheWriteTokens);
+  const { output: candidatesTokenCount, reasoning: thoughtsTokenCount } = splitInclusiveOutputTokens(
+    usage.completion_tokens,
+    usage.completion_tokens_details?.reasoning_tokens,
+  );
   const serviceTier = billableServiceTier(upstreamServiceTier);
 
   const metadata: GeminiUsageMetadata = {
     promptTokenCount: usage.prompt_tokens,
-    candidatesTokenCount: usage.completion_tokens,
+    candidatesTokenCount,
     totalTokenCount: usage.total_tokens,
   };
 
-  const thoughtsTokenCount = reasoningTokensFromUsage(usage);
-  if (thoughtsTokenCount !== undefined) {
+  if (usage.completion_tokens_details?.reasoning_tokens !== undefined) {
     metadata.thoughtsTokenCount = thoughtsTokenCount;
   }
 

@@ -20,3 +20,21 @@ export const splitInclusiveInputTokens = (
   }
   return { input, cacheRead, cacheWrite };
 };
+
+export const splitInclusiveOutputTokens = (
+  outputTokens: number,
+  reasoningTokens: number | undefined,
+): { output: number; reasoning: number } => {
+  for (const [name, value] of [
+    ['output tokens', outputTokens],
+    ['reasoning tokens', reasoningTokens],
+  ] as const) {
+    if (value !== undefined && (!Number.isSafeInteger(value) || value < 0)) {
+      throw new RangeError(`${name} must be a non-negative safe integer: ${value}`);
+    }
+  }
+  const reasoning = reasoningTokens ?? 0;
+  const output = outputTokens - reasoning;
+  if (output < 0) throw new RangeError(`reasoning tokens exceed inclusive output tokens: ${outputTokens} - ${reasoning}`);
+  return { output, reasoning };
+};

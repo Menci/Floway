@@ -1,5 +1,5 @@
 import { geminiCandidateEvent, parseStrictJsonObject } from '../shared/gemini-via/gemini.ts';
-import { billableServiceTier, eventFrame, splitInclusiveInputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { billableServiceTier, eventFrame, splitInclusiveInputTokens, splitInclusiveOutputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { GEMINI_USAGE_BILLING, type GeminiFinishReason, type GeminiPart, type GeminiStreamEvent, type GeminiUsageMetadata } from '@floway-dev/protocols/gemini';
 import type { ResponsesOutputFunctionCall, ResponsesOutputReasoning, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
@@ -16,15 +16,19 @@ const mapUsage = (response: ResponsesResult, upstreamServiceTier: ResponsesResul
   const cachedTokens = usage.input_tokens_details?.cached_tokens;
   const cacheWriteTokens = usage.input_tokens_details?.cache_write_tokens;
   splitInclusiveInputTokens(usage.input_tokens, cachedTokens, cacheWriteTokens);
+  const { output: candidatesTokenCount, reasoning: thoughtsTokenCount } = splitInclusiveOutputTokens(
+    usage.output_tokens,
+    usage.output_tokens_details?.reasoning_tokens,
+  );
   const serviceTier = billableServiceTier(upstreamServiceTier);
 
   return {
     promptTokenCount: usage.input_tokens,
-    candidatesTokenCount: usage.output_tokens,
+    candidatesTokenCount,
     totalTokenCount: usage.total_tokens,
     ...(usage.output_tokens_details?.reasoning_tokens !== undefined
       ? {
-          thoughtsTokenCount: usage.output_tokens_details.reasoning_tokens,
+          thoughtsTokenCount,
         }
       : {}),
     ...(cachedTokens !== undefined

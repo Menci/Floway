@@ -209,7 +209,7 @@ test('translateToSourceEvents maps finish reasons and usage metadata', async () 
       ],
       usageMetadata: {
         promptTokenCount: 10,
-        candidatesTokenCount: 5,
+        candidatesTokenCount: 3,
         totalTokenCount: 15,
         thoughtsTokenCount: 2,
       },
