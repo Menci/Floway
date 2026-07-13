@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, ref } from 'vue';
 
 import { parseOptionalNumber } from '../../utils/parse-optional-number.ts';
 import {
@@ -20,14 +20,9 @@ import { Button, Input } from '@floway-dev/ui';
 const props = defineProps<{
   kind: ModelKind;
   editable: boolean;
-  resetKey: string;
 }>();
 
 const pricing = defineModel<ModelPricing | undefined>({ required: true });
-
-const emit = defineEmits<{
-  'validity-change': [valid: boolean];
-}>();
 
 const PRICING_LABELS: Record<BillingDimension, string> = {
   input: 'Input ($/MTok)',
@@ -72,11 +67,6 @@ const pricingEntryDraftsFor = (value: ModelPricing | undefined): PricingEntryDra
 
 const pricingEntryDrafts = ref<PricingEntryDraft[]>(pricingEntryDraftsFor(pricing.value));
 const selectedPricingEntryId = ref<number | null>(pricingEntryDrafts.value[0]?.id ?? null);
-
-watch(() => props.resetKey, () => {
-  pricingEntryDrafts.value = pricingEntryDraftsFor(pricing.value);
-  selectedPricingEntryId.value = pricingEntryDrafts.value[0]?.id ?? null;
-});
 
 const selectedPricingEntryIndex = computed(() => pricingEntryDrafts.value.findIndex(draft => draft.id === selectedPricingEntryId.value));
 const selectedPricingEntry = computed(() => pricingEntryDrafts.value[selectedPricingEntryIndex.value] ?? null);
@@ -201,9 +191,6 @@ const pricingValidationErrors = computed<readonly string[]>(() => {
   }
   return [...errors];
 });
-
-const isPricingValid = computed(() => pricingValidationErrors.value.length === 0);
-watch(isPricingValid, valid => emit('validity-change', valid), { immediate: true });
 
 const writePricingEntries = (drafts: readonly PricingEntryDraft[]) => {
   if (!props.editable) return;

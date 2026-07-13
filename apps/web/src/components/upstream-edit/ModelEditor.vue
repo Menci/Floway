@@ -200,10 +200,10 @@ const onChatMetadataChange = (next: AnnouncedMetadata | undefined) => {
         />
 
         <PricingEditor
+          :key="row.uiId + ':' + row.kind"
           :model-value="config.pricing"
           :kind="rowKind"
           :editable="editable"
-          :reset-key="row.uiId + ':' + row.kind"
           @update:model-value="value => patch({ pricing: value })"
         />
 
