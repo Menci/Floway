@@ -7,6 +7,7 @@ import { afterEach, expect, test, vi } from 'vitest';
 // have dedicated coverage in models-cache_test.ts.
 vi.mock('../../data-plane/providers/models-cache.ts', () => ({
   fetchUpstreamModelsCached: () => Promise.resolve([]),
+  clearInFlightForTesting: () => {},
 }));
 
 import { hashPassword } from '../../shared/passwords.ts';

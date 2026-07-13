@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 
 import { enumerateAddressableModelIds } from './addressable.ts';
 import { buildCustomUpstreamRecord, setupAppTest } from '../../../test-helpers.ts';
+import { clearInFlightForTesting } from '../../providers/models-cache.ts';
 import { directFetcher } from '@floway-dev/provider';
 import { jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
@@ -14,6 +15,7 @@ describe('enumerateAddressableModelIds', () => {
     const { repo } = await setupAppTest();
     await repo.upstreams.deleteAll();
     await repo.upstreams.save(buildCustomUpstreamRecord());
+    clearInFlightForTesting();
 
     await withMockedFetch(
       request => {
@@ -42,6 +44,7 @@ describe('enumerateAddressableModelIds', () => {
       // public id.
       modelPrefix: { prefix: 'cust/', addressable: ['unprefixed', 'prefixed'], listed: ['prefixed'] },
     }));
+    clearInFlightForTesting();
 
     await withMockedFetch(
       request => {
@@ -66,6 +69,7 @@ describe('enumerateAddressableModelIds', () => {
   test('throws "no upstream configured" when the upstream cap is empty — surfacing the same hint /v1/models has always raised', async () => {
     const { repo } = await setupAppTest();
     await repo.upstreams.deleteAll();
+    clearInFlightForTesting();
 
     await expect(enumerateAddressableModelIds(null, () => directFetcher, noBackground))
       .rejects.toThrow('No upstream provider configured');
