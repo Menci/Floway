@@ -218,6 +218,12 @@ test('generate translates through Responses when only that endpoint is exposed',
 
 test('generate falls through to the next candidate when the first yields an upstream error', async () => {
   installRepo();
+  const payload = makePayload({
+    contents: [{
+      role: 'user',
+      parts: [{ text: 'hello', thought: true, thoughtSignature: 'opaque-signature' }],
+    }],
+  });
   const firstError = new Response(JSON.stringify({ error: { message: 'nope' } }), {
     status: 502, headers: new Headers({ 'content-type': 'application/json' }),
   });
@@ -233,7 +239,7 @@ test('generate falls through to the next candidate when the first yields an upst
   ]);
 
   const result = await geminiServe.generate({
-    payload: makePayload(),
+    payload,
     ctx: makeGatewayCtx(),
     model: 'test-model',
     headers: new Headers(),
@@ -245,6 +251,11 @@ test('generate falls through to the next candidate when the first yields an upst
   expectType(result, 'events');
   assertEquals(firstCall.mock.calls.length, 1);
   assertEquals(secondCall.mock.calls.length, 1);
+  assertEquals(payload.contents?.[0]?.parts, [{
+    text: 'hello',
+    thought: true,
+    thoughtSignature: 'opaque-signature',
+  }]);
 });
 
 // A mid-attempt throw (interceptor bug / translation error / provider-layer

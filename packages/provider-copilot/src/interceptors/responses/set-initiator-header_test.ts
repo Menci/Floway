@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { withInitiatorHeaderSet } from './set-initiator-header.ts';
 import type { ResponsesBoundaryCtx } from './types.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ResponsesInputItem, ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { CanonicalResponsesPayload, ResponsesInputItem, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
 import { assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
@@ -13,7 +13,7 @@ const stubRequest = {};
 const okEvents = (): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> =>
   Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {})(), testTelemetryModelIdentity));
 
-const invocation = (payload: ResponsesPayload): ResponsesBoundaryCtx => ({
+const invocation = (payload: CanonicalResponsesPayload): ResponsesBoundaryCtx => ({
   payload,
   headers: new Headers(),
   model: stubProviderModel({ endpoints: { responses: {} } }),
@@ -30,17 +30,6 @@ test('Responses initiator is user when the last input item is a plain user messa
         content: [{ type: 'input_text', text: 'hello' }],
       },
     ],
-  });
-
-  await withInitiatorHeaderSet(ctx, stubRequest, okEvents);
-
-  assertEquals(ctx.headers.get('x-initiator'), 'user');
-});
-
-test('Responses initiator is user when input is a plain string', async () => {
-  const ctx = invocation({
-    model: 'gpt-test',
-    input: 'plain string input',
   });
 
   await withInitiatorHeaderSet(ctx, stubRequest, okEvents);

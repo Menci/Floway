@@ -55,8 +55,6 @@ const modelEndpointsSchema = z.object({
   imagesEdits: z.object({}).optional(),
 });
 
-// Shared between base pricing and per-tier overlays so the two always carry
-// the same dimension set.
 const pricingDimensionShape = {
   input: z.number().nonnegative().optional(),
   output: z.number().nonnegative().optional(),
@@ -133,13 +131,12 @@ const upstreamModelSchema = z.object({
   kind: z.enum(['chat', 'embedding', 'image']).optional(),
   endpoints: modelEndpointsSchema,
   display_name: z.string().optional(),
-  cost: z.object({
-    ...pricingDimensionShape,
-    // See ModelPricing.tiers in @floway-dev/protocols/common for semantics.
-    // An empty overlay is legal — it declares the tier without changing any
-    // rate, so every dimension inherits base pricing.
-    tiers: z.record(z.string().min(1), z.object(pricingDimensionShape)).optional(),
-  }).optional(),
+  pricing: z.object({
+    entries: z.array(z.object({
+      selector: z.record(z.string(), z.unknown()).optional(),
+      rates: z.object(pricingDimensionShape).strict(),
+    }).strict()).min(1),
+  }).strict().optional(),
   flagOverrides: flagOverridesSchema.optional(),
   limits: limitsSchema.optional(),
   chat: chatSchema.optional(),
@@ -647,7 +644,7 @@ export const updateAliasBody = aliasBodyCore.superRefine(aliasBodyRulesRefinemen
 // --- data transfer ---
 
 export const importBody = z.object({
-  version: z.literal(8, { error: 'version must be 8 — older export formats are not supported; re-export from the current deployment' }),
+  version: z.literal(9, { error: 'version must be 9 — older export formats are not supported; re-export from the current deployment' }),
   mode: z.enum(['merge', 'replace'], { error: "mode must be 'merge' or 'replace'" }),
   data: z.unknown().optional(),
 });

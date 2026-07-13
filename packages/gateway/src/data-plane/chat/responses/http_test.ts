@@ -7,7 +7,7 @@ import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import type { ApiKey, StoredResponsesItem, User } from '../../../repo/types.ts';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { CanonicalResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { type ModelCandidate, directFetcher, type ProviderResponsesResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
 
@@ -179,9 +179,9 @@ test('POST /v1/responses streams a successful SSE body', async () => {
 
 test('POST /v1/responses canonicalizes implicit messages before provider dispatch', async () => {
   installRepo();
-  let observedBody: Omit<ResponsesPayload, 'model'> | undefined;
+  let observedBody: Omit<CanonicalResponsesPayload, 'model'> | undefined;
   const callResponses = vi.fn(async (_model, body): Promise<ProviderResponsesResult> => {
-    observedBody = body as Omit<ResponsesPayload, 'model'>;
+    observedBody = body as Omit<CanonicalResponsesPayload, 'model'>;
     return {
       action: 'generate',
       ok: true,
@@ -397,11 +397,10 @@ test('POST /v1/responses renders a routing-unavailable 400 when a forcing item n
   assertEquals(body.error.code, 'responses_item_routing_unavailable');
 });
 
-// Alias flow: the resolver returns a candidate whose upstream catalog id
-// is the target model id, plus the alias's rule overlay. Serve rewrites
-// `payload.model` to `candidate.model.id` before dispatching, and the
-// attempt's leaf wire call reads `candidate.rules` to overlay the rules
-// onto the target IR.
+// Alias flow: the resolver returns a candidate whose upstream catalog id is
+// the target model id, plus the alias's rule overlay. The attempt stamps its
+// private clone with `candidate.model.id`, and the leaf wire call reads
+// `candidate.rules` to overlay the rules onto the target IR.
 const queueCodexAutoReviewCandidate = (
   callResponses: (model: unknown, body: unknown, action: ResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderResponsesResult>,
 ): void => {
@@ -413,9 +412,9 @@ const queueCodexAutoReviewCandidate = (
 test('POST /v1/responses routes a codex-auto-review request through the seeded alias: rewrites the model to gpt-5.4 and stamps reasoning.effort=low', async () => {
   installRepo();
   lastSeenModel.value = null;
-  const observedBodies: ResponsesPayload[] = [];
+  const observedBodies: Omit<CanonicalResponsesPayload, 'model'>[] = [];
   queueCodexAutoReviewCandidate(async (_model, body): Promise<ProviderResponsesResult> => {
-    observedBodies.push(body as ResponsesPayload);
+    observedBodies.push(body as Omit<CanonicalResponsesPayload, 'model'>);
     return {
       action: 'generate', ok: true,
       events: makeProviderEvents([completedEvent()]),
@@ -445,7 +444,7 @@ test('POST /v1/responses routes a codex-auto-review request through the seeded a
 test('POST /v1/responses/compact routes a codex-auto-review request through the seeded alias: rewrites the model to gpt-5.4 and stamps reasoning.effort=low (the alias rule overlays the compact body too)', async () => {
   installRepo();
   lastSeenModel.value = null;
-  const observedBodies: ResponsesPayload[] = [];
+  const observedBodies: Omit<CanonicalResponsesPayload, 'model'>[] = [];
   const compactionItem = { type: 'compaction' as const, id: 'cmp_1', encrypted_content: 'ENC' };
   const compactionResult: ResponsesResult = {
     ...makeResponsesResult(),
@@ -454,7 +453,7 @@ test('POST /v1/responses/compact routes a codex-auto-review request through the 
   };
   queueCodexAutoReviewCandidate(async (_model, body, action): Promise<ProviderResponsesResult> => {
     if (action !== 'compact') throw new Error(`expected compact, got ${action}`);
-    observedBodies.push(body as ResponsesPayload);
+    observedBodies.push(body as Omit<CanonicalResponsesPayload, 'model'>);
     return { action: 'compact', ok: true, result: compactionResult, modelKey: 'test-model-key' };
   });
 

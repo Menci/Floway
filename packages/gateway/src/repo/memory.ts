@@ -45,10 +45,11 @@ import type {
   UsersRepo,
 } from './types.ts';
 import { serializeStoredState } from './upstream-json.ts';
+import { usageDimensionRows } from './usage-dimensions.ts';
 import { bucketForTtftMs, bucketForTpotUs } from '../shared/performance-histogram.ts';
 import { generateSessionToken } from '../shared/session-tokens.ts';
 import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';
-import { BILLING_DIMENSIONS, type BillingDimension, type ModelPricing, resolveEffectivePricing, unitPriceForDimension } from '@floway-dev/protocols/common';
+import { BILLING_DIMENSIONS, canonicalPricingSelectorKey, canonicalizePricingSelector, type BillingDimension, type PriceVector, type PricingSelector } from '@floway-dev/protocols/common';
 import type { ProviderModel, UpstreamRecord } from '@floway-dev/provider';
 
 const SEED_ADMIN_USER: User = {
@@ -231,7 +232,7 @@ interface UsageBucketIdentity {
   upstream: string | null;
   modelKey: string;
   hour: string;
-  tier: string | null;
+  pricingSelector: PricingSelector;
 }
 
 interface UsageBucketState extends UsageBucketIdentity {
@@ -244,34 +245,27 @@ class MemoryUsageRepo implements UsageRepo {
   private store = new Map<string, UsageBucketState>();
 
   private key(r: UsageBucketIdentity): string {
-    return [r.keyId, r.model, r.upstream ?? '', r.modelKey, r.hour, r.tier ?? ''].join('\0');
-  }
-
-  private dimensionEntries(record: UsageRecord): { dimension: BillingDimension; tokens: number; unitPrice: number | null }[] {
-    const effective = resolveEffectivePricing(record.cost, record.tier);
-    return BILLING_DIMENSIONS.flatMap(dimension => {
-      const tokens = record.tokens[dimension] ?? 0;
-      return tokens > 0 ? [{ dimension, tokens, unitPrice: unitPriceForDimension(effective, dimension) }] : [];
-    });
+    return [r.keyId, r.model, r.upstream ?? '', r.modelKey, r.hour, canonicalPricingSelectorKey(r.pricingSelector)].join('\0');
   }
 
   private toRecord(state: UsageBucketState): UsageRecord {
     const tokens: Partial<Record<BillingDimension, number>> = {};
-    let cost: ModelPricing | null = null;
+    let rates: PriceVector | null = null;
     for (const dimension of BILLING_DIMENSIONS) {
       const count = state.tokens[dimension];
       if (count !== undefined) tokens[dimension] = count;
       const unitPrice = state.unitPrices[dimension];
-      if (unitPrice !== undefined) (cost ??= {})[dimension] = unitPrice;
+      if (unitPrice !== undefined) (rates ??= {})[dimension] = unitPrice;
     }
-    return { keyId: state.keyId, model: state.model, upstream: state.upstream ?? null, modelKey: state.modelKey, hour: state.hour, tier: state.tier, requests: state.requests, tokens, cost };
+    return { keyId: state.keyId, model: state.model, upstream: state.upstream ?? null, modelKey: state.modelKey, hour: state.hour, pricingSelector: state.pricingSelector, requests: state.requests, tokens, rates };
   }
 
   private bucket(record: UsageRecord): UsageBucketState {
-    const k = this.key(record);
+    const pricingSelector = canonicalizePricingSelector(record.pricingSelector);
+    const k = this.key({ ...record, pricingSelector });
     let state = this.store.get(k);
     if (!state) {
-      state = { keyId: record.keyId, model: record.model, upstream: record.upstream ?? null, modelKey: record.modelKey, hour: record.hour, tier: record.tier, tokens: {}, unitPrices: {}, requests: 0 };
+      state = { keyId: record.keyId, model: record.model, upstream: record.upstream ?? null, modelKey: record.modelKey, hour: record.hour, pricingSelector, tokens: {}, unitPrices: {}, requests: 0 };
       this.store.set(k, state);
     }
     return state;
@@ -280,9 +274,10 @@ class MemoryUsageRepo implements UsageRepo {
   record(record: UsageRecord): Promise<void> {
     const state = this.bucket(record);
     state.requests += record.requests;
-    for (const { dimension, tokens, unitPrice } of this.dimensionEntries(record)) {
+    for (const { dimension, tokens, unitPrice } of usageDimensionRows(record)) {
+      const isFirstWrite = state.tokens[dimension] === undefined;
       state.tokens[dimension] = (state.tokens[dimension] ?? 0) + tokens;
-      if (state.unitPrices[dimension] === undefined && unitPrice !== null) state.unitPrices[dimension] = unitPrice;
+      if (isFirstWrite && unitPrice !== null) state.unitPrices[dimension] = unitPrice;
     }
     return Promise.resolve();
   }
@@ -304,19 +299,20 @@ class MemoryUsageRepo implements UsageRepo {
   }
 
   set(record: UsageRecord): Promise<void> {
-    const k = this.key(record);
+    const pricingSelector = canonicalizePricingSelector(record.pricingSelector);
+    const k = this.key({ ...record, pricingSelector });
     const state: UsageBucketState = {
       keyId: record.keyId,
       model: record.model,
       upstream: record.upstream ?? null,
       modelKey: record.modelKey,
       hour: record.hour,
-      tier: record.tier,
+      pricingSelector,
       tokens: {},
       unitPrices: {},
       requests: record.requests,
     };
-    for (const { dimension, tokens, unitPrice } of this.dimensionEntries(record)) {
+    for (const { dimension, tokens, unitPrice } of usageDimensionRows(record)) {
       state.tokens[dimension] = tokens;
       if (unitPrice !== null) state.unitPrices[dimension] = unitPrice;
     }

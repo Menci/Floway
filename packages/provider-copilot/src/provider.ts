@@ -13,14 +13,14 @@ import { emptyKnownModels, mergeKnownModels, projectKnownModels } from './known-
 import { mergeClaudeVariants } from './merge-claude-variants.ts';
 import { copilotPublicModelId } from './model-name.ts';
 import { CONTEXT_1M_BETA, copilotModelSupportsFastMode, type ModelSelectionHints, resolveCopilotRawModel } from './model-selection.ts';
-import { pricingForCopilotModelKey, pricingForCopilotPublicModelId } from './pricing.ts';
+import { pricingForCopilotPublicModelId } from './pricing.ts';
 import { readCopilotUpstreamState, type CopilotUpstreamState } from './state.ts';
 import type { CopilotRawModel } from './types.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import { parseChatCompletionsStream, type ChatCompletionsPayload, type ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { type ModelEndpointKey, type ModelEndpoints, type ProtocolFrame, kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseAnthropicBetaHeader, parseMessagesStream, type MessagesPayload, type MessagesStreamEvent } from '@floway-dev/protocols/messages';
-import { parseResponsesStream, type ResponsesInputItem, type ResponsesPayload, type ResponsesResult } from '@floway-dev/protocols/responses';
+import { parseResponsesStream, type CanonicalResponsesPayload, type ResponsesResult } from '@floway-dev/protocols/responses';
 import { COMPACTION_TRIGGER, compactionResponse, eventResult, getProviderRepo, readUpstreamApiError, streamingProviderCall, apiErrorToResponse, resolveEffectiveFlags, type ExecuteResult, type FlagOverrides, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderResponsesResult, type ProviderStreamResult, type TelemetryModelIdentity, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord } from '@floway-dev/provider';
 
 interface CopilotProviderData {
@@ -111,7 +111,7 @@ const chatReasoningEffort = (body: Omit<ChatCompletionsPayload, 'model'>): strin
 
 const messagesReasoningEffort = (body: Omit<MessagesPayload, 'model'>): string | undefined => body.output_config?.effort;
 
-const responsesReasoningEffort = (body: Omit<ResponsesPayload, 'model'>): string | undefined => (body.reasoning?.effort && body.reasoning.effort !== 'none' ? body.reasoning.effort : undefined);
+const responsesReasoningEffort = (body: Omit<CanonicalResponsesPayload, 'model'>): string | undefined => (body.reasoning?.effort && body.reasoning.effort !== 'none' ? body.reasoning.effort : undefined);
 
 const rejectUnsupported = (capability: string) => (): Promise<never> =>
   Promise.reject(new Error(`Copilot provider does not implement ${capability}`));
@@ -153,15 +153,19 @@ const finalizeCopilotModels = (
 
   const models: ProviderModel[] = [];
   for (const mergedModel of merged.data) {
-    const variants = groups.get(mergedModel.id) ?? [mergedModel];
+    const variants = groups.get(mergedModel.id);
+    if (variants === undefined) {
+      const rawIds = rawModels.length === 0 ? 'none' : rawModels.map(model => model.id).join(', ');
+      throw new Error(`Copilot model projection invariant violated: merged model '${mergedModel.id}' has no raw variant group (raw model ids: ${rawIds})`);
+    }
     const endpoints = copilotModelEndpoints(variants);
-    const cost = pricingForCopilotPublicModelId(mergedModel.id);
+    const pricing = pricingForCopilotPublicModelId(mergedModel.id);
     const draft: Omit<ProviderModel, 'enabledFlags'> = {
       ...copilotRawToProviderModel(mergedModel),
       kind: kindForEndpoints(endpoints),
       endpoints,
       providerData: { rawModels: variants } satisfies CopilotProviderData,
-      ...(cost ? { cost } : {}),
+      ...(pricing ? { pricing } : {}),
     };
     // Layer order: provider upstream default → operator upstream override
     // → per-model provider default. Placing the per-model layer last
@@ -239,7 +243,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
     model: modelKey,
     upstream: copilot.id,
     modelKey,
-    cost: pricingForCopilotModelKey(modelKey),
+    pricing: null,
   });
 
   // Materialize an upstream error body up-front so any interceptor that
@@ -312,7 +316,6 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
       }
       return finalizeCopilotModels(projectKnownModels(merged, now), copilot.flagOverrides);
     },
-    getPricingForModelKey: pricingForCopilotModelKey,
     // Copilot's catalog never declares endpoints.completions, so this
     // stub is unreachable; the rejection surfaces a routing bug.
     callCompletions: rejectUnsupported('callCompletions'),
@@ -362,7 +365,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
               : { action: 'generate', ok: false, response: stream.response, modelKey: stream.modelKey };
           }
           case 'compact': {
-            const input: ResponsesInputItem[] = typeof wireBody.input === 'string' ? [{ type: 'message', role: 'user', content: wireBody.input }] : wireBody.input;
+            const input = wireBody.input;
             const triggered = { ...wireBody, input: [...input, COMPACTION_TRIGGER], stream: false, model: rawModel.id };
             const response = await copilotFetchResponses(
               upstreamConfig,

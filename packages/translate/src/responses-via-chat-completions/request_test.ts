@@ -1408,6 +1408,7 @@ test.each([
   { name: 'multi_agent_call', input: [{ type: 'multi_agent_call', action: 'spawn_agent', arguments: '{}', call_id: 'call_1' }] },
   { name: 'multi_agent_call_output', input: [{ type: 'multi_agent_call_output', action: 'spawn_agent', call_id: 'call_1', output: [] as ResponsesInputMultiAgentCallOutputItem['output'] }] },
   { name: 'context_compaction', input: [{ type: 'context_compaction', encrypted_content: 'opaque' }] },
+  { name: 'item_reference', input: [{ type: 'item_reference', id: 'msg_1' }] },
 ] as const)('translateResponsesToChatCompletions rejects Responses-only $name input', ({ name, input }) => {
   assertThrows(
     () => translateResponsesToChatCompletions({ model: 'gpt-test', input: [...input] }),

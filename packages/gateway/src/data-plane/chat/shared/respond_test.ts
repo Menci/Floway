@@ -13,7 +13,7 @@ const testTelemetryModelIdentity: TelemetryModelIdentity = {
   model: 'claude-test',
   upstream: 'copilot:1',
   modelKey: 'claude-test-raw',
-  cost: null,
+  pricing: null,
 };
 
 const testPerformanceContext = mockPerfTelemetryContext({

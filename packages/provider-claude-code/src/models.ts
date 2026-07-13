@@ -192,7 +192,7 @@ export const buildClaudeCodeCatalog = (
   enabledFlags: ReadonlySet<FlagId>,
 ): ProviderModel[] => apiModels.map(api => {
   const alias = aliasFromApiId(api.id);
-  const cost = pricingForClaudeCodeModelKey(api.id);
+  const pricing = pricingForClaudeCodeModelKey(api.id);
   const providerData: ClaudeCodeProviderData = { upstreamModelId: api.id };
   const chat = chatFromCapabilities(api.capabilities);
   return {
@@ -204,7 +204,7 @@ export const buildClaudeCodeCatalog = (
     enabledFlags,
     limits: { max_context_window_tokens: api.max_input_tokens },
     providerData,
-    ...(cost ? { cost } : {}),
+    ...(pricing ? { pricing } : {}),
     ...(chat ? { chat } : {}),
   };
 });

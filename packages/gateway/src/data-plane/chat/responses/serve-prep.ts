@@ -6,9 +6,9 @@ import { enumerateModelCandidates } from '../../providers/registry.ts';
 import { noViableCandidateFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { CanonicalResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { ModelCandidate, ExecuteResult } from '@floway-dev/provider';
-import { responsesItemsView, type CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
+import { responsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
 // Thrown when a request names a `previous_response_id` that the store cannot
 // resolve. The HTTP/WS entry layer catches this and renders the OpenAI-shaped

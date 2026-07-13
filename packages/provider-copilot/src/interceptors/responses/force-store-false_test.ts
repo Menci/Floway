@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { withStoreForcedFalse } from './force-store-false.ts';
 import type { ResponsesBoundaryCtx } from './types.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { CanonicalResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
 import { assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
@@ -13,7 +13,7 @@ const stubRequest = {};
 const okEvents = (): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> =>
   Promise.resolve(eventResult((async function* (): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {})(), testTelemetryModelIdentity));
 
-const invocation = (payload: ResponsesPayload): ResponsesBoundaryCtx => ({
+const invocation = (payload: CanonicalResponsesPayload): ResponsesBoundaryCtx => ({
   payload,
   headers: new Headers(),
   model: stubProviderModel({ endpoints: { responses: {} } }),
@@ -21,7 +21,7 @@ const invocation = (payload: ResponsesPayload): ResponsesBoundaryCtx => ({
 });
 
 test('forces store:false when the caller requested store:true', async () => {
-  const ctx = invocation({ model: 'gpt-test', input: 'hello', store: true });
+  const ctx = invocation({ model: 'gpt-test', input: [{ type: 'message', role: 'user', content: 'hello' }], store: true });
 
   await withStoreForcedFalse(ctx, stubRequest, okEvents);
 
@@ -29,7 +29,7 @@ test('forces store:false when the caller requested store:true', async () => {
 });
 
 test('sets store:false when the caller omitted store', async () => {
-  const ctx = invocation({ model: 'gpt-test', input: 'hello' });
+  const ctx = invocation({ model: 'gpt-test', input: [{ type: 'message', role: 'user', content: 'hello' }] });
 
   await withStoreForcedFalse(ctx, stubRequest, okEvents);
 
@@ -37,7 +37,7 @@ test('sets store:false when the caller omitted store', async () => {
 });
 
 test('leaves an explicit store:false untouched', async () => {
-  const ctx = invocation({ model: 'gpt-test', input: 'hello', store: false });
+  const ctx = invocation({ model: 'gpt-test', input: [{ type: 'message', role: 'user', content: 'hello' }], store: false });
 
   await withStoreForcedFalse(ctx, stubRequest, okEvents);
 

@@ -76,6 +76,10 @@ export type ResponsesCompactRequestPayload = Omit<ResponsesCompactPayload, 'inpu
   input: string | ResponsesRequestInputItem[];
 };
 
+export type CanonicalResponsesCompactPayload = Omit<ResponsesCompactPayload, 'input'> & {
+  input: ResponsesInputItem[];
+};
+
 // Project a (possibly-wider) ResponsesPayload-shaped object into the strict
 // compact wire shape. Every native-compact provider terminal calls this
 // before dispatching to its upstream's `/responses/compact` endpoint, so a
@@ -85,7 +89,7 @@ export type ResponsesCompactRequestPayload = Omit<ResponsesCompactPayload, 'inpu
 // the resolved upstream id; store is gateway-only). `prompt_cache_retention`
 // only exists on the compact payload type today, so there is no
 // generate-side value to forward.
-export const toCompactPayloadShape = (payload: Omit<ResponsesPayload, 'model'>): Omit<ResponsesCompactPayload, 'model' | 'store'> => ({
+export const toCompactPayloadShape = (payload: Omit<CanonicalResponsesPayload, 'model'>): Omit<CanonicalResponsesCompactPayload, 'model' | 'store'> => ({
   input: payload.input,
   ...(payload.instructions !== undefined && { instructions: payload.instructions }),
   ...(payload.previous_response_id !== undefined && { previous_response_id: payload.previous_response_id }),
@@ -158,6 +162,10 @@ export type ResponsesRequestInputItem =
 
 export type ResponsesRequestPayload = Omit<ResponsesPayload, 'input'> & {
   input: string | ResponsesRequestInputItem[];
+};
+
+export type CanonicalResponsesPayload = Omit<ResponsesPayload, 'input'> & {
+  input: ResponsesInputItem[];
 };
 
 export type ResponsesInputContent = ResponsesInputText | ResponsesInputImage | ResponsesInputFile;

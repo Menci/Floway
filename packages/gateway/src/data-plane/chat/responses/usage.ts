@@ -2,12 +2,8 @@ import { tokenUsage } from '../../shared/telemetry/usage.ts';
 import { billableServiceTier, splitCacheWriteTokens, splitInclusiveInputTokens, USAGE_BILLING } from '@floway-dev/protocols/common';
 import type { ResponsesResult } from '@floway-dev/protocols/responses';
 
-// OpenAI Responses reports input_tokens inclusive of cached tokens; subtract
-// the cached split to recover the disjoint bare input. The top-level
-// `service_tier` echoes the actual processing tier the upstream served the
-// request at (e.g. `default` when capacity downgraded a `priority` request).
-// We surface it via `billableServiceTier` so per-tier pricing overrides
-// resolve at recording time.
+// service_tier reports the tier actually served and therefore selects the
+// matching pricing entry rather than the tier originally requested.
 // https://developers.openai.com/api/docs/guides/priority-processing
 export const tokenUsageFromResponsesResult = (response: ResponsesResult) => {
   const usage = response.usage;

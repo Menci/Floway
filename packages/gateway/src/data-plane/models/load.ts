@@ -26,7 +26,7 @@ export const toPublicModel = (model: InternalModel): PublicModel => {
     info.created = model.created;
     info.created_at = new Date(model.created * 1000).toISOString();
   }
-  if (model.cost) info.cost = model.cost;
+  if (model.pricing) info.pricing = model.pricing;
   if (model.chat) info.chat = model.chat;
   if (model.aliasedFrom !== undefined) {
     info.aliasedFrom = {
