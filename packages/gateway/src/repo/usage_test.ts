@@ -34,17 +34,34 @@ const record = (overrides: Partial<UsageRecord>): UsageRecord => ({
 
 const query = (repo: Repo) => repo.usage.query({ keyId: 'key-1', start: '2026-07-12T00', end: '2026-07-12T01' });
 
-test('0052 migrates blank and special-character service tiers to readable canonical selectors', async () => {
+test('0052 preserves distinct open-string service tiers as canonical selectors', async () => {
   const SQL = await initSqlJs();
   const db = new SQL.Database();
   for (const [filename, sql] of migrationSqlByFilename) {
     if (filename === '0052_usage_pricing_selector.sql') {
-      db.run("INSERT INTO usage_requests (key_id, model, upstream, model_key, hour, tier, requests) VALUES ('k', 'm', NULL, 'mk', '2026-01-01T00', '  ', 1), ('k', 'm', NULL, 'mk', '2026-01-01T01', 'pri\"雪', 1)");
+      db.run(`INSERT INTO usage (key_id, model, upstream, model_key, hour, tier, dimension, tokens, unit_price) VALUES
+        ('k', 'm', NULL, 'mk', '2026-01-01T00', NULL, 'input', 10, 1),
+        ('k', 'm', NULL, 'mk', '2026-01-01T00', '  ', 'input', 20, 2),
+        ('k', 'm', NULL, 'mk', '2026-01-01T00', 'pri"雪', 'input', 30, 3)`);
+      db.run(`INSERT INTO usage_requests (key_id, model, upstream, model_key, hour, tier, requests) VALUES
+        ('k', 'm', NULL, 'mk', '2026-01-01T00', NULL, 1),
+        ('k', 'm', NULL, 'mk', '2026-01-01T00', '  ', 2),
+        ('k', 'm', NULL, 'mk', '2026-01-01T00', 'pri"雪', 3)`);
     }
     db.run(sql);
   }
-  const rows = db.exec('SELECT pricing_selector FROM usage_requests ORDER BY hour')[0]!.values;
-  assertEquals(rows, [['{}'], ['{"serviceTier":"pri\\"雪"}']]);
+  const usageRows = db.exec('SELECT pricing_selector, tokens, unit_price FROM usage ORDER BY tokens')[0]!.values;
+  const requestRows = db.exec('SELECT pricing_selector, requests FROM usage_requests ORDER BY requests')[0]!.values;
+  assertEquals(usageRows, [
+    ['{}', 10, 1],
+    ['{"serviceTier":"  "}', 20, 2],
+    ['{"serviceTier":"pri\\"雪"}', 30, 3],
+  ]);
+  assertEquals(requestRows, [
+    ['{}', 1],
+    ['{"serviceTier":"  "}', 2],
+    ['{"serviceTier":"pri\\"雪"}', 3],
+  ]);
 });
 
 for (const backend of backends) {

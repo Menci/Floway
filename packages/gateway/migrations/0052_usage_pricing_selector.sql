@@ -1,7 +1,9 @@
 -- Replace the service-tier bucket column with one self-describing canonical
 -- pricing selector. The historical `tier` field becomes the serviceTier axis;
--- NULL is the base selector. Sorted canonical JSON keeps bucket identity stable
--- and lets future axes ship without schema changes.
+-- NULL and the legacy empty string are the base selector. Every other open
+-- string is preserved byte-for-byte so distinct historical buckets remain
+-- distinct. Sorted canonical JSON keeps bucket identity stable and lets future
+-- axes ship without schema changes.
 
 CREATE TABLE usage_new (
   key_id TEXT NOT NULL,
@@ -19,7 +21,7 @@ CREATE TABLE usage_new (
 
 INSERT INTO usage_new (key_id, model, upstream, model_key, hour, pricing_selector, dimension, tokens, unit_price)
 SELECT key_id, model, upstream, model_key, hour,
-  CASE WHEN tier IS NULL OR trim(tier) = '' THEN '{}' ELSE json_object('serviceTier', tier) END,
+  CASE WHEN tier IS NULL OR tier = '' THEN '{}' ELSE json_object('serviceTier', tier) END,
   dimension, tokens, unit_price
 FROM usage;
 
@@ -41,7 +43,7 @@ CREATE TABLE usage_requests_new (
 
 INSERT INTO usage_requests_new (key_id, model, upstream, model_key, hour, pricing_selector, requests)
 SELECT key_id, model, upstream, model_key, hour,
-  CASE WHEN tier IS NULL OR trim(tier) = '' THEN '{}' ELSE json_object('serviceTier', tier) END,
+  CASE WHEN tier IS NULL OR tier = '' THEN '{}' ELSE json_object('serviceTier', tier) END,
   requests
 FROM usage_requests;
 
