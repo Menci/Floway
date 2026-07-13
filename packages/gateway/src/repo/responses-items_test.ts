@@ -261,11 +261,13 @@ test('memory responses items repo clones item JSON at the repo boundary', async 
   await repo.insertMany([item]);
   (item.payload!.item as { nested: { values: string[] } }).nested.values.push('mutated-after-write');
 
-  const [read] = await repo.lookupMany('key_a', [item.id]);
+  const [metadata] = await repo.lookupMany('key_a', [item.id]);
+  const [read] = await repo.lookupPayloads('key_a', [item.id]);
+  assertEquals(metadata.hasPayload, true);
   assertEquals(read.payload, { item: { nested: { values: ['original'] } } });
-  (read.payload!.item as { nested: { values: string[] } }).nested.values.push('mutated-after-read');
+  (read.payload.item as { nested: { values: string[] } }).nested.values.push('mutated-after-read');
 
-  assertEquals((await repo.lookupMany('key_a', [item.id]))[0].payload, { item: { nested: { values: ['original'] } } });
+  assertEquals((await repo.lookupPayloads('key_a', [item.id]))[0].payload, { item: { nested: { values: ['original'] } } });
 });
 
 test('memory responses items repo scopes ids by api key and treats duplicate scoped writes as no-ops', async () => {

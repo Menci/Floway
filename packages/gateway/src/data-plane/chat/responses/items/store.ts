@@ -552,7 +552,7 @@ export class MemoryStatefulResponsesBacking implements StatefulResponsesBacking 
     const records: StoredResponsesItemPayloadRecord[] = [];
     for (const id of new Set(ids)) {
       const row = this.items.get(scopedKey(apiKeyId, id))?.row;
-      if (row?.payload !== null && row !== undefined) records.push({ id, payload: structuredClone(row.payload) });
+      if (row !== undefined && row.payload !== null) records.push({ id, payload: structuredClone(row.payload) });
     }
     return Promise.resolve(records);
   }

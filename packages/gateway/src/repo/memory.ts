@@ -613,7 +613,7 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
     const records: StoredResponsesItemPayloadRecord[] = [];
     for (const metadata of this.lookupManySync(apiKeyId, ids)) {
       const row = this.store.get(responsesItemStoreKey(apiKeyId, metadata.id));
-      if (row?.payload !== null) records.push({ id: row.id, payload: structuredClone(row.payload) });
+      if (row !== undefined && row.payload !== null) records.push({ id: row.id, payload: structuredClone(row.payload) });
     }
     return Promise.resolve(records);
   }

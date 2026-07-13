@@ -42,8 +42,9 @@ test('changed input payload with a stable client id persists as a distinct input
   assertEquals(secondSnapshot.itemIds.length, 1);
   assert(firstSnapshot.itemIds[0] !== secondSnapshot.itemIds[0]);
   const rows = await repo.responsesItems.lookupMany(API_KEY_ID, [firstSnapshot.itemIds[0]!, secondSnapshot.itemIds[0]!]);
+  const payloads = await repo.responsesItems.lookupPayloads(API_KEY_ID, [firstSnapshot.itemIds[0]!, secondSnapshot.itemIds[0]!]);
   assertEquals(rows.map(row => row.origin), ['input', 'input']);
-  assertEquals(rows.map(row => row.payload?.item), [first, second]);
+  assertEquals(payloads.map(record => record.payload.item), [first, second]);
 });
 
 test('metadata-only durable item accepts a full payload repair', async () => {
@@ -70,9 +71,10 @@ test('metadata-only durable item accepts a full payload repair', async () => {
   await store.commitSnapshot('resp_repaired', 'append');
 
   const [repaired] = await repo.responsesItems.lookupMany(API_KEY_ID, [item.id]);
+  const [payload] = await repo.responsesItems.lookupPayloads(API_KEY_ID, [item.id]);
   assertExists(repaired);
   assertEquals(repaired.origin, 'upstream');
-  assertEquals(repaired.payload?.item, input);
+  assertEquals(payload.payload.item, input);
   const snapshot = await repo.responsesSnapshots.lookup(API_KEY_ID, 'resp_repaired');
   assertExists(snapshot);
   assertEquals(snapshot.itemIds, [item.id]);

@@ -5,7 +5,7 @@ import { drainAsync, syntheticEventsFromResult, wrapResponsesOutputForStorage } 
 import { createResponsesHttpStore, LayeredStatefulResponsesStore, RepoStatefulResponsesBacking, type StatefulResponsesBacking, type StatefulResponsesStore } from './store.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
-import type { ResponsesItemsRepo, StoredResponsesItem } from '../../../../repo/types.ts';
+import type { ResponsesItemsRepo, StoredResponsesItem, StoredResponsesItemMetadata, StoredResponsesItemPayloadRecord } from '../../../../repo/types.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesOutputItem, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { assert, assertEquals, assertRejects } from '@floway-dev/test-utils';
@@ -123,9 +123,10 @@ class ControlledResponsesItemsRepo implements ResponsesItemsRepo {
   resolveInsert: (() => void) | undefined;
   rejectInsert: ((error: unknown) => void) | undefined;
 
-  lookupMany(): Promise<StoredResponsesItem[]> { return Promise.resolve([]); }
-  lookupManyByEncryptedContentHash(): Promise<StoredResponsesItem[]> { return Promise.resolve([]); }
-  lookupManyByContentHash(): Promise<StoredResponsesItem[]> { return Promise.resolve([]); }
+  lookupMany(): Promise<StoredResponsesItemMetadata[]> { return Promise.resolve([]); }
+  lookupManyByEncryptedContentHash(): Promise<StoredResponsesItemMetadata[]> { return Promise.resolve([]); }
+  lookupManyByContentHash(): Promise<StoredResponsesItemMetadata[]> { return Promise.resolve([]); }
+  lookupPayloads(): Promise<StoredResponsesItemPayloadRecord[]> { return Promise.resolve([]); }
 
   insertMany(items: readonly StoredResponsesItem[]): Promise<void> {
     this.calls.push(items.map(item => structuredClone(item)));
@@ -163,9 +164,10 @@ test('rewrites output item ids consistently across added, child, done, and termi
   assertEquals(eventAt(collected, 'response.completed').response.output[0].id, storedId);
 
   const [row] = await repo.responsesItems.lookupMany(apiKeyId, [storedId]);
+  const [payload] = await repo.responsesItems.lookupPayloads(apiKeyId, [storedId]);
   assertEquals(row.upstreamId, 'up_native');
   assertEquals(row.upstreamItemId, original.id);
-  assertEquals(row.payload, { item: original });
+  assertEquals(payload.payload, { item: original });
 });
 
 test('rewrites and persists programmatic tool output items without changing their payload', async () => {
@@ -205,8 +207,8 @@ test('rewrites and persists programmatic tool output items without changing thei
   assertEquals(storedProgram, { ...program, id: storedProgram.id });
   assertEquals(storedProgramOutput, { ...programOutput, id: storedProgramOutput.id });
 
-  const rows = await repo.responsesItems.lookupMany(apiKeyId, completed.response.output.map(item => item.id!));
-  assertEquals(rows.map(row => row.payload?.item), [additionalTools, program, programOutput]);
+  const payloads = await repo.responsesItems.lookupPayloads(apiKeyId, completed.response.output.map(item => item.id!));
+  assertEquals(payloads.map(record => record.payload.item), [additionalTools, program, programOutput]);
 });
 
 test('persists each row before yielding the item-done frame', async () => {
@@ -285,7 +287,7 @@ test('store false creates metadata rows with null payload', async () => {
   const collected = await collectEvents(events);
   const storedId = eventAt(collected, 'response.output_item.done').item.id!;
   const [row] = await repo.responsesItems.lookupMany(apiKeyId, [storedId]);
-  assertEquals(row.payload, null);
+  assertEquals(row.hasPayload, false);
   assertEquals(row.upstreamItemId, original.id);
 });
 
@@ -301,8 +303,8 @@ test('terminal output items missing done frames are stored and rewritten', async
   const collected = await collectEvents(events);
   const storedId = eventAt(collected, 'response.completed').response.output[0].id!;
   assert(isStoredResponsesItemId(storedId));
-  const [row] = await repo.responsesItems.lookupMany(apiKeyId, [storedId]);
-  assertEquals(row.payload, { item: original });
+  const [payload] = await repo.responsesItems.lookupPayloads(apiKeyId, [storedId]);
+  assertEquals(payload.payload, { item: original });
 });
 
 test('two distinct upstream items receive distinct stored ids', async () => {
@@ -389,8 +391,8 @@ test('private payload registered on the request is attached to the persisted row
 
   const collected = await collectEvents(events);
   const storedId = eventAt(collected, 'response.output_item.done').item.id!;
-  const [row] = await repo.responsesItems.lookupMany(apiKeyId, [storedId]);
-  assertEquals(row.payload?.private, privateBlob);
+  const [payload] = await repo.responsesItems.lookupPayloads(apiKeyId, [storedId]);
+  assertEquals(payload.payload.private, privateBlob);
 });
 
 // --- snapshot-mode derivation tests ---
@@ -548,6 +550,7 @@ test('snapshot commit failure rejects before yielding the terminal frame', async
   const repoBacking = new RepoStatefulResponsesBacking(() => repo);
   const faultyBacking: StatefulResponsesBacking = {
     lookupItems: args => repoBacking.lookupItems(args),
+    lookupPayloads: (aid, ids) => repoBacking.lookupPayloads(aid, ids),
     insertItems: items => repoBacking.insertItems(items),
     fillPayloads: items => repoBacking.fillPayloads(items),
     refreshItems: (aid, ids, at) => repoBacking.refreshItems(aid, ids, at),
@@ -607,7 +610,9 @@ test('end-of-stream items in terminal frame are stored and rewritten', async () 
   const storedId = eventAt(collected, 'response.completed').response.output[0].id!;
   assert(isStoredResponsesItemId(storedId));
   const [row] = await repo.responsesItems.lookupMany(apiKeyId, [storedId]);
-  assertEquals(row.payload, { item: original });
+  const [payload] = await repo.responsesItems.lookupPayloads(apiKeyId, [storedId]);
+  assertEquals(row.hasPayload, true);
+  assertEquals(payload.payload, { item: original });
 });
 
 // --- syntheticEventsFromResult / drainAsync ---

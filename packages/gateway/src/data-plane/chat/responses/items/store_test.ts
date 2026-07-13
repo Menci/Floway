@@ -59,8 +59,8 @@ test('stages programmatic tool items with their documented id prefixes and prese
   assert(snapshot.itemIds[0].startsWith('at_'));
   assert(snapshot.itemIds[1].startsWith('prog_'));
   assert(snapshot.itemIds[2].startsWith('prog_out_'));
-  const rows = await repo.responsesItems.lookupMany(API_KEY_ID, snapshot.itemIds);
-  assertEquals(rows.map(row => row.payload?.item), input);
+  const payloads = await repo.responsesItems.lookupPayloads(API_KEY_ID, snapshot.itemIds);
+  assertEquals(payloads.map(record => record.payload.item), input);
 });
 
 test('stages agent and context-compaction items with stable prefixes and preserves every field', async () => {
@@ -80,8 +80,8 @@ test('stages agent and context-compaction items with stable prefixes and preserv
   const snapshot = await repo.responsesSnapshots.lookup(API_KEY_ID, 'resp_agents');
   assertExists(snapshot);
   assertEquals(snapshot.itemIds.map(id => id.slice(0, id.indexOf('_'))), ['amsg', 'mac', 'maco', 'cmp']);
-  const rows = await repo.responsesItems.lookupMany(API_KEY_ID, snapshot.itemIds);
-  assertEquals(rows.map(row => row.payload?.item), input);
+  const payloads = await repo.responsesItems.lookupPayloads(API_KEY_ID, snapshot.itemIds);
+  assertEquals(payloads.map(record => record.payload.item), input);
 });
 
 test('snapshots with non-replayable metadata-only rows load as missing', async () => {
@@ -164,7 +164,7 @@ test('createNonResponsesSourceStore reads items for affinity but does not write 
     origin: 'upstream',
     payload: { item: { type: 'message', id: 'out_1', role: 'assistant', content: [] } },
   };
-  store.beginAttempt([]);
+  store.beginAttempt(new Map());
   store.stageOutputItem(outputItem);
   await store.commitOutputItems();
   await store.commitSnapshot('resp_new', 'append');
@@ -183,7 +183,7 @@ test('createResponsesHttpStore with store=false does not write snapshots', async
     itemType: 'message',
     origin: 'upstream',
   });
-  store.beginAttempt([]);
+  store.beginAttempt(new Map());
   store.stageOutputItem(outputItem);
   await store.commitOutputItems();
   await store.commitSnapshot('resp_no_store', 'append');
@@ -204,7 +204,7 @@ test('createResponsesHttpStore with store=true writes snapshots', async () => {
     upstreamItemId: 'raw_snap',
     payload: { item: { type: 'message', id: 'snap_1', role: 'assistant', content: [] } },
   });
-  store.beginAttempt([]);
+  store.beginAttempt(new Map());
   store.stageOutputItem(outputItem);
   await store.commitOutputItems();
   await store.commitSnapshot('resp_with_store', 'append');
