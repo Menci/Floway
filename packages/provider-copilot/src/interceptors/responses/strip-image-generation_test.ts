@@ -61,7 +61,7 @@ test('stripImageGenerationFromPayload removes the image_gen namespace tool but k
   // namespaces must survive.
   const payload = {
     model: 'gpt-test',
-    input: 'draw this',
+    input: [{ type: 'message', role: 'user', content: 'draw this' }],
     tools: [
       { type: 'namespace', name: 'image_gen', tools: [{ type: 'function', name: 'imagegen' }] },
       { type: 'namespace', name: 'browser', tools: [] },
@@ -79,7 +79,7 @@ test('stripImageGenerationFromPayload removes the image_gen namespace tool but k
 test('stripImageGenerationFromPayload removes a forced image_gen namespace tool_choice', () => {
   const payload = {
     model: 'gpt-test',
-    input: 'draw this',
+    input: [{ type: 'message', role: 'user', content: 'draw this' }],
     tools: [{ type: 'namespace', name: 'image_gen', tools: [] }],
     tool_choice: { type: 'namespace', name: 'image_gen' },
   } as CanonicalResponsesPayload;
@@ -93,7 +93,7 @@ test('stripImageGenerationFromPayload removes a forced image_gen namespace tool_
 test('stripImageGenerationFromPayload preserves a tool_choice naming a surviving namespace', () => {
   const payload = {
     model: 'gpt-test',
-    input: 'browse',
+    input: [{ type: 'message', role: 'user', content: 'browse' }],
     tools: [
       { type: 'namespace', name: 'image_gen', tools: [] },
       { type: 'namespace', name: 'browser', tools: [] },
