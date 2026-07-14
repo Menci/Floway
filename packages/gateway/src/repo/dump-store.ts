@@ -81,13 +81,7 @@ const bodyPath = (keyId: string, bucket: string, recordId: string, side: 'req' |
   `${bucketPrefix(keyId, bucket)}${recordId}.${side}.gz`;
 
 const gzip = async (bytes: Uint8Array): Promise<Uint8Array> => {
-  const source = new ReadableStream<Uint8Array>({
-    start(controller) {
-      controller.enqueue(bytes);
-      controller.close();
-    },
-  });
-  const stream = new Response(source.pipeThrough(new CompressionStream('gzip')));
+  const stream = new Response(new Blob([bytes as BlobPart]).stream().pipeThrough(new CompressionStream('gzip')));
   return new Uint8Array(await stream.arrayBuffer());
 };
 
