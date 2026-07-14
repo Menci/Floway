@@ -250,5 +250,5 @@ export const translateChatCompletionsToMessages = async (payload: ChatCompletion
   };
 };
 
-export const buildTargetRequest = (payload: ChatCompletionsPayload, options: { fallbackMaxOutputTokens?: number }): Promise<MessagesPayload> =>
+export const buildTargetRequest = (payload: ChatCompletionsPayload, options: TranslateChatCompletionsToMessagesOptions): Promise<MessagesPayload> =>
   translateChatCompletionsToMessages(payload, options);

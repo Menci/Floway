@@ -58,7 +58,7 @@ test('external image fetcher reports non-success and oversized responses', async
 
 test('external image loader bounds redirect chains', async () => {
   let requests = 0;
-  initExternalResourceFetcher(url => {
+  initExternalResourceFetcher(_url => {
     requests += 1;
     return Promise.resolve(new Response(null, {
       status: 302,

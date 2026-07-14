@@ -406,5 +406,5 @@ export const translateResponsesToMessages = async (source: ResponsesRequestPaylo
   return { target, customToolNames };
 };
 
-export const buildTargetRequest = (payload: ResponsesRequestPayload, options: { fallbackMaxOutputTokens?: number }): Promise<ResponsesToMessagesResult> =>
+export const buildTargetRequest = (payload: ResponsesRequestPayload, options: TranslateResponsesToMessagesOptions): Promise<ResponsesToMessagesResult> =>
   translateResponsesToMessages(payload, options);
