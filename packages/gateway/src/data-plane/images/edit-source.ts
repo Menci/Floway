@@ -17,7 +17,7 @@ const EDIT_MIME_ALIASES: Record<string, ImageEditMime> = {
   'image/x-png': 'image/png',
 };
 
-export const editSupportedMime = (mime: string): ImageEditMime | null => {
+const editSupportedMime = (mime: string): ImageEditMime | null => {
   const canonical = EDIT_MIME_ALIASES[mime] ?? mime;
   return canonical === 'image/png' || canonical === 'image/jpeg' || canonical === 'image/webp'
     ? canonical
