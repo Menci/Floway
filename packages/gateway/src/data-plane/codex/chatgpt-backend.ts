@@ -1,7 +1,6 @@
 // chatgpt_base_url sub-paths Codex calls during a ChatGPT-authenticated
-// session. Each handler returns the matching client's successful empty shape
-// so unsupported hosted services stay explicit without producing startup or
-// normal-use 404 warnings.
+// session. Each handler returns the smallest accepted absence shape, avoiding
+// 404 warnings for hosted services Floway does not implement.
 //
 // /plugins/featured, /plugins/list — legacy plugin marketplace. Clients in
 //   codex-rs/core-plugins/src/remote_legacy.rs:120-198 deserialize a bare
@@ -18,9 +17,9 @@
 //   swallow events here to keep workspace telemetry inside Floway rather
 //   than leaking to chatgpt.com if `chatgpt_base_url` were ever unset.
 //
-// /api/codex/usage, /api/codex/rate-limit-reset-credits, and its /consume
-//   sub-route —
-//   requires_openai_auth makes the TUI query account limits and reset credits.
+// /api/codex/usage, /api/codex/rate-limit-reset-credits, and
+//   /api/codex/rate-limit-reset-credits/consume — requires_openai_auth makes
+//   the TUI query account limits and reset credits.
 //   Floway has neither a first-party ChatGPT quota nor redeemable credits, so
 //   these report the client's supported `unknown` plan and zero credits:
 //   https://github.com/openai/codex/blob/f90e7deea6a715bbd153044af6f475eefa749177/codex-rs/tui/src/chatwidget/rate_limits.rs#L295-L303
