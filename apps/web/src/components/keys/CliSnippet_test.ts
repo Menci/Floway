@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils';
-import { defineComponent } from 'vue';
 import { expect, test } from 'vitest';
+import { defineComponent } from 'vue';
 
 import CliSnippet from './CliSnippet.vue';
 import type { ControlPlaneModel } from '../../api/types.ts';
