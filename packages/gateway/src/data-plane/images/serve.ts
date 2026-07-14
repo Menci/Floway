@@ -12,7 +12,7 @@ import type { Context } from 'hono';
 
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { createGatewayCtxFromHono, finalizeGatewayResponse } from '../chat/shared/gateway-ctx.ts';
-import { readRequestBody, takeRequestBody } from '../chat/shared/request-body.ts';
+import { readRequestBody, takeRequestBody, type RequestBody } from '../chat/shared/request-body.ts';
 import { passthroughApiError, passthroughServe } from '../shared/passthrough-serve.ts';
 import { tokenUsageFromImagesBody } from '../shared/telemetry/usage.ts';
 
@@ -70,23 +70,7 @@ export const imagesGenerations = async (c: Context): Promise<Response> => {
   return finalizeGatewayResponse(ctx, response);
 };
 
-export const imagesEdits = async (c: Context): Promise<Response> => {
-  // Buffer the multipart body once. Hono's formData() helper would consume
-  // c.req.raw.body internally; re-parsing from the captured bytes via a fresh
-  // Response keeps the dump capture honest without a second read on the wire.
-  const requestBody = await readRequestBody(c);
-  let form: FormData;
-  try {
-    form = await new Response(requestBody.bytes as BodyInit, { headers: { 'content-type': c.req.header('content-type') ?? '' } }).formData();
-  } catch {
-    // Match the embeddings serve stance: do not surface the underlying
-    // parser's error text. The wording is enough for a client to know
-    // they sent the wrong content type or a malformed body.
-    const errorCtx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
-    errorCtx.dump?.error('gateway');
-    return finalizeGatewayResponse(errorCtx, passthroughApiError(c, 'Image edits request body must be a valid multipart/form-data payload.', 400));
-  }
-
+export const serveImagesEditForm = async (c: Context, requestBody: RequestBody, form: FormData): Promise<Response> => {
   const ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
 
   const modelRaw = form.get('model');
@@ -120,4 +104,24 @@ export const imagesEdits = async (c: Context): Promise<Response> => {
     response: { format: 'json', extractBilling: tokenUsageFromImagesBody },
   });
   return finalizeGatewayResponse(ctx, response);
+};
+
+export const imagesEdits = async (c: Context): Promise<Response> => {
+  // Buffer the multipart body once. Hono's formData() helper would consume
+  // c.req.raw.body internally; re-parsing from the captured bytes via a fresh
+  // Response keeps the dump capture honest without a second read on the wire.
+  const requestBody = await readRequestBody(c);
+  let form: FormData;
+  try {
+    form = await new Response(requestBody.bytes as BodyInit, { headers: { 'content-type': c.req.header('content-type') ?? '' } }).formData();
+  } catch {
+    // Match the embeddings serve stance: do not surface the underlying
+    // parser's error text. The wording is enough for a client to know
+    // they sent the wrong content type or a malformed body.
+    const errorCtx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
+    errorCtx.dump?.error('gateway');
+    return finalizeGatewayResponse(errorCtx, passthroughApiError(c, 'Image edits request body must be a valid multipart/form-data payload.', 400));
+  }
+
+  return await serveImagesEditForm(c, requestBody, form);
 };
