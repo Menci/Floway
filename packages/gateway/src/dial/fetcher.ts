@@ -61,7 +61,7 @@ interface MaterializedRequest {
 
 interface ReplayableRequest {
   readonly signal: AbortSignal | undefined;
-  directInit(): RequestInit;
+  fetchInit(): RequestInit;
   materialized(): Promise<MaterializedRequest>;
 }
 
@@ -79,7 +79,7 @@ interface ReplayableRequest {
 // which is how non-buffered shapes like FormData stay supported.
 export const createFetcher = (input: CreateFetcherInput): Fetcher => {
   // Colo filter precedes the implicit direct-fetch collapse so a fully-excluded
-  // list behaves like an empty list and gets the direct fallback, rather than
+  // list behaves like an empty list and gets the direct-fetch fallback, rather than
   // throwing because pass 1 had no candidates.
   const matched = input.fallbackList.filter(entry => entryMatchesColo(entry, input.runtimeLocation));
   const list = matched.length > 0 ? matched.map(entry => entry.id) : [DIRECT_FETCH_ID];
@@ -153,35 +153,35 @@ const runFallbacks = async (
 
 class ReplayableRequestOwner implements ReplayableRequest {
   readonly signal: AbortSignal | undefined;
-  private direct: RequestInit;
+  private fetch: RequestInit;
   private materializedRequest: MaterializedRequest | undefined;
-  private rebuildDirectBody = false;
+  private rebuildFetchBody = false;
 
   constructor(
     private readonly url: string,
     init: RequestInit,
   ) {
     this.signal = init.signal ?? undefined;
-    this.direct = init;
+    this.fetch = init;
   }
 
-  directInit(): RequestInit {
-    if (this.rebuildDirectBody) {
-      this.direct = rebuildInitFromMaterialized(this.direct, this.materializedRequest!);
-      this.rebuildDirectBody = false;
+  fetchInit(): RequestInit {
+    if (this.rebuildFetchBody) {
+      this.fetch = rebuildInitFromMaterialized(this.fetch, this.materializedRequest!);
+      this.rebuildFetchBody = false;
     }
-    return this.direct;
+    return this.fetch;
   }
 
   async materialized(): Promise<MaterializedRequest> {
     if (this.materializedRequest !== undefined) return this.materializedRequest;
-    this.materializedRequest = await buildMaterializedRequest(this.url, this.direct);
+    this.materializedRequest = await buildMaterializedRequest(this.url, this.fetch);
     // Once bytes exist, the original BodyInit must not remain captured for the
-    // duration of the upstream request. A later direct fallback rebuilds its
+    // duration of the upstream request. A later direct-fetch fallback rebuilds its
     // owned byte body lazily, so a successful proxy does not retain a second
-    // full buffer merely because `direct` appears later in the list.
-    this.direct = { ...this.direct, body: null };
-    this.rebuildDirectBody = true;
+    // full buffer merely because `direct_fetch` appears later in the list.
+    this.fetch = { ...this.fetch, body: null };
+    this.rebuildFetchBody = true;
     return this.materializedRequest;
   }
 }
@@ -223,7 +223,7 @@ const tryOne = async (
     if (id === DIRECT_FETCH_ID) {
       // Direct egress is the runtime's fetch — it never raises ProxyDialError,
       // so we don't touch the backoff table for this entry.
-      return await input.runDirectFetch(url, request.directInit());
+      return await input.runDirectFetch(url, request.fetchInit());
     }
     if (id === DIRECT_CONNECT_ID) {
       const materialized = await request.materialized();
@@ -238,8 +238,8 @@ const tryOne = async (
       // The proxies catalog was loaded once at the top of the request, but
       // an admin can delete a row mid-flight. Treat the missing id as a
       // dial-shaped failure for THIS entry so the fallback chain advances
-      // instead of killing the whole call (and any healthy `direct` /
-      // sibling entries further down the list). We don't write to backoff
+      // instead of killing the whole call (and any healthy built-in or proxy
+      // siblings further down the list). We don't write to backoff
       // here — the row is gone, and the upstream's fallback_list will
       // surface the dangling reference next time the dashboard renders it.
       errors.push(new ProxyDialError(`unknown proxy id in fallback list: ${id}`, 'config'));

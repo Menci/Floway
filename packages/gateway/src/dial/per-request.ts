@@ -50,7 +50,7 @@ export const createPerRequestFetcher = async (
 
   return upstreamId => {
     // Fail loud on an unknown upstream id. Silently substituting `[]`
-    // would route the request through `direct` only, masking a stale
+    // would route the request through direct-fetch only, masking a stale
     // api-key→upstream binding or a typo in the caller as a working
     // proxy-bypass.
     const list = fallbackById.get(upstreamId);
