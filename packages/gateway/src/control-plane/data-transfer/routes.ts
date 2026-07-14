@@ -199,7 +199,7 @@ const parseProxyRecords = (value: unknown): { type: 'ok'; records: SerializedPro
       const item = value[i];
       if (!isRecord(item)) throw new Error('record must be an object');
       const id = nonEmptyString(item.id, 'id');
-      if (isDirectFallbackId(id)) throw new Error(`id must not be a reserved direct-transport sentinel`);
+      if (isDirectFallbackId(id)) throw new Error('id must not be a reserved direct-transport sentinel');
       const name = nonEmptyString(item.name, 'name');
       const url = nonEmptyString(item.url, 'url');
       try {
