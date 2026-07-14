@@ -204,7 +204,7 @@ test('prepareImageGenerationConfig validates input_fidelity and partial_images',
 test('prepareImageGenerationConfig decodes an inline mask and reports file_id as a Floway limitation', () => {
   const ok = prepareImageGenerationConfig([{ type: 'image_generation', input_image_mask: { image_url: `data:image/png;base64,${PNG_B64}` } } as ResponsesTool]);
   assert(ok.ok);
-  assert(ok.config.mask !== undefined);
+  assert(ok.config.mask !== undefined && !('url' in ok.config.mask));
   assertEquals(ok.config.mask.mimeType, 'image/png');
   assertEquals(ok.config.mask.bytes.byteLength, 5);
 
@@ -332,9 +332,13 @@ test('inspectImageSources reads tool-result images and preserves forward order',
   ];
   const { sources } = inspectImageSources(input);
   assertEquals(sources.length, 3);
-  assertEquals(sources[0].mimeType, 'image/png');
-  assertEquals(sources[1].mimeType, 'image/jpeg');
-  assertEquals(sources[2].mimeType, 'image/webp');
+  const [first, second, third] = sources;
+  assert(first !== undefined && !('url' in first));
+  assert(second !== undefined && !('url' in second));
+  assert(third !== undefined && !('url' in third));
+  assertEquals(first.mimeType, 'image/png');
+  assertEquals(second.mimeType, 'image/jpeg');
+  assertEquals(third.mimeType, 'image/webp');
 });
 
 test('prepareEditSources transcodes formats accepted by native Responses but rejected by images edits', async () => {
@@ -677,7 +681,7 @@ test('imageGenerationServerTool fetches and inlines repeated remote edit sources
   assert(result.type === 'active');
   assertEquals(urls, ['https://example.com/source.png']);
   const transformed = result.transformItems?.(input, SHIM_TOOL_NAME);
-  assert(transformed !== undefined && transformed[0].type === 'message' && Array.isArray(transformed[0].content));
+  assert(transformed?.[0].type === 'message' && Array.isArray(transformed[0].content));
   const first = transformed[0].content[0];
   assert(first.type === 'input_image');
   assertEquals(first.image_url, `data:image/png;base64,${VALID_PNG_B64}`);

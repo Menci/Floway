@@ -394,7 +394,7 @@ const validateHostedImageGenerationEntry = (
   // resolve to bytes and are not supported here.
   // https://github.com/openai/openai-node/blob/ec2f57fd0d66e94782656b986d7b3eb03225369c/src/resources/responses/responses.ts#L8217-L8232
   const maskField = tool.input_image_mask;
-  let mask: ImageSource | undefined;
+  let mask: ImageSourceReference | undefined;
   if (maskField !== undefined && maskField !== null) {
     if (typeof maskField !== 'object' || Array.isArray(maskField)) {
       return { ok: false, error: invalidValue(path('input_image_mask'), maskField, ['{ image_url }']) };
@@ -1052,8 +1052,10 @@ const buildEditsForm = (prompt: string, config: ImageGenerationConfig, sources: 
     form.append('image[]', new Blob([source.bytes], { type: mime }), `image_${i}.${editFileExt(mime)}`);
   }
   if (config.mask !== undefined) {
-    const mime = editSupportedMime(config.mask.mimeType) ?? config.mask.mimeType;
-    form.append('mask', new Blob([config.mask.bytes], { type: mime }), `mask.${editFileExt(mime)}`);
+    if (isRemoteImageSource(config.mask)) throw new Error('Remote image mask reached form encoding before materialization');
+    const mask = config.mask;
+    const mime = editSupportedMime(mask.mimeType) ?? mask.mimeType;
+    form.append('mask', new Blob([mask.bytes], { type: mime }), `mask.${editFileExt(mime)}`);
   }
   return form;
 };
