@@ -408,8 +408,8 @@ Request mapping:
   Messages `system`, joined with blank lines.
 - string input becomes one user message.
 - user `input_text` becomes Messages text; `input_image` URLs are resolved via
-  the shared remote-image loader and converted to base64 image blocks when
-  supported.
+  the gateway-injected platform external-resource loader and converted to
+  base64 image blocks when supported.
 - assistant `output_text` becomes assistant text blocks.
 - `function_call` becomes assistant `tool_use`.
 - `function_call_output` becomes user `tool_result`; incomplete status marks the
@@ -520,7 +520,7 @@ Request mapping:
 - Chat `system` and `developer` messages become top-level Messages `system`,
   joined with blank lines.
 - Chat user text and supported images become Messages user blocks. Remote images
-  are resolved through the shared loader.
+  are resolved through the same gateway-injected external-resource loader.
 - Chat assistant `content` becomes assistant text.
 - Chat assistant scalar `reasoning_text` / `reasoning_opaque` becomes one
   `thinking` block or one `redacted_thinking` block.

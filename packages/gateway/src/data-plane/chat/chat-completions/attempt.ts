@@ -2,6 +2,7 @@ import { chatCompletionsInterceptors } from './interceptors/index.ts';
 import type { ChatCompletionsInvocation } from './interceptors/types.ts';
 import { applyRulesToUpstreamChatCompletions } from '../../model-aliases/apply-rules.ts';
 import { providerStreamResultToExecuteResult, buildUpstreamCallOptions, chatTargetPicker } from '../../shared/telemetry/attempt-helpers.ts';
+import { createExternalImageLoader } from '../shared/external-image-loader.ts';
 import { messagesAttempt } from '../messages/attempt.ts';
 import { responsesAttempt } from '../responses/attempt.ts';
 import { rewriteStoredItemsInSourceForCandidate } from '../responses/items/rewrite.ts';
@@ -59,6 +60,7 @@ export const chatCompletionsAttempt = {
           p => translateChatCompletionsViaMessages(p, {
             model: candidate.model.id,
             fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
+            loadRemoteImage: createExternalImageLoader(ctx.abortSignal),
           }),
           translated => messagesAttempt.generate({
             payload: translated, ctx, candidate, headers: invocation.headers,
