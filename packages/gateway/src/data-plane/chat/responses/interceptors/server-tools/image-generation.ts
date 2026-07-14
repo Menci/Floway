@@ -4,8 +4,9 @@ import { appendFailedUpstreams } from '../../../../shared/failed-upstreams.ts';
 import { recordPerformance, type PerformanceTelemetryContext } from '../../../../shared/telemetry/performance.ts';
 import { recordTokenUsage, tokenUsageFromImagesBody } from '../../../../shared/telemetry/usage.ts';
 import { stampUpstreamCallStart, type AttemptState } from '../../../shared/gateway-ctx.ts';
+import { createExternalImageFetcher, type ExternalImageFetchResult } from '../../../shared/external-image-loader.ts';
 import type { ServerToolLifecycleEvent, ServerToolOutputItem, ServerToolRegistration, ServerToolTerminal } from '../server-tool-shim.ts';
-import { dimensionsFromBytes, getExternalResourceFetcher, getImageProcessor, type BackgroundScheduler } from '@floway-dev/platform';
+import { dimensionsFromBytes, getImageProcessor, type BackgroundScheduler } from '@floway-dev/platform';
 import { parseSSEStream } from '@floway-dev/protocols/common';
 import type {
   ResponsesFunctionCallOutputItem,
@@ -100,14 +101,15 @@ interface ImageSource {
 }
 
 interface RemoteImageSource {
-  url: URL;
   wireUrl: string;
+  invalidUrlParam: string;
+  afterMaterializationError?: PrepareConfigError;
 }
 
 type ImageSourceReference = ImageSource | RemoteImageSource;
 
 const isRemoteImageSource = (source: ImageSourceReference): source is RemoteImageSource =>
-  'url' in source;
+  'wireUrl' in source;
 
 export const prepareEditSources = async (sources: readonly ImageSource[]): Promise<readonly ImageSource[]> => {
   const keyBySource = new Map<ImageSource, Promise<string>>();
@@ -226,18 +228,6 @@ const decodeInputImageDataUrl = (
   } catch {
     decodedSources.set(cacheKey, null);
     return { ok: false, reason: 'invalid_base64' };
-  }
-};
-
-const parseRemoteImageUrl = (value: string): URL | null => {
-  if (!/^https?:\/\//i.test(value)) return null;
-  try {
-    const url = new URL(value);
-    return (url.protocol === 'http:' || url.protocol === 'https:') && url.hostname.length > 0
-      ? url
-      : null;
-  } catch {
-    return null;
   }
 };
 
@@ -409,19 +399,11 @@ const validateHostedImageGenerationEntry = (
       };
     }
     if (/^https?:\/\//i.test(maskUrl)) {
-      const url = parseRemoteImageUrl(maskUrl);
-      if (url === null) {
-        const param = path('input_image_mask.image_url');
-        return {
-          ok: false,
-          error: {
-            message: `Invalid '${param}'. Expected a valid URL, but got a value with an invalid format.`,
-            param,
-            code: 'invalid_value',
-          },
-        };
-      }
-      mask = { url, wireUrl: maskUrl };
+      mask = {
+        wireUrl: maskUrl,
+        invalidUrlParam: path('input_image_mask.image_url'),
+        ...(fileIdError === null ? {} : { afterMaterializationError: fileIdError }),
+      };
     } else {
       const decodedMask = decodeInlineImage(maskUrl);
       if (decodedMask === null) {
@@ -431,8 +413,8 @@ const validateHostedImageGenerationEntry = (
         };
       }
       mask = decodedMask;
+      if (fileIdError !== null) return { ok: false, error: fileIdError };
     }
-    if (fileIdError !== null) return { ok: false, error: fileIdError };
   }
 
   return {
@@ -531,9 +513,10 @@ interface ImageOperationError {
   code: string | null;
 }
 
-type RemoteImageDownload =
-  | { ok: true; source: ImageSource }
-  | { ok: false; reason: 'download' | 'timeout' | 'invalid-image'; status?: number };
+type RemoteImageFailure =
+  | Exclude<ExternalImageFetchResult, { type: 'success' }>
+  | { type: 'invalid-image' }
+  | { type: 'aggregate-too-large' };
 
 const INVALID_REMOTE_IMAGE_MESSAGE = "The image data you provided does not represent a valid image. Please check your input and try again with one of the supported image formats: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'].";
 const REMOTE_IMAGE_TIMEOUT_MESSAGE = 'Unable to download content from the provided URL before the timeout. Check that the URL is publicly accessible and responds promptly, or upload the file and provide a file_id instead.';
@@ -544,8 +527,16 @@ const REMOTE_MASK_ERROR: ImageOperationError = {
   code: null,
 };
 
-const remoteInputError = (failure: Exclude<RemoteImageDownload, { ok: true }>): ImageOperationError => {
-  if (failure.reason === 'invalid-image') {
+const invalidRemoteUrlError = (param: string): ImageOperationError => ({
+  message: `Invalid '${param}'. Expected a valid URL, but got a value with an invalid format.`,
+  errorType: 'invalid_request_error',
+  param,
+  code: 'invalid_value',
+});
+
+const remoteInputError = (source: RemoteImageSource, failure: RemoteImageFailure): ImageOperationError => {
+  if (failure.type === 'invalid-url') return invalidRemoteUrlError(source.invalidUrlParam);
+  if (failure.type === 'invalid-image' || failure.type === 'empty-body') {
     return {
       message: INVALID_REMOTE_IMAGE_MESSAGE,
       errorType: 'invalid_request_error',
@@ -553,7 +544,7 @@ const remoteInputError = (failure: Exclude<RemoteImageDownload, { ok: true }>): 
       code: 'invalid_value',
     };
   }
-  if (failure.reason === 'timeout') {
+  if (failure.type === 'timeout') {
     return {
       message: REMOTE_IMAGE_TIMEOUT_MESSAGE,
       errorType: 'invalid_request_error',
@@ -561,24 +552,25 @@ const remoteInputError = (failure: Exclude<RemoteImageDownload, { ok: true }>): 
       code: 'invalid_value',
     };
   }
+  const status = failure.type === 'http-error' || failure.type === 'invalid-redirect'
+    ? failure.status
+    : undefined;
   return {
-    message: failure.status === undefined
+    message: status === undefined
       ? 'Error while downloading file.'
-      : `Error while downloading file. Upstream status code: ${failure.status}.`,
+      : `Error while downloading file. Upstream status code: ${status}.`,
     errorType: 'invalid_request_error',
     param: 'url',
     code: 'invalid_value',
   };
 };
 
-// Responses accepts at most 50 MB across all image inputs. Enforce that limit
-// while streaming rather than buffering arbitrary remote bodies inside the
-// Worker's 128 MB isolate.
+// The shared fetcher enforces the per-body limit while streaming. Native
+// Responses additionally accepts at most 50 MB across all distinct successful
+// image downloads, so account each memoized result once across sources and the
+// mask.
 // https://platform.openai.com/docs/guides/images-vision#image-input-requirements
 const MAX_REMOTE_IMAGE_TOTAL_BYTES = 50 * 1024 * 1024;
-const REMOTE_IMAGE_TIMEOUT_MS = 30_000;
-const MAX_REMOTE_IMAGE_REDIRECTS = 5;
-const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
 const supportedImageMimeFromBytes = (bytes: Uint8Array): string | null => {
   if (dimensionsFromBytes(bytes) === null) return null;
@@ -606,116 +598,59 @@ const supportedImageMimeFromBytes = (bytes: Uint8Array): string | null => {
   return null;
 };
 
-const readRemoteImageBody = async (response: Response, maxBytes: number): Promise<ArrayBuffer | null> => {
-  const contentLength = response.headers.get('content-length');
-  if (contentLength !== null) {
-    const declared = Number(contentLength);
-    if (Number.isFinite(declared) && declared > maxBytes) {
-      await response.body?.cancel();
-      return null;
-    }
-  }
-  if (response.body === null) return new ArrayBuffer(0);
-
-  const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  while (true) {
-    const next = await reader.read();
-    if (next.done) break;
-    total += next.value.byteLength;
-    if (total > maxBytes) {
-      await reader.cancel();
-      return null;
-    }
-    chunks.push(next.value);
-  }
-  const bytes = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return bytes.buffer;
-};
-
-const isFetchableRemoteUrl = (url: URL): boolean =>
-  (url.protocol === 'http:' || url.protocol === 'https:')
-  && url.hostname.length > 0
-  && url.username.length === 0
-  && url.password.length === 0;
-
 const createRemoteImageMaterializer = (requestSignal: AbortSignal | undefined) => {
-  const downloads = new Map<string, Promise<RemoteImageDownload>>();
+  const fetchImage = createExternalImageFetcher(requestSignal);
   const materialized = new Map<string, ImageSource>();
+  const materializedByData = new Map<Uint8Array, ImageSource>();
   let materializedBytes = 0;
 
-  const download = (source: RemoteImageSource): Promise<RemoteImageDownload> => {
-    const cached = downloads.get(source.wireUrl);
-    if (cached !== undefined) return cached;
-    const fetchExternal = getExternalResourceFetcher();
+  const materialize = async (source: RemoteImageSource): Promise<
+    { ok: true; source: ImageSource } | { ok: false; failure: RemoteImageFailure }
+  > => {
+    const fetched = await fetchImage(source.wireUrl);
+    if (fetched.type !== 'success') return { ok: false, failure: fetched };
 
-    const task = (async (): Promise<RemoteImageDownload> => {
-      const timeoutSignal = AbortSignal.timeout(REMOTE_IMAGE_TIMEOUT_MS);
-      const signal = requestSignal === undefined
-        ? timeoutSignal
-        : AbortSignal.any([requestSignal, timeoutSignal]);
-      let url = source.url;
-      if (!isFetchableRemoteUrl(url)) return { ok: false, reason: 'download' };
+    const cached = materializedByData.get(fetched.data);
+    if (cached !== undefined) return { ok: true, source: cached };
 
-      try {
-        for (let redirects = 0; ; redirects++) {
-          const response = await fetchExternal(url, signal);
-          if (REDIRECT_STATUSES.has(response.status)) {
-            const location = response.headers.get('location');
-            await response.body?.cancel();
-            if (location === null || redirects >= MAX_REMOTE_IMAGE_REDIRECTS) {
-              return { ok: false, reason: 'download', status: response.status };
-            }
-            try {
-              url = new URL(location, url);
-            } catch {
-              return { ok: false, reason: 'download', status: response.status };
-            }
-            if (!isFetchableRemoteUrl(url)) return { ok: false, reason: 'download' };
-            continue;
-          }
-          if (!response.ok) {
-            await response.body?.cancel();
-            return { ok: false, reason: 'download', status: response.status };
-          }
+    const mimeType = supportedImageMimeFromBytes(fetched.data);
+    if (mimeType === null) return { ok: false, failure: { type: 'invalid-image' } };
+    if (materializedBytes + fetched.data.byteLength > MAX_REMOTE_IMAGE_TOTAL_BYTES) {
+      return { ok: false, failure: { type: 'aggregate-too-large' } };
+    }
 
-          const buffer = await readRemoteImageBody(response, MAX_REMOTE_IMAGE_TOTAL_BYTES - materializedBytes);
-          if (buffer === null) return { ok: false, reason: 'download' };
-          const mimeType = supportedImageMimeFromBytes(new Uint8Array(buffer));
-          if (mimeType === null) return { ok: false, reason: 'invalid-image' };
-          materializedBytes += buffer.byteLength;
-          return {
-            ok: true,
-            source: { bytes: buffer, mimeType },
-          };
-        }
-      } catch (error) {
-        if (requestSignal?.aborted === true) throw error;
-        return { ok: false, reason: timeoutSignal.aborted ? 'timeout' : 'download' };
-      }
-    })();
-    downloads.set(source.wireUrl, task);
-    return task;
+    materializedBytes += fetched.data.byteLength;
+    const bytes = fetched.data.byteOffset === 0
+      && fetched.data.buffer instanceof ArrayBuffer
+      && fetched.data.byteLength === fetched.data.buffer.byteLength
+      ? fetched.data.buffer
+      : Uint8Array.from(fetched.data).buffer;
+    const result = { bytes, mimeType };
+    materializedByData.set(fetched.data, result);
+    return { ok: true, source: result };
   };
 
   return {
     async inputs(sources: readonly RemoteImageSource[]): Promise<{ ok: true } | { ok: false; error: ImageOperationError }> {
       for (const source of sources) {
-        const result = await download(source);
-        if (!result.ok) return { ok: false, error: remoteInputError(result) };
+        const result = await materialize(source);
+        if (!result.ok) return { ok: false, error: remoteInputError(source, result.failure) };
         materialized.set(source.wireUrl, result.source);
       }
       return { ok: true };
     },
     async mask(source: RemoteImageSource): Promise<{ ok: true; source: ImageSource } | { ok: false; error: ImageOperationError }> {
-      const result = await download(source);
-      return result.ok ? { ok: true, source: result.source } : { ok: false, error: REMOTE_MASK_ERROR };
+      const result = await materialize(source);
+      if (!result.ok) {
+        return {
+          ok: false,
+          error: result.failure.type === 'invalid-url'
+            ? invalidRemoteUrlError(source.invalidUrlParam)
+            : REMOTE_MASK_ERROR,
+        };
+      }
+      materialized.set(source.wireUrl, result.source);
+      return { ok: true, source: result.source };
     },
     cached(source: RemoteImageSource): ImageSource {
       const result = materialized.get(source.wireUrl);
@@ -736,14 +671,7 @@ const inputImageDecodeError = (
   path: string,
   failure: Exclude<InputImageDecodeResult, { ok: true }>,
 ): ImageOperationError => {
-  if (failure.reason === 'invalid_format') {
-    return {
-      message: `Invalid '${path}'. Expected a valid URL, but got a value with an invalid format.`,
-      errorType: 'invalid_request_error',
-      param: path,
-      code: 'invalid_value',
-    };
-  }
+  if (failure.reason === 'invalid_format') return invalidRemoteUrlError(path);
   const expected = `Invalid '${path}'. Expected a base64-encoded data URL with an image MIME type (e.g. 'data:image/png;base64,aW1nIGJ5dGVzIGhlcmU=')`;
   const detail = failure.reason === 'missing_base64_separator'
     ? "a value without the ';base64' separator."
@@ -789,17 +717,7 @@ const inspectImageSourcesWithCache = (
       }
       if (imageUrl !== null) {
         if (/^https?:\/\//i.test(imageUrl)) {
-          const url = parseRemoteImageUrl(imageUrl);
-          if (url === null) {
-            return {
-              sources,
-              issue: {
-                kind: 'native',
-                error: inputImageDecodeError(`${path}.image_url`, { ok: false, reason: 'invalid_format' }),
-              },
-            };
-          }
-          sources.push({ url, wireUrl: imageUrl });
+          sources.push({ wireUrl: imageUrl, invalidUrlParam: `${path}.image_url` });
           continue;
         }
         const decoded = decodeInputImageDataUrl(imageUrl, decodedSources);
@@ -1519,7 +1437,8 @@ export const imageGenerationServerTool: ServerToolRegistration = async (invocati
     };
   }
   if (config.mask !== undefined && isRemoteImageSource(config.mask)) {
-    const materializedMask = await materializer.mask(config.mask);
+    const remoteMask = config.mask;
+    const materializedMask = await materializer.mask(remoteMask);
     if (!materializedMask.ok) {
       return {
         type: 'invalid-request',
@@ -1527,6 +1446,14 @@ export const imageGenerationServerTool: ServerToolRegistration = async (invocati
         param: materializedMask.error.param,
         errorType: materializedMask.error.errorType,
         code: materializedMask.error.code,
+      };
+    }
+    if (remoteMask.afterMaterializationError !== undefined) {
+      return {
+        type: 'invalid-request',
+        message: remoteMask.afterMaterializationError.message,
+        param: remoteMask.afterMaterializationError.param,
+        code: remoteMask.afterMaterializationError.code,
       };
     }
     config = { ...config, mask: materializedMask.source };

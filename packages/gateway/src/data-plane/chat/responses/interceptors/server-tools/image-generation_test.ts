@@ -33,6 +33,11 @@ const VALID_PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42
 const validPngResponse = (): Response => new Response(Uint8Array.from(atob(VALID_PNG_B64), c => c.charCodeAt(0)), {
   headers: { 'content-type': 'image/png' },
 });
+const paddedPngResponse = (byteLength: number): Response => {
+  const bytes = new Uint8Array(byteLength);
+  bytes.set(Uint8Array.from(atob(VALID_PNG_B64), c => c.charCodeAt(0)));
+  return new Response(bytes, { headers: { 'content-type': 'image/png' } });
+};
 
 // The registration only reads targetApi / enabledFlags / payload off the invocation.
 const makeCtx = (payload: Partial<ResponsesPayload>): ResponsesInvocation => ({
@@ -204,7 +209,7 @@ test('prepareImageGenerationConfig validates input_fidelity and partial_images',
 test('prepareImageGenerationConfig decodes image_url masks and reports file_id as a Floway limitation', () => {
   const ok = prepareImageGenerationConfig([{ type: 'image_generation', input_image_mask: { image_url: `data:image/png;base64,${PNG_B64}` } } as ResponsesTool]);
   assert(ok.ok);
-  assert(ok.config.mask !== undefined && !('url' in ok.config.mask));
+  assert(ok.config.mask !== undefined && !('wireUrl' in ok.config.mask));
   assertEquals(ok.config.mask.mimeType, 'image/png');
   assertEquals(ok.config.mask.bytes.byteLength, 5);
 
@@ -217,25 +222,20 @@ test('prepareImageGenerationConfig decodes image_url masks and reports file_id a
   assert(!fileId.ok);
   assertEquals(fileId.error, expectedFileIdError);
 
-  for (const input_image_mask of [
-    { image_url: `data:image/png;base64,${PNG_B64}`, file_id: 'file_123' },
-    { file_id: 'file_123', image_url: 'https://example.com/mask.png' },
-  ]) {
-    const both = prepareImageGenerationConfig([{ type: 'image_generation', input_image_mask } as ResponsesTool]);
-    assert(!both.ok);
-    assertEquals(both.error, expectedFileIdError);
-  }
-
-  const malformedUrl = prepareImageGenerationConfig([{
+  const inlineBoth = prepareImageGenerationConfig([{
     type: 'image_generation',
-    input_image_mask: { file_id: 'file_123', image_url: 'https://' },
+    input_image_mask: { image_url: `data:image/png;base64,${PNG_B64}`, file_id: 'file_123' },
   } as ResponsesTool]);
-  assert(!malformedUrl.ok);
-  assertEquals(malformedUrl.error, {
-    message: "Invalid 'tools[0].input_image_mask.image_url'. Expected a valid URL, but got a value with an invalid format.",
-    param: 'tools[0].input_image_mask.image_url',
-    code: 'invalid_value',
-  });
+  assert(!inlineBoth.ok);
+  assertEquals(inlineBoth.error, expectedFileIdError);
+
+  const remoteBoth = prepareImageGenerationConfig([{
+    type: 'image_generation',
+    input_image_mask: { file_id: 'file_123', image_url: 'https://example.com/mask.png' },
+  } as ResponsesTool]);
+  assert(remoteBoth.ok);
+  assert(remoteBoth.config.mask !== undefined && 'wireUrl' in remoteBoth.config.mask);
+  assertEquals(remoteBoth.config.mask.afterMaterializationError, expectedFileIdError);
 });
 
 // ── buildImageGenerationFunctionTool ──
@@ -278,8 +278,8 @@ test('inspectImageSources preserves valid remote image urls for materialization'
   ];
   const { sources, issue } = inspectImageSources(input);
   assertEquals(sources.length, 1);
-  assert('url' in sources[0]);
-  assertEquals(sources[0].url.href, 'https://example.com/a.png');
+  assert('wireUrl' in sources[0]);
+  assertEquals(sources[0].wireUrl, 'https://example.com/a.png');
   assertEquals(issue, undefined);
 });
 
@@ -344,9 +344,9 @@ test('inspectImageSources reads tool-result images and preserves forward order',
   const { sources } = inspectImageSources(input);
   assertEquals(sources.length, 3);
   const [first, second, third] = sources;
-  assert(first !== undefined && !('url' in first));
-  assert(second !== undefined && !('url' in second));
-  assert(third !== undefined && !('url' in third));
+  assert(first !== undefined && !('wireUrl' in first));
+  assert(second !== undefined && !('wireUrl' in second));
+  assert(third !== undefined && !('wireUrl' in third));
   assertEquals(first.mimeType, 'image/png');
   assertEquals(second.mimeType, 'image/jpeg');
   assertEquals(third.mimeType, 'image/webp');
@@ -578,8 +578,9 @@ test('prepareImageGenerationConfig uses Azure integer-range codes', () => {
 test('prepareImageGenerationConfig preserves a remote mask for materialization', () => {
   const result = prepareImageGenerationConfig([{ type: 'image_generation', input_image_mask: { image_url: 'https://example.com/m.png' } } as ResponsesTool]);
   assert(result.ok);
-  assert(result.config.mask !== undefined && 'url' in result.config.mask);
-  assertEquals(result.config.mask.url.href, 'https://example.com/m.png');
+  assert(result.config.mask !== undefined && 'wireUrl' in result.config.mask);
+  assertEquals(result.config.mask.wireUrl, 'https://example.com/m.png');
+  assertEquals(result.config.mask.invalidUrlParam, 'tools[0].input_image_mask.image_url');
 });
 
 test('transformInputItemsForImageGeneration preserves error type and retryability on replay', () => {
@@ -698,6 +699,51 @@ test('imageGenerationServerTool fetches repeated remote edit sources once', asyn
   assertEquals(first.image_url, 'https://example.com/source.png');
 });
 
+test('imageGenerationServerTool counts and fetches one URL once when shared by a source and mask', async () => {
+  let requests = 0;
+  initExternalResourceFetcher(() => {
+    requests += 1;
+    return Promise.resolve(paddedPngResponse(30 * 1024 * 1024));
+  });
+  const imageUrl = 'https://example.com/shared.png';
+
+  const result = await imageGenerationServerTool(
+    makeCtx({
+      tools: [{ type: 'image_generation', action: 'edit', input_image_mask: { image_url: imageUrl } }],
+      input: [imageInputContainers.message({ type: 'input_image', image_url: imageUrl, detail: 'auto' })],
+    }),
+    gatewayCtx(),
+  );
+
+  assert(result.type === 'active');
+  assertEquals(requests, 1);
+});
+
+test('imageGenerationServerTool enforces the aggregate limit across distinct successful downloads', async () => {
+  let requests = 0;
+  initExternalResourceFetcher(() => {
+    requests += 1;
+    return Promise.resolve(paddedPngResponse(26 * 1024 * 1024));
+  });
+
+  const result = await imageGenerationServerTool(
+    makeCtx({
+      tools: [{ type: 'image_generation', action: 'edit' }],
+      input: [
+        imageInputContainers.message({ type: 'input_image', image_url: 'https://example.com/first.png', detail: 'auto' }),
+        imageInputContainers.message({ type: 'input_image', image_url: 'https://example.com/second.png', detail: 'auto' }),
+      ],
+    }),
+    gatewayCtx(),
+  );
+
+  assert(result.type === 'invalid-request');
+  assertEquals(result.message, 'Error while downloading file.');
+  assertEquals(result.param, 'url');
+  assertEquals(result.code, 'invalid_value');
+  assertEquals(requests, 2);
+});
+
 test.each([
   {
     name: 'DNS failure',
@@ -793,9 +839,33 @@ test('imageGenerationServerTool materializes a remote mask and mirrors its downl
   assertEquals(rejected.code, null);
 });
 
+test('imageGenerationServerTool validates a remote mask before applying the Floway file-ID guard', async () => {
+  let requests = 0;
+  initExternalResourceFetcher(() => {
+    requests += 1;
+    return Promise.resolve(validPngResponse());
+  });
+  const result = await imageGenerationServerTool(
+    makeCtx({
+      tools: [{
+        type: 'image_generation',
+        action: 'edit',
+        input_image_mask: { file_id: 'file_123', image_url: 'https://example.com/mask.png' },
+      }],
+    }),
+    gatewayCtx(),
+  );
+
+  assert(result.type === 'invalid-request');
+  assertEquals(result.message, 'Floway cannot resolve input_image_mask.file_id; remove file_id and provide image_url alone.');
+  assertEquals(result.param, 'tools[0].input_image_mask.file_id');
+  assertEquals(result.code, 'unsupported_image_source');
+  assertEquals(requests, 1);
+});
+
 test('imageGenerationServerTool reports a malformed remote mask at its native path', async () => {
   const result = await imageGenerationServerTool(
-    makeCtx({ tools: [{ type: 'image_generation', input_image_mask: { image_url: 'https://' } }] }),
+    makeCtx({ tools: [{ type: 'image_generation', input_image_mask: { file_id: 'file_123', image_url: 'https://' } }] }),
     gatewayCtx(),
   );
   assert(result.type === 'invalid-request');

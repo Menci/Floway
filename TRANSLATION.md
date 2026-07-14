@@ -198,11 +198,12 @@ steps.
   translated targets and native Responses providers that opt into the shim.
   Edit sources are flattened in declaration order from message content,
   function/custom tool output, and replayed image-generation results. Remote
-  HTTP(S) sources are downloaded once during request preparation, with manual
-  redirect handling, bounded streaming, public-address-only Node egress, and
-  Azure-compatible errors for download and image-format failures. The original
-  URL remains visible to the orchestrator while the cached bytes are reused by
-  the edit backend. Inline and remote masks are materialized by the same path.
+  HTTP(S) sources are downloaded once during request preparation through the
+  gateway's shared external-image loader, with manual redirect handling,
+  bounded streaming, public-address-only Node egress, and Azure-compatible
+  errors for download and image-format failures. The original URL remains
+  visible to the orchestrator while the cached bytes are reused by the edit
+  backend. Inline and remote masks are materialized by the same path.
   Any mask `file_id`, including one supplied beside `image_url`, remains an
   explicit `unsupported_image_source` because it requires the owning
   upstream's authenticated Files namespace; the shim validates `image_url`
