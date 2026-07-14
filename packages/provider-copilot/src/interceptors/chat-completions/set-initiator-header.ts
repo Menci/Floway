@@ -16,11 +16,11 @@ import type { CopilotChatCompletionsBoundaryInterceptor } from './types.ts';
  *
  * Official clients do not offer one wire-derived rule to copy. VS Code keeps
  * image content on a private multimodal `role: "tool"` Chat message and lifts
- * only for Responses. Copilot CLI 1.0.70 lifts before endpoint dispatch even
- * on Chat, but retains `X-Initiator: agent` through private billing metadata.
- * Floway has neither private Chat tool-image syntax nor client loop metadata;
- * it deliberately follows its standards-shaped Chat role instead of adding a
- * provenance side channel.
+ * only for Responses, while initiator provenance can travel separately from
+ * serialized roles. Floway has neither private Chat tool-image syntax nor
+ * client loop metadata; this remains a payload-shape heuristic, and translated
+ * or synthetic final user messages can therefore be classified differently
+ * from their source-side turn.
  *
  * The header name is lowercase `x-initiator`; HTTP header names are
  * case-insensitive on the wire, so the casing is cosmetic.
@@ -31,8 +31,6 @@ import type { CopilotChatCompletionsBoundaryInterceptor } from './types.ts';
  * - https://github.com/microsoft/vscode-prompt-tsx/blob/86cc3a025fb54b72b0b5be9ddbc786ea16ef4073/src/base/output/openaiConvert.ts#L15-L81
  * - https://github.com/microsoft/vscode/blob/fb5e582d1c8edb9ad0a69e50fe6f508a8c095466/extensions/copilot/src/platform/endpoint/node/responsesApi.ts#L419-L468
  * - https://github.com/microsoft/vscode/blob/fb5e582d1c8edb9ad0a69e50fe6f508a8c095466/extensions/copilot/src/extension/prompt/node/chatMLFetcher.ts#L1453-L1474
- * - https://github.com/github/copilot-cli/releases/tag/v1.0.70
- *   darwin-arm64 tarball SHA-256: 4ebfa2b31154996420417de2be0949ef1f4e35af0943d65515474d5ae3c22b11
  */
 export const withInitiatorHeaderSet: CopilotChatCompletionsBoundaryInterceptor = async (ctx, _request, run) => {
   const lastMessage = ctx.payload.messages.at(-1);
