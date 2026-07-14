@@ -66,11 +66,10 @@ const formatUserLocation = (loc: NonNullable<ShimToolFilters['userLocation']>): 
 // deliberately omits the unsupported ones.
 //   https://github.com/openai/harmony/blob/abd677f7ac962629c808197caa1feb9e3e95d2b0/src/chat.rs#L259-L313
 const buildShimFunctionTool = (
-  canonical: ResponsesTool,
+  filters: ShimToolFilters,
   name: string,
 ): ResponsesFunctionTool => {
-  if (!isHostedWebSearchTool(canonical)) throw new Error(`Expected a hosted web_search tool, got ${canonical.type}`);
-  const userLocation = canonical.user_location;
+  const userLocation = filters.userLocation;
   const baseDescription
     = 'Accesses the web through three actions: searching, opening a page, and finding text inside a page. '
     + 'Multiple sub-property arrays may be populated in one call to dispatch several operations in parallel.';
@@ -265,28 +264,22 @@ const validateHostedEntry = (tool: ResponsesHostedTool): PrepareToolsError | nul
   return null;
 };
 
-// First hosted block's filters win, matching the framework's
-// dedupe-to-first rule for hosted entries. Validation still runs
-// across every hosted entry so a malformed later block rejects the
-// request rather than slipping through behind the chosen first one.
-// Name-collision resolution and the hosted-tool → function-tool
-// replacement are the framework's responsibility.
+// Validation covers every declaration even though only the last complete
+// declaration supplies runtime filters. Azure and Copilot both use this
+// dedupe-to-last rule for repeated web-search declarations.
+// https://github.com/Menci/Floway/pull/172#issuecomment-4971739422
 export const prepareToolsForShim = (
   tools: ResponsesTool[],
 ): PrepareToolsResult => {
-  let firstHostedFilters: ShimToolFilters = {};
-  let captured = false;
+  let selectedFilters: ShimToolFilters = {};
   for (const tool of tools) {
     if (isHostedWebSearchTool(tool)) {
       const reject = validateHostedEntry(tool);
       if (reject !== null) return { ok: false, error: reject };
-      if (!captured) {
-        firstHostedFilters = extractFilters(tool);
-        captured = true;
-      }
+      selectedFilters = extractFilters(tool);
     }
   }
-  return { ok: true, filters: firstHostedFilters };
+  return { ok: true, filters: selectedFilters };
 };
 
 // ── Shim call parsing ──
@@ -1348,10 +1341,10 @@ export const webSearchServerTool: ServerToolRegistration = (invocation, gatewayC
     transformItems: (items, toolName) => transformInputItemsForWebSearch(items, toolName, id => gatewayCtx.store.getPrivatePayload(id)),
     ...(hasHostedWebSearch
       ? {
-          hosted: {
+          declaration: {
             canonicalize: canonicalizeWebSearchTool,
             matchToolChoice: choice => WEB_SEARCH_HOSTED_TYPES.has(choice.type),
-            buildFunctionTool: buildShimFunctionTool,
+            buildFunctionTool: toolName => buildShimFunctionTool(filters, toolName),
             dispatcher: ({ intercepted, loopState }) => {
               const slot = planShimSlots(parseShimOperations(intercepted.arguments), intercepted.name, state, loopState);
               const functionCallItem: ResponsesFunctionToolCallItem = {

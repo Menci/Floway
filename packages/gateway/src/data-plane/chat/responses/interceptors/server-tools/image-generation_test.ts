@@ -282,7 +282,7 @@ test('prepareImageGenerationConfig decodes image_url masks and reports file_id a
 // ── buildImageGenerationFunctionTool ──
 
 test('buildImageGenerationFunctionTool exposes only an optional prompt and is non-strict', () => {
-  const tool = buildImageGenerationFunctionTool({ type: 'image_generation' }, SHIM_TOOL_NAME);
+  const tool = buildImageGenerationFunctionTool(SHIM_TOOL_NAME);
   assertEquals(tool.type, 'function');
   assertEquals(tool.name, SHIM_TOOL_NAME);
   assertEquals(tool.strict, false);
@@ -1021,7 +1021,7 @@ test('imageGenerationServerTool ignores input format when action is generate', a
 test('image dispatcher exposes a newly introduced invalid edit source as an invariant failure', async () => {
   const invocation = makeCtx({ tools: [{ type: 'image_generation', action: 'auto' }] });
   const result = await imageGenerationServerTool(invocation, gatewayCtx());
-  assert(result.type === 'active' && result.hosted !== undefined);
+  assert(result.type === 'active' && result.declaration !== undefined);
 
   invocation.payload = {
     ...invocation.payload,
@@ -1030,7 +1030,7 @@ test('image dispatcher exposes a newly introduced invalid edit source as an inva
     })],
   };
   assertThrows(
-    () => result.hosted?.dispatcher({
+    () => result.declaration?.dispatcher({
       intercepted: { callId: 'call_live_invalid', name: SHIM_TOOL_NAME, arguments: { prompt: 'edit it' } },
       loopState: { iterationCount: 2, remainingToolCalls: undefined },
     }),
@@ -1043,8 +1043,8 @@ test('image dispatcher exposes a newly introduced invalid edit source as an inva
 
 test('image dispatch budget caps real backend calls per response, not ReAct turns', async () => {
   const result = await imageGenerationServerTool(makeCtx({ tools: [{ type: 'image_generation', action: 'generate' }] }), gatewayCtx());
-  assert(result.type === 'active' && result.hosted !== undefined);
-  const dispatch = result.hosted.dispatcher;
+  assert(result.type === 'active' && result.declaration !== undefined);
+  const dispatch = result.declaration.dispatcher;
   const intercepted = { callId: 'c', name: SHIM_TOOL_NAME, argumentsJson: '{}', arguments: { prompt: 'x' } };
   const loopState = { iterationCount: 1, remainingToolCalls: undefined };
 

@@ -5967,13 +5967,15 @@ test('echo restore preserves client-supplied filters / user_location on the cano
   assertEquals((completed.response.tools![0] as { user_location: typeof userLoc }).user_location, userLoc);
 });
 
-test('duplicate hosted web_search entries silently collapse into one echoed canonical', async () => {
+test('duplicate web_search declarations collapse to the last complete declaration', async () => {
   makeStubDeps();
+  const firstFilters = { allowed_domains: ['first.example'] };
+  const lastFilters = { allowed_domains: ['last.example'] };
   const inv = makeInvocation({
     payload: {
       tools: [
-        { type: 'web_search', search_context_size: 'high' },
-        { type: 'web_search' },
+        { type: 'web_search', search_context_size: 'high', filters: firstFilters },
+        { type: 'web_search_preview', search_context_size: 'low', filters: lastFilters },
       ],
     },
   });
@@ -5995,12 +5997,13 @@ test('duplicate hosted web_search entries silently collapse into one echoed cano
   // Request side: only one function tool was sent upstream.
   assertEquals(inv.payload.tools?.length, 1);
   assertEquals(inv.payload.tools?.[0].type, 'function');
-  // Response side: one restored canonical entry, preserving the FIRST
-  // hosted block's `search_context_size`.
+  // Response side: one restored declaration with the last alias and all of
+  // its configuration.
   const completed = findResponseCompleted(frames);
   assertEquals(completed.response.tools!.length, 1);
-  assertEquals(completed.response.tools![0].type, 'web_search');
-  assertEquals((completed.response.tools![0] as { search_context_size: string }).search_context_size, 'high');
+  assertEquals(completed.response.tools![0].type, 'web_search_preview');
+  assertEquals((completed.response.tools![0] as { search_context_size: string }).search_context_size, 'low');
+  assertEquals((completed.response.tools![0] as { filters: typeof lastFilters }).filters, lastFilters);
 });
 
 test('echo restore swaps the function-typed tool_choice back to a hosted tool_choice', async () => {

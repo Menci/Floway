@@ -108,7 +108,7 @@ export const isImageGenerationDeclaration = (tool: ResponsesTool): boolean =>
 // References:
 // - https://github.com/caozhiyuan/copilot-api/issues/312
 // - https://github.com/caozhiyuan/copilot-api/commit/e260303a1ccc48390b0b710fa40631562f1a37fb
-export const canonicalizeImageGenerationTool = (raw: ResponsesTool): ResponsesTool | undefined =>
+export const canonicalizeImageGenerationTool = (raw: ResponsesTool): ResponsesHostedTool | ResponsesNamespaceTool | undefined =>
   isImageGenerationDeclaration(raw) ? raw : undefined;
 
 // A base64-data-URL or bare-base64 image source bound for an edit call.
@@ -483,7 +483,7 @@ export const prepareImageGenerationConfig = (tools: readonly ResponsesTool[]): P
 // on from the client config, exactly like Azure). A minimal description
 // elicits native-quality refined prompts while costing ~50 input tokens vs
 // the native hosted tool's ~2300.
-export const buildImageGenerationFunctionTool = (_canonical: ResponsesTool, name: string): ResponsesFunctionTool => ({
+export const buildImageGenerationFunctionTool = (name: string): ResponsesFunctionTool => ({
   type: 'function',
   name,
   description:
@@ -1502,11 +1502,10 @@ export const imageGenerationServerTool: ServerToolRegistration = async (invocati
     type: 'active',
     baseToolName: SHIM_TOOL_NAME,
     transformItems: transformInputItemsForImageGeneration,
-    hosted: {
+    declaration: {
       canonicalize: canonicalizeImageGenerationTool,
       matchToolChoice: choice => choice.type === 'image_generation'
         || (choice.type === 'namespace' && choice.name === 'image_gen'),
-      declarationPrecedence: 'last',
       buildFunctionTool: buildImageGenerationFunctionTool,
       dispatcher: ({ intercepted }) => {
         const promptArg = intercepted.arguments !== null && typeof intercepted.arguments.prompt === 'string'

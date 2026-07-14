@@ -206,6 +206,11 @@ steps.
   missing durable payload returns `item_not_found`, and no provider receives an
   `item_reference` carrier.
 
+- canonicalizes each supported server-tool declaration family before exposing
+  one collision-resolved function to the orchestrator. Repeated declarations,
+  including equivalent web-search aliases, collapse to the last declaration's
+  complete shape and configuration; Azure and Copilot return the same result
+  for distinguishable reversed controls ([probe evidence](https://github.com/Menci/Floway/pull/172#issuecomment-4971739422)).
 - executes `image_generation` through the gateway server-tool shim for
   translated targets and native Responses providers that opt into the shim.
   The shim recognizes both the hosted declaration and Codex's exact deferred
@@ -214,8 +219,7 @@ steps.
   the provider boundary, exposes one collision-resolved function to the
   orchestrator, emits the native `image_generation_call` lifecycle, and
   restores the selected declaration and forced `tool_choice` in response
-  echoes. Unrelated namespaces remain untouched. Repeated declarations
-  collapse to the last declaration's complete shape and configuration.
+  echoes. Unrelated namespaces remain untouched.
 - prepares image edits by flattening sources in declaration order from message
   content, function/custom tool output, and replayed image-generation results.
   Remote HTTP(S) sources are downloaded once through the shared external-image
