@@ -4,12 +4,14 @@ import { chatCompletionsAttempt } from './attempt.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../test-helpers/gateway-ctx.ts';
+import { initExternalResourceFetcher } from '@floway-dev/platform';
 import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
-import type { ResponsesResult } from '@floway-dev/protocols/responses';
+import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
+import type { ResponsesPayload, ResponsesResult } from '@floway-dev/protocols/responses';
 import { type ModelCandidate, directFetcher, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
-import { assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
+import type { FlagId } from '@floway-dev/provider/flags';
+import { assert, assertEquals, stubProvider, stubInternalModel, stubProviderModel } from '@floway-dev/test-utils';
 
 const API_KEY_ID = 'key_chat_completions_attempt_test';
 
@@ -63,8 +65,10 @@ const makeCandidate = (overrides: {
   callChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
   callMessages?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<MessagesStreamEvent>>;
   callResponses?: (model: unknown, body: unknown, action: ResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderResponsesResult>;
+  enabledFlags?: ReadonlySet<FlagId>;
 } = {}): ModelCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
+  const endpoints = overrides.endpoints ?? { chatCompletions: {}, responses: {}, messages: {} };
   const provider = stubProvider({
     callChatCompletions: overrides.callChatCompletions,
     callMessages: overrides.callMessages,
@@ -73,9 +77,14 @@ const makeCandidate = (overrides: {
   return {
     provider: {
       upstream, kind: 'custom', name: upstream,
-      disabledPublicModelIds: [], modelPrefix: null, instance: provider, supportsResponsesItemReference: true,
+      disabledPublicModelIds: [], modelPrefix: null, instance: provider,
     },
-    model: stubInternalModel(overrides.endpoints ? { endpoints: overrides.endpoints } : {}, upstream),
+    model: stubInternalModel({
+      endpoints,
+      providerModels: {
+        [upstream]: stubProviderModel({ endpoints, enabledFlags: new Set<FlagId>(overrides.enabledFlags ?? []) }),
+      },
+    }, upstream),
     fetcher: directFetcher,
   };
 };
@@ -112,6 +121,49 @@ test('generate native chat-completions target calls provider.callChatCompletions
   assertEquals(callChatCompletions.mock.calls.length, 1);
 });
 
+test('generate native target applies role compatibility flags in target-chain order', async () => {
+  installRepo();
+  let observedBody: Omit<ChatCompletionsPayload, 'model'> | undefined;
+  const callChatCompletions = vi.fn(async (_model, body): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>> => {
+    observedBody = body as Omit<ChatCompletionsPayload, 'model'>;
+    return {
+      ok: true,
+      events: makeProtocolFrames(makeChatCompletionsEvents()),
+      modelKey: 'k',
+      headers: new Headers(),
+    };
+  });
+  const result = await chatCompletionsAttempt.generate({
+    payload: makePayload({
+      messages: [
+        { role: 'system', content: 'base instructions' },
+        { role: 'user', content: 'hello' },
+        { role: 'system', content: 'inline instructions' },
+      ],
+    }),
+    ctx: makeGatewayCtx(),
+    candidate: makeCandidate({
+      callChatCompletions,
+      endpoints: { chatCompletions: {} },
+      enabledFlags: new Set([
+        'demote-developer-to-system',
+        'demote-interleaved-system-to-user',
+        'promote-system-to-developer',
+      ]),
+    }),
+    headers: new Headers(),
+  });
+
+  assertEquals(result.type, 'events');
+  if (result.type !== 'events') throw new Error('unreachable');
+  await collectEvents(result.events);
+  assertEquals(observedBody?.messages, [
+    { role: 'system', content: 'base instructions' },
+    { role: 'user', content: 'hello' },
+    { role: 'user', content: 'inline instructions' },
+  ]);
+});
+
 test('generate translates through the Messages target when only that endpoint is exposed', async () => {
   installRepo();
   const callMessages = vi.fn(async (): Promise<ProviderStreamResult<MessagesStreamEvent>> => ({
@@ -128,6 +180,39 @@ test('generate translates through the Messages target when only that endpoint is
   if (result.type !== 'events') throw new Error('unreachable');
   await collectEvents(result.events);
   assertEquals(callMessages.mock.calls.length, 1);
+});
+
+test('generate injects the platform external-image loader into Chat-to-Messages translation', async () => {
+  installRepo();
+  initExternalResourceFetcher(url => {
+    assertEquals(url.href, 'https://example.com/image.png');
+    return Promise.resolve(new Response(Uint8Array.of(1, 2, 3), { headers: { 'content-type': 'image/png' } }));
+  });
+  let observedBody: Omit<MessagesPayload, 'model'> | undefined;
+  const callMessages = vi.fn(async (_model, body): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
+    observedBody = body as Omit<MessagesPayload, 'model'>;
+    return { ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'k', headers: new Headers() };
+  });
+  const result = await chatCompletionsAttempt.generate({
+    payload: makePayload({
+      messages: [{
+        role: 'user',
+        content: [{ type: 'image_url', image_url: { url: 'https://example.com/image.png' } }],
+      }],
+    }),
+    ctx: makeGatewayCtx(),
+    candidate: makeCandidate({ callMessages, endpoints: { messages: {} } }),
+    headers: new Headers(),
+  });
+
+  assertEquals(result.type, 'events');
+  if (result.type !== 'events') throw new Error('unreachable');
+  await collectEvents(result.events);
+  const message = observedBody?.messages[0];
+  assert(message?.role === 'user' && Array.isArray(message.content));
+  const image = message.content.find(block => block.type === 'image');
+  assert(image?.type === 'image');
+  assertEquals(image.source, { type: 'base64', media_type: 'image/png', data: 'AQID' });
 });
 
 test('generate translates through the Responses target when only that endpoint is exposed', async () => {
@@ -157,6 +242,54 @@ test('generate translates through the Responses target when only that endpoint i
   if (result.type !== 'events') throw new Error('unreachable');
   await collectEvents(result.events);
   assertEquals(callResponses.mock.calls.length, 1);
+});
+
+test('generate preserves translated instructions before promoting inline system messages', async () => {
+  installRepo();
+  const observedBodies: Omit<ResponsesPayload, 'model'>[] = [];
+  const callResponses = vi.fn(async (_model, body): Promise<ProviderResponsesResult> => {
+    observedBodies.push(body as Omit<ResponsesPayload, 'model'>);
+    return {
+      action: 'generate',
+      ok: true,
+      events: makeProtocolFrames([{
+        type: 'response.completed', sequence_number: 0, response: {
+          id: 'resp_x', object: 'response', model: 'test-model', status: 'completed',
+          output: [], output_text: '', error: null, incomplete_details: null,
+        },
+      }]),
+      modelKey: 'k',
+      headers: new Headers(),
+    };
+  });
+
+  const result = await chatCompletionsAttempt.generate({
+    payload: makePayload({
+      messages: [
+        { role: 'system', content: 'base instructions' },
+        { role: 'user', content: 'hello' },
+        { role: 'system', content: 'inline instructions' },
+      ],
+    }),
+    ctx: makeGatewayCtx(),
+    candidate: makeCandidate({
+      callResponses,
+      endpoints: { responses: {} },
+      enabledFlags: new Set<FlagId>(['promote-system-to-developer']),
+    }),
+    headers: new Headers(),
+  });
+
+  assertEquals(result.type, 'events');
+  if (result.type !== 'events') throw new Error('unreachable');
+  await collectEvents(result.events);
+  const observedBody = observedBodies[0];
+  if (!observedBody) throw new Error('expected observed Responses body');
+  assertEquals(observedBody.instructions, 'base instructions');
+  const input = observedBody.input;
+  if (!Array.isArray(input)) throw new Error('expected Responses input array');
+  assertEquals(input[0], { type: 'message', role: 'user', content: 'hello' });
+  assertEquals(input[1], { type: 'message', role: 'developer', content: 'inline instructions' });
 });
 
 test('generate propagates upstream response headers onto the EventResult so respond can forward them', async () => {

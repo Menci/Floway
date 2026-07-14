@@ -17,7 +17,7 @@ const baseFields = (): Omit<ControlPlaneModel, 'id' | 'upstreams'> => ({
 
 export const buildRealModel = (over: Partial<ControlPlaneModel> & { id: string }): ControlPlaneModel => ({
   ...baseFields(),
-  upstreams: [{ id: 'u1', name: 'U1', kind: 'custom' }],
+  upstreams: [{ id: 'u1', name: 'U1', kind: 'custom', color: null }],
   ...over,
 });
 
@@ -30,7 +30,7 @@ export const buildAliasModel = (over: Partial<ControlPlaneModel> & { id: string 
 
 export const buildUnlistedModel = (over: Partial<ControlPlaneModel> & { id: string }): ControlPlaneModel => ({
   ...baseFields(),
-  upstreams: [{ id: 'u1', name: 'U1', kind: 'custom' }],
+  upstreams: [{ id: 'u1', name: 'U1', kind: 'custom', color: null }],
   unlisted: true,
   ...over,
 });

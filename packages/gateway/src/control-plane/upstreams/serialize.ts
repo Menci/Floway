@@ -1,5 +1,5 @@
 import { flagDefaultsForKind } from '../../data-plane/providers/registry.ts';
-import type { FlagDefaults, FlagOverrides, ModelPrefixConfig, ProxyFallbackEntry, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
+import type { FlagDefaults, FlagOverrides, ModelPrefixConfig, ProxyFallbackEntry, UpstreamColor, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 
 export interface SerializedUpstreamRecord {
   id: string;
@@ -15,6 +15,7 @@ export interface SerializedUpstreamRecord {
   disabled_public_model_ids: string[];
   proxy_fallback_list: ProxyFallbackEntry[];
   model_prefix: ModelPrefixConfig | null;
+  color: UpstreamColor | null;
   config: unknown;
   state: unknown;
 }
@@ -187,6 +188,7 @@ const serializeBase = (
   disabled_public_model_ids: [...upstream.disabledPublicModelIds],
   proxy_fallback_list: upstream.proxyFallbackList.map(entry => entry.colos === undefined ? { id: entry.id } : { id: entry.id, colos: [...entry.colos] }),
   model_prefix: upstream.modelPrefix === null ? null : clone(upstream.modelPrefix),
+  color: upstream.color,
   config,
   state,
 });
@@ -216,6 +218,7 @@ export const blueprintUpstreamRecord = (kind: UpstreamProviderKind): UpstreamRec
     disabledPublicModelIds: [] as string[],
     proxyFallbackList: [] as ProxyFallbackEntry[],
     modelPrefix: null,
+    color: null,
   };
   switch (kind) {
   case 'copilot':

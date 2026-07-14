@@ -223,6 +223,7 @@ export const listUpstreamOptions = async (c: Context) => {
       name: upstream.name,
       kind: upstream.kind,
       enabled: upstream.enabled,
+      color: upstream.color,
     })));
 };
 
@@ -293,6 +294,7 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
     disabledPublicModelIds: body.disabled_public_model_ids ?? [],
     proxyFallbackList,
     modelPrefix,
+    color: body.color ?? null,
     config: body.config,
     state: stateFromBody,
   };
@@ -360,6 +362,7 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '
     if (!result.ok) return c.json({ error: result.error }, 400);
     next = { ...next, modelPrefix: result.value };
   }
+  if (body.color !== undefined) next = { ...next, color: body.color };
   if (body.config !== undefined) {
     const config = mergeConfigPatch(existing.kind, existing.config, body.config);
     if (!config.ok) return c.json({ error: config.error }, 400);
@@ -937,7 +940,7 @@ const reshapeModelForDashboard = (model: ProviderModel): Record<string, unknown>
     endpoints: model.endpoints,
     ...(model.display_name !== undefined ? { display_name: model.display_name } : {}),
     ...(Object.keys(model.limits).length > 0 ? { limits: model.limits } : {}),
-    ...(model.cost ? { cost: model.cost } : {}),
+    ...(model.pricing ? { pricing: model.pricing } : {}),
     ...(model.chat ? { chat: model.chat } : {}),
     ...(model.flagOverrides ? { flagOverrides: model.flagOverrides } : {}),
   };
@@ -971,6 +974,7 @@ export const listModels = async (c: CtxWithJson<typeof listModelsBody>) => {
     disabledPublicModelIds: [],
     proxyFallbackList: (record.proxy_fallback_list ?? []) as ProxyFallbackEntry[],
     modelPrefix: null,
+    color: null,
     config: record.config,
     state: record.state,
   };

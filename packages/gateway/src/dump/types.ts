@@ -1,23 +1,24 @@
-// Per-API-key request-dump types. Two parallel shapes split by where bodies
-// live:
+// Per-API-key request-dump types. Three shapes split by lifecycle:
 //
-//   - the storage shape (`Stored*`, with `body: Uint8Array`) is what the
-//     accumulator hands the store, what the store writes and rehydrates,
-//     and what flows in-process between the data plane and the dashboard's
-//     control-plane reader;
+//   - the write shape (`DumpWrite*`) carries a request body prepared while the
+//     upstream is running, so persistence does not need the original bytes;
+//   - the storage/read shape (`Stored*`, with `body: Uint8Array`) is what the
+//     store rehydrates and what flows in-process to the dashboard's reader;
 //   - the wire shape (`Dump*`, with `body: DumpBody`) is the JSON-friendly
 //     view served to the dashboard by `dumpRecordToWire`.
 //
 // `DumpMetadata` and `DumpStreamEvent` are body-free and shared verbatim.
 
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
+import type { UpstreamColor, UpstreamProviderKind } from '@floway-dev/provider';
 
 export type DumpRecordId = string;
 
 export interface DumpUpstreamRef {
   id: string;
   name: string;
-  kind: string;
+  kind: UpstreamProviderKind;
+  color: UpstreamColor | null;
 }
 
 // What went wrong on a failed turn. Either a categorized api-error envelope
@@ -42,7 +43,9 @@ export interface DumpMetadata {
   model: string | null;
   inputTokens: number | null;
   outputTokens: number | null;
-  // Raw (pre-gzip) byte counts of the captured bodies.
+  // Captured application-payload bytes. HTTP counts body bytes; WebSocket
+  // counts UTF-8 message payloads. Transport framing/compression and the
+  // dump store's gzip encoding are excluded.
   requestBytes: number;
   responseBytes: number;
   durationMs: number;
@@ -74,6 +77,19 @@ export interface StoredDumpRequest {
   body: Uint8Array;
 }
 
+export type PreparedDumpRequestBody = {
+  readonly encoding: 'identity' | 'gzip';
+  readonly bytes: Uint8Array;
+  readonly decodedByteLength: number;
+};
+
+export interface DumpWriteRequest {
+  method: string;
+  path: string;
+  headers: Array<[string, string]>;
+  body: PreparedDumpRequestBody;
+}
+
 export type StoredDumpResponseBody =
   | { type: 'stream'; events: DumpStreamEvent[] }
   | { type: 'bytes'; body: Uint8Array }
@@ -88,6 +104,12 @@ export interface StoredDumpResponse {
 export type StoredDumpRecord = {
   meta: DumpMetadata;
   request: StoredDumpRequest;
+  response: StoredDumpResponse;
+};
+
+export type DumpWriteRecord = {
+  meta: DumpMetadata;
+  request: DumpWriteRequest;
   response: StoredDumpResponse;
 };
 

@@ -1,12 +1,15 @@
-import { createStoredResponsesItemId, hashResponsesItemContent, hashResponsesItemEncryptedContent, isStoredResponsesItemId, responsesItemEncryptedContent, responsesItemId } from './format.ts';
+import { createStoredResponsesItemId, isStoredResponsesItemId, responsesItemEncryptedContent, responsesItemId } from './format.ts';
+import { ResponsesItemHashCache } from './hash-cache.ts';
 import { getRepo } from '../../../../repo/index.ts';
 import {
   cloneStoredResponsesItem,
+  cloneStoredResponsesItemMetadata,
   cloneStoredResponsesSnapshot,
   compareResponsesItemsByFreshness as compareItemsByFreshness,
   responsesItemStoreKey as scopedKey,
+  storedResponsesItemMetadata,
 } from '../../../../repo/responses-clone.ts';
-import type { Repo, StoredResponsesItem, StoredResponsesSnapshot } from '../../../../repo/types.ts';
+import type { Repo, StoredResponsesItem, StoredResponsesItemMetadata, StoredResponsesItemPayload, StoredResponsesItemPayloadRecord, StoredResponsesSnapshot } from '../../../../repo/types.ts';
 import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
 import type { ResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
@@ -18,12 +21,13 @@ export interface StatefulResponsesItemLookup {
 }
 
 export interface StatefulResponsesItemLookupResult {
-  readonly row: StoredResponsesItem;
+  readonly metadata: StoredResponsesItemMetadata;
   readonly durable: boolean;
 }
 
 export interface StatefulResponsesBacking {
   lookupItems(query: StatefulResponsesItemLookup): Promise<StatefulResponsesItemLookupResult[]>;
+  lookupPayloads(apiKeyId: string | null, ids: readonly string[]): Promise<StoredResponsesItemPayloadRecord[]>;
   insertItems(items: readonly StoredResponsesItem[], options: { readonly durable: boolean }): Promise<void>;
   fillPayloads(items: readonly StoredResponsesItem[], options: { readonly durable: boolean }): Promise<void>;
   markDurable?(apiKeyId: string | null, id: string): void;
@@ -81,11 +85,15 @@ export interface StatefulResponsesStore {
     readonly view: Pick<ResponsesItemsView<TSourceItems>, 'visitAsResponsesItems'>;
     readonly inputItemsToStage?: readonly ResponsesInputItem[];
   }): Promise<void>;
-  getItemById(id: string): StoredResponsesItem | undefined;
-  getItemsByEncryptedContentHash(hash: string): StoredResponsesItem[];
+  getItemById(id: string): StoredResponsesItemMetadata | undefined;
+  getItemsByEncryptedContentHash(hash: string): StoredResponsesItemMetadata[];
+  hashItemContent(item: ResponsesInputItem): Promise<string>;
+  hashEncryptedContent(encryptedContent: string): Promise<string>;
+  clearItemHashes(): void;
+  loadItemPayloads(items: readonly StoredResponsesItemMetadata[]): Promise<ReadonlyMap<string, StoredResponsesItemPayload>>;
   touchItem(id: string): void;
   stageInputItems(items: readonly ResponsesInputItem[]): Promise<void>;
-  beginAttempt(references: Iterable<{ readonly row?: StoredResponsesItem }>): void;
+  beginAttempt(privatePayloads: ReadonlyMap<string, unknown>): void;
   addSyntheticItem(id: string, privatePayload?: unknown): void;
   isSyntheticItem(id: string): boolean;
   getPrivatePayload(id: string): unknown;
@@ -96,9 +104,11 @@ export interface StatefulResponsesStore {
 }
 
 export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
-  private readonly loadedItemsById = new Map<string, StoredResponsesItem>();
-  private readonly loadedItemsByContentHash = new Map<string, StoredResponsesItem[]>();
-  private readonly loadedItemsByEncryptedContentHash = new Map<string, StoredResponsesItem[]>();
+  private readonly loadedItemsById = new Map<string, StoredResponsesItemMetadata>();
+  private readonly loadedItemsByContentHash = new Map<string, StoredResponsesItemMetadata[]>();
+  private readonly loadedItemsByEncryptedContentHash = new Map<string, StoredResponsesItemMetadata[]>();
+  private readonly payloadSourcesById = new Map<string, StatefulResponsesBacking>();
+  private readonly stagedPayloadsById = new Map<string, StoredResponsesItemPayload>();
   private readonly privatePayload = new Map<string, unknown>();
   private readonly syntheticItemIds = new Set<string>();
   private readonly snapshotsById = new Map<string, StoredResponsesSnapshot>();
@@ -114,7 +124,10 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   private readonly refreshedItemIds = new Set<string>();
   private readonly durableItemIds = new Set<string>();
 
-  constructor(private readonly options: LayeredStatefulResponsesStoreOptions) {}
+  constructor(
+    private readonly options: LayeredStatefulResponsesStoreOptions,
+    private readonly hashes = new ResponsesItemHashCache(),
+  ) {}
 
   get apiKeyId(): string | null {
     return this.options.apiKeyId;
@@ -122,6 +135,18 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
 
   get shouldStorePayload(): boolean {
     return this.options.shouldStorePayload !== false;
+  }
+
+  hashItemContent(item: ResponsesInputItem): Promise<string> {
+    return this.hashes.content(item);
+  }
+
+  hashEncryptedContent(encryptedContent: string): Promise<string> {
+    return this.hashes.encryptedContent(encryptedContent);
+  }
+
+  clearItemHashes(): void {
+    this.hashes.clear();
   }
 
   async loadSnapshot(id: string): Promise<StoredResponsesSnapshot | null> {
@@ -137,7 +162,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
       await this.loadItems({ ids: snapshot.itemIds, contentHashes: [], encryptedContentHashes: [] });
       if (!snapshot.itemIds.every(itemId => {
         const row = this.loadedItemsById.get(itemId);
-        return row !== undefined && isReplayableSnapshotRow(row);
+        return row !== undefined && isReplayableSnapshotMetadata(row);
       })) continue;
       this.rememberSnapshot(snapshot);
       this.previousSnapshotItemIds = [...snapshot.itemIds];
@@ -163,10 +188,17 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     });
 
     const contentHashes = new Set<string>();
-    for (const item of options.inputItemsToStage ?? []) contentHashes.add(await hashResponsesItemContent(item));
+    for (const item of options.inputItemsToStage ?? []) {
+      const id = responsesItemId(item);
+      // A gateway-owned id is authoritative: affinity rejects it when the row
+      // is absent, while staging reuses or repairs that exact row. A content
+      // lookup cannot change either outcome.
+      if (id !== null && isStoredResponsesItemId(id)) continue;
+      contentHashes.add(await this.hashItemContent(item));
+    }
 
     const encryptedContentHashes = new Set<string>();
-    for (const encryptedContent of encryptedContents) encryptedContentHashes.add(await hashResponsesItemEncryptedContent(encryptedContent));
+    for (const encryptedContent of encryptedContents) encryptedContentHashes.add(await this.hashEncryptedContent(encryptedContent));
 
     await this.loadItems({
       ids: [...ids],
@@ -175,14 +207,42 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     });
   }
 
-  getItemById(id: string): StoredResponsesItem | undefined {
+  getItemById(id: string): StoredResponsesItemMetadata | undefined {
     const row = this.loadedItemsById.get(id) ?? this.stagedInputItems.get(id) ?? this.stagedOutputItems.get(id);
     if (row) this.touchItem(row.id);
-    return row ? cloneStoredResponsesItem(row) : undefined;
+    return row ? cloneStoredResponsesItemMetadata('hasPayload' in row ? row : storedResponsesItemMetadata(row)) : undefined;
   }
 
-  getItemsByEncryptedContentHash(hash: string): StoredResponsesItem[] {
-    return (this.loadedItemsByEncryptedContentHash.get(hash) ?? []).map(cloneStoredResponsesItem);
+  getItemsByEncryptedContentHash(hash: string): StoredResponsesItemMetadata[] {
+    return (this.loadedItemsByEncryptedContentHash.get(hash) ?? []).map(cloneStoredResponsesItemMetadata);
+  }
+
+  async loadItemPayloads(items: readonly StoredResponsesItemMetadata[]): Promise<ReadonlyMap<string, StoredResponsesItemPayload>> {
+    const payloads = new Map<string, StoredResponsesItemPayload>();
+    const groups = new Map<StatefulResponsesBacking, StoredResponsesItemMetadata[]>();
+    for (const item of items) {
+      if (!item.hasPayload || payloads.has(item.id)) continue;
+      const staged = this.stagedPayloadsById.get(item.id);
+      if (staged !== undefined) {
+        payloads.set(item.id, staged);
+        continue;
+      }
+      const source = this.payloadSourcesById.get(item.id);
+      if (source === undefined) throw new Error(`Stored Responses payload source missing for id=${item.id}`);
+      const rows = groups.get(source) ?? [];
+      rows.push(item);
+      groups.set(source, rows);
+    }
+    for (const [source, metadata] of groups) {
+      const records = await source.lookupPayloads(this.options.apiKeyId, metadata.map(item => item.id));
+      const byId = new Map(records.map(record => [record.id, record.payload]));
+      for (const item of metadata) {
+        const payload = byId.get(item.id);
+        if (payload === undefined) throw new Error(`Stored Responses payload disappeared during hydration for id=${item.id}`);
+        payloads.set(item.id, payload);
+      }
+    }
+    return payloads;
   }
 
   touchItem(id: string): void {
@@ -194,16 +254,12 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     for (const item of items) await this.stageInputItem(item);
   }
 
-  beginAttempt(references: Iterable<{ readonly row?: StoredResponsesItem }>): void {
+  beginAttempt(privatePayloads: ReadonlyMap<string, unknown>): void {
     this.stagedOutputItems.clear();
     this.stagedOutputItemIds.length = 0;
     this.privatePayload.clear();
     this.syntheticItemIds.clear();
-    for (const ref of references) {
-      if (ref.row?.payload?.private === undefined) continue;
-      const wireId = responsesItemId(ref.row.payload.item as { id?: unknown });
-      if (wireId !== null) this.privatePayload.set(wireId, ref.row.payload.private);
-    }
+    for (const [wireId, payload] of privatePayloads) this.privatePayload.set(wireId, payload);
   }
 
   addSyntheticItem(id: string, privatePayload?: unknown): void {
@@ -238,8 +294,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
       : [...this.previousSnapshotItemIds, ...this.stagedInputItemIds, ...this.stagedOutputItemIds];
     if (itemIds.length === 0) return;
 
-    const replayableRows = this.replayableRowsForSnapshot(itemIds);
-    await this.commitItems(replayableRows);
+    this.assertReplayableSnapshotItems(itemIds);
     const now = Date.now();
     const snapshot: StoredResponsesSnapshot = {
       id: responseId,
@@ -268,7 +323,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
         contentHashes,
         encryptedContentHashes,
       });
-      for (const result of results) this.rememberItem(result.row, { durable: result.durable });
+      for (const result of results) this.rememberItem(result.metadata, { durable: result.durable, source: backing });
       ids = ids.filter(id => !this.loadedItemsById.has(id));
     }
   }
@@ -294,7 +349,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     if (storedId !== null && isStoredResponsesItemId(storedId)) {
       const row = this.getItemById(storedId);
       if (row !== undefined) {
-        if (row.payload !== null) {
+        if (row.hasPayload) {
           this.stagedInputItemIds.push(row.id);
           return;
         }
@@ -305,11 +360,11 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
 
     const encryptedContent = responsesItemEncryptedContent(item);
     if (encryptedContent !== null) {
-      const row = this.getItemsByEncryptedContentHash(await hashResponsesItemEncryptedContent(encryptedContent))
+      const row = this.getItemsByEncryptedContentHash(await this.hashEncryptedContent(encryptedContent))
         .find(candidate => candidate.itemType === item.type);
       if (row !== undefined) {
         this.touchItem(row.id);
-        if (row.payload !== null) {
+        if (row.hasPayload) {
           this.stagedInputItemIds.push(row.id);
           return;
         }
@@ -318,7 +373,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
       }
     }
 
-    const contentHash = await hashResponsesItemContent(item);
+    const contentHash = await this.hashItemContent(item);
     const existing = this.reusableItemByContentHash(contentHash);
     if (existing) {
       this.touchItem(existing.id);
@@ -336,7 +391,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
       origin: 'input',
       payload: { item: structuredClone(item) },
       contentHash,
-      encryptedContentHash: encryptedContent === null ? null : await hashResponsesItemEncryptedContent(encryptedContent),
+      encryptedContentHash: encryptedContent === null ? null : await this.hashEncryptedContent(encryptedContent),
       createdAt: now,
       refreshedAt: now,
     };
@@ -345,13 +400,14 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     this.rememberItem(row, { durable: this.durableItemIds.has(row.id) });
   }
 
-  private async stagePayloadUpgrade(row: StoredResponsesItem, item: ResponsesInputItem, encryptedContent: string | null): Promise<void> {
+  private async stagePayloadUpgrade(row: StoredResponsesItemMetadata, item: ResponsesInputItem, encryptedContent: string | null): Promise<void> {
     const now = Date.now();
+    const { hasPayload: _hasPayload, ...metadata } = row;
     const upgraded: StoredResponsesItem = {
-      ...row,
+      ...metadata,
       payload: { item: structuredClone(item) },
-      contentHash: await hashResponsesItemContent(item),
-      encryptedContentHash: encryptedContent === null ? row.encryptedContentHash : await hashResponsesItemEncryptedContent(encryptedContent),
+      contentHash: await this.hashItemContent(item),
+      encryptedContentHash: encryptedContent === null ? row.encryptedContentHash : await this.hashEncryptedContent(encryptedContent),
       createdAt: now,
       refreshedAt: now,
     };
@@ -361,56 +417,70 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     this.rememberItem(upgraded);
   }
 
-  private reusableItemByContentHash(hash: string): StoredResponsesItem | undefined {
+  private reusableItemByContentHash(hash: string): StoredResponsesItemMetadata | undefined {
     const staged = [...this.stagedInputItems.values(), ...this.stagedOutputItems.values()].find(row => row.contentHash === hash);
-    if (staged) return staged;
-    return this.loadedItemsByContentHash.get(hash)?.find(row => row.payload !== null);
+    if (staged) return storedResponsesItemMetadata(staged);
+    return this.loadedItemsByContentHash.get(hash)?.find(row => row.hasPayload);
   }
 
-  private rememberItem(row: StoredResponsesItem, options: { readonly durable?: boolean } = {}): void {
-    const cloned = cloneStoredResponsesItem(row);
-    this.loadedItemsById.set(cloned.id, cloned);
-    if (options.durable === true) this.durableItemIds.add(cloned.id);
-    if (cloned.contentHash !== null) pushByHash(this.loadedItemsByContentHash, cloned.contentHash, cloned);
-    if (cloned.encryptedContentHash !== null) pushByHash(this.loadedItemsByEncryptedContentHash, cloned.encryptedContentHash, cloned);
+  private rememberItem(
+    row: StoredResponsesItem | StoredResponsesItemMetadata,
+    options: { readonly durable?: boolean; readonly source?: StatefulResponsesBacking } = {},
+  ): void {
+    const metadata = cloneStoredResponsesItemMetadata('hasPayload' in row ? row : storedResponsesItemMetadata(row));
+    this.loadedItemsById.set(metadata.id, metadata);
+    // Full rows are already owned by this store: input/repair rows clone the
+    // caller item when constructed, and stageOutputItem clones its row before
+    // reaching here. Share that internal payload between the staging indexes;
+    // candidate rewrite clones the hydrated item before downstream mutation.
+    if (!('hasPayload' in row) && row.payload !== null) this.stagedPayloadsById.set(row.id, row.payload);
+    if (metadata.hasPayload && options.source !== undefined) this.payloadSourcesById.set(metadata.id, options.source);
+    if (options.durable === true) this.durableItemIds.add(metadata.id);
+    if (metadata.contentHash !== null) pushByHash(this.loadedItemsByContentHash, metadata.contentHash, metadata);
+    if (metadata.encryptedContentHash !== null) pushByHash(this.loadedItemsByEncryptedContentHash, metadata.encryptedContentHash, metadata);
   }
 
   private rememberSnapshot(snapshot: StoredResponsesSnapshot): void {
     this.snapshotsById.set(snapshot.id, cloneStoredResponsesSnapshot(snapshot));
   }
 
-  private replayableRowsForSnapshot(itemIds: readonly string[]): StoredResponsesItem[] {
-    const rows: StoredResponsesItem[] = [];
+  private assertReplayableSnapshotItems(itemIds: readonly string[]): void {
     const seen = new Set<string>();
     for (const id of itemIds) {
       if (seen.has(id)) continue;
       seen.add(id);
-      const row = this.loadedItemsById.get(id) ?? this.stagedInputItems.get(id) ?? this.stagedOutputItems.get(id);
-      if (row === undefined || !isReplayableSnapshotRow(row)) {
+      const row = this.loadedItemsById.get(id)
+        ?? (this.stagedInputItems.has(id) ? storedResponsesItemMetadata(this.stagedInputItems.get(id)!) : undefined)
+        ?? (this.stagedOutputItems.has(id) ? storedResponsesItemMetadata(this.stagedOutputItems.get(id)!) : undefined);
+      if (row === undefined || !isReplayableSnapshotMetadata(row)) {
         throw new Error(`Cannot persist Responses snapshot with non-replayable item id=${id}`);
       }
-      rows.push(row);
     }
-    return rows;
   }
 
   private async commitItems(rows: readonly StoredResponsesItem[]): Promise<void> {
     const pending = rows.filter(row => !this.committedItemIds.has(row.id));
-    if (pending.length === 0) return;
-    await Promise.all(this.options.itemWrites.map(async write => {
-      const writable = write.durable ? pending.filter(row => this.isDurableWriteEligible(row)) : pending;
-      const payloadUpgrades = writable.filter(row => this.payloadUpgradeIds.has(row.id) && (!write.durable || this.durableItemIds.has(row.id)));
-      const inserts = writable.filter(row => !this.payloadUpgradeIds.has(row.id) || (write.durable && !this.durableItemIds.has(row.id)));
-      await Promise.all([
-        write.backing.insertItems(inserts, { durable: write.durable }),
-        write.backing.fillPayloads(payloadUpgrades, { durable: write.durable }),
-      ]);
-      if (write.durable) {
-        for (const row of writable) this.markDurable(row.apiKeyId, row.id);
-      }
-    }));
-    for (const row of pending) this.committedItemIds.add(row.id);
+    if (pending.length > 0) {
+      await Promise.all(this.options.itemWrites.map(async write => {
+        const writable = write.durable ? pending.filter(row => this.needsDurableWrite(row)) : pending;
+        const payloadUpgrades = writable.filter(row => this.payloadUpgradeIds.has(row.id) && (!write.durable || this.durableItemIds.has(row.id)));
+        const inserts = writable.filter(row => !this.payloadUpgradeIds.has(row.id) || (write.durable && !this.durableItemIds.has(row.id)));
+        const operations: Promise<unknown>[] = [];
+        if (inserts.length > 0) operations.push(write.backing.insertItems(inserts, { durable: write.durable }));
+        if (payloadUpgrades.length > 0) operations.push(write.backing.fillPayloads(payloadUpgrades, { durable: write.durable }));
+        await Promise.all(operations);
+        if (write.durable) {
+          for (const row of writable) this.markDurable(row.apiKeyId, row.id);
+        }
+      }));
+      for (const row of pending) this.committedItemIds.add(row.id);
+    }
     await this.refreshTouchedItems();
+  }
+
+  private needsDurableWrite(row: StoredResponsesItem): boolean {
+    return this.isDurableWriteEligible(row)
+      && (!this.durableItemIds.has(row.id) || this.payloadUpgradeIds.has(row.id));
   }
 
   private isDurableWriteEligible(row: StoredResponsesItem): boolean {
@@ -452,11 +522,15 @@ export class RepoStatefulResponsesBacking implements StatefulResponsesBacking {
       this.repo.responsesItems.lookupManyByContentHash(query.apiKeyId, query.contentHashes),
       this.repo.responsesItems.lookupManyByEncryptedContentHash(query.apiKeyId, query.encryptedContentHashes),
     ]);
-    const rowsByKey = new Map<string, StoredResponsesItem>();
+    const rowsByKey = new Map<string, StoredResponsesItemMetadata>();
     for (const row of [...byId, ...byContentHash, ...byEncryptedContentHash]) {
-      rowsByKey.set(scopedKey(row.apiKeyId, row.id), cloneStoredResponsesItem(row));
+      rowsByKey.set(scopedKey(row.apiKeyId, row.id), cloneStoredResponsesItemMetadata(row));
     }
-    return [...rowsByKey.values()].map(row => ({ row, durable: true }));
+    return [...rowsByKey.values()].map(metadata => ({ metadata, durable: true }));
+  }
+
+  async lookupPayloads(apiKeyId: string | null, ids: readonly string[]): Promise<StoredResponsesItemPayloadRecord[]> {
+    return await this.repo.responsesItems.lookupPayloads(apiKeyId, ids);
   }
 
   async insertItems(items: readonly StoredResponsesItem[]): Promise<void> {
@@ -500,8 +574,17 @@ export class MemoryStatefulResponsesBacking implements StatefulResponsesBacking 
           || (row.contentHash !== null && contentHashes.has(row.contentHash))
           || (row.encryptedContentHash !== null && encryptedContentHashes.has(row.encryptedContentHash))
         ))
-      .map(({ row, durable }) => ({ row: cloneStoredResponsesItem(row), durable }))
-      .toSorted((a, b) => compareItemsByFreshness(a.row, b.row)));
+      .map(({ row, durable }) => ({ metadata: storedResponsesItemMetadata(row), durable }))
+      .toSorted((a, b) => compareItemsByFreshness(a.metadata, b.metadata)));
+  }
+
+  lookupPayloads(apiKeyId: string | null, ids: readonly string[]): Promise<StoredResponsesItemPayloadRecord[]> {
+    const records: StoredResponsesItemPayloadRecord[] = [];
+    for (const id of new Set(ids)) {
+      const row = this.items.get(scopedKey(apiKeyId, id))?.row;
+      if (row !== undefined && row.payload !== null) records.push({ id, payload: structuredClone(row.payload) });
+    }
+    return Promise.resolve(records);
   }
 
   insertItems(items: readonly StoredResponsesItem[], options: { readonly durable: boolean }): Promise<void> {
@@ -634,14 +717,14 @@ export const createResponsesWsSession = (): {
   };
 };
 
-const pushByHash = (target: Map<string, StoredResponsesItem[]>, hash: string, row: StoredResponsesItem): void => {
+const pushByHash = (target: Map<string, StoredResponsesItemMetadata[]>, hash: string, row: StoredResponsesItemMetadata): void => {
   const rows = target.get(hash) ?? [];
   if (!rows.some(existing => existing.id === row.id && existing.apiKeyId === row.apiKeyId)) {
-    rows.push(cloneStoredResponsesItem(row));
+    rows.push(row);
     rows.sort(compareItemsByFreshness);
   }
   target.set(hash, rows);
 };
 
-const isReplayableSnapshotRow = (row: StoredResponsesItem): boolean =>
-  row.payload !== null || (row.upstreamId !== null && row.upstreamItemId !== null);
+const isReplayableSnapshotMetadata = (row: StoredResponsesItemMetadata): boolean =>
+  row.hasPayload || (row.upstreamId !== null && row.upstreamItemId !== null);

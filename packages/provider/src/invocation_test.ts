@@ -64,7 +64,6 @@ test('providerModelOf throws the alias-row diagnostic when the candidate names a
       disabledPublicModelIds: [],
       modelPrefix: null,
       instance: stubProvider(),
-      supportsResponsesItemReference: false,
     },
     model: {
       id: 'gpt-fast',

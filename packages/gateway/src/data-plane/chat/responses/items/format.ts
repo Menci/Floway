@@ -4,9 +4,12 @@
 // "Named export 'buf' not found". Default-import the namespace and destructure.
 import crc32Mod from 'crc-32';
 
-import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
+import type { ResponsesInputItem, ResponsesOutputItem } from '@floway-dev/protocols/responses';
 
 const { buf: crc32 } = crc32Mod;
+
+type ResponsesItemType = ResponsesInputItem['type'] | ResponsesOutputItem['type'];
+type StorableResponsesItemType = Exclude<ResponsesItemType, 'item_reference' | 'compaction_trigger'> | 'compaction_summary';
 
 const itemTypePrefixes = {
   message: 'msg',
@@ -21,7 +24,25 @@ const itemTypePrefixes = {
   computer_call_output: 'cco',
   tool_search_call: 'ts',
   tool_search_output: 'tso',
+  // OpenAI's Programmatic Tool Calling guide uses `prog_` and `prog_out_`
+  // for these item ids. Codex independently uses `at_` for additional-tools
+  // items in its durable history. These are gateway-generated storage ids,
+  // not validation rules for opaque upstream ids.
+  // https://github.com/stavarengo/claude-code-docs/blob/9cbe34a5c6cab42f9242395186b035f6b352b8c7/content/docs/openai/developers.openai.com/api/docs/guides/tools-programmatic-tool-calling.md#L139-L203
+  // https://github.com/openai/codex/blob/385c0a9351e2199929e01f7864ec78a8f7d5e580/codex-rs/protocol/src/models.rs#L1216-L1234
+  additional_tools: 'at',
+  program: 'prog',
+  program_output: 'prog_out',
+  // OpenAI beta fixtures use `mac_` / `maco_`; Codex uses `amsg_` for its
+  // Responses inter-agent envelope. `context_compaction` shares `cmp_` with
+  // the distinct `compaction` variant.
+  // https://github.com/openai/openai-java/blob/46917cce69b57721187b50313256488ed81bb023/openai-java-core/src/test/kotlin/com/openai/models/beta/responses/BetaResponseInputItemTest.kt#L1001-L1110
+  // https://github.com/openai/codex/blob/9e552e9d15ba52bed7077d5357f3e18e330f8f38/codex-rs/protocol/src/models.rs#L1217-L1233
+  agent_message: 'amsg',
+  multi_agent_call: 'mac',
+  multi_agent_call_output: 'maco',
   compaction: 'cmp',
+  context_compaction: 'cmp',
   // `compaction_summary` is the Codex-side wire alias for `compaction` (the
   // protocol declares them as one variant via `#[serde(alias = ...)]`); both
   // mint the same `cmp_` prefix so a row written under either spelling
@@ -39,11 +60,10 @@ const itemTypePrefixes = {
   mcp_list_tools: 'mcpl',
   mcp_approval_request: 'mcpar',
   mcp_approval_response: 'mcpa',
-} as const satisfies Record<string, string>;
+} as const satisfies Record<StorableResponsesItemType, string>;
 
 const knownPrefixes = new Set<string>(Object.values(itemTypePrefixes));
-const bodyPattern = /^[A-Za-z0-9_-]{22}$/;
-const checksumPattern = /^[A-Za-z0-9_-]{6}$/;
+const storedIdPattern = /^(.+)_([A-Za-z0-9_-]{6})_([A-Za-z0-9_-]{22})$/;
 
 // Stored ids are `<prefix>_<crc32(body)>_<body>` where `body` is 16 random
 // bytes encoded as base64url (22 chars). The body is content-free on purpose:
@@ -73,15 +93,11 @@ export const responsesItemEncryptedContent = (item: ResponsesInputItem): string 
   return typeof value === 'string' && value.length > 0 ? value : null;
 };
 
-export const hashResponsesItemEncryptedContent = async (encryptedContent: string): Promise<string> => {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(encryptedContent));
-  return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
-};
+export const hashResponsesItemEncryptedContent = async (encryptedContent: string): Promise<string> =>
+  await sha256Hex(encryptedContent);
 
-export const hashResponsesItemContent = async (item: ResponsesInputItem): Promise<string> => {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(sortJson(item))));
-  return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
-};
+export const hashResponsesItemContent = async (item: ResponsesInputItem): Promise<string> =>
+  await sha256Hex(JSON.stringify(sortJson(item)));
 
 export const createTemporaryResponsesItemId = (itemType: string): string => `${prefixForItemType(itemType)}_tmp_${randomBody()}`;
 
@@ -105,23 +121,20 @@ export const isStoredResponseId = (value: string): boolean =>
 // predicate accepts the prefix, and the crc32 of `body` matches the
 // checksum.
 const isValidStoredId = (value: string, isPrefixValid: (prefix: string) => boolean): boolean => {
-  const firstSeparator = value.indexOf('_');
-  if (firstSeparator <= 0) return false;
-  const checksumStart = firstSeparator + 1;
-  const checksumEnd = checksumStart + 6;
-  if (value[checksumEnd] !== '_') return false;
-  const prefix = value.slice(0, firstSeparator);
-  const checksum = value.slice(checksumStart, checksumEnd);
-  const body = value.slice(checksumEnd + 1);
-  if (!isPrefixValid(prefix)) return false;
-  if (!checksumPattern.test(checksum) || !bodyPattern.test(body)) return false;
-  return crc32Checksum(body) === checksum;
+  const match = storedIdPattern.exec(value);
+  if (match === null) return false;
+  const [, prefix, checksum, body] = match;
+  return isPrefixValid(prefix) && crc32Checksum(body) === checksum;
 };
 
 const prefixForItemType = (itemType: string): string => {
-  const prefix = itemTypePrefixes[itemType as keyof typeof itemTypePrefixes];
-  if (!prefix) throw new TypeError(`Unknown Responses item type: ${itemType}`);
-  return prefix;
+  if (!Object.hasOwn(itemTypePrefixes, itemType)) throw new TypeError(`Unknown Responses item type: ${itemType}`);
+  return itemTypePrefixes[itemType as keyof typeof itemTypePrefixes];
+};
+
+const sha256Hex = async (value: string): Promise<string> => {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+  return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
 };
 
 const randomBody = (): string => {

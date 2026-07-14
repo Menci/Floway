@@ -113,6 +113,39 @@ test('/auth/login on Cloudflare edge (CF-Ray present) refuses passwordless login
   assertEquals(response.status, 401);
 });
 
+// A brand-new checkout has ADMIN_KEY entirely unset — not `''` but truly
+// undefined — because platform-node's EnvGetter is `name => process.env[name]`
+// and an unexported variable reads as undefined. The route must treat that
+// state identically to an explicitly empty string, or fresh Node dev
+// installs 500 on every login. Cloudflare has the same shape when the
+// operator has no `.dev.vars`.
+
+test('/auth/login on Node dev with ADMIN_KEY entirely unset (EnvGetter returns undefined) grants passwordless admin login', async () => {
+  await setupAppTest({ adminKey: null });
+  const response = await requestApp('/auth/login', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ username: '', password: '' }),
+  });
+  assertEquals(response.status, 200);
+  const body = (await response.json()) as { user: { id: number; isAdmin: boolean } };
+  assertEquals(body.user.id, 1);
+  assertEquals(body.user.isAdmin, true);
+});
+
+test('/auth/login on Cloudflare wrangler dev with ADMIN_KEY entirely unset (no .dev.vars, no CF-Ray) grants passwordless admin login', async () => {
+  await setupAppTest({ adminKey: null });
+  initRuntimeKind('cloudflare');
+  const response = await requestApp('/auth/login', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ username: '', password: '' }),
+  });
+  assertEquals(response.status, 200);
+  const body = (await response.json()) as { user: { id: number } };
+  assertEquals(body.user.id, 1);
+});
+
 test('/auth/login with username + matching password issues a session', async () => {
   const { repo } = await setupAppTest();
   await repo.users.save({

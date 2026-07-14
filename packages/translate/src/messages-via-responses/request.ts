@@ -2,7 +2,6 @@ import { openAiJsonSchemaCoreFromMessagesFormat } from '../shared/messages/struc
 import { messagesReasoningBlockToResponsesReasoning } from '../shared/messages-and-responses/reasoning.ts';
 import { resolveMessagesReasoningEffort } from '../shared/messages-via/reasoning-effort.ts';
 import { normalizeMessagesToolInputSchema } from '../shared/messages-via/tool-schema.ts';
-import { type CanonicalResponsesPayload } from '../shared/via-responses/responses-items.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
 import {
   type MessagesAssistantMessage,
@@ -18,7 +17,7 @@ import {
   type MessagesUserMessage,
   type MessagesWebSearchToolResultBlock,
 } from '@floway-dev/protocols/messages';
-import type { ResponsesInputContent, ResponsesInputItem, ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
+import type { CanonicalResponsesPayload, ResponsesInputContent, ResponsesInputItem, ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
 
 const flushPendingContent = (pending: ResponsesInputContent[], input: ResponsesInputItem[], role: 'user' | 'assistant'): void => {
   if (pending.length === 0) return;
@@ -248,8 +247,10 @@ export const translateMessagesToResponses = (payload: MessagesPayload): Canonica
   const serviceTier = payload.speed === 'fast' ? 'fast' : payload.speed === undefined ? payload.service_tier : undefined;
 
   // Keep fallback semantics strict: do not synthesize `temperature: 1`,
-  // `store: false`, `parallel_tool_calls: true`, or `reasoning.summary` when the
-  // Messages source did not express those knobs.
+  // `store: false`, `parallel_tool_calls: true`, `reasoning.summary`, or
+  // `reasoning.context` when the Messages source did not express those knobs.
+  // The source thinking block carries no reasoning-context mode, so we never
+  // invent `all_turns` (or any other value) on the target reasoning object.
   return {
     model: payload.model,
     input: [...prependItems, ...translateMessagesInput(payload.messages)],

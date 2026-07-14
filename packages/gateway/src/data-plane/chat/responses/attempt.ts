@@ -3,7 +3,7 @@ import type { ResponsesAttemptResult, ResponsesInvocation } from './interceptors
 import { createStoredResponseId } from './items/format.ts';
 import { normalizeAssistantInputText } from './items/normalize-assistant-content.ts';
 import { drainAsync, syntheticEventsFromResult, wrapResponsesOutputForStorage } from './items/output.ts';
-import { rewriteResponsesItemsForCandidate, type RewrittenResponsesPayload } from './items/rewrite.ts';
+import { rewriteResponsesPayloadForCandidate, type RewrittenResponsesPayload } from './items/rewrite.ts';
 import type { StatefulResponsesStore } from './items/store.ts';
 import { tokenUsageFromResponsesResult } from './usage.ts';
 import { applyRulesToUpstreamResponses } from '../../model-aliases/apply-rules.ts';
@@ -11,15 +11,14 @@ import { providerStreamResultToExecuteResult, buildUpstreamCallOptions, telemetr
 import { chatCompletionsAttempt } from '../chat-completions/attempt.ts';
 import { messagesAttempt } from '../messages/attempt.ts';
 import { tryCatchChatServeFailure } from '../shared/errors.ts';
+import { createExternalImageLoader } from '../shared/external-image-loader.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { traverseTranslation } from '../shared/translate-traverse.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import { collectResponsesProtocolEventsToResult } from '@floway-dev/protocols/responses';
-import { type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { collectResponsesProtocolEventsToResult, type CanonicalResponsesPayload, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { type ModelCandidate, eventResult, readUpstreamApiError, providerModelOf, type ChatTargetApi, type ExecuteResult, type ProviderResponsesResult, type ResponsesAction } from '@floway-dev/provider';
 import { translateResponsesViaChatCompletions, translateResponsesViaMessages } from '@floway-dev/translate';
-import type { CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
 
 // `/v1/responses` generate prefers the native Responses target, then the
 // translated Messages path, then the translated Chat Completions path. The
@@ -75,7 +74,9 @@ export interface ResponsesAttemptInvokeArgs {
 // no-op at the store-write layer.
 export const responsesAttempt = {
   invoke: async (args: ResponsesAttemptInvokeArgs): Promise<ResponsesAttemptResult> => {
-    const { payload, action, ctx, candidate, headers } = args;
+    const { payload: sourcePayload, action, ctx, candidate, headers: sourceHeaders } = args;
+    const payload = { ...structuredClone(sourcePayload), model: candidate.model.id };
+    const headers = new Headers(sourceHeaders);
     const { store } = ctx;
     const targetApi = responsesTarget.pick(candidate.model.endpoints);
     // Rewrite + privatePayload seed + assistant-content normalization all run
@@ -88,7 +89,7 @@ export const responsesAttempt = {
     // wire shape against an empty privatePayload map.
     const rewritten = await rewriteOrRenderFailure(payload, store, candidate);
     if (!('payload' in rewritten)) return rewritten.failure;
-    store.beginAttempt(rewritten.references);
+    store.beginAttempt(rewritten.privatePayloads);
     // Copilot compaction and Azure-native compaction both emit assistant
     // messages whose content blocks have `type: 'input_text'`, then refuse
     // the same items echoed back as input on the next turn. Normalising
@@ -184,7 +185,7 @@ const rewriteOrRenderFailure = async (
   candidate: ModelCandidate,
 ): Promise<RewriteOutcome> => {
   try {
-    return await rewriteResponsesItemsForCandidate(payload, store, candidate);
+    return await rewriteResponsesPayloadForCandidate(payload, store, candidate);
   } catch (error) {
     const failure = tryCatchChatServeFailure(error);
     if (failure === null) throw error;
@@ -259,6 +260,7 @@ const dispatchResponses = async (
       p => translateResponsesViaMessages(p, {
         model: candidate.model.id,
         fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
+        loadRemoteImage: createExternalImageLoader(ctx.abortSignal),
       }),
       translated => messagesAttempt.generate({
         payload: translated, ctx, candidate, headers: invocation.headers,

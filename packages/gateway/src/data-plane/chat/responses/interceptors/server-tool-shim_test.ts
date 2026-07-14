@@ -31,6 +31,7 @@ import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type {
+  CanonicalResponsesPayload,
   ResponsesOutputItem,
   ResponsesInputItem,
   ResponsesInputWebSearchCall,
@@ -44,7 +45,6 @@ import type {
 } from '@floway-dev/protocols/responses';
 import { type EventResult, type ExecuteResult, type FlagId } from '@floway-dev/provider';
 import { assert, assertEquals, assertFalse, stubModelCandidate } from '@floway-dev/test-utils';
-import type { CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
 
 const withResponsesWebSearchShim = withResponsesServerToolShim([webSearchServerTool]);
 
@@ -217,7 +217,7 @@ const testTelemetryModelIdentity = {
   model: 'test-model',
   upstream: 'test-upstream',
   modelKey: 'test-model-key',
-  cost: null,
+  pricing: null,
 };
 
 interface ProviderOverrides {
@@ -952,6 +952,31 @@ test('fetchPage whole-batch failure surfaces the open-page error text', async ()
 });
 
 // ── Domain filter input validation ────────────────────────────────────
+
+test('invalid request registration preserves an upstream error type and null code', async () => {
+  const shim = withResponsesServerToolShim([() => ({
+    type: 'invalid-request',
+    message: 'native image error',
+    param: 'input',
+    errorType: 'image_generation_user_error',
+    code: null,
+  })]);
+  const result = await shim(
+    makeInvocation(),
+    makeGatewayCtx(),
+    () => Promise.reject(new Error('run should not be called')),
+  );
+  assert(result.type === 'api-error');
+  const body = JSON.parse(new TextDecoder().decode(result.body)) as {
+    error: { message: string; type: string; param: string | null; code: string | null };
+  };
+  assertEquals(body.error, {
+    message: 'native image error',
+    type: 'image_generation_user_error',
+    param: 'input',
+    code: null,
+  });
+});
 
 test('non-empty allowed_domains with every entry malformed is rejected as 400 invalid_request_error (no silent expansion to allow-all)', async () => {
   // Silently dropping every malformed entry would turn "only allow
@@ -2800,7 +2825,7 @@ test('finalMetadata resolves with the LATEST turn modelIdentity, not turn 1', as
         model: 'gpt-5',
         upstream: 'test-upstream',
         modelKey: `turn-${runCalls}-key`,
-        cost: null,
+        pricing: null,
       },
     };
   };

@@ -7,6 +7,7 @@ import type { StatefulResponsesStore } from '../items/store.ts';
 import type { InterceptorRun } from '@floway-dev/interceptor';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type {
+  CanonicalResponsesPayload,
   ResponsesInputItem,
   ResponsesOutputItem,
   ResponsesResult,
@@ -15,7 +16,6 @@ import type {
   ResponsesToolChoice,
 } from '@floway-dev/protocols/responses';
 import type { EventResultMetadata, ExecuteResult } from '@floway-dev/provider';
-import type { CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
 
 export interface MergeUsage {
   input_tokens?: number;
@@ -114,11 +114,10 @@ export interface ServerToolHostedDispatch {
 
 export type ServerToolPrepareResult =
   | { type: 'inactive' }
-  // `code` overrides the envelope's `error.code` for tools that emulate a
-  // specific upstream's rejection vocabulary (e.g. `unknown_parameter` /
-  // `invalid_value` for the public Responses surface). Omitted falls back
-  // to the generic `invalid_request_error`.
-  | { type: 'invalid-request'; message: string; param: string; code?: string }
+  // `errorType` / `code` override the envelope for tools that emulate an
+  // upstream's rejection vocabulary. An omitted code falls back to the
+  // generic `invalid_request_error`; explicit null is preserved verbatim.
+  | { type: 'invalid-request'; message: string; param: string | null; errorType?: string; code?: string | null }
   | {
     type: 'active';
     baseToolName: string;
@@ -233,10 +232,10 @@ const usageOf = (usage: ResponsesResult['usage']): MergeUsage => {
 };
 
 const rewriteHostedToolChoice = (
-  toolChoice: ResponsesToolChoice | undefined,
+  toolChoice: ResponsesToolChoice | null | undefined,
   active: readonly ActiveServerTool[],
-): ResponsesToolChoice | undefined => {
-  if (toolChoice === undefined || typeof toolChoice === 'string') return toolChoice;
+): ResponsesToolChoice | null | undefined => {
+  if (toolChoice == null || typeof toolChoice === 'string') return toolChoice;
   for (const entry of active) {
     if (!entry.hasHostedTool || entry.hosted === undefined) continue;
     if (entry.hosted.matchToolChoice(toolChoice)) return { type: 'function', name: entry.toolName };
@@ -251,9 +250,9 @@ const rewriteHostedToolChoice = (
 // choice is therefore restored from the exact client shape captured before the
 // first rewrite.
 const restoreEchoedToolChoice = (
-  toolChoice: ResponsesToolChoice | undefined,
+  toolChoice: ResponsesToolChoice | null | undefined,
   active: readonly ActiveServerTool[],
-): ResponsesToolChoice | undefined => {
+): ResponsesToolChoice | null | undefined => {
   for (const entry of active) {
     if (entry.originalToolChoice !== undefined) return entry.originalToolChoice;
   }
@@ -755,15 +754,16 @@ const buildErrorFromResult = (
 
 const invalidRequestEnvelope = (
   message: string,
-  param: string,
-  code = 'invalid_request_error',
+  param: string | null,
+  code: string | null | undefined,
+  errorType = 'invalid_request_error',
 ): ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> => {
   const body = JSON.stringify({
     error: {
       message,
-      type: 'invalid_request_error',
+      type: errorType,
       param,
-      code,
+      code: code === undefined ? 'invalid_request_error' : code,
     },
   });
   return {
@@ -968,7 +968,9 @@ export const withResponsesServerToolShim = (
   for (const prepareServerTool of registrations) {
     const prepared = await prepareServerTool(ctx, gatewayCtx);
     if (prepared.type === 'inactive') continue;
-    if (prepared.type === 'invalid-request') return invalidRequestEnvelope(prepared.message, prepared.param, prepared.code);
+    if (prepared.type === 'invalid-request') {
+      return invalidRequestEnvelope(prepared.message, prepared.param, prepared.code, prepared.errorType);
+    }
     const currentTools = Array.isArray(ctx.payload.tools) ? ctx.payload.tools : [];
     const toolName = resolveServerToolName(prepared.baseToolName, currentTools);
     const { hosted } = prepared;

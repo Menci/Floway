@@ -343,6 +343,66 @@ describe('createFetcher', () => {
     expect(await repo.proxyBackoffs.listForUpstream('u')).toEqual([]);
   });
 
+  it('replays materialized bytes to a direct fallback without mutating the caller init', async () => {
+    const repo = new InMemoryRepo();
+    let directBody: BodyInit | null | undefined;
+    const fetcher = createFetcher({
+      repo,
+      upstreamId: 'u',
+      fallbackList: [{ id: 'a' }, { id: 'direct' }],
+      runtimeLocation: 'TEST',
+      proxyById: new Map([['a', proxyA]]),
+      runProxied: async (_config, _target, request) => {
+        expect(new TextDecoder().decode(request.body)).toBe('request body');
+        throw new ProxyDialError('proxy unavailable', 'tcp-connect');
+      },
+      runDirect: async (_url, init) => {
+        directBody = init.body;
+        return new Response('direct');
+      },
+      socketDial: () => stubSocketDial,
+    });
+    const init: RequestInit = { method: 'POST', body: 'request body' };
+
+    const response = await fetcher('https://api.openai.com/v1/responses', init);
+
+    expect(await response.text()).toBe('direct');
+    expect(directBody).toBeInstanceOf(Uint8Array);
+    expect(new TextDecoder().decode(directBody as Uint8Array)).toBe('request body');
+    expect(init.body).toBe('request body');
+  });
+
+  it('materializes before a leading direct attempt without mutating the caller init', async () => {
+    const repo = new InMemoryRepo();
+    let directBody: BodyInit | null | undefined;
+    let proxiedBody: Uint8Array | undefined;
+    const fetcher = createFetcher({
+      repo,
+      upstreamId: 'u',
+      fallbackList: [{ id: 'direct' }, { id: 'a' }],
+      runtimeLocation: 'TEST',
+      proxyById: new Map([['a', proxyA]]),
+      runProxied: async (_config, _target, request) => {
+        proxiedBody = request.body;
+        return new Response('proxy');
+      },
+      runDirect: async (_url, init) => {
+        directBody = init.body;
+        throw new TypeError('direct dial failed');
+      },
+      socketDial: () => stubSocketDial,
+    });
+    const init: RequestInit = { method: 'POST', body: 'request body' };
+
+    const response = await fetcher('https://api.openai.com/v1/responses', init);
+
+    expect(await response.text()).toBe('proxy');
+    expect(directBody).toBeInstanceOf(Uint8Array);
+    expect(new TextDecoder().decode(directBody as Uint8Array)).toBe('request body');
+    expect(new TextDecoder().decode(proxiedBody)).toBe('request body');
+    expect(init.body).toBe('request body');
+  });
+
   it('forwards init.signal to runProxied so the dialer can honour client cancellation', async () => {
     const repo = new InMemoryRepo();
     let observedSignal: AbortSignal | undefined;

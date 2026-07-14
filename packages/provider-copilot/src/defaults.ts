@@ -22,6 +22,7 @@ export const COPILOT_DEFAULT_FLAGS: FlagDefaults = {
   // basis.
   'demote-interleaved-system-to-user': false,
   'demote-developer-to-system': false,
+  'promote-system-to-developer': false,
   'strip-billing-attribution': true,
   'strip-prompt-cache-key': false,
 };
@@ -108,8 +109,9 @@ const supportsInlineSystem = (id: string): boolean => {
 
 // Per-model default flag deltas for Copilot. Only Claude models below
 // 4.8 opt into `demote-interleaved-system-to-user`; every other flag
-// inherits from `COPILOT_DEFAULT_FLAGS`. Operator overrides on the DB
-// row still layer on top of this result.
+// inherits from `COPILOT_DEFAULT_FLAGS`. Upstream-wide operator overrides
+// are applied before this provider-enforced per-model delta, so the technical
+// requirement for affected Claude models remains authoritative.
 export const defaultFlagsForCopilotModel = (model: Omit<ProviderModel, 'enabledFlags'>): FlagOverrides => {
   if (!model.id.startsWith('claude-')) return {};
   if (supportsInlineSystem(model.id)) return {};

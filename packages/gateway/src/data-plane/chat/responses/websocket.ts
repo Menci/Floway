@@ -4,21 +4,24 @@ import { createResponsesWsSession } from './items/store.ts';
 import { PreviousResponseNotFoundError } from './serve-prep.ts';
 import { responsesServe } from './serve.ts';
 import { tokenUsageFromResponsesResult } from './usage.ts';
-import type { AuthedContext } from '../../../middleware/auth.ts';
+import type { DumpAccumulator } from '../../../dump/accumulator.ts';
+import { apiKeyFromContext, authenticateApiKey, type AuthedContext } from '../../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
 import { createChatGatewayCtxFromHono, type ChatGatewayCtx, type GatewayCtx } from '../shared/gateway-ctx.ts';
+import { takeRequestBody } from '../shared/request-body.ts';
 import { SourceStreamState, eventResultMetadata } from '../shared/respond.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS, type StreamCompletion } from '../shared/stream/sse.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { RESPONSES_MISSING_TERMINAL_MESSAGE } from '@floway-dev/protocols/responses';
-import { isResponsesTerminalEvent, type ResponsesPayload, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { isResponsesTerminalEvent, type CanonicalResponsesPayload, type ResponsesRequestPayload, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { toInternalDebugError } from '@floway-dev/provider';
-import { canonicalizeResponsesPayload, type CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
+import { TranslatorInputError } from '@floway-dev/translate';
+import { canonicalizeResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
 
 interface WorkerWebSocket extends WebSocket {
   accept(): void;
@@ -28,6 +31,8 @@ interface ResponsesWebSocketSocket {
   readonly readyState: number;
   send(data: string): void;
 }
+
+const UTF8_ENCODER = new TextEncoder();
 
 export interface ResponsesWebSocketEvents {
   onOpen?(event: Event, socket: ResponsesWebSocketSocket): void;
@@ -65,7 +70,7 @@ declare const WebSocketPair: {
 interface ResponsesWebSocketClientEvent {
   type: string;
   event_id?: string;
-  response?: Partial<ResponsesPayload>;
+  response?: Partial<ResponsesRequestPayload>;
   [key: string]: unknown;
 }
 
@@ -92,6 +97,11 @@ export const responsesWebSocket = async (c: AuthedContext): Promise<Response> =>
 };
 
 const createResponsesWebSocketEvents = (c: AuthedContext): ResponsesWebSocketHandlers => {
+  // The upgrade authenticates the connection, but every response.create is a
+  // separate data-plane request. Codex deliberately reuses one socket across
+  // turns, so retain the presented credential and resolve it again before each
+  // turn rather than freezing key/user policy at upgrade time.
+  const authenticatedRawKey = apiKeyFromContext(c).key;
   const session = createResponsesWsSession();
   let closed = false;
   let activeAbortController: AbortController | undefined;
@@ -154,7 +164,7 @@ const createResponsesWebSocketEvents = (c: AuthedContext): ResponsesWebSocketHan
           const abortController = new AbortController();
           activeAbortController = abortController;
           try {
-            await handleClientMessage(c, socket, session, event.data, abortController, () => closed, sessionScheduler);
+            await handleClientMessage(c, socket, session, event.data, authenticatedRawKey, abortController, () => closed, sessionScheduler);
           } finally {
             if (activeAbortController === abortController) activeAbortController = undefined;
           }
@@ -174,6 +184,7 @@ const handleClientMessage = async (
   socket: ResponsesWebSocketSocket,
   session: ReturnType<typeof createResponsesWsSession>,
   data: unknown,
+  authenticatedRawKey: string,
   downstreamAbortController: AbortController,
   isClosed: () => boolean,
   backgroundScheduler: BackgroundScheduler,
@@ -186,10 +197,18 @@ const handleClientMessage = async (
     // request body when `ctx` is constructed below. Payloads that fail to
     // parse never reach ctx construction, so no dump record is emitted for
     // them — there is no api-key-scoped turn to attribute them to.
-    const requestBytes = wsDataToBytes(data);
+    const requestBody = { bytes: wsDataToBytes(data), streamError: null };
+    if (!(await authenticateApiKey(c, authenticatedRawKey))) {
+      sendError(socket, 401, {
+        type: 'authentication_error',
+        code: 'invalid_api_key',
+        message: 'Invalid API key.',
+      });
+      return;
+    }
     let parsed: unknown;
     try {
-      parsed = JSON.parse(new TextDecoder().decode(requestBytes)) as unknown;
+      parsed = JSON.parse(new TextDecoder().decode(requestBody.bytes)) as unknown;
     } catch (cause) {
       throw new WebSocketClientMessageError(`WebSocket message must be valid JSON: ${cause instanceof Error ? cause.message : String(cause)}`);
     }
@@ -216,7 +235,7 @@ const handleClientMessage = async (
       // The WS upgrade has no HTTP body; the dump's request body is the
       // per-turn JSON frame bytes so an operator reading the dashboard
       // sees the exact `response.create` payload the client sent.
-      requestBody: { bytes: requestBytes, streamError: null },
+      requestBody: takeRequestBody(requestBody),
       method: 'WS',
       model: payload.model,
       backgroundScheduler,
@@ -236,7 +255,7 @@ const handleClientMessage = async (
           type: 'invalid_request_error',
           param: 'previous_response_id',
           code: 'previous_response_not_found',
-        }, eventId);
+        }, eventId, ctx.dump);
         ctx.dump?.failed(error);
         ctx.dump?.finalize(400, []);
         return;
@@ -247,6 +266,15 @@ const handleClientMessage = async (
     await respondResponsesWebSocket({ socket, eventId, signal, isClosed, result, ctx });
   } catch (error) {
     if (signal.aborted || isClosed()) return;
+    if (error instanceof TranslatorInputError) {
+      sendError(socket, 400, {
+        type: 'invalid_request_error',
+        code: 'invalid_request_error',
+        message: error.message,
+        param: error.param,
+      }, eventId);
+      return;
+    }
     if (error instanceof WebSocketClientMessageError) {
       sendError(socket, 400, {
         type: 'invalid_request_error',
@@ -255,7 +283,7 @@ const handleClientMessage = async (
       }, eventId);
       return;
     }
-    sendError(socket, 500, serverErrorEnvelope(error), eventId);
+    sendError(socket, 500, serverErrorEnvelope(error), eventId, ctx?.dump);
     if (ctx !== undefined) {
       // Mid-attempt throws (interceptor bug, translation error, provider-layer JS
       // exception that bypassed tryCatchChatServeFailure) never reach the
@@ -294,7 +322,7 @@ const responsesPayloadFromClientSource = (source: object): CanonicalResponsesPay
     throw new WebSocketClientMessageError('response.create requires response.input to be a string or an array.');
   }
   // stamp stream: true — the WS transport always streams.
-  return { ...canonicalizeResponsesPayload(source as ResponsesPayload), stream: true };
+  return { ...canonicalizeResponsesPayload(source as ResponsesRequestPayload), stream: true };
 };
 
 const respondResponsesWebSocket = async (input: {
@@ -309,16 +337,16 @@ const respondResponsesWebSocket = async (input: {
   if (result.type === 'api-error') {
     recordFailedRequest(ctx, result.performance);
     ctx.dump?.error(result.source, result.upstream);
+    sendError(socket, result.status, normalizeErrorBody(parseMaybeJson(result.body, result.headers), result.status), eventId, ctx.dump);
     ctx.dump?.finalize(result.status, []);
-    sendError(socket, result.status, normalizeErrorBody(parseMaybeJson(result.body, result.headers), result.status), eventId);
     return;
   }
 
   if (result.type === 'internal-error') {
     recordFailedRequest(ctx, result.performance);
     ctx.dump?.failed(result.error.message);
+    sendError(socket, result.status, internalErrorEnvelope(result.error), eventId, ctx.dump);
     ctx.dump?.finalize(result.status, []);
-    sendError(socket, result.status, internalErrorEnvelope(result.error), eventId);
     return;
   }
 
@@ -346,7 +374,7 @@ const respondResponsesWebSocket = async (input: {
         const next = await nextFrameOrKeepAlive(pendingNext);
 
         if (next.type === 'keep-alive') {
-          if (!sendJson(socket, { type: 'ping' }, eventId)) {
+          if (!sendJson(socket, { type: 'ping' }, eventId, ctx.dump)) {
             stopForDownstream();
             return;
           }
@@ -370,15 +398,15 @@ const respondResponsesWebSocket = async (input: {
         if (failed) state.failed = true;
         state.rememberUsage('response' in event ? tokenUsageFromResponsesResult((event as { response: ResponsesResult }).response) : null);
 
-        // The upstream terminal event flushes immediately; we then drain the
-        // remainder of the generator (storage commit, any post-terminal frames)
-        // before emitting the WS-only `response.done` envelope, so the client
-        // sees `response.done` last and treats it as the stable signal that the
-        // stored response can be referenced by a follow-up message.
+        // The wrapped terminal event arrives only after its item and snapshot
+        // writes have committed. Flush it immediately, then drain the remainder
+        // of the generator before emitting the WS-only `response.done` envelope,
+        // so `response.done` remains the stable signal that a follow-up message
+        // can reference the stored response.
         if (terminalEvent !== undefined) continue;
 
         if (isResponsesTerminalEvent(event)) {
-          if (!sendJson(socket, event, eventId)) {
+          if (!sendJson(socket, event, eventId, ctx.dump)) {
             completion = 'cancel';
             continue;
           }
@@ -387,7 +415,7 @@ const respondResponsesWebSocket = async (input: {
           continue;
         }
 
-        if (!sendJson(socket, event, eventId)) {
+        if (!sendJson(socket, event, eventId, ctx.dump)) {
           stopForDownstream();
           return;
         }
@@ -404,7 +432,7 @@ const respondResponsesWebSocket = async (input: {
       throw new Error(RESPONSES_MISSING_TERMINAL_MESSAGE);
     }
     const done = responseDoneSummary(terminalEvent);
-    if (done !== null && !sendJson(socket, { type: 'response.done', response: done }, eventId)) {
+    if (done !== null && !sendJson(socket, { type: 'response.done', response: done }, eventId, ctx.dump)) {
       completion = 'cancel';
       return;
     }
@@ -415,7 +443,7 @@ const respondResponsesWebSocket = async (input: {
       return;
     }
     state.failed = true;
-    sendError(socket, 500, serverErrorEnvelope(error), eventId);
+    sendError(socket, 500, serverErrorEnvelope(error), eventId, ctx.dump);
   } finally {
     const metadata = await eventResultMetadata(result);
     const failed = state.failedAfter(completion);
@@ -500,19 +528,33 @@ const normalizeErrorBody = (body: unknown, statusCode: number): Record<string, u
   };
 };
 
-const sendError = (socket: ResponsesWebSocketSocket, statusCode: number, error: Record<string, unknown>, eventId?: string): void => {
-  sendJson(socket, { type: 'error', status_code: statusCode, error }, eventId);
+const sendError = (
+  socket: ResponsesWebSocketSocket,
+  statusCode: number,
+  error: Record<string, unknown>,
+  eventId?: string,
+  dump?: DumpAccumulator | null,
+): void => {
+  sendJson(socket, { type: 'error', status_code: statusCode, error }, eventId, dump);
 };
 
-const sendJson = (socket: ResponsesWebSocketSocket, value: unknown, eventId?: string): boolean => {
+const sendJson = (
+  socket: ResponsesWebSocketSocket,
+  value: unknown,
+  eventId?: string,
+  dump?: DumpAccumulator | null,
+): boolean => {
   if (socket.readyState !== 1) return false;
   const payload = eventId === undefined || !value || typeof value !== 'object'
     ? value
     : { ...value, event_id: eventId };
+  let text: string;
   try {
-    socket.send(JSON.stringify(payload));
-    return true;
+    text = JSON.stringify(payload);
+    socket.send(text);
   } catch {
     return false;
   }
+  dump?.recordSentPayloadBytes(UTF8_ENCODER.encode(text).byteLength);
+  return true;
 };

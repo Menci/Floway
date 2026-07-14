@@ -1,5 +1,5 @@
 import type { ResponsesBoundaryCtx } from './types.ts';
-import type { ResponsesPayload, ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
+import type { CanonicalResponsesPayload, ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
 
 /**
  * Copilot's `/responses` endpoint rejects image-generation tool entries, so
@@ -44,13 +44,13 @@ const isImageGenerationTool = (tool: ResponsesTool): boolean =>
 // A tool_choice that named one of the just-removed tools would tell Copilot to
 // invoke a tool that no longer exists. A bare `{ type: "namespace" }` without a
 // name, or one naming a surviving namespace, is untouched.
-const isImageGenerationToolChoice = (choice: ResponsesToolChoice | undefined): boolean =>
+const isImageGenerationToolChoice = (choice: ResponsesToolChoice | null | undefined): boolean =>
   typeof choice === 'object'
   && choice !== null
   && (choice.type === 'image_generation'
     || (choice.type === 'namespace' && choice.name === IMAGE_GENERATION_NAMESPACE_NAME));
 
-export const stripImageGenerationFromPayload = (payload: ResponsesPayload): void => {
+export const stripImageGenerationFromPayload = (payload: CanonicalResponsesPayload): void => {
   let removedTool = false;
 
   if (Array.isArray(payload.tools)) {

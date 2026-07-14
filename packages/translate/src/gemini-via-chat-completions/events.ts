@@ -1,7 +1,7 @@
 import { appendGeminiThoughtSignature, flushGeminiThoughtSignature, type GeminiThoughtSignatureState, parseStrictJsonObject, signGeminiPart } from '../shared/gemini-via/gemini.ts';
 import { chatCompletionsErrorPayloadMessage } from '@floway-dev/protocols/chat-completions';
 import type { ChatCompletionsStreamEvent, ChatCompletionsDelta } from '@floway-dev/protocols/chat-completions';
-import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { billableServiceTier, eventFrame, splitCacheWriteTokens, splitInclusiveInputTokens, splitInclusiveOutputTokens, USAGE_BILLING, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiCandidate, GeminiFinishReason, GeminiResult, GeminiPart, GeminiStreamEvent, GeminiUsageMetadata } from '@floway-dev/protocols/gemini';
 
 type ChatCompletionsStreamChoice = ChatCompletionsStreamEvent['choices'][0];
@@ -20,33 +20,47 @@ const mapFinishReason = (finishReason: ChatCompletionsStreamChoice['finish_reaso
   }
 };
 
-const reasoningTokensFromUsage = (usage: NonNullable<ChatCompletionsStreamEvent['usage']>): number | undefined => {
-  const reasoningTokens = usage.completion_tokens_details?.reasoning_tokens;
-
-  return typeof reasoningTokens === 'number' ? reasoningTokens : undefined;
-};
-
 // OpenAI prompt_tokens already includes prompt_tokens_details.cached_tokens,
 // matching Gemini's inclusive promptTokenCount semantics. Pass both through
 // directly — no folding. Contrast with gemini-via-messages, where Anthropic's
 // input_tokens excludes cache buckets and must be summed.
-const mapUsage = (usage?: ChatCompletionsStreamEvent['usage']): GeminiUsageMetadata | undefined => {
+const mapUsage = (
+  chunk: ChatCompletionsStreamEvent,
+  upstreamServiceTier: ChatCompletionsStreamEvent['service_tier'],
+): GeminiUsageMetadata | undefined => {
+  const usage = chunk.usage;
   if (!usage) return undefined;
+
+  const cachedTokens = usage.prompt_tokens_details?.cached_tokens;
+  const cacheWriteTokens = usage.prompt_tokens_details?.cache_creation_input_tokens
+    ?? usage.prompt_tokens_details?.cache_write_tokens;
+  const writes = splitCacheWriteTokens(cacheWriteTokens, usage[USAGE_BILLING]);
+  splitInclusiveInputTokens(usage.prompt_tokens, cachedTokens, cacheWriteTokens);
+  const { output: candidatesTokenCount, reasoning: thoughtsTokenCount } = splitInclusiveOutputTokens(
+    usage.completion_tokens,
+    usage.completion_tokens_details?.reasoning_tokens,
+  );
+  const serviceTier = billableServiceTier(upstreamServiceTier);
 
   const metadata: GeminiUsageMetadata = {
     promptTokenCount: usage.prompt_tokens,
-    candidatesTokenCount: usage.completion_tokens,
+    candidatesTokenCount,
     totalTokenCount: usage.total_tokens,
   };
 
-  const thoughtsTokenCount = reasoningTokensFromUsage(usage);
-  if (thoughtsTokenCount !== undefined) {
+  if (usage.completion_tokens_details?.reasoning_tokens !== undefined) {
     metadata.thoughtsTokenCount = thoughtsTokenCount;
   }
 
-  const cachedTokens = usage.prompt_tokens_details?.cached_tokens;
   if (cachedTokens !== undefined) {
     metadata.cachedContentTokenCount = cachedTokens;
+  }
+  if (cacheWriteTokens !== undefined || serviceTier !== null) {
+    metadata[USAGE_BILLING] = {
+      ...(cacheWriteTokens !== undefined ? { cacheWriteTokenCount: writes.cacheWrite } : {}),
+      ...(writes.cacheWrite1h > 0 ? { cacheWrite1hTokenCount: writes.cacheWrite1h } : {}),
+      ...(serviceTier !== null ? { serviceTier } : {}),
+    };
   }
 
   return metadata;
@@ -147,7 +161,11 @@ const buildCandidate = (choice: ChatCompletionsStreamChoice, state: ChatCompleti
   };
 };
 
-const translateChunk = (chunk: ChatCompletionsStreamEvent, states: Record<number, ChatCompletionsToGeminiStreamState>): GeminiResult | null => {
+const translateChunk = (
+  chunk: ChatCompletionsStreamEvent,
+  states: Record<number, ChatCompletionsToGeminiStreamState>,
+  upstreamServiceTier: ChatCompletionsStreamEvent['service_tier'],
+): GeminiResult | null => {
   const candidates: GeminiCandidate[] = [];
 
   for (const choice of chunk.choices) {
@@ -156,7 +174,7 @@ const translateChunk = (chunk: ChatCompletionsStreamEvent, states: Record<number
     if (candidate) candidates.push(candidate);
   }
 
-  const usageMetadata = mapUsage(chunk.usage);
+  const usageMetadata = mapUsage(chunk, upstreamServiceTier);
 
   if (!candidates.length && !usageMetadata) return null;
 
@@ -178,12 +196,14 @@ const throwOnChatCompletionsErrorPayload = (chunk: ChatCompletionsStreamEvent): 
 export const translateToSourceEvents = async function* (frames: AsyncIterable<ProtocolFrame<ChatCompletionsStreamEvent>>): AsyncGenerator<ProtocolFrame<GeminiStreamEvent>> {
   const states: Record<number, ChatCompletionsToGeminiStreamState> = {};
   let pendingUsageMetadata: GeminiUsageMetadata | undefined;
+  let upstreamServiceTier: ChatCompletionsStreamEvent['service_tier'];
   const deferredFinalCandidates: GeminiCandidate[] = [];
 
   for await (const chunk of upstreamChatCompletionEventsUntilDone(frames)) {
     throwOnChatCompletionsErrorPayload(chunk);
+    if (chunk.service_tier !== undefined) upstreamServiceTier = chunk.service_tier;
 
-    const result = translateChunk(chunk, states);
+    const result = translateChunk(chunk, states, upstreamServiceTier);
     if (!result) continue;
 
     if (result.usageMetadata) {

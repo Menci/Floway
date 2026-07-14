@@ -77,13 +77,6 @@ export const seq = (state: ResponsesSequenceState, events: ResponsesStreamEvent[
     sequence_number: state.sequenceNumber++,
   }));
 
-export const usage = (inputTokens: number, outputTokens: number, cacheReadInputTokens?: number): ResponsesUsage => ({
-  input_tokens: inputTokens,
-  output_tokens: outputTokens,
-  total_tokens: inputTokens + outputTokens,
-  ...(cacheReadInputTokens !== undefined ? { input_tokens_details: { cached_tokens: cacheReadInputTokens } } : {}),
-});
-
 // `incompleteDetails` is an explicit caller-supplied input. Inferring
 // it from `status === 'incomplete'` alone would have to hard-code a
 // reason — current callers all map to `'max_output_tokens'`, but a

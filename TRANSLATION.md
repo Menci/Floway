@@ -56,6 +56,17 @@ the gateway returns a Gemini-shaped unsupported-model error.
 
 - Pairwise translators preserve source semantics where the target API has a
   natural counterpart.
+- Responses wire input accepts OpenAI's EasyInputMessage shorthand without a
+  `type` field. HTTP, WebSocket, and direct Responses-source translator
+  boundaries normalize it to an explicit `type: "message"` before storage,
+  interception, or translation. Malformed untyped items are rejected as caller
+  input errors at the same boundary.
+- Responses create and compact request shapes model open-string
+  `prompt_cache_options` and `prompt_cache_retention`. Native compact projection
+  forwards both controls verbatim; provider-specific rejection remains a
+  boundary workaround (Codex strips `prompt_cache_retention`).
+- Explicit `prompt_cache_breakpoint` metadata on text, image, and file content
+  survives canonicalization and retained-message compaction.
 - Translators do not synthesize defaults merely to satisfy a target shape.
   Examples: no translated-only `temperature: 1`, `store: false`,
   `parallel_tool_calls: true`, or `reasoning.summary: "detailed"`.
@@ -66,10 +77,16 @@ the gateway returns a Gemini-shaped unsupported-model error.
   sees a Messages request and Messages result/events whether Messages is the
   source the client sent or the target the upstream serves; Responses, Chat
   Completions, and Gemini follow the same rule.
+- Role compatibility is target-only within those lists, so translator bullets
+  describe the intermediate target shape rather than an unconditional final
+  wire role. Chat Completions and Responses apply enabled role rewrites in the
+  fixed order system-to-developer, developer-to-system, then interleaved
+  system-to-user. Messages can demote every inline system message to user
+  because its only first-position system slot is the top-level `system` field.
 - Each provider runs its own boundary interceptor chain inside its `call*`
   method, after the gateway-side chain and immediately before the wire. The
   boundary chain owns provider-specific quirks: image compression, header
-  shaping (`x-vision-request`, `x-initiator`, anthropic-beta filtering),
+  shaping (`copilot-vision-request`, `x-initiator`, anthropic-beta filtering),
   field stripping (Copilot Responses `service_tier`, `image_generation`,
   `store: false` forcing), Copilot Messages `cache_control.scope` scrubbing,
   and similar.
@@ -78,6 +95,32 @@ the gateway returns a Gemini-shaped unsupported-model error.
   SSE bytes. The HTTP / WebSocket adapter at the gateway boundary owns the
   final wire shaping after the protocol events have been translated back to
   the source-protocol shape.
+
+## Usage And Billing Facts
+
+Usage translation keeps billing dimensions disjoint. OpenAI-style inclusive
+input totals are checked and split into uncached input, cache read, and cache
+write counts; inclusive output totals are likewise split into visible output
+and reasoning where the target exposes both. Negative, fractional, or
+overlapping counts are rejected rather than clamped.
+
+Messages already reports disjoint input dimensions. Its flat cache-creation
+total and optional 5-minute / 1-hour detail are normalized into two cache-write
+buckets. Streaming `message_start` and `message_delta` usage is accumulated as
+one snapshot, including late input counts and atomic replacement of the
+`speed` / `service_tier` pair.
+
+Some billing facts have no native field in every protocol. A symbol-keyed
+`USAGE_BILLING` sidecar carries cache-write TTL detail and the served tier only
+inside Floway's typed event pipeline. Translation and stream reassembly retain
+it, while JSON serialization omits it from client responses. Consequently a
+fact may survive a Chat, Responses, Messages, or Gemini intermediate shape
+without inventing a private wire field.
+
+Response-side blank, `default`, and `standard` tier markers identify base
+service. Every other open-string tier is preserved byte-for-byte. Gemini
+candidate and thought counts remain disjoint in `usageMetadata`; thought tokens
+are billed as reasoning/output exactly once.
 
 ## Boundary Workarounds
 
@@ -91,12 +134,20 @@ the gateway returns a Gemini-shaped unsupported-model error.
   it, decodes shim-owned replay history back into upstream `search_result`
   blocks, and rewrites shim-owned search results/citations back to native
   Messages shape. The shim is enabled by default for Copilot Messages targets
-  too, because Copilot search is executed by the gateway.
+  too, because Copilot search is executed by the gateway. `count_tokens`
+  performs the same request preparation without the generation-only response
+  stream rewrite.
 - strips reserved `x-anthropic-billing-header` prompt-attribution lines and
   `cch=<hash>` cache markers that some clients inline into the `system`
   prompt; these are opaque to every upstream and poison prompt-cache prefix
   hashes
 - strips stray `[DONE]` sentinels from Anthropic-shaped streams
+
+Messages generation and `count_tokens` apply billing-attribution stripping,
+forced-tool reasoning compatibility, inline-system role compatibility, and
+web-search request preparation in the same order. Token counts therefore see
+the same gateway-level compatibility shape as generation; each provider still
+owns any operation-specific wire-boundary transforms.
 
 ### Messages — Copilot provider boundary chain
 
@@ -145,25 +196,43 @@ Header shaping (UA, `X-Stainless-*`, `anthropic-beta`) and the dated
 upstream model id are set in the provider's fetch path, not as interceptor
 steps.
 
-### Responses — gateway interceptors
+### Responses — gateway flow and interceptors
 
-- executes hosted `image_generation` through the gateway image backend when
-  `responses-image-generation-shim` is enabled for a native Responses target,
-  and unconditionally for translated targets that cannot carry the hosted
-  tool. The shim also recognizes Codex's exact deferred declaration
+- resolves `previous_response_id` and every `item_reference` through the
+  gateway's Responses store before candidate dispatch. Affinity is classified
+  from each referenced item's stored type, then the candidate rewrite replaces
+  every reference with its durable payload. Same-upstream items recover their
+  upstream wire id; portable items receive a temporary id when needed. A
+  missing durable payload returns `item_not_found`, and no provider receives an
+  `item_reference` carrier.
+
+- executes `image_generation` through the gateway server-tool shim for
+  translated targets and native Responses providers that opt into the shim.
+  The shim recognizes both the hosted declaration and Codex's exact deferred
   `{ type: "namespace", name: "image_gen", tools: [{ type: "function", name:
-  "imagegen", ... }] }` as the same capability. It consumes all recognized
-  declarations before the provider boundary, exposes one collision-resolved
-  plain function to the orchestrator, intercepts that function call, emits the
-  normal `image_generation_call` lifecycle, and restores the selected original
-  tool and forced `tool_choice` in response echoes. Other namespaces are
-  untouched. When several recognized declarations are present, the last one
-  supplies hosted config and the canonical echo; this matches a 2026-07-12
-  production Azure probe where duplicate hosted entries deduplicated with the
-  last config winning. The same probe found that `image_gen` is a reserved
-  namespace rejected alone or alongside a hosted entry in either order. Azure's
-  native hosted path requires `x-ms-oai-image-generation-deployment` for the
-  image deployment ([official sample](https://github.com/Azure-Samples/azure-openai-responses-api-samples/blob/bd1d4fa776ced664d24ed35f691e4b9e0602af69/python/responses-image-generate-aoai-v1.py#L9-L18)).
+  "imagegen", ... }] }` shape. It consumes every matching declaration before
+  the provider boundary, exposes one collision-resolved function to the
+  orchestrator, emits the native `image_generation_call` lifecycle, and
+  restores the selected declaration and forced `tool_choice` in response
+  echoes. Unrelated namespaces remain untouched. Repeated declarations
+  collapse to the last declaration's complete shape and configuration.
+- prepares image edits by flattening sources in declaration order from message
+  content, function/custom tool output, and replayed image-generation results.
+  Remote HTTP(S) sources are downloaded once through the shared external-image
+  loader with manual redirects, bounded streaming, public-address-only Node
+  egress, and Azure-compatible download and format errors. The original URL
+  remains visible to the orchestrator while cached bytes are reused by the edit
+  backend. Inline and remote masks use the same path. A mask `file_id` remains
+  an explicit `unsupported_image_source` because it requires the owning
+  upstream's authenticated Files namespace. GIF sources are transcoded to WebP
+  for `/images/edits`, and a mask alone supplies edit context for `auto`/`edit`.
+- removes unsupported `image_generation` Responses tool entries and forced
+  tool choices that targeted them before target request construction. Other
+  hosted/deferred Responses tools, including `web_search`, `tool_search`, and
+  `namespace`, remain visible to native Responses targets. Translated
+  Messages/Chat targets currently narrow tool conversion to `function` and
+  Freeform `custom` tools; the hosted/deferred translated semantics are
+  tracked separately.
 - preserves Freeform `custom` tools: native Responses targets receive them
   directly; translated targets wrap them as single-string function tools (see
   "Responses Custom Tool Wrapping").
@@ -184,24 +253,42 @@ The same boundary runs for both `/v1/responses` (streaming) and
 - forces `store: false` on the wire — the gateway always owns Responses
   persistence; the original `store` is captured by the entry adapter before
   the chain runs, so durable storage is unaffected
-- compresses inline base64 image data URLs to WebP
-- injects `x-vision-request` and `x-initiator` headers
-- on `/v1/responses` only: retries expired connection-bound input IDs once
-  with deterministic rewrites, and synchronizes mismatched stream output
-  item IDs
+- compresses inline base64 image data URLs to WebP across canonical message,
+  function-output, and custom-output content; remote URLs and file IDs remain
+  unchanged
+- injects `copilot-vision-request` when any of those canonical content arrays
+  carries an image, and derives `x-initiator` from the final canonical item
+  (missing/falsy roles and `assistant` are agent turns; other role-bearing
+  items are user turns)
+- on `/v1/responses` only: synchronizes mismatched stream output item IDs
 
 ### Responses — Codex provider boundary chain
 
 Codex (ChatGPT subscription) only serves Responses; Messages, Chat
 Completions, and Gemini reach Codex through translation. The same boundary
-runs for both `/v1/responses` and the synthesized `/v1/responses/compact`
-path (Codex has no native compact endpoint; the provider drives `compaction_trigger`
-inline and rebuilds the envelope client-side).
+runs for streaming `/v1/responses` and non-streaming `/v1/responses/compact`.
+The compact action is narrowed to the compact request shape and dispatched
+directly to the subscription backend's `/codex/responses/compact` endpoint.
 
-- hoists `role: "system"` items out of `input` into top-level `instructions`
-  (the upstream rejects system messages inside `input`)
-- injects a default `instructions` string when none is supplied (the upstream
-  rejects empty / missing `instructions`)
+Codex enables `promote-system-to-developer` by default. While that effective
+flag remains enabled, the target Responses interceptor rewrites input messages
+from `role: "system"` to `role: "developer"`. It changes only the role; item
+order, content-part boundaries, ids, and status remain intact. This also covers
+a multi-block Messages `system` field after generic translation has preserved
+it as one multi-part input message. Native Responses instructions, Gemini
+`systemInstruction`, and a string or single-block Messages `system` stay in the
+top-level `instructions` field; input messages are never folded into it. The
+provider's default-instructions step below remains independent. The developer
+representation matches the official Codex Responses Lite wire:
+https://github.com/openai/codex/blob/1f17e7512f0e47625f2cad416f14870688a99814/codex-rs/core/src/client.rs#L829-L849
+
+The Codex boundary then runs these steps:
+
+- injects a neutral default only when `instructions` is absent, `null`, or an
+  empty string. Other malformed external values pass through so the upstream
+  owns validation. Current ChatGPT-subscription catalog models reject empty or
+  missing instructions (implementation record:
+  https://github.com/im4codes/imcodes/blob/5f769d933dfd679e3a4d670183b0384a1baf62cd/src/agent/providers/codex-sdk.ts#L560-L579)
 - strips fields the upstream rejects with `Unsupported parameter`:
   `max_output_tokens`, `temperature`, `top_p`, `frequency_penalty`,
   `presence_penalty`, `user`, `metadata`, `prompt_cache_retention`,
@@ -261,7 +348,11 @@ Request mapping shared by the Gemini source translation pairs:
   thinking controls. Budget `0` disables thinking via Messages
   `thinking.disabled`, Responses `reasoning.effort: "none"`, or Chat
   `reasoning_effort: "none"`; positive budgets choose low/medium/high effort
-  where the target only supports effort levels.
+  where the target only supports effort levels. When both controls are present,
+  the numeric budget takes precedence on Chat and Responses; Messages preserves
+  its native budget and the level in separate fields. Without a budget,
+  explicit `thinkingLevel` strings, including empty and future values, pass
+  verbatim to the target's open-string effort slot for upstream validation.
 - `maxOutputTokens`, `temperature`, `topP`, `topK`, `stopSequences`,
   `presencePenalty`, `frequencyPenalty`, `seed`, `responseMimeType`, and
   `responseSchema` are passed through when the selected target has a natural
@@ -280,8 +371,9 @@ Response mapping shared by the Gemini source translation pairs:
   part. Responses targets do not emit opaque Gemini signatures; only readable
   reasoning summaries become thought-summary parts.
 - Target tool/function calls become Gemini `functionCall` parts.
-- Target usage maps to Gemini `usageMetadata`; reasoning/thinking tokens map to
-  `thoughtsTokenCount` when available.
+- Target usage maps to Gemini `usageMetadata`; cache reads and writes remain
+  separate, while reasoning/thinking tokens map to `thoughtsTokenCount` and do
+  not overlap `candidatesTokenCount`.
 - Gemini streaming emits data-only SSE chunks containing full
   `GenerateContentResponse` objects and does not emit a `[DONE]` sentinel.
 - Gemini non-streaming responses are assembled from source-shaped Gemini event
@@ -314,8 +406,10 @@ Known losses:
 
 Request mapping:
 
-- `system` becomes Responses `instructions`; multi-block system text is joined
-  with blank lines.
+- a string or single text-block `system` maps directly to Responses
+  `instructions`. A multi-block `system` becomes one leading `role: "system"`
+  input message with a separate `input_text` part for each source block, so the
+  generic translation preserves block boundaries.
 - user text and images become Responses `message` input content.
 - user `tool_result` blocks become `function_call_output` items, preserving
   source order relative to user text by splitting input items when necessary.
@@ -349,7 +443,9 @@ Response mapping:
 - assistant `tool_use` becomes `function_call` output items.
 - `max_tokens` stop maps to `status: "incomplete"`; other normal stops map to
   `status: "completed"`.
-- cache read tokens map to Responses `input_tokens_details.cached_tokens`.
+- cache reads and total cache writes map to Responses
+  `input_tokens_details`; 1-hour write detail remains in the internal billing
+  sidecar.
 - Output item order follows the original assistant block order.
 
 Known losses:
@@ -363,12 +459,14 @@ Known losses:
 
 Request mapping:
 
-- `instructions` and input `system` / `developer` messages become top-level
-  Messages `system`, joined with blank lines.
+- `instructions` and the leading contiguous input `system` / `developer`
+  prefix become top-level Messages `system`; each source and content part stays
+  a separate text block. Later system/developer messages remain inline to
+  preserve chronology.
 - string input becomes one user message.
 - user `input_text` becomes Messages text; `input_image` URLs are resolved via
-  the shared remote-image loader and converted to base64 image blocks when
-  supported.
+  the gateway-injected platform external-resource loader and converted to
+  base64 image blocks when supported.
 - assistant `output_text` becomes assistant text blocks.
 - `function_call` becomes assistant `tool_use`.
 - `function_call_output` becomes user `tool_result`; incomplete status marks the
@@ -390,6 +488,13 @@ Request mapping:
 - Responses `tool_choice` maps to the corresponding Messages tool choice when
   representable. `{type:'custom', name}` collapses onto the wrapped function
   tool name.
+- Programmatic Tool Calling state is native-Responses-only: `additional_tools`,
+  `program`, `program_output`, program callers and tool declarations, deferred
+  tools, and forced programmatic choice are rejected rather than projected
+  lossily. Native Responses paths retain these items, caller metadata, and
+  opaque fingerprints whenever snapshot persistence is active; HTTP
+  `store: false` disables snapshots, while WebSocket `store: false` keeps them
+  only in the current session's memory.
 
 Response mapping:
 
@@ -402,8 +507,9 @@ Response mapping:
 - `function_call` maps to `tool_use`.
 - `completed` maps to `end_turn` or `tool_use`; max-output incomplete maps to
   `max_tokens`.
-- cached input tokens are subtracted from Anthropic `input_tokens` and exposed
-  as `cache_read_input_tokens`.
+- cached reads and writes are subtracted from Anthropic `input_tokens` and
+  exposed as `cache_read_input_tokens` and cache-creation usage, retaining
+  1-hour write detail.
 
 Known losses:
 
@@ -417,6 +523,8 @@ Known losses:
   other `format` fields are not preserved.
 - Remote image fetch failures and unsupported image media types drop that image
   rather than failing the request.
+- `input_file` content and assistant-side images have no Messages counterpart
+  and are rejected.
 
 ## Messages To Chat Completions
 
@@ -448,8 +556,9 @@ Response mapping:
 - `tool_use` blocks become `tool_calls`.
 - only the first source-order reasoning group is projected into scalar Chat
   reasoning fields.
-- usage maps to Chat prompt/completion tokens; cache read tokens become
-  `prompt_tokens_details.cached_tokens`.
+- usage maps to Chat prompt/completion tokens; cache reads and total cache
+  writes use the OpenAI usage fields, with 1-hour write detail carried
+  internally.
 - `tool_use` stop maps to `tool_calls`; `max_tokens` maps to `length`; other
   normal stops map to `stop`.
 
@@ -465,10 +574,11 @@ Known losses:
 
 Request mapping:
 
-- Chat `system` and `developer` messages become top-level Messages `system`,
-  joined with blank lines.
+- the leading contiguous Chat `system` / `developer` prefix becomes top-level
+  Messages `system`, preserving each source content part as a separate text
+  block. Later instruction messages remain inline in chronological order.
 - Chat user text and supported images become Messages user blocks. Remote images
-  are resolved through the shared loader.
+  are resolved through the same gateway-injected external-resource loader.
 - Chat assistant `content` becomes assistant text.
 - Chat assistant scalar `reasoning_text` / `reasoning_opaque` becomes one
   `thinking` block or one `redacted_thinking` block.
@@ -485,8 +595,8 @@ Response mapping:
 - scalar reasoning blocks are emitted before text, and text before tool use.
 - scalar opaque-only reasoning becomes `redacted_thinking` rather than fake
   readable thinking.
-- Chat usage maps to Messages usage; cached prompt tokens become
-  `cache_read_input_tokens`.
+- Chat usage maps to Messages usage; cached prompt reads and writes become the
+  corresponding disjoint Messages cache fields.
 
 Known losses:
 
@@ -549,7 +659,14 @@ Request mapping:
   assistant message as `reasoning_items[]`; the first scalar-eligible group also
   projects to `reasoning_text`.
 - `function_call` items become assistant `tool_calls`.
-- `function_call_output` items become Chat `tool` messages.
+- `function_call_output` items become text-only Chat `tool` messages. Because
+  Chat tool messages do not admit image parts, tool-output images are grouped
+  after the contiguous tool-result run in one synthesized user image message;
+  each tool call's image group is preceded by its source `call_id` label.
+  The synthesized message's legal Chat `user` role is authoritative at provider
+  boundaries, so a final lifted-image turn is reported as user-initiated even
+  though its image originated in tool output; no out-of-band provenance
+  contradicts the wire role.
 - `max_output_tokens`, `stream`, `temperature`, `top_p`, `metadata`, `store`,
   `parallel_tool_calls`, `prompt_cache_key`, `safety_identifier`,
   `service_tier`, and explicit `reasoning.effort` pass through when present.
@@ -558,6 +675,13 @@ Request mapping:
 - Responses function tools become Chat function tools, preserving `strict`.
   Freeform `custom` tools are wrapped as single-string function tools; see
   "Responses Custom Tool Wrapping".
+- Programmatic Tool Calling state is native-Responses-only: `additional_tools`,
+  `program`, `program_output`, program callers and tool declarations, deferred
+  tools, and forced programmatic choice are rejected rather than projected
+  lossily. Native Responses paths retain these items, caller metadata, and
+  opaque fingerprints whenever snapshot persistence is active; HTTP
+  `store: false` disables snapshots, while WebSocket `store: false` keeps them
+  only in the current session's memory.
 
 Response mapping:
 
@@ -583,6 +707,13 @@ Known losses:
 - Freeform `custom` tool `format.definition` is preserved as a
   `Lark grammar: ${definition}` description on the wrapped `input` parameter;
   other `format` fields are not preserved.
+- Lifting tool-output images into a user message changes their speaker role but
+  keeps the visual bytes usable on Chat targets.
+- `input_file` message/tool-output content and assistant-side files or images
+  have no Chat counterpart and are rejected.
+- File-id-only images cannot be materialized by the pure translator and are
+  rejected. Chat image detail supports only `auto`, `low`, and `high`; other
+  Responses values such as `original` are rejected.
 - opaque Responses reasoning state is not requested, translated, or preserved on
   Chat fallback paths.
 

@@ -3,13 +3,14 @@
 // single raw record query.
 //
 // View semantics mirror /api/token-usage and /api/search-usage:
-// - `self-by-key` scopes rows to the actor's keys (active + soft-deleted).
-//   `group_by=userId` is rejected — every row already belongs to the actor.
-// - `all-by-user` aggregates across every row (callers must have
-//   `canViewGlobalTelemetry`); `resolveTelemetryView` rejects a `key_id`
-//   scope for this view because the actor owns no global key.
+// - `self-by-key` scopes every axis to the actor's keys (active +
+//   soft-deleted). `group_by=userId` is rejected because every row belongs to
+//   the actor.
+// - `all-by-user` uses every row for global and per-user axes, while API-key
+//   axes, metadata, and filters remain scoped to the actor's own keys.
 
 import { aggregatePerformanceForDisplay, type PerformanceBucketGranularity, type PerformanceGroupBy } from './aggregate.ts';
+import { userFromContext } from '../../middleware/auth.ts';
 import { type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { PerformanceTelemetryRecord } from '../../repo/types.ts';
@@ -117,11 +118,9 @@ interface DimensionValues {
   upstreams: string[];
   operations: string[];
   runtimeLocations: string[];
-  // keyIds / userIds are returned as their raw ids; the frontend joins to
-  // the users/keys metadata below to render names. userIds is empty in
-  // self-view — every self-view row belongs to the actor by construction,
-  // so a single-element user dropdown carries no useful choice and the
-  // dashboard hides that filter entirely for that view.
+  // The frontend joins these raw ids to the users/keys metadata below.
+  // keyIds always belongs to the actor; userIds spans all users only in the
+  // global view and stays empty in self-view.
   keyIds: string[];
   userIds: number[];
 }
@@ -139,6 +138,7 @@ const partitionRecords = (
   rows: readonly PerformanceTelemetryRecord[],
   filters: PerformanceFilters,
   keyToUser: ReadonlyMap<string, number>,
+  visibleKeyIds: ReadonlySet<string>,
   includeUserIds: boolean,
 ): { filtered: readonly PerformanceTelemetryRecord[]; dimensionValues: DimensionValues } => {
   const models = new Set<string>();
@@ -153,7 +153,7 @@ const partitionRecords = (
     upstreams.add(r.upstream);
     operations.add(r.operation);
     runtimeLocations.add(r.runtimeLocation);
-    keyIds.add(r.keyId);
+    if (visibleKeyIds.has(r.keyId)) keyIds.add(r.keyId);
     const uid = keyToUser.get(r.keyId);
     if (uid !== undefined && includeUserIds) userIds.add(uid);
 
@@ -185,22 +185,22 @@ export const performanceOverview = async (c: Ctx) => {
   const resolved = resolveView(c, params.value);
   if ('error' in resolved) return c.json({ error: resolved.message }, resolved.error === 'forbidden' ? 403 : 400);
 
-  // One api_keys listing feeds every downstream concern in this handler:
-  // the ownedKeyIds gate on the record query, the key→user map for
-  // group_by=userId / filter_user_id, and the sorted keys[] block on
-  // the response.
   const repo = getRepo();
-  const scopedKeys = await loadTelemetryKeys(repo, resolved);
-  const ownedKeyIds = new Set(scopedKeys.map(k => k.id));
+  const allKeys = await loadTelemetryKeys(repo, resolved);
+  const actorUserId = userFromContext(c).id;
+  const ownedKeys = allKeys.filter(key => key.userId === actorUserId);
+  const ownedKeyIds = new Set(ownedKeys.map(key => key.id));
+  if (resolved.view === 'all-by-user' && params.value.filters.keyId !== undefined && !ownedKeyIds.has(params.value.filters.keyId)) {
+    return c.json({ error: 'Unknown filter_key_id' }, 404);
+  }
+
   const rawRecords = await queryRecordsForView(resolved, params.value, ownedKeyIds);
   if (rawRecords === null) return c.json({ error: 'Unknown key_id' }, 404);
-  const users = resolved.view === 'all-by-user' ? await repo.users.listIncludingDeleted() : [];
 
-  // User breakdown only makes sense in all-by-user; other views collapse it
-  // to an empty array at the response boundary.
   const includeUserRows = resolved.view === 'all-by-user';
-  const keyToUser = buildKeyToUserMap(scopedKeys);
-  const { filtered, dimensionValues } = partitionRecords(rawRecords, params.value.filters, keyToUser, includeUserRows);
+  const users = includeUserRows ? await repo.users.listIncludingDeleted() : [];
+  const keyToUser = buildKeyToUserMap(allKeys);
+  const { filtered, dimensionValues } = partitionRecords(rawRecords, params.value.filters, keyToUser, ownedKeyIds, includeUserRows);
 
   const tzOnly = { timezoneOffsetMinutes: params.value.timezoneOffsetMinutes };
   const { series, ...axes } = aggregatePerformanceForDisplay(filtered, {
@@ -213,15 +213,14 @@ export const performanceOverview = async (c: Ctx) => {
     operation: { ...tzOnly, bucket: 'all', groupBy: 'operation' as const },
     keyId: { ...tzOnly, bucket: 'all', groupBy: 'keyId' as const },
     userId: { ...tzOnly, bucket: 'all', groupBy: 'userId' as const },
-  }, keyToUser);
+  }, keyToUser, ownedKeyIds);
 
-  // Users/keys metadata is returned so the dashboard can render usernames +
-  // key names in the By-User / By-API-key group column and in the filter
-  // dropdowns.
+  // Global views expose user metadata for By User, while key metadata remains
+  // actor-owned for By API Key and its filter.
   const userMetadata = users
     .map(u => ({ id: u.id, username: u.username }))
     .sort((a, b) => a.id - b.id);
-  const keys = scopedKeys
+  const keys = ownedKeys
     .map(k => ({ id: k.id, name: k.name, createdAt: k.createdAt }))
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
 

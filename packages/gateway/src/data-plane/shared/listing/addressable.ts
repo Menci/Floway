@@ -14,7 +14,7 @@
 import { fetchUpstreamModelsCached } from '../../providers/models-cache.ts';
 import { compareModelIds, getModelsFromProviders, listModelProviders } from '../../providers/registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import { isAbortError, type Fetcher, type InternalModel, type Provider } from '@floway-dev/provider';
+import { isAbortError, type Fetcher, type InternalModel, type Provider, type UpstreamRecord } from '@floway-dev/provider';
 
 export interface AddressableIdEntry {
   // The inbound model id the data plane will accept verbatim.
@@ -53,14 +53,16 @@ export const enumerateAddressableModelIds = async (
   upstreamFilter: readonly string[] | null,
   fetcherForUpstream: (upstreamId: string) => Fetcher,
   scheduler: BackgroundScheduler,
+  preFetchedUpstreams?: readonly UpstreamRecord[],
 ): Promise<readonly AddressableIdEntry[]> => {
   // Resolve providers once and thread them into the catalog assembly so
   // the upstreams.list() round-trip and provider-instantiation cost is
   // paid once per call. `getModelsFromProviders` throws the actionable
   // "no upstream provider configured" message when the provider list is
   // empty; surface it the same way here so /v1/models keeps its 502 +
-  // hint behavior on a brand-new gateway.
-  const providers = await listModelProviders(upstreamFilter);
+  // hint behavior on a brand-new gateway. `preFetchedUpstreams` avoids
+  // an additional round-trip when the caller has the list already.
+  const providers = await listModelProviders(upstreamFilter, preFetchedUpstreams);
   const { models: realModels, upstreamsByPublicId } = await getModelsFromProviders(providers, fetcherForUpstream, scheduler);
   const byId = new Map(realModels.map(model => [model.id, model] as const));
 

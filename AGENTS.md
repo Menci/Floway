@@ -108,12 +108,18 @@ Vue + Vite SPA. Cloudflare Workers is the production deployment target;
 Node.js (`node:sqlite` + `sharp` + filesystem) is a parallel deployment
 target with the same Hono app and the same `packages/gateway/migrations` SQL.
 The `@floway-dev/platform` package owns the abstract runtime contracts
-(`FileProvider`, `ImageProcessor`, `SqlDatabase`, `BackgroundScheduler`,
-`EnvGetter`, `SocketDial`); each `apps/platform-*` app supplies the
-concrete impls (including the runtime's root-CA list as a plain
-`readonly string[]`) and its own entry. `packages/gateway` (the gateway
-core) imports only platform contracts and is ESLint-prohibited from
-reaching into any `apps/platform-*`.
+(`FileProvider`, `ImageProcessor`, `ExternalResourceFetcher`, `SqlDatabase`,
+`BackgroundScheduler`, `EnvGetter`, `SocketDial`); each `apps/platform-*`
+app supplies the concrete impls (including the runtime's root-CA list as a
+plain `readonly string[]`) and its own entry. External-resource fetchers make
+one credential-free GET with redirects exposed to the caller; the Node
+implementation additionally pins DNS resolution to public addresses so
+untrusted URLs cannot reach local or special-purpose networks. The gateway's
+external-image loader owns redirect traversal, timeout and byte limits, then
+returns structured fetch failures for native-facing callers; its translation
+adapter maps those failures onto each pair's existing image-drop semantics.
+`packages/gateway` (the gateway core) imports only platform contracts and is
+ESLint-prohibited from reaching into any `apps/platform-*`.
 
 ## Workspace Layout
 

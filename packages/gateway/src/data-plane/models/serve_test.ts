@@ -157,8 +157,8 @@ test('/v1/models returns merged model list from Copilot and custom upstreams', a
       };
       const controlClaude = controlBody.data.find(m => m.id === 'claude-sonnet-4')!;
       assertEquals(controlClaude.display_name, 'Claude Sonnet 4');
-      assertEquals(controlClaude.upstreams, [{ kind: 'copilot', id: 'up_copilot', name: 'GitHub Copilot (tester)' }]);
-      assertEquals(controlBody.data.find(m => m.id === 'gpt-4o')?.upstreams, [{ kind: 'custom', id: 'up_oai', name: 'Test OpenAI' }]);
+      assertEquals(controlClaude.upstreams, [{ kind: 'copilot', id: 'up_copilot', name: 'GitHub Copilot (tester)', color: null }]);
+      assertEquals(controlBody.data.find(m => m.id === 'gpt-4o')?.upstreams, [{ kind: 'custom', id: 'up_oai', name: 'Test OpenAI', color: null }]);
       // Legacy split fields and Copilot-only fields never reach the dashboard.
       for (const model of controlBody.data) {
         assertEquals(model.provider, undefined);
@@ -248,19 +248,11 @@ test('/models returns the same superset payload as /v1/models', async () => {
             limits: {},
             kind: 'chat',
             endpoints: { messages: {} },
-            cost: {
-              input: 5,
-              output: 25,
-              input_cache_read: 0.5,
-              input_cache_write: 6.25,
-              tiers: {
-                fast: {
-                  input: 30,
-                  output: 150,
-                  input_cache_read: 3,
-                  input_cache_write: 37.5,
-                },
-              },
+            pricing: {
+              entries: [
+                { rates: { input: 5, output: 25, input_cache_read: 0.5, input_cache_write: 6.25 } },
+                { selector: { serviceTier: 'fast' }, rates: { input: 30, output: 150, input_cache_read: 3, input_cache_write: 37.5 } },
+              ],
             },
           },
           {
@@ -869,7 +861,7 @@ test('/v1/models serves Anthropic-shape rows with a [1m] suffix on 1M-capable id
           kind?: unknown;
           endpoints?: unknown;
           limits?: unknown;
-          cost?: unknown;
+          pricing?: unknown;
           chat?: unknown;
         }>;
       };
@@ -900,7 +892,7 @@ test('/v1/models serves Anthropic-shape rows with a [1m] suffix on 1M-capable id
       assertEquals(opus.kind, undefined);
       assertEquals(opus.endpoints, undefined);
       assertEquals(opus.limits, undefined);
-      assertEquals(opus.cost, undefined);
+      assertEquals(opus.pricing, undefined);
       assertEquals(opus.chat, undefined);
 
       // 200K model stays bare and carries the same Anthropic-shape fields.
