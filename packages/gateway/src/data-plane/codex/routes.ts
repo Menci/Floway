@@ -2,7 +2,7 @@
 //
 // OAuth ("ChatGPT") mode has two independently configured bases:
 //
-//   chatgpt_base_url             — usage, analytics, plugins, identity, Apps MCP
+//   chatgpt_base_url             — usage, analytics, plugins, Agent Identity, Apps MCP
 //   model_providers.x.base_url   — models, Responses HTTP/WS, remote compaction
 //
 // The dashboard points both at this namespace. Codex appends `models`,

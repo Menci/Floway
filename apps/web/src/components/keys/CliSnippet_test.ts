@@ -24,14 +24,24 @@ const codexModel: ControlPlaneModel = {
   upstreams: [],
 };
 
-test('Codex snippet opts the Floway provider into the supported ChatGPT-auth surface', () => {
+const sectionLines = (config: string, section: string): string[] => {
+  const lines = config.split('\n');
+  const start = lines.indexOf(`[${section}]`);
+  if (start < 0) throw new Error(`Missing [${section}] in generated Codex config`);
+  const next = lines.findIndex((line, index) => index > start && line.startsWith('['));
+  return lines.slice(start + 1, next < 0 ? undefined : next);
+};
+
+test('Codex snippet requires OpenAI auth and disables Agent Identity', () => {
   const wrapper = mount(CliSnippet, {
     props: { apiKey: 'floway-key', models: [codexModel] },
     global: { stubs: { Code: CodeStub } },
   });
   const config = wrapper.findAll('pre').map(block => block.text()).find(code => code.includes('[model_providers.floway]'));
-  expect(config).toBeDefined();
-  expect(config).toContain('requires_openai_auth = true');
-  expect(config).toContain('[features]\napps = false\nuse_agent_identity = false');
-  expect(config!.indexOf('requires_openai_auth = true')).toBeLessThan(config!.indexOf('[features]'));
+  if (config === undefined) throw new Error('Codex config block was not rendered');
+  expect(sectionLines(config, 'model_providers.floway')).toContain('requires_openai_auth = true');
+  expect(sectionLines(config, 'features')).toEqual(expect.arrayContaining([
+    'apps = false',
+    'use_agent_identity = false',
+  ]));
 });

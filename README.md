@@ -129,9 +129,9 @@ Open the deployed URL (or `http://localhost:8788` for Node), log in with
    order is routing order; earlier providers win for a shared public model id.
 2. **API Keys -> New Key**. Give the generated key to your client.
 3. Copy the Claude Code or Codex CLI snippet from the API Keys panel into the
-   agent config. The Codex snippet uses the generated ChatGPT-style credential
-   for the Floway model provider and keeps the separate experimental Agent
-   Identity flow disabled.
+   agent config. The Codex snippet marks Floway as ChatGPT-authenticated so
+   Codex enables its client-owned image extension, while keeping the separate
+   experimental Agent Identity flow disabled.
 
 Import/export of upstreams, keys, and search config is in Settings. The
 payload format is tied to the running deployment, so import only accepts a

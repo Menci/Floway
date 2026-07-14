@@ -18,10 +18,12 @@
 //   swallow events here to keep workspace telemetry inside Floway rather
 //   than leaking to chatgpt.com if `chatgpt_base_url` were ever unset.
 //
-// /api/codex/usage and /api/codex/rate-limit-reset-credits —
+// /api/codex/usage, /api/codex/rate-limit-reset-credits, and its /consume
+//   sub-route —
 //   requires_openai_auth makes the TUI query account limits and reset credits.
 //   Floway has neither a first-party ChatGPT quota nor redeemable credits, so
 //   these report the client's supported `unknown` plan and zero credits:
+//   https://github.com/openai/codex/blob/f90e7deea6a715bbd153044af6f475eefa749177/codex-rs/tui/src/chatwidget/rate_limits.rs#L295-L303
 //   https://github.com/openai/codex/blob/f90e7deea6a715bbd153044af6f475eefa749177/codex-rs/backend-client/src/client/rate_limit_resets.rs#L30-L42
 //   https://github.com/openai/codex/blob/f90e7deea6a715bbd153044af6f475eefa749177/codex-rs/backend-client/src/types.rs#L22-L55
 //   https://github.com/openai/codex/blob/f90e7deea6a715bbd153044af6f475eefa749177/codex-rs/backend-client/src/types.rs#L74-L88
