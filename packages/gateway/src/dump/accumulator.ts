@@ -105,7 +105,7 @@ export class DumpAccumulator {
   private inputTokens: number | null = null;
   private outputTokens: number | null = null;
   private errorMeta: DumpErrorMeta | null = null;
-  private preparedRequestBody: Promise<PreparedDumpRequestBody> | PreparedDumpRequestBody;
+  private readonly preparedRequestBody: Promise<PreparedDumpRequestBody>;
 
   constructor(
     private readonly apiKey: ApiKey,
@@ -114,16 +114,11 @@ export class DumpAccumulator {
     private readonly startedAt: number,
     private readonly backgroundScheduler: BackgroundScheduler,
   ) {
-    const preparation = getDumpStore().prepareRequestBody(requestBody);
-    this.preparedRequestBody = preparation;
-    // The rejection handler prevents a long upstream wait from surfacing the
-    // failure before `write()` awaits the same promise and records it.
-    void preparation.then(body => {
-      // Retaining a resolved CompressionStream promise also retains its input
-      // and stream graph in workerd. Keep only the prepared value once the
-      // asynchronous work has settled.
-      this.preparedRequestBody = body;
-    }, () => undefined);
+    this.preparedRequestBody = getDumpStore().prepareRequestBody(requestBody);
+    // Preparation starts eagerly and is awaited at terminal persistence. Mark
+    // a rejection handled immediately so a long upstream wait cannot surface
+    // it as an unhandled promise before `write()` records the dump failure.
+    void this.preparedRequestBody.catch(() => {});
   }
 
   // --- mid-flight hooks (called from per-protocol respond layer) ---
