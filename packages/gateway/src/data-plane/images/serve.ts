@@ -12,7 +12,7 @@ import type { Context } from 'hono';
 
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { createGatewayCtxFromHono, finalizeGatewayResponse } from '../chat/shared/gateway-ctx.ts';
-import { readRequestBody } from '../chat/shared/request-body.ts';
+import { readRequestBody, takeRequestBody } from '../chat/shared/request-body.ts';
 import { passthroughApiError, passthroughServe } from '../shared/passthrough-serve.ts';
 import { tokenUsageFromImagesBody } from '../shared/telemetry/usage.ts';
 
@@ -45,8 +45,8 @@ const prepareImagesGenerationsRequest = (bytes: Uint8Array): PreparedRequest => 
 
 export const imagesGenerations = async (c: Context): Promise<Response> => {
   const requestBody = await readRequestBody(c);
-  const ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody, backgroundScheduler: backgroundSchedulerFromContext(c) });
   const request = prepareImagesGenerationsRequest(requestBody.bytes);
+  const ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
   if (request.type === 'invalid') {
     ctx.dump?.error('gateway');
     return finalizeGatewayResponse(ctx, passthroughApiError(c, request.message, 400));
@@ -75,7 +75,6 @@ export const imagesEdits = async (c: Context): Promise<Response> => {
   // c.req.raw.body internally; re-parsing from the captured bytes via a fresh
   // Response keeps the dump capture honest without a second read on the wire.
   const requestBody = await readRequestBody(c);
-  const ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody, backgroundScheduler: backgroundSchedulerFromContext(c) });
   let form: FormData;
   try {
     form = await new Response(requestBody.bytes as BodyInit, { headers: { 'content-type': c.req.header('content-type') ?? '' } }).formData();
@@ -83,9 +82,12 @@ export const imagesEdits = async (c: Context): Promise<Response> => {
     // Match the embeddings serve stance: do not surface the underlying
     // parser's error text. The wording is enough for a client to know
     // they sent the wrong content type or a malformed body.
-    ctx.dump?.error('gateway');
-    return finalizeGatewayResponse(ctx, passthroughApiError(c, 'Image edits request body must be a valid multipart/form-data payload.', 400));
+    const errorCtx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
+    errorCtx.dump?.error('gateway');
+    return finalizeGatewayResponse(errorCtx, passthroughApiError(c, 'Image edits request body must be a valid multipart/form-data payload.', 400));
   }
+
+  const ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
 
   const modelRaw = form.get('model');
   if (typeof modelRaw !== 'string' || modelRaw.length === 0) {
