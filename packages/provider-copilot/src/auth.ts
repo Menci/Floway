@@ -1,5 +1,5 @@
 import { readCopilotUpstreamState, type CopilotTokenEntry, type CopilotUpstreamState } from './state.ts';
-import { getProviderRepo as getRepo, isAbortError, type Fetcher } from '@floway-dev/provider';
+import { dispatchUpstreamFetch, getProviderRepo as getRepo, isAbortError, type Fetcher } from '@floway-dev/provider';
 
 // Version constants pinned to a known-good fingerprint that mirrors what a
 // current VSCode Copilot Chat install sends. The Copilot Chat plugin version,
@@ -239,13 +239,20 @@ export interface CopilotAuth {
 }
 
 export async function copilotAuthedFetch(path: string, init: RequestInit, auth: CopilotAuth, options: CopilotFetchOptions): Promise<Response> {
-  const entry = await getCopilotToken(auth.id, auth.githubToken, options.fetcher, init.signal ?? undefined);
+  const signal = init.signal ?? undefined;
+  let ownedInit: RequestInit | undefined = init;
+  // The token exchange is the only await before the data-plane dispatch. Keep
+  // the body in an explicit owner and replace the generator parameter so the
+  // final network wait cannot retain both copies after ownership transfers.
+  init = { signal };
+  const entry = await getCopilotToken(auth.id, auth.githubToken, options.fetcher, signal);
 
   // x-request-id and x-agent-task-id share a single per-call UUID, mirroring
   // VSCode Copilot Chat's "one id ties the request to its background task" pattern.
   const requestId = crypto.randomUUID();
 
-  const headers = new Headers(init.headers);
+  if (ownedInit === undefined) throw new Error('Copilot request ownership missing before dispatch');
+  const headers = new Headers(ownedInit.headers);
   headers.set('Authorization', `Bearer ${entry.token}`);
   headers.set('Content-Type', 'application/json');
   headers.set('editor-version', EDITOR_VERSION);
@@ -278,7 +285,12 @@ export async function copilotAuthedFetch(path: string, init: RequestInit, auth: 
     }
   }
 
-  return await options.wrapUpstreamCall(() => options.fetcher(`${entry.baseUrl}${path}`, { ...init, headers }));
+  const request = { ...ownedInit, headers };
+  ownedInit = undefined;
+  // Do not await here: the dispatch owner clears its body synchronously, then
+  // this async frame can disappear while the upstream network wait continues.
+  // eslint-disable-next-line @typescript-eslint/return-await
+  return dispatchUpstreamFetch(options, `${entry.baseUrl}${path}`, request);
 }
 
 // Headers for api.github.com calls — token exchange and /copilot_internal/user.

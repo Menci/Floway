@@ -527,8 +527,11 @@ test('generate failover preserves billing blocks for a strip-off candidate', asy
   const expectedSystem = structuredClone(system);
   const messages = [{ role: 'user' as const, content: [{ type: 'text' as const, text: 'original user text' }] }];
   const expectedMessages = structuredClone(messages);
+  const firstBodies: Array<Omit<MessagesPayload, 'model'>> = [];
   const firstCall = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
-    const message = (body as Omit<MessagesPayload, 'model'>).messages[0];
+    const firstBody = body as Omit<MessagesPayload, 'model'>;
+    firstBodies.push(firstBody);
+    const message = firstBody.messages[0];
     if (!Array.isArray(message.content) || message.content[0]?.type !== 'text') throw new Error('expected text content');
     message.content[0].text = 'mutated by first provider';
     return {
@@ -567,6 +570,7 @@ test('generate failover preserves billing blocks for a strip-off candidate', asy
 
   assertEquals(firstCall.mock.calls.length, 1);
   assertEquals(secondCall.mock.calls.length, 1);
+  assertEquals(firstBodies[0]?.system, [{ type: 'text', text: "You are Claude Code, Anthropic's official CLI for Claude." }]);
   assertEquals(observedBodies[0]?.system, expectedSystem);
   assertEquals(observedBodies[0]?.messages, expectedMessages);
   assertEquals(payload.system, expectedSystem);
@@ -582,8 +586,11 @@ test('countTokens failover preserves billing blocks for a strip-off candidate', 
   const expectedSystem = structuredClone(system);
   const messages = [{ role: 'user' as const, content: [{ type: 'text' as const, text: 'original user text' }] }];
   const expectedMessages = structuredClone(messages);
+  const firstBodies: Array<Omit<MessagesPayload, 'model'>> = [];
   const firstCall = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderCallResult> => {
-    const message = (body as Omit<MessagesPayload, 'model'>).messages[0];
+    const firstBody = body as Omit<MessagesPayload, 'model'>;
+    firstBodies.push(firstBody);
+    const message = firstBody.messages[0];
     if (!Array.isArray(message.content) || message.content[0]?.type !== 'text') throw new Error('expected text content');
     message.content[0].text = 'mutated by first provider';
     return {
@@ -618,6 +625,7 @@ test('countTokens failover preserves billing blocks for a strip-off candidate', 
   assertEquals(assertResultType(result, 'plain').status, 200);
   assertEquals(firstCall.mock.calls.length, 1);
   assertEquals(secondCall.mock.calls.length, 1);
+  assertEquals(firstBodies[0]?.system, [{ type: 'text', text: 'Count this prompt.' }]);
   assertEquals(observedBodies[0]?.system, expectedSystem);
   assertEquals(observedBodies[0]?.messages, expectedMessages);
   assertEquals(payload.system, expectedSystem);
