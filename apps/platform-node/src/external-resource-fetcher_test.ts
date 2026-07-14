@@ -28,14 +28,19 @@ test('Node external-resource egress accepts only globally routable addresses', (
   }
 });
 
-test.each(['http://127.0.0.1:8080/private', 'http://[::1]:8080/private'])(
-  'Node external-resource fetcher rejects private IP literal %s before connecting',
+test.each([
+  'http://127.0.0.1:8080/private',
+  'http://[::1]:8080/private',
+  'http://localhost:8080/private',
+])(
+  'Node external-resource fetcher rejects private target %s before connecting',
   async url => {
     const fetcher = createNodeExternalResourceFetcher();
-    await assertRejects(
-      () => fetcher(new URL(url), new AbortController().signal),
-      Error,
-      'public IP addresses',
-    );
+    const error = await assertRejects(() => fetcher(new URL(url), new AbortController().signal), Error);
+    const messages: string[] = [];
+    for (let current: unknown = error; current instanceof Error; current = current.cause) {
+      messages.push(current.message);
+    }
+    assertEquals(messages.includes('External resource target did not resolve exclusively to public IP addresses'), true);
   },
 );
