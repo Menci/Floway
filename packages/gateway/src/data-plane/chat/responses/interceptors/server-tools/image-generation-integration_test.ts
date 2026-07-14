@@ -261,7 +261,7 @@ test('an image generated in turn 1 is re-collected as an edit source in turn 2',
   assertEquals(bytes, 'AAAA');
 });
 
-test('a remote edit source is inlined before orchestration and reused by the edits backend', async () => {
+test('a prefetched remote edit source remains visible to orchestration and is reused by the edits backend', async () => {
   const fetched: string[] = [];
   initExternalResourceFetcher(url => {
     fetched.push(url.href);
@@ -292,7 +292,7 @@ test('a remote edit source is inlined before orchestration and reused by the edi
   await drain(await shim(invocation, gatewayCtx(), run));
 
   assertEquals(fetched, ['https://example.com/source.png']);
-  assertEquals(orchestratorImageUrl, `data:image/png;base64,${REMOTE_PNG_B64}`);
+  assertEquals(orchestratorImageUrl, 'https://example.com/source.png');
   assertEquals(stub.editsForms.length, 1);
   const image = stub.editsForms[0].getAll('image[]')[0] as Blob;
   assertEquals(new Uint8Array(await image.arrayBuffer()), Uint8Array.from(atob(REMOTE_PNG_B64), c => c.charCodeAt(0)));

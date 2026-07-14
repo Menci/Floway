@@ -12,7 +12,6 @@ import type {
   ResponsesFunctionTool,
   ResponsesFunctionToolCallItem,
   ResponsesHostedTool,
-  ResponsesInputContent,
   ResponsesInputImage,
   ResponsesInputImageGenerationCall,
   ResponsesInputItem,
@@ -148,15 +147,6 @@ const base64ToArrayBuffer = (b64: string): ArrayBuffer => {
   const bytes = new Uint8Array(buffer);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   return buffer;
-};
-
-const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
-  const bytes = new Uint8Array(buffer);
-  const chunks: string[] = [];
-  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
-    chunks.push(String.fromCharCode(...bytes.subarray(offset, offset + 0x8000)));
-  }
-  return btoa(chunks.join(''));
 };
 
 // Parse a `data:<mime>;base64,<payload>` URL or a bare base64 string (as
@@ -551,7 +541,7 @@ interface ImageOperationError {
 }
 
 type RemoteImageDownload =
-  | { ok: true; source: ImageSource; dataUrl: string }
+  | { ok: true; source: ImageSource }
   | { ok: false; reason: 'download' | 'timeout' | 'invalid-image'; status?: number };
 
 const INVALID_REMOTE_IMAGE_MESSAGE = "The image data you provided does not represent a valid image. Please check your input and try again with one of the supported image formats: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'].";
@@ -667,6 +657,7 @@ const isFetchableRemoteUrl = (url: URL): boolean =>
 
 const createRemoteImageMaterializer = (requestSignal: AbortSignal | undefined) => {
   const downloads = new Map<string, Promise<RemoteImageDownload>>();
+  const materialized = new Map<string, ImageSource>();
 
   const download = (source: RemoteImageSource): Promise<RemoteImageDownload> => {
     const cached = downloads.get(source.wireUrl);
@@ -709,7 +700,6 @@ const createRemoteImageMaterializer = (requestSignal: AbortSignal | undefined) =
           return {
             ok: true,
             source: { bytes: buffer, mimeType },
-            dataUrl: `data:${mimeType};base64,${arrayBufferToBase64(buffer)}`,
           };
         }
       } catch (error) {
@@ -722,20 +712,26 @@ const createRemoteImageMaterializer = (requestSignal: AbortSignal | undefined) =
   };
 
   return {
-    async inputs(sources: readonly RemoteImageSource[]): Promise<{ ok: true; dataUrls: ReadonlyMap<string, string> } | { ok: false; error: ImageOperationError }> {
+    async inputs(sources: readonly RemoteImageSource[]): Promise<{ ok: true } | { ok: false; error: ImageOperationError }> {
       const results = await Promise.all(sources.map(download));
-      const dataUrls = new Map<string, string>();
       for (const [index, result] of results.entries()) {
         if (!result.ok) return { ok: false, error: remoteInputError(result) };
         const source = sources[index];
         if (source === undefined) throw new Error('Missing remote image source after materialization');
-        dataUrls.set(source.wireUrl, result.dataUrl);
+        materialized.set(source.wireUrl, result.source);
       }
-      return { ok: true, dataUrls };
+      return { ok: true };
     },
     async mask(source: RemoteImageSource): Promise<{ ok: true; source: ImageSource } | { ok: false; error: ImageOperationError }> {
       const result = await download(source);
       return result.ok ? { ok: true, source: result.source } : { ok: false, error: REMOTE_MASK_ERROR };
+    },
+    cached(source: RemoteImageSource): ImageSource {
+      const result = materialized.get(source.wireUrl);
+      if (result === undefined) {
+        throw new Error('image_generation live source invariant violated after request validation: remote image URL was not materialized');
+      }
+      return result;
     },
   };
 };
@@ -1424,43 +1420,6 @@ const streamImageGeneration = (
 // needs no out-of-band payload for this to be lossless: every field required
 // to rebuild the pair, INCLUDING the error (`status` + `error{message,code,
 // type}`), has a public home on the item.
-const materializeRemoteInputImages = (
-  input: ResponsesInputItem[],
-  dataUrls: ReadonlyMap<string, string>,
-): ResponsesInputItem[] => {
-  if (dataUrls.size === 0) return input;
-
-  const rewriteBlocks = (blocks: ResponsesInputContent[]): ResponsesInputContent[] => {
-    let changed = false;
-    const next = blocks.map(block => {
-      if (block.type !== 'input_image' || typeof block.image_url !== 'string') return block;
-      const dataUrl = dataUrls.get(block.image_url);
-      if (dataUrl === undefined) return block;
-      changed = true;
-      return { ...block, image_url: dataUrl };
-    });
-    return changed ? next : blocks;
-  };
-
-  let changed = false;
-  const next = input.map(item => {
-    if (item.type === 'message' && Array.isArray(item.content)) {
-      const content = rewriteBlocks(item.content);
-      if (content === item.content) return item;
-      changed = true;
-      return { ...item, content };
-    }
-    if ((item.type === 'function_call_output' || item.type === 'custom_tool_call_output') && Array.isArray(item.output)) {
-      const output = rewriteBlocks(item.output);
-      if (output === item.output) return item;
-      changed = true;
-      return { ...item, output };
-    }
-    return item;
-  });
-  return changed ? next : input;
-};
-
 export const transformInputItemsForImageGeneration = (
   input: ResponsesInputItem[],
   toolName: string,
@@ -1582,12 +1541,6 @@ export const imageGenerationServerTool: ServerToolRegistration = async (invocati
     config = { ...config, mask: materializedMask.source };
   }
 
-  const transformItems = (items: ResponsesInputItem[], toolName: string): ResponsesInputItem[] =>
-    transformInputItemsForImageGeneration(
-      materializeRemoteInputImages(items, materializedInputs.dataUrls),
-      toolName,
-    );
-
   const state: ShimState = {
     config,
     apiKeyId: gatewayCtx.apiKeyId,
@@ -1601,7 +1554,7 @@ export const imageGenerationServerTool: ServerToolRegistration = async (invocati
   return {
     type: 'active',
     baseToolName: SHIM_TOOL_NAME,
-    transformItems,
+    transformItems: transformInputItemsForImageGeneration,
     hosted: {
       hostedTypes: ['image_generation'],
       canonicalize: canonicalizeImageGenerationTool,
@@ -1621,10 +1574,7 @@ export const imageGenerationServerTool: ServerToolRegistration = async (invocati
           throw new Error(`image_generation live source invariant violated after request validation: ${operation.error.message}`);
         }
         const sources = operation.sources.map(source => {
-          if (isRemoteImageSource(source)) {
-            throw new Error('image_generation live source invariant violated after request validation: remote image URL was not materialized');
-          }
-          return source;
+          return isRemoteImageSource(source) ? materializer.cached(source) : source;
         });
 
         // Safety valve against an unbounded backend-call loop (the model

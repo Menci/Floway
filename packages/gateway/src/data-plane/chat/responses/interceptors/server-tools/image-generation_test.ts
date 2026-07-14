@@ -661,7 +661,7 @@ test('imageGenerationServerTool accepts GIF edit input for local WebP transcodin
   assert(result.type === 'active');
 });
 
-test('imageGenerationServerTool fetches and inlines repeated remote edit sources once', async () => {
+test('imageGenerationServerTool fetches repeated remote edit sources once', async () => {
   const urls: string[] = [];
   initExternalResourceFetcher(url => {
     urls.push(url.href);
@@ -684,7 +684,7 @@ test('imageGenerationServerTool fetches and inlines repeated remote edit sources
   assert(transformed?.[0].type === 'message' && Array.isArray(transformed[0].content));
   const first = transformed[0].content[0];
   assert(first.type === 'input_image');
-  assertEquals(first.image_url, `data:image/png;base64,${VALID_PNG_B64}`);
+  assertEquals(first.image_url, 'https://example.com/source.png');
 });
 
 test.each([

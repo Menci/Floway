@@ -200,13 +200,13 @@ steps.
   function/custom tool output, and replayed image-generation results. Remote
   HTTP(S) sources are downloaded once during request preparation, with manual
   redirect handling, bounded streaming, public-address-only Node egress, and
-  Azure-compatible errors for download and image-format failures; the cached
-  bytes replace the URL before the orchestrator runs and are reused by the edit
-  backend. Inline and remote masks are materialized by the same path. Files API
-  IDs remain an explicit `unsupported_image_source` because they require the
-  owning upstream's authenticated Files namespace. GIF sources are transcoded
-  to WebP for `/images/edits`, and a mask alone is sufficient edit context for
-  `auto`/`edit`.
+  Azure-compatible errors for download and image-format failures. The original
+  URL remains visible to the orchestrator while the cached bytes are reused by
+  the edit backend. Inline and remote masks are materialized by the same path.
+  Files API IDs remain an explicit `unsupported_image_source` because they
+  require the owning upstream's authenticated Files namespace. GIF sources are
+  transcoded to WebP for `/images/edits`, and a mask alone is sufficient edit
+  context for `auto`/`edit`.
 - removes unsupported `image_generation` Responses tool entries and forced
   tool choices that targeted them before target request construction. Other
   hosted/deferred Responses tools, including `web_search`, `tool_search`, and
