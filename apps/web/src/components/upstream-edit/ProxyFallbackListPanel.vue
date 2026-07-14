@@ -372,10 +372,10 @@ const toggleCurrentColoAt = (index: number) => {
               {{ p.name }}
             </DropdownMenuItem>
             <p
-              v-if="proxiesNotInList.length === 0 && directInList"
+              v-if="proxiesNotInList.length === 0 && builtInTransportsNotInList.length === 0"
               class="px-2 py-1.5 text-xs text-gray-500"
             >
-              All proxies already added.
+              All fallbacks already added.
             </p>
           </DropdownMenuContent>
         </DropdownMenuPortal>
