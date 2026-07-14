@@ -134,3 +134,35 @@ test('compresses each unique inline image only once when the same data URL appea
   // Two unique data URLs across four targets → exactly two compress calls.
   assertEquals(calls, 2);
 });
+
+test('reuses its compressed image when the same attempt payload is retried', async () => {
+  let calls = 0;
+  initImageProcessor({
+    compressToWebp: () => {
+      calls += 1;
+      return Promise.resolve(new Uint8Array([1, 2, 3]));
+    },
+  });
+
+  const ctx = invocation({
+    model: 'gpt-test',
+    input: [{
+      type: 'message',
+      role: 'user',
+      content: [{ type: 'input_image', image_url: 'data:image/png;base64,AAAA', detail: 'auto' }],
+    }],
+  });
+
+  await withInlineImagesCompressed(ctx, stubRequest, okEvents);
+  await withInlineImagesCompressed(ctx, stubRequest, okEvents);
+
+  assertEquals(calls, 1);
+  assertEquals(firstImageUrl(ctx.payload), 'data:image/webp;base64,AQID');
+
+  const item = ctx.payload.input[0];
+  if (item.type !== 'message' || !Array.isArray(item.content) || item.content[0]?.type !== 'input_image') throw new Error('expected image content');
+  item.content[0].image_url = 'data:image/png;base64,BBBB';
+  await withInlineImagesCompressed(ctx, stubRequest, okEvents);
+
+  assertEquals(calls, 2);
+});

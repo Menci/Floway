@@ -99,7 +99,7 @@ export type { ValidatePathErr, ValidatePathOk } from './join.ts';
 export { joinBaseAndPath, validateUpstreamPath } from './join.ts';
 
 export type { Fetcher, UpstreamFetchOptions } from './options.ts';
-export { directFetcher, identityWrapUpstreamCall } from './options.ts';
+export { directFetcher, dispatchUpstreamFetch, identityWrapUpstreamCall } from './options.ts';
 
 export { isAbortError } from './abort.ts';
 

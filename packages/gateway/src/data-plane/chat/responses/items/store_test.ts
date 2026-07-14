@@ -84,6 +84,50 @@ test('stages agent and context-compaction items with stable prefixes and preserv
   assertEquals(payloads.map(record => record.payload.item), input);
 });
 
+test('staged input payload ownership is isolated from later caller mutation', async () => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  const input: ResponsesInputItem[] = [{
+    type: 'message',
+    role: 'user',
+    content: [{ type: 'input_text', text: 'before' }],
+  }];
+  const store = createResponsesHttpStore(API_KEY_ID, true);
+
+  await store.stageInputItems(input);
+  (input[0] as { content: Array<{ text: string }> }).content[0]!.text = 'after';
+  await store.commitSnapshot('resp_input_owner', 'append');
+
+  const snapshot = await repo.responsesSnapshots.lookup(API_KEY_ID, 'resp_input_owner');
+  assertExists(snapshot);
+  const [payload] = await repo.responsesItems.lookupPayloads(API_KEY_ID, snapshot.itemIds);
+  assertExists(payload);
+  assertEquals((payload.payload.item as { content: Array<{ text: string }> }).content[0]!.text, 'before');
+});
+
+test('staged output payload ownership is isolated from later caller mutation', async () => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  const output = storedRow({
+    id: createStoredResponsesItemId('message'),
+    itemType: 'message',
+    origin: 'upstream',
+    payload: {
+      item: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'before' }] },
+    },
+  });
+  const store = createResponsesHttpStore(API_KEY_ID, true);
+
+  store.beginAttempt(new Map());
+  store.stageOutputItem(output);
+  ((output.payload!.item as { content: Array<{ text: string }> }).content[0]!).text = 'after';
+  await store.commitOutputItems();
+
+  const [payload] = await repo.responsesItems.lookupPayloads(API_KEY_ID, [output.id]);
+  assertExists(payload);
+  assertEquals((payload.payload.item as { content: Array<{ text: string }> }).content[0]!.text, 'before');
+});
+
 test('content-hash preload skips items already addressed by a stored id', async () => {
   const repo = new InMemoryRepo();
   initRepo(repo);
