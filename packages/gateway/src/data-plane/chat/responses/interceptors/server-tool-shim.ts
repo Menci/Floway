@@ -101,10 +101,8 @@ export type ServerToolDispatcher = (args: {
 
 type ServerToolDeclaration = ResponsesHostedTool | ResponsesNamespaceTool;
 
-// A registration owns one family of client-visible server-tool declarations.
-// `canonicalize` is the sole raw→canonical boundary; the selected declaration
-// is restored in response echoes while `buildFunctionTool` exposes the
-// gateway-internal function used by the orchestrator.
+// Keep declaration matching, function injection, and dispatch atomic so a
+// registration cannot silently omit part of a server-tool family.
 export interface ServerToolDeclarationDispatch {
   canonicalize: (raw: ResponsesTool) => ServerToolDeclaration | undefined;
   matchToolChoice: (choice: Exclude<ResponsesToolChoice, string>) => boolean;
@@ -135,9 +133,7 @@ export type ServerToolRegistration = (invocation: ResponsesInvocation, gatewayCt
 
 type ActiveServerTool = Extract<ServerToolPrepareResult, { type: 'active' }> & {
   toolName: string;
-  hasDeclaration: boolean;
-  // Present iff `hasDeclaration` is true; drives echo restore on the
-  // synthesized envelope's `tools`.
+  // Absent only for replay activation; otherwise drives `tools` echo restore.
   canonicalDeclaration: ServerToolDeclaration | undefined;
   // Captures the exact forced choice shape before request rewriting.
   originalToolChoice: Exclude<ResponsesToolChoice, string> | undefined;
@@ -237,18 +233,14 @@ const rewriteDeclarationToolChoice = (
 ): ResponsesToolChoice | null | undefined => {
   if (toolChoice == null || typeof toolChoice === 'string') return toolChoice;
   for (const entry of active) {
-    if (!entry.hasDeclaration || entry.declaration === undefined) continue;
+    if (entry.declaration === undefined) continue;
     if (entry.declaration.matchToolChoice(toolChoice)) return { type: 'function', name: entry.toolName };
   }
   return toolChoice;
 };
 
-// Reverse of `rewriteDeclarationToolChoice` for the upstream-echoed `tool_choice`
-// on synthesized envelopes. After the first intercepted turn, the shim changes
-// its own request choice to `auto` to let the orchestrator finish, so the final
-// upstream echo no longer contains the injected function choice. Any echoed
-// choice is therefore restored from the exact client shape captured before the
-// first rewrite.
+// The shim demotes forced choice to `auto` after the first turn, so synthesized
+// echoes restore the captured client shape rather than the final upstream echo.
 const restoreEchoedToolChoice = (
   toolChoice: ResponsesToolChoice | null | undefined,
   active: readonly ActiveServerTool[],
@@ -299,7 +291,7 @@ const rewriteToolsForServerToolShim = (
   tools: readonly ResponsesTool[],
   declaration: ServerToolDeclarationDispatch,
   toolName: string,
-): { rewritten: ResponsesTool[]; canonicalDeclaration: ServerToolDeclaration | undefined } => {
+): { rewritten: ResponsesTool[]; canonicalDeclaration: ServerToolDeclaration } => {
   const rewritten: ResponsesTool[] = [];
   let canonicalDeclaration: ServerToolDeclaration | undefined = undefined;
   let replacementIndex = -1;
@@ -315,9 +307,10 @@ const rewriteToolsForServerToolShim = (
     }
     canonicalDeclaration = canonical;
   }
-  if (canonicalDeclaration !== undefined) {
-    rewritten[replacementIndex] = declaration.buildFunctionTool(toolName);
+  if (canonicalDeclaration === undefined) {
+    throw new Error('Server-tool declaration registration did not match any request tool');
   }
+  rewritten[replacementIndex] = declaration.buildFunctionTool(toolName);
   return { rewritten, canonicalDeclaration };
 };
 
@@ -974,21 +967,19 @@ export const withResponsesServerToolShim = (
     const currentTools = Array.isArray(ctx.payload.tools) ? ctx.payload.tools : [];
     const toolName = resolveServerToolName(prepared.baseToolName, currentTools);
     const { declaration } = prepared;
-    const hasDeclaration = declaration !== undefined && currentTools.some(t => declaration.canonicalize(t) !== undefined);
     let canonicalDeclaration: ServerToolDeclaration | undefined = undefined;
-    if (hasDeclaration && declaration !== undefined) {
+    if (declaration !== undefined) {
       const rewrite = rewriteToolsForServerToolShim(currentTools, declaration, toolName);
       canonicalDeclaration = rewrite.canonicalDeclaration;
       ctx.payload = { ...ctx.payload, tools: rewrite.rewritten };
     }
-    const originalToolChoice = hasDeclaration
-      && declaration !== undefined
+    const originalToolChoice = declaration !== undefined
       && typeof ctx.payload.tool_choice === 'object'
       && ctx.payload.tool_choice !== null
       && declaration.matchToolChoice(ctx.payload.tool_choice)
       ? ctx.payload.tool_choice
       : undefined;
-    active.push({ ...prepared, toolName, hasDeclaration, canonicalDeclaration, originalToolChoice });
+    active.push({ ...prepared, toolName, canonicalDeclaration, originalToolChoice });
   }
 
   if (active.length === 0) return await run();
@@ -1004,7 +995,7 @@ export const withResponsesServerToolShim = (
 
   const declaredActive = active.filter(
     (entry): entry is ActiveServerTool & { declaration: ServerToolDeclarationDispatch } =>
-      entry.hasDeclaration && entry.declaration !== undefined,
+      entry.declaration !== undefined,
   );
   if (declaredActive.length === 0) return await run();
 

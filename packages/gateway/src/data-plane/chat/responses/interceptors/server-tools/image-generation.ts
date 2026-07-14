@@ -13,7 +13,6 @@ import type {
   ResponsesFunctionTool,
   ResponsesFunctionToolCallItem,
   ResponsesHostedTool,
-  ResponsesInputContent,
   ResponsesInputImage,
   ResponsesNamespaceTool,
   ResponsesInputImageGenerationCall,
@@ -25,10 +24,10 @@ import { providerModelOf, type Fetcher, type Provider, type ModelCandidate, type
 
 export const SHIM_TOOL_NAME = 'image_generation';
 
-// Default image backend when the hosted tool omits `model`. Microsoft's native
-// Azure Responses example pairs an orchestrator with `gpt-image-2` through the
-// `x-ms-oai-image-generation-deployment` header; operators provision it under
-// this public id (or alias it).
+// Default image backend for a hosted declaration without `model` and for the
+// Codex namespace declaration. Microsoft's native Azure Responses example
+// pairs an orchestrator with `gpt-image-2`; operators provision it under this
+// public id (or alias it).
 // https://github.com/Azure-Samples/azure-openai-responses-api-samples/blob/bd1d4fa776ced664d24ed35f691e4b9e0602af69/python/responses-image-generate-aoai-v1.py#L9-L18
 export const DEFAULT_IMAGE_MODEL = 'gpt-image-2';
 
@@ -88,9 +87,14 @@ const KNOWN_TOOL_FIELDS = new Set([
 export const isHostedImageGenerationTool = (tool: ResponsesTool): tool is ResponsesHostedTool =>
   tool.type === 'image_generation';
 
+// Codex's exact image_gen/imagegen namespace is a compatibility declaration;
+// Azure and Copilot reject it as a reserved namespace before inference.
+// https://github.com/caozhiyuan/copilot-api/issues/312
+// https://github.com/caozhiyuan/copilot-api/commit/e260303a1ccc48390b0b710fa40631562f1a37fb
 const isCodexImageGenerationNamespace = (tool: ResponsesTool): tool is ResponsesNamespaceTool =>
   tool.type === 'namespace'
   && tool.name === 'image_gen'
+  && typeof tool.description === 'string'
   && Array.isArray(tool.tools)
   && tool.tools.length === 1
   && typeof tool.tools[0] === 'object'
@@ -98,18 +102,8 @@ const isCodexImageGenerationNamespace = (tool: ResponsesTool): tool is Responses
   && tool.tools[0].type === 'function'
   && tool.tools[0].name === 'imagegen';
 
-export const isImageGenerationDeclaration = (tool: ResponsesTool): tool is ResponsesHostedTool | ResponsesNamespaceTool =>
+const isImageGenerationDeclaration = (tool: ResponsesTool): tool is ResponsesHostedTool | ResponsesNamespaceTool =>
   isHostedImageGenerationTool(tool) || isCodexImageGenerationNamespace(tool);
-
-// Identity canonicalization preserves the exact declaration selected for echo.
-// The namespace shape is a compatibility-only Codex form: Azure and Copilot
-// reject it before inference, so the shim consumes it rather than forwarding it.
-//
-// References:
-// - https://github.com/caozhiyuan/copilot-api/issues/312
-// - https://github.com/caozhiyuan/copilot-api/commit/e260303a1ccc48390b0b710fa40631562f1a37fb
-export const canonicalizeImageGenerationTool = (raw: ResponsesTool): ResponsesHostedTool | ResponsesNamespaceTool | undefined =>
-  isImageGenerationDeclaration(raw) ? raw : undefined;
 
 // A base64-data-URL or bare-base64 image source bound for an edit call.
 // Bytes are held in a concrete ArrayBuffer so they can be wrapped in a Blob.
@@ -453,15 +447,9 @@ const validateHostedImageGenerationEntry = (
   };
 };
 
-// Validate every recognized image declaration; the LAST declaration's config
-// wins. A 2026-07-12 production Azure `gpt-5.4` + `gpt-image-2` probe found that
-// duplicate hosted declarations collapse to one and the last entry supplies its
-// config, while the Codex namespace is rejected as reserved whether sent alone
-// or with a hosted declaration in either order. The namespace is therefore a
-// compatibility-only alternate declaration with native defaults, not something
-// forwarded to Azure. Microsoft's documented native path requires the image
-// deployment header shown here:
-// https://github.com/MicrosoftDocs/azure-ai-docs/blob/04c093649faec3beea023e8407d5af4c8119f7be/articles/foundry/agents/how-to/tools/image-generation.md#L310-L316
+// Validate every declaration even though the last complete declaration wins;
+// the Codex namespace selects native defaults.
+// https://github.com/Menci/Floway/pull/172#issuecomment-4971739422
 export const prepareImageGenerationConfig = (tools: readonly ResponsesTool[]): PrepareConfigResult => {
   let config: ImageGenerationConfig | undefined;
   for (const [i, tool] of tools.entries()) {
@@ -1503,7 +1491,7 @@ export const imageGenerationServerTool: ServerToolRegistration = async (invocati
     baseToolName: SHIM_TOOL_NAME,
     transformItems: transformInputItemsForImageGeneration,
     declaration: {
-      canonicalize: canonicalizeImageGenerationTool,
+      canonicalize: raw => isImageGenerationDeclaration(raw) ? raw : undefined,
       matchToolChoice: choice => choice.type === 'image_generation'
         || (choice.type === 'namespace' && choice.name === 'image_gen'),
       buildFunctionTool: buildImageGenerationFunctionTool,

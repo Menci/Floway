@@ -10,7 +10,6 @@ import {
   type ImageOutcome,
   imageGenerationServerTool,
   imageTerminal,
-  isImageGenerationDeclaration,
   isHostedImageGenerationTool,
   parseImageStreamEvent,
   parseRetryAfterMs,
@@ -26,7 +25,7 @@ import { InMemoryRepo } from '../../../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../../../test-helpers/gateway-ctx.ts';
 import type { ResponsesInvocation } from '../types.ts';
 import { initExternalResourceFetcher, initImageProcessor } from '@floway-dev/platform';
-import type { CanonicalResponsesPayload, ResponsesInputImage, ResponsesInputItem, ResponsesNamespaceFunctionTool, ResponsesPayload, ResponsesTool } from '@floway-dev/protocols/responses';
+import type { CanonicalResponsesPayload, ResponsesInputImage, ResponsesInputItem, ResponsesPayload, ResponsesTool } from '@floway-dev/protocols/responses';
 import { assert, assertEquals, assertFalse, assertStringIncludes, assertThrows, stubModelCandidate } from '@floway-dev/test-utils';
 
 const PNG_B64 = 'aGVsbG8='; // "hello" — any decodable base64 works for source tests.
@@ -90,17 +89,29 @@ test('isHostedImageGenerationTool matches only the hosted image_generation type'
   assertFalse(isHostedImageGenerationTool({ type: 'function', name: 'x', parameters: {}, strict: false } as ResponsesTool));
 });
 
-test('isImageGenerationDeclaration recognizes only the exact Codex image_gen namespace shape', () => {
-  const imagegen: ResponsesNamespaceFunctionTool = { type: 'function', name: 'imagegen', parameters: { type: 'object' }, strict: false };
-  assert(isImageGenerationDeclaration({ type: 'image_generation' }));
-  assert(isImageGenerationDeclaration({ type: 'namespace', name: 'image_gen', tools: [imagegen] }));
+test('imageGenerationServerTool activates only for the exact Codex image_gen namespace shape', async () => {
+  const imagegen = { type: 'function', name: 'imagegen', parameters: { type: 'object' }, strict: false } as const;
+  const valid: ResponsesTool = {
+    type: 'namespace',
+    name: 'image_gen',
+    description: 'Generate an image.',
+    tools: [imagegen],
+  };
+  const active = await imageGenerationServerTool(makeCtx({ tools: [valid] }), gatewayCtx());
+  assertEquals(active.type, 'active');
 
-  assertFalse(isImageGenerationDeclaration({ type: 'namespace', name: 'image_gen' } as ResponsesTool));
-  assertFalse(isImageGenerationDeclaration({ type: 'namespace', name: 'image_gen', tools: [null] } as unknown as ResponsesTool));
-  assertFalse(isImageGenerationDeclaration({ type: 'namespace', name: 'image_gen', tools: [] }));
-  assertFalse(isImageGenerationDeclaration({ type: 'namespace', name: 'image_gen', tools: [imagegen, imagegen] }));
-  assertFalse(isImageGenerationDeclaration({ type: 'namespace', name: 'image_gen', tools: [{ ...imagegen, name: 'other' }] }));
-  assertFalse(isImageGenerationDeclaration({ type: 'namespace', name: 'other', tools: [imagegen] }));
+  const invalid = [
+    { type: 'namespace', name: 'image_gen', tools: [imagegen] },
+    { type: 'namespace', name: 'image_gen', description: 'Generate an image.', tools: [null] },
+    { type: 'namespace', name: 'image_gen', description: 'Generate an image.', tools: [] },
+    { type: 'namespace', name: 'image_gen', description: 'Generate an image.', tools: [imagegen, imagegen] },
+    { type: 'namespace', name: 'image_gen', description: 'Generate an image.', tools: [{ ...imagegen, name: 'other' }] },
+    { type: 'namespace', name: 'other', description: 'Generate an image.', tools: [imagegen] },
+  ];
+  for (const declaration of invalid) {
+    const result = await imageGenerationServerTool(makeCtx({ tools: [declaration as unknown as ResponsesTool] }), gatewayCtx());
+    assertEquals(result.type, 'inactive');
+  }
 });
 
 // ── prepareImageGenerationConfig ──
@@ -174,6 +185,7 @@ test('prepareImageGenerationConfig uses namespace defaults when the exact Codex 
     {
       type: 'namespace',
       name: 'image_gen',
+      description: 'Generate an image.',
       tools: [{ type: 'function', name: 'imagegen', parameters: { type: 'object' }, strict: false }],
     },
   ]);
@@ -187,6 +199,7 @@ test('prepareImageGenerationConfig uses hosted config when a hosted declaration 
     {
       type: 'namespace',
       name: 'image_gen',
+      description: 'Generate an image.',
       tools: [{ type: 'function', name: 'imagegen', parameters: { type: 'object' }, strict: false }],
     },
     { type: 'image_generation', quality: 'high' },

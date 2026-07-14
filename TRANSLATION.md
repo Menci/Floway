@@ -206,20 +206,18 @@ steps.
   missing durable payload returns `item_not_found`, and no provider receives an
   `item_reference` carrier.
 
-- canonicalizes each supported server-tool declaration family before exposing
-  one collision-resolved function to the orchestrator. Repeated declarations,
-  including equivalent web-search aliases, collapse to the last declaration's
-  complete shape and configuration; Azure and Copilot return the same result
-  for distinguishable reversed controls ([probe evidence](https://github.com/Menci/Floway/pull/172#issuecomment-4971739422)).
-- executes `image_generation` through the gateway server-tool shim for
-  translated targets and native Responses providers that opt into the shim.
-  The shim recognizes both the hosted declaration and Codex's exact deferred
-  `{ type: "namespace", name: "image_gen", tools: [{ type: "function", name:
-  "imagegen", ... }] }` shape. It consumes every matching declaration before
-  the provider boundary, exposes one collision-resolved function to the
-  orchestrator, emits the native `image_generation_call` lifecycle, and
-  restores the selected declaration and forced `tool_choice` in response
-  echoes. Unrelated namespaces remain untouched.
+- executes supported `web_search` and `image_generation` declaration families
+  through the server-tool shim for translated targets and native Responses
+  providers that opt in. Each family validates every declaration, selects the
+  last complete declaration, injects one collision-resolved function, executes
+  the configured backend, and restores the selected declaration plus a matching
+  declaration-specific `tool_choice` object in synthesized echoes. Equivalent
+  web-search aliases follow the same last-wins rule on Azure and Copilot
+  ([probe evidence](https://github.com/Menci/Floway/pull/172#issuecomment-4971739422)).
+  Image generation also recognizes Codex's exact deferred `{ type: "namespace",
+  name: "image_gen", tools: [{ type: "function", name: "imagegen", ... }] }`
+  declaration and emits the native `image_generation_call` lifecycle; unrelated
+  namespaces remain untouched.
 - prepares image edits by flattening sources in declaration order from message
   content, function/custom tool output, and replayed image-generation results.
   Remote HTTP(S) sources are downloaded once through the shared external-image
@@ -230,13 +228,11 @@ steps.
   an explicit `unsupported_image_source` because it requires the owning
   upstream's authenticated Files namespace. GIF sources are transcoded to WebP
   for `/images/edits`, and a mask alone supplies edit context for `auto`/`edit`.
-- removes unsupported `image_generation` Responses tool entries and forced
-  tool choices that targeted them before target request construction. Other
-  hosted/deferred Responses tools, including `web_search`, `tool_search`, and
-  `namespace`, remain visible to native Responses targets. Translated
-  Messages/Chat targets currently narrow tool conversion to `function` and
-  Freeform `custom` tools; the hosted/deferred translated semantics are
-  tracked separately.
+- after supported server-tool declarations have become ordinary functions,
+  translated Messages/Chat targets retain those functions while omitting
+  remaining hosted/deferred declarations and choices they cannot represent.
+  The generic gateway layer leaves unconsumed declarations to native provider
+  boundaries.
 - preserves Freeform `custom` tools: native Responses targets receive them
   directly; translated targets wrap them as single-string function tools (see
   "Responses Custom Tool Wrapping").

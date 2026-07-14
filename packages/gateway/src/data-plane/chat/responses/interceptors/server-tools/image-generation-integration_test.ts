@@ -163,6 +163,7 @@ const scriptedRun = (turns: ProtocolFrame<ResponsesStreamEvent>[][]) => {
 const codexImageNamespace: ResponsesTool = {
   type: 'namespace',
   name: 'image_gen',
+  description: 'Generate or edit an image.',
   tools: [{ type: 'function', name: 'imagegen', parameters: { type: 'object' }, strict: false }],
 };
 
@@ -390,7 +391,7 @@ test('canonicalizes mixed image declarations to one replacement with the last de
 
 test('leaves unrelated namespaces untouched while consuming the exact image namespace', async () => {
   stub.nextGenerations = [jsonResponse('R0VO')];
-  const unrelated = { type: 'namespace', name: 'browser', tools: [] } as ResponsesTool;
+  const unrelated = { type: 'namespace', name: 'browser', description: 'Browse.', tools: [] } as ResponsesTool;
   const invocation = makeCtxWithTools([], [unrelated, codexImageNamespace]);
   const replacement = { type: 'function', name: SHIM_TOOL_NAME, parameters: {}, strict: false } as ResponsesTool;
   const result = await shim(invocation, gatewayCtx(), scriptedRun([

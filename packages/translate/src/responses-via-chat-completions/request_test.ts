@@ -1463,7 +1463,7 @@ test('translateResponsesToChatCompletions rejects nested namespace programmatic 
     () => translateResponsesToChatCompletions({
       model: 'gpt-test',
       input: 'hi',
-      tools: [{ type: 'namespace', name: 'ops', description: 'ops', tools: [{ type: 'custom', name: 'exec', allowed_callers: ['programmatic'] }] } as unknown as ResponsesTool],
+      tools: [{ type: 'namespace', name: 'ops', description: 'ops', tools: [{ type: 'custom', name: 'exec', allowed_callers: ['programmatic'] }] }],
     }),
     Error,
     'Programmatic',

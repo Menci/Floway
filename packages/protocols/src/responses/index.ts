@@ -552,17 +552,21 @@ export interface ResponsesHostedTool {
 export interface ResponsesNamespaceFunctionTool {
   type: 'function';
   name: string;
-  parameters?: Record<string, unknown>;
-  strict?: boolean;
-  description?: string;
+  allowed_callers?: ResponsesToolAllowedCaller[] | null;
+  defer_loading?: boolean;
+  description?: string | null;
+  output_schema?: Record<string, unknown> | null;
+  parameters?: unknown | null;
+  strict?: boolean | null;
   [key: string]: unknown;
 }
 
+// https://github.com/openai/openai-node/blob/1cdc0196b4341ee641ec6839e08744b2771250e4/src/resources/responses/responses.ts#L937-L994
 export interface ResponsesNamespaceTool {
   type: 'namespace';
   name: string;
-  tools: ResponsesNamespaceFunctionTool[];
-  description?: string;
+  description: string;
+  tools: Array<ResponsesNamespaceFunctionTool | ResponsesCustomTool>;
   [key: string]: unknown;
 }
 
@@ -626,7 +630,7 @@ export type ResponsesToolChoice =
   | 'required'
   | { type: 'function'; name: string }
   | { type: 'custom'; name: string }
-  | { type: 'namespace'; name?: string }
+  | { type: 'namespace'; name: string }
   | { type: 'programmatic_tool_calling' }
   | { type: ResponsesHostedToolType };
 
