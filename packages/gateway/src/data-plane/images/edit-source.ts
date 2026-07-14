@@ -5,16 +5,23 @@ export interface ImageEditSource {
   mimeType: string;
 }
 
-const EDIT_MIME_ALIASES: Record<string, string> = {
+export type ImageEditMime = 'image/png' | 'image/jpeg' | 'image/webp';
+
+export interface PreparedImageEditSource extends ImageEditSource {
+  mimeType: ImageEditMime;
+}
+
+const EDIT_MIME_ALIASES: Record<string, ImageEditMime> = {
   'image/jpg': 'image/jpeg',
   'image/pjpeg': 'image/jpeg',
   'image/x-png': 'image/png',
 };
-const EDIT_SUPPORTED_MIMES = new Set(['image/png', 'image/jpeg', 'image/webp']);
 
-export const editSupportedMime = (mime: string): string | null => {
+export const editSupportedMime = (mime: string): ImageEditMime | null => {
   const canonical = EDIT_MIME_ALIASES[mime] ?? mime;
-  return EDIT_SUPPORTED_MIMES.has(canonical) ? canonical : null;
+  return canonical === 'image/png' || canonical === 'image/jpeg' || canonical === 'image/webp'
+    ? canonical
+    : null;
 };
 
 export const supportedImageMimeFromBytes = (bytes: Uint8Array): string | null => {
@@ -43,11 +50,12 @@ export const supportedImageMimeFromBytes = (bytes: Uint8Array): string | null =>
   return null;
 };
 
-export const prepareImageEditSources = async (sources: readonly ImageEditSource[]): Promise<readonly ImageEditSource[]> => {
+export const prepareImageEditSources = async (sources: readonly ImageEditSource[]): Promise<readonly PreparedImageEditSource[]> => {
   const keyBySource = new Map<ImageEditSource, Promise<string>>();
-  const preparedByContent = new Map<string, Promise<ImageEditSource>>();
+  const preparedByContent = new Map<string, Promise<PreparedImageEditSource>>();
   return await Promise.all(sources.map(async source => {
-    if (editSupportedMime(source.mimeType) !== null) return source;
+    const mimeType = editSupportedMime(source.mimeType);
+    if (mimeType !== null) return { bytes: source.bytes, mimeType };
 
     let keyPromise = keyBySource.get(source);
     if (keyPromise === undefined) {
@@ -66,7 +74,7 @@ export const prepareImageEditSources = async (sources: readonly ImageEditSource[
       // https://github.com/openai/openai-node/blob/ec2f57fd0d66e94782656b986d7b3eb03225369c/src/resources/images.ts#L560-L572
       prepared = getImageProcessor().compressToWebp(new Uint8Array(source.bytes), null).then(encoded => {
         const bytes = encoded.buffer.slice(encoded.byteOffset, encoded.byteOffset + encoded.byteLength) as ArrayBuffer;
-        return { bytes, mimeType: 'image/webp' };
+        return { bytes, mimeType: 'image/webp' } satisfies PreparedImageEditSource;
       });
       preparedByContent.set(key, prepared);
     }

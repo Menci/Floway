@@ -1,5 +1,11 @@
 import { sleep } from '../../../../../shared/sleep.ts';
-import { editSupportedMime, prepareImageEditSources, supportedImageMimeFromBytes, type ImageEditSource } from '../../../../images/edit-source.ts';
+import {
+  prepareImageEditSources,
+  supportedImageMimeFromBytes,
+  type ImageEditMime,
+  type ImageEditSource,
+  type PreparedImageEditSource,
+} from '../../../../images/edit-source.ts';
 import { enumerateModelCandidates } from '../../../../providers/registry.ts';
 import { appendFailedUpstreams } from '../../../../shared/failed-upstreams.ts';
 import { recordPerformance, type PerformanceTelemetryContext } from '../../../../shared/telemetry/performance.ts';
@@ -49,7 +55,7 @@ const ALLOWED_MODERATIONS = new Set(['auto', 'low']);
 const ALLOWED_ACTIONS = new Set(['generate', 'edit', 'auto']);
 const ALLOWED_INPUT_FIDELITY = new Set(['high', 'low']);
 
-const editFileExt = (mime: string): string =>
+const editFileExt = (mime: ImageEditMime): string =>
   mime === 'image/jpeg' ? 'jpg' : mime === 'image/webp' ? 'webp' : 'png';
 
 // The public `image_generation` tool-config surface. Azure rejects any other
@@ -205,14 +211,14 @@ export interface ImageGenerationConfig {
 const prepareEditRequest = async (
   sources: readonly ImageSource[],
   config: ImageGenerationConfig,
-): Promise<{ sources: readonly ImageSource[]; config: ImageGenerationConfig }> => {
+): Promise<{ sources: readonly PreparedImageEditSource[]; mask?: PreparedImageEditSource }> => {
   if (config.mask !== undefined && isRemoteImageSource(config.mask)) {
     throw new Error('Remote image mask reached edit dispatch before materialization');
   }
   const originals = [...sources];
   if (config.mask !== undefined && !originals.includes(config.mask)) originals.push(config.mask);
   const prepared = await prepareImageEditSources(originals);
-  const bySource = new Map<ImageSource, ImageSource>();
+  const bySource = new Map<ImageSource, PreparedImageEditSource>();
   for (const [index, source] of originals.entries()) {
     const wireSource = prepared[index];
     if (wireSource === undefined) throw new Error('Missing prepared image edit source');
@@ -223,10 +229,10 @@ const prepareEditRequest = async (
     if (wireSource === undefined) throw new Error('Missing prepared image edit source');
     return wireSource;
   });
-  if (config.mask === undefined) return { sources: wireSources, config };
+  if (config.mask === undefined) return { sources: wireSources };
   const mask = bySource.get(config.mask);
   if (mask === undefined) throw new Error('Missing prepared image edit mask');
-  return { sources: wireSources, config: { ...config, mask } };
+  return { sources: wireSources, mask };
 };
 
 interface PrepareConfigError {
@@ -852,7 +858,13 @@ export const buildGenerationsBody = (prompt: string, config: ImageGenerationConf
   ...(stream ? { stream: true, partial_images: config.partial_images } : {}),
 });
 
-const buildEditsForm = (prompt: string, config: ImageGenerationConfig, sources: readonly ImageSource[], stream: boolean): FormData => {
+const buildEditsForm = (
+  prompt: string,
+  config: ImageGenerationConfig,
+  sources: readonly PreparedImageEditSource[],
+  mask: PreparedImageEditSource | undefined,
+  stream: boolean,
+): FormData => {
   const form = new FormData();
   form.append('prompt', prompt);
   form.append('n', '1');
@@ -868,23 +880,24 @@ const buildEditsForm = (prompt: string, config: ImageGenerationConfig, sources: 
     form.append('partial_images', String(config.partial_images));
   }
   for (const [i, source] of sources.entries()) {
-    // Forward the canonical supported mime; an unsupported source is rejected
-    // before dispatch, so the fallback only ever carries an already-supported
-    // generated image. Sending the raw mime (rather than relabeling as png)
-    // keeps a stray unsupported byte stream failing loud at the backend.
-    const mime = editSupportedMime(source.mimeType) ?? source.mimeType;
     // `image[]` repeated parts: gpt-image accepts multiple, resolving "the
     // Nth image" against attach order (see `inspectImageSources`).
-    form.append('image[]', new Blob([source.bytes], { type: mime }), `image_${i}.${editFileExt(mime)}`);
+    form.append('image[]', new Blob([source.bytes], { type: source.mimeType }), `image_${i}.${editFileExt(source.mimeType)}`);
   }
-  if (config.mask !== undefined) {
-    if (isRemoteImageSource(config.mask)) throw new Error('Remote image mask reached form encoding before materialization');
-    const mask = config.mask;
-    const mime = editSupportedMime(mask.mimeType) ?? mask.mimeType;
-    form.append('mask', new Blob([mask.bytes], { type: mime }), `mask.${editFileExt(mime)}`);
+  if (mask !== undefined) {
+    form.append('mask', new Blob([mask.bytes], { type: mask.mimeType }), `mask.${editFileExt(mask.mimeType)}`);
   }
   return form;
 };
+
+type ImageCallRequest =
+  | { type: 'generation'; config: ImageGenerationConfig }
+  | {
+    type: 'edit';
+    config: ImageGenerationConfig;
+    sources: readonly PreparedImageEditSource[];
+    mask?: PreparedImageEditSource;
+  };
 
 const serverError = (e: unknown): ImageError => ({
   type: 'image_generation_error',
@@ -991,9 +1004,7 @@ const issueImageCall = async (
   model: ProviderModel,
   fetcher: Fetcher,
   prompt: string,
-  isEdit: boolean,
-  sources: readonly ImageSource[],
-  config: ImageGenerationConfig,
+  request: ImageCallRequest,
   state: ShimState,
   stream: boolean,
   attempt: AttemptState,
@@ -1010,9 +1021,19 @@ const issueImageCall = async (
       // retry so it reflects the dispatch that actually returned.
       wrapUpstreamCall: stampUpstreamCallStart(attempt),
     };
-    const { response, modelKey } = await (isEdit
-      ? provider.instance.callImagesEdits(model, buildEditsForm(prompt, config, sources, stream), state.downstreamAbortSignal, opts)
-      : provider.instance.callImagesGenerations(model, buildGenerationsBody(prompt, config, stream), state.downstreamAbortSignal, opts));
+    const { response, modelKey } = await (request.type === 'edit'
+      ? provider.instance.callImagesEdits(
+          model,
+          buildEditsForm(prompt, request.config, request.sources, request.mask, stream),
+          state.downstreamAbortSignal,
+          opts,
+        )
+      : provider.instance.callImagesGenerations(
+          model,
+          buildGenerationsBody(prompt, request.config, stream),
+          state.downstreamAbortSignal,
+          opts,
+        ));
     if (response.status !== 429 || retry >= MAX_RATE_LIMIT_RETRIES) return { response, modelKey };
 
     // 25% jitter desynchronizes parallel callers so a burst of orchestrator
@@ -1178,17 +1199,15 @@ const streamImageGeneration = (
   let response: Response;
   let modelKey: string;
   try {
-    const prepared = isEdit
-      ? await prepareEditRequest(sources, state.config)
-      : { sources, config: state.config };
+    const request: ImageCallRequest = isEdit
+      ? { type: 'edit', config: state.config, ...await prepareEditRequest(sources, state.config) }
+      : { type: 'generation', config: state.config };
     ({ response, modelKey } = await issueImageCall(
       provider,
       model,
       fetcher,
       prompt,
-      isEdit,
-      prepared.sources,
-      prepared.config,
+      request,
       state,
       wantsPartials,
       attempt,
