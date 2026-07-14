@@ -7,6 +7,7 @@ import { responsesAttempt } from '../responses/attempt.ts';
 import { rewriteStoredItemsInSourceForCandidate } from '../responses/items/rewrite.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import { tryCatchChatServeFailure } from '../shared/errors.ts';
+import { createExternalImageLoader } from '../shared/external-image-loader.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { traverseTranslation } from '../shared/translate-traverse.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
@@ -59,6 +60,7 @@ export const chatCompletionsAttempt = {
           p => translateChatCompletionsViaMessages(p, {
             model: candidate.model.id,
             fallbackMaxOutputTokens: candidate.model.limits.max_output_tokens,
+            loadRemoteImage: createExternalImageLoader(ctx.abortSignal),
           }),
           translated => messagesAttempt.generate({
             payload: translated, ctx, candidate, headers: invocation.headers,

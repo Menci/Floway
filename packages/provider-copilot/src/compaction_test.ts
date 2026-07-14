@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import type { ResponsesInputItem, ResponsesResult } from '@floway-dev/protocols/responses';
+import type { ResponsesInputItem, ResponsesInputText, ResponsesResult } from '@floway-dev/protocols/responses';
 import { compactionResponse } from '@floway-dev/provider';
 
 const generatedResult = (output: unknown[]): ResponsesResult =>
@@ -38,15 +38,20 @@ test('keeps retained user/assistant/developer/system messages and appends the co
 
 test('normalizes every retained text part to input_text — assistant output_text included', () => {
   const input: ResponsesInputItem[] = [
-    { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'reply' }] },
+    {
+      type: 'message',
+      role: 'assistant',
+      content: [{ type: 'output_text', text: 'reply', prompt_cache_breakpoint: { mode: 'explicit' } }],
+    },
     { type: 'message', role: 'user', content: 'plain string' },
   ];
   const result = compactionResponse(input, generatedResult([compaction]));
 
   // Both retained messages echo with `input_text` parts, regardless of original part type.
-  const assistantPart = (result.output[0] as { content: Array<{ type: string }> }).content[0];
+  const assistantPart = (result.output[0] as { content: ResponsesInputText[] }).content[0];
   const userPart = (result.output[1] as { content: Array<{ type: string }> }).content[0];
   expect(assistantPart.type).toBe('input_text');
+  expect(assistantPart.prompt_cache_breakpoint).toEqual({ mode: 'explicit' });
   expect(userPart.type).toBe('input_text');
 });
 

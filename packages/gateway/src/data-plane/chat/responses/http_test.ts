@@ -463,6 +463,8 @@ test('POST /v1/responses/compact routes a codex-auto-review request through the 
     body: JSON.stringify({
       model: 'codex-auto-review',
       input: [{ type: 'message', role: 'user', content: 'kept' }],
+      prompt_cache_options: { mode: 'explicit', ttl: '30m' },
+      prompt_cache_retention: '24h',
     }),
   });
 
@@ -471,6 +473,8 @@ test('POST /v1/responses/compact routes a codex-auto-review request through the 
   const observed = observedBodies[0];
   if (observed === undefined) throw new Error('expected callResponses to receive a body');
   assertEquals(observed.reasoning?.effort, 'low');
+  assertEquals(observed.prompt_cache_options, { mode: 'explicit', ttl: '30m' });
+  assertEquals(observed.prompt_cache_retention, '24h');
 });
 
 test('POST /v1/responses renders the OpenAI-shaped model-unsupported 400 when no candidate matches the responses picker', async () => {

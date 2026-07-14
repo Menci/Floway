@@ -3,7 +3,7 @@ import { responsesReasoningToMessagesUpstreamBlock } from '../shared/messages-an
 import { buildCustomToolInputSchema } from '../shared/responses-via/custom-tool-wrap.ts';
 import { rejectProgramCaller, rejectProgrammaticResponsesPayload } from '../shared/responses-via/programmatic-tooling.ts';
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../shared/via-messages/cache-breakpoints.ts';
-import { fetchRemoteImage, type RemoteImageLoader, resolveImageUrlToMessagesImage } from '../shared/via-messages/remote-images.ts';
+import { type RemoteImageLoader, resolveImageUrlToMessagesImage, unavailableRemoteImageLoader } from '../shared/via-messages/remote-images.ts';
 import { canonicalizeResponsesPayload } from '../shared/via-responses/responses-items.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
 import {
@@ -337,7 +337,7 @@ export const translateResponsesToMessages = async (source: ResponsesRequestPaylo
   const payload = canonicalizeResponsesPayload(source);
   rejectProgrammaticResponsesPayload(payload, 'Messages');
   const customToolNames = new Set<string>();
-  const { messages, systemBlocks: hoistedSystemBlocks } = await translateResponsesInput(payload.input, options.loadRemoteImage ?? fetchRemoteImage);
+  const { messages, systemBlocks: hoistedSystemBlocks } = await translateResponsesInput(payload.input, options.loadRemoteImage ?? unavailableRemoteImageLoader);
   const tools = translateTools(payload.tools, customToolNames);
   // `payload.instructions` is the Responses canonical system field; leading
   // system/developer input items contribute additional blocks immediately
@@ -406,5 +406,5 @@ export const translateResponsesToMessages = async (source: ResponsesRequestPaylo
   return { target, customToolNames };
 };
 
-export const buildTargetRequest = (payload: ResponsesRequestPayload, options: { fallbackMaxOutputTokens?: number }): Promise<ResponsesToMessagesResult> =>
+export const buildTargetRequest = (payload: ResponsesRequestPayload, options: TranslateResponsesToMessagesOptions): Promise<ResponsesToMessagesResult> =>
   translateResponsesToMessages(payload, options);
