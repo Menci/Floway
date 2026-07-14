@@ -6,7 +6,6 @@ import { createCopilotProvider } from './provider.ts';
 import { readCopilotUpstreamState, type CopilotUpstreamState } from './state.ts';
 import type { CopilotModelsResponse } from './types.ts';
 import { createInMemoryImageProcessor, initImageProcessor } from '@floway-dev/platform';
-import type { ChatCompletionsMessage } from '@floway-dev/protocols/chat-completions';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { directFetcher, initProviderRepo } from '@floway-dev/provider';
