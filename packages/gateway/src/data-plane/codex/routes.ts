@@ -3,12 +3,11 @@
 // OAuth ("ChatGPT") mode has two independently configured bases:
 //
 //   chatgpt_base_url             — analytics, plugins, agent identity, Apps MCP
-//   model_providers.x.base_url   — models, Responses HTTP/WS, remote compaction
+//   model_providers.x.base_url   — models, Responses, compaction, image requests
 //
 // The dashboard points both at this namespace. Codex appends `models`,
 // `responses`, `responses/compact`, `images/generations`, and `images/edits`
-// directly to the
-// model-provider base:
+// directly to the model-provider base:
 // https://github.com/openai/codex/blob/44918ea10c0f99151c6710411b4322c2f5c96bea/codex-rs/codex-api/src/endpoint/models.rs#L31-L43
 // https://github.com/openai/codex/blob/44918ea10c0f99151c6710411b4322c2f5c96bea/codex-rs/codex-api/src/endpoint/responses.rs#L100-L102
 // https://github.com/openai/codex/blob/44918ea10c0f99151c6710411b4322c2f5c96bea/codex-rs/codex-api/src/endpoint/compact.rs#L35-L57

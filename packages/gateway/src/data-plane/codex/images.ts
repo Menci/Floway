@@ -27,8 +27,11 @@ type LoadedImage =
   | { type: 'ok'; source: ImageEditSource }
   | { type: 'invalid'; message: string };
 
-const imageBytes = (data: Uint8Array): ArrayBuffer =>
-  data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer;
+const imageBytes = (data: Uint8Array): ArrayBuffer => data.byteOffset === 0
+  && data.buffer instanceof ArrayBuffer
+  && data.byteLength === data.buffer.byteLength
+  ? data.buffer
+  : Uint8Array.from(data).buffer;
 
 const decodeDataUrl = (value: string, index: number): LoadedImage | null => {
   const match = /^data:image\/[a-z0-9.+-]+;base64,(.*)$/isu.exec(value);

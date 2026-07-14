@@ -47,7 +47,7 @@ const controlPlaneFetch = (request: Request): Response | undefined => {
   return undefined;
 };
 
-test('Codex provider-relative image generation reuses the public JSON route', async () => {
+test('Codex provider-relative image generation reuses the public image-generation handler', async () => {
   const { apiKey, repo } = await setupAppTest();
   await saveAzureImages(repo);
   let observedUrl: string | undefined;
