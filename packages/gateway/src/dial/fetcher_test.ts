@@ -144,7 +144,7 @@ describe('createFetcher', () => {
       upstreamId: 'u',
       // 'p_unknown' is in the list but not in proxyById — simulating a
       // mid-request DELETE between catalog load and dial. The chain must
-      // advance to 'direct' rather than killing the whole call.
+      // advance to direct-fetch rather than killing the whole call.
       fallbackList: [{ id: 'p_unknown' }, { id: 'direct_fetch' }],
       runtimeLocation: 'TEST',
       proxyById: new Map(),
@@ -163,7 +163,7 @@ describe('createFetcher', () => {
     const fetcher = createFetcher({
       repo,
       upstreamId: 'u',
-      // No 'direct' fallback — the only entry is the unknown id, so the
+      // No direct-fetch fallback — the only entry is the unknown id, so the
       // call fails and the typed ProxyDialError surfaces directly (single-
       // entry chains skip the AggregateError wrapper).
       fallbackList: [{ id: 'p_unknown' }],
