@@ -5,6 +5,8 @@ import type {
   DumpRecordId,
   DumpStreamEvent,
   DumpUpstreamRef,
+  DumpWriteRecord,
+  PreparedDumpRequestBody,
   StoredDumpRecord,
   StoredDumpRequest,
   StoredDumpResponse,
@@ -88,7 +90,7 @@ const gunzip = async (bytes: Uint8Array): Promise<Uint8Array> => {
   return new Uint8Array(await stream.arrayBuffer());
 };
 
-const putBody = async (
+const putRawBody = async (
   files: FileProvider,
   key: string,
   rawBytes: Uint8Array,
@@ -97,6 +99,16 @@ const putBody = async (
   const gz = await gzip(rawBytes);
   await files.put(key, gz);
   return { key, type };
+};
+
+const putPreparedBody = async (
+  files: FileProvider,
+  key: string,
+  prepared: PreparedDumpRequestBody,
+): Promise<BodyDescriptor> => {
+  const gz = prepared.encoding === 'gzip' ? prepared.bytes : await gzip(prepared.bytes);
+  await files.put(key, gz);
+  return { key, type: 'bytes' };
 };
 
 const fetchBody = async (files: FileProvider, descriptor: BodyDescriptor): Promise<Uint8Array> => {
@@ -108,19 +120,27 @@ const fetchBody = async (files: FileProvider, descriptor: BodyDescriptor): Promi
 export class FileDumpStore implements DumpStore {
   constructor(private readonly db: SqlDatabase, private readonly files: FileProvider) {}
 
-  async put(keyId: string, record: StoredDumpRecord): Promise<void> {
+  async prepareRequestBody(body: Uint8Array): Promise<PreparedDumpRequestBody> {
+    return {
+      encoding: 'gzip',
+      bytes: await gzip(body),
+      decodedByteLength: body.byteLength,
+    };
+  }
+
+  async put(keyId: string, record: DumpWriteRecord): Promise<void> {
     const bucket = hourBucket(record.meta.completedAt);
-    const requestDescriptor = record.request.body.byteLength === 0
+    const requestDescriptor = record.request.body.decodedByteLength === 0
       ? null
-      : await putBody(this.files, bodyPath(keyId, bucket, record.meta.id, 'req'), record.request.body, 'bytes');
+      : await putPreparedBody(this.files, bodyPath(keyId, bucket, record.meta.id, 'req'), record.request.body);
 
     let responseDescriptor: BodyDescriptor | null = null;
     if (record.response.body.type === 'bytes') {
       if (record.response.body.body.byteLength > 0) {
-        responseDescriptor = await putBody(this.files, bodyPath(keyId, bucket, record.meta.id, 'resp'), record.response.body.body, 'bytes');
+        responseDescriptor = await putRawBody(this.files, bodyPath(keyId, bucket, record.meta.id, 'resp'), record.response.body.body, 'bytes');
       }
     } else if (record.response.body.type === 'stream') {
-      responseDescriptor = await putBody(this.files, bodyPath(keyId, bucket, record.meta.id, 'resp'), new TextEncoder().encode(JSON.stringify(record.response.body.events)), 'events');
+      responseDescriptor = await putRawBody(this.files, bodyPath(keyId, bucket, record.meta.id, 'resp'), new TextEncoder().encode(JSON.stringify(record.response.body.events)), 'events');
     }
 
     // Strip the in-memory `upstream` field; the ref is rebuilt from the join

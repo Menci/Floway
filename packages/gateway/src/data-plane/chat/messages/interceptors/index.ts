@@ -1,18 +1,19 @@
 import { demoteInterleavedSystemToUser } from './demote-interleaved-system-to-user.ts';
 import { withReasoningDisabledOnForcedToolChoice } from './disable-reasoning-on-forced-tool-choice.ts';
 import { stripBillingAttribution } from './strip-billing-attribution.ts';
-import type { MessagesCountTokensInterceptor, MessagesInterceptor } from './types.ts';
-import { withMessagesWebSearchShim } from './web-search-shim.ts';
+import type { MessagesCountTokensInterceptor, MessagesInterceptor, MessagesPayloadInterceptor } from './types.ts';
+import { withMessagesWebSearchRequestPrepared, withMessagesWebSearchShim } from './web-search-shim.ts';
 
-// Unified Messages interceptor list. All entries are attached to every
-// candidate; each interceptor's body decides whether to act (flag-gated entries
-// early-return on `providerModelOf(ctx.candidate).enabledFlags.has(flagId)`).
+// Unified Messages generation chain. All entries are attached to every
+// candidate; each interceptor decides whether to act from the candidate's
+// model flags and selected target.
 //
-// Order follows source-then-target semantics collapsed into a single chain:
-//   - withMessagesWebSearchShim: registered first so its replay rewrite and
-//     intercept loop wrap the rest of the chain. Unconditional for translated
-//     targets (Responses / Chat Completions cannot carry Anthropic server
-//     tools); gated by `messages-web-search-shim` for native Messages targets.
+//   - withMessagesWebSearchShim: registered first so its request preparation,
+//     replay rewrite, and intercept loop wrap the rest of the generation chain.
+//     Unconditional for translated targets (Responses / Chat Completions cannot
+//     carry Anthropic server tools); gated by `messages-web-search-shim` for
+//     native Messages targets. count_tokens runs the same request preparation
+//     without the stream-response wrapper.
 //   - stripBillingAttribution: gated by `strip-billing-attribution` (default
 //     on for copilot/azure/custom, off for claude-code). On candidates
 //     where it runs, it scrubs Claude Code's `x-anthropic-billing-header` /
@@ -21,20 +22,26 @@ import { withMessagesWebSearchShim } from './web-search-shim.ts';
 //     because Anthropic uses it for plan-tier billing.
 //   - withReasoningDisabledOnForcedToolChoice: gated by
 //     `disable-reasoning-on-forced-tool-choice`.
-//   - demoteInterleavedSystemToUser: gated by
-//     `demote-interleaved-system-to-user`. Anthropic's top-level
-//     `payload.system` is conceptually the first-position system slot, so
-//     every inline `role: 'system'` message in `payload.messages` is by
-//     definition interleaved and gets rewritten to `role: 'user'`.
-export const messagesInterceptors: readonly MessagesInterceptor[] = [
-  withMessagesWebSearchShim,
+//   - demoteInterleavedSystemToUser: Anthropic's top-level `payload.system` is
+//     the only first-position system slot, so the interleaved-system flag
+//     rewrites every inline system message to user.
+//
+// The remaining three entries mutate only the request payload and are shared
+// with count_tokens in the same order. Token counting therefore observes the
+// same gateway-level billing-attribution, reasoning, and role shape as
+// generation.
+const messagesPayloadInterceptors: readonly MessagesPayloadInterceptor[] = [
   stripBillingAttribution,
   withReasoningDisabledOnForcedToolChoice,
   demoteInterleavedSystemToUser,
 ];
 
-// The shipped Messages interceptors all inspect post-`run()` event streams,
-// which the non-streaming count_tokens path cannot supply — so the list
-// stays empty today. Kept as a separate readonly array so the count-tokens
-// attempt has a clear extension point.
-export const messagesCountTokensInterceptors: readonly MessagesCountTokensInterceptor[] = [];
+export const messagesInterceptors: readonly MessagesInterceptor[] = [
+  withMessagesWebSearchShim,
+  ...messagesPayloadInterceptors,
+];
+
+export const messagesCountTokensInterceptors: readonly MessagesCountTokensInterceptor[] = [
+  withMessagesWebSearchRequestPrepared,
+  ...messagesPayloadInterceptors,
+];

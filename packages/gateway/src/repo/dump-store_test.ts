@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { test } from 'vitest';
 
 import { FileDumpStore } from './dump-store.ts';
-import type { StoredDumpRecord } from '../dump/types.ts';
+import type { DumpWriteRecord } from '../dump/types.ts';
 import { MemoryFileProvider } from '@floway-dev/platform';
 import type { FileProvider, SqlDatabase, SqlPreparedStatement, SqlResult } from '@floway-dev/platform';
 import { assertEquals, assertExists } from '@floway-dev/test-utils';
@@ -61,7 +61,9 @@ const openDb = async (): Promise<SqlDatabase> => {
 
 const utf8 = (s: string): Uint8Array => new TextEncoder().encode(s);
 
-const baseRecord = (id: string, completedAt: number): StoredDumpRecord => ({
+const requestBody = utf8('{"hello":"world"}');
+
+const baseRecord = (id: string, completedAt: number): DumpWriteRecord => ({
   meta: {
     id, startedAt: completedAt - 1, completedAt, method: 'POST', path: '/v1/x', status: 200,
     upstream: null, model: 'm', inputTokens: 1, outputTokens: 2,
@@ -70,13 +72,40 @@ const baseRecord = (id: string, completedAt: number): StoredDumpRecord => ({
   request: {
     method: 'POST', path: '/v1/x',
     headers: [['content-type', 'application/json']],
-    body: utf8('{"hello":"world"}'),
+    body: { encoding: 'identity', bytes: requestBody, decodedByteLength: requestBody.byteLength },
   },
   response: {
     status: 200,
     headers: [['content-type', 'application/json']],
     body: { type: 'bytes', body: utf8('{"id":"abc"}') },
   },
+});
+
+test('FileDumpStore prepares request gzip before terminal persistence', async () => {
+  const db = await openDb();
+  const files = new MemoryFileProvider();
+  const store = new FileDumpStore(db, files);
+  const raw = utf8(`{"content":"${'repeatable '.repeat(4096)}"}`);
+  const prepared = await store.prepareRequestBody(raw);
+  const base = baseRecord('01HZZ0000000000000000000P1', Date.UTC(2026, 5, 1, 12, 0, 0));
+  const record: DumpWriteRecord = {
+    ...base,
+    meta: { ...base.meta, requestBytes: raw.byteLength },
+    request: {
+      method: 'POST',
+      path: '/v1/x',
+      headers: [['content-type', 'application/json']],
+      body: prepared,
+    },
+  };
+
+  assertEquals(prepared.encoding, 'gzip');
+  assertEquals(prepared.decodedByteLength, raw.byteLength);
+  assertEquals(prepared.bytes.byteLength < raw.byteLength, true);
+  await store.put('key_x', record);
+  const fetched = await store.get('key_x', record.meta.id);
+  assertExists(fetched);
+  assertEquals(Array.from(fetched.request.body), Array.from(raw));
 });
 
 test('FileDumpStore round-trips a JSON record through gzip', async () => {
@@ -99,7 +128,7 @@ test('FileDumpStore preserves the original content-type header on binary bodies'
   const files = new MemoryFileProvider();
   const store = new FileDumpStore(db, files);
   const pngMagic = new Uint8Array([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
-  const record: StoredDumpRecord = {
+  const record: DumpWriteRecord = {
     ...baseRecord('01HZZ0000000000000000000PNG', Date.UTC(2026, 5, 1, 12, 0, 0)),
     response: {
       status: 200,
@@ -124,7 +153,7 @@ test('FileDumpStore preserves the bytes discriminator on an empty-body response'
   // 204-style: real upstream response with status + headers but a zero-length
   // body. Persistence drops the body file (nothing to gzip), but headers are
   // still written — the read path must surface this as `bytes`, not `none`.
-  const record: StoredDumpRecord = {
+  const record: DumpWriteRecord = {
     ...baseRecord('01HZZ0000000000000000000E1', Date.UTC(2026, 5, 1, 12, 0, 0)),
     response: {
       status: 204,
@@ -145,7 +174,7 @@ test('FileDumpStore round-trips an SSE record as a stream events array', async (
   const db = await openDb();
   const files = new MemoryFileProvider();
   const store = new FileDumpStore(db, files);
-  const record: StoredDumpRecord = {
+  const record: DumpWriteRecord = {
     ...baseRecord('01HZZ0000000000000000000A2', Date.UTC(2026, 5, 1, 12, 0, 0)),
     response: {
       status: 200,

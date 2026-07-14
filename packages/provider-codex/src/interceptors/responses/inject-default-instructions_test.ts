@@ -35,7 +35,7 @@ test('injects the default when instructions is an empty string', async () => {
 });
 
 test('injects the default when instructions is null', async () => {
-  const ctx = invocation({ model: 'gpt-test', input: 'hello', instructions: null });
+  const ctx = invocation({ model: 'gpt-test', input: [{ type: 'message', role: 'user', content: 'hello' }], instructions: null });
 
   await injectDefaultInstructions(ctx, stubRequest, okEvents);
 
@@ -60,7 +60,7 @@ test.each([
   async ({ value }) => {
     const ctx = invocation({
       model: 'gpt-test',
-      input: 'hello',
+      input: [{ type: 'message', role: 'user', content: 'hello' }],
       instructions: value as unknown as string,
     });
 
