@@ -201,30 +201,41 @@ test('prepareImageGenerationConfig validates input_fidelity and partial_images',
   assertEquals(badPartial.error.param, 'tools[0].partial_images');
 });
 
-test('prepareImageGenerationConfig decodes an inline mask and reports file_id as a Floway limitation', () => {
+test('prepareImageGenerationConfig decodes image_url masks and reports file_id as a Floway limitation', () => {
   const ok = prepareImageGenerationConfig([{ type: 'image_generation', input_image_mask: { image_url: `data:image/png;base64,${PNG_B64}` } } as ResponsesTool]);
   assert(ok.ok);
   assert(ok.config.mask !== undefined && !('url' in ok.config.mask));
   assertEquals(ok.config.mask.mimeType, 'image/png');
   assertEquals(ok.config.mask.bytes.byteLength, 5);
 
+  const expectedFileIdError = {
+    message: 'Floway cannot resolve input_image_mask.file_id; remove file_id and provide image_url alone.',
+    param: 'tools[0].input_image_mask.file_id',
+    code: 'unsupported_image_source',
+  };
   const fileId = prepareImageGenerationConfig([{ type: 'image_generation', input_image_mask: { file_id: 'file_123' } } as ResponsesTool]);
   assert(!fileId.ok);
-  assertEquals(fileId.error.code, 'unsupported_image_source');
-  assertEquals(fileId.error.param, 'tools[0].input_image_mask.file_id');
-  assertStringIncludes(fileId.error.message, 'Floway cannot use file IDs');
+  assertEquals(fileId.error, expectedFileIdError);
 
-  const both = prepareImageGenerationConfig([{
+  for (const input_image_mask of [
+    { image_url: `data:image/png;base64,${PNG_B64}`, file_id: 'file_123' },
+    { file_id: 'file_123', image_url: 'https://example.com/mask.png' },
+  ]) {
+    const both = prepareImageGenerationConfig([{ type: 'image_generation', input_image_mask } as ResponsesTool]);
+    assert(!both.ok);
+    assertEquals(both.error, expectedFileIdError);
+  }
+
+  const malformedUrl = prepareImageGenerationConfig([{
     type: 'image_generation',
-    input_image_mask: {
-      image_url: `data:image/png;base64,${PNG_B64}`,
-      file_id: 'file_123',
-    },
+    input_image_mask: { file_id: 'file_123', image_url: 'https://' },
   } as ResponsesTool]);
-  assert(!both.ok);
-  assertEquals(both.error.code, 'mutually_exclusive_parameters');
-  assertEquals(both.error.param, 'tools[0].input_image_mask');
-  assertStringIncludes(both.error.message, 'Floway requires exactly one');
+  assert(!malformedUrl.ok);
+  assertEquals(malformedUrl.error, {
+    message: "Invalid 'tools[0].input_image_mask.image_url'. Expected a valid URL, but got a value with an invalid format.",
+    param: 'tools[0].input_image_mask.image_url',
+    code: 'invalid_value',
+  });
 });
 
 // ── buildImageGenerationFunctionTool ──

@@ -203,10 +203,11 @@ steps.
   Azure-compatible errors for download and image-format failures. The original
   URL remains visible to the orchestrator while the cached bytes are reused by
   the edit backend. Inline and remote masks are materialized by the same path.
-  Files API IDs remain an explicit `unsupported_image_source` because they
-  require the owning upstream's authenticated Files namespace. GIF sources are
-  transcoded to WebP for `/images/edits`, and a mask alone is sufficient edit
-  context for `auto`/`edit`.
+  Any mask `file_id`, including one supplied beside `image_url`, remains an
+  explicit `unsupported_image_source` because it requires the owning
+  upstream's authenticated Files namespace; the shim validates `image_url`
+  before applying that Floway guard. GIF sources are transcoded to WebP for
+  `/images/edits`, and a mask alone is sufficient edit context for `auto`/`edit`.
 - removes unsupported `image_generation` Responses tool entries and forced
   tool choices that targeted them before target request construction. Other
   hosted/deferred Responses tools, including `web_search`, `tool_search`, and

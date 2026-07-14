@@ -295,7 +295,7 @@ const prepareEditRequest = async (
 interface PrepareConfigError {
   message: string;
   param: string;
-  code: 'unknown_parameter' | 'invalid_value' | 'integer_below_min_value' | 'integer_above_max_value' | 'unsupported_image_source' | 'mutually_exclusive_parameters';
+  code: 'unknown_parameter' | 'invalid_value' | 'integer_below_min_value' | 'integer_above_max_value' | 'unsupported_image_source';
 }
 
 type PrepareConfigResult =
@@ -378,11 +378,14 @@ const validateHostedImageGenerationEntry = (
   const partialError = integerInRange(tool.partial_images, path('partial_images'), 0, 3);
   if (partialError !== null) return { ok: false, error: partialError };
 
-  // input_image_mask: inpainting mask. Native Responses accepts both inline
-  // data and remote HTTP(S) URLs here even though the generated SDK comment
-  // describes image_url as base64-only. `file_id` masks need the Files API to
-  // resolve to bytes and are not supported here.
-  // https://github.com/openai/openai-node/blob/ec2f57fd0d66e94782656b986d7b3eb03225369c/src/resources/responses/responses.ts#L8217-L8232
+  // The published OpenAI and Azure schemas make `image_url` and `file_id`
+  // independently optional and define no mutual-exclusivity error. Floway
+  // cannot resolve a file ID in its owning upstream's Files namespace, so we
+  // validate a supplied image URL first and then report `file_id` as Floway's
+  // unsupported source instead of silently choosing a field or inventing a
+  // native 400 envelope.
+  // https://github.com/openai/openai-openapi/blob/5162af98d3147432c14680df789e8e12d4891e6b/openapi.yaml#L51524-L51539
+  // https://github.com/Azure/azure-rest-api-specs/blob/bc54681a2af2c09a6254ce9a57fdb78d71d04eba/specification/ai/data-plane/OpenAI.v1/azure-v1-v1-generated.yaml#L19479-L19505
   const maskField = tool.input_image_mask;
   let mask: ImageSourceReference | undefined;
   if (maskField !== undefined && maskField !== null) {
@@ -390,29 +393,16 @@ const validateHostedImageGenerationEntry = (
       return { ok: false, error: invalidValue(path('input_image_mask'), maskField, ['{ image_url }']) };
     }
     const maskInput = maskField as { image_url?: unknown; file_id?: unknown };
-    if (typeof maskInput.image_url === 'string' && maskInput.image_url.length > 0
-      && typeof maskInput.file_id === 'string' && maskInput.file_id.length > 0) {
-      return {
-        ok: false,
-        error: {
-          message: 'Floway requires exactly one of file_id or image_url for input_image_mask; both were provided.',
-          param: path('input_image_mask'),
-          code: 'mutually_exclusive_parameters',
-        },
-      };
-    }
+    const fileIdError: PrepareConfigError | null = typeof maskInput.file_id === 'string' && maskInput.file_id.length > 0
+      ? {
+          message: 'Floway cannot resolve input_image_mask.file_id; remove file_id and provide image_url alone.',
+          param: path('input_image_mask.file_id'),
+          code: 'unsupported_image_source',
+        }
+      : null;
     const maskUrl = maskInput.image_url;
     if (typeof maskUrl !== 'string' || maskUrl.length === 0) {
-      if (typeof maskInput.file_id === 'string' && maskInput.file_id.length > 0) {
-        return {
-          ok: false,
-          error: {
-            message: 'Floway cannot use file IDs for input_image_mask; provide an inline image data URL.',
-            param: path('input_image_mask.file_id'),
-            code: 'unsupported_image_source',
-          },
-        };
-      }
+      if (fileIdError !== null) return { ok: false, error: fileIdError };
       return {
         ok: false,
         error: invalidValue(path('input_image_mask'), maskField, ['{ image_url }']),
@@ -442,6 +432,7 @@ const validateHostedImageGenerationEntry = (
       }
       mask = decodedMask;
     }
+    if (fileIdError !== null) return { ok: false, error: fileIdError };
   }
 
   return {
