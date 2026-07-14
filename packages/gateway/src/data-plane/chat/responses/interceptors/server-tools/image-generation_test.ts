@@ -13,13 +13,13 @@ import {
   isHostedImageGenerationTool,
   parseImageStreamEvent,
   parseRetryAfterMs,
-  prepareEditSources,
   prepareImageGenerationConfig,
   resolveImageOperation,
   SHIM_TOOL_NAME,
   synthesizeImageGenerationCallId,
   transformInputItemsForImageGeneration,
 } from './image-generation.ts';
+import { prepareImageEditSources } from '../../../../images/edit-source.ts';
 import { initRepo } from '../../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../../../test-helpers/gateway-ctx.ts';
@@ -352,7 +352,7 @@ test('inspectImageSources reads tool-result images and preserves forward order',
   assertEquals(third.mimeType, 'image/webp');
 });
 
-test('prepareEditSources transcodes formats accepted by native Responses but rejected by images edits', async () => {
+test('prepareImageEditSources transcodes formats accepted by native Responses but rejected by images edits', async () => {
   let observedTarget: unknown = undefined;
   let processorCalls = 0;
   initImageProcessor({
@@ -367,7 +367,7 @@ test('prepareEditSources transcodes formats accepted by native Responses but rej
     mimeType: 'image/gif',
   };
   const sameBytes = { bytes: Uint8Array.of(4, 5, 6).buffer, mimeType: 'image/gif' };
-  const prepared = await prepareEditSources([first, first, sameBytes]);
+  const prepared = await prepareImageEditSources([first, first, sameBytes]);
   assertEquals(processorCalls, 1);
   assert(prepared[0] === prepared[1]);
   assert(prepared[0] === prepared[2]);

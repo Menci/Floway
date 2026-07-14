@@ -1,8 +1,14 @@
 import type { Context } from 'hono';
 
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
+import { createExternalImageFetcher, type ExternalImageFetchResult } from '../chat/shared/external-image-loader.ts';
 import { createGatewayCtxFromHono, finalizeGatewayResponse } from '../chat/shared/gateway-ctx.ts';
 import { readRequestBody, takeRequestBody, type RequestBody } from '../chat/shared/request-body.ts';
+import {
+  prepareImageEditSources,
+  supportedImageMimeFromBytes,
+  type ImageEditSource,
+} from '../images/edit-source.ts';
 import { serveImagesEditForm } from '../images/serve.ts';
 import { passthroughApiError } from '../shared/passthrough-serve.ts';
 
@@ -17,43 +23,73 @@ type PreparedCodexEdit =
   | { type: 'ok'; form: FormData }
   | { type: 'invalid'; message: string };
 
-const invalidRequest = (c: Context, requestBody: RequestBody, message: string): Response => {
-  const ctx = createGatewayCtxFromHono(c, {
-    wantsStream: false,
-    requestBody: takeRequestBody(requestBody),
-    backgroundScheduler: backgroundSchedulerFromContext(c),
-  });
-  ctx.dump?.error('gateway');
-  return finalizeGatewayResponse(ctx, passthroughApiError(c, message, 400));
+type LoadedImage =
+  | { type: 'ok'; source: ImageEditSource }
+  | { type: 'invalid'; message: string };
+
+const imageBytes = (data: Uint8Array): ArrayBuffer =>
+  data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer;
+
+const decodeDataUrl = (value: string, index: number): LoadedImage | null => {
+  const match = /^data:image\/[a-z0-9.+-]+;base64,(.*)$/isu.exec(value);
+  if (match === null) return null;
+
+  let bytes: Uint8Array;
+  try {
+    const decoded = atob(match[1]!);
+    bytes = Uint8Array.from(decoded, character => character.charCodeAt(0));
+  } catch {
+    return { type: 'invalid', message: `Codex image edits images[${index}].image_url must contain valid base64 image data.` };
+  }
+  const mimeType = supportedImageMimeFromBytes(bytes);
+  return mimeType === null
+    ? { type: 'invalid', message: `Codex image edits images[${index}].image_url must contain a supported raster image.` }
+    : { type: 'ok', source: { bytes: imageBytes(bytes), mimeType } };
 };
 
-const imageFile = (value: unknown, index: number): File | string => {
+const externalImageError = (result: Exclude<ExternalImageFetchResult, { type: 'success' }>, index: number): string => {
+  const path = `Codex image edits images[${index}].image_url`;
+  switch (result.type) {
+    case 'invalid-url': return `${path} must be an HTTP(S) URL or a base64 image data URL.`;
+    case 'invalid-redirect': return `${path} has an invalid redirect (${result.reason}).`;
+    case 'http-error': return `${path} returned HTTP ${result.status}.`;
+    case 'too-large': return `${path} exceeds the ${result.limitBytes}-byte image limit.`;
+    case 'empty-body': return `${path} returned an empty response.`;
+    case 'timeout': return `${path} timed out.`;
+    case 'transport-error': return `${path} could not be downloaded.`;
+  }
+};
+
+const loadImage = async (
+  value: unknown,
+  index: number,
+  fetchExternalImage: ReturnType<typeof createExternalImageFetcher>,
+): Promise<LoadedImage> => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return `Codex image edits images[${index}] must be an object.`;
+    return { type: 'invalid', message: `Codex image edits images[${index}] must be an object.` };
   }
   const imageUrl = (value as { image_url?: unknown }).image_url;
   if (typeof imageUrl !== 'string') {
-    return `Codex image edits images[${index}].image_url must be a string.`;
+    return { type: 'invalid', message: `Codex image edits images[${index}].image_url must be a string.` };
   }
-  const match = /^data:(image\/[a-z0-9.+-]+);base64,(.*)$/isu.exec(imageUrl);
-  if (!match) {
-    return `Codex image edits images[${index}].image_url must be a base64 image data URL.`;
-  }
-  let data: ArrayBuffer;
-  try {
-    const decoded = atob(match[2]!);
-    data = new ArrayBuffer(decoded.length);
-    const bytes = new Uint8Array(data);
-    for (let i = 0; i < decoded.length; i++) bytes[i] = decoded.charCodeAt(i);
-  } catch {
-    return `Codex image edits images[${index}].image_url must contain valid base64 image data.`;
-  }
-  const mimeType = match[1]!.toLowerCase();
-  const extension = mimeType === 'image/jpeg' ? 'jpg' : mimeType.slice('image/'.length).replace(/[^a-z0-9]+/gu, '-');
-  return new File([data], `image-${index + 1}.${extension}`, { type: mimeType });
+
+  const inline = decodeDataUrl(imageUrl, index);
+  if (inline !== null) return inline;
+
+  const result = await fetchExternalImage(imageUrl);
+  if (result.type !== 'success') return { type: 'invalid', message: externalImageError(result, index) };
+  const mimeType = supportedImageMimeFromBytes(result.data);
+  return mimeType === null
+    ? { type: 'invalid', message: `Codex image edits images[${index}].image_url must resolve to a supported raster image.` }
+    : { type: 'ok', source: { bytes: imageBytes(result.data), mimeType } };
 };
 
-const prepareCodexImageEdit = (bytes: Uint8Array): PreparedCodexEdit => {
+const imageFile = (source: ImageEditSource, index: number): File => {
+  const extension = source.mimeType === 'image/jpeg' ? 'jpg' : source.mimeType.slice('image/'.length);
+  return new File([source.bytes], `image-${index + 1}.${extension}`, { type: source.mimeType });
+};
+
+const prepareCodexImageEdit = async (bytes: Uint8Array, signal: AbortSignal): Promise<PreparedCodexEdit> => {
   let request: CodexImageEditRequest;
   try {
     const parsed = JSON.parse(new TextDecoder().decode(bytes)) as unknown;
@@ -67,7 +103,7 @@ const prepareCodexImageEdit = (bytes: Uint8Array): PreparedCodexEdit => {
   if (typeof request.model !== 'string' || request.model.length === 0) {
     return { type: 'invalid', message: 'Codex image edits request body must include a model string.' };
   }
-  if (typeof request.prompt !== 'string' || request.prompt.length === 0) {
+  if (typeof request.prompt !== 'string') {
     return { type: 'invalid', message: 'Codex image edits request body must include a prompt string.' };
   }
   if (!Array.isArray(request.images) || request.images.length === 0) {
@@ -82,11 +118,16 @@ const prepareCodexImageEdit = (bytes: Uint8Array): PreparedCodexEdit => {
     }
     form.append(name, String(value));
   }
+
+  const fetchExternalImage = createExternalImageFetcher(signal);
+  const sources: ImageEditSource[] = [];
   for (const [index, image] of request.images.entries()) {
-    const file = imageFile(image, index);
-    if (typeof file === 'string') return { type: 'invalid', message: file };
-    form.append('image[]', file);
+    const loaded = await loadImage(image, index, fetchExternalImage);
+    if (loaded.type === 'invalid') return loaded;
+    sources.push(loaded.source);
   }
+  const prepared = await prepareImageEditSources(sources);
+  prepared.forEach((source, index) => form.append('image[]', imageFile(source, index)));
   return { type: 'ok', form };
 };
 
@@ -96,7 +137,15 @@ const prepareCodexImageEdit = (bytes: Uint8Array): PreparedCodexEdit => {
 // https://github.com/openai/codex/blob/f90e7deea6a715bbd153044af6f475eefa749177/codex-rs/codex-api/src/images.rs#L4-L31
 export const codexImagesEdits = async (c: Context): Promise<Response> => {
   const requestBody = await readRequestBody(c);
-  const prepared = prepareCodexImageEdit(requestBody.bytes);
-  if (prepared.type === 'invalid') return invalidRequest(c, requestBody, prepared.message);
+  const prepared = await prepareCodexImageEdit(requestBody.bytes, c.req.raw.signal);
+  if (prepared.type === 'invalid') {
+    const ctx = createGatewayCtxFromHono(c, {
+      wantsStream: false,
+      requestBody: takeRequestBody(requestBody),
+      backgroundScheduler: backgroundSchedulerFromContext(c),
+    });
+    ctx.dump?.error('gateway');
+    return finalizeGatewayResponse(ctx, passthroughApiError(c, prepared.message, 400));
+  }
   return await serveImagesEditForm(c, requestBody, prepared.form);
 };

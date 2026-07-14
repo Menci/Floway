@@ -6,7 +6,8 @@
 //   model_providers.x.base_url   — models, Responses HTTP/WS, remote compaction
 //
 // The dashboard points both at this namespace. Codex appends `models`,
-// `responses`, `responses/compact`, and `images/*` directly to the
+// `responses`, `responses/compact`, `images/generations`, and `images/edits`
+// directly to the
 // model-provider base:
 // https://github.com/openai/codex/blob/44918ea10c0f99151c6710411b4322c2f5c96bea/codex-rs/codex-api/src/endpoint/models.rs#L31-L43
 // https://github.com/openai/codex/blob/44918ea10c0f99151c6710411b4322c2f5c96bea/codex-rs/codex-api/src/endpoint/responses.rs#L100-L102

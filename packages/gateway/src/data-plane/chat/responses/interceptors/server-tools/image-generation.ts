@@ -5,8 +5,9 @@ import { recordPerformance, type PerformanceTelemetryContext } from '../../../..
 import { recordTokenUsage, tokenUsageFromImagesBody } from '../../../../shared/telemetry/usage.ts';
 import { createExternalImageFetcher, type ExternalImageFetchResult } from '../../../shared/external-image-loader.ts';
 import { stampUpstreamCallStart, type AttemptState } from '../../../shared/gateway-ctx.ts';
+import { editSupportedMime, prepareImageEditSources, supportedImageMimeFromBytes, type ImageEditSource } from '../../../../images/edit-source.ts';
 import type { ServerToolLifecycleEvent, ServerToolOutputItem, ServerToolRegistration, ServerToolTerminal } from '../server-tool-shim.ts';
-import { dimensionsFromBytes, getImageProcessor, type BackgroundScheduler } from '@floway-dev/platform';
+import type { BackgroundScheduler } from '@floway-dev/platform';
 import { parseSSEStream } from '@floway-dev/protocols/common';
 import type {
   ResponsesFunctionCallOutputItem,
@@ -48,25 +49,6 @@ const ALLOWED_MODERATIONS = new Set(['auto', 'low']);
 const ALLOWED_ACTIONS = new Set(['generate', 'edit', 'auto']);
 const ALLOWED_INPUT_FIDELITY = new Set(['high', 'low']);
 
-// gpt-image-* `/images/edits` accepts only these input image mimetypes; a live
-// Azure probe confirmed png/jpeg/webp succeed while gif is rejected with
-// `unsupported_file_mimetype`. Native Responses accepts the same GIF and
-// re-encodes it before editing, so the shim mirrors that behavior through the
-// platform image processor. Common aliases are folded onto the backend form.
-const EDIT_MIME_ALIASES: Record<string, string> = {
-  'image/jpg': 'image/jpeg',
-  'image/pjpeg': 'image/jpeg',
-  'image/x-png': 'image/png',
-};
-const EDIT_SUPPORTED_MIMES = new Set(['image/png', 'image/jpeg', 'image/webp']);
-
-// The canonical edit-supported mimetype for a source, or null when the
-// standalone endpoint requires local WebP transcoding first.
-const editSupportedMime = (mime: string): string | null => {
-  const canonical = EDIT_MIME_ALIASES[mime] ?? mime;
-  return EDIT_SUPPORTED_MIMES.has(canonical) ? canonical : null;
-};
-
 const editFileExt = (mime: string): string =>
   mime === 'image/jpeg' ? 'jpg' : mime === 'image/webp' ? 'webp' : 'png';
 
@@ -95,10 +77,7 @@ export const canonicalizeImageGenerationTool = (raw: ResponsesTool): ResponsesHo
 
 // A base64-data-URL or bare-base64 image source bound for an edit call.
 // Bytes are held in a concrete ArrayBuffer so they can be wrapped in a Blob.
-interface ImageSource {
-  bytes: ArrayBuffer;
-  mimeType: string;
-}
+type ImageSource = ImageEditSource;
 
 interface RemoteImageSource {
   wireUrl: string;
@@ -110,38 +89,6 @@ type ImageSourceReference = ImageSource | RemoteImageSource;
 
 const isRemoteImageSource = (source: ImageSourceReference): source is RemoteImageSource =>
   'wireUrl' in source;
-
-export const prepareEditSources = async (sources: readonly ImageSource[]): Promise<readonly ImageSource[]> => {
-  const keyBySource = new Map<ImageSource, Promise<string>>();
-  const preparedByContent = new Map<string, Promise<ImageSource>>();
-  return await Promise.all(sources.map(async source => {
-    if (editSupportedMime(source.mimeType) !== null) return source;
-
-    let keyPromise = keyBySource.get(source);
-    if (keyPromise === undefined) {
-      keyPromise = crypto.subtle.digest('SHA-256', source.bytes).then(buffer => {
-        const digest = [...new Uint8Array(buffer)].map(byte => byte.toString(16).padStart(2, '0')).join('');
-        return `${source.mimeType}\u0000${digest}`;
-      });
-      keyBySource.set(source, keyPromise);
-    }
-    const key = await keyPromise;
-
-    let prepared = preparedByContent.get(key);
-    if (prepared === undefined) {
-      // Native Responses accepts formats such as GIF through its multimodal
-      // preprocessing, while the standalone edits endpoint accepts only
-      // PNG/JPEG/WebP. Re-encode locally to preserve the hosted-tool behavior.
-      // https://github.com/openai/openai-node/blob/ec2f57fd0d66e94782656b986d7b3eb03225369c/src/resources/images.ts#L560-L572
-      prepared = getImageProcessor().compressToWebp(new Uint8Array(source.bytes), null).then(encoded => {
-        const bytes = encoded.buffer.slice(encoded.byteOffset, encoded.byteOffset + encoded.byteLength) as ArrayBuffer;
-        return { bytes, mimeType: 'image/webp' };
-      });
-      preparedByContent.set(key, prepared);
-    }
-    return await prepared;
-  }));
-};
 
 const base64ToArrayBuffer = (b64: string): ArrayBuffer => {
   const binary = atob(b64);
@@ -264,7 +211,7 @@ const prepareEditRequest = async (
   }
   const originals = [...sources];
   if (config.mask !== undefined && !originals.includes(config.mask)) originals.push(config.mask);
-  const prepared = await prepareEditSources(originals);
+  const prepared = await prepareImageEditSources(originals);
   const bySource = new Map<ImageSource, ImageSource>();
   for (const [index, source] of originals.entries()) {
     const wireSource = prepared[index];
@@ -571,32 +518,6 @@ const remoteInputError = (source: RemoteImageSource, failure: RemoteImageFailure
 // mask.
 // https://platform.openai.com/docs/guides/images-vision#image-input-requirements
 const MAX_REMOTE_IMAGE_TOTAL_BYTES = 50 * 1024 * 1024;
-
-const supportedImageMimeFromBytes = (bytes: Uint8Array): string | null => {
-  if (dimensionsFromBytes(bytes) === null) return null;
-  if (
-    bytes.length >= 8
-    && bytes[0] === 0x89
-    && bytes[1] === 0x50
-    && bytes[2] === 0x4e
-    && bytes[3] === 0x47
-    && bytes[4] === 0x0d
-    && bytes[5] === 0x0a
-    && bytes[6] === 0x1a
-    && bytes[7] === 0x0a
-  ) return 'image/png';
-  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg';
-  if (bytes.length >= 6) {
-    const signature = String.fromCharCode(...bytes.subarray(0, 6));
-    if (signature === 'GIF87a' || signature === 'GIF89a') return 'image/gif';
-  }
-  if (
-    bytes.length >= 12
-    && String.fromCharCode(...bytes.subarray(0, 4)) === 'RIFF'
-    && String.fromCharCode(...bytes.subarray(8, 12)) === 'WEBP'
-  ) return 'image/webp';
-  return null;
-};
 
 const createRemoteImageMaterializer = (requestSignal: AbortSignal | undefined) => {
   const fetchImage = createExternalImageFetcher(requestSignal);
