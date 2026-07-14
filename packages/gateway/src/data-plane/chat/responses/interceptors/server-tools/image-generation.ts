@@ -5,13 +5,14 @@ import { recordPerformance, type PerformanceTelemetryContext } from '../../../..
 import { recordTokenUsage, tokenUsageFromImagesBody } from '../../../../shared/telemetry/usage.ts';
 import { stampUpstreamCallStart, type AttemptState } from '../../../shared/gateway-ctx.ts';
 import type { ServerToolLifecycleEvent, ServerToolOutputItem, ServerToolRegistration, ServerToolTerminal } from '../server-tool-shim.ts';
-import { getImageProcessor, type BackgroundScheduler } from '@floway-dev/platform';
+import { dimensionsFromBytes, getExternalResourceFetcher, getImageProcessor, type BackgroundScheduler } from '@floway-dev/platform';
 import { parseSSEStream } from '@floway-dev/protocols/common';
 import type {
   ResponsesFunctionCallOutputItem,
   ResponsesFunctionTool,
   ResponsesFunctionToolCallItem,
   ResponsesHostedTool,
+  ResponsesInputContent,
   ResponsesInputImage,
   ResponsesInputImageGenerationCall,
   ResponsesInputItem,
@@ -99,6 +100,16 @@ interface ImageSource {
   mimeType: string;
 }
 
+interface RemoteImageSource {
+  url: URL;
+  wireUrl: string;
+}
+
+type ImageSourceReference = ImageSource | RemoteImageSource;
+
+const isRemoteImageSource = (source: ImageSourceReference): source is RemoteImageSource =>
+  'url' in source;
+
 export const prepareEditSources = async (sources: readonly ImageSource[]): Promise<readonly ImageSource[]> => {
   const keyBySource = new Map<ImageSource, Promise<string>>();
   const preparedByContent = new Map<string, Promise<ImageSource>>();
@@ -139,10 +150,18 @@ const base64ToArrayBuffer = (b64: string): ArrayBuffer => {
   return buffer;
 };
 
+const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
+  const bytes = new Uint8Array(buffer);
+  const chunks: string[] = [];
+  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+    chunks.push(String.fromCharCode(...bytes.subarray(offset, offset + 0x8000)));
+  }
+  return btoa(chunks.join(''));
+};
+
 // Parse a `data:<mime>;base64,<payload>` URL or a bare base64 string (as
-// emitted in `image_generation_call.result`) into raw bytes. Returns null
-// for non-data URLs (e.g. http(s)): fetching remote images at edit time is
-// not supported — only inline image bytes are accepted.
+// emitted in `image_generation_call.result`) into raw bytes. Remote URLs are
+// materialized at request preparation and therefore stay outside this decoder.
 const decodeInlineImage = (
   imageUrl: string,
   fallbackMime = 'image/png',
@@ -220,6 +239,18 @@ const decodeInputImageDataUrl = (
   }
 };
 
+const parseRemoteImageUrl = (value: string): URL | null => {
+  if (!/^https?:\/\//i.test(value)) return null;
+  try {
+    const url = new URL(value);
+    return (url.protocol === 'http:' || url.protocol === 'https:') && url.hostname.length > 0
+      ? url
+      : null;
+  } catch {
+    return null;
+  }
+};
+
 // The orchestrator-visible tool config the shim layers onto the backend
 // call. Mirrors Azure: the orchestrator only chooses `prompt`; everything
 // here is read from the client's hosted-tool entry and applied by the shim.
@@ -237,10 +268,10 @@ export interface ImageGenerationConfig {
   // is called non-streaming and no preview frames are produced.
   partial_images?: number;
   input_fidelity?: 'high' | 'low';
-  // Inpainting mask decoded once at validation, forwarded to /images/edits as
-  // the standalone `mask` part. `file_id` masks are not supported (rejected at
-  // validation) — resolving them needs the files API.
-  mask?: ImageSource;
+  // Inpainting mask materialized once at validation, forwarded to
+  // /images/edits as the standalone `mask` part. `file_id` masks are not
+  // supported (rejected at validation) — resolving them needs the Files API.
+  mask?: ImageSourceReference;
   action: 'generate' | 'edit' | 'auto';
 }
 
@@ -248,6 +279,9 @@ const prepareEditRequest = async (
   sources: readonly ImageSource[],
   config: ImageGenerationConfig,
 ): Promise<{ sources: readonly ImageSource[]; config: ImageGenerationConfig }> => {
+  if (config.mask !== undefined && isRemoteImageSource(config.mask)) {
+    throw new Error('Remote image mask reached edit dispatch before materialization');
+  }
   const originals = [...sources];
   if (config.mask !== undefined && !originals.includes(config.mask)) originals.push(config.mask);
   const prepared = await prepareEditSources(originals);
@@ -354,11 +388,11 @@ const validateHostedImageGenerationEntry = (
   const partialError = integerInRange(tool.partial_images, path('partial_images'), 0, 3);
   if (partialError !== null) return { ok: false, error: partialError };
 
-  // input_image_mask: inpainting mask. Accept an inline `image_url`
-  // (data URL / base64) and validate that it decodes; `file_id` masks need
-  // the files API to resolve to bytes and are not supported here. Reject a
-  // malformed or unsupported mask rather than silently dropping the mask the
-  // client expected to apply.
+  // input_image_mask: inpainting mask. Native Responses accepts both inline
+  // data and remote HTTP(S) URLs here even though the generated SDK comment
+  // describes image_url as base64-only. `file_id` masks need the Files API to
+  // resolve to bytes and are not supported here.
+  // https://github.com/openai/openai-node/blob/ec2f57fd0d66e94782656b986d7b3eb03225369c/src/resources/responses/responses.ts#L8217-L8232
   const maskField = tool.input_image_mask;
   let mask: ImageSource | undefined;
   if (maskField !== undefined && maskField !== null) {
@@ -394,14 +428,30 @@ const validateHostedImageGenerationEntry = (
         error: invalidValue(path('input_image_mask'), maskField, ['{ image_url }']),
       };
     }
-    const decodedMask = decodeInlineImage(maskUrl);
-    if (decodedMask === null) {
-      return {
-        ok: false,
-        error: { message: 'image_generation input_image_mask.image_url must be an inline base64 data URL; remote URLs and malformed base64 are not supported.', param: path('input_image_mask'), code: 'invalid_value' },
-      };
+    if (/^https?:\/\//i.test(maskUrl)) {
+      const url = parseRemoteImageUrl(maskUrl);
+      if (url === null) {
+        const param = path('input_image_mask.image_url');
+        return {
+          ok: false,
+          error: {
+            message: `Invalid '${param}'. Expected a valid URL, but got a value with an invalid format.`,
+            param,
+            code: 'invalid_value',
+          },
+        };
+      }
+      mask = { url, wireUrl: maskUrl };
+    } else {
+      const decodedMask = decodeInlineImage(maskUrl);
+      if (decodedMask === null) {
+        return {
+          ok: false,
+          error: { message: 'image_generation input_image_mask.image_url must contain valid base64 image data.', param: path('input_image_mask.image_url'), code: 'invalid_value' },
+        };
+      }
+      mask = decodedMask;
     }
-    mask = decodedMask;
   }
 
   return {
@@ -467,9 +517,9 @@ export const buildImageGenerationFunctionTool = (_canonical: ResponsesHostedTool
 export const synthesizeImageGenerationCallId = (): string =>
   `ig_gw_${crypto.randomUUID().replace(/-/g, '')}`;
 
-// Collect all inline image sources from the request input in forward
-// declaration order: `input_image` blocks in messages and function/custom tool
-// outputs, and full-echo
+// Collect all image sources from the request input in forward declaration
+// order: inline/remote `input_image` blocks in messages and function/custom
+// tool outputs, and full-echo
 // `image_generation_call` items carrying `result` bytes, each in the order they
 // appear. Order is load-bearing: probing both the standalone /images/edits
 // endpoint and native Responses showed gpt-image numbers the attached images
@@ -499,6 +549,196 @@ interface ImageOperationError {
   param: string | null;
   code: string | null;
 }
+
+type RemoteImageDownload =
+  | { ok: true; source: ImageSource; dataUrl: string }
+  | { ok: false; reason: 'download' | 'timeout' | 'invalid-image'; status?: number };
+
+const INVALID_REMOTE_IMAGE_MESSAGE = "The image data you provided does not represent a valid image. Please check your input and try again with one of the supported image formats: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'].";
+const REMOTE_IMAGE_TIMEOUT_MESSAGE = 'Unable to download content from the provided URL before the timeout. Check that the URL is publicly accessible and responds promptly, or upload the file and provide a file_id instead.';
+const REMOTE_MASK_ERROR: ImageOperationError = {
+  message: 'There was an issue with your request. Please check your inputs and try again',
+  errorType: 'invalid_request_error',
+  param: null,
+  code: null,
+};
+
+const remoteInputError = (failure: Exclude<RemoteImageDownload, { ok: true }>): ImageOperationError => {
+  if (failure.reason === 'invalid-image') {
+    return {
+      message: INVALID_REMOTE_IMAGE_MESSAGE,
+      errorType: 'invalid_request_error',
+      param: 'input',
+      code: 'invalid_value',
+    };
+  }
+  if (failure.reason === 'timeout') {
+    return {
+      message: REMOTE_IMAGE_TIMEOUT_MESSAGE,
+      errorType: 'invalid_request_error',
+      param: 'url',
+      code: 'invalid_value',
+    };
+  }
+  return {
+    message: failure.status === undefined
+      ? 'Error while downloading file.'
+      : `Error while downloading file. Upstream status code: ${failure.status}.`,
+    errorType: 'invalid_request_error',
+    param: 'url',
+    code: 'invalid_value',
+  };
+};
+
+// The standalone edits endpoint allows each of at most 16 images to be under
+// 50 MB. Enforce the same per-resource ceiling while streaming so a remote
+// server cannot exhaust a Worker's memory before the backend gets a chance to
+// apply its own limit.
+// https://github.com/openai/openai-node/blob/ec2f57fd0d66e94782656b986d7b3eb03225369c/src/resources/images.ts#L560-L572
+const MAX_REMOTE_IMAGE_BYTES = 50 * 1024 * 1024;
+const REMOTE_IMAGE_TIMEOUT_MS = 30_000;
+const MAX_REMOTE_IMAGE_REDIRECTS = 5;
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+
+const supportedImageMimeFromBytes = (bytes: Uint8Array): string | null => {
+  if (dimensionsFromBytes(bytes) === null) return null;
+  if (
+    bytes.length >= 8
+    && bytes[0] === 0x89
+    && bytes[1] === 0x50
+    && bytes[2] === 0x4e
+    && bytes[3] === 0x47
+    && bytes[4] === 0x0d
+    && bytes[5] === 0x0a
+    && bytes[6] === 0x1a
+    && bytes[7] === 0x0a
+  ) return 'image/png';
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg';
+  if (bytes.length >= 6) {
+    const signature = String.fromCharCode(...bytes.subarray(0, 6));
+    if (signature === 'GIF87a' || signature === 'GIF89a') return 'image/gif';
+  }
+  if (
+    bytes.length >= 12
+    && String.fromCharCode(...bytes.subarray(0, 4)) === 'RIFF'
+    && String.fromCharCode(...bytes.subarray(8, 12)) === 'WEBP'
+  ) return 'image/webp';
+  return null;
+};
+
+const readRemoteImageBody = async (response: Response): Promise<ArrayBuffer | null> => {
+  const contentLength = response.headers.get('content-length');
+  if (contentLength !== null) {
+    const declared = Number(contentLength);
+    if (Number.isFinite(declared) && declared > MAX_REMOTE_IMAGE_BYTES) {
+      await response.body?.cancel();
+      return null;
+    }
+  }
+  if (response.body === null) return new ArrayBuffer(0);
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  while (true) {
+    const next = await reader.read();
+    if (next.done) break;
+    total += next.value.byteLength;
+    if (total > MAX_REMOTE_IMAGE_BYTES) {
+      await reader.cancel();
+      return null;
+    }
+    chunks.push(next.value);
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes.buffer;
+};
+
+const isFetchableRemoteUrl = (url: URL): boolean =>
+  (url.protocol === 'http:' || url.protocol === 'https:')
+  && url.hostname.length > 0
+  && url.username.length === 0
+  && url.password.length === 0;
+
+const createRemoteImageMaterializer = (requestSignal: AbortSignal | undefined) => {
+  const downloads = new Map<string, Promise<RemoteImageDownload>>();
+
+  const download = (source: RemoteImageSource): Promise<RemoteImageDownload> => {
+    const cached = downloads.get(source.wireUrl);
+    if (cached !== undefined) return cached;
+
+    const task = (async (): Promise<RemoteImageDownload> => {
+      const timeoutSignal = AbortSignal.timeout(REMOTE_IMAGE_TIMEOUT_MS);
+      const signal = requestSignal === undefined
+        ? timeoutSignal
+        : AbortSignal.any([requestSignal, timeoutSignal]);
+      let url = source.url;
+      if (!isFetchableRemoteUrl(url)) return { ok: false, reason: 'download' };
+
+      try {
+        for (let redirects = 0; ; redirects++) {
+          const response = await getExternalResourceFetcher()(url, signal);
+          if (REDIRECT_STATUSES.has(response.status)) {
+            const location = response.headers.get('location');
+            await response.body?.cancel();
+            if (location === null || redirects >= MAX_REMOTE_IMAGE_REDIRECTS) {
+              return { ok: false, reason: 'download', status: response.status };
+            }
+            try {
+              url = new URL(location, url);
+            } catch {
+              return { ok: false, reason: 'download', status: response.status };
+            }
+            if (!isFetchableRemoteUrl(url)) return { ok: false, reason: 'download' };
+            continue;
+          }
+          if (!response.ok) {
+            await response.body?.cancel();
+            return { ok: false, reason: 'download', status: response.status };
+          }
+
+          const buffer = await readRemoteImageBody(response);
+          if (buffer === null) return { ok: false, reason: 'download' };
+          const mimeType = supportedImageMimeFromBytes(new Uint8Array(buffer));
+          if (mimeType === null) return { ok: false, reason: 'invalid-image' };
+          return {
+            ok: true,
+            source: { bytes: buffer, mimeType },
+            dataUrl: `data:${mimeType};base64,${arrayBufferToBase64(buffer)}`,
+          };
+        }
+      } catch (error) {
+        if (requestSignal?.aborted === true) throw error;
+        return { ok: false, reason: timeoutSignal.aborted ? 'timeout' : 'download' };
+      }
+    })();
+    downloads.set(source.wireUrl, task);
+    return task;
+  };
+
+  return {
+    async inputs(sources: readonly RemoteImageSource[]): Promise<{ ok: true; dataUrls: ReadonlyMap<string, string> } | { ok: false; error: ImageOperationError }> {
+      const results = await Promise.all(sources.map(download));
+      const dataUrls = new Map<string, string>();
+      for (const [index, result] of results.entries()) {
+        if (!result.ok) return { ok: false, error: remoteInputError(result) };
+        const source = sources[index];
+        if (source === undefined) throw new Error('Missing remote image source after materialization');
+        dataUrls.set(source.wireUrl, result.dataUrl);
+      }
+      return { ok: true, dataUrls };
+    },
+    async mask(source: RemoteImageSource): Promise<{ ok: true; source: ImageSource } | { ok: false; error: ImageOperationError }> {
+      const result = await download(source);
+      return result.ok ? { ok: true, source: result.source } : { ok: false, error: REMOTE_MASK_ERROR };
+    },
+  };
+};
 
 type ImageSourceIssue =
   | { kind: 'native'; error: ImageOperationError }
@@ -532,7 +772,7 @@ const inputImageDecodeError = (
 };
 
 interface ImageSourceInspection {
-  sources: ImageSource[];
+  sources: ImageSourceReference[];
   issue?: ImageSourceIssue;
 }
 
@@ -540,7 +780,7 @@ const inspectImageSourcesWithCache = (
   input: readonly ResponsesInputItem[],
   decodedSources: Map<string, ImageSource | null>,
 ): ImageSourceInspection => {
-  const sources: ImageSource[] = [];
+  const sources: ImageSourceReference[] = [];
   let issue: ImageSourceIssue | undefined;
   for (const [inputIndex, item] of input.entries()) {
     for (const { image, path } of inputImagesOf(item, inputIndex)) {
@@ -562,15 +802,17 @@ const inspectImageSourcesWithCache = (
       }
       if (imageUrl !== null) {
         if (/^https?:\/\//i.test(imageUrl)) {
-          issue ??= {
-            kind: 'gateway',
-            error: {
-              message: "Floway cannot use remote image URLs as edit sources; provide an inline image data URL or set image_generation.action to 'generate'.",
-              errorType: 'invalid_request_error',
-              param: `${path}.image_url`,
-              code: 'unsupported_image_source',
-            },
-          };
+          const url = parseRemoteImageUrl(imageUrl);
+          if (url === null) {
+            return {
+              sources,
+              issue: {
+                kind: 'native',
+                error: inputImageDecodeError(`${path}.image_url`, { ok: false, reason: 'invalid_format' }),
+              },
+            };
+          }
+          sources.push({ url, wireUrl: imageUrl });
           continue;
         }
         const decoded = decodeInputImageDataUrl(imageUrl, decodedSources);
@@ -639,7 +881,7 @@ export const inspectImageSources = (input: readonly ResponsesInputItem[]): Image
   createImageSourceInspector()(input);
 
 type ImageOperation =
-  | { ok: true; action: 'generate' | 'edit'; sources: readonly ImageSource[] }
+  | { ok: true; action: 'generate' | 'edit'; sources: readonly ImageSourceReference[] }
   | { ok: false; error: ImageOperationError };
 
 export const resolveImageOperation = (
@@ -1180,6 +1422,43 @@ const streamImageGeneration = (
 // needs no out-of-band payload for this to be lossless: every field required
 // to rebuild the pair, INCLUDING the error (`status` + `error{message,code,
 // type}`), has a public home on the item.
+const materializeRemoteInputImages = (
+  input: ResponsesInputItem[],
+  dataUrls: ReadonlyMap<string, string>,
+): ResponsesInputItem[] => {
+  if (dataUrls.size === 0) return input;
+
+  const rewriteBlocks = (blocks: ResponsesInputContent[]): ResponsesInputContent[] => {
+    let changed = false;
+    const next = blocks.map(block => {
+      if (block.type !== 'input_image' || typeof block.image_url !== 'string') return block;
+      const dataUrl = dataUrls.get(block.image_url);
+      if (dataUrl === undefined) return block;
+      changed = true;
+      return { ...block, image_url: dataUrl };
+    });
+    return changed ? next : blocks;
+  };
+
+  let changed = false;
+  const next = input.map(item => {
+    if (item.type === 'message' && Array.isArray(item.content)) {
+      const content = rewriteBlocks(item.content);
+      if (content === item.content) return item;
+      changed = true;
+      return { ...item, content };
+    }
+    if ((item.type === 'function_call_output' || item.type === 'custom_tool_call_output') && Array.isArray(item.output)) {
+      const output = rewriteBlocks(item.output);
+      if (output === item.output) return item;
+      changed = true;
+      return { ...item, output };
+    }
+    return item;
+  });
+  return changed ? next : input;
+};
+
 export const transformInputItemsForImageGeneration = (
   input: ResponsesInputItem[],
   toolName: string,
@@ -1237,7 +1516,7 @@ export const transformInputItemsForImageGeneration = (
   return out;
 };
 
-export const imageGenerationServerTool: ServerToolRegistration = (invocation, gatewayCtx) => {
+export const imageGenerationServerTool: ServerToolRegistration = async (invocation, gatewayCtx) => {
   if (invocation.targetApi === 'responses' && !providerModelOf(invocation.candidate).enabledFlags.has('responses-image-generation-shim')) {
     return { type: 'inactive' };
   }
@@ -1261,9 +1540,10 @@ export const imageGenerationServerTool: ServerToolRegistration = (invocation, ga
   if (!prepared.ok) {
     return { type: 'invalid-request', message: prepared.error.message, param: prepared.error.param, code: prepared.error.code };
   }
-  const config = prepared.config;
+  let config = prepared.config;
   const inspectSources = createImageSourceInspector();
-  const initialOperation = resolveImageOperation(config, inspectSources(invocation.payload.input));
+  const initialInspection = inspectSources(invocation.payload.input);
+  const initialOperation = resolveImageOperation(config, initialInspection);
   if (!initialOperation.ok) {
     return {
       type: 'invalid-request',
@@ -1273,6 +1553,38 @@ export const imageGenerationServerTool: ServerToolRegistration = (invocation, ga
       code: initialOperation.error.code,
     };
   }
+
+  const materializer = createRemoteImageMaterializer(gatewayCtx.abortSignal);
+  const remoteInputs = initialInspection.sources.filter(isRemoteImageSource);
+  const materializedInputs = await materializer.inputs(remoteInputs);
+  if (!materializedInputs.ok) {
+    return {
+      type: 'invalid-request',
+      message: materializedInputs.error.message,
+      param: materializedInputs.error.param,
+      errorType: materializedInputs.error.errorType,
+      code: materializedInputs.error.code,
+    };
+  }
+  if (config.mask !== undefined && isRemoteImageSource(config.mask)) {
+    const materializedMask = await materializer.mask(config.mask);
+    if (!materializedMask.ok) {
+      return {
+        type: 'invalid-request',
+        message: materializedMask.error.message,
+        param: materializedMask.error.param,
+        errorType: materializedMask.error.errorType,
+        code: materializedMask.error.code,
+      };
+    }
+    config = { ...config, mask: materializedMask.source };
+  }
+
+  const transformItems = (items: ResponsesInputItem[], toolName: string): ResponsesInputItem[] =>
+    transformInputItemsForImageGeneration(
+      materializeRemoteInputImages(items, materializedInputs.dataUrls),
+      toolName,
+    );
 
   const state: ShimState = {
     config,
@@ -1287,7 +1599,7 @@ export const imageGenerationServerTool: ServerToolRegistration = (invocation, ga
   return {
     type: 'active',
     baseToolName: SHIM_TOOL_NAME,
-    transformItems: transformInputItemsForImageGeneration,
+    transformItems,
     hosted: {
       hostedTypes: ['image_generation'],
       canonicalize: canonicalizeImageGenerationTool,
@@ -1306,6 +1618,12 @@ export const imageGenerationServerTool: ServerToolRegistration = (invocation, ga
         if (!operation.ok) {
           throw new Error(`image_generation live source invariant violated after request validation: ${operation.error.message}`);
         }
+        const sources = operation.sources.map(source => {
+          if (isRemoteImageSource(source)) {
+            throw new Error('image_generation live source invariant violated after request validation: remote image URL was not materialized');
+          }
+          return source;
+        });
 
         // Safety valve against an unbounded backend-call loop (the model
         // retrying after repeated {ok:false} outcomes): once this response has
@@ -1339,7 +1657,7 @@ export const imageGenerationServerTool: ServerToolRegistration = (invocation, ga
             promptArg,
             operation.action,
             operation.action === 'edit',
-            operation.sources,
+            sources,
             state,
           ),
         }];

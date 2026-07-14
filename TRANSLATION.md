@@ -197,13 +197,16 @@ steps.
 - executes hosted `image_generation` through the gateway server-tool shim for
   translated targets and native Responses providers that opt into the shim.
   Edit sources are flattened in declaration order from message content,
-  function/custom tool output, and replayed image-generation results. Invalid
-  image data URLs receive Azure's native request error and exact field path.
-  Native Responses can resolve remote URLs and Files API IDs, but the shim
-  cannot materialize them as standalone edit bytes, so `auto`/`edit` return an
-  explicit `unsupported_image_source`; forced `generate` leaves them as model
-  context. Raster formats unsupported by `/images/edits` are transcoded to
-  WebP, and an inline mask alone is sufficient edit context for `auto`/`edit`.
+  function/custom tool output, and replayed image-generation results. Remote
+  HTTP(S) sources are downloaded once during request preparation, with manual
+  redirect handling, bounded streaming, public-address-only Node egress, and
+  Azure-compatible errors for download and image-format failures; the cached
+  bytes replace the URL before the orchestrator runs and are reused by the edit
+  backend. Inline and remote masks are materialized by the same path. Files API
+  IDs remain an explicit `unsupported_image_source` because they require the
+  owning upstream's authenticated Files namespace. GIF sources are transcoded
+  to WebP for `/images/edits`, and a mask alone is sufficient edit context for
+  `auto`/`edit`.
 - removes unsupported `image_generation` Responses tool entries and forced
   tool choices that targeted them before target request construction. Other
   hosted/deferred Responses tools, including `web_search`, `tool_search`, and

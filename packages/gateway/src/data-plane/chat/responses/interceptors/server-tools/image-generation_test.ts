@@ -24,11 +24,15 @@ import { initRepo } from '../../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../../../test-helpers/gateway-ctx.ts';
 import type { ResponsesInvocation } from '../types.ts';
-import { initImageProcessor } from '@floway-dev/platform';
+import { initExternalResourceFetcher, initImageProcessor } from '@floway-dev/platform';
 import type { CanonicalResponsesPayload, ResponsesInputImage, ResponsesInputItem, ResponsesPayload, ResponsesTool } from '@floway-dev/protocols/responses';
 import { assert, assertEquals, assertFalse, assertStringIncludes, assertThrows, stubModelCandidate } from '@floway-dev/test-utils';
 
 const PNG_B64 = 'aGVsbG8='; // "hello" — any decodable base64 works for source tests.
+const VALID_PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/wEAAAAASUVORK5CYII=';
+const validPngResponse = (): Response => new Response(Uint8Array.from(atob(VALID_PNG_B64), c => c.charCodeAt(0)), {
+  headers: { 'content-type': 'image/png' },
+});
 
 // The registration only reads targetApi / enabledFlags / payload off the invocation.
 const makeCtx = (payload: Partial<ResponsesPayload>): ResponsesInvocation => ({
@@ -59,7 +63,6 @@ const imageInputContainers = {
 
 const unresolvableImages = {
   file_id: { type: 'input_image', file_id: 'file_1', detail: 'auto' },
-  remote: { type: 'input_image', image_url: 'https://example.com/a.png', detail: 'auto' },
   malformed: { type: 'input_image', image_url: 'data:image/png;base64,%%%', detail: 'auto' },
 } as const satisfies Record<string, ResponsesInputImage>;
 
@@ -254,7 +257,7 @@ test('inspectImageSources reads input_image blocks and image_generation_call res
   assertEquals(issue, undefined);
 });
 
-test('inspectImageSources marks http(s) image urls as unresolvable', () => {
+test('inspectImageSources preserves valid remote image urls for materialization', () => {
   const input: ResponsesInputItem[] = [
     {
       type: 'message', role: 'user', content: [
@@ -263,16 +266,10 @@ test('inspectImageSources marks http(s) image urls as unresolvable', () => {
     },
   ];
   const { sources, issue } = inspectImageSources(input);
-  assertEquals(sources.length, 0);
-  assertEquals(issue, {
-    kind: 'gateway',
-    error: {
-      message: "Floway cannot use remote image URLs as edit sources; provide an inline image data URL or set image_generation.action to 'generate'.",
-      errorType: 'invalid_request_error',
-      param: 'input[0].content[0].image_url',
-      code: 'unsupported_image_source',
-    },
-  });
+  assertEquals(sources.length, 1);
+  assert('url' in sources[0]);
+  assertEquals(sources[0].url.href, 'https://example.com/a.png');
+  assertEquals(issue, undefined);
 });
 
 test('inspectImageSources rejects bare base64 with the native input_image error', () => {
@@ -563,11 +560,11 @@ test('prepareImageGenerationConfig uses Azure integer-range codes', () => {
   assertEquals(above.error.code, 'integer_above_max_value');
 });
 
-test('prepareImageGenerationConfig rejects a non-decodable mask', () => {
+test('prepareImageGenerationConfig preserves a remote mask for materialization', () => {
   const result = prepareImageGenerationConfig([{ type: 'image_generation', input_image_mask: { image_url: 'https://example.com/m.png' } } as ResponsesTool]);
-  assert(!result.ok);
-  assertEquals(result.error.code, 'invalid_value');
-  assertEquals(result.error.param, 'tools[0].input_image_mask');
+  assert(result.ok);
+  assert(result.config.mask !== undefined && 'url' in result.config.mask);
+  assertEquals(result.config.mask.url.href, 'https://example.com/m.png');
 });
 
 test('transformInputItemsForImageGeneration preserves error type and retryability on replay', () => {
@@ -658,6 +655,131 @@ test('imageGenerationServerTool accepts GIF edit input for local WebP transcodin
     gatewayCtx(),
   );
   assert(result.type === 'active');
+});
+
+test('imageGenerationServerTool fetches and inlines repeated remote edit sources once', async () => {
+  const urls: string[] = [];
+  initExternalResourceFetcher(url => {
+    urls.push(url.href);
+    return Promise.resolve(validPngResponse());
+  });
+  const remote = { type: 'input_image', image_url: 'https://example.com/source.png', detail: 'auto' } as const;
+  const input: ResponsesInputItem[] = [
+    imageInputContainers.message(remote),
+    imageInputContainers.function_output(remote),
+  ];
+
+  const result = await imageGenerationServerTool(
+    makeCtx({ tools: [{ type: 'image_generation', action: 'edit' }], input }),
+    gatewayCtx(),
+  );
+
+  assert(result.type === 'active');
+  assertEquals(urls, ['https://example.com/source.png']);
+  const transformed = result.transformItems?.(input, SHIM_TOOL_NAME);
+  assert(transformed !== undefined && transformed[0].type === 'message' && Array.isArray(transformed[0].content));
+  const first = transformed[0].content[0];
+  assert(first.type === 'input_image');
+  assertEquals(first.image_url, `data:image/png;base64,${VALID_PNG_B64}`);
+});
+
+test.each([
+  {
+    name: 'DNS failure',
+    fetcher: () => Promise.reject(new TypeError('getaddrinfo ENOTFOUND')),
+    message: 'Error while downloading file.',
+  },
+  {
+    name: 'HTTP 404',
+    fetcher: () => Promise.resolve(new Response(null, { status: 404 })),
+    message: 'Error while downloading file. Upstream status code: 404.',
+  },
+])('imageGenerationServerTool mirrors the native remote-source error for $name', async ({ fetcher, message }) => {
+  initExternalResourceFetcher(fetcher);
+  const result = await imageGenerationServerTool(
+    makeCtx({
+      tools: [{ type: 'image_generation', action: 'edit' }],
+      input: [imageInputContainers.message({ type: 'input_image', image_url: 'https://example.invalid/source.png', detail: 'auto' })],
+    }),
+    gatewayCtx(),
+  );
+
+  assert(result.type === 'invalid-request');
+  assertEquals(result.message, message);
+  assertEquals(result.errorType, 'invalid_request_error');
+  assertEquals(result.param, 'url');
+  assertEquals(result.code, 'invalid_value');
+});
+
+test('imageGenerationServerTool mirrors the native error for a fetched non-image', async () => {
+  initExternalResourceFetcher(() => Promise.resolve(new Response('not an image', {
+    headers: { 'content-type': 'text/plain' },
+  })));
+  const result = await imageGenerationServerTool(
+    makeCtx({
+      tools: [{ type: 'image_generation', action: 'edit' }],
+      input: [imageInputContainers.message({ type: 'input_image', image_url: 'https://example.com/readme.txt', detail: 'auto' })],
+    }),
+    gatewayCtx(),
+  );
+
+  assert(result.type === 'invalid-request');
+  assertEquals(result.message, "The image data you provided does not represent a valid image. Please check your input and try again with one of the supported image formats: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'].");
+  assertEquals(result.errorType, 'invalid_request_error');
+  assertEquals(result.param, 'input');
+  assertEquals(result.code, 'invalid_value');
+});
+
+test('imageGenerationServerTool follows redirects before materializing a remote source', async () => {
+  const urls: string[] = [];
+  initExternalResourceFetcher(url => {
+    urls.push(url.href);
+    return Promise.resolve(url.pathname === '/redirect'
+      ? new Response(null, { status: 302, headers: { location: '/image.png' } })
+      : validPngResponse());
+  });
+
+  const result = await imageGenerationServerTool(
+    makeCtx({
+      tools: [{ type: 'image_generation', action: 'edit' }],
+      input: [imageInputContainers.message({ type: 'input_image', image_url: 'https://example.com/redirect', detail: 'auto' })],
+    }),
+    gatewayCtx(),
+  );
+
+  assert(result.type === 'active');
+  assertEquals(urls, ['https://example.com/redirect', 'https://example.com/image.png']);
+});
+
+test('imageGenerationServerTool materializes a remote mask and mirrors its download error', async () => {
+  initExternalResourceFetcher(() => Promise.resolve(validPngResponse()));
+  const accepted = await imageGenerationServerTool(
+    makeCtx({ tools: [{ type: 'image_generation', action: 'generate', input_image_mask: { image_url: 'https://example.com/mask.png' } }] }),
+    gatewayCtx(),
+  );
+  assert(accepted.type === 'active');
+
+  initExternalResourceFetcher(() => Promise.resolve(new Response(null, { status: 404 })));
+  const rejected = await imageGenerationServerTool(
+    makeCtx({ tools: [{ type: 'image_generation', action: 'edit', input_image_mask: { image_url: 'https://example.com/missing.png' } }] }),
+    gatewayCtx(),
+  );
+  assert(rejected.type === 'invalid-request');
+  assertEquals(rejected.message, 'There was an issue with your request. Please check your inputs and try again');
+  assertEquals(rejected.errorType, 'invalid_request_error');
+  assertEquals(rejected.param, null);
+  assertEquals(rejected.code, null);
+});
+
+test('imageGenerationServerTool reports a malformed remote mask at its native path', async () => {
+  const result = await imageGenerationServerTool(
+    makeCtx({ tools: [{ type: 'image_generation', input_image_mask: { image_url: 'https://' } }] }),
+    gatewayCtx(),
+  );
+  assert(result.type === 'invalid-request');
+  assertEquals(result.message, "Invalid 'tools[0].input_image_mask.image_url'. Expected a valid URL, but got a value with an invalid format.");
+  assertEquals(result.param, 'tools[0].input_image_mask.image_url');
+  assertEquals(result.code, 'invalid_value');
 });
 
 test.each(unresolvableSourceCases)(
@@ -770,7 +892,9 @@ test('image dispatcher exposes a newly introduced invalid edit source as an inva
 
   invocation.payload = {
     ...invocation.payload,
-    input: [imageInputContainers.custom_output(unresolvableImages.remote)],
+    input: [imageInputContainers.custom_output({
+      type: 'input_image', image_url: 'https://example.com/late.png', detail: 'auto',
+    })],
   };
   assertThrows(
     () => result.hosted?.dispatcher({
@@ -778,7 +902,7 @@ test('image dispatcher exposes a newly introduced invalid edit source as an inva
       loopState: { iterationCount: 2, remainingToolCalls: undefined },
     }),
     Error,
-    'image_generation live source invariant violated after request validation: Floway cannot use remote image URLs as edit sources',
+    'image_generation live source invariant violated after request validation: remote image URL was not materialized',
   );
 });
 
