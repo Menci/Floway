@@ -6,7 +6,7 @@ import { InMemoryRepo } from './repo/memory.ts';
 import type { ApiKey } from './repo/types.ts';
 import { initBackgroundSchedulerResolver } from './runtime/background.ts';
 import { trackBackground } from './test-helpers/background-tracker.ts';
-import { createInMemoryImageProcessor, initEnv, initFileProvider, initImageProcessor, MemoryFileProvider } from '@floway-dev/platform';
+import { createInMemoryImageProcessor, initEnv, initExternalResourceFetcher, initFileProvider, initImageProcessor, MemoryFileProvider } from '@floway-dev/platform';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 
@@ -106,6 +106,7 @@ export const buildCustomUpstreamRecord = (overrides: Partial<UpstreamRecord> = {
 export async function setupAppTest(options: SetupOptions = {}): Promise<AppTestContext> {
   const repo = new InMemoryRepo();
   initRepo(repo);
+  initExternalResourceFetcher(() => Promise.resolve(new Response(null, { status: 404 })));
   initFileProvider(new MemoryFileProvider());
   initImageProcessor(createInMemoryImageProcessor());
   // Route background promises through the shared tracker so flushBackground()

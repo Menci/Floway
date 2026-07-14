@@ -4,12 +4,13 @@ import { chatCompletionsAttempt } from './attempt.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../test-helpers/gateway-ctx.ts';
+import { initExternalResourceFetcher } from '@floway-dev/platform';
 import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
+import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesResult } from '@floway-dev/protocols/responses';
 import { type ModelCandidate, directFetcher, type ProviderResponsesResult, type ProviderStreamResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
-import { assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
+import { assert, assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
 
 const API_KEY_ID = 'key_chat_completions_attempt_test';
 
@@ -128,6 +129,39 @@ test('generate translates through the Messages target when only that endpoint is
   if (result.type !== 'events') throw new Error('unreachable');
   await collectEvents(result.events);
   assertEquals(callMessages.mock.calls.length, 1);
+});
+
+test('generate injects the platform external-image loader into Chat-to-Messages translation', async () => {
+  installRepo();
+  initExternalResourceFetcher(url => {
+    assertEquals(url.href, 'https://example.com/image.png');
+    return Promise.resolve(new Response(Uint8Array.of(1, 2, 3), { headers: { 'content-type': 'image/png' } }));
+  });
+  let observedBody: Omit<MessagesPayload, 'model'> | undefined;
+  const callMessages = vi.fn(async (_model, body): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
+    observedBody = body as Omit<MessagesPayload, 'model'>;
+    return { ok: true, events: makeProtocolFrames(makeMessagesEvents()), modelKey: 'k', headers: new Headers() };
+  });
+  const result = await chatCompletionsAttempt.generate({
+    payload: makePayload({
+      messages: [{
+        role: 'user',
+        content: [{ type: 'image_url', image_url: { url: 'https://example.com/image.png' } }],
+      }],
+    }),
+    ctx: makeGatewayCtx(),
+    candidate: makeCandidate({ callMessages, endpoints: { messages: {} } }),
+    headers: new Headers(),
+  });
+
+  assertEquals(result.type, 'events');
+  if (result.type !== 'events') throw new Error('unreachable');
+  await collectEvents(result.events);
+  const message = observedBody?.messages[0];
+  assert(message?.role === 'user' && Array.isArray(message.content));
+  const image = message.content.find(block => block.type === 'image');
+  assert(image?.type === 'image');
+  assertEquals(image.source, { type: 'base64', media_type: 'image/png', data: 'AQID' });
 });
 
 test('generate translates through the Responses target when only that endpoint is exposed', async () => {
