@@ -131,7 +131,7 @@ test('reuses its compressed image when the same attempt payload is retried', asy
   await withInlineImagesCompressed(ctx, stubRequest, okEvents);
 
   assertEquals(calls, 1);
-  assertEquals(firstImageUrl(ctx.payload), 'data:image/webp;base64,AQID');
+  assertEquals(imageUrlOf(ctx.payload.input[0]), 'data:image/webp;base64,AQID');
 
   const item = ctx.payload.input[0];
   if (item.type !== 'message' || !Array.isArray(item.content) || item.content[0]?.type !== 'input_image') throw new Error('expected image content');
