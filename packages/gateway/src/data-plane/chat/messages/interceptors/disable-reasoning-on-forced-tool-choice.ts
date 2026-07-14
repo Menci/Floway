@@ -1,5 +1,5 @@
 
-import type { MessagesInterceptor } from './types.ts';
+import type { MessagesPayloadInterceptor } from './types.ts';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
 import { providerModelOf } from '@floway-dev/provider';
 
@@ -24,7 +24,7 @@ const disableMessagesReasoning = (payload: MessagesPayload): MessagesPayload => 
   return next;
 };
 
-export const withReasoningDisabledOnForcedToolChoice: MessagesInterceptor = async (ctx, _gatewayCtx, run) => {
+export const withReasoningDisabledOnForcedToolChoice: MessagesPayloadInterceptor = async (ctx, _gatewayCtx, run) => {
   if (!providerModelOf(ctx.candidate).enabledFlags.has('disable-reasoning-on-forced-tool-choice')) return await run();
   if (!hasForcedToolChoice(ctx.payload)) return await run();
   ctx.payload = disableMessagesReasoning(ctx.payload);

@@ -6,7 +6,7 @@ import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
 import { createNonResponsesSourceStore } from '../responses/items/store.ts';
 import { createChatGatewayCtxFromHono, finalizeGatewayResponse, type ChatGatewayCtx } from '../shared/gateway-ctx.ts';
-import { readRequestBody, type RequestBody } from '../shared/request-body.ts';
+import { readRequestBody, takeRequestBody, type RequestBody } from '../shared/request-body.ts';
 import type { GeminiContent, GeminiPayload } from '@floway-dev/protocols/gemini';
 import { internalErrorResult, ProviderModelsUnavailableError, toInternalDebugError } from '@floway-dev/provider';
 import { TranslatorInputError } from '@floway-dev/translate';
@@ -103,7 +103,7 @@ const runGeminiGenerate = async (c: AuthedContext, model: string, wantsStream: b
   const payload = parseGeminiBodyBytes(requestBody, body => body as GeminiPayload);
   if (payload instanceof Response) return payload;
 
-  const ctx = createChatGatewayCtxFromHono(c, { wantsStream, requestBody, model, backgroundScheduler: backgroundSchedulerFromContext(c) }, createNonResponsesSourceStore);
+  const ctx = createChatGatewayCtxFromHono(c, { wantsStream, requestBody: takeRequestBody(requestBody), model, backgroundScheduler: backgroundSchedulerFromContext(c) }, createNonResponsesSourceStore);
   try {
     const result = await geminiServe.generate({ payload, ctx, model, headers: inboundHeadersForUpstream(c) });
     const { response } = await respondGemini(c, result, wantsStream, ctx);
@@ -118,7 +118,7 @@ const runGeminiCountTokens = async (c: AuthedContext, model: string): Promise<Re
   const payload = parseGeminiBodyBytes(requestBody, parseGeminiCountTokensPayload);
   if (payload instanceof Response) return payload;
 
-  const ctx = createChatGatewayCtxFromHono(c, { wantsStream: false, requestBody, model, backgroundScheduler: backgroundSchedulerFromContext(c) }, createNonResponsesSourceStore);
+  const ctx = createChatGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), model, backgroundScheduler: backgroundSchedulerFromContext(c) }, createNonResponsesSourceStore);
   try {
     const result = await geminiServe.countTokens({ payload, ctx, model, headers: inboundHeadersForUpstream(c) });
     const { response } = await respondGemini(c, result, false, ctx);
