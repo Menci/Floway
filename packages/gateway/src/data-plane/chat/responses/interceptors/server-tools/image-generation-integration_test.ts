@@ -4,7 +4,7 @@ import { initRepo } from '../../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../../../test-helpers/gateway-ctx.ts';
 import type { ResponsesInvocation } from '../types.ts';
-import { createInMemoryImageProcessor, initImageProcessor } from '@floway-dev/platform';
+import { createInMemoryImageProcessor, initExternalResourceFetcher, initImageProcessor } from '@floway-dev/platform';
 import { eventFrame } from '@floway-dev/protocols/common';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
@@ -99,6 +99,9 @@ const emptyResult = (status: ResponsesResult['status']): ResponsesResult => ({
 
 const jsonResponse = (b64: string): Response =>
   new Response(JSON.stringify({ data: [{ b64_json: b64 }] }), { status: 200, headers: new Headers({ 'content-type': 'application/json' }) });
+
+const REMOTE_PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/wEAAAAASUVORK5CYII=';
+const remotePngResponse = (): Response => new Response(Uint8Array.from(atob(REMOTE_PNG_B64), c => c.charCodeAt(0)));
 
 const sseResponse = (lines: string[]): Response =>
   new Response(lines.map(l => `data: ${l}\n\n`).join(''), { status: 200, headers: new Headers({ 'content-type': 'text/event-stream' }) });
@@ -256,6 +259,43 @@ test('an image generated in turn 1 is re-collected as an edit source in turn 2',
   assertEquals(images.length, 1);
   const bytes = await (images[0] as Blob).text();
   assertEquals(bytes, 'AAAA');
+});
+
+test('a remote edit source is inlined before orchestration and reused by the edits backend', async () => {
+  const fetched: string[] = [];
+  initExternalResourceFetcher(url => {
+    fetched.push(url.href);
+    return Promise.resolve(remotePngResponse());
+  });
+  stub.nextEdits = [jsonResponse('RURJVA==')];
+  const invocation = makeCtx([{
+    type: 'message',
+    role: 'user',
+    content: [{ type: 'input_image', image_url: 'https://example.com/source.png', detail: 'auto' }],
+  }], 'edit');
+  const baseRun = scriptedRun([
+    callTurn(0, 'call_1', 'edit the image'),
+    messageTurn('done'),
+  ]);
+  let orchestratorImageUrl: string | undefined;
+  const run = async () => {
+    if (orchestratorImageUrl === undefined) {
+      const item = invocation.payload.input[0];
+      if (item?.type === 'message' && Array.isArray(item.content)) {
+        const image = item.content.find(block => block.type === 'input_image');
+        if (image?.type === 'input_image') orchestratorImageUrl = image.image_url ?? undefined;
+      }
+    }
+    return await baseRun();
+  };
+
+  await drain(await shim(invocation, gatewayCtx(), run));
+
+  assertEquals(fetched, ['https://example.com/source.png']);
+  assertEquals(orchestratorImageUrl, `data:image/png;base64,${REMOTE_PNG_B64}`);
+  assertEquals(stub.editsForms.length, 1);
+  const image = stub.editsForms[0].getAll('image[]')[0] as Blob;
+  assertEquals(new Uint8Array(await image.arrayBuffer()), Uint8Array.from(atob(REMOTE_PNG_B64), c => c.charCodeAt(0)));
 });
 
 test('mask-only GIF edit transcodes one shared image and mask to WebP', async () => {
