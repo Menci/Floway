@@ -49,9 +49,9 @@ for (const [backend, makeRepo] of REPO_BACKENDS) {
   test(`[${backend}] proxies repo findUpstreamsReferencing returns ids of upstreams whose fallback list contains the proxy`, async () => {
     const repo = await makeRepo();
     await repo.proxies.insert({ id: 'p', name: 'P', url: 'socks5://host:1080', dialTimeoutSeconds: null });
-    await repo.upstreams.save(upstreamFixture('up_1', [{ id: 'p' }, { id: 'direct' }]));
-    await repo.upstreams.save(upstreamFixture('up_2', [{ id: 'direct' }, { id: 'p' }]));
-    await repo.upstreams.save(upstreamFixture('up_3', [{ id: 'direct' }]));
+    await repo.upstreams.save(upstreamFixture('up_1', [{ id: 'p' }, { id: 'direct_fetch' }]));
+    await repo.upstreams.save(upstreamFixture('up_2', [{ id: 'direct_fetch' }, { id: 'p' }]));
+    await repo.upstreams.save(upstreamFixture('up_3', [{ id: 'direct_fetch' }]));
 
     const ids = (await repo.proxies.findUpstreamsReferencing('p')).toSorted();
     assertEquals(ids, ['up_1', 'up_2']);

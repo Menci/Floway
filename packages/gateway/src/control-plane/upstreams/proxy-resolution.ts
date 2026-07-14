@@ -1,10 +1,10 @@
 import { createFetcher, type ProxyEntry } from '../../dial/fetcher.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { getRepo } from '../../repo/index.ts';
-import { DIRECT_PROXY_ID, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
+import { DIRECT_CONNECT_ID, isDirectFallbackId, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
 import { getSocketDial } from '@floway-dev/platform';
 import { directFetcher, type Fetcher, type ProxyFallbackEntry } from '@floway-dev/provider';
-import { parseProxyUri, type ProxyUriError, runProxiedRequest } from '@floway-dev/proxy';
+import { parseProxyUri, type ProxyUriError, runDirectConnectRequest, runProxiedRequest } from '@floway-dev/proxy';
 
 // Fetcher resolution for control-plane operations that fire from the
 // dashboard edit form, where the in-progress proxy_fallback_list must take
@@ -31,8 +31,8 @@ const buildOverrideFetcher = async (
   runtimeLocation: string,
 ): Promise<Fetcher> => {
   const list = normalizeProxyFallbackList(rawList);
-  const referenced = new Set(list.filter(entry => entry.id !== DIRECT_PROXY_ID).map(entry => entry.id));
-  if (referenced.size === 0) {
+  const referenced = new Set(list.filter(entry => !isDirectFallbackId(entry.id)).map(entry => entry.id));
+  if (referenced.size === 0 && !list.some(entry => entry.id === DIRECT_CONNECT_ID)) {
     return directFetcher;
   }
 
@@ -52,7 +52,7 @@ const buildOverrideFetcher = async (
     }
   }
 
-  const unknown = list.find(entry => entry.id !== DIRECT_PROXY_ID && !proxyById.has(entry.id) && !parseErrors.has(entry.id));
+  const unknown = list.find(entry => !isDirectFallbackId(entry.id) && !proxyById.has(entry.id) && !parseErrors.has(entry.id));
   if (unknown !== undefined) {
     throw new Error(`unknown proxy id in fallback list: ${unknown.id}`);
   }
@@ -69,7 +69,8 @@ const buildOverrideFetcher = async (
     runtimeLocation,
     proxyById,
     runProxied: runProxiedRequest,
-    runDirect: directFetcher,
+    runDirectFetch: directFetcher,
+    runDirectConnect: runDirectConnectRequest,
     socketDial: getSocketDial,
   });
 };

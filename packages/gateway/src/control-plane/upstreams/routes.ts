@@ -9,7 +9,7 @@ import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { type AuthedContext, userFromContext } from '../../middleware/auth.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
-import { DIRECT_PROXY_ID, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
+import { isDirectFallbackId, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import { shortId } from '../../shared/short-id.ts';
@@ -188,12 +188,11 @@ const warmModelsCache = async (record: UpstreamRecord, c: Context): Promise<void
   }
 };
 
-// 'direct' is always a valid entry id; any other id must reference an
-// existing proxy row. List order matters at dial time (see createFetcher),
-// and persistence layers dedupe via normalizeProxyFallbackList before
-// storing.
+// Built-in direct transports are always valid entry ids; every other id must
+// reference an existing proxy row. List order matters at dial time (see
+// createFetcher), and persistence layers dedupe before storing.
 const validateProxyFallbackList = async (entries: readonly ProxyFallbackEntry[]): Promise<{ ok: true } | { ok: false; error: string }> => {
-  const ids = entries.map(e => e.id).filter(id => id !== DIRECT_PROXY_ID);
+  const ids = entries.map(e => e.id).filter(id => !isDirectFallbackId(id));
   if (ids.length === 0) return { ok: true };
   const proxies = await getRepo().proxies.list();
   const known = new Set(proxies.map(p => p.id));

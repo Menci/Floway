@@ -265,8 +265,8 @@ export const updateKeyBody = z.object({
 // --- upstreams ---
 
 // Per-upstream proxy fallback list. Each entry is an object with a required
-// `id` (a proxy id known to the proxies repo, or the literal `'direct'`
-// sentinel meaning "dial without a proxy") and an optional `colos` whitelist
+// `id` (a proxy id known to the proxies repo, or a built-in direct transport)
+// and an optional `colos` whitelist
 // of location tags (Cloudflare colos / the Node `RUNTIME_LOCATION` env
 // var). `colos` is intentionally not cross-checked against a known-colo list
 // — Node `RUNTIME_LOCATION` is free-form and CF adds new colos we haven't
