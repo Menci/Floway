@@ -1,17 +1,18 @@
 import type { CopilotChatCompletionsBoundaryInterceptor } from './types.ts';
-import { CHAT_COMPLETIONS_LIFTED_TOOL_OUTPUT_IMAGES } from '@floway-dev/protocols/chat-completions';
 
 /**
  * Copilot's `x-initiator` header distinguishes user-triggered turns from
  * agent-triggered tool-result consumption. On Chat Completions the
  * discriminator is the last message: when its role is `assistant` (model
  * replay) or `tool` (a tool result being fed back into the model), the agent
- * is driving the turn. Responses tool-output images are the exception to the
- * role check: Chat tool messages cannot carry images, so translation lifts
- * them into a final user message after the contiguous tool results; that
- * synthesized message retains the source turn's agent initiator through
- * symbol-keyed internal metadata that direct JSON clients cannot supply and
- * JSON wire serialization cannot expose.
+ * is driving the turn.
+ *
+ * Responses tool-output images expose a deliberate translation loss here:
+ * Chat tool messages cannot carry image parts, so translation lifts them into
+ * a legal user message after the contiguous tool results. The Chat wire role
+ * remains authoritative, and that turn is therefore reported as user-initiated
+ * even though its image originated in tool output. Preserving the source-side
+ * provenance would require a contradictory out-of-band signal.
  *
  * The header name is lowercase `x-initiator`; HTTP header names are
  * case-insensitive on the wire, so the casing is cosmetic.
@@ -23,8 +24,7 @@ import { CHAT_COMPLETIONS_LIFTED_TOOL_OUTPUT_IMAGES } from '@floway-dev/protocol
 export const withInitiatorHeaderSet: CopilotChatCompletionsBoundaryInterceptor = async (ctx, _request, run) => {
   const lastMessage = ctx.payload.messages.at(-1);
   const agentInitiated = lastMessage?.role === 'assistant'
-    || lastMessage?.role === 'tool'
-    || ctx.payload[CHAT_COMPLETIONS_LIFTED_TOOL_OUTPUT_IMAGES] === true;
+    || lastMessage?.role === 'tool';
   ctx.headers.set('x-initiator', agentInitiated ? 'agent' : 'user');
 
   return await run();

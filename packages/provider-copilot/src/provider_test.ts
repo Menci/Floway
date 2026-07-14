@@ -6,7 +6,7 @@ import { createCopilotProvider } from './provider.ts';
 import { readCopilotUpstreamState, type CopilotUpstreamState } from './state.ts';
 import type { CopilotModelsResponse } from './types.ts';
 import { createInMemoryImageProcessor, initImageProcessor } from '@floway-dev/platform';
-import { CHAT_COMPLETIONS_LIFTED_TOOL_OUTPUT_IMAGES, type ChatCompletionsMessage } from '@floway-dev/protocols/chat-completions';
+import type { ChatCompletionsMessage } from '@floway-dev/protocols/chat-completions';
 import type { MessagesPayload } from '@floway-dev/protocols/messages';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { directFetcher, initProviderRepo } from '@floway-dev/provider';
@@ -659,61 +659,6 @@ test('Copilot provider sets copilot-vision-request when an image is nested insid
   );
 
   assertEquals(visionHeaders, ['true', null]);
-});
-
-test('Copilot Chat derives lifted-image initiator from internal provenance, not visible content', async () => {
-  const { copilotUpstream } = await setupCopilotTest();
-  const provider = createCopilotProvider(copilotUpstream).instance;
-  const visionHeaders: Array<string | null> = [];
-  const initiatorHeaders: Array<string | null> = [];
-  const wireBodies: string[] = [];
-
-  await withMockedFetch(
-    async request => {
-      const url = new URL(request.url);
-      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
-      if (url.pathname === '/copilot_internal/v2/token') {
-        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
-      }
-      if (url.pathname === '/models') {
-        return jsonResponse(copilotModels([{ id: 'gpt-chat', supported_endpoints: ['/chat/completions'] }]));
-      }
-      if (url.pathname === '/chat/completions') {
-        visionHeaders.push(request.headers.get('copilot-vision-request'));
-        initiatorHeaders.push(request.headers.get('x-initiator'));
-        wireBodies.push(await request.text());
-        return sseResponse();
-      }
-      throw new Error(`Unhandled fetch ${request.url}`);
-    },
-    async () => {
-      const [model] = await provider.getProvidedModels(directFetcher);
-      const messages: ChatCompletionsMessage[] = [
-        {
-          role: 'assistant',
-          content: null,
-          tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'capture', arguments: '{}' } }],
-        },
-        { role: 'tool', tool_call_id: 'call_1', content: 'captured' },
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: 'Image output from tool call call_1:' },
-            { type: 'image_url', image_url: { url: 'https://example.com/capture.png' } },
-          ],
-        },
-      ];
-      await provider.callChatCompletions(model, {
-        messages,
-        [CHAT_COMPLETIONS_LIFTED_TOOL_OUTPUT_IMAGES]: true,
-      }, undefined, noopUpstreamCallOptions());
-      await provider.callChatCompletions(model, { messages: structuredClone(messages) }, undefined, noopUpstreamCallOptions());
-    },
-  );
-
-  assertEquals(visionHeaders, ['true', 'true']);
-  assertEquals(initiatorHeaders, ['agent', 'user']);
-  assertEquals(wireBodies.every(body => !body.includes('chat-completions-lifted-tool-output-images')), true);
 });
 
 test('Copilot Messages boundary chain does NOT fire on the Chat Completions wire (translated path)', async () => {

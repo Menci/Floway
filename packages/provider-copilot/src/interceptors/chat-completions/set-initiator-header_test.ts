@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { withInitiatorHeaderSet } from './set-initiator-header.ts';
 import type { ChatCompletionsBoundaryCtx } from './types.ts';
-import { CHAT_COMPLETIONS_LIFTED_TOOL_OUTPUT_IMAGES, type ChatCompletionsStreamEvent, type ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
+import type { ChatCompletionsStreamEvent, ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
@@ -63,33 +63,7 @@ test('Chat Completions initiator is agent when the last message is a tool result
   assertEquals(ctx.headers.get('x-initiator'), 'agent');
 });
 
-test('Chat Completions initiator stays agent for lifted tool-output images', async () => {
-  const ctx = invocation({
-    model: 'gpt-test',
-    [CHAT_COMPLETIONS_LIFTED_TOOL_OUTPUT_IMAGES]: true,
-    messages: [
-      {
-        role: 'assistant',
-        content: null,
-        tool_calls: [{ id: 'call_1', type: 'function', function: { name: 'capture', arguments: '{}' } }],
-      },
-      { role: 'tool', tool_call_id: 'call_1', content: 'captured' },
-      {
-        role: 'user',
-        content: [
-          { type: 'text', text: 'Image output from tool call call_1:' },
-          { type: 'image_url', image_url: { url: 'https://example.com/capture.png' } },
-        ],
-      },
-    ],
-  });
-
-  await withInitiatorHeaderSet(ctx, stubRequest, okEvents);
-
-  assertEquals(ctx.headers.get('x-initiator'), 'agent');
-});
-
-test('Chat Completions initiator stays user when direct input copies the visible lifted-image shape', async () => {
+test('Chat Completions initiator follows the final user role for a lifted-image-shaped message', async () => {
   const ctx = invocation({
     model: 'gpt-test',
     messages: [

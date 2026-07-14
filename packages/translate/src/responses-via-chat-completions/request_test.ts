@@ -3,7 +3,6 @@ import { test } from 'vitest';
 import { translateResponsesToChatCompletions } from './request.ts';
 import { createResponsesToChatCompletionsStreamState, translateResponsesEventToChatCompletionsChunks } from '../chat-completions-via-responses/events.ts';
 import { assertEquals, assertThrows } from '../test-assert.ts';
-import { CHAT_COMPLETIONS_LIFTED_TOOL_OUTPUT_IMAGES } from '@floway-dev/protocols/chat-completions';
 import type { ResponsesAgentMessageContent, ResponsesInputMultiAgentCallOutputItem, ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
 
 test('translateResponsesToChatCompletions accepts an implicit message discriminator', () => {
@@ -1672,7 +1671,6 @@ test('translateResponsesToChatCompletions lifts tool-output images into a follow
       ],
     },
   ]);
-  assertEquals(result.target[CHAT_COMPLETIONS_LIFTED_TOOL_OUTPUT_IMAGES], true);
 });
 
 test('translateResponsesToChatCompletions keeps grouped tool results contiguous before lifted images', () => {
@@ -1713,10 +1711,9 @@ test('translateResponsesToChatCompletions keeps grouped tool results contiguous 
     { type: 'text', text: 'Image output from tool call call_b:' },
     { type: 'image_url', image_url: { url: 'data:image/png;base64,BBBB', detail: 'auto' } },
   ]);
-  assertEquals(result.target[CHAT_COMPLETIONS_LIFTED_TOOL_OUTPUT_IMAGES], true);
 });
 
-test('translateResponsesToChatCompletions clears lifted-image provenance when a later source message wins', () => {
+test('translateResponsesToChatCompletions places lifted images before a later source message', () => {
   for (const trailing of [
     { type: 'message' as const, role: 'user' as const, content: 'new user turn' },
     { type: 'message' as const, role: 'system' as const, content: 'new system turn' },
@@ -1735,7 +1732,7 @@ test('translateResponsesToChatCompletions clears lifted-image provenance when a 
     });
 
     assertEquals(result.target.messages.map(message => message.role), ['assistant', 'tool', 'user', trailing.role]);
-    assertEquals(result.target[CHAT_COMPLETIONS_LIFTED_TOOL_OUTPUT_IMAGES], undefined);
+    assertEquals(result.target.messages.at(-1)?.content, trailing.content);
   }
 });
 

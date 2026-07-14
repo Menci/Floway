@@ -2,11 +2,6 @@
 
 import type { USAGE_BILLING, UsageBillingMetadata } from '../common/usage.ts';
 
-// This symbol-keyed flag travels between in-process translation, gateway, and
-// provider boundaries but is ignored by JSON wire serialization. Attempt
-// cloning explicitly preserves it because structuredClone omits symbol keys.
-export const CHAT_COMPLETIONS_LIFTED_TOOL_OUTPUT_IMAGES = Symbol('chat-completions-lifted-tool-output-images');
-
 export interface ChatCompletionsPayload {
   model: string;
   messages: ChatCompletionsMessage[];
@@ -35,7 +30,6 @@ export interface ChatCompletionsPayload {
   tool_choice?: 'none' | 'auto' | 'required' | { type: 'function'; function: { name: string } } | null;
   /** Request usage stats in streaming responses */
   stream_options?: { include_usage: boolean } | null;
-  [CHAT_COMPLETIONS_LIFTED_TOOL_OUTPUT_IMAGES]?: true;
 }
 
 export interface ChatCompletionsTool {

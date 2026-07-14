@@ -631,10 +631,10 @@ Request mapping:
   Chat tool messages do not admit image parts, tool-output images are grouped
   after the contiguous tool-result run in one synthesized user image message;
   each tool call's image group is preceded by its source `call_id` label.
-  When that synthesized message remains the final source turn, symbol-keyed
-  internal provenance keeps it agent-initiated at the Copilot boundary without
-  exposing a marker on the JSON wire or trusting client text. A later
-  user/system/developer turn takes precedence and clears the provenance.
+  The synthesized message's legal Chat `user` role is authoritative at provider
+  boundaries, so a final lifted-image turn is reported as user-initiated even
+  though its image originated in tool output; no out-of-band provenance
+  contradicts the wire role.
 - `max_output_tokens`, `stream`, `temperature`, `top_p`, `metadata`, `store`,
   `parallel_tool_calls`, `prompt_cache_key`, `safety_identifier`,
   `service_tier`, and explicit `reasoning.effort` pass through when present.
