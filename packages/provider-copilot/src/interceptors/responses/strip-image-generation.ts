@@ -1,5 +1,5 @@
 import type { ResponsesBoundaryCtx } from './types.ts';
-import type { CanonicalResponsesPayload, ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
+import type { ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
 
 // Copilot rejects both the hosted image_generation tool and Codex's image_gen
 // namespace before inference. The gateway shim normally consumes them; this is

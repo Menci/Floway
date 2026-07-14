@@ -1,7 +1,7 @@
 import { test } from 'vitest';
 
-import type { ResponsesBoundaryCtx } from './types.ts';
 import { withImageGenerationStripped } from './strip-image-generation.ts';
+import type { ResponsesBoundaryCtx } from './types.ts';
 import type { CanonicalResponsesPayload } from '@floway-dev/protocols/responses';
 import { assertEquals, assertFalse } from '@floway-dev/test-utils';
 
