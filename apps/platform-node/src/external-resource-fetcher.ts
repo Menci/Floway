@@ -69,6 +69,11 @@ type ResolveAll = (
 
 const resolveAll: ResolveAll = (hostname, options, callback) => lookup(hostname, options, callback);
 
+const nonPublicTargetError = (): NodeJS.ErrnoException => Object.assign(
+  new Error('External resource target did not resolve exclusively to public IP addresses'),
+  { code: 'ENETUNREACH' },
+);
+
 export const createPublicAddressLookup = (resolve: ResolveAll = resolveAll): LookupFunction =>
   (hostname, options, callback) => {
     resolve(hostname, { ...options, all: true }, (error, addresses) => {
@@ -77,11 +82,7 @@ export const createPublicAddressLookup = (resolve: ResolveAll = resolveAll): Loo
         return;
       }
       if (addresses.length === 0 || addresses.some(({ address }) => !isPublicIpAddress(address))) {
-        const denied = Object.assign(
-          new Error('External resource target did not resolve exclusively to public IP addresses'),
-          { code: 'ENETUNREACH' },
-        );
-        callback(denied, [], 0);
+        callback(nonPublicTargetError(), [], 0);
         return;
       }
       if (options.all === true) {
@@ -96,6 +97,12 @@ export const createPublicAddressLookup = (resolve: ResolveAll = resolveAll): Loo
 export const createNodeExternalResourceFetcher = (): ExternalResourceFetcher => {
   const dispatcher = new Agent({ connect: { lookup: createPublicAddressLookup() } });
   return async (url, signal) => {
+    // Undici bypasses `lookup` for IP literals, so validate them before the
+    // dispatcher sees the request. URL.hostname retains brackets on IPv6.
+    const hostname = url.hostname.startsWith('[') && url.hostname.endsWith(']')
+      ? url.hostname.slice(1, -1)
+      : url.hostname;
+    if (isIP(hostname) !== 0 && !isPublicIpAddress(hostname)) throw nonPublicTargetError();
     const response = await undiciFetch(url, { dispatcher, redirect: 'manual', signal });
     const body = response.body === null
       ? null
