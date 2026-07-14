@@ -98,7 +98,7 @@ const isCodexImageGenerationNamespace = (tool: ResponsesTool): tool is Responses
   && tool.tools[0].type === 'function'
   && tool.tools[0].name === 'imagegen';
 
-export const isImageGenerationDeclaration = (tool: ResponsesTool): boolean =>
+export const isImageGenerationDeclaration = (tool: ResponsesTool): tool is ResponsesHostedTool | ResponsesNamespaceTool =>
   isHostedImageGenerationTool(tool) || isCodexImageGenerationNamespace(tool);
 
 // Identity canonicalization preserves the exact declaration selected for echo.

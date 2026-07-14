@@ -262,7 +262,7 @@ test('consumes the exact Codex image_gen namespace and restores its tool and for
     withResponseEcho(callTurn(0, 'call_1', 'a cat'), [replacement], { type: 'function', name: SHIM_TOOL_NAME }),
     withResponseEcho(messageTurn('done'), [replacement], 'auto'),
   ]);
-  let firstUpstreamToolChoice: ResponsesToolChoice | undefined;
+  let firstUpstreamToolChoice: ResponsesToolChoice | null | undefined;
   const result = await shim(invocation, gatewayCtx(), async () => {
     firstUpstreamToolChoice ??= invocation.payload.tool_choice;
     return await run();
@@ -290,7 +290,7 @@ test('maps and restores a forced hosted image_generation choice across the demot
     withResponseEcho(callTurn(0, 'call_1', 'a cat'), [replacement], { type: 'function', name: SHIM_TOOL_NAME }),
     withResponseEcho(messageTurn('done'), [replacement], 'auto'),
   ]);
-  let firstUpstreamToolChoice: ResponsesToolChoice | undefined;
+  let firstUpstreamToolChoice: ResponsesToolChoice | null | undefined;
   const result = await shim(invocation, gatewayCtx(), async () => {
     firstUpstreamToolChoice ??= invocation.payload.tool_choice;
     return await run();
