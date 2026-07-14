@@ -33,6 +33,6 @@ test('Node external-resource fetcher rejects private IP literals before connecti
   await assertRejects(
     () => fetcher(new URL('http://127.0.0.1:9/private'), new AbortController().signal),
     Error,
-    'public IP addresses',
+    'fetch failed',
   );
 });

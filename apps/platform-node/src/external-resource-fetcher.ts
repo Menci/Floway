@@ -34,7 +34,6 @@ const blockedIpv4Subnets = [
 const blockedIpv6Subnets = [
   ['::', 128],
   ['::1', 128],
-  ['::ffff:0:0', 96],
   ['64:ff9b::', 96],
   ['64:ff9b:1::', 48],
   ['100::', 64],
@@ -53,7 +52,12 @@ for (const [network, prefix] of blockedIpv6Subnets) blockedAddresses.addSubnet(n
 export const isPublicIpAddress = (address: string): boolean => {
   const family = isIP(address);
   if (family === 4) return !blockedAddresses.check(address, 'ipv4');
-  if (family === 6) return !blockedAddresses.check(address, 'ipv6');
+  if (family === 6) {
+    // DNS should normally return IPv4 as family 4. Refuse mapped family-6
+    // spellings outright so they cannot bypass the IPv4 registry ranges.
+    if (address.toLowerCase().startsWith('::ffff:')) return false;
+    return !blockedAddresses.check(address, 'ipv6');
+  }
   return false;
 };
 
@@ -93,7 +97,22 @@ export const createNodeExternalResourceFetcher = (): ExternalResourceFetcher => 
   const dispatcher = new Agent({ connect: { lookup: createPublicAddressLookup() } });
   return async (url, signal) => {
     const response = await undiciFetch(url, { dispatcher, redirect: 'manual', signal });
-    return new Response(response.body, {
+    const body = response.body === null
+      ? null
+      : (() => {
+          const reader = response.body.getReader();
+          return new ReadableStream<Uint8Array>({
+            async pull(controller) {
+              const next = await reader.read();
+              if (next.done) controller.close();
+              else controller.enqueue(next.value);
+            },
+            cancel(reason) {
+              return reader.cancel(reason);
+            },
+          });
+        })();
+    return new Response(body, {
       headers: [...response.headers],
       status: response.status,
       statusText: response.statusText,
