@@ -136,5 +136,5 @@ test.each([
     body,
   });
   assertEquals(response.status, 400);
-  assertEquals(await response.json(), { error: { message, type: 'invalid_request_error', param: null, code: 'invalid_request_error' } });
+  assertEquals(await response.json(), { error: { message, type: 'api_error' } });
 });

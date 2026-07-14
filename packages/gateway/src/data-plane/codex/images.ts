@@ -39,15 +39,18 @@ const imageFile = (value: unknown, index: number): File | string => {
   if (!match) {
     return `Codex image edits images[${index}].image_url must be a base64 image data URL.`;
   }
-  let bytes: Uint8Array;
+  let data: ArrayBuffer;
   try {
-    bytes = Uint8Array.from(atob(match[2]!), character => character.charCodeAt(0));
+    const decoded = atob(match[2]!);
+    data = new ArrayBuffer(decoded.length);
+    const bytes = new Uint8Array(data);
+    for (let i = 0; i < decoded.length; i++) bytes[i] = decoded.charCodeAt(i);
   } catch {
     return `Codex image edits images[${index}].image_url must contain valid base64 image data.`;
   }
   const mimeType = match[1]!.toLowerCase();
   const extension = mimeType === 'image/jpeg' ? 'jpg' : mimeType.slice('image/'.length).replace(/[^a-z0-9]+/gu, '-');
-  return new File([bytes], `image-${index + 1}.${extension}`, { type: mimeType });
+  return new File([data], `image-${index + 1}.${extension}`, { type: mimeType });
 };
 
 const prepareCodexImageEdit = (bytes: Uint8Array): PreparedCodexEdit => {
