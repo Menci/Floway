@@ -237,13 +237,13 @@ const closeSocketWithResponse = (response: Response, socket: DialedSocket): Resp
         const result = await reader.read();
         if (result.done) {
           controller.close();
-          await close();
+          void close();
         } else {
           controller.enqueue(result.value);
         }
       } catch (error) {
         controller.error(error);
-        await close();
+        void close();
       }
     },
     async cancel(reason) {
