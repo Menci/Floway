@@ -12,7 +12,8 @@ import type {
   DumpMetadata,
   DumpStreamEvent,
   DumpUpstreamRef,
-  StoredDumpRecord,
+  DumpWriteRecord,
+  PreparedDumpRequestBody,
   StoredDumpResponseBody,
 } from './types.ts';
 import type { RequestBody } from '../data-plane/chat/shared/request-body.ts';
@@ -29,7 +30,7 @@ interface RequestSnapshot {
   readonly method: string;
   readonly path: string;
   readonly headers: ReadonlyArray<readonly [string, string]>;
-  readonly body: Uint8Array;
+  readonly bodyByteLength: number;
   readonly streamError: string | null;
 }
 
@@ -104,13 +105,21 @@ export class DumpAccumulator {
   private inputTokens: number | null = null;
   private outputTokens: number | null = null;
   private errorMeta: DumpErrorMeta | null = null;
+  private readonly preparedRequestBody: Promise<PreparedDumpRequestBody>;
 
   constructor(
     private readonly apiKey: ApiKey,
     private readonly requestSnapshot: RequestSnapshot,
+    requestBody: Uint8Array,
     private readonly startedAt: number,
     private readonly backgroundScheduler: BackgroundScheduler,
-  ) {}
+  ) {
+    this.preparedRequestBody = getDumpStore().prepareRequestBody(requestBody);
+    // Preparation starts eagerly and is awaited at terminal persistence. Mark
+    // a rejection handled immediately so a long upstream wait cannot surface
+    // it as an unhandled promise before `write()` records the dump failure.
+    void this.preparedRequestBody.catch(() => {});
+  }
 
   // --- mid-flight hooks (called from per-protocol respond layer) ---
 
@@ -257,7 +266,7 @@ export class DumpAccumulator {
       model: this.model,
       inputTokens: this.inputTokens,
       outputTokens: this.outputTokens,
-      requestBytes: this.requestSnapshot.body.byteLength,
+      requestBytes: this.requestSnapshot.bodyByteLength,
       responseBytes: response.payloadBytes,
       durationMs: completedAt - this.startedAt,
       // Precedence: an explicit error stamp from the respond path wins;
@@ -269,23 +278,22 @@ export class DumpAccumulator {
         ?? (response.streamError !== null ? { kind: 'failed', reason: response.streamError } : null),
     };
 
-    const record: StoredDumpRecord = {
-      meta,
-      request: {
-        method: this.requestSnapshot.method,
-        path: this.requestSnapshot.path,
-        headers: this.requestSnapshot.headers.map(([k, v]) => [k, v]),
-        body: this.requestSnapshot.body,
-      },
-      response: {
-        status: response.status,
-        headers: response.headers.map(([k, v]) => [k, v]),
-        body: responseBody,
-      },
-    };
-
     // Commit the row before publishing so subscribers fetching detail off the meta frame find it.
     try {
+      const record: DumpWriteRecord = {
+        meta,
+        request: {
+          method: this.requestSnapshot.method,
+          path: this.requestSnapshot.path,
+          headers: this.requestSnapshot.headers.map(([k, v]) => [k, v]),
+          body: await this.preparedRequestBody,
+        },
+        response: {
+          status: response.status,
+          headers: response.headers.map(([k, v]) => [k, v]),
+          body: responseBody,
+        },
+      };
       await getDumpStore().put(this.apiKey.id, record);
       await getDumpBroker().publish(this.apiKey.id, meta);
     } catch (err) {
@@ -310,8 +318,8 @@ export const openDumpAccumulator = (
     method,
     path: c.req.path,
     headers: headerPairs(c.req.raw.headers),
-    body: requestBody.bytes,
+    bodyByteLength: requestBody.bytes.byteLength,
     streamError: requestBody.streamError,
   };
-  return new DumpAccumulator(apiKey, requestSnapshot, Date.now(), backgroundScheduler);
+  return new DumpAccumulator(apiKey, requestSnapshot, requestBody.bytes, Date.now(), backgroundScheduler);
 };

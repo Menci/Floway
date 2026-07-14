@@ -1,8 +1,8 @@
-import type { DumpMetadata, DumpRecordId, StoredDumpRecord } from './types.ts';
+import type { DumpMetadata, DumpRecordId, DumpWriteRecord, PreparedDumpRequestBody, StoredDumpRecord } from './types.ts';
 
-// Per-API-key request dump storage contract: metadata in SQL, bytes in
-// FileProvider. Concrete impls live in `apps/platform-*`. Records carry
-// raw `Uint8Array` bodies — wire encoding is the control plane's concern.
+// Per-API-key request dump storage contract: metadata in SQL, bodies in the
+// FileProvider. Request bytes are prepared before the terminal write; reads
+// always rehydrate raw bytes for the control plane.
 
 export interface DumpListOptions {
   before?: DumpRecordId;
@@ -10,9 +10,14 @@ export interface DumpListOptions {
 }
 
 export interface DumpStore {
+  // Starts body preparation while the request is in flight. Implementations
+  // may return identity bytes, but persistent stores compress here so the
+  // accumulator can release the original request buffer before terminal IO.
+  prepareRequestBody(body: Uint8Array): Promise<PreparedDumpRequestBody>;
+
   // Write body files BEFORE the metadata row so a partial failure leaves
   // orphan files (sweep-collectable), not orphan rows (broken records).
-  put(keyId: string, record: StoredDumpRecord): Promise<void>;
+  put(keyId: string, record: DumpWriteRecord): Promise<void>;
 
   // Newest-first, paginated by ULID cursor. Retention is enforced by the
   // cron sweep, not here, so the dashboard may briefly show records that

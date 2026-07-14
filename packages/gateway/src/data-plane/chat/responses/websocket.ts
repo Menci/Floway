@@ -11,6 +11,7 @@ import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
 import { createChatGatewayCtxFromHono, type ChatGatewayCtx, type GatewayCtx } from '../shared/gateway-ctx.ts';
+import { takeRequestBody } from '../shared/request-body.ts';
 import { SourceStreamState, eventResultMetadata } from '../shared/respond.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS, type StreamCompletion } from '../shared/stream/sse.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
@@ -196,7 +197,7 @@ const handleClientMessage = async (
     // request body when `ctx` is constructed below. Payloads that fail to
     // parse never reach ctx construction, so no dump record is emitted for
     // them — there is no api-key-scoped turn to attribute them to.
-    const requestBytes = wsDataToBytes(data);
+    const requestBody = { bytes: wsDataToBytes(data), streamError: null };
     if (!(await authenticateApiKey(c, authenticatedRawKey))) {
       sendError(socket, 401, {
         type: 'authentication_error',
@@ -207,7 +208,7 @@ const handleClientMessage = async (
     }
     let parsed: unknown;
     try {
-      parsed = JSON.parse(new TextDecoder().decode(requestBytes)) as unknown;
+      parsed = JSON.parse(new TextDecoder().decode(requestBody.bytes)) as unknown;
     } catch (cause) {
       throw new WebSocketClientMessageError(`WebSocket message must be valid JSON: ${cause instanceof Error ? cause.message : String(cause)}`);
     }
@@ -234,7 +235,7 @@ const handleClientMessage = async (
       // The WS upgrade has no HTTP body; the dump's request body is the
       // per-turn JSON frame bytes so an operator reading the dashboard
       // sees the exact `response.create` payload the client sent.
-      requestBody: { bytes: requestBytes, streamError: null },
+      requestBody: takeRequestBody(requestBody),
       method: 'WS',
       model: payload.model,
       backgroundScheduler,
