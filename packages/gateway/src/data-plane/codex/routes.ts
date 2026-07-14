@@ -2,7 +2,7 @@
 //
 // OAuth ("ChatGPT") mode has two independently configured bases:
 //
-//   chatgpt_base_url             — usage, analytics, plugins, Agent Identity, Apps MCP
+//   chatgpt_base_url             — analytics, plugins, agent identity, Apps MCP
 //   model_providers.x.base_url   — models, Responses HTTP/WS, remote compaction
 //
 // The dashboard points both at this namespace. Codex appends `models`,
@@ -26,6 +26,10 @@
 // when the base contains neither `/backend-api` nor `/api/codex`:
 // https://github.com/openai/codex/blob/44918ea10c0f99151c6710411b4322c2f5c96bea/codex-rs/analytics/src/client.rs#L99-L108
 // https://github.com/openai/codex/blob/44918ea10c0f99151c6710411b4322c2f5c96bea/codex-rs/codex-mcp/src/mcp/mod.rs#L469-L490
+//
+// With requires_openai_auth, the TUI also appends `/api/codex/usage` and the
+// rate-limit-reset-credit paths mounted below:
+// https://github.com/openai/codex/blob/f90e7deea6a715bbd153044af6f475eefa749177/codex-rs/tui/src/chatwidget/rate_limits.rs#L295-L303
 //
 // Auth: Codex reads `tokens.access_token` from `~/.codex/auth.json` and sends
 // it as `Authorization: Bearer <key>`, which authMiddleware accepts as a Floway
