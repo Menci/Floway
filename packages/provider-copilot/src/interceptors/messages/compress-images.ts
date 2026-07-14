@@ -48,6 +48,21 @@ const collectImageBlocks = (messages: MessagesMessage[]): MessagesImageBlock[] =
   return blocks;
 };
 
+const compressInlineImages = async (ctx: MessagesBoundaryCtx | MessagesCountTokensBoundaryCtx): Promise<void> => {
+  const blocks = collectImageBlocks(ctx.payload.messages);
+  if (blocks.length === 0) return;
+
+  const caps = claudeImageCaps(ctx.model.id);
+  const targetSize: ImageSizeCalculator = source => fitWithin(source, caps);
+  const compress = memoizedBase64Compressor(targetSize);
+  await Promise.all(
+    blocks.map(async block => {
+      block.source.data = await compress(block.source.data);
+      block.source.media_type = 'image/webp';
+    }),
+  );
+};
+
 // Recompresses every inline base64 image in the outgoing Messages payload to
 // WebP before the Copilot upstream call. Generic in the run-result type so the
 // same definition serves both the streaming Messages boundary chain and the
@@ -58,18 +73,9 @@ export const withInlineImagesCompressed = async <TResult>(
   _request: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
-  const blocks = collectImageBlocks(ctx.payload.messages);
-  if (blocks.length > 0) {
-    const caps = claudeImageCaps(ctx.model.id);
-    const targetSize: ImageSizeCalculator = source => fitWithin(source, caps);
-    const compress = memoizedBase64Compressor(targetSize);
-    await Promise.all(
-      blocks.map(async block => {
-        block.source.data = await compress(block.source.data);
-        block.source.media_type = 'image/webp';
-      }),
-    );
-  }
-
+  // Finish this nested activation before starting the upstream call. Its
+  // request-local memoizer keys are the full source base64 strings, which can
+  // be several megabytes each and must not stay live for the response stream.
+  await compressInlineImages(ctx);
   return await run();
 };

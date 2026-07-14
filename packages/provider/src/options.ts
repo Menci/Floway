@@ -19,3 +19,21 @@ export interface UpstreamFetchOptions {
 // timing — model-listing helpers and interceptor sub-calls that dispatch
 // outside the primary data-plane fetch.
 export const identityWrapUpstreamCall = <T>(dispatch: () => Promise<T>): Promise<T> => dispatch();
+
+// Transfer a request into the fetcher exactly once. The wrapper used for
+// upstream-call timing can outlive dispatch for the whole network wait; clearing
+// its slot immediately keeps a large serialized body owned only by the fetcher,
+// whose proxy path replaces it with replayable bytes.
+export const dispatchUpstreamFetch = (
+  options: Pick<UpstreamFetchOptions, 'fetcher' | 'wrapUpstreamCall'>,
+  url: string,
+  init: RequestInit,
+): Promise<Response> => {
+  let owned: RequestInit | undefined = init;
+  return options.wrapUpstreamCall(() => {
+    if (owned === undefined) throw new Error('upstream fetch dispatch invoked more than once');
+    const request = owned;
+    owned = undefined;
+    return options.fetcher(url, request);
+  });
+};

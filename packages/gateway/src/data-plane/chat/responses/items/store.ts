@@ -429,7 +429,11 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   ): void {
     const metadata = cloneStoredResponsesItemMetadata('hasPayload' in row ? row : storedResponsesItemMetadata(row));
     this.loadedItemsById.set(metadata.id, metadata);
-    if (!('hasPayload' in row) && row.payload !== null) this.stagedPayloadsById.set(row.id, structuredClone(row.payload));
+    // Full rows are already owned by this store: input/repair rows clone the
+    // caller item when constructed, and stageOutputItem clones its row before
+    // reaching here. Share that internal payload between the staging indexes;
+    // candidate rewrite clones the hydrated item before downstream mutation.
+    if (!('hasPayload' in row) && row.payload !== null) this.stagedPayloadsById.set(row.id, row.payload);
     if (metadata.hasPayload && options.source !== undefined) this.payloadSourcesById.set(metadata.id, options.source);
     if (options.durable === true) this.durableItemIds.add(metadata.id);
     if (metadata.contentHash !== null) pushByHash(this.loadedItemsByContentHash, metadata.contentHash, metadata);

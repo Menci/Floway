@@ -1,4 +1,4 @@
-import type { MessagesInterceptor } from './types.ts';
+import type { MessagesPayloadInterceptor } from './types.ts';
 import { providerModelOf } from '@floway-dev/provider';
 
 // Workaround for upstreams (e.g. DeepSeek-R1) that reject `role: 'system'`
@@ -6,7 +6,7 @@ import { providerModelOf } from '@floway-dev/provider';
 // conceptually-first system slot on the top-level `payload.system` field;
 // any inline message with `role: 'system'` is therefore by definition
 // interleaved, and gets demoted to `role: 'user'` with content preserved.
-export const demoteInterleavedSystemToUser: MessagesInterceptor = (ctx, _gatewayCtx, run) => {
+export const demoteInterleavedSystemToUser: MessagesPayloadInterceptor = (ctx, _gatewayCtx, run) => {
   if (!providerModelOf(ctx.candidate).enabledFlags.has('demote-interleaved-system-to-user')) return run();
 
   const { messages } = ctx.payload;

@@ -122,12 +122,20 @@ are billed as reasoning/output exactly once.
   it, decodes shim-owned replay history back into upstream `search_result`
   blocks, and rewrites shim-owned search results/citations back to native
   Messages shape. The shim is enabled by default for Copilot Messages targets
-  too, because Copilot search is executed by the gateway.
+  too, because Copilot search is executed by the gateway. `count_tokens`
+  performs the same request preparation without the generation-only response
+  stream rewrite.
 - strips reserved `x-anthropic-billing-header` prompt-attribution lines and
   `cch=<hash>` cache markers that some clients inline into the `system`
   prompt; these are opaque to every upstream and poison prompt-cache prefix
   hashes
 - strips stray `[DONE]` sentinels from Anthropic-shaped streams
+
+Messages generation and `count_tokens` apply billing-attribution stripping,
+forced-tool reasoning compatibility, inline-system role compatibility, and
+web-search request preparation in the same order. Token counts therefore see
+the same gateway-level compatibility shape as generation; each provider still
+owns any operation-specific wire-boundary transforms.
 
 ### Messages — Copilot provider boundary chain
 
