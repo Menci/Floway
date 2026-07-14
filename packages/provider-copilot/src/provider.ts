@@ -13,7 +13,7 @@ import { emptyKnownModels, mergeKnownModels, projectKnownModels } from './known-
 import { mergeClaudeVariants } from './merge-claude-variants.ts';
 import { copilotPublicModelId } from './model-name.ts';
 import { CONTEXT_1M_BETA, copilotModelSupportsFastMode, type ModelSelectionHints, resolveCopilotRawModel } from './model-selection.ts';
-import { pricingForCopilotModelKey, pricingForCopilotPublicModelId } from './pricing.ts';
+import { pricingForCopilotPublicModelId } from './pricing.ts';
 import { readCopilotUpstreamState, type CopilotUpstreamState } from './state.ts';
 import type { CopilotRawModel } from './types.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
@@ -153,15 +153,19 @@ const finalizeCopilotModels = (
 
   const models: ProviderModel[] = [];
   for (const mergedModel of merged.data) {
-    const variants = groups.get(mergedModel.id) ?? [mergedModel];
+    const variants = groups.get(mergedModel.id);
+    if (variants === undefined) {
+      const rawIds = rawModels.length === 0 ? 'none' : rawModels.map(model => model.id).join(', ');
+      throw new Error(`Copilot model projection invariant violated: merged model '${mergedModel.id}' has no raw variant group (raw model ids: ${rawIds})`);
+    }
     const endpoints = copilotModelEndpoints(variants);
-    const cost = pricingForCopilotPublicModelId(mergedModel.id);
+    const pricing = pricingForCopilotPublicModelId(mergedModel.id);
     const draft: Omit<ProviderModel, 'enabledFlags'> = {
       ...copilotRawToProviderModel(mergedModel),
       kind: kindForEndpoints(endpoints),
       endpoints,
       providerData: { rawModels: variants } satisfies CopilotProviderData,
-      ...(cost ? { cost } : {}),
+      ...(pricing ? { pricing } : {}),
     };
     // Layer order: provider upstream default → operator upstream override
     // → per-model provider default. Placing the per-model layer last
@@ -239,7 +243,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
     model: modelKey,
     upstream: copilot.id,
     modelKey,
-    cost: pricingForCopilotModelKey(modelKey),
+    pricing: null,
   });
 
   // Materialize an upstream error body up-front so any interceptor that
@@ -312,7 +316,6 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
       }
       return finalizeCopilotModels(projectKnownModels(merged, now), copilot.flagOverrides);
     },
-    getPricingForModelKey: pricingForCopilotModelKey,
     // Copilot's catalog never declares endpoints.completions, so this
     // stub is unreachable; the rejection surfaces a routing bug.
     callCompletions: rejectUnsupported('callCompletions'),

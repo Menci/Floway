@@ -1,5 +1,5 @@
 import type { WebSearchProviderName } from '../shared/web-search-providers.ts';
-import type { AliasSelection, AliasTarget, AnnouncedMetadata, BillingDimension, ModelKind, ModelPricing } from '@floway-dev/protocols/common';
+import type { AliasSelection, AliasTarget, AnnouncedMetadata, BillingDimension, ModelKind, PriceVector, PricingSelector } from '@floway-dev/protocols/common';
 import type { PerformanceTelemetryContext, ProviderModel, UpstreamRecord } from '@floway-dev/provider';
 
 export interface ApiKey {
@@ -45,31 +45,25 @@ export interface UsageRecord {
   upstream: string | null;
   modelKey: string;
   hour: string;
-  // Service tier the upstream stamped on this bucket (Anthropic `speed`,
-  // OpenAI `service_tier`). null = the base / default tier. Distinct tiers
-  // for the same (keyId, model, upstream, modelKey, hour) are stored as
-  // separate buckets so per-tier pricing overrides apply correctly.
-  tier: string | null;
+  // Canonical, self-describing selector coordinate for this bucket. The SQL
+  // identity stores its sorted-key JSON form; repository reads expose the typed
+  // object. `{}` is the base coordinate.
+  pricingSelector: PricingSelector;
   requests: number;
-  // Disjoint per-dimension token counts for this bucket. The tier the bucket
-  // was stamped under lives on the `tier` field above — do not encode it
-  // inside this map.
+  // Disjoint per-dimension token counts for this selector bucket.
   tokens: Partial<Record<BillingDimension, number>>;
-  // Pricing snapshot taken at write time. null means the provider did not
-  // resolve pricing for this model (Custom upstreams, unknown Copilot
-  // public id, etc.). The repo derives per-dimension unit prices from it via
-  // unitPriceForDimension after `resolveEffectivePricing(cost, tier)` folds
-  // in the bucket's tier override; aggregation treats a null snapshot as
-  // cost 0.
-  cost: ModelPricing | null;
+  // Resolved per-dimension price snapshot for this exact selector coordinate.
+  // null means the model had no pricing metadata. Selector misses inside a
+  // configured rate card resolve to Base before reaching the repo. Repos
+  // persist one unit price per token-bearing dimension; null contributes zero
+  // realized cost.
+  rates: PriceVector | null;
 }
 
 // Disjoint per-dimension token counts. Absent keys mean zero for that
-// dimension. No key's count overlaps another's. `tier` is the upstream-
-// reported service-tier marker (Anthropic `usage.speed`, OpenAI
-// `usage.service_tier`) that selects an override against `cost.tiers`
-// before any per-dimension unit-price lookup; absent / null = the model's
-// base pricing applies.
+// dimension. No key's count overlaps another's. `tier` is only the normalized
+// upstream observation used as a runtime pricing fact; it is projected into the
+// generic `pricingSelector` at recording time and is not persisted directly.
 export interface TokenUsage extends Partial<Record<BillingDimension, number>> {
   tier?: string | null;
 }
@@ -179,14 +173,14 @@ export interface SessionsRepo {
 }
 
 export interface UsageRepo {
-  // Additive upsert: on (keyId, model, upstream, modelKey, hour, tier)
-  // conflict, token counts are summed. cost is COALESCED — the first write
-  // within a bucket establishes the pricing snapshot for that row, later
-  // writes that share the bucket keep the original snapshot.
+  // Additive upsert: on (keyId, model, upstream, modelKey, hour,
+  // pricingSelector) conflict, token counts are summed. The first write for
+  // each dimension establishes its pricing snapshot, including an unpriced
+  // snapshot; later writes that share the bucket keep it unchanged.
   record(record: UsageRecord): Promise<void>;
   query(opts: { keyId?: string; start: string; end: string }): Promise<UsageRecord[]>;
   listAll(): Promise<UsageRecord[]>;
-  // Replacement upsert: counts and cost are both overwritten from the record.
+  // Replacement upsert: counts and rates are both overwritten from the record.
   set(record: UsageRecord): Promise<void>;
   deleteAll(): Promise<void>;
 }

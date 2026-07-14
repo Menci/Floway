@@ -48,6 +48,56 @@ const collectImageBlocks = (messages: MessagesMessage[]): MessagesImageBlock[] =
   return blocks;
 };
 
+const compressInlineImages = async (ctx: MessagesBoundaryCtx | MessagesCountTokensBoundaryCtx): Promise<void> => {
+  const blocks = collectImageBlocks(ctx.payload.messages);
+  if (blocks.length === 0) return;
+
+  const caps = claudeImageCaps(ctx.model.id);
+  const targetSize: ImageSizeCalculator = source => fitWithin(source, caps);
+  const compress = memoizedBase64Compressor(targetSize);
+  const compressedData = new Map<MessagesImageBlock, string>();
+  await Promise.all(
+    blocks.map(async block => {
+      compressedData.set(block, await compress(block.source.data));
+    }),
+  );
+  const hasCompressedImage = (block: MessagesToolResultContentBlock | MessagesUserContentBlock): block is MessagesImageBlock =>
+    block.type === 'image' && compressedData.has(block);
+  const hasCompressedToolResultImage = (
+    block: MessagesUserContentBlock,
+  ): block is MessagesToolResultBlock & { content: MessagesToolResultContentBlock[] } =>
+    block.type === 'tool_result'
+    && Array.isArray(block.content)
+    && block.content.some(hasCompressedImage);
+  const rewriteImage = (block: MessagesImageBlock): MessagesImageBlock => {
+    const data = compressedData.get(block);
+    if (data === undefined) throw new Error('Missing compressed Messages image data');
+    return {
+      ...block,
+      source: { ...block.source, media_type: 'image/webp', data },
+    };
+  };
+  const rewriteUserContent = (content: MessagesUserContentBlock[]): MessagesUserContentBlock[] =>
+    content.map(block => {
+      if (hasCompressedImage(block)) return rewriteImage(block);
+      if (!hasCompressedToolResultImage(block)) return block;
+      return {
+        ...block,
+        content: block.content.map(inner => hasCompressedImage(inner) ? rewriteImage(inner) : inner),
+      };
+    });
+
+  ctx.payload = {
+    ...ctx.payload,
+    messages: ctx.payload.messages.map(message =>
+      message.role === 'user'
+      && Array.isArray(message.content)
+      && message.content.some(block => hasCompressedImage(block) || hasCompressedToolResultImage(block))
+        ? { ...message, content: rewriteUserContent(message.content) }
+        : message),
+  };
+};
+
 // Recompresses every inline base64 image in the outgoing Messages payload to
 // WebP before the Copilot upstream call. Generic in the run-result type so the
 // same definition serves both the streaming Messages boundary chain and the
@@ -58,53 +108,9 @@ export const withInlineImagesCompressed = async <TResult>(
   _request: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
-  const blocks = collectImageBlocks(ctx.payload.messages);
-  if (blocks.length > 0) {
-    const caps = claudeImageCaps(ctx.model.id);
-    const targetSize: ImageSizeCalculator = source => fitWithin(source, caps);
-    const compress = memoizedBase64Compressor(targetSize);
-    const compressedData = new Map<MessagesImageBlock, string>();
-    await Promise.all(
-      blocks.map(async block => {
-        compressedData.set(block, await compress(block.source.data));
-      }),
-    );
-    const hasCompressedImage = (block: MessagesToolResultContentBlock | MessagesUserContentBlock): block is MessagesImageBlock =>
-      block.type === 'image' && compressedData.has(block);
-    const hasCompressedToolResultImage = (
-      block: MessagesUserContentBlock,
-    ): block is MessagesToolResultBlock & { content: MessagesToolResultContentBlock[] } =>
-      block.type === 'tool_result'
-      && Array.isArray(block.content)
-      && block.content.some(hasCompressedImage);
-    const rewriteImage = (block: MessagesImageBlock): MessagesImageBlock => {
-      const data = compressedData.get(block);
-      if (data === undefined) throw new Error('Missing compressed Messages image data');
-      return {
-        ...block,
-        source: { ...block.source, media_type: 'image/webp', data },
-      };
-    };
-    const rewriteUserContent = (content: MessagesUserContentBlock[]): MessagesUserContentBlock[] =>
-      content.map(block => {
-        if (hasCompressedImage(block)) return rewriteImage(block);
-        if (!hasCompressedToolResultImage(block)) return block;
-        return {
-          ...block,
-          content: block.content.map(inner => hasCompressedImage(inner) ? rewriteImage(inner) : inner),
-        };
-      });
-
-    ctx.payload = {
-      ...ctx.payload,
-      messages: ctx.payload.messages.map(message =>
-        message.role === 'user'
-        && Array.isArray(message.content)
-        && message.content.some(block => hasCompressedImage(block) || hasCompressedToolResultImage(block))
-          ? { ...message, content: rewriteUserContent(message.content) }
-          : message),
-    };
-  }
-
+  // Finish this nested activation before starting the upstream call. Its
+  // request-local memoizer keys are the full source base64 strings, which can
+  // be several megabytes each and must not stay live for the response stream.
+  await compressInlineImages(ctx);
   return await run();
 };

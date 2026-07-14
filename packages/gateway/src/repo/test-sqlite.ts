@@ -2,7 +2,7 @@ import initSqlJs from 'sql.js';
 
 import type { SqlDatabase, SqlPreparedStatement, SqlResult } from '@floway-dev/platform';
 
-const migrationSqlByFilename = Object.entries(import.meta.glob('../../migrations/*.sql', { query: '?raw', import: 'default', eager: true }) as Record<string, string>)
+export const migrationSqlByFilename = Object.entries(import.meta.glob('../../migrations/*.sql', { query: '?raw', import: 'default', eager: true }) as Record<string, string>)
   .map(([path, sql]) => [path.slice(path.lastIndexOf('/') + 1), sql] as const)
   .toSorted(([a], [b]) => a.localeCompare(b));
 

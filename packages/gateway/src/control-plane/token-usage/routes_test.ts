@@ -16,10 +16,10 @@ const seedUsage = async (
     upstream: 'up_test',
     modelKey: model,
     hour,
-    tier: null,
+    pricingSelector: {},
     requests,
     tokens: { input: 100, output: 50 },
-    cost: null,
+    rates: null,
   });
 };
 

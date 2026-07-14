@@ -2,11 +2,11 @@ import { test } from 'vitest';
 
 import { aggregateUsageForDisplay } from './aggregate.ts';
 import type { UsageRecord } from '../../repo/types.ts';
-import type { ModelPricing } from '@floway-dev/protocols/common';
+import type { PriceVector } from '@floway-dev/protocols/common';
 import { assertAlmostEquals, assertEquals } from '@floway-dev/test-utils';
 
-const opus47Pricing: ModelPricing = { input: 5, output: 25, input_cache_read: 0.5, input_cache_write: 6.25 };
-const gpt54Pricing: ModelPricing = { input: 2.5, output: 15, input_cache_read: 0.25 };
+const opus47Pricing: PriceVector = { input: 5, output: 25, input_cache_read: 0.5, input_cache_write: 6.25 };
+const gpt54Pricing: PriceVector = { input: 2.5, output: 15, input_cache_read: 0.25 };
 
 const baseRecord = (overrides: Partial<UsageRecord>): UsageRecord => ({
   keyId: 'key-1',
@@ -14,10 +14,10 @@ const baseRecord = (overrides: Partial<UsageRecord>): UsageRecord => ({
   model: 'claude-opus-4-7',
   upstream: 'up_copilot',
   modelKey: 'claude-opus-4-7',
-  tier: null,
+  pricingSelector: {},
   requests: 1,
   tokens: { input: 100, output: 50 },
-  cost: opus47Pricing,
+  rates: opus47Pricing,
   ...overrides,
 });
 
@@ -37,7 +37,7 @@ test('aggregateUsageForDisplay groups variants that share public model id', () =
   assertEquals('modelKey' in out[0], false);
 });
 
-test('aggregateUsageForDisplay applies cost from each record snapshot', () => {
+test('aggregateUsageForDisplay applies cost from each record rate snapshot', () => {
   const records: UsageRecord[] = [baseRecord({ modelKey: 'claude-opus-4-7-xhigh', tokens: { input: 1_000_000, output: 50 } })];
   const out = aggregateUsageForDisplay(records);
   // 1M input * $5/MTok = $5; output 50 tokens * $25/MTok ≈ $0.00125. total ≈ 5.00125.
@@ -46,8 +46,8 @@ test('aggregateUsageForDisplay applies cost from each record snapshot', () => {
 
 test('aggregateUsageForDisplay sums cost across grouped raw records', () => {
   const records: UsageRecord[] = [
-    baseRecord({ model: 'gpt-5.4', modelKey: 'gpt-5.4', cost: gpt54Pricing, tokens: { input: 1_000_000 } }),
-    baseRecord({ model: 'gpt-5.4', modelKey: 'gpt-5.4', cost: gpt54Pricing, tokens: { input: 1_000_000 } }),
+    baseRecord({ model: 'gpt-5.4', modelKey: 'gpt-5.4', rates: gpt54Pricing, tokens: { input: 1_000_000 } }),
+    baseRecord({ model: 'gpt-5.4', modelKey: 'gpt-5.4', rates: gpt54Pricing, tokens: { input: 1_000_000 } }),
   ];
   const out = aggregateUsageForDisplay(records);
   assertEquals(out.length, 1);
@@ -62,44 +62,42 @@ test('aggregateUsageForDisplay leaves the input record shape untouched', () => {
   assertEquals(original.tokens.input, 42);
 });
 
-test('aggregateUsageForDisplay treats null cost as zero', () => {
-  const out = aggregateUsageForDisplay([baseRecord({ cost: null, tokens: { input: 1_000_000 } })]);
+test('aggregateUsageForDisplay treats null rates as zero cost', () => {
+  const out = aggregateUsageForDisplay([baseRecord({ rates: null, tokens: { input: 1_000_000 } })]);
   assertEquals(out[0].cost, 0);
 });
 
-test('aggregateUsageForDisplay falls back to the input rate when input_cache_read has no dedicated price', () => {
-  const cost: ModelPricing = { input: 4, output: 8 };
+test('aggregateUsageForDisplay leaves dimensions without an explicit rate unpriced', () => {
+  const rates: PriceVector = { input: 4, output: 8 };
   const out = aggregateUsageForDisplay([
-    baseRecord({ cost, tokens: { input: 500_000, input_cache_read: 500_000 } }),
+    baseRecord({ rates, tokens: { input: 500_000, input_cache_read: 500_000 } }),
   ]);
-  // input = 500_000 * $4 = 2; input_cache_read = 500_000 * $4 (fallback) = 2; total $4.
-  assertAlmostEquals(out[0].cost, 4, 1e-9);
+  // Only input has a rate: 500_000 * $4 = $2. Cache reads remain unpriced.
+  assertAlmostEquals(out[0].cost, 2, 1e-9);
 });
 
 test('aggregateUsageForDisplay charges image dimensions separately', () => {
-  const cost: ModelPricing = { input: 10, input_image: 5, output: 40, output_image: 30 };
+  const rates: PriceVector = { input: 10, input_image: 5, output: 40, output_image: 30 };
   const out = aggregateUsageForDisplay([
-    baseRecord({ cost, tokens: { input: 1_000_000, input_image: 1_000_000, output: 1_000_000, output_image: 1_000_000 } }),
+    baseRecord({ rates, tokens: { input: 1_000_000, input_image: 1_000_000, output: 1_000_000, output_image: 1_000_000 } }),
   ]);
   // 10 + 5 + 40 + 30 = $85.
   assertAlmostEquals(out[0].cost, 85, 1e-9);
 });
 
-test('aggregateUsageForDisplay reads unit prices from the already-folded cost the repo writer hands back', () => {
+test('aggregateUsageForDisplay reads unit prices from the already-folded rates the repo writer hands back', () => {
   // The repo write path (`repo/sql.ts:dimensionRows`, `repo/memory.ts:dimensionEntries`)
-  // resolves the bucket's tier into per-dimension unit prices BEFORE storing,
-  // so by the time aggregate sees a UsageRecord the `cost` field is already
-  // the effective pricing for that bucket's tier and tier resolution is a
-  // no-op. Two same-tier records below model the post-write shape.
+  // receives the request's resolved per-dimension rates, so by the time aggregate
+  // sees a UsageRecord the `rates` field is already the effective snapshot.
   // Opus 4.8: standard $5 / $25, fast $10 / $50.
   const fastRow = baseRecord({
-    tier: 'fast',
-    cost: { input: 10, output: 50 },
+    pricingSelector: { serviceTier: 'fast' },
+    rates: { input: 10, output: 50 },
     tokens: { input: 1_000_000, output: 1_000_000 },
   });
   const standardRow = baseRecord({
-    tier: null,
-    cost: { input: 5, output: 25 },
+    pricingSelector: {},
+    rates: { input: 5, output: 25 },
     tokens: { input: 1_000_000, output: 1_000_000 },
   });
 
@@ -110,4 +108,19 @@ test('aggregateUsageForDisplay reads unit prices from the already-folded cost th
   const standardOut = aggregateUsageForDisplay([standardRow]);
   // 1M * $5 + 1M * $25 = $30.
   assertAlmostEquals(standardOut[0].cost, 30, 1e-9);
+});
+
+test('aggregateUsageForDisplay charges the whole request at the selected pricing entry, not a marginal overage', () => {
+  const out = aggregateUsageForDisplay([
+    baseRecord({ rates: { input: 10, output: 45 }, pricingSelector: { inputTokens: { operator: 'gt', value: 272000 } }, tokens: { input: 300_000, output: 100_000 } }),
+  ]);
+  assertAlmostEquals(out[0].cost, 7.5, 1e-9);
+});
+
+test('aggregateUsageForDisplay prices different resolved selector snapshots independently', () => {
+  const out = aggregateUsageForDisplay([
+    baseRecord({ rates: { input: 5, output: 30 }, tokens: { input: 300_000, output: 100_000 } }),
+    baseRecord({ rates: { input: 20, output: 90 }, pricingSelector: { inputTokens: { operator: 'gt', value: 272000 }, serviceTier: 'priority' }, tokens: { input: 300_000, output: 100_000 } }),
+  ]);
+  assertAlmostEquals(out[0].cost, 4.5 + 15, 1e-9);
 });

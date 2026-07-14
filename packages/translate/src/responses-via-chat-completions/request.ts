@@ -200,9 +200,9 @@ export const translateResponsesToChatCompletions = (source: ResponsesRequestPayl
       continue;
     }
 
-    // item_reference items are connection-bound pointers with no inline
-    // content to translate; skip them.
-    if (item.type === 'item_reference') continue;
+    if (item.type === 'item_reference') {
+      throw new TranslatorInputError("Invalid input item type 'item_reference'.");
+    }
 
     // The shim must translate echoed web_search_call input items
     // into function_call + function_call_output pairs before this

@@ -1,10 +1,9 @@
-// Per-API-key request-dump types. Two parallel shapes split by where bodies
-// live:
+// Per-API-key request-dump types. Three shapes split by lifecycle:
 //
-//   - the storage shape (`Stored*`, with `body: Uint8Array`) is what the
-//     accumulator hands the store, what the store writes and rehydrates,
-//     and what flows in-process between the data plane and the dashboard's
-//     control-plane reader;
+//   - the write shape (`DumpWrite*`) carries a request body prepared while the
+//     upstream is running, so persistence does not need the original bytes;
+//   - the storage/read shape (`Stored*`, with `body: Uint8Array`) is what the
+//     store rehydrates and what flows in-process to the dashboard's reader;
 //   - the wire shape (`Dump*`, with `body: DumpBody`) is the JSON-friendly
 //     view served to the dashboard by `dumpRecordToWire`.
 //
@@ -78,6 +77,19 @@ export interface StoredDumpRequest {
   body: Uint8Array;
 }
 
+export type PreparedDumpRequestBody = {
+  readonly encoding: 'identity' | 'gzip';
+  readonly bytes: Uint8Array;
+  readonly decodedByteLength: number;
+};
+
+export interface DumpWriteRequest {
+  method: string;
+  path: string;
+  headers: Array<[string, string]>;
+  body: PreparedDumpRequestBody;
+}
+
 export type StoredDumpResponseBody =
   | { type: 'stream'; events: DumpStreamEvent[] }
   | { type: 'bytes'; body: Uint8Array }
@@ -92,6 +104,12 @@ export interface StoredDumpResponse {
 export type StoredDumpRecord = {
   meta: DumpMetadata;
   request: StoredDumpRequest;
+  response: StoredDumpResponse;
+};
+
+export type DumpWriteRecord = {
+  meta: DumpMetadata;
+  request: DumpWriteRequest;
   response: StoredDumpResponse;
 };
 

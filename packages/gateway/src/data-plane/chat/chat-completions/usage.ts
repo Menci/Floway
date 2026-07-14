@@ -8,7 +8,7 @@ import { billableServiceTier, splitCacheWriteTokens, splitInclusiveInputTokens, 
 // Moonshot flat, OpenRouter cache_write_tokens) onto a single (read, write)
 // pair, which we subtract from prompt_tokens to recover the disjoint bare
 // input. The top-level `service_tier` echoes the actual processing tier;
-// surface it via `billableServiceTier` so per-tier pricing overrides resolve
+// surface it via `billableServiceTier` so service-tier selector entries resolve
 // at recording time.
 // https://developers.openai.com/api/docs/guides/priority-processing
 export const tokenUsageFromChatCompletionsUsage = (u: NonNullable<ChatCompletionsResult['usage']>, serviceTier: string | null | undefined) => {
