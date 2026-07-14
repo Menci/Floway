@@ -1,6 +1,6 @@
 import { test } from 'vitest';
 
-import { InMemoryRepo } from '../../repo/memory.ts';
+import type { InMemoryRepo } from '../../repo/memory.ts';
 import { copilotModels, requestApp, setupAppTest } from '../../test-helpers.ts';
 import { initExternalResourceFetcher, initImageProcessor } from '@floway-dev/platform';
 import { assertEquals, assertExists, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';

@@ -3,7 +3,7 @@ import type { Context } from 'hono';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { createExternalImageFetcher, type ExternalImageFetchResult } from '../chat/shared/external-image-loader.ts';
 import { createGatewayCtxFromHono, finalizeGatewayResponse } from '../chat/shared/gateway-ctx.ts';
-import { readRequestBody, takeRequestBody, type RequestBody } from '../chat/shared/request-body.ts';
+import { readRequestBody, takeRequestBody } from '../chat/shared/request-body.ts';
 import {
   prepareImageEditSources,
   supportedImageMimeFromBytes,
@@ -50,13 +50,13 @@ const decodeDataUrl = (value: string, index: number): LoadedImage | null => {
 const externalImageError = (result: Exclude<ExternalImageFetchResult, { type: 'success' }>, index: number): string => {
   const path = `Codex image edits images[${index}].image_url`;
   switch (result.type) {
-    case 'invalid-url': return `${path} must be an HTTP(S) URL or a base64 image data URL.`;
-    case 'invalid-redirect': return `${path} has an invalid redirect (${result.reason}).`;
-    case 'http-error': return `${path} returned HTTP ${result.status}.`;
-    case 'too-large': return `${path} exceeds the ${result.limitBytes}-byte image limit.`;
-    case 'empty-body': return `${path} returned an empty response.`;
-    case 'timeout': return `${path} timed out.`;
-    case 'transport-error': return `${path} could not be downloaded.`;
+  case 'invalid-url': return `${path} must be an HTTP(S) URL or a base64 image data URL.`;
+  case 'invalid-redirect': return `${path} has an invalid redirect (${result.reason}).`;
+  case 'http-error': return `${path} returned HTTP ${result.status}.`;
+  case 'too-large': return `${path} exceeds the ${result.limitBytes}-byte image limit.`;
+  case 'empty-body': return `${path} returned an empty response.`;
+  case 'timeout': return `${path} timed out.`;
+  case 'transport-error': return `${path} could not be downloaded.`;
   }
 };
 

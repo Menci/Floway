@@ -19,10 +19,10 @@ import {
   synthesizeImageGenerationCallId,
   transformInputItemsForImageGeneration,
 } from './image-generation.ts';
-import { prepareImageEditSources } from '../../../../images/edit-source.ts';
 import { initRepo } from '../../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../../../test-helpers/gateway-ctx.ts';
+import { prepareImageEditSources } from '../../../../images/edit-source.ts';
 import type { ResponsesInvocation } from '../types.ts';
 import { initExternalResourceFetcher, initImageProcessor } from '@floway-dev/platform';
 import type { CanonicalResponsesPayload, ResponsesInputImage, ResponsesInputItem, ResponsesPayload, ResponsesTool } from '@floway-dev/protocols/responses';
