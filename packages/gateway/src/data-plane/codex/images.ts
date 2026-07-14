@@ -8,6 +8,7 @@ import {
   prepareImageEditSources,
   supportedImageMimeFromBytes,
   type ImageEditSource,
+  type PreparedImageEditSource,
 } from '../images/edit-source.ts';
 import { serveImagesEditForm } from '../images/serve.ts';
 import { passthroughApiError } from '../shared/passthrough-serve.ts';
@@ -87,7 +88,7 @@ const loadImage = async (
     : { type: 'ok', source: { bytes: imageBytes(result.data), mimeType } };
 };
 
-const imageFile = (source: ImageEditSource, index: number): File => {
+const imageFile = (source: PreparedImageEditSource, index: number): File => {
   const extension = source.mimeType === 'image/jpeg' ? 'jpg' : source.mimeType.slice('image/'.length);
   return new File([source.bytes], `image-${index + 1}.${extension}`, { type: source.mimeType });
 };
