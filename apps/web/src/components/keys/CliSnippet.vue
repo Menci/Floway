@@ -115,6 +115,11 @@ const codexIdToken = computed(() => {
   return `${header}.${payload}.c2ln`;
 });
 
+// OpenAI-auth providers enable Codex's client-owned image extension. Agent
+// Identity is a separate under-development auth flow, so keep it off for the
+// Floway-issued ChatGPT-style credential.
+// https://github.com/openai/codex/blob/f90e7deea6a715bbd153044af6f475eefa749177/codex-rs/ext/image-generation/src/extension.rs#L36-L46
+// https://github.com/openai/codex/blob/f90e7deea6a715bbd153044af6f475eefa749177/codex-rs/features/src/lib.rs#L1363-L1368
 const codexSnippet = computed(() => [
   `model = "${codexModel.value}"`,
   'model_provider = "floway"',
@@ -125,9 +130,11 @@ const codexSnippet = computed(() => [
   `base_url = "${codexBaseUrl.value}"`,
   'wire_api = "responses"',
   'supports_websockets = true',
+  'requires_openai_auth = true',
   '',
   '[features]',
   'apps = false',
+  'use_agent_identity = false',
 ].join('\n'));
 
 // Unquoted heredoc so `$(date -u +...)` runs in the user's shell to stamp

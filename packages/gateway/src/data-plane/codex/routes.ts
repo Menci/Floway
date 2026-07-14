@@ -2,7 +2,7 @@
 //
 // OAuth ("ChatGPT") mode has two independently configured bases:
 //
-//   chatgpt_base_url             — analytics, plugins, agent identity, Apps MCP
+//   chatgpt_base_url             — usage, analytics, plugins, identity, Apps MCP
 //   model_providers.x.base_url   — models, Responses HTTP/WS, remote compaction
 //
 // The dashboard points both at this namespace. Codex appends `models`,
@@ -39,10 +39,13 @@ import type { Hono } from 'hono';
 import { codexAppsMcp } from './apps-mcp.ts';
 import {
   codexAnalyticsEventsEvents,
+  codexConsumeRateLimitResetCredit,
   codexPluginsFeatured,
   codexPluginsList,
   codexPsPluginsInstalled,
   codexPsPluginsList,
+  codexRateLimitResetCredits,
+  codexUsage,
   codexWhamAgentIdentitiesJwks,
 } from './chatgpt-backend.ts';
 import { codexModels } from './models.ts';
@@ -60,6 +63,9 @@ export const mountCodexRoutes = (app: Hono<{ Variables: AuthVars }>) => {
   app.get(`${CODEX_BASE_PATH}/models`, codexModels);
   app.post(`${CODEX_BASE_PATH}/codex/analytics-events/events`, codexAnalyticsEventsEvents);
 
+  app.get(`${CODEX_BASE_PATH}/api/codex/usage`, codexUsage);
+  app.get(`${CODEX_BASE_PATH}/api/codex/rate-limit-reset-credits`, codexRateLimitResetCredits);
+  app.post(`${CODEX_BASE_PATH}/api/codex/rate-limit-reset-credits/consume`, codexConsumeRateLimitResetCredit);
   app.post(`${CODEX_BASE_PATH}/api/codex/apps`, codexAppsMcp);
 
   app.get(`${CODEX_BASE_PATH}/wham/agent-identities/jwks`, codexWhamAgentIdentitiesJwks);

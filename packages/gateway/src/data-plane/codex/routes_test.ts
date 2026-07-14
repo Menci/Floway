@@ -223,6 +223,31 @@ describe('codex 1p namespace', () => {
       expect(response.status).toBe(200);
     });
 
+    it('reports an unknown plan with no local rate-limit reset credits', async () => {
+      const { apiKey } = await setupAppTest();
+      const app = buildCodexApp();
+      const headers = { authorization: `Bearer ${apiKey.key}` };
+
+      const usage = await app.request('/azure-api.codex/api/codex/usage', { headers });
+      expect(usage.status).toBe(200);
+      expect(await usage.json()).toEqual({
+        plan_type: 'unknown',
+        rate_limit_reset_credits: { available_count: 0 },
+      });
+
+      const credits = await app.request('/azure-api.codex/api/codex/rate-limit-reset-credits', { headers });
+      expect(credits.status).toBe(200);
+      expect(await credits.json()).toEqual({ credits: [], available_count: 0 });
+
+      const consume = await app.request('/azure-api.codex/api/codex/rate-limit-reset-credits/consume', {
+        method: 'POST',
+        headers: { ...headers, 'content-type': 'application/json' },
+        body: JSON.stringify({ redeem_request_id: 'reset-test' }),
+      });
+      expect(consume.status).toBe(200);
+      expect(await consume.json()).toEqual({ code: 'no_credit', windows_reset: 0 });
+    });
+
     it.each([
       '/azure-api.codex/plugins/featured',
       '/azure-api.codex/plugins/list',
