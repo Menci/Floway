@@ -698,6 +698,13 @@ test.each([
     fetcher: () => Promise.resolve(new Response(null, { status: 404 })),
     message: 'Error while downloading file. Upstream status code: 404.',
   },
+  {
+    name: 'oversized response',
+    fetcher: () => Promise.resolve(new Response(Uint8Array.of(1), {
+      headers: { 'content-length': String(50 * 1024 * 1024 + 1) },
+    })),
+    message: 'Error while downloading file.',
+  },
 ])('imageGenerationServerTool mirrors the native remote-source error for $name', async ({ fetcher, message }) => {
   initExternalResourceFetcher(fetcher);
   const result = await imageGenerationServerTool(

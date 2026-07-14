@@ -580,12 +580,11 @@ const remoteInputError = (failure: Exclude<RemoteImageDownload, { ok: true }>): 
   };
 };
 
-// The standalone edits endpoint allows each of at most 16 images to be under
-// 50 MB. Enforce the same per-resource ceiling while streaming so a remote
-// server cannot exhaust a Worker's memory before the backend gets a chance to
-// apply its own limit.
-// https://github.com/openai/openai-node/blob/ec2f57fd0d66e94782656b986d7b3eb03225369c/src/resources/images.ts#L560-L572
-const MAX_REMOTE_IMAGE_BYTES = 50 * 1024 * 1024;
+// Responses accepts at most 50 MB across all image inputs. Enforce that limit
+// while streaming rather than buffering arbitrary remote bodies inside the
+// Worker's 128 MB isolate.
+// https://platform.openai.com/docs/guides/images-vision#image-input-requirements
+const MAX_REMOTE_IMAGE_TOTAL_BYTES = 50 * 1024 * 1024;
 const REMOTE_IMAGE_TIMEOUT_MS = 30_000;
 const MAX_REMOTE_IMAGE_REDIRECTS = 5;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
@@ -616,11 +615,11 @@ const supportedImageMimeFromBytes = (bytes: Uint8Array): string | null => {
   return null;
 };
 
-const readRemoteImageBody = async (response: Response): Promise<ArrayBuffer | null> => {
+const readRemoteImageBody = async (response: Response, maxBytes: number): Promise<ArrayBuffer | null> => {
   const contentLength = response.headers.get('content-length');
   if (contentLength !== null) {
     const declared = Number(contentLength);
-    if (Number.isFinite(declared) && declared > MAX_REMOTE_IMAGE_BYTES) {
+    if (Number.isFinite(declared) && declared > maxBytes) {
       await response.body?.cancel();
       return null;
     }
@@ -634,7 +633,7 @@ const readRemoteImageBody = async (response: Response): Promise<ArrayBuffer | nu
     const next = await reader.read();
     if (next.done) break;
     total += next.value.byteLength;
-    if (total > MAX_REMOTE_IMAGE_BYTES) {
+    if (total > maxBytes) {
       await reader.cancel();
       return null;
     }
@@ -658,10 +657,12 @@ const isFetchableRemoteUrl = (url: URL): boolean =>
 const createRemoteImageMaterializer = (requestSignal: AbortSignal | undefined) => {
   const downloads = new Map<string, Promise<RemoteImageDownload>>();
   const materialized = new Map<string, ImageSource>();
+  let materializedBytes = 0;
 
   const download = (source: RemoteImageSource): Promise<RemoteImageDownload> => {
     const cached = downloads.get(source.wireUrl);
     if (cached !== undefined) return cached;
+    const fetchExternal = getExternalResourceFetcher();
 
     const task = (async (): Promise<RemoteImageDownload> => {
       const timeoutSignal = AbortSignal.timeout(REMOTE_IMAGE_TIMEOUT_MS);
@@ -673,7 +674,7 @@ const createRemoteImageMaterializer = (requestSignal: AbortSignal | undefined) =
 
       try {
         for (let redirects = 0; ; redirects++) {
-          const response = await getExternalResourceFetcher()(url, signal);
+          const response = await fetchExternal(url, signal);
           if (REDIRECT_STATUSES.has(response.status)) {
             const location = response.headers.get('location');
             await response.body?.cancel();
@@ -693,10 +694,11 @@ const createRemoteImageMaterializer = (requestSignal: AbortSignal | undefined) =
             return { ok: false, reason: 'download', status: response.status };
           }
 
-          const buffer = await readRemoteImageBody(response);
+          const buffer = await readRemoteImageBody(response, MAX_REMOTE_IMAGE_TOTAL_BYTES - materializedBytes);
           if (buffer === null) return { ok: false, reason: 'download' };
           const mimeType = supportedImageMimeFromBytes(new Uint8Array(buffer));
           if (mimeType === null) return { ok: false, reason: 'invalid-image' };
+          materializedBytes += buffer.byteLength;
           return {
             ok: true,
             source: { bytes: buffer, mimeType },
@@ -713,11 +715,9 @@ const createRemoteImageMaterializer = (requestSignal: AbortSignal | undefined) =
 
   return {
     async inputs(sources: readonly RemoteImageSource[]): Promise<{ ok: true } | { ok: false; error: ImageOperationError }> {
-      const results = await Promise.all(sources.map(download));
-      for (const [index, result] of results.entries()) {
+      for (const source of sources) {
+        const result = await download(source);
         if (!result.ok) return { ok: false, error: remoteInputError(result) };
-        const source = sources[index];
-        if (source === undefined) throw new Error('Missing remote image source after materialization');
         materialized.set(source.wireUrl, result.source);
       }
       return { ok: true };
