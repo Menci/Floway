@@ -501,13 +501,13 @@ export interface ResponsesFunctionTool {
 }
 
 // Codex and other Responses clients ship hosted server tools (web_search,
-// image_generation, tool_search), deferred-tool namespaces, and Freeform
-// `custom` tools alongside ordinary function tools. Native Responses targets
-// pass `custom` through; translated targets wrap each `custom` as a
-// single-string-parameter function tool and unwrap matching function calls
-// back into `custom_tool_call` outputs. The wire-level tools array is still a
-// heterogeneous union and translators must narrow on `type === "function"`
-// (or `"custom"`) before reading `name` / `parameters`.
+// image_generation, tool_search, namespace) and Freeform `custom` tools
+// alongside ordinary function tools. Native Responses targets pass `custom`
+// through; translated targets wrap each `custom` as a single-string-parameter
+// function tool and unwrap matching function calls back into `custom_tool_call`
+// outputs. The wire-level tools array is still a heterogeneous union and
+// translators must narrow on `type === "function"` (or `"custom"`) before
+// reading `name` / `parameters`.
 //
 // `web_search` ships under four equivalent type values (current + dated
 // + preview + dated-preview). All four name the same hosted tool. The
@@ -523,7 +523,8 @@ export const WEB_SEARCH_HOSTED_TYPE_NAMES = [
 export type ResponsesHostedToolType =
   | typeof WEB_SEARCH_HOSTED_TYPE_NAMES[number]
   | 'image_generation'
-  | 'tool_search';
+  | 'tool_search'
+  | 'namespace';
 
 export interface ResponsesHostedTool {
   type: ResponsesHostedToolType;
@@ -546,27 +547,6 @@ export interface ResponsesHostedTool {
   name?: string;
   // Forward-compat catch-all for other hosted-tool fields the gateway
   // doesn't currently inspect.
-  [key: string]: unknown;
-}
-
-export interface ResponsesNamespaceFunctionTool {
-  type: 'function';
-  name: string;
-  allowed_callers?: ResponsesToolAllowedCaller[] | null;
-  defer_loading?: boolean;
-  description?: string | null;
-  output_schema?: Record<string, unknown> | null;
-  parameters?: unknown | null;
-  strict?: boolean | null;
-  [key: string]: unknown;
-}
-
-// https://github.com/openai/openai-node/blob/1cdc0196b4341ee641ec6839e08744b2771250e4/src/resources/responses/responses.ts#L937-L994
-export interface ResponsesNamespaceTool {
-  type: 'namespace';
-  name: string;
-  description: string;
-  tools: Array<ResponsesNamespaceFunctionTool | ResponsesCustomTool>;
   [key: string]: unknown;
 }
 
@@ -615,7 +595,6 @@ export interface ResponsesApplyPatchTool {
 export type ResponsesTool =
   | ResponsesFunctionTool
   | ResponsesHostedTool
-  | ResponsesNamespaceTool
   | ResponsesCustomTool
   | ResponsesProgrammaticTool
   | ResponsesMcpTool
@@ -630,7 +609,6 @@ export type ResponsesToolChoice =
   | 'required'
   | { type: 'function'; name: string }
   | { type: 'custom'; name: string }
-  | { type: 'namespace'; name: string }
   | { type: 'programmatic_tool_calling' }
   | { type: ResponsesHostedToolType };
 

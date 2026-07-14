@@ -89,31 +89,6 @@ test('isHostedImageGenerationTool matches only the hosted image_generation type'
   assertFalse(isHostedImageGenerationTool({ type: 'function', name: 'x', parameters: {}, strict: false } as ResponsesTool));
 });
 
-test('imageGenerationServerTool activates only for the exact Codex image_gen namespace shape', async () => {
-  const imagegen = { type: 'function', name: 'imagegen', parameters: { type: 'object' }, strict: false } as const;
-  const valid: ResponsesTool = {
-    type: 'namespace',
-    name: 'image_gen',
-    description: 'Generate an image.',
-    tools: [imagegen],
-  };
-  const active = await imageGenerationServerTool(makeCtx({ tools: [valid] }), gatewayCtx());
-  assertEquals(active.type, 'active');
-
-  const invalid = [
-    { type: 'namespace', name: 'image_gen', tools: [imagegen] },
-    { type: 'namespace', name: 'image_gen', description: 'Generate an image.', tools: [null] },
-    { type: 'namespace', name: 'image_gen', description: 'Generate an image.', tools: [] },
-    { type: 'namespace', name: 'image_gen', description: 'Generate an image.', tools: [imagegen, imagegen] },
-    { type: 'namespace', name: 'image_gen', description: 'Generate an image.', tools: [{ ...imagegen, name: 'other' }] },
-    { type: 'namespace', name: 'other', description: 'Generate an image.', tools: [imagegen] },
-  ];
-  for (const declaration of invalid) {
-    const result = await imageGenerationServerTool(makeCtx({ tools: [declaration as unknown as ResponsesTool] }), gatewayCtx());
-    assertEquals(result.type, 'inactive');
-  }
-});
-
 // ── prepareImageGenerationConfig ──
 
 test('prepareImageGenerationConfig accepts a valid hosted entry and defaults the model', () => {
@@ -174,35 +149,6 @@ test('prepareImageGenerationConfig takes the last hosted entry when several are 
   const result = prepareImageGenerationConfig([
     { type: 'image_generation', quality: 'low' } as ResponsesTool,
     { type: 'image_generation', quality: 'high' } as ResponsesTool,
-  ]);
-  assert(result.ok);
-  assertEquals(result.config.quality, 'high');
-});
-
-test('prepareImageGenerationConfig uses namespace defaults when the exact Codex namespace is last', () => {
-  const result = prepareImageGenerationConfig([
-    { type: 'image_generation', quality: 'high' },
-    {
-      type: 'namespace',
-      name: 'image_gen',
-      description: 'Generate an image.',
-      tools: [{ type: 'function', name: 'imagegen', parameters: { type: 'object' }, strict: false }],
-    },
-  ]);
-  assert(result.ok);
-  assertEquals(result.config.model, DEFAULT_IMAGE_MODEL);
-  assertEquals(result.config.quality, undefined);
-});
-
-test('prepareImageGenerationConfig uses hosted config when a hosted declaration follows the namespace', () => {
-  const result = prepareImageGenerationConfig([
-    {
-      type: 'namespace',
-      name: 'image_gen',
-      description: 'Generate an image.',
-      tools: [{ type: 'function', name: 'imagegen', parameters: { type: 'object' }, strict: false }],
-    },
-    { type: 'image_generation', quality: 'high' },
   ]);
   assert(result.ok);
   assertEquals(result.config.quality, 'high');
@@ -295,7 +241,7 @@ test('prepareImageGenerationConfig decodes image_url masks and reports file_id a
 // ── buildImageGenerationFunctionTool ──
 
 test('buildImageGenerationFunctionTool exposes only an optional prompt and is non-strict', () => {
-  const tool = buildImageGenerationFunctionTool(SHIM_TOOL_NAME);
+  const tool = buildImageGenerationFunctionTool({ type: 'image_generation' }, SHIM_TOOL_NAME);
   assertEquals(tool.type, 'function');
   assertEquals(tool.name, SHIM_TOOL_NAME);
   assertEquals(tool.strict, false);
@@ -1034,7 +980,7 @@ test('imageGenerationServerTool ignores input format when action is generate', a
 test('image dispatcher exposes a newly introduced invalid edit source as an invariant failure', async () => {
   const invocation = makeCtx({ tools: [{ type: 'image_generation', action: 'auto' }] });
   const result = await imageGenerationServerTool(invocation, gatewayCtx());
-  assert(result.type === 'active' && result.declaration !== undefined);
+  assert(result.type === 'active' && result.hosted !== undefined);
 
   invocation.payload = {
     ...invocation.payload,
@@ -1043,7 +989,7 @@ test('image dispatcher exposes a newly introduced invalid edit source as an inva
     })],
   };
   assertThrows(
-    () => result.declaration?.dispatcher({
+    () => result.hosted?.dispatcher({
       intercepted: { callId: 'call_live_invalid', name: SHIM_TOOL_NAME, arguments: { prompt: 'edit it' } },
       loopState: { iterationCount: 2, remainingToolCalls: undefined },
     }),
@@ -1056,8 +1002,8 @@ test('image dispatcher exposes a newly introduced invalid edit source as an inva
 
 test('image dispatch budget caps real backend calls per response, not ReAct turns', async () => {
   const result = await imageGenerationServerTool(makeCtx({ tools: [{ type: 'image_generation', action: 'generate' }] }), gatewayCtx());
-  assert(result.type === 'active' && result.declaration !== undefined);
-  const dispatch = result.declaration.dispatcher;
+  assert(result.type === 'active' && result.hosted !== undefined);
+  const dispatch = result.hosted.dispatcher;
   const intercepted = { callId: 'c', name: SHIM_TOOL_NAME, argumentsJson: '{}', arguments: { prompt: 'x' } };
   const loopState = { iterationCount: 1, remainingToolCalls: undefined };
 

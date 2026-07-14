@@ -66,10 +66,10 @@ const formatUserLocation = (loc: NonNullable<ShimToolFilters['userLocation']>): 
 // deliberately omits the unsupported ones.
 //   https://github.com/openai/harmony/blob/abd677f7ac962629c808197caa1feb9e3e95d2b0/src/chat.rs#L259-L313
 const buildShimFunctionTool = (
-  filters: ShimToolFilters,
+  canonical: ResponsesHostedTool,
   name: string,
 ): ResponsesFunctionTool => {
-  const userLocation = filters.userLocation;
+  const userLocation = canonical.user_location;
   const baseDescription
     = 'Accesses the web through three actions: searching, opening a page, and finding text inside a page. '
     + 'Multiple sub-property arrays may be populated in one call to dispatch several operations in parallel.';
@@ -264,9 +264,9 @@ const validateHostedEntry = (tool: ResponsesHostedTool): PrepareToolsError | nul
   return null;
 };
 
-// Validation covers every declaration even though only the last complete
-// declaration supplies runtime filters. Azure and Copilot both use this
-// dedupe-to-last rule for repeated web-search declarations.
+// Validation covers every hosted declaration even though only the last one
+// supplies runtime filters. Azure and Copilot both use this dedupe-to-last
+// rule for repeated web-search declarations.
 // https://github.com/Menci/Floway/pull/172#issuecomment-4971739422
 export const prepareToolsForShim = (
   tools: ResponsesTool[],
@@ -1341,10 +1341,10 @@ export const webSearchServerTool: ServerToolRegistration = (invocation, gatewayC
     transformItems: (items, toolName) => transformInputItemsForWebSearch(items, toolName, id => gatewayCtx.store.getPrivatePayload(id)),
     ...(hasHostedWebSearch
       ? {
-          declaration: {
+          hosted: {
+            hostedTypes: WEB_SEARCH_HOSTED_TYPE_NAMES,
             canonicalize: canonicalizeWebSearchTool,
-            matchToolChoice: choice => WEB_SEARCH_HOSTED_TYPES.has(choice.type),
-            buildFunctionTool: toolName => buildShimFunctionTool(filters, toolName),
+            buildFunctionTool: buildShimFunctionTool,
             dispatcher: ({ intercepted, loopState }) => {
               const slot = planShimSlots(parseShimOperations(intercepted.arguments), intercepted.name, state, loopState);
               const functionCallItem: ResponsesFunctionToolCallItem = {

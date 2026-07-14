@@ -9,7 +9,7 @@ import { eventFrame } from '@floway-dev/protocols/common';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesResult, ResponsesStreamEvent, ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
 import { type EventResult, type ExecuteResult, type FlagId } from '@floway-dev/provider';
-import { assert, assertEquals, assertFalse, assertStringIncludes, stubModelCandidate } from '@floway-dev/test-utils';
+import { assert, assertEquals, assertStringIncludes, stubModelCandidate } from '@floway-dev/test-utils';
 
 // Dirty integration harness: mock the model registry so the image backend is a
 // pair of in-test stubs, then drive the whole shim (function-tool rewrite,
@@ -87,7 +87,7 @@ vi.mock('../../../../providers/registry.ts', () => ({
 
 // Imported AFTER vi.mock so the mocked registry is in effect.
 const { withResponsesServerToolShim } = await import('../server-tool-shim.ts');
-const { imageGenerationServerTool, SHIM_TOOL_NAME } = await import('./image-generation.ts');
+const { imageGenerationServerTool } = await import('./image-generation.ts');
 
 const shim = withResponsesServerToolShim([imageGenerationServerTool]);
 
@@ -117,12 +117,12 @@ const rateLimitResponse = (retryAfterMs: number | null): Response => {
 
 // One scripted upstream turn: the orchestrator calls image_generation with the
 // given prompt, then the upstream completes.
-const callTurn = (outputIndex: number, callId: string, prompt: string, toolName = 'image_generation'): ProtocolFrame<ResponsesStreamEvent>[] => {
+const callTurn = (outputIndex: number, callId: string, prompt: string): ProtocolFrame<ResponsesStreamEvent>[] => {
   const args = JSON.stringify({ prompt });
   return [
     eventFrame({ type: 'response.created', response: emptyResult('in_progress') }),
-    eventFrame({ type: 'response.output_item.added', output_index: outputIndex, item: { type: 'function_call', call_id: callId, name: toolName, arguments: '', status: 'in_progress' } }),
-    eventFrame({ type: 'response.output_item.done', output_index: outputIndex, item: { type: 'function_call', call_id: callId, name: toolName, arguments: args, status: 'completed' } }),
+    eventFrame({ type: 'response.output_item.added', output_index: outputIndex, item: { type: 'function_call', call_id: callId, name: 'image_generation', arguments: '', status: 'in_progress' } }),
+    eventFrame({ type: 'response.output_item.done', output_index: outputIndex, item: { type: 'function_call', call_id: callId, name: 'image_generation', arguments: args, status: 'completed' } }),
     eventFrame({ type: 'response.completed', response: emptyResult('completed') }),
   ] as ProtocolFrame<ResponsesStreamEvent>[];
 };
@@ -139,7 +139,7 @@ const withResponseEcho = (
   tools: ResponsesTool[],
   toolChoice?: ResponsesToolChoice,
 ): ProtocolFrame<ResponsesStreamEvent>[] => frames.map(frame => {
-  if (frame.type !== 'event' || !('response' in frame.event)) return frame;
+  if (frame.type !== 'event' || (frame.event.type !== 'response.created' && frame.event.type !== 'response.completed')) return frame;
   return eventFrame({
     ...frame.event,
     response: {
@@ -160,31 +160,26 @@ const scriptedRun = (turns: ProtocolFrame<ResponsesStreamEvent>[][]) => {
   };
 };
 
-const codexImageNamespace: ResponsesTool = {
-  type: 'namespace',
-  name: 'image_gen',
-  description: 'Generate or edit an image.',
-  tools: [{ type: 'function', name: 'imagegen', parameters: { type: 'object' }, strict: false }],
-};
-
-const makeCtxWithTools = (
+const makeCtx = (
   input: unknown[],
-  tools: ResponsesTool[],
+  action: 'generate' | 'edit' | 'auto' = 'auto',
+  extraTool: Record<string, unknown> = {},
   toolChoice?: ResponsesToolChoice,
-  flags: ReadonlySet<FlagId> = new Set(['responses-image-generation-shim']),
 ): ResponsesInvocation => ({
   candidate: stubModelCandidate({
-    enabledFlags: flags,
+    enabledFlags: new Set(['responses-image-generation-shim']),
     model: { id: 'm', endpoints: { responses: {} } },
   }),
   targetApi: 'responses',
-  payload: { model: 'orchestrator', input, tools, ...(toolChoice !== undefined ? { tool_choice: toolChoice } : {}) } as never,
+  payload: {
+    model: 'orchestrator',
+    input,
+    tools: [{ type: 'image_generation', action, ...extraTool }],
+    ...(toolChoice !== undefined ? { tool_choice: toolChoice } : {}),
+  } as never,
   headers: new Headers(),
   action: 'generate',
 });
-
-const makeCtx = (input: unknown[], action: 'generate' | 'edit' | 'auto' = 'auto', extraTool: Record<string, unknown> = {}): ResponsesInvocation =>
-  makeCtxWithTools(input, [{ type: 'image_generation', action, ...extraTool } as ResponsesTool]);
 const gatewayCtx = () => mockChatGatewayCtx({ wantsStream: true });
 
 const drain = async (result: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>): Promise<ResponsesStreamEvent[]> => {
@@ -250,176 +245,22 @@ test('generates an image end-to-end and emits the native lifecycle', async () =>
   assertEquals(item.action, 'generate');
 });
 
-test('consumes the exact Codex image_gen namespace and restores its tool and forced choice after dispatch', async () => {
+test('restores a forced hosted choice when the terminal upstream echo omits it', async () => {
   stub.nextGenerations = [jsonResponse('R0VO')];
-  const namespaceChoice = { type: 'namespace', name: 'image_gen' } as ResponsesToolChoice;
-  const invocation = makeCtxWithTools(
-    [{ type: 'message', role: 'user', content: 'draw a cat' }],
-    [codexImageNamespace],
-    namespaceChoice,
-  );
-  const replacement = { type: 'function', name: SHIM_TOOL_NAME, parameters: {}, strict: false } as ResponsesTool;
-  const run = scriptedRun([
-    withResponseEcho(callTurn(0, 'call_1', 'a cat'), [replacement], { type: 'function', name: SHIM_TOOL_NAME }),
-    withResponseEcho(messageTurn('done'), [replacement], 'auto'),
-  ]);
-  let firstUpstreamToolChoice: ResponsesToolChoice | null | undefined;
-  const result = await shim(invocation, gatewayCtx(), async () => {
-    firstUpstreamToolChoice ??= invocation.payload.tool_choice;
-    return await run();
-  });
-  const events = await drain(result);
-
-  assertEquals(invocation.payload.tools?.length, 1);
-  assertEquals(invocation.payload.tools?.[0].type, 'function');
-  assertEquals((invocation.payload.tools?.[0] as { name: string }).name, SHIM_TOOL_NAME);
-  assertEquals(firstUpstreamToolChoice, { type: 'function', name: SHIM_TOOL_NAME });
-  assert(events.some(e => e.type === 'response.image_generation_call.completed'));
-  const completed = events.find(e => e.type === 'response.completed');
-  assert(completed?.type === 'response.completed');
-  assertEquals(completed.response.tools, [codexImageNamespace]);
-  assertEquals(completed.response.tool_choice, namespaceChoice);
-});
-
-test('maps and restores a forced hosted image_generation choice across the demoted final turn', async () => {
-  stub.nextGenerations = [jsonResponse('R0VO')];
-  const hostedTool = { type: 'image_generation', quality: 'high' } as ResponsesTool;
-  const hostedChoice = { type: 'image_generation' } as ResponsesToolChoice;
-  const invocation = makeCtxWithTools([], [hostedTool], hostedChoice);
-  const replacement = { type: 'function', name: SHIM_TOOL_NAME, parameters: {}, strict: false } as ResponsesTool;
-  const run = scriptedRun([
-    withResponseEcho(callTurn(0, 'call_1', 'a cat'), [replacement], { type: 'function', name: SHIM_TOOL_NAME }),
-    withResponseEcho(messageTurn('done'), [replacement], 'auto'),
-  ]);
-  let firstUpstreamToolChoice: ResponsesToolChoice | null | undefined;
-  const result = await shim(invocation, gatewayCtx(), async () => {
-    firstUpstreamToolChoice ??= invocation.payload.tool_choice;
-    return await run();
-  });
-  const events = await drain(result);
-
-  assertEquals(firstUpstreamToolChoice, { type: 'function', name: SHIM_TOOL_NAME });
-  const completed = events.find(e => e.type === 'response.completed');
-  assert(completed?.type === 'response.completed');
-  assertEquals(completed.response.tools, [hostedTool]);
-  assertEquals(completed.response.tool_choice, hostedChoice);
-});
-
-test('restores a forced image namespace choice when the terminal upstream envelope omits tool_choice', async () => {
-  stub.nextGenerations = [jsonResponse('R0VO')];
-  const namespaceChoice = { type: 'namespace', name: 'image_gen' } as ResponsesToolChoice;
-  const invocation = makeCtxWithTools([], [codexImageNamespace], namespaceChoice);
-  const replacement = { type: 'function', name: SHIM_TOOL_NAME, parameters: {}, strict: false } as ResponsesTool;
+  const hostedChoice = { type: 'image_generation' } as const;
+  const invocation = makeCtx([], 'generate', { quality: 'high' }, hostedChoice);
+  const hostedTool = invocation.payload.tools![0];
+  const replacement = { type: 'function', name: 'image_generation', parameters: {}, strict: false } as ResponsesTool;
   const result = await shim(invocation, gatewayCtx(), scriptedRun([
-    withResponseEcho(callTurn(0, 'call_1', 'a cat'), [replacement], { type: 'function', name: SHIM_TOOL_NAME }),
+    withResponseEcho(callTurn(0, 'call_1', 'a cat'), [replacement], { type: 'function', name: 'image_generation' }),
     withResponseEcho(messageTurn('done'), [replacement]),
   ]));
   const events = await drain(result);
 
-  const completed = events.find(e => e.type === 'response.completed');
+  const completed = events.find(event => event.type === 'response.completed');
   assert(completed?.type === 'response.completed');
-  assertEquals(completed.response.tool_choice, namespaceChoice);
-});
-
-test('resolves a client function-name collision while keeping the image namespace internal name off the wire', async () => {
-  stub.nextGenerations = [jsonResponse('R0VO')];
-  const clientFunction = { type: 'function', name: SHIM_TOOL_NAME, parameters: {}, strict: false } as ResponsesTool;
-  const invocation = makeCtxWithTools([], [clientFunction, codexImageNamespace]);
-  const resolvedName = `${SHIM_TOOL_NAME}_2`;
-  const replacement = { type: 'function', name: resolvedName, parameters: {}, strict: false } as ResponsesTool;
-
-  const result = await shim(invocation, gatewayCtx(), scriptedRun([
-    withResponseEcho(callTurn(0, 'call_1', 'a cat', resolvedName), [clientFunction, replacement]),
-    withResponseEcho(messageTurn('done'), [clientFunction, replacement]),
-  ]));
-  const events = await drain(result);
-
-  assertEquals(invocation.payload.tools?.map(tool => ({ type: tool.type, name: 'name' in tool ? tool.name : undefined })), [
-    { type: 'function', name: SHIM_TOOL_NAME },
-    { type: 'function', name: resolvedName },
-  ]);
-  assertFalse('tools' in invocation.payload.tools![1]);
-  assertFalse((invocation.payload.tools![1] as { name: string }).name.includes('imagegen'));
-  assert(events.some(e => e.type === 'response.image_generation_call.completed'));
-  const completed = events.find(e => e.type === 'response.completed');
-  assert(completed?.type === 'response.completed');
-  assertEquals(completed.response.tools, [clientFunction, codexImageNamespace]);
-});
-
-test('canonicalizes mixed image declarations to one replacement with the last declaration winning', async () => {
-  const cases: Array<{
-    tools: ResponsesTool[];
-    expectedEcho: ResponsesTool;
-    expectedQuality: string | undefined;
-  }> = [
-    {
-      tools: [{ type: 'image_generation', quality: 'high' }, codexImageNamespace],
-      expectedEcho: codexImageNamespace,
-      expectedQuality: undefined,
-    },
-    {
-      tools: [codexImageNamespace, { type: 'image_generation', quality: 'high' }],
-      expectedEcho: { type: 'image_generation', quality: 'high' },
-      expectedQuality: 'high',
-    },
-    {
-      tools: [{ type: 'image_generation', quality: 'low' }, { type: 'image_generation', quality: 'high' }],
-      expectedEcho: { type: 'image_generation', quality: 'high' },
-      expectedQuality: 'high',
-    },
-  ];
-
-  for (const [index, testCase] of cases.entries()) {
-    stub.nextGenerations = [jsonResponse('R0VO')];
-    const invocation = makeCtxWithTools([], testCase.tools);
-    const replacement = { type: 'function', name: SHIM_TOOL_NAME, parameters: {}, strict: false } as ResponsesTool;
-    const result = await shim(invocation, gatewayCtx(), scriptedRun([
-      withResponseEcho(callTurn(0, `call_${index}`, 'a cat'), [replacement]),
-      withResponseEcho(messageTurn('done'), [replacement]),
-    ]));
-    const events = await drain(result);
-
-    assertEquals(invocation.payload.tools?.length, 1);
-    assertEquals(invocation.payload.tools?.[0].type, 'function');
-    assertEquals(stub.generationsCalls[0].quality, testCase.expectedQuality);
-    const completed = events.find(e => e.type === 'response.completed');
-    assert(completed?.type === 'response.completed');
-    assertEquals(completed.response.tools, [testCase.expectedEcho]);
-    stub.generationsCalls = [];
-  }
-});
-
-test('leaves unrelated namespaces untouched while consuming the exact image namespace', async () => {
-  stub.nextGenerations = [jsonResponse('R0VO')];
-  const unrelated = { type: 'namespace', name: 'browser', description: 'Browse.', tools: [] } as ResponsesTool;
-  const invocation = makeCtxWithTools([], [unrelated, codexImageNamespace]);
-  const replacement = { type: 'function', name: SHIM_TOOL_NAME, parameters: {}, strict: false } as ResponsesTool;
-  const result = await shim(invocation, gatewayCtx(), scriptedRun([
-    withResponseEcho(callTurn(0, 'call_1', 'a cat'), [unrelated, replacement]),
-    withResponseEcho(messageTurn('done'), [unrelated, replacement]),
-  ]));
-  const events = await drain(result);
-
-  assertEquals(invocation.payload.tools?.map(tool => tool.type), ['namespace', 'function']);
-  const completed = events.find(e => e.type === 'response.completed');
-  assert(completed?.type === 'response.completed');
-  assertEquals(completed.response.tools, [unrelated, codexImageNamespace]);
-});
-
-test('leaves image_gen untouched when the image shim flag is disabled', async () => {
-  const invocation = makeCtxWithTools([], [codexImageNamespace], undefined, new Set());
-  let sawOriginalNamespace = false;
-  const result = await shim(invocation, gatewayCtx(), async () => {
-    sawOriginalNamespace = invocation.payload.tools?.[0] === codexImageNamespace;
-    const events: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> = (async function* () {
-      for (const frame of messageTurn('done')) yield frame;
-    })();
-    return { type: 'events', events, modelIdentity: MODEL_IDENTITY };
-  });
-  await drain(result);
-
-  assert(sawOriginalNamespace);
-  assertEquals(invocation.payload.tools, [codexImageNamespace]);
+  assertEquals(completed.response.tools, [hostedTool]);
+  assertEquals(completed.response.tool_choice, hostedChoice);
 });
 
 test('relays real partial_image frames when partial_images > 0', async () => {

@@ -1,31 +1,31 @@
 import type { ResponsesBoundaryCtx } from './types.ts';
-import type { ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
+import type { CanonicalResponsesPayload, ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
 
-// Copilot rejects both the hosted image_generation tool and Codex's image_gen
-// namespace before inference. The gateway shim normally consumes them; this is
-// the disabled-shim fallback, scoped by exact namespace name.
-// https://github.com/caozhiyuan/copilot-api/issues/206
-// https://github.com/caozhiyuan/copilot-api/issues/312
-// https://github.com/caozhiyuan/copilot-api/commit/e260303a1ccc48390b0b710fa40631562f1a37fb
-const isImageGenerationReference = (
-  value: ResponsesTool | ResponsesToolChoice | null | undefined,
-): boolean =>
-  typeof value === 'object'
-  && value !== null
-  && (value.type === 'image_generation'
-    || (value.type === 'namespace' && value.name === 'image_gen'));
+/**
+ * Copilot's `/responses` endpoint rejects public `image_generation` tool
+ * entries, so strip them once the planner has committed to a native Responses
+ * target on a Copilot upstream. Other Responses-capable upstreams (e.g. OpenAI
+ * direct) accept the entry and must continue to see it. Other public hosted
+ * and deferred tools (`web_search`, `tool_search`, `namespace`) are left in
+ * place: Codex relies on `tool_search` / `namespace` for client-executed
+ * deferred tool discovery, and Copilot accepts `web_search`.
+ *
+ * References:
+ * - https://platform.openai.com/docs/guides/tools-image-generation
+ * - https://github.com/openai/codex/blob/9f42c89c0112771dc29100a6f3fc904049b2655f/codex-rs/tools/src/tool_spec.rs#L17-L27
+ * - https://github.com/caozhiyuan/copilot-api/blob/5d37d5b1ac6566c935a5c26d046396ee5fa423cc/src/routes/responses/handler.ts#L187-L204
+ */
+const isImageGenerationTool = (tool: ResponsesTool): boolean => tool.type === 'image_generation';
 
-export const withImageGenerationStripped = async <TResult>(
-  ctx: ResponsesBoundaryCtx,
-  _request: object,
-  run: () => Promise<TResult>,
-): Promise<TResult> => {
-  const { payload } = ctx;
+const isImageGenerationToolChoice = (choice: ResponsesToolChoice | null | undefined): boolean =>
+  typeof choice === 'object' && choice !== null && choice.type === 'image_generation';
+
+export const stripImageGenerationFromPayload = (payload: CanonicalResponsesPayload): void => {
   let removedTool = false;
 
   if (Array.isArray(payload.tools)) {
     const tools = payload.tools.filter(tool => {
-      const drop = isImageGenerationReference(tool);
+      const drop = isImageGenerationTool(tool);
       removedTool ||= drop;
       return !drop;
     });
@@ -37,12 +37,23 @@ export const withImageGenerationStripped = async <TResult>(
     }
   }
 
-  if (isImageGenerationReference(payload.tool_choice)) {
+  if (isImageGenerationToolChoice(payload.tool_choice)) {
     delete payload.tool_choice;
-  } else if (removedTool && payload.tool_choice === 'required' && (!Array.isArray(payload.tools) || payload.tools.length === 0)) {
-    // `required` cannot be satisfied after the last declared tool is removed.
-    delete payload.tool_choice;
+    return;
   }
 
+  // A forced `required` choice with no surviving tools would tell Copilot to
+  // invoke a tool that no longer exists; drop the choice along with the tools.
+  if (removedTool && payload.tool_choice === 'required' && (!Array.isArray(payload.tools) || payload.tools.length === 0)) {
+    delete payload.tool_choice;
+  }
+};
+
+export const withImageGenerationStripped = async <TResult>(
+  ctx: ResponsesBoundaryCtx,
+  _request: object,
+  run: () => Promise<TResult>,
+): Promise<TResult> => {
+  stripImageGenerationFromPayload(ctx.payload);
   return await run();
 };

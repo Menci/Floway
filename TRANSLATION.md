@@ -206,33 +206,33 @@ steps.
   missing durable payload returns `item_not_found`, and no provider receives an
   `item_reference` carrier.
 
-- executes supported `web_search` and `image_generation` declaration families
-  through the server-tool shim for translated targets and native Responses
-  providers that opt in. Each family validates every declaration, selects the
-  last complete declaration, injects one collision-resolved function, executes
-  the configured backend, and restores the selected declaration plus a matching
-  declaration-specific `tool_choice` object in synthesized echoes. Equivalent
-  web-search aliases follow the same last-wins rule on Azure and Copilot
+- executes hosted `web_search` and `image_generation` through the server-tool
+  shim for translated targets and native Responses providers that opt in. Each
+  hosted family validates every declaration, selects the last complete alias
+  and configuration, injects one collision-resolved function, executes the
+  configured backend, and restores the selected hosted declaration plus a
+  matching hosted `tool_choice` in synthesized echoes. Azure and Copilot return
+  the same last-wins result for reversed web-search controls, matching Azure's
+  hosted image-generation behavior
   ([probe evidence](https://github.com/Menci/Floway/pull/172#issuecomment-4971739422)).
-  Image generation also recognizes Codex's exact deferred `{ type: "namespace",
-  name: "image_gen", tools: [{ type: "function", name: "imagegen", ... }] }`
-  declaration and emits the native `image_generation_call` lifecycle; unrelated
-  namespaces remain untouched.
-- prepares image edits by flattening sources in declaration order from message
-  content, function/custom tool output, and replayed image-generation results.
-  Remote HTTP(S) sources are downloaded once through the shared external-image
-  loader with manual redirects, bounded streaming, public-address-only Node
-  egress, and Azure-compatible download and format errors. The original URL
-  remains visible to the orchestrator while cached bytes are reused by the edit
-  backend. Inline and remote masks use the same path. A mask `file_id` remains
-  an explicit `unsupported_image_source` because it requires the owning
+  Image edit sources are flattened in declaration order from message content,
+  function/custom tool output, and replayed image-generation results. Remote
+  HTTP(S) sources are downloaded once during request preparation through the
+  shared external-image loader, with manual redirect handling, bounded
+  streaming, public-address-only Node egress, and Azure-compatible errors for
+  download and image-format failures. The original URL remains visible to the
+  orchestrator while cached bytes are reused by the edit backend. Inline and
+  remote masks are materialized by the same path. A mask `file_id` remains an
+  explicit `unsupported_image_source` because it requires the owning
   upstream's authenticated Files namespace. GIF sources are transcoded to WebP
   for `/images/edits`, and a mask alone supplies edit context for `auto`/`edit`.
-- after supported server-tool declarations have become ordinary functions,
-  translated Messages/Chat targets retain those functions while omitting
-  remaining hosted/deferred declarations and choices they cannot represent.
-  The generic gateway layer leaves unconsumed declarations to native provider
-  boundaries.
+- removes unsupported `image_generation` Responses tool entries and forced
+  tool choices that targeted them before target request construction. Other
+  hosted/deferred Responses tools, including `web_search`, `tool_search`, and
+  `namespace`, remain visible to native Responses targets. Translated
+  Messages/Chat targets currently narrow tool conversion to `function` and
+  Freeform `custom` tools; the hosted/deferred translated semantics are
+  tracked separately.
 - preserves Freeform `custom` tools: native Responses targets receive them
   directly; translated targets wrap them as single-string function tools (see
   "Responses Custom Tool Wrapping").
@@ -245,11 +245,7 @@ The same boundary runs for both `/v1/responses` (streaming) and
 `/v1/responses/compact` (non-streaming).
 
 - strips unsupported `service_tier`
-- as a disabled-shim fallback, removes image-generation declarations Copilot
-  cannot accept — the hosted `image_generation` tool and Codex's `image_gen`
-  deferred-tool namespace — plus any forced `tool_choice` that named them.
-  Normally the gateway image shim consumes these first; every other namespace
-  and tool is left in place
+- removes the `image_generation` tool entry (Copilot does not host it)
 - forces `store: false` on the wire — the gateway always owns Responses
   persistence; the original `store` is captured by the entry adapter before
   the chain runs, so durable storage is unaffected

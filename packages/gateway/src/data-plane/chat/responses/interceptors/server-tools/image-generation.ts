@@ -14,7 +14,6 @@ import type {
   ResponsesFunctionToolCallItem,
   ResponsesHostedTool,
   ResponsesInputImage,
-  ResponsesNamespaceTool,
   ResponsesInputImageGenerationCall,
   ResponsesInputItem,
   ResponsesOutputImageGenerationCall,
@@ -24,11 +23,9 @@ import { providerModelOf, type Fetcher, type Provider, type ModelCandidate, type
 
 export const SHIM_TOOL_NAME = 'image_generation';
 
-// Default image backend for a hosted declaration without `model` and for the
-// Codex namespace declaration. Microsoft's native Azure Responses example
-// pairs an orchestrator with `gpt-image-2`; operators provision it under this
-// public id (or alias it).
-// https://github.com/Azure-Samples/azure-openai-responses-api-samples/blob/bd1d4fa776ced664d24ed35f691e4b9e0602af69/python/responses-image-generate-aoai-v1.py#L9-L18
+// Default image backend when the hosted tool omits `model`. gpt-image-2 is
+// the reference backend Azure's native Responses `image_generation` routes
+// to; operators provision it under this public id (or alias it).
 export const DEFAULT_IMAGE_MODEL = 'gpt-image-2';
 
 // Safety valve on the multi-turn ReAct loop: cap how many real image backend
@@ -87,23 +84,14 @@ const KNOWN_TOOL_FIELDS = new Set([
 export const isHostedImageGenerationTool = (tool: ResponsesTool): tool is ResponsesHostedTool =>
   tool.type === 'image_generation';
 
-// Codex's exact image_gen/imagegen namespace is a compatibility declaration;
-// Azure and Copilot reject it as a reserved namespace before inference.
-// https://github.com/caozhiyuan/copilot-api/issues/312
-// https://github.com/caozhiyuan/copilot-api/commit/e260303a1ccc48390b0b710fa40631562f1a37fb
-const isCodexImageGenerationNamespace = (tool: ResponsesTool): tool is ResponsesNamespaceTool =>
-  tool.type === 'namespace'
-  && tool.name === 'image_gen'
-  && typeof tool.description === 'string'
-  && Array.isArray(tool.tools)
-  && tool.tools.length === 1
-  && typeof tool.tools[0] === 'object'
-  && tool.tools[0] !== null
-  && tool.tools[0].type === 'function'
-  && tool.tools[0].name === 'imagegen';
-
-const isImageGenerationDeclaration = (tool: ResponsesTool): tool is ResponsesHostedTool | ResponsesNamespaceTool =>
-  isHostedImageGenerationTool(tool) || isCodexImageGenerationNamespace(tool);
+// Identity canonicalization for image_generation: the shim doesn't
+// depend on filled defaults to run, and the OpenAI spec defaults for
+// `background` / `quality` / `size` / etc. observed via Azure echo
+// (all `'auto'`) signal "backend decides" rather than concrete values
+// the model needs. Preserving the client's raw shape keeps the echo
+// round-trip minimal — anything the client didn't send stays absent.
+export const canonicalizeImageGenerationTool = (raw: ResponsesTool): ResponsesHostedTool | undefined =>
+  isHostedImageGenerationTool(raw) ? raw : undefined;
 
 // A base64-data-URL or bare-base64 image source bound for an edit call.
 // Bytes are held in a concrete ArrayBuffer so they can be wrapped in a Blob.
@@ -447,22 +435,17 @@ const validateHostedImageGenerationEntry = (
   };
 };
 
-// Validate every declaration even though the last complete declaration wins;
-// the Codex namespace selects native defaults.
-// https://github.com/Menci/Floway/pull/172#issuecomment-4971739422
+// Validate every hosted `image_generation` entry; the LAST entry's config
+// wins (most-recent declaration).
 export const prepareImageGenerationConfig = (tools: readonly ResponsesTool[]): PrepareConfigResult => {
   let config: ImageGenerationConfig | undefined;
   for (const [i, tool] of tools.entries()) {
-    if (isCodexImageGenerationNamespace(tool)) {
-      config = { model: DEFAULT_IMAGE_MODEL, action: 'auto' };
-      continue;
-    }
     if (!isHostedImageGenerationTool(tool)) continue;
     const validated = validateHostedImageGenerationEntry(tool, i);
     if (!validated.ok) return validated;
     config = validated.config;
   }
-  if (config === undefined) return { ok: false, error: { message: 'No image-generation declaration present.', param: 'tools', code: 'unknown_parameter' } };
+  if (config === undefined) return { ok: false, error: { message: 'No image_generation tool present.', param: 'tools', code: 'unknown_parameter' } };
   return { ok: true, config };
 };
 
@@ -471,7 +454,7 @@ export const prepareImageGenerationConfig = (tools: readonly ResponsesTool[]): P
 // on from the client config, exactly like Azure). A minimal description
 // elicits native-quality refined prompts while costing ~50 input tokens vs
 // the native hosted tool's ~2300.
-export const buildImageGenerationFunctionTool = (name: string): ResponsesFunctionTool => ({
+export const buildImageGenerationFunctionTool = (_canonical: ResponsesHostedTool, name: string): ResponsesFunctionTool => ({
   type: 'function',
   name,
   description:
@@ -1409,11 +1392,11 @@ export const imageGenerationServerTool: ServerToolRegistration = async (invocati
   }
 
   const tools = Array.isArray(invocation.payload.tools) ? invocation.payload.tools : [];
-  const hasImageDeclaration = tools.some(isImageGenerationDeclaration);
+  const hasHostedTool = tools.some(isHostedImageGenerationTool);
   const hasReplayInput = invocation.payload.input.some(i => i.type === 'image_generation_call');
-  if (!hasImageDeclaration && !hasReplayInput) return { type: 'inactive' };
+  if (!hasHostedTool && !hasReplayInput) return { type: 'inactive' };
 
-  if (!hasImageDeclaration) {
+  if (!hasHostedTool) {
     // Replay-only activation: rewrite echoed image_generation_call items so
     // the upstream can read them, but there is no hosted tool to dispatch.
     return {
@@ -1490,10 +1473,9 @@ export const imageGenerationServerTool: ServerToolRegistration = async (invocati
     type: 'active',
     baseToolName: SHIM_TOOL_NAME,
     transformItems: transformInputItemsForImageGeneration,
-    declaration: {
-      canonicalize: raw => isImageGenerationDeclaration(raw) ? raw : undefined,
-      matchToolChoice: choice => choice.type === 'image_generation'
-        || (choice.type === 'namespace' && choice.name === 'image_gen'),
+    hosted: {
+      hostedTypes: ['image_generation'],
+      canonicalize: canonicalizeImageGenerationTool,
       buildFunctionTool: buildImageGenerationFunctionTool,
       dispatcher: ({ intercepted }) => {
         const promptArg = intercepted.arguments !== null && typeof intercepted.arguments.prompt === 'string'

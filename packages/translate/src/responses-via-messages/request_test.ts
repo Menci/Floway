@@ -98,7 +98,7 @@ test('translateResponsesToMessages rejects nested namespace programmatic callers
   await assertRejects(
     () => translateResponsesToMessages({
       ...minimalPayload,
-      tools: [{ type: 'namespace', name: 'ops', description: 'ops', tools: [{ type: 'custom', name: 'exec', allowed_callers: ['programmatic'] }] }],
+      tools: [{ type: 'namespace', name: 'ops', description: 'ops', tools: [{ type: 'custom', name: 'exec', allowed_callers: ['programmatic'] }] } as unknown as ResponsesTool],
     }),
     Error,
     'Programmatic',

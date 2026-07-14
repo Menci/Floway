@@ -5967,7 +5967,7 @@ test('echo restore preserves client-supplied filters / user_location on the cano
   assertEquals((completed.response.tools![0] as { user_location: typeof userLoc }).user_location, userLoc);
 });
 
-test('duplicate web_search declarations collapse to the last complete declaration', async () => {
+test('duplicate hosted web_search declarations collapse to the last complete declaration', async () => {
   makeStubDeps();
   const firstFilters = { allowed_domains: ['first.example'] };
   const lastFilters = { allowed_domains: ['last.example'] };

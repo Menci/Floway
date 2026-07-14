@@ -11,7 +11,6 @@ import type {
   ResponsesFunctionTool,
   ResponsesHostedTool,
   ResponsesInputItem,
-  ResponsesNamespaceTool,
   ResponsesOutputItem,
   ResponsesResult,
   ResponsesStreamEvent,
@@ -99,14 +98,12 @@ export type ServerToolDispatcher = (args: {
   loopState: ServerToolLoopState;
 }) => ServerToolResultSlot[];
 
-type ServerToolDeclaration = ResponsesHostedTool | ResponsesNamespaceTool;
-
-// Keep declaration matching, function injection, and dispatch atomic so a
+// Keep hosted matching, function injection, and dispatch atomic so a
 // registration cannot silently omit part of a server-tool family.
-export interface ServerToolDeclarationDispatch {
-  canonicalize: (raw: ResponsesTool) => ServerToolDeclaration | undefined;
-  matchToolChoice: (choice: Exclude<ResponsesToolChoice, string>) => boolean;
-  buildFunctionTool: (toolName: string) => ResponsesFunctionTool;
+export interface ServerToolHostedDispatch {
+  hostedTypes: readonly string[];
+  canonicalize: (raw: ResponsesTool) => ResponsesHostedTool | undefined;
+  buildFunctionTool: (canonical: ResponsesHostedTool, toolName: string) => ResponsesFunctionTool;
   dispatcher: ServerToolDispatcher;
 }
 
@@ -124,9 +121,9 @@ export type ServerToolPrepareResult =
     // upstream-readable even on a request that no longer declares the
     // hosted tool.
     transformItems?: (items: ResponsesInputItem[], toolName: string) => ResponsesInputItem[];
-    // Present only when the request declares this server tool; absent for
+    // Present only when the request declares this hosted tool; absent for
     // replay-only activation.
-    declaration?: ServerToolDeclarationDispatch;
+    hosted?: ServerToolHostedDispatch;
   };
 
 export type ServerToolRegistration = (invocation: ResponsesInvocation, gatewayCtx: ChatGatewayCtx) => ServerToolPrepareResult | Promise<ServerToolPrepareResult>;
@@ -134,7 +131,7 @@ export type ServerToolRegistration = (invocation: ResponsesInvocation, gatewayCt
 type ActiveServerTool = Extract<ServerToolPrepareResult, { type: 'active' }> & {
   toolName: string;
   // Absent only for replay activation; otherwise drives `tools` echo restore.
-  canonicalDeclaration: ServerToolDeclaration | undefined;
+  canonicalHostedTool: ResponsesHostedTool | undefined;
   // Captures the exact forced choice shape before request rewriting.
   originalToolChoice: Exclude<ResponsesToolChoice, string> | undefined;
 };
@@ -227,14 +224,14 @@ const usageOf = (usage: ResponsesResult['usage']): MergeUsage => {
   return out;
 };
 
-const rewriteDeclarationToolChoice = (
+const rewriteHostedToolChoice = (
   toolChoice: ResponsesToolChoice | null | undefined,
   active: readonly ActiveServerTool[],
 ): ResponsesToolChoice | null | undefined => {
   if (toolChoice == null || typeof toolChoice === 'string') return toolChoice;
   for (const entry of active) {
-    if (entry.declaration === undefined) continue;
-    if (entry.declaration.matchToolChoice(toolChoice)) return { type: 'function', name: entry.toolName };
+    if (entry.hosted === undefined) continue;
+    if (entry.hosted.hostedTypes.includes(toolChoice.type)) return { type: 'function', name: entry.toolName };
   }
   return toolChoice;
 };
@@ -263,8 +260,8 @@ const restoreEchoedTools = (
   return tools.map(tool => {
     if (tool.type !== 'function') return tool;
     for (const entry of active) {
-      if (entry.canonicalDeclaration !== undefined && tool.name === entry.toolName) {
-        return entry.canonicalDeclaration;
+      if (entry.canonicalHostedTool !== undefined && tool.name === entry.toolName) {
+        return entry.canonicalHostedTool;
       }
     }
     return tool;
@@ -282,21 +279,21 @@ export const resolveServerToolName = (baseName: string, tools: readonly Response
   throw new Error(`Unable to resolve a free server tool function name for ${baseName} within ${MAX_NAME_RESOLUTION_ATTEMPTS} attempts`);
 };
 
-// Azure and Copilot both deduplicate repeated server-tool declarations as one
+// Azure and Copilot both deduplicate repeated hosted-tool declarations as one
 // family and retain the last complete declaration, including aliases and
 // configuration. The replacement occupies the first declaration's array slot
 // so unrelated tools retain their relative order.
 // https://github.com/Menci/Floway/pull/172#issuecomment-4971739422
-const rewriteToolsForServerToolShim = (
+const rewriteToolsForHostedShim = (
   tools: readonly ResponsesTool[],
-  declaration: ServerToolDeclarationDispatch,
+  hosted: ServerToolHostedDispatch,
   toolName: string,
-): { rewritten: ResponsesTool[]; canonicalDeclaration: ServerToolDeclaration } => {
+): { rewritten: ResponsesTool[]; canonicalHostedTool: ResponsesHostedTool } => {
   const rewritten: ResponsesTool[] = [];
-  let canonicalDeclaration: ServerToolDeclaration | undefined = undefined;
+  let canonicalHostedTool: ResponsesHostedTool | undefined = undefined;
   let replacementIndex = -1;
   for (const raw of tools) {
-    const canonical = declaration.canonicalize(raw);
+    const canonical = hosted.canonicalize(raw);
     if (canonical === undefined) {
       rewritten.push(raw);
       continue;
@@ -305,13 +302,13 @@ const rewriteToolsForServerToolShim = (
       replacementIndex = rewritten.length;
       rewritten.push(raw);
     }
-    canonicalDeclaration = canonical;
+    canonicalHostedTool = canonical;
   }
-  if (canonicalDeclaration === undefined) {
-    throw new Error('Server-tool declaration registration did not match any request tool');
+  if (canonicalHostedTool === undefined) {
+    throw new Error('Hosted server-tool registration did not match any request tool');
   }
-  rewritten[replacementIndex] = declaration.buildFunctionTool(toolName);
-  return { rewritten, canonicalDeclaration };
+  rewritten[replacementIndex] = hosted.buildFunctionTool(canonicalHostedTool, toolName);
+  return { rewritten, canonicalHostedTool };
 };
 
 export const parseServerToolArguments = (argumentsJson: string): Record<string, unknown> | null => {
@@ -966,25 +963,25 @@ export const withResponsesServerToolShim = (
     }
     const currentTools = Array.isArray(ctx.payload.tools) ? ctx.payload.tools : [];
     const toolName = resolveServerToolName(prepared.baseToolName, currentTools);
-    const { declaration } = prepared;
-    let canonicalDeclaration: ServerToolDeclaration | undefined = undefined;
-    if (declaration !== undefined) {
-      const rewrite = rewriteToolsForServerToolShim(currentTools, declaration, toolName);
-      canonicalDeclaration = rewrite.canonicalDeclaration;
+    const { hosted } = prepared;
+    let canonicalHostedTool: ResponsesHostedTool | undefined = undefined;
+    if (hosted !== undefined) {
+      const rewrite = rewriteToolsForHostedShim(currentTools, hosted, toolName);
+      canonicalHostedTool = rewrite.canonicalHostedTool;
       ctx.payload = { ...ctx.payload, tools: rewrite.rewritten };
     }
-    const originalToolChoice = declaration !== undefined
+    const originalToolChoice = hosted !== undefined
       && typeof ctx.payload.tool_choice === 'object'
       && ctx.payload.tool_choice !== null
-      && declaration.matchToolChoice(ctx.payload.tool_choice)
+      && hosted.hostedTypes.includes(ctx.payload.tool_choice.type)
       ? ctx.payload.tool_choice
       : undefined;
-    active.push({ ...prepared, toolName, canonicalDeclaration, originalToolChoice });
+    active.push({ ...prepared, toolName, canonicalHostedTool, originalToolChoice });
   }
 
   if (active.length === 0) return await run();
 
-  const rewrittenToolChoice = rewriteDeclarationToolChoice(ctx.payload.tool_choice, active);
+  const rewrittenToolChoice = rewriteHostedToolChoice(ctx.payload.tool_choice, active);
   if (rewrittenToolChoice !== ctx.payload.tool_choice) {
     ctx.payload = { ...ctx.payload, tool_choice: rewrittenToolChoice };
   }
@@ -993,14 +990,14 @@ export const withResponsesServerToolShim = (
   const nextInput = transformServerToolItems(canonicalInput, active);
   if (nextInput !== canonicalInput) ctx.payload = { ...ctx.payload, input: nextInput };
 
-  const declaredActive = active.filter(
-    (entry): entry is ActiveServerTool & { declaration: ServerToolDeclarationDispatch } =>
-      entry.declaration !== undefined,
+  const hostedActive = active.filter(
+    (entry): entry is ActiveServerTool & { hosted: ServerToolHostedDispatch } =>
+      entry.hosted !== undefined,
   );
-  if (declaredActive.length === 0) return await run();
+  if (hostedActive.length === 0) return await run();
 
   const dispatchers = new Map<string, ServerToolDispatcher>();
-  for (const entry of declaredActive) dispatchers.set(entry.toolName, entry.declaration.dispatcher);
+  for (const entry of hostedActive) dispatchers.set(entry.toolName, entry.hosted.dispatcher);
   const loopState: ServerToolLoopState = {
     iterationCount: 1,
     remainingToolCalls: typeof ctx.payload.max_tool_calls === 'number' ? ctx.payload.max_tool_calls : undefined,
