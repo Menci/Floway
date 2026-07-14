@@ -236,6 +236,18 @@ describe('runDirectConnectRequest', () => {
     expect(direct.closeCalls()).toBe(1);
   });
 
+  it('closes its socket when the response body errors', async () => {
+    const direct = makeSocketDial('HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n');
+    const response = await runDirectConnectRequest(
+      { host: 'api.example.com', port: 80, tls: false },
+      { method: 'GET', path: '/', headers: {} },
+      { socketDial: direct.socketDial },
+    );
+
+    await expect(response.text()).rejects.toThrow('upstream EOF');
+    expect(direct.closeCalls()).toBe(1);
+  });
+
   it('bounds the raw TCP connect with the direct-connect dial deadline', async () => {
     const socketDial: SocketDial = {
       connect: async (_host, _port, options) => {
