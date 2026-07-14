@@ -1,7 +1,7 @@
 import { messagesInterceptors, messagesCountTokensInterceptors } from './interceptors/index.ts';
 import type { MessagesInvocation } from './interceptors/types.ts';
+import { cloneMessagesPayload } from './clone-payload.ts';
 import { applyRulesToUpstreamMessages } from '../../model-aliases/apply-rules.ts';
-import { cloneProtocolPayload } from '../../shared/clone-protocol-payload.ts';
 import { providerStreamResultToExecuteResult, buildUpstreamCallOptions, chatTargetPicker } from '../../shared/telemetry/attempt-helpers.ts';
 import { chatCompletionsAttempt } from '../chat-completions/attempt.ts';
 import { responsesAttempt } from '../responses/attempt.ts';
@@ -37,7 +37,7 @@ export interface MessagesAttemptArgs {
 export const messagesAttempt = {
   generate: async (args: MessagesAttemptArgs): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>>> => {
     const { payload: sourcePayload, ctx, candidate, headers: sourceHeaders } = args;
-    const payload = { ...cloneProtocolPayload(sourcePayload), model: candidate.model.id };
+    const payload = { ...cloneMessagesPayload(sourcePayload), model: candidate.model.id };
     const headers = new Headers(sourceHeaders);
     const { store } = ctx;
     const targetApi = messagesGenerateTarget.pick(candidate.model.endpoints);
@@ -85,7 +85,7 @@ export const messagesAttempt = {
 
   countTokens: async (args: MessagesAttemptArgs): Promise<PlainResult> => {
     const { payload: sourcePayload, ctx, candidate, headers: sourceHeaders } = args;
-    const payload = { ...cloneProtocolPayload(sourcePayload), model: candidate.model.id };
+    const payload = { ...cloneMessagesPayload(sourcePayload), model: candidate.model.id };
     const headers = new Headers(sourceHeaders);
     const { store } = ctx;
     // `pick` here is contractually total — serve filtered with
