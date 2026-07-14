@@ -1,30 +1,22 @@
 import type { ResponsesBoundaryCtx } from './types.ts';
+import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
 
 /**
  * Copilot's Responses endpoint requires the private
- * `copilot-vision-request: true` header to accept image inputs. Images can
- * appear as `input_image` blocks (current Responses) or legacy `image` blocks,
- * and not only inside top-level `message.content`: hosted-tool output items,
- * custom tool outputs, and other future input shapes may also carry image
- * content nested at arbitrary depth. The detector recursively scans every
- * input item's `content` and array branches so a deeply embedded image still
- * flips the header.
+ * `copilot-vision-request: true` header to accept image inputs. Canonical
+ * Responses carries `input_image` blocks in message content and in multimodal
+ * function/custom tool output arrays, so all three containers participate in
+ * the same detection rule.
  *
  * References:
- * - https://github.com/caozhiyuan/copilot-api/blob/main/src/routes/responses/utils.ts#L185-L210
+ * - https://github.com/caozhiyuan/copilot-api/blob/cd0d0182eb4b9bf68a3376dc79728afa7f42ce07/src/lib/api-config.ts#L248-L258
+ * - https://github.com/caozhiyuan/copilot-api/blob/cd8207cb70ede07771bf37a04accfbf2af76d980/src/routes/responses/utils.ts#L176-L201
  */
-const containsVisionContent = (value: unknown): boolean => {
-  if (!value) return false;
-  if (Array.isArray(value)) return value.some(entry => containsVisionContent(entry));
-  if (typeof value !== 'object') return false;
-  const record = value as Record<string, unknown>;
-  const type = typeof record.type === 'string' ? record.type.toLowerCase() : undefined;
-  // Legacy `image` is retained alongside `input_image` for older Responses
-  // payloads that predate `input_image`. Matching both costs nothing and
-  // avoids dropping the header on aged samples we may still see in replay.
-  if (type === 'input_image' || type === 'image') return true;
-  if (Array.isArray(record.content)) return record.content.some(entry => containsVisionContent(entry));
-  return false;
+const itemHasImage = (item: ResponsesInputItem): boolean => {
+  const content = item.type === 'message'
+    ? item.content
+    : item.type === 'function_call_output' || item.type === 'custom_tool_call_output' ? item.output : undefined;
+  return Array.isArray(content) && content.some(part => part.type === 'input_image');
 };
 
 export const withVisionHeaderSet = async <TResult>(
@@ -32,7 +24,7 @@ export const withVisionHeaderSet = async <TResult>(
   _request: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {
-  if (containsVisionContent(ctx.payload.input)) ctx.headers.set('copilot-vision-request', 'true');
+  if (ctx.payload.input.some(itemHasImage)) ctx.headers.set('copilot-vision-request', 'true');
 
   return await run();
 };

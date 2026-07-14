@@ -1,7 +1,7 @@
 import { messagesThinkingBlockFromChatCompletionsScalarReasoning } from '../shared/chat-completions-and-messages/reasoning.ts';
 import { parseToolArgumentsObject } from '../shared/messages/tool-arguments.ts';
 import { applyLastMessageCacheBreakpoint, applyLastSystemCacheBreakpoint, applyLastToolCacheBreakpoint } from '../shared/via-messages/cache-breakpoints.ts';
-import { fetchRemoteImage, type RemoteImageLoader, resolveImageUrlToMessagesImage } from '../shared/via-messages/remote-images.ts';
+import { type RemoteImageLoader, resolveImageUrlToMessagesImage, unavailableRemoteImageLoader } from '../shared/via-messages/remote-images.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
 import type { ChatCompletionsPayload, ChatCompletionsMessage, ChatCompletionsTool } from '@floway-dev/protocols/chat-completions';
 import { MESSAGES_FALLBACK_MAX_TOKENS, type MessagesAssistantContentBlock, type MessagesMessage, type MessagesPayload, type MessagesTextBlock, type MessagesUserContentBlock } from '@floway-dev/protocols/messages';
@@ -193,7 +193,7 @@ export const translateChatCompletionsToMessages = async (payload: ChatCompletion
     prefixEnd++;
   }
 
-  const messages = await buildMessagesInput(payload.messages.slice(prefixEnd), options.loadRemoteImage ?? fetchRemoteImage);
+  const messages = await buildMessagesInput(payload.messages.slice(prefixEnd), options.loadRemoteImage ?? unavailableRemoteImageLoader);
 
   const maxTokens = payload.max_tokens ?? options.fallbackMaxOutputTokens ?? MESSAGES_FALLBACK_MAX_TOKENS;
   const tools = payload.tools?.length ? translateChatCompletionsTools(payload.tools) : undefined;
@@ -250,5 +250,5 @@ export const translateChatCompletionsToMessages = async (payload: ChatCompletion
   };
 };
 
-export const buildTargetRequest = (payload: ChatCompletionsPayload, options: { fallbackMaxOutputTokens?: number }): Promise<MessagesPayload> =>
+export const buildTargetRequest = (payload: ChatCompletionsPayload, options: TranslateChatCompletionsToMessagesOptions): Promise<MessagesPayload> =>
   translateChatCompletionsToMessages(payload, options);

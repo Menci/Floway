@@ -1,11 +1,11 @@
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 
 /**
- * Per-trip context. Carries the model name plus a per-pair-declared `TCaps`
- * shape that lists exactly the capability fields the trip reads. Pairs that
- * need no extra capability fields pass an empty object type. Callers
- * (typically source serves) construct one wide context whose shape is the
- * union of every pair's TCaps and reuse it across the dispatch map.
+ * Per-trip context. Carries the model name plus a per-pair-declared `TExtras`
+ * shape that lists exactly the capability fields and runtime adapters the trip
+ * reads. Pairs that need no extra fields pass an empty object type. Callers
+ * construct the context at the protocol boundary and inject runtime-owned
+ * dependencies without making this package import their implementation.
  *
  * The client's stream preference is intentionally not in this context.
  * Translation always emits `stream: true` on the target payload; the LLM
@@ -13,9 +13,9 @@ import type { ProtocolFrame } from '@floway-dev/protocols/common';
  * collect a non-streamed downstream response when the client did not ask
  * for SSE.
  */
-export type TranslationContext<TCaps = unknown> = {
+export type TranslationContext<TExtras = unknown> = {
   readonly model: string;
-} & TCaps;
+} & TExtras;
 
 /**
  * A wire-shaped upstream error body handed to `TranslateTrip.apiError`. The
@@ -41,9 +41,9 @@ export interface TranslatedApiError {
  * Stateless pairs simply return a function reference for `events`. Stateful
  * pairs let the closure capture whatever locals the trip needs.
  *
- * `TCaps` is the pair-declared capability surface: each pair lists exactly
- * the fields it reads from `TranslationContext`. Pairs that do not need any
- * upstream capability data leave it as `unknown` (default).
+ * `TExtras` is the pair-declared context surface: each pair lists exactly the
+ * capabilities and injected runtime adapters it reads. Pairs that need no
+ * extra context leave it as `unknown` (default).
  *
  * `apiError` is optional: when the target upstream returns a non-2xx HTTP
  * body (rather than an SSE stream), the pair may rewrite it into the source
@@ -51,9 +51,9 @@ export interface TranslatedApiError {
  * entirely — passes the upstream body through verbatim, which is what most
  * pairs want.
  */
-export type TranslateTrip<SrcPayload, SrcEvent, TgtPayload extends { model: string }, TgtEvent, TCaps = unknown> = (
+export type TranslateTrip<SrcPayload, SrcEvent, TgtPayload extends { model: string }, TgtEvent, TExtras = unknown> = (
   src: SrcPayload,
-  ctx: TranslationContext<TCaps>,
+  ctx: TranslationContext<TExtras>,
 ) => Promise<{
   target: TgtPayload;
   events: (frames: AsyncIterable<ProtocolFrame<TgtEvent>>) => AsyncIterable<ProtocolFrame<SrcEvent>>;

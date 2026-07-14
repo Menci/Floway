@@ -61,6 +61,12 @@ the gateway returns a Gemini-shaped unsupported-model error.
   boundaries normalize it to an explicit `type: "message"` before storage,
   interception, or translation. Malformed untyped items are rejected as caller
   input errors at the same boundary.
+- Responses create and compact request shapes model open-string
+  `prompt_cache_options` and `prompt_cache_retention`. Native compact projection
+  forwards both controls verbatim; provider-specific rejection remains a
+  boundary workaround (Codex strips `prompt_cache_retention`).
+- Explicit `prompt_cache_breakpoint` metadata on text, image, and file content
+  survives canonicalization and retained-message compaction.
 - Translators do not synthesize defaults merely to satisfy a target shape.
   Examples: no translated-only `temperature: 1`, `store: false`,
   `parallel_tool_calls: true`, or `reasoning.summary: "detailed"`.
@@ -74,7 +80,7 @@ the gateway returns a Gemini-shaped unsupported-model error.
 - Each provider runs its own boundary interceptor chain inside its `call*`
   method, after the gateway-side chain and immediately before the wire. The
   boundary chain owns provider-specific quirks: image compression, header
-  shaping (`x-vision-request`, `x-initiator`, anthropic-beta filtering),
+  shaping (`copilot-vision-request`, `x-initiator`, anthropic-beta filtering),
   field stripping (Copilot Responses `service_tier`, `image_generation`,
   `store: false` forcing), Copilot Messages `cache_control.scope` scrubbing,
   and similar.
@@ -194,6 +200,21 @@ steps.
   missing durable payload returns `item_not_found`, and no provider receives an
   `item_reference` carrier.
 
+- executes hosted `image_generation` through the gateway server-tool shim for
+  translated targets and native Responses providers that opt into the shim.
+  Edit sources are flattened in declaration order from message content,
+  function/custom tool output, and replayed image-generation results. Remote
+  HTTP(S) sources are downloaded once during request preparation through the
+  gateway's shared external-image loader, with manual redirect handling,
+  bounded streaming, public-address-only Node egress, and Azure-compatible
+  errors for download and image-format failures. The original URL remains
+  visible to the orchestrator while the cached bytes are reused by the edit
+  backend. Inline and remote masks are materialized by the same path.
+  Any mask `file_id`, including one supplied beside `image_url`, remains an
+  explicit `unsupported_image_source` because it requires the owning
+  upstream's authenticated Files namespace; the shim validates `image_url`
+  before applying that Floway guard. GIF sources are transcoded to WebP for
+  `/images/edits`, and a mask alone is sufficient edit context for `auto`/`edit`.
 - removes unsupported `image_generation` Responses tool entries and forced
   tool choices that targeted them before target request construction. Other
   hosted/deferred Responses tools, including `web_search`, `tool_search`, and
@@ -217,8 +238,13 @@ The same boundary runs for both `/v1/responses` (streaming) and
 - forces `store: false` on the wire — the gateway always owns Responses
   persistence; the original `store` is captured by the entry adapter before
   the chain runs, so durable storage is unaffected
-- compresses inline base64 image data URLs to WebP
-- injects `x-vision-request` and `x-initiator` headers
+- compresses inline base64 image data URLs to WebP across canonical message,
+  function-output, and custom-output content; remote URLs and file IDs remain
+  unchanged
+- injects `copilot-vision-request` when any of those canonical content arrays
+  carries an image, and derives `x-initiator` from the final canonical item
+  (missing/falsy roles and `assistant` are agent turns; other role-bearing
+  items are user turns)
 - on `/v1/responses` only: synchronizes mismatched stream output item IDs
 
 ### Responses — Codex provider boundary chain
@@ -408,8 +434,8 @@ Request mapping:
   Messages `system`, joined with blank lines.
 - string input becomes one user message.
 - user `input_text` becomes Messages text; `input_image` URLs are resolved via
-  the shared remote-image loader and converted to base64 image blocks when
-  supported.
+  the gateway-injected platform external-resource loader and converted to
+  base64 image blocks when supported.
 - assistant `output_text` becomes assistant text blocks.
 - `function_call` becomes assistant `tool_use`.
 - `function_call_output` becomes user `tool_result`; incomplete status marks the
@@ -520,7 +546,7 @@ Request mapping:
 - Chat `system` and `developer` messages become top-level Messages `system`,
   joined with blank lines.
 - Chat user text and supported images become Messages user blocks. Remote images
-  are resolved through the shared loader.
+  are resolved through the same gateway-injected external-resource loader.
 - Chat assistant `content` becomes assistant text.
 - Chat assistant scalar `reasoning_text` / `reasoning_opaque` becomes one
   `thinking` block or one `redacted_thinking` block.

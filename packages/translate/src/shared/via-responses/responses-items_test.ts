@@ -19,7 +19,14 @@ test('canonicalizes string and implicit-message wire inputs', () => {
     model: 'gpt-test',
     input: [
       { role: 'system', content: 'rules', phase: 'future_phase' },
-      { role: 'user', content: [{ type: 'input_image', file_id: 'file_1', detail: 'original' }] },
+      {
+        role: 'user',
+        content: [
+          { type: 'input_text', text: 'look', prompt_cache_breakpoint: { mode: 'future_mode' } },
+          { type: 'input_image', file_id: 'file_1', detail: 'original', prompt_cache_breakpoint: { mode: 'explicit' } },
+          { type: 'input_file', file_id: 'file_2', prompt_cache_breakpoint: { mode: 'explicit' } },
+        ],
+      },
       { type: 'message', role: 'user', content: 'hello' },
       { type: 'function_call_output', call_id: 'call_1', output: 'result' },
     ],
@@ -27,7 +34,15 @@ test('canonicalizes string and implicit-message wire inputs', () => {
     model: 'gpt-test',
     input: [
       { type: 'message', role: 'system', content: 'rules', phase: 'future_phase' },
-      { type: 'message', role: 'user', content: [{ type: 'input_image', file_id: 'file_1', detail: 'original' }] },
+      {
+        type: 'message',
+        role: 'user',
+        content: [
+          { type: 'input_text', text: 'look', prompt_cache_breakpoint: { mode: 'future_mode' } },
+          { type: 'input_image', file_id: 'file_1', detail: 'original', prompt_cache_breakpoint: { mode: 'explicit' } },
+          { type: 'input_file', file_id: 'file_2', prompt_cache_breakpoint: { mode: 'explicit' } },
+        ],
+      },
       { type: 'message', role: 'user', content: 'hello' },
       { type: 'function_call_output', call_id: 'call_1', output: 'result' },
     ],
@@ -43,6 +58,7 @@ test('rejects malformed untyped input items at the canonical boundary', () => {
     { role: 'user', content: [null] },
     { role: 'user', content: [{}] },
     { role: 'user', content: [{ type: 'input_text' }] },
+    { role: 'user', content: [{ type: 'input_text', text: 'invalid breakpoint', prompt_cache_breakpoint: {} }] },
     { role: 'user', content: 'invalid phase', phase: 42 },
   ]) {
     const error = assertThrows(

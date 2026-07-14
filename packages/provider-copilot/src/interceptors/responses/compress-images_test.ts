@@ -4,7 +4,7 @@ import { withInlineImagesCompressed } from './compress-images.ts';
 import type { ResponsesBoundaryCtx } from './types.ts';
 import { type ImageProcessor, initImageProcessor } from '@floway-dev/platform';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { CanonicalResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { CanonicalResponsesPayload, ResponsesInputContent, ResponsesInputItem, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { ExecuteResult } from '@floway-dev/provider';
 import { eventResult } from '@floway-dev/provider';
 import { assertEquals, stubProviderModel, testTelemetryModelIdentity } from '@floway-dev/test-utils';
@@ -25,75 +25,44 @@ const invocation = (payload: CanonicalResponsesPayload): ResponsesBoundaryCtx =>
   action: 'generate',
 });
 
-const firstImageUrl = (payload: CanonicalResponsesPayload): string => {
-  const input = payload.input as Array<{ type: string; content?: Array<{ type: string; image_url?: string }> }>;
-  const message = input.find(item => item.type === 'message');
-  const image = message?.content?.find(part => part.type === 'input_image');
-  return image?.image_url ?? '';
+const contentContainers = {
+  message: (content: ResponsesInputContent[]): ResponsesInputItem => ({ type: 'message', role: 'user', content }),
+  function_output: (output: ResponsesInputContent[]): ResponsesInputItem => ({ type: 'function_call_output', call_id: 'call_function', output }),
+  custom_output: (output: ResponsesInputContent[]): ResponsesInputItem => ({ type: 'custom_tool_call_output', call_id: 'call_custom', output }),
 };
 
-test('rewrites a base64 input_image data URL to a WebP data URL', async () => {
-  initImageProcessor(fixedProcessor);
+const imageUrlOf = (item: ResponsesInputItem): string | null | undefined => {
+  const content = item.type === 'message'
+    ? item.content
+    : item.type === 'function_call_output' || item.type === 'custom_tool_call_output' ? item.output : undefined;
+  return Array.isArray(content) ? content.find(part => part.type === 'input_image')?.image_url : undefined;
+};
 
+test.each(Object.entries(contentContainers))('compresses inline images in %s', async (_name, wrap) => {
+  initImageProcessor(fixedProcessor);
   const ctx = invocation({
     model: 'gpt-test',
-    input: [
-      {
-        type: 'message',
-        role: 'user',
-        content: [
-          { type: 'input_text', text: 'look' },
-          { type: 'input_image', image_url: 'data:image/png;base64,AAAA', detail: 'auto' },
-        ],
-      },
-    ],
+    input: [wrap([
+      { type: 'input_text', text: 'look' },
+      { type: 'input_image', image_url: 'data:image/png;base64,AAAA', detail: 'auto' },
+    ])],
   });
 
   await withInlineImagesCompressed(ctx, stubRequest, okEvents);
 
-  assertEquals(firstImageUrl(ctx.payload), 'data:image/webp;base64,AQID');
+  assertEquals(imageUrlOf(ctx.payload.input[0]), 'data:image/webp;base64,AQID');
 });
 
-test('leaves remote https image references untouched', async () => {
+test.each(Object.entries(contentContainers))('leaves remote images in %s untouched', async (_name, wrap) => {
   initImageProcessor(fixedProcessor);
-
   const ctx = invocation({
     model: 'gpt-test',
-    input: [
-      {
-        type: 'message',
-        role: 'user',
-        content: [{ type: 'input_image', image_url: 'https://example.com/cat.png', detail: 'auto' }],
-      },
-    ],
+    input: [wrap([{ type: 'input_image', image_url: 'https://example.com/cat.png', detail: 'auto' }])],
   });
 
   await withInlineImagesCompressed(ctx, stubRequest, okEvents);
 
-  assertEquals(firstImageUrl(ctx.payload), 'https://example.com/cat.png');
-});
-
-test('compresses base64 images inside function_call_output tool outputs', async () => {
-  initImageProcessor(fixedProcessor);
-
-  const ctx = invocation({
-    model: 'gpt-test',
-    input: [
-      {
-        type: 'function_call_output',
-        call_id: 'call_1',
-        output: [
-          { type: 'input_text', text: 'screenshot' },
-          { type: 'input_image', image_url: 'data:image/png;base64,AAAA', detail: 'high' },
-        ],
-      },
-    ],
-  });
-
-  await withInlineImagesCompressed(ctx, stubRequest, okEvents);
-
-  const output = (ctx.payload.input as Array<{ type: string; output?: Array<{ type: string; image_url?: string }> }>)[0].output;
-  assertEquals(output?.find(part => part.type === 'input_image')?.image_url, 'data:image/webp;base64,AQID');
+  assertEquals(imageUrlOf(ctx.payload.input[0]), 'https://example.com/cat.png');
 });
 
 test('compresses each unique inline image only once when the same data URL appears multiple times', async () => {
@@ -122,6 +91,11 @@ test('compresses each unique inline image only once when the same data URL appea
         output: [{ type: 'input_image', image_url: 'data:image/png;base64,AAAA', detail: 'high' }],
       },
       {
+        type: 'custom_tool_call_output',
+        call_id: 'call_custom',
+        output: [{ type: 'input_image', image_url: 'data:image/png;base64,AAAA', detail: 'high' }],
+      },
+      {
         type: 'message',
         role: 'user',
         content: [{ type: 'input_image', image_url: 'data:image/png;base64,BBBB', detail: 'auto' }],
@@ -131,7 +105,7 @@ test('compresses each unique inline image only once when the same data URL appea
 
   await withInlineImagesCompressed(ctx, stubRequest, okEvents);
 
-  // Two unique data URLs across four targets → exactly two compress calls.
+  // Two unique data URLs across five targets → exactly two compress calls.
   assertEquals(calls, 2);
 });
 
@@ -157,7 +131,7 @@ test('reuses its compressed image when the same attempt payload is retried', asy
   await withInlineImagesCompressed(ctx, stubRequest, okEvents);
 
   assertEquals(calls, 1);
-  assertEquals(firstImageUrl(ctx.payload), 'data:image/webp;base64,AQID');
+  assertEquals(imageUrlOf(ctx.payload.input[0]), 'data:image/webp;base64,AQID');
 
   const item = ctx.payload.input[0];
   if (item.type !== 'message' || !Array.isArray(item.content) || item.content[0]?.type !== 'input_image') throw new Error('expected image content');
