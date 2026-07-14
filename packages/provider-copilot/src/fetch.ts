@@ -4,26 +4,23 @@ import type { UpstreamFetchOptions } from '@floway-dev/provider';
 export type CopilotFetchConfig = CopilotAuth;
 
 // Token-exchange failures surface as regular Responses so callers handle them via the same 4xx/5xx path.
-const copilotFetchInternal = async (
+const copilotFetchInternal = (
   config: CopilotFetchConfig,
   path: string,
   init: RequestInit,
   options: UpstreamFetchOptions,
-): Promise<Response> => {
-  try {
-    return await copilotAuthedFetch(path, init, config, {
-      headers: options.extraHeaders,
-      fetcher: options.fetcher,
-      wrapUpstreamCall: options.wrapUpstreamCall,
-    });
-  } catch (error) {
+): Promise<Response> =>
+  copilotAuthedFetch(path, init, config, {
+    headers: options.extraHeaders,
+    fetcher: options.fetcher,
+    wrapUpstreamCall: options.wrapUpstreamCall,
+  }).catch(error => {
     if (!isCopilotTokenFetchError(error)) throw error;
     return new Response(error.body, {
       status: error.status,
       headers: new Headers(error.headers),
     });
-  }
-};
+  });
 
 export const copilotFetchChatCompletions = (config: CopilotFetchConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
   copilotFetchInternal(config, '/chat/completions', init, options);
