@@ -130,11 +130,7 @@ const ensureFirstResponsesItemAffinity = async function* (
   frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
   options: AffinityEgressOptions,
 ): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
-  const syntheticPrefixContent = options.codec.wrap(
-    undefined,
-    { ...options.affinity, syntheticItem: true },
-    responsesAffinityDomain('reasoning', 'encrypted_content'),
-  );
+  let syntheticPrefixContent: Promise<string> | undefined;
   const syntheticOnFirstItem = new Map<string, Promise<string>>();
   let firstItem: { readonly outputIndex: number; readonly canCarry: boolean } | undefined;
   let prefixItem: ResponsesOutputReasoning | undefined;
@@ -143,6 +139,11 @@ const ensureFirstResponsesItemAffinity = async function* (
 
   const getPrefixItem = async (): Promise<ResponsesOutputReasoning> => {
     if (prefixItem !== undefined) return prefixItem;
+    syntheticPrefixContent ??= options.codec.wrap(
+      undefined,
+      { ...options.affinity, syntheticItem: true },
+      responsesAffinityDomain('reasoning', 'encrypted_content'),
+    );
     prefixItem = {
       type: 'reasoning',
       id: randomReasoningId(),
@@ -198,8 +199,9 @@ const ensureFirstResponsesItemAffinity = async function* (
   const rewriteResponse = async (response: ResponsesResult): Promise<ResponsesResult> => {
     let output = response.output;
     if (firstItem?.canCarry && output[firstItem.outputIndex] !== undefined) {
-      const first = await ensureItemCarrier(output[firstItem.outputIndex], firstItem.outputIndex);
-      output = output.map((item, index) => index === firstItem.outputIndex ? first : item);
+      const firstItemIndex = firstItem.outputIndex;
+      const first = await ensureItemCarrier(output[firstItemIndex], firstItemIndex);
+      output = output.map((item, index) => index === firstItemIndex ? first : item);
     }
     if (prefixItem !== undefined) output = [prefixItem, ...output];
     return { ...response, output };
