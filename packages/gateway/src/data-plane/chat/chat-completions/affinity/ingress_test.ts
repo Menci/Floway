@@ -26,7 +26,7 @@ test('restores owned opaque state only for its exact candidate', async () => {
     messages: [{ role: 'assistant', content: 'answer', reasoning_opaque: carrier }],
   }, codec);
 
-  expect(prepared.affinities).toEqual([affinityTargetForCandidate(candidateA)]);
+  expect(prepared.routingEvidence).toEqual([{ target: affinityTargetForCandidate(candidateA), mode: 'prefer' }]);
   expect(prepared.payloadForCandidate(candidateA).messages[0]).toMatchObject({ reasoning_opaque: 'upstream-signature' });
   expect(prepared.payloadForCandidate(candidateB).messages[0]).not.toHaveProperty('reasoning_opaque');
 });

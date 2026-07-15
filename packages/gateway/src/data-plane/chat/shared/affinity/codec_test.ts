@@ -7,7 +7,6 @@ const SECRET = '00'.repeat(32);
 const OTHER_SECRET = '11'.repeat(32);
 const DOMAIN = 'test.carrier';
 const affinity: AffinityTarget = {
-  mode: 'prefer',
   upstreamId: 'upstream-a',
   modelId: 'model-a',
   rulesPresent: false,

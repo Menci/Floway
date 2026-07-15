@@ -3,7 +3,6 @@ import type { AliasRules } from '@floway-dev/protocols/common';
 export type AffinityOrigin = 'raw' | 'base64' | 'base64url';
 
 export interface AffinityTarget {
-  mode: 'prefer' | 'force';
   upstreamId: string;
   modelId: string;
   rulesPresent: boolean;
@@ -11,6 +10,11 @@ export interface AffinityTarget {
   upstreamItemId?: string;
   syntheticItem?: true;
   geminiPartFromEnd?: number;
+}
+
+export interface AffinityEvidence {
+  readonly target: AffinityTarget;
+  readonly mode: 'prefer' | 'force';
 }
 
 export interface AffinityEnvelope {

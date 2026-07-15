@@ -1,9 +1,9 @@
 import { candidateMatchesAffinity } from './candidate.ts';
-import type { AffinityTarget, DecodedAffinityBlob } from './types.ts';
+import type { AffinityEvidence, DecodedAffinityBlob } from './types.ts';
 import type { ModelCandidate } from '@floway-dev/provider';
 
 export interface PreparedAffinityPayload<T> {
-  readonly affinities: readonly AffinityTarget[];
+  readonly routingEvidence: readonly AffinityEvidence[];
   readonly payloadForCandidate: (candidate: ModelCandidate) => T;
 }
 
@@ -19,5 +19,8 @@ export const blobForCandidate = (decoded: DecodedAffinityBlob, candidate: ModelC
   return { present: true, owned: true, compatible: true, value: decoded.value };
 };
 
-export const ownedAffinities = (decoded: Iterable<DecodedAffinityBlob>): AffinityTarget[] =>
-  [...decoded].flatMap(blob => blob.kind === 'owned' ? [blob.envelope.affinity] : []);
+export const ownedAffinityEvidence = (
+  decoded: Iterable<DecodedAffinityBlob>,
+  mode: AffinityEvidence['mode'] = 'prefer',
+): AffinityEvidence[] =>
+  [...decoded].flatMap(blob => blob.kind === 'owned' ? [{ target: blob.envelope.affinity, mode }] : []);

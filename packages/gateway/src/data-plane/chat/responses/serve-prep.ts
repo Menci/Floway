@@ -102,7 +102,7 @@ export const prepareResponsesServePlan = async (args: {
     return { kind: 'failure', result: renderResponsesFailure(failure) };
   }
   const affinity = await prepareResponsesAffinity(hydrated.payload, ctx.affinity.codec);
-  const decision = routeCandidatesByAffinity(viable, affinity.affinities);
+  const decision = routeCandidatesByAffinity(viable, affinity.routingEvidence);
   if (decision.kind === 'failure') return { kind: 'failure', result: renderResponsesFailure(decision.failure) };
   // Stage the user-supplied input from the original payload — not the
   // expansion's `item_reference` prefix — so the next-turn snapshot picks

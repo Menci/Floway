@@ -28,7 +28,7 @@ export const chatCompletionsServe = {
       runtimeLocation: ctx.runtimeLocation,
     });
     const viable = enumerated.filter(c => chatCompletionsTarget.canServe(c.model.endpoints));
-    const decision = routeCandidatesByAffinity(viable, prepared.affinities);
+    const decision = routeCandidatesByAffinity(viable, prepared.routingEvidence);
     if (decision.kind === 'failure') return renderChatCompletionsFailure(decision.failure);
     if (decision.candidates.length === 0) return renderChatCompletionsFailure(noViableCandidateFailure(sawModel, payload.model, failedUpstreams));
 

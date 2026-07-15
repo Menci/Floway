@@ -1,6 +1,6 @@
 import { isEqual } from 'es-toolkit';
 
-import type { AffinityTarget } from './types.ts';
+import type { AffinityEvidence, AffinityTarget } from './types.ts';
 import type { RoutingDecision } from '../routing.ts';
 import type { ModelCandidate } from '@floway-dev/provider';
 
@@ -11,7 +11,6 @@ const sameTarget = (left: AffinityTarget, right: AffinityTarget): boolean =>
   && isEqual(left.rules, right.rules);
 
 export const affinityTargetForCandidate = (candidate: ModelCandidate): AffinityTarget => ({
-  mode: 'prefer',
   upstreamId: candidate.provider.upstream,
   modelId: candidate.model.id,
   rulesPresent: candidate.rules !== undefined,
@@ -26,11 +25,11 @@ export const candidateMatchesAffinity = (candidate: ModelCandidate, affinity: Af
 
 export const routeCandidatesByAffinity = <T extends ModelCandidate>(
   candidates: readonly T[],
-  affinities: readonly AffinityTarget[],
+  evidence: readonly AffinityEvidence[],
 ): RoutingDecision<T> => {
   const forcing: AffinityTarget[] = [];
-  for (const affinity of affinities) {
-    if (affinity.mode === 'force' && !forcing.some(existing => sameTarget(existing, affinity))) forcing.push(affinity);
+  for (const item of evidence) {
+    if (item.mode === 'force' && !forcing.some(existing => sameTarget(existing, item.target))) forcing.push(item.target);
   }
   if (forcing.length > 1) {
     return {
@@ -54,7 +53,7 @@ export const routeCandidatesByAffinity = <T extends ModelCandidate>(
         };
   }
 
-  const preferred = affinities.findLast(affinity => affinity.mode === 'prefer');
+  const preferred = evidence.findLast(item => item.mode === 'prefer')?.target;
   if (preferred === undefined) return { kind: 'success', candidates };
   const matching = candidates.filter(candidate => candidateMatchesAffinity(candidate, preferred));
   if (matching.length === 0) return { kind: 'success', candidates };

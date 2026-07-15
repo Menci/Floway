@@ -7,7 +7,6 @@ import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 
 const affinity: AffinityTarget = {
-  mode: 'prefer',
   upstreamId: 'up-a',
   modelId: 'model-a',
   rulesPresent: false,

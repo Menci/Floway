@@ -34,7 +34,7 @@ export const messagesServe = {
       runtimeLocation: ctx.runtimeLocation,
     });
     const viable = enumerated.filter(c => messagesGenerateTarget.canServe(c.model.endpoints));
-    const decision = routeCandidatesByAffinity(viable, prepared.affinities);
+    const decision = routeCandidatesByAffinity(viable, prepared.routingEvidence);
     if (decision.kind === 'failure') return renderMessagesFailure(decision.failure, 'generate');
     if (decision.candidates.length === 0) return renderMessagesFailure(noViableCandidateFailure(sawModel, payload.model, failedUpstreams), 'generate');
 
@@ -68,7 +68,7 @@ export const messagesServe = {
       runtimeLocation: ctx.runtimeLocation,
     });
     const viable = enumerated.filter(c => messagesCountTokensTarget.canServe(c.model.endpoints));
-    const decision = routeCandidatesByAffinity(viable, prepared.affinities);
+    const decision = routeCandidatesByAffinity(viable, prepared.routingEvidence);
     if (decision.kind === 'failure') return renderMessagesFailure(decision.failure, 'countTokens');
     if (decision.candidates.length === 0) return renderMessagesFailure(noViableCandidateFailure(sawModel, payload.model, failedUpstreams), 'countTokens');
 

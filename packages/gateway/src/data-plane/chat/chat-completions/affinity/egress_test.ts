@@ -7,7 +7,6 @@ import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-comp
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 
 const affinity: AffinityTarget = {
-  mode: 'prefer',
   upstreamId: 'up-a',
   modelId: 'model-a',
   rulesPresent: false,

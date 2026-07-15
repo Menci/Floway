@@ -39,7 +39,7 @@ export const geminiServe = {
       runtimeLocation: ctx.runtimeLocation,
     });
     const viable = enumerated.filter(c => geminiGenerateTarget.canServe(c.model.endpoints));
-    const decision = routeCandidatesByAffinity(viable, prepared.affinities);
+    const decision = routeCandidatesByAffinity(viable, prepared.routingEvidence);
     if (decision.kind === 'failure') return renderGeminiFailure(decision.failure, 'generate');
     if (decision.candidates.length === 0) return renderGeminiFailure(noViableCandidateFailure(sawModel, model, failedUpstreams), 'generate');
 
@@ -75,7 +75,7 @@ export const geminiServe = {
       runtimeLocation: ctx.runtimeLocation,
     });
     const viable = enumerated.filter(c => geminiCountTokensTarget.canServe(c.model.endpoints));
-    const decision = routeCandidatesByAffinity(viable, prepared.affinities);
+    const decision = routeCandidatesByAffinity(viable, prepared.routingEvidence);
     if (decision.kind === 'failure') return renderGeminiFailure(decision.failure, 'countTokens');
     if (decision.candidates.length === 0) return renderGeminiFailure(noViableCandidateFailure(sawModel, model, failedUpstreams), 'countTokens');
 

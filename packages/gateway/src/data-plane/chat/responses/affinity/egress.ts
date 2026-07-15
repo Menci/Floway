@@ -19,7 +19,6 @@ const isForceItem = (item: ResponsesOutputItem): boolean =>
 
 const itemAffinity = (base: AffinityTarget, item: ResponsesOutputItem): AffinityTarget => ({
   ...base,
-  mode: isForceItem(item) ? 'force' : base.mode,
   ...('id' in item && typeof item.id === 'string' ? { upstreamItemId: item.id } : {}),
 });
 
@@ -128,9 +127,7 @@ export const wrapResponsesAffinityEgress = async function* (
       }
 
       const outputIndex = response.output.length;
-      const syntheticAffinity: AffinityTarget = hasForceState
-        ? { ...options.affinity, mode: 'force' as const, syntheticItem: true }
-        : { ...options.affinity, syntheticItem: true };
+      const syntheticAffinity: AffinityTarget = { ...options.affinity, syntheticItem: true };
       const item: ResponsesOutputReasoning = {
         type: 'reasoning',
         id: randomReasoningId(),

@@ -7,7 +7,6 @@ import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesOutputReasoning, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 const affinity: AffinityTarget = {
-  mode: 'prefer',
   upstreamId: 'up-a',
   modelId: 'model-a',
   rulesPresent: false,
@@ -171,13 +170,13 @@ describe('Responses affinity egress', () => {
       codec: {
         wrap: async (_value, target) => {
           calls.push(target);
-          return `wrapped:${target.mode}`;
+          return `wrapped:${target.syntheticItem === true ? 'synthetic' : 'natural'}`;
         },
       },
       affinity,
     })) output.push(frame);
 
-    expect(calls.map(call => call.mode)).toEqual(['prefer', 'force']);
+    expect(calls.map(call => call.syntheticItem === true)).toEqual([false, true]);
     expect(output.map(frame => frame.type === 'event' ? frame.event.type : frame.type)).toEqual([
       'response.output_item.added',
       'response.output_item.done',

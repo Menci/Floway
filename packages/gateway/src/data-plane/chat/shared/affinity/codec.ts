@@ -86,8 +86,7 @@ const parseEnvelope = (value: unknown): AffinityEnvelope | null => {
 
   const affinity = value.affinity;
   if (
-    (affinity.mode !== 'prefer' && affinity.mode !== 'force')
-    || typeof affinity.upstreamId !== 'string'
+    typeof affinity.upstreamId !== 'string'
     || typeof affinity.modelId !== 'string'
     || typeof affinity.rulesPresent !== 'boolean'
     || (affinity.upstreamItemId !== undefined && typeof affinity.upstreamItemId !== 'string')
@@ -98,7 +97,6 @@ const parseEnvelope = (value: unknown): AffinityEnvelope | null => {
   ) return null;
 
   const parsedAffinity: AffinityTarget = {
-    mode: affinity.mode,
     upstreamId: affinity.upstreamId,
     modelId: affinity.modelId,
     rulesPresent: affinity.rulesPresent,

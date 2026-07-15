@@ -1,7 +1,7 @@
 import { responsesAffinityDomain } from './domain.ts';
 import type { AffinityCodec } from '../../shared/affinity/codec.ts';
-import { blobForCandidate, ownedAffinities, type PreparedAffinityPayload } from '../../shared/affinity/prepared.ts';
-import type { DecodedAffinityBlob } from '../../shared/affinity/types.ts';
+import { blobForCandidate, type PreparedAffinityPayload } from '../../shared/affinity/prepared.ts';
+import type { AffinityEvidence, AffinityTarget, DecodedAffinityBlob } from '../../shared/affinity/types.ts';
 import { createTemporaryResponsesItemId } from '../items/format.ts';
 import type { CanonicalResponsesPayload, ResponsesInputItem } from '@floway-dev/protocols/responses';
 
@@ -10,6 +10,56 @@ interface ResponsesBlobLocation {
   readonly contentIndex?: number;
   readonly decoded: DecodedAffinityBlob;
 }
+
+type OwnedResponsesBlobLocation = ResponsesBlobLocation & {
+  readonly decoded: Extract<DecodedAffinityBlob, { kind: 'owned' }>;
+};
+
+const isOwnedLocation = (location: ResponsesBlobLocation): location is OwnedResponsesBlobLocation =>
+  location.decoded.kind === 'owned';
+
+const itemRequiresAffinity = (item: ResponsesInputItem): boolean =>
+  item.type === 'compaction'
+  || item.type === 'context_compaction'
+  || item.type === 'program'
+  || item.type === 'program_output';
+
+const routingEvidenceFrom = (
+  items: readonly ResponsesInputItem[],
+  locations: readonly ResponsesBlobLocation[],
+): AffinityEvidence[] => {
+  const ownedByItem = Map.groupBy(
+    locations.filter(isOwnedLocation),
+    location => location.itemIndex,
+  );
+  const evidence: AffinityEvidence[] = [];
+  const forceItemsWithoutPriorTarget: number[] = [];
+  let latestTarget: AffinityTarget | undefined;
+
+  for (const [itemIndex, item] of items.entries()) {
+    const owned = ownedByItem.get(itemIndex) ?? [];
+    for (const location of owned) {
+      latestTarget = location.decoded.envelope.affinity;
+      evidence.push({ target: latestTarget, mode: itemRequiresAffinity(item) ? 'force' : 'prefer' });
+    }
+    if (!itemRequiresAffinity(item) || owned.length > 0) continue;
+    if (latestTarget !== undefined) evidence.push({ target: latestTarget, mode: 'force' });
+    else forceItemsWithoutPriorTarget.push(itemIndex);
+  }
+
+  for (const itemIndex of forceItemsWithoutPriorTarget) {
+    const followingSynthetic = locations.find(location =>
+      location.itemIndex > itemIndex
+      && location.decoded.kind === 'owned'
+      && location.decoded.envelope.affinity.syntheticItem === true,
+    );
+    if (followingSynthetic?.decoded.kind === 'owned') {
+      evidence.push({ target: followingSynthetic.decoded.envelope.affinity, mode: 'force' });
+    }
+  }
+
+  return evidence;
+};
 
 const encryptedContentLocations = async (
   items: readonly ResponsesInputItem[],
@@ -40,7 +90,7 @@ export const prepareResponsesAffinity = async (
 ): Promise<PreparedAffinityPayload<CanonicalResponsesPayload>> => {
   const locations = await encryptedContentLocations(payload.input, codec);
   return {
-    affinities: ownedAffinities(locations.map(location => location.decoded)),
+    routingEvidence: routingEvidenceFrom(payload.input, locations),
     payloadForCandidate: candidate => {
       const candidatePayload = structuredClone(payload);
       const byItem = Map.groupBy(locations, location => location.itemIndex);

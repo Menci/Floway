@@ -1,6 +1,6 @@
 import { CHAT_COMPLETIONS_AFFINITY_DOMAIN } from './domain.ts';
 import type { AffinityCodec } from '../../shared/affinity/codec.ts';
-import { blobForCandidate, ownedAffinities, type PreparedAffinityPayload } from '../../shared/affinity/prepared.ts';
+import { blobForCandidate, ownedAffinityEvidence, type PreparedAffinityPayload } from '../../shared/affinity/prepared.ts';
 import type { DecodedAffinityBlob } from '../../shared/affinity/types.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 
@@ -15,7 +15,7 @@ export const prepareChatCompletionsAffinity = async (
   }
 
   return {
-    affinities: ownedAffinities(decoded.values()),
+    routingEvidence: ownedAffinityEvidence(decoded.values()),
     payloadForCandidate: candidate => {
       const candidatePayload = structuredClone(payload);
       for (const [index, blob] of decoded) {

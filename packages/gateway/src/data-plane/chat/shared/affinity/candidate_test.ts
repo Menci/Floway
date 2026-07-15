@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import { affinityTargetForCandidate, candidateMatchesAffinity, routeCandidatesByAffinity } from './candidate.ts';
+import type { AffinityEvidence } from './types.ts';
 import type { AliasRules } from '@floway-dev/protocols/common';
 import { stubModelCandidate } from '@floway-dev/test-utils';
 
@@ -12,6 +13,11 @@ const candidate = (upstream: string, model: string, rules?: AliasRules) => {
   });
   return rules === undefined ? value : { ...value, rules };
 };
+
+const evidence = (value: ReturnType<typeof candidate>, mode: AffinityEvidence['mode'] = 'prefer'): AffinityEvidence => ({
+  target: affinityTargetForCandidate(value),
+  mode,
+});
 
 describe('client-carried affinity candidate routing', () => {
   test('matches upstream, model, and the exact alias rules presence', () => {
@@ -28,7 +34,7 @@ describe('client-carried affinity candidate routing', () => {
     const second = candidate('up-b', 'model');
     const decision = routeCandidatesByAffinity(
       [first, second],
-      [affinityTargetForCandidate(first), affinityTargetForCandidate(second)],
+      [evidence(first), evidence(second)],
     );
 
     expect(decision.kind).toBe('success');
@@ -41,7 +47,7 @@ describe('client-carried affinity candidate routing', () => {
     const second = candidate('up-b', 'model');
     const unavailable = candidate('up-c', 'model');
 
-    expect(routeCandidatesByAffinity([first, second], [affinityTargetForCandidate(unavailable)])).toEqual({
+    expect(routeCandidatesByAffinity([first, second], [evidence(unavailable)])).toEqual({
       kind: 'success',
       candidates: [first, second],
     });
@@ -51,10 +57,10 @@ describe('client-carried affinity candidate routing', () => {
     const first = candidate('up-a', 'model');
     const second = candidate('up-b', 'model');
 
-    expect(routeCandidatesByAffinity([first], [{ ...affinityTargetForCandidate(second), mode: 'force' }])).toMatchObject({ kind: 'failure' });
+    expect(routeCandidatesByAffinity([first], [evidence(second, 'force')])).toMatchObject({ kind: 'failure' });
     expect(routeCandidatesByAffinity([first, second], [
-      { ...affinityTargetForCandidate(first), mode: 'force' },
-      { ...affinityTargetForCandidate(second), mode: 'force' },
+      evidence(first, 'force'),
+      evidence(second, 'force'),
     ])).toMatchObject({ kind: 'failure' });
   });
 });

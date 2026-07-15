@@ -76,6 +76,6 @@ test('passes foreign blobs through unchanged for cascaded gateways', async () =>
     input: [{ type: 'reasoning', id: 'rs_foreign', summary: [], encrypted_content: 'foreign' }],
   }, codec);
 
-  expect(prepared.affinities).toEqual([]);
+  expect(prepared.routingEvidence).toEqual([]);
   expect(prepared.payloadForCandidate(candidateA).input[0]).toMatchObject({ encrypted_content: 'foreign' });
 });
