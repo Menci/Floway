@@ -132,10 +132,10 @@ const encryptedLengthFrom = (bytes: Uint8Array): number =>
 
 const ownedBuffer = (bytes: Uint8Array): ArrayBuffer => new Uint8Array(bytes).buffer;
 
-const deriveAffinityKey = async (serverSecret: string): Promise<CryptoKey> => {
+const deriveAffinityKey = async (serverSecret: Uint8Array): Promise<CryptoKey> => {
   const root = await crypto.subtle.importKey(
     'raw',
-    ownedBuffer(parseServerSecretBytes(serverSecret)),
+    ownedBuffer(serverSecret),
     'HKDF',
     false,
     ['deriveKey'],
@@ -164,7 +164,7 @@ export class AffinityCodec {
   readonly #key: Promise<CryptoKey>;
 
   constructor(serverSecret: string) {
-    this.#key = deriveAffinityKey(serverSecret);
+    this.#key = deriveAffinityKey(parseServerSecretBytes(serverSecret));
   }
 
   async wrap(value: string | undefined, affinity: AffinityTarget, domain: string): Promise<string> {
