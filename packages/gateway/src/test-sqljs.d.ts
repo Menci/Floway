@@ -1,7 +1,7 @@
 declare module 'sql.js' {
   export interface SqlJsDatabase {
-    run(sql: string): void;
-    exec(sql: string): Array<{ columns: string[]; values: unknown[][] }>;
+    run(sql: string, params?: unknown[]): void;
+    exec(sql: string, params?: unknown[]): Array<{ columns: string[]; values: unknown[][] }>;
     close(): void;
   }
 
