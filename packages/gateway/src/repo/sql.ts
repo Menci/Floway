@@ -174,7 +174,7 @@ class SqlApiKeyRepo implements ApiKeyRepo {
         key.userId,
         key.name,
         key.key,
-        parseAffinitySecret(key.affinitySecret, `ApiKey.affinitySecret for id=${key.id}`),
+        key.affinitySecret,
         key.createdAt,
         key.lastUsedAt ?? null,
         serializeUpstreamIds(key.upstreamIds),

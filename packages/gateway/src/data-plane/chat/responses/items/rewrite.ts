@@ -8,10 +8,10 @@ interface HydratedItem {
   readonly privatePayload?: unknown;
 }
 
-const hydrateItem = (item: ResponsesInputItem, store: StatefulResponsesStore): HydratedItem => {
+const hydrateItem = (item: ResponsesInputItem, store: StatefulResponsesStore | undefined): HydratedItem => {
   const id = responsesItemId(item);
   if (id === null || !isStoredResponsesItemId(id)) return { item };
-  const stored = store.getItemById(id);
+  const stored = store?.getItemById(id);
   if (stored === undefined) {
     if (item.type === 'item_reference') throwChatServeFailure({ kind: 'item-not-found', itemId: id });
     return { item };
@@ -22,23 +22,18 @@ const hydrateItem = (item: ResponsesInputItem, store: StatefulResponsesStore): H
   };
 };
 
-const hydrateItems = (items: readonly ResponsesInputItem[], store: StatefulResponsesStore): HydratedItem[] =>
+const hydrateItems = (items: readonly ResponsesInputItem[], store: StatefulResponsesStore | undefined): HydratedItem[] =>
   items.map(item => hydrateItem(item, store));
 
-export const hydrateStoredResponsesItemsForAffinity = async (
-  items: readonly ResponsesInputItem[],
-  store: StatefulResponsesStore,
-): Promise<ResponsesInputItem[]> => hydrateItems(items, store).map(entry => entry.item);
-
-export interface RewrittenResponsesPayload {
+export interface HydratedResponsesPayload {
   readonly payload: CanonicalResponsesPayload;
   readonly privatePayloads: ReadonlyMap<string, unknown>;
 }
 
-export const rewriteResponsesPayload = (
+export const hydrateResponsesPayload = (
   payload: CanonicalResponsesPayload,
-  store: StatefulResponsesStore,
-): RewrittenResponsesPayload => {
+  store: StatefulResponsesStore | undefined,
+): HydratedResponsesPayload => {
   const hydrated = hydrateItems(payload.input, store);
   const privatePayloads = new Map<string, unknown>();
   for (const entry of hydrated) {

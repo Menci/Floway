@@ -769,16 +769,26 @@ test('import rejects api key unique identity conflicts before mutating', async (
   const duplicateId = await doImport(app, 'replace', latestImportData({
     apiKeys: [KEY_B, { ...KEY_B, name: 'Duplicate Bob' }],
   }));
+  const duplicateAffinitySecret = await doImport(app, 'replace', latestImportData({
+    apiKeys: [KEY_B, { ...KEY_A, id: 'key-c', key: 'secret-c', affinitySecret: KEY_B.affinitySecret }],
+  }));
   const mergeExistingRawKeyConflict = await doImport(app, 'merge', latestImportData({
     apiKeys: [{ ...KEY_B, key: KEY_A.key }],
+  }));
+  const mergeExistingAffinityConflict = await doImport(app, 'merge', latestImportData({
+    apiKeys: [{ ...KEY_B, affinitySecret: KEY_A.affinitySecret }],
   }));
 
   assertEquals(duplicateRawKey.status, 400);
   assertEquals(duplicateRawKey.body.error, 'invalid apiKeys: duplicate apiKeys raw key used by key-b and key-c');
   assertEquals(duplicateId.status, 400);
   assertEquals(duplicateId.body.error, 'invalid apiKeys: duplicate apiKeys id key-b at indexes 0 and 1');
+  assertEquals(duplicateAffinitySecret.status, 400);
+  assertEquals(duplicateAffinitySecret.body.error, 'invalid apiKeys: duplicate apiKeys affinity secret used by key-b and key-c');
   assertEquals(mergeExistingRawKeyConflict.status, 400);
   assertEquals(mergeExistingRawKeyConflict.body.error, 'invalid apiKeys: apiKeys raw key for key-b conflicts with existing api key key-a');
+  assertEquals(mergeExistingAffinityConflict.status, 400);
+  assertEquals(mergeExistingAffinityConflict.body.error, 'invalid apiKeys: apiKeys affinity secret for key-b conflicts with existing api key key-a');
   assertEquals(await repo.apiKeys.list(), [KEY_A]);
   assertEquals(await repo.upstreams.list(), [CUSTOM_UPSTREAM]);
 });

@@ -92,7 +92,7 @@ const parseEnvelope = (value: unknown): AffinityEnvelope | null => {
     || typeof affinity.modelId !== 'string'
     || typeof affinity.rulesPresent !== 'boolean'
     || (affinity.upstreamItemId !== undefined && typeof affinity.upstreamItemId !== 'string')
-    || (affinity.syntheticItem !== undefined && typeof affinity.syntheticItem !== 'boolean')
+    || (affinity.syntheticItem !== undefined && affinity.syntheticItem !== true)
     || (affinity.geminiPartFromEnd !== undefined && (typeof affinity.geminiPartFromEnd !== 'number' || !Number.isInteger(affinity.geminiPartFromEnd) || affinity.geminiPartFromEnd <= 0))
     || (affinity.rulesPresent && !isRecord(affinity.rules))
     || (!affinity.rulesPresent && affinity.rules !== undefined)
@@ -106,7 +106,7 @@ const parseEnvelope = (value: unknown): AffinityEnvelope | null => {
     rulesPresent: affinity.rulesPresent,
     ...(affinity.rulesPresent ? { rules: affinity.rules as AliasRules } : {}),
     ...(affinity.upstreamItemId !== undefined ? { upstreamItemId: affinity.upstreamItemId } : {}),
-    ...(affinity.syntheticItem !== undefined ? { syntheticItem: affinity.syntheticItem } : {}),
+    ...(affinity.syntheticItem === true ? { syntheticItem: true } : {}),
     ...(affinity.geminiPartFromEnd !== undefined ? { geminiPartFromEnd: affinity.geminiPartFromEnd } : {}),
   };
   return {
@@ -134,6 +134,12 @@ const encryptedLengthFrom = (bytes: Uint8Array): number =>
 
 const ownedBuffer = (bytes: Uint8Array): ArrayBuffer => new Uint8Array(bytes).buffer;
 
+const authenticatedCarrierData = (domain: string, original: Uint8Array): Uint8Array => {
+  const domainBytes = textEncoder.encode(domain);
+  if (domainBytes.length > MAX_ENCRYPTED_BYTES) throw new RangeError('Affinity carrier domain exceeds the 2-byte length marker');
+  return concatBytes(encryptedLengthMarker(domainBytes.length), domainBytes, original);
+};
+
 export class AffinityCodec {
   readonly #key: Promise<CryptoKey>;
 
@@ -141,8 +147,9 @@ export class AffinityCodec {
     this.#key = crypto.subtle.importKey('raw', ownedBuffer(parseHexSecret(secret)), 'AES-GCM', false, ['encrypt', 'decrypt']);
   }
 
-  async wrap(value: string | undefined, affinity: AffinityTarget): Promise<string> {
+  async wrap(value: string | undefined, affinity: AffinityTarget, domain: string): Promise<string> {
     const original = value === undefined ? undefined : decodeOriginal(value);
+    const originalBytes = original?.bytes ?? new Uint8Array();
     const envelope: AffinityEnvelope = {
       version: 1,
       ...(original !== undefined ? { origin: original.origin } : {}),
@@ -150,17 +157,17 @@ export class AffinityCodec {
     };
     const iv = crypto.getRandomValues(new Uint8Array(IV_BYTES));
     const ciphertext = new Uint8Array(await crypto.subtle.encrypt(
-      { name: 'AES-GCM', iv },
+      { name: 'AES-GCM', iv, additionalData: authenticatedCarrierData(domain, originalBytes) },
       await this.#key,
       textEncoder.encode(JSON.stringify(envelope)),
     ));
     const encrypted = concatBytes(iv, ciphertext);
     if (encrypted.length > MAX_ENCRYPTED_BYTES) throw new RangeError('Encrypted affinity envelope exceeds the 2-byte length marker');
-    const framed = concatBytes(original?.bytes ?? new Uint8Array(), encrypted, encryptedLengthMarker(encrypted.length));
+    const framed = concatBytes(originalBytes, encrypted, encryptedLengthMarker(encrypted.length));
     return original?.origin === 'base64url' ? bytesToBase64url(framed) : bytesToBase64(framed);
   }
 
-  async unwrap(value: string): Promise<DecodedAffinityBlob> {
+  async unwrap(value: string, domain: string): Promise<DecodedAffinityBlob> {
     const framed = decodeCanonicalBase64(value) ?? decodeCanonicalBase64url(value);
     if (framed === null || framed.length < LENGTH_BYTES + IV_BYTES + 16) return { kind: 'foreign', value };
 
@@ -169,17 +176,17 @@ export class AffinityCodec {
     if (encryptedLength < IV_BYTES + 16 || originalLength < 0) return { kind: 'foreign', value };
 
     const encrypted = framed.subarray(originalLength, framed.length - LENGTH_BYTES);
+    const original = framed.subarray(0, originalLength);
     const iv = encrypted.subarray(0, IV_BYTES);
     const ciphertext = encrypted.subarray(IV_BYTES);
     try {
       const plaintext = await crypto.subtle.decrypt(
-        { name: 'AES-GCM', iv: ownedBuffer(iv) },
+        { name: 'AES-GCM', iv: ownedBuffer(iv), additionalData: ownedBuffer(authenticatedCarrierData(domain, original)) },
         await this.#key,
         ownedBuffer(ciphertext),
       );
       const envelope = parseEnvelope(JSON.parse(fatalTextDecoder.decode(plaintext)) as unknown);
       if (envelope === null) return { kind: 'foreign', value };
-      const original = framed.subarray(0, originalLength);
       if (envelope.origin === undefined) {
         return original.length === 0
           ? { kind: 'owned', envelope }

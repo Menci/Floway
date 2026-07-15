@@ -14,7 +14,6 @@ const sameTarget = (left: AffinityTarget, right: AffinityTarget): boolean =>
 export const affinityTargetForCandidate = (
   candidate: ModelCandidate,
   mode: AffinityTarget['mode'],
-  upstreamItemId?: string,
 ): AffinityTarget => ({
   mode,
   upstreamId: candidate.provider.upstream,
@@ -22,7 +21,6 @@ export const affinityTargetForCandidate = (
   modelId: candidate.model.id,
   rulesPresent: candidate.rules !== undefined,
   ...(candidate.rules !== undefined ? { rules: candidate.rules } : {}),
-  ...(upstreamItemId !== undefined ? { upstreamItemId } : {}),
 });
 
 export const candidateMatchesAffinity = (candidate: ModelCandidate, affinity: AffinityTarget): boolean =>

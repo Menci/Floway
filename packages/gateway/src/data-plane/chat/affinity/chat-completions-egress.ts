@@ -1,4 +1,5 @@
 import type { AffinityEgressOptions } from './affinity-egress.ts';
+import { CHAT_COMPLETIONS_AFFINITY_DOMAIN } from './carrier-domains.ts';
 import { chatCompletionsErrorPayloadMessage, type ChatCompletionsDelta, type ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 
@@ -41,7 +42,7 @@ export const wrapChatCompletionsAffinityEgress = async function* (
             state.finished = true;
             return {
               index,
-              delta: { reasoning_opaque: await options.codec.wrap(state.opaque, options.affinity) },
+              delta: { reasoning_opaque: await options.codec.wrap(state.opaque, options.affinity, CHAT_COMPLETIONS_AFFINITY_DOMAIN) },
               finish_reason: null,
             } satisfies StreamingChoice;
           }));
@@ -89,7 +90,7 @@ export const wrapChatCompletionsAffinityEgress = async function* (
 
     const wrappedChoices = await Promise.all(finishingChoices.map(async ({ choice, state }) => ({
       ...choice,
-      delta: { reasoning_opaque: await options.codec.wrap(state.opaque, options.affinity) },
+      delta: { reasoning_opaque: await options.codec.wrap(state.opaque, options.affinity, CHAT_COMPLETIONS_AFFINITY_DOMAIN) },
       finish_reason: null,
     })));
     yield eventFrame(eventWithChoices(frame.event, wrappedChoices, false));

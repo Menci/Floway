@@ -1,4 +1,5 @@
 import type { AffinityEgressOptions } from './affinity-egress.ts';
+import { responsesAffinityDomain } from './carrier-domains.ts';
 import type { AffinityTarget } from './types.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesOutputItem, ResponsesOutputReasoning, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
@@ -76,7 +77,7 @@ export const wrapResponsesAffinityEgress = async function* (
       const cacheKey = `${outputIndex}\0${itemId}\0encrypted_content\0synthetic`;
       let replacement = wrapped.get(cacheKey);
       if (replacement === undefined) {
-        replacement = options.codec.wrap(undefined, target);
+        replacement = options.codec.wrap(undefined, target, responsesAffinityDomain(item.type, 'encrypted_content'));
         wrapped.set(cacheKey, replacement);
       }
       return { ...item, encrypted_content: await replacement };
@@ -86,7 +87,7 @@ export const wrapResponsesAffinityEgress = async function* (
       const cacheKey = `${outputIndex}\0${itemId}\0${slot.key}\0${slot.value}`;
       let replacement = wrapped.get(cacheKey);
       if (replacement === undefined) {
-        replacement = options.codec.wrap(slot.value, target);
+        replacement = options.codec.wrap(slot.value, target, responsesAffinityDomain(item.type, slot.key));
         wrapped.set(cacheKey, replacement);
       }
       replacements.set(slot.key, await replacement);
@@ -118,20 +119,23 @@ export const wrapResponsesAffinityEgress = async function* (
 
     if (event.type === 'response.completed' || event.type === 'response.incomplete') {
       const response = await wrapResult(event.response);
-      if (response.output.some(item => encryptedContentSlots(item).length > 0)) {
+      const hasForceState = response.output.some(isForceItem);
+      const hasForceCarrier = response.output.some(item => isForceItem(item) && encryptedContentSlots(item).length > 0);
+      const hasCarrier = response.output.some(item => encryptedContentSlots(item).length > 0);
+      if ((hasForceState && hasForceCarrier) || (!hasForceState && hasCarrier)) {
         yield eventFrame({ ...event, response });
         return;
       }
 
       const outputIndex = response.output.length;
-      const syntheticAffinity = response.output.some(isForceItem)
+      const syntheticAffinity = hasForceState
         ? { ...options.affinity, mode: 'force' as const, syntheticItem: true }
         : { ...options.affinity, syntheticItem: true };
       const item: ResponsesOutputReasoning = {
         type: 'reasoning',
         id: randomReasoningId(),
         summary: [],
-        encrypted_content: await options.codec.wrap(undefined, syntheticAffinity),
+        encrypted_content: await options.codec.wrap(undefined, syntheticAffinity, responsesAffinityDomain('reasoning', 'encrypted_content')),
       };
       const sequence = event.sequence_number;
       yield eventFrame({

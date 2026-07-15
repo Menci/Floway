@@ -2,6 +2,7 @@ import { expect, test } from 'vitest';
 
 import { wrapResponsesOutputForStorage } from './output.ts';
 import { createResponsesHttpStore } from './store.ts';
+import { ResponsesAttemptState } from '../attempt-state.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
@@ -30,7 +31,11 @@ test('storage rewrites ids and persists the exact complete client-wire item befo
   };
 
   const events: ResponsesStreamEvent[] = [];
-  for await (const frame of wrapResponsesOutputForStorage(frames(result), { store, responseId: 'resp_public' })) {
+  for await (const frame of wrapResponsesOutputForStorage(frames(result), {
+    store,
+    attemptState: new ResponsesAttemptState(),
+    responseId: 'resp_public',
+  })) {
     if (frame.type === 'event') events.push(frame.event);
   }
 

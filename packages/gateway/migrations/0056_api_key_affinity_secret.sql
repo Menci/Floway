@@ -41,3 +41,4 @@ DROP TABLE api_keys;
 ALTER TABLE api_keys_new RENAME TO api_keys;
 
 CREATE INDEX idx_api_keys_user ON api_keys(user_id) WHERE deleted_at IS NULL;
+CREATE UNIQUE INDEX idx_api_keys_affinity_secret ON api_keys(affinity_secret);

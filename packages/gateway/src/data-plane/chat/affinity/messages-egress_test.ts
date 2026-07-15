@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from 'vitest';
 
-import type { AffinityEgressCodec } from './affinity-egress.ts';
+import type { AffinityCodec } from './codec.ts';
 import { wrapMessagesAffinityEgress } from './messages-egress.ts';
 import type { AffinityTarget } from './types.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
@@ -13,6 +13,8 @@ const affinity: AffinityTarget = {
   modelId: 'model-a',
   rulesPresent: false,
 };
+
+type AffinityEgressCodec = Pick<AffinityCodec, 'wrap'>;
 
 const frames = async function* (values: ProtocolFrame<MessagesStreamEvent>[]) {
   yield* values;

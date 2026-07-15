@@ -6,7 +6,6 @@ import { createResponsesHttpStore } from './store.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import type { StoredResponsesItem } from '../../../../repo/types.ts';
-import { responsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
 describe('Responses stored-item hydration', () => {
   test('replaces a public item reference with its complete client-wire payload and private state', async () => {
@@ -27,7 +26,7 @@ describe('Responses stored-item hydration', () => {
     await repo.responsesItems.insertMany([row]);
     const store = createResponsesHttpStore('key-a', true);
     const payload = { model: 'model', input: [{ type: 'item_reference' as const, id: row.id }] };
-    await store.loadInputItems({ sourceItems: payload.input, view: responsesItemsView });
+    await store.loadInputItems(payload.input, payload.input);
 
     const rewritten = rewriteResponsesPayload(payload, store);
 

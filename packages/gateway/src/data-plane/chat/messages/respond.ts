@@ -5,7 +5,8 @@ import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
 import { tokenUsage } from '../../shared/telemetry/usage.ts';
 import { wrapMessagesAffinityEgress } from '../affinity/messages-egress.ts';
-import type { ChatGatewayCtx, GatewayCtx } from '../shared/gateway-ctx.ts';
+import { affinityEgressOptions } from '../affinity/context.ts';
+import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse } from '../shared/respond.ts';
 import { type StreamCompletion, writeSSEFrames } from '../shared/stream/sse.ts';
 import { billableServiceTier, type ProtocolFrame, sseFrame } from '@floway-dev/protocols/common';
@@ -87,12 +88,6 @@ export const respondMessages = async (
   });
 
   return { success: true, response };
-};
-
-const affinityEgressOptions = (ctx: GatewayCtx) => {
-  if (!('affinity' in ctx)) throw new Error('Messages event result reached responder without affinity context');
-  const chatCtx = ctx as ChatGatewayCtx;
-  return { codec: chatCtx.affinity.codec, affinity: chatCtx.affinity.selectedTarget() };
 };
 
 // Anthropic already reports disjoint token counts: input_tokens excludes the

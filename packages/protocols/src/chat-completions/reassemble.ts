@@ -1,5 +1,5 @@
 import { chatCompletionsErrorPayloadMessage } from './index.ts';
-import type { ChatCompletionsChoiceNonStreaming, ChatCompletionsResult, ChatCompletionsStreamEvent, ChatCompletionsReasoningItem, ChatCompletionsToolCall } from './index.ts';
+import type { ChatCompletionsChoiceNonStreaming, ChatCompletionsDelta, ChatCompletionsResult, ChatCompletionsStreamEvent, ChatCompletionsReasoningItem, ChatCompletionsToolCall } from './index.ts';
 import { captureExtras } from '../common/reassemble-extras.ts';
 
 // Field-fidelity contract: every field an upstream emits must reach the
@@ -10,8 +10,8 @@ const KNOWN_CHOICE_KEYS = new Set(['index', 'delta', 'finish_reason']);
 const KNOWN_CHUNK_KEYS = new Set(['id', 'object', 'created', 'model', 'choices', 'usage', 'system_fingerprint', 'service_tier']);
 
 interface ToolCallAccumulator {
-  id: string;
-  name: string;
+  id?: string;
+  name?: string;
   arguments: string;
 }
 
@@ -21,7 +21,7 @@ interface ChoiceAccumulator {
   reasoningText: string;
   reasoningOpaque?: string;
   readonly reasoningItems: ChatCompletionsReasoningItem[];
-  finishReason: ChatCompletionsChoiceNonStreaming['finish_reason'];
+  finishReason?: ChatCompletionsChoiceNonStreaming['finish_reason'];
   readonly toolCalls: Map<number, ToolCallAccumulator>;
   readonly choiceExtras: Record<string, unknown>;
   readonly messageExtras: Record<string, unknown>;
@@ -32,26 +32,18 @@ const createChoiceAccumulator = (index: number): ChoiceAccumulator => ({
   content: '',
   reasoningText: '',
   reasoningItems: [],
-  finishReason: 'stop',
   toolCalls: new Map(),
   choiceExtras: {},
   messageExtras: {},
 });
 
-const accumulateToolCalls = (choice: ChoiceAccumulator, value: unknown): void => {
-  if (!Array.isArray(value)) return;
-
-  for (const raw of value) {
-    if (raw === null || typeof raw !== 'object') continue;
-    const toolCall = raw as Record<string, unknown>;
-    if (typeof toolCall.index !== 'number') continue;
-    const fn = toolCall.function && typeof toolCall.function === 'object'
-      ? toolCall.function as Record<string, unknown>
-      : undefined;
-    const current = choice.toolCalls.get(toolCall.index) ?? { id: '', name: '', arguments: '' };
-    if (typeof toolCall.id === 'string') current.id = toolCall.id;
-    if (typeof fn?.name === 'string') current.name = fn.name;
-    if (typeof fn?.arguments === 'string') current.arguments += fn.arguments;
+const accumulateToolCalls = (choice: ChoiceAccumulator, value: ChatCompletionsDelta['tool_calls']): void => {
+  if (value === undefined) return;
+  for (const toolCall of value) {
+    const current = choice.toolCalls.get(toolCall.index) ?? { arguments: '' };
+    if (toolCall.id !== undefined) current.id = toolCall.id;
+    if (toolCall.function?.name !== undefined) current.name = toolCall.function.name;
+    if (toolCall.function?.arguments !== undefined) current.arguments += toolCall.function.arguments;
     choice.toolCalls.set(toolCall.index, current);
   }
 };
@@ -59,13 +51,19 @@ const accumulateToolCalls = (choice: ChoiceAccumulator, value: unknown): void =>
 const finalizedToolCalls = (choice: ChoiceAccumulator): ChatCompletionsToolCall[] =>
   [...choice.toolCalls.entries()]
     .toSorted(([left], [right]) => left - right)
-    .map(([, toolCall]) => ({
-      id: toolCall.id,
-      type: 'function',
-      function: { name: toolCall.name, arguments: toolCall.arguments },
-    }));
+    .map(([index, toolCall]) => {
+      if (toolCall.id === undefined || toolCall.name === undefined) {
+        throw new Error(`Chat Completions tool call ${index} finished without id or name`);
+      }
+      return {
+        id: toolCall.id,
+        type: 'function' as const,
+        function: { name: toolCall.name, arguments: toolCall.arguments },
+      };
+    });
 
 const finalizeChoice = (choice: ChoiceAccumulator): ChatCompletionsChoiceNonStreaming => {
+  if (choice.finishReason === undefined) throw new Error(`Chat Completions choice ${choice.index} finished without finish_reason`);
   const toolCalls = finalizedToolCalls(choice);
   return {
     index: choice.index,
@@ -84,9 +82,9 @@ const finalizeChoice = (choice: ChoiceAccumulator): ChatCompletionsChoiceNonStre
 };
 
 export async function reassembleChatCompletionsEvents(chunks: AsyncIterable<ChatCompletionsStreamEvent>): Promise<ChatCompletionsResult> {
-  let id = '';
-  let model = '';
-  let created = 0;
+  let id: string | undefined;
+  let model: string | undefined;
+  let created: number | undefined;
   let systemFingerprint: string | undefined;
   let serviceTier: ChatCompletionsResult['service_tier'];
   let lastUsage: ChatCompletionsResult['usage'] | undefined;
@@ -97,21 +95,21 @@ export async function reassembleChatCompletionsEvents(chunks: AsyncIterable<Chat
     const errorMessage = chatCompletionsErrorPayloadMessage(chunk);
     if (errorMessage) throw new Error(`Upstream Chat Completions SSE error: ${errorMessage}`);
 
-    if (!id && chunk.id) {
+    if (id === undefined) {
       id = chunk.id;
       model = chunk.model;
       created = chunk.created;
     }
-    if (!systemFingerprint && typeof chunk.system_fingerprint === 'string' && chunk.system_fingerprint) {
+    if (systemFingerprint === undefined && typeof chunk.system_fingerprint === 'string') {
       systemFingerprint = chunk.system_fingerprint;
     }
-    if (!serviceTier && typeof chunk.service_tier === 'string' && chunk.service_tier) {
+    if (serviceTier === undefined && typeof chunk.service_tier === 'string') {
       serviceTier = chunk.service_tier;
     }
     if (chunk.usage) lastUsage = chunk.usage;
     captureExtras(chunk as unknown as Record<string, unknown>, KNOWN_CHUNK_KEYS, chunkExtras);
 
-    for (const streamed of chunk.choices ?? []) {
+    for (const streamed of chunk.choices) {
       const choice = choices.get(streamed.index) ?? createChoiceAccumulator(streamed.index);
       choices.set(streamed.index, choice);
       captureExtras(streamed as unknown as Record<string, unknown>, KNOWN_CHOICE_KEYS, choice.choiceExtras);
@@ -124,11 +122,14 @@ export async function reassembleChatCompletionsEvents(chunks: AsyncIterable<Chat
       if (Array.isArray(delta.reasoning_items)) {
         choice.reasoningItems.push(...delta.reasoning_items as ChatCompletionsReasoningItem[]);
       }
-      accumulateToolCalls(choice, delta.tool_calls);
+      accumulateToolCalls(choice, streamed.delta.tool_calls);
       if (streamed.finish_reason !== null) choice.finishReason = streamed.finish_reason;
     }
   }
 
+  if (id === undefined || model === undefined || created === undefined) {
+    throw new Error('Chat Completions stream contained no response envelope');
+  }
   return {
     id,
     object: 'chat.completion',

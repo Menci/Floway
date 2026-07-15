@@ -119,6 +119,12 @@ test('migration 0056 backfills distinct affinity secrets and enforces their cano
       Error,
       'CHECK constraint failed',
     );
+    assertThrows(
+      () => db.run(`INSERT INTO api_keys (id, user_id, name, key, affinity_secret, created_at)
+        VALUES ('duplicate', 1, 'Duplicate', 'raw_duplicate', '${rows[0]!.affinity_secret}', '2026-01-03T00:00:00.000Z')`),
+      Error,
+      'UNIQUE constraint failed: api_keys.affinity_secret',
+    );
   } finally {
     db.close();
   }

@@ -78,8 +78,6 @@ type ChatCompletionsStreamToolCalls = NonNullable<ChatCompletionsStreamDelta['to
 type MessagesContentBlock = MessagesContentBlockStartEvent['content_block'];
 type MessagesContentDelta = MessagesContentBlockDeltaEvent['delta'];
 
-type DeferredAfterThinking = { type: 'content'; content: string; hasToolCallDelta: boolean } | { type: 'tool_calls'; toolCalls: ChatCompletionsStreamToolCalls };
-
 type OpenContentBlock = 'text' | 'thinking' | 'tool_use';
 
 interface ChatCompletionsToMessagesStreamState {
@@ -93,8 +91,6 @@ interface ChatCompletionsToMessagesStreamState {
     }
   >;
   pendingReasoningOpaque?: string;
-  pendingThinkingSignature?: string;
-  deferredAfterThinking: DeferredAfterThinking[];
   // Some OpenAI-shaped upstreams (notably gpt-4o-2024-05-13) interleave a
   // `content` delta in the middle of a tool_call's argument fragments, and
   // some chunk deltas carry BOTH `content` and `tool_calls` arrays in one
@@ -114,8 +110,6 @@ interface ChatCompletionsToMessagesStreamState {
   upstreamServiceTier?: string;
   finalMessageSent?: boolean;
 }
-
-const hasPendingReasoning = (state: ChatCompletionsToMessagesStreamState): boolean => state.openBlock === 'thinking' || state.pendingReasoningOpaque !== undefined;
 
 const startContentBlock = (state: ChatCompletionsToMessagesStreamState, events: MessagesStreamEvent[], openBlock: OpenContentBlock, contentBlock: MessagesContentBlock): void => {
   events.push({
@@ -138,23 +132,8 @@ const closeCurrentBlock = (state: ChatCompletionsToMessagesStreamState, events: 
   state.openBlock = undefined;
 };
 
-const attachOpaqueToOpenThinkingBlock = (state: ChatCompletionsToMessagesStreamState): boolean => {
-  if (state.openBlock !== 'thinking' || state.pendingReasoningOpaque === undefined) {
-    return false;
-  }
-
-  state.pendingThinkingSignature = state.pendingReasoningOpaque;
-  state.pendingReasoningOpaque = undefined;
-  return true;
-};
-
 const emitPendingOpaqueReasoningBlock = (state: ChatCompletionsToMessagesStreamState, events: MessagesStreamEvent[]): void => {
   if (state.pendingReasoningOpaque === undefined) return;
-
-  // Opaque data is attachable only to the currently open thinking block. Once a
-  // thinking block has closed, later opaque-only reasoning must become its own
-  // redacted_thinking block instead of being suppressed by global history.
-  if (attachOpaqueToOpenThinkingBlock(state)) return;
 
   closeCurrentBlock(state, events);
   events.push(
@@ -218,7 +197,6 @@ const handleReasoningDelta = (delta: ChatCompletionsStreamDelta, state: ChatComp
         type: 'thinking',
         thinking: '',
       });
-      attachOpaqueToOpenThinkingBlock(state);
     }
 
     emitContentBlockDelta(state, events, {
@@ -228,12 +206,6 @@ const handleReasoningDelta = (delta: ChatCompletionsStreamDelta, state: ChatComp
   }
 
   if (delta.reasoning_opaque === undefined || delta.reasoning_opaque === null) {
-    return;
-  }
-
-  if (state.openBlock === 'thinking') {
-    state.pendingThinkingSignature = delta.reasoning_opaque;
-    emitPendingReasoningAndDeferred(state, events);
     return;
   }
 
@@ -266,7 +238,7 @@ const emitToolCallsDelta = (toolCalls: ChatCompletionsStreamToolCalls, state: Ch
     if (!toolCall.function?.arguments) continue;
 
     const toolCallInfo = state.toolCalls[toolCall.index];
-    if (!toolCallInfo) continue;
+    if (!toolCallInfo) throw new Error(`Chat Completions tool arguments targeted unopened tool call index ${toolCall.index}`);
 
     emitContentBlockDelta(
       state,
@@ -280,32 +252,8 @@ const emitToolCallsDelta = (toolCalls: ChatCompletionsStreamToolCalls, state: Ch
   }
 };
 
-const emitPendingReasoningAndDeferred = (state: ChatCompletionsToMessagesStreamState, events: MessagesStreamEvent[]): void => {
-  // Opaque-only reasoning still owns source order: it may later become a
-  // thinking signature, so content/tool deltas wait behind the reasoning gate.
+const emitPendingReasoning = (state: ChatCompletionsToMessagesStreamState, events: MessagesStreamEvent[]): void => {
   emitPendingOpaqueReasoningBlock(state, events);
-  if (state.openBlock === 'thinking') {
-    if (state.pendingThinkingSignature !== undefined) {
-      emitContentBlockDelta(state, events, {
-        type: 'signature_delta',
-        signature: state.pendingThinkingSignature,
-      });
-      state.pendingThinkingSignature = undefined;
-    }
-    closeCurrentBlock(state, events);
-  }
-
-  const deferred = state.deferredAfterThinking;
-  state.deferredAfterThinking = [];
-
-  for (const item of deferred) {
-    if (item.type === 'content') {
-      emitContentDelta(item.content, item.hasToolCallDelta, state, events);
-      continue;
-    }
-
-    emitToolCallsDelta(item.toolCalls, state, events);
-  }
 };
 
 const handleFinishReason = (
@@ -314,7 +262,7 @@ const handleFinishReason = (
   state: ChatCompletionsToMessagesStreamState,
   events: MessagesStreamEvent[],
 ): void => {
-  emitPendingReasoningAndDeferred(state, events);
+  emitPendingReasoning(state, events);
 
   closeCurrentBlock(state, events);
   flushDeferredContent(state, events);
@@ -352,7 +300,6 @@ export const createChatCompletionsToMessagesStreamState = (): ChatCompletionsToM
   messageStartSent: false,
   contentBlockIndex: 0,
   toolCalls: {},
-  deferredAfterThinking: [],
 });
 
 export const translateChatCompletionsChunkToMessagesEvents = (chunk: ChatCompletionsStreamEvent, state: ChatCompletionsToMessagesStreamState): MessagesStreamEvent[] => {
@@ -396,21 +343,14 @@ export const translateChatCompletionsChunkToMessagesEvents = (chunk: ChatComplet
   const content = choice.delta.content;
   const toolCalls = choice.delta.tool_calls;
   const hasToolCallDelta = Boolean(toolCalls?.length);
+  if (state.openBlock === 'thinking' && (content || hasToolCallDelta)) closeCurrentBlock(state, events);
 
   if (content) {
-    if (hasPendingReasoning(state)) {
-      state.deferredAfterThinking.push({ type: 'content', content, hasToolCallDelta });
-    } else {
-      emitContentDelta(content, hasToolCallDelta, state, events);
-    }
+    emitContentDelta(content, hasToolCallDelta, state, events);
   }
 
   if (toolCalls?.length) {
-    if (hasPendingReasoning(state)) {
-      state.deferredAfterThinking.push({ type: 'tool_calls', toolCalls });
-    } else {
-      emitToolCallsDelta(toolCalls, state, events);
-    }
+    emitToolCallsDelta(toolCalls, state, events);
   }
 
   if (choice.finish_reason) {
@@ -425,7 +365,7 @@ export const translateChatCompletionsChunkToMessagesEvents = (chunk: ChatComplet
 // opaque-only reasoning can be emitted in valid block/message order.
 export const flushChatCompletionsToMessagesEvents = (state: ChatCompletionsToMessagesStreamState): MessagesStreamEvent[] => {
   const events: MessagesStreamEvent[] = [];
-  emitPendingReasoningAndDeferred(state, events);
+  emitPendingReasoning(state, events);
   closeCurrentBlock(state, events);
   flushDeferredContent(state, events);
   emitFinalMessageIfReady(state, events);

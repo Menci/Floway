@@ -1,9 +1,10 @@
 import { responsesInterceptors } from './interceptors/index.ts';
+import type { PreparedAffinityPayload } from '../affinity/prepared.ts';
 import { prepareResponsesAffinity } from '../affinity/responses-ingress.ts';
 import type { ResponsesAttemptResult, ResponsesInvocation } from './interceptors/types.ts';
 import { normalizeAssistantInputText } from './items/normalize-assistant-content.ts';
 import { syntheticEventsFromResult } from './items/output.ts';
-import { rewriteResponsesPayload, type RewrittenResponsesPayload } from './items/rewrite.ts';
+import { hydrateResponsesPayload, type HydratedResponsesPayload } from './items/rewrite.ts';
 import type { StatefulResponsesStore } from './items/store.ts';
 import { tokenUsageFromResponsesResult } from './usage.ts';
 import { applyRulesToUpstreamResponses } from '../../model-aliases/apply-rules.ts';
@@ -27,13 +28,24 @@ import { translateResponsesViaChatCompletions, translateResponsesViaMessages } f
 // targets.
 export const responsesTarget = chatTargetPicker(['responses', 'messages', 'chat-completions']);
 
-export interface ResponsesAttemptInvokeArgs {
-  readonly payload: CanonicalResponsesPayload;
+interface ResponsesAttemptBaseArgs {
   readonly action: ResponsesAction;
   readonly ctx: ChatGatewayCtx;
   readonly candidate: ModelCandidate;
   readonly headers: Headers;
 }
+
+interface ResponsesSourcePreparation {
+  readonly affinity: PreparedAffinityPayload<CanonicalResponsesPayload>;
+  readonly privatePayloads: ReadonlyMap<string, unknown>;
+}
+
+type ResponsesAttemptInput =
+  | { readonly payload: CanonicalResponsesPayload; readonly sourcePreparation?: never }
+  | { readonly payload?: never; readonly sourcePreparation: ResponsesSourcePreparation };
+
+export type ResponsesAttemptInvokeArgs = ResponsesAttemptBaseArgs & ResponsesAttemptInput;
+type ResponsesAttemptGenerateArgs = Omit<ResponsesAttemptBaseArgs, 'action'> & ResponsesAttemptInput;
 
 // Single entry point for both `action: 'generate'` and `action: 'compact'`.
 // Envelope-drain branches on the caller's intent (`action` passed by value),
@@ -68,10 +80,8 @@ export interface ResponsesAttemptInvokeArgs {
 // accidentally owning another protocol's client-visible state.
 export const responsesAttempt = {
   invoke: async (args: ResponsesAttemptInvokeArgs): Promise<ResponsesAttemptResult> => {
-    const { payload: sourcePayload, action, ctx, candidate, headers: sourceHeaders } = args;
-    const payload = { ...structuredClone(sourcePayload), model: candidate.model.id };
+    const { action, ctx, candidate, headers: sourceHeaders } = args;
     const headers = new Headers(sourceHeaders);
-    const { store } = ctx;
     const targetApi = responsesTarget.pick(candidate.model.endpoints);
     // Rewrite + privatePayload seed + assistant-content normalization all run
     // BEFORE the interceptor chain so source interceptors — most importantly
@@ -81,17 +91,26 @@ export const responsesAttempt = {
     // inside the chain body, before `run()`, so deferring rewrite/seed to
     // the inner closure would leave the shim looking at the pre-rewrite
     // wire shape against an empty privatePayload map.
-    const rewritten = await rewriteOrRenderFailure(payload, store);
-    if (!('payload' in rewritten)) return rewritten.failure;
-    store.beginAttempt(rewritten.privatePayloads);
+    let affinity: PreparedAffinityPayload<CanonicalResponsesPayload>;
+    let privatePayloads: ReadonlyMap<string, unknown>;
+    if ('sourcePreparation' in args) {
+      affinity = args.sourcePreparation.affinity;
+      privatePayloads = args.sourcePreparation.privatePayloads;
+    } else {
+      const payload = { ...structuredClone(args.payload), model: candidate.model.id };
+      const hydrated = await rewriteOrRenderFailure(payload, ctx.store);
+      if (!('payload' in hydrated)) return hydrated.failure;
+      affinity = await prepareResponsesAffinity(hydrated.payload, ctx.affinity.codec);
+      privatePayloads = hydrated.privatePayloads;
+    }
+    ctx.responsesAttemptState.begin(privatePayloads);
     // Copilot compaction and Azure-native compaction both emit assistant
     // messages whose content blocks have `type: 'input_text'`, then refuse
     // the same items echoed back as input on the next turn. Normalising
     // here, after the rewrite has expanded any `item_reference` items
     // from the snapshot store, catches both the direct-echo and
     // store-replay paths in one place.
-    const affinity = await prepareResponsesAffinity(rewritten.payload, ctx.affinity.codec);
-    const candidatePayload = affinity.payloadForCandidate(candidate);
+    const candidatePayload = { ...affinity.payloadForCandidate(candidate), model: candidate.model.id };
     const normalized: CanonicalResponsesPayload = { ...candidatePayload, input: normalizeAssistantInputText(candidatePayload.input) };
 
     const invocation: ResponsesInvocation = {
@@ -125,7 +144,7 @@ export const responsesAttempt = {
   // want the ExecuteResult branch. The compact branch is a contract
   // violation here; an interceptor that pivoted generate→compact would
   // surface as a throw, not a silent shape mismatch.
-  generate: async (args: Omit<ResponsesAttemptInvokeArgs, 'action'>): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
+  generate: async (args: ResponsesAttemptGenerateArgs): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
     const result = await responsesAttempt.invoke({ ...args, action: 'generate' });
     if (result.type === 'result') {
       throw new Error('responsesAttempt.generate received a compact result; an interceptor pivoted generate→compact unexpectedly');
@@ -135,15 +154,15 @@ export const responsesAttempt = {
 };
 
 type RewriteOutcome =
-  | RewrittenResponsesPayload
+  | HydratedResponsesPayload
   | { readonly failure: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> };
 
 const rewriteOrRenderFailure = async (
   payload: CanonicalResponsesPayload,
-  store: StatefulResponsesStore,
+  store: StatefulResponsesStore | undefined,
 ): Promise<RewriteOutcome> => {
   try {
-    return rewriteResponsesPayload(payload, store);
+    return hydrateResponsesPayload(payload, store);
   } catch (error) {
     const failure = tryCatchChatServeFailure(error);
     if (failure === null) throw error;

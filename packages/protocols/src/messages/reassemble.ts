@@ -121,7 +121,7 @@ const createBlockAccumulator = (event: Extract<MessagesStreamEvent, { type: 'con
   case 'text':
     return withExtras({
       type: 'text',
-      text: block.text ?? '',
+      text: block.text,
       citations: normalizeMessagesTextCitations(block.citations),
     });
   case 'tool_use':
@@ -146,37 +146,37 @@ const createBlockAccumulator = (event: Extract<MessagesStreamEvent, { type: 'con
       content: block.content,
     });
   case 'thinking':
-    return withExtras({ type: 'thinking', thinking: block.thinking ?? '' });
+    return withExtras({ type: 'thinking', thinking: block.thinking });
   case 'redacted_thinking':
     return withExtras({ type: 'redacted_thinking', data: block.data });
   }
 };
 
 const applyBlockDelta = (block: MessagesBlockAccumulator | undefined, event: Extract<MessagesStreamEvent, { type: 'content_block_delta' }>): void => {
-  if (!block) return;
+  if (block === undefined) throw new Error(`Messages delta targeted unopened content block ${event.index}`);
 
   switch (event.delta.type) {
   case 'text_delta':
-    if (block.type !== 'text') return;
-    block.text += event.delta.text ?? '';
+    if (block.type !== 'text') throw new Error(`Messages text_delta targeted ${block.type} block ${event.index}`);
+    block.text += event.delta.text;
     block.citations.push(...normalizeMessagesTextCitations(event.delta.citations));
     return;
   case 'citations_delta': {
-    if (block.type !== 'text') return;
+    if (block.type !== 'text') throw new Error(`Messages citations_delta targeted ${block.type} block ${event.index}`);
     const citation = normalizeMessagesTextCitation(event.delta.citation);
     if (citation) block.citations.push(citation);
     return;
   }
   case 'input_json_delta':
-    if (block.type !== 'tool_use') return;
-    block.inputJson += event.delta.partial_json ?? '';
+    if (block.type !== 'tool_use') throw new Error(`Messages input_json_delta targeted ${block.type} block ${event.index}`);
+    block.inputJson += event.delta.partial_json;
     return;
   case 'thinking_delta':
-    if (block.type !== 'thinking') return;
-    block.thinking += event.delta.thinking ?? '';
+    if (block.type !== 'thinking') throw new Error(`Messages thinking_delta targeted ${block.type} block ${event.index}`);
+    block.thinking += event.delta.thinking;
     return;
   case 'signature_delta':
-    if (block.type !== 'thinking') return;
+    if (block.type !== 'thinking') throw new Error(`Messages signature_delta targeted ${block.type} block ${event.index}`);
     block.signature = event.delta.signature;
     return;
   }
@@ -187,13 +187,8 @@ const finalizeToolUseInput = (block: MessagesBlockAccumulator | undefined): void
 
   try {
     block.input = JSON.parse(block.inputJson);
-  } catch {
-    // Anthropic Messages requires `input` to be an object even when the
-    // upstream streamed malformed JSON for a tool call. Failing the whole
-    // response on a partial/garbage tool_use is more hostile to clients than
-    // surfacing an empty object; the broken arguments stay observable via
-    // the original SSE frames.
-    block.input = {};
+  } catch (cause) {
+    throw new Error('Messages tool_use input was not valid JSON', { cause });
   }
 };
 
@@ -219,8 +214,9 @@ const finalizeContentBlock = (block: MessagesBlockAccumulator): MessagesAssistan
 };
 
 export async function reassembleMessagesEvents(events: AsyncIterable<MessagesStreamEvent>): Promise<MessagesResult> {
-  let id = '';
-  let model = '';
+  let id: string | undefined;
+  let model: string | undefined;
+  let messageStopped = false;
   const usage: MessagesResult['usage'] = {
     input_tokens: 0,
     output_tokens: 0,
@@ -229,6 +225,7 @@ export async function reassembleMessagesEvents(events: AsyncIterable<MessagesStr
   let stopSequence: string | null = null;
 
   const blocks: Array<MessagesBlockAccumulator | undefined> = [];
+  const stoppedBlocks = new Set<number>();
   const resultExtras: Record<string, unknown> = {};
 
   for await (const event of events) {
@@ -240,13 +237,16 @@ export async function reassembleMessagesEvents(events: AsyncIterable<MessagesStr
       captureExtras(event.message as unknown as Record<string, unknown>, KNOWN_MESSAGE_KEYS, resultExtras);
       break;
     case 'content_block_start':
+      if (blocks[event.index] !== undefined) throw new Error(`Messages content block ${event.index} started twice`);
       blocks[event.index] = createBlockAccumulator(event);
       break;
     case 'content_block_delta':
       applyBlockDelta(blocks[event.index], event);
       break;
     case 'content_block_stop':
+      if (blocks[event.index] === undefined) throw new Error(`Messages content block ${event.index} stopped before it started`);
       finalizeToolUseInput(blocks[event.index]);
+      stoppedBlocks.add(event.index);
       break;
     case 'message_delta':
       if (event.delta.stop_reason != null) {
@@ -258,11 +258,19 @@ export async function reassembleMessagesEvents(events: AsyncIterable<MessagesStr
       applyMessagesUsage(usage, event.usage);
       break;
     case 'error':
-      throw new Error(`Upstream SSE error: ${event.error?.type ?? 'unknown'}: ${event.error?.message ?? JSON.stringify(event)}`);
+      throw new Error(`Upstream SSE error: ${event.error.type}: ${event.error.message}`);
     case 'message_stop':
+      messageStopped = true;
+      break;
     case 'ping':
       break;
     }
+  }
+
+  if (id === undefined || model === undefined) throw new Error('Messages stream contained no message_start');
+  if (!messageStopped) throw new Error('Messages stream contained no message_stop');
+  for (const [index, block] of blocks.entries()) {
+    if (block !== undefined && !stoppedBlocks.has(index)) throw new Error(`Messages content block ${index} never stopped`);
   }
 
   const content = blocks.flatMap((block): MessagesAssistantContentBlock[] => (block ? [finalizeContentBlock(block)] : []));

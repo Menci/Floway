@@ -479,16 +479,7 @@ test('generate seeds privatePayload before interceptors so the web-search shim r
   const candidate = makeCandidate(callResponses, new Set(['responses-web-search-shim']));
 
   const store = createResponsesHttpStore(API_KEY_ID, true);
-  await store.loadInputItems({
-    sourceItems: [{ id: storedId } as unknown as { id: string }],
-    view: {
-      visitAsResponsesItems: async (items, visit) => {
-        for (const item of items as readonly { id: string }[]) {
-          await visit({ type: 'web_search_call', id: item.id } as unknown as never);
-        }
-      },
-    },
-  });
+  await store.loadInputItems([{ type: 'web_search_call', id: storedId }], []);
 
   const result = await responsesAttempt.generate({
     payload: makePayload({

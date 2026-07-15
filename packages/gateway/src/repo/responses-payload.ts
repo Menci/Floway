@@ -23,9 +23,8 @@ type StoredResponsesPayloadJson =
 // cap pushes large tool outputs out to the file provider where per-byte
 // storage is dramatically cheaper than D1.
 const INLINE_PAYLOAD_LIMIT_BYTES = 64 * 1024;
-// Read only by the scheduled item/snapshot/file cleanup.
-// Lookups intentionally do NOT filter by this TTL: a row stays referenceable
-// until cleanup actually removes it, so expiry is driven by the sweeper alone.
+// Shared creation-based horizon for item/snapshot deletion and spilled-file
+// expiry buckets. Lookups remain valid until scheduled cleanup removes state.
 export const RESPONSES_ITEM_PAYLOAD_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -79,7 +78,7 @@ export const parseStoredResponsesPayload = async (
 ): Promise<StoredResponsesItemPayload> => {
   const descriptor = parseDescriptor(id, raw);
   if (descriptor.storage === 'inline') {
-    return clonePayload(parseInlinePayloadJson(id, await ungzipToString(base64ToBytes(descriptor.payload))));
+    return parseInlinePayloadJson(id, await ungzipToString(base64ToBytes(descriptor.payload)));
   }
 
   const body = await getFileProvider().get(descriptor.key);
@@ -92,7 +91,7 @@ export const parseStoredResponsesPayload = async (
     throw new Error(`Stored Responses payload file hash mismatch for id=${id}`);
   }
 
-  return clonePayload(parseInlinePayloadJson(id, await ungzipToString(body)));
+  return parseInlinePayloadJson(id, await ungzipToString(body));
 };
 
 const parseInlinePayloadJson = (id: string, json: string): StoredResponsesItemPayload => {
@@ -135,12 +134,6 @@ const assertPayloadObject = (id: string, value: unknown): StoredResponsesItemPay
   if (Object.hasOwn(value, 'private')) payload.private = value.private;
   return payload;
 };
-
-const clonePayload = (payload: StoredResponsesItemPayload): StoredResponsesItemPayload => ({
-  ...payload,
-  item: structuredClone(payload.item),
-  ...(Object.hasOwn(payload, 'private') ? { private: structuredClone(payload.private) } : {}),
-});
 
 // Copying through `new Uint8Array(bytes)` gives Blob a concrete
 // ArrayBuffer-backed view regardless of the caller's ArrayBufferLike type

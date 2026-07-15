@@ -1,4 +1,5 @@
 import type { AffinityEgressOptions } from './affinity-egress.ts';
+import { MESSAGES_REDACTED_AFFINITY_DOMAIN, MESSAGES_SIGNATURE_AFFINITY_DOMAIN } from './carrier-domains.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 
@@ -26,7 +27,7 @@ export const wrapMessagesAffinityEgress = async function* (
         index,
         content_block: {
           type: 'redacted_thinking',
-          data: await options.codec.wrap(undefined, options.affinity),
+          data: await options.codec.wrap(undefined, options.affinity, MESSAGES_REDACTED_AFFINITY_DOMAIN),
         },
       },
       { type: 'content_block_stop', index },
@@ -54,7 +55,7 @@ export const wrapMessagesAffinityEgress = async function* (
         ...event,
         content_block: {
           ...event.content_block,
-          data: await options.codec.wrap(event.content_block.data, options.affinity),
+          data: await options.codec.wrap(event.content_block.data, options.affinity, MESSAGES_REDACTED_AFFINITY_DOMAIN),
         },
       });
       continue;
@@ -77,7 +78,7 @@ export const wrapMessagesAffinityEgress = async function* (
           index: event.index,
           delta: {
             type: 'signature_delta',
-            signature: await options.codec.wrap(block.signature, options.affinity),
+            signature: await options.codec.wrap(block.signature, options.affinity, MESSAGES_SIGNATURE_AFFINITY_DOMAIN),
           },
         });
       }

@@ -1,6 +1,8 @@
 import { affinityTargetForCandidate } from './candidate.ts';
 import { AffinityCodec } from './codec.ts';
+import type { AffinityEgressOptions } from './affinity-egress.ts';
 import type { AffinityTarget } from './types.ts';
+import type { ChatGatewayCtx, GatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ModelCandidate } from '@floway-dev/provider';
 
 export class AffinityRequestContext {
@@ -15,12 +17,14 @@ export class AffinityRequestContext {
     this.#selectedCandidate = candidate;
   }
 
-  selectedTarget(mode: AffinityTarget['mode'] = 'prefer'): AffinityTarget {
-    return affinityTargetForCandidate(this.selectedCandidate(), mode);
-  }
-
-  selectedCandidate(): ModelCandidate {
+  selectedTarget(): AffinityTarget {
     if (this.#selectedCandidate === undefined) throw new Error('Affinity target requested before a candidate was selected');
-    return this.#selectedCandidate;
+    return affinityTargetForCandidate(this.#selectedCandidate, 'prefer');
   }
 }
+
+export const affinityEgressOptions = (ctx: GatewayCtx): AffinityEgressOptions => {
+  if (!('affinity' in ctx)) throw new Error('Chat event result reached responder without affinity context');
+  const chatCtx = ctx as ChatGatewayCtx;
+  return { codec: chatCtx.affinity.codec, affinity: chatCtx.affinity.selectedTarget() };
+};

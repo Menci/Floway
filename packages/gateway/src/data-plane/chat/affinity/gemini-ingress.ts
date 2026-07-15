@@ -1,4 +1,5 @@
 import type { AffinityCodec } from './codec.ts';
+import { GEMINI_AFFINITY_DOMAIN } from './carrier-domains.ts';
 import { blobForCandidate, ownedAffinities, type PreparedAffinityPayload } from './prepared.ts';
 import type { DecodedAffinityBlob } from './types.ts';
 import type { GeminiContent, GeminiPart, GeminiPayload } from '@floway-dev/protocols/gemini';
@@ -44,7 +45,7 @@ export const prepareGeminiAffinity = async (
     if (content.role !== 'model') continue;
     for (const [partIndex, part] of content.parts.entries()) {
       if (typeof part.thoughtSignature !== 'string') continue;
-      locations.push({ contentIndex, partIndex, decoded: await codec.unwrap(part.thoughtSignature) });
+      locations.push({ contentIndex, partIndex, decoded: await codec.unwrap(part.thoughtSignature, GEMINI_AFFINITY_DOMAIN) });
     }
   }
 
@@ -54,6 +55,7 @@ export const prepareGeminiAffinity = async (
       const candidatePayload = structuredClone(payload);
       if (candidatePayload.contents === undefined) return candidatePayload;
       const byContent = Map.groupBy(locations, location => location.contentIndex);
+      const emptiedByAffinity = new Set<number>();
       for (const [contentIndex, contentLocations] of byContent) {
         const content = candidatePayload.contents[contentIndex];
         const replacements = new Map<number, GeminiPart | null>();
@@ -88,8 +90,9 @@ export const prepareGeminiAffinity = async (
           const replacement = replacements.get(partIndex);
           return replacement === undefined ? [part] : replacement === null ? [] : [replacement];
         });
+        if (content.parts.length === 0) emptiedByAffinity.add(contentIndex);
       }
-      candidatePayload.contents = candidatePayload.contents.filter(content => content.parts.length > 0);
+      candidatePayload.contents = candidatePayload.contents.filter((_content, contentIndex) => !emptiedByAffinity.has(contentIndex));
       return candidatePayload;
     },
   };

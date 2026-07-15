@@ -1,5 +1,6 @@
 import { createStoredResponsesItemId, responsesItemId } from './format.ts';
 import type { StatefulResponsesStore } from './store.ts';
+import type { ResponsesAttemptState } from '../attempt-state.ts';
 import type { StoredResponsesItem } from '../../../../repo/types.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { responsesResultToEvents, type ResponsesInputItem, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
@@ -40,10 +41,11 @@ export const wrapResponsesOutputForStorage = async function* (
   frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
   args: {
     readonly store: StatefulResponsesStore;
+    readonly attemptState: ResponsesAttemptState;
     readonly responseId: string;
   },
 ): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
-  const { store, responseId } = args;
+  const { store, attemptState, responseId } = args;
   const upstreamToStored = new Map<string, string>();
 
   const idMapper = (upstreamId: string, itemType: string): string => {
@@ -63,7 +65,7 @@ export const wrapResponsesOutputForStorage = async function* (
     // Interceptors register per-item server-only payloads under the wire id.
     // Attaching it lets a later turn restore the real success/failure state
     // even when the client stripped fields from the echoed wire item.
-    const privatePayload = store.getPrivatePayload(upstreamId);
+    const privatePayload = attemptState.getPrivatePayload(upstreamId);
     const clientItem = { ...originalItem, id: newId } as ResponsesInputItem;
     const persistedPayload = privatePayload !== undefined ? { item: clientItem, private: privatePayload } : { item: clientItem };
     const now = Date.now();
@@ -191,8 +193,4 @@ const isCompactionItemType = (type: string): boolean =>
 export const syntheticEventsFromResult = async function* (result: ResponsesResult): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
   yield* responsesResultToEvents(result, { genericOutputItems: true });
   yield doneFrame();
-};
-
-export const drainAsync = async (events: AsyncIterable<unknown>): Promise<void> => {
-  for await (const _ of events);
 };

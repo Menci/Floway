@@ -10,7 +10,7 @@ export interface AffinityTarget {
   rulesPresent: boolean;
   rules?: AliasRules;
   upstreamItemId?: string;
-  syntheticItem?: boolean;
+  syntheticItem?: true;
   geminiPartFromEnd?: number;
 }
 

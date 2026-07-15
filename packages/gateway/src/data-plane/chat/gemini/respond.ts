@@ -6,11 +6,12 @@ import { tokenUsageFromGeminiUsageMetadata } from './usage.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
 import { wrapGeminiAffinityEgress } from '../affinity/gemini-egress.ts';
-import type { ChatGatewayCtx, GatewayCtx } from '../shared/gateway-ctx.ts';
+import { affinityEgressOptions } from '../affinity/context.ts';
+import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse } from '../shared/respond.ts';
 import { type StreamCompletion, writeSSEFrames } from '../shared/stream/sse.ts';
 import { type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
-import { geminiProtocolFrameToSSEFrame, GEMINI_MISSING_TERMINAL_MESSAGE, isGeminiErrorEvent, isGeminiTerminalEvent, collectGeminiProtocolEventsToResult } from '@floway-dev/protocols/gemini';
+import { geminiProtocolFrameToSSEFrame, GEMINI_MISSING_TERMINAL_MESSAGE, isGeminiErrorEvent, collectGeminiProtocolEventsToResult } from '@floway-dev/protocols/gemini';
 import type { GeminiErrorResponse, GeminiResult, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 import { type ExecuteResult, type PlainResult, type ApiErrorResult, type InternalDebugError, toInternalDebugError, decodeApiErrorBody } from '@floway-dev/provider';
 
@@ -85,12 +86,6 @@ export const respondGemini = async (
   });
 
   return { success: true, response };
-};
-
-const affinityEgressOptions = (ctx: GatewayCtx) => {
-  if (!('affinity' in ctx)) throw new Error('Gemini event result reached responder without affinity context');
-  const chatCtx = ctx as ChatGatewayCtx;
-  return { codec: chatCtx.affinity.codec, affinity: chatCtx.affinity.selectedTarget() };
 };
 
 const tokenUsageFromGeminiResponse = (r: GeminiResult) => (r.usageMetadata ? tokenUsageFromGeminiUsageMetadata(r.usageMetadata) : null);
@@ -193,7 +188,8 @@ const geminiStreamErrorFrame = (error: unknown) => sseFrame(JSON.stringify(caugh
 
 // --- frame observation ---
 
-const isGeminiTerminalFrame = (frame: ProtocolFrame<GeminiStreamEvent>): boolean => frame.type === 'done' || (frame.type === 'event' && isGeminiTerminalEvent(frame.event));
+const isGeminiTerminalFrame = (frame: ProtocolFrame<GeminiStreamEvent>): boolean =>
+  frame.type === 'done' || (frame.type === 'event' && isGeminiErrorEvent(frame.event));
 
 const observeGeminiFrames = async function* (frames: AsyncIterable<ProtocolFrame<GeminiStreamEvent>>, state: SourceStreamState, observeUsage: boolean, ctx: GatewayCtx) {
   for await (const frame of frames) {

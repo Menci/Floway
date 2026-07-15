@@ -1,7 +1,5 @@
-const AFFINITY_SECRET_PATTERN = /^[0-9a-f]{64}$/;
-
 export const parseAffinitySecret = (value: unknown, field = 'affinitySecret'): string => {
-  if (typeof value !== 'string' || !AFFINITY_SECRET_PATTERN.test(value)) {
+  if (typeof value !== 'string' || !/^[0-9a-f]{64}$/.test(value)) {
     throw new Error(`${field} must be exactly 64 lowercase hexadecimal characters`);
   }
   return value;

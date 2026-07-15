@@ -40,7 +40,12 @@ export const responsesServe = {
       ctx,
       'chat',
       async candidate => {
-        const result = await responsesAttempt.generate({ payload: plan.prepared, ctx, candidate, headers });
+        const result = await responsesAttempt.generate({
+          sourcePreparation: { affinity: plan.affinity, privatePayloads: plan.privatePayloads },
+          ctx,
+          candidate,
+          headers,
+        });
         if (result.type === 'events') ctx.affinity.select(candidate);
         return result;
       },
@@ -50,6 +55,8 @@ export const responsesServe = {
 
   compact: async (args: ResponsesServeCompactArgs): Promise<ResponsesAttemptResult> => {
     const { payload, ctx, headers } = args;
+    const store = ctx.store;
+    if (store === undefined) throw new Error('Native Responses compact requires a state store');
     // Compact accepts `previous_response_id` (the official endpoint documents
     // it). When present serve-prep expands it the same way generate does so
     // the candidate rewrite can restore the stored history before dispatch.
@@ -66,7 +73,13 @@ export const responsesServe = {
       ctx,
       'chat',
       async candidate => {
-        const result = await responsesAttempt.invoke({ payload: plan.prepared, action: 'compact', ctx, candidate, headers });
+        const result = await responsesAttempt.invoke({
+          sourcePreparation: { affinity: plan.affinity, privatePayloads: plan.privatePayloads },
+          action: 'compact',
+          ctx,
+          candidate,
+          headers,
+        });
         if (result.type === 'result') ctx.affinity.select(candidate);
         return result;
       },
@@ -77,12 +90,13 @@ export const responsesServe = {
       codec: ctx.affinity.codec,
       affinity: ctx.affinity.selectedTarget(),
     });
-    if (!ctx.store.storesState) {
+    if (!store.storesState) {
       const clientResult = await collectResponsesProtocolEventsToResult(withAffinity);
       return { ...result, result: clientResult, usage: tokenUsageFromResponsesResult(clientResult) };
     }
     const stored = wrapResponsesOutputForStorage(withAffinity, {
-      store: ctx.store,
+      store,
+      attemptState: ctx.responsesAttemptState,
       responseId: createStoredResponseId(),
     });
     const clientResult = await collectResponsesProtocolEventsToResult(stored);

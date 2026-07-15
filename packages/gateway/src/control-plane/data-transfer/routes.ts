@@ -3,11 +3,9 @@
 // Ephemeral stored Responses state is omitted from exports and cleared on
 // replace imports; clients can regenerate it through normal Responses use.
 //
-// The export contains every credential the gateway holds — API-key affinity
-// secrets, provider API keys, GitHub tokens, Codex refresh tokens, and proxy
-// URIs that embed passwords / UUIDs / PSKs. The endpoint is admin-only;
-// operators are responsible for handling the dumped file with the same care
-// as a DB backup.
+// The export contains the listed persisted credentials: API-key affinity
+// secrets, provider keys/tokens, and credential-bearing proxy URIs. The
+// endpoint is admin-only; handle the file with the same care as a DB backup.
 
 import type { Context } from 'hono';
 
@@ -99,19 +97,6 @@ const isPerformanceOperation = (value: unknown): value is PerformanceOperation =
 const importErrorBuilder = (field: string, expected: string) => new Error(`${field} must be ${expected}`);
 
 const nonEmptyString = (value: unknown, field: string): string => nonEmptyStringField(value, field, importErrorBuilder);
-
-const serializeApiKey = (key: ApiKey): SerializedApiKey => ({
-  id: key.id,
-  userId: key.userId,
-  name: key.name,
-  key: key.key,
-  affinitySecret: key.affinitySecret,
-  createdAt: key.createdAt,
-  ...(key.lastUsedAt !== undefined ? { lastUsedAt: key.lastUsedAt } : {}),
-  upstreamIds: key.upstreamIds,
-  deletedAt: key.deletedAt,
-  dumpRetentionSeconds: key.dumpRetentionSeconds,
-});
 
 const normalizeUpstreamConfig = (record: UpstreamRecord): unknown => {
   if (record.kind === 'custom') return assertCustomUpstreamRecord(record).config;
@@ -379,6 +364,7 @@ const parseUserRecords = (value: unknown): { type: 'ok'; records: User[] } | { t
 const validateApiKeyIdentities = (records: readonly ApiKey[], existing: readonly ApiKey[], mode: 'merge' | 'replace'): string | null => {
   const ids = new Map<string, number>();
   const rawKeys = new Map<string, string>();
+  const affinitySecrets = new Map<string, string>();
 
   for (let i = 0; i < records.length; i++) {
     const record = records[i];
@@ -389,14 +375,23 @@ const validateApiKeyIdentities = (records: readonly ApiKey[], existing: readonly
     const existingRawKeyId = rawKeys.get(record.key);
     if (existingRawKeyId !== undefined) return `duplicate apiKeys raw key used by ${existingRawKeyId} and ${record.id}`;
     rawKeys.set(record.key, record.id);
+
+    const existingAffinitySecretId = affinitySecrets.get(record.affinitySecret);
+    if (existingAffinitySecretId !== undefined) return `duplicate apiKeys affinity secret used by ${existingAffinitySecretId} and ${record.id}`;
+    affinitySecrets.set(record.affinitySecret, record.id);
   }
 
   if (mode === 'merge') {
     const existingRawKeys = new Map(existing.map(record => [record.key, record.id]));
+    const existingAffinitySecrets = new Map(existing.map(record => [record.affinitySecret, record.id]));
     for (const record of records) {
       const existingId = existingRawKeys.get(record.key);
       if (existingId !== undefined && existingId !== record.id) {
         return `apiKeys raw key for ${record.id} conflicts with existing api key ${existingId}`;
+      }
+      const existingAffinitySecretId = existingAffinitySecrets.get(record.affinitySecret);
+      if (existingAffinitySecretId !== undefined && existingAffinitySecretId !== record.id) {
+        return `apiKeys affinity secret for ${record.id} conflicts with existing api key ${existingAffinitySecretId}`;
       }
     }
   }
@@ -705,7 +700,18 @@ export const exportData = async (c: CtxWithQuery<typeof exportQuery>) => {
     exportedAt: new Date().toISOString(),
     data: {
       users,
-      apiKeys: apiKeys.map(serializeApiKey),
+      apiKeys: apiKeys.map(key => ({
+        id: key.id,
+        userId: key.userId,
+        name: key.name,
+        key: key.key,
+        affinitySecret: key.affinitySecret,
+        createdAt: key.createdAt,
+        ...(key.lastUsedAt !== undefined ? { lastUsedAt: key.lastUsedAt } : {}),
+        upstreamIds: key.upstreamIds,
+        deletedAt: key.deletedAt,
+        dumpRetentionSeconds: key.dumpRetentionSeconds,
+      } satisfies SerializedApiKey)),
       upstreams: upstreams.map(upstreamRecordToFullJson),
       proxies: proxies.map(p => ({ id: p.id, name: p.name, url: p.url, dial_timeout_seconds: p.dialTimeoutSeconds })),
       usage,

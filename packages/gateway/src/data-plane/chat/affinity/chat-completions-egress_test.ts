@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
-import type { AffinityEgressCodec } from './affinity-egress.ts';
 import { wrapChatCompletionsAffinityEgress } from './chat-completions-egress.ts';
+import type { AffinityCodec } from './codec.ts';
 import type { AffinityTarget } from './types.ts';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
@@ -13,6 +13,8 @@ const affinity: AffinityTarget = {
   modelId: 'model-a',
   rulesPresent: false,
 };
+
+type AffinityEgressCodec = Pick<AffinityCodec, 'wrap'>;
 
 const chunk = (
   choices: ChatCompletionsStreamEvent['choices'],

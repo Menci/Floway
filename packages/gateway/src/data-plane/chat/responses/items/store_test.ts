@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import { createResponsesHttpStore, createResponsesWsSession } from './store.ts';
+import { ResponsesAttemptState } from '../attempt-state.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 
@@ -51,12 +52,12 @@ describe('StatefulResponsesStore', () => {
 
   test('attempt-private payload is request scoped', () => {
     initRepo(new InMemoryRepo());
-    const store = createResponsesHttpStore('key-a', true);
-    store.beginAttempt(new Map([['item', { first: true }]]));
-    store.setPrivatePayload('second', { value: 2 });
-    expect(store.getPrivatePayload('item')).toEqual({ first: true });
-    expect(store.getPrivatePayload('second')).toEqual({ value: 2 });
-    store.beginAttempt(new Map());
-    expect(store.getPrivatePayload('item')).toBeUndefined();
+    const state = new ResponsesAttemptState();
+    state.begin(new Map([['item', { first: true }]]));
+    state.setPrivatePayload('second', { value: 2 });
+    expect(state.getPrivatePayload('item')).toEqual({ first: true });
+    expect(state.getPrivatePayload('second')).toEqual({ value: 2 });
+    state.begin(new Map());
+    expect(state.getPrivatePayload('item')).toBeUndefined();
   });
 });

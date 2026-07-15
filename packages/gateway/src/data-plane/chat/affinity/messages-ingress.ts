@@ -1,4 +1,5 @@
 import type { AffinityCodec } from './codec.ts';
+import { MESSAGES_REDACTED_AFFINITY_DOMAIN, MESSAGES_SIGNATURE_AFFINITY_DOMAIN } from './carrier-domains.ts';
 import { blobForCandidate, ownedAffinities, type PreparedAffinityPayload } from './prepared.ts';
 import type { DecodedAffinityBlob } from './types.ts';
 import type { MessagesAssistantContentBlock, MessagesPayload } from '@floway-dev/protocols/messages';
@@ -19,9 +20,9 @@ export const prepareMessagesAffinity = async (
     if (message.role !== 'assistant' || !Array.isArray(message.content)) continue;
     for (const [blockIndex, block] of message.content.entries()) {
       if (block.type === 'thinking' && typeof block.signature === 'string') {
-        locations.push({ messageIndex, blockIndex, kind: block.type, decoded: await codec.unwrap(block.signature) });
+        locations.push({ messageIndex, blockIndex, kind: block.type, decoded: await codec.unwrap(block.signature, MESSAGES_SIGNATURE_AFFINITY_DOMAIN) });
       } else if (block.type === 'redacted_thinking') {
-        locations.push({ messageIndex, blockIndex, kind: block.type, decoded: await codec.unwrap(block.data) });
+        locations.push({ messageIndex, blockIndex, kind: block.type, decoded: await codec.unwrap(block.data, MESSAGES_REDACTED_AFFINITY_DOMAIN) });
       }
     }
   }

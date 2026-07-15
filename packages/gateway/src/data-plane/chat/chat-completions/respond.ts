@@ -5,7 +5,8 @@ import { tokenUsageFromChatCompletionsUsage } from './usage.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
 import { wrapChatCompletionsAffinityEgress } from '../affinity/chat-completions-egress.ts';
-import type { ChatGatewayCtx, GatewayCtx } from '../shared/gateway-ctx.ts';
+import { affinityEgressOptions } from '../affinity/context.ts';
+import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse } from '../shared/respond.ts';
 import { type StreamCompletion, writeSSEFrames } from '../shared/stream/sse.ts';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
@@ -80,12 +81,6 @@ export const respondChatCompletions = async (
   });
 
   return { success: true, response };
-};
-
-const affinityEgressOptions = (ctx: GatewayCtx) => {
-  if (!('affinity' in ctx)) throw new Error('Chat Completions event result reached responder without affinity context');
-  const chatCtx = ctx as ChatGatewayCtx;
-  return { codec: chatCtx.affinity.codec, affinity: chatCtx.affinity.selectedTarget() };
 };
 
 // --- error rendering ---

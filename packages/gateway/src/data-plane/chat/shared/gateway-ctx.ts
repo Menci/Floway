@@ -3,6 +3,7 @@ import { type DumpAccumulator, openDumpAccumulator } from '../../../dump/accumul
 import { apiKeyFromContext, type AuthedContext, effectiveUpstreamIdsFromContext } from '../../../middleware/auth.ts';
 import { getRuntimeLocation } from '../../../runtime/runtime-info.ts';
 import { AffinityRequestContext } from '../affinity/context.ts';
+import { ResponsesAttemptState } from '../responses/attempt-state.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { PerformanceTelemetryContext } from '@floway-dev/provider';
@@ -57,7 +58,8 @@ export interface GatewayCtx {
 // no stored-items concept and stay on plain `GatewayCtx`.
 export interface ChatGatewayCtx extends GatewayCtx {
   readonly affinity: AffinityRequestContext;
-  readonly store: StatefulResponsesStore;
+  readonly responsesAttemptState: ResponsesAttemptState;
+  readonly store?: StatefulResponsesStore;
 }
 
 export interface CreateGatewayCtxOptions {
@@ -130,12 +132,13 @@ export const finalizeGatewayResponse = (ctx: GatewayCtx, response: Response): Re
 export const createChatGatewayCtxFromHono = (
   c: AuthedContext,
   opts: CreateGatewayCtxOptions,
-  storeFactory: (apiKeyId: string) => StatefulResponsesStore,
+  storeFactory?: (apiKeyId: string) => StatefulResponsesStore,
 ): ChatGatewayCtx => {
   const base = createGatewayCtxFromHono(c, opts);
   return {
     ...base,
     affinity: new AffinityRequestContext(apiKeyFromContext(c).affinitySecret),
-    store: storeFactory(base.apiKeyId),
+    responsesAttemptState: new ResponsesAttemptState(),
+    ...(storeFactory !== undefined ? { store: storeFactory(base.apiKeyId) } : {}),
   };
 };

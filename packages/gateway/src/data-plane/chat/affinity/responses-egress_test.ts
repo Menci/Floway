@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from 'vitest';
 
-import type { AffinityEgressCodec } from './affinity-egress.ts';
+import type { AffinityCodec } from './codec.ts';
 import { wrapResponsesAffinityEgress } from './responses-egress.ts';
 import type { AffinityTarget } from './types.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
@@ -13,6 +13,8 @@ const affinity: AffinityTarget = {
   modelId: 'model-a',
   rulesPresent: false,
 };
+
+type AffinityEgressCodec = Pick<AffinityCodec, 'wrap'>;
 
 const frames = async function* (values: ProtocolFrame<ResponsesStreamEvent>[]) {
   yield* values;
@@ -153,6 +155,31 @@ describe('Responses affinity egress', () => {
     expect(output.map(frame => frame.type === 'event' ? frame.event.type : frame.type)).toEqual([
       'response.output_item.added',
       'response.output_item.done',
+      'response.output_item.added',
+      'response.output_item.done',
+      'response.completed',
+    ]);
+  });
+
+  test('adds a force carrier when program state coexists with preferred reasoning', async () => {
+    const reasoning: ResponsesOutputReasoning = { type: 'reasoning', id: 'rs_1', summary: [], encrypted_content: 'opaque' };
+    const program = { type: 'program' as const, id: 'prog_1', call_id: 'call_1', code: 'return 1', fingerprint: 'fp' };
+    const calls: AffinityTarget[] = [];
+    const output: ProtocolFrame<ResponsesStreamEvent>[] = [];
+    for await (const frame of wrapResponsesAffinityEgress(frames([
+      eventFrame({ type: 'response.completed', response: response([reasoning, program]) }),
+    ]), {
+      codec: {
+        wrap: async (_value, target) => {
+          calls.push(target);
+          return `wrapped:${target.mode}`;
+        },
+      },
+      affinity,
+    })) output.push(frame);
+
+    expect(calls.map(call => call.mode)).toEqual(['prefer', 'force']);
+    expect(output.map(frame => frame.type === 'event' ? frame.event.type : frame.type)).toEqual([
       'response.output_item.added',
       'response.output_item.done',
       'response.completed',

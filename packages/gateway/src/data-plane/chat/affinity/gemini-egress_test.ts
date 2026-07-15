@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import type { AffinityEgressCodec } from './affinity-egress.ts';
+import type { AffinityCodec } from './codec.ts';
 import { wrapGeminiAffinityEgress } from './gemini-egress.ts';
 import type { AffinityTarget } from './types.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
@@ -13,6 +13,8 @@ const affinity: AffinityTarget = {
   modelId: 'model-a',
   rulesPresent: false,
 };
+
+type AffinityEgressCodec = Pick<AffinityCodec, 'wrap'>;
 
 const frames = async function* (values: ProtocolFrame<GeminiStreamEvent>[]) {
   yield* values;

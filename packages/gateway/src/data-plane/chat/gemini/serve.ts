@@ -49,9 +49,8 @@ export const geminiServe = {
     // transient 5xx/429/network failures. When the list is exhausted, the
     // most recent failure is forwarded verbatim so the client still sees
     // real upstream telemetry rather than a synthetic envelope. The
-    // Gemini URL-path model id is already in `model`; downstream dispatch
-    // keys off `candidate.model.id`, so no payload rewrite is needed here
-    // even for alias-origin candidates.
+    // Gemini carries its model in the URL, so affinity preparation owns the
+    // candidate payload while dispatch reads the canonical candidate model.
     return await iterateCandidates(
       decision.candidates,
       'geminiServe.generate',

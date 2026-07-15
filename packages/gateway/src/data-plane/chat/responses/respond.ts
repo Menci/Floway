@@ -94,6 +94,7 @@ const nativeResponsesOutput = (
 ): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> => {
   if (!('affinity' in ctx) || !('store' in ctx)) throw new Error('Responses event result reached responder without chat context');
   const chatCtx = ctx as ChatGatewayCtx;
+  if (chatCtx.store === undefined) throw new Error('Native Responses responder requires a state store');
   const withAffinity = wrapResponsesAffinityEgress(frames, {
     codec: chatCtx.affinity.codec,
     affinity: chatCtx.affinity.selectedTarget(),
@@ -101,6 +102,7 @@ const nativeResponsesOutput = (
   if (!chatCtx.store.storesState) return withAffinity;
   return wrapResponsesOutputForStorage(withAffinity, {
     store: chatCtx.store,
+    attemptState: chatCtx.responsesAttemptState,
     responseId: createStoredResponseId(),
   });
 };

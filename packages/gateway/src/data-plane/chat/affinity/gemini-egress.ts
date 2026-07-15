@@ -1,4 +1,5 @@
 import type { AffinityEgressOptions } from './affinity-egress.ts';
+import { GEMINI_AFFINITY_DOMAIN } from './carrier-domains.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiCandidate, GeminiPart, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 
@@ -104,11 +105,15 @@ export const wrapGeminiAffinityEgress = async function* (
           ? [{ value: undefined, synthetic: true }]
           : [];
       const parts = await Promise.all(planned.map(async carrier => ({
-        thoughtSignature: await options.codec.wrap(carrier.value, {
-          ...options.affinity,
-          ...('synthetic' in carrier ? { syntheticItem: true } : {}),
-          ...('partFromEnd' in carrier ? { geminiPartFromEnd: carrier.partFromEnd } : {}),
-        }),
+        thoughtSignature: await options.codec.wrap(
+          carrier.value,
+          {
+            ...options.affinity,
+            ...('synthetic' in carrier ? { syntheticItem: true } : {}),
+            ...('partFromEnd' in carrier ? { geminiPartFromEnd: carrier.partFromEnd } : {}),
+          },
+          GEMINI_AFFINITY_DOMAIN,
+        ),
       })));
       if (parts.length > 0) state.sawCarrier = true;
       if (candidate.finishReason !== undefined) state.finished = true;

@@ -3,7 +3,6 @@ import { getRepo } from '../../../../repo/index.ts';
 import { cloneStoredResponsesItem, cloneStoredResponsesSnapshot, compareResponsesItemsByFreshness, responsesItemStoreKey as scopedKey } from '../../../../repo/responses-clone.ts';
 import type { Repo, StoredResponsesItem, StoredResponsesSnapshot } from '../../../../repo/types.ts';
 import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
-import type { ResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 
 export interface StatefulResponsesItemLookup {
   readonly apiKeyId: string;
@@ -43,17 +42,10 @@ export interface StatefulResponsesStore {
   readonly apiKeyId: string;
   readonly storesState: boolean;
   loadSnapshot(id: string): Promise<StoredResponsesSnapshot | null>;
-  loadInputItems<TSourceItems>(options: {
-    readonly sourceItems: TSourceItems;
-    readonly view: Pick<ResponsesItemsView<TSourceItems>, 'visitAsResponsesItems'>;
-    readonly inputItemsToStage?: readonly ResponsesInputItem[];
-  }): Promise<void>;
+  loadInputItems(sourceItems: readonly ResponsesInputItem[], inputItemsToStage: readonly ResponsesInputItem[]): Promise<void>;
   getItemById(id: string): StoredResponsesItem | undefined;
   hashItemContent(item: ResponsesInputItem): Promise<string>;
   stageInputItems(items: readonly ResponsesInputItem[]): Promise<void>;
-  beginAttempt(privatePayloads: ReadonlyMap<string, unknown>): void;
-  setPrivatePayload(id: string, payload: unknown): void;
-  getPrivatePayload(id: string): unknown;
   stageOutputItem(row: StoredResponsesItem): void;
   commitOutputItems(): Promise<void>;
   commitSnapshot(responseId: string, mode: ResponsesSnapshotMode): Promise<void>;
@@ -66,10 +58,8 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   private readonly stagedInputItemIds: string[] = [];
   private readonly stagedOutputItems = new Map<string, StoredResponsesItem>();
   private readonly stagedOutputItemIds: string[] = [];
-  private readonly privatePayload = new Map<string, unknown>();
   private previousSnapshotItemIds: string[] = [];
   private readonly committedItemIds = new Set<string>();
-  private readonly committedSnapshotIds = new Set<string>();
   private readonly durableItemIds = new Set<string>();
 
   constructor(private readonly options: LayeredStatefulResponsesStoreOptions) {}
@@ -98,18 +88,14 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     return null;
   }
 
-  async loadInputItems<TSourceItems>(options: {
-    readonly sourceItems: TSourceItems;
-    readonly view: Pick<ResponsesItemsView<TSourceItems>, 'visitAsResponsesItems'>;
-    readonly inputItemsToStage?: readonly ResponsesInputItem[];
-  }): Promise<void> {
+  async loadInputItems(sourceItems: readonly ResponsesInputItem[], inputItemsToStage: readonly ResponsesInputItem[]): Promise<void> {
     const ids = new Set<string>();
-    await options.view.visitAsResponsesItems(options.sourceItems, item => {
+    for (const item of sourceItems) {
       const id = responsesItemId(item);
       if (id !== null && isStoredResponsesItemId(id)) ids.add(id);
-    });
+    }
     const contentHashes = new Set<string>();
-    for (const item of options.inputItemsToStage ?? []) {
+    for (const item of inputItemsToStage) {
       const id = responsesItemId(item);
       if (id !== null && isStoredResponsesItemId(id)) continue;
       contentHashes.add(await this.hashItemContent(item));
@@ -127,26 +113,10 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     for (const item of items) await this.stageInputItem(item);
   }
 
-  beginAttempt(privatePayloads: ReadonlyMap<string, unknown>): void {
-    this.stagedOutputItems.clear();
-    this.stagedOutputItemIds.length = 0;
-    this.privatePayload.clear();
-    for (const [wireId, payload] of privatePayloads) this.privatePayload.set(wireId, structuredClone(payload));
-  }
-
-  setPrivatePayload(id: string, payload: unknown): void {
-    this.privatePayload.set(id, structuredClone(payload));
-  }
-
-  getPrivatePayload(id: string): unknown {
-    const payload = this.privatePayload.get(id);
-    return payload === undefined ? undefined : structuredClone(payload);
-  }
-
   stageOutputItem(row: StoredResponsesItem): void {
     const cloned = cloneStoredResponsesItem(row);
     this.stagedOutputItems.set(cloned.id, cloned);
-    if (!this.stagedOutputItemIds.includes(cloned.id)) this.stagedOutputItemIds.push(cloned.id);
+    this.stagedOutputItemIds.push(cloned.id);
     this.rememberItem(cloned);
   }
 
@@ -155,7 +125,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   }
 
   async commitSnapshot(responseId: string, mode: ResponsesSnapshotMode): Promise<void> {
-    if (this.options.snapshotWrites.length === 0 || this.committedSnapshotIds.has(responseId)) return;
+    if (this.options.snapshotWrites.length === 0) return;
     await this.commitItems([...this.stagedInputItems.values(), ...this.stagedOutputItems.values()]);
     const itemIds = mode === 'replace'
       ? [...this.stagedOutputItemIds]
@@ -167,10 +137,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
       itemIds,
       createdAt: Date.now(),
     };
-    await Promise.all(this.options.snapshotWrites
-      .filter(write => !write.durable || itemIds.every(id => this.durableItemIds.has(id)))
-      .map(write => write.backing.insertSnapshot(snapshot)));
-    this.committedSnapshotIds.add(responseId);
+    await Promise.all(this.options.snapshotWrites.map(write => write.backing.insertSnapshot(snapshot)));
   }
 
   private async loadItems(query: { ids: readonly string[]; contentHashes: readonly string[] }): Promise<void> {
@@ -319,13 +286,8 @@ export class MemoryStatefulResponsesBacking implements StatefulResponsesBacking 
   }
 }
 
-const repoBacking = () => new RepoStatefulResponsesBacking(getRepo);
-
-export const createTransientResponsesStore = (apiKeyId: string): StatefulResponsesStore =>
-  new LayeredStatefulResponsesStore({ apiKeyId, reads: [], itemWrites: [], snapshotWrites: [], stageInputs: false });
-
 export const createResponsesHttpStore = (apiKeyId: string, store: boolean | undefined): StatefulResponsesStore => {
-  const backing = repoBacking();
+  const backing = new RepoStatefulResponsesBacking(getRepo);
   const writes = store === false ? [] : [{ backing, durable: true }];
   return new LayeredStatefulResponsesStore({
     apiKeyId,
@@ -340,7 +302,7 @@ export const createResponsesWsSession = (): {
   createStore(apiKeyId: string, store: boolean | undefined): StatefulResponsesStore;
 } => {
   const local = new MemoryStatefulResponsesBacking();
-  const durable = repoBacking();
+  const durable = new RepoStatefulResponsesBacking(getRepo);
   return {
     createStore(apiKeyId: string, store: boolean | undefined): StatefulResponsesStore {
       const localWrite = { backing: local, durable: false };

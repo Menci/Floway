@@ -356,14 +356,16 @@ const respondResponsesWebSocket = async (input: {
   const state = new SourceStreamState();
   let completion: StreamCompletion = 'error';
   try {
+    const store = ctx.store;
+    if (store === undefined) throw new Error('Responses WebSocket turn requires a state store');
     let terminalEvent: ResponsesStreamEvent | undefined;
     const observed = observeResponsesWebSocketFrames(result.events, state, ctx);
     const withAffinity = wrapResponsesAffinityEgress(observed, {
       codec: ctx.affinity.codec,
       affinity: ctx.affinity.selectedTarget(),
     });
-    const output = ctx.store.storesState
-      ? wrapResponsesOutputForStorage(withAffinity, { store: ctx.store, responseId: createStoredResponseId() })
+    const output = store.storesState
+      ? wrapResponsesOutputForStorage(withAffinity, { store, attemptState: ctx.responsesAttemptState, responseId: createStoredResponseId() })
       : withAffinity;
     const iterator = output[Symbol.asyncIterator]();
     let pendingNext = pendingWsFrameResult(iterator.next());
