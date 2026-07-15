@@ -3,9 +3,10 @@ import { streamSSE } from 'hono/streaming';
 
 import { geminiStatusForHttpStatus } from './errors.ts';
 import { tokenUsageFromGeminiUsageMetadata } from './usage.ts';
+import { wrapGeminiAffinityEgress } from '../affinity/gemini-egress.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
-import type { GatewayCtx } from '../shared/gateway-ctx.ts';
+import type { ChatGatewayCtx, GatewayCtx } from '../shared/gateway-ctx.ts';
 import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse } from '../shared/respond.ts';
 import { type StreamCompletion, writeSSEFrames } from '../shared/stream/sse.ts';
 import { type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
@@ -45,7 +46,8 @@ export const respondGemini = async (
   }
 
   const state = new SourceStreamState();
-  const frames = observeGeminiFrames(result.events, state, wantsStream, ctx);
+  const observed = observeGeminiFrames(result.events, state, wantsStream, ctx);
+  const frames = wrapGeminiAffinityEgress(observed, affinityEgressOptions(ctx));
 
   if (!wantsStream) {
     try {
@@ -83,6 +85,12 @@ export const respondGemini = async (
   });
 
   return { success: true, response };
+};
+
+const affinityEgressOptions = (ctx: GatewayCtx) => {
+  if (!('affinity' in ctx)) throw new Error('Gemini event result reached responder without affinity context');
+  const chatCtx = ctx as ChatGatewayCtx;
+  return { codec: chatCtx.affinity.codec, affinity: chatCtx.affinity.selectedTarget() };
 };
 
 const tokenUsageFromGeminiResponse = (r: GeminiResult) => (r.usageMetadata ? tokenUsageFromGeminiUsageMetadata(r.usageMetadata) : null);
