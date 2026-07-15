@@ -46,6 +46,7 @@ import type {
 } from './types.ts';
 import { serializeStoredState } from './upstream-json.ts';
 import { usageDimensionRows } from './usage-dimensions.ts';
+import { parseAffinitySecret } from '../shared/affinity-secret.ts';
 import { bucketForTtftMs, bucketForTpotUs } from '../shared/performance-histogram.ts';
 import { generateSessionToken } from '../shared/session-tokens.ts';
 import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';
@@ -195,9 +196,13 @@ class MemoryApiKeyRepo implements ApiKeyRepo {
   }
 
   async save(key: ApiKey): Promise<void> {
+    const validated = {
+      ...key,
+      affinitySecret: parseAffinitySecret(key.affinitySecret, `ApiKey.affinitySecret for id=${key.id}`),
+    };
     const i = this.keys.findIndex(k => k.id === key.id);
-    if (i >= 0) this.keys[i] = { ...key };
-    else this.keys.push({ ...key });
+    if (i >= 0) this.keys[i] = validated;
+    else this.keys.push(validated);
   }
 
   async softDelete(id: string): Promise<boolean> {

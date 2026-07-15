@@ -3,10 +3,11 @@
 // Ephemeral stored Responses state is omitted from exports and cleared on
 // replace imports; clients can regenerate it through normal Responses use.
 //
-// The export contains every credential the gateway holds — provider API keys,
-// GitHub tokens, Codex refresh tokens, and proxy URIs that embed passwords /
-// UUIDs / PSKs. The endpoint is admin-only via x-api-key; operators are
-// responsible for handling the dumped file with the same care as a DB backup.
+// The export contains every credential the gateway holds — API-key affinity
+// secrets, provider API keys, GitHub tokens, Codex refresh tokens, and proxy
+// URIs that embed passwords / UUIDs / PSKs. The endpoint is admin-only;
+// operators are responsible for handling the dumped file with the same care
+// as a DB backup.
 
 import type { Context } from 'hono';
 
@@ -23,6 +24,7 @@ import { DIRECT_FALLBACK_IDS, isDirectFallbackId, normalizeProxyFallbackList } f
 import type { ApiKey, PerformanceBucketRow, PerformanceMetric, PerformanceTelemetryRecord, SearchUsageRecord, TokenUsage, UsageRecord, User } from '../../repo/types.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
+import { parseAffinitySecret } from '../../shared/affinity-secret.ts';
 import { PASSWORD_HASH_SCHEME } from '../../shared/passwords.ts';
 import { isWebSearchProviderName } from '../../shared/web-search-providers.ts';
 import { parseUpstreamIdsValue } from '../api-keys/upstream-ids.ts';
@@ -48,12 +50,25 @@ interface SerializedProxy {
   dial_timeout_seconds: number | null;
 }
 
+interface SerializedApiKey {
+  id: string;
+  userId: number;
+  name: string;
+  key: string;
+  affinitySecret: string;
+  createdAt: string;
+  lastUsedAt?: string;
+  upstreamIds: string[] | null;
+  deletedAt: string | null;
+  dumpRetentionSeconds: number | null;
+}
+
 interface ExportPayload {
-  version: 9;
+  version: 10;
   exportedAt: string;
   data: {
     users: User[];
-    apiKeys: ApiKey[];
+    apiKeys: SerializedApiKey[];
     upstreams: SerializedUpstreamRecord[];
     proxies: SerializedProxy[];
     usage: UsageRecord[];
@@ -64,7 +79,7 @@ interface ExportPayload {
   };
 }
 
-const EXPORT_VERSION = 9;
+const EXPORT_VERSION = 10;
 const SEARCH_USAGE_HOUR_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}$/;
 const PERFORMANCE_METRICS = new Set<PerformanceMetric>(['ttft_ms', 'tpot_us']);
 const UPSTREAM_PROVIDERS = new Set<UpstreamProviderKind>(ALL_PROVIDER_KINDS);
@@ -84,6 +99,19 @@ const isPerformanceOperation = (value: unknown): value is PerformanceOperation =
 const importErrorBuilder = (field: string, expected: string) => new Error(`${field} must be ${expected}`);
 
 const nonEmptyString = (value: unknown, field: string): string => nonEmptyStringField(value, field, importErrorBuilder);
+
+const serializeApiKey = (key: ApiKey): SerializedApiKey => ({
+  id: key.id,
+  userId: key.userId,
+  name: key.name,
+  key: key.key,
+  affinitySecret: key.affinitySecret,
+  createdAt: key.createdAt,
+  ...(key.lastUsedAt !== undefined ? { lastUsedAt: key.lastUsedAt } : {}),
+  upstreamIds: key.upstreamIds,
+  deletedAt: key.deletedAt,
+  dumpRetentionSeconds: key.dumpRetentionSeconds,
+});
 
 const normalizeUpstreamConfig = (record: UpstreamRecord): unknown => {
   if (record.kind === 'custom') return assertCustomUpstreamRecord(record).config;
@@ -284,6 +312,7 @@ const parseApiKeyRecords = (value: unknown): { type: 'ok'; records: ApiKey[] } |
         userId: record.userId,
         name: nonEmptyString(record.name, 'name'),
         key: nonEmptyString(record.key, 'key'),
+        affinitySecret: parseAffinitySecret(record.affinitySecret),
         createdAt: nonEmptyString(record.createdAt, 'createdAt'),
         ...(record.lastUsedAt !== undefined ? { lastUsedAt: nonEmptyString(record.lastUsedAt, 'lastUsedAt') } : {}),
         upstreamIds: upstreamIdsParsed.value,
@@ -676,7 +705,7 @@ export const exportData = async (c: CtxWithQuery<typeof exportQuery>) => {
     exportedAt: new Date().toISOString(),
     data: {
       users,
-      apiKeys,
+      apiKeys: apiKeys.map(serializeApiKey),
       upstreams: upstreams.map(upstreamRecordToFullJson),
       proxies: proxies.map(p => ({ id: p.id, name: p.name, url: p.url, dial_timeout_seconds: p.dialTimeoutSeconds })),
       usage,

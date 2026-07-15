@@ -4,6 +4,7 @@ import { type AuthedContext, sessionIdFromContext, userFromContext } from '../..
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { ApiKey, User } from '../../repo/types.ts';
+import { generateAffinitySecret } from '../../shared/affinity-secret.ts';
 import { generateApiKeyToken } from '../../shared/api-key-tokens.ts';
 import { hashPassword, verifyPassword } from '../../shared/passwords.ts';
 import type { changeOwnPasswordBody, createUserBody, updateUserBody } from '../schemas.ts';
@@ -53,6 +54,7 @@ export const createUser = async (c: CtxWithJson<typeof createUserBody>) => {
     userId: user.id,
     name: 'Default',
     key: generateApiKeyToken(),
+    affinitySecret: generateAffinitySecret(),
     createdAt: new Date().toISOString(),
     upstreamIds: null,
     deletedAt: null,

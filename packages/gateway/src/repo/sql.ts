@@ -40,6 +40,7 @@ import type {
 import { serializeStoredConfig, serializeStoredState } from './upstream-json.ts';
 import { parseUpstreamColor, parseUpstreamKind } from './upstream-parse.ts';
 import { usageDimensionRows } from './usage-dimensions.ts';
+import { parseAffinitySecret } from '../shared/affinity-secret.ts';
 import { bucketForTtftMs, bucketForTpotUs } from '../shared/performance-histogram.ts';
 import { generateSessionToken } from '../shared/session-tokens.ts';
 import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';
@@ -67,6 +68,7 @@ interface ApiKeyRow {
   user_id: number;
   name: string;
   key: string;
+  affinity_secret: string;
   created_at: string;
   last_used_at: string | null;
   upstream_ids: string | null;
@@ -74,7 +76,7 @@ interface ApiKeyRow {
   dump_retention_seconds: number | null;
 }
 
-const API_KEY_COLUMNS = 'id, user_id, name, key, created_at, last_used_at, upstream_ids, deleted_at, dump_retention_seconds';
+const API_KEY_COLUMNS = 'id, user_id, name, key, affinity_secret, created_at, last_used_at, upstream_ids, deleted_at, dump_retention_seconds';
 
 const serializeUpstreamIds = (value: readonly string[] | null): string | null => (value === null ? null : JSON.stringify(value));
 
@@ -98,6 +100,7 @@ const toApiKey = (row: ApiKeyRow): ApiKey => ({
   userId: row.user_id,
   name: row.name,
   key: row.key,
+  affinitySecret: parseAffinitySecret(row.affinity_secret, `api_keys.affinity_secret for id=${row.id}`),
   createdAt: row.created_at,
   lastUsedAt: row.last_used_at ?? undefined,
   upstreamIds: parseUpstreamIds(row.upstream_ids, `api_keys.id=${row.id}`),
@@ -157,11 +160,12 @@ class SqlApiKeyRepo implements ApiKeyRepo {
   async save(key: ApiKey): Promise<void> {
     await this.db
       .prepare(
-        `INSERT INTO api_keys (${API_KEY_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO api_keys (${API_KEY_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE SET
            user_id = excluded.user_id,
            name = excluded.name,
            key = excluded.key,
+           affinity_secret = excluded.affinity_secret,
            last_used_at = excluded.last_used_at,
            upstream_ids = excluded.upstream_ids,
            deleted_at = excluded.deleted_at,
@@ -172,6 +176,7 @@ class SqlApiKeyRepo implements ApiKeyRepo {
         key.userId,
         key.name,
         key.key,
+        parseAffinitySecret(key.affinitySecret, `ApiKey.affinitySecret for id=${key.id}`),
         key.createdAt,
         key.lastUsedAt ?? null,
         serializeUpstreamIds(key.upstreamIds),

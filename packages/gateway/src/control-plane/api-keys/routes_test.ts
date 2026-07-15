@@ -12,6 +12,16 @@ const ownerPatch = (id: string, body: unknown, rawKey: string) =>
     body: JSON.stringify(body),
   });
 
+test('GET /api/keys never exposes the server-side affinity secret', async () => {
+  const { apiKey } = await setupAppTest();
+  const response = await requestApp('/api/keys', { headers: { 'x-api-key': apiKey.key } });
+  assertEquals(response.status, 200);
+  const body = (await response.json()) as Array<Record<string, unknown>>;
+  assertEquals(body.length, 1);
+  assertEquals(Object.hasOwn(body[0]!, 'affinitySecret'), false);
+  assertEquals(Object.hasOwn(body[0]!, 'affinity_secret'), false);
+});
+
 test('PATCH /api/keys/:id accepts a custom upstream whitelist + order', async () => {
   const { repo, apiKey } = await setupAppTest();
   await repo.upstreams.save(buildCustomUpstreamRecord({ id: 'up_x', name: 'X' }));
@@ -133,12 +143,15 @@ test('POST /api/keys creates a key under the actor with optional upstream_ids', 
     body: JSON.stringify({ name: 'side-key', upstream_ids: ['up_x'] }),
   });
   assertEquals(response.status, 201);
-  const body = (await response.json()) as { id: string; key: string; upstream_ids: string[] | null };
+  const body = (await response.json()) as { id: string; key: string; upstream_ids: string[] | null } & Record<string, unknown>;
   assertEquals(/^sk-[A-Za-z0-9]{20}T3BlbkFJ[A-Za-z0-9]{20}$/.test(body.key), true);
   assertEquals(body.upstream_ids, ['up_x']);
+  assertEquals(Object.hasOwn(body, 'affinitySecret'), false);
+  assertEquals(Object.hasOwn(body, 'affinity_secret'), false);
   const stored = await repo.apiKeys.getById(body.id);
   assertExists(stored);
   assertEquals(stored.userId, apiKey.userId);
+  assertEquals(/^[0-9a-f]{64}$/.test(stored.affinitySecret), true);
 });
 
 test('POST /api/keys mints a generated key when key_source is generate', async () => {
@@ -205,15 +218,18 @@ test('POST /api/keys rejects malformed custom key requests', async () => {
 });
 
 test('POST /api/keys/:id/rotate mints a generated key by default', async () => {
-  const { apiKey } = await setupAppTest();
+  const { apiKey, repo } = await setupAppTest();
   const response = await requestApp(`/api/keys/${apiKey.id}/rotate`, {
     method: 'POST',
     headers: { 'x-api-key': apiKey.key, 'content-type': 'application/json' },
     body: JSON.stringify({}),
   });
   assertEquals(response.status, 200);
-  const body = (await response.json()) as { key: string };
+  const body = (await response.json()) as { key: string } & Record<string, unknown>;
   assertEquals(/^sk-[A-Za-z0-9]{20}T3BlbkFJ[A-Za-z0-9]{20}$/.test(body.key), true);
+  assertEquals(Object.hasOwn(body, 'affinitySecret'), false);
+  assertEquals(Object.hasOwn(body, 'affinity_secret'), false);
+  assertEquals((await repo.apiKeys.getById(apiKey.id))?.affinitySecret, apiKey.affinitySecret);
 });
 
 test('POST /api/keys/:id/rotate accepts a caller-provided key when key_source is custom', async () => {

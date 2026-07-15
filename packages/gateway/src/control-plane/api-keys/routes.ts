@@ -3,6 +3,7 @@ import { type AuthedContext, userFromContext, userUpstreamIdsFromContext } from 
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { ApiKey } from '../../repo/types.ts';
+import { generateAffinitySecret } from '../../shared/affinity-secret.ts';
 import { CUSTOM_API_KEY_MAX_LENGTH, generateApiKeyToken, type KeySource } from '../../shared/api-key-tokens.ts';
 import type { createKeyBody, rotateKeyBody, updateKeyBody } from '../schemas.ts';
 import { ownedKeyOr404 } from '../shared/owned-key.ts';
@@ -121,6 +122,7 @@ export const createKey = async (c: CtxWithJson<typeof createKeyBody>) => {
     id: crypto.randomUUID(),
     userId,
     name: body.name,
+    affinitySecret: generateAffinitySecret(),
     createdAt: new Date().toISOString(),
     upstreamIds: body.upstream_ids ?? null,
     deletedAt: null,

@@ -7,6 +7,10 @@ export interface ApiKey {
   userId: number;
   name: string;
   key: string;
+  // Server-only key material for client-carried affinity envelopes. Normal
+  // API-key routes never expose it; admin data transfer preserves it so
+  // exported client histories remain usable after restoring a deployment.
+  affinitySecret: string;
   createdAt: string;
   lastUsedAt?: string;
   // null = inherit global upstream order; array = whitelist + priority order.
