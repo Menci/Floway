@@ -170,14 +170,14 @@ const toggleCurrentColoAt = (index: number) => {
 <template>
   <section>
     <p class="mb-2 text-[10px] font-semibold uppercase tracking-wider text-gray-500">
-      Egress Fallback List <span class="text-accent-cyan">({{ list.length }})</span>
+      Egress Routes <span class="text-accent-cyan">({{ list.length }})</span>
       <span v-if="coloAware && currentColo" class="ml-2 font-mono text-gray-500">
         · this colo = <span class="text-accent-cyan">{{ currentColo }}</span>
       </span>
     </p>
 
     <div v-if="list.length === 0" class="rounded-md border border-dashed border-white/[0.08] bg-surface-900/40 px-3 py-2.5 text-xs text-gray-500">
-      No fallback list configured — defaults to DIRECT fetch().
+      No egress routes configured — defaults to DIRECT fetch().
     </div>
 
     <Sortable
@@ -343,7 +343,7 @@ const toggleCurrentColoAt = (index: number) => {
         <DropdownMenuTrigger
           class="inline-flex h-9 w-full items-center justify-between rounded-[10px] border border-white/[0.06] bg-surface-700 px-3 text-sm text-gray-300 transition-colors hover:border-white/[0.1] focus:border-accent-cyan/50 focus:outline-none focus:ring-1 focus:ring-accent-cyan/30"
         >
-          <span>+ Add fallback</span>
+          <span>+ Add route</span>
           <svg class="size-4 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25">
             <path d="m6 9 6 6 6-6" />
           </svg>
@@ -375,7 +375,7 @@ const toggleCurrentColoAt = (index: number) => {
               v-if="proxiesNotInList.length === 0 && builtInTransportsNotInList.length === 0"
               class="px-2 py-1.5 text-xs text-gray-500"
             >
-              All fallbacks already added.
+              All routes already added.
             </p>
           </DropdownMenuContent>
         </DropdownMenuPortal>

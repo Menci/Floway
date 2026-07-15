@@ -267,7 +267,7 @@ interface UpstreamRecordBase {
   // unroutable, but their per-model metadata stays editable. May include ids no
   // longer present in the live model list.
   disabled_public_model_ids: string[];
-  // Ordered egress fallback list. Each entry pins a proxy id or one of the
+  // Ordered egress routes. Each entry pins a proxy id or one of the
   // built-in direct transports (`direct_fetch`, `direct_connect`), plus an
   // optional `colos` whitelist that scopes it to location tags (Cloudflare
   // colos / the Node `RUNTIME_LOCATION` env var). Empty/missing whitelist

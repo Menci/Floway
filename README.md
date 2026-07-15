@@ -87,7 +87,7 @@ passwordless logins.
 
 Optionally set `RUNTIME_LOCATION=<tag>` to label this instance in the
 performance telemetry's `runtimeLocation` dimension and as the dial-time
-key for the egress fallback list's per-instance colo whitelist. The value
+key for the egress route list's per-instance colo whitelist. The value
 is uppercased on read so `local`, `Local`, and `LOCAL` all match the
 dashboard's uppercased whitelist input; defaults to `LOCAL` when unset.
 
