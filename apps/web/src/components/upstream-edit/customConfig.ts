@@ -6,6 +6,7 @@ export const PATH_KEYS = [
   '/responses',
   '/messages',
   '/embeddings',
+  '/alpha/search',
   '/images/generations',
   '/images/edits',
 ] as const;
@@ -17,6 +18,7 @@ export const emptyPathOverrides = (): Record<PathKey, string> => ({
   '/responses': '',
   '/messages': '',
   '/embeddings': '',
+  '/alpha/search': '',
   '/images/generations': '',
   '/images/edits': '',
 });

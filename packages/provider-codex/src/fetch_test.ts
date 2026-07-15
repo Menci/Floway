@@ -895,4 +895,28 @@ describe('callCodexAlphaSearch', () => {
       commands: { search_query: [{ q: 'Floway' }] },
     });
   });
+
+  test('normalizes a missing request id and omits absent turn metadata', async () => {
+    seedFreshAccessToken();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ output: 'Search result' }), { status: 200 }));
+
+    await callCodexAlphaSearch({
+      upstreamId,
+      account: activeAccount,
+      model,
+      body: { commands: { search_query: [{ q: 'Floway' }] } },
+      headers: new Headers(),
+      effects: makeEffects(),
+      call: noopUpstreamCallOptions(),
+    });
+
+    const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    const headers = new Headers(init.headers);
+    const body = JSON.parse(init.body as string) as Record<string, unknown>;
+    expect(headers.has('x-codex-turn-metadata')).toBe(false);
+    expect(typeof body.id).toBe('string');
+    expect(headers.get('session-id')).toBe(body.id);
+    expect(headers.get('thread-id')).toBe(body.id);
+    expect(headers.get('x-client-request-id')).toBe(body.id);
+  });
 });

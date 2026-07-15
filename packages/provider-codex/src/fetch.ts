@@ -72,9 +72,11 @@ export const callCodexResponsesCompact = async (opts: CallCodexResponsesCompactO
 };
 
 export const callCodexAlphaSearch = async (opts: CallCodexAlphaSearchOptions): Promise<ProviderCallResult> => {
-  const ready = await prepareCodexCall(opts);
-  if (!ready.ok) return { modelKey: opts.model.id, response: ready.response };
-  return await performAlphaSearchCall(opts, ready.accessToken, false);
+  const requestId = stringField(opts.body, 'id') ?? uuidV7();
+  const normalized = { ...opts, body: { ...opts.body, id: requestId } };
+  const ready = await prepareCodexCall(normalized);
+  if (!ready.ok) return { modelKey: normalized.model.id, response: ready.response };
+  return await performAlphaSearchCall(normalized, ready.accessToken, false);
 };
 
 // Pre-fetch gates + initial access-token mint.
@@ -319,7 +321,7 @@ const dispatchCodexHttpCall = async (
   accept: string,
   body: Record<string, unknown>,
   identity: CodexRequestIdentity,
-  turnMetadataJson: string,
+  turnMetadataJson: string | null,
 ): Promise<Response> => {
   const headers = new Headers();
   headers.set('authorization', `Bearer ${accessToken}`);
@@ -332,7 +334,7 @@ const dispatchCodexHttpCall = async (
   headers.set('thread-id', identity.threadId);
   headers.set('x-client-request-id', identity.clientRequestId);
   headers.set('x-codex-window-id', identity.windowId);
-  headers.set('x-codex-turn-metadata', turnMetadataJson);
+  if (turnMetadataJson !== null) headers.set('x-codex-turn-metadata', turnMetadataJson);
 
   const response = await opts.call.wrapUpstreamCall(() => opts.call.fetcher(`${CODEX_BACKEND_BASE}${path}`, {
     method: 'POST',
@@ -461,7 +463,8 @@ const performAlphaSearchCall = async (
   accessToken: string,
   alreadyRetried: boolean,
 ): Promise<ProviderCallResult> => {
-  const requestId = stringField(opts.body, 'id') ?? uuidV7();
+  const requestId = stringField(opts.body, 'id');
+  if (requestId === null) throw new Error('Normalized Codex alpha search request is missing id');
   const identity: CodexRequestIdentity = {
     installationId: opts.account.openaiDeviceId,
     sessionId: requestId,
@@ -470,7 +473,7 @@ const performAlphaSearchCall = async (
     turnId: uuidV7(),
     windowId: `${requestId}:0`,
   };
-  const turnMetadataJson = trimHeader(opts.headers, 'x-codex-turn-metadata') ?? '{}';
+  const turnMetadataJson = trimHeader(opts.headers, 'x-codex-turn-metadata');
   const response = await dispatchCodexHttpCall(
     opts,
     accessToken,
