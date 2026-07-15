@@ -264,6 +264,7 @@ export interface WebSearchExecutionSession {
 export interface WebSearchCallIR {
   action: ResponsesWebSearchAction;
   results: ResponsesWebSearchResult[];
+  outputText?: string;
 }
 
 const searchIr = (
@@ -393,6 +394,9 @@ export const renderOperationOutputText = (action: ResponsesWebSearchAction, resu
     return results.length > 0 ? results[0].snippet : '';
   }
 };
+
+export const renderWebSearchCallOutput = (ir: WebSearchCallIR): string =>
+  ir.outputText ?? renderOperationOutputText(ir.action, ir.results);
 
 // ── Domain filtering ──
 
@@ -846,7 +850,7 @@ export const executeOperationToText = async (
     return wrongTypeOperationText(op.subProperty, op.actualType);
   default: {
     const ir = await executeOperationToIr(op, session, batch);
-    return renderOperationOutputText(ir.action, ir.results);
+    return renderWebSearchCallOutput(ir);
   }
   }
 };

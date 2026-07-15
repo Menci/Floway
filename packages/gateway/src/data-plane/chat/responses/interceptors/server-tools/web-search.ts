@@ -1,4 +1,6 @@
 import { shortId } from '../../../../../shared/short-id.ts';
+import { executeAlphaSearch } from '../../../../tools/web-search/alpha-execution.ts';
+import { resolveAlphaSearchDispatcher } from '../../../../tools/web-search/alpha-upstream.ts';
 import { normalizeDomainEntry } from '../../../../tools/web-search/domain-normalize.ts';
 import {
   actionSearchQueries,
@@ -8,7 +10,7 @@ import {
   isSearchContextSize,
   maxResultsForContextSize,
   parseWebSearchOperations,
-  renderOperationOutputText,
+  renderWebSearchCallOutput,
   runBackendSearchMulti,
   schemaErrorIr,
   startBatchFetch,
@@ -398,7 +400,7 @@ export const transformInputItemsForWebSearch = (
         {
           type: 'function_call_output',
           call_id: candidatePayload.functionCallItem.call_id,
-          output: renderOperationOutputText(candidatePayload.ir.action, candidatePayload.ir.results),
+          output: renderWebSearchCallOutput(candidatePayload.ir),
         },
       );
       continue;
@@ -458,12 +460,14 @@ interface ShimState extends WebSearchExecutionSession {
   // (and therefore `payload.private`) always carries the real results
   // so a subsequent turn echoing the item id can be hydrated regardless.
   includeSearchResults: boolean;
+  executeAlpha?: (commands: Record<string, unknown>, action: ResponsesWebSearchAction) => Promise<WebSearchCallIR>;
 }
 
 const ITERATION_CAP = 30;
 
 const planShimSlots = (
   parsed: ParsedWebSearchOperations,
+  commands: Record<string, unknown>,
   toolName: string,
   state: ShimState,
   loopState: ServerToolLoopState,
@@ -488,6 +492,24 @@ const planShimSlots = (
         'Error: arguments must be a JSON object with sub-property arrays (search_query[], open[], find[]).',
       )),
     };
+  }
+
+  if (state.executeAlpha !== undefined) {
+    const first = parsed.ops[0];
+    let action: ResponsesWebSearchAction;
+    if (first.kind === 'search') {
+      const queries = parsed.ops.filter((op): op is Extract<WebSearchOperation, { kind: 'search' }> => op.kind === 'search').map(op => op.query);
+      action = queries.length === 1
+        ? { type: 'search', query: queries[0], queries }
+        : { type: 'search', query: queries.join(' | '), queries };
+    } else if (first.kind === 'open') {
+      action = { type: 'open_page', url: first.url };
+    } else if (first.kind === 'find') {
+      action = { type: 'find_in_page', url: first.url, pattern: first.pattern };
+    } else {
+      action = { type: 'search', query: Object.keys(commands).join(', ') };
+    }
+    return { id: synthesizeWebSearchCallId(), promise: state.executeAlpha(commands, action) };
   }
 
   // Multi-`search_query` entries collapse into one wsc with a multi-query
@@ -526,7 +548,7 @@ const planShimSlots = (
   };
 };
 
-export const webSearchServerTool: ServerToolRegistration = (invocation, gatewayCtx) => {
+export const webSearchServerTool: ServerToolRegistration = async (invocation, gatewayCtx) => {
   if (invocation.targetApi === 'responses' && !providerModelOf(invocation.candidate).enabledFlags.has('responses-web-search-shim')) {
     return { type: 'inactive' };
   }
@@ -546,13 +568,14 @@ export const webSearchServerTool: ServerToolRegistration = (invocation, gatewayC
   }
 
   const { filters } = prepared;
+  const searchConfig = await loadSearchConfig();
   const includeArray = Array.isArray(invocation.payload.include) ? invocation.payload.include : [];
   let configuredProvider: Promise<ConfiguredWebSearchProvider> | undefined;
   const state: ShimState = {
     filters,
     pageCache: new Map(),
     getProvider: () => {
-      configuredProvider ??= loadSearchConfig().then(cfg => resolveConfiguredWebSearchProvider(cfg));
+      configuredProvider ??= Promise.resolve(resolveConfiguredWebSearchProvider(searchConfig));
       return configuredProvider;
     },
     apiKeyId: gatewayCtx.apiKeyId,
@@ -560,6 +583,30 @@ export const webSearchServerTool: ServerToolRegistration = (invocation, gatewayC
     includeSearchActionSources: includeArray.includes('web_search_call.action.sources'),
     ...(gatewayCtx.abortSignal !== undefined ? { signal: gatewayCtx.abortSignal } : {}),
   };
+  if (searchConfig.passthroughOpenAiSearch.enabled) {
+    let dispatcher = resolveAlphaSearchDispatcher({
+      config: searchConfig.passthroughOpenAiSearch,
+      upstreamIds: gatewayCtx.upstreamIds,
+      scheduler: gatewayCtx.backgroundScheduler,
+      runtimeLocation: gatewayCtx.runtimeLocation,
+    });
+    const sessionId = crypto.randomUUID();
+    const hosted = tools.filter(isHostedWebSearchTool).at(-1);
+    const settings: Record<string, unknown> = {
+      ...(hosted?.search_context_size === undefined ? {} : { search_context_size: hosted.search_context_size }),
+      ...(hosted?.filters === undefined ? {} : { filters: hosted.filters }),
+      ...(hosted?.user_location === undefined ? {} : { user_location: hosted.user_location }),
+    };
+    state.executeAlpha = async (commands, action) => executeAlphaSearch({
+      dispatcher: await dispatcher,
+      sessionId,
+      commands,
+      settings,
+      input: invocation.payload.input,
+      action,
+      signal: gatewayCtx.abortSignal,
+    });
+  }
 
   return {
     type: 'active',
@@ -572,7 +619,8 @@ export const webSearchServerTool: ServerToolRegistration = (invocation, gatewayC
             canonicalize: canonicalizeWebSearchTool,
             buildFunctionTool: buildShimFunctionTool,
             dispatcher: ({ intercepted, loopState }) => {
-              const slot = planShimSlots(parseWebSearchOperations(intercepted.arguments), intercepted.name, state, loopState);
+              const commands = intercepted.arguments ?? {};
+              const slot = planShimSlots(parseWebSearchOperations(intercepted.arguments), commands, intercepted.name, state, loopState);
               const functionCallItem: ResponsesFunctionToolCallItem = {
                 type: 'function_call',
                 call_id: intercepted.callId,
