@@ -1,6 +1,6 @@
 import { GEMINI_AFFINITY_DOMAIN } from './domain.ts';
 import type { AffinityCodec } from '../../shared/affinity/codec.ts';
-import { blobForCandidate, ownedAffinityEvidence, type PreparedAffinityPayload } from '../../shared/affinity/prepared.ts';
+import { blobForCandidate, preferredAffinityEvidence, type PreparedAffinityPayload } from '../../shared/affinity/prepared.ts';
 import type { DecodedAffinityBlob } from '../../shared/affinity/types.ts';
 import type { GeminiPart, GeminiPayload } from '@floway-dev/protocols/gemini';
 
@@ -29,7 +29,7 @@ export const prepareGeminiAffinity = async (
   }
 
   return {
-    routingEvidence: ownedAffinityEvidence(locations.map(location => location.decoded)),
+    routingEvidence: preferredAffinityEvidence(locations.map(location => location.decoded)),
     payloadForCandidate: candidate => {
       const candidatePayload = structuredClone(payload);
       if (candidatePayload.contents === undefined) return candidatePayload;

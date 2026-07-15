@@ -2,14 +2,22 @@ import type { AliasRules } from '@floway-dev/protocols/common';
 
 export type AffinityOrigin = 'raw' | 'base64' | 'base64url';
 
-export interface AffinityTarget {
+interface AffinityRouteBase {
   upstreamId: string;
   modelId: string;
-  rulesPresent: boolean;
-  rules?: AliasRules;
+}
+
+export type AffinityRouteIdentity = AffinityRouteBase & (
+  | { rulesPresent: false; rules?: never }
+  | { rulesPresent: true; rules: AliasRules }
+);
+
+export interface AffinityRestoreMetadata {
   upstreamItemId?: string;
   syntheticItem?: true;
 }
+
+export type AffinityTarget = AffinityRouteIdentity & AffinityRestoreMetadata;
 
 export interface AffinityEvidence {
   readonly target: AffinityTarget;

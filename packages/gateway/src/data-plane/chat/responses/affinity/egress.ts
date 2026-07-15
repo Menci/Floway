@@ -1,15 +1,9 @@
 import { responsesAffinityDomain } from './domain.ts';
+import { createTemporaryResponsesItemId } from '../items/format.ts';
 import type { AffinityEgressOptions } from '../../shared/affinity/egress-options.ts';
 import type { AffinityTarget } from '../../shared/affinity/types.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesOutputItem, ResponsesOutputReasoning, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-
-const randomReasoningId = (): string => {
-  const bytes = crypto.getRandomValues(new Uint8Array(16));
-  let hex = '';
-  for (const byte of bytes) hex += byte.toString(16).padStart(2, '0');
-  return `rs_affinity_${hex}`;
-};
 
 const itemAffinity = (base: AffinityTarget, item: ResponsesOutputItem): AffinityTarget => ({
   ...base,
@@ -146,7 +140,7 @@ const ensureFirstResponsesItemAffinity = async function* (
     );
     prefixItem = {
       type: 'reasoning',
-      id: randomReasoningId(),
+      id: createTemporaryResponsesItemId('reasoning'),
       summary: [],
       encrypted_content: await syntheticPrefixContent,
     };

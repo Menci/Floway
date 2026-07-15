@@ -15,11 +15,15 @@ export const wrapMessagesAffinityEgress = async function* (
   options: AffinityEgressOptions,
 ): AsyncGenerator<ProtocolFrame<MessagesStreamEvent>> {
   const openBlocks = new Map<number, OpenBlock>();
-  const syntheticPrefix = options.codec.wrap(undefined, options.affinity, MESSAGES_REDACTED_AFFINITY_DOMAIN);
+  let syntheticPrefix: Promise<string> | undefined;
+  let syntheticPrefixEmitted = false;
   let firstBlockSeen = false;
   let indexOffset = 0;
 
   const syntheticEvents = async (): Promise<MessagesStreamEvent[]> => {
+    if (syntheticPrefixEmitted) return [];
+    syntheticPrefixEmitted = true;
+    syntheticPrefix = options.codec.wrap(undefined, options.affinity, MESSAGES_REDACTED_AFFINITY_DOMAIN);
     return [
       {
         type: 'content_block_start',

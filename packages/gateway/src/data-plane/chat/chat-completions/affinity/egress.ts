@@ -1,6 +1,6 @@
 import { CHAT_COMPLETIONS_AFFINITY_DOMAIN } from './domain.ts';
 import type { AffinityEgressOptions } from '../../shared/affinity/egress-options.ts';
-import { chatCompletionsErrorPayloadMessage, type ChatCompletionsDelta, type ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
+import { chatCompletionsErrorPayloadMessage, type ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 
 interface ChoiceState {
@@ -9,11 +9,6 @@ interface ChoiceState {
 }
 
 type StreamingChoice = ChatCompletionsStreamEvent['choices'][number];
-
-const withoutOpaque = (delta: ChatCompletionsDelta): ChatCompletionsDelta => {
-  const { reasoning_opaque: _opaque, ...visible } = delta;
-  return visible;
-};
 
 const eventWithChoices = (
   event: ChatCompletionsStreamEvent,
@@ -71,8 +66,8 @@ export const wrapChatCompletionsAffinityEgress = async function* (
       if (state.finished) throw new Error(`Chat Completions choice ${choice.index} emitted data after its finish_reason`);
       choices.set(choice.index, state);
 
-      if (typeof choice.delta.reasoning_opaque === 'string') state.opaque = choice.delta.reasoning_opaque;
-      const delta = withoutOpaque(choice.delta);
+      const { reasoning_opaque: opaque, ...delta } = choice.delta;
+      if (typeof opaque === 'string') state.opaque = opaque;
 
       if (choice.finish_reason === null) {
         if (Object.keys(delta).length > 0) visibleChoices.push({ ...choice, delta });

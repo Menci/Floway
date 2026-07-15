@@ -120,4 +120,20 @@ describe('Messages affinity egress', () => {
       eventFrame({ type: 'content_block_stop', index: 0 }),
     ]);
   });
+
+  test('emits one prefix for an empty message with both terminal events', async () => {
+    const output: ProtocolFrame<MessagesStreamEvent>[] = [];
+    for await (const frame of wrapMessagesAffinityEgress(frames([
+      eventFrame({ type: 'message_delta', delta: { stop_reason: 'end_turn' } }),
+      eventFrame({ type: 'message_stop' }),
+    ]), { codec: immediateCodec, affinity })) output.push(frame);
+
+    expect(output.filter(frame => frame.type === 'event' && frame.event.type === 'content_block_start')).toHaveLength(1);
+    expect(output.map(frame => frame.type === 'event' ? frame.event.type : frame.type)).toEqual([
+      'content_block_start',
+      'content_block_stop',
+      'message_delta',
+      'message_stop',
+    ]);
+  });
 });

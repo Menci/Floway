@@ -1,6 +1,6 @@
 import { MESSAGES_REDACTED_AFFINITY_DOMAIN, MESSAGES_SIGNATURE_AFFINITY_DOMAIN } from './domain.ts';
 import type { AffinityCodec } from '../../shared/affinity/codec.ts';
-import { blobForCandidate, ownedAffinityEvidence, type PreparedAffinityPayload } from '../../shared/affinity/prepared.ts';
+import { blobForCandidate, preferredAffinityEvidence, type PreparedAffinityPayload } from '../../shared/affinity/prepared.ts';
 import type { DecodedAffinityBlob } from '../../shared/affinity/types.ts';
 import type { MessagesAssistantContentBlock, MessagesPayload } from '@floway-dev/protocols/messages';
 
@@ -28,7 +28,7 @@ export const prepareMessagesAffinity = async (
   }
 
   return {
-    routingEvidence: ownedAffinityEvidence(locations.map(location => location.decoded)),
+    routingEvidence: preferredAffinityEvidence(locations.map(location => location.decoded)),
     payloadForCandidate: candidate => {
       const candidatePayload = structuredClone(payload);
       const byMessage = Map.groupBy(locations, location => location.messageIndex);

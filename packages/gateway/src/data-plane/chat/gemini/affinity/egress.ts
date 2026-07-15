@@ -64,6 +64,15 @@ const removeEmptySignatureParts = (candidate: GeminiCandidate): void => {
   candidate.content.parts = candidate.content.parts.filter(part => hasPartData(part) || part.thoughtSignature !== undefined);
 };
 
+const transferCandidateMetadata = (current: GeminiCandidate, next: GeminiCandidate): void => {
+  const currentRecord = current as unknown as Record<string, unknown>;
+  const nextRecord = next as unknown as Record<string, unknown>;
+  for (const [key, value] of Object.entries(nextRecord)) {
+    if (key !== 'index' && key !== 'content' && key !== 'finishReason') currentRecord[key] = value;
+  }
+  if (next.finishReason !== undefined) current.finishReason = next.finishReason;
+};
+
 const relocateLeadingSignature = (
   current: GeminiCandidate,
   next: GeminiCandidate | undefined,
@@ -87,10 +96,29 @@ const relocateLeadingSignature = (
   };
   delete signatureOnly.thoughtSignature;
   removeEmptySignatureParts(next);
-  if (next.content.parts.length === 0 && next.finishReason !== undefined) {
-    current.finishReason = next.finishReason;
+  if (next.content.parts.length === 0) {
+    transferCandidateMetadata(current, next);
     delete next.finishReason;
   }
+};
+
+const relocateContinuationSignature = (
+  current: GeminiCandidate,
+  next: GeminiCandidate | undefined,
+): void => {
+  if (next === undefined || current.finishReason !== undefined) return;
+  const targetIndex = lastContentPartIndex(current.content.parts);
+  const nextPart = firstContentPart(next.content.parts);
+  if (
+    targetIndex === undefined
+    || nextPart?.thoughtSignature === undefined
+    || !sameLogicalElement(current.content.parts[targetIndex], nextPart)
+  ) return;
+  current.content.parts[targetIndex] = {
+    ...current.content.parts[targetIndex],
+    thoughtSignature: nextPart.thoughtSignature,
+  };
+  delete nextPart.thoughtSignature;
 };
 
 const wrapEvent = async (
@@ -109,16 +137,10 @@ const wrapEvent = async (
 
     const nextCandidate = candidateByIndex(next, candidate.index);
     relocateLeadingSignature(candidate, nextCandidate);
+    relocateContinuationSignature(candidate, nextCandidate);
     const firstIndexes = firstElementIndexes(candidate.content.parts);
     const firstHasNatural = firstIndexes.some(index => candidate.content.parts[index].thoughtSignature !== undefined);
     const lastFirstContentIndex = firstIndexes.findLast(index => hasPartData(candidate.content.parts[index]));
-    const nextFirst = nextCandidate === undefined ? undefined : firstContentPart(nextCandidate.content.parts);
-    const currentLast = lastFirstContentIndex === undefined ? undefined : candidate.content.parts[lastFirstContentIndex];
-    const naturalContinuesImmediately = !firstHasNatural
-      && currentLast !== undefined
-      && nextFirst !== undefined
-      && sameLogicalElement(currentLast, nextFirst)
-      && nextFirst.thoughtSignature !== undefined;
 
     for (const part of candidate.content.parts) {
       if (part.thoughtSignature === undefined) continue;
@@ -126,7 +148,7 @@ const wrapEvent = async (
     }
 
     if (!state.anchored) {
-      if (firstHasNatural || naturalContinuesImmediately) {
+      if (firstHasNatural) {
         state.anchored = true;
       } else if (lastFirstContentIndex !== undefined && (next !== undefined || candidate.finishReason !== undefined || allowSynthetic)) {
         candidate.content.parts[lastFirstContentIndex] = {

@@ -96,7 +96,7 @@ describe('Gemini affinity egress', () => {
     expect(output[1]).toEqual(eventFrame({ candidates: [], usageMetadata: { totalTokenCount: 2 } }));
   });
 
-  test('waits for an immediate natural signature on the same function-call element', async () => {
+  test('moves an immediate continuation signature onto the buffered function-call event', async () => {
     const output: ProtocolFrame<GeminiStreamEvent>[] = [];
     for await (const frame of wrapGeminiAffinityEgress(frames([
       eventFrame({ candidates: [{ index: 0, content: { role: 'model', parts: [{ functionCall: { id: 'call', name: 'tool', args: { a: 1 } } }] } }] }),
@@ -109,10 +109,10 @@ describe('Gemini affinity egress', () => {
       }),
     ]), { codec: immediateCodec, affinity })) output.push(frame);
 
-    expect(output[0]).not.toMatchObject({ event: { candidates: [{ content: { parts: [{ thoughtSignature: expect.anything() }] } }] } });
-    expect(output[1]).toMatchObject({
-      event: { candidates: [{ content: { parts: [{ thoughtSignature: 'wrapped:natural' }] }, finishReason: 'STOP' }] },
+    expect(output[0]).toMatchObject({
+      event: { candidates: [{ content: { parts: [{ thoughtSignature: 'wrapped:natural' }] } }] },
     });
+    expect(output[1]).not.toMatchObject({ event: { candidates: [{ content: { parts: [{ thoughtSignature: expect.anything() }] } }] } });
   });
 
   test('synthesizes on the buffered first element when the lookahead starts a different element', async () => {

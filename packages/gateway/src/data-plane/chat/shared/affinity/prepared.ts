@@ -8,19 +8,16 @@ export interface PreparedAffinityPayload<T> {
 }
 
 export type CandidateBlob =
-  | { readonly present: false; readonly owned: true; readonly compatible: boolean }
-  | { readonly present: true; readonly owned: false; readonly compatible: false; readonly value: string }
-  | { readonly present: true; readonly owned: true; readonly compatible: true; readonly value: string };
+  | { readonly present: false; readonly compatible: boolean }
+  | { readonly present: true; readonly compatible: false; readonly value: string }
+  | { readonly present: true; readonly compatible: true; readonly value: string };
 
 export const blobForCandidate = (decoded: DecodedAffinityBlob, candidate: ModelCandidate): CandidateBlob => {
-  if (decoded.kind === 'foreign') return { present: true, owned: false, compatible: false, value: decoded.value };
+  if (decoded.kind === 'foreign') return { present: true, compatible: false, value: decoded.value };
   const compatible = candidateMatchesAffinity(candidate, decoded.envelope.affinity);
-  if (!compatible || decoded.value === undefined) return { present: false, owned: true, compatible };
-  return { present: true, owned: true, compatible: true, value: decoded.value };
+  if (!compatible || decoded.value === undefined) return { present: false, compatible };
+  return { present: true, compatible: true, value: decoded.value };
 };
 
-export const ownedAffinityEvidence = (
-  decoded: Iterable<DecodedAffinityBlob>,
-  mode: AffinityEvidence['mode'] = 'prefer',
-): AffinityEvidence[] =>
-  [...decoded].flatMap(blob => blob.kind === 'owned' ? [{ target: blob.envelope.affinity, mode }] : []);
+export const preferredAffinityEvidence = (decoded: Iterable<DecodedAffinityBlob>): AffinityEvidence[] =>
+  [...decoded].flatMap(blob => blob.kind === 'owned' ? [{ target: blob.envelope.affinity, mode: 'prefer' }] : []);
