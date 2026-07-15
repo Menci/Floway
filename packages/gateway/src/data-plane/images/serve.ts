@@ -58,11 +58,13 @@ const imageEditSource = (value: unknown, path: string): ImagesEditsSource | stri
       return { type: 'reference', reference: reference as ImageEditReference };
     }
     const match = /^data:([^;,]+);base64,(.*)$/su.exec(imageUrl);
-    if (match === null || !match[1]!.startsWith('image/')) return `${path}.image_url must be a base64 image data URL.`;
+    const mimeType = match?.[1];
+    const payload = match?.[2];
+    if (!mimeType?.startsWith('image/') || payload === undefined) return `${path}.image_url must be a base64 image data URL.`;
     try {
-      const bytes = Uint8Array.from(atob(match[2]!), character => character.charCodeAt(0));
-      const extension = match[1]!.slice('image/'.length).replace(/[^a-z0-9]+/giu, '-');
-      return { type: 'upload', file: new File([bytes], `${path}.${extension}`, { type: match[1] }) };
+      const bytes = Uint8Array.from(atob(payload), character => character.charCodeAt(0));
+      const extension = mimeType.slice('image/'.length).replace(/[^a-z0-9]+/giu, '-');
+      return { type: 'upload', file: new File([bytes], `${path}.${extension}`, { type: mimeType }) };
     } catch {
       return `${path}.image_url must contain valid base64 image data.`;
     }
