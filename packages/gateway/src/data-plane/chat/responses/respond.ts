@@ -6,7 +6,7 @@ import { wrapResponsesOutputForStorage } from './items/output.ts';
 import { tokenUsageFromResponsesResult } from './usage.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
-import { wrapResponsesAffinityEgress } from '../affinity/responses-egress.ts';
+import { wrapResponsesAffinityEgress } from '../shared/affinity/responses-egress.ts';
 import type { ChatGatewayCtx, GatewayCtx } from '../shared/gateway-ctx.ts';
 import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse } from '../shared/respond.ts';
 import { type StreamCompletion, writeSSEFrames } from '../shared/stream/sse.ts';

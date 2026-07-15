@@ -23,7 +23,7 @@ const candidate = (upstream: string): ModelCandidate => {
 const candidateA = candidate('upstream-a');
 const candidateB = candidate('upstream-b');
 
-describe('protocol affinity ingress', () => {
+describe('affinity ingress across source protocols', () => {
   test('Chat Completions restores owned opaque state only for its exact candidate', async () => {
     const carrier = await codec.wrap('upstream-signature', affinityTargetForCandidate(candidateA), CHAT_COMPLETIONS_AFFINITY_DOMAIN);
     const prepared = await prepareChatCompletionsAffinity({

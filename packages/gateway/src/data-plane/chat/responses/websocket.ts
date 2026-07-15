@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
 
-import { wrapResponsesAffinityEgress } from '../affinity/responses-egress.ts';
+import { wrapResponsesAffinityEgress } from '../shared/affinity/responses-egress.ts';
 import { createStoredResponseId } from './items/format.ts';
 import { wrapResponsesOutputForStorage } from './items/output.ts';
 import { createResponsesWsSession } from './items/store.ts';

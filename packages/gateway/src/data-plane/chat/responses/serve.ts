@@ -5,7 +5,7 @@ import { syntheticEventsFromResult, wrapResponsesOutputForStorage } from './item
 import { prepareResponsesServePlan } from './serve-prep.ts';
 import { tokenUsageFromResponsesResult } from './usage.ts';
 import { iterateCandidates } from '../../shared/iterate-candidates.ts';
-import { wrapResponsesAffinityEgress } from '../affinity/responses-egress.ts';
+import { wrapResponsesAffinityEgress } from '../shared/affinity/responses-egress.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectResponsesProtocolEventsToResult, type CanonicalResponsesPayload, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';

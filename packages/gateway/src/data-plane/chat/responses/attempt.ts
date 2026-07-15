@@ -1,6 +1,6 @@
 import { responsesInterceptors } from './interceptors/index.ts';
-import type { PreparedAffinityPayload } from '../affinity/prepared.ts';
-import { prepareResponsesAffinity } from '../affinity/responses-ingress.ts';
+import type { PreparedAffinityPayload } from '../shared/affinity/prepared.ts';
+import { prepareResponsesAffinity } from '../shared/affinity/responses-ingress.ts';
 import type { ResponsesAttemptResult, ResponsesInvocation } from './interceptors/types.ts';
 import { normalizeAssistantInputText } from './items/normalize-assistant-content.ts';
 import { syntheticEventsFromResult } from './items/output.ts';

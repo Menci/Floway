@@ -1,4 +1,4 @@
-import { AffinityRequestContext } from '../data-plane/chat/affinity/context.ts';
+import { AffinityRequestContext } from '../data-plane/chat/shared/affinity/context.ts';
 import { ResponsesAttemptState } from '../data-plane/chat/responses/attempt-state.ts';
 import { createResponsesHttpStore, type StatefulResponsesStore } from '../data-plane/chat/responses/items/store.ts';
 import type { ChatGatewayCtx, GatewayCtx } from '../data-plane/chat/shared/gateway-ctx.ts';
