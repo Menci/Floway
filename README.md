@@ -144,7 +144,7 @@ current deployment before importing.
 
 `/v1/messages` accepts Anthropic-style web search. When the resolved upstream
 can run the native server tool, Floway passes it through; otherwise it shims the
-search via **Settings -> Web Search** (`tavily` or `microsoft-grounding`,
+search via **Settings -> Web Search** (`tavily`, `microsoft-grounding`, or `jina`,
 default `disabled`).
 
 `/v1/responses` has a shared server-tool shim layer for hosted Responses
@@ -159,9 +159,9 @@ Floway also serves the Codex CLI's `/alpha/search` path conventions at
 By default these routes and the Responses web-search shim use the same general
 provider configured above. **Settings -> Web Search** can instead enable
 **Passthrough OpenAI search** and select a Codex or Custom upstream plus model;
-then both surfaces use that upstream's `/alpha/search`, while Messages search
-continues using the general provider. Passthrough failures are returned without
-falling back to another search backend.
+then both surfaces use that provider's alpha-search endpoint, while Messages
+search continues using the general provider. Passthrough failures are returned
+without falling back to another search backend.
 
 ## Stateful Responses
 

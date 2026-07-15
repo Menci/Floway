@@ -75,17 +75,19 @@ const saving = ref(false);
 const testing = ref(false);
 const testResult = ref<SearchTestResult | null>(null);
 
+const chatModelsForUpstream = (upstreamId: string) => props.models.filter(model =>
+  model.kind === 'chat' && model.upstreams.some(upstream => upstream.id === upstreamId));
+
 const eligibleUpstreams = computed(() => props.upstreams.filter(upstream =>
   upstream.enabled
   && (upstream.kind === 'codex' || upstream.kind === 'custom')
-  && props.models.some(model => model.kind === 'chat' && model.upstreams.some(candidate => candidate.id === upstream.id))));
+  && chatModelsForUpstream(upstream.id).length > 0));
 const alphaUpstreamOptions = computed(() => eligibleUpstreams.value.map(upstream => ({
   value: upstream.id,
   label: upstream.name,
   description: upstream.kind === 'codex' ? 'ChatGPT Codex subscription' : 'Custom OpenAI-compatible upstream',
 })));
-const alphaModelOptions = computed(() => props.models
-  .filter(model => model.kind === 'chat' && model.upstreams.some(upstream => upstream.id === draft.value.passthroughOpenAiSearch.upstreamId))
+const alphaModelOptions = computed(() => chatModelsForUpstream(draft.value.passthroughOpenAiSearch.upstreamId)
   .map(model => ({ value: model.id, label: model.display_name })));
 
 const activeOption = computed(() => PROVIDER_OPTIONS.find(option => option.value === draft.value.provider) ?? PROVIDER_OPTIONS[0]);
@@ -105,12 +107,13 @@ const setSearchCredentialValue = (v: string) => {
   }
 };
 
-const setAlphaUpstream = (upstreamId: string) => {
-  const model = props.models.find(candidate =>
-    candidate.kind === 'chat' && candidate.upstreams.some(upstream => upstream.id === upstreamId))?.id ?? '';
+const setAlphaUpstream = (upstreamId: string, preferredModel?: string) => {
+  const models = chatModelsForUpstream(upstreamId);
+  const model = models.find(candidate => candidate.id === preferredModel) ?? models[0];
+  if (model === undefined) throw new Error(`OpenAI search upstream ${upstreamId} has no chat model`);
   draft.value = {
     ...draft.value,
-    passthroughOpenAiSearch: { enabled: true, upstreamId, model },
+    passthroughOpenAiSearch: { enabled: true, upstreamId, model: model.id },
   };
 };
 
@@ -131,8 +134,8 @@ const setPassthroughOpenAiSearch = (enabled: boolean) => {
   }
   const selected = eligibleUpstreams.value.find(upstream => upstream.id === draft.value.passthroughOpenAiSearch.upstreamId)
     ?? eligibleUpstreams.value[0];
-  if (selected === undefined) return;
-  setAlphaUpstream(selected.id);
+  if (selected === undefined) throw new Error('OpenAI search passthrough requires an eligible upstream');
+  setAlphaUpstream(selected.id, draft.value.passthroughOpenAiSearch.model);
 };
 
 const save = async () => {

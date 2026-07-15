@@ -1,6 +1,7 @@
 import { test } from 'vitest';
 
 import { DEFAULT_SEARCH_CONFIG, FIXED_SEARCH_CONFIG_TEST_QUERY, loadSearchConfig, parseSearchConfigDefault, parseSearchConfigStrict, saveSearchConfig } from './search-config.ts';
+import type { SearchConfig } from './types.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import { SqlRepo } from '../../../repo/sql.ts';
@@ -114,7 +115,7 @@ test('loadSearchConfig strict-parses a stored row and rejects unknown provider v
     microsoftGrounding: { apiKey: '  ms-test  ' },
     jina: { apiKey: '' },
     passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
-  });
+  } as unknown as SearchConfig);
 
   await assertRejects(() => loadSearchConfig(), Error, 'provider');
 });

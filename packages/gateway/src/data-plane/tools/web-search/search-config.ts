@@ -66,31 +66,6 @@ export const parseSearchConfigStrict = (input: unknown): SearchConfig => {
   };
 };
 
-// Lossy normalize: coerces any unknown into a SearchConfig, defaulting
-// missing or malformed fields to the disabled/empty shape. Used by
-// zod-validated input paths where the schema already enforced the
-// outer shape; the normalizer just guarantees the canonical form
-// (trimmed strings, fields always present).
-export const normalizeSearchConfig = (input: unknown): SearchConfig => {
-  const record = isJsonObject(input) ? input : {};
-  const tavily = isJsonObject(record.tavily) ? record.tavily : {};
-  const microsoftGrounding = isJsonObject(record.microsoftGrounding) ? record.microsoftGrounding : {};
-  const jina = isJsonObject(record.jina) ? record.jina : {};
-  const passthrough = isJsonObject(record.passthroughOpenAiSearch) ? record.passthroughOpenAiSearch : {};
-
-  return {
-    provider: isWebSearchProviderName(record.provider) ? record.provider : 'disabled',
-    tavily: { apiKey: typeof tavily.apiKey === 'string' ? tavily.apiKey.trim() : '' },
-    microsoftGrounding: { apiKey: typeof microsoftGrounding.apiKey === 'string' ? microsoftGrounding.apiKey.trim() : '' },
-    jina: { apiKey: typeof jina.apiKey === 'string' ? jina.apiKey.trim() : '' },
-    passthroughOpenAiSearch: {
-      enabled: passthrough.enabled === true,
-      upstreamId: typeof passthrough.upstreamId === 'string' ? passthrough.upstreamId.trim() : '',
-      model: typeof passthrough.model === 'string' ? passthrough.model.trim() : '',
-    },
-  };
-};
-
 export const loadSearchConfig = async (): Promise<SearchConfig> => {
   const stored = await getRepo().searchConfig.get();
   if (stored === null) return parseSearchConfigDefault();

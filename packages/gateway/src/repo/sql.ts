@@ -22,6 +22,7 @@ import type {
   Repo,
   ResponsesItemsRepo,
   ResponsesSnapshotsRepo,
+  SearchConfig,
   SearchConfigRepo,
   SearchUsageRecord,
   SearchUsageRepo,
@@ -1050,14 +1051,8 @@ class SqlSearchConfigRepo implements SearchConfigRepo {
     };
   }
 
-  async save(config: unknown): Promise<void> {
-    const { provider, tavily, microsoftGrounding, jina, passthroughOpenAiSearch } = config as {
-      provider: string;
-      tavily: { apiKey: string };
-      microsoftGrounding: { apiKey: string };
-      jina: { apiKey: string };
-      passthroughOpenAiSearch: { enabled: boolean; upstreamId: string; model: string };
-    };
+  async save(config: SearchConfig): Promise<void> {
+    const { provider, tavily, microsoftGrounding, jina, passthroughOpenAiSearch } = config;
     await this.db
       .prepare(
         `INSERT INTO search_config (id, provider, tavily_api_key, microsoft_grounding_api_key, jina_api_key, passthrough_openai_search, alpha_search_upstream_id, alpha_search_model, updated_at)

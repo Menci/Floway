@@ -1,4 +1,5 @@
-import type { WebSearchProviderName } from '../shared/web-search-providers.ts';
+import type { SearchConfig, WebSearchProviderName } from '../shared/web-search-providers.ts';
+export type { SearchConfig } from '../shared/web-search-providers.ts';
 import type { AliasSelection, AliasTarget, AnnouncedMetadata, BillingDimension, ModelKind, PriceVector, PricingSelector } from '@floway-dev/protocols/common';
 import type { PerformanceTelemetryContext, ProviderModel, UpstreamRecord } from '@floway-dev/provider';
 
@@ -233,7 +234,7 @@ export interface ModelsCacheRepo {
 
 export interface SearchConfigRepo {
   get(): Promise<unknown>;
-  save(config: unknown): Promise<void>;
+  save(config: SearchConfig): Promise<void>;
 }
 
 export interface UpstreamRepo {
