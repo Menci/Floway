@@ -6,7 +6,7 @@ import { type AuthVars, authMiddleware } from '../../middleware/auth.ts';
 import { buildCustomUpstreamRecord, setupAppTest } from '../../test-helpers.ts';
 import { resolveConfiguredWebSearchProvider } from '../tools/web-search/provider.ts';
 import type { SearchConfig, WebSearchFetchPageRequest, WebSearchFetchPageResult, WebSearchProvider, WebSearchProviderRequest, WebSearchProviderResult } from '../tools/web-search/types.ts';
-import { jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
+import { withMockedFetch } from '@floway-dev/test-utils';
 
 // Real provider construction (`createTavilyWebSearchProvider` etc.) hits the
 // network; replace the resolver so tests drive a stub backend instead. A
