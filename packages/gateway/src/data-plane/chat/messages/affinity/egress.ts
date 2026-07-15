@@ -5,6 +5,7 @@ import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 
 interface OpenBlock {
   readonly type: string;
+  readonly first: boolean;
   signature?: string;
 }
 
@@ -13,24 +14,22 @@ export const wrapMessagesAffinityEgress = async function* (
   options: AffinityEgressOptions,
 ): AsyncGenerator<ProtocolFrame<MessagesStreamEvent>> {
   const openBlocks = new Map<number, OpenBlock>();
-  let nextBlockIndex = 0;
-  let sawCarrier = false;
-  let syntheticEmitted = false;
+  const syntheticPrefix = options.codec.wrap(undefined, options.affinity, MESSAGES_REDACTED_AFFINITY_DOMAIN);
+  let syntheticSignaturePrefix: Promise<string> | undefined;
+  let firstBlockSeen = false;
+  let indexOffset = 0;
 
   const syntheticEvents = async (): Promise<MessagesStreamEvent[]> => {
-    if (sawCarrier || syntheticEmitted) return [];
-    syntheticEmitted = true;
-    const index = nextBlockIndex++;
     return [
       {
         type: 'content_block_start',
-        index,
+        index: 0,
         content_block: {
           type: 'redacted_thinking',
-          data: await options.codec.wrap(undefined, options.affinity, MESSAGES_REDACTED_AFFINITY_DOMAIN),
+          data: await syntheticPrefix,
         },
       },
-      { type: 'content_block_stop', index },
+      { type: 'content_block_stop', index: 0 },
     ];
   };
 
@@ -42,17 +41,28 @@ export const wrapMessagesAffinityEgress = async function* (
 
     const event = frame.event;
     if (event.type === 'content_block_start') {
-      nextBlockIndex = Math.max(nextBlockIndex, event.index + 1);
       if (openBlocks.has(event.index)) throw new Error(`Messages content block ${event.index} started twice`);
-      openBlocks.set(event.index, { type: event.content_block.type });
+      const first = !firstBlockSeen;
+      firstBlockSeen = true;
+      openBlocks.set(event.index, { type: event.content_block.type, first });
+      if (first && event.content_block.type === 'thinking') {
+        syntheticSignaturePrefix = options.codec.wrap(undefined, options.affinity, MESSAGES_SIGNATURE_AFFINITY_DOMAIN);
+      }
+
+      if (first && event.content_block.type !== 'thinking' && event.content_block.type !== 'redacted_thinking') {
+        for (const synthetic of await syntheticEvents()) yield eventFrame(synthetic);
+        indexOffset = 1;
+      }
+
+      const index = event.index + indexOffset;
       if (event.content_block.type !== 'redacted_thinking') {
-        yield frame;
+        yield eventFrame({ ...event, index });
         continue;
       }
 
-      sawCarrier = true;
       yield eventFrame({
         ...event,
+        index,
         content_block: {
           ...event.content_block,
           data: await options.codec.wrap(event.content_block.data, options.affinity, MESSAGES_REDACTED_AFFINITY_DOMAIN),
@@ -71,32 +81,38 @@ export const wrapMessagesAffinityEgress = async function* (
     if (event.type === 'content_block_stop') {
       const block = openBlocks.get(event.index);
       if (block === undefined) throw new Error(`Messages content block ${event.index} stopped before it started`);
-      if (block.signature !== undefined) {
-        sawCarrier = true;
+      if (block.signature !== undefined || (block.first && block.type === 'thinking')) {
         yield eventFrame({
           type: 'content_block_delta',
-          index: event.index,
+          index: event.index + indexOffset,
           delta: {
             type: 'signature_delta',
-            signature: await options.codec.wrap(block.signature, options.affinity, MESSAGES_SIGNATURE_AFFINITY_DOMAIN),
+            signature: block.signature === undefined
+              ? await syntheticSignaturePrefix!
+              : await options.codec.wrap(block.signature, options.affinity, MESSAGES_SIGNATURE_AFFINITY_DOMAIN),
           },
         });
       }
       openBlocks.delete(event.index);
-      yield frame;
+      yield eventFrame({ ...event, index: event.index + indexOffset });
+      continue;
+    }
+
+    if (event.type === 'content_block_delta') {
+      yield eventFrame({ ...event, index: event.index + indexOffset });
       continue;
     }
 
     if (event.type === 'message_delta' && event.delta.stop_reason != null) {
       if (openBlocks.size > 0) throw new Error('Messages terminal message_delta arrived with an open content block');
-      for (const synthetic of await syntheticEvents()) yield eventFrame(synthetic);
+      if (!firstBlockSeen) for (const synthetic of await syntheticEvents()) yield eventFrame(synthetic);
       yield frame;
       continue;
     }
 
     if (event.type === 'message_stop') {
       if (openBlocks.size > 0) throw new Error('Messages message_stop arrived with an open content block');
-      for (const synthetic of await syntheticEvents()) yield eventFrame(synthetic);
+      if (!firstBlockSeen) for (const synthetic of await syntheticEvents()) yield eventFrame(synthetic);
       yield frame;
       return;
     }

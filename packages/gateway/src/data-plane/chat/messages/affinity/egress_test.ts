@@ -49,11 +49,11 @@ describe('Messages affinity egress', () => {
       index: 0,
       delta: { type: 'thinking_delta', thinking: 'visible' },
     }));
-    expect(codec.calls).toHaveLength(0);
+    expect(codec.calls.map(call => call.value)).toEqual([undefined, undefined]);
 
     const signaturePending = output.next();
-    await vi.waitFor(() => expect(codec.calls.map(call => call.value)).toEqual(['latest']));
-    codec.calls[0].resolve('wrapped-latest');
+    await vi.waitFor(() => expect(codec.calls.map(call => call.value)).toEqual([undefined, undefined, 'latest']));
+    codec.calls[2].resolve('wrapped-latest');
     expect((await signaturePending).value).toEqual(eventFrame({
       type: 'content_block_delta',
       index: 0,
@@ -80,7 +80,7 @@ describe('Messages affinity egress', () => {
     expect(output.filter(frame => frame.type === 'event' && frame.event.type === 'content_block_start')).toHaveLength(1);
   });
 
-  test('injects a synthetic redacted block before the terminal message_delta', async () => {
+  test('prefixes a synthetic redacted block before a first text block and shifts its index', async () => {
     const output: ProtocolFrame<MessagesStreamEvent>[] = [];
     for await (const frame of wrapMessagesAffinityEgress(frames([
       eventFrame({ type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } }),
@@ -90,14 +90,34 @@ describe('Messages affinity egress', () => {
       eventFrame({ type: 'message_stop' }),
     ]), { codec: immediateCodec, affinity })) output.push(frame);
 
-    expect(output.slice(3, 6)).toEqual([
+    expect(output.slice(0, 5)).toEqual([
       eventFrame({
         type: 'content_block_start',
-        index: 1,
+        index: 0,
         content_block: { type: 'redacted_thinking', data: 'wrapped:synthetic' },
       }),
+      eventFrame({ type: 'content_block_stop', index: 0 }),
+      eventFrame({ type: 'content_block_start', index: 1, content_block: { type: 'text', text: '' } }),
+      eventFrame({ type: 'content_block_delta', index: 1, delta: { type: 'text_delta', text: 'answer' } }),
       eventFrame({ type: 'content_block_stop', index: 1 }),
+    ]);
+  });
+
+  test('adds an originless signature to a first thinking block without a natural signature', async () => {
+    const output: ProtocolFrame<MessagesStreamEvent>[] = [];
+    for await (const frame of wrapMessagesAffinityEgress(frames([
+      eventFrame({ type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: '' } }),
+      eventFrame({ type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: 'visible' } }),
+      eventFrame({ type: 'content_block_stop', index: 0 }),
       eventFrame({ type: 'message_delta', delta: { stop_reason: 'end_turn' } }),
+      eventFrame({ type: 'message_stop' }),
+    ]), { codec: immediateCodec, affinity })) output.push(frame);
+
+    expect(output.slice(0, 4)).toEqual([
+      eventFrame({ type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: '' } }),
+      eventFrame({ type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: 'visible' } }),
+      eventFrame({ type: 'content_block_delta', index: 0, delta: { type: 'signature_delta', signature: 'wrapped:synthetic' } }),
+      eventFrame({ type: 'content_block_stop', index: 0 }),
     ]);
   });
 });
