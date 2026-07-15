@@ -41,15 +41,6 @@ const uploadedFile = (source: ImagesEditsSource, index: number): File | null => 
   return new File([bytes], `image-${index}`, { type: parsed.mimeType });
 };
 
-const canUseMultipart = (request: ImagesEditsRequest): boolean => {
-  const sources = [...request.images, ...(request.mask === undefined ? [] : [request.mask])];
-  return sources.every(source =>
-    source.type === 'upload'
-    || (source.type === 'inline' && Object.keys(source.reference).every(key => key === 'image_url')))
-    && Object.values(request.parameters).every(value =>
-      typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean');
-};
-
 const jsonReference = async (source: ImagesEditsSource): Promise<ImageEditReference> => {
   if (source.type === 'inline' || source.type === 'reference') return source.reference;
   const bytes = new Uint8Array(await source.file.arrayBuffer());
@@ -67,6 +58,14 @@ const jsonBody = async (request: ImagesEditsRequest): Promise<Record<string, unk
 };
 
 const multipartBody = (request: ImagesEditsRequest, model: string): FormData | null => {
+  const sources = [...request.images, ...(request.mask === undefined ? [] : [request.mask])];
+  const compatibleSources = sources.every(source =>
+    source.type === 'upload'
+    || (source.type === 'inline' && Object.keys(source.reference).every(key => key === 'image_url')));
+  const compatibleParameters = Object.values(request.parameters).every(value =>
+    typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean');
+  if (!compatibleSources || !compatibleParameters) return null;
+
   const images: File[] = [];
   for (const [index, source] of request.images.entries()) {
     const file = uploadedFile(source, index);
@@ -86,9 +85,7 @@ const multipartBody = (request: ImagesEditsRequest, model: string): FormData | n
 };
 
 export const serializeOpenAIImagesEditsRequest = async (request: ImagesEditsRequest, model: string): Promise<BodyInit> => {
-  if (canUseMultipart(request)) {
-    const multipart = multipartBody(request, model);
-    if (multipart !== null) return multipart;
-  }
+  const multipart = multipartBody(request, model);
+  if (multipart !== null) return multipart;
   return JSON.stringify({ ...await jsonBody(request), model });
 };
