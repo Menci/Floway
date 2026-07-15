@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 
 import { wrapGeminiAffinityEgress } from './egress.ts';
 import type { AffinityCodec } from '../../shared/affinity/codec.ts';
@@ -43,8 +43,7 @@ describe('Gemini affinity egress', () => {
     })]), { codec, affinity })[Symbol.asyncIterator]();
 
     const pending = output.next();
-    await Promise.resolve();
-    expect(codec.calls.map(call => call.value)).toEqual(['opaque']);
+    await vi.waitFor(() => expect(codec.calls.map(call => call.value)).toEqual(['opaque']));
     codec.calls[0].resolve('wrapped-opaque');
     expect((await pending).value).toEqual(eventFrame({
       candidates: [{
