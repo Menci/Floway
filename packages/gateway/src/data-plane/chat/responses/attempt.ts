@@ -93,7 +93,7 @@ export const responsesAttempt = {
     // wire shape against an empty privatePayload map.
     let affinity: PreparedAffinityPayload<CanonicalResponsesPayload>;
     let privatePayloads: ReadonlyMap<string, unknown>;
-    if ('sourcePreparation' in args) {
+    if (args.sourcePreparation !== undefined) {
       affinity = args.sourcePreparation.affinity;
       privatePayloads = args.sourcePreparation.privatePayloads;
     } else {

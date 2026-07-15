@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import { createStoredResponsesItemId } from './format.ts';
-import { rewriteResponsesPayload } from './rewrite.ts';
+import { hydrateResponsesPayload } from './rewrite.ts';
 import { createResponsesHttpStore } from './store.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
@@ -28,7 +28,7 @@ describe('Responses stored-item hydration', () => {
     const payload = { model: 'model', input: [{ type: 'item_reference' as const, id: row.id }] };
     await store.loadInputItems(payload.input, payload.input);
 
-    const rewritten = rewriteResponsesPayload(payload, store);
+    const rewritten = hydrateResponsesPayload(payload, store);
 
     expect(rewritten.payload.input).toEqual([row.payload.item]);
     expect(rewritten.privatePayloads.get(row.id)).toEqual({ replay: true });
@@ -37,7 +37,7 @@ describe('Responses stored-item hydration', () => {
   test('rejects a missing gateway item reference', () => {
     initRepo(new InMemoryRepo());
     const store = createResponsesHttpStore('key-a', true);
-    expect(() => rewriteResponsesPayload({
+    expect(() => hydrateResponsesPayload({
       model: 'model',
       input: [{ type: 'item_reference', id: 'msg_z1mVjw_0xVvS8c_KjD1sBkZk5qbdA' }],
     }, store)).toThrow();

@@ -128,7 +128,7 @@ export const wrapResponsesAffinityEgress = async function* (
       }
 
       const outputIndex = response.output.length;
-      const syntheticAffinity = hasForceState
+      const syntheticAffinity: AffinityTarget = hasForceState
         ? { ...options.affinity, mode: 'force' as const, syntheticItem: true }
         : { ...options.affinity, syntheticItem: true };
       const item: ResponsesOutputReasoning = {

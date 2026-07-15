@@ -157,7 +157,7 @@ export class AffinityCodec {
     };
     const iv = crypto.getRandomValues(new Uint8Array(IV_BYTES));
     const ciphertext = new Uint8Array(await crypto.subtle.encrypt(
-      { name: 'AES-GCM', iv, additionalData: authenticatedCarrierData(domain, originalBytes) },
+      { name: 'AES-GCM', iv, additionalData: ownedBuffer(authenticatedCarrierData(domain, originalBytes)) },
       await this.#key,
       textEncoder.encode(JSON.stringify(envelope)),
     ));
