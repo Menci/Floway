@@ -79,3 +79,23 @@ test('passes foreign blobs through unchanged for cascaded gateways', async () =>
   expect(prepared.routingEvidence).toEqual([]);
   expect(prepared.payloadForCandidate(candidateA).input[0]).toMatchObject({ encrypted_content: 'foreign' });
 });
+
+test('derives force routing from program state following a preferred carrier', async () => {
+  const carrier = await codec.wrap(
+    undefined,
+    affinityTargetForCandidate(candidateA),
+    responsesAffinityDomain('reasoning', 'encrypted_content'),
+  );
+  const prepared = await prepareResponsesAffinity({
+    model: 'model',
+    input: [
+      { type: 'reasoning', id: 'rs_prefix', summary: [], encrypted_content: carrier },
+      { type: 'program', id: 'prog_1', call_id: 'call_1', code: 'return 1', fingerprint: 'fp' },
+    ],
+  }, codec);
+
+  expect(prepared.routingEvidence).toEqual([
+    { target: affinityTargetForCandidate(candidateA), mode: 'prefer' },
+    { target: affinityTargetForCandidate(candidateA), mode: 'force' },
+  ]);
+});

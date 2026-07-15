@@ -128,7 +128,7 @@ describe('Responses affinity egress', () => {
       summary: [],
       encrypted_content: 'wrapped:synthetic',
     });
-    expect(output[2]).toMatchObject({ event: { response: { output: [message, added.event.item] } } });
+    expect(output[2]).toMatchObject({ event: { response: { output: [added.event.item, message] } } });
   });
 
   test('does not synthesize affinity for a failed response', async () => {
@@ -140,26 +140,22 @@ describe('Responses affinity egress', () => {
     expect(output).toEqual([eventFrame({ type: 'response.failed', response: response([], 'failed') })]);
   });
 
-  test('uses the terminal replacement snapshot when deciding whether affinity exists', async () => {
-    const early: ResponsesOutputReasoning = { type: 'reasoning', id: 'rs_1', summary: [], encrypted_content: 'early' };
-    const final = { type: 'message' as const, id: 'msg_1', role: 'assistant' as const, content: [] };
+  test('adds one synthetic carrier to a real first reasoning item at item close', async () => {
+    const reasoning: ResponsesOutputReasoning = { type: 'reasoning', id: 'rs_1', summary: [] };
     const output: ProtocolFrame<ResponsesStreamEvent>[] = [];
     for await (const frame of wrapResponsesAffinityEgress(frames([
-      eventFrame({ type: 'response.output_item.added', output_index: 0, item: early }),
-      eventFrame({ type: 'response.output_item.done', output_index: 0, item: final }),
-      eventFrame({ type: 'response.completed', response: response([final]) }),
+      eventFrame({ type: 'response.output_item.added', output_index: 0, item: reasoning }),
+      eventFrame({ type: 'response.output_item.done', output_index: 0, item: reasoning }),
+      eventFrame({ type: 'response.completed', response: response([reasoning]) }),
     ]), { codec: immediateCodec, affinity })) output.push(frame);
 
-    expect(output.map(frame => frame.type === 'event' ? frame.event.type : frame.type)).toEqual([
-      'response.output_item.added',
-      'response.output_item.done',
-      'response.output_item.added',
-      'response.output_item.done',
-      'response.completed',
-    ]);
+    expect(output).toHaveLength(3);
+    expect(output[0]).not.toMatchObject({ event: { item: { encrypted_content: expect.anything() } } });
+    expect(output[1]).toMatchObject({ event: { item: { encrypted_content: 'wrapped:synthetic' } } });
+    expect(output[2]).toMatchObject({ event: { response: { output: [{ encrypted_content: 'wrapped:synthetic' }] } } });
   });
 
-  test('adds a force carrier when program state coexists with preferred reasoning', async () => {
+  test('keeps force policy out of the encrypted natural carrier', async () => {
     const reasoning: ResponsesOutputReasoning = { type: 'reasoning', id: 'rs_1', summary: [], encrypted_content: 'opaque' };
     const program = { type: 'program' as const, id: 'prog_1', call_id: 'call_1', code: 'return 1', fingerprint: 'fp' };
     const calls: AffinityTarget[] = [];
@@ -176,11 +172,37 @@ describe('Responses affinity egress', () => {
       affinity,
     })) output.push(frame);
 
-    expect(calls.map(call => call.syntheticItem === true)).toEqual([false, true]);
-    expect(output.map(frame => frame.type === 'event' ? frame.event.type : frame.type)).toEqual([
-      'response.output_item.added',
-      'response.output_item.done',
-      'response.completed',
+    expect(calls.map(call => call.syntheticItem === true)).toEqual([false]);
+    expect(output).toHaveLength(1);
+  });
+
+  test('prefixes a non-carrier item and shifts output and sequence indexes', async () => {
+    const message = {
+      type: 'message' as const,
+      id: 'msg_1',
+      role: 'assistant' as const,
+      status: 'completed',
+      content: [{ type: 'output_text' as const, text: 'answer' }],
+    };
+    const output: ProtocolFrame<ResponsesStreamEvent>[] = [];
+    for await (const frame of wrapResponsesAffinityEgress(frames([
+      eventFrame({ type: 'response.output_item.added', output_index: 0, item: message, sequence_number: 2 }),
+      eventFrame({ type: 'response.output_text.delta', item_id: 'msg_1', output_index: 0, content_index: 0, delta: 'answer', sequence_number: 3 }),
+      eventFrame({ type: 'response.output_item.done', output_index: 0, item: message, sequence_number: 4 }),
+      eventFrame({ type: 'response.completed', response: response([message]), sequence_number: 5 }),
+    ]), { codec: immediateCodec, affinity })) output.push(frame);
+
+    expect(output.map(frame => frame.type === 'event' ? [frame.event.type, frame.event.sequence_number] : [frame.type])).toEqual([
+      ['response.output_item.added', 2],
+      ['response.output_item.done', 3],
+      ['response.output_item.added', 4],
+      ['response.output_text.delta', 5],
+      ['response.output_item.done', 6],
+      ['response.completed', 7],
     ]);
+    expect(output[2]).toMatchObject({ event: { output_index: 1 } });
+    expect(output[3]).toMatchObject({ event: { output_index: 1 } });
+    expect(output[4]).toMatchObject({ event: { output_index: 1 } });
+    expect(output[5]).toMatchObject({ event: { response: { output: [{ type: 'reasoning' }, message] } } });
   });
 });
