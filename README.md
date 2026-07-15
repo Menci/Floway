@@ -1,50 +1,48 @@
 # Floway
 
 Floway is an LLM API gateway that fronts multiple model upstreams behind one
-set of standard APIs. Point a coding agent at Floway and it can use a
-GitHub Copilot account, a ChatGPT subscription via Codex CLI, a Claude.ai
-Pro / Max subscription via Claude Code CLI, a custom OpenAI- or
-Anthropic-compatible provider, an Azure deployment, or an Ollama server
-(ollama.com or self-hosted) through whichever API shape the agent already
-speaks.
-Cloudflare Workers is the production deployment target; a Node.js deployment
-target ships in the same repo for self-hosting on a long-lived process.
+set of standard APIs. Point a coding agent at Floway and it can use a GitHub
+Copilot account, a ChatGPT subscription through the Codex CLI OAuth client, a
+Claude.ai Pro / Max subscription through the Claude Code CLI OAuth client, a
+custom OpenAI- or Anthropic-compatible provider, an Azure deployment, or an
+Ollama server through whichever API shape the agent already speaks.
+
+Cloudflare Workers is the production deployment target. A Node.js deployment
+target ships in the same repository for self-hosting on a long-lived process.
 
 ## Client APIs
 
-| Source API                              | Path                          |
-| --------------------------------------- | ----------------------------- |
-| OpenAI Completions                      | `POST /v1/completions`        |
-| Anthropic Messages                      | `POST /v1/messages`, `POST /v1/messages/count_tokens` |
-| OpenAI Responses                        | `POST /v1/responses`, `POST /v1/responses/compact`, `GET /v1/responses` WebSocket |
-| OpenAI Chat Completions                 | `POST /v1/chat/completions`   |
-| OpenAI Embeddings                       | `POST /v1/embeddings`         |
-| OpenAI Images                           | `POST /v1/images/generations` |
-| OpenAI Image Edits                      | `POST /v1/images/edits`       |
-| OpenAI Models                           | `GET  /v1/models`             |
-| Google Gemini (generate / count tokens) | `POST /v1beta/models/...`     |
+| Source API | Path |
+| --- | --- |
+| OpenAI Completions | `POST /v1/completions` |
+| Anthropic Messages | `POST /v1/messages`, `POST /v1/messages/count_tokens` |
+| OpenAI Responses | `POST /v1/responses`, `POST /v1/responses/compact`, `GET /v1/responses` WebSocket |
+| OpenAI Chat Completions | `POST /v1/chat/completions` |
+| OpenAI Embeddings | `POST /v1/embeddings` |
+| OpenAI Images | `POST /v1/images/generations` |
+| OpenAI Image Edits | `POST /v1/images/edits` |
+| OpenAI Models | `GET /v1/models` |
+| Google Gemini | `POST /v1beta/models/...` generate and count-token actions |
 
 `POST /v1/images/edits` accepts multipart image uploads and JSON `images`
 references. The dashboard's Codex provider base, `/azure-api.codex`, exposes
 the same generation and edit handlers at their provider-relative paths.
 
-For each public model, Floway picks the first (provider, model) pair that can
-serve the request, translating between source and target protocols when the
-upstream speaks a different shape. `/v1/completions` is forwarded to upstreams that
-expose the OpenAI text-completions endpoint (Custom OpenAI-compatible, Azure
-OpenAI, Ollama) without cross-protocol translation.
+For each public model, Floway enumerates every compatible `(upstream, model,
+alias-rules)` candidate, applies client-carried affinity, and tries candidates
+in order until an upstream opens a stream or returns a successful plain
+response. Pairwise translation is used when the selected upstream speaks a
+different chat protocol. `/v1/completions` is only sent to upstreams that
+advertise the text-completions endpoint; it has no cross-protocol translation.
 
 ## Quick Start
 
-Prereqs: Node.js 22.5+ (for `node:sqlite` if you want the Node target),
-pnpm 10.x, and at least one upstream credential — Copilot subscription,
-ChatGPT Plus / Pro / Team subscription (via Codex CLI auth), Claude.ai
-Pro / Max subscription (via Claude Code CLI auth), an OpenAI-compatible
-bearer token, or Azure endpoint plus API key.
+Prerequisites: Node.js 22.5+ (for `node:sqlite` on the Node target), pnpm 10.x,
+and at least one upstream credential: Copilot, ChatGPT Plus / Pro / Team,
+Claude.ai Pro / Max, an OpenAI-compatible bearer token, an Azure endpoint and
+API key, or an Ollama server.
 
-### Cloudflare Workers (production)
-
-A Cloudflare account is required.
+### Cloudflare Workers
 
 ```bash
 pnpm install
@@ -54,28 +52,25 @@ cp wrangler.example.jsonc wrangler.jsonc
 pnpm wrangler login
 pnpm wrangler d1 create <DB_NAME>
 
-# Apply schema. Prod also needs an admin secret; wrangler dev doesn't.
+# Apply schema. Production also needs an admin secret.
 pnpm run db:migrate
-pnpm wrangler secret put ADMIN_KEY   # production only
+pnpm wrangler secret put ADMIN_KEY
 
-# Run locally or deploy. In dev, open the Vite SPA at http://localhost:5174.
+# In development, open the Vite SPA at http://localhost:5174.
 pnpm run dev
 pnpm run deploy
 ```
 
-`ADMIN_KEY` is required on production deploys — a live Worker that
-receives requests from Cloudflare's edge (detected via the `CF-Ray`
-header) refuses passwordless logins. A local `wrangler dev` instance
-without `.dev.vars` has no `ADMIN_KEY`, and the login page then accepts a
-blank username with any (or empty) password as the seed admin.
+`ADMIN_KEY` is required on production deployments. A Worker request that came
+through Cloudflare's edge, detected by `CF-Ray`, never permits passwordless
+login. A local `wrangler dev` instance without `.dev.vars` accepts a blank
+username and any password as the seed admin.
 
-### Node.js (self-hosted)
+### Node.js
 
 ```bash
 pnpm install
 
-# All config is environment variables; sqlite + filesystem dirs are created
-# on first boot, migrations apply automatically.
 ADMIN_KEY=<admin-secret> \
 FLOWAY_DB_PATH=./data/floway.db \
 FLOWAY_FILES_DIR=./data/files \
@@ -83,23 +78,19 @@ PORT=8788 \
 pnpm run dev:node
 ```
 
-`ADMIN_KEY` may be omitted on a dev machine — the login page then accepts
-a blank username with any (or empty) password as the seed admin. Setting
-`NODE_ENV=production` makes `ADMIN_KEY` mandatory: the entry point
-refuses to boot without it, and the running server also rejects
-passwordless logins.
+SQLite, the file store, and schema are created on first boot. `ADMIN_KEY` may
+be omitted in development; `NODE_ENV=production` makes it mandatory and the
+entry point refuses to boot without it.
 
-Optionally set `RUNTIME_LOCATION=<tag>` to label this instance in the
-performance telemetry's `runtimeLocation` dimension and as the dial-time
-key for the proxy fallback list's per-instance colo whitelist. The value
-is uppercased on read so `local`, `Local`, and `LOCAL` all match the
-dashboard's uppercased whitelist input; defaults to `LOCAL` when unset.
+Set `RUNTIME_LOCATION=<tag>` to label performance telemetry and select the
+proxy fallback list's location-specific entries. The value is uppercased and
+defaults to `LOCAL`.
 
-The Node target serves no SPA — point the dashboard at the same admin host
-through your own static-file server, or use the Cloudflare deploy for the
-dashboard while running data-plane traffic on Node.
+The Node target serves no SPA. Host the dashboard separately, or use a
+Cloudflare deployment for the dashboard while directing data-plane traffic to
+the Node server.
 
-### Docker Compose (self-hosted web + server)
+### Docker Compose
 
 ```bash
 git clone https://github.com/Menci/Floway.git
@@ -107,119 +98,151 @@ cd Floway
 ADMIN_KEY=<admin-secret> docker compose -f docker/docker-compose.yml up --build -d
 ```
 
-Compose starts two services: `server` runs the Node.js target on
-`http://localhost:8788` with SQLite/files persisted in the `floway-data`
-volume, and `web` serves the built dashboard on `http://localhost:18088`.
-The nginx web container proxies Floway API paths to `server`, including
-WebSocket-capable `/v1/responses` and the Codex-compatible
-`/azure-api.codex/*` routes. Pass `FLOWAY_WEB_PORT` or
-`FLOWAY_SERVER_PORT` alongside `ADMIN_KEY` if those host ports are already in
-use.
+Compose starts `server` on `http://localhost:8788` with SQLite and files in the
+`floway-data` volume, plus `web` on `http://localhost:18088`. The nginx web
+container proxies all Floway API paths, including Responses WebSocket and
+`/azure-api.codex/*`. Override the host ports with `FLOWAY_WEB_PORT` and
+`FLOWAY_SERVER_PORT`.
 
-### After the first boot
+### First boot
 
-Open the deployed URL (or `http://localhost:8788` for Node), log in with
-`ADMIN_KEY` (or leave the password blank on a dev instance with no
-`ADMIN_KEY` set), and:
+Open the deployed URL, log in with `ADMIN_KEY` (or the development shortcut),
+then:
 
-1. **Settings -> Upstreams -> Add Upstream**. Upstreams are *Custom*
-   (OpenAI/Anthropic-shaped, static credential), *Azure* (one endpoint, API key,
-   deployment list), *Copilot* (GitHub device OAuth), *Codex* (ChatGPT
-   subscription via the Codex CLI's OAuth client; paste `~/.codex/auth.json`
-   or run the OAuth flow from the dashboard), *Claude Code* (Claude.ai
-   subscription via the Claude Code CLI's OAuth client; PKCE flow, Setup
-   Token flow, or paste `~/.claude/.credentials.json`), or *Ollama* (base
-   URL + optional API key — ollama.com or a self-hosted daemon). List
-   order is routing order; earlier providers win for a shared public model id.
-2. **API Keys -> New Key**. Give the generated key to your client.
-3. Copy the Claude Code or Codex CLI snippet from the API Keys panel into the
-   agent config.
+1. Open **Settings -> Upstreams -> Add Upstream**. Configure Custom, Azure,
+   Copilot, Codex, Claude Code, or Ollama. List order is normal routing order.
+2. Open **API Keys -> New Key** and give the generated credential to the
+   client.
+3. Copy the Claude Code or Codex CLI snippet from the API Keys panel.
 
-Import/export of upstreams, keys, and search config is in Settings. The
-payload format is tied to the running deployment, so import only accepts a
-file produced by a deployment at the same version — re-export from the
-current deployment before importing.
+Settings import/export currently uses format version 10. API-key records in an
+admin export include their hidden affinity secret so already-issued client
+history remains decryptable after a restore. Normal API-key routes and the API
+Keys dashboard never expose this secret. Import only accepts the exact current
+format version; re-export before migrating a deployment.
 
-## Server Tools
+## Client-carried affinity
 
-`/v1/messages` accepts Anthropic-style web search. When the resolved upstream
-can run the native server tool, Floway passes it through; otherwise it shims the
-search via **Settings -> Web Search** (`tavily` or `microsoft-grounding`,
-default `disabled`).
+Aliases and shared model names may resolve to different upstream accounts,
+canonical model IDs, or alias-rule variants. Opaque reasoning state is often
+valid only at the exact target that created it. Floway therefore treats a
+multi-turn payload as a Floway wire protocol: clients are expected to send the
+returned opaque fields back through Floway rather than replay the modified
+payload directly to an upstream.
 
-`/v1/responses` has a shared server-tool shim layer for hosted Responses
-tools. `web_search` is rewritten into a model-visible function call,
-executed through the same web-search provider (**Settings -> Web
-Search**), and emitted back as Responses `web_search_call` items, with
-the shim driving the internal multi-turn loop and replaying prior
-`web_search_call` items across turns.
+Every API key owns a hidden, random 256-bit affinity secret. On a successful
+chat response, the source-protocol boundary encrypts the exact selected target
+into each opaque reasoning carrier, or creates a synthetic carrier when the
+turn has none. The target identity includes upstream ID, upstream revision,
+canonical model ID, and the presence and value of alias rules.
+
+The envelope uses AES-256-GCM and contains version 1 metadata. Its wire value
+has no delimiter or magic prefix:
+
+```text
+base64-or-base64url(
+  original bytes
+  || 12-byte IV
+  || AES-GCM ciphertext and tag
+  || encrypted-length u16be
+)
+```
+
+Canonical Base64 and Base64URL inputs are decoded before the encrypted trailer
+is appended, so existing encoded data is not Base64-encoded a second time.
+Other strings are stored as UTF-8 and marked `raw`; a synthetic carrier omits
+the origin. A blob that cannot be authenticated with this API key is foreign
+and is forwarded byte-for-byte. This permits Floway instances to be cascaded:
+an outer instance wraps the inner carrier and later restores it unchanged.
+
+Ingress runs before normal interception and translation. It extracts owned
+affinity, then builds a clean payload separately for every candidate: matching
+carriers restore their original value, mismatched preferred state is removed,
+and foreign values remain. Force state such as Responses compaction or
+programmatic state narrows to one exact candidate and fails if unavailable;
+ordinary reasoning prefers its latest available target but may fall back with
+the incompatible state removed.
+
+Egress runs only after provider events have returned to the client's source
+protocol. Floway buffers opaque fields where their protocol requires a final
+snapshot, but never delays visible text, thinking, tool-call, or argument
+deltas. Chat `reasoning_opaque` and Messages `signature_delta` are
+last-write-wins snapshots. Gemini signatures are deferred into signed parts,
+and Responses synthetic carriers are represented consistently in
+`output_item.added`, `output_item.done`, and the terminal response snapshot.
 
 ## Stateful Responses
 
-`/v1/responses` stores replayable Responses input and output items for API-key
-scoped HTTP requests. Clients can send `previous_response_id` to continue from
-a stored snapshot, or resend full input history; repeated full-history input is
-deduplicated by content hash instead of stored again. HTTP `store: false` does
-not create durable snapshots or input payload rows, but it keeps output item
-metadata for routing; if a later `store: true` request echoes that item with a
-full payload, the metadata row is filled in place.
+Responses state and affinity are separate systems. Affinity is carried by the
+client; the Responses store only expands and saves Responses protocol state.
 
-The same endpoint accepts `GET` WebSocket upgrades for streaming Responses
-events. WebSocket `store: false` keeps replay state only inside the open
-session, so same-socket `previous_response_id` works without writing those
-items or snapshots to durable storage.
+For native HTTP Responses requests, `previous_response_id` and gateway item
+IDs are hydrated into complete stored items before affinity is decoded. On the
+response path, source-protocol affinity is added first; the complete
+client-visible item is then assigned a gateway ID and stored, and the snapshot
+is committed before its successful terminal event is sent.
 
-## Model Aliases
+HTTP `store: false` performs no item or snapshot writes. WebSocket
+`store: false` keeps complete items and snapshots only in the open session, so
+same-socket `previous_response_id` continues to work without durable writes.
+With storage enabled, items and snapshots are API-key scoped and retained for
+30 days from creation. Large complete items are compressed and may spill to
+the configured file store; the scheduled maintenance job removes both rows and
+payload files on the same creation-based lifetime.
 
-An alias is an operator-defined virtual model id that maps to a list of
-real targets. When a client sends a request with the alias name as
-`model`, Floway picks one target from the list (per the alias's
-`selection` mode — `first-available` walks the list in order, `random`
-picks uniformly across the available subset), applies the target's
-per-request rule overrides onto the outbound wire body, and routes the
-request as if the client had asked for the picked id directly.
+Compaction output replaces snapshot history. Ordinary generation appends the
+previous snapshot, this turn's new input, and this turn's output. Input content
+hashes deduplicate repeated complete items, but there is no separate routing
+record: stored rows always contain the full replay payload.
 
-Aliases surface on every listing endpoint (`/v1/models`,
-`/v1beta/models`, the Codex catalog); a visible alias whose name
-collides with a real id replaces the real entry on the wire so the row
-count stays one-per-id. The upstream response's `model` field reports
-the target the request actually landed on, so a client that wants to
-tell alias-vs-direct routing apart can compare the response's model id
-against the id it sent.
+## Server tools
 
-Chat aliases (kind `chat`) can carry per-target rules — reasoning
-effort, verbosity, service tier, and Anthropic thinking configuration.
-Rules apply post-translate on the chosen target IR; a rule with no
-native slot on that target is dropped by design. Passthrough aliases
-(kinds `embedding` / `image`) must have empty rules.
+`/v1/messages` accepts Anthropic web search. A provider that can serve the
+native server tool receives it directly; otherwise Floway shims it through the
+provider configured under **Settings -> Web Search** (`tavily` or
+`microsoft-grounding`, default `disabled`).
 
-Schema and the seeded `codex-auto-review` alias live in
-`packages/gateway/migrations/0046_model_aliases.sql`; behavior and
-rule-mapping details are covered in [RESOLUTION.md](./RESOLUTION.md) and
+`/v1/responses` has a shared hosted-tool shim. `web_search` is rewritten into a
+model-visible function call, executed through the same search provider, and
+restored as Responses `web_search_call` items. Image generation follows the
+same orchestration model and supports generation and edit sources.
+
+## Model aliases
+
+An alias is an operator-defined virtual model ID with a list of real targets.
+`first-available` walks target declaration order; `random` shuffles available
+targets. Every target candidate carries its own post-translation rule overlay,
+and failures continue through the remaining upstreams and alias targets.
+
+Aliases appear on `/v1/models`, `/v1beta/models`, and the Codex catalog. A
+visible alias shadows a real model with the same public ID so listings keep one
+row per ID. The response reports the canonical model that actually served the
+request.
+
+Chat alias rules cover reasoning effort, Messages thinking configuration,
+verbosity, and service tier. Rules apply on the chosen target protocol after
+translation; a rule with no native target slot is omitted. Embedding and image
+aliases must use empty rules. See [RESOLUTION.md](./RESOLUTION.md) and
 [TRANSLATION.md](./TRANSLATION.md).
 
 ## Development
 
 ```bash
-pnpm run lint          # eslint --cache across the workspace
-pnpm run test          # vitest run over the root test.projects
-pnpm run typecheck     # pnpm -r run typecheck
-pnpm run dev           # parallel wrangler dev (8788) + Vite SPA dev server (5174)
-pnpm run dev:node      # Node.js entry (tsx apps/platform-node/entry.ts)
+pnpm run lint
+pnpm run test
+pnpm run typecheck
+pnpm run dev
+pnpm run dev:node
 ```
 
-The repo is a pnpm workspace; see [AGENTS.md](./AGENTS.md) for the full
-package map and the strict dependency direction it enforces.
+The repository is a pnpm workspace. `wrangler.example.jsonc` keeps API paths
+Worker-first, lets SPA routes fall through to `index.html`, and configures the
+hourly maintenance trigger. The Node entry runs the same maintenance on a
+wall-clock interval. Cross-package imports use declared exports; ESLint blocks
+deep imports.
 
-`wrangler.example.jsonc` keeps API/data-plane routes Worker-first and lets
-other direct browser routes fall through to the SPA's `index.html`. It also
-includes an hourly cron trigger used by the Worker to age out retained Responses
-snapshots, payloads, and metadata. The Node entry runs the same maintenance
-sweep on a wall-clock interval. Cross-package imports go through each package's
-`exports` map; deep imports are blocked by ESLint.
-
-See [AGENTS.md](./AGENTS.md) for architecture, provider routing, deployment,
-and development conventions.
+See [AGENTS.md](./AGENTS.md) for package boundaries, verification, deployment,
+and agent conventions.
 
 ## License
 
