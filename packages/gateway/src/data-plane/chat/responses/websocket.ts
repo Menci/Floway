@@ -426,7 +426,7 @@ const respondResponsesWebSocket = async (input: {
       }
     } finally {
       if (!completed) {
-        const stopped = iterator.return?.();
+        const stopped = iterator.return?.(undefined);
         if (stoppedByDownstream) stopped?.catch(() => {});
         else await stopped;
       }

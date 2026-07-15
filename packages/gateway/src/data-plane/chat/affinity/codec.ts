@@ -93,7 +93,7 @@ const parseEnvelope = (value: unknown): AffinityEnvelope | null => {
     || typeof affinity.rulesPresent !== 'boolean'
     || (affinity.upstreamItemId !== undefined && typeof affinity.upstreamItemId !== 'string')
     || (affinity.syntheticItem !== undefined && typeof affinity.syntheticItem !== 'boolean')
-    || (affinity.geminiPartFromEnd !== undefined && (!Number.isInteger(affinity.geminiPartFromEnd) || affinity.geminiPartFromEnd <= 0))
+    || (affinity.geminiPartFromEnd !== undefined && (typeof affinity.geminiPartFromEnd !== 'number' || !Number.isInteger(affinity.geminiPartFromEnd) || affinity.geminiPartFromEnd <= 0))
     || (affinity.rulesPresent && !isRecord(affinity.rules))
     || (!affinity.rulesPresent && affinity.rules !== undefined)
   ) return null;
