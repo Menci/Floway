@@ -62,7 +62,8 @@ opaque carrier placement and exact-target provenance.
 
 ### Client-carried affinity envelope
 
-Each API key has an internal 32-byte secret. The codec encrypts this version 1
+Each API key has an internal 32-byte server secret for gateway-private per-key
+data. The codec derives an affinity-specific key and encrypts this version 1
 object with AES-256-GCM:
 
 ```ts
@@ -72,7 +73,6 @@ object with AES-256-GCM:
   affinity: {
     mode: 'prefer' | 'force',
     upstreamId: string,
-    upstreamRevision: string,
     modelId: string,
     rulesPresent: boolean,
     rules?: AliasRules,

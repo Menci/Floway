@@ -9,7 +9,6 @@ import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols
 const affinity: AffinityTarget = {
   mode: 'prefer',
   upstreamId: 'up-a',
-  upstreamRevision: 'rev-a',
   modelId: 'model-a',
   rulesPresent: false,
 };

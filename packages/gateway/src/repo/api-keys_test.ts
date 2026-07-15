@@ -17,7 +17,7 @@ const baseKey = (overrides: Partial<ApiKey> = {}): ApiKey => ({
   userId: 1,
   name: 'Dump key',
   key: 'raw_dump_key',
-  affinitySecret: '00'.repeat(32),
+  serverSecret: '00'.repeat(32),
   createdAt: '2026-06-19T00:00:00.000Z',
   upstreamIds: null,
   deletedAt: null,
@@ -65,21 +65,21 @@ for (const [backend, makeRepo] of REPO_BACKENDS) {
     assertEquals(byUser.find(k => k.id === 'key_dump')?.dumpRetentionSeconds, 86_400);
   });
 
-  test(`[${backend}] api keys repo round-trips affinitySecret`, async () => {
+  test(`[${backend}] api keys repo round-trips serverSecret`, async () => {
     const repo = await makeRepo();
     const secret = 'ab'.repeat(32);
-    await repo.apiKeys.save(baseKey({ affinitySecret: secret }));
-    assertEquals((await repo.apiKeys.findByRawKey('raw_dump_key'))?.affinitySecret, secret);
+    await repo.apiKeys.save(baseKey({ serverSecret: secret }));
+    assertEquals((await repo.apiKeys.findByRawKey('raw_dump_key'))?.serverSecret, secret);
 
   });
 }
 
-test('migration 0056 backfills distinct affinity secrets and enforces their canonical form', async () => {
+test('migration 0056 backfills distinct server secrets and enforces their canonical form', async () => {
   const SQL = await initSqlJs();
   const db = new SQL.Database();
   try {
     for (const [filename, sql] of migrationSqlByFilename) {
-      if (filename === '0056_api_key_affinity_secret.sql') break;
+      if (filename === '0056_api_key_server_secret.sql') break;
       db.run(sql);
     }
     db.run(`
@@ -89,36 +89,36 @@ test('migration 0056 backfills distinct affinity secrets and enforces their cano
         ('key_b', 1, 'B', 'raw_b', '2026-01-02T00:00:00.000Z', '["up_a"]', NULL, 3600)
     `);
 
-    const migration = migrationSqlByFilename.find(([filename]) => filename === '0056_api_key_affinity_secret.sql');
-    if (migration === undefined) throw new Error('missing migration 0056_api_key_affinity_secret.sql');
+    const migration = migrationSqlByFilename.find(([filename]) => filename === '0056_api_key_server_secret.sql');
+    if (migration === undefined) throw new Error('missing migration 0056_api_key_server_secret.sql');
     db.run(migration[1]);
 
-    const [result] = db.exec('SELECT id, upstream_ids, dump_retention_seconds, affinity_secret FROM api_keys ORDER BY id');
+    const [result] = db.exec('SELECT id, upstream_ids, dump_retention_seconds, server_secret FROM api_keys ORDER BY id');
     if (result === undefined) throw new Error('migration 0056 returned no api_keys rows');
     const rows = result.values.map(values => Object.fromEntries(result.columns.map((column, index) => [column, values[index]]))) as Array<{
       id: string;
       upstream_ids: string | null;
       dump_retention_seconds: number | null;
-      affinity_secret: string;
+      server_secret: string;
     }>;
     assertEquals(rows.map(row => [row.id, row.upstream_ids, row.dump_retention_seconds]), [
       ['key_a', null, null],
       ['key_b', '["up_a"]', 3600],
     ]);
-    assertEquals(rows.every(row => /^[0-9a-f]{64}$/.test(row.affinity_secret)), true);
-    assertEquals(rows[0]!.affinity_secret === rows[1]!.affinity_secret, false);
+    assertEquals(rows.every(row => /^[0-9a-f]{64}$/.test(row.server_secret)), true);
+    assertEquals(rows[0]!.server_secret === rows[1]!.server_secret, false);
 
     assertThrows(
-      () => db.run(`INSERT INTO api_keys (id, user_id, name, key, affinity_secret, created_at)
+      () => db.run(`INSERT INTO api_keys (id, user_id, name, key, server_secret, created_at)
         VALUES ('bad', 1, 'Bad', 'raw_bad', '${'AB'.repeat(32)}', '2026-01-03T00:00:00.000Z')`),
       Error,
       'CHECK constraint failed',
     );
     assertThrows(
-      () => db.run(`INSERT INTO api_keys (id, user_id, name, key, affinity_secret, created_at)
-        VALUES ('duplicate', 1, 'Duplicate', 'raw_duplicate', '${rows[0]!.affinity_secret}', '2026-01-03T00:00:00.000Z')`),
+      () => db.run(`INSERT INTO api_keys (id, user_id, name, key, server_secret, created_at)
+        VALUES ('duplicate', 1, 'Duplicate', 'raw_duplicate', '${rows[0]!.server_secret}', '2026-01-03T00:00:00.000Z')`),
       Error,
-      'UNIQUE constraint failed: api_keys.affinity_secret',
+      'UNIQUE constraint failed: api_keys.server_secret',
     );
   } finally {
     db.close();

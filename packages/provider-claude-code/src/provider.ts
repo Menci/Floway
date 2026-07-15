@@ -97,7 +97,6 @@ export const createClaudeCodeProvider = (record: UpstreamRecord): Provider => {
 
   return {
     upstream: record.id,
-    upstreamRevision: record.updatedAt,
     kind: 'claude-code',
     name: record.name,
     disabledPublicModelIds: record.disabledPublicModelIds,

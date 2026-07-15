@@ -23,10 +23,6 @@ export type ResponsesAction = 'generate' | 'compact';
 
 export interface Provider {
   upstream: string;
-  // Changes whenever the operator replaces this upstream's configuration or
-  // credentials. Opaque reasoning state minted by an earlier revision must
-  // not be replayed into the replacement merely because it reused the same id.
-  upstreamRevision: string;
   kind: UpstreamProviderKind;
   name: string;
   disabledPublicModelIds: readonly string[];

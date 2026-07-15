@@ -116,7 +116,7 @@ then:
 3. Copy the Claude Code or Codex CLI snippet from the API Keys panel.
 
 Settings import/export currently uses format version 10. API-key records in an
-admin export include their hidden affinity secret so already-issued client
+admin export include their hidden server secret so already-issued client
 history remains decryptable after a restore. Normal API-key routes and the API
 Keys dashboard never expose this secret. Import only accepts the exact current
 format version; re-export before migrating a deployment.
@@ -130,10 +130,11 @@ multi-turn payload as a Floway wire protocol: clients are expected to send the
 returned opaque fields back through Floway rather than replay the modified
 payload directly to an upstream.
 
-Every API key owns a hidden, random 256-bit affinity secret. On a successful
-chat response, the source-protocol boundary encrypts the exact selected target
-into each opaque reasoning carrier, or creates a synthetic carrier when the
-turn has none. The target identity includes upstream ID, upstream revision,
+Every API key owns a hidden, random 256-bit server secret for gateway-private
+per-key data. Affinity derives a dedicated encryption key from it. On a
+successful chat response, the source-protocol boundary encrypts the exact
+selected target into each opaque reasoning carrier, or creates a synthetic
+carrier when the turn has none. The target identity includes upstream ID,
 canonical model ID, and the presence and value of alias rules.
 
 The envelope uses AES-256-GCM and contains version 1 metadata. Its wire value

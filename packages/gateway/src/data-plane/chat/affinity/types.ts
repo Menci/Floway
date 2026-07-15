@@ -5,7 +5,6 @@ export type AffinityOrigin = 'raw' | 'base64' | 'base64url';
 export interface AffinityTarget {
   mode: 'prefer' | 'force';
   upstreamId: string;
-  upstreamRevision: string;
   modelId: string;
   rulesPresent: boolean;
   rules?: AliasRules;

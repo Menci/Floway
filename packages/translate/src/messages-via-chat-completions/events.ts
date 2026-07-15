@@ -238,7 +238,7 @@ const emitToolCallsDelta = (toolCalls: ChatCompletionsStreamToolCalls, state: Ch
     if (!toolCall.function?.arguments) continue;
 
     const toolCallInfo = state.toolCalls[toolCall.index];
-    if (!toolCallInfo) throw new Error(`Chat Completions tool arguments targeted unopened tool call index ${toolCall.index}`);
+    if (!toolCallInfo) continue;
 
     emitContentBlockDelta(
       state,

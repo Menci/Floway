@@ -161,16 +161,17 @@ canonical models, and rule variants. Opaque reasoning state is target-bound.
 Floway therefore adds authenticated provenance to client-carried opaque state
 and expects continued requests to pass through Floway.
 
-Each API key has a hidden random 256-bit `affinitySecret`. Normal API-key CRUD
-and dashboard DTOs never expose it. Admin data transfer format version 10
-includes it so a restored deployment can decrypt previously issued histories.
-Key updates preserve it.
+Each API key has a hidden random 256-bit `serverSecret` for gateway-private
+per-key data. Normal API-key CRUD and dashboard DTOs never expose it. Admin
+data transfer format version 10 includes it so a restored deployment can
+recover that private state. Key updates preserve it. Affinity derives its own
+encryption key from the server secret.
 
 The version 1 AES-256-GCM envelope contains optional original encoding plus:
 
 ```text
 mode (prefer | force)
-upstream ID and revision
+upstream ID
 canonical model ID
 alias-rule presence and value
 optional protocol restore state

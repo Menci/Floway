@@ -137,7 +137,7 @@ export const createChatGatewayCtxFromHono = (
   const base = createGatewayCtxFromHono(c, opts);
   return {
     ...base,
-    affinity: new AffinityRequestContext(apiKeyFromContext(c).affinitySecret),
+    affinity: new AffinityRequestContext(apiKeyFromContext(c).serverSecret),
     responsesAttemptState: new ResponsesAttemptState(),
     ...(storeFactory !== undefined ? { store: storeFactory(base.apiKeyId) } : {}),
   };

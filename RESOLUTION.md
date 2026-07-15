@@ -134,7 +134,7 @@ interface ModelCandidate {
 }
 ```
 
-- `provider` owns the upstream ID, revision, name, kind, prefix policy, and
+- `provider` owns the upstream ID, name, kind, prefix policy, and
   provider implementation;
 - `model` is the canonical public row projected to that upstream and contains
   its exact `ProviderModel`;
@@ -149,19 +149,17 @@ Client-carried affinity serializes the exact dispatch identity:
 
 ```text
 upstream ID
-+ upstream revision
 + canonical model ID
 + alias-rule presence
 + alias-rule value
 ```
 
-The upstream revision invalidates affinity when an operator changes the
-upstream configuration or credentials under the same ID. Equality uses exact
-rule structure, matching candidate deduplication.
+Equality uses exact rule structure, matching candidate deduplication.
 
 ## Client-carried affinity routing
 
-Every chat API key has a hidden 256-bit affinity secret. The source-protocol
+Every chat API key has a hidden 256-bit server secret for gateway-private
+per-key data. Affinity derives a dedicated key from it. The source-protocol
 ingress scans opaque reasoning carriers and attempts AES-GCM authentication.
 Successfully decoded envelopes yield `AffinityTarget` entries; a value that is
 malformed, belongs to another key, or belongs to another Floway instance is

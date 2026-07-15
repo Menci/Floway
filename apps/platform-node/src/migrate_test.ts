@@ -32,7 +32,7 @@ test('applies all real migration files against a fresh sqlite', () => withTemp(a
   const colNames = apiKeyCols.results.map(r => r.name).toSorted();
   assertEquals(colNames.includes('id'), true);
   assertEquals(colNames.includes('key'), true);
-  assertEquals(colNames.includes('affinity_secret'), true);
+  assertEquals(colNames.includes('server_secret'), true);
 
   // Every migration was recorded.
   const recorded = await db.prepare('SELECT COUNT(*) AS n FROM _migrations').first<{ n: number }>();

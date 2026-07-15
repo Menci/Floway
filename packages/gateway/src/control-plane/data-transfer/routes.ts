@@ -22,7 +22,7 @@ import { DIRECT_FALLBACK_IDS, isDirectFallbackId, normalizeProxyFallbackList } f
 import type { ApiKey, PerformanceBucketRow, PerformanceMetric, PerformanceTelemetryRecord, SearchUsageRecord, TokenUsage, UsageRecord, User } from '../../repo/types.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
-import { parseAffinitySecret } from '../../shared/affinity-secret.ts';
+import { parseServerSecret } from '../../shared/server-secret.ts';
 import { PASSWORD_HASH_SCHEME } from '../../shared/passwords.ts';
 import { isWebSearchProviderName } from '../../shared/web-search-providers.ts';
 import { parseUpstreamIdsValue } from '../api-keys/upstream-ids.ts';
@@ -53,7 +53,7 @@ interface SerializedApiKey {
   userId: number;
   name: string;
   key: string;
-  affinitySecret: string;
+  serverSecret: string;
   createdAt: string;
   lastUsedAt?: string;
   upstreamIds: string[] | null;
@@ -297,7 +297,7 @@ const parseApiKeyRecords = (value: unknown): { type: 'ok'; records: ApiKey[] } |
         userId: record.userId,
         name: nonEmptyString(record.name, 'name'),
         key: nonEmptyString(record.key, 'key'),
-        affinitySecret: parseAffinitySecret(record.affinitySecret),
+        serverSecret: parseServerSecret(record.serverSecret),
         createdAt: nonEmptyString(record.createdAt, 'createdAt'),
         ...(record.lastUsedAt !== undefined ? { lastUsedAt: nonEmptyString(record.lastUsedAt, 'lastUsedAt') } : {}),
         upstreamIds: upstreamIdsParsed.value,
@@ -364,7 +364,7 @@ const parseUserRecords = (value: unknown): { type: 'ok'; records: User[] } | { t
 const validateApiKeyIdentities = (records: readonly ApiKey[], existing: readonly ApiKey[], mode: 'merge' | 'replace'): string | null => {
   const ids = new Map<string, number>();
   const rawKeys = new Map<string, string>();
-  const affinitySecrets = new Map<string, string>();
+  const serverSecrets = new Map<string, string>();
 
   for (let i = 0; i < records.length; i++) {
     const record = records[i];
@@ -376,22 +376,22 @@ const validateApiKeyIdentities = (records: readonly ApiKey[], existing: readonly
     if (existingRawKeyId !== undefined) return `duplicate apiKeys raw key used by ${existingRawKeyId} and ${record.id}`;
     rawKeys.set(record.key, record.id);
 
-    const existingAffinitySecretId = affinitySecrets.get(record.affinitySecret);
-    if (existingAffinitySecretId !== undefined) return `duplicate apiKeys affinity secret used by ${existingAffinitySecretId} and ${record.id}`;
-    affinitySecrets.set(record.affinitySecret, record.id);
+    const existingServerSecretId = serverSecrets.get(record.serverSecret);
+    if (existingServerSecretId !== undefined) return `duplicate apiKeys server secret used by ${existingServerSecretId} and ${record.id}`;
+    serverSecrets.set(record.serverSecret, record.id);
   }
 
   if (mode === 'merge') {
     const existingRawKeys = new Map(existing.map(record => [record.key, record.id]));
-    const existingAffinitySecrets = new Map(existing.map(record => [record.affinitySecret, record.id]));
+    const existingServerSecrets = new Map(existing.map(record => [record.serverSecret, record.id]));
     for (const record of records) {
       const existingId = existingRawKeys.get(record.key);
       if (existingId !== undefined && existingId !== record.id) {
         return `apiKeys raw key for ${record.id} conflicts with existing api key ${existingId}`;
       }
-      const existingAffinitySecretId = existingAffinitySecrets.get(record.affinitySecret);
-      if (existingAffinitySecretId !== undefined && existingAffinitySecretId !== record.id) {
-        return `apiKeys affinity secret for ${record.id} conflicts with existing api key ${existingAffinitySecretId}`;
+      const existingServerSecretId = existingServerSecrets.get(record.serverSecret);
+      if (existingServerSecretId !== undefined && existingServerSecretId !== record.id) {
+        return `apiKeys server secret for ${record.id} conflicts with existing api key ${existingServerSecretId}`;
       }
     }
   }
@@ -705,7 +705,7 @@ export const exportData = async (c: CtxWithQuery<typeof exportQuery>) => {
         userId: key.userId,
         name: key.name,
         key: key.key,
-        affinitySecret: key.affinitySecret,
+        serverSecret: key.serverSecret,
         createdAt: key.createdAt,
         ...(key.lastUsedAt !== undefined ? { lastUsedAt: key.lastUsedAt } : {}),
         upstreamIds: key.upstreamIds,

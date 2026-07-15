@@ -123,7 +123,6 @@ const makeCandidate = (overrides: {
   return {
     provider: {
       upstream,
-      upstreamRevision: 'test-revision',
       kind: 'custom',
       name: upstream,
       disabledPublicModelIds: [],

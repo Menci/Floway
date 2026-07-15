@@ -67,8 +67,8 @@ const encodeOriginal = (bytes: Uint8Array, origin: AffinityOrigin): string => {
   }
 };
 
-const parseHexSecret = (secret: string): Uint8Array => {
-  if (!/^[0-9a-f]{64}$/.test(secret)) throw new TypeError('Affinity secret must be 64 lowercase hexadecimal characters');
+const parseServerSecretBytes = (secret: string): Uint8Array => {
+  if (!/^[0-9a-f]{64}$/.test(secret)) throw new TypeError('Server secret must be 64 lowercase hexadecimal characters');
   const bytes = new Uint8Array(32);
   for (let index = 0; index < bytes.length; index += 1) {
     bytes[index] = Number.parseInt(secret.slice(index * 2, index * 2 + 2), 16);
@@ -88,7 +88,6 @@ const parseEnvelope = (value: unknown): AffinityEnvelope | null => {
   if (
     (affinity.mode !== 'prefer' && affinity.mode !== 'force')
     || typeof affinity.upstreamId !== 'string'
-    || typeof affinity.upstreamRevision !== 'string'
     || typeof affinity.modelId !== 'string'
     || typeof affinity.rulesPresent !== 'boolean'
     || (affinity.upstreamItemId !== undefined && typeof affinity.upstreamItemId !== 'string')
@@ -101,7 +100,6 @@ const parseEnvelope = (value: unknown): AffinityEnvelope | null => {
   const parsedAffinity: AffinityTarget = {
     mode: affinity.mode,
     upstreamId: affinity.upstreamId,
-    upstreamRevision: affinity.upstreamRevision,
     modelId: affinity.modelId,
     rulesPresent: affinity.rulesPresent,
     ...(affinity.rulesPresent ? { rules: affinity.rules as AliasRules } : {}),
@@ -134,6 +132,28 @@ const encryptedLengthFrom = (bytes: Uint8Array): number =>
 
 const ownedBuffer = (bytes: Uint8Array): ArrayBuffer => new Uint8Array(bytes).buffer;
 
+const deriveAffinityKey = async (serverSecret: string): Promise<CryptoKey> => {
+  const root = await crypto.subtle.importKey(
+    'raw',
+    ownedBuffer(parseServerSecretBytes(serverSecret)),
+    'HKDF',
+    false,
+    ['deriveKey'],
+  );
+  return await crypto.subtle.deriveKey(
+    {
+      name: 'HKDF',
+      hash: 'SHA-256',
+      salt: ownedBuffer(textEncoder.encode('Floway server secret v1')),
+      info: ownedBuffer(textEncoder.encode('client-carried affinity v1')),
+    },
+    root,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt'],
+  );
+};
+
 const authenticatedCarrierData = (domain: string, original: Uint8Array): Uint8Array => {
   const domainBytes = textEncoder.encode(domain);
   if (domainBytes.length > MAX_ENCRYPTED_BYTES) throw new RangeError('Affinity carrier domain exceeds the 2-byte length marker');
@@ -143,8 +163,8 @@ const authenticatedCarrierData = (domain: string, original: Uint8Array): Uint8Ar
 export class AffinityCodec {
   readonly #key: Promise<CryptoKey>;
 
-  constructor(secret: string) {
-    this.#key = crypto.subtle.importKey('raw', ownedBuffer(parseHexSecret(secret)), 'AES-GCM', false, ['encrypt', 'decrypt']);
+  constructor(serverSecret: string) {
+    this.#key = deriveAffinityKey(serverSecret);
   }
 
   async wrap(value: string | undefined, affinity: AffinityTarget, domain: string): Promise<string> {

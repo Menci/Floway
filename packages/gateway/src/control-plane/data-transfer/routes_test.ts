@@ -31,7 +31,7 @@ const KEY_A: ApiKey = {
   userId: 1,
   name: 'Alice',
   key: 'raw-a',
-  affinitySecret: '11'.repeat(32),
+  serverSecret: '11'.repeat(32),
   createdAt: '2026-01-01T00:00:00.000Z',
   lastUsedAt: '2026-01-02T00:00:00.000Z',
   upstreamIds: null,
@@ -44,7 +44,7 @@ const KEY_B: ApiKey = {
   userId: 1,
   name: 'Bob',
   key: 'raw-b',
-  affinitySecret: '22'.repeat(32),
+  serverSecret: '22'.repeat(32),
   createdAt: '2026-02-01T00:00:00.000Z',
   upstreamIds: null,
   deletedAt: null,
@@ -769,39 +769,39 @@ test('import rejects api key unique identity conflicts before mutating', async (
   const duplicateId = await doImport(app, 'replace', latestImportData({
     apiKeys: [KEY_B, { ...KEY_B, name: 'Duplicate Bob' }],
   }));
-  const duplicateAffinitySecret = await doImport(app, 'replace', latestImportData({
-    apiKeys: [KEY_B, { ...KEY_A, id: 'key-c', key: 'secret-c', affinitySecret: KEY_B.affinitySecret }],
+  const duplicateServerSecret = await doImport(app, 'replace', latestImportData({
+    apiKeys: [KEY_B, { ...KEY_A, id: 'key-c', key: 'secret-c', serverSecret: KEY_B.serverSecret }],
   }));
   const mergeExistingRawKeyConflict = await doImport(app, 'merge', latestImportData({
     apiKeys: [{ ...KEY_B, key: KEY_A.key }],
   }));
-  const mergeExistingAffinityConflict = await doImport(app, 'merge', latestImportData({
-    apiKeys: [{ ...KEY_B, affinitySecret: KEY_A.affinitySecret }],
+  const mergeExistingServerSecretConflict = await doImport(app, 'merge', latestImportData({
+    apiKeys: [{ ...KEY_B, serverSecret: KEY_A.serverSecret }],
   }));
 
   assertEquals(duplicateRawKey.status, 400);
   assertEquals(duplicateRawKey.body.error, 'invalid apiKeys: duplicate apiKeys raw key used by key-b and key-c');
   assertEquals(duplicateId.status, 400);
   assertEquals(duplicateId.body.error, 'invalid apiKeys: duplicate apiKeys id key-b at indexes 0 and 1');
-  assertEquals(duplicateAffinitySecret.status, 400);
-  assertEquals(duplicateAffinitySecret.body.error, 'invalid apiKeys: duplicate apiKeys affinity secret used by key-b and key-c');
+  assertEquals(duplicateServerSecret.status, 400);
+  assertEquals(duplicateServerSecret.body.error, 'invalid apiKeys: duplicate apiKeys server secret used by key-b and key-c');
   assertEquals(mergeExistingRawKeyConflict.status, 400);
   assertEquals(mergeExistingRawKeyConflict.body.error, 'invalid apiKeys: apiKeys raw key for key-b conflicts with existing api key key-a');
-  assertEquals(mergeExistingAffinityConflict.status, 400);
-  assertEquals(mergeExistingAffinityConflict.body.error, 'invalid apiKeys: apiKeys affinity secret for key-b conflicts with existing api key key-a');
+  assertEquals(mergeExistingServerSecretConflict.status, 400);
+  assertEquals(mergeExistingServerSecretConflict.body.error, 'invalid apiKeys: apiKeys server secret for key-b conflicts with existing api key key-a');
   assertEquals(await repo.apiKeys.list(), [KEY_A]);
   assertEquals(await repo.upstreams.list(), [CUSTOM_UPSTREAM]);
 });
 
-test('import requires an exact lowercase hexadecimal affinitySecret on every api key', async () => {
+test('import requires an exact lowercase hexadecimal serverSecret on every api key', async () => {
   const { app, repo } = setup();
   await repo.apiKeys.save(KEY_A);
 
   const malformed = [
-    { ...KEY_B, affinitySecret: undefined },
-    { ...KEY_B, affinitySecret: 'aa'.repeat(31) },
-    { ...KEY_B, affinitySecret: 'AA'.repeat(32) },
-    { ...KEY_B, affinitySecret: `${'aa'.repeat(31)}zz` },
+    { ...KEY_B, serverSecret: undefined },
+    { ...KEY_B, serverSecret: 'aa'.repeat(31) },
+    { ...KEY_B, serverSecret: 'AA'.repeat(32) },
+    { ...KEY_B, serverSecret: `${'aa'.repeat(31)}zz` },
   ];
 
   for (const key of malformed) {
@@ -809,7 +809,7 @@ test('import requires an exact lowercase hexadecimal affinitySecret on every api
     assertEquals(result.status, 400);
     assertEquals(
       result.body.error,
-      'invalid apiKeys at index 0: affinitySecret must be exactly 64 lowercase hexadecimal characters',
+      'invalid apiKeys at index 0: serverSecret must be exactly 64 lowercase hexadecimal characters',
     );
   }
 

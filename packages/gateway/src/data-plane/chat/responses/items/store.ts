@@ -192,11 +192,13 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     const cloned = cloneStoredResponsesItem(row);
     this.loadedItems.set(cloned.id, cloned);
     if (durable) this.durableItemIds.add(cloned.id);
-    const byHash = this.loadedByContentHash.get(cloned.contentHash) ?? [];
-    if (!byHash.some(existing => existing.id === cloned.id)) {
-      byHash.push(cloned);
-      byHash.sort(compareResponsesItemsByFreshness);
-      this.loadedByContentHash.set(cloned.contentHash, byHash);
+    if (cloned.contentHash !== null) {
+      const byHash = this.loadedByContentHash.get(cloned.contentHash) ?? [];
+      if (!byHash.some(existing => existing.id === cloned.id)) {
+        byHash.push(cloned);
+        byHash.sort(compareResponsesItemsByFreshness);
+        this.loadedByContentHash.set(cloned.contentHash, byHash);
+      }
     }
   }
 
@@ -252,7 +254,7 @@ export class MemoryStatefulResponsesBacking implements StatefulResponsesBacking 
     const ids = new Set(query.ids);
     const hashes = new Set(query.contentHashes);
     return Promise.resolve([...this.items.values()]
-      .filter(({ row }) => row.apiKeyId === query.apiKeyId && (ids.has(row.id) || hashes.has(row.contentHash)))
+      .filter(({ row }) => row.apiKeyId === query.apiKeyId && (ids.has(row.id) || (row.contentHash !== null && hashes.has(row.contentHash))))
       .map(({ row, durable }) => ({ item: cloneStoredResponsesItem(row), durable }))
       .toSorted((a, b) => compareResponsesItemsByFreshness(a.item, b.item)));
   }

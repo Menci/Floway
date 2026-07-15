@@ -38,7 +38,7 @@ import type {
 import { serializeStoredConfig, serializeStoredState } from './upstream-json.ts';
 import { parseUpstreamColor, parseUpstreamKind } from './upstream-parse.ts';
 import { usageDimensionRows } from './usage-dimensions.ts';
-import { parseAffinitySecret } from '../shared/affinity-secret.ts';
+import { parseServerSecret } from '../shared/server-secret.ts';
 import { bucketForTtftMs, bucketForTpotUs } from '../shared/performance-histogram.ts';
 import { generateSessionToken } from '../shared/session-tokens.ts';
 import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';
@@ -66,7 +66,7 @@ interface ApiKeyRow {
   user_id: number;
   name: string;
   key: string;
-  affinity_secret: string;
+  server_secret: string;
   created_at: string;
   last_used_at: string | null;
   upstream_ids: string | null;
@@ -74,7 +74,7 @@ interface ApiKeyRow {
   dump_retention_seconds: number | null;
 }
 
-const API_KEY_COLUMNS = 'id, user_id, name, key, affinity_secret, created_at, last_used_at, upstream_ids, deleted_at, dump_retention_seconds';
+const API_KEY_COLUMNS = 'id, user_id, name, key, server_secret, created_at, last_used_at, upstream_ids, deleted_at, dump_retention_seconds';
 
 const serializeUpstreamIds = (value: readonly string[] | null): string | null => (value === null ? null : JSON.stringify(value));
 
@@ -98,7 +98,7 @@ const toApiKey = (row: ApiKeyRow): ApiKey => ({
   userId: row.user_id,
   name: row.name,
   key: row.key,
-  affinitySecret: parseAffinitySecret(row.affinity_secret, `api_keys.affinity_secret for id=${row.id}`),
+  serverSecret: parseServerSecret(row.server_secret, `api_keys.server_secret for id=${row.id}`),
   createdAt: row.created_at,
   lastUsedAt: row.last_used_at ?? undefined,
   upstreamIds: parseUpstreamIds(row.upstream_ids, `api_keys.id=${row.id}`),
@@ -163,7 +163,7 @@ class SqlApiKeyRepo implements ApiKeyRepo {
            user_id = excluded.user_id,
            name = excluded.name,
            key = excluded.key,
-           affinity_secret = excluded.affinity_secret,
+           server_secret = excluded.server_secret,
            last_used_at = excluded.last_used_at,
            upstream_ids = excluded.upstream_ids,
            deleted_at = excluded.deleted_at,
@@ -174,7 +174,7 @@ class SqlApiKeyRepo implements ApiKeyRepo {
         key.userId,
         key.name,
         key.key,
-        key.affinitySecret,
+        key.serverSecret,
         key.createdAt,
         key.lastUsedAt ?? null,
         serializeUpstreamIds(key.upstreamIds),
@@ -881,7 +881,7 @@ interface ResponsesItemRow {
   api_key_id: string;
   item_type: string;
   payload_json: string;
-  content_hash: string;
+  content_hash: string | null;
   created_at: number;
 }
 

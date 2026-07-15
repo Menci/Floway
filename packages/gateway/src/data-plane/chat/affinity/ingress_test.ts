@@ -15,7 +15,7 @@ const codec = new AffinityCodec('22'.repeat(32));
 const candidate = (upstream: string): ModelCandidate => {
   const base = stubModelCandidate();
   return stubModelCandidate({
-    provider: { ...base.provider, upstream, upstreamRevision: `${upstream}-revision` },
+    provider: { ...base.provider, upstream },
     model: { id: 'model' },
   });
 };

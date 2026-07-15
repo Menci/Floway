@@ -582,7 +582,7 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
     if (wanted.size === 0) return Promise.resolve([]);
     const rows: StoredResponsesItem[] = [];
     for (const row of this.store.values()) {
-      if (row.apiKeyId === apiKeyId && wanted.has(row.contentHash)) {
+      if (row.apiKeyId === apiKeyId && row.contentHash !== null && wanted.has(row.contentHash)) {
         rows.push(cloneStoredResponsesItem(row));
       }
     }

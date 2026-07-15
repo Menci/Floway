@@ -74,6 +74,34 @@ test('inline payload round-trips through gzip+base64 and the descriptor advertis
   });
 });
 
+test('legacy inline payload descriptors remain readable after the state migration', async () => {
+  initFileProvider(new MemoryFileProvider());
+  const descriptor = JSON.stringify({
+    version: 1,
+    storage: 'inline',
+    payload: { item: { type: 'message', id: 'msg_legacy', content: 'plain' } },
+  });
+
+  assertEquals(await parseStoredResponsesPayload('msg_legacy', descriptor), {
+    item: { type: 'message', id: 'msg_legacy', content: 'plain' },
+  });
+});
+
+test('legacy file descriptors retain their uncompressed payload body', async () => {
+  const files = new MemoryFileProvider();
+  initFileProvider(files);
+  const body = new TextEncoder().encode(JSON.stringify({ item: { type: 'message', id: 'msg_file_legacy', content: 'persisted' } }));
+  const digest = await crypto.subtle.digest('SHA-256', body);
+  const sha256 = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+  const key = `responses-items/v1/expires/2026/06/27/12/scope/msg_file_legacy/${sha256}.json`;
+  await files.put(key, body);
+  const descriptor = JSON.stringify({ version: 1, storage: 'file', key, sha256, byteLength: body.byteLength });
+
+  assertEquals(await parseStoredResponsesPayload('msg_file_legacy', descriptor), {
+    item: { type: 'message', id: 'msg_file_legacy', content: 'persisted' },
+  });
+});
+
 test('spilled payload file body is gzip-compressed and the descriptor records the encoding', async () => {
   const files = new MemoryFileProvider();
   initFileProvider(files);

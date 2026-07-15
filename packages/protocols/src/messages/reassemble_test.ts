@@ -247,7 +247,7 @@ test('reassembleMessagesEvents reassembles tool_use response', async () => {
   assertEquals(tu.input, { x: 42 });
 });
 
-test('reassembleMessagesEvents rejects malformed streamed tool input JSON', async () => {
+test('reassembleMessagesEvents falls back to empty tool input for malformed JSON', async () => {
   const body = makeEvents([
     {
       event: 'message_start',
@@ -296,7 +296,14 @@ test('reassembleMessagesEvents rejects malformed streamed tool input JSON', asyn
     { event: 'message_stop', data: { type: 'message_stop' } },
   ]);
 
-  await assertRejects(() => reassembleMessagesEvents(body), Error, 'Messages tool_use input was not valid JSON');
+  const result = await reassembleMessagesEvents(body);
+
+  assertEquals(result.content[0], {
+    type: 'tool_use',
+    id: 'tu_bad',
+    name: 'calc',
+    input: {},
+  });
 });
 
 test('reassembleMessagesEvents reassembles thinking blocks', async () => {

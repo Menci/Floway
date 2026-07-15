@@ -9,7 +9,6 @@ import type { GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 const affinity: AffinityTarget = {
   mode: 'prefer',
   upstreamId: 'up-a',
-  upstreamRevision: 'rev-a',
   modelId: 'model-a',
   rulesPresent: false,
 };

@@ -1,4 +1,4 @@
-import { flushGeminiThoughtSignature, type GeminiThoughtSignatureState, parseStrictJsonObject, signGeminiPart } from '../shared/gemini-via/gemini.ts';
+import { flushGeminiThoughtSignature, type GeminiThoughtSignatureState, parseStrictJsonObject, setGeminiThoughtSignature, signGeminiPart } from '../shared/gemini-via/gemini.ts';
 import { chatCompletionsErrorPayloadMessage } from '@floway-dev/protocols/chat-completions';
 import type { ChatCompletionsStreamEvent, ChatCompletionsDelta } from '@floway-dev/protocols/chat-completions';
 import { billableServiceTier, eventFrame, splitCacheWriteTokens, splitInclusiveInputTokens, splitInclusiveOutputTokens, USAGE_BILLING, type ProtocolFrame } from '@floway-dev/protocols/common';
@@ -111,7 +111,7 @@ const flushToolCallParts = (state: ChatCompletionsToGeminiStreamState): GeminiPa
   const parts: GeminiPart[] = [];
 
   for (const [_index, toolCall] of Object.entries(state.toolCalls).sort(([left], [right]) => Number(left) - Number(right))) {
-    if (!toolCall.name) throw new Error('Chat Completions tool call finished without a name');
+    if (!toolCall.name) continue;
 
     parts.push(
       signGeminiPart(state, {
@@ -137,7 +137,7 @@ const buildCandidate = (choice: ChatCompletionsStreamChoice, state: ChatCompleti
   }
 
   if (typeof delta.reasoning_opaque === 'string') {
-    state.pendingThoughtSignature = delta.reasoning_opaque;
+    setGeminiThoughtSignature(state, delta.reasoning_opaque);
   }
 
   if (typeof delta.content === 'string') {

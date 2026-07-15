@@ -6,7 +6,6 @@ import type { ModelCandidate } from '@floway-dev/provider';
 
 const sameTarget = (left: AffinityTarget, right: AffinityTarget): boolean =>
   left.upstreamId === right.upstreamId
-  && left.upstreamRevision === right.upstreamRevision
   && left.modelId === right.modelId
   && left.rulesPresent === right.rulesPresent
   && isEqual(left.rules, right.rules);
@@ -14,7 +13,6 @@ const sameTarget = (left: AffinityTarget, right: AffinityTarget): boolean =>
 export const affinityTargetForCandidate = (candidate: ModelCandidate): AffinityTarget => ({
   mode: 'prefer',
   upstreamId: candidate.provider.upstream,
-  upstreamRevision: candidate.provider.upstreamRevision,
   modelId: candidate.model.id,
   rulesPresent: candidate.rules !== undefined,
   ...(candidate.rules !== undefined ? { rules: candidate.rules } : {}),
@@ -22,7 +20,6 @@ export const affinityTargetForCandidate = (candidate: ModelCandidate): AffinityT
 
 export const candidateMatchesAffinity = (candidate: ModelCandidate, affinity: AffinityTarget): boolean =>
   candidate.provider.upstream === affinity.upstreamId
-  && candidate.provider.upstreamRevision === affinity.upstreamRevision
   && candidate.model.id === affinity.modelId
   && (candidate.rules !== undefined) === affinity.rulesPresent
   && isEqual(candidate.rules, affinity.rules);

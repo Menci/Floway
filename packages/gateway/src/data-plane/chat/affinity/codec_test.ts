@@ -9,7 +9,6 @@ const DOMAIN = 'test.carrier';
 const affinity: AffinityTarget = {
   mode: 'prefer',
   upstreamId: 'upstream-a',
-  upstreamRevision: '2026-07-15T00:00:00.000Z',
   modelId: 'model-a',
   rulesPresent: false,
 };

@@ -95,7 +95,6 @@ export const stubModelCandidate = (overrides: {
 } = {}): ModelCandidate => {
   const provider = overrides.provider ?? {
     upstream: 'test-upstream',
-    upstreamRevision: 'test-revision',
     kind: 'custom',
     name: 'Test Upstream',
     disabledPublicModelIds: [],
