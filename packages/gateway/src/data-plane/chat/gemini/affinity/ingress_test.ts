@@ -46,25 +46,3 @@ test('preserves unrelated empty model contents', async () => {
 
   expect(prepared.payloadForCandidate(candidateA).contents).toEqual([{ role: 'model', parts: [] }]);
 });
-
-test('reattaches a deferred wrapped signature to its original visible part', async () => {
-  const carrier = await codec.wrap('signature', {
-    ...affinityTargetForCandidate(candidateA),
-    geminiPartFromEnd: 1,
-  }, GEMINI_AFFINITY_DOMAIN);
-  const prepared = await prepareGeminiAffinity({
-    contents: [
-      { role: 'model', parts: [{ functionCall: { name: 'tool', args: {} } }] },
-      { role: 'model', parts: [{ thoughtSignature: carrier }] },
-    ],
-  }, codec);
-
-  expect(prepared.payloadForCandidate(candidateA).contents).toEqual([{
-    role: 'model',
-    parts: [{ functionCall: { name: 'tool', args: {} }, thoughtSignature: 'signature' }],
-  }]);
-  expect(prepared.payloadForCandidate(candidateB).contents).toEqual([{
-    role: 'model',
-    parts: [{ functionCall: { name: 'tool', args: {} } }],
-  }]);
-});

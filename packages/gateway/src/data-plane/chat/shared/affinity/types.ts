@@ -9,7 +9,6 @@ export interface AffinityTarget {
   rules?: AliasRules;
   upstreamItemId?: string;
   syntheticItem?: true;
-  geminiPartFromEnd?: number;
 }
 
 export interface AffinityEvidence {

@@ -2,7 +2,7 @@ import { GEMINI_AFFINITY_DOMAIN } from './domain.ts';
 import type { AffinityCodec } from '../../shared/affinity/codec.ts';
 import { blobForCandidate, ownedAffinityEvidence, type PreparedAffinityPayload } from '../../shared/affinity/prepared.ts';
 import type { DecodedAffinityBlob } from '../../shared/affinity/types.ts';
-import type { GeminiContent, GeminiPart, GeminiPayload } from '@floway-dev/protocols/gemini';
+import type { GeminiPart, GeminiPayload } from '@floway-dev/protocols/gemini';
 
 interface GeminiBlobLocation {
   readonly contentIndex: number;
@@ -13,27 +13,6 @@ interface GeminiBlobLocation {
 const visiblePart = (part: GeminiPart): boolean => {
   const { thoughtSignature: _signature, ...data } = part;
   return Object.keys(data).length > 0;
-};
-
-const findPreviousVisiblePart = (
-  contents: GeminiContent[],
-  contentIndex: number,
-  partIndex: number,
-  fromEnd: number,
-): GeminiPart => {
-  let remaining = fromEnd;
-  for (let currentContent = contentIndex; currentContent >= 0; currentContent -= 1) {
-    const content = contents[currentContent];
-    if (content.role !== 'model') break;
-    const start = currentContent === contentIndex ? partIndex - 1 : content.parts.length - 1;
-    for (let currentPart = start; currentPart >= 0; currentPart -= 1) {
-      const part = content.parts[currentPart];
-      if (!visiblePart(part)) continue;
-      remaining -= 1;
-      if (remaining === 0) return part;
-    }
-  }
-  throw new Error(`Gemini affinity carrier could not find previous visible part at offset ${fromEnd}`);
 };
 
 export const prepareGeminiAffinity = async (
@@ -68,15 +47,6 @@ export const prepareGeminiAffinity = async (
           }
           const affinity = location.decoded.envelope.affinity;
           if (affinity.syntheticItem === true) {
-            replacements.set(location.partIndex, null);
-          } else if (selected.present && affinity.geminiPartFromEnd !== undefined) {
-            const target = findPreviousVisiblePart(
-              candidatePayload.contents,
-              location.contentIndex,
-              location.partIndex,
-              affinity.geminiPartFromEnd,
-            );
-            target.thoughtSignature = selected.value;
             replacements.set(location.partIndex, null);
           } else if (selected.present) {
             replacements.set(location.partIndex, { ...part, thoughtSignature: selected.value });

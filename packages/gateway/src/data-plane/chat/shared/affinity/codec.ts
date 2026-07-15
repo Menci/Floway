@@ -91,7 +91,6 @@ const parseEnvelope = (value: unknown): AffinityEnvelope | null => {
     || typeof affinity.rulesPresent !== 'boolean'
     || (affinity.upstreamItemId !== undefined && typeof affinity.upstreamItemId !== 'string')
     || (affinity.syntheticItem !== undefined && affinity.syntheticItem !== true)
-    || (affinity.geminiPartFromEnd !== undefined && (typeof affinity.geminiPartFromEnd !== 'number' || !Number.isInteger(affinity.geminiPartFromEnd) || affinity.geminiPartFromEnd <= 0))
     || (affinity.rulesPresent && !isRecord(affinity.rules))
     || (!affinity.rulesPresent && affinity.rules !== undefined)
   ) return null;
@@ -103,7 +102,6 @@ const parseEnvelope = (value: unknown): AffinityEnvelope | null => {
     ...(affinity.rulesPresent ? { rules: affinity.rules as AliasRules } : {}),
     ...(affinity.upstreamItemId !== undefined ? { upstreamItemId: affinity.upstreamItemId } : {}),
     ...(affinity.syntheticItem === true ? { syntheticItem: true } : {}),
-    ...(affinity.geminiPartFromEnd !== undefined ? { geminiPartFromEnd: affinity.geminiPartFromEnd } : {}),
   };
   return {
     version: 1,
