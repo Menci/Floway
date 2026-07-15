@@ -152,9 +152,10 @@ Dependency direction is strict. The leaf-most packages are `protocols`,
 `interceptor`, and `http` (HTTP/1.1 over a duplex byte stream + userspace
 TLS + WebSocket upgrade, no runtime dependencies). `translate` depends on
 `protocols`. `proxy` depends on `http`; it parses subscription-style
-proxy URIs, dispatches to per-protocol byte-stream dialers, and exposes a
-`runProxiedRequest` orchestrator that composes dial → optional userspace
-TLS → fetch-on-stream. All dialers — including `vless-ws`, which layers
+proxy URIs, dispatches to per-protocol byte-stream dialers, and exposes
+request runners for both proxy-backed and direct TCP streams. Both compose
+dial → optional userspace TLS → fetch-on-stream. All dialers — including
+`vless-ws`, which layers
 `wsUpgradeAndFrame` over the runtime's TLS-wrapped duplex — stay
 runtime-agnostic by taking the raw TCP `socketDial` primitive through
 `DialOptions`, so they never import `@floway-dev/platform`. `provider`

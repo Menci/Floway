@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import { entryMatchesColo, normalizeProxyFallbackList } from './proxy-fallback-list.ts';
+import { entryMatchesColo, isDirectFallbackId, normalizeProxyFallbackList } from './proxy-fallback-list.ts';
+
+describe('isDirectFallbackId', () => {
+  it('recognizes only the two built-in direct transports', () => {
+    expect(isDirectFallbackId('direct_fetch')).toBe(true);
+    expect(isDirectFallbackId('direct_connect')).toBe(true);
+    expect(isDirectFallbackId('proxy_a')).toBe(false);
+  });
+});
 
 describe('entryMatchesColo', () => {
   it('treats missing colos as "active in all colos"', () => {

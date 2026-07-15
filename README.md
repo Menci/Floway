@@ -24,6 +24,10 @@ target ships in the same repo for self-hosting on a long-lived process.
 | OpenAI Models                           | `GET  /v1/models`             |
 | Google Gemini (generate / count tokens) | `POST /v1beta/models/...`     |
 
+`POST /v1/images/edits` accepts multipart image uploads and JSON `images`
+references. The dashboard's Codex provider base, `/azure-api.codex`, exposes
+the same generation and edit handlers at their provider-relative paths.
+
 For each public model, Floway picks the first (provider, model) pair that can
 serve the request, translating between source and target protocols when the
 upstream speaks a different shape. `/v1/completions` is forwarded to upstreams that

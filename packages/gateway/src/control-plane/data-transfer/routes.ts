@@ -19,7 +19,7 @@ import { getDumpStore, notifyDisabledBestEffort } from '../../dump/registry.ts';
 import { type CtxWithJson, type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { parseDisabledPublicModelIdsWire } from '../../repo/disabled-public-models.ts';
 import { getRepo } from '../../repo/index.ts';
-import { DIRECT_PROXY_ID, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
+import { DIRECT_FALLBACK_IDS, isDirectFallbackId, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
 import type { ApiKey, PerformanceBucketRow, PerformanceMetric, PerformanceTelemetryRecord, SearchUsageRecord, TokenUsage, UsageRecord, User } from '../../repo/types.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
@@ -199,7 +199,7 @@ const parseProxyRecords = (value: unknown): { type: 'ok'; records: SerializedPro
       const item = value[i];
       if (!isRecord(item)) throw new Error('record must be an object');
       const id = nonEmptyString(item.id, 'id');
-      if (id === DIRECT_PROXY_ID) throw new Error(`id must not be the reserved '${DIRECT_PROXY_ID}' sentinel`);
+      if (isDirectFallbackId(id)) throw new Error('id must not be a reserved direct-transport sentinel');
       const name = nonEmptyString(item.name, 'name');
       const url = nonEmptyString(item.url, 'url');
       try {
@@ -233,9 +233,9 @@ const validateProxyIdentities = (records: readonly SerializedProxy[]): string | 
 // Every entry in every upstream's proxy_fallback_list must resolve to a proxy
 // id that will exist after the import completes — that is, an imported proxy,
 // an existing local proxy (merge mode only; replace mode wipes them first),
-// or the 'direct' sentinel. A dangling reference would silently disable that
-// fallback in the dial layer, which is exactly the silent-truncation
-// behavior the import contract is supposed to prevent.
+// or one of the built-in direct transports. A dangling reference would
+// silently disable that fallback in the dial layer, which is exactly the
+// silent-truncation behavior the import contract is supposed to prevent.
 const validateProxyFallbackReferences = (
   upstreams: readonly UpstreamRecord[],
   proxies: readonly SerializedProxy[],
@@ -243,7 +243,7 @@ const validateProxyFallbackReferences = (
 ): string | null => {
   const knownIds = new Set<string>(proxies.map(p => p.id));
   for (const id of existingProxyIds) knownIds.add(id);
-  knownIds.add(DIRECT_PROXY_ID);
+  for (const id of DIRECT_FALLBACK_IDS) knownIds.add(id);
   for (const upstream of upstreams) {
     for (const ref of upstream.proxyFallbackList) {
       if (!knownIds.has(ref.id)) {

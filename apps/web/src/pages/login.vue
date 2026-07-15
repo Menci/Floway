@@ -19,13 +19,14 @@ const errorMessage = ref<string | null>(null);
 
 const [loading, submit] = useLoading(async () => {
   errorMessage.value = null;
-  if (!passwordInput.value) {
+  const username = usernameInput.value.trim();
+  if (username && !passwordInput.value) {
     errorMessage.value = 'Enter a password to continue.';
     return;
   }
 
   const { data, error } = await callApi<{ token: string; user: AuthUser }>(
-    () => api.auth.login.$post({ json: { username: usernameInput.value.trim(), password: passwordInput.value } }),
+    () => api.auth.login.$post({ json: { username, password: passwordInput.value } }),
   );
   if (error) {
     errorMessage.value = error.message;
@@ -57,7 +58,9 @@ const [loading, submit] = useLoading(async () => {
 
       <div class="glass-card glow-cyan p-8">
         <p class="mb-6 text-xs leading-relaxed text-gray-500">
-          Leave the username blank and use the deployment's <span class="text-gray-400">ADMIN_KEY</span> to log in as the default admin user.
+          Leave the username blank to sign in as the default admin user. In local development without an
+          <span class="text-gray-400">ADMIN_KEY</span>, leave the password blank too; otherwise enter the deployment's
+          <span class="text-gray-400">ADMIN_KEY</span>.
         </p>
 
         <form class="space-y-5" @submit.prevent="submit">
@@ -67,7 +70,7 @@ const [loading, submit] = useLoading(async () => {
               id="username"
               v-model="usernameInput"
               type="text"
-              placeholder="(leave blank for ADMIN_KEY login)"
+              placeholder="(leave blank for default admin)"
               autocomplete="username"
               autofocus
             />

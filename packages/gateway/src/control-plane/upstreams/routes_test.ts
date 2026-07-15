@@ -1305,14 +1305,14 @@ test('POST /api/upstreams accepts proxy_fallback_list and surfaces it in the res
 
   const resp = await requestApp(
     '/api/upstreams',
-    authed(adminSession, createBody({ proxy_fallback_list: [{ id: 'p_fallback' }, { id: 'direct' }] })),
+    authed(adminSession, createBody({ proxy_fallback_list: [{ id: 'p_fallback' }, { id: 'direct_connect' }, { id: 'direct_fetch' }] })),
   );
   assertEquals(resp.status, 201);
   const created = (await resp.json()) as JsonObject;
-  assertEquals(created.proxy_fallback_list, [{ id: 'p_fallback' }, { id: 'direct' }]);
+  assertEquals(created.proxy_fallback_list, [{ id: 'p_fallback' }, { id: 'direct_connect' }, { id: 'direct_fetch' }]);
 
   const stored = await repo.upstreams.getById(created.id);
-  assertEquals(stored?.proxyFallbackList, [{ id: 'p_fallback' }, { id: 'direct' }]);
+  assertEquals(stored?.proxyFallbackList, [{ id: 'p_fallback' }, { id: 'direct_connect' }, { id: 'direct_fetch' }]);
 });
 
 test('POST /api/upstreams normalises proxy_fallback_list duplicates so the response matches what GET returns', async () => {
@@ -1322,19 +1322,19 @@ test('POST /api/upstreams normalises proxy_fallback_list duplicates so the respo
 
   const resp = await requestApp(
     '/api/upstreams',
-    authed(adminSession, createBody({ proxy_fallback_list: [{ id: 'p_fallback' }, { id: 'direct' }, { id: 'p_fallback' }, { id: 'direct' }] })),
+    authed(adminSession, createBody({ proxy_fallback_list: [{ id: 'p_fallback' }, { id: 'direct_connect' }, { id: 'direct_fetch' }, { id: 'p_fallback' }, { id: 'direct_connect' }, { id: 'direct_fetch' }] })),
   );
   assertEquals(resp.status, 201);
   const created = (await resp.json()) as JsonObject;
   // Without the API-layer normalize, the response would echo the duplicates
   // while the saved row only kept one of each — operators would see a
   // different list on POST vs the next GET.
-  assertEquals(created.proxy_fallback_list, [{ id: 'p_fallback' }, { id: 'direct' }]);
+  assertEquals(created.proxy_fallback_list, [{ id: 'p_fallback' }, { id: 'direct_connect' }, { id: 'direct_fetch' }]);
 
   const get = await requestApp('/api/upstreams', authed(adminSession));
   const list = (await get.json()) as JsonObject[];
   const fresh = list.find(u => u.id === created.id);
-  assertEquals(fresh!.proxy_fallback_list, [{ id: 'p_fallback' }, { id: 'direct' }]);
+  assertEquals(fresh!.proxy_fallback_list, [{ id: 'p_fallback' }, { id: 'direct_connect' }, { id: 'direct_fetch' }]);
 });
 
 test('PATCH /api/upstreams sets proxy_fallback_list', async () => {
@@ -1349,11 +1349,11 @@ test('PATCH /api/upstreams sets proxy_fallback_list', async () => {
   const patch = await requestApp(`/api/upstreams/${created.id}`, {
     method: 'PATCH',
     headers: { 'content-type': 'application/json', 'x-floway-session': adminSession },
-    body: JSON.stringify({ proxy_fallback_list: [{ id: 'p_fallback' }, { id: 'direct' }] }),
+    body: JSON.stringify({ proxy_fallback_list: [{ id: 'p_fallback' }, { id: 'direct_connect' }, { id: 'direct_fetch' }] }),
   });
   assertEquals(patch.status, 200);
   const updated = (await patch.json()) as JsonObject;
-  assertEquals(updated.proxy_fallback_list, [{ id: 'p_fallback' }, { id: 'direct' }]);
+  assertEquals(updated.proxy_fallback_list, [{ id: 'p_fallback' }, { id: 'direct_connect' }, { id: 'direct_fetch' }]);
 });
 
 test('PATCH /api/upstreams rejects proxy_fallback_list referencing an unknown proxy id', async () => {
@@ -2041,7 +2041,7 @@ test('spec invariant (3): POST /api/upstreams/claude-code/probe does not persist
   const originalList = (await getRecord(repo, created.id)).proxyFallbackList;
 
   const envelope = envelopeFromRecord(await getRecord(repo, created.id));
-  envelope.proxy_fallback_list = [{ id: 'direct' }];
+  envelope.proxy_fallback_list = [{ id: 'direct_fetch' }];
 
   await withMockedFetch(
     () => jsonResponse(usageProbeBody),

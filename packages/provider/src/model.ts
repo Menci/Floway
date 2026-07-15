@@ -58,7 +58,8 @@ export const normalizeUpstreamColor = (value: unknown): UpstreamColor | null => 
 };
 
 // One entry in `UpstreamRecord.proxyFallbackList`. `id` is the proxy id from
-// the proxies catalog or the literal 'direct' sentinel. `colos` is an
+// the proxies catalog or a built-in transport (`direct_fetch`,
+// `direct_connect`). `colos` is an
 // optional whitelist of location tags (Cloudflare colos / the Node
 // `RUNTIME_LOCATION` env var); when set, the dial layer only attempts this
 // entry from a request that landed in one of the listed locations. Missing

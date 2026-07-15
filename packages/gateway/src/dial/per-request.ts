@@ -1,9 +1,9 @@
 import { createFetcher, type ProxyEntry } from './fetcher.ts';
 import { getRepo } from '../repo/index.ts';
-import { DIRECT_PROXY_ID } from '../repo/proxy-fallback-list.ts';
+import { isDirectFallbackId } from '../repo/proxy-fallback-list.ts';
 import { getSocketDial } from '@floway-dev/platform';
 import { directFetcher, type Fetcher, type UpstreamRecord } from '@floway-dev/provider';
-import { parseProxyUri, type ProxyUriError, runProxiedRequest } from '@floway-dev/proxy';
+import { parseProxyUri, type ProxyUriError, runDirectConnectRequest, runProxiedRequest } from '@floway-dev/proxy';
 
 // Parse failures on individual proxy rows are isolated to the upstreams that
 // actually reference them: a single malformed URL must not take down every
@@ -24,7 +24,7 @@ export const createPerRequestFetcher = async (
   const referencedProxyIds = new Set<string>();
   for (const list of fallbackById.values()) {
     for (const entry of list) {
-      if (entry.id !== DIRECT_PROXY_ID) referencedProxyIds.add(entry.id);
+      if (!isDirectFallbackId(entry.id)) referencedProxyIds.add(entry.id);
     }
   }
 
@@ -50,7 +50,7 @@ export const createPerRequestFetcher = async (
 
   return upstreamId => {
     // Fail loud on an unknown upstream id. Silently substituting `[]`
-    // would route the request through `direct` only, masking a stale
+    // would route the request through direct-fetch only, masking a stale
     // api-key→upstream binding or a typo in the caller as a working
     // proxy-bypass.
     const list = fallbackById.get(upstreamId);
@@ -72,7 +72,8 @@ export const createPerRequestFetcher = async (
       runtimeLocation,
       proxyById,
       runProxied: runProxiedRequest,
-      runDirect: directFetcher,
+      runDirectFetch: directFetcher,
+      runDirectConnect: runDirectConnectRequest,
       socketDial: getSocketDial,
     });
   };

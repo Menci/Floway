@@ -267,11 +267,12 @@ interface UpstreamRecordBase {
   // unroutable, but their per-model metadata stays editable. May include ids no
   // longer present in the live model list.
   disabled_public_model_ids: string[];
-  // Ordered fallback dial-list. Each entry pins a proxy id (or the literal
-  // string `'direct'` for "no proxy") and an optional `colos` whitelist that
-  // scopes the entry to specific location tags (Cloudflare colos / the Node
-  // `RUNTIME_LOCATION` env var). Empty/missing whitelist means "active in
-  // all locations". Empty top-level list means "always direct".
+  // Ordered proxy fallback list. Each entry pins a proxy id or one of the
+  // built-in direct transports (`direct_fetch`, `direct_connect`), plus an
+  // optional `colos` whitelist that scopes it to location tags (Cloudflare
+  // colos / the Node `RUNTIME_LOCATION` env var). Empty/missing whitelist
+  // means "active in all locations". Empty top-level list defaults to
+  // `direct_fetch`.
   proxy_fallback_list: ProxyFallbackEntry[];
   // Per-upstream model name prefix. When set, this upstream's models can be
   // addressed in two forms (`unprefixed` and `prefixed`) and listed in either

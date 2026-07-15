@@ -828,6 +828,43 @@ test('migration 0048 rebuckets Codex quota snapshots by active limit', async () 
   }
 });
 
+test('migration 0055 names existing direct fallback entries direct_fetch', async () => {
+  const db = await createMigratedSqlJsDatabase();
+  try {
+    for (const filename of [...migrationSqlByFilename.keys()].filter(f => f >= '0010_unified_upstreams.sql' && f < '0055_direct_transport_fallbacks.sql').toSorted()) {
+      applySqlJsFile(db, filename);
+    }
+
+    db.run(`INSERT INTO upstreams (id, provider, name, enabled, sort_order, created_at, updated_at, config_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json)
+            VALUES
+              ('up_direct', 'custom', 'Direct', 1, 0, '2026-07-14T00:00:00.000Z', '2026-07-14T00:00:00.000Z',
+                json_object('baseUrl', 'https://a.example', 'apiKey', 'k', 'authStyle', 'bearer'),
+                '[]', '[]', '[{"id":"p_first"},{"id":"direct","colos":["SIN"]},{"id":"p_last"}]'),
+              ('up_proxy_only', 'custom', 'Proxy only', 1, 1, '2026-07-14T00:00:00.000Z', '2026-07-14T00:00:00.000Z',
+                json_object('baseUrl', 'https://b.example', 'apiKey', 'k', 'authStyle', 'bearer'),
+                '[]', '[]', '[{"id":"p_only"}]'),
+              ('up_empty', 'custom', 'Empty', 1, 2, '2026-07-14T00:00:00.000Z', '2026-07-14T00:00:00.000Z',
+                json_object('baseUrl', 'https://c.example', 'apiKey', 'k', 'authStyle', 'bearer'),
+                '[]', '[]', '[]')`);
+
+    applySqlJsFile(db, '0055_direct_transport_fallbacks.sql');
+
+    const rows = sqlJsRows<{ id: string; fallback: string }>(
+      db,
+      'SELECT id, proxy_fallback_list_json AS fallback FROM upstreams ORDER BY id',
+    );
+    assertEquals(JSON.parse(rows.find(row => row.id === 'up_direct')!.fallback), [
+      { id: 'p_first' },
+      { id: 'direct_fetch', colos: ['SIN'] },
+      { id: 'p_last' },
+    ]);
+    assertEquals(JSON.parse(rows.find(row => row.id === 'up_proxy_only')!.fallback), [{ id: 'p_only' }]);
+    assertEquals(JSON.parse(rows.find(row => row.id === 'up_empty')!.fallback), []);
+  } finally {
+    db.close();
+  }
+});
+
 type FakeUpstreamRow = {
   id: string;
   provider: string;

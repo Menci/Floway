@@ -1,7 +1,6 @@
 import { beforeEach, test } from 'vitest';
 
 import {
-  buildGenerationsBody,
   buildImageGenerationFunctionTool,
   createImageSourceInspector,
   inspectImageSources,
@@ -13,7 +12,6 @@ import {
   isHostedImageGenerationTool,
   parseImageStreamEvent,
   parseRetryAfterMs,
-  prepareEditSources,
   prepareImageGenerationConfig,
   resolveImageOperation,
   SHIM_TOOL_NAME,
@@ -24,7 +22,7 @@ import { initRepo } from '../../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../../../test-helpers/gateway-ctx.ts';
 import type { ResponsesInvocation } from '../types.ts';
-import { initExternalResourceFetcher, initImageProcessor } from '@floway-dev/platform';
+import { initExternalResourceFetcher } from '@floway-dev/platform';
 import type { CanonicalResponsesPayload, ResponsesInputImage, ResponsesInputItem, ResponsesPayload, ResponsesTool } from '@floway-dev/protocols/responses';
 import { assert, assertEquals, assertFalse, assertStringIncludes, assertThrows, stubModelCandidate } from '@floway-dev/test-utils';
 
@@ -352,30 +350,6 @@ test('inspectImageSources reads tool-result images and preserves forward order',
   assertEquals(third.mimeType, 'image/webp');
 });
 
-test('prepareEditSources transcodes formats accepted by native Responses but rejected by images edits', async () => {
-  let observedTarget: unknown = undefined;
-  let processorCalls = 0;
-  initImageProcessor({
-    compressToWebp: (_input, target) => {
-      processorCalls += 1;
-      observedTarget = target;
-      return Promise.resolve(Uint8Array.of(1, 2, 3));
-    },
-  });
-  const first = {
-    bytes: Uint8Array.of(4, 5, 6).buffer,
-    mimeType: 'image/gif',
-  };
-  const sameBytes = { bytes: Uint8Array.of(4, 5, 6).buffer, mimeType: 'image/gif' };
-  const prepared = await prepareEditSources([first, first, sameBytes]);
-  assertEquals(processorCalls, 1);
-  assert(prepared[0] === prepared[1]);
-  assert(prepared[0] === prepared[2]);
-  assertEquals(prepared[0].mimeType, 'image/webp');
-  assertEquals([...new Uint8Array(prepared[0].bytes)], [1, 2, 3]);
-  assertEquals(observedTarget, null);
-});
-
 test('resolveImageOperation exposes a malformed replayed result as an invariant failure', () => {
   const inspection = inspectImageSources([
     { type: 'image_generation_call', id: 'ig_bad', status: 'completed', result: '%%%' },
@@ -469,28 +443,6 @@ test('transformInputItemsForImageGeneration passes non-image items through untou
   const out = transformInputItemsForImageGeneration([message], 'image_generation');
   assertEquals(out.length, 1);
   assertEquals(out[0], message);
-});
-
-// ── buildGenerationsBody ──
-
-test('buildGenerationsBody always sends n:1 and maps config, omitting undefined', () => {
-  const config: ImageGenerationConfig = { model: 'gpt-image-2', size: '1024x1024', quality: 'low', action: 'generate' };
-  const body = buildGenerationsBody('a cat', config, false);
-  assertEquals(body.prompt, 'a cat');
-  assertEquals(body.n, 1);
-  assertEquals(body.size, '1024x1024');
-  assertEquals(body.quality, 'low');
-  assertFalse('background' in body);
-  assertFalse('output_format' in body);
-  assertFalse('stream' in body);
-  assertFalse('partial_images' in body);
-});
-
-test('buildGenerationsBody adds stream and partial_images when streaming', () => {
-  const config: ImageGenerationConfig = { model: 'gpt-image-2', partial_images: 2, action: 'generate' };
-  const body = buildGenerationsBody('a cat', config, true);
-  assertEquals(body.stream, true);
-  assertEquals(body.partial_images, 2);
 });
 
 // ── imageTerminal ──

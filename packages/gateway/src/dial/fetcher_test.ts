@@ -28,17 +28,18 @@ describe('createFetcher', () => {
     const fetcher = createFetcher({
       repo,
       upstreamId: 'u',
-      fallbackList: [{ id: 'a' }, { id: 'b' }, { id: 'direct' }],
+      fallbackList: [{ id: 'a' }, { id: 'b' }, { id: 'direct_fetch' }],
       runtimeLocation: 'TEST',
       proxyById: new Map([['a', proxyA], ['b', proxyB]]),
       runProxied: async (config: ProxyConfig) => {
         calls.push(config.host);
         return new Response('ok');
       },
-      runDirect: async () => {
+      runDirectFetch: async () => {
         calls.push('direct');
         return new Response('direct');
       },
+      runDirectConnect: async () => new Response('direct connect'),
       socketDial: () => stubSocketDial,
     });
     const res = await fetcher('https://api.openai.com/v1/models', { method: 'GET' });
@@ -55,7 +56,8 @@ describe('createFetcher', () => {
       runtimeLocation: 'TEST',
       proxyById: new Map([['a', proxyA]]),
       runProxied: async () => { throw new ProxyDialError('boom', 'tcp-connect'); },
-      runDirect: async () => new Response('ok'),
+      runDirectFetch: async () => new Response('ok'),
+      runDirectConnect: async () => new Response('direct connect'),
       socketDial: () => stubSocketDial,
     });
     await expect(fetcher('https://api.openai.com', { method: 'GET' })).rejects.toBeInstanceOf(ProxyDialError);
@@ -77,7 +79,8 @@ describe('createFetcher', () => {
       runtimeLocation: 'TEST',
       proxyById: new Map([['a', proxyA]]),
       runProxied: async () => new Response('ok'),
-      runDirect: async () => new Response('ok'),
+      runDirectFetch: async () => new Response('ok'),
+      runDirectConnect: async () => new Response('direct connect'),
       socketDial: () => stubSocketDial,
     });
     // first-pass skips a (in backoff). second-pass ignores backoff and succeeds.
@@ -101,7 +104,8 @@ describe('createFetcher', () => {
         if (order.length < 2) throw new ProxyDialError('still bad', 'tcp-connect');
         return new Response('ok');
       },
-      runDirect: async () => new Response('ok'),
+      runDirectFetch: async () => new Response('ok'),
+      runDirectConnect: async () => new Response('direct connect'),
       socketDial: () => stubSocketDial,
     });
     await fetcher('https://api.openai.com', { method: 'GET' });
@@ -120,7 +124,8 @@ describe('createFetcher', () => {
       runtimeLocation: 'TEST',
       proxyById: new Map([['a', proxyA]]),
       runProxied: async () => { throw new ProxyDialError('still bad', 'tcp-connect'); },
-      runDirect: async () => new Response('ok'),
+      runDirectFetch: async () => new Response('ok'),
+      runDirectConnect: async () => new Response('direct connect'),
       socketDial: () => stubSocketDial,
     });
     // Pass 1 skips 'a' (in backoff). Pass 2 retries it and fails — the
@@ -139,12 +144,13 @@ describe('createFetcher', () => {
       upstreamId: 'u',
       // 'p_unknown' is in the list but not in proxyById — simulating a
       // mid-request DELETE between catalog load and dial. The chain must
-      // advance to 'direct' rather than killing the whole call.
-      fallbackList: [{ id: 'p_unknown' }, { id: 'direct' }],
+      // advance to direct-fetch rather than killing the whole call.
+      fallbackList: [{ id: 'p_unknown' }, { id: 'direct_fetch' }],
       runtimeLocation: 'TEST',
       proxyById: new Map(),
       runProxied: async () => new Response('proxy'),
-      runDirect: async () => { directCalls++; return new Response('direct'); },
+      runDirectFetch: async () => { directCalls++; return new Response('direct'); },
+      runDirectConnect: async () => new Response('direct connect'),
       socketDial: () => stubSocketDial,
     });
     const res = await fetcher('https://api.openai.com', { method: 'GET' });
@@ -157,14 +163,15 @@ describe('createFetcher', () => {
     const fetcher = createFetcher({
       repo,
       upstreamId: 'u',
-      // No 'direct' fallback — the only entry is the unknown id, so the
+      // No direct-fetch fallback — the only entry is the unknown id, so the
       // call fails and the typed ProxyDialError surfaces directly (single-
       // entry chains skip the AggregateError wrapper).
       fallbackList: [{ id: 'p_unknown' }],
       runtimeLocation: 'TEST',
       proxyById: new Map(),
       runProxied: async () => new Response('proxy'),
-      runDirect: async () => { throw new Error('unreachable'); },
+      runDirectFetch: async () => { throw new Error('unreachable'); },
+      runDirectConnect: async () => new Response('direct connect'),
       socketDial: () => stubSocketDial,
     });
     await expect(
@@ -193,7 +200,8 @@ describe('createFetcher', () => {
         calls.push(config.host);
         throw new ProxyDialError('fail', 'tcp-connect');
       },
-      runDirect: async () => new Response('ok'),
+      runDirectFetch: async () => new Response('ok'),
+      runDirectConnect: async () => new Response('direct connect'),
       socketDial: () => stubSocketDial,
     });
     await expect(fetcher('https://api.openai.com', { method: 'GET' })).rejects.toBeInstanceOf(AggregateError);
@@ -212,14 +220,15 @@ describe('createFetcher', () => {
       runtimeLocation: 'TEST',
       proxyById: new Map([['a', proxyA]]),
       runProxied: async () => { throw new Error('upstream 500'); },
-      runDirect: async () => new Response('ok'),
+      runDirectFetch: async () => new Response('ok'),
+      runDirectConnect: async () => new Response('direct connect'),
       socketDial: () => stubSocketDial,
     });
     await expect(fetcher('https://api.openai.com', { method: 'GET' })).rejects.toThrow('upstream 500');
     expect(await repo.proxyBackoffs.listForUpstream('u')).toEqual([]);
   });
 
-  it('empty fallback list defaults to ["direct"]', async () => {
+  it('empty fallback list defaults to ["direct_fetch"]', async () => {
     const repo = new InMemoryRepo();
     let directCalled = false;
     const fetcher = createFetcher({
@@ -229,12 +238,78 @@ describe('createFetcher', () => {
       runtimeLocation: 'TEST',
       proxyById: new Map(),
       runProxied: async () => new Response('proxy'),
-      runDirect: async () => { directCalled = true; return new Response('direct'); },
+      runDirectFetch: async () => { directCalled = true; return new Response('direct'); },
+      runDirectConnect: async () => new Response('direct connect'),
       socketDial: () => stubSocketDial,
     });
     const res = await fetcher('https://api.openai.com', { method: 'GET' });
     expect(directCalled).toBe(true);
     expect(await res.text()).toBe('direct');
+  });
+
+  it('runs direct-connect as a built-in materialized transport', async () => {
+    const repo = new InMemoryRepo();
+    let observedTarget: ProxyRequestTarget | undefined;
+    let observedRequest: HttpRequest | undefined;
+    let observedSocketDial: SocketDial | undefined;
+    const fetcher = createFetcher({
+      repo,
+      upstreamId: 'u',
+      fallbackList: [{ id: 'direct_connect' }],
+      runtimeLocation: 'TEST',
+      proxyById: new Map(),
+      runProxied: async () => new Response('proxy'),
+      runDirectFetch: async () => new Response('direct fetch'),
+      runDirectConnect: async (target, request, options) => {
+        observedTarget = target;
+        observedRequest = request;
+        observedSocketDial = options.socketDial;
+        return new Response('direct connect');
+      },
+      socketDial: () => stubSocketDial,
+    });
+
+    const response = await fetcher('https://api.openai.com/v1/responses?stream=1', {
+      method: 'POST',
+      body: 'request body',
+    });
+
+    expect(await response.text()).toBe('direct connect');
+    expect(observedTarget).toEqual({ host: 'api.openai.com', port: 443, tls: true });
+    if (observedRequest === undefined) throw new Error('direct-connect request was not observed');
+    expect(observedRequest?.method).toBe('POST');
+    expect(observedRequest?.path).toBe('/v1/responses?stream=1');
+    expect(new TextDecoder().decode(observedRequest.body)).toBe('request body');
+    expect(observedSocketDial).toBe(stubSocketDial);
+    expect(await repo.proxyBackoffs.listForUpstream('u')).toEqual([]);
+  });
+
+  it('falls through from a direct-connect dial failure without writing proxy backoff', async () => {
+    const repo = new InMemoryRepo();
+    const calls: string[] = [];
+    const fetcher = createFetcher({
+      repo,
+      upstreamId: 'u',
+      fallbackList: [{ id: 'direct_connect' }, { id: 'direct_fetch' }],
+      runtimeLocation: 'TEST',
+      proxyById: new Map(),
+      runProxied: async () => new Response('proxy'),
+      runDirectConnect: async () => {
+        calls.push('direct_connect');
+        throw new ProxyDialError('socket unavailable', 'tcp-connect');
+      },
+      runDirectFetch: async () => {
+        calls.push('direct_fetch');
+        return new Response('ok');
+      },
+      socketDial: () => stubSocketDial,
+    });
+
+    const response = await fetcher('https://api.openai.com', { method: 'GET' });
+
+    expect(await response.text()).toBe('ok');
+    expect(calls).toEqual(['direct_connect', 'direct_fetch']);
+    expect(await repo.proxyBackoffs.listForUpstream('u')).toEqual([]);
   });
 
   it('skips entries whose colos whitelist excludes the current colo', async () => {
@@ -246,7 +321,7 @@ describe('createFetcher', () => {
       fallbackList: [
         { id: 'a', colos: ['NRT'] },          // wrong colo — skip
         { id: 'b', colos: ['HKG', 'NRT'] },   // matches — attempt
-        { id: 'direct' },                     // no whitelist — attempt
+        { id: 'direct_fetch' },                     // no whitelist — attempt
       ],
       runtimeLocation: 'HKG',
       proxyById: new Map([['a', proxyA], ['b', proxyB]]),
@@ -254,10 +329,11 @@ describe('createFetcher', () => {
         calls.push(config.host);
         return new Response('ok');
       },
-      runDirect: async () => {
+      runDirectFetch: async () => {
         calls.push('direct');
         return new Response('direct');
       },
+      runDirectConnect: async () => new Response('direct connect'),
       socketDial: () => stubSocketDial,
     });
     const res = await fetcher('https://api.openai.com', { method: 'GET' });
@@ -287,7 +363,8 @@ describe('createFetcher', () => {
         calls.push(config.host);
         throw new ProxyDialError('boom', 'tcp-connect');
       },
-      runDirect: async () => new Response('direct'),
+      runDirectFetch: async () => new Response('direct'),
+      runDirectConnect: async () => new Response('direct connect'),
       socketDial: () => stubSocketDial,
     });
     await expect(fetcher('https://api.openai.com', { method: 'GET' })).rejects.toBeInstanceOf(ProxyDialError);
@@ -296,7 +373,7 @@ describe('createFetcher', () => {
     expect(calls).toEqual(['b']);
   });
 
-  it('collapses to implicit ["direct"] when every entry is colo-filtered out', async () => {
+  it('collapses to implicit ["direct_fetch"] when every entry is colo-filtered out', async () => {
     const repo = new InMemoryRepo();
     let directCalled = false;
     const fetcher = createFetcher({
@@ -309,7 +386,8 @@ describe('createFetcher', () => {
       runtimeLocation: 'HKG',
       proxyById: new Map([['a', proxyA], ['b', proxyB]]),
       runProxied: async () => new Response('proxy'),
-      runDirect: async () => { directCalled = true; return new Response('direct'); },
+      runDirectFetch: async () => { directCalled = true; return new Response('direct'); },
+      runDirectConnect: async () => new Response('direct connect'),
       socketDial: () => stubSocketDial,
     });
     const res = await fetcher('https://api.openai.com', { method: 'GET' });
@@ -323,17 +401,18 @@ describe('createFetcher', () => {
     const fetcher = createFetcher({
       repo,
       upstreamId: 'u',
-      fallbackList: [{ id: 'direct' }, { id: 'a' }],
+      fallbackList: [{ id: 'direct_fetch' }, { id: 'a' }],
       runtimeLocation: 'TEST',
       proxyById: new Map([['a', proxyA]]),
       runProxied: async (config: ProxyConfig) => {
         calls.push(`proxy:${config.host}`);
         return new Response('proxy-should-not-be-called');
       },
-      runDirect: async () => {
+      runDirectFetch: async () => {
         calls.push('direct');
         throw new DOMException('client gone', 'AbortError');
       },
+      runDirectConnect: async () => new Response('direct connect'),
       socketDial: () => stubSocketDial,
     });
     await expect(fetcher('https://api.openai.com', { method: 'GET' }))
@@ -349,17 +428,18 @@ describe('createFetcher', () => {
     const fetcher = createFetcher({
       repo,
       upstreamId: 'u',
-      fallbackList: [{ id: 'a' }, { id: 'direct' }],
+      fallbackList: [{ id: 'a' }, { id: 'direct_fetch' }],
       runtimeLocation: 'TEST',
       proxyById: new Map([['a', proxyA]]),
       runProxied: async (_config, _target, request) => {
         expect(new TextDecoder().decode(request.body)).toBe('request body');
         throw new ProxyDialError('proxy unavailable', 'tcp-connect');
       },
-      runDirect: async (_url, init) => {
+      runDirectFetch: async (_url, init) => {
         directBody = init.body;
         return new Response('direct');
       },
+      runDirectConnect: async () => new Response('direct connect'),
       socketDial: () => stubSocketDial,
     });
     const init: RequestInit = { method: 'POST', body: 'request body' };
@@ -375,21 +455,22 @@ describe('createFetcher', () => {
   it('materializes before a leading direct attempt without mutating the caller init', async () => {
     const repo = new InMemoryRepo();
     let directBody: BodyInit | null | undefined;
-    let proxiedBody: Uint8Array | undefined;
+    let materializedBody: Uint8Array | undefined;
     const fetcher = createFetcher({
       repo,
       upstreamId: 'u',
-      fallbackList: [{ id: 'direct' }, { id: 'a' }],
+      fallbackList: [{ id: 'direct_fetch' }, { id: 'a' }],
       runtimeLocation: 'TEST',
       proxyById: new Map([['a', proxyA]]),
       runProxied: async (_config, _target, request) => {
-        proxiedBody = request.body;
+        materializedBody = request.body;
         return new Response('proxy');
       },
-      runDirect: async (_url, init) => {
+      runDirectFetch: async (_url, init) => {
         directBody = init.body;
         throw new TypeError('direct dial failed');
       },
+      runDirectConnect: async () => new Response('direct connect'),
       socketDial: () => stubSocketDial,
     });
     const init: RequestInit = { method: 'POST', body: 'request body' };
@@ -399,7 +480,7 @@ describe('createFetcher', () => {
     expect(await response.text()).toBe('proxy');
     expect(directBody).toBeInstanceOf(Uint8Array);
     expect(new TextDecoder().decode(directBody as Uint8Array)).toBe('request body');
-    expect(new TextDecoder().decode(proxiedBody)).toBe('request body');
+    expect(new TextDecoder().decode(materializedBody)).toBe('request body');
     expect(init.body).toBe('request body');
   });
 
@@ -416,7 +497,8 @@ describe('createFetcher', () => {
         observedSignal = options.signal;
         return new Response('ok');
       },
-      runDirect: async () => new Response('direct'),
+      runDirectFetch: async () => new Response('direct'),
+      runDirectConnect: async () => new Response('direct connect'),
       socketDial: () => stubSocketDial,
     });
     const ac = new AbortController();
@@ -434,7 +516,8 @@ describe('createFetcher', () => {
       runtimeLocation: 'TEST',
       proxyById: new Map([['a', proxyA]]),
       runProxied: async (_config, _target, request) => { captured.push(request); return new Response('ok'); },
-      runDirect: async () => new Response('direct'),
+      runDirectFetch: async () => new Response('direct'),
+      runDirectConnect: async () => new Response('direct connect'),
       socketDial: () => stubSocketDial,
     });
     const fd = new FormData();
@@ -455,7 +538,8 @@ describe('createFetcher', () => {
       runtimeLocation: 'TEST',
       proxyById: new Map([['a', proxyA]]),
       runProxied: async (_config, _target, request) => { captured.push(request); return new Response('ok'); },
-      runDirect: async () => new Response('direct'),
+      runDirectFetch: async () => new Response('direct'),
+      runDirectConnect: async () => new Response('direct connect'),
       socketDial: () => stubSocketDial,
     });
     const fd = new FormData();
@@ -477,7 +561,8 @@ describe('createFetcher', () => {
       runtimeLocation: 'TEST',
       proxyById: new Map([['a', proxyA]]),
       runProxied: async () => new Response('ok'),
-      runDirect: async () => new Response('direct'),
+      runDirectFetch: async () => new Response('direct'),
+      runDirectConnect: async () => new Response('direct connect'),
       socketDial: () => stubSocketDial,
     });
     const stream = new ReadableStream({
@@ -499,7 +584,8 @@ describe('createFetcher', () => {
       runtimeLocation: 'TEST',
       proxyById: new Map([['a', proxyA]]),
       runProxied: async () => { throw new ProxyDialError('cert mismatch', 'inner-tls'); },
-      runDirect: async () => new Response('ok'),
+      runDirectFetch: async () => new Response('ok'),
+      runDirectConnect: async () => new Response('direct connect'),
       socketDial: () => stubSocketDial,
     });
     await expect(fetcher('https://api.openai.com', { method: 'GET' })).rejects.toBeInstanceOf(ProxyDialError);
@@ -525,7 +611,8 @@ describe('createFetcher', () => {
       runtimeLocation: 'TEST',
       proxyById: new Map([['a', proxyA]]),
       runProxied: async () => new Response('ok'),
-      runDirect: async () => new Response('direct'),
+      runDirectFetch: async () => new Response('direct'),
+      runDirectConnect: async () => new Response('direct connect'),
       socketDial: () => stubSocketDial,
     });
     const res = await fetcher('https://api.openai.com', { method: 'GET' });
@@ -549,7 +636,8 @@ describe('createFetcher', () => {
         captured = target;
         return new Response('ok');
       },
-      runDirect: async () => new Response('direct'),
+      runDirectFetch: async () => new Response('direct'),
+      runDirectConnect: async () => new Response('direct connect'),
       socketDial: () => stubSocketDial,
     });
     await fetcher('https://[::1]:8443/v1/models', { method: 'GET' });
@@ -579,7 +667,8 @@ describe('createFetcher', () => {
         await new Promise(resolve => setTimeout(resolve, 20));
         return new Response('ok');
       },
-      runDirect: async () => new Response('direct'),
+      runDirectFetch: async () => new Response('direct'),
+      runDirectConnect: async () => new Response('direct connect'),
       socketDial: () => stubSocketDial,
     });
     const res = await fetcher('https://api.openai.com', { method: 'GET' });

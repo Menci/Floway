@@ -11,7 +11,12 @@ import { useProxiesStore } from '../../composables/useProxies.ts';
 import { formatCountdown } from '../../utils/format-countdown.ts';
 import { Sortable, TagCombobox, Tooltip } from '@floway-dev/ui';
 
-const DIRECT = 'direct';
+const BUILT_IN_TRANSPORTS = [
+  { id: 'direct_fetch', label: 'DIRECT fetch()', title: 'Runtime-native fetch with automatic HTTP handling' },
+  { id: 'direct_connect', label: 'DIRECT connect()', title: 'Raw TCP socket with userspace TLS and HTTP/1.1' },
+] as const;
+
+const isBuiltInTransport = (id: string): boolean => BUILT_IN_TRANSPORTS.some(transport => transport.id === id);
 
 // Common CF colos for the combobox suggestion list. Not exhaustive — the
 // editor still accepts free-form codes (Node RUNTIME_LOCATION tags can be
@@ -50,10 +55,14 @@ const proxiesNotInList = computed<ProxyRecord[]>(() => {
   return (proxies.value ?? []).filter(p => !used.has(p.id));
 });
 
-const directInList = computed(() => list.value.some(e => e.id === DIRECT));
+const builtInTransportsNotInList = computed(() => {
+  const used = new Set(list.value.map(entry => entry.id));
+  return BUILT_IN_TRANSPORTS.filter(transport => !used.has(transport.id));
+});
 
 const labelFor = (entry: ProxyFallbackEntry): string => {
-  if (entry.id === DIRECT) return 'direct';
+  const builtIn = BUILT_IN_TRANSPORTS.find(transport => transport.id === entry.id);
+  if (builtIn) return builtIn.label;
   return proxiesById.value.get(entry.id)!.name;
 };
 
@@ -63,7 +72,7 @@ const labelFor = (entry: ProxyFallbackEntry): string => {
 // remove them in one click instead of silently masquerading as a normal
 // entry whose label happens to be a UUID.
 const isOrphan = (entry: ProxyFallbackEntry): boolean =>
-  entry.id !== DIRECT && !proxiesById.value.has(entry.id);
+  !isBuiltInTransport(entry.id) && !proxiesById.value.has(entry.id);
 
 const now = useNow({ interval: 1000 });
 
@@ -78,7 +87,7 @@ const activeBackoffByEntry = computed<Map<string, ActiveBackoff>>(() => {
   const map = new Map<string, ActiveBackoff>();
   const nowSec = Math.floor(now.value.getTime() / 1000);
   for (const entry of list.value) {
-    if (entry.id === DIRECT) continue;
+    if (isBuiltInTransport(entry.id)) continue;
     const rows = backoffsByProxyId.value.get(entry.id);
     // `>=` keeps the entry's badge visible during its expiry second so the
     // countdown's `now` edge label is reachable; a strict `>` would hide it
@@ -168,7 +177,7 @@ const toggleCurrentColoAt = (index: number) => {
     </p>
 
     <div v-if="list.length === 0" class="rounded-md border border-dashed border-white/[0.08] bg-surface-900/40 px-3 py-2.5 text-xs text-gray-500">
-      No fallback list configured — defaults to direct.
+      No fallback list configured — defaults to DIRECT fetch().
     </div>
 
     <Sortable
@@ -194,9 +203,9 @@ const toggleCurrentColoAt = (index: number) => {
             <span
               class="min-w-0 truncate"
               :class="[
-                entry.id === DIRECT ? 'font-mono text-gray-300' : (isOrphan(entry) ? 'font-mono text-accent-rose' : 'text-white'),
+                isBuiltInTransport(entry.id) ? 'font-mono text-gray-300' : (isOrphan(entry) ? 'font-mono text-accent-rose' : 'text-white'),
               ]"
-              :title="entry.id === DIRECT ? 'No proxy — connect directly' : entry.id"
+              :title="BUILT_IN_TRANSPORTS.find(transport => transport.id === entry.id)?.title ?? entry.id"
             >
               <template v-if="isOrphan(entry)">Unknown proxy · {{ entry.id }}</template>
               <template v-else>{{ labelFor(entry) }}</template>
@@ -334,7 +343,7 @@ const toggleCurrentColoAt = (index: number) => {
         <DropdownMenuTrigger
           class="inline-flex h-9 w-full items-center justify-between rounded-[10px] border border-white/[0.06] bg-surface-700 px-3 text-sm text-gray-300 transition-colors hover:border-white/[0.1] focus:border-accent-cyan/50 focus:outline-none focus:ring-1 focus:ring-accent-cyan/30"
         >
-          <span>+ Add proxy</span>
+          <span>+ Add entry</span>
           <svg class="size-4 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25">
             <path d="m6 9 6 6 6-6" />
           </svg>
@@ -346,11 +355,13 @@ const toggleCurrentColoAt = (index: number) => {
             class="z-50 w-[var(--reka-dropdown-menu-trigger-width)] min-w-[8rem] overflow-hidden rounded-[10px] border border-white/[0.06] bg-surface-800 p-1 text-white shadow-xl"
           >
             <DropdownMenuItem
-              v-if="!directInList"
+              v-for="transport in builtInTransportsNotInList"
+              :key="transport.id"
               class="flex cursor-pointer select-none items-center rounded-sm px-2 py-1.5 font-mono text-sm text-gray-300 outline-none data-[highlighted]:bg-accent-cyan/10 data-[highlighted]:text-accent-cyan"
-              @select="append(DIRECT)"
+              :title="transport.title"
+              @select="append(transport.id)"
             >
-              direct
+              {{ transport.label }}
             </DropdownMenuItem>
             <DropdownMenuItem
               v-for="p in proxiesNotInList"
@@ -361,10 +372,10 @@ const toggleCurrentColoAt = (index: number) => {
               {{ p.name }}
             </DropdownMenuItem>
             <p
-              v-if="proxiesNotInList.length === 0 && directInList"
+              v-if="proxiesNotInList.length === 0 && builtInTransportsNotInList.length === 0"
               class="px-2 py-1.5 text-xs text-gray-500"
             >
-              All proxies already added.
+              All entries already added.
             </p>
           </DropdownMenuContent>
         </DropdownMenuPortal>

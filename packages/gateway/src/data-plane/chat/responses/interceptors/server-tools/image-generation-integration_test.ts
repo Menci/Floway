@@ -8,7 +8,7 @@ import { createInMemoryImageProcessor, initExternalResourceFetcher, initImagePro
 import { eventFrame } from '@floway-dev/protocols/common';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesResult, ResponsesStreamEvent, ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
-import { type EventResult, type ExecuteResult, type FlagId } from '@floway-dev/provider';
+import { type EventResult, type ExecuteResult, type FlagId, type ImagesEditsRequest } from '@floway-dev/provider';
 import { assert, assertEquals, assertStringIncludes, stubModelCandidate } from '@floway-dev/test-utils';
 
 // Dirty integration harness: mock the model registry so the image backend is a
@@ -20,7 +20,7 @@ import { assert, assertEquals, assertStringIncludes, stubModelCandidate } from '
 
 interface BackendStub {
   generationsCalls: Record<string, unknown>[];
-  editsForms: FormData[];
+  editsRequests: ImagesEditsRequest[];
   nextGenerations: Response[];
   nextEdits: Response[];
   // When set, the next `enumerateModelCandidates` call returns this
@@ -31,7 +31,7 @@ interface BackendStub {
 
 // Hoisted so the vi.mock factory below can close over it; tests mutate the
 // `next*` queues and read back the recorded calls.
-const stub = vi.hoisted((): BackendStub => ({ generationsCalls: [], editsForms: [], nextGenerations: [], nextEdits: [], nextResolutionOverride: null }));
+const stub = vi.hoisted((): BackendStub => ({ generationsCalls: [], editsRequests: [], nextGenerations: [], nextEdits: [], nextResolutionOverride: null }));
 
 // Assigned per test in beforeEach and captured so the perf-attribution test
 // can read `repo.performance.listAll()` after the shim completes.
@@ -52,8 +52,8 @@ const defaultCandidates = vi.hoisted(() => () => [{
         if (response === undefined) throw new Error('test did not enqueue a generations response');
         return { response, modelKey: 'gpt-image-2' };
       },
-      callImagesEdits: async (_model: unknown, form: FormData) => {
-        stub.editsForms.push(form);
+      callImagesEdits: async (_model: unknown, request: ImagesEditsRequest) => {
+        stub.editsRequests.push(request);
         const response = stub.nextEdits.shift();
         if (response === undefined) throw new Error('test did not enqueue an edits response');
         return { response, modelKey: 'gpt-image-2' };
@@ -221,7 +221,7 @@ beforeEach(async () => {
   initRepo(repo);
   initImageProcessor(createInMemoryImageProcessor());
   stub.generationsCalls = [];
-  stub.editsForms = [];
+  stub.editsRequests = [];
   stub.nextGenerations = [];
   stub.nextEdits = [];
   stub.nextResolutionOverride = null;
@@ -229,14 +229,18 @@ beforeEach(async () => {
 
 test('generates an image end-to-end and emits the native lifecycle', async () => {
   stub.nextGenerations = [jsonResponse('R0VO')]; // "GEN"
-  const result = await shim(makeCtx([{ type: 'message', role: 'user', content: 'draw a cat' }]), gatewayCtx(), scriptedRun([
+  const result = await shim(makeCtx([{ type: 'message', role: 'user', content: 'draw a cat' }], 'auto', {
+    size: '1024x1024',
+    quality: 'low',
+  }), gatewayCtx(), scriptedRun([
     callTurn(0, 'call_1', 'a cat'),
     messageTurn('here it is'),
   ]));
   const events = await drain(result);
 
   assertEquals(stub.generationsCalls.length, 1);
-  assertEquals(stub.editsForms.length, 0);
+  assertEquals(stub.generationsCalls[0], { prompt: 'a cat', n: 1, size: '1024x1024', quality: 'low' });
+  assertEquals(stub.editsRequests.length, 0);
   const igcDone = events.find(e => e.type === 'response.output_item.done' && (e as { item: { type: string } }).item.type === 'image_generation_call');
   assert(igcDone !== undefined);
   const item = (igcDone as { item: { status: string; result: string; action: string } }).item;
@@ -275,6 +279,7 @@ test('relays real partial_image frames when partial_images > 0', async () => {
   ]));
   const events = await drain(result);
 
+  assertEquals(stub.generationsCalls[0], { prompt: 'a cat', n: 1, stream: true, partial_images: 2 });
   const partials = events.filter(e => e.type === 'response.image_generation_call.partial_image');
   assertEquals(partials.length, 2);
   assertEquals((partials[0] as { partial_image_b64: string }).partial_image_b64, 'UDA=');
@@ -298,10 +303,12 @@ test('an image generated in turn 1 is re-collected as an edit source in turn 2',
   await drain(result);
 
   assertEquals(stub.generationsCalls.length, 1);
-  assertEquals(stub.editsForms.length, 1);
-  const images = stub.editsForms[0].getAll('image[]');
-  assertEquals(images.length, 1);
-  const bytes = await (images[0] as Blob).text();
+  assertEquals(stub.editsRequests.length, 1);
+  const request = stub.editsRequests[0];
+  assertEquals(request.images.length, 1);
+  const image = request.images[0];
+  assert(image.type === 'upload');
+  const bytes = await image.file.text();
   assertEquals(bytes, 'AAAA');
 });
 
@@ -337,9 +344,11 @@ test('a prefetched remote edit source remains visible to orchestration and is re
 
   assertEquals(fetched, ['https://example.com/source.png']);
   assertEquals(orchestratorImageUrl, 'https://example.com/source.png');
-  assertEquals(stub.editsForms.length, 1);
-  const image = stub.editsForms[0].getAll('image[]')[0] as Blob;
-  assertEquals(new Uint8Array(await image.arrayBuffer()), Uint8Array.from(atob(REMOTE_PNG_B64), c => c.charCodeAt(0)));
+  assertEquals(stub.editsRequests.length, 1);
+  const request = stub.editsRequests[0];
+  const image = request.images[0];
+  assert(image.type === 'upload');
+  assertEquals(new Uint8Array(await image.file.arrayBuffer()), Uint8Array.from(atob(REMOTE_PNG_B64), c => c.charCodeAt(0)));
 });
 
 test('mask-only GIF edit transcodes one shared image and mask to WebP', async () => {
@@ -361,14 +370,16 @@ test('mask-only GIF edit transcodes one shared image and mask to WebP', async ()
   await drain(result);
 
   assertEquals(processorCalls, 1);
-  assertEquals(stub.editsForms.length, 1);
-  const form = stub.editsForms[0];
-  const image = form.getAll('image[]')[0] as Blob;
-  const mask = form.get('mask') as Blob;
-  assertEquals(image.type, 'image/webp');
-  assertEquals(mask.type, 'image/webp');
-  assertEquals(await image.text(), 'WEBP');
-  assertEquals(await mask.text(), 'WEBP');
+  assertEquals(stub.editsRequests.length, 1);
+  const request = stub.editsRequests[0];
+  const image = request.images[0];
+  const mask = request.mask;
+  assert(image.type === 'upload');
+  assert(mask?.type === 'upload');
+  assertEquals(image.file.type, 'image/webp');
+  assertEquals(mask.file.type, 'image/webp');
+  assertEquals(await image.file.text(), 'WEBP');
+  assertEquals(await mask.file.text(), 'WEBP');
 });
 
 test('identical GIF source and mask share one transcode', async () => {
@@ -393,9 +404,12 @@ test('identical GIF source and mask share one transcode', async () => {
   await drain(result);
 
   assertEquals(processorCalls, 1);
-  const form = stub.editsForms[0];
-  assertEquals(await (form.getAll('image[]')[0] as Blob).text(), 'WEBP');
-  assertEquals(await (form.get('mask') as Blob).text(), 'WEBP');
+  const request = stub.editsRequests[0];
+  const image = request.images[0];
+  assert(image.type === 'upload');
+  assert(request.mask?.type === 'upload');
+  assertEquals(await image.file.text(), 'WEBP');
+  assertEquals(await request.mask.file.text(), 'WEBP');
 });
 
 test('image transcoding failure becomes a terminal image tool failure', async () => {
@@ -412,7 +426,7 @@ test('image transcoding failure becomes a terminal image tool failure', async ()
   ]));
   const events = await drain(result);
 
-  assertEquals(stub.editsForms.length, 0);
+  assertEquals(stub.editsRequests.length, 0);
   const done = events.find(event => event.type === 'response.output_item.done'
     && (event as { item: { type: string } }).item.type === 'image_generation_call');
   assert(done !== undefined);

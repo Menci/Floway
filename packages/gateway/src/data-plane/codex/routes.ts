@@ -3,13 +3,15 @@
 // OAuth ("ChatGPT") mode has two independently configured bases:
 //
 //   chatgpt_base_url             — analytics, plugins, agent identity, Apps MCP
-//   model_providers.x.base_url   — models, Responses HTTP/WS, remote compaction
+//   model_providers.x.base_url   — models, Responses, compaction, image requests
 //
 // The dashboard points both at this namespace. Codex appends `models`,
-// `responses`, and `responses/compact` directly to the model-provider base:
+// `responses`, `responses/compact`, `images/generations`, and `images/edits`
+// directly to the model-provider base:
 // https://github.com/openai/codex/blob/44918ea10c0f99151c6710411b4322c2f5c96bea/codex-rs/codex-api/src/endpoint/models.rs#L31-L43
 // https://github.com/openai/codex/blob/44918ea10c0f99151c6710411b4322c2f5c96bea/codex-rs/codex-api/src/endpoint/responses.rs#L100-L102
 // https://github.com/openai/codex/blob/44918ea10c0f99151c6710411b4322c2f5c96bea/codex-rs/codex-api/src/endpoint/compact.rs#L35-L57
+// https://github.com/openai/codex/blob/f90e7deea6a715bbd153044af6f475eefa749177/codex-rs/codex-api/src/endpoint/images.rs#L33-L68
 // GET on `/responses` is the WebSocket upgrade entry; POST uses the generic
 // Responses handler, and `/responses/compact` uses its compaction counterpart.
 // Mounting the generic WS handler here preserves its session-local item chain.
@@ -56,6 +58,7 @@ import { codexModels } from './models.ts';
 import type { AuthVars } from '../../middleware/auth.ts';
 import { responsesHttp } from '../chat/responses/http.ts';
 import { responsesWebSocket } from '../chat/responses/websocket.ts';
+import { imagesEdits, imagesGenerations } from '../images/serve.ts';
 
 const CODEX_BASE_PATH = '/azure-api.codex';
 
@@ -63,6 +66,8 @@ export const mountCodexRoutes = (app: Hono<{ Variables: AuthVars }>) => {
   app.post(`${CODEX_BASE_PATH}/responses`, responsesHttp.generate);
   app.post(`${CODEX_BASE_PATH}/responses/compact`, responsesHttp.compact);
   app.get(`${CODEX_BASE_PATH}/responses`, responsesWebSocket);
+  app.post(`${CODEX_BASE_PATH}/images/generations`, imagesGenerations);
+  app.post(`${CODEX_BASE_PATH}/images/edits`, imagesEdits);
 
   app.get(`${CODEX_BASE_PATH}/models`, codexModels);
   app.post(`${CODEX_BASE_PATH}/codex/analytics-events/events`, codexAnalyticsEventsEvents);
