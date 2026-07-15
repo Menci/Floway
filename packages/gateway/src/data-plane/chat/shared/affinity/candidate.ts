@@ -10,12 +10,10 @@ const sameTarget = (left: AffinityTarget, right: AffinityTarget): boolean =>
   && left.rulesPresent === right.rulesPresent
   && isEqual(left.rules, right.rules);
 
-export const affinityTargetForCandidate = (candidate: ModelCandidate): AffinityTarget => ({
-  upstreamId: candidate.provider.upstream,
-  modelId: candidate.model.id,
-  rulesPresent: candidate.rules !== undefined,
-  ...(candidate.rules !== undefined ? { rules: candidate.rules } : {}),
-});
+export const affinityTargetForCandidate = (candidate: ModelCandidate): AffinityTarget =>
+  candidate.rules === undefined
+    ? { upstreamId: candidate.provider.upstream, modelId: candidate.model.id, rulesPresent: false }
+    : { upstreamId: candidate.provider.upstream, modelId: candidate.model.id, rulesPresent: true, rules: candidate.rules };
 
 export const candidateMatchesAffinity = (candidate: ModelCandidate, affinity: AffinityTarget): boolean =>
   candidate.provider.upstream === affinity.upstreamId

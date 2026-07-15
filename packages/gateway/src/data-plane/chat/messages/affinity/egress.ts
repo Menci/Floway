@@ -89,17 +89,18 @@ export const wrapMessagesAffinityEgress = async function* (
       const block = openBlocks.get(event.index);
       if (block === undefined) throw new Error(`Messages content block ${event.index} stopped before it started`);
       if (block.signature !== undefined || (block.first && block.type === 'thinking')) {
-        if (block.signature === undefined && block.syntheticSignature === undefined) {
-          throw new Error('First Messages thinking block has no synthetic signature promise');
-        }
+        let signature: string;
+        if (block.signature !== undefined) {
+          signature = await options.codec.wrap(block.signature, options.affinity, MESSAGES_SIGNATURE_AFFINITY_DOMAIN);
+        } else if (block.syntheticSignature !== undefined) {
+          signature = await block.syntheticSignature;
+        } else throw new Error('First Messages thinking block has no synthetic signature promise');
         yield eventFrame({
           type: 'content_block_delta',
           index: event.index + indexOffset,
           delta: {
             type: 'signature_delta',
-            signature: block.signature === undefined
-              ? await block.syntheticSignature
-              : await options.codec.wrap(block.signature, options.affinity, MESSAGES_SIGNATURE_AFFINITY_DOMAIN),
+            signature,
           },
         });
       }

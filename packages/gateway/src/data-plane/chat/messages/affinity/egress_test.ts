@@ -49,11 +49,11 @@ describe('Messages affinity egress', () => {
       index: 0,
       delta: { type: 'thinking_delta', thinking: 'visible' },
     }));
-    expect(codec.calls.map(call => call.value)).toEqual([undefined, undefined]);
+    expect(codec.calls.map(call => call.value)).toEqual([undefined]);
 
     const signaturePending = output.next();
-    await vi.waitFor(() => expect(codec.calls.map(call => call.value)).toEqual([undefined, undefined, 'latest']));
-    codec.calls[2].resolve('wrapped-latest');
+    await vi.waitFor(() => expect(codec.calls.map(call => call.value)).toEqual([undefined, 'latest']));
+    codec.calls[1].resolve('wrapped-latest');
     expect((await signaturePending).value).toEqual(eventFrame({
       type: 'content_block_delta',
       index: 0,

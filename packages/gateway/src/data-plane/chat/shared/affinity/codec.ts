@@ -95,11 +95,20 @@ const parseEnvelope = (value: unknown): AffinityEnvelope | null => {
     || (!affinity.rulesPresent && affinity.rules !== undefined)
   ) return null;
 
+  const identity: AffinityTarget = affinity.rulesPresent
+    ? {
+        upstreamId: affinity.upstreamId,
+        modelId: affinity.modelId,
+        rulesPresent: true,
+        rules: affinity.rules as AliasRules,
+      }
+    : {
+        upstreamId: affinity.upstreamId,
+        modelId: affinity.modelId,
+        rulesPresent: false,
+      };
   const parsedAffinity: AffinityTarget = {
-    upstreamId: affinity.upstreamId,
-    modelId: affinity.modelId,
-    rulesPresent: affinity.rulesPresent,
-    ...(affinity.rulesPresent ? { rules: affinity.rules as AliasRules } : {}),
+    ...identity,
     ...(affinity.upstreamItemId !== undefined ? { upstreamItemId: affinity.upstreamItemId } : {}),
     ...(affinity.syntheticItem === true ? { syntheticItem: true } : {}),
   };
