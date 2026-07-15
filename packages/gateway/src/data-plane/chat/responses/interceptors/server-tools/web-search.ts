@@ -584,7 +584,7 @@ export const webSearchServerTool: ServerToolRegistration = async (invocation, ga
     ...(gatewayCtx.abortSignal !== undefined ? { signal: gatewayCtx.abortSignal } : {}),
   };
   if (searchConfig.passthroughOpenAiSearch.enabled) {
-    let dispatcher = resolveAlphaSearchDispatcher({
+    const dispatcher = resolveAlphaSearchDispatcher({
       config: searchConfig.passthroughOpenAiSearch,
       upstreamIds: gatewayCtx.upstreamIds,
       scheduler: gatewayCtx.backgroundScheduler,
@@ -597,7 +597,7 @@ export const webSearchServerTool: ServerToolRegistration = async (invocation, ga
       ...(hosted?.filters === undefined ? {} : { filters: hosted.filters }),
       ...(hosted?.user_location === undefined ? {} : { user_location: hosted.user_location }),
     };
-    state.executeAlpha = async (commands, action) => executeAlphaSearch({
+    state.executeAlpha = async (commands, action) => await executeAlphaSearch({
       dispatcher: await dispatcher,
       sessionId,
       commands,

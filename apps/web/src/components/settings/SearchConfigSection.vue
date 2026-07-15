@@ -62,7 +62,7 @@ const PROVIDER_OPTIONS: ProviderOption[] = [
 const props = defineProps<{
   initialConfig: SearchConfig;
   initialError?: string | null;
-  upstreams: UpstreamRecord[];
+  upstreams: Array<Pick<UpstreamRecord, 'id' | 'name' | 'kind' | 'enabled'>>;
   models: ControlPlaneModel[];
 }>();
 

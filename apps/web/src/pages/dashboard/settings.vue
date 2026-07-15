@@ -118,7 +118,7 @@ const openAliasDialog = (record: ModelAlias | null): void => {
           :initial-config="settingsData.data.value.searchConfig"
           :initial-error="settingsData.data.value.searchConfigError"
           :upstreams="ordered"
-          :models="modelsStore.models.value"
+          :models="modelsStore.models.value ?? []"
         />
       </div>
 

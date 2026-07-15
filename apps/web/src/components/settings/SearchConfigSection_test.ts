@@ -21,26 +21,12 @@ const config: SearchConfig = {
   passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
 };
 
-const upstream = (id: string, name: string, kind: UpstreamProviderKind): UpstreamRecord => ({
+const upstream = (id: string, name: string, kind: UpstreamProviderKind): Pick<UpstreamRecord, 'id' | 'name' | 'kind' | 'enabled'> => ({
   id,
   name,
   kind,
   enabled: true,
-  sort_order: 0,
-  created_at: '2026-01-01T00:00:00Z',
-  updated_at: '2026-01-01T00:00:00Z',
-  flag_overrides: {},
-  flag_defaults: {},
-  disabled_public_model_ids: [],
-  proxy_fallback_list: [],
-  model_prefix: null,
-  color: null,
-  modelsCache: { fetchedAt: null, lastError: null },
-  config: kind === 'codex'
-    ? { accounts: [] }
-    : { baseUrl: 'https://example.test', authStyle: 'none', endpoints: {}, pathOverrides: {}, modelsFetch: { enabled: false }, models: [] },
-  state: null,
-} as UpstreamRecord);
+});
 
 test('OpenAI search passthrough exposes only Codex and Custom upstream models', async () => {
   const wrapper = mount(SearchConfigSection, {
