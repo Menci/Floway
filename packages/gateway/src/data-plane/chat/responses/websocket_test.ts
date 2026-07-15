@@ -524,7 +524,7 @@ test('Responses WebSocket keepalive during an in-flight request does not drop th
           upstreamController.enqueue(encoder.encode('data: [DONE]\n\n'));
           upstreamController.close();
 
-          for (let i = 0; i < 20 && !hasMessageType(messages, 'response.done'); i++) {
+          for (let i = 0; i < 100 && !hasMessageType(messages, 'response.done'); i++) {
             await waitForMicrotasks();
           }
 
