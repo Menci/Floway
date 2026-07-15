@@ -33,7 +33,6 @@ const routingEvidenceFrom = (
     location => location.itemIndex,
   );
   const evidence: AffinityEvidence[] = [];
-  const forceItemsWithoutPriorTarget: number[] = [];
   let latestTarget: AffinityTarget | undefined;
 
   for (const [itemIndex, item] of items.entries()) {
@@ -44,17 +43,6 @@ const routingEvidenceFrom = (
     }
     if (!itemRequiresAffinity(item) || owned.length > 0) continue;
     if (latestTarget !== undefined) evidence.push({ target: latestTarget, mode: 'force' });
-    else forceItemsWithoutPriorTarget.push(itemIndex);
-  }
-
-  for (const itemIndex of forceItemsWithoutPriorTarget) {
-    const followingSynthetic = locations.find(location =>
-      location.itemIndex > itemIndex
-      && location.decoded.kind === 'owned'
-      && location.decoded.envelope.affinity.syntheticItem === true);
-    if (followingSynthetic?.decoded.kind === 'owned') {
-      evidence.push({ target: followingSynthetic.decoded.envelope.affinity, mode: 'force' });
-    }
   }
 
   return evidence;

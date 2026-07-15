@@ -20,9 +20,11 @@ const sameLogicalElement = (left: GeminiPart, right: GeminiPart): boolean => {
     return left.text !== undefined && right.text !== undefined && (left.thought === true) === (right.thought === true);
   }
   if (left.functionCall !== undefined || right.functionCall !== undefined) {
-    return left.functionCall !== undefined
-      && right.functionCall !== undefined
-      && (left.functionCall.id ?? left.functionCall.name) === (right.functionCall.id ?? right.functionCall.name);
+    if (left.functionCall === undefined || right.functionCall === undefined) return false;
+    if (left.functionCall.id !== undefined && right.functionCall.id !== undefined) {
+      return left.functionCall.id === right.functionCall.id;
+    }
+    return left.functionCall.name === right.functionCall.name;
   }
   return false;
 };

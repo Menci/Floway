@@ -6,6 +6,7 @@ import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 interface OpenBlock {
   readonly type: string;
   readonly first: boolean;
+  readonly syntheticSignature?: Promise<string>;
   signature?: string;
 }
 
@@ -15,7 +16,6 @@ export const wrapMessagesAffinityEgress = async function* (
 ): AsyncGenerator<ProtocolFrame<MessagesStreamEvent>> {
   const openBlocks = new Map<number, OpenBlock>();
   const syntheticPrefix = options.codec.wrap(undefined, options.affinity, MESSAGES_REDACTED_AFFINITY_DOMAIN);
-  let syntheticSignaturePrefix: Promise<string> | undefined;
   let firstBlockSeen = false;
   let indexOffset = 0;
 
@@ -44,10 +44,13 @@ export const wrapMessagesAffinityEgress = async function* (
       if (openBlocks.has(event.index)) throw new Error(`Messages content block ${event.index} started twice`);
       const first = !firstBlockSeen;
       firstBlockSeen = true;
-      openBlocks.set(event.index, { type: event.content_block.type, first });
-      if (first && event.content_block.type === 'thinking') {
-        syntheticSignaturePrefix = options.codec.wrap(undefined, options.affinity, MESSAGES_SIGNATURE_AFFINITY_DOMAIN);
-      }
+      openBlocks.set(event.index, {
+        type: event.content_block.type,
+        first,
+        ...(first && event.content_block.type === 'thinking'
+          ? { syntheticSignature: options.codec.wrap(undefined, options.affinity, MESSAGES_SIGNATURE_AFFINITY_DOMAIN) }
+          : {}),
+      });
 
       if (first && event.content_block.type !== 'thinking' && event.content_block.type !== 'redacted_thinking') {
         for (const synthetic of await syntheticEvents()) yield eventFrame(synthetic);
@@ -82,13 +85,16 @@ export const wrapMessagesAffinityEgress = async function* (
       const block = openBlocks.get(event.index);
       if (block === undefined) throw new Error(`Messages content block ${event.index} stopped before it started`);
       if (block.signature !== undefined || (block.first && block.type === 'thinking')) {
+        if (block.signature === undefined && block.syntheticSignature === undefined) {
+          throw new Error('First Messages thinking block has no synthetic signature promise');
+        }
         yield eventFrame({
           type: 'content_block_delta',
           index: event.index + indexOffset,
           delta: {
             type: 'signature_delta',
             signature: block.signature === undefined
-              ? await syntheticSignaturePrefix!
+              ? await block.syntheticSignature
               : await options.codec.wrap(block.signature, options.affinity, MESSAGES_SIGNATURE_AFFINITY_DOMAIN),
           },
         });

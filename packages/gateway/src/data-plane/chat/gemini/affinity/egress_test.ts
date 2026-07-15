@@ -103,7 +103,7 @@ describe('Gemini affinity egress', () => {
       eventFrame({
         candidates: [{
           index: 0,
-          content: { role: 'model', parts: [{ functionCall: { id: 'call', name: 'tool', args: { b: 2 } }, thoughtSignature: 'natural' }] },
+          content: { role: 'model', parts: [{ functionCall: { name: 'tool', args: { b: 2 } }, thoughtSignature: 'natural' }] },
           finishReason: 'STOP',
         }],
       }),

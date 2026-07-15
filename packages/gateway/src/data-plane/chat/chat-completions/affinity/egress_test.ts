@@ -112,4 +112,17 @@ describe('Chat Completions affinity egress', () => {
       doneFrame(),
     ]);
   });
+
+  test('rejects a successful stream that ends without an assistant choice', async () => {
+    const collect = async () => {
+      const output: ProtocolFrame<ChatCompletionsStreamEvent>[] = [];
+      for await (const frame of wrapChatCompletionsAffinityEgress(
+        frames([doneFrame()]),
+        { codec: immediateCodec, affinity },
+      )) output.push(frame);
+      return output;
+    };
+
+    await expect(collect()).rejects.toThrow('Chat Completions stream ended without an assistant choice');
+  });
 });

@@ -35,7 +35,10 @@ export const wrapChatCompletionsAffinityEgress = async function* (
 
   for await (const frame of frames) {
     if (frame.type !== 'event') {
-      if (frame.type === 'done' && !failed && lastEvent !== undefined) {
+      if (frame.type === 'done' && !failed) {
+        if (choices.size === 0 || lastEvent === undefined) {
+          throw new Error('Chat Completions stream ended without an assistant choice');
+        }
         const unfinished = [...choices.entries()].filter(([, state]) => !state.finished);
         if (unfinished.length > 0) {
           const wrappedChoices = await Promise.all(unfinished.map(async ([index, state]) => {
