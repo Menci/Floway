@@ -57,7 +57,7 @@ export type {
   UpstreamCallOptions,
 } from './provider.ts';
 export type { ImagesEditsRequest, ImagesEditsSource } from './images.ts';
-export { imagesEditsCanUseMultipart, imagesEditsJsonBody, imagesEditsMultipartBody } from './images.ts';
+export { serializeOpenAIImagesEditsRequest } from './images.ts';
 export type { ProviderStreamParser } from './streaming.ts';
 export { streamingProviderCall } from './streaming.ts';
 

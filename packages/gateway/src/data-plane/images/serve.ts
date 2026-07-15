@@ -15,7 +15,7 @@ import { readRequestBody, takeRequestBody, type RequestBody } from '../chat/shar
 import { passthroughApiError, passthroughServe } from '../shared/passthrough-serve.ts';
 import { tokenUsageFromImagesBody } from '../shared/telemetry/usage.ts';
 import type { ImageEditReference } from '@floway-dev/protocols/images';
-import type { ImagesEditsRequest, ImagesEditsSource } from '@floway-dev/provider';
+import { isBase64ImageDataUrl, type ImagesEditsRequest, type ImagesEditsSource } from '@floway-dev/provider';
 
 interface JsonModelRequestBody {
   model?: unknown;
@@ -54,20 +54,10 @@ const imageEditSource = (value: unknown, path: string): ImagesEditsSource | stri
   const reference = value as { image_url?: unknown; file_id?: unknown };
   const { image_url: imageUrl, file_id: fileId } = reference;
   if (typeof imageUrl === 'string' && fileId === undefined) {
-    if (!imageUrl.startsWith('data:')) {
-      return { type: 'reference', reference: reference as ImageEditReference };
-    }
-    const match = /^data:([^;,]+);base64,(.*)$/su.exec(imageUrl);
-    const mimeType = match?.[1];
-    const payload = match?.[2];
-    if (!mimeType?.startsWith('image/') || payload === undefined) return `${path}.image_url must be a base64 image data URL.`;
-    try {
-      const bytes = Uint8Array.from(atob(payload), character => character.charCodeAt(0));
-      const extension = mimeType.slice('image/'.length).replace(/[^a-z0-9]+/giu, '-');
-      return { type: 'upload', file: new File([bytes], `${path}.${extension}`, { type: mimeType }) };
-    } catch {
-      return `${path}.image_url must contain valid base64 image data.`;
-    }
+    const imageReference = reference as ImageEditReference & { image_url: string };
+    return isBase64ImageDataUrl(imageUrl)
+      ? { type: 'inline', reference: imageReference }
+      : { type: 'reference', reference: imageReference };
   }
   if (typeof fileId === 'string' && imageUrl === undefined) {
     return { type: 'reference', reference: reference as ImageEditReference };
