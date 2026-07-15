@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 
 import type { AffinityEgressCodec } from './affinity-egress.ts';
 import { wrapMessagesAffinityEgress } from './messages-egress.ts';
@@ -52,8 +52,7 @@ describe('Messages affinity egress', () => {
     expect(codec.calls).toHaveLength(0);
 
     const signaturePending = output.next();
-    await Promise.resolve();
-    expect(codec.calls.map(call => call.value)).toEqual(['latest']);
+    await vi.waitFor(() => expect(codec.calls.map(call => call.value)).toEqual(['latest']));
     codec.calls[0].resolve('wrapped-latest');
     expect((await signaturePending).value).toEqual(eventFrame({
       type: 'content_block_delta',

@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 
 import type { AffinityEgressCodec } from './affinity-egress.ts';
 import { wrapResponsesAffinityEgress } from './responses-egress.ts';
@@ -67,8 +67,7 @@ describe('Responses affinity egress', () => {
     expect(codec.calls).toHaveLength(0);
 
     const donePending = output.next();
-    await Promise.resolve();
-    expect(codec.calls.map(call => call.value)).toEqual(['opaque']);
+    await vi.waitFor(() => expect(codec.calls.map(call => call.value)).toEqual(['opaque']));
     codec.calls[0].resolve('wrapped-opaque');
     expect((await donePending).value).toMatchObject({
       event: { item: { encrypted_content: 'wrapped-opaque' } },
