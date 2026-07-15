@@ -86,6 +86,28 @@ describe('protocol affinity ingress', () => {
     ]);
   });
 
+  test('Gemini reattaches a deferred wrapped signature to its original visible part', async () => {
+    const carrier = await codec.wrap('signature', {
+      ...affinityTargetForCandidate(candidateA, 'prefer'),
+      geminiPartFromEnd: 1,
+    });
+    const prepared = await prepareGeminiAffinity({
+      contents: [
+        { role: 'model', parts: [{ functionCall: { name: 'tool', args: {} } }] },
+        { role: 'model', parts: [{ thoughtSignature: carrier }] },
+      ],
+    }, codec);
+
+    expect(prepared.payloadForCandidate(candidateA).contents).toEqual([{
+      role: 'model',
+      parts: [{ functionCall: { name: 'tool', args: {} }, thoughtSignature: 'signature' }],
+    }]);
+    expect(prepared.payloadForCandidate(candidateB).contents).toEqual([{
+      role: 'model',
+      parts: [{ functionCall: { name: 'tool', args: {} } }],
+    }]);
+  });
+
   test('Responses restores the original upstream item id and drops owned state on fallback', async () => {
     const carrier = await codec.wrap('encrypted', affinityTargetForCandidate(candidateA, 'prefer', 'rs_upstream'));
     const prepared = await prepareResponsesAffinity({

@@ -1,13 +1,39 @@
 import type { AffinityCodec } from './codec.ts';
 import { blobForCandidate, ownedAffinities, type PreparedAffinityPayload } from './prepared.ts';
 import type { DecodedAffinityBlob } from './types.ts';
-import type { GeminiPart, GeminiPayload } from '@floway-dev/protocols/gemini';
+import type { GeminiContent, GeminiPart, GeminiPayload } from '@floway-dev/protocols/gemini';
 
 interface GeminiBlobLocation {
   readonly contentIndex: number;
   readonly partIndex: number;
   readonly decoded: DecodedAffinityBlob;
 }
+
+const visiblePart = (part: GeminiPart): boolean => {
+  const { thoughtSignature: _signature, ...data } = part;
+  return Object.keys(data).length > 0;
+};
+
+const findPreviousVisiblePart = (
+  contents: GeminiContent[],
+  contentIndex: number,
+  partIndex: number,
+  fromEnd: number,
+): GeminiPart => {
+  let remaining = fromEnd;
+  for (let currentContent = contentIndex; currentContent >= 0; currentContent -= 1) {
+    const content = contents[currentContent];
+    if (content.role !== 'model') break;
+    const start = currentContent === contentIndex ? partIndex - 1 : content.parts.length - 1;
+    for (let currentPart = start; currentPart >= 0; currentPart -= 1) {
+      const part = content.parts[currentPart];
+      if (!visiblePart(part)) continue;
+      remaining -= 1;
+      if (remaining === 0) return part;
+    }
+  }
+  throw new Error(`Gemini affinity carrier could not find previous visible part at offset ${fromEnd}`);
+};
 
 export const prepareGeminiAffinity = async (
   payload: GeminiPayload,
@@ -34,12 +60,28 @@ export const prepareGeminiAffinity = async (
         for (const location of contentLocations) {
           const part = content.parts[location.partIndex];
           const selected = blobForCandidate(location.decoded, candidate);
-          if (selected.present) replacements.set(location.partIndex, { ...part, thoughtSignature: selected.value });
-          else if (location.decoded.kind === 'owned' && location.decoded.value === undefined) replacements.set(location.partIndex, null);
-          else {
+          if (location.decoded.kind === 'foreign') {
+            replacements.set(location.partIndex, part);
+            continue;
+          }
+          const affinity = location.decoded.envelope.affinity;
+          if (affinity.syntheticItem === true) {
+            replacements.set(location.partIndex, null);
+          } else if (selected.present && affinity.geminiPartFromEnd !== undefined) {
+            const target = findPreviousVisiblePart(
+              candidatePayload.contents,
+              location.contentIndex,
+              location.partIndex,
+              affinity.geminiPartFromEnd,
+            );
+            target.thoughtSignature = selected.value;
+            replacements.set(location.partIndex, null);
+          } else if (selected.present) {
+            replacements.set(location.partIndex, { ...part, thoughtSignature: selected.value });
+          } else {
             const replacement = { ...part };
             delete replacement.thoughtSignature;
-            replacements.set(location.partIndex, replacement);
+            replacements.set(location.partIndex, visiblePart(replacement) ? replacement : null);
           }
         }
         content.parts = content.parts.flatMap((part, partIndex) => {
@@ -47,6 +89,7 @@ export const prepareGeminiAffinity = async (
           return replacement === undefined ? [part] : replacement === null ? [] : [replacement];
         });
       }
+      candidatePayload.contents = candidatePayload.contents.filter(content => content.parts.length > 0);
       return candidatePayload;
     },
   };

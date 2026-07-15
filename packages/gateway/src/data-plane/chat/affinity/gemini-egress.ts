@@ -9,7 +9,7 @@ interface CandidateState {
 
 interface CandidatePlan {
   readonly candidate: GeminiCandidate;
-  readonly carrierValues: string[];
+  readonly carriers: Array<{ readonly value: string; readonly visiblePartIndex?: number }>;
   readonly visibleParts: GeminiPart[];
   readonly needsSynthetic: boolean;
   readonly state: CandidateState;
@@ -51,19 +51,25 @@ export const wrapGeminiAffinityEgress = async function* (
       if (state.finished) throw new Error(`Gemini candidate ${candidate.index} emitted data after its finishReason`);
       states.set(candidate.index, state);
 
-      const carrierValues: string[] = [];
+      const carriers: Array<{ value: string; visiblePartIndex?: number }> = [];
       const visibleParts: GeminiPart[] = [];
       for (const part of candidate.content.parts) {
-        if (typeof part.thoughtSignature === 'string') carrierValues.push(part.thoughtSignature);
         const visible = withoutThoughtSignature(part);
-        if (hasPartData(visible)) visibleParts.push(visible);
+        const hasVisible = hasPartData(visible);
+        if (typeof part.thoughtSignature === 'string') {
+          carriers.push({
+            value: part.thoughtSignature,
+            ...(hasVisible ? { visiblePartIndex: visibleParts.length } : {}),
+          });
+        }
+        if (hasVisible) visibleParts.push(visible);
       }
 
-      const needsSynthetic = candidate.finishReason !== undefined && !state.sawCarrier && carrierValues.length === 0;
-      plans.push({ candidate, carrierValues, visibleParts, needsSynthetic, state });
+      const needsSynthetic = candidate.finishReason !== undefined && !state.sawCarrier && carriers.length === 0;
+      plans.push({ candidate, carriers, visibleParts, needsSynthetic, state });
     }
 
-    const needsDeferredCarrier = plans.some(plan => plan.carrierValues.length > 0 || plan.needsSynthetic);
+    const needsDeferredCarrier = plans.some(plan => plan.carriers.length > 0 || plan.needsSynthetic);
     if (!needsDeferredCarrier) {
       for (const plan of plans) {
         if (plan.candidate.finishReason !== undefined) plan.state.finished = true;
@@ -73,7 +79,7 @@ export const wrapGeminiAffinityEgress = async function* (
     }
 
     const visibleCandidates = plans.flatMap(plan => {
-      const parts = plan.carrierValues.length > 0 ? plan.visibleParts : plan.candidate.content.parts;
+      const parts = plan.carriers.length > 0 ? plan.visibleParts : plan.candidate.content.parts;
       if (parts.length === 0) return [];
       const { finishReason: _finishReason, ...rest } = plan.candidate;
       return [{ ...rest, content: { ...plan.candidate.content, parts } }];
@@ -83,17 +89,26 @@ export const wrapGeminiAffinityEgress = async function* (
     }
 
     const wrappedCandidates = await Promise.all(plans.flatMap(plan => {
-      const hasCarrier = plan.carrierValues.length > 0 || plan.needsSynthetic;
+      const hasCarrier = plan.carriers.length > 0 || plan.needsSynthetic;
       if (!hasCarrier && plan.candidate.finishReason === undefined) return [];
       return [plan];
-    }).map(async ({ candidate, carrierValues, needsSynthetic, state }) => {
-      const values: Array<string | undefined> = carrierValues.length > 0
-        ? carrierValues
+    }).map(async ({ candidate, carriers, visibleParts, needsSynthetic, state }) => {
+      const planned = carriers.length > 0
+        ? carriers.map(carrier => ({
+            value: carrier.value as string | undefined,
+            ...(carrier.visiblePartIndex !== undefined
+              ? { partFromEnd: visibleParts.length - carrier.visiblePartIndex }
+              : {}),
+          }))
         : needsSynthetic
-          ? [undefined]
+          ? [{ value: undefined, synthetic: true }]
           : [];
-      const parts = await Promise.all(values.map(async value => ({
-        thoughtSignature: await options.codec.wrap(value, options.affinity),
+      const parts = await Promise.all(planned.map(async carrier => ({
+        thoughtSignature: await options.codec.wrap(carrier.value, {
+          ...options.affinity,
+          ...('synthetic' in carrier ? { syntheticItem: true } : {}),
+          ...('partFromEnd' in carrier ? { geminiPartFromEnd: carrier.partFromEnd } : {}),
+        }),
       })));
       if (parts.length > 0) state.sawCarrier = true;
       if (candidate.finishReason !== undefined) state.finished = true;

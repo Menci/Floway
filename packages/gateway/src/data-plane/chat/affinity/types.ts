@@ -11,6 +11,7 @@ export interface AffinityTarget {
   rules?: AliasRules;
   upstreamItemId?: string;
   syntheticItem?: boolean;
+  geminiPartFromEnd?: number;
 }
 
 export interface AffinityEnvelope {
