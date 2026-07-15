@@ -222,7 +222,7 @@ const test = async () => {
       <div class="flex items-start justify-between gap-4">
         <div>
           <label class="text-sm font-medium text-white">Passthrough OpenAI search (/alpha/search and Responses hosted tool)</label>
-          <p class="mt-1 text-xs text-gray-500">Use a selected Codex or Custom upstream instead of the general search provider for OpenAI search calls.</p>
+          <p class="mt-1 text-xs text-gray-500">Use a selected upstream (with /alpha/search support) instead of the general search provider for OpenAI search calls. Anthropic Messages API is not affected by this option.</p>
         </div>
         <Switch
           :model-value="draft.passthroughOpenAiSearch.enabled"
