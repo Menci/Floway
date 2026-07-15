@@ -1,5 +1,5 @@
 import type { AffinityEgressOptions } from './affinity-egress.ts';
-import type { ChatCompletionsDelta, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
+import { chatCompletionsErrorPayloadMessage, type ChatCompletionsDelta, type ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 
 interface ChoiceState {
@@ -29,12 +29,35 @@ export const wrapChatCompletionsAffinityEgress = async function* (
   options: AffinityEgressOptions,
 ): AsyncGenerator<ProtocolFrame<ChatCompletionsStreamEvent>> {
   const choices = new Map<number, ChoiceState>();
+  let lastEvent: ChatCompletionsStreamEvent | undefined;
+  let failed = false;
 
   for await (const frame of frames) {
     if (frame.type !== 'event') {
+      if (frame.type === 'done' && !failed && lastEvent !== undefined) {
+        const unfinished = [...choices.entries()].filter(([, state]) => !state.finished);
+        if (unfinished.length > 0) {
+          const wrappedChoices = await Promise.all(unfinished.map(async ([index, state]) => {
+            state.finished = true;
+            return {
+              index,
+              delta: { reasoning_opaque: await options.codec.wrap(state.opaque, options.affinity) },
+              finish_reason: null,
+            } satisfies StreamingChoice;
+          }));
+          yield eventFrame(eventWithChoices(lastEvent, wrappedChoices, false));
+        }
+      }
       yield frame;
       continue;
     }
+
+    if (chatCompletionsErrorPayloadMessage(frame.event) !== null) {
+      failed = true;
+      yield frame;
+      continue;
+    }
+    lastEvent = frame.event;
 
     const visibleChoices: StreamingChoice[] = [];
     const finishingChoices: Array<{ choice: StreamingChoice; state: ChoiceState }> = [];

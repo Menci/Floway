@@ -139,4 +139,23 @@ describe('Responses affinity egress', () => {
 
     expect(output).toEqual([eventFrame({ type: 'response.failed', response: response([], 'failed') })]);
   });
+
+  test('uses the terminal replacement snapshot when deciding whether affinity exists', async () => {
+    const early: ResponsesOutputReasoning = { type: 'reasoning', id: 'rs_1', summary: [], encrypted_content: 'early' };
+    const final = { type: 'message' as const, id: 'msg_1', role: 'assistant' as const, content: [] };
+    const output: ProtocolFrame<ResponsesStreamEvent>[] = [];
+    for await (const frame of wrapResponsesAffinityEgress(frames([
+      eventFrame({ type: 'response.output_item.added', output_index: 0, item: early }),
+      eventFrame({ type: 'response.output_item.done', output_index: 0, item: final }),
+      eventFrame({ type: 'response.completed', response: response([final]) }),
+    ]), { codec: immediateCodec, affinity })) output.push(frame);
+
+    expect(output.map(frame => frame.type === 'event' ? frame.event.type : frame.type)).toEqual([
+      'response.output_item.added',
+      'response.output_item.done',
+      'response.output_item.added',
+      'response.output_item.done',
+      'response.completed',
+    ]);
+  });
 });

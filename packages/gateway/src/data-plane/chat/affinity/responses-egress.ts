@@ -66,15 +66,14 @@ export const wrapResponsesAffinityEgress = async function* (
   options: AffinityEgressOptions,
 ): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
   const wrapped = new Map<string, Promise<string>>();
-  let sawCarrier = false;
 
   const wrapItem = async (item: ResponsesOutputItem, outputIndex: number): Promise<ResponsesOutputItem> => {
     const slots = encryptedContentSlots(item);
     const target = itemAffinity(options.affinity, item);
+    const itemId = 'id' in item && typeof item.id === 'string' ? item.id : '';
     if (slots.length === 0) {
       if (item.type !== 'compaction' && item.type !== 'context_compaction') return item;
-      sawCarrier = true;
-      const cacheKey = `${outputIndex}\0encrypted_content\0synthetic`;
+      const cacheKey = `${outputIndex}\0${itemId}\0encrypted_content\0synthetic`;
       let replacement = wrapped.get(cacheKey);
       if (replacement === undefined) {
         replacement = options.codec.wrap(undefined, target);
@@ -82,10 +81,9 @@ export const wrapResponsesAffinityEgress = async function* (
       }
       return { ...item, encrypted_content: await replacement };
     }
-    sawCarrier = true;
     const replacements = new Map<string, string>();
     await Promise.all(slots.map(async slot => {
-      const cacheKey = `${outputIndex}\0${slot.key}\0${slot.value}`;
+      const cacheKey = `${outputIndex}\0${itemId}\0${slot.key}\0${slot.value}`;
       let replacement = wrapped.get(cacheKey);
       if (replacement === undefined) {
         replacement = options.codec.wrap(slot.value, target);
@@ -120,7 +118,7 @@ export const wrapResponsesAffinityEgress = async function* (
 
     if (event.type === 'response.completed' || event.type === 'response.incomplete') {
       const response = await wrapResult(event.response);
-      if (sawCarrier) {
+      if (response.output.some(item => encryptedContentSlots(item).length > 0)) {
         yield eventFrame({ ...event, response });
         return;
       }

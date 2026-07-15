@@ -98,4 +98,18 @@ describe('Chat Completions affinity egress', () => {
       { index: 1, delta: {}, finish_reason: 'length' },
     ])));
   });
+
+  test('flushes a carrier before DONE when an upstream omits finish_reason', async () => {
+    const output: ProtocolFrame<ChatCompletionsStreamEvent>[] = [];
+    for await (const frame of wrapChatCompletionsAffinityEgress(frames([
+      eventFrame(chunk([{ index: 0, delta: { content: 'visible' }, finish_reason: null }])),
+      doneFrame(),
+    ]), { codec: immediateCodec, affinity })) output.push(frame);
+
+    expect(output).toEqual([
+      eventFrame(chunk([{ index: 0, delta: { content: 'visible' }, finish_reason: null }])),
+      eventFrame(chunk([{ index: 0, delta: { reasoning_opaque: 'wrapped:synthetic' }, finish_reason: null }])),
+      doneFrame(),
+    ]);
+  });
 });
