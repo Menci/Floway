@@ -141,6 +141,7 @@ export const createCodexProvider = (record: UpstreamRecord): Provider => {
 
   return {
     upstream: record.id,
+    upstreamRevision: record.updatedAt,
     kind: 'codex',
     name: record.name,
     disabledPublicModelIds: record.disabledPublicModelIds,
