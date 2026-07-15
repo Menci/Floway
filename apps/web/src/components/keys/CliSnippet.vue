@@ -109,8 +109,10 @@ const codexSnippet = computed(() => [
   // Command auth is provider-scoped and also opts the provider into online
   // model refresh; a static bearer or env key does not satisfy that gate.
   // https://github.com/openai/codex/blob/1bbdb32789e1f79932df44941236ea3658f6e965/codex-rs/models-manager/src/manager.rs#L413-L415
-  'auth = { command = "sh", args = ["-c", "cat \\"${CODEX_HOME:-$HOME/.codex}/floway-token\\""] }',
+  'auth = { command = "sh", args = ["-c", "cat \\"${CODEX_HOME:-$HOME/.codex}/floway-token\\""] } # Linux & macOS',
+  `# auth = { command = "powershell", args = ["-NoProfile", "-Command", "$h = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME '.codex' }; [IO.File]::ReadAllText((Join-Path $h 'floway-token'))"] } # Windows: uncomment and remove the line above`,
   'wire_api = "responses"',
+  'supports_websockets = true',
   'http_headers = { "x-openai-actor-authorization" = "floway-client-tools" }',
   '',
   '[features]',
@@ -118,13 +120,22 @@ const codexSnippet = computed(() => [
   'standalone_web_search = true',
 ].join('\n'));
 
-const codexCredentialCommand = computed(() => {
+const codexUnixCredentialCommand = computed(() => {
   const quotedApiKey = `'${props.apiKey.replaceAll("'", `'"'"'`)}'`;
   return [
     'codex_home="${CODEX_HOME:-$HOME/.codex}"',
     'mkdir -p "$codex_home" && \\',
     `  printf '%s' ${quotedApiKey} > "$codex_home/floway-token" && \\`,
     '  chmod 600 "$codex_home/floway-token"',
+  ].join('\n');
+});
+
+const codexWindowsCredentialCommand = computed(() => {
+  const quotedApiKey = `'${props.apiKey.replaceAll("'", "''")}'`;
+  return [
+    '$codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME ".codex" }',
+    'New-Item -ItemType Directory -Force -Path $codexHome | Out-Null',
+    `[IO.File]::WriteAllText((Join-Path $codexHome "floway-token"), ${quotedApiKey}, (New-Object Text.UTF8Encoding($false)))`,
   ].join('\n');
 });
 
@@ -178,8 +189,11 @@ const selectClass = 'max-w-full text-xs font-mono bg-surface-800 text-gray-300 b
       <p class="text-[11px] text-gray-600 mb-2">Merge into <code class="text-gray-500">~/.codex/config.toml</code></p>
       <Code :code="codexSnippet" language="toml" />
 
-      <p class="text-[11px] text-gray-600 mt-4 mb-2">Paste in a shell — stores only the Floway provider token under the active <code class="text-gray-500">CODEX_HOME</code>; official account login is unaffected</p>
-      <Code :code="codexCredentialCommand" language="bash" />
+      <p class="text-[11px] text-gray-600 mt-4 mb-2">Linux &amp; macOS — stores only the Floway provider token under the active <code class="text-gray-500">CODEX_HOME</code></p>
+      <Code :code="codexUnixCredentialCommand" language="bash" />
+
+      <p class="text-[11px] text-gray-600 mt-4 mb-2">Windows PowerShell — stores the same provider token without changing the official account login</p>
+      <Code :code="codexWindowsCredentialCommand" language="powershell" />
     </div>
   </div>
 </template>

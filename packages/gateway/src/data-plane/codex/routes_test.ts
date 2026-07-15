@@ -38,6 +38,16 @@ interface CodexModelsResponse {
 }
 
 describe('Codex model-provider routes', () => {
+  it('mounts the Responses WebSocket transport at the provider-relative path', async () => {
+    const { apiKey } = await setupAppTest();
+    const response = await buildCodexApp().request('/azure-api.codex/responses', {
+      headers: { authorization: `Bearer ${apiKey.key}` },
+    });
+
+    expect(response.status).toBe(426);
+    expect(await response.json()).toEqual({ error: 'Expected Upgrade: websocket' });
+  });
+
   it('writes both context-window fields from the registry and leaves automatic compaction at the Codex default', async () => {
     const { apiKey } = await setupAppTest();
     const body = await withMockedFetch(
