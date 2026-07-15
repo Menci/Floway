@@ -31,8 +31,7 @@ export interface StatefulResponsesWriteTarget {
 export interface LayeredStatefulResponsesStoreOptions {
   readonly apiKeyId: string;
   readonly reads: readonly StatefulResponsesBacking[];
-  readonly itemWrites: readonly StatefulResponsesWriteTarget[];
-  readonly snapshotWrites: readonly StatefulResponsesWriteTarget[];
+  readonly writes: readonly StatefulResponsesWriteTarget[];
   readonly stageInputs: boolean;
 }
 
@@ -69,7 +68,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   }
 
   get storesState(): boolean {
-    return this.options.itemWrites.length > 0 && this.options.snapshotWrites.length > 0;
+    return this.options.writes.length > 0;
   }
 
   hashItemContent(item: ResponsesInputItem): Promise<string> {
@@ -125,7 +124,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   }
 
   async commitSnapshot(responseId: string, mode: ResponsesSnapshotMode): Promise<void> {
-    if (this.options.snapshotWrites.length === 0) return;
+    if (this.options.writes.length === 0) return;
     await this.commitItems([...this.stagedInputItems.values(), ...this.stagedOutputItems.values()]);
     const itemIds = mode === 'replace'
       ? [...this.stagedOutputItemIds]
@@ -137,7 +136,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
       itemIds,
       createdAt: Date.now(),
     };
-    await Promise.all(this.options.snapshotWrites.map(write => write.backing.insertSnapshot(snapshot)));
+    await Promise.all(this.options.writes.map(write => write.backing.insertSnapshot(snapshot)));
   }
 
   private async loadItems(query: { ids: readonly string[]; contentHashes: readonly string[] }): Promise<void> {
@@ -204,14 +203,14 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
 
   private async commitItems(rows: readonly StoredResponsesItem[]): Promise<void> {
     const pending = rows.filter(row => !this.committedItemIds.has(row.id));
-    await Promise.all(this.options.itemWrites.map(async write => {
+    await Promise.all(this.options.writes.map(async write => {
       const writable = write.durable ? pending.filter(row => !this.durableItemIds.has(row.id)) : pending;
       if (writable.length === 0) return;
       await write.backing.insertItems(writable, { durable: write.durable });
       if (!write.durable) return;
       for (const row of writable) {
         this.durableItemIds.add(row.id);
-        for (const target of this.options.itemWrites) {
+        for (const target of this.options.writes) {
           if (!target.durable) target.backing.markDurable?.(row.apiKeyId, row.id);
         }
       }
@@ -294,8 +293,7 @@ export const createResponsesHttpStore = (apiKeyId: string, store: boolean | unde
   return new LayeredStatefulResponsesStore({
     apiKeyId,
     reads: [backing],
-    itemWrites: writes,
-    snapshotWrites: writes,
+    writes,
     stageInputs: store !== false,
   });
 };
@@ -308,12 +306,11 @@ export const createResponsesWsSession = (): {
   return {
     createStore(apiKeyId: string, store: boolean | undefined): StatefulResponsesStore {
       const localWrite = { backing: local, durable: false };
-      const itemWrites = store === false ? [localWrite] : [localWrite, { backing: durable, durable: true }];
+      const writes = store === false ? [localWrite] : [localWrite, { backing: durable, durable: true }];
       return new LayeredStatefulResponsesStore({
         apiKeyId,
         reads: [local, durable],
-        itemWrites,
-        snapshotWrites: itemWrites,
+        writes,
         stageInputs: true,
       });
     },

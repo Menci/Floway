@@ -423,8 +423,7 @@ const memoryStore = async (snapshots: readonly StoredResponsesSnapshot[], items:
   return new LayeredStatefulResponsesStore({
     apiKeyId: API_KEY_ID,
     reads: [backing],
-    itemWrites: [{ backing, durable: true }],
-    snapshotWrites: [{ backing, durable: true }],
+    writes: [{ backing, durable: true }],
     stageInputs: true,
   });
 };
