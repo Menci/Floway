@@ -51,9 +51,10 @@ const imageEditReference = (value: unknown, path: string): ImageEditReference | 
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
     return `${path} must be an object.`;
   }
-  const { image_url: imageUrl, file_id: fileId } = value as { image_url?: unknown; file_id?: unknown };
-  if (typeof imageUrl === 'string' && fileId === undefined) return { image_url: imageUrl };
-  if (typeof fileId === 'string' && imageUrl === undefined) return { file_id: fileId };
+  const reference = value as { image_url?: unknown; file_id?: unknown };
+  const { image_url: imageUrl, file_id: fileId } = reference;
+  if (typeof imageUrl === 'string' && fileId === undefined) return reference as ImageEditReference;
+  if (typeof fileId === 'string' && imageUrl === undefined) return reference as ImageEditReference;
   return `${path} must contain exactly one string field: image_url or file_id.`;
 };
 
@@ -170,7 +171,7 @@ export const imagesEdits = async (c: Context): Promise<Response> => {
   }
   const images: File[] = [];
   let mask: File | undefined;
-  const parameters: Record<string, unknown> = {};
+  const parameters: Record<string, string | number | boolean> = {};
   for (const [name, value] of form.entries()) {
     if (name === 'model') continue;
     if (name === 'image' || name === 'image[]') {

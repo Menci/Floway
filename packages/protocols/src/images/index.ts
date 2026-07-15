@@ -23,8 +23,8 @@ export interface ImagesGenerationsPayload {
 }
 
 export type ImageEditReference =
-  | { image_url: string; file_id?: never }
-  | { file_id: string; image_url?: never };
+  | { image_url: string; file_id?: never; [key: string]: unknown }
+  | { file_id: string; image_url?: never; [key: string]: unknown };
 
 // POST /v1/images/edits accepts either multipart uploads or this JSON shape.
 // JSON uses `images` rather than the multipart `image` field, and references
@@ -36,16 +36,16 @@ export interface ImagesEditsJsonPayload {
   prompt: string;
   images: ImageEditReference[];
   mask?: ImageEditReference;
-  n?: number;
-  quality?: string;
-  input_fidelity?: string;
-  size?: string;
+  n?: number | null;
+  quality?: string | null;
+  input_fidelity?: string | null;
+  size?: string | null;
   user?: string;
-  output_format?: string;
-  output_compression?: number;
-  moderation?: string;
-  background?: string;
-  stream?: boolean;
-  partial_images?: number;
+  output_format?: string | null;
+  output_compression?: number | null;
+  moderation?: string | null;
+  background?: string | null;
+  stream?: boolean | null;
+  partial_images?: number | null;
   [key: string]: unknown;
 }

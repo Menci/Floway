@@ -3,20 +3,18 @@ import type { ImageEditReference } from '@floway-dev/protocols/images';
 // The gateway normalizes both public wire formats into one homogeneous source
 // kind. Providers serialize references as JSON and uploads as multipart
 // without downloading URLs or base64-encoding uploaded bytes.
-interface ImagesEditsRequestBase {
-  parameters: Record<string, unknown>;
-}
-
-export interface UploadedImagesEditsRequest extends ImagesEditsRequestBase {
+export interface UploadedImagesEditsRequest {
   type: 'uploads';
   images: File[];
   mask?: File;
+  parameters: Record<string, string | number | boolean>;
 }
 
-export interface ReferencedImagesEditsRequest extends ImagesEditsRequestBase {
+export interface ReferencedImagesEditsRequest {
   type: 'references';
   images: ImageEditReference[];
   mask?: ImageEditReference;
+  parameters: Record<string, unknown>;
 }
 
 export type ImagesEditsRequest = UploadedImagesEditsRequest | ReferencedImagesEditsRequest;
@@ -30,9 +28,6 @@ export const imagesEditsJsonBody = (request: ReferencedImagesEditsRequest): Reco
 export const imagesEditsMultipartBody = (request: UploadedImagesEditsRequest, model: string): FormData => {
   const form = new FormData();
   for (const [name, value] of Object.entries(request.parameters)) {
-    if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') {
-      throw new Error(`Multipart image edits parameter ${name} must be a string, number, or boolean`);
-    }
     form.append(name, String(value));
   }
   for (const image of request.images) form.append('image[]', image);

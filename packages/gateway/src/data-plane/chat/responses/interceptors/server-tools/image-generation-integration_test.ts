@@ -229,13 +229,17 @@ beforeEach(async () => {
 
 test('generates an image end-to-end and emits the native lifecycle', async () => {
   stub.nextGenerations = [jsonResponse('R0VO')]; // "GEN"
-  const result = await shim(makeCtx([{ type: 'message', role: 'user', content: 'draw a cat' }]), gatewayCtx(), scriptedRun([
+  const result = await shim(makeCtx([{ type: 'message', role: 'user', content: 'draw a cat' }], 'auto', {
+    size: '1024x1024',
+    quality: 'low',
+  }), gatewayCtx(), scriptedRun([
     callTurn(0, 'call_1', 'a cat'),
     messageTurn('here it is'),
   ]));
   const events = await drain(result);
 
   assertEquals(stub.generationsCalls.length, 1);
+  assertEquals(stub.generationsCalls[0], { prompt: 'a cat', n: 1, size: '1024x1024', quality: 'low' });
   assertEquals(stub.editsRequests.length, 0);
   const igcDone = events.find(e => e.type === 'response.output_item.done' && (e as { item: { type: string } }).item.type === 'image_generation_call');
   assert(igcDone !== undefined);
@@ -275,6 +279,7 @@ test('relays real partial_image frames when partial_images > 0', async () => {
   ]));
   const events = await drain(result);
 
+  assertEquals(stub.generationsCalls[0], { prompt: 'a cat', n: 1, stream: true, partial_images: 2 });
   const partials = events.filter(e => e.type === 'response.image_generation_call.partial_image');
   assertEquals(partials.length, 2);
   assertEquals((partials[0] as { partial_image_b64: string }).partial_image_b64, 'UDA=');
