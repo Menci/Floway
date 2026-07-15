@@ -1,4 +1,5 @@
 import type { RequestBody } from './request-body.ts';
+import { AffinityRequestContext } from '../affinity/context.ts';
 import { type DumpAccumulator, openDumpAccumulator } from '../../../dump/accumulator.ts';
 import { apiKeyFromContext, type AuthedContext, effectiveUpstreamIdsFromContext } from '../../../middleware/auth.ts';
 import { getRuntimeLocation } from '../../../runtime/runtime-info.ts';
@@ -54,6 +55,7 @@ export interface GatewayCtx {
 // attempt. Passthrough endpoints (embeddings / images / completions) have
 // no stored-items concept and stay on plain `GatewayCtx`.
 export interface ChatGatewayCtx extends GatewayCtx {
+  readonly affinity: AffinityRequestContext;
   readonly store: StatefulResponsesStore;
 }
 
@@ -131,5 +133,9 @@ export const createChatGatewayCtxFromHono = (
   storeFactory: (apiKeyId: string) => StatefulResponsesStore,
 ): ChatGatewayCtx => {
   const base = createGatewayCtxFromHono(c, opts);
-  return { ...base, store: storeFactory(base.apiKeyId) };
+  return {
+    ...base,
+    affinity: new AffinityRequestContext(apiKeyFromContext(c).affinitySecret),
+    store: storeFactory(base.apiKeyId),
+  };
 };

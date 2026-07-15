@@ -1,4 +1,5 @@
 import { createNonResponsesSourceStore } from '../data-plane/chat/responses/items/store.ts';
+import { AffinityRequestContext } from '../data-plane/chat/affinity/context.ts';
 import type { ChatGatewayCtx, GatewayCtx } from '../data-plane/chat/shared/gateway-ctx.ts';
 
 // Shared minimal GatewayCtx for tests that exercise serve / respond /
@@ -27,6 +28,7 @@ export const mockChatGatewayCtx = (overrides: Partial<ChatGatewayCtx> = {}): Cha
   const base = mockGatewayCtx(overrides);
   return {
     ...base,
+    affinity: overrides.affinity ?? new AffinityRequestContext('00'.repeat(32)),
     store: overrides.store ?? createNonResponsesSourceStore(base.apiKeyId),
   };
 };
