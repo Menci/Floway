@@ -227,9 +227,11 @@ test('Custom provider callImagesEdits forwards multipart body with model field a
       const models = await provider.instance.getProvidedModels(directFetcher);
       const model = models[0]; const opts = noopUpstreamCallOptions();
       const result = await provider.instance.callImagesEdits(model, {
-        type: 'uploads',
         parameters: { prompt: 'add a kite' },
-        images: [new File([new Uint8Array([1, 2, 3])], 'photo.png', { type: 'image/png' })],
+        images: [{
+          type: 'upload',
+          file: new File([new Uint8Array([1, 2, 3])], 'photo.png', { type: 'image/png' }),
+        }],
       }, undefined, opts);
       assertEquals(result.modelKey, 'gpt-image-2');
       assertEquals(result.response.status, 200);

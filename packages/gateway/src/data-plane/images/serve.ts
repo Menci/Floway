@@ -15,7 +15,7 @@ import { readRequestBody, takeRequestBody, type RequestBody } from '../chat/shar
 import { passthroughApiError, passthroughServe } from '../shared/passthrough-serve.ts';
 import { tokenUsageFromImagesBody } from '../shared/telemetry/usage.ts';
 import type { ImageEditReference } from '@floway-dev/protocols/images';
-import type { ImagesEditsRequest } from '@floway-dev/provider';
+import type { ImagesEditsRequest, ImagesEditsSource } from '@floway-dev/provider';
 
 interface JsonModelRequestBody {
   model?: unknown;
@@ -43,42 +43,56 @@ const prepareJsonModelRequest = (bytes: Uint8Array, requestName: string): Prepar
   return { type: 'ok', body: request as Record<string, unknown>, model: request.model };
 };
 
-type PreparedReferencedImagesEdit =
+type PreparedImagesEdit =
   | { type: 'ok'; request: ImagesEditsRequest }
   | { type: 'invalid'; message: string };
 
-const imageEditReference = (value: unknown, path: string): ImageEditReference | string => {
+const imageEditSource = (value: unknown, path: string): ImagesEditsSource | string => {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
     return `${path} must be an object.`;
   }
   const reference = value as { image_url?: unknown; file_id?: unknown };
   const { image_url: imageUrl, file_id: fileId } = reference;
-  if (typeof imageUrl === 'string' && fileId === undefined) return reference as ImageEditReference;
-  if (typeof fileId === 'string' && imageUrl === undefined) return reference as ImageEditReference;
+  if (typeof imageUrl === 'string' && fileId === undefined) {
+    if (!imageUrl.startsWith('data:')) {
+      return { type: 'reference', reference: reference as ImageEditReference };
+    }
+    const match = /^data:([^;,]+);base64,(.*)$/su.exec(imageUrl);
+    if (match === null || !match[1]!.startsWith('image/')) return `${path}.image_url must be a base64 image data URL.`;
+    try {
+      const bytes = Uint8Array.from(atob(match[2]!), character => character.charCodeAt(0));
+      const extension = match[1]!.slice('image/'.length).replace(/[^a-z0-9]+/giu, '-');
+      return { type: 'upload', file: new File([bytes], `${path}.${extension}`, { type: match[1] }) };
+    } catch {
+      return `${path}.image_url must contain valid base64 image data.`;
+    }
+  }
+  if (typeof fileId === 'string' && imageUrl === undefined) {
+    return { type: 'reference', reference: reference as ImageEditReference };
+  }
   return `${path} must contain exactly one string field: image_url or file_id.`;
 };
 
-const prepareReferencedImagesEdit = (body: Record<string, unknown>): PreparedReferencedImagesEdit => {
+const prepareJsonImagesEdit = (body: Record<string, unknown>): PreparedImagesEdit => {
   if (!Array.isArray(body.images)) {
     return { type: 'invalid', message: 'Image edits request body must include an images array.' };
   }
-  const images: ImageEditReference[] = [];
+  const images: ImagesEditsSource[] = [];
   for (const [index, value] of body.images.entries()) {
-    const reference = imageEditReference(value, `Image edits images[${index}]`);
-    if (typeof reference === 'string') return { type: 'invalid', message: reference };
-    images.push(reference);
+    const source = imageEditSource(value, `Image edits images[${index}]`);
+    if (typeof source === 'string') return { type: 'invalid', message: source };
+    images.push(source);
   }
-  let mask: ImageEditReference | undefined;
+  let mask: ImagesEditsSource | undefined;
   if (body.mask !== undefined) {
-    const reference = imageEditReference(body.mask, 'Image edits mask');
-    if (typeof reference === 'string') return { type: 'invalid', message: reference };
-    mask = reference;
+    const source = imageEditSource(body.mask, 'Image edits mask');
+    if (typeof source === 'string') return { type: 'invalid', message: source };
+    mask = source;
   }
   const { model: _model, images: _images, mask: _mask, ...parameters } = body;
   return {
     type: 'ok',
     request: {
-      type: 'references',
       images,
       ...(mask === undefined ? {} : { mask }),
       parameters,
@@ -151,7 +165,7 @@ export const imagesEdits = async (c: Context): Promise<Response> => {
   if (mediaType === 'application/json') {
     const body = prepareJsonModelRequest(requestBody.bytes, 'Image edits');
     if (body.type === 'invalid') return invalid(body.message);
-    const request = prepareReferencedImagesEdit(body.body);
+    const request = prepareJsonImagesEdit(body.body);
     if (request.type === 'invalid') return invalid(request.message);
     return await serveImagesEditRequest(c, requestBody, body.model, request.request);
   }
@@ -186,9 +200,8 @@ export const imagesEdits = async (c: Context): Promise<Response> => {
     }
   }
   return await serveImagesEditRequest(c, requestBody, model, {
-    type: 'uploads',
-    images,
-    ...(mask === undefined ? {} : { mask }),
+    images: images.map(file => ({ type: 'upload', file })),
+    ...(mask === undefined ? {} : { mask: { type: 'upload' as const, file: mask } }),
     parameters,
   });
 };

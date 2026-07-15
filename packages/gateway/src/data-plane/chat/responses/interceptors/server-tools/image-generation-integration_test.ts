@@ -305,9 +305,10 @@ test('an image generated in turn 1 is re-collected as an edit source in turn 2',
   assertEquals(stub.generationsCalls.length, 1);
   assertEquals(stub.editsRequests.length, 1);
   const request = stub.editsRequests[0];
-  assert(request.type === 'uploads');
   assertEquals(request.images.length, 1);
-  const bytes = await request.images[0].text();
+  const image = request.images[0];
+  assert(image.type === 'upload');
+  const bytes = await image.file.text();
   assertEquals(bytes, 'AAAA');
 });
 
@@ -345,9 +346,9 @@ test('a prefetched remote edit source remains visible to orchestration and is re
   assertEquals(orchestratorImageUrl, 'https://example.com/source.png');
   assertEquals(stub.editsRequests.length, 1);
   const request = stub.editsRequests[0];
-  assert(request.type === 'uploads');
   const image = request.images[0];
-  assertEquals(new Uint8Array(await image.arrayBuffer()), Uint8Array.from(atob(REMOTE_PNG_B64), c => c.charCodeAt(0)));
+  assert(image.type === 'upload');
+  assertEquals(new Uint8Array(await image.file.arrayBuffer()), Uint8Array.from(atob(REMOTE_PNG_B64), c => c.charCodeAt(0)));
 });
 
 test('mask-only GIF edit transcodes one shared image and mask to WebP', async () => {
@@ -371,14 +372,14 @@ test('mask-only GIF edit transcodes one shared image and mask to WebP', async ()
   assertEquals(processorCalls, 1);
   assertEquals(stub.editsRequests.length, 1);
   const request = stub.editsRequests[0];
-  assert(request.type === 'uploads');
   const image = request.images[0];
   const mask = request.mask;
-  assert(mask !== undefined);
-  assertEquals(image.type, 'image/webp');
-  assertEquals(mask.type, 'image/webp');
-  assertEquals(await image.text(), 'WEBP');
-  assertEquals(await mask.text(), 'WEBP');
+  assert(image.type === 'upload');
+  assert(mask?.type === 'upload');
+  assertEquals(image.file.type, 'image/webp');
+  assertEquals(mask.file.type, 'image/webp');
+  assertEquals(await image.file.text(), 'WEBP');
+  assertEquals(await mask.file.text(), 'WEBP');
 });
 
 test('identical GIF source and mask share one transcode', async () => {
@@ -404,9 +405,11 @@ test('identical GIF source and mask share one transcode', async () => {
 
   assertEquals(processorCalls, 1);
   const request = stub.editsRequests[0];
-  assert(request.type === 'uploads');
-  assertEquals(await request.images[0].text(), 'WEBP');
-  assertEquals(await request.mask?.text(), 'WEBP');
+  const image = request.images[0];
+  assert(image.type === 'upload');
+  assert(request.mask?.type === 'upload');
+  assertEquals(await image.file.text(), 'WEBP');
+  assertEquals(await request.mask.file.text(), 'WEBP');
 });
 
 test('image transcoding failure becomes a terminal image tool failure', async () => {

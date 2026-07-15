@@ -4,6 +4,8 @@ import type { InMemoryRepo } from '../../repo/memory.ts';
 import { copilotModels, requestApp, setupAppTest } from '../../test-helpers.ts';
 import { assertEquals, assertExists, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
+const PNG_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/wEAAAAASUVORK5CYII=';
+
 const saveAzureImages = async (repo: InMemoryRepo): Promise<void> => {
   await repo.upstreams.save({
     id: 'az-image',
@@ -121,4 +123,39 @@ test('Codex provider-relative image edits reuse the public JSON handler', async 
     quality: 'high',
     images: [{ image_url: 'https://assets.example/image.png' }],
   });
+});
+
+test('Codex inline data URL edits egress as multipart uploads', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await saveAzureImages(repo);
+  let observedForm: FormData | undefined;
+
+  await withMockedFetch(
+    async request => {
+      const control = controlPlaneFetch(request);
+      if (control) return control;
+      if (new URL(request.url).hostname === 'example.openai.azure.com') {
+        observedForm = await request.formData();
+        return jsonResponse({ data: [{ b64_json: 'ZWRpdA==' }] });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const response = await requestApp('/azure-api.codex/images/edits', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${apiKey.key}`, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model: 'gpt-image-2',
+          prompt: 'add a red hat',
+          images: [{ image_url: `data:image/png;base64,${PNG_B64}` }],
+        }),
+      });
+      assertEquals(response.status, 200);
+    },
+  );
+
+  assertExists(observedForm);
+  const image = observedForm.get('image');
+  assertEquals(image instanceof File, true);
+  assertEquals((image as File).type, 'image/png');
 });

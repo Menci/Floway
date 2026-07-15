@@ -433,9 +433,11 @@ test('createAzureProvider callImagesEdits posts multipart with model replaced by
       const provider = createAzureProvider(record);
       const models = await provider.instance.getProvidedModels(directFetcher);
       const result = await provider.instance.callImagesEdits(models[0], {
-        type: 'uploads',
         parameters: { prompt: 'replace sky' },
-        images: [new File([new Uint8Array([1, 2, 3])], 'photo.png', { type: 'image/png' })],
+        images: [{
+          type: 'upload',
+          file: new File([new Uint8Array([1, 2, 3])], 'photo.png', { type: 'image/png' }),
+        }],
       }, undefined, noopUpstreamCallOptions());
       assertEquals(result.modelKey, 'gpt-image-2');
       assertEquals(result.response.status, 200);

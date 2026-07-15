@@ -56,8 +56,8 @@ export type {
   ResponsesAction,
   UpstreamCallOptions,
 } from './provider.ts';
-export type { ImagesEditsRequest, ReferencedImagesEditsRequest, UploadedImagesEditsRequest } from './images.ts';
-export { imagesEditsJsonBody, imagesEditsMultipartBody } from './images.ts';
+export type { ImagesEditsRequest, ImagesEditsSource } from './images.ts';
+export { imagesEditsCanUseMultipart, imagesEditsJsonBody, imagesEditsMultipartBody } from './images.ts';
 export type { ProviderStreamParser } from './streaming.ts';
 export { streamingProviderCall } from './streaming.ts';
 

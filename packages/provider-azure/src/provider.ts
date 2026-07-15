@@ -5,7 +5,7 @@ import { parseChatCompletionsStream } from '@floway-dev/protocols/chat-completio
 import { kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseMessagesStream } from '@floway-dev/protocols/messages';
 import { parseResponsesStream, type ResponsesResult, toCompactPayloadShape } from '@floway-dev/protocols/responses';
-import { imagesEditsJsonBody, imagesEditsMultipartBody, type ProviderInstance, type Provider, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord, publicModelId, resolveEffectiveFlags, streamingProviderCall } from '@floway-dev/provider';
+import { imagesEditsCanUseMultipart, imagesEditsJsonBody, imagesEditsMultipartBody, type ProviderInstance, type Provider, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord, publicModelId, resolveEffectiveFlags, streamingProviderCall } from '@floway-dev/provider';
 
 const upstreamModelIdOf = (model: ProviderModel): string => (model.providerData as { upstreamModelId: string }).upstreamModelId;
 
@@ -91,12 +91,18 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
     callEmbeddings: (model, body, signal, opts) => callNonStreaming(azureFetchEmbeddings, model, body, signal, opts.headers, opts),
     callImagesGenerations: (model, body, signal, opts) => callNonStreaming(azureFetchImagesGenerations, model, body, signal, opts.headers, opts),
     callImagesEdits: async (model, request, signal, opts) => {
-      if (request.type === 'references') {
-        return await callNonStreaming(azureFetchImagesEdits, model, imagesEditsJsonBody(request), signal, opts.headers, opts);
-      }
       const upstreamModelId = upstreamModelIdOf(model);
-      const body = imagesEditsMultipartBody(request, upstreamModelId);
-      const response = await azureFetchImagesEdits(azure.config, { method: 'POST', body, signal }, { extraHeaders: opts.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall });
+      if (imagesEditsCanUseMultipart(request)) {
+        const body = imagesEditsMultipartBody(request, upstreamModelId);
+        const response = await azureFetchImagesEdits(azure.config, { method: 'POST', body, signal }, { extraHeaders: opts.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall });
+        return { response, modelKey: upstreamModelId };
+      }
+      const body = await imagesEditsJsonBody(request);
+      const response = await azureFetchImagesEdits(
+        azure.config,
+        { method: 'POST', body: JSON.stringify({ ...body, model: upstreamModelId }), signal },
+        { extraHeaders: opts.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
+      );
       return { response, modelKey: upstreamModelId };
     },
   };

@@ -956,12 +956,18 @@ const buildEditsRequest = (
     ...(config.input_fidelity === undefined ? {} : { input_fidelity: config.input_fidelity }),
     ...(stream ? { stream: true, partial_images: config.partial_images } : {}),
   };
-  const images = sources.map((source, index) =>
-    new File([source.bytes], `image_${index}.${editFileExt(source.mimeType)}`, { type: source.mimeType }));
+  const images = sources.map((source, index) => ({
+    type: 'upload' as const,
+    file: new File([source.bytes], `image_${index}.${editFileExt(source.mimeType)}`, { type: source.mimeType }),
+  }));
   const maskFile = mask === undefined
     ? undefined
     : new File([mask.bytes], `mask.${editFileExt(mask.mimeType)}`, { type: mask.mimeType });
-  return { type: 'uploads', images, ...(maskFile === undefined ? {} : { mask: maskFile }), parameters };
+  return {
+    images,
+    ...(maskFile === undefined ? {} : { mask: { type: 'upload' as const, file: maskFile } }),
+    parameters,
+  };
 };
 
 const serverError = (e: unknown): ImageError => ({
