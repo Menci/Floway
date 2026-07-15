@@ -2,7 +2,7 @@ import { compressBytesToWebp, type ImageSizeCalculator } from '@floway-dev/platf
 
 const BASE64_CHUNK = 0x8000;
 
-export const base64ToBytes = (base64: string): Uint8Array => {
+export const base64ToBytes = (base64: string): Uint8Array<ArrayBuffer> => {
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
