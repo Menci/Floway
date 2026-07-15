@@ -177,7 +177,7 @@ const applyBlockDelta = (block: MessagesBlockAccumulator | undefined, event: Ext
     return;
   case 'signature_delta':
     if (block.type !== 'thinking') return;
-    block.signature = `${block.signature ?? ''}${event.delta.signature ?? ''}`;
+    block.signature = event.delta.signature;
     return;
   }
 };

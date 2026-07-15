@@ -16,7 +16,7 @@ import { TranslatorInputError } from '../translator-input-error.ts';
 import type { ChatCompletionsPayload, ChatCompletionsContentPart, ChatCompletionsMessage, ChatCompletionsTool, ChatCompletionsToolCall } from '@floway-dev/protocols/chat-completions';
 import type { GeminiContent, GeminiPayload, GeminiGenerationConfig, GeminiPart } from '@floway-dev/protocols/gemini';
 
-const appendOpaque = (current: string | null, signature?: string): string | null => (typeof signature === 'string' ? `${current ?? ''}${signature}` : current);
+const latestOpaque = (current: string | null, signature?: string): string | null => (typeof signature === 'string' ? signature : current);
 
 const inlineDataToContentPart = (part: GeminiPart): ChatCompletionsContentPart | null => {
   const url = geminiInlineDataUrl(part);
@@ -56,7 +56,7 @@ const buildAssistantMessage = (content: GeminiContent, turnIndex: number, unmatc
   let reasoningOpaque: string | null = null;
 
   content.parts.forEach((part, partIndex) => {
-    reasoningOpaque = appendOpaque(reasoningOpaque, part.thoughtSignature);
+    reasoningOpaque = latestOpaque(reasoningOpaque, part.thoughtSignature);
 
     const kind = geminiPartKind(part);
     switch (kind) {

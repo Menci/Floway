@@ -345,6 +345,14 @@ test('reassembleMessagesEvents reassembles thinking blocks', async () => {
       data: {
         type: 'content_block_delta',
         index: 0,
+        delta: { type: 'signature_delta', signature: 'sig_old' },
+      },
+    },
+    {
+      event: 'content_block_delta',
+      data: {
+        type: 'content_block_delta',
+        index: 0,
         delta: { type: 'signature_delta', signature: 'sig_123' },
       },
     },

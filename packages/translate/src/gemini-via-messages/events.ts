@@ -1,4 +1,4 @@
-import { appendGeminiThoughtSignature, flushGeminiThoughtSignature, type GeminiThoughtSignatureState, geminiCandidateEvent, parseStrictJsonObject, signGeminiPart } from '../shared/gemini-via/gemini.ts';
+import { flushGeminiThoughtSignature, type GeminiThoughtSignatureState, geminiCandidateEvent, parseStrictJsonObject, setGeminiThoughtSignature, signGeminiPart } from '../shared/gemini-via/gemini.ts';
 import { billableServiceTier, eventFrame, splitInclusiveInputTokens, USAGE_BILLING, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiFinishReason, GeminiStreamEvent, GeminiUsageMetadata } from '@floway-dev/protocols/gemini';
 import { mergeMessagesUsageSnapshot, messagesUsageSnapshot, splitMessagesCacheCreationTokens, type MessagesStreamEvent, type MessagesUsageSnapshot } from '@floway-dev/protocols/messages';
@@ -108,7 +108,7 @@ export const translateToSourceEvents = async function* (frames: AsyncIterable<Pr
       }
 
       if (event.content_block.type === 'redacted_thinking') {
-        appendGeminiThoughtSignature(state, event.content_block.data);
+        setGeminiThoughtSignature(state, event.content_block.data);
         break;
       }
 
@@ -137,7 +137,7 @@ export const translateToSourceEvents = async function* (frames: AsyncIterable<Pr
         }
         break;
       case 'signature_delta':
-        appendGeminiThoughtSignature(state, event.delta.signature);
+        setGeminiThoughtSignature(state, event.delta.signature);
         break;
       case 'text_delta':
         if (event.delta.text.length > 0) {

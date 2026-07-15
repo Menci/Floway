@@ -124,6 +124,11 @@ test('translateToSourceEvents maps thinking text and attaches signature to the n
     eventFrame({
       type: 'content_block_delta',
       index: 0,
+      delta: { type: 'signature_delta', signature: 'sig_old' },
+    }),
+    eventFrame({
+      type: 'content_block_delta',
+      index: 0,
       delta: { type: 'signature_delta', signature: 'sig_1' },
     }),
     eventFrame({ type: 'content_block_stop', index: 0 }),

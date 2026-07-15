@@ -28,7 +28,8 @@ const usageChunk = (): ChatCompletionsStreamEvent => ({
 test('translateChatCompletionsChunkToMessagesEvents emits opaque-only reasoning as redacted_thinking at finish', () => {
   const state = createChatCompletionsToMessagesStreamState();
   const events = [
-    ...translateChatCompletionsChunkToMessagesEvents(chunk({ role: 'assistant', reasoning_opaque: 'enc_only' }), state),
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({ role: 'assistant', reasoning_opaque: 'enc_old' }), state),
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({ reasoning_opaque: 'enc_only' }), state),
     ...translateChatCompletionsChunkToMessagesEvents(chunk({}, 'stop'), state),
   ];
 
