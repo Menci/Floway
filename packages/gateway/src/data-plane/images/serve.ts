@@ -2,12 +2,11 @@
 // requests to the provider that declares the requested model and the
 // matching image endpoint capability.
 //
-// Edits accepts multipart uploads and JSON `images` references. Both shapes
-// are buffered once for dump capture; JSON remains JSON through provider
-// dispatch, while multipart is parsed and re-encoded with a fresh boundary.
+// The edits handler accepts multipart uploads and JSON `images` references.
+// Both shapes are buffered once for dump capture; JSON remains JSON through
+// provider dispatch, while multipart is re-encoded with a fresh boundary.
 // https://github.com/openai/openai-openapi/blob/a3276900e58b8b2a92e0cb087cd2e6e005f58458/openapi.yaml#L12558-L12620
-// Multipart size is therefore capped by the Workers heap (~128 MB); a
-// streaming parser is required before larger multi-image uploads are viable.
+// A streaming parser is required before unbounded multipart uploads are viable.
 
 import type { Context } from 'hono';
 
