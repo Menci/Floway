@@ -96,13 +96,13 @@ const assertRawModel = (value: unknown): CodexRawModel => {
 
 // Codex exposes only the Responses endpoint. Pricing is looked up from the
 // per-slug table in pricing.ts so the dashboard can report a notional
-// API-rate cost even though Codex itself bills as a flat-fee subscription.
+// API-rate pricing even though Codex itself bills as a flat-fee subscription.
 //
 // `enabledFlags` is the upstream-resolved flag set (provider defaults
 // merged with the row's `flagOverrides`); it propagates per-model so
 // downstream interceptors can read the effective set without re-resolving.
 export const codexRawToProviderModel = (raw: CodexRawModel, enabledFlags: ReadonlySet<FlagId>): ProviderModel => {
-  const cost = pricingForCodexModelKey(raw.id);
+  const pricing = pricingForCodexModelKey(raw.id);
   const chat: UpstreamChatModelConfig = {};
   if (raw.input_modalities && raw.input_modalities.length > 0) {
     chat.modalities = { input: raw.input_modalities, output: ['text'] };
@@ -129,7 +129,7 @@ export const codexRawToProviderModel = (raw: CodexRawModel, enabledFlags: Readon
     },
     endpoints: { responses: {} },
     enabledFlags,
-    ...(cost ? { cost } : {}),
+    ...(pricing ? { pricing } : {}),
     ...(Object.keys(chat).length > 0 ? { chat } : {}),
   };
 };

@@ -10,5 +10,5 @@ export type { ProxyConfig } from './proxy-config.ts';
 
 export { ProxyDialError, ProxyUriError } from './errors.ts';
 
-export { runProxiedRequest } from './dialer.ts';
-export type { RunProxiedRequestOptions } from './dialer.ts';
+export { runDirectConnectRequest, runProxiedRequest } from './dialer.ts';
+export type { RunDirectConnectRequestOptions, RunProxiedRequestOptions } from './dialer.ts';

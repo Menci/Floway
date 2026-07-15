@@ -29,6 +29,7 @@ const upstream = (id: string, proxyFallbackList: ProxyFallbackEntry[]) => ({
   disabledPublicModelIds: [],
   proxyFallbackList,
   modelPrefix: null,
+  color: null,
   config: COPILOT_CONFIG,
   state: null,
 });
@@ -65,9 +66,10 @@ describe('createPerRequestFetcher', () => {
     const repo = new InMemoryRepo();
     initRepo(repo);
     // A malformed row sitting unreferenced in the table must not break
-    // direct-only upstreams: we only parse rows that are reachable via some
+    // built-in-only upstreams: we only parse rows that are reachable via some
     // upstream's fallback list.
-    await repo.upstreams.save(upstream('u_direct', []));
+    await repo.upstreams.save(upstream('u_direct_fetch', []));
+    await repo.upstreams.save(upstream('u_direct_connect', [{ id: 'direct_connect' }]));
     await repo.proxies.insert({ id: 'p_bad', name: 'Bad', url: 'gibberish-no-scheme', dialTimeoutSeconds: null });
 
     let proxyListCalls = 0;

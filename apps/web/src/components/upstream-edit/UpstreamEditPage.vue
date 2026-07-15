@@ -125,6 +125,11 @@ const modelPrefix = computed({
   set: v => { draft.value = { ...draft.value, model_prefix: v }; },
 });
 const modelPrefixInvalid = ref(false);
+const color = computed({
+  get: () => draft.value.color,
+  set: v => { draft.value = { ...draft.value, color: v }; },
+});
+const colorInvalid = ref(false);
 
 const upstreamModels = ref<UpstreamModelConfig[]>([]);
 const upstreamModelsError = ref<string | null>(null);
@@ -164,7 +169,7 @@ const customAutoModelsFromDraft = computed<UpstreamModelConfig[]>(() => fetchedR
     endpoints: endpointsForKind(m.kind),
     ...(label ? { display_name: label } : {}),
     ...(m.limits ? { limits: m.limits } : {}),
-    ...(m.cost ? { cost: m.cost } : {}),
+    ...(m.pricing ? { pricing: m.pricing } : {}),
   };
 }));
 
@@ -338,7 +343,8 @@ const save = async ({ openEdit = false }: { openEdit?: boolean } = {}) => {
   const trimmedName = draft.value.name.trim();
   if (!trimmedName) { saveError.value = 'Name is required'; return; }
   if (modelPrefixInvalid.value) { saveError.value = 'Model name prefix is invalid'; return; }
-  if (modelsPanelInvalid.value) { saveError.value = 'One or more models have invalid configuration — check model reasoning settings'; return; }
+  if (colorInvalid.value) { saveError.value = 'Color hex is invalid'; return; }
+  if (modelsPanelInvalid.value) { saveError.value = 'One or more models have invalid configuration — review each model\'s highlighted fields and validation errors'; return; }
   // OAuth providers can only persist an initial record once the wizard has
   // populated the credential slice; without it the backend's per-kind
   // asserter rejects the POST with an opaque error. Fail early so the
@@ -371,6 +377,7 @@ const save = async ({ openEdit = false }: { openEdit?: boolean } = {}) => {
       disabled_public_model_ids: draft.value.disabled_public_model_ids,
       proxy_fallback_list: draft.value.proxy_fallback_list,
       model_prefix: draft.value.model_prefix,
+      color: draft.value.color,
     };
 
     if (isCreate.value) {
@@ -572,6 +579,8 @@ const workbenchStyle = computed(() => ({ '--right-pane-h': `${Math.ceil(rightCon
         v-model:proxy-fallback-list="proxyFallbackList"
         v-model:model-prefix="modelPrefix"
         @update:model-prefix-invalid="v => modelPrefixInvalid = v"
+        v-model:color="color"
+        @update:color-invalid="v => colorInvalid = v"
         v-model:custom="customDraft"
         v-model:azure="azureDraft"
         v-model:ollama="ollamaDraft"

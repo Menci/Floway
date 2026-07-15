@@ -4,14 +4,14 @@ import { withToolArgumentWhitespaceAborted } from './abort-on-tool-argument-whit
 import type { ResponsesBoundaryCtx } from './types.ts';
 import { MAX_CONSECUTIVE_WHITESPACE } from '../shared/whitespace-overflow.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { ProviderResponsesResult } from '@floway-dev/provider';
 import { assertEquals, stubProviderModel } from '@floway-dev/test-utils';
 
 const invocation = (): ResponsesBoundaryCtx => ({
   payload: {
     model: 'test-model',
-    input: [] as unknown as ResponsesPayload['input'],
+    input: [],
     instructions: null,
     temperature: 1,
     top_p: null,

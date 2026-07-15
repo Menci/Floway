@@ -3,12 +3,12 @@ import { streamSSE } from 'hono/streaming';
 
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
-import { billableServiceTier, tokenUsage } from '../../shared/telemetry/usage.ts';
+import { tokenUsage } from '../../shared/telemetry/usage.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse } from '../shared/respond.ts';
 import { type StreamCompletion, writeSSEFrames } from '../shared/stream/sse.ts';
-import { type ProtocolFrame, sseFrame } from '@floway-dev/protocols/common';
-import { messagesProtocolFrameToSSEFrame, MESSAGES_MISSING_TERMINAL_MESSAGE, collectMessagesProtocolEventsToResult } from '@floway-dev/protocols/messages';
+import { billableServiceTier, type ProtocolFrame, sseFrame } from '@floway-dev/protocols/common';
+import { messagesProtocolFrameToSSEFrame, MESSAGES_MISSING_TERMINAL_MESSAGE, collectMessagesProtocolEventsToResult, mergeMessagesUsageSnapshot, messagesUsageSnapshot, splitMessagesCacheCreationTokens } from '@floway-dev/protocols/messages';
 import type { MessagesMessageDeltaEvent, MessagesStreamEvent, MessagesUsage } from '@floway-dev/protocols/messages';
 import { type ExecuteResult, type PlainResult, type InternalDebugError, toInternalDebugError } from '@floway-dev/provider';
 import { apiErrorToResponse } from '@floway-dev/provider';
@@ -105,23 +105,21 @@ export const respondMessages = async (
 //   * https://docs.claude.com/en/build-with-claude/fast-mode
 //   * https://docs.claude.com/en/api/service-tiers
 const tokenUsageFromMessagesUsage = (u: MessagesUsageLike) => {
-  const cacheWrite5m = u.cache_creation?.ephemeral_5m_input_tokens;
-  const cacheWrite1h = u.cache_creation?.ephemeral_1h_input_tokens;
-  const cacheWriteRolledUp = u.cache_creation_input_tokens ?? 0;
+  const { cacheWrite, cacheWrite1h } = splitMessagesCacheCreationTokens(u);
   const tier = billableServiceTier(u.speed) ?? billableServiceTier(u.service_tier);
   return tokenUsage({
     input: u.input_tokens ?? 0,
     input_cache_read: u.cache_read_input_tokens ?? 0,
-    input_cache_write: cacheWrite5m ?? cacheWriteRolledUp,
-    input_cache_write_1h: cacheWrite1h ?? 0,
+    input_cache_write: cacheWrite,
+    input_cache_write_1h: cacheWrite1h,
     output: u.output_tokens,
     tier,
   });
 };
 
 export const createMessagesStreamUsageState = () => ({
+  raw: messagesUsageSnapshot(),
   current: tokenUsage({}),
-  gotInputFromStart: false,
 });
 
 type MessagesStreamUsageState = ReturnType<typeof createMessagesStreamUsageState>;
@@ -137,32 +135,13 @@ export const tokenUsageFromMessagesFrame = (frame: ProtocolFrame<MessagesStreamE
   if (frame.type !== 'event') return null;
   const { event } = frame;
   if (event.type === 'message_start') {
-    state.current = tokenUsageFromMessagesUsage(event.message.usage);
-    // A fully cache-hit prompt reports message_start with input=0 but non-zero
-    // cache reads; the input accounting still arrived, so the flag must reflect
-    // every input-side dimension, not bare input alone — otherwise a later
-    // delta carrying input_tokens re-merges and drops the cache counts.
-    state.gotInputFromStart ||= (state.current.input ?? 0) + (state.current.input_cache_read ?? 0) + (state.current.input_cache_write ?? 0) + (state.current.input_cache_write_1h ?? 0) > 0;
+    state.raw = messagesUsageSnapshot(event.message.usage);
+    state.current = tokenUsageFromMessagesUsage(state.raw);
     return { ...state.current };
   }
   if (event.type === 'message_delta' && event.usage) {
-    // Anthropic's wire schema lets a delta re-stamp `speed`/`service_tier`,
-    // and both fields are per-message properties of this billing bucket. A
-    // delta-supplied tier therefore wins; absent that, message_start's tier
-    // carries forward across the bucket. Two branches below: the cache-hit
-    // prompt path (message_start carried zero input, this delta now carries
-    // the real input accounting) rebuilds state.current from the delta and
-    // backfills tier from the prior; the normal path updates the running
-    // output and restamps tier when the delta provides one.
-    const deltaResolved = tokenUsageFromMessagesUsage(event.usage);
-    if (!state.gotInputFromStart && event.usage.input_tokens !== undefined) {
-      const priorTier = state.current.tier;
-      state.current = deltaResolved;
-      state.current.tier ??= priorTier;
-    } else {
-      state.current.output = event.usage.output_tokens;
-      if (deltaResolved.tier != null) state.current.tier = deltaResolved.tier;
-    }
+    state.raw = mergeMessagesUsageSnapshot(state.raw, event.usage);
+    state.current = tokenUsageFromMessagesUsage(state.raw);
     return { ...state.current };
   }
   return event.type === 'message_stop' ? { ...state.current } : null;

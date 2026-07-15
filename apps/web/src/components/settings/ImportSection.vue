@@ -20,7 +20,7 @@ interface ExportPayload {
 
 // The dashboard only round-trips the current export format. Older exports are
 // rejected rather than silently coerced.
-const EXPORT_VERSION = 8 as const;
+const EXPORT_VERSION = 9 as const;
 
 const api = useApi();
 

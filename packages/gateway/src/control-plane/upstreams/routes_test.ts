@@ -1,6 +1,7 @@
 import { test } from 'vitest';
 
 import { blueprintUpstreamRecord, upstreamRecordToFullJson } from './serialize.ts';
+import { MODEL_CATALOG_REVISION } from '../../data-plane/providers/models-cache.ts';
 import { requestApp, setupAppTest } from '../../test-helpers.ts';
 import type { UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { assertEquals, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
@@ -260,6 +261,7 @@ test('PATCH /api/upstreams preserves omitted secrets and re-warms the models cac
   // it with the new upstream-supplied catalog rather than leaving the old
   // models in place.
   await repo.modelsCache.put(created.id, {
+    revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1,
     models: [{ id: 'stale-model', kind: 'chat', endpoints: {}, enabledFlags: new Set(), limits: {} }],
   });
@@ -309,6 +311,7 @@ test('PATCH /api/upstreams keeps Azure as a single endpoint config', async () =>
     disabledPublicModelIds: [],
     proxyFallbackList: [],
     modelPrefix: null,
+    color: null,
     config: {
       endpoint: 'https://example.openai.azure.com/openai/v1',
       apiKey: 'az-secret',
@@ -354,6 +357,7 @@ test('PATCH /api/upstreams round-trips a flat per-model flagOverrides map', asyn
     disabledPublicModelIds: [],
     proxyFallbackList: [],
     modelPrefix: null,
+    color: null,
     config: {
       endpoint: 'https://example.openai.azure.com/openai/v1',
       apiKey: 'az-secret',
@@ -397,6 +401,7 @@ test('GET /api/upstreams attaches models-cache freshness to every row', async ()
     disabledPublicModelIds: [],
     proxyFallbackList: [],
     modelPrefix: null,
+    color: null,
     config: { baseUrl: 'https://a.example.com', authStyle: 'bearer', apiKey: 'x', endpoints: { chatCompletions: {} } },
     state: null,
   };
@@ -405,10 +410,12 @@ test('GET /api/upstreams attaches models-cache freshness to every row', async ()
   await repo.upstreams.save({ ...baseRow, id: 'up_failed', name: 'Failed', sortOrder: 2 });
 
   await repo.modelsCache.put('up_warm', {
+    revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1_700_000_000_000,
     models: [{ id: 'm1', kind: 'chat', endpoints: {}, enabledFlags: new Set(), limits: {} }],
   });
   await repo.modelsCache.put('up_failed', {
+    revision: MODEL_CATALOG_REVISION,
     fetchedAt: 1_700_000_000_000,
     models: [{ id: 'm1', kind: 'chat', endpoints: {}, enabledFlags: new Set(), limits: {} }],
   });
@@ -455,13 +462,14 @@ test('GET /api/upstream-options returns the minimal picker shape to admin and no
     disabledPublicModelIds: [],
     proxyFallbackList: [],
     modelPrefix: null,
+    color: null,
     config: { baseUrl: 'https://custom.example.com', authStyle: 'bearer', apiKey: 'sk-secret', endpoints: { chatCompletions: {} } },
     state: null,
   });
 
   const expected = [
-    { id: 'up_copilot', name: 'GitHub Copilot (tester)', kind: 'copilot', enabled: true },
-    { id: 'up_disabled_custom', name: 'Disabled Custom', kind: 'custom', enabled: false },
+    { id: 'up_copilot', name: 'GitHub Copilot (tester)', kind: 'copilot', enabled: true, color: null },
+    { id: 'up_disabled_custom', name: 'Disabled Custom', kind: 'custom', enabled: false, color: null },
   ];
 
   const adminResp = await requestApp('/api/upstream-options', { headers: { 'x-floway-session': adminSession } });
@@ -474,7 +482,7 @@ test('GET /api/upstream-options returns the minimal picker shape to admin and no
   assertEquals(userBody, expected);
   // No secret-bearing or operator-only fields leak through this endpoint.
   for (const row of userBody) {
-    assertEquals(Object.keys(row).sort(), ['enabled', 'id', 'kind', 'name']);
+    assertEquals(Object.keys(row).sort(), ['color', 'enabled', 'id', 'kind', 'name']);
   }
 });
 
@@ -624,6 +632,7 @@ test('POST /api/upstreams/list-models with a persisted id forces a fresh upstrea
     disabledPublicModelIds: [],
     proxyFallbackList: [],
     modelPrefix: null,
+    color: null,
     config: { ...customConfig, apiKey: 'sk-refresh' },
     state: null,
   };
@@ -1296,14 +1305,14 @@ test('POST /api/upstreams accepts proxy_fallback_list and surfaces it in the res
 
   const resp = await requestApp(
     '/api/upstreams',
-    authed(adminSession, createBody({ proxy_fallback_list: [{ id: 'p_fallback' }, { id: 'direct' }] })),
+    authed(adminSession, createBody({ proxy_fallback_list: [{ id: 'p_fallback' }, { id: 'direct_connect' }, { id: 'direct_fetch' }] })),
   );
   assertEquals(resp.status, 201);
   const created = (await resp.json()) as JsonObject;
-  assertEquals(created.proxy_fallback_list, [{ id: 'p_fallback' }, { id: 'direct' }]);
+  assertEquals(created.proxy_fallback_list, [{ id: 'p_fallback' }, { id: 'direct_connect' }, { id: 'direct_fetch' }]);
 
   const stored = await repo.upstreams.getById(created.id);
-  assertEquals(stored?.proxyFallbackList, [{ id: 'p_fallback' }, { id: 'direct' }]);
+  assertEquals(stored?.proxyFallbackList, [{ id: 'p_fallback' }, { id: 'direct_connect' }, { id: 'direct_fetch' }]);
 });
 
 test('POST /api/upstreams normalises proxy_fallback_list duplicates so the response matches what GET returns', async () => {
@@ -1313,19 +1322,19 @@ test('POST /api/upstreams normalises proxy_fallback_list duplicates so the respo
 
   const resp = await requestApp(
     '/api/upstreams',
-    authed(adminSession, createBody({ proxy_fallback_list: [{ id: 'p_fallback' }, { id: 'direct' }, { id: 'p_fallback' }, { id: 'direct' }] })),
+    authed(adminSession, createBody({ proxy_fallback_list: [{ id: 'p_fallback' }, { id: 'direct_connect' }, { id: 'direct_fetch' }, { id: 'p_fallback' }, { id: 'direct_connect' }, { id: 'direct_fetch' }] })),
   );
   assertEquals(resp.status, 201);
   const created = (await resp.json()) as JsonObject;
   // Without the API-layer normalize, the response would echo the duplicates
   // while the saved row only kept one of each — operators would see a
   // different list on POST vs the next GET.
-  assertEquals(created.proxy_fallback_list, [{ id: 'p_fallback' }, { id: 'direct' }]);
+  assertEquals(created.proxy_fallback_list, [{ id: 'p_fallback' }, { id: 'direct_connect' }, { id: 'direct_fetch' }]);
 
   const get = await requestApp('/api/upstreams', authed(adminSession));
   const list = (await get.json()) as JsonObject[];
   const fresh = list.find(u => u.id === created.id);
-  assertEquals(fresh!.proxy_fallback_list, [{ id: 'p_fallback' }, { id: 'direct' }]);
+  assertEquals(fresh!.proxy_fallback_list, [{ id: 'p_fallback' }, { id: 'direct_connect' }, { id: 'direct_fetch' }]);
 });
 
 test('PATCH /api/upstreams sets proxy_fallback_list', async () => {
@@ -1340,11 +1349,11 @@ test('PATCH /api/upstreams sets proxy_fallback_list', async () => {
   const patch = await requestApp(`/api/upstreams/${created.id}`, {
     method: 'PATCH',
     headers: { 'content-type': 'application/json', 'x-floway-session': adminSession },
-    body: JSON.stringify({ proxy_fallback_list: [{ id: 'p_fallback' }, { id: 'direct' }] }),
+    body: JSON.stringify({ proxy_fallback_list: [{ id: 'p_fallback' }, { id: 'direct_connect' }, { id: 'direct_fetch' }] }),
   });
   assertEquals(patch.status, 200);
   const updated = (await patch.json()) as JsonObject;
-  assertEquals(updated.proxy_fallback_list, [{ id: 'p_fallback' }, { id: 'direct' }]);
+  assertEquals(updated.proxy_fallback_list, [{ id: 'p_fallback' }, { id: 'direct_connect' }, { id: 'direct_fetch' }]);
 });
 
 test('PATCH /api/upstreams rejects proxy_fallback_list referencing an unknown proxy id', async () => {
@@ -2032,7 +2041,7 @@ test('spec invariant (3): POST /api/upstreams/claude-code/probe does not persist
   const originalList = (await getRecord(repo, created.id)).proxyFallbackList;
 
   const envelope = envelopeFromRecord(await getRecord(repo, created.id));
-  envelope.proxy_fallback_list = [{ id: 'direct' }];
+  envelope.proxy_fallback_list = [{ id: 'direct_fetch' }];
 
   await withMockedFetch(
     () => jsonResponse(usageProbeBody),
@@ -2066,6 +2075,7 @@ test('spec invariant (3): POST /api/upstreams/list-models ignores record.name mu
     disabledPublicModelIds: [],
     proxyFallbackList: [],
     modelPrefix: null,
+    color: null,
     config: {
       endpoint: 'https://invariant.openai.azure.com',
       apiKey: 'sk-invariant',

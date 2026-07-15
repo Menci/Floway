@@ -8,12 +8,12 @@ import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
 import { createChatGatewayCtxFromHono, createGatewayCtxFromHono, finalizeGatewayResponse, type ChatGatewayCtx, type GatewayCtx } from '../shared/gateway-ctx.ts';
-import { readRequestBody, type RequestBody } from '../shared/request-body.ts';
+import { readRequestBody, takeRequestBody, type RequestBody } from '../shared/request-body.ts';
 import { providerModelsUnavailableResponse } from '../shared/upstream-models-error.ts';
-import type { ResponsesPayload } from '@floway-dev/protocols/responses';
+import type { CanonicalResponsesPayload, ResponsesRequestPayload } from '@floway-dev/protocols/responses';
 import { internalErrorResult, toInternalDebugError } from '@floway-dev/provider';
 import { TranslatorInputError } from '@floway-dev/translate';
-import { canonicalizeResponsesPayload, type CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
+import { canonicalizeResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
 
 // OpenAI's verbatim previous_response_not_found envelope. Codex compares this
 // body byte-for-byte against upstream — see the cross-references on
@@ -44,7 +44,7 @@ const previousResponseNotFoundResponse = (id: string): Response =>
 const respondWithInternalError = async (c: AuthedContext, error: unknown, requestBody: RequestBody, ctx?: GatewayCtx): Promise<Response> => {
   const verbatim = providerModelsUnavailableResponse(error);
   if (verbatim !== null) return verbatim;
-  const effectiveCtx = ctx ?? createGatewayCtxFromHono(c, { wantsStream: false, requestBody, backgroundScheduler: backgroundSchedulerFromContext(c) });
+  const effectiveCtx = ctx ?? createGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
   const result = internalErrorResult(502, toInternalDebugError(error), effectiveCtx.attempt.telemetry);
   const { response } = await respondResponses(c, result, false, effectiveCtx);
   return finalizeGatewayResponse(effectiveCtx, response);
@@ -60,7 +60,7 @@ const respondToThrow = async (c: AuthedContext, error: unknown, requestBody: Req
     return ctx ? finalizeGatewayResponse(ctx, response) : response;
   }
   if (error instanceof TranslatorInputError) {
-    const effectiveCtx = ctx ?? createGatewayCtxFromHono(c, { wantsStream: false, requestBody, backgroundScheduler: backgroundSchedulerFromContext(c) });
+    const effectiveCtx = ctx ?? createGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
     const { response } = await respondResponses(c, translatorInputErrorResult(error, effectiveCtx.attempt.telemetry), false, effectiveCtx);
     return finalizeGatewayResponse(effectiveCtx, response);
   }
@@ -68,7 +68,7 @@ const respondToThrow = async (c: AuthedContext, error: unknown, requestBody: Req
 };
 
 const parsePayload = (requestBody: RequestBody): CanonicalResponsesPayload =>
-  canonicalizeResponsesPayload(JSON.parse(new TextDecoder().decode(requestBody.bytes)) as ResponsesPayload);
+  canonicalizeResponsesPayload(JSON.parse(new TextDecoder().decode(requestBody.bytes)) as ResponsesRequestPayload);
 
 export const responsesHttp = {
   generate: async (c: AuthedContext): Promise<Response> => {
@@ -77,7 +77,7 @@ export const responsesHttp = {
     try {
       const payload = parsePayload(requestBody);
       const wantsStream = payload.stream === true;
-      ctx = createChatGatewayCtxFromHono(c, { wantsStream, requestBody, model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) }, apiKeyId => createResponsesHttpStore(apiKeyId, payload.store ?? undefined));
+      ctx = createChatGatewayCtxFromHono(c, { wantsStream, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) }, apiKeyId => createResponsesHttpStore(apiKeyId, payload.store ?? undefined));
       const result = await responsesServe.generate({ payload, ctx, headers: inboundHeadersForUpstream(c) });
       const { response } = await respondResponses(c, result, wantsStream, ctx);
       return finalizeGatewayResponse(ctx, response);
@@ -91,7 +91,7 @@ export const responsesHttp = {
     let ctx: ChatGatewayCtx | undefined;
     try {
       const payload = parsePayload(requestBody);
-      ctx = createChatGatewayCtxFromHono(c, { wantsStream: false, requestBody, model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) }, apiKeyId => createResponsesHttpStore(apiKeyId, payload.store ?? undefined));
+      ctx = createChatGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) }, apiKeyId => createResponsesHttpStore(apiKeyId, payload.store ?? undefined));
       const result = await responsesServe.compact({ payload, ctx, headers: inboundHeadersForUpstream(c) });
       if (result.type === 'result') {
         // Compact drains the upstream stream into a single envelope with

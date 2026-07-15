@@ -9,7 +9,7 @@ import { dialSocks5 } from './protocols/socks5.ts';
 import { dialTrojan } from './protocols/trojan.ts';
 import { dialVlessTcpTls, dialVlessWsTls } from './protocols/vless.ts';
 import type { ProxyConfig } from './proxy-config.ts';
-import type { DialOptions, DialResult, DialTarget, ProxyRequestTarget } from './types.ts';
+import { connectOrDialError, type DialedSocket, type DialOptions, type DialResult, type DialTarget, type ProxyRequestTarget } from './types.ts';
 import { fetchOnStream, signalAbortReason, userspaceTls, type DuplexStream, type HttpRequest, type TlsStream } from '@floway-dev/http';
 
 /**
@@ -22,7 +22,21 @@ export const dial = async (
   config: ProxyConfig,
   target: DialTarget,
   options: DialOptions,
-): Promise<DialResult> => {
+): Promise<DialResult> =>
+  await withDialDeadline(
+    options,
+    () => new ProxyDialError(
+      `${config.kind}: dial to ${config.host}:${config.port} → ${target.host}:${target.port} exceeded deadline of ${options.dialTimeoutMs ?? DEFAULT_DIAL_DEADLINE_MS}ms`,
+      'tcp-connect',
+    ),
+    innerOptions => dispatchDial(config, target, innerOptions),
+  );
+
+const withDialDeadline = async <T>(
+  options: DialOptions,
+  timeoutError: () => ProxyDialError,
+  run: (options: DialOptions) => Promise<T>,
+): Promise<T> => {
   const deadlineMs = options.dialTimeoutMs ?? DEFAULT_DIAL_DEADLINE_MS;
   const callerSignal = options.signal;
   if (callerSignal?.aborted) {
@@ -41,10 +55,7 @@ export const dial = async (
     callerSignal.addEventListener('abort', onCallerAbort, { once: true });
   }
   const timer = setTimeout(
-    () => internal.abort(new ProxyDialError(
-      `${config.kind}: dial to ${config.host}:${config.port} → ${target.host}:${target.port} exceeded deadline of ${deadlineMs}ms`,
-      'tcp-connect',
-    )),
+    () => internal.abort(timeoutError()),
     deadlineMs,
   );
   const innerOptions: DialOptions = {
@@ -52,7 +63,7 @@ export const dial = async (
     signal: internal.signal,
   };
   try {
-    return await dispatchDial(config, target, innerOptions);
+    return await run(innerOptions);
   } catch (err) {
     if (internal.signal.aborted && internal.signal.reason instanceof ProxyDialError) {
       throw internal.signal.reason;
@@ -90,6 +101,7 @@ const dispatchDial = async (config: ProxyConfig, target: DialTarget, options: Di
 };
 
 export type RunProxiedRequestOptions = DialOptions;
+export type RunDirectConnectRequestOptions = DialOptions;
 
 /**
  * Compose `dial` → optional `userspaceTls` → `fetchOnStream` into a single
@@ -107,6 +119,49 @@ export const runProxiedRequest = async (
   options: RunProxiedRequestOptions,
 ): Promise<Response> => {
   const dialed = await dial(config, target, options);
+  return await runRequestOnStream(dialed, target, request, options);
+};
+
+/**
+ * Run one HTTP request on a raw runtime TCP socket. This deliberately shares
+ * the post-dial TLS and HTTP/1.1 pipeline with proxy-backed requests; only the
+ * transport that produces the first duplex stream differs.
+ */
+export const runDirectConnectRequest = async (
+  target: ProxyRequestTarget,
+  request: HttpRequest,
+  options: RunDirectConnectRequestOptions,
+): Promise<Response> => {
+  const deadlineMs = options.dialTimeoutMs ?? DEFAULT_DIAL_DEADLINE_MS;
+  const socket = await withDialDeadline(
+    options,
+    () => new ProxyDialError(
+      `direct-connect: dial to ${target.host}:${target.port} exceeded deadline of ${deadlineMs}ms`,
+      'tcp-connect',
+    ),
+    innerOptions => connectOrDialError(
+      innerOptions.socketDial,
+      target.host,
+      target.port,
+      { signal: innerOptions.signal },
+    ),
+  );
+
+  try {
+    const response = await runRequestOnStream(socket, target, request, options);
+    return closeSocketWithResponse(response, socket);
+  } catch (error) {
+    await socket.close().catch(() => {});
+    throw error;
+  }
+};
+
+const runRequestOnStream = async (
+  dialed: DialResult,
+  target: ProxyRequestTarget,
+  request: HttpRequest,
+  options: RunProxiedRequestOptions,
+): Promise<Response> => {
   let stream: DuplexStream = { readable: dialed.readable, writable: dialed.writable };
   try {
     // Route DialResult.prefix to the next byte sink: as the userspace-TLS
@@ -161,4 +216,48 @@ export const runProxiedRequest = async (
     void stream.readable.cancel(err).catch(() => {});
     throw err;
   }
+};
+
+const closeSocketWithResponse = (response: Response, socket: DialedSocket): Response => {
+  let closePromise: Promise<void> | null = null;
+  const close = (): Promise<void> => {
+    closePromise ??= socket.close().catch(() => {});
+    return closePromise;
+  };
+
+  if (response.body === null) {
+    void close();
+    return response;
+  }
+
+  const reader = response.body.getReader();
+  const body = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const result = await reader.read();
+        if (result.done) {
+          controller.close();
+          void close();
+        } else {
+          controller.enqueue(result.value);
+        }
+      } catch (error) {
+        controller.error(error);
+        void close();
+      }
+    },
+    async cancel(reason) {
+      try {
+        await reader.cancel(reason);
+      } finally {
+        await close();
+      }
+    },
+  });
+
+  return new Response(body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
 };

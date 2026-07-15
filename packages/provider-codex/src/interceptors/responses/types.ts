@@ -1,4 +1,4 @@
-import type { ResponsesPayload } from '@floway-dev/protocols/responses';
+import type { CanonicalResponsesPayload } from '@floway-dev/protocols/responses';
 import type { ProviderModel, ResponsesAction } from '@floway-dev/provider';
 
 // Boundary ctx for Codex Responses interceptors. The same ctx feeds both the
@@ -6,7 +6,7 @@ import type { ProviderModel, ResponsesAction } from '@floway-dev/provider';
 // (action='compact') chains; the terminal switches on `action` to pick the
 // wire shape (see provider.ts callResponses).
 export interface ResponsesBoundaryCtx {
-  payload: ResponsesPayload;
+  payload: CanonicalResponsesPayload;
   headers: Headers;
   readonly model: ProviderModel;
   // Mirrors the gateway-side ResponsesInvocation.action. Interceptors MAY

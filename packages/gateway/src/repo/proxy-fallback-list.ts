@@ -1,8 +1,14 @@
 import type { ProxyFallbackEntry } from '@floway-dev/provider';
 
-// Sentinel for "no proxy — connect directly"; the only legal non-id `entry.id`
-// value in a proxy_fallback_list entry.
-export const DIRECT_PROXY_ID = 'direct';
+// Built-in egress candidates occupy the same ordered fallback list as
+// operator-managed proxies, but do not resolve through the proxies table.
+export const DIRECT_FETCH_ID = 'direct_fetch';
+export const DIRECT_CONNECT_ID = 'direct_connect';
+
+export const DIRECT_FALLBACK_IDS = [DIRECT_FETCH_ID, DIRECT_CONNECT_ID] as const;
+
+export const isDirectFallbackId = (id: string): id is typeof DIRECT_FALLBACK_IDS[number] =>
+  id === DIRECT_FETCH_ID || id === DIRECT_CONNECT_ID;
 
 // Treat the list as a SET by `id` semantics: a duplicate entry has no meaning
 // beyond "try once", so silently drop repeats. The first occurrence's `colos`

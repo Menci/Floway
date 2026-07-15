@@ -1,5 +1,6 @@
 export * from './background.ts';
 export * from './env.ts';
+export * from './external-resource-fetcher.ts';
 export * from './file-provider.ts';
 export * from './image-cache-store.ts';
 export * from './image-processor.ts';

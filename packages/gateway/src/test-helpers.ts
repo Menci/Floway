@@ -6,12 +6,17 @@ import { InMemoryRepo } from './repo/memory.ts';
 import type { ApiKey } from './repo/types.ts';
 import { initBackgroundSchedulerResolver } from './runtime/background.ts';
 import { trackBackground } from './test-helpers/background-tracker.ts';
-import { createInMemoryImageProcessor, initEnv, initFileProvider, initImageProcessor, MemoryFileProvider } from '@floway-dev/platform';
+import { createInMemoryImageProcessor, initEnv, initExternalResourceFetcher, initFileProvider, initImageProcessor, MemoryFileProvider } from '@floway-dev/platform';
 import type { UpstreamRecord } from '@floway-dev/provider';
 import { clearInProcessCopilotTokenCache } from '@floway-dev/provider-copilot';
 
 interface SetupOptions {
-  adminKey?: string;
+  // `null` models an unset ADMIN_KEY — the platform EnvGetter contract says
+  // missing vars surface as `undefined`, which is what a fresh Node dev
+  // checkout hits (`process.env.ADMIN_KEY` is unset). The `?? ''` default and
+  // the raw `string` type below cannot express that state, so tests targeting
+  // the "no ADMIN_KEY at all" path need this explicit third value.
+  adminKey?: string | null;
   apiKey?: ApiKey;
   githubAccount?: CopilotAccountFixture;
   copilotUpstream?: UpstreamRecord;
@@ -64,6 +69,7 @@ export const buildCopilotUpstreamRecord = (githubAccount: CopilotAccountFixture,
     disabledPublicModelIds: [],
     proxyFallbackList: [],
     modelPrefix: null,
+    color: null,
     ...rest,
     config: overrideConfig ?? config,
   };
@@ -91,6 +97,7 @@ export const buildCustomUpstreamRecord = (overrides: Partial<UpstreamRecord> = {
     disabledPublicModelIds: [],
     proxyFallbackList: [],
     modelPrefix: null,
+    color: null,
     ...rest,
     config: overrideConfig ?? config,
   };
@@ -99,14 +106,18 @@ export const buildCustomUpstreamRecord = (overrides: Partial<UpstreamRecord> = {
 export async function setupAppTest(options: SetupOptions = {}): Promise<AppTestContext> {
   const repo = new InMemoryRepo();
   initRepo(repo);
+  initExternalResourceFetcher(() => Promise.resolve(new Response(null, { status: 404 })));
   initFileProvider(new MemoryFileProvider());
   initImageProcessor(createInMemoryImageProcessor());
   // Route background promises through the shared tracker so flushBackground()
   // can deterministically await them — see test-helpers/background-tracker.ts.
   initBackgroundSchedulerResolver(_c => trackBackground);
 
-  const adminKey = options.adminKey ?? 'admin-test-key';
-  initEnv(name => (name === 'ADMIN_KEY' ? adminKey : ''));
+  const adminKey = 'adminKey' in options ? options.adminKey : 'admin-test-key';
+  initEnv(name => {
+    if (name !== 'ADMIN_KEY') return '';
+    return adminKey === null ? undefined : adminKey;
+  });
 
   clearInProcessCopilotTokenCache();
   clearInFlightForTesting();
@@ -158,7 +169,7 @@ export async function setupAppTest(options: SetupOptions = {}): Promise<AppTestC
   // `x-floway-session: adminSession`.
   const adminSession = (await repo.sessions.create(1)).id;
 
-  return { repo, adminKey, adminSession, apiKey, githubAccount, copilotUpstream };
+  return { repo, adminKey: adminKey ?? '', adminSession, apiKey, githubAccount, copilotUpstream };
 }
 
 export function sseResponse(chunks: SSEChunk[], status = 200): Response {

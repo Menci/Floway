@@ -61,11 +61,19 @@ export const installDumpStubs = (
   const throws: Partial<Record<DumpStubFailMethod, Error>> = {};
 
   const store: DumpStore = {
+    async prepareRequestBody(body) {
+      return { encoding: 'identity', bytes: body, decodedByteLength: body.byteLength };
+    },
     async put(keyId, record) {
       if (throws.put) throw throws.put;
-      stored.push({ keyId, record });
+      if (record.request.body.encoding !== 'identity') throw new Error('dump test stub expected identity request body');
+      const storedRecord: StoredDumpRecord = {
+        ...record,
+        request: { ...record.request, body: record.request.body.bytes },
+      };
+      stored.push({ keyId, record: storedRecord });
       const list = records.get(keyId) ?? [];
-      list.unshift(record);
+      list.unshift(storedRecord);
       records.set(keyId, list);
     },
     async list(keyId, opts) {

@@ -30,8 +30,6 @@ const record = (overrides: Partial<PerformanceTelemetryRecord> = {}): Performanc
   ttftMsSum: 100,
   tpotUsSum: 500,
   // Bucket edges here are illustrative test fixtures, not the production edge set.
-  // ttft bucket [50, 100] → geometric midpoint sqrt(5000) ≈ 70.71
-  // tpot bucket [200, 500] → geometric midpoint sqrt(100000) ≈ 316.23
   buckets: [
     { metric: 'ttft_ms', lower: 50, upper: 100, count: 1 },
     { metric: 'tpot_us', lower: 200, upper: 500, count: 1 },
@@ -39,9 +37,10 @@ const record = (overrides: Partial<PerformanceTelemetryRecord> = {}): Performanc
   ...overrides,
 });
 
-// Geometric midpoints of the fixture buckets — expected percentile values.
-const TTFT_MID = Math.sqrt(50 * 100);
-const TPOT_MID = Math.sqrt(200 * 500);
+// A singleton bucket places its sole sample's expected order statistic at
+// the interval midpoint, so every percentile has the same estimate.
+const TTFT_MID = (50 + 100) / 2;
+const TPOT_MID = (200 + 500) / 2;
 
 test('aggregatePerformanceForDisplay produces correct averages and percentiles for a single record', () => {
   const rows = aggregateSingle(
@@ -118,7 +117,8 @@ test('aggregatePerformanceForDisplay merges two hours under bucket: all', () => 
   assertEquals(rows[0].requests, 2);
   assertEquals(rows[0].ttftSamples, 2);
   assertEquals(rows[0].tpotSamples, 2);
-  assertEquals(rows[0].ttftMsP50, TTFT_MID);
+  // The merged bucket has count 2, so p50 is its first order statistic.
+  assertEquals(rows[0].ttftMsP50, 50 + 50 / 3);
 });
 
 test('aggregatePerformanceForDisplay splits rows by upstream when groupBy is upstream', () => {
@@ -138,8 +138,8 @@ test('aggregatePerformanceForDisplay splits rows by upstream when groupBy is ups
 test('aggregatePerformanceForDisplay returns lower edge for overflow-bucket percentile', () => {
   // A ttftMs value above the highest edge falls into the overflow bucket
   // { lower: <top-finite-edge>, upper: null }. percentileFromBuckets returns
-  // bucket.lower when upper is null (geometric midpoint is undefined without an
-  // upper edge).
+  // bucket.lower when upper is null because a finite uniform distribution
+  // cannot be inferred without an upper edge.
   const rows = aggregateSingle(
     [
       record({

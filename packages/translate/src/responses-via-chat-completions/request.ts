@@ -1,9 +1,11 @@
 import { responsesContentToChatCompletionsContent, responsesContentToText } from '../shared/chat-completions-and-responses/content.ts';
 import { addResponsesReasoningToChatCompletionsProjection, type ChatCompletionsReasoningProjection, chatCompletionsReasoningProjectionFields, createChatCompletionsReasoningProjection } from '../shared/chat-completions-and-responses/reasoning.ts';
 import { buildCustomToolInputSchema } from '../shared/responses-via/custom-tool-wrap.ts';
+import { rejectProgramCaller, rejectProgrammaticResponsesPayload } from '../shared/responses-via/programmatic-tooling.ts';
+import { canonicalizeResponsesPayload } from '../shared/via-responses/responses-items.ts';
 import { TranslatorInputError } from '../translator-input-error.ts';
-import type { ChatCompletionsPayload, ChatCompletionsMessage, ChatCompletionsTool, ChatCompletionsToolCall } from '@floway-dev/protocols/chat-completions';
-import type { ResponsesPayload, ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
+import type { ChatCompletionsContentPart, ChatCompletionsPayload, ChatCompletionsMessage, ChatCompletionsTool, ChatCompletionsToolCall } from '@floway-dev/protocols/chat-completions';
+import type { ResponsesFunctionCallOutputItem, ResponsesInputImage, ResponsesInputText, ResponsesPayload, ResponsesRequestPayload, ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
 
 interface AssistantAccumulator {
   message: ChatCompletionsMessage;
@@ -41,6 +43,41 @@ const appendAssistantToolCall = (
     } satisfies ChatCompletionsToolCall,
   ];
   return next;
+};
+
+interface FunctionCallOutputProjection {
+  toolContent: string;
+  liftedImageContent: ChatCompletionsContentPart[];
+}
+
+// Chat tool messages admit only strings or text parts, while Responses tool
+// output also admits images. Keep every tool result contiguous with its
+// assistant tool-call group, then lift its images into one following user
+// message so vision targets receive a legal, usable shape.
+// https://github.com/openai/openai-node/blob/61539248cbe04665de68a71e6fd878127ae4db87/src/resources/chat/completions/completions.ts#L1893-L1908
+// https://github.com/vercel/ai/blob/c093ee7458ccd5dada05d8461041e47c24ee55c0/packages/google/src/convert-to-google-messages.ts#L137-L180
+const projectFunctionCallOutput = (item: ResponsesFunctionCallOutputItem): FunctionCallOutputProjection => {
+  if (typeof item.output === 'string') return { toolContent: item.output, liftedImageContent: [] };
+  if (item.output.some(part => part.type === 'input_file')) {
+    throw new TranslatorInputError('Cannot translate input_file tool output to Chat Completions.');
+  }
+
+  const images = item.output.filter((part): part is ResponsesInputImage => part.type === 'input_image');
+  const textParts = item.output.filter((part): part is ResponsesInputText =>
+    part.type === 'input_text' || part.type === 'output_text');
+  if (images.length === 0) {
+    return { toolContent: responsesContentToText(textParts), liftedImageContent: [] };
+  }
+
+  const lifted = responsesContentToChatCompletionsContent([
+    { type: 'input_text', text: `Image output from tool call ${item.call_id}:` },
+    ...images,
+  ]);
+  if (typeof lifted === 'string') throw new Error('Image tool output projection lost its image content');
+  return {
+    toolContent: responsesContentToText(textParts) || 'Image output is attached in the following user message.',
+    liftedImageContent: lifted,
+  };
 };
 
 const translateResponsesTools = (tools: ResponsesTool[] | null | undefined, customToolNames: Set<string>): ChatCompletionsTool[] | undefined => {
@@ -86,7 +123,7 @@ const translateResponsesTools = (tools: ResponsesTool[] | null | undefined, cust
   return out.length > 0 ? out : undefined;
 };
 
-const translateResponsesToolChoice = (choice?: ResponsesToolChoice): ChatCompletionsPayload['tool_choice'] => {
+const translateResponsesToolChoice = (choice?: ResponsesToolChoice | null): ChatCompletionsPayload['tool_choice'] => {
   if (choice == null) return undefined;
   if (typeof choice === 'string') return choice;
   // Both function and wrapped custom tools land on the target as named function
@@ -131,100 +168,116 @@ export interface ResponsesToChatCompletionsResult {
   customToolNames: Set<string>;
 }
 
-export const translateResponsesToChatCompletions = (payload: ResponsesPayload): ResponsesToChatCompletionsResult => {
+export const translateResponsesToChatCompletions = (source: ResponsesRequestPayload): ResponsesToChatCompletionsResult => {
+  const payload = canonicalizeResponsesPayload(source);
+  rejectProgrammaticResponsesPayload(payload, 'Chat Completions');
   const customToolNames = new Set<string>();
   const responseFormat = buildChatCompletionsResponseFormat(payload.text);
   const messages: ChatCompletionsMessage[] = payload.instructions ? [{ role: 'system', content: payload.instructions }] : [];
+  const pendingToolOutputImages: ChatCompletionsContentPart[] = [];
 
-  if (typeof payload.input === 'string') {
-    messages.push({ role: 'user', content: payload.input });
-  } else {
-    let assistant: AssistantAccumulator | null = null;
-    const flushAssistant = () => {
-      if (!assistant) return;
+  let assistant: AssistantAccumulator | null = null;
+  const flushAssistant = () => {
+    if (!assistant) return;
+    messages.push({
+      ...assistant.message,
+      ...chatCompletionsReasoningProjectionFields(assistant.reasoning),
+    });
+    assistant = null;
+  };
+
+  const flushToolOutputImages = () => {
+    if (pendingToolOutputImages.length === 0) return;
+    messages.push({ role: 'user', content: [...pendingToolOutputImages] });
+    pendingToolOutputImages.length = 0;
+  };
+
+  for (const item of payload.input) {
+    if (item.type !== 'function_call_output' && item.type !== 'custom_tool_call_output') flushToolOutputImages();
+    rejectProgramCaller(item);
+    if (item.type === 'reasoning') {
+      assistant = ensureAssistant(assistant);
+      addResponsesReasoningToChatCompletionsProjection(assistant.reasoning, item);
+      continue;
+    }
+
+    if (item.type === 'function_call') {
+      assistant = appendAssistantToolCall(assistant, item);
+      continue;
+    }
+
+    if (item.type === 'function_call_output') {
+      flushAssistant();
+      const projected = projectFunctionCallOutput(item);
       messages.push({
-        ...assistant.message,
-        ...chatCompletionsReasoningProjectionFields(assistant.reasoning),
+        role: 'tool',
+        tool_call_id: item.call_id,
+        content: projected.toolContent,
       });
-      assistant = null;
-    };
+      pendingToolOutputImages.push(...projected.liftedImageContent);
+      continue;
+    }
 
-    for (const item of payload.input) {
-      if (item.type === 'reasoning') {
-        assistant = ensureAssistant(assistant);
-        addResponsesReasoningToChatCompletionsProjection(assistant.reasoning, item);
-        continue;
+    if (item.type === 'custom_tool_call') {
+      // Project the freeform invocation into the wrapped function-tool shape
+      // so the translated target sees a coherent tool-call history.
+      assistant = appendAssistantToolCall(assistant, {
+        call_id: item.call_id,
+        name: item.name,
+        arguments: JSON.stringify({ input: item.input }),
+      });
+      continue;
+    }
+
+    if (item.type === 'custom_tool_call_output') {
+      if (typeof item.output !== 'string') {
+        throw new TranslatorInputError(`Cannot translate multimodal custom_tool_call_output '${item.call_id}'.`);
       }
-
-      if (item.type === 'function_call') {
-        assistant = appendAssistantToolCall(assistant, item);
-        continue;
-      }
-
-      if (item.type === 'function_call_output') {
-        flushAssistant();
-        // FIXME: a multimodal function_call_output becomes a tool-role message
-        // with image_url content parts. Verify GitHub Copilot's chat upstream
-        // accepts image content on tool messages before relying on this path.
-        messages.push({
-          role: 'tool',
-          tool_call_id: item.call_id,
-          content: responsesContentToChatCompletionsContent(item.output),
-        });
-        continue;
-      }
-
-      if (item.type === 'custom_tool_call') {
-        // Project the freeform invocation into the wrapped function-tool shape
-        // so the translated target sees a coherent tool-call history.
-        assistant = appendAssistantToolCall(assistant, {
-          call_id: item.call_id,
-          name: item.name,
-          arguments: JSON.stringify({ input: item.input }),
-        });
-        continue;
-      }
-
-      if (item.type === 'custom_tool_call_output') {
-        flushAssistant();
-        messages.push({
-          role: 'tool',
-          tool_call_id: item.call_id,
-          content: item.output,
-        });
-        continue;
-      }
-
-      // item_reference items are connection-bound pointers with no inline
-      // content to translate; skip them.
-      if (item.type === 'item_reference') continue;
-
-      // The shim must translate echoed web_search_call input items
-      // into function_call + function_call_output pairs before this
-      // translator runs. Reaching here means the reverse path was
-      // skipped.
-      if (item.type === 'web_search_call') {
-        throw new TranslatorInputError("Invalid input item type 'web_search_call'.");
-      }
-
-      if (item.type !== 'message') {
-        throw new TranslatorInputError(`Invalid input item type '${item.type}'.`);
-      }
-
-      if (item.role === 'assistant') {
-        assistant = appendAssistantText(assistant, responsesContentToText(item.content));
-        continue;
-      }
-
       flushAssistant();
       messages.push({
-        role: item.role,
-        content: responsesContentToChatCompletionsContent(item.content),
+        role: 'tool',
+        tool_call_id: item.call_id,
+        content: item.output,
       });
+      continue;
+    }
+
+    if (item.type === 'item_reference') {
+      throw new TranslatorInputError("Invalid input item type 'item_reference'.");
+    }
+
+    // The shim must translate echoed web_search_call input items
+    // into function_call + function_call_output pairs before this
+    // translator runs. Reaching here means the reverse path was
+    // skipped.
+    if (item.type === 'web_search_call') {
+      throw new TranslatorInputError("Invalid input item type 'web_search_call'.");
+    }
+
+    if (item.type !== 'message') {
+      throw new TranslatorInputError(`Invalid input item type '${item.type}'.`);
+    }
+
+    if (item.role === 'assistant') {
+      if (Array.isArray(item.content)) {
+        const unsupported = item.content.find(part => part.type === 'input_file' || part.type === 'input_image');
+        if (unsupported !== undefined) {
+          throw new TranslatorInputError(`Cannot translate ${unsupported.type} assistant content to Chat Completions.`);
+        }
+      }
+      assistant = appendAssistantText(assistant, responsesContentToText(item.content));
+      continue;
     }
 
     flushAssistant();
+    messages.push({
+      role: item.role,
+      content: responsesContentToChatCompletionsContent(item.content),
+    });
   }
+
+  flushAssistant();
+  flushToolOutputImages();
 
   const tools = translateResponsesTools(payload.tools, customToolNames);
   // Same-purpose OpenAI fields pass through directly here, while broader

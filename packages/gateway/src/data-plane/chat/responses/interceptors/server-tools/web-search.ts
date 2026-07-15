@@ -255,28 +255,22 @@ const validateHostedEntry = (tool: ResponsesHostedTool): PrepareToolsError | nul
   return null;
 };
 
-// First hosted block's filters win, matching the framework's
-// dedupe-to-first rule for hosted entries. Validation still runs
-// across every hosted entry so a malformed later block rejects the
-// request rather than slipping through behind the chosen first one.
-// Name-collision resolution and the hosted-tool → function-tool
-// replacement are the framework's responsibility.
+// Validation covers every hosted declaration even though only the last one
+// supplies runtime filters. Azure and Copilot both use this dedupe-to-last
+// rule for repeated web-search declarations.
+// https://github.com/Menci/Floway/pull/172#issuecomment-4971739422
 export const prepareToolsForShim = (
   tools: ResponsesTool[],
 ): PrepareToolsResult => {
-  let firstHostedFilters: WebSearchFilters = {};
-  let captured = false;
+  let selectedFilters: ShimToolFilters = {};
   for (const tool of tools) {
     if (isHostedWebSearchTool(tool)) {
       const reject = validateHostedEntry(tool);
       if (reject !== null) return { ok: false, error: reject };
-      if (!captured) {
-        firstHostedFilters = extractFilters(tool);
-        captured = true;
-      }
+      selectedFilters = extractFilters(tool);
     }
   }
-  return { ok: true, filters: firstHostedFilters };
+  return { ok: true, filters: selectedFilters };
 };
 
 // Cap on the wire-item dump inlined into the malformed-input branch's

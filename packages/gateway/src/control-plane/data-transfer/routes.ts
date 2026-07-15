@@ -19,7 +19,7 @@ import { getDumpStore, notifyDisabledBestEffort } from '../../dump/registry.ts';
 import { type CtxWithJson, type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { parseDisabledPublicModelIdsWire } from '../../repo/disabled-public-models.ts';
 import { getRepo } from '../../repo/index.ts';
-import { DIRECT_PROXY_ID, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
+import { DIRECT_FALLBACK_IDS, isDirectFallbackId, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
 import type { ApiKey, PerformanceBucketRow, PerformanceMetric, PerformanceTelemetryRecord, SearchUsageRecord, TokenUsage, UsageRecord, User } from '../../repo/types.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
@@ -29,8 +29,8 @@ import { parseUpstreamIdsValue } from '../api-keys/upstream-ids.ts';
 import { USERNAME_PATTERN, type exportQuery, type importBody, DUMP_RETENTION_MAX_SECONDS } from '../schemas.ts';
 import { copilotConfigField, isRecord, nonEmptyStringField } from '../shared/field-validators.ts';
 import { type SerializedUpstreamRecord, upstreamRecordToFullJson } from '../upstreams/serialize.ts';
-import { BILLING_DIMENSIONS, type ModelPricing } from '@floway-dev/protocols/common';
-import { ALL_PROVIDER_KINDS, normalizeModelPrefix, parseFlagOverridesWire } from '@floway-dev/provider';
+import { BILLING_DIMENSIONS, canonicalizePricingSelector, type BillingDimension, type PriceVector, type PricingSelector, validatePriceVector } from '@floway-dev/protocols/common';
+import { ALL_PROVIDER_KINDS, normalizeModelPrefix, normalizeUpstreamColor, parseFlagOverridesWire } from '@floway-dev/provider';
 import type { PerformanceOperation, ProxyFallbackEntry, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
 import { assertClaudeCodeUpstreamRecord, assertClaudeCodeUpstreamState } from '@floway-dev/provider-claude-code';
@@ -49,7 +49,7 @@ interface SerializedProxy {
 }
 
 interface ExportPayload {
-  version: 8;
+  version: 9;
   exportedAt: string;
   data: {
     users: User[];
@@ -64,7 +64,7 @@ interface ExportPayload {
   };
 }
 
-const EXPORT_VERSION = 8;
+const EXPORT_VERSION = 9;
 const SEARCH_USAGE_HOUR_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}$/;
 const PERFORMANCE_METRICS = new Set<PerformanceMetric>(['ttft_ms', 'tpot_us']);
 const UPSTREAM_PROVIDERS = new Set<UpstreamProviderKind>(ALL_PROVIDER_KINDS);
@@ -174,6 +174,7 @@ const parseUpstreamRecords = (value: unknown): { type: 'ok'; records: UpstreamRe
         disabledPublicModelIds: parseDisabledPublicModelIdsWire(item.disabled_public_model_ids),
         proxyFallbackList: parseProxyFallbackListField(item.proxy_fallback_list),
         modelPrefix: normalizeModelPrefix(item.model_prefix),
+        color: normalizeUpstreamColor(item.color),
         config: item.config,
         state: normalizeUpstreamState(kind, item.state),
       };
@@ -198,7 +199,7 @@ const parseProxyRecords = (value: unknown): { type: 'ok'; records: SerializedPro
       const item = value[i];
       if (!isRecord(item)) throw new Error('record must be an object');
       const id = nonEmptyString(item.id, 'id');
-      if (id === DIRECT_PROXY_ID) throw new Error(`id must not be the reserved '${DIRECT_PROXY_ID}' sentinel`);
+      if (isDirectFallbackId(id)) throw new Error('id must not be a reserved direct-transport sentinel');
       const name = nonEmptyString(item.name, 'name');
       const url = nonEmptyString(item.url, 'url');
       try {
@@ -232,9 +233,9 @@ const validateProxyIdentities = (records: readonly SerializedProxy[]): string | 
 // Every entry in every upstream's proxy_fallback_list must resolve to a proxy
 // id that will exist after the import completes — that is, an imported proxy,
 // an existing local proxy (merge mode only; replace mode wipes them first),
-// or the 'direct' sentinel. A dangling reference would silently disable that
-// fallback in the dial layer, which is exactly the silent-truncation
-// behavior the import contract is supposed to prevent.
+// or one of the built-in direct transports. A dangling reference would
+// silently disable that fallback in the dial layer, which is exactly the
+// silent-truncation behavior the import contract is supposed to prevent.
 const validateProxyFallbackReferences = (
   upstreams: readonly UpstreamRecord[],
   proxies: readonly SerializedProxy[],
@@ -242,7 +243,7 @@ const validateProxyFallbackReferences = (
 ): string | null => {
   const knownIds = new Set<string>(proxies.map(p => p.id));
   for (const id of existingProxyIds) knownIds.add(id);
-  knownIds.add(DIRECT_PROXY_ID);
+  for (const id of DIRECT_FALLBACK_IDS) knownIds.add(id);
   for (const upstream of upstreams) {
     for (const ref of upstream.proxyFallbackList) {
       if (!knownIds.has(ref.id)) {
@@ -374,29 +375,39 @@ const validateApiKeyIdentities = (records: readonly ApiKey[], existing: readonly
   return null;
 };
 
-const parseImportedCost = (value: unknown): { type: 'ok'; cost: UsageRecord['cost'] } | { type: 'invalid' } => {
-  if (value === undefined || value === null) return { type: 'ok', cost: null };
-  if (typeof value !== 'object' || Array.isArray(value)) return { type: 'invalid' };
+const parseImportedRates = (value: unknown): { type: 'ok'; rates: UsageRecord['rates'] } | { type: 'invalid'; error: string } => {
+  if (value === undefined) return { type: 'invalid', error: 'rates is required' };
+  if (value === null) return { type: 'ok', rates: null };
+  if (typeof value !== 'object' || Array.isArray(value)) return { type: 'invalid', error: 'rates must be an object or null' };
   const obj = value as Record<string, unknown>;
-  const cost: ModelPricing = {};
+  const unknownDimensions = Object.keys(obj).filter(key => !BILLING_DIMENSIONS.includes(key as BillingDimension));
+  if (unknownDimensions.length > 0) return { type: 'invalid', error: `rates has unknown dimensions: ${unknownDimensions.join(', ')}` };
+  const rates: PriceVector = {};
   for (const dimension of BILLING_DIMENSIONS) {
     const rate = obj[dimension];
     if (rate === undefined) continue;
-    if (typeof rate !== 'number' || !Number.isFinite(rate)) return { type: 'invalid' };
-    cost[dimension] = rate;
+    rates[dimension] = rate as number;
   }
-  return { type: 'ok', cost: Object.keys(cost).length > 0 ? cost : null };
+  if (Object.keys(rates).length === 0) return { type: 'ok', rates: null };
+  try {
+    validatePriceVector(rates, 'rates');
+    return { type: 'ok', rates };
+  } catch (error) {
+    return { type: 'invalid', error: error instanceof Error ? error.message : String(error) };
+  }
 };
 
-const parseImportedTokens = (value: unknown): { type: 'ok'; tokens: TokenUsage } | { type: 'invalid' } => {
-  if (value === undefined || value === null) return { type: 'ok', tokens: {} };
-  if (typeof value !== 'object' || Array.isArray(value)) return { type: 'invalid' };
+const parseImportedTokens = (value: unknown): { type: 'ok'; tokens: TokenUsage } | { type: 'invalid'; error: string } => {
+  if (value === undefined) return { type: 'invalid', error: 'tokens is required' };
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return { type: 'invalid', error: 'tokens must be an object' };
   const obj = value as Record<string, unknown>;
+  const unknownDimensions = Object.keys(obj).filter(key => !BILLING_DIMENSIONS.includes(key as BillingDimension));
+  if (unknownDimensions.length > 0) return { type: 'invalid', error: `tokens has unknown dimensions: ${unknownDimensions.join(', ')}` };
   const tokens: TokenUsage = {};
   for (const dimension of BILLING_DIMENSIONS) {
     const count = obj[dimension];
     if (count === undefined) continue;
-    if (!isNonNegativeSafeInteger(count)) return { type: 'invalid' };
+    if (!isNonNegativeSafeInteger(count)) return { type: 'invalid', error: 'tokens must contain non-negative safe integers' };
     if (count > 0) tokens[dimension] = count;
   }
   return { type: 'ok', tokens };
@@ -426,30 +437,27 @@ const parseUsageRecords = (value: unknown): { type: 'ok'; records: UsageRecord[]
     if (typeof record.upstream === 'string' && isLegacyUpstreamIdentity(record.upstream)) {
       return { type: 'invalid', index: i, error: 'upstream must use a raw upstream id, not a legacy provider-prefixed identity' };
     }
-    if (record.tier !== undefined && record.tier !== null && typeof record.tier !== 'string') {
-      return { type: 'invalid', index: i, error: 'tier, when present, must be a string or null' };
+    if (!isRecord(record.pricingSelector)) return { type: 'invalid', index: i, error: 'pricingSelector must be an object' };
+    let pricingSelector: PricingSelector;
+    try {
+      pricingSelector = canonicalizePricingSelector(record.pricingSelector as PricingSelector);
+    } catch (cause) {
+      return { type: 'invalid', index: i, error: `invalid pricingSelector: ${cause instanceof Error ? cause.message : String(cause)}` };
     }
-    if (record.tier === '') {
-      return { type: 'invalid', index: i, error: 'tier must be a non-empty string or null/absent' };
-    }
-    // Empty-string is rejected rather than normalized to null: the unique
-    // index folds NULL/'' under COALESCE, so a '' import would silently
-    // merge with base-tier rows.
-    const tier: string | null = typeof record.tier === 'string' ? record.tier : null;
     const tokensResult = parseImportedTokens(record.tokens);
-    if (tokensResult.type === 'invalid') return { type: 'invalid', index: i, error: 'record has invalid token dimension counts' };
-    const costResult = parseImportedCost(record.cost);
-    if (costResult.type === 'invalid') return { type: 'invalid', index: i, error: 'record has invalid cost dimension rates' };
+    if (tokensResult.type === 'invalid') return { type: 'invalid', index: i, error: tokensResult.error };
+    const ratesResult = parseImportedRates(record.rates);
+    if (ratesResult.type === 'invalid') return { type: 'invalid', index: i, error: ratesResult.error };
     records.push({
       keyId: record.keyId,
       model: record.model,
       upstream: record.upstream,
       modelKey: record.modelKey,
       hour: record.hour,
-      tier,
+      pricingSelector,
       requests: record.requests,
       tokens: tokensResult.tokens,
-      cost: costResult.cost,
+      rates: ratesResult.rates,
     });
   }
 

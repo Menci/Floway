@@ -2,14 +2,14 @@ import { compressBytesToWebp, type ImageSizeCalculator } from '@floway-dev/platf
 
 const BASE64_CHUNK = 0x8000;
 
-const base64ToBytes = (base64: string): Uint8Array => {
+export const base64ToBytes = (base64: string): Uint8Array<ArrayBuffer> => {
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
   return bytes;
 };
 
-const bytesToBase64 = (bytes: Uint8Array): string => {
+export const bytesToBase64 = (bytes: Uint8Array): string => {
   let binary = '';
   for (let offset = 0; offset < bytes.length; offset += BASE64_CHUNK) {
     binary += String.fromCharCode(...bytes.subarray(offset, offset + BASE64_CHUNK));
@@ -17,7 +17,14 @@ const bytesToBase64 = (bytes: Uint8Array): string => {
   return btoa(binary);
 };
 
-const BASE64_DATA_URL = /^data:([^;,]+);base64,(.*)$/s;
+const BASE64_DATA_URL = /^data:([^;,]+)(?:;[^,;]*)*;base64,(.*)$/is;
+
+export const parseBase64ImageDataUrl = (url: string): { mimeType: string; base64: string } | null => {
+  const match = BASE64_DATA_URL.exec(url);
+  const mimeType = match?.[1];
+  const base64 = match?.[2];
+  return mimeType?.toLowerCase().startsWith('image/') && base64 !== undefined ? { mimeType, base64 } : null;
+};
 
 const compressBase64ImageToWebp = async (
   base64: string,
@@ -34,14 +41,14 @@ const compressImageDataUrlToWebp = async (
   url: string,
   calculator: ImageSizeCalculator,
 ): Promise<string> => {
-  const match = BASE64_DATA_URL.exec(url);
-  if (!match?.[1].startsWith('image/')) return url;
-  const webp = await compressBase64ImageToWebp(match[2], calculator);
+  const parsed = parseBase64ImageDataUrl(url);
+  if (parsed === null) return url;
+  const webp = await compressBase64ImageToWebp(parsed.base64, calculator);
   return `data:image/webp;base64,${webp}`;
 };
 
 export const isBase64ImageDataUrl = (url: string): boolean =>
-  BASE64_DATA_URL.exec(url)?.[1].startsWith('image/') ?? false;
+  parseBase64ImageDataUrl(url) !== null;
 
 // Per-request memoizing wrappers around the compress helpers above. A single
 // agentic request often replays the same screenshot across many turns, so the

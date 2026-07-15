@@ -18,6 +18,7 @@ const upstream = (overrides: Partial<UpstreamRecord> & Pick<UpstreamRecord, 'id'
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
+  color: null,
   ...overrides,
 });
 
@@ -248,6 +249,7 @@ test('SQL upstream repo rejects malformed stored upstream JSON', async () => {
     disabled_public_model_ids: '[]',
     proxy_fallback_list_json: '[]',
     model_prefix_json: null,
+    color: null,
   });
 
   await assertRejects(() => new SqlRepo(db).upstreams.list(), Error, 'Malformed upstream config JSON for up_bad_config');
@@ -269,6 +271,7 @@ test('SQL upstream repo rejects malformed stored flag overrides JSON', async () 
     disabled_public_model_ids: '[]',
     proxy_fallback_list_json: '[]',
     model_prefix_json: null,
+    color: null,
   });
 
   await assertRejects(() => new SqlRepo(db).upstreams.getById('up_bad_fixes'), Error, 'Malformed upstream flag_overrides JSON for up_bad_fixes');
@@ -290,6 +293,7 @@ test('SQL upstream repo rejects array-shaped flag_overrides with helpful message
     disabled_public_model_ids: '[]',
     proxy_fallback_list_json: '[]',
     model_prefix_json: null,
+    color: null,
   });
 
   await assertRejects(
@@ -315,6 +319,7 @@ test('SQL upstream repo rejects non-boolean value in flag_overrides with helpful
     disabled_public_model_ids: '[]',
     proxy_fallback_list_json: '[]',
     model_prefix_json: null,
+    color: null,
   });
 
   await assertRejects(
@@ -340,6 +345,7 @@ test('SQL upstream repo rejects malformed stored model_prefix_json', async () =>
     disabled_public_model_ids: '[]',
     proxy_fallback_list_json: '[]',
     model_prefix_json: '{not json',
+    color: null,
   });
 
   await assertRejects(() => new SqlRepo(db).upstreams.getById('up_bad_prefix_json'), Error, 'Malformed upstream model_prefix_json for up_bad_prefix_json');
@@ -362,6 +368,7 @@ test('SQL upstream repo rejects shape-invalid model_prefix_json', async () => {
     proxy_fallback_list_json: '[]',
     // Prefix missing trailing slash — passes JSON.parse but fails the regex.
     model_prefix_json: '{"prefix":"or","addressable":["unprefixed"],"listed":[]}',
+    color: null,
   });
 
   await assertRejects(() => new SqlRepo(db).upstreams.getById('up_bad_prefix_shape'), Error, 'Invalid upstream model_prefix_json shape for up_bad_prefix_shape');
@@ -385,10 +392,54 @@ test('SQL upstream repo round-trips a non-null model_prefix', async () => {
     disabledPublicModelIds: [],
     proxyFallbackList: [],
     modelPrefix: { prefix: 'or/', addressable: ['unprefixed', 'prefixed'], listed: ['prefixed'] },
+    color: null,
   };
   await repo.save(record);
   const reloaded = await repo.getById('up_prefix_rt');
   assertEquals(reloaded?.modelPrefix, { prefix: 'or/', addressable: ['unprefixed', 'prefixed'], listed: ['prefixed'] });
+});
+
+test('SQL upstream repo round-trips a preset color and a hex color', async () => {
+  const repo = new SqlRepo(new FakeUpstreamsSqlDatabase()).upstreams;
+  await repo.save(upstream({
+    id: 'up_color_preset',
+    kind: 'custom',
+    sortOrder: 0,
+    createdAt: '2026-07-01T00:00:00.000Z',
+    color: 'emerald',
+  }));
+  await repo.save(upstream({
+    id: 'up_color_hex',
+    kind: 'custom',
+    sortOrder: 1,
+    createdAt: '2026-07-01T00:00:01.000Z',
+    color: '#8B5CF6',
+  }));
+
+  assertEquals((await repo.getById('up_color_preset'))?.color, 'emerald');
+  assertEquals((await repo.getById('up_color_hex'))?.color, '#8B5CF6');
+});
+
+test('SQL upstream repo rejects an invalid stored color', async () => {
+  const db = new FakeUpstreamsSqlDatabase();
+  db.rows.push({
+    id: 'up_bad_color',
+    provider: 'custom',
+    name: 'Bad Color',
+    enabled: 1,
+    sort_order: 0,
+    created_at: '2026-07-01T00:00:00.000Z',
+    updated_at: '2026-07-01T00:00:00.000Z',
+    config_json: '{}',
+    state_json: null,
+    flag_overrides: '{}',
+    disabled_public_model_ids: '[]',
+    proxy_fallback_list_json: '[]',
+    model_prefix_json: null,
+    color: 'not-a-tone',
+  });
+
+  await assertRejects(() => new SqlRepo(db).upstreams.getById('up_bad_color'), Error, 'Invalid upstream color for up_bad_color');
 });
 
 test('migration 0010 creates unified upstreams and rewrites legacy upstream identities', async () => {
@@ -777,6 +828,43 @@ test('migration 0048 rebuckets Codex quota snapshots by active limit', async () 
   }
 });
 
+test('migration 0055 names existing direct fallback entries direct_fetch', async () => {
+  const db = await createMigratedSqlJsDatabase();
+  try {
+    for (const filename of [...migrationSqlByFilename.keys()].filter(f => f >= '0010_unified_upstreams.sql' && f < '0055_direct_transport_fallbacks.sql').toSorted()) {
+      applySqlJsFile(db, filename);
+    }
+
+    db.run(`INSERT INTO upstreams (id, provider, name, enabled, sort_order, created_at, updated_at, config_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json)
+            VALUES
+              ('up_direct', 'custom', 'Direct', 1, 0, '2026-07-14T00:00:00.000Z', '2026-07-14T00:00:00.000Z',
+                json_object('baseUrl', 'https://a.example', 'apiKey', 'k', 'authStyle', 'bearer'),
+                '[]', '[]', '[{"id":"p_first"},{"id":"direct","colos":["SIN"]},{"id":"p_last"}]'),
+              ('up_proxy_only', 'custom', 'Proxy only', 1, 1, '2026-07-14T00:00:00.000Z', '2026-07-14T00:00:00.000Z',
+                json_object('baseUrl', 'https://b.example', 'apiKey', 'k', 'authStyle', 'bearer'),
+                '[]', '[]', '[{"id":"p_only"}]'),
+              ('up_empty', 'custom', 'Empty', 1, 2, '2026-07-14T00:00:00.000Z', '2026-07-14T00:00:00.000Z',
+                json_object('baseUrl', 'https://c.example', 'apiKey', 'k', 'authStyle', 'bearer'),
+                '[]', '[]', '[]')`);
+
+    applySqlJsFile(db, '0055_direct_transport_fallbacks.sql');
+
+    const rows = sqlJsRows<{ id: string; fallback: string }>(
+      db,
+      'SELECT id, proxy_fallback_list_json AS fallback FROM upstreams ORDER BY id',
+    );
+    assertEquals(JSON.parse(rows.find(row => row.id === 'up_direct')!.fallback), [
+      { id: 'p_first' },
+      { id: 'direct_fetch', colos: ['SIN'] },
+      { id: 'p_last' },
+    ]);
+    assertEquals(JSON.parse(rows.find(row => row.id === 'up_proxy_only')!.fallback), [{ id: 'p_only' }]);
+    assertEquals(JSON.parse(rows.find(row => row.id === 'up_empty')!.fallback), []);
+  } finally {
+    db.close();
+  }
+});
+
 type FakeUpstreamRow = {
   id: string;
   provider: string;
@@ -791,6 +879,7 @@ type FakeUpstreamRow = {
   disabled_public_model_ids: string;
   proxy_fallback_list_json: string;
   model_prefix_json: string | null;
+  color: string | null;
 };
 
 class FakeUpstreamsSqlPreparedStatement {
@@ -860,7 +949,7 @@ class FakeUpstreamsSqlDatabase implements SqlDatabase {
   }
 
   upsert(binds: unknown[]): void {
-    const [id, provider, name, enabled, sortOrder, createdAt, updatedAt, configJson, stateJson, flagOverrides, disabledPublicModelIds, proxyFallbackListJson, modelPrefixJson] = binds as [string, string, string, number, number, string, string, string, string | null, string, string, string, string | null];
+    const [id, provider, name, enabled, sortOrder, createdAt, updatedAt, configJson, stateJson, flagOverrides, disabledPublicModelIds, proxyFallbackListJson, modelPrefixJson, color] = binds as [string, string, string, number, number, string, string, string, string | null, string, string, string, string | null, string | null];
     const existingIndex = this.rows.findIndex(candidate => candidate.id === id);
     const preservedCreatedAt = existingIndex >= 0 ? this.rows[existingIndex].created_at : createdAt;
     const row = {
@@ -877,6 +966,7 @@ class FakeUpstreamsSqlDatabase implements SqlDatabase {
       disabled_public_model_ids: disabledPublicModelIds,
       proxy_fallback_list_json: proxyFallbackListJson,
       model_prefix_json: modelPrefixJson,
+      color,
     };
     if (existingIndex >= 0) {
       this.rows[existingIndex] = row;

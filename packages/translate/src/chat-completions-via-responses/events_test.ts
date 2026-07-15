@@ -124,6 +124,47 @@ test('translateToSourceEvents emits exactly one [DONE] for structured responses 
   assertEquals(doneCount, 1);
 });
 
+test('response.created service_tier survives when the terminal response omits it', async () => {
+  async function* stream() {
+    yield toProtocolFrame({
+      type: 'response.created',
+      response: { ...makeResponse('in_progress'), service_tier: 'priority' },
+    });
+    yield toProtocolFrame({
+      type: 'response.completed',
+      response: makeResponse('completed'),
+    });
+  }
+
+  const frames = await collect(translateToSourceEvents(stream()));
+  const events = frames.flatMap(frame => frame.type === 'event' ? [frame.event] : []);
+  assertEquals(events[0].service_tier, 'priority');
+  assertEquals(events.at(-1)?.service_tier, 'priority');
+});
+
+test('Responses to Chat translation rejects malformed inclusive cache counts', async () => {
+  async function* stream() {
+    yield toProtocolFrame({
+      type: 'response.completed',
+      response: {
+        ...makeResponse('completed'),
+        usage: {
+          input_tokens: 40,
+          output_tokens: 1,
+          total_tokens: 41,
+          input_tokens_details: { cached_tokens: 30, cache_write_tokens: 25 },
+        },
+      },
+    });
+  }
+
+  await assertRejects(
+    async () => await drain(translateToSourceEvents(stream())),
+    RangeError,
+    'cache token counts exceed inclusive input tokens',
+  );
+});
+
 test('translateToSourceEvents emits exactly one [DONE] for fallback completion stream', async () => {
   const doneCount = await countDoneSentinels([
     toProtocolFrame({
@@ -234,11 +275,12 @@ test('translateToSourceEvents preserves deferred reasoning and stream usage', as
           id: 'resp_deferred_reasoning',
           output_text: 'answer',
           output: [],
+          service_tier: 'priority',
           usage: {
             input_tokens: 12,
             output_tokens: 4,
             total_tokens: 16,
-            input_tokens_details: { cached_tokens: 3 },
+            input_tokens_details: { cached_tokens: 3, cache_write_tokens: 2 },
           },
         },
       }),
@@ -275,8 +317,10 @@ test('translateToSourceEvents preserves deferred reasoning and stream usage', as
     prompt_tokens: 12,
     completion_tokens: 4,
     total_tokens: 16,
-    prompt_tokens_details: { cached_tokens: 3 },
+    prompt_tokens_details: { cached_tokens: 3, cache_creation_input_tokens: 2 },
   });
+  assertEquals(events.at(-2)?.service_tier, 'priority');
+  assertEquals(events.at(-1)?.service_tier, 'priority');
   assertEquals(frames.at(-1)?.type, 'done');
 });
 

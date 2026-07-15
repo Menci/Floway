@@ -3,7 +3,8 @@ import { computed } from 'vue';
 
 import type { ControlPlaneModel } from '../../api/types.ts';
 import { reachableTargets } from '../../utils/reachability.ts';
-import { providerBadgeClass, providerMeta } from '../upstreams/provider-meta.ts';
+import { providerMeta } from '../upstreams/provider-meta.ts';
+import UpstreamBadge from '../upstreams/UpstreamBadge.vue';
 import { type AliasRuleBadgeField, formatAliasRuleBadges } from '@floway-dev/protocols/common';
 
 const props = defineProps<{
@@ -81,7 +82,7 @@ const selectionLabel = computed<string | null>(() => {
 // against the cap: a target may sit on three upstreams of which only
 // one is currently in cap; only the in-cap one is the provider the
 // resolver would actually route to.
-const effectiveUpstreams = computed<readonly { kind: ControlPlaneModel['upstreams'][number]['kind']; id: string; name: string }[]>(() => {
+const effectiveUpstreams = computed<readonly ControlPlaneModel['upstreams'][number][]>(() => {
   if (props.model.aliasedFrom === undefined) return props.model.upstreams;
   if (props.catalog === undefined) return [];
   const cap = props.cap ?? null;
@@ -132,13 +133,15 @@ const ruleBadges = computed<{ label: string }[]>(() => {
           >{{ model.id }}</span>
         </div>
         <div class="flex flex-wrap gap-1.5 mt-2">
-          <span
+          <UpstreamBadge
             v-for="upstream in effectiveUpstreams"
             :key="upstream.id"
-            class="text-[10px] font-semibold px-2 py-0.5 rounded-full border"
-            :class="providerBadgeClass(upstream.kind)"
+            :kind="upstream.kind"
+            :color="upstream.color"
+            variant="badge"
+            class="!text-[10px] !font-semibold !px-2 !py-0.5 !rounded-full !h-auto"
             :title="providerMeta(upstream.kind).label + ' · ' + upstream.name"
-          >{{ upstream.name }}</span>
+          >{{ upstream.name }}</UpstreamBadge>
           <span v-if="model.limits?.max_context_window_tokens" class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-surface-600 text-gray-400">
             context: {{ formatTokenLimit(model.limits.max_context_window_tokens) }}
           </span>

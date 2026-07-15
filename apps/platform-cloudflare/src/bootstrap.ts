@@ -1,4 +1,5 @@
 import { DurableObjectChannelBroker, type BroadcastNamespace } from './do-channel-broker.ts';
+import { createCloudflareExternalResourceFetcher } from './external-resource-fetcher.ts';
 import { createCloudflareImageProcessor, type ImagesBinding } from './image-processor.ts';
 import { KvImageCache, type KvNamespace } from './kv-image-cache.ts';
 import { R2FileProvider, type R2BucketLike } from './r2-file-provider.ts';
@@ -11,6 +12,7 @@ import { addTrustedRootCAs } from '@floway-dev/http';
 import {
   IMAGE_CACHE_POLICY,
   initEnv,
+  initExternalResourceFetcher,
   initFileProvider,
   initImageCacheStore,
   initImageProcessor,
@@ -50,6 +52,7 @@ export const bootstrapCloudflarePlatform = (env: CloudflareEnv): { db: SqlDataba
     return value;
   });
   initRuntimeKind('cloudflare');
+  initExternalResourceFetcher(createCloudflareExternalResourceFetcher());
   const files = new R2FileProvider(env.FILES);
   initFileProvider(files);
   initImageCacheStore(new KvImageCache(env.KV, IMAGE_CACHE_POLICY));

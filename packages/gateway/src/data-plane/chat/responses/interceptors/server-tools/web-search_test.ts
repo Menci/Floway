@@ -365,6 +365,28 @@ test('prepareToolsForShim extracts filters, user_location, and context size', ()
   assertEquals(filters.maxResults, 40);
 });
 
+test('prepareToolsForShim selects the last web_search declaration as one configuration', () => {
+  const { filters } = prepare([
+    {
+      type: 'web_search',
+      filters: { allowed_domains: ['first.example'] },
+      user_location: { country: 'US' },
+      search_context_size: 'high',
+    },
+    {
+      type: 'web_search_preview',
+      filters: { blocked_domains: ['last.example'] },
+      user_location: { country: 'SG' },
+      search_context_size: 'low',
+    },
+  ]);
+  assertEquals(filters, {
+    blockedDomains: ['last.example'],
+    userLocation: { country: 'SG' },
+    maxResults: 10,
+  });
+});
+
 test('prepareToolsForShim passes through with empty filters when no hosted web_search exists', () => {
   const fn: ResponsesTool = { type: 'function', name: 'foo', parameters: {}, strict: false };
   assertEquals(prepare([fn]).filters, {});

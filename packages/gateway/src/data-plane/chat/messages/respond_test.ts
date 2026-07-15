@@ -226,6 +226,44 @@ test('Messages stream usage falls back to the rolled-up cache_creation when the 
   });
 });
 
+test('Messages stream usage applies a TTL breakdown restamped by message_delta', () => {
+  const state = createMessagesStreamUsageState();
+  tokenUsageFromMessagesFrame(
+    eventFrame({
+      type: 'message_start',
+      message: {
+        id: 'msg_1',
+        type: 'message',
+        role: 'assistant',
+        content: [],
+        model: 'claude-test',
+        stop_reason: null,
+        stop_sequence: null,
+        usage: { input_tokens: 12, output_tokens: 0, cache_creation_input_tokens: 9 },
+      },
+    } satisfies MessagesStreamEvent),
+    state,
+  );
+  tokenUsageFromMessagesFrame(
+    eventFrame({
+      type: 'message_delta',
+      delta: { stop_reason: 'end_turn' },
+      usage: {
+        output_tokens: 2,
+        cache_creation: { ephemeral_1h_input_tokens: 5 },
+      },
+    } satisfies MessagesStreamEvent),
+    state,
+  );
+
+  assertEquals(tokenUsageFromMessagesFrame(stop(), state), {
+    input: 12,
+    input_cache_write: 4,
+    input_cache_write_1h: 5,
+    output: 2,
+  });
+});
+
 test('Messages stream usage captures speed=fast as tier=fast', () => {
   const state = createMessagesStreamUsageState();
 

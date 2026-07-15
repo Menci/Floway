@@ -49,10 +49,14 @@ export const flagDefaultsForKind = (kind: UpstreamProviderKind): FlagDefaults =>
 // (this, getModels) so a caller can never omit it and silently receive the
 // full, unscoped catalog — a missing scope is a compile error, not a runtime
 // leak. Pass `null` to deliberately request every enabled upstream.
+//
+// `preFetchedUpstreams` lets a caller reuse a list it already loaded on
+// this request instead of paying a second `upstreams.list()` round-trip.
 export const listModelProviders = async (
   upstreamFilter: readonly string[] | null,
+  preFetchedUpstreams?: readonly UpstreamRecord[],
 ): Promise<Provider[]> => {
-  const upstreams = await getRepo().upstreams.list();
+  const upstreams = preFetchedUpstreams ?? await getRepo().upstreams.list();
   const enabledById = new Map<string, UpstreamRecord>();
   const knownIds = new Set<string>();
   for (const upstream of upstreams) {

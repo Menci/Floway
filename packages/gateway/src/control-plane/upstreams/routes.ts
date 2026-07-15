@@ -9,7 +9,7 @@ import { createPerRequestFetcher } from '../../dial/per-request.ts';
 import { type AuthedContext, userFromContext } from '../../middleware/auth.ts';
 import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
-import { DIRECT_PROXY_ID, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
+import { isDirectFallbackId, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import { shortId } from '../../shared/short-id.ts';
@@ -188,12 +188,11 @@ const warmModelsCache = async (record: UpstreamRecord, c: Context): Promise<void
   }
 };
 
-// 'direct' is always a valid entry id; any other id must reference an
-// existing proxy row. List order matters at dial time (see createFetcher),
-// and persistence layers dedupe via normalizeProxyFallbackList before
-// storing.
+// Built-in direct transports are always valid entry ids; every other id must
+// reference an existing proxy row. List order matters at dial time (see
+// createFetcher), and persistence layers dedupe before storing.
 const validateProxyFallbackList = async (entries: readonly ProxyFallbackEntry[]): Promise<{ ok: true } | { ok: false; error: string }> => {
-  const ids = entries.map(e => e.id).filter(id => id !== DIRECT_PROXY_ID);
+  const ids = entries.map(e => e.id).filter(id => !isDirectFallbackId(id));
   if (ids.length === 0) return { ok: true };
   const proxies = await getRepo().proxies.list();
   const known = new Set(proxies.map(p => p.id));
@@ -223,6 +222,7 @@ export const listUpstreamOptions = async (c: Context) => {
       name: upstream.name,
       kind: upstream.kind,
       enabled: upstream.enabled,
+      color: upstream.color,
     })));
 };
 
@@ -293,6 +293,7 @@ export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) 
     disabledPublicModelIds: body.disabled_public_model_ids ?? [],
     proxyFallbackList,
     modelPrefix,
+    color: body.color ?? null,
     config: body.config,
     state: stateFromBody,
   };
@@ -360,6 +361,7 @@ export const updateUpstream = async (c: CtxWithJson<typeof updateUpstreamBody, '
     if (!result.ok) return c.json({ error: result.error }, 400);
     next = { ...next, modelPrefix: result.value };
   }
+  if (body.color !== undefined) next = { ...next, color: body.color };
   if (body.config !== undefined) {
     const config = mergeConfigPatch(existing.kind, existing.config, body.config);
     if (!config.ok) return c.json({ error: config.error }, 400);
@@ -937,7 +939,7 @@ const reshapeModelForDashboard = (model: ProviderModel): Record<string, unknown>
     endpoints: model.endpoints,
     ...(model.display_name !== undefined ? { display_name: model.display_name } : {}),
     ...(Object.keys(model.limits).length > 0 ? { limits: model.limits } : {}),
-    ...(model.cost ? { cost: model.cost } : {}),
+    ...(model.pricing ? { pricing: model.pricing } : {}),
     ...(model.chat ? { chat: model.chat } : {}),
     ...(model.flagOverrides ? { flagOverrides: model.flagOverrides } : {}),
   };
@@ -971,6 +973,7 @@ export const listModels = async (c: CtxWithJson<typeof listModelsBody>) => {
     disabledPublicModelIds: [],
     proxyFallbackList: (record.proxy_fallback_list ?? []) as ProxyFallbackEntry[],
     modelPrefix: null,
+    color: null,
     config: record.config,
     state: record.state,
   };

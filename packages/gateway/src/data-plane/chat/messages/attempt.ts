@@ -4,7 +4,7 @@ import { applyRulesToUpstreamMessages } from '../../model-aliases/apply-rules.ts
 import { providerStreamResultToExecuteResult, buildUpstreamCallOptions, chatTargetPicker } from '../../shared/telemetry/attempt-helpers.ts';
 import { chatCompletionsAttempt } from '../chat-completions/attempt.ts';
 import { responsesAttempt } from '../responses/attempt.ts';
-import { rewriteStoredResponsesItemsForCandidate } from '../responses/items/rewrite.ts';
+import { rewriteStoredItemsInSourceForCandidate } from '../responses/items/rewrite.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import { tryCatchChatServeFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
@@ -35,7 +35,9 @@ export interface MessagesAttemptArgs {
 
 export const messagesAttempt = {
   generate: async (args: MessagesAttemptArgs): Promise<ExecuteResult<ProtocolFrame<MessagesStreamEvent>>> => {
-    const { payload, ctx, candidate, headers } = args;
+    const { payload: sourcePayload, ctx, candidate, headers: sourceHeaders } = args;
+    const payload = { ...structuredClone(sourcePayload), model: candidate.model.id };
+    const headers = new Headers(sourceHeaders);
     const { store } = ctx;
     const targetApi = messagesGenerateTarget.pick(candidate.model.endpoints);
     const rewritten = await rewriteOrRenderMessagesFailure(payload, store, candidate);
@@ -81,7 +83,9 @@ export const messagesAttempt = {
   },
 
   countTokens: async (args: MessagesAttemptArgs): Promise<PlainResult> => {
-    const { payload, ctx, candidate, headers } = args;
+    const { payload: sourcePayload, ctx, candidate, headers: sourceHeaders } = args;
+    const payload = { ...structuredClone(sourcePayload), model: candidate.model.id };
+    const headers = new Headers(sourceHeaders);
     const { store } = ctx;
     // `pick` here is contractually total — serve filtered with
     // `messagesCountTokensTarget.canServe`, so a non-messages candidate is
@@ -126,7 +130,7 @@ const rewriteOrRenderMessagesFailure = async (
   candidate: ModelCandidate,
 ): Promise<{ payload: MessagesPayload; failure?: undefined } | { payload?: undefined; failure: ExecuteResult<ProtocolFrame<MessagesStreamEvent>> & { type: 'api-error' } }> => {
   try {
-    const rewrittenMessages = await rewriteStoredResponsesItemsForCandidate(
+    const rewrittenMessages = await rewriteStoredItemsInSourceForCandidate(
       payload.messages as readonly MessagesMessage[],
       messagesViaResponsesItemsView,
       store,

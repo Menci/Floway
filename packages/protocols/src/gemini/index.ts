@@ -1,3 +1,5 @@
+import type { USAGE_BILLING, UsageBillingMetadata } from '../common/usage.ts';
+
 export interface GeminiPayload {
   contents?: GeminiContent[];
   systemInstruction?: GeminiContent;
@@ -95,6 +97,7 @@ export interface GeminiUsageMetadata {
   totalTokenCount?: number;
   thoughtsTokenCount?: number;
   cachedContentTokenCount?: number;
+  [USAGE_BILLING]?: UsageBillingMetadata;
 }
 
 export interface GeminiErrorResponse {

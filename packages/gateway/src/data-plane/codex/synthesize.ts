@@ -97,11 +97,13 @@ const BASELINE: CatalogModel = {
   max_context_window: CONSERVATIVE_DEFAULT_CONTEXT_WINDOW,
 };
 
-// Registry-derived: each key in cost.tiers is a billable tier wire-id. Names
-// mirror ids and descriptions are blank — Floway does not yet carry tier
-// metadata, and Codex only needs the id to round-trip the selection.
-const deriveServiceTiers = (model: InternalModel): { id: string; name: string; description: string }[] =>
-  Object.keys(model.cost?.tiers ?? {}).map(id => ({ id, name: id, description: '' }));
+// Registry-derived: every distinct serviceTier selector is a billable wire-id.
+// Names mirror ids and descriptions are blank — Floway does not carry separate
+// tier metadata, and Codex only needs the id to round-trip the selection.
+const deriveServiceTiers = (model: InternalModel): { id: string; name: string; description: string }[] => {
+  const ids = new Set(model.pricing?.entries.flatMap(entry => typeof entry.selector?.serviceTier === 'string' ? [entry.selector.serviceTier] : []) ?? []);
+  return [...ids].map(id => ({ id, name: id, description: '' }));
+};
 
 export const synthesizeCatalogEntry = (model: InternalModel, base?: CatalogModel): CatalogModel => {
   const source = base ?? BASELINE;

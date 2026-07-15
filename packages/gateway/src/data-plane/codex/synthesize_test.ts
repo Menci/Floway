@@ -129,15 +129,15 @@ describe('synthesizeCatalogEntry', () => {
     expect(entry.default_reasoning_level).toBe('medium');
   });
 
-  test('service_tiers derived from cost.tiers keys', () => {
+  test('service_tiers derived from pricing.entries keys', () => {
     const entry = synthesizeCatalogEntry({
       ...base,
-      cost: { tiers: { fast: { input: 1 } } },
+      pricing: { entries: [{ rates: { input: 1 } }, { selector: { serviceTier: 'fast' }, rates: { input: 1 } }] },
     });
     expect(entry.service_tiers).toEqual([{ id: 'fast', name: 'fast', description: '' }]);
   });
 
-  test('service_tiers empty when no cost.tiers', () => {
+  test('service_tiers empty when no pricing.entries', () => {
     const entry = synthesizeCatalogEntry(base);
     expect(entry.service_tiers).toEqual([]);
   });
@@ -145,7 +145,7 @@ describe('synthesizeCatalogEntry', () => {
   test('service_tiers preserves key order for multiple tiers', () => {
     const entry = synthesizeCatalogEntry({
       ...base,
-      cost: { tiers: { flex: { input: 1 }, priority: { input: 2 } } },
+      pricing: { entries: [{ rates: { input: 1 } }, { selector: { serviceTier: 'flex' }, rates: { input: 1 } }, { selector: { serviceTier: 'priority' }, rates: { input: 2 } }] },
     });
     expect(entry.service_tiers).toEqual([
       { id: 'flex', name: 'flex', description: '' },
@@ -242,7 +242,7 @@ describe('synthesizeCatalogEntry', () => {
       // Bundled entries may advertise OpenAI 1p tiers Floway cannot bill;
       // publishing them without registry-side unit prices would surface a
       // toggle we could not honor. Registry-derived tiers (from
-      // model.cost.tiers) always win, even when the registry list is empty.
+      // model.pricing.entries) always win, even when the registry list is empty.
       const entry = synthesizeCatalogEntry(base, bundledBase);
       expect(entry.service_tiers).toEqual([]);
     });
@@ -250,7 +250,7 @@ describe('synthesizeCatalogEntry', () => {
     test('service_tiers picks up the registry-configured tiers', () => {
       const entry = synthesizeCatalogEntry({
         ...base,
-        cost: { tiers: { fast: { input: 1 } } },
+        pricing: { entries: [{ rates: { input: 1 } }, { selector: { serviceTier: 'fast' }, rates: { input: 1 } }] },
       }, bundledBase);
       expect(entry.service_tiers).toEqual([{ id: 'fast', name: 'fast', description: '' }]);
     });

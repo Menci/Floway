@@ -23,6 +23,7 @@ const baseRecord: UpstreamRecord = {
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
+  color: null,
 };
 
 const recordWithAccessToken = (entry: CodexAccessTokenEntry = freshAccessToken): UpstreamRecord => ({
@@ -74,7 +75,6 @@ describe('createCodexProvider', () => {
     expect(instance.kind).toBe('codex');
     expect(instance.upstream).toBe('up_codex');
     expect(instance.name).toBe('Codex Plus');
-    expect(instance.supportsResponsesItemReference).toBe(false);
   });
 
   test('getProvidedModels uses the cached access token when fresh and surfaces every catalog entry', async () => {
@@ -130,11 +130,10 @@ describe('createCodexProvider', () => {
   });
 
   test('getProvidedModels resolves operator flag overrides into every ProviderModel', async () => {
-    // The codex provider has no provider-default flags, so an operator
-    // toggling `responses-web-search-shim` on at the upstream layer is the
-    // only signal downstream interceptors get. A previous regression
-    // hardcoded `enabledFlags: new Set()` in the catalog mapper, dropping
-    // the override on the floor — this test guards against that.
+    // Provider defaults and operator overrides are resolved once, then
+    // threaded through every model. A previous regression hardcoded
+    // `enabledFlags: new Set()` in the catalog mapper, dropping the resolved
+    // set on the floor — this test guards against that.
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(modelsResponse());
     const recordWithOverride: UpstreamRecord = {
       ...baseRecord,
@@ -143,22 +142,39 @@ describe('createCodexProvider', () => {
     const instance = createCodexProvider(recordWithOverride);
     const models = await instance.instance.getProvidedModels(directFetcher);
     for (const m of models) {
+      expect(m.enabledFlags.has('promote-system-to-developer')).toBe(true);
       expect(m.enabledFlags.has('responses-web-search-shim')).toBe(true);
     }
   });
 
-  test('callResponses round-trips through fetch transport', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
+  test('callResponses preserves developer messages on the Codex wire', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(sseResponse());
     const instance = createCodexProvider(baseRecord);
     const result = await instance.instance.callResponses(
       stubProviderModel({ id: 'gpt-5.4', display_name: 'gpt-5.4', endpoints: { responses: {} } }),
-      { input: [{ type: 'message', role: 'user', content: 'hi' }], stream: true },
+      {
+        input: [
+          { type: 'message', role: 'developer', content: 'base instructions' },
+          { type: 'message', role: 'user', content: 'hi' },
+          { type: 'message', role: 'developer', content: 'inline instructions' },
+        ],
+        stream: true,
+      },
       'generate',
       undefined,
       noopUpstreamCallOptions(),
     );
     expect(result.ok).toBe(true);
     expect(result.action).toBe('generate');
+    const init = fetchSpy.mock.calls[0]?.[1] as RequestInit | undefined;
+    expect(init).toBeDefined();
+    const body = JSON.parse(init?.body as string) as Record<string, unknown>;
+    expect(body.instructions).toBe("You're a helpful assistant.");
+    expect(body.input).toEqual([
+      { type: 'message', role: 'developer', content: 'base instructions' },
+      { type: 'message', role: 'user', content: 'hi' },
+      { type: 'message', role: 'developer', content: 'inline instructions' },
+    ]);
   });
 
   test('callResponses re-reads state per request (operator re-import takes effect)', async () => {

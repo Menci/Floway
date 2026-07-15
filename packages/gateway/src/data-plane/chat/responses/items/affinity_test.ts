@@ -14,7 +14,7 @@ import { responsesItemsView } from '@floway-dev/translate/via-responses/response
 
 const API_KEY_ID = 'key_affinity_test';
 
-const candidate = (upstream: string, supportsResponsesItemReference = true): ModelCandidate => {
+const candidate = (upstream: string): ModelCandidate => {
   const modelProvider = stubProvider({
     getProvidedModels: () => Promise.resolve([stubProviderModel()]),
   });
@@ -26,7 +26,6 @@ const candidate = (upstream: string, supportsResponsesItemReference = true): Mod
       disabledPublicModelIds: [],
       modelPrefix: null,
       instance: modelProvider,
-      supportsResponsesItemReference,
     },
     model: stubInternalModel({}, upstream),
     fetcher: directFetcher,
@@ -78,6 +77,8 @@ const classifyItems = async (
 const storedMessageId = (_label: string): string => createStoredResponsesItemId('message');
 const storedReasoningId = (_label: string): string => createStoredResponsesItemId('reasoning');
 const storedCompactionId = (_label: string): string => createStoredResponsesItemId('compaction');
+const storedProgramId = (_label: string): string => createStoredResponsesItemId('program');
+const storedProgramOutputId = (_label: string): string => createStoredResponsesItemId('program_output');
 
 test('missing stored item_reference returns item-not-found failure', async () => {
   await insertRows([]);
@@ -183,6 +184,22 @@ test('mixed portable upstreams are ordered by reverse last occurrence before rem
   if (result.kind === 'success') assertEquals(result.candidates.map(c => c.provider.upstream), ['up_b', 'up_a', 'up_c']);
 });
 
+test.each([
+  { type: 'program' as const, id: storedProgramId, item: (id: string) => ({ type: 'program' as const, id, call_id: 'call_prog', code: 'return 1', fingerprint: 'opaque' }) },
+  { type: 'program_output' as const, id: storedProgramOutputId, item: (id: string) => ({ type: 'program_output' as const, id, call_id: 'call_prog', result: '1', status: 'completed' as const }) },
+])('$type item forces affinity to its producing upstream', async ({ type, id: createId, item: createItem }) => {
+  const id = createId('account-bound');
+  const item = createItem(id);
+  await insertRows([
+    storedRow({ id, itemType: type, upstreamId: 'up_a', upstreamItemId: `raw_${type}`, payload: item }),
+  ]);
+
+  const result = await classifyItems([item], [candidate('up_b'), candidate('up_a')]);
+
+  assertEquals(result.kind, 'success');
+  if (result.kind === 'success') assertEquals(result.candidates.map(c => c.provider.upstream), ['up_a']);
+});
+
 test('conflicting compaction forcing upstreams reject the request', async () => {
   const first = storedCompactionId('first');
   const second = storedCompactionId('second');
@@ -214,13 +231,13 @@ test('row item type must match source item type', async () => {
   if (result.kind === 'failure') assertEquals(result.failure.kind, 'routing-unavailable');
 });
 
-test('metadata-only item_reference rejects when the origin upstream does not support item_reference', async () => {
-  const id = storedMessageId('metadata-only-reference-unsupported');
+test('metadata-only item_reference rejects even with an upstream item id', async () => {
+  const id = storedMessageId('metadata-only-reference-with-upstream-item-id');
   await insertRows([
     storedRow({ id, itemType: 'message', upstreamId: 'up_a', upstreamItemId: 'raw_msg_a', payload: null }),
   ]);
 
-  const result = await classifyItems([{ type: 'item_reference', id }], [candidate('up_a', false)]);
+  const result = await classifyItems([{ type: 'item_reference', id }], [candidate('up_a')]);
 
   assertEquals(result.kind, 'failure');
   if (result.kind === 'failure') {

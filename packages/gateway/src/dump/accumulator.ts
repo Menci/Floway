@@ -12,7 +12,8 @@ import type {
   DumpMetadata,
   DumpStreamEvent,
   DumpUpstreamRef,
-  StoredDumpRecord,
+  DumpWriteRecord,
+  PreparedDumpRequestBody,
   StoredDumpResponseBody,
 } from './types.ts';
 import type { RequestBody } from '../data-plane/chat/shared/request-body.ts';
@@ -29,7 +30,7 @@ interface RequestSnapshot {
   readonly method: string;
   readonly path: string;
   readonly headers: ReadonlyArray<readonly [string, string]>;
-  readonly body: Uint8Array;
+  readonly bodyByteLength: number;
   readonly streamError: string | null;
 }
 
@@ -38,6 +39,7 @@ interface ResponseSnapshot {
   readonly headers: ReadonlyArray<readonly [string, string]>;
   readonly isStream: boolean;
   readonly bytes: Uint8Array;
+  readonly payloadBytes: number;
   readonly streamError: string | null;
 }
 
@@ -92,23 +94,32 @@ const resolveUpstreamRef = async (id: string | null): Promise<DumpUpstreamRef | 
   if (!id) return null;
   const upstream = await getRepo().upstreams.getById(id);
   if (!upstream) return null;
-  return { id: upstream.id, name: upstream.name, kind: upstream.kind };
+  return { id: upstream.id, name: upstream.name, kind: upstream.kind, color: upstream.color };
 };
 
 export class DumpAccumulator {
   private readonly events: DumpStreamEvent[] = [];
+  private sentPayloadBytes = 0;
   private model: string | null = null;
   private upstreamId: string | null = null;
   private inputTokens: number | null = null;
   private outputTokens: number | null = null;
   private errorMeta: DumpErrorMeta | null = null;
+  private readonly preparedRequestBody: Promise<PreparedDumpRequestBody>;
 
   constructor(
     private readonly apiKey: ApiKey,
     private readonly requestSnapshot: RequestSnapshot,
+    requestBody: Uint8Array,
     private readonly startedAt: number,
     private readonly backgroundScheduler: BackgroundScheduler,
-  ) {}
+  ) {
+    this.preparedRequestBody = getDumpStore().prepareRequestBody(requestBody);
+    // Preparation starts eagerly and is awaited at terminal persistence. Mark
+    // a rejection handled immediately so a long upstream wait cannot surface
+    // it as an unhandled promise before `write()` records the dump failure.
+    void this.preparedRequestBody.catch(() => {});
+  }
 
   // --- mid-flight hooks (called from per-protocol respond layer) ---
 
@@ -133,6 +144,10 @@ export class DumpAccumulator {
     this.events.push({ frame, ts: Date.now() - this.startedAt });
   }
 
+  recordSentPayloadBytes(byteLength: number): void {
+    this.sentPayloadBytes += byteLength;
+  }
+
   success(identity: TelemetryModelIdentity, usage: TokenUsage | null): void {
     this.model = identity.model;
     this.upstreamId = identity.upstream;
@@ -147,8 +162,8 @@ export class DumpAccumulator {
   //
   //   • `(status, headers)` — no HTTP Response object to tee. The WebSocket
   //     Responses path uses this: its "response" is the stream of frames
-  //     already captured via `frame()` and the terminal status is supplied
-  //     by the caller.
+  //     already captured via `frame()`, while the send seam records their
+  //     actual UTF-8 payload bytes via `recordSentPayloadBytes()`.
   //   • `(response)` — tees the response body so the client gets bytes
   //     flowing while a background reader accumulates the other half. The
   //     returned Response streams the client-side bytes; status, statusText,
@@ -168,6 +183,7 @@ export class DumpAccumulator {
         headers: headers.map(([k, v]) => [k, v]),
         isStream: this.events.length > 0,
         bytes: new Uint8Array(),
+        payloadBytes: this.sentPayloadBytes,
         streamError: null,
       }));
       return;
@@ -202,7 +218,14 @@ export class DumpAccumulator {
       const bytes = new Uint8Array(total);
       let offset = 0;
       for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
-      await this.write({ status: responseStatus, headers: responseHeaders, isStream, bytes, streamError });
+      await this.write({
+        status: responseStatus,
+        headers: responseHeaders,
+        isStream,
+        bytes,
+        payloadBytes: bytes.byteLength,
+        streamError,
+      });
     })());
 
     return new Response(forClient, {
@@ -243,8 +266,8 @@ export class DumpAccumulator {
       model: this.model,
       inputTokens: this.inputTokens,
       outputTokens: this.outputTokens,
-      requestBytes: this.requestSnapshot.body.byteLength,
-      responseBytes: response.bytes.byteLength,
+      requestBytes: this.requestSnapshot.bodyByteLength,
+      responseBytes: response.payloadBytes,
       durationMs: completedAt - this.startedAt,
       // Precedence: an explicit error stamp from the respond path wins;
       // otherwise a request-body read failure (operator-side payload didn't
@@ -255,23 +278,22 @@ export class DumpAccumulator {
         ?? (response.streamError !== null ? { kind: 'failed', reason: response.streamError } : null),
     };
 
-    const record: StoredDumpRecord = {
-      meta,
-      request: {
-        method: this.requestSnapshot.method,
-        path: this.requestSnapshot.path,
-        headers: this.requestSnapshot.headers.map(([k, v]) => [k, v]),
-        body: this.requestSnapshot.body,
-      },
-      response: {
-        status: response.status,
-        headers: response.headers.map(([k, v]) => [k, v]),
-        body: responseBody,
-      },
-    };
-
     // Commit the row before publishing so subscribers fetching detail off the meta frame find it.
     try {
+      const record: DumpWriteRecord = {
+        meta,
+        request: {
+          method: this.requestSnapshot.method,
+          path: this.requestSnapshot.path,
+          headers: this.requestSnapshot.headers.map(([k, v]) => [k, v]),
+          body: await this.preparedRequestBody,
+        },
+        response: {
+          status: response.status,
+          headers: response.headers.map(([k, v]) => [k, v]),
+          body: responseBody,
+        },
+      };
       await getDumpStore().put(this.apiKey.id, record);
       await getDumpBroker().publish(this.apiKey.id, meta);
     } catch (err) {
@@ -296,8 +318,8 @@ export const openDumpAccumulator = (
     method,
     path: c.req.path,
     headers: headerPairs(c.req.raw.headers),
-    body: requestBody.bytes,
+    bodyByteLength: requestBody.bytes.byteLength,
     streamError: requestBody.streamError,
   };
-  return new DumpAccumulator(apiKey, requestSnapshot, Date.now(), backgroundScheduler);
+  return new DumpAccumulator(apiKey, requestSnapshot, requestBody.bytes, Date.now(), backgroundScheduler);
 };
