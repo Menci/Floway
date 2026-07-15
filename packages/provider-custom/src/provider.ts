@@ -180,7 +180,7 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
     callImagesGenerations: (model, body, signal, opts) => call(customFetchImagesGenerations, model, body, signal, opts.headers, opts),
     callImagesEdits: async (model, body, signal, opts) => {
       if (!(body instanceof FormData)) {
-        return call(customFetchImagesEdits, model, body, signal, opts.headers, opts);
+        return await call(customFetchImagesEdits, model, body, signal, opts.headers, opts);
       }
       // The runtime auto-encodes the FormData with a fresh boundary and sets
       // Content-Type itself.
