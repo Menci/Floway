@@ -3,7 +3,7 @@
 // Ephemeral stored Responses state is omitted from exports and cleared on
 // replace imports; clients can regenerate it through normal Responses use.
 //
-// The export contains the listed persisted credentials: API-key affinity
+// The export contains the listed persisted credentials: API-key server
 // secrets, provider keys/tokens, and credential-bearing proxy URIs. The
 // endpoint is admin-only; handle the file with the same care as a DB backup.
 
@@ -22,8 +22,8 @@ import { DIRECT_FALLBACK_IDS, isDirectFallbackId, normalizeProxyFallbackList } f
 import type { ApiKey, PerformanceBucketRow, PerformanceMetric, PerformanceTelemetryRecord, SearchUsageRecord, TokenUsage, UsageRecord, User } from '../../repo/types.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
-import { parseServerSecret } from '../../shared/server-secret.ts';
 import { PASSWORD_HASH_SCHEME } from '../../shared/passwords.ts';
+import { parseServerSecret } from '../../shared/server-secret.ts';
 import { isWebSearchProviderName } from '../../shared/web-search-providers.ts';
 import { parseUpstreamIdsValue } from '../api-keys/upstream-ids.ts';
 import { USERNAME_PATTERN, type exportQuery, type importBody, DUMP_RETENTION_MAX_SECONDS } from '../schemas.ts';

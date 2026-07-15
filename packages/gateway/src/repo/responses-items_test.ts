@@ -68,24 +68,22 @@ test('migration 0057 preserves every usable full payload and only replayable sna
     const gzipDescriptor = JSON.stringify({ version: 1, storage: 'inline', encoding: 'gzip', payload: 'H4sIAAAAAAAA' });
     const fileDescriptor = JSON.stringify({ version: 1, storage: 'file', key: 'responses-items/v1/expires/x', sha256: 'abc', byteLength: 3 });
     const legacyInline = JSON.stringify({ version: 1, storage: 'inline', payload: { item: { type: 'reasoning', id: 'rs_legacy' } } });
-    const insertItem = db.prepare(`INSERT INTO responses_items
+    const insertItem = `INSERT INTO responses_items
       (id, api_key_id, item_type, payload_json, content_hash, created_at)
-      VALUES (?, ?, ?, ?, ?, ?)`);
-    insertItem.run(['msg_gzip', 'key-a', 'message', gzipDescriptor, 'hash-a', 1_000]);
-    insertItem.run(['rs_file', 'key-a', 'reasoning', fileDescriptor, null, 2_000]);
-    insertItem.run(['rs_legacy', 'key-a', 'reasoning', legacyInline, null, 3_000]);
-    insertItem.run(['msg_unscoped', null, 'message', gzipDescriptor, 'hash-u', 4_000]);
-    insertItem.run(['msg_metadata', 'key-a', 'message', null, 'hash-m', 5_000]);
-    insertItem.free();
+      VALUES (?, ?, ?, ?, ?, ?)`;
+    db.run(insertItem, ['msg_gzip', 'key-a', 'message', gzipDescriptor, 'hash-a', 1_000]);
+    db.run(insertItem, ['rs_file', 'key-a', 'reasoning', fileDescriptor, null, 2_000]);
+    db.run(insertItem, ['rs_legacy', 'key-a', 'reasoning', legacyInline, null, 3_000]);
+    db.run(insertItem, ['msg_unscoped', null, 'message', gzipDescriptor, 'hash-u', 4_000]);
+    db.run(insertItem, ['msg_metadata', 'key-a', 'message', null, 'hash-m', 5_000]);
 
-    const insertSnapshot = db.prepare(`INSERT INTO responses_snapshots
+    const insertSnapshot = `INSERT INTO responses_snapshots
       (id, api_key_id, item_ids_json, created_at, refreshed_at)
-      VALUES (?, ?, ?, ?, ?)`);
-    insertSnapshot.run(['resp_valid', 'key-a', '["msg_gzip","rs_file","rs_legacy"]', 6_000, 6_000]);
-    insertSnapshot.run(['resp_dangling', 'key-a', '["msg_gzip","msg_metadata"]', 7_000, 7_000]);
-    insertSnapshot.run(['resp_malformed', 'key-a', '{', 8_000, 8_000]);
-    insertSnapshot.run(['resp_unscoped', null, '["msg_unscoped"]', 9_000, 9_000]);
-    insertSnapshot.free();
+      VALUES (?, ?, ?, ?, ?)`;
+    db.run(insertSnapshot, ['resp_valid', 'key-a', '["msg_gzip","rs_file","rs_legacy"]', 6_000, 6_000]);
+    db.run(insertSnapshot, ['resp_dangling', 'key-a', '["msg_gzip","msg_metadata"]', 7_000, 7_000]);
+    db.run(insertSnapshot, ['resp_malformed', 'key-a', '{', 8_000, 8_000]);
+    db.run(insertSnapshot, ['resp_unscoped', null, '["msg_unscoped"]', 9_000, 9_000]);
 
     const migration = migrationSqlByFilename.find(([filename]) => filename === '0057_responses_full_state.sql');
     if (migration === undefined) throw new Error('missing migration 0057_responses_full_state.sql');
