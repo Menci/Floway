@@ -1,5 +1,5 @@
-import type { AffinityCodec } from './codec.ts';
 import { CHAT_COMPLETIONS_AFFINITY_DOMAIN } from './carrier-domains.ts';
+import type { AffinityCodec } from './codec.ts';
 import { blobForCandidate, ownedAffinities, type PreparedAffinityPayload } from './prepared.ts';
 import type { DecodedAffinityBlob } from './types.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';

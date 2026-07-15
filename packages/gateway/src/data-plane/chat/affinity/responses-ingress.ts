@@ -1,5 +1,5 @@
-import type { AffinityCodec } from './codec.ts';
 import { responsesAffinityDomain } from './carrier-domains.ts';
+import type { AffinityCodec } from './codec.ts';
 import { blobForCandidate, ownedAffinities, type PreparedAffinityPayload } from './prepared.ts';
 import type { DecodedAffinityBlob } from './types.ts';
 import { createTemporaryResponsesItemId } from '../responses/items/format.ts';

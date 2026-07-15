@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'vitest';
 
 import { createResponsesHttpStore, createResponsesWsSession } from './store.ts';
-import { ResponsesAttemptState } from '../attempt-state.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
+import { ResponsesAttemptState } from '../attempt-state.ts';
 
 describe('StatefulResponsesStore', () => {
   test('HTTP store=false performs no state writes', async () => {
