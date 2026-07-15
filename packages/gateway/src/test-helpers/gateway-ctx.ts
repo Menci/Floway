@@ -1,4 +1,4 @@
-import { createNonResponsesSourceStore } from '../data-plane/chat/responses/items/store.ts';
+import { createTransientResponsesStore } from '../data-plane/chat/responses/items/store.ts';
 import { AffinityRequestContext } from '../data-plane/chat/affinity/context.ts';
 import type { ChatGatewayCtx, GatewayCtx } from '../data-plane/chat/shared/gateway-ctx.ts';
 
@@ -20,15 +20,14 @@ export const mockGatewayCtx = (overrides: Partial<GatewayCtx> = {}): GatewayCtx 
   ...overrides,
 });
 
-// Chat-protocol counterpart: adds the stored-items store bound to the
-// resolved apiKeyId (base default or override). Interceptor tests only
-// need the store to exist; overriding `.store` explicitly is supported
-// for tests that inspect its per-turn behaviour.
+// Chat-protocol counterpart: adds the affinity membrane and request-local
+// Responses invocation state. Tests that exercise durable Responses behavior
+// override `.store` explicitly.
 export const mockChatGatewayCtx = (overrides: Partial<ChatGatewayCtx> = {}): ChatGatewayCtx => {
   const base = mockGatewayCtx(overrides);
   return {
     ...base,
     affinity: overrides.affinity ?? new AffinityRequestContext('00'.repeat(32)),
-    store: overrides.store ?? createNonResponsesSourceStore(base.apiKeyId),
+    store: overrides.store ?? createTransientResponsesStore(base.apiKeyId),
   };
 };

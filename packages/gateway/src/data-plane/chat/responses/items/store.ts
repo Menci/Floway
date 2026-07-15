@@ -321,7 +321,7 @@ export class MemoryStatefulResponsesBacking implements StatefulResponsesBacking 
 
 const repoBacking = () => new RepoStatefulResponsesBacking(getRepo);
 
-export const createNonResponsesSourceStore = (apiKeyId: string): StatefulResponsesStore =>
+export const createTransientResponsesStore = (apiKeyId: string): StatefulResponsesStore =>
   new LayeredStatefulResponsesStore({ apiKeyId, reads: [], itemWrites: [], snapshotWrites: [], stageInputs: false });
 
 export const createResponsesHttpStore = (apiKeyId: string, store: boolean | undefined): StatefulResponsesStore => {

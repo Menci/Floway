@@ -49,8 +49,9 @@ export interface GatewayCtx {
   readonly responseHeaders: Headers;
 }
 
-// Chat-protocol ctx — `GatewayCtx` plus the request-scoped stored-items
-// store. Every chat HTTP/WS entry constructs this via
+// Chat-protocol ctx adds the affinity membrane and the Responses invocation
+// state used by native Responses requests or an inner translated Responses
+// call. Every chat HTTP/WS entry constructs this via
 // `createChatGatewayCtxFromHono` and threads it through serve → narrow →
 // attempt. Passthrough endpoints (embeddings / images / completions) have
 // no stored-items concept and stay on plain `GatewayCtx`.
@@ -120,11 +121,10 @@ export const finalizeGatewayResponse = (ctx: GatewayCtx, response: Response): Re
   return ctx.dump?.finalize(response) ?? response;
 };
 
-// Chat-protocol counterpart of `createGatewayCtxFromHono`. Calls the base
-// factory, then attaches the stored-items store the caller chose for this
-// protocol. The factory receives `ctx.apiKeyId` so every entry threads the
-// same authoritative id into its store — messages / gemini / chat-completions
-// pass `createNonResponsesSourceStore`; responses HTTP passes
+// Chat-protocol counterpart of `createGatewayCtxFromHono`. The factory
+// receives the authoritative API-key id. Messages, Gemini, and Chat
+// Completions use an isolated request-local store only when translation enters
+// the Responses attempt; native Responses HTTP passes
 // `apiKeyId => createResponsesHttpStore(apiKeyId, payload.store)`; responses
 // WS passes `apiKeyId => session.createStore(apiKeyId, payload.store)`.
 export const createChatGatewayCtxFromHono = (
