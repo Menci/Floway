@@ -5,7 +5,7 @@ import { parseChatCompletionsStream } from '@floway-dev/protocols/chat-completio
 import { kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseMessagesStream } from '@floway-dev/protocols/messages';
 import { parseResponsesStream, type ResponsesResult, toCompactPayloadShape } from '@floway-dev/protocols/responses';
-import { type ProviderInstance, type Provider, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord, publicModelId, resolveEffectiveFlags, streamingProviderCall } from '@floway-dev/provider';
+import { imagesEditsJsonBody, imagesEditsMultipartBody, type ProviderInstance, type Provider, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord, publicModelId, resolveEffectiveFlags, streamingProviderCall } from '@floway-dev/provider';
 
 const upstreamModelIdOf = (model: ProviderModel): string => (model.providerData as { upstreamModelId: string }).upstreamModelId;
 
@@ -90,15 +90,12 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
     callMessagesCountTokens: (model, body, signal, opts) => callNonStreaming(azureFetchMessagesCountTokens, model, body, signal, opts.headers, opts),
     callEmbeddings: (model, body, signal, opts) => callNonStreaming(azureFetchEmbeddings, model, body, signal, opts.headers, opts),
     callImagesGenerations: (model, body, signal, opts) => callNonStreaming(azureFetchImagesGenerations, model, body, signal, opts.headers, opts),
-    callImagesEdits: async (model, body, signal, opts) => {
-      if (!(body instanceof FormData)) {
-        return await callNonStreaming(azureFetchImagesEdits, model, body, signal, opts.headers, opts);
+    callImagesEdits: async (model, request, signal, opts) => {
+      if (request.type === 'references') {
+        return await callNonStreaming(azureFetchImagesEdits, model, imagesEditsJsonBody(request), signal, opts.headers, opts);
       }
-      // Azure routes by upstream model id in the multipart `model` field; the
-      // runtime re-encodes the FormData with a fresh boundary and sets
-      // Content-Type itself.
       const upstreamModelId = upstreamModelIdOf(model);
-      body.append('model', upstreamModelId);
+      const body = imagesEditsMultipartBody(request, upstreamModelId);
       const response = await azureFetchImagesEdits(azure.config, { method: 'POST', body, signal }, { extraHeaders: opts.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall });
       return { response, modelKey: upstreamModelId };
     },

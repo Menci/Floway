@@ -3,8 +3,8 @@
 // matching image endpoint capability.
 //
 // The edits handler accepts multipart uploads and JSON `images` references.
-// Both shapes are buffered once for dump capture; JSON remains JSON through
-// provider dispatch, while multipart is re-encoded with a fresh boundary.
+// Both are buffered once for dump capture and normalized into a semantic
+// request; each provider owns the final JSON or multipart serialization.
 // https://github.com/openai/openai-openapi/blob/a3276900e58b8b2a92e0cb087cd2e6e005f58458/openapi.yaml#L12558-L12620
 
 import type { Context } from 'hono';
@@ -14,8 +14,8 @@ import { createGatewayCtxFromHono, finalizeGatewayResponse } from '../chat/share
 import { readRequestBody, takeRequestBody, type RequestBody } from '../chat/shared/request-body.ts';
 import { passthroughApiError, passthroughServe } from '../shared/passthrough-serve.ts';
 import { tokenUsageFromImagesBody } from '../shared/telemetry/usage.ts';
-import type { ImagesEditsJsonPayload } from '@floway-dev/protocols/images';
-import type { ImagesEditsBody } from '@floway-dev/provider';
+import type { ImageEditReference } from '@floway-dev/protocols/images';
+import type { ImagesEditsRequest } from '@floway-dev/provider';
 
 interface JsonModelRequestBody {
   model?: unknown;
@@ -41,6 +41,48 @@ const prepareJsonModelRequest = (bytes: Uint8Array, requestName: string): Prepar
     return { type: 'invalid', message: `${requestName} request body must include a model string.` };
   }
   return { type: 'ok', body: request as Record<string, unknown>, model: request.model };
+};
+
+type PreparedReferencedImagesEdit =
+  | { type: 'ok'; request: ImagesEditsRequest }
+  | { type: 'invalid'; message: string };
+
+const imageEditReference = (value: unknown, path: string): ImageEditReference | string => {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return `${path} must be an object.`;
+  }
+  const { image_url: imageUrl, file_id: fileId } = value as { image_url?: unknown; file_id?: unknown };
+  if (typeof imageUrl === 'string' && fileId === undefined) return { image_url: imageUrl };
+  if (typeof fileId === 'string' && imageUrl === undefined) return { file_id: fileId };
+  return `${path} must contain exactly one string field: image_url or file_id.`;
+};
+
+const prepareReferencedImagesEdit = (body: Record<string, unknown>): PreparedReferencedImagesEdit => {
+  if (!Array.isArray(body.images)) {
+    return { type: 'invalid', message: 'Image edits request body must include an images array.' };
+  }
+  const images: ImageEditReference[] = [];
+  for (const [index, value] of body.images.entries()) {
+    const reference = imageEditReference(value, `Image edits images[${index}]`);
+    if (typeof reference === 'string') return { type: 'invalid', message: reference };
+    images.push(reference);
+  }
+  let mask: ImageEditReference | undefined;
+  if (body.mask !== undefined) {
+    const reference = imageEditReference(body.mask, 'Image edits mask');
+    if (typeof reference === 'string') return { type: 'invalid', message: reference };
+    mask = reference;
+  }
+  const { model: _model, images: _images, mask: _mask, ...parameters } = body;
+  return {
+    type: 'ok',
+    request: {
+      type: 'references',
+      images,
+      ...(mask === undefined ? {} : { mask }),
+      parameters,
+    },
+  };
 };
 
 export const imagesGenerations = async (c: Context): Promise<Response> => {
@@ -70,11 +112,11 @@ export const imagesGenerations = async (c: Context): Promise<Response> => {
   return finalizeGatewayResponse(ctx, response);
 };
 
-const serveImagesEditBody = async (
+const serveImagesEditRequest = async (
   c: Context,
   requestBody: RequestBody,
   model: string,
-  body: ImagesEditsBody,
+  request: ImagesEditsRequest,
 ): Promise<Response> => {
   const ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
   ctx.dump?.requestedModel(model);
@@ -86,18 +128,7 @@ const serveImagesEditBody = async (
     model,
     kind: 'image',
     modelServesEndpoint: model => model.endpoints.imagesEdits !== undefined,
-    call: (provider, model, opts) => {
-      if (!(body instanceof FormData)) {
-        return provider.instance.callImagesEdits(model, body, undefined, opts);
-      }
-      // The provider may append its model id to multipart bodies, so allocate
-      // a fresh FormData per candidate. Blob values remain shared.
-      const candidateBody = new FormData();
-      for (const [name, value] of body.entries()) {
-        if (name !== 'model') candidateBody.append(name, value);
-      }
-      return provider.instance.callImagesEdits(model, candidateBody, undefined, opts);
-    },
+    call: (provider, model, opts) => provider.instance.callImagesEdits(model, request, undefined, opts),
     response: { format: 'json', extractBilling: tokenUsageFromImagesBody },
   });
   return finalizeGatewayResponse(ctx, response);
@@ -117,10 +148,11 @@ export const imagesEdits = async (c: Context): Promise<Response> => {
   }
   const mediaType = contentType.replace(/;.*$/u, '').trim().toLowerCase();
   if (mediaType === 'application/json') {
-    const request = prepareJsonModelRequest(requestBody.bytes, 'Image edits');
+    const body = prepareJsonModelRequest(requestBody.bytes, 'Image edits');
+    if (body.type === 'invalid') return invalid(body.message);
+    const request = prepareReferencedImagesEdit(body.body);
     if (request.type === 'invalid') return invalid(request.message);
-    const { model: _model, ...body } = request.body as ImagesEditsJsonPayload;
-    return await serveImagesEditBody(c, requestBody, request.model, body);
+    return await serveImagesEditRequest(c, requestBody, body.model, request.request);
   }
 
   if (mediaType !== 'multipart/form-data') {
@@ -136,5 +168,26 @@ export const imagesEdits = async (c: Context): Promise<Response> => {
   if (typeof model !== 'string' || model.length === 0) {
     return invalid('Image edits request body must include a model field.');
   }
-  return await serveImagesEditBody(c, requestBody, model, form);
+  const images: File[] = [];
+  let mask: File | undefined;
+  const parameters: Record<string, unknown> = {};
+  for (const [name, value] of form.entries()) {
+    if (name === 'model') continue;
+    if (name === 'image' || name === 'image[]') {
+      if (!(value instanceof File)) return invalid(`Image edits ${name} fields must be files.`);
+      images.push(value);
+    } else if (name === 'mask') {
+      if (!(value instanceof File)) return invalid('Image edits mask field must be a file.');
+      mask = value;
+    } else {
+      if (typeof value !== 'string') return invalid(`Image edits ${name} field must be text.`);
+      parameters[name] = value;
+    }
+  }
+  return await serveImagesEditRequest(c, requestBody, model, {
+    type: 'uploads',
+    images,
+    ...(mask === undefined ? {} : { mask }),
+    parameters,
+  });
 };

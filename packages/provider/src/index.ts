@@ -47,7 +47,6 @@ export type { AddressableForm, ModelPrefixConfig } from './model-prefix.ts';
 export { MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX, normalizeModelPrefix } from './model-prefix.ts';
 
 export type {
-  ImagesEditsBody,
   Provider,
   ProviderInstance,
   ProviderCallResult,
@@ -57,6 +56,8 @@ export type {
   ResponsesAction,
   UpstreamCallOptions,
 } from './provider.ts';
+export type { ImagesEditsRequest, ReferencedImagesEditsRequest, UploadedImagesEditsRequest } from './images.ts';
+export { imagesEditsJsonBody, imagesEditsMultipartBody } from './images.ts';
 export type { ProviderStreamParser } from './streaming.ts';
 export { streamingProviderCall } from './streaming.ts';
 

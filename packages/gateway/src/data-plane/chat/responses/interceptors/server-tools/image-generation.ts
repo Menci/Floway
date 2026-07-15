@@ -19,7 +19,7 @@ import type {
   ResponsesOutputImageGenerationCall,
   ResponsesTool,
 } from '@floway-dev/protocols/responses';
-import { providerModelOf, type Fetcher, type Provider, type ModelCandidate, type ProviderModel } from '@floway-dev/provider';
+import { providerModelOf, type Fetcher, type ImagesEditsRequest, type Provider, type ModelCandidate, type ProviderModel } from '@floway-dev/provider';
 
 export const SHIM_TOOL_NAME = 'image_generation';
 
@@ -931,38 +931,34 @@ export const buildGenerationsBody = (prompt: string, config: ImageGenerationConf
   ...(stream ? { stream: true, partial_images: config.partial_images } : {}),
 });
 
-const buildEditsForm = (prompt: string, config: ImageGenerationConfig, sources: readonly ImageSource[], stream: boolean): FormData => {
-  const form = new FormData();
-  form.append('prompt', prompt);
-  form.append('n', '1');
-  if (config.size !== undefined) form.append('size', config.size);
-  if (config.quality !== undefined) form.append('quality', config.quality);
-  if (config.output_format !== undefined) form.append('output_format', config.output_format);
-  if (config.background !== undefined) form.append('background', config.background);
-  if (config.moderation !== undefined) form.append('moderation', config.moderation);
-  if (config.output_compression !== undefined) form.append('output_compression', String(config.output_compression));
-  if (config.input_fidelity !== undefined) form.append('input_fidelity', config.input_fidelity);
-  if (stream) {
-    form.append('stream', 'true');
-    form.append('partial_images', String(config.partial_images));
-  }
-  for (const [i, source] of sources.entries()) {
+const buildEditsRequest = (prompt: string, config: ImageGenerationConfig, sources: readonly ImageSource[], stream: boolean): ImagesEditsRequest => {
+  const parameters: Record<string, unknown> = {
+    prompt,
+    n: 1,
+    ...(config.size === undefined ? {} : { size: config.size }),
+    ...(config.quality === undefined ? {} : { quality: config.quality }),
+    ...(config.output_format === undefined ? {} : { output_format: config.output_format }),
+    ...(config.background === undefined ? {} : { background: config.background }),
+    ...(config.moderation === undefined ? {} : { moderation: config.moderation }),
+    ...(config.output_compression === undefined ? {} : { output_compression: config.output_compression }),
+    ...(config.input_fidelity === undefined ? {} : { input_fidelity: config.input_fidelity }),
+    ...(stream ? { stream: true, partial_images: config.partial_images } : {}),
+  };
+  const images = sources.map((source, index) => {
     // Forward the canonical supported mime; an unsupported source is rejected
     // before dispatch, so the fallback only ever carries an already-supported
     // generated image. Sending the raw mime (rather than relabeling as png)
     // keeps a stray unsupported byte stream failing loud at the backend.
     const mime = editSupportedMime(source.mimeType) ?? source.mimeType;
-    // `image[]` repeated parts: gpt-image accepts multiple, resolving "the
-    // Nth image" against attach order (see `inspectImageSources`).
-    form.append('image[]', new Blob([source.bytes], { type: mime }), `image_${i}.${editFileExt(mime)}`);
-  }
+    return new File([source.bytes], `image_${index}.${editFileExt(mime)}`, { type: mime });
+  });
+  let mask: File | undefined;
   if (config.mask !== undefined) {
-    if (isRemoteImageSource(config.mask)) throw new Error('Remote image mask reached form encoding before materialization');
-    const mask = config.mask;
-    const mime = editSupportedMime(mask.mimeType) ?? mask.mimeType;
-    form.append('mask', new Blob([mask.bytes], { type: mime }), `mask.${editFileExt(mime)}`);
+    if (isRemoteImageSource(config.mask)) throw new Error('Remote image mask reached edit request construction before materialization');
+    const mime = editSupportedMime(config.mask.mimeType) ?? config.mask.mimeType;
+    mask = new File([config.mask.bytes], `mask.${editFileExt(mime)}`, { type: mime });
   }
-  return form;
+  return { type: 'uploads', images, ...(mask === undefined ? {} : { mask }), parameters };
 };
 
 const serverError = (e: unknown): ImageError => ({
@@ -1090,7 +1086,7 @@ const issueImageCall = async (
       wrapUpstreamCall: stampUpstreamCallStart(attempt),
     };
     const { response, modelKey } = await (isEdit
-      ? provider.instance.callImagesEdits(model, buildEditsForm(prompt, config, sources, stream), state.downstreamAbortSignal, opts)
+      ? provider.instance.callImagesEdits(model, buildEditsRequest(prompt, config, sources, stream), state.downstreamAbortSignal, opts)
       : provider.instance.callImagesGenerations(model, buildGenerationsBody(prompt, config, stream), state.downstreamAbortSignal, opts));
     if (response.status !== 429 || retry >= MAX_RATE_LIMIT_RETRIES) return { response, modelKey };
 

@@ -432,10 +432,11 @@ test('createAzureProvider callImagesEdits posts multipart with model replaced by
     async () => {
       const provider = createAzureProvider(record);
       const models = await provider.instance.getProvidedModels(directFetcher);
-      const form = new FormData();
-      form.append('prompt', 'replace sky');
-      form.append('image', new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' }), 'photo.png');
-      const result = await provider.instance.callImagesEdits(models[0], form, undefined, noopUpstreamCallOptions());
+      const result = await provider.instance.callImagesEdits(models[0], {
+        type: 'uploads',
+        parameters: { prompt: 'replace sky' },
+        images: [new File([new Uint8Array([1, 2, 3])], 'photo.png', { type: 'image/png' })],
+      }, undefined, noopUpstreamCallOptions());
       assertEquals(result.modelKey, 'gpt-image-2');
       assertEquals(result.response.status, 200);
     },

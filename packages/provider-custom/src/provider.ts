@@ -7,7 +7,7 @@ import { parseChatCompletionsStream } from '@floway-dev/protocols/chat-completio
 import { type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseMessagesStream } from '@floway-dev/protocols/messages';
 import { parseResponsesStream, type ResponsesResult, toCompactPayloadShape } from '@floway-dev/protocols/responses';
-import { publicModelId, resolveEffectiveFlags, streamingProviderCall, type FlagId, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord } from '@floway-dev/provider';
+import { imagesEditsJsonBody, imagesEditsMultipartBody, publicModelId, resolveEffectiveFlags, streamingProviderCall, type FlagId, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord } from '@floway-dev/provider';
 
 const rawModelIdOf = (model: ProviderModel): string => model.providerData as string;
 
@@ -178,14 +178,12 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
     callMessagesCountTokens: (model, body, signal, opts) => call(customFetchMessagesCountTokens, model, body, signal, opts.headers, opts),
     callEmbeddings: (model, body, signal, opts) => call(customFetchEmbeddings, model, body, signal, opts.headers, opts),
     callImagesGenerations: (model, body, signal, opts) => call(customFetchImagesGenerations, model, body, signal, opts.headers, opts),
-    callImagesEdits: async (model, body, signal, opts) => {
-      if (!(body instanceof FormData)) {
-        return await call(customFetchImagesEdits, model, body, signal, opts.headers, opts);
+    callImagesEdits: async (model, request, signal, opts) => {
+      if (request.type === 'references') {
+        return await call(customFetchImagesEdits, model, imagesEditsJsonBody(request), signal, opts.headers, opts);
       }
-      // The runtime auto-encodes the FormData with a fresh boundary and sets
-      // Content-Type itself.
       const rawModelId = rawModelIdOf(model);
-      body.append('model', rawModelId);
+      const body = imagesEditsMultipartBody(request, rawModelId);
       const response = await customFetchImagesEdits(config, { method: 'POST', body, signal }, { extraHeaders: opts.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall });
       return { response, modelKey: rawModelId };
     },
