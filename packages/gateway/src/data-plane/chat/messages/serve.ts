@@ -1,9 +1,9 @@
+import { prepareMessagesAffinity } from './affinity/ingress.ts';
 import { messagesAttempt, messagesGenerateTarget, messagesCountTokensTarget } from './attempt.ts';
 import { renderMessagesFailure } from './errors.ts';
 import { enumerateModelCandidates } from '../../providers/registry.ts';
 import { iterateCandidates } from '../../shared/iterate-candidates.ts';
 import { routeCandidatesByAffinity } from '../shared/affinity/candidate.ts';
-import { prepareMessagesAffinity } from '../shared/affinity/messages-ingress.ts';
 import { noViableCandidateFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';

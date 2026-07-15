@@ -1,6 +1,6 @@
-import type { AffinityEgressOptions } from './affinity-egress.ts';
 import { affinityTargetForCandidate } from './candidate.ts';
 import { AffinityCodec } from './codec.ts';
+import type { AffinityEgressOptions } from './egress-options.ts';
 import type { AffinityTarget } from './types.ts';
 import type { ChatGatewayCtx, GatewayCtx } from '../gateway-ctx.ts';
 import type { ModelCandidate } from '@floway-dev/provider';

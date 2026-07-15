@@ -1,5 +1,5 @@
-import type { AffinityEgressOptions } from './affinity-egress.ts';
-import { MESSAGES_REDACTED_AFFINITY_DOMAIN, MESSAGES_SIGNATURE_AFFINITY_DOMAIN } from './carrier-domains.ts';
+import { MESSAGES_REDACTED_AFFINITY_DOMAIN, MESSAGES_SIGNATURE_AFFINITY_DOMAIN } from './domain.ts';
+import type { AffinityEgressOptions } from '../../shared/affinity/egress-options.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 

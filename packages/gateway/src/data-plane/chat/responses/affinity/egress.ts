@@ -1,6 +1,6 @@
-import type { AffinityEgressOptions } from './affinity-egress.ts';
-import { responsesAffinityDomain } from './carrier-domains.ts';
-import type { AffinityTarget } from './types.ts';
+import { responsesAffinityDomain } from './domain.ts';
+import type { AffinityEgressOptions } from '../../shared/affinity/egress-options.ts';
+import type { AffinityTarget } from '../../shared/affinity/types.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesOutputItem, ResponsesOutputReasoning, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 

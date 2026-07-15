@@ -1,8 +1,8 @@
-import { responsesAffinityDomain } from './carrier-domains.ts';
-import type { AffinityCodec } from './codec.ts';
-import { blobForCandidate, ownedAffinities, type PreparedAffinityPayload } from './prepared.ts';
-import type { DecodedAffinityBlob } from './types.ts';
-import { createTemporaryResponsesItemId } from '../../responses/items/format.ts';
+import { responsesAffinityDomain } from './domain.ts';
+import type { AffinityCodec } from '../../shared/affinity/codec.ts';
+import { blobForCandidate, ownedAffinities, type PreparedAffinityPayload } from '../../shared/affinity/prepared.ts';
+import type { DecodedAffinityBlob } from '../../shared/affinity/types.ts';
+import { createTemporaryResponsesItemId } from '../items/format.ts';
 import type { CanonicalResponsesPayload, ResponsesInputItem } from '@floway-dev/protocols/responses';
 
 interface ResponsesBlobLocation {

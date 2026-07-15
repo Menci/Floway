@@ -1,7 +1,7 @@
-import { MESSAGES_REDACTED_AFFINITY_DOMAIN, MESSAGES_SIGNATURE_AFFINITY_DOMAIN } from './carrier-domains.ts';
-import type { AffinityCodec } from './codec.ts';
-import { blobForCandidate, ownedAffinities, type PreparedAffinityPayload } from './prepared.ts';
-import type { DecodedAffinityBlob } from './types.ts';
+import { MESSAGES_REDACTED_AFFINITY_DOMAIN, MESSAGES_SIGNATURE_AFFINITY_DOMAIN } from './domain.ts';
+import type { AffinityCodec } from '../../shared/affinity/codec.ts';
+import { blobForCandidate, ownedAffinities, type PreparedAffinityPayload } from '../../shared/affinity/prepared.ts';
+import type { DecodedAffinityBlob } from '../../shared/affinity/types.ts';
 import type { MessagesAssistantContentBlock, MessagesPayload } from '@floway-dev/protocols/messages';
 
 interface MessagesBlobLocation {

@@ -1,12 +1,12 @@
 import type { Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
 
+import { wrapGeminiAffinityEgress } from './affinity/egress.ts';
 import { geminiStatusForHttpStatus } from './errors.ts';
 import { tokenUsageFromGeminiUsageMetadata } from './usage.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
 import { affinityEgressOptions } from '../shared/affinity/context.ts';
-import { wrapGeminiAffinityEgress } from '../shared/affinity/gemini-egress.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse } from '../shared/respond.ts';
 import { type StreamCompletion, writeSSEFrames } from '../shared/stream/sse.ts';

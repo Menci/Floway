@@ -1,3 +1,4 @@
+import { prepareResponsesAffinity } from './affinity/ingress.ts';
 import { responsesInterceptors } from './interceptors/index.ts';
 import type { ResponsesAttemptResult, ResponsesInvocation } from './interceptors/types.ts';
 import { normalizeAssistantInputText } from './items/normalize-assistant-content.ts';
@@ -10,7 +11,6 @@ import { providerStreamResultToExecuteResult, buildUpstreamCallOptions, telemetr
 import { chatCompletionsAttempt } from '../chat-completions/attempt.ts';
 import { messagesAttempt } from '../messages/attempt.ts';
 import type { PreparedAffinityPayload } from '../shared/affinity/prepared.ts';
-import { prepareResponsesAffinity } from '../shared/affinity/responses-ingress.ts';
 import { tryCatchChatServeFailure } from '../shared/errors.ts';
 import { createExternalImageLoader } from '../shared/external-image-loader.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';

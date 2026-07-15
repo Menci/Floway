@@ -1,10 +1,10 @@
 import type { Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
 
+import { wrapChatCompletionsAffinityEgress } from './affinity/egress.ts';
 import { tokenUsageFromChatCompletionsUsage } from './usage.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
-import { wrapChatCompletionsAffinityEgress } from '../shared/affinity/chat-completions-egress.ts';
 import { affinityEgressOptions } from '../shared/affinity/context.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse } from '../shared/respond.ts';

@@ -1,5 +1,5 @@
-import type { AffinityEgressOptions } from './affinity-egress.ts';
-import { GEMINI_AFFINITY_DOMAIN } from './carrier-domains.ts';
+import { GEMINI_AFFINITY_DOMAIN } from './domain.ts';
+import type { AffinityEgressOptions } from '../../shared/affinity/egress-options.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiCandidate, GeminiPart, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 

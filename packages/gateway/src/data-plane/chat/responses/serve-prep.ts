@@ -1,3 +1,4 @@
+import { prepareResponsesAffinity } from './affinity/ingress.ts';
 import { responsesTarget } from './attempt.ts';
 import { renderResponsesFailure } from './errors.ts';
 import { hydrateResponsesPayload } from './items/rewrite.ts';
@@ -5,7 +6,6 @@ import type { StatefulResponsesStore } from './items/store.ts';
 import { enumerateModelCandidates } from '../../providers/registry.ts';
 import { routeCandidatesByAffinity } from '../shared/affinity/candidate.ts';
 import type { PreparedAffinityPayload } from '../shared/affinity/prepared.ts';
-import { prepareResponsesAffinity } from '../shared/affinity/responses-ingress.ts';
 import { noViableCandidateFailure, tryCatchChatServeFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';

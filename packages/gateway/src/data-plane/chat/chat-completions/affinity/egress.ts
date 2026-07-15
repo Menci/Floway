@@ -1,5 +1,5 @@
-import type { AffinityEgressOptions } from './affinity-egress.ts';
-import { CHAT_COMPLETIONS_AFFINITY_DOMAIN } from './carrier-domains.ts';
+import { CHAT_COMPLETIONS_AFFINITY_DOMAIN } from './domain.ts';
+import type { AffinityEgressOptions } from '../../shared/affinity/egress-options.ts';
 import { chatCompletionsErrorPayloadMessage, type ChatCompletionsDelta, type ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 

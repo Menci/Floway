@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'vitest';
 
-import type { AffinityCodec } from './codec.ts';
-import { wrapGeminiAffinityEgress } from './gemini-egress.ts';
-import type { AffinityTarget } from './types.ts';
+import { wrapGeminiAffinityEgress } from './egress.ts';
+import type { AffinityCodec } from '../../shared/affinity/codec.ts';
+import type { AffinityTarget } from '../../shared/affinity/types.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 
