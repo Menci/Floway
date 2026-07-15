@@ -35,7 +35,11 @@ export const responsesServe = {
       'responsesServe.generate',
       ctx,
       'chat',
-      candidate => responsesAttempt.generate({ payload: plan.prepared, ctx, candidate, headers }),
+      async candidate => {
+        const result = await responsesAttempt.generate({ payload: plan.prepared, ctx, candidate, headers });
+        if (result.type === 'events') ctx.affinity.select(candidate);
+        return result;
+      },
     );
   },
 
@@ -56,7 +60,11 @@ export const responsesServe = {
       'responsesServe.compact',
       ctx,
       'chat',
-      candidate => responsesAttempt.invoke({ payload: plan.prepared, action: 'compact', ctx, candidate, headers }),
+      async candidate => {
+        const result = await responsesAttempt.invoke({ payload: plan.prepared, action: 'compact', ctx, candidate, headers });
+        if (result.type === 'result') ctx.affinity.select(candidate);
+        return result;
+      },
     );
   },
 };

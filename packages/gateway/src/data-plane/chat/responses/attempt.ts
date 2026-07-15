@@ -1,4 +1,5 @@
 import { responsesInterceptors } from './interceptors/index.ts';
+import { prepareResponsesAffinity } from '../affinity/responses-ingress.ts';
 import type { ResponsesAttemptResult, ResponsesInvocation } from './interceptors/types.ts';
 import { createStoredResponseId } from './items/format.ts';
 import { normalizeAssistantInputText } from './items/normalize-assistant-content.ts';
@@ -96,7 +97,9 @@ export const responsesAttempt = {
     // here, after the rewrite has expanded any `item_reference` items
     // from the snapshot store, catches both the direct-echo and
     // store-replay paths in one place.
-    const normalized: CanonicalResponsesPayload = { ...rewritten.payload, input: normalizeAssistantInputText(rewritten.payload.input) };
+    const affinity = await prepareResponsesAffinity(rewritten.payload, ctx.affinity.codec);
+    const candidatePayload = affinity.payloadForCandidate(candidate);
+    const normalized: CanonicalResponsesPayload = { ...candidatePayload, input: normalizeAssistantInputText(candidatePayload.input) };
 
     const invocation: ResponsesInvocation = {
       payload: normalized,

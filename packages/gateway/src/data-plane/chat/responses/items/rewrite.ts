@@ -155,6 +155,28 @@ export interface RewrittenResponsesPayload {
   readonly privatePayloads: ReadonlyMap<string, unknown>;
 }
 
+// Affinity routing must inspect the complete client-wire item before choosing
+// a candidate. Snapshot expansion initially yields item_reference entries, so
+// load their stored payloads without applying any candidate-specific id or
+// fallback rewrite. The selected attempt performs that rewrite separately.
+export const hydrateStoredResponsesItemsForAffinity = async (
+  items: readonly ResponsesInputItem[],
+  store: StatefulResponsesStore,
+): Promise<ResponsesInputItem[]> => {
+  const rows = items.map(item => {
+    const id = responsesItemId(item);
+    return id === null ? undefined : store.getItemById(id);
+  });
+  const payloads = await store.loadItemPayloads(rows.filter(row => row !== undefined && row.hasPayload));
+  return items.map((item, index) => {
+    const row = rows[index];
+    if (row === undefined) return item;
+    const payload = payloads.get(row.id);
+    if (payload === undefined) return item;
+    return structuredClone(payload.item) as ResponsesInputItem;
+  });
+};
+
 export const rewriteResponsesPayloadForCandidate = async (
   payload: CanonicalResponsesPayload,
   store: StatefulResponsesStore,

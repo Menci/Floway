@@ -1,7 +1,9 @@
 import { responsesTarget } from './attempt.ts';
 import { renderResponsesFailure } from './errors.ts';
-import { classifyResponsesItemAffinity } from './items/affinity.ts';
+import { hydrateStoredResponsesItemsForAffinity } from './items/rewrite.ts';
 import type { StatefulResponsesStore } from './items/store.ts';
+import { routeCandidatesByAffinity } from '../affinity/candidate.ts';
+import { prepareResponsesAffinity } from '../affinity/responses-ingress.ts';
 import { enumerateModelCandidates } from '../../providers/registry.ts';
 import { noViableCandidateFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
@@ -84,17 +86,14 @@ export const prepareResponsesServePlan = async (args: {
     runtimeLocation: ctx.runtimeLocation,
   });
   const viable = candidates.filter(c => responsesTarget.canServe(c.model.endpoints));
-  const decision = await classifyResponsesItemAffinity({
+  await store.loadInputItems({
     sourceItems: prepared.input,
     view: responsesItemsView,
-    store,
-    candidates: viable,
-    // Hash-preload covers any user item carried directly on this turn — once
-    // `expandPreviousResponseId` has run, those are the items after the
-    // snapshot's item_reference prefix, which IS `payload.input` (verbatim,
-    // pre-expansion).
     inputItemsToStage: payload.input,
   });
+  const hydrated = await hydrateStoredResponsesItemsForAffinity(prepared.input, store);
+  const affinity = await prepareResponsesAffinity({ ...prepared, input: hydrated }, ctx.affinity.codec);
+  const decision = routeCandidatesByAffinity(viable, affinity.affinities);
   if (decision.kind === 'failure') return { kind: 'failure', result: renderResponsesFailure(decision.failure) };
   // Stage the user-supplied input from the original payload — not the
   // expansion's `item_reference` prefix — so the next-turn snapshot picks
