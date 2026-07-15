@@ -33,7 +33,7 @@ const uploadedFile = (source: ImagesEditsSource, index: number): File | null => 
   if (source.type === 'reference') return null;
   const parsed = parseBase64ImageDataUrl(source.reference.image_url);
   if (parsed === null) return null;
-  let bytes: Uint8Array;
+  let bytes: Uint8Array<ArrayBuffer>;
   try {
     bytes = base64ToBytes(parsed.base64);
   } catch {
