@@ -838,12 +838,9 @@ async function* materializeServerToolItems(
         yield stampServerToolEvent(merge, outputIndex, slot.id, step.value);
         step = await lifecycle.next();
       }
-      // The slot item is gateway-synthesized, not upstream-emitted; register
-      // its id so persistence stores it with no upstream identity even on a
-      // native Responses stream. The private payload (when the dispatcher
-      // produced one) registers under the same id so persistence captures it
-      // and the next loop turn's replay-side `transformItems` finds it by the
-      // accumulated output item's id.
+      // Register private dispatcher state under the emitted item id so output
+      // persistence captures it and replay-side `transformItems` can restore
+      // it on the next loop turn.
       attemptState.setPrivatePayload(slot.id, step.value.privatePayload);
       yield* serverToolEndFrames(merge, outputIndex, slot, step.value);
     }

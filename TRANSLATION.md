@@ -77,7 +77,7 @@ object with AES-256-GCM:
     rulesPresent: boolean,
     rules?: AliasRules,
     upstreamItemId?: string,
-    syntheticItem?: boolean,
+    syntheticItem?: true,
     geminiPartFromEnd?: number,
   },
 }
@@ -88,6 +88,10 @@ Wire framing has no delimiter and no magic marker:
 ```text
 original bytes || IV[12] || ciphertext+tag || encryptedLength:u16be
 ```
+
+Additional authenticated data is a length-delimited carrier-domain name
+followed by the original bytes. Moving a trailer to another protocol field,
+item slot, or original value therefore fails authentication.
 
 The complete bytes are encoded as canonical Base64, or Base64URL when the
 original was canonical Base64URL. Canonical Base64/Base64URL input is decoded
@@ -171,8 +175,8 @@ create continuation state.
 ## Responses state membrane
 
 The native Responses source owns state. An inner Responses attempt reached by
-Messages, Chat, or Gemini translation uses an isolated transient store and
-never writes durable Responses state.
+Messages, Chat, or Gemini translation has only request-local hosted-tool state
+and never constructs or writes a Responses persistence store.
 
 Inbound ordering is strict:
 

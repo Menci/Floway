@@ -148,6 +148,10 @@ base64-or-base64url(
 )
 ```
 
+AES-GCM additional authenticated data binds the original bytes and the exact
+source protocol/slot, so a valid trailer cannot be transplanted onto another
+opaque value or carrier kind.
+
 Canonical Base64 and Base64URL inputs are decoded before the encrypted trailer
 is appended, so existing encoded data is not Base64-encoded a second time.
 Other strings are stored as UTF-8 and marked `raw`; a synthetic carrier omits

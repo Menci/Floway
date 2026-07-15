@@ -176,6 +176,10 @@ alias-rule presence and value
 optional protocol restore state
 ```
 
+AEAD additional data binds a length-delimited protocol/slot domain and the
+original bytes. A trailer cannot authenticate after moving to another carrier
+or attaching it to different opaque content.
+
 Wire framing is `originalBytes || IV[12] || ciphertext+tag || length:u16be`,
 then canonical Base64/Base64URL. There is no magic value or delimiter.
 Canonical encoded input is decoded before framing; raw input is UTF-8. A
@@ -246,14 +250,16 @@ atomic replacement. Normal generation appends previous history, new input, and
 new output. Stored items are API-key scoped complete payloads with a content
 hash, creation time, and optional private server-tool payload.
 
-HTTP `store: false` uses a transient store and performs no state writes.
+HTTP `store: false` may read existing durable history but performs no state
+writes and leaves upstream item/response IDs unchanged.
 WebSocket `store: false` uses a session-owned memory backing so same-socket
 references work without durable storage. Stored HTTP/WS items and snapshots
 expire 30 days after creation; compressed payload files follow the same
 lifetime.
 
-Translated inner Responses calls use request-local transient state. Only a
-native Responses source applies client item IDs and persistence.
+Translated inner Responses calls use only request-local hosted-tool state.
+Only a native Responses source constructs a persistence store and applies
+client item IDs and retention.
 
 ## Verification
 
