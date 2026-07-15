@@ -25,6 +25,7 @@ const defaultSearchConfig: SearchConfig = {
   tavily: { apiKey: '' },
   microsoftGrounding: { apiKey: '' },
   jina: { apiKey: '' },
+  passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
 };
 
 export const useSettingsPageData = defineBasicLoader(async () => {
@@ -116,6 +117,8 @@ const openAliasDialog = (record: ModelAlias | null): void => {
         <SearchConfigSection
           :initial-config="settingsData.data.value.searchConfig"
           :initial-error="settingsData.data.value.searchConfigError"
+          :upstreams="ordered"
+          :models="modelsStore.models.value"
         />
       </div>
 

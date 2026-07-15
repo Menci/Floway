@@ -8,6 +8,11 @@ export interface SearchConfig {
   tavily: { apiKey: string };
   microsoftGrounding: { apiKey: string };
   jina: { apiKey: string };
+  passthroughOpenAiSearch: {
+    enabled: boolean;
+    upstreamId: string;
+    model: string;
+  };
 }
 
 export const DEFAULT_WEB_SEARCH_RESULT_COUNT = 10;
