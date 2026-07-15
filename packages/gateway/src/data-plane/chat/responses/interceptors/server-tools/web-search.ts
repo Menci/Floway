@@ -29,12 +29,6 @@ import type { ResponsesFunctionTool, ResponsesFunctionToolCallItem, ResponsesHos
 import { WEB_SEARCH_HOSTED_TYPE_NAMES } from '@floway-dev/protocols/responses';
 import { providerModelOf } from '@floway-dev/provider';
 
-// Re-export the shared engine's pure helpers under this module's public
-// surface so the shim's own tests keep a single entry point for the
-// Responses web-search feature.
-export { findMatches, formatMatches, isUrlAllowed, parseWebSearchOperations } from '../../../../tools/web-search/operations.ts';
-export type { WebSearchOperation } from '../../../../tools/web-search/operations.ts';
-
 // Runtime set derived from the canonical tuple declared next to
 // `ResponsesHostedToolType` so the type union and runtime check can't drift.
 //   https://github.com/openai/openai-python/blob/e75766769547601a25ed83b666c4d0fd046881f0/src/openai/types/responses/web_search_tool.py
@@ -295,11 +289,10 @@ const MAX_MALFORMED_WIRE_DUMP_CHARS = 1024;
  *   call_id, name, status — passes through untouched). Replayed verbatim
  *   so the upstream model's prior assistant turn looks bit-exact.
  *
- * - `ir` is the in-flight `(action, results)` tuple straight from
- *   `planShimSlots`. Stored as data so the rendering format can
- *   evolve without re-persisting; reused by the renderer at replay time.
- *   Composition (rather than inlining `action` / `results` here) keeps
- *   any future IR field automatically reaching the persisted shape.
+ * - `ir` stores the action, structured results, and optional upstream
+ *   model-facing output straight from `planShimSlots`. Replay uses
+ *   `renderWebSearchCallOutput`, which preserves that output when present
+ *   and otherwise renders the action and results.
  *
  * Version-tagged: an unknown `v` falls through the no-payload branch in
  * `transformInputItemsForWebSearch` (action re-serialized into the
@@ -363,9 +356,8 @@ const actionToShimCallArgsJson = (action: ResponsesWebSearchAction): string => {
 // 1. Private payload hit (the request resolved the wsc id to a persisted
 //    `payload.private`): emit the upstream's literal `functionCallItem`
 //    (jsonrepair-canonical args, original call_id) plus a
-//    `function_call_output` whose body is rendered from the persisted
-//    `output.action / output.results` via `renderOperationOutputText`. This
-//    is the bit-exact round-trip.
+//    `function_call_output` whose body comes from
+//    `renderWebSearchCallOutput`. This is the bit-exact round-trip.
 //
 // 2. No payload (`store: false`, expired, foreign id, cross-account, or
 //    schema-version mismatch): degrade to a synthesized pair whose

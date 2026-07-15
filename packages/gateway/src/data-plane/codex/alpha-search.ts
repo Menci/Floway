@@ -1,26 +1,13 @@
-// Codex `/alpha/search` — the endpoint the Codex CLI's web-search tool POSTs
-// to when the model emits a `web.run`-style tool call. Instead of proxying
-// chatgpt.com, we execute the requested operations through Floway's own
-// configured web-search provider and return the single `output` string the
-// CLI feeds back to the model.
+// Codex `/alpha/search` compatibility endpoint. The private request carries
+// model/session context plus a command object; the response is
+// `{ encrypted_output?, output, results? }`.
+// https://github.com/openai/codex/blob/2e1607ee2fa8099a233df7437adee5f16a741905/codex-rs/codex-api/src/search.rs#L8-L29
+// https://github.com/openai/codex/blob/2e1607ee2fa8099a233df7437adee5f16a741905/codex-rs/codex-api/src/search.rs#L297-L305
 //
-// Request shape mirrors codex-rs `SearchRequest`
-// (codex-rs/codex-api/src/search.rs @ 385c0a9). `commands` is an OBJECT
-// keyed by command kind — `{ search_query:[{q}], open:[{ref_id}],
-// find:[{ref_id,pattern}], … }` — which is byte-for-byte the same shape the
-// Responses web_search shim parses, so both share `parseWebSearchOperations`
-// and the whole execution engine. Command kinds we don't implement
-// (`image_query`, `click`, `screenshot`, `finance`, `weather`, `sports`,
-// `time`, `response_length`) surface as deterministic per-op error text
-// rather than silently vanishing. `settings.filters` /
-// `settings.user_location` / `settings.search_context_size` shape the
-// search; the remaining request fields (`id`, `model`, `reasoning`, `input`,
-// `max_output_tokens`) are inputs a real backend model would consume and
-// carry no meaning for deterministic command execution, so we accept and
-// ignore them.
-//
-// Response is codex-rs `SearchResponse` (`{ encrypted_output, output }`);
-// the CLI reads only `output` (search.rs `SearchOutput::new(response.output)`).
+// In the default mode, Floway executes supported commands through the general
+// configured search provider and renders a local `{ encrypted_output: null,
+// output }` response. Passthrough mode instead returns the selected Codex or
+// Custom provider response verbatim, preserving its optional structured data.
 //
 // Auth is the shared `authMiddleware` that guards the rest of the namespace;
 // this handler reads the resolved API key for per-key search-usage
@@ -101,7 +88,7 @@ export const codexAlphaSearch = async (c: CtxWithJson<typeof codexSearchRequestS
     const headers = new Headers();
     const turnMetadata = c.req.header('x-codex-turn-metadata');
     if (turnMetadata !== undefined) headers.set('x-codex-turn-metadata', turnMetadata);
-    return await dispatcher.call(body, c.req.raw.signal, headers);
+    return await dispatcher(body, c.req.raw.signal, headers);
   }
 
   let configuredProvider: Promise<ConfiguredWebSearchProvider> | undefined;

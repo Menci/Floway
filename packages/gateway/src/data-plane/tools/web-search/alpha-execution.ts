@@ -31,12 +31,12 @@ export const executeAlphaSearch = async ({
   action: ResponsesWebSearchAction;
   signal: AbortSignal | undefined;
 }): Promise<WebSearchCallIR> => {
-  const response = await dispatcher.call({
+  const response = await dispatcher({
     id: sessionId,
     input,
     commands,
     settings,
-  }, signal);
+  }, signal, new Headers());
   const raw = await response.text();
   if (!response.ok) throw new Error(`OpenAI search upstream returned HTTP ${response.status}: ${raw.slice(0, 512)}`);
 

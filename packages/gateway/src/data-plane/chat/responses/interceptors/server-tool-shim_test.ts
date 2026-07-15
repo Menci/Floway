@@ -3919,12 +3919,12 @@ test('responses target with OpenAI passthrough uses the selected alpha search di
     jina: { apiKey: '' },
     passthroughOpenAiSearch: { enabled: true, upstreamId: 'up_codex', model: 'gpt-search' },
   } satisfies SearchConfig);
-  const call = vi.fn<AlphaSearchDispatcher['call']>(async () => new Response(JSON.stringify({
+  const call = vi.fn<AlphaSearchDispatcher>(async () => new Response(JSON.stringify({
     encrypted_output: null,
     output: 'alpha output',
     results: [{ type: 'text_result', url: 'https://example.com', title: 'Example', snippet: 'alpha snippet' }],
   }), { status: 200, headers: { 'content-type': 'application/json' } }));
-  mockResolveAlpha.mockResolvedValue({ call });
+  mockResolveAlpha.mockResolvedValue(call);
   const inv = makeInvocation({
     targetApi: 'responses',
     enabledFlags: new Set<FlagId>(['responses-web-search-shim']),

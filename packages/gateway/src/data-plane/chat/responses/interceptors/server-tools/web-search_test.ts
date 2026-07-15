@@ -2,19 +2,15 @@ import { test } from 'vitest';
 
 import { resolveServerToolName } from '../server-tool-shim.ts';
 import {
-  findMatches,
-  formatMatches,
   isHostedWebSearchTool,
-  isUrlAllowed,
-  parseWebSearchOperations,
   prepareToolsForShim,
   SHIM_TOOL_NAME,
   synthesizeWebSearchCallId,
   transformInputItemsForWebSearch,
   WEB_SEARCH_HOSTED_TYPES,
-  type WebSearchOperation,
   type WebSearchCallPrivatePayload,
 } from './web-search.ts';
+import { findMatches, formatMatches, isUrlAllowed, parseWebSearchOperations, type WebSearchOperation } from '../../../../tools/web-search/operations.ts';
 import { truncatePreservingCodePoints } from '../../../shared/text.ts';
 import type { ResponsesTool, ResponsesWebSearchAction, ResponsesWebSearchResult } from '@floway-dev/protocols/responses';
 import { assert, assertEquals, assertFalse } from '@floway-dev/test-utils';

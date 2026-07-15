@@ -1,24 +1,8 @@
-// Protocol-neutral web-search operation engine.
-//
-// Two surfaces sit on top of this module and share its execution and
-// text-rendering logic verbatim:
-//
-//   - The Responses `web_search` server-tool shim
-//     (`chat/responses/interceptors/server-tools/web-search.ts`), which
-//     wraps each executed operation into a `web_search_call` wire item and
-//     drives the internal multi-turn loop.
-//   - The Codex `/alpha/search` endpoint (`codex/alpha-search.ts`), which
-//     concatenates the rendered text of every operation into the single
-//     `output` string the Codex CLI feeds back to the model.
-//
-// Both accept the identical `{ search_query:[{q}], open:[{ref_id}],
-// find:[{ref_id,pattern}], … }` command shape — the Responses shim gets it
-// from the model's function-call arguments, Codex from the request body's
-// `commands` object — so a single parser (`parseWebSearchOperations`)
-// serves both. The engine speaks the Responses `web_search_call` IR
-// (`action` + `results`) as its internal representation because those types
-// already model "a search/open/find action and its text results"; the Codex
-// path never exposes the IR, it only renders it to text.
+// Shared parser, local-provider executor, and Responses web-search IR.
+// Responses always uses the parser and IR; its local mode also executes and
+// renders operations here, while alpha passthrough delegates the commands and
+// retains the upstream model-facing output. The Codex compatibility route uses
+// this engine only in its default local-provider mode.
 
 import { normalizeDomainList } from './domain-normalize.ts';
 import { fetchPageAndRecordUsage } from './fetch-page.ts';
@@ -26,13 +10,14 @@ import { searchWebAndRecordUsage } from './search.ts';
 import type { ConfiguredWebSearchProvider, WebSearchProvider, WebSearchProviderName } from './types.ts';
 import { truncatePreservingCodePoints } from '../../chat/shared/text.ts';
 import type { ResponsesWebSearchAction, ResponsesWebSearchResult } from '@floway-dev/protocols/responses';
+import { isAbortError } from '@floway-dev/provider';
 
 // Search-context-size → result-count mapping. Approximates the ~40 results
 // native hosted web_search returns regardless of search_context_size;
 // backends bill per call, so larger result sets only multiply upstream
 // context-window cost. `medium` is the native default (matches openai-python
 // `WebSearchTool.search_context_size` docstring: "Defaults to 'medium'").
-//   https://github.com/openai/openai-python/blob/main/src/openai/types/responses/web_search_tool.py
+//   https://github.com/openai/openai-python/blob/f16fbbd2bd25dc1ff150b5f78dbd15ff6bab6d91/src/openai/types/responses/web_search_tool.py#L65-L70
 export const CONTEXT_SIZE_TO_MAX_RESULTS: Record<'low' | 'medium' | 'high', number> = {
   low: 10,
   medium: 20,
@@ -41,14 +26,16 @@ export const CONTEXT_SIZE_TO_MAX_RESULTS: Record<'low' | 'medium' | 'high', numb
 
 export const DEFAULT_SEARCH_CONTEXT_SIZE: keyof typeof CONTEXT_SIZE_TO_MAX_RESULTS = 'medium';
 
+const SEARCH_CONTEXT_SIZES = new Set<keyof typeof CONTEXT_SIZE_TO_MAX_RESULTS>(['low', 'medium', 'high']);
+
 export const isSearchContextSize = (v: unknown): v is keyof typeof CONTEXT_SIZE_TO_MAX_RESULTS =>
-  typeof v === 'string' && v in CONTEXT_SIZE_TO_MAX_RESULTS;
+  typeof v === 'string' && SEARCH_CONTEXT_SIZES.has(v as keyof typeof CONTEXT_SIZE_TO_MAX_RESULTS);
 
 // Default to native's documented default (`medium`) when omitted. Without
 // this, a provider-side default (e.g. Tavily's smaller baseline count) would
 // silently shrink the result set on requests that didn't set the field.
-export const maxResultsForContextSize = (size: unknown): number =>
-  CONTEXT_SIZE_TO_MAX_RESULTS[isSearchContextSize(size) ? size : DEFAULT_SEARCH_CONTEXT_SIZE];
+export const maxResultsForContextSize = (size: keyof typeof CONTEXT_SIZE_TO_MAX_RESULTS | undefined): number =>
+  CONTEXT_SIZE_TO_MAX_RESULTS[size ?? DEFAULT_SEARCH_CONTEXT_SIZE];
 
 // Per-snippet char cap on a search result's rendered text. Providers like
 // Tavily can return multi-KB snippets per hit; without this cap a single
@@ -277,7 +264,7 @@ const searchIr = (
 // are protocol-native (`{type:'search', queries:[...]}`); the singular
 // `query` field is emitted alongside for SDKs that only know the legacy
 // single-string shape — see `actionSearchQueries`.
-export const searchIrFromQueries = (
+const searchIrFromQueries = (
   queries: string[],
   results: ResponsesWebSearchResult[],
   sources?: { type: 'url'; url: string }[],
@@ -335,17 +322,17 @@ export const schemaErrorIr = (
 // - gpt-oss simple_browser_tool.py `BackendError` fetching phrase, lines 444-445:
 //   https://github.com/openai/gpt-oss/blob/285b05d96dea9ce7da52ecbbe86791f18239c510/gpt_oss/tools/simple_browser/simple_browser_tool.py#L444-L445
 // - litellm `Search failed: <e>` idiom:
-//   https://github.com/BerriAI/litellm/blob/main/litellm/integrations/websearch_interception/transformation.py
+//   https://github.com/BerriAI/litellm/blob/6a797f97b22d74cc5603ddacb16e38bf4a259858/litellm/integrations/websearch_interception/handler.py#L180-L186
 const searchFailedText = (providerMessage: string): string =>
   `Search failed: ${providerMessage}`;
 
 const openFailedText = (url: string, providerMessage: string): string =>
   `Error fetching URL \`${url}\`: ${providerMessage}`;
 
-export const unsupportedOperationText = (subProperty: string): string =>
+const unsupportedOperationText = (subProperty: string): string =>
   `Error: the \`${subProperty}\` sub-property is not supported by this gateway. Only \`search_query\`, \`open\`, and \`find\` are available.`;
 
-export const wrongTypeOperationText = (subProperty: string, actualType: string): string =>
+const wrongTypeOperationText = (subProperty: string, actualType: string): string =>
   `Error: the \`${subProperty}\` sub-property must be an array of objects; got ${actualType}.`;
 
 const errorSnippet = (title: string, snippet: string): ResponsesWebSearchResult => ({
@@ -377,7 +364,7 @@ const formatSearchResultsText = (query: string, results: readonly ResponsesWebSe
   return `${header}\n\n${sections.join('\n\n')}`;
 };
 
-export const renderOperationOutputText = (action: ResponsesWebSearchAction, results: ResponsesWebSearchResult[]): string => {
+const renderOperationOutputText = (action: ResponsesWebSearchAction, results: ResponsesWebSearchResult[]): string => {
   switch (action.type) {
   case 'search': {
     const queryLabel = actionSearchQueries(action).join(' | ');
@@ -547,6 +534,7 @@ const runOneSearchQuery = async (
       : undefined;
     return sources !== undefined ? { results, sources } : { results };
   } catch (e) {
+    if (isAbortError(e)) throw e;
     const msg = e instanceof Error ? e.message : String(e);
     return { results: [errorSnippet('Search error', searchFailedText(msg))] };
   }
@@ -655,6 +643,7 @@ const runBatchFetch = async (
     }
     return perUrl;
   } catch (e) {
+    if (isAbortError(e)) throw e;
     const msg = e instanceof Error ? e.message : String(e);
     for (const url of needFetch) {
       perUrl.set(url, { ok: false, output: openFailedText(url, msg) });
