@@ -10,10 +10,11 @@
 // https://github.com/openai/codex/blob/1bbdb32789e1f79932df44941236ea3658f6e965/codex-rs/codex-api/src/provider.rs#L106-L126
 // https://github.com/openai/codex/blob/1bbdb32789e1f79932df44941236ea3658f6e965/codex-rs/core/src/client.rs#L890-L906
 //
-// The generated provider reads `FLOWAY_API_KEY` through `env_key`. Codex sends
-// it as `Authorization: Bearer <key>`, which the shared gateway auth middleware
-// accepts without replacing any account-level Codex login.
-// https://github.com/openai/codex/blob/1bbdb32789e1f79932df44941236ea3658f6e965/codex-rs/model-provider-info/src/lib.rs#L280-L299
+// The generated provider carries a provider-scoped bearer token. Codex resolves
+// it before account-level auth and sends it as `Authorization: Bearer <key>`,
+// so an existing official account login remains independent.
+// https://github.com/openai/codex/blob/1bbdb32789e1f79932df44941236ea3658f6e965/codex-rs/model-provider-info/src/lib.rs#L101-L104
+// https://github.com/openai/codex/blob/1bbdb32789e1f79932df44941236ea3658f6e965/codex-rs/model-provider/src/auth.rs#L179-L196
 
 import type { Hono } from 'hono';
 

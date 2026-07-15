@@ -131,9 +131,9 @@ Open the deployed URL (or `http://localhost:8788` for Node), log in with
    order is routing order; earlier providers win for a shared public model id.
 2. **API Keys -> New Key**. Give the generated key to your client.
 3. Copy the Claude Code or Codex CLI snippet from the API Keys panel into the
-   agent config. The Codex setup reads its Floway credential from
-   `FLOWAY_API_KEY`, enables client-owned search and image tools, and retains
-   remote compaction without replacing an existing Codex account login.
+   agent config. The Codex provider carries its own Floway credential, enables
+   client-owned search and image tools, and retains remote compaction without
+   replacing an existing Codex account login.
 
 Import/export of upstreams, keys, and search config is in Settings. The
 payload format is tied to the running deployment, so import only accepts a

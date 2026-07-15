@@ -32,7 +32,7 @@ test('Codex setup uses API-key auth and client-owned search and image tools', ()
     '[model_providers.floway]',
     'name = "Floway"',
     'base_url = "http://localhost:3000/azure-api.codex"',
-    'env_key = "FLOWAY_API_KEY"',
+    `experimental_bearer_token = "floway-'key"`,
     'wire_api = "responses"',
     'http_headers = { "x-openai-actor-authorization" = "floway-client-tools" }',
     '',
@@ -40,9 +40,4 @@ test('Codex setup uses API-key auth and client-owned search and image tools', ()
     'apps = false',
     'standalone_web_search = true',
   ].join('\n'));
-
-  const credential = wrapper.findAll('pre[data-language="bash"]')
-    .map(block => block.text())
-    .find(code => code.includes('FLOWAY_API_KEY'));
-  expect(credential).toBe(`export FLOWAY_API_KEY='floway-'"'"'key'`);
 });

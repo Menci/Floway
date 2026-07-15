@@ -107,7 +107,7 @@ const codexSnippet = computed(() => [
   '[model_providers.floway]',
   'name = "Floway"',
   `base_url = "${codexBaseUrl.value}"`,
-  'env_key = "FLOWAY_API_KEY"',
+  `experimental_bearer_token = ${JSON.stringify(props.apiKey)}`,
   'wire_api = "responses"',
   'http_headers = { "x-openai-actor-authorization" = "floway-client-tools" }',
   '',
@@ -115,10 +115,6 @@ const codexSnippet = computed(() => [
   'apps = false',
   'standalone_web_search = true',
 ].join('\n'));
-
-const shellQuote = (value: string): string => `'${value.replaceAll("'", `'"'"'`)}'`;
-
-const codexCredential = computed(() => `export FLOWAY_API_KEY=${shellQuote(props.apiKey)}`);
 
 const selectClass = 'max-w-full text-xs font-mono bg-surface-800 text-gray-300 border border-white/10 rounded-lg px-2 py-1.5 outline-none focus:border-accent-cyan/50 cursor-pointer';
 </script>
@@ -169,9 +165,6 @@ const selectClass = 'max-w-full text-xs font-mono bg-surface-800 text-gray-300 b
 
       <p class="text-[11px] text-gray-600 mb-2">Merge into <code class="text-gray-500">~/.codex/config.toml</code></p>
       <Code :code="codexSnippet" language="toml" />
-
-      <p class="text-[11px] text-gray-600 mt-4 mb-2">Add to <code class="text-gray-500">~/.bashrc</code>, <code class="text-gray-500">~/.zshrc</code>, or equivalent; existing Codex account login is unaffected</p>
-      <Code :code="codexCredential" language="bash" />
     </div>
   </div>
 </template>
