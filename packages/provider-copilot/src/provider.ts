@@ -286,6 +286,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
   };
 
   const instance: ProviderInstance = {
+    callAlphaSearch: rejectUnsupported('callAlphaSearch'),
     getProvidedModels: async fetcher => {
       const fresh = await getProviderRepo().upstreams.getById(copilot.id);
       if (!fresh) throw new Error(`Copilot upstream ${copilot.id} disappeared mid-request`);

@@ -132,6 +132,7 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
     Promise.reject(new Error(`Ollama provider does not implement ${capability}`));
 
   const instance: ProviderInstance = {
+    callAlphaSearch: rejectUnsupported('callAlphaSearch'),
     getProvidedModels: async fetcher => {
       const catalog = await fetchOllamaCatalog(config, fetcher);
       const auto = finalizeOllamaModels(

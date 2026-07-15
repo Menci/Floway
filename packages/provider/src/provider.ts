@@ -110,6 +110,7 @@ export interface ProviderInstance {
   // latency budget, so it takes the per-upstream fetcher directly instead of
   // the broader `UpstreamCallOptions` bag the data-plane `call*` methods use.
   getProvidedModels(fetcher: Fetcher): Promise<readonly ProviderModel[]>;
+  callAlphaSearch(model: ProviderModel, body: Record<string, unknown>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
   // /v1/completions text completions. Passthrough. Providers whose
   // upstream doesn't expose /v1/completions set `endpoints.completions`
   // to absent in getProvidedModels, so this method is unreachable for
