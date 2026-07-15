@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import { rewriteResponsesPayload } from './rewrite.ts';
+import { createStoredResponsesItemId } from './format.ts';
 import { createResponsesHttpStore } from './store.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
@@ -11,12 +12,13 @@ describe('Responses stored-item hydration', () => {
   test('replaces a public item reference with its complete client-wire payload and private state', async () => {
     const repo = new InMemoryRepo();
     initRepo(repo);
+    const id = createStoredResponsesItemId('reasoning');
     const row: StoredResponsesItem = {
-      id: 'rs_public',
+      id,
       apiKeyId: 'key-a',
       itemType: 'reasoning',
       payload: {
-        item: { type: 'reasoning', id: 'rs_public', summary: [], encrypted_content: 'wrapped' },
+        item: { type: 'reasoning', id, summary: [], encrypted_content: 'wrapped' },
         private: { replay: true },
       },
       contentHash: 'hash',

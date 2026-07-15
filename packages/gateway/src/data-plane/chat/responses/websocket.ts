@@ -1,5 +1,8 @@
 import type { Context } from 'hono';
 
+import { wrapResponsesAffinityEgress } from '../affinity/responses-egress.ts';
+import { createStoredResponseId } from './items/format.ts';
+import { wrapResponsesOutputForStorage } from './items/output.ts';
 import { createResponsesWsSession } from './items/store.ts';
 import { PreviousResponseNotFoundError } from './serve-prep.ts';
 import { responsesServe } from './serve.ts';
@@ -10,7 +13,7 @@ import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
-import { createChatGatewayCtxFromHono, type ChatGatewayCtx, type GatewayCtx } from '../shared/gateway-ctx.ts';
+import { createChatGatewayCtxFromHono, type ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { takeRequestBody } from '../shared/request-body.ts';
 import { SourceStreamState, eventResultMetadata } from '../shared/respond.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS, type StreamCompletion } from '../shared/stream/sse.ts';
@@ -331,7 +334,7 @@ const respondResponsesWebSocket = async (input: {
   readonly signal: AbortSignal;
   readonly isClosed: () => boolean;
   readonly result: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>;
-  readonly ctx: GatewayCtx;
+  readonly ctx: ChatGatewayCtx;
 }): Promise<void> => {
   const { socket, eventId, signal, isClosed, result, ctx } = input;
   if (result.type === 'api-error') {
@@ -354,7 +357,15 @@ const respondResponsesWebSocket = async (input: {
   let completion: StreamCompletion = 'error';
   try {
     let terminalEvent: ResponsesStreamEvent | undefined;
-    const iterator = result.events[Symbol.asyncIterator]();
+    const observed = observeResponsesWebSocketFrames(result.events, state, ctx);
+    const withAffinity = wrapResponsesAffinityEgress(observed, {
+      codec: ctx.affinity.codec,
+      affinity: ctx.affinity.selectedTarget(),
+    });
+    const output = ctx.store.storesState
+      ? wrapResponsesOutputForStorage(withAffinity, { store: ctx.store, responseId: createStoredResponseId() })
+      : withAffinity;
+    const iterator = output[Symbol.asyncIterator]();
     let pendingNext = pendingWsFrameResult(iterator.next());
     let completed = false;
     let stoppedByDownstream = false;
@@ -388,15 +399,9 @@ const respondResponsesWebSocket = async (input: {
 
         const frame = next.result.value;
         pendingNext = pendingWsFrameResult(iterator.next());
-        // Capture every frame (events + the `done` sentinel) so the
-        // dashboard can reassemble the turn identically to the HTTP path.
-        ctx.dump?.frame(frame);
         if (frame.type !== 'event') continue;
 
         const event = frame.event;
-        const failed = event.type === 'error' || event.type === 'response.failed';
-        if (failed) state.failed = true;
-        state.rememberUsage('response' in event ? tokenUsageFromResponsesResult((event as { response: ResponsesResult }).response) : null);
 
         // The wrapped terminal event arrives only after its item and snapshot
         // writes have committed. Flush it immediately, then drain the remainder
@@ -410,7 +415,6 @@ const respondResponsesWebSocket = async (input: {
             completion = 'cancel';
             continue;
           }
-          if (!failed) state.completed = true;
           terminalEvent = event;
           continue;
         }
@@ -451,6 +455,24 @@ const respondResponsesWebSocket = async (input: {
     else ctx.dump?.success(metadata.modelIdentity, state.usage);
     ctx.dump?.finalize(failed ? 500 : 200, []);
     settle(ctx, metadata.performance, metadata.modelIdentity, state.usage, failed);
+  }
+};
+
+const observeResponsesWebSocketFrames = async function* (
+  frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
+  state: SourceStreamState,
+  ctx: ChatGatewayCtx,
+): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
+  for await (const frame of frames) {
+    ctx.dump?.frame(frame);
+    if (frame.type === 'event') {
+      const event = frame.event;
+      const failed = event.type === 'error' || event.type === 'response.failed';
+      if (failed) state.failed = true;
+      if ('response' in event) state.rememberUsage(tokenUsageFromResponsesResult(event.response));
+      if (isResponsesTerminalEvent(event) && !failed) state.completed = true;
+    }
+    yield frame;
   }
 };
 
