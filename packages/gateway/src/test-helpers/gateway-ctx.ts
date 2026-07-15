@@ -1,6 +1,7 @@
 import { createTransientResponsesStore } from '../data-plane/chat/responses/items/store.ts';
 import { AffinityRequestContext } from '../data-plane/chat/affinity/context.ts';
 import type { ChatGatewayCtx, GatewayCtx } from '../data-plane/chat/shared/gateway-ctx.ts';
+import { stubModelCandidate } from '@floway-dev/test-utils';
 
 // Shared minimal GatewayCtx for tests that exercise serve / respond /
 // interceptor code in isolation. Defaults satisfy every required field; pass
@@ -25,9 +26,11 @@ export const mockGatewayCtx = (overrides: Partial<GatewayCtx> = {}): GatewayCtx 
 // override `.store` explicitly.
 export const mockChatGatewayCtx = (overrides: Partial<ChatGatewayCtx> = {}): ChatGatewayCtx => {
   const base = mockGatewayCtx(overrides);
+  const affinity = overrides.affinity ?? new AffinityRequestContext('00'.repeat(32));
+  if (overrides.affinity === undefined) affinity.select(stubModelCandidate());
   return {
     ...base,
-    affinity: overrides.affinity ?? new AffinityRequestContext('00'.repeat(32)),
+    affinity,
     store: overrides.store ?? createTransientResponsesStore(base.apiKeyId),
   };
 };

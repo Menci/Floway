@@ -508,6 +508,7 @@ test('Responses WebSocket keepalive during an in-flight request does not drop th
           }
 
           assert(hasMessageType(messages, 'ping'), 'expected a ping while the upstream response stream is idle');
+          const completed = waitForMessages(client, received => received.some(message => message.type === 'response.done'));
 
           const response = {
             id: 'resp_ws_keepalive',
@@ -524,9 +525,7 @@ test('Responses WebSocket keepalive during an in-flight request does not drop th
           upstreamController.enqueue(encoder.encode('data: [DONE]\n\n'));
           upstreamController.close();
 
-          for (let i = 0; i < 100 && !hasMessageType(messages, 'response.done'); i++) {
-            await waitForMicrotasks();
-          }
+          await completed;
 
           const types = messages.map(message => message.type);
           assert(types.indexOf('ping') < types.indexOf('response.created'), 'expected the delayed upstream frame after the ping');
