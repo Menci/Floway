@@ -2,9 +2,13 @@ import type { Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
 
 import { tokenUsageFromResponsesResult } from './usage.ts';
+import { responsesTarget } from './attempt.ts';
+import { createStoredResponseId } from './items/format.ts';
+import { wrapResponsesOutputForStorage } from './items/output.ts';
+import { wrapResponsesAffinityEgress } from '../affinity/responses-egress.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
-import type { GatewayCtx } from '../shared/gateway-ctx.ts';
+import type { ChatGatewayCtx, GatewayCtx } from '../shared/gateway-ctx.ts';
 import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse } from '../shared/respond.ts';
 import { type StreamCompletion, writeSSEFrames } from '../shared/stream/sse.ts';
 import { type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
@@ -44,7 +48,8 @@ export const respondResponses = async (
   }
 
   const state = new SourceStreamState();
-  const frames = observeResponsesFrames(result.events, state, wantsStream, ctx);
+  const observed = observeResponsesFrames(result.events, state, wantsStream, ctx);
+  const frames = nativeResponsesOutput(observed, ctx);
 
   if (!wantsStream) {
     try {
@@ -82,6 +87,25 @@ export const respondResponses = async (
   });
 
   return { success: true, response };
+};
+
+const nativeResponsesOutput = (
+  frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
+  ctx: GatewayCtx,
+): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> => {
+  if (!('affinity' in ctx) || !('store' in ctx)) throw new Error('Responses event result reached responder without chat context');
+  const chatCtx = ctx as ChatGatewayCtx;
+  const candidate = chatCtx.affinity.selectedCandidate();
+  const withAffinity = wrapResponsesAffinityEgress(frames, {
+    codec: chatCtx.affinity.codec,
+    affinity: chatCtx.affinity.selectedTarget(),
+  });
+  return wrapResponsesOutputForStorage(withAffinity, {
+    store: chatCtx.store,
+    upstream: candidate.provider.upstream,
+    targetApi: responsesTarget.pick(candidate.model.endpoints),
+    responseId: createStoredResponseId(),
+  });
 };
 
 // --- error rendering ---

@@ -53,8 +53,16 @@ export const prepareResponsesAffinity = async (
               }
             } else {
               delete replacement.encrypted_content;
-              if (location.decoded.kind === 'owned' && location.decoded.value === undefined) removeItem = true;
-              else if ('id' in replacement && typeof replacement.id === 'string') {
+              if (selected.compatible && location.decoded.kind === 'owned') {
+                const upstreamItemId = location.decoded.envelope.affinity.upstreamItemId;
+                if (upstreamItemId !== undefined) replacement.id = upstreamItemId;
+              }
+              if (
+                location.decoded.kind === 'owned'
+                && location.decoded.value === undefined
+                && location.decoded.envelope.affinity.syntheticItem === true
+              ) removeItem = true;
+              else if (!selected.compatible && 'id' in replacement && typeof replacement.id === 'string') {
                 replacement.id = createTemporaryResponsesItemId(replacement.type);
               }
             }

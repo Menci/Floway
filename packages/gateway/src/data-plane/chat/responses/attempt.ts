@@ -1,9 +1,8 @@
 import { responsesInterceptors } from './interceptors/index.ts';
 import { prepareResponsesAffinity } from '../affinity/responses-ingress.ts';
 import type { ResponsesAttemptResult, ResponsesInvocation } from './interceptors/types.ts';
-import { createStoredResponseId } from './items/format.ts';
 import { normalizeAssistantInputText } from './items/normalize-assistant-content.ts';
-import { drainAsync, syntheticEventsFromResult, wrapResponsesOutputForStorage } from './items/output.ts';
+import { syntheticEventsFromResult } from './items/output.ts';
 import { rewriteResponsesPayloadForCandidate, type RewrittenResponsesPayload } from './items/rewrite.ts';
 import type { StatefulResponsesStore } from './items/store.ts';
 import { tokenUsageFromResponsesResult } from './usage.ts';
@@ -63,16 +62,10 @@ export interface ResponsesAttemptInvokeArgs {
 // the interceptor finally blocks), and stay independent of the shim's
 // presence.
 //
-// Snapshot persistence is owned end-to-end by `wrapResponsesOutputForStorage`,
-// which derives the snapshot mode by observing the output stream — `'replace'`
-// when any output item is a compaction (the three convergence cases:
-// native `/v1/responses/compact`, a `compaction_trigger` input on
-// `/v1/responses` reshaped by the upstream, and the server-side
-// `context_management` `compact_threshold` mode), `'append'` otherwise.
-// "Don't write" is expressed by the store itself: cross-protocol translation
-// stores (`createNonResponsesSourceStore`) and `store=false` HTTP turns ship
-// with an empty `snapshotWrites` configuration, so `commitSnapshot` is a
-// no-op at the store-write layer.
+// Responses state and client affinity both belong to the native source edge,
+// outside this candidate attempt. Keeping this function free of public-id
+// minting and persistence prevents translated inner Responses calls from
+// accidentally owning another protocol's client-visible state.
 export const responsesAttempt = {
   invoke: async (args: ResponsesAttemptInvokeArgs): Promise<ResponsesAttemptResult> => {
     const { payload: sourcePayload, action, ctx, candidate, headers: sourceHeaders } = args;
@@ -113,54 +106,17 @@ export const responsesAttempt = {
 
     if (chainResult.type !== 'events') return chainResult;
 
-    const responseId = createStoredResponseId();
     if (action === 'compact') {
-      // The caller entered through /v1/responses/compact (or serve.compact).
-      // Drain the chain's events — whether they came from a native /compact
-      // wire or from the responses-compact-shim's synthesized envelope —
-      // into a single result envelope so the http layer can JSON-encode it
-      // directly. Storage still runs over the synthesized event stream so
-      // the snapshot is committed under the same id the client will see —
-      // wrap detects the `compaction` output item and writes a `'replace'`
-      // snapshot.
       const upstreamCompacted = await collectResponsesProtocolEventsToResult(chainResult.events);
-      await drainAsync(wrapResponsesOutputForStorage(syntheticEventsFromResult(upstreamCompacted), {
-        store,
-        upstream: candidate.provider.upstream,
-        targetApi: 'responses',
-        responseId,
-      }));
       return {
         type: 'result',
-        result: { ...upstreamCompacted, id: responseId },
+        result: upstreamCompacted,
         modelIdentity: chainResult.modelIdentity,
         usage: tokenUsageFromResponsesResult(upstreamCompacted),
         performance: chainResult.performance,
       };
     }
-
-    // Persistence and id rewriting wrap the *outermost* stream — after every
-    // interceptor (including the server-tool shim) has emitted its final
-    // events. This is the only seam at which the gateway-owned response id
-    // is minted; whatever id any inner layer produced (the upstream's blob,
-    // the shim's internal `resp_shim_*` placeholder) is overwritten to a
-    // `resp_<crc>_<body>` before the client sees a frame, and the snapshot
-    // is committed under the same id so the next turn's
-    // `previous_response_id` lookup is guaranteed to hit.
-    return eventResult(
-      wrapResponsesOutputForStorage(chainResult.events, {
-        store,
-        upstream: candidate.provider.upstream,
-        targetApi,
-        responseId,
-      }),
-      chainResult.modelIdentity,
-      {
-        performance: chainResult.performance,
-        finalMetadata: chainResult.finalMetadata,
-        headers: chainResult.headers,
-      },
-    );
+    return chainResult;
   },
 
   // Narrowing wrapper for cross-protocol translation callers

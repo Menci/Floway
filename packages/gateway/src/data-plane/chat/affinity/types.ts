@@ -10,6 +10,7 @@ export interface AffinityTarget {
   rulesPresent: boolean;
   rules?: AliasRules;
   upstreamItemId?: string;
+  syntheticItem?: boolean;
 }
 
 export interface AffinityEnvelope {

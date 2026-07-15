@@ -1,4 +1,5 @@
 import type { AffinityEgressOptions } from './affinity-egress.ts';
+import type { AffinityTarget } from './types.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesOutputItem, ResponsesOutputReasoning, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
@@ -8,6 +9,18 @@ const randomReasoningId = (): string => {
   for (const byte of bytes) hex += byte.toString(16).padStart(2, '0');
   return `rs_affinity_${hex}`;
 };
+
+const isForceItem = (item: ResponsesOutputItem): boolean =>
+  item.type === 'compaction'
+  || item.type === 'context_compaction'
+  || item.type === 'program'
+  || item.type === 'program_output';
+
+const itemAffinity = (base: AffinityTarget, item: ResponsesOutputItem): AffinityTarget => ({
+  ...base,
+  mode: isForceItem(item) ? 'force' : base.mode,
+  ...('id' in item && typeof item.id === 'string' ? { upstreamItemId: item.id } : {}),
+});
 
 const encryptedContentSlots = (item: ResponsesOutputItem): Array<{ key: string; value: string }> => {
   const slots: Array<{ key: string; value: string }> = [];
@@ -57,14 +70,25 @@ export const wrapResponsesAffinityEgress = async function* (
 
   const wrapItem = async (item: ResponsesOutputItem, outputIndex: number): Promise<ResponsesOutputItem> => {
     const slots = encryptedContentSlots(item);
-    if (slots.length === 0) return item;
+    const target = itemAffinity(options.affinity, item);
+    if (slots.length === 0) {
+      if (item.type !== 'compaction' && item.type !== 'context_compaction') return item;
+      sawCarrier = true;
+      const cacheKey = `${outputIndex}\0encrypted_content\0synthetic`;
+      let replacement = wrapped.get(cacheKey);
+      if (replacement === undefined) {
+        replacement = options.codec.wrap(undefined, target);
+        wrapped.set(cacheKey, replacement);
+      }
+      return { ...item, encrypted_content: await replacement };
+    }
     sawCarrier = true;
     const replacements = new Map<string, string>();
     await Promise.all(slots.map(async slot => {
       const cacheKey = `${outputIndex}\0${slot.key}\0${slot.value}`;
       let replacement = wrapped.get(cacheKey);
       if (replacement === undefined) {
-        replacement = options.codec.wrap(slot.value, options.affinity);
+        replacement = options.codec.wrap(slot.value, target);
         wrapped.set(cacheKey, replacement);
       }
       replacements.set(slot.key, await replacement);
@@ -89,6 +113,11 @@ export const wrapResponsesAffinityEgress = async function* (
       continue;
     }
 
+    if (event.type === 'response.created' || event.type === 'response.in_progress') {
+      yield eventFrame({ ...event, response: await wrapResult(event.response) });
+      continue;
+    }
+
     if (event.type === 'response.completed' || event.type === 'response.incomplete') {
       const response = await wrapResult(event.response);
       if (sawCarrier) {
@@ -97,15 +126,33 @@ export const wrapResponsesAffinityEgress = async function* (
       }
 
       const outputIndex = response.output.length;
+      const syntheticAffinity = response.output.some(isForceItem)
+        ? { ...options.affinity, mode: 'force' as const, syntheticItem: true }
+        : { ...options.affinity, syntheticItem: true };
       const item: ResponsesOutputReasoning = {
         type: 'reasoning',
         id: randomReasoningId(),
         summary: [],
-        encrypted_content: await options.codec.wrap(undefined, options.affinity),
+        encrypted_content: await options.codec.wrap(undefined, syntheticAffinity),
       };
-      yield eventFrame({ type: 'response.output_item.added', output_index: outputIndex, item });
-      yield eventFrame({ type: 'response.output_item.done', output_index: outputIndex, item });
-      yield eventFrame({ ...event, response: { ...response, output: [...response.output, item] } });
+      const sequence = event.sequence_number;
+      yield eventFrame({
+        type: 'response.output_item.added',
+        output_index: outputIndex,
+        item,
+        ...(sequence !== undefined ? { sequence_number: sequence } : {}),
+      });
+      yield eventFrame({
+        type: 'response.output_item.done',
+        output_index: outputIndex,
+        item,
+        ...(sequence !== undefined ? { sequence_number: sequence + 1 } : {}),
+      });
+      yield eventFrame({
+        ...event,
+        response: { ...response, output: [...response.output, item] },
+        ...(sequence !== undefined ? { sequence_number: sequence + 2 } : {}),
+      });
       return;
     }
 

@@ -92,6 +92,7 @@ const parseEnvelope = (value: unknown): AffinityEnvelope | null => {
     || typeof affinity.modelId !== 'string'
     || typeof affinity.rulesPresent !== 'boolean'
     || (affinity.upstreamItemId !== undefined && typeof affinity.upstreamItemId !== 'string')
+    || (affinity.syntheticItem !== undefined && typeof affinity.syntheticItem !== 'boolean')
     || (affinity.rulesPresent && !isRecord(affinity.rules))
     || (!affinity.rulesPresent && affinity.rules !== undefined)
   ) return null;
@@ -104,6 +105,7 @@ const parseEnvelope = (value: unknown): AffinityEnvelope | null => {
     rulesPresent: affinity.rulesPresent,
     ...(affinity.rulesPresent ? { rules: affinity.rules as AliasRules } : {}),
     ...(affinity.upstreamItemId !== undefined ? { upstreamItemId: affinity.upstreamItemId } : {}),
+    ...(affinity.syntheticItem !== undefined ? { syntheticItem: affinity.syntheticItem } : {}),
   };
   return {
     version: 1,

@@ -1,10 +1,14 @@
-import { responsesAttempt } from './attempt.ts';
+import { responsesAttempt, responsesTarget } from './attempt.ts';
 import type { ResponsesAttemptResult } from './interceptors/types.ts';
+import { createStoredResponseId } from './items/format.ts';
+import { syntheticEventsFromResult, wrapResponsesOutputForStorage } from './items/output.ts';
+import { tokenUsageFromResponsesResult } from './usage.ts';
 import { prepareResponsesServePlan } from './serve-prep.ts';
+import { wrapResponsesAffinityEgress } from '../affinity/responses-egress.ts';
 import { iterateCandidates } from '../../shared/iterate-candidates.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { CanonicalResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { collectResponsesProtocolEventsToResult, type CanonicalResponsesPayload, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { ExecuteResult } from '@floway-dev/provider';
 
 export interface ResponsesServeGenerateArgs {
@@ -30,7 +34,7 @@ export const responsesServe = {
     // candidate can serve. The last failure surfaces verbatim on exhaustion.
     // Each attempt stamps its private prepared-payload clone with the
     // candidate's canonical model id.
-    return await iterateCandidates(
+    const result = await iterateCandidates(
       plan.candidates,
       'responsesServe.generate',
       ctx,
@@ -66,5 +70,24 @@ export const responsesServe = {
         return result;
       },
     );
+    if (result.type !== 'result') return result;
+
+    const candidate = ctx.affinity.selectedCandidate();
+    const withAffinity = wrapResponsesAffinityEgress(syntheticEventsFromResult(result.result), {
+      codec: ctx.affinity.codec,
+      affinity: ctx.affinity.selectedTarget(),
+    });
+    const stored = wrapResponsesOutputForStorage(withAffinity, {
+      store: ctx.store,
+      upstream: candidate.provider.upstream,
+      targetApi: responsesTarget.pick(candidate.model.endpoints),
+      responseId: createStoredResponseId(),
+    });
+    const clientResult = await collectResponsesProtocolEventsToResult(stored);
+    return {
+      ...result,
+      result: clientResult,
+      usage: tokenUsageFromResponsesResult(clientResult),
+    };
   },
 };
