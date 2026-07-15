@@ -17,9 +17,9 @@ import type { ResponsesInterceptor, ResponsesInvocation } from './types.ts';
 import { getRepo, initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../../test-helpers/gateway-ctx.ts';
-import { resolveConfiguredWebSearchProvider } from '../../../tools/web-search/provider.ts';
 import { resolveAlphaSearchDispatcher } from '../../../tools/web-search/alpha-upstream.ts';
 import type { AlphaSearchDispatcher } from '../../../tools/web-search/alpha-upstream.ts';
+import { resolveConfiguredWebSearchProvider } from '../../../tools/web-search/provider.ts';
 import type {
   ConfiguredWebSearchProvider,
   SearchConfig,
