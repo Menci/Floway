@@ -93,41 +93,23 @@ const claudeSnippet = computed(() => [
   `export ANTHROPIC_DEFAULT_HAIKU_MODEL=${claudeSmallModel.value}`,
 ].join('\n'));
 
-const codexBaseUrl = computed(() => `${baseUrl.value}/azure-api.codex`);
-
-// Codex has one account-level auth slot. This synthetic ChatGPT credential
-// enables its account-backed catalog and auxiliary startup paths; the setup
-// command backs up any existing account before replacing it.
-const codexIdToken = computed(() => {
-  const host = (() => {
-    try { return new URL(baseUrl.value).host; } catch { return 'local'; }
-  })();
-  const b64url = (s: string) => btoa(s).replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
-  const header = b64url('{"alg":"none","typ":"JWT"}');
-  const payload = b64url(JSON.stringify({
-    email: `floway@${host}`,
-    'https://api.openai.com/auth': {
-      chatgpt_plan_type: 'pro_plus',
-      chatgpt_user_id: 'user-floway',
-      chatgpt_account_id: 'acct-floway',
-    },
-  }));
-  return `${header}.${payload}.c2ln`;
-});
-
 // Codex treats an actor-authorized custom provider as eligible for its
 // client-owned search and image extensions. This non-secret marker selects
 // those tools locally; Floway removes it before provider dispatch.
 // https://github.com/openai/codex/blob/1bbdb32789e1f79932df44941236ea3658f6e965/codex-rs/model-provider-info/src/lib.rs#L396-L408
+// https://github.com/openai/codex/blob/1bbdb32789e1f79932df44941236ea3658f6e965/codex-rs/ext/web-search/src/extension.rs#L39-L49
 // https://github.com/openai/codex/blob/1bbdb32789e1f79932df44941236ea3658f6e965/codex-rs/core/src/tools/spec_plan.rs#L367-L394
 const codexSnippet = computed(() => [
   `model = "${codexModel.value}"`,
   'model_provider = "floway"',
-  `chatgpt_base_url = "${codexBaseUrl.value}"`,
   '',
   '[model_providers.floway]',
   'name = "Floway"',
-  `base_url = "${codexBaseUrl.value}"`,
+  `base_url = "${baseUrl.value}/azure-api.codex"`,
+  // Command auth is provider-scoped and also opts the provider into online
+  // model refresh; a static bearer or env key does not satisfy that gate.
+  // https://github.com/openai/codex/blob/1bbdb32789e1f79932df44941236ea3658f6e965/codex-rs/models-manager/src/manager.rs#L413-L415
+  'auth = { command = "sh", args = ["-c", "cat \\"${CODEX_HOME:-$HOME/.codex}/floway-token\\""] }',
   'wire_api = "responses"',
   'http_headers = { "x-openai-actor-authorization" = "floway-client-tools" }',
   '',
@@ -136,24 +118,13 @@ const codexSnippet = computed(() => [
   'standalone_web_search = true',
 ].join('\n'));
 
-const codexAuthCommand = computed(() => {
-  const auth = {
-    auth_mode: 'chatgpt',
-    openai_api_key: null,
-    tokens: {
-      id_token: codexIdToken.value,
-      access_token: props.apiKey,
-      refresh_token: 'noop',
-    },
-    last_refresh: '__LAST_REFRESH__',
-  };
-  const json = JSON.stringify(auth).replace('"__LAST_REFRESH__"', '"$(date -u +%Y-%m-%dT%H:%M:%SZ)"');
+const codexCredentialCommand = computed(() => {
+  const quotedApiKey = `'${props.apiKey.replaceAll("'", `'"'"'`)}'`;
   return [
-    'mkdir -p ~/.codex && \\',
-    '  { [ -f ~/.codex/auth.json ] && cp ~/.codex/auth.json ~/.codex/auth.json.bak.$(date +%s); :; } && \\',
-    '  cat > ~/.codex/auth.json <<EOF',
-    json,
-    'EOF',
+    'codex_home="${CODEX_HOME:-$HOME/.codex}"',
+    'mkdir -p "$codex_home" && \\',
+    `  printf '%s' ${quotedApiKey} > "$codex_home/floway-token" && \\`,
+    '  chmod 600 "$codex_home/floway-token"',
   ].join('\n');
 });
 
@@ -207,8 +178,8 @@ const selectClass = 'max-w-full text-xs font-mono bg-surface-800 text-gray-300 b
       <p class="text-[11px] text-gray-600 mb-2">Merge into <code class="text-gray-500">~/.codex/config.toml</code></p>
       <Code :code="codexSnippet" language="toml" />
 
-      <p class="text-[11px] text-gray-600 mt-4 mb-2">Paste in a shell — backs up and replaces the single account in <code class="text-gray-500">~/.codex/auth.json</code>; use a separate <code class="text-gray-500">CODEX_HOME</code> to keep an official login active</p>
-      <Code :code="codexAuthCommand" language="bash" />
+      <p class="text-[11px] text-gray-600 mt-4 mb-2">Paste in a shell — stores only the Floway provider token under the active <code class="text-gray-500">CODEX_HOME</code>; official account login is unaffected</p>
+      <Code :code="codexCredentialCommand" language="bash" />
     </div>
   </div>
 </template>

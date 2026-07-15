@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 
 // Headers stripped from the inbound request before the data plane threads
-// the bag down to the provider boundary. Four groups, one deny-list:
+// the bag down to the provider boundary. The deny-list covers:
 //
 // - Gateway-owned auth + identity. Providers pin their own credentials and
 //   content-type on the wire (Azure's `api-key`, Anthropic's `x-api-key`,

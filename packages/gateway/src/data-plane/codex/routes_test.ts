@@ -37,65 +37,6 @@ interface CodexModelsResponse {
   }>;
 }
 
-describe('Codex auxiliary routes', () => {
-  it('accepts analytics and exposes empty identity and plugin state', async () => {
-    const { apiKey } = await setupAppTest();
-    const app = buildCodexApp();
-    const headers = { authorization: `Bearer ${apiKey.key}` };
-
-    const analytics = await app.request('/azure-api.codex/codex/analytics-events/events', {
-      method: 'POST',
-      headers,
-    });
-    expect(analytics.status).toBe(200);
-
-    const jwks = await app.request('/azure-api.codex/wham/agent-identities/jwks', { headers });
-    expect(await jwks.json()).toEqual({ keys: [] });
-
-    for (const path of ['/azure-api.codex/plugins/featured', '/azure-api.codex/plugins/list']) {
-      const response = await app.request(path, { headers });
-      expect(await response.json()).toEqual([]);
-    }
-    for (const path of ['/azure-api.codex/ps/plugins/list', '/azure-api.codex/ps/plugins/installed']) {
-      const response = await app.request(path, { headers });
-      expect(await response.json()).toEqual({ plugins: [], pagination: { next_page_token: null } });
-    }
-  });
-
-  it('completes the Apps MCP handshake with a tool-less server', async () => {
-    const { apiKey } = await setupAppTest();
-    const app = buildCodexApp();
-    const headers = { authorization: `Bearer ${apiKey.key}`, 'content-type': 'application/json' };
-
-    const initialize = await app.request('/azure-api.codex/api/codex/apps', {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: 1,
-        method: 'initialize',
-        params: {
-          protocolVersion: '2025-06-18',
-          capabilities: {},
-          clientInfo: { name: 'test', version: '0' },
-        },
-      }),
-    });
-    expect(await initialize.json()).toMatchObject({
-      jsonrpc: '2.0',
-      id: 1,
-      result: { protocolVersion: '2025-06-18', capabilities: { tools: {} } },
-    });
-
-    const tools = await app.request('/azure-api.codex/api/codex/apps', {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} }),
-    });
-    expect(await tools.json()).toEqual({ jsonrpc: '2.0', id: 2, result: { tools: [], nextCursor: null } });
-  });
-});
-
 describe('Codex model-provider routes', () => {
   it('writes both context-window fields from the registry and leaves automatic compaction at the Codex default', async () => {
     const { apiKey } = await setupAppTest();

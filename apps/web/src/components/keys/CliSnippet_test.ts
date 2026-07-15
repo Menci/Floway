@@ -28,11 +28,11 @@ test('Codex setup uses API-key auth and client-owned search and image tools', ()
   expect(config).toBe([
     'model = "gpt-5.5"',
     'model_provider = "floway"',
-    'chatgpt_base_url = "http://localhost:3000/azure-api.codex"',
     '',
     '[model_providers.floway]',
     'name = "Floway"',
     'base_url = "http://localhost:3000/azure-api.codex"',
+    'auth = { command = "sh", args = ["-c", "cat \\"${CODEX_HOME:-$HOME/.codex}/floway-token\\""] }',
     'wire_api = "responses"',
     'http_headers = { "x-openai-actor-authorization" = "floway-client-tools" }',
     '',
@@ -41,17 +41,13 @@ test('Codex setup uses API-key auth and client-owned search and image tools', ()
     'standalone_web_search = true',
   ].join('\n'));
 
-  const authCommand = wrapper.findAll('pre[data-language="bash"]')
+  const credentialCommand = wrapper.findAll('pre[data-language="bash"]')
     .map(block => block.text())
-    .find(code => code.includes('auth.json'));
-  if (authCommand === undefined) throw new Error('Codex auth command was not rendered');
-  expect(authCommand).toContain('cp ~/.codex/auth.json ~/.codex/auth.json.bak.$(date +%s)');
-  const auth = JSON.parse(authCommand.split('\n')[3]) as {
-    auth_mode: string;
-    tokens: { id_token: string; access_token: string; refresh_token: string };
-  };
-  expect(auth.auth_mode).toBe('chatgpt');
-  expect(auth.tokens.access_token).toBe("floway-'key");
-  expect(auth.tokens.refresh_token).toBe('noop');
-  expect(auth.tokens.id_token.split('.')).toHaveLength(3);
+    .find(code => code.includes('floway-token'));
+  expect(credentialCommand).toBe([
+    'codex_home="${CODEX_HOME:-$HOME/.codex}"',
+    'mkdir -p "$codex_home" && \\',
+    `  printf '%s' 'floway-'"'"'key' > "$codex_home/floway-token" && \\`,
+    '  chmod 600 "$codex_home/floway-token"',
+  ].join('\n'));
 });
