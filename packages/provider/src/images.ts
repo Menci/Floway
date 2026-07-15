@@ -1,10 +1,9 @@
 import { base64ToBytes, bytesToBase64, parseBase64ImageDataUrl } from './image-helpers.ts';
 import type { ImageEditReference } from '@floway-dev/protocols/images';
 
-// Each source stores one authoritative representation. Serialization prefers
-// multipart when every source is upload-like and every parameter is scalar;
-// requests containing external references use JSON, encoding File uploads only
-// when they are mixed with references.
+// Each source stores one authoritative representation. Multipart requires
+// upload-like sources with no extra reference fields plus scalar parameters;
+// every other request uses JSON and encodes File uploads as data URLs.
 interface UploadedImagesEditsSource {
   type: 'upload';
   file: File;
@@ -42,6 +41,15 @@ const uploadedFile = (source: ImagesEditsSource, index: number): File | null => 
   return new File([bytes], `image-${index}`, { type: parsed.mimeType });
 };
 
+const canUseMultipart = (request: ImagesEditsRequest): boolean => {
+  const sources = [...request.images, ...(request.mask === undefined ? [] : [request.mask])];
+  return sources.every(source =>
+    source.type === 'upload'
+    || (source.type === 'inline' && Object.keys(source.reference).every(key => key === 'image_url')))
+    && Object.values(request.parameters).every(value =>
+      typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean');
+};
+
 const jsonReference = async (source: ImagesEditsSource): Promise<ImageEditReference> => {
   if (source.type === 'inline' || source.type === 'reference') return source.reference;
   const bytes = new Uint8Array(await source.file.arrayBuffer());
@@ -59,8 +67,6 @@ const jsonBody = async (request: ImagesEditsRequest): Promise<Record<string, unk
 };
 
 const multipartBody = (request: ImagesEditsRequest, model: string): FormData | null => {
-  if (!Object.values(request.parameters).every(value =>
-    typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean')) return null;
   const images: File[] = [];
   for (const [index, source] of request.images.entries()) {
     const file = uploadedFile(source, index);
@@ -80,7 +86,9 @@ const multipartBody = (request: ImagesEditsRequest, model: string): FormData | n
 };
 
 export const serializeOpenAIImagesEditsRequest = async (request: ImagesEditsRequest, model: string): Promise<BodyInit> => {
-  const multipart = multipartBody(request, model);
-  if (multipart !== null) return multipart;
+  if (canUseMultipart(request)) {
+    const multipart = multipartBody(request, model);
+    if (multipart !== null) return multipart;
+  }
   return JSON.stringify({ ...await jsonBody(request), model });
 };

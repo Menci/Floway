@@ -64,3 +64,19 @@ test('serializeOpenAIImagesEditsRequest leaves malformed inline data for upstrea
     model: 'gpt-image',
   });
 });
+
+test('serializeOpenAIImagesEditsRequest preserves extra inline reference fields through JSON', async () => {
+  const serialized = await serializeOpenAIImagesEditsRequest({
+    images: [{
+      type: 'inline',
+      reference: { image_url: 'data:image/png;base64,aW1hZ2U=', future_field: 'keep' },
+    }],
+    parameters: { prompt: 'edit' },
+  }, 'gpt-image');
+  assertEquals(typeof serialized, 'string');
+  assertEquals(JSON.parse(serialized as string), {
+    prompt: 'edit',
+    images: [{ image_url: 'data:image/png;base64,aW1hZ2U=', future_field: 'keep' }],
+    model: 'gpt-image',
+  });
+});

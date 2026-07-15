@@ -23,7 +23,7 @@ export const parseBase64ImageDataUrl = (url: string): { mimeType: string; base64
   const match = BASE64_DATA_URL.exec(url);
   const mimeType = match?.[1];
   const base64 = match?.[2];
-  return mimeType?.startsWith('image/') && base64 !== undefined ? { mimeType, base64 } : null;
+  return mimeType?.toLowerCase().startsWith('image/') && base64 !== undefined ? { mimeType, base64 } : null;
 };
 
 const compressBase64ImageToWebp = async (
