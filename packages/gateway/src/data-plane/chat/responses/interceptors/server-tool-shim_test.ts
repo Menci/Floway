@@ -285,6 +285,7 @@ beforeEach(() => {
     tavily: { apiKey: 'test-key' },
     microsoftGrounding: { apiKey: '' },
     jina: { apiKey: '' },
+    passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
   } satisfies SearchConfig);
 });
 

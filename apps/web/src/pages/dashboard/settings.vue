@@ -99,7 +99,7 @@ const openAliasDialog = (record: ModelAlias | null): void => {
         <UpstreamsSettingsCard
           v-model:ordered="ordered"
           :loading="storeLoading"
-          :models="modelsStore.models.value"
+          :models="modelsStore.models.value ?? []"
           @add="(kind: UpstreamProviderKind) => router.push(`/dashboard/upstreams/new/${kind}`)"
           @edit="(record: UpstreamRecord) => router.push(`/dashboard/upstreams/${record.id}`)"
           @changed="reloadAll"

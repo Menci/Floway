@@ -20,6 +20,7 @@ const TAVILY_CONFIG: SearchConfig = {
   tavily: { apiKey: 'test-key' },
   microsoftGrounding: { apiKey: '' },
   jina: { apiKey: '' },
+    passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
 };
 
 interface ProviderOverrides {

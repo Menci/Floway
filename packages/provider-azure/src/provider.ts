@@ -11,6 +11,9 @@ const upstreamModelIdOf = (model: ProviderModel): string => (model.providerData 
 
 type AzureTypedFetch = (config: ReturnType<typeof assertAzureUpstreamRecord>['config'], init: RequestInit, options: UpstreamFetchOptions) => Promise<Response>;
 
+const rejectUnsupported = (capability: string) => (): Promise<never> =>
+  Promise.reject(new Error(`Azure provider does not support ${capability}`));
+
 export const createAzureProvider = (record: UpstreamRecord): Provider => {
   const azure = assertAzureUpstreamRecord(record);
 

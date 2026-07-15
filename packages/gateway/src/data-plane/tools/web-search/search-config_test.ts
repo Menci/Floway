@@ -82,6 +82,7 @@ test('search config repo defaults to disabled and round-trips provider keys', as
     tavily: { apiKey: 'tvly-test' },
     microsoftGrounding: { apiKey: 'ms-test' },
     jina: { apiKey: 'jina-test' },
+    passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
   });
 
   assertEquals(await loadSearchConfig(), {
@@ -89,6 +90,7 @@ test('search config repo defaults to disabled and round-trips provider keys', as
     tavily: { apiKey: 'tvly-test' },
     microsoftGrounding: { apiKey: 'ms-test' },
     jina: { apiKey: 'jina-test' },
+    passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
   });
   assertEquals(FIXED_SEARCH_CONFIG_TEST_QUERY, 'React documentation');
 });
@@ -102,6 +104,7 @@ test('loadSearchConfig strict-parses a stored row and rejects unknown provider v
     tavily: { apiKey: '  tvly-test  ' },
     microsoftGrounding: { apiKey: '  ms-test  ' },
     jina: { apiKey: '' },
+    passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
   });
 
   await assertRejects(() => loadSearchConfig(), Error, 'provider');
@@ -116,6 +119,7 @@ test('loadSearchConfig strict-parses a stored row and trims valid api keys', asy
     tavily: { apiKey: '  tvly-trim  ' },
     microsoftGrounding: { apiKey: '  ms-trim  ' },
     jina: { apiKey: '  jina-trim  ' },
+    passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
   });
 
   assertEquals(await loadSearchConfig(), {
@@ -123,6 +127,7 @@ test('loadSearchConfig strict-parses a stored row and trims valid api keys', asy
     tavily: { apiKey: 'tvly-trim' },
     microsoftGrounding: { apiKey: 'ms-trim' },
     jina: { apiKey: 'jina-trim' },
+    passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
   });
 });
 
@@ -163,6 +168,7 @@ test('saveSearchConfig writes the typed columns and round-trips through the same
     tavily: { apiKey: '  tvly-test  ' },
     microsoftGrounding: { apiKey: '  ms-test  ' },
     jina: { apiKey: '  jina-test  ' },
+    passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
   });
 
   assertEquals(saved, {
@@ -170,6 +176,7 @@ test('saveSearchConfig writes the typed columns and round-trips through the same
     tavily: { apiKey: 'tvly-test' },
     microsoftGrounding: { apiKey: 'ms-test' },
     jina: { apiKey: 'jina-test' },
+    passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
   });
   assertEquals(db.searchConfig, {
     provider: 'disabled',
@@ -182,5 +189,6 @@ test('saveSearchConfig writes the typed columns and round-trips through the same
     tavily: { apiKey: 'tvly-test' },
     microsoftGrounding: { apiKey: 'ms-test' },
     jina: { apiKey: 'jina-test' },
+    passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
   });
 });

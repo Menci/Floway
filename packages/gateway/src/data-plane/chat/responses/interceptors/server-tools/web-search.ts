@@ -264,7 +264,7 @@ const validateHostedEntry = (tool: ResponsesHostedTool): PrepareToolsError | nul
 export const prepareToolsForShim = (
   tools: ResponsesTool[],
 ): PrepareToolsResult => {
-  let selectedFilters: ShimToolFilters = {};
+  let selectedFilters: WebSearchFilters = {};
   for (const tool of tools) {
     if (isHostedWebSearchTool(tool)) {
       const reject = validateHostedEntry(tool);
