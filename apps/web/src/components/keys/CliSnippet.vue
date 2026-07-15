@@ -95,6 +95,26 @@ const claudeSnippet = computed(() => [
 
 const codexBaseUrl = computed(() => `${baseUrl.value}/azure-api.codex`);
 
+// Codex has one account-level auth slot. This synthetic ChatGPT credential
+// enables its account-backed catalog and auxiliary startup paths; the setup
+// command backs up any existing account before replacing it.
+const codexIdToken = computed(() => {
+  const host = (() => {
+    try { return new URL(baseUrl.value).host; } catch { return 'local'; }
+  })();
+  const b64url = (s: string) => btoa(s).replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
+  const header = b64url('{"alg":"none","typ":"JWT"}');
+  const payload = b64url(JSON.stringify({
+    email: `floway@${host}`,
+    'https://api.openai.com/auth': {
+      chatgpt_plan_type: 'pro_plus',
+      chatgpt_user_id: 'user-floway',
+      chatgpt_account_id: 'acct-floway',
+    },
+  }));
+  return `${header}.${payload}.c2ln`;
+});
+
 // Codex treats an actor-authorized custom provider as eligible for its
 // client-owned search and image extensions. This non-secret marker selects
 // those tools locally; Floway removes it before provider dispatch.
@@ -103,11 +123,11 @@ const codexBaseUrl = computed(() => `${baseUrl.value}/azure-api.codex`);
 const codexSnippet = computed(() => [
   `model = "${codexModel.value}"`,
   'model_provider = "floway"',
+  `chatgpt_base_url = "${codexBaseUrl.value}"`,
   '',
   '[model_providers.floway]',
   'name = "Floway"',
   `base_url = "${codexBaseUrl.value}"`,
-  `experimental_bearer_token = ${JSON.stringify(props.apiKey)}`,
   'wire_api = "responses"',
   'http_headers = { "x-openai-actor-authorization" = "floway-client-tools" }',
   '',
@@ -115,6 +135,27 @@ const codexSnippet = computed(() => [
   'apps = false',
   'standalone_web_search = true',
 ].join('\n'));
+
+const codexAuthCommand = computed(() => {
+  const auth = {
+    auth_mode: 'chatgpt',
+    openai_api_key: null,
+    tokens: {
+      id_token: codexIdToken.value,
+      access_token: props.apiKey,
+      refresh_token: 'noop',
+    },
+    last_refresh: '__LAST_REFRESH__',
+  };
+  const json = JSON.stringify(auth).replace('"__LAST_REFRESH__"', '"$(date -u +%Y-%m-%dT%H:%M:%SZ)"');
+  return [
+    'mkdir -p ~/.codex && \\',
+    '  { [ -f ~/.codex/auth.json ] && cp ~/.codex/auth.json ~/.codex/auth.json.bak.$(date +%s); :; } && \\',
+    '  cat > ~/.codex/auth.json <<EOF',
+    json,
+    'EOF',
+  ].join('\n');
+});
 
 const selectClass = 'max-w-full text-xs font-mono bg-surface-800 text-gray-300 border border-white/10 rounded-lg px-2 py-1.5 outline-none focus:border-accent-cyan/50 cursor-pointer';
 </script>
@@ -165,6 +206,9 @@ const selectClass = 'max-w-full text-xs font-mono bg-surface-800 text-gray-300 b
 
       <p class="text-[11px] text-gray-600 mb-2">Merge into <code class="text-gray-500">~/.codex/config.toml</code></p>
       <Code :code="codexSnippet" language="toml" />
+
+      <p class="text-[11px] text-gray-600 mt-4 mb-2">Paste in a shell — backs up and replaces the single account in <code class="text-gray-500">~/.codex/auth.json</code>; use a separate <code class="text-gray-500">CODEX_HOME</code> to keep an official login active</p>
+      <Code :code="codexAuthCommand" language="bash" />
     </div>
   </div>
 </template>
