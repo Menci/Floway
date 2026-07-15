@@ -1,6 +1,4 @@
 import { responsesInterceptors } from './interceptors/index.ts';
-import type { PreparedAffinityPayload } from '../shared/affinity/prepared.ts';
-import { prepareResponsesAffinity } from '../shared/affinity/responses-ingress.ts';
 import type { ResponsesAttemptResult, ResponsesInvocation } from './interceptors/types.ts';
 import { normalizeAssistantInputText } from './items/normalize-assistant-content.ts';
 import { syntheticEventsFromResult } from './items/output.ts';
@@ -11,6 +9,8 @@ import { applyRulesToUpstreamResponses } from '../../model-aliases/apply-rules.t
 import { providerStreamResultToExecuteResult, buildUpstreamCallOptions, telemetryModelIdentity, chatTargetPicker, upstreamPerformanceContext } from '../../shared/telemetry/attempt-helpers.ts';
 import { chatCompletionsAttempt } from '../chat-completions/attempt.ts';
 import { messagesAttempt } from '../messages/attempt.ts';
+import type { PreparedAffinityPayload } from '../shared/affinity/prepared.ts';
+import { prepareResponsesAffinity } from '../shared/affinity/responses-ingress.ts';
 import { tryCatchChatServeFailure } from '../shared/errors.ts';
 import { createExternalImageLoader } from '../shared/external-image-loader.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';

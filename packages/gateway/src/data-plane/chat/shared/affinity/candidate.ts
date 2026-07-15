@@ -1,7 +1,7 @@
 import { isEqual } from 'es-toolkit';
 
 import type { AffinityTarget } from './types.ts';
-import type { RoutingDecision } from '../shared/routing.ts';
+import type { RoutingDecision } from '../routing.ts';
 import type { ModelCandidate } from '@floway-dev/provider';
 
 const sameTarget = (left: AffinityTarget, right: AffinityTarget): boolean =>

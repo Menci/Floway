@@ -1,6 +1,5 @@
 import type { Context } from 'hono';
 
-import { wrapResponsesAffinityEgress } from '../shared/affinity/responses-egress.ts';
 import { createStoredResponseId } from './items/format.ts';
 import { wrapResponsesOutputForStorage } from './items/output.ts';
 import { createResponsesWsSession } from './items/store.ts';
@@ -13,6 +12,7 @@ import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
+import { wrapResponsesAffinityEgress } from '../shared/affinity/responses-egress.ts';
 import { createChatGatewayCtxFromHono, type ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { takeRequestBody } from '../shared/request-body.ts';
 import { SourceStreamState, eventResultMetadata } from '../shared/respond.ts';
