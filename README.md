@@ -25,8 +25,7 @@ target ships in the same repo for self-hosting on a long-lived process.
 | Google Gemini (generate / count tokens) | `POST /v1beta/models/...`     |
 
 `POST /v1/images/edits` accepts multipart image uploads and JSON `images`
-references. The dashboard's Codex provider base, `/azure-api.codex`, exposes
-the same generation and edit handlers at their provider-relative paths.
+references.
 
 For each public model, Floway picks the first (provider, model) pair that can
 serve the request, translating between source and target protocols when the
@@ -111,8 +110,7 @@ Compose starts two services: `server` runs the Node.js target on
 `http://localhost:8788` with SQLite/files persisted in the `floway-data`
 volume, and `web` serves the built dashboard on `http://localhost:18088`.
 The nginx web container proxies Floway API paths to `server`, including
-WebSocket-capable `/v1/responses` and the Codex-compatible
-`/azure-api.codex/*` routes. Pass `FLOWAY_WEB_PORT` or
+WebSocket-capable `/v1/responses`. Pass `FLOWAY_WEB_PORT` or
 `FLOWAY_SERVER_PORT` alongside `ADMIN_KEY` if those host ports are already in
 use.
 
@@ -154,8 +152,8 @@ Search**), and emitted back as Responses `web_search_call` items, with
 the shim driving the internal multi-turn loop and replaying prior
 `web_search_call` items across turns.
 
-Floway also serves the Codex CLI's `/alpha/search` path conventions at
-`/azure-api.codex/alpha/search`, `/alpha/search`, and `/v1/alpha/search`.
+Floway also serves the Codex CLI's search contract at `/alpha/search` and
+`/v1/alpha/search`.
 By default these routes and the Responses web-search shim use the same general
 provider configured above. **Settings -> Web Search** can instead enable
 **Passthrough OpenAI search** and select a Codex or Custom upstream plus model;
