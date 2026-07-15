@@ -1,5 +1,5 @@
-import { test } from 'vitest';
 import initSqlJs from 'sql.js';
+import { test } from 'vitest';
 
 import { InMemoryRepo } from './memory.ts';
 import { SqlRepo } from './sql.ts';
