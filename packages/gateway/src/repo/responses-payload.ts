@@ -34,6 +34,7 @@ const HOUR_MS = 60 * 60 * 1000;
 const RESPONSES_ITEMS_FILE_ROOT = 'responses-items/v1/expires/';
 
 const encoder = new TextEncoder();
+const decoder = new TextDecoder();
 
 export const serializeStoredResponsesPayload = async (
   id: string,
