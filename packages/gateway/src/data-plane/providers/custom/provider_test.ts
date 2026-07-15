@@ -243,6 +243,45 @@ test('Custom provider callImagesEdits forwards multipart body with model field a
   assertEquals(forwarded.form.get('image') instanceof File, true);
 });
 
+test('Custom provider callAlphaSearch posts JSON to /v1/alpha/search with the upstream model', async () => {
+  await setupAppTest();
+  const record = buildCustomUpstreamRecord({
+    config: { baseUrl: 'https://custom.example.com', authStyle: 'bearer', apiKey: 'sk-custom', endpoints: { responses: {} } },
+  });
+  let forwarded: { url: string; body: Record<string, unknown> } | undefined;
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.pathname === '/v1/models') return jsonResponse({ data: [{ id: 'gpt-search' }] });
+      if (url.pathname === '/v1/alpha/search') {
+        forwarded = { url: request.url, body: await request.json() as Record<string, unknown> };
+        return jsonResponse({ encrypted_output: null, output: 'result', results: [] });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const provider = createCustomProvider(record);
+      const model = (await provider.instance.getProvidedModels(directFetcher))[0];
+      const result = await provider.instance.callAlphaSearch(
+        model,
+        { id: 'search-session', commands: { search_query: [{ q: 'Floway' }] } },
+        undefined,
+        noopUpstreamCallOptions(),
+      );
+      assertEquals(result.response.status, 200);
+      assertEquals(result.modelKey, 'gpt-search');
+    },
+  );
+  assertEquals(forwarded, {
+    url: 'https://custom.example.com/v1/alpha/search',
+    body: {
+      id: 'search-session',
+      commands: { search_query: [{ q: 'Floway' }] },
+      model: 'gpt-search',
+    },
+  });
+});
+
 test('Custom provider with modelsFetch disabled serves only manual models and never fetches', async () => {
   await setupAppTest();
 

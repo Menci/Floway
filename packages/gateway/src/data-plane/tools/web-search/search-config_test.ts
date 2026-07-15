@@ -12,16 +12,22 @@ interface SearchConfigRow {
   tavily_api_key: string;
   microsoft_grounding_api_key: string;
   jina_api_key: string;
+  passthrough_openai_search: number;
+  alpha_search_upstream_id: string;
+  alpha_search_model: string;
 }
 
-const SELECT_SQL = 'SELECT provider, tavily_api_key, microsoft_grounding_api_key, jina_api_key FROM search_config WHERE id = 1';
-const UPSERT_SQL = `INSERT INTO search_config (id, provider, tavily_api_key, microsoft_grounding_api_key, jina_api_key, updated_at)
-         VALUES (1, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+const SELECT_SQL = 'SELECT provider, tavily_api_key, microsoft_grounding_api_key, jina_api_key, passthrough_openai_search, alpha_search_upstream_id, alpha_search_model FROM search_config WHERE id = 1';
+const UPSERT_SQL = `INSERT INTO search_config (id, provider, tavily_api_key, microsoft_grounding_api_key, jina_api_key, passthrough_openai_search, alpha_search_upstream_id, alpha_search_model, updated_at)
+         VALUES (1, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
          ON CONFLICT (id) DO UPDATE SET
            provider = excluded.provider,
            tavily_api_key = excluded.tavily_api_key,
            microsoft_grounding_api_key = excluded.microsoft_grounding_api_key,
            jina_api_key = excluded.jina_api_key,
+           passthrough_openai_search = excluded.passthrough_openai_search,
+           alpha_search_upstream_id = excluded.alpha_search_upstream_id,
+           alpha_search_model = excluded.alpha_search_model,
            updated_at = excluded.updated_at`;
 
 class FakeSqlPreparedStatement {
@@ -53,6 +59,9 @@ class FakeSqlPreparedStatement {
         tavily_api_key: String(this.binds[1]),
         microsoft_grounding_api_key: String(this.binds[2]),
         jina_api_key: String(this.binds[3]),
+        passthrough_openai_search: Number(this.binds[4]),
+        alpha_search_upstream_id: String(this.binds[5]),
+        alpha_search_model: String(this.binds[6]),
       };
       return Promise.resolve({ results: [], success: true, meta: {} });
     }
@@ -159,6 +168,13 @@ test('parseSearchConfigStrict throws on missing required fields', () => {
   );
 });
 
+test('parseSearchConfigStrict requires upstream and model when passthrough is enabled', () => {
+  assertThrows(() => parseSearchConfigStrict({
+    ...DEFAULT_SEARCH_CONFIG,
+    passthroughOpenAiSearch: { enabled: true, upstreamId: '', model: '' },
+  }), Error, 'requires an upstream and model');
+});
+
 test('saveSearchConfig writes the typed columns and round-trips through the same db', async () => {
   const db = new FakeSqlDatabase();
   initRepo(new SqlRepo(db));
@@ -183,6 +199,9 @@ test('saveSearchConfig writes the typed columns and round-trips through the same
     tavily_api_key: 'tvly-test',
     microsoft_grounding_api_key: 'ms-test',
     jina_api_key: 'jina-test',
+    passthrough_openai_search: 0,
+    alpha_search_upstream_id: '',
+    alpha_search_model: '',
   });
   assertEquals(await loadSearchConfig(), {
     provider: 'disabled',

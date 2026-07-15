@@ -86,7 +86,7 @@ const alphaUpstreamOptions = computed(() => eligibleUpstreams.value.map(upstream
 })));
 const alphaModelOptions = computed(() => props.models
   .filter(model => model.kind === 'chat' && model.upstreams.some(upstream => upstream.id === draft.value.passthroughOpenAiSearch.upstreamId))
-  .map(model => ({ value: model.id, label: model.display_name || model.id })));
+  .map(model => ({ value: model.id, label: model.display_name })));
 
 const activeOption = computed(() => PROVIDER_OPTIONS.find(option => option.value === draft.value.provider) ?? PROVIDER_OPTIONS[0]);
 

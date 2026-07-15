@@ -3,9 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { mountCodexRoutes } from './routes.ts';
 import { type AuthVars, authMiddleware } from '../../middleware/auth.ts';
-import { setupAppTest } from '../../test-helpers.ts';
+import { buildCustomUpstreamRecord, setupAppTest } from '../../test-helpers.ts';
 import { resolveConfiguredWebSearchProvider } from '../tools/web-search/provider.ts';
 import type { SearchConfig, WebSearchFetchPageRequest, WebSearchFetchPageResult, WebSearchProvider, WebSearchProviderRequest, WebSearchProviderResult } from '../tools/web-search/types.ts';
+import { jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 // Real provider construction (`createTavilyWebSearchProvider` etc.) hits the
 // network; replace the resolver so tests drive a stub backend instead. A
@@ -154,6 +155,59 @@ describe('codex /alpha/search', () => {
   });
 
   describe('command execution', () => {
+    it('raw-passthrough mode dispatches to the selected custom upstream and preserves its response', async () => {
+      const searchConfig: SearchConfig = {
+        ...TAVILY_CONFIG,
+        passthroughOpenAiSearch: { enabled: true, upstreamId: 'up_alpha', model: 'gpt-search' },
+      };
+      const { apiKey, repo } = await setupAppTest({ searchConfig });
+      await repo.upstreams.deleteAll();
+      await repo.upstreams.save(buildCustomUpstreamRecord({
+        id: 'up_alpha',
+        name: 'Alpha Search',
+        config: {
+          baseUrl: 'https://search.example.com',
+          authStyle: 'bearer',
+          apiKey: 'search-secret',
+          endpoints: { responses: {} },
+          modelsFetch: { enabled: false },
+          models: [{ upstreamModelId: 'gpt-search', endpoints: { responses: {} } }],
+        },
+      }));
+      let upstreamBody: Record<string, unknown> | undefined;
+      await withMockedFetch(
+        async request => {
+          if (request.url === 'https://search.example.com/v1/alpha/search') {
+            upstreamBody = await request.json() as Record<string, unknown>;
+            return jsonResponse({
+              encrypted_output: 'opaque',
+              output: 'upstream output',
+              results: [{ type: 'text_result', ref_id: 'turn0search0', url: 'https://example.com', title: 'Example', snippet: 'Snippet' }],
+            });
+          }
+          throw new Error(`Unhandled fetch ${request.url}`);
+        },
+        async () => {
+          const response = await postSearch(buildCodexApp(), apiKey.key, {
+            id: 'session-search',
+            model: 'caller-model',
+            commands: { search_query: [{ q: 'Floway' }] },
+          });
+          expect(response.status).toBe(200);
+          expect(await response.json()).toEqual({
+            encrypted_output: 'opaque',
+            output: 'upstream output',
+            results: [{ type: 'text_result', ref_id: 'turn0search0', url: 'https://example.com', title: 'Example', snippet: 'Snippet' }],
+          });
+        },
+      );
+      expect(upstreamBody).toMatchObject({
+        id: 'session-search',
+        model: 'gpt-search',
+        commands: { search_query: [{ q: 'Floway' }] },
+      });
+    });
+
     it('runs a search_query and returns rendered results as `output`', async () => {
       const { apiKey, repo } = await setupAppTest({ searchConfig: TAVILY_CONFIG });
       const stub = makeStubProvider();
