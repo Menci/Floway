@@ -71,17 +71,20 @@ object with AES-256-GCM:
   version: 1,
   origin?: 'raw' | 'base64' | 'base64url',
   affinity: {
-    mode: 'prefer' | 'force',
     upstreamId: string,
     modelId: string,
     rulesPresent: boolean,
     rules?: AliasRules,
     upstreamItemId?: string,
     syntheticItem?: true,
-    geminiPartFromEnd?: number,
   },
 }
 ```
+
+The envelope stores identity and restoration data only. Source ingress derives
+request-local prefer/force evidence from the carrier's current protocol
+location. Ordinary assistant state prefers its target; Responses compaction
+and program state forces the associated target.
 
 Wire framing has no delimiter and no magic marker:
 
@@ -107,15 +110,17 @@ gateway sees it.
 
 Owned values are removed at the early source edge and retained in a
 request-local plan. Every candidate gets a fresh payload clone. Compatible
-carriers restore their original value; incompatible preferred state is
+carriers restore their original value; incompatible owned state is
 omitted; incompatible synthetic blocks/items are removed; foreign values pass
 through. Thus Floway's encrypted metadata is invisible to translators,
 interceptors, and upstream providers.
 
 After a successful attempt identifies the exact candidate, source egress runs
-outside the complete translation/interceptor stack. It wraps existing opaque
-state and adds a synthetic carrier when a successful turn has none. Count-token
-responses have no assistant turn and therefore perform ingress/routing only.
+outside the complete translation/interceptor stack. Its inner transform wraps
+every natural opaque value. Its outer transform ensures the first logical
+assistant element has a carrier, augmenting it or inserting a protocol-native
+prefix element. Count-token responses have no assistant turn and therefore
+perform ingress/routing only.
 
 ### Protocol affinity placement
 
@@ -135,42 +140,43 @@ maintains independent state for all choices.
 Anthropic `signature_delta` is also a last-write-wins snapshot, not a string
 fragment. Readable `thinking_delta` events are forwarded immediately while the
 latest signature is retained. Immediately before `content_block_stop`, egress
-emits one wrapped replacement signature. `redacted_thinking.data` is complete
-on `content_block_start` and is wrapped there. When the message contains no
-carrier, a synthetic `redacted_thinking` start/stop pair is emitted after all
-content blocks and before terminal `message_delta` / `message_stop`.
+emits one wrapped replacement signature. If the first thinking block has no
+natural signature, the replacement is originless. `redacted_thinking.data` is
+complete on `content_block_start` and is wrapped there. When the first block
+cannot carry a blob, egress emits a synthetic `redacted_thinking` block at
+index zero and shifts every original block event by one. An empty successful
+message receives that prefix immediately before its terminal event.
 
 #### Gemini
 
-`thoughtSignature` is complete on one part. To avoid holding visible text or
-function calls, egress removes the signature from the visible part and emits a
-deferred signature-only part. The encrypted metadata records the signed
-visible part's offset from the end (`geminiPartFromEnd`); compatible ingress
-reattaches the original signature to that part and deletes the deferred
-carrier. Candidate role, finish reason, and terminal usage stay on the deferred
-event so a client cannot terminate before receiving affinity. A finishing
-candidate with no signature receives a synthetic signature-only part.
+Gemini intentionally buffers one complete source event and inspects the next.
+Natural signatures remain attached to content-bearing Parts and are wrapped in
+place. An immediate signature-only trailer is moved onto the buffered Part;
+when the lookahead provides no natural carrier for the same text/function-call
+element, the buffered first Part receives an originless signature. This avoids
+the metadata-only Parts rejected or discarded by several Gemini clients. A
+successful candidate with no content-bearing Part still requires a
+signature-only best-effort fallback. Candidate state is independent by index.
 
 #### Responses
 
 Responses opaque slots include top-level `encrypted_content` on reasoning,
 compaction, context-compaction, and other output items, plus
 `agent_message.content[].encrypted_content`. Existing slots are wrapped with a
-cached value so `output_item.added`, `output_item.done`, and terminal response
-snapshots agree. The envelope also records the upstream item ID. Compaction,
-context-compaction, program, and program-output state is forcing; ordinary
-reasoning is preferred.
+cached value across repeated snapshots. If the first item can carry a blob but
+has none, egress adds an originless value at `output_item.done` and reuses it in
+the terminal response. Otherwise it emits a synthetic reasoning prefix through
+`output_item.added` / `output_item.done`, shifts every original `output_index`
+by one and `sequence_number` by two, and prepends the same item to later
+response snapshots. The storage membrane runs afterward and therefore assigns
+and persists client IDs for the exact prefixed output.
 
-If a successful response has no carrier, egress creates a synthetic reasoning
-item. Responses consumers use different snapshot sources, so the same item is
-emitted atomically in all three places:
-
-1. `response.output_item.added`;
-2. `response.output_item.done`;
-3. terminal `response.completed` / `response.incomplete` output.
-
-Inserted events advance `sequence_number`. `response.failed` and `error` do not
-create continuation state.
+Ingress derives strength from the reconstructed input. Compaction and
+context-compaction carriers are force evidence. Program/program-output state
+forces the nearest preceding owned target; ordinary reasoning and agent-message
+carriers prefer. `response.failed` and `error` do not synthesize a missing
+carrier, though a prefix already emitted before a later failure cannot be
+retracted.
 
 ## Responses state membrane
 
@@ -531,9 +537,9 @@ Native Responses targets receive custom tools unchanged.
 
 ## Streaming semantics
 
-- Visible content, readable reasoning, tool calls, and argument deltas are not
-  buffered by affinity. Only opaque carriers are deferred to a protocol-valid
-  snapshot boundary.
+- Chat, Messages, and Responses defer only opaque carrier state to a
+  protocol-valid boundary. Gemini holds one complete event so a natural
+  signature can remain attached to content-bearing output.
 - Messages streams never expose `[DONE]`.
 - Chat streams end with `[DONE]`; usage-only chunks remain conditional on the
   source request.
@@ -544,8 +550,8 @@ Native Responses targets receive custom tools unchanged.
   remain isolated per choice.
 - Messages thinking text concatenates while signatures replace.
 - Responses `output_item.done` replaces the item snapshot and terminal response
-  events replace the complete response snapshot; synthetic affinity is emitted
-  consistently in every representation a client may retain.
+  events replace the complete response snapshot; prefix insertion rewrites all
+  later output indexes and terminal output consistently.
 - Pairwise translators preserve source output order even when target items
   complete out of order.
 - Tool/custom argument guards reject infinite whitespace or malformed partial

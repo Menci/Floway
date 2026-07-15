@@ -133,9 +133,11 @@ payload directly to an upstream.
 Every API key owns a hidden, random 256-bit server secret for gateway-private
 per-key data. Affinity derives a dedicated encryption key from it. On a
 successful chat response, the source-protocol boundary encrypts the exact
-selected target into each opaque reasoning carrier, or creates a synthetic
-carrier when the turn has none. The target identity includes upstream ID,
-canonical model ID, and the presence and value of alias rules.
+selected target into every natural opaque reasoning carrier. A separate turn
+anchor guarantees that the first logical assistant element has a carrier,
+creating an originless value or element when necessary. The target identity
+includes upstream ID, canonical model ID, and the presence and value of alias
+rules.
 
 The envelope uses AES-256-GCM and contains version 1 metadata. Its wire value
 has no delimiter or magic prefix:
@@ -161,20 +163,21 @@ and is forwarded byte-for-byte. This permits Floway instances to be cascaded:
 an outer instance wraps the inner carrier and later restores it unchanged.
 
 Ingress runs before normal interception and translation. It extracts owned
-affinity, then builds a clean payload separately for every candidate: matching
-carriers restore their original value, mismatched preferred state is removed,
-and foreign values remain. Force state such as Responses compaction or
-programmatic state narrows to one exact candidate and fails if unavailable;
-ordinary reasoning prefers its latest available target but may fall back with
-the incompatible state removed.
+targets, derives prefer or force evidence from each carrier's current protocol
+location, then builds a clean payload separately for every candidate. Matching
+carriers restore their original value, incompatible owned state is removed,
+and foreign values remain. Responses compaction and programmatic state derive
+force evidence at ingress; ordinary assistant state derives preference.
 
 Egress runs only after provider events have returned to the client's source
-protocol. Floway buffers opaque fields where their protocol requires a final
-snapshot, but never delays visible text, thinking, tool-call, or argument
-deltas. Chat `reasoning_opaque` and Messages `signature_delta` are
-last-write-wins snapshots. Gemini signatures are deferred into signed parts,
-and Responses synthetic carriers are represented consistently in
-`output_item.added`, `output_item.done`, and the terminal response snapshot.
+protocol. Chat closes its one logical choice with one wrapped or originless
+`reasoning_opaque`. Messages uses the first thinking/redacted block, or
+prefixes a redacted block before a first element that cannot carry a blob.
+Gemini buffers one event so an immediate natural signature remains on a
+content-bearing Part; otherwise the first Part receives an originless
+signature. Responses augments a carrier-capable first item at close or prefixes
+a synthetic reasoning lifecycle before it. Natural opaque values are wrapped
+independently of these turn anchors.
 
 ## Stateful Responses
 

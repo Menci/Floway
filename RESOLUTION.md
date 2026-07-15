@@ -161,9 +161,11 @@ Equality uses exact rule structure, matching candidate deduplication.
 Every chat API key has a hidden 256-bit server secret for gateway-private
 per-key data. Affinity derives a dedicated key from it. The source-protocol
 ingress scans opaque reasoning carriers and attempts AES-GCM authentication.
-Successfully decoded envelopes yield `AffinityTarget` entries; a value that is
-malformed, belongs to another key, or belongs to another Floway instance is
-foreign and contributes no routing constraint.
+Successfully decoded envelopes yield immutable target identities and restore
+metadata. Protocol ingress derives request-local `prefer` or `force` evidence
+from the carrier's current location; routing strength is never stored in the
+encrypted envelope. A value that is malformed, belongs to another key, or
+belongs to another Floway instance is foreign and contributes no constraint.
 
 Affinity has two strengths:
 
@@ -174,6 +176,13 @@ Affinity has two strengths:
   Responses compaction and programmatic state. One forcing identity filters the
   list to exact matches. An unavailable force or multiple incompatible forces
   returns `routing-unavailable` before any upstream call.
+
+Egress has two independent responsibilities. The inner carrier transform wraps
+every natural upstream blob. The outer turn transform ensures the first logical
+assistant element has a carrier: it augments that element when possible or
+inserts a protocol-native prefix element otherwise. Responses program and
+compaction state is recognized when the client carries the result back, at
+which point ingress promotes the associated target to force.
 
 Affinity never invents candidates and never bypasses the user's upstream
 scope. It only filters or reorders viable candidates returned by ordinary

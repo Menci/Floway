@@ -170,12 +170,16 @@ encryption key from the server secret.
 The version 1 AES-256-GCM envelope contains optional original encoding plus:
 
 ```text
-mode (prefer | force)
 upstream ID
 canonical model ID
 alias-rule presence and value
 optional protocol restore state
 ```
+
+Routing strength is request-local. Ingress derives prefer/force from the
+carrier's current protocol location; it is never serialized. Compaction and
+program state force their associated target, while ordinary assistant state
+only prefers it.
 
 AEAD additional data binds a length-delimited protocol/slot domain and the
 original bytes. A trailer cannot authenticate after moving to another carrier
@@ -196,8 +200,10 @@ Affinity is an early-ingress/late-egress membrane:
    restored, incompatible owned values are removed, foreign values remain;
 4. the request then crosses normal interceptors, translation, and provider
    dispatch without Floway affinity metadata;
-5. after target events return to the source shape, source egress wraps opaque
-   state or emits a synthetic carrier for the winning candidate.
+5. after target events return to the source shape, the inner egress transform
+   wraps every natural opaque value;
+6. the outer egress transform ensures the first assistant element carries a
+   blob, augmenting it or inserting a protocol-native prefix element.
 
 Force means the request contains non-discardable state such as Responses
 compaction/program state. Conflicting or unavailable force targets fail before
@@ -209,15 +215,17 @@ Protocol streaming rules:
 - Chat `reasoning_opaque` is a per-choice last-write-wins snapshot. Egress
   retains only opaque snapshots until finish; visible deltas remain immediate.
 - Messages `signature_delta` is last-write-wins. Readable thinking streams
-  immediately; the final wrapped signature is emitted before block stop.
-- Gemini removes signatures from visible parts and later emits wrapped
-  signature-only parts with relative placement metadata. Terminal role,
-  finish, and usage stay on the deferred carrier event.
-- Responses wraps consistent item snapshots and, when needed, emits a
-  synthetic reasoning item through added, done, and terminal output events.
+  immediately; a first thinking block receives a wrapped or originless final
+  signature. A non-carrier first block is shifted behind a redacted prefix.
+- Gemini buffers one source event. Natural signatures stay attached to
+  content-bearing Parts; an immediate signature-only trailer is moved onto the
+  buffered Part, otherwise that first Part receives an originless signature.
+- Responses augments a carrier-capable first item at close or emits a synthetic
+  reasoning prefix through added/done before shifting later item indexes.
 
-Only opaque carrier data may be buffered by affinity. Visible text, thinking,
-tool calls, and argument deltas must not be delayed.
+Chat, Messages, and Responses buffer only opaque carrier state. Gemini is the
+sole exception: it deliberately holds one complete source event to keep a
+natural signature on a content-bearing Part for client compatibility.
 
 ## Stateful Responses
 
