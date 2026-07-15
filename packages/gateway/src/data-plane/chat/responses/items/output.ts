@@ -1,9 +1,8 @@
-import { createStoredResponsesItemId, responsesItemEncryptedContent, responsesItemId } from './format.ts';
+import { createStoredResponsesItemId, responsesItemId } from './format.ts';
 import type { StatefulResponsesStore } from './store.ts';
 import type { StoredResponsesItem } from '../../../../repo/types.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { responsesResultToEvents, type ResponsesInputItem, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import type { ChatTargetApi } from '@floway-dev/provider';
 
 // Wraps a Responses event stream to mint gateway-owned stored ids for every
 // output item and persist the matching rows. Runs inside `responsesAttempt`
@@ -42,12 +41,10 @@ export const wrapResponsesOutputForStorage = async function* (
   frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
   args: {
     readonly store: StatefulResponsesStore;
-    readonly upstream: string;
-    readonly targetApi: ChatTargetApi;
     readonly responseId: string;
   },
 ): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
-  const { store, upstream, targetApi, responseId } = args;
+  const { store, responseId } = args;
   const upstreamToStored = new Map<string, string>();
 
   const idMapper = (upstreamId: string, itemType: string): string => {
@@ -64,30 +61,20 @@ export const wrapResponsesOutputForStorage = async function* (
     if (upstreamId === null) {
       throw new Error(`Cannot persist Responses item without an upstream id (newId=${newId}, type=${originalItem.type})`);
     }
-    // A native Responses upstream owns its items — except those a source
-    // interceptor synthesized this request, whose gateway-minted ids the
-    // upstream never issued. Those persist with no upstream identity so they
-    // stay non_affinity.
-    const upstreamOwned = targetApi === 'responses' && !store.isSyntheticItem(upstreamId);
-    const encryptedContent = responsesItemEncryptedContent(originalItem);
     // Interceptors register per-item server-only payloads under the wire id.
     // Attaching it lets a later turn restore the real success/failure state
     // even when the client stripped fields from the echoed wire item.
     const privatePayload = store.getPrivatePayload(upstreamId);
-    const persistedPayload = privatePayload !== undefined ? { item: originalItem, private: privatePayload } : { item: originalItem };
+    const clientItem = { ...originalItem, id: newId } as ResponsesInputItem;
+    const persistedPayload = privatePayload !== undefined ? { item: clientItem, private: privatePayload } : { item: clientItem };
     const now = Date.now();
     const row: StoredResponsesItem = {
       id: newId,
       apiKeyId: store.apiKeyId,
-      upstreamId: upstreamOwned ? upstream : null,
-      upstreamItemId: upstreamOwned ? upstreamId : null,
       itemType: originalItem.type,
-      origin: upstreamOwned ? 'upstream' : 'synthetic',
-      payload: store.shouldStorePayload ? persistedPayload : null,
-      contentHash: await store.hashItemContent(originalItem),
-      encryptedContentHash: encryptedContent === null ? null : await store.hashEncryptedContent(encryptedContent),
+      payload: persistedPayload,
+      contentHash: await store.hashItemContent(clientItem),
       createdAt: now,
-      refreshedAt: now,
     };
     store.stageOutputItem(row);
     await store.commitOutputItems();

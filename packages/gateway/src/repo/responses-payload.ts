@@ -51,7 +51,6 @@ export const RESPONSES_ITEM_PAYLOAD_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 // UPDATE volume would scale with conversation history length. One UPDATE per
 // row per day shifts the row-retention sweep by at most one day relative to
 // the 180-day row TTL, well below the precision worth paying for.
-export const RESPONSES_REFRESH_DEBOUNCE_MS = 24 * 60 * 60 * 1000;
 const HOUR_MS = 60 * 60 * 1000;
 
 // Root under which every stored-payload file lives, regardless of expiry hour.
@@ -63,12 +62,10 @@ const decoder = new TextDecoder();
 
 export const serializeStoredResponsesPayload = async (
   id: string,
-  apiKeyId: string | null,
+  apiKeyId: string,
   createdAt: number,
-  payload: StoredResponsesItemPayload | null,
-): Promise<string | null> => {
-  if (payload === null) return null;
-
+  payload: StoredResponsesItemPayload,
+): Promise<string> => {
   const rawBytes = encoder.encode(JSON.stringify(payload));
   const gzippedBytes = await gzipBytes(rawBytes);
 
@@ -87,7 +84,7 @@ export const serializeStoredResponsesPayload = async (
   // integrity verification stays a plain hash-of-body check.
   const sha256 = await sha256Hex(gzippedBytes);
   const expiresAt = createdAt + RESPONSES_ITEM_PAYLOAD_TTL_MS;
-  const apiKeyHashPrefix = (await sha256Hex(encoder.encode(apiKeyId ?? ''))).slice(0, 16);
+  const apiKeyHashPrefix = (await sha256Hex(encoder.encode(apiKeyId))).slice(0, 16);
   const key = `${responsesItemsExpiryBucketPrefix(expiresAt)}${apiKeyHashPrefix}/${id}/${sha256}.gz`;
   await getFileProvider().put(key, gzippedBytes);
   return JSON.stringify({
@@ -102,10 +99,8 @@ export const serializeStoredResponsesPayload = async (
 
 export const parseStoredResponsesPayload = async (
   id: string,
-  raw: string | null,
-): Promise<StoredResponsesItemPayload | null> => {
-  if (raw === null) return null;
-
+  raw: string,
+): Promise<StoredResponsesItemPayload> => {
   const descriptor = parseDescriptor(id, raw);
   if (descriptor.storage === 'inline') {
     return 'encoding' in descriptor

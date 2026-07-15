@@ -3,7 +3,7 @@ import { prepareResponsesAffinity } from '../affinity/responses-ingress.ts';
 import type { ResponsesAttemptResult, ResponsesInvocation } from './interceptors/types.ts';
 import { normalizeAssistantInputText } from './items/normalize-assistant-content.ts';
 import { syntheticEventsFromResult } from './items/output.ts';
-import { rewriteResponsesPayloadForCandidate, type RewrittenResponsesPayload } from './items/rewrite.ts';
+import { rewriteResponsesPayload, type RewrittenResponsesPayload } from './items/rewrite.ts';
 import type { StatefulResponsesStore } from './items/store.ts';
 import { tokenUsageFromResponsesResult } from './usage.ts';
 import { applyRulesToUpstreamResponses } from '../../model-aliases/apply-rules.ts';
@@ -81,7 +81,7 @@ export const responsesAttempt = {
     // inside the chain body, before `run()`, so deferring rewrite/seed to
     // the inner closure would leave the shim looking at the pre-rewrite
     // wire shape against an empty privatePayload map.
-    const rewritten = await rewriteOrRenderFailure(payload, store, candidate);
+    const rewritten = await rewriteOrRenderFailure(payload, store);
     if (!('payload' in rewritten)) return rewritten.failure;
     store.beginAttempt(rewritten.privatePayloads);
     // Copilot compaction and Azure-native compaction both emit assistant
@@ -141,10 +141,9 @@ type RewriteOutcome =
 const rewriteOrRenderFailure = async (
   payload: CanonicalResponsesPayload,
   store: StatefulResponsesStore,
-  candidate: ModelCandidate,
 ): Promise<RewriteOutcome> => {
   try {
-    return await rewriteResponsesPayloadForCandidate(payload, store, candidate);
+    return rewriteResponsesPayload(payload, store);
   } catch (error) {
     const failure = tryCatchChatServeFailure(error);
     if (failure === null) throw error;

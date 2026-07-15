@@ -349,25 +349,13 @@ export interface ModelAliasesRepo {
   deleteAll(): Promise<void>;
 }
 
-export interface StoredResponsesItemMetadata {
+export interface StoredResponsesItem {
   id: string;
-  apiKeyId: string | null;
-  upstreamId: string | null;
-  upstreamItemId: string | null;
+  apiKeyId: string;
   itemType: string;
-  origin: 'input' | 'upstream' | 'synthetic';
-  hasPayload: boolean;
-  contentHash: string | null;
-  // sha256 of the item's `encrypted_content`, when it carries one (reasoning /
-  // compaction). Lets a later turn that echoes the blob without a gateway id
-  // recover this row's owning upstream for affinity routing.
-  encryptedContentHash: string | null;
+  payload: StoredResponsesItemPayload;
+  contentHash: string;
   createdAt: number;
-  refreshedAt: number;
-}
-
-export interface StoredResponsesItem extends Omit<StoredResponsesItemMetadata, 'hasPayload'> {
-  payload: StoredResponsesItemPayload | null;
 }
 
 export interface StoredResponsesItemPayload {
@@ -379,37 +367,25 @@ export interface StoredResponsesItemPayload {
   private?: unknown;
 }
 
-export interface StoredResponsesItemPayloadRecord {
-  id: string;
-  payload: StoredResponsesItemPayload;
-}
-
 export interface ResponsesItemsRepo {
-  lookupMany(apiKeyId: string | null, ids: readonly string[]): Promise<StoredResponsesItemMetadata[]>;
-  lookupManyByContentHash(apiKeyId: string | null, hashes: readonly string[]): Promise<StoredResponsesItemMetadata[]>;
-  lookupManyByEncryptedContentHash(apiKeyId: string | null, hashes: readonly string[]): Promise<StoredResponsesItemMetadata[]>;
-  lookupPayloads(apiKeyId: string | null, ids: readonly string[]): Promise<StoredResponsesItemPayloadRecord[]>;
+  lookupMany(apiKeyId: string, ids: readonly string[]): Promise<StoredResponsesItem[]>;
+  lookupManyByContentHash(apiKeyId: string, hashes: readonly string[]): Promise<StoredResponsesItem[]>;
   insertMany(items: readonly StoredResponsesItem[]): Promise<void>;
-  fillPayloads(items: readonly StoredResponsesItem[]): Promise<number>;
-  refreshMany(apiKeyId: string | null, ids: readonly string[], refreshedAt: number): Promise<number>;
-  clearPayloadOlderThan(createdBefore: number): Promise<number>;
-  deleteOlderThan(refreshedBefore: number): Promise<number>;
+  deleteOlderThan(createdBefore: number): Promise<number>;
   deleteAll(): Promise<void>;
 }
 
 export interface StoredResponsesSnapshot {
   id: string;
-  apiKeyId: string | null;
+  apiKeyId: string;
   itemIds: string[];
   createdAt: number;
-  refreshedAt: number;
 }
 
 export interface ResponsesSnapshotsRepo {
-  lookup(apiKeyId: string | null, id: string): Promise<StoredResponsesSnapshot | null>;
+  lookup(apiKeyId: string, id: string): Promise<StoredResponsesSnapshot | null>;
   insert(snapshot: StoredResponsesSnapshot): Promise<void>;
-  refresh(apiKeyId: string | null, id: string, refreshedAt: number): Promise<boolean>;
-  deleteOlderThan(refreshedBefore: number): Promise<number>;
+  deleteOlderThan(createdBefore: number): Promise<number>;
   deleteAll(): Promise<void>;
 }
 

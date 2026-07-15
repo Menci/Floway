@@ -844,7 +844,7 @@ async function* materializeServerToolItems(
       // produced one) registers under the same id so persistence captures it
       // and the next loop turn's replay-side `transformItems` finds it by the
       // accumulated output item's id.
-      statefulResponsesStore.addSyntheticItem(slot.id, step.value.privatePayload);
+      statefulResponsesStore.setPrivatePayload(slot.id, step.value.privatePayload);
       yield* serverToolEndFrames(merge, outputIndex, slot, step.value);
     }
   }

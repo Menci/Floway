@@ -101,7 +101,6 @@ export const prepareResponsesServePlan = async (args: {
   // Runs after the affinity walk so any `item_reference` in user-supplied
   // input has its target row loaded.
   await store.stageInputItems(payload.input);
-  await store.refreshTouchedItems();
 
   if (decision.candidates.length === 0) {
     return {

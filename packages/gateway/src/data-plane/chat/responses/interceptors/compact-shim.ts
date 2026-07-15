@@ -330,7 +330,6 @@ const simulateCompaction = async (ctx: ResponsesInvocation, gatewayCtx: ChatGate
   // (For non-responses targets the targetApi check already suppresses
   // ownership; this also covers the responses-target + flag-on engagement.)
   const cmpId = `cmp_${crypto.randomUUID()}`;
-  gatewayCtx.store.addSyntheticItem(cmpId);
   const synthesized = buildCompactionEnvelope(cmpId, summaryText, collected);
 
   return {

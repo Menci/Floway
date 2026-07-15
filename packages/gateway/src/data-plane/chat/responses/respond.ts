@@ -2,7 +2,6 @@ import type { Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
 
 import { tokenUsageFromResponsesResult } from './usage.ts';
-import { responsesTarget } from './attempt.ts';
 import { createStoredResponseId } from './items/format.ts';
 import { wrapResponsesOutputForStorage } from './items/output.ts';
 import { wrapResponsesAffinityEgress } from '../affinity/responses-egress.ts';
@@ -95,15 +94,13 @@ const nativeResponsesOutput = (
 ): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> => {
   if (!('affinity' in ctx) || !('store' in ctx)) throw new Error('Responses event result reached responder without chat context');
   const chatCtx = ctx as ChatGatewayCtx;
-  const candidate = chatCtx.affinity.selectedCandidate();
   const withAffinity = wrapResponsesAffinityEgress(frames, {
     codec: chatCtx.affinity.codec,
     affinity: chatCtx.affinity.selectedTarget(),
   });
+  if (!chatCtx.store.storesState) return withAffinity;
   return wrapResponsesOutputForStorage(withAffinity, {
     store: chatCtx.store,
-    upstream: candidate.provider.upstream,
-    targetApi: responsesTarget.pick(candidate.model.endpoints),
     responseId: createStoredResponseId(),
   });
 };

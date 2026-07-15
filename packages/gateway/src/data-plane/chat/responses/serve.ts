@@ -1,4 +1,4 @@
-import { responsesAttempt, responsesTarget } from './attempt.ts';
+import { responsesAttempt } from './attempt.ts';
 import type { ResponsesAttemptResult } from './interceptors/types.ts';
 import { createStoredResponseId } from './items/format.ts';
 import { syntheticEventsFromResult, wrapResponsesOutputForStorage } from './items/output.ts';
@@ -73,15 +73,16 @@ export const responsesServe = {
     );
     if (result.type !== 'result') return result;
 
-    const candidate = ctx.affinity.selectedCandidate();
     const withAffinity = wrapResponsesAffinityEgress(syntheticEventsFromResult(result.result), {
       codec: ctx.affinity.codec,
       affinity: ctx.affinity.selectedTarget(),
     });
+    if (!ctx.store.storesState) {
+      const clientResult = await collectResponsesProtocolEventsToResult(withAffinity);
+      return { ...result, result: clientResult, usage: tokenUsageFromResponsesResult(clientResult) };
+    }
     const stored = wrapResponsesOutputForStorage(withAffinity, {
       store: ctx.store,
-      upstream: candidate.provider.upstream,
-      targetApi: responsesTarget.pick(candidate.model.endpoints),
       responseId: createStoredResponseId(),
     });
     const clientResult = await collectResponsesProtocolEventsToResult(stored);
