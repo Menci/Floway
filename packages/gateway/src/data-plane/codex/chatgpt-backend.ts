@@ -1,4 +1,3 @@
-[[31mERROR[0m] - (starship::print): Under a 'dumb' terminal (TERM=dumb).
 // chatgpt_base_url sub-paths codex pokes during a session. Each handler
 // returns the minimum shape the matching client deserialiser accepts as a
 // successful empty result, so the user does not see "404 Not Found" warn
@@ -38,4 +37,3 @@ export const codexPluginsList = (c: Context) => c.json([]);
 const emptyPluginsPage = { plugins: [], pagination: { next_page_token: null } };
 export const codexPsPluginsList = (c: Context) => c.json(emptyPluginsPage);
 export const codexPsPluginsInstalled = (c: Context) => c.json(emptyPluginsPage);
-

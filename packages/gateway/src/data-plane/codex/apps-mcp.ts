@@ -1,4 +1,3 @@
-[[31mERROR[0m] - (starship::print): Under a 'dumb' terminal (TERM=dumb).
 // Minimal MCP Streamable HTTP server that advertises zero tools, mounted at
 // `/api/codex/apps`. codex's 1p client registers a "codex_apps" MCP server
 // whose URL is derived from `chatgpt_base_url` by
@@ -110,4 +109,3 @@ const jsonRpcError = (id: JsonRpcId, code: number, message: string): JsonRpcResp
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
-
