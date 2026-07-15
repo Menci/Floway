@@ -88,7 +88,12 @@ export const codexAlphaSearch = async (c: CtxWithJson<typeof codexSearchRequestS
     const headers = new Headers();
     const turnMetadata = c.req.header('x-codex-turn-metadata');
     if (turnMetadata !== undefined) headers.set('x-codex-turn-metadata', turnMetadata);
-    return await dispatcher(body, c.req.raw.signal, headers);
+    const response = await dispatcher(body, c.req.raw.signal, headers);
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers,
+    });
   }
 
   let configuredProvider: Promise<ConfiguredWebSearchProvider> | undefined;

@@ -174,16 +174,18 @@ describe('codex /alpha/search', () => {
           models: [{ upstreamModelId: 'gpt-search', endpoints: { responses: {} } }],
         },
       }));
+      const upstreamPayload = {
+        encrypted_output: 'opaque',
+        output: 'upstream output',
+        results: [{ type: 'text_result', ref_id: 'turn0search0', url: 'https://example.com', title: 'Example', snippet: 'Snippet' }],
+      };
+      const immutableUpstreamResponse = await fetch(`data:application/json,${encodeURIComponent(JSON.stringify(upstreamPayload))}`);
       let upstreamBody: Record<string, unknown> | undefined;
       await withMockedFetch(
         async request => {
           if (request.url === 'https://search.example.com/v1/alpha/search') {
             upstreamBody = await request.json() as Record<string, unknown>;
-            return jsonResponse({
-              encrypted_output: 'opaque',
-              output: 'upstream output',
-              results: [{ type: 'text_result', ref_id: 'turn0search0', url: 'https://example.com', title: 'Example', snippet: 'Snippet' }],
-            });
+            return immutableUpstreamResponse;
           }
           throw new Error(`Unhandled fetch ${request.url}`);
         },
@@ -194,11 +196,7 @@ describe('codex /alpha/search', () => {
             commands: { search_query: [{ q: 'Floway' }] },
           });
           expect(response.status).toBe(200);
-          expect(await response.json()).toEqual({
-            encrypted_output: 'opaque',
-            output: 'upstream output',
-            results: [{ type: 'text_result', ref_id: 'turn0search0', url: 'https://example.com', title: 'Example', snippet: 'Snippet' }],
-          });
+          expect(await response.json()).toEqual(upstreamPayload);
         },
       );
       expect(upstreamBody).toMatchObject({
