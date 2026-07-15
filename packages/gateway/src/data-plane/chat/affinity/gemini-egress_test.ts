@@ -88,4 +88,33 @@ describe('Gemini affinity egress', () => {
       },
     });
   });
+
+  test('delays every finish when one candidate in the event still needs a carrier', async () => {
+    const output: ProtocolFrame<GeminiStreamEvent>[] = [];
+    for await (const frame of wrapGeminiAffinityEgress(frames([
+      eventFrame({
+        candidates: [{ index: 0, content: { role: 'model', parts: [{ thoughtSignature: 'existing' }] } }],
+      }),
+      eventFrame({
+        candidates: [
+          { index: 0, content: { role: 'model', parts: [] }, finishReason: 'STOP' },
+          { index: 1, content: { role: 'model', parts: [{ text: 'visible' }] }, finishReason: 'MAX_TOKENS' },
+        ],
+      }),
+    ]), { codec: immediateCodec, affinity })) output.push(frame);
+
+    expect(output[1]).toEqual(eventFrame({
+      candidates: [{ index: 1, content: { role: 'model', parts: [{ text: 'visible' }] } }],
+    }));
+    expect(output[2]).toEqual(eventFrame({
+      candidates: [
+        { index: 0, content: { role: 'model', parts: [] }, finishReason: 'STOP' },
+        {
+          index: 1,
+          content: { role: 'model', parts: [{ thoughtSignature: 'wrapped:synthetic' }] },
+          finishReason: 'MAX_TOKENS',
+        },
+      ],
+    }));
+  });
 });

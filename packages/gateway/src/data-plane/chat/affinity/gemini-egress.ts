@@ -7,9 +7,11 @@ interface CandidateState {
   finished: boolean;
 }
 
-interface DeferredCandidate {
+interface CandidatePlan {
   readonly candidate: GeminiCandidate;
   readonly carrierValues: string[];
+  readonly visibleParts: GeminiPart[];
+  readonly needsSynthetic: boolean;
   readonly state: CandidateState;
 }
 
@@ -42,8 +44,7 @@ export const wrapGeminiAffinityEgress = async function* (
       return;
     }
 
-    const visibleCandidates: GeminiCandidate[] = [];
-    const deferredCandidates: DeferredCandidate[] = [];
+    const plans: CandidatePlan[] = [];
 
     for (const candidate of frame.event.candidates ?? []) {
       const state = states.get(candidate.index) ?? { sawCarrier: false, finished: false };
@@ -59,32 +60,42 @@ export const wrapGeminiAffinityEgress = async function* (
       }
 
       const needsSynthetic = candidate.finishReason !== undefined && !state.sawCarrier && carrierValues.length === 0;
-      if (carrierValues.length > 0 || needsSynthetic) {
-        deferredCandidates.push({ candidate, carrierValues, state });
-        if (visibleParts.length > 0) {
-          const { finishReason: _finishReason, ...rest } = candidate;
-          visibleCandidates.push({ ...rest, content: { ...candidate.content, parts: visibleParts } });
-        }
-        continue;
+      plans.push({ candidate, carrierValues, visibleParts, needsSynthetic, state });
+    }
+
+    const needsDeferredCarrier = plans.some(plan => plan.carrierValues.length > 0 || plan.needsSynthetic);
+    if (!needsDeferredCarrier) {
+      for (const plan of plans) {
+        if (plan.candidate.finishReason !== undefined) plan.state.finished = true;
       }
-
-      visibleCandidates.push(candidate);
-      if (candidate.finishReason !== undefined) state.finished = true;
+      yield frame;
+      continue;
     }
 
+    const visibleCandidates = plans.flatMap(plan => {
+      const parts = plan.carrierValues.length > 0 ? plan.visibleParts : plan.candidate.content.parts;
+      if (parts.length === 0) return [];
+      const { finishReason: _finishReason, ...rest } = plan.candidate;
+      return [{ ...rest, content: { ...plan.candidate.content, parts } }];
+    });
     if (visibleCandidates.length > 0 || (frame.event.candidates?.length ?? 0) === 0) {
-      const visibleEvent = deferredCandidates.length > 0 ? eventWithoutUsage(frame.event) : frame.event;
-      yield eventFrame({ ...visibleEvent, candidates: visibleCandidates });
+      yield eventFrame({ ...eventWithoutUsage(frame.event), candidates: visibleCandidates });
     }
 
-    if (deferredCandidates.length === 0) continue;
-
-    const wrappedCandidates = await Promise.all(deferredCandidates.map(async ({ candidate, carrierValues, state }) => {
-      const values = carrierValues.length > 0 ? carrierValues : [undefined];
+    const wrappedCandidates = await Promise.all(plans.flatMap(plan => {
+      const hasCarrier = plan.carrierValues.length > 0 || plan.needsSynthetic;
+      if (!hasCarrier && plan.candidate.finishReason === undefined) return [];
+      return [plan];
+    }).map(async ({ candidate, carrierValues, needsSynthetic, state }) => {
+      const values: Array<string | undefined> = carrierValues.length > 0
+        ? carrierValues
+        : needsSynthetic
+          ? [undefined]
+          : [];
       const parts = await Promise.all(values.map(async value => ({
         thoughtSignature: await options.codec.wrap(value, options.affinity),
       })));
-      state.sawCarrier = true;
+      if (parts.length > 0) state.sawCarrier = true;
       if (candidate.finishReason !== undefined) state.finished = true;
       return {
         index: candidate.index,
