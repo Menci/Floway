@@ -1,10 +1,11 @@
 import { expect, test, vi } from 'vitest';
 
 import { executeAlphaSearch } from './alpha-execution.ts';
+import type { AlphaSearchDispatcher } from './alpha-upstream.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 test('executeAlphaSearch preserves model-facing output and structured text results', async () => {
-  const call = vi.fn(async () => new Response(JSON.stringify({
+  const call = vi.fn<AlphaSearchDispatcher['call']>(async () => new Response(JSON.stringify({
     encrypted_output: 'opaque',
     output: 'rendered output',
     results: [{ type: 'text_result', ref_id: 'turn0search0', url: 'https://example.com', title: 'Example', snippet: 'Snippet', future: true }],

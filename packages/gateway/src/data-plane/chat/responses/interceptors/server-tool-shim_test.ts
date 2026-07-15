@@ -19,6 +19,7 @@ import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../../test-helpers/gateway-ctx.ts';
 import { resolveConfiguredWebSearchProvider } from '../../../tools/web-search/provider.ts';
 import { resolveAlphaSearchDispatcher } from '../../../tools/web-search/alpha-upstream.ts';
+import type { AlphaSearchDispatcher } from '../../../tools/web-search/alpha-upstream.ts';
 import type {
   ConfiguredWebSearchProvider,
   SearchConfig,
@@ -3918,7 +3919,7 @@ test('responses target with OpenAI passthrough uses the selected alpha search di
     jina: { apiKey: '' },
     passthroughOpenAiSearch: { enabled: true, upstreamId: 'up_codex', model: 'gpt-search' },
   } satisfies SearchConfig);
-  const call = vi.fn(async () => new Response(JSON.stringify({
+  const call = vi.fn<AlphaSearchDispatcher['call']>(async () => new Response(JSON.stringify({
     encrypted_output: null,
     output: 'alpha output',
     results: [{ type: 'text_result', url: 'https://example.com', title: 'Example', snippet: 'alpha snippet' }],
