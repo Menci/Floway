@@ -1,31 +1,12 @@
 import type { StoredResponsesItemPayload } from './types.ts';
 import { getFileProvider, sha256Hex } from '@floway-dev/platform';
 
-// Two encodings coexist in this column:
-//   - legacy (no `encoding` field): inline `payload` is a plain object;
-//     file body is the raw payload JSON bytes
-//   - "gzip": inline `payload` is a base64 string of gzipped JSON bytes;
-//     file body is the gzipped JSON bytes
-// Writes always emit "gzip"; reads accept both so legacy rows stay
-// deserializable for the remainder of their TTL.
 type StoredResponsesPayloadJson =
-  | {
-    version: 1;
-    storage: 'inline';
-    payload: StoredResponsesItemPayload;
-  }
   | {
     version: 1;
     storage: 'inline';
     encoding: 'gzip';
     payload: string;
-  }
-  | {
-    version: 1;
-    storage: 'file';
-    key: string;
-    sha256: string;
-    byteLength: number;
   }
   | {
     version: 1;
@@ -42,15 +23,10 @@ type StoredResponsesPayloadJson =
 // cap pushes large tool outputs out to the file provider where per-byte
 // storage is dramatically cheaper than D1.
 const INLINE_PAYLOAD_LIMIT_BYTES = 64 * 1024;
-// Read only by the scheduled cleanup (payload-file sweep + descriptor clear).
+// Read only by the scheduled item/snapshot/file cleanup.
 // Lookups intentionally do NOT filter by this TTL: a row stays referenceable
 // until cleanup actually removes it, so expiry is driven by the sweeper alone.
 export const RESPONSES_ITEM_PAYLOAD_TTL_MS = 30 * 24 * 60 * 60 * 1000;
-// `refreshed_at` writes are debounced within this window. Long Responses
-// sessions touch every prior item every turn; without coalescing, per-request
-// UPDATE volume would scale with conversation history length. One UPDATE per
-// row per day shifts the row-retention sweep by at most one day relative to
-// the 180-day row TTL, well below the precision worth paying for.
 const HOUR_MS = 60 * 60 * 1000;
 
 // Root under which every stored-payload file lives, regardless of expiry hour.
@@ -58,7 +34,6 @@ const HOUR_MS = 60 * 60 * 1000;
 const RESPONSES_ITEMS_FILE_ROOT = 'responses-items/v1/expires/';
 
 const encoder = new TextEncoder();
-const decoder = new TextDecoder();
 
 export const serializeStoredResponsesPayload = async (
   id: string,
@@ -103,9 +78,7 @@ export const parseStoredResponsesPayload = async (
 ): Promise<StoredResponsesItemPayload> => {
   const descriptor = parseDescriptor(id, raw);
   if (descriptor.storage === 'inline') {
-    return 'encoding' in descriptor
-      ? clonePayload(parseInlinePayloadJson(id, await ungzipToString(base64ToBytes(descriptor.payload))))
-      : clonePayload(descriptor.payload);
+    return clonePayload(parseInlinePayloadJson(id, await ungzipToString(base64ToBytes(descriptor.payload))));
   }
 
   const body = await getFileProvider().get(descriptor.key);
@@ -118,8 +91,7 @@ export const parseStoredResponsesPayload = async (
     throw new Error(`Stored Responses payload file hash mismatch for id=${id}`);
   }
 
-  const json = 'encoding' in descriptor ? await ungzipToString(body) : decoder.decode(body);
-  return clonePayload(parseInlinePayloadJson(id, json));
+  return clonePayload(parseInlinePayloadJson(id, await ungzipToString(body)));
 };
 
 const parseInlinePayloadJson = (id: string, json: string): StoredResponsesItemPayload => {
@@ -141,13 +113,8 @@ const parseDescriptor = (id: string, raw: string): StoredResponsesPayloadJson =>
   }
 
   if (!isRecord(parsed) || parsed.version !== 1) throw new Error(`Invalid responses_items.payload_json for id=${id}`);
-  if (parsed.storage === 'inline') {
-    if (parsed.encoding === 'gzip' && typeof parsed.payload === 'string') {
-      return { version: 1, storage: 'inline', encoding: 'gzip', payload: parsed.payload };
-    }
-    if (parsed.encoding === undefined) {
-      return { version: 1, storage: 'inline', payload: assertPayloadObject(id, parsed.payload) };
-    }
+  if (parsed.storage === 'inline' && parsed.encoding === 'gzip' && typeof parsed.payload === 'string') {
+    return { version: 1, storage: 'inline', encoding: 'gzip', payload: parsed.payload };
   }
   if (parsed.storage === 'file'
     && typeof parsed.key === 'string'
@@ -156,12 +123,7 @@ const parseDescriptor = (id: string, raw: string): StoredResponsesPayloadJson =>
     && Number.isSafeInteger(parsed.byteLength)
     && parsed.byteLength >= 0
   ) {
-    if (parsed.encoding === 'gzip') {
-      return { version: 1, storage: 'file', encoding: 'gzip', key: parsed.key, sha256: parsed.sha256, byteLength: parsed.byteLength };
-    }
-    if (parsed.encoding === undefined) {
-      return { version: 1, storage: 'file', key: parsed.key, sha256: parsed.sha256, byteLength: parsed.byteLength };
-    }
+    if (parsed.encoding === 'gzip') return { version: 1, storage: 'file', encoding: 'gzip', key: parsed.key, sha256: parsed.sha256, byteLength: parsed.byteLength };
   }
   throw new Error(`Invalid responses_items.payload_json for id=${id} (storage=${typeof parsed.storage === 'string' ? parsed.storage : 'unknown'}, encoding=${typeof parsed.encoding === 'string' ? parsed.encoding : 'absent'})`);
 };

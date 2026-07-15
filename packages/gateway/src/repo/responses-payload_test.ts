@@ -74,38 +74,6 @@ test('inline payload round-trips through gzip+base64 and the descriptor advertis
   });
 });
 
-test('legacy inline payload descriptors still parse without an encoding field', async () => {
-  initFileProvider(new MemoryFileProvider());
-
-  // Hand-rolled because rows written by builds older than this change carry no
-  // encoding field; the read path keeps deserializing them while their TTL
-  // elapses (we cannot reach back through the deploy lag and rewrite them).
-  const legacy = JSON.stringify({
-    version: 1,
-    storage: 'inline',
-    payload: { item: { type: 'message', id: 'msg_legacy', content: 'plain' } },
-  });
-  assertEquals(await parseStoredResponsesPayload('msg_legacy', legacy), {
-    item: { type: 'message', id: 'msg_legacy', content: 'plain' },
-  });
-});
-
-test('legacy file payload descriptors verify their hash and parse the unencoded body', async () => {
-  const files = new MemoryFileProvider();
-  initFileProvider(files);
-
-  const body = new TextEncoder().encode(JSON.stringify({ item: { type: 'message', id: 'msg_file_legacy', content: 'persisted' } }));
-  const digest = await crypto.subtle.digest('SHA-256', body);
-  const sha256 = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
-  const key = `responses-items/v1/expires/2026/06/27/12/scope/msg_file_legacy/${sha256}.json`;
-  await files.put(key, body);
-  const descriptor = JSON.stringify({ version: 1, storage: 'file', key, sha256, byteLength: body.byteLength });
-
-  assertEquals(await parseStoredResponsesPayload('msg_file_legacy', descriptor), {
-    item: { type: 'message', id: 'msg_file_legacy', content: 'persisted' },
-  });
-});
-
 test('spilled payload file body is gzip-compressed and the descriptor records the encoding', async () => {
   const files = new MemoryFileProvider();
   initFileProvider(files);
