@@ -52,8 +52,9 @@ const defaultCandidates = vi.hoisted(() => () => [{
         if (response === undefined) throw new Error('test did not enqueue a generations response');
         return { response, modelKey: 'gpt-image-2' };
       },
-      callImagesEdits: async (_model: unknown, form: FormData) => {
-        stub.editsForms.push(form);
+      callImagesEdits: async (_model: unknown, body: FormData | Record<string, unknown>) => {
+        if (!(body instanceof FormData)) throw new Error('hosted image edit must use multipart');
+        stub.editsForms.push(body);
         const response = stub.nextEdits.shift();
         if (response === undefined) throw new Error('test did not enqueue an edits response');
         return { response, modelKey: 'gpt-image-2' };

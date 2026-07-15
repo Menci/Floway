@@ -2,11 +2,12 @@
 // requests to the provider that declares the requested model and the
 // matching image endpoint capability.
 //
-// Edits multipart bodies are loaded into memory via `request.formData()`;
-// this caps the per-request body size at the Workers heap (~128 MB).
-// Sufficient for the gpt-image-2 single-image edit case (≤50 MB image +
-// ≤50 MB mask). Multi-image edits with the gpt-image-1 `image[]` array
-// may exceed the heap — a streaming multipart parser is a follow-up.
+// Edits accepts multipart uploads and JSON `images` references. Both shapes
+// are buffered once for dump capture; JSON remains JSON through provider
+// dispatch, while multipart is parsed and re-encoded with a fresh boundary.
+// https://github.com/openai/openai-openapi/blob/a3276900e58b8b2a92e0cb087cd2e6e005f58458/openapi.yaml#L12558-L12620
+// Multipart size is therefore capped by the Workers heap (~128 MB); a
+// streaming parser is required before larger multi-image uploads are viable.
 
 import type { Context } from 'hono';
 
@@ -15,37 +16,38 @@ import { createGatewayCtxFromHono, finalizeGatewayResponse } from '../chat/share
 import { readRequestBody, takeRequestBody, type RequestBody } from '../chat/shared/request-body.ts';
 import { passthroughApiError, passthroughServe } from '../shared/passthrough-serve.ts';
 import { tokenUsageFromImagesBody } from '../shared/telemetry/usage.ts';
+import type { ImagesEditsJsonPayload } from '@floway-dev/protocols/images';
+import type { ImagesEditsBody } from '@floway-dev/provider';
 
-interface ImagesGenerationsRequestBody {
+interface JsonModelRequestBody {
   model?: unknown;
-  prompt?: unknown;
   [key: string]: unknown;
 }
 
-type PreparedRequest =
+type PreparedJsonRequest =
   | { type: 'ok'; body: Record<string, unknown>; model: string }
   | { type: 'invalid'; message: string };
 
-const prepareImagesGenerationsRequest = (bytes: Uint8Array): PreparedRequest => {
-  let request: ImagesGenerationsRequestBody;
+const prepareJsonModelRequest = (bytes: Uint8Array, requestName: string): PreparedJsonRequest => {
+  let request: JsonModelRequestBody;
   try {
     const parsed = JSON.parse(new TextDecoder().decode(bytes)) as unknown;
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      return { type: 'invalid', message: 'Images generations request body must be an object.' };
+      return { type: 'invalid', message: `${requestName} request body must be an object.` };
     }
-    request = parsed as ImagesGenerationsRequestBody;
+    request = parsed as JsonModelRequestBody;
   } catch {
-    return { type: 'invalid', message: 'Images generations request body must be valid JSON.' };
+    return { type: 'invalid', message: `${requestName} request body must be valid JSON.` };
   }
   if (typeof request.model !== 'string' || request.model.length === 0) {
-    return { type: 'invalid', message: 'Images generations request body must include a model string.' };
+    return { type: 'invalid', message: `${requestName} request body must include a model string.` };
   }
   return { type: 'ok', body: request as Record<string, unknown>, model: request.model };
 };
 
 export const imagesGenerations = async (c: Context): Promise<Response> => {
   const requestBody = await readRequestBody(c);
-  const request = prepareImagesGenerationsRequest(requestBody.bytes);
+  const request = prepareJsonModelRequest(requestBody.bytes, 'Images generations');
   const ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
   if (request.type === 'invalid') {
     ctx.dump?.error('gateway');
@@ -70,36 +72,33 @@ export const imagesGenerations = async (c: Context): Promise<Response> => {
   return finalizeGatewayResponse(ctx, response);
 };
 
-export const serveImagesEditForm = async (c: Context, requestBody: RequestBody, form: FormData): Promise<Response> => {
+const serveImagesEditBody = async (
+  c: Context,
+  requestBody: RequestBody,
+  model: string,
+  body: ImagesEditsBody,
+): Promise<Response> => {
   const ctx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
-
-  const modelRaw = form.get('model');
-  if (typeof modelRaw !== 'string' || modelRaw.length === 0) {
-    ctx.dump?.error('gateway');
-    return finalizeGatewayResponse(ctx, passthroughApiError(c, 'Image edits request body must include a model field.', 400));
-  }
-
-  ctx.dump?.requestedModel(modelRaw);
+  ctx.dump?.requestedModel(model);
   const response = await passthroughServe({
     c,
     ctx,
     sourceApi: '/images/edits',
     operation: 'image_edit',
-    model: modelRaw,
+    model,
     kind: 'image',
     modelServesEndpoint: model => model.endpoints.imagesEdits !== undefined,
     call: (provider, model, opts) => {
-      // ProviderInstance.callImagesEdits takes ownership of the FormData and
-      // appends the upstream-specific model/deployment id; allocate a fresh
-      // copy per candidate so the contract holds even if cross-candidate
-      // fallback is ever extended to try a second match. File-blob entries
-      // are passed by reference so no buffer copy happens.
-      const passthrough = new FormData();
-      for (const [name, value] of form.entries()) {
-        if (name === 'model') continue;
-        passthrough.append(name, value);
+      if (!(body instanceof FormData)) {
+        return provider.instance.callImagesEdits(model, body, undefined, opts);
       }
-      return provider.instance.callImagesEdits(model, passthrough, undefined, opts);
+      // The provider may append its model id to multipart bodies, so allocate
+      // a fresh FormData per candidate. Blob values remain shared.
+      const candidateBody = new FormData();
+      for (const [name, value] of body.entries()) {
+        if (name !== 'model') candidateBody.append(name, value);
+      }
+      return provider.instance.callImagesEdits(model, candidateBody, undefined, opts);
     },
     response: { format: 'json', extractBilling: tokenUsageFromImagesBody },
   });
@@ -107,21 +106,37 @@ export const serveImagesEditForm = async (c: Context, requestBody: RequestBody, 
 };
 
 export const imagesEdits = async (c: Context): Promise<Response> => {
-  // Buffer the multipart body once. Hono's formData() helper would consume
-  // c.req.raw.body internally; re-parsing from the captured bytes via a fresh
-  // Response keeps the dump capture honest without a second read on the wire.
   const requestBody = await readRequestBody(c);
-  let form: FormData;
-  try {
-    form = await new Response(requestBody.bytes as BodyInit, { headers: { 'content-type': c.req.header('content-type') ?? '' } }).formData();
-  } catch {
-    // Match the embeddings serve stance: do not surface the underlying
-    // parser's error text. The wording is enough for a client to know
-    // they sent the wrong content type or a malformed body.
+  const invalid = (message: string): Response => {
     const errorCtx = createGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
     errorCtx.dump?.error('gateway');
-    return finalizeGatewayResponse(errorCtx, passthroughApiError(c, 'Image edits request body must be a valid multipart/form-data payload.', 400));
+    return finalizeGatewayResponse(errorCtx, passthroughApiError(c, message, 400));
+  };
+
+  const contentType = c.req.header('content-type');
+  if (contentType === undefined) {
+    return invalid('Image edits request body must use application/json or multipart/form-data.');
+  }
+  const mediaType = contentType.replace(/;.*$/u, '').trim().toLowerCase();
+  if (mediaType === 'application/json') {
+    const request = prepareJsonModelRequest(requestBody.bytes, 'Image edits');
+    if (request.type === 'invalid') return invalid(request.message);
+    const { model: _model, ...body } = request.body as ImagesEditsJsonPayload;
+    return await serveImagesEditBody(c, requestBody, request.model, body);
   }
 
-  return await serveImagesEditForm(c, requestBody, form);
+  if (mediaType !== 'multipart/form-data') {
+    return invalid('Image edits request body must use application/json or multipart/form-data.');
+  }
+  let form: FormData;
+  try {
+    form = await new Response(requestBody.bytes as BodyInit, { headers: { 'content-type': contentType } }).formData();
+  } catch {
+    return invalid('Image edits request body must be valid multipart/form-data.');
+  }
+  const model = form.get('model');
+  if (typeof model !== 'string' || model.length === 0) {
+    return invalid('Image edits request body must include a model field.');
+  }
+  return await serveImagesEditBody(c, requestBody, model, form);
 };

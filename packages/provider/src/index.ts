@@ -47,6 +47,7 @@ export type { AddressableForm, ModelPrefixConfig } from './model-prefix.ts';
 export { MODEL_PREFIX_MAX_LENGTH, MODEL_PREFIX_REGEX, normalizeModelPrefix } from './model-prefix.ts';
 
 export type {
+  ImagesEditsBody,
   Provider,
   ProviderInstance,
   ProviderCallResult,

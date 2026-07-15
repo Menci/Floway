@@ -6,7 +6,7 @@ import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { CompletionsPayload } from '@floway-dev/protocols/completions';
 import type { EmbeddingsPayload } from '@floway-dev/protocols/embeddings';
-import type { ImagesGenerationsPayload } from '@floway-dev/protocols/images';
+import type { ImagesEditsJsonPayload, ImagesGenerationsPayload } from '@floway-dev/protocols/images';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { CanonicalResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
@@ -19,6 +19,7 @@ import type { CanonicalResponsesPayload, ResponsesResult, ResponsesStreamEvent }
 // into 'generate' so the inner upstream call runs an ordinary summarization
 // turn against the SUMMARIZATION_PROMPT).
 export type ResponsesAction = 'generate' | 'compact';
+export type ImagesEditsBody = FormData | Omit<ImagesEditsJsonPayload, 'model'>;
 
 export interface Provider {
   upstream: string;
@@ -129,10 +130,9 @@ export interface ProviderInstance {
   callMessagesCountTokens(model: ProviderModel, body: Omit<MessagesPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
   callEmbeddings(model: ProviderModel, body: Omit<EmbeddingsPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
   callImagesGenerations(model: ProviderModel, body: Omit<ImagesGenerationsPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
-  // The provider takes ownership of `body` and may mutate it (e.g. append
-  // the upstream-specific model/deployment id). Callers must allocate a
-  // fresh FormData per call.
-  callImagesEdits(model: ProviderModel, body: FormData, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
+  // Providers insert their upstream-specific model id. Multipart bodies are
+  // owned by the provider and may be mutated; JSON bodies remain immutable.
+  callImagesEdits(model: ProviderModel, body: ImagesEditsBody, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
 }
 
 // Static, module-shaped surface each provider package exports. The gateway

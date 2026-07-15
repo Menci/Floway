@@ -91,6 +91,9 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
     callEmbeddings: (model, body, signal, opts) => callNonStreaming(azureFetchEmbeddings, model, body, signal, opts.headers, opts),
     callImagesGenerations: (model, body, signal, opts) => callNonStreaming(azureFetchImagesGenerations, model, body, signal, opts.headers, opts),
     callImagesEdits: async (model, body, signal, opts) => {
+      if (!(body instanceof FormData)) {
+        return callNonStreaming(azureFetchImagesEdits, model, body, signal, opts.headers, opts);
+      }
       // Azure routes by upstream model id in the multipart `model` field; the
       // runtime re-encodes the FormData with a fresh boundary and sets
       // Content-Type itself.
