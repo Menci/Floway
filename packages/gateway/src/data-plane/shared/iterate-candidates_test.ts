@@ -11,6 +11,7 @@ const stubCandidate = (id: string, upstream = 'up'): ModelCandidate =>
     model: { id },
     provider: {
       upstream,
+      upstreamRevision: 'test-revision',
       kind: 'custom',
       name: upstream,
       disabledPublicModelIds: [],

@@ -108,7 +108,7 @@ const makeCandidate = (overrides: {
   const provider = stubProvider({ callChatCompletions: overrides.callChatCompletions });
   return {
     provider: {
-      upstream, kind: 'custom', name: upstream,
+      upstream, upstreamRevision: 'test-revision', kind: 'custom', name: upstream,
       disabledPublicModelIds: [], modelPrefix: null, instance: provider,
     },
     model: stubInternalModel(overrides.endpoints ? { endpoints: overrides.endpoints } : {}, upstream),

@@ -45,6 +45,7 @@ export const responsesServe = {
         return result;
       },
     );
+    return result;
   },
 
   compact: async (args: ResponsesServeCompactArgs): Promise<ResponsesAttemptResult> => {
@@ -59,7 +60,7 @@ export const responsesServe = {
     // re-tags the result as compact on the way out.
     const plan = await prepareResponsesServePlan({ payload, ctx });
     if (plan.kind === 'failure') return plan.result;
-    return await iterateCandidates(
+    const result = await iterateCandidates(
       plan.candidates,
       'responsesServe.compact',
       ctx,

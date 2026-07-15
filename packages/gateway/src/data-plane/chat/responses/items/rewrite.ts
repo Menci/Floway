@@ -167,7 +167,8 @@ export const hydrateStoredResponsesItemsForAffinity = async (
     const id = responsesItemId(item);
     return id === null ? undefined : store.getItemById(id);
   });
-  const payloads = await store.loadItemPayloads(rows.filter(row => row !== undefined && row.hasPayload));
+  const loadedRows = rows.filter((row): row is StoredResponsesItemMetadata => row !== undefined && row.hasPayload);
+  const payloads = await store.loadItemPayloads(loadedRows);
   return items.map((item, index) => {
     const row = rows[index];
     if (row === undefined) return item;

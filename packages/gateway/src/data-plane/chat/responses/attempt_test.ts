@@ -59,6 +59,7 @@ const makeCandidate = (
   return {
     provider: {
       upstream,
+      upstreamRevision: 'test-revision',
       kind: 'custom',
       name: upstream,
       disabledPublicModelIds: [],
@@ -242,6 +243,7 @@ test('generate defers role promotion until after translation to Chat Completions
   const candidate: ModelCandidate = {
     provider: {
       upstream,
+      upstreamRevision: 'test-revision',
       kind: 'custom',
       name: upstream,
       disabledPublicModelIds: [],
@@ -507,7 +509,7 @@ test('generate inherits headers and injects external image loading across transl
   });
   const candidate: ModelCandidate = {
     provider: {
-      upstream: 'up_test', kind: 'custom', name: 'up_test',
+      upstream: 'up_test', upstreamRevision: 'test-revision', kind: 'custom', name: 'up_test',
       disabledPublicModelIds: [], modelPrefix: null, instance: messagesProvider,
     },
     model: upstreamModel,

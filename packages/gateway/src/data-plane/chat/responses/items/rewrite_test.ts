@@ -22,6 +22,7 @@ const candidate = (upstream: string): ModelCandidate => {
   return {
     provider: {
       upstream,
+      upstreamRevision: 'test-revision',
       kind: 'custom',
       name: upstream,
       disabledPublicModelIds: [],

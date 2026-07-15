@@ -130,11 +130,13 @@ const encryptedLengthMarker = (length: number): Uint8Array =>
 const encryptedLengthFrom = (bytes: Uint8Array): number =>
   (bytes[bytes.length - 2] << 8) | bytes[bytes.length - 1];
 
+const ownedBuffer = (bytes: Uint8Array): ArrayBuffer => new Uint8Array(bytes).buffer;
+
 export class AffinityCodec {
   readonly #key: Promise<CryptoKey>;
 
   constructor(secret: string) {
-    this.#key = crypto.subtle.importKey('raw', parseHexSecret(secret), 'AES-GCM', false, ['encrypt', 'decrypt']);
+    this.#key = crypto.subtle.importKey('raw', ownedBuffer(parseHexSecret(secret)), 'AES-GCM', false, ['encrypt', 'decrypt']);
   }
 
   async wrap(value: string | undefined, affinity: AffinityTarget): Promise<string> {
@@ -169,9 +171,9 @@ export class AffinityCodec {
     const ciphertext = encrypted.subarray(IV_BYTES);
     try {
       const plaintext = await crypto.subtle.decrypt(
-        { name: 'AES-GCM', iv },
+        { name: 'AES-GCM', iv: ownedBuffer(iv) },
         await this.#key,
-        ciphertext,
+        ownedBuffer(ciphertext),
       );
       const envelope = parseEnvelope(JSON.parse(fatalTextDecoder.decode(plaintext)) as unknown);
       if (envelope === null) return { kind: 'foreign', value };
