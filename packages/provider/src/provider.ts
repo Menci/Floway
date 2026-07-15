@@ -1,4 +1,5 @@
 import type { FlagDefaults } from './flags.ts';
+import type { ImagesEditsRequest } from './images.ts';
 import type { ModelPrefixConfig } from './model-prefix.ts';
 import type { ProviderModel, UpstreamProviderKind, UpstreamRecord } from './model.ts';
 import type { Fetcher } from './options.ts';
@@ -9,7 +10,6 @@ import type { EmbeddingsPayload } from '@floway-dev/protocols/embeddings';
 import type { ImagesGenerationsPayload } from '@floway-dev/protocols/images';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { CanonicalResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import type { ImagesEditsRequest } from './images.ts';
 
 // Action tag threaded through the Responses pipeline. `generate` is a normal
 // streaming /responses turn; `compact` is the summarize-and-replace-history
