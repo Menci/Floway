@@ -1,7 +1,7 @@
 import { createStoredResponsesItemId, hashResponsesItemContent, isStoredResponsesItemId, responsesItemId } from './format.ts';
 import { getRepo } from '../../../../repo/index.ts';
 import { cloneStoredResponsesItem, cloneStoredResponsesSnapshot, compareResponsesItemsByFreshness, responsesItemStoreKey as scopedKey } from '../../../../repo/responses-clone.ts';
-import type { Repo, StoredResponsesItem, StoredResponsesItemPayload, StoredResponsesSnapshot } from '../../../../repo/types.ts';
+import type { Repo, StoredResponsesItem, StoredResponsesSnapshot } from '../../../../repo/types.ts';
 import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
 import type { ResponsesItemsView } from '@floway-dev/translate/via-responses/responses-items';
 

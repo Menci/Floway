@@ -1,9 +1,9 @@
 import { geminiAttempt, geminiCountTokensTarget, geminiGenerateTarget } from './attempt.ts';
 import { renderGeminiFailure } from './errors.ts';
-import { routeCandidatesByAffinity } from '../affinity/candidate.ts';
-import { prepareGeminiAffinity } from '../affinity/gemini-ingress.ts';
 import { enumerateModelCandidates } from '../../providers/registry.ts';
 import { iterateCandidates } from '../../shared/iterate-candidates.ts';
+import { routeCandidatesByAffinity } from '../affinity/candidate.ts';
+import { prepareGeminiAffinity } from '../affinity/gemini-ingress.ts';
 import { noViableCandidateFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';

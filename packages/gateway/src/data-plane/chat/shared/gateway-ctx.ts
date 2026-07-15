@@ -1,8 +1,8 @@
 import type { RequestBody } from './request-body.ts';
-import { AffinityRequestContext } from '../affinity/context.ts';
 import { type DumpAccumulator, openDumpAccumulator } from '../../../dump/accumulator.ts';
 import { apiKeyFromContext, type AuthedContext, effectiveUpstreamIdsFromContext } from '../../../middleware/auth.ts';
 import { getRuntimeLocation } from '../../../runtime/runtime-info.ts';
+import { AffinityRequestContext } from '../affinity/context.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { PerformanceTelemetryContext } from '@floway-dev/provider';

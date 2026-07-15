@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
-import { rewriteResponsesPayload } from './rewrite.ts';
 import { createStoredResponsesItemId } from './format.ts';
+import { rewriteResponsesPayload } from './rewrite.ts';
 import { createResponsesHttpStore } from './store.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';

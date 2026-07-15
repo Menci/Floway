@@ -1,11 +1,11 @@
 import { Hono } from 'hono';
 import { test, vi } from 'vitest';
 
-import { createStoredResponsesItemId, isStoredResponseId } from './items/format.ts';
+import { isStoredResponseId } from './items/format.ts';
 import type { AuthVars } from '../../../middleware/auth.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
-import type { ApiKey, StoredResponsesItem, User } from '../../../repo/types.ts';
+import type { ApiKey, User } from '../../../repo/types.ts';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { CanonicalResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { type FlagId, type ModelCandidate, directFetcher, type ProviderResponsesResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
