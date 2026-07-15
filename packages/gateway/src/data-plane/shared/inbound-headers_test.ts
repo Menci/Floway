@@ -22,7 +22,7 @@ describe('inboundHeadersForUpstream', () => {
         'x-api-key': 'gateway-api-key',
         'x-floway-session': 'sess-1',
         'x-goog-api-key': 'goog-key',
-        'x-openai-actor-authorization': 'floway-client-tools',
+        'x-openai-actor-authorization': '1',
         'proxy-authorization': 'Basic abcdef',
         'cookie': 'session=abc',
         'host': 'gateway.example.com',

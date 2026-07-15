@@ -113,7 +113,7 @@ const codexSnippet = computed(() => [
   `# auth = { command = "powershell", args = ["-NoProfile", "-Command", "$h = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME '.codex' }; [IO.File]::ReadAllText((Join-Path $h 'floway-token'))"] } # Windows: uncomment and remove the line above`,
   'wire_api = "responses"',
   'supports_websockets = true',
-  'http_headers = { "x-openai-actor-authorization" = "floway-client-tools" }',
+  'http_headers = { "x-openai-actor-authorization" = "1" }',
   '',
   '[features]',
   'apps = false',
