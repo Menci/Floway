@@ -229,15 +229,10 @@ const SEARCH_USAGE_2: SearchUsageRecord = {
 const STORED_RESPONSES_ITEM: StoredResponsesItem = {
   id: 'msg_z1mVjw_0xVvS8c_KjD1sBkZk5qbdA',
   apiKeyId: 'key-a',
-  upstreamId: null,
-  upstreamItemId: null,
   itemType: 'message',
-  origin: 'synthetic',
-  contentHash: null,
-  encryptedContentHash: null,
+  contentHash: 'stored-content-hash',
   payload: { item: { type: 'message', id: 'msg_z1mVjw_0xVvS8c_KjD1sBkZk5qbdA', role: 'assistant', content: [] } },
   createdAt: 1_000,
-  refreshedAt: 1_000,
 };
 
 const PERFORMANCE_1: PerformanceTelemetryRecord = {

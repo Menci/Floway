@@ -1,5 +1,4 @@
-import { createStoredResponsesItemId, isStoredResponsesItemId, responsesItemId } from './format.ts';
-import { ResponsesItemHashCache } from './hash-cache.ts';
+import { createStoredResponsesItemId, hashResponsesItemContent, isStoredResponsesItemId, responsesItemId } from './format.ts';
 import { getRepo } from '../../../../repo/index.ts';
 import { cloneStoredResponsesItem, cloneStoredResponsesSnapshot, compareResponsesItemsByFreshness, responsesItemStoreKey as scopedKey } from '../../../../repo/responses-clone.ts';
 import type { Repo, StoredResponsesItem, StoredResponsesItemPayload, StoredResponsesSnapshot } from '../../../../repo/types.ts';
@@ -73,10 +72,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   private readonly committedSnapshotIds = new Set<string>();
   private readonly durableItemIds = new Set<string>();
 
-  constructor(
-    private readonly options: LayeredStatefulResponsesStoreOptions,
-    private readonly hashes = new ResponsesItemHashCache(),
-  ) {}
+  constructor(private readonly options: LayeredStatefulResponsesStoreOptions) {}
 
   get apiKeyId(): string {
     return this.options.apiKeyId;
@@ -87,7 +83,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   }
 
   hashItemContent(item: ResponsesInputItem): Promise<string> {
-    return this.hashes.content(item);
+    return hashResponsesItemContent(item);
   }
 
   async loadSnapshot(id: string): Promise<StoredResponsesSnapshot | null> {

@@ -78,23 +78,10 @@ export const createStoredResponsesItemId = (itemType: string): string => {
 export const isStoredResponsesItemId = (value: string): boolean =>
   isValidStoredId(value, prefix => knownPrefixes.has(prefix));
 
-// Codex and other stateless Responses clients echo reasoning and compaction
-// items back with their `encrypted_content` blob but no gateway id (the id is
-// stripped client-side). The blob is signed against the producing upstream
-// account, so we key such items by its hash to recover the owning upstream for
-// affinity routing.
 export const responsesItemId = (item: { id?: unknown }): string | null => {
   const id = item.id;
   return typeof id === 'string' && id.length > 0 ? id : null;
 };
-
-export const responsesItemEncryptedContent = (item: ResponsesInputItem): string | null => {
-  const value = (item as { encrypted_content?: unknown }).encrypted_content;
-  return typeof value === 'string' && value.length > 0 ? value : null;
-};
-
-export const hashResponsesItemEncryptedContent = async (encryptedContent: string): Promise<string> =>
-  await sha256Hex(encryptedContent);
 
 export const hashResponsesItemContent = async (item: ResponsesInputItem): Promise<string> =>
   await sha256Hex(JSON.stringify(sortJson(item)));

@@ -376,46 +376,6 @@ test('POST /v1/responses with an unresolvable previous_response_id renders the v
   assertEquals(body.error.code, 'previous_response_not_found');
 });
 
-test('POST /v1/responses renders a routing-unavailable 400 when a forcing item names an absent upstream', async () => {
-  const repo = installRepo();
-  // A stored item pinned to `up_forcing` makes the input force-route to that
-  // upstream; queueing a candidate for a different upstream produces the
-  // routing-unavailable failure that the http entry must surface verbatim.
-  const id = createStoredResponsesItemId('compaction');
-  const row: StoredResponsesItem = {
-    id,
-    apiKeyId: API_KEY_ID,
-    upstreamId: 'up_forcing',
-    upstreamItemId: 'raw_cmp',
-    itemType: 'compaction',
-    origin: 'upstream',
-    contentHash: null,
-    encryptedContentHash: null,
-    payload: { item: { type: 'compaction', id } },
-    createdAt: 1_000,
-    refreshedAt: 1_000,
-  };
-  await repo.responsesItems.insertMany([row]);
-  queueResolution([makeCandidate({ upstream: 'up_b' })]);
-
-  const response = await makeApp().request('/v1/responses', {
-    method: 'POST',
-    headers: new Headers({ 'content-type': 'application/json' }),
-    body: JSON.stringify({
-      model: 'test-model',
-      input: [{ type: 'item_reference', id }],
-    }),
-  });
-
-  assertEquals(response.status, 400);
-  const body = await response.json() as { error: { code: string } };
-  assertEquals(body.error.code, 'responses_item_routing_unavailable');
-});
-
-// Alias flow: the resolver returns a candidate whose upstream catalog id is
-// the target model id, plus the alias's rule overlay. The attempt stamps its
-// private clone with `candidate.model.id`, and the leaf wire call reads
-// `candidate.rules` to overlay the rules onto the target IR.
 const queueCodexAutoReviewCandidate = (
   callResponses: (model: unknown, body: unknown, action: ResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderResponsesResult>,
 ): void => {

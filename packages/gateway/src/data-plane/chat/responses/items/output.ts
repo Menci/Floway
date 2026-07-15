@@ -4,10 +4,9 @@ import type { StoredResponsesItem } from '../../../../repo/types.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { responsesResultToEvents, type ResponsesInputItem, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
-// Wraps a Responses event stream to mint gateway-owned stored ids for every
-// output item and persist the matching rows. Runs inside `responsesAttempt`
-// after any cross-protocol translation, so the stream is always
-// Responses-shaped by the time it arrives here.
+// Mints gateway-owned ids and persists the exact affinity-wrapped client item.
+// The native Responses source edge owns this transform; translated inner
+// Responses attempts never enter it.
 //
 // Items are committed at their `done` frame and the snapshot is committed
 // at the terminal `response.completed` / `response.incomplete` frame.
