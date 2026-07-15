@@ -12,8 +12,8 @@ import { formatCountdown } from '../../utils/format-countdown.ts';
 import { Sortable, TagCombobox, Tooltip } from '@floway-dev/ui';
 
 const BUILT_IN_TRANSPORTS = [
-  { id: 'direct_fetch', label: 'Direct · fetch()', title: 'Runtime-native fetch with automatic HTTP handling' },
-  { id: 'direct_connect', label: 'Direct · connect()', title: 'Raw TCP socket with userspace TLS and HTTP/1.1' },
+  { id: 'direct_fetch', label: 'DIRECT fetch()', title: 'Runtime-native fetch with automatic HTTP handling' },
+  { id: 'direct_connect', label: 'DIRECT connect()', title: 'Raw TCP socket with userspace TLS and HTTP/1.1' },
 ] as const;
 
 const isBuiltInTransport = (id: string): boolean => BUILT_IN_TRANSPORTS.some(transport => transport.id === id);
@@ -177,7 +177,7 @@ const toggleCurrentColoAt = (index: number) => {
     </p>
 
     <div v-if="list.length === 0" class="rounded-md border border-dashed border-white/[0.08] bg-surface-900/40 px-3 py-2.5 text-xs text-gray-500">
-      No fallback list configured — defaults to Direct · fetch().
+      No fallback list configured — defaults to DIRECT fetch().
     </div>
 
     <Sortable
