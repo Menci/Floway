@@ -11,11 +11,8 @@ const sameTarget = (left: AffinityTarget, right: AffinityTarget): boolean =>
   && left.rulesPresent === right.rulesPresent
   && isEqual(left.rules, right.rules);
 
-export const affinityTargetForCandidate = (
-  candidate: ModelCandidate,
-  mode: AffinityTarget['mode'],
-): AffinityTarget => ({
-  mode,
+export const affinityTargetForCandidate = (candidate: ModelCandidate): AffinityTarget => ({
+  mode: 'prefer',
   upstreamId: candidate.provider.upstream,
   upstreamRevision: candidate.provider.upstreamRevision,
   modelId: candidate.model.id,

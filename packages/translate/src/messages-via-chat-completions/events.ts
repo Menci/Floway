@@ -253,6 +253,15 @@ const emitToolCallsDelta = (toolCalls: ChatCompletionsStreamToolCalls, state: Ch
 };
 
 const emitPendingReasoning = (state: ChatCompletionsToMessagesStreamState, events: MessagesStreamEvent[]): void => {
+  if (state.openBlock === 'thinking' && state.pendingReasoningOpaque !== undefined) {
+    emitContentBlockDelta(state, events, {
+      type: 'signature_delta',
+      signature: state.pendingReasoningOpaque,
+    });
+    state.pendingReasoningOpaque = undefined;
+    closeCurrentBlock(state, events);
+    return;
+  }
   emitPendingOpaqueReasoningBlock(state, events);
 };
 

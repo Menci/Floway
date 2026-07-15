@@ -25,20 +25,20 @@ const candidateB = candidate('upstream-b');
 
 describe('protocol affinity ingress', () => {
   test('Chat Completions restores owned opaque state only for its exact candidate', async () => {
-    const carrier = await codec.wrap('upstream-signature', affinityTargetForCandidate(candidateA, 'prefer'), CHAT_COMPLETIONS_AFFINITY_DOMAIN);
+    const carrier = await codec.wrap('upstream-signature', affinityTargetForCandidate(candidateA), CHAT_COMPLETIONS_AFFINITY_DOMAIN);
     const prepared = await prepareChatCompletionsAffinity({
       model: 'model',
       messages: [{ role: 'assistant', content: 'answer', reasoning_opaque: carrier }],
     }, codec);
 
-    expect(prepared.affinities).toEqual([affinityTargetForCandidate(candidateA, 'prefer')]);
+    expect(prepared.affinities).toEqual([affinityTargetForCandidate(candidateA)]);
     expect(prepared.payloadForCandidate(candidateA).messages[0]).toMatchObject({ reasoning_opaque: 'upstream-signature' });
     expect(prepared.payloadForCandidate(candidateB).messages[0]).not.toHaveProperty('reasoning_opaque');
   });
 
   test('Messages removes synthetic blocks and strips incompatible signatures without hiding thinking', async () => {
-    const signature = await codec.wrap('signature', affinityTargetForCandidate(candidateA, 'prefer'), MESSAGES_SIGNATURE_AFFINITY_DOMAIN);
-    const synthetic = await codec.wrap(undefined, affinityTargetForCandidate(candidateA, 'prefer'), MESSAGES_REDACTED_AFFINITY_DOMAIN);
+    const signature = await codec.wrap('signature', affinityTargetForCandidate(candidateA), MESSAGES_SIGNATURE_AFFINITY_DOMAIN);
+    const synthetic = await codec.wrap(undefined, affinityTargetForCandidate(candidateA), MESSAGES_REDACTED_AFFINITY_DOMAIN);
     const prepared = await prepareMessagesAffinity({
       model: 'model',
       max_tokens: 100,
@@ -69,7 +69,7 @@ describe('protocol affinity ingress', () => {
   });
 
   test('Gemini removes a synthetic signature-only part and preserves foreign signatures', async () => {
-    const synthetic = await codec.wrap(undefined, affinityTargetForCandidate(candidateA, 'prefer'), GEMINI_AFFINITY_DOMAIN);
+    const synthetic = await codec.wrap(undefined, affinityTargetForCandidate(candidateA), GEMINI_AFFINITY_DOMAIN);
     const prepared = await prepareGeminiAffinity({
       contents: [{
         role: 'model',
@@ -97,7 +97,7 @@ describe('protocol affinity ingress', () => {
 
   test('Gemini reattaches a deferred wrapped signature to its original visible part', async () => {
     const carrier = await codec.wrap('signature', {
-      ...affinityTargetForCandidate(candidateA, 'prefer'),
+      ...affinityTargetForCandidate(candidateA),
       geminiPartFromEnd: 1,
     }, GEMINI_AFFINITY_DOMAIN);
     const prepared = await prepareGeminiAffinity({
@@ -120,7 +120,7 @@ describe('protocol affinity ingress', () => {
   test('Responses restores the original upstream item id and drops owned state on fallback', async () => {
     const carrier = await codec.wrap(
       'encrypted',
-      { ...affinityTargetForCandidate(candidateA, 'prefer'), upstreamItemId: 'rs_upstream' },
+      { ...affinityTargetForCandidate(candidateA), upstreamItemId: 'rs_upstream' },
       responsesAffinityDomain('reasoning', 'encrypted_content'),
     );
     const prepared = await prepareResponsesAffinity({
@@ -140,7 +140,7 @@ describe('protocol affinity ingress', () => {
   test('Responses applies item-id provenance from nested encrypted content', async () => {
     const carrier = await codec.wrap(
       'nested-encrypted',
-      { ...affinityTargetForCandidate(candidateA, 'prefer'), upstreamItemId: 'amsg_upstream' },
+      { ...affinityTargetForCandidate(candidateA), upstreamItemId: 'amsg_upstream' },
       responsesAffinityDomain('agent_message', 'content.1.encrypted_content'),
     );
     const prepared = await prepareResponsesAffinity({

@@ -241,7 +241,7 @@ test('translateMessagesToChatCompletions preserves redacted_thinking as reasonin
   ]);
 });
 
-test('translateMessagesToChatCompletions projects only the first scalar reasoning group', () => {
+test('translateMessagesToChatCompletions keeps first readable reasoning and latest opaque snapshot', () => {
   const result = translateMessagesToChatCompletions({
     model: 'gpt-test',
     max_tokens: 256,
@@ -261,11 +261,11 @@ test('translateMessagesToChatCompletions projects only the first scalar reasonin
     role: 'assistant',
     content: 'answer',
     reasoning_text: 'first',
-    reasoning_opaque: 'sig_1',
+    reasoning_opaque: 'sig_2',
   });
 });
 
-test('translateMessagesToChatCompletions does not pair readable thinking with later redacted opaque data', () => {
+test('translateMessagesToChatCompletions combines readable thinking with the latest redacted opaque snapshot', () => {
   const result = translateMessagesToChatCompletions({
     model: 'gpt-test',
     max_tokens: 256,
@@ -284,7 +284,7 @@ test('translateMessagesToChatCompletions does not pair readable thinking with la
     role: 'assistant',
     content: null,
     reasoning_text: 'first',
-    reasoning_opaque: null,
+    reasoning_opaque: 'opaque_later',
   });
 });
 

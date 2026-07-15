@@ -19,7 +19,7 @@ export class AffinityRequestContext {
 
   selectedTarget(): AffinityTarget {
     if (this.#selectedCandidate === undefined) throw new Error('Affinity target requested before a candidate was selected');
-    return affinityTargetForCandidate(this.#selectedCandidate, 'prefer');
+    return affinityTargetForCandidate(this.#selectedCandidate);
   }
 }
 

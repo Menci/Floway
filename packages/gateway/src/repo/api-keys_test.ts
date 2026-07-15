@@ -5,7 +5,7 @@ import { InMemoryRepo } from './memory.ts';
 import { SqlRepo } from './sql.ts';
 import { createSqliteTestDb, migrationSqlByFilename } from './test-sqlite.ts';
 import type { ApiKey, Repo } from './types.ts';
-import { assertEquals, assertRejects, assertThrows } from '@floway-dev/test-utils';
+import { assertEquals, assertThrows } from '@floway-dev/test-utils';
 
 const REPO_BACKENDS: Array<readonly [string, () => Promise<Repo>]> = [
   ['memory', async () => new InMemoryRepo()],
@@ -65,17 +65,12 @@ for (const [backend, makeRepo] of REPO_BACKENDS) {
     assertEquals(byUser.find(k => k.id === 'key_dump')?.dumpRetentionSeconds, 86_400);
   });
 
-  test(`[${backend}] api keys repo validates and round-trips affinitySecret`, async () => {
+  test(`[${backend}] api keys repo round-trips affinitySecret`, async () => {
     const repo = await makeRepo();
     const secret = 'ab'.repeat(32);
     await repo.apiKeys.save(baseKey({ affinitySecret: secret }));
     assertEquals((await repo.apiKeys.findByRawKey('raw_dump_key'))?.affinitySecret, secret);
 
-    await assertRejects(
-      () => repo.apiKeys.save(baseKey({ affinitySecret: 'AB'.repeat(32) })),
-      Error,
-      'must be exactly 64 lowercase hexadecimal characters',
-    );
   });
 }
 

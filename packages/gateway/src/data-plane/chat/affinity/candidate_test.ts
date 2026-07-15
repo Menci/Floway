@@ -18,9 +18,9 @@ describe('client-carried affinity candidate routing', () => {
     const direct = candidate('up-a', 'rev-1', 'model-a');
     const alias = candidate('up-a', 'rev-1', 'model-a', {});
 
-    expect(candidateMatchesAffinity(direct, affinityTargetForCandidate(direct, 'prefer'))).toBe(true);
-    expect(candidateMatchesAffinity(alias, affinityTargetForCandidate(direct, 'prefer'))).toBe(false);
-    expect(candidateMatchesAffinity(candidate('up-a', 'rev-2', 'model-a'), affinityTargetForCandidate(direct, 'prefer'))).toBe(false);
+    expect(candidateMatchesAffinity(direct, affinityTargetForCandidate(direct))).toBe(true);
+    expect(candidateMatchesAffinity(alias, affinityTargetForCandidate(direct))).toBe(false);
+    expect(candidateMatchesAffinity(candidate('up-a', 'rev-2', 'model-a'), affinityTargetForCandidate(direct))).toBe(false);
   });
 
   test('moves the latest available preferred target to the front', () => {
@@ -28,7 +28,7 @@ describe('client-carried affinity candidate routing', () => {
     const second = candidate('up-b', 'rev', 'model');
     const decision = routeCandidatesByAffinity(
       [first, second],
-      [affinityTargetForCandidate(first, 'prefer'), affinityTargetForCandidate(second, 'prefer')],
+      [affinityTargetForCandidate(first), affinityTargetForCandidate(second)],
     );
 
     expect(decision.kind).toBe('success');
@@ -41,7 +41,7 @@ describe('client-carried affinity candidate routing', () => {
     const second = candidate('up-b', 'rev', 'model');
     const unavailable = candidate('up-c', 'rev', 'model');
 
-    expect(routeCandidatesByAffinity([first, second], [affinityTargetForCandidate(unavailable, 'prefer')])).toEqual({
+    expect(routeCandidatesByAffinity([first, second], [affinityTargetForCandidate(unavailable)])).toEqual({
       kind: 'success',
       candidates: [first, second],
     });
@@ -51,10 +51,10 @@ describe('client-carried affinity candidate routing', () => {
     const first = candidate('up-a', 'rev', 'model');
     const second = candidate('up-b', 'rev', 'model');
 
-    expect(routeCandidatesByAffinity([first], [affinityTargetForCandidate(second, 'force')])).toMatchObject({ kind: 'failure' });
+    expect(routeCandidatesByAffinity([first], [{ ...affinityTargetForCandidate(second), mode: 'force' }])).toMatchObject({ kind: 'failure' });
     expect(routeCandidatesByAffinity([first, second], [
-      affinityTargetForCandidate(first, 'force'),
-      affinityTargetForCandidate(second, 'force'),
+      { ...affinityTargetForCandidate(first), mode: 'force' },
+      { ...affinityTargetForCandidate(second), mode: 'force' },
     ])).toMatchObject({ kind: 'failure' });
   });
 });
