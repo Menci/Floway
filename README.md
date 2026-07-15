@@ -154,16 +154,14 @@ Search**), and emitted back as Responses `web_search_call` items, with
 the shim driving the internal multi-turn loop and replaying prior
 `web_search_call` items across turns.
 
-The Codex CLI's web-search endpoint runs on the same provider. Floway serves
-all paths Codex derives across its authentication and model-provider modes:
+Floway also serves the Codex CLI's `/alpha/search` path conventions at
 `/azure-api.codex/alpha/search`, `/alpha/search`, and `/v1/alpha/search`.
-The generated dashboard config continues to recommend the namespaced path.
-Codex POSTs the `search_query` / `open` / `find` commands the model requested;
-Floway executes them against the configured provider and returns the combined
-text the CLI feeds back to the model, instead of proxying chatgpt.com. Command
-kinds Floway doesn't implement, and a disabled or unconfigured provider,
-come back as in-band tool-output text so the model can react rather than the
-call hard-failing.
+By default these routes and the Responses web-search shim use the same general
+provider configured above. **Settings -> Web Search** can instead enable
+**Passthrough OpenAI search** and select a Codex or Custom upstream plus model;
+then both surfaces use that upstream's `/alpha/search`, while Messages search
+continues using the general provider. Passthrough failures are returned without
+falling back to another search backend.
 
 ## Stateful Responses
 
