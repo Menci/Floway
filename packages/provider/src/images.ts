@@ -1,8 +1,8 @@
 import type { ImageEditReference } from '@floway-dev/protocols/images';
 
-// The gateway normalizes both public wire formats into one homogeneous source
-// kind. Providers serialize references as JSON and uploads as multipart
-// without downloading URLs or base64-encoding uploaded bytes.
+// The gateway normalizes each public wire format into one of two semantic
+// source kinds. Providers serialize references as JSON and uploads as
+// multipart without downloading URLs or base64-encoding uploaded bytes.
 export interface UploadedImagesEditsRequest {
   type: 'uploads';
   images: File[];
@@ -30,7 +30,8 @@ export const imagesEditsMultipartBody = (request: UploadedImagesEditsRequest, mo
   for (const [name, value] of Object.entries(request.parameters)) {
     form.append(name, String(value));
   }
-  for (const image of request.images) form.append('image[]', image);
+  const imageField = request.images.length === 1 ? 'image' : 'image[]';
+  for (const image of request.images) form.append(imageField, image);
   if (request.mask !== undefined) form.append('mask', request.mask);
   form.append('model', model);
   return form;

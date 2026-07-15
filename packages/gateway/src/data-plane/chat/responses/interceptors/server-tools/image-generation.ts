@@ -262,13 +262,12 @@ export interface ImageGenerationConfig {
   action: 'generate' | 'edit' | 'auto';
 }
 
+type MaterializedImageGenerationConfig = Omit<ImageGenerationConfig, 'mask'> & { mask?: ImageSource };
+
 const prepareEditRequest = async (
   sources: readonly ImageSource[],
-  config: ImageGenerationConfig,
+  config: MaterializedImageGenerationConfig,
 ): Promise<{ sources: readonly PreparedImageSource[]; mask?: PreparedImageSource }> => {
-  if (config.mask !== undefined && isRemoteImageSource(config.mask)) {
-    throw new Error('Remote image mask reached edit dispatch before materialization');
-  }
   const originals = [...sources];
   if (config.mask !== undefined && !originals.includes(config.mask)) originals.push(config.mask);
   const prepared = await prepareEditSources(originals);
@@ -897,7 +896,7 @@ const errorFromBody = (body: string, status: number): { type?: string; code: str
 // in a later turn. `imageDispatchCount` bounds how many real backend image
 // calls one response may issue.
 interface ShimState {
-  config: ImageGenerationConfig;
+  config: MaterializedImageGenerationConfig;
   apiKeyId: string;
   upstreamIds: readonly string[] | null;
   backgroundScheduler: BackgroundScheduler;
@@ -1410,7 +1409,7 @@ export const imageGenerationServerTool: ServerToolRegistration = async (invocati
   if (!prepared.ok) {
     return { type: 'invalid-request', message: prepared.error.message, param: prepared.error.param, code: prepared.error.code };
   }
-  let config = prepared.config;
+  const config = prepared.config;
   const inspectSources = createImageSourceInspector();
   const initialInspection = inspectSources(invocation.payload.input);
   const initialOperation = resolveImageOperation(config, initialInspection);
@@ -1436,31 +1435,41 @@ export const imageGenerationServerTool: ServerToolRegistration = async (invocati
       code: materializedInputs.error.code,
     };
   }
-  if (config.mask !== undefined && isRemoteImageSource(config.mask)) {
-    const remoteMask = config.mask;
-    const materializedMask = await materializer.mask(remoteMask);
-    if (!materializedMask.ok) {
-      return {
-        type: 'invalid-request',
-        message: materializedMask.error.message,
-        param: materializedMask.error.param,
-        errorType: materializedMask.error.errorType,
-        code: materializedMask.error.code,
-      };
+  let mask: ImageSource | undefined;
+  if (config.mask !== undefined) {
+    if (isRemoteImageSource(config.mask)) {
+      const remoteMask = config.mask;
+      const materializedMask = await materializer.mask(remoteMask);
+      if (!materializedMask.ok) {
+        return {
+          type: 'invalid-request',
+          message: materializedMask.error.message,
+          param: materializedMask.error.param,
+          errorType: materializedMask.error.errorType,
+          code: materializedMask.error.code,
+        };
+      }
+      if (remoteMask.afterMaterializationError !== undefined) {
+        return {
+          type: 'invalid-request',
+          message: remoteMask.afterMaterializationError.message,
+          param: remoteMask.afterMaterializationError.param,
+          code: remoteMask.afterMaterializationError.code,
+        };
+      }
+      mask = materializedMask.source;
+    } else {
+      mask = config.mask;
     }
-    if (remoteMask.afterMaterializationError !== undefined) {
-      return {
-        type: 'invalid-request',
-        message: remoteMask.afterMaterializationError.message,
-        param: remoteMask.afterMaterializationError.param,
-        code: remoteMask.afterMaterializationError.code,
-      };
-    }
-    config = { ...config, mask: materializedMask.source };
   }
+  const { mask: _unmaterializedMask, ...configWithoutMask } = config;
+  const materializedConfig: MaterializedImageGenerationConfig = {
+    ...configWithoutMask,
+    ...(mask === undefined ? {} : { mask }),
+  };
 
   const state: ShimState = {
-    config,
+    config: materializedConfig,
     apiKeyId: gatewayCtx.apiKeyId,
     upstreamIds: gatewayCtx.upstreamIds,
     backgroundScheduler: gatewayCtx.backgroundScheduler,
@@ -1487,7 +1496,7 @@ export const imageGenerationServerTool: ServerToolRegistration = async (invocati
         // to editing without bypassing the same source policy used at ingress.
         // The per-request inspector cache reuses bytes already decoded during
         // registration and earlier turns.
-        const operation = resolveImageOperation(config, inspectSources(invocation.payload.input));
+        const operation = resolveImageOperation(materializedConfig, inspectSources(invocation.payload.input));
         if (!operation.ok) {
           throw new Error(`image_generation live source invariant violated after request validation: ${operation.error.message}`);
         }

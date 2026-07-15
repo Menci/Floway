@@ -238,7 +238,7 @@ test('Custom provider callImagesEdits forwards multipart body with model field a
   assertExists(forwarded);
   assertEquals(forwarded.form.get('model'), 'gpt-image-2');
   assertEquals(forwarded.form.get('prompt'), 'add a kite');
-  assertEquals(forwarded.form.get('image[]') instanceof File, true);
+  assertEquals(forwarded.form.get('image') instanceof File, true);
 });
 
 test('Custom provider with modelsFetch disabled serves only manual models and never fetches', async () => {
