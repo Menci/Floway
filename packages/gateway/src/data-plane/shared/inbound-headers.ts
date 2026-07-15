@@ -10,6 +10,13 @@ import type { Context } from 'hono';
 //   passthrough). Letting any of these survive would clobber a pinned
 //   value or leak a private one.
 //
+// - Codex client-tool eligibility. The generated Codex config carries a
+//   non-secret `x-openai-actor-authorization` marker because current Codex
+//   uses header presence to expose client-owned search and image tools to a
+//   custom provider. It is a local selection signal, not upstream auth, and
+//   must stop at the gateway boundary.
+//   https://github.com/openai/codex/blob/1bbdb32789e1f79932df44941236ea3658f6e965/codex-rs/model-provider-info/src/lib.rs#L396-L408
+//
 // - HTTP/1.1 framing + hop-by-hop (RFC 9110 §7.6.1). `content-length`,
 //   `content-encoding`, and `transfer-encoding` describe the inbound body
 //   and would mis-frame the re-serialized outbound body — on Node this
@@ -69,6 +76,7 @@ const SCRUBBED_INBOUND_HEADER_NAMES = [
   'x-forwarded-host',
   'x-forwarded-proto',
   'x-goog-api-key',
+  'x-openai-actor-authorization',
   'x-real-ip',
 ];
 

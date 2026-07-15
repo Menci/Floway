@@ -95,71 +95,30 @@ const claudeSnippet = computed(() => [
 
 const codexBaseUrl = computed(() => `${baseUrl.value}/azure-api.codex`);
 
-// Static alg=none id_token codex parses for TUI display; not signed and not
-// verified server-side. host-derived email keeps multi-deployment dashboards
-// distinguishable in `codex login status`.
-const codexIdToken = computed(() => {
-  const host = (() => {
-    try { return new URL(baseUrl.value).host; } catch { return 'local'; }
-  })();
-  const b64url = (s: string) => btoa(s).replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
-  const header = b64url('{"alg":"none","typ":"JWT"}');
-  const payload = b64url(JSON.stringify({
-    email: `floway@${host}`,
-    'https://api.openai.com/auth': {
-      chatgpt_plan_type: 'pro_plus',
-      chatgpt_user_id: 'user-floway',
-      chatgpt_account_id: 'acct-floway',
-    },
-  }));
-  return `${header}.${payload}.c2ln`;
-});
-
-// OpenAI-auth providers enable Codex's client-owned image extension. Agent
-// Identity is a separate under-development auth flow, so keep it off for the
-// Floway-issued ChatGPT-style credential.
-// https://github.com/openai/codex/blob/f90e7deea6a715bbd153044af6f475eefa749177/codex-rs/ext/image-generation/src/extension.rs#L36-L46
-// https://github.com/openai/codex/blob/f90e7deea6a715bbd153044af6f475eefa749177/codex-rs/features/src/lib.rs#L1363-L1368
+// Codex treats an actor-authorized custom provider as eligible for its
+// client-owned search and image extensions. This non-secret marker selects
+// those tools locally; Floway removes it before provider dispatch.
+// https://github.com/openai/codex/blob/1bbdb32789e1f79932df44941236ea3658f6e965/codex-rs/model-provider-info/src/lib.rs#L396-L408
+// https://github.com/openai/codex/blob/1bbdb32789e1f79932df44941236ea3658f6e965/codex-rs/core/src/tools/spec_plan.rs#L367-L394
 const codexSnippet = computed(() => [
   `model = "${codexModel.value}"`,
   'model_provider = "floway"',
-  `chatgpt_base_url = "${codexBaseUrl.value}"`,
   '',
   '[model_providers.floway]',
   'name = "Floway"',
   `base_url = "${codexBaseUrl.value}"`,
+  'env_key = "FLOWAY_API_KEY"',
   'wire_api = "responses"',
-  'supports_websockets = true',
-  'requires_openai_auth = true',
+  'http_headers = { "x-openai-actor-authorization" = "floway-client-tools" }',
   '',
   '[features]',
   'apps = false',
-  'use_agent_identity = false',
+  'standalone_web_search = true',
 ].join('\n'));
 
-// Unquoted heredoc so `$(date -u +...)` runs in the user's shell to stamp
-// last_refresh at paste time. base64url chars are shell-safe so the JSON
-// body needs no escaping beyond what JSON.stringify produces.
-const codexAuthCommand = computed(() => {
-  const auth = {
-    auth_mode: 'chatgpt',
-    openai_api_key: null,
-    tokens: {
-      id_token: codexIdToken.value,
-      access_token: props.apiKey,
-      refresh_token: 'noop',
-    },
-    last_refresh: '__LAST_REFRESH__',
-  };
-  const json = JSON.stringify(auth).replace('"__LAST_REFRESH__"', '"$(date -u +%Y-%m-%dT%H:%M:%SZ)"');
-  return [
-    'mkdir -p ~/.codex && \\',
-    '  { [ -f ~/.codex/auth.json ] && cp ~/.codex/auth.json ~/.codex/auth.json.bak.$(date +%s); :; } && \\',
-    '  cat > ~/.codex/auth.json <<EOF',
-    json,
-    'EOF',
-  ].join('\n');
-});
+const shellQuote = (value: string): string => `'${value.replaceAll("'", `'"'"'`)}'`;
+
+const codexCredential = computed(() => `export FLOWAY_API_KEY=${shellQuote(props.apiKey)}`);
 
 const selectClass = 'max-w-full text-xs font-mono bg-surface-800 text-gray-300 border border-white/10 rounded-lg px-2 py-1.5 outline-none focus:border-accent-cyan/50 cursor-pointer';
 </script>
@@ -211,8 +170,8 @@ const selectClass = 'max-w-full text-xs font-mono bg-surface-800 text-gray-300 b
       <p class="text-[11px] text-gray-600 mb-2">Merge into <code class="text-gray-500">~/.codex/config.toml</code></p>
       <Code :code="codexSnippet" language="toml" />
 
-      <p class="text-[11px] text-gray-600 mt-4 mb-2">Paste in a shell — writes <code class="text-gray-500">~/.codex/auth.json</code>, backing up any existing file first</p>
-      <Code :code="codexAuthCommand" language="bash" />
+      <p class="text-[11px] text-gray-600 mt-4 mb-2">Add to <code class="text-gray-500">~/.bashrc</code>, <code class="text-gray-500">~/.zshrc</code>, or equivalent; existing Codex account login is unaffected</p>
+      <Code :code="codexCredential" language="bash" />
     </div>
   </div>
 </template>

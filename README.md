@@ -25,8 +25,7 @@ target ships in the same repo for self-hosting on a long-lived process.
 | Google Gemini (generate / count tokens) | `POST /v1beta/models/...`     |
 
 `POST /v1/images/edits` accepts multipart image uploads and JSON `images`
-references. The dashboard's Codex provider base, `/azure-api.codex`, exposes
-the same generation and edit handlers at their provider-relative paths.
+references.
 
 For each public model, Floway picks the first (provider, model) pair that can
 serve the request, translating between source and target protocols when the
@@ -111,8 +110,7 @@ Compose starts two services: `server` runs the Node.js target on
 `http://localhost:8788` with SQLite/files persisted in the `floway-data`
 volume, and `web` serves the built dashboard on `http://localhost:18088`.
 The nginx web container proxies Floway API paths to `server`, including
-WebSocket-capable `/v1/responses` and the Codex-compatible
-`/azure-api.codex/*` routes. Pass `FLOWAY_WEB_PORT` or
+WebSocket-capable `/v1/responses`. Pass `FLOWAY_WEB_PORT` or
 `FLOWAY_SERVER_PORT` alongside `ADMIN_KEY` if those host ports are already in
 use.
 
@@ -133,9 +131,9 @@ Open the deployed URL (or `http://localhost:8788` for Node), log in with
    order is routing order; earlier providers win for a shared public model id.
 2. **API Keys -> New Key**. Give the generated key to your client.
 3. Copy the Claude Code or Codex CLI snippet from the API Keys panel into the
-   agent config. The Codex snippet marks Floway as ChatGPT-authenticated so
-   Codex enables its client-owned image extension, while keeping the separate
-   experimental Agent Identity flow disabled.
+   agent config. The Codex setup reads its Floway credential from
+   `FLOWAY_API_KEY`, enables client-owned search and image tools, and retains
+   remote compaction without replacing an existing Codex account login.
 
 Import/export of upstreams, keys, and search config is in Settings. The
 payload format is tied to the running deployment, so import only accepts a
