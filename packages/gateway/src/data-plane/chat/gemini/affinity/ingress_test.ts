@@ -18,7 +18,6 @@ const candidate = (upstream: string): ModelCandidate => {
 };
 
 const candidateA = candidate('upstream-a');
-const candidateB = candidate('upstream-b');
 
 test('removes a synthetic signature-only part and preserves foreign signatures', async () => {
   const synthetic = await codec.wrap(undefined, affinityTargetForCandidate(candidateA), GEMINI_AFFINITY_DOMAIN);

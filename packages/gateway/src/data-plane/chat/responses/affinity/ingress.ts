@@ -51,8 +51,7 @@ const routingEvidenceFrom = (
     const followingSynthetic = locations.find(location =>
       location.itemIndex > itemIndex
       && location.decoded.kind === 'owned'
-      && location.decoded.envelope.affinity.syntheticItem === true,
-    );
+      && location.decoded.envelope.affinity.syntheticItem === true);
     if (followingSynthetic?.decoded.kind === 'owned') {
       evidence.push({ target: followingSynthetic.decoded.envelope.affinity, mode: 'force' });
     }
