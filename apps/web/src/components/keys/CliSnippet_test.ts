@@ -53,7 +53,7 @@ test('Codex setup uses API-key auth and client-owned search and image tools', ()
     '  chmod 600 "$codex_home/floway-token"',
   ].join('\n'));
 
-  expect(wrapper.find('pre[data-language="powershell"]').text()).toBe([
+  expect(wrapper.find('pre[data-language="text"]').text()).toBe([
     '$codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME ".codex" }',
     'New-Item -ItemType Directory -Force -Path $codexHome | Out-Null',
     `[IO.File]::WriteAllText((Join-Path $codexHome "floway-token"), 'floway-''key', (New-Object Text.UTF8Encoding($false)))`,

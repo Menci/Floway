@@ -193,7 +193,7 @@ const selectClass = 'max-w-full text-xs font-mono bg-surface-800 text-gray-300 b
       <Code :code="codexUnixCredentialCommand" language="bash" />
 
       <p class="text-[11px] text-gray-600 mt-4 mb-2">Windows PowerShell — stores the same provider token without changing the official account login</p>
-      <Code :code="codexWindowsCredentialCommand" language="powershell" />
+      <Code :code="codexWindowsCredentialCommand" language="text" />
     </div>
   </div>
 </template>
