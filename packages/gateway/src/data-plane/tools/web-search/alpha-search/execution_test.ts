@@ -1,7 +1,7 @@
 import { expect, test, vi } from 'vitest';
 
-import { executeAlphaSearch } from './alpha-execution.ts';
-import type { AlphaSearchDispatcher } from './alpha-upstream.ts';
+import { executeAlphaSearch } from './execution.ts';
+import type { AlphaSearchDispatcher } from './upstream.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 test('executeAlphaSearch preserves model-facing output without retyping opaque alpha results', async () => {

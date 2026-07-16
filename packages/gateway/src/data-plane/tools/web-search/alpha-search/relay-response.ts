@@ -1,4 +1,4 @@
-// Fetch decodes a response's content coding before exposing its body stream,
+// Alpha-search upstream Fetch decodes a response's content coding before exposing its body stream,
 // but keeps the upstream Content-Encoding and Content-Length headers. Relaying
 // that stream with the stale representation headers makes the next Fetch
 // consumer decode plain bytes a second time. Rebuild the response around the

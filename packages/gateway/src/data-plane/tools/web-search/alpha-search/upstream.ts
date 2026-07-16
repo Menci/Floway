@@ -1,5 +1,5 @@
 import type { SearchConfig } from './types.ts';
-import { enumerateModelCandidates } from '../../providers/registry.ts';
+import { enumerateModelCandidates } from '../../../providers/registry.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import { identityWrapUpstreamCall, providerModelOf } from '@floway-dev/provider';
 

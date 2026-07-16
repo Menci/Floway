@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { relayFetchedResponse } from './fetched-response.ts';
+import { relayFetchedResponse } from './relay-response.ts';
 
 describe('relayFetchedResponse', () => {
   it('keeps decoded bytes and representation-safe upstream headers', async () => {

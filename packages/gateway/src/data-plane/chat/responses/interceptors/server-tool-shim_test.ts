@@ -17,8 +17,8 @@ import type { ResponsesInterceptor, ResponsesInvocation } from './types.ts';
 import { getRepo, initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../../test-helpers/gateway-ctx.ts';
-import { resolveAlphaSearchDispatcher } from '../../../tools/web-search/alpha-upstream.ts';
-import type { AlphaSearchDispatcher } from '../../../tools/web-search/alpha-upstream.ts';
+import { resolveAlphaSearchDispatcher } from '../../../tools/web-search/alpha-search/upstream.ts';
+import type { AlphaSearchDispatcher } from '../../../tools/web-search/alpha-search/upstream.ts';
 import { resolveConfiguredWebSearchProvider } from '../../../tools/web-search/provider.ts';
 import type {
   ConfiguredWebSearchProvider,
@@ -183,7 +183,7 @@ const mkReasoningDone = (outputIndex: number, reasoningId: string): ProtocolFram
 // test stub. Tests that need a specific configured state set
 // `mockResolveConfigured.mockReturnValue(...)` per call.
 vi.mock('../../../tools/web-search/provider.ts');
-vi.mock('../../../tools/web-search/alpha-upstream.ts');
+vi.mock('../../../tools/web-search/alpha-search/upstream.ts');
 
 const mkResponseCompleted = (
   usage?: ResponsesResult['usage'],

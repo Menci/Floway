@@ -15,16 +15,16 @@
 
 import { z } from 'zod';
 
-import { apiKeyFromContext, effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
-import type { CtxWithJson } from '../../middleware/zod-validator.ts';
-import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
-import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
-import { relayFetchedResponse } from '../shared/fetched-response.ts';
-import { resolveAlphaSearchDispatcher } from '../tools/web-search/alpha-upstream.ts';
-import { executeOperationToText, maxResultsForContextSize, parseWebSearchOperations, startBatchFetch, type WebSearchExecutionSession, type WebSearchFilters } from '../tools/web-search/operations.ts';
-import { resolveConfiguredWebSearchProvider } from '../tools/web-search/provider.ts';
-import { loadSearchConfig } from '../tools/web-search/search-config.ts';
-import type { ConfiguredWebSearchProvider } from '../tools/web-search/types.ts';
+import { relayFetchedResponse } from './relay-response.ts';
+import { resolveAlphaSearchDispatcher } from './upstream.ts';
+import { apiKeyFromContext, effectiveUpstreamIdsFromContext } from '../../../../middleware/auth.ts';
+import type { CtxWithJson } from '../../../../middleware/zod-validator.ts';
+import { backgroundSchedulerFromContext } from '../../../../runtime/background.ts';
+import { getRuntimeLocation } from '../../../../runtime/runtime-info.ts';
+import { executeOperationToText, maxResultsForContextSize, parseWebSearchOperations, startBatchFetch, type WebSearchExecutionSession, type WebSearchFilters } from '../operations.ts';
+import { resolveConfiguredWebSearchProvider } from '../provider.ts';
+import { loadSearchConfig } from '../search-config.ts';
+import type { ConfiguredWebSearchProvider } from '../types.ts';
 
 const domainListSchema = z.array(z.string());
 
@@ -51,14 +51,14 @@ const searchSettingsSchema = z.looseObject({
 // deterministic text for missing args, non-URL refs, wrong-typed keys, and
 // unsupported command kinds. `looseObject` preserves the unimplemented keys
 // so they reach that parser as unsupported ops.
-export const codexSearchRequestSchema = z.looseObject({
+export const alphaSearchRequestSchema = z.looseObject({
   commands: z.looseObject({}).optional(),
   settings: searchSettingsSchema.optional(),
 });
 
-type CodexSearchRequest = z.infer<typeof codexSearchRequestSchema>;
+type AlphaSearchRequest = z.infer<typeof alphaSearchRequestSchema>;
 
-const filtersFromSettings = (settings: CodexSearchRequest['settings']): WebSearchFilters => {
+const filtersFromSettings = (settings: AlphaSearchRequest['settings']): WebSearchFilters => {
   const filters: WebSearchFilters = {
     maxResults: maxResultsForContextSize(settings?.search_context_size),
   };
@@ -76,7 +76,7 @@ const filtersFromSettings = (settings: CodexSearchRequest['settings']): WebSearc
   return filters;
 };
 
-export const codexAlphaSearch = async (c: CtxWithJson<typeof codexSearchRequestSchema>): Promise<Response> => {
+export const alphaSearch = async (c: CtxWithJson<typeof alphaSearchRequestSchema>): Promise<Response> => {
   const body = c.req.valid('json');
   const searchConfig = await loadSearchConfig();
   if (searchConfig.passthroughOpenAiSearch.enabled) {

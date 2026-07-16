@@ -1,5 +1,5 @@
-import type { AlphaSearchDispatcher } from './alpha-upstream.ts';
-import type { WebSearchCallIR } from './operations.ts';
+import type { AlphaSearchDispatcher } from './upstream.ts';
+import type { WebSearchCallIR } from '../operations.ts';
 import type { ResponsesInputItem, ResponsesWebSearchAction } from '@floway-dev/protocols/responses';
 
 export const executeAlphaSearch = async ({

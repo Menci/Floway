@@ -1,6 +1,6 @@
 import { shortId } from '../../../../../shared/short-id.ts';
-import { executeAlphaSearch } from '../../../../tools/web-search/alpha-execution.ts';
-import { resolveAlphaSearchDispatcher } from '../../../../tools/web-search/alpha-upstream.ts';
+import { executeAlphaSearch } from '../../../../tools/web-search/alpha-search/execution.ts';
+import { resolveAlphaSearchDispatcher } from '../../../../tools/web-search/alpha-search/upstream.ts';
 import { normalizeDomainEntry } from '../../../../tools/web-search/domain-normalize.ts';
 import {
   actionSearchQueries,
