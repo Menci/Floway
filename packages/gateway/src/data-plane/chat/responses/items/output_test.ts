@@ -128,3 +128,75 @@ test('client output mints and persists one lifecycle id for an id-less item', as
   expect(await repo.responsesItems.lookupMany('key-a', [clientId!])).toHaveLength(1);
   expect((await repo.responsesSnapshots.lookup('key-a', 'resp_public'))?.itemIds).toContain(clientId);
 });
+
+test('client output binds a later delta item_id to an id-less lifecycle', async () => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  const store = createResponsesHttpStore('key-a', true);
+  const item = {
+    type: 'message' as const,
+    role: 'assistant' as const,
+    status: 'completed' as const,
+    content: [{ type: 'output_text' as const, text: 'answer' }],
+  };
+  const response: ResponsesResult = {
+    id: 'resp_upstream',
+    object: 'response',
+    model: 'model',
+    status: 'completed',
+    output: [item],
+    error: null,
+    incomplete_details: null,
+  };
+  const input = async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
+    yield eventFrame({ type: 'response.output_item.added', output_index: 0, item });
+    yield eventFrame({ type: 'response.output_text.delta', item_id: 'msg_late_upstream', output_index: 0, content_index: 0, delta: 'answer' });
+    yield eventFrame({ type: 'response.output_item.done', output_index: 0, item });
+    yield eventFrame({ type: 'response.completed', response });
+  };
+
+  const events: ResponsesStreamEvent[] = [];
+  for await (const frame of wrapResponsesClientOutput(input(), {
+    store,
+    attemptState: new ResponsesAttemptState(),
+    responseId: 'resp_public',
+  })) if (frame.type === 'event') events.push(frame.event);
+
+  const added = events.find(event => event.type === 'response.output_item.added');
+  const delta = events.find(event => event.type === 'response.output_text.delta');
+  expect(added?.type === 'response.output_item.added' ? added.item.id : undefined).toBe(
+    delta?.type === 'response.output_text.delta' ? delta.item_id : undefined,
+  );
+});
+
+test('client output rejects terminal item drift after output_item.done', async () => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  const store = createResponsesHttpStore('key-a', true);
+  const doneItem = { type: 'reasoning' as const, id: 'rs_upstream', summary: [{ type: 'summary_text' as const, text: 'old' }] };
+  const terminalItem = { ...doneItem, summary: [{ type: 'summary_text' as const, text: 'new' }] };
+  const response: ResponsesResult = {
+    id: 'resp_upstream',
+    object: 'response',
+    model: 'model',
+    status: 'completed',
+    output: [terminalItem],
+    error: null,
+    incomplete_details: null,
+  };
+  const input = async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
+    yield eventFrame({ type: 'response.output_item.added', output_index: 0, item: doneItem });
+    yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: doneItem });
+    yield eventFrame({ type: 'response.completed', response });
+  };
+  const collect = async () => {
+    for await (const _frame of wrapResponsesClientOutput(input(), {
+      store,
+      attemptState: new ResponsesAttemptState(),
+      responseId: 'resp_public',
+    })) void _frame;
+  };
+
+  await expect(collect()).rejects.toThrow('Responses terminal output item 0 changed after output_item.done');
+  expect(await repo.responsesSnapshots.lookup('key-a', 'resp_public')).toBeNull();
+});

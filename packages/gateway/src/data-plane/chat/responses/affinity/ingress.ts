@@ -49,6 +49,7 @@ const routingEvidenceFrom = (
     locations.filter(isOwnedLocation),
     location => location.itemIndex,
   );
+  const locationsByItem = Map.groupBy(locations, location => location.itemIndex);
   const evidence: AffinityEvidence[] = [];
   let latestTarget: AffinityTarget | undefined;
 
@@ -59,7 +60,7 @@ const routingEvidenceFrom = (
       evidence.push({ target: latestTarget, mode: 'prefer' });
       if (itemRequiresAffinity(item)) evidence.push({ target: latestTarget, mode: 'force' });
     }
-    if (!itemRequiresAffinity(item) || owned.length > 0) continue;
+    if (!itemRequiresAffinity(item) || (locationsByItem.get(itemIndex)?.length ?? 0) > 0) continue;
     if (latestTarget !== undefined) evidence.push({ target: latestTarget, mode: 'force' });
   }
 

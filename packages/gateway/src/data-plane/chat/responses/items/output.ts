@@ -1,4 +1,4 @@
-import { createResponsesItemId, responsesItemId } from './format.ts';
+import { createResponsesItemId, hashResponsesItemBinding, responsesItemId } from './format.ts';
 import type { StatefulResponsesStore } from './store.ts';
 import type { StoredResponsesItem } from '../../../../repo/types.ts';
 import type { ResponsesAttemptState } from '../attempt-state.ts';
@@ -48,6 +48,7 @@ export const wrapResponsesClientOutput = async function* (
   const { store, attemptState, responseId } = args;
   const upstreamToClient = new Map<string, string>();
   const outputIndexToClient = new Map<number, string>();
+  const finalizedItems = new Map<number, { readonly itemType: string; readonly contentHash: string }>();
 
   const idMapper = (upstreamId: string, itemType: string): string => {
     let clientId = upstreamToClient.get(upstreamId);
@@ -95,7 +96,6 @@ export const wrapResponsesClientOutput = async function* (
   // via an item-bearing frame. Delta events carry only `item_id` with no
   // type, so we look the type up before re-invoking idMapper.
   const seenItemTypes = new Map<string, string>();
-  const finalizedOutputIndexes = new Set<number>();
   let sawCompactionItem = false;
 
   const rewriteEnvelopeIds = (response: ResponsesResult): ResponsesResult => ({
@@ -138,8 +138,11 @@ export const wrapResponsesClientOutput = async function* (
       if (upstreamId !== null) seenItemTypes.set(upstreamId, event.item.type);
       const newId = lifecycleId(upstreamId, event.item.type, event.output_index);
       if (isCompactionItemType(event.item.type)) sawCompactionItem = true;
-      if (!finalizedOutputIndexes.has(event.output_index)) {
-        finalizedOutputIndexes.add(event.output_index);
+      if (!finalizedItems.has(event.output_index)) {
+        finalizedItems.set(event.output_index, {
+          itemType: event.item.type,
+          contentHash: await hashResponsesItemBinding(event.item),
+        });
         await onItemFinalized(event.item as unknown as ResponsesInputItem, newId);
       }
       yield eventFrame({ ...event, item: { ...event.item, id: newId } });
@@ -153,8 +156,13 @@ export const wrapResponsesClientOutput = async function* (
         const upstreamId = responsesItemId(item);
         if (upstreamId !== null) seenItemTypes.set(upstreamId, item.type);
         const newId = lifecycleId(upstreamId, item.type, outputIndex);
-        if (!finalizedOutputIndexes.has(outputIndex)) {
-          finalizedOutputIndexes.add(outputIndex);
+        const contentHash = await hashResponsesItemBinding(item);
+        const finalized = finalizedItems.get(outputIndex);
+        if (finalized !== undefined && (finalized.itemType !== item.type || finalized.contentHash !== contentHash)) {
+          throw new Error(`Responses terminal output item ${outputIndex} changed after output_item.done`);
+        }
+        if (finalized === undefined) {
+          finalizedItems.set(outputIndex, { itemType: item.type, contentHash });
           await onItemFinalized(item as unknown as ResponsesInputItem, newId);
         }
         output.push({ ...(item as unknown as ResponsesInputItem), id: newId });
@@ -184,6 +192,15 @@ export const wrapResponsesClientOutput = async function* (
 
     const refId = (event as { item_id?: unknown }).item_id;
     if (typeof refId === 'string') {
+      const outputIndex = 'output_index' in event && typeof event.output_index === 'number'
+        ? event.output_index
+        : undefined;
+      const lifecycleItemId = outputIndex === undefined ? undefined : outputIndexToClient.get(outputIndex);
+      if (lifecycleItemId !== undefined) {
+        upstreamToClient.set(refId, lifecycleItemId);
+        yield eventFrame({ ...event, item_id: lifecycleItemId } as ResponsesStreamEvent);
+        continue;
+      }
       const knownType = seenItemTypes.get(refId);
       if (knownType === undefined) { yield frame; continue; }
       const newId = idMapper(refId, knownType);

@@ -172,6 +172,24 @@ test('derives force routing from program state following a preferred carrier', a
   ]);
 });
 
+test('does not inherit force through a foreign program blob', async () => {
+  const carrier = await codec.wrap(
+    undefined,
+    targetFor(candidateA),
+    carrierDomain('reasoning', 'encrypted_content'),
+  );
+  const prepared = await prepareResponsesAffinity({
+    model: 'model',
+    input: [
+      { type: 'reasoning', id: 'rs_prefix', summary: [], encrypted_content: carrier },
+      { type: 'program', id: 'prog_1', call_id: 'call_1', code: 'return 1', fingerprint: 'foreign' },
+    ],
+  }, codec);
+
+  expect(prepared.routingEvidence).toEqual([{ target: targetFor(candidateA), mode: 'prefer' }]);
+  expect(prepared.payloadForCandidate(candidateA).input[1]).toMatchObject({ fingerprint: 'foreign' });
+});
+
 test('restores the bound ID of a force item carried by an adjacent synthetic prefix', async () => {
   const item = { type: 'program_output' as const, id: 'prog_out_public', call_id: 'call_1', result: 'done', status: 'completed' as const };
   const carrier = await codec.wrap(
