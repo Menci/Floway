@@ -132,6 +132,56 @@ test('keeps tool argument continuations on the open block when opaque reasoning 
   expect(textStart).toBeGreaterThan(redactedStart);
 });
 
+test('serializes parallel Chat tool drafts into valid Messages blocks', () => {
+  const state = createChatCompletionsToMessagesStreamState();
+  const events = [
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({
+      role: 'assistant',
+      tool_calls: [
+        { index: 0, id: 'call_0', type: 'function', function: { name: 'first', arguments: '{"a"' } },
+        { index: 1, id: 'call_1', type: 'function', function: { name: 'second', arguments: '{"b"' } },
+      ],
+    }), state),
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({ tool_calls: [
+      { index: 1, function: { arguments: ':2}' } },
+      { index: 0, function: { arguments: ':1}' } },
+    ] }), state),
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({}, 'tool_calls'), state),
+  ];
+
+  const toolEvents = events.filter(event =>
+    event.type === 'content_block_start'
+    || event.type === 'content_block_stop'
+    || (event.type === 'content_block_delta' && event.delta.type === 'input_json_delta'));
+  assertEquals(toolEvents, [
+    { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'call_0', name: 'first', input: {} } },
+    { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '{"a":1}' } },
+    { type: 'content_block_stop', index: 0 },
+    { type: 'content_block_start', index: 1, content_block: { type: 'tool_use', id: 'call_1', name: 'second', input: {} } },
+    { type: 'content_block_delta', index: 1, delta: { type: 'input_json_delta', partial_json: '{"b":2}' } },
+    { type: 'content_block_stop', index: 1 },
+  ]);
+});
+
+test('defers readable reasoning until a buffered tool draft is complete', () => {
+  const state = createChatCompletionsToMessagesStreamState();
+  const events = [
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({
+      role: 'assistant',
+      tool_calls: [{ index: 0, id: 'call_0', type: 'function', function: { name: 'tool', arguments: '{"a"' } }],
+    }), state),
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({ reasoning_text: 'trace' }), state),
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({ tool_calls: [{ index: 0, function: { arguments: ':1}' } }] }), state),
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({}, 'tool_calls'), state),
+  ];
+
+  const toolStop = events.findIndex(event => event.type === 'content_block_stop' && event.index === 0);
+  const thinkingStart = events.findIndex(event =>
+    event.type === 'content_block_start' && event.content_block.type === 'thinking');
+  expect(toolStop).toBeGreaterThan(-1);
+  expect(thinkingStart).toBeGreaterThan(toolStop);
+});
+
 test('translateChatCompletionsChunkToMessagesEvents keeps text and opaque in one thinking block', () => {
   const state = createChatCompletionsToMessagesStreamState();
   const events = [
@@ -432,7 +482,7 @@ test('translateChatCompletionsChunkToMessagesEvents defers content interleaved b
 // because the tool_use block is about to open — and any trailing argument
 // fragments for the same tool_call would land against a stopped block index.
 // Mirrors caozhiyuan's gating
-// (https://github.com/caozhiyuan/copilot-api/blob/main/src/routes/messages/stream-translation.ts#L240):
+// (https://github.com/caozhiyuan/copilot-api/blob/287d2d330c299bbdf3ed213a1bc05b1739aecf03/src/routes/messages/stream-translation.ts#L232-L243):
 // `isToolBlockOpen(state) || hasToolCallDelta(delta)` defers the content
 // rather than emitting it before the tool_use block opens.
 test('translateChatCompletionsChunkToMessagesEvents defers content that shares a chunk with tool_calls before any tool block opens', () => {
@@ -482,24 +532,15 @@ test('translateChatCompletionsChunkToMessagesEvents defers content that shares a
 
 test('translateChatCompletionsChunkToMessagesEvents ignores empty tool_calls arrays', () => {
   const state = createChatCompletionsToMessagesStreamState();
-  // First chunk with role: "assistant" and empty tool_calls.
-  // Before the fix (choice.delta.tool_calls), empty [] was truthy and
-  // entered the tool-calls branch, which could close an open text block
-  // prematurely. After the fix (choice.delta.tool_calls?.length), empty
-  // arrays are treated as absent.
   const events1 = translateChatCompletionsChunkToMessagesEvents(chunk({ role: 'assistant', tool_calls: [] }), state);
-  // First event should be message_start (from role), not any tool-call handling.
-  // No content yet, so no content_block_start.
   assertEquals(events1.length, 1);
   assertEquals(events1[0].type, 'message_start');
 
-  // Second chunk with content — should start a text block normally.
   const events2 = translateChatCompletionsChunkToMessagesEvents(chunk({ content: 'hello' }), state);
   assertEquals(events2.length, 2);
   assertEquals(events2[0].type, 'content_block_start');
   assertEquals(events2[1].type, 'content_block_delta');
 
-  // Finish with stop.
   const events3 = translateChatCompletionsChunkToMessagesEvents(chunk({}, 'stop'), state);
   const textBlocks = events3.filter(e => e.type === 'content_block_stop');
   assertEquals(textBlocks.length, 1, 'only one text block should have been closed');

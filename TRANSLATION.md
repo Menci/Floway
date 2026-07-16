@@ -255,9 +255,10 @@ without a Messages counterpart are rejected.
 
 Request mapping:
 
-- system, user text/images, tool results, assistant text, and tool use become
-  their Chat counterparts while preserving source order;
-- readable reasoning comes from the first source-order thinking group; later
+- system, user text/images, and tool results become their Chat counterparts;
+- assistant text blocks are concatenated and tool calls are collected, so
+  text/tool interleaving collapses to scalar text followed by the tool list;
+- the first non-empty readable reasoning is retained, while later
   thinking/redacted blocks can replace the scalar `reasoning_opaque` snapshot;
 - limits, sampling, stop, tools, and representable tool choice map directly;
 - explicit effort maps to `reasoning_effort`; disabled thinking maps to
@@ -281,8 +282,8 @@ Request mapping:
 - limits, sampling, stop, tools, and strictness map where representable.
 
 Response mapping emits scalar reasoning before text and normally emits text
-before tools. Text sharing a frame with a tool call, or arriving while tool
-arguments stream, is deferred until that `tool_use` block closes.
+before tools. Parallel tool drafts are buffered and emitted serially at finish;
+text/reasoning arriving during that run follows the emitted tool blocks.
 `reasoning_opaque` is treated as a replacement snapshot; when several snapshots
 arrive before a block is emitted, the latest value wins. Opaque-only reasoning
 uses `redacted_thinking`. Chat alternatives have no Messages representation,
