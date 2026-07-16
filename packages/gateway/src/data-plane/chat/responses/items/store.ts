@@ -47,7 +47,7 @@ export interface StatefulResponsesStore {
   getItemById(id: string): StoredResponsesItem | undefined;
   hashItemContent(item: ResponsesInputItem): Promise<string>;
   stageInputItems(items: readonly ResponsesInputItem[]): Promise<void>;
-  stageOutputItem(row: StoredResponsesItem): void;
+  stageOutputItem(row: StoredResponsesItem, outputIndex: number): void;
   commitOutputItems(): Promise<void>;
   commitSnapshot(responseId: string, mode: ResponsesSnapshotMode): Promise<void>;
 }
@@ -58,7 +58,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   private readonly stagedInputItems = new Map<string, StoredResponsesItem>();
   private readonly stagedInputItemIds: string[] = [];
   private readonly stagedOutputItems = new Map<string, StoredResponsesItem>();
-  private readonly stagedOutputItemIds: string[] = [];
+  private readonly stagedOutputItemIds = new Map<number, string>();
   private previousSnapshotItemIds: string[] = [];
   private readonly committedItemIds = new Set<string>();
   private readonly durableItemIds = new Set<string>();
@@ -125,10 +125,10 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     for (const item of items) await this.stageInputItem(item);
   }
 
-  stageOutputItem(row: StoredResponsesItem): void {
+  stageOutputItem(row: StoredResponsesItem, outputIndex: number): void {
     const cloned = cloneStoredResponsesItem(row);
     this.stagedOutputItems.set(cloned.id, cloned);
-    this.stagedOutputItemIds.push(cloned.id);
+    this.stagedOutputItemIds.set(outputIndex, cloned.id);
     this.rememberItem(cloned);
   }
 
@@ -138,9 +138,12 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
 
   async commitSnapshot(responseId: string, mode: ResponsesSnapshotMode): Promise<void> {
     if (this.options.writes.length === 0) return;
+    const outputItemIds = [...this.stagedOutputItemIds.entries()]
+      .toSorted(([left], [right]) => left - right)
+      .map(([, id]) => id);
     const itemIds = mode === 'replace'
-      ? [...this.stagedOutputItemIds]
-      : [...this.previousSnapshotItemIds, ...this.stagedInputItemIds, ...this.stagedOutputItemIds];
+      ? outputItemIds
+      : [...this.previousSnapshotItemIds, ...this.stagedInputItemIds, ...outputItemIds];
     if (itemIds.length === 0) return;
     const uniqueRows = [...new Set(itemIds)].map(id => {
       const row = this.loadedItems.get(id);

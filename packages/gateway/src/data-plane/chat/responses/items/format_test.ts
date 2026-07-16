@@ -125,7 +125,7 @@ test('affinity item binding normalizes Codex output-only message defaults', asyn
     type: 'message' as const,
     id: 'msg_public',
     role: 'assistant' as const,
-    content: [{ type: 'output_text' as const, text: 'answer' }],
+    content: [{ type: 'input_text' as const, text: 'answer' }],
   };
 
   assert(await hashResponsesItemBinding(output) === await hashResponsesItemBinding(history));

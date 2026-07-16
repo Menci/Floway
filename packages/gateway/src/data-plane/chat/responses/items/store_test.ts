@@ -30,7 +30,7 @@ describe('StatefulResponsesStore', () => {
       contentHash: 'output-hash',
       createdAt: 1_000,
     };
-    store.stageOutputItem(output);
+    store.stageOutputItem(output, 0);
     await store.commitSnapshot('resp_saved', 'append');
 
     const snapshot = await repo.responsesSnapshots.lookup('key-a', 'resp_saved');
@@ -53,7 +53,7 @@ describe('StatefulResponsesStore', () => {
       contentHash: 'output-hash',
       createdAt: 1_000,
     };
-    store.stageOutputItem(output);
+    store.stageOutputItem(output, 0);
     await store.commitSnapshot('resp_compact', 'replace');
 
     expect(await repo.responsesItems.lookupManyByContentHash('key-a', [await store.hashItemContent(input)])).toEqual([]);

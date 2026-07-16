@@ -226,3 +226,65 @@ test('client output rejects repeated output_item.done drift', async () => {
 
   await expect(collect()).rejects.toThrow('Responses output item 0 changed after output_item.done');
 });
+
+test('snapshot output IDs follow output_index rather than done arrival order', async () => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  const store = createResponsesHttpStore('key-a', true);
+  const first = { type: 'reasoning' as const, id: 'rs_first', summary: [] };
+  const second = { type: 'reasoning' as const, id: 'rs_second', summary: [] };
+  const response: ResponsesResult = {
+    id: 'resp_upstream',
+    object: 'response',
+    model: 'model',
+    status: 'completed',
+    output: [first, second],
+    error: null,
+    incomplete_details: null,
+  };
+  const input = async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
+    yield eventFrame({ type: 'response.output_item.done', output_index: 1, item: second });
+    yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: first });
+    yield eventFrame({ type: 'response.completed', response });
+  };
+  let terminal: ResponsesResult | undefined;
+  for await (const frame of wrapResponsesClientOutput(input(), {
+    store,
+    attemptState: new ResponsesAttemptState(),
+    responseId: 'resp_public',
+  })) if (frame.type === 'event' && frame.event.type === 'response.completed') terminal = frame.event.response;
+  if (terminal === undefined) throw new Error('Expected terminal response');
+
+  expect((await repo.responsesSnapshots.lookup('key-a', 'resp_public'))?.itemIds).toEqual(
+    terminal.output.map(item => item.id),
+  );
+});
+
+test('finalized item validation accepts the compaction_summary alias', async () => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  const store = createResponsesHttpStore('key-a', true);
+  const summary = { type: 'compaction_summary', id: 'cmp_upstream', encrypted_content: 'opaque' } as unknown as ResponsesResult['output'][number];
+  const canonical = { ...summary, type: 'compaction' } as unknown as ResponsesResult['output'][number];
+  const response: ResponsesResult = {
+    id: 'resp_upstream',
+    object: 'response',
+    model: 'model',
+    status: 'completed',
+    output: [canonical],
+    error: null,
+    incomplete_details: null,
+  };
+  const input = async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
+    yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: summary });
+    yield eventFrame({ type: 'response.completed', response });
+  };
+  const events: ResponsesStreamEvent[] = [];
+  for await (const frame of wrapResponsesClientOutput(input(), {
+    store,
+    attemptState: new ResponsesAttemptState(),
+    responseId: 'resp_public',
+  })) if (frame.type === 'event') events.push(frame.event);
+
+  expect(events.at(-1)?.type).toBe('response.completed');
+});

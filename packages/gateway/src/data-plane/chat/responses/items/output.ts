@@ -74,13 +74,13 @@ export const wrapResponsesClientOutput = async function* (
     const finalized = finalizedItems.get(outputIndex);
     if (finalized === undefined) return false;
     const contentHash = await hashResponsesItemBinding(item);
-    if (finalized.itemType !== item.type || finalized.contentHash !== contentHash) {
+    if (finalized.itemType !== canonicalResponsesItemType(item.type) || finalized.contentHash !== contentHash) {
       throw new Error(`Responses output item ${outputIndex} changed after output_item.done`);
     }
     return true;
   };
 
-  const onItemFinalized = async (originalItem: ResponsesInputItem, newId: string): Promise<void> => {
+  const onItemFinalized = async (originalItem: ResponsesInputItem, newId: string, outputIndex: number): Promise<void> => {
     if (!store.writesState) return;
     const upstreamId = responsesItemId(originalItem);
     // Interceptors register per-item server-only payloads under the wire id.
@@ -98,7 +98,7 @@ export const wrapResponsesClientOutput = async function* (
       contentHash: await store.hashItemContent(clientItem),
       createdAt: now,
     };
-    store.stageOutputItem(row);
+    store.stageOutputItem(row, outputIndex);
     await store.commitOutputItems();
   };
 
@@ -149,10 +149,10 @@ export const wrapResponsesClientOutput = async function* (
       if (isCompactionItemType(event.item.type)) sawCompactionItem = true;
       if (!await matchesFinalizedItem(event.output_index, event.item as unknown as ResponsesInputItem)) {
         finalizedItems.set(event.output_index, {
-          itemType: event.item.type,
+          itemType: canonicalResponsesItemType(event.item.type),
           contentHash: await hashResponsesItemBinding(event.item),
         });
-        await onItemFinalized(event.item as unknown as ResponsesInputItem, newId);
+        await onItemFinalized(event.item as unknown as ResponsesInputItem, newId, event.output_index);
       }
       yield eventFrame({ ...event, item: { ...event.item, id: newId } });
       continue;
@@ -166,7 +166,7 @@ export const wrapResponsesClientOutput = async function* (
         if (upstreamId !== null) seenItemTypes.set(upstreamId, item.type);
         const newId = clientIdForOutput(upstreamId, item.type, outputIndex);
         if (!await matchesFinalizedItem(outputIndex, item as unknown as ResponsesInputItem)) {
-          await onItemFinalized(item as unknown as ResponsesInputItem, newId);
+          await onItemFinalized(item as unknown as ResponsesInputItem, newId, outputIndex);
         }
         output.push({ ...(item as unknown as ResponsesInputItem), id: newId });
       }

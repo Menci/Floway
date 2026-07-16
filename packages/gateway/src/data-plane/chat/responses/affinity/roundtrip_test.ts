@@ -155,6 +155,7 @@ test('an adjacent carrier accepts Codex-normalized message history', async () =>
   const clientMessage = clientResponse.output[1] as unknown as Record<string, unknown>;
   delete clientMessage.status;
   const [outputText] = clientMessage.content as Array<Record<string, unknown>>;
+  outputText.type = 'input_text';
   delete outputText.annotations;
   delete outputText.logprobs;
 
@@ -162,7 +163,7 @@ test('an adjacent carrier accepts Codex-normalized message history', async () =>
   expect(prepared.payloadForCandidate(candidate).input[0]).toMatchObject({
     type: 'message',
     id: 'msg_upstream',
-    content: [{ type: 'output_text', text: 'answer' }],
+    content: [{ type: 'input_text', text: 'answer' }],
   });
 });
 
