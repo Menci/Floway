@@ -688,7 +688,7 @@ test('full redacted_thinking + text stream scenario', () => {
   assertEquals(d[2].content, 'Response');
 });
 
-test('later reasoning blocks are ignored for Chat scalar streaming', () => {
+test('keeps first readable reasoning and later opaque snapshots for Chat scalar streaming', () => {
   const d = deltas([
     MSG_START,
     {
@@ -727,10 +727,10 @@ test('later reasoning blocks are ignored for Chat scalar streaming', () => {
   ]);
 
   assertEquals(d.map(delta => delta.reasoning_text).filter(Boolean), ['first']);
-  assertEquals(d.map(delta => delta.reasoning_opaque).filter(Boolean), ['sig_1']);
+  assertEquals(d.map(delta => delta.reasoning_opaque).filter(Boolean), ['sig_1', 'sig_2']);
 });
 
-test('first redacted_thinking block suppresses later readable thinking in Chat scalar streaming', () => {
+test('leading redacted_thinking does not suppress later first-readable thinking', () => {
   const d = deltas([
     MSG_START,
     {
@@ -754,7 +754,7 @@ test('first redacted_thinking block suppresses later readable thinking in Chat s
   ]);
 
   assertEquals(d.map(delta => delta.reasoning_opaque).filter(Boolean), ['opaque_first']);
-  assertEquals(d.map(delta => delta.reasoning_text).filter(Boolean), []);
+  assertEquals(d.map(delta => delta.reasoning_text).filter(Boolean), ['later']);
 });
 
 test('thinking + tool_use stream (interleaved thinking)', () => {

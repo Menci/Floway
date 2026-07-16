@@ -284,10 +284,10 @@ Request mapping:
 - Chat tool calls/results become Messages tool use/results;
 - limits, sampling, stop, tools, and strictness map where representable.
 
-Response mapping projects the first Messages reasoning block onto Chat scalar
-reasoning, concatenates text, maps sequential tool blocks to indexed Chat tool
-call deltas, and translates stop/usage fields. Later Messages reasoning blocks
-are not representable in Chat's scalar response shape.
+Response mapping retains the first non-empty readable Messages reasoning and
+forwards later opaque signatures as replacement Chat snapshots. It concatenates
+text, maps sequential tool blocks to indexed Chat tool-call deltas, and
+translates stop/usage fields.
 
 Chat name/user/generic metadata and image detail are omitted where Messages has
 no native equivalent.
