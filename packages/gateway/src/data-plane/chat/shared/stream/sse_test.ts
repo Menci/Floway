@@ -1,8 +1,8 @@
 import { Hono } from 'hono';
-import { streamSSE } from 'hono/streaming';
 import { test } from 'vitest';
 
 import { writeSSEFrames } from './sse.ts';
+import { streamSSE } from '../../../../streaming/sse.ts';
 import { FakeTime } from '../../../../test-time.ts';
 import { parseSSEStream } from '@floway-dev/protocols/common';
 import { sseCommentFrame, type SseFrame, sseFrame } from '@floway-dev/protocols/common';

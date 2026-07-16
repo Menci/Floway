@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
-import { streamSSE } from 'hono/streaming';
 
 import { tokenUsageFromChatCompletionsUsage } from './usage.ts';
+import { streamSSE } from '../../../streaming/sse.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';

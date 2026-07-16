@@ -10,7 +10,6 @@
 // successful 200 from upstream into a 502.
 
 import type { Context } from 'hono';
-import { streamSSE } from 'hono/streaming';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 
 import type { PassthroughServeApiName } from './api-names.ts';
@@ -21,6 +20,7 @@ import { recordFailedRequest } from './telemetry/performance.ts';
 import { settle } from './telemetry/settle.ts';
 import type { AuthedContext } from '../../middleware/auth.ts';
 import type { TokenUsage } from '../../repo/types.ts';
+import { streamSSE } from '../../streaming/sse.ts';
 import type { GatewayCtx } from '../chat/shared/gateway-ctx.ts';
 import { type StreamCompletion, writeSSEFrames } from '../chat/shared/stream/sse.ts';
 import { enumerateModelCandidates } from '../providers/registry.ts';

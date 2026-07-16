@@ -1,8 +1,8 @@
 import type { Context } from 'hono';
 import { Hono } from 'hono';
-import { streamSSE } from 'hono/streaming';
 import { z } from 'zod';
 
+import { streamSSE } from '../streaming/sse.ts';
 import { ownedKeyOr404 } from './shared/owned-key.ts';
 import { getDumpBroker, getDumpStore } from '../dump/registry.ts';
 import { dumpRecordToWire } from '../dump/wire.ts';

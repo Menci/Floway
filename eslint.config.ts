@@ -65,6 +65,10 @@ const commonConfig: Linter.Config = {
           ],
           message: 'Platform implementations are deployment-target apps, not libraries. They are reachable only from their own entry.ts via relative imports.',
         },
+        {
+          group: ['hono/streaming'],
+          message: 'Import streamSSE from packages/gateway/src/streaming/sse.ts instead — the wrapper adds X-Accel-Buffering: no so SSE flows through nginx reverse proxies without buffering.',
+        },
       ],
     }],
 
