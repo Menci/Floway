@@ -29,11 +29,6 @@
 // https://github.com/openai/codex/blob/44918ea10c0f99151c6710411b4322c2f5c96bea/codex-rs/analytics/src/client.rs#L99-L108
 // https://github.com/openai/codex/blob/44918ea10c0f99151c6710411b4322c2f5c96bea/codex-rs/codex-mcp/src/mcp/mod.rs#L469-L490
 //
-// Codex appends `alpha/search` to the model-provider base for its standalone
-// `web.run` tool. The root aliases cover the other base conventions Codex can
-// derive; all three paths share the web-search alpha handler.
-// https://github.com/openai/codex/blob/2e1607ee2fa8099a233df7437adee5f16a741905/codex-rs/codex-api/src/endpoint/search.rs#L31-L47
-//
 // Auth: Codex reads `tokens.access_token` from `~/.codex/auth.json` and sends
 // it as `Authorization: Bearer <key>`, which authMiddleware accepts as a Floway
 // API key. The WebSocket binds that credential at upgrade, then re-resolves its
@@ -54,18 +49,11 @@ import {
 } from './chatgpt-backend.ts';
 import { codexModels } from './models.ts';
 import type { AuthVars } from '../../middleware/auth.ts';
-import { zValidator } from '../../middleware/zod-validator.ts';
 import { responsesHttp } from '../chat/responses/http.ts';
 import { responsesWebSocket } from '../chat/responses/websocket.ts';
 import { imagesEdits, imagesGenerations } from '../images/serve.ts';
-import { alphaSearch, alphaSearchRequestSchema } from '../tools/web-search/alpha-search/route.ts';
 
 const CODEX_BASE_PATH = '/azure-api.codex';
-const CODEX_SEARCH_PATHS = [
-  `${CODEX_BASE_PATH}/alpha/search`,
-  '/alpha/search',
-  '/v1/alpha/search',
-] as const;
 
 export const mountCodexRoutes = (app: Hono<{ Variables: AuthVars }>) => {
   app.post(`${CODEX_BASE_PATH}/responses`, responsesHttp.generate);
@@ -76,10 +64,6 @@ export const mountCodexRoutes = (app: Hono<{ Variables: AuthVars }>) => {
 
   app.get(`${CODEX_BASE_PATH}/models`, codexModels);
   app.post(`${CODEX_BASE_PATH}/codex/analytics-events/events`, codexAnalyticsEventsEvents);
-
-  for (const path of CODEX_SEARCH_PATHS) {
-    app.post(path, zValidator('json', alphaSearchRequestSchema), alphaSearch);
-  }
 
   app.post(`${CODEX_BASE_PATH}/api/codex/apps`, codexAppsMcp);
 

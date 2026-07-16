@@ -1,11 +1,11 @@
 import { Hono } from 'hono';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { type AuthVars, authMiddleware } from '../../../../middleware/auth.ts';
-import { buildCustomUpstreamRecord, setupAppTest } from '../../../../test-helpers.ts';
-import { mountCodexRoutes } from '../../../codex/routes.ts';
-import { resolveConfiguredWebSearchProvider } from '../provider.ts';
-import type { SearchConfig, WebSearchFetchPageRequest, WebSearchFetchPageResult, WebSearchProvider, WebSearchProviderRequest, WebSearchProviderResult } from '../types.ts';
+import { mountAlphaSearchRoutes } from './routes.ts';
+import { type AuthVars, authMiddleware } from '../../middleware/auth.ts';
+import { buildCustomUpstreamRecord, setupAppTest } from '../../test-helpers.ts';
+import { resolveConfiguredWebSearchProvider } from '../tools/web-search/provider.ts';
+import type { SearchConfig, WebSearchFetchPageRequest, WebSearchFetchPageResult, WebSearchProvider, WebSearchProviderRequest, WebSearchProviderResult } from '../tools/web-search/types.ts';
 import { withMockedFetch } from '@floway-dev/test-utils';
 
 // Real provider construction (`createTavilyWebSearchProvider` etc.) hits the
@@ -13,7 +13,7 @@ import { withMockedFetch } from '@floway-dev/test-utils';
 // SearchConfig row is still seeded so `loadSearchConfig` returns a real
 // value; the mock ignores it and returns the configured state each test
 // wants.
-vi.mock('../provider.ts');
+vi.mock('../tools/web-search/provider.ts');
 const mockResolveConfigured = vi.mocked(resolveConfiguredWebSearchProvider);
 
 const TAVILY_CONFIG: SearchConfig = {
@@ -58,10 +58,10 @@ const makeStubProvider = (overrides: ProviderOverrides = {}): { provider: WebSea
   return { provider, calls };
 };
 
-const buildCodexApp = () => {
+const buildAlphaSearchApp = () => {
   const app = new Hono<{ Variables: AuthVars }>();
   app.use('*', authMiddleware);
-  mountCodexRoutes(app);
+  mountAlphaSearchRoutes(app);
   return app;
 };
 
@@ -73,7 +73,7 @@ const SEARCH_PATHS = [
 const SEARCH_PATH = SEARCH_PATHS[0];
 
 const postSearch = (
-  app: ReturnType<typeof buildCodexApp>,
+  app: ReturnType<typeof buildAlphaSearchApp>,
   apiKey: string,
   body: unknown,
   path: (typeof SEARCH_PATHS)[number] = SEARCH_PATH,
@@ -93,13 +93,13 @@ beforeEach(() => {
   mockResolveConfigured.mockReset();
 });
 
-describe('codex /alpha/search', () => {
+describe('/alpha/search data plane', () => {
   describe('routing and auth', () => {
     it.each(SEARCH_PATHS)('serves the same handler at %s', async path => {
       const { apiKey } = await setupAppTest({ searchConfig: TAVILY_CONFIG });
       const stub = makeStubProvider();
       mockResolveConfigured.mockReturnValue({ type: 'enabled', provider: 'tavily', impl: stub.provider });
-      const app = buildCodexApp();
+      const app = buildAlphaSearchApp();
 
       const response = await postSearch(app, apiKey.key, { commands: { search_query: [{ q: 'route probe' }] } }, path);
       expect(response.status).toBe(200);
@@ -109,14 +109,14 @@ describe('codex /alpha/search', () => {
 
     it.each(SEARCH_PATHS)('rejects missing auth at %s', async path => {
       await setupAppTest();
-      const app = buildCodexApp();
+      const app = buildAlphaSearchApp();
       const response = await app.request(path, { method: 'POST', body: '{}', headers: { 'content-type': 'application/json' } });
       expect(response.status).toBe(401);
     });
 
     it.each(SEARCH_PATHS)('rejects an unknown bearer at %s', async path => {
       await setupAppTest();
-      const app = buildCodexApp();
+      const app = buildAlphaSearchApp();
       const response = await postSearch(app, 'not-an-api-key', {}, path);
       expect(response.status).toBe(401);
     });
@@ -125,14 +125,14 @@ describe('codex /alpha/search', () => {
   describe('schema validation', () => {
     it.each(SEARCH_PATHS)('rejects non-object `commands` at %s', async path => {
       const { apiKey } = await setupAppTest({ searchConfig: TAVILY_CONFIG });
-      const app = buildCodexApp();
+      const app = buildAlphaSearchApp();
       const response = await postSearch(app, apiKey.key, { commands: [] }, path);
       expect(response.status).toBe(400);
     });
 
     it.each(SEARCH_PATHS)('rejects unknown search_context_size at %s', async path => {
       const { apiKey } = await setupAppTest({ searchConfig: TAVILY_CONFIG });
-      const app = buildCodexApp();
+      const app = buildAlphaSearchApp();
       const response = await postSearch(app, apiKey.key, { settings: { search_context_size: 'huge' } }, path);
       expect(response.status).toBe(400);
     });
@@ -141,7 +141,7 @@ describe('codex /alpha/search', () => {
       const { apiKey } = await setupAppTest({ searchConfig: TAVILY_CONFIG });
       const stub = makeStubProvider();
       mockResolveConfigured.mockReturnValue({ type: 'enabled', provider: 'tavily', impl: stub.provider });
-      const app = buildCodexApp();
+      const app = buildAlphaSearchApp();
       const response = await postSearch(app, apiKey.key, {
         id: 'session-1',
         model: 'gpt-5.5',
@@ -190,7 +190,7 @@ describe('codex /alpha/search', () => {
           throw new Error(`Unhandled fetch ${request.url}`);
         },
         async () => {
-          const response = await postSearch(buildCodexApp(), apiKey.key, {
+          const response = await postSearch(buildAlphaSearchApp(), apiKey.key, {
             id: 'session-search',
             model: 'caller-model',
             commands: { search_query: [{ q: 'Floway' }] },
@@ -210,7 +210,7 @@ describe('codex /alpha/search', () => {
       const { apiKey, repo } = await setupAppTest({ searchConfig: TAVILY_CONFIG });
       const stub = makeStubProvider();
       mockResolveConfigured.mockReturnValue({ type: 'enabled', provider: 'tavily', impl: stub.provider });
-      const app = buildCodexApp();
+      const app = buildAlphaSearchApp();
 
       const response = await postSearch(app, apiKey.key, { commands: { search_query: [{ q: 'react hooks' }] } });
       expect(response.status).toBe(200);
@@ -236,7 +236,7 @@ describe('codex /alpha/search', () => {
       const { apiKey, repo } = await setupAppTest({ searchConfig: TAVILY_CONFIG });
       const stub = makeStubProvider();
       mockResolveConfigured.mockReturnValue({ type: 'enabled', provider: 'tavily', impl: stub.provider });
-      const app = buildCodexApp();
+      const app = buildAlphaSearchApp();
 
       const response = await postSearch(app, apiKey.key, { commands: { open: [{ ref_id: 'https://example.com/doc' }] } });
       expect(response.status).toBe(200);
@@ -258,7 +258,7 @@ describe('codex /alpha/search', () => {
         }),
       });
       mockResolveConfigured.mockReturnValue({ type: 'enabled', provider: 'tavily', impl: stub.provider });
-      const app = buildCodexApp();
+      const app = buildAlphaSearchApp();
 
       const response = await postSearch(app, apiKey.key, { commands: { find: [{ ref_id: 'https://example.com/doc', pattern: 'beta' }] } });
       expect(response.status).toBe(200);
@@ -270,7 +270,7 @@ describe('codex /alpha/search', () => {
       const { apiKey } = await setupAppTest({ searchConfig: TAVILY_CONFIG });
       const stub = makeStubProvider();
       mockResolveConfigured.mockReturnValue({ type: 'enabled', provider: 'tavily', impl: stub.provider });
-      const app = buildCodexApp();
+      const app = buildAlphaSearchApp();
 
       const response = await postSearch(app, apiKey.key, {
         commands: {
@@ -293,7 +293,7 @@ describe('codex /alpha/search', () => {
       const { apiKey } = await setupAppTest({ searchConfig: TAVILY_CONFIG });
       const stub = makeStubProvider();
       mockResolveConfigured.mockReturnValue({ type: 'enabled', provider: 'tavily', impl: stub.provider });
-      const app = buildCodexApp();
+      const app = buildAlphaSearchApp();
 
       const response = await postSearch(app, apiKey.key, {
         commands: { screenshot: [{ ref_id: 'https://example.com', pageno: 0 }], response_length: 'short' },
@@ -307,7 +307,7 @@ describe('codex /alpha/search', () => {
 
     it('returns a helpful message when no commands are provided', async () => {
       const { apiKey } = await setupAppTest({ searchConfig: TAVILY_CONFIG });
-      const app = buildCodexApp();
+      const app = buildAlphaSearchApp();
       const response = await postSearch(app, apiKey.key, { commands: {} });
       expect(response.status).toBe(200);
       const body = await response.json() as SearchResponseBody;
@@ -318,7 +318,7 @@ describe('codex /alpha/search', () => {
       const { apiKey } = await setupAppTest({ searchConfig: TAVILY_CONFIG });
       const stub = makeStubProvider();
       mockResolveConfigured.mockReturnValue({ type: 'enabled', provider: 'tavily', impl: stub.provider });
-      const app = buildCodexApp();
+      const app = buildAlphaSearchApp();
 
       const response = await postSearch(app, apiKey.key, {
         settings: { filters: { allowed_domains: ['example.org'] } },
@@ -336,7 +336,7 @@ describe('codex /alpha/search', () => {
     it('surfaces disabled search as in-band output text (contract-shaped 200)', async () => {
       const { apiKey, repo } = await setupAppTest();
       mockResolveConfigured.mockReturnValue({ type: 'disabled' });
-      const app = buildCodexApp();
+      const app = buildAlphaSearchApp();
 
       const response = await postSearch(app, apiKey.key, { commands: { search_query: [{ q: 'anything' }] } });
       expect(response.status).toBe(200);
@@ -350,7 +350,7 @@ describe('codex /alpha/search', () => {
     it('surfaces a missing provider credential as in-band output text', async () => {
       const { apiKey } = await setupAppTest();
       mockResolveConfigured.mockReturnValue({ type: 'missing-credential', provider: 'tavily' });
-      const app = buildCodexApp();
+      const app = buildAlphaSearchApp();
 
       const response = await postSearch(app, apiKey.key, { commands: { search_query: [{ q: 'anything' }] } });
       expect(response.status).toBe(200);

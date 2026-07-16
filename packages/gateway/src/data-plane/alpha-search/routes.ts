@@ -3,28 +3,31 @@
 // `{ encrypted_output?, output, results? }`.
 // https://github.com/openai/codex/blob/2e1607ee2fa8099a233df7437adee5f16a741905/codex-rs/codex-api/src/search.rs#L8-L29
 // https://github.com/openai/codex/blob/2e1607ee2fa8099a233df7437adee5f16a741905/codex-rs/codex-api/src/search.rs#L297-L305
+// Codex appends `alpha/search` to its model-provider base. The aliases below
+// cover every base convention generated or accepted by Floway.
+// https://github.com/openai/codex/blob/2e1607ee2fa8099a233df7437adee5f16a741905/codex-rs/codex-api/src/endpoint/search.rs#L31-L47
 //
 // In the default mode, Floway executes supported commands through the general
 // configured search provider and renders a local `{ encrypted_output: null,
 // output }` response. Passthrough mode instead returns the selected Codex or
 // Custom provider response verbatim, preserving its optional structured data.
 //
-// Auth is the shared `authMiddleware` that guards the rest of the namespace;
-// this handler reads the resolved API key for per-key search-usage
-// accounting.
+// The shared data-plane auth middleware guards every alias; this handler reads
+// the resolved API key for per-key search-usage accounting.
 
+import type { Hono } from 'hono';
 import { z } from 'zod';
 
-import { relayFetchedResponse } from './relay-response.ts';
-import { resolveAlphaSearchDispatcher } from './upstream.ts';
-import { apiKeyFromContext, effectiveUpstreamIdsFromContext } from '../../../../middleware/auth.ts';
-import type { CtxWithJson } from '../../../../middleware/zod-validator.ts';
-import { backgroundSchedulerFromContext } from '../../../../runtime/background.ts';
-import { getRuntimeLocation } from '../../../../runtime/runtime-info.ts';
-import { executeOperationToText, maxResultsForContextSize, parseWebSearchOperations, startBatchFetch, type WebSearchExecutionSession, type WebSearchFilters } from '../operations.ts';
-import { resolveConfiguredWebSearchProvider } from '../provider.ts';
-import { loadSearchConfig } from '../search-config.ts';
-import type { ConfiguredWebSearchProvider } from '../types.ts';
+import { type AuthVars, apiKeyFromContext, effectiveUpstreamIdsFromContext } from '../../middleware/auth.ts';
+import { type CtxWithJson, zValidator } from '../../middleware/zod-validator.ts';
+import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
+import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
+import { relayFetchedResponse } from '../tools/web-search/alpha-search/relay-response.ts';
+import { resolveAlphaSearchDispatcher } from '../tools/web-search/alpha-search/upstream.ts';
+import { executeOperationToText, maxResultsForContextSize, parseWebSearchOperations, startBatchFetch, type WebSearchExecutionSession, type WebSearchFilters } from '../tools/web-search/operations.ts';
+import { resolveConfiguredWebSearchProvider } from '../tools/web-search/provider.ts';
+import { loadSearchConfig } from '../tools/web-search/search-config.ts';
+import type { ConfiguredWebSearchProvider } from '../tools/web-search/types.ts';
 
 const domainListSchema = z.array(z.string());
 
@@ -51,7 +54,7 @@ const searchSettingsSchema = z.looseObject({
 // deterministic text for missing args, non-URL refs, wrong-typed keys, and
 // unsupported command kinds. `looseObject` preserves the unimplemented keys
 // so they reach that parser as unsupported ops.
-export const alphaSearchRequestSchema = z.looseObject({
+const alphaSearchRequestSchema = z.looseObject({
   commands: z.looseObject({}).optional(),
   settings: searchSettingsSchema.optional(),
 });
@@ -76,7 +79,7 @@ const filtersFromSettings = (settings: AlphaSearchRequest['settings']): WebSearc
   return filters;
 };
 
-export const alphaSearch = async (c: CtxWithJson<typeof alphaSearchRequestSchema>): Promise<Response> => {
+const alphaSearch = async (c: CtxWithJson<typeof alphaSearchRequestSchema>): Promise<Response> => {
   const body = c.req.valid('json');
   const searchConfig = await loadSearchConfig();
   if (searchConfig.passthroughOpenAiSearch.enabled) {
@@ -124,4 +127,16 @@ export const alphaSearch = async (c: CtxWithJson<typeof alphaSearchRequestSchema
   const blocks = await Promise.all(parsed.ops.map(op => executeOperationToText(op, session, batch)));
 
   return c.json({ encrypted_output: null, output: blocks.join('\n\n') });
+};
+
+const ALPHA_SEARCH_PATHS = [
+  '/azure-api.codex/alpha/search',
+  '/alpha/search',
+  '/v1/alpha/search',
+] as const;
+
+export const mountAlphaSearchRoutes = (app: Hono<{ Variables: AuthVars }>) => {
+  for (const path of ALPHA_SEARCH_PATHS) {
+    app.post(path, zValidator('json', alphaSearchRequestSchema), alphaSearch);
+  }
 };
