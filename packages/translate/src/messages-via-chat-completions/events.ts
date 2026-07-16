@@ -87,8 +87,8 @@ interface ChatCompletionsToMessagesStreamState {
   toolCalls: Record<
     number,
     {
-      id: string;
-      name: string;
+      id?: string;
+      name?: string;
       arguments: string;
     }
   >;
@@ -212,24 +212,21 @@ const handleReasoningDelta = (delta: ChatCompletionsStreamDelta, state: ChatComp
 
 const bufferToolCallsDelta = (toolCalls: ChatCompletionsStreamToolCalls, state: ChatCompletionsToMessagesStreamState): void => {
   for (const toolCall of toolCalls) {
-    if (toolCall.id && toolCall.function?.name) {
-      const existing = state.toolCalls[toolCall.index];
-      if (existing === undefined) {
-        state.toolCalls[toolCall.index] = {
-          id: toolCall.id,
-          name: toolCall.function.name,
-          arguments: '',
-        };
-      } else if (existing.id !== toolCall.id || existing.name !== toolCall.function.name) {
-        throw new Error(`Chat tool call ${toolCall.index} changed identity while streaming`);
+    const draft = state.toolCalls[toolCall.index] ?? { arguments: '' };
+    state.toolCalls[toolCall.index] = draft;
+    if (toolCall.id !== undefined) {
+      if (draft.id !== undefined && draft.id !== toolCall.id) {
+        throw new Error(`Chat tool call ${toolCall.index} changed id while streaming`);
       }
+      draft.id = toolCall.id;
     }
-
-    if (!toolCall.function?.arguments) continue;
-
-    const draft = state.toolCalls[toolCall.index];
-    if (draft === undefined) throw new Error(`Chat tool call ${toolCall.index} emitted arguments before its start`);
-    draft.arguments += toolCall.function.arguments;
+    if (toolCall.function?.name !== undefined) {
+      if (draft.name !== undefined && draft.name !== toolCall.function.name) {
+        throw new Error(`Chat tool call ${toolCall.index} changed name while streaming`);
+      }
+      draft.name = toolCall.function.name;
+    }
+    if (toolCall.function?.arguments !== undefined) draft.arguments += toolCall.function.arguments;
   }
 };
 
@@ -237,6 +234,9 @@ const flushToolCalls = (state: ChatCompletionsToMessagesStreamState, events: Mes
   if (Object.keys(state.toolCalls).length === 0) return;
   closeCurrentBlock(state, events);
   for (const [, toolCall] of Object.entries(state.toolCalls).toSorted(([left], [right]) => Number(left) - Number(right))) {
+    if (toolCall.id === undefined || toolCall.name === undefined) {
+      throw new Error('Chat tool call ended before its id and name were complete');
+    }
     startContentBlock(state, events, 'tool_use', {
       type: 'tool_use',
       id: toolCall.id,
@@ -359,8 +359,10 @@ export const translateChatCompletionsChunkToMessagesEvents = (chunk: ChatComplet
   const toolCalls = choice.delta.tool_calls;
   const hasToolCallDelta = Boolean(toolCalls?.length);
   const hasBufferedToolCalls = Object.keys(state.toolCalls).length > 0;
-  const startsToolCall = toolCalls?.some(toolCall => Boolean(toolCall.id && toolCall.function?.name)) === true;
-  const startsVisibleBoundary = startsToolCall || Boolean(content && !hasBufferedToolCalls);
+  const startsToolCall = toolCalls?.some(toolCall =>
+    state.toolCalls[toolCall.index] === undefined
+    && (toolCall.id !== undefined || toolCall.function?.name !== undefined)) === true;
+  const startsVisibleBoundary = (startsToolCall || Boolean(content)) && !hasBufferedToolCalls;
   if ((state.openBlock === 'thinking' || state.pendingReasoningOpaque !== undefined) && startsVisibleBoundary) {
     flushPendingReasoningAndClose(state, events);
   }
@@ -370,7 +372,7 @@ export const translateChatCompletionsChunkToMessagesEvents = (chunk: ChatComplet
   }
 
   if (toolCalls?.length) {
-    if (startsToolCall) closeCurrentBlock(state, events);
+    if (startsToolCall && !hasBufferedToolCalls) closeCurrentBlock(state, events);
     bufferToolCallsDelta(toolCalls, state);
   }
 

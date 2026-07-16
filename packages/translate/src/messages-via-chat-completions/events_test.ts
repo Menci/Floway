@@ -181,6 +181,55 @@ test('defers readable reasoning until a buffered tool draft is complete', () => 
   expect(thinkingStart).toBeGreaterThan(toolStop);
 });
 
+test('keeps deferred reasoning and signature together across a later parallel tool start', () => {
+  const state = createChatCompletionsToMessagesStreamState();
+  const events = [
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({
+      role: 'assistant',
+      tool_calls: [{ index: 0, id: 'call_0', type: 'function', function: { name: 'first', arguments: '{}' } }],
+    }), state),
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({ reasoning_text: 'trace', reasoning_opaque: 'sig' }), state),
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({
+      tool_calls: [{ index: 1, id: 'call_1', type: 'function', function: { name: 'second', arguments: '{}' } }],
+    }), state),
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({}, 'tool_calls'), state),
+  ];
+
+  const thinkingStart = events.findIndex(event =>
+    event.type === 'content_block_start' && event.content_block.type === 'thinking');
+  const signature = events.findIndex(event =>
+    event.type === 'content_block_delta' && event.delta.type === 'signature_delta');
+  const secondToolStop = events.findIndex(event => event.type === 'content_block_stop' && event.index === 1);
+  expect(thinkingStart).toBeGreaterThan(secondToolStop);
+  expect(signature).toBeGreaterThan(thinkingStart);
+  expect(events[signature]).toMatchObject({ index: 2, delta: { signature: 'sig' } });
+});
+
+test('accumulates a tool identity split across chunks', () => {
+  const state = createChatCompletionsToMessagesStreamState();
+  const events = [
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({
+      role: 'assistant',
+      tool_calls: [{ index: 0, id: 'call_0', type: 'function', function: { arguments: '{"a"' } }],
+    }), state),
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({
+      tool_calls: [{ index: 0, function: { name: 'tool', arguments: ':1}' } }],
+    }), state),
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({}, 'tool_calls'), state),
+  ];
+
+  expect(events).toContainEqual({
+    type: 'content_block_start',
+    index: 0,
+    content_block: { type: 'tool_use', id: 'call_0', name: 'tool', input: {} },
+  });
+  expect(events).toContainEqual({
+    type: 'content_block_delta',
+    index: 0,
+    delta: { type: 'input_json_delta', partial_json: '{"a":1}' },
+  });
+});
+
 test('translateChatCompletionsChunkToMessagesEvents keeps text and opaque in one thinking block', () => {
   const state = createChatCompletionsToMessagesStreamState();
   const events = [
