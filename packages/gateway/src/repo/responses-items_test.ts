@@ -59,7 +59,9 @@ describe.each(factories)('%s Responses state repo', (_name, createRepo) => {
     const files = new MemoryFileProvider();
     initFileProvider(files);
     const repo = await createRepo();
-    const bytes = crypto.getRandomValues(new Uint8Array(128 * 1024));
+    const bytes = new Uint8Array(128 * 1024);
+    crypto.getRandomValues(bytes.subarray(0, 64 * 1024));
+    crypto.getRandomValues(bytes.subarray(64 * 1024));
     let binary = '';
     for (let offset = 0; offset < bytes.length; offset += 0x8000) {
       binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
