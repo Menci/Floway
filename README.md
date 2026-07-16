@@ -173,9 +173,10 @@ Egress runs only after provider events have returned to the client's source
 protocol. Chat closes its one logical choice with one wrapped or originless
 `reasoning_opaque`. Messages uses the first thinking/redacted block, or
 prefixes a redacted block before a first element that cannot carry a blob.
-Gemini buffers one event so an immediate natural signature remains on a
-content-bearing Part; otherwise the first Part receives an originless
-signature. Responses augments a carrier-capable first item at close or prefixes
+Gemini uses a sliding one-event lookahead: same-element continuations pass
+without a synthetic value until a natural signature or a definite boundary is
+seen, so the last buffered content-bearing Part receives the one carrier.
+Responses augments a carrier-capable first item at close or prefixes
 a synthetic reasoning lifecycle before it. Natural opaque values are wrapped
 independently of these turn anchors.
 

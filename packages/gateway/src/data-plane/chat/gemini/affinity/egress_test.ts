@@ -115,6 +115,44 @@ describe('Gemini affinity egress', () => {
     expect(output[1]).not.toMatchObject({ event: { candidates: [{ content: { parts: [{ thoughtSignature: expect.anything() }] } }] } });
   });
 
+  test('slides one-event lookahead until a later natural signature closes the same element', async () => {
+    const output: ProtocolFrame<GeminiStreamEvent>[] = [];
+    for await (const frame of wrapGeminiAffinityEgress(frames([
+      eventFrame({ candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'a' }] } }] }),
+      eventFrame({ candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'b' }] } }] }),
+      eventFrame({ candidates: [{
+        index: 0,
+        content: { role: 'model', parts: [{ text: 'c', thoughtSignature: 'natural' }] },
+        finishReason: 'STOP',
+      }] }),
+    ]), { codec: immediateCodec, affinity })) output.push(frame);
+
+    expect(output[0]).not.toMatchObject({ event: { candidates: [{ content: { parts: [{ thoughtSignature: expect.anything() }] } }] } });
+    expect(output[1]).toMatchObject({
+      event: { candidates: [{ content: { parts: [{ text: 'b', thoughtSignature: 'wrapped:natural' }] } }] },
+    });
+    expect(output[2]).not.toMatchObject({ event: { candidates: [{ content: { parts: [{ thoughtSignature: expect.anything() }] } }] } });
+  });
+
+  test('slides one-event lookahead to finish before synthesizing without a natural signature', async () => {
+    const output: ProtocolFrame<GeminiStreamEvent>[] = [];
+    for await (const frame of wrapGeminiAffinityEgress(frames([
+      eventFrame({ candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'a' }] } }] }),
+      eventFrame({ candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'b' }] } }] }),
+      eventFrame({ candidates: [{
+        index: 0,
+        content: { role: 'model', parts: [{ text: 'c' }] },
+        finishReason: 'STOP',
+      }] }),
+    ]), { codec: immediateCodec, affinity })) output.push(frame);
+
+    expect(output[0]).not.toMatchObject({ event: { candidates: [{ content: { parts: [{ thoughtSignature: expect.anything() }] } }] } });
+    expect(output[1]).not.toMatchObject({ event: { candidates: [{ content: { parts: [{ thoughtSignature: expect.anything() }] } }] } });
+    expect(output[2]).toMatchObject({
+      event: { candidates: [{ content: { parts: [{ text: 'c', thoughtSignature: 'wrapped:synthetic' }] }, finishReason: 'STOP' }] },
+    });
+  });
+
   test('synthesizes on the buffered first element when the lookahead starts a different element', async () => {
     const output: ProtocolFrame<GeminiStreamEvent>[] = [];
     for await (const frame of wrapGeminiAffinityEgress(frames([

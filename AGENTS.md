@@ -217,15 +217,15 @@ Protocol streaming rules:
 - Messages `signature_delta` is last-write-wins. Readable thinking streams
   immediately; a first thinking block receives a wrapped or originless final
   signature. A non-carrier first block is shifted behind a redacted prefix.
-- Gemini buffers one source event. Natural signatures stay attached to
-  content-bearing Parts; an immediate signature-only trailer is moved onto the
-  buffered Part, otherwise that first Part receives an originless signature.
+- Gemini uses a sliding one-event lookahead. Same-element continuations release
+  the older event unsigned and keep the newer event buffered until a natural
+  signature or a definite element boundary determines the carrier.
 - Responses augments a carrier-capable first item at close or emits a synthetic
   reasoning prefix through added/done before shifting later item indexes.
 
 Chat, Messages, and Responses buffer only opaque carrier state. Gemini is the
-sole exception: it deliberately holds one complete source event to keep a
-natural signature on a content-bearing Part for client compatibility.
+sole exception: it deliberately holds at most one complete source event to
+keep one authoritative signature on content-bearing output.
 
 ## Stateful Responses
 

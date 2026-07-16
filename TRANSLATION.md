@@ -149,12 +149,13 @@ message receives that prefix immediately before its terminal event.
 
 #### Gemini
 
-Gemini intentionally buffers one complete source event and inspects the next.
-Natural signatures remain attached to content-bearing Parts and are wrapped in
-place. An immediate signature-only trailer is moved onto the buffered Part;
-when the lookahead provides no natural carrier for the same text/function-call
-element, the buffered first Part receives an originless signature. This avoids
-the metadata-only Parts rejected or discarded by several Gemini clients. A
+Gemini uses a sliding one-event lookahead. When the next event continues the
+same text/function-call element without a signature, the older event is
+released unsigned and the newer one becomes the only buffered event. A later
+natural signature is moved onto that buffered content-bearing Part; a definite
+element boundary or finish synthesizes an originless signature only when no
+natural value arrived. This avoids duplicate signatures and metadata-only
+Parts rejected or discarded by several Gemini clients. A
 successful candidate with no content-bearing Part still requires a
 signature-only best-effort fallback. Candidate state is independent by index.
 

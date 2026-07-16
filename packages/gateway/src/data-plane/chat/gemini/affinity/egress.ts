@@ -121,6 +121,15 @@ const relocateContinuationSignature = (
   delete nextPart.thoughtSignature;
 };
 
+const foldEmptyTerminalCandidate = (
+  current: GeminiCandidate,
+  next: GeminiCandidate | undefined,
+): void => {
+  if (next === undefined || next.content.parts.length > 0 || next.finishReason === undefined) return;
+  transferCandidateMetadata(current, next);
+  delete next.finishReason;
+};
+
 const wrapEvent = async (
   current: GeminiStreamEvent,
   next: GeminiStreamEvent | undefined,
@@ -138,9 +147,21 @@ const wrapEvent = async (
     const nextCandidate = candidateByIndex(next, candidate.index);
     relocateLeadingSignature(candidate, nextCandidate);
     relocateContinuationSignature(candidate, nextCandidate);
+    foldEmptyTerminalCandidate(candidate, nextCandidate);
     const firstIndexes = firstElementIndexes(candidate.content.parts);
     const firstHasNatural = firstIndexes.some(index => candidate.content.parts[index].thoughtSignature !== undefined);
     const lastFirstContentIndex = firstIndexes.findLast(index => hasPartData(candidate.content.parts[index]));
+    const firstContent = lastFirstContentIndex === undefined ? undefined : candidate.content.parts[lastFirstContentIndex];
+    const nextContent = nextCandidate === undefined ? undefined : firstContentPart(nextCandidate.content.parts);
+    const continuesInNextEvent = firstContent !== undefined
+      && nextContent !== undefined
+      && sameLogicalElement(firstContent, nextContent);
+    const startsAnotherElementInCurrentEvent = lastFirstContentIndex !== undefined
+      && candidate.content.parts.slice(lastFirstContentIndex + 1).some(hasPartData);
+    const firstElementClosed = startsAnotherElementInCurrentEvent
+      || candidate.finishReason !== undefined
+      || (nextCandidate !== undefined && nextContent !== undefined && !continuesInNextEvent)
+      || (next === undefined && allowSynthetic);
 
     for (const part of candidate.content.parts) {
       if (part.thoughtSignature === undefined) continue;
@@ -150,7 +171,7 @@ const wrapEvent = async (
     if (!state.anchored) {
       if (firstHasNatural) {
         state.anchored = true;
-      } else if (lastFirstContentIndex !== undefined && (next !== undefined || candidate.finishReason !== undefined || allowSynthetic)) {
+      } else if (lastFirstContentIndex !== undefined && firstElementClosed) {
         candidate.content.parts[lastFirstContentIndex] = {
           ...candidate.content.parts[lastFirstContentIndex],
           thoughtSignature: await options.codec.wrap(undefined, options.affinity, GEMINI_AFFINITY_DOMAIN),
