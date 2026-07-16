@@ -119,15 +119,14 @@ test('keeps tool argument continuations on the open block when opaque reasoning 
   const argumentDeltas = events.filter(event =>
     event.type === 'content_block_delta' && event.delta.type === 'input_json_delta');
   assertEquals(argumentDeltas, [
-    { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '{"a"' } },
-    { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: ':1}' } },
+    { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '{"a":1}' } },
   ]);
   const toolStop = events.findIndex(event => event.type === 'content_block_stop' && event.index === 0);
   const redactedStart = events.findIndex(event =>
     event.type === 'content_block_start' && event.content_block.type === 'redacted_thinking');
   const textStart = events.findIndex(event =>
     event.type === 'content_block_start' && event.content_block.type === 'text');
-  expect(toolStop).toBeGreaterThan(events.lastIndexOf(argumentDeltas[1]));
+  expect(toolStop).toBeGreaterThan(events.lastIndexOf(argumentDeltas[0]));
   expect(redactedStart).toBeGreaterThan(toolStop);
   expect(textStart).toBeGreaterThan(redactedStart);
 });
@@ -449,12 +448,7 @@ test('translateChatCompletionsChunkToMessagesEvents defers content interleaved b
     {
       type: 'content_block_delta',
       index: 0,
-      delta: { type: 'input_json_delta', partial_json: '{"loc' },
-    },
-    {
-      type: 'content_block_delta',
-      index: 0,
-      delta: { type: 'input_json_delta', partial_json: 'ation": "Paris"}' },
+      delta: { type: 'input_json_delta', partial_json: '{"location": "Paris"}' },
     },
     { type: 'content_block_stop', index: 0 },
     {

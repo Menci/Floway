@@ -229,6 +229,7 @@ const bufferToolCallsDelta = (toolCalls: ChatCompletionsStreamToolCalls, state: 
 };
 
 const flushToolCalls = (state: ChatCompletionsToMessagesStreamState, events: MessagesStreamEvent[]): void => {
+  if (Object.keys(state.toolCalls).length === 0) return;
   closeCurrentBlock(state, events);
   for (const [, toolCall] of Object.entries(state.toolCalls).toSorted(([left], [right]) => Number(left) - Number(right))) {
     startContentBlock(state, events, 'tool_use', {
