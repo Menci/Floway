@@ -31,6 +31,12 @@ test('stored force items recover their original upstream IDs from adjacent clien
     incomplete_details: null,
   };
   const source = async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
+    yield eventFrame({
+      type: 'response.output_item.added',
+      output_index: 0,
+      item: { ...programOutput, id: 'prog_out_initial', result: '', status: 'incomplete' },
+    });
+    yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: programOutput });
     yield eventFrame({ type: 'response.completed', response });
   };
   const affinity = wrapResponsesAffinityEgress(source(), {
