@@ -814,6 +814,10 @@ class SqlModelsCacheRepo implements ModelsCacheRepo {
 }
 
 const RESPONSES_ITEM_COLUMNS = 'id, api_key_id, item_type, payload_json, content_hash, created_at';
+// D1 permits 100 bound parameters per query. Descriptor reads reserve one
+// bind for api_key_id; inserts use six binds per item; refresh CASE updates
+// use three per item plus created_at and api_key_id.
+// https://developers.cloudflare.com/d1/platform/limits/#limits
 const RESPONSES_IN_QUERY_CHUNK_SIZE = 90;
 const RESPONSES_INSERT_CHUNK_SIZE = 16;
 const RESPONSES_REFRESH_CHUNK_SIZE = 32;
@@ -871,12 +875,8 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
     return await this.lookupByColumn(apiKeyId, 'content_hash', hashes);
   }
 
-  // D1 caps bound parameters at 100 per query (node:sqlite's default cap is
-  // 32766, well above this). A single Responses request can echo back more
-  // stored items than D1's cap — long agentic sessions resubmit every prior
-  // reasoning/compaction item each turn — so chunk the IN-list well under
-  // the tightest backend (the `api_key_id` bind shares the budget) and union
-  // the results.
+  // A single Responses request can echo back more stored items than one
+  // IN-list can hold, so chunk the list and union the results.
   private async lookupByColumn(apiKeyId: string, column: 'id' | 'content_hash', values: readonly string[]): Promise<StoredResponsesItem[]> {
     const unique = [...new Set(values)];
     if (unique.length === 0) return [];
