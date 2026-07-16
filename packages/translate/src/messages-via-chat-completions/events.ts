@@ -96,14 +96,9 @@ interface ChatCompletionsToMessagesStreamState {
     }
   >;
   pendingReasoningOpaque?: string;
-  // Some OpenAI-shaped upstreams (notably gpt-4o-2024-05-13) interleave a
-  // `content` delta in the middle of a tool_call's argument fragments, and
-  // some chunk deltas carry BOTH `content` and `tool_calls` arrays in one
-  // hit. In either case, emitting the content as a text block before /
-  // around the tool_use block would force us to close the tool_use block
-  // early — its trailing argument fragments would then land against a
-  // stopped block index and Anthropic clients would reject them. We buffer
-  // the interleaved content here and flush it after the buffered tool run. Ref:
+  // Parallel/interleaved Chat tool drafts cannot be represented as concurrent
+  // Messages blocks. The complete tool run is serialized first; text and
+  // reasoning received during it are queued here in arrival order. Ref:
   // https://github.com/caozhiyuan/copilot-api/commit/51675f73de7983093c857d68ddd61bcd09f1806a
   // and the broader gating that includes same-chunk content+tool_calls:
   // https://github.com/caozhiyuan/copilot-api/blob/287d2d330c299bbdf3ed213a1bc05b1739aecf03/src/routes/messages/stream-translation.ts#L232-L243
@@ -172,9 +167,6 @@ const appendDeferredReasoning = (state: ChatCompletionsToMessagesStreamState, te
 };
 
 const emitContentDelta = (content: string, deferUntilAfterTools: boolean, state: ChatCompletionsToMessagesStreamState, events: MessagesStreamEvent[]): void => {
-  // Chat tool drafts are buffered until finish. Text sharing or following the
-  // draft run follows the serialized Messages tool blocks.
-  // https://github.com/caozhiyuan/copilot-api/blob/287d2d330c299bbdf3ed213a1bc05b1739aecf03/src/routes/messages/stream-translation.ts#L232-L243
   if (deferUntilAfterTools) {
     appendDeferredText(state, content);
     return;

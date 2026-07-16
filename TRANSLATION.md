@@ -265,9 +265,10 @@ Request mapping:
   `none`.
 
 Response mapping buffers parallel Chat tool drafts and emits them as sequential
-Messages tool blocks. Text/reasoning that arrives during a tool run follows the
-tools in source order. Other text and tool argument fragments concatenate;
-stop reasons and usage map directly.
+Messages tool blocks. Only after the complete tool run does it emit deferred
+text/reasoning, preserving arrival order among those deferred segments. Other
+text and tool argument fragments concatenate; stop reasons and usage map
+directly.
 When visible content, tool output, or finish closes a thinking block, an
 already-available signature is emitted inside that block. A signature that
 arrives after the boundary becomes a later standalone redacted block. Assistant

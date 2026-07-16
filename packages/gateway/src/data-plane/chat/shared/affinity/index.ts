@@ -1,8 +1,8 @@
 import { isEqual } from 'es-toolkit';
 
+import { serverSecretBytes } from '../../../../shared/server-secret.ts';
 import type { ChatGatewayCtx, GatewayCtx } from '../gateway-ctx.ts';
 import type { RoutingDecision } from '../routing.ts';
-import { serverSecretBytes } from '../../../../shared/server-secret.ts';
 import type { AliasRules } from '@floway-dev/protocols/common';
 import type { ModelCandidate } from '@floway-dev/provider';
 
