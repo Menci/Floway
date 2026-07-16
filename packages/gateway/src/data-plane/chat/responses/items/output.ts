@@ -10,10 +10,9 @@ import { responsesResultToEvents, type ResponsesInputItem, type ResponsesResult,
 // never enter this membrane.
 //
 // Complete items are staged at their `done` frame. The whole output batch and
-// its snapshot commit together before the terminal `response.completed` /
-// `response.incomplete` frame is yielded. These writes are protocol state, not
-// best-effort telemetry: a failure propagates before the client sees a
-// successful terminal response whose ids could not be referenced next turn.
+// its snapshot commit together before a successful terminal frame is yielded.
+// Failed/error terminals still commit the completed item batch, but never a
+// snapshot. These writes are protocol state, not best-effort telemetry.
 //
 // Wrap is also the single source of truth for the response envelope id the
 // client sees. The caller mints a `resp_<crc>_<body>` once and passes it
@@ -182,10 +181,12 @@ export const wrapResponsesClientOutput = async function* (
     }
 
     if (event.type === 'response.failed') {
+      if (store.writesState) await store.commitStagedOutputItems();
       yield eventFrame({ ...event, response: rewriteEnvelopeIds(event.response) });
       return;
     }
     if (event.type === 'error') {
+      if (store.writesState) await store.commitStagedOutputItems();
       yield frame;
       return;
     }

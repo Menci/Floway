@@ -36,6 +36,7 @@ export interface StatefulResponsesStore {
   hashItemContent(item: ResponsesInputItem): Promise<string>;
   stageInputItems(items: readonly ResponsesInputItem[]): Promise<void>;
   stageOutputItem(row: StoredResponsesItem, outputIndex: number): void;
+  commitStagedOutputItems(): Promise<void>;
   commitSnapshot(responseId: string, mode: ResponsesSnapshotMode): Promise<void>;
 }
 
@@ -48,6 +49,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   private readonly stagedOutputItemIds = new Map<number, string>();
   private previousSnapshotItemIds: string[] = [];
   private readonly committedItemIds = new Set<string>();
+  private readonly freshItemIds = new Set<string>();
 
   constructor(private readonly options: LayeredStatefulResponsesStoreOptions) {}
 
@@ -77,7 +79,10 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
           await write.refreshItems(items, createdAt);
           await write.insertSnapshot({ ...snapshot, createdAt });
         }));
-        for (const item of items) item.createdAt = createdAt;
+        for (const item of items) {
+          item.createdAt = createdAt;
+          this.freshItemIds.add(item.id);
+        }
         snapshot.createdAt = createdAt;
       }
       this.previousSnapshotItemIds = [...snapshot.itemIds];
@@ -115,7 +120,12 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     const cloned = cloneStoredResponsesItem(row);
     this.stagedOutputItems.set(cloned.id, cloned);
     this.stagedOutputItemIds.set(outputIndex, cloned.id);
+    this.freshItemIds.add(cloned.id);
     this.rememberItem(cloned);
+  }
+
+  async commitStagedOutputItems(): Promise<void> {
+    await this.commitItems([...this.stagedOutputItems.values()]);
   }
 
   async commitSnapshot(responseId: string, mode: ResponsesSnapshotMode): Promise<void> {
@@ -134,13 +144,20 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     });
     await this.commitItems(uniqueRows);
     const createdAt = Date.now();
-    await Promise.all(this.options.writes.map(write => write.refreshItems(uniqueRows, createdAt)));
-    for (const row of uniqueRows) row.createdAt = createdAt;
+    const staleRows = uniqueRows.filter(row => !this.freshItemIds.has(row.id));
+    if (staleRows.length > 0) {
+      await Promise.all(this.options.writes.map(write => write.refreshItems(staleRows, createdAt)));
+      for (const row of staleRows) {
+        row.createdAt = createdAt;
+        this.freshItemIds.add(row.id);
+      }
+    }
+    const snapshotCreatedAt = Math.min(...uniqueRows.map(row => row.createdAt));
     const snapshot: StoredResponsesSnapshot = {
       id: responseId,
       apiKeyId: this.apiKeyId,
       itemIds,
-      createdAt,
+      createdAt: snapshotCreatedAt,
     };
     await Promise.all(this.options.writes.map(write => write.insertSnapshot(snapshot)));
   }
@@ -190,6 +207,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     };
     this.stagedInputItems.set(row.id, row);
     this.stagedInputItemIds.push(row.id);
+    this.freshItemIds.add(row.id);
     this.rememberItem(row);
   }
 
