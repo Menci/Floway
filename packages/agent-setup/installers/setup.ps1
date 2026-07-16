@@ -5,6 +5,7 @@
 # skip or roll back the other.
 
 $ErrorActionPreference = 'Stop'
+if (-not (Test-Path Variable:SetupEndpoint)) { $SetupEndpoint = $null }
 # Keep native (non-cmdlet) command failures from auto-throwing on PowerShell
 # 7.3+, so explicit $LASTEXITCODE checks stay authoritative across versions.
 $PSNativeCommandUseErrorActionPreference = $false
