@@ -3,11 +3,6 @@
 // optional bearer token. The catalog is always live-fetched from /api/tags +
 // /api/show — no toggle, no path overrides, no auth-style choice. The
 // model-overrides list lives in a separate panel.
-//
-// The Fetch button re-runs the live catalog fetch against the in-flight form
-// config (baseUrl / apiKey), so the operator can preview the resolved list
-// before saving on both create and edit. In edit mode an untyped apiKey
-// falls back to the stored secret (handled by the parent).
 
 import type { OllamaDraft } from './customConfig.ts';
 import SecretInput from '../shared/SecretInput.vue';
@@ -20,7 +15,7 @@ defineProps<{
   editMode: boolean;
   fetchLoading: boolean;
   fetchError: string | null;
-  /** Wall-clock summary of the last draft fetch, e.g. "35 returned · 1m ago". */
+  /** Wall-clock summary of the last fetch, e.g. "35 returned · 1m ago". */
   fetchStatus: string | null;
 }>();
 

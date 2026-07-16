@@ -254,10 +254,10 @@ const hasCredentialForFetch = computed<boolean>(() => {
 // returns raw rows the dashboard translates through the draft's endpoints,
 // so route them into `fetchedRaw` — the same slot the unsaved draft
 // preview uses; every other kind receives already-projected
-// UpstreamModelConfig rows and lands in `upstreamModels`. Surfaces the
-// error on `upstreamModelsError` otherwise. Returns nothing — callers
-// wrap this with their own bookkeeping (mount-time prime, operator-driven
-// refresh).
+// UpstreamModelConfig rows and lands in `upstreamModels`. Called once on
+// mount to prime ModelsPanel; the operator-driven "Fetch" button goes
+// through listDraftModels instead so it can post the in-flight form
+// config. Surfaces the error on `upstreamModelsError` on failure.
 const fetchUpstreamModels = async () => {
   if (draft.value.kind === 'azure') return;
   if (!hasCredentialForFetch.value) return;
