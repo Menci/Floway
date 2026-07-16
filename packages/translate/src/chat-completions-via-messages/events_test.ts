@@ -688,7 +688,7 @@ test('full redacted_thinking + text stream scenario', () => {
   assertEquals(d[2].content, 'Response');
 });
 
-test('keeps the first complete reasoning block for Chat scalar streaming', () => {
+test('later reasoning blocks are ignored for Chat scalar streaming', () => {
   const d = deltas([
     MSG_START,
     {
@@ -730,7 +730,7 @@ test('keeps the first complete reasoning block for Chat scalar streaming', () =>
   assertEquals(d.map(delta => delta.reasoning_opaque).filter(Boolean), ['sig_1']);
 });
 
-test('keeps a leading redacted block intact instead of pairing later thinking', () => {
+test('first redacted_thinking block suppresses later readable thinking in Chat scalar streaming', () => {
   const d = deltas([
     MSG_START,
     {
@@ -828,27 +828,6 @@ test('multiple tool_use blocks in stream', () => {
   assertEquals(d[1].tool_calls![0].id, 'tu_1');
   assertEquals(d[3].tool_calls![0].index, 1);
   assertEquals(d[3].tool_calls![0].id, 'tu_2');
-});
-
-test('routes interleaved parallel tool arguments by Messages block index', () => {
-  const d = deltas([
-    MSG_START,
-    {
-      type: 'content_block_start',
-      index: 2,
-      content_block: { type: 'tool_use', id: 'tu_1', name: 'f1', input: {} },
-    },
-    {
-      type: 'content_block_start',
-      index: 7,
-      content_block: { type: 'tool_use', id: 'tu_2', name: 'f2', input: {} },
-    },
-    { type: 'content_block_delta', index: 2, delta: { type: 'input_json_delta', partial_json: '{"a":1}' } },
-    { type: 'content_block_delta', index: 7, delta: { type: 'input_json_delta', partial_json: '{"b":2}' } },
-  ]);
-
-  assertEquals(d[3].tool_calls![0].index, 0);
-  assertEquals(d[4].tool_calls![0].index, 1);
 });
 
 // ── Edge: DONE signal propagation ──

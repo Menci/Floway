@@ -264,15 +264,13 @@ Request mapping:
 - explicit effort maps to `reasoning_effort`; disabled thinking maps to
   `none`.
 
-Response mapping buffers parallel Chat tool drafts and emits them as sequential
-Messages tool blocks. Only after the complete tool run does it emit deferred
-text/reasoning, preserving arrival order among those deferred segments. Other
-text and tool argument fragments concatenate; stop reasons and usage map
-directly.
-When visible content, a tool-call start, or finish closes a thinking block, an
-already-available signature is emitted inside that block. A signature that
-arrives after the boundary becomes a later standalone redacted block. Assistant
-images remain lossy.
+Response mapping emits Chat scalar reasoning as Messages thinking or redacted
+blocks, concatenates text, and maps tool-call deltas to Messages tool blocks.
+Content interleaved with an open tool block, or carried in the same chunk as a
+tool-call start, waits until finish so later argument fragments retain their
+original block index. Opaque reasoning values are replacement snapshots rather
+than string fragments. Stop reasons and usage map directly. Assistant images
+remain lossy.
 
 ## Chat Completions → Messages
 

@@ -101,187 +101,6 @@ test('translateChatCompletionsChunkToMessagesEvents preserves opaque reasoning b
   ]);
 });
 
-test('keeps tool argument continuations on the open block when opaque reasoning arrives mid-call', () => {
-  const state = createChatCompletionsToMessagesStreamState();
-  const events = [
-    ...translateChatCompletionsChunkToMessagesEvents(chunk({
-      role: 'assistant',
-      tool_calls: [{ index: 0, id: 'call_x', type: 'function', function: { name: 'tool', arguments: '{"a"' } }],
-    }), state),
-    ...translateChatCompletionsChunkToMessagesEvents(chunk({ reasoning_opaque: 'opaque' }), state),
-    ...translateChatCompletionsChunkToMessagesEvents(chunk({
-      content: 'after',
-      tool_calls: [{ index: 0, function: { arguments: ':1}' } }],
-    }), state),
-    ...translateChatCompletionsChunkToMessagesEvents(chunk({}, 'tool_calls'), state),
-  ];
-
-  const argumentDeltas = events.filter(event =>
-    event.type === 'content_block_delta' && event.delta.type === 'input_json_delta');
-  assertEquals(argumentDeltas, [
-    { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '{"a":1}' } },
-  ]);
-  const toolStop = events.findIndex(event => event.type === 'content_block_stop' && event.index === 0);
-  const redactedStart = events.findIndex(event =>
-    event.type === 'content_block_start' && event.content_block.type === 'redacted_thinking');
-  const textStart = events.findIndex(event =>
-    event.type === 'content_block_start' && event.content_block.type === 'text');
-  expect(toolStop).toBeGreaterThan(events.lastIndexOf(argumentDeltas[0]));
-  expect(redactedStart).toBeGreaterThan(toolStop);
-  expect(textStart).toBeGreaterThan(redactedStart);
-});
-
-test('serializes parallel Chat tool drafts into valid Messages blocks', () => {
-  const state = createChatCompletionsToMessagesStreamState();
-  const events = [
-    ...translateChatCompletionsChunkToMessagesEvents(chunk({
-      role: 'assistant',
-      tool_calls: [
-        { index: 0, id: 'call_0', type: 'function', function: { name: 'first', arguments: '{"a"' } },
-        { index: 1, id: 'call_1', type: 'function', function: { name: 'second', arguments: '{"b"' } },
-      ],
-    }), state),
-    ...translateChatCompletionsChunkToMessagesEvents(chunk({ tool_calls: [
-      { index: 1, function: { arguments: ':2}' } },
-      { index: 0, id: 'call_0', type: 'function', function: { name: 'first', arguments: ':1}' } },
-    ] }), state),
-    ...translateChatCompletionsChunkToMessagesEvents(chunk({}, 'tool_calls'), state),
-  ];
-
-  const toolEvents = events.filter(event =>
-    event.type === 'content_block_start'
-    || event.type === 'content_block_stop'
-    || (event.type === 'content_block_delta' && event.delta.type === 'input_json_delta'));
-  assertEquals(toolEvents, [
-    { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'call_0', name: 'first', input: {} } },
-    { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '{"a":1}' } },
-    { type: 'content_block_stop', index: 0 },
-    { type: 'content_block_start', index: 1, content_block: { type: 'tool_use', id: 'call_1', name: 'second', input: {} } },
-    { type: 'content_block_delta', index: 1, delta: { type: 'input_json_delta', partial_json: '{"b":2}' } },
-    { type: 'content_block_stop', index: 1 },
-  ]);
-});
-
-test('defers readable reasoning until a buffered tool draft is complete', () => {
-  const state = createChatCompletionsToMessagesStreamState();
-  const events = [
-    ...translateChatCompletionsChunkToMessagesEvents(chunk({
-      role: 'assistant',
-      tool_calls: [{ index: 0, id: 'call_0', type: 'function', function: { name: 'tool', arguments: '{"a"' } }],
-    }), state),
-    ...translateChatCompletionsChunkToMessagesEvents(chunk({ reasoning_text: 'trace' }), state),
-    ...translateChatCompletionsChunkToMessagesEvents(chunk({ tool_calls: [{ index: 0, function: { arguments: ':1}' } }] }), state),
-    ...translateChatCompletionsChunkToMessagesEvents(chunk({}, 'tool_calls'), state),
-  ];
-
-  const toolStop = events.findIndex(event => event.type === 'content_block_stop' && event.index === 0);
-  const thinkingStart = events.findIndex(event =>
-    event.type === 'content_block_start' && event.content_block.type === 'thinking');
-  expect(toolStop).toBeGreaterThan(-1);
-  expect(thinkingStart).toBeGreaterThan(toolStop);
-});
-
-test('keeps deferred reasoning and signature together across a later parallel tool start', () => {
-  const state = createChatCompletionsToMessagesStreamState();
-  const events = [
-    ...translateChatCompletionsChunkToMessagesEvents(chunk({
-      role: 'assistant',
-      tool_calls: [{ index: 0, id: 'call_0', type: 'function', function: { name: 'first', arguments: '{}' } }],
-    }), state),
-    ...translateChatCompletionsChunkToMessagesEvents(chunk({ reasoning_text: 'trace', reasoning_opaque: 'sig' }), state),
-    ...translateChatCompletionsChunkToMessagesEvents(chunk({
-      tool_calls: [{ index: 1, id: 'call_1', type: 'function', function: { name: 'second', arguments: '{}' } }],
-    }), state),
-    ...translateChatCompletionsChunkToMessagesEvents(chunk({}, 'tool_calls'), state),
-  ];
-
-  const thinkingStart = events.findIndex(event =>
-    event.type === 'content_block_start' && event.content_block.type === 'thinking');
-  const signature = events.findIndex(event =>
-    event.type === 'content_block_delta' && event.delta.type === 'signature_delta');
-  const secondToolStop = events.findIndex(event => event.type === 'content_block_stop' && event.index === 1);
-  expect(thinkingStart).toBeGreaterThan(secondToolStop);
-  expect(signature).toBeGreaterThan(thinkingStart);
-  expect(events[signature]).toMatchObject({ index: 2, delta: { signature: 'sig' } });
-});
-
-test('accumulates a tool identity split across chunks', () => {
-  const state = createChatCompletionsToMessagesStreamState();
-  const events = [
-    ...translateChatCompletionsChunkToMessagesEvents(chunk({
-      role: 'assistant',
-      tool_calls: [{ index: 0, id: 'call_0', type: 'function', function: { arguments: '{"a"' } }],
-    }), state),
-    ...translateChatCompletionsChunkToMessagesEvents(chunk({
-      tool_calls: [{ index: 0, function: { name: 'tool', arguments: ':1}' } }],
-    }), state),
-    ...translateChatCompletionsChunkToMessagesEvents(chunk({}, 'tool_calls'), state),
-  ];
-
-  expect(events).toContainEqual({
-    type: 'content_block_start',
-    index: 0,
-    content_block: { type: 'tool_use', id: 'call_0', name: 'tool', input: {} },
-  });
-  expect(events).toContainEqual({
-    type: 'content_block_delta',
-    index: 0,
-    delta: { type: 'input_json_delta', partial_json: '{"a":1}' },
-  });
-});
-
-test('treats an arguments-first tool draft as a reasoning boundary', () => {
-  const state = createChatCompletionsToMessagesStreamState();
-  const events = [
-    ...translateChatCompletionsChunkToMessagesEvents(chunk({
-      role: 'assistant',
-      reasoning_text: 'trace',
-      reasoning_opaque: 'sig',
-    }), state),
-    ...translateChatCompletionsChunkToMessagesEvents(chunk({
-      tool_calls: [{ index: 0, function: { arguments: '{"a"' } }],
-    }), state),
-    ...translateChatCompletionsChunkToMessagesEvents(chunk({
-      tool_calls: [{ index: 0, id: 'call_0', type: 'function', function: { name: 'tool', arguments: ':1}' } }],
-    }), state),
-    ...translateChatCompletionsChunkToMessagesEvents(chunk({}, 'tool_calls'), state),
-  ];
-
-  const signatureIndex = events.findIndex(event =>
-    event.type === 'content_block_delta' && event.delta.type === 'signature_delta');
-  const toolStartIndex = events.findIndex(event =>
-    event.type === 'content_block_start' && event.content_block.type === 'tool_use');
-  expect(signatureIndex).toBeGreaterThan(-1);
-  expect(toolStartIndex).toBeGreaterThan(signatureIndex);
-});
-
-test('preserves deferred text and reasoning segment order after a tool run', () => {
-  const state = createChatCompletionsToMessagesStreamState();
-  const events = [
-    ...translateChatCompletionsChunkToMessagesEvents(chunk({
-      role: 'assistant',
-      tool_calls: [{ index: 0, id: 'call_0', type: 'function', function: { name: 'tool', arguments: '{}' } }],
-    }), state),
-    ...translateChatCompletionsChunkToMessagesEvents(chunk({ content: 'before' }), state),
-    ...translateChatCompletionsChunkToMessagesEvents(chunk({ reasoning_text: 'trace', reasoning_opaque: 'sig' }), state),
-    ...translateChatCompletionsChunkToMessagesEvents(chunk({ content: 'after' }), state),
-    ...translateChatCompletionsChunkToMessagesEvents(chunk({}, 'tool_calls'), state),
-  ];
-
-  const starts = events.filter(event => event.type === 'content_block_start');
-  expect(starts).toMatchObject([
-    { content_block: { type: 'tool_use' } },
-    { content_block: { type: 'text', text: '' } },
-    { content_block: { type: 'thinking', thinking: '' } },
-    { content_block: { type: 'text', text: '' } },
-  ]);
-  expect(events).toContainEqual({
-    type: 'content_block_delta',
-    index: 2,
-    delta: { type: 'signature_delta', signature: 'sig' },
-  });
-});
-
 test('translateChatCompletionsChunkToMessagesEvents keeps text and opaque in one thinking block', () => {
   const state = createChatCompletionsToMessagesStreamState();
   const events = [
@@ -310,12 +129,42 @@ test('translateChatCompletionsChunkToMessagesEvents keeps text and opaque in one
   ]);
 });
 
-test('emits an available signature before visible content closes the thinking block', () => {
+test('translateChatCompletionsChunkToMessagesEvents emits early opaque after later thinking text', () => {
+  const state = createChatCompletionsToMessagesStreamState();
+  const events = [
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({ role: 'assistant', reasoning_opaque: 'old' }), state),
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({ reasoning_text: 'trace' }), state),
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({ reasoning_opaque: 'sig' }), state),
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({}, 'stop'), state),
+  ];
+
+  assertEquals(events.slice(1, 5), [
+    {
+      type: 'content_block_start',
+      index: 0,
+      content_block: { type: 'thinking', thinking: '' },
+    },
+    {
+      type: 'content_block_delta',
+      index: 0,
+      delta: { type: 'thinking_delta', thinking: 'trace' },
+    },
+    {
+      type: 'content_block_delta',
+      index: 0,
+      delta: { type: 'signature_delta', signature: 'sig' },
+    },
+    { type: 'content_block_stop', index: 0 },
+  ]);
+});
+
+test('translateChatCompletionsChunkToMessagesEvents keeps late opaque with prior reasoning text', () => {
   const state = createChatCompletionsToMessagesStreamState();
   const events = [
     ...translateChatCompletionsChunkToMessagesEvents(chunk({ role: 'assistant', reasoning_text: 'trace' }), state),
-    ...translateChatCompletionsChunkToMessagesEvents(chunk({ reasoning_opaque: 'sig' }), state),
     ...translateChatCompletionsChunkToMessagesEvents(chunk({ content: 'answer' }), state),
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({ reasoning_opaque: 'sig' }), state),
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({}, 'stop'), state),
   ];
 
   assertEquals(events.slice(1, 7), [
@@ -348,75 +197,6 @@ test('emits an available signature before visible content closes the thinking bl
   ]);
 });
 
-test('translateChatCompletionsChunkToMessagesEvents emits early opaque after later thinking text', () => {
-  const state = createChatCompletionsToMessagesStreamState();
-  const events = [
-    ...translateChatCompletionsChunkToMessagesEvents(chunk({ role: 'assistant', reasoning_opaque: 'sig' }), state),
-    ...translateChatCompletionsChunkToMessagesEvents(chunk({ reasoning_text: 'trace' }), state),
-    ...translateChatCompletionsChunkToMessagesEvents(chunk({}, 'stop'), state),
-  ];
-
-  assertEquals(events.slice(1, 5), [
-    {
-      type: 'content_block_start',
-      index: 0,
-      content_block: { type: 'thinking', thinking: '' },
-    },
-    {
-      type: 'content_block_delta',
-      index: 0,
-      delta: { type: 'thinking_delta', thinking: 'trace' },
-    },
-    {
-      type: 'content_block_delta',
-      index: 0,
-      delta: { type: 'signature_delta', signature: 'sig' },
-    },
-    { type: 'content_block_stop', index: 0 },
-  ]);
-});
-
-test('translateChatCompletionsChunkToMessagesEvents emits late opaque after visible reasoning and text', () => {
-  const state = createChatCompletionsToMessagesStreamState();
-  const events = [
-    ...translateChatCompletionsChunkToMessagesEvents(chunk({ role: 'assistant', reasoning_text: 'trace' }), state),
-    ...translateChatCompletionsChunkToMessagesEvents(chunk({ content: 'answer' }), state),
-    ...translateChatCompletionsChunkToMessagesEvents(chunk({ reasoning_opaque: 'sig' }), state),
-    ...translateChatCompletionsChunkToMessagesEvents(chunk({}, 'stop'), state),
-  ];
-
-  assertEquals(events.slice(1, 9), [
-    {
-      type: 'content_block_start',
-      index: 0,
-      content_block: { type: 'thinking', thinking: '' },
-    },
-    {
-      type: 'content_block_delta',
-      index: 0,
-      delta: { type: 'thinking_delta', thinking: 'trace' },
-    },
-    { type: 'content_block_stop', index: 0 },
-    {
-      type: 'content_block_start',
-      index: 1,
-      content_block: { type: 'text', text: '' },
-    },
-    {
-      type: 'content_block_delta',
-      index: 1,
-      delta: { type: 'text_delta', text: 'answer' },
-    },
-    { type: 'content_block_stop', index: 1 },
-    {
-      type: 'content_block_start',
-      index: 2,
-      content_block: { type: 'redacted_thinking', data: 'sig' },
-    },
-    { type: 'content_block_stop', index: 2 },
-  ]);
-});
-
 test('translateChatCompletionsChunkToMessagesEvents preserves later opaque-only reasoning after earlier thinking', () => {
   const state = createChatCompletionsToMessagesStreamState();
   const events = [
@@ -427,7 +207,7 @@ test('translateChatCompletionsChunkToMessagesEvents preserves later opaque-only 
     ...translateChatCompletionsChunkToMessagesEvents(chunk({}, 'stop'), state),
   ];
 
-  assertEquals(events.slice(1, 9), [
+  assertEquals(events.slice(1, 10), [
     {
       type: 'content_block_start',
       index: 0,
@@ -437,6 +217,11 @@ test('translateChatCompletionsChunkToMessagesEvents preserves later opaque-only 
       type: 'content_block_delta',
       index: 0,
       delta: { type: 'thinking_delta', thinking: 'trace' },
+    },
+    {
+      type: 'content_block_delta',
+      index: 0,
+      delta: { type: 'signature_delta', signature: 'sig1' },
     },
     { type: 'content_block_stop', index: 0 },
     {
@@ -549,7 +334,12 @@ test('translateChatCompletionsChunkToMessagesEvents defers content interleaved b
     {
       type: 'content_block_delta',
       index: 0,
-      delta: { type: 'input_json_delta', partial_json: '{"location": "Paris"}' },
+      delta: { type: 'input_json_delta', partial_json: '{"loc' },
+    },
+    {
+      type: 'content_block_delta',
+      index: 0,
+      delta: { type: 'input_json_delta', partial_json: 'ation": "Paris"}' },
     },
     { type: 'content_block_stop', index: 0 },
     {
@@ -572,6 +362,14 @@ test('translateChatCompletionsChunkToMessagesEvents defers content interleaved b
   ]);
 });
 
+// A single chunk delta can carry BOTH `content` and `tool_calls` arrays. If
+// we emit the content first, we open a text block, then close it immediately
+// because the tool_use block is about to open — and any trailing argument
+// fragments for the same tool_call would land against a stopped block index.
+// Mirrors caozhiyuan's gating
+// (https://github.com/caozhiyuan/copilot-api/blob/main/src/routes/messages/stream-translation.ts#L240):
+// `isToolBlockOpen(state) || hasToolCallDelta(delta)` defers the content
+// rather than emitting it before the tool_use block opens.
 test('translateChatCompletionsChunkToMessagesEvents defers content that shares a chunk with tool_calls before any tool block opens', () => {
   const state = createChatCompletionsToMessagesStreamState();
   const events = [
@@ -619,15 +417,24 @@ test('translateChatCompletionsChunkToMessagesEvents defers content that shares a
 
 test('translateChatCompletionsChunkToMessagesEvents ignores empty tool_calls arrays', () => {
   const state = createChatCompletionsToMessagesStreamState();
+  // First chunk with role: "assistant" and empty tool_calls.
+  // Before the fix (choice.delta.tool_calls), empty [] was truthy and
+  // entered the tool-calls branch, which could close an open text block
+  // prematurely. After the fix (choice.delta.tool_calls?.length), empty
+  // arrays are treated as absent.
   const events1 = translateChatCompletionsChunkToMessagesEvents(chunk({ role: 'assistant', tool_calls: [] }), state);
+  // First event should be message_start (from role), not any tool-call handling.
+  // No content yet, so no content_block_start.
   assertEquals(events1.length, 1);
   assertEquals(events1[0].type, 'message_start');
 
+  // Second chunk with content — should start a text block normally.
   const events2 = translateChatCompletionsChunkToMessagesEvents(chunk({ content: 'hello' }), state);
   assertEquals(events2.length, 2);
   assertEquals(events2[0].type, 'content_block_start');
   assertEquals(events2[1].type, 'content_block_delta');
 
+  // Finish with stop.
   const events3 = translateChatCompletionsChunkToMessagesEvents(chunk({}, 'stop'), state);
   const textBlocks = events3.filter(e => e.type === 'content_block_stop');
   assertEquals(textBlocks.length, 1, 'only one text block should have been closed');
