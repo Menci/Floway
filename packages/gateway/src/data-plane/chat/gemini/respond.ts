@@ -11,7 +11,7 @@ import type { GatewayCtx } from '../shared/gateway-ctx.ts';
 import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse } from '../shared/respond.ts';
 import { type StreamCompletion, writeSSEFrames } from '../shared/stream/sse.ts';
 import { type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
-import { geminiProtocolFrameToSSEFrame, GEMINI_MISSING_TERMINAL_MESSAGE, isGeminiErrorEvent, collectGeminiProtocolEventsToResult } from '@floway-dev/protocols/gemini';
+import { geminiProtocolFrameToSSEFrame, GEMINI_MISSING_TERMINAL_MESSAGE, isGeminiErrorEvent, isGeminiTerminalEvent, collectGeminiProtocolEventsToResult } from '@floway-dev/protocols/gemini';
 import type { GeminiErrorResponse, GeminiResult, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 import { type ExecuteResult, type PlainResult, type ApiErrorResult, type InternalDebugError, toInternalDebugError, decodeApiErrorBody } from '@floway-dev/provider';
 
@@ -188,11 +188,9 @@ const geminiStreamErrorFrame = (error: unknown) => sseFrame(JSON.stringify(caugh
 
 // --- frame observation ---
 
-const isGeminiTerminalFrame = (frame: ProtocolFrame<GeminiStreamEvent>): boolean =>
-  frame.type === 'done' || (frame.type === 'event' && isGeminiErrorEvent(frame.event));
+const isGeminiTerminalFrame = (frame: ProtocolFrame<GeminiStreamEvent>): boolean => frame.type === 'done' || (frame.type === 'event' && isGeminiTerminalEvent(frame.event));
 
 const observeGeminiFrames = async function* (frames: AsyncIterable<ProtocolFrame<GeminiStreamEvent>>, state: SourceStreamState, observeUsage: boolean, ctx: GatewayCtx) {
-  let sawFinishedCandidate = false;
   for await (const frame of frames) {
     ctx.dump?.frame(frame);
     const failed = frame.type === 'event' && isGeminiErrorEvent(frame.event);
@@ -200,16 +198,9 @@ const observeGeminiFrames = async function* (frames: AsyncIterable<ProtocolFrame
     if (observeUsage) {
       state.rememberUsage(frame.type === 'event' && !('error' in frame.event) ? tokenUsageFromGeminiResponse(frame.event) : null);
     }
-    if (frame.type === 'event' && 'candidates' in frame.event && frame.event.candidates?.some(candidate => candidate.finishReason !== undefined)) {
-      sawFinishedCandidate = true;
-    }
     if (isGeminiTerminalFrame(frame) && !failed) state.completed = true;
     yield frame;
     if (isGeminiTerminalFrame(frame)) return;
-  }
-  if (sawFinishedCandidate) {
-    state.completed = true;
-    return;
   }
   throw new Error(GEMINI_MISSING_TERMINAL_MESSAGE);
 };

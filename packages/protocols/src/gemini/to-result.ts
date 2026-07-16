@@ -11,16 +11,13 @@ const isGeminiFinishedEvent = (event: GeminiStreamEvent): boolean => 'candidates
 export const isGeminiTerminalEvent = (event: GeminiStreamEvent): boolean => isGeminiErrorEvent(event) || isGeminiFinishedEvent(event);
 
 const geminiEventsUntilTerminal = async function* (frames: AsyncIterable<ProtocolFrame<GeminiStreamEvent>>): AsyncGenerator<GeminiStreamEvent> {
-  let sawFinishedCandidate = false;
   for await (const frame of frames) {
     if (frame.type === 'done') return;
 
     yield frame.event;
-    if (isGeminiErrorEvent(frame.event)) return;
-    if (isGeminiFinishedEvent(frame.event)) sawFinishedCandidate = true;
+    if (isGeminiTerminalEvent(frame.event)) return;
   }
 
-  if (sawFinishedCandidate) return;
   throw new Error(GEMINI_MISSING_TERMINAL_MESSAGE);
 };
 

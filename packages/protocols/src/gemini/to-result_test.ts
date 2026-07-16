@@ -96,22 +96,6 @@ test('collectGeminiProtocolEventsToResult assembles candidate parts and final me
   assertEquals(await collectGeminiProtocolEventsToResult(events()), expected);
 });
 
-test('collectGeminiProtocolEventsToResult keeps staggered candidates after the first finish', async () => {
-  const result = await collectGeminiProtocolEventsToResult((async function* () {
-    yield eventFrame({
-      candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'first' }] }, finishReason: 'STOP' }],
-    });
-    yield eventFrame({
-      candidates: [{ index: 1, content: { role: 'model', parts: [{ text: 'second' }] }, finishReason: 'MAX_TOKENS' }],
-    });
-  })());
-
-  assertEquals(result.candidates?.map(candidate => [candidate.index, candidate.content.parts[0]]), [
-    [0, { text: 'first' }],
-    [1, { text: 'second' }],
-  ]);
-});
-
 test('collectGeminiProtocolEventsToResult throws Gemini error events', async () => {
   const errorEvent = {
     error: {

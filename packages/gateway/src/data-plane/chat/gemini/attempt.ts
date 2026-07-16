@@ -37,7 +37,7 @@ export interface GeminiAttemptCountTokensArgs {
 export const geminiAttempt = {
   generate: async (args: GeminiAttemptGenerateArgs): Promise<ExecuteResult<ProtocolFrame<GeminiStreamEvent>>> => {
     const { payload: sourcePayload, ctx, candidate, headers: sourceHeaders } = args;
-    const payload = sourcePayload;
+    const payload = structuredClone(sourcePayload);
     const headers = new Headers(sourceHeaders);
     const targetApi = geminiGenerateTarget.pick(candidate.model.endpoints);
     const invocation: GeminiInvocation = { payload, candidate, targetApi, headers };
@@ -83,7 +83,7 @@ export const geminiAttempt = {
 
   countTokens: async (args: GeminiAttemptCountTokensArgs): Promise<PlainResult> => {
     const { payload: sourcePayload, ctx, candidate, headers: sourceHeaders } = args;
-    const payload = sourcePayload;
+    const payload = structuredClone(sourcePayload);
     const headers = new Headers(sourceHeaders);
     const targetApi = geminiCountTokensTarget.pick(candidate.model.endpoints);
     const invocation: GeminiInvocation = { payload, candidate, targetApi, headers };

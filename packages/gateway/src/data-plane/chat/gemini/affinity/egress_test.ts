@@ -77,17 +77,6 @@ describe('Gemini affinity egress', () => {
     })]);
   });
 
-  test('canonicalizes a role-less response candidate before adding affinity', async () => {
-    const output: ProtocolFrame<GeminiStreamEvent>[] = [];
-    for await (const frame of wrapGeminiAffinityEgress(frames([eventFrame({
-      candidates: [{ index: 0, content: { parts: [{ text: 'answer' }] }, finishReason: 'STOP' }],
-    })]), { codec: immediateCodec, affinity })) output.push(frame);
-
-    expect(output[0]).toMatchObject({
-      event: { candidates: [{ content: { role: 'model', parts: [{ thoughtSignature: 'wrapped:synthetic' }] } }] },
-    });
-  });
-
   test('moves an immediate signature-only trailer onto the buffered content event', async () => {
     const output: ProtocolFrame<GeminiStreamEvent>[] = [];
     for await (const frame of wrapGeminiAffinityEgress(frames([

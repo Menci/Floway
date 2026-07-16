@@ -4,7 +4,6 @@ import type { GeminiCandidate, GeminiPart, GeminiResult, GeminiStreamEvent } fro
 
 interface CandidateState {
   anchored: boolean;
-  finished: boolean;
 }
 
 const hasPartContent = (part: GeminiPart): boolean => {
@@ -247,9 +246,7 @@ const wrapEvent = async (
   const removedCandidates = new WeakSet<GeminiCandidate>();
 
   for (const candidate of current.candidates ?? []) {
-    candidate.content.role ??= 'model';
-    const state = states.get(candidate.index) ?? { anchored: false, finished: false };
-    if (state.finished) throw new Error(`Gemini candidate ${candidate.index} emitted data after its finishReason`);
+    const state = states.get(candidate.index) ?? { anchored: false };
     states.set(candidate.index, state);
 
     const nextCandidate = next?.candidates?.find(nextCandidate => nextCandidate.index === candidate.index);
@@ -304,7 +301,6 @@ const wrapEvent = async (
       }
     }
 
-    if (candidate.finishReason !== undefined) state.finished = true;
   }
 
   if (next?.candidates !== undefined) {
