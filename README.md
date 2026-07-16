@@ -124,61 +124,21 @@ format version; re-export before migrating a deployment.
 ## Client-carried affinity
 
 Aliases and shared model names may resolve to different upstream accounts,
-canonical model IDs, or alias-rule variants. Opaque reasoning state is often
-valid only at the exact target that created it. Floway therefore treats a
-multi-turn payload as a Floway wire protocol: clients are expected to send the
-returned opaque fields back through Floway rather than replay the modified
-payload directly to an upstream.
+canonical model IDs, or alias-rule variants. Floway adds authenticated target
+metadata to client-carried opaque reasoning fields so later turns can prefer,
+or when required force, the target that created their state.
 
-Every API key owns a hidden, random 256-bit server secret for gateway-private
-per-key data. Affinity derives a dedicated encryption key from it. On a
-successful chat response, the source-protocol boundary encrypts the exact
-selected target into every natural opaque reasoning carrier. A separate turn
-anchor guarantees that the first logical assistant element has a carrier,
-creating an originless value or element when necessary. The target identity
-includes upstream ID, canonical model ID, and the presence and value of alias
-rules.
+Clients must send the returned structured history back through the same Floway
+deployment and API key. Replaying Floway-modified payloads directly to an
+upstream is not supported. Foreign opaque values pass through unchanged, so
+Floway deployments can be cascaded.
 
-The envelope uses AES-256-GCM and contains version 1 metadata. Its wire value
-has no delimiter or magic prefix:
-
-```text
-base64-or-base64url(
-  original bytes
-  || 12-byte IV
-  || AES-GCM ciphertext and tag
-  || encrypted-length u16be
-)
-```
-
-AES-GCM additional authenticated data binds the original bytes and the exact
-source protocol/slot, so a valid trailer cannot be transplanted onto another
-opaque value or carrier kind.
-
-Canonical Base64 and Base64URL inputs are decoded before the encrypted trailer
-is appended, so existing encoded data is not Base64-encoded a second time.
-Other strings are stored as UTF-8 and marked `raw`; a synthetic carrier omits
-the origin. A blob that cannot be authenticated with this API key is foreign
-and is forwarded byte-for-byte. This permits Floway instances to be cascaded:
-an outer instance wraps the inner carrier and later restores it unchanged.
-
-Ingress runs before normal interception and translation. It extracts owned
-targets, derives prefer or force evidence from each carrier's current protocol
-location, then builds a clean payload separately for every candidate. Matching
-carriers restore their original value, incompatible owned state is removed,
-and foreign values remain. Responses compaction and programmatic state derive
-force evidence at ingress; ordinary assistant state derives preference.
-
-Egress runs only after provider events have returned to the client's source
-protocol. Chat closes its one logical choice with one wrapped or originless
-`reasoning_opaque`. Messages uses the first thinking/redacted block, or
-prefixes a redacted block before a first element that cannot carry a blob.
-Gemini uses a sliding one-event lookahead: same-element continuations pass
-without a synthetic value until a natural signature or a definite boundary is
-seen, so the last buffered content-bearing Part receives the one carrier.
-Responses augments a carrier-capable first item at close or prefixes
-a synthetic reasoning lifecycle before it. Natural opaque values are wrapped
-independently of these turn anchors.
+Affinity does not require a server-side conversation database. It relies on
+clients preserving protocol-native opaque fields; high-level Chat Completions
+clients that discard unknown fields cannot provide reliable affinity. Gemini
+streaming deliberately carries one upstream-event of latency to keep signatures
+attached to content-bearing parts. Detailed wire and routing semantics live in
+[TRANSLATION.md](./TRANSLATION.md) and [RESOLUTION.md](./RESOLUTION.md).
 
 ## Stateful Responses
 

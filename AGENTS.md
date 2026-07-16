@@ -156,119 +156,33 @@ JSON, SSE, and WebSocket rendering.
 
 ## Client-carried Affinity
 
-Shared model names and aliases can resolve to different upstream accounts,
-canonical models, and rule variants. Opaque reasoning state is target-bound.
-Floway therefore adds authenticated provenance to client-carried opaque state
-and expects continued requests to pass through Floway.
+Affinity is a gateway concern, not a protocol. Protocol-independent identity,
+codec, candidate routing, and request context live under
+`data-plane/chat/shared/affinity`; each source protocol owns its wire-specific
+`affinity/ingress.ts` and `affinity/egress.ts`.
 
-Each API key has a hidden random 256-bit `serverSecret` for gateway-private
-per-key data. Normal API-key CRUD and dashboard DTOs never expose it. Admin
-data transfer format version 10 includes it so a restored deployment can
-recover that private state. Key updates preserve it. Affinity derives its own
-encryption key from the server secret.
+Ingress runs before ordinary gateway work and egress after events return to the
+source shape. Floway affinity metadata must remain invisible to translators,
+interceptors, and providers. Routing strength is derived at ingress from the
+current protocol structure, never serialized in the envelope.
 
-The version 1 AES-256-GCM envelope contains optional original encoding plus:
-
-```text
-upstream ID
-canonical model ID
-alias-rule presence and value
-optional protocol restore state
-```
-
-Routing strength is request-local. Ingress derives prefer/force from the
-carrier's current protocol location; it is never serialized. Compaction and
-program state force their associated target, while ordinary assistant state
-only prefers it.
-
-AEAD additional data binds a length-delimited protocol/slot domain and the
-original bytes. A trailer cannot authenticate after moving to another carrier
-or attaching it to different opaque content.
-
-Wire framing is `originalBytes || IV[12] || ciphertext+tag || length:u16be`,
-then canonical Base64/Base64URL. There is no magic value or delimiter.
-Canonical encoded input is decoded before framing; raw input is UTF-8. A
-synthetic carrier has no original value. Unauthenticated or unrecognized
-values are foreign and pass byte-for-byte, which gives cascaded Floway
-instances natural nesting.
-
-Affinity is an early-ingress/late-egress membrane:
-
-1. source ingress authenticates owned carriers before ordinary gateway work;
-2. exact force/prefer affinity filters or orders normal viable candidates;
-3. every attempt gets a clean source clone: compatible original values are
-   restored, incompatible owned values are removed, foreign values remain;
-4. the request then crosses normal interceptors, translation, and provider
-   dispatch without Floway affinity metadata;
-5. after target events return to the source shape, the inner egress transform
-   wraps every natural opaque value;
-6. the outer egress transform ensures the first assistant element carries a
-   blob, augmenting it or inserting a protocol-native prefix element.
-
-Force means the request contains non-discardable state such as Responses
-compaction/program state. Conflicting or unavailable force targets fail before
-dispatch. Prefer moves the latest available exact target first; unavailable
-preferred state leaves normal order and is omitted on incompatible attempts.
-
-Protocol streaming rules:
-
-- Chat `reasoning_opaque` is a per-choice last-write-wins snapshot. Egress
-  retains only opaque snapshots until finish; visible deltas remain immediate.
-- Messages `signature_delta` is last-write-wins. Readable thinking streams
-  immediately; a first thinking block receives a wrapped or originless final
-  signature. A non-carrier first block is shifted behind a redacted prefix.
-- Gemini uses a sliding one-event lookahead. Same-element continuations release
-  the older event unsigned and keep the newer event buffered until a natural
-  signature or a definite element boundary determines the carrier.
-- Responses augments a carrier-capable first item at close or emits a synthetic
-  reasoning prefix through added/done before shifting later item indexes.
-
-Chat, Messages, and Responses buffer only opaque carrier state. Gemini is the
-sole exception: it deliberately holds at most one complete source event to
-keep one authoritative signature on content-bearing output.
+Every API key has a hidden `serverSecret`; normal CRUD never exposes it and
+admin data transfer preserves it. Clients carrying Floway envelopes are
+expected to continue through the same deployment and API key. Foreign values
+pass unchanged for cascaded gateways. Detailed wire, placement, and fallback
+semantics are documented in `TRANSLATION.md` and `RESOLUTION.md`.
 
 ## Stateful Responses
 
-Responses state is independent from affinity. The store owns complete
-Responses items and snapshots; affinity owns routing provenance.
+Responses persistence is independent from affinity and lives under
+`data-plane/chat/responses/items` plus the repository implementations. It stores
+API-key-scoped complete items and snapshots; translated inner Responses calls
+remain request-local and only native Responses sources construct a store.
 
-Native inbound order is:
-
-```text
-previous_response_id expansion
-→ complete item hydration
-→ affinity extraction/routing
-→ candidate-specific opaque restoration
-→ attempt
-```
-
-Native outbound order is:
-
-```text
-source-shaped events
-→ affinity wrapping
-→ gateway response/item ID rewrite
-→ complete item persistence
-→ snapshot commit
-→ client
-```
-
-Successful item writes complete before `output_item.done`; snapshot writes
-complete before the terminal event. A compaction item makes the snapshot an
-atomic replacement. Normal generation appends previous history, new input, and
-new output. Stored items are API-key scoped complete payloads with a content
-hash, creation time, and optional private server-tool payload.
-
-HTTP `store: false` may read existing durable history but performs no state
-writes and leaves upstream item/response IDs unchanged.
-WebSocket `store: false` uses a session-owned memory backing so same-socket
-references work without durable storage. Stored HTTP/WS items and snapshots
-expire 30 days after creation; compressed payload files follow the same
-lifetime.
-
-Translated inner Responses calls use only request-local hosted-tool state.
-Only a native Responses source constructs a persistence store and applies
-client item IDs and retention.
+HTTP `store: false` writes no state. WebSocket `store: false` uses session memory
+for same-socket references. Durable and session items share the 30-day creation
+lifetime. Detailed hydration, ID rewrite, commit ordering, and compaction
+semantics are documented in `TRANSLATION.md`.
 
 ## Verification
 
