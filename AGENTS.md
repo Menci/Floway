@@ -166,11 +166,8 @@ source shape. Floway affinity metadata must remain invisible to translators,
 interceptors, and providers. Routing strength is derived at ingress from the
 current protocol structure, never serialized in the envelope.
 
-Every API key has a hidden `serverSecret`; normal CRUD never exposes it and
-admin data transfer preserves it. Clients carrying Floway envelopes are
-expected to continue through the same deployment and API key. Foreign values
-pass unchanged for cascaded gateways. Wire and placement semantics live in
-`AFFINITY.md`; candidate ordering lives in `RESOLUTION.md`.
+Wire and placement semantics live in `AFFINITY.md`; candidate ordering lives in
+`RESOLUTION.md`.
 
 ## Stateful Responses
 

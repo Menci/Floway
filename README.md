@@ -115,11 +115,8 @@ then:
    client.
 3. Copy the Claude Code or Codex CLI snippet from the API Keys panel.
 
-Settings import/export currently uses format version 10. API-key records in an
-admin export include their hidden server secret so already-issued client
-history remains decryptable after a restore. Normal API-key routes and the API
-Keys dashboard never expose this secret. Import only accepts the exact current
-format version; re-export before migrating a deployment.
+Settings import/export currently uses format version 10. Import only accepts
+the exact current format version; re-export before migrating a deployment.
 
 ## Routing and state
 
