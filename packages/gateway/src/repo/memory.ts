@@ -575,7 +575,15 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
   private store = new Map<string, StoredResponsesItem>();
 
   lookupMany(apiKeyId: string, ids: readonly string[]): Promise<StoredResponsesItem[]> {
-    return Promise.resolve(this.lookupManySync(apiKeyId, ids));
+    const rows: StoredResponsesItem[] = [];
+    const seen = new Set<string>();
+    for (const id of ids) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const row = this.store.get(scopedResponsesKey(apiKeyId, id));
+      if (row !== undefined) rows.push(cloneStoredResponsesItem(row));
+    }
+    return Promise.resolve(rows);
   }
 
   lookupManyByContentHash(apiKeyId: string, hashes: readonly string[]): Promise<StoredResponsesItem[]> {
@@ -588,18 +596,6 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
       }
     }
     return Promise.resolve(rows.toSorted(compareResponsesItemsByFreshness));
-  }
-
-  private lookupManySync(apiKeyId: string, ids: readonly string[]): StoredResponsesItem[] {
-    const rows: StoredResponsesItem[] = [];
-    const seen = new Set<string>();
-    for (const id of ids) {
-      if (seen.has(id)) continue;
-      seen.add(id);
-      const row = this.store.get(scopedResponsesKey(apiKeyId, id));
-      if (row !== undefined) rows.push(cloneStoredResponsesItem(row));
-    }
-    return rows;
   }
 
   insertMany(items: readonly StoredResponsesItem[]): Promise<void> {

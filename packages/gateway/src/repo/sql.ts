@@ -981,32 +981,29 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
       group.push(write);
       writesByApiKey.set(write.item.apiKeyId, group);
     }
-    const statementChunks: Array<{ writes: PreparedResponsesRefreshWrite[]; statement: SqlPreparedStatement }> = [];
+    const statements: SqlPreparedStatement[] = [];
     for (const [apiKeyId, group] of writesByApiKey) {
       for (let index = 0; index < group.length; index += RESPONSES_REFRESH_CHUNK_SIZE) {
         const chunk = group.slice(index, index + RESPONSES_REFRESH_CHUNK_SIZE);
         const cases = chunk.map(() => 'WHEN ? THEN ?').join(' ');
         const conditions = chunk.map(() => '(id = ? AND payload_json = ?)').join(' OR ');
-        statementChunks.push({
-          writes: chunk,
-          statement: this.db
-            .prepare(
-              `UPDATE responses_items
-               SET payload_json = CASE id ${cases} ELSE payload_json END,
-                   created_at = MAX(created_at, ?)
-               WHERE api_key_id = ? AND (${conditions})`,
-            )
-            .bind(
-              ...chunk.flatMap(({ item, payload }) => [item.id, payload]),
-              createdAt,
-              apiKeyId,
-              ...chunk.flatMap(({ item, previousPayloadJson }) => [item.id, previousPayloadJson]),
-            ),
-        });
+        statements.push(this.db
+          .prepare(
+            `UPDATE responses_items
+             SET payload_json = CASE id ${cases} ELSE payload_json END,
+                 created_at = MAX(created_at, ?)
+             WHERE api_key_id = ? AND (${conditions})`,
+          )
+          .bind(
+            ...chunk.flatMap(({ item, payload }) => [item.id, payload]),
+            createdAt,
+            apiKeyId,
+            ...chunk.flatMap(({ item, previousPayloadJson }) => [item.id, previousPayloadJson]),
+          ));
       }
     }
     try {
-      await runStatements(this.db, statementChunks.map(chunk => chunk.statement));
+      await runStatements(this.db, statements);
     } catch (error) {
       await this.finishPayloadWrites(writes, error);
     }

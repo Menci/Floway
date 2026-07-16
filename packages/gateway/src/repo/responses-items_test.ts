@@ -61,11 +61,11 @@ describe.each(factories)('%s Responses state repo', (_name, createRepo) => {
     const first = storedItem('msg_first', 'key-a', 'hash-a', 1_000);
     const second = storedItem('msg_second', 'key-a', 'hash-b', 2_000);
     const other = storedItem('msg_other', 'key-b', 'hash-a', 3_000);
-    const legacy = storedItem('msg_legacy', 'key-a', null, 4_000);
+    const unhashed = storedItem('msg_unhashed', 'key-a', null, 4_000);
 
-    await repo.responsesItems.insertMany([first, second, other, legacy]);
+    await repo.responsesItems.insertMany([first, second, other, unhashed]);
 
-    expect(await repo.responsesItems.lookupMany('key-a', [second.id, legacy.id, first.id])).toEqual([second, legacy, first]);
+    expect(await repo.responsesItems.lookupMany('key-a', [second.id, unhashed.id, first.id])).toEqual([second, unhashed, first]);
     expect(await repo.responsesItems.lookupMany('key-b', [first.id])).toEqual([]);
     expect(await repo.responsesItems.lookupManyByContentHash('key-a', ['hash-a'])).toEqual([first]);
   });

@@ -1,6 +1,8 @@
 import type { StoredResponsesItemPayload } from './types.ts';
 import { getFileProvider, sha256Hex } from '@floway-dev/platform';
 
+// Encoding-less variants remain readable because migration 0058 preserves
+// existing payload descriptors and files instead of rewriting their bodies.
 type StoredResponsesPayloadJson =
   | {
     version: 1;

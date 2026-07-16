@@ -4,13 +4,13 @@ import { cloneStoredResponsesItem, cloneStoredResponsesSnapshot, compareResponse
 import type { Repo, StoredResponsesItem, StoredResponsesSnapshot } from '../../../../repo/types.ts';
 import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
 
-export interface StatefulResponsesItemLookup {
+interface StatefulResponsesItemLookup {
   readonly apiKeyId: string;
   readonly ids: readonly string[];
   readonly contentHashes: readonly string[];
 }
 
-export interface StatefulResponsesBacking {
+interface StatefulResponsesBacking {
   lookupItems(query: StatefulResponsesItemLookup): Promise<StoredResponsesItem[]>;
   insertItems(items: readonly StoredResponsesItem[]): Promise<void>;
   refreshItems(items: readonly StoredResponsesItem[], createdAt: number): Promise<void>;
@@ -18,14 +18,14 @@ export interface StatefulResponsesBacking {
   insertSnapshot(snapshot: StoredResponsesSnapshot): Promise<void>;
 }
 
-export interface LayeredStatefulResponsesStoreOptions {
+interface LayeredStatefulResponsesStoreOptions {
   readonly apiKeyId: string;
   readonly reads: readonly StatefulResponsesBacking[];
   readonly writes: readonly StatefulResponsesBacking[];
   readonly stageInputs: boolean;
 }
 
-export type ResponsesSnapshotMode = 'append' | 'replace';
+type ResponsesSnapshotMode = 'append' | 'replace';
 
 export interface StatefulResponsesStore {
   readonly apiKeyId: string;
@@ -33,7 +33,6 @@ export interface StatefulResponsesStore {
   loadSnapshot(id: string): Promise<StoredResponsesSnapshot | null>;
   loadInputItems(sourceItems: readonly ResponsesInputItem[], inputItemsToStage: readonly ResponsesInputItem[]): Promise<void>;
   getItemById(id: string): StoredResponsesItem | undefined;
-  hashItemContent(item: ResponsesInputItem): Promise<string>;
   stageInputItems(items: readonly ResponsesInputItem[]): Promise<void>;
   stageOutputItem(row: StoredResponsesItem, outputIndex: number): void;
   commitStagedOutputItems(): Promise<void>;
@@ -58,10 +57,6 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
 
   get writesState(): boolean {
     return this.options.writes.length > 0;
-  }
-
-  hashItemContent(item: ResponsesInputItem): Promise<string> {
-    return hashResponsesItemContent(item);
   }
 
   async loadSnapshot(id: string): Promise<StoredResponsesSnapshot | null> {
@@ -100,7 +95,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     for (const item of inputItemsToStage) {
       const id = responsesItemId(item);
       if (id !== null && isResponsesItemId(id)) continue;
-      contentHashes.add(await this.hashItemContent(item));
+      contentHashes.add(await hashResponsesItemContent(item));
     }
     await this.loadItems({ ids: [...ids], contentHashes: [...contentHashes] });
   }
@@ -189,7 +184,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
       }
     }
 
-    const contentHash = await this.hashItemContent(item);
+    const contentHash = await hashResponsesItemContent(item);
     const existing = this.loadedByContentHash.get(contentHash)?.[0];
     if (existing !== undefined) {
       this.stagedInputItemIds.push(existing.id);

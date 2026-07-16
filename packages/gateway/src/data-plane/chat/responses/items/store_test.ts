@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
+import { hashResponsesItemContent } from './format.ts';
 import { createResponsesHttpStore, createResponsesWsSession } from './store.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
@@ -56,7 +57,7 @@ describe('StatefulResponsesStore', () => {
     store.stageOutputItem(output, 0);
     await store.commitSnapshot('resp_compact', 'replace');
 
-    expect(await repo.responsesItems.lookupManyByContentHash('key-a', [await store.hashItemContent(input)])).toEqual([]);
+    expect(await repo.responsesItems.lookupManyByContentHash('key-a', [await hashResponsesItemContent(input)])).toEqual([]);
     expect((await repo.responsesSnapshots.lookup('key-a', 'resp_compact'))?.itemIds).toEqual([output.id]);
   });
 
@@ -114,7 +115,7 @@ describe('StatefulResponsesStore', () => {
       apiKeyId: 'key-a',
       itemType: 'message',
       payload: { item: directInput },
-      contentHash: await store.hashItemContent(directInput),
+      contentHash: await hashResponsesItemContent(directInput),
       createdAt: 1,
     };
     const hashedRow = {
@@ -122,7 +123,7 @@ describe('StatefulResponsesStore', () => {
       apiKeyId: 'key-a',
       itemType: 'message',
       payload: { item: hashedInput },
-      contentHash: await store.hashItemContent(hashedInput),
+      contentHash: await hashResponsesItemContent(hashedInput),
       createdAt: 1,
     };
     await repo.responsesItems.insertMany([directRow, hashedRow]);
@@ -146,7 +147,7 @@ describe('StatefulResponsesStore', () => {
       apiKeyId: 'key-a',
       itemType: 'message',
       payload: { item: input },
-      contentHash: await store.hashItemContent(input),
+      contentHash: await hashResponsesItemContent(input),
       createdAt: futureCreatedAt,
     };
     await repo.responsesItems.insertMany([row]);
