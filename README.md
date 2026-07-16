@@ -147,10 +147,17 @@ Open the deployed URL (or `http://localhost:8788` for Node), log in with
 
    The command's setup URL stays stable while the panel is open. The visible
    panel renews its five-minute lease once a minute, and the URL expires about
-   five minutes after you leave. The installer installs only a missing CLI —
-   through the official user-local installer, never `sudo`, and never upgrading
-   an existing install. It backs up each managed file before surgically merging
-   Floway's settings into Claude Code's `~/.claude/settings.json` and Codex's
+   five minutes after you leave. A missing CLI is installed with Homebrew on
+   macOS. Linux uses Claude's direct release bootstrap and Codex's GitHub source
+   installer; Windows uses their PowerShell equivalents, preferring `pwsh` when
+   available. The setup never uses npm or `sudo` and never upgrades an existing
+   installation. Native installer output stays attached to the terminal so its
+   progress, colors, and carriage-return updates render in real time; the setup's
+   own output uses plain headings rather than a synthetic vertical spine. The
+   header names the endpoint and selected API key.
+
+   Each managed file is backed up before Floway's settings are merged into
+   Claude Code's `~/.claude/settings.json` and Codex's
    `$CODEX_HOME/config.toml`. The Codex provider token is stored separately
    under the active `CODEX_HOME`, so an official account login in `auth.json`
    remains available. Verification only reaches the gateway's authenticated

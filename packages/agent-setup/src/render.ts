@@ -10,6 +10,7 @@ import type { AgentSetupConfiguration } from './configuration.ts';
 
 export interface RenderPrefixInput {
   apiKey: string;
+  apiKeyName: string;
   configuration: AgentSetupConfiguration;
 }
 
@@ -31,6 +32,11 @@ const powerShellLiteral = (value: string): string => {
   return `'${value.replace(/'/g, "''")}'`;
 };
 
+const metadataValue = (value: string): string => {
+  assertNoNul(value);
+  return value.replace(/[\u0001-\u001f\u007f]/g, ' ');
+};
+
 // An unset override renders empty, which the installer reads as "remove this
 // managed key"; a set flag renders `1`.
 const shellFlag = (enabled: boolean): string => (enabled ? '1' : '');
@@ -40,19 +46,20 @@ const shellOptional = (value: string | null): string => value ?? '';
 // assignment to its trace stream; the trailing newline lets the fixed installer
 // body concatenate cleanly beneath.
 export const renderShellPrefix = (input: RenderPrefixInput): string => {
-  const { apiKey, configuration: { claudeCode, codex } } = input;
+  const { apiKey, apiKeyName, configuration: { claudeCode, codex } } = input;
   const assignments: [name: string, value: string][] = [
-    ['FLOWAY_API_KEY', apiKey],
-    ['FLOWAY_INSTALL_CLAUDE', shellFlag(claudeCode.enabled)],
-    ['FLOWAY_CLAUDE_MODEL', shellOptional(claudeCode.model)],
-    ['FLOWAY_CLAUDE_DEFAULT_OPUS_MODEL', shellOptional(claudeCode.defaultOpusModel)],
-    ['FLOWAY_CLAUDE_DEFAULT_SONNET_MODEL', shellOptional(claudeCode.defaultSonnetModel)],
-    ['FLOWAY_CLAUDE_DEFAULT_HAIKU_MODEL', shellOptional(claudeCode.defaultHaikuModel)],
-    ['FLOWAY_CLAUDE_EFFORT_LEVEL', shellOptional(claudeCode.effortLevel)],
-    ['FLOWAY_CLAUDE_MODEL_DISCOVERY', shellFlag(claudeCode.modelDiscovery)],
-    ['FLOWAY_INSTALL_CODEX', shellFlag(codex.enabled)],
-    ['FLOWAY_CODEX_MODEL', shellOptional(codex.model)],
-    ['FLOWAY_CODEX_REASONING_EFFORT', shellOptional(codex.reasoningEffort)],
+    ['SETUP_API_KEY', apiKey],
+    ['SETUP_API_KEY_NAME', metadataValue(apiKeyName)],
+    ['SETUP_INSTALL_CLAUDE', shellFlag(claudeCode.enabled)],
+    ['SETUP_CLAUDE_MODEL', shellOptional(claudeCode.model)],
+    ['SETUP_CLAUDE_DEFAULT_OPUS_MODEL', shellOptional(claudeCode.defaultOpusModel)],
+    ['SETUP_CLAUDE_DEFAULT_SONNET_MODEL', shellOptional(claudeCode.defaultSonnetModel)],
+    ['SETUP_CLAUDE_DEFAULT_HAIKU_MODEL', shellOptional(claudeCode.defaultHaikuModel)],
+    ['SETUP_CLAUDE_EFFORT_LEVEL', shellOptional(claudeCode.effortLevel)],
+    ['SETUP_CLAUDE_MODEL_DISCOVERY', shellFlag(claudeCode.modelDiscovery)],
+    ['SETUP_INSTALL_CODEX', shellFlag(codex.enabled)],
+    ['SETUP_CODEX_MODEL', shellOptional(codex.model)],
+    ['SETUP_CODEX_REASONING_EFFORT', shellOptional(codex.reasoningEffort)],
   ];
   const lines = assignments.map(([name, value]) => `${name}=${shellLiteral(value)}`);
   return `set +x\n${lines.join('\n')}\n`;
@@ -65,19 +72,20 @@ const powerShellOptional = (value: string | null): string => (value === null ? '
 
 // `Set-PSDebug -Off` leads for the same reason `set +x` does in POSIX.
 export const renderPowerShellPrefix = (input: RenderPrefixInput): string => {
-  const { apiKey, configuration: { claudeCode, codex } } = input;
+  const { apiKey, apiKeyName, configuration: { claudeCode, codex } } = input;
   const assignments: [name: string, value: string][] = [
-    ['$FlowayApiKey', powerShellLiteral(apiKey)],
-    ['$FlowayInstallClaude', powerShellBool(claudeCode.enabled)],
-    ['$FlowayClaudeModel', powerShellOptional(claudeCode.model)],
-    ['$FlowayClaudeDefaultOpusModel', powerShellOptional(claudeCode.defaultOpusModel)],
-    ['$FlowayClaudeDefaultSonnetModel', powerShellOptional(claudeCode.defaultSonnetModel)],
-    ['$FlowayClaudeDefaultHaikuModel', powerShellOptional(claudeCode.defaultHaikuModel)],
-    ['$FlowayClaudeEffortLevel', powerShellOptional(claudeCode.effortLevel)],
-    ['$FlowayClaudeModelDiscovery', powerShellBool(claudeCode.modelDiscovery)],
-    ['$FlowayInstallCodex', powerShellBool(codex.enabled)],
-    ['$FlowayCodexModel', powerShellOptional(codex.model)],
-    ['$FlowayCodexReasoningEffort', powerShellOptional(codex.reasoningEffort)],
+    ['$SetupApiKey', powerShellLiteral(apiKey)],
+    ['$SetupApiKeyName', powerShellLiteral(metadataValue(apiKeyName))],
+    ['$SetupInstallClaude', powerShellBool(claudeCode.enabled)],
+    ['$SetupClaudeModel', powerShellOptional(claudeCode.model)],
+    ['$SetupClaudeDefaultOpusModel', powerShellOptional(claudeCode.defaultOpusModel)],
+    ['$SetupClaudeDefaultSonnetModel', powerShellOptional(claudeCode.defaultSonnetModel)],
+    ['$SetupClaudeDefaultHaikuModel', powerShellOptional(claudeCode.defaultHaikuModel)],
+    ['$SetupClaudeEffortLevel', powerShellOptional(claudeCode.effortLevel)],
+    ['$SetupClaudeModelDiscovery', powerShellBool(claudeCode.modelDiscovery)],
+    ['$SetupInstallCodex', powerShellBool(codex.enabled)],
+    ['$SetupCodexModel', powerShellOptional(codex.model)],
+    ['$SetupCodexReasoningEffort', powerShellOptional(codex.reasoningEffort)],
   ];
   const lines = assignments.map(([name, value]) => `${name} = ${value}`);
   return `Set-PSDebug -Off\n${lines.join('\n')}\n`;

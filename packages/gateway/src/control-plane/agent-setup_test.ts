@@ -67,8 +67,9 @@ test('the public GET serves the rendered script with hardened headers and no COR
   assertEquals(response.headers.get('cache-control'), 'no-store');
   assertEquals(response.headers.get('access-control-allow-origin'), null);
   const text = await response.text();
-  expect(text).toContain("FLOWAY_API_KEY='raw-key'");
-  expect(text).toContain('Floway agent setup installer (Bash 3.2+)');
+  expect(text).toContain("SETUP_API_KEY='raw-key'");
+  expect(text).toContain("SETUP_API_KEY_NAME='Primary key'");
+  expect(text).toContain('Floway Agent Setup installer (Bash 3.2+)');
 });
 
 test('HEAD validates without assembling the API-key body', async () => {

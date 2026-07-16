@@ -107,43 +107,51 @@ describe('renderShellPrefix', () => {
   test('renders every assignment through the encoder and ends with a newline', () => {
     const prefix = renderShellPrefix({
       apiKey: 'sk-raw-key',
+      apiKeyName: 'Primary key',
       configuration: fullConfiguration,
     });
     expect(prefix).toBe([
       'set +x',
-      "FLOWAY_API_KEY='sk-raw-key'",
-      "FLOWAY_INSTALL_CLAUDE='1'",
-      "FLOWAY_CLAUDE_MODEL='claude-opus-4-6[1m]'",
-      "FLOWAY_CLAUDE_DEFAULT_OPUS_MODEL='claude-opus-4-5'",
-      "FLOWAY_CLAUDE_DEFAULT_SONNET_MODEL='claude-sonnet-4-5'",
-      "FLOWAY_CLAUDE_DEFAULT_HAIKU_MODEL=''",
-      "FLOWAY_CLAUDE_EFFORT_LEVEL='high'",
-      "FLOWAY_CLAUDE_MODEL_DISCOVERY='1'",
-      "FLOWAY_INSTALL_CODEX='1'",
-      "FLOWAY_CODEX_MODEL='gpt-5.6-terra'",
-      "FLOWAY_CODEX_REASONING_EFFORT='xhigh'",
+      "SETUP_API_KEY='sk-raw-key'",
+      "SETUP_API_KEY_NAME='Primary key'",
+      "SETUP_INSTALL_CLAUDE='1'",
+      "SETUP_CLAUDE_MODEL='claude-opus-4-6[1m]'",
+      "SETUP_CLAUDE_DEFAULT_OPUS_MODEL='claude-opus-4-5'",
+      "SETUP_CLAUDE_DEFAULT_SONNET_MODEL='claude-sonnet-4-5'",
+      "SETUP_CLAUDE_DEFAULT_HAIKU_MODEL=''",
+      "SETUP_CLAUDE_EFFORT_LEVEL='high'",
+      "SETUP_CLAUDE_MODEL_DISCOVERY='1'",
+      "SETUP_INSTALL_CODEX='1'",
+      "SETUP_CODEX_MODEL='gpt-5.6-terra'",
+      "SETUP_CODEX_REASONING_EFFORT='xhigh'",
       '',
     ].join('\n'));
   });
 
-  test('never emits the base URL or a Codex identity token — the gateway does not know its origin', () => {
-    const prefix = renderShellPrefix({ apiKey: 'sk-raw-key', configuration: fullConfiguration });
-    expect(prefix).not.toContain('FLOWAY_BASE_URL');
-    expect(prefix).not.toContain('FLOWAY_CODEX_ID_TOKEN');
+  test('never emits the endpoint — the gateway does not know its origin', () => {
+    const prefix = renderShellPrefix({ apiKey: 'sk-raw-key', apiKeyName: 'Primary key', configuration: fullConfiguration });
+    expect(prefix).not.toContain('SETUP_ENDPOINT');
   });
 
   test('single-quotes each value, escaping embedded quotes and preserving newlines, tabs, and Unicode', () => {
     const prefix = renderShellPrefix({
       apiKey: "a'b",
+      apiKeyName: 'Primary key',
       configuration: { ...fullConfiguration, codex: { ...fullConfiguration.codex, model: 'x\ny\t€🚀' } },
     });
-    expect(prefix).toContain("FLOWAY_API_KEY='a'\\''b'");
-    expect(prefix).toContain("FLOWAY_CODEX_MODEL='x\ny\t€🚀'");
+    expect(prefix).toContain("SETUP_API_KEY='a'\\''b'");
+    expect(prefix).toContain("SETUP_CODEX_MODEL='x\ny\t€🚀'");
+  });
+
+  test('flattens control characters in the API key label before it reaches terminal metadata', () => {
+    const prefix = renderShellPrefix({ apiKey: 'key', apiKeyName: 'CI\n\u001b[2J', configuration: fullConfiguration });
+    expect(prefix).toContain("SETUP_API_KEY_NAME='CI  [2J'");
   });
 
   test('renders empty values for disabled agents and null overrides', () => {
     const prefix = renderShellPrefix({
       apiKey: 'sk-raw-key',
+      apiKeyName: 'Primary key',
       configuration: {
         apiKeyId: 'key-a',
         claudeCode: {
@@ -153,16 +161,17 @@ describe('renderShellPrefix', () => {
         codex: { enabled: false, model: null, reasoningEffort: null },
       },
     });
-    expect(prefix).toContain("FLOWAY_INSTALL_CLAUDE=''");
-    expect(prefix).toContain("FLOWAY_INSTALL_CODEX=''");
-    expect(prefix).toContain("FLOWAY_CLAUDE_MODEL_DISCOVERY=''");
-    expect(prefix).toContain("FLOWAY_CLAUDE_EFFORT_LEVEL=''");
-    expect(prefix).toContain("FLOWAY_CODEX_REASONING_EFFORT=''");
+    expect(prefix).toContain("SETUP_INSTALL_CLAUDE=''");
+    expect(prefix).toContain("SETUP_INSTALL_CODEX=''");
+    expect(prefix).toContain("SETUP_CLAUDE_MODEL_DISCOVERY=''");
+    expect(prefix).toContain("SETUP_CLAUDE_EFFORT_LEVEL=''");
+    expect(prefix).toContain("SETUP_CODEX_REASONING_EFFORT=''");
   });
 
   test('propagates a NUL-rejecting failure from the API key', () => {
     expect(() => renderShellPrefix({
       apiKey: 'sk-\0-key',
+      apiKeyName: 'Primary key',
       configuration: fullConfiguration,
     })).toThrow();
   });
@@ -172,46 +181,50 @@ describe('renderPowerShellPrefix', () => {
   test('renders booleans, single-quoted strings, and $null for absent overrides', () => {
     const prefix = renderPowerShellPrefix({
       apiKey: 'sk-raw-key',
+      apiKeyName: 'Primary key',
       configuration: fullConfiguration,
     });
     expect(prefix).toBe([
       'Set-PSDebug -Off',
-      "$FlowayApiKey = 'sk-raw-key'",
-      '$FlowayInstallClaude = $true',
-      "$FlowayClaudeModel = 'claude-opus-4-6[1m]'",
-      "$FlowayClaudeDefaultOpusModel = 'claude-opus-4-5'",
-      "$FlowayClaudeDefaultSonnetModel = 'claude-sonnet-4-5'",
-      '$FlowayClaudeDefaultHaikuModel = $null',
-      "$FlowayClaudeEffortLevel = 'high'",
-      '$FlowayClaudeModelDiscovery = $true',
-      '$FlowayInstallCodex = $true',
-      "$FlowayCodexModel = 'gpt-5.6-terra'",
-      "$FlowayCodexReasoningEffort = 'xhigh'",
+      "$SetupApiKey = 'sk-raw-key'",
+      "$SetupApiKeyName = 'Primary key'",
+      '$SetupInstallClaude = $true',
+      "$SetupClaudeModel = 'claude-opus-4-6[1m]'",
+      "$SetupClaudeDefaultOpusModel = 'claude-opus-4-5'",
+      "$SetupClaudeDefaultSonnetModel = 'claude-sonnet-4-5'",
+      '$SetupClaudeDefaultHaikuModel = $null',
+      "$SetupClaudeEffortLevel = 'high'",
+      '$SetupClaudeModelDiscovery = $true',
+      '$SetupInstallCodex = $true',
+      "$SetupCodexModel = 'gpt-5.6-terra'",
+      "$SetupCodexReasoningEffort = 'xhigh'",
       '',
     ].join('\n'));
   });
 
   test('never emits the base URL — the gateway does not know its origin', () => {
-    const prefix = renderPowerShellPrefix({ apiKey: 'sk-raw-key', configuration: fullConfiguration });
-    expect(prefix).not.toContain('$FlowayBaseUrl');
+    const prefix = renderPowerShellPrefix({ apiKey: 'sk-raw-key', apiKeyName: 'Primary key', configuration: fullConfiguration });
+    expect(prefix).not.toContain('$SetupEndpoint');
   });
 
   test('single-quotes each string, doubling embedded quotes and preserving newlines, tabs, and Unicode', () => {
     const prefix = renderPowerShellPrefix({
       apiKey: "a'b",
+      apiKeyName: 'Primary key',
       configuration: { ...fullConfiguration, codex: { ...fullConfiguration.codex, model: 'x\ny\t€🚀' } },
     });
-    expect(prefix).toContain("$FlowayApiKey = 'a''b'");
-    expect(prefix).toContain("$FlowayCodexModel = 'x\ny\t€🚀'");
+    expect(prefix).toContain("$SetupApiKey = 'a''b'");
+    expect(prefix).toContain("$SetupCodexModel = 'x\ny\t€🚀'");
   });
 
   test('propagates a NUL-rejecting failure from the API key', () => {
-    expect(() => renderPowerShellPrefix({ apiKey: 'sk-\0-key', configuration: fullConfiguration })).toThrow();
+    expect(() => renderPowerShellPrefix({ apiKey: 'sk-\0-key', apiKeyName: 'Primary key', configuration: fullConfiguration })).toThrow();
   });
 
   test('renders $false and $null for disabled agents and null overrides', () => {
     const prefix = renderPowerShellPrefix({
       apiKey: 'sk-raw-key',
+      apiKeyName: 'Primary key',
       configuration: {
         apiKeyId: 'key-a',
         claudeCode: {
@@ -221,11 +234,11 @@ describe('renderPowerShellPrefix', () => {
         codex: { enabled: false, model: null, reasoningEffort: null },
       },
     });
-    expect(prefix).toContain('$FlowayInstallClaude = $false');
-    expect(prefix).toContain('$FlowayInstallCodex = $false');
-    expect(prefix).toContain('$FlowayClaudeModelDiscovery = $false');
-    expect(prefix).toContain('$FlowayClaudeModel = $null');
-    expect(prefix).toContain('$FlowayCodexReasoningEffort = $null');
+    expect(prefix).toContain('$SetupInstallClaude = $false');
+    expect(prefix).toContain('$SetupInstallCodex = $false');
+    expect(prefix).toContain('$SetupClaudeModelDiscovery = $false');
+    expect(prefix).toContain('$SetupClaudeModel = $null');
+    expect(prefix).toContain('$SetupCodexReasoningEffort = $null');
   });
 });
 

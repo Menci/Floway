@@ -84,9 +84,9 @@ export interface AgentSetupPublicDeps {
   repository: Pick<AgentSetupRepository, 'findByToken'>;
   // Confirm the lease owner still exists.
   userExists: (userId: number) => Promise<boolean>;
-  // Resolve the servable API key secret for the lease owner, or null when the
-  // key is gone or no longer owned by that user.
-  resolveApiKeySecret: (userId: number, apiKeyId: string) => Promise<string | null>;
+  // Resolve the servable API key label and secret for the lease owner, or null
+  // when the key is gone or no longer owned by that user.
+  resolveApiKey: (userId: number, apiKeyId: string) => Promise<{ name: string; secret: string } | null>;
 }
 
 // Every failure — unknown token, expired lease, deleted user or key, or a
@@ -95,14 +95,14 @@ export interface AgentSetupPublicDeps {
 const resolveServeableLease = async (
   deps: AgentSetupPublicDeps,
   token: string,
-): Promise<{ apiKey: string; configuration: AgentSetupConfiguration } | null> => {
+): Promise<{ apiKey: string; apiKeyName: string; configuration: AgentSetupConfiguration } | null> => {
   const record = await deps.repository.findByToken(token);
   if (!record || record.expiresAt <= Date.now()) return null;
   if (!(await deps.userExists(record.userId))) return null;
   const configuration = agentSetupConfigurationSchema.parse(JSON.parse(record.configurationJson));
-  const apiKey = await deps.resolveApiKeySecret(record.userId, configuration.apiKeyId);
+  const apiKey = await deps.resolveApiKey(record.userId, configuration.apiKeyId);
   if (apiKey === null) return null;
-  return { apiKey, configuration };
+  return { apiKey: apiKey.secret, apiKeyName: apiKey.name, configuration };
 };
 
 type ScriptLanguage = 'sh' | 'ps1';
@@ -116,7 +116,7 @@ export const createAgentSetupPublicRoutes = (deps: AgentSetupPublicDeps) => {
       // HEAD stops before rendering so it never assembles the API-key-bearing body.
       if (c.req.method === 'HEAD') return c.body(null, 200, SCRIPT_RESPONSE_HEADERS);
 
-      const input = { apiKey: resolved.apiKey, configuration: resolved.configuration };
+      const input = { apiKey: resolved.apiKey, apiKeyName: resolved.apiKeyName, configuration: resolved.configuration };
       const body = language === 'sh'
         ? renderShellPrefix(input) + SETUP_SH_BODY
         : renderPowerShellPrefix(input) + SETUP_PS1_BODY;

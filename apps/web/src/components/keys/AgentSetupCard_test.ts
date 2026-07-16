@@ -281,17 +281,17 @@ describe('AgentSetupCard', () => {
       ['macOS / Linux', 'true'],
       ['Windows', 'false'],
     ]);
-    expect(w.text()).toContain(`export FLOWAY_BASE_URL='${window.location.origin}'; curl -fsSL "$FLOWAY_BASE_URL/api/setup/tok-1/setup.sh" | bash`);
+    expect(w.text()).toContain(`export SETUP_ENDPOINT='${window.location.origin}'; curl -fsSL "$SETUP_ENDPOINT/api/setup/tok-1/setup.sh" | bash`);
     const unixCopy = w.get('button[aria-label="Copy macOS / Linux command"]');
     expect(platformTabs[0]!.element.closest('.mb-2')).toBe(unixCopy.element.closest('.mb-2'));
     expect(w.find('button[aria-label="Copy Windows command"]').exists()).toBe(false);
 
     await platformTabs[1]!.trigger('click');
-    expect(w.text()).toContain(`$FlowayBaseUrl = '${window.location.origin}'; irm "$FlowayBaseUrl/api/setup/tok-1/setup.ps1" | iex`);
+    expect(w.text()).toContain(`$SetupEndpoint = '${window.location.origin}'; irm "$SetupEndpoint/api/setup/tok-1/setup.ps1" | iex`);
     expect(w.find('button[aria-label="Copy Windows command"]').exists()).toBe(true);
     expect(w.find('code.language-powershell').exists()).toBe(true);
     const explanation = 'These commands install the selected agents and point them at this gateway.';
-    expect(w.text().lastIndexOf(explanation)).toBeGreaterThan(w.text().lastIndexOf('$FlowayBaseUrl'));
+    expect(w.text().lastIndexOf(explanation)).toBeGreaterThan(w.text().lastIndexOf('$SetupEndpoint'));
     expect(w.text()).not.toContain('ExecutionPolicy');
     expect(w.text()).not.toContain('Bypass');
   });
@@ -356,7 +356,7 @@ describe('AgentSetupCard', () => {
     const writeText = (navigator.clipboard as unknown as { writeText: ReturnType<typeof vi.fn> }).writeText;
     await w.findAll('button[aria-label^="Copy "][aria-label$=" command"]')[0]!.trigger('click');
     await nextTick();
-    expect(writeText).toHaveBeenCalledWith(`export FLOWAY_BASE_URL='${window.location.origin}'; curl -fsSL "$FLOWAY_BASE_URL/api/setup/tok-1/setup.sh" | bash`);
+    expect(writeText).toHaveBeenCalledWith(`export SETUP_ENDPOINT='${window.location.origin}'; curl -fsSL "$SETUP_ENDPOINT/api/setup/tok-1/setup.sh" | bash`);
   });
 
   it('surfaces a synchronization error from the setup composable', () => {

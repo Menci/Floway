@@ -108,7 +108,9 @@ const harness = (options: {
   const publicDeps: AgentSetupPublicDeps = {
     repository: repo,
     userExists: userId => Promise.resolve(users.has(userId)),
-    resolveApiKeySecret: (_userId, apiKeyId) => Promise.resolve(secrets[apiKeyId] ?? null),
+    resolveApiKey: (_userId, apiKeyId) => Promise.resolve(
+      secrets[apiKeyId] === undefined ? null : { name: apiKeyId === 'key_primary' ? 'Primary key' : apiKeyId, secret: secrets[apiKeyId] },
+    ),
     ...options.publicOverrides,
   };
   const controlDeps: AgentSetupControlDeps<Record<never, never>> = {
@@ -361,8 +363,8 @@ test('GET serves the shell prefix + fixed body with hardened no-store headers', 
   assertEquals(response.headers.get('x-content-type-options'), 'nosniff');
   const text = await response.text();
   const prefix = text.slice(0, text.indexOf(SETUP_SH_BODY));
-  expect(prefix).toContain("FLOWAY_API_KEY='raw-key'");
-  expect(prefix).not.toContain('FLOWAY_BASE_URL');
+  expect(prefix).toContain("SETUP_API_KEY='raw-key'");
+  expect(prefix).not.toContain('SETUP_ENDPOINT');
   expect(text).toContain(SETUP_SH_BODY);
 });
 
@@ -371,7 +373,7 @@ test('GET serves the PowerShell prefix + fixed body', async () => {
   const lease = await create(h);
   const text = await (await h.request(lease.scripts.ps1, { method: 'GET' })).text();
   const prefix = text.slice(0, text.indexOf(SETUP_PS1_BODY));
-  expect(prefix).toContain("$FlowayApiKey = 'raw-key'");
+  expect(prefix).toContain("$SetupApiKey = 'raw-key'");
   expect(text).toContain(SETUP_PS1_BODY);
 });
 
@@ -391,7 +393,7 @@ test('near-miss public URLs are consumed before host middleware can log their to
     .route('/api/setup', createAgentSetupPublicRoutes({
       repository: { findByToken: () => Promise.resolve(null) },
       userExists: () => Promise.resolve(false),
-      resolveApiKeySecret: () => Promise.resolve(null),
+      resolveApiKey: () => Promise.resolve(null),
     }))
     .use('*', async (c, next) => {
       downstream(c.req.path);
@@ -419,11 +421,11 @@ test('near-miss public URLs are consumed before host middleware can log their to
 test('GET re-reads the current configuration each request', async () => {
   const h = harness();
   const lease = await create(h);
-  expect(await (await h.request(lease.scripts.sh, { method: 'GET' })).text()).toContain("FLOWAY_INSTALL_CODEX='1'");
+  expect(await (await h.request(lease.scripts.sh, { method: 'GET' })).text()).toContain("SETUP_INSTALL_CODEX='1'");
   const edited = { ...lease.configuration, codex: { ...lease.configuration.codex, enabled: false } };
   await h.request('/api/setup', putJson({ token: lease.token, configuration: edited, expectedRevision: lease.configurationRevision }));
   const after = await (await h.request(lease.scripts.sh, { method: 'GET' })).text();
-  expect(after).toContain("FLOWAY_INSTALL_CODEX=''");
+  expect(after).toContain("SETUP_INSTALL_CODEX=''");
 });
 
 test('unknown, expired, deleted-user, and deleted-key tokens all return an identical generic 404', async () => {

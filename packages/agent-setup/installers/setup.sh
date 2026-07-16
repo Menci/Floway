@@ -1,4 +1,4 @@
-# Floway agent setup installer (Bash 3.2+). The gateway prepends the
+# Floway Agent Setup installer (Bash 3.2+). The gateway prepends the
 # language-native assignment prefix, so this fixed body has no shebang.
 #
 # Each selected agent is an independent transaction. Errexit stays disabled
@@ -14,27 +14,25 @@ set -o pipefail 2>/dev/null || true
 # inherited from the caller. jq/awk receive it only on the individual
 # invocations that need it; the official installer and Claude CLI never inherit
 # it.
-export -n FLOWAY_API_KEY 2>/dev/null || true
+export -n SETUP_API_KEY 2>/dev/null || true
 
 # --- output layer -----------------------------------------------------------
 #
-# Structure is carried by a compact box-line tree, not banners or padded
-# columns: a blank line then `┌─ <name>` opens a phase, `│  ` continues its
-# body, `│  · ` marks a step, and the closing Summary phase lists each agent as
-# `<label>  [state]`. The PowerShell installer prints the identical text and the
-# same color semantics through its native host colors.
+# Setup-owned output uses plain headings and indented status lines. Native
+# package managers inherit the terminal directly, so their ANSI colors,
+# carriage-return progress, buffering, and cursor behavior remain intact.
 #
 # Color is emitted only for an interactive terminal with NO_COLOR unset, probed
 # per stream so a redirected capture on either stdout or stderr stays free of
 # escape sequences. Informational, progress, and success lines go to stdout;
 # warnings, errors, rollback notices, and captured tool output go to stderr.
-_floway_stream_color() {
+_stream_color() {
   [ -z "${NO_COLOR:-}" ] || return 1
-  [ -n "${FLOWAY_INSTALLER_TEST_FORCE_COLOR:-}" ] && return 0
+  [ -n "${AGENT_SETUP_TEST_FORCE_COLOR:-}" ] && return 0
   [ -t "$1" ]
 }
-if _floway_stream_color 1; then _OUT_COLOR=1; else _OUT_COLOR=0; fi
-if _floway_stream_color 2; then _ERR_COLOR=1; else _ERR_COLOR=0; fi
+if _stream_color 1; then _OUT_COLOR=1; else _OUT_COLOR=0; fi
+if _stream_color 2; then _ERR_COLOR=1; else _ERR_COLOR=0; fi
 _C_CYAN=$'\033[96m'
 _C_DARK_CYAN=$'\033[36m'
 _C_GREEN=$'\033[92m'
@@ -44,8 +42,8 @@ _C_GRAY=$'\033[90m'
 _C_RESET=$'\033[0m'
 
 # Emit one line to a stream, wrapping it in an ANSI color only when that stream
-# opted into color and a non-empty color was given (default-color lines, like
-# tree detail, stay uncolored rather than carrying a bare reset). $1 stream
+# opted into color and a non-empty color was given (default-color detail lines
+# stay uncolored rather than carrying a bare reset). $1 stream
 # (1|2), $2 color, $3 text.
 _emit_line() {
   if [ "$1" -eq 1 ]; then
@@ -55,21 +53,20 @@ _emit_line() {
   fi
 }
 
-out_title() { _emit_line 1 "$_C_CYAN" 'Floway agent setup'; }
-out_phase() { printf '\n'; _emit_line 1 "$_C_CYAN" "┌─ $1"; }
-out_step() { _emit_line 1 "$_C_DARK_CYAN" "│  · $1"; }
-out_info() { _emit_line 1 '' "│  $1"; }
-out_success() { _emit_line 1 "$_C_GREEN" "│  $1"; }
-out_warn() { _emit_line 2 "$_C_YELLOW" "│  $1"; }
-out_error() { _emit_line 2 "$_C_RED" "│  $1"; }
-# A fatal line raised before any phase is open carries no spine.
+out_title() { _emit_line 1 "$_C_CYAN" 'Floway Agent Setup'; }
+out_metadata() { _emit_line 1 '' "$1: $2"; }
+out_phase() { printf '\n'; _emit_line 1 "$_C_CYAN" "$1"; }
+out_step() { _emit_line 1 "$_C_DARK_CYAN" "  · $1"; }
+out_info() { _emit_line 1 '' "  $1"; }
+out_success() { _emit_line 1 "$_C_GREEN" "  $1"; }
+out_warn() { _emit_line 2 "$_C_YELLOW" "  $1"; }
+out_error() { _emit_line 2 "$_C_RED" "  $1"; }
 out_fatal() { _emit_line 2 "$_C_RED" "$1"; }
 
-# Re-emit captured official-tool output as a de-emphasized, redacted, spined
-# block on stderr so it never masquerades as a Floway line.
+# Re-emit captured non-progress output as a de-emphasized, redacted block.
 out_captured() {
   redact_key | while IFS= read -r _oc_line; do
-    _emit_line 2 "$_C_GRAY" "│    $_oc_line"
+    _emit_line 2 "$_C_GRAY" "    $_oc_line"
   done
 }
 
@@ -79,30 +76,32 @@ out_summary_entry() {
     failed) _os_color=$_C_RED ;;
     *) _os_color=$_C_GRAY ;;
   esac
-  _emit_line 1 "$_os_color" "│  $1  [$2]"
+  _emit_line 1 "$_os_color" "  $1  [$2]"
 }
 
 out_title
 
-# The wrapping command supplies FLOWAY_BASE_URL. Validate it before mutation,
+# The wrapping command supplies SETUP_ENDPOINT. Validate it before mutation,
 # then keep it out of installer and CLI subprocess environments.
-if [ -z "${FLOWAY_BASE_URL:-}" ]; then
-  out_fatal 'FLOWAY_BASE_URL must be set to this gateway origin (e.g. https://gateway.example).'
+if [ -z "${SETUP_ENDPOINT:-}" ]; then
+  out_fatal 'SETUP_ENDPOINT must be set to this gateway origin (e.g. https://gateway.example).'
   exit 1
 fi
-case "$FLOWAY_BASE_URL" in
+case "$SETUP_ENDPOINT" in
   http://?* | https://?*) ;;
   *)
-    out_fatal "FLOWAY_BASE_URL must be an http(s) origin, got $FLOWAY_BASE_URL"
+    out_fatal "SETUP_ENDPOINT must be an http(s) origin, got $SETUP_ENDPOINT"
     exit 1
     ;;
 esac
-export -n FLOWAY_BASE_URL 2>/dev/null || true
+out_metadata 'Endpoint' "$SETUP_ENDPOINT"
+out_metadata 'API Key' "$SETUP_API_KEY_NAME"
+export -n SETUP_ENDPOINT 2>/dev/null || true
 
-FLOWAY_SETUP_TMPDIR=""
+SETUP_TMPDIR=""
 _cleanup() {
-  if [ -n "$FLOWAY_SETUP_TMPDIR" ]; then
-    rm -rf "$FLOWAY_SETUP_TMPDIR" 2>/dev/null || true
+  if [ -n "$SETUP_TMPDIR" ]; then
+    rm -rf "$SETUP_TMPDIR" 2>/dev/null || true
   fi
 }
 # EXIT owns cleanup. INT/TERM only translate the signal into the conventional
@@ -118,16 +117,16 @@ trap 'exit 143' TERM
 JQ=""
 
 # Managed-key merge applied to the existing Claude settings document. Only the
-# keys Floway owns are touched; every unrelated key and env var is preserved.
+# keys the setup owns are touched; every unrelated key and env var is preserved.
 # An empty optional value means "remove that managed key". The API key is read
-# from the environment (`env.FLOWAY_API_KEY`) so it stays out of argv.
+# from the environment (`env.SETUP_API_KEY`) so it stays out of argv.
 CLAUDE_MERGE_PROGRAM='
   if type != "object" then error("root is not a JSON object")
   elif (has("env") and ((.env | type) != "object")) then error("env is not a JSON object")
   else . end
   | (if (has("env") | not) then .env = {} else . end)
   | .env.ANTHROPIC_BASE_URL = $baseUrl
-  | .env.ANTHROPIC_AUTH_TOKEN = env.FLOWAY_API_KEY
+  | .env.ANTHROPIC_AUTH_TOKEN = env.SETUP_API_KEY
   | (if $model == "" then del(.env.ANTHROPIC_MODEL) else .env.ANTHROPIC_MODEL = $model end)
   | (if $opus == "" then del(.env.ANTHROPIC_DEFAULT_OPUS_MODEL) else .env.ANTHROPIC_DEFAULT_OPUS_MODEL = $opus end)
   | (if $sonnet == "" then del(.env.ANTHROPIC_DEFAULT_SONNET_MODEL) else .env.ANTHROPIC_DEFAULT_SONNET_MODEL = $sonnet end)
@@ -142,8 +141,8 @@ CLAUDE_MERGE_PROGRAM='
 # read from the environment (never argv) and matched with index() so arbitrary
 # key characters are treated literally rather than as a regex.
 redact_key() {
-  FLOWAY_API_KEY="$FLOWAY_API_KEY" awk '
-    BEGIN { k = ENVIRON["FLOWAY_API_KEY"]; kl = length(k) }
+  SETUP_API_KEY="$SETUP_API_KEY" awk '
+    BEGIN { k = ENVIRON["SETUP_API_KEY"]; kl = length(k) }
     {
       if (kl == 0) { print; next }
       line = $0; out = ""
@@ -173,10 +172,10 @@ _run_with_timeout() {
     return $?
   fi
 
-  _rwt_marker=$(mktemp "$FLOWAY_SETUP_TMPDIR/timeout.XXXXXX") || return 1
+  _rwt_marker=$(mktemp "$SETUP_TMPDIR/timeout.XXXXXX") || return 1
   rm -f "$_rwt_marker"
-  if [ -n "${FLOWAY_INSTALLER_TEST_TRACE_TIMEOUT:-}" ]; then
-    printf 'Floway test: timeout fallback: process-tree\n'
+  if [ -n "${AGENT_SETUP_TEST_TRACE_TIMEOUT:-}" ]; then
+    printf 'Agent Setup test: timeout fallback: process-tree\n'
   fi
   set -m
   "$@" &
@@ -241,7 +240,7 @@ _bootstrap_jq() {
     *) return 1 ;;
   esac
   _bj_url="https://github.com/jqlang/jq/releases/download/jq-1.8.2/$_bj_asset"
-  _bj_dest="$FLOWAY_SETUP_TMPDIR/$_bj_asset"
+  _bj_dest="$SETUP_TMPDIR/$_bj_asset"
   out_step 'jq not found on PATH; fetching the pinned jq-1.8.2 build'
   if ! curl -fsSL --connect-timeout 10 --max-time 120 -o "$_bj_dest" "$_bj_url"; then
     out_error "failed to download jq from $_bj_url"
@@ -275,7 +274,7 @@ _bootstrap_jq() {
 }
 
 # Resolve a usable jq: prefer PATH, else provision the pinned build. The
-# FLOWAY_INSTALLER_TEST_NO_JQ_DOWNLOAD hook lets the test harness assert the
+# AGENT_SETUP_TEST_NO_JQ_DOWNLOAD hook lets the test harness assert the
 # fail-before-mutation path without reaching the network.
 ensure_jq() {
   if [ -n "$JQ" ]; then
@@ -285,7 +284,7 @@ ensure_jq() {
     JQ=jq
     return 0
   fi
-  if [ -n "${FLOWAY_INSTALLER_TEST_NO_JQ_DOWNLOAD:-}" ]; then
+  if [ -n "${AGENT_SETUP_TEST_NO_JQ_DOWNLOAD:-}" ]; then
     return 1
   fi
   _bootstrap_jq
@@ -296,7 +295,7 @@ ensure_jq() {
 # of the real installer), then execute it without sudo.
 _download_and_run_installer() {
   _dri_url=$1
-  _dri_file=$(mktemp "$FLOWAY_SETUP_TMPDIR/install.XXXXXX") || return 1
+  _dri_file=$(mktemp "$SETUP_TMPDIR/install.XXXXXX") || return 1
   if ! curl -fsSL --connect-timeout 10 --max-time 120 -o "$_dri_file" "$_dri_url"; then
     out_error "could not download the installer from $_dri_url"
     rm -f "$_dri_file"
@@ -320,8 +319,8 @@ _download_and_run_installer() {
     rm -f "$_dri_file"
     return 1
   fi
-  _dri_timeout=${FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS:-120}
-  _run_with_timeout "$_dri_timeout" env -u FLOWAY_API_KEY bash "$_dri_file"
+  _dri_timeout=${AGENT_SETUP_TEST_TIMEOUT_SECONDS:-120}
+  _run_with_timeout "$_dri_timeout" env -u SETUP_API_KEY bash "$_dri_file" </dev/null
   _dri_rc=$?
   rm -f "$_dri_file"
   return $_dri_rc
@@ -368,7 +367,19 @@ _restore_managed_file() {
 
 # --- Claude Code ------------------------------------------------------------
 
-# Ref: https://docs.claude.com/en/docs/claude-code/troubleshoot-install
+_install_brew_cask() {
+  _ibc_cask=$1
+  if ! command -v brew >/dev/null 2>&1; then
+    out_error 'Homebrew is required to install agent CLIs on macOS.'
+    return 1
+  fi
+  _ibc_timeout=${AGENT_SETUP_TEST_TIMEOUT_SECONDS:-600}
+  _run_with_timeout "$_ibc_timeout" env -u SETUP_API_KEY brew install --cask "$_ibc_cask" </dev/null
+}
+
+# Refs:
+# https://code.claude.com/docs/en/setup
+# https://github.com/anthropics/claude-code/blob/c39cb0f14bfe8bb519bae5bfc55add6867c5e2ab/README.md#L13-L44
 claude_ensure_installed() {
   _discover_cli claude \
     "$HOME/.local/bin/claude" \
@@ -384,13 +395,28 @@ claude_ensure_installed() {
     return 0
   fi
 
-  out_step 'Claude Code CLI not found; installing the official build'
-  if [ -n "${FLOWAY_INSTALLER_TEST_INSTALL_CLAUDE_SCRIPT:-}" ]; then
-    _ic_timeout=${FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS:-120}
-    _run_with_timeout "$_ic_timeout" env -u FLOWAY_API_KEY bash "$FLOWAY_INSTALLER_TEST_INSTALL_CLAUDE_SCRIPT" || return 1
+  if [ -n "${AGENT_SETUP_TEST_INSTALL_CLAUDE_SCRIPT:-}" ]; then
+    out_step 'Claude Code CLI not found; running the test installer'
+    _ic_timeout=${AGENT_SETUP_TEST_TIMEOUT_SECONDS:-120}
+    _run_with_timeout "$_ic_timeout" env -u SETUP_API_KEY bash "$AGENT_SETUP_TEST_INSTALL_CLAUDE_SCRIPT" </dev/null || return 1
+  elif [ -n "${AGENT_SETUP_TEST_CLAUDE_URL:-}" ]; then
+    out_step 'Claude Code CLI not found; running the test installer download'
+    _download_and_run_installer "$AGENT_SETUP_TEST_CLAUDE_URL" || return 1
   else
-    # Ref: https://docs.claude.com/en/docs/claude-code/setup ("Native Install").
-    _download_and_run_installer "${FLOWAY_INSTALLER_TEST_CLAUDE_URL:-https://claude.ai/install.sh}" || return 1
+    case "$(uname -s)" in
+      Darwin)
+        out_step 'Claude Code CLI not found; installing with Homebrew'
+        _install_brew_cask claude-code || return 1
+        ;;
+      Linux)
+        out_step 'Claude Code CLI not found; installing from downloads.claude.ai'
+        _download_and_run_installer 'https://downloads.claude.ai/claude-code-releases/bootstrap.sh' || return 1
+        ;;
+      *)
+        out_error 'automatic Claude Code installation supports macOS and Linux only in the Bash installer.'
+        return 1
+        ;;
+    esac
   fi
   hash -r 2>/dev/null || true
   _discover_cli claude \
@@ -444,14 +470,14 @@ claude_write_settings() {
   fi
 
   _cw_stage="$CLAUDE_SETTINGS_PATH.floway-stage.$$"
-  if ! printf '%s' "$_cw_base" | FLOWAY_API_KEY="$FLOWAY_API_KEY" "$JQ" \
-      --arg baseUrl "$FLOWAY_BASE_URL" \
-      --arg model "$FLOWAY_CLAUDE_MODEL" \
-      --arg opus "$FLOWAY_CLAUDE_DEFAULT_OPUS_MODEL" \
-      --arg sonnet "$FLOWAY_CLAUDE_DEFAULT_SONNET_MODEL" \
-      --arg haiku "$FLOWAY_CLAUDE_DEFAULT_HAIKU_MODEL" \
-      --arg discovery "$FLOWAY_CLAUDE_MODEL_DISCOVERY" \
-      --arg effort "$FLOWAY_CLAUDE_EFFORT_LEVEL" \
+  if ! printf '%s' "$_cw_base" | SETUP_API_KEY="$SETUP_API_KEY" "$JQ" \
+      --arg baseUrl "$SETUP_ENDPOINT" \
+      --arg model "$SETUP_CLAUDE_MODEL" \
+      --arg opus "$SETUP_CLAUDE_DEFAULT_OPUS_MODEL" \
+      --arg sonnet "$SETUP_CLAUDE_DEFAULT_SONNET_MODEL" \
+      --arg haiku "$SETUP_CLAUDE_DEFAULT_HAIKU_MODEL" \
+      --arg discovery "$SETUP_CLAUDE_MODEL_DISCOVERY" \
+      --arg effort "$SETUP_CLAUDE_EFFORT_LEVEL" \
       "$CLAUDE_MERGE_PROGRAM" > "$_cw_stage"; then
     out_error 'failed to construct updated Claude settings.'
     rm -f "$_cw_stage"
@@ -459,11 +485,11 @@ claude_write_settings() {
     return 1
   fi
 
-  if ! FLOWAY_API_KEY="$FLOWAY_API_KEY" "$JQ" -e --arg baseUrl "$FLOWAY_BASE_URL" '
+  if ! SETUP_API_KEY="$SETUP_API_KEY" "$JQ" -e --arg baseUrl "$SETUP_ENDPOINT" '
       (type == "object")
       and ((.env | type) == "object")
       and (.env.ANTHROPIC_BASE_URL == $baseUrl)
-      and (.env.ANTHROPIC_AUTH_TOKEN == env.FLOWAY_API_KEY)
+      and (.env.ANTHROPIC_AUTH_TOKEN == env.SETUP_API_KEY)
     ' "$_cw_stage" >/dev/null 2>&1; then
     out_error 'staged Claude settings failed validation.'
     rm -f "$_cw_stage"
@@ -489,17 +515,17 @@ claude_write_settings() {
 # request is issued. The key is passed through a mode-0600 curl config file so
 # it never reaches the process argument list.
 claude_check_models() {
-  _cm_cfg="$FLOWAY_SETUP_TMPDIR/claude-curl.cfg"
+  _cm_cfg="$SETUP_TMPDIR/claude-curl.cfg"
   {
     printf 'silent\n'
     printf 'show-error\n'
     printf 'fail\n'
     printf 'header = "anthropic-version: 2023-06-01"\n'
-    printf 'header = "Authorization: Bearer %s"\n' "$FLOWAY_API_KEY"
-    printf 'header = "x-api-key: %s"\n' "$FLOWAY_API_KEY"
+    printf 'header = "Authorization: Bearer %s"\n' "$SETUP_API_KEY"
+    printf 'header = "x-api-key: %s"\n' "$SETUP_API_KEY"
   } > "$_cm_cfg"
   chmod 600 "$_cm_cfg" 2>/dev/null || true
-  curl -K "$_cm_cfg" --connect-timeout 10 --max-time 30 -o /dev/null "${FLOWAY_BASE_URL%/}/v1/models"
+  curl -K "$_cm_cfg" --connect-timeout 10 --max-time 30 -o /dev/null "${SETUP_ENDPOINT%/}/v1/models"
   _cm_rc=$?
   rm -f "$_cm_cfg"
   return $_cm_rc
@@ -510,18 +536,18 @@ claude_check_models() {
 # and run `claude doctor` when the subcommand exists. Doctor output is redacted
 # before it is surfaced.
 claude_verify() {
-  if ! FLOWAY_API_KEY="$FLOWAY_API_KEY" "$JQ" -e --arg baseUrl "$FLOWAY_BASE_URL" '
+  if ! SETUP_API_KEY="$SETUP_API_KEY" "$JQ" -e --arg baseUrl "$SETUP_ENDPOINT" '
       (type == "object")
       and ((.env | type) == "object")
       and (.env.ANTHROPIC_BASE_URL == $baseUrl)
-      and (.env.ANTHROPIC_AUTH_TOKEN == env.FLOWAY_API_KEY)
+      and (.env.ANTHROPIC_AUTH_TOKEN == env.SETUP_API_KEY)
     ' "$CLAUDE_SETTINGS_PATH" >/dev/null 2>&1; then
     out_error 'the written Claude settings did not reparse as expected.'
     return 1
   fi
 
-  _cv_timeout=${FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS:-30}
-  _cv_version_file="$FLOWAY_SETUP_TMPDIR/claude-version.out"
+  _cv_timeout=${AGENT_SETUP_TEST_TIMEOUT_SECONDS:-30}
+  _cv_version_file="$SETUP_TMPDIR/claude-version.out"
   if _run_with_timeout "$_cv_timeout" "$CLAUDE_BIN" --version > "$_cv_version_file" 2>&1; then
     _cv_version=$(cat "$_cv_version_file")
   else
@@ -536,14 +562,14 @@ claude_verify() {
   out_info "Claude Code version: $_cv_version"
 
   if ! claude_check_models; then
-    out_error "could not reach the authenticated model directory at ${FLOWAY_BASE_URL%/}/v1/models"
+    out_error "could not reach the authenticated model directory at ${SETUP_ENDPOINT%/}/v1/models"
     return 1
   fi
   out_success 'reached the authenticated model directory (no inference issued).'
 
-  _cv_doctor_help="$FLOWAY_SETUP_TMPDIR/claude-doctor-help.out"
+  _cv_doctor_help="$SETUP_TMPDIR/claude-doctor-help.out"
   if _run_with_timeout "$_cv_timeout" "$CLAUDE_BIN" doctor --help </dev/null > "$_cv_doctor_help" 2>&1; then
-    if _run_with_timeout "$_cv_timeout" "$CLAUDE_BIN" doctor </dev/null > "$FLOWAY_SETUP_TMPDIR/claude-doctor.out" 2>&1; then
+    if _run_with_timeout "$_cv_timeout" "$CLAUDE_BIN" doctor </dev/null > "$SETUP_TMPDIR/claude-doctor.out" 2>&1; then
       out_success 'claude doctor reported no blocking issues.'
     else
       _cv_doctor_status=$?
@@ -551,7 +577,7 @@ claude_verify() {
         out_error 'claude doctor timed out.'
       else
         out_error 'claude doctor reported a problem:'
-        out_captured < "$FLOWAY_SETUP_TMPDIR/claude-doctor.out"
+        out_captured < "$SETUP_TMPDIR/claude-doctor.out"
       fi
       return 1
     fi
@@ -611,13 +637,30 @@ codex_ensure_installed() {
     return 0
   fi
 
-  out_step 'Codex CLI not found; installing the official build'
-  if [ -n "${FLOWAY_INSTALLER_TEST_INSTALL_CODEX_SCRIPT:-}" ]; then
-    _icx_timeout=${FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS:-120}
-    _run_with_timeout "$_icx_timeout" env -u FLOWAY_API_KEY CODEX_NON_INTERACTIVE=true bash "$FLOWAY_INSTALLER_TEST_INSTALL_CODEX_SCRIPT" || return 1
+  if [ -n "${AGENT_SETUP_TEST_INSTALL_CODEX_SCRIPT:-}" ]; then
+    out_step 'Codex CLI not found; running the test installer'
+    _icx_timeout=${AGENT_SETUP_TEST_TIMEOUT_SECONDS:-120}
+    _run_with_timeout "$_icx_timeout" env -u SETUP_API_KEY CODEX_NON_INTERACTIVE=true bash "$AGENT_SETUP_TEST_INSTALL_CODEX_SCRIPT" </dev/null || return 1
+  elif [ -n "${AGENT_SETUP_TEST_CODEX_URL:-}" ]; then
+    out_step 'Codex CLI not found; running the test installer download'
+    CODEX_NON_INTERACTIVE=true _download_and_run_installer "$AGENT_SETUP_TEST_CODEX_URL" || return 1
   else
-    # Ref: https://github.com/openai/codex README ("curl -fsSL https://chatgpt.com/codex/install.sh | sh").
-    CODEX_NON_INTERACTIVE=true _download_and_run_installer "${FLOWAY_INSTALLER_TEST_CODEX_URL:-https://chatgpt.com/codex/install.sh}" || return 1
+    case "$(uname -s)" in
+      Darwin)
+        out_step 'Codex CLI not found; installing with Homebrew'
+        _install_brew_cask codex || return 1
+        ;;
+      Linux)
+        # This source is published byte-for-byte as the GitHub release installer.
+        # Ref: https://github.com/openai/codex/blob/d3fc1950a920f98e7fa9f11056667cdf911c38df/scripts/install/install.sh
+        out_step 'Codex CLI not found; installing from GitHub'
+        CODEX_NON_INTERACTIVE=true _download_and_run_installer 'https://raw.githubusercontent.com/openai/codex/refs/heads/main/scripts/install/install.sh' || return 1
+        ;;
+      *)
+        out_error 'automatic Codex installation supports macOS and Linux only in the Bash installer.'
+        return 1
+        ;;
+    esac
   fi
   hash -r 2>/dev/null || true
   _discover_cli codex \
@@ -736,8 +779,8 @@ _codex_read_response() {
 # only thing written to stdout (progress and errors go to stderr).
 codex_app_server_batch_write() {
   _cas_edits=$1
-  _cas_timeout=${FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS:-60}
-  _cas_dir=$(mktemp -d "$FLOWAY_SETUP_TMPDIR/codex-appserver.XXXXXX") || return 1
+  _cas_timeout=${AGENT_SETUP_TEST_TIMEOUT_SECONDS:-60}
+  _cas_dir=$(mktemp -d "$SETUP_TMPDIR/codex-appserver.XXXXXX") || return 1
   _cas_req="$_cas_dir/req"
   _cas_res="$_cas_dir/res"
   if ! mkfifo "$_cas_req" "$_cas_res"; then
@@ -795,15 +838,15 @@ codex_app_server_batch_write() {
 # unset. A batch status of `ok` or `okOverridden` confirms the intended base
 # config; `okOverridden` is reported with its non-secret layer metadata.
 codex_write_config() {
-  _cwc_base="${FLOWAY_BASE_URL%/}/azure-api.codex"
+  _cwc_base="${SETUP_ENDPOINT%/}/azure-api.codex"
   # Command auth opts a provider into online model refresh. The actor marker
   # enables Codex's client-owned search and image extensions for this provider.
   # https://github.com/openai/codex/blob/1bbdb32789e1f79932df44941236ea3658f6e965/codex-rs/models-manager/src/manager.rs#L413-L415
   # https://github.com/openai/codex/blob/1bbdb32789e1f79932df44941236ea3658f6e965/codex-rs/model-provider-info/src/lib.rs#L396-L408
   _cwc_edits=$("$JQ" -cn \
     --arg base "$_cwc_base" \
-    --arg model "$FLOWAY_CODEX_MODEL" \
-    --arg effort "$FLOWAY_CODEX_REASONING_EFFORT" '
+    --arg model "$SETUP_CODEX_MODEL" \
+    --arg effort "$SETUP_CODEX_REASONING_EFFORT" '
     [
       {keyPath:"model_provider",mergeStrategy:"replace",value:"floway"},
       {keyPath:"model_providers.floway.name",mergeStrategy:"replace",value:"Floway"},
@@ -851,7 +894,7 @@ codex_write_config() {
   esac
 }
 
-# Store the Floway API key as a provider-scoped command-auth token. The private
+# Store the selected API key as a provider-scoped command-auth token. The private
 # stage is validated byte-for-byte, then atomically renamed. auth.json is an
 # account-owned Codex file and is never read or changed here.
 codex_stage_token() {
@@ -860,12 +903,12 @@ codex_stage_token() {
     out_error 'could not create the Codex provider-token stage.'
     return 1
   fi
-  if ! printf '%s' "$FLOWAY_API_KEY" > "$_cst_stage"; then
+  if ! printf '%s' "$SETUP_API_KEY" > "$_cst_stage"; then
     out_error 'could not write the Codex provider-token stage.'
     rm -f "$_cst_stage"
     return 1
   fi
-  if ! cmp -s "$_cst_stage" <(printf '%s' "$FLOWAY_API_KEY"); then
+  if ! cmp -s "$_cst_stage" <(printf '%s' "$SETUP_API_KEY"); then
     out_error 'staged Codex provider token failed validation.'
     rm -f "$_cst_stage"
     return 1
@@ -886,16 +929,16 @@ codex_stage_token() {
 # returned catalog. The key is passed through a mode-0600 curl config file so it
 # never reaches the process argument list.
 codex_check_models() {
-  _ccm_base="${FLOWAY_BASE_URL%/}/azure-api.codex"
-  _ccm_cfg="$FLOWAY_SETUP_TMPDIR/codex-curl.cfg"
+  _ccm_base="${SETUP_ENDPOINT%/}/azure-api.codex"
+  _ccm_cfg="$SETUP_TMPDIR/codex-curl.cfg"
   {
     printf 'silent\n'
     printf 'show-error\n'
     printf 'fail\n'
-    printf 'header = "Authorization: Bearer %s"\n' "$FLOWAY_API_KEY"
+    printf 'header = "Authorization: Bearer %s"\n' "$SETUP_API_KEY"
   } > "$_ccm_cfg"
   chmod 600 "$_ccm_cfg" 2>/dev/null || true
-  _ccm_body="$FLOWAY_SETUP_TMPDIR/codex-models.json"
+  _ccm_body="$SETUP_TMPDIR/codex-models.json"
   curl -K "$_ccm_cfg" --connect-timeout 10 --max-time 30 -o "$_ccm_body" "$_ccm_base/models"
   _ccm_rc=$?
   rm -f "$_ccm_cfg"
@@ -903,9 +946,9 @@ codex_check_models() {
     rm -f "$_ccm_body"
     return 1
   fi
-  if [ -n "$FLOWAY_CODEX_MODEL" ]; then
-    if ! "$JQ" -e --arg m "$FLOWAY_CODEX_MODEL" 'any(.models[]?; .slug == $m)' "$_ccm_body" >/dev/null 2>&1; then
-      out_error "the selected Codex model $FLOWAY_CODEX_MODEL is not in the gateway catalog."
+  if [ -n "$SETUP_CODEX_MODEL" ]; then
+    if ! "$JQ" -e --arg m "$SETUP_CODEX_MODEL" 'any(.models[]?; .slug == $m)' "$_ccm_body" >/dev/null 2>&1; then
+      out_error "the selected Codex model $SETUP_CODEX_MODEL is not in the gateway catalog."
       rm -f "$_ccm_body"
       return 1
     fi
@@ -917,13 +960,13 @@ codex_check_models() {
 # it, print the raw CLI version, and reach the authenticated model directory
 # (confirming the selected model when one is set).
 codex_verify() {
-  if ! cmp -s "$CODEX_TOKEN_PATH" <(printf '%s' "$FLOWAY_API_KEY"); then
+  if ! cmp -s "$CODEX_TOKEN_PATH" <(printf '%s' "$SETUP_API_KEY"); then
     out_error 'the written Codex provider token did not reparse as expected.'
     return 1
   fi
 
-  _cv_timeout=${FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS:-30}
-  _cv_version_file="$FLOWAY_SETUP_TMPDIR/codex-version.out"
+  _cv_timeout=${AGENT_SETUP_TEST_TIMEOUT_SECONDS:-30}
+  _cv_version_file="$SETUP_TMPDIR/codex-version.out"
   if _run_with_timeout "$_cv_timeout" "$CODEX_BIN" --version > "$_cv_version_file" 2>&1; then
     out_info "Codex version: $(cat "$_cv_version_file")"
   else
@@ -937,7 +980,7 @@ codex_verify() {
   fi
 
   if ! codex_check_models; then
-    out_error "could not reach the authenticated Codex model directory at ${FLOWAY_BASE_URL%/}/azure-api.codex/models"
+    out_error "could not reach the authenticated Codex model directory at ${SETUP_ENDPOINT%/}/azure-api.codex/models"
     return 1
   fi
   out_success 'reached the authenticated Codex model directory (no inference issued).'
@@ -987,17 +1030,17 @@ configure_codex() {
 
 # --- run --------------------------------------------------------------------
 
-FLOWAY_SETUP_TMPDIR=$(mktemp -d "${TMPDIR:-/tmp}/floway-setup.XXXXXX") || {
+SETUP_TMPDIR=$(mktemp -d "${TMPDIR:-/tmp}/floway-setup.XXXXXX") || {
   out_fatal 'could not create a private working directory.'
   exit 1
 }
-chmod 700 "$FLOWAY_SETUP_TMPDIR" 2>/dev/null || true
+chmod 700 "$SETUP_TMPDIR" 2>/dev/null || true
 
 CLAUDE_RESULT=skipped
 CODEX_RESULT=skipped
 OVERALL=0
 
-if [ -n "$FLOWAY_INSTALL_CLAUDE" ]; then
+if [ -n "$SETUP_INSTALL_CLAUDE" ]; then
   if configure_claude; then
     CLAUDE_RESULT=configured
   else
@@ -1006,7 +1049,7 @@ if [ -n "$FLOWAY_INSTALL_CLAUDE" ]; then
   fi
 fi
 
-if [ -n "$FLOWAY_INSTALL_CODEX" ]; then
+if [ -n "$SETUP_INSTALL_CODEX" ]; then
   if configure_codex; then
     CODEX_RESULT=configured
   else

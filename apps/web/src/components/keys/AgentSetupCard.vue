@@ -183,11 +183,11 @@ const codexEffort = computed<string>({
 const origin = window.location.origin;
 const shellCommand = computed(() => (scripts.value
   && props.selectedKey !== null
-  ? `export FLOWAY_BASE_URL='${origin.replace(/'/g, "'\\''")}'; curl -fsSL "$FLOWAY_BASE_URL${scripts.value.sh}" | bash`
+  ? `export SETUP_ENDPOINT='${origin.replace(/'/g, "'\\''")}'; curl -fsSL "$SETUP_ENDPOINT${scripts.value.sh}" | bash`
   : props.selectedKey === null ? '# Select an API key above to generate the setup command.' : '# Preparing setup command…'));
 const powerShellCommand = computed(() => (scripts.value
   && props.selectedKey !== null
-  ? `$FlowayBaseUrl = '${origin.replace(/'/g, "''")}'; irm "$FlowayBaseUrl${scripts.value.ps1}" | iex`
+  ? `$SetupEndpoint = '${origin.replace(/'/g, "''")}'; irm "$SetupEndpoint${scripts.value.ps1}" | iex`
   : props.selectedKey === null ? '# Select an API key above to generate the setup command.' : '# Preparing setup command…'));
 </script>
 

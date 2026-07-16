@@ -29,9 +29,9 @@ const repository: AgentSetupRepository = {
 export const agentSetupPublicRoutes = createAgentSetupPublicRoutes({
   repository,
   userExists: async userId => (await getRepo().users.getById(userId)) !== null,
-  resolveApiKeySecret: async (userId, apiKeyId) => {
+  resolveApiKey: async (userId, apiKeyId) => {
     const key = await getRepo().apiKeys.getById(apiKeyId);
-    return key?.userId === userId ? key.key : null;
+    return key?.userId === userId ? { name: key.name, secret: key.key } : null;
   },
 });
 

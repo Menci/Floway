@@ -118,8 +118,8 @@ if (hostJqPath) symlinkSync(hostJqPath, join(NO_TIMEOUT_BIN, 'jq'));
 // an injected exit code, and `doctor --help` is the capability probe an older
 // build (FAKE_CLAUDE_HAS_DOCTOR=0) fails.
 const FAKE_CLAUDE = `#!/bin/bash
-if [ "\${FLOWAY_API_KEY+x}" = x ] || [ "\${FlowayApiKey+x}" = x ]; then
-  printf 'fake claude inherited the Floway API key environment variable\\n' >&2
+if [ "\${SETUP_API_KEY+x}" = x ] || [ "\${SetupApiKey+x}" = x ]; then
+  printf 'fake claude inherited the setup API key environment variable\\n' >&2
   exit 91
 fi
 case "$1" in
@@ -148,13 +148,12 @@ case "$1" in
 esac
 `;
 
-// The fake official installer stands in for `curl https://claude.ai/install.sh
-// | bash`: it drops a `claude` into the user-local native location and records
-// that it ran, so tests can assert the installer fires only when absent.
+// The fake installer drops a `claude` into the user-local native location and
+// records that it ran, so tests can assert the installer fires only when absent.
 const FAKE_INSTALLER = `#!/bin/bash
 set -eu
-if [ "\${FLOWAY_API_KEY+x}" = x ] || [ "\${FlowayApiKey+x}" = x ]; then
-  printf 'fake installer inherited the Floway API key environment variable\\n' >&2
+if [ "\${SETUP_API_KEY+x}" = x ] || [ "\${SetupApiKey+x}" = x ]; then
+  printf 'fake installer inherited the setup API key environment variable\\n' >&2
   exit 92
 fi
 if [ "\${FAKE_INSTALLER_SLEEP:-0}" -gt 0 ]; then
@@ -194,8 +193,8 @@ const NL = String.fromCharCode(10);
 const REC = process.env.FAKE_CODEX_RECORD || '';
 const rec = (o) => { if (REC) fs.appendFileSync(REC, JSON.stringify(o) + NL); };
 const SENTINEL = process.env.FAKE_CODEX_SENTINEL || '';
-if (process.env.FLOWAY_API_KEY !== undefined || process.env.FlowayApiKey !== undefined) {
-  process.stderr.write('fake codex inherited the Floway API key environment variable' + NL);
+if (process.env.SETUP_API_KEY !== undefined || process.env.SetupApiKey !== undefined) {
+  process.stderr.write('fake codex inherited the setup API key environment variable' + NL);
   process.exit(91);
 }
 const expectedNonInteractive = process.env.FAKE_CODEX_EXPECT_NON_INTERACTIVE;
@@ -267,14 +266,13 @@ if (cmd === '--version') {
 }
 `;
 
-// The fake Codex installer stands in for `curl https://chatgpt.com/codex/install.sh
-// | sh`: it drops the fake `codex` into the user-local native location and
-// records that it ran, mirroring the Claude installer fixture so the shared
+// The fake Codex installer drops `codex` into the user-local native location
+// and records that it ran, mirroring the Claude installer fixture so the shared
 // timeout/process-tree assertions apply to both agents.
 const FAKE_CODEX_INSTALLER = `#!/bin/bash
 set -eu
-if [ "\${FLOWAY_API_KEY+x}" = x ] || [ "\${FlowayApiKey+x}" = x ]; then
-  printf 'fake codex installer inherited the Floway API key environment variable\\n' >&2
+if [ "\${SETUP_API_KEY+x}" = x ] || [ "\${SetupApiKey+x}" = x ]; then
+  printf 'fake codex installer inherited the setup API key environment variable\\n' >&2
   exit 92
 fi
 if [ "\${CODEX_NON_INTERACTIVE:-}" != true ]; then
@@ -331,7 +329,7 @@ interface ModelServer {
 }
 
 const PS1_FAKE_INSTALLER_BODY = (binName: string, src: string): string =>
-  `if ($env:FLOWAY_API_KEY) { throw 'installer inherited secret' }
+  `if ($env:SETUP_API_KEY) { throw 'installer inherited secret' }
 if ($env:CODEX_NON_INTERACTIVE -ne 'true' -and '${binName}' -eq 'codex') { throw 'codex installer did not receive CODEX_NON_INTERACTIVE=true' }
 if ($env:FAKE_INSTALLER_OBSERVED_NON_INTERACTIVE -and '${binName}' -eq 'codex') { [IO.File]::WriteAllText($env:FAKE_INSTALLER_OBSERVED_NON_INTERACTIVE, [string]$env:CODEX_NON_INTERACTIVE) }
 if ($env:FAKE_INSTALLER_OBSERVED_COMMAND_LINE -and '${binName}' -eq 'codex') { [IO.File]::WriteAllText($env:FAKE_INSTALLER_OBSERVED_COMMAND_LINE, [Environment]::CommandLine) }
@@ -368,16 +366,16 @@ const startModelServer = async (): Promise<ModelServer> => {
     state.requests.push({ method: req.method ?? '', path: pathname, auth });
     // Unauthenticated probe bodies for the command-injection-semantics tests:
     // each echoes the base URL the wrapping command injected into the executing
-    // shell, so the harness can confirm `export FLOWAY_BASE_URL` / `$FlowayBaseUrl`
+    // shell, so the harness can confirm `export SETUP_ENDPOINT` / `$SetupEndpoint`
     // actually reached the piped `bash` / the `iex` runspace.
     if (pathname === '/probe/setup.sh') {
       res.writeHead(200, { 'content-type': 'text/x-shellscript' });
-      res.end('printf \'PROBE_BASE_URL=[%s]\\n\' "${FLOWAY_BASE_URL:-UNSET}"\n');
+      res.end('printf \'PROBE_BASE_URL=[%s]\\n\' "${SETUP_ENDPOINT:-UNSET}"\n');
       return;
     }
     if (pathname === '/probe/setup.ps1') {
       res.writeHead(200, { 'content-type': 'text/plain' });
-      res.end('Write-Output "PROBE_BASE_URL=[$(if ($null -eq $FlowayBaseUrl) { \'UNSET\' } else { $FlowayBaseUrl })]"\n');
+      res.end('Write-Output "PROBE_BASE_URL=[$(if ($null -eq $SetupEndpoint) { \'UNSET\' } else { $SetupEndpoint })]"\n');
       return;
     }
     if (pathname === '/install.sh' || pathname === '/install-codex.sh') {
@@ -508,7 +506,7 @@ interface RunOptions {
   configuration: AgentSetupConfiguration;
   baseUrl: string;
   // The wrapping one-line command injects the gateway origin into the executing
-  // shell (Bash exports FLOWAY_BASE_URL; PowerShell assigns $FlowayBaseUrl in the
+  // shell (Bash exports SETUP_ENDPOINT; PowerShell assigns $SetupEndpoint in the
   // iex runspace); the harness mirrors that. `baseUrlOverride` injects a
   // different value than the model-server URL (used for the invalid-origin
   // guard); `omitBaseUrl` injects nothing at all (the missing-origin guard).
@@ -547,9 +545,9 @@ interface RunOptions {
   codexInstallerUrl?: string;
   ambientCodexNonInteractive?: string;
   powerShellTimeSeparator?: string;
-  // Output-contract knobs. `forceColor` sets FLOWAY_INSTALLER_TEST_FORCE_COLOR so
+  // Output-contract knobs. `forceColor` sets AGENT_SETUP_TEST_FORCE_COLOR so
   // the palette is emitted even though the harness captures (never a TTY);
-  // `noColor` sets NO_COLOR; `failRestore` sets FLOWAY_INSTALLER_TEST_FAIL_RESTORE
+  // `noColor` sets NO_COLOR; `failRestore` sets AGENT_SETUP_TEST_FAIL_RESTORE
   // so the PowerShell rollback restore rename fails, exercising its recovery
   // guidance the way the Bash `mv` shim does for Bash.
   forceColor?: boolean;
@@ -579,8 +577,8 @@ const codexEnv = (options: RunOptions): Record<string, string> => {
   if (options.fakeCodexVersion) env.FAKE_CODEX_VERSION = options.fakeCodexVersion;
   if (options.fakeCodexLargeStderr) env.FAKE_CODEX_LARGE_STDERR = '1';
   if (options.codexHome) env.CODEX_HOME = options.codexHome;
-  if (options.withCodexInstallHook !== false) env.FLOWAY_INSTALLER_TEST_INSTALL_CODEX_SCRIPT = FAKE_CODEX_INSTALLER_SCRIPT;
-  if (options.codexInstallerUrl) env.FLOWAY_INSTALLER_TEST_CODEX_URL = options.codexInstallerUrl;
+  if (options.withCodexInstallHook !== false) env.AGENT_SETUP_TEST_INSTALL_CODEX_SCRIPT = FAKE_CODEX_INSTALLER_SCRIPT;
+  if (options.codexInstallerUrl) env.AGENT_SETUP_TEST_CODEX_URL = options.codexInstallerUrl;
   return env;
 };
 
@@ -588,16 +586,16 @@ const codexEnv = (options: RunOptions): Record<string, string> => {
 const injectedBaseUrlValue = (options: RunOptions): string => options.baseUrlOverride ?? options.baseUrl;
 
 // Bash's downstream `bash` is a child process, so the origin crosses the
-// boundary through the exported environment — mirror the `export FLOWAY_BASE_URL`
+// boundary through the exported environment — mirror the `export SETUP_ENDPOINT`
 // the copyable command performs. Omitted entirely for the missing-origin guard.
 const injectedBaseUrlEnv = (options: RunOptions): Record<string, string> =>
-  options.omitBaseUrl ? {} : { FLOWAY_BASE_URL: injectedBaseUrlValue(options) };
+  options.omitBaseUrl ? {} : { SETUP_ENDPOINT: injectedBaseUrlValue(options) };
 
 // PowerShell's `iex` runs in the caller's runspace, so the origin is a plain
 // in-process variable assigned ahead of the served body — mirror the
-// `$FlowayBaseUrl = '...'` the copyable command performs.
+// `$SetupEndpoint = '...'` the copyable command performs.
 const powerShellBaseUrlPrelude = (options: RunOptions): string =>
-  options.omitBaseUrl ? '' : `$FlowayBaseUrl = ${powerShellLiteral(injectedBaseUrlValue(options))}\n`;
+  options.omitBaseUrl ? '' : `$SetupEndpoint = ${powerShellLiteral(injectedBaseUrlValue(options))}\n`;
 
 // Runs asynchronously via `spawn` (not `spawnSync`): the local model directory
 // lives in this process's event loop, and a synchronous child would deadlock
@@ -605,7 +603,7 @@ const powerShellBaseUrlPrelude = (options: RunOptions): string =>
 // waiting on the child.
 const runShellInstaller = (options: RunOptions): Promise<RunResult> => {
   const { workspace, configuration } = options;
-  const script = renderShellPrefix({ apiKey: SENTINEL_KEY, configuration }) + SH_BODY;
+  const script = renderShellPrefix({ apiKey: SENTINEL_KEY, apiKeyName: 'Primary key', configuration }) + SH_BODY;
   const scriptPath = join(workspace.root, 'setup.sh');
   writeFileSync(scriptPath, script);
 
@@ -630,12 +628,12 @@ const runShellInstaller = (options: RunOptions): Promise<RunResult> => {
   };
   if (options.configDir) env.CLAUDE_CONFIG_DIR = options.configDir;
   if (options.fakeClaudeVersion) env.FAKE_CLAUDE_VERSION = options.fakeClaudeVersion;
-  if (options.withInstallHook !== false) env.FLOWAY_INSTALLER_TEST_INSTALL_CLAUDE_SCRIPT = FAKE_INSTALLER_SCRIPT;
-  if (options.installerUrl) env.FLOWAY_INSTALLER_TEST_CLAUDE_URL = options.installerUrl;
-  if (options.timeoutSeconds !== undefined) env.FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS = String(options.timeoutSeconds);
-  if (options.excludeTimeoutTools) env.FLOWAY_INSTALLER_TEST_TRACE_TIMEOUT = '1';
-  if (options.disableJqDownload) env.FLOWAY_INSTALLER_TEST_NO_JQ_DOWNLOAD = '1';
-  if (options.forceColor) env.FLOWAY_INSTALLER_TEST_FORCE_COLOR = '1';
+  if (options.withInstallHook !== false) env.AGENT_SETUP_TEST_INSTALL_CLAUDE_SCRIPT = FAKE_INSTALLER_SCRIPT;
+  if (options.installerUrl) env.AGENT_SETUP_TEST_CLAUDE_URL = options.installerUrl;
+  if (options.timeoutSeconds !== undefined) env.AGENT_SETUP_TEST_TIMEOUT_SECONDS = String(options.timeoutSeconds);
+  if (options.excludeTimeoutTools) env.AGENT_SETUP_TEST_TRACE_TIMEOUT = '1';
+  if (options.disableJqDownload) env.AGENT_SETUP_TEST_NO_JQ_DOWNLOAD = '1';
+  if (options.forceColor) env.AGENT_SETUP_TEST_FORCE_COLOR = '1';
   if (options.noColor) env.NO_COLOR = '1';
 
   if (options.fakeRestoreFailure) {
@@ -644,10 +642,10 @@ const runShellInstaller = (options: RunOptions): Promise<RunResult> => {
     // and delegates every other rename (staging included) to the real mv.
     writeFileSync(
       join(workspace.binDir, 'mv'),
-      '#!/bin/bash\nfor arg in "$@"; do case "$arg" in *.floway-backup.*) exit 1 ;; esac; done\nexec "$FLOWAY_TEST_REAL_MV" "$@"\n',
+      '#!/bin/bash\nfor arg in "$@"; do case "$arg" in *.floway-backup.*) exit 1 ;; esac; done\nexec "$SETUP_TEST_REAL_MV" "$@"\n',
       { mode: 0o755 },
     );
-    env.FLOWAY_TEST_REAL_MV = join(SHIM_BIN, 'mv');
+    env.SETUP_TEST_REAL_MV = join(SHIM_BIN, 'mv');
   }
 
   const signal = options.signalDuringInstall;
@@ -677,7 +675,7 @@ const runShellInstaller = (options: RunOptions): Promise<RunResult> => {
 
 const runShellInstallerWithAmbientKey = (options: RunOptions): Promise<RunResult> => {
   const { workspace, configuration } = options;
-  const script = renderShellPrefix({ apiKey: SENTINEL_KEY, configuration }) + SH_BODY;
+  const script = renderShellPrefix({ apiKey: SENTINEL_KEY, apiKeyName: 'Primary key', configuration }) + SH_BODY;
   const scriptPath = join(workspace.root, 'setup-ambient-key.sh');
   writeFileSync(scriptPath, script);
   const pathParts = [workspace.binDir, SHIM_BIN];
@@ -687,14 +685,14 @@ const runShellInstallerWithAmbientKey = (options: RunOptions): Promise<RunResult
     PATH: pathParts.join(':'),
     TMPDIR: workspace.root,
     ...injectedBaseUrlEnv(options),
-    FLOWAY_API_KEY: SENTINEL_KEY,
+    SETUP_API_KEY: SENTINEL_KEY,
     FAKE_CLAUDE_HAS_DOCTOR: '1',
     FAKE_CLAUDE_DOCTOR_EXIT: '0',
     FAKE_CLAUDE_DOCTOR_SLEEP: '0',
     FAKE_CLAUDE_SRC,
     FAKE_INSTALLER_MARKER: join(workspace.root, 'installer-ran'),
     FAKE_INSTALLER_CHILD_PID_FILE: join(workspace.root, 'installer-child.pid'),
-    FLOWAY_INSTALLER_TEST_INSTALL_CLAUDE_SCRIPT: FAKE_INSTALLER_SCRIPT,
+    AGENT_SETUP_TEST_INSTALL_CLAUDE_SCRIPT: FAKE_INSTALLER_SCRIPT,
   };
   return new Promise<RunResult>((resolve) => {
     const child = spawn('/bin/bash', [scriptPath], { env });
@@ -761,7 +759,7 @@ const runPowerShellInstaller = (options: RunOptions): Promise<RunResult> => {
   const culturePrelude = options.powerShellTimeSeparator === undefined
     ? ''
     : `$culture = [Globalization.CultureInfo]::GetCultureInfo('en-US').Clone()\n$culture.DateTimeFormat.TimeSeparator = '${options.powerShellTimeSeparator.replace(/'/g, "''")}'\n[Threading.Thread]::CurrentThread.CurrentCulture = $culture\n`;
-  const script = powerShellBaseUrlPrelude(options) + renderPowerShellPrefix({ apiKey: SENTINEL_KEY, configuration }) + culturePrelude + PS1_BODY;
+  const script = powerShellBaseUrlPrelude(options) + renderPowerShellPrefix({ apiKey: SENTINEL_KEY, apiKeyName: 'Primary key', configuration }) + culturePrelude + PS1_BODY;
   const scriptPath = join(workspace.root, 'setup.ps1');
   writeFileSync(scriptPath, script);
 
@@ -784,13 +782,13 @@ const runPowerShellInstaller = (options: RunOptions): Promise<RunResult> => {
   };
   if (options.configDir) env.CLAUDE_CONFIG_DIR = options.configDir;
   if (options.fakeClaudeVersion) env.FAKE_CLAUDE_VERSION = options.fakeClaudeVersion;
-  if (options.withInstallHook !== false) env.FLOWAY_INSTALLER_TEST_INSTALL_CLAUDE_SCRIPT = FAKE_INSTALLER_SCRIPT;
-  if (options.installerUrl) env.FLOWAY_INSTALLER_TEST_CLAUDE_URL = options.installerUrl;
-  if (options.timeoutSeconds !== undefined) env.FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS = String(options.timeoutSeconds);
-  if (options.ambientApiKey) env.FLOWAY_API_KEY = SENTINEL_KEY;
-  if (options.forceColor) env.FLOWAY_INSTALLER_TEST_FORCE_COLOR = '1';
+  if (options.withInstallHook !== false) env.AGENT_SETUP_TEST_INSTALL_CLAUDE_SCRIPT = FAKE_INSTALLER_SCRIPT;
+  if (options.installerUrl) env.AGENT_SETUP_TEST_CLAUDE_URL = options.installerUrl;
+  if (options.timeoutSeconds !== undefined) env.AGENT_SETUP_TEST_TIMEOUT_SECONDS = String(options.timeoutSeconds);
+  if (options.ambientApiKey) env.SETUP_API_KEY = SENTINEL_KEY;
+  if (options.forceColor) env.AGENT_SETUP_TEST_FORCE_COLOR = '1';
   if (options.noColor) env.NO_COLOR = '1';
-  if (options.failRestore) env.FLOWAY_INSTALLER_TEST_FAIL_RESTORE = '1';
+  if (options.failRestore) env.AGENT_SETUP_TEST_FAIL_RESTORE = '1';
 
   return new Promise<RunResult>((resolve) => {
     const child = spawn(hostPwsh!, ['-NoProfile', '-File', scriptPath], { env });
@@ -1002,8 +1000,8 @@ test('claude', 'an interrupt during the Claude install stops the run, skips Code
       installerSleep: 5, signalDuringInstall: signal,
     });
     t.equal(run.code, expectedCode, `${signal} must exit ${expectedCode}, not resume:\n${run.combined}`);
-    t.includes(run.combined, '┌─ Claude Code', `${signal}: the run had entered the Claude phase`);
-    t.excludes(run.combined, '┌─ Codex', `${signal}: the run must never reach the Codex phase`);
+    t.includes(run.combined, 'Claude Code', `${signal}: the run had entered the Claude phase`);
+    t.excludes(run.combined, 'Codex', `${signal}: the run must never reach the Codex phase`);
     t.ok(!existsSync(codexConfigPath(ws)), `${signal}: Codex config must not be written`);
     t.ok(!existsSync(codexTokenPath(ws)), `${signal}: Codex provider token must not be written`);
     const remnants = readdirSync(ws.root).filter(name => name.startsWith('floway-setup.'));
@@ -1112,6 +1110,7 @@ test('claude', 'PowerShell installer body parses without syntax errors', async t
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const script = renderPowerShellPrefix({
     apiKey: SENTINEL_KEY,
+    apiKeyName: 'Primary key',
     configuration: claudeConfig({ model: 'claude-opus-x', effortLevel: 'high', modelDiscovery: true }),
   }) + PS1_BODY;
   const scriptPath = join(HARNESS_ROOT, 'parse-check.ps1');
@@ -1254,9 +1253,9 @@ test('claude', 'PowerShell: verification failure rolls back to the original sett
 
 test('claude', 'PowerShell stages secret data only after protection and hardens Windows replacement targets', async t => {
   const createIndex = PS1_BODY.indexOf('[System.IO.File]::Create($stage).Dispose()');
-  const protectStageIndex = PS1_BODY.indexOf('Protect-FlowayFile $stage', createIndex);
+  const protectStageIndex = PS1_BODY.indexOf('Protect-SetupFile $stage', createIndex);
   const writeIndex = PS1_BODY.indexOf('[System.IO.File]::WriteAllText($stage, $json', protectStageIndex);
-  const protectTargetIndex = PS1_BODY.indexOf('Protect-FlowayFile $script:ClaudeSettingsPath', writeIndex);
+  const protectTargetIndex = PS1_BODY.indexOf('Protect-SetupFile $script:ClaudeSettingsPath', writeIndex);
   const replaceIndex = PS1_BODY.indexOf('[System.IO.File]::Replace($stage, $script:ClaudeSettingsPath, $null)', protectTargetIndex);
   t.ok(createIndex >= 0 && createIndex < protectStageIndex, 'stage must be created before protection');
   t.ok(protectStageIndex < writeIndex, 'stage must be protected before secret JSON is written');
@@ -1516,8 +1515,17 @@ test('claude', 'PowerShell: the API key never appears in output and no inference
 
 // --- Bash 3.2 syntax check --------------------------------------------------
 
+test('claude', 'platform installers use the direct release sources', t => {
+  t.includes(SH_BODY, 'brew install --cask', 'the Bash installer uses Homebrew on macOS');
+  t.includes(SH_BODY, 'https://downloads.claude.ai/claude-code-releases/bootstrap.sh', 'Claude Linux uses the direct release bootstrap');
+  t.includes(SH_BODY, 'https://raw.githubusercontent.com/openai/codex/refs/heads/main/scripts/install/install.sh', 'Codex Linux uses the GitHub source installer');
+  t.includes(PS1_BODY, 'https://downloads.claude.ai/claude-code-releases/bootstrap.ps1', 'Claude Windows uses the direct release bootstrap');
+  t.includes(PS1_BODY, 'https://raw.githubusercontent.com/openai/codex/refs/heads/main/scripts/install/install.ps1', 'Codex Windows uses the GitHub source installer');
+  t.includes(PS1_BODY, 'Get-Command pwsh', 'downloaded PowerShell scripts prefer pwsh when it is installed');
+});
+
 test('claude', 'Bash installer body parses under the macOS Bash 3.2 baseline', async t => {
-  const script = renderShellPrefix({ apiKey: SENTINEL_KEY, configuration: claudeConfig({ model: 'm', effortLevel: 'high', modelDiscovery: true }) }) + SH_BODY;
+  const script = renderShellPrefix({ apiKey: SENTINEL_KEY, apiKeyName: 'Primary key', configuration: claudeConfig({ model: 'm', effortLevel: 'high', modelDiscovery: true }) }) + SH_BODY;
   const scriptPath = join(HARNESS_ROOT, 'syntax-check.sh');
   writeFileSync(scriptPath, script);
   const result = spawnSync('/bin/bash', ['-n', scriptPath], { encoding: 'utf8' });
@@ -1528,7 +1536,7 @@ test('claude', 'Bash installer body parses under the macOS Bash 3.2 baseline', a
 
 // A raw shell run of an arbitrary command line, sharing the async model-server
 // event loop. Used to exercise the exact copyable command a user pastes, so the
-// `export FLOWAY_BASE_URL` / `$FlowayBaseUrl` injection and the `| bash` / `| iex`
+// `export SETUP_ENDPOINT` / `$SetupEndpoint` injection and the `| bash` / `| iex`
 // pipeline scoping are verified end to end rather than assumed.
 const runCommandLine = (exe: string, args: string[], command: string): Promise<RunResult> =>
   new Promise<RunResult>((resolve) => {
@@ -1543,7 +1551,7 @@ const runCommandLine = (exe: string, args: string[], command: string): Promise<R
 
 test('claude', 'the copyable Bash command exports the origin into the piped installer body', async t => {
   const origin = modelServer.url;
-  const command = `export FLOWAY_BASE_URL='${origin.replace(/'/g, "'\\''")}'; curl -fsSL "$FLOWAY_BASE_URL/probe/setup.sh" | bash`;
+  const command = `export SETUP_ENDPOINT='${origin.replace(/'/g, "'\\''")}'; curl -fsSL "$SETUP_ENDPOINT/probe/setup.sh" | bash`;
   const run = await runCommandLine('/bin/bash', ['-c'], command);
   t.equal(run.code, 0, `the copyable Bash command should run cleanly:\n${run.combined}`);
   t.includes(run.stdout, `PROBE_BASE_URL=[${origin}]`, 'the exported origin reached the piped bash executing the fetched body');
@@ -1552,13 +1560,13 @@ test('claude', 'the copyable Bash command exports the origin into the piped inst
 test('claude', 'the copyable PowerShell command assigns the origin into the iex runspace', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const origin = modelServer.url;
-  const command = `$FlowayBaseUrl = ${powerShellLiteral(origin)}; irm "$FlowayBaseUrl/probe/setup.ps1" | iex`;
+  const command = `$SetupEndpoint = ${powerShellLiteral(origin)}; irm "$SetupEndpoint/probe/setup.ps1" | iex`;
   const run = await runCommandLine(hostPwsh, ['-NoProfile', '-Command'], command);
   t.equal(run.code, 0, `the copyable PowerShell command should run cleanly:\n${run.combined}`);
   t.includes(run.stdout, `PROBE_BASE_URL=[${origin}]`, 'the in-process origin reached the iex-executed fetched body');
 });
 
-test('claude', 'a missing FLOWAY_BASE_URL fails before any mutation', async t => {
+test('claude', 'a missing SETUP_ENDPOINT fails before any mutation', async t => {
   const ws = makeWorkspace();
   placeFakeClaude(ws.binDir);
   const configDir = join(ws.home, '.claude');
@@ -1567,12 +1575,12 @@ test('claude', 'a missing FLOWAY_BASE_URL fails before any mutation', async t =>
   writeFileSync(settingsPathFor(ws), original);
   const run = await runShellInstaller({ workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url, omitBaseUrl: true });
   t.ok(run.code !== 0, 'a missing base URL must fail the run');
-  t.includes(run.combined, 'FLOWAY_BASE_URL', 'the failure names the required base URL');
+  t.includes(run.combined, 'SETUP_ENDPOINT', 'the failure names the required base URL');
   t.equal(readFileSync(settingsPathFor(ws), 'utf8'), original, 'settings are left untouched');
   t.equal(backupFiles(configDir).length, 0, 'no backup is created before the base-URL guard');
 });
 
-test('claude', 'a non-http(s) FLOWAY_BASE_URL fails before any mutation', async t => {
+test('claude', 'a non-http(s) SETUP_ENDPOINT fails before any mutation', async t => {
   const ws = makeWorkspace();
   placeFakeClaude(ws.binDir);
   const configDir = join(ws.home, '.claude');
@@ -1586,7 +1594,7 @@ test('claude', 'a non-http(s) FLOWAY_BASE_URL fails before any mutation', async 
   t.equal(backupFiles(configDir).length, 0, 'no backup is created before the base-URL guard');
 });
 
-test('claude', 'PowerShell: a missing $FlowayBaseUrl fails before any mutation', async t => {
+test('claude', 'PowerShell: a missing $SetupEndpoint fails before any mutation', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   placeFakeClaude(ws.binDir);
@@ -1601,7 +1609,7 @@ test('claude', 'PowerShell: a missing $FlowayBaseUrl fails before any mutation',
   t.equal(backupFiles(configDir).length, 0, 'no backup is created before the base-URL guard');
 });
 
-test('claude', 'PowerShell: a non-http(s) $FlowayBaseUrl fails before any mutation', async t => {
+test('claude', 'PowerShell: a non-http(s) $SetupEndpoint fails before any mutation', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   placeFakeClaude(ws.binDir);
@@ -1639,7 +1647,7 @@ const assertCodexBaseEdits = (t: Assert, ws: Workspace, baseUrl: string): void =
 };
 
 const assertStagedToken = (t: Assert, ws: Workspace, codexHome?: string): void => {
-  t.equal(readCodexToken(ws, codexHome), SENTINEL_KEY, 'provider token carries the Floway API key byte-for-byte');
+  t.equal(readCodexToken(ws, codexHome), SENTINEL_KEY, 'provider token carries the setup API key byte-for-byte');
 };
 
 // The real Codex 0.144.5 binary on the host, used by the end-to-end smoke test.
@@ -2165,16 +2173,16 @@ test('codex', 'PowerShell: selected model missing is distinguished from catalog 
 });
 
 test('codex', 'PowerShell: Windows provider-token replacement and rollback preserve owner-only ACL ordering', async t => {
-  const tokenFnStart = PS1_BODY.indexOf('function Write-FlowayCodexToken');
-  const tokenFnEnd = PS1_BODY.indexOf('function Read-FlowayCodexModelCatalog', tokenFnStart);
+  const tokenFnStart = PS1_BODY.indexOf('function Write-SetupCodexToken');
+  const tokenFnEnd = PS1_BODY.indexOf('function Read-SetupCodexModelCatalog', tokenFnStart);
   const tokenBody = PS1_BODY.slice(tokenFnStart, tokenFnEnd);
   const createStage = tokenBody.indexOf('[System.IO.File]::Create($stage).Dispose()');
-  const protectStage = tokenBody.indexOf('Protect-FlowayFile $stage', createStage);
-  const writeSecret = tokenBody.indexOf('[System.IO.File]::WriteAllText($stage, $FlowayApiKey', protectStage);
-  const protectTarget = tokenBody.indexOf('Protect-FlowayFile $script:CodexTokenPath', writeSecret);
+  const protectStage = tokenBody.indexOf('Protect-SetupFile $stage', createStage);
+  const writeSecret = tokenBody.indexOf('[System.IO.File]::WriteAllText($stage, $SetupApiKey', protectStage);
+  const protectTarget = tokenBody.indexOf('Protect-SetupFile $script:CodexTokenPath', writeSecret);
   const replaceTarget = tokenBody.indexOf('[System.IO.File]::Replace($stage, $script:CodexTokenPath, $null)', protectTarget);
-  t.ok(tokenFnStart >= 0, 'Write-FlowayCodexToken marker exists');
-  t.ok(tokenFnEnd >= 0, 'Read-FlowayCodexModelCatalog marker exists after token function');
+  t.ok(tokenFnStart >= 0, 'Write-SetupCodexToken marker exists');
+  t.ok(tokenFnEnd >= 0, 'Read-SetupCodexModelCatalog marker exists after token function');
   t.ok(createStage >= 0, 'Codex provider-token stage creation marker exists');
   t.ok(protectStage >= 0, 'Codex provider-token stage protection marker exists');
   t.ok(writeSecret >= 0, 'Codex provider-token secret-write marker exists');
@@ -2184,18 +2192,18 @@ test('codex', 'PowerShell: Windows provider-token replacement and rollback prese
   t.ok(protectStage < writeSecret, 'Codex provider-token stage is protected before the secret is written');
   t.ok(protectTarget < replaceTarget, 'existing Windows provider-token target is hardened before File.Replace');
 
-  const restoreHelperStart = PS1_BODY.indexOf('function Restore-FlowayManagedFile');
+  const restoreHelperStart = PS1_BODY.indexOf('function Restore-SetupManagedFile');
   const restoreHelperEnd = PS1_BODY.indexOf('# --- Claude Code', restoreHelperStart);
   const restoreHelperBody = PS1_BODY.slice(restoreHelperStart, restoreHelperEnd);
   const restoreMove = restoreHelperBody.indexOf('Move-Item -LiteralPath $Backup -Destination $Path -Force');
-  t.ok(restoreHelperStart >= 0, 'Restore-FlowayManagedFile marker exists');
+  t.ok(restoreHelperStart >= 0, 'Restore-SetupManagedFile marker exists');
   t.ok(restoreHelperEnd >= 0, 'Claude section marker exists after restore helper');
   t.ok(restoreMove >= 0, 'managed rollback move marker exists');
-  t.excludes(restoreHelperBody, 'Protect-FlowayFile $Path', 'rollback keeps the already-protected backup inode instead of adding a fallible post-move step');
+  t.excludes(restoreHelperBody, 'Protect-SetupFile $Path', 'rollback keeps the already-protected backup inode instead of adding a fallible post-move step');
 
-  const restoreStart = PS1_BODY.indexOf('function Restore-FlowayCodexFiles');
-  const restoreEnd = PS1_BODY.indexOf('function Invoke-FlowayCodexAppServerBatchWrite', restoreStart);
-  t.ok(restoreStart >= 0, 'Restore-FlowayCodexFiles marker exists');
+  const restoreStart = PS1_BODY.indexOf('function Restore-SetupCodexFiles');
+  const restoreEnd = PS1_BODY.indexOf('function Invoke-SetupCodexAppServerBatchWrite', restoreStart);
+  t.ok(restoreStart >= 0, 'Restore-SetupCodexFiles marker exists');
   t.ok(restoreEnd >= 0, 'app-server function marker exists after restore function');
 });
 
@@ -2223,7 +2231,7 @@ test('codex', 'PowerShell: a provider-token backup protection failure removes th
   writeFileSync(codexTokenPath(ws), priorToken);
   writeFileSync(codexAuthPath(ws), priorAuth);
 
-  // chmod fails, so Protect-FlowayFile throws while hardening the token backup —
+  // chmod fails, so Protect-SetupFile throws while hardening the token backup —
   // the first protected copy in the Codex flow, before any mutation.
   const run = await runPowerShellInstaller({
     workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url, fakeChmodFailure: true,
@@ -2371,9 +2379,8 @@ test('codex', 'end-to-end against the real pinned Codex 0.144.5 app-server write
 // --- output contract --------------------------------------------------------
 
 // Escape sequences are stripped and CRLF normalized; each line is right-trimmed
-// and trailing blank lines dropped, but interior blank lines (the blank line
-// that precedes every `┌─` phase) are preserved so the tree structure is
-// compared, not just the words.
+// and trailing blank lines dropped. Interior blank lines remain part of the
+// heading/status output contract.
 const ANSI_PATTERN = /\[[0-9;]*m/g;
 const stripAnsi = (text: string): string => text.replace(ANSI_PATTERN, '');
 const normalizeLines = (text: string): string =>
@@ -2403,12 +2410,13 @@ test('claude', 'Bash and PowerShell emit an identical happy-path stdout line seq
   const ps = await runPowerShellInstaller({ workspace: psWs, baseUrl: modelServer.url, configuration: bothConfig() });
   t.equal(ps.code, 0, `PowerShell happy path should succeed:\n${ps.combined}`);
 
-  t.equal(normalizeLines(ps.stdout), normalizeLines(bash.stdout), 'the two installers must print the same stdout tree');
-  // Sanity: the compared text is the real box-line tree, not an empty string.
-  t.includes(normalizeLines(bash.stdout), '\n┌─ Claude Code\n', 'the tree opens the Claude Code phase');
-  t.includes(normalizeLines(bash.stdout), '\n┌─ Summary\n', 'the tree closes with a Summary phase');
-  t.includes(normalizeLines(bash.stdout), '│  Claude Code  [configured]', 'Summary lists Claude Code with its state');
-  t.includes(normalizeLines(bash.stdout), '│  Codex  [configured]', 'Summary lists Codex with its state');
+  t.equal(normalizeLines(ps.stdout), normalizeLines(bash.stdout), 'the two installers must print the same stdout structure');
+  t.includes(normalizeLines(bash.stdout), 'Floway Agent Setup\nEndpoint:', 'the header identifies the setup and endpoint');
+  t.includes(normalizeLines(bash.stdout), '\nAPI Key: Primary key\n', 'the header identifies the selected API key');
+  t.includes(normalizeLines(bash.stdout), '\nClaude Code\n', 'the output opens the Claude Code phase');
+  t.includes(normalizeLines(bash.stdout), '\nSummary\n', 'the output closes with a Summary phase');
+  t.includes(normalizeLines(bash.stdout), '  Claude Code  [configured]', 'Summary lists Claude Code with its state');
+  t.includes(normalizeLines(bash.stdout), '  Codex  [configured]', 'Summary lists Codex with its state');
 });
 
 test('claude', 'a fully successful run keeps stderr empty and emits no escape codes when captured', async t => {
@@ -2430,13 +2438,13 @@ test('claude', 'a fully successful run keeps stderr empty and emits no escape co
   t.ok(!hasAnsi(ps.combined), 'captured PowerShell output carries no escape sequences');
 });
 
-test('claude', 'Bash paints the box-line tree only when color is enabled and honors NO_COLOR', async t => {
+test('claude', 'Bash paints setup headings only when color is enabled and honors NO_COLOR', async t => {
   const ws = makeWorkspace();
   placeFakeClaude(ws.binDir);
   const forced = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: claudeConfig(), forceColor: true });
   t.equal(forced.code, 0, `forced-color run should succeed:\n${forced.combined}`);
-  t.includes(forced.stdout, '[96m┌─ Claude Code[0m', 'the phase header is painted bright cyan on stdout');
-  t.includes(forced.stdout, '[92m│  Claude Code configured.[0m', 'a success line is painted bright green on stdout');
+  t.includes(forced.stdout, '[96mClaude Code[0m', 'the phase header is painted bright cyan on stdout');
+  t.includes(forced.stdout, '[92m  Claude Code configured.[0m', 'a success line is painted bright green on stdout');
   t.ok(!hasAnsi(forced.stderr), 'a successful run leaves stderr escape-free even under forced color');
 
   const suppressed = makeWorkspace();
@@ -2444,7 +2452,7 @@ test('claude', 'Bash paints the box-line tree only when color is enabled and hon
   const noColor = await runShellInstaller({ workspace: suppressed, baseUrl: modelServer.url, configuration: claudeConfig(), forceColor: true, noColor: true });
   t.equal(noColor.code, 0, `NO_COLOR run should succeed:\n${noColor.combined}`);
   t.ok(!hasAnsi(noColor.combined), 'NO_COLOR wins over forced color on both streams');
-  t.includes(noColor.stdout, '┌─ Claude Code', 'the plain tree is still present without color');
+  t.includes(noColor.stdout, 'Claude Code', 'the plain heading is still present without color');
 });
 
 test('claude', 'Bash routes errors and rollback notices to stderr in red and yellow under forced color', async t => {
@@ -2458,8 +2466,8 @@ test('claude', 'Bash routes errors and rollback notices to stderr in red and yel
     fakeClaudeDoctorExit: 1, forceColor: true,
   });
   t.ok(run.code !== 0, 'a failed doctor must fail the agent');
-  t.includes(run.stderr, '[91m│  claude doctor reported a problem:[0m', 'the primary error is painted red on stderr');
-  t.includes(run.stderr, '[93m│  Claude Code verification failed; rolling back settings.[0m', 'the rollback notice is painted yellow on stderr');
+  t.includes(run.stderr, '[91m  claude doctor reported a problem:[0m', 'the primary error is painted red on stderr');
+  t.includes(run.stderr, '[93m  Claude Code verification failed; rolling back settings.[0m', 'the rollback notice is painted yellow on stderr');
   t.excludes(run.stdout, 'claude doctor reported a problem', 'the error does not leak onto stdout');
   t.excludes(run.stdout, 'rolling back settings', 'the rollback notice does not leak onto stdout');
 });
@@ -2477,8 +2485,8 @@ test('claude', 'PowerShell colors stderr under forced color, keeps stdout escape
   });
   t.ok(forced.code !== 0, 'a failed doctor must fail the agent');
   t.ok(!hasAnsi(forced.stdout), 'host-colored stdout never carries escape codes even under forced color');
-  t.includes(forced.stderr, '[91m│  claude doctor reported a problem:[0m', 'stderr is painted red for the primary error');
-  t.includes(forced.stderr, '[93m│  Claude Code verification failed; rolling back settings.[0m', 'stderr is painted yellow for the rollback notice');
+  t.includes(forced.stderr, '[91m  claude doctor reported a problem:[0m', 'stderr is painted red for the primary error');
+  t.includes(forced.stderr, '[93m  Claude Code verification failed; rolling back settings.[0m', 'stderr is painted yellow for the rollback notice');
 
   const suppressed = makeWorkspace();
   placeFakeClaude(suppressed.binDir);
@@ -2490,7 +2498,7 @@ test('claude', 'PowerShell colors stderr under forced color, keeps stdout escape
   });
   t.ok(noColor.code !== 0, 'the failure still occurs');
   t.ok(!hasAnsi(noColor.combined), 'NO_COLOR wins over forced color on stderr too');
-  t.includes(noColor.stderr, '│  claude doctor reported a problem:', 'the plain error is still on stderr');
+  t.includes(noColor.stderr, '  claude doctor reported a problem:', 'the plain error is still on stderr');
 });
 
 test('claude', 'a multiple-installation warning is a stderr line on both installers', async t => {
@@ -2499,7 +2507,7 @@ test('claude', 'a multiple-installation warning is a stderr line on both install
   placeFakeClaude(join(bashWs.home, '.local/bin'));
   const bash = await runShellInstaller({ workspace: bashWs, baseUrl: modelServer.url, configuration: claudeConfig() });
   t.equal(bash.code, 0, `should succeed:\n${bash.combined}`);
-  t.includes(bash.stderr, '│  multiple Claude Code installations detected;', 'Bash writes the warning to stderr');
+  t.includes(bash.stderr, '  multiple Claude Code installations detected;', 'Bash writes the warning to stderr');
   t.excludes(bash.stdout, 'multiple Claude Code installations detected', 'the warning is not on stdout');
 
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
@@ -2509,7 +2517,7 @@ test('claude', 'a multiple-installation warning is a stderr line on both install
   placeFakeClaude(join(psWs.home, '.local/bin'));
   const ps = await runPowerShellInstaller({ workspace: psWs, baseUrl: modelServer.url, configuration: claudeConfig() });
   t.equal(ps.code, 0, `should succeed:\n${ps.combined}`);
-  t.includes(ps.stderr, '│  multiple Claude Code installations detected;', 'PowerShell writes the warning to stderr');
+  t.includes(ps.stderr, '  multiple Claude Code installations detected;', 'PowerShell writes the warning to stderr');
   t.excludes(ps.stdout, 'multiple Claude Code installations detected', 'the warning is not on stdout');
 });
 
@@ -2524,7 +2532,7 @@ test('claude', 'PowerShell surfaces one primary error and rollback status on std
   t.excludes(run.combined, 'setup failed', 'the removed double-wrapper phrasing must not return');
   const errorCount = run.stderr.split('\n').filter(line => line.includes('claude doctor reported a problem:')).length;
   t.equal(errorCount, 1, 'the primary error is printed exactly once');
-  t.includes(run.stderr, '│  Claude Code verification failed; rolling back settings.', 'the rollback status accompanies the primary error');
+  t.includes(run.stderr, '  Claude Code verification failed; rolling back settings.', 'the rollback status accompanies the primary error');
   t.excludes(run.stdout, 'claude doctor reported a problem', 'the error stays off stdout');
 });
 
@@ -2543,7 +2551,7 @@ test('claude', 'PowerShell rollback restore failure preserves the backup and pri
     fakeClaudeDoctorExit: 1, failRestore: true,
   });
   t.ok(run.code !== 0, 'the agent still fails');
-  t.includes(run.stderr, '│  could not restore', 'a rollback-failure warning is printed to stderr');
+  t.includes(run.stderr, '  could not restore', 'a rollback-failure warning is printed to stderr');
   t.includes(run.stderr, settingsPathFor(ws), 'the warning names the settings path');
   t.includes(run.stderr, 'restore it by hand', 'the warning names the manual action');
   const backups = backupFiles(configDir);
@@ -2565,7 +2573,7 @@ test('codex', 'PowerShell rollback restore failure preserves the Codex provider-
       workspace: ws, baseUrl: modelServer.url, configuration: codexConfig(), failRestore: true,
     });
     t.ok(run.code !== 0, 'an unauthorized model directory must fail verification');
-    t.includes(run.stderr, '│  could not restore', 'a rollback-failure warning is printed to stderr');
+    t.includes(run.stderr, '  could not restore', 'a rollback-failure warning is printed to stderr');
     t.includes(run.stderr, 'provider token', 'the warning names the preserved provider token');
     t.includes(run.stderr, 'restore it by hand', 'the warning names the manual action');
     const backups = codexBackupFiles(home, 'floway-token');
