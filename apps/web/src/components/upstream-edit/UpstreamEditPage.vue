@@ -131,14 +131,9 @@ const modelPrefixInvalid = ref(false);
 const upstreamModels = ref<UpstreamModelConfig[]>([]);
 const upstreamModelsError = ref<string | null>(null);
 
-// Draft preview state for the inline "Fetch" button on the Custom and Ollama
-// panels: `POST /api/upstreams/list-models` returns the in-flight config's
-// catalog so rows can be picked before saving (create) or before persisting
-// edits (edit). `fetchedRaw` carries the Custom raw rows (translated through
-// the draft's endpoints by `customAutoModelsFromDraft`); Ollama rows land in
-// `upstreamModels` alongside the mount-time result — the two call sites
-// produce the same UpstreamModelConfig shape, so a single slot keeps the
-// display path uniform across create and edit.
+// `fetchedRaw` is the Custom-only raw slot — rows get translated through the
+// draft's endpoints via `customAutoModelsFromDraft`; Ollama's Fetch result
+// lands in `upstreamModels` alongside the mount-time prime.
 const fetchedRaw = ref<CustomRawModel[]>([]);
 const fetchLoading = ref(false);
 const fetchError = ref<string | null>(null);
@@ -175,9 +170,6 @@ const customAutoModelsFromDraft = computed<UpstreamModelConfig[]>(() => fetchedR
 // already-projected `UpstreamModelConfig`.
 type ListModelsResult = { data: UpstreamModelConfig[] } | { data: CustomRawModel[] };
 
-// Route the response into the ref that matches the current kind — custom
-// keeps a raw slot so the dashboard can retranslate through the draft's
-// endpoints; every other kind lands projected rows.
 const applyListModelsResult = (data: ListModelsResult['data']): void => {
   if (draft.value.kind === 'custom') fetchedRaw.value = data as CustomRawModel[];
   else upstreamModels.value = data as UpstreamModelConfig[];
@@ -250,14 +242,9 @@ const hasCredentialForFetch = computed<boolean>(() => {
 
 // Fetch the live model catalog for the current draft. Skipped for Azure
 // (operator-edited catalog, no upstream `/models` endpoint) and when the
-// draft has no credential yet (blueprint state). For custom the server
-// returns raw rows the dashboard translates through the draft's endpoints,
-// so route them into `fetchedRaw` — the same slot the unsaved draft
-// preview uses; every other kind receives already-projected
-// UpstreamModelConfig rows and lands in `upstreamModels`. Called once on
-// mount to prime ModelsPanel; the operator-driven "Fetch" button goes
-// through listDraftModels instead so it can post the in-flight form
-// config. Surfaces the error on `upstreamModelsError` on failure.
+// draft has no credential yet (blueprint state). Called once on mount to
+// prime ModelsPanel; the operator-driven "Fetch" button goes through
+// listDraftModels instead so it can post the in-flight form config.
 const fetchUpstreamModels = async () => {
   if (draft.value.kind === 'azure') return;
   if (!hasCredentialForFetch.value) return;
