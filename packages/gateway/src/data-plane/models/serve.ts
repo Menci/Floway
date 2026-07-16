@@ -58,7 +58,11 @@ import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 // https://github.com/anthropics/anthropic-sdk-typescript/blob/main/src/resources/models.ts
 const toClaudeCodeShape = (response: PublicModelsResponse) => {
   const CREATED_AT_UNKNOWN = '1970-01-01T00:00:00Z';
-  const data = response.data.map(model => {
+  // The CLI's `/model` picker is a chat surface — embedding and image models
+  // in the response only clutter the menu. Mirrors the same chat-only narrow
+  // already done by the Codex CLI discovery handler at ../codex/models.ts
+  // and by `loadGeminiModels` at ./gemini.ts.
+  const data = response.data.filter(model => model.kind === 'chat').map(model => {
     const max = model.limits.max_context_window_tokens;
     // Prefix decision runs on the raw id (so a real `claude-*` never gets
     // double-prefixed), then [1m] is appended to the possibly-prefixed

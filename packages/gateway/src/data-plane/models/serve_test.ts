@@ -982,8 +982,27 @@ test('/v1/models serves Anthropic-shape rows without a [1m] suffix when no model
 // stays untouched because the picker renders `display_name ?? id`, so the
 // operator-configured label reaches the user unchanged. The `[1m]` suffix
 // composes on the possibly-prefixed form (`claude-code:<id>[1m]`).
+// Embedding and image models are dropped upstream of the prefix rewrite —
+// the picker is a chat surface, matching the same chat-only narrow the
+// Codex and Gemini discovery handlers already apply.
 test('/v1/models prefixes non-Anthropic ids for the Claude Code CLI picker while preserving display_name', async () => {
-  const { apiKey } = await setupAppTest();
+  const { repo, apiKey } = await setupAppTest();
+
+  // Custom upstream carrying an image model (Copilot's fixture only emits
+  // chat and embedding kinds; image classification comes from the id-tier
+  // heuristic on a non-Copilot upstream — see the '/models superset' test
+  // for the same setup).
+  await repo.upstreams.save(buildCustomUpstreamRecord({
+    id: 'up_images_proj',
+    name: 'Image Provider',
+    sortOrder: 100,
+    config: {
+      baseUrl: 'https://images-proj.example.com',
+      authStyle: 'bearer',
+      apiKey: 'sk-images-proj',
+      endpoints: {  },
+    },
+  }));
 
   await withMockedFetch(
     request => {
@@ -1021,8 +1040,16 @@ test('/v1/models prefixes non-Anthropic ids for the Claude Code CLI picker while
               maxContextWindowTokens: 1_000_000,
               maxOutputTokens: 128_000,
             },
+            {
+              id: 'text-embedding-3-large',
+              display_name: 'Text Embedding 3 Large',
+              supported_endpoints: ['/embeddings'],
+            },
           ]),
         );
+      }
+      if (url.hostname === 'images-proj.example.com' && url.pathname === '/v1/models') {
+        return jsonResponse({ object: 'list', data: [{ id: 'gpt-image-2' }] });
       }
       throw new Error(`Unhandled fetch ${request.url}`);
     },
@@ -1043,14 +1070,21 @@ test('/v1/models prefixes non-Anthropic ids for the Claude Code CLI picker while
       // Prefix composes with the [1m] suffix on 1M-capable non-Anthropic models.
       assertEquals(byDisplayName.get('GPT-5 (1M)'), 'claude-code:gpt-5-1m[1m]');
 
-      // Non-CC caller still gets the OpenAI-Anthropic superset with raw ids —
-      // the prefix is scoped to the CC-shape branch.
+      // Non-chat kinds never reach the picker — they would only clutter
+      // a chat-only surface, and the CLI can't dispatch to them anyway.
+      const ids = claudeCodeBody.data.map(m => m.id);
+      assertEquals(ids.includes('claude-code:text-embedding-3-large'), false);
+      assertEquals(ids.includes('claude-code:gpt-image-2'), false);
+      assertEquals(claudeCodeBody.data.length, 3);
+
+      // Non-CC caller still gets the OpenAI-Anthropic superset — full catalog
+      // with all kinds, raw ids, no prefix applied.
       const openAiResp = await requestApp('/v1/models', {
         headers: { 'x-api-key': apiKey.key, 'user-agent': 'openai-python/1.42.0' },
       });
       const openAiBody = (await openAiResp.json()) as { data: Array<{ id: string }> };
       const openAiIds = openAiBody.data.map(m => m.id).sort();
-      assertEquals(openAiIds, ['claude-opus-4-7', 'gpt-4o', 'gpt-5-1m']);
+      assertEquals(openAiIds, ['claude-opus-4-7', 'gpt-4o', 'gpt-5-1m', 'gpt-image-2', 'text-embedding-3-large']);
     },
   );
 });
