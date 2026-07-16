@@ -247,6 +247,7 @@ const wrapEvent = async (
   const removedCandidates = new WeakSet<GeminiCandidate>();
 
   for (const candidate of current.candidates ?? []) {
+    candidate.content.role ??= 'model';
     const state = states.get(candidate.index) ?? { anchored: false, finished: false };
     if (state.finished) throw new Error(`Gemini candidate ${candidate.index} emitted data after its finishReason`);
     states.set(candidate.index, state);

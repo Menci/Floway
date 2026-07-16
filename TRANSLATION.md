@@ -258,8 +258,8 @@ Request mapping:
 - system, user text/images, and tool results become their Chat counterparts;
 - assistant text blocks are concatenated and tool calls are collected, so
   text/tool interleaving collapses to scalar text followed by the tool list;
-- the first non-empty readable reasoning is retained, while later
-  thinking/redacted blocks can replace the scalar `reasoning_opaque` snapshot;
+- only the first complete thinking/redacted block is projected into Chat's
+  scalar reasoning pair so text and signature remain coherent;
 - limits, sampling, stop, tools, and representable tool choice map directly;
 - explicit effort maps to `reasoning_effort`; disabled thinking maps to
   `none`.
@@ -284,10 +284,9 @@ Request mapping:
 - Chat tool calls/results become Messages tool use/results;
 - limits, sampling, stop, tools, and strictness map where representable.
 
-Response mapping retains the first non-empty readable Messages reasoning and
-forwards later opaque signatures as replacement Chat snapshots. It concatenates
-text, maps sequential tool blocks to indexed Chat tool-call deltas, and
-translates stop/usage fields.
+Response mapping projects the first complete Messages reasoning block into
+Chat's scalar reasoning pair, concatenates text, maps sequential tool blocks to
+indexed Chat tool-call deltas, and translates stop/usage fields.
 
 Chat name/user/generic metadata and image detail are omitted where Messages has
 no native equivalent.

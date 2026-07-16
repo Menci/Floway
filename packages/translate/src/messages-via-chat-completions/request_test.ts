@@ -241,7 +241,7 @@ test('translateMessagesToChatCompletions preserves redacted_thinking as reasonin
   ]);
 });
 
-test('translateMessagesToChatCompletions keeps first readable reasoning and latest opaque snapshot', () => {
+test('translateMessagesToChatCompletions keeps the first complete reasoning block', () => {
   const result = translateMessagesToChatCompletions({
     model: 'gpt-test',
     max_tokens: 256,
@@ -261,11 +261,11 @@ test('translateMessagesToChatCompletions keeps first readable reasoning and late
     role: 'assistant',
     content: 'answer',
     reasoning_text: 'first',
-    reasoning_opaque: 'sig_2',
+    reasoning_opaque: 'sig_1',
   });
 });
 
-test('translateMessagesToChatCompletions combines readable thinking with the latest redacted opaque snapshot', () => {
+test('translateMessagesToChatCompletions does not combine later redacted state with readable thinking', () => {
   const result = translateMessagesToChatCompletions({
     model: 'gpt-test',
     max_tokens: 256,
@@ -284,11 +284,11 @@ test('translateMessagesToChatCompletions combines readable thinking with the lat
     role: 'assistant',
     content: null,
     reasoning_text: 'first',
-    reasoning_opaque: 'opaque_later',
+    reasoning_opaque: null,
   });
 });
 
-test('keeps the first readable thinking after an earlier redacted snapshot', () => {
+test('keeps an earlier redacted block intact instead of pairing it with later thinking', () => {
   const result = translateMessagesToChatCompletions({
     model: 'gpt-test',
     max_tokens: 256,
@@ -304,8 +304,8 @@ test('keeps the first readable thinking after an earlier redacted snapshot', () 
   assertEquals(result.messages[0], {
     role: 'assistant',
     content: null,
-    reasoning_text: 'readable',
-    reasoning_opaque: 'opaque_new',
+    reasoning_text: null,
+    reasoning_opaque: 'opaque_old',
   });
 });
 

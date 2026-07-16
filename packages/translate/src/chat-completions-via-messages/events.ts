@@ -39,8 +39,7 @@ interface MessagesToChatCompletionsStreamState {
   nextToolCallIndex: number;
   readonly toolCallIndexByBlock: Map<number, number>;
   usage: MessagesUsageSnapshot;
-  readonly reasoningBlockIndexes: Set<number>;
-  readableReasoningBlockIndex?: number;
+  reasoningBlockIndex?: number;
 }
 
 export const createMessagesToChatCompletionsStreamState = (): MessagesToChatCompletionsStreamState => ({
@@ -49,7 +48,6 @@ export const createMessagesToChatCompletionsStreamState = (): MessagesToChatComp
   created: Math.floor(Date.now() / 1000),
   nextToolCallIndex: 0,
   toolCallIndexByBlock: new Map(),
-  reasoningBlockIndexes: new Set(),
   usage: messagesUsageSnapshot(),
 });
 
@@ -100,6 +98,11 @@ const makeUsageChunk = (state: MessagesToChatCompletionsStreamState): ChatComple
   };
 };
 
+const claimReasoningBlock = (state: MessagesToChatCompletionsStreamState, index: number): boolean => {
+  state.reasoningBlockIndex ??= index;
+  return state.reasoningBlockIndex === index;
+};
+
 const unexpectedMessagesVariant = (value: never): never => {
   throw new Error(`Unexpected Messages stream variant: ${JSON.stringify(value)}`);
 };
@@ -118,11 +121,10 @@ export const translateMessagesEventToChatCompletionsChunks = (event: MessagesStr
 
     switch (block.type) {
     case 'thinking':
-      state.reasoningBlockIndexes.add(event.index);
+      claimReasoningBlock(state, event.index);
       return [];
     case 'redacted_thinking':
-      state.reasoningBlockIndexes.add(event.index);
-      return [makeChunk(state, { reasoning_opaque: block.data })];
+      return claimReasoningBlock(state, event.index) ? [makeChunk(state, { reasoning_opaque: block.data })] : [];
     case 'tool_use': {
       const toolCallIndex = state.nextToolCallIndex++;
       state.toolCallIndexByBlock.set(event.index, toolCallIndex);
@@ -152,10 +154,9 @@ export const translateMessagesEventToChatCompletionsChunks = (event: MessagesStr
     const { delta } = event;
     switch (delta.type) {
     case 'thinking_delta':
-      state.readableReasoningBlockIndex ??= event.index;
-      return state.readableReasoningBlockIndex === event.index ? [makeChunk(state, { reasoning_text: delta.thinking })] : [];
+      return state.reasoningBlockIndex === event.index ? [makeChunk(state, { reasoning_text: delta.thinking })] : [];
     case 'signature_delta':
-      return state.reasoningBlockIndexes.has(event.index) ? [makeChunk(state, { reasoning_opaque: delta.signature })] : [];
+      return state.reasoningBlockIndex === event.index ? [makeChunk(state, { reasoning_opaque: delta.signature })] : [];
     case 'text_delta':
       return [makeChunk(state, { content: delta.text })];
     case 'input_json_delta': {
@@ -194,7 +195,6 @@ export const translateMessagesEventToChatCompletionsChunks = (event: MessagesStr
 
   case 'content_block_stop':
     state.toolCallIndexByBlock.delete(event.index);
-    state.reasoningBlockIndexes.delete(event.index);
     return [];
 
   case 'message_delta': {
