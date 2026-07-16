@@ -335,7 +335,7 @@ test('client output mints and persists one lifecycle id for an id-less item', as
 });
 
 test('client output binds a later delta item_id to an id-less lifecycle', async () => {
-  const { repo, store } = memoryOutputHarness();
+  const { store } = memoryOutputHarness();
   const item = {
     type: 'message' as const,
     role: 'assistant' as const,
