@@ -2,10 +2,11 @@ import { isEqual } from 'es-toolkit';
 
 import type { ChatGatewayCtx, GatewayCtx } from '../gateway-ctx.ts';
 import type { RoutingDecision } from '../routing.ts';
+import { serverSecretBytes } from '../../../../shared/server-secret.ts';
 import type { AliasRules } from '@floway-dev/protocols/common';
 import type { ModelCandidate } from '@floway-dev/provider';
 
-export type AffinityOrigin = 'raw' | 'base64' | 'base64url';
+type AffinityOrigin = 'raw' | 'base64' | 'base64url';
 
 export interface AffinityTarget {
   upstreamId: string;
@@ -21,7 +22,7 @@ export interface AffinityEvidence {
   readonly mode: 'prefer' | 'force';
 }
 
-export interface AffinityEnvelope {
+interface AffinityEnvelope {
   version: 1;
   origin?: AffinityOrigin;
   affinity: AffinityTarget;
@@ -121,15 +122,6 @@ const encodeOriginal = (bytes: Uint8Array, origin: AffinityOrigin): string => {
   }
 };
 
-const parseServerSecretBytes = (secret: string): Uint8Array => {
-  if (!/^[0-9a-f]{64}$/.test(secret)) throw new TypeError('Server secret must be 64 lowercase hexadecimal characters');
-  const bytes = new Uint8Array(32);
-  for (let index = 0; index < bytes.length; index += 1) {
-    bytes[index] = Number.parseInt(secret.slice(index * 2, index * 2 + 2), 16);
-  }
-  return bytes;
-};
-
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
@@ -227,7 +219,7 @@ export class AffinityCodec {
   readonly #key: Promise<CryptoKey>;
 
   constructor(serverSecret: string) {
-    this.#key = deriveAffinityKey(parseServerSecretBytes(serverSecret));
+    this.#key = deriveAffinityKey(serverSecretBytes(serverSecret));
   }
 
   async wrap(value: string | undefined, affinity: AffinityTarget, domain: string): Promise<string> {
@@ -262,10 +254,12 @@ export class AffinityCodec {
     const original = framed.subarray(0, originalLength);
     const iv = encrypted.subarray(0, IV_BYTES);
     const ciphertext = encrypted.subarray(IV_BYTES);
+    const key = await this.#key;
+    const additionalData = ownedBuffer(authenticatedCarrierData(domain, original));
     try {
       const plaintext = await crypto.subtle.decrypt(
-        { name: 'AES-GCM', iv: ownedBuffer(iv), additionalData: ownedBuffer(authenticatedCarrierData(domain, original)) },
-        await this.#key,
+        { name: 'AES-GCM', iv: ownedBuffer(iv), additionalData },
+        key,
         ownedBuffer(ciphertext),
       );
       const envelope = parseEnvelope(JSON.parse(fatalTextDecoder.decode(plaintext)) as unknown);
@@ -290,13 +284,13 @@ export interface AffinityEgressOptions {
 const sameForcedTarget = (left: AffinityTarget, right: AffinityTarget): boolean =>
   left.upstreamId === right.upstreamId && left.modelId === right.modelId;
 
-export const affinityTargetForCandidate = (candidate: ModelCandidate): AffinityTarget => ({
+const affinityTargetForCandidate = (candidate: ModelCandidate): AffinityTarget => ({
   upstreamId: candidate.provider.upstream,
   modelId: candidate.model.id,
   ...(candidate.rules !== undefined ? { rules: candidate.rules } : {}),
 });
 
-export const candidateMatchesAffinity = (candidate: ModelCandidate, affinity: AffinityTarget): boolean =>
+const candidateMatchesAffinity = (candidate: ModelCandidate, affinity: AffinityTarget): boolean =>
   candidate.provider.upstream === affinity.upstreamId
   && candidate.model.id === affinity.modelId
   && isEqual(candidate.rules, affinity.rules);

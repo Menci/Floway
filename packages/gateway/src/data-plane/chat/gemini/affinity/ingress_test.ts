@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 
 import { prepareGeminiAffinity } from './ingress.ts';
-import { affinityTargetForCandidate, AffinityCodec } from '../../shared/affinity/index.ts';
+import { AffinityCodec, type AffinityTarget } from '../../shared/affinity/index.ts';
 import type { ModelCandidate } from '@floway-dev/provider';
 import { stubModelCandidate } from '@floway-dev/test-utils';
 
@@ -15,11 +15,17 @@ const candidate = (upstream: string): ModelCandidate => {
   });
 };
 
+const targetFor = (value: ModelCandidate): AffinityTarget => ({
+  upstreamId: value.provider.upstream,
+  modelId: value.model.id,
+  ...(value.rules !== undefined ? { rules: value.rules } : {}),
+});
+
 const candidateA = candidate('upstream-a');
 const candidateB = candidate('upstream-b');
 
 test('removes a synthetic signature-only part and preserves foreign signatures', async () => {
-  const synthetic = await codec.wrap(undefined, affinityTargetForCandidate(candidateA), 'gemini.part.thoughtSignature');
+  const synthetic = await codec.wrap(undefined, targetFor(candidateA), 'gemini.part.thoughtSignature');
   const prepared = await prepareGeminiAffinity({
     contents: [{
       role: 'model',
@@ -41,7 +47,7 @@ test.each([
   { text: '' },
   { thought: true },
 ])('removes metadata-only remnants after stripping an incompatible owned signature', async metadata => {
-  const owned = await codec.wrap('natural', affinityTargetForCandidate(candidateA), 'gemini.part.thoughtSignature');
+  const owned = await codec.wrap('natural', targetFor(candidateA), 'gemini.part.thoughtSignature');
   const prepared = await prepareGeminiAffinity({
     contents: [{ role: 'model', parts: [{ ...metadata, thoughtSignature: owned }] }],
   }, codec);

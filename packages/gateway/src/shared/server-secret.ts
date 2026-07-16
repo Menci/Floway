@@ -1,8 +1,13 @@
 export const parseServerSecret = (value: unknown, field = 'serverSecret'): string => {
   if (typeof value !== 'string' || !/^[0-9a-f]{64}$/.test(value)) {
-    throw new Error(`${field} must be exactly 64 lowercase hexadecimal characters`);
+    throw new TypeError(`${field} must be exactly 64 lowercase hexadecimal characters`);
   }
   return value;
+};
+
+export const serverSecretBytes = (value: unknown, field = 'serverSecret'): Uint8Array => {
+  const secret = parseServerSecret(value, field);
+  return Uint8Array.from({ length: 32 }, (_, index) => Number.parseInt(secret.slice(index * 2, index * 2 + 2), 16));
 };
 
 export const generateServerSecret = (): string =>

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
-import { affinityTargetForCandidate, candidateMatchesAffinity, routeCandidatesByAffinity } from './index.ts';
-import type { AffinityEvidence } from './index.ts';
+import { routeCandidatesByAffinity } from './index.ts';
+import type { AffinityEvidence, AffinityTarget } from './index.ts';
 import type { AliasRules } from '@floway-dev/protocols/common';
 import { stubModelCandidate } from '@floway-dev/test-utils';
 
@@ -14,19 +14,30 @@ const candidate = (upstream: string, model: string, rules?: AliasRules) => {
   return rules === undefined ? value : { ...value, rules };
 };
 
+const targetFor = (value: ReturnType<typeof candidate>): AffinityTarget => ({
+  upstreamId: value.provider.upstream,
+  modelId: value.model.id,
+  ...(value.rules !== undefined ? { rules: value.rules } : {}),
+});
+
 const evidence = (value: ReturnType<typeof candidate>, mode: AffinityEvidence['mode'] = 'prefer'): AffinityEvidence => ({
-  target: affinityTargetForCandidate(value),
+  target: targetFor(value),
   mode,
 });
 
 describe('client-carried affinity candidate routing', () => {
-  test('matches upstream, model, and the exact alias rules presence', () => {
+  test('orders preference by exact optional alias rules', () => {
     const direct = candidate('up-a', 'model-a');
     const alias = candidate('up-a', 'model-a', {});
 
-    expect(candidateMatchesAffinity(direct, affinityTargetForCandidate(direct))).toBe(true);
-    expect(candidateMatchesAffinity(alias, affinityTargetForCandidate(direct))).toBe(false);
-    expect(candidateMatchesAffinity(candidate('up-a', 'model-b'), affinityTargetForCandidate(direct))).toBe(false);
+    expect(routeCandidatesByAffinity([alias, direct], [evidence(direct)])).toEqual({
+      kind: 'success',
+      candidates: [direct, alias],
+    });
+    expect(routeCandidatesByAffinity([direct, alias], [evidence(alias)])).toEqual({
+      kind: 'success',
+      candidates: [alias, direct],
+    });
   });
 
   test('moves the latest available preferred target to the front', () => {

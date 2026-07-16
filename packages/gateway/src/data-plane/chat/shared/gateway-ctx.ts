@@ -124,11 +124,9 @@ export const finalizeGatewayResponse = (ctx: GatewayCtx, response: Response): Re
 };
 
 // Chat-protocol counterpart of `createGatewayCtxFromHono`. The factory
-// receives the authoritative API-key id. Messages, Gemini, and Chat
-// Completions use an isolated request-local store only when translation enters
-// the Responses attempt; native Responses HTTP passes
-// `apiKeyId => createResponsesHttpStore(apiKeyId, payload.store)`; responses
-// WS passes `apiKeyId => session.createStore(apiKeyId, payload.store)`.
+// receives the authoritative API-key id. Non-Responses sources leave the store
+// absent even when translation enters a Responses attempt. Native Responses
+// HTTP and WebSocket entries supply their transport-specific store factories.
 export const createChatGatewayCtxFromHono = (
   c: AuthedContext,
   opts: CreateGatewayCtxOptions,

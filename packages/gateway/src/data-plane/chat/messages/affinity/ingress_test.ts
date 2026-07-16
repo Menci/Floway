@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 
 import { prepareMessagesAffinity } from './ingress.ts';
-import { affinityTargetForCandidate, AffinityCodec } from '../../shared/affinity/index.ts';
+import { AffinityCodec, type AffinityTarget } from '../../shared/affinity/index.ts';
 import type { ModelCandidate } from '@floway-dev/provider';
 import { stubModelCandidate } from '@floway-dev/test-utils';
 
@@ -15,11 +15,17 @@ const candidate = (upstream: string): ModelCandidate => {
   });
 };
 
+const targetFor = (value: ModelCandidate): AffinityTarget => ({
+  upstreamId: value.provider.upstream,
+  modelId: value.model.id,
+  ...(value.rules !== undefined ? { rules: value.rules } : {}),
+});
+
 test('removes synthetic blocks and strips incompatible signatures without hiding thinking', async () => {
   const candidateA = candidate('upstream-a');
   const candidateB = candidate('upstream-b');
-  const signature = await codec.wrap('signature', affinityTargetForCandidate(candidateA), 'messages.thinking.signature');
-  const synthetic = await codec.wrap(undefined, affinityTargetForCandidate(candidateA), 'messages.redacted_thinking.data');
+  const signature = await codec.wrap('signature', targetFor(candidateA), 'messages.thinking.signature');
+  const synthetic = await codec.wrap(undefined, targetFor(candidateA), 'messages.redacted_thinking.data');
   const prepared = await prepareMessagesAffinity({
     model: 'model',
     max_tokens: 100,
