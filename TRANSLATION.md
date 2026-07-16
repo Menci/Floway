@@ -76,6 +76,7 @@ object with AES-256-GCM:
     rules?: AliasRules,
     upstreamItemId?: string,
     syntheticItem?: true,
+    boundItem?: { type: string, upstreamItemId: string },
   },
 }
 ```
@@ -156,27 +157,35 @@ element boundary or finish synthesizes an originless signature only when no
 natural value arrived. This avoids duplicate signatures and metadata-only
 Parts rejected or discarded by several Gemini clients. A
 successful candidate with no content-bearing Part still requires a
-signature-only best-effort fallback. Candidate state is independent by index.
+signature-only best-effort fallback. Candidate absence in the next event is a
+boundary and produces an anchor before interleaved candidates proceed.
+
+The one-event bound is an explicit experience/compatibility tradeoff. It adds
+one upstream-event of latency and cannot update first-chunk-wins function-call
+clients when a natural signature arrives after multiple continuations. Moving
+an immediate signature-only trailer onto text favors direct Google GenAI Chat;
+Google ADK text aggregation may instead discard attached signature metadata.
 
 #### Responses
 
-Responses opaque slots include top-level `encrypted_content` on reasoning,
-compaction, context-compaction, and other output items, plus
-`agent_message.content[].encrypted_content`. Existing slots are wrapped with a
-cached value across repeated snapshots. If the first item can carry a blob but
-has none, egress adds an originless value at `output_item.done` and reuses it in
-the terminal response. Otherwise it emits a synthetic reasoning prefix through
-`output_item.added` / `output_item.done`, shifts every original `output_index`
-by one and `sequence_number` by two, and prepends the same item to later
-response snapshots. The storage membrane runs afterward and therefore assigns
-and persists client IDs for the exact prefixed output.
+Responses opaque slots include top-level `encrypted_content`, program
+`fingerprint`, and `agent_message.content[].encrypted_content`. Existing slots
+are wrapped with a cached value across repeated snapshots. If the first item
+can carry a blob but has none, egress adds an originless value at
+`output_item.done` and reuses it in the terminal response. Otherwise it emits a
+synthetic reasoning item before it. Non-carrier program/program-output items
+also receive an adjacent encrypted binding for their original upstream ID.
+Every insertion advances later `output_index` values by one and
+`sequence_number` values by two; terminal response output interleaves the same
+synthetic items. The storage membrane runs afterward and therefore persists
+the exact client-visible graph.
 
-Ingress derives strength from the reconstructed input. Compaction and
-context-compaction carriers are force evidence. Program/program-output state
-forces the nearest preceding owned target; ordinary reasoning and agent-message
-carriers prefer. `response.failed` and `error` do not synthesize a missing
-carrier, though a prefix already emitted before a later failure cannot be
-retracted.
+Ingress derives strength from the reconstructed input. Compaction,
+compaction-summary, context-compaction, program, and program-output state adds
+force evidence by upstream and model only; every natural carrier also remains
+an exact-rules preference. Adjacent bindings restore non-carrier force-item
+IDs. `response.failed` and `error` do not synthesize a missing carrier, though
+an item emitted before a later failure cannot be retracted.
 
 ## Responses state membrane
 

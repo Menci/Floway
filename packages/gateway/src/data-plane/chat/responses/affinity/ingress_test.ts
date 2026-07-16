@@ -133,7 +133,9 @@ test('treats compaction_summary as force state and restores its upstream ID', as
   );
   const item = { type: 'compaction_summary', id: 'cmp_public', encrypted_content: carrier } as unknown as CanonicalResponsesPayload['input'][number];
   const prepared = await prepareResponsesAffinity({ model: 'model', input: [item] }, codec);
+  const aliasVariant = { ...candidateA, rules: {} };
 
   expect(prepared.routingEvidence.map(evidence => evidence.mode)).toEqual(['prefer', 'force']);
   expect(prepared.payloadForCandidate(candidateA).input[0]).toMatchObject({ id: 'cmp_upstream', encrypted_content: 'opaque' });
+  expect(prepared.payloadForCandidate(aliasVariant).input[0]).toMatchObject({ id: 'cmp_upstream', encrypted_content: 'opaque' });
 });
