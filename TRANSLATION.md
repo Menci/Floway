@@ -267,9 +267,10 @@ Request mapping:
 
 Response mapping concatenates text and tool argument fragments, maps tools,
 stop reasons, and usage, and preserves each reasoning segment in source order.
-A signature already available when readable output starts closes its thinking
-block; a signature that arrives after that boundary becomes a later standalone
-redacted block. Assistant images remain lossy.
+When visible content, tool output, or finish closes a thinking block, an
+already-available signature is emitted inside that block. A signature that
+arrives after the boundary becomes a later standalone redacted block. Assistant
+images remain lossy.
 
 ## Chat Completions → Messages
 

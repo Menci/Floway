@@ -252,17 +252,17 @@ const emitToolCallsDelta = (toolCalls: ChatCompletionsStreamToolCalls, state: Ch
   }
 };
 
-const emitPendingReasoning = (state: ChatCompletionsToMessagesStreamState, events: MessagesStreamEvent[]): void => {
+const flushPendingReasoningAndClose = (state: ChatCompletionsToMessagesStreamState, events: MessagesStreamEvent[]): void => {
   if (state.openBlock === 'thinking' && state.pendingReasoningOpaque !== undefined) {
     emitContentBlockDelta(state, events, {
       type: 'signature_delta',
       signature: state.pendingReasoningOpaque,
     });
     state.pendingReasoningOpaque = undefined;
-    closeCurrentBlock(state, events);
-    return;
+  } else {
+    emitPendingOpaqueReasoningBlock(state, events);
   }
-  emitPendingOpaqueReasoningBlock(state, events);
+  closeCurrentBlock(state, events);
 };
 
 const handleFinishReason = (
@@ -271,9 +271,7 @@ const handleFinishReason = (
   state: ChatCompletionsToMessagesStreamState,
   events: MessagesStreamEvent[],
 ): void => {
-  emitPendingReasoning(state, events);
-
-  closeCurrentBlock(state, events);
+  flushPendingReasoningAndClose(state, events);
   flushDeferredContent(state, events);
 
   state.pendingFinishReason = finishReason;
@@ -353,8 +351,7 @@ export const translateChatCompletionsChunkToMessagesEvents = (chunk: ChatComplet
   const toolCalls = choice.delta.tool_calls;
   const hasToolCallDelta = Boolean(toolCalls?.length);
   if (state.openBlock === 'thinking' && (content || hasToolCallDelta)) {
-    emitPendingReasoning(state, events);
-    closeCurrentBlock(state, events);
+    flushPendingReasoningAndClose(state, events);
   }
 
   if (content) {
@@ -377,8 +374,7 @@ export const translateChatCompletionsChunkToMessagesEvents = (chunk: ChatComplet
 // opaque-only reasoning can be emitted in valid block/message order.
 export const flushChatCompletionsToMessagesEvents = (state: ChatCompletionsToMessagesStreamState): MessagesStreamEvent[] => {
   const events: MessagesStreamEvent[] = [];
-  emitPendingReasoning(state, events);
-  closeCurrentBlock(state, events);
+  flushPendingReasoningAndClose(state, events);
   flushDeferredContent(state, events);
   emitFinalMessageIfReady(state, events);
   return events;
