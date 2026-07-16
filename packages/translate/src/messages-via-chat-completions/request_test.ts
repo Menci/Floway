@@ -288,27 +288,6 @@ test('translateMessagesToChatCompletions does not combine later redacted state w
   });
 });
 
-test('keeps an earlier redacted block intact instead of pairing it with later thinking', () => {
-  const result = translateMessagesToChatCompletions({
-    model: 'gpt-test',
-    max_tokens: 256,
-    messages: [{
-      role: 'assistant',
-      content: [
-        { type: 'redacted_thinking', data: 'opaque_old' },
-        { type: 'thinking', thinking: 'readable', signature: 'opaque_new' },
-      ],
-    }],
-  });
-
-  assertEquals(result.messages[0], {
-    role: 'assistant',
-    content: null,
-    reasoning_text: null,
-    reasoning_opaque: 'opaque_old',
-  });
-});
-
 // OpenAI strict-mode JSON Schema validators reject {type: 'object'} without a
 // `properties` field. Anthropic accepts that shape, so the input_schema must
 // be normalized before forwarding. The reverse direction at

@@ -79,11 +79,10 @@ type PendingAssistantMessage = {
 };
 
 const recordPendingScalarReasoning = (pending: PendingAssistantMessage, block: MessagesAssistantContentBlock): void => {
-  const next = chatCompletionsScalarReasoningFromMessagesBlock(block);
-  if (next === null) return;
-  if (pending.scalarReasoning === null) {
-    pending.scalarReasoning = next;
-  }
+  // Chat scalar reasoning cannot represent ordered interleaved Messages
+  // thinking blocks. Project only the first source-order group so readable text
+  // is never paired with an opaque signature from a later block.
+  pending.scalarReasoning ??= chatCompletionsScalarReasoningFromMessagesBlock(block);
 };
 
 const flushPendingAssistantMessage = (messages: ChatCompletionsMessage[], pending: PendingAssistantMessage): void => {
