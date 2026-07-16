@@ -617,7 +617,7 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
     if (missingIndex !== -1) {
       return Promise.reject(new Error(`Responses item disappeared before lifetime refresh: ${items[missingIndex].id}`));
     }
-    for (const item of existing) item!.createdAt = createdAt;
+    for (const item of existing) item!.createdAt = Math.max(item!.createdAt, createdAt);
     return Promise.resolve();
   }
 
@@ -647,7 +647,11 @@ class MemoryResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
   }
 
   insert(snapshot: StoredResponsesSnapshot): Promise<void> {
-    this.store.set(scopedResponsesKey(snapshot.apiKeyId, snapshot.id), cloneStoredResponsesSnapshot(snapshot));
+    const key = scopedResponsesKey(snapshot.apiKeyId, snapshot.id);
+    const existing = this.store.get(key);
+    if (existing === undefined || snapshot.createdAt >= existing.createdAt) {
+      this.store.set(key, cloneStoredResponsesSnapshot(snapshot));
+    }
     return Promise.resolve();
   }
 
