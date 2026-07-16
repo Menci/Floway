@@ -34,7 +34,7 @@ test('the reserved private payload field round-trips through both inline and fil
     private: { results: 'preserved' },
   });
   const parsed = await parseStoredResponsesPayload('msg_spilled', spilled);
-  assertEquals(parsed?.private, { results: 'preserved' });
+  assertEquals(parsed.private, { results: 'preserved' });
 });
 
 test('identical spilled payload writes get distinct owned keys that retain the content hash', async () => {
@@ -66,7 +66,6 @@ test('inline payload round-trips through gzip+base64 and the descriptor advertis
   const serialized = await serializeStoredResponsesPayload('msg_round', 'key-test', 0, {
     item: { type: 'message', id: 'msg_round', content: 'hello world' },
   });
-  assert(serialized !== null);
   const descriptor = JSON.parse(serialized) as Record<string, unknown>;
   assertEquals(descriptor.version, 1);
   assertEquals(descriptor.storage, 'inline');
@@ -114,7 +113,6 @@ test('spilled payload file body is gzip-compressed and the descriptor records th
   const serialized = await serializeStoredResponsesPayload('msg_file_gz', 'key_a', 0, {
     item: { type: 'message', id: 'msg_file_gz', content: original },
   });
-  assert(serialized !== null);
   const descriptor = JSON.parse(serialized) as Record<string, unknown>;
   assertEquals(descriptor.storage, 'file');
   assertEquals(descriptor.encoding, 'gzip');
@@ -138,7 +136,6 @@ test('a tampered file body fails its hash check', async () => {
   const serialized = await serializeStoredResponsesPayload('msg_tampered', 'key_a', 0, {
     item: { type: 'message', id: 'msg_tampered', content: incompressibleString(96 * 1024) },
   });
-  assert(serialized !== null);
   const descriptor = JSON.parse(serialized) as { key: string; byteLength: number };
   // Replace the body with a different incompressible blob of the same length;
   // sha256 changes but byteLength matches, so the hash check is the only line

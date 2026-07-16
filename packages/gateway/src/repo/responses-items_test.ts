@@ -126,17 +126,7 @@ describe.each(factories)('%s Responses state repo', (_name, createRepo) => {
     const files = new MemoryFileProvider();
     initFileProvider(files);
     const repo = await createRepo();
-    const bytes = new Uint8Array(128 * 1024);
-    crypto.getRandomValues(bytes.subarray(0, 64 * 1024));
-    crypto.getRandomValues(bytes.subarray(64 * 1024));
-    let binary = '';
-    for (let offset = 0; offset < bytes.length; offset += 0x8000) {
-      binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
-    }
-    const item = {
-      ...storedItem('msg_large', 'key-a', 'large', 1_000),
-      payload: { item: { type: 'message', id: 'msg_large', role: 'assistant', content: btoa(binary) } },
-    };
+    const item = spilledItem('msg_large', 'key-a', 1_000);
     await repo.responsesItems.insertMany([item]);
     const before = await files.listKeys('responses-items/');
     const put = vi.spyOn(files, 'put');
@@ -178,15 +168,7 @@ test('SQL refresh cleans a replacement spill when the row disappears before upda
     },
   };
   const repo = new SqlRepo(db);
-  const bytes = new Uint8Array(128 * 1024);
-  crypto.getRandomValues(bytes.subarray(0, 64 * 1024));
-  crypto.getRandomValues(bytes.subarray(64 * 1024));
-  let content = '';
-  for (const byte of bytes) content += byte.toString(16).padStart(2, '0');
-  const item: StoredResponsesItem = {
-    ...storedItem('msg_race', 'key-a', 'race', 1_000),
-    payload: { item: { type: 'message', id: 'msg_race', role: 'assistant', content } },
-  };
+  const item = spilledItem('msg_race', 'key-a', 1_000);
   await repo.responsesItems.insertMany([item]);
   const originalFiles = await files.listKeys('responses-items/');
   expect(originalFiles).toHaveLength(1);
@@ -380,15 +362,7 @@ test('SQL duplicate insert does not write an unreferenced replacement spill', as
   const files = new MemoryFileProvider();
   initFileProvider(files);
   const repo = new SqlRepo(await createSqliteTestDb());
-  const bytes = new Uint8Array(128 * 1024);
-  crypto.getRandomValues(bytes.subarray(0, 64 * 1024));
-  crypto.getRandomValues(bytes.subarray(64 * 1024));
-  let content = '';
-  for (const byte of bytes) content += byte.toString(16).padStart(2, '0');
-  const original: StoredResponsesItem = {
-    ...storedItem('msg_duplicate', 'key-a', 'duplicate', 1_000),
-    payload: { item: { type: 'message', id: 'msg_duplicate', role: 'assistant', content } },
-  };
+  const original = spilledItem('msg_duplicate', 'key-a', 1_000);
   await repo.responsesItems.insertMany([original]);
   const originalFiles = await files.listKeys('responses-items/');
   expect(originalFiles).toHaveLength(1);

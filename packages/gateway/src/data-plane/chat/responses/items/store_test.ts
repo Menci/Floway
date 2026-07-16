@@ -70,7 +70,8 @@ describe('StatefulResponsesStore', () => {
 
     const snapshot = await repo.responsesSnapshots.lookup('key-a', 'resp_summary');
     expect(snapshot).not.toBeNull();
-    const rows = await repo.responsesItems.lookupMany('key-a', snapshot?.itemIds ?? []);
+    if (snapshot === null) throw new Error('Expected Responses snapshot');
+    const rows = await repo.responsesItems.lookupMany('key-a', snapshot.itemIds);
     expect(rows[0].itemType).toBe('compaction');
   });
 
@@ -167,7 +168,6 @@ describe('StatefulResponsesStore', () => {
   });
 
   test('attempt-private payload is request scoped', () => {
-    initRepo(new InMemoryRepo());
     const state = new ResponsesAttemptState();
     state.begin(new Map([['item', { first: true }]]), new Map([['item', 'item_upstream']]));
     state.setPrivatePayload('second', { value: 2 });
