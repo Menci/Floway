@@ -1,4 +1,5 @@
-import type { SSEStreamingApi } from '../../../../streaming/sse.ts';
+import type { SSEStreamingApi } from 'hono/streaming';
+
 import type { SseFrame, SseWritableFrame } from '@floway-dev/protocols/common';
 
 export const DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS = 15_000;

@@ -29,6 +29,25 @@ const projectList = [
   './packages/ui/tsconfig.json',
 ];
 
+// Shared across every `no-restricted-imports` block so re-listing them (a
+// flat-config requirement — rule option arrays are replaced, not deep-merged
+// — see the apps/web override below) stays a spread, not a hand-sync copy.
+const commonRestrictedImportPatterns = [
+  {
+    group: ['@floway-dev/*/src/**'],
+    message: 'Cross-package deep imports are forbidden. Use the package\'s public exports map.',
+  },
+  {
+    group: [
+      '@floway-dev/platform-cloudflare',
+      '@floway-dev/platform-cloudflare/*',
+      '@floway-dev/platform-node',
+      '@floway-dev/platform-node/*',
+    ],
+    message: 'Platform implementations are deployment-target apps, not libraries. They are reachable only from their own entry.ts via relative imports.',
+  },
+];
+
 const commonConfig: Linter.Config = {
   plugins: {
     import: importPlugin,
@@ -51,25 +70,7 @@ const commonConfig: Linter.Config = {
     'import/no-duplicates': 'error',
 
     'no-restricted-imports': ['error', {
-      patterns: [
-        {
-          group: ['@floway-dev/*/src/**'],
-          message: 'Cross-package deep imports are forbidden. Use the package\'s public exports map.',
-        },
-        {
-          group: [
-            '@floway-dev/platform-cloudflare',
-            '@floway-dev/platform-cloudflare/*',
-            '@floway-dev/platform-node',
-            '@floway-dev/platform-node/*',
-          ],
-          message: 'Platform implementations are deployment-target apps, not libraries. They are reachable only from their own entry.ts via relative imports.',
-        },
-        {
-          group: ['hono/streaming'],
-          message: 'Import streamSSE from packages/gateway/src/streaming/sse.ts instead — the wrapper adds X-Accel-Buffering: no so SSE flows through nginx reverse proxies without buffering.',
-        },
-      ],
+      patterns: commonRestrictedImportPatterns,
     }],
 
     // Belt-and-suspenders for the package-name ban above: relative imports
@@ -222,27 +223,15 @@ const config: Linter.Config[] = [
   {
     // Redefining a single rule replaces its whole option value (the
     // option array is not deep-merged with the earlier declaration), so
-    // the platform-impl patterns from commonConfig's `no-restricted-imports`
-    // must be re-listed here alongside the proxy-root ban. Other common
-    // rules still apply to apps/web via flat-config's per-rule merge
-    // across matching config objects.
+    // the common patterns are spread in from `commonRestrictedImportPatterns`
+    // alongside the proxy-root ban. Other common rules still apply to
+    // apps/web via flat-config's per-rule merge across matching config
+    // objects.
     files: ['apps/web/**/*.{ts,tsx,vue}'],
     rules: {
       'no-restricted-imports': ['error', {
         patterns: [
-          {
-            group: ['@floway-dev/*/src/**'],
-            message: 'Cross-package deep imports are forbidden. Use the package\'s public exports map.',
-          },
-          {
-            group: [
-              '@floway-dev/platform-cloudflare',
-              '@floway-dev/platform-cloudflare/*',
-              '@floway-dev/platform-node',
-              '@floway-dev/platform-node/*',
-            ],
-            message: 'Platform implementations are deployment-target apps, not libraries. They are reachable only from their own entry.ts via relative imports.',
-          },
+          ...commonRestrictedImportPatterns,
           {
             // Match the bare specifier only, not the `/url`, `/url-kind`,
             // etc. subpaths the dashboard is allowed to import.
@@ -261,6 +250,30 @@ const config: Linter.Config[] = [
       'no-restricted-syntax': ['error', {
         selector: 'ImportDeclaration[importKind!="type"][source.value=/^@floway-dev\\u002Fgateway($|\\u002F)/]',
         message: 'apps/web may only type-import from @floway-dev/gateway. The SPA bundle must not pull gateway runtime code.',
+      }],
+    },
+  },
+  {
+    // Gateway is the only package that touches Hono at all, and every SSE
+    // response needs `X-Accel-Buffering: no` so it flows through nginx
+    // reverse proxies without buffering. Funnel every `streamSSE` call
+    // through the wrapper (which sets the header before delegating);
+    // sibling helpers like `streamText` / `stream` are unaffected because
+    // they carry no buffering-behaviour contract. The wrapper file itself
+    // is `ignores`d so it can import `streamSSE` from Hono directly
+    // without an inline `eslint-disable`.
+    files: ['packages/gateway/**/*.{ts,tsx}'],
+    ignores: ['packages/gateway/src/streaming/sse.ts'],
+    rules: {
+      'no-restricted-imports': ['error', {
+        patterns: commonRestrictedImportPatterns,
+        paths: [
+          {
+            name: 'hono/streaming',
+            importNames: ['streamSSE'],
+            message: 'Import streamSSE from packages/gateway/src/streaming/sse.ts — the wrapper adds X-Accel-Buffering: no so SSE flows through nginx reverse proxies without buffering.',
+          },
+        ],
       }],
     },
   },
