@@ -46,7 +46,7 @@ const itemTypePrefixes = {
   // `compaction_summary` is the Codex-side wire alias for `compaction` (the
   // protocol declares them as one variant via `#[serde(alias = ...)]`); both
   // mint the same `cmp_` prefix so a row written under either spelling
-  // round-trips through `isStoredResponsesItemId`.
+  // round-trips through `isResponsesItemId`.
   compaction_summary: 'cmp',
   image_generation_call: 'ig',
   code_interpreter_call: 'ci',
@@ -63,20 +63,20 @@ const itemTypePrefixes = {
 } as const satisfies Record<StorableResponsesItemType, string>;
 
 const knownPrefixes = new Set<string>(Object.values(itemTypePrefixes));
-const storedIdPattern = /^(.+)_([A-Za-z0-9_-]{6})_([A-Za-z0-9_-]{22})$/;
+const responsesIdPattern = /^(.+)_([A-Za-z0-9_-]{6})_([A-Za-z0-9_-]{22})$/;
 
-// Stored ids are `<prefix>_<crc32(body)>_<body>` where `body` is 16 random
+// Client item ids are `<prefix>_<crc32(body)>_<body>` where `body` is 16 random
 // bytes encoded as base64url (22 chars). The body is content-free on purpose:
 // uniqueness comes from `crypto.getRandomValues`, and the crc32 prefix lets
-// `isStoredResponsesItemId` reject typos and accidental upstream collisions
+// `isResponsesItemId` reject typos and accidental upstream collisions
 // without re-hashing the original item.
-export const createStoredResponsesItemId = (itemType: string): string => {
+export const createResponsesItemId = (itemType: string): string => {
   const body = randomBody();
   return `${prefixForItemType(itemType)}_${crc32Checksum(body)}_${body}`;
 };
 
-export const isStoredResponsesItemId = (value: string): boolean =>
-  isValidStoredId(value, prefix => knownPrefixes.has(prefix));
+export const isResponsesItemId = (value: string): boolean =>
+  isValidResponsesId(value, prefix => knownPrefixes.has(prefix));
 
 export const responsesItemId = (item: { id?: unknown }): string | null => {
   const id = item.id;
@@ -107,14 +107,14 @@ export const createResponsesResponseId = (): string => {
   return `${responseEnvelopePrefix}_${crc32Checksum(body)}_${body}`;
 };
 
-export const isStoredResponseId = (value: string): boolean =>
-  isValidStoredId(value, prefix => prefix === responseEnvelopePrefix);
+export const isResponsesResponseId = (value: string): boolean =>
+  isValidResponsesId(value, prefix => prefix === responseEnvelopePrefix);
 
 // Validates that `value` matches `<prefix>_<crc6>_<body22>`, the prefix
 // predicate accepts the prefix, and the crc32 of `body` matches the
 // checksum.
-const isValidStoredId = (value: string, isPrefixValid: (prefix: string) => boolean): boolean => {
-  const match = storedIdPattern.exec(value);
+const isValidResponsesId = (value: string, isPrefixValid: (prefix: string) => boolean): boolean => {
+  const match = responsesIdPattern.exec(value);
   if (match === null) return false;
   const [, prefix, checksum, body] = match;
   return isPrefixValid(prefix) && crc32Checksum(body) === checksum;

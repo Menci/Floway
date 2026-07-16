@@ -1,7 +1,7 @@
 import { test, vi } from 'vitest';
 
 import { responsesAttempt } from './attempt.ts';
-import { createStoredResponsesItemId, hashResponsesItemBinding } from './items/format.ts';
+import { createResponsesItemId, hashResponsesItemBinding } from './items/format.ts';
 import * as outputModule from './items/output.ts';
 import { createResponsesHttpStore } from './items/store.ts';
 import { initRepo } from '../../../repo/index.ts';
@@ -429,7 +429,7 @@ test('generate seeds privatePayload before interceptors so the web-search shim r
   // so privatePayload was always empty when the shim looked it up, and
   // every echoed wsc collapsed to the placeholder.
   const repo = installRepo();
-  const storedId = createStoredResponsesItemId('web_search_call');
+  const storedId = createResponsesItemId('web_search_call');
   const wireId = 'ws_gw_72927da0b19d48aa874e9937';
   const storedItem = {
     type: 'web_search_call' as const,

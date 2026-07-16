@@ -10,6 +10,7 @@ describe('StatefulResponsesStore', () => {
     const repo = new InMemoryRepo();
     initRepo(repo);
     const store = createResponsesHttpStore('key-a', false);
+    expect(store.writesState).toBe(false);
 
     await store.stageInputItems([{ type: 'message', role: 'user', content: 'hello' }]);
     await store.commitSnapshot('resp_none', 'append');
@@ -42,6 +43,7 @@ describe('StatefulResponsesStore', () => {
     initRepo(repo);
     const session = createResponsesWsSession();
     const first = session.createStore('key-a', false);
+    expect(first.writesState).toBe(true);
     await first.stageInputItems([{ type: 'message', role: 'user', content: 'hello' }]);
     await first.commitSnapshot('resp_local', 'append');
 

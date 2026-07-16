@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { createStoredResponsesItemId } from './format.ts';
+import { createResponsesItemId } from './format.ts';
 import { hydrateResponsesPayload } from './rewrite.ts';
 import { createResponsesHttpStore } from './store.ts';
 import { initRepo } from '../../../../repo/index.ts';
@@ -11,7 +11,7 @@ describe('Responses stored-item hydration', () => {
   test('replaces a public item reference with its complete client-wire payload and private state', async () => {
     const repo = new InMemoryRepo();
     initRepo(repo);
-    const id = createStoredResponsesItemId('reasoning');
+    const id = createResponsesItemId('reasoning');
     const row: StoredResponsesItem = {
       id,
       apiKeyId: 'key-a',

@@ -1,4 +1,4 @@
-import { createStoredResponsesItemId, responsesItemId } from './format.ts';
+import { createResponsesItemId, responsesItemId } from './format.ts';
 import type { StatefulResponsesStore } from './store.ts';
 import type { StoredResponsesItem } from '../../../../repo/types.ts';
 import type { ResponsesAttemptState } from '../attempt-state.ts';
@@ -46,38 +46,36 @@ export const wrapResponsesClientOutput = async function* (
   },
 ): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
   const { store, attemptState, responseId } = args;
-  const upstreamToStored = new Map<string, string>();
-  const outputIndexToStored = new Map<number, string>();
+  const upstreamToClient = new Map<string, string>();
+  const outputIndexToClient = new Map<number, string>();
 
   const idMapper = (upstreamId: string, itemType: string): string => {
-    let storedId = upstreamToStored.get(upstreamId);
-    if (storedId === undefined) {
-      storedId = createStoredResponsesItemId(itemType);
-      upstreamToStored.set(upstreamId, storedId);
+    let clientId = upstreamToClient.get(upstreamId);
+    if (clientId === undefined) {
+      clientId = createResponsesItemId(itemType);
+      upstreamToClient.set(upstreamId, clientId);
     }
-    return storedId;
+    return clientId;
   };
 
-  const lifecycleId = (upstreamId: string, itemType: string, outputIndex: number): string => {
-    let publicId = outputIndexToStored.get(outputIndex);
+  const lifecycleId = (upstreamId: string | null, itemType: string, outputIndex: number): string => {
+    let publicId = outputIndexToClient.get(outputIndex);
     if (publicId === undefined) {
-      publicId = idMapper(upstreamId, itemType);
-      outputIndexToStored.set(outputIndex, publicId);
-    } else {
-      upstreamToStored.set(upstreamId, publicId);
+      publicId = upstreamId === null ? createResponsesItemId(itemType) : idMapper(upstreamId, itemType);
+      outputIndexToClient.set(outputIndex, publicId);
+    } else if (upstreamId !== null) {
+      upstreamToClient.set(upstreamId, publicId);
     }
     return publicId;
   };
 
   const onItemFinalized = async (originalItem: ResponsesInputItem, newId: string): Promise<void> => {
+    if (!store.writesState) return;
     const upstreamId = responsesItemId(originalItem);
-    if (upstreamId === null) {
-      throw new Error(`Cannot persist Responses item without an upstream id (newId=${newId}, type=${originalItem.type})`);
-    }
     // Interceptors register per-item server-only payloads under the wire id.
     // Attaching it lets a later turn restore the real success/failure state
     // even when the client stripped fields from the echoed wire item.
-    const privatePayload = attemptState.getPrivatePayload(upstreamId);
+    const privatePayload = upstreamId === null ? undefined : attemptState.getPrivatePayload(upstreamId);
     const clientItem = { ...originalItem, id: newId } as ResponsesInputItem;
     const persistedPayload = privatePayload !== undefined ? { item: clientItem, private: privatePayload } : { item: clientItem };
     const now = Date.now();
@@ -105,8 +103,7 @@ export const wrapResponsesClientOutput = async function* (
     id: responseId,
     output: response.output.map((item, outputIndex) => {
       const upstreamId = responsesItemId(item);
-      if (upstreamId === null) return item;
-      seenItemTypes.set(upstreamId, item.type);
+      if (upstreamId !== null) seenItemTypes.set(upstreamId, item.type);
       return { ...item, id: lifecycleId(upstreamId, item.type, outputIndex) };
     }),
   });
@@ -130,8 +127,7 @@ export const wrapResponsesClientOutput = async function* (
 
     if (event.type === 'response.output_item.added') {
       const upstreamId = responsesItemId(event.item);
-      if (upstreamId === null) { yield frame; continue; }
-      seenItemTypes.set(upstreamId, event.item.type);
+      if (upstreamId !== null) seenItemTypes.set(upstreamId, event.item.type);
       const newId = lifecycleId(upstreamId, event.item.type, event.output_index);
       yield eventFrame({ ...event, item: { ...event.item, id: newId } });
       continue;
@@ -139,8 +135,7 @@ export const wrapResponsesClientOutput = async function* (
 
     if (event.type === 'response.output_item.done') {
       const upstreamId = responsesItemId(event.item);
-      if (upstreamId === null) { yield frame; continue; }
-      seenItemTypes.set(upstreamId, event.item.type);
+      if (upstreamId !== null) seenItemTypes.set(upstreamId, event.item.type);
       const newId = lifecycleId(upstreamId, event.item.type, event.output_index);
       if (isCompactionItemType(event.item.type)) sawCompactionItem = true;
       if (!finalizedOutputIndexes.has(event.output_index)) {
@@ -156,8 +151,7 @@ export const wrapResponsesClientOutput = async function* (
       for (const [outputIndex, item] of event.response.output.entries()) {
         if (isCompactionItemType(item.type)) sawCompactionItem = true;
         const upstreamId = responsesItemId(item);
-        if (upstreamId === null) { output.push(item as unknown as ResponsesInputItem); continue; }
-        seenItemTypes.set(upstreamId, item.type);
+        if (upstreamId !== null) seenItemTypes.set(upstreamId, item.type);
         const newId = lifecycleId(upstreamId, item.type, outputIndex);
         if (!finalizedOutputIndexes.has(outputIndex)) {
           finalizedOutputIndexes.add(outputIndex);
@@ -174,7 +168,7 @@ export const wrapResponsesClientOutput = async function* (
       // generator another tick, so any post-yield work would be lost.
       // The downstream HTTP entry has nothing to observe pre-snapshot —
       // ordering matches a synchronous emit.
-      await store.commitSnapshot(responseId, sawCompactionItem ? 'replace' : 'append');
+      if (store.writesState) await store.commitSnapshot(responseId, sawCompactionItem ? 'replace' : 'append');
       yield rewritten;
       return;
     }

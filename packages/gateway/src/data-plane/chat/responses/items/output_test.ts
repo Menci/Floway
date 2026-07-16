@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest';
 
 import { wrapResponsesClientOutput } from './output.ts';
+import { isResponsesItemId } from './format.ts';
 import { createResponsesHttpStore } from './store.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
@@ -16,7 +17,7 @@ const frames = async function* (response: ResponsesResult): AsyncIterable<Protoc
   yield doneFrame();
 };
 
-test('storage rewrites ids and persists the exact complete client-wire item before terminal', async () => {
+test('client output rewrites ids and persists the exact complete item before terminal', async () => {
   const repo = new InMemoryRepo();
   initRepo(repo);
   const store = createResponsesHttpStore('key-a', true);
@@ -50,7 +51,7 @@ test('storage rewrites ids and persists the exact complete client-wire item befo
   expect(await repo.responsesSnapshots.lookup('key-a', 'resp_public')).not.toBeNull();
 });
 
-test('storage uses one public item id across lifecycle snapshots without committing a failed snapshot', async () => {
+test('client output uses one item id across lifecycle snapshots without committing a failed snapshot', async () => {
   const repo = new InMemoryRepo();
   initRepo(repo);
   const store = createResponsesHttpStore('key-a', true);
@@ -87,4 +88,43 @@ test('storage uses one public item id across lifecycle snapshots without committ
   });
   expect(new Set(ids).size).toBe(1);
   expect(await repo.responsesSnapshots.lookup('key-a', 'resp_public')).toBeNull();
+});
+
+test('client output mints and persists one lifecycle id for an id-less item', async () => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  const store = createResponsesHttpStore('key-a', true);
+  const item = {
+    type: 'message' as const,
+    role: 'assistant' as const,
+    status: 'completed' as const,
+    content: [{ type: 'output_text' as const, text: 'answer' }],
+  };
+  const result: ResponsesResult = {
+    id: 'resp_upstream',
+    object: 'response',
+    model: 'model',
+    status: 'completed',
+    output: [item],
+    error: null,
+    incomplete_details: null,
+  };
+
+  const events: ResponsesStreamEvent[] = [];
+  for await (const frame of wrapResponsesClientOutput(frames(result), {
+    store,
+    attemptState: new ResponsesAttemptState(),
+    responseId: 'resp_public',
+  })) if (frame.type === 'event') events.push(frame.event);
+
+  const itemIds = events.flatMap(event => {
+    if (event.type === 'response.output_item.added' || event.type === 'response.output_item.done') return [event.item.id];
+    if (event.type === 'response.completed') return event.response.output.map(output => output.id);
+    return [];
+  });
+  expect(new Set(itemIds).size).toBe(1);
+  const [clientId] = itemIds;
+  expect(typeof clientId === 'string' && isResponsesItemId(clientId)).toBe(true);
+  expect(await repo.responsesItems.lookupMany('key-a', [clientId!])).toHaveLength(1);
+  expect((await repo.responsesSnapshots.lookup('key-a', 'resp_public'))?.itemIds).toContain(clientId);
 });

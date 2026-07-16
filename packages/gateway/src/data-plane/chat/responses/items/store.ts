@@ -1,4 +1,4 @@
-import { createStoredResponsesItemId, hashResponsesItemContent, isStoredResponsesItemId, responsesItemId } from './format.ts';
+import { createResponsesItemId, hashResponsesItemContent, isResponsesItemId, responsesItemId } from './format.ts';
 import { getRepo } from '../../../../repo/index.ts';
 import { cloneStoredResponsesItem, cloneStoredResponsesSnapshot, compareResponsesItemsByFreshness, scopedResponsesKey } from '../../../../repo/responses-clone.ts';
 import type { Repo, StoredResponsesItem, StoredResponsesSnapshot } from '../../../../repo/types.ts';
@@ -39,6 +39,7 @@ export type ResponsesSnapshotMode = 'append' | 'replace';
 
 export interface StatefulResponsesStore {
   readonly apiKeyId: string;
+  readonly writesState: boolean;
   loadSnapshot(id: string): Promise<StoredResponsesSnapshot | null>;
   loadInputItems(sourceItems: readonly ResponsesInputItem[], inputItemsToStage: readonly ResponsesInputItem[]): Promise<void>;
   getItemById(id: string): StoredResponsesItem | undefined;
@@ -66,6 +67,10 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     return this.options.apiKeyId;
   }
 
+  get writesState(): boolean {
+    return this.options.writes.length > 0;
+  }
+
   hashItemContent(item: ResponsesInputItem): Promise<string> {
     return hashResponsesItemContent(item);
   }
@@ -86,12 +91,12 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     const ids = new Set<string>();
     for (const item of sourceItems) {
       const id = responsesItemId(item);
-      if (id !== null && isStoredResponsesItemId(id)) ids.add(id);
+      if (id !== null && isResponsesItemId(id)) ids.add(id);
     }
     const contentHashes = new Set<string>();
     for (const item of inputItemsToStage) {
       const id = responsesItemId(item);
-      if (id !== null && isStoredResponsesItemId(id)) continue;
+      if (id !== null && isResponsesItemId(id)) continue;
       contentHashes.add(await this.hashItemContent(item));
     }
     await this.loadItems({ ids: [...ids], contentHashes: [...contentHashes] });
@@ -159,7 +164,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     }
 
     const id = responsesItemId(item);
-    if (id !== null && isStoredResponsesItemId(id)) {
+    if (id !== null && isResponsesItemId(id)) {
       const row = this.getItemById(id);
       if (row !== undefined) {
         this.stagedInputItemIds.push(row.id);
@@ -175,7 +180,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     }
 
     const row: StoredResponsesItem = {
-      id: createStoredResponsesItemId(item.type),
+      id: createResponsesItemId(item.type),
       apiKeyId: this.apiKeyId,
       itemType: item.type,
       payload: { item: structuredClone(item) },

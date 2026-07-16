@@ -1,4 +1,4 @@
-import { isStoredResponsesItemId, responsesItemId } from './format.ts';
+import { isResponsesItemId, responsesItemId } from './format.ts';
 import type { StatefulResponsesStore } from './store.ts';
 import { throwChatServeFailure } from '../../shared/errors.ts';
 import type { CanonicalResponsesPayload, ResponsesInputItem } from '@floway-dev/protocols/responses';
@@ -10,7 +10,7 @@ interface HydratedItem {
 
 const hydrateItem = (item: ResponsesInputItem, store: StatefulResponsesStore | undefined): HydratedItem => {
   const id = responsesItemId(item);
-  if (id === null || !isStoredResponsesItemId(id)) return { item };
+  if (id === null || !isResponsesItemId(id)) return { item };
   const stored = store?.getItemById(id);
   if (stored === undefined) {
     if (item.type === 'item_reference') throwChatServeFailure({ kind: 'item-not-found', itemId: id });

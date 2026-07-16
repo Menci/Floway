@@ -142,10 +142,19 @@ const wrapResponsesCarrierLifecycle = async function* (
   const syntheticOnFirstItem = new Map<string, Promise<string>>();
   let firstItem: { readonly outputIndex: number; readonly canCarry: boolean } | undefined;
   const insertedItems = new Map<number, InsertedCarrier>();
+  const insertedItemIndexes: number[] = [];
   let sequenceOffset = 0;
 
-  const outputIndexOffset = (originalOutputIndex: number): number =>
-    [...insertedItems.keys()].filter(insertedIndex => insertedIndex <= originalOutputIndex).length;
+  const outputIndexOffset = (originalOutputIndex: number): number => {
+    let low = 0;
+    let high = insertedItemIndexes.length;
+    while (low < high) {
+      const middle = (low + high) >>> 1;
+      if (insertedItemIndexes[middle] <= originalOutputIndex) low = middle + 1;
+      else high = middle;
+    }
+    return low;
+  };
 
   const startCarrierBefore = (
     originalOutputIndex: number,
@@ -158,7 +167,9 @@ const wrapResponsesCarrierLifecycle = async function* (
       id: createTemporaryResponsesItemId('reasoning'),
       summary: [],
     };
-    const shiftedOutputIndex = originalOutputIndex + outputIndexOffset(originalOutputIndex);
+    const insertionPoint = outputIndexOffset(originalOutputIndex);
+    const shiftedOutputIndex = originalOutputIndex + insertionPoint;
+    insertedItemIndexes.splice(insertionPoint, 0, originalOutputIndex);
     insertedItems.set(originalOutputIndex, { outputIndex: shiftedOutputIndex, added });
     const shiftedSequence = sequenceNumber === undefined ? undefined : sequenceNumber + sequenceOffset;
     sequenceOffset += 1;

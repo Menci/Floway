@@ -1,6 +1,6 @@
 import { afterEach, test, vi } from 'vitest';
 
-import { createStoredResponsesItemId } from './items/format.ts';
+import { createResponsesItemId } from './items/format.ts';
 import { createResponsesHttpStore, MemoryStatefulResponsesBacking, LayeredStatefulResponsesStore } from './items/store.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
@@ -381,7 +381,7 @@ test('compact renders model-unsupported as a 400 when the only candidate\'s endp
 
 test('expandPreviousResponseId prepends snapshot items and strips the previous_response_id field', async () => {
   const repo = installRepo();
-  const previousMessageId = createStoredResponsesItemId('message');
+  const previousMessageId = createResponsesItemId('message');
   await repo.responsesItems.insertMany([{
     id: previousMessageId,
     apiKeyId: API_KEY_ID,
@@ -430,7 +430,7 @@ const memoryStore = async (snapshots: readonly StoredResponsesSnapshot[], items:
 
 test('expandPreviousResponseId resolves snapshots from a non-repo-backed store', async () => {
   installRepo(); // affinity lookups in the wider flow still need a repo, but here the helper only touches the store.
-  const id = createStoredResponsesItemId('message');
+  const id = createResponsesItemId('message');
   const item: StoredResponsesItem = {
     id,
     apiKeyId: API_KEY_ID,

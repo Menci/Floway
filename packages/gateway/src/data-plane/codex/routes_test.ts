@@ -6,7 +6,7 @@ import { mountCodexRoutes } from './routes.ts';
 import { app as gatewayApp } from '../../app.ts';
 import { type AuthVars, authMiddleware } from '../../middleware/auth.ts';
 import { copilotModels, setupAppTest, sseResponsesResponse } from '../../test-helpers.ts';
-import { isStoredResponseId } from '../chat/responses/items/format.ts';
+import { isResponsesResponseId } from '../chat/responses/items/format.ts';
 import { jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 type WorkerResponseInit = ResponseInit & { readonly webSocket?: WebSocket };
@@ -304,7 +304,7 @@ describe('codex 1p namespace', () => {
             response: { model: 'gpt-direct-responses', input: 'codex first', store: false },
           }));
           const firstResponseId = responseDoneId(await firstDone);
-          expect(isStoredResponseId(firstResponseId)).toBe(true);
+          expect(isResponsesResponseId(firstResponseId)).toBe(true);
 
           const secondDone = waitForMessages(client, messages => messages.some(message => message.type === 'response.done'));
           client.send(JSON.stringify({
@@ -317,7 +317,7 @@ describe('codex 1p namespace', () => {
             },
           }));
           const secondResponseId = responseDoneId(await secondDone);
-          expect(isStoredResponseId(secondResponseId)).toBe(true);
+          expect(isResponsesResponseId(secondResponseId)).toBe(true);
         }),
       );
 
