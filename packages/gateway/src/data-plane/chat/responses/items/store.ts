@@ -79,10 +79,10 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
           await write.insertSnapshot({ ...snapshot, createdAt });
         }));
         for (const item of items) {
-          item.createdAt = createdAt;
+          item.createdAt = Math.max(item.createdAt, createdAt);
           this.freshItemIds.add(item.id);
         }
-        snapshot.createdAt = createdAt;
+        snapshot.createdAt = Math.max(snapshot.createdAt, createdAt);
       }
       this.previousSnapshotItemIds = [...snapshot.itemIds];
       return cloneStoredResponsesSnapshot(snapshot);
@@ -147,7 +147,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
       const createdAt = Date.now();
       await Promise.all(this.options.writes.map(write => write.refreshItems(staleRows, createdAt)));
       for (const row of staleRows) {
-        row.createdAt = createdAt;
+        row.createdAt = Math.max(row.createdAt, createdAt);
         this.freshItemIds.add(row.id);
       }
     }

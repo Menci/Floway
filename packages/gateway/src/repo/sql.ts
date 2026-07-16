@@ -950,10 +950,12 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
       throw new Error(`Responses item disappeared before lifetime refresh: ${missingBeforeWrite.id}`);
     }
 
+    const pending = unique.filter(item => previous.get(scopedResponsesKey(item.apiKeyId, item.id))!.createdAt < createdAt);
+    if (pending.length === 0) return;
     const targetFilePrefix = responsesItemPayloadExpiryBucketPrefix(createdAt + RESPONSES_STATE_TTL_MS);
     const writes: PreparedResponsesRefreshWrite[] = [];
     try {
-      for (const item of unique) {
+      for (const item of pending) {
         const descriptor = previous.get(scopedResponsesKey(item.apiKeyId, item.id))!;
         const previousFileKey = storedResponsesPayloadFileKey(item.id, descriptor.payloadJson);
         const moveFile = previousFileKey !== null && !previousFileKey.startsWith(targetFilePrefix);
