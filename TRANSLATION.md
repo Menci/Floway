@@ -218,14 +218,6 @@ the same socket can reference it, but later sessions cannot. With storage
 enabled, item and snapshot rows expire 30 days after creation. Large compressed
 item payloads may spill to the file provider and use the same lifetime.
 
-Migration `0057_responses_full_state.sql` preserves every scoped complete item
-payload and every snapshot whose referenced payloads all survive. It does not
-migrate the old `upstream_id` / `upstream_item_id` affinity columns: those rows
-lack the canonical model and alias information required by the client-carried
-envelope. Pre-0057 history therefore retains its items and snapshot structure
-but resumes through normal routing with no affinity. An upstream may reject an
-old account-bound ID or opaque blob after this known breaking transition.
-
 ## General translation rules
 
 - Responses EasyInputMessage shorthand is canonicalized to explicit
