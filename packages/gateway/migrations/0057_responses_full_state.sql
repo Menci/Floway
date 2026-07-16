@@ -31,7 +31,13 @@ SELECT
   item_type,
   payload_json,
   content_hash,
-  created_at
+  CASE
+    -- SQL cannot move an existing spilled payload into a later expiry bucket.
+    -- Keep its original file-backed horizon; inline rows can retain the latest
+    -- reference time directly.
+    WHEN json_extract(payload_json, '$.storage') = 'file' THEN created_at
+    ELSE MAX(created_at, refreshed_at)
+  END
 FROM responses_items
 WHERE api_key_id IS NOT NULL
   AND length(api_key_id) > 0
@@ -58,7 +64,16 @@ SELECT
   snapshot.id,
   snapshot.api_key_id,
   snapshot.item_ids_json,
-  snapshot.created_at
+  MIN(
+    MAX(snapshot.created_at, snapshot.refreshed_at),
+    (
+      SELECT MIN(item.created_at)
+      FROM json_each(CASE WHEN json_valid(snapshot.item_ids_json) THEN snapshot.item_ids_json ELSE '[]' END) AS ref
+      JOIN responses_items_new AS item
+        ON item.api_key_id = snapshot.api_key_id
+        AND item.id = ref.value
+    )
+  )
 FROM responses_snapshots AS snapshot
 WHERE snapshot.api_key_id IS NOT NULL
   AND length(snapshot.api_key_id) > 0

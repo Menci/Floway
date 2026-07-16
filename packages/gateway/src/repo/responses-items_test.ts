@@ -103,18 +103,18 @@ test('migration 0057 preserves usable payloads and snapshots but drops legacy af
     const fileDescriptor = JSON.stringify({ version: 1, storage: 'file', key: 'responses-items/v1/expires/x', sha256: 'abc', byteLength: 3 });
     const legacyInline = JSON.stringify({ version: 1, storage: 'inline', payload: { item: { type: 'reasoning', id: 'rs_legacy' } } });
     const insertItem = `INSERT INTO responses_items
-      (id, api_key_id, upstream_id, upstream_item_id, item_type, payload_json, content_hash, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
-    db.run(insertItem, ['msg_gzip', 'key-a', 'upstream-a', 'msg_upstream', 'message', gzipDescriptor, 'hash-a', 1_000]);
-    db.run(insertItem, ['rs_file', 'key-a', 'upstream-a', 'rs_upstream', 'reasoning', fileDescriptor, null, 2_000]);
-    db.run(insertItem, ['rs_legacy', 'key-a', 'upstream-a', 'rs_legacy_upstream', 'reasoning', legacyInline, null, 3_000]);
-    db.run(insertItem, ['msg_unscoped', null, null, null, 'message', gzipDescriptor, 'hash-u', 4_000]);
-    db.run(insertItem, ['msg_metadata', 'key-a', 'upstream-a', 'msg_metadata_upstream', 'message', null, 'hash-m', 5_000]);
+      (id, api_key_id, upstream_id, upstream_item_id, item_type, payload_json, content_hash, created_at, refreshed_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+    db.run(insertItem, ['msg_gzip', 'key-a', 'upstream-a', 'msg_upstream', 'message', gzipDescriptor, 'hash-a', 1_000, 9_000]);
+    db.run(insertItem, ['rs_file', 'key-a', 'upstream-a', 'rs_upstream', 'reasoning', fileDescriptor, null, 2_000, 10_000]);
+    db.run(insertItem, ['rs_legacy', 'key-a', 'upstream-a', 'rs_legacy_upstream', 'reasoning', legacyInline, null, 3_000, 11_000]);
+    db.run(insertItem, ['msg_unscoped', null, null, null, 'message', gzipDescriptor, 'hash-u', 4_000, 12_000]);
+    db.run(insertItem, ['msg_metadata', 'key-a', 'upstream-a', 'msg_metadata_upstream', 'message', null, 'hash-m', 5_000, 13_000]);
 
     const insertSnapshot = `INSERT INTO responses_snapshots
       (id, api_key_id, item_ids_json, created_at, refreshed_at)
       VALUES (?, ?, ?, ?, ?)`;
-    db.run(insertSnapshot, ['resp_valid', 'key-a', '["msg_gzip","rs_file","rs_legacy"]', 6_000, 6_000]);
+    db.run(insertSnapshot, ['resp_valid', 'key-a', '["msg_gzip","rs_file","rs_legacy"]', 6_000, 12_000]);
     db.run(insertSnapshot, ['resp_dangling', 'key-a', '["msg_gzip","msg_metadata"]', 7_000, 7_000]);
     db.run(insertSnapshot, ['resp_malformed', 'key-a', '{', 8_000, 8_000]);
     db.run(insertSnapshot, ['resp_unscoped', null, '["msg_unscoped"]', 9_000, 9_000]);
@@ -125,13 +125,13 @@ test('migration 0057 preserves usable payloads and snapshots but drops legacy af
 
     const itemResult = db.exec('SELECT id, payload_json, content_hash, created_at FROM responses_items ORDER BY created_at')[0];
     expect(itemResult?.values).toEqual([
-      ['msg_gzip', gzipDescriptor, 'hash-a', 1_000],
+      ['msg_gzip', gzipDescriptor, 'hash-a', 9_000],
       ['rs_file', fileDescriptor, null, 2_000],
-      ['rs_legacy', legacyInline, null, 3_000],
+      ['rs_legacy', legacyInline, null, 11_000],
     ]);
     const snapshotResult = db.exec('SELECT id, api_key_id, item_ids_json, created_at FROM responses_snapshots')[0];
     expect(snapshotResult?.values).toEqual([
-      ['resp_valid', 'key-a', '["msg_gzip","rs_file","rs_legacy"]', 6_000],
+      ['resp_valid', 'key-a', '["msg_gzip","rs_file","rs_legacy"]', 2_000],
     ]);
     const columns = db.exec('PRAGMA table_info(responses_items)')[0]?.values.map(row => row[1]);
     expect(columns).not.toContain('upstream_id');
