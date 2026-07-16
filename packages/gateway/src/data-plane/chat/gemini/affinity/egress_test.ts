@@ -120,11 +120,13 @@ describe('Gemini affinity egress', () => {
     for await (const frame of wrapGeminiAffinityEgress(frames([
       eventFrame({ candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'a' }] } }] }),
       eventFrame({ candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'b' }] } }] }),
-      eventFrame({ candidates: [{
-        index: 0,
-        content: { role: 'model', parts: [{ text: 'c', thoughtSignature: 'natural' }] },
-        finishReason: 'STOP',
-      }] }),
+      eventFrame({
+        candidates: [{
+          index: 0,
+          content: { role: 'model', parts: [{ text: 'c', thoughtSignature: 'natural' }] },
+          finishReason: 'STOP',
+        }],
+      }),
     ]), { codec: immediateCodec, affinity })) output.push(frame);
 
     expect(output[0]).not.toMatchObject({ event: { candidates: [{ content: { parts: [{ thoughtSignature: expect.anything() }] } }] } });
@@ -139,11 +141,13 @@ describe('Gemini affinity egress', () => {
     for await (const frame of wrapGeminiAffinityEgress(frames([
       eventFrame({ candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'a' }] } }] }),
       eventFrame({ candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'b' }] } }] }),
-      eventFrame({ candidates: [{
-        index: 0,
-        content: { role: 'model', parts: [{ text: 'c' }] },
-        finishReason: 'STOP',
-      }] }),
+      eventFrame({
+        candidates: [{
+          index: 0,
+          content: { role: 'model', parts: [{ text: 'c' }] },
+          finishReason: 'STOP',
+        }],
+      }),
     ]), { codec: immediateCodec, affinity })) output.push(frame);
 
     expect(output[0]).not.toMatchObject({ event: { candidates: [{ content: { parts: [{ thoughtSignature: expect.anything() }] } }] } });
