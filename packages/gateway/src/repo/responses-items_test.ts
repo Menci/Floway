@@ -2,6 +2,7 @@ import initSqlJs from 'sql.js';
 import { describe, expect, test, vi } from 'vitest';
 
 import { InMemoryRepo } from './memory.ts';
+import { serializeStoredResponsesPayload } from './responses-payload.ts';
 import { SqlRepo } from './sql.ts';
 import { createSqliteTestDb, migrationSqlByFilename } from './test-sqlite.ts';
 import type { Repo, StoredResponsesItem } from './types.ts';
@@ -41,6 +42,17 @@ const sqlDatabaseWithBatch = (
   exec: sql => base.exec(sql),
   batch: runBatch,
 });
+
+class DeleteHookFileProvider extends MemoryFileProvider {
+  beforeDelete: ((key: string) => Promise<void>) | undefined;
+
+  override async deletePrefix(prefix: string): Promise<void> {
+    const beforeDelete = this.beforeDelete;
+    this.beforeDelete = undefined;
+    await beforeDelete?.(prefix);
+    await super.deletePrefix(prefix);
+  }
+}
 
 describe.each(factories)('%s Responses state repo', (_name, createRepo) => {
   test('stores complete key-scoped items and looks them up by id and content hash', async () => {
@@ -377,6 +389,47 @@ test('SQL insert conflict cleans its spill when the winning row disappears', asy
   await expect(repo.responsesItems.insertMany([item, survivor]))
     .rejects.toThrow('Responses item conflict disappeared before spill cleanup: msg_insert_race');
   expect(await files.listKeys('responses-items/')).toEqual([]);
+});
+
+test('SQL conflict cleanup cannot delete a later winner\'s independently owned spill', async () => {
+  const files = new DeleteHookFileProvider();
+  initFileProvider(files);
+  const base = await createSqliteTestDb();
+  const item = spilledItem('msg_insert_owner_race', 'key-a', 1_000);
+  const winnerPayload = await serializeStoredResponsesPayload(
+    item.id,
+    item.apiKeyId,
+    item.createdAt,
+    item.payload,
+  );
+  const winnerFileKey = (JSON.parse(winnerPayload) as { key: string }).key;
+  const insertWinner = base.prepare(
+    'INSERT INTO responses_items (id, api_key_id, item_type, payload_json, content_hash, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+  );
+  const db = sqlDatabaseWithBatch(base, async statements => {
+    await insertWinner
+      .bind(item.id, item.apiKeyId, item.itemType, winnerPayload, item.contentHash, item.createdAt)
+      .run();
+    const results = [];
+    for (const statement of statements) results.push(await statement.run());
+    await base.prepare('DELETE FROM responses_items WHERE id = ? AND api_key_id = ?')
+      .bind(item.id, item.apiKeyId)
+      .run();
+    return results;
+  });
+  files.beforeDelete = async loserFileKey => {
+    expect(loserFileKey).not.toBe(winnerFileKey);
+    await insertWinner
+      .bind(item.id, item.apiKeyId, item.itemType, winnerPayload, item.contentHash, item.createdAt)
+      .run();
+  };
+  const repo = new SqlRepo(db);
+
+  await expect(repo.responsesItems.insertMany([item]))
+    .rejects.toThrow(`Responses item conflict disappeared before spill cleanup: ${item.id}`);
+
+  expect(await files.listKeys('responses-items/')).toEqual([winnerFileKey]);
+  expect((await repo.responsesItems.lookupMany(item.apiKeyId, [item.id]))[0].payload).toEqual(item.payload);
 });
 
 test('migration 0058 preserves usable payloads and snapshots but drops legacy affinity columns', async () => {

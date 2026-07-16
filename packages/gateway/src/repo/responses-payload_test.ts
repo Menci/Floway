@@ -37,23 +37,27 @@ test('the reserved private payload field round-trips through both inline and fil
   assertEquals(parsed?.private, { results: 'preserved' });
 });
 
-test('spilled payload file keys include the content hash to avoid overwrites', async () => {
+test('identical spilled payload writes get distinct owned keys that retain the content hash', async () => {
   const files = new MemoryFileProvider();
   initFileProvider(files);
   const createdAt = Date.UTC(2026, 4, 28, 12);
 
-  const firstContent = `a${incompressibleString(96 * 1024)}`;
-  const secondContent = `b${incompressibleString(96 * 1024)}`;
+  const content = incompressibleString(96 * 1024);
   const first = await serializeStoredResponsesPayload('msg_same_id', 'key_a', createdAt, {
-    item: { type: 'message', id: 'msg_big', content: firstContent },
+    item: { type: 'message', id: 'msg_big', content },
   });
   const second = await serializeStoredResponsesPayload('msg_same_id', 'key_a', createdAt, {
-    item: { type: 'message', id: 'msg_big', content: secondContent },
+    item: { type: 'message', id: 'msg_big', content },
   });
+  const firstDescriptor = JSON.parse(first) as { key: string; sha256: string };
+  const secondDescriptor = JSON.parse(second) as { key: string; sha256: string };
 
   assertEquals((await files.listKeys('responses-items/v1/expires/')).length, 2);
-  assertEquals((await parseStoredResponsesPayload('msg_same_id', first))?.item, { type: 'message', id: 'msg_big', content: firstContent });
-  assertEquals((await parseStoredResponsesPayload('msg_same_id', second))?.item, { type: 'message', id: 'msg_big', content: secondContent });
+  assert(firstDescriptor.key !== secondDescriptor.key);
+  assert(firstDescriptor.key.includes(firstDescriptor.sha256));
+  assert(secondDescriptor.key.includes(secondDescriptor.sha256));
+  assertEquals((await parseStoredResponsesPayload('msg_same_id', first))?.item, { type: 'message', id: 'msg_big', content });
+  assertEquals((await parseStoredResponsesPayload('msg_same_id', second))?.item, { type: 'message', id: 'msg_big', content });
 });
 
 test('inline payload round-trips through gzip+base64 and the descriptor advertises the encoding', async () => {

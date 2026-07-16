@@ -72,7 +72,11 @@ export const serializeStoredResponsesPayload = async (
   const sha256 = await sha256Hex(gzippedBytes);
   const expiresAt = createdAt + RESPONSES_STATE_TTL_MS;
   const apiKeyHashPrefix = (await sha256Hex(encoder.encode(apiKeyId))).slice(0, 16);
-  const key = `${responsesItemPayloadExpiryBucketPrefix(expiresAt)}${apiKeyHashPrefix}/${id}/${sha256}.gz`;
+  // The digest keeps integrity/content identity visible, while the nonce gives
+  // each pre-SQL write exclusive cleanup ownership. A losing concurrent write
+  // can then delete its object without racing a later winner that stored the
+  // same item bytes under the same expiry bucket.
+  const key = `${responsesItemPayloadExpiryBucketPrefix(expiresAt)}${apiKeyHashPrefix}/${id}/${sha256}-${randomFileNonce()}.gz`;
   await getFileProvider().put(key, gzippedBytes);
   return JSON.stringify({
     version: 1,
@@ -183,6 +187,12 @@ const bytesToBase64 = (bytes: Uint8Array): string => {
     binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
   }
   return btoa(binary);
+};
+
+const randomFileNonce = (): string => {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return bytesToBase64(bytes).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/u, '');
 };
 
 const base64ToBytes = (base64: string): Uint8Array => {
