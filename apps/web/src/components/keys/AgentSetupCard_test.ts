@@ -291,7 +291,7 @@ describe('AgentSetupCard', () => {
     expect(w.text()).toContain(`$SetupEndpoint = '${window.location.origin}'; irm "$SetupEndpoint/api/setup/tok-1/claude.ps1" | iex`);
     expect(w.find('button[aria-label="Copy Windows command"]').exists()).toBe(true);
     expect(w.find('code.language-powershell').exists()).toBe(true);
-    const explanation = 'These commands install the selected agents and point them at this gateway.';
+    const explanation = 'This command installs and configures Claude Code.';
     expect(w.text().lastIndexOf(explanation)).toBeGreaterThan(w.text().lastIndexOf('$SetupEndpoint'));
     expect(w.text()).not.toContain('ExecutionPolicy');
     expect(w.text()).not.toContain('Bypass');

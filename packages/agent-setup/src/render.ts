@@ -40,6 +40,7 @@ const metadataValue = (value: string): string => {
 
 // An unset override renders empty, which the installer reads as "remove this
 // managed key".
+const shellFlag = (enabled: boolean): string => (enabled ? '1' : '');
 const shellOptional = (value: string | null): string => value ?? '';
 
 // `set +x` leads so a caller who piped us into `set -x` cannot echo the API-key
@@ -66,6 +67,7 @@ export const renderShellPrefix = (input: RenderPrefixInput): string => {
 
 // PowerShell: booleans and $null render bare; only strings are quoted, so the
 // encoder cannot be applied uniformly the way the POSIX renderer applies it.
+const powerShellBool = (value: boolean): string => (value ? '$true' : '$false');
 const powerShellOptional = (value: string | null): string => (value === null ? '$null' : powerShellLiteral(value));
 
 // `Set-PSDebug -Off` leads for the same reason `set +x` does in POSIX.
