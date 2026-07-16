@@ -1,4 +1,4 @@
-import { AffinityCodec, blobForCandidate, preferredAffinityEvidence, type DecodedAffinityBlob, type PreparedAffinityPayload } from '../../shared/affinity/index.ts';
+import { type AffinityCodec, blobForCandidate, preferredAffinityEvidence, type DecodedAffinityBlob, type PreparedAffinityPayload } from '../../shared/affinity/index.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 
 export const prepareChatCompletionsAffinity = async (
