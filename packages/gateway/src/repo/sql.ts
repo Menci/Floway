@@ -1,7 +1,7 @@
 import { normalizeDisabledPublicModelIds } from './disabled-public-models.ts';
 import { normalizeFlagOverrides } from './flag-overrides.ts';
 import { normalizeProxyFallbackList } from './proxy-fallback-list.ts';
-import { deleteAllResponsesItemPayloadFiles, parseStoredResponsesPayload, serializeStoredResponsesPayload } from './responses-payload.ts';
+import { deleteAllResponsesItemPayloadFiles, parseStoredResponsesPayload, serializeStoredResponsesPayload, storedResponsesPayloadFileKey } from './responses-payload.ts';
 import type {
   ApiKey,
   ApiKeyRepo,
@@ -42,7 +42,7 @@ import { bucketForTtftMs, bucketForTpotUs } from '../shared/performance-histogra
 import { parseServerSecret } from '../shared/server-secret.ts';
 import { generateSessionToken } from '../shared/session-tokens.ts';
 import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';
-import type { SqlDatabase, SqlPreparedStatement, SqlResult } from '@floway-dev/platform';
+import { getFileProvider, type SqlDatabase, type SqlPreparedStatement, type SqlResult } from '@floway-dev/platform';
 import { canonicalPricingSelectorKey, parsePricingSelectorKey, type AliasSelection, type AliasTarget, type AnnouncedMetadata, type BillingDimension, type ModelKind, type PriceVector } from '@floway-dev/protocols/common';
 import type { ProviderModel, ProxyFallbackEntry, ModelPrefixConfig, PerformanceOperation, UpstreamRecord } from '@floway-dev/provider';
 import { normalizeModelPrefix } from '@floway-dev/provider';
@@ -866,13 +866,26 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
   }
 
   async refreshMany(items: readonly StoredResponsesItem[], createdAt: number): Promise<void> {
-    const statements = await mapSequentially(items, async item => {
+    const refreshed = await mapSequentially(items, async item => {
+      const previous = await this.db
+        .prepare('SELECT payload_json FROM responses_items WHERE id = ? AND api_key_id = ?')
+        .bind(item.id, item.apiKeyId)
+        .first<{ payload_json: string }>();
       const payload = await serializeStoredResponsesPayload(item.id, item.apiKeyId, createdAt, item.payload);
-      return this.db
-        .prepare('UPDATE responses_items SET payload_json = ?, created_at = ? WHERE id = ? AND api_key_id = ?')
-        .bind(payload, createdAt, item.id, item.apiKeyId);
+      return {
+        statement: this.db
+          .prepare('UPDATE responses_items SET payload_json = ?, created_at = ? WHERE id = ? AND api_key_id = ?')
+          .bind(payload, createdAt, item.id, item.apiKeyId),
+        previousFileKey: previous === null ? null : storedResponsesPayloadFileKey(item.id, previous.payload_json),
+        nextFileKey: storedResponsesPayloadFileKey(item.id, payload),
+      };
     });
-    await runStatements(this.db, statements);
+    await runStatements(this.db, refreshed.map(item => item.statement));
+    for (const item of refreshed) {
+      if (item.previousFileKey !== null && item.previousFileKey !== item.nextFileKey) {
+        await getFileProvider().deletePrefix(item.previousFileKey);
+      }
+    }
   }
 
   async deleteOlderThan(createdBefore: number): Promise<number> {

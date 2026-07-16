@@ -37,7 +37,7 @@ describe.each(factories)('%s Responses state repo', (_name, createRepo) => {
     expect(await repo.responsesItems.lookupManyByContentHash('key-a', ['hash-a'])).toEqual([first]);
   });
 
-  test('deletes complete items and snapshots by their shared creation-time retention', async () => {
+  test('deletes complete items and snapshots by their refreshable retention timestamp', async () => {
     initFileProvider(new MemoryFileProvider());
     const repo = await createRepo();
     const old = storedItem('msg_old', 'key-a', 'old', 1_000);
@@ -53,6 +53,35 @@ describe.each(factories)('%s Responses state repo', (_name, createRepo) => {
     expect(await repo.responsesSnapshots.lookup('key-a', 'resp_fresh')).toEqual({
       id: 'resp_fresh', apiKeyId: 'key-a', itemIds: [fresh.id], createdAt: 3_000,
     });
+  });
+
+  test('refreshes spilled payload expiry without retaining the previous file', async () => {
+    const files = new MemoryFileProvider();
+    initFileProvider(files);
+    const repo = await createRepo();
+    const bytes = crypto.getRandomValues(new Uint8Array(128 * 1024));
+    let binary = '';
+    for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+      binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+    }
+    const item = {
+      ...storedItem('msg_large', 'key-a', 'large', 1_000),
+      payload: { item: { type: 'message', id: 'msg_large', role: 'assistant', content: btoa(binary) } },
+    };
+    await repo.responsesItems.insertMany([item]);
+    const before = await files.listKeys('responses-items/');
+    await repo.responsesItems.refreshMany([item], 1_000 + 2 * 60 * 60 * 1000);
+    const after = await files.listKeys('responses-items/');
+
+    if (_name === 'sql') {
+      expect(before).toHaveLength(1);
+      expect(after).toHaveLength(1);
+      expect(after[0]).not.toBe(before[0]);
+    } else {
+      expect(before).toEqual([]);
+      expect(after).toEqual([]);
+    }
+    expect((await repo.responsesItems.lookupMany('key-a', [item.id]))[0].createdAt).toBe(1_000 + 2 * 60 * 60 * 1000);
   });
 });
 

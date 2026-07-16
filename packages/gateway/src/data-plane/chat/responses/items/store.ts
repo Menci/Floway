@@ -126,26 +126,19 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
 
   async commitSnapshot(responseId: string, mode: ResponsesSnapshotMode): Promise<void> {
     if (this.options.writes.length === 0) return;
-    const rows = mode === 'replace'
-      ? [...this.stagedOutputItems.values()]
-      : [
-          ...this.previousSnapshotItemIds.map(id => {
-            const item = this.loadedItems.get(id);
-            if (item === undefined) throw new Error(`Responses snapshot item disappeared before commit: ${id}`);
-            return item;
-          }),
-          ...this.stagedInputItems.values(),
-          ...this.stagedOutputItems.values(),
-        ];
-    const uniqueRows = [...new Map(rows.map(row => [row.id, row])).values()];
-    await this.commitItems(uniqueRows);
-    const createdAt = Date.now();
-    await Promise.all(this.options.writes.map(write => write.backing.refreshItems(uniqueRows, createdAt)));
-    for (const row of uniqueRows) row.createdAt = createdAt;
     const itemIds = mode === 'replace'
       ? [...this.stagedOutputItemIds]
       : [...this.previousSnapshotItemIds, ...this.stagedInputItemIds, ...this.stagedOutputItemIds];
     if (itemIds.length === 0) return;
+    const uniqueRows = [...new Set(itemIds)].map(id => {
+      const row = this.loadedItems.get(id);
+      if (row === undefined) throw new Error(`Responses snapshot item disappeared before commit: ${id}`);
+      return row;
+    });
+    await this.commitItems(uniqueRows);
+    const createdAt = Date.now();
+    await Promise.all(this.options.writes.map(write => write.backing.refreshItems(uniqueRows, createdAt)));
+    for (const row of uniqueRows) row.createdAt = createdAt;
     const snapshot: StoredResponsesSnapshot = {
       id: responseId,
       apiKeyId: this.apiKeyId,

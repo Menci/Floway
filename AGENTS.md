@@ -181,8 +181,9 @@ remain request-local and only native Responses sources construct a store.
 
 HTTP `store: false` writes no state. WebSocket `store: false` uses session memory
 for same-socket references and disappears with the socket. Durable items and
-snapshots use a 30-day creation lifetime. Hydration, ID rewrite, commit
-ordering, and compaction invariants live beside the implementation and tests.
+snapshots expire 30 days after their latest snapshot reference. Hydration, ID
+rewrite, commit ordering, and compaction invariants live beside the
+implementation and tests.
 
 ## Verification
 

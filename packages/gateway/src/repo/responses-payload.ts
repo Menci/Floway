@@ -35,8 +35,8 @@ type StoredResponsesPayloadJson =
 // cap pushes large tool outputs out to the file provider where per-byte
 // storage is dramatically cheaper than D1.
 const INLINE_PAYLOAD_LIMIT_BYTES = 64 * 1024;
-// Shared creation-based horizon for item/snapshot deletion and spilled-file
-// expiry buckets. Lookups remain valid until scheduled cleanup removes state.
+// Shared refreshable horizon for item/snapshot deletion and spilled-file
+// expiry buckets. Snapshot commits refresh every referenced item's timestamp.
 export const RESPONSES_STATE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -106,6 +106,11 @@ export const parseStoredResponsesPayload = async (
   }
 
   return parseInlinePayloadJson(id, 'encoding' in descriptor ? await ungzipToString(body) : decoder.decode(body));
+};
+
+export const storedResponsesPayloadFileKey = (id: string, raw: string): string | null => {
+  const descriptor = parseDescriptor(id, raw);
+  return descriptor.storage === 'file' ? descriptor.key : null;
 };
 
 const parseInlinePayloadJson = (id: string, json: string): StoredResponsesItemPayload => {

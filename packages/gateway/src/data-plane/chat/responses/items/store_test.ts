@@ -84,6 +84,38 @@ describe('StatefulResponsesStore', () => {
     expect(await repo.responsesItems.lookupMany('key-a', [item.id])).toHaveLength(1);
   });
 
+  test('append snapshots refresh direct-id and content-hash input reuse', async () => {
+    const repo = new InMemoryRepo();
+    initRepo(repo);
+    const store = createResponsesHttpStore('key-a', true);
+    const directInput = { type: 'message' as const, id: 'msg_direct', role: 'user' as const, content: 'direct' };
+    const hashedInput = { type: 'message' as const, role: 'user' as const, content: 'hashed' };
+    const directRow = {
+      id: directInput.id,
+      apiKeyId: 'key-a',
+      itemType: 'message',
+      payload: { item: directInput },
+      contentHash: await store.hashItemContent(directInput),
+      createdAt: 1,
+    };
+    const hashedRow = {
+      id: 'msg_hashed',
+      apiKeyId: 'key-a',
+      itemType: 'message',
+      payload: { item: hashedInput },
+      contentHash: await store.hashItemContent(hashedInput),
+      createdAt: 1,
+    };
+    await repo.responsesItems.insertMany([directRow, hashedRow]);
+    await store.loadInputItems([directInput, hashedInput], [directInput, hashedInput]);
+    await store.stageInputItems([directInput, hashedInput]);
+    await store.commitSnapshot('resp_reused', 'append');
+
+    const refreshed = await repo.responsesItems.lookupMany('key-a', [directRow.id, hashedRow.id]);
+    expect(refreshed.every(row => row.createdAt > 1)).toBe(true);
+    expect((await repo.responsesSnapshots.lookup('key-a', 'resp_reused'))?.itemIds).toEqual([directRow.id, hashedRow.id]);
+  });
+
   test('WebSocket store=false retains socket-local state only', async () => {
     const repo = new InMemoryRepo();
     initRepo(repo);
