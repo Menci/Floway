@@ -47,6 +47,15 @@ vi.mock('../../../components/keys/AgentSetupCard.vue', () => ({
 
 const { default: KeysPage } = await import('./index.vue');
 
+const mountPage = () => mount(KeysPage, {
+  global: {
+    stubs: {
+      EditKeyDialog: true,
+      Dialog: true,
+    },
+  },
+});
+
 const apiKey = (over: Partial<ApiKey> & { id: string; name: string }): ApiKey => ({
   key: 'sk-xxxx',
   created_at: '2026-01-01T00:00:00Z',
@@ -69,7 +78,7 @@ afterEach(() => {
 describe('KeysPage', () => {
   it('passes the account keys and addressable models into AgentSetupCard', () => {
     pageData.value = { keys: [apiKey({ id: 'k1', name: 'Primary' }), apiKey({ id: 'k2', name: 'CI' })], error: null };
-    mount(KeysPage);
+    mountPage();
 
     expect(cardProps).not.toBeNull();
     expect((cardProps!.keys as ApiKey[]).map(k => k.id)).toEqual(['k1', 'k2']);
@@ -77,7 +86,7 @@ describe('KeysPage', () => {
   });
 
   it('drives the setup card off the addressable-models store, not the limited catalog', () => {
-    mount(KeysPage);
+    mountPage();
     expect(addressableLoad).not.toBe(limitedLoad);
     // The card sees the addressable catalog the store exposes.
     expect((cardProps!.models as ControlPlaneModel[]).map(m => m.id)).toEqual(['claude-sonnet-4-5', 'gpt-5']);
@@ -85,7 +94,7 @@ describe('KeysPage', () => {
 
   it('renders the keys table without any snippet-era row-selection wiring', () => {
     pageData.value = { keys: [apiKey({ id: 'k1', name: 'Primary' })], error: null };
-    const w = mount(KeysPage);
+    const w = mountPage();
     const table = w.findComponent(KeysTable);
     expect(table.exists()).toBe(true);
     expect(table.props('keys')).toHaveLength(1);

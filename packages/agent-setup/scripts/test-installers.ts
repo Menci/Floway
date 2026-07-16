@@ -7,7 +7,7 @@
 // Codex CLIs, fake official installers, and local authenticated model catalogs,
 // then inspects files, protocol records, permissions, rollback, and output.
 // The full host run exercises more than 90 behavior cases across Bash and
-// PowerShell, including a real Codex 0.144.1 app-server smoke when that exact
+// PowerShell, including a real Codex 0.144.5 app-server smoke when that exact
 // CLI is present.
 // Individual cases skip only when their host prerequisite is absent or blocks
 // isolation: PowerShell, the pinned Codex binary, jq-bootstrap network access,
@@ -1638,11 +1638,11 @@ const assertStagedToken = (t: Assert, ws: Workspace, codexHome?: string): void =
   t.equal(readCodexToken(ws, codexHome), SENTINEL_KEY, 'provider token carries the Floway API key byte-for-byte');
 };
 
-// The real Codex 0.144.1 binary on the host, used by the end-to-end smoke test.
-// It must be exactly 0.144.1 so the wire protocol matches the version the
+// The real Codex 0.144.5 binary on the host, used by the end-to-end smoke test.
+// It must be exactly 0.144.5 so the wire protocol matches the version the
 // installer was built against; any other version self-skips rather than
 // asserting against an unverified protocol.
-const PINNED_CODEX_VERSION = '0.144.1';
+const PINNED_CODEX_VERSION = '0.144.5';
 const parseCodexCliVersion = (output: string): string | null =>
   /^codex-cli ([0-9]+\.[0-9]+\.[0-9]+)$/.exec(output.trim())?.[1] ?? null;
 const hostCodex = ((): string | null => {
@@ -1660,10 +1660,10 @@ const GLOBAL_CODEX_LOCATIONS = ['/opt/homebrew/bin/codex', '/usr/local/bin/codex
 const globalCodexPresent = (): boolean => GLOBAL_CODEX_LOCATIONS.some(p => existsSync(p));
 
 test('codex', 'real app-server smoke version guard requires exact codex-cli semantic version', t => {
-  t.equal(parseCodexCliVersion('codex-cli 0.144.1'), '0.144.1', 'the pinned output parses exactly');
-  t.equal(parseCodexCliVersion('codex-cli 0.144.10'), '0.144.10', 'a longer patch version stays distinct');
-  t.ok(parseCodexCliVersion('codex-cli 0.144.10') !== PINNED_CODEX_VERSION, '0.144.10 cannot pass the 0.144.1 guard');
-  t.equal(parseCodexCliVersion('codex-cli 0.144.1 extra'), null, 'extra output invalidates the exact version contract');
+  t.equal(parseCodexCliVersion('codex-cli 0.144.5'), '0.144.5', 'the pinned output parses exactly');
+  t.equal(parseCodexCliVersion('codex-cli 0.144.50'), '0.144.50', 'a longer patch version stays distinct');
+  t.ok(parseCodexCliVersion('codex-cli 0.144.50') !== PINNED_CODEX_VERSION, '0.144.50 cannot pass the 0.144.5 guard');
+  t.equal(parseCodexCliVersion('codex-cli 0.144.5 extra'), null, 'extra output invalidates the exact version contract');
 });
 
 test('codex', 'existing CLI configures via the app-server and stages the provider token', async t => {
@@ -2341,8 +2341,8 @@ test('codex', 'PowerShell: independent agents keep a configured Claude when code
 
 // --- Codex real-binary smoke test -------------------------------------------
 
-test('codex', 'end-to-end against the real pinned Codex 0.144.1 app-server writes config.toml', async t => {
-  if (!hostCodex) skip('real Codex 0.144.1 is not installed on this host');
+test('codex', 'end-to-end against the real pinned Codex 0.144.5 app-server writes config.toml', async t => {
+  if (!hostCodex) skip('real Codex 0.144.5 is not installed on this host');
   const ws = makeWorkspace();
   symlinkSync(hostCodex, join(ws.binDir, 'codex'));
   const codexHome = join(ws.root, 'real-codex-home');
