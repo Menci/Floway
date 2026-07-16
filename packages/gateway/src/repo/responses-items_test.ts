@@ -187,7 +187,7 @@ test('SQL refresh cleans a replacement spill when the row disappears before upda
   expect(await repo.responsesItems.lookupMany('key-a', [item.id])).toEqual([]);
 });
 
-test('SQL stale refresh cannot restore a superseded spill descriptor', async () => {
+test('SQL stale refresh accepts a newer concurrent spill descriptor', async () => {
   const files = new MemoryFileProvider();
   initFileProvider(files);
   const base = await createSqliteTestDb();
@@ -215,10 +215,46 @@ test('SQL stale refresh cannot restore a superseded spill descriptor', async () 
   await staleStarted;
   await repo.responsesItems.refreshMany([item], currentCreatedAt);
   releaseStale?.();
-  await expect(staleRefresh).rejects.toThrow('Unexpected Responses item refresh count');
+  await staleRefresh;
 
   const [persisted] = await repo.responsesItems.lookupMany('key-a', [item.id]);
   expect(persisted.createdAt).toBe(currentCreatedAt);
+  expect(persisted.payload).toEqual(item.payload);
+  expect(await files.listKeys('responses-items/')).toHaveLength(1);
+});
+
+test('SQL newer refresh retries after an older concurrent spill wins CAS', async () => {
+  const files = new MemoryFileProvider();
+  initFileProvider(files);
+  const base = await createSqliteTestDb();
+  const item = spilledItem('msg_refresh_retry', 'key-a', 1_000);
+  await new SqlRepo(base).responsesItems.insertMany([item]);
+  let releaseNewer: (() => void) | undefined;
+  const newerGate = new Promise<void>(resolve => { releaseNewer = resolve; });
+  let markNewerStarted: (() => void) | undefined;
+  const newerStarted = new Promise<void>(resolve => { markNewerStarted = resolve; });
+  let batchNumber = 0;
+  const repo = new SqlRepo(sqlDatabaseWithBatch(base, async statements => {
+    batchNumber += 1;
+    if (batchNumber === 1) {
+      markNewerStarted?.();
+      await newerGate;
+    }
+    const results = [];
+    for (const statement of statements) results.push(await statement.run());
+    return results;
+  }));
+  const olderCreatedAt = 1_000 + 60 * 60 * 1000;
+  const newerCreatedAt = 1_000 + 2 * 60 * 60 * 1000;
+
+  const newerRefresh = repo.responsesItems.refreshMany([item], newerCreatedAt);
+  await newerStarted;
+  await repo.responsesItems.refreshMany([item], olderCreatedAt);
+  releaseNewer?.();
+  await newerRefresh;
+
+  const [persisted] = await repo.responsesItems.lookupMany('key-a', [item.id]);
+  expect(persisted.createdAt).toBe(newerCreatedAt);
   expect(persisted.payload).toEqual(item.payload);
   expect(await files.listKeys('responses-items/')).toHaveLength(1);
 });

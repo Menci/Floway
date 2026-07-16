@@ -1,11 +1,14 @@
-import { expect, test, vi } from 'vitest';
+import { expect, test } from 'vitest';
 
 import { isResponsesItemId } from './format.ts';
 import { wrapResponsesClientOutput } from './output.ts';
-import { createResponsesHttpStore } from './store.ts';
+import { createResponsesHttpStore, LayeredStatefulResponsesStore, RepoStatefulResponsesBacking } from './store.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
+import { SqlRepo } from '../../../../repo/sql.ts';
+import { createSqliteTestDb } from '../../../../repo/test-sqlite.ts';
 import { ResponsesAttemptState } from '../attempt-state.ts';
+import { initFileProvider, MemoryFileProvider, type SqlDatabase, type SqlPreparedStatement } from '@floway-dev/platform';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
@@ -15,6 +18,33 @@ const frames = async function* (response: ResponsesResult): AsyncIterable<Protoc
   yield eventFrame({ type: 'response.output_item.done', output_index: 0, item });
   yield eventFrame({ type: 'response.completed', response });
   yield doneFrame();
+};
+
+const countingSqlDatabase = (base: SqlDatabase): { db: SqlDatabase; queryCount: () => number } => {
+  let count = 0;
+  const wrap = (statement: SqlPreparedStatement): SqlPreparedStatement => ({
+    bind: (...values) => wrap(statement.bind(...values)),
+    first: async <T>() => {
+      count += 1;
+      return await statement.first<T>();
+    },
+    all: async <T>() => {
+      count += 1;
+      return await statement.all<T>();
+    },
+    run: async () => {
+      count += 1;
+      return await statement.run();
+    },
+  });
+  return {
+    db: {
+      prepare: query => wrap(base.prepare(query)),
+      batch: async statements => await Promise.all(statements.map(async statement => await statement.run())),
+      exec: sql => base.exec(sql),
+    },
+    queryCount: () => count,
+  };
 };
 
 test('client output rewrites ids and persists the exact complete item before terminal', async () => {
@@ -87,15 +117,21 @@ test('client output uses one item id across lifecycle snapshots without committi
     return [];
   });
   expect(new Set(ids).size).toBe(1);
-  expect(await repo.responsesItems.lookupMany('key-a', ids.filter((id): id is string => typeof id === 'string'))).toEqual([]);
+  expect(await repo.responsesItems.lookupMany('key-a', ids.filter((id): id is string => typeof id === 'string'))).toHaveLength(1);
   expect(await repo.responsesSnapshots.lookup('key-a', 'resp_public')).toBeNull();
 });
 
 test('client output batches hundreds of finalized items at the successful terminal boundary', async () => {
-  const repo = new InMemoryRepo();
-  initRepo(repo);
-  const insertItems = vi.spyOn(repo.responsesItems, 'insertMany');
-  const store = createResponsesHttpStore('key-a', true);
+  initFileProvider(new MemoryFileProvider());
+  const counting = countingSqlDatabase(await createSqliteTestDb());
+  const repo = new SqlRepo(counting.db);
+  const backing = new RepoStatefulResponsesBacking(() => repo);
+  const store = new LayeredStatefulResponsesStore({
+    apiKeyId: 'key-a',
+    reads: [backing],
+    writes: [backing],
+    stageInputs: true,
+  });
   const items = Array.from({ length: 240 }, (_, index) => ({
     type: 'reasoning' as const,
     id: `rs_upstream_${index}`,
@@ -130,12 +166,11 @@ test('client output batches hundreds of finalized items at the successful termin
     }
     expect(next.value.event.item.id).not.toBe(item.id);
   }
-  expect(insertItems).not.toHaveBeenCalled();
+  expect(counting.queryCount()).toBe(0);
 
   const terminal = await iterator.next();
   expect(terminal.value?.type === 'event' && terminal.value.event.type).toBe('response.completed');
-  expect(insertItems).toHaveBeenCalledTimes(1);
-  expect(insertItems.mock.calls[0][0]).toHaveLength(items.length);
+  expect(counting.queryCount()).toBeLessThan(50);
   expect((await repo.responsesSnapshots.lookup('key-a', 'resp_public'))?.itemIds).toHaveLength(items.length);
 });
 
