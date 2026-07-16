@@ -290,7 +290,7 @@ export class MemoryStatefulResponsesBacking implements StatefulResponsesBacking 
     if (missingIndex !== -1) {
       return Promise.reject(new Error(`Responses item disappeared before lifetime refresh: ${items[missingIndex].id}`));
     }
-    for (const item of existing) item!.createdAt = createdAt;
+    for (const item of existing) item!.createdAt = Math.max(item!.createdAt, createdAt);
     return Promise.resolve();
   }
 
@@ -300,7 +300,11 @@ export class MemoryStatefulResponsesBacking implements StatefulResponsesBacking 
   }
 
   insertSnapshot(snapshot: StoredResponsesSnapshot): Promise<void> {
-    this.snapshots.set(scopedResponsesKey(snapshot.apiKeyId, snapshot.id), cloneStoredResponsesSnapshot(snapshot));
+    const key = scopedResponsesKey(snapshot.apiKeyId, snapshot.id);
+    const existing = this.snapshots.get(key);
+    if (existing === undefined || snapshot.createdAt >= existing.createdAt) {
+      this.snapshots.set(key, cloneStoredResponsesSnapshot(snapshot));
+    }
     return Promise.resolve();
   }
 }

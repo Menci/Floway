@@ -1150,8 +1150,11 @@ class SqlResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
       .prepare(
         `INSERT INTO responses_snapshots (id, api_key_id, item_ids_json, created_at) VALUES (?, ?, ?, ?)
          ON CONFLICT (id, api_key_id) DO UPDATE SET
-           item_ids_json = excluded.item_ids_json,
-           created_at = excluded.created_at`,
+           item_ids_json = CASE
+             WHEN excluded.created_at >= responses_snapshots.created_at THEN excluded.item_ids_json
+             ELSE responses_snapshots.item_ids_json
+           END,
+           created_at = MAX(responses_snapshots.created_at, excluded.created_at)`,
       )
       .bind(snapshot.id, snapshot.apiKeyId, JSON.stringify(snapshot.itemIds), snapshot.createdAt)
       .run();
