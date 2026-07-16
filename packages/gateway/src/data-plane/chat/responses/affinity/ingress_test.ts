@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 
 import { prepareResponsesAffinity } from './ingress.ts';
-import { affinityTargetForCandidate, AffinityCodec } from '../../shared/affinity/index.ts';
+import { AffinityCodec, type AffinityTarget } from '../../shared/affinity/index.ts';
 import { hashResponsesItemBinding } from '../items/format.ts';
 import type { CanonicalResponsesPayload } from '@floway-dev/protocols/responses';
 import type { ModelCandidate } from '@floway-dev/provider';
@@ -18,13 +18,19 @@ const candidate = (upstream: string): ModelCandidate => {
   });
 };
 
+const targetFor = (value: ModelCandidate): AffinityTarget => ({
+  upstreamId: value.provider.upstream,
+  modelId: value.model.id,
+  ...(value.rules !== undefined ? { rules: value.rules } : {}),
+});
+
 const candidateA = candidate('upstream-a');
 const candidateB = candidate('upstream-b');
 
 test('restores the original upstream item id and drops owned state on fallback', async () => {
   const carrier = await codec.wrap(
     'encrypted',
-    { ...affinityTargetForCandidate(candidateA), upstreamItemId: 'rs_upstream' },
+    { ...targetFor(candidateA), upstreamItemId: 'rs_upstream' },
     carrierDomain('reasoning', 'encrypted_content'),
   );
   const prepared = await prepareResponsesAffinity({
@@ -44,7 +50,7 @@ test('restores the original upstream item id and drops owned state on fallback',
 test('applies item-id provenance from nested encrypted content', async () => {
   const carrier = await codec.wrap(
     'nested-encrypted',
-    { ...affinityTargetForCandidate(candidateA), upstreamItemId: 'amsg_upstream' },
+    { ...targetFor(candidateA), upstreamItemId: 'amsg_upstream' },
     carrierDomain('agent_message', 'content.1.encrypted_content'),
   );
   const prepared = await prepareResponsesAffinity({
@@ -74,7 +80,7 @@ test('applies item-id provenance from nested encrypted content', async () => {
 test('preserves an originally empty agent message after removing its synthetic nested carrier', async () => {
   const carrier = await codec.wrap(
     undefined,
-    { ...affinityTargetForCandidate(candidateA), upstreamItemId: 'amsg_upstream' },
+    { ...targetFor(candidateA), upstreamItemId: 'amsg_upstream' },
     carrierDomain('agent_message', 'content.0.encrypted_content'),
   );
   const prepared = await prepareResponsesAffinity({
@@ -104,12 +110,12 @@ test('preserves an originally empty agent message after removing its synthetic n
 test('rewrites multiple nested encrypted blocks against their original indexes', async () => {
   const first = await codec.wrap(
     'first',
-    { ...affinityTargetForCandidate(candidateA), upstreamItemId: 'amsg_upstream' },
+    { ...targetFor(candidateA), upstreamItemId: 'amsg_upstream' },
     carrierDomain('agent_message', 'content.0.encrypted_content'),
   );
   const second = await codec.wrap(
     'second',
-    { ...affinityTargetForCandidate(candidateA), upstreamItemId: 'amsg_upstream' },
+    { ...targetFor(candidateA), upstreamItemId: 'amsg_upstream' },
     carrierDomain('agent_message', 'content.1.encrypted_content'),
   );
   const prepared = await prepareResponsesAffinity({
@@ -149,7 +155,7 @@ test('passes foreign blobs through unchanged for cascaded gateways', async () =>
 test('derives force routing from program state following a preferred carrier', async () => {
   const carrier = await codec.wrap(
     undefined,
-    affinityTargetForCandidate(candidateA),
+    targetFor(candidateA),
     carrierDomain('reasoning', 'encrypted_content'),
   );
   const prepared = await prepareResponsesAffinity({
@@ -161,8 +167,8 @@ test('derives force routing from program state following a preferred carrier', a
   }, codec);
 
   expect(prepared.routingEvidence).toEqual([
-    { target: affinityTargetForCandidate(candidateA), mode: 'prefer' },
-    { target: affinityTargetForCandidate(candidateA), mode: 'force' },
+    { target: targetFor(candidateA), mode: 'prefer' },
+    { target: targetFor(candidateA), mode: 'force' },
   ]);
 });
 
@@ -171,7 +177,7 @@ test('restores the bound ID of a force item carried by an adjacent synthetic pre
   const carrier = await codec.wrap(
     undefined,
     {
-      ...affinityTargetForCandidate(candidateA),
+      ...targetFor(candidateA),
       syntheticItem: true,
       boundItem: {
         type: 'program_output',
@@ -204,7 +210,7 @@ test('restores a preferred bound item ID only for exact optional rules', async (
   const carrier = await codec.wrap(
     undefined,
     {
-      ...affinityTargetForCandidate(aliasCandidate),
+      ...targetFor(aliasCandidate),
       syntheticItem: true,
       boundItem: {
         type: item.type,
@@ -231,7 +237,7 @@ test('rejects a bound carrier moved before a different same-type item', async ()
   const carrier = await codec.wrap(
     undefined,
     {
-      ...affinityTargetForCandidate(candidateA),
+      ...targetFor(candidateA),
       syntheticItem: true,
       boundItem: {
         type: original.type,
@@ -258,7 +264,7 @@ test('rejects a bound carrier moved before a different same-type item', async ()
 test('treats compaction_summary as force state and restores its upstream ID', async () => {
   const carrier = await codec.wrap(
     'opaque',
-    { ...affinityTargetForCandidate(candidateA), upstreamItemId: 'cmp_upstream' },
+    { ...targetFor(candidateA), upstreamItemId: 'cmp_upstream' },
     carrierDomain('compaction_summary', 'encrypted_content'),
   );
   const item = { type: 'compaction_summary', id: 'cmp_public', encrypted_content: carrier } as unknown as CanonicalResponsesPayload['input'][number];

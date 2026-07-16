@@ -8,7 +8,6 @@ import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import type { StoredResponsesItem } from '../../../repo/types.ts';
 import { mockChatGatewayCtx } from '../../../test-helpers/gateway-ctx.ts';
-import { affinityTargetForCandidate } from '../shared/affinity/index.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { initExternalResourceFetcher } from '@floway-dev/platform';
 import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
@@ -269,7 +268,7 @@ test('generate defers role promotion until after translation to Chat Completions
 
 test('generate passes non-events provider result through unchanged', async () => {
   installRepo();
-  const wrapSpy = vi.spyOn(outputModule, 'wrapResponsesOutputForStorage');
+  const wrapSpy = vi.spyOn(outputModule, 'wrapResponsesClientOutput');
 
   const upstreamResponse = new Response(JSON.stringify({ error: { message: 'nope' } }), { status: 502, headers: new Headers({ 'content-type': 'application/json' }) });
   const callResponses = vi.fn(async (): Promise<ProviderResponsesResult> => ({
@@ -419,7 +418,7 @@ test('generate seeds privatePayload before interceptors so the web-search shim r
   // placeholder.
   //
   // The wire shape we model here:
-  //   - row.id = stored gateway id (`ws_<crc>_<body>`) — wrapResponsesOutputForStorage
+  //   - row.id = stored gateway id (`ws_<crc>_<body>`) — wrapResponsesClientOutput
   //     emits this on the wire and clients echo it back as `wsc.id`.
   //   - payload.item.id = the stored client-visible id; affinity restores the
   //     original `ws_gw_` wire id before the shim sees the item.
@@ -484,7 +483,8 @@ test('generate seeds privatePayload before interceptors so the web-search shim r
   const carrier = await ctx.affinity.codec.wrap(
     undefined,
     {
-      ...affinityTargetForCandidate(candidate),
+      upstreamId: candidate.provider.upstream,
+      modelId: candidate.model.id,
       syntheticItem: true,
       boundItem: {
         type: storedItem.type,

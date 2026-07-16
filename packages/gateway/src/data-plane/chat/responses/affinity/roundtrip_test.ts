@@ -4,9 +4,9 @@ import { wrapResponsesAffinityEgress } from './egress.ts';
 import { prepareResponsesAffinity } from './ingress.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
-import { AffinityCodec, affinityTargetForCandidate } from '../../shared/affinity/index.ts';
+import { AffinityCodec } from '../../shared/affinity/index.ts';
 import { ResponsesAttemptState } from '../attempt-state.ts';
-import { wrapResponsesOutputForStorage } from '../items/output.ts';
+import { wrapResponsesClientOutput } from '../items/output.ts';
 import { createResponsesHttpStore } from '../items/store.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesInputItem, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
@@ -41,9 +41,9 @@ test('stored force items recover their original upstream IDs from adjacent clien
   };
   const affinity = wrapResponsesAffinityEgress(source(), {
     codec,
-    affinity: affinityTargetForCandidate(candidate),
+    affinity: { upstreamId: candidate.provider.upstream, modelId: candidate.model.id },
   });
-  const stored = wrapResponsesOutputForStorage(affinity, {
+  const stored = wrapResponsesClientOutput(affinity, {
     store: createResponsesHttpStore('key-a', true),
     attemptState: new ResponsesAttemptState(),
     responseId: 'resp_public',

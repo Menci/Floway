@@ -102,7 +102,7 @@ export const createTemporaryResponsesItemId = (itemType: string): string => `${p
 // wrap (the snapshot store key, the SSE/WS frames the client sees) carries
 // this id.
 const responseEnvelopePrefix = 'resp';
-export const createStoredResponseId = (): string => {
+export const createResponsesResponseId = (): string => {
   const body = randomBody();
   return `${responseEnvelopePrefix}_${crc32Checksum(body)}_${body}`;
 };

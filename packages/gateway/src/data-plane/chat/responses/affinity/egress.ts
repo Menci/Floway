@@ -179,9 +179,8 @@ const wrapResponsesCarrierLifecycle = async function* (
     const inserted = insertedItems.get(originalOutputIndex);
     if (inserted === undefined) throw new Error(`Responses affinity carrier ${originalOutputIndex} completed before it started`);
     const upstreamItemId = item !== undefined && 'id' in item && typeof item.id === 'string' ? item.id : undefined;
-    const contentHash = item === undefined ? undefined : await hashResponsesItemBinding(item);
-    const boundItem = item !== undefined && upstreamItemId !== undefined && contentHash !== undefined
-      ? { type: item.type, upstreamItemId, contentHash }
+    const boundItem = item !== undefined && upstreamItemId !== undefined
+      ? { type: item.type, upstreamItemId, contentHash: await hashResponsesItemBinding(item) }
       : undefined;
     if (inserted.completed !== undefined) {
       if (
@@ -323,13 +322,9 @@ const wrapResponsesCarrierLifecycle = async function* (
           for (const inserted of startCarrierBefore(outputIndex, event.sequence_number)) yield eventFrame(inserted);
         }
       }
-      for (const [outputIndex, inserted] of insertedItems) {
+      for (const outputIndex of insertedItems.keys()) {
         const item = event.response.output[outputIndex];
-        if (inserted.completed === undefined) {
-          for (const completed of await completeCarrierBefore(item, outputIndex, event.sequence_number)) yield eventFrame(completed);
-        } else {
-          await completeCarrierBefore(item, outputIndex, event.sequence_number);
-        }
+        for (const completed of await completeCarrierBefore(item, outputIndex, event.sequence_number)) yield eventFrame(completed);
       }
       const response = await rewriteResponse(event.response, true);
       yield eventFrame(addSequenceOffset({ ...event, response }, sequenceOffset));

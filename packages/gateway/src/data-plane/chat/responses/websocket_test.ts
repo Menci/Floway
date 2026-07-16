@@ -1,7 +1,7 @@
 import type { ExecutionContext } from 'hono';
 import { test, vi } from 'vitest';
 
-import { hashResponsesItemBinding, hashResponsesItemContent, isStoredResponseId } from './items/format.ts';
+import { hashResponsesItemBinding, hashResponsesItemContent, isStoredResponseId, isStoredResponsesItemId } from './items/format.ts';
 import { responsesServe } from './serve.ts';
 import { app } from '../../../app.ts';
 import { initDumpBroker, initDumpStore } from '../../../dump/registry.ts';
@@ -802,9 +802,11 @@ test('Responses WebSocket store:false keeps session snapshots without durable re
       const firstMessages = await firstDone;
       const firstResponseId = responseDoneId(firstMessages);
 
+      assert(isStoredResponseId(firstResponseId), 'expected a Floway response id');
       assertEquals(await repo.responsesSnapshots.lookup(apiKey.id, firstResponseId), null);
       const firstOutput = firstMessages.find(message => message.type === 'response.output_item.done') as { item?: { id?: string } } | undefined;
       assertExists(firstOutput?.item?.id);
+      assert(isStoredResponsesItemId(firstOutput.item.id), 'expected a Floway output item id');
       assertEquals(await repo.responsesItems.lookupMany(apiKey.id, [firstOutput.item.id]), []);
       assertEquals(
         await repo.responsesItems.lookupManyByContentHash(apiKey.id, [await hashResponsesItemContent({ type: 'message', role: 'user', content: 'first question' })]),

@@ -11,7 +11,6 @@ describe('StatefulResponsesStore', () => {
     initRepo(repo);
     const store = createResponsesHttpStore('key-a', false);
 
-    expect(store.storesState).toBe(false);
     await store.stageInputItems([{ type: 'message', role: 'user', content: 'hello' }]);
     await store.commitSnapshot('resp_none', 'append');
     expect(await repo.responsesSnapshots.lookup('key-a', 'resp_none')).toBeNull();

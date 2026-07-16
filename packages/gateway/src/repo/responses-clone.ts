@@ -10,7 +10,7 @@ export const cloneStoredResponsesSnapshot = (snapshot: StoredResponsesSnapshot):
   itemIds: [...snapshot.itemIds],
 });
 
-export const responsesItemStoreKey = (apiKeyId: string, id: string): string => `${apiKeyId}\0${id}`;
+export const scopedResponsesKey = (apiKeyId: string, id: string): string => `${apiKeyId}\0${id}`;
 
 export const compareResponsesItemsByFreshness = (
   a: Pick<StoredResponsesItem, 'id' | 'createdAt'>,

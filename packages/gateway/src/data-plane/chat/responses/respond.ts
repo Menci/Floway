@@ -2,8 +2,8 @@ import type { Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
 
 import { wrapResponsesAffinityEgress } from './affinity/egress.ts';
-import { createStoredResponseId } from './items/format.ts';
-import { wrapResponsesOutputForStorage } from './items/output.ts';
+import { createResponsesResponseId } from './items/format.ts';
+import { wrapResponsesClientOutput } from './items/output.ts';
 import { tokenUsageFromResponsesResult } from './usage.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
@@ -98,10 +98,10 @@ const nativeResponsesOutput = (
     codec: chatCtx.affinity.codec,
     affinity: chatCtx.affinity.selectedTarget(),
   });
-  return wrapResponsesOutputForStorage(withAffinity, {
+  return wrapResponsesClientOutput(withAffinity, {
     store: chatCtx.store,
     attemptState: chatCtx.responsesAttemptState,
-    responseId: createStoredResponseId(),
+    responseId: createResponsesResponseId(),
   });
 };
 

@@ -1,8 +1,8 @@
 import { wrapResponsesAffinityEgress } from './affinity/egress.ts';
 import { responsesAttempt } from './attempt.ts';
 import type { ResponsesAttemptResult } from './interceptors/types.ts';
-import { createStoredResponseId } from './items/format.ts';
-import { syntheticEventsFromResult, wrapResponsesOutputForStorage } from './items/output.ts';
+import { createResponsesResponseId } from './items/format.ts';
+import { syntheticEventsFromResult, wrapResponsesClientOutput } from './items/output.ts';
 import { prepareResponsesServePlan } from './serve-prep.ts';
 import { tokenUsageFromResponsesResult } from './usage.ts';
 import { iterateCandidates } from '../../shared/iterate-candidates.ts';
@@ -84,10 +84,10 @@ export const responsesServe = {
       codec: ctx.affinity.codec,
       affinity: ctx.affinity.selectedTarget(),
     });
-    const stored = wrapResponsesOutputForStorage(withAffinity, {
+    const stored = wrapResponsesClientOutput(withAffinity, {
       store,
       attemptState: ctx.responsesAttemptState,
-      responseId: createStoredResponseId(),
+      responseId: createResponsesResponseId(),
     });
     const clientResult = await collectResponsesProtocolEventsToResult(stored);
     return {

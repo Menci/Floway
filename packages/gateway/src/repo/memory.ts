@@ -5,7 +5,7 @@ import {
   cloneStoredResponsesItem,
   cloneStoredResponsesSnapshot,
   compareResponsesItemsByFreshness,
-  responsesItemStoreKey,
+  scopedResponsesKey,
 } from './responses-clone.ts';
 import type {
   ApiKey,
@@ -595,7 +595,7 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
     for (const id of ids) {
       if (seen.has(id)) continue;
       seen.add(id);
-      const row = this.store.get(responsesItemStoreKey(apiKeyId, id));
+      const row = this.store.get(scopedResponsesKey(apiKeyId, id));
       if (row !== undefined) rows.push(cloneStoredResponsesItem(row));
     }
     return rows;
@@ -603,7 +603,7 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
 
   insertMany(items: readonly StoredResponsesItem[]): Promise<void> {
     for (const item of items) {
-      const key = responsesItemStoreKey(item.apiKeyId, item.id);
+      const key = scopedResponsesKey(item.apiKeyId, item.id);
       if (this.store.has(key)) continue;
       this.store.set(key, cloneStoredResponsesItem(item));
     }
@@ -631,12 +631,12 @@ class MemoryResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
   private store = new Map<string, StoredResponsesSnapshot>();
 
   lookup(apiKeyId: string, id: string): Promise<StoredResponsesSnapshot | null> {
-    const snapshot = this.store.get(responsesItemStoreKey(apiKeyId, id));
+    const snapshot = this.store.get(scopedResponsesKey(apiKeyId, id));
     return Promise.resolve(snapshot ? cloneStoredResponsesSnapshot(snapshot) : null);
   }
 
   insert(snapshot: StoredResponsesSnapshot): Promise<void> {
-    this.store.set(responsesItemStoreKey(snapshot.apiKeyId, snapshot.id), cloneStoredResponsesSnapshot(snapshot));
+    this.store.set(scopedResponsesKey(snapshot.apiKeyId, snapshot.id), cloneStoredResponsesSnapshot(snapshot));
     return Promise.resolve();
   }
 

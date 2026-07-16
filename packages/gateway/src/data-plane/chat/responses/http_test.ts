@@ -6,7 +6,7 @@ import type { AuthVars } from '../../../middleware/auth.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import type { ApiKey, User } from '../../../repo/types.ts';
-import { affinityTargetForCandidate, AffinityCodec } from '../shared/affinity/index.ts';
+import { AffinityCodec } from '../shared/affinity/index.ts';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { CanonicalResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { type FlagId, type ModelCandidate, directFetcher, type ProviderResponsesResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
@@ -388,7 +388,8 @@ test('POST /v1/responses renders an invalid bound affinity carrier as a 400 inpu
   const codec = new AffinityCodec(buildApiKey().serverSecret);
   const original = { type: 'program_output' as const, id: 'first', call_id: 'call_1', result: 'first', status: 'completed' as const };
   const carrier = await codec.wrap(undefined, {
-    ...affinityTargetForCandidate(candidate),
+    upstreamId: candidate.provider.upstream,
+    modelId: candidate.model.id,
     syntheticItem: true,
     boundItem: {
       type: original.type,

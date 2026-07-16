@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { wrapResponsesOutputForStorage } from './output.ts';
+import { wrapResponsesClientOutput } from './output.ts';
 import { createResponsesHttpStore } from './store.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
@@ -31,7 +31,7 @@ test('storage rewrites ids and persists the exact complete client-wire item befo
   };
 
   const events: ResponsesStreamEvent[] = [];
-  for await (const frame of wrapResponsesOutputForStorage(frames(result), {
+  for await (const frame of wrapResponsesClientOutput(frames(result), {
     store,
     attemptState: new ResponsesAttemptState(),
     responseId: 'resp_public',
@@ -72,7 +72,7 @@ test('storage uses one public item id across lifecycle snapshots without committ
   };
 
   const events: ResponsesStreamEvent[] = [];
-  for await (const frame of wrapResponsesOutputForStorage(input(), {
+  for await (const frame of wrapResponsesClientOutput(input(), {
     store,
     attemptState: new ResponsesAttemptState(),
     responseId: 'resp_public',

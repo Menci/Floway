@@ -5,9 +5,9 @@ import type { ResponsesAttemptState } from '../attempt-state.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { responsesResultToEvents, type ResponsesInputItem, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
-// Mints gateway-owned ids and persists the exact affinity-wrapped client item.
-// The native Responses source edge owns this transform; translated inner
-// Responses attempts never enter it.
+// Mints gateway-owned ids and presents finalized client items to the configured
+// state store. A write-free HTTP store discards those rows after the IDs are
+// rewritten; translated inner Responses attempts never enter this membrane.
 //
 // Items are committed at their `done` frame and the snapshot is committed
 // at the terminal `response.completed` / `response.incomplete` frame.
@@ -37,7 +37,7 @@ import { responsesResultToEvents, type ResponsesInputItem, type ResponsesResult,
 // a `compaction_trigger` input on `/v1/responses` (Codex's RemoteCompactionV2),
 // and the server-side `context_management` `compact_threshold` mode — without
 // each path needing its own gateway-side detector.
-export const wrapResponsesOutputForStorage = async function* (
+export const wrapResponsesClientOutput = async function* (
   frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
   args: {
     readonly store: StatefulResponsesStore;
@@ -199,7 +199,7 @@ const isCompactionItemType = (type: string): boolean =>
 // Expands a non-streaming compact result into the same frame sequence a live
 // upstream would emit: every output item as bare added/done pairs (no inner
 // content delta events) via `responsesResultToEvents` with genericOutputItems,
-// terminated by a done sentinel frame. Lets `wrapResponsesOutputForStorage`
+// terminated by a done sentinel frame. Lets `wrapResponsesClientOutput`
 // consume the result without a real provider call.
 export const syntheticEventsFromResult = async function* (result: ResponsesResult): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
   yield* responsesResultToEvents(result, { genericOutputItems: true });

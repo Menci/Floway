@@ -2,8 +2,8 @@ import type { Context } from 'hono';
 
 import { wrapResponsesAffinityEgress } from './affinity/egress.ts';
 import { ResponsesAffinityInputError } from './affinity/ingress.ts';
-import { createStoredResponseId } from './items/format.ts';
-import { wrapResponsesOutputForStorage } from './items/output.ts';
+import { createResponsesResponseId } from './items/format.ts';
+import { wrapResponsesClientOutput } from './items/output.ts';
 import { createResponsesWsSession } from './items/store.ts';
 import { PreviousResponseNotFoundError } from './serve-prep.ts';
 import { responsesServe } from './serve.ts';
@@ -371,9 +371,11 @@ const respondResponsesWebSocket = async (input: {
       codec: ctx.affinity.codec,
       affinity: ctx.affinity.selectedTarget(),
     });
-    const output = store.storesState
-      ? wrapResponsesOutputForStorage(withAffinity, { store, attemptState: ctx.responsesAttemptState, responseId: createStoredResponseId() })
-      : withAffinity;
+    const output = wrapResponsesClientOutput(withAffinity, {
+      store,
+      attemptState: ctx.responsesAttemptState,
+      responseId: createResponsesResponseId(),
+    });
     const iterator = output[Symbol.asyncIterator]();
     let pendingNext = pendingWsFrameResult(iterator.next());
     let completed = false;

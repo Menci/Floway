@@ -1,6 +1,6 @@
 import { createStoredResponsesItemId, hashResponsesItemContent, isStoredResponsesItemId, responsesItemId } from './format.ts';
 import { getRepo } from '../../../../repo/index.ts';
-import { cloneStoredResponsesItem, cloneStoredResponsesSnapshot, compareResponsesItemsByFreshness, responsesItemStoreKey as scopedKey } from '../../../../repo/responses-clone.ts';
+import { cloneStoredResponsesItem, cloneStoredResponsesSnapshot, compareResponsesItemsByFreshness, scopedResponsesKey } from '../../../../repo/responses-clone.ts';
 import type { Repo, StoredResponsesItem, StoredResponsesSnapshot } from '../../../../repo/types.ts';
 import type { ResponsesInputItem } from '@floway-dev/protocols/responses';
 
@@ -39,7 +39,6 @@ export type ResponsesSnapshotMode = 'append' | 'replace';
 
 export interface StatefulResponsesStore {
   readonly apiKeyId: string;
-  readonly storesState: boolean;
   loadSnapshot(id: string): Promise<StoredResponsesSnapshot | null>;
   loadInputItems(sourceItems: readonly ResponsesInputItem[], inputItemsToStage: readonly ResponsesInputItem[]): Promise<void>;
   getItemById(id: string): StoredResponsesItem | undefined;
@@ -65,10 +64,6 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
 
   get apiKeyId(): string {
     return this.options.apiKeyId;
-  }
-
-  get storesState(): boolean {
-    return this.options.writes.length > 0;
   }
 
   hashItemContent(item: ResponsesInputItem): Promise<string> {
@@ -233,7 +228,7 @@ export class RepoStatefulResponsesBacking implements StatefulResponsesBacking {
       this.getRepo().responsesItems.lookupManyByContentHash(query.apiKeyId, query.contentHashes),
     ]);
     const rows = new Map<string, StoredResponsesItem>();
-    for (const row of [...byId, ...byContentHash]) rows.set(scopedKey(row.apiKeyId, row.id), row);
+    for (const row of [...byId, ...byContentHash]) rows.set(scopedResponsesKey(row.apiKeyId, row.id), row);
     return [...rows.values()].map(item => ({ item, durable: true }));
   }
 
@@ -265,7 +260,7 @@ export class MemoryStatefulResponsesBacking implements StatefulResponsesBacking 
 
   insertItems(items: readonly StoredResponsesItem[], options: { readonly durable: boolean }): Promise<void> {
     for (const item of items) {
-      const key = scopedKey(item.apiKeyId, item.id);
+      const key = scopedResponsesKey(item.apiKeyId, item.id);
       const existing = this.items.get(key);
       if (existing !== undefined) {
         if (options.durable) existing.durable = true;
@@ -277,17 +272,17 @@ export class MemoryStatefulResponsesBacking implements StatefulResponsesBacking 
   }
 
   markDurable(apiKeyId: string, id: string): void {
-    const existing = this.items.get(scopedKey(apiKeyId, id));
+    const existing = this.items.get(scopedResponsesKey(apiKeyId, id));
     if (existing !== undefined) existing.durable = true;
   }
 
   lookupSnapshot(apiKeyId: string, id: string): Promise<StoredResponsesSnapshot | null> {
-    const snapshot = this.snapshots.get(scopedKey(apiKeyId, id));
+    const snapshot = this.snapshots.get(scopedResponsesKey(apiKeyId, id));
     return Promise.resolve(snapshot === undefined ? null : cloneStoredResponsesSnapshot(snapshot));
   }
 
   insertSnapshot(snapshot: StoredResponsesSnapshot): Promise<void> {
-    this.snapshots.set(scopedKey(snapshot.apiKeyId, snapshot.id), cloneStoredResponsesSnapshot(snapshot));
+    this.snapshots.set(scopedResponsesKey(snapshot.apiKeyId, snapshot.id), cloneStoredResponsesSnapshot(snapshot));
     return Promise.resolve();
   }
 }
