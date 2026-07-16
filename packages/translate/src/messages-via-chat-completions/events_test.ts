@@ -143,7 +143,7 @@ test('serializes parallel Chat tool drafts into valid Messages blocks', () => {
     }), state),
     ...translateChatCompletionsChunkToMessagesEvents(chunk({ tool_calls: [
       { index: 1, function: { arguments: ':2}' } },
-      { index: 0, function: { arguments: ':1}' } },
+      { index: 0, id: 'call_0', type: 'function', function: { name: 'first', arguments: ':1}' } },
     ] }), state),
     ...translateChatCompletionsChunkToMessagesEvents(chunk({}, 'tool_calls'), state),
   ];

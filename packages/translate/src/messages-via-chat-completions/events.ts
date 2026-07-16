@@ -213,11 +213,16 @@ const handleReasoningDelta = (delta: ChatCompletionsStreamDelta, state: ChatComp
 const bufferToolCallsDelta = (toolCalls: ChatCompletionsStreamToolCalls, state: ChatCompletionsToMessagesStreamState): void => {
   for (const toolCall of toolCalls) {
     if (toolCall.id && toolCall.function?.name) {
-      state.toolCalls[toolCall.index] = {
-        id: toolCall.id,
-        name: toolCall.function.name,
-        arguments: '',
-      };
+      const existing = state.toolCalls[toolCall.index];
+      if (existing === undefined) {
+        state.toolCalls[toolCall.index] = {
+          id: toolCall.id,
+          name: toolCall.function.name,
+          arguments: '',
+        };
+      } else if (existing.id !== toolCall.id || existing.name !== toolCall.function.name) {
+        throw new Error(`Chat tool call ${toolCall.index} changed identity while streaming`);
+      }
     }
 
     if (!toolCall.function?.arguments) continue;
