@@ -78,7 +78,7 @@ export const responsesHttp = {
     try {
       const payload = parsePayload(requestBody);
       const wantsStream = payload.stream === true;
-      ctx = createChatGatewayCtxFromHono(c, { wantsStream, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) }, apiKeyId => createResponsesHttpStore(apiKeyId, payload.store));
+      ctx = createChatGatewayCtxFromHono(c, { wantsStream, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) }, apiKeyId => createResponsesHttpStore(apiKeyId, payload.store ?? undefined));
       const result = await responsesServe.generate({ payload, ctx, headers: inboundHeadersForUpstream(c) });
       const response = await respondResponses(c, result, wantsStream, ctx);
       return finalizeGatewayResponse(ctx, response);
@@ -92,7 +92,7 @@ export const responsesHttp = {
     let ctx: ChatGatewayCtx | undefined;
     try {
       const payload = parsePayload(requestBody);
-      ctx = createChatGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) }, apiKeyId => createResponsesHttpStore(apiKeyId, payload.store));
+      ctx = createChatGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) }, apiKeyId => createResponsesHttpStore(apiKeyId, payload.store ?? undefined));
       const result = await responsesServe.compact({ payload, ctx, headers: inboundHeadersForUpstream(c) });
       if (result.type === 'result') {
         // Compact drains the upstream stream into a single envelope with
