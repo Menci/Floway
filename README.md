@@ -131,30 +131,29 @@ Open the deployed URL (or `http://localhost:8788` for Node), log in with
    order is routing order; earlier providers win for a shared public model id.
 2. **API Keys -> New Key**. Generate a long-lived key and use it directly as
    the `x-api-key` / bearer token in any client.
-3. **API Keys -> Agent Setup** installs the Claude Code and Codex CLIs and
-   points them at this gateway with a single command. Pick the API key the
-   setup link should carry and enable either or both agents. For Claude Code,
-   choose the main model, Sonnet and Haiku aliases, reasoning effort, and
-   gateway model discovery. For Codex, choose the model and optionally enter
-   any reasoning-effort value. Edits autosave to a short-lived setup lease;
-   wait for the "Saving…" spinner to clear, then copy the shell command
-   (`export FLOWAY_BASE_URL=… ; curl -fsSL … | bash`) or the PowerShell command
-   (`$FlowayBaseUrl = …; irm … | iex`) and run it on the target machine. The
-   command injects this dashboard's own origin into the shell it runs; the
-   gateway never learns or stores its public URL.
+3. **API Keys -> Agent Setup** offers two configuration modes. **Agent Setup**
+   installs the Claude Code and Codex CLIs and points them at this gateway with
+   a single command. Pick the API key the setup link should carry, enable either
+   agent, and configure its model settings. Enabled agents expand into full-
+   width responsive forms; disabled agents keep their saved settings hidden.
+   Edits autosave to a short-lived setup lease. The command picker defaults to
+   Windows on Windows clients and to macOS/Linux elsewhere.
 
-   The command's setup URL stays the same while the panel is open. The visible
+   The command's setup URL stays stable while the panel is open. The visible
    panel renews its five-minute lease once a minute, and the URL expires about
    five minutes after you leave. The installer installs only a missing CLI —
    through the official user-local installer, never `sudo`, and never upgrading
-   an existing install. It backs up each file before surgically merging
-   Floway's managed keys into Claude Code's `~/.claude/settings.json` and
-   Codex's `$CODEX_HOME/config.toml`. The Codex provider token is stored
-   separately under the active `CODEX_HOME`, so the installer never changes an
-   official account login in `auth.json`. Codex setup enables client-owned
-   search and image tools, Responses WebSocket, remote compaction, and Floway's
-   live model catalog. Verification only reaches the gateway's authenticated
+   an existing install. It backs up each managed file before surgically merging
+   Floway's settings into Claude Code's `~/.claude/settings.json` and Codex's
+   `$CODEX_HOME/config.toml`. The Codex provider token is stored separately
+   under the active `CODEX_HOME`, so an official account login in `auth.json`
+   remains available. Verification only reaches the gateway's authenticated
    model directory; it never issues an inference request.
+
+   **Config snippets** keeps the manual setup path available. Select an API key,
+   edit Claude Code's `settings.json` with the generated JSON object, or merge
+   the generated Codex TOML and provider-token commands yourself. Claude values
+   are presented as JSON file edits, not shell environment exports.
 
 Import/export of upstreams, keys, and search config is in Settings. The
 payload format is tied to the running deployment, so import only accepts a

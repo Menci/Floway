@@ -29,6 +29,14 @@ describe('AgentSetupCommand', () => {
     expect(copyButton(w, 'macOS / Linux').exists()).toBe(true);
   });
 
+  it('can leave the selected tab as the only visible label', () => {
+    const w = mount(AgentSetupCommand, {
+      props: { label: 'Windows', command: 'irm https://x/api/setup/t/setup.ps1 | iex', language: 'text', showLabel: false },
+    });
+    expect(w.text()).not.toContain('Windows');
+    expect(copyButton(w, 'Windows').exists()).toBe(true);
+  });
+
   it('copies exactly the visible command to the clipboard and announces success', async () => {
     const command = 'curl -fsSL https://x/api/setup/t/setup.sh | bash';
     const w = mount(AgentSetupCommand, { props: { label: 'Shell', command } });

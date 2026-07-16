@@ -130,10 +130,6 @@ const copyToClipboard = async (text: string, tag: string) => {
 };
 
 const upstreamOptions = computed(() => upstreamOptionsStore.options.value);
-// The setup card revalidates its selected key against the live account, so it
-// only needs each key's id and name; a genuine no-key → has-key transition
-// re-acquires a lease by remounting the card with a fresh useAgentSetup.
-const setupKeys = computed(() => keys.value.map(k => ({ id: k.id, name: k.name })));
 const models = computed(() => modelsStore.models.value ?? []);
 </script>
 
@@ -163,7 +159,7 @@ const models = computed(() => modelsStore.models.value ?? []);
 
     <AgentSetupCard
       :key="keys.length > 0 ? 'has-keys' : 'no-keys'"
-      :keys="setupKeys"
+      :keys="keys"
       :models="models"
       :loading="modelsStore.loading.value"
       :error="modelsStore.error.value"

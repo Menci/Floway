@@ -12,7 +12,8 @@ const props = withDefaults(defineProps<{
   command: string;
   language?: 'bash' | 'text';
   disabled?: boolean;
-}>(), { language: 'bash', disabled: false });
+  showLabel?: boolean;
+}>(), { language: 'bash', disabled: false, showLabel: true });
 
 type CopyStatus = 'idle' | 'copied' | 'error';
 const status = ref<CopyStatus>('idle');
@@ -43,8 +44,8 @@ onScopeDispose(() => { if (resetTimer !== null) clearTimeout(resetTimer); });
 
 <template>
   <div>
-    <div class="mb-2 flex items-center justify-between gap-2">
-      <span class="text-xs font-medium text-gray-400">{{ label }}</span>
+    <div class="mb-2 flex items-center gap-2" :class="showLabel ? 'justify-between' : 'justify-end'">
+      <span v-if="showLabel" class="text-xs font-medium text-gray-400">{{ label }}</span>
       <div class="flex items-center gap-2">
         <span
           role="status"

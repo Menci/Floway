@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { nextTick, ref, type Ref } from 'vue';
 
 import { buildRealModel } from '../../api/test-fixtures.ts';
-import type { ControlPlaneModel } from '../../api/types.ts';
+import type { ApiKey, ControlPlaneModel } from '../../api/types.ts';
 import type { AgentSetupConfiguration } from '../../composables/useAgentSetup.ts';
 import { Combobox, Select } from '@floway-dev/ui';
 
@@ -73,7 +73,10 @@ const { default: AgentSetupCard } = await import('./AgentSetupCard.vue');
 
 const model = (id: string, over: Partial<ControlPlaneModel> = {}): ControlPlaneModel => buildRealModel({ id, ...over });
 
-const defaultKeys = [{ id: 'key-1', name: 'Primary' }, { id: 'key-2', name: 'CI' }];
+const defaultKeys: ApiKey[] = [
+  { id: 'key-1', name: 'Primary', key: 'first-key', created_at: '2026-01-01T00:00:00Z', last_used_at: null, upstream_ids: null, dump_retention_seconds: null },
+  { id: 'key-2', name: 'CI', key: 'second-key', created_at: '2026-01-01T00:00:00Z', last_used_at: null, upstream_ids: null, dump_retention_seconds: null },
+];
 
 const defaultModels: ControlPlaneModel[] = [
   model('gpt-5'),
@@ -113,6 +116,19 @@ describe('AgentSetupCard', () => {
     expect(selectableIdsArg).toEqual(['key-1', 'key-2']);
   });
 
+  it('defaults to Agent Setup and switches to the Config snippets experience', async () => {
+    const w = mountCard();
+    const modeTabs = w.findAll('[role="tablist"][aria-label="Agent configuration mode"] [role="tab"]');
+    expect(modeTabs.map(tab => [tab.text(), tab.attributes('aria-selected')])).toEqual([
+      ['Agent Setup', 'true'],
+      ['Config snippets', 'false'],
+    ]);
+
+    await modeTabs[1]!.trigger('click');
+    expect(w.text()).toContain('Edit ~/.claude/settings.json and merge this JSON object');
+    expect(w.find('[data-testid="agent-setup-api-key"]').exists()).toBe(false);
+  });
+
   it('offers the account keys in the API-key selector by name', () => {
     const w = mountCard();
     const options = selectIn(w, 'agent-setup-api-key').props().options;
@@ -146,11 +162,11 @@ describe('AgentSetupCard', () => {
     // A leading "no override" option, then the Claude family ahead of the rest;
     // the embedding model is dropped. The 1M-context Claude id carries the [1m]
     // suffix in its persisted value while the label stays the raw id.
-    expect(claude[0]!.label).toContain('Default');
+    expect(claude[0]!.label).toBe('Default');
     expect(claude.slice(1).map(o => o.value)).toEqual(['claude-sonnet-4-5[1m]', 'claude-haiku-4-5', 'gpt-5']);
 
     const codex = selectIn(w, 'codex-model').props().options;
-    expect(codex[0]!.label).toContain('Default');
+    expect(codex[0]!.label).toBe('Default');
     expect(codex.slice(1).map(o => o.value)).toEqual(['gpt-5', 'claude-sonnet-4-5', 'claude-haiku-4-5']);
   });
 
@@ -164,7 +180,7 @@ describe('AgentSetupCard', () => {
   it('exposes the Claude reasoning-effort enum with an optional sentinel', () => {
     const w = mountCard();
     const effort = selectIn(w, 'claude-effort').props().options;
-    expect(effort[0]!.label).toContain('Default');
+    expect(effort[0]!.label).toBe('Default');
     expect(effort.slice(1).map(o => o.value)).toEqual(['low', 'medium', 'high', 'xhigh']);
   });
 
@@ -208,7 +224,7 @@ describe('AgentSetupCard', () => {
     expect(setupStub.draft.value!.claudeCode.model).toBeNull();
   });
 
-  it('disables the Claude sub-controls while the agent is off but keeps their values', () => {
+  it('hides the Claude form while the agent is off but keeps its draft values', () => {
     setupStub = makeSetup({
       config: {
         ...defaultConfig(),
@@ -216,11 +232,18 @@ describe('AgentSetupCard', () => {
       },
     });
     const w = mountCard();
-    expect(selectIn(w, 'claude-model').props().disabled).toBe(true);
-    expect(selectIn(w, 'claude-effort').props().disabled).toBe(true);
-    // Values survive the disabled state — nothing resets the draft.
+    expect(w.find('[data-testid="claude-model"]').exists()).toBe(false);
+    expect(w.find('[data-testid="claude-effort"]').exists()).toBe(false);
     expect(setupStub.draft.value!.claudeCode.model).toBe('claude-sonnet-4-5');
     expect(setupStub.draft.value!.claudeCode.effortLevel).toBe('high');
+  });
+
+  it('hides the Codex form while its switch is off', () => {
+    setupStub = makeSetup({ config: { ...defaultConfig(), codex: { enabled: false, model: 'gpt-5', reasoningEffort: 'high' } } });
+    const w = mountCard();
+    expect(w.find('[data-testid="codex-model"]').exists()).toBe(false);
+    expect(w.find('[data-testid="codex-effort"]').exists()).toBe(false);
+    expect(setupStub.draft.value!.codex.model).toBe('gpt-5');
   });
 
   it('explains that Codex provider auth stays separate from the official account', () => {
@@ -235,19 +258,37 @@ describe('AgentSetupCard', () => {
     expect(mountCard({ loading: true }).text()).not.toContain('Loading models');
   });
 
-  it('renders the shell and PowerShell commands with distinct copy-button names', () => {
+  it('shows one OS-tab-selected command at a time and places the explanation below it', async () => {
     const w = mountCard();
-    const text = w.text();
-    // The origin is injected into the executing shell (exported for the piped
-    // bash; an in-runspace variable for iex) and the fetch URL references that
-    // same variable, so the origin literal appears exactly once per command.
-    expect(text).toContain(`export FLOWAY_BASE_URL='${window.location.origin}'; curl -fsSL "$FLOWAY_BASE_URL/api/setup/tok-1/setup.sh" | bash`);
-    expect(text).toContain(`$FlowayBaseUrl = '${window.location.origin}'; irm "$FlowayBaseUrl/api/setup/tok-1/setup.ps1" | iex`);
-    expect(w.find('button[aria-label="Copy macOS · Linux · WSL command"]').exists()).toBe(true);
-    expect(w.find('button[aria-label="Copy Windows PowerShell command"]').exists()).toBe(true);
-    // The PowerShell command must not touch Execution Policy.
-    expect(text).not.toContain('ExecutionPolicy');
-    expect(text).not.toContain('Bypass');
+    const platformTabs = w.findAll('[role="tablist"][aria-label="Setup command platform"] [role="tab"]');
+    expect(platformTabs.map(tab => [tab.text(), tab.attributes('aria-selected')])).toEqual([
+      ['macOS / Linux', 'true'],
+      ['Windows', 'false'],
+    ]);
+    expect(w.text()).toContain(`export FLOWAY_BASE_URL='${window.location.origin}'; curl -fsSL "$FLOWAY_BASE_URL/api/setup/tok-1/setup.sh" | bash`);
+    expect(w.find('button[aria-label="Copy macOS / Linux command"]').exists()).toBe(true);
+    expect(w.find('button[aria-label="Copy Windows command"]').exists()).toBe(false);
+
+    await platformTabs[1]!.trigger('click');
+    expect(w.text()).toContain(`$FlowayBaseUrl = '${window.location.origin}'; irm "$FlowayBaseUrl/api/setup/tok-1/setup.ps1" | iex`);
+    expect(w.find('button[aria-label="Copy Windows command"]').exists()).toBe(true);
+    const explanation = 'These commands install the selected agents and point them at this gateway.';
+    expect(w.text().lastIndexOf(explanation)).toBeGreaterThan(w.text().lastIndexOf('$FlowayBaseUrl'));
+    expect(w.text()).not.toContain('ExecutionPolicy');
+    expect(w.text()).not.toContain('Bypass');
+  });
+
+  it('defaults the command tab to Windows for Windows clients', () => {
+    const originalPlatform = navigator.platform;
+    Object.defineProperty(navigator, 'platform', { value: 'Win32', configurable: true });
+    try {
+      const w = mountCard();
+      const tabs = w.findAll('[role="tablist"][aria-label="Setup command platform"] [role="tab"]');
+      expect(tabs[1]!.attributes('aria-selected')).toBe('true');
+      expect(w.find('button[aria-label="Copy Windows command"]').exists()).toBe(true);
+    } finally {
+      Object.defineProperty(navigator, 'platform', { value: originalPlatform, configurable: true });
+    }
   });
 
   it('shows a saving indicator and disables both copy buttons while a draft edit is unconfirmed', () => {
@@ -255,7 +296,7 @@ describe('AgentSetupCard', () => {
     const w = mountCard();
     expect(w.text()).toContain('Saving');
     const buttons = w.findAll('button[aria-label^="Copy "][aria-label$=" command"]');
-    expect(buttons.length).toBe(2);
+    expect(buttons.length).toBe(1);
     for (const b of buttons) expect((b.element as HTMLButtonElement).disabled).toBe(true);
   });
 
