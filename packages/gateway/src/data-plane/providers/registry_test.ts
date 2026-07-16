@@ -343,6 +343,79 @@ test('enumerateModelCandidates prefers the literal dated id over the stripped ba
   );
 });
 
+test('enumerateModelCandidates strips the claude-code: synthetic prefix and routes to the real model when the raw form misses', async () => {
+  // Counterpart to the discovery-side rewrite in ../models/serve.ts: the
+  // Claude Code CLI picks a non-Anthropic model as `claude-code:<real-id>`,
+  // no upstream advertises the literal prefixed form, so the resolver
+  // strips the prefix and rerun (alias-then-real) on `<real-id>`.
+  const { repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  await repo.upstreams.save(
+    buildCustomUpstreamRecord({
+      config: {
+        baseUrl: 'https://custom.example.com',
+        authStyle: 'bearer',
+        apiKey: 'sk-custom',
+        endpoints: { chatCompletions: {} },
+      },
+    }),
+  );
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'custom.example.com' && url.pathname === '/v1/models') {
+        return jsonResponse({ object: 'list', data: [{ id: 'gpt-5' }] });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const prefixed = await enumerateModelCandidates({ upstreamIds: null, model: 'claude-code:gpt-5', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST' });
+      assertEquals(prefixed.candidates.length, 1);
+      assertEquals(prefixed.candidates[0]?.model.id, 'gpt-5');
+      assertEquals(prefixed.sawModel, true);
+
+      // The raw id still resolves directly — the strip retry is only the
+      // second attempt, so no double-resolution.
+      const bare = await enumerateModelCandidates({ upstreamIds: null, model: 'gpt-5', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST' });
+      assertEquals(bare.candidates.length, 1);
+      assertEquals(bare.candidates[0]?.model.id, 'gpt-5');
+    },
+  );
+});
+
+test('enumerateModelCandidates does not spuriously hit when a claude-code: prefixed id has no real form either', async () => {
+  // The strip retry runs only when the first attempt reports sawModel:false.
+  // A prefixed id whose stripped form is also unknown must still miss.
+  const { repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+  await repo.upstreams.save(
+    buildCustomUpstreamRecord({
+      config: {
+        baseUrl: 'https://custom.example.com',
+        authStyle: 'bearer',
+        apiKey: 'sk-custom',
+        endpoints: { chatCompletions: {} },
+      },
+    }),
+  );
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'custom.example.com' && url.pathname === '/v1/models') {
+        return jsonResponse({ object: 'list', data: [{ id: 'gpt-5' }] });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const resolved = await enumerateModelCandidates({ upstreamIds: null, model: 'claude-code:nonexistent-model', kind: 'chat', scheduler: testScheduler, runtimeLocation: 'TEST' });
+      assertEquals(resolved.candidates.length, 0);
+      assertEquals(resolved.sawModel, false);
+    },
+  );
+});
+
 test('enumerateRealModelCandidates only loads the selected providers\' catalogs', async () => {
   const { repo } = await setupAppTest();
   await repo.upstreams.deleteAll();

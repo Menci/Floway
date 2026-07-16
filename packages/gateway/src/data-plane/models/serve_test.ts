@@ -976,3 +976,82 @@ test('/v1/models serves Anthropic-shape rows without a [1m] suffix when no model
     },
   );
 });
+
+// Non-Anthropic ids get a `claude-code:` synthetic prefix so the CLI's
+// `/^(claude|anthropic)/i` picker filter admits them. `display_name`
+// stays untouched because the picker renders `display_name ?? id`, so the
+// operator-configured label reaches the user unchanged. The `[1m]` suffix
+// composes on the possibly-prefixed form (`claude-code:<id>[1m]`).
+test('/v1/models prefixes non-Anthropic ids for the Claude Code CLI picker while preserving display_name', async () => {
+  const { apiKey } = await setupAppTest();
+
+  await withMockedFetch(
+    request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({
+          token: 'copilot-access-token',
+          expires_at: 4102444800,
+          refresh_in: 3600,
+          endpoints: { api: 'https://api.individual.githubcopilot.com' },
+        });
+      }
+      if (url.pathname === '/models' && url.hostname === 'api.individual.githubcopilot.com') {
+        return jsonResponse(
+          copilotModels([
+            {
+              id: 'claude-opus-4.7',
+              display_name: 'Claude Opus 4.7',
+              supported_endpoints: ['/v1/messages'],
+              maxContextWindowTokens: 1_000_000,
+              maxOutputTokens: 128_000,
+            },
+            {
+              id: 'gpt-4o',
+              display_name: 'GPT-4o',
+              supported_endpoints: ['/chat/completions'],
+              maxContextWindowTokens: 128_000,
+              maxOutputTokens: 16_384,
+            },
+            {
+              id: 'gpt-5-1m',
+              display_name: 'GPT-5 (1M)',
+              supported_endpoints: ['/chat/completions'],
+              maxContextWindowTokens: 1_000_000,
+              maxOutputTokens: 128_000,
+            },
+          ]),
+        );
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const claudeCodeResp = await requestApp('/v1/models', {
+        headers: { 'x-api-key': apiKey.key, 'user-agent': 'claude-code/2.1.211' },
+      });
+      assertEquals(claudeCodeResp.status, 200);
+      const claudeCodeBody = (await claudeCodeResp.json()) as {
+        data: Array<{ id: string; display_name: string }>;
+      };
+      const byDisplayName = new Map(claudeCodeBody.data.map(m => [m.display_name, m.id]));
+
+      // Real Anthropic id passes the picker filter as-is; [1m] still lands.
+      assertEquals(byDisplayName.get('Claude Opus 4.7'), 'claude-opus-4-7[1m]');
+      // Non-Anthropic id gets the synthetic prefix so it reaches the menu.
+      assertEquals(byDisplayName.get('GPT-4o'), 'claude-code:gpt-4o');
+      // Prefix composes with the [1m] suffix on 1M-capable non-Anthropic models.
+      assertEquals(byDisplayName.get('GPT-5 (1M)'), 'claude-code:gpt-5-1m[1m]');
+
+      // Non-CC caller still gets the OpenAI-Anthropic superset with raw ids —
+      // the prefix is scoped to the CC-shape branch.
+      const openAiResp = await requestApp('/v1/models', {
+        headers: { 'x-api-key': apiKey.key, 'user-agent': 'openai-python/1.42.0' },
+      });
+      const openAiBody = (await openAiResp.json()) as { data: Array<{ id: string }> };
+      const openAiIds = openAiBody.data.map(m => m.id).sort();
+      assertEquals(openAiIds, ['claude-opus-4-7', 'gpt-4o', 'gpt-5-1m']);
+    },
+  );
+});
+
