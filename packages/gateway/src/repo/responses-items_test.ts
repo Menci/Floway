@@ -5,7 +5,7 @@ import { InMemoryRepo } from './memory.ts';
 import { SqlRepo } from './sql.ts';
 import { createSqliteTestDb, migrationSqlByFilename } from './test-sqlite.ts';
 import type { Repo, StoredResponsesItem } from './types.ts';
-import { initFileProvider, MemoryFileProvider, type SqlDatabase } from '@floway-dev/platform';
+import { initFileProvider, MemoryFileProvider, type SqlDatabase, type SqlPreparedStatement } from '@floway-dev/platform';
 
 const factories: Array<[string, () => Promise<Repo>]> = [
   ['memory', async () => new InMemoryRepo()],
@@ -19,6 +19,27 @@ const storedItem = (id: string, apiKeyId: string, contentHash: string | null, cr
   payload: { item: { type: 'message', id, role: 'assistant', content: [] } },
   contentHash,
   createdAt,
+});
+
+const spilledItem = (id: string, apiKeyId: string, createdAt: number): StoredResponsesItem => {
+  const bytes = new Uint8Array(128 * 1024);
+  crypto.getRandomValues(bytes.subarray(0, 64 * 1024));
+  crypto.getRandomValues(bytes.subarray(64 * 1024));
+  let content = '';
+  for (const byte of bytes) content += byte.toString(16).padStart(2, '0');
+  return {
+    ...storedItem(id, apiKeyId, `${id}-hash`, createdAt),
+    payload: { item: { type: 'message', id, role: 'assistant', content } },
+  };
+};
+
+const sqlDatabaseWithBatch = (
+  base: SqlDatabase,
+  runBatch: (statements: SqlPreparedStatement[]) => Promise<Awaited<ReturnType<NonNullable<SqlDatabase['batch']>>>>,
+): SqlDatabase => ({
+  prepare: query => base.prepare(query),
+  exec: sql => base.exec(sql),
+  batch: runBatch,
 });
 
 describe.each(factories)('%s Responses state repo', (_name, createRepo) => {
@@ -154,6 +175,111 @@ test('SQL refresh cleans a replacement spill when the row disappears before upda
   expect(await repo.responsesItems.lookupMany('key-a', [item.id])).toEqual([]);
 });
 
+test('SQL Responses item writes stay within D1 bind limits and use bounded statement counts', async () => {
+  initFileProvider(new MemoryFileProvider());
+  const base = await createSqliteTestDb();
+  const batchSizes: number[] = [];
+  let maxBindCount = 0;
+  const db: SqlDatabase = {
+    prepare: query => {
+      const statement = base.prepare(query);
+      return {
+        bind: (...values) => {
+          maxBindCount = Math.max(maxBindCount, values.length);
+          return statement.bind(...values);
+        },
+        first: <T>() => statement.first<T>(),
+        all: <T>() => statement.all<T>(),
+        run: () => statement.run(),
+      };
+    },
+    exec: sql => base.exec(sql),
+    batch: async statements => {
+      batchSizes.push(statements.length);
+      const results = [];
+      for (const statement of statements) results.push(await statement.run());
+      return results;
+    },
+  };
+  const repo = new SqlRepo(db);
+  const items = Array.from({ length: 240 }, (_, index) =>
+    storedItem(`msg_bulk_${index}`, 'key-a', `hash-${index}`, 1_000));
+
+  await repo.responsesItems.insertMany(items);
+  await repo.responsesItems.refreshMany(items, 2_000);
+
+  expect(batchSizes).toEqual([15, 8]);
+  expect(maxBindCount).toBeLessThanOrEqual(100);
+  expect(await repo.responsesItems.lookupMany('key-a', items.map(item => item.id))).toHaveLength(items.length);
+});
+
+test('SQL insert cleans earlier spills when a later payload cannot be serialized', async () => {
+  const files = new MemoryFileProvider();
+  initFileProvider(files);
+  const repo = new SqlRepo(await createSqliteTestDb());
+  const circular: Record<string, unknown> = { type: 'message', id: 'msg_circular' };
+  circular.self = circular;
+  const invalid: StoredResponsesItem = {
+    ...storedItem('msg_circular', 'key-a', 'circular', 1_000),
+    payload: { item: circular },
+  };
+
+  await expect(repo.responsesItems.insertMany([spilledItem('msg_before_circular', 'key-a', 1_000), invalid]))
+    .rejects.toThrow();
+
+  expect(await files.listKeys('responses-items/')).toEqual([]);
+});
+
+test('SQL insert cleans generated spills when its batch fails', async () => {
+  const files = new MemoryFileProvider();
+  initFileProvider(files);
+  const base = await createSqliteTestDb();
+  const batchFailure = new Error('simulated insert batch failure');
+  const repo = new SqlRepo(sqlDatabaseWithBatch(base, () => Promise.reject(batchFailure)));
+
+  await expect(repo.responsesItems.insertMany([spilledItem('msg_insert_failure', 'key-a', 1_000)]))
+    .rejects.toBe(batchFailure);
+
+  expect(await files.listKeys('responses-items/')).toEqual([]);
+});
+
+test('SQL refresh cleans earlier replacement spills when a later payload cannot be serialized', async () => {
+  const files = new MemoryFileProvider();
+  initFileProvider(files);
+  const base = await createSqliteTestDb();
+  const repo = new SqlRepo(base);
+  const first = spilledItem('msg_refresh_before_circular', 'key-a', 1_000);
+  const second = spilledItem('msg_refresh_circular', 'key-a', 1_000);
+  await repo.responsesItems.insertMany([first, second]);
+  const originalFiles = await files.listKeys('responses-items/');
+  const circular: Record<string, unknown> = { type: 'message', id: second.id };
+  circular.self = circular;
+
+  await expect(repo.responsesItems.refreshMany([
+    first,
+    { ...second, payload: { item: circular } },
+  ], 1_000 + 2 * 60 * 60 * 1000)).rejects.toThrow();
+
+  expect((await files.listKeys('responses-items/')).toSorted()).toEqual(originalFiles.toSorted());
+});
+
+test('SQL refresh cleans replacement spills and keeps originals when its batch fails', async () => {
+  const files = new MemoryFileProvider();
+  initFileProvider(files);
+  const base = await createSqliteTestDb();
+  const originalRepo = new SqlRepo(base);
+  const item = spilledItem('msg_refresh_failure', 'key-a', 1_000);
+  await originalRepo.responsesItems.insertMany([item]);
+  const originalFiles = await files.listKeys('responses-items/');
+  const batchFailure = new Error('simulated refresh batch failure');
+  const repo = new SqlRepo(sqlDatabaseWithBatch(base, () => Promise.reject(batchFailure)));
+
+  await expect(repo.responsesItems.refreshMany([item], 1_000 + 2 * 60 * 60 * 1000))
+    .rejects.toBe(batchFailure);
+
+  expect(await files.listKeys('responses-items/')).toEqual(originalFiles);
+});
+
 test('SQL duplicate insert does not write an unreferenced replacement spill', async () => {
   const files = new MemoryFileProvider();
   initFileProvider(files);
@@ -195,9 +321,11 @@ test('SQL insert conflict cleans its spill when the winning row disappears', asy
         storage: 'inline',
         payload: { item: { type: 'message', id: 'msg_insert_race', role: 'assistant', content: [] } },
       });
-      await base.prepare(
+      const insertWinner = base.prepare(
         'INSERT INTO responses_items (id, api_key_id, item_type, payload_json, content_hash, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-      ).bind('msg_insert_race', 'key-a', 'message', inlinePayload, 'race', 1_000).run();
+      );
+      await insertWinner.bind('msg_insert_race', 'key-a', 'message', inlinePayload, 'race', 1_000).run();
+      await insertWinner.bind('msg_insert_survivor', 'key-a', 'message', inlinePayload, 'survivor', 1_000).run();
       const results = [];
       for (const statement of statements) results.push(await statement.run());
       await base.prepare('DELETE FROM responses_items WHERE id = ? AND api_key_id = ?')
@@ -207,17 +335,10 @@ test('SQL insert conflict cleans its spill when the winning row disappears', asy
     },
   };
   const repo = new SqlRepo(db);
-  const bytes = new Uint8Array(128 * 1024);
-  crypto.getRandomValues(bytes.subarray(0, 64 * 1024));
-  crypto.getRandomValues(bytes.subarray(64 * 1024));
-  let content = '';
-  for (const byte of bytes) content += byte.toString(16).padStart(2, '0');
-  const item: StoredResponsesItem = {
-    ...storedItem('msg_insert_race', 'key-a', 'race', 1_000 + 2 * 60 * 60 * 1000),
-    payload: { item: { type: 'message', id: 'msg_insert_race', role: 'assistant', content } },
-  };
+  const item = spilledItem('msg_insert_race', 'key-a', 1_000 + 2 * 60 * 60 * 1000);
+  const survivor = spilledItem('msg_insert_survivor', 'key-a', 1_000 + 2 * 60 * 60 * 1000);
 
-  await expect(repo.responsesItems.insertMany([item]))
+  await expect(repo.responsesItems.insertMany([item, survivor]))
     .rejects.toThrow('Responses item conflict disappeared before spill cleanup: msg_insert_race');
   expect(await files.listKeys('responses-items/')).toEqual([]);
 });

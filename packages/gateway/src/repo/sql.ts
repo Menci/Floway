@@ -815,6 +815,48 @@ class SqlModelsCacheRepo implements ModelsCacheRepo {
 
 const RESPONSES_ITEM_COLUMNS = 'id, api_key_id, item_type, payload_json, content_hash, created_at';
 const RESPONSES_IN_QUERY_CHUNK_SIZE = 90;
+const RESPONSES_INSERT_CHUNK_SIZE = 16;
+const RESPONSES_REFRESH_CHUNK_SIZE = 32;
+
+interface ResponsesItemDescriptor {
+  id: string;
+  apiKeyId: string;
+  payloadJson: string;
+}
+
+interface ResponsesItemDescriptorRow {
+  id: string;
+  api_key_id: string;
+  payload_json: string;
+}
+
+interface PreparedResponsesPayloadWrite {
+  item: StoredResponsesItem;
+  payload: string;
+  generatedFileKey: string | null;
+  previousFileKey: string | null;
+}
+
+const uniqueResponsesItems = (items: readonly StoredResponsesItem[]): StoredResponsesItem[] => {
+  const unique = new Map<string, StoredResponsesItem>();
+  for (const item of items) {
+    const key = scopedResponsesKey(item.apiKeyId, item.id);
+    if (!unique.has(key)) unique.set(key, item);
+  }
+  return [...unique.values()];
+};
+
+const groupResponsesPayloadWrites = (writes: readonly PreparedResponsesPayloadWrite[]): Map<string, PreparedResponsesPayloadWrite[]> => {
+  const groups = new Map<string, PreparedResponsesPayloadWrite[]>();
+  for (const write of writes) {
+    const group = groups.get(write.item.apiKeyId) ?? [];
+    group.push(write);
+    groups.set(write.item.apiKeyId, group);
+  }
+  return groups;
+};
+
+const responsesErrorMessage = (error: unknown): string => error instanceof Error ? error.message : String(error);
 
 class SqlResponsesItemsRepo implements ResponsesItemsRepo {
   constructor(private db: SqlDatabase) {}
@@ -857,43 +899,109 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
   }
 
   async insertMany(items: readonly StoredResponsesItem[]): Promise<void> {
-    const existing = await this.lookupExistingKeys(items);
-    const pending = items.filter(item => !existing.has(scopedResponsesKey(item.apiKeyId, item.id)));
-    const inserts = await mapSequentially(pending, async item => {
-      const payload = await serializeStoredResponsesPayload(item.id, item.apiKeyId, item.createdAt, item.payload);
-      return {
-        item,
-        payload,
-        statement: this.db.prepare(
-          `INSERT INTO responses_items (${RESPONSES_ITEM_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?)
+    const unique = uniqueResponsesItems(items);
+    const existing = await this.lookupDescriptors(unique);
+    const pending = unique.filter(item => !existing.has(scopedResponsesKey(item.apiKeyId, item.id)));
+    const writes: PreparedResponsesPayloadWrite[] = [];
+    try {
+      for (const item of pending) {
+        const payload = await serializeStoredResponsesPayload(item.id, item.apiKeyId, item.createdAt, item.payload);
+        writes.push({
+          item,
+          payload,
+          generatedFileKey: storedResponsesPayloadFileKey(item.id, payload),
+          previousFileKey: null,
+        });
+      }
+    } catch (error) {
+      await this.finishPayloadWrites(writes, error, 'insert');
+    }
+
+    const statements: SqlPreparedStatement[] = [];
+    for (let index = 0; index < writes.length; index += RESPONSES_INSERT_CHUNK_SIZE) {
+      const chunk = writes.slice(index, index + RESPONSES_INSERT_CHUNK_SIZE);
+      const values = chunk.map(() => '(?, ?, ?, ?, ?, ?)').join(', ');
+      statements.push(this.db
+        .prepare(
+          `INSERT INTO responses_items (${RESPONSES_ITEM_COLUMNS}) VALUES ${values}
            ON CONFLICT (id, api_key_id) DO NOTHING`,
         )
-          .bind(item.id, item.apiKeyId, item.itemType, payload, item.contentHash, item.createdAt),
-      };
-    });
-    const results = await runStatements(this.db, inserts.map(insert => insert.statement));
-    for (const [index, insert] of inserts.entries()) {
-      const changes = results[index]?.meta.changes;
-      if (changes === 1) continue;
-      if (changes !== 0) throw new Error(`Unexpected Responses item insert count for ${insert.item.id}: ${String(changes)}`);
-
-      const persisted = await this.db
-        .prepare('SELECT payload_json FROM responses_items WHERE id = ? AND api_key_id = ?')
-        .bind(insert.item.id, insert.item.apiKeyId)
-        .first<{ payload_json: string }>();
-      const generatedFileKey = storedResponsesPayloadFileKey(insert.item.id, insert.payload);
-      if (persisted === null) {
-        if (generatedFileKey !== null) await getFileProvider().deletePrefix(generatedFileKey);
-        throw new Error(`Responses item conflict disappeared before spill cleanup: ${insert.item.id}`);
-      }
-      const persistedFileKey = storedResponsesPayloadFileKey(insert.item.id, persisted.payload_json);
-      if (generatedFileKey !== null && generatedFileKey !== persistedFileKey) {
-        await getFileProvider().deletePrefix(generatedFileKey);
-      }
+        .bind(...chunk.flatMap(({ item, payload }) => [item.id, item.apiKeyId, item.itemType, payload, item.contentHash, item.createdAt])));
     }
+    try {
+      await runStatements(this.db, statements);
+    } catch (error) {
+      await this.finishPayloadWrites(writes, error, 'insert');
+    }
+    await this.finishPayloadWrites(writes, null, 'insert');
   }
 
-  private async lookupExistingKeys(items: readonly StoredResponsesItem[]): Promise<Set<string>> {
+  async refreshMany(items: readonly StoredResponsesItem[], createdAt: number): Promise<void> {
+    const unique = uniqueResponsesItems(items);
+    const previous = await this.lookupDescriptors(unique);
+    const missingBeforeWrite = unique.find(item => !previous.has(scopedResponsesKey(item.apiKeyId, item.id)));
+    if (missingBeforeWrite !== undefined) {
+      throw new Error(`Responses item disappeared before lifetime refresh: ${missingBeforeWrite.id}`);
+    }
+
+    const targetFilePrefix = responsesItemPayloadExpiryBucketPrefix(createdAt + RESPONSES_STATE_TTL_MS);
+    const writes: PreparedResponsesPayloadWrite[] = [];
+    try {
+      for (const item of unique) {
+        const descriptor = previous.get(scopedResponsesKey(item.apiKeyId, item.id))!;
+        const previousFileKey = storedResponsesPayloadFileKey(item.id, descriptor.payloadJson);
+        const moveFile = previousFileKey !== null && !previousFileKey.startsWith(targetFilePrefix);
+        const payload = moveFile
+          ? await serializeStoredResponsesPayload(item.id, item.apiKeyId, createdAt, item.payload)
+          : descriptor.payloadJson;
+        writes.push({
+          item,
+          payload,
+          generatedFileKey: moveFile ? storedResponsesPayloadFileKey(item.id, payload) : null,
+          previousFileKey,
+        });
+      }
+    } catch (error) {
+      await this.finishPayloadWrites(writes, error, 'refresh');
+    }
+
+    const statementChunks: Array<{ writes: PreparedResponsesPayloadWrite[]; statement: SqlPreparedStatement }> = [];
+    for (const [apiKeyId, group] of groupResponsesPayloadWrites(writes)) {
+      for (let index = 0; index < group.length; index += RESPONSES_REFRESH_CHUNK_SIZE) {
+        const chunk = group.slice(index, index + RESPONSES_REFRESH_CHUNK_SIZE);
+        const cases = chunk.map(() => 'WHEN ? THEN ?').join(' ');
+        const placeholders = chunk.map(() => '?').join(', ');
+        statementChunks.push({
+          writes: chunk,
+          statement: this.db
+            .prepare(
+              `UPDATE responses_items
+               SET payload_json = CASE id ${cases} ELSE payload_json END, created_at = ?
+               WHERE api_key_id = ? AND id IN (${placeholders})`,
+            )
+            .bind(
+              ...chunk.flatMap(({ item, payload }) => [item.id, payload]),
+              createdAt,
+              apiKeyId,
+              ...chunk.map(({ item }) => item.id),
+            ),
+        });
+      }
+    }
+    let countError: Error | null = null;
+    try {
+      const results = await runStatements(this.db, statementChunks.map(chunk => chunk.statement));
+      const mismatch = statementChunks.find((chunk, index) => results[index]?.meta.changes !== chunk.writes.length);
+      if (mismatch !== undefined) {
+        countError = new Error(`Unexpected Responses item refresh count: expected ${mismatch.writes.length}`);
+      }
+    } catch (error) {
+      await this.finishPayloadWrites(writes, error, 'refresh');
+    }
+    await this.finishPayloadWrites(writes, countError, 'refresh', true);
+  }
+
+  private async lookupDescriptors(items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId'>[]): Promise<Map<string, ResponsesItemDescriptor>> {
     const idsByApiKey = new Map<string, Set<string>>();
     for (const item of items) {
       const ids = idsByApiKey.get(item.apiKeyId) ?? new Set<string>();
@@ -901,57 +1009,93 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
       idsByApiKey.set(item.apiKeyId, ids);
     }
 
-    const queries: Promise<SqlResult<{ id: string; api_key_id: string }>>[] = [];
+    const queries: Promise<SqlResult<ResponsesItemDescriptorRow>>[] = [];
     for (const [apiKeyId, idSet] of idsByApiKey) {
       const ids = [...idSet];
       for (let index = 0; index < ids.length; index += RESPONSES_IN_QUERY_CHUNK_SIZE) {
         const chunk = ids.slice(index, index + RESPONSES_IN_QUERY_CHUNK_SIZE);
         const placeholders = chunk.map(() => '?').join(', ');
         queries.push(this.db
-          .prepare(`SELECT id, api_key_id FROM responses_items WHERE api_key_id = ? AND id IN (${placeholders})`)
+          .prepare(`SELECT id, api_key_id, payload_json FROM responses_items WHERE api_key_id = ? AND id IN (${placeholders})`)
           .bind(apiKeyId, ...chunk)
-          .all<{ id: string; api_key_id: string }>());
+          .all<ResponsesItemDescriptorRow>());
       }
     }
     const results = await Promise.all(queries);
-    return new Set(results.flatMap(result => result.results.map(row => scopedResponsesKey(row.api_key_id, row.id))));
+    return new Map(results.flatMap(result => result.results.map(row => {
+      const descriptor: ResponsesItemDescriptor = {
+        id: row.id,
+        apiKeyId: row.api_key_id,
+        payloadJson: row.payload_json,
+      };
+      return [scopedResponsesKey(row.api_key_id, row.id), descriptor] as const;
+    })));
   }
 
-  async refreshMany(items: readonly StoredResponsesItem[], createdAt: number): Promise<void> {
-    const refreshed = await mapSequentially(items, async item => {
-      const previous = await this.db
-        .prepare('SELECT payload_json FROM responses_items WHERE id = ? AND api_key_id = ?')
-        .bind(item.id, item.apiKeyId)
-        .first<{ payload_json: string }>();
-      if (previous === null) throw new Error(`Responses item disappeared before lifetime refresh: ${item.id}`);
-      const previousFileKey = storedResponsesPayloadFileKey(item.id, previous.payload_json);
-      const targetFilePrefix = responsesItemPayloadExpiryBucketPrefix(createdAt + RESPONSES_STATE_TTL_MS);
-      const payload = previousFileKey === null || previousFileKey.startsWith(targetFilePrefix)
-        ? previous.payload_json
-        : await serializeStoredResponsesPayload(item.id, item.apiKeyId, createdAt, item.payload);
-      return {
-        item,
-        statement: this.db
-          .prepare('UPDATE responses_items SET payload_json = ?, created_at = ? WHERE id = ? AND api_key_id = ?')
-          .bind(payload, createdAt, item.id, item.apiKeyId),
-        previousFileKey,
-        nextFileKey: storedResponsesPayloadFileKey(item.id, payload),
-      };
-    });
-    const results = await runStatements(this.db, refreshed.map(item => item.statement));
-    const missing: typeof refreshed = [];
-    for (const [index, item] of refreshed.entries()) {
-      const updated = results[index]?.meta.changes === 1;
-      if (!updated) missing.push(item);
-      const obsoleteFileKey = updated ? item.previousFileKey : item.nextFileKey;
-      const retainedFileKey = updated ? item.nextFileKey : item.previousFileKey;
-      if (obsoleteFileKey !== null && obsoleteFileKey !== retainedFileKey) {
-        await getFileProvider().deletePrefix(obsoleteFileKey);
+  private async finishPayloadWrites(
+    writes: readonly PreparedResponsesPayloadWrite[],
+    failure: unknown | null,
+    operation: 'insert' | 'refresh',
+    preferMissing = false,
+  ): Promise<void> {
+    let persisted: Map<string, ResponsesItemDescriptor>;
+    try {
+      persisted = await this.lookupDescriptors(writes.map(write => write.item));
+    } catch (cleanupError) {
+      if (failure === null) throw cleanupError;
+      throw new AggregateError([failure, cleanupError], `${responsesErrorMessage(failure)}; Responses payload reconciliation failed`);
+    }
+
+    const retainedFileKeys = new Set<string>();
+    const cleanupErrors: unknown[] = [];
+    try {
+      for (const descriptor of persisted.values()) {
+        const fileKey = storedResponsesPayloadFileKey(descriptor.id, descriptor.payloadJson);
+        if (fileKey !== null) retainedFileKeys.add(fileKey);
+      }
+    } catch (cleanupError) {
+      cleanupErrors.push(cleanupError);
+    }
+
+    if (cleanupErrors.length === 0) {
+      const obsoleteFileKeys = new Set<string>();
+      for (const write of writes) {
+        const descriptor = persisted.get(scopedResponsesKey(write.item.apiKeyId, write.item.id));
+        if (write.generatedFileKey !== null && !retainedFileKeys.has(write.generatedFileKey)) {
+          obsoleteFileKeys.add(write.generatedFileKey);
+        }
+        if (
+          operation === 'refresh'
+          && descriptor !== undefined
+          && write.previousFileKey !== null
+          && !retainedFileKeys.has(write.previousFileKey)
+        ) {
+          obsoleteFileKeys.add(write.previousFileKey);
+        }
+      }
+      const cleanupResults = await Promise.allSettled(
+        [...obsoleteFileKeys].map(async key => await getFileProvider().deletePrefix(key)),
+      );
+      for (const result of cleanupResults) {
+        if (result.status === 'rejected') cleanupErrors.push(result.reason);
       }
     }
-    if (missing.length > 0) {
-      throw new Error(`Responses item disappeared before lifetime refresh: ${missing[0].item.id}`);
+
+    const missing = writes.find(write => !persisted.has(scopedResponsesKey(write.item.apiKeyId, write.item.id)));
+    const missingError = missing === undefined
+      ? null
+      : new Error(operation === 'insert'
+        ? `Responses item conflict disappeared before spill cleanup: ${missing.item.id}`
+        : `Responses item disappeared before lifetime refresh: ${missing.item.id}`);
+    const operationError = preferMissing ? missingError ?? failure : failure ?? missingError;
+    if (cleanupErrors.length > 0) {
+      if (operationError === null) throw new AggregateError(cleanupErrors, 'Responses payload cleanup failed');
+      throw new AggregateError(
+        [operationError, ...cleanupErrors],
+        `${responsesErrorMessage(operationError)}; Responses payload cleanup failed`,
+      );
     }
+    if (operationError !== null) throw operationError;
   }
 
   async deleteOlderThan(createdBefore: number): Promise<number> {
