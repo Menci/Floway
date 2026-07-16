@@ -1,18 +1,6 @@
 import type { AlphaSearchDispatcher } from './alpha-upstream.ts';
 import type { WebSearchCallIR } from './operations.ts';
-import type { ResponsesInputItem, ResponsesWebSearchAction, ResponsesWebSearchResult } from '@floway-dev/protocols/responses';
-
-const structuredResults = (value: unknown): ResponsesWebSearchResult[] => {
-  if (!Array.isArray(value)) return [];
-  return value.flatMap(entry => {
-    if (entry === null || typeof entry !== 'object') return [];
-    const result = entry as Record<string, unknown>;
-    if (result.type !== 'text_result' || typeof result.url !== 'string' || typeof result.title !== 'string' || typeof result.snippet !== 'string') {
-      return [];
-    }
-    return [{ ...result, type: 'text_result', url: result.url, title: result.title, snippet: result.snippet } as ResponsesWebSearchResult];
-  });
-};
+import type { ResponsesInputItem, ResponsesWebSearchAction } from '@floway-dev/protocols/responses';
 
 export const executeAlphaSearch = async ({
   dispatcher,
@@ -49,13 +37,17 @@ export const executeAlphaSearch = async ({
   if (parsed === null || typeof parsed !== 'object' || typeof (parsed as { output?: unknown }).output !== 'string') {
     throw new Error('OpenAI search upstream response must include an output string');
   }
-  const body = parsed as { output: string; results?: unknown };
-  const results = structuredResults(body.results);
+  const body = parsed as { output: string };
   return {
     action,
-    results: results.length > 0 || body.output === ''
-      ? results
-      : [{ type: 'text_result', url: '', title: 'OpenAI search', snippet: body.output }],
+    // Alpha results are opaque UI metadata (`ref_id`, `domain`, optional
+    // thumbnail) and live responses do not include the hosted-search
+    // `snippet` field. The model-facing output is the only lossless bridge;
+    // this explicitly synthetic entry serves Responses clients that request
+    // `web_search_call.results` without pretending alpha DTOs were preserved.
+    results: body.output === ''
+      ? []
+      : [{ type: 'text_result', url: '', title: 'OpenAI search output', snippet: body.output }],
     outputText: body.output,
   };
 };
