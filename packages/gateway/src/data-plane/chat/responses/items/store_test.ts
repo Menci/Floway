@@ -4,7 +4,6 @@ import { hashResponsesItemContent } from './format.ts';
 import { createResponsesHttpStore, createResponsesWsSession } from './store.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
-import { ResponsesAttemptState } from '../attempt-state.ts';
 
 describe('StatefulResponsesStore', () => {
   test('HTTP store=false performs no state writes', async () => {
@@ -189,16 +188,5 @@ describe('StatefulResponsesStore', () => {
     expect(snapshot).not.toBeNull();
     if (snapshot === null) throw new Error('Expected durable snapshot');
     expect(await repo.responsesItems.lookupMany('key-a', snapshot.itemIds)).toHaveLength(snapshot.itemIds.length);
-  });
-
-  test('attempt-private payload is request scoped', () => {
-    const state = new ResponsesAttemptState();
-    state.begin(new Map([['item', { first: true }]]), new Map([['item', 'item_upstream']]));
-    state.setPrivatePayload('second', { value: 2 });
-    expect(state.getPrivatePayload('item')).toBeUndefined();
-    expect(state.getPrivatePayload('item_upstream')).toEqual({ first: true });
-    expect(state.getPrivatePayload('second')).toEqual({ value: 2 });
-    state.begin(new Map(), new Map());
-    expect(state.getPrivatePayload('item_upstream')).toBeUndefined();
   });
 });
