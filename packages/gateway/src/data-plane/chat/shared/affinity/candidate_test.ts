@@ -85,6 +85,19 @@ describe('client-carried affinity candidate routing', () => {
     });
   });
 
+  test('exact preference still orders rule variants inside a shared force target', () => {
+    const direct = candidate('up-a', 'model');
+    const alias = candidate('up-a', 'model', {});
+
+    expect(routeCandidatesByAffinity(
+      [direct, alias],
+      [evidence(direct, 'force'), evidence(alias, 'force'), evidence(alias)],
+    )).toEqual({
+      kind: 'success',
+      candidates: [alias, direct],
+    });
+  });
+
   test('fails unavailable and conflicting force affinity', () => {
     const first = candidate('up-a', 'model');
     const second = candidate('up-b', 'model');

@@ -160,7 +160,7 @@ ordered first.
 
 ## Client-carried affinity routing
 
-Every chat API key has a hidden 256-bit server secret for gateway-private
+Every API key has a hidden 256-bit server secret for gateway-private
 per-key data. Affinity derives a dedicated key from it. The source-protocol
 ingress scans opaque reasoning carriers and attempts AES-GCM authentication.
 Successfully decoded envelopes yield immutable target identities and restore

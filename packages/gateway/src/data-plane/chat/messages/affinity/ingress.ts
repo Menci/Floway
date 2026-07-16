@@ -1,4 +1,4 @@
-import { type AffinityCodec, blobForCandidate, preferredAffinityEvidence, type DecodedAffinityBlob, type PreparedAffinityPayload } from '../../shared/affinity/index.ts';
+import { type AffinityCodec, blobForExactCandidate, preferredAffinityEvidence, type DecodedAffinityBlob, type PreparedAffinityPayload } from '../../shared/affinity/index.ts';
 import type { MessagesAssistantContentBlock, MessagesPayload } from '@floway-dev/protocols/messages';
 
 interface MessagesBlobLocation {
@@ -38,7 +38,7 @@ export const prepareMessagesAffinity = async (
         const replacements = new Map<number, MessagesAssistantContentBlock | null>();
         for (const location of messageLocations) {
           const block = message.content[location.blockIndex];
-          const selected = blobForCandidate(location.decoded, candidate);
+          const selected = blobForExactCandidate(location.decoded, candidate);
           if (location.kind === 'thinking') {
             if (block.type !== 'thinking') throw new Error('Messages affinity thinking location changed type');
             const replacement = { ...block };

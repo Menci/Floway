@@ -1,4 +1,4 @@
-import { type AffinityCodec, blobForCandidate, preferredAffinityEvidence, type DecodedAffinityBlob, type PreparedAffinityPayload } from '../../shared/affinity/index.ts';
+import { type AffinityCodec, blobForExactCandidate, preferredAffinityEvidence, type DecodedAffinityBlob, type PreparedAffinityPayload } from '../../shared/affinity/index.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 
 export const prepareChatCompletionsAffinity = async (
@@ -17,7 +17,7 @@ export const prepareChatCompletionsAffinity = async (
       const candidatePayload = structuredClone(payload);
       for (const [index, blob] of decoded) {
         const message = candidatePayload.messages[index];
-        const selected = blobForCandidate(blob, candidate);
+        const selected = blobForExactCandidate(blob, candidate);
         if (selected.present) message.reasoning_opaque = selected.value;
         else delete message.reasoning_opaque;
       }

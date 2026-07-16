@@ -38,8 +38,8 @@ export interface PreparedAffinityPayload<T> {
 }
 
 const IV_BYTES = 12;
-const LENGTH_BYTES = 2;
-const MAX_ENCRYPTED_BYTES = 0xffff;
+const LENGTH_MARKER_BYTES = 2;
+const MAX_UINT16 = 0xffff;
 const textEncoder = new TextEncoder();
 const fatalTextDecoder = new TextDecoder('utf-8', { fatal: true });
 
@@ -181,10 +181,10 @@ const concatBytes = (...parts: readonly Uint8Array[]): Uint8Array => {
   return result;
 };
 
-const encryptedLengthMarker = (length: number): Uint8Array =>
+const uint16be = (length: number): Uint8Array =>
   new Uint8Array([length >>> 8, length & 0xff]);
 
-const encryptedLengthFrom = (bytes: Uint8Array): number =>
+const readTrailingUint16be = (bytes: Uint8Array): number =>
   (bytes[bytes.length - 2] << 8) | bytes[bytes.length - 1];
 
 const ownedBuffer = (bytes: Uint8Array): ArrayBuffer => new Uint8Array(bytes).buffer;
@@ -213,8 +213,8 @@ const deriveAffinityKey = async (serverSecret: Uint8Array): Promise<CryptoKey> =
 
 const authenticatedCarrierData = (domain: string, original: Uint8Array): Uint8Array => {
   const domainBytes = textEncoder.encode(domain);
-  if (domainBytes.length > MAX_ENCRYPTED_BYTES) throw new RangeError('Affinity carrier domain exceeds the 2-byte length marker');
-  return concatBytes(encryptedLengthMarker(domainBytes.length), domainBytes, original);
+  if (domainBytes.length > MAX_UINT16) throw new RangeError('Affinity carrier domain exceeds the 2-byte length marker');
+  return concatBytes(uint16be(domainBytes.length), domainBytes, original);
 };
 
 export class AffinityCodec {
@@ -239,20 +239,20 @@ export class AffinityCodec {
       textEncoder.encode(JSON.stringify(envelope)),
     ));
     const encrypted = concatBytes(iv, ciphertext);
-    if (encrypted.length > MAX_ENCRYPTED_BYTES) throw new RangeError('Encrypted affinity envelope exceeds the 2-byte length marker');
-    const framed = concatBytes(originalBytes, encrypted, encryptedLengthMarker(encrypted.length));
+    if (encrypted.length > MAX_UINT16) throw new RangeError('Encrypted affinity envelope exceeds the 2-byte length marker');
+    const framed = concatBytes(originalBytes, encrypted, uint16be(encrypted.length));
     return original?.origin === 'base64url' ? bytesToBase64url(framed) : bytesToBase64(framed);
   }
 
   async unwrap(value: string, domain: string): Promise<DecodedAffinityBlob> {
     const framed = decodeCanonicalBase64(value) ?? decodeCanonicalBase64url(value);
-    if (framed === null || framed.length < LENGTH_BYTES + IV_BYTES + 16) return { kind: 'foreign', value };
+    if (framed === null || framed.length < LENGTH_MARKER_BYTES + IV_BYTES + 16) return { kind: 'foreign', value };
 
-    const encryptedLength = encryptedLengthFrom(framed);
-    const originalLength = framed.length - LENGTH_BYTES - encryptedLength;
+    const encryptedLength = readTrailingUint16be(framed);
+    const originalLength = framed.length - LENGTH_MARKER_BYTES - encryptedLength;
     if (encryptedLength < IV_BYTES + 16 || originalLength < 0) return { kind: 'foreign', value };
 
-    const encrypted = framed.subarray(originalLength, framed.length - LENGTH_BYTES);
+    const encrypted = framed.subarray(originalLength, framed.length - LENGTH_MARKER_BYTES);
     const original = framed.subarray(0, originalLength);
     const iv = encrypted.subarray(0, IV_BYTES);
     const ciphertext = encrypted.subarray(IV_BYTES);
@@ -292,7 +292,7 @@ const affinityTargetForCandidate = (candidate: ModelCandidate): AffinityTarget =
   ...(candidate.rules !== undefined ? { rules: candidate.rules } : {}),
 });
 
-const candidateMatchesAffinity = (candidate: ModelCandidate, affinity: AffinityTarget): boolean =>
+const candidateMatchesExactTarget = (candidate: ModelCandidate, affinity: AffinityTarget): boolean =>
   candidate.provider.upstream === affinity.upstreamId
   && candidate.model.id === affinity.modelId
   && isEqual(candidate.rules, affinity.rules);
@@ -307,11 +307,11 @@ const reorderByLatestAvailablePreference = <T extends ModelCandidate>(
   for (let index = evidence.length - 1; index >= 0; index -= 1) {
     if (evidence[index].mode !== 'prefer') continue;
     const preferred = evidence[index].target;
-    const matching = candidates.filter(candidate => candidateMatchesAffinity(candidate, preferred));
+    const matching = candidates.filter(candidate => candidateMatchesExactTarget(candidate, preferred));
     if (matching.length === 0) continue;
     return [
       ...matching,
-      ...candidates.filter(candidate => !candidateMatchesAffinity(candidate, preferred)),
+      ...candidates.filter(candidate => !candidateMatchesExactTarget(candidate, preferred)),
     ];
   }
   return candidates;
@@ -362,10 +362,10 @@ const blobForCompatibility = (decoded: DecodedAffinityBlob, compatible: boolean)
   return { present: true, compatible: true, value: decoded.value };
 };
 
-export const blobForCandidate = (decoded: DecodedAffinityBlob, candidate: ModelCandidate): CandidateBlob =>
+export const blobForExactCandidate = (decoded: DecodedAffinityBlob, candidate: ModelCandidate): CandidateBlob =>
   blobForCompatibility(
     decoded,
-    decoded.kind === 'owned' && candidateMatchesAffinity(candidate, decoded.envelope.affinity),
+    decoded.kind === 'owned' && candidateMatchesExactTarget(candidate, decoded.envelope.affinity),
   );
 
 export const blobForForcedCandidate = (decoded: DecodedAffinityBlob, candidate: ModelCandidate): CandidateBlob =>

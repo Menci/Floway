@@ -1,4 +1,4 @@
-import { type AffinityCodec, blobForCandidate, preferredAffinityEvidence, type DecodedAffinityBlob, type PreparedAffinityPayload } from '../../shared/affinity/index.ts';
+import { type AffinityCodec, blobForExactCandidate, preferredAffinityEvidence, type DecodedAffinityBlob, type PreparedAffinityPayload } from '../../shared/affinity/index.ts';
 import type { GeminiPart, GeminiPayload } from '@floway-dev/protocols/gemini';
 
 interface GeminiBlobLocation {
@@ -37,7 +37,7 @@ export const prepareGeminiAffinity = async (
         const replacements = new Map<number, GeminiPart | null>();
         for (const location of contentLocations) {
           const part = content.parts[location.partIndex];
-          const selected = blobForCandidate(location.decoded, candidate);
+          const selected = blobForExactCandidate(location.decoded, candidate);
           if (location.decoded.kind === 'foreign') continue;
           const affinity = location.decoded.envelope.affinity;
           if (affinity.syntheticItem === true) {

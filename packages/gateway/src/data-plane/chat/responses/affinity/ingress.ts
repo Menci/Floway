@@ -1,4 +1,4 @@
-import { type AffinityCodec, blobForCandidate, blobForForcedCandidate, type AffinityEvidence, type AffinityTarget, type DecodedAffinityBlob, type PreparedAffinityPayload } from '../../shared/affinity/index.ts';
+import { type AffinityCodec, blobForExactCandidate, blobForForcedCandidate, type AffinityEvidence, type AffinityTarget, type DecodedAffinityBlob, type PreparedAffinityPayload } from '../../shared/affinity/index.ts';
 import { createTemporaryResponsesItemId, hashResponsesItemBinding } from '../items/format.ts';
 import type { CanonicalResponsesPayload, ResponsesInputItem } from '@floway-dev/protocols/responses';
 import type { ModelCandidate } from '@floway-dev/provider';
@@ -148,7 +148,7 @@ export const prepareResponsesAffinity = async (
       const item = candidatePayload.input[itemIndex]!;
       const selected = blobRequiresForce(item, carrier.decoded)
         ? blobForForcedCandidate(carrier.decoded, candidate)
-        : blobForCandidate(carrier.decoded, candidate);
+        : blobForExactCandidate(carrier.decoded, candidate);
       if (!selected.compatible) setItemId(item, createTemporaryResponsesItemId(item.type));
       else if (carrier.boundItem.upstreamItemId !== undefined) setItemId(item, carrier.boundItem.upstreamItemId);
       else delete (item as ResponsesInputItem & { id?: string }).id;
@@ -163,7 +163,7 @@ export const prepareResponsesAffinity = async (
         location,
         selected: blobRequiresForce(item, location.decoded)
           ? blobForForcedCandidate(location.decoded, candidate)
-          : blobForCandidate(location.decoded, candidate),
+          : blobForExactCandidate(location.decoded, candidate),
       }));
       for (const { location, selected } of decisions) {
         if (location.contentIndex !== undefined) continue;
