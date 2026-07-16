@@ -1,7 +1,7 @@
 import { normalizeDisabledPublicModelIds } from './disabled-public-models.ts';
 import { normalizeFlagOverrides } from './flag-overrides.ts';
 import { normalizeProxyFallbackList } from './proxy-fallback-list.ts';
-import { deleteAllResponsesItemPayloadFiles, parseStoredResponsesPayload, serializeStoredResponsesPayload, storedResponsesPayloadFileKey } from './responses-payload.ts';
+import { deleteAllResponsesItemPayloadFiles, parseStoredResponsesPayload, RESPONSES_STATE_TTL_MS, responsesItemPayloadExpiryBucketPrefix, serializeStoredResponsesPayload, storedResponsesPayloadFileKey } from './responses-payload.ts';
 import type {
   ApiKey,
   ApiKeyRepo,
@@ -871,12 +871,17 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
         .prepare('SELECT payload_json FROM responses_items WHERE id = ? AND api_key_id = ?')
         .bind(item.id, item.apiKeyId)
         .first<{ payload_json: string }>();
-      const payload = await serializeStoredResponsesPayload(item.id, item.apiKeyId, createdAt, item.payload);
+      if (previous === null) throw new Error(`Responses item disappeared before lifetime refresh: ${item.id}`);
+      const previousFileKey = storedResponsesPayloadFileKey(item.id, previous.payload_json);
+      const targetFilePrefix = responsesItemPayloadExpiryBucketPrefix(createdAt + RESPONSES_STATE_TTL_MS);
+      const payload = previousFileKey === null || previousFileKey.startsWith(targetFilePrefix)
+        ? previous.payload_json
+        : await serializeStoredResponsesPayload(item.id, item.apiKeyId, createdAt, item.payload);
       return {
         statement: this.db
           .prepare('UPDATE responses_items SET payload_json = ?, created_at = ? WHERE id = ? AND api_key_id = ?')
           .bind(payload, createdAt, item.id, item.apiKeyId),
-        previousFileKey: previous === null ? null : storedResponsesPayloadFileKey(item.id, previous.payload_json),
+        previousFileKey,
         nextFileKey: storedResponsesPayloadFileKey(item.id, payload),
       };
     });

@@ -75,7 +75,9 @@ describe('StatefulResponsesStore', () => {
     await repo.responsesSnapshots.insert({ id: 'resp_old', apiKeyId: 'key-a', itemIds: [item.id], createdAt: 1 });
     const store = createResponsesHttpStore('key-a', true);
     expect(await store.loadSnapshot('resp_old')).not.toBeNull();
+    await repo.responsesItems.deleteOlderThan(2);
     await repo.responsesSnapshots.deleteOlderThan(2);
+    expect(await repo.responsesItems.lookupMany('key-a', [item.id])).toHaveLength(1);
     expect(await repo.responsesSnapshots.lookup('key-a', 'resp_old')).not.toBeNull();
     await store.commitSnapshot('resp_new', 'append');
 

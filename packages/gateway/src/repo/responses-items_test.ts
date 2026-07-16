@@ -1,5 +1,5 @@
 import initSqlJs from 'sql.js';
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 
 import { InMemoryRepo } from './memory.ts';
 import { SqlRepo } from './sql.ts';
@@ -72,6 +72,9 @@ describe.each(factories)('%s Responses state repo', (_name, createRepo) => {
     };
     await repo.responsesItems.insertMany([item]);
     const before = await files.listKeys('responses-items/');
+    const put = vi.spyOn(files, 'put');
+    await repo.responsesItems.refreshMany([item], 1_000 + 10 * 60 * 1000);
+    if (_name === 'sql') expect(put).not.toHaveBeenCalled();
     await repo.responsesItems.refreshMany([item], 1_000 + 2 * 60 * 60 * 1000);
     const after = await files.listKeys('responses-items/');
 
