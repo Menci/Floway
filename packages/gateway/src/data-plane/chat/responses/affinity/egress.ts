@@ -20,10 +20,8 @@ const opaqueSlots = (item: ResponsesOutputItem): Array<{ key: string; value: str
   if (item.type === 'program' && typeof item.fingerprint === 'string') {
     slots.push({ key: 'fingerprint', value: item.fingerprint });
   }
-  if (item.type === 'agent_message' && Array.isArray(record.content)) {
-    record.content.forEach((part, index) => {
-      if (!part || typeof part !== 'object') return;
-      const content = part as Record<string, unknown>;
+  if (item.type === 'agent_message') {
+    item.content.forEach((content, index) => {
       if (content.type === 'encrypted_content' && typeof content.encrypted_content === 'string') {
         slots.push({ key: `content.${index}.encrypted_content`, value: content.encrypted_content });
       }
@@ -36,14 +34,11 @@ const replaceOpaqueSlots = (
   item: ResponsesOutputItem,
   replacements: ReadonlyMap<string, string>,
 ): ResponsesOutputItem => {
-  const record = item as unknown as Record<string, unknown>;
   const topLevel = Object.fromEntries([...replacements].filter(([key]) => !key.startsWith('content.')));
-  const content = Array.isArray(record.content)
-    ? record.content.map((part, index) => {
+  const content = item.type === 'agent_message'
+    ? item.content.map((part, index) => {
         const replacement = replacements.get(`content.${index}.encrypted_content`);
-        return replacement === undefined || !part || typeof part !== 'object'
-          ? part
-          : { ...(part as Record<string, unknown>), encrypted_content: replacement };
+        return replacement === undefined ? part : { ...part, encrypted_content: replacement };
       })
     : undefined;
   return {
