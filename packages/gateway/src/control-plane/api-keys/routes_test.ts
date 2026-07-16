@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { test, vi } from 'vitest';
 
 import { initDumpBroker, initDumpStore } from '../../dump/registry.ts';
 import { installDumpStubs } from '../../dump/test-fixtures.ts';
@@ -191,6 +191,43 @@ test('POST /api/keys stores a custom key verbatim and rejects duplicates', async
     body: JSON.stringify({ name: 'duplicate-key', key_source: 'custom', custom_key: 'bring-your-own-key' }),
   });
   assertEquals(duplicate.status, 409);
+});
+
+test.each([
+  'UNIQUE constraint failed: api_keys.server_secret',
+  'CHECK constraint failed: length(server_secret) = 64',
+])('POST /api/keys exposes non-key database constraints: %s', async message => {
+  const { repo, apiKey } = await setupAppTest();
+  const save = vi.spyOn(repo.apiKeys, 'save').mockRejectedValue(new Error(message));
+  try {
+    const response = await requestApp('/api/keys', {
+      method: 'POST',
+      headers: { 'x-api-key': apiKey.key, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'constraint-test', key_source: 'custom', custom_key: 'custom-value' }),
+    });
+    assertEquals(response.status, 500);
+    if (!(await response.text()).includes(message)) throw new Error(`expected response to expose ${message}`);
+  } finally {
+    save.mockRestore();
+  }
+});
+
+test('POST /api/keys does not retry a generated key after a server-secret constraint', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  const message = 'UNIQUE constraint failed: api_keys.server_secret';
+  const save = vi.spyOn(repo.apiKeys, 'save').mockRejectedValue(new Error(message));
+  try {
+    const response = await requestApp('/api/keys', {
+      method: 'POST',
+      headers: { 'x-api-key': apiKey.key, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'constraint-test', key_source: 'generate' }),
+    });
+    assertEquals(response.status, 500);
+    assertEquals(save.mock.calls.length, 1);
+    if (!(await response.text()).includes(message)) throw new Error(`expected response to expose ${message}`);
+  } finally {
+    save.mockRestore();
+  }
 });
 
 test('POST /api/keys rejects malformed custom key requests', async () => {

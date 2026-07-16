@@ -35,6 +35,9 @@ const normalizeCustomKey = (value: unknown): string | Response => {
 const duplicateKeyResponse = () =>
   Response.json({ error: 'An API key with that raw key already exists.' }, { status: 409 });
 
+const isRawKeyUniqueConstraint = (error: unknown): boolean =>
+  /UNIQUE constraint failed: api_keys\.key(?:\b|$)/i.test(error instanceof Error ? error.message : String(error));
+
 const findAnyByRawKey = async (rawKey: string): Promise<ApiKey | null> =>
   (await getRepo().apiKeys.listIncludingDeleted()).find(key => key.key === rawKey) ?? null;
 
@@ -46,8 +49,7 @@ const saveGeneratedKey = async (template: Omit<ApiKey, 'key'>): Promise<ApiKey |
       await getRepo().apiKeys.save(key);
       return key;
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message.toLowerCase().includes('unique') || message.toLowerCase().includes('constraint')) continue;
+      if (isRawKeyUniqueConstraint(error)) continue;
       throw error;
     }
   }
@@ -62,8 +64,7 @@ const saveCustomKey = async (template: Omit<ApiKey, 'key'>, rawKey: string): Pro
     await getRepo().apiKeys.save(key);
     return key;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (message.toLowerCase().includes('unique') || message.toLowerCase().includes('constraint')) return duplicateKeyResponse();
+    if (isRawKeyUniqueConstraint(error)) return duplicateKeyResponse();
     throw error;
   }
 };
