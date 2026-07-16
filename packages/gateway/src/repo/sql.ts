@@ -1085,8 +1085,8 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
     const missingError = missing === undefined
       ? null
       : new Error(operation === 'insert'
-        ? `Responses item conflict disappeared before spill cleanup: ${missing.item.id}`
-        : `Responses item disappeared before lifetime refresh: ${missing.item.id}`);
+          ? `Responses item conflict disappeared before spill cleanup: ${missing.item.id}`
+          : `Responses item disappeared before lifetime refresh: ${missing.item.id}`);
     const operationError = preferMissing ? missingError ?? failure : failure ?? missingError;
     if (cleanupErrors.length > 0) {
       if (operationError === null) throw new AggregateError(cleanupErrors, 'Responses payload cleanup failed');
