@@ -10,12 +10,11 @@ import { stubModelCandidate } from '@floway-dev/test-utils';
 const codec = new AffinityCodec('22'.repeat(32));
 const carrierDomain = (itemType: string, slot: string): string => `responses.${itemType}.${slot}`;
 
-const candidate = (upstream: string, rules?: ModelCandidate['rules']): ModelCandidate => {
+const candidate = (upstream: string): ModelCandidate => {
   const base = stubModelCandidate();
   return stubModelCandidate({
     provider: { ...base.provider, upstream },
     model: { id: 'model' },
-    ...(rules !== undefined ? { rules } : {}),
   });
 };
 
@@ -170,7 +169,7 @@ test('restores the bound ID of a force item carried by an adjacent synthetic pre
 });
 
 test('restores a preferred bound item ID only for exact optional rules', async () => {
-  const aliasCandidate = candidate('upstream-a', {});
+  const aliasCandidate = { ...candidateA, rules: {} };
   const item = { type: 'message' as const, id: 'msg_public', role: 'assistant' as const, content: 'answer' };
   const carrier = await codec.wrap(
     undefined,

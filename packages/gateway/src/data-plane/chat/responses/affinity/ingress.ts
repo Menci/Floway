@@ -95,7 +95,7 @@ export const prepareResponsesAffinity = async (
   const locations = await encryptedContentLocations(payload.input, codec);
   const boundItems = new Map<number, OwnedResponsesBlobLocation>();
   for (const location of locations) {
-    if (location.decoded.kind !== 'owned') continue;
+    if (!isOwnedLocation(location)) continue;
     const affinity = location.decoded.envelope.affinity;
     const bound = affinity.boundItem;
     if (bound === undefined) continue;
@@ -146,7 +146,7 @@ export const prepareResponsesAffinity = async (
         ? blobForForcedCandidate(location.decoded, candidate)
         : blobForCandidate(location.decoded, candidate);
       recordItemId(
-        item,
+        item as ResponsesInputItem & { id: string },
         selected.compatible ? bound.upstreamItemId : createTemporaryResponsesItemId(item.type),
       );
     }
