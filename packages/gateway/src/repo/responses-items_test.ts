@@ -134,14 +134,18 @@ describe.each(factories)('%s Responses state repo', (_name, createRepo) => {
     if (_name === 'sql') expect(put).not.toHaveBeenCalled();
     await repo.responsesItems.refreshMany([item], 1_000 + 2 * 60 * 60 * 1000);
     const after = await files.listKeys('responses-items/');
+    await repo.responsesItems.refreshMany([item], 1_000 + 60 * 60 * 1000);
+    const afterOlderRefresh = await files.listKeys('responses-items/');
 
     if (_name === 'sql') {
       expect(before).toHaveLength(1);
       expect(after).toHaveLength(1);
       expect(after[0]).not.toBe(before[0]);
+      expect(afterOlderRefresh).toEqual(after);
     } else {
       expect(before).toEqual([]);
       expect(after).toEqual([]);
+      expect(afterOlderRefresh).toEqual([]);
     }
     expect((await repo.responsesItems.lookupMany('key-a', [item.id]))[0].createdAt).toBe(1_000 + 2 * 60 * 60 * 1000);
   });

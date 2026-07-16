@@ -135,6 +135,29 @@ describe('StatefulResponsesStore', () => {
     expect((await repo.responsesSnapshots.lookup('key-a', 'resp_reused'))?.itemIds).toEqual([directRow.id, hashedRow.id]);
   });
 
+  test('snapshot lifetime follows a newer backing item timestamp', async () => {
+    const repo = new InMemoryRepo();
+    initRepo(repo);
+    const store = createResponsesHttpStore('key-a', true);
+    const input = { type: 'message' as const, role: 'user' as const, content: 'future lifetime' };
+    const futureCreatedAt = Date.now() + 60_000;
+    const row = {
+      id: 'msg_future',
+      apiKeyId: 'key-a',
+      itemType: 'message',
+      payload: { item: input },
+      contentHash: await store.hashItemContent(input),
+      createdAt: futureCreatedAt,
+    };
+    await repo.responsesItems.insertMany([row]);
+    await store.loadInputItems([input], [input]);
+    await store.stageInputItems([input]);
+    await store.commitSnapshot('resp_future', 'append');
+
+    expect((await repo.responsesItems.lookupMany('key-a', [row.id]))[0].createdAt).toBe(futureCreatedAt);
+    expect((await repo.responsesSnapshots.lookup('key-a', 'resp_future'))?.createdAt).toBe(futureCreatedAt);
+  });
+
   test('WebSocket store=false retains socket-local state only', async () => {
     const repo = new InMemoryRepo();
     initRepo(repo);
