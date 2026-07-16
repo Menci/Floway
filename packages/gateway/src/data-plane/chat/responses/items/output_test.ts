@@ -1,4 +1,4 @@
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
 import { wrapResponsesClientOutput } from './output.ts';
 import { isResponsesItemId } from './format.ts';
@@ -87,7 +87,52 @@ test('client output uses one item id across lifecycle snapshots without committi
     return [];
   });
   expect(new Set(ids).size).toBe(1);
+  expect(await repo.responsesItems.lookupMany('key-a', ids.filter((id): id is string => typeof id === 'string'))).toEqual([]);
   expect(await repo.responsesSnapshots.lookup('key-a', 'resp_public')).toBeNull();
+});
+
+test('client output batches hundreds of finalized items at the successful terminal boundary', async () => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  const insertItems = vi.spyOn(repo.responsesItems, 'insertMany');
+  const store = createResponsesHttpStore('key-a', true);
+  const items = Array.from({ length: 240 }, (_, index) => ({
+    type: 'reasoning' as const,
+    id: `rs_upstream_${index}`,
+    summary: [{ type: 'summary_text' as const, text: `summary ${index}` }],
+  }));
+  const response: ResponsesResult = {
+    id: 'resp_upstream',
+    object: 'response',
+    model: 'model',
+    status: 'completed',
+    output: items,
+    error: null,
+    incomplete_details: null,
+  };
+  const input = async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
+    for (const [outputIndex, item] of items.entries()) {
+      yield eventFrame({ type: 'response.output_item.done', output_index: outputIndex, item });
+    }
+    yield eventFrame({ type: 'response.completed', response });
+  };
+  const iterator = wrapResponsesClientOutput(input(), {
+    store,
+    attemptState: new ResponsesAttemptState(),
+    responseId: 'resp_public',
+  })[Symbol.asyncIterator]();
+
+  for (let index = 0; index < items.length; index += 1) {
+    const next = await iterator.next();
+    expect(next.value?.type === 'event' && next.value.event.type).toBe('response.output_item.done');
+  }
+  expect(insertItems).not.toHaveBeenCalled();
+
+  const terminal = await iterator.next();
+  expect(terminal.value?.type === 'event' && terminal.value.event.type).toBe('response.completed');
+  expect(insertItems).toHaveBeenCalledTimes(1);
+  expect(insertItems.mock.calls[0][0]).toHaveLength(items.length);
+  expect((await repo.responsesSnapshots.lookup('key-a', 'resp_public'))?.itemIds).toHaveLength(items.length);
 });
 
 test('client output mints and persists one lifecycle id for an id-less item', async () => {

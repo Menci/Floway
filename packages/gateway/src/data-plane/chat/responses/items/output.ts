@@ -9,13 +9,11 @@ import { responsesResultToEvents, type ResponsesInputItem, type ResponsesResult,
 // state store when it has a write target. Translated inner Responses attempts
 // never enter this membrane.
 //
-// Items are committed at their `done` frame and the snapshot is committed
-// at the terminal `response.completed` / `response.incomplete` frame.
-// Both writes are protocol state, not best-effort telemetry: their failures
-// propagate so the client never receives `done` / a successful terminal frame
-// for ids that cannot be referenced on its next turn. Streaming clients may
-// already have seen the item's `added` frame and deltas, but without `done`
-// they must treat that partial item as failed.
+// Complete items are staged at their `done` frame. The whole output batch and
+// its snapshot commit together before the terminal `response.completed` /
+// `response.incomplete` frame is yielded. These writes are protocol state, not
+// best-effort telemetry: a failure propagates before the client sees a
+// successful terminal response whose ids could not be referenced next turn.
 //
 // Wrap is also the single source of truth for the response envelope id the
 // client sees. The caller mints a `resp_<crc>_<body>` once and passes it
@@ -80,7 +78,7 @@ export const wrapResponsesClientOutput = async function* (
     return true;
   };
 
-  const onItemFinalized = async (originalItem: ResponsesInputItem, newId: string, outputIndex: number): Promise<void> => {
+  const stageFinalizedItem = async (originalItem: ResponsesInputItem, newId: string, outputIndex: number): Promise<void> => {
     if (!store.writesState) return;
     const upstreamId = responsesItemId(originalItem);
     // Interceptors register per-item server-only payloads under the wire id.
@@ -99,7 +97,6 @@ export const wrapResponsesClientOutput = async function* (
       createdAt: now,
     };
     store.stageOutputItem(row, outputIndex);
-    await store.commitOutputItems();
   };
 
   // Fallback for an out-of-order delta that references an upstream id before
@@ -152,7 +149,7 @@ export const wrapResponsesClientOutput = async function* (
           itemType: canonicalResponsesItemType(event.item.type),
           contentHash: await hashResponsesItemBinding(event.item),
         });
-        await onItemFinalized(event.item as unknown as ResponsesInputItem, newId, event.output_index);
+        await stageFinalizedItem(event.item as unknown as ResponsesInputItem, newId, event.output_index);
       }
       yield eventFrame({ ...event, item: { ...event.item, id: newId } });
       continue;
@@ -166,7 +163,7 @@ export const wrapResponsesClientOutput = async function* (
         if (upstreamId !== null) seenItemTypes.set(upstreamId, item.type);
         const newId = clientIdForOutput(upstreamId, item.type, outputIndex);
         if (!await matchesFinalizedItem(outputIndex, item as unknown as ResponsesInputItem)) {
-          await onItemFinalized(item as unknown as ResponsesInputItem, newId, outputIndex);
+          await stageFinalizedItem(item as unknown as ResponsesInputItem, newId, outputIndex);
         }
         output.push({ ...(item as unknown as ResponsesInputItem), id: newId });
       }

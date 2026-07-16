@@ -36,7 +36,6 @@ export interface StatefulResponsesStore {
   hashItemContent(item: ResponsesInputItem): Promise<string>;
   stageInputItems(items: readonly ResponsesInputItem[]): Promise<void>;
   stageOutputItem(row: StoredResponsesItem, outputIndex: number): void;
-  commitOutputItems(): Promise<void>;
   commitSnapshot(responseId: string, mode: ResponsesSnapshotMode): Promise<void>;
 }
 
@@ -117,10 +116,6 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     this.stagedOutputItems.set(cloned.id, cloned);
     this.stagedOutputItemIds.set(outputIndex, cloned.id);
     this.rememberItem(cloned);
-  }
-
-  async commitOutputItems(): Promise<void> {
-    await this.commitItems([...this.stagedOutputItems.values()]);
   }
 
   async commitSnapshot(responseId: string, mode: ResponsesSnapshotMode): Promise<void> {
