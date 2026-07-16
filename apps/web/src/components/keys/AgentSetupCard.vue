@@ -59,7 +59,9 @@ const draft = computed(() => props.selectedKey !== null && serverDraft.value !==
   : localDraft.value);
 
 type AgentSetupView = 'agent-setup' | 'config-snippets';
+type SetupAgent = 'claude' | 'codex';
 const activeView = shallowRef<AgentSetupView>('agent-setup');
+const activeAgent = shallowRef<SetupAgent>('claude');
 const commandPlatform = shallowRef<AgentSetupPlatform>(detectAgentSetupPlatform(navigator.platform, navigator.userAgent));
 
 type ClaudeEffortLevel = NonNullable<AgentSetupConfiguration['claudeCode']['effortLevel']>;
@@ -181,42 +183,62 @@ const codexEffort = computed<string>({
 // value as a single-quoted literal rather than making safety depend on that URL
 // invariant (POSIX uses close/backslash/reopen; PowerShell doubles the quote).
 const origin = window.location.origin;
-const shellCommand = computed(() => (scripts.value
+const activeScripts = computed(() => scripts.value?.[activeAgent.value] ?? null);
+const activeAgentLabel = computed(() => activeAgent.value === 'claude' ? 'Claude Code' : 'Codex');
+const shellCommand = computed(() => (activeScripts.value
   && props.selectedKey !== null
-  ? `export SETUP_ENDPOINT='${origin.replace(/'/g, "'\\''")}'; curl -fsSL "$SETUP_ENDPOINT${scripts.value.sh}" | bash`
+  ? `export SETUP_ENDPOINT='${origin.replace(/'/g, "'\\''")}'; curl -fsSL "$SETUP_ENDPOINT${activeScripts.value.sh}" | bash`
   : props.selectedKey === null ? '# Select an API key above to generate the setup command.' : '# Preparing setup command…'));
-const powerShellCommand = computed(() => (scripts.value
+const powerShellCommand = computed(() => (activeScripts.value
   && props.selectedKey !== null
-  ? `$SetupEndpoint = '${origin.replace(/'/g, "''")}'; irm "$SetupEndpoint${scripts.value.ps1}" | iex`
+  ? `$SetupEndpoint = '${origin.replace(/'/g, "''")}'; irm "$SetupEndpoint${activeScripts.value.ps1}" | iex`
   : props.selectedKey === null ? '# Select an API key above to generate the setup command.' : '# Preparing setup command…'));
 </script>
 
 <template>
   <section class="glass-card p-5 sm:p-6 animate-in delay-1">
-    <div class="mb-5 flex items-center justify-between gap-3">
-      <div class="flex flex-wrap items-center gap-3">
-        <div role="tablist" aria-label="Agent configuration mode" class="inline-flex items-center gap-1 rounded-lg bg-surface-800 p-0.5">
+    <div class="grid gap-5 md:grid-cols-[20rem_minmax(0,1fr)]">
+      <aside class="space-y-4">
+        <div role="tablist" aria-label="Agent configuration mode" class="flex gap-2">
           <button
             v-for="view in (['agent-setup', 'config-snippets'] as const)"
             :key="view"
             role="tab"
-            class="rounded-md px-3 py-1.5 text-xs font-medium transition-all"
-            :class="activeView === view ? 'bg-surface-600 text-white' : 'text-gray-500 hover:text-gray-300'"
+            class="min-w-0 flex-1 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-colors"
+            :class="activeView === view ? 'bg-surface-700 text-white' : 'text-gray-500 hover:bg-white/[0.03] hover:text-gray-300'"
             :aria-selected="activeView === view"
             @click="activeView = view"
           >{{ view === 'agent-setup' ? 'Agent Setup' : 'Config snippets' }}</button>
         </div>
-        <p class="text-xs" :class="selectedKey === null ? 'text-gray-500' : 'font-medium text-gray-300'">
-          {{ selectedKey === null ? 'Select the API key to use.' : `The configuration below will use the ${selectedKey.name} API key.` }}
-        </p>
-      </div>
-      <span v-if="activeView === 'agent-setup' && syncing" class="inline-flex items-center gap-1.5 text-xs text-gray-500">
-        <Spinner class="size-3.5" />
-        Saving…
-      </span>
-    </div>
 
-    <AgentConfigSnippets v-if="activeView === 'config-snippets' && selectedKey !== null" :api-key="selectedKey" :models="models" />
+        <nav aria-label="Agent" class="flex flex-col gap-2 border-t border-white/5 pt-4">
+          <button
+            v-for="agent in (['claude', 'codex'] as const)"
+            :key="agent"
+            class="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-colors"
+            :class="activeAgent === agent ? 'bg-surface-700 text-white' : 'text-gray-500 hover:bg-white/[0.03] hover:text-gray-300'"
+            :aria-current="activeAgent === agent ? 'true' : undefined"
+            @click="activeAgent = agent"
+          >
+            <i :class="agent === 'claude' ? 'i-simple-icons-anthropic' : 'i-simple-icons-openai'" class="size-4 shrink-0" />
+            {{ agent === 'claude' ? 'Claude Code' : 'Codex' }}
+          </button>
+        </nav>
+      </aside>
+
+      <div class="min-w-0">
+        <div class="mb-5 flex min-h-10 items-center justify-between gap-3">
+          <p class="text-xs text-gray-600">
+            <template v-if="selectedKey === null">Select the API key to use.</template>
+            <template v-else>The configuration below will use the <span class="font-medium text-gray-300">{{ selectedKey.name }}</span> API key.</template>
+          </p>
+          <span v-if="activeView === 'agent-setup' && syncing" class="inline-flex items-center gap-1.5 text-xs text-gray-500">
+            <Spinner class="size-3.5" />
+            Saving…
+          </span>
+        </div>
+
+    <AgentConfigSnippets v-if="activeView === 'config-snippets' && selectedKey !== null" :agent="activeAgent" :api-key="selectedKey" :models="models" />
 
     <div v-else-if="activeView === 'config-snippets'" class="rounded-lg border border-white/10 bg-surface-800/60 px-4 py-6 text-center text-sm text-gray-400">
       Select an API key above to generate configuration snippets.
@@ -250,49 +272,39 @@ const powerShellCommand = computed(() => (scripts.value
 
       <p v-if="loading && models.length === 0" class="mb-4 text-[11px] text-gray-500">Loading models…</p>
 
-      <div class="space-y-5">
-        <section>
-          <div class="mb-4 flex items-center gap-2">
-            <Switch v-model="draft.claudeCode.enabled" aria-label="Enable Claude Code setup" />
-            <h3 class="text-sm font-semibold text-white">Claude Code</h3>
-          </div>
-          <div v-if="draft.claudeCode.enabled" data-testid="claude-fields" :class="agentFieldGridClass">
-            <div data-testid="claude-model">
-              <label :for="fieldIds.claudeModel" class="mb-1.5 block text-xs text-gray-500">Default model</label>
-              <Select :id="fieldIds.claudeModel" v-model="claudeModel" :options="claudeModelOptions" />
-            </div>
-            <div data-testid="claude-opus">
-              <label :for="fieldIds.claudeOpus" class="mb-1.5 block text-xs text-gray-500">Opus model</label>
-              <Select :id="fieldIds.claudeOpus" v-model="claudeOpusModel" :options="claudeOpusOptions" />
-            </div>
-            <div data-testid="claude-sonnet">
-              <label :for="fieldIds.claudeSonnet" class="mb-1.5 block text-xs text-gray-500">Sonnet model</label>
-              <Select :id="fieldIds.claudeSonnet" v-model="claudeSonnetModel" :options="claudeSonnetOptions" />
-            </div>
-            <div data-testid="claude-haiku">
-              <label :for="fieldIds.claudeHaiku" class="mb-1.5 block text-xs text-gray-500">Haiku model</label>
-              <Select :id="fieldIds.claudeHaiku" v-model="claudeHaikuModel" :options="claudeHaikuOptions" />
-            </div>
-            <div data-testid="claude-effort">
-              <label :for="fieldIds.claudeEffort" class="mb-1.5 block text-xs text-gray-500">Reasoning effort</label>
-              <Select :id="fieldIds.claudeEffort" v-model="claudeEffort" :options="claudeEffortOptions" />
-            </div>
-            <div data-testid="claude-model-discovery">
-              <span class="mb-1.5 block text-xs text-gray-500">Gateway model discovery</span>
-              <div class="flex h-9 items-center gap-2">
-                <Switch v-model="draft.claudeCode.modelDiscovery" size="sm" aria-label="Enable Claude Code gateway model discovery" />
-                <span class="text-sm text-white">{{ draft.claudeCode.modelDiscovery ? 'Enabled' : 'Disabled' }}</span>
+          <section v-if="activeAgent === 'claude'">
+            <div data-testid="claude-fields" :class="agentFieldGridClass">
+              <div data-testid="claude-model">
+                <label :for="fieldIds.claudeModel" class="mb-1.5 block text-xs text-gray-500">Default model</label>
+                <Select :id="fieldIds.claudeModel" v-model="claudeModel" :options="claudeModelOptions" />
+              </div>
+              <div data-testid="claude-opus">
+                <label :for="fieldIds.claudeOpus" class="mb-1.5 block text-xs text-gray-500">Opus model</label>
+                <Select :id="fieldIds.claudeOpus" v-model="claudeOpusModel" :options="claudeOpusOptions" />
+              </div>
+              <div data-testid="claude-sonnet">
+                <label :for="fieldIds.claudeSonnet" class="mb-1.5 block text-xs text-gray-500">Sonnet model</label>
+                <Select :id="fieldIds.claudeSonnet" v-model="claudeSonnetModel" :options="claudeSonnetOptions" />
+              </div>
+              <div data-testid="claude-haiku">
+                <label :for="fieldIds.claudeHaiku" class="mb-1.5 block text-xs text-gray-500">Haiku model</label>
+                <Select :id="fieldIds.claudeHaiku" v-model="claudeHaikuModel" :options="claudeHaikuOptions" />
+              </div>
+              <div data-testid="claude-effort">
+                <label :for="fieldIds.claudeEffort" class="mb-1.5 block text-xs text-gray-500">Reasoning effort</label>
+                <Select :id="fieldIds.claudeEffort" v-model="claudeEffort" :options="claudeEffortOptions" />
+              </div>
+              <div data-testid="claude-model-discovery">
+                <span class="mb-1.5 block text-xs text-gray-500">Gateway model discovery</span>
+                <div class="flex h-9 items-center gap-2">
+                  <Switch v-model="draft.claudeCode.modelDiscovery" size="sm" aria-label="Enable Claude Code gateway model discovery" />
+                  <span class="text-sm text-white">{{ draft.claudeCode.modelDiscovery ? 'Enabled' : 'Disabled' }}</span>
+                </div>
               </div>
             </div>
-          </div>
-        </section>
+          </section>
 
-        <section class="border-t border-white/5 pt-5">
-          <div class="mb-4 flex items-center gap-2">
-            <Switch v-model="draft.codex.enabled" aria-label="Enable Codex setup" />
-            <h3 class="text-sm font-semibold text-white">Codex</h3>
-          </div>
-          <div v-if="draft.codex.enabled">
+          <section v-else>
             <div data-testid="codex-fields" :class="agentFieldGridClass">
               <div data-testid="codex-model">
                 <label :for="fieldIds.codexModel" class="mb-1.5 block text-xs text-gray-500">Model</label>
@@ -313,37 +325,37 @@ const powerShellCommand = computed(() => (scripts.value
             <p class="mt-3 text-[11px] text-gray-500">
               The Floway provider token is stored separately under <code class="text-gray-400">CODEX_HOME</code>; an official Codex account login remains available.
             </p>
+          </section>
+
+          <div class="mt-5 border-t border-white/5 pt-5">
+            <AgentSetupCommand
+              :label="commandPlatform === 'unix' ? 'macOS / Linux' : 'Windows'"
+              :command="commandPlatform === 'unix' ? shellCommand : powerShellCommand"
+              :language="commandPlatform === 'unix' ? 'bash' : 'powershell'"
+              :disabled="selectedKey === null || !canCopy"
+              :show-label="false"
+            >
+              <template #header>
+                <div role="tablist" aria-label="Setup command platform" class="inline-flex items-center gap-1 rounded-lg bg-surface-800 p-0.5">
+                  <button
+                    v-for="platform in (['unix', 'windows'] as const)"
+                    :key="platform"
+                    role="tab"
+                    class="rounded-md px-3 py-1.5 text-xs font-medium transition-all"
+                    :class="commandPlatform === platform ? 'bg-surface-600 text-white' : 'text-gray-500 hover:text-gray-300'"
+                    :aria-selected="commandPlatform === platform"
+                    @click="commandPlatform = platform"
+                  >{{ platform === 'unix' ? 'macOS / Linux' : 'Windows' }}</button>
+                </div>
+              </template>
+            </AgentSetupCommand>
+
+            <p class="mt-4 text-[11px] text-gray-600">
+              This command installs and configures {{ activeAgentLabel }}. The setup link refreshes automatically while this page stays open and expires a few minutes after you leave.
+            </p>
           </div>
-        </section>
-      </div>
-
-      <div class="mt-6 border-t border-white/5 pt-5">
-        <AgentSetupCommand
-          :label="commandPlatform === 'unix' ? 'macOS / Linux' : 'Windows'"
-          :command="commandPlatform === 'unix' ? shellCommand : powerShellCommand"
-          :language="commandPlatform === 'unix' ? 'bash' : 'powershell'"
-          :disabled="selectedKey === null || !canCopy"
-          :show-label="false"
-        >
-          <template #header>
-            <div role="tablist" aria-label="Setup command platform" class="inline-flex items-center gap-1 rounded-lg bg-surface-800 p-0.5">
-              <button
-                v-for="platform in (['unix', 'windows'] as const)"
-                :key="platform"
-                role="tab"
-                class="rounded-md px-3 py-1.5 text-xs font-medium transition-all"
-                :class="commandPlatform === platform ? 'bg-surface-600 text-white' : 'text-gray-500 hover:text-gray-300'"
-                :aria-selected="commandPlatform === platform"
-                @click="commandPlatform = platform"
-              >{{ platform === 'unix' ? 'macOS / Linux' : 'Windows' }}</button>
-            </div>
-          </template>
-        </AgentSetupCommand>
-
-        <p class="mt-4 text-[11px] text-gray-600">
-          These commands install the selected agents and point them at this gateway. The setup link refreshes automatically while this page stays open and expires a few minutes after you leave.
-        </p>
-      </div>
     </template>
+      </div>
+    </div>
   </section>
 </template>

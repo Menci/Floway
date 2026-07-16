@@ -63,8 +63,14 @@ const leaseProjection = (record: AgentSetupRecord) => ({
   configurationRevision: record.configurationRevision,
   expiresAt: record.expiresAt,
   scripts: {
-    sh: `/api/setup/${record.token}/setup.sh`,
-    ps1: `/api/setup/${record.token}/setup.ps1`,
+    claude: {
+      sh: `/api/setup/${record.token}/claude.sh`,
+      ps1: `/api/setup/${record.token}/claude.ps1`,
+    },
+    codex: {
+      sh: `/api/setup/${record.token}/codex.sh`,
+      ps1: `/api/setup/${record.token}/codex.ps1`,
+    },
   },
 });
 
@@ -106,9 +112,10 @@ const resolveServeableLease = async (
 };
 
 type ScriptLanguage = 'sh' | 'ps1';
+type ScriptAgent = 'claude' | 'codex';
 
 export const createAgentSetupPublicRoutes = (deps: AgentSetupPublicDeps) => {
-  const serveSetupScript = (language: ScriptLanguage) => async (c: Context) => {
+  const serveSetupScript = (agent: ScriptAgent, language: ScriptLanguage) => async (c: Context) => {
     const token = c.req.param('token')!;
     try {
       const resolved = await resolveServeableLease(deps, token);
@@ -116,7 +123,7 @@ export const createAgentSetupPublicRoutes = (deps: AgentSetupPublicDeps) => {
       // HEAD stops before rendering so it never assembles the API-key-bearing body.
       if (c.req.method === 'HEAD') return c.body(null, 200, SCRIPT_RESPONSE_HEADERS);
 
-      const input = { apiKey: resolved.apiKey, apiKeyName: resolved.apiKeyName, configuration: resolved.configuration };
+      const input = { agent, apiKey: resolved.apiKey, apiKeyName: resolved.apiKeyName, configuration: resolved.configuration };
       const body = language === 'sh'
         ? renderShellPrefix(input) + SETUP_SH_BODY
         : renderPowerShellPrefix(input) + SETUP_PS1_BODY;
@@ -132,8 +139,10 @@ export const createAgentSetupPublicRoutes = (deps: AgentSetupPublicDeps) => {
   const notFound = (c: Context) => c.body(null, 404, SCRIPT_RESPONSE_HEADERS);
 
   return new Hono()
-    .on(['GET', 'HEAD'], '/:token/setup.sh', serveSetupScript('sh'))
-    .on(['GET', 'HEAD'], '/:token/setup.ps1', serveSetupScript('ps1'))
+    .on(['GET', 'HEAD'], '/:token/claude.sh', serveSetupScript('claude', 'sh'))
+    .on(['GET', 'HEAD'], '/:token/claude.ps1', serveSetupScript('claude', 'ps1'))
+    .on(['GET', 'HEAD'], '/:token/codex.sh', serveSetupScript('codex', 'sh'))
+    .on(['GET', 'HEAD'], '/:token/codex.ps1', serveSetupScript('codex', 'ps1'))
     // Consume every near-miss beneath a token-shaped path before the host's
     // middleware. A mistyped filename or HTTP method still carries the live
     // credential in its URL segment and must not fall through to access logs.

@@ -1,8 +1,8 @@
 # Floway Agent Setup installer (PowerShell). The gateway prepends the
 # language-native assignment prefix before this fixed body.
 #
-# Each selected agent runs as an independent transaction so one failure does not
-# skip or roll back the other.
+# Each served script targets exactly one agent and rolls back that agent's
+# configuration as one transaction on failure.
 
 $ErrorActionPreference = 'Stop'
 if (-not (Test-Path Variable:SetupEndpoint)) { $SetupEndpoint = $null }
@@ -97,6 +97,10 @@ if ($SetupEndpoint -notmatch '^https?://.+') {
 }
 Write-SetupMetadata 'Endpoint' $SetupEndpoint
 Write-SetupMetadata 'API Key' $SetupApiKeyName
+if ($SetupAgent -notin @('claude', 'codex')) {
+  Write-SetupFatal "unknown setup agent: $SetupAgent"
+  exit 1
+}
 
 # --- common helpers ---------------------------------------------------------
 
@@ -820,34 +824,30 @@ function Set-SetupCodex {
 # 'setup-handled' marker), so the boundary only records the outcome. Any
 # unexpected exception that escaped without being reported is surfaced here,
 # redacted, so a failure is never silently swallowed.
-$script:ClaudeResult = 'skipped'
-$script:CodexResult = 'skipped'
 $overall = 0
 
-if ($SetupInstallClaude) {
+if ($SetupAgent -eq 'claude') {
   try {
     Set-SetupClaude
-    $script:ClaudeResult = 'configured'
+    $result = 'configured'
   } catch {
     if ($_.Exception.Message -ne 'setup-handled') { Write-SetupError (Protect-SetupSecret ([string]$_.Exception.Message)) }
-    $script:ClaudeResult = 'failed'
+    $result = 'failed'
     $overall = 1
   }
-}
-
-if ($SetupInstallCodex) {
+  Write-SetupPhase 'Summary'
+  Write-SetupSummaryEntry 'Claude Code' $result
+} else {
   try {
     Set-SetupCodex
-    $script:CodexResult = 'configured'
+    $result = 'configured'
   } catch {
     if ($_.Exception.Message -ne 'setup-handled') { Write-SetupError (Protect-SetupSecret ([string]$_.Exception.Message)) }
-    $script:CodexResult = 'failed'
+    $result = 'failed'
     $overall = 1
   }
+  Write-SetupPhase 'Summary'
+  Write-SetupSummaryEntry 'Codex' $result
 }
-
-Write-SetupPhase 'Summary'
-Write-SetupSummaryEntry 'Claude Code' $script:ClaudeResult
-Write-SetupSummaryEntry 'Codex' $script:CodexResult
 
 exit $overall

@@ -106,22 +106,22 @@ describe('defaultAgentSetupConfiguration', () => {
 describe('renderShellPrefix', () => {
   test('renders every assignment through the encoder and ends with a newline', () => {
     const prefix = renderShellPrefix({
+      agent: 'claude',
       apiKey: 'sk-raw-key',
       apiKeyName: 'Primary key',
       configuration: fullConfiguration,
     });
     expect(prefix).toBe([
       'set +x',
+      "SETUP_AGENT='claude'",
       "SETUP_API_KEY='sk-raw-key'",
       "SETUP_API_KEY_NAME='Primary key'",
-      "SETUP_INSTALL_CLAUDE='1'",
       "SETUP_CLAUDE_MODEL='claude-opus-4-6[1m]'",
       "SETUP_CLAUDE_DEFAULT_OPUS_MODEL='claude-opus-4-5'",
       "SETUP_CLAUDE_DEFAULT_SONNET_MODEL='claude-sonnet-4-5'",
       "SETUP_CLAUDE_DEFAULT_HAIKU_MODEL=''",
       "SETUP_CLAUDE_EFFORT_LEVEL='high'",
       "SETUP_CLAUDE_MODEL_DISCOVERY='1'",
-      "SETUP_INSTALL_CODEX='1'",
       "SETUP_CODEX_MODEL='gpt-5.6-terra'",
       "SETUP_CODEX_REASONING_EFFORT='xhigh'",
       '',
@@ -129,12 +129,13 @@ describe('renderShellPrefix', () => {
   });
 
   test('never emits the endpoint — the gateway does not know its origin', () => {
-    const prefix = renderShellPrefix({ apiKey: 'sk-raw-key', apiKeyName: 'Primary key', configuration: fullConfiguration });
+    const prefix = renderShellPrefix({ agent: 'claude', apiKey: 'sk-raw-key', apiKeyName: 'Primary key', configuration: fullConfiguration });
     expect(prefix).not.toContain('SETUP_ENDPOINT');
   });
 
   test('single-quotes each value, escaping embedded quotes and preserving newlines, tabs, and Unicode', () => {
     const prefix = renderShellPrefix({
+      agent: 'codex',
       apiKey: "a'b",
       apiKeyName: 'Primary key',
       configuration: { ...fullConfiguration, codex: { ...fullConfiguration.codex, model: 'x\ny\t€🚀' } },
@@ -144,12 +145,13 @@ describe('renderShellPrefix', () => {
   });
 
   test('flattens control characters in the API key label before it reaches terminal metadata', () => {
-    const prefix = renderShellPrefix({ apiKey: 'key', apiKeyName: 'CI\n\u001b[2J', configuration: fullConfiguration });
+    const prefix = renderShellPrefix({ agent: 'claude', apiKey: 'key', apiKeyName: 'CI\n\u001b[2J', configuration: fullConfiguration });
     expect(prefix).toContain("SETUP_API_KEY_NAME='CI  [2J'");
   });
 
   test('renders empty values for disabled agents and null overrides', () => {
     const prefix = renderShellPrefix({
+      agent: 'claude',
       apiKey: 'sk-raw-key',
       apiKeyName: 'Primary key',
       configuration: {
@@ -161,8 +163,6 @@ describe('renderShellPrefix', () => {
         codex: { enabled: false, model: null, reasoningEffort: null },
       },
     });
-    expect(prefix).toContain("SETUP_INSTALL_CLAUDE=''");
-    expect(prefix).toContain("SETUP_INSTALL_CODEX=''");
     expect(prefix).toContain("SETUP_CLAUDE_MODEL_DISCOVERY=''");
     expect(prefix).toContain("SETUP_CLAUDE_EFFORT_LEVEL=''");
     expect(prefix).toContain("SETUP_CODEX_REASONING_EFFORT=''");
@@ -170,6 +170,7 @@ describe('renderShellPrefix', () => {
 
   test('propagates a NUL-rejecting failure from the API key', () => {
     expect(() => renderShellPrefix({
+      agent: 'claude',
       apiKey: 'sk-\0-key',
       apiKeyName: 'Primary key',
       configuration: fullConfiguration,
@@ -180,22 +181,22 @@ describe('renderShellPrefix', () => {
 describe('renderPowerShellPrefix', () => {
   test('renders booleans, single-quoted strings, and $null for absent overrides', () => {
     const prefix = renderPowerShellPrefix({
+      agent: 'codex',
       apiKey: 'sk-raw-key',
       apiKeyName: 'Primary key',
       configuration: fullConfiguration,
     });
     expect(prefix).toBe([
       'Set-PSDebug -Off',
+      "$SetupAgent = 'codex'",
       "$SetupApiKey = 'sk-raw-key'",
       "$SetupApiKeyName = 'Primary key'",
-      '$SetupInstallClaude = $true',
       "$SetupClaudeModel = 'claude-opus-4-6[1m]'",
       "$SetupClaudeDefaultOpusModel = 'claude-opus-4-5'",
       "$SetupClaudeDefaultSonnetModel = 'claude-sonnet-4-5'",
       '$SetupClaudeDefaultHaikuModel = $null',
       "$SetupClaudeEffortLevel = 'high'",
       '$SetupClaudeModelDiscovery = $true',
-      '$SetupInstallCodex = $true',
       "$SetupCodexModel = 'gpt-5.6-terra'",
       "$SetupCodexReasoningEffort = 'xhigh'",
       '',
@@ -203,12 +204,13 @@ describe('renderPowerShellPrefix', () => {
   });
 
   test('never emits the base URL — the gateway does not know its origin', () => {
-    const prefix = renderPowerShellPrefix({ apiKey: 'sk-raw-key', apiKeyName: 'Primary key', configuration: fullConfiguration });
+    const prefix = renderPowerShellPrefix({ agent: 'claude', apiKey: 'sk-raw-key', apiKeyName: 'Primary key', configuration: fullConfiguration });
     expect(prefix).not.toContain('$SetupEndpoint');
   });
 
   test('single-quotes each string, doubling embedded quotes and preserving newlines, tabs, and Unicode', () => {
     const prefix = renderPowerShellPrefix({
+      agent: 'codex',
       apiKey: "a'b",
       apiKeyName: 'Primary key',
       configuration: { ...fullConfiguration, codex: { ...fullConfiguration.codex, model: 'x\ny\t€🚀' } },
@@ -218,11 +220,12 @@ describe('renderPowerShellPrefix', () => {
   });
 
   test('propagates a NUL-rejecting failure from the API key', () => {
-    expect(() => renderPowerShellPrefix({ apiKey: 'sk-\0-key', apiKeyName: 'Primary key', configuration: fullConfiguration })).toThrow();
+    expect(() => renderPowerShellPrefix({ agent: 'claude', apiKey: 'sk-\0-key', apiKeyName: 'Primary key', configuration: fullConfiguration })).toThrow();
   });
 
   test('renders $false and $null for disabled agents and null overrides', () => {
     const prefix = renderPowerShellPrefix({
+      agent: 'claude',
       apiKey: 'sk-raw-key',
       apiKeyName: 'Primary key',
       configuration: {
@@ -234,8 +237,6 @@ describe('renderPowerShellPrefix', () => {
         codex: { enabled: false, model: null, reasoningEffort: null },
       },
     });
-    expect(prefix).toContain('$SetupInstallClaude = $false');
-    expect(prefix).toContain('$SetupInstallCodex = $false');
     expect(prefix).toContain('$SetupClaudeModelDiscovery = $false');
     expect(prefix).toContain('$SetupClaudeModel = $null');
     expect(prefix).toContain('$SetupCodexReasoningEffort = $null');

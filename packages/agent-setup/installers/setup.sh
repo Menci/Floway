@@ -1,20 +1,9 @@
 # Floway Agent Setup installer (Bash 3.2+). The gateway prepends the
 # language-native assignment prefix, so this fixed body has no shebang.
 #
-# Each selected agent is an independent transaction. Errexit stays disabled
-# because Bash suppresses it inside the aggregation guards at the bottom;
-# failures are checked explicitly and rolled back per agent.
-
-set -u
-umask 077
-set -o pipefail 2>/dev/null || true
-
-# The API key remains a shell variable, not an exported process-environment
-# value. `export -n` also neutralizes an identically named exported variable
-# inherited from the caller. jq/awk receive it only on the individual
-# invocations that need it; the official installer and Claude CLI never inherit
-# it.
-export -n SETUP_API_KEY 2>/dev/null || true
+# Each served script targets exactly one agent. Errexit stays disabled because
+# Bash suppresses it inside guarded calls; failures are checked explicitly and
+# the selected agent's configuration is rolled back as one transaction.
 
 # --- output layer -----------------------------------------------------------
 #
@@ -31,15 +20,17 @@ _stream_color() {
   [ -n "${AGENT_SETUP_TEST_FORCE_COLOR:-}" ] && return 0
   [ -t "$1" ]
 }
-if _stream_color 1; then _OUT_COLOR=1; else _OUT_COLOR=0; fi
-if _stream_color 2; then _ERR_COLOR=1; else _ERR_COLOR=0; fi
-_C_CYAN=$'\033[96m'
-_C_DARK_CYAN=$'\033[36m'
-_C_GREEN=$'\033[92m'
-_C_YELLOW=$'\033[93m'
-_C_RED=$'\033[91m'
-_C_GRAY=$'\033[90m'
-_C_RESET=$'\033[0m'
+_init_output() {
+  if _stream_color 1; then _OUT_COLOR=1; else _OUT_COLOR=0; fi
+  if _stream_color 2; then _ERR_COLOR=1; else _ERR_COLOR=0; fi
+  _C_CYAN=$'\033[96m'
+  _C_DARK_CYAN=$'\033[36m'
+  _C_GREEN=$'\033[92m'
+  _C_YELLOW=$'\033[93m'
+  _C_RED=$'\033[91m'
+  _C_GRAY=$'\033[90m'
+  _C_RESET=$'\033[0m'
+}
 
 # Emit one line to a stream, wrapping it in an ANSI color only when that stream
 # opted into color and a non-empty color was given (default-color detail lines
@@ -79,25 +70,6 @@ out_summary_entry() {
   _emit_line 1 "$_os_color" "  $1  [$2]"
 }
 
-out_title
-
-# The wrapping command supplies SETUP_ENDPOINT. Validate it before mutation,
-# then keep it out of installer and CLI subprocess environments.
-if [ -z "${SETUP_ENDPOINT:-}" ]; then
-  out_fatal 'SETUP_ENDPOINT must be set to this gateway origin (e.g. https://gateway.example).'
-  exit 1
-fi
-case "$SETUP_ENDPOINT" in
-  http://?* | https://?*) ;;
-  *)
-    out_fatal "SETUP_ENDPOINT must be an http(s) origin, got $SETUP_ENDPOINT"
-    exit 1
-    ;;
-esac
-out_metadata 'Endpoint' "$SETUP_ENDPOINT"
-out_metadata 'API Key' "$SETUP_API_KEY_NAME"
-export -n SETUP_ENDPOINT 2>/dev/null || true
-
 SETUP_TMPDIR=""
 _cleanup() {
   if [ -n "$SETUP_TMPDIR" ]; then
@@ -109,13 +81,6 @@ _cleanup() {
 # EXIT trap. Cleaning up directly inside the INT/TERM handlers would delete the
 # working directory and then let the interrupted script resume into the next
 # agent's configuration; exiting instead stops all further agent work.
-trap _cleanup EXIT
-trap 'exit 130' INT
-trap 'exit 143' TERM
-
-# Resolved lazily by ensure_jq: either `jq` on PATH or a verified pinned build.
-JQ=""
-
 # Managed-key merge applied to the existing Claude settings document. Only the
 # keys the setup owns are touched; every unrelated key and env var is preserved.
 # An empty optional value means "remove that managed key". The API key is read
@@ -1030,36 +995,59 @@ configure_codex() {
 
 # --- run --------------------------------------------------------------------
 
-SETUP_TMPDIR=$(mktemp -d "${TMPDIR:-/tmp}/floway-setup.XXXXXX") || {
-  out_fatal 'could not create a private working directory.'
-  exit 1
+main() {
+  set -u
+  umask 077
+  set -o pipefail 2>/dev/null || true
+
+  # Neutralize identically named exported variables inherited from the caller.
+  # jq receives the API key only on the exact invocations that need it; package
+  # managers and CLIs never inherit the credential.
+  export -n SETUP_API_KEY SETUP_API_KEY_NAME SETUP_AGENT 2>/dev/null || true
+
+  _init_output
+  out_title
+
+  if [ -z "${SETUP_ENDPOINT:-}" ]; then
+    out_fatal 'SETUP_ENDPOINT must be set to this gateway origin (e.g. https://gateway.example).'
+    return 1
+  fi
+  case "$SETUP_ENDPOINT" in
+    http://?* | https://?*) ;;
+    *) out_fatal "SETUP_ENDPOINT must be an http(s) origin, got $SETUP_ENDPOINT"; return 1 ;;
+  esac
+  case "$SETUP_AGENT" in
+    claude | codex) ;;
+    *) out_fatal "unknown setup agent: $SETUP_AGENT"; return 1 ;;
+  esac
+  out_metadata 'Endpoint' "$SETUP_ENDPOINT"
+  out_metadata 'API Key' "$SETUP_API_KEY_NAME"
+  export -n SETUP_ENDPOINT 2>/dev/null || true
+
+  SETUP_TMPDIR=$(mktemp -d "${TMPDIR:-/tmp}/agent-setup.XXXXXX") || {
+    out_fatal 'could not create a private working directory.'
+    return 1
+  }
+  chmod 700 "$SETUP_TMPDIR" 2>/dev/null || true
+  trap _cleanup EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  JQ=""
+
+  OVERALL=0
+  case "$SETUP_AGENT" in
+    claude)
+      if configure_claude; then RESULT=configured; else RESULT=failed; OVERALL=1; fi
+      out_phase 'Summary'
+      out_summary_entry 'Claude Code' "$RESULT"
+      ;;
+    codex)
+      if configure_codex; then RESULT=configured; else RESULT=failed; OVERALL=1; fi
+      out_phase 'Summary'
+      out_summary_entry 'Codex' "$RESULT"
+      ;;
+  esac
+  return "$OVERALL"
 }
-chmod 700 "$SETUP_TMPDIR" 2>/dev/null || true
 
-CLAUDE_RESULT=skipped
-CODEX_RESULT=skipped
-OVERALL=0
-
-if [ -n "$SETUP_INSTALL_CLAUDE" ]; then
-  if configure_claude; then
-    CLAUDE_RESULT=configured
-  else
-    CLAUDE_RESULT=failed
-    OVERALL=1
-  fi
-fi
-
-if [ -n "$SETUP_INSTALL_CODEX" ]; then
-  if configure_codex; then
-    CODEX_RESULT=configured
-  else
-    CODEX_RESULT=failed
-    OVERALL=1
-  fi
-fi
-
-out_phase 'Summary'
-out_summary_entry 'Claude Code' "$CLAUDE_RESULT"
-out_summary_entry 'Codex' "$CODEX_RESULT"
-
-exit "$OVERALL"
+main "$@"

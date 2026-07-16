@@ -16,7 +16,7 @@ interface SetupStub {
     token: Ref<string | null>;
     configurationRevision: Ref<number | null>;
     expiresAt: Ref<number | null>;
-    scripts: Ref<{ sh: string; ps1: string } | null>;
+    scripts: Ref<{ claude: { sh: string; ps1: string }; codex: { sh: string; ps1: string } } | null>;
     noSelectableKey: Ref<boolean>;
     error: Ref<string | null>;
   };
@@ -42,13 +42,16 @@ const defaultConfig = (): AgentSetupConfiguration => ({
   codex: { enabled: true, model: null, reasoningEffort: null },
 });
 
-const makeSetup = (over: Partial<{ config: AgentSetupConfiguration; initialized: boolean; scripts: { sh: string; ps1: string } | null; noSelectableKey: boolean; syncing: boolean; terminated: boolean; canCopy: boolean; error: string | null; expiresAt: number | null }> = {}): SetupStub => ({
+const makeSetup = (over: Partial<{ config: AgentSetupConfiguration; initialized: boolean; scripts: { claude: { sh: string; ps1: string }; codex: { sh: string; ps1: string } } | null; noSelectableKey: boolean; syncing: boolean; terminated: boolean; canCopy: boolean; error: string | null; expiresAt: number | null }> = {}): SetupStub => ({
   state: {
     initialized: ref(over.initialized ?? true),
     token: ref('tok-1'),
     configurationRevision: ref(1),
     expiresAt: ref(over.expiresAt ?? Date.now() + 5 * 60 * 1000),
-    scripts: ref(over.scripts ?? { sh: '/api/setup/tok-1/setup.sh', ps1: '/api/setup/tok-1/setup.ps1' }),
+    scripts: ref(over.scripts ?? {
+      claude: { sh: '/api/setup/tok-1/claude.sh', ps1: '/api/setup/tok-1/claude.ps1' },
+      codex: { sh: '/api/setup/tok-1/codex.sh', ps1: '/api/setup/tok-1/codex.ps1' },
+    }),
     noSelectableKey: ref(over.noSelectableKey ?? false),
     error: ref(over.error ?? null),
   },
@@ -102,6 +105,11 @@ interface SelectProbe {
 }
 const selectIn = (w: ReturnType<typeof mountCard>, testid: string): SelectProbe =>
   w.get(`[data-testid="${testid}"]`).findComponent(Select) as unknown as SelectProbe;
+const selectAgent = async (w: ReturnType<typeof mountCard>, label: 'Claude Code' | 'Codex') => {
+  const button = w.findAll('nav[aria-label="Agent"] button').find(item => item.text() === label);
+  if (!button) throw new Error(`Missing ${label} agent item`);
+  await button.trigger('click');
+};
 
 beforeEach(() => {
   setupStub = makeSetup();
@@ -130,30 +138,35 @@ describe('AgentSetupCard', () => {
       ['Config snippets', 'false'],
     ]);
     expect(w.text()).toContain('The configuration below will use the Primary API key.');
-    expect(w.get('p.font-medium').classes()).toContain('text-gray-300');
+    expect(w.get('p span.font-medium').classes()).toContain('text-gray-300');
 
     await modeTabs[1]!.trigger('click');
     expect(w.text()).toContain('Edit ~/.claude/settings.json and merge this JSON object');
+    await selectAgent(w, 'Codex');
+    expect(w.text()).toContain('Merge into ~/.codex/config.toml');
+    expect(w.text()).not.toContain('Edit ~/.claude/settings.json');
   });
 
-  it('associates visible labels with representative Select and Combobox controls', () => {
+  it('associates visible labels with representative Select and Combobox controls', async () => {
     const w = mountCard();
     const claudeModelField = w.get('[data-testid="claude-model"]');
-    const codexEffortField = w.get('[data-testid="codex-effort"]');
-
     expect(claudeModelField.get('label').attributes('for')).toBe(claudeModelField.get('button[role="combobox"]').attributes('id'));
+    await selectAgent(w, 'Codex');
+    const codexEffortField = w.get('[data-testid="codex-effort"]');
     expect(codexEffortField.get('label').attributes('for')).toBe(codexEffortField.get('input').attributes('id'));
   });
 
-  it('uses the same responsive field width for both agents and renders discovery as a standard field', () => {
+  it('uses the same responsive field width for both agents and renders discovery as a standard field', async () => {
     const w = mountCard();
-    expect(w.get('[data-testid="claude-fields"]').classes()).toEqual(w.get('[data-testid="codex-fields"]').classes());
+    const claudeClasses = w.get('[data-testid="claude-fields"]').classes();
 
     const discovery = w.get('[data-testid="claude-model-discovery"]');
     expect(discovery.text()).toContain('Gateway model discovery');
     expect(discovery.text()).toContain('Enabled');
     expect(discovery.get('div').classes()).toContain('h-9');
     expect(discovery.get('div').classes()).not.toContain('border');
+    await selectAgent(w, 'Codex');
+    expect(w.get('[data-testid="codex-fields"]').classes()).toEqual(claudeClasses);
   });
 
   it('moves a restored lease onto the API key selected by the table', async () => {
@@ -162,14 +175,18 @@ describe('AgentSetupCard', () => {
     expect(setupStub.draft.value!.apiKeyId).toBe('key-2');
   });
 
-  it('gives every rendered switch an accurate accessible name', () => {
+  it('uses Iconify logos and only renders the selected agent pane', async () => {
     const w = mountCard();
-    expect(w.find('button[role="switch"][aria-label="Enable Claude Code setup"]').exists()).toBe(true);
-    expect(w.find('button[role="switch"][aria-label="Enable Codex setup"]').exists()).toBe(true);
+    expect(w.find('.i-simple-icons-anthropic').exists()).toBe(true);
+    expect(w.find('.i-simple-icons-openai').exists()).toBe(true);
     expect(w.find('button[role="switch"][aria-label="Enable Claude Code gateway model discovery"]').exists()).toBe(true);
+    expect(w.find('[data-testid="codex-fields"]').exists()).toBe(false);
+    await selectAgent(w, 'Codex');
+    expect(w.find('[data-testid="claude-fields"]').exists()).toBe(false);
+    expect(w.find('[data-testid="codex-fields"]').exists()).toBe(true);
   });
 
-  it('retains every addressable chat model, native-first per family, and skips non-chat models', () => {
+  it('retains every addressable chat model, native-first per family, and skips non-chat models', async () => {
     const w = mountCard();
     const claude = selectIn(w, 'claude-model').props().options;
     // A leading "no override" option, then the Claude family ahead of the rest;
@@ -181,14 +198,16 @@ describe('AgentSetupCard', () => {
     const opus = selectIn(w, 'claude-opus').props().options;
     expect(opus.slice(1).map(o => o.value)).toEqual(['claude-opus-4-8', 'claude-fable-4-6', 'claude-sonnet-4-5[1m]', 'claude-haiku-4-5', 'gpt-5']);
 
+    await selectAgent(w, 'Codex');
     const codex = selectIn(w, 'codex-model').props().options;
     expect(codex[0]!.label).toBe('Default');
     expect(codex.slice(1).map(o => o.value)).toEqual(['gpt-5', 'claude-fable-4-6', 'claude-opus-4-8', 'claude-sonnet-4-5', 'claude-haiku-4-5']);
   });
 
-  it('keeps a persisted model that left the catalog selectable instead of dropping it', () => {
+  it('keeps a persisted model that left the catalog selectable instead of dropping it', async () => {
     setupStub = makeSetup({ config: { ...defaultConfig(), codex: { enabled: true, model: 'gpt-5-retired', reasoningEffort: null } } });
     const w = mountCard();
+    await selectAgent(w, 'Codex');
     const codex = selectIn(w, 'codex-model').props().options;
     expect(codex.some(o => o.value === 'gpt-5-retired')).toBe(true);
   });
@@ -200,17 +219,19 @@ describe('AgentSetupCard', () => {
     expect(effort.slice(1).map(o => o.value)).toEqual(['low', 'medium', 'high', 'xhigh']);
   });
 
-  it('offers a free-form Codex effort combobox seeded with upstream-advertised suggestions', () => {
+  it('offers a free-form Codex effort combobox seeded with upstream-advertised suggestions', async () => {
     setupStub = makeSetup({ config: { ...defaultConfig(), codex: { enabled: true, model: 'gpt-5', reasoningEffort: null } } });
     const w = mountCard({
       models: [model('gpt-5', { chat: { reasoning: { effort: { supported: ['low', 'high'], default: 'high' } } } })],
     });
+    await selectAgent(w, 'Codex');
     const combo = w.get('[data-testid="codex-effort"]').findComponent(Combobox);
     expect(combo.props('items')).toEqual(['low', 'high']);
   });
 
   it('maps a blank Codex effort to null but preserves an opaque non-empty value verbatim', async () => {
     const w = mountCard();
+    await selectAgent(w, 'Codex');
     const combo = w.get('[data-testid="codex-effort"]').findComponent(Combobox);
 
     combo.vm.$emit('update:modelValue', 'ultra');
@@ -240,30 +261,10 @@ describe('AgentSetupCard', () => {
     expect(setupStub.draft.value!.claudeCode.model).toBeNull();
   });
 
-  it('hides the Claude form while the agent is off but keeps its draft values', () => {
-    setupStub = makeSetup({
-      config: {
-        ...defaultConfig(),
-        claudeCode: { enabled: false, model: 'claude-sonnet-4-5', defaultOpusModel: null, defaultSonnetModel: null, defaultHaikuModel: null, effortLevel: 'high', modelDiscovery: true },
-      },
-    });
+  it('explains that Codex provider auth stays separate from the official account', async () => {
     const w = mountCard();
-    expect(w.find('[data-testid="claude-model"]').exists()).toBe(false);
-    expect(w.find('[data-testid="claude-effort"]').exists()).toBe(false);
-    expect(setupStub.draft.value!.claudeCode.model).toBe('claude-sonnet-4-5');
-    expect(setupStub.draft.value!.claudeCode.effortLevel).toBe('high');
-  });
-
-  it('hides the Codex form while its switch is off', () => {
-    setupStub = makeSetup({ config: { ...defaultConfig(), codex: { enabled: false, model: 'gpt-5', reasoningEffort: 'high' } } });
-    const w = mountCard();
-    expect(w.find('[data-testid="codex-model"]').exists()).toBe(false);
-    expect(w.find('[data-testid="codex-effort"]').exists()).toBe(false);
-    expect(setupStub.draft.value!.codex.model).toBe('gpt-5');
-  });
-
-  it('explains that Codex provider auth stays separate from the official account', () => {
-    const text = mountCard().text();
+    await selectAgent(w, 'Codex');
+    const text = w.text();
     expect(text).toContain('provider token is stored separately');
     expect(text).toContain('official Codex account login remains available');
   });
@@ -281,19 +282,27 @@ describe('AgentSetupCard', () => {
       ['macOS / Linux', 'true'],
       ['Windows', 'false'],
     ]);
-    expect(w.text()).toContain(`export SETUP_ENDPOINT='${window.location.origin}'; curl -fsSL "$SETUP_ENDPOINT/api/setup/tok-1/setup.sh" | bash`);
+    expect(w.text()).toContain(`export SETUP_ENDPOINT='${window.location.origin}'; curl -fsSL "$SETUP_ENDPOINT/api/setup/tok-1/claude.sh" | bash`);
     const unixCopy = w.get('button[aria-label="Copy macOS / Linux command"]');
     expect(platformTabs[0]!.element.closest('.mb-2')).toBe(unixCopy.element.closest('.mb-2'));
     expect(w.find('button[aria-label="Copy Windows command"]').exists()).toBe(false);
 
     await platformTabs[1]!.trigger('click');
-    expect(w.text()).toContain(`$SetupEndpoint = '${window.location.origin}'; irm "$SetupEndpoint/api/setup/tok-1/setup.ps1" | iex`);
+    expect(w.text()).toContain(`$SetupEndpoint = '${window.location.origin}'; irm "$SetupEndpoint/api/setup/tok-1/claude.ps1" | iex`);
     expect(w.find('button[aria-label="Copy Windows command"]').exists()).toBe(true);
     expect(w.find('code.language-powershell').exists()).toBe(true);
     const explanation = 'These commands install the selected agents and point them at this gateway.';
     expect(w.text().lastIndexOf(explanation)).toBeGreaterThan(w.text().lastIndexOf('$SetupEndpoint'));
     expect(w.text()).not.toContain('ExecutionPolicy');
     expect(w.text()).not.toContain('Bypass');
+  });
+
+  it('keeps one lease token while switching to the other agent-specific script', async () => {
+    const w = mountCard();
+    expect(w.text()).toContain('/api/setup/tok-1/claude.sh');
+    await selectAgent(w, 'Codex');
+    expect(w.text()).toContain('/api/setup/tok-1/codex.sh');
+    expect(w.text()).not.toContain('/api/setup/tok-1/claude.sh');
   });
 
   it('defaults the command tab to Windows for Windows clients', () => {
@@ -356,7 +365,7 @@ describe('AgentSetupCard', () => {
     const writeText = (navigator.clipboard as unknown as { writeText: ReturnType<typeof vi.fn> }).writeText;
     await w.findAll('button[aria-label^="Copy "][aria-label$=" command"]')[0]!.trigger('click');
     await nextTick();
-    expect(writeText).toHaveBeenCalledWith(`export SETUP_ENDPOINT='${window.location.origin}'; curl -fsSL "$SETUP_ENDPOINT/api/setup/tok-1/setup.sh" | bash`);
+    expect(writeText).toHaveBeenCalledWith(`export SETUP_ENDPOINT='${window.location.origin}'; curl -fsSL "$SETUP_ENDPOINT/api/setup/tok-1/claude.sh" | bash`);
   });
 
   it('surfaces a synchronization error from the setup composable', () => {

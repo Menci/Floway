@@ -68,7 +68,10 @@ const lease = (over: Record<string, unknown> = {}) => ({
   configuration: defaultConfig(),
   configurationRevision: 1,
   expiresAt: Date.now() + 5 * 60 * 1000,
-  scripts: { sh: '/api/setup/tok-1/setup.sh', ps1: '/api/setup/tok-1/setup.ps1' },
+  scripts: {
+    claude: { sh: '/api/setup/tok-1/claude.sh', ps1: '/api/setup/tok-1/claude.ps1' },
+    codex: { sh: '/api/setup/tok-1/codex.sh', ps1: '/api/setup/tok-1/codex.ps1' },
+  },
   ...over,
 });
 
@@ -125,7 +128,10 @@ describe('useAgentSetup — lease acquisition', () => {
     expect(setup.state.initialized.value).toBe(true);
     expect(setup.state.token.value).toBe('tok-1');
     expect(setup.state.configurationRevision.value).toBe(1);
-    expect(setup.state.scripts.value).toEqual({ sh: '/api/setup/tok-1/setup.sh', ps1: '/api/setup/tok-1/setup.ps1' });
+    expect(setup.state.scripts.value).toEqual({
+      claude: { sh: '/api/setup/tok-1/claude.sh', ps1: '/api/setup/tok-1/claude.ps1' },
+      codex: { sh: '/api/setup/tok-1/codex.sh', ps1: '/api/setup/tok-1/codex.ps1' },
+    });
     expect(setup.draft.value).toEqual(defaultConfig());
     // Only the one create — no duplicate POST.
     expect(records.post.length).toBe(1);
@@ -459,7 +465,7 @@ describe('useAgentSetup — heartbeat', () => {
 
     // The token never rotates; renewal only extends expiry, re-enabling copy.
     expect(setup.state.token.value).toBe('tok-1');
-    expect(setup.state.scripts.value!.sh).toBe('/api/setup/tok-1/setup.sh');
+    expect(setup.state.scripts.value!.claude.sh).toBe('/api/setup/tok-1/claude.sh');
     expect(setup.canCopy.value).toBe(true);
   });
 

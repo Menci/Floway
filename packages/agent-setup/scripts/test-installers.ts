@@ -268,7 +268,7 @@ if (cmd === '--version') {
 
 // The fake Codex installer drops `codex` into the user-local native location
 // and records that it ran, mirroring the Claude installer fixture so the shared
-// timeout/process-tree assertions apply to both agents.
+// timeout/process-tree assertions apply to either agent-specific script.
 const FAKE_CODEX_INSTALLER = `#!/bin/bash
 set -eu
 if [ "\${SETUP_API_KEY+x}" = x ] || [ "\${SetupApiKey+x}" = x ]; then
@@ -504,6 +504,7 @@ const bothConfig = (
 interface RunOptions {
   workspace: Workspace;
   configuration: AgentSetupConfiguration;
+  agent?: 'claude' | 'codex';
   baseUrl: string;
   // The wrapping one-line command injects the gateway origin into the executing
   // shell (Bash exports SETUP_ENDPOINT; PowerShell assigns $SetupEndpoint in the
@@ -554,11 +555,14 @@ interface RunOptions {
   noColor?: boolean;
   failRestore?: boolean;
 }
+
+const targetAgent = (configuration: AgentSetupConfiguration, agent?: 'claude' | 'codex'): 'claude' | 'codex' =>
+  agent ?? (configuration.claudeCode.enabled && !configuration.codex.enabled ? 'claude' : 'codex');
 interface RunResult { code: number; stdout: string; stderr: string; combined: string; }
 
 // Environment shared by the shell run helpers: Codex fake-binary knobs, the
-// install hook, and CODEX_HOME. Callers merge this over the Claude env so a
-// single run can exercise either or both agents.
+// install hook, and CODEX_HOME. Callers merge this over the Claude environment
+// before running the selected agent.
 const codexEnv = (options: RunOptions): Record<string, string> => {
   const env: Record<string, string> = {
     FAKE_CODEX_SRC,
@@ -603,7 +607,7 @@ const powerShellBaseUrlPrelude = (options: RunOptions): string =>
 // waiting on the child.
 const runShellInstaller = (options: RunOptions): Promise<RunResult> => {
   const { workspace, configuration } = options;
-  const script = renderShellPrefix({ apiKey: SENTINEL_KEY, apiKeyName: 'Primary key', configuration }) + SH_BODY;
+  const script = renderShellPrefix({ agent: targetAgent(configuration, options.agent), apiKey: SENTINEL_KEY, apiKeyName: 'Primary key', configuration }) + SH_BODY;
   const scriptPath = join(workspace.root, 'setup.sh');
   writeFileSync(scriptPath, script);
 
@@ -675,7 +679,7 @@ const runShellInstaller = (options: RunOptions): Promise<RunResult> => {
 
 const runShellInstallerWithAmbientKey = (options: RunOptions): Promise<RunResult> => {
   const { workspace, configuration } = options;
-  const script = renderShellPrefix({ apiKey: SENTINEL_KEY, apiKeyName: 'Primary key', configuration }) + SH_BODY;
+  const script = renderShellPrefix({ agent: targetAgent(configuration, options.agent), apiKey: SENTINEL_KEY, apiKeyName: 'Primary key', configuration }) + SH_BODY;
   const scriptPath = join(workspace.root, 'setup-ambient-key.sh');
   writeFileSync(scriptPath, script);
   const pathParts = [workspace.binDir, SHIM_BIN];
@@ -759,7 +763,7 @@ const runPowerShellInstaller = (options: RunOptions): Promise<RunResult> => {
   const culturePrelude = options.powerShellTimeSeparator === undefined
     ? ''
     : `$culture = [Globalization.CultureInfo]::GetCultureInfo('en-US').Clone()\n$culture.DateTimeFormat.TimeSeparator = '${options.powerShellTimeSeparator.replace(/'/g, "''")}'\n[Threading.Thread]::CurrentThread.CurrentCulture = $culture\n`;
-  const script = powerShellBaseUrlPrelude(options) + renderPowerShellPrefix({ apiKey: SENTINEL_KEY, apiKeyName: 'Primary key', configuration }) + culturePrelude + PS1_BODY;
+  const script = powerShellBaseUrlPrelude(options) + renderPowerShellPrefix({ agent: targetAgent(configuration, options.agent), apiKey: SENTINEL_KEY, apiKeyName: 'Primary key', configuration }) + culturePrelude + PS1_BODY;
   const scriptPath = join(workspace.root, 'setup.ps1');
   writeFileSync(scriptPath, script);
 
@@ -990,13 +994,13 @@ test('claude', 'a restore failure during rollback preserves the backup and warns
   t.ok(readFileSync(settingsPathFor(ws), 'utf8') !== original, 'the settings were not silently restored to the original');
 });
 
-test('claude', 'an interrupt during the Claude install stops the run, skips Codex, and cleans up', async t => {
+test('claude', 'an interrupt during the Claude install stops the selected script and cleans up', async t => {
   for (const [signal, expectedCode] of [['SIGINT', 130], ['SIGTERM', 143]] as const) {
     const ws = makeWorkspace();
     // No fake claude on PATH, so configure_claude runs the (sleeping) installer;
     // the signal lands while it is mid-install.
     const run = await runShellInstaller({
-      workspace: ws, baseUrl: modelServer.url, configuration: bothConfig(),
+      workspace: ws, baseUrl: modelServer.url, configuration: bothConfig(), agent: 'claude',
       installerSleep: 5, signalDuringInstall: signal,
     });
     t.equal(run.code, expectedCode, `${signal} must exit ${expectedCode}, not resume:\n${run.combined}`);
@@ -1004,7 +1008,7 @@ test('claude', 'an interrupt during the Claude install stops the run, skips Code
     t.excludes(run.combined, 'Codex', `${signal}: the run must never reach the Codex phase`);
     t.ok(!existsSync(codexConfigPath(ws)), `${signal}: Codex config must not be written`);
     t.ok(!existsSync(codexTokenPath(ws)), `${signal}: Codex provider token must not be written`);
-    const remnants = readdirSync(ws.root).filter(name => name.startsWith('floway-setup.'));
+    const remnants = readdirSync(ws.root).filter(name => name.startsWith('agent-setup.'));
     t.equal(remnants.length, 0, `${signal}: the EXIT trap cleaned the private working directory`);
   }
 });
@@ -1109,6 +1113,7 @@ test('claude', 'jq is bootstrapped from the pinned release when absent from PATH
 test('claude', 'PowerShell installer body parses without syntax errors', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const script = renderPowerShellPrefix({
+    agent: 'claude',
     apiKey: SENTINEL_KEY,
     apiKeyName: 'Primary key',
     configuration: claudeConfig({ model: 'claude-opus-x', effortLevel: 'high', modelDiscovery: true }),
@@ -1525,11 +1530,30 @@ test('claude', 'platform installers use the direct release sources', t => {
 });
 
 test('claude', 'Bash installer body parses under the macOS Bash 3.2 baseline', async t => {
-  const script = renderShellPrefix({ apiKey: SENTINEL_KEY, apiKeyName: 'Primary key', configuration: claudeConfig({ model: 'm', effortLevel: 'high', modelDiscovery: true }) }) + SH_BODY;
+  t.ok(SH_BODY.trimEnd().endsWith('main "$@"'), 'the downloaded script starts execution only from its final line');
+  t.ok(SH_BODY.indexOf('main() {') > SH_BODY.indexOf('configure_codex() {'), 'main is defined after every setup function');
+  const script = renderShellPrefix({ agent: 'claude', apiKey: SENTINEL_KEY, apiKeyName: 'Primary key', configuration: claudeConfig({ model: 'm', effortLevel: 'high', modelDiscovery: true }) }) + SH_BODY;
   const scriptPath = join(HARNESS_ROOT, 'syntax-check.sh');
   writeFileSync(scriptPath, script);
   const result = spawnSync('/bin/bash', ['-n', scriptPath], { encoding: 'utf8' });
   t.equal(result.status, 0, `/bin/bash -n reported a syntax error:\n${result.stderr}`);
+});
+
+test('claude', 'a download that ends before the final main call performs no setup work', t => {
+  const ws = makeWorkspace();
+  const configuration = claudeConfig();
+  const bodyWithoutEntry = SH_BODY.slice(0, SH_BODY.lastIndexOf('main "$@"'));
+  const script = renderShellPrefix({ agent: 'claude', apiKey: SENTINEL_KEY, apiKeyName: 'Primary key', configuration }) + bodyWithoutEntry;
+  const scriptPath = join(ws.root, 'truncated-setup.sh');
+  writeFileSync(scriptPath, script);
+  const result = spawnSync('/bin/bash', [scriptPath], {
+    encoding: 'utf8',
+    env: { HOME: ws.home, PATH: [ws.binDir, SHIM_BIN].join(':'), SETUP_ENDPOINT: modelServer.url },
+  });
+  t.equal(result.status, 0, `definitions-only script should exit cleanly:\n${result.stderr}`);
+  t.equal(result.stdout, '', 'definitions-only script prints nothing');
+  t.ok(!existsSync(settingsPathFor(ws)), 'definitions-only script writes no Claude settings');
+  t.ok(!existsSync(installerMarker(ws)), 'definitions-only script starts no installer');
 });
 
 // --- base URL injection -----------------------------------------------------
@@ -2006,29 +2030,28 @@ test('codex', 'no model-inference request is issued during verification', async 
   }
 });
 
-test('codex', 'independent agents: codex failure keeps a configured Claude and exits nonzero', async t => {
+test('codex', 'a Codex script never configures Claude when Codex fails', async t => {
   const ws = makeWorkspace();
   placeFakeClaude(ws.binDir);
   placeFakeCodex(ws.binDir);
   const run = await runShellInstaller({
-    workspace: ws, baseUrl: modelServer.url, configuration: bothConfig(),
+    workspace: ws, baseUrl: modelServer.url, configuration: bothConfig(), agent: 'codex',
     fakeCodexAppServerMode: 'error',
   });
-  t.ok(run.code !== 0, 'a codex failure must make the aggregate exit nonzero');
-  t.includes(run.combined, 'Claude Code  [configured]', 'Claude remains configured despite the codex failure');
+  t.ok(run.code !== 0, 'a Codex failure must exit nonzero');
   t.includes(run.combined, 'Codex  [failed]', 'Codex is reported as failed');
-  const settings = readSettings(settingsPathFor(ws)) as { env: Record<string, string> };
-  t.equal(settings.env.ANTHROPIC_AUTH_TOKEN, SENTINEL_KEY, 'Claude settings survive the codex failure');
+  t.excludes(run.combined, 'Claude Code  [', 'the summary contains only the selected agent');
+  t.ok(!existsSync(settingsPathFor(ws)), 'the Codex script never writes Claude settings');
 });
 
-test('codex', 'both agents configure independently when both succeed', async t => {
+test('codex', 'the two agent-specific scripts configure independently against one configuration', async t => {
   const ws = makeWorkspace();
   placeFakeClaude(ws.binDir);
   placeFakeCodex(ws.binDir);
-  const run = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: bothConfig() });
-  t.equal(run.code, 0, `both agents should configure:\n${run.combined}`);
-  t.includes(run.combined, 'Claude Code  [configured]', 'Claude configured');
-  t.includes(run.combined, 'Codex  [configured]', 'Codex configured');
+  const claude = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: bothConfig(), agent: 'claude' });
+  t.equal(claude.code, 0, `Claude should configure:\n${claude.combined}`);
+  const codex = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: bothConfig(), agent: 'codex' });
+  t.equal(codex.code, 0, `Codex should configure:\n${codex.combined}`);
   assertCodexBaseEdits(t, ws, modelServer.url);
   t.ok(existsSync(settingsPathFor(ws)), 'Claude settings written');
 });
@@ -2340,15 +2363,16 @@ test('codex', 'PowerShell: a pre-existing CODEX_NON_INTERACTIVE value is restore
   t.excludes(run.combined, 'unexpected CODEX_NON_INTERACTIVE', 'app-server and version subprocesses see the restored caller value');
 });
 
-test('codex', 'PowerShell: independent agents keep a configured Claude when codex fails', async t => {
+test('codex', 'PowerShell: a Codex script never configures Claude when Codex fails', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   placeFakeClaude(ws.binDir);
   placeFakeCodex(ws.binDir);
-  const run = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: bothConfig(), fakeCodexAppServerMode: 'error' });
-  t.ok(run.code !== 0, 'a codex failure must make the aggregate exit nonzero');
-  t.includes(run.combined, 'Claude Code  [configured]', 'Claude remains configured despite the codex failure');
+  const run = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: bothConfig(), agent: 'codex', fakeCodexAppServerMode: 'error' });
+  t.ok(run.code !== 0, 'a Codex failure must exit nonzero');
   t.includes(run.combined, 'Codex  [failed]', 'Codex is reported as failed');
+  t.excludes(run.combined, 'Claude Code  [', 'the summary contains only the selected agent');
+  t.ok(!existsSync(settingsPathFor(ws)), 'the Codex script never writes Claude settings');
 });
 
 // --- Codex real-binary smoke test -------------------------------------------
@@ -2400,14 +2424,14 @@ test('claude', 'Bash and PowerShell emit an identical happy-path stdout line seq
   const bashWs = makeWorkspace();
   placeFakeClaude(bashWs.binDir);
   placeFakeCodex(bashWs.binDir);
-  const bash = await runShellInstaller({ workspace: bashWs, baseUrl: modelServer.url, configuration: bothConfig() });
+  const bash = await runShellInstaller({ workspace: bashWs, baseUrl: modelServer.url, configuration: bothConfig(), agent: 'claude' });
   t.equal(bash.code, 0, `Bash happy path should succeed:\n${bash.combined}`);
 
   modelServer.reset();
   const psWs = makeWorkspace();
   placeFakeClaude(psWs.binDir);
   placeFakeCodex(psWs.binDir);
-  const ps = await runPowerShellInstaller({ workspace: psWs, baseUrl: modelServer.url, configuration: bothConfig() });
+  const ps = await runPowerShellInstaller({ workspace: psWs, baseUrl: modelServer.url, configuration: bothConfig(), agent: 'claude' });
   t.equal(ps.code, 0, `PowerShell happy path should succeed:\n${ps.combined}`);
 
   t.equal(normalizeLines(ps.stdout), normalizeLines(bash.stdout), 'the two installers must print the same stdout structure');
@@ -2416,7 +2440,7 @@ test('claude', 'Bash and PowerShell emit an identical happy-path stdout line seq
   t.includes(normalizeLines(bash.stdout), '\nClaude Code\n', 'the output opens the Claude Code phase');
   t.includes(normalizeLines(bash.stdout), '\nSummary\n', 'the output closes with a Summary phase');
   t.includes(normalizeLines(bash.stdout), '  Claude Code  [configured]', 'Summary lists Claude Code with its state');
-  t.includes(normalizeLines(bash.stdout), '  Codex  [configured]', 'Summary lists Codex with its state');
+  t.excludes(normalizeLines(bash.stdout), '  Codex  [', 'Summary excludes the unselected agent');
 });
 
 test('claude', 'a fully successful run keeps stderr empty and emits no escape codes when captured', async t => {

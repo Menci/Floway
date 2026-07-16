@@ -9,6 +9,7 @@
 import type { AgentSetupConfiguration } from './configuration.ts';
 
 export interface RenderPrefixInput {
+  agent: 'claude' | 'codex';
   apiKey: string;
   apiKeyName: string;
   configuration: AgentSetupConfiguration;
@@ -38,26 +39,24 @@ const metadataValue = (value: string): string => {
 };
 
 // An unset override renders empty, which the installer reads as "remove this
-// managed key"; a set flag renders `1`.
-const shellFlag = (enabled: boolean): string => (enabled ? '1' : '');
+// managed key".
 const shellOptional = (value: string | null): string => value ?? '';
 
 // `set +x` leads so a caller who piped us into `set -x` cannot echo the API-key
 // assignment to its trace stream; the trailing newline lets the fixed installer
 // body concatenate cleanly beneath.
 export const renderShellPrefix = (input: RenderPrefixInput): string => {
-  const { apiKey, apiKeyName, configuration: { claudeCode, codex } } = input;
+  const { agent, apiKey, apiKeyName, configuration: { claudeCode, codex } } = input;
   const assignments: [name: string, value: string][] = [
+    ['SETUP_AGENT', agent],
     ['SETUP_API_KEY', apiKey],
     ['SETUP_API_KEY_NAME', metadataValue(apiKeyName)],
-    ['SETUP_INSTALL_CLAUDE', shellFlag(claudeCode.enabled)],
     ['SETUP_CLAUDE_MODEL', shellOptional(claudeCode.model)],
     ['SETUP_CLAUDE_DEFAULT_OPUS_MODEL', shellOptional(claudeCode.defaultOpusModel)],
     ['SETUP_CLAUDE_DEFAULT_SONNET_MODEL', shellOptional(claudeCode.defaultSonnetModel)],
     ['SETUP_CLAUDE_DEFAULT_HAIKU_MODEL', shellOptional(claudeCode.defaultHaikuModel)],
     ['SETUP_CLAUDE_EFFORT_LEVEL', shellOptional(claudeCode.effortLevel)],
     ['SETUP_CLAUDE_MODEL_DISCOVERY', shellFlag(claudeCode.modelDiscovery)],
-    ['SETUP_INSTALL_CODEX', shellFlag(codex.enabled)],
     ['SETUP_CODEX_MODEL', shellOptional(codex.model)],
     ['SETUP_CODEX_REASONING_EFFORT', shellOptional(codex.reasoningEffort)],
   ];
@@ -67,23 +66,21 @@ export const renderShellPrefix = (input: RenderPrefixInput): string => {
 
 // PowerShell: booleans and $null render bare; only strings are quoted, so the
 // encoder cannot be applied uniformly the way the POSIX renderer applies it.
-const powerShellBool = (value: boolean): string => (value ? '$true' : '$false');
 const powerShellOptional = (value: string | null): string => (value === null ? '$null' : powerShellLiteral(value));
 
 // `Set-PSDebug -Off` leads for the same reason `set +x` does in POSIX.
 export const renderPowerShellPrefix = (input: RenderPrefixInput): string => {
-  const { apiKey, apiKeyName, configuration: { claudeCode, codex } } = input;
+  const { agent, apiKey, apiKeyName, configuration: { claudeCode, codex } } = input;
   const assignments: [name: string, value: string][] = [
+    ['$SetupAgent', powerShellLiteral(agent)],
     ['$SetupApiKey', powerShellLiteral(apiKey)],
     ['$SetupApiKeyName', powerShellLiteral(metadataValue(apiKeyName))],
-    ['$SetupInstallClaude', powerShellBool(claudeCode.enabled)],
     ['$SetupClaudeModel', powerShellOptional(claudeCode.model)],
     ['$SetupClaudeDefaultOpusModel', powerShellOptional(claudeCode.defaultOpusModel)],
     ['$SetupClaudeDefaultSonnetModel', powerShellOptional(claudeCode.defaultSonnetModel)],
     ['$SetupClaudeDefaultHaikuModel', powerShellOptional(claudeCode.defaultHaikuModel)],
     ['$SetupClaudeEffortLevel', powerShellOptional(claudeCode.effortLevel)],
     ['$SetupClaudeModelDiscovery', powerShellBool(claudeCode.modelDiscovery)],
-    ['$SetupInstallCodex', powerShellBool(codex.enabled)],
     ['$SetupCodexModel', powerShellOptional(codex.model)],
     ['$SetupCodexReasoningEffort', powerShellOptional(codex.reasoningEffort)],
   ];

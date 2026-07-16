@@ -5,6 +5,7 @@ import type { ApiKey, ControlPlaneModel } from '../../api/types.ts';
 import { Code } from '@floway-dev/ui';
 
 const props = defineProps<{
+  agent: 'claude' | 'codex';
   apiKey: ApiKey;
   models: readonly ControlPlaneModel[];
 }>();
@@ -111,7 +112,7 @@ const selectClass = 'max-w-full rounded-lg border border-white/10 bg-surface-800
 
 <template>
   <div class="space-y-8">
-    <section>
+    <section v-if="agent === 'claude'">
       <h3 class="mb-3 text-sm font-semibold text-white">Claude Code</h3>
       <div class="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2">
         <label v-for="tier in CLAUDE_TIER_KEYS" :key="tier" class="flex min-w-0 items-center gap-2 text-xs text-gray-500">
@@ -127,7 +128,7 @@ const selectClass = 'max-w-full rounded-lg border border-white/10 bg-surface-800
       <Code :code="claudeSnippet" language="json" />
     </section>
 
-    <section class="border-t border-white/5 pt-8">
+    <section v-else>
       <h3 class="mb-3 text-sm font-semibold text-white">Codex</h3>
       <label class="mb-3 flex max-w-sm items-center gap-2 text-xs text-gray-500">
         <span>Model</span>

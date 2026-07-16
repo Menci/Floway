@@ -35,7 +35,7 @@ const models = [
 
 describe('AgentConfigSnippets', () => {
   it('renders Claude configuration as settings JSON rather than shell exports', () => {
-    const wrapper = mount(AgentConfigSnippets, { props: { apiKey: key('key-1', 'Primary', 'floway-key'), models } });
+    const wrapper = mount(AgentConfigSnippets, { props: { agent: 'claude', apiKey: key('key-1', 'Primary', 'floway-key'), models } });
     const json = wrapper.find('pre[data-language="json"]').text();
 
     expect(wrapper.text()).toContain('Edit ~/.claude/settings.json and merge this JSON object');
@@ -47,11 +47,10 @@ describe('AgentConfigSnippets', () => {
 
   it('switches every credential snippet when the selected API key changes', async () => {
     const wrapper = mount(AgentConfigSnippets, {
-      props: { apiKey: key('key-1', 'Primary', 'first-key'), models },
+      props: { agent: 'codex', apiKey: key('key-1', 'Primary', 'first-key'), models },
     });
     await wrapper.setProps({ apiKey: key('key-2', 'CI', "floway-'key") });
 
-    expect(wrapper.find('pre[data-language="json"]').text()).toContain("floway-'key");
     const unixCredential = wrapper.findAll('pre[data-language="bash"]')
       .map(block => block.text())
       .find(code => code.includes('floway-token'));
@@ -60,7 +59,7 @@ describe('AgentConfigSnippets', () => {
   });
 
   it('uses provider-scoped Codex auth and enables the client-owned tools', () => {
-    const wrapper = mount(AgentConfigSnippets, { props: { apiKey: key('key-1', 'Primary', 'floway-key'), models } });
+    const wrapper = mount(AgentConfigSnippets, { props: { agent: 'codex', apiKey: key('key-1', 'Primary', 'floway-key'), models } });
     const config = wrapper.find('pre[data-language="toml"]').text();
 
     expect(config).toContain('model = "gpt-5.5"');

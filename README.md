@@ -132,18 +132,22 @@ Open the deployed URL (or `http://localhost:8788` for Node), log in with
 2. **API Keys -> New Key**. Generate a long-lived key and use it directly as
    the `x-api-key` / bearer token in any client.
 3. **API Keys -> Agent Setup** offers two configuration modes. **Agent Setup**
-   installs the Claude Code and Codex CLIs and points them at this gateway with
-   a single command. Select a row in the API Keys table, then enable either
-   agent and configure its model settings. The browser remembers the last
-   selected key while it still exists, and a newly created key becomes the
-   selection automatically. With no selected key, form edits remain local and
-   the command block asks for a key instead of creating a setup URL. Enabled
-   agents expand into full-width responsive forms; disabled agents keep their
-   saved settings hidden. Claude Code exposes Default, Opus, Sonnet, and Haiku
-   model overrides plus reasoning effort and gateway discovery. Codex exposes
-   its model and reasoning effort. Edits made against a selected key autosave
-   to a short-lived setup lease. The command picker defaults to Windows on
-   Windows clients and to macOS/Linux elsewhere.
+   and **Config snippets** form one selector in the left column; Claude Code and
+   Codex form a second selector below it. The right column keeps the selected-key
+   description stable while its lower pane changes for the chosen mode and
+   agent. Select a row in the API Keys table, then configure or copy the chosen
+   agent. The browser remembers the last selected key while it still exists, and
+   a newly created key becomes the selection automatically. With no selected
+   key, form edits remain local and the command block asks for a key instead of
+   creating a setup URL.
+
+   Claude Code exposes Default, Opus, Sonnet, and Haiku model overrides plus
+   reasoning effort and gateway discovery. Codex exposes its model and reasoning
+   effort. Both configurations live in one lease record and renew through one
+   keepalive. The agent-specific script paths share the same token —
+   `<token>/claude.sh` and `<token>/codex.sh` (plus their PowerShell variants) —
+   and each script installs and configures only its named agent. The command
+   picker defaults to Windows on Windows clients and to macOS/Linux elsewhere.
 
    The command's setup URL stays stable while the panel is open. The visible
    panel renews its five-minute lease once a minute, and the URL expires about
@@ -164,10 +168,9 @@ Open the deployed URL (or `http://localhost:8788` for Node), log in with
    model directory; it never issues an inference request.
 
    **Config snippets** keeps the manual setup path available for the same
-   table-selected key. Edit Claude Code's `settings.json` with the generated
-   JSON object, or merge the generated Codex TOML and provider-token commands
-   yourself. Claude values are presented as JSON file edits, not shell
-   environment exports.
+   table-selected key and left-column agent choice. Claude Code is presented as
+   a `settings.json` JSON edit, not shell environment exports; Codex presents its
+   TOML and provider-token commands.
 
 Import/export of upstreams, keys, and search config is in Settings. The
 payload format is tied to the running deployment, so import only accepts a

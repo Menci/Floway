@@ -22,16 +22,16 @@ const copyButton = (w: ReturnType<typeof mount>, label = 'Shell') => w.find(`but
 describe('AgentSetupCommand', () => {
   it('renders the label and exact command with an instance-specific copy name', () => {
     const w = mount(AgentSetupCommand, {
-      props: { label: 'macOS / Linux', command: 'curl -fsSL https://x/api/setup/t/setup.sh | bash', language: 'bash' },
+      props: { label: 'macOS / Linux', command: 'curl -fsSL https://x/api/setup/t/claude.sh | bash', language: 'bash' },
     });
     expect(w.text()).toContain('macOS / Linux');
-    expect(w.text()).toContain('curl -fsSL https://x/api/setup/t/setup.sh | bash');
+    expect(w.text()).toContain('curl -fsSL https://x/api/setup/t/claude.sh | bash');
     expect(copyButton(w, 'macOS / Linux').exists()).toBe(true);
   });
 
   it('can leave the selected tab as the only visible label', () => {
     const w = mount(AgentSetupCommand, {
-      props: { label: 'Windows', command: 'irm https://x/api/setup/t/setup.ps1 | iex', language: 'powershell', showLabel: false },
+      props: { label: 'Windows', command: 'irm https://x/api/setup/t/codex.ps1 | iex', language: 'powershell', showLabel: false },
     });
     expect(w.text()).not.toContain('Windows');
     expect(copyButton(w, 'Windows').exists()).toBe(true);
@@ -39,7 +39,7 @@ describe('AgentSetupCommand', () => {
   });
 
   it('copies exactly the visible command to the clipboard and announces success', async () => {
-    const command = 'curl -fsSL https://x/api/setup/t/setup.sh | bash';
+    const command = 'curl -fsSL https://x/api/setup/t/claude.sh | bash';
     const w = mount(AgentSetupCommand, { props: { label: 'Shell', command } });
 
     await copyButton(w).trigger('click');
@@ -53,7 +53,7 @@ describe('AgentSetupCommand', () => {
   });
 
   it('keeps the copy button rendered but disabled and never writes while disabled', async () => {
-    const w = mount(AgentSetupCommand, { props: { label: 'Shell', command: 'irm https://x/api/setup/t/setup.ps1 | iex', disabled: true } });
+    const w = mount(AgentSetupCommand, { props: { label: 'Shell', command: 'irm https://x/api/setup/t/codex.ps1 | iex', disabled: true } });
 
     const button = copyButton(w);
     expect(button.exists()).toBe(true);

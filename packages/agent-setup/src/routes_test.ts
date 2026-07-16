@@ -137,7 +137,10 @@ interface LeaseResponse {
   };
   configurationRevision: number;
   expiresAt: number;
-  scripts: { sh: string; ps1: string };
+  scripts: {
+    claude: { sh: string; ps1: string };
+    codex: { sh: string; ps1: string };
+  };
 }
 
 // A full, schema-valid configuration for rows seeded directly into the repo
@@ -180,8 +183,10 @@ test('POST first use selects the first key and enables both agents at revision 1
   assertEquals(body.configuration.claudeCode.model, null);
   assertEquals(body.configurationRevision, 1);
   expect(body.token).toMatch(/^[A-Za-z0-9_-]{43}$/);
-  assertEquals(body.scripts.sh, `/api/setup/${body.token}/setup.sh`);
-  assertEquals(body.scripts.ps1, `/api/setup/${body.token}/setup.ps1`);
+  assertEquals(body.scripts.claude.sh, `/api/setup/${body.token}/claude.sh`);
+  assertEquals(body.scripts.claude.ps1, `/api/setup/${body.token}/claude.ps1`);
+  assertEquals(body.scripts.codex.sh, `/api/setup/${body.token}/codex.sh`);
+  assertEquals(body.scripts.codex.ps1, `/api/setup/${body.token}/codex.ps1`);
 });
 
 test('POST returns no-selectable-key when the account has no key', async () => {
@@ -226,8 +231,8 @@ test('two POSTs coexist as independent leases: neither supersedes the other', as
   const b = await create(h);
   expect(b.token).not.toBe(a.token);
   // Both tokens remain live and independently servable.
-  assertEquals((await h.request(`/api/setup/${a.token}/setup.sh`, { method: 'HEAD' })).status, 200);
-  assertEquals((await h.request(`/api/setup/${b.token}/setup.sh`, { method: 'HEAD' })).status, 200);
+  assertEquals((await h.request(`/api/setup/${a.token}/claude.sh`, { method: 'HEAD' })).status, 200);
+  assertEquals((await h.request(`/api/setup/${b.token}/codex.sh`, { method: 'HEAD' })).status, 200);
 });
 
 test('inserting a new lease sweeps only the same user\'s already-expired rows', async () => {
@@ -353,7 +358,7 @@ test('POST retries a token collision without masking unrelated failures', async 
 test('GET serves the shell prefix + fixed body with hardened no-store headers', async () => {
   const h = harness();
   const lease = await create(h);
-  const response = await h.request(lease.scripts.sh, { method: 'GET' });
+  const response = await h.request(lease.scripts.claude.sh, { method: 'GET' });
   assertEquals(response.status, 200);
   assertEquals(response.headers.get('content-type'), 'text/plain; charset=utf-8');
   assertEquals(response.headers.get('cache-control'), 'no-store');
@@ -364,6 +369,7 @@ test('GET serves the shell prefix + fixed body with hardened no-store headers', 
   const text = await response.text();
   const prefix = text.slice(0, text.indexOf(SETUP_SH_BODY));
   expect(prefix).toContain("SETUP_API_KEY='raw-key'");
+  expect(prefix).toContain("SETUP_AGENT='claude'");
   expect(prefix).not.toContain('SETUP_ENDPOINT');
   expect(text).toContain(SETUP_SH_BODY);
 });
@@ -371,16 +377,17 @@ test('GET serves the shell prefix + fixed body with hardened no-store headers', 
 test('GET serves the PowerShell prefix + fixed body', async () => {
   const h = harness();
   const lease = await create(h);
-  const text = await (await h.request(lease.scripts.ps1, { method: 'GET' })).text();
+  const text = await (await h.request(lease.scripts.codex.ps1, { method: 'GET' })).text();
   const prefix = text.slice(0, text.indexOf(SETUP_PS1_BODY));
   expect(prefix).toContain("$SetupApiKey = 'raw-key'");
+  expect(prefix).toContain("$SetupAgent = 'codex'");
   expect(text).toContain(SETUP_PS1_BODY);
 });
 
 test('HEAD validates but returns an empty body', async () => {
   const h = harness();
   const lease = await create(h);
-  const response = await h.request(lease.scripts.sh, { method: 'HEAD' });
+  const response = await h.request(lease.scripts.claude.sh, { method: 'HEAD' });
   assertEquals(response.status, 200);
   assertEquals(response.headers.get('cache-control'), 'no-store');
   assertEquals(await response.text(), '');
@@ -402,8 +409,8 @@ test('near-miss public URLs are consumed before host middleware can log their to
 
   for (const [path, method] of [
     [`/api/setup/${token}/setup.txt`, 'GET'],
-    [`/api/setup/${token}/setup.sh/extra`, 'GET'],
-    [`/api/setup/${token}/setup.sh`, 'POST'],
+    [`/api/setup/${token}/claude.sh/extra`, 'GET'],
+    [`/api/setup/${token}/codex.sh`, 'POST'],
     [`/api/setup/${token}`, 'GET'],
   ] as const) {
     const response = await app.request(path, { method });
@@ -421,11 +428,11 @@ test('near-miss public URLs are consumed before host middleware can log their to
 test('GET re-reads the current configuration each request', async () => {
   const h = harness();
   const lease = await create(h);
-  expect(await (await h.request(lease.scripts.sh, { method: 'GET' })).text()).toContain("SETUP_INSTALL_CODEX='1'");
-  const edited = { ...lease.configuration, codex: { ...lease.configuration.codex, enabled: false } };
+  expect(await (await h.request(lease.scripts.codex.sh, { method: 'GET' })).text()).toContain("SETUP_CODEX_MODEL=''");
+  const edited = { ...lease.configuration, codex: { ...lease.configuration.codex, model: 'gpt-custom' } };
   await h.request('/api/setup', putJson({ token: lease.token, configuration: edited, expectedRevision: lease.configurationRevision }));
-  const after = await (await h.request(lease.scripts.sh, { method: 'GET' })).text();
-  expect(after).toContain("SETUP_INSTALL_CODEX=''");
+  const after = await (await h.request(lease.scripts.codex.sh, { method: 'GET' })).text();
+  expect(after).toContain("SETUP_CODEX_MODEL='gpt-custom'");
 });
 
 test('unknown, expired, deleted-user, and deleted-key tokens all return an identical generic 404', async () => {
@@ -439,7 +446,7 @@ test('unknown, expired, deleted-user, and deleted-key tokens all return an ident
 
   const bodies = new Set<string>();
   for (const token of ['a'.repeat(43), 'b'.repeat(43), 'c'.repeat(43), 'd'.repeat(43)]) {
-    const response = await h.request(`/api/setup/${token}/setup.sh`, { method: 'GET' });
+    const response = await h.request(`/api/setup/${token}/claude.sh`, { method: 'GET' });
     assertEquals(response.status, 404);
     bodies.add(await response.text());
   }
@@ -457,7 +464,7 @@ test('a public serve failure is sealed to an opaque 500 that leaks neither token
   const logged: string[] = [];
   const errorSpy = vi.spyOn(console, 'error').mockImplementation((...args) => { logged.push(args.map(String).join(' ')); });
   try {
-    const response = await h.request(`/api/setup/${lease.token}/setup.sh`, { method: 'GET' });
+    const response = await h.request(`/api/setup/${lease.token}/claude.sh`, { method: 'GET' });
     assertEquals(response.status, 500);
     const raw = await response.text();
     expect(JSON.parse(raw)).toEqual({ error: { type: 'internal_error' } });

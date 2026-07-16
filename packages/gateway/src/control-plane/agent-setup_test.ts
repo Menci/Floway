@@ -27,7 +27,7 @@ const testApiKey = (overrides: Partial<ApiKey> = {}): ApiKey => ({
 interface LeaseResponse {
   status: string;
   token: string;
-  scripts: { sh: string; ps1: string };
+  scripts: { claude: { sh: string; ps1: string }; codex: { sh: string; ps1: string } };
 }
 
 const createLease = async (rawKey: string): Promise<LeaseResponse> => {
@@ -48,7 +48,7 @@ test('an unsupported method on a token-shaped path is contained before auth and 
   const logged: string[] = [];
   const logSpy = vi.spyOn(console, 'log').mockImplementation((...args) => { logged.push(args.map(String).join(' ')); });
   try {
-    const response = await requestApp(`/api/setup/${token}/setup.sh`, { method: 'POST' });
+    const response = await requestApp(`/api/setup/${token}/claude.sh`, { method: 'POST' });
     assertEquals(response.status, 404);
     assertEquals(response.headers.get('cache-control'), 'no-store');
   } finally {
@@ -61,12 +61,13 @@ test('the public GET serves the rendered script with hardened headers and no COR
   const { apiKey } = await setupAppTest({ apiKey: testApiKey() });
   const lease = await createLease(apiKey.key);
 
-  const response = await requestApp(lease.scripts.sh, { method: 'GET' });
+  const response = await requestApp(lease.scripts.claude.sh, { method: 'GET' });
   assertEquals(response.status, 200);
   assertEquals(response.headers.get('content-type'), 'text/plain; charset=utf-8');
   assertEquals(response.headers.get('cache-control'), 'no-store');
   assertEquals(response.headers.get('access-control-allow-origin'), null);
   const text = await response.text();
+  expect(text).toContain("SETUP_AGENT='claude'");
   expect(text).toContain("SETUP_API_KEY='raw-key'");
   expect(text).toContain("SETUP_API_KEY_NAME='Primary key'");
   expect(text).toContain('Floway Agent Setup installer (Bash 3.2+)');
@@ -75,14 +76,14 @@ test('the public GET serves the rendered script with hardened headers and no COR
 test('HEAD validates without assembling the API-key body', async () => {
   const { apiKey } = await setupAppTest({ apiKey: testApiKey() });
   const lease = await createLease(apiKey.key);
-  const response = await requestApp(lease.scripts.sh, { method: 'HEAD' });
+  const response = await requestApp(lease.scripts.claude.sh, { method: 'HEAD' });
   assertEquals(response.status, 200);
   assertEquals(await response.text(), '');
 });
 
 test('a bogus token is a generic 404 with an empty body and no auth challenge', async () => {
   await setupAppTest({ apiKey: testApiKey() });
-  const response = await requestApp(`/api/setup/${'a'.repeat(43)}/setup.sh`, { method: 'GET' });
+  const response = await requestApp(`/api/setup/${'a'.repeat(43)}/claude.sh`, { method: 'GET' });
   assertEquals(response.status, 404);
   assertEquals(await response.text(), '');
 });
@@ -94,7 +95,7 @@ test('the public script route is mounted ahead of the logger, so the lease token
   const logged: string[] = [];
   const logSpy = vi.spyOn(console, 'log').mockImplementation((...args) => { logged.push(args.map(String).join(' ')); });
   try {
-    await requestApp(lease.scripts.sh, { method: 'GET' });
+    await requestApp(lease.scripts.claude.sh, { method: 'GET' });
   } finally {
     logSpy.mockRestore();
   }
@@ -111,7 +112,7 @@ test('OPTIONS on a script path is contained without resolving the lease or expos
   const repo = getRepo();
 
   const findByTokenSpy = vi.spyOn(repo.agentSetup, 'findByToken');
-  const preflight = await requestApp(lease.scripts.sh, {
+  const preflight = await requestApp(lease.scripts.claude.sh, {
     method: 'OPTIONS',
     headers: { origin: 'https://cross.example', 'access-control-request-method': 'GET' },
   });
@@ -121,7 +122,7 @@ test('OPTIONS on a script path is contained without resolving the lease or expos
   expect(findByTokenSpy).not.toHaveBeenCalled();
   findByTokenSpy.mockRestore();
 
-  const get = await requestApp(lease.scripts.sh, { method: 'GET' });
+  const get = await requestApp(lease.scripts.claude.sh, { method: 'GET' });
   assertEquals(get.headers.get('access-control-allow-origin'), null);
 });
 
@@ -136,7 +137,7 @@ test('a public-serve failure is sealed to an opaque 500 that leaks neither token
   const logged: string[] = [];
   const errorSpy = vi.spyOn(console, 'error').mockImplementation((...args) => { logged.push(args.map(String).join(' ')); });
   try {
-    const response = await requestApp(lease.scripts.sh, { method: 'GET' });
+    const response = await requestApp(lease.scripts.claude.sh, { method: 'GET' });
     assertEquals(response.status, 500);
     const raw = await response.text();
     expect(JSON.parse(raw)).toEqual({ error: { type: 'internal_error' } });
