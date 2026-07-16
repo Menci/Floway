@@ -116,7 +116,6 @@ test('SQL refresh cleans a replacement spill when the row disappears before upda
   const files = new MemoryFileProvider();
   initFileProvider(files);
   const base = await createSqliteTestDb();
-  if (base.batch === undefined) throw new Error('SQL refresh race test requires batch support');
   let deleteBeforeBatch = false;
   const db: SqlDatabase = {
     prepare: query => base.prepare(query),
@@ -128,7 +127,9 @@ test('SQL refresh cleans a replacement spill when the row disappears before upda
           .bind('msg_race', 'key-a')
           .run();
       }
-      return await base.batch!(statements);
+      const results = [];
+      for (const statement of statements) results.push(await statement.run());
+      return results;
     },
   };
   const repo = new SqlRepo(db);
