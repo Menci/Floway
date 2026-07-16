@@ -13,6 +13,9 @@ type SignatureDeltaEvent = ContentBlockDeltaEvent & {
   readonly delta: Extract<ContentBlockDeltaEvent['delta'], { type: 'signature_delta' }>;
 };
 
+const isSignatureDeltaEvent = (event: MessagesStreamEvent): event is SignatureDeltaEvent =>
+  event.type === 'content_block_delta' && event.delta.type === 'signature_delta';
+
 export const wrapMessagesAffinityEgress = async function* (
   frames: AsyncIterable<ProtocolFrame<MessagesStreamEvent>>,
   options: AffinityEgressOptions,
@@ -76,7 +79,7 @@ export const wrapMessagesAffinityEgress = async function* (
       continue;
     }
 
-    if (event.type === 'content_block_delta' && event.delta.type === 'signature_delta') {
+    if (isSignatureDeltaEvent(event)) {
       const block = openBlocks.get(event.index);
       if (block?.type !== 'thinking') throw new Error(`Messages signature_delta targeted non-thinking block ${event.index}`);
       block.signatureEvent = event;
