@@ -61,6 +61,35 @@ describe('Messages affinity egress', () => {
     expect((await output.next()).value).toMatchObject({ event: { type: 'message_delta' } });
   });
 
+  test('retains extension fields from the latest natural signature event', async () => {
+    const signature = {
+      type: 'content_block_delta',
+      index: 0,
+      delta: { type: 'signature_delta', signature: 'natural', vendor_delta: 'delta-extra' },
+      vendor_event: 'event-extra',
+    } as unknown as MessagesStreamEvent;
+    const output: ProtocolFrame<MessagesStreamEvent>[] = [];
+    for await (const frame of wrapMessagesAffinityEgress(frames([
+      eventFrame({ type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: '' } }),
+      eventFrame(signature),
+      eventFrame({ type: 'content_block_stop', index: 0 }),
+      eventFrame({ type: 'message_stop' }),
+    ]), { codec: immediateCodec, affinity })) output.push(frame);
+
+    expect(output[1]).toMatchObject({
+      event: {
+        type: 'content_block_delta',
+        index: 0,
+        vendor_event: 'event-extra',
+        delta: {
+          type: 'signature_delta',
+          signature: 'wrapped:natural',
+          vendor_delta: 'delta-extra',
+        },
+      },
+    });
+  });
+
   test('wraps redacted data inline and does not inject another carrier', async () => {
     const output: ProtocolFrame<MessagesStreamEvent>[] = [];
     for await (const frame of wrapMessagesAffinityEgress(frames([

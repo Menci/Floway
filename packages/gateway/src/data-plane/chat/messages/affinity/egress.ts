@@ -5,8 +5,13 @@ import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 interface OpenBlock {
   readonly type: string;
   readonly first: boolean;
-  signature?: string;
+  signatureEvent?: SignatureDeltaEvent;
 }
+
+type ContentBlockDeltaEvent = Extract<MessagesStreamEvent, { type: 'content_block_delta' }>;
+type SignatureDeltaEvent = ContentBlockDeltaEvent & {
+  readonly delta: Extract<ContentBlockDeltaEvent['delta'], { type: 'signature_delta' }>;
+};
 
 export const wrapMessagesAffinityEgress = async function* (
   frames: AsyncIterable<ProtocolFrame<MessagesStreamEvent>>,
@@ -74,26 +79,34 @@ export const wrapMessagesAffinityEgress = async function* (
     if (event.type === 'content_block_delta' && event.delta.type === 'signature_delta') {
       const block = openBlocks.get(event.index);
       if (block?.type !== 'thinking') throw new Error(`Messages signature_delta targeted non-thinking block ${event.index}`);
-      block.signature = event.delta.signature;
+      block.signatureEvent = event;
       continue;
     }
 
     if (event.type === 'content_block_stop') {
       const block = openBlocks.get(event.index);
       if (block === undefined) throw new Error(`Messages content block ${event.index} stopped before it started`);
-      if (block.signature !== undefined || (block.first && block.type === 'thinking')) {
+      if (block.signatureEvent !== undefined || (block.first && block.type === 'thinking')) {
         let signature: string;
-        if (block.signature !== undefined) {
-          signature = await options.codec.wrap(block.signature, options.affinity, 'messages.thinking.signature');
+        if (block.signatureEvent !== undefined) {
+          signature = await options.codec.wrap(block.signatureEvent.delta.signature, options.affinity, 'messages.thinking.signature');
         } else signature = await options.codec.wrap(undefined, options.affinity, 'messages.thinking.signature');
-        yield eventFrame({
-          type: 'content_block_delta',
-          index: event.index + indexOffset,
-          delta: {
-            type: 'signature_delta',
-            signature,
-          },
-        });
+        if (block.signatureEvent === undefined) {
+          yield eventFrame({
+            type: 'content_block_delta',
+            index: event.index + indexOffset,
+            delta: { type: 'signature_delta', signature },
+          });
+        } else {
+          const { index: _index, delta, ...eventExtras } = block.signatureEvent;
+          const { signature: _signature, ...deltaExtras } = delta;
+          yield eventFrame({
+            ...eventExtras,
+            type: 'content_block_delta',
+            index: event.index + indexOffset,
+            delta: { ...deltaExtras, type: 'signature_delta', signature },
+          });
+        }
       }
       openBlocks.delete(event.index);
       yield eventFrame({ ...event, index: event.index + indexOffset });

@@ -8,16 +8,26 @@ interface ChoiceState {
 }
 
 type StreamingChoice = ChatCompletionsStreamEvent['choices'][number];
+const REQUIRED_CHUNK_KEYS = new Set(['id', 'object', 'created', 'model', 'choices']);
 
 const eventWithChoices = (
   event: ChatCompletionsStreamEvent,
   choices: StreamingChoice[],
-  includeUsage: boolean,
+  includeOriginalFields: boolean,
 ): ChatCompletionsStreamEvent => {
-  if (includeUsage || event.usage === undefined) return { ...event, choices };
-  const { usage: _usage, ...rest } = event;
-  return { ...rest, choices };
+  const { id, object, created, model, choices: _choices, ...optional } = event;
+  return {
+    id,
+    object,
+    created,
+    model,
+    choices,
+    ...(includeOriginalFields ? optional : {}),
+  };
 };
+
+const hasOptionalChunkFields = (event: ChatCompletionsStreamEvent): boolean =>
+  Object.keys(event).some(key => !REQUIRED_CHUNK_KEYS.has(key));
 
 export const wrapChatCompletionsAffinityEgress = async function* (
   frames: AsyncIterable<ProtocolFrame<ChatCompletionsStreamEvent>>,
@@ -85,8 +95,8 @@ export const wrapChatCompletionsAffinityEgress = async function* (
       finishingChoices.push({ index, finishReason, state });
     }
 
-    if (visibleChoices.length > 0 || frame.event.choices.length === 0) {
-      yield eventFrame(eventWithChoices(frame.event, visibleChoices, finishingChoices.length === 0));
+    if (visibleChoices.length > 0 || frame.event.choices.length === 0 || hasOptionalChunkFields(frame.event)) {
+      yield eventFrame(eventWithChoices(frame.event, visibleChoices, true));
     }
 
     if (finishingChoices.length === 0) continue;
@@ -102,6 +112,6 @@ export const wrapChatCompletionsAffinityEgress = async function* (
       state.finished = true;
       return { index, delta: {}, finish_reason: finishReason };
     });
-    yield eventFrame(eventWithChoices(frame.event, finishedChoices, true));
+    yield eventFrame(eventWithChoices(frame.event, finishedChoices, false));
   }
 };

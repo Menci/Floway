@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 
 import { wrapChatCompletionsAffinityEgress } from './egress.ts';
 import type { AffinityCodec, AffinityTarget } from '../../shared/affinity/index.ts';
-import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
+import { reassembleChatCompletionsEvents, type ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 
 const affinity: AffinityTarget = {
@@ -28,6 +28,11 @@ const frames = async function* (values: ProtocolFrame<ChatCompletionsStreamEvent
 
 const withChoiceExtra = (event: ChatCompletionsStreamEvent, name: string, value: unknown): ChatCompletionsStreamEvent => {
   Object.assign(event.choices[0], { [name]: value });
+  return event;
+};
+
+const withChunkExtra = (event: ChatCompletionsStreamEvent, name: string, value: unknown): ChatCompletionsStreamEvent => {
+  Object.assign(event, { [name]: value });
   return event;
 };
 
@@ -164,5 +169,39 @@ describe('Chat Completions affinity egress', () => {
 
     expect(output[0]).toEqual(eventFrame(withChoiceExtra(chunk([{ index: 0, delta: {}, finish_reason: null }]), 'logprobs', null)));
     expect(JSON.stringify(output.slice(1))).not.toContain('logprobs');
+  });
+
+  test('emits final chunk extras once across split frames and non-stream reassembly', async () => {
+    const output: ProtocolFrame<ChatCompletionsStreamEvent>[] = [];
+    for await (const frame of wrapChatCompletionsAffinityEgress(frames([
+      eventFrame(withChunkExtra(chunk([{
+        index: 0,
+        delta: { content: 'answer', reasoning_opaque: 'opaque' },
+        finish_reason: 'stop',
+      }]), 'vendor_text', 'x')),
+      doneFrame(),
+    ]), { codec: immediateCodec, affinity })) output.push(frame);
+
+    expect(JSON.stringify(output).match(/vendor_text/g)).toHaveLength(1);
+    const chunks = async function* () {
+      for (const frame of output) if (frame.type === 'event') yield frame.event;
+    };
+    expect(await reassembleChatCompletionsEvents(chunks())).toMatchObject({ vendor_text: 'x' });
+  });
+
+  test('preserves chunk extras from an opaque-only nonterminal event', async () => {
+    const output: ProtocolFrame<ChatCompletionsStreamEvent>[] = [];
+    for await (const frame of wrapChatCompletionsAffinityEgress(frames([
+      eventFrame(withChunkExtra(
+        chunk([{ index: 0, delta: { reasoning_opaque: 'opaque' }, finish_reason: null }]),
+        'vendor_scalar',
+        7,
+      )),
+      eventFrame(chunk([{ index: 0, delta: {}, finish_reason: 'stop' }])),
+      doneFrame(),
+    ]), { codec: immediateCodec, affinity })) output.push(frame);
+
+    expect(output[0]).toMatchObject({ event: { choices: [], vendor_scalar: 7 } });
+    expect(JSON.stringify(output.slice(1))).not.toContain('vendor_scalar');
   });
 });

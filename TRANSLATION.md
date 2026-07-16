@@ -354,9 +354,6 @@ Native Responses targets receive custom tools unchanged.
 
 ## Streaming semantics
 
-- Chat, Messages, and Responses defer only opaque carrier state to a
-  protocol-valid boundary. Gemini holds one complete event so a natural
-  signature can remain attached to content-bearing output.
 - Messages streams never expose `[DONE]`.
 - Chat streams end with `[DONE]`; usage-only chunks remain conditional on the
   source request.
