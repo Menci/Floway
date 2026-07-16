@@ -1,6 +1,7 @@
 import { type AffinityCodec, blobForCandidate, blobForForcedCandidate, type AffinityEvidence, type AffinityTarget, type DecodedAffinityBlob, type PreparedAffinityPayload } from '../../shared/affinity/index.ts';
 import { createTemporaryResponsesItemId, hashResponsesItemBinding } from '../items/format.ts';
 import type { CanonicalResponsesPayload, ResponsesInputItem } from '@floway-dev/protocols/responses';
+import type { ModelCandidate } from '@floway-dev/provider';
 
 interface ResponsesBlobLocation {
   readonly itemIndex: number;
@@ -17,6 +18,20 @@ type OwnedResponsesBlobLocation = ResponsesBlobLocation & {
 
 const isOwnedLocation = (location: ResponsesBlobLocation): location is OwnedResponsesBlobLocation =>
   location.decoded.kind === 'owned';
+
+export class ResponsesAffinityInputError extends Error {
+  readonly param: string;
+
+  constructor(message: string, param: string) {
+    super(message);
+    this.name = 'ResponsesAffinityInputError';
+    this.param = param;
+  }
+}
+
+export interface PreparedResponsesAffinity extends PreparedAffinityPayload<CanonicalResponsesPayload> {
+  readonly itemIdMapForCandidate: (candidate: ModelCandidate) => ReadonlyMap<string, string>;
+}
 
 const itemRequiresAffinity = (item: ResponsesInputItem): boolean =>
   ['compaction', 'compaction_summary', 'context_compaction', 'program', 'program_output'].includes(item.type);
@@ -76,9 +91,9 @@ const encryptedContentLocations = async (
 export const prepareResponsesAffinity = async (
   payload: CanonicalResponsesPayload,
   codec: AffinityCodec,
-): Promise<PreparedAffinityPayload<CanonicalResponsesPayload>> => {
+): Promise<PreparedResponsesAffinity> => {
   const locations = await encryptedContentLocations(payload.input, codec);
-  const boundItems = new Map<number, Extract<DecodedAffinityBlob, { kind: 'owned' }>['envelope']['affinity']>();
+  const boundItems = new Map<number, OwnedResponsesBlobLocation>();
   for (const location of locations) {
     if (location.decoded.kind !== 'owned') continue;
     const affinity = location.decoded.envelope.affinity;
@@ -92,68 +107,109 @@ export const prepareResponsesAffinity = async (
       || !('id' in item)
       || typeof item.id !== 'string'
       || await hashResponsesItemBinding(item) !== bound.contentHash
-    ) throw new TypeError(`Responses affinity carrier does not match input item at index ${itemIndex}`);
-    boundItems.set(itemIndex, affinity);
+    ) {
+      throw new ResponsesAffinityInputError(
+        `Affinity carrier does not match the Responses input item at index ${itemIndex}.`,
+        `input[${itemIndex}]`,
+      );
+    }
+    if (boundItems.has(itemIndex)) {
+      throw new ResponsesAffinityInputError(
+        `Multiple affinity carriers bind Responses input item at index ${itemIndex}.`,
+        `input[${itemIndex}]`,
+      );
+    }
+    boundItems.set(itemIndex, location);
   }
+
+  const preparedByCandidate = new WeakMap<ModelCandidate, {
+    readonly payload: CanonicalResponsesPayload;
+    readonly itemIdMap: ReadonlyMap<string, string>;
+  }>();
+  const prepareCandidate = (candidate: ModelCandidate) => {
+    const cached = preparedByCandidate.get(candidate);
+    if (cached !== undefined) return cached;
+    const itemIdMap = new Map<string, string>();
+    const recordItemId = (item: ResponsesInputItem & { id: string }, id: string): void => {
+      if (item.id !== id) itemIdMap.set(item.id, id);
+      item.id = id;
+    };
+    const candidatePayload = structuredClone(payload);
+    for (const [itemIndex, location] of boundItems) {
+      const item = candidatePayload.input[itemIndex];
+      const affinity = location.decoded.envelope.affinity;
+      const bound = affinity.boundItem;
+      if (item === undefined || bound === undefined || !('id' in item) || typeof item.id !== 'string') {
+        throw new Error('Validated Responses affinity binding changed before candidate preparation');
+      }
+      const selected = itemRequiresAffinity(item)
+        ? blobForForcedCandidate(location.decoded, candidate)
+        : blobForCandidate(location.decoded, candidate);
+      recordItemId(
+        item,
+        selected.compatible ? bound.upstreamItemId : createTemporaryResponsesItemId(item.type),
+      );
+    }
+    const byItem = Map.groupBy(locations, location => location.itemIndex);
+    const rewritten = candidatePayload.input.flatMap((item, itemIndex): ResponsesInputItem[] => {
+      const itemLocations = byItem.get(itemIndex);
+      if (itemLocations === undefined) return [item];
+      let removeItem = false;
+      const replacement = { ...item } as ResponsesInputItem & Record<string, unknown>;
+      const decisions = itemLocations.map(location => ({
+        location,
+        selected: itemRequiresAffinity(item)
+          ? blobForForcedCandidate(location.decoded, candidate)
+          : blobForCandidate(location.decoded, candidate),
+      }));
+      for (const { location, selected } of decisions) {
+        if (location.contentIndex !== undefined) continue;
+        if (selected.present) {
+          replacement[location.slot] = selected.value;
+        } else {
+          delete replacement[location.slot];
+          if (
+            location.decoded.kind === 'owned'
+            && location.decoded.value === undefined
+            && location.decoded.envelope.affinity.syntheticItem === true
+          ) removeItem = true;
+        }
+      }
+      const nested = new Map(decisions.flatMap(decision =>
+        decision.location.contentIndex === undefined ? [] : [[decision.location.contentIndex, decision] as const]));
+      if (nested.size > 0) {
+        if (replacement.type !== 'agent_message') throw new Error('Responses affinity content location changed item type');
+        replacement.content = replacement.content.flatMap((content, contentIndex) => {
+          const decision = nested.get(contentIndex);
+          if (decision === undefined) return [content];
+          if (content.type !== 'encrypted_content') throw new Error('Responses affinity content location changed block type');
+          return decision.selected.present ? [{ ...content, encrypted_content: decision.selected.value }] : [];
+        });
+      }
+      const compatibleOwned = decisions.find(decision => decision.selected.compatible && decision.location.decoded.kind === 'owned');
+      if (compatibleOwned?.location.decoded.kind === 'owned') {
+        const upstreamItemId = compatibleOwned.location.decoded.envelope.affinity.upstreamItemId;
+        if (upstreamItemId !== undefined && 'id' in replacement && typeof replacement.id === 'string') {
+          recordItemId(replacement as ResponsesInputItem & { id: string }, upstreamItemId);
+        }
+      } else if (decisions.some(decision => decision.location.decoded.kind === 'owned') && 'id' in replacement && typeof replacement.id === 'string') {
+        recordItemId(
+          replacement as ResponsesInputItem & { id: string },
+          createTemporaryResponsesItemId(replacement.type),
+        );
+      }
+      if (removeItem) return [];
+      if (replacement.type === 'agent_message' && replacement.content.length === 0) return [];
+      return [replacement];
+    });
+    const prepared = { payload: { ...candidatePayload, input: rewritten }, itemIdMap };
+    preparedByCandidate.set(candidate, prepared);
+    return prepared;
+  };
+
   return {
     routingEvidence: routingEvidenceFrom(payload.input, locations),
-    payloadForCandidate: candidate => {
-      const candidatePayload = structuredClone(payload);
-      for (const [itemIndex, affinity] of boundItems) {
-        const item = candidatePayload.input[itemIndex];
-        const bound = affinity.boundItem;
-        if (item === undefined || bound === undefined || !('id' in item) || typeof item.id !== 'string') {
-          throw new Error('Validated Responses affinity binding changed before candidate preparation');
-        }
-        item.id = candidate.provider.upstream === affinity.upstreamId && candidate.model.id === affinity.modelId
-          ? bound.upstreamItemId
-          : createTemporaryResponsesItemId(item.type);
-      }
-      const byItem = Map.groupBy(locations, location => location.itemIndex);
-      const rewritten = candidatePayload.input.flatMap((item, itemIndex): ResponsesInputItem[] => {
-        const itemLocations = byItem.get(itemIndex);
-        if (itemLocations === undefined) return [item];
-        let removeItem = false;
-        const replacement = { ...item } as ResponsesInputItem & Record<string, unknown>;
-        const decisions = itemLocations.map(location => ({
-          location,
-          selected: itemRequiresAffinity(item)
-            ? blobForForcedCandidate(location.decoded, candidate)
-            : blobForCandidate(location.decoded, candidate),
-        }));
-        for (const { location, selected } of decisions) {
-          if (location.contentIndex === undefined) {
-            if (selected.present) {
-              replacement[location.slot] = selected.value;
-            } else {
-              delete replacement[location.slot];
-              if (
-                location.decoded.kind === 'owned'
-                && location.decoded.value === undefined
-                && location.decoded.envelope.affinity.syntheticItem === true
-              ) removeItem = true;
-            }
-            continue;
-          }
-          if (replacement.type !== 'agent_message') throw new Error('Responses affinity content location changed item type');
-          replacement.content = replacement.content.flatMap((content, contentIndex) => {
-            if (contentIndex !== location.contentIndex) return [content];
-            if (content.type !== 'encrypted_content') throw new Error('Responses affinity content location changed block type');
-            return selected.present ? [{ ...content, encrypted_content: selected.value }] : [];
-          });
-        }
-        const compatibleOwned = decisions.find(decision => decision.selected.compatible && decision.location.decoded.kind === 'owned');
-        if (compatibleOwned?.location.decoded.kind === 'owned') {
-          const upstreamItemId = compatibleOwned.location.decoded.envelope.affinity.upstreamItemId;
-          if (upstreamItemId !== undefined) replacement.id = upstreamItemId;
-        } else if (decisions.some(decision => decision.location.decoded.kind === 'owned') && 'id' in replacement && typeof replacement.id === 'string') {
-          replacement.id = createTemporaryResponsesItemId(replacement.type);
-        }
-        if (removeItem) return [];
-        if (replacement.type === 'agent_message' && replacement.content.length === 0) return [];
-        return [replacement];
-      });
-      return { ...candidatePayload, input: rewritten };
-    },
+    payloadForCandidate: candidate => structuredClone(prepareCandidate(candidate).payload),
+    itemIdMapForCandidate: candidate => new Map(prepareCandidate(candidate).itemIdMap),
   };
 };

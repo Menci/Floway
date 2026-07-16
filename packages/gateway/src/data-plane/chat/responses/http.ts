@@ -1,4 +1,5 @@
-import { translatorInputErrorResult } from './errors.ts';
+import { ResponsesAffinityInputError } from './affinity/ingress.ts';
+import { responsesInputErrorResult } from './errors.ts';
 import { createResponsesHttpStore } from './items/store.ts';
 import { respondResponses } from './respond.ts';
 import { PreviousResponseNotFoundError } from './serve-prep.ts';
@@ -59,9 +60,9 @@ const respondToThrow = async (c: AuthedContext, error: unknown, requestBody: Req
     ctx?.dump?.error('gateway');
     return ctx ? finalizeGatewayResponse(ctx, response) : response;
   }
-  if (error instanceof TranslatorInputError) {
+  if (error instanceof TranslatorInputError || error instanceof ResponsesAffinityInputError) {
     const effectiveCtx = ctx ?? createGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
-    const response = await respondResponses(c, translatorInputErrorResult(error, effectiveCtx.attempt.telemetry), false, effectiveCtx);
+    const response = await respondResponses(c, responsesInputErrorResult(error, effectiveCtx.attempt.telemetry), false, effectiveCtx);
     return finalizeGatewayResponse(effectiveCtx, response);
   }
   return await respondWithInternalError(c, error, requestBody, ctx);

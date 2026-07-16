@@ -1,11 +1,10 @@
-import { prepareResponsesAffinity } from './affinity/ingress.ts';
+import { prepareResponsesAffinity, type PreparedResponsesAffinity } from './affinity/ingress.ts';
 import { responsesTarget } from './attempt.ts';
 import { renderResponsesFailure } from './errors.ts';
 import { hydrateResponsesPayload } from './items/rewrite.ts';
 import type { StatefulResponsesStore } from './items/store.ts';
 import { enumerateModelCandidates } from '../../providers/registry.ts';
 import { routeCandidatesByAffinity } from '../shared/affinity/index.ts';
-import type { PreparedAffinityPayload } from '../shared/affinity/index.ts';
 import { noViableCandidateFailure, tryCatchChatServeFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -63,7 +62,7 @@ export type ResponsesServePlan =
   | { readonly kind: 'failure'; readonly result: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> }
   | {
     readonly kind: 'ready';
-    readonly affinity: PreparedAffinityPayload<CanonicalResponsesPayload>;
+    readonly affinity: PreparedResponsesAffinity;
     readonly privatePayloads: ReadonlyMap<string, unknown>;
     readonly candidates: readonly ModelCandidate[];
   };

@@ -1,4 +1,4 @@
-import { prepareResponsesAffinity } from './affinity/ingress.ts';
+import { prepareResponsesAffinity, type PreparedResponsesAffinity } from './affinity/ingress.ts';
 import { responsesInterceptors } from './interceptors/index.ts';
 import type { ResponsesAttemptResult, ResponsesInvocation } from './interceptors/types.ts';
 import { normalizeAssistantInputText } from './items/normalize-assistant-content.ts';
@@ -10,7 +10,6 @@ import { applyRulesToUpstreamResponses } from '../../model-aliases/apply-rules.t
 import { providerStreamResultToExecuteResult, buildUpstreamCallOptions, telemetryModelIdentity, chatTargetPicker, upstreamPerformanceContext } from '../../shared/telemetry/attempt-helpers.ts';
 import { chatCompletionsAttempt } from '../chat-completions/attempt.ts';
 import { messagesAttempt } from '../messages/attempt.ts';
-import type { PreparedAffinityPayload } from '../shared/affinity/index.ts';
 import { tryCatchChatServeFailure } from '../shared/errors.ts';
 import { createExternalImageLoader } from '../shared/external-image-loader.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
@@ -36,7 +35,7 @@ interface ResponsesAttemptBaseArgs {
 }
 
 interface ResponsesSourcePreparation {
-  readonly affinity: PreparedAffinityPayload<CanonicalResponsesPayload>;
+  readonly affinity: PreparedResponsesAffinity;
   readonly privatePayloads: ReadonlyMap<string, unknown>;
 }
 
@@ -91,7 +90,7 @@ export const responsesAttempt = {
     // inside the chain body, before `run()`, so deferring rewrite/seed to
     // the inner closure would leave the shim looking at the pre-rewrite
     // wire shape against an empty privatePayload map.
-    let affinity: PreparedAffinityPayload<CanonicalResponsesPayload>;
+    let affinity: PreparedResponsesAffinity;
     let privatePayloads: ReadonlyMap<string, unknown>;
     if (args.sourcePreparation !== undefined) {
       affinity = args.sourcePreparation.affinity;
@@ -103,7 +102,6 @@ export const responsesAttempt = {
       affinity = await prepareResponsesAffinity(hydrated.payload, ctx.affinity.codec);
       privatePayloads = hydrated.privatePayloads;
     }
-    ctx.responsesAttemptState.begin(privatePayloads);
     // Copilot compaction and Azure-native compaction both emit assistant
     // messages whose content blocks have `type: 'input_text'`, then refuse
     // the same items echoed back as input on the next turn. Normalising
@@ -111,6 +109,7 @@ export const responsesAttempt = {
     // from the snapshot store, catches both the direct-echo and
     // store-replay paths in one place.
     const candidatePayload = { ...affinity.payloadForCandidate(candidate), model: candidate.model.id };
+    ctx.responsesAttemptState.begin(privatePayloads, affinity.itemIdMapForCandidate(candidate));
     const normalized: CanonicalResponsesPayload = { ...candidatePayload, input: normalizeAssistantInputText(candidatePayload.input) };
 
     const invocation: ResponsesInvocation = {

@@ -10,11 +10,12 @@ import { stubModelCandidate } from '@floway-dev/test-utils';
 const codec = new AffinityCodec('22'.repeat(32));
 const carrierDomain = (itemType: string, slot: string): string => `responses.${itemType}.${slot}`;
 
-const candidate = (upstream: string): ModelCandidate => {
+const candidate = (upstream: string, rules?: ModelCandidate['rules']): ModelCandidate => {
   const base = stubModelCandidate();
   return stubModelCandidate({
     provider: { ...base.provider, upstream },
     model: { id: 'model' },
+    ...(rules !== undefined ? { rules } : {}),
   });
 };
 
@@ -68,6 +69,41 @@ test('applies item-id provenance from nested encrypted content', async () => {
   expect(prepared.payloadForCandidate(candidateB).input[0]).toMatchObject({
     id: expect.stringMatching(/^amsg_tmp_/),
     content: [{ type: 'input_text', text: 'visible' }],
+  });
+});
+
+test('rewrites multiple nested encrypted blocks against their original indexes', async () => {
+  const first = await codec.wrap(
+    'first',
+    { ...affinityTargetForCandidate(candidateA), upstreamItemId: 'amsg_upstream' },
+    carrierDomain('agent_message', 'content.0.encrypted_content'),
+  );
+  const second = await codec.wrap(
+    'second',
+    { ...affinityTargetForCandidate(candidateA), upstreamItemId: 'amsg_upstream' },
+    carrierDomain('agent_message', 'content.1.encrypted_content'),
+  );
+  const prepared = await prepareResponsesAffinity({
+    model: 'model',
+    input: [{
+      type: 'agent_message',
+      id: 'amsg_public',
+      author: 'a',
+      recipient: 'b',
+      content: [
+        { type: 'encrypted_content', encrypted_content: first },
+        { type: 'encrypted_content', encrypted_content: second },
+        { type: 'encrypted_content', encrypted_content: 'foreign' },
+        { type: 'input_text', text: 'visible' },
+      ],
+    }],
+  }, codec);
+
+  expect(prepared.payloadForCandidate(candidateB).input[0]).toMatchObject({
+    content: [
+      { type: 'encrypted_content', encrypted_content: 'foreign' },
+      { type: 'input_text', text: 'visible' },
+    ],
   });
 });
 
@@ -128,7 +164,37 @@ test('restores the bound ID of a force item carried by an adjacent synthetic pre
     { type: 'program_output', id: 'prog_out_upstream', call_id: 'call_1', result: 'done', status: 'completed' },
   ]);
   expect((prepared.payloadForCandidate(candidateB).input[0] as { id: string }).id).toMatch(/^prog_out_tmp_/);
+  expect(prepared.payloadForCandidate({ ...candidateA, rules: {} }).input[0]).toMatchObject({ id: 'prog_out_upstream' });
+  expect(prepared.itemIdMapForCandidate(candidateA).get('prog_out_public')).toBe('prog_out_upstream');
   expect(prepared.routingEvidence.map(item => item.mode)).toEqual(['prefer', 'force']);
+});
+
+test('restores a preferred bound item ID only for exact optional rules', async () => {
+  const aliasCandidate = candidate('upstream-a', {});
+  const item = { type: 'message' as const, id: 'msg_public', role: 'assistant' as const, content: 'answer' };
+  const carrier = await codec.wrap(
+    undefined,
+    {
+      ...affinityTargetForCandidate(aliasCandidate),
+      syntheticItem: true,
+      boundItem: {
+        type: item.type,
+        upstreamItemId: 'msg_upstream',
+        contentHash: await hashResponsesItemBinding(item),
+      },
+    },
+    carrierDomain('reasoning', 'encrypted_content'),
+  );
+  const prepared = await prepareResponsesAffinity({
+    model: 'model',
+    input: [
+      { type: 'reasoning', id: 'rs_prefix', summary: [], encrypted_content: carrier },
+      item,
+    ],
+  }, codec);
+
+  expect(prepared.payloadForCandidate(aliasCandidate).input[0]).toMatchObject({ id: 'msg_upstream' });
+  expect(prepared.payloadForCandidate(candidateA).input[0]).toMatchObject({ id: expect.stringMatching(/^msg_tmp_/) });
 });
 
 test('rejects a bound carrier moved before a different same-type item', async () => {
@@ -153,7 +219,11 @@ test('rejects a bound carrier moved before a different same-type item', async ()
       { type: 'reasoning', id: 'rs_prefix', summary: [], encrypted_content: carrier },
       { type: 'program_output', id: 'second_public', call_id: 'call_2', result: 'second', status: 'completed' },
     ],
-  }, codec)).rejects.toThrow('Responses affinity carrier does not match input item at index 1');
+  }, codec)).rejects.toMatchObject({
+    name: 'ResponsesAffinityInputError',
+    message: 'Affinity carrier does not match the Responses input item at index 1.',
+    param: 'input[1]',
+  });
 });
 
 test('treats compaction_summary as force state and restores its upstream ID', async () => {
