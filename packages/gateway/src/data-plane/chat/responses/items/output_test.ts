@@ -240,7 +240,7 @@ test('client output persists a completed item when its consumer cancels', async 
     throw new Error('Expected completed output item');
   }
   const clientId = first.value.event.item.id!;
-  await iterator.return?.();
+  await iterator.return?.(doneFrame());
 
   expect(await repo.responsesItems.lookupMany('key-a', [clientId])).toHaveLength(1);
   expect(await repo.responsesSnapshots.lookup('key-a', 'resp_public')).toBeNull();
