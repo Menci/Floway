@@ -3,9 +3,10 @@
 // Ephemeral stored Responses state is omitted from exports and cleared on
 // replace imports; clients can regenerate it through normal Responses use.
 //
-// The export contains the listed persisted credentials: API-key server
-// secrets, provider keys/tokens, and credential-bearing proxy URIs. The
-// endpoint is admin-only; handle the file with the same care as a DB backup.
+// The export contains all persisted authentication material, including raw API
+// keys and server secrets, user password hashes, provider tokens, and
+// credential-bearing proxy URIs. The endpoint is admin-only; handle the file
+// with the same care as a DB backup.
 
 import type { Context } from 'hono';
 
@@ -48,25 +49,12 @@ interface SerializedProxy {
   dial_timeout_seconds: number | null;
 }
 
-interface SerializedApiKey {
-  id: string;
-  userId: number;
-  name: string;
-  key: string;
-  serverSecret: string;
-  createdAt: string;
-  lastUsedAt?: string;
-  upstreamIds: string[] | null;
-  deletedAt: string | null;
-  dumpRetentionSeconds: number | null;
-}
-
 interface ExportPayload {
   version: 11;
   exportedAt: string;
   data: {
     users: User[];
-    apiKeys: SerializedApiKey[];
+    apiKeys: ApiKey[];
     upstreams: SerializedUpstreamRecord[];
     proxies: SerializedProxy[];
     usage: UsageRecord[];
@@ -700,18 +688,7 @@ export const exportData = async (c: CtxWithQuery<typeof exportQuery>) => {
     exportedAt: new Date().toISOString(),
     data: {
       users,
-      apiKeys: apiKeys.map(key => ({
-        id: key.id,
-        userId: key.userId,
-        name: key.name,
-        key: key.key,
-        serverSecret: key.serverSecret,
-        createdAt: key.createdAt,
-        ...(key.lastUsedAt !== undefined ? { lastUsedAt: key.lastUsedAt } : {}),
-        upstreamIds: key.upstreamIds,
-        deletedAt: key.deletedAt,
-        dumpRetentionSeconds: key.dumpRetentionSeconds,
-      } satisfies SerializedApiKey)),
+      apiKeys,
       upstreams: upstreams.map(upstreamRecordToFullJson),
       proxies: proxies.map(p => ({ id: p.id, name: p.name, url: p.url, dial_timeout_seconds: p.dialTimeoutSeconds })),
       usage,
