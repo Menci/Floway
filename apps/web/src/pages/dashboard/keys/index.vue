@@ -1,6 +1,6 @@
 <script lang="ts">
-import { defineBasicLoader } from 'unplugin-vue-router/data-loaders/basic';
 import { useLocalStorage } from '@vueuse/core';
+import { defineBasicLoader } from 'unplugin-vue-router/data-loaders/basic';
 import { computed, ref, watch } from 'vue';
 
 import { callApi, useApi } from '../../../api/client.ts';

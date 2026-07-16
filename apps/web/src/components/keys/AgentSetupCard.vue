@@ -244,7 +244,6 @@ const powerShellCommand = computed(() => (scripts.value
       Preparing setup…
     </div>
 
-    <template>
       <div v-if="setupError ?? error" class="mb-4 rounded-md border border-accent-rose/40 bg-accent-rose/10 px-3 py-2 text-sm text-accent-rose">
         {{ setupError ?? error }}
       </div>
@@ -345,7 +344,6 @@ const powerShellCommand = computed(() => (scripts.value
           These commands install the selected agents and point them at this gateway. The setup link refreshes automatically while this page stays open and expires a few minutes after you leave.
         </p>
       </div>
-    </template>
     </template>
   </section>
 </template>

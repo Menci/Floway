@@ -25,8 +25,10 @@ export interface ModelOption {
 
 const CLAUDE_DEFAULT_ORDER: readonly ClaudeTier[] = ['fable', 'opus', 'sonnet', 'haiku', 'other'];
 const claudeTier = (id: string): ClaudeTier => {
-  const match = id.toLowerCase().match(/(?:^|[-/.])(fable|opus|sonnet|haiku)(?=$|[-/.[\]])/);
-  return match?.[1] as ClaudeTier | undefined ?? 'other';
+  const segment = id.toLowerCase().split('/').find(part => part.startsWith('claude-'));
+  if (!segment) return 'other';
+  const tier = (['fable', 'opus', 'sonnet', 'haiku'] as const).find(candidate => segment.includes(`-${candidate}`));
+  return tier ?? 'other';
 };
 
 const claudeOrder = (picker: ClaudePicker): readonly ClaudeTier[] => picker === 'default'
