@@ -1,4 +1,3 @@
-import { GEMINI_AFFINITY_DOMAIN } from './domain.ts';
 import type { AffinityCodec } from '../../shared/affinity/codec.ts';
 import { blobForCandidate, preferredAffinityEvidence, type PreparedAffinityPayload } from '../../shared/affinity/prepared.ts';
 import type { DecodedAffinityBlob } from '../../shared/affinity/types.ts';
@@ -24,7 +23,7 @@ export const prepareGeminiAffinity = async (
     if (content.role !== 'model') continue;
     for (const [partIndex, part] of content.parts.entries()) {
       if (typeof part.thoughtSignature !== 'string') continue;
-      locations.push({ contentIndex, partIndex, decoded: await codec.unwrap(part.thoughtSignature, GEMINI_AFFINITY_DOMAIN) });
+      locations.push({ contentIndex, partIndex, decoded: await codec.unwrap(part.thoughtSignature, 'gemini.part.thoughtSignature') });
     }
   }
 

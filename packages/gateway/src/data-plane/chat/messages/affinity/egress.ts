@@ -1,4 +1,3 @@
-import { MESSAGES_REDACTED_AFFINITY_DOMAIN, MESSAGES_SIGNATURE_AFFINITY_DOMAIN } from './domain.ts';
 import type { AffinityEgressOptions } from '../../shared/affinity/egress-options.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
@@ -14,6 +13,9 @@ export const wrapMessagesAffinityEgress = async function* (
   frames: AsyncIterable<ProtocolFrame<MessagesStreamEvent>>,
   options: AffinityEgressOptions,
 ): AsyncGenerator<ProtocolFrame<MessagesStreamEvent>> {
+  // Messages exposes real block boundaries. A first block that cannot carry a
+  // signature is shifted behind one redacted prefix; thinking stays visible
+  // while only its latest signature waits for content_block_stop.
   const openBlocks = new Map<number, OpenBlock>();
   let syntheticPrefix: Promise<string> | undefined;
   let syntheticPrefixEmitted = false;
@@ -23,7 +25,7 @@ export const wrapMessagesAffinityEgress = async function* (
   const syntheticEvents = async (): Promise<MessagesStreamEvent[]> => {
     if (syntheticPrefixEmitted) return [];
     syntheticPrefixEmitted = true;
-    syntheticPrefix = options.codec.wrap(undefined, options.affinity, MESSAGES_REDACTED_AFFINITY_DOMAIN);
+    syntheticPrefix = options.codec.wrap(undefined, options.affinity, 'messages.redacted_thinking.data');
     return [
       {
         type: 'content_block_start',
@@ -52,7 +54,7 @@ export const wrapMessagesAffinityEgress = async function* (
         type: event.content_block.type,
         first,
         ...(first && event.content_block.type === 'thinking'
-          ? { syntheticSignature: options.codec.wrap(undefined, options.affinity, MESSAGES_SIGNATURE_AFFINITY_DOMAIN) }
+          ? { syntheticSignature: options.codec.wrap(undefined, options.affinity, 'messages.thinking.signature') }
           : {}),
       });
 
@@ -72,7 +74,7 @@ export const wrapMessagesAffinityEgress = async function* (
         index,
         content_block: {
           ...event.content_block,
-          data: await options.codec.wrap(event.content_block.data, options.affinity, MESSAGES_REDACTED_AFFINITY_DOMAIN),
+          data: await options.codec.wrap(event.content_block.data, options.affinity, 'messages.redacted_thinking.data'),
         },
       });
       continue;
@@ -91,7 +93,7 @@ export const wrapMessagesAffinityEgress = async function* (
       if (block.signature !== undefined || (block.first && block.type === 'thinking')) {
         let signature: string;
         if (block.signature !== undefined) {
-          signature = await options.codec.wrap(block.signature, options.affinity, MESSAGES_SIGNATURE_AFFINITY_DOMAIN);
+          signature = await options.codec.wrap(block.signature, options.affinity, 'messages.thinking.signature');
         } else if (block.syntheticSignature !== undefined) {
           signature = await block.syntheticSignature;
         } else throw new Error('First Messages thinking block has no synthetic signature promise');

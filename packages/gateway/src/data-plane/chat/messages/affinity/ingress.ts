@@ -1,4 +1,3 @@
-import { MESSAGES_REDACTED_AFFINITY_DOMAIN, MESSAGES_SIGNATURE_AFFINITY_DOMAIN } from './domain.ts';
 import type { AffinityCodec } from '../../shared/affinity/codec.ts';
 import { blobForCandidate, preferredAffinityEvidence, type PreparedAffinityPayload } from '../../shared/affinity/prepared.ts';
 import type { DecodedAffinityBlob } from '../../shared/affinity/types.ts';
@@ -20,9 +19,9 @@ export const prepareMessagesAffinity = async (
     if (message.role !== 'assistant' || !Array.isArray(message.content)) continue;
     for (const [blockIndex, block] of message.content.entries()) {
       if (block.type === 'thinking' && typeof block.signature === 'string') {
-        locations.push({ messageIndex, blockIndex, kind: block.type, decoded: await codec.unwrap(block.signature, MESSAGES_SIGNATURE_AFFINITY_DOMAIN) });
+        locations.push({ messageIndex, blockIndex, kind: block.type, decoded: await codec.unwrap(block.signature, 'messages.thinking.signature') });
       } else if (block.type === 'redacted_thinking') {
-        locations.push({ messageIndex, blockIndex, kind: block.type, decoded: await codec.unwrap(block.data, MESSAGES_REDACTED_AFFINITY_DOMAIN) });
+        locations.push({ messageIndex, blockIndex, kind: block.type, decoded: await codec.unwrap(block.data, 'messages.redacted_thinking.data') });
       }
     }
   }

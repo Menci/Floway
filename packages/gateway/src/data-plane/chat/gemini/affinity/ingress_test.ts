@@ -1,6 +1,5 @@
 import { expect, test } from 'vitest';
 
-import { GEMINI_AFFINITY_DOMAIN } from './domain.ts';
 import { prepareGeminiAffinity } from './ingress.ts';
 import { affinityTargetForCandidate } from '../../shared/affinity/candidate.ts';
 import { AffinityCodec } from '../../shared/affinity/codec.ts';
@@ -20,7 +19,7 @@ const candidate = (upstream: string): ModelCandidate => {
 const candidateA = candidate('upstream-a');
 
 test('removes a synthetic signature-only part and preserves foreign signatures', async () => {
-  const synthetic = await codec.wrap(undefined, affinityTargetForCandidate(candidateA), GEMINI_AFFINITY_DOMAIN);
+  const synthetic = await codec.wrap(undefined, affinityTargetForCandidate(candidateA), 'gemini.part.thoughtSignature');
   const prepared = await prepareGeminiAffinity({
     contents: [{
       role: 'model',

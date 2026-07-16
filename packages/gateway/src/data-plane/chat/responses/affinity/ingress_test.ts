@@ -1,6 +1,5 @@
 import { expect, test } from 'vitest';
 
-import { responsesAffinityDomain } from './domain.ts';
 import { prepareResponsesAffinity } from './ingress.ts';
 import { affinityTargetForCandidate } from '../../shared/affinity/candidate.ts';
 import { AffinityCodec } from '../../shared/affinity/codec.ts';
@@ -8,6 +7,7 @@ import type { ModelCandidate } from '@floway-dev/provider';
 import { stubModelCandidate } from '@floway-dev/test-utils';
 
 const codec = new AffinityCodec('22'.repeat(32));
+const carrierDomain = (itemType: string, slot: string): string => `responses.${itemType}.${slot}`;
 
 const candidate = (upstream: string): ModelCandidate => {
   const base = stubModelCandidate();
@@ -24,7 +24,7 @@ test('restores the original upstream item id and drops owned state on fallback',
   const carrier = await codec.wrap(
     'encrypted',
     { ...affinityTargetForCandidate(candidateA), upstreamItemId: 'rs_upstream' },
-    responsesAffinityDomain('reasoning', 'encrypted_content'),
+    carrierDomain('reasoning', 'encrypted_content'),
   );
   const prepared = await prepareResponsesAffinity({
     model: 'model',
@@ -44,7 +44,7 @@ test('applies item-id provenance from nested encrypted content', async () => {
   const carrier = await codec.wrap(
     'nested-encrypted',
     { ...affinityTargetForCandidate(candidateA), upstreamItemId: 'amsg_upstream' },
-    responsesAffinityDomain('agent_message', 'content.1.encrypted_content'),
+    carrierDomain('agent_message', 'content.1.encrypted_content'),
   );
   const prepared = await prepareResponsesAffinity({
     model: 'model',
@@ -84,7 +84,7 @@ test('derives force routing from program state following a preferred carrier', a
   const carrier = await codec.wrap(
     undefined,
     affinityTargetForCandidate(candidateA),
-    responsesAffinityDomain('reasoning', 'encrypted_content'),
+    carrierDomain('reasoning', 'encrypted_content'),
   );
   const prepared = await prepareResponsesAffinity({
     model: 'model',

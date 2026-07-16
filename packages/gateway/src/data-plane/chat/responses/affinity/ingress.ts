@@ -1,4 +1,3 @@
-import { responsesAffinityDomain } from './domain.ts';
 import type { AffinityCodec } from '../../shared/affinity/codec.ts';
 import { blobForCandidate, type PreparedAffinityPayload } from '../../shared/affinity/prepared.ts';
 import type { AffinityEvidence, AffinityTarget, DecodedAffinityBlob } from '../../shared/affinity/types.ts';
@@ -10,6 +9,8 @@ interface ResponsesBlobLocation {
   readonly contentIndex?: number;
   readonly decoded: DecodedAffinityBlob;
 }
+
+const carrierDomain = (itemType: string, slot: string): string => `responses.${itemType}.${slot}`;
 
 type OwnedResponsesBlobLocation = ResponsesBlobLocation & {
   readonly decoded: Extract<DecodedAffinityBlob, { kind: 'owned' }>;
@@ -56,7 +57,7 @@ const encryptedContentLocations = async (
   for (const [itemIndex, item] of items.entries()) {
     const topLevel = (item as { encrypted_content?: unknown }).encrypted_content;
     if (typeof topLevel === 'string') {
-      locations.push({ itemIndex, decoded: await codec.unwrap(topLevel, responsesAffinityDomain(item.type, 'encrypted_content')) });
+      locations.push({ itemIndex, decoded: await codec.unwrap(topLevel, carrierDomain(item.type, 'encrypted_content')) });
     }
     if (item.type !== 'agent_message') continue;
     for (const [contentIndex, content] of item.content.entries()) {
@@ -64,7 +65,7 @@ const encryptedContentLocations = async (
       locations.push({
         itemIndex,
         contentIndex,
-        decoded: await codec.unwrap(content.encrypted_content, responsesAffinityDomain(item.type, `content.${contentIndex}.encrypted_content`)),
+        decoded: await codec.unwrap(content.encrypted_content, carrierDomain(item.type, `content.${contentIndex}.encrypted_content`)),
       });
     }
   }

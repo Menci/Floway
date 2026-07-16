@@ -1,9 +1,10 @@
-import { responsesAffinityDomain } from './domain.ts';
 import type { AffinityEgressOptions } from '../../shared/affinity/egress-options.ts';
 import type { AffinityTarget } from '../../shared/affinity/types.ts';
 import { createTemporaryResponsesItemId } from '../items/format.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesOutputItem, ResponsesOutputReasoning, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+
+const carrierDomain = (itemType: string, slot: string): string => `responses.${itemType}.${slot}`;
 
 const itemAffinity = (base: AffinityTarget, item: ResponsesOutputItem): AffinityTarget => ({
   ...base,
@@ -65,7 +66,7 @@ const wrapNaturalResponsesAffinity = async function* (
       const cacheKey = `${outputIndex}\0${itemId}\0${slot.key}\0${slot.value}`;
       let replacement = wrapped.get(cacheKey);
       if (replacement === undefined) {
-        replacement = options.codec.wrap(slot.value, target, responsesAffinityDomain(item.type, slot.key));
+        replacement = options.codec.wrap(slot.value, target, carrierDomain(item.type, slot.key));
         wrapped.set(cacheKey, replacement);
       }
       replacements.set(slot.key, await replacement);
@@ -124,6 +125,10 @@ const ensureFirstResponsesItemAffinity = async function* (
   frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
   options: AffinityEgressOptions,
 ): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
+  // Natural opaque fields are wrapped independently above. This outer state
+  // machine gives output index zero a carrier: augment a carrier-capable item
+  // at close, or insert a complete reasoning prefix and shift every later
+  // output/sequence index plus terminal snapshot by the same fixed offsets.
   let syntheticPrefixContent: Promise<string> | undefined;
   const syntheticOnFirstItem = new Map<string, Promise<string>>();
   let firstItem: { readonly outputIndex: number; readonly canCarry: boolean } | undefined;
@@ -136,7 +141,7 @@ const ensureFirstResponsesItemAffinity = async function* (
     syntheticPrefixContent ??= options.codec.wrap(
       undefined,
       { ...options.affinity, syntheticItem: true },
-      responsesAffinityDomain('reasoning', 'encrypted_content'),
+      carrierDomain('reasoning', 'encrypted_content'),
     );
     prefixItem = {
       type: 'reasoning',
@@ -175,7 +180,7 @@ const ensureFirstResponsesItemAffinity = async function* (
       const cacheKey = `${outputIndex}\0${itemId}\0${slot}`;
       let encrypted = syntheticOnFirstItem.get(cacheKey);
       if (encrypted === undefined) {
-        encrypted = options.codec.wrap(undefined, target, responsesAffinityDomain(item.type, slot));
+        encrypted = options.codec.wrap(undefined, target, carrierDomain(item.type, slot));
         syntheticOnFirstItem.set(cacheKey, encrypted);
       }
       return { ...item, content: [...item.content, { type: 'encrypted_content', encrypted_content: await encrypted }] };
@@ -184,7 +189,7 @@ const ensureFirstResponsesItemAffinity = async function* (
     const cacheKey = `${outputIndex}\0${itemId}\0encrypted_content`;
     let encrypted = syntheticOnFirstItem.get(cacheKey);
     if (encrypted === undefined) {
-      encrypted = options.codec.wrap(undefined, target, responsesAffinityDomain(item.type, 'encrypted_content'));
+      encrypted = options.codec.wrap(undefined, target, carrierDomain(item.type, 'encrypted_content'));
       syntheticOnFirstItem.set(cacheKey, encrypted);
     }
     return { ...item, encrypted_content: await encrypted } as ResponsesOutputItem;

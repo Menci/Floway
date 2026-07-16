@@ -1,6 +1,5 @@
 import { expect, test } from 'vitest';
 
-import { MESSAGES_REDACTED_AFFINITY_DOMAIN, MESSAGES_SIGNATURE_AFFINITY_DOMAIN } from './domain.ts';
 import { prepareMessagesAffinity } from './ingress.ts';
 import { affinityTargetForCandidate } from '../../shared/affinity/candidate.ts';
 import { AffinityCodec } from '../../shared/affinity/codec.ts';
@@ -20,8 +19,8 @@ const candidate = (upstream: string): ModelCandidate => {
 test('removes synthetic blocks and strips incompatible signatures without hiding thinking', async () => {
   const candidateA = candidate('upstream-a');
   const candidateB = candidate('upstream-b');
-  const signature = await codec.wrap('signature', affinityTargetForCandidate(candidateA), MESSAGES_SIGNATURE_AFFINITY_DOMAIN);
-  const synthetic = await codec.wrap(undefined, affinityTargetForCandidate(candidateA), MESSAGES_REDACTED_AFFINITY_DOMAIN);
+  const signature = await codec.wrap('signature', affinityTargetForCandidate(candidateA), 'messages.thinking.signature');
+  const synthetic = await codec.wrap(undefined, affinityTargetForCandidate(candidateA), 'messages.redacted_thinking.data');
   const prepared = await prepareMessagesAffinity({
     model: 'model',
     max_tokens: 100,

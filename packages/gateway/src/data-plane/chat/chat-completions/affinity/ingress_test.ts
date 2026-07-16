@@ -1,6 +1,5 @@
 import { expect, test } from 'vitest';
 
-import { CHAT_COMPLETIONS_AFFINITY_DOMAIN } from './domain.ts';
 import { prepareChatCompletionsAffinity } from './ingress.ts';
 import { affinityTargetForCandidate } from '../../shared/affinity/candidate.ts';
 import { AffinityCodec } from '../../shared/affinity/codec.ts';
@@ -20,7 +19,7 @@ const candidate = (upstream: string): ModelCandidate => {
 test('restores owned opaque state only for its exact candidate', async () => {
   const candidateA = candidate('upstream-a');
   const candidateB = candidate('upstream-b');
-  const carrier = await codec.wrap('upstream-signature', affinityTargetForCandidate(candidateA), CHAT_COMPLETIONS_AFFINITY_DOMAIN);
+  const carrier = await codec.wrap('upstream-signature', affinityTargetForCandidate(candidateA), 'chat-completions.reasoning_opaque');
   const prepared = await prepareChatCompletionsAffinity({
     model: 'model',
     messages: [{ role: 'assistant', content: 'answer', reasoning_opaque: carrier }],

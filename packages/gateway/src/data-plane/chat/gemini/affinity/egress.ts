@@ -1,4 +1,3 @@
-import { GEMINI_AFFINITY_DOMAIN } from './domain.ts';
 import type { AffinityEgressOptions } from '../../shared/affinity/egress-options.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiCandidate, GeminiPart, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
@@ -59,6 +58,17 @@ const firstContentPart = (parts: readonly GeminiPart[]): GeminiPart | undefined 
 
 const candidateByIndex = (event: GeminiStreamEvent | undefined, index: number): GeminiCandidate | undefined =>
   event !== undefined && !('error' in event) ? event.candidates?.find(candidate => candidate.index === index) : undefined;
+
+// Gemini pays one upstream-event of TTFT/inter-event latency so the client sees
+// one authoritative signature on a content-bearing Part. Repeating synthetic
+// then natural signatures is unsafe: streamed function calls are first-wins in
+// Vercel/Google ADKs, while LangChain Python concatenates same-index strings.
+// A sliding window holds only the newest same-element event until a signature
+// or boundary arrives; older visible events keep flowing without a signature.
+// https://github.com/vercel/ai/blob/2c080eae3da9294d992cae5df22c2d7e1d38b571/packages/google/src/google-language-model.ts#L620-L665
+// https://github.com/langchain-ai/langchain/blob/7bf8fe22163e5dadce365169e2df6b91233de9c4/libs/core/langchain_core/utils/_merge.py#L6-L70
+// Signature-only Parts are also rejected from Go Chat history:
+// https://github.com/googleapis/go-genai/blob/dc282483e1a68eaeb64faa9fa9877dd4a7ad1887/chats.go#L49-L75
 
 const removeEmptySignatureParts = (candidate: GeminiCandidate): void => {
   candidate.content.parts = candidate.content.parts.filter(part => hasPartData(part) || part.thoughtSignature !== undefined);
@@ -165,7 +175,7 @@ const wrapEvent = async (
 
     for (const part of candidate.content.parts) {
       if (part.thoughtSignature === undefined) continue;
-      part.thoughtSignature = await options.codec.wrap(part.thoughtSignature, options.affinity, GEMINI_AFFINITY_DOMAIN);
+      part.thoughtSignature = await options.codec.wrap(part.thoughtSignature, options.affinity, 'gemini.part.thoughtSignature');
     }
 
     if (!state.anchored) {
@@ -174,7 +184,7 @@ const wrapEvent = async (
       } else if (lastFirstContentIndex !== undefined && firstElementClosed) {
         candidate.content.parts[lastFirstContentIndex] = {
           ...candidate.content.parts[lastFirstContentIndex],
-          thoughtSignature: await options.codec.wrap(undefined, options.affinity, GEMINI_AFFINITY_DOMAIN),
+          thoughtSignature: await options.codec.wrap(undefined, options.affinity, 'gemini.part.thoughtSignature'),
         };
         state.anchored = true;
       } else if (candidate.finishReason !== undefined) {
@@ -182,7 +192,7 @@ const wrapEvent = async (
           thoughtSignature: await options.codec.wrap(
             undefined,
             { ...options.affinity, syntheticItem: true },
-            GEMINI_AFFINITY_DOMAIN,
+            'gemini.part.thoughtSignature',
           ),
         });
         state.anchored = true;

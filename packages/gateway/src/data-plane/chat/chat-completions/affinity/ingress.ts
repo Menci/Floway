@@ -1,4 +1,3 @@
-import { CHAT_COMPLETIONS_AFFINITY_DOMAIN } from './domain.ts';
 import type { AffinityCodec } from '../../shared/affinity/codec.ts';
 import { blobForCandidate, preferredAffinityEvidence, type PreparedAffinityPayload } from '../../shared/affinity/prepared.ts';
 import type { DecodedAffinityBlob } from '../../shared/affinity/types.ts';
@@ -11,7 +10,7 @@ export const prepareChatCompletionsAffinity = async (
   const decoded = new Map<number, DecodedAffinityBlob>();
   for (const [index, message] of payload.messages.entries()) {
     if (message.role !== 'assistant' || typeof message.reasoning_opaque !== 'string') continue;
-    decoded.set(index, await codec.unwrap(message.reasoning_opaque, CHAT_COMPLETIONS_AFFINITY_DOMAIN));
+    decoded.set(index, await codec.unwrap(message.reasoning_opaque, 'chat-completions.reasoning_opaque'));
   }
 
   return {

@@ -1,4 +1,3 @@
-import { CHAT_COMPLETIONS_AFFINITY_DOMAIN } from './domain.ts';
 import type { AffinityEgressOptions } from '../../shared/affinity/egress-options.ts';
 import { chatCompletionsErrorPayloadMessage, type ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
@@ -24,6 +23,8 @@ export const wrapChatCompletionsAffinityEgress = async function* (
   frames: AsyncIterable<ProtocolFrame<ChatCompletionsStreamEvent>>,
   options: AffinityEgressOptions,
 ): AsyncGenerator<ProtocolFrame<ChatCompletionsStreamEvent>> {
+  // One choice is one logical assistant element, so its physical carrier frame
+  // immediately before finish is both the turn prefix and final opaque snapshot.
   const choices = new Map<number, ChoiceState>();
   let lastEvent: ChatCompletionsStreamEvent | undefined;
   let failed = false;
@@ -40,7 +41,7 @@ export const wrapChatCompletionsAffinityEgress = async function* (
             state.finished = true;
             return {
               index,
-              delta: { reasoning_opaque: await options.codec.wrap(state.opaque, options.affinity, CHAT_COMPLETIONS_AFFINITY_DOMAIN) },
+              delta: { reasoning_opaque: await options.codec.wrap(state.opaque, options.affinity, 'chat-completions.reasoning_opaque') },
               finish_reason: null,
             } satisfies StreamingChoice;
           }));
@@ -88,7 +89,7 @@ export const wrapChatCompletionsAffinityEgress = async function* (
 
     const wrappedChoices = await Promise.all(finishingChoices.map(async ({ choice, state }) => ({
       ...choice,
-      delta: { reasoning_opaque: await options.codec.wrap(state.opaque, options.affinity, CHAT_COMPLETIONS_AFFINITY_DOMAIN) },
+      delta: { reasoning_opaque: await options.codec.wrap(state.opaque, options.affinity, 'chat-completions.reasoning_opaque') },
       finish_reason: null,
     })));
     yield eventFrame(eventWithChoices(frame.event, wrappedChoices, false));
