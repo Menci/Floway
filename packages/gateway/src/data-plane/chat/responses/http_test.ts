@@ -222,7 +222,9 @@ test('POST /v1/responses canonicalizes and promotes an implicit system message',
   });
 
   assertEquals(response.status, 200);
-  await response.text();
+  const responseBody = await response.text();
+  const responseId = responseBody.match(/"id":"(resp_[A-Za-z0-9_-]+)"/)?.[1];
+  assert(responseId !== undefined && isStoredResponseId(responseId), 'expected store:false to retain a Floway response id');
   assertEquals(observedBody?.input, [
     { type: 'message', role: 'developer', content: 'rules' },
     { type: 'message', role: 'user', content: 'hello' },
@@ -325,7 +327,7 @@ test('POST /v1/responses returns 502 when the response snapshot cannot be persis
 });
 
 test('POST /v1/responses/compact returns a non-streaming compaction envelope', async () => {
-  installRepo();
+  const repo = installRepo();
   const compactionItem = { type: 'compaction' as const, id: 'cmp_1', encrypted_content: 'ENC' };
   const compactionResult: ResponsesResult = {
     ...makeResponsesResult(),
@@ -344,14 +346,17 @@ test('POST /v1/responses/compact returns a non-streaming compaction envelope', a
     body: JSON.stringify({
       model: 'test-model',
       input: [{ type: 'message', role: 'user', content: 'kept' }],
+      store: false,
     }),
   });
 
   assertEquals(response.status, 200);
   assertEquals(response.headers.get('content-type')?.split(';')[0], 'application/json');
-  const body = await response.json() as { object: string; id: string };
+  const body = await response.json() as { object: string; id: string; output: Array<{ id: string }> };
   assertEquals(body.object, 'response.compaction');
   assert(isStoredResponseId(body.id), `expected Floway-minted resp_ id, got ${body.id}`);
+  assertEquals(await repo.responsesSnapshots.lookup(API_KEY_ID, body.id), null);
+  assertEquals(await repo.responsesItems.lookupMany(API_KEY_ID, body.output.map(item => item.id)), []);
 });
 
 test('POST /v1/responses with an unresolvable previous_response_id renders the verbatim 400 envelope', async () => {

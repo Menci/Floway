@@ -84,10 +84,6 @@ export const responsesServe = {
       codec: ctx.affinity.codec,
       affinity: ctx.affinity.selectedTarget(),
     });
-    if (!store.storesState) {
-      const clientResult = await collectResponsesProtocolEventsToResult(withAffinity);
-      return { ...result, result: clientResult, usage: tokenUsageFromResponsesResult(clientResult) };
-    }
     const stored = wrapResponsesOutputForStorage(withAffinity, {
       store,
       attemptState: ctx.responsesAttemptState,

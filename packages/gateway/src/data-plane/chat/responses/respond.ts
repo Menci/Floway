@@ -98,7 +98,6 @@ const nativeResponsesOutput = (
     codec: chatCtx.affinity.codec,
     affinity: chatCtx.affinity.selectedTarget(),
   });
-  if (!chatCtx.store.storesState) return withAffinity;
   return wrapResponsesOutputForStorage(withAffinity, {
     store: chatCtx.store,
     attemptState: chatCtx.responsesAttemptState,
