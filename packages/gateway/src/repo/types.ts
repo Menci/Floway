@@ -1,4 +1,3 @@
-import type { HistogramBucket } from '../shared/performance-histogram.ts';
 import type { SearchConfig, WebSearchProviderName } from '../shared/web-search-providers.ts';
 export type { SearchConfig } from '../shared/web-search-providers.ts';
 import type { AgentSetupRepository } from '@floway-dev/agent-setup';
