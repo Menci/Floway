@@ -114,6 +114,58 @@ test('an adjacent carrier restores an originally id-less item', async () => {
   expect(prepared.payloadForCandidate(candidate).input).toEqual([message]);
 });
 
+test('an adjacent carrier accepts Codex-normalized message history', async () => {
+  initRepo(new InMemoryRepo());
+  const base = stubModelCandidate();
+  const candidate = stubModelCandidate({
+    provider: { ...base.provider, upstream: 'upstream-a' },
+    model: { id: 'model-a' },
+  });
+  const codec = new AffinityCodec('22'.repeat(32));
+  const message = {
+    type: 'message' as const,
+    id: 'msg_upstream',
+    role: 'assistant' as const,
+    status: 'completed' as const,
+    content: [{ type: 'output_text' as const, text: 'answer', annotations: [], logprobs: [] }],
+  };
+  const response: ResponsesResult = {
+    id: 'resp_upstream',
+    object: 'response',
+    model: 'model-a',
+    status: 'completed',
+    output: [message],
+    error: null,
+    incomplete_details: null,
+  };
+  const source = async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
+    yield eventFrame({ type: 'response.completed', response });
+  };
+  const withAffinity = wrapResponsesAffinityEgress(source(), {
+    codec,
+    affinity: { upstreamId: candidate.provider.upstream, modelId: candidate.model.id },
+  });
+  let clientResponse: ResponsesResult | undefined;
+  for await (const frame of wrapResponsesClientOutput(withAffinity, {
+    store: createResponsesHttpStore('key-a', false),
+    attemptState: new ResponsesAttemptState(),
+    responseId: 'resp_public',
+  })) if (frame.type === 'event' && frame.event.type === 'response.completed') clientResponse = frame.event.response;
+  if (clientResponse === undefined) throw new Error('Expected completed client response');
+  const clientMessage = clientResponse.output[1] as unknown as Record<string, unknown>;
+  delete clientMessage.status;
+  const [outputText] = clientMessage.content as Array<Record<string, unknown>>;
+  delete outputText.annotations;
+  delete outputText.logprobs;
+
+  const prepared = await prepareResponsesAffinity({ model: 'model-a', input: clientResponse.output as unknown as ResponsesInputItem[] }, codec);
+  expect(prepared.payloadForCandidate(candidate).input[0]).toMatchObject({
+    type: 'message',
+    id: 'msg_upstream',
+    content: [{ type: 'output_text', text: 'answer' }],
+  });
+});
+
 test('agent-message natural and synthetic nested carriers round-trip', async () => {
   const base = stubModelCandidate();
   const candidate = stubModelCandidate({

@@ -1,4 +1,4 @@
-import { createResponsesItemId, hashResponsesItemBinding, responsesItemId } from './format.ts';
+import { canonicalResponsesItemType, createResponsesItemId, hashResponsesItemBinding, responsesItemId } from './format.ts';
 import type { StatefulResponsesStore } from './store.ts';
 import type { StoredResponsesItem } from '../../../../repo/types.ts';
 import type { ResponsesAttemptState } from '../attempt-state.ts';
@@ -93,7 +93,7 @@ export const wrapResponsesClientOutput = async function* (
     const row: StoredResponsesItem = {
       id: newId,
       apiKeyId: store.apiKeyId,
-      itemType: originalItem.type,
+      itemType: canonicalResponsesItemType(originalItem.type),
       payload: persistedPayload,
       contentHash: await store.hashItemContent(clientItem),
       createdAt: now,

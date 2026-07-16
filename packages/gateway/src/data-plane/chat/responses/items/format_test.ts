@@ -112,3 +112,21 @@ test('affinity item binding ignores only the replaceable item id', async () => {
   assert(first === same);
   assertFalse(first === different);
 });
+
+test('affinity item binding normalizes Codex output-only message defaults', async () => {
+  const output = {
+    type: 'message' as const,
+    id: 'msg_upstream',
+    role: 'assistant' as const,
+    status: 'completed' as const,
+    content: [{ type: 'output_text' as const, text: 'answer', annotations: [], logprobs: [] }],
+  };
+  const history = {
+    type: 'message' as const,
+    id: 'msg_public',
+    role: 'assistant' as const,
+    content: [{ type: 'output_text' as const, text: 'answer' }],
+  };
+
+  assert(await hashResponsesItemBinding(output) === await hashResponsesItemBinding(history));
+});

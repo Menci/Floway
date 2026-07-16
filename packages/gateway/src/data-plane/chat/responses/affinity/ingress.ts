@@ -1,5 +1,5 @@
 import { type AffinityCodec, blobForExactCandidate, blobForForcedCandidate, type AffinityEvidence, type AffinityTarget, type DecodedAffinityBlob, type PreparedAffinityPayload } from '../../shared/affinity/index.ts';
-import { createTemporaryResponsesItemId, hashResponsesItemBinding } from '../items/format.ts';
+import { canonicalResponsesItemType, createTemporaryResponsesItemId, hashResponsesItemBinding } from '../items/format.ts';
 import type { CanonicalResponsesPayload, ResponsesInputItem } from '@floway-dev/protocols/responses';
 import type { ModelCandidate } from '@floway-dev/provider';
 
@@ -11,7 +11,7 @@ interface ResponsesBlobLocation {
 }
 
 const carrierDomain = (itemType: string, slot: string): string =>
-  `responses.${itemType === 'compaction_summary' ? 'compaction' : itemType}.${slot}`;
+  `responses.${canonicalResponsesItemType(itemType)}.${slot}`;
 
 type OwnedResponsesBlobLocation = ResponsesBlobLocation & {
   readonly decoded: Extract<DecodedAffinityBlob, { kind: 'owned' }>;

@@ -42,4 +42,24 @@ describe('Responses stored-item hydration', () => {
       input: [{ type: 'item_reference', id: 'msg_z1mVjw_0xVvS8c_KjD1sBkZk5qbdA' }],
     }, store)).toThrow();
   });
+
+  test('accepts compaction after a client canonicalizes the compaction_summary alias', async () => {
+    const repo = new InMemoryRepo();
+    initRepo(repo);
+    const id = createResponsesItemId('compaction');
+    const row: StoredResponsesItem = {
+      id,
+      apiKeyId: 'key-a',
+      itemType: 'compaction_summary',
+      payload: { item: { type: 'compaction_summary', id, encrypted_content: 'wrapped' } },
+      contentHash: 'hash',
+      createdAt: 1_000,
+    };
+    await repo.responsesItems.insertMany([row]);
+    const store = createResponsesHttpStore('key-a', true);
+    const input = [{ type: 'compaction', id, encrypted_content: 'wrapped' }] as unknown as Parameters<typeof hydrateResponsesPayload>[0]['input'];
+    await store.loadInputItems(input, input);
+
+    expect(hydrateResponsesPayload({ model: 'model', input }, store).payload.input).toEqual([row.payload.item]);
+  });
 });

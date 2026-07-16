@@ -83,12 +83,25 @@ export const responsesItemId = (item: { id?: unknown }): string | null => {
   return typeof id === 'string' && id.length > 0 ? id : null;
 };
 
+export const canonicalResponsesItemType = (itemType: string): string =>
+  itemType === 'compaction_summary' ? 'compaction' : itemType;
+
 export const hashResponsesItemContent = async (item: ResponsesInputItem): Promise<string> =>
   await sha256Hex(JSON.stringify(sortJson(item)));
 
 export const hashResponsesItemBinding = async (item: ResponsesInputItem | ResponsesOutputItem): Promise<string> => {
   const content = { ...item } as Record<string, unknown>;
   delete content.id;
+  if (item.type === 'message' || item.type === 'function_call') delete content.status;
+  if (item.type === 'message' && Array.isArray(content.content)) {
+    content.content = content.content.map(block => {
+      if (!block || typeof block !== 'object' || (block as { type?: unknown }).type !== 'output_text') return block;
+      const normalized = { ...(block as Record<string, unknown>) };
+      if (Array.isArray(normalized.annotations) && normalized.annotations.length === 0) delete normalized.annotations;
+      if (Array.isArray(normalized.logprobs) && normalized.logprobs.length === 0) delete normalized.logprobs;
+      return normalized;
+    });
+  }
   return await sha256Hex(JSON.stringify(sortJson(content)));
 };
 

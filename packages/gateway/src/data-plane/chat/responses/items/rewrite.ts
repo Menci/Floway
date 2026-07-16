@@ -1,4 +1,4 @@
-import { isResponsesItemId, responsesItemId } from './format.ts';
+import { canonicalResponsesItemType, isResponsesItemId, responsesItemId } from './format.ts';
 import type { StatefulResponsesStore } from './store.ts';
 import { throwChatServeFailure } from '../../shared/errors.ts';
 import type { CanonicalResponsesPayload, ResponsesInputItem } from '@floway-dev/protocols/responses';
@@ -16,7 +16,7 @@ const hydrateItem = (item: ResponsesInputItem, store: StatefulResponsesStore | u
     if (item.type === 'item_reference') throwChatServeFailure({ kind: 'item-not-found', itemId: id });
     return { item };
   }
-  if (item.type !== 'item_reference' && item.type !== stored.itemType) {
+  if (item.type !== 'item_reference' && canonicalResponsesItemType(item.type) !== canonicalResponsesItemType(stored.itemType)) {
     throwChatServeFailure({
       kind: 'routing-unavailable',
       message: `Stored Responses item '${stored.id}' has type '${stored.itemType}', incompatible with the requested item type '${item.type}'.`,
