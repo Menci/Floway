@@ -7,9 +7,9 @@
 // exists on the account.
 import { computed, shallowRef, useId } from 'vue';
 
+import { detectAgentSetupPlatform, type AgentSetupPlatform } from './agent-setup-platform.ts';
 import AgentConfigSnippets from './AgentConfigSnippets.vue';
 import AgentSetupCommand from './AgentSetupCommand.vue';
-import { detectAgentSetupPlatform, type AgentSetupPlatform } from './agent-setup-platform.ts';
 import { useApi } from '../../api/client.ts';
 import type { ApiKey, ControlPlaneModel } from '../../api/types.ts';
 import { type AgentSetupConfiguration, useAgentSetup } from '../../composables/useAgentSetup.ts';
