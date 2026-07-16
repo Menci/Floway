@@ -191,16 +191,14 @@ test('SQL stale refresh accepts a newer concurrent spill descriptor', async () =
   const base = await createSqliteTestDb();
   const item = spilledItem('msg_refresh_cas', 'key-a', 1_000);
   await new SqlRepo(base).responsesItems.insertMany([item]);
-  let releaseStale: (() => void) | undefined;
-  const staleGate = new Promise<void>(resolve => { releaseStale = resolve; });
-  let markStaleStarted: (() => void) | undefined;
-  const staleStarted = new Promise<void>(resolve => { markStaleStarted = resolve; });
+  const staleGate = Promise.withResolvers<void>();
+  const staleStarted = Promise.withResolvers<void>();
   let batchNumber = 0;
   const repo = new SqlRepo(sqlDatabaseWithBatch(base, async statements => {
     batchNumber += 1;
     if (batchNumber === 1) {
-      markStaleStarted?.();
-      await staleGate;
+      staleStarted.resolve();
+      await staleGate.promise;
     }
     const results = [];
     for (const statement of statements) results.push(await statement.run());
@@ -210,9 +208,9 @@ test('SQL stale refresh accepts a newer concurrent spill descriptor', async () =
   const currentCreatedAt = 1_000 + 2 * 60 * 60 * 1000;
 
   const staleRefresh = repo.responsesItems.refreshMany([item], staleCreatedAt);
-  await staleStarted;
+  await staleStarted.promise;
   await repo.responsesItems.refreshMany([item], currentCreatedAt);
-  releaseStale?.();
+  staleGate.resolve();
   await staleRefresh;
 
   const [persisted] = await repo.responsesItems.lookupMany('key-a', [item.id]);
@@ -227,16 +225,14 @@ test('SQL newer refresh retries after an older concurrent spill wins CAS', async
   const base = await createSqliteTestDb();
   const item = spilledItem('msg_refresh_retry', 'key-a', 1_000);
   await new SqlRepo(base).responsesItems.insertMany([item]);
-  let releaseNewer: (() => void) | undefined;
-  const newerGate = new Promise<void>(resolve => { releaseNewer = resolve; });
-  let markNewerStarted: (() => void) | undefined;
-  const newerStarted = new Promise<void>(resolve => { markNewerStarted = resolve; });
+  const newerGate = Promise.withResolvers<void>();
+  const newerStarted = Promise.withResolvers<void>();
   let batchNumber = 0;
   const repo = new SqlRepo(sqlDatabaseWithBatch(base, async statements => {
     batchNumber += 1;
     if (batchNumber === 1) {
-      markNewerStarted?.();
-      await newerGate;
+      newerStarted.resolve();
+      await newerGate.promise;
     }
     const results = [];
     for (const statement of statements) results.push(await statement.run());
@@ -246,9 +242,9 @@ test('SQL newer refresh retries after an older concurrent spill wins CAS', async
   const newerCreatedAt = 1_000 + 2 * 60 * 60 * 1000;
 
   const newerRefresh = repo.responsesItems.refreshMany([item], newerCreatedAt);
-  await newerStarted;
+  await newerStarted.promise;
   await repo.responsesItems.refreshMany([item], olderCreatedAt);
-  releaseNewer?.();
+  newerGate.resolve();
   await newerRefresh;
 
   const [persisted] = await repo.responsesItems.lookupMany('key-a', [item.id]);

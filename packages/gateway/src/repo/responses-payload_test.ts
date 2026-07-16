@@ -56,8 +56,8 @@ test('identical spilled payload writes get distinct owned keys that retain the c
   assert(firstDescriptor.key !== secondDescriptor.key);
   assert(firstDescriptor.key.includes(firstDescriptor.sha256));
   assert(secondDescriptor.key.includes(secondDescriptor.sha256));
-  assertEquals((await parseStoredResponsesPayload('msg_same_id', first))?.item, { type: 'message', id: 'msg_big', content });
-  assertEquals((await parseStoredResponsesPayload('msg_same_id', second))?.item, { type: 'message', id: 'msg_big', content });
+  assertEquals((await parseStoredResponsesPayload('msg_same_id', first)).item, { type: 'message', id: 'msg_big', content });
+  assertEquals((await parseStoredResponsesPayload('msg_same_id', second)).item, { type: 'message', id: 'msg_big', content });
 });
 
 test('inline payload round-trips through gzip+base64 and the descriptor advertises the encoding', async () => {
