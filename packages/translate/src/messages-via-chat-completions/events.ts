@@ -350,7 +350,7 @@ export const translateChatCompletionsChunkToMessagesEvents = (chunk: ChatComplet
   const content = choice.delta.content;
   const toolCalls = choice.delta.tool_calls;
   const hasToolCallDelta = Boolean(toolCalls?.length);
-  if (state.openBlock === 'thinking' && (content || hasToolCallDelta)) {
+  if ((state.openBlock === 'thinking' || state.pendingReasoningOpaque !== undefined) && (content || hasToolCallDelta)) {
     flushPendingReasoningAndClose(state, events);
   }
 

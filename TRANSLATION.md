@@ -12,7 +12,8 @@ translation trip converts one complete source request to one target request and
 returns an event mapper that converts decoded target events back to the source
 protocol. Provider-specific behavior belongs in provider boundary chains;
 Floway-specific affinity and Responses persistence belong in gateway source
-membranes outside `packages/translate`.
+membranes outside `packages/translate`. Affinity wire behavior is documented in
+[AFFINITY.md](./AFFINITY.md).
 
 ## Route planning
 
@@ -32,9 +33,6 @@ metadata:
 Gemini is source-only: no provider exposes a native Gemini target. A candidate
 without an endpoint required by the operation is removed before attempt
 dispatch. Model resolution is documented in [RESOLUTION.md](./RESOLUTION.md).
-Client-carried target affinity is a source-protocol gateway membrane, not a
-translation concern; its wire behavior is documented in
-[AFFINITY.md](./AFFINITY.md).
 
 ## General translation rules
 

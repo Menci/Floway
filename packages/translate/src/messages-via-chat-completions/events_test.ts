@@ -72,7 +72,7 @@ test('translateChatCompletionsChunkToMessagesEvents emits opaque-only reasoning 
   ]);
 });
 
-test('translateChatCompletionsChunkToMessagesEvents does not delay later text behind opaque reasoning', () => {
+test('translateChatCompletionsChunkToMessagesEvents preserves opaque reasoning before later text', () => {
   const state = createChatCompletionsToMessagesStreamState();
   const events = [
     ...translateChatCompletionsChunkToMessagesEvents(chunk({ role: 'assistant', reasoning_opaque: 'enc' }), state),
@@ -84,18 +84,18 @@ test('translateChatCompletionsChunkToMessagesEvents does not delay later text be
     {
       type: 'content_block_start',
       index: 0,
-      content_block: { type: 'text', text: '' },
-    },
-    {
-      type: 'content_block_delta',
-      index: 0,
-      delta: { type: 'text_delta', text: 'answer' },
+      content_block: { type: 'redacted_thinking', data: 'enc' },
     },
     { type: 'content_block_stop', index: 0 },
     {
       type: 'content_block_start',
       index: 1,
-      content_block: { type: 'redacted_thinking', data: 'enc' },
+      content_block: { type: 'text', text: '' },
+    },
+    {
+      type: 'content_block_delta',
+      index: 1,
+      delta: { type: 'text_delta', text: 'answer' },
     },
     { type: 'content_block_stop', index: 1 },
   ]);
