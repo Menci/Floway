@@ -5,7 +5,7 @@ import { InMemoryRepo } from './memory.ts';
 import { SqlRepo } from './sql.ts';
 import { createSqliteTestDb, migrationSqlByFilename } from './test-sqlite.ts';
 import type { Repo, StoredResponsesItem } from './types.ts';
-import { initFileProvider, MemoryFileProvider } from '@floway-dev/platform';
+import { initFileProvider, MemoryFileProvider, type SqlDatabase } from '@floway-dev/platform';
 
 const factories: Array<[string, () => Promise<Repo>]> = [
   ['memory', async () => new InMemoryRepo()],
@@ -55,6 +55,28 @@ describe.each(factories)('%s Responses state repo', (_name, createRepo) => {
     });
   });
 
+  test('rejects a lifetime refresh after its item disappeared', async () => {
+    initFileProvider(new MemoryFileProvider());
+    const repo = await createRepo();
+    const item = storedItem('msg_missing', 'key-a', 'missing', 1_000);
+    await repo.responsesItems.insertMany([item]);
+    await repo.responsesItems.deleteOlderThan(2_000);
+
+    await expect(repo.responsesItems.refreshMany([item], 3_000))
+      .rejects.toThrow('Responses item disappeared before lifetime refresh: msg_missing');
+  });
+
+  test('snapshot upsert refreshes its timestamp and item graph', async () => {
+    initFileProvider(new MemoryFileProvider());
+    const repo = await createRepo();
+    await repo.responsesSnapshots.insert({ id: 'resp_same', apiKeyId: 'key-a', itemIds: ['msg_old'], createdAt: 1_000 });
+    await repo.responsesSnapshots.insert({ id: 'resp_same', apiKeyId: 'key-a', itemIds: ['msg_new'], createdAt: 3_000 });
+
+    expect(await repo.responsesSnapshots.lookup('key-a', 'resp_same')).toEqual({
+      id: 'resp_same', apiKeyId: 'key-a', itemIds: ['msg_new'], createdAt: 3_000,
+    });
+  });
+
   test('refreshes spilled payload expiry without retaining the previous file', async () => {
     const files = new MemoryFileProvider();
     initFileProvider(files);
@@ -88,6 +110,47 @@ describe.each(factories)('%s Responses state repo', (_name, createRepo) => {
     }
     expect((await repo.responsesItems.lookupMany('key-a', [item.id]))[0].createdAt).toBe(1_000 + 2 * 60 * 60 * 1000);
   });
+});
+
+test('SQL refresh cleans a replacement spill when the row disappears before update', async () => {
+  const files = new MemoryFileProvider();
+  initFileProvider(files);
+  const base = await createSqliteTestDb();
+  if (base.batch === undefined) throw new Error('SQL refresh race test requires batch support');
+  let deleteBeforeBatch = false;
+  const db: SqlDatabase = {
+    prepare: query => base.prepare(query),
+    exec: sql => base.exec(sql),
+    batch: async statements => {
+      if (deleteBeforeBatch) {
+        deleteBeforeBatch = false;
+        await base.prepare('DELETE FROM responses_items WHERE id = ? AND api_key_id = ?')
+          .bind('msg_race', 'key-a')
+          .run();
+      }
+      return await base.batch!(statements);
+    },
+  };
+  const repo = new SqlRepo(db);
+  const bytes = new Uint8Array(128 * 1024);
+  crypto.getRandomValues(bytes.subarray(0, 64 * 1024));
+  crypto.getRandomValues(bytes.subarray(64 * 1024));
+  let content = '';
+  for (const byte of bytes) content += byte.toString(16).padStart(2, '0');
+  const item: StoredResponsesItem = {
+    ...storedItem('msg_race', 'key-a', 'race', 1_000),
+    payload: { item: { type: 'message', id: 'msg_race', role: 'assistant', content } },
+  };
+  await repo.responsesItems.insertMany([item]);
+  const originalFiles = await files.listKeys('responses-items/');
+  expect(originalFiles).toHaveLength(1);
+
+  deleteBeforeBatch = true;
+  await expect(repo.responsesItems.refreshMany([item], 1_000 + 2 * 60 * 60 * 1000))
+    .rejects.toThrow('Responses item disappeared before lifetime refresh: msg_race');
+
+  expect(await files.listKeys('responses-items/')).toEqual(originalFiles);
+  expect(await repo.responsesItems.lookupMany('key-a', [item.id])).toEqual([]);
 });
 
 test('migration 0057 preserves usable payloads and snapshots but drops legacy affinity columns', async () => {

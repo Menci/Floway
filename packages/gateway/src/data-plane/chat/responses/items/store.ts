@@ -22,7 +22,6 @@ export interface StatefulResponsesBacking {
   markDurable?(apiKeyId: string, id: string): void;
   lookupSnapshot(apiKeyId: string, id: string): Promise<StoredResponsesSnapshot | null>;
   insertSnapshot(snapshot: StoredResponsesSnapshot): Promise<void>;
-  refreshSnapshot(apiKeyId: string, id: string, createdAt: number): Promise<void>;
 }
 
 export interface StatefulResponsesWriteTarget {
@@ -89,7 +88,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
         await this.commitItems(items);
         await Promise.all(this.options.writes.map(async write => {
           await write.backing.refreshItems(items, createdAt);
-          await write.backing.refreshSnapshot(this.apiKeyId, snapshot.id, createdAt);
+          await write.backing.insertSnapshot({ ...snapshot, createdAt });
         }));
         for (const item of items) item.createdAt = createdAt;
         snapshot.createdAt = createdAt;
@@ -271,10 +270,6 @@ export class RepoStatefulResponsesBacking implements StatefulResponsesBacking {
   async insertSnapshot(snapshot: StoredResponsesSnapshot): Promise<void> {
     await this.getRepo().responsesSnapshots.insert(snapshot);
   }
-
-  async refreshSnapshot(apiKeyId: string, id: string, createdAt: number): Promise<void> {
-    await this.getRepo().responsesSnapshots.refresh(apiKeyId, id, createdAt);
-  }
 }
 
 export class MemoryStatefulResponsesBacking implements StatefulResponsesBacking {
@@ -304,10 +299,12 @@ export class MemoryStatefulResponsesBacking implements StatefulResponsesBacking 
   }
 
   refreshItems(items: readonly StoredResponsesItem[], createdAt: number): Promise<void> {
-    for (const item of items) {
-      const existing = this.items.get(scopedResponsesKey(item.apiKeyId, item.id));
-      if (existing !== undefined) existing.row.createdAt = createdAt;
+    const existing = items.map(item => this.items.get(scopedResponsesKey(item.apiKeyId, item.id)));
+    const missingIndex = existing.findIndex(item => item === undefined);
+    if (missingIndex !== -1) {
+      return Promise.reject(new Error(`Responses item disappeared before lifetime refresh: ${items[missingIndex].id}`));
     }
+    for (const item of existing) item!.row.createdAt = createdAt;
     return Promise.resolve();
   }
 
@@ -323,12 +320,6 @@ export class MemoryStatefulResponsesBacking implements StatefulResponsesBacking 
 
   insertSnapshot(snapshot: StoredResponsesSnapshot): Promise<void> {
     this.snapshots.set(scopedResponsesKey(snapshot.apiKeyId, snapshot.id), cloneStoredResponsesSnapshot(snapshot));
-    return Promise.resolve();
-  }
-
-  refreshSnapshot(apiKeyId: string, id: string, createdAt: number): Promise<void> {
-    const snapshot = this.snapshots.get(scopedResponsesKey(apiKeyId, id));
-    if (snapshot !== undefined) snapshot.createdAt = createdAt;
     return Promise.resolve();
   }
 }

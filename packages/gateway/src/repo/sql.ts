@@ -878,6 +878,7 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
         ? previous.payload_json
         : await serializeStoredResponsesPayload(item.id, item.apiKeyId, createdAt, item.payload);
       return {
+        item,
         statement: this.db
           .prepare('UPDATE responses_items SET payload_json = ?, created_at = ? WHERE id = ? AND api_key_id = ?')
           .bind(payload, createdAt, item.id, item.apiKeyId),
@@ -885,11 +886,19 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
         nextFileKey: storedResponsesPayloadFileKey(item.id, payload),
       };
     });
-    await runStatements(this.db, refreshed.map(item => item.statement));
-    for (const item of refreshed) {
-      if (item.previousFileKey !== null && item.previousFileKey !== item.nextFileKey) {
-        await getFileProvider().deletePrefix(item.previousFileKey);
+    const results = await runStatements(this.db, refreshed.map(item => item.statement));
+    const missing: typeof refreshed = [];
+    for (const [index, item] of refreshed.entries()) {
+      const updated = results[index]?.meta.changes === 1;
+      if (!updated) missing.push(item);
+      const obsoleteFileKey = updated ? item.previousFileKey : item.nextFileKey;
+      const retainedFileKey = updated ? item.nextFileKey : item.previousFileKey;
+      if (obsoleteFileKey !== null && obsoleteFileKey !== retainedFileKey) {
+        await getFileProvider().deletePrefix(obsoleteFileKey);
       }
+    }
+    if (missing.length > 0) {
+      throw new Error(`Responses item disappeared before lifetime refresh: ${missing[0].item.id}`);
     }
   }
 
@@ -937,16 +946,11 @@ class SqlResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
     await this.db
       .prepare(
         `INSERT INTO responses_snapshots (id, api_key_id, item_ids_json, created_at) VALUES (?, ?, ?, ?)
-         ON CONFLICT (id, api_key_id) DO UPDATE SET item_ids_json = excluded.item_ids_json`,
+         ON CONFLICT (id, api_key_id) DO UPDATE SET
+           item_ids_json = excluded.item_ids_json,
+           created_at = excluded.created_at`,
       )
       .bind(snapshot.id, snapshot.apiKeyId, JSON.stringify(snapshot.itemIds), snapshot.createdAt)
-      .run();
-  }
-
-  async refresh(apiKeyId: string, id: string, createdAt: number): Promise<void> {
-    await this.db
-      .prepare('UPDATE responses_snapshots SET created_at = ? WHERE id = ? AND api_key_id = ?')
-      .bind(createdAt, id, apiKeyId)
       .run();
   }
 
