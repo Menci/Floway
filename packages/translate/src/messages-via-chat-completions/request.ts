@@ -85,6 +85,9 @@ const recordPendingScalarReasoning = (pending: PendingAssistantMessage, block: M
     pending.scalarReasoning = next;
     return;
   }
+  if (pending.scalarReasoning.reasoningText === null && next.reasoningText !== null) {
+    pending.scalarReasoning.reasoningText = next.reasoningText;
+  }
   if (next.hasReasoningOpaque) {
     pending.scalarReasoning.reasoningOpaque = next.reasoningOpaque;
     pending.scalarReasoning.hasReasoningOpaque = true;
