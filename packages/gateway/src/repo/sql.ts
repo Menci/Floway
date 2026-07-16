@@ -826,12 +826,14 @@ interface ResponsesItemDescriptor {
   id: string;
   apiKeyId: string;
   payloadJson: string;
+  createdAt: number;
 }
 
 interface ResponsesItemDescriptorRow {
   id: string;
   api_key_id: string;
   payload_json: string;
+  created_at: number;
 }
 
 interface PreparedResponsesPayloadWrite {
@@ -992,17 +994,17 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
         });
       }
     }
-    let countError: Error | null = null;
     try {
-      const results = await runStatements(this.db, statementChunks.map(chunk => chunk.statement));
-      const mismatch = statementChunks.find((chunk, index) => results[index]?.meta.changes !== chunk.writes.length);
-      if (mismatch !== undefined) {
-        countError = new Error(`Unexpected Responses item refresh count: expected ${mismatch.writes.length}`);
-      }
+      await runStatements(this.db, statementChunks.map(chunk => chunk.statement));
     } catch (error) {
       await this.finishPayloadWrites(writes, error, 'refresh');
     }
-    await this.finishPayloadWrites(writes, countError, 'refresh', true);
+    const persisted = await this.finishPayloadWrites(writes, null, 'refresh');
+    const staleItems = writes.flatMap(write => {
+      const descriptor = persisted.get(scopedResponsesKey(write.item.apiKeyId, write.item.id));
+      return descriptor !== undefined && descriptor.createdAt < createdAt ? [write.item] : [];
+    });
+    if (staleItems.length > 0) await this.refreshMany(staleItems, createdAt);
   }
 
   private async lookupDescriptors(items: readonly Pick<StoredResponsesItem, 'id' | 'apiKeyId'>[]): Promise<Map<string, ResponsesItemDescriptor>> {
@@ -1020,7 +1022,7 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
         const chunk = ids.slice(index, index + RESPONSES_IN_QUERY_CHUNK_SIZE);
         const placeholders = chunk.map(() => '?').join(', ');
         queries.push(this.db
-          .prepare(`SELECT id, api_key_id, payload_json FROM responses_items WHERE api_key_id = ? AND id IN (${placeholders})`)
+          .prepare(`SELECT id, api_key_id, payload_json, created_at FROM responses_items WHERE api_key_id = ? AND id IN (${placeholders})`)
           .bind(apiKeyId, ...chunk)
           .all<ResponsesItemDescriptorRow>());
       }
@@ -1031,6 +1033,7 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
         id: row.id,
         apiKeyId: row.api_key_id,
         payloadJson: row.payload_json,
+        createdAt: row.created_at,
       };
       return [scopedResponsesKey(row.api_key_id, row.id), descriptor] as const;
     })));
@@ -1040,8 +1043,7 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
     writes: readonly PreparedResponsesPayloadWrite[],
     failure: unknown | null,
     operation: 'insert' | 'refresh',
-    preferMissing = false,
-  ): Promise<void> {
+  ): Promise<Map<string, ResponsesItemDescriptor>> {
     let persisted: Map<string, ResponsesItemDescriptor>;
     try {
       persisted = await this.lookupDescriptors(writes.map(write => write.item));
@@ -1091,7 +1093,7 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
       : new Error(operation === 'insert'
           ? `Responses item conflict disappeared before spill cleanup: ${missing.item.id}`
           : `Responses item disappeared before lifetime refresh: ${missing.item.id}`);
-    const operationError = preferMissing ? missingError ?? failure : failure ?? missingError;
+    const operationError = failure ?? missingError;
     if (cleanupErrors.length > 0) {
       if (operationError === null) throw new AggregateError(cleanupErrors, 'Responses payload cleanup failed');
       throw new AggregateError(
@@ -1100,6 +1102,7 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
       );
     }
     if (operationError !== null) throw operationError;
+    return persisted;
   }
 
   async deleteOlderThan(createdBefore: number): Promise<number> {
