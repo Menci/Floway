@@ -38,10 +38,7 @@ export const prepareGeminiAffinity = async (
         for (const location of contentLocations) {
           const part = content.parts[location.partIndex];
           const selected = blobForCandidate(location.decoded, candidate);
-          if (location.decoded.kind === 'foreign') {
-            replacements.set(location.partIndex, part);
-            continue;
-          }
+          if (location.decoded.kind === 'foreign') continue;
           const affinity = location.decoded.envelope.affinity;
           if (affinity.syntheticItem === true) {
             replacements.set(location.partIndex, null);

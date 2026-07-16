@@ -7,13 +7,8 @@ interface CandidateState {
   finished: boolean;
 }
 
-const withoutThoughtSignature = (part: GeminiPart): GeminiPart => {
-  const { thoughtSignature: _signature, ...visible } = part;
-  return visible;
-};
-
 const hasPartContent = (part: GeminiPart): boolean => {
-  const { text, thought: _thought, ...data } = withoutThoughtSignature(part);
+  const { text, thought: _thought, thoughtSignature: _signature, ...data } = part;
   return (typeof text === 'string' && text.length > 0) || Object.keys(data).length > 0;
 };
 
@@ -69,7 +64,9 @@ const candidateByIndex = (event: GeminiStreamEvent | undefined, index: number): 
   event !== undefined && !('error' in event) ? event.candidates?.find(candidate => candidate.index === index) : undefined;
 
 // Gemini pays one upstream-event of TTFT/inter-event latency so the client sees
-// one authoritative signature on the first Part of a logical element.
+// one authoritative signature. Within one event it belongs on the first Part
+// of its logical element; across events the window can move it back only onto
+// the immediately preceding buffered chunk.
 // Repeating synthetic then natural signatures is unsafe: Vercel and Google ADK
 // retain the metadata captured when a streamed function call starts, while
 // LangChain Python concatenates same-index strings.
@@ -152,7 +149,7 @@ const relocateSignatureOnlyForward = (
   if (current.content.parts.length === 0) transferCandidateMetadataForward(current, next);
 };
 
-const relocateLeadingSignature = (
+const relocateSignatureOnlyBackward = (
   current: GeminiCandidate,
   next: GeminiCandidate | undefined,
 ): void => {
@@ -224,7 +221,7 @@ const wrapEvent = async (
     normalizeElementSignatures(candidate);
     if (nextCandidate !== undefined) normalizeElementSignatures(nextCandidate);
     relocateSignatureOnlyForward(candidate, nextCandidate);
-    relocateLeadingSignature(candidate, nextCandidate);
+    relocateSignatureOnlyBackward(candidate, nextCandidate);
     relocateContinuationSignature(candidate, nextCandidate);
     foldEmptyTerminalCandidate(candidate, nextCandidate);
     const firstIndexes = firstElementIndexes(candidate.content.parts);

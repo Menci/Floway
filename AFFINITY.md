@@ -84,9 +84,9 @@ Egress performs two independent operations:
 2. ensure the first logical assistant element has a carrier when no natural
    value provides one.
 
-Visible text, reasoning, tool calls, and argument deltas are not buffered for
-affinity. Only the protocol's opaque snapshot, or Gemini's explicitly bounded
-lookahead event, waits for placement.
+Chat Completions, Messages, and Responses do not buffer visible deltas for
+affinity. Gemini deliberately delays one complete upstream event; the window
+never grows beyond that event.
 
 ### Chat Completions
 
@@ -105,10 +105,12 @@ shifts every original block index by one.
 ### Gemini
 
 Gemini buffers at most one upstream event. Signature snapshots for each
-logical element are reduced to the latest value and placed on that element's
-first content-bearing Part. Empty text and `thought` metadata alone do not make
-a Part content-bearing. Immediate signature-only prefixes/trailers are moved
-onto adjacent content when the one-event window can determine ownership.
+same-event logical element are reduced to the latest value and placed on that
+element's first content-bearing Part. Across events, a late signature can move
+back only onto the immediately preceding buffered chunk. Empty text and
+`thought` metadata alone do not make a Part content-bearing. Immediate
+signature-only prefixes/trailers are moved onto adjacent content when the
+one-event window can determine ownership.
 
 This adds one upstream-event of latency. It deliberately favors direct Google
 GenAI Chat compatibility and cannot repair a first-wins client when a natural
