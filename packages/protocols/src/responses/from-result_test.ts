@@ -176,15 +176,17 @@ test('responsesResultToEvents propagates the real function_call item id to the a
           name: 'do_thing',
           arguments: '{"x":1}',
           status: 'completed',
+          caller: { type: 'program', caller_id: 'call_prog_1' },
         },
       ],
     }),
   );
 
   const added = frames.find(frame => frame.event.type === 'response.output_item.added')?.event as {
-    item: { id?: string };
+    item: { id?: string; caller?: unknown };
   };
   assertEquals(added.item.id, 'fc_real');
+  assertEquals(added.item.caller, { type: 'program', caller_id: 'call_prog_1' });
 
   const childItemIds = frames
     .map(frame => frame.event)

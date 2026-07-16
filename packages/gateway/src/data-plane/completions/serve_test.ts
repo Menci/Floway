@@ -270,7 +270,7 @@ test('/v1/completions handler also serves the unversioned /completions path', as
 // chat-completions does (no interceptor framework to feed), so the two
 // paths really do exercise different scaffold branches and the assertions
 // here keep them honest.
-test('/v1/completions non-streaming records usage row, request_total+upstream_success performance rows, and a bytes-body dump record', async () => {
+test('/v1/completions non-streaming records usage row, performance neutral row (text_completion operation, no TTFT/TPOT), and a bytes-body dump record', async () => {
   const { apiKey, repo } = await setupAppTest();
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
   await registerCompletionsUpstream(repo);
@@ -305,17 +305,10 @@ test('/v1/completions non-streaming records usage row, request_total+upstream_su
   assertEquals(usage[0]?.tokens.output, 2);
 
   const performance = await repo.performance.listAll();
-  const requestTotal = performance.find(row => row.metricScope === 'request_total');
-  const upstreamSuccess = performance.find(row => row.metricScope === 'upstream_success');
-  assertExists(requestTotal);
-  assertExists(upstreamSuccess);
-  assertEquals(requestTotal.model, 'davinci-002');
-  assertEquals(requestTotal.stream, false);
-  assertEquals(requestTotal.requests, 1);
-  assertEquals(requestTotal.errors, 0);
-  assertEquals(upstreamSuccess.stream, false);
-  assertEquals(upstreamSuccess.requests, 1);
-  assertEquals(upstreamSuccess.errors, 0);
+  assertEquals(performance.length, 1);
+  assertEquals(performance[0]?.model, 'davinci-002');
+  assertEquals(performance[0]?.requests, 1);
+  assertEquals(performance[0]?.errorsNoOutput, 0);
 
   assertEquals(dumpStubs.stored.length, 1);
   const dump = dumpStubs.stored[0]!.record;
@@ -329,7 +322,7 @@ test('/v1/completions non-streaming records usage row, request_total+upstream_su
   assertEquals(dump.response.body.type, 'bytes');
 });
 
-test('/v1/completions streaming records usage row, request_total+upstream_success performance rows with stream=true, and a frame-log dump record', async () => {
+test('/v1/completions streaming records usage row, performance neutral row (text_completion operation, no TTFT/TPOT), and a frame-log dump record', async () => {
   const { apiKey, repo } = await setupAppTest();
   await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
   await registerCompletionsUpstream(repo);
@@ -356,16 +349,9 @@ test('/v1/completions streaming records usage row, request_total+upstream_succes
   assertEquals(usage[0]?.tokens.output, 2);
 
   const performance = await repo.performance.listAll();
-  const requestTotal = performance.find(row => row.metricScope === 'request_total');
-  const upstreamSuccess = performance.find(row => row.metricScope === 'upstream_success');
-  assertExists(requestTotal);
-  assertExists(upstreamSuccess);
-  assertEquals(requestTotal.stream, true);
-  assertEquals(requestTotal.requests, 1);
-  assertEquals(requestTotal.errors, 0);
-  assertEquals(upstreamSuccess.stream, true);
-  assertEquals(upstreamSuccess.requests, 1);
-  assertEquals(upstreamSuccess.errors, 0);
+  assertEquals(performance.length, 1);
+  assertEquals(performance[0]?.requests, 1);
+  assertEquals(performance[0]?.errorsNoOutput, 0);
 
   assertEquals(dumpStubs.stored.length, 1);
   const dump = dumpStubs.stored[0]!.record;

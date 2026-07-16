@@ -2,7 +2,7 @@ import { appendFailedUpstreams } from '../../shared/failed-upstreams.ts';
 import type { ChatServeFailure } from '../shared/errors.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiStreamEvent } from '@floway-dev/protocols/gemini';
-import type { ExecuteResult } from '@floway-dev/provider';
+import type { ExecuteResult, PerformanceTelemetryContext } from '@floway-dev/provider';
 import type { TranslatorInputError } from '@floway-dev/translate';
 
 // Google RPC Status envelope, used by Gemini's `error` channel everywhere
@@ -29,7 +29,7 @@ export const geminiStatusForHttpStatus = (status: number): string => {
   }
 };
 
-const geminiRpcErrorResult = (status: number, message: string): ExecuteResult<ProtocolFrame<GeminiStreamEvent>> => ({
+const geminiRpcErrorResult = (status: number, message: string, performance?: PerformanceTelemetryContext): ExecuteResult<ProtocolFrame<GeminiStreamEvent>> => ({
   type: 'api-error',
   source: 'gateway',
   status,
@@ -37,16 +37,20 @@ const geminiRpcErrorResult = (status: number, message: string): ExecuteResult<Pr
   body: new TextEncoder().encode(JSON.stringify({
     error: { code: status, message, status: geminiStatusForHttpStatus(status) },
   })),
+  ...(performance ? { performance } : {}),
 });
 
 // Translator surfaced a caller-input violation (unsupported content part,
 // disallowed role, missing required field, etc.). Render as a 400
 // INVALID_ARGUMENT envelope so the caller sees a Gemini-shaped failure
-// instead of the internal-error 500 envelope.
+// instead of the internal-error 500 envelope. `performance` carries the
+// throwing candidate's telemetry attribution when the throw fired
+// mid-attempt (see AttemptState.telemetry).
 export const translatorInputErrorResult = (
   error: TranslatorInputError,
+  performance?: PerformanceTelemetryContext,
 ): ExecuteResult<ProtocolFrame<GeminiStreamEvent>> =>
-  geminiRpcErrorResult(400, error.message);
+  geminiRpcErrorResult(400, error.message, performance);
 
 // `endpoint` selects between `:generateContent` and `:countTokens` only in
 // the `model-unsupported` message string.

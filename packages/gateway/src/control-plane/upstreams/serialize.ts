@@ -1,11 +1,5 @@
 import { flagDefaultsForKind } from '../../data-plane/providers/registry.ts';
-import type { FlagDefaults, FlagOverrides, ModelPrefixConfig, ProxyFallbackEntry, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
-import type { CodexQuotaSnapshotMap } from '@floway-dev/provider-codex';
-
-export interface ModelsCacheStatus {
-  fetchedAt: number | null;
-  lastError: { message: string; at: number } | null;
-}
+import type { FlagDefaults, FlagOverrides, ModelPrefixConfig, ProxyFallbackEntry, UpstreamColor, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 
 export interface SerializedUpstreamRecord {
   id: string;
@@ -16,21 +10,14 @@ export interface SerializedUpstreamRecord {
   created_at: string;
   updated_at: string;
   flag_overrides: FlagOverrides;
-  // Sent per record (rather than a separate per-kind lookup) so the
-  // dashboard's "Inherit → on/off" pill renders each row without a
-  // second round trip.
+  // Pure per-kind derivation of the record's effective flag baseline.
   flag_defaults: FlagDefaults;
   disabled_public_model_ids: string[];
   proxy_fallback_list: ProxyFallbackEntry[];
   model_prefix: ModelPrefixConfig | null;
+  color: UpstreamColor | null;
   config: unknown;
   state: unknown;
-  // SWR models-cache freshness joined from the models_cache table by the
-  // route handler. Both inner values are null on a row that has never been
-  // warmed.
-  modelsCache?: ModelsCacheStatus;
-  // Present only for kind === 'codex'.
-  codex_quota?: CodexQuotaSnapshotMap | null;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -201,6 +188,7 @@ const serializeBase = (
   disabled_public_model_ids: [...upstream.disabledPublicModelIds],
   proxy_fallback_list: upstream.proxyFallbackList.map(entry => entry.colos === undefined ? { id: entry.id } : { id: entry.id, colos: [...entry.colos] }),
   model_prefix: upstream.modelPrefix === null ? null : clone(upstream.modelPrefix),
+  color: upstream.color,
   config,
   state,
 });
@@ -230,6 +218,7 @@ export const blueprintUpstreamRecord = (kind: UpstreamProviderKind): UpstreamRec
     disabledPublicModelIds: [] as string[],
     proxyFallbackList: [] as ProxyFallbackEntry[],
     modelPrefix: null,
+    color: null,
   };
   switch (kind) {
   case 'copilot':

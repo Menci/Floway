@@ -2,7 +2,7 @@ import { getEnvOptional, getRuntimeKind, type RuntimeKind } from '@floway-dev/pl
 
 export interface RuntimeInfo {
   kind: RuntimeKind;
-  colo: string;
+  runtimeLocation: string;
 }
 
 // Location tag for the incoming request, always non-empty and uppercase.
@@ -10,7 +10,7 @@ export interface RuntimeInfo {
 // operator-set `RUNTIME_LOCATION` env var and defaults to `LOCAL`. Uppercasing
 // keeps the value aligned with the dashboard's colo whitelist input, which is
 // uppercased at write time (see `normalizeProxyFallbackList`).
-export const getCurrentColo = (request: Request): string => {
+export const getRuntimeLocation = (request: Request): string => {
   if (getRuntimeKind() === 'cloudflare') {
     const cf = (request as Request & { cf?: { colo?: unknown } }).cf;
     if (typeof cf?.colo !== 'string' || cf.colo.length === 0) {
@@ -24,5 +24,5 @@ export const getCurrentColo = (request: Request): string => {
 
 export const getRuntimeInfo = (request: Request): RuntimeInfo => ({
   kind: getRuntimeKind(),
-  colo: getCurrentColo(request),
+  runtimeLocation: getRuntimeLocation(request),
 });

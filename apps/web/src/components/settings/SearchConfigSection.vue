@@ -2,10 +2,10 @@
 import { computed, ref } from 'vue';
 
 import { callApi, useApi } from '../../api/client.ts';
-import type { SearchConfig } from '../../api/types.ts';
+import type { ControlPlaneModel, SearchConfig, UpstreamRecord } from '../../api/types.ts';
 import { useAuthStore } from '../../stores/auth.ts';
 import SecretInput from '../shared/SecretInput.vue';
-import { Button, Input, Select } from '@floway-dev/ui';
+import { Button, Input, Select, Switch } from '@floway-dev/ui';
 
 interface SearchTestResult {
   ok: boolean;
@@ -62,6 +62,8 @@ const PROVIDER_OPTIONS: ProviderOption[] = [
 const props = defineProps<{
   initialConfig: SearchConfig;
   initialError?: string | null;
+  upstreams: Array<Pick<UpstreamRecord, 'id' | 'name' | 'kind' | 'enabled'>>;
+  models: ControlPlaneModel[];
 }>();
 
 const auth = useAuthStore();
@@ -72,6 +74,21 @@ const error = ref<string | null>(props.initialError ?? null);
 const saving = ref(false);
 const testing = ref(false);
 const testResult = ref<SearchTestResult | null>(null);
+
+const chatModelsForUpstream = (upstreamId: string) => props.models.filter(model =>
+  model.kind === 'chat' && model.upstreams.some(upstream => upstream.id === upstreamId));
+
+const eligibleUpstreams = computed(() => props.upstreams.filter(upstream =>
+  upstream.enabled
+  && (upstream.kind === 'codex' || upstream.kind === 'custom')
+  && chatModelsForUpstream(upstream.id).length > 0));
+const alphaUpstreamOptions = computed(() => eligibleUpstreams.value.map(upstream => ({
+  value: upstream.id,
+  label: upstream.name,
+  description: upstream.kind === 'codex' ? 'ChatGPT Codex subscription' : 'Custom OpenAI-compatible upstream',
+})));
+const alphaModelOptions = computed(() => chatModelsForUpstream(draft.value.passthroughOpenAiSearch.upstreamId)
+  .map(model => ({ value: model.id, label: model.display_name })));
 
 const activeOption = computed(() => PROVIDER_OPTIONS.find(option => option.value === draft.value.provider) ?? PROVIDER_OPTIONS[0]);
 
@@ -88,6 +105,37 @@ const setSearchCredentialValue = (v: string) => {
   if (option.set) {
     draft.value = option.set(draft.value, v);
   }
+};
+
+const setAlphaUpstream = (upstreamId: string, preferredModel?: string) => {
+  const models = chatModelsForUpstream(upstreamId);
+  const model = models.find(candidate => candidate.id === preferredModel) ?? models[0];
+  if (model === undefined) throw new Error(`OpenAI search upstream ${upstreamId} has no chat model`);
+  draft.value = {
+    ...draft.value,
+    passthroughOpenAiSearch: { enabled: true, upstreamId, model: model.id },
+  };
+};
+
+const setAlphaModel = (model: string) => {
+  draft.value = {
+    ...draft.value,
+    passthroughOpenAiSearch: { ...draft.value.passthroughOpenAiSearch, model },
+  };
+};
+
+const setPassthroughOpenAiSearch = (enabled: boolean) => {
+  if (!enabled) {
+    draft.value = {
+      ...draft.value,
+      passthroughOpenAiSearch: { ...draft.value.passthroughOpenAiSearch, enabled: false },
+    };
+    return;
+  }
+  const selected = eligibleUpstreams.value.find(upstream => upstream.id === draft.value.passthroughOpenAiSearch.upstreamId)
+    ?? eligibleUpstreams.value[0];
+  if (selected === undefined) throw new Error('OpenAI search passthrough requires an eligible upstream');
+  setAlphaUpstream(selected.id, draft.value.passthroughOpenAiSearch.model);
 };
 
 const save = async () => {
@@ -133,7 +181,7 @@ const test = async () => {
   <div class="glass-card p-5 sm:p-6 animate-in delay-2">
     <div class="mb-4">
       <h3 class="text-white font-semibold mb-1">Web Search</h3>
-      <p class="text-sm text-gray-400">Configure the search provider used by Anthropic Messages web search.</p>
+      <p class="text-sm text-gray-400">Configure the search provider used by gateway-managed Messages and Responses web search.</p>
     </div>
 
     <p v-if="error" class="mb-4 rounded-md border border-accent-rose/40 bg-accent-rose/10 px-3 py-2 text-xs text-accent-rose">{{ error }}</p>
@@ -168,6 +216,45 @@ const test = async () => {
           class="w-full"
         />
       </div>
+    </div>
+
+    <div class="mt-5 border-t border-white/[0.06] pt-5">
+      <div class="flex items-start justify-between gap-4">
+        <div>
+          <label class="text-sm font-medium text-white">Passthrough OpenAI search (/alpha/search and Responses hosted tool)</label>
+          <p class="mt-1 text-xs text-gray-500">Use a selected upstream (with /alpha/search support) instead of the general search provider for OpenAI search calls. Anthropic Messages API is not affected by this option.</p>
+        </div>
+        <Switch
+          :model-value="draft.passthroughOpenAiSearch.enabled"
+          :disabled="eligibleUpstreams.length === 0"
+          @update:model-value="value => setPassthroughOpenAiSearch(value === true)"
+        />
+      </div>
+
+      <div v-if="draft.passthroughOpenAiSearch.enabled" class="mt-4 grid grid-cols-1 gap-5 sm:grid-cols-2">
+        <div>
+          <label class="mb-1.5 block text-xs font-medium text-gray-500">Search Upstream</label>
+          <Select
+            :model-value="draft.passthroughOpenAiSearch.upstreamId"
+            :options="alphaUpstreamOptions"
+            @update:model-value="value => value !== undefined && setAlphaUpstream(value)"
+          >
+            <template #description="{ option }">
+              <p class="text-[11px] text-gray-500">{{ option.description }}</p>
+            </template>
+          </Select>
+        </div>
+        <div>
+          <label class="mb-1.5 block text-xs font-medium text-gray-500">Search Model</label>
+          <Select
+            :model-value="draft.passthroughOpenAiSearch.model"
+            :options="alphaModelOptions"
+            @update:model-value="value => value !== undefined && setAlphaModel(value)"
+          />
+        </div>
+      </div>
+
+      <p v-else-if="eligibleUpstreams.length === 0" class="mt-3 text-xs text-gray-500">Add an enabled Codex or Custom upstream with a chat model to use OpenAI search passthrough.</p>
     </div>
 
     <div class="mt-5 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">

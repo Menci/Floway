@@ -24,6 +24,9 @@ target ships in the same repo for self-hosting on a long-lived process.
 | OpenAI Models                           | `GET  /v1/models`             |
 | Google Gemini (generate / count tokens) | `POST /v1beta/models/...`     |
 
+`POST /v1/images/edits` accepts multipart image uploads and JSON `images`
+references.
+
 For each public model, Floway picks the first (provider, model) pair that can
 serve the request, translating between source and target protocols when the
 upstream speaks a different shape. `/v1/completions` is forwarded to upstreams that
@@ -50,14 +53,20 @@ cp wrangler.example.jsonc wrangler.jsonc
 pnpm wrangler login
 pnpm wrangler d1 create <DB_NAME>
 
-# Apply schema and set the admin secret.
+# Apply schema. Prod also needs an admin secret; wrangler dev doesn't.
 pnpm run db:migrate
-pnpm wrangler secret put ADMIN_KEY
+pnpm wrangler secret put ADMIN_KEY   # production only
 
 # Run locally or deploy. In dev, open the Vite SPA at http://localhost:5174.
 pnpm run dev
 pnpm run deploy
 ```
+
+`ADMIN_KEY` is required on production deploys — a live Worker that
+receives requests from Cloudflare's edge (detected via the `CF-Ray`
+header) refuses passwordless logins. A local `wrangler dev` instance
+without `.dev.vars` has no `ADMIN_KEY`, and the login page then accepts a
+blank username with any (or empty) password as the seed admin.
 
 ### Node.js (self-hosted)
 
@@ -72,6 +81,12 @@ FLOWAY_FILES_DIR=./data/files \
 PORT=8788 \
 pnpm run dev:node
 ```
+
+`ADMIN_KEY` may be omitted on a dev machine — the login page then accepts
+a blank username with any (or empty) password as the seed admin. Setting
+`NODE_ENV=production` makes `ADMIN_KEY` mandatory: the entry point
+refuses to boot without it, and the running server also rejects
+passwordless logins.
 
 Optionally set `RUNTIME_LOCATION=<tag>` to label this instance in the
 performance telemetry's `runtimeLocation` dimension and as the dial-time
@@ -95,15 +110,15 @@ Compose starts two services: `server` runs the Node.js target on
 `http://localhost:8788` with SQLite/files persisted in the `floway-data`
 volume, and `web` serves the built dashboard on `http://localhost:18088`.
 The nginx web container proxies Floway API paths to `server`, including
-WebSocket-capable `/v1/responses` and the Codex-compatible
-`/azure-api.codex/*` routes. Pass `FLOWAY_WEB_PORT` or
+WebSocket-capable `/v1/responses`. Pass `FLOWAY_WEB_PORT` or
 `FLOWAY_SERVER_PORT` alongside `ADMIN_KEY` if those host ports are already in
 use.
 
 ### After the first boot
 
 Open the deployed URL (or `http://localhost:8788` for Node), log in with
-`ADMIN_KEY`, and:
+`ADMIN_KEY` (or leave the password blank on a dev instance with no
+`ADMIN_KEY` set), and:
 
 1. **Settings -> Upstreams -> Add Upstream**. Upstreams are *Custom*
    (OpenAI/Anthropic-shaped, static credential), *Azure* (one endpoint, API key,
@@ -134,10 +149,12 @@ Open the deployed URL (or `http://localhost:8788` for Node), log in with
    through the official user-local installer, never `sudo`, and never upgrading
    an existing install. It backs up each file before surgically merging
    Floway's managed keys into Claude Code's `~/.claude/settings.json` and
-   Codex's `$CODEX_HOME/config.toml`. The Codex step backs up and then replaces
-   `$CODEX_HOME/auth.json`, including any current ChatGPT login. Verification
-   only reaches the gateway's authenticated model directory; it never issues
-   an inference request.
+   Codex's `$CODEX_HOME/config.toml`. The Codex provider token is stored
+   separately under the active `CODEX_HOME`, so the installer never changes an
+   official account login in `auth.json`. Codex setup enables client-owned
+   search and image tools, Responses WebSocket, remote compaction, and Floway's
+   live model catalog. Verification only reaches the gateway's authenticated
+   model directory; it never issues an inference request.
 
 Import/export of upstreams, keys, and search config is in Settings. The
 payload format is tied to the running deployment, so import only accepts a
@@ -148,7 +165,7 @@ current deployment before importing.
 
 `/v1/messages` accepts Anthropic-style web search. When the resolved upstream
 can run the native server tool, Floway passes it through; otherwise it shims the
-search via **Settings -> Web Search** (`tavily` or `microsoft-grounding`,
+search via **Settings -> Web Search** (`tavily`, `microsoft-grounding`, or `jina`,
 default `disabled`).
 
 `/v1/responses` has a shared server-tool shim layer for hosted Responses
@@ -157,6 +174,15 @@ executed through the same web-search provider (**Settings -> Web
 Search**), and emitted back as Responses `web_search_call` items, with
 the shim driving the internal multi-turn loop and replaying prior
 `web_search_call` items across turns.
+
+Floway also serves the Codex CLI's search contract at `/alpha/search` and
+`/v1/alpha/search`.
+By default these routes and the Responses web-search shim use the same general
+provider configured above. **Settings -> Web Search** can instead enable
+**Passthrough OpenAI search** and select a Codex or Custom upstream plus model;
+then both surfaces use that provider's alpha-search endpoint, while Messages
+search continues using the general provider. Passthrough failures are returned
+without falling back to another search backend.
 
 ## Stateful Responses
 

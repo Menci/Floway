@@ -6,7 +6,8 @@ import {
 import UpstreamRow from './UpstreamRow.vue';
 import { callApi, useApi } from '../../api/client.ts';
 import type { ControlPlaneModel, UpstreamProviderKind, UpstreamRecord } from '../../api/types.ts';
-import { PROVIDER_META, providerSwatchClass } from '../upstreams/provider-meta.ts';
+import { PROVIDER_META } from '../upstreams/provider-meta.ts';
+import UpstreamBadge from '../upstreams/UpstreamBadge.vue';
 import { Spinner } from '@floway-dev/ui';
 
 const props = defineProps<{
@@ -114,12 +115,14 @@ const moveDisabled = (id: string, direction: -1 | 1) => {
               class="flex cursor-pointer select-none items-center gap-3 rounded-sm px-2 py-2 outline-none data-[highlighted]:bg-white/[0.05]"
               @select="emit('add', meta.kind)"
             >
-              <span
-                class="grid size-8 shrink-0 place-items-center rounded-md"
-                :class="providerSwatchClass(meta.kind)"
+              <UpstreamBadge
+                :kind="meta.kind"
+                :color="null"
+                variant="swatch"
+                class="size-8 shrink-0 rounded-md"
               >
                 <i :class="[meta.icon, 'size-4']" />
-              </span>
+              </UpstreamBadge>
               <span class="min-w-0">
                 <span class="block text-sm font-semibold text-white">{{ meta.label }}</span>
                 <span class="mt-0.5 block text-xs text-gray-400">{{ meta.subtitle }}</span>

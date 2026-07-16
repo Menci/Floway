@@ -3,7 +3,18 @@ import { test } from 'vitest';
 import { translateResponsesToChatCompletions } from './request.ts';
 import { createResponsesToChatCompletionsStreamState, translateResponsesEventToChatCompletionsChunks } from '../chat-completions-via-responses/events.ts';
 import { assertEquals, assertThrows } from '../test-assert.ts';
-import type { ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
+import type { ResponsesAgentMessageContent, ResponsesInputMultiAgentCallOutputItem, ResponsesTool, ResponsesToolChoice } from '@floway-dev/protocols/responses';
+
+test('translateResponsesToChatCompletions accepts an implicit message discriminator', () => {
+  const result = translateResponsesToChatCompletions({
+    model: 'gpt-test',
+    input: [{ role: 'system', content: 'rules' }],
+  });
+
+  assertEquals(result.target.messages, [
+    { role: 'system', content: 'rules' },
+  ]);
+});
 
 test('translateResponsesToChatCompletions merges adjacent assistant reasoning text and tool calls', () => {
   const result = translateResponsesToChatCompletions({
@@ -1389,6 +1400,142 @@ test('translateResponsesToChatCompletions projects custom_tool_call history into
   });
 });
 
+test.each([
+  { name: 'additional_tools', input: [{ type: 'additional_tools', role: 'developer', tools: [] as ResponsesTool[] }] },
+  { name: 'program', input: [{ type: 'program', id: 'prog_1', call_id: 'call_prog_1', code: 'return 1', fingerprint: 'opaque' }] },
+  { name: 'program_output', input: [{ type: 'program_output', id: 'prog_out_1', call_id: 'call_prog_1', result: '1', status: 'completed' }] },
+  { name: 'agent_message', input: [{ type: 'agent_message', author: '/root/a', recipient: '/root', content: [{ type: 'input_text', text: 'done' }] as ResponsesAgentMessageContent[] }] },
+  { name: 'multi_agent_call', input: [{ type: 'multi_agent_call', action: 'spawn_agent', arguments: '{}', call_id: 'call_1' }] },
+  { name: 'multi_agent_call_output', input: [{ type: 'multi_agent_call_output', action: 'spawn_agent', call_id: 'call_1', output: [] as ResponsesInputMultiAgentCallOutputItem['output'] }] },
+  { name: 'context_compaction', input: [{ type: 'context_compaction', encrypted_content: 'opaque' }] },
+  { name: 'item_reference', input: [{ type: 'item_reference', id: 'msg_1' }] },
+] as const)('translateResponsesToChatCompletions rejects Responses-only $name input', ({ name, input }) => {
+  assertThrows(
+    () => translateResponsesToChatCompletions({ model: 'gpt-test', input: [...input] }),
+    Error,
+    `Invalid input item type '${name}'`,
+  );
+});
+
+test.each([
+  { type: 'function_call', call_id: 'call_1', name: 'lookup', arguments: '{}', status: 'completed', caller: { type: 'program', caller_id: 'call_prog_1' } },
+  { type: 'function_call_output', call_id: 'call_1', output: 'ok', caller: { type: 'program', caller_id: 'call_prog_1' } },
+  { type: 'custom_tool_call', call_id: 'call_1', name: 'exec', input: 'run', caller: { type: 'program', caller_id: 'call_prog_1' } },
+  { type: 'custom_tool_call_output', call_id: 'call_1', output: 'ok', caller: { type: 'program', caller_id: 'call_prog_1' } },
+] as const)('translateResponsesToChatCompletions rejects $type program caller metadata', item => {
+  assertThrows(
+    () => translateResponsesToChatCompletions({ model: 'gpt-test', input: [item] }),
+    Error,
+    'program caller',
+  );
+});
+
+test('translateResponsesToChatCompletions accepts null tool_choice', () => {
+  const result = translateResponsesToChatCompletions({ model: 'gpt-test', input: 'hi', tool_choice: null });
+  assertEquals(result.target.tool_choice, undefined);
+});
+
+test.each([
+  { name: 'programmatic tool', payload: { tools: [{ type: 'programmatic_tool_calling' as const }] } },
+  { name: 'programmatic allowed caller', payload: { tools: [{ type: 'function' as const, name: 'lookup', parameters: {}, strict: true, allowed_callers: ['programmatic' as const] }] } },
+  { name: 'programmatic tool choice', payload: { tool_choice: { type: 'programmatic_tool_calling' as const } } },
+])('translateResponsesToChatCompletions rejects $name', ({ payload }) => {
+  assertThrows(
+    () => translateResponsesToChatCompletions({ model: 'gpt-test', input: 'hi', ...payload }),
+    Error,
+    'Programmatic',
+  );
+});
+
+test.each([
+  { type: 'function' as const, name: 'lookup', parameters: {}, strict: true, defer_loading: true },
+  { type: 'custom' as const, name: 'exec', defer_loading: true },
+])('translateResponsesToChatCompletions rejects deferred $type tools', tool => {
+  assertThrows(
+    () => translateResponsesToChatCompletions({ model: 'gpt-test', input: 'hi', tools: [tool] }),
+    Error,
+    'Deferred',
+  );
+});
+
+test('translateResponsesToChatCompletions rejects nested namespace programmatic callers', () => {
+  assertThrows(
+    () => translateResponsesToChatCompletions({
+      model: 'gpt-test',
+      input: 'hi',
+      tools: [{ type: 'namespace', name: 'ops', description: 'ops', tools: [{ type: 'custom', name: 'exec', allowed_callers: ['programmatic'] }] } as unknown as ResponsesTool],
+    }),
+    Error,
+    'Programmatic',
+  );
+});
+
+test('translateResponsesToChatCompletions rejects multimodal custom tool output', () => {
+  assertThrows(
+    () => translateResponsesToChatCompletions({
+      model: 'gpt-test',
+      input: [{ type: 'custom_tool_call_output', call_id: 'call_1', output: [{ type: 'input_file', file_id: 'file_1' }] }],
+    }),
+    Error,
+    'multimodal custom_tool_call_output',
+  );
+});
+
+test('translateResponsesToChatCompletions rejects file tool output', () => {
+  assertThrows(
+    () => translateResponsesToChatCompletions({
+      model: 'gpt-test',
+      input: [{ type: 'function_call_output', call_id: 'call_1', output: [{ type: 'input_file', file_id: 'file_1' }] }],
+    }),
+    Error,
+    'input_file tool output',
+  );
+});
+
+test('translateResponsesToChatCompletions rejects file assistant content', () => {
+  assertThrows(
+    () => translateResponsesToChatCompletions({
+      model: 'gpt-test',
+      input: [{ type: 'message', role: 'assistant', content: [{ type: 'input_file', file_id: 'file_1' }] }],
+    }),
+    Error,
+    'input_file assistant content',
+  );
+});
+
+test('translateResponsesToChatCompletions rejects image assistant content', () => {
+  assertThrows(
+    () => translateResponsesToChatCompletions({
+      model: 'gpt-test',
+      input: [{ type: 'message', role: 'assistant', content: [{ type: 'input_image', image_url: 'https://example.com/a.png', detail: 'auto' }] }],
+    }),
+    Error,
+    'input_image assistant content',
+  );
+});
+
+test('translateResponsesToChatCompletions rejects file_id-only images', () => {
+  assertThrows(
+    () => translateResponsesToChatCompletions({
+      model: 'gpt-test',
+      input: [{ type: 'message', role: 'user', content: [{ type: 'input_image', file_id: 'file_1', detail: 'auto' }] }],
+    }),
+    Error,
+    'file_id-only image content',
+  );
+});
+
+test('translateResponsesToChatCompletions rejects Responses-only original image detail', () => {
+  assertThrows(
+    () => translateResponsesToChatCompletions({
+      model: 'gpt-test',
+      input: [{ type: 'message', role: 'user', content: [{ type: 'input_image', image_url: 'https://example.com/a.png', detail: 'original' }] }],
+    }),
+    Error,
+    "image detail 'original'",
+  );
+});
+
 test('translateResponsesToChatCompletions throws on a stray web_search_call input item (shim owns the reverse path)', () => {
   // The Responses web-search shim rewrites web_search_call input items into
   // upstream function_call + function_call_output pairs before this
@@ -1479,7 +1626,7 @@ test('translateResponsesToChatCompletions throws on a stray compaction input ite
   );
 });
 
-test('translateResponsesToChatCompletions maps multimodal function_call_output into a tool message with image content', () => {
+test('translateResponsesToChatCompletions lifts tool-output images into a following user message', () => {
   const result = translateResponsesToChatCompletions({
     model: 'gpt-test',
     input: [
@@ -1505,11 +1652,88 @@ test('translateResponsesToChatCompletions maps multimodal function_call_output i
     parallel_tool_calls: true,
   });
 
-  const toolMessage = result.target.messages.find(message => message.role === 'tool');
-  assertEquals(toolMessage?.content, [
-    { type: 'text', text: 'captured' },
-    { type: 'image_url', image_url: { url: 'data:image/png;base64,AQID', detail: 'high' } },
+  assertEquals(result.target.messages, [
+    {
+      role: 'assistant',
+      content: null,
+      tool_calls: [{
+        id: 'call_1',
+        type: 'function',
+        function: { name: 'screenshot', arguments: '{}' },
+      }],
+    },
+    { role: 'tool', tool_call_id: 'call_1', content: 'captured' },
+    {
+      role: 'user',
+      content: [
+        { type: 'text', text: 'Image output from tool call call_1:' },
+        { type: 'image_url', image_url: { url: 'data:image/png;base64,AQID', detail: 'high' } },
+      ],
+    },
   ]);
+});
+
+test('translateResponsesToChatCompletions keeps grouped tool results contiguous before lifted images', () => {
+  const result = translateResponsesToChatCompletions({
+    model: 'gpt-test',
+    input: [
+      { type: 'function_call', call_id: 'call_a', name: 'capture_a', arguments: '{}', status: 'completed' },
+      { type: 'function_call', call_id: 'call_b', name: 'capture_b', arguments: '{}', status: 'completed' },
+      { type: 'custom_tool_call', call_id: 'call_c', name: 'inspect', input: 'raw output' },
+      {
+        type: 'function_call_output',
+        call_id: 'call_a',
+        output: [
+          { type: 'input_image', image_url: 'data:image/png;base64,AAAA', detail: 'low' },
+          { type: 'input_image', image_url: 'data:image/png;base64,AAAB', detail: 'high' },
+        ],
+      },
+      {
+        type: 'function_call_output',
+        call_id: 'call_b',
+        output: [
+          { type: 'input_text', text: 'second capture' },
+          { type: 'input_image', image_url: 'data:image/png;base64,BBBB', detail: 'auto' },
+        ],
+      },
+      { type: 'custom_tool_call_output', call_id: 'call_c', output: 'inspection complete' },
+    ],
+  });
+
+  assertEquals(result.target.messages.map(message => message.role), ['assistant', 'tool', 'tool', 'tool', 'user']);
+  assertEquals(result.target.messages[1].content, 'Image output is attached in the following user message.');
+  assertEquals(result.target.messages[2].content, 'second capture');
+  assertEquals(result.target.messages[3].content, 'inspection complete');
+  assertEquals(result.target.messages[4].content, [
+    { type: 'text', text: 'Image output from tool call call_a:' },
+    { type: 'image_url', image_url: { url: 'data:image/png;base64,AAAA', detail: 'low' } },
+    { type: 'image_url', image_url: { url: 'data:image/png;base64,AAAB', detail: 'high' } },
+    { type: 'text', text: 'Image output from tool call call_b:' },
+    { type: 'image_url', image_url: { url: 'data:image/png;base64,BBBB', detail: 'auto' } },
+  ]);
+});
+
+test('translateResponsesToChatCompletions places lifted images before a later source message', () => {
+  for (const trailing of [
+    { type: 'message' as const, role: 'user' as const, content: 'new user turn' },
+    { type: 'message' as const, role: 'system' as const, content: 'new system turn' },
+  ]) {
+    const result = translateResponsesToChatCompletions({
+      model: 'gpt-test',
+      input: [
+        { type: 'function_call', call_id: 'call_1', name: 'capture', arguments: '{}', status: 'completed' },
+        {
+          type: 'function_call_output',
+          call_id: 'call_1',
+          output: [{ type: 'input_image', image_url: 'data:image/png;base64,AAAA', detail: 'auto' }],
+        },
+        trailing,
+      ],
+    });
+
+    assertEquals(result.target.messages.map(message => message.role), ['assistant', 'tool', 'user', trailing.role]);
+    assertEquals(result.target.messages.at(-1)?.content, trailing.content);
+  }
 });
 
 // ── Native field forwarding ──

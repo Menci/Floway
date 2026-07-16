@@ -1,5 +1,6 @@
 import type { Hono } from 'hono';
 
+import { mountAlphaSearchRoutes } from './alpha-search/routes.ts';
 import { mountChatRoutes } from './chat/routes.ts';
 import { mountCodexRoutes } from './codex/routes.ts';
 import { completions } from './completions/serve.ts';
@@ -10,6 +11,7 @@ import { models } from './models/serve.ts';
 import type { AuthVars } from '../middleware/auth.ts';
 
 export const mountDataPlane = (app: Hono<{ Variables: AuthVars }>) => {
+  mountAlphaSearchRoutes(app);
   mountChatRoutes(app);
   mountCodexRoutes(app);
 

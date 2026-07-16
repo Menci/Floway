@@ -13,6 +13,7 @@ export const AZURE_DEFAULT_FLAGS: FlagDefaults = {
   'disable-reasoning-on-forced-tool-choice': false,
   'demote-interleaved-system-to-user': false,
   'demote-developer-to-system': false,
+  'promote-system-to-developer': false,
   'strip-billing-attribution': true,
   'strip-prompt-cache-key': false,
 };

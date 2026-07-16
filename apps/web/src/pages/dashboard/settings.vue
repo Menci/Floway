@@ -25,6 +25,7 @@ const defaultSearchConfig: SearchConfig = {
   tavily: { apiKey: '' },
   microsoftGrounding: { apiKey: '' },
   jina: { apiKey: '' },
+  passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
 };
 
 export const useSettingsPageData = defineBasicLoader(async () => {
@@ -32,11 +33,11 @@ export const useSettingsPageData = defineBasicLoader(async () => {
   const [searchRes] = await Promise.all([
     callApi<SearchConfig>(() => api.api['search-config'].$get()),
     useUpstreamsStore().load(),
-    useRawModelsStore().load(),
     useProxiesStore().load(),
     useModelAliases().load(),
     useRuntimeInfo().load(),
   ]);
+  await useRawModelsStore().load();
   return {
     searchConfig: searchRes.data ?? defaultSearchConfig,
     searchConfigError: searchRes.error?.message ?? null,
@@ -87,12 +88,18 @@ const openAliasDialog = (record: ModelAlias | null): void => {
 
 <template>
   <div>
+    <p
+      v-if="modelsStore.error.value"
+      class="mb-4 rounded-md border border-accent-rose/40 bg-accent-rose/10 px-3 py-2 text-sm text-accent-rose"
+    >
+      Model catalog unavailable: {{ modelsStore.error.value }}
+    </p>
     <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
       <div class="flex flex-col gap-5">
         <UpstreamsSettingsCard
           v-model:ordered="ordered"
           :loading="storeLoading"
-          :models="modelsStore.models.value"
+          :models="modelsStore.models.value ?? []"
           @add="(kind: UpstreamProviderKind) => router.push(`/dashboard/upstreams/new/${kind}`)"
           @edit="(record: UpstreamRecord) => router.push(`/dashboard/upstreams/${record.id}`)"
           @changed="reloadAll"
@@ -110,6 +117,8 @@ const openAliasDialog = (record: ModelAlias | null): void => {
         <SearchConfigSection
           :initial-config="settingsData.data.value.searchConfig"
           :initial-error="settingsData.data.value.searchConfigError"
+          :upstreams="ordered"
+          :models="modelsStore.models.value ?? []"
         />
       </div>
 

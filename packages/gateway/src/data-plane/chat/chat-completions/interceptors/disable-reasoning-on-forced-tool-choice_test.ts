@@ -2,24 +2,12 @@ import { test } from 'vitest';
 
 import { withReasoningDisabledOnForcedToolChoice } from './disable-reasoning-on-forced-tool-choice.ts';
 import type { ChatCompletionsInvocation } from './types.ts';
-import { createNonResponsesSourceStore } from '../../responses/items/store.ts';
-import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
+import { mockChatGatewayCtx } from '../../../../test-helpers/gateway-ctx.ts';
 import type { ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import { eventResult, type FlagId } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
-const stubCtx: ChatGatewayCtx = {
-  apiKeyId: 'test-key',
-  upstreamIds: null,
-  wantsStream: false,
-  runtimeLocation: 'TEST',
-  currentColo: 'TEST',
-  dump: null,
-  responseHeaders: new Headers(),
-  backgroundScheduler: () => {},
-  requestStartedAt: 0,
-  store: createNonResponsesSourceStore('test-key'),
-};
+const stubCtx = mockChatGatewayCtx();
 
 const okEvents = () => Promise.resolve(eventResult((async function* () {})(), testTelemetryModelIdentity));
 

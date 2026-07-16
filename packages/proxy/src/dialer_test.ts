@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { dial, runProxiedRequest } from './dialer.ts';
+import { dial, runDirectConnectRequest, runProxiedRequest } from './dialer.ts';
 import { dialHttpConnect } from './protocols/http-connect.ts';
 import { dialReality } from './protocols/reality.ts';
 import { dialShadowsocks2022 } from './protocols/shadowsocks-2022.ts';
@@ -169,6 +169,103 @@ describe('runProxiedRequest — post-dial teardown', () => {
     ).rejects.toBeInstanceOf(Error);
     expect(cancelCalls).toBeGreaterThan(0);
     expect(lastCancelReason).toBeInstanceOf(Error);
+  });
+});
+
+describe('runDirectConnectRequest', () => {
+  const makeSocketDial = (responseHead: string, connect: () => void = () => {}): {
+    socketDial: SocketDial;
+    written: () => string;
+    closeCalls: () => number;
+  } => {
+    let writeBuf = new Uint8Array(0);
+    let closes = 0;
+    return {
+      written: () => new TextDecoder().decode(writeBuf),
+      closeCalls: () => closes,
+      socketDial: {
+        connect: async () => {
+          connect();
+          return {
+            writable: new WritableStream<Uint8Array>({
+              write(chunk) {
+                const next = new Uint8Array(writeBuf.byteLength + chunk.byteLength);
+                next.set(writeBuf, 0);
+                next.set(chunk, writeBuf.byteLength);
+                writeBuf = next;
+              },
+            }),
+            readable: new ReadableStream<Uint8Array>({
+              start(controller) {
+                controller.enqueue(new TextEncoder().encode(responseHead));
+                controller.close();
+              },
+            }),
+            close: async () => { closes++; },
+          };
+        },
+      },
+    };
+  };
+
+  it('sends HTTP directly to the target and closes its socket after the body ends', async () => {
+    const direct = makeSocketDial('HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok');
+    const response = await runDirectConnectRequest(
+      { host: 'api.example.com', port: 80, tls: false },
+      { method: 'POST', path: '/responses?stream=1', headers: {}, body: new TextEncoder().encode('body') },
+      { socketDial: direct.socketDial },
+    );
+
+    expect(await response.text()).toBe('ok');
+    expect(direct.written()).toContain('POST /responses?stream=1 HTTP/1.1\r\n');
+    expect(direct.written()).toContain('Host: api.example.com\r\n');
+    expect(direct.written()).toContain('Content-Length: 4\r\n');
+    expect(direct.written().endsWith('\r\n\r\nbody')).toBe(true);
+    expect(direct.closeCalls()).toBe(1);
+  });
+
+  it('closes its socket when the response body is cancelled', async () => {
+    const direct = makeSocketDial('HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok');
+    const response = await runDirectConnectRequest(
+      { host: 'api.example.com', port: 80, tls: false },
+      { method: 'GET', path: '/', headers: {} },
+      { socketDial: direct.socketDial },
+    );
+
+    await response.body!.cancel('client gone');
+    expect(direct.closeCalls()).toBe(1);
+  });
+
+  it('closes its socket when the response body errors', async () => {
+    const direct = makeSocketDial('HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n');
+    const response = await runDirectConnectRequest(
+      { host: 'api.example.com', port: 80, tls: false },
+      { method: 'GET', path: '/', headers: {} },
+      { socketDial: direct.socketDial },
+    );
+
+    await expect(response.text()).rejects.toThrow('upstream EOF');
+    expect(direct.closeCalls()).toBe(1);
+  });
+
+  it('bounds the raw TCP connect with the direct-connect dial deadline', async () => {
+    const socketDial: SocketDial = {
+      connect: async (_host, _port, options) => {
+        return await new Promise<never>((_, reject) => {
+          options?.signal?.addEventListener('abort', () => reject(options.signal!.reason), { once: true });
+        });
+      },
+    };
+
+    await expect(runDirectConnectRequest(
+      { host: 'api.example.com', port: 443, tls: true },
+      { method: 'GET', path: '/', headers: {} },
+      { socketDial, dialTimeoutMs: 20 },
+    )).rejects.toMatchObject({
+      name: 'ProxyDialError',
+      stage: 'tcp-connect',
+      message: expect.stringContaining('direct-connect'),
+    });
   });
 });
 

@@ -1,66 +1,56 @@
 ---
 name: backfill-model-pricing
-description: Use when the human asks to write or rewrite `usage.unit_price` for
-  some slice of usage rows — typically backfilling NULL rows, or overwriting a
-  time range after a price change. Operates on a live D1 environment, defaults
-  to production.
+description: Write or rewrite usage.unit_price for a selected slice of live D1 usage rows, typically filling NULL rates or correcting a time range after a pricing change. Defaults to production.
 ---
 
 # Backfill Model Pricing
 
-The `usage` table holds one row per `(key_id, model, upstream, model_key, hour,
-dimension)` with a `tokens` count and a `unit_price` snapshot (USD per million
-tokens for that billing dimension). `unit_price` is captured at write time;
-NULL means pricing was unknown then. This skill recomputes it for a chosen
-slice using the current provider pricing.
+`usage` stores one row per
+`(key_id, model, upstream, model_key, hour, pricing_selector, dimension)`.
+`tokens` is the count and `unit_price` is the request-time USD-per-million-
+token rate snapshot. `pricing_selector` is canonical selector JSON; `{}`
+is the base coordinate.
 
-## Flow
+## Procedure
 
-1. **Pick the environment.** Default `--remote` (production). Announce which
-   one before any write.
+1. Announce the environment. Default to production (`--remote`).
+2. Establish the exact model, upstream, hour range, timezone, dimensions, and
+   write mode:
+   - fill only rows where `unit_price IS NULL`; or
+   - overwrite the selected range.
+3. If intent is incomplete, show enabled upstreams and grouped NULL-rate rows
+   by `(upstream, model_key, pricing_selector, dimension)`, including count
+   and `MIN/MAX(hour)`. Do not guess.
+4. Read the current provider rate source or the upstream's
+   `config_json.models[].pricing`. Resolve one `ModelPricing` per
+   `(upstream, model_key)`.
+5. Match the stored `pricing_selector` exactly against
+   `ModelPricing.entries` using canonical selector JSON.
+   - Current runtime selector misses are stored as `{}` with Base rates.
+   - A historical non-Base selector absent from today's catalog indicates
+     catalog drift; stop and investigate rather than guessing its old rates.
+   - Read only `entry.rates[dimension]`.
+   - A missing dimension is unpriced; there is no cache, image, or other
+     field-by-field fallback.
+6. Preview the affected count and representative rows.
+7. Execute one UPDATE per exact
+   `(slice, pricing_selector, dimension)`. Include
+   `unit_price IS NULL` only in fill mode.
+8. Re-query every slice and report the selector, dimension, rate, rows updated,
+   and remaining NULL count.
 
-2. **Get intent.** Need: target model(s), owning upstream, time window on
-   `usage.hour`, and write mode (fill-NULL-only vs overwrite). If the human
-   gives an explicit time, make them name the timezone — `usage.hour` is a
-   text bucket and `hour` strings are ambiguous on their own. Ask for
-   whatever is missing; do not guess the model or upstream.
+Use the local Wrangler dependency and read the D1 database name from
+`wrangler.jsonc`. Never ask the human for credentials already available to
+Wrangler.
 
-3. **If the human gave no instruction**, show them the menu: enabled
-   upstreams, and `(upstream, model_key, dimension)` aggregates over rows with
-   `unit_price IS NULL` including count and `MIN/MAX(hour)`. Let them pick a
-   slice from that.
+## Safety
 
-4. **Resolve pricing per `(upstream, model_key)`** by reading the provider's
-   own pricing source — TS code under `src/data-plane/providers/<provider>/`
-   or the upstream's `config` JSON in `upstreams`. That yields a `ModelPricing`
-   (a partial map of BillingDimension → USD/1M). Different provider kinds
-   resolve differently; let the code/data be the source of truth rather than
-   carrying a copy here. If a model has no rule, stop and report — do not
-   invent one.
-
-5. **Derive the per-dimension unit price.** For each dimension present in the
-   slice, the price is `unitPriceForDimension(pricing, dimension)`
-   (`packages/protocols/src/common/models.ts`): a modality with no dedicated
-   rate falls back to the bare text rate (`input_image → input`,
-   `output_image → output`) and cached input falls back to uncached
-   (`input_cache_read`/`input_cache_write → input`). Mirror that fallback when
-   computing the value to write; a `null` result means leave `unit_price` NULL.
-
-6. **Preview** the affected COUNT and a small sample, then write one UPDATE
-   per `(slice, dimension)`. The `WHERE` filter pins `dimension = ?` and
-   encodes the write mode (add `unit_price IS NULL` for fill-only; omit it to
-   overwrite). After each write, re-count the slice to prove it landed.
-
-7. **Report** per slice: upstream, model_key, dimension, price written, rows
-   updated.
-
-## Cautions
-
-- Production D1. Treat every UPDATE as a deploy-grade action.
-- `unit_price` is a single REAL: USD per million tokens for that one
-  dimension, already resolved through the fallback chain. Do not write a JSON
-  blob and do not write a raw rate that ignores the modality/cached fallback.
-- Cost is `SUM(tokens * unit_price) / 1e6`, so a wrong `unit_price` silently
-  misreports cost in aggregation. Validate the resolved number before writing.
-- Writing today's price into old rows is the intended behavior. If the human
-  wants price-at-the-time, they must supply the rate.
+- Treat every production UPDATE as a deploy-grade mutation.
+- Do not write a JSON rate vector into `unit_price`; it is one scalar.
+- Do not map an obsolete selector to a newer “closest” threshold.
+- Leave rows NULL when the current catalog has no exact entry or explicit
+  dimension rate.
+- Realized cost is `SUM(tokens * unit_price) / 1e6`; validate each scalar
+  before writing.
+- Writing today's documented rate into historical rows is intentional unless
+  the human explicitly supplies price-at-the-time data.

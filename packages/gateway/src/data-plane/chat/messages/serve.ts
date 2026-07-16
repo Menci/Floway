@@ -30,7 +30,7 @@ export const messagesServe = {
       model: payload.model,
       kind: 'chat',
       scheduler: ctx.backgroundScheduler,
-      currentColo: ctx.currentColo,
+      runtimeLocation: ctx.runtimeLocation,
     });
     const viable = enumerated.filter(c => messagesGenerateTarget.canServe(c.model.endpoints));
     const decision = await classifyResponsesItemAffinity({
@@ -46,16 +46,14 @@ export const messagesServe = {
     // stream opened) is the final answer; an api-error or internal-error
     // from one candidate falls through to the next so the gateway absorbs
     // transient 5xx/429/network failures. When the list is exhausted, the
-    // most recent failure is forwarded verbatim. Normalize `payload.model`
-    // to the candidate's real id so every attempt sees the canonical
-    // resolved public id.
+    // most recent failure is forwarded verbatim. Each attempt stamps its
+    // private payload clone with the candidate's canonical model id.
     return await iterateCandidates(
       decision.candidates,
       'messagesServe.generate',
-      candidate => {
-        payload.model = candidate.model.id;
-        return messagesAttempt.generate({ payload, ctx, candidate, headers });
-      },
+      ctx,
+      'chat',
+      candidate => messagesAttempt.generate({ payload, ctx, candidate, headers }),
     );
   },
 
@@ -66,7 +64,7 @@ export const messagesServe = {
       model: payload.model,
       kind: 'chat',
       scheduler: ctx.backgroundScheduler,
-      currentColo: ctx.currentColo,
+      runtimeLocation: ctx.runtimeLocation,
     });
     const viable = enumerated.filter(c => messagesCountTokensTarget.canServe(c.model.endpoints));
     const decision = await classifyResponsesItemAffinity({
@@ -81,12 +79,9 @@ export const messagesServe = {
     return await iterateCandidates(
       decision.candidates,
       'messagesServe.countTokens',
-      candidate => {
-        // Same normalization as generate above — every attempt sees
-        // payload.model === candidate.model.id regardless of inbound form.
-        payload.model = candidate.model.id;
-        return messagesAttempt.countTokens({ payload, ctx, candidate, headers });
-      },
+      ctx,
+      'chat',
+      candidate => messagesAttempt.countTokens({ payload, ctx, candidate, headers }),
     );
   },
 };

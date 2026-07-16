@@ -2,8 +2,10 @@ import type { Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
 
 import { tokenUsageFromChatCompletionsUsage } from './usage.ts';
+import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
+import { settle } from '../../shared/telemetry/settle.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
-import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse, recordPerformance, recordUsage } from '../shared/respond.ts';
+import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse } from '../shared/respond.ts';
 import { type StreamCompletion, writeSSEFrames } from '../shared/stream/sse.ts';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { chatCompletionsProtocolFrameToSSEFrame, CHAT_COMPLETIONS_MISSING_TERMINAL_MESSAGE, collectChatCompletionsProtocolEventsToResult, chatCompletionsErrorPayloadMessage } from '@floway-dev/protocols/chat-completions';
@@ -19,13 +21,13 @@ export const respondChatCompletions = async (
   ctx: GatewayCtx,
 ): Promise<{ success: boolean; response: Response }> => {
   if (result.type === 'api-error') {
-    recordPerformance(ctx, result.performance, true);
+    recordFailedRequest(ctx, result.performance);
     ctx.dump?.error(result.source, result.upstream);
     return { success: false, response: apiErrorToResponse(result) };
   }
 
   if (result.type === 'internal-error') {
-    recordPerformance(ctx, result.performance, true);
+    recordFailedRequest(ctx, result.performance);
     ctx.dump?.failed(result.error.message);
     return { success: false, response: internalChatCompletionsErrorResponse(result.status, result.error) };
   }
@@ -46,11 +48,10 @@ export const respondChatCompletions = async (
       const metadata = await eventResultMetadata(result);
       const usage = response.usage ? tokenUsageFromChatCompletionsUsage(response.usage, response.service_tier) : null;
       ctx.dump?.success(metadata.modelIdentity, usage);
-      await recordUsage(ctx, metadata.modelIdentity, usage);
-      recordPerformance(ctx, metadata.performance, state.failed);
+      settle(ctx, metadata.performance, metadata.modelIdentity, usage, state.failed);
       return { success: true, response: Response.json(response, { headers: mergeForwardedUpstreamHeaders(undefined, result.headers) }) };
     } catch (error) {
-      recordPerformance(ctx, result.performance, true);
+      recordFailedRequest(ctx, result.performance);
       ctx.dump?.failed(error);
       return { success: false, response: internalChatCompletionsErrorResponse(502, toInternalDebugError(error)) };
     }
@@ -72,13 +73,7 @@ export const respondChatCompletions = async (
       } else {
         ctx.dump?.success(metadata.modelIdentity, state.usage);
       }
-      try {
-        await recordUsage(ctx, metadata.modelIdentity, state.usage);
-      } catch (error) {
-        console.error('Failed to record Chat Completions usage:', error);
-      } finally {
-        recordPerformance(ctx, metadata.performance, failed);
-      }
+      settle(ctx, metadata.performance, metadata.modelIdentity, state.usage, failed);
     }
   });
 

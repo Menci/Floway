@@ -1,8 +1,24 @@
 import { test } from 'vitest';
 
 import { buildTargetRequest } from './request.ts';
-import { assertEquals, assertThrows } from '../test-assert.ts';
+import { assertEquals, assertFalse, assertThrows } from '../test-assert.ts';
 import type { GeminiContent, GeminiPayload } from '@floway-dev/protocols/gemini';
+
+test('buildTargetRequest forwards an empty thinkingLevel verbatim', () => {
+  const request = buildTargetRequest({
+    generationConfig: { thinkingConfig: { thinkingLevel: '', includeThoughts: true } },
+  }, 'gpt-test');
+
+  assertEquals(request.reasoning, { effort: '', summary: 'detailed' });
+});
+
+test('buildTargetRequest gives thinkingBudget precedence over an empty thinkingLevel', () => {
+  const request = buildTargetRequest({
+    generationConfig: { thinkingConfig: { thinkingBudget: 2048, thinkingLevel: '', includeThoughts: true } },
+  }, 'gpt-test');
+
+  assertEquals(request.reasoning, { effort: 'low', summary: 'detailed' });
+});
 
 test('buildTargetRequest maps instructions and multimodal user input without defaults', () => {
   const payload: GeminiPayload = {
@@ -178,6 +194,18 @@ test('buildTargetRequest maps generation config, JSON schema, and reasoning cont
   });
 
   assertEquals(buildTargetRequest({ generationConfig: { responseMimeType: 'application/json' } }, 'gpt-test').text, { format: { type: 'json_object' } });
+});
+
+test('buildTargetRequest never invents reasoning.context from Gemini thinking controls', () => {
+  const result = buildTargetRequest({
+    generationConfig: {
+      thinkingConfig: { thinkingLevel: 'high', includeThoughts: true },
+    },
+  }, 'gpt-test');
+
+  assertEquals(result.reasoning, { effort: 'high', summary: 'detailed' });
+  assertEquals(result.reasoning?.context, undefined);
+  assertFalse('context' in (result.reasoning ?? {}));
 });
 
 test('buildTargetRequest filters tools to allowed function names for ANY mode', () => {

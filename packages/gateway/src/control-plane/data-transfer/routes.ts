@@ -19,19 +19,19 @@ import { getDumpStore, notifyDisabledBestEffort } from '../../dump/registry.ts';
 import { type CtxWithJson, type CtxWithQuery } from '../../middleware/zod-validator.ts';
 import { parseDisabledPublicModelIdsWire } from '../../repo/disabled-public-models.ts';
 import { getRepo } from '../../repo/index.ts';
-import { DIRECT_PROXY_ID, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
-import type { ApiKey, PerformanceMetricScope, PerformanceTelemetryRecord, SearchUsageRecord, TokenUsage, UsageRecord, User } from '../../repo/types.ts';
+import { DIRECT_FALLBACK_IDS, isDirectFallbackId, normalizeProxyFallbackList } from '../../repo/proxy-fallback-list.ts';
+import type { ApiKey, PerformanceBucketRow, PerformanceMetric, PerformanceTelemetryRecord, SearchUsageRecord, TokenUsage, UsageRecord, User } from '../../repo/types.ts';
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
-import { getCurrentColo } from '../../runtime/runtime-info.ts';
+import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import { PASSWORD_HASH_SCHEME } from '../../shared/passwords.ts';
 import { isWebSearchProviderName } from '../../shared/web-search-providers.ts';
 import { parseUpstreamIdsValue } from '../api-keys/upstream-ids.ts';
 import { USERNAME_PATTERN, type exportQuery, type importBody, DUMP_RETENTION_MAX_SECONDS } from '../schemas.ts';
 import { copilotConfigField, isRecord, nonEmptyStringField } from '../shared/field-validators.ts';
 import { type SerializedUpstreamRecord, upstreamRecordToFullJson } from '../upstreams/serialize.ts';
-import { BILLING_DIMENSIONS, type ModelPricing } from '@floway-dev/protocols/common';
-import { ALL_PROVIDER_KINDS, normalizeModelPrefix, parseFlagOverridesWire } from '@floway-dev/provider';
-import type { ProxyFallbackEntry, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
+import { BILLING_DIMENSIONS, canonicalizePricingSelector, type BillingDimension, type PriceVector, type PricingSelector, validatePriceVector } from '@floway-dev/protocols/common';
+import { ALL_PROVIDER_KINDS, normalizeModelPrefix, normalizeUpstreamColor, parseFlagOverridesWire } from '@floway-dev/provider';
+import type { PerformanceOperation, ProxyFallbackEntry, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
 import { assertAzureUpstreamRecord } from '@floway-dev/provider-azure';
 import { assertClaudeCodeUpstreamRecord, assertClaudeCodeUpstreamState } from '@floway-dev/provider-claude-code';
 import { assertCodexUpstreamRecord, assertCodexUpstreamState } from '@floway-dev/provider-codex';
@@ -49,7 +49,7 @@ interface SerializedProxy {
 }
 
 interface ExportPayload {
-  version: 7;
+  version: 10;
   exportedAt: string;
   data: {
     users: User[];
@@ -64,9 +64,9 @@ interface ExportPayload {
   };
 }
 
-const EXPORT_VERSION = 7;
+const EXPORT_VERSION = 10;
 const SEARCH_USAGE_HOUR_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}$/;
-const PERFORMANCE_METRIC_SCOPES = new Set<PerformanceMetricScope>(['request_total', 'upstream_success']);
+const PERFORMANCE_METRICS = new Set<PerformanceMetric>(['ttft_ms', 'tpot_us']);
 const UPSTREAM_PROVIDERS = new Set<UpstreamProviderKind>(ALL_PROVIDER_KINDS);
 const LEGACY_UPSTREAM_PREFIXES = ['openai:', 'copilot:'];
 
@@ -76,7 +76,10 @@ const isLegacyUpstreamIdentity = (value: string): boolean => LEGACY_UPSTREAM_PRE
 
 const isNonNegativeSafeInteger = (value: unknown): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 
-const isPerformanceMetricScope = (value: unknown): value is PerformanceMetricScope => typeof value === 'string' && PERFORMANCE_METRIC_SCOPES.has(value as PerformanceMetricScope);
+const isPerformanceMetric = (value: unknown): value is PerformanceMetric => typeof value === 'string' && PERFORMANCE_METRICS.has(value as PerformanceMetric);
+
+const PERFORMANCE_OPERATIONS = new Set<PerformanceOperation>(['chat', 'text_completion', 'embeddings', 'image_generation', 'image_edit']);
+const isPerformanceOperation = (value: unknown): value is PerformanceOperation => typeof value === 'string' && PERFORMANCE_OPERATIONS.has(value as PerformanceOperation);
 
 const importErrorBuilder = (field: string, expected: string) => new Error(`${field} must be ${expected}`);
 
@@ -171,6 +174,7 @@ const parseUpstreamRecords = (value: unknown): { type: 'ok'; records: UpstreamRe
         disabledPublicModelIds: parseDisabledPublicModelIdsWire(item.disabled_public_model_ids),
         proxyFallbackList: parseProxyFallbackListField(item.proxy_fallback_list),
         modelPrefix: normalizeModelPrefix(item.model_prefix),
+        color: normalizeUpstreamColor(item.color),
         config: item.config,
         state: normalizeUpstreamState(kind, item.state),
       };
@@ -195,7 +199,7 @@ const parseProxyRecords = (value: unknown): { type: 'ok'; records: SerializedPro
       const item = value[i];
       if (!isRecord(item)) throw new Error('record must be an object');
       const id = nonEmptyString(item.id, 'id');
-      if (id === DIRECT_PROXY_ID) throw new Error(`id must not be the reserved '${DIRECT_PROXY_ID}' sentinel`);
+      if (isDirectFallbackId(id)) throw new Error('id must not be a reserved direct-transport sentinel');
       const name = nonEmptyString(item.name, 'name');
       const url = nonEmptyString(item.url, 'url');
       try {
@@ -229,9 +233,9 @@ const validateProxyIdentities = (records: readonly SerializedProxy[]): string | 
 // Every entry in every upstream's proxy_fallback_list must resolve to a proxy
 // id that will exist after the import completes — that is, an imported proxy,
 // an existing local proxy (merge mode only; replace mode wipes them first),
-// or the 'direct' sentinel. A dangling reference would silently disable that
-// fallback in the dial layer, which is exactly the silent-truncation
-// behavior the import contract is supposed to prevent.
+// or one of the built-in direct transports. A dangling reference would
+// silently disable that fallback in the dial layer, which is exactly the
+// silent-truncation behavior the import contract is supposed to prevent.
 const validateProxyFallbackReferences = (
   upstreams: readonly UpstreamRecord[],
   proxies: readonly SerializedProxy[],
@@ -239,7 +243,7 @@ const validateProxyFallbackReferences = (
 ): string | null => {
   const knownIds = new Set<string>(proxies.map(p => p.id));
   for (const id of existingProxyIds) knownIds.add(id);
-  knownIds.add(DIRECT_PROXY_ID);
+  for (const id of DIRECT_FALLBACK_IDS) knownIds.add(id);
   for (const upstream of upstreams) {
     for (const ref of upstream.proxyFallbackList) {
       if (!knownIds.has(ref.id)) {
@@ -371,29 +375,39 @@ const validateApiKeyIdentities = (records: readonly ApiKey[], existing: readonly
   return null;
 };
 
-const parseImportedCost = (value: unknown): { type: 'ok'; cost: UsageRecord['cost'] } | { type: 'invalid' } => {
-  if (value === undefined || value === null) return { type: 'ok', cost: null };
-  if (typeof value !== 'object' || Array.isArray(value)) return { type: 'invalid' };
+const parseImportedRates = (value: unknown): { type: 'ok'; rates: UsageRecord['rates'] } | { type: 'invalid'; error: string } => {
+  if (value === undefined) return { type: 'invalid', error: 'rates is required' };
+  if (value === null) return { type: 'ok', rates: null };
+  if (typeof value !== 'object' || Array.isArray(value)) return { type: 'invalid', error: 'rates must be an object or null' };
   const obj = value as Record<string, unknown>;
-  const cost: ModelPricing = {};
+  const unknownDimensions = Object.keys(obj).filter(key => !BILLING_DIMENSIONS.includes(key as BillingDimension));
+  if (unknownDimensions.length > 0) return { type: 'invalid', error: `rates has unknown dimensions: ${unknownDimensions.join(', ')}` };
+  const rates: PriceVector = {};
   for (const dimension of BILLING_DIMENSIONS) {
     const rate = obj[dimension];
     if (rate === undefined) continue;
-    if (typeof rate !== 'number' || !Number.isFinite(rate)) return { type: 'invalid' };
-    cost[dimension] = rate;
+    rates[dimension] = rate as number;
   }
-  return { type: 'ok', cost: Object.keys(cost).length > 0 ? cost : null };
+  if (Object.keys(rates).length === 0) return { type: 'ok', rates: null };
+  try {
+    validatePriceVector(rates, 'rates');
+    return { type: 'ok', rates };
+  } catch (error) {
+    return { type: 'invalid', error: error instanceof Error ? error.message : String(error) };
+  }
 };
 
-const parseImportedTokens = (value: unknown): { type: 'ok'; tokens: TokenUsage } | { type: 'invalid' } => {
-  if (value === undefined || value === null) return { type: 'ok', tokens: {} };
-  if (typeof value !== 'object' || Array.isArray(value)) return { type: 'invalid' };
+const parseImportedTokens = (value: unknown): { type: 'ok'; tokens: TokenUsage } | { type: 'invalid'; error: string } => {
+  if (value === undefined) return { type: 'invalid', error: 'tokens is required' };
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return { type: 'invalid', error: 'tokens must be an object' };
   const obj = value as Record<string, unknown>;
+  const unknownDimensions = Object.keys(obj).filter(key => !BILLING_DIMENSIONS.includes(key as BillingDimension));
+  if (unknownDimensions.length > 0) return { type: 'invalid', error: `tokens has unknown dimensions: ${unknownDimensions.join(', ')}` };
   const tokens: TokenUsage = {};
   for (const dimension of BILLING_DIMENSIONS) {
     const count = obj[dimension];
     if (count === undefined) continue;
-    if (!isNonNegativeSafeInteger(count)) return { type: 'invalid' };
+    if (!isNonNegativeSafeInteger(count)) return { type: 'invalid', error: 'tokens must contain non-negative safe integers' };
     if (count > 0) tokens[dimension] = count;
   }
   return { type: 'ok', tokens };
@@ -423,30 +437,27 @@ const parseUsageRecords = (value: unknown): { type: 'ok'; records: UsageRecord[]
     if (typeof record.upstream === 'string' && isLegacyUpstreamIdentity(record.upstream)) {
       return { type: 'invalid', index: i, error: 'upstream must use a raw upstream id, not a legacy provider-prefixed identity' };
     }
-    if (record.tier !== undefined && record.tier !== null && typeof record.tier !== 'string') {
-      return { type: 'invalid', index: i, error: 'tier, when present, must be a string or null' };
+    if (!isRecord(record.pricingSelector)) return { type: 'invalid', index: i, error: 'pricingSelector must be an object' };
+    let pricingSelector: PricingSelector;
+    try {
+      pricingSelector = canonicalizePricingSelector(record.pricingSelector as PricingSelector);
+    } catch (cause) {
+      return { type: 'invalid', index: i, error: `invalid pricingSelector: ${cause instanceof Error ? cause.message : String(cause)}` };
     }
-    if (record.tier === '') {
-      return { type: 'invalid', index: i, error: 'tier must be a non-empty string or null/absent' };
-    }
-    // Empty-string is rejected rather than normalized to null: the unique
-    // index folds NULL/'' under COALESCE, so a '' import would silently
-    // merge with base-tier rows.
-    const tier: string | null = typeof record.tier === 'string' ? record.tier : null;
     const tokensResult = parseImportedTokens(record.tokens);
-    if (tokensResult.type === 'invalid') return { type: 'invalid', index: i, error: 'record has invalid token dimension counts' };
-    const costResult = parseImportedCost(record.cost);
-    if (costResult.type === 'invalid') return { type: 'invalid', index: i, error: 'record has invalid cost dimension rates' };
+    if (tokensResult.type === 'invalid') return { type: 'invalid', index: i, error: tokensResult.error };
+    const ratesResult = parseImportedRates(record.rates);
+    if (ratesResult.type === 'invalid') return { type: 'invalid', index: i, error: ratesResult.error };
     records.push({
       keyId: record.keyId,
       model: record.model,
       upstream: record.upstream,
       modelKey: record.modelKey,
       hour: record.hour,
-      tier,
+      pricingSelector,
       requests: record.requests,
       tokens: tokensResult.tokens,
-      cost: costResult.cost,
+      rates: ratesResult.rates,
     });
   }
 
@@ -512,48 +523,112 @@ const parsePerformanceRecords = (value: unknown): { type: 'ok'; records: Perform
     if (
       typeof item.hour !== 'string' ||
       !SEARCH_USAGE_HOUR_PATTERN.test(item.hour) ||
-      !isPerformanceMetricScope(item.metricScope) ||
       typeof item.keyId !== 'string' ||
       item.keyId.length === 0 ||
       typeof item.model !== 'string' ||
       item.model.length === 0 ||
-      (item.upstream !== null && typeof item.upstream !== 'string') ||
-      (typeof item.upstream === 'string' && isLegacyUpstreamIdentity(item.upstream)) ||
-      typeof item.modelKey !== 'string' ||
-      item.modelKey.length === 0 ||
-      typeof item.stream !== 'boolean' ||
+      typeof item.upstream !== 'string' ||
+      item.upstream.length === 0 ||
+      isLegacyUpstreamIdentity(item.upstream) ||
+      !isPerformanceOperation(item.operation) ||
       typeof item.runtimeLocation !== 'string' ||
       item.runtimeLocation.length === 0 ||
       !isNonNegativeSafeInteger(item.requests) ||
-      !isNonNegativeSafeInteger(item.errors) ||
-      !isNonNegativeSafeInteger(item.totalMsSum) ||
+      !isNonNegativeSafeInteger(item.ttftSamplesOk) ||
+      !isNonNegativeSafeInteger(item.errorsWithOutput) ||
+      !isNonNegativeSafeInteger(item.errorsNoOutput) ||
+      !isNonNegativeSafeInteger(item.neutral) ||
+      !isNonNegativeSafeInteger(item.tpotSamples) ||
+      !isNonNegativeSafeInteger(item.ttftMsSum) ||
+      !isNonNegativeSafeInteger(item.tpotUsSum) ||
       !Array.isArray(item.buckets)
     ) {
       return { type: 'invalid', index: i, error: 'record fields are missing or malformed' };
     }
 
-    const buckets = [];
+    // Partition-first invariant: every request lands in exactly one of the
+    // four counters, so their sum equals `requests` on any row the recorder
+    // wrote. `tpotSamples` is orthogonal (a subset of TTFT-carrying rows —
+    // ttftSamplesOk + errorsWithOutput — where at least two output tokens
+    // streamed).
+    const ttftSamplesOk = item.ttftSamplesOk as number;
+    const errorsWithOutput = item.errorsWithOutput as number;
+    const errorsNoOutput = item.errorsNoOutput as number;
+    const neutral = item.neutral as number;
+    const requests = item.requests as number;
+    const tpotSamples = item.tpotSamples as number;
+    if (ttftSamplesOk + errorsWithOutput + errorsNoOutput + neutral !== requests) {
+      return {
+        type: 'invalid',
+        index: i,
+        error: 'ttftSamplesOk + errorsWithOutput + errorsNoOutput + neutral must equal requests',
+      };
+    }
+    if (tpotSamples > ttftSamplesOk + errorsWithOutput) {
+      return {
+        type: 'invalid',
+        index: i,
+        error: 'tpotSamples must not exceed ttftSamplesOk + errorsWithOutput',
+      };
+    }
+
+    const buckets: PerformanceBucketRow[] = [];
+    const bucketKeys = new Set<string>();
+    let ttftBucketCount = 0;
+    let tpotBucketCount = 0;
     for (const bucket of item.buckets) {
       if (!bucket || typeof bucket !== 'object') return { type: 'invalid', index: i, error: 'bucket is not an object' };
-      const bucketItem = bucket as Record<string, unknown>;
-      if (!isNonNegativeSafeInteger(bucketItem.lowerMs) || !isNonNegativeSafeInteger(bucketItem.upperMs) || !isNonNegativeSafeInteger(bucketItem.count) || bucketItem.upperMs <= bucketItem.lowerMs) {
-        return { type: 'invalid', index: i, error: 'bucket lowerMs/upperMs/count fields are missing or malformed' };
+      const b = bucket as Record<string, unknown>;
+      if (
+        !isPerformanceMetric(b.metric) ||
+        !isNonNegativeSafeInteger(b.lower) ||
+        (b.upper !== null && !isNonNegativeSafeInteger(b.upper)) ||
+        (b.upper !== null && (b.upper as number) <= (b.lower as number)) ||
+        !isNonNegativeSafeInteger(b.count)
+      ) {
+        return { type: 'invalid', index: i, error: 'bucket metric/lower/upper/count fields are missing or malformed' };
       }
-      buckets.push({ lowerMs: bucketItem.lowerMs, upperMs: bucketItem.upperMs, count: bucketItem.count });
+      // Duplicate {metric, lower} tuples would silently over-count in
+      // aggregation because updateAggregate merges bucket entries by lower
+      // edge and adds their counts.
+      const dedupKey = `${b.metric}\0${b.lower as number}`;
+      if (bucketKeys.has(dedupKey)) {
+        return { type: 'invalid', index: i, error: `duplicate bucket entry for {metric: ${b.metric}, lower: ${b.lower as number}}` };
+      }
+      bucketKeys.add(dedupKey);
+      if (b.metric === 'ttft_ms') ttftBucketCount += b.count as number;
+      else tpotBucketCount += b.count as number;
+      buckets.push({ metric: b.metric, lower: b.lower as number, upper: b.upper as number | null, count: b.count as number });
+    }
+
+    // Every ttft/tpot sample the recorder logs also increments exactly one
+    // bucket entry for its metric. If the per-metric bucket sum doesn't match
+    // the declared sample count, the histogram is inconsistent with the
+    // counters and percentile queries would return misleading values. TTFT
+    // buckets cover both healthy and partial-output-failure samples, so the
+    // sum matches `ttftSamplesOk + errorsWithOutput`.
+    if (ttftBucketCount !== ttftSamplesOk + errorsWithOutput) {
+      return { type: 'invalid', index: i, error: `ttft_ms bucket sum (${ttftBucketCount}) must equal ttftSamplesOk + errorsWithOutput (${ttftSamplesOk + errorsWithOutput})` };
+    }
+    if (tpotBucketCount !== tpotSamples) {
+      return { type: 'invalid', index: i, error: `tpot_us bucket sum (${tpotBucketCount}) must equal tpotSamples (${tpotSamples})` };
     }
 
     records.push({
       hour: item.hour,
-      metricScope: item.metricScope,
       keyId: item.keyId,
       model: item.model,
       upstream: item.upstream,
-      modelKey: item.modelKey,
-      stream: item.stream,
+      operation: item.operation as PerformanceOperation,
       runtimeLocation: item.runtimeLocation,
-      requests: item.requests,
-      errors: item.errors,
-      totalMsSum: item.totalMsSum,
+      requests,
+      ttftSamplesOk,
+      errorsWithOutput,
+      errorsNoOutput,
+      neutral,
+      tpotSamples,
+      ttftMsSum: item.ttftMsSum,
+      tpotUsSum: item.tpotUsSum,
       buckets,
     });
   }
@@ -575,7 +650,7 @@ const parsePerformanceRecords = (value: unknown): { type: 'ok'; records: Perform
 const warmModelsCache = async (record: UpstreamRecord, c: Context): Promise<void> => {
   const scheduler = backgroundSchedulerFromContext(c);
   const instance = createProviderInstance(record);
-  const fetcher = (await createPerRequestFetcher(getCurrentColo(c.req.raw)))(record.id);
+  const fetcher = (await createPerRequestFetcher(getRuntimeLocation(c.req.raw)))(record.id);
   try {
     await fetchUpstreamModelsCached(instance, { scheduler, fetcher, force: true });
   } catch {}

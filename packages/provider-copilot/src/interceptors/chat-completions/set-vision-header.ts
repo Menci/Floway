@@ -7,7 +7,7 @@ import type { CopilotChatCompletionsBoundaryInterceptor } from './types.ts';
  * rejected.
  *
  * References:
- * - https://github.com/caozhiyuan/copilot-api/blob/main/src/services/copilot/create-chat-completions.ts#L20-L24
+ * - https://github.com/caozhiyuan/copilot-api/blob/cd0d0182eb4b9bf68a3376dc79728afa7f42ce07/src/services/copilot/create-chat-completions.ts#L28-L49
  */
 export const withVisionHeaderSet: CopilotChatCompletionsBoundaryInterceptor = async (ctx, _request, run) => {
   const hasImage = ctx.payload.messages.some(

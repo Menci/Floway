@@ -2,13 +2,15 @@ import type { Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
 
 import { geminiStatusForHttpStatus } from './errors.ts';
-import { tokenUsage } from '../../shared/telemetry/usage.ts';
+import { tokenUsageFromGeminiUsageMetadata } from './usage.ts';
+import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
+import { settle } from '../../shared/telemetry/settle.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
-import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse, recordPerformance, recordUsage } from '../shared/respond.ts';
+import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse } from '../shared/respond.ts';
 import { type StreamCompletion, writeSSEFrames } from '../shared/stream/sse.ts';
 import { type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import { geminiProtocolFrameToSSEFrame, GEMINI_MISSING_TERMINAL_MESSAGE, isGeminiErrorEvent, isGeminiTerminalEvent, collectGeminiProtocolEventsToResult } from '@floway-dev/protocols/gemini';
-import type { GeminiErrorResponse, GeminiResult, GeminiStreamEvent, GeminiUsageMetadata } from '@floway-dev/protocols/gemini';
+import type { GeminiErrorResponse, GeminiResult, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 import { type ExecuteResult, type PlainResult, type ApiErrorResult, type InternalDebugError, toInternalDebugError, decodeApiErrorBody } from '@floway-dev/provider';
 
 // Renders an upstream Gemini result into the client HTTP/SSE response, in the
@@ -24,13 +26,13 @@ export const respondGemini = async (
   ctx: GatewayCtx,
 ): Promise<{ success: boolean; response: Response }> => {
   if (result.type === 'api-error') {
-    recordPerformance(ctx, result.performance, true);
+    recordFailedRequest(ctx, result.performance);
     ctx.dump?.error(result.source, result.upstream);
     return { success: false, response: geminiApiErrorResponse(result) };
   }
 
   if (result.type === 'internal-error') {
-    recordPerformance(ctx, result.performance, true);
+    recordFailedRequest(ctx, result.performance);
     ctx.dump?.failed(result.error.message);
     return { success: false, response: geminiErrorResponse(result.status, result.error.message, internalDebugFields(result.error)) };
   }
@@ -51,11 +53,10 @@ export const respondGemini = async (
       const metadata = await eventResultMetadata(result);
       const usage = tokenUsageFromGeminiResponse(response);
       ctx.dump?.success(metadata.modelIdentity, usage);
-      await recordUsage(ctx, metadata.modelIdentity, usage);
-      recordPerformance(ctx, metadata.performance, state.failed);
+      settle(ctx, metadata.performance, metadata.modelIdentity, usage, state.failed);
       return { success: true, response: Response.json(response, { headers: mergeForwardedUpstreamHeaders(undefined, result.headers) }) };
     } catch (error) {
-      recordPerformance(ctx, result.performance, true);
+      recordFailedRequest(ctx, result.performance);
       ctx.dump?.failed(error);
       return { success: false, response: geminiCollectErrorResponse(error) };
     }
@@ -77,31 +78,11 @@ export const respondGemini = async (
       } else {
         ctx.dump?.success(metadata.modelIdentity, state.usage);
       }
-      try {
-        await recordUsage(ctx, metadata.modelIdentity, state.usage);
-      } catch (error) {
-        console.error('Failed to record Gemini usage:', error);
-      } finally {
-        recordPerformance(ctx, metadata.performance, failed);
-      }
+      settle(ctx, metadata.performance, metadata.modelIdentity, state.usage, failed);
     }
   });
 
   return { success: true, response };
-};
-
-// --- token usage ---
-
-// Gemini reports promptTokenCount inclusive of cachedContentTokenCount
-// (verified against the Google GenAI SDK docs); subtract it for disjoint input.
-// Reasoning (thoughts) tokens are billed as output.
-const tokenUsageFromGeminiUsageMetadata = (m: GeminiUsageMetadata) => {
-  const cacheRead = m.cachedContentTokenCount ?? 0;
-  return tokenUsage({
-    input: (m.promptTokenCount ?? 0) - cacheRead,
-    input_cache_read: cacheRead,
-    output: (m.candidatesTokenCount ?? 0) + (m.thoughtsTokenCount ?? 0),
-  });
 };
 
 const tokenUsageFromGeminiResponse = (r: GeminiResult) => (r.usageMetadata ? tokenUsageFromGeminiUsageMetadata(r.usageMetadata) : null);
@@ -113,12 +94,6 @@ type GeminiErrorDebugFields = Partial<Pick<InternalDebugError, 'type' | 'name' |
 type GeminiErrorStatusPayload = {
   error: GeminiErrorResponse['error'] & GeminiErrorDebugFields;
 };
-
-// HTTP status -> Google RPC status string mapping plus the two ways we coerce
-// an out-of-range code: `googleRpcHttpStatusCode` for passthrough/native
-// errors (anything insane becomes 500), `synthesizedGeminiHttpStatusCode` for
-// errors we mint (a non-500 that maps to INTERNAL becomes 500).
-const synthesizedGeminiHttpStatusCode = (status: number): number => (geminiStatusForHttpStatus(status) === 'INTERNAL' && status !== 500 ? 500 : status);
 
 const googleRpcHttpStatusCode = (status: number): number => (Number.isInteger(status) && status >= 400 && status <= 599 ? status : 500);
 
@@ -155,7 +130,8 @@ export const geminiInternalRpcErrorResponse = (status: number, error: unknown): 
 };
 
 const geminiErrorResponse = (status: number, message: string, debug: GeminiErrorDebugFields = {}): Response => {
-  const code = synthesizedGeminiHttpStatusCode(status);
+  // For gateway-minted errors, a non-500 that maps to INTERNAL is coerced to 500.
+  const code = geminiStatusForHttpStatus(status) === 'INTERNAL' && status !== 500 ? 500 : status;
   return Response.json({ error: { code, message, status: geminiStatusForHttpStatus(code), ...debug } }, { status: code });
 };
 

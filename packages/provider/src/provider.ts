@@ -1,14 +1,15 @@
 import type { FlagDefaults } from './flags.ts';
+import type { ImagesEditsRequest } from './images.ts';
 import type { ModelPrefixConfig } from './model-prefix.ts';
 import type { ProviderModel, UpstreamProviderKind, UpstreamRecord } from './model.ts';
 import type { Fetcher } from './options.ts';
 import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
-import type { ModelPricing, ProtocolFrame } from '@floway-dev/protocols/common';
+import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { CompletionsPayload } from '@floway-dev/protocols/completions';
 import type { EmbeddingsPayload } from '@floway-dev/protocols/embeddings';
 import type { ImagesGenerationsPayload } from '@floway-dev/protocols/images';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
-import type { ResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { CanonicalResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 // Action tag threaded through the Responses pipeline. `generate` is a normal
 // streaming /responses turn; `compact` is the summarize-and-replace-history
@@ -24,14 +25,12 @@ export interface Provider {
   upstream: string;
   kind: UpstreamProviderKind;
   name: string;
-  // Public model ids the operator switched off for this upstream.
   disabledPublicModelIds: readonly string[];
   // Per-upstream model name prefix policy mirrored from the source upstream
   // record so registry helpers — routing and listing — read it from the
   // instance instead of re-fetching the row. `null` keeps the bare-id behavior.
   modelPrefix: ModelPrefixConfig | null;
   instance: ProviderInstance;
-  supportsResponsesItemReference: boolean;
 }
 
 export interface ProviderCallResult {
@@ -72,21 +71,12 @@ export type ProviderResponsesResult =
   | { action: 'compact'; ok: true; result: ResponsesResult; modelKey: string }
   | { action: 'compact'; ok: false; response: Response; modelKey: string };
 
-// Per-call observation hooks the gateway threads through to the provider.
+// Per-call options the gateway threads through to the provider.
 //
 // `fetcher` is the per-upstream proxy-aware indirection for outbound HTTP.
 // Every upstream call (data-plane request, OAuth refresh, etc.) must go
 // through this fetcher so a single fallback chain governs every leg of the
 // call under restricted egress.
-//
-// `recordUpstreamLatency` measures the precise upstream round-trip — request
-// leaves the gateway, response returns to the gateway — and explicitly excludes
-// in-process work the provider does around the call (boundary interceptors,
-// auth-token refresh, request/response shaping, SSE parsing). The provider is
-// required to wrap the actual upstream fetch promise with this helper at least
-// once; the gateway throws on a violation so missing wraps fail loud. On
-// retries (e.g. invalidate-token-and-redo), only the most recent invocation's
-// measurement is kept.
 //
 // `waitUntil` registers a fire-and-forget promise that must outlive the
 // response. On workerd it maps to `ExecutionContext.waitUntil` so the
@@ -103,9 +93,16 @@ export type ProviderResponsesResult =
 // the bag and the provider must not retain a reference past the call.
 export interface UpstreamCallOptions {
   fetcher: Fetcher;
-  recordUpstreamLatency: <T>(promise: Promise<T>) => Promise<T>;
   waitUntil: (promise: Promise<unknown>) => void;
   headers: Headers;
+  // Providers wrap the dispatch that fires the outbound fetch. The wrap
+  // runs synchronously and stamps `attempt.upstreamCallStartedAt` before
+  // invoking the factory, so the stamp fires ahead of dial + TLS + CONNECT
+  // (which live inside the returned promise's async body under a proxied
+  // fetcher). The pre-dial anchor is deliberate: TTFT from the user's
+  // viewpoint includes proxy handshake time, so keeping it in the interval
+  // matches observed client latency.
+  wrapUpstreamCall: <T>(dispatch: () => Promise<T>) => Promise<T>;
 }
 
 export interface ProviderInstance {
@@ -113,8 +110,7 @@ export interface ProviderInstance {
   // latency budget, so it takes the per-upstream fetcher directly instead of
   // the broader `UpstreamCallOptions` bag the data-plane `call*` methods use.
   getProvidedModels(fetcher: Fetcher): Promise<readonly ProviderModel[]>;
-  // Resolve pricing for a usage record's `model_key` (the raw upstream model id).
-  getPricingForModelKey(modelKey: string): ModelPricing | null;
+  callAlphaSearch(model: ProviderModel, body: Record<string, unknown>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
   // /v1/completions text completions. Passthrough. Providers whose
   // upstream doesn't expose /v1/completions set `endpoints.completions`
   // to absent in getProvidedModels, so this method is unreachable for
@@ -128,17 +124,14 @@ export interface ProviderInstance {
   // before the wire header is filtered down to the Copilot allow-list)
   // re-parse it from `opts.headers.get('anthropic-beta')` themselves.
   callChatCompletions(model: ProviderModel, body: Omit<ChatCompletionsPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
-  callResponses(model: ProviderModel, body: Omit<ResponsesPayload, 'model'>, action: ResponsesAction, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderResponsesResult>;
+  callResponses(model: ProviderModel, body: Omit<CanonicalResponsesPayload, 'model'>, action: ResponsesAction, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderResponsesResult>;
   callMessages(model: ProviderModel, body: Omit<MessagesPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderStreamResult<MessagesStreamEvent>>;
   // count_tokens is non-streaming JSON; the gateway relays the upstream
   // Response verbatim.
   callMessagesCountTokens(model: ProviderModel, body: Omit<MessagesPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
   callEmbeddings(model: ProviderModel, body: Omit<EmbeddingsPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
   callImagesGenerations(model: ProviderModel, body: Omit<ImagesGenerationsPayload, 'model'>, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
-  // The provider takes ownership of `body` and may mutate it (e.g. append
-  // the upstream-specific model/deployment id). Callers must allocate a
-  // fresh FormData per call.
-  callImagesEdits(model: ProviderModel, body: FormData, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
+  callImagesEdits(model: ProviderModel, request: ImagesEditsRequest, signal: AbortSignal | undefined, opts: UpstreamCallOptions): Promise<ProviderCallResult>;
 }
 
 // Static, module-shaped surface each provider package exports. The gateway

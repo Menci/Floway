@@ -2,7 +2,7 @@ import { appendFailedUpstreams } from '../../shared/failed-upstreams.ts';
 import type { ChatServeFailure } from '../shared/errors.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
-import type { ExecuteResult } from '@floway-dev/provider';
+import type { ExecuteResult, PerformanceTelemetryContext } from '@floway-dev/provider';
 import type { TranslatorInputError } from '@floway-dev/translate';
 
 // Mint an Anthropic-shaped synthetic request id (`req_` + 24 base62 chars)
@@ -23,6 +23,7 @@ const anthropicErrorResult = (
   status: number,
   type: string,
   message: string,
+  performance?: PerformanceTelemetryContext,
 ): ExecuteResult<ProtocolFrame<MessagesStreamEvent>> => ({
   type: 'api-error',
   source: 'gateway',
@@ -33,16 +34,20 @@ const anthropicErrorResult = (
     error: { type, message },
     request_id: mintAnthropicRequestId(),
   })),
+  ...(performance ? { performance } : {}),
 });
 
 // Translator surfaced a caller-input violation (unsupported content part,
 // disallowed role, missing required field, etc.). Render as a 400
 // invalid_request_error so the caller sees a protocol-shaped failure
-// instead of the internal-error 502 envelope.
+// instead of the internal-error 502 envelope. `performance` carries the
+// throwing candidate's telemetry attribution when the throw fired
+// mid-attempt (see AttemptState.telemetry).
 export const translatorInputErrorResult = (
   error: TranslatorInputError,
+  performance?: PerformanceTelemetryContext,
 ): ExecuteResult<ProtocolFrame<MessagesStreamEvent>> =>
-  anthropicErrorResult(400, 'invalid_request_error', error.message);
+  anthropicErrorResult(400, 'invalid_request_error', error.message, performance);
 
 // `endpoint` selects between `/messages` and `/messages/count_tokens` only in
 // the `model-unsupported` message string.

@@ -9,7 +9,7 @@ const good = { accounts: [goodAccount] };
 const wrap = (config: unknown): UpstreamRecord => ({
   id: 'up', kind: 'codex', name: 'n', enabled: true, sortOrder: 0,
   createdAt: '', updatedAt: '', config: config as UpstreamRecord['config'], state: null,
-  flagOverrides: {}, disabledPublicModelIds: [], proxyFallbackList: [], modelPrefix: null,
+  flagOverrides: {}, disabledPublicModelIds: [], proxyFallbackList: [], modelPrefix: null, color: null,
 });
 
 describe('assertCodexUpstreamRecord (config validation)', () => {
@@ -42,7 +42,7 @@ describe('assertCodexUpstreamRecord (record-level checks)', () => {
     const record: UpstreamRecord = {
       id: 'up', kind: 'copilot', name: 'n', enabled: true, sortOrder: 0,
       createdAt: '', updatedAt: '', config: {}, state: null,
-      flagOverrides: {}, disabledPublicModelIds: [], proxyFallbackList: [], modelPrefix: null,
+      flagOverrides: {}, disabledPublicModelIds: [], proxyFallbackList: [], modelPrefix: null, color: null,
     };
     expect(() => assertCodexUpstreamRecord(record)).toThrow();
   });

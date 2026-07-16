@@ -2,7 +2,7 @@ import { test } from 'vitest';
 
 import { createOllamaProvider } from './provider.ts';
 import type { UpstreamRecord } from '@floway-dev/provider';
-import { directFetcher } from '@floway-dev/provider';
+import { directFetcher, identityWrapUpstreamCall } from '@floway-dev/provider';
 import { assertEquals, jsonResponse, noopUpstreamCallOptions, withMockedFetch } from '@floway-dev/test-utils';
 
 const buildRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => ({
@@ -19,6 +19,7 @@ const buildRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord =>
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
+  color: null,
   ...overrides,
 });
 
@@ -62,10 +63,10 @@ test('getProvidedModels surfaces chat models with all three OpenAI/Anthropic-com
     assertEquals(Object.keys(gptoss.endpoints).sort(), ['chatCompletions', 'completions', 'messages', 'responses']);
     assertEquals(gptoss.owned_by, 'ollama');
     assertEquals(gptoss.limits.max_context_window_tokens, 131072);
-    // OLLAMA_MODEL_PRICING covers gpt-oss:120b, so cost flows through into
+    // OLLAMA_MODEL_PRICING covers gpt-oss:120b, so pricing flows through into
     // the ProviderModel on the auto path.
-    assertEquals(gptoss.cost?.input, 0.15);
-    assertEquals(gptoss.cost?.output, 0.6);
+    assertEquals(gptoss.pricing?.entries[0]?.rates.input, 0.15);
+    assertEquals(gptoss.pricing?.entries[0]?.rates.output, 0.6);
   });
 });
 
@@ -89,6 +90,7 @@ test('getProvidedModels merges manual overrides in front of auto-fetched models 
         kind: 'chat',
         endpoints: { chatCompletions: {} },
         display_name: 'Pinned 120B',
+        pricing: { entries: [{ rates: { input: 99, output: 99 } }] },
       }],
     },
   }));
@@ -99,30 +101,28 @@ test('getProvidedModels merges manual overrides in front of auto-fetched models 
     assertEquals(models[0].id, 'gpt-oss:120b');
     assertEquals(models[0].display_name, 'Pinned 120B');
     assertEquals(Object.keys(models[0].endpoints), ['chatCompletions']);
+    assertEquals(models[0].pricing, { entries: [{ rates: { input: 99, output: 99 } }] });
     // No duplicate gpt-oss:120b further down.
     assertEquals(models.filter(m => m.id === 'gpt-oss:120b').length, 1);
   });
 });
 
-test('getPricingForModelKey resolves manual cost first, then falls back to the OLLAMA_MODEL_PRICING table', () => {
+test('manual known models inherit built-in pricing when no override is configured', async () => {
   const instance = createOllamaProvider(buildRecord({
     config: {
       baseUrl: 'https://ollama.com',
       apiKey: 'ollama_test',
       models: [{
-        upstreamModelId: 'gpt-oss:120b',
+        upstreamModelId: 'deepseek-v4-flash',
         kind: 'chat',
         endpoints: { chatCompletions: {} },
-        cost: { input: 99, output: 99 },
       }],
     },
   }));
-  // Manual cost wins for the pinned id.
-  assertEquals(instance.instance.getPricingForModelKey('gpt-oss:120b'), { input: 99, output: 99 });
-  // Unpinned model falls back to the table.
-  assertEquals(instance.instance.getPricingForModelKey('deepseek-v4-flash')?.input, 0.14);
-  // Unknown model returns null rather than fabricating a guess.
-  assertEquals(instance.instance.getPricingForModelKey('devstral-small-2:24b'), null);
+  await withMockedFetch(tagsAndShow, async () => {
+    const models = await instance.instance.getProvidedModels(directFetcher);
+    assertEquals(models.find(model => model.id === 'deepseek-v4-flash')?.pricing?.entries[0]?.rates.input, 0.14);
+  });
 });
 
 test('call* methods POST to /v1/<endpoint> with the upstream model id and Bearer header', async () => {
@@ -158,7 +158,7 @@ test('call* methods POST to /v1/<endpoint> with the upstream model id and Bearer
         providerModel,
         { messages: [{ role: 'user', content: 'hi' }] },
         undefined,
-        noopUpstreamCallOptions({ fetcher: directFetcher }),
+        noopUpstreamCallOptions({ fetcher: directFetcher, wrapUpstreamCall: identityWrapUpstreamCall }),
       );
       assertEquals(result.modelKey, 'gpt-oss:120b');
     },

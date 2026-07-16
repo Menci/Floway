@@ -1,7 +1,5 @@
-// HTTP transport for the ollama upstream. Joins the operator's base URL to
-// each Ollama endpoint path, sets `Authorization: Bearer <apiKey>` when an
-// API key is configured (omitting the header on an unauthenticated daemon),
-// and adds `Content-Type: application/json` for JSON request bodies.
+// HTTP transport for the Ollama upstream (ollama.com or a self-hosted daemon;
+// API key optional for the latter).
 //
 // Endpoint paths are fixed: ollama.com and a self-hosted daemon serve the
 // same routes from the same Go binary, so there is no pathOverrides escape
@@ -24,7 +22,7 @@ const ollamaFetchInternal = async (
   if (options.extraHeaders) {
     for (const [k, v] of options.extraHeaders) headers.set(k, v);
   }
-  return await options.fetcher(joinBaseAndPath(config.baseUrl, path), { ...init, headers }, options.recordUpstreamLatency);
+  return await options.wrapUpstreamCall(() => options.fetcher(joinBaseAndPath(config.baseUrl, path), { ...init, headers }));
 };
 
 export const ollamaFetchChatCompletions = (config: OllamaUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>

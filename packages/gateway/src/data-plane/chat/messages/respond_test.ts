@@ -4,7 +4,7 @@ import { test } from 'vitest';
 import { createMessagesStreamUsageState, respondMessages, tokenUsageFromMessagesFrame } from './respond.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
-import { createNonResponsesSourceStore } from '../responses/items/store.ts';
+import { mockChatGatewayCtx } from '../../../test-helpers/gateway-ctx.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
@@ -223,6 +223,44 @@ test('Messages stream usage falls back to the rolled-up cache_creation when the 
     input_cache_read: 3,
     input_cache_write: 9,
     output: 1,
+  });
+});
+
+test('Messages stream usage applies a TTL breakdown restamped by message_delta', () => {
+  const state = createMessagesStreamUsageState();
+  tokenUsageFromMessagesFrame(
+    eventFrame({
+      type: 'message_start',
+      message: {
+        id: 'msg_1',
+        type: 'message',
+        role: 'assistant',
+        content: [],
+        model: 'claude-test',
+        stop_reason: null,
+        stop_sequence: null,
+        usage: { input_tokens: 12, output_tokens: 0, cache_creation_input_tokens: 9 },
+      },
+    } satisfies MessagesStreamEvent),
+    state,
+  );
+  tokenUsageFromMessagesFrame(
+    eventFrame({
+      type: 'message_delta',
+      delta: { stop_reason: 'end_turn' },
+      usage: {
+        output_tokens: 2,
+        cache_creation: { ephemeral_1h_input_tokens: 5 },
+      },
+    } satisfies MessagesStreamEvent),
+    state,
+  );
+
+  assertEquals(tokenUsageFromMessagesFrame(stop(), state), {
+    input: 12,
+    input_cache_write: 4,
+    input_cache_write_1h: 5,
+    output: 2,
   });
 });
 
@@ -529,18 +567,7 @@ const forwardedHeadersFixture = (): Headers => new Headers({
   'set-cookie': 'session=secret',
 });
 
-const makeRespondCtx = (): ChatGatewayCtx => ({
-  apiKeyId: 'key_respond_test',
-  upstreamIds: null,
-  wantsStream: false,
-  runtimeLocation: 'TEST',
-  backgroundScheduler: () => {},
-  requestStartedAt: 0,
-  currentColo: 'TEST',
-  dump: null,
-  responseHeaders: new Headers(),
-  store: createNonResponsesSourceStore('key_respond_test'),
-});
+const makeRespondCtx = (): ChatGatewayCtx => mockChatGatewayCtx({ apiKeyId: 'key_respond_test' });
 
 const messagesEventsForRespond = (): readonly MessagesStreamEvent[] => [
   {

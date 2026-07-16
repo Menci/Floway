@@ -183,10 +183,8 @@ const responsesFunctionCallEvents = (item: ResponsesOutputFunctionCall, outputIn
       type: 'response.output_item.added',
       output_index: outputIndex,
       item: {
-        type: 'function_call',
+        ...item,
         id: itemId,
-        call_id: item.call_id,
-        name: item.name,
         arguments: '',
         status: 'in_progress',
       },

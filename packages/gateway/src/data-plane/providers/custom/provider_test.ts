@@ -18,6 +18,7 @@ const baseRecord = (overrides: Partial<UpstreamRecord> = {}): UpstreamRecord => 
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
+  color: null,
   config: {
     baseUrl: 'https://custom.example.com',
     authStyle: 'bearer',
@@ -32,8 +33,6 @@ test('Custom provider forces stream=true for streaming endpoints and leaves coun
   const instance = createCustomProvider(baseRecord());
   const provider = instance.instance;
   const bodies: Record<string, Record<string, unknown>> = {};
-
-  assertEquals(instance.supportsResponsesItemReference, true);
 
   await withMockedFetch(
     async request => {
@@ -112,7 +111,7 @@ test('Custom provider uses configured endpoints regardless of per-model hints in
   );
 });
 
-test('Custom provider projects display_name / created / limits / cost from a Floway-style /models response', async () => {
+test('Custom provider projects display_name / created / limits / pricing from a Floway-style /models response', async () => {
   await setupAppTest();
 
   await withMockedFetch(
@@ -124,7 +123,7 @@ test('Custom provider projects display_name / created / limits / cost from a Flo
         display_name: 'Rich Model',
         created_at: '2026-04-01T00:00:00Z',
         limits: { max_output_tokens: 8192, max_context_window_tokens: 200000 },
-        cost: { input: 3, output: 15, input_cache_read: 0.3 },
+        pricing: { entries: [{ rates: { input: 3, output: 15, input_cache_read: 0.3 } }] },
       }],
     }),
     async () => {
@@ -134,15 +133,9 @@ test('Custom provider projects display_name / created / limits / cost from a Flo
       assertEquals(model.created, Math.floor(Date.parse('2026-04-01T00:00:00Z') / 1000));
       assertEquals(model.limits.max_output_tokens, 8192);
       assertEquals(model.limits.max_context_window_tokens, 200000);
-      assertEquals(model.cost?.input, 3);
-      assertEquals(model.cost?.output, 15);
-      assertEquals(model.cost?.input_cache_read, 0.3);
-
-      const pricing = instance.instance.getPricingForModelKey('m-rich');
-      assertEquals(pricing?.input, 3);
-      assertEquals(pricing?.output, 15);
-
-      assertEquals(instance.instance.getPricingForModelKey('unknown'), null);
+      assertEquals(model.pricing?.entries[0]?.rates.input, 3);
+      assertEquals(model.pricing?.entries[0]?.rates.output, 15);
+      assertEquals(model.pricing?.entries[0]?.rates.input_cache_read, 0.3);
     },
   );
 });
@@ -232,11 +225,14 @@ test('Custom provider callImagesEdits forwards multipart body with model field a
     async () => {
       const provider = createCustomProvider(record);
       const models = await provider.instance.getProvidedModels(directFetcher);
-      const form = new FormData();
-      form.append('prompt', 'add a kite');
-      form.append('image', new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' }), 'photo.png');
       const model = models[0]; const opts = noopUpstreamCallOptions();
-      const result = await provider.instance.callImagesEdits(model, form, undefined, opts);
+      const result = await provider.instance.callImagesEdits(model, {
+        parameters: { prompt: 'add a kite' },
+        images: [{
+          type: 'upload',
+          file: new File([new Uint8Array([1, 2, 3])], 'photo.png', { type: 'image/png' }),
+        }],
+      }, undefined, opts);
       assertEquals(result.modelKey, 'gpt-image-2');
       assertEquals(result.response.status, 200);
     },
@@ -245,6 +241,45 @@ test('Custom provider callImagesEdits forwards multipart body with model field a
   assertEquals(forwarded.form.get('model'), 'gpt-image-2');
   assertEquals(forwarded.form.get('prompt'), 'add a kite');
   assertEquals(forwarded.form.get('image') instanceof File, true);
+});
+
+test('Custom provider callAlphaSearch posts JSON to /v1/alpha/search with the upstream model', async () => {
+  await setupAppTest();
+  const record = buildCustomUpstreamRecord({
+    config: { baseUrl: 'https://custom.example.com', authStyle: 'bearer', apiKey: 'sk-custom', endpoints: { responses: {} } },
+  });
+  let forwarded: { url: string; body: Record<string, unknown> } | undefined;
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.pathname === '/v1/models') return jsonResponse({ data: [{ id: 'gpt-search' }] });
+      if (url.pathname === '/v1/alpha/search') {
+        forwarded = { url: request.url, body: await request.json() as Record<string, unknown> };
+        return jsonResponse({ encrypted_output: null, output: 'result', results: [] });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => {
+      const provider = createCustomProvider(record);
+      const model = (await provider.instance.getProvidedModels(directFetcher))[0];
+      const result = await provider.instance.callAlphaSearch(
+        model,
+        { id: 'search-session', commands: { search_query: [{ q: 'Floway' }] } },
+        undefined,
+        noopUpstreamCallOptions(),
+      );
+      assertEquals(result.response.status, 200);
+      assertEquals(result.modelKey, 'gpt-search');
+    },
+  );
+  assertEquals(forwarded, {
+    url: 'https://custom.example.com/v1/alpha/search',
+    body: {
+      id: 'search-session',
+      commands: { search_query: [{ q: 'Floway' }] },
+      model: 'gpt-search',
+    },
+  });
 });
 
 test('Custom provider with modelsFetch disabled serves only manual models and never fetches', async () => {
@@ -268,7 +303,7 @@ test('Custom provider with modelsFetch disabled serves only manual models and ne
               endpoints: { chatCompletions: {} },
               display_name: 'Pinned Chat',
               limits: { max_output_tokens: 4096 },
-              cost: { input: 1, output: 2 },
+              pricing: { entries: [{ rates: { input: 1, output: 2 } }] },
             },
           ],
         },
@@ -281,11 +316,8 @@ test('Custom provider with modelsFetch disabled serves only manual models and ne
       assertEquals(models[0].endpoints, { chatCompletions: {} });
       assertEquals(models[0].display_name, 'Pinned Chat');
       assertEquals(models[0].limits.max_output_tokens, 4096);
-      assertEquals(models[0].cost?.input, 1);
+      assertEquals(models[0].pricing?.entries[0]?.rates.input, 1);
 
-      const pricing = provider.getPricingForModelKey('pinned-chat');
-      assertEquals(pricing?.input, 1);
-      assertEquals(pricing?.output, 2);
     },
   );
 });
@@ -300,7 +332,7 @@ test('Custom provider with a manual override sharing an upstream id wins over th
         return jsonResponse({
           object: 'list',
           data: [
-            { id: 'shared', cost: { input: 9, output: 9 } },
+            { id: 'shared', pricing: { entries: [{ rates: { input: 9, output: 9 } }] } },
             { id: 'auto-only' },
           ],
         });
@@ -321,7 +353,7 @@ test('Custom provider with a manual override sharing an upstream id wins over th
               upstreamModelId: 'shared',
               endpoints: { chatCompletions: {} },
               display_name: 'Manual Shared',
-              cost: { input: 1, output: 2 },
+              pricing: { entries: [{ rates: { input: 1, output: 2 } }] },
             },
           ],
         },
@@ -333,15 +365,9 @@ test('Custom provider with a manual override sharing an upstream id wins over th
       const shared = models.find(m => m.id === 'shared');
       assertExists(shared);
       assertEquals(shared.display_name, 'Manual Shared');
-
-      // Pricing resolves from the manual config first, not the cached upstream cost.
-      const sharedPricing = provider.getPricingForModelKey('shared');
-      assertEquals(sharedPricing?.input, 1);
-      assertEquals(sharedPricing?.output, 2);
-
-      // Auto models without upstream cost data resolve to null pricing.
-      const autoOnly = provider.getPricingForModelKey('auto-only');
-      assertEquals(autoOnly, null);
+      assertEquals(shared.pricing?.entries[0]?.rates.input, 1);
+      assertEquals(shared.pricing?.entries[0]?.rates.output, 2);
+      assertEquals(models.find(model => model.id === 'auto-only')?.pricing, undefined);
     },
   );
 });

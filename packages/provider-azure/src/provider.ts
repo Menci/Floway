@@ -5,7 +5,7 @@ import { parseChatCompletionsStream } from '@floway-dev/protocols/chat-completio
 import { kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseMessagesStream } from '@floway-dev/protocols/messages';
 import { parseResponsesStream, type ResponsesResult, toCompactPayloadShape } from '@floway-dev/protocols/responses';
-import { type ProviderInstance, type Provider, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord, publicModelId, resolveEffectiveFlags, streamingProviderCall } from '@floway-dev/provider';
+import { serializeOpenAIImagesEditsRequest, type ProviderInstance, type Provider, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord, publicModelId, resolveEffectiveFlags, streamingProviderCall } from '@floway-dev/provider';
 
 const upstreamModelIdOf = (model: ProviderModel): string => (model.providerData as { upstreamModelId: string }).upstreamModelId;
 
@@ -28,7 +28,7 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
       transport(
         azure.config,
         { method: 'POST', body: JSON.stringify({ ...body, stream: true, model: upstreamModelId }), signal },
-        { extraHeaders: headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency },
+        { extraHeaders: headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
       ),
       parser,
       upstreamModelId,
@@ -38,11 +38,12 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
 
   const callNonStreaming = async (transport: AzureTypedFetch, model: ProviderModel, body: Record<string, unknown>, signal: AbortSignal | undefined, headers: Headers, opts: UpstreamCallOptions) => {
     const upstreamModelId = upstreamModelIdOf(model);
-    const response = await transport(azure.config, { method: 'POST', body: JSON.stringify({ ...body, model: upstreamModelId }), signal }, { extraHeaders: headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency });
+    const response = await transport(azure.config, { method: 'POST', body: JSON.stringify({ ...body, model: upstreamModelId }), signal }, { extraHeaders: headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall });
     return { response, modelKey: upstreamModelId };
   };
 
   const instance: ProviderInstance = {
+    callAlphaSearch: () => Promise.reject(new Error('Azure provider does not support callAlphaSearch')),
     getProvidedModels() {
       return Promise.resolve(azure.config.models.map(model => {
         const effective = resolveEffectiveFlags([AZURE_DEFAULT_FLAGS, azure.flagOverrides, model.flagOverrides]);
@@ -51,7 +52,7 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
           id: publicModelId(model),
           limits: { ...(model.limits ?? {}) },
           ...(model.display_name !== undefined ? { display_name: model.display_name } : {}),
-          ...(model.cost ? { cost: model.cost } : {}),
+          ...(model.pricing ? { pricing: model.pricing } : {}),
           ...(model.chat ? { chat: model.chat } : {}),
           kind: kindForEndpoints(endpoints),
           endpoints,
@@ -59,9 +60,6 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
           enabledFlags: effective,
         };
       }));
-    },
-    getPricingForModelKey(modelKey) {
-      return azure.config.models.find(model => model.upstreamModelId === modelKey)?.cost ?? null;
     },
     callCompletions: (model, body, signal, opts) => callNonStreaming(azureFetchCompletions, model, body, signal, opts.headers, opts),
     callChatCompletions: (model, body, signal, opts) => callStreaming(azureFetchChatCompletions, model, body, signal, opts.headers, parseChatCompletionsStream, opts),
@@ -78,7 +76,7 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
         const response = await azureFetchResponsesCompact(
           azure.config,
           { method: 'POST', body: JSON.stringify({ ...toCompactPayloadShape(body), model: upstreamModelId }), signal },
-          { extraHeaders: opts.headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency },
+          { extraHeaders: opts.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
         );
         return response.ok
           ? { action: 'compact', ok: true, result: (await response.json()) as ResponsesResult, modelKey: upstreamModelId }
@@ -93,13 +91,10 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
     callMessagesCountTokens: (model, body, signal, opts) => callNonStreaming(azureFetchMessagesCountTokens, model, body, signal, opts.headers, opts),
     callEmbeddings: (model, body, signal, opts) => callNonStreaming(azureFetchEmbeddings, model, body, signal, opts.headers, opts),
     callImagesGenerations: (model, body, signal, opts) => callNonStreaming(azureFetchImagesGenerations, model, body, signal, opts.headers, opts),
-    callImagesEdits: async (model, body, signal, opts) => {
-      // Azure routes by upstream model id in the multipart `model` field; the
-      // runtime re-encodes the FormData with a fresh boundary and sets
-      // Content-Type itself.
+    callImagesEdits: async (model, request, signal, opts) => {
       const upstreamModelId = upstreamModelIdOf(model);
-      body.append('model', upstreamModelId);
-      const response = await azureFetchImagesEdits(azure.config, { method: 'POST', body, signal }, { extraHeaders: opts.headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency });
+      const body = await serializeOpenAIImagesEditsRequest(request, upstreamModelId);
+      const response = await azureFetchImagesEdits(azure.config, { method: 'POST', body, signal }, { extraHeaders: opts.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall });
       return { response, modelKey: upstreamModelId };
     },
   };
@@ -111,6 +106,5 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
     disabledPublicModelIds: azure.disabledPublicModelIds,
     modelPrefix: azure.modelPrefix,
     instance,
-    supportsResponsesItemReference: true,
   };
 };

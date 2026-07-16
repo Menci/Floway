@@ -62,3 +62,23 @@ test('Chat Completions initiator is agent when the last message is a tool result
 
   assertEquals(ctx.headers.get('x-initiator'), 'agent');
 });
+
+test('Chat Completions initiator follows the final user role for a lifted-image-shaped message', async () => {
+  const ctx = invocation({
+    model: 'gpt-test',
+    messages: [
+      { role: 'tool', tool_call_id: 'call_1', content: 'done' },
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'Image output from tool call call_1:' },
+          { type: 'image_url', image_url: { url: 'https://example.com/user.png' } },
+        ],
+      },
+    ],
+  });
+
+  await withInitiatorHeaderSet(ctx, stubRequest, okEvents);
+
+  assertEquals(ctx.headers.get('x-initiator'), 'user');
+});

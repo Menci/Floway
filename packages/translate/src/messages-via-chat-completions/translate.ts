@@ -1,5 +1,6 @@
 import { translateToSourceEvents } from './events.ts';
 import { buildTargetRequest } from './request.ts';
+import { rewriteContextExceededToPromptTooLong } from '../shared/messages/context-window-error.ts';
 import type { TranslateTrip } from '../types.ts';
 import type { ChatCompletionsStreamEvent, ChatCompletionsPayload } from '@floway-dev/protocols/chat-completions';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
@@ -9,4 +10,5 @@ export const translateMessagesViaChatCompletions: TranslateTrip<
 > = async src => ({
   target: buildTargetRequest(src),
   events: translateToSourceEvents,
+  apiError: rewriteContextExceededToPromptTooLong,
 });

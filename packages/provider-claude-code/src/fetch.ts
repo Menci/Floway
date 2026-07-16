@@ -325,22 +325,13 @@ const maybePersistTerminalFromBodyFireAndForget = (
   waitUntil?.(task);
 };
 
-// recordUpstreamLatency contract: every code path that returns must wrap
-// exactly one fetch (real or synthetic). Synthetic gates ride a resolved
-// promise so the gateway's recorder sees the contract met without
-// measuring anything meaningful. Both the pre-flight gates and the 401-retry
-// terminal-state branch use this helper so the two paths read identically;
-// the recorder's "at least once + last wrap kept" contract is satisfied
-// even when the streaming call already wrapped its own fetch upstream of
-// the retry.
-const syntheticReturn = async (
-  opts: CallClaudeCodeMessagesOptions,
+const syntheticReturn = (
   upstreamModelId: string,
   response: Response,
-): Promise<ProviderStreamResult<MessagesStreamEvent>> => ({
+): ProviderStreamResult<MessagesStreamEvent> => ({
   ok: false,
   modelKey: upstreamModelId,
-  response: await opts.call.recordUpstreamLatency(Promise.resolve(response)),
+  response,
 });
 
 // Either ensures a usable access token or returns a 503 wrap for terminal
@@ -359,7 +350,7 @@ const ensureOrSession503 = async (
   } catch (err) {
     if (err instanceof ClaudeCodeOAuthSessionTerminatedError) {
       // ensureClaudeCodeAccessToken already persisted the terminal state.
-      return await syntheticReturn(opts, upstreamModelId, synthetic503(`Claude Code refresh failed: ${err.upstreamMessage}`));
+      return syntheticReturn(upstreamModelId, synthetic503(`Claude Code refresh failed: ${err.upstreamMessage}`));
     }
     throw err;
   }
@@ -381,7 +372,7 @@ export const callClaudeCodeMessages = async (
   const account = state.accounts[0];
 
   if (account.state !== 'active') {
-    return await syntheticReturn(opts, upstreamModelId, synthetic503(
+    return syntheticReturn(upstreamModelId, synthetic503(
       `Claude Code account is ${account.state}: ${account.stateMessage}`,
     ));
   }
@@ -390,7 +381,7 @@ export const callClaudeCodeMessages = async (
   const quotaData = account.quotaSnapshot === null ? null : account.quotaSnapshot.data;
   if (isRateLimitedNow(quotaData, now)) {
     const resetIso = quotaData.reset;
-    return await syntheticReturn(opts, upstreamModelId, synthetic429(
+    return syntheticReturn(upstreamModelId, synthetic429(
       resetIso ? `Claude Code upstream rate-limited until ${resetIso}` : 'Claude Code upstream rate-limited',
       resetIso,
       now,
@@ -436,12 +427,12 @@ const performUpstreamCall = async (
   // and the real Claude Code client always sets `stream: true`.
   const wireBody: MessagesPayload = { ...opts.body, model: upstreamModelId, stream: true };
 
-  const upstreamFetch = opts.call.fetcher(ANTHROPIC_MESSAGES_ENDPOINT, {
+  const upstreamFetch = opts.call.wrapUpstreamCall(() => opts.call.fetcher(ANTHROPIC_MESSAGES_ENDPOINT, {
     method: 'POST',
     headers,
     body: JSON.stringify(wireBody),
     signal: opts.signal,
-  }, opts.call.recordUpstreamLatency).then(response => {
+  })).then(response => {
     // `opts.call.waitUntil` is set by the gateway on Workers so the
     // runtime keeps the worker alive past the response (without it, the
     // persist promise gets cancelled the moment the response returns).
@@ -474,11 +465,6 @@ const performUpstreamCall = async (
       repo: getProviderRepo().upstreams,
     });
     const ensured = await ensureOrSession503(opts, upstreamModelId);
-    // If the refresh terminated, ensureOrSession503 returns a syntheticReturn
-    // wrap. That wrap intentionally shadows the failed first fetch's recorded
-    // latency under the "last wrap wins" semantics — the telemetry surface
-    // reflects the synthetic 503 because that is what the caller sees, not the
-    // 401 we discarded.
     if ('modelKey' in ensured) return ensured;
     return await performUpstreamCall(opts, upstreamModelId, ensured, true);
   }

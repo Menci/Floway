@@ -111,15 +111,18 @@ test('responses: budget_tokens / adaptive have no native slot — silently dropp
   assertEquals('adaptive_thinking' in body, false);
 });
 
-test('responses: alias rules overwrite existing reasoning + service_tier fields', () => {
-  const body = resPayload({ reasoning: { effort: 'low', summary: 'auto' }, service_tier: 'default', text: { verbosity: 'high' } });
+test('responses: alias rules overwrite owned fields while preserving reasoning.context', () => {
+  const body = resPayload({
+    reasoning: { effort: 'low', summary: 'auto', context: 'future_mode' },
+    service_tier: 'default',
+    text: { verbosity: 'high' },
+  });
   applyRulesToUpstreamResponses(body, {
     reasoning: { effort: 'xhigh', summary: 'detailed' },
     verbosity: 'low',
     serviceTier: 'priority',
   });
-  assertEquals(body.reasoning?.effort, 'xhigh');
-  assertEquals(body.reasoning?.summary, 'detailed');
+  assertEquals(body.reasoning, { effort: 'xhigh', summary: 'detailed', context: 'future_mode' });
   assertEquals(body.text?.verbosity, 'low');
   assertEquals(body.service_tier, 'priority');
 });

@@ -2,8 +2,7 @@ import { afterEach, test, vi } from 'vitest';
 
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
-import { createNonResponsesSourceStore } from '../responses/items/store.ts';
-import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
+import { mockChatGatewayCtx } from '../../../test-helpers/gateway-ctx.ts';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesPayload, MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
@@ -56,18 +55,7 @@ const installRepo = (): InMemoryRepo => {
   return repo;
 };
 
-const makeGatewayCtx = (): ChatGatewayCtx => ({
-  apiKeyId: API_KEY_ID,
-  upstreamIds: null,
-  wantsStream: true,
-  runtimeLocation: 'TEST',
-  currentColo: 'TEST',
-  dump: null,
-  responseHeaders: new Headers(),
-  backgroundScheduler: () => {},
-  requestStartedAt: 0,
-  store: createNonResponsesSourceStore(API_KEY_ID),
-});
+const makeGatewayCtx = () => mockChatGatewayCtx({ apiKeyId: API_KEY_ID, wantsStream: true });
 
 const makePayload = (overrides: Partial<MessagesPayload> = {}): MessagesPayload => ({
   model: 'test-model',
@@ -136,6 +124,7 @@ const makeProtocolFrames = async function* <TEvent>(events: readonly TEvent[]): 
 
 const makeCandidate = (overrides: {
   upstream?: string;
+  modelId?: string;
   endpoints?: ModelEndpoints;
   kind?: ModelCandidate['provider']['kind'];
   enabledFlags?: ReadonlySet<FlagId>;
@@ -144,6 +133,7 @@ const makeCandidate = (overrides: {
   callMessagesCountTokens?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderCallResult>;
 } = {}): ModelCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
+  const modelId = overrides.modelId ?? 'test-model';
   const kind = overrides.kind ?? 'custom';
   const provider = stubProvider({
     callMessages: overrides.callMessages,
@@ -153,12 +143,14 @@ const makeCandidate = (overrides: {
   return {
     provider: {
       upstream, kind, name: upstream,
-      disabledPublicModelIds: [], modelPrefix: null, instance: provider, supportsResponsesItemReference: true,
+      disabledPublicModelIds: [], modelPrefix: null, instance: provider,
     },
     model: stubInternalModel({
+      id: modelId,
       ...(overrides.endpoints ? { endpoints: overrides.endpoints } : {}),
       providerModels: {
         [upstream]: stubProviderModel({
+          id: modelId,
           ...(overrides.endpoints ? { endpoints: overrides.endpoints } : {}),
           ...(overrides.enabledFlags ? { enabledFlags: overrides.enabledFlags } : {}),
         }),
@@ -345,17 +337,23 @@ test('generate filters out candidates whose endpoints do not satisfy the message
 
 test('countTokens proxies the upstream measurement response as a plain result', async () => {
   installRepo();
-  const callMessagesCountTokens = vi.fn(async (): Promise<ProviderCallResult> => ({
-    response: new Response(JSON.stringify({ input_tokens: 42 }), {
-      status: 200,
-      headers: new Headers({ 'content-type': 'application/json' }),
-    }),
-    modelKey: 'test-model-key',
-  }));
-  queueResolution([makeCandidate({ upstream: 'up_a', callMessagesCountTokens })]);
+  const observedModelIds: string[] = [];
+  const callMessagesCountTokens = vi.fn(async (model: unknown): Promise<ProviderCallResult> => {
+    observedModelIds.push((model as { id: string }).id);
+    return {
+      response: new Response(JSON.stringify({ input_tokens: 42 }), {
+        status: 200,
+        headers: new Headers({ 'content-type': 'application/json' }),
+      }),
+      modelKey: 'test-model-key',
+    };
+  });
+  const candidate = makeCandidate({ upstream: 'up_a', modelId: 'claude-target', callMessagesCountTokens });
+  queueResolution([candidate]);
+  const payload = makePayload({ model: 'claude-alias' });
 
   const result = await messagesServe.countTokens({
-    payload: makePayload(),
+    payload,
     ctx: makeGatewayCtx(),
     headers: new Headers(),
   });
@@ -365,6 +363,8 @@ test('countTokens proxies the upstream measurement response as a plain result', 
   const body = JSON.parse(new TextDecoder().decode(plain.body));
   assertEquals(body.input_tokens, 42);
   assertEquals(callMessagesCountTokens.mock.calls.length, 1);
+  assertEquals(observedModelIds, ['claude-target']);
+  assertEquals(payload.model, 'claude-alias');
 });
 
 test('countTokens renders model-missing as a 404 when no candidates are available', async () => {
@@ -517,19 +517,135 @@ test('copilot candidate strips x-anthropic-billing-header system block via the d
   assertEquals(observed.system[0].text, 'You are a helpful assistant.');
 });
 
+test('generate failover preserves billing blocks for a strip-off candidate', async () => {
+  installRepo();
+  const billingBlock = 'x-anthropic-billing-header: per-turn-token\ncch=deadbeef1234;';
+  const system = [
+    { type: 'text' as const, text: billingBlock },
+    { type: 'text' as const, text: "You are Claude Code, Anthropic's official CLI for Claude." },
+  ];
+  const expectedSystem = structuredClone(system);
+  const messages = [{ role: 'user' as const, content: [{ type: 'text' as const, text: 'original user text' }] }];
+  const expectedMessages = structuredClone(messages);
+  const firstBodies: Array<Omit<MessagesPayload, 'model'>> = [];
+  const firstCall = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
+    const firstBody = body as Omit<MessagesPayload, 'model'>;
+    firstBodies.push(firstBody);
+    const message = firstBody.messages[0];
+    if (!Array.isArray(message.content) || message.content[0]?.type !== 'text') throw new Error('expected text content');
+    message.content[0].text = 'mutated by first provider';
+    return {
+      ok: false,
+      response: new Response('unavailable', { status: 503 }),
+      modelKey: 'first-key',
+    };
+  });
+  const observedBodies: Array<Omit<MessagesPayload, 'model'>> = [];
+  const secondCall = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
+    observedBodies.push(body as Omit<MessagesPayload, 'model'>);
+    return {
+      ok: true,
+      events: makeProtocolFrames(makeMessagesResultEvents('msg_claude_code')),
+      modelKey: 'claude-code-key',
+    };
+  });
+  queueResolution([
+    makeCandidate({
+      upstream: 'up_copilot',
+      kind: 'copilot',
+      enabledFlags: new Set(['strip-billing-attribution']),
+      callMessages: firstCall,
+    }),
+    makeCandidate({
+      upstream: 'up_claude_code',
+      kind: 'claude-code',
+      enabledFlags: new Set(),
+      callMessages: secondCall,
+    }),
+  ]);
+
+  const payload = makePayload({ system, messages });
+  const result = await messagesServe.generate({ payload, ctx: makeGatewayCtx(), headers: new Headers() });
+  await collectEvents(assertResultType(result, 'events').events);
+
+  assertEquals(firstCall.mock.calls.length, 1);
+  assertEquals(secondCall.mock.calls.length, 1);
+  assertEquals(firstBodies[0]?.system, [{ type: 'text', text: "You are Claude Code, Anthropic's official CLI for Claude." }]);
+  assertEquals(observedBodies[0]?.system, expectedSystem);
+  assertEquals(observedBodies[0]?.messages, expectedMessages);
+  assertEquals(payload.system, expectedSystem);
+  assertEquals(payload.messages, expectedMessages);
+});
+
+test('countTokens failover preserves billing blocks for a strip-off candidate', async () => {
+  installRepo();
+  const system = [
+    { type: 'text' as const, text: 'x-anthropic-billing-header: per-turn-token\ncch=deadbeef1234;' },
+    { type: 'text' as const, text: 'Count this prompt.' },
+  ];
+  const expectedSystem = structuredClone(system);
+  const messages = [{ role: 'user' as const, content: [{ type: 'text' as const, text: 'original user text' }] }];
+  const expectedMessages = structuredClone(messages);
+  const firstBodies: Array<Omit<MessagesPayload, 'model'>> = [];
+  const firstCall = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderCallResult> => {
+    const firstBody = body as Omit<MessagesPayload, 'model'>;
+    firstBodies.push(firstBody);
+    const message = firstBody.messages[0];
+    if (!Array.isArray(message.content) || message.content[0]?.type !== 'text') throw new Error('expected text content');
+    message.content[0].text = 'mutated by first provider';
+    return {
+      response: new Response('unavailable', { status: 503 }),
+      modelKey: 'first-key',
+    };
+  });
+  const observedBodies: Array<Omit<MessagesPayload, 'model'>> = [];
+  const secondCall = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderCallResult> => {
+    observedBodies.push(body as Omit<MessagesPayload, 'model'>);
+    return {
+      response: Response.json({ input_tokens: 12 }),
+      modelKey: 'second-key',
+    };
+  });
+  queueResolution([
+    makeCandidate({
+      upstream: 'up_strip_on',
+      enabledFlags: new Set(['strip-billing-attribution']),
+      callMessagesCountTokens: firstCall,
+    }),
+    makeCandidate({
+      upstream: 'up_strip_off',
+      enabledFlags: new Set(),
+      callMessagesCountTokens: secondCall,
+    }),
+  ]);
+
+  const payload = makePayload({ system, messages });
+  const result = await messagesServe.countTokens({ payload, ctx: makeGatewayCtx(), headers: new Headers() });
+
+  assertEquals(assertResultType(result, 'plain').status, 200);
+  assertEquals(firstCall.mock.calls.length, 1);
+  assertEquals(secondCall.mock.calls.length, 1);
+  assertEquals(firstBodies[0]?.system, [{ type: 'text', text: 'Count this prompt.' }]);
+  assertEquals(observedBodies[0]?.system, expectedSystem);
+  assertEquals(observedBodies[0]?.messages, expectedMessages);
+  assertEquals(payload.system, expectedSystem);
+  assertEquals(payload.messages, expectedMessages);
+});
+
 test('alias resolution swaps the inbound model id for the target and overlays rules onto the Messages IR', async () => {
   installRepo();
   const capturedBodies: MessagesPayload[] = [];
-  const callMessages = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
+  const observedModelIds: string[] = [];
+  const callMessages = vi.fn(async (model: unknown, body: unknown): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
+    observedModelIds.push((model as { id: string }).id);
     capturedBodies.push({ ...(body as Omit<MessagesPayload, 'model'>), model: 'claude-opus-4-7' });
     return { ok: true, events: makeProtocolFrames(makeMessagesResultEvents()), modelKey: 'claude-opus-4-7' };
   });
   // Alias flow shape: the resolver returns candidates carrying the target's
   // upstream catalog id AND the alias's rule overlay on `candidate.rules`.
-  // Serve normalizes `payload.model` to `candidate.model.id`; the attempt
-  // reads the overlay directly off `candidate.rules` at wire-call time.
-  const candidate = makeCandidate({ upstream: 'up_cf', callMessages });
-  Object.assign(candidate.model, { id: 'claude-opus-4-7' });
+  // The attempt stamps its private clone with `candidate.model.id` and reads
+  // the overlay directly off `candidate.rules` at wire-call time.
+  const candidate = makeCandidate({ upstream: 'up_cf', modelId: 'claude-opus-4-7', callMessages });
   queueResolution([candidate], { aliasRules: { reasoning: { effort: 'high', budget_tokens: 2048 }, serviceTier: 'fast' } });
 
   const payload = makePayload({ model: 'claude-fast' });
@@ -541,10 +657,11 @@ test('alias resolution swaps the inbound model id for the target and overlays ru
 
   await collectEvents(assertResultType(result, 'events').events);
 
-  // The resolver saw the inbound alias id verbatim; serve rewrote
-  // payload.model to the target id before the attempt.
+  // The resolver and caller payload retain the inbound alias while dispatch
+  // uses the resolved target id.
   assertEquals(lastResolveCall.model, 'claude-fast');
-  assertEquals(payload.model, 'claude-opus-4-7');
+  assertEquals(observedModelIds, ['claude-opus-4-7']);
+  assertEquals(payload.model, 'claude-fast');
   const observed = capturedBodies[0]!;
   assertEquals(observed.output_config?.effort, 'high');
   assertEquals(observed.thinking?.budget_tokens, 2048);
@@ -569,4 +686,48 @@ test('alias whose targets have no kind-matching binding surfaces as the regular 
   const body = JSON.parse(new TextDecoder().decode(result.body));
   assertEquals(body.error.type, 'not_found_error');
   assertEquals(body.error.message, 'Model claude-fast is not available on any configured upstream.');
+});
+
+// A mid-attempt throw (interceptor bug / translation error / provider-layer JS
+// exception bypassing tryCatchChatServeFailure) must attribute the perf error
+// row to the throwing candidate, not the previous one. The serve stamps
+// `ctx.attempt.telemetry` synchronously in the iterateCandidates
+// callback so the http.ts catch can build an internal-error result carrying
+// the correct upstream, and `recordFailedRequest` lands a row rather than
+// short-circuiting on missing telemetry. Passthrough's equivalent regression
+// lives in passthrough-serve_test.ts (R3 fix 303c4e89).
+test('mid-attempt throw stamps telemetry with the throwing candidate, not the previous one', async () => {
+  installRepo();
+  const firstError = new Response(JSON.stringify({ error: { message: 'nope' } }), {
+    status: 502, headers: new Headers({ 'content-type': 'application/json' }),
+  });
+  const firstCall = vi.fn(async (): Promise<ProviderStreamResult<MessagesStreamEvent>> => ({
+    ok: false, response: firstError, modelKey: 'first-key',
+  }));
+  const secondCall = vi.fn(async (): Promise<ProviderStreamResult<MessagesStreamEvent>> => {
+    throw new Error('simulated provider-layer JS exception');
+  });
+  queueResolution([
+    makeCandidate({ upstream: 'up_a', callMessages: firstCall }),
+    makeCandidate({ upstream: 'up_b', callMessages: secondCall }),
+  ]);
+
+  const ctx = makeGatewayCtx();
+  await messagesServe.generate({
+    payload: makePayload(),
+    ctx,
+    headers: new Headers(),
+  }).then(
+    () => { throw new Error('expected messagesServe.generate to throw'); },
+    (error: unknown) => {
+      assertEquals((error as Error).message, 'simulated provider-layer JS exception');
+    },
+  );
+
+  assertEquals(firstCall.mock.calls.length, 1);
+  assertEquals(secondCall.mock.calls.length, 1);
+  // The perf attribution slot reflects the throwing upstream, so the http.ts
+  // catch synthesizes the internal-error result with performance context and
+  // the error row lands against up_b.
+  assertEquals(ctx.attempt.telemetry?.upstream, 'up_b');
 });

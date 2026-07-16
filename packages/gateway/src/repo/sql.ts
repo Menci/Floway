@@ -13,11 +13,11 @@ import type {
   ModelAliasesRepo,
   ModelAliasRecord,
   ModelsCacheRepo,
+  PerformanceBucketRow,
   PerformanceDimensions,
-  PerformanceErrorSample,
-  PerformanceLatencySample,
-  PerformanceMetricScope,
+  PerformanceMetric,
   PerformanceRepo,
+  PerformanceSample,
   PerformanceTelemetryRecord,
   ProxyBackoffRepo,
   ProxyRecord,
@@ -25,12 +25,15 @@ import type {
   Repo,
   ResponsesItemsRepo,
   ResponsesSnapshotsRepo,
+  SearchConfig,
   SearchConfigRepo,
   SearchUsageRecord,
   SearchUsageRepo,
   Session,
   SessionsRepo,
   StoredResponsesItem,
+  StoredResponsesItemMetadata,
+  StoredResponsesItemPayloadRecord,
   StoredResponsesSnapshot,
   UpstreamRepo,
   UsageRecord,
@@ -39,13 +42,15 @@ import type {
   UsersRepo,
 } from './types.ts';
 import { serializeStoredConfig, serializeStoredState } from './upstream-json.ts';
-import { latencyBucketForMs } from '../shared/performance-histogram.ts';
+import { parseUpstreamColor, parseUpstreamKind } from './upstream-parse.ts';
+import { usageDimensionRows } from './usage-dimensions.ts';
+import { bucketForTtftMs, bucketForTpotUs } from '../shared/performance-histogram.ts';
 import { generateSessionToken } from '../shared/session-tokens.ts';
 import { assertWebSearchProviderName } from '../shared/web-search-providers.ts';
 import { AgentSetupTokenCollisionError } from '@floway-dev/agent-setup';
 import type { SqlDatabase, SqlPreparedStatement, SqlResult } from '@floway-dev/platform';
-import { BILLING_DIMENSIONS, type AliasSelection, type AliasTarget, type AnnouncedMetadata, type BillingDimension, type ModelKind, type ModelPricing, resolveEffectivePricing, unitPriceForDimension } from '@floway-dev/protocols/common';
-import type { ProviderModel, ProxyFallbackEntry, ModelPrefixConfig, UpstreamProviderKind, UpstreamRecord } from '@floway-dev/provider';
+import { canonicalPricingSelectorKey, parsePricingSelectorKey, type AliasSelection, type AliasTarget, type AnnouncedMetadata, type BillingDimension, type ModelKind, type PriceVector } from '@floway-dev/protocols/common';
+import type { ProviderModel, ProxyFallbackEntry, ModelPrefixConfig, PerformanceOperation, UpstreamRecord } from '@floway-dev/provider';
 import { normalizeModelPrefix } from '@floway-dev/provider';
 
 const runStatements = async (db: SqlDatabase, statements: SqlPreparedStatement[]): Promise<SqlResult[]> => {
@@ -54,6 +59,12 @@ const runStatements = async (db: SqlDatabase, statements: SqlPreparedStatement[]
   const results: SqlResult[] = [];
   for (const statement of statements) results.push(await statement.run());
   return results;
+};
+
+const mapSequentially = async <T, U>(values: readonly T[], mapper: (value: T) => Promise<U>): Promise<U[]> => {
+  const mapped: U[] = [];
+  for (const value of values) mapped.push(await mapper(value));
+  return mapped;
 };
 
 interface ApiKeyRow {
@@ -146,14 +157,6 @@ class SqlApiKeyRepo implements ApiKeyRepo {
       .bind(id)
       .first<ApiKeyRow>();
     return row ? toApiKey(row) : null;
-  }
-
-  async idsByUserIdIncludingDeleted(userId: number): Promise<string[]> {
-    const { results } = await this.db
-      .prepare('SELECT id FROM api_keys WHERE user_id = ?')
-      .bind(userId)
-      .all<{ id: string }>();
-    return results.map(r => r.id);
   }
 
   async save(key: ApiKey): Promise<void> {
@@ -379,84 +382,56 @@ class SqlSessionsRepo implements SessionsRepo {
   }
 }
 
-const dimensionRows = (record: UsageRecord): { dimension: BillingDimension; tokens: number; unitPrice: number | null }[] => {
-  const effective = resolveEffectivePricing(record.cost, record.tier);
-  return BILLING_DIMENSIONS.flatMap(dimension => {
-    const tokens = record.tokens[dimension] ?? 0;
-    return tokens > 0 ? [{ dimension, tokens, unitPrice: unitPriceForDimension(effective, dimension) }] : [];
-  });
-};
-
 class SqlUsageRepo implements UsageRepo {
   constructor(private db: SqlDatabase) {}
 
   async record(record: UsageRecord): Promise<void> {
     const upstream = record.upstream ?? null;
-    const statements: SqlPreparedStatement[] = dimensionRows(record).map(row =>
-      this.db
-        .prepare(
-          `INSERT INTO usage (key_id, model, upstream, model_key, hour, tier, dimension, tokens, unit_price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-           ON CONFLICT DO UPDATE SET
-             tokens = tokens + excluded.tokens,
-             unit_price = COALESCE(unit_price, excluded.unit_price)`,
-        )
-        .bind(record.keyId, record.model, upstream, record.modelKey, record.hour, record.tier, row.dimension, row.tokens, row.unitPrice));
-    statements.push(
-      this.db
-        .prepare(
-          `INSERT INTO usage_requests (key_id, model, upstream, model_key, hour, tier, requests) VALUES (?, ?, ?, ?, ?, ?, ?)
-           ON CONFLICT DO UPDATE SET requests = requests + excluded.requests`,
-        )
-        .bind(record.keyId, record.model, upstream, record.modelKey, record.hour, record.tier, record.requests),
-    );
+    const selector = canonicalPricingSelectorKey(record.pricingSelector);
+    const statements: SqlPreparedStatement[] = usageDimensionRows(record).map(row =>
+      this.db.prepare(
+        `INSERT INTO usage (key_id, model, upstream, model_key, hour, pricing_selector, dimension, tokens, unit_price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT DO UPDATE SET tokens = tokens + excluded.tokens`,
+      ).bind(record.keyId, record.model, upstream, record.modelKey, record.hour, selector, row.dimension, row.tokens, row.unitPrice));
+    statements.push(this.db.prepare(
+      `INSERT INTO usage_requests (key_id, model, upstream, model_key, hour, pricing_selector, requests) VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT DO UPDATE SET requests = requests + excluded.requests`,
+    ).bind(record.keyId, record.model, upstream, record.modelKey, record.hour, selector, record.requests));
     await runStatements(this.db, statements);
   }
 
   async query(opts: { keyId?: string; start: string; end: string }): Promise<UsageRecord[]> {
-    const dimensionWhere = opts.keyId ? 'key_id = ? AND hour >= ? AND hour < ?' : 'hour >= ? AND hour < ?';
+    const where = opts.keyId ? 'key_id = ? AND hour >= ? AND hour < ?' : 'hour >= ? AND hour < ?';
     const binds = opts.keyId ? [opts.keyId, opts.start, opts.end] : [opts.start, opts.end];
     const [{ results: dimensions }, { results: requests }] = await Promise.all([
-      this.db
-        .prepare(`SELECT key_id, model, upstream, model_key, hour, tier, dimension, tokens, unit_price FROM usage WHERE ${dimensionWhere}`)
-        .bind(...binds)
-        .all<UsageDimensionRow>(),
-      this.db
-        .prepare(`SELECT key_id, model, upstream, model_key, hour, tier, requests FROM usage_requests WHERE ${dimensionWhere}`)
-        .bind(...binds)
-        .all<UsageRequestRow>(),
+      this.db.prepare(`SELECT key_id, model, upstream, model_key, hour, pricing_selector, dimension, tokens, unit_price FROM usage WHERE ${where}`).bind(...binds).all<UsageDimensionRow>(),
+      this.db.prepare(`SELECT key_id, model, upstream, model_key, hour, pricing_selector, requests FROM usage_requests WHERE ${where}`).bind(...binds).all<UsageRequestRow>(),
     ]);
     return assembleUsageRecords(dimensions, requests);
   }
 
   async listAll(): Promise<UsageRecord[]> {
     const [{ results: dimensions }, { results: requests }] = await Promise.all([
-      this.db.prepare('SELECT key_id, model, upstream, model_key, hour, tier, dimension, tokens, unit_price FROM usage').all<UsageDimensionRow>(),
-      this.db.prepare('SELECT key_id, model, upstream, model_key, hour, tier, requests FROM usage_requests').all<UsageRequestRow>(),
+      this.db.prepare('SELECT key_id, model, upstream, model_key, hour, pricing_selector, dimension, tokens, unit_price FROM usage').all<UsageDimensionRow>(),
+      this.db.prepare('SELECT key_id, model, upstream, model_key, hour, pricing_selector, requests FROM usage_requests').all<UsageRequestRow>(),
     ]);
     return assembleUsageRecords(dimensions, requests);
   }
 
   async set(record: UsageRecord): Promise<void> {
     const upstream = record.upstream ?? null;
-    // Replacement upsert: clear the bucket's existing dimension rows first so
-    // dimensions absent from the new record do not linger.
+    const selector = canonicalPricingSelectorKey(record.pricingSelector);
     const statements: SqlPreparedStatement[] = [
-      this.db
-        .prepare("DELETE FROM usage WHERE key_id = ? AND model = ? AND COALESCE(upstream, '') = COALESCE(?, '') AND model_key = ? AND hour = ? AND COALESCE(tier, '') = COALESCE(?, '')")
-        .bind(record.keyId, record.model, upstream, record.modelKey, record.hour, record.tier),
-      ...dimensionRows(record).map(row =>
-        this.db
-          .prepare('INSERT INTO usage (key_id, model, upstream, model_key, hour, tier, dimension, tokens, unit_price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-          .bind(record.keyId, record.model, upstream, record.modelKey, record.hour, record.tier, row.dimension, row.tokens, row.unitPrice)),
+      this.db.prepare("DELETE FROM usage WHERE key_id = ? AND model = ? AND COALESCE(upstream, '') = COALESCE(?, '') AND model_key = ? AND hour = ? AND pricing_selector = ?")
+        .bind(record.keyId, record.model, upstream, record.modelKey, record.hour, selector),
+      ...usageDimensionRows(record).map(row => this.db.prepare(
+        'INSERT INTO usage (key_id, model, upstream, model_key, hour, pricing_selector, dimension, tokens, unit_price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      ).bind(record.keyId, record.model, upstream, record.modelKey, record.hour, selector, row.dimension, row.tokens, row.unitPrice)),
     ];
-    statements.push(
-      this.db
-        .prepare(
-          `INSERT INTO usage_requests (key_id, model, upstream, model_key, hour, tier, requests) VALUES (?, ?, ?, ?, ?, ?, ?)
-           ON CONFLICT DO UPDATE SET requests = excluded.requests`,
-        )
-        .bind(record.keyId, record.model, upstream, record.modelKey, record.hour, record.tier, record.requests),
-    );
+    statements.push(this.db.prepare(
+      `INSERT INTO usage_requests (key_id, model, upstream, model_key, hour, pricing_selector, requests) VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT DO UPDATE SET requests = excluded.requests`,
+    ).bind(record.keyId, record.model, upstream, record.modelKey, record.hour, selector, record.requests));
     await runStatements(this.db, statements);
   }
 
@@ -466,65 +441,42 @@ class SqlUsageRepo implements UsageRepo {
 }
 
 interface UsageDimensionRow {
-  key_id: string;
-  model: string;
-  upstream: string | null;
-  model_key: string;
-  hour: string;
-  tier: string | null;
-  dimension: string;
-  tokens: number;
-  unit_price: number | null;
+  key_id: string; model: string; upstream: string | null; model_key: string; hour: string;
+  pricing_selector: string; dimension: string; tokens: number; unit_price: number | null;
 }
-
 interface UsageRequestRow {
-  key_id: string;
-  model: string;
-  upstream: string | null;
-  model_key: string;
-  hour: string;
-  tier: string | null;
-  requests: number;
+  key_id: string; model: string; upstream: string | null; model_key: string; hour: string;
+  pricing_selector: string; requests: number;
 }
 
-const usageBucketKey = (row: { key_id: string; model: string; upstream: string | null; model_key: string; hour: string; tier: string | null }): string =>
-  [row.key_id, row.model, row.upstream ?? '', row.model_key, row.hour, row.tier ?? ''].join('\0');
+type UsageIdentityRow = Pick<UsageDimensionRow, 'key_id' | 'model' | 'upstream' | 'model_key' | 'hour' | 'pricing_selector'>;
+const usageBucketKey = (row: UsageIdentityRow): string =>
+  [row.key_id, row.model, row.upstream ?? '', row.model_key, row.hour, row.pricing_selector].join('\0');
 
-// Reassemble per-bucket UsageRecords from the two narrow tables. The dimension
-// rows carry the disjoint counts and the per-dimension unit_price snapshot,
-// which we fold back into a ModelPricing snapshot; usage_requests carries the
-// request count. A bucket may appear in either table independently.
 const assembleUsageRecords = (dimensions: readonly UsageDimensionRow[], requests: readonly UsageRequestRow[]): UsageRecord[] => {
   const byBucket = new Map<string, UsageRecord>();
-
-  const ensureRecord = (row: { key_id: string; model: string; upstream: string | null; model_key: string; hour: string; tier: string | null }): UsageRecord => {
+  const ensureRecord = (row: UsageIdentityRow): UsageRecord => {
     const key = usageBucketKey(row);
     let record = byBucket.get(key);
     if (!record) {
-      record = { keyId: row.key_id, model: row.model, upstream: row.upstream, modelKey: row.model_key, hour: row.hour, tier: row.tier, requests: 0, tokens: {}, cost: null };
+      record = { keyId: row.key_id, model: row.model, upstream: row.upstream, modelKey: row.model_key, hour: row.hour, pricingSelector: parsePricingSelectorKey(row.pricing_selector), requests: 0, tokens: {}, rates: null };
       byBucket.set(key, record);
     }
     return record;
   };
-
-  const pricingByBucket = new Map<string, ModelPricing>();
+  const ratesByBucket = new Map<string, PriceVector>();
   for (const row of dimensions) {
     const record = ensureRecord(row);
     record.tokens[row.dimension as BillingDimension] = row.tokens;
     if (row.unit_price !== null) {
       const key = usageBucketKey(row);
-      const pricing = pricingByBucket.get(key) ?? {};
-      pricing[row.dimension as BillingDimension] = row.unit_price;
-      pricingByBucket.set(key, pricing);
+      const rates = ratesByBucket.get(key) ?? {};
+      rates[row.dimension as BillingDimension] = row.unit_price;
+      ratesByBucket.set(key, rates);
     }
   }
-  for (const [key, pricing] of pricingByBucket) {
-    const record = byBucket.get(key);
-    if (record) record.cost = pricing;
-  }
-
   for (const row of requests) ensureRecord(row).requests = row.requests;
-
+  for (const [key, rates] of ratesByBucket) byBucket.get(key)!.rates = rates;
   return [...byBucket.values()].sort((a, b) => a.hour.localeCompare(b.hour));
 };
 
@@ -601,236 +553,199 @@ class SqlSearchUsageRepo implements SearchUsageRepo {
   }
 }
 
+type PerformanceDimensionRow = {
+  hour: string;
+  key_id: string;
+  model: string;
+  upstream: string;
+  operation: string;
+  runtime_location: string;
+};
+
+const performanceDimensionsFromRow = (row: PerformanceDimensionRow): PerformanceDimensions => ({
+  hour: row.hour,
+  keyId: row.key_id,
+  model: row.model,
+  upstream: row.upstream,
+  operation: row.operation as PerformanceOperation,
+  runtimeLocation: row.runtime_location,
+});
+
+const performanceRecordKey = (dims: PerformanceDimensions): string =>
+  `${dims.hour}\0${dims.keyId}\0${dims.model}\0${dims.upstream}\0${dims.operation}\0${dims.runtimeLocation}`;
+
+const performanceDimensionBinds = (dims: PerformanceDimensions): unknown[] =>
+  [dims.hour, dims.keyId, dims.model, dims.upstream, dims.operation, dims.runtimeLocation];
+
+const PERFORMANCE_SUMMARY_COUNT_COLUMNS = ['requests', 'ttft_samples_ok', 'errors_with_output', 'errors_no_output', 'neutral', 'tpot_samples', 'ttft_ms_sum', 'tpot_us_sum'] as const;
+type PerformanceSummaryCountColumn = typeof PERFORMANCE_SUMMARY_COUNT_COLUMNS[number];
+
+const buildPerformanceSummarySql = (mode: 'add' | 'set'): string => {
+  const dimensionColumns = ['hour', 'key_id', 'model', 'upstream', 'operation', 'runtime_location'] as const;
+  const allColumns = [...dimensionColumns, ...PERFORMANCE_SUMMARY_COUNT_COLUMNS];
+  const placeholders = allColumns.map(() => '?').join(', ');
+  const conflictKey = dimensionColumns.join(', ');
+  const updates = PERFORMANCE_SUMMARY_COUNT_COLUMNS
+    .map(col => (mode === 'add' ? `${col} = ${col} + excluded.${col}` : `${col} = excluded.${col}`))
+    .join(', ');
+  return `INSERT INTO performance_summary (${allColumns.join(', ')}) VALUES (${placeholders})
+          ON CONFLICT (${conflictKey}) DO UPDATE SET ${updates}`;
+};
+
+const PERFORMANCE_SUMMARY_ADD_SQL = buildPerformanceSummarySql('add');
+const PERFORMANCE_SUMMARY_SET_SQL = buildPerformanceSummarySql('set');
+
 class SqlPerformanceRepo implements PerformanceRepo {
-  constructor(private db: SqlDatabase) {}
+  constructor(private readonly db: SqlDatabase) {}
 
-  async recordLatency(sample: PerformanceLatencySample): Promise<void> {
-    const durationMs = Math.max(0, Math.round(sample.durationMs));
-    const bucket = latencyBucketForMs(durationMs);
-    await runStatements(this.db, [this.addSummaryStatement(sample, 1, 0, durationMs), this.bucketStatement(sample, bucket.lowerMs, bucket.upperMs, 1, 'add')]);
+  async recordSample(sample: PerformanceSample): Promise<void> {
+    const summaryStmt = this.upsertSummary(sample, {
+      requests: 1,
+      ttft_samples_ok: sample.success ? 1 : 0,
+      errors_with_output: sample.success ? 0 : 1,
+      errors_no_output: 0,
+      neutral: 0,
+      tpot_samples: sample.tpotUs === undefined ? 0 : 1,
+      ttft_ms_sum: sample.ttftMs,
+      tpot_us_sum: sample.tpotUs ?? 0,
+    }, 'add');
+    const stmts: SqlPreparedStatement[] = [summaryStmt, this.buildBucketStmt(sample, 'ttft_ms', bucketForTtftMs(sample.ttftMs))];
+    if (sample.tpotUs !== undefined) stmts.push(this.buildBucketStmt(sample, 'tpot_us', bucketForTpotUs(sample.tpotUs)));
+    await runStatements(this.db, stmts);
   }
 
-  async recordError(sample: PerformanceErrorSample): Promise<void> {
-    await this.addSummaryStatement(sample, 0, 1, 0).run();
+  async recordZeroOutputError(dims: PerformanceDimensions): Promise<void> {
+    await this.upsertSummary(dims, { requests: 1, errors_no_output: 1 }, 'add').run();
   }
 
-  async query(opts: { keyId?: string; metricScope?: PerformanceMetricScope; start: string; end: string }): Promise<PerformanceTelemetryRecord[]> {
-    const filters = ['hour >= ?', 'hour < ?'];
-    const binds: unknown[] = [opts.start, opts.end];
-    if (opts.keyId) {
-      filters.push('key_id = ?');
-      binds.push(opts.keyId);
-    }
-    if (opts.metricScope) {
-      filters.push('metric_scope = ?');
-      binds.push(opts.metricScope);
-    }
-    return await this.queryWhere(filters.join(' AND '), binds);
+  async recordNeutral(dims: PerformanceDimensions): Promise<void> {
+    await this.upsertSummary(dims, { requests: 1, neutral: 1 }, 'add').run();
+  }
+
+  async query(opts: { keyId?: string; start: string; end: string }): Promise<PerformanceTelemetryRecord[]> {
+    return await this.rowsFor(opts);
   }
 
   async listAll(): Promise<PerformanceTelemetryRecord[]> {
-    return await this.queryWhere('1 = 1', []);
+    return await this.rowsFor({});
   }
 
   async set(record: PerformanceTelemetryRecord): Promise<void> {
-    await runStatements(this.db, [
-      this.setSummaryStatement(record),
-      this.deleteBucketsStatement(record),
-      ...record.buckets.map(bucket => this.bucketStatement(record, bucket.lowerMs, bucket.upperMs, bucket.count, 'set')),
-    ]);
+    const summaryStmt = this.upsertSummary(record, {
+      requests: record.requests,
+      ttft_samples_ok: record.ttftSamplesOk,
+      errors_with_output: record.errorsWithOutput,
+      errors_no_output: record.errorsNoOutput,
+      neutral: record.neutral,
+      tpot_samples: record.tpotSamples,
+      ttft_ms_sum: record.ttftMsSum,
+      tpot_us_sum: record.tpotUsSum,
+    }, 'set');
+
+    const deleteStmt = this.db.prepare(
+      'DELETE FROM performance_buckets WHERE hour = ? AND key_id = ? AND model = ? AND upstream = ? AND operation = ? AND runtime_location = ?',
+    ).bind(...performanceDimensionBinds(record));
+
+    const bucketStmts = record.buckets.map(bucket => this.db.prepare(
+      `INSERT INTO performance_buckets (hour, key_id, model, upstream, operation, runtime_location, metric, lower, upper, count)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).bind(...performanceDimensionBinds(record), bucket.metric, bucket.lower, bucket.upper, bucket.count));
+
+    await runStatements(this.db, [summaryStmt, deleteStmt, ...bucketStmts]);
+  }
+
+  // 'add' takes a partial map because missing columns are a no-op increment.
+  // 'set' rewrites the row wholesale, so a missing column would zero the
+  // existing value — the overload forces callers to spell out every count.
+  private upsertSummary(dims: PerformanceDimensions, counts: Partial<Record<PerformanceSummaryCountColumn, number>>, mode: 'add'): SqlPreparedStatement;
+  private upsertSummary(dims: PerformanceDimensions, counts: Record<PerformanceSummaryCountColumn, number>, mode: 'set'): SqlPreparedStatement;
+  private upsertSummary(
+    dims: PerformanceDimensions,
+    counts: Partial<Record<PerformanceSummaryCountColumn, number>>,
+    mode: 'add' | 'set',
+  ): SqlPreparedStatement {
+    const sql = mode === 'add' ? PERFORMANCE_SUMMARY_ADD_SQL : PERFORMANCE_SUMMARY_SET_SQL;
+    const countBinds = PERFORMANCE_SUMMARY_COUNT_COLUMNS.map(col => {
+      const value = counts[col];
+      if (value === undefined) {
+        if (mode === 'set') throw new Error(`upsertSummary('set'): missing count column ${col}`);
+        return 0;
+      }
+      return value;
+    });
+    return this.db.prepare(sql).bind(...performanceDimensionBinds(dims), ...countBinds);
   }
 
   async deleteAll(): Promise<void> {
-    await this.db.prepare('DELETE FROM performance_latency_buckets').run();
+    await this.db.prepare('DELETE FROM performance_buckets').run();
     await this.db.prepare('DELETE FROM performance_summary').run();
   }
 
-  private async queryWhere(where: string, binds: unknown[]): Promise<PerformanceTelemetryRecord[]> {
-    const records = new Map<string, PerformanceTelemetryRecord>();
+  private buildBucketStmt(dims: PerformanceDimensions, metric: PerformanceMetric, edges: { lower: number; upper: number | null }): SqlPreparedStatement {
+    return this.db.prepare(
+      `INSERT INTO performance_buckets (hour, key_id, model, upstream, operation, runtime_location, metric, lower, upper, count)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+       ON CONFLICT (hour, key_id, model, upstream, operation, runtime_location, metric, lower) DO UPDATE SET
+         count = count + 1`,
+    ).bind(...performanceDimensionBinds(dims), metric, edges.lower, edges.upper);
+  }
 
-    const { results: summaries } = await this.db
-      .prepare(
-        `SELECT hour, metric_scope, key_id, model, upstream, model_key, stream, runtime_location, requests, errors, total_ms_sum
-         FROM performance_summary WHERE ${where} ORDER BY hour`,
-      )
-      .bind(...binds)
-      .all<PerformanceSummaryRow>();
-    for (const row of summaries) {
-      const dimensions = performanceDimensionsFromRow(row);
-      records.set(performanceRecordKey(dimensions), {
-        ...dimensions,
+  private async rowsFor(opts: { keyId?: string; start?: string; end?: string }): Promise<PerformanceTelemetryRecord[]> {
+    const clauses: string[] = [];
+    const binds: unknown[] = [];
+    if (opts.start !== undefined) {
+      clauses.push('hour >= ?');
+      binds.push(opts.start);
+    }
+    if (opts.end !== undefined) {
+      clauses.push('hour < ?');
+      binds.push(opts.end);
+    }
+    if (opts.keyId !== undefined) {
+      clauses.push('key_id = ?');
+      binds.push(opts.keyId);
+    }
+    const whereClause = clauses.length > 0 ? ` WHERE ${clauses.join(' AND ')}` : '';
+
+    const { results: summaryRows } = await this.db.prepare(
+      `SELECT hour, key_id, model, upstream, operation, runtime_location, requests, ttft_samples_ok, errors_with_output, errors_no_output, neutral, tpot_samples, ttft_ms_sum, tpot_us_sum
+       FROM performance_summary${whereClause} ORDER BY hour`,
+    ).bind(...binds).all<PerformanceDimensionRow & { requests: number; ttft_samples_ok: number; errors_with_output: number; errors_no_output: number; neutral: number; tpot_samples: number; ttft_ms_sum: number; tpot_us_sum: number }>();
+
+    const records = new Map<string, Omit<PerformanceTelemetryRecord, 'buckets'> & { buckets: PerformanceBucketRow[] }>();
+    for (const row of summaryRows) {
+      const dims = performanceDimensionsFromRow(row);
+      records.set(performanceRecordKey(dims), {
+        ...dims,
         requests: row.requests,
-        errors: row.errors,
-        totalMsSum: row.total_ms_sum,
+        ttftSamplesOk: row.ttft_samples_ok,
+        errorsWithOutput: row.errors_with_output,
+        errorsNoOutput: row.errors_no_output,
+        neutral: row.neutral,
+        tpotSamples: row.tpot_samples,
+        ttftMsSum: row.ttft_ms_sum,
+        tpotUsSum: row.tpot_us_sum,
         buckets: [],
       });
     }
 
-    const { results: buckets } = await this.db
-      .prepare(
-        `SELECT hour, metric_scope, key_id, model, upstream, model_key, stream, runtime_location, lower_ms, upper_ms, count
-         FROM performance_latency_buckets WHERE ${where} ORDER BY hour, upper_ms`,
-      )
-      .bind(...binds)
-      .all<PerformanceBucketRow>();
-    for (const row of buckets) {
-      const dimensions = performanceDimensionsFromRow(row);
-      const key = performanceRecordKey(dimensions);
-      let record = records.get(key);
-      if (!record) {
-        record = {
-          ...dimensions,
-          requests: 0,
-          errors: 0,
-          totalMsSum: 0,
-          buckets: [],
-        };
-        records.set(key, record);
-      }
-      record.buckets.push({
-        lowerMs: row.lower_ms,
-        upperMs: row.upper_ms,
-        count: row.count,
-      });
+    const { results: bucketRows } = await this.db.prepare(
+      `SELECT hour, key_id, model, upstream, operation, runtime_location, metric, lower, upper, count
+       FROM performance_buckets${whereClause} ORDER BY hour, metric, lower`,
+    ).bind(...binds).all<PerformanceDimensionRow & { metric: PerformanceMetric; lower: number; upper: number | null; count: number }>();
+    for (const row of bucketRows) {
+      const dims = performanceDimensionsFromRow(row);
+      const key = performanceRecordKey(dims);
+      const record = records.get(key);
+      // Every write path inserts the summary + buckets atomically, so a bucket
+      // row without its summary is a DB invariant violation, not a domain case.
+      if (!record) throw new Error(`performance_buckets row has no matching summary for key ${key}`);
+      record.buckets.push({ metric: row.metric, lower: row.lower, upper: row.upper, count: row.count });
     }
 
-    return [...records.values()].sort(comparePerformanceTelemetryRecords);
-  }
-
-  private addSummaryStatement(sample: PerformanceDimensions, requests: number, errors: number, totalMsSum: number): SqlPreparedStatement {
-    return this.db
-      .prepare(
-        `INSERT INTO performance_summary (hour, metric_scope, key_id, model, upstream, model_key, stream, runtime_location, requests, errors, total_ms_sum)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT DO UPDATE SET
-           requests = requests + excluded.requests,
-           errors = errors + excluded.errors,
-           total_ms_sum = total_ms_sum + excluded.total_ms_sum`,
-      )
-      .bind(
-        sample.hour,
-        sample.metricScope,
-        sample.keyId,
-        sample.model,
-        sample.upstream,
-        sample.modelKey,
-        sample.stream ? 1 : 0,
-        sample.runtimeLocation,
-        requests,
-        errors,
-        totalMsSum,
-      );
-  }
-
-  private setSummaryStatement(record: PerformanceTelemetryRecord): SqlPreparedStatement {
-    return this.db
-      .prepare(
-        `INSERT INTO performance_summary (hour, metric_scope, key_id, model, upstream, model_key, stream, runtime_location, requests, errors, total_ms_sum)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT DO UPDATE SET
-           requests = excluded.requests,
-           errors = excluded.errors,
-           total_ms_sum = excluded.total_ms_sum`,
-      )
-      .bind(
-        record.hour,
-        record.metricScope,
-        record.keyId,
-        record.model,
-        record.upstream,
-        record.modelKey,
-        record.stream ? 1 : 0,
-        record.runtimeLocation,
-        record.requests,
-        record.errors,
-        record.totalMsSum,
-      );
-  }
-
-  private deleteBucketsStatement(record: PerformanceDimensions): SqlPreparedStatement {
-    return this.db
-      .prepare(
-        `DELETE FROM performance_latency_buckets
-         WHERE hour = ? AND metric_scope = ? AND key_id = ? AND model = ? AND upstream IS ? AND model_key = ? AND stream = ? AND runtime_location = ?`,
-      )
-      .bind(...performanceDimensionBinds(record));
-  }
-
-  private bucketStatement(sample: PerformanceDimensions, lowerMs: number, upperMs: number, count: number, mode: 'add' | 'set'): SqlPreparedStatement {
-    return this.db
-      .prepare(
-        `INSERT INTO performance_latency_buckets (hour, metric_scope, key_id, model, upstream, model_key, stream, runtime_location, lower_ms, upper_ms, count)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT DO UPDATE SET
-           count = ${mode === 'add' ? 'count + excluded.count' : 'excluded.count'}`,
-      )
-      .bind(
-        sample.hour,
-        sample.metricScope,
-        sample.keyId,
-        sample.model,
-        sample.upstream,
-        sample.modelKey,
-        sample.stream ? 1 : 0,
-        sample.runtimeLocation,
-        lowerMs,
-        upperMs,
-        count,
-      );
+    return [...records.values()];
   }
 }
-
-type PerformanceDimensionRow = {
-  hour: string;
-  metric_scope: string;
-  key_id: string;
-  model: string;
-  upstream: string | null;
-  model_key: string;
-  stream: number;
-  runtime_location: string;
-};
-
-interface PerformanceSummaryRow extends PerformanceDimensionRow {
-  requests: number;
-  errors: number;
-  total_ms_sum: number;
-}
-
-interface PerformanceBucketRow extends PerformanceDimensionRow {
-  lower_ms: number;
-  upper_ms: number;
-  count: number;
-}
-
-const performanceDimensionsFromRow = (row: PerformanceDimensionRow): PerformanceDimensions => ({
-  hour: row.hour,
-  metricScope: row.metric_scope as PerformanceMetricScope,
-  keyId: row.key_id,
-  model: row.model,
-  upstream: row.upstream,
-  modelKey: row.model_key,
-  stream: row.stream === 1,
-  runtimeLocation: row.runtime_location,
-});
-
-const performanceRecordKey = (record: PerformanceDimensions): string =>
-  [record.hour, record.metricScope, record.keyId, record.model, record.upstream, record.modelKey, record.stream ? '1' : '0', record.runtimeLocation].join(
-    '\0',
-  );
-
-const performanceDimensionBinds = (record: PerformanceDimensions): unknown[] =>
-  [record.hour, record.metricScope, record.keyId, record.model, record.upstream, record.modelKey, record.stream ? 1 : 0, record.runtimeLocation];
-
-const comparePerformanceTelemetryRecords = (a: PerformanceTelemetryRecord, b: PerformanceTelemetryRecord): number =>
-  a.hour.localeCompare(b.hour) ||
-  a.metricScope.localeCompare(b.metricScope) ||
-  a.keyId.localeCompare(b.keyId) ||
-  a.model.localeCompare(b.model) ||
-  (a.upstream ?? '').localeCompare(b.upstream ?? '') ||
-  a.modelKey.localeCompare(b.modelKey) ||
-  Number(a.stream) - Number(b.stream) ||
-  a.runtimeLocation.localeCompare(b.runtimeLocation);
 
 const toSearchUsageRecord = (row: { provider: string; key_id: string; action: string; hour: string; requests: number }): SearchUsageRecord => {
   if (row.action !== 'search' && row.action !== 'fetch_page') {
@@ -859,27 +774,29 @@ class SqlModelsCacheRepo implements ModelsCacheRepo {
 
   async get(upstreamId: string): Promise<CachedModelsRow | null> {
     const row = await this.db
-      .prepare('SELECT fetched_at, models_json, last_error_json FROM models_cache WHERE upstream_id = ?')
+      .prepare('SELECT revision, fetched_at, models_json, last_error_json FROM models_cache WHERE upstream_id = ?')
       .bind(upstreamId)
-      .first<{ fetched_at: number; models_json: string; last_error_json: string | null }>();
+      .first<{ revision: number; fetched_at: number; models_json: string; last_error_json: string | null }>();
     if (!row) return null;
     return {
+      revision: row.revision,
       fetchedAt: row.fetched_at,
       models: JSON.parse(row.models_json, modelsReviver) as ProviderModel[],
       lastError: row.last_error_json ? JSON.parse(row.last_error_json) as { message: string; at: number } : null,
     };
   }
 
-  async put(upstreamId: string, row: { fetchedAt: number; models: ProviderModel[] }): Promise<void> {
+  async put(upstreamId: string, row: { revision: number; fetchedAt: number; models: ProviderModel[] }): Promise<void> {
     await this.db
       .prepare(
-        `INSERT INTO models_cache (upstream_id, fetched_at, models_json, last_error_json) VALUES (?, ?, ?, NULL)
+        `INSERT INTO models_cache (upstream_id, revision, fetched_at, models_json, last_error_json) VALUES (?, ?, ?, ?, NULL)
          ON CONFLICT (upstream_id) DO UPDATE SET
+           revision = excluded.revision,
            fetched_at = excluded.fetched_at,
            models_json = excluded.models_json,
            last_error_json = NULL`,
       )
-      .bind(upstreamId, row.fetchedAt, JSON.stringify(row.models, modelsReplacer))
+      .bind(upstreamId, row.revision, row.fetchedAt, JSON.stringify(row.models, modelsReplacer))
       .run();
   }
 
@@ -896,23 +813,24 @@ class SqlModelsCacheRepo implements ModelsCacheRepo {
   }
 }
 
-const RESPONSES_ITEM_COLUMNS = 'id, api_key_id, upstream_id, upstream_item_id, item_type, origin, payload_json, content_hash, encrypted_content_hash, created_at, refreshed_at';
+const RESPONSES_ITEM_WRITE_COLUMNS = 'id, api_key_id, upstream_id, upstream_item_id, item_type, origin, payload_json, content_hash, encrypted_content_hash, created_at, refreshed_at';
+const RESPONSES_ITEM_METADATA_COLUMNS = 'id, api_key_id, upstream_id, upstream_item_id, item_type, origin, payload_json IS NOT NULL AS has_payload, content_hash, encrypted_content_hash, created_at, refreshed_at';
 const RESPONSES_ITEM_ID_SCOPE_SQL = "COALESCE(api_key_id, '') = COALESCE(?, '')";
 
 class SqlResponsesItemsRepo implements ResponsesItemsRepo {
   constructor(private db: SqlDatabase) {}
 
-  async lookupMany(apiKeyId: string | null, ids: readonly string[]): Promise<StoredResponsesItem[]> {
+  async lookupMany(apiKeyId: string | null, ids: readonly string[]): Promise<StoredResponsesItemMetadata[]> {
     const rows = await this.lookupByColumn(apiKeyId, 'id', ids);
     const order = new Map([...new Set(ids)].map((id, index) => [id, index]));
     return rows.toSorted((a, b) => order.get(a.id)! - order.get(b.id)!);
   }
 
-  async lookupManyByEncryptedContentHash(apiKeyId: string | null, hashes: readonly string[]): Promise<StoredResponsesItem[]> {
+  async lookupManyByEncryptedContentHash(apiKeyId: string | null, hashes: readonly string[]): Promise<StoredResponsesItemMetadata[]> {
     return await this.lookupByColumn(apiKeyId, 'encrypted_content_hash', hashes);
   }
 
-  async lookupManyByContentHash(apiKeyId: string | null, hashes: readonly string[]): Promise<StoredResponsesItem[]> {
+  async lookupManyByContentHash(apiKeyId: string | null, hashes: readonly string[]): Promise<StoredResponsesItemMetadata[]> {
     return await this.lookupByColumn(apiKeyId, 'content_hash', hashes);
   }
 
@@ -922,7 +840,7 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
   // reasoning/compaction item each turn — so chunk the IN-list well under
   // the tightest backend (the `api_key_id` bind shares the budget) and union
   // the results.
-  private async lookupByColumn(apiKeyId: string | null, column: 'id' | 'content_hash' | 'encrypted_content_hash', values: readonly string[]): Promise<StoredResponsesItem[]> {
+  private async lookupByColumn(apiKeyId: string | null, column: 'id' | 'content_hash' | 'encrypted_content_hash', values: readonly string[]): Promise<StoredResponsesItemMetadata[]> {
     const unique = [...new Set(values)];
     if (unique.length === 0) return [];
 
@@ -935,39 +853,61 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
       const orderSql = column === 'id' ? '' : ' ORDER BY refreshed_at DESC, created_at DESC, id ASC';
       const scopeSql = column === 'id' ? RESPONSES_ITEM_ID_SCOPE_SQL : 'api_key_id IS ?';
       const { results } = await this.db
-        .prepare(`SELECT ${RESPONSES_ITEM_COLUMNS} FROM responses_items WHERE ${scopeSql} AND ${column} IN (${placeholders})${orderSql}`)
+        .prepare(`SELECT ${RESPONSES_ITEM_METADATA_COLUMNS} FROM responses_items WHERE ${scopeSql} AND ${column} IN (${placeholders})${orderSql}`)
         .bind(apiKeyId, ...chunk)
-        .all<ResponsesItemRow>();
-      return await Promise.all(results.map(toStoredResponsesItem));
+        .all<ResponsesItemMetadataRow>();
+      return results;
     }));
-    return perChunk.flat();
+    return perChunk.flat().map(toStoredResponsesItemMetadata);
+  }
+
+  async lookupPayloads(apiKeyId: string | null, ids: readonly string[]): Promise<StoredResponsesItemPayloadRecord[]> {
+    const unique = [...new Set(ids)];
+    const chunks: string[][] = [];
+    for (let index = 0; index < unique.length; index += 90) chunks.push(unique.slice(index, index + 90));
+    const perChunk = await Promise.all(chunks.map(async chunk => {
+      const placeholders = chunk.map(() => '?').join(', ');
+      const { results } = await this.db
+        .prepare(`SELECT id, payload_json FROM responses_items WHERE ${RESPONSES_ITEM_ID_SCOPE_SQL} AND id IN (${placeholders})`)
+        .bind(apiKeyId, ...chunk)
+        .all<{ id: string; payload_json: string | null }>();
+      return results;
+    }));
+    const rowsById = new Map(perChunk.flat().map(row => [row.id, row]));
+    const records: StoredResponsesItemPayloadRecord[] = [];
+    for (const id of unique) {
+      const payloadJson = rowsById.get(id)?.payload_json;
+      if (payloadJson === undefined || payloadJson === null) continue;
+      const payload = await parseStoredResponsesPayload(id, payloadJson);
+      if (payload !== null) records.push({ id, payload });
+    }
+    return records;
   }
 
   async insertMany(items: readonly StoredResponsesItem[]): Promise<void> {
-    const statements = await Promise.all(items.map(async item => {
+    const statements = await mapSequentially(items, async item => {
       const payload = await serializeStoredResponsesPayload(item.id, item.apiKeyId, item.createdAt, item.payload);
       return this.db
         .prepare(
-          `INSERT INTO responses_items (${RESPONSES_ITEM_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `INSERT INTO responses_items (${RESPONSES_ITEM_WRITE_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT (id, COALESCE(api_key_id, '')) DO NOTHING`,
         )
         .bind(item.id, item.apiKeyId, item.upstreamId, item.upstreamItemId, item.itemType, item.origin, payload, item.contentHash, item.encryptedContentHash, item.createdAt, item.refreshedAt);
-    }));
+    });
     await runStatements(this.db, statements);
   }
 
   async fillPayloads(items: readonly StoredResponsesItem[]): Promise<number> {
-    const statements = await Promise.all(items.flatMap(item => {
-      if (item.payload === null) return [];
-      return [serializeStoredResponsesPayload(item.id, item.apiKeyId, item.createdAt, item.payload).then(payload =>
-        this.db
-          .prepare(
-            `UPDATE responses_items
-             SET payload_json = ?, content_hash = ?, encrypted_content_hash = ?, created_at = ?, refreshed_at = ?
-             WHERE ${RESPONSES_ITEM_ID_SCOPE_SQL} AND id = ? AND payload_json IS NULL`,
-          )
-          .bind(payload, item.contentHash, item.encryptedContentHash, item.createdAt, item.refreshedAt, item.apiKeyId, item.id))];
-    }));
+    const statements = await mapSequentially(items.filter(item => item.payload !== null), async item => {
+      const payload = await serializeStoredResponsesPayload(item.id, item.apiKeyId, item.createdAt, item.payload);
+      return this.db
+        .prepare(
+          `UPDATE responses_items
+           SET payload_json = ?, content_hash = ?, encrypted_content_hash = ?, created_at = ?, refreshed_at = ?
+           WHERE ${RESPONSES_ITEM_ID_SCOPE_SQL} AND id = ? AND payload_json IS NULL`,
+        )
+        .bind(payload, item.contentHash, item.encryptedContentHash, item.createdAt, item.refreshedAt, item.apiKeyId, item.id);
+    });
     const results = await runStatements(this.db, statements);
     return results.reduce((sum, result) => sum + (result.meta.changes ?? 0), 0);
   }
@@ -1005,28 +945,28 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
   }
 }
 
-interface ResponsesItemRow {
+interface ResponsesItemMetadataRow {
   id: string;
   api_key_id: string | null;
   upstream_id: string | null;
   upstream_item_id: string | null;
   item_type: string;
   origin: StoredResponsesItem['origin'];
-  payload_json: string | null;
+  has_payload: number;
   content_hash: string | null;
   encrypted_content_hash: string | null;
   created_at: number;
   refreshed_at: number;
 }
 
-const toStoredResponsesItem = async (row: ResponsesItemRow): Promise<StoredResponsesItem> => ({
+const toStoredResponsesItemMetadata = (row: ResponsesItemMetadataRow): StoredResponsesItemMetadata => ({
   id: row.id,
   apiKeyId: row.api_key_id,
   upstreamId: row.upstream_id,
   upstreamItemId: row.upstream_item_id,
   itemType: row.item_type,
   origin: row.origin,
-  payload: await parseStoredResponsesPayload(row.id, row.payload_json),
+  hasPayload: row.has_payload !== 0,
   contentHash: row.content_hash,
   encryptedContentHash: row.encrypted_content_hash,
   createdAt: row.created_at,
@@ -1099,36 +1039,39 @@ class SqlSearchConfigRepo implements SearchConfigRepo {
 
   async get(): Promise<unknown | null> {
     const row = await this.db
-      .prepare('SELECT provider, tavily_api_key, microsoft_grounding_api_key, jina_api_key FROM search_config WHERE id = 1')
-      .first<{ provider: string; tavily_api_key: string; microsoft_grounding_api_key: string; jina_api_key: string }>();
+      .prepare('SELECT provider, tavily_api_key, microsoft_grounding_api_key, jina_api_key, passthrough_openai_search, alpha_search_upstream_id, alpha_search_model FROM search_config WHERE id = 1')
+      .first<{ provider: string; tavily_api_key: string; microsoft_grounding_api_key: string; jina_api_key: string; passthrough_openai_search: number; alpha_search_upstream_id: string; alpha_search_model: string }>();
     if (!row) throw new Error('search_config singleton row missing');
     return {
       provider: row.provider,
       tavily: { apiKey: row.tavily_api_key },
       microsoftGrounding: { apiKey: row.microsoft_grounding_api_key },
       jina: { apiKey: row.jina_api_key },
+      passthroughOpenAiSearch: {
+        enabled: row.passthrough_openai_search === 1,
+        upstreamId: row.alpha_search_upstream_id,
+        model: row.alpha_search_model,
+      },
     };
   }
 
-  async save(config: unknown): Promise<void> {
-    const { provider, tavily, microsoftGrounding, jina } = config as {
-      provider: string;
-      tavily: { apiKey: string };
-      microsoftGrounding: { apiKey: string };
-      jina: { apiKey: string };
-    };
+  async save(config: SearchConfig): Promise<void> {
+    const { provider, tavily, microsoftGrounding, jina, passthroughOpenAiSearch } = config;
     await this.db
       .prepare(
-        `INSERT INTO search_config (id, provider, tavily_api_key, microsoft_grounding_api_key, jina_api_key, updated_at)
-         VALUES (1, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        `INSERT INTO search_config (id, provider, tavily_api_key, microsoft_grounding_api_key, jina_api_key, passthrough_openai_search, alpha_search_upstream_id, alpha_search_model, updated_at)
+         VALUES (1, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
          ON CONFLICT (id) DO UPDATE SET
            provider = excluded.provider,
            tavily_api_key = excluded.tavily_api_key,
            microsoft_grounding_api_key = excluded.microsoft_grounding_api_key,
            jina_api_key = excluded.jina_api_key,
+           passthrough_openai_search = excluded.passthrough_openai_search,
+           alpha_search_upstream_id = excluded.alpha_search_upstream_id,
+           alpha_search_model = excluded.alpha_search_model,
            updated_at = excluded.updated_at`,
       )
-      .bind(provider, tavily.apiKey, microsoftGrounding.apiKey, jina.apiKey)
+      .bind(provider, tavily.apiKey, microsoftGrounding.apiKey, jina.apiKey, passthroughOpenAiSearch.enabled ? 1 : 0, passthroughOpenAiSearch.upstreamId, passthroughOpenAiSearch.model)
       .run();
   }
 }
@@ -1138,14 +1081,14 @@ class SqlUpstreamRepo implements UpstreamRepo {
 
   async list(): Promise<UpstreamRecord[]> {
     const { results } = await this.db
-      .prepare('SELECT id, provider, name, enabled, sort_order, created_at, updated_at, config_json, state_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json FROM upstreams ORDER BY sort_order, created_at')
+      .prepare('SELECT id, provider, name, enabled, sort_order, created_at, updated_at, config_json, state_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, color FROM upstreams ORDER BY sort_order, created_at')
       .all<UpstreamRow>();
     return results.map(toUpstreamRecord);
   }
 
   async getById(id: string): Promise<UpstreamRecord | null> {
     const row = await this.db
-      .prepare('SELECT id, provider, name, enabled, sort_order, created_at, updated_at, config_json, state_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json FROM upstreams WHERE id = ?')
+      .prepare('SELECT id, provider, name, enabled, sort_order, created_at, updated_at, config_json, state_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, color FROM upstreams WHERE id = ?')
       .bind(id)
       .first<UpstreamRow>();
     return row ? toUpstreamRecord(row) : null;
@@ -1156,7 +1099,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
     // wins, and re-saves preserve that timestamp regardless of what the caller passes.
     await this.db
       .prepare(
-        `INSERT INTO upstreams (id, provider, name, enabled, sort_order, created_at, updated_at, config_json, state_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO upstreams (id, provider, name, enabled, sort_order, created_at, updated_at, config_json, state_json, flag_overrides, disabled_public_model_ids, proxy_fallback_list_json, model_prefix_json, color) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE SET
            provider = excluded.provider,
            name = excluded.name,
@@ -1168,7 +1111,8 @@ class SqlUpstreamRepo implements UpstreamRepo {
            flag_overrides = excluded.flag_overrides,
            disabled_public_model_ids = excluded.disabled_public_model_ids,
            proxy_fallback_list_json = excluded.proxy_fallback_list_json,
-           model_prefix_json = excluded.model_prefix_json`,
+           model_prefix_json = excluded.model_prefix_json,
+           color = excluded.color`,
       )
       .bind(
         upstream.id,
@@ -1184,6 +1128,7 @@ class SqlUpstreamRepo implements UpstreamRepo {
         JSON.stringify(normalizeDisabledPublicModelIds(upstream.disabledPublicModelIds)),
         JSON.stringify(normalizeProxyFallbackList(upstream.proxyFallbackList)),
         upstream.modelPrefix === null ? null : JSON.stringify(upstream.modelPrefix),
+        upstream.color,
       )
       .run();
   }
@@ -1224,6 +1169,7 @@ interface UpstreamRow {
   disabled_public_model_ids: string;
   proxy_fallback_list_json: string;
   model_prefix_json: string | null;
+  color: string | null;
 }
 
 const toUpstreamRecord = (row: UpstreamRow): UpstreamRecord => {
@@ -1244,7 +1190,7 @@ const toUpstreamRecord = (row: UpstreamRow): UpstreamRecord => {
 
   return {
     id: row.id,
-    kind: assertUpstreamProviderKind(row.provider),
+    kind: parseUpstreamKind(row.id, row.provider),
     name: row.name,
     enabled: row.enabled !== 0,
     sortOrder: row.sort_order,
@@ -1256,12 +1202,8 @@ const toUpstreamRecord = (row: UpstreamRow): UpstreamRecord => {
     disabledPublicModelIds: parseDisabledPublicModelIds(row.id, row.disabled_public_model_ids),
     proxyFallbackList: parseProxyFallbackList(row.id, row.proxy_fallback_list_json),
     modelPrefix: parseModelPrefix(row.id, row.model_prefix_json),
+    color: parseUpstreamColor(row.id, row.color),
   };
-};
-
-const assertUpstreamProviderKind = (provider: string): UpstreamProviderKind => {
-  if (provider === 'copilot' || provider === 'custom' || provider === 'azure' || provider === 'codex' || provider === 'claude-code' || provider === 'ollama') return provider;
-  throw new TypeError(`Invalid upstream provider kind: ${provider}`);
 };
 
 const parseFlagOverrides = (id: string, json: string): Record<string, boolean> => {

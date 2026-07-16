@@ -1,4 +1,4 @@
-import type { ModelEndpoints, UpstreamModelConfig } from '../../api/types.ts';
+import type { ModelEndpoints, UpstreamModelConfig, UpstreamRecord } from '../../api/types.ts';
 
 export const PATH_KEYS = [
   '/completions',
@@ -6,6 +6,7 @@ export const PATH_KEYS = [
   '/responses',
   '/messages',
   '/embeddings',
+  '/alpha/search',
   '/images/generations',
   '/images/edits',
 ] as const;
@@ -17,6 +18,7 @@ export const emptyPathOverrides = (): Record<PathKey, string> => ({
   '/responses': '',
   '/messages': '',
   '/embeddings': '',
+  '/alpha/search': '',
   '/images/generations': '',
   '/images/edits': '',
 });
@@ -124,3 +126,50 @@ export const blankOllamaDraft = (): OllamaDraft => ({
   apiKey: '',
   models: [],
 });
+
+// Wire-shape projection of OllamaDraft. Shared by save() and the list-models
+// preview so the two paths cannot drift.
+export const buildOllamaConfig = (draft: OllamaDraft): Record<string, unknown> => {
+  const config: Record<string, unknown> = {
+    baseUrl: draft.baseUrl.trim(),
+    models: draft.models,
+  };
+  if (draft.apiKey.trim()) config.apiKey = draft.apiKey.trim();
+  return config;
+};
+
+// Wire-shape projection of AzureDraft. Azure has no list-models path (the
+// catalog is operator-authored), so this only feeds save().
+export const buildAzureConfig = (draft: AzureDraft): Record<string, unknown> => {
+  const config: Record<string, unknown> = {
+    endpoint: draft.endpoint.trim(),
+    models: draft.models,
+  };
+  if (draft.apiKey.trim()) config.apiKey = draft.apiKey.trim();
+  return config;
+};
+
+// Wire-shape projection for POST /api/upstreams/list-models. Consolidates the
+// per-kind builder dispatch and the edit-mode stored-secret fallback so the
+// preview probes the same shape save() would write. Matches save()'s
+// backend-patch-omit semantics — an untyped apiKey in edit mode falls back to
+// the record's stored secret so the preview does not hit an unauthenticated
+// upstream when the operator merely tweaks non-credential fields.
+export const buildListModelsPreviewConfig = (
+  record: UpstreamRecord,
+  customDraft: CustomDraft,
+  ollamaDraft: OllamaDraft,
+  isCreate: boolean,
+): Record<string, unknown> => {
+  const config: Record<string, unknown> = record.kind === 'custom'
+    ? { ...buildCustomConfigCore(customDraft), models: customDraft.models }
+    : buildOllamaConfig(ollamaDraft);
+  if (!isCreate && config.apiKey === undefined) {
+    if (record.kind === 'custom' && record.config.authStyle !== 'none' && record.config.apiKey) {
+      config.apiKey = record.config.apiKey;
+    } else if (record.kind === 'ollama' && record.config.apiKey) {
+      config.apiKey = record.config.apiKey;
+    }
+  }
+  return config;
+};

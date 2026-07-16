@@ -7,9 +7,9 @@ import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import type { ApiKey, StoredResponsesItem, User } from '../../../repo/types.ts';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-import { type ModelCandidate, directFetcher, type ProviderResponsesResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
-import { assert, assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
+import type { CanonicalResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { type FlagId, type ModelCandidate, directFetcher, type ProviderResponsesResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
+import { assert, assertEquals, stubProvider, stubInternalModel, stubProviderModel } from '@floway-dev/test-utils';
 
 // Mock the resolver seam so each test hands the http entry exactly the
 // provider candidates it wants, optionally with an alias-rules overlay
@@ -119,9 +119,11 @@ const makeProviderEvents = async function* (events: readonly ResponsesStreamEven
 const makeCandidate = (overrides: {
   upstream?: string;
   endpoints?: ModelEndpoints;
+  enabledFlags?: ReadonlySet<FlagId>;
   callResponses?: (model: unknown, body: unknown, action: ResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderResponsesResult>;
 } = {}): ModelCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
+  const endpoints = overrides.endpoints ?? { chatCompletions: {}, responses: {}, messages: {} };
   const provider = stubProvider({
     callResponses: overrides.callResponses,
   });
@@ -133,9 +135,16 @@ const makeCandidate = (overrides: {
       disabledPublicModelIds: [],
       modelPrefix: null,
       instance: provider,
-      supportsResponsesItemReference: true,
     },
-    model: stubInternalModel(overrides.endpoints ? { endpoints: overrides.endpoints } : {}, upstream),
+    model: stubInternalModel({
+      endpoints,
+      providerModels: {
+        [upstream]: stubProviderModel({
+          endpoints,
+          enabledFlags: overrides.enabledFlags ?? new Set(),
+        }),
+      },
+    }, upstream),
     fetcher: directFetcher,
   };
 };
@@ -146,15 +155,20 @@ const completedEvent = (id = 'resp_test'): ResponsesStreamEvent => ({
   response: makeResponsesResult(id),
 });
 
-test('POST /v1/responses streams a successful SSE body', async () => {
-  installRepo();
+const queueCompletedResponse = (id = 'resp_test') => {
   const callResponses = vi.fn(async (): Promise<ProviderResponsesResult> => ({
     action: 'generate', ok: true,
-    events: makeProviderEvents([completedEvent()]),
+    events: makeProviderEvents([completedEvent(id)]),
     modelKey: 'test-model-key',
     headers: new Headers(),
   }));
   queueResolution([makeCandidate({ callResponses })]);
+  return callResponses;
+};
+
+test('POST /v1/responses streams a successful SSE body', async () => {
+  installRepo();
+  const callResponses = queueCompletedResponse();
 
   const response = await makeApp().request('/v1/responses', {
     method: 'POST',
@@ -173,15 +187,63 @@ test('POST /v1/responses streams a successful SSE body', async () => {
   assertEquals(callResponses.mock.calls.length, 1);
 });
 
+test('POST /v1/responses canonicalizes and promotes an implicit system message', async () => {
+  installRepo();
+  let observedBody: Omit<CanonicalResponsesPayload, 'model'> | undefined;
+  const callResponses = vi.fn(async (_model, body): Promise<ProviderResponsesResult> => {
+    observedBody = body as Omit<CanonicalResponsesPayload, 'model'>;
+    return {
+      action: 'generate',
+      ok: true,
+      events: makeProviderEvents([completedEvent()]),
+      modelKey: 'test-model-key',
+      headers: new Headers(),
+    };
+  });
+  queueResolution([makeCandidate({
+    callResponses,
+    enabledFlags: new Set(['promote-system-to-developer']),
+  })]);
+
+  const response = await makeApp().request('/v1/responses', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({
+      model: 'test-model',
+      input: [
+        { role: 'system', content: 'rules' },
+        { role: 'user', content: 'hello' },
+      ],
+      store: false,
+      stream: true,
+    }),
+  });
+
+  assertEquals(response.status, 200);
+  await response.text();
+  assertEquals(observedBody?.input, [
+    { type: 'message', role: 'developer', content: 'rules' },
+    { type: 'message', role: 'user', content: 'hello' },
+  ]);
+});
+
+test('POST /v1/responses rejects a malformed untyped input item', async () => {
+  installRepo();
+  const response = await makeApp().request('/v1/responses', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({ model: 'test-model', input: [null] }),
+  });
+
+  assertEquals(response.status, 400);
+  const body = await response.json() as { error: { message: string; param: string } };
+  assertEquals(body.error.message, 'Untyped Responses input items require a valid role and content.');
+  assertEquals(body.error.param, 'input[0]');
+});
+
 test('POST /v1/responses returns a single JSON body when stream is omitted', async () => {
   installRepo();
-  const callResponses = vi.fn(async (): Promise<ProviderResponsesResult> => ({
-    action: 'generate', ok: true,
-    events: makeProviderEvents([completedEvent('resp_nonstream')]),
-    modelKey: 'test-model-key',
-    headers: new Headers(),
-  }));
-  queueResolution([makeCandidate({ callResponses })]);
+  queueCompletedResponse('resp_nonstream');
 
   const response = await makeApp().request('/v1/responses', {
     method: 'POST',
@@ -194,6 +256,70 @@ test('POST /v1/responses returns a single JSON body when stream is omitted', asy
   const body = await response.json() as ResponsesResult;
   assert(isStoredResponseId(body.id), `expected Floway-minted resp_ id, got ${body.id}`);
   assertEquals(body.status, 'completed');
+});
+
+test('POST /v1/responses returns 502 when a non-streaming output item cannot be persisted', async () => {
+  const repo = installRepo();
+  const persistence = vi.spyOn(repo.responsesItems, 'insertMany').mockRejectedValue(new Error('simulated item persistence failure'));
+  try {
+    queueCompletedResponse();
+
+    const response = await makeApp().request('/v1/responses', {
+      method: 'POST',
+      headers: new Headers({ 'content-type': 'application/json' }),
+      body: JSON.stringify({ model: 'test-model', input: 'hello' }),
+    });
+
+    assertEquals(response.status, 502);
+    const body = await response.json() as { error: { message: string } };
+    assertEquals(body.error.message, 'simulated item persistence failure');
+  } finally {
+    persistence.mockRestore();
+  }
+});
+
+test('POST /v1/responses terminates an SSE stream with error when an output item cannot be persisted', async () => {
+  const repo = installRepo();
+  const persistence = vi.spyOn(repo.responsesItems, 'insertMany').mockRejectedValue(new Error('simulated item persistence failure'));
+  try {
+    queueCompletedResponse();
+
+    const response = await makeApp().request('/v1/responses', {
+      method: 'POST',
+      headers: new Headers({ 'content-type': 'application/json' }),
+      body: JSON.stringify({ model: 'test-model', input: 'hello', stream: true }),
+    });
+
+    // Streaming headers are already committed, so the protocol error frame is
+    // the failure signal; a successful terminal frame must never follow it.
+    assertEquals(response.status, 200);
+    const body = await response.text();
+    assert(body.includes('event: error'));
+    assert(body.includes('simulated item persistence failure'));
+    assert(!body.includes('event: response.completed'));
+  } finally {
+    persistence.mockRestore();
+  }
+});
+
+test('POST /v1/responses returns 502 when the response snapshot cannot be persisted', async () => {
+  const repo = installRepo();
+  const persistence = vi.spyOn(repo.responsesSnapshots, 'insert').mockRejectedValue(new Error('simulated snapshot persistence failure'));
+  try {
+    queueCompletedResponse();
+
+    const response = await makeApp().request('/v1/responses', {
+      method: 'POST',
+      headers: new Headers({ 'content-type': 'application/json' }),
+      body: JSON.stringify({ model: 'test-model', input: 'hello' }),
+    });
+
+    assertEquals(response.status, 502);
+    const body = await response.json() as { error: { message: string } };
+    assertEquals(body.error.message, 'simulated snapshot persistence failure');
+  } finally {
+    persistence.mockRestore();
+  }
 });
 
 test('POST /v1/responses/compact returns a non-streaming compaction envelope', async () => {
@@ -263,7 +389,7 @@ test('POST /v1/responses renders a routing-unavailable 400 when a forcing item n
     origin: 'upstream',
     contentHash: null,
     encryptedContentHash: null,
-    payload: null,
+    payload: { item: { type: 'compaction', id } },
     createdAt: 1_000,
     refreshedAt: 1_000,
   };
@@ -284,11 +410,10 @@ test('POST /v1/responses renders a routing-unavailable 400 when a forcing item n
   assertEquals(body.error.code, 'responses_item_routing_unavailable');
 });
 
-// Alias flow: the resolver returns a candidate whose upstream catalog id
-// is the target model id, plus the alias's rule overlay. Serve rewrites
-// `payload.model` to `candidate.model.id` before dispatching, and the
-// attempt's leaf wire call reads `candidate.rules` to overlay the rules
-// onto the target IR.
+// Alias flow: the resolver returns a candidate whose upstream catalog id is
+// the target model id, plus the alias's rule overlay. The attempt stamps its
+// private clone with `candidate.model.id`, and the leaf wire call reads
+// `candidate.rules` to overlay the rules onto the target IR.
 const queueCodexAutoReviewCandidate = (
   callResponses: (model: unknown, body: unknown, action: ResponsesAction, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderResponsesResult>,
 ): void => {
@@ -300,9 +425,9 @@ const queueCodexAutoReviewCandidate = (
 test('POST /v1/responses routes a codex-auto-review request through the seeded alias: rewrites the model to gpt-5.4 and stamps reasoning.effort=low', async () => {
   installRepo();
   lastSeenModel.value = null;
-  const observedBodies: ResponsesPayload[] = [];
+  const observedBodies: Omit<CanonicalResponsesPayload, 'model'>[] = [];
   queueCodexAutoReviewCandidate(async (_model, body): Promise<ProviderResponsesResult> => {
-    observedBodies.push(body as ResponsesPayload);
+    observedBodies.push(body as Omit<CanonicalResponsesPayload, 'model'>);
     return {
       action: 'generate', ok: true,
       events: makeProviderEvents([completedEvent()]),
@@ -332,7 +457,7 @@ test('POST /v1/responses routes a codex-auto-review request through the seeded a
 test('POST /v1/responses/compact routes a codex-auto-review request through the seeded alias: rewrites the model to gpt-5.4 and stamps reasoning.effort=low (the alias rule overlays the compact body too)', async () => {
   installRepo();
   lastSeenModel.value = null;
-  const observedBodies: ResponsesPayload[] = [];
+  const observedBodies: Omit<CanonicalResponsesPayload, 'model'>[] = [];
   const compactionItem = { type: 'compaction' as const, id: 'cmp_1', encrypted_content: 'ENC' };
   const compactionResult: ResponsesResult = {
     ...makeResponsesResult(),
@@ -341,7 +466,7 @@ test('POST /v1/responses/compact routes a codex-auto-review request through the 
   };
   queueCodexAutoReviewCandidate(async (_model, body, action): Promise<ProviderResponsesResult> => {
     if (action !== 'compact') throw new Error(`expected compact, got ${action}`);
-    observedBodies.push(body as ResponsesPayload);
+    observedBodies.push(body as Omit<CanonicalResponsesPayload, 'model'>);
     return { action: 'compact', ok: true, result: compactionResult, modelKey: 'test-model-key' };
   });
 
@@ -351,6 +476,8 @@ test('POST /v1/responses/compact routes a codex-auto-review request through the 
     body: JSON.stringify({
       model: 'codex-auto-review',
       input: [{ type: 'message', role: 'user', content: 'kept' }],
+      prompt_cache_options: { mode: 'explicit', ttl: '30m' },
+      prompt_cache_retention: '24h',
     }),
   });
 
@@ -359,6 +486,8 @@ test('POST /v1/responses/compact routes a codex-auto-review request through the 
   const observed = observedBodies[0];
   if (observed === undefined) throw new Error('expected callResponses to receive a body');
   assertEquals(observed.reasoning?.effort, 'low');
+  assertEquals(observed.prompt_cache_options, { mode: 'explicit', ttl: '30m' });
+  assertEquals(observed.prompt_cache_retention, '24h');
 });
 
 test('POST /v1/responses renders the OpenAI-shaped model-unsupported 400 when no candidate matches the responses picker', async () => {

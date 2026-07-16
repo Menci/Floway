@@ -21,7 +21,7 @@
 
 import type { OllamaUpstreamConfig } from './config.ts';
 import { ollamaFetchShow, ollamaFetchTags } from './fetch.ts';
-import { fetchUpstreamModels, type Fetcher } from '@floway-dev/provider';
+import { fetchUpstreamModels, type Fetcher, identityWrapUpstreamCall } from '@floway-dev/provider';
 
 export interface OllamaRawModel {
   // The slug Ollama uses everywhere (e.g. `gpt-oss:120b`, `deepseek-v4-flash`,
@@ -137,7 +137,7 @@ const fetchShowForTag = async (
   const response = await ollamaFetchShow(
     config,
     { method: 'POST', body: JSON.stringify({ name: tag.name }) },
-    { fetcher },
+    { fetcher, wrapUpstreamCall: identityWrapUpstreamCall },
   );
   if (!response.ok) return null;
   let parsed: unknown;
@@ -155,7 +155,7 @@ export const fetchOllamaCatalog = async (config: OllamaUpstreamConfig, fetcher: 
   // provider's catalog fetch produces, which the control-plane and SWR cache
   // both branch on.
   const tags = await fetchUpstreamModels(
-    () => ollamaFetchTags(config, { method: 'GET' }, { fetcher }),
+    () => ollamaFetchTags(config, { method: 'GET' }, { fetcher, wrapUpstreamCall: identityWrapUpstreamCall }),
     parseTagsResponse,
   );
   // /api/show fan-out stays outside the scaffold: `allSettled` already drops

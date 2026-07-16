@@ -14,8 +14,11 @@ import {
 } from './server-tool-shim.ts';
 import { SHIM_TOOL_NAME, webSearchServerTool } from './server-tools/web-search.ts';
 import type { ResponsesInterceptor, ResponsesInvocation } from './types.ts';
-import { initRepo } from '../../../../repo/index.ts';
+import { getRepo, initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
+import { mockChatGatewayCtx } from '../../../../test-helpers/gateway-ctx.ts';
+import { resolveAlphaSearchDispatcher } from '../../../tools/web-search/alpha-search/upstream.ts';
+import type { AlphaSearchDispatcher } from '../../../tools/web-search/alpha-search/upstream.ts';
 import { resolveConfiguredWebSearchProvider } from '../../../tools/web-search/provider.ts';
 import type {
   ConfiguredWebSearchProvider,
@@ -27,10 +30,10 @@ import type {
   WebSearchProviderResult,
 } from '../../../tools/web-search/types.ts';
 import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
-import { createNonResponsesSourceStore } from '../items/store.ts';
 import { eventFrame } from '@floway-dev/protocols/common';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type {
+  CanonicalResponsesPayload,
   ResponsesOutputItem,
   ResponsesInputItem,
   ResponsesInputWebSearchCall,
@@ -44,7 +47,6 @@ import type {
 } from '@floway-dev/protocols/responses';
 import { type EventResult, type ExecuteResult, type FlagId } from '@floway-dev/provider';
 import { assert, assertEquals, assertFalse, stubModelCandidate } from '@floway-dev/test-utils';
-import type { CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
 
 const withResponsesWebSearchShim = withResponsesServerToolShim([webSearchServerTool]);
 
@@ -181,6 +183,7 @@ const mkReasoningDone = (outputIndex: number, reasoningId: string): ProtocolFram
 // test stub. Tests that need a specific configured state set
 // `mockResolveConfigured.mockReturnValue(...)` per call.
 vi.mock('../../../tools/web-search/provider.ts');
+vi.mock('../../../tools/web-search/alpha-search/upstream.ts');
 
 const mkResponseCompleted = (
   usage?: ResponsesResult['usage'],
@@ -217,7 +220,7 @@ const testTelemetryModelIdentity = {
   model: 'test-model',
   upstream: 'test-upstream',
   modelKey: 'test-model-key',
-  cost: null,
+  pricing: null,
 };
 
 interface ProviderOverrides {
@@ -272,12 +275,14 @@ interface DepsOverrides {
 }
 
 const mockResolveConfigured = vi.mocked(resolveConfiguredWebSearchProvider);
+const mockResolveAlpha = vi.mocked(resolveAlphaSearchDispatcher);
 
 // Seed a per-test InMemoryRepo and a default tavily search config so
 // `loadSearchConfig()` returns a non-default value. The actual provider
 // construction is short-circuited by the module mock above; tests
 // override `mockResolveConfigured` to point at a stub backend.
 beforeEach(() => {
+  mockResolveAlpha.mockReset();
   const repo = new InMemoryRepo();
   initRepo(repo);
   void repo.searchConfig.save({
@@ -285,6 +290,7 @@ beforeEach(() => {
     tavily: { apiKey: 'test-key' },
     microsoftGrounding: { apiKey: '' },
     jina: { apiKey: '' },
+    passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
   } satisfies SearchConfig);
 });
 
@@ -330,18 +336,8 @@ const makeInvocation = (overrides: InvocationOverrides = {}): ResponsesInvocatio
   action: 'generate',
 });
 
-const makeGatewayCtx = (apiKeyId: string = 'k1'): ChatGatewayCtx => ({
-  apiKeyId,
-  upstreamIds: null,
-  wantsStream: true,
-  runtimeLocation: 'TEST',
-  currentColo: 'TEST',
-  dump: null,
-  responseHeaders: new Headers(),
-  backgroundScheduler: () => {},
-  requestStartedAt: 0,
-  store: createNonResponsesSourceStore(apiKeyId),
-});
+const makeGatewayCtx = (apiKeyId: string = 'k1') =>
+  mockChatGatewayCtx({ apiKeyId, wantsStream: true });
 
 const collectFrames = async <T>(iter: AsyncIterable<T>): Promise<T[]> => {
   const out: T[] = [];
@@ -962,6 +958,31 @@ test('fetchPage whole-batch failure surfaces the open-page error text', async ()
 });
 
 // ── Domain filter input validation ────────────────────────────────────
+
+test('invalid request registration preserves an upstream error type and null code', async () => {
+  const shim = withResponsesServerToolShim([() => ({
+    type: 'invalid-request',
+    message: 'native image error',
+    param: 'input',
+    errorType: 'image_generation_user_error',
+    code: null,
+  })]);
+  const result = await shim(
+    makeInvocation(),
+    makeGatewayCtx(),
+    () => Promise.reject(new Error('run should not be called')),
+  );
+  assert(result.type === 'api-error');
+  const body = JSON.parse(new TextDecoder().decode(result.body)) as {
+    error: { message: string; type: string; param: string | null; code: string | null };
+  };
+  assertEquals(body.error, {
+    message: 'native image error',
+    type: 'image_generation_user_error',
+    param: 'input',
+    code: null,
+  });
+});
 
 test('non-empty allowed_domains with every entry malformed is rejected as 400 invalid_request_error (no silent expansion to allow-all)', async () => {
   // Silently dropping every malformed entry would turn "only allow
@@ -1623,6 +1644,8 @@ test('truncated page contents append the truncation sentinel', async () => {
   assert(lastOutput.type === 'function_call_output');
   const text = (lastOutput as { output: string }).output;
   assert(text.includes('[Content truncated; full page is 99999 bytes.'));
+  assert(text.includes('Use the `find` sub-property with a pattern'));
+  assertFalse(text.includes("web_search's"));
 });
 
 // ── Multi-turn SSE merge invariants ──────────────────────────────────
@@ -2810,7 +2833,7 @@ test('finalMetadata resolves with the LATEST turn modelIdentity, not turn 1', as
         model: 'gpt-5',
         upstream: 'test-upstream',
         modelKey: `turn-${runCalls}-key`,
-        cost: null,
+        pricing: null,
       },
     };
   };
@@ -3887,6 +3910,36 @@ test('responses target with flag on: function_call_output is plain-text formatte
   assert(text.startsWith('Search results for "q1":'));
 });
 
+test('responses target with OpenAI passthrough uses the selected alpha search dispatcher', async () => {
+  makeStubDeps();
+  await getRepo().searchConfig.save({
+    provider: 'tavily',
+    tavily: { apiKey: 'test-key' },
+    microsoftGrounding: { apiKey: '' },
+    jina: { apiKey: '' },
+    passthroughOpenAiSearch: { enabled: true, upstreamId: 'up_codex', model: 'gpt-search' },
+  } satisfies SearchConfig);
+  const call = vi.fn<AlphaSearchDispatcher>(async () => new Response(JSON.stringify({
+    encrypted_output: null,
+    output: 'alpha output',
+    results: [{ type: 'text_result', url: 'https://example.com', title: 'Example', snippet: 'alpha snippet' }],
+  }), { status: 200, headers: { 'content-type': 'application/json' } }));
+  mockResolveAlpha.mockResolvedValue(call);
+  const inv = makeInvocation({
+    targetApi: 'responses',
+    enabledFlags: new Set<FlagId>(['responses-web-search-shim']),
+  });
+  const script = scriptedRun([
+    searchCallTurn(0, 'call_1', 'alpha query'),
+    messageTurn('done', 0),
+  ]);
+
+  await runShimAndDrain(withResponsesWebSearchShim, inv, makeGatewayCtx(), script.run);
+
+  assertEquals(lastFunctionCallOutput(inv.payload.input as ResponsesInputItem[]), 'alpha output');
+  assertEquals(call.mock.calls[0]?.[0].commands, { search_query: [{ q: 'alpha query' }] });
+});
+
 test('chat-completions target: function_call_output is plain-text formatted search results', async () => {
   makeStubDeps();
   const shim = withResponsesWebSearchShim;
@@ -4481,19 +4534,11 @@ test('downstream AbortSignal threads through to provider search / fetchPage and 
   });
   const shim = withResponsesWebSearchShim;
   const inv = makeInvocation();
-  const gatewayCtx: ChatGatewayCtx = {
+  const gatewayCtx = mockChatGatewayCtx({
     apiKeyId: 'k1',
-    upstreamIds: null,
     wantsStream: true,
-    runtimeLocation: 'TEST',
-    currentColo: 'TEST',
-    dump: null,
-    responseHeaders: new Headers(),
-    backgroundScheduler: () => {},
-    requestStartedAt: 0,
-    store: createNonResponsesSourceStore('k1'),
     abortSignal: controller.signal,
-  };
+  });
   const script = scriptedRun([
     searchCallTurn(0, 'call_1', 'will-be-aborted'),
   ]);
@@ -5960,13 +6005,15 @@ test('echo restore preserves client-supplied filters / user_location on the cano
   assertEquals((completed.response.tools![0] as { user_location: typeof userLoc }).user_location, userLoc);
 });
 
-test('duplicate hosted web_search entries silently collapse into one echoed canonical', async () => {
+test('duplicate hosted web_search declarations collapse to the last complete declaration', async () => {
   makeStubDeps();
+  const firstFilters = { allowed_domains: ['first.example'] };
+  const lastFilters = { allowed_domains: ['last.example'] };
   const inv = makeInvocation({
     payload: {
       tools: [
-        { type: 'web_search', search_context_size: 'high' },
-        { type: 'web_search' },
+        { type: 'web_search', search_context_size: 'high', filters: firstFilters },
+        { type: 'web_search_preview', search_context_size: 'low', filters: lastFilters },
       ],
     },
   });
@@ -5988,12 +6035,13 @@ test('duplicate hosted web_search entries silently collapse into one echoed cano
   // Request side: only one function tool was sent upstream.
   assertEquals(inv.payload.tools?.length, 1);
   assertEquals(inv.payload.tools?.[0].type, 'function');
-  // Response side: one restored canonical entry, preserving the FIRST
-  // hosted block's `search_context_size`.
+  // Response side: one restored declaration with the last alias and all of
+  // its configuration.
   const completed = findResponseCompleted(frames);
   assertEquals(completed.response.tools!.length, 1);
-  assertEquals(completed.response.tools![0].type, 'web_search');
-  assertEquals((completed.response.tools![0] as { search_context_size: string }).search_context_size, 'high');
+  assertEquals(completed.response.tools![0].type, 'web_search_preview');
+  assertEquals((completed.response.tools![0] as { search_context_size: string }).search_context_size, 'low');
+  assertEquals((completed.response.tools![0] as { filters: typeof lastFilters }).filters, lastFilters);
 });
 
 test('echo restore swaps the function-typed tool_choice back to a hosted tool_choice', async () => {

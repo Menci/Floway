@@ -18,8 +18,8 @@ import { defineConfig } from 'vite';
 //     Cloudflare Workers topology, where the SPA is served from Workers
 //     Static Assets and the listed paths divert to the Worker).
 //
-// Bare LLM paths (without `/v1` prefix) are listed because the gateway
-// accepts both forms.
+// Bare data-plane paths are listed because the gateway accepts both root and
+// `/v1` forms where the upstream protocol defines them.
 const wranglerOrigin = 'http://127.0.0.1:8788';
 const wranglerProxiedPaths = [
   '/api',
@@ -27,6 +27,7 @@ const wranglerProxiedPaths = [
   '/v1',
   '/v1beta',
   '/azure-api.codex',
+  '/alpha/search',
   '/completions',
   '/chat/completions',
   '/responses',

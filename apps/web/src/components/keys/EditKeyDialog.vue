@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue';
 import { RouterLink } from 'vue-router';
 
+import { type KeySource, KEY_SOURCE_OPTIONS } from './keySource.ts';
 import { callApi, useApi } from '../../api/client.ts';
 import type { ApiKey } from '../../api/types.ts';
 import type { UpstreamOption } from '../../composables/useUpstreamOptions.ts';
@@ -12,15 +13,13 @@ import { Button, Dialog, Input, Select } from '@floway-dev/ui';
 
 const open = defineModel<boolean>('open');
 
-const props = defineProps<{
-  apiKey: ApiKey;
-  upstreams: UpstreamOption[];
-}>();
+const props = defineProps<{ upstreams: UpstreamOption[] } & ({ mode: 'create' } | { mode: 'edit'; apiKey: ApiKey })>();
 
 const emit = defineEmits<{ saved: [] }>();
 
 const api = useApi();
 const auth = useAuthStore();
+const isCreate = computed(() => props.mode === 'create');
 
 const visibleUpstreams = computed<UpstreamOption[]>(() => {
   if (!auth.currentUser) throw new Error('EditKeyDialog rendered without an authenticated user');
@@ -56,9 +55,8 @@ const retentionPresetFromValue = (sec: number | null): { preset: RetentionPreset
   if (sec % 86400 === 0) return { preset: 'custom', custom: `${sec / 86400}d` };
   if (sec % 3600 === 0) return { preset: 'custom', custom: `${sec / 3600}h` };
   if (sec % 60 === 0) return { preset: 'custom', custom: `${sec / 60}m` };
-  // Always carry the explicit `s` suffix when rendering raw seconds — the
-  // input placeholder shows mixed units (`30m, 2h, 3d, 1800`) so a bare
-  // integer like `45` reads ambiguously even though the parser accepts it.
+  // Emit an explicit 's' suffix so raw seconds don't collide with the
+  // mixed-unit placeholder shown in the custom retention Input.
   return { preset: 'custom', custom: `${sec}s` };
 };
 
@@ -66,18 +64,29 @@ const name = ref('');
 const upstreamSelection = ref<UpstreamPickerValue>({ override: false, ids: [] });
 const retentionPreset = ref<RetentionPreset>('off');
 const retentionCustom = ref('');
+const keySource = ref<KeySource>('generate');
+const customKey = ref('');
 const saving = ref(false);
 const error = ref<string | null>(null);
 
 const reset = () => {
-  name.value = props.apiKey.name;
-  upstreamSelection.value = {
-    override: props.apiKey.upstream_ids !== null,
-    ids: props.apiKey.upstream_ids ?? [],
-  };
-  const { preset, custom } = retentionPresetFromValue(props.apiKey.dump_retention_seconds);
-  retentionPreset.value = preset;
-  retentionCustom.value = custom;
+  if (props.mode === 'create') {
+    name.value = '';
+    upstreamSelection.value = { override: false, ids: [] };
+    retentionPreset.value = 'off';
+    retentionCustom.value = '';
+    keySource.value = 'generate';
+    customKey.value = '';
+  } else {
+    name.value = props.apiKey.name;
+    upstreamSelection.value = {
+      override: props.apiKey.upstream_ids !== null,
+      ids: props.apiKey.upstream_ids ?? [],
+    };
+    const { preset, custom } = retentionPresetFromValue(props.apiKey.dump_retention_seconds);
+    retentionPreset.value = preset;
+    retentionCustom.value = custom;
+  }
   error.value = null;
 };
 
@@ -97,6 +106,7 @@ const retentionEnabled = computed(() => {
 });
 
 const retentionWarning = computed<string | null>(() => {
+  if (props.mode === 'create') return null;
   const previous = props.apiKey.dump_retention_seconds;
   if (previous === null) return null;
   const next = proposedRetentionSeconds.value;
@@ -121,17 +131,30 @@ const save = async () => {
     error.value = 'Retention must be an integer number of seconds, or a value like 30m / 2h / 3d.';
     return;
   }
+  const custom = customKey.value.trim();
+  if (props.mode === 'create' && keySource.value === 'custom' && !custom) {
+    error.value = 'Custom API key is required.';
+    return;
+  }
 
   saving.value = true;
   error.value = null;
-  const body = {
+  const commonBody = {
     name: trimmed,
     upstream_ids: upstreamSelection.value.override ? upstreamSelection.value.ids : null,
     dump_retention_seconds: proposedRetention,
   };
-  const { error: err } = await callApi(
-    () => api.api.keys[':id'].$patch({ param: { id: props.apiKey.id }, json: body }),
-  );
+  const { error: err } = props.mode === 'create'
+    ? await callApi(() => api.api.keys.$post({
+        json: {
+          ...commonBody,
+          key_source: keySource.value,
+          ...(keySource.value === 'custom' ? { custom_key: custom } : {}),
+        },
+      }))
+    : await callApi(
+        () => api.api.keys[':id'].$patch({ param: { id: props.apiKey.id }, json: commonBody }),
+      );
   saving.value = false;
   if (err) {
     error.value = err.message;
@@ -143,7 +166,7 @@ const save = async () => {
 </script>
 
 <template>
-  <Dialog v-model:open="open" title="Edit API Key" size="lg" :auto-focus-on-open="false">
+  <Dialog v-model:open="open" :title="isCreate ? 'Create API Key' : 'Edit API Key'" size="lg" :auto-focus-on-open="false">
     <div class="space-y-5">
       <div class="space-y-2">
         <label class="block text-xs font-medium text-gray-500">Name</label>
@@ -156,6 +179,20 @@ const save = async () => {
         title="Override Available Upstreams"
         inherit-description="When off, this key inherits the global upstream order."
       />
+
+      <div v-if="isCreate" class="space-y-2">
+        <label class="block text-xs font-medium text-gray-500">New key</label>
+        <Select v-model="keySource" :options="KEY_SOURCE_OPTIONS">
+          <template #description="{ option }">
+            <span class="text-xs text-gray-500">{{ option.description }}</span>
+          </template>
+        </Select>
+        <Input
+          v-if="keySource === 'custom'"
+          v-model="customKey"
+          placeholder="Paste custom API key"
+        />
+      </div>
 
       <div class="space-y-2">
         <label class="block text-xs font-medium text-gray-500">Request dump retention</label>
@@ -172,8 +209,8 @@ const save = async () => {
         <p v-if="retentionWarning" class="rounded-md border border-accent-amber/40 bg-accent-amber/10 px-3 py-2 text-xs text-accent-amber">
           {{ retentionWarning }}
         </p>
-        <p v-if="retentionEnabled" class="text-xs text-gray-500">
-          <RouterLink :to="`/dashboard/requests/${apiKey.id}`" class="text-accent-cyan hover:underline">
+        <p v-if="props.mode === 'edit' && retentionEnabled" class="text-xs text-gray-500">
+          <RouterLink :to="`/dashboard/requests/${props.apiKey.id}`" class="text-accent-cyan hover:underline">
             View captured requests →
           </RouterLink>
         </p>
@@ -184,7 +221,7 @@ const save = async () => {
       <footer class="flex items-center justify-end gap-2">
         <Button variant="secondary" :disabled="saving" @click="open = false">Cancel</Button>
         <Button :loading="saving" @click="save">
-          Save changes
+          {{ isCreate ? 'Create key' : 'Save changes' }}
         </Button>
       </footer>
     </div>

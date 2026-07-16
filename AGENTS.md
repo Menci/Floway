@@ -108,12 +108,18 @@ Vue + Vite SPA. Cloudflare Workers is the production deployment target;
 Node.js (`node:sqlite` + `sharp` + filesystem) is a parallel deployment
 target with the same Hono app and the same `packages/gateway/migrations` SQL.
 The `@floway-dev/platform` package owns the abstract runtime contracts
-(`FileProvider`, `ImageProcessor`, `SqlDatabase`, `BackgroundScheduler`,
-`EnvGetter`, `SocketDial`); each `apps/platform-*` app supplies the
-concrete impls (including the runtime's root-CA list as a plain
-`readonly string[]`) and its own entry. `packages/gateway` (the gateway
-core) imports only platform contracts and is ESLint-prohibited from
-reaching into any `apps/platform-*`.
+(`FileProvider`, `ImageProcessor`, `ExternalResourceFetcher`, `SqlDatabase`,
+`BackgroundScheduler`, `EnvGetter`, `SocketDial`); each `apps/platform-*`
+app supplies the concrete impls (including the runtime's root-CA list as a
+plain `readonly string[]`) and its own entry. External-resource fetchers make
+one credential-free GET with redirects exposed to the caller; the Node
+implementation additionally pins DNS resolution to public addresses so
+untrusted URLs cannot reach local or special-purpose networks. The gateway's
+external-image loader owns redirect traversal, timeout and byte limits, then
+returns structured fetch failures for native-facing callers; its translation
+adapter maps those failures onto each pair's existing image-drop semantics.
+`packages/gateway` (the gateway core) imports only platform contracts and is
+ESLint-prohibited from reaching into any `apps/platform-*`.
 
 ## Workspace Layout
 
@@ -152,10 +158,10 @@ canonical `setup.sh`/`setup.ps1` bodies, dependency-injected Hono public and
 control route factories, and the lease `AgentSetupRepository` contract — and
 depends only on `hono` / `zod` / `@hono/zod-validator`; it never imports the
 gateway or any app, and knows nothing of databases, HTTP auth/CORS/logging, or
-runtimes. `proxy` depends on `http`; it parses subscription-style
-proxy URIs, dispatches to per-protocol byte-stream dialers, and exposes a
-`runProxiedRequest` orchestrator that composes dial → optional userspace
-TLS → fetch-on-stream. All dialers — including `vless-ws`, which layers
+runtimes. `proxy` depends on `http`; it parses subscription-style proxy URIs,
+dispatches to per-protocol byte-stream dialers, and exposes request runners
+for both proxy-backed and direct TCP streams. Both compose dial → optional
+userspace TLS → fetch-on-stream. All dialers — including `vless-ws`, which layers
 `wsUpgradeAndFrame` over the runtime's TLS-wrapped duplex — stay
 runtime-agnostic by taking the raw TCP `socketDial` primitive through
 `DialOptions`, so they never import `@floway-dev/platform`. `provider`
@@ -231,11 +237,12 @@ package, use pnpm filters (e.g.
 
 `dev:node` boots the Node deployment target. Configure via
 `FLOWAY_DB_PATH` (sqlite file path), `FLOWAY_FILES_DIR` (filesystem store
-root), `ADMIN_KEY` (admin secret), `PORT`, and optionally
-`RUNTIME_LOCATION` (instance tag used as the perf-telemetry
-`runtimeLocation` dimension and the dial-time colo-whitelist key —
-uppercased on read, defaults to `LOCAL` when unset). Default ports/paths in
-`apps/platform-node/entry.ts`. The Node entry runs `applyMigrations` against
+root), `ADMIN_KEY` (admin secret; optional on dev, mandatory when
+`NODE_ENV=production`), `PORT`, and optionally `RUNTIME_LOCATION`
+(instance tag used as the perf-telemetry `runtimeLocation` dimension and
+the dial-time colo-whitelist key — uppercased on read, defaults to
+`LOCAL` when unset). Default ports/paths in `apps/platform-node/entry.ts`.
+The Node entry runs `applyMigrations` against
 `packages/gateway/migrations/*.sql` at boot, then serves the same Hono app
 through `@hono/node-server`. Static-asset serving is Workers-only; the Node
 target serves no SPA.
@@ -249,11 +256,22 @@ fail on drift) after editing either installer.
 Wrangler commands go through the local dependency with `pnpm wrangler` or
 package scripts. When deploying, do not pass `--dry-run`.
 
+`ADMIN_KEY` is optional on dev instances so a fresh checkout is usable
+without any secret setup: with the env var unset (which is the default
+once `.dev.vars` is deleted), the login page grants seed-admin access to
+a blank username + any password. Real deployments must set it — the Node
+entry refuses to boot under `NODE_ENV=production` with an empty
+`ADMIN_KEY`, and the Cloudflare-side request handler refuses passwordless
+logins whenever the request carries a `CF-Ray` header (workerd's local
+inbound used by `wrangler dev` never writes CF-Ray; only Cloudflare's
+edge does).
+
 For manual data-plane validation, log into the dashboard with the
-`ADMIN_KEY` backdoor or with your own user, then create or pick an API
-key under your account and use it as `x-api-key`. `ADMIN_KEY` is not a
-data-plane credential; its only purpose is to let an operator who lost
-the admin password log in via `POST /auth/login`.
+`ADMIN_KEY` backdoor (or, on a dev instance, the passwordless shortcut)
+or with your own user, then create or pick an API key under your account
+and use it as `x-api-key`. `ADMIN_KEY` is not a data-plane credential;
+its only purpose is to let an operator who lost the admin password log
+in via `POST /auth/login`.
 
 When investigating Copilot upstream quirks, compare at least one other
 Copilot gateway implementation before inventing a policy. For generic

@@ -1,13 +1,13 @@
 import { assertCustomUpstreamRecord, type CustomUpstreamConfig } from './config.ts';
 import { CUSTOM_DEFAULT_FLAGS } from './defaults.ts';
 import { fetchCustomModels, type CustomModelsResponse, type CustomRawModel } from './fetch-models.ts';
-import { customFetchChatCompletions, customFetchCompletions, customFetchEmbeddings, customFetchImagesEdits, customFetchImagesGenerations, customFetchMessages, customFetchMessagesCountTokens, customFetchResponses, customFetchResponsesCompact } from './fetch.ts';
+import { customFetchAlphaSearch, customFetchChatCompletions, customFetchCompletions, customFetchEmbeddings, customFetchImagesEdits, customFetchImagesGenerations, customFetchMessages, customFetchMessagesCountTokens, customFetchResponses, customFetchResponsesCompact } from './fetch.ts';
 import { inferEndpointsFromModelId } from './infer-endpoints.ts';
 import { parseChatCompletionsStream } from '@floway-dev/protocols/chat-completions';
-import { type ModelEndpoints, type ModelPricing, kindForEndpoints } from '@floway-dev/protocols/common';
+import { type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseMessagesStream } from '@floway-dev/protocols/messages';
 import { parseResponsesStream, type ResponsesResult, toCompactPayloadShape } from '@floway-dev/protocols/responses';
-import { publicModelId, resolveEffectiveFlags, streamingProviderCall, type FlagId, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord } from '@floway-dev/provider';
+import { serializeOpenAIImagesEditsRequest, publicModelId, resolveEffectiveFlags, streamingProviderCall, type FlagId, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord } from '@floway-dev/provider';
 
 const rawModelIdOf = (model: ProviderModel): string => model.providerData as string;
 
@@ -30,7 +30,7 @@ const customRawToProviderModel = (model: CustomRawModel): Omit<ProviderModel, 'k
   }
   const display = model.display_name ?? model.name;
   if (display !== undefined) partial.display_name = display;
-  if (model.cost) partial.cost = model.cost;
+  if (model.pricing) partial.pricing = model.pricing;
   return partial;
 };
 
@@ -39,8 +39,7 @@ const customRawToProviderModel = (model: CustomRawModel): Omit<ProviderModel, 'k
 // verbatim. With no/unrecognized published kind, the id heuristic (Tier 2) runs
 // and falls back to the configured endpoints when it does not match. The
 // configured set may be empty, leaving the model listed but unroutable until
-// the operator declares an endpoint. The result is the model's `endpoints`;
-// `kind` is derived back from it.
+// the operator declares an endpoint. `kind` is derived back from the endpoints.
 const autoModelEndpoints = (model: CustomRawModel, configured: ModelEndpoints): ModelEndpoints => {
   if (model.kind === 'embedding') return { embeddings: {} };
   if (model.kind === 'image') return { imagesGenerations: {}, imagesEdits: {} };
@@ -90,32 +89,10 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
       enabledFlags,
     };
     if (model.display_name !== undefined) internal.display_name = model.display_name;
-    if (model.cost) internal.cost = model.cost;
+    if (model.pricing) internal.pricing = model.pricing;
     if (model.chat) internal.chat = model.chat;
     return internal;
   });
-  const manualPricingByUpstreamId = new Map<string, ModelPricing>(
-    config.models.flatMap(m => (m.cost ? [[m.upstreamModelId, m.cost] as const] : [])),
-  );
-
-  // Last-known pricing keyed by raw model id from the auto-fetch path. Read
-  // synchronously by getPricingForModelKey after the manual map misses, so it
-  // must be populated by the time telemetry runs. Two writers keep it warm:
-  //   1. `getProvidedModels` re-stamps the whole table from a fresh /models
-  //      response (cold path / cache miss).
-  //   2. Every `call*` re-stamps the entry for the model it is dispatching
-  //      against, sourced from the `ProviderModel.cost` already carried on
-  //      the candidate's model. This second writer is what saves us in any isolate
-  //      where the SWR layer (`fetchUpstreamModelsCached`) returns the cached
-  //      `ProviderModel[]` row directly without ever calling
-  //      `getProvidedModels` — without it, telemetry would see `null` cost
-  //      for auto-fetched models on every isolate that started cold against
-  //      a SOFT-fresh cache row.
-  const pricingByRawId = new Map<string, ModelPricing>();
-  const rememberPricingForModel = (model: ProviderModel): void => {
-    if (model.cost) pricingByRawId.set(rawModelIdOf(model), model.cost);
-  };
-
   const call = (
     transport: (config: CustomUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions) => Promise<Response>,
     model: ProviderModel,
@@ -124,9 +101,8 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
     headers: Headers,
     opts: UpstreamCallOptions,
   ): Promise<ProviderCallResult> => {
-    rememberPricingForModel(model);
     const rawModelId = rawModelIdOf(model);
-    return transport(config, { method: 'POST', body: JSON.stringify({ ...body, model: rawModelId }), signal }, { extraHeaders: headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency })
+    return transport(config, { method: 'POST', body: JSON.stringify({ ...body, model: rawModelId }), signal }, { extraHeaders: headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall })
       .then(response => ({
         response,
         modelKey: rawModelId,
@@ -142,13 +118,12 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
     parser: ProviderStreamParser<TEvent>,
     opts: UpstreamCallOptions,
   ) => {
-    rememberPricingForModel(model);
     const rawModelId = rawModelIdOf(model);
     return streamingProviderCall(
       transport(
         config,
         { method: 'POST', body: JSON.stringify({ ...body, stream: true, model: rawModelId }), signal },
-        { extraHeaders: headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency },
+        { extraHeaders: headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
       ),
       parser,
       rawModelId,
@@ -160,16 +135,20 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
     getProvidedModels: async fetcher => {
       if (!config.modelsFetch.enabled) return manualModels;
       const response = await fetchCustomModels(config, fetcher);
-      pricingByRawId.clear();
-      for (const raw of response.data) {
-        if (raw.id && raw.cost) pricingByRawId.set(raw.id, raw.cost);
-      }
+      const fetchedPricing = new Map(
+        response.data.flatMap(model => model.pricing ? [[model.id, model.pricing] as const] : []),
+      );
+      const effectiveManualModels = manualModels.map(model => {
+        if (model.pricing !== undefined) return model;
+        const pricing = fetchedPricing.get(rawModelIdOf(model));
+        return pricing === undefined ? model : { ...model, pricing };
+      });
       // Drop any auto-fetched model whose id is pinned by a manual
       // override so the manual copy is the only one emitted for that id.
       const filtered: CustomModelsResponse = { data: response.data.filter(raw => !overriddenIds.has(raw.id)) };
-      return [...manualModels, ...finalizeCustomModels(filtered, configuredEndpoints, upstreamFlags)];
+      return [...effectiveManualModels, ...finalizeCustomModels(filtered, configuredEndpoints, upstreamFlags)];
     },
-    getPricingForModelKey: modelKey => manualPricingByUpstreamId.get(modelKey) ?? pricingByRawId.get(modelKey) ?? null,
+    callAlphaSearch: (model, body, signal, opts) => call(customFetchAlphaSearch, model, body, signal, opts.headers, opts),
     callCompletions: (model, body, signal, opts) => call(customFetchCompletions, model, body, signal, opts.headers, opts),
     callChatCompletions: (model, body, signal, opts) => callStreaming(customFetchChatCompletions, model, body, signal, opts.headers, parseChatCompletionsStream, opts),
     callResponses: async (model, body, action, signal, opts) => {
@@ -181,12 +160,11 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
           : { action: 'generate', ok: false, response: stream.response, modelKey: stream.modelKey };
       }
       case 'compact': {
-        rememberPricingForModel(model);
         const rawModelId = rawModelIdOf(model);
         const response = await customFetchResponsesCompact(
           config,
           { method: 'POST', body: JSON.stringify({ ...toCompactPayloadShape(body), model: rawModelId }), signal },
-          { extraHeaders: opts.headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency },
+          { extraHeaders: opts.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
         );
         return response.ok
           ? { action: 'compact', ok: true, result: (await response.json()) as ResponsesResult, modelKey: rawModelId }
@@ -201,13 +179,10 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
     callMessagesCountTokens: (model, body, signal, opts) => call(customFetchMessagesCountTokens, model, body, signal, opts.headers, opts),
     callEmbeddings: (model, body, signal, opts) => call(customFetchEmbeddings, model, body, signal, opts.headers, opts),
     callImagesGenerations: (model, body, signal, opts) => call(customFetchImagesGenerations, model, body, signal, opts.headers, opts),
-    callImagesEdits: async (model, body, signal, opts) => {
-      rememberPricingForModel(model);
-      // Custom forwards the resolved upstream model id. The runtime auto-encodes
-      // the FormData with a fresh boundary and sets Content-Type itself.
+    callImagesEdits: async (model, request, signal, opts) => {
       const rawModelId = rawModelIdOf(model);
-      body.append('model', rawModelId);
-      const response = await customFetchImagesEdits(config, { method: 'POST', body, signal }, { extraHeaders: opts.headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency });
+      const body = await serializeOpenAIImagesEditsRequest(request, rawModelId);
+      const response = await customFetchImagesEdits(config, { method: 'POST', body, signal }, { extraHeaders: opts.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall });
       return { response, modelKey: rawModelId };
     },
   };
@@ -219,6 +194,5 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
     disabledPublicModelIds: record.disabledPublicModelIds,
     modelPrefix: record.modelPrefix,
     instance,
-    supportsResponsesItemReference: true,
   };
 };

@@ -4,9 +4,8 @@ import { prepareResponsesServePlan } from './serve-prep.ts';
 import { iterateCandidates } from '../../shared/iterate-candidates.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { CanonicalResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { ExecuteResult } from '@floway-dev/provider';
-import type { CanonicalResponsesPayload } from '@floway-dev/translate/via-responses/responses-items';
 
 export interface ResponsesServeGenerateArgs {
   readonly payload: CanonicalResponsesPayload;
@@ -29,15 +28,14 @@ export const responsesServe = {
     // final answer; per-candidate failures fall through so a transient
     // 5xx/429/network does not become the request's verdict when another
     // candidate can serve. The last failure surfaces verbatim on exhaustion.
-    // Normalize `prepared.model` to the candidate's real id so every
-    // attempt sees the canonical resolved public id.
+    // Each attempt stamps its private prepared-payload clone with the
+    // candidate's canonical model id.
     return await iterateCandidates(
       plan.candidates,
       'responsesServe.generate',
-      candidate => {
-        plan.prepared.model = candidate.model.id;
-        return responsesAttempt.generate({ payload: plan.prepared, ctx, candidate, headers });
-      },
+      ctx,
+      'chat',
+      candidate => responsesAttempt.generate({ payload: plan.prepared, ctx, candidate, headers }),
     );
   },
 
@@ -45,7 +43,7 @@ export const responsesServe = {
     const { payload, ctx, headers } = args;
     // Compact accepts `previous_response_id` (the official endpoint documents
     // it). When present serve-prep expands it the same way generate does so
-    // the upstream sees the same item_reference + current input shape.
+    // the candidate rewrite can restore the stored history before dispatch.
     //
     // For non-responses targets the responses-compact-shim picks up the
     // request inside the interceptor chain, flips action='compact' to
@@ -56,10 +54,9 @@ export const responsesServe = {
     return await iterateCandidates(
       plan.candidates,
       'responsesServe.compact',
-      candidate => {
-        plan.prepared.model = candidate.model.id;
-        return responsesAttempt.invoke({ payload: plan.prepared, action: 'compact', ctx, candidate, headers });
-      },
+      ctx,
+      'chat',
+      candidate => responsesAttempt.invoke({ payload: plan.prepared, action: 'compact', ctx, candidate, headers }),
     );
   },
 };

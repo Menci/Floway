@@ -9,4 +9,4 @@ export {
   assertThrows,
 } from './assert.ts';
 export { jsonResponse, sseResponse, withMockedFetch } from './mock-fetch.ts';
-export { noopUpstreamCallOptions, stubInternalModel, stubProvider, stubProviderModel, stubModelCandidate, testTelemetryModelIdentity } from './stubs.ts';
+export { mockPerfTelemetryContext, noopUpstreamCallOptions, stubInternalModel, stubProvider, stubProviderModel, stubModelCandidate, testTelemetryModelIdentity } from './stubs.ts';

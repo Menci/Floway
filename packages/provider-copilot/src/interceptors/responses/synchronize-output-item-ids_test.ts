@@ -3,7 +3,7 @@ import { test } from 'vitest';
 import { withOutputItemIdsSynchronized } from './synchronize-output-item-ids.ts';
 import type { ResponsesBoundaryCtx } from './types.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ResponsesPayload, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { ProviderResponsesResult } from '@floway-dev/provider';
 import { assertEquals, stubProviderModel } from '@floway-dev/test-utils';
 
@@ -12,7 +12,7 @@ const stubRequest = {};
 const invocation = (): ResponsesBoundaryCtx => ({
   payload: {
     model: 'test-model',
-    input: [] as unknown as ResponsesPayload['input'],
+    input: [],
     instructions: null,
     temperature: 1,
     top_p: null,

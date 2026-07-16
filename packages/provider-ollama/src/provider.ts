@@ -13,7 +13,7 @@
 //
 // Vision, tool calling, and reasoning/thinking are request-time features, not
 // per-endpoint capabilities, so they do not change routing. They surface to
-// the dashboard via providerData for display purposes only.
+// the dashboard via the model's `chat` field for display purposes only.
 //
 // Manual config.models[] entries override auto-fetched models with the same
 // upstreamModelId, mirroring the custom provider's pinning behavior.
@@ -25,7 +25,7 @@ import { fetchOllamaCatalog, type OllamaCatalog } from './fetch-models.ts';
 import { ollamaFetchChatCompletions, ollamaFetchCompletions, ollamaFetchEmbeddings, ollamaFetchMessages, ollamaFetchMessagesCountTokens, ollamaFetchResponses, ollamaFetchResponsesCompact } from './fetch.ts';
 import { pricingForOllamaModelKey } from './pricing.ts';
 import { parseChatCompletionsStream } from '@floway-dev/protocols/chat-completions';
-import { type ModelEndpoints, type ModelPricing, kindForEndpoints } from '@floway-dev/protocols/common';
+import { type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseMessagesStream } from '@floway-dev/protocols/messages';
 import { parseResponsesStream, type ResponsesResult, toCompactPayloadShape } from '@floway-dev/protocols/responses';
 import { publicModelId, resolveEffectiveFlags, streamingProviderCall, type FlagId, type ProviderInstance, type Provider, type ProviderCallResult, type ProviderModel, type ProviderStreamParser, type UpstreamCallOptions, type UpstreamFetchOptions, type UpstreamRecord } from '@floway-dev/provider';
@@ -40,16 +40,13 @@ const rawModelIdOf = (model: ProviderModel): string => model.providerData as str
 const CHAT_ENDPOINTS: ModelEndpoints = { completions: {}, chatCompletions: {}, responses: {}, messages: {} };
 const EMBEDDING_ENDPOINTS: ModelEndpoints = { embeddings: {} };
 
-const endpointsForCapabilities = (capabilities: ReadonlySet<string>): ModelEndpoints =>
-  (capabilities.has('embedding') ? EMBEDDING_ENDPOINTS : CHAT_ENDPOINTS);
-
 const finalizeOllamaModels = (
   catalog: OllamaCatalog,
   enabledFlags: ReadonlySet<FlagId>,
 ): ProviderModel[] => {
   const models: ProviderModel[] = [];
   for (const raw of catalog.data) {
-    const endpoints = endpointsForCapabilities(raw.capabilities);
+    const endpoints = raw.capabilities.has('embedding') ? EMBEDDING_ENDPOINTS : CHAT_ENDPOINTS;
     const limits: ProviderModel['limits'] = {};
     if (raw.contextLength !== undefined) limits.max_context_window_tokens = raw.contextLength;
     const model: ProviderModel = {
@@ -62,8 +59,8 @@ const finalizeOllamaModels = (
       enabledFlags,
     };
     if (raw.modifiedAt !== undefined) model.created = raw.modifiedAt;
-    const cost = pricingForOllamaModelKey(raw.id);
-    if (cost) model.cost = cost;
+    const pricing = pricingForOllamaModelKey(raw.id);
+    if (pricing) model.pricing = pricing;
     const chat = chatFromOllamaRaw(raw);
     if (chat) model.chat = chat;
     models.push(model);
@@ -90,14 +87,11 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
       enabledFlags,
     };
     if (model.display_name !== undefined) internal.display_name = model.display_name;
-    if (model.cost) internal.cost = model.cost;
+    const pricing = model.pricing ?? pricingForOllamaModelKey(model.upstreamModelId);
+    if (pricing) internal.pricing = pricing;
     if (model.chat) internal.chat = model.chat;
     return internal;
   });
-  const manualPricingByUpstreamId = new Map<string, ModelPricing>(
-    config.models.flatMap(m => (m.cost ? [[m.upstreamModelId, m.cost] as const] : [])),
-  );
-
   const call = (
     transport: (config: OllamaUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions) => Promise<Response>,
     model: ProviderModel,
@@ -109,7 +103,7 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
     return transport(
       config,
       { method: 'POST', body: JSON.stringify({ ...body, model: rawModelId }), signal },
-      { extraHeaders: opts.headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency },
+      { extraHeaders: opts.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
     ).then(response => ({ response, modelKey: rawModelId }));
   };
 
@@ -126,7 +120,7 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
       transport(
         config,
         { method: 'POST', body: JSON.stringify({ ...body, stream: true, model: rawModelId }), signal },
-        { extraHeaders: opts.headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency },
+        { extraHeaders: opts.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
       ),
       parser,
       rawModelId,
@@ -138,6 +132,7 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
     Promise.reject(new Error(`Ollama provider does not implement ${capability}`));
 
   const instance: ProviderInstance = {
+    callAlphaSearch: rejectUnsupported('callAlphaSearch'),
     getProvidedModels: async fetcher => {
       const catalog = await fetchOllamaCatalog(config, fetcher);
       const auto = finalizeOllamaModels(
@@ -146,7 +141,6 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
       );
       return [...manualModels, ...auto];
     },
-    getPricingForModelKey: modelKey => manualPricingByUpstreamId.get(modelKey) ?? pricingForOllamaModelKey(modelKey),
     callCompletions: (model, body, signal, opts) => call(ollamaFetchCompletions, model, body, signal, opts),
     callChatCompletions: (model, body, signal, opts) => callStreaming(ollamaFetchChatCompletions, model, body, signal, parseChatCompletionsStream, opts),
     callResponses: async (model, body, action, signal, opts) => {
@@ -162,7 +156,7 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
         const response = await ollamaFetchResponsesCompact(
           config,
           { method: 'POST', body: JSON.stringify({ ...toCompactPayloadShape(body), model: rawModelId }), signal },
-          { extraHeaders: opts.headers, fetcher: opts.fetcher, recordUpstreamLatency: opts.recordUpstreamLatency },
+          { extraHeaders: opts.headers, fetcher: opts.fetcher, wrapUpstreamCall: opts.wrapUpstreamCall },
         );
         return response.ok
           ? { action: 'compact', ok: true, result: (await response.json()) as ResponsesResult, modelKey: rawModelId }
@@ -189,6 +183,5 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
     disabledPublicModelIds: record.disabledPublicModelIds,
     modelPrefix: record.modelPrefix,
     instance,
-    supportsResponsesItemReference: true,
   };
 };

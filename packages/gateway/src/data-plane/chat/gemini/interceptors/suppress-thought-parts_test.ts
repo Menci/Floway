@@ -1,25 +1,13 @@
 import { test } from 'vitest';
 
 import { suppressThoughtParts } from './suppress-thought-parts.ts';
-import { createNonResponsesSourceStore } from '../../responses/items/store.ts';
-import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
+import { mockChatGatewayCtx } from '../../../../test-helpers/gateway-ctx.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiPayload, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 import { type ExecuteResult, eventResult, type GeminiInvocation } from '@floway-dev/provider';
 import { assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
-const stubCtx: ChatGatewayCtx = {
-  apiKeyId: 'test-key',
-  upstreamIds: null,
-  wantsStream: false,
-  runtimeLocation: 'TEST',
-  currentColo: 'TEST',
-  dump: null,
-  responseHeaders: new Headers(),
-  backgroundScheduler: () => {},
-  requestStartedAt: 0,
-  store: createNonResponsesSourceStore('test-key'),
-};
+const stubCtx = mockChatGatewayCtx();
 
 const invocation = (payload: GeminiPayload): GeminiInvocation => ({
   payload,

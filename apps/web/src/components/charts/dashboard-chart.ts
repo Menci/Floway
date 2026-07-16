@@ -30,6 +30,19 @@ export const DASHBOARD_CHART_PALETTE = [
 export const chartColor = (slot: number): string =>
   DASHBOARD_CHART_PALETTE[slot % DASHBOARD_CHART_PALETTE.length]!;
 
+// Deterministic color from a group name — used where the group set is
+// filter-driven and there is no stable slot ordering to map into
+// (dropping a filtered-out entity would otherwise re-slot every remaining
+// group into a different color). Java String.hashCode variant (seed 0,
+// multiplier 31, `>>> 0` to keep the accumulator in u32 range) into the
+// same palette so a name always renders in the same slot regardless of
+// which siblings are present.
+export const chartColorByName = (name: string): string => {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return DASHBOARD_CHART_PALETTE[h % DASHBOARD_CHART_PALETTE.length]!;
+};
+
 export const chartFont = {
   sans: "'DM Sans', sans-serif",
   mono: "'JetBrains Mono', monospace",

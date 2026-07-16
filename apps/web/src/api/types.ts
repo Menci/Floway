@@ -16,55 +16,23 @@ import type {
   PublicModel,
   PublicModelLimits,
 } from '@floway-dev/protocols/common';
+import type { UpstreamModelConfig } from '@floway-dev/provider';
 import type { FlagDefaults, FlagOverrides } from '@floway-dev/provider/flags';
+import type { UpstreamColor, UpstreamColorPreset, UpstreamProviderKind } from '@floway-dev/provider/model';
 import type { AddressableForm, ModelPrefixConfig } from '@floway-dev/provider/model-prefix';
 
 export type { BillingDimension, ModelEndpointKey, ModelEndpoints, ModelKind, ModelPricing };
+export type { UpstreamModelConfig };
 export type { AddressableForm, ModelPrefixConfig };
+export type { UpstreamColor, UpstreamColorPreset, UpstreamProviderKind };
 export type {
   AliasRules, AliasSelection, AliasTarget, AnnouncedMetadata, ChatAliasRules, ChatModelInfo, ModelAlias,
   PublicModel, PublicModelLimits,
 };
 
-export type UpstreamProviderKind = 'custom' | 'azure' | 'copilot' | 'codex' | 'claude-code' | 'ollama';
-
 export interface ProxyFallbackEntry {
   id: string;
   colos?: string[];
-}
-
-// Mutable variant of @floway-dev/protocols/common ChatModelInfo. The editor
-// mutates these arrays in place during reasoning-level/modality edits, so
-// dropping `readonly` here is intentional — the wire shape stays readonly.
-export interface UpstreamChatConfig {
-  modalities?: { input: ('text' | 'image')[]; output: ('text' | 'image')[] };
-  reasoning?: {
-    effort?: { supported: string[]; default: string };
-    budget_tokens?: { min?: number; max?: number };
-    adaptive?: true;
-    mandatory?: true;
-  };
-}
-
-export interface UpstreamModelConfig {
-  upstreamModelId: string;
-  publicModelId?: string;
-  kind: ModelKind;
-  endpoints: ModelEndpoints;
-  display_name?: string;
-  limits?: PublicModelLimits;
-  cost?: ModelPricing;
-  chat?: UpstreamChatConfig;
-  // Layer 3 per-model flag map. On a manual row (from
-  // `upstreams.config.models[]`) this is the operator-declared
-  // override that PATCH writes back to the DB; on an auto row (from
-  // `POST /api/upstreams/list-models`, reshaped from `ProviderModel`
-  // by the backend) it is the provider's per-model rule as a live
-  // read-only projection. The shape is the same in both cases; the
-  // source (and whether the row persists) is not carried on the wire —
-  // the consuming UI knows it from which list it is iterating (the
-  // config models[] array vs. the list-models response).
-  flagOverrides?: FlagOverrides;
 }
 
 export interface CustomModelsFetch {
@@ -81,7 +49,7 @@ export interface CustomRawModel {
   created?: number;
   owned_by?: string;
   limits?: PublicModelLimits;
-  cost?: ModelPricing;
+  pricing?: ModelPricing;
   kind?: ModelKind;
 }
 
@@ -299,11 +267,12 @@ interface UpstreamRecordBase {
   // unroutable, but their per-model metadata stays editable. May include ids no
   // longer present in the live model list.
   disabled_public_model_ids: string[];
-  // Ordered fallback dial-list. Each entry pins a proxy id (or the literal
-  // string `'direct'` for "no proxy") and an optional `colos` whitelist that
-  // scopes the entry to specific location tags (Cloudflare colos / the Node
-  // `RUNTIME_LOCATION` env var). Empty/missing whitelist means "active in
-  // all locations". Empty top-level list means "always direct".
+  // Ordered proxy fallback list. Each entry pins a proxy id or one of the
+  // built-in direct transports (`direct_fetch`, `direct_connect`), plus an
+  // optional `colos` whitelist that scopes it to location tags (Cloudflare
+  // colos / the Node `RUNTIME_LOCATION` env var). Empty/missing whitelist
+  // means "active in all locations". Empty top-level list defaults to
+  // `direct_fetch`.
   proxy_fallback_list: ProxyFallbackEntry[];
   // Per-upstream model name prefix. When set, this upstream's models can be
   // addressed in two forms (`unprefixed` and `prefixed`) and listed in either
@@ -311,6 +280,11 @@ interface UpstreamRecordBase {
   // means "no prefix configured; the upstream advertises and accepts only
   // the bare upstream id."
   model_prefix: ModelPrefixConfig | null;
+  // Operator-chosen badge color override. `null` inherits the kind default;
+  // a preset key from `UPSTREAM_COLOR_PRESETS` resolves to a static UnoCSS
+  // accent class; a `#RRGGBB` string renders via inline CSS custom
+  // properties so any operator hex works without extending the theme.
+  color: UpstreamColor | null;
   // SWR models-cache freshness joined from the models_cache table. Both inner
   // values are null on a row that has never been warmed; lastError is set
   // when the most recent warm failed but a prior fetch still populates
@@ -373,7 +347,7 @@ export interface ApiKey {
 }
 
 export interface ControlPlaneModel extends PublicModel {
-  upstreams: { kind: UpstreamProviderKind; id: string; name: string }[];
+  upstreams: { kind: UpstreamProviderKind; id: string; name: string; color: UpstreamColor | null }[];
 }
 
 export interface SearchConfig {
@@ -381,6 +355,7 @@ export interface SearchConfig {
   tavily: { apiKey: string };
   microsoftGrounding: { apiKey: string };
   jina: { apiKey: string };
+  passthroughOpenAiSearch: { enabled: boolean; upstreamId: string; model: string };
 }
 
 export interface CopilotQuotaSnapshot {

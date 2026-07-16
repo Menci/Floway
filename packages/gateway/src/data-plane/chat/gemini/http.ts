@@ -6,7 +6,7 @@ import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
 import { createNonResponsesSourceStore } from '../responses/items/store.ts';
 import { createChatGatewayCtxFromHono, finalizeGatewayResponse, type ChatGatewayCtx } from '../shared/gateway-ctx.ts';
-import { readRequestBody, type RequestBody } from '../shared/request-body.ts';
+import { readRequestBody, takeRequestBody, type RequestBody } from '../shared/request-body.ts';
 import type { GeminiContent, GeminiPayload } from '@floway-dev/protocols/gemini';
 import { internalErrorResult, ProviderModelsUnavailableError, toInternalDebugError } from '@floway-dev/provider';
 import { TranslatorInputError } from '@floway-dev/translate';
@@ -53,7 +53,10 @@ const parseGeminiBodyBytes = <T>(requestBody: RequestBody, project: (body: unkno
 // carrying an upstream HTTP body relays that body through the `api-error`
 // path with `source: 'upstream'`; everything else collapses to an
 // `internal-error` result rendered as the Gemini internal-error envelope
-// (status, code, message, stack, cause, target_api).
+// (status, code, message, stack, cause, target_api). The throwing-
+// candidate telemetry stamped in serve.ts survives onto the error row via
+// `ctx.attempt.telemetry` so a mid-attempt throw still lands in
+// performance_summary against the throwing upstream.
 const respondWithGeminiError = async (
   c: AuthedContext,
   error: unknown,
@@ -61,7 +64,7 @@ const respondWithGeminiError = async (
   wantsStream: boolean,
 ): Promise<Response> => {
   if (error instanceof TranslatorInputError) {
-    const { response } = await respondGemini(c, translatorInputErrorResult(error), wantsStream, ctx);
+    const { response } = await respondGemini(c, translatorInputErrorResult(error, ctx.attempt.telemetry), wantsStream, ctx);
     return (ctx.dump?.finalize(response) ?? response);
   }
   if (error instanceof ProviderModelsUnavailableError && error.httpResponse) {
@@ -76,7 +79,7 @@ const respondWithGeminiError = async (
     const { response } = await respondGemini(c, apiErrorResult, wantsStream, ctx);
     return finalizeGatewayResponse(ctx, response);
   }
-  const internalResult = internalErrorResult(500, toInternalDebugError(error));
+  const internalResult = internalErrorResult(500, toInternalDebugError(error), ctx.attempt.telemetry);
   const { response } = await respondGemini(c, internalResult, wantsStream, ctx);
   return finalizeGatewayResponse(ctx, response);
 };
@@ -100,7 +103,7 @@ const runGeminiGenerate = async (c: AuthedContext, model: string, wantsStream: b
   const payload = parseGeminiBodyBytes(requestBody, body => body as GeminiPayload);
   if (payload instanceof Response) return payload;
 
-  const ctx = createChatGatewayCtxFromHono(c, { wantsStream, requestBody, model, backgroundScheduler: backgroundSchedulerFromContext(c) }, createNonResponsesSourceStore);
+  const ctx = createChatGatewayCtxFromHono(c, { wantsStream, requestBody: takeRequestBody(requestBody), model, backgroundScheduler: backgroundSchedulerFromContext(c) }, createNonResponsesSourceStore);
   try {
     const result = await geminiServe.generate({ payload, ctx, model, headers: inboundHeadersForUpstream(c) });
     const { response } = await respondGemini(c, result, wantsStream, ctx);
@@ -115,7 +118,7 @@ const runGeminiCountTokens = async (c: AuthedContext, model: string): Promise<Re
   const payload = parseGeminiBodyBytes(requestBody, parseGeminiCountTokensPayload);
   if (payload instanceof Response) return payload;
 
-  const ctx = createChatGatewayCtxFromHono(c, { wantsStream: false, requestBody, model, backgroundScheduler: backgroundSchedulerFromContext(c) }, createNonResponsesSourceStore);
+  const ctx = createChatGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), model, backgroundScheduler: backgroundSchedulerFromContext(c) }, createNonResponsesSourceStore);
   try {
     const result = await geminiServe.countTokens({ payload, ctx, model, headers: inboundHeadersForUpstream(c) });
     const { response } = await respondGemini(c, result, false, ctx);

@@ -54,6 +54,7 @@ const makeRecord = (state: ClaudeCodeUpstreamState): UpstreamRecord => ({
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
+  color: null,
 });
 
 let currentRecord: UpstreamRecord;
@@ -134,17 +135,17 @@ describe('createClaudeCodeProvider — factory surface', () => {
     }
   });
 
-  test('getPricingForModelKey wires through the pricing table (keyed by dated upstream id)', async () => {
+  test('getProvidedModels carries pricing resolved from each dated upstream id', async () => {
+    stubModelsListFetch();
     const instance = createClaudeCodeProvider(currentRecord);
-    expect(instance.instance.getPricingForModelKey('claude-sonnet-4-5-20250929'))
+    const models = await instance.instance.getProvidedModels(noopUpstreamCallOptions().fetcher);
+    expect(models.find(model => model.id === 'claude-sonnet-4-5')?.pricing)
       .toEqual(pricingForClaudeCodeModelKey('claude-sonnet-4-5-20250929'));
-    expect(instance.instance.getPricingForModelKey('unknown-id')).toBeNull();
   });
 
-  test('kind is "claude-code" and supportsResponsesItemReference is false', async () => {
+  test('kind is "claude-code"', async () => {
     const instance = createClaudeCodeProvider(currentRecord);
     expect(instance.kind).toBe('claude-code');
-    expect(instance.supportsResponsesItemReference).toBe(false);
     expect(instance.upstream).toBe(upstreamId);
   });
 });

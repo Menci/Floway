@@ -16,6 +16,7 @@ const azureUpstream = (): UpstreamRecord => ({
   disabledPublicModelIds: [],
   proxyFallbackList: [],
   modelPrefix: null,
+  color: null,
   config: {
     endpoint: 'https://example.openai.azure.com',
     apiKey: 'az-key',
@@ -28,6 +29,23 @@ const azureUpstream = (): UpstreamRecord => ({
     ],
   },
   state: null,
+});
+
+test('/api/models returns an empty catalog when the gateway has no upstreams', async () => {
+  const { adminSession, repo } = await setupAppTest();
+  await repo.upstreams.deleteAll();
+
+  const response = await requestApp('/api/models?aliases=false&include_unlisted=true', {
+    headers: { 'x-floway-session': adminSession },
+  });
+  assertEquals(response.status, 200);
+  assertEquals(await response.json(), {
+    object: 'list',
+    has_more: false,
+    first_id: null,
+    last_id: null,
+    data: [],
+  });
 });
 
 test('/api/models exposes each upstream as { kind, id } so multi-provider models are unambiguous', async () => {
@@ -55,9 +73,9 @@ test('/api/models exposes each upstream as { kind, id } so multi-provider models
       assertEquals(response.status, 200);
       const body = (await response.json()) as { data: Array<Record<string, unknown>> };
 
-      assertEquals(body.data.find(model => model.id === 'claude-sonnet-4')?.upstreams, [{ kind: 'copilot', id: 'up_copilot', name: 'GitHub Copilot (tester)' }]);
-      assertEquals(body.data.find(model => model.id === 'custom-model')?.upstreams, [{ kind: 'custom', id: 'up_custom_models', name: 'Custom Provider' }]);
-      assertEquals(body.data.find(model => model.id === 'azure-public')?.upstreams, [{ kind: 'azure', id: 'up_azure_models', name: 'Azure Models' }]);
+      assertEquals(body.data.find(model => model.id === 'claude-sonnet-4')?.upstreams, [{ kind: 'copilot', id: 'up_copilot', name: 'GitHub Copilot (tester)', color: null }]);
+      assertEquals(body.data.find(model => model.id === 'custom-model')?.upstreams, [{ kind: 'custom', id: 'up_custom_models', name: 'Custom Provider', color: null }]);
+      assertEquals(body.data.find(model => model.id === 'azure-public')?.upstreams, [{ kind: 'azure', id: 'up_azure_models', name: 'Azure Models', color: null }]);
       for (const model of body.data) {
         // Legacy split fields must not reappear.
         assertEquals(Object.hasOwn(model, 'provider'), false);

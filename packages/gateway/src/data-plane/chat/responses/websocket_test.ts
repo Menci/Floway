@@ -1,9 +1,12 @@
 import type { ExecutionContext } from 'hono';
-import { test } from 'vitest';
+import { test, vi } from 'vitest';
 
 import { hashResponsesItemContent, isStoredResponseId } from './items/format.ts';
+import { responsesServe } from './serve.ts';
 import { app } from '../../../app.ts';
-import { copilotModels, setupAppTest, sseResponsesResponse } from '../../../test-helpers.ts';
+import { initDumpBroker, initDumpStore } from '../../../dump/registry.ts';
+import { installDumpStubs } from '../../../dump/test-fixtures.ts';
+import { copilotModels, flushAsyncWork, setupAppTest, sseResponsesResponse } from '../../../test-helpers.ts';
 import { FakeTime } from '../../../test-time.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS } from '../shared/stream/sse.ts';
 import { assert, assertEquals, assertExists, assertStringIncludes, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
@@ -97,6 +100,18 @@ const waitForMessages = async (
   });
 };
 
+const recordRawMessages = (socket: TestWorkerWebSocket) => {
+  const messages: string[] = [];
+  const onMessage = (event: Event): void => {
+    messages.push((event as MessageEvent<string>).data);
+  };
+  socket.addEventListener('message', onMessage);
+  return {
+    messages,
+    stop: () => socket.removeEventListener('message', onMessage),
+  };
+};
+
 const waitForMicrotasks = async (): Promise<void> => {
   for (let i = 0; i < 10; i++) await Promise.resolve();
 };
@@ -148,6 +163,50 @@ const withWorkerWebSocketRuntime = async <T>(run: () => Promise<T>): Promise<T> 
     runtime.restore();
     currentRuntime = undefined;
   }
+};
+
+const withSuccessfulResponsesUpstream = async <T>(run: () => Promise<T>): Promise<T> =>
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models') {
+        return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'] }]));
+      }
+      if (url.pathname === '/responses') {
+        return sseResponsesResponse({
+          id: 'resp_ws_policy_refresh',
+          object: 'response',
+          model: 'gpt-direct-responses',
+          status: 'completed',
+          output: [],
+          output_text: 'done',
+          usage: { input_tokens: 3, output_tokens: 5, total_tokens: 8 },
+        });
+      }
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    run,
+  );
+
+const completeResponsesTurn = async (
+  client: TestWorkerWebSocket,
+  eventId: string,
+): Promise<void> => {
+  const received = waitForMessages(client, messages => messages.some(message => message.type === 'response.done'));
+  client.send(JSON.stringify({
+    type: 'response.create',
+    event_id: eventId,
+    response: {
+      model: 'gpt-direct-responses',
+      input: eventId,
+    },
+  }));
+  await received;
+  await waitForMicrotasks();
 };
 
 test('Responses WebSocket forwards stream events, echoes event_id, and sends response.done', async () => {
@@ -205,6 +264,176 @@ test('Responses WebSocket forwards stream events, echoes event_id, and sends res
       });
     }),
   );
+});
+
+test('Responses WebSocket starts capturing on the next turn when dump retention is enabled after upgrade', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  const dumps = installDumpStubs(initDumpStore, initDumpBroker);
+
+  await withSuccessfulResponsesUpstream(
+    async () => await withWorkerWebSocketRuntime(async () => {
+      const client = await connectResponsesWebSocket(apiKey.key);
+      await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
+
+      await completeResponsesTurn(client, 'capture-after-enable');
+      await vi.waitFor(() => assertEquals(dumps.stored.length, 1));
+
+      const stored = dumps.stored[0];
+      assertExists(stored);
+      assertEquals(stored.keyId, apiKey.id);
+      assertEquals(stored.record.request.method, 'WS');
+      assertEquals(stored.record.request.path, '/v1/responses');
+      assertEquals(JSON.parse(new TextDecoder().decode(stored.record.request.body)), {
+        type: 'response.create',
+        event_id: 'capture-after-enable',
+        response: {
+          model: 'gpt-direct-responses',
+          input: 'capture-after-enable',
+        },
+      });
+      client.close();
+    }),
+  );
+});
+
+test('Responses WebSocket stops capturing on the next turn when dump retention is disabled after upgrade', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
+  const dumps = installDumpStubs(initDumpStore, initDumpBroker);
+
+  await withSuccessfulResponsesUpstream(
+    async () => await withWorkerWebSocketRuntime(async () => {
+      const client = await connectResponsesWebSocket(apiKey.key);
+      await completeResponsesTurn(client, 'captured-before-disable');
+      await vi.waitFor(() => assertEquals(dumps.stored.length, 1));
+
+      await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: null });
+      await completeResponsesTurn(client, 'not-captured-after-disable');
+
+      assertEquals(dumps.stored.length, 1);
+      client.close();
+    }),
+  );
+});
+
+test('Responses WebSocket dump responseBytes equals the UTF-8 payload bytes sent downstream', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
+  const dumps = installDumpStubs(initDumpStore, initDumpBroker);
+
+  await withSuccessfulResponsesUpstream(
+    async () => await withWorkerWebSocketRuntime(async () => {
+      const client = await connectResponsesWebSocket(apiKey.key);
+      const recorded = recordRawMessages(client);
+      try {
+        await completeResponsesTurn(client, '响应-byte-count');
+        await vi.waitFor(() => assertEquals(dumps.stored.length, 1));
+
+        const expectedBytes = recorded.messages.reduce(
+          (total, message) => total + new TextEncoder().encode(message).byteLength,
+          0,
+        );
+        const utf16CodeUnits = recorded.messages.reduce((total, message) => total + message.length, 0);
+        assert(expectedBytes > utf16CodeUnits, 'non-ASCII event_id must be counted as UTF-8 bytes');
+        assertEquals(dumps.stored[0]?.record.meta.responseBytes, expectedBytes);
+      } finally {
+        recorded.stop();
+        client.close();
+      }
+    }),
+  );
+});
+
+test('Responses WebSocket rejects the next turn after its API key is rotated', async () => {
+  const { apiKey, repo } = await setupAppTest();
+
+  await withSuccessfulResponsesUpstream(
+    async () => await withWorkerWebSocketRuntime(async () => {
+      const client = await connectResponsesWebSocket(apiKey.key);
+      await repo.apiKeys.save({ ...apiKey, key: 'rotated-api-key' });
+      const received = waitForMessages(client, messages => messages.length === 1);
+
+      client.send(JSON.stringify({
+        type: 'response.create',
+        event_id: 'after-key-rotation',
+        response: {
+          model: 'gpt-direct-responses',
+          input: 'must not reach the upstream',
+        },
+      }));
+
+      assertEquals(await received, [{
+        type: 'error',
+        status_code: 401,
+        error: {
+          type: 'authentication_error',
+          code: 'invalid_api_key',
+          message: 'Invalid API key.',
+        },
+      }]);
+      client.close();
+    }),
+  );
+});
+
+test('Responses WebSocket reports a failed turn when an output item cannot be persisted', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  const persistence = vi.spyOn(repo.responsesItems, 'insertMany').mockRejectedValue(new Error('simulated item persistence failure'));
+  try {
+    await withMockedFetch(
+      async request => {
+        const url = new URL(request.url);
+        if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+        if (url.pathname === '/copilot_internal/v2/token') {
+          return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+        }
+        if (url.pathname === '/models') {
+          return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'] }]));
+        }
+        if (url.pathname === '/responses') {
+          return sseResponsesResponse({
+            id: 'resp_ws_persist_failure',
+            object: 'response',
+            model: 'gpt-direct-responses',
+            status: 'completed',
+            output: [{
+              type: 'message',
+              id: 'msg_upstream',
+              role: 'assistant',
+              status: 'completed',
+              content: [{ type: 'output_text', text: 'done' }],
+            }],
+            output_text: 'done',
+            usage: { input_tokens: 3, output_tokens: 5, total_tokens: 8 },
+          });
+        }
+        throw new Error(`Unhandled fetch ${request.url}`);
+      },
+      async () => await withWorkerWebSocketRuntime(async () => {
+        const client = await connectResponsesWebSocket(apiKey.key);
+        const received = waitForMessages(client, messages => messages.some(message => message.type === 'error'));
+
+        client.send(JSON.stringify({
+          type: 'response.create',
+          event_id: 'evt_persist_failure',
+          response: {
+            model: 'gpt-direct-responses',
+            input: 'hello',
+          },
+        }));
+
+        const messages = await received;
+        const error = messages.find(message => message.type === 'error') as { status_code?: unknown; error?: { message?: unknown } } | undefined;
+        assertExists(error);
+        assertEquals(error.status_code, 500);
+        assertEquals(error.error?.message, 'simulated item persistence failure');
+        assert(!messages.some(message => message.type === 'response.completed'));
+        assert(!messages.some(message => message.type === 'response.done'));
+      }),
+    );
+  } finally {
+    persistence.mockRestore();
+  }
 });
 
 test('Responses WebSocket keepalive during an in-flight request does not drop the pending upstream frame', async () => {
@@ -377,6 +606,25 @@ test('Responses WebSocket returns invalid_request_error for malformed client mes
         message: 'response.create requires response.model to be a non-empty string.',
       },
     }]);
+
+    const invalidItem = waitForMessages(client, messages => messages.length === 1);
+    client.send(JSON.stringify({
+      type: 'response.create',
+      event_id: 'evt_item',
+      response: { model: 'test-model', input: [null] },
+    }));
+
+    assertEquals(await invalidItem, [{
+      type: 'error',
+      event_id: 'evt_item',
+      status_code: 400,
+      error: {
+        type: 'invalid_request_error',
+        code: 'invalid_request_error',
+        message: 'Untyped Responses input items require a valid role and content.',
+        param: 'input[0]',
+      },
+    }]);
   });
 });
 
@@ -415,6 +663,50 @@ test('Responses WebSocket forwards HTTP failures with status_code, error.code, a
           message: 'Model missing-model is not available on any configured upstream.',
         },
       }]);
+    }),
+  );
+});
+
+test('Responses WebSocket dump responseBytes counts an error envelope sent downstream', async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.apiKeys.save({ ...apiKey, dumpRetentionSeconds: 3600 });
+  const dumps = installDumpStubs(initDumpStore, initDumpBroker);
+
+  await withMockedFetch(
+    async request => {
+      const url = new URL(request.url);
+      if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+      if (url.pathname === '/copilot_internal/v2/token') {
+        return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+      }
+      if (url.pathname === '/models') return jsonResponse(copilotModels([]));
+      throw new Error(`Unhandled fetch ${request.url}`);
+    },
+    async () => await withWorkerWebSocketRuntime(async () => {
+      const client = await connectResponsesWebSocket(apiKey.key);
+      const recorded = recordRawMessages(client);
+      try {
+        const received = waitForMessages(client, messages => messages.length === 1);
+        client.send(JSON.stringify({
+          type: 'response.create',
+          event_id: '错误-byte-count',
+          response: {
+            model: 'missing-model',
+            input: 'hello',
+          },
+        }));
+
+        assertEquals((await received)[0]?.status_code, 404);
+        await vi.waitFor(() => assertEquals(dumps.stored.length, 1));
+        const expectedBytes = recorded.messages.reduce(
+          (total, message) => total + new TextEncoder().encode(message).byteLength,
+          0,
+        );
+        assertEquals(dumps.stored[0]?.record.meta.responseBytes, expectedBytes);
+      } finally {
+        recorded.stop();
+        client.close();
+      }
     }),
   );
 });
@@ -752,4 +1044,79 @@ test('Responses WebSocket aborts the in-flight Responses request when the client
       await upstreamAborted;
     }),
   );
+});
+
+// The four chat HTTP transports render a mid-attempt throw (interceptor
+// bug, translation error, provider-layer JS exception that bypassed
+// tryCatchChatServeFailure) through an
+// `internalErrorResult(..., ctx.attempt.telemetry)` envelope,
+// which internally reaches `recordFailedRequest` and lands an error row
+// attributed to the throwing candidate. The WS transport's outer catch
+// must do the same: alongside its sendError / dump.failed / dump.finalize,
+// it calls `recordFailedRequest(ctx, ctx.attempt.telemetry)` so
+// the failure shows up in performance_summary.
+test('Responses WebSocket outer catch records a failed perf sample attributed to the throwing candidate', async () => {
+  const { apiKey, repo } = await setupAppTest();
+
+  // Mirror what responsesServe.generate would have stamped before failing
+  // — telemetry set for the throwing candidate — then throw.
+  const generateSpy = vi.spyOn(responsesServe, 'generate').mockImplementation(async ({ ctx }) => {
+    ctx.attempt.telemetry = {
+      keyId: apiKey.id,
+      model: 'gpt-direct-responses',
+      upstream: 'up_throwing',
+      operation: 'chat',
+      runtimeLocation: 'TEST',
+    };
+    throw new Error('simulated mid-attempt provider throw');
+  });
+
+  try {
+    await withMockedFetch(
+      async request => {
+        const url = new URL(request.url);
+        if (url.hostname === 'update.code.visualstudio.com') return jsonResponse(['1.110.1']);
+        if (url.pathname === '/copilot_internal/v2/token') {
+          return jsonResponse({ token: 'copilot-access-token', expires_at: 4102444800, refresh_in: 3600, endpoints: { api: 'https://api.individual.githubcopilot.com' } });
+        }
+        if (url.pathname === '/models') {
+          return jsonResponse(copilotModels([{ id: 'gpt-direct-responses', supported_endpoints: ['/responses'] }]));
+        }
+        throw new Error(`Unhandled fetch ${request.url}`);
+      },
+      async () => await withWorkerWebSocketRuntime(async () => {
+        const client = await connectResponsesWebSocket(apiKey.key);
+        const received = waitForMessages(client, messages => messages.length === 1);
+        client.send(JSON.stringify({
+          type: 'response.create',
+          event_id: 'evt_throw',
+          response: { model: 'gpt-direct-responses', input: 'hello' },
+        }));
+
+        const [errorMessage] = await received;
+        assertExists(errorMessage);
+        assertEquals(errorMessage.type, 'error');
+        assertEquals(errorMessage.status_code, 500);
+        assertEquals(errorMessage.event_id, 'evt_throw');
+      }),
+    );
+
+    await flushAsyncWork();
+
+    // Filter to the throwing upstream: earlier WS tests in the same file
+    // schedule background recordFailedRequest calls through the session
+    // scheduler, and the shared `getRepo()` global resolves them against
+    // whichever repo `setupAppTest` last installed — so cross-test rows can
+    // land here. Only the row from the mocked generate is load-bearing for
+    // this fix.
+    const perfRows = (await repo.performance.listAll()).filter(row => row.upstream === 'up_throwing');
+    assertEquals(perfRows.length, 1);
+    assertEquals(perfRows[0]?.upstream, 'up_throwing');
+    assertEquals(perfRows[0]?.model, 'gpt-direct-responses');
+    assertEquals(perfRows[0]?.operation, 'chat');
+    assertEquals(perfRows[0]?.errorsNoOutput, 1);
+    assertEquals(perfRows[0]?.requests, 1);
+  } finally {
+    generateSpy.mockRestore();
+  }
 });

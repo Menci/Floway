@@ -6,6 +6,7 @@
   "exports": {
     ".": { "import": "./src/index.ts", "types": "./src/index.ts" },
     "./flags": { "import": "./src/flags.ts", "types": "./src/flags.ts" },
+    "./model": { "import": "./src/model.ts", "types": "./src/model.ts" },
     "./model-prefix": { "import": "./src/model-prefix.ts", "types": "./src/model-prefix.ts" }
   },
   "scripts": {

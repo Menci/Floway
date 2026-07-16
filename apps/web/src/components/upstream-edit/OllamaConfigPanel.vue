@@ -3,10 +3,6 @@
 // optional bearer token. The catalog is always live-fetched from /api/tags +
 // /api/show — no toggle, no path overrides, no auth-style choice. The
 // model-overrides list lives in a separate panel.
-//
-// In create mode the panel exposes a Fetch button so the operator can preview
-// the upstream's resolved catalog before saving; on edit mode the cache-status
-// panel above already drives a force-refresh.
 
 import type { OllamaDraft } from './customConfig.ts';
 import SecretInput from '../shared/SecretInput.vue';
@@ -19,7 +15,7 @@ defineProps<{
   editMode: boolean;
   fetchLoading: boolean;
   fetchError: string | null;
-  /** Wall-clock summary of the last draft fetch, e.g. "35 returned · 1m ago". */
+  /** Wall-clock summary of the last fetch, e.g. "35 returned · 1m ago". */
   fetchStatus: string | null;
 }>();
 
@@ -56,7 +52,7 @@ const emit = defineEmits<{ 'fetch-models': [] }>();
       </p>
     </div>
 
-    <div v-if="!editMode">
+    <div>
       <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
         <p class="text-xs font-medium text-gray-500">Fetch models</p>
         <div class="flex items-center gap-3">

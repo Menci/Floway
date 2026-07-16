@@ -24,7 +24,7 @@ export const chatCompletionsServe = {
       model: payload.model,
       kind: 'chat',
       scheduler: ctx.backgroundScheduler,
-      currentColo: ctx.currentColo,
+      runtimeLocation: ctx.runtimeLocation,
     });
     const viable = enumerated.filter(c => chatCompletionsTarget.canServe(c.model.endpoints));
     const decision = await classifyResponsesItemAffinity({
@@ -41,17 +41,15 @@ export const chatCompletionsServe = {
     // from one candidate falls through to the next so the gateway absorbs
     // transient 5xx/429/network failures. When the list is exhausted, the
     // most recent failure is forwarded verbatim so the client still sees
-    // real upstream telemetry rather than a synthetic envelope. Normalize
-    // `payload.model` to the candidate's real id — inbound may be an alias
-    // name, a prefix-addressable variant, or a dated-suffix id, but every
-    // attempt sees the canonical resolved public id.
+    // real upstream telemetry rather than a synthetic envelope. Each attempt
+    // stamps its private payload clone with the candidate's canonical model id
+    // so aliases and prefixed ids resolve without mutating the caller payload.
     return await iterateCandidates(
       decision.candidates,
       'chatCompletionsServe.generate',
-      candidate => {
-        payload.model = candidate.model.id;
-        return chatCompletionsAttempt.generate({ payload, ctx, candidate, headers });
-      },
+      ctx,
+      'chat',
+      candidate => chatCompletionsAttempt.generate({ payload, ctx, candidate, headers }),
     );
   },
 };

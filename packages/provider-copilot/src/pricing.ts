@@ -3,146 +3,94 @@
 // `claude-opus-4-7`, `gpt-5.4`). `pricingForCopilotModelKey` strips raw-id
 // variant suffixes (`-high`, `-xhigh`, `-1m`, `-1m-internal`, trailing date)
 // using the same rules as `copilotPublicModelId` in model-name.ts so it can be
-// fed the modelKey persisted in `usage.model_key`. Values are USD per million
-// tokens, aligned with sst/models.dev `Cost`:
-// https://github.com/sst/models.dev/blob/main/packages/core/src/schema.ts
+// fed the modelKey persisted in `usage.model_key`. Every entry carries
+// explicit USD-per-million-token rates for its selector coordinate.
 //
 // Source of truth for Copilot pricing updates:
 // https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing
-// This table is the single source of truth going forward; edit it here when
-// pricing changes. migrations/0011_usage_cost_snapshot.sql holds a frozen
-// snapshot for one-shot historical cleanup and is deliberately not kept in
-// sync — historical rows for newly-priced models are recovered by re-running
-// the cost backfill against live D1, not by editing that migration.
-//
+// After changing this table, run the unit-price backfill for existing rows.
 // Refresh procedure: .agents/skills/fetching-models-pricing/.
 import { copilotPublicModelId } from './model-name.ts';
-import type { ModelPricing } from '@floway-dev/protocols/common';
+import { basePricing, modelPricing, pricingEntry, type ModelPricing } from '@floway-dev/protocols/common';
 
 type PricingRule = readonly [key: string | RegExp, pricing: ModelPricing];
 
 const COPILOT_MODEL_PRICING: readonly PricingRule[] = [
-  // Opus 4.5 — no Fast Mode variant exposed by Copilot.
-  [
-    'claude-opus-4-5',
-    {
-      input: 5,
-      input_cache_read: 0.5,
-      input_cache_write: 6.25,
-      output: 25,
-    },
-  ],
-  // Opus 4.6 / 4.7 — Anthropic public Fast Mode pricing is 6× base.
+  ['claude-opus-4-5', basePricing({ input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 25 })],
+  // Anthropic public Fast Mode pricing is 6× base for Opus 4.6 / 4.7.
   // https://docs.claude.com/en/build-with-claude/fast-mode
-  [
-    /^claude-opus-4-[67]$/,
-    {
-      input: 5,
-      input_cache_read: 0.5,
-      input_cache_write: 6.25,
-      output: 25,
-      tiers: {
-        fast: {
-          input: 30,
-          input_cache_read: 3,
-          input_cache_write: 37.5,
-          output: 150,
-        },
-      },
-    },
-  ],
-  // Opus 4.8 — Anthropic public Fast Mode pricing is 2× base.
-  [
-    'claude-opus-4-8',
-    {
-      input: 5,
-      input_cache_read: 0.5,
-      input_cache_write: 6.25,
-      output: 25,
-      tiers: {
-        fast: {
-          input: 10,
-          input_cache_read: 1,
-          input_cache_write: 12.5,
-          output: 50,
-        },
-      },
-    },
-  ],
-  // Sonnet 5 — Anthropic introductory pricing through 2026-08-31; sticker is
-  // $3/$15 (same as Sonnet 4 family) afterwards. Cross-checked against
-  // OpenRouter (openrouter.ai/api/v1/models) and models.dev, both mirroring
-  // Anthropic's live rate.
-  [
-    'claude-sonnet-5',
-    {
-      input: 2,
-      input_cache_read: 0.2,
-      input_cache_write: 2.5,
-      output: 10,
-    },
-  ],
-  [
-    /^claude-sonnet-4(-[56])?$/,
-    {
-      input: 3,
-      input_cache_read: 0.3,
-      input_cache_write: 3.75,
-      output: 15,
-    },
-  ],
-  [
-    'claude-haiku-4-5',
-    {
-      input: 1,
-      input_cache_read: 0.1,
-      input_cache_write: 1.25,
-      output: 5,
-    },
-  ],
-  // OpenAI's July 2026 GPT-5.6 launch splits the family into three
-  // named variants (Sol / Terra / Luna). Copilot's live catalog exposes
-  // all three with per-model billing blocks that agree exactly with
-  // models.dev and OpenRouter — Sol matches the GPT-5.5 rate, Terra
-  // matches GPT-5.4, and Luna sits between GPT-5.4-mini and GPT-4o-mini.
-  ['gpt-5.6-sol', { input: 5, input_cache_read: 0.5, output: 30 }],
-  ['gpt-5.6-terra', { input: 2.5, input_cache_read: 0.25, output: 15 }],
-  ['gpt-5.6-luna', { input: 1, input_cache_read: 0.1, output: 6 }],
-  ['gpt-5.5', { input: 5, input_cache_read: 0.5, output: 30 }],
-  ['gpt-5.4', { input: 2.5, input_cache_read: 0.25, output: 15 }],
-  ['gpt-5.4-mini', { input: 0.75, input_cache_read: 0.075, output: 4.5 }],
-  ['gpt-5.4-nano', { input: 0.2, input_cache_read: 0.02, output: 1.25 }],
-  [/^gpt-5[.][23](-codex)?$/, { input: 1.75, input_cache_read: 0.175, output: 14 }],
-  ['gpt-5.1-codex-mini', { input: 0.25, input_cache_read: 0.025, output: 2 }],
-  [/^gpt-5[.]1/, { input: 1.25, input_cache_read: 0.125, output: 10 }],
-  ['gpt-5-mini', { input: 0.25, input_cache_read: 0.025, output: 2 }],
-  [/^gpt-4[.]1/, { input: 2, input_cache_read: 0.5, output: 8 }],
-  ['gpt-41-copilot', { input: 2, input_cache_read: 0.5, output: 8 }],
-  [
-    /^gpt-4o(-[0-9]{4}-[0-9]{2}-[0-9]{2})?$/,
-    {
-      input: 2.5,
-      input_cache_read: 1.25,
-      output: 10,
-    },
-  ],
-  ['gpt-4-o-preview', { input: 2.5, input_cache_read: 1.25, output: 10 }],
-  [/^gpt-4o-mini/, { input: 0.15, input_cache_read: 0.075, output: 0.6 }],
-  [/^gpt-4(-0613)?$/, { input: 30, output: 60 }],
-  ['gpt-4-0125-preview', { input: 10, output: 30 }],
-  ['gpt-3.5-turbo', { input: 0.5, output: 1.5 }],
-  ['gpt-3.5-turbo-0613', { input: 1.5, output: 2 }],
-  ['gemini-2.5-pro', { input: 1.25, input_cache_read: 0.125, output: 10 }],
-  ['gemini-3-flash-preview', { input: 0.5, input_cache_read: 0.05, output: 3 }],
-  ['gemini-3.1-pro-preview', { input: 2, input_cache_read: 0.2, output: 12 }],
-  ['gemini-3.5-flash', { input: 1.5, input_cache_read: 0.15, output: 9 }],
-  [/^grok-code-fast/, { input: 0.2, output: 1.5 }],
-  ['goldeneye', { input: 1.25, input_cache_read: 0.125, output: 10 }],
-  ['raptor-mini', { input: 0.25, input_cache_read: 0.025, output: 2 }],
-  ['minimax-m2.5', { input: 0.3, output: 1.2 }],
-  [/^mai-code-1-flash/, { input: 0.75, input_cache_read: 0.075, output: 4.5 }],
-  [/^text-embedding-3-small/, { input: 0.02, output: 0 }],
-  ['text-embedding-ada-002', { input: 0.1, output: 0 }],
+  [/^claude-opus-4-[67]$/, modelPricing(
+    pricingEntry({ input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 25 }),
+    pricingEntry({ input: 30, input_cache_read: 3, input_cache_write: 37.5, output: 150 }, { serviceTier: 'fast' }),
+  )],
+  ['claude-opus-4-8', modelPricing(
+    pricingEntry({ input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 25 }),
+    pricingEntry({ input: 10, input_cache_read: 1, input_cache_write: 12.5, output: 50 }, { serviceTier: 'fast' }),
+  )],
+  ['claude-sonnet-5', basePricing({ input: 2, input_cache_read: 0.2, input_cache_write: 2.5, output: 10 })],
+  [/^claude-sonnet-4(-[56])?$/, basePricing({ input: 3, input_cache_read: 0.3, input_cache_write: 3.75, output: 15 })],
+  ['claude-haiku-4-5', basePricing({ input: 1, input_cache_read: 0.1, input_cache_write: 1.25, output: 5 })],
+  // GPT-5.6 standard short/long entries. Copilot exposes no priority/flex lane.
+  // https://web.archive.org/web/20260709205359/https://platform.openai.com/docs/pricing
+  // https://github.com/sst/models.dev/blob/6dfc39c81b6cd57a91c155aa7b4f68ed1b360da0/providers/openai/models/gpt-5.6-sol.toml
+  // https://github.com/BerriAI/litellm/blob/6fa088224bc2022c7541ee44cf02c0bd6dd2942e/model_prices_and_context_window.json
+  // Cross-check only:
+  // https://github.com/caozhiyuan/copilot-api/blob/5a28eee7ced4fda51b6b224fb8723df5e6534708/src/lib/token-usage/pricing.ts#L98-L148
+  ['gpt-5.6-sol', modelPricing(
+    pricingEntry({ input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 30 }),
+    pricingEntry({ input: 10, input_cache_read: 1, input_cache_write: 12.5, output: 45 }, { inputTokens: { operator: 'gt', value: 272000 } }),
+  )],
+  ['gpt-5.6-terra', modelPricing(
+    pricingEntry({ input: 2.5, input_cache_read: 0.25, input_cache_write: 3.125, output: 15 }),
+    pricingEntry({ input: 5, input_cache_read: 0.5, input_cache_write: 6.25, output: 22.5 }, { inputTokens: { operator: 'gt', value: 272000 } }),
+  )],
+  ['gpt-5.6-luna', modelPricing(
+    pricingEntry({ input: 1, input_cache_read: 0.1, input_cache_write: 1.25, output: 6 }),
+    pricingEntry({ input: 2, input_cache_read: 0.2, input_cache_write: 2.5, output: 9 }, { inputTokens: { operator: 'gt', value: 272000 } }),
+  )],
+  // Copilot's live catalog exposes a 1.05M context window for GPT-5.5/5.4;
+  // OpenAI reprices the whole request above 272k input tokens.
+  // https://web.archive.org/web/20260709205359/https://platform.openai.com/docs/pricing
+  ['gpt-5.5', modelPricing(
+    pricingEntry({ input: 5, input_cache_read: 0.5, output: 30 }),
+    pricingEntry({ input: 10, input_cache_read: 1, output: 45 }, { inputTokens: { operator: 'gt', value: 272000 } }),
+  )],
+  ['gpt-5.4', modelPricing(
+    pricingEntry({ input: 2.5, input_cache_read: 0.25, output: 15 }),
+    pricingEntry({ input: 5, input_cache_read: 0.5, output: 22.5 }, { inputTokens: { operator: 'gt', value: 272000 } }),
+  )],
+  ['gpt-5.4-mini', basePricing({ input: 0.75, input_cache_read: 0.075, output: 4.5 })],
+  ['gpt-5.4-nano', basePricing({ input: 0.2, input_cache_read: 0.02, output: 1.25 })],
+  [/^gpt-5[.][23](-codex)?$/, basePricing({ input: 1.75, input_cache_read: 0.175, output: 14 })],
+  ['gpt-5.1-codex-mini', basePricing({ input: 0.25, input_cache_read: 0.025, output: 2 })],
+  [/^gpt-5[.]1/, basePricing({ input: 1.25, input_cache_read: 0.125, output: 10 })],
+  ['gpt-5-mini', basePricing({ input: 0.25, input_cache_read: 0.025, output: 2 })],
+  [/^gpt-4[.]1/, basePricing({ input: 2, input_cache_read: 0.5, output: 8 })],
+  ['gpt-41-copilot', basePricing({ input: 2, input_cache_read: 0.5, output: 8 })],
+  [/^gpt-4o(-[0-9]{4}-[0-9]{2}-[0-9]{2})?$/, basePricing({ input: 2.5, input_cache_read: 1.25, output: 10 })],
+  ['gpt-4-o-preview', basePricing({ input: 2.5, input_cache_read: 1.25, output: 10 })],
+  [/^gpt-4o-mini/, basePricing({ input: 0.15, input_cache_read: 0.075, output: 0.6 })],
+  [/^gpt-4(-0613)?$/, basePricing({ input: 30, output: 60 })],
+  ['gpt-4-0125-preview', basePricing({ input: 10, output: 30 })],
+  ['gpt-3.5-turbo', basePricing({ input: 0.5, output: 1.5 })],
+  ['gpt-3.5-turbo-0613', basePricing({ input: 1.5, output: 2 })],
+  // Google charges higher whole-request rates above 200k input tokens.
+  // https://ai.google.dev/gemini-api/docs/pricing
+  // https://github.com/sst/models.dev/blob/6dfc39c81b6cd57a91c155aa7b4f68ed1b360da0/providers/google/models/gemini-3.1-pro-preview.toml
+  ['gemini-2.5-pro', basePricing({ input: 1.25, input_cache_read: 0.125, output: 10 })],
+  ['gemini-3-flash-preview', basePricing({ input: 0.5, input_cache_read: 0.05, output: 3 })],
+  ['gemini-3.1-pro-preview', modelPricing(
+    pricingEntry({ input: 2, input_cache_read: 0.2, output: 12 }),
+    pricingEntry({ input: 4, input_cache_read: 0.4, output: 18 }, { inputTokens: { operator: 'gt', value: 200000 } }),
+  )],
+  ['gemini-3.5-flash', basePricing({ input: 1.5, input_cache_read: 0.15, output: 9 })],
+  [/^grok-code-fast/, basePricing({ input: 0.2, output: 1.5 })],
+  ['goldeneye', basePricing({ input: 1.25, input_cache_read: 0.125, output: 10 })],
+  ['raptor-mini', basePricing({ input: 0.25, input_cache_read: 0.025, output: 2 })],
+  ['minimax-m2.5', basePricing({ input: 0.3, output: 1.2 })],
+  [/^mai-code-1-flash/, basePricing({ input: 0.75, input_cache_read: 0.075, output: 4.5 })],
+  [/^text-embedding-3-small/, basePricing({ input: 0.02, output: 0 })],
+  ['text-embedding-ada-002', basePricing({ input: 0.1, output: 0 })],
 ];
 
 const matchPricing = (publicName: string): ModelPricing | null => {

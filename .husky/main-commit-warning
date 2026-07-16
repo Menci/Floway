@@ -1,20 +1,19 @@
 #!/bin/sh
 # Warn the agent before a commit / merge-commit / cherry-pick / FF lands
-# from a checkout that is NOT a linked worktree under <repo_root>/.worktrees/.
-# Always exits 0; the warning goes to stderr and never blocks the calling
-# git command. Sourced by `.husky/post-commit` and `.husky/post-merge`.
+# from the main worktree (NOT from any linked worktree). Always exits 0;
+# the warning goes to stderr and never blocks the calling git command.
+# Sourced by `.husky/post-commit` and `.husky/post-merge`.
 
-toplevel=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+# A linked worktree's per-worktree git dir sits under the main repo's
+# .git/worktrees/<name>/, so --git-dir and --git-common-dir differ. In the
+# main worktree they point at the same .git directory.
+git_dir=$(git rev-parse --absolute-git-dir 2>/dev/null) || exit 0
 common_dir=$(git rev-parse --git-common-dir 2>/dev/null) || exit 0
 case "$common_dir" in
   /*) ;;
   *) common_dir=$(cd "$common_dir" 2>/dev/null && pwd) || exit 0 ;;
 esac
-main_root=$(dirname "$common_dir")
-
-case "$toplevel" in
-  "$main_root"/.worktrees/*) exit 0 ;;
-esac
+[ "$git_dir" = "$common_dir" ] || exit 0
 
 cat >&2 <<'WARNING'
 WARNING! NOT in a worktree. Please double check: is the user really *explicitly* asking you to commit here?

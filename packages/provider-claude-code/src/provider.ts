@@ -5,7 +5,6 @@ import { isClaudeCodeShapedRequest } from './detection.ts';
 import { detectHaikuProbe, callClaudeCodeMessages } from './fetch.ts';
 import { claudeCodeMessagesChain, type ClaudeCodeMessagesBoundaryCtx } from './interceptors/messages/index.ts';
 import { buildClaudeCodeCatalog, fetchClaudeCodeModelsList } from './models.ts';
-import { pricingForClaudeCodeModelKey } from './pricing.ts';
 import { assertClaudeCodeUpstreamState } from './state.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
@@ -25,6 +24,7 @@ export const createClaudeCodeProvider = (record: UpstreamRecord): Provider => {
   const enabledFlags = resolveEffectiveFlags([CLAUDE_CODE_DEFAULT_FLAGS, record.flagOverrides]);
 
   const instance: ProviderInstance = {
+    callAlphaSearch: rejectUnsupported('callAlphaSearch'),
     // Catalog refresh mints an access token and hits /v1/models on every
     // dispatcher poll. `ensureClaudeCodeAccessToken` flips the row to
     // `refresh_failed` and throws `ClaudeCodeOAuthSessionTerminatedError`
@@ -39,8 +39,6 @@ export const createClaudeCodeProvider = (record: UpstreamRecord): Provider => {
       const apiModels = await fetchClaudeCodeModelsList(access.entry.token, fetcher);
       return buildClaudeCodeCatalog(apiModels, enabledFlags);
     },
-
-    getPricingForModelKey: pricingForClaudeCodeModelKey,
 
     callMessages: async (model, body, signal: AbortSignal | undefined, opts) => {
       const ctx: ClaudeCodeMessagesBoundaryCtx = {
@@ -105,7 +103,6 @@ export const createClaudeCodeProvider = (record: UpstreamRecord): Provider => {
     disabledPublicModelIds: record.disabledPublicModelIds,
     modelPrefix: record.modelPrefix,
     instance,
-    supportsResponsesItemReference: false,
   };
 };
 

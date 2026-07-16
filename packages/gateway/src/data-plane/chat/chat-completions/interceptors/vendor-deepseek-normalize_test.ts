@@ -2,8 +2,7 @@ import { test } from 'vitest';
 
 import type { ChatCompletionsInvocation } from './types.ts';
 import { withVendorDeepseekChatCompletionsNormalize } from './vendor-deepseek-normalize.ts';
-import { createNonResponsesSourceStore } from '../../responses/items/store.ts';
-import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
+import { mockChatGatewayCtx } from '../../../../test-helpers/gateway-ctx.ts';
 import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { type ExecuteResult, eventResult, type FlagId } from '@floway-dev/provider';
@@ -13,18 +12,7 @@ type DeepseekReasoningDelta = ChatCompletionsStreamEvent['choices'][number]['del
   reasoning_content?: string;
 };
 
-const stubCtx: ChatGatewayCtx = {
-  apiKeyId: 'test-key',
-  upstreamIds: null,
-  wantsStream: false,
-  runtimeLocation: 'TEST',
-  currentColo: 'TEST',
-  dump: null,
-  responseHeaders: new Headers(),
-  backgroundScheduler: () => {},
-  requestStartedAt: 0,
-  store: createNonResponsesSourceStore('test-key'),
-};
+const stubCtx = mockChatGatewayCtx();
 
 const invocation = (payload: ChatCompletionsPayload, enabledFlags: ReadonlySet<FlagId> = new Set(['vendor-deepseek'])): ChatCompletionsInvocation => ({
   payload,
