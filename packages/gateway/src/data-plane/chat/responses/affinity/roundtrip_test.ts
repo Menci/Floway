@@ -9,7 +9,7 @@ import { ResponsesAttemptState } from '../attempt-state.ts';
 import { wrapResponsesOutputForStorage } from '../items/output.ts';
 import { createResponsesHttpStore } from '../items/store.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { ResponsesInputItem, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { stubModelCandidate } from '@floway-dev/test-utils';
 
 test('stored force items recover their original upstream IDs from adjacent client carriers', async () => {
@@ -51,7 +51,7 @@ test('stored force items recover their original upstream IDs from adjacent clien
   if (clientResponse === undefined) throw new Error('Expected completed client response');
   expect(clientResponse.output[1].id).not.toBe('prog_out_upstream');
 
-  const prepared = await prepareResponsesAffinity({ model: 'model-a', input: clientResponse.output }, codec);
+  const prepared = await prepareResponsesAffinity({ model: 'model-a', input: clientResponse.output as unknown as ResponsesInputItem[] }, codec);
   expect(prepared.routingEvidence.map(evidence => evidence.mode)).toEqual(['prefer', 'force']);
   expect(prepared.payloadForCandidate(candidate).input).toEqual([programOutput]);
 });
