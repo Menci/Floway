@@ -101,6 +101,33 @@ test('translateChatCompletionsChunkToMessagesEvents preserves opaque reasoning b
   ]);
 });
 
+test('keeps tool argument continuations on the open block when opaque reasoning arrives mid-call', () => {
+  const state = createChatCompletionsToMessagesStreamState();
+  const events = [
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({
+      role: 'assistant',
+      tool_calls: [{ index: 0, id: 'call_x', type: 'function', function: { name: 'tool', arguments: '{"a"' } }],
+    }), state),
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({ reasoning_opaque: 'opaque' }), state),
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({
+      tool_calls: [{ index: 0, function: { arguments: ':1}' } }],
+    }), state),
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({}, 'tool_calls'), state),
+  ];
+
+  const argumentDeltas = events.filter(event =>
+    event.type === 'content_block_delta' && event.delta.type === 'input_json_delta');
+  assertEquals(argumentDeltas, [
+    { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '{"a"' } },
+    { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: ':1}' } },
+  ]);
+  const toolStop = events.findIndex(event => event.type === 'content_block_stop' && event.index === 0);
+  const redactedStart = events.findIndex(event =>
+    event.type === 'content_block_start' && event.content_block.type === 'redacted_thinking');
+  expect(toolStop).toBeGreaterThan(events.lastIndexOf(argumentDeltas[1]));
+  expect(redactedStart).toBeGreaterThan(toolStop);
+});
+
 test('translateChatCompletionsChunkToMessagesEvents keeps text and opaque in one thinking block', () => {
   const state = createChatCompletionsToMessagesStreamState();
   const events = [

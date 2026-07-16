@@ -54,3 +54,28 @@ test('removes synthetic blocks and strips incompatible signatures without hiding
     ],
   });
 });
+
+test('removes assistant messages emptied by affinity block stripping', async () => {
+  const candidateA = candidate('upstream-a');
+  const candidateB = candidate('upstream-b');
+  const synthetic = await codec.wrap(undefined, targetFor(candidateA), 'messages.redacted_thinking.data');
+  const natural = await codec.wrap('natural', targetFor(candidateA), 'messages.redacted_thinking.data');
+
+  const syntheticPrepared = await prepareMessagesAffinity({
+    model: 'model',
+    max_tokens: 100,
+    messages: [{ role: 'assistant', content: [{ type: 'redacted_thinking', data: synthetic }] }],
+  }, codec);
+  expect(syntheticPrepared.payloadForCandidate(candidateA).messages).toEqual([]);
+  expect(syntheticPrepared.payloadForCandidate(candidateB).messages).toEqual([]);
+
+  const naturalPrepared = await prepareMessagesAffinity({
+    model: 'model',
+    max_tokens: 100,
+    messages: [{ role: 'assistant', content: [{ type: 'redacted_thinking', data: natural }] }],
+  }, codec);
+  expect(naturalPrepared.payloadForCandidate(candidateA).messages).toEqual([
+    { role: 'assistant', content: [{ type: 'redacted_thinking', data: 'natural' }] },
+  ]);
+  expect(naturalPrepared.payloadForCandidate(candidateB).messages).toEqual([]);
+});

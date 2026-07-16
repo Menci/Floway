@@ -29,6 +29,7 @@ export const prepareMessagesAffinity = async (
     payloadForCandidate: candidate => {
       const candidatePayload = structuredClone(payload);
       const byMessage = Map.groupBy(locations, location => location.messageIndex);
+      const emptiedByAffinity = new Set<number>();
       for (const [messageIndex, messageLocations] of byMessage) {
         const message = candidatePayload.messages[messageIndex];
         if (message.role !== 'assistant' || !Array.isArray(message.content)) {
@@ -53,7 +54,9 @@ export const prepareMessagesAffinity = async (
           const replacement = replacements.get(blockIndex);
           return replacement === undefined ? [block] : replacement === null ? [] : [replacement];
         });
+        if (message.content.length === 0) emptiedByAffinity.add(messageIndex);
       }
+      candidatePayload.messages = candidatePayload.messages.filter((_message, messageIndex) => !emptiedByAffinity.has(messageIndex));
       return candidatePayload;
     },
   };
