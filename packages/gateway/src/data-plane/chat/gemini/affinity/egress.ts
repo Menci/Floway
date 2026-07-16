@@ -23,8 +23,7 @@ const sameLogicalElement = (left: GeminiPart, right: GeminiPart): boolean => {
     if (left.functionCall.id !== undefined && right.functionCall.id !== undefined) {
       return left.functionCall.id === right.functionCall.id;
     }
-    if (left.functionCall.id === undefined && right.functionCall.id === undefined) return false;
-    return left.functionCall.name === right.functionCall.name;
+    return false;
   }
   return false;
 };
@@ -80,17 +79,37 @@ const removeEmptySignatureParts = (candidate: GeminiCandidate): void => {
   candidate.content.parts = candidate.content.parts.filter(part => hasPartData(part) || part.thoughtSignature !== undefined);
 };
 
-const normalizeFirstElementSignature = (candidate: GeminiCandidate): void => {
-  const indexes = firstElementIndexes(candidate.content.parts);
+const normalizeElementSignature = (parts: GeminiPart[], indexes: readonly number[]): void => {
   const signatures = indexes.flatMap(index => {
-    const signature = candidate.content.parts[index].thoughtSignature;
+    const signature = parts[index].thoughtSignature;
     return signature === undefined ? [] : [signature];
   });
   if (signatures.length === 0) return;
-  const targetIndex = indexes.findLast(index => hasPartData(candidate.content.parts[index]));
-  if (targetIndex === undefined) return;
-  for (const index of indexes) delete candidate.content.parts[index].thoughtSignature;
-  candidate.content.parts[targetIndex].thoughtSignature = signatures.at(-1);
+  const targetIndex = indexes.findLast(index => hasPartData(parts[index])) ?? indexes.at(-1);
+  if (targetIndex === undefined) throw new Error('Gemini signature group has no target Part');
+  for (const index of indexes) delete parts[index].thoughtSignature;
+  parts[targetIndex].thoughtSignature = signatures[signatures.length - 1];
+};
+
+const normalizeElementSignatures = (candidate: GeminiCandidate): void => {
+  const parts = candidate.content.parts;
+  let group: number[] = [];
+  let previousContent: GeminiPart | undefined;
+  const flush = () => {
+    normalizeElementSignature(parts, group);
+    group = [];
+    previousContent = undefined;
+  };
+  for (const [index, part] of parts.entries()) {
+    if (!hasPartData(part)) {
+      if (part.thoughtSignature !== undefined) group.push(index);
+      continue;
+    }
+    if (previousContent !== undefined && !sameLogicalElement(previousContent, part)) flush();
+    group.push(index);
+    previousContent = part;
+  }
+  flush();
   removeEmptySignatureParts(candidate);
 };
 
@@ -100,6 +119,7 @@ const transferCandidateMetadata = (current: GeminiCandidate, next: GeminiCandida
   for (const [key, value] of Object.entries(nextRecord)) {
     if (key !== 'index' && key !== 'content' && key !== 'finishReason') currentRecord[key] = value;
   }
+  if (next.content.role !== undefined) current.content.role = next.content.role;
   if (next.finishReason !== undefined) current.finishReason = next.finishReason;
 };
 
@@ -178,9 +198,11 @@ const wrapEvent = async (
     relocateLeadingSignature(candidate, nextCandidate);
     relocateContinuationSignature(candidate, nextCandidate);
     foldEmptyTerminalCandidate(candidate, nextCandidate);
-    normalizeFirstElementSignature(candidate);
+    normalizeElementSignatures(candidate);
     const firstIndexes = firstElementIndexes(candidate.content.parts);
     const firstHasNatural = firstIndexes.some(index => candidate.content.parts[index].thoughtSignature !== undefined);
+    const signatureOnlyNatural = firstIndexes.length === 0
+      && candidate.content.parts.some(part => part.thoughtSignature !== undefined);
     const lastFirstContentIndex = firstIndexes.findLast(index => hasPartData(candidate.content.parts[index]));
     const firstContent = lastFirstContentIndex === undefined ? undefined : candidate.content.parts[lastFirstContentIndex];
     const nextContent = nextCandidate === undefined ? undefined : firstContentPart(nextCandidate.content.parts);
@@ -201,7 +223,7 @@ const wrapEvent = async (
     }
 
     if (!state.anchored) {
-      if (firstHasNatural) {
+      if (firstHasNatural || signatureOnlyNatural) {
         state.anchored = true;
       } else if (lastFirstContentIndex !== undefined && firstElementClosed) {
         candidate.content.parts[lastFirstContentIndex] = {
