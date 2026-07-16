@@ -1,13 +1,14 @@
 import { test, vi } from 'vitest';
 
 import { responsesAttempt } from './attempt.ts';
-import { createStoredResponsesItemId } from './items/format.ts';
+import { createStoredResponsesItemId, hashResponsesItemBinding } from './items/format.ts';
 import * as outputModule from './items/output.ts';
 import { createResponsesHttpStore } from './items/store.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import type { StoredResponsesItem } from '../../../repo/types.ts';
 import { mockChatGatewayCtx } from '../../../test-helpers/gateway-ctx.ts';
+import { affinityTargetForCandidate } from '../shared/affinity/index.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { initExternalResourceFetcher } from '@floway-dev/platform';
 import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
@@ -420,8 +421,8 @@ test('generate seeds privatePayload before interceptors so the web-search shim r
   // The wire shape we model here:
   //   - row.id = stored gateway id (`ws_<crc>_<body>`) — wrapResponsesOutputForStorage
   //     emits this on the wire and clients echo it back as `wsc.id`.
-  //   - payload.item.id = the original `ws_gw_` wire id the shim synthesized
-  //     on turn 1; beginAttempt keys privatePayload by it after inline expansion.
+  //   - payload.item.id = the stored client-visible id; affinity restores the
+  //     original `ws_gw_` wire id before the shim sees the item.
   //   - payload.private = WebSearchCallPrivatePayload (v:1, functionCallItem, ir).
   //
   // This regression caught a prior ordering bug where rewrite + beginAttempt
@@ -431,16 +432,17 @@ test('generate seeds privatePayload before interceptors so the web-search shim r
   const repo = installRepo();
   const storedId = createStoredResponsesItemId('web_search_call');
   const wireId = 'ws_gw_72927da0b19d48aa874e9937';
+  const storedItem = {
+    type: 'web_search_call' as const,
+    id: storedId,
+    status: 'completed' as const,
+    action: { type: 'search' as const, query: 'deepseek v4', queries: ['deepseek v4'] },
+  };
   await insertStoredItem(repo, {
     id: storedId,
     itemType: 'web_search_call',
     payload: {
-      item: {
-        type: 'web_search_call',
-        id: wireId,
-        status: 'completed',
-        action: { type: 'search', query: 'deepseek v4', queries: ['deepseek v4'] },
-      },
+      item: storedItem,
       private: {
         v: 1,
         functionCallItem: {
@@ -478,11 +480,26 @@ test('generate seeds privatePayload before interceptors so the web-search shim r
 
   const store = createResponsesHttpStore(API_KEY_ID, true);
   await store.loadInputItems([{ type: 'web_search_call', id: storedId }], []);
+  const ctx = makeGatewayCtx(store);
+  const carrier = await ctx.affinity.codec.wrap(
+    undefined,
+    {
+      ...affinityTargetForCandidate(candidate),
+      syntheticItem: true,
+      boundItem: {
+        type: storedItem.type,
+        upstreamItemId: wireId,
+        contentHash: await hashResponsesItemBinding(storedItem),
+      },
+    },
+    'responses.reasoning.encrypted_content',
+  );
 
   const result = await responsesAttempt.generate({
     payload: makePayload({
       input: [
         { type: 'message', role: 'user', content: 'follow-up' },
+        { type: 'reasoning', id: 'rs_affinity', summary: [], encrypted_content: carrier },
         {
           type: 'web_search_call',
           id: storedId,
@@ -492,7 +509,7 @@ test('generate seeds privatePayload before interceptors so the web-search shim r
       ],
       tools: [{ type: 'web_search' }],
     }),
-    ctx: makeGatewayCtx(store),
+    ctx,
     candidate,
     headers: new Headers(),
   });
