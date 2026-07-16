@@ -121,13 +121,13 @@ describe('Responses affinity egress', () => {
     const done = output[1];
     if (added.type !== 'event' || added.event.type !== 'response.output_item.added') throw new Error('Expected added event');
     if (done.type !== 'event' || done.event.type !== 'response.output_item.done') throw new Error('Expected done event');
-    expect(added.event.item).toEqual(done.event.item);
-    expect(added.event.item).toMatchObject({
+    expect(added.event.item).not.toHaveProperty('encrypted_content');
+    expect(done.event.item).toMatchObject({
       type: 'reasoning',
       summary: [],
       encrypted_content: 'wrapped:synthetic',
     });
-    expect(output[2]).toMatchObject({ event: { response: { output: [added.event.item, message] } } });
+    expect(output[2]).toMatchObject({ event: { response: { output: [done.event.item, message] } } });
   });
 
   test('does not synthesize affinity for a failed response', async () => {
@@ -193,16 +193,55 @@ describe('Responses affinity egress', () => {
 
     expect(output.map(frame => frame.type === 'event' ? [frame.event.type, frame.event.sequence_number] : [frame.type])).toEqual([
       ['response.output_item.added', 2],
-      ['response.output_item.done', 3],
-      ['response.output_item.added', 4],
-      ['response.output_text.delta', 5],
+      ['response.output_item.added', 3],
+      ['response.output_text.delta', 4],
+      ['response.output_item.done', 5],
       ['response.output_item.done', 6],
       ['response.completed', 7],
     ]);
+    expect(output[1]).toMatchObject({ event: { output_index: 1 } });
     expect(output[2]).toMatchObject({ event: { output_index: 1 } });
-    expect(output[3]).toMatchObject({ event: { output_index: 1 } });
+    expect(output[3]).toMatchObject({ event: { output_index: 0, item: { encrypted_content: 'wrapped:synthetic' } } });
     expect(output[4]).toMatchObject({ event: { output_index: 1 } });
     expect(output[5]).toMatchObject({ event: { response: { output: [{ type: 'reasoning' }, message] } } });
+  });
+
+  test('binds a prefixed item from its canonical done snapshot', async () => {
+    const addedItem = { type: 'program_output' as const, id: 'initial_upstream', call_id: 'call_1', result: '', status: 'incomplete' as const };
+    const doneItem = { type: 'program_output' as const, id: 'final_upstream', call_id: 'call_1', result: 'done', status: 'completed' as const };
+    const calls: AffinityTarget[] = [];
+    const output: ProtocolFrame<ResponsesStreamEvent>[] = [];
+    for await (const frame of wrapResponsesAffinityEgress(frames([
+      eventFrame({ type: 'response.output_item.added', output_index: 0, item: addedItem }),
+      eventFrame({ type: 'response.output_item.done', output_index: 0, item: doneItem }),
+      eventFrame({ type: 'response.completed', response: response([doneItem]) }),
+    ]), {
+      codec: {
+        wrap: async (_value, target) => {
+          calls.push(target);
+          return 'wrapped';
+        },
+      },
+      affinity,
+    })) output.push(frame);
+
+    expect(calls).toContainEqual({
+      ...affinity,
+      syntheticItem: true,
+      boundItem: {
+        type: 'program_output',
+        upstreamItemId: 'final_upstream',
+        contentHash: await hashResponsesItemBinding(doneItem),
+      },
+    });
+    expect(output.map(frame => frame.type === 'event' ? frame.event.type : frame.type)).toEqual([
+      'response.output_item.added',
+      'response.output_item.added',
+      'response.output_item.done',
+      'response.output_item.done',
+      'response.completed',
+    ]);
+    expect(output[4]).toMatchObject({ event: { response: { output: [{ encrypted_content: 'wrapped' }, doneItem] } } });
   });
 
   test('binds a prefixed force item to its original upstream ID', async () => {

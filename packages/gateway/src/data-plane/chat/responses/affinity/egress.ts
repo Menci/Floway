@@ -124,61 +124,93 @@ const addOutputIndexOffset = <T extends ResponsesStreamEvent>(event: T, offset: 
     ? event
     : { ...event, output_index: event.output_index + offset } as T;
 
+interface InsertedCarrier {
+  readonly outputIndex: number;
+  readonly added: ResponsesOutputReasoning;
+  completed?: ResponsesOutputReasoning;
+  boundItem?: NonNullable<AffinityTarget['boundItem']>;
+}
+
 const ensureFirstResponsesItemAffinity = async function* (
   frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
   options: AffinityEgressOptions,
 ): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
   // Natural opaque fields are wrapped independently above. This outer state
   // machine gives output index zero a carrier: augment a carrier-capable item
-  // at close, or insert a complete reasoning prefix and shift every later
-  // output/sequence index plus terminal snapshot by the same fixed offsets.
+  // at close, or open a reasoning prefix immediately and complete it with the
+  // canonical bound item at that item's close. Visible content is never held
+  // back while the binding waits for its final ID and content hash.
   const syntheticOnFirstItem = new Map<string, Promise<string>>();
   let firstItem: { readonly outputIndex: number; readonly canCarry: boolean } | undefined;
-  const insertedItems = new Map<number, ResponsesOutputReasoning>();
+  const insertedItems = new Map<number, InsertedCarrier>();
   let outputIndexOffset = 0;
   let sequenceOffset = 0;
 
-  const insertCarrierBefore = async (
-    item: ResponsesOutputItem | undefined,
+  const startCarrierBefore = (
     originalOutputIndex: number,
     sequenceNumber: number | undefined,
-  ): Promise<ResponsesStreamEvent[]> => {
+  ): ResponsesStreamEvent[] => {
     const existing = insertedItems.get(originalOutputIndex);
     if (existing !== undefined) return [];
-    const upstreamItemId = item !== undefined && 'id' in item && typeof item.id === 'string' ? item.id : undefined;
-    const contentHash = item === undefined ? undefined : await hashResponsesItemBinding(item);
-    const target: AffinityTarget = {
-      ...options.affinity,
-      syntheticItem: true,
-      ...(item !== undefined && upstreamItemId !== undefined && contentHash !== undefined
-        ? { boundItem: { type: item.type, upstreamItemId, contentHash } }
-        : {}),
-    };
-    const inserted: ResponsesOutputReasoning = {
+    const added: ResponsesOutputReasoning = {
       type: 'reasoning',
       id: createTemporaryResponsesItemId('reasoning'),
       summary: [],
-      encrypted_content: await options.codec.wrap(undefined, target, carrierDomain('reasoning', 'encrypted_content')),
     };
-    insertedItems.set(originalOutputIndex, inserted);
     const shiftedOutputIndex = originalOutputIndex + outputIndexOffset;
+    insertedItems.set(originalOutputIndex, { outputIndex: shiftedOutputIndex, added });
     const shiftedSequence = sequenceNumber === undefined ? undefined : sequenceNumber + sequenceOffset;
     outputIndexOffset += 1;
-    sequenceOffset += 2;
+    sequenceOffset += 1;
     return [
       {
         type: 'response.output_item.added',
         output_index: shiftedOutputIndex,
-        item: inserted,
+        item: added,
         ...(shiftedSequence !== undefined ? { sequence_number: shiftedSequence } : {}),
       },
-      {
-        type: 'response.output_item.done',
-        output_index: shiftedOutputIndex,
-        item: inserted,
-        ...(shiftedSequence !== undefined ? { sequence_number: shiftedSequence + 1 } : {}),
-      },
     ];
+  };
+
+  const completeCarrierBefore = async (
+    item: ResponsesOutputItem | undefined,
+    originalOutputIndex: number,
+    sequenceNumber: number | undefined,
+  ): Promise<ResponsesStreamEvent[]> => {
+    const inserted = insertedItems.get(originalOutputIndex);
+    if (inserted === undefined) throw new Error(`Responses affinity carrier ${originalOutputIndex} completed before it started`);
+    const upstreamItemId = item !== undefined && 'id' in item && typeof item.id === 'string' ? item.id : undefined;
+    const contentHash = item === undefined ? undefined : await hashResponsesItemBinding(item);
+    const boundItem = item !== undefined && upstreamItemId !== undefined && contentHash !== undefined
+      ? { type: item.type, upstreamItemId, contentHash }
+      : undefined;
+    if (inserted.completed !== undefined) {
+      if (
+        inserted.boundItem?.type !== boundItem?.type
+        || inserted.boundItem?.upstreamItemId !== boundItem?.upstreamItemId
+        || inserted.boundItem?.contentHash !== boundItem?.contentHash
+      ) throw new Error(`Responses output item ${originalOutputIndex} changed after its affinity binding closed`);
+      return [];
+    }
+    const target: AffinityTarget = {
+      ...options.affinity,
+      syntheticItem: true,
+      ...(boundItem !== undefined ? { boundItem } : {}),
+    };
+    const completed: ResponsesOutputReasoning = {
+      ...inserted.added,
+      encrypted_content: await options.codec.wrap(undefined, target, carrierDomain('reasoning', 'encrypted_content')),
+    };
+    inserted.completed = completed;
+    inserted.boundItem = boundItem;
+    const shiftedSequence = sequenceNumber === undefined ? undefined : sequenceNumber + sequenceOffset;
+    sequenceOffset += 1;
+    return [{
+      type: 'response.output_item.done',
+      output_index: inserted.outputIndex,
+      item: completed,
+      ...(shiftedSequence !== undefined ? { sequence_number: shiftedSequence } : {}),
+    }];
   };
 
   const ensureItemCarrier = async (item: ResponsesOutputItem, outputIndex: number): Promise<ResponsesOutputItem> => {
@@ -216,7 +248,7 @@ const ensureFirstResponsesItemAffinity = async function* (
     const interleaved: ResponsesOutputItem[] = [];
     for (let index = 0; index <= output.length; index += 1) {
       const inserted = insertedItems.get(index);
-      if (inserted !== undefined) interleaved.push(inserted);
+      if (inserted !== undefined) interleaved.push(inserted.completed ?? inserted.added);
       if (output[index] !== undefined) interleaved.push(output[index]);
     }
     output = interleaved;
@@ -237,21 +269,23 @@ const ensureFirstResponsesItemAffinity = async function* (
       if (firstItem === undefined) {
         firstItem = { outputIndex: event.output_index, canCarry: canCarryAffinity(event.item) };
         if (!firstItem.canCarry) {
-          for (const inserted of await insertCarrierBefore(event.item, event.output_index, event.sequence_number)) yield eventFrame(inserted);
+          for (const inserted of startCarrierBefore(event.output_index, event.sequence_number)) yield eventFrame(inserted);
         }
       } else if (requiresBoundCarrier(event.item)) {
-        for (const inserted of await insertCarrierBefore(event.item, event.output_index, event.sequence_number)) yield eventFrame(inserted);
+        for (const inserted of startCarrierBefore(event.output_index, event.sequence_number)) yield eventFrame(inserted);
       }
       yield eventFrame(shifted(event));
       continue;
     }
 
-    if (
-      event.type === 'response.output_item.done'
-      && firstItem?.canCarry
-      && event.output_index === firstItem.outputIndex
-    ) {
-      yield eventFrame(shifted({ ...event, item: await ensureItemCarrier(event.item, event.output_index) }));
+    if (event.type === 'response.output_item.done') {
+      if (insertedItems.has(event.output_index)) {
+        for (const inserted of await completeCarrierBefore(event.item, event.output_index, event.sequence_number)) yield eventFrame(inserted);
+      }
+      const item = firstItem?.canCarry && event.output_index === firstItem.outputIndex
+        ? await ensureItemCarrier(event.item, event.output_index)
+        : event.item;
+      yield eventFrame(shifted({ ...event, item }));
       continue;
     }
 
@@ -261,13 +295,22 @@ const ensureFirstResponsesItemAffinity = async function* (
         if (first !== undefined && canCarryAffinity(first)) {
           firstItem = { outputIndex: 0, canCarry: true };
         } else {
-          for (const inserted of await insertCarrierBefore(first, 0, event.sequence_number)) yield eventFrame(inserted);
+          for (const inserted of startCarrierBefore(0, event.sequence_number)) yield eventFrame(inserted);
           firstItem = first === undefined ? undefined : { outputIndex: 0, canCarry: false };
         }
       }
       for (const [outputIndex, item] of event.response.output.entries()) {
-        if (!requiresBoundCarrier(item) || insertedItems.has(outputIndex)) continue;
-        for (const inserted of await insertCarrierBefore(item, outputIndex, event.sequence_number)) yield eventFrame(inserted);
+        if (requiresBoundCarrier(item) && !insertedItems.has(outputIndex)) {
+          for (const inserted of startCarrierBefore(outputIndex, event.sequence_number)) yield eventFrame(inserted);
+        }
+      }
+      for (const [outputIndex, inserted] of insertedItems) {
+        const item = event.response.output[outputIndex];
+        if (inserted.completed === undefined) {
+          for (const completed of await completeCarrierBefore(item, outputIndex, event.sequence_number)) yield eventFrame(completed);
+        } else {
+          await completeCarrierBefore(item, outputIndex, event.sequence_number);
+        }
       }
       const response = await rewriteResponse(event.response);
       yield eventFrame(addSequenceOffset({ ...event, response }, sequenceOffset));
