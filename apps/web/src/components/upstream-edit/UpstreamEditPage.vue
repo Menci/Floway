@@ -14,6 +14,8 @@ import {
   blankCustomDraft,
   blankOllamaDraft,
   buildCustomConfigCore,
+  buildListModelsPreviewConfig,
+  buildOllamaConfig,
   type CustomDraft,
   type OllamaDraft,
   seedPathOverrides,
@@ -178,26 +180,7 @@ const listDraftModels = async () => {
   fetchLoading.value = true;
   fetchError.value = null;
   try {
-    // Merge the current form drafts into the payload so the preview
-    // reflects the in-flight edits (baseUrl, apiKey, models)
-    // rather than the record's persisted config.
-    const config: Record<string, unknown> = draft.value.kind === 'custom'
-      ? { ...buildCustomConfigCore(customDraft.value), models: customDraft.value.models }
-      : buildOllamaConfig();
-    // Edit mode: an operator who did not retype the API key expects the
-    // preview to probe with the stored secret — matching how `save()` (via
-    // the backend's patch-omit semantics) treats an empty apiKey as "keep
-    // existing". `list-models` receives a full record envelope rather than a
-    // patch, so replicate the fallback client-side to avoid hitting an
-    // unauthenticated upstream. Applies only when the operator didn't type
-    // anything AND (for custom) the auth style still expects a key.
-    if (!isCreate.value && config.apiKey === undefined) {
-      if (draft.value.kind === 'custom' && draft.value.config.authStyle !== 'none' && draft.value.config.apiKey) {
-        config.apiKey = draft.value.config.apiKey;
-      } else if (draft.value.kind === 'ollama' && draft.value.config.apiKey) {
-        config.apiKey = draft.value.config.apiKey;
-      }
-    }
+    const config = buildListModelsPreviewConfig(draft.value, customDraft.value, ollamaDraft.value, isCreate.value);
     const previewRecord = { ...toRecordEnvelope(draft.value), config };
     const { data, error } = await callApi<ListModelsResult>(
       () => api.api.upstreams['list-models'].$post({ json: { record: previewRecord } }),
@@ -319,15 +302,6 @@ const buildAzureConfig = () => {
   return config;
 };
 
-const buildOllamaConfig = () => {
-  const config: Record<string, unknown> = {
-    baseUrl: ollamaDraft.value.baseUrl.trim(),
-    models: ollamaDraft.value.models,
-  };
-  if (ollamaDraft.value.apiKey.trim()) config.apiKey = ollamaDraft.value.apiKey.trim();
-  return config;
-};
-
 // Editable providers (custom/azure/ollama) rebuild the config from the
 // per-provider form draft; OAuth providers hand back the credential slice
 // their wizards populated in draft.config / draft.state. In edit state the
@@ -336,7 +310,7 @@ const buildOllamaConfig = () => {
 const buildConfigForSave = (): unknown => {
   if (draft.value.kind === 'custom') return buildCustomConfig();
   if (draft.value.kind === 'azure') return buildAzureConfig();
-  if (draft.value.kind === 'ollama') return buildOllamaConfig();
+  if (draft.value.kind === 'ollama') return buildOllamaConfig(ollamaDraft.value);
   return draft.value.config;
 };
 
