@@ -175,6 +175,14 @@ const customAutoModelsFromDraft = computed<UpstreamModelConfig[]>(() => fetchedR
 // already-projected `UpstreamModelConfig`.
 type ListModelsResult = { data: UpstreamModelConfig[] } | { data: CustomRawModel[] };
 
+// Route the response into the ref that matches the current kind — custom
+// keeps a raw slot so the dashboard can retranslate through the draft's
+// endpoints; every other kind lands projected rows.
+const applyListModelsResult = (data: ListModelsResult['data']): void => {
+  if (draft.value.kind === 'custom') fetchedRaw.value = data as CustomRawModel[];
+  else upstreamModels.value = data as UpstreamModelConfig[];
+};
+
 const listDraftModels = async () => {
   if (draft.value.kind !== 'custom' && draft.value.kind !== 'ollama') return;
   fetchLoading.value = true;
@@ -190,11 +198,7 @@ const listDraftModels = async () => {
     // discard the late result rather than repopulating stale auto rows.
     if (draft.value.kind === 'custom' && !customDraft.value.modelsFetch.enabled) return;
     if (error) { fetchError.value = error.message; return; }
-    if (draft.value.kind === 'custom') {
-      fetchedRaw.value = data.data as CustomRawModel[];
-    } else {
-      upstreamModels.value = data.data as UpstreamModelConfig[];
-    }
+    applyListModelsResult(data.data);
     fetchedCount.value = data.data.length;
     fetchedAtMs.value = Date.now();
     // Edit mode: the server-side list-models refreshed the SWR cache too
@@ -262,11 +266,7 @@ const fetchUpstreamModels = async () => {
     () => api.api.upstreams['list-models'].$post({ json: { record: toRecordEnvelope(draft.value) } }),
   );
   if (error) { upstreamModelsError.value = error.message; return; }
-  if (draft.value.kind === 'custom') {
-    fetchedRaw.value = data.data as CustomRawModel[];
-  } else {
-    upstreamModels.value = data.data as UpstreamModelConfig[];
-  }
+  applyListModelsResult(data.data);
 };
 
 // Prime on mount so ModelsPanel renders populated; the operator-driven
