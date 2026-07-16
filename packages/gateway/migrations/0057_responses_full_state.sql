@@ -28,7 +28,7 @@ INSERT INTO responses_items_new (
 SELECT
   id,
   api_key_id,
-  item_type,
+  CASE WHEN item_type = 'compaction_summary' THEN 'compaction' ELSE item_type END,
   payload_json,
   content_hash,
   CASE

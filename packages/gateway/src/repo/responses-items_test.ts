@@ -102,12 +102,14 @@ test('migration 0057 preserves usable payloads and snapshots but drops legacy af
     const gzipDescriptor = JSON.stringify({ version: 1, storage: 'inline', encoding: 'gzip', payload: 'H4sIAAAAAAAA' });
     const fileDescriptor = JSON.stringify({ version: 1, storage: 'file', key: 'responses-items/v1/expires/x', sha256: 'abc', byteLength: 3 });
     const legacyInline = JSON.stringify({ version: 1, storage: 'inline', payload: { item: { type: 'reasoning', id: 'rs_legacy' } } });
+    const summaryInline = JSON.stringify({ version: 1, storage: 'inline', payload: { item: { type: 'compaction_summary', id: 'cmp_summary' } } });
     const insertItem = `INSERT INTO responses_items
       (id, api_key_id, upstream_id, upstream_item_id, item_type, payload_json, content_hash, created_at, refreshed_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`;
     db.run(insertItem, ['msg_gzip', 'key-a', 'upstream-a', 'msg_upstream', 'message', gzipDescriptor, 'hash-a', 1_000, 9_000]);
     db.run(insertItem, ['rs_file', 'key-a', 'upstream-a', 'rs_upstream', 'reasoning', fileDescriptor, null, 2_000, 10_000]);
     db.run(insertItem, ['rs_legacy', 'key-a', 'upstream-a', 'rs_legacy_upstream', 'reasoning', legacyInline, null, 3_000, 11_000]);
+    db.run(insertItem, ['cmp_summary', 'key-a', 'upstream-a', 'cmp_upstream', 'compaction_summary', summaryInline, null, 3_500, 11_500]);
     db.run(insertItem, ['msg_unscoped', null, null, null, 'message', gzipDescriptor, 'hash-u', 4_000, 12_000]);
     db.run(insertItem, ['msg_metadata', 'key-a', 'upstream-a', 'msg_metadata_upstream', 'message', null, 'hash-m', 5_000, 13_000]);
 
@@ -123,11 +125,12 @@ test('migration 0057 preserves usable payloads and snapshots but drops legacy af
     if (migration === undefined) throw new Error('missing migration 0057_responses_full_state.sql');
     db.run(migration[1]);
 
-    const itemResult = db.exec('SELECT id, payload_json, content_hash, created_at FROM responses_items ORDER BY created_at')[0];
+    const itemResult = db.exec('SELECT id, item_type, payload_json, content_hash, created_at FROM responses_items ORDER BY created_at')[0];
     expect(itemResult?.values).toEqual([
-      ['rs_file', fileDescriptor, null, 2_000],
-      ['msg_gzip', gzipDescriptor, 'hash-a', 9_000],
-      ['rs_legacy', legacyInline, null, 11_000],
+      ['rs_file', 'reasoning', fileDescriptor, null, 2_000],
+      ['msg_gzip', 'message', gzipDescriptor, 'hash-a', 9_000],
+      ['rs_legacy', 'reasoning', legacyInline, null, 11_000],
+      ['cmp_summary', 'compaction', summaryInline, null, 11_500],
     ]);
     const snapshotResult = db.exec('SELECT id, api_key_id, item_ids_json, created_at FROM responses_snapshots')[0];
     expect(snapshotResult?.values).toEqual([

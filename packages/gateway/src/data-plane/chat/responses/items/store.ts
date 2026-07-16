@@ -1,4 +1,4 @@
-import { createResponsesItemId, hashResponsesItemContent, isResponsesItemId, responsesItemId } from './format.ts';
+import { canonicalResponsesItemType, createResponsesItemId, hashResponsesItemContent, isResponsesItemId, responsesItemId } from './format.ts';
 import { getRepo } from '../../../../repo/index.ts';
 import { cloneStoredResponsesItem, cloneStoredResponsesSnapshot, compareResponsesItemsByFreshness, scopedResponsesKey } from '../../../../repo/responses-clone.ts';
 import type { Repo, StoredResponsesItem, StoredResponsesSnapshot } from '../../../../repo/types.ts';
@@ -198,7 +198,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     const row: StoredResponsesItem = {
       id: createResponsesItemId(item.type),
       apiKeyId: this.apiKeyId,
-      itemType: item.type,
+      itemType: canonicalResponsesItemType(item.type),
       payload: { item: structuredClone(item) },
       contentHash,
       createdAt: Date.now(),

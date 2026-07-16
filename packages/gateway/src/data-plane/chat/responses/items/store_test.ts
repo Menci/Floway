@@ -60,6 +60,20 @@ describe('StatefulResponsesStore', () => {
     expect((await repo.responsesSnapshots.lookup('key-a', 'resp_compact'))?.itemIds).toEqual([output.id]);
   });
 
+  test('stages compaction_summary metadata under its canonical item type', async () => {
+    const repo = new InMemoryRepo();
+    initRepo(repo);
+    const store = createResponsesHttpStore('key-a', true);
+    const item = { type: 'compaction_summary', id: 'cmp_client', encrypted_content: 'opaque' } as unknown as Parameters<typeof store.stageInputItems>[0][number];
+    await store.stageInputItems([item]);
+    await store.commitSnapshot('resp_summary', 'append');
+
+    const snapshot = await repo.responsesSnapshots.lookup('key-a', 'resp_summary');
+    expect(snapshot).not.toBeNull();
+    const rows = await repo.responsesItems.lookupMany('key-a', snapshot?.itemIds ?? []);
+    expect(rows[0].itemType).toBe('compaction');
+  });
+
   test('append snapshots refresh the lifetime of every referenced item', async () => {
     const repo = new InMemoryRepo();
     initRepo(repo);
