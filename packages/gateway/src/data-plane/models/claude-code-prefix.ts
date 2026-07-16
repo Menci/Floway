@@ -1,19 +1,29 @@
 // The Claude Code CLI's gateway-discovery model picker (enabled by the
 // `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1` env var) applies two
 // filters to the `/v1/models` payload before populating its `/model`
-// menu:
+// menu. Anthropic documents both filters at
+// https://code.claude.com/docs/en/llm-gateway-protocol#model-discovery:
+//
+//   > Claude Code reads `id` and the optional `display_name` from each
+//   > entry in the response's `data` array, and ignores entries whose
+//   > `id` doesn't begin with `claude` or `anthropic`.
+//
+//   > A discovered ID is skipped when it exactly matches a row already
+//   > in the picker, or when both the discovered and existing IDs
+//   > resolve to Fable.
+//
+// The compiled implementation matches the docs verbatim; the shape is
 //
 //   models.filter(m => /^(claude|anthropic)/i.test(m.id))
 //         .filter(m => { const fam = knownFamily(m.id); return fam === null || fam === fable5Family; })
 //
-// The second filter drops any id that exact-matches a family string the
-// binary already ships built-in (haiku/sonnet/opus/etc.) — discovery is
-// meant to advertise EXTRA models beyond the built-in list — with a
-// carve-out for the `fable5` family. Extracted verbatim from
-// `@anthropic-ai/claude-code@2.1.211`'s compiled `Bootstrap Gateway
+// where `knownFamily` walks the CLI's built-in id→family map. Extracted
+// from `@anthropic-ai/claude-code@2.1.211`'s compiled `Bootstrap Gateway
 // /v1/models` handler, captured 2026-07-16 by grepping the Bun-compiled
 // darwin-arm64 binary around the `[Bootstrap] Gateway /v1/models`
-// telemetry strings.
+// telemetry strings; the docs are the primary source-of-truth and the
+// binary extraction pins the exact carve-out (`fable5`) and evaluation
+// order the prose leaves implicit.
 //
 // Consequences for gateway callers:
 //

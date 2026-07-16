@@ -30,16 +30,20 @@ import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 // Claude Code passes it through to the upstream).
 //
 // (2) The picker only accepts discovered ids matching
-// `/^(claude|anthropic)/i` (see ./claude-code-prefix.ts for the extracted
-// predicate). Any non-Anthropic model advertised through gateway
-// discovery is silently dropped from the menu unless its id starts with
-// one of those two prefixes. We prepend `CLAUDE_CODE_SYNTHETIC_PREFIX`
-// on those ids so the picker admits them; because the picker renders
-// `display_name` (with id as a fallback), the original label the
-// operator configured is what the user sees. The prefix is stripped
-// back off in `enumerateModelCandidates` when the same id comes in on
-// `/v1/messages` (or any other data-plane endpoint) so routing lands on
-// the real model.
+// `/^(claude|anthropic)/i` — Anthropic documents this at
+// https://code.claude.com/docs/en/llm-gateway-protocol#model-discovery
+// ("ignores entries whose `id` doesn't begin with `claude` or
+// `anthropic`"); see ./claude-code-prefix.ts for the extracted predicate
+// and the second, built-in-family-collision filter it pairs with. Any
+// non-Anthropic model advertised through gateway discovery is silently
+// dropped from the menu unless its id starts with one of those two
+// prefixes. We prepend `CLAUDE_CODE_SYNTHETIC_PREFIX` on those ids so
+// the picker admits them; because the picker renders `display_name`
+// (with id as a fallback), the original label the operator configured
+// is what the user sees. The prefix is stripped back off in
+// `enumerateModelCandidates` when the same id comes in on `/v1/messages`
+// (or any other data-plane endpoint) so routing lands on the real
+// model.
 //
 // (3) Mirroring the official shape (instead of the OpenAI-Anthropic
 // superset the handler serves everyone else) also lets any future
