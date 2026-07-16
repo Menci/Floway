@@ -131,9 +131,10 @@ prefix. Its `output_item.added` event is emitted immediately
 without buffering the bound item's visible stream. Its encrypted
 `output_item.done` is emitted immediately before the bound item's done event,
 using the final upstream ID and a canonical SHA-256 content hash that excludes
-only the replaceable item ID. Terminal output contains the same completed
-prefix. Output indexes and sequence numbers include each inserted lifecycle
-event.
+the replaceable item ID. The hash also applies Codex's output-to-history
+projection: message/function-call `status` and empty output-text `annotations`
+or `logprobs` are omitted. Terminal output contains the same completed prefix.
+Output indexes and sequence numbers include each inserted lifecycle event.
 
 On replay, the authenticated type and content hash must match the adjacent
 item. A mismatch is a client input error. Preferred bindings restore IDs only
