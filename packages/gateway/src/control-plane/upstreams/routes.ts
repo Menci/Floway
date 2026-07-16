@@ -85,10 +85,9 @@ const codexQuotaForResponse = async (record: UpstreamRecord): Promise<CodexQuota
 };
 
 // These projections need repository/provider I/O, which serialize.ts excludes
-// so it stays a pure persisted-record transform. Callers pick the base
-// serializer: list/create/update stay on the redacted default;
-// getUpstream passes upstreamRecordToFullJson so the edit page receives the
-// unredacted secrets it needs to round-trip.
+// so it stays a pure persisted-record transform. The optional baseSerialize
+// override lets callers swap in upstreamRecordToFullJson to round-trip
+// unredacted secrets instead of the redacted default.
 const serializeForResponse = async (
   record: UpstreamRecord,
   baseSerialize: (r: UpstreamRecord) => SerializedUpstreamRecord = upstreamRecordToJson,
