@@ -13,7 +13,6 @@ test('streamSSE wrapper sets X-Accel-Buffering plus the streamSSE defaults', asy
 
   const response = await app.request('/');
 
-  // nginx-buffering opt-out — the reason this wrapper exists.
   assertEquals(response.headers.get('x-accel-buffering'), 'no');
   // Hono's built-in headers survive the wrapper (regression guard against a
   // future refactor that stops delegating to honoStreamSSE).
