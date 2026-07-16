@@ -313,10 +313,8 @@ test('keeps synthetic context compaction prefer-only while natural encrypted sta
     { ...targetFor(candidateA), upstreamItemId: 'ctx_upstream' },
     carrierDomain('context_compaction', 'encrypted_content'),
   );
-  const naturalPrepared = await prepareResponsesAffinity({
-    model: 'model',
-    input: [{ ...syntheticItem, encrypted_content: natural }],
-  }, codec);
+  const naturalItem = { ...syntheticItem, encrypted_content: natural } as unknown as CanonicalResponsesPayload['input'][number];
+  const naturalPrepared = await prepareResponsesAffinity({ model: 'model', input: [naturalItem] }, codec);
   expect(naturalPrepared.routingEvidence.map(evidence => evidence.mode)).toEqual(['prefer', 'force']);
   expect(naturalPrepared.payloadForCandidate({ ...candidateA, rules: {} }).input[0]).toMatchObject({
     id: 'ctx_upstream',
