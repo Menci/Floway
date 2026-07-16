@@ -4,6 +4,7 @@
 
 import type { Context } from 'hono';
 
+import { CLAUDE_CODE_PICKER_ID_ACCEPT, CLAUDE_CODE_SYNTHETIC_PREFIX } from './claude-code-prefix.ts';
 import { loadModels } from './load.ts';
 import { MODEL_LISTING_FAILURE_MESSAGE } from './shared.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
@@ -16,7 +17,7 @@ import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 
 // Anthropic's official /v1/models shape — `{data, first_id, has_more,
 // last_id}` with `ModelInfo` rows — served to Claude Code CLI's `/model`
-// picker. Two picker mechanics dictate the fields below.
+// picker. Three picker mechanics dictate the fields below.
 //
 // (1) The CLI's `[1m]` suffix convention — append `[1m]` to a model id and
 // the CLI switches that pick to the 1M-context window — only reaches the
@@ -28,7 +29,19 @@ import { ProviderModelsUnavailableError } from '@floway-dev/provider';
 // which providers already honor (Copilot's `context1m` variant selector;
 // Claude Code passes it through to the upstream).
 //
-// (2) Mirroring the official shape (instead of the OpenAI-Anthropic
+// (2) The picker only accepts discovered ids matching
+// `/^(claude|anthropic)/i` (see ./claude-code-prefix.ts for the extracted
+// predicate). Any non-Anthropic model advertised through gateway
+// discovery is silently dropped from the menu unless its id starts with
+// one of those two prefixes. We prepend `CLAUDE_CODE_SYNTHETIC_PREFIX`
+// on those ids so the picker admits them; because the picker renders
+// `display_name` (with id as a fallback), the original label the
+// operator configured is what the user sees. The prefix is stripped
+// back off in `enumerateModelCandidates` when the same id comes in on
+// `/v1/messages` (or any other data-plane endpoint) so routing lands on
+// the real model.
+//
+// (3) Mirroring the official shape (instead of the OpenAI-Anthropic
 // superset the handler serves everyone else) also lets any future
 // Anthropic-native picker consume the payload verbatim. `capabilities`
 // is nullable per the SDK type; we do not track every dimension the
@@ -47,8 +60,14 @@ const toClaudeCodeShape = (response: PublicModelsResponse) => {
   const CREATED_AT_UNKNOWN = '1970-01-01T00:00:00Z';
   const data = response.data.map(model => {
     const max = model.limits.max_context_window_tokens;
+    // Prefix decision runs on the raw id (so a real `claude-*` never gets
+    // double-prefixed), then [1m] is appended to the possibly-prefixed
+    // form so the CLI's suffix strip lands cleanly on either shape.
+    const accepted = CLAUDE_CODE_PICKER_ID_ACCEPT.test(model.id);
+    const withPrefix = accepted ? model.id : `${CLAUDE_CODE_SYNTHETIC_PREFIX}${model.id}`;
+    const withSuffix = max !== undefined && max >= 1_000_000 ? `${withPrefix}[1m]` : withPrefix;
     return {
-      id: max !== undefined && max >= 1_000_000 ? `${model.id}[1m]` : model.id,
+      id: withSuffix,
       type: 'model' as const,
       display_name: model.display_name,
       created_at: model.created_at ?? CREATED_AT_UNKNOWN,

@@ -3,6 +3,7 @@ import { isEqual } from 'es-toolkit';
 import { unionEndpoints } from './endpoint-union.ts';
 import { fetchUpstreamModelsCached } from './models-cache.ts';
 import { createPerRequestFetcher } from '../../dial/per-request.ts';
+import { CLAUDE_CODE_SYNTHETIC_PREFIX } from '../models/claude-code-prefix.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { ModelAliasRecord } from '../../repo/types.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
@@ -435,7 +436,8 @@ const orderAliasTargets = (alias: ModelAliasRecord): readonly ModelAliasRecord['
   return shuffled;
 };
 
-// Per-request model resolution. Two-branch chain:
+// Per-request model resolution. Two-branch chain, then one prefix-strip
+// fallback:
 //
 //   1. Look the inbound id up in the alias repo. When the id names an
 //      alias, walk every target in `selection`-mode order, delegate to the
@@ -449,6 +451,14 @@ const orderAliasTargets = (alias: ModelAliasRecord): readonly ModelAliasRecord['
 //      failing at the first target.
 //   2. Otherwise (no alias match at all) run the real-catalog resolver
 //      directly on the inbound id.
+//   3. If the whole chain missed AND the inbound id starts with
+//      `CLAUDE_CODE_SYNTHETIC_PREFIX` (see ../models/claude-code-prefix.ts),
+//      strip the prefix and rerun (1)+(2). This is the counterpart to the
+//      discovery-side rewrite `toClaudeCodeShape` applies when serving the
+//      Claude Code CLI's `/model` picker: a non-Anthropic model advertised
+//      as `<prefix><real-id>` gets routed back to `<real-id>`. The direct
+//      lookup always runs first so an admin alias literally named
+//      `<prefix><name>` keeps precedence.
 //
 // The real-catalog resolver walks every visible upstream, filters by kind
 // inside the walk (so wrong-kind entries never become candidates), and
@@ -490,38 +500,62 @@ export const enumerateModelCandidates = async ({
   const fetcherForUpstream = await createPerRequestFetcher(runtimeLocation);
   const providers = await listModelProviders(upstreamIds);
 
-  const alias = await getRepo().modelAliases.getByName(model);
-  if (alias === null) {
-    return await resolveRealCandidates(model, kind, providers, fetcherForUpstream, scheduler);
-  }
-
-  // Walk every target, tag each returned candidate with the target's rule
-  // overlay, then flatten (target order preserved), and dedup by
-  // (modelId, upstreamId, rules). Different rules against the same
-  // (model, upstream) stay as distinct entries so the operator can pin the
-  // same physical binding under two rule variants.
-  const aggregatedFailed = new Set<string>();
-  let sawAny = false;
-  const flat: ModelCandidate[] = [];
-  for (const target of orderAliasTargets(alias)) {
-    const result = await resolveRealCandidates(target.target_model_id, kind, providers, fetcherForUpstream, scheduler);
-    for (const name of result.failedUpstreams) aggregatedFailed.add(name);
-    if (result.sawModel) sawAny = true;
-    for (const candidate of result.candidates) {
-      flat.push({ ...candidate, rules: target.rules });
+  const attempt = async (m: string): Promise<{
+    readonly candidates: readonly ModelCandidate[];
+    readonly sawModel: boolean;
+    readonly failedUpstreams: readonly string[];
+  }> => {
+    const alias = await getRepo().modelAliases.getByName(m);
+    if (alias === null) {
+      return await resolveRealCandidates(m, kind, providers, fetcherForUpstream, scheduler);
     }
-  }
-  const deduped: ModelCandidate[] = [];
-  for (const candidate of flat) {
-    const duplicate = deduped.some(existing =>
-      existing.model.id === candidate.model.id
-      && existing.provider.upstream === candidate.provider.upstream
-      && isEqual(existing.rules, candidate.rules));
-    if (!duplicate) deduped.push(candidate);
-  }
-  return {
-    candidates: deduped,
-    sawModel: sawAny,
-    failedUpstreams: [...aggregatedFailed],
+
+    // Walk every target, tag each returned candidate with the target's rule
+    // overlay, then flatten (target order preserved), and dedup by
+    // (modelId, upstreamId, rules). Different rules against the same
+    // (model, upstream) stay as distinct entries so the operator can pin the
+    // same physical binding under two rule variants.
+    const aggregatedFailed = new Set<string>();
+    let sawAny = false;
+    const flat: ModelCandidate[] = [];
+    for (const target of orderAliasTargets(alias)) {
+      const result = await resolveRealCandidates(target.target_model_id, kind, providers, fetcherForUpstream, scheduler);
+      for (const name of result.failedUpstreams) aggregatedFailed.add(name);
+      if (result.sawModel) sawAny = true;
+      for (const candidate of result.candidates) {
+        flat.push({ ...candidate, rules: target.rules });
+      }
+    }
+    const deduped: ModelCandidate[] = [];
+    for (const candidate of flat) {
+      const duplicate = deduped.some(existing =>
+        existing.model.id === candidate.model.id
+        && existing.provider.upstream === candidate.provider.upstream
+        && isEqual(existing.rules, candidate.rules));
+      if (!duplicate) deduped.push(candidate);
+    }
+    return {
+      candidates: deduped,
+      sawModel: sawAny,
+      failedUpstreams: [...aggregatedFailed],
+    };
   };
+
+  // Symmetric with the discovery-side rewrite in ../models/serve.ts: a
+  // Claude Code CLI caller sending back a synthetic-prefixed id (see
+  // CLAUDE_CODE_SYNTHETIC_PREFIX) never resolves on the first try because
+  // no upstream carries that literal string. Strip the prefix and try
+  // again; the direct-lookup path always runs first so an admin who ever
+  // creates a real alias literally named `<prefix><name>` keeps precedence.
+  // Unconditional (no UA gate) because the CLI's discovery UA
+  // (`claude-code/*`) diverges from the Messages UA (`claude-cli/*`) it
+  // sends inference through, and other clients that reuse the discovered
+  // list also benefit from the same round-trip working.
+  const primary = await attempt(model);
+  if (!primary.sawModel && model.startsWith(CLAUDE_CODE_SYNTHETIC_PREFIX)) {
+    const stripped = model.slice(CLAUDE_CODE_SYNTHETIC_PREFIX.length);
+    const retry = await attempt(stripped);
+    if (retry.sawModel) return retry;
+  }
+  return primary;
 };
