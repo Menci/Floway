@@ -35,7 +35,8 @@ describe('StatefulResponsesStore', () => {
 
     const snapshot = await repo.responsesSnapshots.lookup('key-a', 'resp_saved');
     expect(snapshot?.itemIds).toHaveLength(2);
-    expect(await repo.responsesItems.lookupMany('key-a', [output.id])).toEqual([output]);
+    const [storedOutput] = await repo.responsesItems.lookupMany('key-a', [output.id]);
+    expect(storedOutput).toMatchObject({ ...output, createdAt: snapshot?.createdAt });
   });
 
   test('replace snapshots persist only their output state', async () => {
