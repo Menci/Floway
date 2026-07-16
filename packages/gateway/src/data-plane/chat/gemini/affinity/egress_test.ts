@@ -3,7 +3,7 @@ import { describe, expect, test, vi } from 'vitest';
 import { wrapGeminiAffinityEgress } from './egress.ts';
 import type { AffinityCodec, AffinityTarget } from '../../shared/affinity/index.ts';
 import { eventFrame, type ProtocolFrame, USAGE_BILLING } from '@floway-dev/protocols/common';
-import type { GeminiStreamEvent } from '@floway-dev/protocols/gemini';
+import type { GeminiCandidate, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 
 const affinity: AffinityTarget = {
   upstreamId: 'up-a',
@@ -15,6 +15,9 @@ type AffinityEgressCodec = Pick<AffinityCodec, 'wrap'>;
 const frames = async function* (values: ProtocolFrame<GeminiStreamEvent>[]) {
   yield* values;
 };
+
+const withCandidateExtra = (candidate: GeminiCandidate, key: string, value: unknown): GeminiCandidate =>
+  Object.assign(candidate, { [key]: value });
 
 class DelayedCodec implements AffinityEgressCodec {
   readonly calls: Array<{ value: string | undefined; resolve: (value: string) => void }> = [];
@@ -215,9 +218,13 @@ describe('Gemini affinity egress', () => {
       }],
     })]), { codec: immediateCodec, affinity })) output.push(frame);
 
-    expect(JSON.stringify(output).match(/wrapped:(?:function|text)-(?:old|latest)/g)).toEqual([
-      'wrapped:function-latest',
-      'wrapped:text-latest',
+    const event = output[0].type === 'event' && !('error' in output[0].event) ? output[0].event : undefined;
+    expect(event?.candidates?.[0].content.parts).toEqual([
+      { text: 'answer', thoughtSignature: 'wrapped:synthetic' },
+      { functionCall: { id: 'call', name: 'tool', args: { a: 1 } }, thoughtSignature: 'wrapped:function-latest' },
+      { functionCall: { id: 'call', name: 'tool', args: { b: 2 } } },
+      { text: 'explanation', thought: true, thoughtSignature: 'wrapped:text-latest' },
+      { text: 'continued', thought: true },
     ]);
   });
 
@@ -277,11 +284,19 @@ describe('Gemini affinity egress', () => {
     const output: ProtocolFrame<GeminiStreamEvent>[] = [];
     for await (const frame of wrapGeminiAffinityEgress(frames([
       eventFrame({
-        candidates: [{ index: 0, content: { role: 'model', parts: [{ thoughtSignature: 'natural' }] } }],
+        candidates: [withCandidateExtra(
+          { index: 0, content: { role: 'model', parts: [{ thoughtSignature: 'natural' }] } },
+          'vendor_text',
+          'early-',
+        )],
         modelVersion: 'model-v1',
       }),
       eventFrame({
-        candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'answer' }] }, finishReason: 'STOP' }],
+        candidates: [withCandidateExtra(
+          { index: 0, content: { role: 'model', parts: [{ text: 'answer' }] }, finishReason: 'STOP' },
+          'vendor_text',
+          'late',
+        )],
         responseId: 'response-1',
       }),
     ]), { codec: immediateCodec, affinity })) output.push(frame);
@@ -291,9 +306,31 @@ describe('Gemini affinity egress', () => {
       event: {
         modelVersion: 'model-v1',
         responseId: 'response-1',
-        candidates: [{ content: { parts: [{ text: 'answer', thoughtSignature: 'wrapped:natural' }] } }],
+        candidates: [{
+          vendor_text: 'early-late',
+          content: { parts: [{ text: 'answer', thoughtSignature: 'wrapped:natural' }] },
+        }],
       },
     });
+  });
+
+  test('merges candidate extension metadata backward from a suppressed trailer', async () => {
+    const output: ProtocolFrame<GeminiStreamEvent>[] = [];
+    for await (const frame of wrapGeminiAffinityEgress(frames([
+      eventFrame({ candidates: [withCandidateExtra(
+        { index: 0, content: { role: 'model', parts: [{ text: 'answer' }] } },
+        'vendor_text',
+        'early-',
+      )] }),
+      eventFrame({ candidates: [withCandidateExtra(
+        { index: 0, content: { role: 'model', parts: [{ thoughtSignature: 'natural' }] }, finishReason: 'STOP' },
+        'vendor_text',
+        'late',
+      )] }),
+    ]), { codec: immediateCodec, affinity })) output.push(frame);
+
+    expect(output).toHaveLength(1);
+    expect(output[0]).toMatchObject({ event: { candidates: [{ vendor_text: 'early-late' }] } });
   });
 
   test('keeps a leading signature with the different element that follows it', async () => {

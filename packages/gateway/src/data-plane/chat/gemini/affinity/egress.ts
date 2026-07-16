@@ -1,6 +1,6 @@
 import type { AffinityEgressOptions } from '../../shared/affinity/index.ts';
 import { captureExtras, eventFrame, type ProtocolFrame, USAGE_BILLING } from '@floway-dev/protocols/common';
-import type { GeminiCandidate, GeminiPart, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
+import type { GeminiCandidate, GeminiPart, GeminiResult, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 
 interface CandidateState {
   anchored: boolean;
@@ -60,15 +60,13 @@ const firstContentIndexOfLastElement = (parts: readonly GeminiPart[]): number | 
 const firstContentPart = (parts: readonly GeminiPart[]): GeminiPart | undefined =>
   parts.find(hasPartContent);
 
-const candidateByIndex = (event: GeminiStreamEvent | undefined, index: number): GeminiCandidate | undefined =>
-  event !== undefined && !('error' in event) ? event.candidates?.find(candidate => candidate.index === index) : undefined;
-
 const KNOWN_EVENT_KEYS = new Set(['candidates', 'usageMetadata', 'modelVersion', 'responseId']);
+const KNOWN_CANDIDATE_KEYS = new Set(['index', 'content', 'finishReason']);
 
 const mergeEventMetadata = (
-  earlier: Exclude<GeminiStreamEvent, { error: unknown }>,
-  later: Exclude<GeminiStreamEvent, { error: unknown }>,
-  target: Exclude<GeminiStreamEvent, { error: unknown }>,
+  earlier: GeminiResult,
+  later: GeminiResult,
+  target: GeminiResult,
 ): void => {
   const extras: Record<string, unknown> = {};
   captureExtras(earlier as unknown as Record<string, unknown>, KNOWN_EVENT_KEYS, extras);
@@ -85,7 +83,7 @@ const mergeEventMetadata = (
   });
 };
 
-const clearEventMetadata = (event: Exclude<GeminiStreamEvent, { error: unknown }>): void => {
+const clearEventMetadata = (event: GeminiResult): void => {
   for (const key of Object.keys(event)) if (key !== 'candidates') delete (event as Record<string, unknown>)[key];
 };
 
@@ -134,24 +132,28 @@ const normalizeElementSignatures = (candidate: GeminiCandidate): void => {
   removeEmptySignatureParts(candidate);
 };
 
-const transferCandidateMetadata = (current: GeminiCandidate, next: GeminiCandidate): void => {
-  const currentRecord = current as unknown as Record<string, unknown>;
-  const nextRecord = next as unknown as Record<string, unknown>;
-  for (const [key, value] of Object.entries(nextRecord)) {
-    if (key !== 'index' && key !== 'content' && key !== 'finishReason') currentRecord[key] = value;
+const mergeCandidateExtras = (
+  earlier: GeminiCandidate,
+  later: GeminiCandidate,
+  target: GeminiCandidate,
+): void => {
+  const extras: Record<string, unknown> = {};
+  captureExtras(earlier as unknown as Record<string, unknown>, KNOWN_CANDIDATE_KEYS, extras);
+  captureExtras(later as unknown as Record<string, unknown>, KNOWN_CANDIDATE_KEYS, extras);
+  for (const key of Object.keys(target)) {
+    if (!KNOWN_CANDIDATE_KEYS.has(key)) delete (target as unknown as Record<string, unknown>)[key];
   }
+  Object.assign(target, extras);
+};
+
+const transferCandidateMetadata = (current: GeminiCandidate, next: GeminiCandidate): void => {
+  mergeCandidateExtras(current, next, current);
   if (next.content.role !== undefined) current.content.role = next.content.role;
   if (next.finishReason !== undefined) current.finishReason = next.finishReason;
 };
 
 const transferCandidateMetadataForward = (current: GeminiCandidate, next: GeminiCandidate): void => {
-  const currentRecord = current as unknown as Record<string, unknown>;
-  const nextRecord = next as unknown as Record<string, unknown>;
-  for (const [key, value] of Object.entries(currentRecord)) {
-    if (key !== 'index' && key !== 'content' && key !== 'finishReason' && nextRecord[key] === undefined) {
-      nextRecord[key] = value;
-    }
-  }
+  mergeCandidateExtras(current, next, next);
   if (next.content.role === undefined && current.content.role !== undefined) next.content.role = current.content.role;
 };
 
@@ -230,23 +232,22 @@ const foldEmptyTerminalCandidate = (
 };
 
 const wrapEvent = async (
-  current: GeminiStreamEvent,
-  next: GeminiStreamEvent | undefined,
+  current: GeminiResult,
+  next: GeminiResult | undefined,
   states: Map<number, CandidateState>,
   suppressed: WeakSet<object>,
   options: AffinityEgressOptions,
   allowSynthetic: boolean,
-): Promise<GeminiStreamEvent> => {
-  if ('error' in current) return current;
+): Promise<GeminiResult> => {
   const currentHadCandidates = (current.candidates?.length ?? 0) > 0;
-  const nextHadCandidates = next !== undefined && !('error' in next) && (next.candidates?.length ?? 0) > 0;
+  const nextHadCandidates = (next?.candidates?.length ?? 0) > 0;
 
   for (const candidate of current.candidates ?? []) {
     const state = states.get(candidate.index) ?? { anchored: false, finished: false };
     if (state.finished) throw new Error(`Gemini candidate ${candidate.index} emitted data after its finishReason`);
     states.set(candidate.index, state);
 
-    const nextCandidate = candidateByIndex(next, candidate.index);
+    const nextCandidate = next?.candidates?.find(nextCandidate => nextCandidate.index === candidate.index);
     normalizeElementSignatures(candidate);
     if (nextCandidate !== undefined) normalizeElementSignatures(nextCandidate);
     relocateSignatureOnlyForward(candidate, nextCandidate);
@@ -301,19 +302,19 @@ const wrapEvent = async (
     if (candidate.finishReason !== undefined) state.finished = true;
   }
 
-  if (next !== undefined && !('error' in next) && next.candidates !== undefined) {
+  if (next?.candidates !== undefined) {
     next.candidates = next.candidates.filter(candidate => candidate.content.parts.length > 0 || candidate.finishReason !== undefined);
   }
   if (current.candidates !== undefined) {
     current.candidates = current.candidates.filter(candidate => candidate.content.parts.length > 0 || candidate.finishReason !== undefined);
   }
   const currentEmptied = currentHadCandidates && current.candidates?.length === 0;
-  const nextEmptied = nextHadCandidates && next !== undefined && !('error' in next) && next.candidates?.length === 0;
-  if (currentEmptied && next !== undefined && !('error' in next) && !nextEmptied) {
+  const nextEmptied = nextHadCandidates && next?.candidates?.length === 0;
+  if (currentEmptied && next !== undefined && !nextEmptied) {
     mergeEventMetadata(current, next, next);
     clearEventMetadata(current);
     suppressed.add(current);
-  } else if (nextEmptied && next !== undefined && !('error' in next) && !currentEmptied) {
+  } else if (nextEmptied && next !== undefined && !currentEmptied) {
     mergeEventMetadata(current, next, current);
     clearEventMetadata(next);
     suppressed.add(next);
@@ -321,12 +322,11 @@ const wrapEvent = async (
   return current;
 };
 
-const cloneGeminiEvent = (event: GeminiStreamEvent): GeminiStreamEvent => {
+const cloneGeminiEvent = (event: GeminiResult): GeminiResult => {
   const cloned = structuredClone(event);
-  if ('error' in event) return cloned;
   const billing = event.usageMetadata?.[USAGE_BILLING];
   if (billing === undefined) return cloned;
-  if ('error' in cloned || cloned.usageMetadata === undefined) {
+  if (cloned.usageMetadata === undefined) {
     throw new Error('Gemini usage billing metadata lost its usage container during affinity cloning');
   }
   cloned.usageMetadata[USAGE_BILLING] = structuredClone(billing);
@@ -339,7 +339,7 @@ export const wrapGeminiAffinityEgress = async function* (
 ): AsyncGenerator<ProtocolFrame<GeminiStreamEvent>> {
   const states = new Map<number, CandidateState>();
   const suppressed = new WeakSet<object>();
-  let pending: GeminiStreamEvent | undefined;
+  let pending: GeminiResult | undefined;
   const iterator = frames[Symbol.asyncIterator]();
   let sourceCompleted = false;
 
