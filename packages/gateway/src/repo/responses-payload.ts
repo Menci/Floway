@@ -37,7 +37,7 @@ type StoredResponsesPayloadJson =
 const INLINE_PAYLOAD_LIMIT_BYTES = 64 * 1024;
 // Shared creation-based horizon for item/snapshot deletion and spilled-file
 // expiry buckets. Lookups remain valid until scheduled cleanup removes state.
-export const RESPONSES_ITEM_PAYLOAD_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+export const RESPONSES_STATE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const HOUR_MS = 60 * 60 * 1000;
 
 // Root under which every stored-payload file lives, regardless of expiry hour.
@@ -70,7 +70,7 @@ export const serializeStoredResponsesPayload = async (
   // sha256/byteLength describe the file's actual bytes (gzipped) so file
   // integrity verification stays a plain hash-of-body check.
   const sha256 = await sha256Hex(gzippedBytes);
-  const expiresAt = createdAt + RESPONSES_ITEM_PAYLOAD_TTL_MS;
+  const expiresAt = createdAt + RESPONSES_STATE_TTL_MS;
   const apiKeyHashPrefix = (await sha256Hex(encoder.encode(apiKeyId))).slice(0, 16);
   const key = `${responsesItemsExpiryBucketPrefix(expiresAt)}${apiKeyHashPrefix}/${id}/${sha256}.gz`;
   await getFileProvider().put(key, gzippedBytes);

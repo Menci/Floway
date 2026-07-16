@@ -180,9 +180,9 @@ API-key-scoped complete items and snapshots; translated inner Responses calls
 remain request-local and only native Responses sources construct a store.
 
 HTTP `store: false` writes no state. WebSocket `store: false` uses session memory
-for same-socket references. Durable and session items share the 30-day creation
-lifetime. Hydration, ID rewrite, commit ordering, and compaction invariants live
-beside the implementation and its tests.
+for same-socket references and disappears with the socket. Durable items and
+snapshots use a 30-day creation lifetime. Hydration, ID rewrite, commit
+ordering, and compaction invariants live beside the implementation and tests.
 
 ## Verification
 
