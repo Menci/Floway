@@ -79,6 +79,9 @@ type MessagesContentBlock = MessagesContentBlockStartEvent['content_block'];
 type MessagesContentDelta = MessagesContentBlockDeltaEvent['delta'];
 
 type OpenContentBlock = 'text' | 'thinking' | 'tool_use';
+type DeferredSegment =
+  | { type: 'text'; text: string }
+  | { type: 'reasoning'; text: string; opaque?: string };
 
 interface ChatCompletionsToMessagesStreamState {
   messageStartSent: boolean;
@@ -93,7 +96,6 @@ interface ChatCompletionsToMessagesStreamState {
     }
   >;
   pendingReasoningOpaque?: string;
-  deferredReasoningText?: string;
   // Some OpenAI-shaped upstreams (notably gpt-4o-2024-05-13) interleave a
   // `content` delta in the middle of a tool_call's argument fragments, and
   // some chunk deltas carry BOTH `content` and `tool_calls` arrays in one
@@ -105,7 +107,7 @@ interface ChatCompletionsToMessagesStreamState {
   // https://github.com/caozhiyuan/copilot-api/commit/51675f73de7983093c857d68ddd61bcd09f1806a
   // and the broader gating that includes same-chunk content+tool_calls:
   // https://github.com/caozhiyuan/copilot-api/blob/287d2d330c299bbdf3ed213a1bc05b1739aecf03/src/routes/messages/stream-translation.ts#L232-L243
-  deferredContent?: string;
+  deferredSegments: DeferredSegment[];
   pendingFinishReason?: ChatCompletionsStreamEvent['choices'][0]['finish_reason'];
   pendingUsage?: ChatCompletionsStreamEvent['usage'];
   // Captured from any chunk's service_tier for speed pass-through.
@@ -153,12 +155,28 @@ const emitPendingOpaqueReasoningBlock = (state: ChatCompletionsToMessagesStreamS
   state.pendingReasoningOpaque = undefined;
 };
 
+const appendDeferredText = (state: ChatCompletionsToMessagesStreamState, text: string): void => {
+  const previous = state.deferredSegments.at(-1);
+  if (previous?.type === 'text') previous.text += text;
+  else state.deferredSegments.push({ type: 'text', text });
+};
+
+const appendDeferredReasoning = (state: ChatCompletionsToMessagesStreamState, text: string | undefined, opaque: string | undefined): void => {
+  const previous = state.deferredSegments.at(-1);
+  const segment = previous?.type === 'reasoning'
+    ? previous
+    : { type: 'reasoning' as const, text: '' };
+  if (segment !== previous) state.deferredSegments.push(segment);
+  if (text !== undefined) segment.text += text;
+  if (opaque !== undefined) segment.opaque = opaque;
+};
+
 const emitContentDelta = (content: string, deferUntilAfterTools: boolean, state: ChatCompletionsToMessagesStreamState, events: MessagesStreamEvent[]): void => {
   // Chat tool drafts are buffered until finish. Text sharing or following the
   // draft run follows the serialized Messages tool blocks.
   // https://github.com/caozhiyuan/copilot-api/blob/287d2d330c299bbdf3ed213a1bc05b1739aecf03/src/routes/messages/stream-translation.ts#L232-L243
   if (deferUntilAfterTools) {
-    state.deferredContent = (state.deferredContent ?? '') + content;
+    appendDeferredText(state, content);
     return;
   }
 
@@ -172,35 +190,25 @@ const emitContentDelta = (content: string, deferUntilAfterTools: boolean, state:
   });
 };
 
-const flushDeferredContent = (state: ChatCompletionsToMessagesStreamState, events: MessagesStreamEvent[]): void => {
-  if (state.deferredContent === undefined) return;
-  if (state.openBlock !== undefined) throw new Error('Deferred Chat content reached flush with an open Messages block');
-
-  const text = state.deferredContent;
-  state.deferredContent = undefined;
-  startContentBlock(state, events, 'text', { type: 'text', text: '' });
-  emitContentBlockDelta(state, events, { type: 'text_delta', text });
-  closeCurrentBlock(state, events);
-};
-
 const handleReasoningDelta = (delta: ChatCompletionsStreamDelta, state: ChatCompletionsToMessagesStreamState, events: MessagesStreamEvent[]): void => {
+  const reasoningOpaque = delta.reasoning_opaque === null ? undefined : delta.reasoning_opaque;
+  if (Object.keys(state.toolCalls).length > 0 && (delta.reasoning_text || reasoningOpaque !== undefined)) {
+    appendDeferredReasoning(state, delta.reasoning_text ?? undefined, reasoningOpaque);
+    return;
+  }
   if (delta.reasoning_text) {
-    if (Object.keys(state.toolCalls).length > 0) {
-      state.deferredReasoningText = `${state.deferredReasoningText ?? ''}${delta.reasoning_text}`;
-    } else {
-      if (state.openBlock !== 'thinking') {
-        closeCurrentBlock(state, events);
-        startContentBlock(state, events, 'thinking', {
-          type: 'thinking',
-          thinking: '',
-        });
-      }
-
-      emitContentBlockDelta(state, events, {
-        type: 'thinking_delta',
-        thinking: delta.reasoning_text,
+    if (state.openBlock !== 'thinking') {
+      closeCurrentBlock(state, events);
+      startContentBlock(state, events, 'thinking', {
+        type: 'thinking',
+        thinking: '',
       });
     }
+
+    emitContentBlockDelta(state, events, {
+      type: 'thinking_delta',
+      thinking: delta.reasoning_text,
+    });
   }
 
   if (delta.reasoning_opaque === undefined || delta.reasoning_opaque === null) {
@@ -251,11 +259,31 @@ const flushToolCalls = (state: ChatCompletionsToMessagesStreamState, events: Mes
   state.toolCalls = {};
 };
 
-const flushDeferredReasoning = (state: ChatCompletionsToMessagesStreamState, events: MessagesStreamEvent[]): void => {
-  if (state.deferredReasoningText === undefined) return;
-  startContentBlock(state, events, 'thinking', { type: 'thinking', thinking: '' });
-  emitContentBlockDelta(state, events, { type: 'thinking_delta', thinking: state.deferredReasoningText });
-  state.deferredReasoningText = undefined;
+const flushDeferredSegments = (state: ChatCompletionsToMessagesStreamState, events: MessagesStreamEvent[]): void => {
+  if (state.openBlock !== undefined) throw new Error('Deferred Chat segments reached flush with an open Messages block');
+  for (const segment of state.deferredSegments) {
+    if (segment.type === 'text') {
+      startContentBlock(state, events, 'text', { type: 'text', text: '' });
+      emitContentBlockDelta(state, events, { type: 'text_delta', text: segment.text });
+      closeCurrentBlock(state, events);
+      continue;
+    }
+    if (segment.text.length > 0) {
+      startContentBlock(state, events, 'thinking', { type: 'thinking', thinking: '' });
+      emitContentBlockDelta(state, events, { type: 'thinking_delta', thinking: segment.text });
+      if (segment.opaque !== undefined) {
+        emitContentBlockDelta(state, events, { type: 'signature_delta', signature: segment.opaque });
+      }
+      closeCurrentBlock(state, events);
+    } else if (segment.opaque !== undefined) {
+      events.push(
+        { type: 'content_block_start', index: state.contentBlockIndex, content_block: { type: 'redacted_thinking', data: segment.opaque } },
+        { type: 'content_block_stop', index: state.contentBlockIndex },
+      );
+      state.contentBlockIndex++;
+    }
+  }
+  state.deferredSegments = [];
 };
 
 const flushPendingReasoningAndClose = (state: ChatCompletionsToMessagesStreamState, events: MessagesStreamEvent[]): void => {
@@ -278,9 +306,8 @@ const handleFinishReason = (
   events: MessagesStreamEvent[],
 ): void => {
   flushToolCalls(state, events);
-  flushDeferredReasoning(state, events);
+  flushDeferredSegments(state, events);
   flushPendingReasoningAndClose(state, events);
-  flushDeferredContent(state, events);
 
   state.pendingFinishReason = finishReason;
   if (chunk.usage) state.pendingUsage = chunk.usage;
@@ -315,6 +342,7 @@ export const createChatCompletionsToMessagesStreamState = (): ChatCompletionsToM
   messageStartSent: false,
   contentBlockIndex: 0,
   toolCalls: {},
+  deferredSegments: [],
 });
 
 export const translateChatCompletionsChunkToMessagesEvents = (chunk: ChatCompletionsStreamEvent, state: ChatCompletionsToMessagesStreamState): MessagesStreamEvent[] => {
@@ -389,9 +417,8 @@ export const translateChatCompletionsChunkToMessagesEvents = (chunk: ChatComplet
 export const flushChatCompletionsToMessagesEvents = (state: ChatCompletionsToMessagesStreamState): MessagesStreamEvent[] => {
   const events: MessagesStreamEvent[] = [];
   flushToolCalls(state, events);
-  flushDeferredReasoning(state, events);
+  flushDeferredSegments(state, events);
   flushPendingReasoningAndClose(state, events);
-  flushDeferredContent(state, events);
   emitFinalMessageIfReady(state, events);
   return events;
 };

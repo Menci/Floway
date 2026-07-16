@@ -230,6 +230,33 @@ test('accumulates a tool identity split across chunks', () => {
   });
 });
 
+test('preserves deferred text and reasoning segment order after a tool run', () => {
+  const state = createChatCompletionsToMessagesStreamState();
+  const events = [
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({
+      role: 'assistant',
+      tool_calls: [{ index: 0, id: 'call_0', type: 'function', function: { name: 'tool', arguments: '{}' } }],
+    }), state),
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({ content: 'before' }), state),
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({ reasoning_text: 'trace', reasoning_opaque: 'sig' }), state),
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({ content: 'after' }), state),
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({}, 'tool_calls'), state),
+  ];
+
+  const starts = events.filter(event => event.type === 'content_block_start');
+  expect(starts).toMatchObject([
+    { content_block: { type: 'tool_use' } },
+    { content_block: { type: 'text', text: '' } },
+    { content_block: { type: 'thinking', thinking: '' } },
+    { content_block: { type: 'text', text: '' } },
+  ]);
+  expect(events).toContainEqual({
+    type: 'content_block_delta',
+    index: 2,
+    delta: { type: 'signature_delta', signature: 'sig' },
+  });
+});
+
 test('translateChatCompletionsChunkToMessagesEvents keeps text and opaque in one thinking block', () => {
   const state = createChatCompletionsToMessagesStreamState();
   const events = [
