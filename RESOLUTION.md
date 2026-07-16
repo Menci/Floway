@@ -152,10 +152,11 @@ upstream ID
 + optional alias-rule value (`undefined` differs from `{}`)
 ```
 
-Preference and opaque restoration use exact rule structure, matching candidate
-deduplication. Force evidence filters only by upstream and canonical model;
-different rule variants on that target remain viable, with an available exact
-preference ordered first.
+Ordinary preference and discardable opaque restoration use exact rule
+structure, matching candidate deduplication. Force evidence and non-discardable
+state restoration compare only upstream and canonical model. Different rule
+variants on that target remain viable, with an available exact preference
+ordered first.
 
 ## Client-carried affinity routing
 
@@ -174,26 +175,26 @@ Affinity has two strengths:
   target that is currently available is moved to the front. If it is absent,
   normal candidate order is retained.
 - `force` represents state that cannot be translated or discarded, including
-  Responses compaction and programmatic state. One forcing identity filters the
-  list to exact matches. An unavailable force or multiple incompatible forces
+  Responses compaction and programmatic state. One forcing identity retains
+  every candidate with the required upstream and canonical model; it does not
+  filter alias rules. An unavailable force or multiple incompatible forces
   returns `routing-unavailable` before any upstream call.
 
-Egress has two independent responsibilities. The inner carrier transform wraps
-every natural upstream blob. The outer turn transform ensures the first logical
-assistant element has a carrier: it augments that element when possible or
-inserts a protocol-native prefix element otherwise. Responses program and
-compaction state is recognized when the client carries the result back, at
-which point ingress promotes the associated target to force.
+Responses program and compaction state is recognized when the client carries
+the result back, at which point ingress promotes the associated upstream/model
+to force. Envelope framing and per-protocol placement are documented in
+[AFFINITY.md](./AFFINITY.md).
 
 Affinity never invents candidates and never bypasses the user's upstream
 scope. It only filters or reorders viable candidates returned by ordinary
 resolution.
 
 Ingress produces a pure candidate payload factory. For every attempt it clones
-the original source payload, restores owned opaque values only for an exact
-candidate match, removes incompatible owned values, and leaves foreign values
-byte-for-byte. This per-attempt clone is the isolation boundary that prevents a
-failed candidate's rewrites from leaking into fallback.
+the original source payload, restores discardable owned values for an exact
+optional-rules match and non-discardable force state for an upstream/model
+match, removes incompatible owned values, and leaves foreign values
+byte-for-byte. This per-attempt clone prevents a failed candidate's rewrites
+from leaking into fallback.
 
 Responses has one additional ordering requirement. The store first expands
 `previous_response_id` and hydrates every gateway item ID into its complete

@@ -169,8 +169,8 @@ current protocol structure, never serialized in the envelope.
 Every API key has a hidden `serverSecret`; normal CRUD never exposes it and
 admin data transfer preserves it. Clients carrying Floway envelopes are
 expected to continue through the same deployment and API key. Foreign values
-pass unchanged for cascaded gateways. Detailed wire, placement, and fallback
-semantics are documented in `TRANSLATION.md` and `RESOLUTION.md`.
+pass unchanged for cascaded gateways. Wire and placement semantics live in
+`AFFINITY.md`; candidate ordering lives in `RESOLUTION.md`.
 
 ## Stateful Responses
 
@@ -181,8 +181,8 @@ remain request-local and only native Responses sources construct a store.
 
 HTTP `store: false` writes no state. WebSocket `store: false` uses session memory
 for same-socket references. Durable and session items share the 30-day creation
-lifetime. Detailed hydration, ID rewrite, commit ordering, and compaction
-semantics are documented in `TRANSLATION.md`.
+lifetime. Hydration, ID rewrite, commit ordering, and compaction invariants live
+beside the implementation and its tests.
 
 ## Verification
 

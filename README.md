@@ -121,48 +121,17 @@ history remains decryptable after a restore. Normal API-key routes and the API
 Keys dashboard never expose this secret. Import only accepts the exact current
 format version; re-export before migrating a deployment.
 
-## Client-carried affinity
+## Routing and state
 
-Aliases and shared model names may resolve to different upstream accounts,
-canonical model IDs, or alias-rule variants. Floway adds authenticated target
-metadata to client-carried opaque reasoning fields so later turns can prefer,
-or when required force, the target that created their state.
+Aliases and shared names may resolve to several upstream/model bindings. Floway
+uses client-carried opaque fields to preserve affinity across turns; those
+payloads are expected to return through the same deployment and API key. See
+[AFFINITY.md](./AFFINITY.md) for the wire contract and
+[RESOLUTION.md](./RESOLUTION.md) for candidate ordering.
 
-Clients must send the returned structured history back through the same Floway
-deployment and API key. Replaying Floway-modified payloads directly to an
-upstream is not supported. Foreign opaque values pass through unchanged, so
-Floway deployments can be cascaded.
-
-Affinity does not require a server-side conversation database. It relies on
-clients preserving protocol-native opaque fields; high-level Chat Completions
-clients that discard unknown fields cannot provide reliable affinity. Gemini
-streaming deliberately carries one upstream-event of latency to keep signatures
-attached to content-bearing parts. Detailed wire and routing semantics live in
-[TRANSLATION.md](./TRANSLATION.md) and [RESOLUTION.md](./RESOLUTION.md).
-
-## Stateful Responses
-
-Responses state and affinity are separate systems. Affinity is carried by the
-client; the Responses store only expands and saves Responses protocol state.
-
-For native HTTP Responses requests, `previous_response_id` and gateway item
-IDs are hydrated into complete stored items before affinity is decoded. On the
-response path, source-protocol affinity is added first; the complete
-client-visible item is then assigned a gateway ID and stored, and the snapshot
-is committed before its successful terminal event is sent.
-
-HTTP `store: false` performs no item or snapshot writes. WebSocket
-`store: false` keeps complete items and snapshots only in the open session, so
-same-socket `previous_response_id` continues to work without durable writes.
-With storage enabled, items and snapshots are API-key scoped and retained for
-30 days from creation. Large complete items are compressed and may spill to
-the configured file store; the scheduled maintenance job removes both rows and
-payload files on the same creation-based lifetime.
-
-Compaction output replaces snapshot history. Ordinary generation appends the
-previous snapshot, this turn's new input, and this turn's output. Input content
-hashes deduplicate repeated complete items, but there is no separate routing
-record: stored rows always contain the full replay payload.
+Native Responses state is independent from affinity. Complete items and
+snapshots are API-key scoped and retained for 30 days when storage is enabled;
+`store: false` is write-free over HTTP and session-local over WebSocket.
 
 ## Server tools
 
