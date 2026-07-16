@@ -3,7 +3,8 @@ import { createTemporaryResponsesItemId, hashResponsesItemBinding } from '../ite
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesOutputItem, ResponsesOutputReasoning, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
-const carrierDomain = (itemType: string, slot: string): string => `responses.${itemType}.${slot}`;
+const carrierDomain = (itemType: string, slot: string): string =>
+  `responses.${itemType === 'compaction_summary' ? 'compaction' : itemType}.${slot}`;
 
 const itemAffinity = (base: AffinityTarget, item: ResponsesOutputItem): AffinityTarget => ({
   ...base,

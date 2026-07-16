@@ -10,7 +10,8 @@ interface ResponsesBlobLocation {
   readonly decoded: DecodedAffinityBlob;
 }
 
-const carrierDomain = (itemType: string, slot: string): string => `responses.${itemType}.${slot}`;
+const carrierDomain = (itemType: string, slot: string): string =>
+  `responses.${itemType === 'compaction_summary' ? 'compaction' : itemType}.${slot}`;
 
 type OwnedResponsesBlobLocation = ResponsesBlobLocation & {
   readonly decoded: Extract<DecodedAffinityBlob, { kind: 'owned' }>;

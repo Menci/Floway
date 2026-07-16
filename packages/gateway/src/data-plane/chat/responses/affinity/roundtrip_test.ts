@@ -151,3 +151,52 @@ test('agent-message natural and synthetic nested carriers round-trip', async () 
   const prepared = await prepareResponsesAffinity({ model: 'model-a', input: clientResponse.output as unknown as ResponsesInputItem[] }, codec);
   expect(prepared.payloadForCandidate(candidate).input).toEqual([empty, natural]);
 });
+
+test('compaction_summary carrier authenticates after a client canonicalizes its alias', async () => {
+  const base = stubModelCandidate();
+  const candidate = stubModelCandidate({
+    provider: { ...base.provider, upstream: 'upstream-a' },
+    model: { id: 'model-a' },
+  });
+  const codec = new AffinityCodec('22'.repeat(32));
+  const summary = {
+    type: 'compaction_summary',
+    id: 'cmp_upstream',
+    encrypted_content: 'opaque',
+  } as unknown as ResponsesResult['output'][number];
+  const response: ResponsesResult = {
+    id: 'resp_upstream',
+    object: 'response',
+    model: 'model-a',
+    status: 'completed',
+    output: [summary],
+    error: null,
+    incomplete_details: null,
+  };
+  const source = async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
+    yield eventFrame({ type: 'response.completed', response });
+  };
+  let wrapped: string | undefined;
+  for await (const frame of wrapResponsesAffinityEgress(source(), {
+    codec,
+    affinity: { upstreamId: candidate.provider.upstream, modelId: candidate.model.id },
+  })) {
+    if (frame.type === 'event' && frame.event.type === 'response.completed') {
+      wrapped = (frame.event.response.output[0] as { encrypted_content?: string }).encrypted_content;
+    }
+  }
+  if (wrapped === undefined) throw new Error('Expected wrapped compaction summary');
+
+  const canonical = {
+    type: 'compaction',
+    id: 'cmp_public',
+    encrypted_content: wrapped,
+  } as unknown as ResponsesInputItem;
+  const prepared = await prepareResponsesAffinity({ model: 'model-a', input: [canonical] }, codec);
+  expect(prepared.routingEvidence.map(evidence => evidence.mode)).toEqual(['prefer', 'force']);
+  expect(prepared.payloadForCandidate(candidate).input[0]).toMatchObject({
+    type: 'compaction',
+    id: 'cmp_upstream',
+    encrypted_content: 'opaque',
+  });
+});
