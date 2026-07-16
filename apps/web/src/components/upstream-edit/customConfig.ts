@@ -136,6 +136,17 @@ export const buildOllamaConfig = (draft: OllamaDraft): Record<string, unknown> =
   return config;
 };
 
+// Wire-shape projection of AzureDraft. Azure has no list-models path (the
+// catalog is operator-authored), so this only feeds save().
+export const buildAzureConfig = (draft: AzureDraft): Record<string, unknown> => {
+  const config: Record<string, unknown> = {
+    endpoint: draft.endpoint.trim(),
+    models: draft.models,
+  };
+  if (draft.apiKey.trim()) config.apiKey = draft.apiKey.trim();
+  return config;
+};
+
 // Wire-shape projection for POST /api/upstreams/list-models. Consolidates the
 // per-kind builder dispatch and the edit-mode stored-secret fallback so the
 // preview probes the same shape save() would write. Matches save()'s

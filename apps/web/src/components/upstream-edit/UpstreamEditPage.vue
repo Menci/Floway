@@ -13,6 +13,7 @@ import {
   blankAzureDraft,
   blankCustomDraft,
   blankOllamaDraft,
+  buildAzureConfig,
   buildCustomConfigCore,
   buildListModelsPreviewConfig,
   buildOllamaConfig,
@@ -280,15 +281,6 @@ const buildCustomConfig = () => {
   return config;
 };
 
-const buildAzureConfig = () => {
-  const config: Record<string, unknown> = {
-    endpoint: azureDraft.value.endpoint.trim(),
-    models: azureDraft.value.models,
-  };
-  if (azureDraft.value.apiKey.trim()) config.apiKey = azureDraft.value.apiKey.trim();
-  return config;
-};
-
 // Editable providers (custom/azure/ollama) rebuild the config from the
 // per-provider form draft; OAuth providers hand back the credential slice
 // their wizards populated in draft.config / draft.state. In edit state the
@@ -296,7 +288,7 @@ const buildAzureConfig = () => {
 // pass here is ignored server-side — it's still safe to include.
 const buildConfigForSave = (): unknown => {
   if (draft.value.kind === 'custom') return buildCustomConfig();
-  if (draft.value.kind === 'azure') return buildAzureConfig();
+  if (draft.value.kind === 'azure') return buildAzureConfig(azureDraft.value);
   if (draft.value.kind === 'ollama') return buildOllamaConfig(ollamaDraft.value);
   return draft.value.config;
 };
