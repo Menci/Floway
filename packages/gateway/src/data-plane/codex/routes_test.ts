@@ -171,6 +171,35 @@ interface CodexModelsResponse {
 }
 
 describe('codex 1p namespace', () => {
+  describe('standalone search', () => {
+    it('owns the namespaced alpha-search path', async () => {
+      const { apiKey } = await setupAppTest();
+      const app = buildCodexApp();
+
+      const response = await app.request('/azure-api.codex/alpha/search', {
+        method: 'POST',
+        body: JSON.stringify({ commands: {} }),
+        headers: { authorization: `Bearer ${apiKey.key}`, 'content-type': 'application/json' },
+      });
+
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({ output: expect.stringContaining('No web search commands were provided') });
+    });
+
+    it.each(['/alpha/search', '/v1/alpha/search'])('does not mount the general alias %s', async path => {
+      const { apiKey } = await setupAppTest();
+      const app = buildCodexApp();
+
+      const response = await app.request(path, {
+        method: 'POST',
+        body: JSON.stringify({ commands: {} }),
+        headers: { authorization: `Bearer ${apiKey.key}`, 'content-type': 'application/json' },
+      });
+
+      expect(response.status).toBe(404);
+    });
+  });
+
   describe('auth', () => {
     it('accepts a Floway api key supplied as `Authorization: Bearer <key>`', async () => {
       const { apiKey } = await setupAppTest();

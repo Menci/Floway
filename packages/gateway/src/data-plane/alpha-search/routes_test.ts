@@ -66,7 +66,6 @@ const buildAlphaSearchApp = () => {
 };
 
 const SEARCH_PATHS = [
-  '/azure-api.codex/alpha/search',
   '/alpha/search',
   '/v1/alpha/search',
 ] as const;

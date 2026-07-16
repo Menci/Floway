@@ -49,6 +49,7 @@ import {
 } from './chatgpt-backend.ts';
 import { codexModels } from './models.ts';
 import type { AuthVars } from '../../middleware/auth.ts';
+import { mountAlphaSearchRoute } from '../alpha-search/routes.ts';
 import { responsesHttp } from '../chat/responses/http.ts';
 import { responsesWebSocket } from '../chat/responses/websocket.ts';
 import { imagesEdits, imagesGenerations } from '../images/serve.ts';
@@ -56,6 +57,10 @@ import { imagesEdits, imagesGenerations } from '../images/serve.ts';
 const CODEX_BASE_PATH = '/azure-api.codex';
 
 export const mountCodexRoutes = (app: Hono<{ Variables: AuthVars }>) => {
+  // Codex appends `alpha/search` to this special provider base. Keep the path
+  // owned by this namespace while reusing the general data-plane handler.
+  // https://github.com/openai/codex/blob/2e1607ee2fa8099a233df7437adee5f16a741905/codex-rs/codex-api/src/endpoint/search.rs#L31-L47
+  mountAlphaSearchRoute(app, `${CODEX_BASE_PATH}/alpha/search`);
   app.post(`${CODEX_BASE_PATH}/responses`, responsesHttp.generate);
   app.post(`${CODEX_BASE_PATH}/responses/compact`, responsesHttp.compact);
   app.get(`${CODEX_BASE_PATH}/responses`, responsesWebSocket);

@@ -3,8 +3,8 @@
 // `{ encrypted_output?, output, results? }`.
 // https://github.com/openai/codex/blob/2e1607ee2fa8099a233df7437adee5f16a741905/codex-rs/codex-api/src/search.rs#L8-L29
 // https://github.com/openai/codex/blob/2e1607ee2fa8099a233df7437adee5f16a741905/codex-rs/codex-api/src/search.rs#L297-L305
-// Codex appends `alpha/search` to its model-provider base. The aliases below
-// cover every base convention generated or accepted by Floway.
+// Clients append `alpha/search` to an OpenAI-compatible provider base. The
+// aliases below cover Floway's general root and `/v1` base conventions.
 // https://github.com/openai/codex/blob/2e1607ee2fa8099a233df7437adee5f16a741905/codex-rs/codex-api/src/endpoint/search.rs#L31-L47
 //
 // In the default mode, Floway executes supported commands through the general
@@ -130,13 +130,16 @@ const alphaSearch = async (c: CtxWithJson<typeof alphaSearchRequestSchema>): Pro
 };
 
 const ALPHA_SEARCH_PATHS = [
-  '/azure-api.codex/alpha/search',
   '/alpha/search',
   '/v1/alpha/search',
 ] as const;
 
+export const mountAlphaSearchRoute = (app: Hono<{ Variables: AuthVars }>, path: string) => {
+  app.post(path, zValidator('json', alphaSearchRequestSchema), alphaSearch);
+};
+
 export const mountAlphaSearchRoutes = (app: Hono<{ Variables: AuthVars }>) => {
   for (const path of ALPHA_SEARCH_PATHS) {
-    app.post(path, zValidator('json', alphaSearchRequestSchema), alphaSearch);
+    mountAlphaSearchRoute(app, path);
   }
 };
