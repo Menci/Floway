@@ -1,9 +1,9 @@
 import { Hono } from 'hono';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { mountCodexRoutes } from '../../../codex/routes.ts';
 import { type AuthVars, authMiddleware } from '../../../../middleware/auth.ts';
 import { buildCustomUpstreamRecord, setupAppTest } from '../../../../test-helpers.ts';
+import { mountCodexRoutes } from '../../../codex/routes.ts';
 import { resolveConfiguredWebSearchProvider } from '../provider.ts';
 import type { SearchConfig, WebSearchFetchPageRequest, WebSearchFetchPageResult, WebSearchProvider, WebSearchProviderRequest, WebSearchProviderResult } from '../types.ts';
 import { withMockedFetch } from '@floway-dev/test-utils';
