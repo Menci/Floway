@@ -4,7 +4,6 @@ import { chatCompletionsServe } from './serve.ts';
 import type { AuthedContext } from '../../../middleware/auth.ts';
 import { backgroundSchedulerFromContext } from '../../../runtime/background.ts';
 import { inboundHeadersForUpstream } from '../../shared/inbound-headers.ts';
-import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import { createChatGatewayCtxFromHono, createGatewayCtxFromHono, finalizeGatewayResponse, type ChatGatewayCtx, type GatewayCtx } from '../shared/gateway-ctx.ts';
 import { readRequestBody, takeRequestBody, type RequestBody } from '../shared/request-body.ts';
 import { providerModelsUnavailableResponse } from '../shared/upstream-models-error.ts';
@@ -24,12 +23,7 @@ import { TranslatorInputError } from '@floway-dev/translate';
 // for pre-parse failures where no payload was available to read model from.
 const respondWithInternalError = async (c: AuthedContext, error: unknown, requestBody: RequestBody, ctx?: GatewayCtx): Promise<Response> => {
   const verbatim = providerModelsUnavailableResponse(error);
-  if (verbatim !== null) {
-    if (ctx === undefined) return verbatim;
-    recordFailedRequest(ctx, ctx.attempt.telemetry);
-    ctx.dump?.error('upstream');
-    return finalizeGatewayResponse(ctx, verbatim);
-  }
+  if (verbatim !== null) return verbatim;
   const effectiveCtx = ctx ?? createGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
   const result = internalErrorResult(502, toInternalDebugError(error), effectiveCtx.attempt.telemetry);
   const { response } = await respondChatCompletions(c, result, false, false, effectiveCtx);
