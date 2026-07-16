@@ -1,3 +1,8 @@
+-- Pre-0057 rows keep their complete payload and fully backed snapshot graph,
+-- but their upstream_id/upstream_item_id affinity cannot be converted into the
+-- new client-carried envelope: the old schema never stored canonical model or
+-- alias rules, and SQL cannot perform the per-key AEAD transform. Preserved
+-- history therefore resumes through normal routing with no legacy affinity.
 CREATE TABLE responses_items_new (
   id TEXT NOT NULL,
   api_key_id TEXT NOT NULL,

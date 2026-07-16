@@ -56,7 +56,7 @@ describe.each(factories)('%s Responses state repo', (_name, createRepo) => {
   });
 });
 
-test('migration 0057 preserves every usable full payload and only replayable snapshots', async () => {
+test('migration 0057 preserves usable payloads and snapshots but drops legacy affinity columns', async () => {
   const SQL = await initSqlJs();
   const db = new SQL.Database();
   try {
@@ -69,13 +69,13 @@ test('migration 0057 preserves every usable full payload and only replayable sna
     const fileDescriptor = JSON.stringify({ version: 1, storage: 'file', key: 'responses-items/v1/expires/x', sha256: 'abc', byteLength: 3 });
     const legacyInline = JSON.stringify({ version: 1, storage: 'inline', payload: { item: { type: 'reasoning', id: 'rs_legacy' } } });
     const insertItem = `INSERT INTO responses_items
-      (id, api_key_id, item_type, payload_json, content_hash, created_at)
-      VALUES (?, ?, ?, ?, ?, ?)`;
-    db.run(insertItem, ['msg_gzip', 'key-a', 'message', gzipDescriptor, 'hash-a', 1_000]);
-    db.run(insertItem, ['rs_file', 'key-a', 'reasoning', fileDescriptor, null, 2_000]);
-    db.run(insertItem, ['rs_legacy', 'key-a', 'reasoning', legacyInline, null, 3_000]);
-    db.run(insertItem, ['msg_unscoped', null, 'message', gzipDescriptor, 'hash-u', 4_000]);
-    db.run(insertItem, ['msg_metadata', 'key-a', 'message', null, 'hash-m', 5_000]);
+      (id, api_key_id, upstream_id, upstream_item_id, item_type, payload_json, content_hash, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
+    db.run(insertItem, ['msg_gzip', 'key-a', 'upstream-a', 'msg_upstream', 'message', gzipDescriptor, 'hash-a', 1_000]);
+    db.run(insertItem, ['rs_file', 'key-a', 'upstream-a', 'rs_upstream', 'reasoning', fileDescriptor, null, 2_000]);
+    db.run(insertItem, ['rs_legacy', 'key-a', 'upstream-a', 'rs_legacy_upstream', 'reasoning', legacyInline, null, 3_000]);
+    db.run(insertItem, ['msg_unscoped', null, null, null, 'message', gzipDescriptor, 'hash-u', 4_000]);
+    db.run(insertItem, ['msg_metadata', 'key-a', 'upstream-a', 'msg_metadata_upstream', 'message', null, 'hash-m', 5_000]);
 
     const insertSnapshot = `INSERT INTO responses_snapshots
       (id, api_key_id, item_ids_json, created_at, refreshed_at)
@@ -99,6 +99,9 @@ test('migration 0057 preserves every usable full payload and only replayable sna
     expect(snapshotResult?.values).toEqual([
       ['resp_valid', 'key-a', '["msg_gzip","rs_file","rs_legacy"]', 6_000],
     ]);
+    const columns = db.exec('PRAGMA table_info(responses_items)')[0]?.values.map(row => row[1]);
+    expect(columns).not.toContain('upstream_id');
+    expect(columns).not.toContain('upstream_item_id');
   } finally {
     db.close();
   }
