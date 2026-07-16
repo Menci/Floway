@@ -175,6 +175,42 @@ test('SQL refresh cleans a replacement spill when the row disappears before upda
   expect(await repo.responsesItems.lookupMany('key-a', [item.id])).toEqual([]);
 });
 
+test('SQL stale refresh cannot restore a superseded spill descriptor', async () => {
+  const files = new MemoryFileProvider();
+  initFileProvider(files);
+  const base = await createSqliteTestDb();
+  const item = spilledItem('msg_refresh_cas', 'key-a', 1_000);
+  await new SqlRepo(base).responsesItems.insertMany([item]);
+  let releaseStale: (() => void) | undefined;
+  const staleGate = new Promise<void>(resolve => { releaseStale = resolve; });
+  let markStaleStarted: (() => void) | undefined;
+  const staleStarted = new Promise<void>(resolve => { markStaleStarted = resolve; });
+  let batchNumber = 0;
+  const repo = new SqlRepo(sqlDatabaseWithBatch(base, async statements => {
+    batchNumber += 1;
+    if (batchNumber === 1) {
+      markStaleStarted?.();
+      await staleGate;
+    }
+    const results = [];
+    for (const statement of statements) results.push(await statement.run());
+    return results;
+  }));
+  const staleCreatedAt = 1_000 + 10 * 60 * 1000;
+  const currentCreatedAt = 1_000 + 2 * 60 * 60 * 1000;
+
+  const staleRefresh = repo.responsesItems.refreshMany([item], staleCreatedAt);
+  await staleStarted;
+  await repo.responsesItems.refreshMany([item], currentCreatedAt);
+  releaseStale?.();
+  await expect(staleRefresh).rejects.toThrow('Unexpected Responses item refresh count');
+
+  const [persisted] = await repo.responsesItems.lookupMany('key-a', [item.id]);
+  expect(persisted.createdAt).toBe(currentCreatedAt);
+  expect(persisted.payload).toEqual(item.payload);
+  expect(await files.listKeys('responses-items/')).toHaveLength(1);
+});
+
 test('SQL Responses item writes stay within D1 bind limits and use bounded statement counts', async () => {
   initFileProvider(new MemoryFileProvider());
   const base = await createSqliteTestDb();
@@ -208,7 +244,7 @@ test('SQL Responses item writes stay within D1 bind limits and use bounded state
   await repo.responsesItems.insertMany(items);
   await repo.responsesItems.refreshMany(items, 2_000);
 
-  expect(batchSizes).toEqual([15, 8]);
+  expect(batchSizes).toEqual([15, 10]);
   expect(maxBindCount).toBeLessThanOrEqual(100);
   expect(await repo.responsesItems.lookupMany('key-a', items.map(item => item.id))).toHaveLength(items.length);
 });

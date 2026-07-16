@@ -816,11 +816,11 @@ class SqlModelsCacheRepo implements ModelsCacheRepo {
 const RESPONSES_ITEM_COLUMNS = 'id, api_key_id, item_type, payload_json, content_hash, created_at';
 // D1 permits 100 bound parameters per query. Descriptor reads reserve one
 // bind for api_key_id; inserts use six binds per item; refresh CASE updates
-// use three per item plus created_at and api_key_id.
+// use four per item plus created_at and api_key_id.
 // https://developers.cloudflare.com/d1/platform/limits/#limits
 const RESPONSES_IN_QUERY_CHUNK_SIZE = 90;
 const RESPONSES_INSERT_CHUNK_SIZE = 16;
-const RESPONSES_REFRESH_CHUNK_SIZE = 32;
+const RESPONSES_REFRESH_CHUNK_SIZE = 24;
 
 interface ResponsesItemDescriptor {
   id: string;
@@ -838,6 +838,7 @@ interface PreparedResponsesPayloadWrite {
   item: StoredResponsesItem;
   payload: string;
   generatedFileKey: string | null;
+  previousPayloadJson: string | null;
   previousFileKey: string | null;
 }
 
@@ -910,6 +911,7 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
           item,
           payload,
           generatedFileKey: storedResponsesPayloadFileKey(item.id, payload),
+          previousPayloadJson: null,
           previousFileKey: null,
         });
       }
@@ -958,6 +960,7 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
           item,
           payload,
           generatedFileKey: moveFile ? storedResponsesPayloadFileKey(item.id, payload) : null,
+          previousPayloadJson: descriptor.payloadJson,
           previousFileKey,
         });
       }
@@ -970,20 +973,21 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
       for (let index = 0; index < group.length; index += RESPONSES_REFRESH_CHUNK_SIZE) {
         const chunk = group.slice(index, index + RESPONSES_REFRESH_CHUNK_SIZE);
         const cases = chunk.map(() => 'WHEN ? THEN ?').join(' ');
-        const placeholders = chunk.map(() => '?').join(', ');
+        const conditions = chunk.map(() => '(id = ? AND payload_json = ?)').join(' OR ');
         statementChunks.push({
           writes: chunk,
           statement: this.db
             .prepare(
               `UPDATE responses_items
-               SET payload_json = CASE id ${cases} ELSE payload_json END, created_at = ?
-               WHERE api_key_id = ? AND id IN (${placeholders})`,
+               SET payload_json = CASE id ${cases} ELSE payload_json END,
+                   created_at = MAX(created_at, ?)
+               WHERE api_key_id = ? AND (${conditions})`,
             )
             .bind(
               ...chunk.flatMap(({ item, payload }) => [item.id, payload]),
               createdAt,
               apiKeyId,
-              ...chunk.map(({ item }) => item.id),
+              ...chunk.flatMap(({ item, previousPayloadJson }) => [item.id, previousPayloadJson]),
             ),
         });
       }
