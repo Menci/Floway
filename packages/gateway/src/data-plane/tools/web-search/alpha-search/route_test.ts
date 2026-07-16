@@ -13,7 +13,7 @@ import { withMockedFetch } from '@floway-dev/test-utils';
 // SearchConfig row is still seeded so `loadSearchConfig` returns a real
 // value; the mock ignores it and returns the configured state each test
 // wants.
-vi.mock('../tools/web-search/provider.ts');
+vi.mock('../provider.ts');
 const mockResolveConfigured = vi.mocked(resolveConfiguredWebSearchProvider);
 
 const TAVILY_CONFIG: SearchConfig = {
