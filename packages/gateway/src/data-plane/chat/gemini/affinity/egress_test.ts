@@ -233,10 +233,10 @@ describe('Gemini affinity egress', () => {
       }],
     })]), { codec: immediateCodec, affinity })) output.push(frame);
 
-    expect(output[0]).toMatchObject({ event: { candidates: [{ content: { parts: [
-      { thoughtSignature: 'wrapped:latest' },
-      { thoughtSignature: undefined },
-    ] } }] } });
+    const event = output[0].type === 'event' && !('error' in output[0].event) ? output[0].event : undefined;
+    const parts = event?.candidates?.[0].content.parts;
+    expect(parts?.[0]).toMatchObject({ thoughtSignature: 'wrapped:latest' });
+    expect(parts?.[1]).not.toHaveProperty('thoughtSignature');
   });
 
   test('moves the latest replacement from a signature-only lookahead', async () => {
