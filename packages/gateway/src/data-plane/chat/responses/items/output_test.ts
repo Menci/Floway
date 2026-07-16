@@ -121,6 +121,81 @@ test('client output uses one item id across lifecycle snapshots without committi
   expect(await repo.responsesSnapshots.lookup('key-a', 'resp_public')).toBeNull();
 });
 
+test('client output persists a completed item before forwarding an error event', async () => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  const store = createResponsesHttpStore('key-a', true);
+  const item = { type: 'reasoning' as const, id: 'rs_upstream', summary: [] };
+  const input = async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
+    yield eventFrame({ type: 'response.output_item.done', output_index: 0, item });
+    yield eventFrame({ type: 'error', message: 'upstream failed' });
+  };
+  let clientId: string | undefined;
+
+  for await (const frame of wrapResponsesClientOutput(input(), {
+    store,
+    attemptState: new ResponsesAttemptState(),
+    responseId: 'resp_public',
+  })) {
+    if (frame.type === 'event' && frame.event.type === 'response.output_item.done') clientId = frame.event.item.id;
+  }
+
+  expect(clientId).toEqual(expect.any(String));
+  expect(await repo.responsesItems.lookupMany('key-a', [clientId!])).toHaveLength(1);
+  expect(await repo.responsesSnapshots.lookup('key-a', 'resp_public')).toBeNull();
+});
+
+test('client output does not persist a partial item without output_item.done', async () => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  const store = createResponsesHttpStore('key-a', true);
+  const item = { type: 'reasoning' as const, id: 'rs_upstream', summary: [] };
+  const input = async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
+    yield eventFrame({ type: 'response.output_item.added', output_index: 0, item });
+    yield eventFrame({ type: 'error', message: 'upstream failed' });
+  };
+  let clientId: string | undefined;
+
+  for await (const frame of wrapResponsesClientOutput(input(), {
+    store,
+    attemptState: new ResponsesAttemptState(),
+    responseId: 'resp_public',
+  })) {
+    if (frame.type === 'event' && frame.event.type === 'response.output_item.added') clientId = frame.event.item.id;
+  }
+
+  expect(clientId).toEqual(expect.any(String));
+  expect(await repo.responsesItems.lookupMany('key-a', [clientId!])).toEqual([]);
+  expect(await repo.responsesSnapshots.lookup('key-a', 'resp_public')).toBeNull();
+});
+
+test('client output persists completed items before rethrowing an iterator error', async () => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  const store = createResponsesHttpStore('key-a', true);
+  const item = { type: 'reasoning' as const, id: 'rs_upstream', summary: [] };
+  const upstreamError = new Error('stream transport failed');
+  const input = async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
+    yield eventFrame({ type: 'response.output_item.done', output_index: 0, item });
+    throw upstreamError;
+  };
+  let clientId: string | undefined;
+  const collect = async () => {
+    for await (const frame of wrapResponsesClientOutput(input(), {
+      store,
+      attemptState: new ResponsesAttemptState(),
+      responseId: 'resp_public',
+    })) {
+      if (frame.type === 'event' && frame.event.type === 'response.output_item.done') clientId = frame.event.item.id;
+    }
+  };
+
+  await expect(collect()).rejects.toBe(upstreamError);
+  expect(clientId).toEqual(expect.any(String));
+  expect(await repo.responsesItems.lookupMany('key-a', [clientId!])).toHaveLength(1);
+  expect(await repo.responsesSnapshots.lookup('key-a', 'resp_public')).toBeNull();
+});
+
 test('client output batches hundreds of finalized items at the successful terminal boundary', async () => {
   initFileProvider(new MemoryFileProvider());
   const counting = countingSqlDatabase(await createSqliteTestDb());

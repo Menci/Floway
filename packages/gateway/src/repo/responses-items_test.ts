@@ -104,10 +104,22 @@ describe.each(factories)('%s Responses state repo', (_name, createRepo) => {
     const repo = await createRepo();
     await repo.responsesSnapshots.insert({ id: 'resp_same', apiKeyId: 'key-a', itemIds: ['msg_old'], createdAt: 1_000 });
     await repo.responsesSnapshots.insert({ id: 'resp_same', apiKeyId: 'key-a', itemIds: ['msg_new'], createdAt: 3_000 });
+    await repo.responsesSnapshots.insert({ id: 'resp_same', apiKeyId: 'key-a', itemIds: ['msg_stale'], createdAt: 2_000 });
 
     expect(await repo.responsesSnapshots.lookup('key-a', 'resp_same')).toEqual({
       id: 'resp_same', apiKeyId: 'key-a', itemIds: ['msg_new'], createdAt: 3_000,
     });
+  });
+
+  test('item refresh never lowers an existing lifetime', async () => {
+    initFileProvider(new MemoryFileProvider());
+    const repo = await createRepo();
+    const item = storedItem('msg_monotonic', 'key-a', 'monotonic', 1_000);
+    await repo.responsesItems.insertMany([item]);
+    await repo.responsesItems.refreshMany([item], 3_000);
+    await repo.responsesItems.refreshMany([item], 2_000);
+
+    expect((await repo.responsesItems.lookupMany('key-a', [item.id]))[0].createdAt).toBe(3_000);
   });
 
   test('refreshes spilled payload expiry without retaining the previous file', async () => {
