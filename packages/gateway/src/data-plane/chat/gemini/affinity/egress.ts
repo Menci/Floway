@@ -21,6 +21,8 @@ const sameLogicalElement = (left: GeminiPart, right: GeminiPart): boolean => {
     if (left.functionCall.id !== undefined && right.functionCall.id !== undefined) {
       return left.functionCall.id === right.functionCall.id;
     }
+    // Name/shape cannot distinguish a continuation from two adjacent complete
+    // id-less calls, so ambiguous or asymmetric-ID calls remain separate.
     return false;
   }
   return false;
