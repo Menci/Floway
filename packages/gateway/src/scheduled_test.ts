@@ -1,10 +1,10 @@
-import { test } from 'vitest';
+import { test, vi } from 'vitest';
 
 import { initDumpBroker, initDumpStore } from './dump/registry.ts';
 import { installDumpStubs } from './dump/test-fixtures.ts';
 import { runScheduledMaintenance } from './scheduled.ts';
 import { setupAppTest } from './test-helpers.ts';
-import { initImageCacheStore } from '@floway-dev/platform';
+import { initFileProvider, initImageCacheStore, MemoryFileProvider } from '@floway-dev/platform';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const noopImageCache = {
@@ -78,4 +78,24 @@ test('runScheduledMaintenance keeps subsequent sweeps running when one top-level
   // The dump sweep ran despite the image-cache failure — the stub recorded
   // a purgeExpired call for the only retention-enabled key.
   assertEquals(stubs.purgedExpired.some(c => c.keyId === keyA.id), true);
+});
+
+test('runScheduledMaintenance keeps spilled payloads when item-row deletion fails', async () => {
+  const { repo } = await setupAppTest();
+  const files = new MemoryFileProvider();
+  initFileProvider(files);
+  initImageCacheStore(noopImageCache);
+  installDumpStubs(initDumpStore, initDumpBroker);
+  const key = 'responses-items/v1/expires/2000/01/01/00/key/item/payload.gz';
+  await files.put(key, new Uint8Array([1]));
+  const deletion = vi.spyOn(repo.responsesItems, 'deleteOlderThan').mockRejectedValue(new Error('item deletion failed'));
+  const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    await runScheduledMaintenance();
+  } finally {
+    deletion.mockRestore();
+    error.mockRestore();
+  }
+
+  assertEquals(await files.get(key), new Uint8Array([1]));
 });
