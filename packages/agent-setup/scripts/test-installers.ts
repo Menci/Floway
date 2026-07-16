@@ -1628,7 +1628,7 @@ test('claude', 'PowerShell: a missing $SetupEndpoint fails before any mutation',
   writeFileSync(settingsPathFor(ws), original);
   const run = await runPowerShellInstaller({ workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url, omitBaseUrl: true });
   t.ok(run.code !== 0, 'a missing base URL must fail the run');
-  t.includes(run.combined, 'FlowayBaseUrl', 'the failure names the required base URL');
+  t.includes(run.combined, 'SetupEndpoint', 'the failure names the required endpoint');
   t.equal(readFileSync(settingsPathFor(ws), 'utf8'), original, 'settings are left untouched');
   t.equal(backupFiles(configDir).length, 0, 'no backup is created before the base-URL guard');
 });
