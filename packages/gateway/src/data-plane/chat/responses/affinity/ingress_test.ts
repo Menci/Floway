@@ -2,13 +2,13 @@ import { expect, test } from 'vitest';
 
 import { prepareResponsesAffinity } from './ingress.ts';
 import { AffinityCodec, type AffinityTarget } from '../../shared/affinity/index.ts';
-import { hashResponsesItemBinding } from '../items/format.ts';
+import { canonicalResponsesItemType, hashResponsesItemBinding } from '../items/format.ts';
 import type { CanonicalResponsesPayload } from '@floway-dev/protocols/responses';
 import type { ModelCandidate } from '@floway-dev/provider';
 import { stubModelCandidate } from '@floway-dev/test-utils';
 
 const codec = new AffinityCodec('22'.repeat(32));
-const carrierDomain = (itemType: string, slot: string): string => `responses.${itemType}.${slot}`;
+const carrierDomain = (itemType: string, slot: string): string => `responses.${canonicalResponsesItemType(itemType)}.${slot}`;
 
 const candidate = (upstream: string): ModelCandidate => {
   const base = stubModelCandidate();
