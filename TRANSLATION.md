@@ -150,7 +150,6 @@ only receives a final usage-only chunk when it explicitly requested
 - removes unsupported file, executable-code, code-result, tool, and safety
   fields before translation;
 - hides readable thought parts unless `includeThoughts` is true;
-- preserves opaque thought signatures through the affinity source membrane;
 - renders source errors as Google RPC Status while retaining debug fields for
   gateway failures.
 
@@ -222,9 +221,7 @@ Response mapping:
 - max-token stop becomes incomplete;
 - usage retains cache-read and cache-write dimensions.
 
-The `${encrypted_content}@${id}` bridge is translation state, not Floway
-affinity encryption. Source affinity egress later wraps the complete Messages
-signature outside the pure trip.
+The `${encrypted_content}@${id}` bridge is trip-local translation state.
 
 Messages stop sequences, top-k, and Messages-only tier controls have no
 Responses request slot. Enabled thinking without explicit effort is not
@@ -309,7 +306,7 @@ Request mapping:
 
 Response mapping produces reasoning items, message output, function calls, and
 terminal state ordered by `output_index`. Scalar opaque Chat state is ignored
-by the pure translator; the source affinity membrane remains outside it.
+by the pure translator.
 
 Chat stop sequences and legacy user have no Responses counterpart.
 
@@ -369,8 +366,7 @@ Native Responses targets receive custom tools unchanged.
   remain isolated per choice.
 - Messages thinking text concatenates while signatures replace.
 - Responses `output_item.done` replaces the item snapshot and terminal response
-  events replace the complete response snapshot; prefix insertion rewrites all
-  later output indexes and terminal output consistently.
+  events replace the complete response snapshot.
 - Pairwise translators preserve source output order even when target items
   complete out of order.
 - Tool/custom argument guards reject infinite whitespace or malformed partial
@@ -380,13 +376,12 @@ Native Responses targets receive custom tools unchanged.
 
 Readable reasoning is translated where the target has a natural field. Opaque
 state is never guessed. Pairwise Messages/Chat and Messages/Responses bridges
-carry restored native values needed by the target protocol; Floway affinity is
-added only after the trip returns to the client source shape.
+carry native values needed by the target protocol.
 
 Chat `reasoning_opaque` and Messages `signature_delta` are replacement
 snapshots. Gemini thought signatures belong to parts. Responses encrypted
-content belongs to an item and may bind its upstream item ID. These semantics
-are protocol contracts, not interchangeable string-fragment conventions.
+content belongs to an item. These semantics are protocol contracts, not
+interchangeable string-fragment conventions.
 
 ## Standard OpenAI fields
 
