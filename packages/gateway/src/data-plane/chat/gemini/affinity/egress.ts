@@ -179,9 +179,7 @@ const relocateSignatureOnlyForward = (
   const signature = relocated.values().next().value?.thoughtSignature;
   const targetIndex = firstElementIndexes(next.content.parts).find(index => hasPartContent(next.content.parts[index]));
   if (signature === undefined || targetIndex === undefined) return;
-  if (next.content.parts[targetIndex].thoughtSignature === undefined) {
-    next.content.parts[targetIndex].thoughtSignature = signature;
-  }
+  next.content.parts[targetIndex].thoughtSignature ??= signature;
   for (const part of relocated) delete part.thoughtSignature;
   removeRelocatedSignatureParts(current, relocated, removedCandidates);
   if (current.content.parts.length === 0) transferCandidateMetadataForward(current, next);

@@ -102,7 +102,7 @@ export const responsesAttempt = {
         hydrated = hydrateResponsesPayload(payload, ctx.store);
       } catch (error) {
         const failure = tryCatchChatServeFailure(error);
-        if (failure === null || failure.kind !== 'item-not-found') throw error;
+        if (failure?.kind !== 'item-not-found') throw error;
         return renderResponsesFailure(failure);
       }
       affinity = await prepareResponsesAffinity(hydrated.payload, ctx.affinity.codec);
