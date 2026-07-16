@@ -171,7 +171,7 @@ describe('Responses affinity egress', () => {
       affinity,
     })) output.push(frame);
 
-    expect(calls.map(call => call.syntheticItem === true)).toEqual([false]);
+    expect(calls.map(call => call.syntheticItem === true)).toEqual([false, false]);
     expect(output).toHaveLength(1);
   });
 
