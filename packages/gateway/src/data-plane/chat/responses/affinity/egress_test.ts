@@ -4,7 +4,7 @@ import { wrapResponsesAffinityEgress } from './egress.ts';
 import type { AffinityCodec } from '../../shared/affinity/index.ts';
 import type { AffinityTarget } from '../../shared/affinity/index.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ResponsesOutputReasoning, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { ResponsesOutputItem, ResponsesOutputReasoning, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 const affinity: AffinityTarget = {
   upstreamId: 'up-a',
@@ -203,5 +203,45 @@ describe('Responses affinity egress', () => {
     expect(output[3]).toMatchObject({ event: { output_index: 1 } });
     expect(output[4]).toMatchObject({ event: { output_index: 1 } });
     expect(output[5]).toMatchObject({ event: { response: { output: [{ type: 'reasoning' }, message] } } });
+  });
+
+  test('binds a prefixed force item to its original upstream ID', async () => {
+    const programOutput = { type: 'program_output' as const, id: 'prog_out_upstream', call_id: 'call_1', result: 'done', status: 'completed' as const };
+    const calls: AffinityTarget[] = [];
+    const output: ProtocolFrame<ResponsesStreamEvent>[] = [];
+    for await (const frame of wrapResponsesAffinityEgress(frames([
+      eventFrame({ type: 'response.completed', response: response([programOutput]) }),
+    ]), {
+      codec: {
+        wrap: async (_value, target) => {
+          calls.push(target);
+          return 'wrapped';
+        },
+      },
+      affinity,
+    })) output.push(frame);
+
+    expect(calls).toContainEqual({
+      ...affinity,
+      syntheticItem: true,
+      boundItem: { type: 'program_output', upstreamItemId: 'prog_out_upstream' },
+    });
+    expect(output).toHaveLength(3);
+  });
+
+  test('wraps compaction_summary as a natural carrier without inserting a prefix', async () => {
+    const item = { type: 'compaction_summary', id: 'cmp_upstream', encrypted_content: 'opaque' } as unknown as ResponsesOutputItem;
+    const values: Array<string | undefined> = [];
+    const output: ProtocolFrame<ResponsesStreamEvent>[] = [];
+    for await (const frame of wrapResponsesAffinityEgress(frames([
+      eventFrame({ type: 'response.completed', response: response([item]) }),
+    ]), {
+      codec: { wrap: async value => { values.push(value); return 'wrapped'; } },
+      affinity,
+    })) output.push(frame);
+
+    expect(values).toEqual(['opaque']);
+    expect(output).toHaveLength(1);
+    expect(output[0]).toMatchObject({ event: { response: { output: [{ type: 'compaction_summary', encrypted_content: 'wrapped' }] } } });
   });
 });

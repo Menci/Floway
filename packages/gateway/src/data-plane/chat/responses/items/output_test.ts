@@ -49,3 +49,42 @@ test('storage rewrites ids and persists the exact complete client-wire item befo
   expect(rows[0].payload.item).toMatchObject({ encrypted_content: 'wrapped-affinity' });
   expect(await repo.responsesSnapshots.lookup('key-a', 'resp_public')).not.toBeNull();
 });
+
+test('storage uses one public item id across lifecycle snapshots without committing a failed snapshot', async () => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  const store = createResponsesHttpStore('key-a', true);
+  const item = { type: 'reasoning' as const, id: 'rs_upstream', summary: [], encrypted_content: 'wrapped-affinity' };
+  const response: ResponsesResult = {
+    id: 'resp_upstream',
+    object: 'response',
+    model: 'model',
+    status: 'failed',
+    output: [item],
+    error: { code: 'failed', message: 'failed' },
+    incomplete_details: null,
+  };
+  const input = async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
+    yield eventFrame({ type: 'response.created', response: { ...response, status: 'in_progress', error: null } });
+    yield eventFrame({ type: 'response.output_item.added', output_index: 0, item });
+    yield eventFrame({ type: 'response.output_item.done', output_index: 0, item });
+    yield eventFrame({ type: 'response.failed', response });
+  };
+
+  const events: ResponsesStreamEvent[] = [];
+  for await (const frame of wrapResponsesOutputForStorage(input(), {
+    store,
+    attemptState: new ResponsesAttemptState(),
+    responseId: 'resp_public',
+  })) {
+    if (frame.type === 'event') events.push(frame.event);
+  }
+
+  const ids = events.flatMap(event => {
+    if (event.type === 'response.output_item.added' || event.type === 'response.output_item.done') return [event.item.id];
+    if ('response' in event) return event.response.output.map(output => output.id);
+    return [];
+  });
+  expect(new Set(ids).size).toBe(1);
+  expect(await repo.responsesSnapshots.lookup('key-a', 'resp_public')).toBeNull();
+});

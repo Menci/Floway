@@ -3,6 +3,7 @@ import { expect, test } from 'vitest';
 import { prepareResponsesAffinity } from './ingress.ts';
 import { affinityTargetForCandidate } from '../../shared/affinity/index.ts';
 import { AffinityCodec } from '../../shared/affinity/index.ts';
+import type { CanonicalResponsesPayload } from '@floway-dev/protocols/responses';
 import type { ModelCandidate } from '@floway-dev/provider';
 import { stubModelCandidate } from '@floway-dev/test-utils';
 
@@ -98,4 +99,42 @@ test('derives force routing from program state following a preferred carrier', a
     { target: affinityTargetForCandidate(candidateA), mode: 'prefer' },
     { target: affinityTargetForCandidate(candidateA), mode: 'force' },
   ]);
+});
+
+test('restores the bound ID of a force item carried by an adjacent synthetic prefix', async () => {
+  const carrier = await codec.wrap(
+    undefined,
+    {
+      ...affinityTargetForCandidate(candidateA),
+      syntheticItem: true,
+      boundItem: { type: 'program_output', upstreamItemId: 'prog_out_upstream' },
+    },
+    carrierDomain('reasoning', 'encrypted_content'),
+  );
+  const prepared = await prepareResponsesAffinity({
+    model: 'model',
+    input: [
+      { type: 'reasoning', id: 'rs_prefix', summary: [], encrypted_content: carrier },
+      { type: 'program_output', id: 'prog_out_public', call_id: 'call_1', result: 'done', status: 'completed' },
+    ],
+  }, codec);
+
+  expect(prepared.payloadForCandidate(candidateA).input).toEqual([
+    { type: 'program_output', id: 'prog_out_upstream', call_id: 'call_1', result: 'done', status: 'completed' },
+  ]);
+  expect((prepared.payloadForCandidate(candidateB).input[0] as { id: string }).id).toMatch(/^prog_out_tmp_/);
+  expect(prepared.routingEvidence.map(item => item.mode)).toEqual(['prefer', 'force']);
+});
+
+test('treats compaction_summary as force state and restores its upstream ID', async () => {
+  const carrier = await codec.wrap(
+    'opaque',
+    { ...affinityTargetForCandidate(candidateA), upstreamItemId: 'cmp_upstream' },
+    carrierDomain('compaction_summary', 'encrypted_content'),
+  );
+  const item = { type: 'compaction_summary', id: 'cmp_public', encrypted_content: carrier } as unknown as CanonicalResponsesPayload['input'][number];
+  const prepared = await prepareResponsesAffinity({ model: 'model', input: [item] }, codec);
+
+  expect(prepared.routingEvidence.map(evidence => evidence.mode)).toEqual(['prefer', 'force']);
+  expect(prepared.payloadForCandidate(candidateA).input[0]).toMatchObject({ id: 'cmp_upstream', encrypted_content: 'opaque' });
 });

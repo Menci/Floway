@@ -125,7 +125,12 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
 
   async commitSnapshot(responseId: string, mode: ResponsesSnapshotMode): Promise<void> {
     if (this.options.writes.length === 0) return;
-    await this.commitItems([...this.stagedInputItems.values(), ...this.stagedOutputItems.values()]);
+    const previousItems = this.previousSnapshotItemIds.map(id => {
+      const item = this.loadedItems.get(id);
+      if (item === undefined) throw new Error(`Responses snapshot item disappeared before commit: ${id}`);
+      return item;
+    });
+    await this.commitItems([...previousItems, ...this.stagedInputItems.values(), ...this.stagedOutputItems.values()]);
     const itemIds = mode === 'replace'
       ? [...this.stagedOutputItemIds]
       : [...this.previousSnapshotItemIds, ...this.stagedInputItemIds, ...this.stagedOutputItemIds];

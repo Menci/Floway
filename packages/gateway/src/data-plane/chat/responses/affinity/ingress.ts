@@ -6,6 +6,7 @@ import type { CanonicalResponsesPayload, ResponsesInputItem } from '@floway-dev/
 
 interface ResponsesBlobLocation {
   readonly itemIndex: number;
+  readonly slot: string;
   readonly contentIndex?: number;
   readonly decoded: DecodedAffinityBlob;
 }
@@ -20,10 +21,7 @@ const isOwnedLocation = (location: ResponsesBlobLocation): location is OwnedResp
   location.decoded.kind === 'owned';
 
 const itemRequiresAffinity = (item: ResponsesInputItem): boolean =>
-  item.type === 'compaction'
-  || item.type === 'context_compaction'
-  || item.type === 'program'
-  || item.type === 'program_output';
+  ['compaction', 'compaction_summary', 'context_compaction', 'program', 'program_output'].includes(item.type);
 
 const routingEvidenceFrom = (
   items: readonly ResponsesInputItem[],
@@ -40,7 +38,8 @@ const routingEvidenceFrom = (
     const owned = ownedByItem.get(itemIndex) ?? [];
     for (const location of owned) {
       latestTarget = location.decoded.envelope.affinity;
-      evidence.push({ target: latestTarget, mode: itemRequiresAffinity(item) ? 'force' : 'prefer' });
+      evidence.push({ target: latestTarget, mode: 'prefer' });
+      if (itemRequiresAffinity(item)) evidence.push({ target: latestTarget, mode: 'force' });
     }
     if (!itemRequiresAffinity(item) || owned.length > 0) continue;
     if (latestTarget !== undefined) evidence.push({ target: latestTarget, mode: 'force' });
@@ -57,13 +56,17 @@ const encryptedContentLocations = async (
   for (const [itemIndex, item] of items.entries()) {
     const topLevel = (item as { encrypted_content?: unknown }).encrypted_content;
     if (typeof topLevel === 'string') {
-      locations.push({ itemIndex, decoded: await codec.unwrap(topLevel, carrierDomain(item.type, 'encrypted_content')) });
+      locations.push({ itemIndex, slot: 'encrypted_content', decoded: await codec.unwrap(topLevel, carrierDomain(item.type, 'encrypted_content')) });
+    }
+    if (item.type === 'program' && typeof item.fingerprint === 'string') {
+      locations.push({ itemIndex, slot: 'fingerprint', decoded: await codec.unwrap(item.fingerprint, carrierDomain(item.type, 'fingerprint')) });
     }
     if (item.type !== 'agent_message') continue;
     for (const [contentIndex, content] of item.content.entries()) {
       if (content.type !== 'encrypted_content' || typeof content.encrypted_content !== 'string') continue;
       locations.push({
         itemIndex,
+        slot: `content.${contentIndex}.encrypted_content`,
         contentIndex,
         decoded: await codec.unwrap(content.encrypted_content, carrierDomain(item.type, `content.${contentIndex}.encrypted_content`)),
       });
@@ -77,23 +80,37 @@ export const prepareResponsesAffinity = async (
   codec: AffinityCodec,
 ): Promise<PreparedAffinityPayload<CanonicalResponsesPayload>> => {
   const locations = await encryptedContentLocations(payload.input, codec);
+  const boundItems = new Map<number, Extract<DecodedAffinityBlob, { kind: 'owned' }>['envelope']['affinity']>();
+  for (const location of locations) {
+    if (location.decoded.kind === 'owned' && location.decoded.envelope.affinity.boundItem !== undefined) {
+      boundItems.set(location.itemIndex + 1, location.decoded.envelope.affinity);
+    }
+  }
   return {
     routingEvidence: routingEvidenceFrom(payload.input, locations),
     payloadForCandidate: candidate => {
       const candidatePayload = structuredClone(payload);
+      for (const [itemIndex, affinity] of boundItems) {
+        const item = candidatePayload.input[itemIndex];
+        const bound = affinity.boundItem;
+        if (item === undefined || bound === undefined || item.type !== bound.type || !('id' in item) || typeof item.id !== 'string') continue;
+        item.id = candidate.provider.upstream === affinity.upstreamId && candidate.model.id === affinity.modelId
+          ? bound.upstreamItemId
+          : createTemporaryResponsesItemId(item.type);
+      }
       const byItem = Map.groupBy(locations, location => location.itemIndex);
       const rewritten = candidatePayload.input.flatMap((item, itemIndex): ResponsesInputItem[] => {
         const itemLocations = byItem.get(itemIndex);
         if (itemLocations === undefined) return [item];
         let removeItem = false;
-        const replacement = { ...item } as ResponsesInputItem & { encrypted_content?: string };
+        const replacement = { ...item } as ResponsesInputItem & Record<string, unknown>;
         const decisions = itemLocations.map(location => ({ location, selected: blobForCandidate(location.decoded, candidate) }));
         for (const { location, selected } of decisions) {
           if (location.contentIndex === undefined) {
             if (selected.present) {
-              replacement.encrypted_content = selected.value;
+              replacement[location.slot] = selected.value;
             } else {
-              delete replacement.encrypted_content;
+              delete replacement[location.slot];
               if (
                 location.decoded.kind === 'owned'
                 && location.decoded.value === undefined

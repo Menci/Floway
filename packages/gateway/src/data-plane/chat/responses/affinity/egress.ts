@@ -11,11 +11,14 @@ const itemAffinity = (base: AffinityTarget, item: ResponsesOutputItem): Affinity
   ...('id' in item && typeof item.id === 'string' ? { upstreamItemId: item.id } : {}),
 });
 
-const encryptedContentSlots = (item: ResponsesOutputItem): Array<{ key: string; value: string }> => {
+const opaqueSlots = (item: ResponsesOutputItem): Array<{ key: string; value: string }> => {
   const slots: Array<{ key: string; value: string }> = [];
   const record = item as unknown as Record<string, unknown>;
   if (typeof record.encrypted_content === 'string') {
     slots.push({ key: 'encrypted_content', value: record.encrypted_content });
+  }
+  if (item.type === 'program' && typeof item.fingerprint === 'string') {
+    slots.push({ key: 'fingerprint', value: item.fingerprint });
   }
   if (Array.isArray(record.content)) {
     record.content.forEach((part, index) => {
@@ -29,12 +32,12 @@ const encryptedContentSlots = (item: ResponsesOutputItem): Array<{ key: string; 
   return slots;
 };
 
-const replaceEncryptedContent = (
+const replaceOpaqueSlots = (
   item: ResponsesOutputItem,
   replacements: ReadonlyMap<string, string>,
 ): ResponsesOutputItem => {
   const record = item as unknown as Record<string, unknown>;
-  const topLevel = replacements.get('encrypted_content');
+  const topLevel = Object.fromEntries([...replacements].filter(([key]) => !key.startsWith('content.')));
   const content = Array.isArray(record.content)
     ? record.content.map((part, index) => {
         const replacement = replacements.get(`content.${index}.encrypted_content`);
@@ -45,7 +48,7 @@ const replaceEncryptedContent = (
     : undefined;
   return {
     ...item,
-    ...(topLevel !== undefined ? { encrypted_content: topLevel } : {}),
+    ...topLevel,
     ...(content !== undefined ? { content } : {}),
   } as ResponsesOutputItem;
 };
@@ -57,7 +60,7 @@ const wrapNaturalResponsesAffinity = async function* (
   const wrapped = new Map<string, Promise<string>>();
 
   const wrapItem = async (item: ResponsesOutputItem, outputIndex: number): Promise<ResponsesOutputItem> => {
-    const slots = encryptedContentSlots(item);
+    const slots = opaqueSlots(item);
     if (slots.length === 0) return item;
     const target = itemAffinity(options.affinity, item);
     const itemId = 'id' in item && typeof item.id === 'string' ? item.id : '';
@@ -71,7 +74,7 @@ const wrapNaturalResponsesAffinity = async function* (
       }
       replacements.set(slot.key, await replacement);
     }));
-    return replaceEncryptedContent(item, replacements);
+    return replaceOpaqueSlots(item, replacements);
   };
 
   const wrapResult = async (response: ResponsesResult): Promise<ResponsesResult> => ({
@@ -108,10 +111,11 @@ const wrapNaturalResponsesAffinity = async function* (
 };
 
 const canCarryAffinity = (item: ResponsesOutputItem): boolean =>
-  item.type === 'reasoning'
-  || item.type === 'compaction'
-  || item.type === 'context_compaction'
-  || item.type === 'agent_message';
+  ['reasoning', 'compaction', 'compaction_summary', 'context_compaction', 'agent_message'].includes(item.type)
+  || (item.type === 'program' && opaqueSlots(item).length > 0);
+
+const requiresBoundCarrier = (item: ResponsesOutputItem): boolean =>
+  (item.type === 'program' || item.type === 'program_output') && opaqueSlots(item).length === 0;
 
 const addSequenceOffset = <T extends ResponsesStreamEvent>(event: T, offset: number): T =>
   event.sequence_number === undefined ? event : { ...event, sequence_number: event.sequence_number + offset };
@@ -129,49 +133,56 @@ const ensureFirstResponsesItemAffinity = async function* (
   // machine gives output index zero a carrier: augment a carrier-capable item
   // at close, or insert a complete reasoning prefix and shift every later
   // output/sequence index plus terminal snapshot by the same fixed offsets.
-  let syntheticPrefixContent: Promise<string> | undefined;
   const syntheticOnFirstItem = new Map<string, Promise<string>>();
   let firstItem: { readonly outputIndex: number; readonly canCarry: boolean } | undefined;
-  let prefixItem: ResponsesOutputReasoning | undefined;
+  const insertedItems = new Map<number, ResponsesOutputReasoning>();
   let outputIndexOffset = 0;
   let sequenceOffset = 0;
 
-  const getPrefixItem = async (): Promise<ResponsesOutputReasoning> => {
-    if (prefixItem !== undefined) return prefixItem;
-    syntheticPrefixContent ??= options.codec.wrap(
-      undefined,
-      { ...options.affinity, syntheticItem: true },
-      carrierDomain('reasoning', 'encrypted_content'),
-    );
-    prefixItem = {
+  const insertCarrierBefore = async (
+    item: ResponsesOutputItem | undefined,
+    originalOutputIndex: number,
+    sequenceNumber: number | undefined,
+  ): Promise<ResponsesStreamEvent[]> => {
+    const existing = insertedItems.get(originalOutputIndex);
+    if (existing !== undefined) return [];
+    const upstreamItemId = item !== undefined && 'id' in item && typeof item.id === 'string' ? item.id : undefined;
+    const target: AffinityTarget = {
+      ...options.affinity,
+      syntheticItem: true,
+      ...(item !== undefined && upstreamItemId !== undefined
+        ? { boundItem: { type: item.type, upstreamItemId } }
+        : {}),
+    };
+    const inserted: ResponsesOutputReasoning = {
       type: 'reasoning',
       id: createTemporaryResponsesItemId('reasoning'),
       summary: [],
-      encrypted_content: await syntheticPrefixContent,
+      encrypted_content: await options.codec.wrap(undefined, target, carrierDomain('reasoning', 'encrypted_content')),
     };
-    return prefixItem;
-  };
-
-  const prefixFrames = async (sequenceNumber: number | undefined): Promise<ResponsesStreamEvent[]> => {
-    const item = await getPrefixItem();
+    insertedItems.set(originalOutputIndex, inserted);
+    const shiftedOutputIndex = originalOutputIndex + outputIndexOffset;
+    const shiftedSequence = sequenceNumber === undefined ? undefined : sequenceNumber + sequenceOffset;
+    outputIndexOffset += 1;
+    sequenceOffset += 2;
     return [
       {
         type: 'response.output_item.added',
-        output_index: 0,
-        item,
-        ...(sequenceNumber !== undefined ? { sequence_number: sequenceNumber } : {}),
+        output_index: shiftedOutputIndex,
+        item: inserted,
+        ...(shiftedSequence !== undefined ? { sequence_number: shiftedSequence } : {}),
       },
       {
         type: 'response.output_item.done',
-        output_index: 0,
-        item,
-        ...(sequenceNumber !== undefined ? { sequence_number: sequenceNumber + 1 } : {}),
+        output_index: shiftedOutputIndex,
+        item: inserted,
+        ...(shiftedSequence !== undefined ? { sequence_number: shiftedSequence + 1 } : {}),
       },
     ];
   };
 
   const ensureItemCarrier = async (item: ResponsesOutputItem, outputIndex: number): Promise<ResponsesOutputItem> => {
-    if (encryptedContentSlots(item).length > 0) return item;
+    if (opaqueSlots(item).length > 0) return item;
     if (!canCarryAffinity(item)) throw new Error(`Responses item type ${item.type} cannot carry affinity`);
     const target = itemAffinity(options.affinity, item);
     const itemId = 'id' in item && typeof item.id === 'string' ? item.id : '';
@@ -202,7 +213,13 @@ const ensureFirstResponsesItemAffinity = async function* (
       const first = await ensureItemCarrier(output[firstItemIndex], firstItemIndex);
       output = output.map((item, index) => index === firstItemIndex ? first : item);
     }
-    if (prefixItem !== undefined) output = [prefixItem, ...output];
+    const interleaved: ResponsesOutputItem[] = [];
+    for (let index = 0; index <= output.length; index += 1) {
+      const inserted = insertedItems.get(index);
+      if (inserted !== undefined) interleaved.push(inserted);
+      if (output[index] !== undefined) interleaved.push(output[index]);
+    }
+    output = interleaved;
     return { ...response, output };
   };
 
@@ -216,12 +233,14 @@ const ensureFirstResponsesItemAffinity = async function* (
     }
 
     const event = frame.event;
-    if (event.type === 'response.output_item.added' && firstItem === undefined) {
-      firstItem = { outputIndex: event.output_index, canCarry: canCarryAffinity(event.item) };
-      if (!firstItem.canCarry) {
-        for (const prefix of await prefixFrames(event.sequence_number)) yield eventFrame(prefix);
-        outputIndexOffset = 1;
-        sequenceOffset = 2;
+    if (event.type === 'response.output_item.added') {
+      if (firstItem === undefined) {
+        firstItem = { outputIndex: event.output_index, canCarry: canCarryAffinity(event.item) };
+        if (!firstItem.canCarry) {
+          for (const inserted of await insertCarrierBefore(event.item, event.output_index, event.sequence_number)) yield eventFrame(inserted);
+        }
+      } else if (requiresBoundCarrier(event.item)) {
+        for (const inserted of await insertCarrierBefore(event.item, event.output_index, event.sequence_number)) yield eventFrame(inserted);
       }
       yield eventFrame(shifted(event));
       continue;
@@ -242,10 +261,13 @@ const ensureFirstResponsesItemAffinity = async function* (
         if (first !== undefined && canCarryAffinity(first)) {
           firstItem = { outputIndex: 0, canCarry: true };
         } else {
-          for (const prefix of await prefixFrames(event.sequence_number)) yield eventFrame(prefix);
-          outputIndexOffset = 1;
-          sequenceOffset = 2;
+          for (const inserted of await insertCarrierBefore(first, 0, event.sequence_number)) yield eventFrame(inserted);
+          firstItem = first === undefined ? undefined : { outputIndex: 0, canCarry: false };
         }
+      }
+      for (const [outputIndex, item] of event.response.output.entries()) {
+        if (!requiresBoundCarrier(item) || insertedItems.has(outputIndex)) continue;
+        for (const inserted of await insertCarrierBefore(item, outputIndex, event.sequence_number)) yield eventFrame(inserted);
       }
       const response = await rewriteResponse(event.response);
       yield eventFrame(addSequenceOffset({ ...event, response }, sequenceOffset));
@@ -253,7 +275,7 @@ const ensureFirstResponsesItemAffinity = async function* (
     }
 
     if (event.type === 'response.created' || event.type === 'response.in_progress' || event.type === 'response.failed') {
-      const response = prefixItem === undefined ? event.response : { ...event.response, output: [prefixItem, ...event.response.output] };
+      const response = await rewriteResponse(event.response);
       yield eventFrame(addSequenceOffset({ ...event, response }, sequenceOffset));
       if (event.type === 'response.failed') return;
       continue;

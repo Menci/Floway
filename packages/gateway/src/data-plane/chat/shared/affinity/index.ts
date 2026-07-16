@@ -13,6 +13,7 @@ export interface AffinityTarget {
   rules?: AliasRules;
   upstreamItemId?: string;
   syntheticItem?: true;
+  boundItem?: { type: string; upstreamItemId: string };
 }
 
 export interface AffinityEvidence {
@@ -143,6 +144,11 @@ const parseEnvelope = (value: unknown): AffinityEnvelope | null => {
     || typeof affinity.modelId !== 'string'
     || (affinity.upstreamItemId !== undefined && typeof affinity.upstreamItemId !== 'string')
     || (affinity.syntheticItem !== undefined && affinity.syntheticItem !== true)
+    || (affinity.boundItem !== undefined && (
+      !isRecord(affinity.boundItem)
+      || typeof affinity.boundItem.type !== 'string'
+      || typeof affinity.boundItem.upstreamItemId !== 'string'
+    ))
     || (affinity.rules !== undefined && !isRecord(affinity.rules))
   ) return null;
 
@@ -152,6 +158,9 @@ const parseEnvelope = (value: unknown): AffinityEnvelope | null => {
     ...(affinity.rules !== undefined ? { rules: affinity.rules as AliasRules } : {}),
     ...(affinity.upstreamItemId !== undefined ? { upstreamItemId: affinity.upstreamItemId } : {}),
     ...(affinity.syntheticItem === true ? { syntheticItem: true } : {}),
+    ...(affinity.boundItem !== undefined
+      ? { boundItem: { type: affinity.boundItem.type as string, upstreamItemId: affinity.boundItem.upstreamItemId as string } }
+      : {}),
   };
   return {
     version: 1,

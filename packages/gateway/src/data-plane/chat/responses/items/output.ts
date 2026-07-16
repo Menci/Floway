@@ -88,6 +88,17 @@ export const wrapResponsesOutputForStorage = async function* (
   const finalized = new Set<string>();
   let sawCompactionItem = false;
 
+  const rewriteEnvelopeIds = (response: ResponsesResult): ResponsesResult => ({
+    ...response,
+    id: responseId,
+    output: response.output.map(item => {
+      const upstreamId = responsesItemId(item);
+      if (upstreamId === null) return item;
+      seenItemTypes.set(upstreamId, item.type);
+      return { ...item, id: idMapper(upstreamId, item.type) };
+    }),
+  });
+
   for await (const frame of frames) {
     if (frame.type !== 'event') {
       yield frame;
@@ -101,7 +112,7 @@ export const wrapResponsesOutputForStorage = async function* (
     // (`response.output_item.*`, delta events) do not carry `response.id`
     // and are handled below.
     if (event.type === 'response.created' || event.type === 'response.in_progress') {
-      yield eventFrame({ ...event, response: { ...event.response, id: responseId } });
+      yield eventFrame({ ...event, response: rewriteEnvelopeIds(event.response) });
       continue;
     }
 
@@ -157,7 +168,7 @@ export const wrapResponsesOutputForStorage = async function* (
     }
 
     if (event.type === 'response.failed') {
-      yield eventFrame({ ...event, response: { ...event.response, id: responseId } });
+      yield eventFrame({ ...event, response: rewriteEnvelopeIds(event.response) });
       return;
     }
     if (event.type === 'error') {

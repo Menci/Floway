@@ -50,6 +50,25 @@ describe('StatefulResponsesStore', () => {
     expect(await session.createStore('key-a', false).loadSnapshot('resp_local')).not.toBeNull();
   });
 
+  test('WebSocket store=true promotes every item referenced by a prior local snapshot', async () => {
+    const repo = new InMemoryRepo();
+    initRepo(repo);
+    const session = createResponsesWsSession();
+    const local = session.createStore('key-a', false);
+    await local.stageInputItems([{ type: 'message', role: 'user', content: 'local' }]);
+    await local.commitSnapshot('resp_local', 'append');
+
+    const durable = session.createStore('key-a', true);
+    expect(await durable.loadSnapshot('resp_local')).not.toBeNull();
+    await durable.stageInputItems([{ type: 'message', role: 'user', content: 'durable' }]);
+    await durable.commitSnapshot('resp_durable', 'append');
+
+    const snapshot = await repo.responsesSnapshots.lookup('key-a', 'resp_durable');
+    expect(snapshot).not.toBeNull();
+    if (snapshot === null) throw new Error('Expected durable snapshot');
+    expect(await repo.responsesItems.lookupMany('key-a', snapshot.itemIds)).toHaveLength(snapshot.itemIds.length);
+  });
+
   test('attempt-private payload is request scoped', () => {
     initRepo(new InMemoryRepo());
     const state = new ResponsesAttemptState();
