@@ -80,9 +80,10 @@ export const prepareResponsesAffinity = async (
   const locations = await encryptedContentLocations(payload.input, codec);
   const boundItems = new Map<number, Extract<DecodedAffinityBlob, { kind: 'owned' }>['envelope']['affinity']>();
   for (const location of locations) {
-    if (location.decoded.kind !== 'owned' || location.decoded.envelope.affinity.boundItem === undefined) continue;
+    if (location.decoded.kind !== 'owned') continue;
     const affinity = location.decoded.envelope.affinity;
     const bound = affinity.boundItem;
+    if (bound === undefined) continue;
     const itemIndex = location.itemIndex + 1;
     const item = payload.input[itemIndex];
     if (
