@@ -1,8 +1,8 @@
 import { expect, test } from 'vitest';
 
 import { prepareMessagesAffinity } from './ingress.ts';
-import { affinityTargetForCandidate } from '../../shared/affinity/candidate.ts';
-import { AffinityCodec } from '../../shared/affinity/codec.ts';
+import { affinityTargetForCandidate } from '../../shared/affinity/index.ts';
+import { AffinityCodec } from '../../shared/affinity/index.ts';
 import type { ModelCandidate } from '@floway-dev/provider';
 import { stubModelCandidate } from '@floway-dev/test-utils';
 

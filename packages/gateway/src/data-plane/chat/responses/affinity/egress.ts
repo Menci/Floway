@@ -1,5 +1,5 @@
-import type { AffinityEgressOptions } from '../../shared/affinity/egress-options.ts';
-import type { AffinityTarget } from '../../shared/affinity/types.ts';
+import type { AffinityEgressOptions } from '../../shared/affinity/index.ts';
+import type { AffinityTarget } from '../../shared/affinity/index.ts';
 import { createTemporaryResponsesItemId } from '../items/format.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesOutputItem, ResponsesOutputReasoning, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';

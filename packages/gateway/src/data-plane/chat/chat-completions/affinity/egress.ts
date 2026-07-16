@@ -1,4 +1,4 @@
-import type { AffinityEgressOptions } from '../../shared/affinity/egress-options.ts';
+import type { AffinityEgressOptions } from '../../shared/affinity/index.ts';
 import { chatCompletionsErrorPayloadMessage, type ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 

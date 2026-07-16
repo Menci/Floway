@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
-import { AffinityCodec } from './codec.ts';
-import type { AffinityTarget } from './types.ts';
+import { AffinityCodec } from './index.ts';
+import type { AffinityTarget } from './index.ts';
 
 const SECRET = '00'.repeat(32);
 const OTHER_SECRET = '11'.repeat(32);
@@ -9,7 +9,6 @@ const DOMAIN = 'test.carrier';
 const affinity: AffinityTarget = {
   upstreamId: 'upstream-a',
   modelId: 'model-a',
-  rulesPresent: false,
 };
 
 describe('AffinityCodec', () => {

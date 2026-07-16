@@ -1,6 +1,6 @@
-import type { AffinityCodec } from '../../shared/affinity/codec.ts';
-import { blobForCandidate, type PreparedAffinityPayload } from '../../shared/affinity/prepared.ts';
-import type { AffinityEvidence, AffinityTarget, DecodedAffinityBlob } from '../../shared/affinity/types.ts';
+import type { AffinityCodec } from '../../shared/affinity/index.ts';
+import { blobForCandidate, type PreparedAffinityPayload } from '../../shared/affinity/index.ts';
+import type { AffinityEvidence, AffinityTarget, DecodedAffinityBlob } from '../../shared/affinity/index.ts';
 import { createTemporaryResponsesItemId } from '../items/format.ts';
 import type { CanonicalResponsesPayload, ResponsesInputItem } from '@floway-dev/protocols/responses';
 

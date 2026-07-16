@@ -1,5 +1,39 @@
-import type { AffinityEnvelope, AffinityOrigin, AffinityTarget, DecodedAffinityBlob } from './types.ts';
+import { isEqual } from 'es-toolkit';
+
+import type { ChatGatewayCtx, GatewayCtx } from '../gateway-ctx.ts';
+import type { RoutingDecision } from '../routing.ts';
 import type { AliasRules } from '@floway-dev/protocols/common';
+import type { ModelCandidate } from '@floway-dev/provider';
+
+export type AffinityOrigin = 'raw' | 'base64' | 'base64url';
+
+export interface AffinityTarget {
+  upstreamId: string;
+  modelId: string;
+  rules?: AliasRules;
+  upstreamItemId?: string;
+  syntheticItem?: true;
+}
+
+export interface AffinityEvidence {
+  readonly target: AffinityTarget;
+  readonly mode: 'prefer' | 'force';
+}
+
+export interface AffinityEnvelope {
+  version: 1;
+  origin?: AffinityOrigin;
+  affinity: AffinityTarget;
+}
+
+export type DecodedAffinityBlob =
+  | { kind: 'foreign'; value: string }
+  | { kind: 'owned'; value?: string; envelope: AffinityEnvelope };
+
+export interface PreparedAffinityPayload<T> {
+  readonly routingEvidence: readonly AffinityEvidence[];
+  readonly payloadForCandidate: (candidate: ModelCandidate) => T;
+}
 
 const IV_BYTES = 12;
 const LENGTH_BYTES = 2;
@@ -49,6 +83,25 @@ const decodeCanonicalBase64url = (value: string): Uint8Array | null => {
   }
 };
 
+const rawStringToBytes = (value: string): Uint8Array => {
+  const bytes = new Uint8Array(value.length * 2);
+  for (let index = 0; index < value.length; index += 1) {
+    const codeUnit = value.charCodeAt(index);
+    bytes[index * 2] = codeUnit >>> 8;
+    bytes[index * 2 + 1] = codeUnit & 0xff;
+  }
+  return bytes;
+};
+
+const rawStringFromBytes = (bytes: Uint8Array): string => {
+  if (bytes.length % 2 !== 0) throw new TypeError('Raw affinity value has an odd byte length');
+  let value = '';
+  for (let offset = 0; offset < bytes.length; offset += 2) {
+    value += String.fromCharCode((bytes[offset] << 8) | bytes[offset + 1]);
+  }
+  return value;
+};
+
 const decodeOriginal = (value: string): { bytes: Uint8Array; origin: AffinityOrigin } => {
   if (value.length > 0) {
     const base64 = decodeCanonicalBase64(value);
@@ -56,14 +109,14 @@ const decodeOriginal = (value: string): { bytes: Uint8Array; origin: AffinityOri
     const base64url = decodeCanonicalBase64url(value);
     if (base64url !== null) return { bytes: base64url, origin: 'base64url' };
   }
-  return { bytes: textEncoder.encode(value), origin: 'raw' };
+  return { bytes: rawStringToBytes(value), origin: 'raw' };
 };
 
 const encodeOriginal = (bytes: Uint8Array, origin: AffinityOrigin): string => {
   switch (origin) {
   case 'base64': return bytesToBase64(bytes);
   case 'base64url': return bytesToBase64url(bytes);
-  case 'raw': return fatalTextDecoder.decode(bytes);
+  case 'raw': return rawStringFromBytes(bytes);
   }
 };
 
@@ -88,27 +141,15 @@ const parseEnvelope = (value: unknown): AffinityEnvelope | null => {
   if (
     typeof affinity.upstreamId !== 'string'
     || typeof affinity.modelId !== 'string'
-    || typeof affinity.rulesPresent !== 'boolean'
     || (affinity.upstreamItemId !== undefined && typeof affinity.upstreamItemId !== 'string')
     || (affinity.syntheticItem !== undefined && affinity.syntheticItem !== true)
-    || (affinity.rulesPresent && !isRecord(affinity.rules))
-    || (!affinity.rulesPresent && affinity.rules !== undefined)
+    || (affinity.rules !== undefined && !isRecord(affinity.rules))
   ) return null;
 
-  const identity: AffinityTarget = affinity.rulesPresent
-    ? {
-        upstreamId: affinity.upstreamId,
-        modelId: affinity.modelId,
-        rulesPresent: true,
-        rules: affinity.rules as AliasRules,
-      }
-    : {
-        upstreamId: affinity.upstreamId,
-        modelId: affinity.modelId,
-        rulesPresent: false,
-      };
   const parsedAffinity: AffinityTarget = {
-    ...identity,
+    upstreamId: affinity.upstreamId,
+    modelId: affinity.modelId,
+    ...(affinity.rules !== undefined ? { rules: affinity.rules as AliasRules } : {}),
     ...(affinity.upstreamItemId !== undefined ? { upstreamItemId: affinity.upstreamItemId } : {}),
     ...(affinity.syntheticItem === true ? { syntheticItem: true } : {}),
   };
@@ -223,3 +264,115 @@ export class AffinityCodec {
     }
   }
 }
+
+export interface AffinityEgressOptions {
+  readonly codec: Pick<AffinityCodec, 'wrap'>;
+  readonly affinity: AffinityTarget;
+}
+
+const sameForcedTarget = (left: AffinityTarget, right: AffinityTarget): boolean =>
+  left.upstreamId === right.upstreamId && left.modelId === right.modelId;
+
+export const affinityTargetForCandidate = (candidate: ModelCandidate): AffinityTarget => ({
+  upstreamId: candidate.provider.upstream,
+  modelId: candidate.model.id,
+  ...(candidate.rules !== undefined ? { rules: candidate.rules } : {}),
+});
+
+export const candidateMatchesAffinity = (candidate: ModelCandidate, affinity: AffinityTarget): boolean =>
+  candidate.provider.upstream === affinity.upstreamId
+  && candidate.model.id === affinity.modelId
+  && isEqual(candidate.rules, affinity.rules);
+
+const candidateMatchesForcedTarget = (candidate: ModelCandidate, affinity: AffinityTarget): boolean =>
+  candidate.provider.upstream === affinity.upstreamId && candidate.model.id === affinity.modelId;
+
+const reorderByLatestAvailablePreference = <T extends ModelCandidate>(
+  candidates: readonly T[],
+  evidence: readonly AffinityEvidence[],
+): readonly T[] => {
+  for (let index = evidence.length - 1; index >= 0; index -= 1) {
+    if (evidence[index].mode !== 'prefer') continue;
+    const preferred = evidence[index].target;
+    const matching = candidates.filter(candidate => candidateMatchesAffinity(candidate, preferred));
+    if (matching.length === 0) continue;
+    return [
+      ...matching,
+      ...candidates.filter(candidate => !candidateMatchesAffinity(candidate, preferred)),
+    ];
+  }
+  return candidates;
+};
+
+export const routeCandidatesByAffinity = <T extends ModelCandidate>(
+  candidates: readonly T[],
+  evidence: readonly AffinityEvidence[],
+): RoutingDecision<T> => {
+  const forcing: AffinityTarget[] = [];
+  for (const item of evidence) {
+    if (item.mode === 'force' && !forcing.some(existing => sameForcedTarget(existing, item.target))) forcing.push(item.target);
+  }
+  if (forcing.length > 1) {
+    return {
+      kind: 'failure',
+      failure: {
+        kind: 'routing-unavailable',
+        message: `Client-carried state requires multiple incompatible targets: ${forcing.map(target => `'${target.upstreamId}/${target.modelId}'`).join(', ')}.`,
+      },
+    };
+  }
+
+  const narrowed = forcing.length === 0
+    ? candidates
+    : candidates.filter(candidate => candidateMatchesForcedTarget(candidate, forcing[0]));
+  if (forcing.length === 1 && narrowed.length === 0) {
+    return {
+      kind: 'failure',
+      failure: {
+        kind: 'routing-unavailable',
+        message: `Client-carried state requires unavailable target '${forcing[0].upstreamId}/${forcing[0].modelId}'.`,
+      },
+    };
+  }
+
+  return { kind: 'success', candidates: reorderByLatestAvailablePreference(narrowed, evidence) as readonly T[] };
+};
+
+type CandidateBlob =
+  | { readonly present: false; readonly compatible: boolean }
+  | { readonly present: true; readonly compatible: false; readonly value: string }
+  | { readonly present: true; readonly compatible: true; readonly value: string };
+
+export const blobForCandidate = (decoded: DecodedAffinityBlob, candidate: ModelCandidate): CandidateBlob => {
+  if (decoded.kind === 'foreign') return { present: true, compatible: false, value: decoded.value };
+  const compatible = candidateMatchesAffinity(candidate, decoded.envelope.affinity);
+  if (!compatible || decoded.value === undefined) return { present: false, compatible };
+  return { present: true, compatible: true, value: decoded.value };
+};
+
+export const preferredAffinityEvidence = (decoded: Iterable<DecodedAffinityBlob>): AffinityEvidence[] =>
+  [...decoded].flatMap(blob => blob.kind === 'owned' ? [{ target: blob.envelope.affinity, mode: 'prefer' }] : []);
+
+export class AffinityRequestContext {
+  readonly codec: AffinityCodec;
+  #selectedCandidate: ModelCandidate | undefined;
+
+  constructor(secret: string) {
+    this.codec = new AffinityCodec(secret);
+  }
+
+  select(candidate: ModelCandidate): void {
+    this.#selectedCandidate = candidate;
+  }
+
+  selectedTarget(): AffinityTarget {
+    if (this.#selectedCandidate === undefined) throw new Error('Affinity target requested before a candidate was selected');
+    return affinityTargetForCandidate(this.#selectedCandidate);
+  }
+}
+
+export const affinityEgressOptions = (ctx: GatewayCtx): AffinityEgressOptions => {
+  if (!('affinity' in ctx)) throw new Error('Chat event result reached responder without affinity context');
+  const chatCtx = ctx as ChatGatewayCtx;
+  return { codec: chatCtx.affinity.codec, affinity: chatCtx.affinity.selectedTarget() };
+};

@@ -1,4 +1,4 @@
-import type { AffinityEgressOptions } from '../../shared/affinity/egress-options.ts';
+import type { AffinityEgressOptions } from '../../shared/affinity/index.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 

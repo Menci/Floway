@@ -73,7 +73,6 @@ object with AES-256-GCM:
   affinity: {
     upstreamId: string,
     modelId: string,
-    rulesPresent: boolean,
     rules?: AliasRules,
     upstreamItemId?: string,
     syntheticItem?: true,

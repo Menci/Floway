@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
-import { affinityTargetForCandidate, candidateMatchesAffinity, routeCandidatesByAffinity } from './candidate.ts';
-import type { AffinityEvidence } from './types.ts';
+import { affinityTargetForCandidate, candidateMatchesAffinity, routeCandidatesByAffinity } from './index.ts';
+import type { AffinityEvidence } from './index.ts';
 import type { AliasRules } from '@floway-dev/protocols/common';
 import { stubModelCandidate } from '@floway-dev/test-utils';
 
@@ -50,6 +50,27 @@ describe('client-carried affinity candidate routing', () => {
     expect(routeCandidatesByAffinity([first, second], [evidence(unavailable)])).toEqual({
       kind: 'success',
       candidates: [first, second],
+    });
+  });
+
+  test('uses the latest preferred target that remains available', () => {
+    const first = candidate('up-a', 'model');
+    const second = candidate('up-b', 'model');
+    const unavailable = candidate('up-c', 'model');
+
+    expect(routeCandidatesByAffinity([second, first], [evidence(first), evidence(unavailable)])).toEqual({
+      kind: 'success',
+      candidates: [first, second],
+    });
+  });
+
+  test('force matches upstream and model without narrowing alias rules', () => {
+    const direct = candidate('up-a', 'model');
+    const alias = candidate('up-a', 'model', {});
+
+    expect(routeCandidatesByAffinity([direct, alias], [evidence(alias, 'force')])).toEqual({
+      kind: 'success',
+      candidates: [direct, alias],
     });
   });
 

@@ -1,15 +1,14 @@
 import { describe, expect, test, vi } from 'vitest';
 
 import { wrapGeminiAffinityEgress } from './egress.ts';
-import type { AffinityCodec } from '../../shared/affinity/codec.ts';
-import type { AffinityTarget } from '../../shared/affinity/types.ts';
+import type { AffinityCodec } from '../../shared/affinity/index.ts';
+import type { AffinityTarget } from '../../shared/affinity/index.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 
 const affinity: AffinityTarget = {
   upstreamId: 'up-a',
   modelId: 'model-a',
-  rulesPresent: false,
 };
 
 type AffinityEgressCodec = Pick<AffinityCodec, 'wrap'>;

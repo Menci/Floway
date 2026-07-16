@@ -1,4 +1,4 @@
-import { AffinityRequestContext } from './affinity/context.ts';
+import { AffinityRequestContext } from './affinity/index.ts';
 import type { RequestBody } from './request-body.ts';
 import { type DumpAccumulator, openDumpAccumulator } from '../../../dump/accumulator.ts';
 import { apiKeyFromContext, type AuthedContext, effectiveUpstreamIdsFromContext } from '../../../middleware/auth.ts';
