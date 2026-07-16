@@ -38,6 +38,51 @@ describe('StatefulResponsesStore', () => {
     expect(await repo.responsesItems.lookupMany('key-a', [output.id])).toEqual([output]);
   });
 
+  test('replace snapshots persist only their output state', async () => {
+    const repo = new InMemoryRepo();
+    initRepo(repo);
+    const store = createResponsesHttpStore('key-a', true);
+    const input = { type: 'message' as const, role: 'user' as const, content: 'discarded history' };
+    await store.stageInputItems([input]);
+    const output = {
+      id: 'cmp_public',
+      apiKeyId: 'key-a',
+      itemType: 'compaction',
+      payload: { item: { type: 'compaction', id: 'cmp_public', encrypted_content: 'opaque' } },
+      contentHash: 'output-hash',
+      createdAt: 1_000,
+    };
+    store.stageOutputItem(output);
+    await store.commitSnapshot('resp_compact', 'replace');
+
+    expect(await repo.responsesItems.lookupManyByContentHash('key-a', [await store.hashItemContent(input)])).toEqual([]);
+    expect((await repo.responsesSnapshots.lookup('key-a', 'resp_compact'))?.itemIds).toEqual([output.id]);
+  });
+
+  test('append snapshots refresh the lifetime of every referenced item', async () => {
+    const repo = new InMemoryRepo();
+    initRepo(repo);
+    const item = {
+      id: 'msg_old',
+      apiKeyId: 'key-a',
+      itemType: 'message',
+      payload: { item: { type: 'message', id: 'msg_old', role: 'assistant', content: [] } },
+      contentHash: 'old-hash',
+      createdAt: 1,
+    };
+    await repo.responsesItems.insertMany([item]);
+    await repo.responsesSnapshots.insert({ id: 'resp_old', apiKeyId: 'key-a', itemIds: [item.id], createdAt: 1 });
+    const store = createResponsesHttpStore('key-a', true);
+    expect(await store.loadSnapshot('resp_old')).not.toBeNull();
+    await store.commitSnapshot('resp_new', 'append');
+
+    const [refreshed] = await repo.responsesItems.lookupMany('key-a', [item.id]);
+    expect(refreshed.createdAt).toBeGreaterThan(1);
+    expect((await repo.responsesSnapshots.lookup('key-a', 'resp_new'))?.itemIds).toEqual([item.id]);
+    await repo.responsesItems.deleteOlderThan(2);
+    expect(await repo.responsesItems.lookupMany('key-a', [item.id])).toHaveLength(1);
+  });
+
   test('WebSocket store=false retains socket-local state only', async () => {
     const repo = new InMemoryRepo();
     initRepo(repo);

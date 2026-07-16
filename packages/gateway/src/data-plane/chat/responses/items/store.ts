@@ -18,6 +18,7 @@ export interface StatefulResponsesItemLookupResult {
 export interface StatefulResponsesBacking {
   lookupItems(query: StatefulResponsesItemLookup): Promise<StatefulResponsesItemLookupResult[]>;
   insertItems(items: readonly StoredResponsesItem[], options: { readonly durable: boolean }): Promise<void>;
+  refreshItems(items: readonly StoredResponsesItem[], createdAt: number): Promise<void>;
   markDurable?(apiKeyId: string, id: string): void;
   lookupSnapshot(apiKeyId: string, id: string): Promise<StoredResponsesSnapshot | null>;
   insertSnapshot(snapshot: StoredResponsesSnapshot): Promise<void>;
@@ -125,12 +126,22 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
 
   async commitSnapshot(responseId: string, mode: ResponsesSnapshotMode): Promise<void> {
     if (this.options.writes.length === 0) return;
-    const previousItems = this.previousSnapshotItemIds.map(id => {
-      const item = this.loadedItems.get(id);
-      if (item === undefined) throw new Error(`Responses snapshot item disappeared before commit: ${id}`);
-      return item;
-    });
-    await this.commitItems([...previousItems, ...this.stagedInputItems.values(), ...this.stagedOutputItems.values()]);
+    const rows = mode === 'replace'
+      ? [...this.stagedOutputItems.values()]
+      : [
+          ...this.previousSnapshotItemIds.map(id => {
+            const item = this.loadedItems.get(id);
+            if (item === undefined) throw new Error(`Responses snapshot item disappeared before commit: ${id}`);
+            return item;
+          }),
+          ...this.stagedInputItems.values(),
+          ...this.stagedOutputItems.values(),
+        ];
+    const uniqueRows = [...new Map(rows.map(row => [row.id, row])).values()];
+    await this.commitItems(uniqueRows);
+    const createdAt = Date.now();
+    await Promise.all(this.options.writes.map(write => write.backing.refreshItems(uniqueRows, createdAt)));
+    for (const row of uniqueRows) row.createdAt = createdAt;
     const itemIds = mode === 'replace'
       ? [...this.stagedOutputItemIds]
       : [...this.previousSnapshotItemIds, ...this.stagedInputItemIds, ...this.stagedOutputItemIds];
@@ -139,7 +150,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
       id: responseId,
       apiKeyId: this.apiKeyId,
       itemIds,
-      createdAt: Date.now(),
+      createdAt,
     };
     await Promise.all(this.options.writes.map(write => write.backing.insertSnapshot(snapshot)));
   }
@@ -241,6 +252,10 @@ export class RepoStatefulResponsesBacking implements StatefulResponsesBacking {
     await this.getRepo().responsesItems.insertMany(items);
   }
 
+  async refreshItems(items: readonly StoredResponsesItem[], createdAt: number): Promise<void> {
+    await this.getRepo().responsesItems.refreshMany(items, createdAt);
+  }
+
   async lookupSnapshot(apiKeyId: string, id: string): Promise<StoredResponsesSnapshot | null> {
     return await this.getRepo().responsesSnapshots.lookup(apiKeyId, id);
   }
@@ -272,6 +287,14 @@ export class MemoryStatefulResponsesBacking implements StatefulResponsesBacking 
         continue;
       }
       this.items.set(key, { row: cloneStoredResponsesItem(item), durable: options.durable });
+    }
+    return Promise.resolve();
+  }
+
+  refreshItems(items: readonly StoredResponsesItem[], createdAt: number): Promise<void> {
+    for (const item of items) {
+      const existing = this.items.get(scopedResponsesKey(item.apiKeyId, item.id));
+      if (existing !== undefined) existing.row.createdAt = createdAt;
     }
     return Promise.resolve();
   }

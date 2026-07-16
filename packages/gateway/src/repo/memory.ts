@@ -610,6 +610,14 @@ class MemoryResponsesItemsRepo implements ResponsesItemsRepo {
     return Promise.resolve();
   }
 
+  refreshMany(items: readonly StoredResponsesItem[], createdAt: number): Promise<void> {
+    for (const item of items) {
+      const existing = this.store.get(scopedResponsesKey(item.apiKeyId, item.id));
+      if (existing !== undefined) existing.createdAt = createdAt;
+    }
+    return Promise.resolve();
+  }
+
   deleteOlderThan(createdBefore: number): Promise<number> {
     let changes = 0;
     for (const [key, row] of this.store) {

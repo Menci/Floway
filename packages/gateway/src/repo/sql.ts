@@ -865,6 +865,16 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
     await runStatements(this.db, statements);
   }
 
+  async refreshMany(items: readonly StoredResponsesItem[], createdAt: number): Promise<void> {
+    const statements = await mapSequentially(items, async item => {
+      const payload = await serializeStoredResponsesPayload(item.id, item.apiKeyId, createdAt, item.payload);
+      return this.db
+        .prepare('UPDATE responses_items SET payload_json = ?, created_at = ? WHERE id = ? AND api_key_id = ?')
+        .bind(payload, createdAt, item.id, item.apiKeyId);
+    });
+    await runStatements(this.db, statements);
+  }
+
   async deleteOlderThan(createdBefore: number): Promise<number> {
     const result = await this.db.prepare('DELETE FROM responses_items WHERE created_at < ?').bind(createdBefore).run();
     return result.meta.changes ?? 0;
