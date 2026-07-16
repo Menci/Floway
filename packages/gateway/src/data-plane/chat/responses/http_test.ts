@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { test, vi } from 'vitest';
 
-import { hashResponsesItemBinding, isResponsesResponseId } from './items/format.ts';
+import { createResponsesItemId, hashResponsesItemBinding, isResponsesResponseId } from './items/format.ts';
 import type { AuthVars } from '../../../middleware/auth.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
@@ -379,6 +379,34 @@ test('POST /v1/responses with an unresolvable previous_response_id renders the v
   assertEquals(body.error.type, 'invalid_request_error');
   assertEquals(body.error.param, 'previous_response_id');
   assertEquals(body.error.code, 'previous_response_not_found');
+});
+
+test('POST /v1/responses rejects a concrete item whose stored ID has another type', async () => {
+  const repo = installRepo();
+  const id = createResponsesItemId('reasoning');
+  await repo.responsesItems.insertMany([{
+    id,
+    apiKeyId: API_KEY_ID,
+    itemType: 'reasoning',
+    payload: { item: { type: 'reasoning', id, summary: [] } },
+    contentHash: 'hash',
+    createdAt: 1,
+  }]);
+  queueResolution([makeCandidate()]);
+
+  const response = await makeApp().request('/v1/responses', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({
+      model: 'test-model',
+      input: [{ type: 'message', id, role: 'user', content: 'client content' }],
+    }),
+  });
+
+  assertEquals(response.status, 400);
+  const body = await response.json() as { error: { message: string; code: string } };
+  assertEquals(body.error.message, `Stored Responses item '${id}' has type 'reasoning', incompatible with the requested item type 'message'.`);
+  assertEquals(body.error.code, 'responses_item_routing_unavailable');
 });
 
 test('POST /v1/responses renders an invalid bound affinity carrier as a 400 input error', async () => {

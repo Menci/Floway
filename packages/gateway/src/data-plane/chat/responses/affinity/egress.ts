@@ -285,6 +285,22 @@ const wrapResponsesCarrierLifecycle = async function* (
       sequenceOffset,
     );
 
+  const discoverSnapshotCarriers = (
+    response: ResponsesResult,
+    sequenceNumber: number | undefined,
+  ): ResponsesStreamEvent[] => {
+    const events: ResponsesStreamEvent[] = [];
+    if (firstItem === undefined && response.output[0] !== undefined) {
+      const first = response.output[0];
+      firstItem = { outputIndex: 0, canCarry: canCarryAffinity(first) };
+      if (!firstItem.canCarry) events.push(...startCarrierBefore(0, sequenceNumber));
+    }
+    for (const [outputIndex, item] of response.output.entries()) {
+      if (requiresBoundCarrier(item)) events.push(...startCarrierBefore(outputIndex, sequenceNumber));
+    }
+    return events;
+  };
+
   for await (const frame of frames) {
     if (frame.type !== 'event') {
       yield frame;
@@ -346,11 +362,17 @@ const wrapResponsesCarrierLifecycle = async function* (
       return;
     }
 
-    if (event.type === 'response.created' || event.type === 'response.in_progress' || event.type === 'response.failed') {
+    if (event.type === 'response.created' || event.type === 'response.in_progress') {
+      for (const inserted of discoverSnapshotCarriers(event.response, event.sequence_number)) yield eventFrame(inserted);
       const response = await rewriteResponse(event.response, false);
       yield eventFrame(addSequenceOffset({ ...event, response }, sequenceOffset));
-      if (event.type === 'response.failed') return;
       continue;
+    }
+
+    if (event.type === 'response.failed') {
+      const response = await rewriteResponse(event.response, false);
+      yield eventFrame(addSequenceOffset({ ...event, response }, sequenceOffset));
+      return;
     }
 
     yield eventFrame(shifted(event));

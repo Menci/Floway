@@ -293,3 +293,33 @@ test('treats compaction_summary as force state and restores its upstream ID', as
   expect(prepared.payloadForCandidate(candidateA).input[0]).toMatchObject({ id: 'cmp_upstream', encrypted_content: 'opaque' });
   expect(prepared.payloadForCandidate(aliasVariant).input[0]).toMatchObject({ id: 'cmp_upstream', encrypted_content: 'opaque' });
 });
+
+test('keeps synthetic context compaction prefer-only while natural encrypted state forces', async () => {
+  const synthetic = await codec.wrap(
+    undefined,
+    { ...targetFor(candidateA), upstreamItemId: 'ctx_upstream' },
+    carrierDomain('context_compaction', 'encrypted_content'),
+  );
+  const syntheticItem = {
+    type: 'context_compaction',
+    id: 'ctx_public',
+    encrypted_content: synthetic,
+  } as unknown as CanonicalResponsesPayload['input'][number];
+  const syntheticPrepared = await prepareResponsesAffinity({ model: 'model', input: [syntheticItem] }, codec);
+  expect(syntheticPrepared.routingEvidence).toEqual([{ target: { ...targetFor(candidateA), upstreamItemId: 'ctx_upstream' }, mode: 'prefer' }]);
+
+  const natural = await codec.wrap(
+    'opaque',
+    { ...targetFor(candidateA), upstreamItemId: 'ctx_upstream' },
+    carrierDomain('context_compaction', 'encrypted_content'),
+  );
+  const naturalPrepared = await prepareResponsesAffinity({
+    model: 'model',
+    input: [{ ...syntheticItem, encrypted_content: natural }],
+  }, codec);
+  expect(naturalPrepared.routingEvidence.map(evidence => evidence.mode)).toEqual(['prefer', 'force']);
+  expect(naturalPrepared.payloadForCandidate({ ...candidateA, rules: {} }).input[0]).toMatchObject({
+    id: 'ctx_upstream',
+    encrypted_content: 'opaque',
+  });
+});

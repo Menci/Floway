@@ -38,8 +38,13 @@ export interface PreparedResponsesAffinity extends PreparedAffinityPayload<Canon
   readonly itemIdMapForCandidate: (candidate: ModelCandidate) => ReadonlyMap<string, string>;
 }
 
-const itemRequiresAffinity = (item: ResponsesInputItem): boolean =>
-  ['compaction', 'compaction_summary', 'context_compaction', 'program', 'program_output'].includes(item.type);
+const itemInheritsForce = (item: ResponsesInputItem): boolean =>
+  ['compaction', 'compaction_summary', 'program', 'program_output'].includes(item.type);
+
+const blobRequiresForce = (item: ResponsesInputItem, decoded: DecodedAffinityBlob): boolean =>
+  item.type === 'context_compaction'
+    ? decoded.kind === 'owned' && decoded.value !== undefined
+    : itemInheritsForce(item);
 
 const routingEvidenceFrom = (
   items: readonly ResponsesInputItem[],
@@ -55,9 +60,9 @@ const routingEvidenceFrom = (
     for (const location of owned) {
       latestTarget = location.decoded.envelope.affinity;
       evidence.push({ target: latestTarget, mode: 'prefer' });
-      if (itemRequiresAffinity(item)) evidence.push({ target: latestTarget, mode: 'force' });
+      if (blobRequiresForce(item, location.decoded)) evidence.push({ target: latestTarget, mode: 'force' });
     }
-    if (!itemRequiresAffinity(item) || itemLocations.length > 0) continue;
+    if (!itemInheritsForce(item) || itemLocations.length > 0) continue;
     if (latestTarget !== undefined) evidence.push({ target: latestTarget, mode: 'force' });
   }
 
@@ -144,7 +149,7 @@ export const prepareResponsesAffinity = async (
     for (const [itemIndex, carrier] of boundItems) {
       const item = candidatePayload.input[itemIndex];
       if (item === undefined) throw new Error('Validated Responses affinity item disappeared before candidate preparation');
-      const selected = itemRequiresAffinity(item)
+      const selected = blobRequiresForce(item, carrier.decoded)
         ? blobForForcedCandidate(carrier.decoded, candidate)
         : blobForCandidate(carrier.decoded, candidate);
       recordItemId(
@@ -160,7 +165,7 @@ export const prepareResponsesAffinity = async (
       const replacement = { ...item } as ResponsesInputItem & Record<string, unknown>;
       const decisions = itemLocations.map(location => ({
         location,
-        selected: itemRequiresAffinity(item)
+        selected: blobRequiresForce(item, location.decoded)
           ? blobForForcedCandidate(location.decoded, candidate)
           : blobForCandidate(location.decoded, candidate),
       }));

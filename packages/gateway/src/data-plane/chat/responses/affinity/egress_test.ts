@@ -281,6 +281,53 @@ describe('Responses affinity egress', () => {
     });
   });
 
+  test('discovers the first prefix from an in-progress snapshot before item added', async () => {
+    const message = {
+      type: 'message' as const,
+      id: 'msg_1',
+      role: 'assistant' as const,
+      status: 'completed',
+      content: [{ type: 'output_text' as const, text: 'answer' }],
+    };
+    const output: ProtocolFrame<ResponsesStreamEvent>[] = [];
+    for await (const frame of wrapResponsesAffinityEgress(frames([
+      eventFrame({ type: 'response.in_progress', response: response([message], 'in_progress'), sequence_number: 0 }),
+      eventFrame({ type: 'response.output_item.added', output_index: 0, item: message, sequence_number: 1 }),
+      eventFrame({ type: 'response.output_item.done', output_index: 0, item: message, sequence_number: 2 }),
+      eventFrame({ type: 'response.completed', response: response([message]), sequence_number: 3 }),
+    ]), { codec: immediateCodec, affinity })) output.push(frame);
+
+    const inProgress = output.find(frame => frame.type === 'event' && frame.event.type === 'response.in_progress');
+    const added = output.find(frame =>
+      frame.type === 'event'
+      && frame.event.type === 'response.output_item.added'
+      && frame.event.item.type === 'message');
+    expect(inProgress).toMatchObject({ event: { response: { output: [{ type: 'reasoning' }, message] } } });
+    expect(added).toMatchObject({ event: { output_index: 1, item: message } });
+  });
+
+  test('discovers a later bound prefix from an in-progress snapshot before item added', async () => {
+    const reasoning: ResponsesOutputReasoning = { type: 'reasoning', id: 'rs_1', summary: [], encrypted_content: 'opaque' };
+    const programOutput = { type: 'program_output' as const, id: 'prog_out_1', call_id: 'call_1', result: 'done', status: 'completed' as const };
+    const output: ProtocolFrame<ResponsesStreamEvent>[] = [];
+    for await (const frame of wrapResponsesAffinityEgress(frames([
+      eventFrame({ type: 'response.in_progress', response: response([reasoning, programOutput], 'in_progress'), sequence_number: 0 }),
+      eventFrame({ type: 'response.output_item.added', output_index: 1, item: programOutput, sequence_number: 1 }),
+      eventFrame({ type: 'response.output_item.done', output_index: 1, item: programOutput, sequence_number: 2 }),
+      eventFrame({ type: 'response.completed', response: response([reasoning, programOutput]), sequence_number: 3 }),
+    ]), { codec: immediateCodec, affinity })) output.push(frame);
+
+    const inProgress = output.find(frame => frame.type === 'event' && frame.event.type === 'response.in_progress');
+    const added = output.find(frame =>
+      frame.type === 'event'
+      && frame.event.type === 'response.output_item.added'
+      && frame.event.item.type === 'program_output');
+    expect(inProgress).toMatchObject({
+      event: { response: { output: [{ type: 'reasoning' }, { type: 'reasoning' }, programOutput] } },
+    });
+    expect(added).toMatchObject({ event: { output_index: 2, item: programOutput } });
+  });
+
   test('binds a prefixed item from its canonical done snapshot', async () => {
     const addedItem = { type: 'program_output' as const, id: 'initial_upstream', call_id: 'call_1', result: '', status: 'incomplete' as const };
     const doneItem = { type: 'program_output' as const, id: 'final_upstream', call_id: 'call_1', result: 'done', status: 'completed' as const };

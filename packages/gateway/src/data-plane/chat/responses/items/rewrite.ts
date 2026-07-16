@@ -16,6 +16,12 @@ const hydrateItem = (item: ResponsesInputItem, store: StatefulResponsesStore | u
     if (item.type === 'item_reference') throwChatServeFailure({ kind: 'item-not-found', itemId: id });
     return { item };
   }
+  if (item.type !== 'item_reference' && item.type !== stored.itemType) {
+    throwChatServeFailure({
+      kind: 'routing-unavailable',
+      message: `Stored Responses item '${stored.id}' has type '${stored.itemType}', incompatible with the requested item type '${item.type}'.`,
+    });
+  }
   return {
     item: structuredClone(stored.payload.item) as ResponsesInputItem,
     ...(stored.payload.private !== undefined ? { privatePayload: structuredClone(stored.payload.private) } : {}),
