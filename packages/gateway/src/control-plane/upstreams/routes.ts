@@ -85,14 +85,20 @@ const codexQuotaForResponse = async (record: UpstreamRecord): Promise<CodexQuota
 };
 
 // These projections need repository/provider I/O, which serialize.ts excludes
-// so it stays a pure persisted-record transform.
-const serializeForResponse = async (record: UpstreamRecord): Promise<UpstreamWithCacheResponse> => {
+// so it stays a pure persisted-record transform. Callers pick the base
+// serializer: list/create/update stay on the redacted default;
+// getUpstream passes upstreamRecordToFullJson so the edit page receives the
+// unredacted secrets it needs to round-trip.
+const serializeForResponse = async (
+  record: UpstreamRecord,
+  baseSerialize: (r: UpstreamRecord) => SerializedUpstreamRecord = upstreamRecordToJson,
+): Promise<UpstreamWithCacheResponse> => {
   const [cacheRow, codexQuota] = await Promise.all([
     getRepo().modelsCache.get(record.id),
     codexQuotaForResponse(record),
   ]);
   return {
-    ...upstreamRecordToJson(record),
+    ...baseSerialize(record),
     modelsCache: {
       fetchedAt: cacheRow?.fetchedAt ?? null,
       lastError: cacheRow?.lastError ?? null,
@@ -205,7 +211,7 @@ const validateProxyFallbackList = async (entries: readonly ProxyFallbackEntry[])
 
 export const listUpstreams = async (c: Context) => {
   const items = await getRepo().upstreams.list();
-  return c.json(await Promise.all(items.map(serializeForResponse)));
+  return c.json(await Promise.all(items.map(record => serializeForResponse(record))));
 };
 
 // Picker dataset for the per-key upstream whitelist editor. Non-admin users
@@ -255,19 +261,7 @@ export const getUpstream = async (c: AuthedContext<'/:id'>) => {
   const id = c.req.param('id');
   const record = await getRepo().upstreams.getById(id);
   if (!record) return c.json({ error: 'upstream not found' }, 404);
-  const [cacheRow, codexQuota] = await Promise.all([
-    getRepo().modelsCache.get(record.id),
-    codexQuotaForResponse(record),
-  ]);
-  const response: UpstreamWithCacheResponse = {
-    ...upstreamRecordToFullJson(record),
-    modelsCache: {
-      fetchedAt: cacheRow?.fetchedAt ?? null,
-      lastError: cacheRow?.lastError ?? null,
-    },
-    ...codexQuota,
-  };
-  return c.json(response);
+  return c.json(await serializeForResponse(record, upstreamRecordToFullJson));
 };
 
 export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) => {
