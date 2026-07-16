@@ -1006,6 +1006,12 @@ test('Responses WebSocket session-level store: second message resolves prior ite
         ['message', 'user', 'turn two input'],
       ]);
 
+      const restored = await repo.responsesSnapshots.lookup(apiKey.id, firstResponseId);
+      assertExists(restored);
+      assertEquals((await repo.responsesItems.lookupMany(apiKey.id, restored.itemIds)).length, restored.itemIds.length);
+      await repo.responsesSnapshots.deleteAll();
+      await repo.responsesItems.deleteAll();
+
       // A fresh WS session for the same api key has its own empty cache; with
       // the repo wiped, the snapshot is unreachable.
       const sessionB = await connectResponsesWebSocket(apiKey.key);

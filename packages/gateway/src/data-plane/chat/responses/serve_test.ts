@@ -418,12 +418,12 @@ test('expandPreviousResponseId prepends snapshot items and strips the previous_r
 // that lives nowhere else.
 const memoryStore = async (snapshots: readonly StoredResponsesSnapshot[], items: readonly StoredResponsesItem[]) => {
   const backing = new MemoryStatefulResponsesBacking();
-  for (const item of items) await backing.insertItems([item], { durable: true });
+  for (const item of items) await backing.insertItems([item]);
   for (const snapshot of snapshots) await backing.insertSnapshot(snapshot);
   return new LayeredStatefulResponsesStore({
     apiKeyId: API_KEY_ID,
     reads: [backing],
-    writes: [{ backing, durable: true }],
+    writes: [backing],
     stageInputs: true,
   });
 };
