@@ -103,8 +103,7 @@ Candidates from every target are flattened in target order and deduplicated by:
 ```text
 canonical model ID
 + upstream ID
-+ alias-rule presence
-+ alias-rule value
++ optional alias-rule value (`undefined` differs from `{}`)
 ```
 
 Rule presence matters: a direct candidate with `rules === undefined` is
@@ -150,11 +149,13 @@ Client-carried affinity serializes the exact dispatch identity:
 ```text
 upstream ID
 + canonical model ID
-+ alias-rule presence
-+ alias-rule value
++ optional alias-rule value (`undefined` differs from `{}`)
 ```
 
-Equality uses exact rule structure, matching candidate deduplication.
+Preference and opaque restoration use exact rule structure, matching candidate
+deduplication. Force evidence filters only by upstream and canonical model;
+different rule variants on that target remain viable, with an available exact
+preference ordered first.
 
 ## Client-carried affinity routing
 
