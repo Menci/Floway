@@ -22,6 +22,7 @@ export interface StatefulResponsesBacking {
   markDurable?(apiKeyId: string, id: string): void;
   lookupSnapshot(apiKeyId: string, id: string): Promise<StoredResponsesSnapshot | null>;
   insertSnapshot(snapshot: StoredResponsesSnapshot): Promise<void>;
+  refreshSnapshot(apiKeyId: string, id: string, createdAt: number): Promise<void>;
 }
 
 export interface StatefulResponsesWriteTarget {
@@ -82,6 +83,11 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
       if (snapshot === null) continue;
       await this.loadItems({ ids: snapshot.itemIds, contentHashes: [] });
       if (!snapshot.itemIds.every(itemId => this.loadedItems.has(itemId))) continue;
+      if (this.options.writes.length > 0) {
+        const createdAt = Date.now();
+        await Promise.all(this.options.writes.map(write => write.backing.refreshSnapshot(this.apiKeyId, snapshot.id, createdAt)));
+        snapshot.createdAt = createdAt;
+      }
       this.previousSnapshotItemIds = [...snapshot.itemIds];
       return cloneStoredResponsesSnapshot(snapshot);
     }
@@ -256,6 +262,10 @@ export class RepoStatefulResponsesBacking implements StatefulResponsesBacking {
   async insertSnapshot(snapshot: StoredResponsesSnapshot): Promise<void> {
     await this.getRepo().responsesSnapshots.insert(snapshot);
   }
+
+  async refreshSnapshot(apiKeyId: string, id: string, createdAt: number): Promise<void> {
+    await this.getRepo().responsesSnapshots.refresh(apiKeyId, id, createdAt);
+  }
 }
 
 export class MemoryStatefulResponsesBacking implements StatefulResponsesBacking {
@@ -304,6 +314,12 @@ export class MemoryStatefulResponsesBacking implements StatefulResponsesBacking 
 
   insertSnapshot(snapshot: StoredResponsesSnapshot): Promise<void> {
     this.snapshots.set(scopedResponsesKey(snapshot.apiKeyId, snapshot.id), cloneStoredResponsesSnapshot(snapshot));
+    return Promise.resolve();
+  }
+
+  refreshSnapshot(apiKeyId: string, id: string, createdAt: number): Promise<void> {
+    const snapshot = this.snapshots.get(scopedResponsesKey(apiKeyId, id));
+    if (snapshot !== undefined) snapshot.createdAt = createdAt;
     return Promise.resolve();
   }
 }

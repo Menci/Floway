@@ -648,6 +648,12 @@ class MemoryResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
     return Promise.resolve();
   }
 
+  refresh(apiKeyId: string, id: string, createdAt: number): Promise<void> {
+    const snapshot = this.store.get(scopedResponsesKey(apiKeyId, id));
+    if (snapshot !== undefined) snapshot.createdAt = createdAt;
+    return Promise.resolve();
+  }
+
   deleteOlderThan(createdBefore: number): Promise<number> {
     let changes = 0;
     for (const [key, snapshot] of this.store) {

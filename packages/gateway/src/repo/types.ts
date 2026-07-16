@@ -385,6 +385,7 @@ export interface StoredResponsesSnapshot {
 export interface ResponsesSnapshotsRepo {
   lookup(apiKeyId: string, id: string): Promise<StoredResponsesSnapshot | null>;
   insert(snapshot: StoredResponsesSnapshot): Promise<void>;
+  refresh(apiKeyId: string, id: string, createdAt: number): Promise<void>;
   deleteOlderThan(createdBefore: number): Promise<number>;
   deleteAll(): Promise<void>;
 }

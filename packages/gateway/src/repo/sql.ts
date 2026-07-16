@@ -938,6 +938,13 @@ class SqlResponsesSnapshotsRepo implements ResponsesSnapshotsRepo {
       .run();
   }
 
+  async refresh(apiKeyId: string, id: string, createdAt: number): Promise<void> {
+    await this.db
+      .prepare('UPDATE responses_snapshots SET created_at = ? WHERE id = ? AND api_key_id = ?')
+      .bind(createdAt, id, apiKeyId)
+      .run();
+  }
+
   async deleteOlderThan(createdBefore: number): Promise<number> {
     const result = await this.db.prepare('DELETE FROM responses_snapshots WHERE created_at < ?').bind(createdBefore).run();
     return result.meta.changes ?? 0;
