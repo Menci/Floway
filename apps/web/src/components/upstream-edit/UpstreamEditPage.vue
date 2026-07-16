@@ -13,7 +13,10 @@ import {
   blankAzureDraft,
   blankCustomDraft,
   blankOllamaDraft,
+  buildAzureConfig,
   buildCustomConfigCore,
+  buildListModelsPreviewConfig,
+  buildOllamaConfig,
   type CustomDraft,
   type OllamaDraft,
   seedPathOverrides,
@@ -134,15 +137,10 @@ const colorInvalid = ref(false);
 const upstreamModels = ref<UpstreamModelConfig[]>([]);
 const upstreamModelsError = ref<string | null>(null);
 
-// Create-mode draft preview state for the inline "Fetch" button on the
-// Custom and Ollama panels: `POST /api/upstreams/list-models` returns the
-// unsaved config's catalog so rows can be picked before saving.
-// `fetchedRaw` carries the Custom raw rows (translated through the draft's
-// endpoints by `customAutoModelsFromDraft`); `fetchedOllamaModels` carries
-// the Ollama rows the backend already projected — no further translation
-// needed since the per-model endpoints fall out of upstream capabilities.
+// `fetchedRaw` is the Custom-only raw slot — rows get translated through the
+// draft's endpoints via `customAutoModelsFromDraft`; Ollama's Fetch result
+// lands in `upstreamModels` alongside the mount-time prime.
 const fetchedRaw = ref<CustomRawModel[]>([]);
-const fetchedOllamaModels = ref<UpstreamModelConfig[]>([]);
 const fetchLoading = ref(false);
 const fetchError = ref<string | null>(null);
 const fetchedAtMs = ref<number | null>(null);
@@ -178,17 +176,17 @@ const customAutoModelsFromDraft = computed<UpstreamModelConfig[]>(() => fetchedR
 // already-projected `UpstreamModelConfig`.
 type ListModelsResult = { data: UpstreamModelConfig[] } | { data: CustomRawModel[] };
 
+const applyListModelsResult = (data: ListModelsResult['data']): void => {
+  if (draft.value.kind === 'custom') fetchedRaw.value = data as CustomRawModel[];
+  else upstreamModels.value = data as UpstreamModelConfig[];
+};
+
 const listDraftModels = async () => {
   if (draft.value.kind !== 'custom' && draft.value.kind !== 'ollama') return;
   fetchLoading.value = true;
   fetchError.value = null;
   try {
-    // Merge the current form drafts into the payload so the preview
-    // reflects the in-flight edits (baseUrl, apiKey, models)
-    // rather than the record's persisted config.
-    const config = draft.value.kind === 'custom'
-      ? { ...buildCustomConfigCore(customDraft.value), models: customDraft.value.models }
-      : buildOllamaConfig();
+    const config = buildListModelsPreviewConfig(draft.value, customDraft.value, ollamaDraft.value, isCreate.value);
     const previewRecord = { ...toRecordEnvelope(draft.value), config };
     const { data, error } = await callApi<ListModelsResult>(
       () => api.api.upstreams['list-models'].$post({ json: { record: previewRecord } }),
@@ -198,13 +196,18 @@ const listDraftModels = async () => {
     // discard the late result rather than repopulating stale auto rows.
     if (draft.value.kind === 'custom' && !customDraft.value.modelsFetch.enabled) return;
     if (error) { fetchError.value = error.message; return; }
-    if (draft.value.kind === 'custom') {
-      fetchedRaw.value = data.data as CustomRawModel[];
-    } else {
-      fetchedOllamaModels.value = data.data as UpstreamModelConfig[];
-    }
+    applyListModelsResult(data.data);
     fetchedCount.value = data.data.length;
     fetchedAtMs.value = Date.now();
+    // Edit mode: the server-side list-models refreshed the SWR cache too
+    // (record.id !== '' branch in the handler), so reload the store and
+    // fold the freshest `modelsCache.fetchedAt / lastError` back into draft
+    // — the Models Cache info panel is a passive reflection of this state.
+    if (!isCreate.value) {
+      await upstreamsStore.load();
+      const refreshed = upstreamsStore.upstreams.value?.find(u => u.id === draft.value.id);
+      if (refreshed) draft.value = { ...draft.value, modelsCache: refreshed.modelsCache };
+    }
   } finally {
     fetchLoading.value = false;
   }
@@ -245,14 +248,9 @@ const hasCredentialForFetch = computed<boolean>(() => {
 
 // Fetch the live model catalog for the current draft. Skipped for Azure
 // (operator-edited catalog, no upstream `/models` endpoint) and when the
-// draft has no credential yet (blueprint state). For custom the server
-// returns raw rows the dashboard translates through the draft's endpoints,
-// so route them into `fetchedRaw` — the same slot the unsaved draft
-// preview uses; every other kind receives already-projected
-// UpstreamModelConfig rows and lands in `upstreamModels`. Surfaces the
-// error on `upstreamModelsError` otherwise. Returns nothing — callers
-// wrap this with their own bookkeeping (mount-time prime, operator-driven
-// refresh).
+// draft has no credential yet (blueprint state). Called once on mount to
+// prime ModelsPanel; the operator-driven "Fetch" button goes through
+// listDraftModels instead so it can post the in-flight form config.
 const fetchUpstreamModels = async () => {
   if (draft.value.kind === 'azure') return;
   if (!hasCredentialForFetch.value) return;
@@ -261,32 +259,12 @@ const fetchUpstreamModels = async () => {
     () => api.api.upstreams['list-models'].$post({ json: { record: toRecordEnvelope(draft.value) } }),
   );
   if (error) { upstreamModelsError.value = error.message; return; }
-  if (draft.value.kind === 'custom') {
-    fetchedRaw.value = data.data as CustomRawModel[];
-  } else {
-    upstreamModels.value = data.data as UpstreamModelConfig[];
-  }
+  applyListModelsResult(data.data);
 };
 
-const refreshing = ref(false);
-const refreshCachedModels = async () => {
-  refreshing.value = true;
-  try {
-    await fetchUpstreamModels();
-    if (upstreamModelsError.value) return;
-    // The server-side list-models refreshed the SWR cache too; reload the
-    // store so the header's `modelsCache` summary reflects the freshest
-    // fetchedAt / lastError the gateway just wrote.
-    await upstreamsStore.load();
-    const refreshed = upstreamsStore.upstreams.value?.find(u => u.id === draft.value.id);
-    if (refreshed) draft.value = { ...draft.value, modelsCache: refreshed.modelsCache };
-  } finally {
-    refreshing.value = false;
-  }
-};
-
-// Prime on mount so ModelsPanel renders populated; refresh button reruns
-// the same call plus the store reload above.
+// Prime on mount so ModelsPanel renders populated; the operator-driven
+// "Fetch" button reruns list-models with the in-flight form config (see
+// listDraftModels).
 void fetchUpstreamModels();
 
 const saving = ref(false);
@@ -308,24 +286,6 @@ const buildCustomConfig = () => {
   return config;
 };
 
-const buildAzureConfig = () => {
-  const config: Record<string, unknown> = {
-    endpoint: azureDraft.value.endpoint.trim(),
-    models: azureDraft.value.models,
-  };
-  if (azureDraft.value.apiKey.trim()) config.apiKey = azureDraft.value.apiKey.trim();
-  return config;
-};
-
-const buildOllamaConfig = () => {
-  const config: Record<string, unknown> = {
-    baseUrl: ollamaDraft.value.baseUrl.trim(),
-    models: ollamaDraft.value.models,
-  };
-  if (ollamaDraft.value.apiKey.trim()) config.apiKey = ollamaDraft.value.apiKey.trim();
-  return config;
-};
-
 // Editable providers (custom/azure/ollama) rebuild the config from the
 // per-provider form draft; OAuth providers hand back the credential slice
 // their wizards populated in draft.config / draft.state. In edit state the
@@ -333,8 +293,8 @@ const buildOllamaConfig = () => {
 // pass here is ignored server-side — it's still safe to include.
 const buildConfigForSave = (): unknown => {
   if (draft.value.kind === 'custom') return buildCustomConfig();
-  if (draft.value.kind === 'azure') return buildAzureConfig();
-  if (draft.value.kind === 'ollama') return buildOllamaConfig();
+  if (draft.value.kind === 'azure') return buildAzureConfig(azureDraft.value);
+  if (draft.value.kind === 'ollama') return buildOllamaConfig(ollamaDraft.value);
   return draft.value.config;
 };
 
@@ -466,20 +426,15 @@ const modelsManualForActive = computed<UpstreamModelConfig[]>({
   },
 });
 
-// Auto rows are the live catalog the upstream itself decides. Saved rows
-// resolve through the SWR cache via `upstreamModels`; unsaved custom /
-// ollama drafts fall back to the inline list-models preview.
+// Auto rows are the live catalog the upstream itself decides. Ollama and the
+// OAuth kinds land the projected UpstreamModelConfig rows in `upstreamModels`
+// (populated by the mount-time prime and the inline "Fetch" preview alike);
+// Custom keeps a separate raw slot so the dashboard can translate through
+// the draft's endpoints.
 const autoForActive = computed<UpstreamModelConfig[]>(() => {
   if (draft.value.kind === 'custom') {
     if (!customDraft.value.modelsFetch.enabled) return [];
-    // Both saved and unsaved custom rows read the raw catalog from
-    // `fetchedRaw` and translate through the draft's endpoints — the
-    // server returns raw upstream rows uniformly for both call paths.
     return customAutoModelsFromDraft.value;
-  }
-  if (draft.value.kind === 'ollama') {
-    if (!isCreate.value) return upstreamModels.value;
-    return fetchedOllamaModels.value;
   }
   return upstreamModels.value;
 });
@@ -595,10 +550,8 @@ const workbenchStyle = computed(() => ({ '--right-pane-h': `${Math.ceil(rightCon
         :fetch-status="fetchStatus"
         :available-model-items="availableModelItems"
         :models-cache="showCacheStatus ? draft.modelsCache : null"
-        :refreshing="refreshing"
         :saving="saving"
         @fetch-models="listDraftModels"
-        @refresh-cache="refreshCachedModels"
         @patched="applyPatch"
         @save-and-open-edit="save({ openEdit: true })"
         @error="onError"

@@ -520,6 +520,19 @@ export const searchConfigSchema = z.object({
   tavily: z.object({ apiKey: z.string() }),
   microsoftGrounding: z.object({ apiKey: z.string() }),
   jina: z.object({ apiKey: z.string() }),
+  passthroughOpenAiSearch: z.object({
+    enabled: z.boolean(),
+    upstreamId: z.string(),
+    model: z.string(),
+  }),
+}).superRefine((config, ctx) => {
+  if (!config.passthroughOpenAiSearch.enabled) return;
+  if (config.passthroughOpenAiSearch.upstreamId.trim() === '') {
+    ctx.addIssue({ code: 'custom', path: ['passthroughOpenAiSearch', 'upstreamId'], message: 'Select an upstream' });
+  }
+  if (config.passthroughOpenAiSearch.model.trim() === '') {
+    ctx.addIssue({ code: 'custom', path: ['passthroughOpenAiSearch', 'model'], message: 'Select a model' });
+  }
 });
 
 // --- model aliases ---

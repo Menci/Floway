@@ -32,6 +32,9 @@ export const CODEX_OAUTH_USER_AGENT = 'codex-cli/0.91.0';
 
 export const CODEX_BACKEND_BASE = 'https://chatgpt.com/backend-api';
 export const CODEX_RESPONSES_PATH = '/codex/responses';
+// Codex appends `alpha/search` to its ChatGPT model-provider base.
+// https://github.com/openai/codex/blob/2e1607ee2fa8099a233df7437adee5f16a741905/codex-rs/codex-api/src/endpoint/search.rs#L31-L47
+export const CODEX_ALPHA_SEARCH_PATH = '/codex/alpha/search';
 // Native unary compaction endpoint. The Codex CLI defaults to a client-side
 // `RemoteCompactionV2` path that re-uses `/codex/responses` with an appended
 // `compaction_trigger` item, but the server still serves this canonical

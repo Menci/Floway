@@ -57,6 +57,8 @@ export const customFetchImagesGenerations = (config: CustomUpstreamConfig, init:
   customFetchInternal(config, resolveOverridable(config, '/images/generations'), init, options);
 export const customFetchImagesEdits = (config: CustomUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
   customFetchInternal(config, resolveOverridable(config, '/images/edits'), init, options);
+export const customFetchAlphaSearch = (config: CustomUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>
+  customFetchInternal(config, resolveOverridable(config, '/alpha/search'), init, options);
 // /models lives on its own fetch toggle (see config.modelsFetch.endpoint),
 // not in pathOverrides.
 export const customFetchModels = (config: CustomUpstreamConfig, init: RequestInit, options: UpstreamFetchOptions): Promise<Response> =>

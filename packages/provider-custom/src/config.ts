@@ -40,6 +40,7 @@ type CustomPathOverrideKey =
   | '/responses'
   | '/messages'
   | '/embeddings'
+  | '/alpha/search'
   | '/images/generations'
   | '/images/edits';
 
@@ -103,6 +104,7 @@ const PATH_OVERRIDE_KEYS = new Set<CustomPathOverrideKey>([
   '/responses',
   '/messages',
   '/embeddings',
+  '/alpha/search',
   '/images/generations',
   '/images/edits',
 ]);
