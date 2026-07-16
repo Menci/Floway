@@ -138,24 +138,20 @@ export const prepareResponsesAffinity = async (
     const cached = preparedByCandidate.get(candidate);
     if (cached !== undefined) return cached;
     const itemIdMap = new Map<string, string>();
-    const recordItemId = (item: ResponsesInputItem, id: string): void => {
-      if (!('id' in item) || typeof item.id !== 'string') {
-        throw new Error('Responses affinity item ID changed before candidate preparation');
-      }
-      if (item.id !== id) itemIdMap.set(item.id, id);
-      item.id = id;
+    const setItemId = (item: ResponsesInputItem, id: string): void => {
+      const existingId = 'id' in item && typeof item.id === 'string' ? item.id : undefined;
+      if (existingId !== undefined && existingId !== id) itemIdMap.set(existingId, id);
+      (item as ResponsesInputItem & { id: string }).id = id;
     };
     const candidatePayload = structuredClone(payload);
     for (const [itemIndex, carrier] of boundItems) {
-      const item = candidatePayload.input[itemIndex];
-      if (item === undefined) throw new Error('Validated Responses affinity item disappeared before candidate preparation');
+      const item = candidatePayload.input[itemIndex]!;
       const selected = blobRequiresForce(item, carrier.decoded)
         ? blobForForcedCandidate(carrier.decoded, candidate)
         : blobForCandidate(carrier.decoded, candidate);
-      recordItemId(
-        item,
-        selected.compatible ? carrier.boundItem.upstreamItemId : createTemporaryResponsesItemId(item.type),
-      );
+      if (!selected.compatible) setItemId(item, createTemporaryResponsesItemId(item.type));
+      else if (carrier.boundItem.upstreamItemId !== undefined) setItemId(item, carrier.boundItem.upstreamItemId);
+      else delete (item as ResponsesInputItem & { id?: string }).id;
     }
     const byItem = Map.groupBy(locations, location => location.itemIndex);
     const rewritten = candidatePayload.input.flatMap((item, itemIndex): ResponsesInputItem[] => {
@@ -189,22 +185,20 @@ export const prepareResponsesAffinity = async (
         && decision.location.decoded.value === undefined
         && !decision.selected.present);
       if (nested.size > 0) {
-        if (replacement.type !== 'agent_message') throw new Error('Responses affinity content location changed item type');
-        replacement.content = replacement.content.flatMap((content, contentIndex) => {
+        const agentMessage = replacement as Extract<ResponsesInputItem, { type: 'agent_message' }>;
+        agentMessage.content = agentMessage.content.flatMap((content, contentIndex) => {
           const decision = nested.get(contentIndex);
           if (decision === undefined) return [content];
-          if (content.type !== 'encrypted_content') throw new Error('Responses affinity content location changed block type');
           return decision.selected.present ? [{ ...content, encrypted_content: decision.selected.value }] : [];
         });
       }
       const compatibleOwned = decisions.find(decision => decision.selected.compatible && decision.location.decoded.kind === 'owned');
       if (compatibleOwned?.location.decoded.kind === 'owned') {
         const upstreamItemId = compatibleOwned.location.decoded.envelope.affinity.upstreamItemId;
-        if (upstreamItemId !== undefined && 'id' in replacement && typeof replacement.id === 'string') {
-          recordItemId(replacement, upstreamItemId);
-        }
+        if (upstreamItemId !== undefined) setItemId(replacement, upstreamItemId);
+        else delete replacement.id;
       } else if (decisions.some(decision => decision.location.decoded.kind === 'owned') && 'id' in replacement && typeof replacement.id === 'string') {
-        recordItemId(
+        setItemId(
           replacement,
           createTemporaryResponsesItemId(replacement.type),
         );

@@ -27,7 +27,7 @@ Affinity derives an AES-256-GCM key with HKDF and encrypts:
     syntheticItem?: true,
     boundItem?: {
       type: string,
-      upstreamItemId: string,
+      upstreamItemId?: string,
       contentHash: string,
     },
   },

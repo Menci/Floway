@@ -19,7 +19,7 @@ const opaqueSlots = (item: ResponsesOutputItem): Array<{ key: string; value: str
   if (item.type === 'program' && typeof item.fingerprint === 'string') {
     slots.push({ key: 'fingerprint', value: item.fingerprint });
   }
-  if (Array.isArray(record.content)) {
+  if (item.type === 'agent_message' && Array.isArray(record.content)) {
     record.content.forEach((part, index) => {
       if (!part || typeof part !== 'object') return;
       const content = part as Record<string, unknown>;
@@ -126,6 +126,7 @@ const addOutputIndexOffset = <T extends ResponsesStreamEvent>(event: T, offset: 
 interface InsertedCarrier {
   readonly outputIndex: number;
   readonly added: ResponsesOutputReasoning;
+  readonly expectsBoundItem: boolean;
   completed?: ResponsesOutputReasoning;
   boundItem?: NonNullable<AffinityTarget['boundItem']>;
 }
@@ -159,6 +160,7 @@ const wrapResponsesCarrierLifecycle = async function* (
   const startCarrierBefore = (
     originalOutputIndex: number,
     sequenceNumber: number | undefined,
+    expectsBoundItem = true,
   ): ResponsesStreamEvent[] => {
     const existing = insertedItems.get(originalOutputIndex);
     if (existing !== undefined) return [];
@@ -170,7 +172,7 @@ const wrapResponsesCarrierLifecycle = async function* (
     const insertionPoint = outputIndexOffset(originalOutputIndex);
     const shiftedOutputIndex = originalOutputIndex + insertionPoint;
     insertedItemIndexes.splice(insertionPoint, 0, originalOutputIndex);
-    insertedItems.set(originalOutputIndex, { outputIndex: shiftedOutputIndex, added });
+    insertedItems.set(originalOutputIndex, { outputIndex: shiftedOutputIndex, added, expectsBoundItem });
     const shiftedSequence = sequenceNumber === undefined ? undefined : sequenceNumber + sequenceOffset;
     sequenceOffset += 1;
     return [
@@ -190,9 +192,16 @@ const wrapResponsesCarrierLifecycle = async function* (
   ): Promise<ResponsesStreamEvent[]> => {
     const inserted = insertedItems.get(originalOutputIndex);
     if (inserted === undefined) throw new Error(`Responses affinity carrier ${originalOutputIndex} completed before it started`);
+    if (inserted.expectsBoundItem && item === undefined) {
+      throw new Error(`Responses output item ${originalOutputIndex} disappeared before its affinity carrier closed`);
+    }
     const upstreamItemId = item !== undefined && 'id' in item && typeof item.id === 'string' ? item.id : undefined;
-    const boundItem = item !== undefined && upstreamItemId !== undefined
-      ? { type: item.type, upstreamItemId, contentHash: await hashResponsesItemBinding(item) }
+    const boundItem = item !== undefined
+      ? {
+          type: item.type,
+          ...(upstreamItemId !== undefined ? { upstreamItemId } : {}),
+          contentHash: await hashResponsesItemBinding(item),
+        }
       : undefined;
     if (inserted.completed !== undefined) {
       if (
@@ -344,7 +353,7 @@ const wrapResponsesCarrierLifecycle = async function* (
         if (first !== undefined && canCarryAffinity(first)) {
           firstItem = { outputIndex: 0, canCarry: true };
         } else {
-          for (const inserted of startCarrierBefore(0, event.sequence_number)) yield eventFrame(inserted);
+          for (const inserted of startCarrierBefore(0, event.sequence_number, first !== undefined)) yield eventFrame(inserted);
           firstItem = first === undefined ? undefined : { outputIndex: 0, canCarry: false };
         }
       }
