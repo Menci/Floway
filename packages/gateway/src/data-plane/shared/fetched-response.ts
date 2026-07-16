@@ -6,6 +6,7 @@
 
 const BLOCKED_RELAY_HEADERS: ReadonlySet<string> = new Set([
   // Hop-by-hop headers (RFC 9110 §7.6.1).
+  // https://www.rfc-editor.org/rfc/rfc9110#section-7.6.1
   'connection',
   'keep-alive',
   'proxy-authenticate',
