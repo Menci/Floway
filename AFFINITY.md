@@ -122,10 +122,11 @@ in `data-plane/chat/gemini/affinity/egress.ts`.
 
 Natural carriers include top-level `encrypted_content`, program `fingerprint`,
 and `agent_message.content[].encrypted_content`. A carrier-capable first item
-without a natural value receives one at `output_item.done`.
+without a natural value receives one at `output_item.done`; a program without
+a natural fingerprint receives a synthetic fingerprint in the same slot.
 
-Other first items, plus non-carrier program/program-output items, receive an
-adjacent reasoning prefix. Its `output_item.added` event is emitted immediately
+Other first items and `program_output` items receive an adjacent reasoning
+prefix. Its `output_item.added` event is emitted immediately
 without buffering the bound item's visible stream. Its encrypted
 `output_item.done` is emitted immediately before the bound item's done event,
 using the final upstream ID and a canonical SHA-256 content hash that excludes

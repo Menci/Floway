@@ -113,7 +113,7 @@ const canCarryAffinity = (item: ResponsesOutputItem): boolean =>
   ['reasoning', 'compaction', 'compaction_summary', 'context_compaction', 'agent_message', 'program'].includes(item.type);
 
 const requiresBoundCarrier = (item: ResponsesOutputItem): boolean =>
-  (item.type === 'program' || item.type === 'program_output') && opaqueSlots(item).length === 0;
+  item.type === 'program_output' && opaqueSlots(item).length === 0;
 
 const addSequenceOffset = <T extends ResponsesStreamEvent>(event: T, offset: number): T =>
   event.sequence_number === undefined ? event : { ...event, sequence_number: event.sequence_number + offset };
@@ -217,6 +217,16 @@ const wrapResponsesCarrierLifecycle = async function* (
     if (!canCarryAffinity(item)) throw new Error(`Responses item type ${item.type} cannot carry affinity`);
     const target = itemAffinity(options.affinity, item);
     const itemId = 'id' in item && typeof item.id === 'string' ? item.id : '';
+    if (item.type === 'program') {
+      const slot = 'fingerprint';
+      const cacheKey = `${outputIndex}\0${itemId}\0${slot}`;
+      let fingerprint = syntheticOnFirstItem.get(cacheKey);
+      if (fingerprint === undefined) {
+        fingerprint = options.codec.wrap(undefined, target, carrierDomain(item.type, slot));
+        syntheticOnFirstItem.set(cacheKey, fingerprint);
+      }
+      return { ...item, fingerprint: await fingerprint };
+    }
     if (item.type === 'agent_message') {
       const slot = `content.${item.content.length}.encrypted_content`;
       const cacheKey = `${outputIndex}\0${itemId}\0${slot}`;
@@ -238,12 +248,14 @@ const wrapResponsesCarrierLifecycle = async function* (
   };
 
   const rewriteResponse = async (response: ResponsesResult): Promise<ResponsesResult> => {
-    let output = response.output;
-    if (firstItem?.canCarry && !insertedItems.has(firstItem.outputIndex) && output[firstItem.outputIndex] !== undefined) {
-      const firstItemIndex = firstItem.outputIndex;
-      const first = await ensureItemCarrier(output[firstItemIndex], firstItemIndex);
-      output = output.map((item, index) => index === firstItemIndex ? first : item);
-    }
+    let output = await Promise.all(response.output.map(async (item, index) => {
+      const firstNeedsCarrier = firstItem?.canCarry
+        && index === firstItem.outputIndex
+        && !insertedItems.has(index);
+      return firstNeedsCarrier || (item.type === 'program' && opaqueSlots(item).length === 0)
+        ? await ensureItemCarrier(item, index)
+        : item;
+    }));
     const interleaved: ResponsesOutputItem[] = [];
     for (let index = 0; index <= output.length; index += 1) {
       const inserted = insertedItems.get(index);
@@ -271,9 +283,7 @@ const wrapResponsesCarrierLifecycle = async function* (
           for (const inserted of startCarrierBefore(event.output_index, event.sequence_number)) yield eventFrame(inserted);
         }
       } else if (requiresBoundCarrier(event.item)) {
-        if (event.item.type !== 'program') {
-          for (const inserted of startCarrierBefore(event.output_index, event.sequence_number)) yield eventFrame(inserted);
-        }
+        for (const inserted of startCarrierBefore(event.output_index, event.sequence_number)) yield eventFrame(inserted);
       }
       yield eventFrame(shifted(event));
       continue;
@@ -286,9 +296,10 @@ const wrapResponsesCarrierLifecycle = async function* (
       if (insertedItems.has(event.output_index)) {
         for (const inserted of await completeCarrierBefore(event.item, event.output_index, event.sequence_number)) yield eventFrame(inserted);
       }
-      const item = firstItem?.canCarry
+      const item = (firstItem?.canCarry
         && event.output_index === firstItem.outputIndex
-        && !insertedItems.has(event.output_index)
+        && !insertedItems.has(event.output_index))
+        || (event.item.type === 'program' && opaqueSlots(event.item).length === 0)
         ? await ensureItemCarrier(event.item, event.output_index)
         : event.item;
       yield eventFrame(shifted({ ...event, item }));
