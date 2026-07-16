@@ -181,6 +181,10 @@ export const prepareResponsesAffinity = async (
       }
       const nested = new Map(decisions.flatMap(decision =>
         decision.location.contentIndex === undefined ? [] : [[decision.location.contentIndex, decision] as const]));
+      const removedSyntheticNested = [...nested.values()].some(decision =>
+        decision.location.decoded.kind === 'owned'
+        && decision.location.decoded.value === undefined
+        && !decision.selected.present);
       if (nested.size > 0) {
         if (replacement.type !== 'agent_message') throw new Error('Responses affinity content location changed item type');
         replacement.content = replacement.content.flatMap((content, contentIndex) => {
@@ -203,7 +207,7 @@ export const prepareResponsesAffinity = async (
         );
       }
       if (removeItem) return [];
-      if (replacement.type === 'agent_message' && replacement.content.length === 0) return [];
+      if (replacement.type === 'agent_message' && replacement.content.length === 0 && !removedSyntheticNested) return [];
       return [replacement];
     });
     const prepared = { payload: { ...candidatePayload, input: rewritten }, itemIdMap };

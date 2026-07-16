@@ -71,6 +71,36 @@ test('applies item-id provenance from nested encrypted content', async () => {
   });
 });
 
+test('preserves an originally empty agent message after removing its synthetic nested carrier', async () => {
+  const carrier = await codec.wrap(
+    undefined,
+    { ...affinityTargetForCandidate(candidateA), upstreamItemId: 'amsg_upstream' },
+    carrierDomain('agent_message', 'content.0.encrypted_content'),
+  );
+  const prepared = await prepareResponsesAffinity({
+    model: 'model',
+    input: [{
+      type: 'agent_message',
+      id: 'amsg_public',
+      author: 'a',
+      recipient: 'b',
+      content: [{ type: 'encrypted_content', encrypted_content: carrier }],
+    }],
+  }, codec);
+
+  expect(prepared.payloadForCandidate(candidateA).input).toEqual([{
+    type: 'agent_message',
+    id: 'amsg_upstream',
+    author: 'a',
+    recipient: 'b',
+    content: [],
+  }]);
+  expect(prepared.payloadForCandidate(candidateB).input[0]).toMatchObject({
+    id: expect.stringMatching(/^amsg_tmp_/),
+    content: [],
+  });
+});
+
 test('rewrites multiple nested encrypted blocks against their original indexes', async () => {
   const first = await codec.wrap(
     'first',

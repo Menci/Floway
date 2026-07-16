@@ -247,15 +247,17 @@ const wrapResponsesCarrierLifecycle = async function* (
     return { ...item, encrypted_content: await encrypted } as ResponsesOutputItem;
   };
 
-  const rewriteResponse = async (response: ResponsesResult): Promise<ResponsesResult> => {
-    let output = await Promise.all(response.output.map(async (item, index) => {
-      const firstNeedsCarrier = firstItem?.canCarry
-        && index === firstItem.outputIndex
-        && !insertedItems.has(index);
-      return firstNeedsCarrier || (item.type === 'program' && opaqueSlots(item).length === 0)
-        ? await ensureItemCarrier(item, index)
-        : item;
-    }));
+  const rewriteResponse = async (response: ResponsesResult, synthesizeMissing: boolean): Promise<ResponsesResult> => {
+    let output = synthesizeMissing
+      ? await Promise.all(response.output.map(async (item, index) => {
+          const firstNeedsCarrier = firstItem?.canCarry
+            && index === firstItem.outputIndex
+            && !insertedItems.has(index);
+          return firstNeedsCarrier || (item.type === 'program' && opaqueSlots(item).length === 0)
+            ? await ensureItemCarrier(item, index)
+            : item;
+        }))
+      : response.output;
     const interleaved: ResponsesOutputItem[] = [];
     for (let index = 0; index <= output.length; index += 1) {
       const inserted = insertedItems.get(index);
@@ -329,13 +331,13 @@ const wrapResponsesCarrierLifecycle = async function* (
           await completeCarrierBefore(item, outputIndex, event.sequence_number);
         }
       }
-      const response = await rewriteResponse(event.response);
+      const response = await rewriteResponse(event.response, true);
       yield eventFrame(addSequenceOffset({ ...event, response }, sequenceOffset));
       return;
     }
 
     if (event.type === 'response.created' || event.type === 'response.in_progress' || event.type === 'response.failed') {
-      const response = await rewriteResponse(event.response);
+      const response = await rewriteResponse(event.response, false);
       yield eventFrame(addSequenceOffset({ ...event, response }, sequenceOffset));
       if (event.type === 'response.failed') return;
       continue;

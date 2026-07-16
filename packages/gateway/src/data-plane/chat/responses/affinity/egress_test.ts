@@ -139,6 +139,16 @@ describe('Responses affinity egress', () => {
     expect(output).toEqual([eventFrame({ type: 'response.failed', response: response([], 'failed') })]);
   });
 
+  test('does not synthesize a missing program carrier in a failed snapshot', async () => {
+    const program = { type: 'program', id: 'prog_1', call_id: 'call_1', code: 'return 1' } as ResponsesOutputItem;
+    const output: ProtocolFrame<ResponsesStreamEvent>[] = [];
+    for await (const frame of wrapResponsesAffinityEgress(frames([
+      eventFrame({ type: 'response.failed', response: response([program], 'failed') }),
+    ]), { codec: immediateCodec, affinity })) output.push(frame);
+
+    expect(output).toEqual([eventFrame({ type: 'response.failed', response: response([program], 'failed') })]);
+  });
+
   test('adds one synthetic carrier to a real first reasoning item at item close', async () => {
     const reasoning: ResponsesOutputReasoning = { type: 'reasoning', id: 'rs_1', summary: [] };
     const output: ProtocolFrame<ResponsesStreamEvent>[] = [];
@@ -181,14 +191,16 @@ describe('Responses affinity egress', () => {
     const output: ProtocolFrame<ResponsesStreamEvent>[] = [];
     for await (const frame of wrapResponsesAffinityEgress(frames([
       eventFrame({ type: 'response.output_item.added', output_index: 0, item: added }),
+      eventFrame({ type: 'response.in_progress', response: response([added], 'in_progress') }),
       eventFrame({ type: 'response.output_item.done', output_index: 0, item: done }),
       eventFrame({ type: 'response.completed', response: response([done]) }),
     ]), { codec: immediateCodec, affinity })) output.push(frame);
 
-    expect(output).toHaveLength(3);
+    expect(output).toHaveLength(4);
     expect(JSON.stringify(output)).not.toContain('"type":"reasoning"');
-    expect(output[1]).toMatchObject({ event: { item: { type: 'program', fingerprint: 'wrapped:fp' } } });
-    expect(output[2]).toMatchObject({ event: { response: { output: [{ type: 'program', fingerprint: 'wrapped:fp' }] } } });
+    expect(output[1]).not.toMatchObject({ event: { response: { output: [{ fingerprint: expect.anything() }] } } });
+    expect(output[2]).toMatchObject({ event: { item: { type: 'program', fingerprint: 'wrapped:fp' } } });
+    expect(output[3]).toMatchObject({ event: { response: { output: [{ type: 'program', fingerprint: 'wrapped:fp' }] } } });
   });
 
   test('uses the program fingerprint slot for a synthetic carrier at close', async () => {
