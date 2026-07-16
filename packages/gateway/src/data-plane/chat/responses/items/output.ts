@@ -190,7 +190,7 @@ export const wrapResponsesOutputForStorage = async function* (
 
 // `compaction` and `compaction_summary` are the same wire variant — Codex's
 // protocol declares the latter as a serde alias for the former (see
-// https://github.com/openai/codex/blob/main/codex-rs/protocol/src/models.rs).
+// https://github.com/openai/codex/blob/9e552e9d15ba52bed7077d5357f3e18e330f8f38/codex-rs/protocol/src/models.rs#L1135-L1148).
 // An output stream carrying either is a self-contained compaction envelope
 // and replaces the conversation history.
 const isCompactionItemType = (type: string): boolean =>

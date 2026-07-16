@@ -110,8 +110,7 @@ const wrapNaturalResponsesAffinity = async function* (
 };
 
 const canCarryAffinity = (item: ResponsesOutputItem): boolean =>
-  ['reasoning', 'compaction', 'compaction_summary', 'context_compaction', 'agent_message'].includes(item.type)
-  || (item.type === 'program' && opaqueSlots(item).length > 0);
+  ['reasoning', 'compaction', 'compaction_summary', 'context_compaction', 'agent_message', 'program'].includes(item.type);
 
 const requiresBoundCarrier = (item: ResponsesOutputItem): boolean =>
   (item.type === 'program' || item.type === 'program_output') && opaqueSlots(item).length === 0;
@@ -131,7 +130,7 @@ interface InsertedCarrier {
   boundItem?: NonNullable<AffinityTarget['boundItem']>;
 }
 
-const ensureFirstResponsesItemAffinity = async function* (
+const wrapResponsesCarrierLifecycle = async function* (
   frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
   options: AffinityEgressOptions,
 ): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
@@ -240,7 +239,7 @@ const ensureFirstResponsesItemAffinity = async function* (
 
   const rewriteResponse = async (response: ResponsesResult): Promise<ResponsesResult> => {
     let output = response.output;
-    if (firstItem?.canCarry && output[firstItem.outputIndex] !== undefined) {
+    if (firstItem?.canCarry && !insertedItems.has(firstItem.outputIndex) && output[firstItem.outputIndex] !== undefined) {
       const firstItemIndex = firstItem.outputIndex;
       const first = await ensureItemCarrier(output[firstItemIndex], firstItemIndex);
       output = output.map((item, index) => index === firstItemIndex ? first : item);
@@ -272,17 +271,24 @@ const ensureFirstResponsesItemAffinity = async function* (
           for (const inserted of startCarrierBefore(event.output_index, event.sequence_number)) yield eventFrame(inserted);
         }
       } else if (requiresBoundCarrier(event.item)) {
-        for (const inserted of startCarrierBefore(event.output_index, event.sequence_number)) yield eventFrame(inserted);
+        if (event.item.type !== 'program') {
+          for (const inserted of startCarrierBefore(event.output_index, event.sequence_number)) yield eventFrame(inserted);
+        }
       }
       yield eventFrame(shifted(event));
       continue;
     }
 
     if (event.type === 'response.output_item.done') {
+      if (requiresBoundCarrier(event.item) && !insertedItems.has(event.output_index)) {
+        for (const inserted of startCarrierBefore(event.output_index, event.sequence_number)) yield eventFrame(inserted);
+      }
       if (insertedItems.has(event.output_index)) {
         for (const inserted of await completeCarrierBefore(event.item, event.output_index, event.sequence_number)) yield eventFrame(inserted);
       }
-      const item = firstItem?.canCarry && event.output_index === firstItem.outputIndex
+      const item = firstItem?.canCarry
+        && event.output_index === firstItem.outputIndex
+        && !insertedItems.has(event.output_index)
         ? await ensureItemCarrier(event.item, event.output_index)
         : event.item;
       yield eventFrame(shifted({ ...event, item }));
@@ -333,4 +339,4 @@ export const wrapResponsesAffinityEgress = (
   frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
   options: AffinityEgressOptions,
 ): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> =>
-  ensureFirstResponsesItemAffinity(wrapNaturalResponsesAffinity(frames, options), options);
+  wrapResponsesCarrierLifecycle(wrapNaturalResponsesAffinity(frames, options), options);

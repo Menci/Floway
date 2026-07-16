@@ -1,10 +1,10 @@
 import { prepareResponsesAffinity, type PreparedResponsesAffinity } from './affinity/ingress.ts';
+import { renderResponsesFailure } from './errors.ts';
 import { responsesInterceptors } from './interceptors/index.ts';
 import type { ResponsesAttemptResult, ResponsesInvocation } from './interceptors/types.ts';
 import { normalizeAssistantInputText } from './items/normalize-assistant-content.ts';
 import { syntheticEventsFromResult } from './items/output.ts';
 import { hydrateResponsesPayload, type HydratedResponsesPayload } from './items/rewrite.ts';
-import type { StatefulResponsesStore } from './items/store.ts';
 import { tokenUsageFromResponsesResult } from './usage.ts';
 import { applyRulesToUpstreamResponses } from '../../model-aliases/apply-rules.ts';
 import { providerStreamResultToExecuteResult, buildUpstreamCallOptions, telemetryModelIdentity, chatTargetPicker, upstreamPerformanceContext } from '../../shared/telemetry/attempt-helpers.ts';
@@ -85,7 +85,7 @@ export const responsesAttempt = {
     // Rewrite + privatePayload seed + assistant-content normalization all run
     // BEFORE the interceptor chain so source interceptors — most importantly
     // the web-search server-tool shim — see fully inline-expanded input items
-    // with their original wire ids, and `store.getPrivatePayload(id)` is
+    // with their original wire ids, and `responsesAttemptState.getPrivatePayload(id)` is
     // ready to hand back the persisted IR. The shim's `transformItems` runs
     // inside the chain body, before `run()`, so deferring rewrite/seed to
     // the inner closure would leave the shim looking at the pre-rewrite
@@ -97,8 +97,14 @@ export const responsesAttempt = {
       privatePayloads = args.sourcePreparation.privatePayloads;
     } else {
       const payload = { ...structuredClone(args.payload), model: candidate.model.id };
-      const hydrated = await rewriteOrRenderFailure(payload, ctx.store);
-      if (!('payload' in hydrated)) return hydrated.failure;
+      let hydrated: HydratedResponsesPayload;
+      try {
+        hydrated = hydrateResponsesPayload(payload, ctx.store);
+      } catch (error) {
+        const failure = tryCatchChatServeFailure(error);
+        if (failure === null || failure.kind !== 'item-not-found') throw error;
+        return renderResponsesFailure(failure);
+      }
       affinity = await prepareResponsesAffinity(hydrated.payload, ctx.affinity.codec);
       privatePayloads = hydrated.privatePayloads;
     }
@@ -150,45 +156,6 @@ export const responsesAttempt = {
     }
     return result;
   },
-};
-
-type RewriteOutcome =
-  | HydratedResponsesPayload
-  | { readonly failure: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> };
-
-const rewriteOrRenderFailure = async (
-  payload: CanonicalResponsesPayload,
-  store: StatefulResponsesStore | undefined,
-): Promise<RewriteOutcome> => {
-  try {
-    return hydrateResponsesPayload(payload, store);
-  } catch (error) {
-    const failure = tryCatchChatServeFailure(error);
-    if (failure === null) throw error;
-    // The full Responses failure renderer that also handles `model-missing`
-    // / `model-unsupported` / `routing-unavailable` lives in the serve
-    // layer and treats the `endpoint` distinction (`generate` vs
-    // `compact`); from inside an attempt, only `item-not-found` is
-    // reachable from rewrite — anything else is a bug. Re-throw the
-    // original error so the upstream stack/cause survives.
-    if (failure.kind !== 'item-not-found') throw error;
-    return {
-      failure: {
-        type: 'api-error',
-        source: 'gateway',
-        status: 404,
-        headers: new Headers({ 'content-type': 'application/json' }),
-        body: new TextEncoder().encode(JSON.stringify({
-          error: {
-            message: `Item with id '${failure.itemId}' not found.`,
-            type: 'invalid_request_error',
-            param: 'input',
-            code: null,
-          },
-        })),
-      },
-    };
-  }
 };
 
 const dispatchResponses = async (

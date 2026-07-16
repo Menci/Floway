@@ -175,6 +175,22 @@ describe('Responses affinity egress', () => {
     expect(output).toHaveLength(1);
   });
 
+  test('waits for a program fingerprint before deciding whether it needs a prefix', async () => {
+    const added = { type: 'program', id: 'prog_1', call_id: 'call_1', code: 'return 1' } as ResponsesOutputItem;
+    const done = { ...added, fingerprint: 'fp' } as ResponsesOutputItem;
+    const output: ProtocolFrame<ResponsesStreamEvent>[] = [];
+    for await (const frame of wrapResponsesAffinityEgress(frames([
+      eventFrame({ type: 'response.output_item.added', output_index: 0, item: added }),
+      eventFrame({ type: 'response.output_item.done', output_index: 0, item: done }),
+      eventFrame({ type: 'response.completed', response: response([done]) }),
+    ]), { codec: immediateCodec, affinity })) output.push(frame);
+
+    expect(output).toHaveLength(3);
+    expect(JSON.stringify(output)).not.toContain('"type":"reasoning"');
+    expect(output[1]).toMatchObject({ event: { item: { type: 'program', fingerprint: 'wrapped:fp' } } });
+    expect(output[2]).toMatchObject({ event: { response: { output: [{ type: 'program', fingerprint: 'wrapped:fp' }] } } });
+  });
+
   test('prefixes a non-carrier item and shifts output and sequence indexes', async () => {
     const message = {
       type: 'message' as const,

@@ -22,9 +22,6 @@ const hydrateItem = (item: ResponsesInputItem, store: StatefulResponsesStore | u
   };
 };
 
-const hydrateItems = (items: readonly ResponsesInputItem[], store: StatefulResponsesStore | undefined): HydratedItem[] =>
-  items.map(item => hydrateItem(item, store));
-
 export interface HydratedResponsesPayload {
   readonly payload: CanonicalResponsesPayload;
   readonly privatePayloads: ReadonlyMap<string, unknown>;
@@ -34,7 +31,7 @@ export const hydrateResponsesPayload = (
   payload: CanonicalResponsesPayload,
   store: StatefulResponsesStore | undefined,
 ): HydratedResponsesPayload => {
-  const hydrated = hydrateItems(payload.input, store);
+  const hydrated = payload.input.map(item => hydrateItem(item, store));
   const privatePayloads = new Map<string, unknown>();
   for (const entry of hydrated) {
     const id = responsesItemId(entry.item);

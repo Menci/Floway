@@ -11,20 +11,14 @@ import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { collectResponsesProtocolEventsToResult, type CanonicalResponsesPayload, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { ExecuteResult } from '@floway-dev/provider';
 
-export interface ResponsesServeGenerateArgs {
-  readonly payload: CanonicalResponsesPayload;
-  readonly ctx: ChatGatewayCtx;
-  readonly headers: Headers;
-}
-
-export interface ResponsesServeCompactArgs {
+interface ResponsesServeArgs {
   readonly payload: CanonicalResponsesPayload;
   readonly ctx: ChatGatewayCtx;
   readonly headers: Headers;
 }
 
 export const responsesServe = {
-  generate: async (args: ResponsesServeGenerateArgs): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
+  generate: async (args: ResponsesServeArgs): Promise<ExecuteResult<ProtocolFrame<ResponsesStreamEvent>>> => {
     const { payload, ctx, headers } = args;
     const plan = await prepareResponsesServePlan({ payload, ctx });
     if (plan.kind === 'failure') return plan.result;
@@ -53,7 +47,7 @@ export const responsesServe = {
     return result;
   },
 
-  compact: async (args: ResponsesServeCompactArgs): Promise<ResponsesAttemptResult> => {
+  compact: async (args: ResponsesServeArgs): Promise<ResponsesAttemptResult> => {
     const { payload, ctx, headers } = args;
     const store = ctx.store;
     if (store === undefined) throw new Error('Native Responses compact requires a state store');

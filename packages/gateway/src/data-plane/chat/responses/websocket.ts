@@ -243,7 +243,7 @@ const handleClientMessage = async (
       method: 'WS',
       model: payload.model,
       backgroundScheduler,
-    }, apiKeyId => session.createStore(apiKeyId, payload.store ?? undefined));
+    }, apiKeyId => session.createStore(apiKeyId, payload.store));
 
     let result;
     try {
@@ -276,7 +276,12 @@ const handleClientMessage = async (
         code: 'invalid_request_error',
         message: error.message,
         param: error.param,
-      }, eventId);
+      }, eventId, ctx?.dump);
+      if (ctx !== undefined) {
+        recordFailedRequest(ctx, ctx.attempt.telemetry);
+        ctx.dump?.failed(error);
+        ctx.dump?.finalize(400, []);
+      }
       return;
     }
     if (error instanceof WebSocketClientMessageError) {

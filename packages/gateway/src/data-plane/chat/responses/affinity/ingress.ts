@@ -16,6 +16,11 @@ type OwnedResponsesBlobLocation = ResponsesBlobLocation & {
   readonly decoded: Extract<DecodedAffinityBlob, { kind: 'owned' }>;
 };
 
+interface ValidatedBoundCarrier {
+  readonly decoded: Extract<DecodedAffinityBlob, { kind: 'owned' }>;
+  readonly boundItem: NonNullable<AffinityTarget['boundItem']>;
+}
+
 const isOwnedLocation = (location: ResponsesBlobLocation): location is OwnedResponsesBlobLocation =>
   location.decoded.kind === 'owned';
 
@@ -61,7 +66,7 @@ const routingEvidenceFrom = (
   return evidence;
 };
 
-const encryptedContentLocations = async (
+const opaqueBlobLocations = async (
   items: readonly ResponsesInputItem[],
   codec: AffinityCodec,
 ): Promise<ResponsesBlobLocation[]> => {
@@ -92,8 +97,8 @@ export const prepareResponsesAffinity = async (
   payload: CanonicalResponsesPayload,
   codec: AffinityCodec,
 ): Promise<PreparedResponsesAffinity> => {
-  const locations = await encryptedContentLocations(payload.input, codec);
-  const boundItems = new Map<number, OwnedResponsesBlobLocation>();
+  const locations = await opaqueBlobLocations(payload.input, codec);
+  const boundItems = new Map<number, ValidatedBoundCarrier>();
   for (const location of locations) {
     if (!isOwnedLocation(location)) continue;
     const affinity = location.decoded.envelope.affinity;
@@ -119,7 +124,7 @@ export const prepareResponsesAffinity = async (
         `input[${itemIndex}]`,
       );
     }
-    boundItems.set(itemIndex, location);
+    boundItems.set(itemIndex, { decoded: location.decoded, boundItem: bound });
   }
 
   const preparedByCandidate = new WeakMap<ModelCandidate, {
@@ -130,24 +135,23 @@ export const prepareResponsesAffinity = async (
     const cached = preparedByCandidate.get(candidate);
     if (cached !== undefined) return cached;
     const itemIdMap = new Map<string, string>();
-    const recordItemId = (item: ResponsesInputItem & { id: string }, id: string): void => {
+    const recordItemId = (item: ResponsesInputItem, id: string): void => {
+      if (!('id' in item) || typeof item.id !== 'string') {
+        throw new Error('Responses affinity item ID changed before candidate preparation');
+      }
       if (item.id !== id) itemIdMap.set(item.id, id);
       item.id = id;
     };
     const candidatePayload = structuredClone(payload);
-    for (const [itemIndex, location] of boundItems) {
+    for (const [itemIndex, carrier] of boundItems) {
       const item = candidatePayload.input[itemIndex];
-      const affinity = location.decoded.envelope.affinity;
-      const bound = affinity.boundItem;
-      if (item === undefined || bound === undefined || !('id' in item) || typeof item.id !== 'string') {
-        throw new Error('Validated Responses affinity binding changed before candidate preparation');
-      }
+      if (item === undefined) throw new Error('Validated Responses affinity item disappeared before candidate preparation');
       const selected = itemRequiresAffinity(item)
-        ? blobForForcedCandidate(location.decoded, candidate)
-        : blobForCandidate(location.decoded, candidate);
+        ? blobForForcedCandidate(carrier.decoded, candidate)
+        : blobForCandidate(carrier.decoded, candidate);
       recordItemId(
-        item as ResponsesInputItem & { id: string },
-        selected.compatible ? bound.upstreamItemId : createTemporaryResponsesItemId(item.type),
+        item,
+        selected.compatible ? carrier.boundItem.upstreamItemId : createTemporaryResponsesItemId(item.type),
       );
     }
     const byItem = Map.groupBy(locations, location => location.itemIndex);
@@ -190,11 +194,11 @@ export const prepareResponsesAffinity = async (
       if (compatibleOwned?.location.decoded.kind === 'owned') {
         const upstreamItemId = compatibleOwned.location.decoded.envelope.affinity.upstreamItemId;
         if (upstreamItemId !== undefined && 'id' in replacement && typeof replacement.id === 'string') {
-          recordItemId(replacement as ResponsesInputItem & { id: string }, upstreamItemId);
+          recordItemId(replacement, upstreamItemId);
         }
       } else if (decisions.some(decision => decision.location.decoded.kind === 'owned') && 'id' in replacement && typeof replacement.id === 'string') {
         recordItemId(
-          replacement as ResponsesInputItem & { id: string },
+          replacement,
           createTemporaryResponsesItemId(replacement.type),
         );
       }
