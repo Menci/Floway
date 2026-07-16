@@ -125,8 +125,8 @@ test('migration 0057 preserves usable payloads and snapshots but drops legacy af
 
     const itemResult = db.exec('SELECT id, payload_json, content_hash, created_at FROM responses_items ORDER BY created_at')[0];
     expect(itemResult?.values).toEqual([
-      ['msg_gzip', gzipDescriptor, 'hash-a', 9_000],
       ['rs_file', fileDescriptor, null, 2_000],
+      ['msg_gzip', gzipDescriptor, 'hash-a', 9_000],
       ['rs_legacy', legacyInline, null, 11_000],
     ]);
     const snapshotResult = db.exec('SELECT id, api_key_id, item_ids_json, created_at FROM responses_snapshots')[0];
