@@ -43,7 +43,6 @@ export interface StatefulResponsesStore {
 export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   private readonly loadedItems = new Map<string, StoredResponsesItem>();
   private readonly loadedByContentHash = new Map<string, StoredResponsesItem[]>();
-  private readonly stagedInputItems = new Map<string, StoredResponsesItem>();
   private readonly stagedInputItemIds: string[] = [];
   private readonly stagedOutputItems = new Map<string, StoredResponsesItem>();
   private readonly stagedOutputItemIds = new Map<number, string>();
@@ -107,7 +106,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   }
 
   getItemById(id: string): StoredResponsesItem | undefined {
-    const row = this.loadedItems.get(id) ?? this.stagedInputItems.get(id) ?? this.stagedOutputItems.get(id);
+    const row = this.loadedItems.get(id);
     return row === undefined ? undefined : cloneStoredResponsesItem(row);
   }
 
@@ -143,9 +142,9 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
       return row;
     });
     await this.commitItems(uniqueRows);
-    const createdAt = Date.now();
     const staleRows = uniqueRows.filter(row => !this.freshItemIds.has(row.id));
     if (staleRows.length > 0) {
+      const createdAt = Date.now();
       await Promise.all(this.options.writes.map(write => write.refreshItems(staleRows, createdAt)));
       for (const row of staleRows) {
         row.createdAt = createdAt;
@@ -205,7 +204,6 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
       contentHash,
       createdAt: Date.now(),
     };
-    this.stagedInputItems.set(row.id, row);
     this.stagedInputItemIds.push(row.id);
     this.freshItemIds.add(row.id);
     this.rememberItem(row);

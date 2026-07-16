@@ -824,7 +824,6 @@ const RESPONSES_REFRESH_CHUNK_SIZE = 24;
 
 interface ResponsesItemDescriptor {
   id: string;
-  apiKeyId: string;
   payloadJson: string;
   createdAt: number;
 }
@@ -836,13 +835,23 @@ interface ResponsesItemDescriptorRow {
   created_at: number;
 }
 
-interface PreparedResponsesPayloadWrite {
+interface PreparedResponsesPayloadWriteBase {
   item: StoredResponsesItem;
   payload: string;
   generatedFileKey: string | null;
-  previousPayloadJson: string | null;
+}
+
+interface PreparedResponsesInsertWrite extends PreparedResponsesPayloadWriteBase {
+  kind: 'insert';
+}
+
+interface PreparedResponsesRefreshWrite extends PreparedResponsesPayloadWriteBase {
+  kind: 'refresh';
+  previousPayloadJson: string;
   previousFileKey: string | null;
 }
+
+type PreparedResponsesPayloadWrite = PreparedResponsesInsertWrite | PreparedResponsesRefreshWrite;
 
 const uniqueResponsesItems = (items: readonly StoredResponsesItem[]): StoredResponsesItem[] => {
   const unique = new Map<string, StoredResponsesItem>();
@@ -851,16 +860,6 @@ const uniqueResponsesItems = (items: readonly StoredResponsesItem[]): StoredResp
     if (!unique.has(key)) unique.set(key, item);
   }
   return [...unique.values()];
-};
-
-const groupResponsesPayloadWrites = (writes: readonly PreparedResponsesPayloadWrite[]): Map<string, PreparedResponsesPayloadWrite[]> => {
-  const groups = new Map<string, PreparedResponsesPayloadWrite[]>();
-  for (const write of writes) {
-    const group = groups.get(write.item.apiKeyId) ?? [];
-    group.push(write);
-    groups.set(write.item.apiKeyId, group);
-  }
-  return groups;
 };
 
 const responsesErrorMessage = (error: unknown): string => error instanceof Error ? error.message : String(error);
@@ -905,20 +904,19 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
     const unique = uniqueResponsesItems(items);
     const existing = await this.lookupDescriptors(unique);
     const pending = unique.filter(item => !existing.has(scopedResponsesKey(item.apiKeyId, item.id)));
-    const writes: PreparedResponsesPayloadWrite[] = [];
+    const writes: PreparedResponsesInsertWrite[] = [];
     try {
       for (const item of pending) {
         const payload = await serializeStoredResponsesPayload(item.id, item.apiKeyId, item.createdAt, item.payload);
         writes.push({
+          kind: 'insert',
           item,
           payload,
           generatedFileKey: storedResponsesPayloadFileKey(item.id, payload),
-          previousPayloadJson: null,
-          previousFileKey: null,
         });
       }
     } catch (error) {
-      await this.finishPayloadWrites(writes, error, 'insert');
+      await this.finishPayloadWrites(writes, error);
     }
 
     const statements: SqlPreparedStatement[] = [];
@@ -935,9 +933,9 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
     try {
       await runStatements(this.db, statements);
     } catch (error) {
-      await this.finishPayloadWrites(writes, error, 'insert');
+      await this.finishPayloadWrites(writes, error);
     }
-    await this.finishPayloadWrites(writes, null, 'insert');
+    await this.finishPayloadWrites(writes, null);
   }
 
   async refreshMany(items: readonly StoredResponsesItem[], createdAt: number): Promise<void> {
@@ -949,7 +947,7 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
     }
 
     const targetFilePrefix = responsesItemPayloadExpiryBucketPrefix(createdAt + RESPONSES_STATE_TTL_MS);
-    const writes: PreparedResponsesPayloadWrite[] = [];
+    const writes: PreparedResponsesRefreshWrite[] = [];
     try {
       for (const item of unique) {
         const descriptor = previous.get(scopedResponsesKey(item.apiKeyId, item.id))!;
@@ -959,6 +957,7 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
           ? await serializeStoredResponsesPayload(item.id, item.apiKeyId, createdAt, item.payload)
           : descriptor.payloadJson;
         writes.push({
+          kind: 'refresh',
           item,
           payload,
           generatedFileKey: moveFile ? storedResponsesPayloadFileKey(item.id, payload) : null,
@@ -967,11 +966,17 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
         });
       }
     } catch (error) {
-      await this.finishPayloadWrites(writes, error, 'refresh');
+      await this.finishPayloadWrites(writes, error);
     }
 
-    const statementChunks: Array<{ writes: PreparedResponsesPayloadWrite[]; statement: SqlPreparedStatement }> = [];
-    for (const [apiKeyId, group] of groupResponsesPayloadWrites(writes)) {
+    const writesByApiKey = new Map<string, PreparedResponsesRefreshWrite[]>();
+    for (const write of writes) {
+      const group = writesByApiKey.get(write.item.apiKeyId) ?? [];
+      group.push(write);
+      writesByApiKey.set(write.item.apiKeyId, group);
+    }
+    const statementChunks: Array<{ writes: PreparedResponsesRefreshWrite[]; statement: SqlPreparedStatement }> = [];
+    for (const [apiKeyId, group] of writesByApiKey) {
       for (let index = 0; index < group.length; index += RESPONSES_REFRESH_CHUNK_SIZE) {
         const chunk = group.slice(index, index + RESPONSES_REFRESH_CHUNK_SIZE);
         const cases = chunk.map(() => 'WHEN ? THEN ?').join(' ');
@@ -997,9 +1002,9 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
     try {
       await runStatements(this.db, statementChunks.map(chunk => chunk.statement));
     } catch (error) {
-      await this.finishPayloadWrites(writes, error, 'refresh');
+      await this.finishPayloadWrites(writes, error);
     }
-    const persisted = await this.finishPayloadWrites(writes, null, 'refresh');
+    const persisted = await this.finishPayloadWrites(writes, null);
     const staleItems = writes.flatMap(write => {
       const descriptor = persisted.get(scopedResponsesKey(write.item.apiKeyId, write.item.id));
       return descriptor !== undefined && descriptor.createdAt < createdAt ? [write.item] : [];
@@ -1031,7 +1036,6 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
     return new Map(results.flatMap(result => result.results.map(row => {
       const descriptor: ResponsesItemDescriptor = {
         id: row.id,
-        apiKeyId: row.api_key_id,
         payloadJson: row.payload_json,
         createdAt: row.created_at,
       };
@@ -1042,7 +1046,6 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
   private async finishPayloadWrites(
     writes: readonly PreparedResponsesPayloadWrite[],
     failure: unknown | null,
-    operation: 'insert' | 'refresh',
   ): Promise<Map<string, ResponsesItemDescriptor>> {
     let persisted: Map<string, ResponsesItemDescriptor>;
     try {
@@ -1071,7 +1074,7 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
           obsoleteFileKeys.add(write.generatedFileKey);
         }
         if (
-          operation === 'refresh'
+          write.kind === 'refresh'
           && descriptor !== undefined
           && write.previousFileKey !== null
           && !retainedFileKeys.has(write.previousFileKey)
@@ -1090,7 +1093,7 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
     const missing = writes.find(write => !persisted.has(scopedResponsesKey(write.item.apiKeyId, write.item.id)));
     const missingError = missing === undefined
       ? null
-      : new Error(operation === 'insert'
+      : new Error(missing.kind === 'insert'
           ? `Responses item conflict disappeared before spill cleanup: ${missing.item.id}`
           : `Responses item disappeared before lifetime refresh: ${missing.item.id}`);
     const operationError = failure ?? missingError;
