@@ -355,6 +355,42 @@ describe('Gemini affinity egress', () => {
     });
   });
 
+  test('preserves a native empty candidate as an element boundary', async () => {
+    const empty = withCandidateExtra(
+      { index: 0, content: { role: 'model', parts: [] } },
+      'vendor_empty',
+      true,
+    );
+    const output: ProtocolFrame<GeminiStreamEvent>[] = [];
+    for await (const frame of wrapGeminiAffinityEgress(frames([
+      eventFrame({ candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'first' }] } }] }),
+      eventFrame({ candidates: [empty] }),
+      eventFrame({ candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'second' }] }, finishReason: 'STOP' }] }),
+    ]), { codec: immediateCodec, affinity })) output.push(frame);
+
+    expect(output).toHaveLength(3);
+    expect(output[0]).toMatchObject({ event: { candidates: [{ content: { parts: [{ thoughtSignature: 'wrapped:synthetic' }] } }] } });
+    expect(output[1]).toMatchObject({ event: { candidates: [{ vendor_empty: true, content: { parts: [] } }] } });
+    expect(output[2]).not.toMatchObject({ event: { candidates: [{ content: { parts: [{ thoughtSignature: expect.anything() }] } }] } });
+  });
+
+  test('preserves native empty Parts when adding a standalone fallback carrier', async () => {
+    const output: ProtocolFrame<GeminiStreamEvent>[] = [];
+    for await (const frame of wrapGeminiAffinityEgress(frames([eventFrame({
+      candidates: [{
+        index: 0,
+        content: { role: 'model', parts: [{ text: '' }, { thought: true }] },
+        finishReason: 'STOP',
+      }],
+    })]), { codec: immediateCodec, affinity })) output.push(frame);
+
+    expect(output[0]).toMatchObject({ event: { candidates: [{ content: { parts: [
+      { text: '' },
+      { thought: true },
+      { thoughtSignature: 'wrapped:synthetic' },
+    ] } }] } });
+  });
+
   test('keeps a natural signature-only finishing candidate as its anchor', async () => {
     const output: ProtocolFrame<GeminiStreamEvent>[] = [];
     for await (const frame of wrapGeminiAffinityEgress(frames([eventFrame({

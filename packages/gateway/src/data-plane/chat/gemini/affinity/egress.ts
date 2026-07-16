@@ -110,8 +110,14 @@ const clearEventMetadata = (event: GeminiResult): void => {
 // whole logical element.
 // https://github.com/google/adk-js/blob/ca2209b68c2fee3c84ea7d90e050ca2fe9951193/core/src/utils/streaming_utils.ts#L227-L250
 
-const removeEmptySignatureParts = (candidate: GeminiCandidate): void => {
-  candidate.content.parts = candidate.content.parts.filter(part => hasPartContent(part) || part.thoughtSignature !== undefined);
+const removeRelocatedSignatureParts = (
+  candidate: GeminiCandidate,
+  relocated: ReadonlySet<GeminiPart>,
+  removedCandidates?: WeakSet<GeminiCandidate>,
+): void => {
+  candidate.content.parts = candidate.content.parts.filter(part =>
+    !relocated.has(part) || hasPartContent(part) || part.thoughtSignature !== undefined);
+  if (candidate.content.parts.length === 0) removedCandidates?.add(candidate);
 };
 
 const normalizeElementSignature = (parts: GeminiPart[], indexes: readonly number[]): void => {
@@ -128,8 +134,9 @@ const normalizeElementSignature = (parts: GeminiPart[], indexes: readonly number
 
 const normalizeElementSignatures = (candidate: GeminiCandidate): void => {
   const parts = candidate.content.parts;
+  const signatureParts = new Set(parts.filter(part => part.thoughtSignature !== undefined));
   for (const indexes of logicalElementGroups(parts)) normalizeElementSignature(parts, indexes);
-  removeEmptySignatureParts(candidate);
+  removeRelocatedSignatureParts(candidate, signatureParts);
 };
 
 const mergeCandidateExtras = (
@@ -160,26 +167,29 @@ const transferCandidateMetadataForward = (current: GeminiCandidate, next: Gemini
 const relocateSignatureOnlyForward = (
   current: GeminiCandidate,
   next: GeminiCandidate | undefined,
+  removedCandidates: WeakSet<GeminiCandidate>,
 ): void => {
   if (
     next === undefined
     || current.finishReason !== undefined
     || current.content.parts.some(hasPartContent)
   ) return;
-  const signature = current.content.parts.find(part => part.thoughtSignature !== undefined)?.thoughtSignature;
+  const relocated = new Set(current.content.parts.filter(part => part.thoughtSignature !== undefined));
+  const signature = relocated.values().next().value?.thoughtSignature;
   const targetIndex = firstElementIndexes(next.content.parts).find(index => hasPartContent(next.content.parts[index]));
   if (signature === undefined || targetIndex === undefined) return;
   if (next.content.parts[targetIndex].thoughtSignature === undefined) {
     next.content.parts[targetIndex].thoughtSignature = signature;
   }
-  for (const part of current.content.parts) delete part.thoughtSignature;
-  removeEmptySignatureParts(current);
+  for (const part of relocated) delete part.thoughtSignature;
+  removeRelocatedSignatureParts(current, relocated, removedCandidates);
   if (current.content.parts.length === 0) transferCandidateMetadataForward(current, next);
 };
 
 const relocateSignatureOnlyBackward = (
   current: GeminiCandidate,
   next: GeminiCandidate | undefined,
+  removedCandidates: WeakSet<GeminiCandidate>,
 ): void => {
   if (
     next === undefined
@@ -196,7 +206,7 @@ const relocateSignatureOnlyBackward = (
     thoughtSignature: signatureOnly.thoughtSignature,
   };
   delete signatureOnly.thoughtSignature;
-  removeEmptySignatureParts(next);
+  removeRelocatedSignatureParts(next, new Set([signatureOnly]), removedCandidates);
   if (next.content.parts.length === 0) {
     transferCandidateMetadata(current, next);
     delete next.finishReason;
@@ -222,15 +232,6 @@ const relocateContinuationSignature = (
   delete nextPart.thoughtSignature;
 };
 
-const foldEmptyTerminalCandidate = (
-  current: GeminiCandidate,
-  next: GeminiCandidate | undefined,
-): void => {
-  if (next === undefined || next.content.parts.length > 0 || next.finishReason === undefined) return;
-  transferCandidateMetadata(current, next);
-  delete next.finishReason;
-};
-
 const wrapEvent = async (
   current: GeminiResult,
   next: GeminiResult | undefined,
@@ -241,6 +242,7 @@ const wrapEvent = async (
 ): Promise<GeminiResult> => {
   const currentHadCandidates = (current.candidates?.length ?? 0) > 0;
   const nextHadCandidates = (next?.candidates?.length ?? 0) > 0;
+  const removedCandidates = new WeakSet<GeminiCandidate>();
 
   for (const candidate of current.candidates ?? []) {
     const state = states.get(candidate.index) ?? { anchored: false, finished: false };
@@ -250,10 +252,9 @@ const wrapEvent = async (
     const nextCandidate = next?.candidates?.find(nextCandidate => nextCandidate.index === candidate.index);
     normalizeElementSignatures(candidate);
     if (nextCandidate !== undefined) normalizeElementSignatures(nextCandidate);
-    relocateSignatureOnlyForward(candidate, nextCandidate);
-    relocateSignatureOnlyBackward(candidate, nextCandidate);
+    relocateSignatureOnlyForward(candidate, nextCandidate, removedCandidates);
+    relocateSignatureOnlyBackward(candidate, nextCandidate, removedCandidates);
     relocateContinuationSignature(candidate, nextCandidate);
-    foldEmptyTerminalCandidate(candidate, nextCandidate);
     const firstIndexes = firstElementIndexes(candidate.content.parts);
     const firstHasNatural = firstIndexes.some(index => candidate.content.parts[index].thoughtSignature !== undefined);
     const signatureOnlyNatural = firstIndexes.length === 0
@@ -270,6 +271,7 @@ const wrapEvent = async (
     const firstElementClosed = startsAnotherElementInCurrentEvent
       || candidate.finishReason !== undefined
       || (next !== undefined && nextCandidate === undefined)
+      || (nextCandidate !== undefined && nextContent === undefined && !removedCandidates.has(nextCandidate))
       || (nextCandidate !== undefined && nextContent !== undefined && !continuesInNextEvent)
       || (next === undefined && allowSynthetic);
 
@@ -303,10 +305,10 @@ const wrapEvent = async (
   }
 
   if (next?.candidates !== undefined) {
-    next.candidates = next.candidates.filter(candidate => candidate.content.parts.length > 0 || candidate.finishReason !== undefined);
+    next.candidates = next.candidates.filter(candidate => !removedCandidates.has(candidate));
   }
   if (current.candidates !== undefined) {
-    current.candidates = current.candidates.filter(candidate => candidate.content.parts.length > 0 || candidate.finishReason !== undefined);
+    current.candidates = current.candidates.filter(candidate => !removedCandidates.has(candidate));
   }
   const currentEmptied = currentHadCandidates && current.candidates?.length === 0;
   const nextEmptied = nextHadCandidates && next?.candidates?.length === 0;
