@@ -224,6 +224,8 @@ export const wrapResponsesClientOutput = async function* (
       throw new AggregateError([error, persistenceError], 'Responses output failed and completed items could not be persisted');
     }
     throw error;
+  } finally {
+    await commitStagedOutput();
   }
 };
 

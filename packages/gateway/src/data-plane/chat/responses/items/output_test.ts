@@ -196,6 +196,56 @@ test('client output persists completed items before rethrowing an iterator error
   expect(await repo.responsesSnapshots.lookup('key-a', 'resp_public')).toBeNull();
 });
 
+test('client output persists completed items when the source ends without a terminal event', async () => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  const store = createResponsesHttpStore('key-a', true);
+  const item = { type: 'reasoning' as const, id: 'rs_upstream', summary: [] };
+  const input = async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
+    yield eventFrame({ type: 'response.output_item.done', output_index: 0, item });
+    yield doneFrame();
+  };
+  let clientId: string | undefined;
+
+  for await (const frame of wrapResponsesClientOutput(input(), {
+    store,
+    attemptState: new ResponsesAttemptState(),
+    responseId: 'resp_public',
+  })) {
+    if (frame.type === 'event' && frame.event.type === 'response.output_item.done') clientId = frame.event.item.id;
+  }
+
+  expect(clientId).toEqual(expect.any(String));
+  expect(await repo.responsesItems.lookupMany('key-a', [clientId!])).toHaveLength(1);
+  expect(await repo.responsesSnapshots.lookup('key-a', 'resp_public')).toBeNull();
+});
+
+test('client output persists a completed item when its consumer cancels', async () => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  const store = createResponsesHttpStore('key-a', true);
+  const item = { type: 'reasoning' as const, id: 'rs_upstream', summary: [] };
+  const input = async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
+    yield eventFrame({ type: 'response.output_item.done', output_index: 0, item });
+    await new Promise(() => {});
+  };
+  const iterator = wrapResponsesClientOutput(input(), {
+    store,
+    attemptState: new ResponsesAttemptState(),
+    responseId: 'resp_public',
+  })[Symbol.asyncIterator]();
+
+  const first = await iterator.next();
+  if (first.value?.type !== 'event' || first.value.event.type !== 'response.output_item.done') {
+    throw new Error('Expected completed output item');
+  }
+  const clientId = first.value.event.item.id!;
+  await iterator.return?.();
+
+  expect(await repo.responsesItems.lookupMany('key-a', [clientId])).toHaveLength(1);
+  expect(await repo.responsesSnapshots.lookup('key-a', 'resp_public')).toBeNull();
+});
+
 test('client output batches hundreds of finalized items at the successful terminal boundary', async () => {
   initFileProvider(new MemoryFileProvider());
   const counting = countingSqlDatabase(await createSqliteTestDb());
