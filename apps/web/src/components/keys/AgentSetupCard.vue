@@ -78,8 +78,8 @@ const agentFieldGridClass = 'grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-
 watch([serverDraft, () => props.selectedKey?.id ?? null], ([configuration, selectedKeyId]) => {
   if (configuration !== null && selectedKeyId !== null) {
     if (localDraftEdited) {
-      configuration.claudeCode = structuredClone(localDraft.value.claudeCode);
-      configuration.codex = structuredClone(localDraft.value.codex);
+      configuration.claudeCode = { ...localDraft.value.claudeCode };
+      configuration.codex = { ...localDraft.value.codex };
       localDraftEdited = false;
     }
     if (configuration.apiKeyId !== selectedKeyId) configuration.apiKeyId = selectedKeyId;
@@ -322,7 +322,7 @@ const powerShellCommand = computed(() => (scripts.value
           :label="commandPlatform === 'unix' ? 'macOS / Linux' : 'Windows'"
           :command="commandPlatform === 'unix' ? shellCommand : powerShellCommand"
           :language="commandPlatform === 'unix' ? 'bash' : 'powershell'"
-          :disabled="!canCopy"
+          :disabled="selectedKey === null || !canCopy"
           :show-label="false"
         >
           <template #header>
