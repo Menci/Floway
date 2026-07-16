@@ -1,8 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import { wrapChatCompletionsAffinityEgress } from './egress.ts';
-import type { AffinityCodec } from '../../shared/affinity/index.ts';
-import type { AffinityTarget } from '../../shared/affinity/index.ts';
+import type { AffinityCodec, AffinityTarget } from '../../shared/affinity/index.ts';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 

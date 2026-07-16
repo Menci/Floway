@@ -2,15 +2,15 @@ import { expect, test } from 'vitest';
 
 import { wrapResponsesAffinityEgress } from './egress.ts';
 import { prepareResponsesAffinity } from './ingress.ts';
-import { wrapResponsesOutputForStorage } from '../items/output.ts';
-import { createResponsesHttpStore } from '../items/store.ts';
-import { AffinityCodec, affinityTargetForCandidate } from '../../shared/affinity/index.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
-import { stubModelCandidate } from '@floway-dev/test-utils';
+import { AffinityCodec, affinityTargetForCandidate } from '../../shared/affinity/index.ts';
 import { ResponsesAttemptState } from '../attempt-state.ts';
+import { wrapResponsesOutputForStorage } from '../items/output.ts';
+import { createResponsesHttpStore } from '../items/store.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { stubModelCandidate } from '@floway-dev/test-utils';
 
 test('stored force items recover their original upstream IDs from adjacent client carriers', async () => {
   initRepo(new InMemoryRepo());

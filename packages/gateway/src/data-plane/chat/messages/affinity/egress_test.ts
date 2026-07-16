@@ -1,8 +1,7 @@
 import { describe, expect, test, vi } from 'vitest';
 
 import { wrapMessagesAffinityEgress } from './egress.ts';
-import type { AffinityCodec } from '../../shared/affinity/index.ts';
-import type { AffinityTarget } from '../../shared/affinity/index.ts';
+import type { AffinityCodec, AffinityTarget } from '../../shared/affinity/index.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 
