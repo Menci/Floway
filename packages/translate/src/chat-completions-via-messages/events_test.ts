@@ -830,6 +830,27 @@ test('multiple tool_use blocks in stream', () => {
   assertEquals(d[3].tool_calls![0].id, 'tu_2');
 });
 
+test('routes interleaved parallel tool arguments by Messages block index', () => {
+  const d = deltas([
+    MSG_START,
+    {
+      type: 'content_block_start',
+      index: 2,
+      content_block: { type: 'tool_use', id: 'tu_1', name: 'f1', input: {} },
+    },
+    {
+      type: 'content_block_start',
+      index: 7,
+      content_block: { type: 'tool_use', id: 'tu_2', name: 'f2', input: {} },
+    },
+    { type: 'content_block_delta', index: 2, delta: { type: 'input_json_delta', partial_json: '{"a":1}' } },
+    { type: 'content_block_delta', index: 7, delta: { type: 'input_json_delta', partial_json: '{"b":2}' } },
+  ]);
+
+  assertEquals(d[3].tool_calls![0].index, 0);
+  assertEquals(d[4].tool_calls![0].index, 1);
+});
+
 // ── Edge: DONE signal propagation ──
 
 test('events after message_stop are not processed', () => {

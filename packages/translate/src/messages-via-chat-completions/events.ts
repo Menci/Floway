@@ -380,9 +380,7 @@ export const translateChatCompletionsChunkToMessagesEvents = (chunk: ChatComplet
   const toolCalls = choice.delta.tool_calls;
   const hasToolCallDelta = Boolean(toolCalls?.length);
   const hasBufferedToolCalls = Object.keys(state.toolCalls).length > 0;
-  const startsToolCall = toolCalls?.some(toolCall =>
-    state.toolCalls[toolCall.index] === undefined
-    && (toolCall.id !== undefined || toolCall.function?.name !== undefined)) === true;
+  const startsToolCall = toolCalls?.some(toolCall => state.toolCalls[toolCall.index] === undefined) === true;
   const startsVisibleBoundary = (startsToolCall || Boolean(content)) && !hasBufferedToolCalls;
   if ((state.openBlock === 'thinking' || state.pendingReasoningOpaque !== undefined) && startsVisibleBoundary) {
     flushPendingReasoningAndClose(state, events);

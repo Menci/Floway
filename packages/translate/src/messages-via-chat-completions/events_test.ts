@@ -230,6 +230,31 @@ test('accumulates a tool identity split across chunks', () => {
   });
 });
 
+test('treats an arguments-first tool draft as a reasoning boundary', () => {
+  const state = createChatCompletionsToMessagesStreamState();
+  const events = [
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({
+      role: 'assistant',
+      reasoning_text: 'trace',
+      reasoning_opaque: 'sig',
+    }), state),
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({
+      tool_calls: [{ index: 0, function: { arguments: '{"a"' } }],
+    }), state),
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({
+      tool_calls: [{ index: 0, id: 'call_0', type: 'function', function: { name: 'tool', arguments: ':1}' } }],
+    }), state),
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({}, 'tool_calls'), state),
+  ];
+
+  const signatureIndex = events.findIndex(event =>
+    event.type === 'content_block_delta' && event.delta.type === 'signature_delta');
+  const toolStartIndex = events.findIndex(event =>
+    event.type === 'content_block_start' && event.content_block.type === 'tool_use');
+  expect(signatureIndex).toBeGreaterThan(-1);
+  expect(toolStartIndex).toBeGreaterThan(signatureIndex);
+});
+
 test('preserves deferred text and reasoning segment order after a tool run', () => {
   const state = createChatCompletionsToMessagesStreamState();
   const events = [

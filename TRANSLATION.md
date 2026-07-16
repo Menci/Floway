@@ -269,7 +269,7 @@ Messages tool blocks. Only after the complete tool run does it emit deferred
 text/reasoning, preserving arrival order among those deferred segments. Other
 text and tool argument fragments concatenate; stop reasons and usage map
 directly.
-When visible content, tool output, or finish closes a thinking block, an
+When visible content, a tool-call start, or finish closes a thinking block, an
 already-available signature is emitted inside that block. A signature that
 arrives after the boundary becomes a later standalone redacted block. Assistant
 images remain lossy.

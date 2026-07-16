@@ -37,6 +37,7 @@ interface MessagesToChatCompletionsStreamState {
   model: string;
   created: number;
   nextToolCallIndex: number;
+  readonly toolCallIndexByBlock: Map<number, number>;
   usage: MessagesUsageSnapshot;
   reasoningBlockIndex?: number;
 }
@@ -46,6 +47,7 @@ export const createMessagesToChatCompletionsStreamState = (): MessagesToChatComp
   model: '',
   created: Math.floor(Date.now() / 1000),
   nextToolCallIndex: 0,
+  toolCallIndexByBlock: new Map(),
   usage: messagesUsageSnapshot(),
 });
 
@@ -125,6 +127,7 @@ export const translateMessagesEventToChatCompletionsChunks = (event: MessagesStr
       return claimReasoningBlock(state, event.index) ? [makeChunk(state, { reasoning_opaque: block.data })] : [];
     case 'tool_use': {
       const toolCallIndex = state.nextToolCallIndex++;
+      state.toolCallIndexByBlock.set(event.index, toolCallIndex);
       return [
         makeChunk(state, {
           tool_calls: [
@@ -156,17 +159,22 @@ export const translateMessagesEventToChatCompletionsChunks = (event: MessagesStr
       return state.reasoningBlockIndex === event.index ? [makeChunk(state, { reasoning_opaque: delta.signature })] : [];
     case 'text_delta':
       return [makeChunk(state, { content: delta.text })];
-    case 'input_json_delta':
+    case 'input_json_delta': {
+      const toolCallIndex = state.toolCallIndexByBlock.get(event.index);
+      if (toolCallIndex === undefined) {
+        throw new Error(`Messages tool block ${event.index} emitted input before tool_use start`);
+      }
       return [
         makeChunk(state, {
           tool_calls: [
             {
-              index: state.nextToolCallIndex - 1,
+              index: toolCallIndex,
               function: { arguments: delta.partial_json },
             },
           ],
         }),
       ];
+    }
     case 'citations_delta':
       // Chat Completions has no equivalent of Anthropic's structured citation
       // annotations (no `output_text.annotation.added` event, no
@@ -186,6 +194,7 @@ export const translateMessagesEventToChatCompletionsChunks = (event: MessagesStr
   }
 
   case 'content_block_stop':
+    state.toolCallIndexByBlock.delete(event.index);
     return [];
 
   case 'message_delta': {
