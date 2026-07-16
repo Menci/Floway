@@ -241,7 +241,7 @@ test('translateMessagesToChatCompletions preserves redacted_thinking as reasonin
   ]);
 });
 
-test('translateMessagesToChatCompletions keeps the first complete reasoning block', () => {
+test('translateMessagesToChatCompletions projects only the first scalar reasoning group', () => {
   const result = translateMessagesToChatCompletions({
     model: 'gpt-test',
     max_tokens: 256,
@@ -265,7 +265,7 @@ test('translateMessagesToChatCompletions keeps the first complete reasoning bloc
   });
 });
 
-test('translateMessagesToChatCompletions does not combine later redacted state with readable thinking', () => {
+test('translateMessagesToChatCompletions does not pair readable thinking with later redacted opaque data', () => {
   const result = translateMessagesToChatCompletions({
     model: 'gpt-test',
     max_tokens: 256,

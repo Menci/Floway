@@ -532,9 +532,9 @@ Request mapping:
   tool results are split into multiple Chat messages to preserve source order.
 - assistant text becomes Chat assistant `content`.
 - assistant `tool_use` blocks become OpenAI `tool_calls`.
-- assistant `thinking` / `redacted_thinking` projects only the first complete
-  source-order reasoning block into Chat `reasoning_text` /
-  `reasoning_opaque`, keeping readable text and its signature coherent.
+- assistant `thinking` / `redacted_thinking` projects only the first
+  source-order scalar reasoning group into Chat `reasoning_text` /
+  `reasoning_opaque`.
 - `max_tokens`, `stop_sequences` -> `stop`, `stream`, `temperature`, and `top_p`
   pass through when present.
 - non-empty `output_config.effort` maps directly to `reasoning_effort`;
