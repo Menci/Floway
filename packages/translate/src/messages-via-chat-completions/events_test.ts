@@ -129,6 +129,44 @@ test('translateChatCompletionsChunkToMessagesEvents keeps text and opaque in one
   ]);
 });
 
+test('emits an available signature before visible content closes the thinking block', () => {
+  const state = createChatCompletionsToMessagesStreamState();
+  const events = [
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({ role: 'assistant', reasoning_text: 'trace' }), state),
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({ reasoning_opaque: 'sig' }), state),
+    ...translateChatCompletionsChunkToMessagesEvents(chunk({ content: 'answer' }), state),
+  ];
+
+  assertEquals(events.slice(1, 7), [
+    {
+      type: 'content_block_start',
+      index: 0,
+      content_block: { type: 'thinking', thinking: '' },
+    },
+    {
+      type: 'content_block_delta',
+      index: 0,
+      delta: { type: 'thinking_delta', thinking: 'trace' },
+    },
+    {
+      type: 'content_block_delta',
+      index: 0,
+      delta: { type: 'signature_delta', signature: 'sig' },
+    },
+    { type: 'content_block_stop', index: 0 },
+    {
+      type: 'content_block_start',
+      index: 1,
+      content_block: { type: 'text', text: '' },
+    },
+    {
+      type: 'content_block_delta',
+      index: 1,
+      delta: { type: 'text_delta', text: 'answer' },
+    },
+  ]);
+});
+
 test('translateChatCompletionsChunkToMessagesEvents emits early opaque after later thinking text', () => {
   const state = createChatCompletionsToMessagesStreamState();
   const events = [

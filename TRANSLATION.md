@@ -259,16 +259,17 @@ Request mapping:
 
 - system, user text/images, tool results, assistant text, and tool use become
   their Chat counterparts while preserving source order;
-- only the first source-order thinking group fits Chat's scalar
-  `reasoning_text` / `reasoning_opaque` fields;
+- readable reasoning comes from the first source-order thinking group; later
+  thinking/redacted blocks can replace the scalar `reasoning_opaque` snapshot;
 - limits, sampling, stop, tools, and representable tool choice map directly;
 - explicit effort maps to `reasoning_effort`; disabled thinking maps to
   `none`.
 
-Response mapping concatenates text and tool argument fragments, uses the latest
-opaque reasoning snapshot, maps tools, stop reasons, and usage, and retains
-only the first Messages reasoning group representable by Chat. Multiple
-Messages thinking groups and assistant images are lossy.
+Response mapping concatenates text and tool argument fragments, maps tools,
+stop reasons, and usage, and preserves each reasoning segment in source order.
+A signature already available when readable output starts closes its thinking
+block; a signature that arrives after that boundary becomes a later standalone
+redacted block. Assistant images remain lossy.
 
 ## Chat Completions → Messages
 
