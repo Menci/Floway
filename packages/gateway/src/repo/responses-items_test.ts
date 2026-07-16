@@ -179,6 +179,49 @@ test('SQL duplicate insert does not write an unreferenced replacement spill', as
   expect(await repo.responsesItems.lookupMany('key-a', [original.id])).toEqual([original]);
 });
 
+test('SQL insert conflict cleans its spill when the winning row disappears', async () => {
+  const files = new MemoryFileProvider();
+  initFileProvider(files);
+  const base = await createSqliteTestDb();
+  let injectConflict = true;
+  const db: SqlDatabase = {
+    prepare: query => base.prepare(query),
+    exec: sql => base.exec(sql),
+    batch: async statements => {
+      if (!injectConflict) throw new Error('unexpected second insert batch');
+      injectConflict = false;
+      const inlinePayload = JSON.stringify({
+        version: 1,
+        storage: 'inline',
+        payload: { item: { type: 'message', id: 'msg_insert_race', role: 'assistant', content: [] } },
+      });
+      await base.prepare(
+        'INSERT INTO responses_items (id, api_key_id, item_type, payload_json, content_hash, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+      ).bind('msg_insert_race', 'key-a', 'message', inlinePayload, 'race', 1_000).run();
+      const results = [];
+      for (const statement of statements) results.push(await statement.run());
+      await base.prepare('DELETE FROM responses_items WHERE id = ? AND api_key_id = ?')
+        .bind('msg_insert_race', 'key-a')
+        .run();
+      return results;
+    },
+  };
+  const repo = new SqlRepo(db);
+  const bytes = new Uint8Array(128 * 1024);
+  crypto.getRandomValues(bytes.subarray(0, 64 * 1024));
+  crypto.getRandomValues(bytes.subarray(64 * 1024));
+  let content = '';
+  for (const byte of bytes) content += byte.toString(16).padStart(2, '0');
+  const item: StoredResponsesItem = {
+    ...storedItem('msg_insert_race', 'key-a', 'race', 1_000 + 2 * 60 * 60 * 1000),
+    payload: { item: { type: 'message', id: 'msg_insert_race', role: 'assistant', content } },
+  };
+
+  await expect(repo.responsesItems.insertMany([item]))
+    .rejects.toThrow('Responses item conflict disappeared before spill cleanup: msg_insert_race');
+  expect(await files.listKeys('responses-items/')).toEqual([]);
+});
+
 test('migration 0058 preserves usable payloads and snapshots but drops legacy affinity columns', async () => {
   const SQL = await initSqlJs();
   const db = new SQL.Database();

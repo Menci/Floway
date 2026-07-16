@@ -881,8 +881,11 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
         .prepare('SELECT payload_json FROM responses_items WHERE id = ? AND api_key_id = ?')
         .bind(insert.item.id, insert.item.apiKeyId)
         .first<{ payload_json: string }>();
-      if (persisted === null) throw new Error(`Responses item conflict disappeared before spill cleanup: ${insert.item.id}`);
       const generatedFileKey = storedResponsesPayloadFileKey(insert.item.id, insert.payload);
+      if (persisted === null) {
+        if (generatedFileKey !== null) await getFileProvider().deletePrefix(generatedFileKey);
+        throw new Error(`Responses item conflict disappeared before spill cleanup: ${insert.item.id}`);
+      }
       const persistedFileKey = storedResponsesPayloadFileKey(insert.item.id, persisted.payload_json);
       if (generatedFileKey !== null && generatedFileKey !== persistedFileKey) {
         await getFileProvider().deletePrefix(generatedFileKey);
