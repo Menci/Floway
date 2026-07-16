@@ -90,8 +90,9 @@ describe('Gemini affinity egress', () => {
         content: { role: 'model', parts: [{ text: 'visible', thoughtSignature: 'wrapped:natural' }] },
         finishReason: 'STOP',
       }],
+      usageMetadata: { totalTokenCount: 2 },
     }));
-    expect(output[1]).toEqual(eventFrame({ candidates: [], usageMetadata: { totalTokenCount: 2 } }));
+    expect(output).toHaveLength(1);
   });
 
   test.each([
@@ -107,7 +108,7 @@ describe('Gemini affinity egress', () => {
     expect(output[0]).toMatchObject({
       event: { candidates: [{ content: { parts: [{ text: 'visible', thoughtSignature: 'wrapped:natural' }] }, finishReason: 'STOP' }] },
     });
-    expect(output[1]).toMatchObject({ event: { candidates: [] } });
+    expect(output).toHaveLength(1);
   });
 
   test('moves an immediate continuation signature onto the buffered function-call event', async () => {
@@ -266,9 +267,32 @@ describe('Gemini affinity egress', () => {
       eventFrame({ candidates: [{ index: 0, content: { role: 'model', parts: [contentPart] }, finishReason: 'STOP' }] }),
     ]), { codec: immediateCodec, affinity })) output.push(frame);
 
-    expect(output[0]).toMatchObject({ event: { candidates: [] } });
-    expect(output[1]).toMatchObject({
+    expect(output).toHaveLength(1);
+    expect(output[0]).toMatchObject({
       event: { candidates: [{ content: { parts: [{ thoughtSignature: 'wrapped:natural' }] }, finishReason: 'STOP' }] },
+    });
+  });
+
+  test('moves event metadata forward when suppressing a leading signature event', async () => {
+    const output: ProtocolFrame<GeminiStreamEvent>[] = [];
+    for await (const frame of wrapGeminiAffinityEgress(frames([
+      eventFrame({
+        candidates: [{ index: 0, content: { role: 'model', parts: [{ thoughtSignature: 'natural' }] } }],
+        modelVersion: 'model-v1',
+      }),
+      eventFrame({
+        candidates: [{ index: 0, content: { role: 'model', parts: [{ text: 'answer' }] }, finishReason: 'STOP' }],
+        responseId: 'response-1',
+      }),
+    ]), { codec: immediateCodec, affinity })) output.push(frame);
+
+    expect(output).toHaveLength(1);
+    expect(output[0]).toMatchObject({
+      event: {
+        modelVersion: 'model-v1',
+        responseId: 'response-1',
+        candidates: [{ content: { parts: [{ text: 'answer', thoughtSignature: 'wrapped:natural' }] } }],
+      },
     });
   });
 

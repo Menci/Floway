@@ -1,5 +1,5 @@
 import type { AffinityEgressOptions } from '../../shared/affinity/index.ts';
-import { eventFrame, type ProtocolFrame, USAGE_BILLING } from '@floway-dev/protocols/common';
+import { captureExtras, eventFrame, type ProtocolFrame, USAGE_BILLING } from '@floway-dev/protocols/common';
 import type { GeminiCandidate, GeminiPart, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
 
 interface CandidateState {
@@ -62,6 +62,32 @@ const firstContentPart = (parts: readonly GeminiPart[]): GeminiPart | undefined 
 
 const candidateByIndex = (event: GeminiStreamEvent | undefined, index: number): GeminiCandidate | undefined =>
   event !== undefined && !('error' in event) ? event.candidates?.find(candidate => candidate.index === index) : undefined;
+
+const KNOWN_EVENT_KEYS = new Set(['candidates', 'usageMetadata', 'modelVersion', 'responseId']);
+
+const mergeEventMetadata = (
+  earlier: Exclude<GeminiStreamEvent, { error: unknown }>,
+  later: Exclude<GeminiStreamEvent, { error: unknown }>,
+  target: Exclude<GeminiStreamEvent, { error: unknown }>,
+): void => {
+  const extras: Record<string, unknown> = {};
+  captureExtras(earlier as unknown as Record<string, unknown>, KNOWN_EVENT_KEYS, extras);
+  captureExtras(later as unknown as Record<string, unknown>, KNOWN_EVENT_KEYS, extras);
+  const usageMetadata = later.usageMetadata ?? earlier.usageMetadata;
+  const modelVersion = later.modelVersion ?? earlier.modelVersion;
+  const responseId = later.responseId ?? earlier.responseId;
+  for (const key of Object.keys(target)) if (key !== 'candidates') delete (target as Record<string, unknown>)[key];
+  Object.assign(target, {
+    ...(usageMetadata !== undefined ? { usageMetadata } : {}),
+    ...(modelVersion !== undefined ? { modelVersion } : {}),
+    ...(responseId !== undefined ? { responseId } : {}),
+    ...extras,
+  });
+};
+
+const clearEventMetadata = (event: Exclude<GeminiStreamEvent, { error: unknown }>): void => {
+  for (const key of Object.keys(event)) if (key !== 'candidates') delete (event as Record<string, unknown>)[key];
+};
 
 // Gemini pays one upstream-event of TTFT/inter-event latency so the client sees
 // one authoritative signature. Within one event it belongs on the first Part
@@ -207,10 +233,13 @@ const wrapEvent = async (
   current: GeminiStreamEvent,
   next: GeminiStreamEvent | undefined,
   states: Map<number, CandidateState>,
+  suppressed: WeakSet<object>,
   options: AffinityEgressOptions,
   allowSynthetic: boolean,
 ): Promise<GeminiStreamEvent> => {
   if ('error' in current) return current;
+  const currentHadCandidates = (current.candidates?.length ?? 0) > 0;
+  const nextHadCandidates = next !== undefined && !('error' in next) && (next.candidates?.length ?? 0) > 0;
 
   for (const candidate of current.candidates ?? []) {
     const state = states.get(candidate.index) ?? { anchored: false, finished: false };
@@ -278,6 +307,17 @@ const wrapEvent = async (
   if (current.candidates !== undefined) {
     current.candidates = current.candidates.filter(candidate => candidate.content.parts.length > 0 || candidate.finishReason !== undefined);
   }
+  const currentEmptied = currentHadCandidates && current.candidates?.length === 0;
+  const nextEmptied = nextHadCandidates && next !== undefined && !('error' in next) && next.candidates?.length === 0;
+  if (currentEmptied && next !== undefined && !('error' in next) && !nextEmptied) {
+    mergeEventMetadata(current, next, next);
+    clearEventMetadata(current);
+    suppressed.add(current);
+  } else if (nextEmptied && next !== undefined && !('error' in next) && !currentEmptied) {
+    mergeEventMetadata(current, next, current);
+    clearEventMetadata(next);
+    suppressed.add(next);
+  }
   return current;
 };
 
@@ -298,6 +338,7 @@ export const wrapGeminiAffinityEgress = async function* (
   options: AffinityEgressOptions,
 ): AsyncGenerator<ProtocolFrame<GeminiStreamEvent>> {
   const states = new Map<number, CandidateState>();
+  const suppressed = new WeakSet<object>();
   let pending: GeminiStreamEvent | undefined;
   const iterator = frames[Symbol.asyncIterator]();
   let sourceCompleted = false;
@@ -309,7 +350,8 @@ export const wrapGeminiAffinityEgress = async function* (
         result = await iterator.next();
       } catch (error) {
         if (pending !== undefined) {
-          yield eventFrame(await wrapEvent(pending, undefined, states, options, false));
+          const wrapped = await wrapEvent(pending, undefined, states, suppressed, options, false);
+          if (!suppressed.has(wrapped)) yield eventFrame(wrapped);
           pending = undefined;
         }
         throw error;
@@ -321,25 +363,35 @@ export const wrapGeminiAffinityEgress = async function* (
       const frame = result.value;
       if (frame.type !== 'event') {
         if (pending !== undefined) {
-          yield eventFrame(await wrapEvent(pending, undefined, states, options, frame.type === 'done'));
+          const wrapped = await wrapEvent(pending, undefined, states, suppressed, options, frame.type === 'done');
+          if (!suppressed.has(wrapped)) yield eventFrame(wrapped);
           pending = undefined;
         }
         yield frame;
         continue;
       }
       if ('error' in frame.event) {
-        if (pending !== undefined) yield eventFrame(await wrapEvent(pending, undefined, states, options, false));
+        if (pending !== undefined) {
+          const wrapped = await wrapEvent(pending, undefined, states, suppressed, options, false);
+          if (!suppressed.has(wrapped)) yield eventFrame(wrapped);
+        }
         yield frame;
         return;
       }
 
       const next = cloneGeminiEvent(frame.event);
-      if (pending !== undefined) yield eventFrame(await wrapEvent(pending, next, states, options, true));
+      if (pending !== undefined) {
+        const wrapped = await wrapEvent(pending, next, states, suppressed, options, true);
+        if (!suppressed.has(wrapped)) yield eventFrame(wrapped);
+      }
       pending = next;
     }
   } finally {
     if (!sourceCompleted) await iterator.return?.();
   }
 
-  if (pending !== undefined) yield eventFrame(await wrapEvent(pending, undefined, states, options, false));
+  if (pending !== undefined) {
+    const wrapped = await wrapEvent(pending, undefined, states, suppressed, options, false);
+    if (!suppressed.has(wrapped)) yield eventFrame(wrapped);
+  }
 };
