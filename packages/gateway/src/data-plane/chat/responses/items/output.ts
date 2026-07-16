@@ -6,8 +6,8 @@ import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols
 import { responsesResultToEvents, type ResponsesInputItem, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 // Mints gateway-owned ids and presents finalized client items to the configured
-// state store. A write-free HTTP store discards those rows after the IDs are
-// rewritten; translated inner Responses attempts never enter this membrane.
+// state store when it has a write target. Translated inner Responses attempts
+// never enter this membrane.
 //
 // Items are committed at their `done` frame and the snapshot is committed
 // at the terminal `response.completed` / `response.incomplete` frame.
@@ -50,7 +50,7 @@ export const wrapResponsesClientOutput = async function* (
   const outputIndexToClient = new Map<number, string>();
   const finalizedItems = new Map<number, { readonly itemType: string; readonly contentHash: string }>();
 
-  const idMapper = (upstreamId: string, itemType: string): string => {
+  const clientIdForUpstreamId = (upstreamId: string, itemType: string): string => {
     let clientId = upstreamToClient.get(upstreamId);
     if (clientId === undefined) {
       clientId = createResponsesItemId(itemType);
@@ -59,15 +59,25 @@ export const wrapResponsesClientOutput = async function* (
     return clientId;
   };
 
-  const lifecycleId = (upstreamId: string | null, itemType: string, outputIndex: number): string => {
-    let publicId = outputIndexToClient.get(outputIndex);
-    if (publicId === undefined) {
-      publicId = upstreamId === null ? createResponsesItemId(itemType) : idMapper(upstreamId, itemType);
-      outputIndexToClient.set(outputIndex, publicId);
+  const clientIdForOutput = (upstreamId: string | null, itemType: string, outputIndex: number): string => {
+    let clientId = outputIndexToClient.get(outputIndex);
+    if (clientId === undefined) {
+      clientId = upstreamId === null ? createResponsesItemId(itemType) : clientIdForUpstreamId(upstreamId, itemType);
+      outputIndexToClient.set(outputIndex, clientId);
     } else if (upstreamId !== null) {
-      upstreamToClient.set(upstreamId, publicId);
+      upstreamToClient.set(upstreamId, clientId);
     }
-    return publicId;
+    return clientId;
+  };
+
+  const matchesFinalizedItem = async (outputIndex: number, item: ResponsesInputItem): Promise<boolean> => {
+    const finalized = finalizedItems.get(outputIndex);
+    if (finalized === undefined) return false;
+    const contentHash = await hashResponsesItemBinding(item);
+    if (finalized.itemType !== item.type || finalized.contentHash !== contentHash) {
+      throw new Error(`Responses output item ${outputIndex} changed after output_item.done`);
+    }
+    return true;
   };
 
   const onItemFinalized = async (originalItem: ResponsesInputItem, newId: string): Promise<void> => {
@@ -92,9 +102,8 @@ export const wrapResponsesClientOutput = async function* (
     await store.commitOutputItems();
   };
 
-  // `seenItemTypes` records item type for every upstream id we have mapped
-  // via an item-bearing frame. Delta events carry only `item_id` with no
-  // type, so we look the type up before re-invoking idMapper.
+  // Fallback for an out-of-order delta that references an upstream id before
+  // its output-index lifecycle is available.
   const seenItemTypes = new Map<string, string>();
   let sawCompactionItem = false;
 
@@ -104,7 +113,7 @@ export const wrapResponsesClientOutput = async function* (
     output: response.output.map((item, outputIndex) => {
       const upstreamId = responsesItemId(item);
       if (upstreamId !== null) seenItemTypes.set(upstreamId, item.type);
-      return { ...item, id: lifecycleId(upstreamId, item.type, outputIndex) };
+      return { ...item, id: clientIdForOutput(upstreamId, item.type, outputIndex) };
     }),
   });
 
@@ -128,7 +137,7 @@ export const wrapResponsesClientOutput = async function* (
     if (event.type === 'response.output_item.added') {
       const upstreamId = responsesItemId(event.item);
       if (upstreamId !== null) seenItemTypes.set(upstreamId, event.item.type);
-      const newId = lifecycleId(upstreamId, event.item.type, event.output_index);
+      const newId = clientIdForOutput(upstreamId, event.item.type, event.output_index);
       yield eventFrame({ ...event, item: { ...event.item, id: newId } });
       continue;
     }
@@ -136,9 +145,9 @@ export const wrapResponsesClientOutput = async function* (
     if (event.type === 'response.output_item.done') {
       const upstreamId = responsesItemId(event.item);
       if (upstreamId !== null) seenItemTypes.set(upstreamId, event.item.type);
-      const newId = lifecycleId(upstreamId, event.item.type, event.output_index);
+      const newId = clientIdForOutput(upstreamId, event.item.type, event.output_index);
       if (isCompactionItemType(event.item.type)) sawCompactionItem = true;
-      if (!finalizedItems.has(event.output_index)) {
+      if (!await matchesFinalizedItem(event.output_index, event.item as unknown as ResponsesInputItem)) {
         finalizedItems.set(event.output_index, {
           itemType: event.item.type,
           contentHash: await hashResponsesItemBinding(event.item),
@@ -155,14 +164,8 @@ export const wrapResponsesClientOutput = async function* (
         if (isCompactionItemType(item.type)) sawCompactionItem = true;
         const upstreamId = responsesItemId(item);
         if (upstreamId !== null) seenItemTypes.set(upstreamId, item.type);
-        const newId = lifecycleId(upstreamId, item.type, outputIndex);
-        const contentHash = await hashResponsesItemBinding(item);
-        const finalized = finalizedItems.get(outputIndex);
-        if (finalized !== undefined && (finalized.itemType !== item.type || finalized.contentHash !== contentHash)) {
-          throw new Error(`Responses terminal output item ${outputIndex} changed after output_item.done`);
-        }
-        if (finalized === undefined) {
-          finalizedItems.set(outputIndex, { itemType: item.type, contentHash });
+        const newId = clientIdForOutput(upstreamId, item.type, outputIndex);
+        if (!await matchesFinalizedItem(outputIndex, item as unknown as ResponsesInputItem)) {
           await onItemFinalized(item as unknown as ResponsesInputItem, newId);
         }
         output.push({ ...(item as unknown as ResponsesInputItem), id: newId });
@@ -190,12 +193,9 @@ export const wrapResponsesClientOutput = async function* (
       return;
     }
 
-    const refId = (event as { item_id?: unknown }).item_id;
-    if (typeof refId === 'string') {
-      const outputIndex = 'output_index' in event && typeof event.output_index === 'number'
-        ? event.output_index
-        : undefined;
-      const lifecycleItemId = outputIndex === undefined ? undefined : outputIndexToClient.get(outputIndex);
+    if ('item_id' in event) {
+      const refId = event.item_id;
+      const lifecycleItemId = outputIndexToClient.get(event.output_index);
       if (lifecycleItemId !== undefined) {
         upstreamToClient.set(refId, lifecycleItemId);
         yield eventFrame({ ...event, item_id: lifecycleItemId } as ResponsesStreamEvent);
@@ -203,7 +203,7 @@ export const wrapResponsesClientOutput = async function* (
       }
       const knownType = seenItemTypes.get(refId);
       if (knownType === undefined) { yield frame; continue; }
-      const newId = idMapper(refId, knownType);
+      const newId = clientIdForUpstreamId(refId, knownType);
       yield eventFrame({ ...event, item_id: newId } as ResponsesStreamEvent);
       continue;
     }

@@ -139,7 +139,7 @@ const wrapResponsesCarrierLifecycle = async function* (
   // at close, or open a reasoning prefix immediately and complete it with the
   // canonical bound item at that item's close. Visible content is never held
   // back while the binding waits for its final ID and content hash.
-  const syntheticOnFirstItem = new Map<string, Promise<string>>();
+  const syntheticItemCarriers = new Map<string, Promise<string>>();
   let firstItem: { readonly outputIndex: number; readonly canCarry: boolean } | undefined;
   const insertedItems = new Map<number, InsertedCarrier>();
   const insertedItemIndexes: number[] = [];
@@ -231,29 +231,29 @@ const wrapResponsesCarrierLifecycle = async function* (
     if (item.type === 'program') {
       const slot = 'fingerprint';
       const cacheKey = `${outputIndex}\0${itemId}\0${slot}`;
-      let fingerprint = syntheticOnFirstItem.get(cacheKey);
+      let fingerprint = syntheticItemCarriers.get(cacheKey);
       if (fingerprint === undefined) {
         fingerprint = options.codec.wrap(undefined, target, carrierDomain(item.type, slot));
-        syntheticOnFirstItem.set(cacheKey, fingerprint);
+        syntheticItemCarriers.set(cacheKey, fingerprint);
       }
       return { ...item, fingerprint: await fingerprint };
     }
     if (item.type === 'agent_message') {
       const slot = `content.${item.content.length}.encrypted_content`;
       const cacheKey = `${outputIndex}\0${itemId}\0${slot}`;
-      let encrypted = syntheticOnFirstItem.get(cacheKey);
+      let encrypted = syntheticItemCarriers.get(cacheKey);
       if (encrypted === undefined) {
         encrypted = options.codec.wrap(undefined, target, carrierDomain(item.type, slot));
-        syntheticOnFirstItem.set(cacheKey, encrypted);
+        syntheticItemCarriers.set(cacheKey, encrypted);
       }
       return { ...item, content: [...item.content, { type: 'encrypted_content', encrypted_content: await encrypted }] };
     }
 
     const cacheKey = `${outputIndex}\0${itemId}\0encrypted_content`;
-    let encrypted = syntheticOnFirstItem.get(cacheKey);
+    let encrypted = syntheticItemCarriers.get(cacheKey);
     if (encrypted === undefined) {
       encrypted = options.codec.wrap(undefined, target, carrierDomain(item.type, 'encrypted_content'));
-      syntheticOnFirstItem.set(cacheKey, encrypted);
+      syntheticItemCarriers.set(cacheKey, encrypted);
     }
     return { ...item, encrypted_content: await encrypted } as ResponsesOutputItem;
   };

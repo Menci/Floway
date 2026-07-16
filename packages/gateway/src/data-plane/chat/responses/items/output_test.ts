@@ -164,9 +164,13 @@ test('client output binds a later delta item_id to an id-less lifecycle', async 
 
   const added = events.find(event => event.type === 'response.output_item.added');
   const delta = events.find(event => event.type === 'response.output_text.delta');
-  expect(added?.type === 'response.output_item.added' ? added.item.id : undefined).toBe(
-    delta?.type === 'response.output_text.delta' ? delta.item_id : undefined,
-  );
+  expect(added?.type).toBe('response.output_item.added');
+  expect(delta?.type).toBe('response.output_text.delta');
+  if (added?.type !== 'response.output_item.added' || delta?.type !== 'response.output_text.delta') {
+    throw new Error('Expected added and delta events');
+  }
+  expect(isResponsesItemId(added.item.id!)).toBe(true);
+  expect(delta.item_id).toBe(added.item.id);
 });
 
 test('client output rejects terminal item drift after output_item.done', async () => {
@@ -197,6 +201,28 @@ test('client output rejects terminal item drift after output_item.done', async (
     })) void _frame;
   };
 
-  await expect(collect()).rejects.toThrow('Responses terminal output item 0 changed after output_item.done');
+  await expect(collect()).rejects.toThrow('Responses output item 0 changed after output_item.done');
   expect(await repo.responsesSnapshots.lookup('key-a', 'resp_public')).toBeNull();
+});
+
+test('client output rejects repeated output_item.done drift', async () => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  const store = createResponsesHttpStore('key-a', true);
+  const first = { type: 'reasoning' as const, id: 'rs_upstream', summary: [{ type: 'summary_text' as const, text: 'old' }] };
+  const changed = { ...first, summary: [{ type: 'summary_text' as const, text: 'new' }] };
+  const input = async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
+    yield eventFrame({ type: 'response.output_item.added', output_index: 0, item: first });
+    yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: first });
+    yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: changed });
+  };
+  const collect = async () => {
+    for await (const _frame of wrapResponsesClientOutput(input(), {
+      store,
+      attemptState: new ResponsesAttemptState(),
+      responseId: 'resp_public',
+    })) void _frame;
+  };
+
+  await expect(collect()).rejects.toThrow('Responses output item 0 changed after output_item.done');
 });

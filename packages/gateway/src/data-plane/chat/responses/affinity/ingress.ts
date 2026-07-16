@@ -45,22 +45,19 @@ const routingEvidenceFrom = (
   items: readonly ResponsesInputItem[],
   locations: readonly ResponsesBlobLocation[],
 ): AffinityEvidence[] => {
-  const ownedByItem = Map.groupBy(
-    locations.filter(isOwnedLocation),
-    location => location.itemIndex,
-  );
   const locationsByItem = Map.groupBy(locations, location => location.itemIndex);
   const evidence: AffinityEvidence[] = [];
   let latestTarget: AffinityTarget | undefined;
 
   for (const [itemIndex, item] of items.entries()) {
-    const owned = ownedByItem.get(itemIndex) ?? [];
+    const itemLocations = locationsByItem.get(itemIndex) ?? [];
+    const owned = itemLocations.filter(isOwnedLocation);
     for (const location of owned) {
       latestTarget = location.decoded.envelope.affinity;
       evidence.push({ target: latestTarget, mode: 'prefer' });
       if (itemRequiresAffinity(item)) evidence.push({ target: latestTarget, mode: 'force' });
     }
-    if (!itemRequiresAffinity(item) || (locationsByItem.get(itemIndex)?.length ?? 0) > 0) continue;
+    if (!itemRequiresAffinity(item) || itemLocations.length > 0) continue;
     if (latestTarget !== undefined) evidence.push({ target: latestTarget, mode: 'force' });
   }
 
