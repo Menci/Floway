@@ -54,10 +54,8 @@ export const respondResponses = async (
       const response = await collectResponsesProtocolEventsToResult(frames);
       const metadata = await eventResultMetadata(result);
       const usage = tokenUsageFromResponsesResult(response);
-      const failed = state.failed || response.status === 'failed';
-      if (failed) ctx.dump?.failed('responses non-stream result status=failed');
-      else ctx.dump?.success(metadata.modelIdentity, usage);
-      settle(ctx, metadata.performance, metadata.modelIdentity, usage, failed);
+      ctx.dump?.success(metadata.modelIdentity, usage);
+      settle(ctx, metadata.performance, metadata.modelIdentity, usage, state.failed || response.status === 'failed');
       return Response.json(response, { headers: mergeForwardedUpstreamHeaders(undefined, result.headers) });
     } catch (error) {
       recordFailedRequest(ctx, result.performance);

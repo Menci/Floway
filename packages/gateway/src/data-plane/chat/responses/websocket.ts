@@ -19,7 +19,7 @@ import { takeRequestBody } from '../shared/request-body.ts';
 import { SourceStreamState, eventResultMetadata } from '../shared/respond.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS, type StreamCompletion } from '../shared/stream/sse.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
-import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import { RESPONSES_MISSING_TERMINAL_MESSAGE } from '@floway-dev/protocols/responses';
 import { isResponsesTerminalEvent, type CanonicalResponsesPayload, type ResponsesRequestPayload, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import type { ExecuteResult } from '@floway-dev/provider';
@@ -260,8 +260,7 @@ const handleClientMessage = async (
           param: 'previous_response_id',
           code: 'previous_response_not_found',
         }, eventId, ctx.dump);
-        recordFailedRequest(ctx, ctx.attempt.telemetry);
-        ctx.dump?.error('gateway');
+        ctx.dump?.failed(error);
         ctx.dump?.finalize(400, []);
         return;
       }
@@ -277,12 +276,7 @@ const handleClientMessage = async (
         code: 'invalid_request_error',
         message: error.message,
         param: error.param,
-      }, eventId, ctx?.dump);
-      if (ctx !== undefined) {
-        recordFailedRequest(ctx, ctx.attempt.telemetry);
-        ctx.dump?.error('gateway');
-        ctx.dump?.finalize(400, []);
-      }
+      }, eventId);
       return;
     }
     if (error instanceof WebSocketClientMessageError) {
@@ -568,14 +562,7 @@ const sendError = (
   eventId?: string,
   dump?: DumpAccumulator | null,
 ): void => {
-  const payload = {
-    type: 'error',
-    status_code: statusCode,
-    error,
-    ...(eventId !== undefined ? { event_id: eventId } : {}),
-  };
-  dump?.frame(eventFrame(payload));
-  sendJson(socket, payload, undefined, dump);
+  sendJson(socket, { type: 'error', status_code: statusCode, error }, eventId, dump);
 };
 
 const sendJson = (
