@@ -1,11 +1,12 @@
 import { Hono } from 'hono';
 import { test, vi } from 'vitest';
 
-import { isStoredResponseId } from './items/format.ts';
+import { hashResponsesItemBinding, isStoredResponseId } from './items/format.ts';
 import type { AuthVars } from '../../../middleware/auth.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
 import type { ApiKey, User } from '../../../repo/types.ts';
+import { affinityTargetForCandidate, AffinityCodec } from '../shared/affinity/index.ts';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { CanonicalResponsesPayload, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { type FlagId, type ModelCandidate, directFetcher, type ProviderResponsesResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
@@ -373,6 +374,44 @@ test('POST /v1/responses with an unresolvable previous_response_id renders the v
   assertEquals(body.error.type, 'invalid_request_error');
   assertEquals(body.error.param, 'previous_response_id');
   assertEquals(body.error.code, 'previous_response_not_found');
+});
+
+test('POST /v1/responses renders an invalid bound affinity carrier as a 400 input error', async () => {
+  installRepo();
+  const candidate = makeCandidate();
+  queueResolution([candidate]);
+  const codec = new AffinityCodec(buildApiKey().serverSecret);
+  const original = { type: 'program_output' as const, id: 'first', call_id: 'call_1', result: 'first', status: 'completed' as const };
+  const carrier = await codec.wrap(undefined, {
+    ...affinityTargetForCandidate(candidate),
+    syntheticItem: true,
+    boundItem: {
+      type: original.type,
+      upstreamItemId: 'first_upstream',
+      contentHash: await hashResponsesItemBinding(original),
+    },
+  }, 'responses.reasoning.encrypted_content');
+
+  const response = await makeApp().request('/v1/responses', {
+    method: 'POST',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: JSON.stringify({
+      model: 'test-model',
+      input: [
+        { type: 'reasoning', id: 'rs_prefix', summary: [], encrypted_content: carrier },
+        { type: 'program_output', id: 'second', call_id: 'call_2', result: 'second', status: 'completed' },
+      ],
+    }),
+  });
+
+  assertEquals(response.status, 400);
+  const body = await response.json() as { error: { message: string; type: string; param: string; code: null } };
+  assertEquals(body.error, {
+    message: 'Affinity carrier does not match the Responses input item at index 1.',
+    type: 'invalid_request_error',
+    param: 'input[1]',
+    code: null,
+  });
 });
 
 const queueCodexAutoReviewCandidate = (
