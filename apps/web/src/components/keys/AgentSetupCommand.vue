@@ -3,20 +3,24 @@
 // persistent, first-class button rather than the Code block's hover-only one so
 // it can stay visible while disabled — the card gates it during a draft sync, an
 // expired lease, or a terminated (swept) link.
-import { onScopeDispose, ref } from 'vue';
+import { onScopeDispose, shallowRef } from 'vue';
 
 import { Button, Code } from '@floway-dev/ui';
 
 const props = withDefaults(defineProps<{
   label: string;
   command: string;
-  language?: 'bash' | 'text';
+  language?: 'bash' | 'powershell' | 'text';
   disabled?: boolean;
   showLabel?: boolean;
 }>(), { language: 'bash', disabled: false, showLabel: true });
 
+defineSlots<{
+  header?: () => unknown;
+}>();
+
 type CopyStatus = 'idle' | 'copied' | 'error';
-const status = ref<CopyStatus>('idle');
+const status = shallowRef<CopyStatus>('idle');
 let resetTimer: ReturnType<typeof setTimeout> | null = null;
 
 const flash = (next: Exclude<CopyStatus, 'idle'>) => {
@@ -44,8 +48,10 @@ onScopeDispose(() => { if (resetTimer !== null) clearTimeout(resetTimer); });
 
 <template>
   <div>
-    <div class="mb-2 flex items-center gap-2" :class="showLabel ? 'justify-between' : 'justify-end'">
-      <span v-if="showLabel" class="text-xs font-medium text-gray-400">{{ label }}</span>
+    <div class="mb-2 flex items-center gap-2" :class="showLabel || $slots.header ? 'justify-between' : 'justify-end'">
+      <slot name="header">
+        <span v-if="showLabel" class="text-xs font-medium text-gray-400">{{ label }}</span>
+      </slot>
       <div class="flex items-center gap-2">
         <span
           role="status"

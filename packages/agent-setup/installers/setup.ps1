@@ -318,6 +318,7 @@ function Write-FlowayClaudeSettings {
   Set-FlowayProp $document.env 'ANTHROPIC_BASE_URL' $FlowayBaseUrl
   Set-FlowayProp $document.env 'ANTHROPIC_AUTH_TOKEN' $FlowayApiKey
   Set-FlowayOptionalProp $document.env 'ANTHROPIC_MODEL' $FlowayClaudeModel
+  Set-FlowayOptionalProp $document.env 'ANTHROPIC_DEFAULT_OPUS_MODEL' $FlowayClaudeDefaultOpusModel
   Set-FlowayOptionalProp $document.env 'ANTHROPIC_DEFAULT_SONNET_MODEL' $FlowayClaudeDefaultSonnetModel
   Set-FlowayOptionalProp $document.env 'ANTHROPIC_DEFAULT_HAIKU_MODEL' $FlowayClaudeDefaultHaikuModel
   if ($FlowayClaudeModelDiscovery) { Set-FlowayProp $document.env 'CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY' '1' }

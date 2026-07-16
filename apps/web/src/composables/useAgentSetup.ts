@@ -95,6 +95,7 @@ const isRetryableHttpStatus = (status: number): boolean =>
 export const useAgentSetup = (
   api: ApiClient,
   selectableKeyIds: MaybeRefOrGetter<readonly string[] | null> = null,
+  active: MaybeRefOrGetter<boolean> = true,
 ): UseAgentSetup => {
   const initialized = ref(false);
   const token = ref<string | null>(null);
@@ -390,7 +391,7 @@ export const useAgentSetup = (
   // request, clear the surfaced error, and post exactly one more create. Guarded
   // to the pre-initialized window so a live lease is never re-created underneath.
   const retryCreate = () => {
-    if (disposed || initialized.value) return;
+    if (disposed || initialized.value || !toValue(active)) return;
     abortActiveRequest();
     createError.value = null;
     noSelectableKey.value = false;
@@ -445,7 +446,10 @@ export const useAgentSetup = (
 
   document.addEventListener('visibilitychange', onVisibilityChange);
   onScopeDispose(dispose);
-  void create();
+  watch(() => toValue(active), enabled => {
+    if (!enabled || disposed || initialized.value || activeRequest !== null) return;
+    void create();
+  }, { immediate: true });
 
   return {
     state: { initialized, token, configurationRevision, expiresAt, scripts, noSelectableKey, error },

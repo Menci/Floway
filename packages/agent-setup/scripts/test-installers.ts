@@ -476,7 +476,7 @@ const placeFakeCodex = (dir: string): void => {
 const claudeConfig = (overrides: Partial<AgentSetupConfiguration['claudeCode']> = {}): AgentSetupConfiguration => ({
   apiKeyId: 'key-a',
   claudeCode: {
-    enabled: true, model: null, defaultSonnetModel: null,
+    enabled: true, model: null, defaultOpusModel: null, defaultSonnetModel: null,
     defaultHaikuModel: null, effortLevel: null, modelDiscovery: false, ...overrides,
   },
   codex: { enabled: false, model: null, reasoningEffort: null },
@@ -485,7 +485,7 @@ const claudeConfig = (overrides: Partial<AgentSetupConfiguration['claudeCode']> 
 const codexConfig = (overrides: Partial<AgentSetupConfiguration['codex']> = {}): AgentSetupConfiguration => ({
   apiKeyId: 'key-a',
   claudeCode: {
-    enabled: false, model: null, defaultSonnetModel: null,
+    enabled: false, model: null, defaultOpusModel: null, defaultSonnetModel: null,
     defaultHaikuModel: null, effortLevel: null, modelDiscovery: false,
   },
   codex: { enabled: true, model: null, reasoningEffort: null, ...overrides },
@@ -497,7 +497,7 @@ const bothConfig = (
 ): AgentSetupConfiguration => ({
   apiKeyId: 'key-a',
   claudeCode: {
-    enabled: true, model: null, defaultSonnetModel: null,
+    enabled: true, model: null, defaultOpusModel: null, defaultSonnetModel: null,
     defaultHaikuModel: null, effortLevel: null, modelDiscovery: false, ...claude,
   },
   codex: { enabled: true, model: null, reasoningEffort: null, ...codex },
@@ -839,7 +839,7 @@ test('claude', 'unrelated settings and env keys are preserved', async t => {
   }));
   const run = await runShellInstaller({
     workspace: ws, baseUrl: modelServer.url,
-    configuration: claudeConfig({ model: 'claude-opus-x[1m]', defaultSonnetModel: 'sonnet-x', defaultHaikuModel: 'haiku-x', effortLevel: 'high', modelDiscovery: true }),
+    configuration: claudeConfig({ model: 'claude-opus-x[1m]', defaultOpusModel: 'opus-x', defaultSonnetModel: 'sonnet-x', defaultHaikuModel: 'haiku-x', effortLevel: 'high', modelDiscovery: true }),
   });
   t.equal(run.code, 0, `should succeed:\n${run.combined}`);
   const settings = readSettings(settingsPathFor(ws)) as { theme: string; permissions: unknown; effortLevel: string; env: Record<string, string> };
@@ -848,6 +848,7 @@ test('claude', 'unrelated settings and env keys are preserved', async t => {
   t.equal(settings.env.OTHER_TOOL, 'keep-me', 'unrelated env key preserved');
   t.equal(settings.env.USE_BUILTIN_RIPGREP, '0', 'unrelated env key preserved');
   t.equal(settings.env.ANTHROPIC_MODEL, 'claude-opus-x[1m]', 'managed model written verbatim');
+  t.equal(settings.env.ANTHROPIC_DEFAULT_OPUS_MODEL, 'opus-x', 'managed opus default written');
   t.equal(settings.env.ANTHROPIC_DEFAULT_SONNET_MODEL, 'sonnet-x', 'managed sonnet default written');
   t.equal(settings.env.ANTHROPIC_DEFAULT_HAIKU_MODEL, 'haiku-x', 'managed haiku default written');
 });
@@ -861,6 +862,7 @@ test('claude', 'optional keys are removed when unset', async t => {
     effortLevel: 'high',
     env: {
       ANTHROPIC_MODEL: 'stale-model',
+      ANTHROPIC_DEFAULT_OPUS_MODEL: 'stale-opus',
       ANTHROPIC_DEFAULT_SONNET_MODEL: 'stale-sonnet',
       ANTHROPIC_DEFAULT_HAIKU_MODEL: 'stale-haiku',
       CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY: '1',
@@ -871,6 +873,7 @@ test('claude', 'optional keys are removed when unset', async t => {
   t.equal(run.code, 0, `should succeed:\n${run.combined}`);
   const settings = readSettings(settingsPathFor(ws)) as { effortLevel?: string; env: Record<string, string> };
   t.ok(!('ANTHROPIC_MODEL' in settings.env), 'stale model removed');
+  t.ok(!('ANTHROPIC_DEFAULT_OPUS_MODEL' in settings.env), 'stale opus removed');
   t.ok(!('ANTHROPIC_DEFAULT_SONNET_MODEL' in settings.env), 'stale sonnet removed');
   t.ok(!('ANTHROPIC_DEFAULT_HAIKU_MODEL' in settings.env), 'stale haiku removed');
   t.ok(!('CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY' in settings.env), 'discovery removed when off');
@@ -1127,7 +1130,7 @@ test('claude', 'PowerShell: existing CLI configures and preserves unrelated keys
   writeFileSync(settingsPathFor(ws), JSON.stringify({ theme: 'dark', env: { OTHER_TOOL: 'keep-me' } }));
   const run = await runPowerShellInstaller({
     workspace: ws, baseUrl: modelServer.url,
-    configuration: claudeConfig({ model: 'claude-opus-x[1m]', defaultSonnetModel: 'sonnet-x', effortLevel: 'high', modelDiscovery: true }),
+    configuration: claudeConfig({ model: 'claude-opus-x[1m]', defaultOpusModel: 'opus-x', defaultSonnetModel: 'sonnet-x', effortLevel: 'high', modelDiscovery: true }),
   });
   t.equal(run.code, 0, `should succeed:\n${run.combined}`);
   t.ok(!existsSync(installerMarker(ws)), 'installer must not run when claude is present');
@@ -1137,6 +1140,7 @@ test('claude', 'PowerShell: existing CLI configures and preserves unrelated keys
   t.equal(settings.env.ANTHROPIC_BASE_URL, modelServer.url, 'base URL written');
   t.equal(settings.env.ANTHROPIC_AUTH_TOKEN, SENTINEL_KEY, 'auth token written');
   t.equal(settings.env.ANTHROPIC_MODEL, 'claude-opus-x[1m]', 'model written verbatim');
+  t.equal(settings.env.ANTHROPIC_DEFAULT_OPUS_MODEL, 'opus-x', 'opus default written');
   t.equal(settings.env.ANTHROPIC_DEFAULT_SONNET_MODEL, 'sonnet-x', 'sonnet default written');
   t.equal(settings.effortLevel, 'high', 'effortLevel maps to the top-level key');
   t.equal(settings.env.CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY, '1', 'discovery maps to the documented env key');

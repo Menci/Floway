@@ -5,7 +5,11 @@
 
 import type { PublicModel, PublicModelLimits } from '../api/types.ts';
 
-type AgentFamily = 'claude' | 'codex';
+type ClaudePicker = 'default' | 'opus' | 'sonnet' | 'haiku';
+type ClaudeTier = 'fable' | 'opus' | 'sonnet' | 'haiku' | 'other';
+export type AgentModelRanking =
+  | { family: 'claude'; picker: ClaudePicker }
+  | { family: 'codex' };
 
 // A model select binds v-model to this `value`. The empty sentinel maps to the
 // configuration's `null` ("no override"); a real option carries the id in the
@@ -19,26 +23,38 @@ export interface ModelOption {
   unavailable: boolean;
 }
 
-// These matchers affect picker rank only; every addressable chat id remains in
-// both pickers. Claude Code discovers gateway models under Claude-family names,
-// while Codex's catalog-driven picker applies native behavior to GPT-5/Codex
-// slugs. A provider prefix may precede the family segment in Floway's addressable
-// ids, so matching starts at either the whole id or a path segment.
-// Refs:
-// https://code.claude.com/docs/en/llm-gateway-protocol#request-and-response
-// https://github.com/openai/codex/blob/c4318c386de365bd0dd9595a08d55a30bb142d11/codex-rs/tui/src/chatwidget/model_popups.rs#L158-L168
-// https://github.com/openai/codex/blob/c4318c386de365bd0dd9595a08d55a30bb142d11/codex-rs/models-manager/src/model_presets.rs#L1-L6
-const NATIVE_MATCHERS: Record<AgentFamily, RegExp> = {
-  claude: /(?:^|\/)claude-/i,
-  codex: /(?:^|\/)(?:gpt-5(?:$|[.\-])|codex-)/i,
+const CLAUDE_DEFAULT_ORDER: readonly ClaudeTier[] = ['fable', 'opus', 'sonnet', 'haiku', 'other'];
+const claudeTier = (id: string): ClaudeTier => {
+  const match = id.toLowerCase().match(/(?:^|[-/.])(fable|opus|sonnet|haiku)(?=$|[-/.[\]])/);
+  return match?.[1] as ClaudeTier | undefined ?? 'other';
 };
 
-// Filter to chat models, drop duplicate ids (first occurrence wins), then stable-
-// partition native-family ids ahead of the rest. `Array.prototype.filter`
-// preserves source order, so relative order inside each bucket is deterministic.
+const claudeOrder = (picker: ClaudePicker): readonly ClaudeTier[] => picker === 'default'
+  ? CLAUDE_DEFAULT_ORDER
+  : [picker, ...CLAUDE_DEFAULT_ORDER.filter(tier => tier !== picker)];
+
+interface CodexModelParts {
+  version: string;
+  variantRank: number;
+}
+
+const CODEX_VARIANT_RANK: Record<string, number> = { sol: 0, terra: 1, luna: 2, mini: 4, nano: 5 };
+const codexModelParts = (id: string): CodexModelParts | null => {
+  const segment = id.toLowerCase().split('/').at(-1)!;
+  const match = /^gpt-(\d+(?:\.\d+)*)(.*)$/.exec(segment);
+  if (!match) return null;
+  const suffix = match[2]!.replace(/^[.-]+/, '');
+  if (!suffix) return { version: match[1]!, variantRank: 3 };
+  const variant = suffix.split(/[.-]/)[0]!;
+  return { version: match[1]!, variantRank: CODEX_VARIANT_RANK[variant] ?? 6 };
+};
+
+// Every addressable chat model stays visible. The ranking only moves the model
+// families each agent understands best to the front, preserving catalog order
+// whenever the explicit priority rules do not distinguish two entries.
 export const rankAgentSetupModels = (
   models: readonly PublicModel[],
-  family: AgentFamily,
+  ranking: AgentModelRanking,
 ): PublicModel[] => {
   const seen = new Set<string>();
   const chat = models.filter(model => {
@@ -46,11 +62,27 @@ export const rankAgentSetupModels = (
     seen.add(model.id);
     return true;
   });
-  const matcher = NATIVE_MATCHERS[family];
-  return [
-    ...chat.filter(model => matcher.test(model.id)),
-    ...chat.filter(model => !matcher.test(model.id)),
-  ];
+
+  if (ranking.family === 'claude') {
+    const priorities = new Map(claudeOrder(ranking.picker).map((tier, index) => [tier, index]));
+    return chat.map((model, index) => ({ model, index }))
+      .sort((a, b) => priorities.get(claudeTier(a.model.id))! - priorities.get(claudeTier(b.model.id))! || a.index - b.index)
+      .map(entry => entry.model);
+  }
+
+  return chat.map((model, index) => ({ model, index, parts: codexModelParts(model.id) }))
+    .sort((a, b) => {
+      if (a.parts === null || b.parts === null) {
+        if (a.parts === null && b.parts !== null) return 1;
+        if (a.parts !== null && b.parts === null) return -1;
+        return a.index - b.index;
+      }
+      if (a.parts.version === b.parts.version && a.parts.variantRank !== b.parts.variantRank) {
+        return a.parts.variantRank - b.parts.variantRank;
+      }
+      return a.index - b.index;
+    })
+    .map(entry => entry.model);
 };
 
 const ONE_MILLION_CONTEXT_TOKENS = 1_000_000;
@@ -76,12 +108,12 @@ const applyClaudeContextSuffix = (modelId: string, limits: PublicModelLimits): s
 export const buildModelOptions = (
   models: readonly PublicModel[],
   currentValue: string | null,
-  family: AgentFamily,
+  ranking: AgentModelRanking,
 ): ModelOption[] => {
   const options: ModelOption[] = [{ value: MODEL_OVERRIDE_NONE, modelId: null, unavailable: false }];
-  for (const model of rankAgentSetupModels(models, family)) {
+  for (const model of rankAgentSetupModels(models, ranking)) {
     options.push({
-      value: family === 'claude' ? applyClaudeContextSuffix(model.id, model.limits) : model.id,
+      value: ranking.family === 'claude' ? applyClaudeContextSuffix(model.id, model.limits) : model.id,
       modelId: model.id,
       unavailable: false,
     });

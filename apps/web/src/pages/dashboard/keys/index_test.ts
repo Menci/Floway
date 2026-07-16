@@ -1,6 +1,6 @@
-import { mount } from '@vue/test-utils';
+import { flushPromises, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { defineComponent, h, ref } from 'vue';
+import { defineComponent, h, nextTick, ref } from 'vue';
 
 import { buildRealModel } from '../../../api/test-fixtures.ts';
 import type { ApiKey, ControlPlaneModel } from '../../../api/types.ts';
@@ -9,6 +9,8 @@ import KeysTable from '../../../components/keys/KeysTable.vue';
 // The page renders behind a route data loader; the tests bypass navigation by
 // stubbing defineBasicLoader so the composable hands back a ref the test owns.
 const pageData = ref<{ keys: ApiKey[]; error: string | null }>({ keys: [], error: null });
+const persistedSelectedKeyId = ref('');
+vi.mock('@vueuse/core', () => ({ useLocalStorage: () => persistedSelectedKeyId }));
 vi.mock('unplugin-vue-router/data-loaders/basic', () => ({
   defineBasicLoader: () => () => ({ data: pageData }),
 }));
@@ -18,6 +20,7 @@ const modelsLoading = ref(false);
 const modelsError = ref<string | null>(null);
 const addressableLoad = vi.fn(async () => {});
 const limitedLoad = vi.fn(async () => {});
+const loadedKeys = ref<ApiKey[]>([]);
 
 vi.mock('../../../composables/useModels.ts', () => ({
   useAddressableModelsStore: () => ({ models: modelsRef, loading: modelsLoading, error: modelsError, load: addressableLoad }),
@@ -28,17 +31,19 @@ vi.mock('../../../composables/useUpstreamOptions.ts', () => ({
 }));
 vi.mock('../../../api/client.ts', () => ({
   useApi: () => ({ api: { keys: {} } }),
-  callApi: async () => ({ data: [] as ApiKey[] }),
+  callApi: async () => ({ data: loadedKeys.value }),
 }));
 
 // A recording stub for the card so the page test asserts the props flowing in
 // without instantiating the real setup composable (which reaches Pinia + fetch).
 let cardProps: Record<string, unknown> | null = null;
+let cardMounts = 0;
 vi.mock('../../../components/keys/AgentSetupCard.vue', () => ({
   default: defineComponent({
     name: 'AgentSetupCard',
-    props: { keys: { type: Array, default: () => [] }, models: { type: Array, default: () => [] }, loading: Boolean, error: { type: String, default: null } },
+    props: { selectedKey: { type: Object, default: null }, models: { type: Array, default: () => [] }, loading: Boolean, error: { type: String, default: null } },
     setup(props) {
+      cardMounts += 1;
       cardProps = props;
       return () => h('div', { 'data-testid': 'agent-setup-card' });
     },
@@ -47,10 +52,16 @@ vi.mock('../../../components/keys/AgentSetupCard.vue', () => ({
 
 const { default: KeysPage } = await import('./index.vue');
 
+const EditKeyDialogStub = defineComponent({
+  name: 'EditKeyDialog',
+  emits: ['saved'],
+  template: '<div data-testid="edit-key-dialog" />',
+});
+
 const mountPage = () => mount(KeysPage, {
   global: {
     stubs: {
-      EditKeyDialog: true,
+      EditKeyDialog: EditKeyDialogStub,
       Dialog: true,
     },
   },
@@ -68,7 +79,10 @@ const apiKey = (over: Partial<ApiKey> & { id: string; name: string }): ApiKey =>
 beforeEach(() => {
   pageData.value = { keys: [], error: null };
   modelsRef.value = [buildRealModel({ id: 'claude-sonnet-4-5' }), buildRealModel({ id: 'gpt-5' })];
+  loadedKeys.value = [];
+  persistedSelectedKeyId.value = '';
   cardProps = null;
+  cardMounts = 0;
 });
 
 afterEach(() => {
@@ -76,12 +90,12 @@ afterEach(() => {
 });
 
 describe('KeysPage', () => {
-  it('passes the account keys and addressable models into AgentSetupCard', () => {
+  it('starts without a selected key and passes addressable models into AgentSetupCard', () => {
     pageData.value = { keys: [apiKey({ id: 'k1', name: 'Primary' }), apiKey({ id: 'k2', name: 'CI' })], error: null };
     mountPage();
 
     expect(cardProps).not.toBeNull();
-    expect((cardProps!.keys as ApiKey[]).map(k => k.id)).toEqual(['k1', 'k2']);
+    expect(cardProps!.selectedKey).toBeNull();
     expect((cardProps!.models as ControlPlaneModel[]).map(m => m.id)).toEqual(['claude-sonnet-4-5', 'gpt-5']);
   });
 
@@ -92,13 +106,46 @@ describe('KeysPage', () => {
     expect((cardProps!.models as ControlPlaneModel[]).map(m => m.id)).toEqual(['claude-sonnet-4-5', 'gpt-5']);
   });
 
-  it('renders the keys table without any snippet-era row-selection wiring', () => {
-    pageData.value = { keys: [apiKey({ id: 'k1', name: 'Primary' })], error: null };
+  it('uses the table selection as the selected key for agent configuration', async () => {
+    pageData.value = { keys: [apiKey({ id: 'k1', name: 'Primary' }), apiKey({ id: 'k2', name: 'CI' })], error: null };
     const w = mountPage();
     const table = w.findComponent(KeysTable);
     expect(table.exists()).toBe(true);
-    expect(table.props('keys')).toHaveLength(1);
-    // Selection was a snippet-only affordance and is gone from the contract.
-    expect(table.props()).not.toHaveProperty('selectedId');
+    expect(table.props('selectedId')).toBe('');
+
+    table.vm.$emit('select', 'k2');
+    await nextTick();
+    expect(table.props('selectedId')).toBe('k2');
+    expect((cardProps!.selectedKey as ApiKey).id).toBe('k2');
+    expect(cardMounts).toBe(1);
+  });
+
+  it('restores the previous table selection when that key still exists', () => {
+    pageData.value = { keys: [apiKey({ id: 'k1', name: 'Primary' }), apiKey({ id: 'k2', name: 'CI' })], error: null };
+    persistedSelectedKeyId.value = 'k2';
+    const w = mountPage();
+    expect(w.getComponent(KeysTable).props('selectedId')).toBe('k2');
+    expect((cardProps!.selectedKey as ApiKey).id).toBe('k2');
+  });
+
+  it('clears a previous selection that no longer exists', () => {
+    pageData.value = { keys: [apiKey({ id: 'k1', name: 'Primary' })], error: null };
+    persistedSelectedKeyId.value = 'gone';
+    const w = mountPage();
+    expect(w.getComponent(KeysTable).props('selectedId')).toBe('');
+    expect(cardProps!.selectedKey).toBeNull();
+  });
+
+  it('selects a newly created API key after reloading the table', async () => {
+    const existing = apiKey({ id: 'k1', name: 'Primary' });
+    const created = apiKey({ id: 'k2', name: 'New key' });
+    pageData.value = { keys: [existing], error: null };
+    loadedKeys.value = [existing, created];
+    const w = mountPage();
+
+    w.getComponent(EditKeyDialogStub).vm.$emit('saved', created);
+    await flushPromises();
+    expect(w.getComponent(KeysTable).props('selectedId')).toBe('k2');
+    expect((cardProps!.selectedKey as ApiKey).id).toBe('k2');
   });
 });

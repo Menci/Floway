@@ -133,11 +133,17 @@ Open the deployed URL (or `http://localhost:8788` for Node), log in with
    the `x-api-key` / bearer token in any client.
 3. **API Keys -> Agent Setup** offers two configuration modes. **Agent Setup**
    installs the Claude Code and Codex CLIs and points them at this gateway with
-   a single command. Pick the API key the setup link should carry, enable either
-   agent, and configure its model settings. Enabled agents expand into full-
-   width responsive forms; disabled agents keep their saved settings hidden.
-   Edits autosave to a short-lived setup lease. The command picker defaults to
-   Windows on Windows clients and to macOS/Linux elsewhere.
+   a single command. Select a row in the API Keys table, then enable either
+   agent and configure its model settings. The browser remembers the last
+   selected key while it still exists, and a newly created key becomes the
+   selection automatically. With no selected key, form edits remain local and
+   the command block asks for a key instead of creating a setup URL. Enabled
+   agents expand into full-width responsive forms; disabled agents keep their
+   saved settings hidden. Claude Code exposes Default, Opus, Sonnet, and Haiku
+   model overrides plus reasoning effort and gateway discovery. Codex exposes
+   its model and reasoning effort. Edits made against a selected key autosave
+   to a short-lived setup lease. The command picker defaults to Windows on
+   Windows clients and to macOS/Linux elsewhere.
 
    The command's setup URL stays stable while the panel is open. The visible
    panel renews its five-minute lease once a minute, and the URL expires about
@@ -150,10 +156,11 @@ Open the deployed URL (or `http://localhost:8788` for Node), log in with
    remains available. Verification only reaches the gateway's authenticated
    model directory; it never issues an inference request.
 
-   **Config snippets** keeps the manual setup path available. Select an API key,
-   edit Claude Code's `settings.json` with the generated JSON object, or merge
-   the generated Codex TOML and provider-token commands yourself. Claude values
-   are presented as JSON file edits, not shell environment exports.
+   **Config snippets** keeps the manual setup path available for the same
+   table-selected key. Edit Claude Code's `settings.json` with the generated
+   JSON object, or merge the generated Codex TOML and provider-token commands
+   yourself. Claude values are presented as JSON file edits, not shell
+   environment exports.
 
 Import/export of upstreams, keys, and search config is in Settings. The
 payload format is tied to the running deployment, so import only accepts a

@@ -1,5 +1,6 @@
 <script lang="ts">
 import { defineBasicLoader } from 'unplugin-vue-router/data-loaders/basic';
+import { useLocalStorage } from '@vueuse/core';
 import { computed, ref, watch } from 'vue';
 
 import { callApi, useApi } from '../../../api/client.ts';
@@ -45,8 +46,10 @@ const rotating = ref(false);
 const rotateError = ref<string | null>(null);
 const copied = ref<string | null>(null);
 const copyFailed = ref<string | null>(null);
+const selectedKeyId = useLocalStorage('floway-agent-setup-selected-key', '');
+if (selectedKeyId.value && !keys.value.some(key => key.id === selectedKeyId.value)) selectedKeyId.value = '';
 
-const loadAll = async () => {
+const loadAll = async (): Promise<boolean> => {
   error.value = null;
   const [keysRes] = await Promise.all([
     callApi<ApiKey[]>(() => api.api.keys.$get()),
@@ -55,9 +58,19 @@ const loadAll = async () => {
   ]);
   if (keysRes.error) {
     error.value = keysRes.error.message;
-    return;
+    return false;
   }
   keys.value = keysRes.data;
+  if (selectedKeyId.value && !keys.value.some(key => key.id === selectedKeyId.value)) selectedKeyId.value = '';
+  return true;
+};
+
+const selectCreatedKey = async (key: ApiKey) => {
+  if (await loadAll()) selectedKeyId.value = key.id;
+};
+
+const reloadEditedKey = async (_key: ApiKey) => {
+  await loadAll();
 };
 
 const rotateOpen = computed({
@@ -131,6 +144,7 @@ const copyToClipboard = async (text: string, tag: string) => {
 
 const upstreamOptions = computed(() => upstreamOptionsStore.options.value);
 const models = computed(() => modelsStore.models.value ?? []);
+const selectedKey = computed(() => keys.value.find(key => key.id === selectedKeyId.value) ?? null);
 </script>
 
 <template>
@@ -148,8 +162,10 @@ const models = computed(() => modelsStore.models.value ?? []);
       <KeysTable
         :keys="keys"
         :upstreams="upstreamOptions"
+        :selected-id="selectedKeyId"
         :copied="copied"
         :copy-failed="copyFailed"
+        @select="id => selectedKeyId = id"
         @copy="(text, tag) => copyToClipboard(text, tag)"
         @edit="openEdit"
         @rotate="k => rotateTarget = k"
@@ -158,8 +174,7 @@ const models = computed(() => modelsStore.models.value ?? []);
     </div>
 
     <AgentSetupCard
-      :key="keys.length > 0 ? 'has-keys' : 'no-keys'"
-      :keys="keys"
+      :selected-key="selectedKey"
       :models="models"
       :loading="modelsStore.loading.value"
       :error="modelsStore.error.value"
@@ -169,7 +184,7 @@ const models = computed(() => modelsStore.models.value ?? []);
       v-model:open="createOpen"
       mode="create"
       :upstreams="upstreamOptions"
-      @saved="loadAll"
+      @saved="selectCreatedKey"
     />
 
     <EditKeyDialog
@@ -178,7 +193,7 @@ const models = computed(() => modelsStore.models.value ?? []);
       mode="edit"
       :api-key="editTarget"
       :upstreams="upstreamOptions"
-      @saved="loadAll"
+      @saved="reloadEditedKey"
     />
 
     <Dialog v-model:open="rotateOpen" title="Rotate API Key" size="md" :auto-focus-on-open="false">

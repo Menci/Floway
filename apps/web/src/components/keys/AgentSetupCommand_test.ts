@@ -31,10 +31,11 @@ describe('AgentSetupCommand', () => {
 
   it('can leave the selected tab as the only visible label', () => {
     const w = mount(AgentSetupCommand, {
-      props: { label: 'Windows', command: 'irm https://x/api/setup/t/setup.ps1 | iex', language: 'text', showLabel: false },
+      props: { label: 'Windows', command: 'irm https://x/api/setup/t/setup.ps1 | iex', language: 'powershell', showLabel: false },
     });
     expect(w.text()).not.toContain('Windows');
     expect(copyButton(w, 'Windows').exists()).toBe(true);
+    expect(w.find('code.language-powershell').exists()).toBe(true);
   });
 
   it('copies exactly the visible command to the clipboard and announces success', async () => {

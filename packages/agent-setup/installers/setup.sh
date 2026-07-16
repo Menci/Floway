@@ -129,6 +129,7 @@ CLAUDE_MERGE_PROGRAM='
   | .env.ANTHROPIC_BASE_URL = $baseUrl
   | .env.ANTHROPIC_AUTH_TOKEN = env.FLOWAY_API_KEY
   | (if $model == "" then del(.env.ANTHROPIC_MODEL) else .env.ANTHROPIC_MODEL = $model end)
+  | (if $opus == "" then del(.env.ANTHROPIC_DEFAULT_OPUS_MODEL) else .env.ANTHROPIC_DEFAULT_OPUS_MODEL = $opus end)
   | (if $sonnet == "" then del(.env.ANTHROPIC_DEFAULT_SONNET_MODEL) else .env.ANTHROPIC_DEFAULT_SONNET_MODEL = $sonnet end)
   | (if $haiku == "" then del(.env.ANTHROPIC_DEFAULT_HAIKU_MODEL) else .env.ANTHROPIC_DEFAULT_HAIKU_MODEL = $haiku end)
   | (if $discovery == "1" then .env.CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY = "1" else del(.env.CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY) end)
@@ -446,6 +447,7 @@ claude_write_settings() {
   if ! printf '%s' "$_cw_base" | FLOWAY_API_KEY="$FLOWAY_API_KEY" "$JQ" \
       --arg baseUrl "$FLOWAY_BASE_URL" \
       --arg model "$FLOWAY_CLAUDE_MODEL" \
+      --arg opus "$FLOWAY_CLAUDE_DEFAULT_OPUS_MODEL" \
       --arg sonnet "$FLOWAY_CLAUDE_DEFAULT_SONNET_MODEL" \
       --arg haiku "$FLOWAY_CLAUDE_DEFAULT_HAIKU_MODEL" \
       --arg discovery "$FLOWAY_CLAUDE_MODEL_DISCOVERY" \

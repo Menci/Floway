@@ -27,6 +27,7 @@ export const agentSetupConfigurationSchema = z.object({
   claudeCode: z.object({
     enabled: z.boolean(),
     model: opaqueOptionalString,
+    defaultOpusModel: opaqueOptionalString,
     defaultSonnetModel: opaqueOptionalString,
     defaultHaikuModel: opaqueOptionalString,
     effortLevel: claudeEffortLevelSchema,
@@ -66,6 +67,7 @@ export const defaultAgentSetupConfiguration = (
     claudeCode: {
       enabled: true,
       model: null,
+      defaultOpusModel: null,
       defaultSonnetModel: null,
       defaultHaikuModel: null,
       effortLevel: null,

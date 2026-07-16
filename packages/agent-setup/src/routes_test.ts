@@ -142,7 +142,7 @@ interface LeaseResponse {
 // (leaseProjection and restore both parse the stored JSON through the schema).
 const FULL_CONFIG_JSON = (apiKeyId: string): string => JSON.stringify({
   apiKeyId,
-  claudeCode: { enabled: true, model: null, defaultSonnetModel: null, defaultHaikuModel: null, effortLevel: null, modelDiscovery: true },
+  claudeCode: { enabled: true, model: null, defaultOpusModel: null, defaultSonnetModel: null, defaultHaikuModel: null, effortLevel: null, modelDiscovery: true },
   codex: { enabled: true, model: null, reasoningEffort: null },
 });
 
@@ -429,11 +429,11 @@ test('GET re-reads the current configuration each request', async () => {
 test('unknown, expired, deleted-user, and deleted-key tokens all return an identical generic 404', async () => {
   const h = harness();
   const now = Date.now();
-  const config = '{"apiKeyId":"key_primary","claudeCode":{"enabled":true,"model":null,"defaultSonnetModel":null,"defaultHaikuModel":null,"effortLevel":null,"modelDiscovery":true},"codex":{"enabled":true,"model":null,"reasoningEffort":null}}';
+  const config = '{"apiKeyId":"key_primary","claudeCode":{"enabled":true,"model":null,"defaultOpusModel":null,"defaultSonnetModel":null,"defaultHaikuModel":null,"effortLevel":null,"modelDiscovery":true},"codex":{"enabled":true,"model":null,"reasoningEffort":null}}';
 
   await h.repo.insertForUser({ userId: USER_ID, token: 'b'.repeat(43), apiKeyId: 'key_primary', configurationJson: config, now, expiresAt: now - 1 });
   await h.repo.insertForUser({ userId: 99, token: 'c'.repeat(43), apiKeyId: 'key_primary', configurationJson: config, now, expiresAt: now + 300_000 });
-  await h.repo.insertForUser({ userId: USER_ID, token: 'd'.repeat(43), apiKeyId: 'key_gone', configurationJson: '{"apiKeyId":"key_gone","claudeCode":{"enabled":true,"model":null,"defaultSonnetModel":null,"defaultHaikuModel":null,"effortLevel":null,"modelDiscovery":true},"codex":{"enabled":true,"model":null,"reasoningEffort":null}}', now, expiresAt: now + 300_000 });
+  await h.repo.insertForUser({ userId: USER_ID, token: 'd'.repeat(43), apiKeyId: 'key_gone', configurationJson: '{"apiKeyId":"key_gone","claudeCode":{"enabled":true,"model":null,"defaultOpusModel":null,"defaultSonnetModel":null,"defaultHaikuModel":null,"effortLevel":null,"modelDiscovery":true},"codex":{"enabled":true,"model":null,"reasoningEffort":null}}', now, expiresAt: now + 300_000 });
 
   const bodies = new Set<string>();
   for (const token of ['a'.repeat(43), 'b'.repeat(43), 'c'.repeat(43), 'd'.repeat(43)]) {

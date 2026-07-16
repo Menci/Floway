@@ -15,7 +15,7 @@ const open = defineModel<boolean>('open');
 
 const props = defineProps<{ upstreams: UpstreamOption[] } & ({ mode: 'create' } | { mode: 'edit'; apiKey: ApiKey })>();
 
-const emit = defineEmits<{ saved: [] }>();
+const emit = defineEmits<{ saved: [apiKey: ApiKey] }>();
 
 const api = useApi();
 const auth = useAuthStore();
@@ -144,15 +144,15 @@ const save = async () => {
     upstream_ids: upstreamSelection.value.override ? upstreamSelection.value.ids : null,
     dump_retention_seconds: proposedRetention,
   };
-  const { error: err } = props.mode === 'create'
-    ? await callApi(() => api.api.keys.$post({
+  const { data, error: err } = props.mode === 'create'
+    ? await callApi<ApiKey>(() => api.api.keys.$post({
         json: {
           ...commonBody,
           key_source: keySource.value,
           ...(keySource.value === 'custom' ? { custom_key: custom } : {}),
         },
       }))
-    : await callApi(
+    : await callApi<ApiKey>(
         () => api.api.keys[':id'].$patch({ param: { id: props.apiKey.id }, json: commonBody }),
       );
   saving.value = false;
@@ -160,8 +160,9 @@ const save = async () => {
     error.value = err.message;
     return;
   }
+  if (!data) throw new Error('API key save succeeded without returning the saved key');
   open.value = false;
-  emit('saved');
+  emit('saved', data);
 };
 </script>
 

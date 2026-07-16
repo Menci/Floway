@@ -1,5 +1,5 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
-import { effectScope } from 'vue';
+import { effectScope, shallowRef } from 'vue';
 
 import { useAgentSetup } from './useAgentSetup.ts';
 import type { ApiClient } from '../api/client.ts';
@@ -57,7 +57,7 @@ const makeApi = () => {
 const defaultConfig = () => ({
   apiKeyId: 'key-1',
   claudeCode: {
-    enabled: true, model: null, defaultSonnetModel: null, defaultHaikuModel: null, effortLevel: null, modelDiscovery: true,
+    enabled: true, model: null, defaultOpusModel: null, defaultSonnetModel: null, defaultHaikuModel: null, effortLevel: null, modelDiscovery: true,
   },
   codex: { enabled: true, model: null, reasoningEffort: null },
 });
@@ -97,6 +97,17 @@ afterEach(() => {
 });
 
 describe('useAgentSetup — lease acquisition', () => {
+  it('does not create a lease until agent setup becomes active', async () => {
+    const { api, records } = makeApi();
+    const active = shallowRef(false);
+    run(() => useAgentSetup(api, null, active));
+    expect(records.post).toHaveLength(0);
+
+    active.value = true;
+    await vi.advanceTimersByTimeAsync(0);
+    expect(records.post).toHaveLength(1);
+  });
+
   it('posts exactly one create with no request body and adopts the returned lease', async () => {
     const { api, records } = makeApi();
     const setup = run(() => useAgentSetup(api));

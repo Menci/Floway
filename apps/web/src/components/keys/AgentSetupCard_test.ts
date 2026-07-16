@@ -32,11 +32,12 @@ interface SetupStub {
 
 let setupStub: SetupStub;
 let selectableIdsArg: readonly string[] | null;
+let activeArg: boolean | null;
 
 const defaultConfig = (): AgentSetupConfiguration => ({
   apiKeyId: 'key-1',
   claudeCode: {
-    enabled: true, model: null, defaultSonnetModel: null, defaultHaikuModel: null, effortLevel: null, modelDiscovery: true,
+    enabled: true, model: null, defaultOpusModel: null, defaultSonnetModel: null, defaultHaikuModel: null, effortLevel: null, modelDiscovery: true,
   },
   codex: { enabled: true, model: null, reasoningEffort: null },
 });
@@ -63,8 +64,9 @@ const makeSetup = (over: Partial<{ config: AgentSetupConfiguration; initialized:
 
 vi.mock('../../api/client.ts', () => ({ useApi: () => ({}) }));
 vi.mock('../../composables/useAgentSetup.ts', () => ({
-  useAgentSetup: (_api: unknown, selectableKeyIds: () => readonly string[]) => {
+  useAgentSetup: (_api: unknown, selectableKeyIds: () => readonly string[], active: () => boolean) => {
     selectableIdsArg = typeof selectableKeyIds === 'function' ? selectableKeyIds() : selectableKeyIds;
+    activeArg = typeof active === 'function' ? active() : active;
     return setupStub;
   },
 }));
@@ -80,13 +82,15 @@ const defaultKeys: ApiKey[] = [
 
 const defaultModels: ControlPlaneModel[] = [
   model('gpt-5'),
+  model('claude-fable-4-6'),
+  model('claude-opus-4-8'),
   model('claude-sonnet-4-5', { limits: { max_context_window_tokens: 1_000_000 } }),
   model('claude-haiku-4-5'),
   model('text-embedding-3', { kind: 'embedding', endpoints: { embeddings: {} } }),
 ];
 
 const mountCard = (props: Partial<InstanceType<typeof AgentSetupCard>['$props']> = {}) => mount(AgentSetupCard, {
-  props: { keys: defaultKeys, models: defaultModels, ...props },
+  props: { selectedKey: defaultKeys[0], models: defaultModels, ...props },
 });
 
 // Select is a generic SFC whose type args don't flow through findComponent's
@@ -102,6 +106,7 @@ const selectIn = (w: ReturnType<typeof mountCard>, testid: string): SelectProbe 
 beforeEach(() => {
   setupStub = makeSetup();
   selectableIdsArg = null;
+  activeArg = null;
   const writeText = vi.fn().mockResolvedValue(undefined);
   Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
 });
@@ -113,7 +118,8 @@ afterEach(() => {
 describe('AgentSetupCard', () => {
   it('passes the selectable key ids into useAgentSetup', () => {
     mountCard();
-    expect(selectableIdsArg).toEqual(['key-1', 'key-2']);
+    expect(selectableIdsArg).toEqual(['key-1']);
+    expect(activeArg).toBe(true);
   });
 
   it('defaults to Agent Setup and switches to the Config snippets experience', async () => {
@@ -123,30 +129,37 @@ describe('AgentSetupCard', () => {
       ['Agent Setup', 'true'],
       ['Config snippets', 'false'],
     ]);
+    expect(w.text()).toContain('The configuration below will use the Primary API key.');
+    expect(w.get('p.font-medium').classes()).toContain('text-gray-300');
 
     await modeTabs[1]!.trigger('click');
     expect(w.text()).toContain('Edit ~/.claude/settings.json and merge this JSON object');
-    expect(w.find('[data-testid="agent-setup-api-key"]').exists()).toBe(false);
-  });
-
-  it('offers the account keys in the API-key selector by name', () => {
-    const w = mountCard();
-    const options = selectIn(w, 'agent-setup-api-key').props().options;
-    expect(options).toEqual([
-      { value: 'key-1', label: 'Primary' },
-      { value: 'key-2', label: 'CI' },
-    ]);
   });
 
   it('associates visible labels with representative Select and Combobox controls', () => {
     const w = mountCard();
-    const apiKeyField = w.get('[data-testid="agent-setup-api-key"]');
     const claudeModelField = w.get('[data-testid="claude-model"]');
     const codexEffortField = w.get('[data-testid="codex-effort"]');
 
-    expect(apiKeyField.get('label').attributes('for')).toBe(apiKeyField.get('button[role="combobox"]').attributes('id'));
     expect(claudeModelField.get('label').attributes('for')).toBe(claudeModelField.get('button[role="combobox"]').attributes('id'));
     expect(codexEffortField.get('label').attributes('for')).toBe(codexEffortField.get('input').attributes('id'));
+  });
+
+  it('uses the same responsive field width for both agents and renders discovery as a standard field', () => {
+    const w = mountCard();
+    expect(w.get('[data-testid="claude-fields"]').classes()).toEqual(w.get('[data-testid="codex-fields"]').classes());
+
+    const discovery = w.get('[data-testid="claude-model-discovery"]');
+    expect(discovery.text()).toContain('Gateway model discovery');
+    expect(discovery.text()).toContain('Enabled');
+    expect(discovery.get('div').classes()).toContain('h-9');
+    expect(discovery.get('div').classes()).not.toContain('border');
+  });
+
+  it('moves a restored lease onto the API key selected by the table', async () => {
+    mountCard({ selectedKey: defaultKeys[1] });
+    await nextTick();
+    expect(setupStub.draft.value!.apiKeyId).toBe('key-2');
   });
 
   it('gives every rendered switch an accurate accessible name', () => {
@@ -163,11 +176,14 @@ describe('AgentSetupCard', () => {
     // the embedding model is dropped. The 1M-context Claude id carries the [1m]
     // suffix in its persisted value while the label stays the raw id.
     expect(claude[0]!.label).toBe('Default');
-    expect(claude.slice(1).map(o => o.value)).toEqual(['claude-sonnet-4-5[1m]', 'claude-haiku-4-5', 'gpt-5']);
+    expect(claude.slice(1).map(o => o.value)).toEqual(['claude-fable-4-6', 'claude-opus-4-8', 'claude-sonnet-4-5[1m]', 'claude-haiku-4-5', 'gpt-5']);
+
+    const opus = selectIn(w, 'claude-opus').props().options;
+    expect(opus.slice(1).map(o => o.value)).toEqual(['claude-opus-4-8', 'claude-fable-4-6', 'claude-sonnet-4-5[1m]', 'claude-haiku-4-5', 'gpt-5']);
 
     const codex = selectIn(w, 'codex-model').props().options;
     expect(codex[0]!.label).toBe('Default');
-    expect(codex.slice(1).map(o => o.value)).toEqual(['gpt-5', 'claude-sonnet-4-5', 'claude-haiku-4-5']);
+    expect(codex.slice(1).map(o => o.value)).toEqual(['gpt-5', 'claude-fable-4-6', 'claude-opus-4-8', 'claude-sonnet-4-5', 'claude-haiku-4-5']);
   });
 
   it('keeps a persisted model that left the catalog selectable instead of dropping it', () => {
@@ -228,7 +244,7 @@ describe('AgentSetupCard', () => {
     setupStub = makeSetup({
       config: {
         ...defaultConfig(),
-        claudeCode: { enabled: false, model: 'claude-sonnet-4-5', defaultSonnetModel: null, defaultHaikuModel: null, effortLevel: 'high', modelDiscovery: true },
+        claudeCode: { enabled: false, model: 'claude-sonnet-4-5', defaultOpusModel: null, defaultSonnetModel: null, defaultHaikuModel: null, effortLevel: 'high', modelDiscovery: true },
       },
     });
     const w = mountCard();
@@ -266,12 +282,14 @@ describe('AgentSetupCard', () => {
       ['Windows', 'false'],
     ]);
     expect(w.text()).toContain(`export FLOWAY_BASE_URL='${window.location.origin}'; curl -fsSL "$FLOWAY_BASE_URL/api/setup/tok-1/setup.sh" | bash`);
-    expect(w.find('button[aria-label="Copy macOS / Linux command"]').exists()).toBe(true);
+    const unixCopy = w.get('button[aria-label="Copy macOS / Linux command"]');
+    expect(platformTabs[0]!.element.closest('.mb-2')).toBe(unixCopy.element.closest('.mb-2'));
     expect(w.find('button[aria-label="Copy Windows command"]').exists()).toBe(false);
 
     await platformTabs[1]!.trigger('click');
     expect(w.text()).toContain(`$FlowayBaseUrl = '${window.location.origin}'; irm "$FlowayBaseUrl/api/setup/tok-1/setup.ps1" | iex`);
     expect(w.find('button[aria-label="Copy Windows command"]').exists()).toBe(true);
+    expect(w.find('code.language-powershell').exists()).toBe(true);
     const explanation = 'These commands install the selected agents and point them at this gateway.';
     expect(w.text().lastIndexOf(explanation)).toBeGreaterThan(w.text().lastIndexOf('$FlowayBaseUrl'));
     expect(w.text()).not.toContain('ExecutionPolicy');
@@ -300,18 +318,37 @@ describe('AgentSetupCard', () => {
     for (const b of buttons) expect((b.element as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it('renders the create-a-key empty state and no commands when there is no selectable key', () => {
-    setupStub = makeSetup({ initialized: false, noSelectableKey: true, scripts: null });
-    const w = mountCard({ keys: [] });
-    expect(w.text()).toContain('API key');
-    expect(w.findAll('button[aria-label^="Copy "][aria-label$=" command"]').length).toBe(0);
+  it('creates no URL before an API key is selected', () => {
+    setupStub = makeSetup({ initialized: false, scripts: null });
+    const w = mountCard({ selectedKey: null });
+    expect(selectableIdsArg).toEqual([]);
+    expect(activeArg).toBe(false);
+    expect(w.text()).toContain('Select the API key to use.');
+    expect(w.find('[data-testid="claude-fields"]').exists()).toBe(true);
+    expect(w.text()).toContain('# Select an API key above to generate the setup command.');
+    const copy = w.get('button[aria-label="Copy macOS / Linux command"]');
+    expect((copy.element as HTMLButtonElement).disabled).toBe(true);
+    expect(w.text()).not.toContain('/api/setup/');
   });
 
-  it('renders a terminated terminal state that tells the user to reload and shows no copy affordance', () => {
+  it('keeps keyless form edits local and applies them when a key is selected', async () => {
+    const w = mountCard({ selectedKey: null });
+    const localModel = selectIn(w, 'claude-model');
+    localModel.vm.$emit('update:modelValue', 'claude-opus-4-8');
+    await nextTick();
+    expect(localModel.props().modelValue).toBe('claude-opus-4-8');
+    expect(setupStub.draft.value!.claudeCode.model).toBeNull();
+
+    await w.setProps({ selectedKey: defaultKeys[0] });
+    await nextTick();
+    expect(setupStub.draft.value!.claudeCode.model).toBe('claude-opus-4-8');
+  });
+
+  it('renders a terminated terminal state and keeps the disabled command visible', () => {
     setupStub = makeSetup({ terminated: true, canCopy: false });
     const w = mountCard();
     expect(w.text().toLowerCase()).toContain('reload');
-    expect(w.findAll('button[aria-label^="Copy "][aria-label$=" command"]').length).toBe(0);
+    expect((w.get('button[aria-label="Copy macOS / Linux command"]').element as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('copies exactly the visible shell command through the command button', async () => {

@@ -5,17 +5,9 @@ import type { ApiKey, ControlPlaneModel } from '../../api/types.ts';
 import { Code } from '@floway-dev/ui';
 
 const props = defineProps<{
-  keys: readonly ApiKey[];
+  apiKey: ApiKey;
   models: readonly ControlPlaneModel[];
 }>();
-
-const selectedKeyId = shallowRef('');
-watchEffect(() => {
-  if (!props.keys.some(key => key.id === selectedKeyId.value)) {
-    selectedKeyId.value = props.keys[0]?.id ?? '';
-  }
-});
-const selectedKey = computed(() => props.keys.find(key => key.id === selectedKeyId.value) ?? null);
 
 const CLAUDE_TIER_KEYS = ['fable', 'opus', 'sonnet', 'haiku'] as const;
 type ClaudeTierKey = typeof CLAUDE_TIER_KEYS[number];
@@ -66,7 +58,7 @@ const baseUrl = window.location.origin;
 const claudeSnippet = computed(() => JSON.stringify({
   env: {
     ANTHROPIC_BASE_URL: baseUrl,
-    ANTHROPIC_AUTH_TOKEN: selectedKey.value?.key ?? '',
+    ANTHROPIC_AUTH_TOKEN: props.apiKey.key,
     ANTHROPIC_DEFAULT_FABLE_MODEL: withLargeContext(claudeSelection.fable),
     ANTHROPIC_DEFAULT_OPUS_MODEL: withLargeContext(claudeSelection.opus),
     ANTHROPIC_DEFAULT_SONNET_MODEL: withLargeContext(claudeSelection.sonnet),
@@ -97,7 +89,7 @@ const codexSnippet = computed(() => [
 ].join('\n'));
 
 const codexUnixCredentialCommand = computed(() => {
-  const apiKey = `'${(selectedKey.value?.key ?? '').replaceAll("'", `'"'"'`)}'`;
+  const apiKey = `'${props.apiKey.key.replaceAll("'", `'"'"'`)}'`;
   return [
     'codex_home="${CODEX_HOME:-$HOME/.codex}"',
     'mkdir -p "$codex_home" && \\',
@@ -106,7 +98,7 @@ const codexUnixCredentialCommand = computed(() => {
   ].join('\n');
 });
 const codexWindowsCredentialCommand = computed(() => {
-  const apiKey = `'${(selectedKey.value?.key ?? '').replaceAll("'", "''")}'`;
+  const apiKey = `'${props.apiKey.key.replaceAll("'", "''")}'`;
   return [
     '$codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME ".codex" }',
     'New-Item -ItemType Directory -Force -Path $codexHome | Out-Null',
@@ -118,14 +110,7 @@ const selectClass = 'max-w-full rounded-lg border border-white/10 bg-surface-800
 </script>
 
 <template>
-  <div v-if="selectedKey" class="space-y-8">
-    <label class="block max-w-sm text-xs text-gray-500">
-      <span class="mb-1.5 block">API key</span>
-      <select v-model="selectedKeyId" :class="selectClass" class="w-full">
-        <option v-for="key in keys" :key="key.id" :value="key.id">{{ key.name }}</option>
-      </select>
-    </label>
-
+  <div class="space-y-8">
     <section>
       <h3 class="mb-3 text-sm font-semibold text-white">Claude Code</h3>
       <div class="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -157,11 +142,7 @@ const selectClass = 'max-w-full rounded-lg border border-white/10 bg-surface-800
       <Code :code="codexUnixCredentialCommand" language="bash" />
 
       <p class="mb-2 mt-4 text-[11px] text-gray-600">Windows PowerShell provider token</p>
-      <Code :code="codexWindowsCredentialCommand" language="text" />
+      <Code :code="codexWindowsCredentialCommand" language="powershell" />
     </section>
-  </div>
-
-  <div v-else class="rounded-lg border border-white/10 bg-surface-800/60 px-4 py-6 text-center text-sm text-gray-400">
-    Create an API key above to generate configuration snippets.
   </div>
 </template>

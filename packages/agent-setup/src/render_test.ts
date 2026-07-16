@@ -14,6 +14,7 @@ const fullConfiguration: AgentSetupConfiguration = {
   claudeCode: {
     enabled: true,
     model: 'claude-opus-4-6[1m]',
+    defaultOpusModel: 'claude-opus-4-5',
     defaultSonnetModel: 'claude-sonnet-4-5',
     defaultHaikuModel: null,
     effortLevel: 'high',
@@ -35,7 +36,7 @@ describe('agentSetupConfigurationSchema', () => {
     expect(agentSetupConfigurationSchema.safeParse({
       apiKeyId: 'key-a',
       claudeCode: {
-        enabled: true, model: null, defaultSonnetModel: null,
+        enabled: true, model: null, defaultOpusModel: null, defaultSonnetModel: null,
         defaultHaikuModel: null, effortLevel: null, modelDiscovery: false,
       },
       codex: { enabled: true, model: null, reasoningEffort: 'vendor-tier' },
@@ -85,7 +86,7 @@ describe('defaultAgentSetupConfiguration', () => {
     expect(defaultAgentSetupConfiguration(['key-a', 'key-b'])).toEqual({
       apiKeyId: 'key-a',
       claudeCode: {
-        enabled: true, model: null, defaultSonnetModel: null,
+        enabled: true, model: null, defaultOpusModel: null, defaultSonnetModel: null,
         defaultHaikuModel: null, effortLevel: null, modelDiscovery: true,
       },
       codex: { enabled: true, model: null, reasoningEffort: null },
@@ -113,6 +114,7 @@ describe('renderShellPrefix', () => {
       "FLOWAY_API_KEY='sk-raw-key'",
       "FLOWAY_INSTALL_CLAUDE='1'",
       "FLOWAY_CLAUDE_MODEL='claude-opus-4-6[1m]'",
+      "FLOWAY_CLAUDE_DEFAULT_OPUS_MODEL='claude-opus-4-5'",
       "FLOWAY_CLAUDE_DEFAULT_SONNET_MODEL='claude-sonnet-4-5'",
       "FLOWAY_CLAUDE_DEFAULT_HAIKU_MODEL=''",
       "FLOWAY_CLAUDE_EFFORT_LEVEL='high'",
@@ -145,7 +147,7 @@ describe('renderShellPrefix', () => {
       configuration: {
         apiKeyId: 'key-a',
         claudeCode: {
-          enabled: false, model: null, defaultSonnetModel: null,
+          enabled: false, model: null, defaultOpusModel: null, defaultSonnetModel: null,
           defaultHaikuModel: null, effortLevel: null, modelDiscovery: false,
         },
         codex: { enabled: false, model: null, reasoningEffort: null },
@@ -177,6 +179,7 @@ describe('renderPowerShellPrefix', () => {
       "$FlowayApiKey = 'sk-raw-key'",
       '$FlowayInstallClaude = $true',
       "$FlowayClaudeModel = 'claude-opus-4-6[1m]'",
+      "$FlowayClaudeDefaultOpusModel = 'claude-opus-4-5'",
       "$FlowayClaudeDefaultSonnetModel = 'claude-sonnet-4-5'",
       '$FlowayClaudeDefaultHaikuModel = $null',
       "$FlowayClaudeEffortLevel = 'high'",
@@ -212,7 +215,7 @@ describe('renderPowerShellPrefix', () => {
       configuration: {
         apiKeyId: 'key-a',
         claudeCode: {
-          enabled: false, model: null, defaultSonnetModel: null,
+          enabled: false, model: null, defaultOpusModel: null, defaultSonnetModel: null,
           defaultHaikuModel: null, effortLevel: null, modelDiscovery: false,
         },
         codex: { enabled: false, model: null, reasoningEffort: null },

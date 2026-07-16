@@ -35,7 +35,7 @@ const models = [
 
 describe('AgentConfigSnippets', () => {
   it('renders Claude configuration as settings JSON rather than shell exports', () => {
-    const wrapper = mount(AgentConfigSnippets, { props: { keys: [key('key-1', 'Primary', 'floway-key')], models } });
+    const wrapper = mount(AgentConfigSnippets, { props: { apiKey: key('key-1', 'Primary', 'floway-key'), models } });
     const json = wrapper.find('pre[data-language="json"]').text();
 
     expect(wrapper.text()).toContain('Edit ~/.claude/settings.json and merge this JSON object');
@@ -45,22 +45,22 @@ describe('AgentConfigSnippets', () => {
     expect(json).not.toContain('export ');
   });
 
-  it('switches every credential snippet to the selected API key', async () => {
+  it('switches every credential snippet when the selected API key changes', async () => {
     const wrapper = mount(AgentConfigSnippets, {
-      props: { keys: [key('key-1', 'Primary', 'first-key'), key('key-2', 'CI', "floway-'key")], models },
+      props: { apiKey: key('key-1', 'Primary', 'first-key'), models },
     });
-    await wrapper.get('select').setValue('key-2');
+    await wrapper.setProps({ apiKey: key('key-2', 'CI', "floway-'key") });
 
     expect(wrapper.find('pre[data-language="json"]').text()).toContain("floway-'key");
     const unixCredential = wrapper.findAll('pre[data-language="bash"]')
       .map(block => block.text())
       .find(code => code.includes('floway-token'));
     expect(unixCredential).toContain(`printf '%s' 'floway-'"'"'key'`);
-    expect(wrapper.find('pre[data-language="text"]').text()).toContain("'floway-''key'");
+    expect(wrapper.find('pre[data-language="powershell"]').text()).toContain("'floway-''key'");
   });
 
   it('uses provider-scoped Codex auth and enables the client-owned tools', () => {
-    const wrapper = mount(AgentConfigSnippets, { props: { keys: [key('key-1', 'Primary', 'floway-key')], models } });
+    const wrapper = mount(AgentConfigSnippets, { props: { apiKey: key('key-1', 'Primary', 'floway-key'), models } });
     const config = wrapper.find('pre[data-language="toml"]').text();
 
     expect(config).toContain('model = "gpt-5.5"');
