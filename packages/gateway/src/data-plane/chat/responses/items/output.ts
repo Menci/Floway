@@ -47,6 +47,7 @@ export const wrapResponsesClientOutput = async function* (
 ): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
   const { store, attemptState, responseId } = args;
   const upstreamToStored = new Map<string, string>();
+  const outputIndexToStored = new Map<number, string>();
 
   const idMapper = (upstreamId: string, itemType: string): string => {
     let storedId = upstreamToStored.get(upstreamId);
@@ -55,6 +56,17 @@ export const wrapResponsesClientOutput = async function* (
       upstreamToStored.set(upstreamId, storedId);
     }
     return storedId;
+  };
+
+  const lifecycleId = (upstreamId: string, itemType: string, outputIndex: number): string => {
+    let publicId = outputIndexToStored.get(outputIndex);
+    if (publicId === undefined) {
+      publicId = idMapper(upstreamId, itemType);
+      outputIndexToStored.set(outputIndex, publicId);
+    } else {
+      upstreamToStored.set(upstreamId, publicId);
+    }
+    return publicId;
   };
 
   const onItemFinalized = async (originalItem: ResponsesInputItem, newId: string): Promise<void> => {
@@ -85,17 +97,17 @@ export const wrapResponsesClientOutput = async function* (
   // via an item-bearing frame. Delta events carry only `item_id` with no
   // type, so we look the type up before re-invoking idMapper.
   const seenItemTypes = new Map<string, string>();
-  const finalized = new Set<string>();
+  const finalizedOutputIndexes = new Set<number>();
   let sawCompactionItem = false;
 
   const rewriteEnvelopeIds = (response: ResponsesResult): ResponsesResult => ({
     ...response,
     id: responseId,
-    output: response.output.map(item => {
+    output: response.output.map((item, outputIndex) => {
       const upstreamId = responsesItemId(item);
       if (upstreamId === null) return item;
       seenItemTypes.set(upstreamId, item.type);
-      return { ...item, id: idMapper(upstreamId, item.type) };
+      return { ...item, id: lifecycleId(upstreamId, item.type, outputIndex) };
     }),
   });
 
@@ -120,7 +132,7 @@ export const wrapResponsesClientOutput = async function* (
       const upstreamId = responsesItemId(event.item);
       if (upstreamId === null) { yield frame; continue; }
       seenItemTypes.set(upstreamId, event.item.type);
-      const newId = idMapper(upstreamId, event.item.type);
+      const newId = lifecycleId(upstreamId, event.item.type, event.output_index);
       yield eventFrame({ ...event, item: { ...event.item, id: newId } });
       continue;
     }
@@ -129,10 +141,10 @@ export const wrapResponsesClientOutput = async function* (
       const upstreamId = responsesItemId(event.item);
       if (upstreamId === null) { yield frame; continue; }
       seenItemTypes.set(upstreamId, event.item.type);
-      const newId = idMapper(upstreamId, event.item.type);
+      const newId = lifecycleId(upstreamId, event.item.type, event.output_index);
       if (isCompactionItemType(event.item.type)) sawCompactionItem = true;
-      if (!finalized.has(upstreamId)) {
-        finalized.add(upstreamId);
+      if (!finalizedOutputIndexes.has(event.output_index)) {
+        finalizedOutputIndexes.add(event.output_index);
         await onItemFinalized(event.item as unknown as ResponsesInputItem, newId);
       }
       yield eventFrame({ ...event, item: { ...event.item, id: newId } });
@@ -141,14 +153,14 @@ export const wrapResponsesClientOutput = async function* (
 
     if (event.type === 'response.completed' || event.type === 'response.incomplete') {
       const output: ResponsesInputItem[] = [];
-      for (const item of event.response.output) {
+      for (const [outputIndex, item] of event.response.output.entries()) {
         if (isCompactionItemType(item.type)) sawCompactionItem = true;
         const upstreamId = responsesItemId(item);
         if (upstreamId === null) { output.push(item as unknown as ResponsesInputItem); continue; }
         seenItemTypes.set(upstreamId, item.type);
-        const newId = idMapper(upstreamId, item.type);
-        if (!finalized.has(upstreamId)) {
-          finalized.add(upstreamId);
+        const newId = lifecycleId(upstreamId, item.type, outputIndex);
+        if (!finalizedOutputIndexes.has(outputIndex)) {
+          finalizedOutputIndexes.add(outputIndex);
           await onItemFinalized(item as unknown as ResponsesInputItem, newId);
         }
         output.push({ ...(item as unknown as ResponsesInputItem), id: newId });

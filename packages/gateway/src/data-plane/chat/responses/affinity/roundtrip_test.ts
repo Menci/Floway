@@ -50,11 +50,18 @@ test('stored force items recover their original upstream IDs from adjacent clien
   });
 
   let clientResponse: ResponsesResult | undefined;
+  const lifecycleItemIds: string[] = [];
   for await (const frame of stored) {
+    if (
+      frame.type === 'event'
+      && (frame.event.type === 'response.output_item.added' || frame.event.type === 'response.output_item.done')
+      && frame.event.item.type === 'program_output'
+    ) lifecycleItemIds.push(frame.event.item.id);
     if (frame.type === 'event' && frame.event.type === 'response.completed') clientResponse = frame.event.response;
   }
   expect(clientResponse).toBeDefined();
   if (clientResponse === undefined) throw new Error('Expected completed client response');
+  expect(new Set(lifecycleItemIds).size).toBe(1);
   expect(clientResponse.output[1].id).not.toBe('prog_out_upstream');
 
   const prepared = await prepareResponsesAffinity({ model: 'model-a', input: clientResponse.output as unknown as ResponsesInputItem[] }, codec);

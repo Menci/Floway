@@ -250,6 +250,37 @@ describe('Responses affinity egress', () => {
     expect(output[5]).toMatchObject({ event: { response: { output: [{ type: 'reasoning' }, message] } } });
   });
 
+  test('keeps an earlier open item on its lifecycle index after a later insertion', async () => {
+    const message = {
+      type: 'message' as const,
+      id: 'msg_1',
+      role: 'assistant' as const,
+      status: 'completed',
+      content: [{ type: 'output_text' as const, text: 'answer' }],
+    };
+    const programOutput = { type: 'program_output' as const, id: 'prog_out_1', call_id: 'call_1', result: 'done', status: 'completed' as const };
+    const output: ProtocolFrame<ResponsesStreamEvent>[] = [];
+    for await (const frame of wrapResponsesAffinityEgress(frames([
+      eventFrame({ type: 'response.output_item.added', output_index: 0, item: message, sequence_number: 0 }),
+      eventFrame({ type: 'response.output_item.added', output_index: 1, item: programOutput, sequence_number: 1 }),
+      eventFrame({ type: 'response.output_text.delta', item_id: 'msg_1', output_index: 0, content_index: 0, delta: 'answer', sequence_number: 2 }),
+      eventFrame({ type: 'response.output_item.done', output_index: 0, item: message, sequence_number: 3 }),
+      eventFrame({ type: 'response.output_item.done', output_index: 1, item: programOutput, sequence_number: 4 }),
+      eventFrame({ type: 'response.completed', response: response([message, programOutput]), sequence_number: 5 }),
+    ]), { codec: immediateCodec, affinity })) output.push(frame);
+
+    const delta = output.find(frame => frame.type === 'event' && frame.event.type === 'response.output_text.delta');
+    const messageDone = output.find(frame =>
+      frame.type === 'event'
+      && frame.event.type === 'response.output_item.done'
+      && frame.event.item.type === 'message');
+    expect(delta).toMatchObject({ event: { output_index: 1 } });
+    expect(messageDone).toMatchObject({ event: { output_index: 1 } });
+    expect(output.at(-1)).toMatchObject({
+      event: { response: { output: [{ type: 'reasoning' }, message, { type: 'reasoning' }, programOutput] } },
+    });
+  });
+
   test('binds a prefixed item from its canonical done snapshot', async () => {
     const addedItem = { type: 'program_output' as const, id: 'initial_upstream', call_id: 'call_1', result: '', status: 'incomplete' as const };
     const doneItem = { type: 'program_output' as const, id: 'final_upstream', call_id: 'call_1', result: 'done', status: 'completed' as const };

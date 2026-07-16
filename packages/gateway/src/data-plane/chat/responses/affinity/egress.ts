@@ -142,8 +142,10 @@ const wrapResponsesCarrierLifecycle = async function* (
   const syntheticOnFirstItem = new Map<string, Promise<string>>();
   let firstItem: { readonly outputIndex: number; readonly canCarry: boolean } | undefined;
   const insertedItems = new Map<number, InsertedCarrier>();
-  let outputIndexOffset = 0;
   let sequenceOffset = 0;
+
+  const outputIndexOffset = (originalOutputIndex: number): number =>
+    [...insertedItems.keys()].filter(insertedIndex => insertedIndex <= originalOutputIndex).length;
 
   const startCarrierBefore = (
     originalOutputIndex: number,
@@ -156,10 +158,9 @@ const wrapResponsesCarrierLifecycle = async function* (
       id: createTemporaryResponsesItemId('reasoning'),
       summary: [],
     };
-    const shiftedOutputIndex = originalOutputIndex + outputIndexOffset;
+    const shiftedOutputIndex = originalOutputIndex + outputIndexOffset(originalOutputIndex);
     insertedItems.set(originalOutputIndex, { outputIndex: shiftedOutputIndex, added });
     const shiftedSequence = sequenceNumber === undefined ? undefined : sequenceNumber + sequenceOffset;
-    outputIndexOffset += 1;
     sequenceOffset += 1;
     return [
       {
@@ -268,7 +269,10 @@ const wrapResponsesCarrierLifecycle = async function* (
   };
 
   const shifted = (event: ResponsesStreamEvent): ResponsesStreamEvent =>
-    addSequenceOffset(addOutputIndexOffset(event, outputIndexOffset), sequenceOffset);
+    addSequenceOffset(
+      addOutputIndexOffset(event, 'output_index' in event ? outputIndexOffset(event.output_index) : 0),
+      sequenceOffset,
+    );
 
   for await (const frame of frames) {
     if (frame.type !== 'event') {
