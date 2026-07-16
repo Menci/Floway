@@ -62,7 +62,7 @@ interface SerializedApiKey {
 }
 
 interface ExportPayload {
-  version: 10;
+  version: 11;
   exportedAt: string;
   data: {
     users: User[];
@@ -77,7 +77,7 @@ interface ExportPayload {
   };
 }
 
-const EXPORT_VERSION = 10;
+const EXPORT_VERSION = 11;
 const SEARCH_USAGE_HOUR_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}$/;
 const PERFORMANCE_METRICS = new Set<PerformanceMetric>(['ttft_ms', 'tpot_us']);
 const UPSTREAM_PROVIDERS = new Set<UpstreamProviderKind>(ALL_PROVIDER_KINDS);

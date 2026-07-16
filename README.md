@@ -137,7 +137,7 @@ Open the deployed URL (or `http://localhost:8788` for Node), log in with
    official Codex account login remains available for account-backed services.
 
 Import/export of upstreams, keys, and search config is in Settings. The
-current payload format is version 10 and is tied to the running deployment, so
+current payload format is version 11 and is tied to the running deployment, so
 import only accepts that exact version. Re-export before moving a deployment.
 
 ## Server Tools
