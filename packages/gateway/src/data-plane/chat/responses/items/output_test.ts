@@ -1,7 +1,7 @@
 import { expect, test, vi } from 'vitest';
 
-import { wrapResponsesClientOutput } from './output.ts';
 import { isResponsesItemId } from './format.ts';
+import { wrapResponsesClientOutput } from './output.ts';
 import { createResponsesHttpStore } from './store.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
@@ -122,9 +122,13 @@ test('client output batches hundreds of finalized items at the successful termin
     responseId: 'resp_public',
   })[Symbol.asyncIterator]();
 
-  for (let index = 0; index < items.length; index += 1) {
+  for (const item of items) {
     const next = await iterator.next();
     expect(next.value?.type === 'event' && next.value.event.type).toBe('response.output_item.done');
+    if (next.value?.type !== 'event' || next.value.event.type !== 'response.output_item.done') {
+      throw new Error('Expected finalized output item');
+    }
+    expect(next.value.event.item.id).not.toBe(item.id);
   }
   expect(insertItems).not.toHaveBeenCalled();
 
