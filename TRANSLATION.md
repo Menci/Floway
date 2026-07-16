@@ -280,7 +280,9 @@ Request mapping:
 - Chat tool calls/results become Messages tool use/results;
 - limits, sampling, stop, tools, and strictness map where representable.
 
-Response mapping emits scalar reasoning before text and text before tools.
+Response mapping emits scalar reasoning before text and normally emits text
+before tools. Text sharing a frame with a tool call, or arriving while tool
+arguments stream, is deferred until that `tool_use` block closes.
 `reasoning_opaque` is treated as a replacement snapshot; when several snapshots
 arrive before a block is emitted, the latest value wins. Opaque-only reasoning
 uses `redacted_thinking`. Chat alternatives have no Messages representation,

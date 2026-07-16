@@ -88,9 +88,9 @@ const clearEventMetadata = (event: GeminiResult): void => {
 };
 
 // Gemini pays one upstream-event of TTFT/inter-event latency so the client sees
-// one authoritative signature. Within one event it belongs on the first Part
-// of its logical element; across events the window can move it back only onto
-// the immediately preceding buffered chunk.
+// one authoritative signature per logical element. Within one event it belongs
+// on that element's first content-bearing Part; across events the window can
+// move it back only onto the immediately preceding buffered chunk.
 // Repeating synthetic then natural signatures is unsafe: Vercel and Google ADK
 // retain the metadata captured when a streamed function call starts, while
 // LangChain Python concatenates same-index strings.
