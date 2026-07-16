@@ -1,6 +1,6 @@
 import type { Context } from 'hono';
-import { streamSSE } from 'hono/streaming';
 
+import { streamSSE } from '../../../shared/sse.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
 import { tokenUsage } from '../../shared/telemetry/usage.ts';

@@ -136,6 +136,7 @@ test('GET /api/dump/keys/:keyId/stream sends snapshot then appended frames', asy
     headers: { 'x-api-key': apiKey.key },
   });
   assertEquals(response.status, 200);
+  assertEquals(response.headers.get('x-accel-buffering'), 'no');
   await stubs.broker.publish(apiKey.id, fakeMeta('01HZZ0000000000000000000A2', 2000));
 
   const frames = await readFrames(response, 2);
