@@ -595,30 +595,6 @@ configure_claude() {
 
 # --- Codex ------------------------------------------------------------------
 
-# The refresh_token slot is a fixed non-secret placeholder: the gateway
-# authenticates the data plane with the API key carried as access_token and
-# never rotates a ChatGPT refresh token, so a real refresh value would be
-# meaningless. Codex only reads it back; it is never sent upstream.
-CODEX_REFRESH_NOOP="floway-managed-no-refresh"
-
-# Codex decodes this alg=none placeholder to render `codex login status`; the
-# gateway authenticates with access_token instead. The host-derived email
-# distinguishes deployments, and jq's @base64 is converted to base64url.
-# Ref: packages/provider-codex/src/auth/jwt.ts (the decode-only claim reader).
-codex_build_id_token() {
-  _cbit_host="${FLOWAY_BASE_URL#*://}"
-  _cbit_host="${_cbit_host%%/*}"
-  FLOWAY_CODEX_ID_TOKEN=$("$JQ" -rn --arg host "$_cbit_host" '
-    def b64url: @base64 | gsub("=";"") | gsub("\\+";"-") | gsub("/";"_");
-    ({alg:"none",typ:"JWT"} | tojson | b64url) as $header
-    | ({email: ("floway@" + $host), "https://api.openai.com/auth": {chatgpt_plan_type:"pro_plus", chatgpt_user_id:"user-floway", chatgpt_account_id:"acct-floway"}} | tojson | b64url) as $payload
-    | $header + "." + $payload + ".c2ln"
-  ') || {
-    out_error 'could not construct the Codex identity token.'
-    return 1
-  }
-}
-
 # Ref: https://github.com/openai/codex/blob/main/scripts/install/install.sh
 codex_ensure_installed() {
   _discover_cli codex \
@@ -650,14 +626,14 @@ codex_ensure_installed() {
   [ "$DISCOVERED_COUNT" -ge 1 ]
 }
 
-# Back up both managed files before any mutation, recording the absence of each
-# so rollback can distinguish "restore" from "remove". Fails before mutation if
-# a backup copy cannot be made.
+# Back up the config and provider token before any mutation, recording the
+# absence of each so rollback can distinguish "restore" from "remove". The
+# token backup must be owner-only before the transaction can continue.
 codex_backup_files() {
   CODEX_CONFIG_EXISTED=0
-  CODEX_AUTH_EXISTED=0
+  CODEX_TOKEN_EXISTED=0
   CODEX_CONFIG_BACKUP=""
-  CODEX_AUTH_BACKUP=""
+  CODEX_TOKEN_BACKUP=""
   _cbf_stamp=$(date +%Y%m%d%H%M%S).$$
   if [ -e "$CODEX_CONFIG_PATH" ]; then
     CODEX_CONFIG_EXISTED=1
@@ -667,14 +643,19 @@ codex_backup_files() {
       return 1
     fi
   fi
-  if [ -e "$CODEX_AUTH_PATH" ]; then
-    CODEX_AUTH_EXISTED=1
-    CODEX_AUTH_BACKUP="$CODEX_AUTH_PATH.floway-backup.$_cbf_stamp"
-    if ! cp "$CODEX_AUTH_PATH" "$CODEX_AUTH_BACKUP"; then
-      out_error "could not back up $CODEX_AUTH_PATH"
+  if [ -e "$CODEX_TOKEN_PATH" ]; then
+    CODEX_TOKEN_EXISTED=1
+    CODEX_TOKEN_BACKUP="$CODEX_TOKEN_PATH.floway-backup.$_cbf_stamp"
+    if ! cp "$CODEX_TOKEN_PATH" "$CODEX_TOKEN_BACKUP"; then
+      out_error "could not back up $CODEX_TOKEN_PATH"
       return 1
     fi
-    chmod 600 "$CODEX_AUTH_BACKUP" 2>/dev/null || true
+    if ! chmod 600 "$CODEX_TOKEN_BACKUP"; then
+      rm -f "$CODEX_TOKEN_BACKUP"
+      CODEX_TOKEN_BACKUP=""
+      out_error "could not protect the backup of $CODEX_TOKEN_PATH"
+      return 1
+    fi
   fi
 }
 
@@ -685,8 +666,8 @@ codex_rollback() {
     "${CODEX_CONFIG_EXISTED:-0}" "${CODEX_CONFIG_BACKUP:-}" "$CODEX_CONFIG_PATH" \
     "file" "Codex config" || _cxr_rc=1
   _restore_managed_file \
-    "${CODEX_AUTH_EXISTED:-0}" "${CODEX_AUTH_BACKUP:-}" "$CODEX_AUTH_PATH" \
-    "ChatGPT login" "Codex auth" || _cxr_rc=1
+    "${CODEX_TOKEN_EXISTED:-0}" "${CODEX_TOKEN_BACKUP:-}" "$CODEX_TOKEN_PATH" \
+    "provider token" "Codex provider token" || _cxr_rc=1
   return "$_cxr_rc"
 }
 
@@ -813,6 +794,10 @@ codex_app_server_batch_write() {
 # config; `okOverridden` is reported with its non-secret layer metadata.
 codex_write_config() {
   _cwc_base="${FLOWAY_BASE_URL%/}/azure-api.codex"
+  # Command auth opts a provider into online model refresh. The actor marker
+  # enables Codex's client-owned search and image extensions for this provider.
+  # https://github.com/openai/codex/blob/1bbdb32789e1f79932df44941236ea3658f6e965/codex-rs/models-manager/src/manager.rs#L413-L415
+  # https://github.com/openai/codex/blob/1bbdb32789e1f79932df44941236ea3658f6e965/codex-rs/model-provider-info/src/lib.rs#L396-L408
   _cwc_edits=$("$JQ" -cn \
     --arg base "$_cwc_base" \
     --arg model "$FLOWAY_CODEX_MODEL" \
@@ -821,11 +806,12 @@ codex_write_config() {
       {keyPath:"model_provider",mergeStrategy:"replace",value:"floway"},
       {keyPath:"model_providers.floway.name",mergeStrategy:"replace",value:"Floway"},
       {keyPath:"model_providers.floway.base_url",mergeStrategy:"replace",value:$base},
+      {keyPath:"model_providers.floway.auth",mergeStrategy:"replace",value:{command:"sh",args:["-c","cat \"${CODEX_HOME:-$HOME/.codex}/floway-token\""]}},
       {keyPath:"model_providers.floway.wire_api",mergeStrategy:"replace",value:"responses"},
       {keyPath:"model_providers.floway.supports_websockets",mergeStrategy:"replace",value:true},
-      {keyPath:"chatgpt_base_url",mergeStrategy:"replace",value:$base},
+      {keyPath:"model_providers.floway.http_headers",mergeStrategy:"replace",value:{"x-openai-actor-authorization":"1"}},
       {keyPath:"features.apps",mergeStrategy:"replace",value:false},
-      {keyPath:"cli_auth_credentials_store",mergeStrategy:"replace",value:"file"},
+      {keyPath:"features.standalone_web_search",mergeStrategy:"replace",value:true},
       {keyPath:"model",mergeStrategy:"replace",value:(if $model == "" then null else $model end)},
       {keyPath:"model_reasoning_effort",mergeStrategy:"replace",value:(if $effort == "" then null else $effort end)}
     ]') || {
@@ -863,37 +849,32 @@ codex_write_config() {
   esac
 }
 
-# Stage a minimal ChatGPT-mode auth.json: the locally assembled identity token, the
-# in-memory API key as access_token, a noop refresh placeholder, and a fresh
-# RFC3339 timestamp. The stage is created under umask 077 (owner-only from the
-# instant it exists), validated, and atomically renamed into place. The key is
-# read from the environment so it never reaches argv.
-codex_stage_auth() {
-  _csa_now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-  _csa_stage="$CODEX_AUTH_PATH.floway-stage.$$"
-  if ! FLOWAY_API_KEY="$FLOWAY_API_KEY" "$JQ" -n \
-      --arg idToken "$FLOWAY_CODEX_ID_TOKEN" \
-      --arg refresh "$CODEX_REFRESH_NOOP" \
-      --arg lastRefresh "$_csa_now" \
-      '{OPENAI_API_KEY: null, tokens: {id_token: $idToken, access_token: env.FLOWAY_API_KEY, refresh_token: $refresh}, last_refresh: $lastRefresh}' > "$_csa_stage"; then
-    out_error 'could not construct the Codex auth file.'
-    rm -f "$_csa_stage"
+# Store the Floway API key as a provider-scoped command-auth token. The private
+# stage is validated byte-for-byte, then atomically renamed. auth.json is an
+# account-owned Codex file and is never read or changed here.
+codex_stage_token() {
+  _cst_stage="$CODEX_TOKEN_PATH.floway-stage.$$"
+  if ! (umask 077 && : > "$_cst_stage"); then
+    out_error 'could not create the Codex provider-token stage.'
     return 1
   fi
-  if ! FLOWAY_API_KEY="$FLOWAY_API_KEY" "$JQ" -e --arg idToken "$FLOWAY_CODEX_ID_TOKEN" '
-      (.tokens.id_token == $idToken) and (.tokens.access_token == env.FLOWAY_API_KEY)
-    ' "$_csa_stage" >/dev/null 2>&1; then
-    out_error 'staged Codex auth failed validation.'
-    rm -f "$_csa_stage"
+  if ! printf '%s' "$FLOWAY_API_KEY" > "$_cst_stage"; then
+    out_error 'could not write the Codex provider-token stage.'
+    rm -f "$_cst_stage"
     return 1
   fi
-  if ! chmod 600 "$_csa_stage"; then
-    rm -f "$_csa_stage"
+  if ! cmp -s "$_cst_stage" <(printf '%s' "$FLOWAY_API_KEY"); then
+    out_error 'staged Codex provider token failed validation.'
+    rm -f "$_cst_stage"
     return 1
   fi
-  if ! mv "$_csa_stage" "$CODEX_AUTH_PATH"; then
-    out_error "could not replace $CODEX_AUTH_PATH"
-    rm -f "$_csa_stage"
+  if ! chmod 600 "$_cst_stage"; then
+    rm -f "$_cst_stage"
+    return 1
+  fi
+  if ! mv "$_cst_stage" "$CODEX_TOKEN_PATH"; then
+    out_error "could not replace $CODEX_TOKEN_PATH"
+    rm -f "$_cst_stage"
     return 1
   fi
 }
@@ -930,14 +911,12 @@ codex_check_models() {
   rm -f "$_ccm_body"
 }
 
-# Verify Codex without inference: reparse the staged auth and assert the identity
-# token and key (never printing them), print the raw CLI version, and reach the
-# authenticated model directory (confirming the selected model when one is set).
+# Verify Codex without inference: compare the provider token without printing
+# it, print the raw CLI version, and reach the authenticated model directory
+# (confirming the selected model when one is set).
 codex_verify() {
-  if ! FLOWAY_API_KEY="$FLOWAY_API_KEY" "$JQ" -e --arg idToken "$FLOWAY_CODEX_ID_TOKEN" '
-      (.tokens.id_token == $idToken) and (.tokens.access_token == env.FLOWAY_API_KEY)
-    ' "$CODEX_AUTH_PATH" >/dev/null 2>&1; then
-    out_error 'the written Codex auth did not reparse as expected.'
+  if ! cmp -s "$CODEX_TOKEN_PATH" <(printf '%s' "$FLOWAY_API_KEY"); then
+    out_error 'the written Codex provider token did not reparse as expected.'
     return 1
   fi
 
@@ -962,9 +941,9 @@ codex_verify() {
   out_success 'reached the authenticated Codex model directory (no inference issued).'
 }
 
-# Configure Codex as one transactional unit. jq must resolve before any mutation.
-# Both managed files are backed up first; a failure in the config write, auth
-# staging, or verification restores both (or removes newly created files). A
+# Configure Codex as one transactional unit. jq must resolve before any
+# mutation. The config and provider token are backed up first; a write or
+# verification failure restores both (or removes newly created files). A
 # freshly installed CLI is never uninstalled.
 configure_codex() {
   out_phase 'Codex'
@@ -978,28 +957,26 @@ configure_codex() {
   fi
   CODEX_HOME_DIR="${CODEX_HOME:-$HOME/.codex}"
   CODEX_CONFIG_PATH="$CODEX_HOME_DIR/config.toml"
-  CODEX_AUTH_PATH="$CODEX_HOME_DIR/auth.json"
+  CODEX_TOKEN_PATH="$CODEX_HOME_DIR/floway-token"
   if ! mkdir -p "$CODEX_HOME_DIR"; then
     out_error "could not create $CODEX_HOME_DIR"
-    return 1
-  fi
-  if ! codex_build_id_token; then
     return 1
   fi
   if ! codex_backup_files; then
     return 1
   fi
-  if ! codex_write_config; then
+  if ! codex_stage_token; then
+    out_warn 'Codex provider-token staging failed; rolling back configuration and token.'
     codex_rollback
     return 1
   fi
-  if ! codex_stage_auth; then
-    out_warn 'Codex auth staging failed; rolling back configuration and auth.'
+  if ! codex_write_config; then
+    out_warn 'Codex configuration failed; rolling back configuration and token.'
     codex_rollback
     return 1
   fi
   if ! codex_verify; then
-    out_warn 'Codex verification failed; rolling back configuration and auth.'
+    out_warn 'Codex verification failed; rolling back configuration and token.'
     codex_rollback
     return 1
   fi

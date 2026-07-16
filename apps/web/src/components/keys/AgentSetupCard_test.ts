@@ -223,8 +223,10 @@ describe('AgentSetupCard', () => {
     expect(setupStub.draft.value!.claudeCode.effortLevel).toBe('high');
   });
 
-  it('warns that Codex setup replaces CODEX_HOME/auth.json when Codex is enabled', () => {
-    expect(mountCard().text()).toContain('auth.json');
+  it('explains that Codex provider auth stays separate from the official account', () => {
+    const text = mountCard().text();
+    expect(text).toContain('provider token is stored separately');
+    expect(text).toContain('official Codex account login remains available');
   });
 
   it('shows a models-loading hint only while the catalog is genuinely empty', () => {

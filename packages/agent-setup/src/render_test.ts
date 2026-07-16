@@ -188,10 +188,9 @@ describe('renderPowerShellPrefix', () => {
     ].join('\n'));
   });
 
-  test('never emits the base URL or a Codex identity token — the gateway does not know its origin', () => {
+  test('never emits the base URL — the gateway does not know its origin', () => {
     const prefix = renderPowerShellPrefix({ apiKey: 'sk-raw-key', configuration: fullConfiguration });
     expect(prefix).not.toContain('$FlowayBaseUrl');
-    expect(prefix).not.toContain('$FlowayCodexIdToken');
   });
 
   test('single-quotes each string, doubling embedded quotes and preserving newlines, tabs, and Unicode', () => {

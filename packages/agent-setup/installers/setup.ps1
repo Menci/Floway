@@ -462,26 +462,6 @@ function Set-FlowayClaude {
 
 # --- Codex ------------------------------------------------------------------
 
-# The refresh_token slot is a fixed non-secret placeholder: the gateway
-# authenticates the data plane with the API key carried as access_token and
-# never rotates a ChatGPT refresh token. Codex only reads it back.
-$FlowayCodexRefreshNoop = 'floway-managed-no-refresh'
-
-# Codex only decodes this alg=none placeholder for login status; access_token
-# authenticates the gateway. Literal JSON keeps byte layout and key order stable
-# across PowerShell versions and matches the Bash installer.
-# Ref: packages/provider-codex/src/auth/jwt.ts (the decode-only claim reader).
-function Get-FlowayCodexIdToken {
-  $authority = ([Uri]$FlowayBaseUrl).Authority
-  $encode = {
-    param([string]$Json)
-    [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($Json)).TrimEnd('=').Replace('+', '-').Replace('/', '_')
-  }
-  $headerJson = '{"alg":"none","typ":"JWT"}'
-  $payloadJson = '{"email":"floway@' + $authority + '","https://api.openai.com/auth":{"chatgpt_plan_type":"pro_plus","chatgpt_user_id":"user-floway","chatgpt_account_id":"acct-floway"}}'
-  return ((& $encode $headerJson) + '.' + (& $encode $payloadJson) + '.c2ln')
-}
-
 # Install the official user-local Codex build. CODEX_NON_INTERACTIVE keeps the
 # installer from prompting. The FLOWAY_INSTALLER_TEST_INSTALL_CODEX_SCRIPT hook —
 # read from the ambient environment, never emitted by the gateway — substitutes
@@ -508,13 +488,13 @@ function Install-FlowayCodex {
   }
 }
 
-# Back up both managed files before any mutation, recording the absence of each
-# so rollback can distinguish "restore" from "remove".
+# Back up the config and provider token before any mutation, recording the
+# absence of each so rollback can distinguish "restore" from "remove".
 function Backup-FlowayCodexFiles {
   $script:CodexConfigExisted = $false
-  $script:CodexAuthExisted = $false
+  $script:CodexTokenExisted = $false
   $script:CodexConfigBackup = $null
-  $script:CodexAuthBackup = $null
+  $script:CodexTokenBackup = $null
   # DateTimeOffset.ToUnixTimeMilliseconds is unavailable on the .NET Framework
   # version bundled with the Windows PowerShell 5.1 baseline.
   $stamp = [long]([DateTimeOffset]::UtcNow - [DateTimeOffset]'1970-01-01T00:00:00Z').TotalMilliseconds
@@ -523,23 +503,17 @@ function Backup-FlowayCodexFiles {
     $script:CodexConfigBackup = "$($script:CodexConfigPath).floway-backup.$stamp.$PID"
     Copy-Item -LiteralPath $script:CodexConfigPath -Destination $script:CodexConfigBackup
   }
-  if (Test-Path -LiteralPath $script:CodexAuthPath) {
-    $script:CodexAuthExisted = $true
-    $script:CodexAuthBackup = "$($script:CodexAuthPath).floway-backup.$stamp.$PID"
-    # The auth backup holds the original ChatGPT login. If hardening its ACL
-    # fails after the copy, the copy is an unprotected secret on disk — remove it
-    # before rethrowing rather than leaving a readable backup behind. The
-    # original is still untouched (backup runs before any mutation), and leaving
-    # CodexAuthExisted true keeps a later restore from deleting it: with a null
-    # backup, restore simply leaves the original in place.
+  if (Test-Path -LiteralPath $script:CodexTokenPath) {
+    $script:CodexTokenExisted = $true
+    $script:CodexTokenBackup = "$($script:CodexTokenPath).floway-backup.$stamp.$PID"
     try {
-      Copy-Item -LiteralPath $script:CodexAuthPath -Destination $script:CodexAuthBackup
-      Protect-FlowayFile $script:CodexAuthBackup
+      Copy-Item -LiteralPath $script:CodexTokenPath -Destination $script:CodexTokenBackup
+      Protect-FlowayFile $script:CodexTokenBackup
     } catch {
-      if (Test-Path -LiteralPath $script:CodexAuthBackup) {
-        Remove-Item -LiteralPath $script:CodexAuthBackup -Force
+      if (Test-Path -LiteralPath $script:CodexTokenBackup) {
+        Remove-Item -LiteralPath $script:CodexTokenBackup -Force
       }
-      $script:CodexAuthBackup = $null
+      $script:CodexTokenBackup = $null
       throw
     }
   }
@@ -547,7 +521,7 @@ function Backup-FlowayCodexFiles {
 
 function Restore-FlowayCodexFiles {
   Restore-FlowayManagedFile -Existed $script:CodexConfigExisted -Backup $script:CodexConfigBackup -Path $script:CodexConfigPath -OriginalLabel 'file' -CreatedLabel 'Codex config'
-  Restore-FlowayManagedFile -Existed $script:CodexAuthExisted -Backup $script:CodexAuthBackup -Path $script:CodexAuthPath -OriginalLabel 'ChatGPT login' -CreatedLabel 'Codex auth'
+  Restore-FlowayManagedFile -Existed $script:CodexTokenExisted -Backup $script:CodexTokenBackup -Path $script:CodexTokenPath -OriginalLabel 'provider token' -CreatedLabel 'Codex provider token'
 }
 
 # Drive `codex app-server` over redirected stdin/stdout/stderr: initialize ->
@@ -614,15 +588,32 @@ function Invoke-FlowayCodexAppServerBatchWrite {
 function Write-FlowayCodexConfig {
   param([string]$Exe)
   $codexBase = ($FlowayBaseUrl.TrimEnd('/')) + '/azure-api.codex'
+  $runningOnWindows = ($PSVersionTable.PSVersion.Major -lt 6) -or $IsWindows
+  $auth = if ($runningOnWindows) {
+    [ordered]@{
+      command = 'powershell'
+      args = @('-NoProfile', '-Command', '$h = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME ''.codex'' }; [IO.File]::ReadAllText((Join-Path $h ''floway-token''))')
+    }
+  } else {
+    [ordered]@{
+      command = 'sh'
+      args = @('-c', 'cat "${CODEX_HOME:-$HOME/.codex}/floway-token"')
+    }
+  }
+  # Command auth opts a provider into online model refresh. The actor marker
+  # enables Codex's client-owned search and image extensions for this provider.
+  # https://github.com/openai/codex/blob/1bbdb32789e1f79932df44941236ea3658f6e965/codex-rs/models-manager/src/manager.rs#L413-L415
+  # https://github.com/openai/codex/blob/1bbdb32789e1f79932df44941236ea3658f6e965/codex-rs/model-provider-info/src/lib.rs#L396-L408
   $edits = @(
     @{ keyPath = 'model_provider'; mergeStrategy = 'replace'; value = 'floway' },
     @{ keyPath = 'model_providers.floway.name'; mergeStrategy = 'replace'; value = 'Floway' },
     @{ keyPath = 'model_providers.floway.base_url'; mergeStrategy = 'replace'; value = $codexBase },
+    @{ keyPath = 'model_providers.floway.auth'; mergeStrategy = 'replace'; value = $auth },
     @{ keyPath = 'model_providers.floway.wire_api'; mergeStrategy = 'replace'; value = 'responses' },
     @{ keyPath = 'model_providers.floway.supports_websockets'; mergeStrategy = 'replace'; value = $true },
-    @{ keyPath = 'chatgpt_base_url'; mergeStrategy = 'replace'; value = $codexBase },
+    @{ keyPath = 'model_providers.floway.http_headers'; mergeStrategy = 'replace'; value = @{ 'x-openai-actor-authorization' = '1' } },
     @{ keyPath = 'features.apps'; mergeStrategy = 'replace'; value = $false },
-    @{ keyPath = 'cli_auth_credentials_store'; mergeStrategy = 'replace'; value = 'file' },
+    @{ keyPath = 'features.standalone_web_search'; mergeStrategy = 'replace'; value = $true },
     @{ keyPath = 'model'; mergeStrategy = 'replace'; value = $FlowayCodexModel },
     @{ keyPath = 'model_reasoning_effort'; mergeStrategy = 'replace'; value = $FlowayCodexReasoningEffort }
   )
@@ -643,39 +634,25 @@ function Write-FlowayCodexConfig {
   }
 }
 
-# Stage a minimal ChatGPT-mode auth.json: the locally assembled identity token, the
-# in-memory API key as access_token, a noop refresh placeholder, and a fresh
-# RFC3339 timestamp. The stage is created and owner-only protected before any
-# secret is written, validated, then atomically moved into place.
-function Write-FlowayCodexAuth {
-  $now = [DateTime]::UtcNow.ToString("yyyy-MM-dd'T'HH':'mm':'ss'Z'", [Globalization.CultureInfo]::InvariantCulture)
-  $auth = [ordered]@{
-    OPENAI_API_KEY = $null
-    tokens         = [ordered]@{
-      id_token      = $FlowayCodexIdToken
-      access_token  = $FlowayApiKey
-      refresh_token = $FlowayCodexRefreshNoop
-    }
-    last_refresh   = $now
-  }
-  $json = $auth | ConvertTo-Json -Depth 10
-  $stage = "$($script:CodexAuthPath).floway-stage.$PID"
+# Store the Floway API key as a provider-scoped command-auth token. The private
+# stage is validated byte-for-byte, then atomically replaced. auth.json is an
+# account-owned Codex file and is never read or changed here.
+function Write-FlowayCodexToken {
+  $stage = "$($script:CodexTokenPath).floway-stage.$PID"
   try {
-    # The stage exists and is owner-only before any secret JSON is written.
     [System.IO.File]::Create($stage).Dispose()
     Protect-FlowayFile $stage
-    [System.IO.File]::WriteAllText($stage, $json, (New-Object System.Text.UTF8Encoding($false)))
-    $check = Get-Content -Raw -LiteralPath $stage | ConvertFrom-Json
-    if (($check.tokens.id_token -ne $FlowayCodexIdToken) -or ($check.tokens.access_token -ne $FlowayApiKey)) {
-      Stop-FlowaySetup "staged Codex auth failed validation."
+    [System.IO.File]::WriteAllText($stage, $FlowayApiKey, (New-Object System.Text.UTF8Encoding($false)))
+    if ([System.IO.File]::ReadAllText($stage) -cne $FlowayApiKey) {
+      Stop-FlowaySetup "staged Codex provider token failed validation."
     }
     $runningOnWindows = ($PSVersionTable.PSVersion.Major -lt 6) -or $IsWindows
-    if ($script:CodexAuthExisted -and $runningOnWindows) {
+    if ($script:CodexTokenExisted -and $runningOnWindows) {
       # File.Replace preserves the destination ACL, so tighten it first.
-      Protect-FlowayFile $script:CodexAuthPath
-      [System.IO.File]::Replace($stage, $script:CodexAuthPath, $null)
+      Protect-FlowayFile $script:CodexTokenPath
+      [System.IO.File]::Replace($stage, $script:CodexTokenPath, $null)
     } else {
-      Move-Item -LiteralPath $stage -Destination $script:CodexAuthPath -Force
+      Move-Item -LiteralPath $stage -Destination $script:CodexTokenPath -Force
     }
   } catch {
     if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Force }
@@ -713,14 +690,13 @@ function Read-FlowayCodexModelCatalog {
   return $slugs
 }
 
-# Verify Codex without inference: reparse the staged auth and assert the identity
-# token and key (never printing them), print the raw CLI version, and reach the
-# authenticated model directory (confirming the selected model when one is set).
+# Verify Codex without inference: compare the provider token without printing
+# it, print the raw CLI version, and reach the authenticated model directory
+# (confirming the selected model when one is set).
 function Invoke-FlowayCodexVerify {
   param([string]$Exe)
-  $auth = Get-Content -Raw -LiteralPath $script:CodexAuthPath | ConvertFrom-Json
-  if (($auth.tokens.id_token -ne $FlowayCodexIdToken) -or ($auth.tokens.access_token -ne $FlowayApiKey)) {
-    Stop-FlowaySetup "the written Codex auth did not reparse as expected."
+  if ([System.IO.File]::ReadAllText($script:CodexTokenPath) -cne $FlowayApiKey) {
+    Stop-FlowaySetup "the written Codex provider token did not reparse as expected."
   }
   $timeoutSeconds = if ($env:FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS) { [int]$env:FLOWAY_INSTALLER_TEST_TIMEOUT_SECONDS } else { 30 }
   $version = Invoke-FlowayProcess -Exe $Exe -Arguments @('--version') -TimeoutSeconds $timeoutSeconds -TimeoutMessage '``codex --version`` timed out.'
@@ -733,10 +709,9 @@ function Invoke-FlowayCodexVerify {
   Write-FlowaySuccess "reached the authenticated Codex model directory (no inference issued)."
 }
 
-# Configure Codex as one transactional unit. Both managed files are backed up
-# first; a failure in the config write, auth staging, or verification restores
-# both (or removes newly created files). A freshly installed CLI is never
-# uninstalled.
+# Configure Codex as one transactional unit. The config and provider token are
+# backed up first; a write or verification failure restores both (or removes
+# newly created files). A freshly installed CLI is never uninstalled.
 function Set-FlowayCodex {
   Write-FlowayPhase 'Codex'
   # Ref: https://github.com/openai/codex/blob/main/scripts/install/install.sh
@@ -754,32 +729,29 @@ function Set-FlowayCodex {
   }
   $script:CodexHomeDir = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME '.codex' }
   $script:CodexConfigPath = Join-Path $script:CodexHomeDir 'config.toml'
-  $script:CodexAuthPath = Join-Path $script:CodexHomeDir 'auth.json'
-  $script:FlowayCodexIdToken = Get-FlowayCodexIdToken
+  $script:CodexTokenPath = Join-Path $script:CodexHomeDir 'floway-token'
   if (-not (Test-Path -LiteralPath $script:CodexHomeDir)) {
     New-Item -ItemType Directory -Path $script:CodexHomeDir -Force | Out-Null
   }
   Backup-FlowayCodexFiles
-  # Each stage aligns its rollback cause with the Bash installer: a failed config
-  # write rolls back silently, a failed auth staging or verification announces the
-  # cause before restoring both managed files.
   try {
-    Write-FlowayCodexConfig -Exe $exe
+    Write-FlowayCodexToken
   } catch {
+    Write-FlowayWarn "Codex provider-token staging failed; rolling back configuration and token."
     Restore-FlowayCodexFiles
     throw
   }
   try {
-    Write-FlowayCodexAuth
+    Write-FlowayCodexConfig -Exe $exe
   } catch {
-    Write-FlowayWarn "Codex auth staging failed; rolling back configuration and auth."
+    Write-FlowayWarn "Codex configuration failed; rolling back configuration and token."
     Restore-FlowayCodexFiles
     throw
   }
   try {
     Invoke-FlowayCodexVerify -Exe $exe
   } catch {
-    Write-FlowayWarn "Codex verification failed; rolling back configuration and auth."
+    Write-FlowayWarn "Codex verification failed; rolling back configuration and token."
     Restore-FlowayCodexFiles
     throw
   }

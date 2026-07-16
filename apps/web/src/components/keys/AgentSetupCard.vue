@@ -254,8 +254,8 @@ const powerShellCommand = computed(() => (scripts.value
                 empty-text="No suggested presets"
               />
             </div>
-            <p v-if="draft.codex.enabled" class="text-[11px] text-accent-amber/90">
-              Running the Codex command replaces the ChatGPT login in <code class="text-accent-amber">CODEX_HOME/auth.json</code>; a timestamped backup is written first.
+            <p v-if="draft.codex.enabled" class="text-[11px] text-gray-500">
+              The Floway provider token is stored separately under <code class="text-gray-400">CODEX_HOME</code>; an official Codex account login remains available.
             </p>
           </div>
         </div>

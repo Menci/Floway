@@ -42,23 +42,6 @@ const SENTINEL_KEY = 'sk-floway-SENTINEL-Do-Not-Log-9f3c1a7b2e4d6058';
 // authenticated model directory and issues no inference.
 const INFERENCE_PATHS = ['/v1/messages', '/v1/chat/completions', '/v1/complete', '/v1/responses'];
 
-// The exact Codex identity token each installer must assemble locally from the
-// injected base URL — the gateway no longer renders it. Mirrors both installers'
-// algorithm (unpadded base64url of compact JSON with the host-derived email),
-// so byte-equality proves the Bash jq and PowerShell Convert paths agree.
-const CODEX_AUTH_CLAIM = {
-  chatgpt_plan_type: 'pro_plus',
-  chatgpt_user_id: 'user-floway',
-  chatgpt_account_id: 'acct-floway',
-} as const;
-const expectedCodexIdentityToken = (baseUrl: string): string => {
-  const host = new URL(baseUrl).host;
-  const b64url = (payload: unknown): string => Buffer.from(JSON.stringify(payload)).toString('base64url');
-  const header = b64url({ alg: 'none', typ: 'JWT' });
-  const payload = b64url({ email: `floway@${host}`, 'https://api.openai.com/auth': CODEX_AUTH_CLAIM });
-  return `${header}.${payload}.c2ln`;
-};
-
 // --- tiny test runner -------------------------------------------------------
 
 class SkipError extends Error {}
@@ -108,7 +91,7 @@ const resolveTool = (name: string): string | null => {
   const found = spawnSync('/bin/sh', ['-c', `command -v ${name}`], { encoding: 'utf8' }).stdout.trim();
   return found || null;
 };
-for (const tool of ['sh', 'bash', 'env', 'awk', 'cat', 'chmod', 'cp', 'date', 'grep', 'mkdir', 'mkfifo', 'mktemp', 'mv', 'rm', 'shasum', 'sleep', 'uname', 'curl']) {
+for (const tool of ['sh', 'bash', 'env', 'awk', 'cat', 'chmod', 'cmp', 'cp', 'date', 'grep', 'mkdir', 'mkfifo', 'mktemp', 'mv', 'rm', 'shasum', 'sleep', 'uname', 'curl']) {
   const path = resolveTool(tool);
   if (!path) throw new Error(`required tool ${tool} is not available on the host; cannot run the installer harness`);
   symlinkSync(path, join(SHIM_BIN, tool));
@@ -743,6 +726,7 @@ const codexRecordPath = (workspace: Workspace): string => join(workspace.root, '
 const codexHomeFor = (workspace: Workspace, codexHome?: string): string => codexHome ?? join(workspace.home, '.codex');
 const codexConfigPath = (workspace: Workspace, codexHome?: string): string => join(codexHomeFor(workspace, codexHome), 'config.toml');
 const codexAuthPath = (workspace: Workspace, codexHome?: string): string => join(codexHomeFor(workspace, codexHome), 'auth.json');
+const codexTokenPath = (workspace: Workspace, codexHome?: string): string => join(codexHomeFor(workspace, codexHome), 'floway-token');
 interface CodexRecord { received?: { method?: string; id?: number; params?: unknown }; marker?: string; edits?: unknown; line?: string; method?: string }
 const readCodexRecord = (workspace: Workspace): CodexRecord[] => {
   const path = codexRecordPath(workspace);
@@ -759,10 +743,10 @@ const codexBatchEdits = (workspace: Workspace): CodexEdit[] => {
 };
 const codexEditMap = (workspace: Workspace): Map<string, unknown> =>
   new Map(codexBatchEdits(workspace).map(e => [e.keyPath, e.value]));
-const codexBackupFiles = (dir: string, base: 'config.toml' | 'auth.json'): string[] =>
+const codexBackupFiles = (dir: string, base: 'config.toml' | 'floway-token'): string[] =>
   existsSync(dir) ? readdirSync(dir).filter(name => name.startsWith(`${base}.floway-backup.`)) : [];
-const readCodexAuth = (workspace: Workspace, codexHome?: string): { OPENAI_API_KEY: unknown; tokens: { id_token: string; access_token: string; refresh_token: string }; last_refresh: string } =>
-  JSON.parse(readFileSync(codexAuthPath(workspace, codexHome), 'utf8'));
+const readCodexToken = (workspace: Workspace, codexHome?: string): string =>
+  readFileSync(codexTokenPath(workspace, codexHome), 'utf8');
 
 const networkReachable = (): boolean => {
   const probe = spawnSync('/usr/bin/curl', ['-fsSL', '-o', '/dev/null', '--max-time', '8', 'https://github.com/jqlang/jq/releases/download/jq-1.8.2/sha256sum.txt'], { encoding: 'utf8' });
@@ -1018,7 +1002,7 @@ test('claude', 'an interrupt during the Claude install stops the run, skips Code
     t.includes(run.combined, '┌─ Claude Code', `${signal}: the run had entered the Claude phase`);
     t.excludes(run.combined, '┌─ Codex', `${signal}: the run must never reach the Codex phase`);
     t.ok(!existsSync(codexConfigPath(ws)), `${signal}: Codex config must not be written`);
-    t.ok(!existsSync(codexAuthPath(ws)), `${signal}: Codex auth must not be written`);
+    t.ok(!existsSync(codexTokenPath(ws)), `${signal}: Codex provider token must not be written`);
     const remnants = readdirSync(ws.root).filter(name => name.startsWith('floway-setup.'));
     t.equal(remnants.length, 0, `${signal}: the EXIT trap cleaned the private working directory`);
   }
@@ -1631,36 +1615,27 @@ test('claude', 'PowerShell: a non-http(s) $FlowayBaseUrl fails before any mutati
 // --- Codex cases ------------------------------------------------------------
 
 // Every fixed leaf the installer must batch-write, independent of model/effort.
-// The base_url and chatgpt_base_url both carry the Codex data-plane path.
 const assertCodexBaseEdits = (t: Assert, ws: Workspace, baseUrl: string): void => {
   const edits = codexEditMap(ws);
   const codexBase = `${baseUrl.replace(/\/$/, '')}/azure-api.codex`;
   t.equal(edits.get('model_provider'), 'floway', 'model_provider set to floway');
   t.equal(edits.get('model_providers.floway.name'), 'Floway', 'provider name is Floway');
   t.equal(edits.get('model_providers.floway.base_url'), codexBase, 'provider base_url targets the Codex data-plane path');
+  const auth = edits.get('model_providers.floway.auth') as { command?: unknown; args?: unknown };
+  t.equal(auth.command, 'sh', 'provider auth uses the host shell on Unix');
+  t.equal(JSON.stringify(auth.args), JSON.stringify(['-c', 'cat "${CODEX_HOME:-$HOME/.codex}/floway-token"']), 'provider auth reads the token under the active CODEX_HOME');
   t.equal(edits.get('model_providers.floway.wire_api'), 'responses', 'provider wire_api is responses');
   t.equal(edits.get('model_providers.floway.supports_websockets'), true, 'provider advertises websocket support');
-  t.equal(edits.get('chatgpt_base_url'), codexBase, 'chatgpt_base_url targets the Codex data-plane path');
+  t.equal(JSON.stringify(edits.get('model_providers.floway.http_headers')), JSON.stringify({ 'x-openai-actor-authorization': '1' }), 'provider carries the actor-authorization marker');
   t.equal(edits.get('features.apps'), false, 'features.apps disabled');
-  t.equal(edits.get('cli_auth_credentials_store'), 'file', 'credentials store is file');
+  t.equal(edits.get('features.standalone_web_search'), true, 'client-owned web search enabled');
   t.ok(edits.has('model'), 'the model leaf is always part of the batch');
   t.ok(edits.has('model_reasoning_effort'), 'the effort leaf is always part of the batch');
+  t.equal(edits.size, 11, 'the batch contains only the provider, feature, model, and effort leaves managed by Floway');
 };
 
-const RFC3339 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
-const assertStagedAuth = (t: Assert, ws: Workspace, baseUrl: string, startedMs: number, codexHome?: string): void => {
-  const auth = readCodexAuth(ws, codexHome);
-  t.equal(auth.OPENAI_API_KEY, null, 'ChatGPT-mode auth carries a null OPENAI_API_KEY');
-  t.equal(auth.tokens.id_token, expectedCodexIdentityToken(baseUrl), 'id_token is the locally-assembled identity token');
-  // The identity token is derived from the injected origin, not the gateway: its
-  // email claim embeds the base URL host.
-  const claims = JSON.parse(Buffer.from(auth.tokens.id_token.split('.')[1]!, 'base64url').toString('utf8')) as { email: string };
-  t.equal(claims.email, `floway@${new URL(baseUrl).host}`, 'the identity token claims the injected origin host');
-  t.equal(auth.tokens.access_token, SENTINEL_KEY, 'access_token carries the Floway API key');
-  t.ok(typeof auth.tokens.refresh_token === 'string' && auth.tokens.refresh_token.length > 0, 'a non-empty refresh placeholder is present');
-  t.ok(RFC3339.test(auth.last_refresh), `last_refresh is RFC3339, got ${auth.last_refresh}`);
-  const stamp = Date.parse(auth.last_refresh);
-  t.ok(Number.isFinite(stamp) && stamp >= startedMs - 5 * 60_000 && stamp <= Date.now() + 60_000, 'last_refresh is freshly minted at run time');
+const assertStagedToken = (t: Assert, ws: Workspace, codexHome?: string): void => {
+  t.equal(readCodexToken(ws, codexHome), SENTINEL_KEY, 'provider token carries the Floway API key byte-for-byte');
 };
 
 // The real Codex 0.144.1 binary on the host, used by the end-to-end smoke test.
@@ -1691,15 +1666,14 @@ test('codex', 'real app-server smoke version guard requires exact codex-cli sema
   t.equal(parseCodexCliVersion('codex-cli 0.144.1 extra'), null, 'extra output invalidates the exact version contract');
 });
 
-test('codex', 'existing CLI configures via the app-server and stages ChatGPT auth', async t => {
+test('codex', 'existing CLI configures via the app-server and stages the provider token', async t => {
   const ws = makeWorkspace();
   placeFakeCodex(ws.binDir);
-  const started = Date.now();
   const run = await runShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url });
   t.equal(run.code, 0, `codex setup should succeed:\n${run.combined}`);
   t.ok(!existsSync(installerMarker(ws)), 'the official installer must not run when codex is present');
   assertCodexBaseEdits(t, ws, modelServer.url);
-  assertStagedAuth(t, ws, modelServer.url, started);
+  assertStagedToken(t, ws);
 });
 
 test('codex', 'the batch clears model and effort when unset', async t => {
@@ -1735,7 +1709,7 @@ test('codex', 'a selected model missing from the catalog fails verification and 
     configuration: codexConfig({ model: 'not-in-catalog' }),
   });
   t.ok(run.code !== 0, 'a selected model absent from the catalog must fail');
-  t.ok(!existsSync(codexAuthPath(ws)), 'auth is rolled back when verification fails');
+  t.ok(!existsSync(codexTokenPath(ws)), 'provider token is rolled back when verification fails');
 });
 
 test('codex', 'the handshake runs initialize then initialized then config/batchWrite in order', async t => {
@@ -1762,18 +1736,18 @@ test('codex', 'okOverridden counts as success and reports non-secret override me
   t.includes(run.combined, 'Overridden by session flags', 'the override message is surfaced');
   t.includes(run.combined.toLowerCase(), 'sessionflags', 'the overriding layer is surfaced');
   t.excludes(run.combined, 'shadow-model', 'the overridden effective value is not echoed');
-  t.ok(existsSync(codexAuthPath(ws)), 'okOverridden still stages auth');
+  t.ok(existsSync(codexTokenPath(ws)), 'okOverridden still stages the provider token');
 });
 
-test('codex', 'a batchWrite JSON-RPC error fails codex and rolls back auth', async t => {
+test('codex', 'a batchWrite JSON-RPC error fails codex and rolls back the provider token', async t => {
   const ws = makeWorkspace();
   placeFakeCodex(ws.binDir);
   const configDir = codexHomeFor(ws);
   mkdirSync(configDir, { recursive: true });
-  writeFileSync(codexAuthPath(ws), '{"tokens":{"id_token":"old","access_token":"old","refresh_token":"old"},"OPENAI_API_KEY":null,"last_refresh":"2020-01-01T00:00:00Z"}');
+  writeFileSync(codexTokenPath(ws), 'old-provider-token');
   const run = await runShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url, fakeCodexAppServerMode: 'error' });
   t.ok(run.code !== 0, 'a protocol error must fail codex');
-  t.equal(readCodexAuth(ws).tokens.id_token, 'old', 'prior auth is restored on rollback');
+  t.equal(readCodexToken(ws), 'old-provider-token', 'prior provider token is restored on rollback');
 });
 
 test('codex', 'a malformed app-server response fails codex', async t => {
@@ -1781,7 +1755,7 @@ test('codex', 'a malformed app-server response fails codex', async t => {
   placeFakeCodex(ws.binDir);
   const run = await runShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url, fakeCodexAppServerMode: 'malformed' });
   t.ok(run.code !== 0, 'a malformed response line must fail codex');
-  t.ok(!existsSync(codexAuthPath(ws)), 'no auth is staged when the batch response is malformed');
+  t.ok(!existsSync(codexTokenPath(ws)), 'the staged provider token is rolled back after a malformed batch response');
 });
 
 test('codex', 'a premature app-server exit before responding fails codex', async t => {
@@ -1789,7 +1763,7 @@ test('codex', 'a premature app-server exit before responding fails codex', async
   placeFakeCodex(ws.binDir);
   const run = await runShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url, fakeCodexAppServerMode: 'premature-eof' });
   t.ok(run.code !== 0, 'a premature EOF must fail codex');
-  t.ok(!existsSync(codexAuthPath(ws)), 'no auth is staged when the app-server exits early');
+  t.ok(!existsSync(codexTokenPath(ws)), 'the staged provider token is rolled back when the app-server exits early');
 });
 
 test('codex', 'a delayed batch response within the deadline succeeds because stdin stays open', async t => {
@@ -1817,7 +1791,7 @@ test('codex', 'a batch response past the deadline times out, kills the tree, and
   });
   t.ok(run.code !== 0, 'a batch response past the deadline must fail codex');
   t.ok(Date.now() - started < 5_000, 'the deadline fires well before the fake would respond');
-  t.ok(!existsSync(codexAuthPath(ws)), 'a timed-out app-server rolls back');
+  t.ok(!existsSync(codexTokenPath(ws)), 'a timed-out app-server rolls back the provider token');
 });
 
 test('codex', 'a missing initialize response times out and fails', async t => {
@@ -1840,16 +1814,15 @@ test('codex', 'a large app-server stderr stream does not deadlock the exchange',
   assertCodexBaseEdits(t, ws, modelServer.url);
 });
 
-test('codex', 'honors an explicit CODEX_HOME for config and auth', async t => {
+test('codex', 'honors an explicit CODEX_HOME for config and provider token', async t => {
   const ws = makeWorkspace();
   placeFakeCodex(ws.binDir);
   const codexHome = join(ws.root, 'custom-codex-home');
-  const started = Date.now();
   const run = await runShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url, codexHome });
   t.equal(run.code, 0, `should succeed:\n${run.combined}`);
-  t.ok(existsSync(codexAuthPath(ws, codexHome)), 'auth lands under CODEX_HOME');
-  t.ok(!existsSync(codexAuthPath(ws)), 'the default ~/.codex is not used when overridden');
-  assertStagedAuth(t, ws, modelServer.url, started, codexHome);
+  t.ok(existsSync(codexTokenPath(ws, codexHome)), 'provider token lands under CODEX_HOME');
+  t.ok(!existsSync(codexTokenPath(ws)), 'the default ~/.codex is not used when overridden');
+  assertStagedToken(t, ws, codexHome);
 });
 
 test('codex', 'missing CLI triggers the official user-local installer', async t => {
@@ -1862,79 +1835,86 @@ test('codex', 'missing CLI triggers the official user-local installer', async t 
   assertCodexBaseEdits(t, ws, modelServer.url);
 });
 
-test('codex', 'the staged auth.json is mode 0600', async t => {
+test('codex', 'the staged provider token is mode 0600', async t => {
   const ws = makeWorkspace();
   placeFakeCodex(ws.binDir);
   const run = await runShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url });
   t.equal(run.code, 0, `should succeed:\n${run.combined}`);
-  const mode = statSync(codexAuthPath(ws)).mode & 0o777;
-  t.equal(mode, 0o600, `auth.json should be 0600, got ${mode.toString(8)}`);
+  const mode = statSync(codexTokenPath(ws)).mode & 0o777;
+  t.equal(mode, 0o600, `floway-token should be 0600, got ${mode.toString(8)}`);
 });
 
-test('codex', 'pre-existing config and auth are backed up on success', async t => {
+test('codex', 'pre-existing config and provider token are backed up while auth.json is untouched', async t => {
   const ws = makeWorkspace();
   placeFakeCodex(ws.binDir);
   const home = codexHomeFor(ws);
   mkdirSync(home, { recursive: true });
   const priorConfig = 'model_provider = "old"\nkeep_me = "yes"\n';
-  const priorAuth = '{"tokens":{"id_token":"old","access_token":"old","refresh_token":"old"},"OPENAI_API_KEY":null,"last_refresh":"2020-01-01T00:00:00Z"}';
+  const priorToken = 'old-provider-token';
+  const priorAuth = '{"tokens":{"access_token":"official-account-token"}}';
   writeFileSync(codexConfigPath(ws), priorConfig);
+  writeFileSync(codexTokenPath(ws), priorToken);
   writeFileSync(codexAuthPath(ws), priorAuth);
   const run = await runShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url });
   t.equal(run.code, 0, `should succeed:\n${run.combined}`);
   t.equal(codexBackupFiles(home, 'config.toml').length, 1, 'config.toml was backed up');
-  const authBackups = codexBackupFiles(home, 'auth.json');
-  t.equal(authBackups.length, 1, 'auth.json was backed up');
-  t.equal(readFileSync(join(home, authBackups[0]!), 'utf8'), priorAuth, 'the auth backup captured the original bytes');
+  const tokenBackups = codexBackupFiles(home, 'floway-token');
+  t.equal(tokenBackups.length, 1, 'floway-token was backed up');
+  t.equal(readFileSync(join(home, tokenBackups[0]!), 'utf8'), priorToken, 'the token backup captured the original bytes');
+  t.equal(readFileSync(codexAuthPath(ws), 'utf8'), priorAuth, 'official account auth remains byte-for-byte unchanged');
+  t.equal(readdirSync(home).filter(name => name.startsWith('auth.json.floway-backup.')).length, 0, 'account auth is not backed up because it is not managed');
 });
 
-test('codex', 'verification failure restores both prior config and auth', async t => {
+test('codex', 'verification failure restores prior config and provider token without touching auth.json', async t => {
   const ws = makeWorkspace();
   placeFakeCodex(ws.binDir);
   const home = codexHomeFor(ws);
   mkdirSync(home, { recursive: true });
   const priorConfig = 'model_provider = "old"\nkeep_me = "yes"\n';
-  const priorAuth = '{"tokens":{"id_token":"old","access_token":"old","refresh_token":"old"},"OPENAI_API_KEY":null,"last_refresh":"2020-01-01T00:00:00Z"}';
+  const priorToken = 'old-provider-token';
+  const priorAuth = '{"tokens":{"access_token":"official-account-token"}}';
   writeFileSync(codexConfigPath(ws), priorConfig);
+  writeFileSync(codexTokenPath(ws), priorToken);
   writeFileSync(codexAuthPath(ws), priorAuth);
   modelServer.mode = 'unauthorized';
   try {
     const run = await runShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url });
     t.ok(run.code !== 0, 'an unauthorized model directory must fail verification');
     t.equal(readFileSync(codexConfigPath(ws), 'utf8'), priorConfig, 'config.toml restored to the original');
-    t.equal(readFileSync(codexAuthPath(ws), 'utf8'), priorAuth, 'auth.json restored to the original');
+    t.equal(readCodexToken(ws), priorToken, 'provider token restored to the original');
+    t.equal(readFileSync(codexAuthPath(ws), 'utf8'), priorAuth, 'auth.json remains byte-for-byte unchanged');
     t.equal(stagedFiles(home).length, 0, 'no staged file is left behind');
   } finally {
     modelServer.mode = 'ok';
   }
 });
 
-test('codex', 'config write succeeds but an auth staging failure rolls back both', async t => {
+test('codex', 'provider-token staging failure leaves config and auth.json untouched', async t => {
   const ws = makeWorkspace();
   placeFakeCodex(ws.binDir);
   const home = codexHomeFor(ws);
   mkdirSync(home, { recursive: true });
-  const priorAuth = '{"tokens":{"id_token":"old","access_token":"old","refresh_token":"old"},"OPENAI_API_KEY":null,"last_refresh":"2020-01-01T00:00:00Z"}';
+  const priorConfig = 'model_provider = "old"\nkeep_me = "yes"\n';
+  const priorAuth = '{"tokens":{"access_token":"official-account-token"}}';
+  writeFileSync(codexConfigPath(ws), priorConfig);
   writeFileSync(codexAuthPath(ws), priorAuth);
-  // A failing chmod trips the auth-stage protection after the batch write has
-  // already succeeded, exercising the config-ok / auth-fail rollback branch.
   writeFileSync(join(ws.binDir, 'chmod'), '#!/bin/bash\nexit 73\n', { mode: 0o755 });
   const run = await runShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url });
-  t.ok(run.code !== 0, 'an auth staging failure must fail codex');
-  t.equal(readCodexAuth(ws).tokens.id_token, 'old', 'auth.json restored after the staging failure');
-  t.equal(stagedFiles(home).length, 0, 'the failed auth stage is removed');
+  t.ok(run.code !== 0, 'a provider-token staging failure must fail codex');
+  t.equal(readFileSync(codexConfigPath(ws), 'utf8'), priorConfig, 'config remains unchanged because token staging precedes the app-server write');
+  t.equal(readFileSync(codexAuthPath(ws), 'utf8'), priorAuth, 'auth.json remains unchanged');
+  t.equal(stagedFiles(home).length, 0, 'the failed token stage is removed');
 });
 
-test('codex', 'a restore failure during rollback preserves the auth backup and warns instead of silently claiming success', async t => {
+test('codex', 'a restore failure during rollback preserves the provider-token backup and warns instead of silently claiming success', async t => {
   const ws = makeWorkspace();
   placeFakeCodex(ws.binDir);
   const home = codexHomeFor(ws);
   mkdirSync(home, { recursive: true });
-  const priorAuth = '{"tokens":{"id_token":"old","access_token":"old","refresh_token":"old"},"OPENAI_API_KEY":null,"last_refresh":"2020-01-01T00:00:00Z"}';
-  writeFileSync(codexAuthPath(ws), priorAuth);
+  writeFileSync(codexTokenPath(ws), 'old-provider-token');
 
   // Verification fails (rollback is attempted) and the restore-from-backup mv
-  // itself fails. The original ChatGPT login must not be reported as restored.
+  // itself fails. The original provider token must not be reported as restored.
   modelServer.mode = 'unauthorized';
   try {
     const run = await runShellInstaller({
@@ -1942,24 +1922,24 @@ test('codex', 'a restore failure during rollback preserves the auth backup and w
     });
     t.ok(run.code !== 0, 'an unauthorized model directory must fail verification');
     t.includes(run.combined, 'could not restore', 'a rollback-failure warning is printed');
-    t.includes(run.combined, codexAuthPath(ws), 'the warning names the auth path');
-    const backups = codexBackupFiles(home, 'auth.json');
-    t.equal(backups.length, 1, 'the auth backup is preserved for manual recovery');
-    t.equal(readCodexAuth(ws).tokens.access_token, SENTINEL_KEY, 'auth.json still holds the managed token — it was not silently restored');
+    t.includes(run.combined, codexTokenPath(ws), 'the warning names the provider-token path');
+    const backups = codexBackupFiles(home, 'floway-token');
+    t.equal(backups.length, 1, 'the provider-token backup is preserved for manual recovery');
+    t.equal(readCodexToken(ws), SENTINEL_KEY, 'the managed token remains in place because restore failed');
   } finally {
     modelServer.mode = 'ok';
   }
 });
 
-test('codex', 'verification failure with no prior files removes the created auth', async t => {
+test('codex', 'verification failure with no prior files removes the created provider token', async t => {
   const ws = makeWorkspace();
   placeFakeCodex(ws.binDir);
   modelServer.mode = 'unauthorized';
   try {
     const run = await runShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url });
     t.ok(run.code !== 0, 'an unauthorized model directory must fail verification');
-    t.ok(!existsSync(codexAuthPath(ws)), 'the freshly staged auth is removed on rollback');
-    t.equal(codexBackupFiles(codexHomeFor(ws), 'auth.json').length, 0, 'no auth backup exists when none pre-existed');
+    t.ok(!existsSync(codexTokenPath(ws)), 'the freshly staged provider token is removed on rollback');
+    t.equal(codexBackupFiles(codexHomeFor(ws), 'floway-token').length, 0, 'no provider-token backup exists when none pre-existed');
   } finally {
     modelServer.mode = 'ok';
   }
@@ -1983,7 +1963,7 @@ test('codex', 'a codex --version timeout is bounded and rolls back', async t => 
   });
   t.ok(run.code !== 0, 'a timed-out version must fail codex');
   t.ok(Date.now() - started < 5_000, 'the version deadline fires before natural completion');
-  t.ok(!existsSync(codexAuthPath(ws)), 'a timed-out verification rolls back auth');
+  t.ok(!existsSync(codexTokenPath(ws)), 'a timed-out verification rolls back the provider token');
 });
 
 test('codex', 'the API key never appears in output and never reaches the app-server', async t => {
@@ -1996,8 +1976,8 @@ test('codex', 'the API key never appears in output and never reaches the app-ser
   t.equal(run.code, 0, `should succeed:\n${run.combined}`);
   t.excludes(run.combined, SENTINEL_KEY, 'the API key must never be printed');
   t.excludes(run.combined, 'received the API key', 'the app-server must never observe the key in a request');
-  // Sanity: the key really was written to auth so the absence above is meaningful.
-  t.equal(readCodexAuth(ws).tokens.access_token, SENTINEL_KEY, 'the key was actually staged into auth.json');
+  // Sanity: the key really was written to the token file so the absence above is meaningful.
+  t.equal(readCodexToken(ws), SENTINEL_KEY, 'the key was actually staged into floway-token');
 });
 
 test('codex', 'no model-inference request is issued during verification', async t => {
@@ -2074,11 +2054,10 @@ test('codex', 'multiple installations produce a warning and PATH wins', async t 
 
 // --- Codex PowerShell parse + execution -------------------------------------
 
-test('codex', 'PowerShell: existing CLI configures via the app-server and stages auth', async t => {
+test('codex', 'PowerShell: existing CLI configures via the app-server and stages the provider token', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   placeFakeCodex(ws.binDir);
-  const started = Date.now();
   const run = await runPowerShellInstaller({ workspace: ws, configuration: codexConfig({ model: 'gpt-5-codex', reasoningEffort: 'high' }), baseUrl: modelServer.url });
   t.equal(run.code, 0, `codex setup should succeed:\n${run.combined}`);
   t.ok(!existsSync(installerMarker(ws)), 'installer must not run when codex is present');
@@ -2086,10 +2065,10 @@ test('codex', 'PowerShell: existing CLI configures via the app-server and stages
   const edits = codexEditMap(ws);
   t.equal(edits.get('model'), 'gpt-5-codex', 'model written verbatim');
   t.equal(edits.get('model_reasoning_effort'), 'high', 'effort written verbatim');
-  assertStagedAuth(t, ws, modelServer.url, started);
+  assertStagedToken(t, ws);
 });
 
-test('codex', 'PowerShell: last_refresh remains RFC3339 under a culture with a dot time separator', async t => {
+test('codex', 'PowerShell: provider token is UTF-8 without a BOM under a non-default culture', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   placeFakeCodex(ws.binDir);
@@ -2097,10 +2076,10 @@ test('codex', 'PowerShell: last_refresh remains RFC3339 under a culture with a d
     workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url,
     powerShellTimeSeparator: '.',
   });
-  t.equal(run.code, 0, `culture-independent auth staging should succeed:\n${run.combined}`);
-  const timestamp = readCodexAuth(ws).last_refresh;
-  t.ok(RFC3339.test(timestamp), `last_refresh must remain RFC3339 under a dot time separator, got ${timestamp}`);
-  t.excludes(timestamp, '.', 'second precision timestamp must use literal colons rather than the culture time separator');
+  t.equal(run.code, 0, `culture-independent provider-token staging should succeed:\n${run.combined}`);
+  const token = readFileSync(codexTokenPath(ws));
+  t.equal(token.toString('utf8'), SENTINEL_KEY, 'provider token decodes to the exact API key');
+  t.ok(!(token[0] === 0xef && token[1] === 0xbb && token[2] === 0xbf), 'provider token has no UTF-8 BOM');
 });
 
 test('codex', 'PowerShell: the batch clears model and effort when unset', async t => {
@@ -2162,9 +2141,11 @@ test('codex', 'PowerShell: selected model missing is distinguished from catalog 
   const shapeWs = makeWorkspace();
   placeFakeCodex(shapeWs.binDir);
   const priorConfig = 'model_provider = "old"\nkeep_me = "yes"\n';
-  const priorAuth = '{"tokens":{"id_token":"old","access_token":"old","refresh_token":"old"},"OPENAI_API_KEY":null,"last_refresh":"2020-01-01T00:00:00Z"}';
+  const priorToken = 'old-provider-token';
+  const priorAuth = '{"tokens":{"access_token":"official-account-token"}}';
   mkdirSync(codexHomeFor(shapeWs), { recursive: true });
   writeFileSync(codexConfigPath(shapeWs), priorConfig);
+  writeFileSync(codexTokenPath(shapeWs), priorToken);
   writeFileSync(codexAuthPath(shapeWs), priorAuth);
   modelServer.mode = 'invalid-shape-codex-models';
   const shape = await runPowerShellInstaller({
@@ -2175,28 +2156,29 @@ test('codex', 'PowerShell: selected model missing is distinguished from catalog 
   t.excludes(shape.combined, 'is not in the gateway catalog', 'invalid shape is not mislabeled as a catalog miss');
   t.excludes(shape.combined, SENTINEL_KEY, 'invalid-shape failure does not expose the key');
   t.equal(readFileSync(codexConfigPath(shapeWs), 'utf8'), priorConfig, 'invalid-shape verification restores prior config');
-  t.equal(readFileSync(codexAuthPath(shapeWs), 'utf8'), priorAuth, 'invalid-shape verification restores prior auth');
+  t.equal(readCodexToken(shapeWs), priorToken, 'invalid-shape verification restores the prior provider token');
+  t.equal(readFileSync(codexAuthPath(shapeWs), 'utf8'), priorAuth, 'invalid-shape verification leaves account auth unchanged');
 });
 
-test('codex', 'PowerShell: Windows auth replacement and rollback preserve owner-only ACL ordering', async t => {
-  const authFnStart = PS1_BODY.indexOf('function Write-FlowayCodexAuth');
-  const authFnEnd = PS1_BODY.indexOf('function Read-FlowayCodexModelCatalog', authFnStart);
-  const authBody = PS1_BODY.slice(authFnStart, authFnEnd);
-  const createStage = authBody.indexOf('[System.IO.File]::Create($stage).Dispose()');
-  const protectStage = authBody.indexOf('Protect-FlowayFile $stage', createStage);
-  const writeSecret = authBody.indexOf('[System.IO.File]::WriteAllText($stage, $json', protectStage);
-  const protectTarget = authBody.indexOf('Protect-FlowayFile $script:CodexAuthPath', writeSecret);
-  const replaceTarget = authBody.indexOf('[System.IO.File]::Replace($stage, $script:CodexAuthPath, $null)', protectTarget);
-  t.ok(authFnStart >= 0, 'Write-FlowayCodexAuth marker exists');
-  t.ok(authFnEnd >= 0, 'Read-FlowayCodexModelCatalog marker exists after auth function');
-  t.ok(createStage >= 0, 'Codex auth stage creation marker exists');
-  t.ok(protectStage >= 0, 'Codex auth stage protection marker exists');
-  t.ok(writeSecret >= 0, 'Codex auth secret-write marker exists');
-  t.ok(protectTarget >= 0, 'Codex auth target protection marker exists');
-  t.ok(replaceTarget >= 0, 'Codex auth File.Replace marker exists');
-  t.ok(createStage < protectStage, 'Codex auth stage is created before protection');
-  t.ok(protectStage < writeSecret, 'Codex auth stage is protected before secret JSON is written');
-  t.ok(protectTarget < replaceTarget, 'existing Windows auth target is hardened before File.Replace');
+test('codex', 'PowerShell: Windows provider-token replacement and rollback preserve owner-only ACL ordering', async t => {
+  const tokenFnStart = PS1_BODY.indexOf('function Write-FlowayCodexToken');
+  const tokenFnEnd = PS1_BODY.indexOf('function Read-FlowayCodexModelCatalog', tokenFnStart);
+  const tokenBody = PS1_BODY.slice(tokenFnStart, tokenFnEnd);
+  const createStage = tokenBody.indexOf('[System.IO.File]::Create($stage).Dispose()');
+  const protectStage = tokenBody.indexOf('Protect-FlowayFile $stage', createStage);
+  const writeSecret = tokenBody.indexOf('[System.IO.File]::WriteAllText($stage, $FlowayApiKey', protectStage);
+  const protectTarget = tokenBody.indexOf('Protect-FlowayFile $script:CodexTokenPath', writeSecret);
+  const replaceTarget = tokenBody.indexOf('[System.IO.File]::Replace($stage, $script:CodexTokenPath, $null)', protectTarget);
+  t.ok(tokenFnStart >= 0, 'Write-FlowayCodexToken marker exists');
+  t.ok(tokenFnEnd >= 0, 'Read-FlowayCodexModelCatalog marker exists after token function');
+  t.ok(createStage >= 0, 'Codex provider-token stage creation marker exists');
+  t.ok(protectStage >= 0, 'Codex provider-token stage protection marker exists');
+  t.ok(writeSecret >= 0, 'Codex provider-token secret-write marker exists');
+  t.ok(protectTarget >= 0, 'Codex provider-token target protection marker exists');
+  t.ok(replaceTarget >= 0, 'Codex provider-token File.Replace marker exists');
+  t.ok(createStage < protectStage, 'Codex provider-token stage is created before protection');
+  t.ok(protectStage < writeSecret, 'Codex provider-token stage is protected before the secret is written');
+  t.ok(protectTarget < replaceTarget, 'existing Windows provider-token target is hardened before File.Replace');
 
   const restoreHelperStart = PS1_BODY.indexOf('function Restore-FlowayManagedFile');
   const restoreHelperEnd = PS1_BODY.indexOf('# --- Claude Code', restoreHelperStart);
@@ -2213,39 +2195,39 @@ test('codex', 'PowerShell: Windows auth replacement and rollback preserve owner-
   t.ok(restoreEnd >= 0, 'app-server function marker exists after restore function');
 });
 
-test('codex', 'PowerShell: a batchWrite error fails codex and rolls back auth', async t => {
+test('codex', 'PowerShell: a batchWrite error fails codex and rolls back the provider token', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   placeFakeCodex(ws.binDir);
   const home = codexHomeFor(ws);
   mkdirSync(home, { recursive: true });
-  const priorAuth = '{"tokens":{"id_token":"old","access_token":"old","refresh_token":"old"},"OPENAI_API_KEY":null,"last_refresh":"2020-01-01T00:00:00Z"}';
-  writeFileSync(codexAuthPath(ws), priorAuth);
+  writeFileSync(codexTokenPath(ws), 'old-provider-token');
   const run = await runPowerShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url, fakeCodexAppServerMode: 'error' });
   t.ok(run.code !== 0, 'a protocol error must fail codex');
-  t.equal(readCodexAuth(ws).tokens.id_token, 'old', 'prior auth is restored on rollback');
+  t.equal(readCodexToken(ws), 'old-provider-token', 'prior provider token is restored on rollback');
 });
 
-test('codex', 'PowerShell: an auth-backup protection failure removes the unsafe backup and leaves the original intact', async t => {
+test('codex', 'PowerShell: a provider-token backup protection failure removes the unsafe backup and leaves the original intact', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   if (process.platform === 'win32') skip('the chmod-based protection-failure injection is Unix-only');
   const ws = makeWorkspace();
   placeFakeCodex(ws.binDir);
   const home = codexHomeFor(ws);
   mkdirSync(home, { recursive: true });
-  const priorAuth = '{"tokens":{"id_token":"old","access_token":"old","refresh_token":"old"},"OPENAI_API_KEY":null,"last_refresh":"2020-01-01T00:00:00Z"}';
+  const priorToken = 'old-provider-token';
+  const priorAuth = '{"tokens":{"access_token":"official-account-token"}}';
+  writeFileSync(codexTokenPath(ws), priorToken);
   writeFileSync(codexAuthPath(ws), priorAuth);
 
-  // chmod fails, so Protect-FlowayFile throws while hardening the auth backup —
+  // chmod fails, so Protect-FlowayFile throws while hardening the token backup —
   // the first protected copy in the Codex flow, before any mutation.
   const run = await runPowerShellInstaller({
     workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url, fakeChmodFailure: true,
   });
   t.ok(run.code !== 0, 'a backup-protection failure must fail codex');
-  // The unsafe (unprotected) backup copy is removed rather than left on disk.
-  t.equal(codexBackupFiles(home, 'auth.json').length, 0, 'the unprotected auth backup is removed');
-  // The original ChatGPT login is untouched — the backup runs before any mutation.
-  t.equal(readFileSync(codexAuthPath(ws), 'utf8'), priorAuth, 'the original auth.json is unchanged');
+  t.equal(codexBackupFiles(home, 'floway-token').length, 0, 'the unprotected provider-token backup is removed');
+  t.equal(readCodexToken(ws), priorToken, 'the original provider token is unchanged');
+  t.equal(readFileSync(codexAuthPath(ws), 'utf8'), priorAuth, 'account auth remains unchanged');
   t.excludes(run.combined, SENTINEL_KEY, 'the API key must never be printed');
 });
 
@@ -2255,7 +2237,7 @@ test('codex', 'PowerShell: a malformed response fails codex', async t => {
   placeFakeCodex(ws.binDir);
   const run = await runPowerShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url, fakeCodexAppServerMode: 'malformed' });
   t.ok(run.code !== 0, 'a malformed response must fail codex');
-  t.ok(!existsSync(codexAuthPath(ws)), 'no auth is staged on a malformed response');
+  t.ok(!existsSync(codexTokenPath(ws)), 'the staged provider token is rolled back on a malformed response');
 });
 
 test('codex', 'PowerShell: a premature app-server exit fails codex', async t => {
@@ -2264,7 +2246,7 @@ test('codex', 'PowerShell: a premature app-server exit fails codex', async t => 
   placeFakeCodex(ws.binDir);
   const run = await runPowerShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url, fakeCodexAppServerMode: 'premature-eof' });
   t.ok(run.code !== 0, 'a premature EOF must fail codex');
-  t.ok(!existsSync(codexAuthPath(ws)), 'no auth is staged on premature EOF');
+  t.ok(!existsSync(codexTokenPath(ws)), 'the staged provider token is rolled back on premature EOF');
 });
 
 test('codex', 'PowerShell: a batch response past the deadline times out and rolls back', async t => {
@@ -2278,7 +2260,7 @@ test('codex', 'PowerShell: a batch response past the deadline times out and roll
   });
   t.ok(run.code !== 0, 'a batch response past the deadline must fail codex');
   t.ok(Date.now() - started < 6_000, 'the deadline fires before the fake would respond');
-  t.ok(!existsSync(codexAuthPath(ws)), 'a timed-out app-server rolls back');
+  t.ok(!existsSync(codexTokenPath(ws)), 'a timed-out app-server rolls back the provider token');
 });
 
 test('codex', 'PowerShell: honors an explicit CODEX_HOME', async t => {
@@ -2288,8 +2270,8 @@ test('codex', 'PowerShell: honors an explicit CODEX_HOME', async t => {
   const codexHome = join(ws.root, 'custom-codex-home');
   const run = await runPowerShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url, codexHome });
   t.equal(run.code, 0, `should succeed:\n${run.combined}`);
-  t.ok(existsSync(codexAuthPath(ws, codexHome)), 'auth lands under CODEX_HOME');
-  t.ok(!existsSync(codexAuthPath(ws)), 'the default ~/.codex is not used when overridden');
+  t.ok(existsSync(codexTokenPath(ws, codexHome)), 'provider token lands under CODEX_HOME');
+  t.ok(!existsSync(codexTokenPath(ws)), 'the default ~/.codex is not used when overridden');
 });
 
 test('codex', 'PowerShell: the API key never appears in output and never reaches the app-server', async t => {
@@ -2300,7 +2282,7 @@ test('codex', 'PowerShell: the API key never appears in output and never reaches
   t.equal(run.code, 0, `should succeed:\n${run.combined}`);
   t.excludes(run.combined, SENTINEL_KEY, 'the API key must never be printed');
   t.excludes(run.combined, 'received the API key', 'the app-server must never observe the key in a request');
-  t.equal(readCodexAuth(ws).tokens.access_token, SENTINEL_KEY, 'the key was actually staged into auth.json');
+  t.equal(readCodexToken(ws), SENTINEL_KEY, 'the key was actually staged into floway-token');
 });
 
 test('codex', 'PowerShell: missing CLI triggers the documented remote installer invocation', async t => {
@@ -2364,7 +2346,6 @@ test('codex', 'end-to-end against the real pinned Codex 0.144.1 app-server write
   const ws = makeWorkspace();
   symlinkSync(hostCodex, join(ws.binDir, 'codex'));
   const codexHome = join(ws.root, 'real-codex-home');
-  const started = Date.now();
   const run = await runShellInstaller({
     workspace: ws, baseUrl: modelServer.url,
     configuration: codexConfig({ model: 'gpt-5-codex', reasoningEffort: 'high' }),
@@ -2376,9 +2357,11 @@ test('codex', 'end-to-end against the real pinned Codex 0.144.1 app-server write
   t.includes(configText, 'model_provider = "floway"', 'real config.toml carries the provider selection');
   t.includes(configText, 'wire_api = "responses"', 'real config.toml carries the wire_api');
   t.includes(configText, 'supports_websockets = true', 'real config.toml carries websocket support');
+  t.includes(configText, 'x-openai-actor-authorization', 'real config.toml carries the actor-authorization marker');
+  t.includes(configText, 'standalone_web_search = true', 'real config.toml enables client-owned web search');
   t.includes(configText, `base_url = "${codexBase}"`, 'real config.toml carries the provider base_url');
   t.includes(configText, 'model = "gpt-5-codex"', 'real config.toml carries the selected model');
-  assertStagedAuth(t, ws, modelServer.url, started, codexHome);
+  assertStagedToken(t, ws, codexHome);
 });
 
 // --- output contract --------------------------------------------------------
@@ -2565,14 +2548,13 @@ test('claude', 'PowerShell rollback restore failure preserves the backup and pri
   t.ok(readFileSync(settingsPathFor(ws), 'utf8') !== original, 'the settings were not silently restored to the original');
 });
 
-test('codex', 'PowerShell rollback restore failure preserves the Codex auth backup and names the ChatGPT login', async t => {
+test('codex', 'PowerShell rollback restore failure preserves the Codex provider-token backup', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
   placeFakeCodex(ws.binDir);
   const home = codexHomeFor(ws);
   mkdirSync(home, { recursive: true });
-  const priorAuth = '{"tokens":{"id_token":"old","access_token":"old","refresh_token":"old"},"OPENAI_API_KEY":null,"last_refresh":"2020-01-01T00:00:00Z"}';
-  writeFileSync(codexAuthPath(ws), priorAuth);
+  writeFileSync(codexTokenPath(ws), 'old-provider-token');
   modelServer.mode = 'unauthorized';
   try {
     const run = await runPowerShellInstaller({
@@ -2580,10 +2562,10 @@ test('codex', 'PowerShell rollback restore failure preserves the Codex auth back
     });
     t.ok(run.code !== 0, 'an unauthorized model directory must fail verification');
     t.includes(run.stderr, '│  could not restore', 'a rollback-failure warning is printed to stderr');
-    t.includes(run.stderr, 'ChatGPT login', 'the warning names the preserved ChatGPT login');
+    t.includes(run.stderr, 'provider token', 'the warning names the preserved provider token');
     t.includes(run.stderr, 'restore it by hand', 'the warning names the manual action');
-    const backups = codexBackupFiles(home, 'auth.json');
-    t.equal(backups.length, 1, 'the auth backup is preserved for manual recovery');
+    const backups = codexBackupFiles(home, 'floway-token');
+    t.equal(backups.length, 1, 'the provider-token backup is preserved for manual recovery');
   } finally {
     modelServer.mode = 'ok';
   }
