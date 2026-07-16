@@ -116,10 +116,9 @@ export const createTemporaryResponsesItemId = (itemType: string): string => `${p
 // Gateway-owned response envelope id. A response from this gateway is not
 // a 1:1 wrapper for an upstream response — the server-tool runtime can
 // drive multiple upstream calls behind a single client-visible response —
-// so we always mint our own id and never echo the upstream's. The wrap
-// layer is the only place this is generated; everything downstream of
-// wrap (the snapshot store key, the SSE/WS frames the client sees) carries
-// this id.
+// so we always mint our own id and never echo the upstream's. Each source
+// response boundary mints one id and passes it to the client-output wrapper;
+// the snapshot key and every downstream SSE/WS envelope then share it.
 const responseEnvelopePrefix = 'resp';
 export const createResponsesResponseId = (): string => {
   const body = randomBody();

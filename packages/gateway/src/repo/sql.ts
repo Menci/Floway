@@ -897,6 +897,10 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
         .all<ResponsesItemRow>();
       return results;
     }));
+    // Payload codecs retain compressed bytes, expanded JSON, and the parsed
+    // clone together. Keep D1 reads parallel, then hydrate serially so one
+    // lookup cannot multiply that working set beyond Workers' memory limit.
+    // https://developers.cloudflare.com/workers/platform/limits/#memory
     return await mapSequentially(perChunk.flat(), toStoredResponsesItem);
   }
 
