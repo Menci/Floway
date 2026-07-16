@@ -29,6 +29,7 @@ import type {
   Repo,
   ResponsesItemsRepo,
   ResponsesSnapshotsRepo,
+  SearchConfig,
   SearchConfigRepo,
   SearchUsageRecord,
   SearchUsageRepo,
@@ -518,8 +519,8 @@ class MemorySearchConfigRepo implements SearchConfigRepo {
     return Promise.resolve(this.config === null ? null : structuredClone(this.config));
   }
 
-  save(config: unknown): Promise<void> {
-    this.config = config === undefined ? null : structuredClone(config);
+  save(config: SearchConfig): Promise<void> {
+    this.config = structuredClone(config);
     return Promise.resolve();
   }
 }

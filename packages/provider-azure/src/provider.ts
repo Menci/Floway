@@ -43,6 +43,7 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
   };
 
   const instance: ProviderInstance = {
+    callAlphaSearch: () => Promise.reject(new Error('Azure provider does not support callAlphaSearch')),
     getProvidedModels() {
       return Promise.resolve(azure.config.models.map(model => {
         const effective = resolveEffectiveFlags([AZURE_DEFAULT_FLAGS, azure.flagOverrides, model.flagOverrides]);

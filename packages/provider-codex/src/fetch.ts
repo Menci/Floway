@@ -2,6 +2,7 @@ import { ensureCodexAccessToken, invalidateCodexAccessToken, mintCodexAccessToke
 import { CodexOAuthSessionTerminatedError } from './auth/oauth.ts';
 import {
   CODEX_BACKEND_BASE,
+  CODEX_ALPHA_SEARCH_PATH,
   CODEX_ORIGINATOR,
   CODEX_RESPONSES_COMPACT_PATH,
   CODEX_RESPONSES_PATH,
@@ -15,7 +16,7 @@ import {
 import type { CodexAccountCredential } from './state.ts';
 import type { CanonicalResponsesCompactPayload, CanonicalResponsesPayload, ResponsesInputItem, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { parseResponsesStream } from '@floway-dev/protocols/responses';
-import { type ProviderModel, type ProviderStreamResult, streamingProviderCall, uuidV7, type UpstreamCallOptions } from '@floway-dev/provider';
+import { type ProviderCallResult, type ProviderModel, type ProviderStreamResult, streamingProviderCall, uuidV7, type UpstreamCallOptions } from '@floway-dev/provider';
 
 export type ProviderCompactionResult =
   | { ok: true; result: ResponsesResult; modelKey: string }
@@ -52,6 +53,10 @@ export interface CallCodexResponsesCompactOptions extends CodexBackendCallBase {
   body: Omit<CanonicalResponsesCompactPayload, 'model' | 'store'>;
 }
 
+export interface CallCodexAlphaSearchOptions extends CodexBackendCallBase {
+  body: Record<string, unknown>;
+}
+
 type CodexResponsesBody = CallCodexResponsesOptions['body'] | CallCodexResponsesCompactOptions['body'];
 
 export const callCodexResponses = async (opts: CallCodexResponsesOptions): Promise<ProviderStreamResult<ResponsesStreamEvent>> => {
@@ -64,6 +69,14 @@ export const callCodexResponsesCompact = async (opts: CallCodexResponsesCompactO
   const ready = await prepareCodexCall(opts);
   if (!ready.ok) return { ok: false, modelKey: opts.model.id, response: ready.response };
   return await performUnaryCompactCall(opts, ready.accessToken, false);
+};
+
+export const callCodexAlphaSearch = async (opts: CallCodexAlphaSearchOptions): Promise<ProviderCallResult> => {
+  const requestId = stringField(opts.body, 'id') ?? uuidV7();
+  const normalized = { ...opts, body: { ...opts.body, id: requestId } };
+  const ready = await prepareCodexCall(normalized);
+  if (!ready.ok) return { modelKey: normalized.model.id, response: ready.response };
+  return await performAlphaSearchCall(normalized, ready.accessToken, false);
 };
 
 // Pre-fetch gates + initial access-token mint.
@@ -308,7 +321,7 @@ const dispatchCodexHttpCall = async (
   accept: string,
   body: Record<string, unknown>,
   identity: CodexRequestIdentity,
-  turnMetadataJson: string,
+  turnMetadataJson: string | null,
 ): Promise<Response> => {
   const headers = new Headers();
   headers.set('authorization', `Bearer ${accessToken}`);
@@ -321,7 +334,7 @@ const dispatchCodexHttpCall = async (
   headers.set('thread-id', identity.threadId);
   headers.set('x-client-request-id', identity.clientRequestId);
   headers.set('x-codex-window-id', identity.windowId);
-  headers.set('x-codex-turn-metadata', turnMetadataJson);
+  if (turnMetadataJson !== null) headers.set('x-codex-turn-metadata', turnMetadataJson);
 
   const response = await opts.call.wrapUpstreamCall(() => opts.call.fetcher(`${CODEX_BACKEND_BASE}${path}`, {
     method: 'POST',
@@ -443,6 +456,40 @@ const performUnaryCompactCall = async (
 
   const result = await response.json() as ResponsesResult;
   return { ok: true, modelKey: opts.model.id, result };
+};
+
+const performAlphaSearchCall = async (
+  opts: CallCodexAlphaSearchOptions,
+  accessToken: string,
+  alreadyRetried: boolean,
+): Promise<ProviderCallResult> => {
+  const requestId = stringField(opts.body, 'id');
+  if (requestId === null) throw new Error('Normalized Codex alpha search request is missing id');
+  const identity: CodexRequestIdentity = {
+    installationId: opts.account.openaiDeviceId,
+    sessionId: requestId,
+    threadId: requestId,
+    clientRequestId: requestId,
+    turnId: uuidV7(),
+    windowId: `${requestId}:0`,
+  };
+  const turnMetadataJson = trimHeader(opts.headers, 'x-codex-turn-metadata');
+  const response = await dispatchCodexHttpCall(
+    opts,
+    accessToken,
+    CODEX_ALPHA_SEARCH_PATH,
+    'application/json',
+    { ...opts.body, model: opts.model.id },
+    identity,
+    turnMetadataJson,
+  );
+
+  if (response.status === 401 && !alreadyRetried) {
+    const fresh = await refreshAccessTokenForRetry(opts);
+    if (!fresh.ok) return { modelKey: opts.model.id, response: fresh.response };
+    return await performAlphaSearchCall(opts, fresh.accessToken, true);
+  }
+  return { modelKey: opts.model.id, response };
 };
 
 const parseUpstreamError = (rawText: string): { code: string | null; message: string } => {

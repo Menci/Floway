@@ -2,43 +2,39 @@ import { test } from 'vitest';
 
 import { resolveServerToolName } from '../server-tool-shim.ts';
 import {
-  findMatches,
-  formatMatches,
   isHostedWebSearchTool,
-  isUrlAllowed,
-  parseShimOperations,
   prepareToolsForShim,
   SHIM_TOOL_NAME,
   synthesizeWebSearchCallId,
   transformInputItemsForWebSearch,
   WEB_SEARCH_HOSTED_TYPES,
-  type ShimLogicalOperation,
   type WebSearchCallPrivatePayload,
 } from './web-search.ts';
+import { findMatches, formatMatches, isUrlAllowed, parseWebSearchOperations, type WebSearchOperation } from '../../../../tools/web-search/operations.ts';
 import { truncatePreservingCodePoints } from '../../../shared/text.ts';
 import type { ResponsesTool, ResponsesWebSearchAction, ResponsesWebSearchResult } from '@floway-dev/protocols/responses';
 import { assert, assertEquals, assertFalse } from '@floway-dev/test-utils';
 
-// ── Shim call argument parsing (parseShimOperations) ──
+// ── Shim call argument parsing (parseWebSearchOperations) ──
 
-const opsOf = (args: Record<string, unknown> | null): ShimLogicalOperation[] => {
-  const parsed = parseShimOperations(args);
+const opsOf = (args: Record<string, unknown> | null): WebSearchOperation[] => {
+  const parsed = parseWebSearchOperations(args);
   assert(parsed.kind === 'ops');
   return parsed.ops;
 };
 
-test('parseShimOperations returns ops:[] for empty object', () => {
-  assertEquals(parseShimOperations({}), { kind: 'ops', ops: [] });
+test('parseWebSearchOperations returns ops:[] for empty object', () => {
+  assertEquals(parseWebSearchOperations({}), { kind: 'ops', ops: [] });
 });
 
-test('parseShimOperations parses one search_query entry', () => {
+test('parseWebSearchOperations parses one search_query entry', () => {
   assertEquals(
     opsOf({ search_query: [{ q: 'hello' }] }),
     [{ kind: 'search', arrayIndex: 0, query: 'hello' }],
   );
 });
 
-test('parseShimOperations parses multiple search_query entries with stable arrayIndex', () => {
+test('parseWebSearchOperations parses multiple search_query entries with stable arrayIndex', () => {
   assertEquals(
     opsOf({ search_query: [{ q: 'a' }, { q: 'b' }, { q: 'c' }] }),
     [
@@ -49,21 +45,21 @@ test('parseShimOperations parses multiple search_query entries with stable array
   );
 });
 
-test('parseShimOperations parses open entry with URL ref_id', () => {
+test('parseWebSearchOperations parses open entry with URL ref_id', () => {
   assertEquals(
     opsOf({ open: [{ ref_id: 'https://example.com' }] }),
     [{ kind: 'open', arrayIndex: 0, url: 'https://example.com' }],
   );
 });
 
-test('parseShimOperations parses find entry with URL ref_id and pattern', () => {
+test('parseWebSearchOperations parses find entry with URL ref_id and pattern', () => {
   assertEquals(
     opsOf({ find: [{ ref_id: 'https://example.com', pattern: 'needle' }] }),
     [{ kind: 'find', arrayIndex: 0, url: 'https://example.com', pattern: 'needle' }],
   );
 });
 
-test('parseShimOperations: non-URL open ref_id produces an error sentinel', () => {
+test('parseWebSearchOperations: non-URL open ref_id produces an error sentinel', () => {
   const ops = opsOf({ open: [{ ref_id: 'opaque-prior-id' }] });
   assertEquals(ops.length, 1);
   const op = ops[0];
@@ -75,7 +71,7 @@ test('parseShimOperations: non-URL open ref_id produces an error sentinel', () =
   assertEquals(err!.includes('opaque-prior-id'), true);
 });
 
-test('parseShimOperations: non-URL find ref_id produces an error sentinel', () => {
+test('parseWebSearchOperations: non-URL find ref_id produces an error sentinel', () => {
   const ops = opsOf({ find: [{ ref_id: 'cursor-123', pattern: 'p' }] });
   assertEquals(ops.length, 1);
   const op = ops[0];
@@ -87,7 +83,7 @@ test('parseShimOperations: non-URL find ref_id produces an error sentinel', () =
   assertEquals(err!.includes('cursor-123'), true);
 });
 
-test('parseShimOperations: multi-action batched call returns all ops in order search→open→find', () => {
+test('parseWebSearchOperations: multi-action batched call returns all ops in order search→open→find', () => {
   const ops = opsOf({
     search_query: [{ q: 'a' }],
     open: [{ ref_id: 'https://x' }],
@@ -96,7 +92,7 @@ test('parseShimOperations: multi-action batched call returns all ops in order se
   assertEquals(ops.map(o => o.kind), ['search', 'open', 'find']);
 });
 
-test('parseShimOperations: unsupported sub-properties surface one unsupported op per entry', () => {
+test('parseWebSearchOperations: unsupported sub-properties surface one unsupported op per entry', () => {
   const ops = opsOf({
     click: [{ ref_id: 'https://x', id: 1 }],
     screenshot: [{ ref_id: 'https://x', pageno: 1 }, { ref_id: 'https://y', pageno: 2 }],
@@ -113,7 +109,7 @@ test('parseShimOperations: unsupported sub-properties surface one unsupported op
   assertEquals(ops[5], { kind: 'unsupported', subProperty: 'response_length', arrayIndex: 0 });
 });
 
-test('parseShimOperations: missing q on search_query entry surfaces a missing-argument error sentinel', () => {
+test('parseWebSearchOperations: missing q on search_query entry surfaces a missing-argument error sentinel', () => {
   const ops = opsOf({ search_query: [{}] });
   assertEquals(ops.length, 1);
   const op = ops[0];
@@ -123,7 +119,7 @@ test('parseShimOperations: missing q on search_query entry surfaces a missing-ar
   assert((op as { error: string }).error.includes('"q"'));
 });
 
-test('parseShimOperations: missing ref_id on open entry surfaces a missing-argument error sentinel', () => {
+test('parseWebSearchOperations: missing ref_id on open entry surfaces a missing-argument error sentinel', () => {
   const ops = opsOf({ open: [{}] });
   assertEquals(ops.length, 1);
   const op = ops[0];
@@ -132,7 +128,7 @@ test('parseShimOperations: missing ref_id on open entry surfaces a missing-argum
   assert((op as { error: string }).error.includes('"ref_id"'));
 });
 
-test('parseShimOperations: missing pattern on find entry surfaces a missing-argument error sentinel', () => {
+test('parseWebSearchOperations: missing pattern on find entry surfaces a missing-argument error sentinel', () => {
   const ops = opsOf({ find: [{ ref_id: 'https://x' }] });
   assertEquals(ops.length, 1);
   const op = ops[0];
@@ -141,13 +137,13 @@ test('parseShimOperations: missing pattern on find entry surfaces a missing-argu
   assert((op as { error: string }).error.includes('"pattern"'));
 });
 
-test('parseShimOperations: array values for non-array shape are skipped', () => {
+test('parseWebSearchOperations: array values for non-array shape are skipped', () => {
   assertEquals(opsOf({ search_query: 'oops' }), [
     { kind: 'wrong-type', subProperty: 'search_query', actualType: 'string' },
   ]);
 });
 
-test('parseShimOperations: supported key with non-array value surfaces a wrong-type op (search_query)', () => {
+test('parseWebSearchOperations: supported key with non-array value surfaces a wrong-type op (search_query)', () => {
   // A model that populates `search_query: {"q":"x"}` (or any
   // non-array) used to be silently dropped because the array guard
   // skipped it. Surface as a model-visible `wrong-type` op so the
@@ -158,14 +154,14 @@ test('parseShimOperations: supported key with non-array value surfaces a wrong-t
   ]);
 });
 
-test('parseShimOperations: wrong-typed supported key does not block other supported keys from executing', () => {
+test('parseWebSearchOperations: wrong-typed supported key does not block other supported keys from executing', () => {
   const ops = opsOf({ search_query: { q: 'x' }, open: [{ ref_id: 'https://y' }] });
   assertEquals(ops.length, 2);
   assertEquals(ops[0], { kind: 'wrong-type', subProperty: 'search_query', actualType: 'object' });
   assertEquals(ops[1], { kind: 'open', arrayIndex: 0, url: 'https://y' });
 });
 
-test('parseShimOperations: wrong-typed open / find surface as wrong-type ops', () => {
+test('parseWebSearchOperations: wrong-typed open / find surface as wrong-type ops', () => {
   assertEquals(opsOf({ open: 'https://x' }), [
     { kind: 'wrong-type', subProperty: 'open', actualType: 'string' },
   ]);

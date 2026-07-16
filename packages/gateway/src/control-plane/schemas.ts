@@ -520,6 +520,19 @@ export const searchConfigSchema = z.object({
   tavily: z.object({ apiKey: z.string() }),
   microsoftGrounding: z.object({ apiKey: z.string() }),
   jina: z.object({ apiKey: z.string() }),
+  passthroughOpenAiSearch: z.object({
+    enabled: z.boolean(),
+    upstreamId: z.string(),
+    model: z.string(),
+  }),
+}).superRefine((config, ctx) => {
+  if (!config.passthroughOpenAiSearch.enabled) return;
+  if (config.passthroughOpenAiSearch.upstreamId.trim() === '') {
+    ctx.addIssue({ code: 'custom', path: ['passthroughOpenAiSearch', 'upstreamId'], message: 'Select an upstream' });
+  }
+  if (config.passthroughOpenAiSearch.model.trim() === '') {
+    ctx.addIssue({ code: 'custom', path: ['passthroughOpenAiSearch', 'model'], message: 'Select a model' });
+  }
 });
 
 // --- model aliases ---
@@ -644,7 +657,7 @@ export const updateAliasBody = aliasBodyCore.superRefine(aliasBodyRulesRefinemen
 // --- data transfer ---
 
 export const importBody = z.object({
-  version: z.literal(9, { error: 'version must be 9 — older export formats are not supported; re-export from the current deployment' }),
+  version: z.literal(10, { error: 'version must be 10 — older export formats are not supported; re-export from the current deployment' }),
   mode: z.enum(['merge', 'replace'], { error: "mode must be 'merge' or 'replace'" }),
   data: z.unknown().optional(),
 });

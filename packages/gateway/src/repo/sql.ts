@@ -22,6 +22,7 @@ import type {
   Repo,
   ResponsesItemsRepo,
   ResponsesSnapshotsRepo,
+  SearchConfig,
   SearchConfigRepo,
   SearchUsageRecord,
   SearchUsageRepo,
@@ -1034,36 +1035,39 @@ class SqlSearchConfigRepo implements SearchConfigRepo {
 
   async get(): Promise<unknown | null> {
     const row = await this.db
-      .prepare('SELECT provider, tavily_api_key, microsoft_grounding_api_key, jina_api_key FROM search_config WHERE id = 1')
-      .first<{ provider: string; tavily_api_key: string; microsoft_grounding_api_key: string; jina_api_key: string }>();
+      .prepare('SELECT provider, tavily_api_key, microsoft_grounding_api_key, jina_api_key, passthrough_openai_search, alpha_search_upstream_id, alpha_search_model FROM search_config WHERE id = 1')
+      .first<{ provider: string; tavily_api_key: string; microsoft_grounding_api_key: string; jina_api_key: string; passthrough_openai_search: number; alpha_search_upstream_id: string; alpha_search_model: string }>();
     if (!row) throw new Error('search_config singleton row missing');
     return {
       provider: row.provider,
       tavily: { apiKey: row.tavily_api_key },
       microsoftGrounding: { apiKey: row.microsoft_grounding_api_key },
       jina: { apiKey: row.jina_api_key },
+      passthroughOpenAiSearch: {
+        enabled: row.passthrough_openai_search === 1,
+        upstreamId: row.alpha_search_upstream_id,
+        model: row.alpha_search_model,
+      },
     };
   }
 
-  async save(config: unknown): Promise<void> {
-    const { provider, tavily, microsoftGrounding, jina } = config as {
-      provider: string;
-      tavily: { apiKey: string };
-      microsoftGrounding: { apiKey: string };
-      jina: { apiKey: string };
-    };
+  async save(config: SearchConfig): Promise<void> {
+    const { provider, tavily, microsoftGrounding, jina, passthroughOpenAiSearch } = config;
     await this.db
       .prepare(
-        `INSERT INTO search_config (id, provider, tavily_api_key, microsoft_grounding_api_key, jina_api_key, updated_at)
-         VALUES (1, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        `INSERT INTO search_config (id, provider, tavily_api_key, microsoft_grounding_api_key, jina_api_key, passthrough_openai_search, alpha_search_upstream_id, alpha_search_model, updated_at)
+         VALUES (1, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
          ON CONFLICT (id) DO UPDATE SET
            provider = excluded.provider,
            tavily_api_key = excluded.tavily_api_key,
            microsoft_grounding_api_key = excluded.microsoft_grounding_api_key,
            jina_api_key = excluded.jina_api_key,
+           passthrough_openai_search = excluded.passthrough_openai_search,
+           alpha_search_upstream_id = excluded.alpha_search_upstream_id,
+           alpha_search_model = excluded.alpha_search_model,
            updated_at = excluded.updated_at`,
       )
-      .bind(provider, tavily.apiKey, microsoftGrounding.apiKey, jina.apiKey)
+      .bind(provider, tavily.apiKey, microsoftGrounding.apiKey, jina.apiKey, passthroughOpenAiSearch.enabled ? 1 : 0, passthroughOpenAiSearch.upstreamId, passthroughOpenAiSearch.model)
       .run();
   }
 }

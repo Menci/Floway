@@ -51,14 +51,15 @@
     //     proxy-to-wrangler-dev topology).
     //
     // All three describe the same concept: every path the gateway owns; the
-    // rest is the SPA. Bare LLM paths (without `/v1` prefix) are listed
-    // because the gateway accepts both forms.
+    // rest is the SPA. Bare data-plane paths are listed when the gateway also
+    // accepts a root form.
     "run_worker_first": [
       "/api/*",
       "/auth",
       "/auth/*",
       "/v1/*",
       "/v1beta/*",
+      "/alpha/search",
       "/completions",
       "/chat/*",
       "/responses",

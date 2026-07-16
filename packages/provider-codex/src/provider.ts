@@ -2,7 +2,7 @@ import { ensureCodexAccessToken, mintCodexAccessToken } from './access-token-cac
 import { CodexOAuthSessionTerminatedError } from './auth/oauth.ts';
 import { assertCodexUpstreamRecord, type CodexUpstreamConfig } from './config.ts';
 import { CODEX_DEFAULT_FLAGS } from './defaults.ts';
-import { callCodexResponses, callCodexResponsesCompact, type CodexCallEffects } from './fetch.ts';
+import { callCodexAlphaSearch, callCodexResponses, callCodexResponsesCompact, type CodexCallEffects } from './fetch.ts';
 import { CODEX_RESPONSES_BOUNDARY } from './interceptors/responses/index.ts';
 import type { ResponsesBoundaryCtx } from './interceptors/responses/types.ts';
 import { codexRawToProviderModel, fetchCodexCatalog } from './models.ts';
@@ -94,6 +94,20 @@ export const createCodexProvider = (record: UpstreamRecord): Provider => {
       // models even though the ChatGPT UI hides them — and the dashboard
       // toggles them per-upstream when needed.
       return raw.map(r => codexRawToProviderModel(r, enabledFlags));
+    },
+
+    callAlphaSearch: async (model, body, signal, opts) => {
+      const { account } = await readActiveAccount();
+      return await callCodexAlphaSearch({
+        upstreamId: record.id,
+        account,
+        model,
+        headers: new Headers(opts.headers),
+        signal,
+        effects,
+        call: opts,
+        body,
+      });
     },
 
     callResponses: async (model, body, action, signal, opts) => {

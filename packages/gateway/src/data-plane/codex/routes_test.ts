@@ -38,6 +38,47 @@ interface CodexModelsResponse {
 }
 
 describe('Codex model-provider routes', () => {
+  it('owns the namespaced alpha-search path', async () => {
+    const { apiKey } = await setupAppTest();
+    const response = await buildCodexApp().request('/azure-api.codex/alpha/search', {
+      method: 'POST',
+      body: JSON.stringify({ commands: {} }),
+      headers: { authorization: `Bearer ${apiKey.key}`, 'content-type': 'application/json' },
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ output: expect.stringContaining('No web search commands were provided') });
+  });
+
+  it.each(['/alpha/search', '/v1/alpha/search'])('does not mount the general alpha-search alias %s', async path => {
+    const { apiKey } = await setupAppTest();
+    const response = await buildCodexApp().request(path, {
+      method: 'POST',
+      body: JSON.stringify({ commands: {} }),
+      headers: { authorization: `Bearer ${apiKey.key}`, 'content-type': 'application/json' },
+    });
+
+    expect(response.status).toBe(404);
+  });
+
+  it.each([
+    { method: 'GET', path: '/azure-api.codex/wham/agent-identities/jwks' },
+    { method: 'POST', path: '/azure-api.codex/codex/analytics-events/events' },
+    { method: 'POST', path: '/azure-api.codex/api/codex/apps' },
+    { method: 'GET', path: '/azure-api.codex/plugins/featured' },
+    { method: 'GET', path: '/azure-api.codex/plugins/list' },
+    { method: 'GET', path: '/azure-api.codex/ps/plugins/list' },
+    { method: 'GET', path: '/azure-api.codex/ps/plugins/installed' },
+  ])('does not emulate the account-backed route $path', async ({ method, path }) => {
+    const { apiKey } = await setupAppTest();
+    const response = await buildCodexApp().request(path, {
+      method,
+      headers: { authorization: `Bearer ${apiKey.key}` },
+    });
+
+    expect(response.status).toBe(404);
+  });
+
   it('mounts the Responses WebSocket transport at the provider-relative path', async () => {
     const { apiKey } = await setupAppTest();
     const response = await buildCodexApp().request('/azure-api.codex/responses', {

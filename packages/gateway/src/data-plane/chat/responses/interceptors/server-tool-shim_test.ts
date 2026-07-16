@@ -14,9 +14,11 @@ import {
 } from './server-tool-shim.ts';
 import { SHIM_TOOL_NAME, webSearchServerTool } from './server-tools/web-search.ts';
 import type { ResponsesInterceptor, ResponsesInvocation } from './types.ts';
-import { initRepo } from '../../../../repo/index.ts';
+import { getRepo, initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { mockChatGatewayCtx } from '../../../../test-helpers/gateway-ctx.ts';
+import { resolveAlphaSearchDispatcher } from '../../../tools/web-search/alpha-search/upstream.ts';
+import type { AlphaSearchDispatcher } from '../../../tools/web-search/alpha-search/upstream.ts';
 import { resolveConfiguredWebSearchProvider } from '../../../tools/web-search/provider.ts';
 import type {
   ConfiguredWebSearchProvider,
@@ -181,6 +183,7 @@ const mkReasoningDone = (outputIndex: number, reasoningId: string): ProtocolFram
 // test stub. Tests that need a specific configured state set
 // `mockResolveConfigured.mockReturnValue(...)` per call.
 vi.mock('../../../tools/web-search/provider.ts');
+vi.mock('../../../tools/web-search/alpha-search/upstream.ts');
 
 const mkResponseCompleted = (
   usage?: ResponsesResult['usage'],
@@ -272,12 +275,14 @@ interface DepsOverrides {
 }
 
 const mockResolveConfigured = vi.mocked(resolveConfiguredWebSearchProvider);
+const mockResolveAlpha = vi.mocked(resolveAlphaSearchDispatcher);
 
 // Seed a per-test InMemoryRepo and a default tavily search config so
 // `loadSearchConfig()` returns a non-default value. The actual provider
 // construction is short-circuited by the module mock above; tests
 // override `mockResolveConfigured` to point at a stub backend.
 beforeEach(() => {
+  mockResolveAlpha.mockReset();
   const repo = new InMemoryRepo();
   initRepo(repo);
   void repo.searchConfig.save({
@@ -285,6 +290,7 @@ beforeEach(() => {
     tavily: { apiKey: 'test-key' },
     microsoftGrounding: { apiKey: '' },
     jina: { apiKey: '' },
+    passthroughOpenAiSearch: { enabled: false, upstreamId: '', model: '' },
   } satisfies SearchConfig);
 });
 
@@ -1638,6 +1644,8 @@ test('truncated page contents append the truncation sentinel', async () => {
   assert(lastOutput.type === 'function_call_output');
   const text = (lastOutput as { output: string }).output;
   assert(text.includes('[Content truncated; full page is 99999 bytes.'));
+  assert(text.includes('Use the `find` sub-property with a pattern'));
+  assertFalse(text.includes("web_search's"));
 });
 
 // ── Multi-turn SSE merge invariants ──────────────────────────────────
@@ -3900,6 +3908,36 @@ test('responses target with flag on: function_call_output is plain-text formatte
 
   const text = lastFunctionCallOutput(inv.payload.input as ResponsesInputItem[]);
   assert(text.startsWith('Search results for "q1":'));
+});
+
+test('responses target with OpenAI passthrough uses the selected alpha search dispatcher', async () => {
+  makeStubDeps();
+  await getRepo().searchConfig.save({
+    provider: 'tavily',
+    tavily: { apiKey: 'test-key' },
+    microsoftGrounding: { apiKey: '' },
+    jina: { apiKey: '' },
+    passthroughOpenAiSearch: { enabled: true, upstreamId: 'up_codex', model: 'gpt-search' },
+  } satisfies SearchConfig);
+  const call = vi.fn<AlphaSearchDispatcher>(async () => new Response(JSON.stringify({
+    encrypted_output: null,
+    output: 'alpha output',
+    results: [{ type: 'text_result', url: 'https://example.com', title: 'Example', snippet: 'alpha snippet' }],
+  }), { status: 200, headers: { 'content-type': 'application/json' } }));
+  mockResolveAlpha.mockResolvedValue(call);
+  const inv = makeInvocation({
+    targetApi: 'responses',
+    enabledFlags: new Set<FlagId>(['responses-web-search-shim']),
+  });
+  const script = scriptedRun([
+    searchCallTurn(0, 'call_1', 'alpha query'),
+    messageTurn('done', 0),
+  ]);
+
+  await runShimAndDrain(withResponsesWebSearchShim, inv, makeGatewayCtx(), script.run);
+
+  assertEquals(lastFunctionCallOutput(inv.payload.input as ResponsesInputItem[]), 'alpha output');
+  assertEquals(call.mock.calls[0]?.[0].commands, { search_query: [{ q: 'alpha query' }] });
 });
 
 test('chat-completions target: function_call_output is plain-text formatted search results', async () => {

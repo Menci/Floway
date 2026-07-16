@@ -44,9 +44,9 @@ const props = defineProps<{
   availableModelItems: { value: string; label: string }[];
   // Live cache snapshot for the saved upstream. Null in create mode and for
   // Azure (which has no fetch step) — `ModelsCacheStatus` is rendered only
-  // when this is provided.
+  // when this is provided. The panel is informational only; the "Fetch"
+  // button in the per-provider config panel is the sole re-fetch entry.
   modelsCache: UpstreamRecord['modelsCache'] | null;
-  refreshing: boolean;
   saving: boolean;
   coloAware: boolean;
   currentColo: string | null;
@@ -54,7 +54,6 @@ const props = defineProps<{
 
 defineEmits<{
   'fetch-models': [];
-  'refresh-cache': [];
   patched: [patch: { config?: unknown; state?: unknown }];
   'save-and-open-edit': [];
   error: [message: string];
@@ -220,11 +219,7 @@ onBeforeUnmount(() => floorObserver?.disconnect());
 
       <section v-if="modelsCache" class="shrink-0">
         <p class="mb-2 text-[10px] font-semibold uppercase tracking-wider text-gray-500">Models Cache</p>
-        <ModelsCacheStatus
-          :models-cache="modelsCache"
-          :refreshing="refreshing"
-          @refresh="$emit('refresh-cache')"
-        />
+        <ModelsCacheStatus :models-cache="modelsCache" />
       </section>
 
       <section class="shrink-0">

@@ -1,7 +1,7 @@
 import { assertCustomUpstreamRecord, type CustomUpstreamConfig } from './config.ts';
 import { CUSTOM_DEFAULT_FLAGS } from './defaults.ts';
 import { fetchCustomModels, type CustomModelsResponse, type CustomRawModel } from './fetch-models.ts';
-import { customFetchChatCompletions, customFetchCompletions, customFetchEmbeddings, customFetchImagesEdits, customFetchImagesGenerations, customFetchMessages, customFetchMessagesCountTokens, customFetchResponses, customFetchResponsesCompact } from './fetch.ts';
+import { customFetchAlphaSearch, customFetchChatCompletions, customFetchCompletions, customFetchEmbeddings, customFetchImagesEdits, customFetchImagesGenerations, customFetchMessages, customFetchMessagesCountTokens, customFetchResponses, customFetchResponsesCompact } from './fetch.ts';
 import { inferEndpointsFromModelId } from './infer-endpoints.ts';
 import { parseChatCompletionsStream } from '@floway-dev/protocols/chat-completions';
 import { type ModelEndpoints, kindForEndpoints } from '@floway-dev/protocols/common';
@@ -148,6 +148,7 @@ export const createCustomProvider = (record: UpstreamRecord): Provider => {
       const filtered: CustomModelsResponse = { data: response.data.filter(raw => !overriddenIds.has(raw.id)) };
       return [...effectiveManualModels, ...finalizeCustomModels(filtered, configuredEndpoints, upstreamFlags)];
     },
+    callAlphaSearch: (model, body, signal, opts) => call(customFetchAlphaSearch, model, body, signal, opts.headers, opts),
     callCompletions: (model, body, signal, opts) => call(customFetchCompletions, model, body, signal, opts.headers, opts),
     callChatCompletions: (model, body, signal, opts) => callStreaming(customFetchChatCompletions, model, body, signal, opts.headers, parseChatCompletionsStream, opts),
     callResponses: async (model, body, action, signal, opts) => {

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { CODEX_ORIGINATOR, CODEX_USER_AGENT } from './constants.ts';
-import { callCodexResponses, callCodexResponsesCompact, type CodexCallEffects } from './fetch.ts';
+import { callCodexAlphaSearch, callCodexResponses, callCodexResponsesCompact, type CodexCallEffects } from './fetch.ts';
 import type { CodexAccessTokenEntry, CodexAccountCredential, CodexQuotaSnapshotMapEntry, CodexUpstreamState } from './state.ts';
 import type { ResponsesResult } from '@floway-dev/protocols/responses';
 import { initProviderRepo, type UpstreamRecord } from '@floway-dev/provider';
@@ -860,4 +860,63 @@ describe('callCodexResponsesCompact', () => {
     expect(effects.persistRefreshTokenRotation).not.toHaveBeenCalled();
   });
 
+});
+
+describe('callCodexAlphaSearch', () => {
+  test('posts the search request to the ChatGPT Codex endpoint with selected model and account auth', async () => {
+    seedFreshAccessToken();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      encrypted_output: null,
+      output: 'Search result',
+      results: [],
+    }), { status: 200, headers: { 'content-type': 'application/json' } }));
+
+    const result = await callCodexAlphaSearch({
+      upstreamId,
+      account: activeAccount,
+      model,
+      body: { id: 'search-session', commands: { search_query: [{ q: 'Floway' }] } },
+      headers: new Headers({ 'x-codex-turn-metadata': '{"turn_id":"turn-search"}' }),
+      effects: makeEffects(),
+      call: noopUpstreamCallOptions(),
+    });
+
+    expect(result.response.status).toBe(200);
+    expect(result.modelKey).toBe('gpt-5.4');
+    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('https://chatgpt.com/backend-api/codex/alpha/search');
+    const headers = new Headers(init.headers);
+    expect(headers.get('authorization')).toBe('Bearer at_kv');
+    expect(headers.get('chatgpt-account-id')).toBe('acc');
+    expect(headers.get('x-codex-turn-metadata')).toBe('{"turn_id":"turn-search"}');
+    expect(JSON.parse(init.body as string)).toMatchObject({
+      id: 'search-session',
+      model: 'gpt-5.4',
+      commands: { search_query: [{ q: 'Floway' }] },
+    });
+  });
+
+  test('normalizes a missing request id and omits absent turn metadata', async () => {
+    seedFreshAccessToken();
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ output: 'Search result' }), { status: 200 }));
+
+    await callCodexAlphaSearch({
+      upstreamId,
+      account: activeAccount,
+      model,
+      body: { commands: { search_query: [{ q: 'Floway' }] } },
+      headers: new Headers(),
+      effects: makeEffects(),
+      call: noopUpstreamCallOptions(),
+    });
+
+    const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    const headers = new Headers(init.headers);
+    const body = JSON.parse(init.body as string) as Record<string, unknown>;
+    expect(headers.has('x-codex-turn-metadata')).toBe(false);
+    expect(typeof body.id).toBe('string');
+    expect(headers.get('session-id')).toBe(body.id);
+    expect(headers.get('thread-id')).toBe(body.id);
+    expect(headers.get('x-client-request-id')).toBe(body.id);
+  });
 });
