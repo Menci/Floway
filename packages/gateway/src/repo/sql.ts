@@ -1,6 +1,7 @@
 import { normalizeDisabledPublicModelIds } from './disabled-public-models.ts';
 import { normalizeFlagOverrides } from './flag-overrides.ts';
 import { normalizeProxyFallbackList } from './proxy-fallback-list.ts';
+import { scopedResponsesKey } from './responses-clone.ts';
 import { deleteAllResponsesItemPayloadFiles, parseStoredResponsesPayload, RESPONSES_STATE_TTL_MS, responsesItemPayloadExpiryBucketPrefix, serializeStoredResponsesPayload, storedResponsesPayloadFileKey } from './responses-payload.ts';
 import type {
   ApiKey,
@@ -813,6 +814,7 @@ class SqlModelsCacheRepo implements ModelsCacheRepo {
 }
 
 const RESPONSES_ITEM_COLUMNS = 'id, api_key_id, item_type, payload_json, content_hash, created_at';
+const RESPONSES_IN_QUERY_CHUNK_SIZE = 90;
 
 class SqlResponsesItemsRepo implements ResponsesItemsRepo {
   constructor(private db: SqlDatabase) {}
@@ -837,9 +839,10 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
     const unique = [...new Set(values)];
     if (unique.length === 0) return [];
 
-    const CHUNK = 90;
     const chunks: string[][] = [];
-    for (let i = 0; i < unique.length; i += CHUNK) chunks.push(unique.slice(i, i + CHUNK));
+    for (let i = 0; i < unique.length; i += RESPONSES_IN_QUERY_CHUNK_SIZE) {
+      chunks.push(unique.slice(i, i + RESPONSES_IN_QUERY_CHUNK_SIZE));
+    }
 
     const perChunk = await Promise.all(chunks.map(async chunk => {
       const placeholders = chunk.map(() => '?').join(', ');
@@ -854,16 +857,61 @@ class SqlResponsesItemsRepo implements ResponsesItemsRepo {
   }
 
   async insertMany(items: readonly StoredResponsesItem[]): Promise<void> {
-    const statements = await mapSequentially(items, async item => {
+    const existing = await this.lookupExistingKeys(items);
+    const pending = items.filter(item => !existing.has(scopedResponsesKey(item.apiKeyId, item.id)));
+    const inserts = await mapSequentially(pending, async item => {
       const payload = await serializeStoredResponsesPayload(item.id, item.apiKeyId, item.createdAt, item.payload);
-      return this.db
-        .prepare(
+      return {
+        item,
+        payload,
+        statement: this.db.prepare(
           `INSERT INTO responses_items (${RESPONSES_ITEM_COLUMNS}) VALUES (?, ?, ?, ?, ?, ?)
            ON CONFLICT (id, api_key_id) DO NOTHING`,
         )
-        .bind(item.id, item.apiKeyId, item.itemType, payload, item.contentHash, item.createdAt);
+          .bind(item.id, item.apiKeyId, item.itemType, payload, item.contentHash, item.createdAt),
+      };
     });
-    await runStatements(this.db, statements);
+    const results = await runStatements(this.db, inserts.map(insert => insert.statement));
+    for (const [index, insert] of inserts.entries()) {
+      const changes = results[index]?.meta.changes;
+      if (changes === 1) continue;
+      if (changes !== 0) throw new Error(`Unexpected Responses item insert count for ${insert.item.id}: ${String(changes)}`);
+
+      const persisted = await this.db
+        .prepare('SELECT payload_json FROM responses_items WHERE id = ? AND api_key_id = ?')
+        .bind(insert.item.id, insert.item.apiKeyId)
+        .first<{ payload_json: string }>();
+      if (persisted === null) throw new Error(`Responses item conflict disappeared before spill cleanup: ${insert.item.id}`);
+      const generatedFileKey = storedResponsesPayloadFileKey(insert.item.id, insert.payload);
+      const persistedFileKey = storedResponsesPayloadFileKey(insert.item.id, persisted.payload_json);
+      if (generatedFileKey !== null && generatedFileKey !== persistedFileKey) {
+        await getFileProvider().deletePrefix(generatedFileKey);
+      }
+    }
+  }
+
+  private async lookupExistingKeys(items: readonly StoredResponsesItem[]): Promise<Set<string>> {
+    const idsByApiKey = new Map<string, Set<string>>();
+    for (const item of items) {
+      const ids = idsByApiKey.get(item.apiKeyId) ?? new Set<string>();
+      ids.add(item.id);
+      idsByApiKey.set(item.apiKeyId, ids);
+    }
+
+    const queries: Promise<SqlResult<{ id: string; api_key_id: string }>>[] = [];
+    for (const [apiKeyId, idSet] of idsByApiKey) {
+      const ids = [...idSet];
+      for (let index = 0; index < ids.length; index += RESPONSES_IN_QUERY_CHUNK_SIZE) {
+        const chunk = ids.slice(index, index + RESPONSES_IN_QUERY_CHUNK_SIZE);
+        const placeholders = chunk.map(() => '?').join(', ');
+        queries.push(this.db
+          .prepare(`SELECT id, api_key_id FROM responses_items WHERE api_key_id = ? AND id IN (${placeholders})`)
+          .bind(apiKeyId, ...chunk)
+          .all<{ id: string; api_key_id: string }>());
+      }
+    }
+    const results = await Promise.all(queries);
+    return new Set(results.flatMap(result => result.results.map(row => scopedResponsesKey(row.api_key_id, row.id))));
   }
 
   async refreshMany(items: readonly StoredResponsesItem[], createdAt: number): Promise<void> {

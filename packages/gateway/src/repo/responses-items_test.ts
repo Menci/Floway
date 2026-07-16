@@ -154,6 +154,31 @@ test('SQL refresh cleans a replacement spill when the row disappears before upda
   expect(await repo.responsesItems.lookupMany('key-a', [item.id])).toEqual([]);
 });
 
+test('SQL duplicate insert does not write an unreferenced replacement spill', async () => {
+  const files = new MemoryFileProvider();
+  initFileProvider(files);
+  const repo = new SqlRepo(await createSqliteTestDb());
+  const bytes = new Uint8Array(128 * 1024);
+  crypto.getRandomValues(bytes.subarray(0, 64 * 1024));
+  crypto.getRandomValues(bytes.subarray(64 * 1024));
+  let content = '';
+  for (const byte of bytes) content += byte.toString(16).padStart(2, '0');
+  const original: StoredResponsesItem = {
+    ...storedItem('msg_duplicate', 'key-a', 'duplicate', 1_000),
+    payload: { item: { type: 'message', id: 'msg_duplicate', role: 'assistant', content } },
+  };
+  await repo.responsesItems.insertMany([original]);
+  const originalFiles = await files.listKeys('responses-items/');
+  expect(originalFiles).toHaveLength(1);
+
+  const put = vi.spyOn(files, 'put');
+  await repo.responsesItems.insertMany([{ ...original, createdAt: 1_000 + 2 * 60 * 60 * 1000 }]);
+
+  expect(put).not.toHaveBeenCalled();
+  expect(await files.listKeys('responses-items/')).toEqual(originalFiles);
+  expect(await repo.responsesItems.lookupMany('key-a', [original.id])).toEqual([original]);
+});
+
 test('migration 0058 preserves usable payloads and snapshots but drops legacy affinity columns', async () => {
   const SQL = await initSqlJs();
   const db = new SQL.Database();
