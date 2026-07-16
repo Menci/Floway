@@ -352,12 +352,23 @@ type CandidateBlob =
   | { readonly present: true; readonly compatible: false; readonly value: string }
   | { readonly present: true; readonly compatible: true; readonly value: string };
 
-export const blobForCandidate = (decoded: DecodedAffinityBlob, candidate: ModelCandidate): CandidateBlob => {
+const blobForCompatibility = (decoded: DecodedAffinityBlob, compatible: boolean): CandidateBlob => {
   if (decoded.kind === 'foreign') return { present: true, compatible: false, value: decoded.value };
-  const compatible = candidateMatchesAffinity(candidate, decoded.envelope.affinity);
   if (!compatible || decoded.value === undefined) return { present: false, compatible };
   return { present: true, compatible: true, value: decoded.value };
 };
+
+export const blobForCandidate = (decoded: DecodedAffinityBlob, candidate: ModelCandidate): CandidateBlob =>
+  blobForCompatibility(
+    decoded,
+    decoded.kind === 'owned' && candidateMatchesAffinity(candidate, decoded.envelope.affinity),
+  );
+
+export const blobForForcedCandidate = (decoded: DecodedAffinityBlob, candidate: ModelCandidate): CandidateBlob =>
+  blobForCompatibility(
+    decoded,
+    decoded.kind === 'owned' && candidateMatchesForcedTarget(candidate, decoded.envelope.affinity),
+  );
 
 export const preferredAffinityEvidence = (decoded: Iterable<DecodedAffinityBlob>): AffinityEvidence[] =>
   [...decoded].flatMap(blob => blob.kind === 'owned' ? [{ target: blob.envelope.affinity, mode: 'prefer' }] : []);

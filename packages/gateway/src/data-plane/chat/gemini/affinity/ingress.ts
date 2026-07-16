@@ -1,4 +1,4 @@
-import type { AffinityCodec, DecodedAffinityBlob, blobForCandidate, preferredAffinityEvidence, type PreparedAffinityPayload  } from '../../shared/affinity/index.ts';
+import { AffinityCodec, blobForCandidate, preferredAffinityEvidence, type DecodedAffinityBlob, type PreparedAffinityPayload } from '../../shared/affinity/index.ts';
 import type { GeminiPart, GeminiPayload } from '@floway-dev/protocols/gemini';
 
 interface GeminiBlobLocation {

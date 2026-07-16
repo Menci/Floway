@@ -1,4 +1,4 @@
-import type { AffinityCodec, AffinityEvidence, AffinityTarget, DecodedAffinityBlob, blobForCandidate, type PreparedAffinityPayload  } from '../../shared/affinity/index.ts';
+import { AffinityCodec, blobForCandidate, blobForForcedCandidate, type AffinityEvidence, type AffinityTarget, type DecodedAffinityBlob, type PreparedAffinityPayload } from '../../shared/affinity/index.ts';
 import { createTemporaryResponsesItemId } from '../items/format.ts';
 import type { CanonicalResponsesPayload, ResponsesInputItem } from '@floway-dev/protocols/responses';
 
@@ -102,7 +102,12 @@ export const prepareResponsesAffinity = async (
         if (itemLocations === undefined) return [item];
         let removeItem = false;
         const replacement = { ...item } as ResponsesInputItem & Record<string, unknown>;
-        const decisions = itemLocations.map(location => ({ location, selected: blobForCandidate(location.decoded, candidate) }));
+        const decisions = itemLocations.map(location => ({
+          location,
+          selected: itemRequiresAffinity(item)
+            ? blobForForcedCandidate(location.decoded, candidate)
+            : blobForCandidate(location.decoded, candidate),
+        }));
         for (const { location, selected } of decisions) {
           if (location.contentIndex === undefined) {
             if (selected.present) {
