@@ -23,6 +23,7 @@ const sameLogicalElement = (left: GeminiPart, right: GeminiPart): boolean => {
     if (left.functionCall.id !== undefined && right.functionCall.id !== undefined) {
       return left.functionCall.id === right.functionCall.id;
     }
+    if (left.functionCall.id === undefined && right.functionCall.id === undefined) return false;
     return left.functionCall.name === right.functionCall.name;
   }
   return false;
@@ -69,9 +70,28 @@ const candidateByIndex = (event: GeminiStreamEvent | undefined, index: number): 
 // https://github.com/langchain-ai/langchain/blob/7bf8fe22163e5dadce365169e2df6b91233de9c4/libs/core/langchain_core/utils/_merge.py#L6-L70
 // Signature-only Parts are also rejected from Go Chat history:
 // https://github.com/googleapis/go-genai/blob/dc282483e1a68eaeb64faa9fa9877dd4a7ad1887/chats.go#L49-L75
+// This deliberately favors direct GenAI Chat compatibility by moving an
+// immediate signature-only trailer onto content. Google ADK text aggregation
+// can drop that metadata, and a natural function signature arriving more than
+// one continuation after the first chunk still cannot repair first-chunk-wins
+// clients without buffering the whole logical element.
 
 const removeEmptySignatureParts = (candidate: GeminiCandidate): void => {
   candidate.content.parts = candidate.content.parts.filter(part => hasPartData(part) || part.thoughtSignature !== undefined);
+};
+
+const normalizeFirstElementSignature = (candidate: GeminiCandidate): void => {
+  const indexes = firstElementIndexes(candidate.content.parts);
+  const signatures = indexes.flatMap(index => {
+    const signature = candidate.content.parts[index].thoughtSignature;
+    return signature === undefined ? [] : [signature];
+  });
+  if (signatures.length === 0) return;
+  const targetIndex = indexes.findLast(index => hasPartData(candidate.content.parts[index]));
+  if (targetIndex === undefined) return;
+  for (const index of indexes) delete candidate.content.parts[index].thoughtSignature;
+  candidate.content.parts[targetIndex].thoughtSignature = signatures.at(-1);
+  removeEmptySignatureParts(candidate);
 };
 
 const transferCandidateMetadata = (current: GeminiCandidate, next: GeminiCandidate): void => {
@@ -158,6 +178,7 @@ const wrapEvent = async (
     relocateLeadingSignature(candidate, nextCandidate);
     relocateContinuationSignature(candidate, nextCandidate);
     foldEmptyTerminalCandidate(candidate, nextCandidate);
+    normalizeFirstElementSignature(candidate);
     const firstIndexes = firstElementIndexes(candidate.content.parts);
     const firstHasNatural = firstIndexes.some(index => candidate.content.parts[index].thoughtSignature !== undefined);
     const lastFirstContentIndex = firstIndexes.findLast(index => hasPartData(candidate.content.parts[index]));
@@ -170,6 +191,7 @@ const wrapEvent = async (
       && candidate.content.parts.slice(lastFirstContentIndex + 1).some(hasPartData);
     const firstElementClosed = startsAnotherElementInCurrentEvent
       || candidate.finishReason !== undefined
+      || (next !== undefined && nextCandidate === undefined)
       || (nextCandidate !== undefined && nextContent !== undefined && !continuesInNextEvent)
       || (next === undefined && allowSynthetic);
 
