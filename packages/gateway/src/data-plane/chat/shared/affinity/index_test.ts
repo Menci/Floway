@@ -53,6 +53,15 @@ describe('AffinityCodec', () => {
     expect(framedBytes.subarray(0, originalBytes.length)).toEqual(originalBytes);
   });
 
+  test.each(['\ud800', '\udfff', `a\ud800${String.fromCodePoint(0x1f600)}\udfffz`])(
+    'round-trips raw UTF-16 code units exactly',
+    async original => {
+      const codec = new AffinityCodec(SECRET);
+      const wrapped = await codec.wrap(original, affinity, DOMAIN);
+      expect(await codec.unwrap(wrapped, DOMAIN)).toMatchObject({ kind: 'owned', value: original });
+    },
+  );
+
   test('preserves a foreign value byte-for-byte on authentication failure', async () => {
     const wrapped = await new AffinityCodec(SECRET).wrap('opaque', affinity, DOMAIN);
 

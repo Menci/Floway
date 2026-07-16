@@ -5,7 +5,6 @@ import type { MessagesStreamEvent } from '@floway-dev/protocols/messages';
 interface OpenBlock {
   readonly type: string;
   readonly first: boolean;
-  readonly syntheticSignature?: Promise<string>;
   signature?: string;
 }
 
@@ -50,13 +49,7 @@ export const wrapMessagesAffinityEgress = async function* (
       if (openBlocks.has(event.index)) throw new Error(`Messages content block ${event.index} started twice`);
       const first = !firstBlockSeen;
       firstBlockSeen = true;
-      openBlocks.set(event.index, {
-        type: event.content_block.type,
-        first,
-        ...(first && event.content_block.type === 'thinking'
-          ? { syntheticSignature: options.codec.wrap(undefined, options.affinity, 'messages.thinking.signature') }
-          : {}),
-      });
+      openBlocks.set(event.index, { type: event.content_block.type, first });
 
       if (first && event.content_block.type !== 'thinking' && event.content_block.type !== 'redacted_thinking') {
         for (const synthetic of await syntheticEvents()) yield eventFrame(synthetic);
@@ -94,9 +87,7 @@ export const wrapMessagesAffinityEgress = async function* (
         let signature: string;
         if (block.signature !== undefined) {
           signature = await options.codec.wrap(block.signature, options.affinity, 'messages.thinking.signature');
-        } else if (block.syntheticSignature !== undefined) {
-          signature = await block.syntheticSignature;
-        } else throw new Error('First Messages thinking block has no synthetic signature promise');
+        } else signature = await options.codec.wrap(undefined, options.affinity, 'messages.thinking.signature');
         yield eventFrame({
           type: 'content_block_delta',
           index: event.index + indexOffset,

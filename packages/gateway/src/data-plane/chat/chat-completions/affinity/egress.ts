@@ -60,25 +60,29 @@ export const wrapChatCompletionsAffinityEgress = async function* (
     lastEvent = frame.event;
 
     const visibleChoices: StreamingChoice[] = [];
-    const finishingChoices: Array<{ choice: StreamingChoice; state: ChoiceState }> = [];
+    const finishingChoices: Array<{
+      index: number;
+      finishReason: NonNullable<StreamingChoice['finish_reason']>;
+      state: ChoiceState;
+    }> = [];
 
     for (const choice of frame.event.choices) {
-      const state = choices.get(choice.index) ?? { finished: false };
-      if (state.finished) throw new Error(`Chat Completions choice ${choice.index} emitted data after its finish_reason`);
-      choices.set(choice.index, state);
+      const { index, delta: sourceDelta, finish_reason: finishReason, ...choiceExtras } = choice;
+      const state = choices.get(index) ?? { finished: false };
+      if (state.finished) throw new Error(`Chat Completions choice ${index} emitted data after its finish_reason`);
+      choices.set(index, state);
 
-      const { reasoning_opaque: opaque, ...delta } = choice.delta;
+      const { reasoning_opaque: opaque, ...delta } = sourceDelta;
       if (typeof opaque === 'string') state.opaque = opaque;
+      const hasVisibleProjection = Object.keys(delta).length > 0 || Object.keys(choiceExtras).length > 0;
 
-      if (choice.finish_reason === null) {
-        if (Object.keys(delta).length > 0) visibleChoices.push({ ...choice, delta });
+      if (finishReason === null) {
+        if (hasVisibleProjection) visibleChoices.push({ index, ...choiceExtras, delta, finish_reason: null } as StreamingChoice);
         continue;
       }
 
-      if (Object.keys(delta).length > 0) {
-        visibleChoices.push({ ...choice, delta, finish_reason: null });
-      }
-      finishingChoices.push({ choice, state });
+      if (hasVisibleProjection) visibleChoices.push({ index, ...choiceExtras, delta, finish_reason: null } as StreamingChoice);
+      finishingChoices.push({ index, finishReason, state });
     }
 
     if (visibleChoices.length > 0 || frame.event.choices.length === 0) {
@@ -87,16 +91,16 @@ export const wrapChatCompletionsAffinityEgress = async function* (
 
     if (finishingChoices.length === 0) continue;
 
-    const wrappedChoices = await Promise.all(finishingChoices.map(async ({ choice, state }) => ({
-      ...choice,
+    const wrappedChoices = await Promise.all(finishingChoices.map(async ({ index, state }) => ({
+      index,
       delta: { reasoning_opaque: await options.codec.wrap(state.opaque, options.affinity, 'chat-completions.reasoning_opaque') },
       finish_reason: null,
     })));
     yield eventFrame(eventWithChoices(frame.event, wrappedChoices, false));
 
-    const finishedChoices = finishingChoices.map(({ choice, state }) => {
+    const finishedChoices = finishingChoices.map(({ index, finishReason, state }) => {
       state.finished = true;
-      return { ...choice, delta: {}, finish_reason: choice.finish_reason };
+      return { index, delta: {}, finish_reason: finishReason };
     });
     yield eventFrame(eventWithChoices(frame.event, finishedChoices, true));
   }
