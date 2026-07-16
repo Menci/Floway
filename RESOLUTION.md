@@ -1,128 +1,275 @@
 # Model Resolution
 
-This document describes how Floway turns an inbound `model` string into an
-ordered set of dispatchable candidates. Catalog assembly, name resolution,
-client-carried affinity, endpoint selection, fallback, and pricing are distinct
-stages.
+This document describes how the gateway turns an inbound `model` string into a
+provider candidate the dispatch layer can call. Four concerns are kept apart:
 
-## Catalog assembly
+- **Catalog assembly** — every enabled upstream's catalog is collapsed into
+  one gateway-wide list of public model ids keyed by public id, with a
+  reverse index of which upstream instances expose each id. Powers the
+  listing endpoints; per-request resolution walks per-upstream catalogs
+  directly without consulting this artefact.
+- **Resolution** — an inbound `model` string is matched against each visible
+  upstream's catalog, kind-filtered inside the per-upstream walk, to produce
+  a flat list of `(provider, model)` candidates. This step never inspects
+  per-endpoint capabilities.
+- **Endpoint selection** — when a candidate is actually dispatched, the
+  attempt layer reads `model.endpoints` and picks a target protocol from
+  its inbound-protocol preference table. A candidate that cannot serve the
+  current operation is filtered out at serve time, before dispatch sees
+  it.
+- **Pricing** — each provider model carries a reusable rate schedule. Request
+  telemetry projects runtime facts onto one exact entry and snapshots its rates;
+  only aggregation converts token counts and rates into realized cost.
 
-Catalog assembly reads enabled upstreams in configured `sort_order`, each
-upstream's SWR-cached `getProvidedModels()` result, and its `modelPrefix`
-policy. It builds public listing metadata; request resolution still walks
-per-upstream catalogs so dispatch retains the exact provider model object.
+## Catalog Assembly
 
-For each upstream model:
+Inputs: the operator's enabled upstreams (filtered to the caller's effective
+scope when one is set), each upstream's SWR-cached `getProvidedModels`
+output, and each upstream's `modelPrefix` policy.
 
-- no prefix policy emits the bare ID;
-- a prefix policy emits every configured `listed` surface (`unprefixed`,
-  `prefixed`, or both);
-- prefixed rows keep the provider's opaque `providerData` but expose a public
-  ID and display name prefixed with the upstream name;
-- public IDs disabled for that upstream are removed before either surface is
-  emitted.
+For every upstream model entry, one or more catalog entries are emitted:
 
-When multiple upstreams expose the same public ID, the first contributes the
-display metadata and later rows union their endpoint capability maps. `kind` is
-recomputed from that union. This merged row is only a listing artefact. A
-request candidate carries a single-upstream `InternalModel` whose
-`providerModels` map contains exactly the selected upstream's original
-`ProviderModel`; provider dispatch reads it through `providerModelOf()`.
+- If the upstream has no `modelPrefix`, one entry is emitted at the model's
+  bare id.
+- If the upstream has a `modelPrefix` with `listed` surfaces, one entry is
+  emitted per surface (`unprefixed`, `prefixed`, or both). The prefixed
+  surface clones the upstream model with the rewritten id and synthesizes
+  `display_name: "<upstreamName>: <originalName>"` so the dashboard tells
+  the operator which upstream a prefixed id came from. `providerData` is
+  preserved by the clone — the per-provider wire-call still reads the
+  real upstream model id from there.
 
-Catalog assembly returns:
+Operator-disabled public ids vanish for that upstream before the entries
+are emitted, so a disabled `gpt-4o` hides both `gpt-4o` and
+`<prefix>gpt-4o` from the upstream's contribution. The disable does not
+cascade to other upstreams.
 
-- `models: InternalModel[]`, projected onto `/v1/models`, `/models`,
-  `/v1beta/models`, and the control-plane catalog;
-- `upstreamsByPublicId: Map<string, Provider[]>`, used by the dashboard to
-  render every upstream contributing a public ID;
-- the upstream names whose catalog fetch failed.
+When two upstreams emit an entry under the same public id, the first wins
+for metadata and the later one **endpoint-unions** into it. The merged
+`endpoints` is the OR of the participants' endpoint capability flags, and
+`kind` is recomputed from the union. The same `endpoints` field carries
+different values at different scopes: a per-candidate row's `endpoints`
+declares one upstream's wire reach (the row `enumerateRealModelCandidates`
+produces carries a single-entry `providerModels` map), while the merged
+catalog row's `endpoints` is the gateway-wide reach. Per-request dispatch
+always reads the per-upstream `ProviderModel` off the chosen candidate via
+`providerModelOf(candidate)`.
 
-Public model lists are sorted by `compareModelIds`. An `AbortError` always
-propagates. Other upstream catalog failures are collected so listing and
-request errors can identify unavailable upstreams without discarding successful
-catalog contributions.
+Catalog assembly returns two artefacts together:
 
-## Addressable model surfaces
+- `models: InternalModel[]` — public-id-keyed metadata (id, kind, limits,
+  pricing, plus the merged `endpoints`). `toPublicModel` projects each row
+  onto the wire DTO at `/v1/models` and `/models`.
+- `upstreamsByPublicId: Map<string, Provider[]>` — every
+  upstream instance that emitted an entry under the given public id, in
+  enumeration order. The control-plane catalog endpoint reads this to
+  render per-model upstream chips without re-walking the catalog.
 
-`modelPrefix.addressable` is independent from `listed`:
+Output ordering: the public-facing list is sorted by `compareModelIds`
+before it crosses any gateway boundary — `/v1/models`, `/models`,
+`/v1beta/models`, and the control-plane catalog endpoint.
 
-- `unprefixed` looks up the inbound ID verbatim;
-- `prefixed` first requires the configured prefix, then looks up the suffix;
-- both forms evaluate both lookup branches against one cached catalog fetch.
+Failed-upstream surfacing during listing: a catalog fetch that rejects
+with `AbortError` propagates so the per-request abort signal cannot be
+masked by a slow upstream. Any other rejection is captured into the
+assembly's `failedUpstreams: string[]` — but listing and per-request
+resolution take separate code paths through the SWR cache, so this list
+is local to the listing artefact and does not feed back into resolution.
 
-An upstream with no prefix policy accepts the unprefixed form. When both forms
-are addressable and both catalog lookups succeed, they are independent
-candidates; the unprefixed branch is ordered first.
+## Addressable Surfaces
 
-## Candidate enumeration
+`modelPrefix.addressable` controls which inbound id forms an upstream
+**accepts** at resolution time, independent of which forms it `listed` at
+catalog assembly time:
 
-Every source serve calls:
+- `[unprefixed]` — the inbound id is looked up verbatim against the
+  upstream's catalog.
+- `[prefixed]` — the inbound id is accepted only if it starts with the
+  configured prefix, and the lookup uses `inbound.slice(prefix.length)`.
+- `[unprefixed, prefixed]` — both branches are evaluated against the same
+  catalog fetch; the unprefixed branch is checked first, so when both
+  branches' lookups succeed the unprefixed match wins ordering ties.
 
-```text
-enumerateModelCandidates({ upstreamIds, model, kind, ... })
-  ├─ alias exists → walk all ordered alias targets
-  │                  resolve each target against real catalogs
-  │                  attach that target's rules
-  │                  flatten and deduplicate exact candidate identities
-  └─ no alias     → resolve the inbound ID against real catalogs
-                     retry once without a trailing -YYYYMMDD only when
-                     the first pass found the ID nowhere
+A single inbound id can therefore produce **two candidates from the same
+upstream** when both branches are addressable, the inbound id literally
+starts with the configured prefix, and the catalog lists both the bare
+and prefixed forms. Each branch is its own catalog lookup; no
+deduplication is performed.
+
+An upstream with no `modelPrefix` is implicitly fully unprefixed.
+
+## Resolution
+
+The per-request resolver runs once per serve invocation and produces the
+candidate list every dispatch layer reads.
+
+Inputs:
+
+- `model` — the inbound id verbatim as the client sent it.
+- `upstreamIds` — the caller's effective upstream cap (`null` =
+  unrestricted; empty list = no providers visible). The cap is the
+  intersection of per-user and per-api-key allow-lists; unknown ids raise
+  a configuration error rather than silently narrowing.
+- `kind` — `chat` / `embedding` / `image`, determined by the inbound
+  endpoint, not by the inbound payload. `/v1/completions` reuses the
+  `chat` kind and narrows further via its endpoint-key predicate
+  (`endpoints.completions !== undefined`).
+
+The resolver is a two-branch chain — an inline alias check at the top,
+otherwise the real-catalog walk:
+
+```
+enumerateModelCandidates({upstreamIds, model, kind, ...})            ← entry
+  ├─ alias lookup: getRepo().modelAliases.getByName(model)
+  │     └─ if matched: walk EVERY target in selection-mode order,
+  │        delegating each to the real-catalog walk; tag each returned
+  │        candidate with that target's rule overlay; flatten across
+  │        targets and dedup by (model.id, upstream, rules)
+  └─ otherwise: real-catalog walk on the inbound id
+       └─ enumerateRealModelCandidates per provider (dated-suffix retry
+          if the first pass matched nothing)
 ```
 
-Inputs are:
+### `enumerateModelCandidates` — entry
 
-- the exact inbound `model` string;
-- the effective upstream scope, which intersects user and API-key allow-lists
-  (`null` is unrestricted; an empty list exposes no upstreams);
-- the endpoint's broad model kind (`chat`, `embedding`, or `image`);
-- the request scheduler and runtime location used by catalog and proxy work.
+1. List the visible providers through `listModelProviders(upstreamIds)` in
+   configured `sort_order`.
+2. Look the inbound id up in the alias repo. When it names an alias:
+   walk EVERY target in `selection`-mode order (`first-available` walks
+   declaration order; `random` shuffles); for each target, delegate to
+   the real-catalog walk (dated-suffix retry included) and tag each
+   returned candidate with that target's `rules` overlay. Flatten
+   across targets (target order preserved) and dedup by
+   `(model.id, provider.upstream, rules)` — same physical binding with
+   distinct rules stays as two candidates so both variants can be
+   attempted; identical triples collapse. The caller's `iterateCandidates`
+   loop then cascades across the flat list, so a target's upstreams all
+   failing over falls through into the next target's candidates instead
+   of hard-failing at the first target. When no target has kind-matching
+   candidates, the resolver returns empty candidates + `sawModel: false`,
+   which surfaces as the regular model-missing 404 with the alias name
+   in the wording.
+3. When the inbound id is not an alias, run the real-catalog walk
+   directly. If the walk returns at least one candidate, OR its
+   `sawAnyId` is true (the id exists in some catalog under any kind), OR
+   the id does not match `/-\d{8}$/`, return that result verbatim.
+   Otherwise strip the trailing eight digits and run the real-catalog
+   walk once more; `failedUpstreams` from the two attempts is
+   deduplicated.
 
-Unknown upstream IDs in a scope are configuration errors. Disabled but known
-upstreams are simply absent.
+A wrong-kind match (`sawAnyId=true, candidates=[]`) does **not** trigger
+the dated-suffix retry — the suffix strip cannot turn a wrong-kind model
+into a right-kind one; the empty candidate list surfaces as a 400 "model
+exists but the inbound endpoint cannot serve it" instead of a 404.
 
-The real-catalog walk fans out across visible upstreams. Each matching branch
-sets `sawAnyId`; a candidate is added only when the catalog row's kind equals
-the request kind. This distinction matters to dated-suffix fallback: an ID
-that exists under the wrong kind yields an unsupported-endpoint error, not a
-second lookup under a modified name. Non-abort catalog failures are collected
-and do not prevent other upstreams from contributing candidates.
+### `enumerateRealModelCandidates` — per-id walk
 
-The only implicit model-name normalization is removal of one trailing
-`-\d{8}` release date when the original ID was absent from every catalog.
-Vendor variants and arbitrary suffixes are not guessed.
+For each visible upstream, evaluate the prefix and unprefixed branches
+the upstream's `addressable` policy allows. Both branches are independent
+lookups against the same SWR-cached catalog fetch:
 
-## Alias resolution
+- Unprefixed branch (when allowed): look up `model.find(m => m.id ===
+  modelId)`.
+- Prefixed branch (when allowed AND the inbound id starts with the
+  upstream's prefix): look up `model.find(m => m.id ===
+  modelId.slice(prefix.length))`.
 
-An alias is resolved inside the same enumeration call as a direct model.
-`first-available` walks targets in declaration order; `random` shuffles the
-available targets. Each target delegates to the complete real-model resolution
-flow, including prefix handling and dated-suffix retry.
+For each branch that found a match:
 
-Candidates from every target are flattened in target order and deduplicated by:
+- If the catalog match's `kind === inboundKind`, push a
+  `ModelCandidate { provider, model, fetcher }` into the result.
+- If the match exists but `kind !== inboundKind`, set `sawAnyId = true`
+  but do not push.
 
-```text
-canonical model ID
-+ upstream ID
-+ optional alias-rule value (`undefined` differs from `{}`)
-```
+`sawAnyId` aggregates across upstreams: true whenever any branch in any
+upstream found the lookup id in its catalog, regardless of kind. Operator-
+disabled ids are not counted toward `sawAnyId` (they vanish from the
+catalog before lookup).
 
-Rule presence matters: a direct candidate with `rules === undefined` is
-different from an alias candidate carrying `{}`. Different rule variants for
-the same physical binding remain independently dispatchable.
+Per-upstream catalog fetches fan out concurrently so a slow upstream
+cannot stall the rest. A catalog fetch that rejects with `AbortError`
+propagates so the per-request abort signal cannot be masked. Other
+rejections are captured into the per-id `failedUpstreams` list, which
+`enumerateModelCandidates` deduplicates across the two attempts and the
+caller's failure renderer inlines into 404 / 400 wording as a
+parenthetical.
 
-Alias rules ride on `ModelCandidate.rules` and are applied only at the terminal
-wire call, after translation, by
-`applyRulesToUpstream{ChatCompletions,Messages,Responses}`. A target protocol
-with no slot for a rule omits it. Gemini is source-only, so its alias rules are
-applied after translation on the selected chat target. Embedding, image, and
-text-completion aliases are schema-restricted to empty rules.
+### Why kind threads down
 
-Alias names never recursively enter alias resolution; alias targets are real
-model IDs. Listings expose aliases, and an alias shadows a real row of the same
-public ID. Response model fields identify the canonical model that actually
-served the request.
+A post-filter shape ("walk first, drop wrong-kind after") would entangle
+the dated-suffix retry decision with the kind filter — the retry has to
+distinguish "the inbound id was nowhere in any catalog" (worth retrying
+on a stripped form) from "the id existed but only under the wrong kind"
+(stripping cannot fix that). Threading `kind` into the per-upstream walk
+keeps the candidate list clean of wrong-kind entries at every layer and
+keeps the `sawAnyId` signal exact: it answers "did this id appear in
+some catalog at all" regardless of kind.
 
-## Candidate shape and identity
+The dated-suffix fallback exists for clients that pin to a vendor's dated
+release id (typical for Anthropic-style `claude-sonnet-4-5-20250929`)
+against a catalog that only lists the base id. It deliberately operates
+on the **full resolution flow**, not on a single upstream's catalog, so
+the stripped id is tried against every visible upstream in its own
+enumeration order.
+
+The resolver never mutates the inbound id on the request body. The
+returned candidates carry an `InternalModel` whose `providerModels` map
+holds the emitting upstream's `ProviderModel` (with `providerData` and
+`enabledFlags`); the dispatch layer reads that entry via
+`providerModelOf(candidate)`.
+
+## Alias Resolution
+
+Alias resolution is a top-of-chain step inside `enumerateModelCandidates`
+— an alias id matches inside the same call the non-alias path uses, so
+the whole pipeline stays a single two-branch function. The resolver
+looks the inbound id up in the alias repo; if it names an alias, it
+walks EVERY target in `selection`-mode order and delegates each target
+to the real-catalog walk (with dated-suffix retry). Every candidate
+returned by a target walk is tagged with that target's `rules` overlay
+and pushed onto a flat list; the resolver then dedups by
+`(model.id, provider.upstream, rules)` — identical triples collapse,
+but the same physical binding with distinct rules stays as two
+candidates so the operator can pin one binding under two rule variants.
+
+The rule overlay rides on the `ModelCandidate.rules` field. Dispatch
+reads it in each attempt's terminal wire call, right before destructuring
+`payload.model` out of the body, via
+`applyRulesToUpstream{ChatCompletions,Responses,Messages}` in
+`data-plane/model-aliases/apply-rules.ts`. Passthrough seams thread
+alias-origin candidates through the same iteration but never observe
+non-empty rules (passthrough alias kinds — `embedding`, `image` — carry
+`{}` by schema; the apply-rules call is a no-op).
+
+Every chat attempt owns a `structuredClone` of the source payload and a
+fresh `Headers` object, so rewrites and provider-boundary mutations cannot
+leak into a fallback candidate or the caller-owned request. Chat Completions,
+Messages, and Responses stamp `candidate.model.id` only onto that private
+clone, whether the inbound id was an alias name, a prefix-addressable variant
+like `cop/gpt-5.4`, a dated suffix like `claude-opus-4-7-20250929`, or a bare
+public id. The wire body drops `payload.model` at the last step; the provider
+layer stamps the emitting upstream's own id from `providerModelOf(candidate)`.
+Gemini clones for the same attempt isolation but needs no body-model stamp:
+its inbound model rides on the URL path and dispatch keys off
+`candidate.model.id` directly.
+
+By construction alias names never re-enter the alias layer: the target
+id is a real model id, so the shadow pattern (an alias whose first
+target matches its own name) resolves to the real model on the first
+pass.
+
+The alias-resolved target id, not the alias name, is what dispatch
+addresses upstream. When no target has kind-matching candidates, the
+resolver returns empty candidates + `sawModel: false`, and the caller
+renders the regular model-missing 404 with the alias name (still on
+`payload.model`) in the wording. The upstream response's `model` field
+reports the model that actually served the request, so a client that
+wants to attribute a response to a particular target can compare that
+against the id it sent. Alias listing behavior on `/v1/models`,
+`/v1beta/models`, and the Codex catalog is covered in the alias
+implementation notes under `data-plane/model-aliases/`.
+
+## Candidate Shape
 
 ```ts
 interface ModelCandidate {
@@ -133,160 +280,151 @@ interface ModelCandidate {
 }
 ```
 
-- `provider` owns the upstream ID, name, kind, prefix policy, and
-  provider implementation;
-- `model` is the canonical public row projected to that upstream and contains
-  its exact `ProviderModel`;
-- `fetcher` is the request-scoped proxy-aware fetcher for that upstream;
-- `rules` distinguishes direct resolution from an alias target and carries the
-  post-translation overlay.
+- `provider` is the resolved upstream provider instance — every wire call reads
+  its upstream id, upstream name, provider kind, and implementation from this
+  binding.
+- `model` is the merged public row for this id, projected to a single
+  contributing upstream: `providerModels` carries exactly one entry keyed
+  on `provider.upstream`. That entry is the `ProviderModel` the upstream
+  emitted verbatim — its `providerData` carries the per-provider wire id,
+  its `enabledFlags` carries the operator's per-model flag set, and its
+  `pricing` carries the exact schedule for this candidate. Dispatch, telemetry,
+  and interceptor gates read the entry through `providerModelOf(candidate)`.
+- `fetcher` is the per-request proxy-chain-bound `Fetcher` for the
+  candidate's upstream, minted once at resolution time and carried with
+  the candidate that dispatches.
+- `rules` is present only on candidates minted by the alias walk — it
+  carries the picked target's rule overlay so each attempt's terminal
+  wire call can apply it against the target IR via
+  `applyRulesToUpstream{ChatCompletions,Responses,Messages}`. Absent
+  (undefined) on direct-resolution candidates; present (possibly `{}`)
+  on alias-origin candidates.
 
-The target API is not part of a candidate. It is chosen from that candidate's
-endpoint metadata at attempt time.
+A target protocol (e.g. `messages` / `responses` / `chat-completions`) is
+deliberately **not** part of the candidate — see Endpoint Selection.
 
-Client-carried affinity serializes the exact dispatch identity:
+## Endpoint Selection
+
+Resolution returns kind-matched candidates without consulting
+`model.endpoints`. The actual target endpoint is chosen at attempt
+dispatch, by a per-inbound-operation preference table that lives next to
+the attempt code:
+
+- `/v1/messages` generate: `messages` > `responses` > `chat-completions`.
+- `/v1/messages` countTokens: `messages` only.
+- `/v1/responses` generate: `responses` > `messages` > `chat-completions`.
+- `/v1/responses/compact`: `responses` > `messages` > `chat-completions`.
+  Non-responses targets are reached through the responses-compact-shim
+  interceptor, which pivots the action and synthesizes the compact
+  envelope from a generate-shaped turn.
+- `/v1/chat/completions`: `chat-completions` > `messages` > `responses`.
+- `/v1beta/models/{m}:generateContent` and `:streamGenerateContent`:
+  `chat-completions` > `messages` > `responses` (Gemini is always served
+  via translation).
+- `/v1beta/models/{m}:countTokens`: `messages` only.
+
+Each preference table is wrapped by a `chatTargetPicker(preference)`
+factory exposing two functions:
+
+- `canServe(endpoints): boolean` — true when at least one preferred
+  target's endpoint key is present on the candidate. Serve calls this to
+  filter out candidates whose upstream wire cannot serve the inbound
+  operation, so dispatch sees only viable candidates.
+- `pick(endpoints): ChatTargetApi` — returns the first preferred target
+  whose endpoint key is set. Attempt calls this once it has a candidate
+  to choose which upstream wire the dispatch goes out on. `pick` is
+  contractually total — a call that returns null would mean serve let a
+  non-viable candidate through, which is a contract breach.
+
+The per-protocol picker definitions live in the attempt files
+(`xTarget = chatTargetPicker([...])`), and both serve and attempt import
+the same picker object — serve uses `.canServe`, attempt uses `.pick`.
+The `targetApi` decision is therefore exclusively an attempt-time
+concern; it is never carried on the candidate or threaded as an explicit
+argument.
+
+Passthrough endpoints (`/v1/embeddings`, `/v1/images/*`, `/v1/completions`)
+follow the same rule with a single-key predicate
+(`endpoints[endpointKey] !== undefined`) instead of a multi-target
+preference list. The kind-filter at resolution time guarantees a
+chat-kind candidate is never offered to a passthrough endpoint and vice
+versa; the endpoint-key check at attempt time then narrows within the
+kind.
+
+## Pricing and Cost
+
+Model metadata uses `pricing?: ModelPricing`. A schedule contains symmetric
+entries: exactly one Base entry has no selector, while every non-Base entry
+declares the same rate dimensions at an explicit coordinate.
 
 ```text
-upstream ID
-+ canonical model ID
-+ optional alias-rule value (`undefined` differs from `{}`)
+ModelPricing
+  → runtime facts (service tier, input-token count)
+  → exact PricingEntry
+  → PriceVector rates snapshot
+  → token counts × rates
+  → realized USD cost
 ```
 
-Ordinary preference and discardable opaque restoration use exact rule
-structure, matching candidate deduplication. Force evidence and non-discardable
-state restoration compare only upstream and canonical model. Different rule
-variants on that target remain viable, with an available exact preference
-ordered first.
+`serviceTier` is an open-string equality axis. `inputTokens` thresholds reprice
+the whole request rather than a marginal suffix. Threshold-only entries are
+global; thresholds combined with equality coordinates apply only within that
+scope. Runtime selects the highest matching global or scoped threshold and then
+performs one exact selector lookup. A missing full coordinate selects the whole
+Base vector, never a field-by-field merge or a lower threshold band.
 
-## Client-carried affinity routing
+The naming boundary is enforced in code and on the wire:
 
-Every API key has a hidden 256-bit server secret for gateway-private
-per-key data. Affinity derives a dedicated key from it. The source-protocol
-ingress scans opaque reasoning carriers and attempts AES-GCM authentication.
-Successfully decoded envelopes yield immutable target identities and restore
-metadata. Protocol ingress derives request-local `prefer` or `force` evidence
-from the carrier's current location; routing strength is never stored in the
-encrypted envelope. A value that is malformed, belongs to another key, or
-belongs to another Floway instance is foreign and contributes no constraint.
+- `pricing` is reusable model metadata and operator-authored configuration;
+- `rates` is the resolved `PriceVector` stored with one usage bucket;
+- `unit_price` is the persisted scalar for one billing dimension;
+- `cost` is the aggregatable USD result exposed by usage views.
 
-Affinity has two strengths:
+Telemetry snapshots the selected coordinate and rates from the exact dispatched
+`ProviderModel`. Later catalog changes therefore cannot rewrite historical
+usage, and SQL bucket identity remains stable through canonical selector JSON.
 
-- `prefer` is ordinary, discardable reasoning continuity. The last preferred
-  target that is currently available is moved to the front. If it is absent,
-  normal candidate order is retained.
-- `force` represents state that cannot be translated or discarded, including
-  Responses compaction and programmatic state. One forcing identity retains
-  every candidate with the required upstream and canonical model; it does not
-  filter alias rules. An unavailable force or multiple incompatible forces
-  returns `routing-unavailable` before any upstream call.
+## Candidate Ordering
 
-Responses program and compaction state is recognized when the client carries
-the result back, at which point ingress promotes the associated upstream/model
-to force. Envelope framing and per-protocol placement are documented in
+Candidates are ordered before they reach dispatch:
+
+- Across upstreams, by configured `sort_order` (lower first). An upstream
+  with an explicit `sort_order` ahead of another upstream's gets first
+  shot at the inbound id.
+- Within a single upstream, the unprefixed branch precedes the prefixed
+  one when both apply.
+
+Chat-shaped ingress authenticates client-carried affinity before dispatch.
+Ordinary carriers prefer the latest available candidate with the same upstream,
+model, and optional alias rules. Non-portable state forces the recorded
+upstream and model but never forces alias rules; an exact-rule preferred variant
+still wins when available. Affinity only reorders or narrows candidates already
+produced by resolution. Protocol placement and restoration are documented in
 [AFFINITY.md](./AFFINITY.md).
 
-Affinity never invents candidates and never bypasses the user's upstream
-scope. It only filters or reorders viable candidates returned by ordinary
-resolution.
+Serve dispatches the first candidate of the ordered list exactly once.
+The attempt's non-throwing result — an SSE-stream event handoff (chat) or
+a 2xx Response (passthrough), an upstream-shaped API error, or an
+internal-debug failure — is the request's final answer; an upstream
+4xx/5xx surfaces verbatim rather than rolling over to another candidate.
 
-Ingress produces a pure candidate payload factory. For every attempt it clones
-the original source payload, restores discardable owned values for an exact
-optional-rules match and non-discardable force state for an upstream/model
-match, removes incompatible owned values, and leaves foreign values
-byte-for-byte. This per-attempt clone prevents a failed candidate's rewrites
-from leaking into fallback.
+## Known Edges
 
-Responses has one additional ordering requirement. The store first expands
-`previous_response_id` and hydrates every gateway item ID into its complete
-payload; affinity is decoded from that hydrated history afterward. This lets
-stored and client-supplied history use one routing path without making the
-Responses repository understand affinity.
-
-## Endpoint selection
-
-After enumeration, each source serve removes candidates that cannot implement
-the operation. The attempt layer then selects the first advertised endpoint in
-the source's preference table:
-
-| Source operation | Target preference |
-| --- | --- |
-| Messages generate | Messages → Responses → Chat Completions |
-| Messages count tokens | Messages only |
-| Responses generate | Responses → Messages → Chat Completions |
-| Responses compact | Responses → Messages → Chat Completions |
-| Chat Completions | Chat Completions → Messages → Responses |
-| Gemini generate | Chat Completions → Messages → Responses |
-| Gemini count tokens | Messages only |
-
-`chatTargetPicker(preference)` exposes `canServe(endpoints)` for serve-time
-filtering and `pick(endpoints)` for attempt dispatch. `pick()` is total after
-the filter; failure means a programming invariant was broken.
-
-Responses compact uses the native compact operation where available. On a
-Messages or Chat target, the compact interceptor performs a generate-shaped
-summarization turn and returns a source-shaped compact result.
-
-Passthrough endpoints use one endpoint-key predicate instead of a preference
-table. `/v1/completions` shares the broad chat kind but still requires the
-candidate's `completions` endpoint.
-
-## Attempt ordering and fallback
-
-Normal candidate order is alias-target order, then upstream `sort_order`, then
-the unprefixed branch before the prefixed branch. Affinity is applied after
-endpoint viability and before attempts.
-
-`iterateCandidates` creates fresh attempt timing state and invokes candidates
-sequentially. A successful event-stream handoff, a successful plain response,
-or a compact result ends iteration. Pre-stream API and internal errors continue
-to the next candidate; the final failure is returned unchanged when the list is
-exhausted. Once a stream is handed to the client, a later stream error cannot
-restart on another upstream.
-
-The winning candidate is recorded in the request affinity context. Only after
-events have returned to the source protocol does the responder add encrypted
-client affinity. Provider and translation layers never see Floway's envelope.
-
-## Pricing and cost
-
-Each `ProviderModel` may carry `pricing: ModelPricing`, a reusable schedule of
-selector coordinates and rate vectors:
-
-```text
-ProviderModel pricing
-→ runtime facts (tier, input-token threshold)
-→ exact PricingEntry
-→ PriceVector snapshot on the usage bucket
-→ token counts × rates
-→ realized USD cost
-```
-
-Exactly one Base entry has no selector. Non-Base entries declare explicit
-coordinates. Service tier is an open-string equality axis. Input-token
-thresholds reprice the whole request, not a marginal suffix; the highest
-matching global or scoped threshold is selected before one exact coordinate
-lookup. A missing coordinate uses the complete Base vector rather than merging
-fields from several entries.
-
-Terminology is enforced across code and storage:
-
-- `pricing` is model metadata;
-- `rates` is the resolved request vector;
-- `unit_price` is one persisted billing-dimension scalar;
-- `cost` is the aggregated USD result.
-
-Telemetry snapshots the selected coordinate and rates from the exact candidate
-that dispatched, so later catalog changes cannot rewrite historical usage.
-
-## Known edges
-
-- Disabling a model on one upstream does not affect the same public ID on
-  another upstream.
-- A soft SWR catalog hit may briefly expose the previous upstream catalog until
-  refresh completes.
-- Dual-addressable prefix policies intentionally keep two candidate paths.
-- A preferred affinity target that disappeared is a normal cache miss; a forced
-  target that disappeared is an explicit error.
-- Replacing API-key affinity material makes existing owned client envelopes
-  foreign. Normal key creation and updates preserve the hidden secret; admin
-  transfer format version 10 is the supported way to move it with the key.
+- A catalog that disabled the inbound id under one upstream still serves
+  it from another that allows it; the operator's per-upstream disable
+  list is intentionally not cross-cutting.
+- A `-\d{8}$` strip is the only inbound-id normalization the gateway
+  applies. Vendor variant suffixes (effort tiers, context-window
+  variants, fast-mode) are routed by request-body fields against a
+  catalog that lists only the base id; clients that send raw variant ids
+  receive a model-missing 404 unless their inbound id happens to match
+  another upstream's catalog entry verbatim.
+- The catalog is SWR-cached per upstream. A model the operator just
+  enabled is visible to resolution as soon as the next cached refresh
+  lands; SWR-soft hits do not block the request.
+- Dual-addressable surfaces (`[unprefixed, prefixed]`) intentionally
+  retain both candidate paths instead of deduping. The unprefixed
+  candidate precedes the prefix-stripped one in the ordered list, so it
+  is the one dispatched.
+- A missing preferred affinity target falls back normally. A missing forced
+  upstream/model target is an explicit error.
