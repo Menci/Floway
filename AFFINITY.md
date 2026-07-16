@@ -113,7 +113,7 @@ back only onto the immediately preceding buffered chunk. Empty text and
 signature-only prefixes/trailers are moved onto adjacent content when the
 one-event window can determine ownership.
 
-This adds one upstream-event of latency. It deliberately favors direct Google
+This adds one upstream event of latency. It deliberately favors direct Google
 GenAI Chat compatibility and cannot repair a first-wins client when a natural
 function signature arrives more than one continuation after the first chunk.
 The evidence and exact client tradeoffs are recorded beside the

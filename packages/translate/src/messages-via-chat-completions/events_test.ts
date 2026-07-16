@@ -572,14 +572,6 @@ test('translateChatCompletionsChunkToMessagesEvents defers content interleaved b
   ]);
 });
 
-// A single chunk delta can carry BOTH `content` and `tool_calls` arrays. If
-// we emit the content first, we open a text block, then close it immediately
-// because the tool_use block is about to open — and any trailing argument
-// fragments for the same tool_call would land against a stopped block index.
-// Mirrors caozhiyuan's gating
-// (https://github.com/caozhiyuan/copilot-api/blob/287d2d330c299bbdf3ed213a1bc05b1739aecf03/src/routes/messages/stream-translation.ts#L232-L243):
-// `isToolBlockOpen(state) || hasToolCallDelta(delta)` defers the content
-// rather than emitting it before the tool_use block opens.
 test('translateChatCompletionsChunkToMessagesEvents defers content that shares a chunk with tool_calls before any tool block opens', () => {
   const state = createChatCompletionsToMessagesStreamState();
   const events = [

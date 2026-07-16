@@ -87,10 +87,10 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
         const createdAt = Date.now();
         const items = snapshot.itemIds.map(itemId => this.loadedItems.get(itemId)!);
         await this.commitItems(items);
-        await Promise.all(this.options.writes.flatMap(write => [
-          write.backing.refreshItems(items, createdAt),
-          write.backing.refreshSnapshot(this.apiKeyId, snapshot.id, createdAt),
-        ]));
+        await Promise.all(this.options.writes.map(async write => {
+          await write.backing.refreshItems(items, createdAt);
+          await write.backing.refreshSnapshot(this.apiKeyId, snapshot.id, createdAt);
+        }));
         for (const item of items) item.createdAt = createdAt;
         snapshot.createdAt = createdAt;
       }
