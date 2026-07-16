@@ -36,6 +36,19 @@ test('removes a synthetic signature-only part and preserves foreign signatures',
   ]);
 });
 
+test.each([
+  { text: '' },
+  { thought: true },
+])('removes metadata-only remnants after stripping an incompatible owned signature', async metadata => {
+  const owned = await codec.wrap('natural', affinityTargetForCandidate(candidateA), 'gemini.part.thoughtSignature');
+  const prepared = await prepareGeminiAffinity({
+    model: 'model',
+    contents: [{ role: 'model', parts: [{ ...metadata, thoughtSignature: owned }] }],
+  }, codec);
+
+  expect(prepared.payloadForCandidate(candidateB).contents).toEqual([]);
+});
+
 test('preserves unrelated empty model contents', async () => {
   const prepared = await prepareGeminiAffinity({
     contents: [{ role: 'model', parts: [] }],

@@ -8,8 +8,8 @@ interface GeminiBlobLocation {
 }
 
 const visiblePart = (part: GeminiPart): boolean => {
-  const { thoughtSignature: _signature, ...data } = part;
-  return Object.keys(data).length > 0;
+  const { text, thought: _thought, thoughtSignature: _signature, ...data } = part;
+  return (typeof text === 'string' && text.length > 0) || Object.keys(data).length > 0;
 };
 
 export const prepareGeminiAffinity = async (
