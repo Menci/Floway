@@ -110,6 +110,7 @@ test('keeps tool argument continuations on the open block when opaque reasoning 
     }), state),
     ...translateChatCompletionsChunkToMessagesEvents(chunk({ reasoning_opaque: 'opaque' }), state),
     ...translateChatCompletionsChunkToMessagesEvents(chunk({
+      content: 'after',
       tool_calls: [{ index: 0, function: { arguments: ':1}' } }],
     }), state),
     ...translateChatCompletionsChunkToMessagesEvents(chunk({}, 'tool_calls'), state),
@@ -124,8 +125,11 @@ test('keeps tool argument continuations on the open block when opaque reasoning 
   const toolStop = events.findIndex(event => event.type === 'content_block_stop' && event.index === 0);
   const redactedStart = events.findIndex(event =>
     event.type === 'content_block_start' && event.content_block.type === 'redacted_thinking');
+  const textStart = events.findIndex(event =>
+    event.type === 'content_block_start' && event.content_block.type === 'text');
   expect(toolStop).toBeGreaterThan(events.lastIndexOf(argumentDeltas[1]));
   expect(redactedStart).toBeGreaterThan(toolStop);
+  expect(textStart).toBeGreaterThan(redactedStart);
 });
 
 test('translateChatCompletionsChunkToMessagesEvents keeps text and opaque in one thinking block', () => {
