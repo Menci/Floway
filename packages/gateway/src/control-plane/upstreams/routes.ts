@@ -85,14 +85,19 @@ const codexQuotaForResponse = async (record: UpstreamRecord): Promise<CodexQuota
 };
 
 // These projections need repository/provider I/O, which serialize.ts excludes
-// so it stays a pure persisted-record transform.
-const serializeForResponse = async (record: UpstreamRecord): Promise<UpstreamWithCacheResponse> => {
+// so it stays a pure persisted-record transform. The optional baseSerialize
+// override lets callers swap in upstreamRecordToFullJson to round-trip
+// unredacted secrets instead of the redacted default.
+const serializeForResponse = async (
+  record: UpstreamRecord,
+  baseSerialize: (r: UpstreamRecord) => SerializedUpstreamRecord = upstreamRecordToJson,
+): Promise<UpstreamWithCacheResponse> => {
   const [cacheRow, codexQuota] = await Promise.all([
     getRepo().modelsCache.get(record.id),
     codexQuotaForResponse(record),
   ]);
   return {
-    ...upstreamRecordToJson(record),
+    ...baseSerialize(record),
     modelsCache: {
       fetchedAt: cacheRow?.fetchedAt ?? null,
       lastError: cacheRow?.lastError ?? null,
@@ -204,7 +209,7 @@ const validateProxyFallbackList = async (entries: readonly ProxyFallbackEntry[])
 
 export const listUpstreams = async (c: Context) => {
   const items = await getRepo().upstreams.list();
-  return c.json(await Promise.all(items.map(serializeForResponse)));
+  return c.json(await Promise.all(items.map(record => serializeForResponse(record))));
 };
 
 // Picker dataset for the per-key upstream whitelist editor. Non-admin users
@@ -247,17 +252,15 @@ export const getUpstreamBlueprint = (c: Context): Response => {
 // Single-record read for the edit page. Returns the FULL record — no
 // secret redaction — because every editor-scoped action posts the record
 // back to a helper endpoint that needs the same credentials the data plane
-// uses (refresh tokens, api keys, etc.). Codex quota is a response-only
-// projection, so it is attached here as well.
+// uses (refresh tokens, api keys, etc.). Codex quota and modelsCache are
+// response-only projections, so they are attached here alongside the
+// unredacted config/state — the edit page relies on `modelsCache` to
+// render the "last fetched / last error" panel on mount.
 export const getUpstream = async (c: AuthedContext<'/:id'>) => {
   const id = c.req.param('id');
   const record = await getRepo().upstreams.getById(id);
   if (!record) return c.json({ error: 'upstream not found' }, 404);
-  const response: UpstreamResponse = {
-    ...upstreamRecordToFullJson(record),
-    ...await codexQuotaForResponse(record),
-  };
-  return c.json(response);
+  return c.json(await serializeForResponse(record, upstreamRecordToFullJson));
 };
 
 export const createUpstream = async (c: CtxWithJson<typeof createUpstreamBody>) => {

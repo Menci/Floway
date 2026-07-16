@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watchEffect } from 'vue';
+import { computed, reactive, ref, watchEffect } from 'vue';
 
 import type { ControlPlaneModel } from '../../api/types.ts';
 import { Code } from '@floway-dev/ui';
@@ -13,24 +13,19 @@ const baseUrl = computed(() => window.location.origin);
 
 // Picker buckets — Claude Code only accepts claude-* generation ids, Codex's
 // Floway integration is the gpt-5 family only. Backend already collapses
-// dated / variant suffixes; dedupe by id and sort by family tier so the
-// picker defaults land on the canonical Opus / Sonnet / Haiku per slot.
-const CLAUDE_TIER: Record<string, number> = { opus: 0, sonnet: 1, haiku: 2 };
+// dated / variant suffixes; dedupe by id and sort by family tier so each
+// slot's default lands on the canonical Fable / Opus / Sonnet / Haiku.
+const CLAUDE_TIER_KEYS = ['fable', 'opus', 'sonnet', 'haiku'] as const;
+type ClaudeTierKey = typeof CLAUDE_TIER_KEYS[number];
+const CLAUDE_TIER: Record<string, number> = { fable: 0, opus: 1, sonnet: 2, haiku: 3 };
+const CLAUDE_TIER_LABELS: Record<ClaudeTierKey, string> = { fable: 'Fable', opus: 'Opus', sonnet: 'Sonnet', haiku: 'Haiku' };
 const claudeTier = (id: string) => {
   for (const t of Object.keys(CLAUDE_TIER)) if (id.includes(t)) return CLAUDE_TIER[t]!;
   return 99;
 };
-const sortClaudeBig = (a: string, b: string) => {
-  const ta = claudeTier(a), tb = claudeTier(b);
-  return ta !== tb ? ta - tb : b.localeCompare(a);
-};
-const sortClaudeSmall = (a: string, b: string) => {
-  const ta = claudeTier(a), tb = claudeTier(b);
-  return ta !== tb ? tb - ta : b.localeCompare(a);
-};
-const sortClaudeSonnet = (a: string, b: string) => {
-  const da = Math.abs(claudeTier(a) - CLAUDE_TIER.sonnet!);
-  const db = Math.abs(claudeTier(b) - CLAUDE_TIER.sonnet!);
+const sortByTierDistance = (target: number) => (a: string, b: string) => {
+  const da = Math.abs(claudeTier(a) - target);
+  const db = Math.abs(claudeTier(b) - target);
   return da !== db ? da - db : b.localeCompare(a);
 };
 const sortCodex = (a: string, b: string) => {
@@ -51,27 +46,24 @@ const CODEX_RE = /(^|\/)gpt-5/;
 const claudeIds = computed(() => dedupe(props.models.filter(m => CLAUDE_RE.test(m.id) && isChat(m)).map(m => m.id)));
 const codexIds = computed(() => dedupe(props.models.filter(m => CODEX_RE.test(m.id) && isChat(m)).map(m => m.id)));
 
-const claudeModelsBig = computed(() => [...claudeIds.value].sort(sortClaudeBig));
-const claudeModelsSonnet = computed(() => [...claudeIds.value].sort(sortClaudeSonnet));
-const claudeModelsSmall = computed(() => [...claudeIds.value].sort(sortClaudeSmall));
-const codexModelsList = computed(() => [...codexIds.value].sort(sortCodex));
+const claudeModelsByTier = computed<Record<ClaudeTierKey, string[]>>(() => Object.fromEntries(CLAUDE_TIER_KEYS.map(k => [k, [...claudeIds.value].sort(sortByTierDistance(CLAUDE_TIER[k]!))])) as Record<ClaudeTierKey, string[]>);
+const codexModels = computed(() => [...codexIds.value].sort(sortCodex));
 
-const claudeModel = ref('');
-const claudeSonnetModel = ref('');
-const claudeSmallModel = ref('');
+const claudeSelection = reactive<Record<ClaudeTierKey, string>>({ fable: '', opus: '', sonnet: '', haiku: '' });
 const codexModel = ref('');
 
 // Keep the selection valid as the model lists rehydrate: if the current pick
 // disappears (e.g. an upstream toggled off), fall back to the bucket head.
 watchEffect(() => {
-  if (!claudeModelsBig.value.includes(claudeModel.value)) claudeModel.value = claudeModelsBig.value[0] ?? '';
-  if (!claudeModelsSonnet.value.includes(claudeSonnetModel.value)) claudeSonnetModel.value = claudeModelsSonnet.value[0] ?? '';
-  if (!claudeModelsSmall.value.includes(claudeSmallModel.value)) claudeSmallModel.value = claudeModelsSmall.value[0] ?? '';
-  if (!codexModelsList.value.includes(codexModel.value)) codexModel.value = codexModelsList.value[0] ?? '';
+  for (const k of CLAUDE_TIER_KEYS) {
+    if (!claudeModelsByTier.value[k].includes(claudeSelection[k])) claudeSelection[k] = claudeModelsByTier.value[k][0] ?? '';
+  }
+  if (!codexModels.value.includes(codexModel.value)) codexModel.value = codexModels.value[0] ?? '';
 });
 
-// Per-id context-window lookup so Claude Code's ANTHROPIC_MODEL line can
-// append the `[1m]` suffix when the upstream supports a 1M context.
+// Per-id context-window lookup so the fable/opus/sonnet slots can append the
+// `[1m]` suffix when the upstream advertises a 1M context window. Haiku stays
+// plain — background-task slot, 1M cost isn't warranted.
 const contextById = computed(() => {
   const map = new Map<string, number>();
   for (const m of props.models) {
@@ -85,13 +77,22 @@ const contextById = computed(() => {
 
 const addCtx = (id: string) => (contextById.value.get(id) ?? 0) >= 1_000_000 ? `${id}[1m]` : id;
 
-const claudeSnippet = computed(() => [
-  `export ANTHROPIC_BASE_URL=${baseUrl.value}`,
-  `export ANTHROPIC_AUTH_TOKEN=${props.apiKey}`,
-  `export ANTHROPIC_MODEL=${addCtx(claudeModel.value)}`,
-  `export ANTHROPIC_DEFAULT_SONNET_MODEL=${addCtx(claudeSonnetModel.value)}`,
-  `export ANTHROPIC_DEFAULT_HAIKU_MODEL=${claudeSmallModel.value}`,
-].join('\n'));
+// JSON fragment for `settings.json`'s `env` block, not shell exports: Claude
+// Code's background-agent supervisor doesn't reliably inherit shell env
+// (dispatching into a different cwd drops it, and the SDK / -p paths don't
+// see it either) — settings.json is the only channel that reaches every
+// execution context. Emit only the `env` sub-object so the user pastes it
+// into their existing settings without clobbering unrelated fields.
+const claudeSnippet = computed(() => JSON.stringify({
+  env: {
+    ANTHROPIC_BASE_URL: baseUrl.value,
+    ANTHROPIC_AUTH_TOKEN: props.apiKey,
+    ANTHROPIC_DEFAULT_FABLE_MODEL: addCtx(claudeSelection.fable),
+    ANTHROPIC_DEFAULT_OPUS_MODEL: addCtx(claudeSelection.opus),
+    ANTHROPIC_DEFAULT_SONNET_MODEL: addCtx(claudeSelection.sonnet),
+    ANTHROPIC_DEFAULT_HAIKU_MODEL: claudeSelection.haiku,
+  },
+}, null, 2));
 
 const codexBaseUrl = computed(() => `${baseUrl.value}/azure-api.codex`);
 
@@ -165,28 +166,16 @@ const selectClass = 'max-w-full text-xs font-mono bg-surface-800 text-gray-300 b
       </div>
 
       <div class="flex flex-wrap items-center gap-x-4 gap-y-2 mb-3">
-        <div class="flex min-w-0 items-center gap-2">
-          <label class="text-xs text-gray-500">Model:</label>
-          <select v-model="claudeModel" :class="selectClass">
-            <option v-for="m in claudeModelsBig" :key="m" :value="m">{{ m }}</option>
-          </select>
-        </div>
-        <div class="flex min-w-0 items-center gap-2">
-          <label class="text-xs text-gray-500">Sonnet:</label>
-          <select v-model="claudeSonnetModel" :class="selectClass">
-            <option v-for="m in claudeModelsSonnet" :key="m" :value="m">{{ m }}</option>
-          </select>
-        </div>
-        <div class="flex min-w-0 items-center gap-2">
-          <label class="text-xs text-gray-500">Haiku:</label>
-          <select v-model="claudeSmallModel" :class="selectClass">
-            <option v-for="m in claudeModelsSmall" :key="m" :value="m">{{ m }}</option>
+        <div v-for="k in CLAUDE_TIER_KEYS" :key="k" class="flex min-w-0 items-center gap-2">
+          <label class="text-xs text-gray-500">{{ CLAUDE_TIER_LABELS[k] }}:</label>
+          <select v-model="claudeSelection[k]" :class="selectClass">
+            <option v-for="m in claudeModelsByTier[k]" :key="m" :value="m">{{ m }}</option>
           </select>
         </div>
       </div>
 
-      <p class="text-[11px] text-gray-600 mb-2">Add to <code class="text-gray-500">~/.bashrc</code>, <code class="text-gray-500">~/.zshrc</code>, or equivalent</p>
-      <Code :code="claudeSnippet" language="bash" />
+      <p class="text-[11px] text-gray-600 mb-2">Merge the <code class="text-gray-500">env</code> block into <code class="text-gray-500">~/.claude/settings.json</code> (user-scope) or <code class="text-gray-500">.claude/settings.json</code> (project-scope)</p>
+      <Code :code="claudeSnippet" language="json" />
     </div>
 
     <div>
@@ -197,7 +186,7 @@ const selectClass = 'max-w-full text-xs font-mono bg-surface-800 text-gray-300 b
       <div class="flex min-w-0 items-center gap-2 mb-3">
         <label class="text-xs text-gray-500">Model:</label>
         <select v-model="codexModel" :class="selectClass">
-          <option v-for="m in codexModelsList" :key="m" :value="m">{{ m }}</option>
+          <option v-for="m in codexModels" :key="m" :value="m">{{ m }}</option>
         </select>
       </div>
 

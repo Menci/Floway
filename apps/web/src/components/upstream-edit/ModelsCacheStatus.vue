@@ -5,16 +5,12 @@ import relativeTime from 'dayjs/plugin/relativeTime';
 import { computed, ref } from 'vue';
 
 import type { UpstreamRecord } from '../../api/types.ts';
-import { Button } from '@floway-dev/ui';
 
 dayjs.extend(relativeTime);
 
 const props = defineProps<{
   modelsCache: UpstreamRecord['modelsCache'];
-  refreshing: boolean;
 }>();
-
-defineEmits<{ refresh: [] }>();
 
 const now = useNow({ interval: 30_000 });
 const fetchedLabel = computed(() => props.modelsCache.fetchedAt === null
@@ -28,21 +24,18 @@ const errorOpen = ref(false);
 </script>
 
 <template>
-  <div class="flex flex-wrap items-center gap-3">
-    <div class="flex min-w-0 flex-1 flex-col gap-1">
-      <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs">
-        <span class="text-gray-300">last fetched <span class="text-white">{{ fetchedLabel }}</span></span>
-        <span
-          v-if="modelsCache.lastError"
-          class="cursor-pointer text-accent-rose hover:underline"
-          @click="errorOpen = !errorOpen"
-        >last error {{ errorAtLabel }} ({{ errorOpen ? 'hide' : 'show' }})</span>
-      </div>
-      <p
-        v-if="modelsCache.lastError && errorOpen"
-        class="rounded-md border border-accent-rose/40 bg-accent-rose/10 px-3 py-2 font-mono text-[11px] text-accent-rose"
-      >{{ modelsCache.lastError.message }}</p>
+  <div class="flex min-w-0 flex-col gap-1">
+    <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs">
+      <span class="text-gray-300">last fetched <span class="text-white">{{ fetchedLabel }}</span></span>
+      <span
+        v-if="modelsCache.lastError"
+        class="cursor-pointer text-accent-rose hover:underline"
+        @click="errorOpen = !errorOpen"
+      >last error {{ errorAtLabel }} ({{ errorOpen ? 'hide' : 'show' }})</span>
     </div>
-    <Button variant="secondary" size="sm" :loading="refreshing" @click="$emit('refresh')">Refresh now</Button>
+    <p
+      v-if="modelsCache.lastError && errorOpen"
+      class="rounded-md border border-accent-rose/40 bg-accent-rose/10 px-3 py-2 font-mono text-[11px] text-accent-rose"
+    >{{ modelsCache.lastError.message }}</p>
   </div>
 </template>
