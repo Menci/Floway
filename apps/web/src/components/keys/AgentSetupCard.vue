@@ -197,15 +197,15 @@ const powerShellCommand = computed(() => (activeScripts.value
 
 <template>
   <section class="glass-card p-5 sm:p-6 animate-in delay-1">
-    <div class="grid gap-5 md:grid-cols-[20rem_minmax(0,1fr)]">
+    <div class="grid gap-5 md:grid-cols-[max-content_minmax(0,1fr)]">
       <aside class="space-y-4">
-        <div role="tablist" aria-label="Agent configuration mode" class="flex gap-2">
+        <div role="tablist" aria-label="Agent configuration mode" class="inline-flex items-center gap-1 rounded-lg bg-surface-800 p-0.5">
           <button
             v-for="view in (['agent-setup', 'config-snippets'] as const)"
             :key="view"
             role="tab"
-            class="min-w-0 flex-1 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-colors"
-            :class="activeView === view ? 'bg-surface-700 text-white' : 'text-gray-500 hover:bg-white/[0.03] hover:text-gray-300'"
+            class="shrink-0 rounded-md px-3 py-1.5 text-xs font-medium transition-all"
+            :class="activeView === view ? 'bg-surface-600 text-white' : 'text-gray-500 hover:text-gray-300'"
             :aria-selected="activeView === view"
             @click="activeView = view"
           >{{ view === 'agent-setup' ? 'Agent Setup' : 'Config snippets' }}</button>
