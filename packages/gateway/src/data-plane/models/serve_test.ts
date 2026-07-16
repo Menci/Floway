@@ -1054,4 +1054,3 @@ test('/v1/models prefixes non-Anthropic ids for the Claude Code CLI picker while
     },
   );
 });
-
