@@ -13,7 +13,7 @@ export interface AffinityTarget {
   rules?: AliasRules;
   upstreamItemId?: string;
   syntheticItem?: true;
-  boundItem?: { type: string; upstreamItemId: string };
+  boundItem?: { type: string; upstreamItemId: string; contentHash: string };
 }
 
 export interface AffinityEvidence {
@@ -148,6 +148,8 @@ const parseEnvelope = (value: unknown): AffinityEnvelope | null => {
       !isRecord(affinity.boundItem)
       || typeof affinity.boundItem.type !== 'string'
       || typeof affinity.boundItem.upstreamItemId !== 'string'
+      || typeof affinity.boundItem.contentHash !== 'string'
+      || !/^[0-9a-f]{64}$/.test(affinity.boundItem.contentHash)
     ))
     || (affinity.rules !== undefined && !isRecord(affinity.rules))
   ) return null;
@@ -159,7 +161,13 @@ const parseEnvelope = (value: unknown): AffinityEnvelope | null => {
     ...(affinity.upstreamItemId !== undefined ? { upstreamItemId: affinity.upstreamItemId } : {}),
     ...(affinity.syntheticItem === true ? { syntheticItem: true } : {}),
     ...(affinity.boundItem !== undefined
-      ? { boundItem: { type: affinity.boundItem.type as string, upstreamItemId: affinity.boundItem.upstreamItemId as string } }
+      ? {
+          boundItem: {
+            type: affinity.boundItem.type as string,
+            upstreamItemId: affinity.boundItem.upstreamItemId as string,
+            contentHash: affinity.boundItem.contentHash as string,
+          },
+        }
       : {}),
   };
   return {

@@ -86,6 +86,12 @@ export const responsesItemId = (item: { id?: unknown }): string | null => {
 export const hashResponsesItemContent = async (item: ResponsesInputItem): Promise<string> =>
   await sha256Hex(JSON.stringify(sortJson(item)));
 
+export const hashResponsesItemBinding = async (item: ResponsesInputItem | ResponsesOutputItem): Promise<string> => {
+  const content = { ...item } as Record<string, unknown>;
+  delete content.id;
+  return await sha256Hex(JSON.stringify(sortJson(content)));
+};
+
 export const createTemporaryResponsesItemId = (itemType: string): string => `${prefixForItemType(itemType)}_tmp_${randomBody()}`;
 
 // Gateway-owned response envelope id. A response from this gateway is not

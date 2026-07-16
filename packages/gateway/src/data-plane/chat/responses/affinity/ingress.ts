@@ -1,5 +1,5 @@
 import { type AffinityCodec, blobForCandidate, blobForForcedCandidate, type AffinityEvidence, type AffinityTarget, type DecodedAffinityBlob, type PreparedAffinityPayload } from '../../shared/affinity/index.ts';
-import { createTemporaryResponsesItemId } from '../items/format.ts';
+import { createTemporaryResponsesItemId, hashResponsesItemBinding } from '../items/format.ts';
 import type { CanonicalResponsesPayload, ResponsesInputItem } from '@floway-dev/protocols/responses';
 
 interface ResponsesBlobLocation {
@@ -80,9 +80,19 @@ export const prepareResponsesAffinity = async (
   const locations = await encryptedContentLocations(payload.input, codec);
   const boundItems = new Map<number, Extract<DecodedAffinityBlob, { kind: 'owned' }>['envelope']['affinity']>();
   for (const location of locations) {
-    if (location.decoded.kind === 'owned' && location.decoded.envelope.affinity.boundItem !== undefined) {
-      boundItems.set(location.itemIndex + 1, location.decoded.envelope.affinity);
-    }
+    if (location.decoded.kind !== 'owned' || location.decoded.envelope.affinity.boundItem === undefined) continue;
+    const affinity = location.decoded.envelope.affinity;
+    const bound = affinity.boundItem;
+    const itemIndex = location.itemIndex + 1;
+    const item = payload.input[itemIndex];
+    if (
+      item === undefined
+      || item.type !== bound.type
+      || !('id' in item)
+      || typeof item.id !== 'string'
+      || await hashResponsesItemBinding(item) !== bound.contentHash
+    ) throw new TypeError(`Responses affinity carrier does not match input item at index ${itemIndex}`);
+    boundItems.set(itemIndex, affinity);
   }
   return {
     routingEvidence: routingEvidenceFrom(payload.input, locations),
@@ -91,7 +101,9 @@ export const prepareResponsesAffinity = async (
       for (const [itemIndex, affinity] of boundItems) {
         const item = candidatePayload.input[itemIndex];
         const bound = affinity.boundItem;
-        if (item === undefined || bound === undefined || item.type !== bound.type || !('id' in item) || typeof item.id !== 'string') continue;
+        if (item === undefined || bound === undefined || !('id' in item) || typeof item.id !== 'string') {
+          throw new Error('Validated Responses affinity binding changed before candidate preparation');
+        }
         item.id = candidate.provider.upstream === affinity.upstreamId && candidate.model.id === affinity.modelId
           ? bound.upstreamItemId
           : createTemporaryResponsesItemId(item.type);

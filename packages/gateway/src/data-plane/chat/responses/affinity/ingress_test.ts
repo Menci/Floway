@@ -2,6 +2,7 @@ import { expect, test } from 'vitest';
 
 import { prepareResponsesAffinity } from './ingress.ts';
 import { affinityTargetForCandidate, AffinityCodec } from '../../shared/affinity/index.ts';
+import { hashResponsesItemBinding } from '../items/format.ts';
 import type { CanonicalResponsesPayload } from '@floway-dev/protocols/responses';
 import type { ModelCandidate } from '@floway-dev/provider';
 import { stubModelCandidate } from '@floway-dev/test-utils';
@@ -101,12 +102,17 @@ test('derives force routing from program state following a preferred carrier', a
 });
 
 test('restores the bound ID of a force item carried by an adjacent synthetic prefix', async () => {
+  const item = { type: 'program_output' as const, id: 'prog_out_public', call_id: 'call_1', result: 'done', status: 'completed' as const };
   const carrier = await codec.wrap(
     undefined,
     {
       ...affinityTargetForCandidate(candidateA),
       syntheticItem: true,
-      boundItem: { type: 'program_output', upstreamItemId: 'prog_out_upstream' },
+      boundItem: {
+        type: 'program_output',
+        upstreamItemId: 'prog_out_upstream',
+        contentHash: await hashResponsesItemBinding(item),
+      },
     },
     carrierDomain('reasoning', 'encrypted_content'),
   );
@@ -114,7 +120,7 @@ test('restores the bound ID of a force item carried by an adjacent synthetic pre
     model: 'model',
     input: [
       { type: 'reasoning', id: 'rs_prefix', summary: [], encrypted_content: carrier },
-      { type: 'program_output', id: 'prog_out_public', call_id: 'call_1', result: 'done', status: 'completed' },
+      item,
     ],
   }, codec);
 
@@ -123,6 +129,31 @@ test('restores the bound ID of a force item carried by an adjacent synthetic pre
   ]);
   expect((prepared.payloadForCandidate(candidateB).input[0] as { id: string }).id).toMatch(/^prog_out_tmp_/);
   expect(prepared.routingEvidence.map(item => item.mode)).toEqual(['prefer', 'force']);
+});
+
+test('rejects a bound carrier moved before a different same-type item', async () => {
+  const original = { type: 'program_output' as const, id: 'first_public', call_id: 'call_1', result: 'first', status: 'completed' as const };
+  const carrier = await codec.wrap(
+    undefined,
+    {
+      ...affinityTargetForCandidate(candidateA),
+      syntheticItem: true,
+      boundItem: {
+        type: original.type,
+        upstreamItemId: 'first_upstream',
+        contentHash: await hashResponsesItemBinding(original),
+      },
+    },
+    carrierDomain('reasoning', 'encrypted_content'),
+  );
+
+  await expect(prepareResponsesAffinity({
+    model: 'model',
+    input: [
+      { type: 'reasoning', id: 'rs_prefix', summary: [], encrypted_content: carrier },
+      { type: 'program_output', id: 'second_public', call_id: 'call_2', result: 'second', status: 'completed' },
+    ],
+  }, codec)).rejects.toThrow('Responses affinity carrier does not match input item at index 1');
 });
 
 test('treats compaction_summary as force state and restores its upstream ID', async () => {

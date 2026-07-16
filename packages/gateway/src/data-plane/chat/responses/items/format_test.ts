@@ -3,6 +3,7 @@ import { test } from 'vitest';
 import {
   createStoredResponsesItemId,
   createTemporaryResponsesItemId,
+  hashResponsesItemBinding,
   hashResponsesItemContent,
   isStoredResponsesItemId,
 } from './format.ts';
@@ -101,4 +102,13 @@ test('input content hashing includes the item id', async () => {
   const second = await hashResponsesItemContent({ type: 'message', id: 'msg_b', role: 'user', content: 'same' });
 
   assertFalse(first === second);
+});
+
+test('affinity item binding ignores only the replaceable item id', async () => {
+  const first = await hashResponsesItemBinding({ type: 'program_output', id: 'first', call_id: 'call', result: 'same', status: 'completed' });
+  const same = await hashResponsesItemBinding({ status: 'completed', result: 'same', call_id: 'call', id: 'second', type: 'program_output' });
+  const different = await hashResponsesItemBinding({ type: 'program_output', id: 'first', call_id: 'other', result: 'same', status: 'completed' });
+
+  assert(first === same);
+  assertFalse(first === different);
 });

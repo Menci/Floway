@@ -1,5 +1,5 @@
 import type { AffinityEgressOptions, AffinityTarget } from '../../shared/affinity/index.ts';
-import { createTemporaryResponsesItemId } from '../items/format.ts';
+import { createTemporaryResponsesItemId, hashResponsesItemBinding } from '../items/format.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesOutputItem, ResponsesOutputReasoning, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
@@ -146,11 +146,12 @@ const ensureFirstResponsesItemAffinity = async function* (
     const existing = insertedItems.get(originalOutputIndex);
     if (existing !== undefined) return [];
     const upstreamItemId = item !== undefined && 'id' in item && typeof item.id === 'string' ? item.id : undefined;
+    const contentHash = item === undefined ? undefined : await hashResponsesItemBinding(item);
     const target: AffinityTarget = {
       ...options.affinity,
       syntheticItem: true,
-      ...(item !== undefined && upstreamItemId !== undefined
-        ? { boundItem: { type: item.type, upstreamItemId } }
+      ...(item !== undefined && upstreamItemId !== undefined && contentHash !== undefined
+        ? { boundItem: { type: item.type, upstreamItemId, contentHash } }
         : {}),
     };
     const inserted: ResponsesOutputReasoning = {

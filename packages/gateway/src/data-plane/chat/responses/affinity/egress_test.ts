@@ -2,6 +2,7 @@ import { describe, expect, test, vi } from 'vitest';
 
 import { wrapResponsesAffinityEgress } from './egress.ts';
 import type { AffinityCodec, AffinityTarget } from '../../shared/affinity/index.ts';
+import { hashResponsesItemBinding } from '../items/format.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesOutputItem, ResponsesOutputReasoning, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
@@ -223,7 +224,11 @@ describe('Responses affinity egress', () => {
     expect(calls).toContainEqual({
       ...affinity,
       syntheticItem: true,
-      boundItem: { type: 'program_output', upstreamItemId: 'prog_out_upstream' },
+      boundItem: {
+        type: 'program_output',
+        upstreamItemId: 'prog_out_upstream',
+        contentHash: await hashResponsesItemBinding(programOutput),
+      },
     });
     expect(output).toHaveLength(3);
   });
