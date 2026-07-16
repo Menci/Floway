@@ -260,6 +260,7 @@ const flushToolCalls = (state: ChatCompletionsToMessagesStreamState, events: Mes
 };
 
 const flushDeferredSegments = (state: ChatCompletionsToMessagesStreamState, events: MessagesStreamEvent[]): void => {
+  if (state.deferredSegments.length === 0) return;
   if (state.openBlock !== undefined) throw new Error('Deferred Chat segments reached flush with an open Messages block');
   for (const segment of state.deferredSegments) {
     if (segment.type === 'text') {
