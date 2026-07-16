@@ -10,7 +10,7 @@ import { createSqliteTestDb } from '../../../../repo/test-sqlite.ts';
 import { ResponsesAttemptState } from '../attempt-state.ts';
 import { initFileProvider, MemoryFileProvider, type SqlDatabase, type SqlPreparedStatement } from '@floway-dev/platform';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
-import type { ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import type { ResponsesOutputReasoning, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
 const frames = async function* (response: ResponsesResult): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
   const item = response.output[0];
@@ -18,6 +18,18 @@ const frames = async function* (response: ResponsesResult): AsyncIterable<Protoc
   yield eventFrame({ type: 'response.output_item.done', output_index: 0, item });
   yield eventFrame({ type: 'response.completed', response });
   yield doneFrame();
+};
+
+const completedReasoningItem: ResponsesOutputReasoning = Object.freeze({
+  type: 'reasoning',
+  id: 'rs_upstream',
+  summary: [],
+});
+
+const memoryOutputHarness = () => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  return { repo, store: createResponsesHttpStore('key-a', true) };
 };
 
 const countingSqlDatabase = (base: SqlDatabase): { db: SqlDatabase; queryCount: () => number } => {
@@ -48,9 +60,7 @@ const countingSqlDatabase = (base: SqlDatabase): { db: SqlDatabase; queryCount: 
 };
 
 test('client output rewrites ids and persists the exact complete item before terminal', async () => {
-  const repo = new InMemoryRepo();
-  initRepo(repo);
-  const store = createResponsesHttpStore('key-a', true);
+  const { repo, store } = memoryOutputHarness();
   const result: ResponsesResult = {
     id: 'resp_upstream',
     object: 'response',
@@ -82,9 +92,7 @@ test('client output rewrites ids and persists the exact complete item before ter
 });
 
 test('client output uses one item id across lifecycle snapshots without committing a failed snapshot', async () => {
-  const repo = new InMemoryRepo();
-  initRepo(repo);
-  const store = createResponsesHttpStore('key-a', true);
+  const { repo, store } = memoryOutputHarness();
   const item = { type: 'reasoning' as const, id: 'rs_upstream', summary: [], encrypted_content: 'wrapped-affinity' };
   const response: ResponsesResult = {
     id: 'resp_upstream',
@@ -122,10 +130,8 @@ test('client output uses one item id across lifecycle snapshots without committi
 });
 
 test('client output persists a completed item before forwarding an error event', async () => {
-  const repo = new InMemoryRepo();
-  initRepo(repo);
-  const store = createResponsesHttpStore('key-a', true);
-  const item = { type: 'reasoning' as const, id: 'rs_upstream', summary: [] };
+  const { repo, store } = memoryOutputHarness();
+  const item = completedReasoningItem;
   const input = async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
     yield eventFrame({ type: 'response.output_item.done', output_index: 0, item });
     yield eventFrame({ type: 'error', message: 'upstream failed' });
@@ -146,10 +152,8 @@ test('client output persists a completed item before forwarding an error event',
 });
 
 test('client output does not persist a partial item without output_item.done', async () => {
-  const repo = new InMemoryRepo();
-  initRepo(repo);
-  const store = createResponsesHttpStore('key-a', true);
-  const item = { type: 'reasoning' as const, id: 'rs_upstream', summary: [] };
+  const { repo, store } = memoryOutputHarness();
+  const item = completedReasoningItem;
   const input = async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
     yield eventFrame({ type: 'response.output_item.added', output_index: 0, item });
     yield eventFrame({ type: 'error', message: 'upstream failed' });
@@ -170,10 +174,8 @@ test('client output does not persist a partial item without output_item.done', a
 });
 
 test('client output persists completed items before rethrowing an iterator error', async () => {
-  const repo = new InMemoryRepo();
-  initRepo(repo);
-  const store = createResponsesHttpStore('key-a', true);
-  const item = { type: 'reasoning' as const, id: 'rs_upstream', summary: [] };
+  const { repo, store } = memoryOutputHarness();
+  const item = completedReasoningItem;
   const upstreamError = new Error('stream transport failed');
   const input = async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
     yield eventFrame({ type: 'response.output_item.done', output_index: 0, item });
@@ -197,10 +199,8 @@ test('client output persists completed items before rethrowing an iterator error
 });
 
 test('client output persists completed items when the source ends without a terminal event', async () => {
-  const repo = new InMemoryRepo();
-  initRepo(repo);
-  const store = createResponsesHttpStore('key-a', true);
-  const item = { type: 'reasoning' as const, id: 'rs_upstream', summary: [] };
+  const { repo, store } = memoryOutputHarness();
+  const item = completedReasoningItem;
   const input = async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
     yield eventFrame({ type: 'response.output_item.done', output_index: 0, item });
     yield doneFrame();
@@ -221,10 +221,8 @@ test('client output persists completed items when the source ends without a term
 });
 
 test('client output persists a completed item when its consumer cancels', async () => {
-  const repo = new InMemoryRepo();
-  initRepo(repo);
-  const store = createResponsesHttpStore('key-a', true);
-  const item = { type: 'reasoning' as const, id: 'rs_upstream', summary: [] };
+  const { repo, store } = memoryOutputHarness();
+  const item = completedReasoningItem;
   const input = async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
     yield eventFrame({ type: 'response.output_item.done', output_index: 0, item });
     await new Promise(() => {});
@@ -300,9 +298,7 @@ test('client output batches hundreds of finalized items at the successful termin
 });
 
 test('client output mints and persists one lifecycle id for an id-less item', async () => {
-  const repo = new InMemoryRepo();
-  initRepo(repo);
-  const store = createResponsesHttpStore('key-a', true);
+  const { repo, store } = memoryOutputHarness();
   const item = {
     type: 'message' as const,
     role: 'assistant' as const,
@@ -339,9 +335,7 @@ test('client output mints and persists one lifecycle id for an id-less item', as
 });
 
 test('client output binds a later delta item_id to an id-less lifecycle', async () => {
-  const repo = new InMemoryRepo();
-  initRepo(repo);
-  const store = createResponsesHttpStore('key-a', true);
+  const { repo, store } = memoryOutputHarness();
   const item = {
     type: 'message' as const,
     role: 'assistant' as const,
@@ -383,9 +377,7 @@ test('client output binds a later delta item_id to an id-less lifecycle', async 
 });
 
 test('client output rejects terminal item drift after output_item.done', async () => {
-  const repo = new InMemoryRepo();
-  initRepo(repo);
-  const store = createResponsesHttpStore('key-a', true);
+  const { repo, store } = memoryOutputHarness();
   const doneItem = { type: 'reasoning' as const, id: 'rs_upstream', summary: [{ type: 'summary_text' as const, text: 'old' }] };
   const terminalItem = { ...doneItem, summary: [{ type: 'summary_text' as const, text: 'new' }] };
   const response: ResponsesResult = {
@@ -415,9 +407,7 @@ test('client output rejects terminal item drift after output_item.done', async (
 });
 
 test('client output rejects repeated output_item.done drift', async () => {
-  const repo = new InMemoryRepo();
-  initRepo(repo);
-  const store = createResponsesHttpStore('key-a', true);
+  const { store } = memoryOutputHarness();
   const first = { type: 'reasoning' as const, id: 'rs_upstream', summary: [{ type: 'summary_text' as const, text: 'old' }] };
   const changed = { ...first, summary: [{ type: 'summary_text' as const, text: 'new' }] };
   const input = async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
@@ -437,9 +427,7 @@ test('client output rejects repeated output_item.done drift', async () => {
 });
 
 test('snapshot output IDs follow output_index rather than done arrival order', async () => {
-  const repo = new InMemoryRepo();
-  initRepo(repo);
-  const store = createResponsesHttpStore('key-a', true);
+  const { repo, store } = memoryOutputHarness();
   const first = { type: 'reasoning' as const, id: 'rs_first', summary: [] };
   const second = { type: 'reasoning' as const, id: 'rs_second', summary: [] };
   const response: ResponsesResult = {
@@ -470,9 +458,7 @@ test('snapshot output IDs follow output_index rather than done arrival order', a
 });
 
 test('finalized item validation accepts the compaction_summary alias', async () => {
-  const repo = new InMemoryRepo();
-  initRepo(repo);
-  const store = createResponsesHttpStore('key-a', true);
+  const { store } = memoryOutputHarness();
   const summary = { type: 'compaction_summary', id: 'cmp_upstream', encrypted_content: 'opaque' } as unknown as ResponsesResult['output'][number];
   const canonical = { ...summary, type: 'compaction' } as unknown as ResponsesResult['output'][number];
   const response: ResponsesResult = {
