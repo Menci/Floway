@@ -33,8 +33,9 @@ export const wrapChatCompletionsAffinityEgress = async function* (
   frames: AsyncIterable<ProtocolFrame<ChatCompletionsStreamEvent>>,
   options: AffinityEgressOptions,
 ): AsyncGenerator<ProtocolFrame<ChatCompletionsStreamEvent>> {
-  // One choice is one logical assistant element, so its physical carrier frame
-  // immediately before finish is both the turn prefix and final opaque snapshot.
+  // One choice is one logical assistant element, so its carrier frame before
+  // finish_reason (or DONE when finish_reason is absent) is both the turn
+  // prefix and final opaque snapshot.
   const choices = new Map<number, ChoiceState>();
   let lastEvent: ChatCompletionsStreamEvent | undefined;
   let failed = false;

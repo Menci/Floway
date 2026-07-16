@@ -91,8 +91,9 @@ never grows beyond that event.
 ### Chat Completions
 
 One choice is one logical element. `reasoning_opaque` is last-write-wins per
-choice. Visible deltas pass through; immediately before `finish_reason`, Floway
-emits one wrapped natural or synthetic opaque snapshot.
+choice. Visible deltas pass through; Floway emits one wrapped natural or
+synthetic opaque snapshot immediately before `finish_reason`, or immediately
+before `[DONE]` when the upstream omits a finish reason.
 
 ### Messages
 

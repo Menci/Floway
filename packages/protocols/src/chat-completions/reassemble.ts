@@ -1,5 +1,5 @@
 import { chatCompletionsErrorPayloadMessage } from './index.ts';
-import type { ChatCompletionsChoiceNonStreaming, ChatCompletionsResult, ChatCompletionsStreamEvent, ChatCompletionsReasoningItem, ChatCompletionsToolCall } from './index.ts';
+import type { ChatCompletionsChoiceNonStreaming, ChatCompletionsDelta, ChatCompletionsResult, ChatCompletionsStreamEvent, ChatCompletionsReasoningItem, ChatCompletionsToolCall } from './index.ts';
 import { captureExtras } from '../common/reassemble-extras.ts';
 
 // Field-fidelity contract: every field an upstream emits must reach the
@@ -38,20 +38,15 @@ const createChoiceAccumulator = (index: number): ChoiceAccumulator => ({
   messageExtras: {},
 });
 
-const accumulateToolCalls = (choice: ChoiceAccumulator, value: unknown): void => {
-  if (!Array.isArray(value)) return;
+const accumulateToolCalls = (choice: ChoiceAccumulator, value: ChatCompletionsDelta['tool_calls']): void => {
+  if (value === undefined) return;
 
-  for (const raw of value) {
-    if (raw === null || typeof raw !== 'object') continue;
-    const toolCall = raw as Record<string, unknown>;
-    if (typeof toolCall.index !== 'number') continue;
-    const fn = toolCall.function && typeof toolCall.function === 'object'
-      ? toolCall.function as Record<string, unknown>
-      : undefined;
+  for (const toolCall of value) {
+    const fn = toolCall.function;
     const current = choice.toolCalls.get(toolCall.index) ?? { id: '', name: '', arguments: '' };
-    if (typeof toolCall.id === 'string') current.id = toolCall.id;
-    if (typeof fn?.name === 'string') current.name = fn.name;
-    if (typeof fn?.arguments === 'string') current.arguments += fn.arguments;
+    if (toolCall.id !== undefined) current.id = toolCall.id;
+    if (fn?.name !== undefined) current.name = fn.name;
+    if (fn?.arguments !== undefined) current.arguments += fn.arguments;
     choice.toolCalls.set(toolCall.index, current);
   }
 };
@@ -111,18 +106,18 @@ export async function reassembleChatCompletionsEvents(chunks: AsyncIterable<Chat
     if (chunk.usage) lastUsage = chunk.usage;
     captureExtras(chunk as unknown as Record<string, unknown>, KNOWN_CHUNK_KEYS, chunkExtras);
 
-    for (const streamed of chunk.choices ?? []) {
+    for (const streamed of chunk.choices) {
       const choice = choices.get(streamed.index) ?? createChoiceAccumulator(streamed.index);
       choices.set(streamed.index, choice);
       captureExtras(streamed as unknown as Record<string, unknown>, KNOWN_CHOICE_KEYS, choice.choiceExtras);
 
-      const delta = streamed.delta as unknown as Record<string, unknown>;
-      captureExtras(delta, KNOWN_DELTA_KEYS, choice.messageExtras);
+      const delta = streamed.delta;
+      captureExtras(delta as unknown as Record<string, unknown>, KNOWN_DELTA_KEYS, choice.messageExtras);
       if (typeof delta.content === 'string') choice.content += delta.content;
       if (typeof delta.reasoning_text === 'string') choice.reasoningText += delta.reasoning_text;
       if (typeof delta.reasoning_opaque === 'string') choice.reasoningOpaque = delta.reasoning_opaque;
       if (Array.isArray(delta.reasoning_items)) {
-        choice.reasoningItems.push(...delta.reasoning_items as ChatCompletionsReasoningItem[]);
+        choice.reasoningItems.push(...delta.reasoning_items);
       }
       accumulateToolCalls(choice, delta.tool_calls);
       if (streamed.finish_reason !== null) choice.finishReason = streamed.finish_reason;
