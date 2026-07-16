@@ -152,7 +152,7 @@ test('passes foreign blobs through unchanged for cascaded gateways', async () =>
   expect(prepared.payloadForCandidate(candidateA).input[0]).toMatchObject({ encrypted_content: 'foreign' });
 });
 
-test('derives force routing from program state following a preferred carrier', async () => {
+test('derives force routing from blob-less program state following a preferred carrier', async () => {
   const carrier = await codec.wrap(
     undefined,
     targetFor(candidateA),
@@ -162,7 +162,7 @@ test('derives force routing from program state following a preferred carrier', a
     model: 'model',
     input: [
       { type: 'reasoning', id: 'rs_prefix', summary: [], encrypted_content: carrier },
-      { type: 'program', id: 'prog_1', call_id: 'call_1', code: 'return 1', fingerprint: 'fp' },
+      { type: 'program_output', id: 'prog_out_1', call_id: 'call_1', result: 'done', status: 'completed' },
     ],
   }, codec);
 
