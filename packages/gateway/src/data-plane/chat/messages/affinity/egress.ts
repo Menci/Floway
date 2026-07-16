@@ -16,7 +16,6 @@ export const wrapMessagesAffinityEgress = async function* (
   // signature is shifted behind one redacted prefix; thinking stays visible
   // while only its latest signature waits for content_block_stop.
   const openBlocks = new Map<number, OpenBlock>();
-  let syntheticPrefix: Promise<string> | undefined;
   let syntheticPrefixEmitted = false;
   let firstBlockSeen = false;
   let indexOffset = 0;
@@ -24,14 +23,13 @@ export const wrapMessagesAffinityEgress = async function* (
   const syntheticEvents = async (): Promise<MessagesStreamEvent[]> => {
     if (syntheticPrefixEmitted) return [];
     syntheticPrefixEmitted = true;
-    syntheticPrefix = options.codec.wrap(undefined, options.affinity, 'messages.redacted_thinking.data');
     return [
       {
         type: 'content_block_start',
         index: 0,
         content_block: {
           type: 'redacted_thinking',
-          data: await syntheticPrefix,
+          data: await options.codec.wrap(undefined, options.affinity, 'messages.redacted_thinking.data'),
         },
       },
       { type: 'content_block_stop', index: 0 },

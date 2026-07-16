@@ -7,9 +7,8 @@ export interface ApiKey {
   userId: number;
   name: string;
   key: string;
-  // Server-only key material for client-carried affinity envelopes. Normal
-  // API-key routes never expose it; admin data transfer preserves it so
-  // exported client histories remain usable after restoring a deployment.
+  // Hidden server-private key material attached to this API key. Normal CRUD
+  // never exposes it; admin data transfer preserves it across deployments.
   serverSecret: string;
   createdAt: string;
   lastUsedAt?: string;
