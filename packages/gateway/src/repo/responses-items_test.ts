@@ -154,12 +154,12 @@ test('SQL refresh cleans a replacement spill when the row disappears before upda
   expect(await repo.responsesItems.lookupMany('key-a', [item.id])).toEqual([]);
 });
 
-test('migration 0057 preserves usable payloads and snapshots but drops legacy affinity columns', async () => {
+test('migration 0058 preserves usable payloads and snapshots but drops legacy affinity columns', async () => {
   const SQL = await initSqlJs();
   const db = new SQL.Database();
   try {
     for (const [filename, sql] of migrationSqlByFilename) {
-      if (filename === '0057_responses_full_state.sql') break;
+      if (filename === '0058_responses_full_state.sql') break;
       db.run(sql);
     }
 
@@ -185,8 +185,8 @@ test('migration 0057 preserves usable payloads and snapshots but drops legacy af
     db.run(insertSnapshot, ['resp_malformed', 'key-a', '{', 8_000, 8_000]);
     db.run(insertSnapshot, ['resp_unscoped', null, '["msg_unscoped"]', 9_000, 9_000]);
 
-    const migration = migrationSqlByFilename.find(([filename]) => filename === '0057_responses_full_state.sql');
-    if (migration === undefined) throw new Error('missing migration 0057_responses_full_state.sql');
+    const migration = migrationSqlByFilename.find(([filename]) => filename === '0058_responses_full_state.sql');
+    if (migration === undefined) throw new Error('missing migration 0058_responses_full_state.sql');
     db.run(migration[1]);
 
     const itemResult = db.exec('SELECT id, item_type, payload_json, content_hash, created_at FROM responses_items ORDER BY created_at')[0];

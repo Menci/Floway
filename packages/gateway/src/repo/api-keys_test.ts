@@ -74,12 +74,12 @@ for (const [backend, makeRepo] of REPO_BACKENDS) {
   });
 }
 
-test('migration 0056 backfills distinct server secrets and enforces their canonical form', async () => {
+test('migration 0057 backfills distinct server secrets and enforces their canonical form', async () => {
   const SQL = await initSqlJs();
   const db = new SQL.Database();
   try {
     for (const [filename, sql] of migrationSqlByFilename) {
-      if (filename === '0056_api_key_server_secret.sql') break;
+      if (filename === '0057_api_key_server_secret.sql') break;
       db.run(sql);
     }
     db.run(`
@@ -89,12 +89,12 @@ test('migration 0056 backfills distinct server secrets and enforces their canoni
         ('key_b', 1, 'B', 'raw_b', '2026-01-02T00:00:00.000Z', '["up_a"]', NULL, 3600)
     `);
 
-    const migration = migrationSqlByFilename.find(([filename]) => filename === '0056_api_key_server_secret.sql');
-    if (migration === undefined) throw new Error('missing migration 0056_api_key_server_secret.sql');
+    const migration = migrationSqlByFilename.find(([filename]) => filename === '0057_api_key_server_secret.sql');
+    if (migration === undefined) throw new Error('missing migration 0057_api_key_server_secret.sql');
     db.run(migration[1]);
 
     const [result] = db.exec('SELECT id, upstream_ids, dump_retention_seconds, server_secret FROM api_keys ORDER BY id');
-    if (result === undefined) throw new Error('migration 0056 returned no api_keys rows');
+    if (result === undefined) throw new Error('migration 0057 returned no api_keys rows');
     const rows = result.values.map(values => Object.fromEntries(result.columns.map((column, index) => [column, values[index]]))) as Array<{
       id: string;
       upstream_ids: string | null;
