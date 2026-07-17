@@ -2184,7 +2184,7 @@ test('claude', 'a fully successful run keeps stderr empty and emits no escape co
   if (globalClaudePresent()) skip('a system Claude Code is installed at a known location; discovery is not hermetic');
   const bashWs = makeWorkspace();
   placeFakeClaude(bashWs.binDir);
-  const bash = await runShellInstaller({ workspace: bashWs, baseUrl: modelServer.url, configuration: claudeConfig(), forceColor: true });
+  const bash = await runShellInstaller({ workspace: bashWs, baseUrl: modelServer.url, configuration: claudeConfig() });
   t.equal(bash.code, 0, `should succeed:\n${bash.combined}`);
   t.equal(bash.stderr.trim(), '', 'a clean Bash run writes nothing to stderr');
   t.ok(!hasAnsi(bash.combined), 'captured Bash output carries no escape sequences');
@@ -2271,7 +2271,7 @@ test('claude', 'a multiple-installation warning is a stderr line on both install
   const bashWs = makeWorkspace();
   placeFakeClaude(bashWs.binDir);
   placeFakeClaude(join(bashWs.home, '.local/bin'));
-  const bash = await runShellInstaller({ workspace: bashWs, baseUrl: modelServer.url, configuration: claudeConfig() });
+  const bash = await runShellInstaller({ workspace: bashWs, baseUrl: modelServer.url, configuration: claudeConfig(), forceColor: true });
   t.equal(bash.code, 0, `should succeed:\n${bash.combined}`);
   t.includes(bash.stderr, '[93mWarning:[0m multiple Claude Code installations detected;', 'Bash colors only the warning label');
   t.excludes(bash.stdout, 'multiple Claude Code installations detected', 'the warning is not on stdout');
