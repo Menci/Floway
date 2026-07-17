@@ -21,8 +21,7 @@ export class ResponsesItemState {
   }
 
   getPrivatePayload(id: string): unknown {
-    const payload = this.#privatePayloads.get(id);
-    return payload === undefined ? undefined : structuredClone(payload);
+    return structuredClone(this.#privatePayloads.get(id));
   }
 
   outputItemSource(id: string): { readonly upstreamId: string; readonly upstreamItemId: string } | null {
