@@ -2148,6 +2148,8 @@ const ANSI_PATTERN = /\[[0-9;]*m/g;
 const stripAnsi = (text: string): string => text.replace(ANSI_PATTERN, '');
 const normalizeLines = (text: string): string =>
   stripAnsi(text).replace(/\r\n/g, '\n').replace(/[ \t]+$/gm, '').replace(/\n+$/, '');
+const normalizeWorkspace = (text: string, workspace: Workspace): string =>
+  normalizeLines(text).replaceAll(workspace.root, '<workspace>');
 const hasAnsi = (text: string): boolean => new RegExp('\\x1b\\[[0-9;]*m').test(text);
 
 // A hermetic single-agent run needs the harness to fully control discovery. The
@@ -2173,7 +2175,7 @@ test('claude', 'Bash and PowerShell emit an identical happy-path stdout line seq
   const ps = await runPowerShellInstaller({ workspace: psWs, baseUrl: modelServer.url, configuration: bothConfig(), agent: 'claude' });
   t.equal(ps.code, 0, `PowerShell happy path should succeed:\n${ps.combined}`);
 
-  t.equal(normalizeLines(ps.stdout), normalizeLines(bash.stdout), 'the two installers must print the same stdout structure');
+  t.equal(normalizeWorkspace(ps.stdout, psWs), normalizeWorkspace(bash.stdout, bashWs), 'the two installers must print the same stdout structure');
   t.includes(normalizeLines(bash.stdout), '==> Floway Agent Setup\nEndpoint:', 'the header identifies the setup and endpoint');
   t.includes(normalizeLines(bash.stdout), '\nAPI Key: Primary key\n', 'the header identifies the selected API key');
   t.includes(normalizeLines(bash.stdout), '\n==> Installing Claude Code\n', 'the installation section is explicit');
