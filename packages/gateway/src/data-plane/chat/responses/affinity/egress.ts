@@ -205,8 +205,9 @@ const wrapResponsesFirstCarrier = async function* (
   const rewriteResponse = async (response: ResponsesResult, synthesizeFirst: boolean): Promise<ResponsesResult> => {
     let output = response.output;
     if (synthesizeFirst && firstItem?.canCarry) {
+      const firstOutputIndex = firstItem.outputIndex;
       output = await Promise.all(output.map(async (item, index) =>
-        index === firstItem.outputIndex ? await ensureItemCarrier(item, index) : item));
+        index === firstOutputIndex ? await ensureItemCarrier(item, index) : item));
     }
     if (prefix === undefined) return { ...response, output };
     return {

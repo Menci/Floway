@@ -25,6 +25,8 @@ describe('StatefulResponsesStore', () => {
     const output = {
       id: 'msg_public',
       apiKeyId: 'key-a',
+      upstreamId: 'upstream-a',
+      upstreamItemId: 'msg_upstream',
       itemType: 'message',
       payload: { item: { type: 'message', id: 'msg_public', role: 'assistant', content: [] } },
       contentHash: 'output-hash',
@@ -48,6 +50,8 @@ describe('StatefulResponsesStore', () => {
     const output = {
       id: 'cmp_public',
       apiKeyId: 'key-a',
+      upstreamId: 'upstream-a',
+      upstreamItemId: 'cmp_upstream',
       itemType: 'compaction',
       payload: { item: { type: 'compaction', id: 'cmp_public', encrypted_content: 'opaque' } },
       contentHash: 'output-hash',
@@ -81,6 +85,8 @@ describe('StatefulResponsesStore', () => {
     const item = {
       id: 'msg_old',
       apiKeyId: 'key-a',
+      upstreamId: null,
+      upstreamItemId: null,
       itemType: 'message',
       payload: { item: { type: 'message', id: 'msg_old', role: 'assistant', content: [] } },
       contentHash: 'old-hash',
@@ -112,6 +118,8 @@ describe('StatefulResponsesStore', () => {
     const directRow = {
       id: directInput.id,
       apiKeyId: 'key-a',
+      upstreamId: null,
+      upstreamItemId: null,
       itemType: 'message',
       payload: { item: directInput },
       contentHash: await hashResponsesItemContent(directInput),
@@ -120,6 +128,8 @@ describe('StatefulResponsesStore', () => {
     const hashedRow = {
       id: 'msg_hashed',
       apiKeyId: 'key-a',
+      upstreamId: null,
+      upstreamItemId: null,
       itemType: 'message',
       payload: { item: hashedInput },
       contentHash: await hashResponsesItemContent(hashedInput),
@@ -144,6 +154,8 @@ describe('StatefulResponsesStore', () => {
     const row = {
       id: 'msg_future',
       apiKeyId: 'key-a',
+      upstreamId: null,
+      upstreamItemId: null,
       itemType: 'message',
       payload: { item: input },
       contentHash: await hashResponsesItemContent(input),

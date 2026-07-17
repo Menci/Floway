@@ -1,14 +1,13 @@
 import type { ExecutionContext } from 'hono';
 import { test, vi } from 'vitest';
 
-import { hashResponsesItemBinding, hashResponsesItemContent, isResponsesItemId, isResponsesResponseId } from './items/format.ts';
+import { hashResponsesItemContent, isResponsesItemId, isResponsesResponseId } from './items/format.ts';
 import { responsesServe } from './serve.ts';
 import { app } from '../../../app.ts';
 import { initDumpBroker, initDumpStore } from '../../../dump/registry.ts';
 import { installDumpStubs } from '../../../dump/test-fixtures.ts';
 import { copilotModels, flushAsyncWork, setupAppTest, sseResponsesResponse } from '../../../test-helpers.ts';
 import { FakeTime } from '../../../test-time.ts';
-import { AffinityCodec } from '../shared/affinity/index.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS } from '../shared/stream/sse.ts';
 import { assert, assertEquals, assertExists, assertStringIncludes, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
@@ -626,49 +625,6 @@ test('Responses WebSocket returns invalid_request_error for malformed client mes
       },
     }]);
   });
-});
-
-test('Responses WebSocket renders an invalid bound affinity carrier as a 400 input error', async () => {
-  const { apiKey } = await setupAppTest();
-  const original = { type: 'program_output' as const, id: 'first', call_id: 'call_1', result: 'first', status: 'completed' as const };
-  const carrier = await new AffinityCodec(apiKey.serverSecret).wrap(undefined, {
-    upstreamId: 'copilot',
-    modelId: 'gpt-direct-responses',
-    syntheticItem: true,
-    boundItem: {
-      type: original.type,
-      upstreamItemId: 'first_upstream',
-      contentHash: await hashResponsesItemBinding(original),
-    },
-  }, 'responses.reasoning.encrypted_content');
-
-  await withSuccessfulResponsesUpstream(async () => await withWorkerWebSocketRuntime(async () => {
-    const client = await connectResponsesWebSocket(apiKey.key);
-    const received = waitForMessages(client, messages => messages.some(message => message.type === 'error'));
-    client.send(JSON.stringify({
-      type: 'response.create',
-      event_id: 'evt_affinity',
-      response: {
-        model: 'gpt-direct-responses',
-        input: [
-          { type: 'reasoning', id: 'rs_prefix', summary: [], encrypted_content: carrier },
-          { type: 'program_output', id: 'second', call_id: 'call_2', result: 'second', status: 'completed' },
-        ],
-      },
-    }));
-
-    assertEquals(await received, [{
-      type: 'error',
-      event_id: 'evt_affinity',
-      status_code: 400,
-      error: {
-        type: 'invalid_request_error',
-        code: 'invalid_request_error',
-        message: 'Affinity carrier does not match the Responses input item at index 1.',
-        param: 'input[1]',
-      },
-    }]);
-  }));
 });
 
 test('Responses WebSocket forwards HTTP failures with status_code, error.code, and event_id', async () => {

@@ -16,6 +16,8 @@ const factories: Array<[string, () => Promise<Repo>]> = [
 const storedItem = (id: string, apiKeyId: string, contentHash: string | null, createdAt: number): StoredResponsesItem => ({
   id,
   apiKeyId,
+  upstreamId: null,
+  upstreamItemId: null,
   itemType: 'message',
   payload: { item: { type: 'message', id, role: 'assistant', content: [] } },
   contentHash,
