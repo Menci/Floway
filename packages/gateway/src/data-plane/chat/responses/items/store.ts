@@ -194,6 +194,8 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
     const row: StoredResponsesItem = {
       id: createResponsesItemId(item.type),
       apiKeyId: this.apiKeyId,
+      upstreamId: null,
+      upstreamItemId: null,
       itemType: canonicalResponsesItemType(item.type),
       payload: { item: structuredClone(item) },
       contentHash,

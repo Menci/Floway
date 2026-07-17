@@ -83,7 +83,10 @@ export const responsesAttempt = {
     if (args.sourceState === undefined) {
       ctx.responsesAttemptState.begin(new Map());
     } else {
-      ctx.responsesAttemptState.begin(args.sourceState.privatePayloads);
+      ctx.responsesAttemptState.begin(args.sourceState.privatePayloads, {
+        upstreamId: candidate.provider.upstream,
+        restoresItemIds: targetApi === 'responses',
+      });
     }
     // Copilot compaction and Azure-native compaction both emit assistant
     // messages whose content blocks have `type: 'input_text'`, then refuse
