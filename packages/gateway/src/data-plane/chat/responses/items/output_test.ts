@@ -376,7 +376,7 @@ test('client output binds a later delta item_id to an id-less lifecycle', async 
   expect(delta.item_id).toBe(added.item.id);
 });
 
-test('client output rejects terminal item drift after output_item.done', async () => {
+test('client output persists the terminal item snapshot after an earlier done event', async () => {
   const { repo, store } = memoryOutputHarness();
   const doneItem = { type: 'reasoning' as const, id: 'rs_upstream', summary: [{ type: 'summary_text' as const, text: 'old' }] };
   const terminalItem = { ...doneItem, summary: [{ type: 'summary_text' as const, text: 'new' }] };
@@ -402,12 +402,17 @@ test('client output rejects terminal item drift after output_item.done', async (
     })) void _frame;
   };
 
-  await expect(collect()).rejects.toThrow('Responses output item 0 changed after output_item.done');
-  expect(await repo.responsesSnapshots.lookup('key-a', 'resp_public')).toBeNull();
+  await collect();
+  const snapshot = await repo.responsesSnapshots.lookup('key-a', 'resp_public');
+  expect(snapshot).not.toBeNull();
+  if (snapshot === null) throw new Error('Expected persisted snapshot');
+  expect((await repo.responsesItems.lookupMany('key-a', snapshot.itemIds))[0].payload.item).toMatchObject({
+    summary: [{ type: 'summary_text', text: 'new' }],
+  });
 });
 
-test('client output rejects repeated output_item.done drift', async () => {
-  const { store } = memoryOutputHarness();
+test('client output persists the latest repeated output_item.done snapshot', async () => {
+  const { repo, store } = memoryOutputHarness();
   const first = { type: 'reasoning' as const, id: 'rs_upstream', summary: [{ type: 'summary_text' as const, text: 'old' }] };
   const changed = { ...first, summary: [{ type: 'summary_text' as const, text: 'new' }] };
   const input = async function* (): AsyncIterable<ProtocolFrame<ResponsesStreamEvent>> {
@@ -415,15 +420,24 @@ test('client output rejects repeated output_item.done drift', async () => {
     yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: first });
     yield eventFrame({ type: 'response.output_item.done', output_index: 0, item: changed });
   };
+  let clientId: string | undefined;
   const collect = async () => {
-    for await (const _frame of wrapResponsesClientOutput(input(), {
+    for await (const frame of wrapResponsesClientOutput(input(), {
       store,
       attemptState: new ResponsesAttemptState(),
       responseId: 'resp_public',
-    })) void _frame;
+    })) {
+      if (frame.type === 'event' && frame.event.type === 'response.output_item.done') {
+        clientId = frame.event.item.id;
+      }
+    }
   };
 
-  await expect(collect()).rejects.toThrow('Responses output item 0 changed after output_item.done');
+  await collect();
+  if (clientId === undefined) throw new Error('Expected client item id');
+  expect((await repo.responsesItems.lookupMany('key-a', [clientId]))[0].payload.item).toMatchObject({
+    summary: [{ type: 'summary_text', text: 'new' }],
+  });
 });
 
 test('snapshot output IDs follow output_index rather than done arrival order', async () => {

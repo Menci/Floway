@@ -129,7 +129,7 @@ describe('Responses affinity egress', () => {
         response: {
           output: [
             { encrypted_content: 'wrapped:opaque' },
-            { type: 'program', fingerprint: undefined },
+            { type: 'program' },
             { type: 'program_output' },
           ],
         },

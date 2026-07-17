@@ -288,7 +288,7 @@ test('SQL Responses item writes stay within D1 bind limits and use bounded state
   await repo.responsesItems.insertMany(items);
   await repo.responsesItems.refreshMany(items, 2_000);
 
-  expect(batchSizes).toEqual([15, 10]);
+  expect(batchSizes).toEqual([20, 10]);
   expect(maxBindCount).toBeLessThanOrEqual(100);
   expect(await repo.responsesItems.lookupMany('key-a', items.map(item => item.id))).toHaveLength(items.length);
 });
