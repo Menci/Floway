@@ -8,7 +8,8 @@
 # --- output layer -----------------------------------------------------------
 #
 # Setup-owned output follows Homebrew's compact visual language: blue `==>`
-# notices introduce work, while warnings and errors color only their labels.
+# notices introduce major phases, while warnings and errors color only their
+# labels. Phase details remain subordinate instead of competing for attention.
 # Native package managers inherit the terminal directly, so their ANSI colors,
 # carriage-return progress, buffering, and cursor behavior remain intact.
 #
@@ -63,12 +64,12 @@ _emit_line() {
   fi
 }
 
-out_title() { _emit_notice 'Floway Agent Setup'; }
+out_title() { _emit_line 1 "$_C_BLUE" 'Floway Agent Setup'; }
 out_metadata() { _emit_line 1 '' "$1: $2"; }
-out_phase() { printf '\n'; _emit_notice "$1"; }
-out_step() { _emit_notice "$1"; }
+out_phase() { _emit_notice "$1"; }
+out_step() { _emit_line 1 "$_C_BLUE" "  · $1"; }
 out_info() { _emit_line 1 '' "  $1"; }
-out_success() { _emit_notice "$1"; }
+out_success() { _emit_line 1 "$_C_GREEN" "  $1"; }
 out_warn() { _emit_diagnostic "$_C_YELLOW" 'Warning' "$1"; }
 out_error() { _emit_diagnostic "$_C_RED" 'Error' "$1"; }
 out_fatal() { _emit_diagnostic "$_C_RED" 'Error' "$1"; }

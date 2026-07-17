@@ -7,7 +7,8 @@
 # --- output layer -----------------------------------------------------------
 #
 # Setup-owned output follows Homebrew's compact visual language: blue `==>`
-# notices introduce work, while warnings and errors color only their labels.
+# notices introduce major phases, while warnings and errors color only their
+# labels. Phase details remain subordinate instead of competing for attention.
 # Native package managers inherit the terminal directly, preserving their ANSI
 # colors, carriage-return progress, buffering, and cursor behavior.
 #
@@ -66,12 +67,12 @@ function Write-SetupDiagnostic {
   }
 }
 
-function Write-SetupTitle { Write-SetupNotice 'Floway Agent Setup' }
+function Write-SetupTitle { Write-SetupHostLine 'Floway Agent Setup' Blue }
 function Write-SetupMetadata { param([string]$Label, [string]$Value) Write-Host "${Label}: $Value" }
-function Write-SetupPhase { param([string]$Name) Write-Host ''; Write-SetupNotice $Name }
-function Write-SetupStep { param([string]$Text) Write-SetupNotice $Text }
+function Write-SetupPhase { param([string]$Name) Write-SetupNotice $Name }
+function Write-SetupStep { param([string]$Text) Write-SetupHostLine "  · $Text" Blue }
 function Write-SetupInfo { param([string]$Text) Write-SetupHostLine "  $Text" -Plain }
-function Write-SetupSuccess { param([string]$Text) Write-SetupNotice $Text }
+function Write-SetupSuccess { param([string]$Text) Write-SetupHostLine "  $Text" Green }
 function Write-SetupWarn { param([string]$Text) Write-SetupDiagnostic 'Warning' $Text Yellow '93' }
 function Write-SetupError { param([string]$Text) Write-SetupDiagnostic 'Error' $Text Red '91' }
 function Write-SetupFatal { param([string]$Text) Write-SetupDiagnostic 'Error' $Text Red '91' }

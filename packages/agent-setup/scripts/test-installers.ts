@@ -2437,10 +2437,12 @@ test('claude', 'Bash and PowerShell emit an identical happy-path stdout line seq
   t.equal(ps.code, 0, `PowerShell happy path should succeed:\n${ps.combined}`);
 
   t.equal(normalizeLines(ps.stdout), normalizeLines(bash.stdout), 'the two installers must print the same stdout structure');
-  t.includes(normalizeLines(bash.stdout), '==> Floway Agent Setup\nEndpoint:', 'the header identifies the setup and endpoint');
+  t.includes(normalizeLines(bash.stdout), 'Floway Agent Setup\nEndpoint:', 'the header identifies the setup and endpoint');
   t.includes(normalizeLines(bash.stdout), '\nAPI Key: Primary key\n', 'the header identifies the selected API key');
   t.includes(normalizeLines(bash.stdout), '\n==> Claude Code\n', 'the output opens the Claude Code phase');
   t.includes(normalizeLines(bash.stdout), '\n==> Summary\n', 'the output closes with a Summary phase');
+  t.excludes(normalizeLines(bash.stdout), '\n\n', 'setup-owned sections do not insert blank separator lines');
+  t.equal(normalizeLines(bash.stdout).match(/^==> /gm)?.length, 2, 'only major phases receive the arrow notice');
   t.includes(normalizeLines(bash.stdout), '  Claude Code  [configured]', 'Summary lists Claude Code with its state');
   t.excludes(normalizeLines(bash.stdout), '  Codex  [', 'Summary excludes the unselected agent');
 });
@@ -2464,13 +2466,13 @@ test('claude', 'a fully successful run keeps stderr empty and emits no escape co
   t.ok(!hasAnsi(ps.combined), 'captured PowerShell output carries no escape sequences');
 });
 
-test('claude', 'Bash styles setup notices only when color is enabled and honors NO_COLOR', async t => {
+test('claude', 'Bash styles phase notices and subordinate success lines only when color is enabled', async t => {
   const ws = makeWorkspace();
   placeFakeClaude(ws.binDir);
   const forced = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: claudeConfig(), forceColor: true });
   t.equal(forced.code, 0, `forced-color run should succeed:\n${forced.combined}`);
   t.includes(forced.stdout, '[34m==>[0m [1mClaude Code[0m', 'the phase uses a blue arrow and bold text');
-  t.includes(forced.stdout, '[34m==>[0m [1mClaude Code configured.[0m', 'success uses the same notice style');
+  t.includes(forced.stdout, '[92m  Claude Code configured.[0m', 'success remains subordinate to the phase');
   t.ok(!hasAnsi(forced.stderr), 'a successful run leaves stderr escape-free even under forced color');
 
   const suppressed = makeWorkspace();
