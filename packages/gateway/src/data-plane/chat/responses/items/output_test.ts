@@ -89,6 +89,36 @@ test('client output rewrites ids and persists the exact complete item before ter
   expect(await repo.responsesSnapshots.lookup('key-a', 'resp_public')).not.toBeNull();
 });
 
+test('store=false passes the upstream item id through and mints no gateway id', async () => {
+  const repo = new InMemoryRepo();
+  initRepo(repo);
+  const store = createResponsesHttpStore('key-a', false);
+  const result: ResponsesResult = {
+    id: 'resp_upstream',
+    object: 'response',
+    model: 'model',
+    status: 'completed',
+    output: [{ type: 'reasoning', id: 'rs_upstream', summary: [], encrypted_content: 'wrapped-affinity' }],
+    error: null,
+    incomplete_details: null,
+  };
+
+  const events: ResponsesStreamEvent[] = [];
+  for await (const frame of wrapResponsesClientOutput(frames(result), { store, responseId: 'resp_public' })) {
+    if (frame.type === 'event') events.push(frame.event);
+  }
+
+  const terminal = events.at(-1);
+  if (terminal?.type !== 'response.completed') throw new Error('Expected terminal response');
+  // The envelope id stays gateway-owned, but the item id is the upstream's own
+  // so the origin upstream recognizes it if the client echoes it next turn.
+  expect(terminal.response.id).toBe('resp_public');
+  expect(terminal.response.output[0].id).toBe('rs_upstream');
+  const added = events.find(event => event.type === 'response.output_item.added');
+  expect(added?.type === 'response.output_item.added' && added.item.id).toBe('rs_upstream');
+  expect(await repo.responsesItems.lookupMany('key-a', ['rs_upstream'])).toEqual([]);
+});
+
 test('client output uses one item id across lifecycle snapshots without committing a failed snapshot', async () => {
   const { repo, store } = memoryOutputHarness();
   const item = { type: 'reasoning' as const, id: 'rs_upstream', summary: [], encrypted_content: 'wrapped-affinity' };

@@ -4,9 +4,11 @@ import type { StoredResponsesItem } from '../../../../repo/types.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { responsesResultToEvents, type ResponsesInputItem, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
-// Mints gateway-owned ids and presents finalized client items to the configured
-// state store when it has a write target. Translated inner Responses attempts
-// never enter this membrane.
+// Mints gateway-owned item ids and presents finalized client items to the
+// configured state store when it has a write target; without one (HTTP
+// store=false) item ids pass through so the origin upstream still recognizes
+// them next turn. Translated inner Responses attempts never enter this
+// membrane.
 //
 // Complete items are staged at their `done` frame. The whole output batch and
 // its snapshot commit together before a successful terminal frame is yielded.
@@ -44,7 +46,14 @@ export const wrapResponsesClientOutput = async function* (
   const upstreamToClient = new Map<string, string>();
   const outputIndexToClient = new Map<number, string>();
 
+  // A gateway-minted item id is only worth issuing when the mapping back to its
+  // upstream origin is persisted (store.writesState) — otherwise a later turn
+  // that echoes the id has no row to restore it from. When no state is written
+  // (HTTP store=false), the upstream item id passes through unchanged, so the
+  // client carries an id the origin upstream still recognizes next turn. The
+  // response envelope id below stays gateway-owned regardless.
   const clientIdForUpstreamId = (upstreamId: string, itemType: string): string => {
+    if (!store.writesState) return upstreamId;
     let clientId = upstreamToClient.get(upstreamId);
     if (clientId === undefined) {
       clientId = createResponsesItemId(itemType);
@@ -54,6 +63,7 @@ export const wrapResponsesClientOutput = async function* (
   };
 
   const clientIdForOutput = (upstreamId: string | null, itemType: string, outputIndex: number): string => {
+    if (!store.writesState && upstreamId !== null) return upstreamId;
     let clientId = outputIndexToClient.get(outputIndex);
     if (clientId === undefined) {
       clientId = upstreamId === null ? createResponsesItemId(itemType) : clientIdForUpstreamId(upstreamId, itemType);
