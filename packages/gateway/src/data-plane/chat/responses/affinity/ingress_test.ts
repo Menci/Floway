@@ -180,18 +180,18 @@ test('treats compaction_summary as force state across alias-rule variants', asyn
 
 test('keeps originless context compaction prefer-only while natural encrypted state forces', async () => {
   const synthetic = await codec.wrap(undefined, targetFor(candidateA), carrierDomain('context_compaction', 'encrypted_content'));
-  const syntheticItem = {
+  const originlessItem = {
     type: 'context_compaction',
     id: 'ctx_client',
     encrypted_content: synthetic,
   } as unknown as CanonicalResponsesPayload['input'][number];
-  const syntheticPrepared = await prepareResponsesAffinity({ model: 'model', input: [syntheticItem] }, codec);
+  const syntheticPrepared = await prepareResponsesAffinity({ model: 'model', input: [originlessItem] }, codec);
   expect(syntheticPrepared.routingEvidence).toEqual([{ target: targetFor(candidateA), mode: 'prefer' }]);
 
   const natural = await codec.wrap('opaque', targetFor(candidateA), carrierDomain('context_compaction', 'encrypted_content'));
   const naturalPrepared = await prepareResponsesAffinity({
     model: 'model',
-    input: [{ ...syntheticItem, encrypted_content: natural } as CanonicalResponsesPayload['input'][number]],
+    input: [{ ...originlessItem, encrypted_content: natural } as CanonicalResponsesPayload['input'][number]],
   }, codec);
   expect(naturalPrepared.routingEvidence.map(evidence => evidence.mode)).toEqual(['prefer', 'force']);
 });

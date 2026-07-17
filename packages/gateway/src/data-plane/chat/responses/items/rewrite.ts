@@ -1,4 +1,4 @@
-import { canonicalResponsesItemType, isResponsesItemId, responsesItemId } from './format.ts';
+import { isResponsesItemId, responsesItemId } from './format.ts';
 import type { StatefulResponsesStore } from './store.ts';
 import { throwChatServeFailure } from '../../shared/errors.ts';
 import type { CanonicalResponsesPayload, ResponsesInputItem } from '@floway-dev/protocols/responses';
