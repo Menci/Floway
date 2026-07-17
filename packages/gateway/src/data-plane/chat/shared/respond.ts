@@ -94,7 +94,7 @@ export const isForwardableUpstreamHeader = (name: string): boolean =>
 // the response. Hono's `c.header()` is the only knob that survives a later
 // `c.json` or `streamSSE` call without being overwritten. Safe to call with
 // `undefined` so callers can pass `result.headers` directly.
-export const forwardUpstreamHeaders = (c: Context, headers: Headers | undefined): void => {
+const forwardUpstreamHeaders = (c: Context, headers: Headers | undefined): void => {
   if (!headers) return;
   for (const [name, value] of headers) {
     if (isForwardableUpstreamHeader(name)) c.header(name, value);
@@ -115,7 +115,7 @@ export const mergeForwardedUpstreamHeaders = (base: HeadersInit | undefined, ups
 
 type EventsResult<TEvent> = Extract<ExecuteResult<ProtocolFrame<TEvent>>, { type: 'events' }>;
 
-export type ChatProtocolTag = 'chat-completions' | 'gemini' | 'messages' | 'responses';
+type ChatProtocolTag = 'chat-completions' | 'gemini' | 'messages' | 'responses';
 
 // Shared streaming scaffold for every chat protocol's SSE response. Forwards
 // upstream headers, drives `writeSSEFrames` under Hono's `streamSSE`, and
