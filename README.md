@@ -155,14 +155,18 @@ Open the deployed URL (or `http://localhost:8788` for Node), log in with
 
    The command's setup URL stays stable while the panel is open. The visible
    panel renews its five-minute lease once a minute, and the URL expires about
-   five minutes after you leave. A missing CLI is installed with Homebrew on
-   macOS. Linux uses Claude's direct release bootstrap and Codex's GitHub source
-   installer; Windows uses their PowerShell equivalents, preferring `pwsh` when
-   available. The setup never uses npm or `sudo` and never upgrades an existing
-   installation. Native installer output stays attached to the terminal so its
-   progress, colors, and carriage-return updates render in real time; the setup's
-   own output uses plain headings rather than a synthetic vertical spine. The
-   header names the endpoint and selected API key.
+   five minutes after you leave. A missing CLI uses the first available install
+   mechanism: Homebrew, npm, then the official script on macOS; npm, then the
+   official script on Linux and Windows. A selected package manager failure is
+   surfaced directly instead of silently falling through. The setup never uses
+   `sudo` and never upgrades an existing installation.
+
+   Native child-process output stays attached to the terminal so progress,
+   colors, and carriage-return updates render in real time. Setup-owned output
+   uses Homebrew-style notices for the title and selected agent, emphasized
+   endpoint/API-key labels, colored warning and error labels, and plain normal
+   status text. Each script configures one agent and exits with that result, so
+   it prints no redundant summary.
 
    Each managed file is backed up before Floway's settings are merged into
    Claude Code's `~/.claude/settings.json` and Codex's

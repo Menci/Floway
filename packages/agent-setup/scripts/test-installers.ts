@@ -4,7 +4,7 @@
 // (rendered here through the real `render.ts`) plus a fixed checked-in body.
 // This harness executes that exact concatenation inside throwaway HOME,
 // CLAUDE_CONFIG_DIR, CODEX_HOME, and PATH roots against fake Claude Code and
-// Codex CLIs, fake official installers, and local authenticated model catalogs,
+// Codex CLIs, fake installer hooks, and local authenticated model catalogs,
 // then inspects files, protocol records, permissions, rollback, and output.
 // The full host run exercises more than 90 behavior cases across Bash and
 // PowerShell, including a real Codex 0.144.5 app-server smoke when that exact
@@ -471,6 +471,29 @@ const placeFakeCodex = (dir: string): void => {
   writeFileSync(join(dir, 'codex'), FAKE_CODEX, { mode: 0o755 });
 };
 
+const placeFakeNpm = (workspace: Workspace): void => {
+  writeFileSync(join(workspace.binDir, 'npm'), `#!/bin/bash
+if [ "\${SETUP_API_KEY+x}" = x ] || [ "\${SetupApiKey+x}" = x ]; then
+  printf 'fake npm inherited the setup API key environment variable\\n' >&2
+  exit 91
+fi
+printf '%s\\n' "$*" > "$FAKE_NPM_RECORD"
+case "$*" in
+  *'@anthropic-ai/claude-code'*)
+    mkdir -p "$HOME/.local/bin"
+    cp "$FAKE_CLAUDE_SRC" "$HOME/.local/bin/claude"
+    chmod 755 "$HOME/.local/bin/claude"
+    ;;
+  *'@openai/codex'*)
+    mkdir -p "$HOME/.local/bin"
+    cp "$FAKE_CODEX_SRC" "$HOME/.local/bin/codex"
+    chmod 755 "$HOME/.local/bin/codex"
+    ;;
+  *) exit 64 ;;
+esac
+`, { mode: 0o755 });
+};
+
 const claudeConfig = (overrides: Partial<AgentSetupConfiguration['claudeCode']> = {}): AgentSetupConfiguration => ({
   apiKeyId: 'key-a',
   claudeCode: {
@@ -628,6 +651,7 @@ const runShellInstaller = (options: RunOptions): Promise<RunResult> => {
     FAKE_CLAUDE_SRC,
     FAKE_INSTALLER_MARKER: join(workspace.root, 'installer-ran'),
     FAKE_INSTALLER_CHILD_PID_FILE: join(workspace.root, 'installer-child.pid'),
+    FAKE_NPM_RECORD: join(workspace.root, 'npm-record.txt'),
     ...codexEnv(options),
   };
   if (options.configDir) env.CLAUDE_CONFIG_DIR = options.configDir;
@@ -696,6 +720,7 @@ const runShellInstallerWithAmbientKey = (options: RunOptions): Promise<RunResult
     FAKE_CLAUDE_SRC,
     FAKE_INSTALLER_MARKER: join(workspace.root, 'installer-ran'),
     FAKE_INSTALLER_CHILD_PID_FILE: join(workspace.root, 'installer-child.pid'),
+    FAKE_NPM_RECORD: join(workspace.root, 'npm-record.txt'),
     AGENT_SETUP_TEST_INSTALL_CLAUDE_SCRIPT: FAKE_INSTALLER_SCRIPT,
   };
   return new Promise<RunResult>((resolve) => {
@@ -782,6 +807,7 @@ const runPowerShellInstaller = (options: RunOptions): Promise<RunResult> => {
     FAKE_CLAUDE_SRC,
     FAKE_INSTALLER_MARKER: join(workspace.root, 'installer-ran'),
     FAKE_INSTALLER_CHILD_PID_FILE: join(workspace.root, 'installer-child.pid'),
+    FAKE_NPM_RECORD: join(workspace.root, 'npm-record.txt'),
     ...codexEnv(options),
   };
   if (options.configDir) env.CLAUDE_CONFIG_DIR = options.configDir;
@@ -809,24 +835,35 @@ const runPowerShellInstaller = (options: RunOptions): Promise<RunResult> => {
 
 let modelServer: ModelServer;
 
-test('claude', 'existing CLI is used and the official installer is not called', async t => {
+test('claude', 'existing CLI is used and the installer hook is not called', async t => {
   const ws = makeWorkspace();
   placeFakeClaude(ws.binDir);
   const run = await runShellInstaller({ workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url });
   t.equal(run.code, 0, `installer should succeed:\n${run.combined}`);
-  t.ok(!existsSync(installerMarker(ws)), 'the official installer must not run when claude is already present');
+  t.ok(!existsSync(installerMarker(ws)), 'the installer hook must not run when claude is already present');
   const settings = readSettings(settingsPathFor(ws)) as { env: Record<string, string> };
   t.equal(settings.env.ANTHROPIC_BASE_URL, modelServer.url, 'base URL is written');
   t.equal(settings.env.ANTHROPIC_AUTH_TOKEN, SENTINEL_KEY, 'auth token is written');
 });
 
-test('claude', 'missing CLI triggers the official user-local installer', async t => {
+test('claude', 'missing CLI triggers the configured installer hook', async t => {
   const ws = makeWorkspace();
-  const run = await runShellInstaller({ workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url });
+  const run = await runShellInstaller({ workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url, forceColor: true });
   t.equal(run.code, 0, `installer should succeed after install:\n${run.combined}`);
-  t.ok(existsSync(installerMarker(ws)), 'the official installer must run when claude is absent');
+  t.ok(existsSync(installerMarker(ws)), 'the installer hook must run when claude is absent');
   t.ok(existsSync(join(ws.home, '.local/bin/claude')), 'the installer places claude in the user-local location');
   t.ok(existsSync(settingsPathFor(ws)), 'settings are written after installing');
+  const installLine = run.stdout.split(/\r?\n/).find(line => line.includes('Claude Code CLI not found; running the test installer'));
+  t.equal(installLine, 'Claude Code CLI not found; running the test installer', 'normal installation information carries no prefix or styling');
+});
+
+test('claude', 'npm is preferred over the direct installer when npm is available', async t => {
+  const ws = makeWorkspace();
+  placeFakeNpm(ws);
+  const run = await runShellInstaller({ workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url, withInstallHook: false });
+  t.equal(run.code, 0, `npm installation should succeed:\n${run.combined}`);
+  t.equal(readFileSync(join(ws.root, 'npm-record.txt'), 'utf8').trim(), 'install --global @anthropic-ai/claude-code', 'npm receives the official global package');
+  t.includes(run.stdout, 'Claude Code CLI not found; installing with npm', 'the selected installation source is reported plainly');
 });
 
 test('claude', 'unrelated settings and env keys are preserved', async t => {
@@ -1104,6 +1141,7 @@ test('claude', 'jq is bootstrapped from the pinned release when absent from PATH
   placeFakeClaude(ws.binDir);
   const run = await runShellInstaller({ workspace: ws, configuration: claudeConfig({ modelDiscovery: true }), baseUrl: modelServer.url, includeJq: false });
   t.equal(run.code, 0, `bootstrapped jq should configure successfully:\n${run.combined}`);
+  t.includes(run.stderr, 'Warning: jq not found on PATH; fetching the pinned jq-1.8.2 build', 'automatic jq recovery is presented as a non-blocking warning');
   const settings = readSettings(settingsPathFor(ws)) as { env: Record<string, string> };
   t.equal(settings.env.CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY, '1', 'the bootstrapped jq produced correct output');
 });
@@ -1280,6 +1318,15 @@ test('claude', 'PowerShell: missing CLI triggers the installer', async t => {
   t.equal(run.code, 0, `should succeed after install:\n${run.combined}`);
   t.ok(existsSync(installerMarker(ws)), 'the installer runs when claude is absent');
   t.ok(existsSync(settingsPathFor(ws)), 'settings are written after installing');
+});
+
+test('claude', 'PowerShell prefers npm over the direct installer when npm is available', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  placeFakeNpm(ws);
+  const run = await runPowerShellInstaller({ workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url, withInstallHook: false });
+  t.equal(run.code, 0, `npm installation should succeed:\n${run.combined}`);
+  t.equal(readFileSync(join(ws.root, 'npm-record.txt'), 'utf8').trim(), 'install --global @anthropic-ai/claude-code', 'npm receives the official global package');
 });
 
 test('claude', 'local Bash installer accepts shell content and rejects HTML', async t => {
@@ -1522,10 +1569,21 @@ test('claude', 'PowerShell: the API key never appears in output and no inference
 
 // --- Bash 3.2 syntax check --------------------------------------------------
 
-test('claude', 'platform installers use the direct release sources', t => {
+test('claude', 'platform installers prefer Homebrew then npm on macOS and npm then direct scripts elsewhere', t => {
   t.includes(SH_BODY, 'brew install --cask', 'the Bash installer uses Homebrew on macOS');
+  t.includes(SH_BODY, "npm install --global \"$_inp_package\"", 'the Bash installer can install global npm packages');
+  t.includes(SH_BODY, "'@anthropic-ai/claude-code'", 'the Bash installer names the official Claude Code npm package');
+  t.includes(SH_BODY, "'@openai/codex'", 'the Bash installer names the official Codex npm package');
   t.includes(SH_BODY, 'https://downloads.claude.ai/claude-code-releases/bootstrap.sh', 'Claude Linux uses the direct release bootstrap');
   t.includes(SH_BODY, 'https://raw.githubusercontent.com/openai/codex/refs/heads/main/scripts/install/install.sh', 'Codex Linux uses the GitHub source installer');
+  const shClaude = SH_BODY.slice(SH_BODY.indexOf('claude_ensure_installed()'), SH_BODY.indexOf('claude_write_settings()'));
+  t.ok(shClaude.indexOf('command -v brew') < shClaude.indexOf('command -v npm'), 'Claude on macOS checks Homebrew before npm');
+  t.ok(shClaude.indexOf('command -v npm') < shClaude.indexOf('bootstrap.sh'), 'Claude checks npm before the direct script');
+  const shCodex = SH_BODY.slice(SH_BODY.indexOf('codex_ensure_installed()'), SH_BODY.indexOf('codex_backup_files()'));
+  t.ok(shCodex.indexOf('command -v brew') < shCodex.indexOf('command -v npm'), 'Codex on macOS checks Homebrew before npm');
+  t.ok(shCodex.indexOf('command -v npm') < shCodex.indexOf('install.sh'), 'Codex checks npm before the direct script');
+  t.includes(PS1_BODY, "Install-SetupNpmPackage -Package '@anthropic-ai/claude-code'", 'PowerShell can install Claude Code with npm');
+  t.includes(PS1_BODY, "Install-SetupNpmPackage -Package '@openai/codex'", 'PowerShell can install Codex with npm');
   t.includes(PS1_BODY, 'https://downloads.claude.ai/claude-code-releases/bootstrap.ps1', 'Claude Windows uses the direct release bootstrap');
   t.includes(PS1_BODY, 'https://raw.githubusercontent.com/openai/codex/refs/heads/main/scripts/install/install.ps1', 'Codex Windows uses the GitHub source installer');
   t.includes(PS1_BODY, 'Get-Command pwsh', 'downloaded PowerShell scripts prefer pwsh when it is installed');
@@ -1709,7 +1767,7 @@ test('codex', 'existing CLI configures via the app-server and stages the provide
   placeFakeCodex(ws.binDir);
   const run = await runShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url });
   t.equal(run.code, 0, `codex setup should succeed:\n${run.combined}`);
-  t.ok(!existsSync(installerMarker(ws)), 'the official installer must not run when codex is present');
+  t.ok(!existsSync(installerMarker(ws)), 'the installer hook must not run when codex is present');
   assertCodexBaseEdits(t, ws, modelServer.url);
   assertStagedToken(t, ws);
 });
@@ -1863,14 +1921,24 @@ test('codex', 'honors an explicit CODEX_HOME for config and provider token', asy
   assertStagedToken(t, ws, codexHome);
 });
 
-test('codex', 'missing CLI triggers the official user-local installer', async t => {
+test('codex', 'missing CLI triggers the configured installer hook', async t => {
   if (globalCodexPresent()) skip('a system Codex is installed at a known location; cannot simulate an absent CLI');
   const ws = makeWorkspace();
   const run = await runShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url });
   t.equal(run.code, 0, `codex setup should succeed after install:\n${run.combined}`);
-  t.ok(existsSync(installerMarker(ws)), 'the official installer must run when codex is absent');
+  t.ok(existsSync(installerMarker(ws)), 'the installer hook must run when codex is absent');
   t.ok(existsSync(join(ws.home, '.local/bin/codex')), 'the installer places codex in the user-local location');
   assertCodexBaseEdits(t, ws, modelServer.url);
+});
+
+test('codex', 'npm is preferred over the direct installer when npm is available', async t => {
+  if (globalCodexPresent()) skip('a system Codex is installed at a known location; cannot simulate an absent CLI');
+  const ws = makeWorkspace();
+  placeFakeNpm(ws);
+  const run = await runShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url, withCodexInstallHook: false });
+  t.equal(run.code, 0, `npm installation should succeed:\n${run.combined}`);
+  t.equal(readFileSync(join(ws.root, 'npm-record.txt'), 'utf8').trim(), 'install --global @openai/codex', 'npm receives the official global package');
+  t.includes(run.stdout, 'Codex CLI not found; installing with npm', 'the selected installation source is reported plainly');
 });
 
 test('codex', 'the staged provider token is mode 0600', async t => {
@@ -2041,8 +2109,8 @@ test('codex', 'a Codex script never configures Claude when Codex fails', async t
     fakeCodexAppServerMode: 'error',
   });
   t.ok(run.code !== 0, 'a Codex failure must exit nonzero');
-  t.includes(run.combined, 'Codex  [failed]', 'Codex is reported as failed');
-  t.excludes(run.combined, 'Claude Code  [', 'the summary contains only the selected agent');
+  t.excludes(run.combined, 'Summary', 'single-agent scripts do not print a redundant summary');
+  t.excludes(run.combined, 'Claude Code', 'the Codex script does not mention the unselected agent');
   t.ok(!existsSync(settingsPathFor(ws)), 'the Codex script never writes Claude settings');
 });
 
@@ -2372,8 +2440,8 @@ test('codex', 'PowerShell: a Codex script never configures Claude when Codex fai
   placeFakeCodex(ws.binDir);
   const run = await runPowerShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: bothConfig(), agent: 'codex', fakeCodexAppServerMode: 'error' });
   t.ok(run.code !== 0, 'a Codex failure must exit nonzero');
-  t.includes(run.combined, 'Codex  [failed]', 'Codex is reported as failed');
-  t.excludes(run.combined, 'Claude Code  [', 'the summary contains only the selected agent');
+  t.excludes(run.combined, 'Summary', 'single-agent scripts do not print a redundant summary');
+  t.excludes(run.combined, 'Claude Code', 'the Codex script does not mention the unselected agent');
   t.ok(!existsSync(settingsPathFor(ws)), 'the Codex script never writes Claude settings');
 });
 
@@ -2437,14 +2505,13 @@ test('claude', 'Bash and PowerShell emit an identical happy-path stdout line seq
   t.equal(ps.code, 0, `PowerShell happy path should succeed:\n${ps.combined}`);
 
   t.equal(normalizeLines(ps.stdout), normalizeLines(bash.stdout), 'the two installers must print the same stdout structure');
-  t.includes(normalizeLines(bash.stdout), 'Floway Agent Setup\nEndpoint:', 'the header identifies the setup and endpoint');
+  t.includes(normalizeLines(bash.stdout), '==> Floway Agent Setup\nEndpoint:', 'the header identifies the setup and endpoint');
   t.includes(normalizeLines(bash.stdout), '\nAPI Key: Primary key\n', 'the header identifies the selected API key');
   t.includes(normalizeLines(bash.stdout), '\n==> Claude Code\n', 'the output opens the Claude Code phase');
-  t.includes(normalizeLines(bash.stdout), '\n==> Summary\n', 'the output closes with a Summary phase');
   t.excludes(normalizeLines(bash.stdout), '\n\n', 'setup-owned sections do not insert blank separator lines');
-  t.equal(normalizeLines(bash.stdout).match(/^==> /gm)?.length, 2, 'only major phases receive the arrow notice');
-  t.includes(normalizeLines(bash.stdout), '  Claude Code  [configured]', 'Summary lists Claude Code with its state');
-  t.excludes(normalizeLines(bash.stdout), '  Codex  [', 'Summary excludes the unselected agent');
+  t.equal(normalizeLines(bash.stdout).match(/^==> /gm)?.length, 2, 'only the setup title and current-agent phase receive arrow notices');
+  t.includes(normalizeLines(bash.stdout), 'Claude Code configured.', 'the successful result is explicit');
+  t.excludes(normalizeLines(bash.stdout), 'Summary', 'a single-agent script has no redundant summary');
 });
 
 test('claude', 'a fully successful run keeps stderr empty and emits no escape codes when captured', async t => {
@@ -2466,13 +2533,16 @@ test('claude', 'a fully successful run keeps stderr empty and emits no escape co
   t.ok(!hasAnsi(ps.combined), 'captured PowerShell output carries no escape sequences');
 });
 
-test('claude', 'Bash styles phase notices and subordinate success lines only when color is enabled', async t => {
+test('claude', 'Bash styles only notices, metadata labels, success, and diagnostics', async t => {
   const ws = makeWorkspace();
   placeFakeClaude(ws.binDir);
   const forced = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: claudeConfig(), forceColor: true });
   t.equal(forced.code, 0, `forced-color run should succeed:\n${forced.combined}`);
-  t.includes(forced.stdout, '[34m==>[0m [1mClaude Code[0m', 'the phase uses a blue arrow and bold text');
-  t.includes(forced.stdout, '[92m  Claude Code configured.[0m', 'success remains subordinate to the phase');
+  t.includes(forced.stdout, '[34m==>[0m [1mFloway Agent Setup[0m', 'the setup title uses the notice style');
+  t.includes(forced.stdout, '[1mEndpoint:[0m ', 'the Endpoint label is bold');
+  t.includes(forced.stdout, '[1mAPI Key:[0m Primary key', 'the API Key label is bold');
+  t.includes(forced.stdout, '[34m==>[0m [1mClaude Code[0m', 'the agent phase uses the notice style');
+  t.includes(forced.stdout, '[92mClaude Code configured.[0m', 'the successful result is green');
   t.ok(!hasAnsi(forced.stderr), 'a successful run leaves stderr escape-free even under forced color');
 
   const suppressed = makeWorkspace();

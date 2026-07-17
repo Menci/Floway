@@ -67,28 +67,26 @@ function Write-SetupDiagnostic {
   }
 }
 
-function Write-SetupTitle { Write-SetupHostLine 'Floway Agent Setup' Blue }
-function Write-SetupMetadata { param([string]$Label, [string]$Value) Write-Host "${Label}: $Value" }
+function Write-SetupTitle { Write-SetupNotice 'Floway Agent Setup' }
+function Write-SetupMetadata {
+  param([string]$Label, [string]$Value)
+  if ($script:SetupNoColor) { Write-Host "${Label}: $Value"; return }
+  Write-Host "${Label}:" -ForegroundColor White -NoNewline
+  Write-Host " $Value"
+}
 function Write-SetupPhase { param([string]$Name) Write-SetupNotice $Name }
-function Write-SetupStep { param([string]$Text) Write-SetupHostLine "  · $Text" Blue }
-function Write-SetupInfo { param([string]$Text) Write-SetupHostLine "  $Text" -Plain }
-function Write-SetupSuccess { param([string]$Text) Write-SetupHostLine "  $Text" Green }
+function Write-SetupInfo { param([string]$Text) Write-SetupHostLine $Text -Plain }
+function Write-SetupSuccess { param([string]$Text) Write-SetupHostLine $Text Green }
 function Write-SetupWarn { param([string]$Text) Write-SetupDiagnostic 'Warning' $Text Yellow '93' }
 function Write-SetupError { param([string]$Text) Write-SetupDiagnostic 'Error' $Text Red '91' }
 function Write-SetupFatal { param([string]$Text) Write-SetupDiagnostic 'Error' $Text Red '91' }
 
-# Re-emit captured non-progress output as a de-emphasized, redacted block.
+# Re-emit captured non-progress output as an indented, redacted block.
 function Write-SetupCaptured {
   param([string]$Text)
   $redacted = (Protect-SetupSecret $Text).TrimEnd()
   if ($redacted.Length -eq 0) { return }
-  foreach ($line in $redacted -split "`r?`n") { Write-SetupErrLine "    $line" DarkGray '90' }
-}
-
-function Write-SetupSummaryEntry {
-  param([string]$Label, [string]$State)
-  $color = switch ($State) { 'configured' { 'Green' } 'failed' { 'Red' } default { 'DarkGray' } }
-  Write-SetupHostLine "  $Label  [$State]" $color
+  foreach ($line in $redacted -split "`r?`n") { [Console]::Error.WriteLine("    $line") }
 }
 
 # Report a primary error to stderr and unwind. The agent boundary recognizes the
@@ -192,17 +190,32 @@ function Install-SetupHomebrewCask {
   Invoke-SetupLiveProcess -Exe $brew.Source -Arguments @('install', '--cask', $Cask) -TimeoutSeconds $timeoutSeconds
 }
 
-# Execute a downloaded PowerShell installer in a fresh interpreter. The script
-# travels through stdin, while the API key exists only as a variable in this
-# parent process and its identically named environment variables were removed.
-# The official installer therefore cannot read the credential.
-function Invoke-SetupPowerShellBody {
-  param([string]$Body, [int]$TimeoutSeconds, [switch]$BypassExecutionPolicy)
+# npm on Windows is commonly a .cmd launcher, which ProcessStartInfo cannot
+# execute directly with UseShellExecute disabled. A fresh copy of the current
+# PowerShell host resolves that launcher while preserving inherited terminal
+# output and the same process-tree timeout.
+function Install-SetupNpmPackage {
+  param([string]$Package)
+  $npm = Get-Command npm -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+  if (-not $npm) { Stop-Setup 'npm was selected for installation but is no longer available.' }
+  $hostCommand = Get-Command pwsh -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+  $hostExe = if ($hostCommand) { $hostCommand.Source } else { [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName }
+  $npmLiteral = "'" + $npm.Source.Replace("'", "''") + "'"
+  $packageLiteral = "'" + $Package.Replace("'", "''") + "'"
+  $command = "& $npmLiteral install --global $packageLiteral; exit `$LASTEXITCODE"
+  $timeoutSeconds = if ($env:AGENT_SETUP_TEST_TIMEOUT_SECONDS) { [int]$env:AGENT_SETUP_TEST_TIMEOUT_SECONDS } else { 600 }
+  Invoke-SetupLiveProcess -Exe $hostExe -Arguments @('-NoProfile', '-NonInteractive', '-Command', $command) -TimeoutSeconds $timeoutSeconds
+}
+
+# Execute a downloaded installer in a fresh interpreter. The script travels
+# through stdin, while the API key exists only as a variable in this parent
+# process and its identically named environment variables were removed. The
+# official installer therefore cannot read the credential.
+function Invoke-SetupInterpreterBody {
+  param([string]$Body, [int]$TimeoutSeconds, [string]$Exe, [string]$Arguments)
   $startInfo = New-Object System.Diagnostics.ProcessStartInfo
-  $pwsh = Get-Command pwsh -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
-  $startInfo.FileName = if ($pwsh) { $pwsh.Source } else { [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName }
-  $executionPolicy = if ($BypassExecutionPolicy) { '-ExecutionPolicy Bypass ' } else { '' }
-  $startInfo.Arguments = "-NoProfile -NonInteractive ${executionPolicy}-Command -"
+  $startInfo.FileName = $Exe
+  $startInfo.Arguments = $Arguments
   $startInfo.UseShellExecute = $false
   $startInfo.CreateNoWindow = $false
   $startInfo.RedirectStandardInput = $true
@@ -220,10 +233,25 @@ function Invoke-SetupPowerShellBody {
   if ($process.ExitCode -ne 0) { Stop-Setup "the installer exited with status $($process.ExitCode)." }
 }
 
+function Invoke-SetupPowerShellBody {
+  param([string]$Body, [int]$TimeoutSeconds, [switch]$BypassExecutionPolicy)
+  $pwsh = Get-Command pwsh -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+  $exe = if ($pwsh) { $pwsh.Source } else { [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName }
+  $executionPolicy = if ($BypassExecutionPolicy) { '-ExecutionPolicy Bypass ' } else { '' }
+  Invoke-SetupInterpreterBody -Body $Body -TimeoutSeconds $TimeoutSeconds -Exe $exe -Arguments "-NoProfile -NonInteractive ${executionPolicy}-Command -"
+}
+
+function Invoke-SetupShellBody {
+  param([string]$Body, [int]$TimeoutSeconds)
+  $bash = Get-Command bash -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+  if (-not $bash) { Stop-Setup 'bash is required to run the official installer on macOS and Linux.' }
+  Invoke-SetupInterpreterBody -Body $Body -TimeoutSeconds $TimeoutSeconds -Exe $bash.Source -Arguments '-s'
+}
+
 # Download an installer, refuse anything that is not a script (region blocks and
 # captive portals serve HTML in place of the installer), then run it.
 function Invoke-SetupRemoteInstaller {
-  param([string]$Uri, [switch]$BypassExecutionPolicy)
+  param([string]$Uri, [switch]$BypassExecutionPolicy, [switch]$Shell)
   $response = Invoke-WebRequest -Uri $Uri -UseBasicParsing -TimeoutSec 60
   $body = [string]$response.Content
   $contentType = [string]$response.Headers['Content-Type']
@@ -232,7 +260,8 @@ function Invoke-SetupRemoteInstaller {
     Stop-Setup "the installer download was HTML or empty, not an executable script (a login or region-block page?)."
   }
   $timeoutSeconds = if ($env:AGENT_SETUP_TEST_TIMEOUT_SECONDS) { [int]$env:AGENT_SETUP_TEST_TIMEOUT_SECONDS } else { 120 }
-  Invoke-SetupPowerShellBody -Body $body -TimeoutSeconds $timeoutSeconds -BypassExecutionPolicy:$BypassExecutionPolicy
+  if ($Shell) { Invoke-SetupShellBody -Body $body -TimeoutSeconds $timeoutSeconds }
+  else { Invoke-SetupPowerShellBody -Body $body -TimeoutSeconds $timeoutSeconds -BypassExecutionPolicy:$BypassExecutionPolicy }
 }
 
 function Get-SetupCliExe {
@@ -278,34 +307,60 @@ function Restore-SetupManagedFile {
 
 # --- Claude Code ------------------------------------------------------------
 
-# Install the official user-local Claude Code build. The
+# Install the official Claude Code package. The
 # AGENT_SETUP_TEST_INSTALL_CLAUDE_SCRIPT hook — read from the ambient
 # environment, never emitted by the gateway — substitutes a fake installer
 # under test.
 function Install-SetupClaude {
   if ($env:AGENT_SETUP_TEST_INSTALL_CLAUDE_SCRIPT) {
-    Write-SetupStep 'Claude Code CLI not found; running the test installer'
+    Write-SetupInfo 'Claude Code CLI not found; running the test installer'
     $timeoutSeconds = if ($env:AGENT_SETUP_TEST_TIMEOUT_SECONDS) { [int]$env:AGENT_SETUP_TEST_TIMEOUT_SECONDS } else { 120 }
     $installer = Invoke-SetupProcess -Exe $env:AGENT_SETUP_TEST_INSTALL_CLAUDE_SCRIPT -Arguments @() -TimeoutSeconds $timeoutSeconds
     if ($installer.ExitCode -ne 0) { Stop-Setup "the test installer hook failed." }
     return
   }
   if ($env:AGENT_SETUP_TEST_CLAUDE_URL) {
-    Write-SetupStep 'Claude Code CLI not found; running the test installer download'
+    Write-SetupInfo 'Claude Code CLI not found; running the test installer download'
     Invoke-SetupRemoteInstaller -Uri $env:AGENT_SETUP_TEST_CLAUDE_URL
     return
   }
-  switch (Get-SetupPlatform) {
+  $platform = Get-SetupPlatform
+  $npm = Get-Command npm -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+  switch ($platform) {
     'macos' {
-      Write-SetupStep 'Claude Code CLI not found; installing with Homebrew'
-      Install-SetupHomebrewCask -Cask 'claude-code'
+      $brew = Get-Command brew -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+      if ($brew) {
+        Write-SetupInfo 'Claude Code CLI not found; installing with Homebrew'
+        Install-SetupHomebrewCask -Cask 'claude-code'
+      } elseif ($npm) {
+        Write-SetupInfo 'Claude Code CLI not found; installing with npm'
+        Install-SetupNpmPackage -Package '@anthropic-ai/claude-code'
+      } else {
+        # Ref: https://code.claude.com/docs/en/setup
+        Write-SetupInfo 'Claude Code CLI not found; installing from downloads.claude.ai'
+        Invoke-SetupRemoteInstaller -Uri 'https://downloads.claude.ai/claude-code-releases/bootstrap.sh' -Shell
+      }
     }
     'windows' {
-      # Ref: https://code.claude.com/docs/en/setup
-      Write-SetupStep 'Claude Code CLI not found; installing from downloads.claude.ai'
-      Invoke-SetupRemoteInstaller -Uri 'https://downloads.claude.ai/claude-code-releases/bootstrap.ps1'
+      if ($npm) {
+        Write-SetupInfo 'Claude Code CLI not found; installing with npm'
+        Install-SetupNpmPackage -Package '@anthropic-ai/claude-code'
+      } else {
+        # Ref: https://code.claude.com/docs/en/setup
+        Write-SetupInfo 'Claude Code CLI not found; installing from downloads.claude.ai'
+        Invoke-SetupRemoteInstaller -Uri 'https://downloads.claude.ai/claude-code-releases/bootstrap.ps1'
+      }
     }
-    default { Stop-Setup 'run the macOS/Linux setup command to install Claude Code on this platform.' }
+    'linux' {
+      if ($npm) {
+        Write-SetupInfo 'Claude Code CLI not found; installing with npm'
+        Install-SetupNpmPackage -Package '@anthropic-ai/claude-code'
+      } else {
+        # Ref: https://code.claude.com/docs/en/setup
+        Write-SetupInfo 'Claude Code CLI not found; installing from downloads.claude.ai'
+        Invoke-SetupRemoteInstaller -Uri 'https://downloads.claude.ai/claude-code-releases/bootstrap.sh' -Shell
+      }
+    }
   }
 }
 
@@ -502,8 +557,10 @@ function Set-SetupClaude {
 
 # --- Codex ------------------------------------------------------------------
 
-# Install the official user-local Codex build. CODEX_NON_INTERACTIVE keeps the
-# installer from prompting. The AGENT_SETUP_TEST_INSTALL_CODEX_SCRIPT hook —
+# Install the official Codex package. CODEX_NON_INTERACTIVE keeps the direct
+# installer from prompting. Package sources:
+# https://github.com/openai/codex/blob/d3fc1950a920f98e7fa9f11056667cdf911c38df/README.md#L18-L37
+# The AGENT_SETUP_TEST_INSTALL_CODEX_SCRIPT hook —
 # read from the ambient environment, never emitted by the gateway — substitutes
 # a fake installer under test.
 function Install-SetupCodex {
@@ -512,29 +569,57 @@ function Install-SetupCodex {
   try {
     $env:CODEX_NON_INTERACTIVE = 'true'
     if ($env:AGENT_SETUP_TEST_INSTALL_CODEX_SCRIPT) {
-      Write-SetupStep 'Codex CLI not found; running the test installer'
+      Write-SetupInfo 'Codex CLI not found; running the test installer'
       $timeoutSeconds = if ($env:AGENT_SETUP_TEST_TIMEOUT_SECONDS) { [int]$env:AGENT_SETUP_TEST_TIMEOUT_SECONDS } else { 120 }
       $installer = Invoke-SetupProcess -Exe $env:AGENT_SETUP_TEST_INSTALL_CODEX_SCRIPT -Arguments @() -TimeoutSeconds $timeoutSeconds
       if ($installer.ExitCode -ne 0) { Stop-Setup "the test codex installer hook failed." }
       return
     }
     if ($env:AGENT_SETUP_TEST_CODEX_URL) {
-      Write-SetupStep 'Codex CLI not found; running the test installer download'
+      Write-SetupInfo 'Codex CLI not found; running the test installer download'
       Invoke-SetupRemoteInstaller -Uri $env:AGENT_SETUP_TEST_CODEX_URL -BypassExecutionPolicy
       return
     }
-    switch (Get-SetupPlatform) {
+    $platform = Get-SetupPlatform
+    $npm = Get-Command npm -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    switch ($platform) {
       'macos' {
-        Write-SetupStep 'Codex CLI not found; installing with Homebrew'
-        Install-SetupHomebrewCask -Cask 'codex'
+        $brew = Get-Command brew -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($brew) {
+          Write-SetupInfo 'Codex CLI not found; installing with Homebrew'
+          Install-SetupHomebrewCask -Cask 'codex'
+        } elseif ($npm) {
+          Write-SetupInfo 'Codex CLI not found; installing with npm'
+          Install-SetupNpmPackage -Package '@openai/codex'
+        } else {
+          # This source is published byte-for-byte as the GitHub release installer.
+          # Ref: https://github.com/openai/codex/blob/d3fc1950a920f98e7fa9f11056667cdf911c38df/scripts/install/install.sh
+          Write-SetupInfo 'Codex CLI not found; installing from GitHub'
+          Invoke-SetupRemoteInstaller -Uri 'https://raw.githubusercontent.com/openai/codex/refs/heads/main/scripts/install/install.sh' -Shell
+        }
       }
       'windows' {
-        # This source is published byte-for-byte as the GitHub release installer.
-        # Ref: https://github.com/openai/codex/blob/d3fc1950a920f98e7fa9f11056667cdf911c38df/scripts/install/install.ps1
-        Write-SetupStep 'Codex CLI not found; installing from GitHub'
-        Invoke-SetupRemoteInstaller -Uri 'https://raw.githubusercontent.com/openai/codex/refs/heads/main/scripts/install/install.ps1'
+        if ($npm) {
+          Write-SetupInfo 'Codex CLI not found; installing with npm'
+          Install-SetupNpmPackage -Package '@openai/codex'
+        } else {
+          # This source is published byte-for-byte as the GitHub release installer.
+          # Ref: https://github.com/openai/codex/blob/d3fc1950a920f98e7fa9f11056667cdf911c38df/scripts/install/install.ps1
+          Write-SetupInfo 'Codex CLI not found; installing from GitHub'
+          Invoke-SetupRemoteInstaller -Uri 'https://raw.githubusercontent.com/openai/codex/refs/heads/main/scripts/install/install.ps1'
+        }
       }
-      default { Stop-Setup 'run the macOS/Linux setup command to install Codex on this platform.' }
+      'linux' {
+        if ($npm) {
+          Write-SetupInfo 'Codex CLI not found; installing with npm'
+          Install-SetupNpmPackage -Package '@openai/codex'
+        } else {
+          # This source is published byte-for-byte as the GitHub release installer.
+          # Ref: https://github.com/openai/codex/blob/d3fc1950a920f98e7fa9f11056667cdf911c38df/scripts/install/install.sh
+          Write-SetupInfo 'Codex CLI not found; installing from GitHub'
+          Invoke-SetupRemoteInstaller -Uri 'https://raw.githubusercontent.com/openai/codex/refs/heads/main/scripts/install/install.sh' -Shell
+        }
+      }
     }
   } finally {
     if ($hadNonInteractive) { $env:CODEX_NON_INTERACTIVE = $previousNonInteractive }
@@ -846,32 +931,24 @@ function Main {
   Write-SetupMetadata 'API Key' $SetupApiKeyName
 
   # Each primary error is already reported at its detection site. The boundary
-  # records the outcome and surfaces any unexpected exception after redaction.
-  $overall = 0
+  # surfaces any unexpected exception after redaction and returns a nonzero
+  # status without adding a redundant single-agent summary.
   if ($SetupAgent -eq 'claude') {
     try {
       Set-SetupClaude
-      $result = 'configured'
     } catch {
       if ($_.Exception.Message -ne 'setup-handled') { Write-SetupError (Protect-SetupSecret ([string]$_.Exception.Message)) }
-      $result = 'failed'
-      $overall = 1
+      return 1
     }
-    Write-SetupPhase 'Summary'
-    Write-SetupSummaryEntry 'Claude Code' $result
   } else {
     try {
       Set-SetupCodex
-      $result = 'configured'
     } catch {
       if ($_.Exception.Message -ne 'setup-handled') { Write-SetupError (Protect-SetupSecret ([string]$_.Exception.Message)) }
-      $result = 'failed'
-      $overall = 1
+      return 1
     }
-    Write-SetupPhase 'Summary'
-    Write-SetupSummaryEntry 'Codex' $result
   }
-  return $overall
+  return 0
 }
 
 exit (Main)

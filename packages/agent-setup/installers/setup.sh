@@ -30,7 +30,6 @@ _init_output() {
   _C_GREEN=$'\033[92m'
   _C_YELLOW=$'\033[93m'
   _C_RED=$'\033[91m'
-  _C_GRAY=$'\033[90m'
   _C_RESET=$'\033[0m'
 }
 
@@ -52,6 +51,14 @@ _emit_diagnostic() {
   fi
 }
 
+_emit_metadata() {
+  if [ "$_OUT_COLOR" -eq 1 ]; then
+    printf '%s%s:%s %s\n' "$_C_BOLD" "$1" "$_C_RESET" "$2"
+  else
+    printf '%s: %s\n' "$1" "$2"
+  fi
+}
+
 # Emit one line to a stream, wrapping it in an ANSI color only when that stream
 # opted into color and a non-empty color was given (default-color detail lines
 # stay uncolored rather than carrying a bare reset). $1 stream
@@ -64,30 +71,20 @@ _emit_line() {
   fi
 }
 
-out_title() { _emit_line 1 "$_C_BLUE" 'Floway Agent Setup'; }
-out_metadata() { _emit_line 1 '' "$1: $2"; }
+out_title() { _emit_notice 'Floway Agent Setup'; }
+out_metadata() { _emit_metadata "$1" "$2"; }
 out_phase() { _emit_notice "$1"; }
-out_step() { _emit_line 1 "$_C_BLUE" "  · $1"; }
-out_info() { _emit_line 1 '' "  $1"; }
-out_success() { _emit_line 1 "$_C_GREEN" "  $1"; }
+out_info() { _emit_line 1 '' "$1"; }
+out_success() { _emit_line 1 "$_C_GREEN" "$1"; }
 out_warn() { _emit_diagnostic "$_C_YELLOW" 'Warning' "$1"; }
 out_error() { _emit_diagnostic "$_C_RED" 'Error' "$1"; }
 out_fatal() { _emit_diagnostic "$_C_RED" 'Error' "$1"; }
 
-# Re-emit captured non-progress output as a de-emphasized, redacted block.
+# Re-emit captured non-progress output as an indented, redacted block.
 out_captured() {
   redact_key | while IFS= read -r _oc_line; do
-    _emit_line 2 "$_C_GRAY" "    $_oc_line"
+    _emit_line 2 '' "    $_oc_line"
   done
-}
-
-out_summary_entry() {
-  case "$2" in
-    configured) _os_color=$_C_GREEN ;;
-    failed) _os_color=$_C_RED ;;
-    *) _os_color=$_C_GRAY ;;
-  esac
-  _emit_line 1 "$_os_color" "  $1  [$2]"
 }
 
 SETUP_TMPDIR=""
@@ -226,7 +223,7 @@ _bootstrap_jq() {
   esac
   _bj_url="https://github.com/jqlang/jq/releases/download/jq-1.8.2/$_bj_asset"
   _bj_dest="$SETUP_TMPDIR/$_bj_asset"
-  out_step 'jq not found on PATH; fetching the pinned jq-1.8.2 build'
+  out_warn 'jq not found on PATH; fetching the pinned jq-1.8.2 build'
   if ! curl -fsSL --connect-timeout 10 --max-time 120 -o "$_bj_dest" "$_bj_url"; then
     out_error "failed to download jq from $_bj_url"
     rm -f "$_bj_dest"
@@ -362,6 +359,12 @@ _install_brew_cask() {
   _run_with_timeout "$_ibc_timeout" env -u SETUP_API_KEY brew install --cask "$_ibc_cask" </dev/null
 }
 
+_install_npm_package() {
+  _inp_package=$1
+  _inp_timeout=${AGENT_SETUP_TEST_TIMEOUT_SECONDS:-600}
+  _run_with_timeout "$_inp_timeout" env -u SETUP_API_KEY npm install --global "$_inp_package" </dev/null
+}
+
 # Refs:
 # https://code.claude.com/docs/en/setup
 # https://github.com/anthropics/claude-code/blob/c39cb0f14bfe8bb519bae5bfc55add6867c5e2ab/README.md#L13-L44
@@ -381,21 +384,34 @@ claude_ensure_installed() {
   fi
 
   if [ -n "${AGENT_SETUP_TEST_INSTALL_CLAUDE_SCRIPT:-}" ]; then
-    out_step 'Claude Code CLI not found; running the test installer'
+    out_info 'Claude Code CLI not found; running the test installer'
     _ic_timeout=${AGENT_SETUP_TEST_TIMEOUT_SECONDS:-120}
     _run_with_timeout "$_ic_timeout" env -u SETUP_API_KEY bash "$AGENT_SETUP_TEST_INSTALL_CLAUDE_SCRIPT" </dev/null || return 1
   elif [ -n "${AGENT_SETUP_TEST_CLAUDE_URL:-}" ]; then
-    out_step 'Claude Code CLI not found; running the test installer download'
+    out_info 'Claude Code CLI not found; running the test installer download'
     _download_and_run_installer "$AGENT_SETUP_TEST_CLAUDE_URL" || return 1
   else
     case "$(uname -s)" in
       Darwin)
-        out_step 'Claude Code CLI not found; installing with Homebrew'
-        _install_brew_cask claude-code || return 1
+        if command -v brew >/dev/null 2>&1; then
+          out_info 'Claude Code CLI not found; installing with Homebrew'
+          _install_brew_cask claude-code || return 1
+        elif command -v npm >/dev/null 2>&1; then
+          out_info 'Claude Code CLI not found; installing with npm'
+          _install_npm_package '@anthropic-ai/claude-code' || return 1
+        else
+          out_info 'Claude Code CLI not found; installing from downloads.claude.ai'
+          _download_and_run_installer 'https://downloads.claude.ai/claude-code-releases/bootstrap.sh' || return 1
+        fi
         ;;
       Linux)
-        out_step 'Claude Code CLI not found; installing from downloads.claude.ai'
-        _download_and_run_installer 'https://downloads.claude.ai/claude-code-releases/bootstrap.sh' || return 1
+        if command -v npm >/dev/null 2>&1; then
+          out_info 'Claude Code CLI not found; installing with npm'
+          _install_npm_package '@anthropic-ai/claude-code' || return 1
+        else
+          out_info 'Claude Code CLI not found; installing from downloads.claude.ai'
+          _download_and_run_installer 'https://downloads.claude.ai/claude-code-releases/bootstrap.sh' || return 1
+        fi
         ;;
       *)
         out_error 'automatic Claude Code installation supports macOS and Linux only in the Bash installer.'
@@ -608,7 +624,9 @@ configure_claude() {
 
 # --- Codex ------------------------------------------------------------------
 
-# Ref: https://github.com/openai/codex/blob/main/scripts/install/install.sh
+# Refs:
+# https://github.com/openai/codex/blob/d3fc1950a920f98e7fa9f11056667cdf911c38df/README.md#L18-L37
+# https://github.com/openai/codex/blob/d3fc1950a920f98e7fa9f11056667cdf911c38df/scripts/install/install.sh
 codex_ensure_installed() {
   _discover_cli codex \
     "$HOME/.local/bin/codex" \
@@ -623,23 +641,38 @@ codex_ensure_installed() {
   fi
 
   if [ -n "${AGENT_SETUP_TEST_INSTALL_CODEX_SCRIPT:-}" ]; then
-    out_step 'Codex CLI not found; running the test installer'
+    out_info 'Codex CLI not found; running the test installer'
     _icx_timeout=${AGENT_SETUP_TEST_TIMEOUT_SECONDS:-120}
     _run_with_timeout "$_icx_timeout" env -u SETUP_API_KEY CODEX_NON_INTERACTIVE=true bash "$AGENT_SETUP_TEST_INSTALL_CODEX_SCRIPT" </dev/null || return 1
   elif [ -n "${AGENT_SETUP_TEST_CODEX_URL:-}" ]; then
-    out_step 'Codex CLI not found; running the test installer download'
+    out_info 'Codex CLI not found; running the test installer download'
     CODEX_NON_INTERACTIVE=true _download_and_run_installer "$AGENT_SETUP_TEST_CODEX_URL" || return 1
   else
     case "$(uname -s)" in
       Darwin)
-        out_step 'Codex CLI not found; installing with Homebrew'
-        _install_brew_cask codex || return 1
+        if command -v brew >/dev/null 2>&1; then
+          out_info 'Codex CLI not found; installing with Homebrew'
+          _install_brew_cask codex || return 1
+        elif command -v npm >/dev/null 2>&1; then
+          out_info 'Codex CLI not found; installing with npm'
+          _install_npm_package '@openai/codex' || return 1
+        else
+          # This source is published byte-for-byte as the GitHub release installer.
+          # Ref: https://github.com/openai/codex/blob/d3fc1950a920f98e7fa9f11056667cdf911c38df/scripts/install/install.sh
+          out_info 'Codex CLI not found; installing from GitHub'
+          CODEX_NON_INTERACTIVE=true _download_and_run_installer 'https://raw.githubusercontent.com/openai/codex/refs/heads/main/scripts/install/install.sh' || return 1
+        fi
         ;;
       Linux)
-        # This source is published byte-for-byte as the GitHub release installer.
-        # Ref: https://github.com/openai/codex/blob/d3fc1950a920f98e7fa9f11056667cdf911c38df/scripts/install/install.sh
-        out_step 'Codex CLI not found; installing from GitHub'
-        CODEX_NON_INTERACTIVE=true _download_and_run_installer 'https://raw.githubusercontent.com/openai/codex/refs/heads/main/scripts/install/install.sh' || return 1
+        if command -v npm >/dev/null 2>&1; then
+          out_info 'Codex CLI not found; installing with npm'
+          _install_npm_package '@openai/codex' || return 1
+        else
+          # This source is published byte-for-byte as the GitHub release installer.
+          # Ref: https://github.com/openai/codex/blob/d3fc1950a920f98e7fa9f11056667cdf911c38df/scripts/install/install.sh
+          out_info 'Codex CLI not found; installing from GitHub'
+          CODEX_NON_INTERACTIVE=true _download_and_run_installer 'https://raw.githubusercontent.com/openai/codex/refs/heads/main/scripts/install/install.sh' || return 1
+        fi
         ;;
       *)
         out_error 'automatic Codex installation supports macOS and Linux only in the Bash installer.'
@@ -1054,20 +1087,11 @@ main() {
   trap 'exit 143' TERM
   JQ=""
 
-  OVERALL=0
   case "$SETUP_AGENT" in
-    claude)
-      if configure_claude; then RESULT=configured; else RESULT=failed; OVERALL=1; fi
-      out_phase 'Summary'
-      out_summary_entry 'Claude Code' "$RESULT"
-      ;;
-    codex)
-      if configure_codex; then RESULT=configured; else RESULT=failed; OVERALL=1; fi
-      out_phase 'Summary'
-      out_summary_entry 'Codex' "$RESULT"
-      ;;
+    claude) configure_claude || return 1 ;;
+    codex) configure_codex || return 1 ;;
   esac
-  return "$OVERALL"
+  return 0
 }
 
 main "$@"
