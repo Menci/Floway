@@ -381,6 +381,12 @@ test('SQL insert conflict cleans its spill when the winning row disappears', asy
   const files = new MemoryFileProvider();
   initFileProvider(files);
   const base = await createSqliteTestDb();
+  const inlinePayload = await serializeStoredResponsesPayload(
+    'msg_insert_race',
+    'key-a',
+    1_000,
+    { item: { type: 'message', id: 'msg_insert_race', role: 'assistant', content: [] } },
+  );
   let injectConflict = true;
   const db: SqlDatabase = {
     prepare: query => base.prepare(query),
@@ -388,11 +394,6 @@ test('SQL insert conflict cleans its spill when the winning row disappears', asy
     batch: async statements => {
       if (!injectConflict) throw new Error('unexpected second insert batch');
       injectConflict = false;
-      const inlinePayload = JSON.stringify({
-        version: 1,
-        storage: 'inline',
-        payload: { item: { type: 'message', id: 'msg_insert_race', role: 'assistant', content: [] } },
-      });
       const insertWinner = base.prepare(
         'INSERT INTO responses_items (id, api_key_id, item_type, payload_json, content_hash, created_at) VALUES (?, ?, ?, ?, ?, ?)',
       );
