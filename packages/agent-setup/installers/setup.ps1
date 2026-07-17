@@ -72,30 +72,13 @@ function Write-SetupDiagnostic {
 }
 
 function Write-SetupTitle { Write-SetupNotice 'Floway Agent Setup' }
-function Write-SetupMetadata {
-  param([string]$Label, [string]$Value)
-  if ($script:SetupNoColor) { Write-Host "${Label}: $Value"; return }
-  if ($script:SetupOutAnsi) {
-    Write-Host "$($script:SetupEsc)[1m${Label}:$($script:SetupEsc)[0m $Value"
-    return
-  }
-  Write-Host "${Label}:" -ForegroundColor White -NoNewline
-  Write-Host " $Value"
-}
+function Write-SetupMetadata { param([string]$Label, [string]$Value) Write-Host "${Label}: $Value" }
 function Write-SetupPhase { param([string]$Name) Write-SetupNotice $Name }
 function Write-SetupInfo { param([string]$Text) Write-SetupHostLine $Text -Plain }
 function Write-SetupSuccess { param([string]$Text) Write-SetupHostLine "✨ $Text" -Plain }
 function Write-SetupWarn { param([string]$Text) Write-SetupDiagnostic 'Warning' $Text Yellow '93' }
 function Write-SetupError { param([string]$Text) Write-SetupDiagnostic 'Error' $Text Red '91' }
 function Write-SetupFatal { param([string]$Text) Write-SetupDiagnostic 'Error' $Text Red '91' }
-
-# Re-emit captured non-progress output as an indented, redacted block.
-function Write-SetupCaptured {
-  param([string]$Text)
-  $redacted = (Protect-SetupSecret $Text).TrimEnd()
-  if ($redacted.Length -eq 0) { return }
-  foreach ($line in $redacted -split "`r?`n") { [Console]::Error.WriteLine("    $line") }
-}
 
 # Report a primary error to stderr and unwind. The agent boundary recognizes the
 # 'setup-handled' marker as already reported, so no line is ever duplicated.
@@ -492,51 +475,18 @@ function Invoke-SetupProcess {
   [PSCustomObject]@{ ExitCode = $process.ExitCode; Output = ($stdout + $stderr) }
 }
 
-function Invoke-SetupClaudeVerify {
+function Write-SetupClaudeVersion {
   param([string]$Exe)
-  $document = Get-Content -Raw -LiteralPath $script:ClaudeSettingsPath | ConvertFrom-Json
-  if (($document.env.ANTHROPIC_BASE_URL -ne $SetupEndpoint) -or ($document.env.ANTHROPIC_AUTH_TOKEN -ne $SetupApiKey)) {
-    Stop-Setup "the written Claude settings did not reparse as expected."
-  }
-
   $timeoutSeconds = if ($env:AGENT_SETUP_TEST_TIMEOUT_SECONDS) { [int]$env:AGENT_SETUP_TEST_TIMEOUT_SECONDS } else { 30 }
   $version = Invoke-SetupProcess -Exe $Exe -Arguments @('--version') -TimeoutSeconds $timeoutSeconds -TimeoutMessage '``claude --version`` timed out.'
   if ($version.ExitCode -ne 0) { Stop-Setup "``claude --version`` failed." }
   Write-SetupInfo "Claude Code version: $($version.Output.Trim())"
-
-  $headers = @{
-    'Authorization'     = "Bearer $SetupApiKey"
-    'x-api-key'         = $SetupApiKey
-    'anthropic-version' = '2023-06-01'
-  }
-  $modelUri = ($SetupEndpoint.TrimEnd('/')) + '/v1/models'
-  try {
-    Invoke-WebRequest -Uri $modelUri -Headers $headers -Method Get -UseBasicParsing -TimeoutSec 30 | Out-Null
-  } catch {
-    Stop-Setup "could not reach the authenticated model directory at $modelUri"
-  }
-  $doctorHelp = Invoke-SetupProcess -Exe $Exe -Arguments @('doctor', '--help') -TimeoutSeconds $timeoutSeconds -TimeoutMessage 'claude doctor capability check timed out.'
-  if ($doctorHelp.ExitCode -eq 0) {
-    $doctor = Invoke-SetupProcess -Exe $Exe -Arguments @('doctor') -TimeoutSeconds $timeoutSeconds -TimeoutMessage 'claude doctor timed out.'
-    if ($doctor.ExitCode -ne 0) {
-      Write-SetupError "claude doctor reported a problem:"
-      Write-SetupCaptured $doctor.Output
-      throw 'setup-handled'
-    }
-    Write-SetupSuccess "claude doctor reported no blocking issues."
-  } elseif ($doctorHelp.Output -match '(?i)(unknown|unrecognized|invalid|no such).*(command|subcommand).*doctor|doctor.*(unknown|unrecognized|invalid).*(command|subcommand)') {
-    Write-SetupInfo "this Claude Code build has no doctor command; skipping that check."
-  } else {
-    Write-SetupError "claude doctor capability check failed:"
-    Write-SetupCaptured $doctorHelp.Output
-    throw 'setup-handled'
-  }
 }
 
-# Configure Claude Code as one transactional unit. Verification failure rolls
-# back the settings write; a freshly installed CLI is never uninstalled.
+# Install, then configure Claude Code as one transactional settings write. A
+# freshly installed CLI is never uninstalled when configuration fails.
 function Set-SetupClaude {
-  Write-SetupPhase 'Claude Code'
+  Write-SetupPhase 'Installing Claude Code'
   # Ref: https://docs.claude.com/en/docs/claude-code/troubleshoot-install
   $candidates = @(
     (Join-Path $HOME '.local/bin/claude'),
@@ -549,15 +499,13 @@ function Set-SetupClaude {
     Install-SetupClaude
     $exe = Get-SetupCliExe -Name claude -Label 'Claude Code' -Candidates $candidates
     if (-not $exe) { Stop-Setup "Claude Code CLI is unavailable and could not be installed." }
+  } else {
+    Write-SetupInfo 'Claude Code is already installed.'
   }
+  Write-SetupClaudeVersion -Exe $exe
+
+  Write-SetupPhase 'Configuring Claude Code'
   Write-SetupClaudeSettings
-  try {
-    Invoke-SetupClaudeVerify $exe
-  } catch {
-    Write-SetupWarn "Claude Code verification failed; rolling back settings."
-    Restore-SetupClaudeSettings
-    throw
-  }
   Write-SetupSuccess "Claude Code configured."
 }
 
@@ -765,16 +713,14 @@ function Write-SetupCodexConfig {
   $timeoutSeconds = if ($env:AGENT_SETUP_TEST_TIMEOUT_SECONDS) { [int]$env:AGENT_SETUP_TEST_TIMEOUT_SECONDS } else { 60 }
   $result = Invoke-SetupCodexAppServerBatchWrite -Exe $Exe -Edits $edits -TimeoutSeconds $timeoutSeconds
   $status = [string]$result.status
-  if ($status -eq 'ok') {
-    Write-SetupSuccess "Codex base configuration written."
-  } elseif ($status -eq 'okOverridden') {
+  if ($status -eq 'okOverridden') {
     $message = if ($result.overriddenMetadata -and $result.overriddenMetadata.message) { [string]$result.overriddenMetadata.message } else { 'an override layer applies' }
     $layer = 'unknown'
     if ($result.overriddenMetadata -and $result.overriddenMetadata.overridingLayer -and $result.overriddenMetadata.overridingLayer.name) {
       $layer = [string]$result.overriddenMetadata.overridingLayer.name.type
     }
-    Write-SetupWarn "Codex base configuration written, but a higher-precedence layer overrides it ($message; layer: $layer)."
-  } else {
+    Write-SetupWarn "Codex configuration is overridden by a higher-precedence layer ($message; layer: $layer)."
+  } elseif ($status -ne 'ok') {
     Stop-Setup "the Codex app-server did not confirm the configuration (status: $status)."
   }
 }
@@ -805,59 +751,18 @@ function Write-SetupCodexToken {
   }
 }
 
-# Read the gateway's authenticated Codex model directory. No inference request
-# is issued. Transport/auth and JSON-shape failures remain distinct from a valid
-# catalog that simply lacks the selected model; none of the errors carries the
-# in-process Authorization header.
-function Read-SetupCodexModelCatalog {
-  $headers = @{ 'Authorization' = "Bearer $SetupApiKey" }
-  $uri = ($SetupEndpoint.TrimEnd('/')) + '/azure-api.codex/models'
-  try {
-    $response = Invoke-WebRequest -Uri $uri -Headers $headers -Method Get -UseBasicParsing -TimeoutSec 30
-  } catch {
-    Stop-Setup "could not reach the authenticated Codex model directory at $uri"
-  }
-  try {
-    $body = [string]$response.Content | ConvertFrom-Json
-  } catch {
-    Stop-Setup "the authenticated Codex model directory did not return valid JSON."
-  }
-  if (($body -isnot [System.Management.Automation.PSCustomObject]) -or ($body.PSObject.Properties.Name -notcontains 'models') -or ($body.models -isnot [System.Array])) {
-    Stop-Setup "the authenticated Codex model directory returned an invalid catalog shape."
-  }
-  $slugs = @()
-  foreach ($model in $body.models) {
-    if (($model -isnot [System.Management.Automation.PSCustomObject]) -or ($model.PSObject.Properties.Name -notcontains 'slug') -or ($model.slug -isnot [string])) {
-      Stop-Setup "the authenticated Codex model directory returned an invalid catalog shape."
-    }
-    $slugs += [string]$model.slug
-  }
-  return $slugs
-}
-
-# Verify Codex without inference: compare the provider token without printing
-# it, print the raw CLI version, and reach the authenticated model directory
-# (confirming the selected model when one is set).
-function Invoke-SetupCodexVerify {
+function Write-SetupCodexVersion {
   param([string]$Exe)
-  if ([System.IO.File]::ReadAllText($script:CodexTokenPath) -cne $SetupApiKey) {
-    Stop-Setup "the written Codex provider token did not reparse as expected."
-  }
   $timeoutSeconds = if ($env:AGENT_SETUP_TEST_TIMEOUT_SECONDS) { [int]$env:AGENT_SETUP_TEST_TIMEOUT_SECONDS } else { 30 }
   $version = Invoke-SetupProcess -Exe $Exe -Arguments @('--version') -TimeoutSeconds $timeoutSeconds -TimeoutMessage '``codex --version`` timed out.'
   if ($version.ExitCode -ne 0) { Stop-Setup "``codex --version`` failed." }
   Write-SetupInfo "Codex version: $($version.Output.Trim())"
-  $modelSlugs = @(Read-SetupCodexModelCatalog)
-  if ($SetupCodexModel -and ($modelSlugs -notcontains $SetupCodexModel)) {
-    Stop-Setup "the selected Codex model $SetupCodexModel is not in the gateway catalog."
-  }
 }
 
-# Configure Codex as one transactional unit. The config and provider token are
-# backed up first; a write or verification failure restores both (or removes
-# newly created files). A freshly installed CLI is never uninstalled.
+# Install, then configure Codex as one transactional config/token write. A
+# freshly installed CLI is never uninstalled when configuration fails.
 function Set-SetupCodex {
-  Write-SetupPhase 'Codex'
+  Write-SetupPhase 'Installing Codex'
   # Ref: https://github.com/openai/codex/blob/main/scripts/install/install.sh
   $candidates = @(
     (Join-Path $HOME '.local/bin/codex'),
@@ -869,7 +774,12 @@ function Set-SetupCodex {
     Install-SetupCodex
     $exe = Get-SetupCliExe -Name codex -Label Codex -Candidates $candidates
     if (-not $exe) { Stop-Setup "Codex CLI is unavailable and could not be installed." }
+  } else {
+    Write-SetupInfo 'Codex is already installed.'
   }
+  Write-SetupCodexVersion -Exe $exe
+
+  Write-SetupPhase 'Configuring Codex'
   $script:CodexHomeDir = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME '.codex' }
   $script:CodexConfigPath = Join-Path $script:CodexHomeDir 'config.toml'
   $script:CodexTokenPath = Join-Path $script:CodexHomeDir 'floway-token'
@@ -888,13 +798,6 @@ function Set-SetupCodex {
     Write-SetupCodexConfig -Exe $exe
   } catch {
     Write-SetupWarn "Codex configuration failed; rolling back configuration and token."
-    Restore-SetupCodexFiles
-    throw
-  }
-  try {
-    Invoke-SetupCodexVerify -Exe $exe
-  } catch {
-    Write-SetupWarn "Codex verification failed; rolling back configuration and token."
     Restore-SetupCodexFiles
     throw
   }

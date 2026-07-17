@@ -50,14 +50,6 @@ _emit_diagnostic() {
   fi
 }
 
-_emit_metadata() {
-  if [ "$_OUT_COLOR" -eq 1 ]; then
-    printf '%s%s:%s %s\n' "$_C_BOLD" "$1" "$_C_RESET" "$2"
-  else
-    printf '%s: %s\n' "$1" "$2"
-  fi
-}
-
 # Emit one line to a stream, wrapping it in an ANSI color only when that stream
 # opted into color and a non-empty color was given (default-color detail lines
 # stay uncolored rather than carrying a bare reset). $1 stream
@@ -71,20 +63,13 @@ _emit_line() {
 }
 
 out_title() { _emit_notice 'Floway Agent Setup'; }
-out_metadata() { _emit_metadata "$1" "$2"; }
+out_metadata() { _emit_line 1 '' "$1: $2"; }
 out_phase() { _emit_notice "$1"; }
 out_info() { _emit_line 1 '' "$1"; }
 out_success() { _emit_line 1 '' "✨ $1"; }
 out_warn() { _emit_diagnostic "$_C_YELLOW" 'Warning' "$1"; }
 out_error() { _emit_diagnostic "$_C_RED" 'Error' "$1"; }
 out_fatal() { _emit_diagnostic "$_C_RED" 'Error' "$1"; }
-
-# Re-emit captured non-progress output as an indented, redacted block.
-out_captured() {
-  redact_key | while IFS= read -r _oc_line; do
-    _emit_line 2 '' "    $_oc_line"
-  done
-}
 
 SETUP_TMPDIR=""
 _cleanup() {
@@ -117,24 +102,6 @@ CLAUDE_MERGE_PROGRAM='
 '
 
 # --- common helpers ---------------------------------------------------------
-
-# Redact every literal occurrence of the API key from a text stream. The key is
-# read from the environment (never argv) and matched with index() so arbitrary
-# key characters are treated literally rather than as a regex.
-redact_key() {
-  SETUP_API_KEY="$SETUP_API_KEY" awk '
-    BEGIN { k = ENVIRON["SETUP_API_KEY"]; kl = length(k) }
-    {
-      if (kl == 0) { print; next }
-      line = $0; out = ""
-      while ((p = index(line, k)) > 0) {
-        out = out substr(line, 1, p - 1) "***"
-        line = substr(line, p + kl)
-      }
-      print out line
-    }
-  '
-}
 
 # Run a command under a wall-clock limit. macOS ships no `timeout`, so the
 # Bash-3.2 fallback enables job control for one launch, placing the command and
@@ -379,6 +346,7 @@ claude_ensure_installed() {
     out_warn "multiple Claude Code installations detected; using $CLAUDE_BIN"
   fi
   if [ "$DISCOVERED_COUNT" -ge 1 ]; then
+    out_info 'Claude Code is already installed.'
     return 0
   fi
 
@@ -511,41 +479,7 @@ claude_write_settings() {
   fi
 }
 
-# Confirm the gateway's authenticated model directory answers. No inference
-# request is issued. The key is passed through a mode-0600 curl config file so
-# it never reaches the process argument list.
-claude_check_models() {
-  _cm_cfg="$SETUP_TMPDIR/claude-curl.cfg"
-  {
-    printf 'silent\n'
-    printf 'show-error\n'
-    printf 'fail\n'
-    printf 'header = "anthropic-version: 2023-06-01"\n'
-    printf 'header = "Authorization: Bearer %s"\n' "$SETUP_API_KEY"
-    printf 'header = "x-api-key: %s"\n' "$SETUP_API_KEY"
-  } > "$_cm_cfg"
-  chmod 600 "$_cm_cfg" 2>/dev/null || true
-  curl -K "$_cm_cfg" --connect-timeout 10 --max-time 30 -o /dev/null "${SETUP_ENDPOINT%/}/v1/models"
-  _cm_rc=$?
-  rm -f "$_cm_cfg"
-  return $_cm_rc
-}
-
-# Verify the Claude configuration without inference: reparse the written
-# settings, print the raw CLI version, reach the authenticated model directory,
-# and run `claude doctor` when the subcommand exists. Doctor output is redacted
-# before it is surfaced.
-claude_verify() {
-  if ! SETUP_API_KEY="$SETUP_API_KEY" "$JQ" -e --arg baseUrl "$SETUP_ENDPOINT" '
-      (type == "object")
-      and ((.env | type) == "object")
-      and (.env.ANTHROPIC_BASE_URL == $baseUrl)
-      and (.env.ANTHROPIC_AUTH_TOKEN == env.SETUP_API_KEY)
-    ' "$CLAUDE_SETTINGS_PATH" >/dev/null 2>&1; then
-    out_error 'the written Claude settings did not reparse as expected.'
-    return 1
-  fi
-
+claude_write_version() {
   _cv_timeout=${AGENT_SETUP_TEST_TIMEOUT_SECONDS:-30}
   _cv_version_file="$SETUP_TMPDIR/claude-version.out"
   if _run_with_timeout "$_cv_timeout" "$CLAUDE_BIN" --version > "$_cv_version_file" 2>&1; then
@@ -560,60 +494,26 @@ claude_verify() {
     return 1
   fi
   out_info "Claude Code version: $_cv_version"
-
-  if ! claude_check_models; then
-    out_error "could not reach the authenticated model directory at ${SETUP_ENDPOINT%/}/v1/models"
-    return 1
-  fi
-  _cv_doctor_help="$SETUP_TMPDIR/claude-doctor-help.out"
-  if _run_with_timeout "$_cv_timeout" "$CLAUDE_BIN" doctor --help </dev/null > "$_cv_doctor_help" 2>&1; then
-    if _run_with_timeout "$_cv_timeout" "$CLAUDE_BIN" doctor </dev/null > "$SETUP_TMPDIR/claude-doctor.out" 2>&1; then
-      out_success 'claude doctor reported no blocking issues.'
-    else
-      _cv_doctor_status=$?
-      if [ "$_cv_doctor_status" -eq 124 ]; then
-        out_error 'claude doctor timed out.'
-      else
-        out_error 'claude doctor reported a problem:'
-        out_captured < "$SETUP_TMPDIR/claude-doctor.out"
-      fi
-      return 1
-    fi
-  else
-    _cv_help_status=$?
-    if [ "$_cv_help_status" -eq 124 ]; then
-      out_error 'claude doctor capability check timed out.'
-      return 1
-    fi
-    if grep -Eiq '(unknown|unrecognized|invalid|no such).*(command|subcommand).*doctor|doctor.*(unknown|unrecognized|invalid).*(command|subcommand)' "$_cv_doctor_help"; then
-      out_info 'this Claude Code build has no doctor command; skipping that check.'
-    else
-      out_error 'claude doctor capability check failed:'
-      out_captured < "$_cv_doctor_help"
-      return 1
-    fi
-  fi
 }
 
-# Configure Claude Code as one transactional unit. jq must resolve before any
-# mutation. Verification failure rolls back the settings write; a freshly
-# installed CLI is never uninstalled.
+# Install, then configure Claude Code as one transactional settings write. A
+# freshly installed CLI is never uninstalled when configuration fails.
 configure_claude() {
-  out_phase 'Claude Code'
-  if ! ensure_jq; then
-    out_error 'jq is required to configure Claude Code but is unavailable and could not be provisioned for this platform. Install jq and re-run.'
-    return 1
-  fi
+  out_phase 'Installing Claude Code'
   if ! claude_ensure_installed; then
     out_error 'Claude Code CLI is unavailable and could not be installed.'
     return 1
   fi
-  if ! claude_write_settings; then
+  if ! claude_write_version; then
     return 1
   fi
-  if ! claude_verify; then
-    out_warn 'Claude Code verification failed; rolling back settings.'
-    claude_rollback_settings
+
+  out_phase 'Configuring Claude Code'
+  if ! ensure_jq; then
+    out_error 'jq is required to configure Claude Code but is unavailable and could not be provisioned for this platform. Install jq and re-run.'
+    return 1
+  fi
+  if ! claude_write_settings; then
     return 1
   fi
   out_success 'Claude Code configured.'
@@ -634,6 +534,7 @@ codex_ensure_installed() {
     out_warn "multiple Codex installations detected; using $CODEX_BIN"
   fi
   if [ "$DISCOVERED_COUNT" -ge 1 ]; then
+    out_info 'Codex is already installed.'
     return 0
   fi
 
@@ -894,13 +795,11 @@ codex_write_config() {
 
   _cwc_status=$(printf '%s' "$_cwc_result" | "$JQ" -r '.result.status // empty' 2>/dev/null)
   case "$_cwc_status" in
-    ok)
-      out_success 'Codex base configuration written.'
-      ;;
+    ok) ;;
     okOverridden)
       _cwc_msg=$(printf '%s' "$_cwc_result" | "$JQ" -r '.result.overriddenMetadata.message // "an override layer applies"' 2>/dev/null)
       _cwc_layer=$(printf '%s' "$_cwc_result" | "$JQ" -r '.result.overriddenMetadata.overridingLayer.name.type // "unknown"' 2>/dev/null)
-      out_warn "Codex base configuration written, but a higher-precedence layer overrides it ($_cwc_msg; layer: $_cwc_layer)."
+      out_warn "Codex configuration is overridden by a higher-precedence layer ($_cwc_msg; layer: $_cwc_layer)."
       ;;
     *)
       out_error "the Codex app-server did not confirm the configuration (status: ${_cwc_status:-none})."
@@ -939,47 +838,7 @@ codex_stage_token() {
   fi
 }
 
-# Confirm the gateway's authenticated Codex model directory answers. No inference
-# request is issued. When a model was selected, confirm it is present in the
-# returned catalog. The key is passed through a mode-0600 curl config file so it
-# never reaches the process argument list.
-codex_check_models() {
-  _ccm_base="${SETUP_ENDPOINT%/}/azure-api.codex"
-  _ccm_cfg="$SETUP_TMPDIR/codex-curl.cfg"
-  {
-    printf 'silent\n'
-    printf 'show-error\n'
-    printf 'fail\n'
-    printf 'header = "Authorization: Bearer %s"\n' "$SETUP_API_KEY"
-  } > "$_ccm_cfg"
-  chmod 600 "$_ccm_cfg" 2>/dev/null || true
-  _ccm_body="$SETUP_TMPDIR/codex-models.json"
-  curl -K "$_ccm_cfg" --connect-timeout 10 --max-time 30 -o "$_ccm_body" "$_ccm_base/models"
-  _ccm_rc=$?
-  rm -f "$_ccm_cfg"
-  if [ "$_ccm_rc" -ne 0 ]; then
-    rm -f "$_ccm_body"
-    return 1
-  fi
-  if [ -n "$SETUP_CODEX_MODEL" ]; then
-    if ! "$JQ" -e --arg m "$SETUP_CODEX_MODEL" 'any(.models[]?; .slug == $m)' "$_ccm_body" >/dev/null 2>&1; then
-      out_error "the selected Codex model $SETUP_CODEX_MODEL is not in the gateway catalog."
-      rm -f "$_ccm_body"
-      return 1
-    fi
-  fi
-  rm -f "$_ccm_body"
-}
-
-# Verify Codex without inference: compare the provider token without printing
-# it, print the raw CLI version, and reach the authenticated model directory
-# (confirming the selected model when one is set).
-codex_verify() {
-  if ! cmp -s "$CODEX_TOKEN_PATH" <(printf '%s' "$SETUP_API_KEY"); then
-    out_error 'the written Codex provider token did not reparse as expected.'
-    return 1
-  fi
-
+codex_write_version() {
   _cv_timeout=${AGENT_SETUP_TEST_TIMEOUT_SECONDS:-30}
   _cv_version_file="$SETUP_TMPDIR/codex-version.out"
   if _run_with_timeout "$_cv_timeout" "$CODEX_BIN" --version > "$_cv_version_file" 2>&1; then
@@ -993,25 +852,23 @@ codex_verify() {
     fi
     return 1
   fi
-
-  if ! codex_check_models; then
-    out_error "could not reach the authenticated Codex model directory at ${SETUP_ENDPOINT%/}/azure-api.codex/models"
-    return 1
-  fi
 }
 
-# Configure Codex as one transactional unit. jq must resolve before any
-# mutation. The config and provider token are backed up first; a write or
-# verification failure restores both (or removes newly created files). A
-# freshly installed CLI is never uninstalled.
+# Install, then configure Codex as one transactional config/token write. A
+# freshly installed CLI is never uninstalled when configuration fails.
 configure_codex() {
-  out_phase 'Codex'
-  if ! ensure_jq; then
-    out_error 'jq is required to configure Codex but is unavailable and could not be provisioned for this platform. Install jq and re-run.'
-    return 1
-  fi
+  out_phase 'Installing Codex'
   if ! codex_ensure_installed; then
     out_error 'Codex CLI is unavailable and could not be installed.'
+    return 1
+  fi
+  if ! codex_write_version; then
+    return 1
+  fi
+
+  out_phase 'Configuring Codex'
+  if ! ensure_jq; then
+    out_error 'jq is required to configure Codex but is unavailable and could not be provisioned for this platform. Install jq and re-run.'
     return 1
   fi
   CODEX_HOME_DIR="${CODEX_HOME:-$HOME/.codex}"
@@ -1031,11 +888,6 @@ configure_codex() {
   fi
   if ! codex_write_config; then
     out_warn 'Codex configuration failed; rolling back configuration and token.'
-    codex_rollback
-    return 1
-  fi
-  if ! codex_verify; then
-    out_warn 'Codex verification failed; rolling back configuration and token.'
     codex_rollback
     return 1
   fi

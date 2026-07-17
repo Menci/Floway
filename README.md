@@ -162,19 +162,19 @@ Open the deployed URL (or `http://localhost:8788` for Node), log in with
    `sudo` and never upgrades an existing installation.
 
    Native child-process output stays attached to the terminal so progress,
-   colors, and carriage-return updates render in real time. Setup-owned output
-   uses Homebrew-style notices for the title and selected agent, emphasized
-   endpoint/API-key labels, colored warning and error labels, plain normal
-   status text, and an `✨` prefix for successful outcomes. Each script
-   configures one agent and exits with that result, so it prints no redundant
-   summary.
+   colors, and carriage-return updates render in real time. Each script has
+   three sections: the Floway header, agent installation (including the CLI
+   version), and agent configuration. Setup-owned output uses Homebrew-style
+   notices for those sections, colored warning and error labels, plain metadata
+   and normal status text, and an `✨` prefix for successful outcomes. It exits
+   with the selected agent's result and prints no redundant summary.
 
    Each managed file is backed up before Floway's settings are merged into
    Claude Code's `~/.claude/settings.json` and Codex's
    `$CODEX_HOME/config.toml`. The Codex provider token is stored separately
    under the active `CODEX_HOME`, so an official account login in `auth.json`
-   remains available. Verification only reaches the gateway's authenticated
-   model directory; it never issues an inference request.
+   remains available. Installation checks the local CLI version before
+   configuration begins; setup performs no gateway request.
 
    **Config snippets** keeps the manual setup path available for the same
    table-selected key and left-column agent choice. Claude Code is presented as
