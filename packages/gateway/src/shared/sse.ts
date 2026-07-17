@@ -1,6 +1,9 @@
 import type { Context } from 'hono';
 import { streamSSE as honoStreamSSE, type SSEStreamingApi } from 'hono/streaming';
 
+// Response-header wrapper for Hono's `streamSSE`, distinct from
+// data-plane/chat/shared/stream/sse.ts which owns per-frame writing.
+//
 // nginx (and OpenResty / Tengine / other nginx-based reverse proxies) enable
 // `proxy_buffering` by default, which holds SSE chunks until the buffer fills
 // or upstream closes — visible to end users as long, silent gaps in the
