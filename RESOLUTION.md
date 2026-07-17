@@ -399,7 +399,8 @@ Ordinary carriers prefer the latest available candidate with the same upstream,
 model, and optional alias rules. Non-portable state forces the recorded
 upstream and model but never forces alias rules; an exact-rule preferred variant
 still wins when available. Affinity only reorders or narrows candidates already
-produced by resolution. Protocol placement and restoration are documented in
+produced by resolution. Empty alias rules and absent direct-candidate rules both
+mean no overlay. Protocol placement and restoration are documented in
 [AFFINITY.md](./AFFINITY.md).
 
 Serve dispatches the first candidate of the ordered list exactly once.

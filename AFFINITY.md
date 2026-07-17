@@ -71,7 +71,8 @@ Every owned carrier also adds an exact-rules preference. The latest preferred
 target that remains available moves first. Responses compaction and
 program/program-output state additionally force upstream and model. Force
 never narrows alias rules; an exact preferred rule variant still wins when it
-is available.
+is available. A direct candidate's absent rules and an alias target's empty
+`rules: {}` are the same no-overlay variant.
 
 Responses expands `previous_response_id` and hydrates complete stored items
 before affinity ingress. Persistence contains no separate routing record.
