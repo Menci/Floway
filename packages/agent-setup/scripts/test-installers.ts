@@ -78,7 +78,9 @@ const HARNESS_ROOT = mkdtempSync(join(tmpdir(), 'floway-installer-harness.'));
 const cleanupPaths: string[] = [HARNESS_ROOT];
 
 const hostJqPath = spawnSync('/bin/sh', ['-c', 'command -v jq'], { encoding: 'utf8' }).stdout.trim() || null;
-const hostJqDir = hostJqPath ? dirname(hostJqPath) : null;
+const HOST_JQ_BIN = join(HARNESS_ROOT, 'host-jq-bin');
+mkdirSync(HOST_JQ_BIN);
+if (hostJqPath) symlinkSync(hostJqPath, join(HOST_JQ_BIN, 'jq'));
 
 // A hermetic tool directory: symlinks to exactly the external commands the
 // installer uses — deliberately excluding jq, whose presence each test controls
@@ -635,7 +637,7 @@ const runShellInstaller = (options: RunOptions): Promise<RunResult> => {
   writeFileSync(scriptPath, script);
 
   const pathParts = [workspace.binDir, options.excludeTimeoutTools ? NO_TIMEOUT_BIN : SHIM_BIN];
-  if (!options.excludeTimeoutTools && options.includeJq !== false && hostJqDir) pathParts.push(hostJqDir);
+  if (!options.excludeTimeoutTools && options.includeJq !== false && hostJqPath) pathParts.push(HOST_JQ_BIN);
 
   const env: Record<string, string> = {
     HOME: workspace.home,
@@ -707,7 +709,7 @@ const runShellInstallerWithAmbientKey = (options: RunOptions): Promise<RunResult
   const scriptPath = join(workspace.root, 'setup-ambient-key.sh');
   writeFileSync(scriptPath, script);
   const pathParts = [workspace.binDir, SHIM_BIN];
-  if (hostJqDir) pathParts.push(hostJqDir);
+  if (hostJqPath) pathParts.push(HOST_JQ_BIN);
   const env: Record<string, string> = {
     HOME: workspace.home,
     PATH: pathParts.join(':'),
