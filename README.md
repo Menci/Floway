@@ -164,9 +164,10 @@ Open the deployed URL (or `http://localhost:8788` for Node), log in with
    Native child-process output stays attached to the terminal so progress,
    colors, and carriage-return updates render in real time. Setup-owned output
    uses Homebrew-style notices for the title and selected agent, emphasized
-   endpoint/API-key labels, colored warning and error labels, and plain normal
-   status text. Each script configures one agent and exits with that result, so
-   it prints no redundant summary.
+   endpoint/API-key labels, colored warning and error labels, plain normal
+   status text, and an `✨` prefix for successful outcomes. Each script
+   configures one agent and exits with that result, so it prints no redundant
+   summary.
 
    Each managed file is backed up before Floway's settings are merged into
    Claude Code's `~/.claude/settings.json` and Codex's

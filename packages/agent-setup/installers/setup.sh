@@ -27,7 +27,6 @@ _init_output() {
   if _stream_color 2; then _ERR_COLOR=1; else _ERR_COLOR=0; fi
   _C_BLUE=$'\033[34m'
   _C_BOLD=$'\033[1m'
-  _C_GREEN=$'\033[92m'
   _C_YELLOW=$'\033[93m'
   _C_RED=$'\033[91m'
   _C_RESET=$'\033[0m'
@@ -75,7 +74,7 @@ out_title() { _emit_notice 'Floway Agent Setup'; }
 out_metadata() { _emit_metadata "$1" "$2"; }
 out_phase() { _emit_notice "$1"; }
 out_info() { _emit_line 1 '' "$1"; }
-out_success() { _emit_line 1 "$_C_GREEN" "$1"; }
+out_success() { _emit_line 1 '' "✨ $1"; }
 out_warn() { _emit_diagnostic "$_C_YELLOW" 'Warning' "$1"; }
 out_error() { _emit_diagnostic "$_C_RED" 'Error' "$1"; }
 out_fatal() { _emit_diagnostic "$_C_RED" 'Error' "$1"; }

@@ -84,7 +84,7 @@ function Write-SetupMetadata {
 }
 function Write-SetupPhase { param([string]$Name) Write-SetupNotice $Name }
 function Write-SetupInfo { param([string]$Text) Write-SetupHostLine $Text -Plain }
-function Write-SetupSuccess { param([string]$Text) Write-SetupHostLine $Text Green }
+function Write-SetupSuccess { param([string]$Text) Write-SetupHostLine "✨ $Text" -Plain }
 function Write-SetupWarn { param([string]$Text) Write-SetupDiagnostic 'Warning' $Text Yellow '93' }
 function Write-SetupError { param([string]$Text) Write-SetupDiagnostic 'Error' $Text Red '91' }
 function Write-SetupFatal { param([string]$Text) Write-SetupDiagnostic 'Error' $Text Red '91' }

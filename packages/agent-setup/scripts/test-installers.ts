@@ -2512,7 +2512,7 @@ test('claude', 'Bash and PowerShell emit an identical happy-path stdout line seq
   t.includes(normalizeLines(bash.stdout), '\n==> Claude Code\n', 'the output opens the Claude Code phase');
   t.excludes(normalizeLines(bash.stdout), '\n\n', 'setup-owned sections do not insert blank separator lines');
   t.equal(normalizeLines(bash.stdout).match(/^==> /gm)?.length, 2, 'only the setup title and current-agent phase receive arrow notices');
-  t.includes(normalizeLines(bash.stdout), 'Claude Code configured.', 'the successful result is explicit');
+  t.includes(normalizeLines(bash.stdout), '✨ Claude Code configured.', 'the successful result is explicit');
   t.excludes(normalizeLines(bash.stdout), 'Summary', 'a single-agent script has no redundant summary');
 });
 
@@ -2535,7 +2535,7 @@ test('claude', 'a fully successful run keeps stderr empty and emits no escape co
   t.ok(!hasAnsi(ps.combined), 'captured PowerShell output carries no escape sequences');
 });
 
-test('claude', 'Bash styles only notices, metadata labels, success, and diagnostics', async t => {
+test('claude', 'Bash styles notices and metadata labels while marking success with an emoji', async t => {
   const ws = makeWorkspace();
   placeFakeClaude(ws.binDir);
   const forced = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: claudeConfig(), forceColor: true });
@@ -2544,7 +2544,8 @@ test('claude', 'Bash styles only notices, metadata labels, success, and diagnost
   t.includes(forced.stdout, '[1mEndpoint:[0m ', 'the Endpoint label is bold');
   t.includes(forced.stdout, '[1mAPI Key:[0m Primary key', 'the API Key label is bold');
   t.includes(forced.stdout, '[34m==>[0m [1mClaude Code[0m', 'the agent phase uses the notice style');
-  t.includes(forced.stdout, '[92mClaude Code configured.[0m', 'the successful result is green');
+  t.includes(forced.stdout, '✨ Claude Code configured.', 'the successful result uses the shared emoji marker');
+  t.excludes(forced.stdout, '[92m', 'success does not use green ANSI styling');
   t.ok(!hasAnsi(forced.stderr), 'a successful run leaves stderr escape-free even under forced color');
 
   const suppressed = makeWorkspace();
