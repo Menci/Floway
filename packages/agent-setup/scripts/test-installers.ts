@@ -2437,10 +2437,10 @@ test('claude', 'Bash and PowerShell emit an identical happy-path stdout line seq
   t.equal(ps.code, 0, `PowerShell happy path should succeed:\n${ps.combined}`);
 
   t.equal(normalizeLines(ps.stdout), normalizeLines(bash.stdout), 'the two installers must print the same stdout structure');
-  t.includes(normalizeLines(bash.stdout), 'Floway Agent Setup\nEndpoint:', 'the header identifies the setup and endpoint');
+  t.includes(normalizeLines(bash.stdout), '==> Floway Agent Setup\nEndpoint:', 'the header identifies the setup and endpoint');
   t.includes(normalizeLines(bash.stdout), '\nAPI Key: Primary key\n', 'the header identifies the selected API key');
-  t.includes(normalizeLines(bash.stdout), '\nClaude Code\n', 'the output opens the Claude Code phase');
-  t.includes(normalizeLines(bash.stdout), '\nSummary\n', 'the output closes with a Summary phase');
+  t.includes(normalizeLines(bash.stdout), '\n==> Claude Code\n', 'the output opens the Claude Code phase');
+  t.includes(normalizeLines(bash.stdout), '\n==> Summary\n', 'the output closes with a Summary phase');
   t.includes(normalizeLines(bash.stdout), '  Claude Code  [configured]', 'Summary lists Claude Code with its state');
   t.excludes(normalizeLines(bash.stdout), '  Codex  [', 'Summary excludes the unselected agent');
 });
@@ -2464,13 +2464,13 @@ test('claude', 'a fully successful run keeps stderr empty and emits no escape co
   t.ok(!hasAnsi(ps.combined), 'captured PowerShell output carries no escape sequences');
 });
 
-test('claude', 'Bash paints setup headings only when color is enabled and honors NO_COLOR', async t => {
+test('claude', 'Bash styles setup notices only when color is enabled and honors NO_COLOR', async t => {
   const ws = makeWorkspace();
   placeFakeClaude(ws.binDir);
   const forced = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: claudeConfig(), forceColor: true });
   t.equal(forced.code, 0, `forced-color run should succeed:\n${forced.combined}`);
-  t.includes(forced.stdout, '[96mClaude Code[0m', 'the phase header is painted bright cyan on stdout');
-  t.includes(forced.stdout, '[92m  Claude Code configured.[0m', 'a success line is painted bright green on stdout');
+  t.includes(forced.stdout, '[34m==>[0m [1mClaude Code[0m', 'the phase uses a blue arrow and bold text');
+  t.includes(forced.stdout, '[34m==>[0m [1mClaude Code configured.[0m', 'success uses the same notice style');
   t.ok(!hasAnsi(forced.stderr), 'a successful run leaves stderr escape-free even under forced color');
 
   const suppressed = makeWorkspace();
@@ -2492,8 +2492,8 @@ test('claude', 'Bash routes errors and rollback notices to stderr in red and yel
     fakeClaudeDoctorExit: 1, forceColor: true,
   });
   t.ok(run.code !== 0, 'a failed doctor must fail the agent');
-  t.includes(run.stderr, '[91m  claude doctor reported a problem:[0m', 'the primary error is painted red on stderr');
-  t.includes(run.stderr, '[93m  Claude Code verification failed; rolling back settings.[0m', 'the rollback notice is painted yellow on stderr');
+  t.includes(run.stderr, '[91mError:[0m claude doctor reported a problem:', 'the primary error label is painted red on stderr');
+  t.includes(run.stderr, '[93mWarning:[0m Claude Code verification failed; rolling back settings.', 'the rollback label is painted yellow on stderr');
   t.excludes(run.stdout, 'claude doctor reported a problem', 'the error does not leak onto stdout');
   t.excludes(run.stdout, 'rolling back settings', 'the rollback notice does not leak onto stdout');
 });
@@ -2511,8 +2511,8 @@ test('claude', 'PowerShell colors stderr under forced color, keeps stdout escape
   });
   t.ok(forced.code !== 0, 'a failed doctor must fail the agent');
   t.ok(!hasAnsi(forced.stdout), 'host-colored stdout never carries escape codes even under forced color');
-  t.includes(forced.stderr, '[91m  claude doctor reported a problem:[0m', 'stderr is painted red for the primary error');
-  t.includes(forced.stderr, '[93m  Claude Code verification failed; rolling back settings.[0m', 'stderr is painted yellow for the rollback notice');
+  t.includes(forced.stderr, '[91mError:[0m claude doctor reported a problem:', 'stderr colors the primary error label');
+  t.includes(forced.stderr, '[93mWarning:[0m Claude Code verification failed; rolling back settings.', 'stderr colors the rollback label');
 
   const suppressed = makeWorkspace();
   placeFakeClaude(suppressed.binDir);
@@ -2524,7 +2524,7 @@ test('claude', 'PowerShell colors stderr under forced color, keeps stdout escape
   });
   t.ok(noColor.code !== 0, 'the failure still occurs');
   t.ok(!hasAnsi(noColor.combined), 'NO_COLOR wins over forced color on stderr too');
-  t.includes(noColor.stderr, '  claude doctor reported a problem:', 'the plain error is still on stderr');
+  t.includes(noColor.stderr, 'Error: claude doctor reported a problem:', 'the plain error is still on stderr');
 });
 
 test('claude', 'a multiple-installation warning is a stderr line on both installers', async t => {
@@ -2533,7 +2533,7 @@ test('claude', 'a multiple-installation warning is a stderr line on both install
   placeFakeClaude(join(bashWs.home, '.local/bin'));
   const bash = await runShellInstaller({ workspace: bashWs, baseUrl: modelServer.url, configuration: claudeConfig() });
   t.equal(bash.code, 0, `should succeed:\n${bash.combined}`);
-  t.includes(bash.stderr, '  multiple Claude Code installations detected;', 'Bash writes the warning to stderr');
+  t.includes(bash.stderr, 'Warning: multiple Claude Code installations detected;', 'Bash writes the warning to stderr');
   t.excludes(bash.stdout, 'multiple Claude Code installations detected', 'the warning is not on stdout');
 
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
@@ -2543,7 +2543,7 @@ test('claude', 'a multiple-installation warning is a stderr line on both install
   placeFakeClaude(join(psWs.home, '.local/bin'));
   const ps = await runPowerShellInstaller({ workspace: psWs, baseUrl: modelServer.url, configuration: claudeConfig() });
   t.equal(ps.code, 0, `should succeed:\n${ps.combined}`);
-  t.includes(ps.stderr, '  multiple Claude Code installations detected;', 'PowerShell writes the warning to stderr');
+  t.includes(ps.stderr, 'Warning: multiple Claude Code installations detected;', 'PowerShell writes the warning to stderr');
   t.excludes(ps.stdout, 'multiple Claude Code installations detected', 'the warning is not on stdout');
 });
 
@@ -2558,7 +2558,7 @@ test('claude', 'PowerShell surfaces one primary error and rollback status on std
   t.excludes(run.combined, 'setup failed', 'the removed double-wrapper phrasing must not return');
   const errorCount = run.stderr.split('\n').filter(line => line.includes('claude doctor reported a problem:')).length;
   t.equal(errorCount, 1, 'the primary error is printed exactly once');
-  t.includes(run.stderr, '  Claude Code verification failed; rolling back settings.', 'the rollback status accompanies the primary error');
+  t.includes(run.stderr, 'Warning: Claude Code verification failed; rolling back settings.', 'the rollback status accompanies the primary error');
   t.excludes(run.stdout, 'claude doctor reported a problem', 'the error stays off stdout');
 });
 

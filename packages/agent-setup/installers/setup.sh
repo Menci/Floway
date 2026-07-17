@@ -7,8 +7,9 @@
 
 # --- output layer -----------------------------------------------------------
 #
-# Setup-owned output uses plain headings and indented status lines. Native
-# package managers inherit the terminal directly, so their ANSI colors,
+# Setup-owned output follows Homebrew's compact visual language: blue `==>`
+# notices introduce work, while warnings and errors color only their labels.
+# Native package managers inherit the terminal directly, so their ANSI colors,
 # carriage-return progress, buffering, and cursor behavior remain intact.
 #
 # Color is emitted only for an interactive terminal with NO_COLOR unset, probed
@@ -23,13 +24,31 @@ _stream_color() {
 _init_output() {
   if _stream_color 1; then _OUT_COLOR=1; else _OUT_COLOR=0; fi
   if _stream_color 2; then _ERR_COLOR=1; else _ERR_COLOR=0; fi
-  _C_CYAN=$'\033[96m'
-  _C_DARK_CYAN=$'\033[36m'
+  _C_BLUE=$'\033[34m'
+  _C_BOLD=$'\033[1m'
   _C_GREEN=$'\033[92m'
   _C_YELLOW=$'\033[93m'
   _C_RED=$'\033[91m'
   _C_GRAY=$'\033[90m'
   _C_RESET=$'\033[0m'
+}
+
+_emit_notice() {
+  if [ "$_OUT_COLOR" -eq 1 ]; then
+    printf '%s==>%s %s%s%s\n' "$_C_BLUE" "$_C_RESET" "$_C_BOLD" "$1" "$_C_RESET"
+  else
+    printf '==> %s\n' "$1"
+  fi
+}
+
+# Homebrew colors the diagnostic label rather than the whole message, keeping
+# paths and remediation text readable in the terminal's native foreground.
+_emit_diagnostic() {
+  if [ "$_ERR_COLOR" -eq 1 ]; then
+    printf '%s%s:%s %s\n' "$1" "$2" "$_C_RESET" "$3" >&2
+  else
+    printf '%s: %s\n' "$2" "$3" >&2
+  fi
 }
 
 # Emit one line to a stream, wrapping it in an ANSI color only when that stream
@@ -44,15 +63,15 @@ _emit_line() {
   fi
 }
 
-out_title() { _emit_line 1 "$_C_CYAN" 'Floway Agent Setup'; }
+out_title() { _emit_notice 'Floway Agent Setup'; }
 out_metadata() { _emit_line 1 '' "$1: $2"; }
-out_phase() { printf '\n'; _emit_line 1 "$_C_CYAN" "$1"; }
-out_step() { _emit_line 1 "$_C_DARK_CYAN" "  · $1"; }
+out_phase() { printf '\n'; _emit_notice "$1"; }
+out_step() { _emit_notice "$1"; }
 out_info() { _emit_line 1 '' "  $1"; }
-out_success() { _emit_line 1 "$_C_GREEN" "  $1"; }
-out_warn() { _emit_line 2 "$_C_YELLOW" "  $1"; }
-out_error() { _emit_line 2 "$_C_RED" "  $1"; }
-out_fatal() { _emit_line 2 "$_C_RED" "$1"; }
+out_success() { _emit_notice "$1"; }
+out_warn() { _emit_diagnostic "$_C_YELLOW" 'Warning' "$1"; }
+out_error() { _emit_diagnostic "$_C_RED" 'Error' "$1"; }
+out_fatal() { _emit_diagnostic "$_C_RED" 'Error' "$1"; }
 
 # Re-emit captured non-progress output as a de-emphasized, redacted block.
 out_captured() {

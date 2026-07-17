@@ -6,9 +6,10 @@
 
 # --- output layer -----------------------------------------------------------
 #
-# Setup-owned output uses plain headings and indented status lines. Native
-# package managers inherit the terminal directly, preserving their ANSI colors,
-# carriage-return progress, buffering, and cursor behavior.
+# Setup-owned output follows Homebrew's compact visual language: blue `==>`
+# notices introduce work, while warnings and errors color only their labels.
+# Native package managers inherit the terminal directly, preserving their ANSI
+# colors, carriage-return progress, buffering, and cursor behavior.
 #
 # stdout color rides the host: `Write-Host -ForegroundColor` colors an
 # interactive console yet writes no escape sequences when redirected/captured,
@@ -37,15 +38,43 @@ function Write-SetupErrLine {
   }
 }
 
-function Write-SetupTitle { Write-SetupHostLine 'Floway Agent Setup' Cyan }
+function Write-SetupNotice {
+  param([string]$Text)
+  if ($script:SetupNoColor) { Write-Host "==> $Text"; return }
+  Write-Host '==>' -ForegroundColor Blue -NoNewline
+  Write-Host " $Text"
+}
+
+# Console.Error is used directly so diagnostics remain on stderr while only the
+# Homebrew-style label receives color.
+function Write-SetupDiagnostic {
+  param([string]$Label, [string]$Text, [System.ConsoleColor]$Color, [string]$TestAnsiCode)
+  if ($script:SetupErrColor) {
+    $previous = [Console]::ForegroundColor
+    try {
+      [Console]::ForegroundColor = $Color
+      [Console]::Error.Write("${Label}:")
+      [Console]::ForegroundColor = $previous
+      [Console]::Error.WriteLine(" $Text")
+    } finally {
+      [Console]::ForegroundColor = $previous
+    }
+  } elseif ($script:SetupForceColor -and (-not $script:SetupNoColor)) {
+    [Console]::Error.WriteLine("$($script:SetupEsc)[${TestAnsiCode}m${Label}:$($script:SetupEsc)[0m $Text")
+  } else {
+    [Console]::Error.WriteLine("${Label}: $Text")
+  }
+}
+
+function Write-SetupTitle { Write-SetupNotice 'Floway Agent Setup' }
 function Write-SetupMetadata { param([string]$Label, [string]$Value) Write-Host "${Label}: $Value" }
-function Write-SetupPhase { param([string]$Name) Write-Host ''; Write-SetupHostLine $Name Cyan }
-function Write-SetupStep { param([string]$Text) Write-SetupHostLine "  · $Text" DarkCyan }
+function Write-SetupPhase { param([string]$Name) Write-Host ''; Write-SetupNotice $Name }
+function Write-SetupStep { param([string]$Text) Write-SetupNotice $Text }
 function Write-SetupInfo { param([string]$Text) Write-SetupHostLine "  $Text" -Plain }
-function Write-SetupSuccess { param([string]$Text) Write-SetupHostLine "  $Text" Green }
-function Write-SetupWarn { param([string]$Text) Write-SetupErrLine "  $Text" Yellow '93' }
-function Write-SetupError { param([string]$Text) Write-SetupErrLine "  $Text" Red '91' }
-function Write-SetupFatal { param([string]$Text) Write-SetupErrLine $Text Red '91' }
+function Write-SetupSuccess { param([string]$Text) Write-SetupNotice $Text }
+function Write-SetupWarn { param([string]$Text) Write-SetupDiagnostic 'Warning' $Text Yellow '93' }
+function Write-SetupError { param([string]$Text) Write-SetupDiagnostic 'Error' $Text Red '91' }
+function Write-SetupFatal { param([string]$Text) Write-SetupDiagnostic 'Error' $Text Red '91' }
 
 # Re-emit captured non-progress output as a de-emphasized, redacted block.
 function Write-SetupCaptured {
