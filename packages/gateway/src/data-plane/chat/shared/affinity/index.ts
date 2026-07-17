@@ -22,7 +22,7 @@ export interface AffinityEvidence {
   readonly mode: 'prefer' | 'force';
 }
 
-interface AffinityEnvelope {
+interface AffinityData {
   version: 1;
   origin?: AffinityOrigin;
   affinity: AffinityTarget;
@@ -30,7 +30,7 @@ interface AffinityEnvelope {
 
 export type DecodedAffinityBlob =
   | { kind: 'foreign'; value: string }
-  | { kind: 'owned'; value?: string; envelope: AffinityEnvelope };
+  | ({ kind: 'owned'; value?: string } & AffinityData);
 
 export interface PreparedAffinityPayload<T> {
   readonly routingEvidence: readonly AffinityEvidence[];
@@ -125,7 +125,7 @@ const encodeOriginal = (bytes: Uint8Array, origin: AffinityOrigin): string => {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
-const parseEnvelope = (value: unknown): AffinityEnvelope | null => {
+const parseAffinityData = (value: unknown): AffinityData | null => {
   if (!isRecord(value) || value.version !== 1 || !isRecord(value.affinity)) return null;
   const origin = value.origin;
   if (origin !== undefined && origin !== 'raw' && origin !== 'base64' && origin !== 'base64url') return null;
@@ -227,7 +227,7 @@ export class AffinityCodec {
   async wrap(value: string | undefined, affinity: AffinityTarget, domain: string): Promise<string> {
     const original = value === undefined ? undefined : decodeOriginal(value);
     const originalBytes = original?.bytes ?? new Uint8Array();
-    const envelope: AffinityEnvelope = {
+    const data: AffinityData = {
       version: 1,
       ...(original !== undefined ? { origin: original.origin } : {}),
       affinity,
@@ -236,10 +236,10 @@ export class AffinityCodec {
     const ciphertext = new Uint8Array(await crypto.subtle.encrypt(
       { name: 'AES-GCM', iv, additionalData: ownedBuffer(authenticatedCarrierData(domain, originalBytes)) },
       await this.#key,
-      textEncoder.encode(JSON.stringify(envelope)),
+      textEncoder.encode(JSON.stringify(data)),
     ));
     const encrypted = concatBytes(iv, ciphertext);
-    if (encrypted.length > MAX_UINT16) throw new RangeError('Encrypted affinity envelope exceeds the 2-byte length marker');
+    if (encrypted.length > MAX_UINT16) throw new RangeError('Encrypted affinity data exceeds the 2-byte length marker');
     const framed = concatBytes(originalBytes, encrypted, uint16be(encrypted.length));
     return original?.origin === 'base64url' ? bytesToBase64url(framed) : bytesToBase64(framed);
   }
@@ -264,14 +264,14 @@ export class AffinityCodec {
         key,
         ownedBuffer(ciphertext),
       );
-      const envelope = parseEnvelope(JSON.parse(fatalTextDecoder.decode(plaintext)) as unknown);
-      if (envelope === null) return { kind: 'foreign', value };
-      if (envelope.origin === undefined) {
+      const data = parseAffinityData(JSON.parse(fatalTextDecoder.decode(plaintext)) as unknown);
+      if (data === null) return { kind: 'foreign', value };
+      if (data.origin === undefined) {
         return original.length === 0
-          ? { kind: 'owned', envelope }
+          ? { kind: 'owned', ...data }
           : { kind: 'foreign', value };
       }
-      return { kind: 'owned', value: encodeOriginal(original, envelope.origin), envelope };
+      return { kind: 'owned', value: encodeOriginal(original, data.origin), ...data };
     } catch {
       return { kind: 'foreign', value };
     }
@@ -369,17 +369,17 @@ const blobForCompatibility = (decoded: DecodedAffinityBlob, compatible: boolean)
 export const blobForExactCandidate = (decoded: DecodedAffinityBlob, candidate: ModelCandidate): CandidateBlob =>
   blobForCompatibility(
     decoded,
-    decoded.kind === 'owned' && candidateMatchesExactTarget(candidate, decoded.envelope.affinity),
+    decoded.kind === 'owned' && candidateMatchesExactTarget(candidate, decoded.affinity),
   );
 
 export const blobForForcedCandidate = (decoded: DecodedAffinityBlob, candidate: ModelCandidate): CandidateBlob =>
   blobForCompatibility(
     decoded,
-    decoded.kind === 'owned' && candidateMatchesForcedTarget(candidate, decoded.envelope.affinity),
+    decoded.kind === 'owned' && candidateMatchesForcedTarget(candidate, decoded.affinity),
   );
 
 export const preferredAffinityEvidence = (decoded: Iterable<DecodedAffinityBlob>): AffinityEvidence[] =>
-  [...decoded].flatMap(blob => blob.kind === 'owned' ? [{ target: blob.envelope.affinity, mode: 'prefer' }] : []);
+  [...decoded].flatMap(blob => blob.kind === 'owned' ? [{ target: blob.affinity, mode: 'prefer' }] : []);
 
 export class AffinityRequestContext {
   readonly codec: AffinityCodec;

@@ -9,7 +9,7 @@ Affinity is a gateway source membrane, not a protocol or a translation layer.
 Ingress removes Floway metadata before interceptors, translators, and providers
 run. Egress adds it only after events return to the client-facing protocol.
 
-## Envelope and framing
+## Encrypted data and framing
 
 Each API key has a hidden 256-bit `serverSecret` for gateway-private per-key
 data. Normal key CRUD never exposes it; admin export/import preserves it.
@@ -50,10 +50,10 @@ Base64-encoded twice. Other strings are stored as UTF-16 code units, preserving
 even lone surrogates exactly. A synthetic carrier has no `origin` and no
 original bytes.
 
-Authentication failure, an invalid frame, an unknown envelope, or another
-key's carrier is foreign. Foreign values pass through byte-for-byte and add no
-routing evidence, which allows nested Floway deployments to unwrap their own
-layers independently.
+Authentication failure, an invalid frame, unsupported encrypted data, or
+another key's carrier is foreign. Foreign values pass through byte-for-byte and
+add no routing evidence, which allows nested Floway deployments to unwrap their
+own layers independently.
 
 ## Ingress and routing
 

@@ -25,11 +25,9 @@ describe('AffinityCodec', () => {
     expect(decoded).toEqual({
       kind: 'owned',
       value: original,
-      envelope: {
-        version: 1,
-        origin: _label === 'base64' ? 'base64' : _label === 'base64url' ? 'base64url' : 'raw',
-        affinity,
-      },
+      version: 1,
+      origin: _label === 'base64' ? 'base64' : _label === 'base64url' ? 'base64url' : 'raw',
+      affinity,
     });
   });
 
@@ -39,7 +37,20 @@ describe('AffinityCodec', () => {
 
     expect(await codec.unwrap(wrapped, DOMAIN)).toEqual({
       kind: 'owned',
-      envelope: { version: 1, affinity },
+      version: 1,
+      affinity,
+    });
+  });
+
+  test('unwraps a previously issued v1 carrier into the flat decoded shape', async () => {
+    const wrapped = 'AG8AcABhAHEAdQBlOtQzeH9xmS/0dfIx4J8Iw4j5LHpU6NpX5xlSL7GDz74XVYW91HEoHmzRRd436JBTkMyJB/GrHFbD7JN9V4fGnPu5ElH8Qz05MG5knmm0rPDE+jQfYTk7hMPIAV11kDajufxJB6m+5cx+4VJGC1INUDDTkQBz';
+
+    expect(await new AffinityCodec(SECRET).unwrap(wrapped, DOMAIN)).toEqual({
+      kind: 'owned',
+      value: 'opaque',
+      version: 1,
+      origin: 'raw',
+      affinity,
     });
   });
 
@@ -75,7 +86,7 @@ describe('AffinityCodec', () => {
     bytes[bytes.length - 3] ^= 1;
     const tampered = btoa(String.fromCharCode(...bytes));
 
-    expect(await codec.unwrap('not-an-envelope', DOMAIN)).toEqual({ kind: 'foreign', value: 'not-an-envelope' });
+    expect(await codec.unwrap('not-a-carrier', DOMAIN)).toEqual({ kind: 'foreign', value: 'not-a-carrier' });
     expect(await codec.unwrap(tampered, DOMAIN)).toEqual({ kind: 'foreign', value: tampered });
   });
 

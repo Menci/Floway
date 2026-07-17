@@ -59,7 +59,7 @@ const routingEvidenceFrom = (
     const itemLocations = locationsByItem.get(itemIndex) ?? [];
     const owned = itemLocations.filter(isOwnedLocation);
     for (const location of owned) {
-      latestTarget = location.decoded.envelope.affinity;
+      latestTarget = location.decoded.affinity;
       evidence.push({ target: latestTarget, mode: 'prefer' });
       if (blobRequiresForce(item, location.decoded)) evidence.push({ target: latestTarget, mode: 'force' });
     }
@@ -105,7 +105,7 @@ export const prepareResponsesAffinity = async (
   const boundItems = new Map<number, ValidatedBoundCarrier>();
   for (const location of locations) {
     if (!isOwnedLocation(location)) continue;
-    const affinity = location.decoded.envelope.affinity;
+    const affinity = location.decoded.affinity;
     const bound = affinity.boundItem;
     if (bound === undefined) continue;
     const itemIndex = location.itemIndex + 1;
@@ -175,7 +175,7 @@ export const prepareResponsesAffinity = async (
           if (
             location.decoded.kind === 'owned'
             && location.decoded.value === undefined
-            && location.decoded.envelope.affinity.syntheticItem === true
+            && location.decoded.affinity.syntheticItem === true
           ) removeItem = true;
         }
       }
@@ -195,7 +195,7 @@ export const prepareResponsesAffinity = async (
       }
       const compatibleOwned = decisions.find(decision => decision.selected.compatible && decision.location.decoded.kind === 'owned');
       if (compatibleOwned?.location.decoded.kind === 'owned') {
-        const upstreamItemId = compatibleOwned.location.decoded.envelope.affinity.upstreamItemId;
+        const upstreamItemId = compatibleOwned.location.decoded.affinity.upstreamItemId;
         if (upstreamItemId !== undefined) setItemId(replacement, upstreamItemId);
         else delete replacement.id;
       } else if (decisions.some(decision => decision.location.decoded.kind === 'owned') && 'id' in replacement && typeof replacement.id === 'string') {
