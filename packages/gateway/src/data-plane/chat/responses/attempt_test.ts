@@ -1,8 +1,10 @@
 import { test, vi } from 'vitest';
 
+import { prepareResponsesAffinity } from './affinity/ingress.ts';
 import { responsesAttempt } from './attempt.ts';
 import { createResponsesItemId, hashResponsesItemBinding } from './items/format.ts';
 import * as outputModule from './items/output.ts';
+import { hydrateResponsesPayload } from './items/rewrite.ts';
 import { createResponsesHttpStore } from './items/store.ts';
 import { initRepo } from '../../../repo/index.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
@@ -131,6 +133,59 @@ test('generate native success leaves source-edge state ownership to the caller',
   assert(events.length >= 1, 'expected at least the response.completed event');
 
   assertEquals(callResponses.mock.calls.length, 1);
+});
+
+test('generate treats a translated Responses payload as opaque to native affinity and state', async () => {
+  installRepo();
+  let observedBody: Omit<CanonicalResponsesPayload, 'model'> | undefined;
+  const callResponses = vi.fn(async (
+    _model: ProviderModel,
+    body: Omit<CanonicalResponsesPayload, 'model'>,
+  ): Promise<ProviderResponsesResult> => {
+    observedBody = body;
+    return {
+      action: 'generate',
+      ok: true,
+      events: makeProviderEvents([{
+        type: 'response.completed',
+        sequence_number: 0,
+        response: makeResponsesResult(),
+      }]),
+      modelKey: 'test-model-key',
+      headers: new Headers(),
+    };
+  });
+  const candidate = makeCandidate(callResponses);
+  const store = createResponsesHttpStore(API_KEY_ID, true);
+  const ctx = makeGatewayCtx(store);
+  const carrier = await ctx.affinity.codec.wrap(
+    undefined,
+    {
+      upstreamId: candidate.provider.upstream,
+      modelId: candidate.model.id,
+      syntheticItem: true,
+    },
+    'responses.reasoning.encrypted_content',
+  );
+  const unwrap = vi.spyOn(ctx.affinity.codec, 'unwrap');
+  const getStoredItem = vi.spyOn(store, 'getItemById');
+  const itemId = createResponsesItemId('reasoning');
+
+  const result = await responsesAttempt.generate({
+    payload: makePayload({
+      input: [{ type: 'reasoning', id: itemId, summary: [], encrypted_content: carrier }],
+    }),
+    ctx,
+    candidate,
+    headers: new Headers(),
+  });
+
+  assertEquals(result.type, 'events');
+  if (result.type !== 'events') throw new Error('unreachable');
+  await collectEvents(result.events);
+  assertEquals(unwrap.mock.calls.length, 0);
+  assertEquals(getStoredItem.mock.calls.length, 0);
+  assertEquals(observedBody?.input, [{ type: 'reasoning', id: itemId, summary: [], encrypted_content: carrier }]);
 });
 
 test('generate applies role compatibility flags in target-chain order', async () => {
@@ -495,20 +550,28 @@ test('generate seeds privatePayload before interceptors so the web-search shim r
     'responses.reasoning.encrypted_content',
   );
 
+  const sourcePayload = makePayload({
+    input: [
+      { type: 'message', role: 'user', content: 'follow-up' },
+      { type: 'reasoning', id: 'rs_affinity', summary: [], encrypted_content: carrier },
+      {
+        type: 'web_search_call',
+        id: storedId,
+        status: 'completed',
+        action: { type: 'search', queries: ['deepseek v4'] },
+      } as unknown as never,
+    ],
+    tools: [{ type: 'web_search' }],
+  });
+  await store.loadInputItems(sourcePayload.input, sourcePayload.input);
+  const hydrated = hydrateResponsesPayload(sourcePayload, store);
+  const affinity = await prepareResponsesAffinity(hydrated.payload, ctx.affinity.codec);
   const result = await responsesAttempt.generate({
-    payload: makePayload({
-      input: [
-        { type: 'message', role: 'user', content: 'follow-up' },
-        { type: 'reasoning', id: 'rs_affinity', summary: [], encrypted_content: carrier },
-        {
-          type: 'web_search_call',
-          id: storedId,
-          status: 'completed',
-          action: { type: 'search', queries: ['deepseek v4'] },
-        } as unknown as never,
-      ],
-      tools: [{ type: 'web_search' }],
-    }),
+    payload: affinity.payloadForCandidate(candidate),
+    sourceState: {
+      privatePayloads: hydrated.privatePayloads,
+      itemIdMap: affinity.itemIdMapForCandidate(candidate),
+    },
     ctx,
     candidate,
     headers: new Headers(),
