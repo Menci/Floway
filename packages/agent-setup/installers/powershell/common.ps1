@@ -296,6 +296,37 @@ function Restore-SetupManagedFile {
   }
 }
 
+# Run a child process with its stdout and stderr redirected into in-process
+# pipes, bounded by a deadline. On timeout the whole process tree is terminated
+# and the call throws; otherwise the exit code and combined stdout+stderr are
+# returned. Arguments are fixed internal tokens, never external input.
+function Invoke-SetupProcess {
+  param([string]$Exe, [string[]]$Arguments, [int]$TimeoutSeconds, [string]$TimeoutMessage)
+  $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+  $startInfo.FileName = $Exe
+  $startInfo.UseShellExecute = $false
+  $startInfo.CreateNoWindow = $true
+  $startInfo.RedirectStandardOutput = $true
+  $startInfo.RedirectStandardError = $true
+  # ArgumentList is unavailable in Windows PowerShell 5.1. These arguments are
+  # fixed internal tokens, so quoting them with ProcessStartInfo.Arguments is
+  # safe and keeps external input out of the child command line.
+  $startInfo.Arguments = ($Arguments | ForEach-Object { '"' + $_.Replace('"', '\"') + '"' }) -join ' '
+  $process = New-Object System.Diagnostics.Process
+  $process.StartInfo = $startInfo
+  if (-not $process.Start()) { Stop-Setup "failed to start $Exe." }
+  $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+  $stderrTask = $process.StandardError.ReadToEndAsync()
+  if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
+    Stop-SetupProcessTree $process
+    $process.WaitForExit()
+    Stop-Setup $(if ($TimeoutMessage) { $TimeoutMessage } else { "$Exe timed out after $TimeoutSeconds seconds." })
+  }
+  $stdout = $stdoutTask.GetAwaiter().GetResult()
+  $stderr = $stderrTask.GetAwaiter().GetResult()
+  [PSCustomObject]@{ ExitCode = $process.ExitCode; Output = ($stdout + $stderr) }
+}
+
 # --- run --------------------------------------------------------------------
 
 function Main {
