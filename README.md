@@ -149,6 +149,10 @@ Open the deployed URL (or `http://localhost:8788` for Node), log in with
    and each script installs and configures only its named agent. The command
    picker defaults to Windows on Windows clients and to macOS/Linux elsewhere.
 
+   Both downloaded script bodies define their setup functions before the final
+   `main`/`Main` invocation. A truncated download cannot begin installation or
+   configuration.
+
    The command's setup URL stays stable while the panel is open. The visible
    panel renews its five-minute lease once a minute, and the URL expires about
    five minutes after you leave. A missing CLI is installed with Homebrew on

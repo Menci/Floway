@@ -4,18 +4,6 @@
 # Each served script targets exactly one agent and rolls back that agent's
 # configuration as one transaction on failure.
 
-$ErrorActionPreference = 'Stop'
-if (-not (Test-Path Variable:SetupEndpoint)) { $SetupEndpoint = $null }
-# Keep native (non-cmdlet) command failures from auto-throwing on PowerShell
-# 7.3+, so explicit $LASTEXITCODE checks stay authoritative across versions.
-$PSNativeCommandUseErrorActionPreference = $false
-
-# The server prefix uses ordinary variables, but defensively remove identically
-# named ambient environment variables so installers and CLI subprocesses cannot
-# inherit the API key.
-Remove-Item Env:SETUP_API_KEY -ErrorAction SilentlyContinue
-Remove-Item Env:SetupApiKey -ErrorAction SilentlyContinue
-
 # --- output layer -----------------------------------------------------------
 #
 # Setup-owned output uses plain headings and indented status lines. Native
@@ -28,12 +16,6 @@ Remove-Item Env:SetupApiKey -ErrorAction SilentlyContinue
 # PowerShell 7. stderr goes through [Console]::Error, colored with ANSI only for
 # an interactive error stream with NO_COLOR unset — a redirected capture stays
 # escape-free. UTF-8 output makes the box-drawing glyphs render on 5.1 too.
-try { [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false) } catch { }
-$script:SetupNoColor = [bool]$env:NO_COLOR
-$script:SetupForceColor = [bool]$env:AGENT_SETUP_TEST_FORCE_COLOR
-$script:SetupErrColor = (-not [Console]::IsErrorRedirected) -and (-not $script:SetupNoColor)
-$script:SetupEsc = [char]27
-
 function Write-SetupHostLine {
   param([string]$Text, [System.ConsoleColor]$Color, [switch]$Plain)
   if ($Plain -or $script:SetupNoColor) { Write-Host $Text } else { Write-Host $Text -ForegroundColor $Color }
@@ -82,25 +64,6 @@ function Write-SetupSummaryEntry {
 # Report a primary error to stderr and unwind. The agent boundary recognizes the
 # 'setup-handled' marker as already reported, so no line is ever duplicated.
 function Stop-Setup { param([string]$Message) Write-SetupError $Message; throw 'setup-handled' }
-
-Write-SetupTitle
-
-# The wrapping command supplies $SetupEndpoint as an in-process variable.
-# Validate it before mutation; installer and CLI subprocesses never inherit it.
-if ([string]::IsNullOrWhiteSpace($SetupEndpoint)) {
-  Write-SetupFatal "`$SetupEndpoint must be set to this gateway origin (e.g. https://gateway.example)."
-  exit 1
-}
-if ($SetupEndpoint -notmatch '^https?://.+') {
-  Write-SetupFatal "`$SetupEndpoint must be an http(s) origin, got $SetupEndpoint"
-  exit 1
-}
-Write-SetupMetadata 'Endpoint' $SetupEndpoint
-Write-SetupMetadata 'API Key' $SetupApiKeyName
-if ($SetupAgent -notin @('claude', 'codex')) {
-  Write-SetupFatal "unknown setup agent: $SetupAgent"
-  exit 1
-}
 
 # --- common helpers ---------------------------------------------------------
 
@@ -820,34 +783,65 @@ function Set-SetupCodex {
 
 # --- run --------------------------------------------------------------------
 
-# Each agent's primary error is already reported at its detection site (the
-# 'setup-handled' marker), so the boundary only records the outcome. Any
-# unexpected exception that escaped without being reported is surfaced here,
-# redacted, so a failure is never silently swallowed.
-$overall = 0
+function Main {
+  $ErrorActionPreference = 'Stop'
+  if (-not (Test-Path Variable:SetupEndpoint)) { $SetupEndpoint = $null }
+  # Keep native command failures from auto-throwing on PowerShell 7.3+ so the
+  # explicit exit-code checks remain authoritative across versions.
+  $PSNativeCommandUseErrorActionPreference = $false
 
-if ($SetupAgent -eq 'claude') {
-  try {
-    Set-SetupClaude
-    $result = 'configured'
-  } catch {
-    if ($_.Exception.Message -ne 'setup-handled') { Write-SetupError (Protect-SetupSecret ([string]$_.Exception.Message)) }
-    $result = 'failed'
-    $overall = 1
+  Remove-Item Env:SETUP_API_KEY -ErrorAction SilentlyContinue
+  Remove-Item Env:SetupApiKey -ErrorAction SilentlyContinue
+
+  try { [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false) } catch { }
+  $script:SetupNoColor = [bool]$env:NO_COLOR
+  $script:SetupForceColor = [bool]$env:AGENT_SETUP_TEST_FORCE_COLOR
+  $script:SetupErrColor = (-not [Console]::IsErrorRedirected) -and (-not $script:SetupNoColor)
+  $script:SetupEsc = [char]27
+
+  Write-SetupTitle
+  if ([string]::IsNullOrWhiteSpace($SetupEndpoint)) {
+    Write-SetupFatal "`$SetupEndpoint must be set to this gateway origin (e.g. https://gateway.example)."
+    return 1
   }
-  Write-SetupPhase 'Summary'
-  Write-SetupSummaryEntry 'Claude Code' $result
-} else {
-  try {
-    Set-SetupCodex
-    $result = 'configured'
-  } catch {
-    if ($_.Exception.Message -ne 'setup-handled') { Write-SetupError (Protect-SetupSecret ([string]$_.Exception.Message)) }
-    $result = 'failed'
-    $overall = 1
+  if ($SetupEndpoint -notmatch '^https?://.+') {
+    Write-SetupFatal "`$SetupEndpoint must be an http(s) origin, got $SetupEndpoint"
+    return 1
   }
-  Write-SetupPhase 'Summary'
-  Write-SetupSummaryEntry 'Codex' $result
+  if ($SetupAgent -notin @('claude', 'codex')) {
+    Write-SetupFatal "unknown setup agent: $SetupAgent"
+    return 1
+  }
+  Write-SetupMetadata 'Endpoint' $SetupEndpoint
+  Write-SetupMetadata 'API Key' $SetupApiKeyName
+
+  # Each primary error is already reported at its detection site. The boundary
+  # records the outcome and surfaces any unexpected exception after redaction.
+  $overall = 0
+  if ($SetupAgent -eq 'claude') {
+    try {
+      Set-SetupClaude
+      $result = 'configured'
+    } catch {
+      if ($_.Exception.Message -ne 'setup-handled') { Write-SetupError (Protect-SetupSecret ([string]$_.Exception.Message)) }
+      $result = 'failed'
+      $overall = 1
+    }
+    Write-SetupPhase 'Summary'
+    Write-SetupSummaryEntry 'Claude Code' $result
+  } else {
+    try {
+      Set-SetupCodex
+      $result = 'configured'
+    } catch {
+      if ($_.Exception.Message -ne 'setup-handled') { Write-SetupError (Protect-SetupSecret ([string]$_.Exception.Message)) }
+      $result = 'failed'
+      $overall = 1
+    }
+    Write-SetupPhase 'Summary'
+    Write-SetupSummaryEntry 'Codex' $result
+  }
+  return $overall
 }
 
-exit $overall
+exit (Main)

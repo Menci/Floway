@@ -1112,6 +1112,8 @@ test('claude', 'jq is bootstrapped from the pinned release when absent from PATH
 
 test('claude', 'PowerShell installer body parses without syntax errors', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  t.ok(PS1_BODY.trimEnd().endsWith('exit (Main)'), 'the downloaded script starts execution only from its final line');
+  t.ok(PS1_BODY.indexOf('function Main {') > PS1_BODY.indexOf('function Set-SetupCodex {'), 'Main is defined after every setup function');
   const script = renderPowerShellPrefix({
     agent: 'claude',
     apiKey: SENTINEL_KEY,
