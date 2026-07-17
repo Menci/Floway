@@ -8,7 +8,7 @@ import { initDumpBroker, initDumpStore } from '../../../dump/registry.ts';
 import { installDumpStubs } from '../../../dump/test-fixtures.ts';
 import { copilotModels, flushAsyncWork, setupAppTest, sseResponsesResponse } from '../../../test-helpers.ts';
 import { FakeTime } from '../../../test-time.ts';
-import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS } from '../shared/stream/sse.ts';
+import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS } from '../../shared/stream/sse.ts';
 import { assert, assertEquals, assertExists, assertStringIncludes, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
 type WorkerResponseInit = ResponseInit & { readonly webSocket?: WebSocket };

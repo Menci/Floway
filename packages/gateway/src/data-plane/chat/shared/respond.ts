@@ -2,8 +2,8 @@ import type { Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
 
 import type { GatewayCtx } from './gateway-ctx.ts';
-import { type StreamCompletion, writeSSEFrames } from './stream/sse.ts';
 import type { TokenUsage } from '../../../repo/types.ts';
+import { type StreamCompletion, writeSSEFrames } from '../../shared/stream/sse.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
 import { hasTokenUsage } from '../../shared/telemetry/usage.ts';
 import type { ProtocolFrame, SseFrame, SseWritableFrame } from '@floway-dev/protocols/common';
