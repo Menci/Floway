@@ -487,3 +487,49 @@ test('migration 0058 replaces legacy Responses state with the full-state schema'
     db.close();
   }
 });
+
+test('migration 0059 drops every prior Responses table and creates item-origin storage', async () => {
+  const SQL = await initSqlJs();
+  const db = new SQL.Database();
+  try {
+    for (const [filename, sql] of migrationSqlByFilename) {
+      if (filename === '0059_responses_item_origins.sql') break;
+      db.run(sql);
+    }
+    db.run(
+      `INSERT INTO responses_items
+        (id, api_key_id, item_type, payload_json, content_hash, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      ['msg_current', 'key-a', 'message', '{}', 'hash', 1_000],
+    );
+    db.run(
+      `INSERT INTO responses_snapshots
+        (id, api_key_id, item_ids_json, created_at)
+       VALUES (?, ?, ?, ?)`,
+      ['resp_current', 'key-a', '["msg_current"]', 1_000],
+    );
+
+    const migration = migrationSqlByFilename.find(([filename]) => filename === '0059_responses_item_origins.sql');
+    if (migration === undefined) throw new Error('missing migration 0059_responses_item_origins.sql');
+    db.run(migration[1]);
+
+    expect(db.exec('SELECT * FROM responses_items')[0]?.values ?? []).toEqual([]);
+    expect(db.exec('SELECT * FROM responses_snapshots')[0]?.values ?? []).toEqual([]);
+    expect(db.exec('PRAGMA table_info(responses_items)')[0]?.values.map(row => row[1])).toEqual([
+      'id',
+      'api_key_id',
+      'upstream_id',
+      'upstream_item_id',
+      'item_type',
+      'payload_json',
+      'content_hash',
+      'created_at',
+    ]);
+    expect(db.exec("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'responses_%' ORDER BY name")[0]?.values).toEqual([
+      ['responses_items'],
+      ['responses_snapshots'],
+    ]);
+  } finally {
+    db.close();
+  }
+});
