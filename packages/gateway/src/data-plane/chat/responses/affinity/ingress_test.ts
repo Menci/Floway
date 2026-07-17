@@ -222,8 +222,9 @@ test('restores the bound ID of a force item carried by an adjacent synthetic pre
   expect(prepared.routingEvidence.map(item => item.mode)).toEqual(['prefer', 'force']);
 });
 
-test('restores a preferred bound item ID only for exact optional rules', async () => {
+test('restores a preferred bound item ID for no-overlay rules but not an override', async () => {
   const aliasCandidate = { ...candidateA, rules: {} };
+  const overriddenCandidate = { ...candidateA, rules: { reasoning: { effort: 'low' as const } } };
   const item = { type: 'message' as const, id: 'msg_public', role: 'assistant' as const, content: 'answer' };
   const carrier = await codec.wrap(
     undefined,
@@ -247,7 +248,8 @@ test('restores a preferred bound item ID only for exact optional rules', async (
   }, codec);
 
   expect(prepared.payloadForCandidate(aliasCandidate).input[0]).toMatchObject({ id: 'msg_upstream' });
-  expect(prepared.payloadForCandidate(candidateA).input[0]).toMatchObject({ id: expect.stringMatching(/^msg_tmp_/) });
+  expect(prepared.payloadForCandidate(candidateA).input[0]).toMatchObject({ id: 'msg_upstream' });
+  expect(prepared.payloadForCandidate(overriddenCandidate).input[0]).toMatchObject({ id: expect.stringMatching(/^msg_tmp_/) });
 });
 
 test('rejects a bound carrier moved before a different same-type item', async () => {
