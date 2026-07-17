@@ -5,7 +5,7 @@ import { prepareResponsesAffinity } from './ingress.ts';
 import { initRepo } from '../../../../repo/index.ts';
 import { InMemoryRepo } from '../../../../repo/memory.ts';
 import { AffinityCodec } from '../../shared/affinity/index.ts';
-import { ResponsesAttemptState } from '../attempt-state.ts';
+import { ResponsesItemState } from '../items/attempt-state.ts';
 import { wrapResponsesClientOutput } from '../items/output.ts';
 import { hydrateResponsesPayload, rewriteResponsesItemsForCandidate } from '../items/rewrite.ts';
 import { createResponsesHttpStore } from '../items/store.ts';
@@ -27,7 +27,7 @@ test('affinity selects the route while item storage independently restores the n
   const candidateB = modelCandidate('upstream-b');
   const codec = new AffinityCodec('22'.repeat(32));
   const store = createResponsesHttpStore('key-a', true);
-  const attemptState = new ResponsesAttemptState();
+  const attemptState = new ResponsesItemState();
   attemptState.begin(new Map(), { upstreamId: 'upstream-a', restoresItemIds: true });
 
   const programOutput = {

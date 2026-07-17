@@ -1,7 +1,7 @@
 import { canonicalResponsesItemType, createResponsesItemId, hashResponsesItemContent, responsesItemId } from './format.ts';
 import type { StatefulResponsesStore } from './store.ts';
 import type { StoredResponsesItem } from '../../../../repo/types.ts';
-import type { ResponsesAttemptState } from '../attempt-state.ts';
+import type { ResponsesItemState } from './attempt-state.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { responsesResultToEvents, type ResponsesInputItem, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 
@@ -38,7 +38,7 @@ export const wrapResponsesClientOutput = async function* (
   frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
   args: {
     readonly store: StatefulResponsesStore;
-    readonly attemptState: ResponsesAttemptState;
+    readonly attemptState: ResponsesItemState;
     readonly responseId: string;
   },
 ): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {

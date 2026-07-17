@@ -1,4 +1,4 @@
-import { ResponsesAttemptState } from '../data-plane/chat/responses/attempt-state.ts';
+import { ResponsesItemState } from '../data-plane/chat/responses/items/attempt-state.ts';
 import { createResponsesHttpStore, type StatefulResponsesStore } from '../data-plane/chat/responses/items/store.ts';
 import { AffinityRequestContext } from '../data-plane/chat/shared/affinity/index.ts';
 import type { ChatGatewayCtx, GatewayCtx } from '../data-plane/chat/shared/gateway-ctx.ts';
@@ -32,7 +32,7 @@ export const mockChatGatewayCtx = (overrides: Partial<ChatGatewayCtx> = {}): Cha
   return {
     ...base,
     affinity,
-    responsesAttemptState: overrides.responsesAttemptState ?? new ResponsesAttemptState(),
+    responsesItemState: overrides.responsesItemState ?? new ResponsesItemState(),
     store: overrides.store ?? createResponsesHttpStore(base.apiKeyId, false),
   };
 };

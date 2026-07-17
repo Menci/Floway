@@ -3,7 +3,7 @@ import { jsonrepair } from 'jsonrepair';
 import type { ResponsesInterceptor, ResponsesInvocation } from './types.ts';
 import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
 import { truncatePreservingCodePoints } from '../../shared/text.ts';
-import type { ResponsesAttemptState } from '../attempt-state.ts';
+import type { ResponsesItemState } from '../items/attempt-state.ts';
 import type { InterceptorRun } from '@floway-dev/interceptor';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type {
@@ -828,7 +828,7 @@ const synthesizeTerminalEnvelope = (
 async function* materializeServerToolItems(
   dispatched: ReadonlyArray<{ slots: DispatchedServerToolSlot[] }>,
   merge: MergeState,
-  attemptState: ResponsesAttemptState,
+  attemptState: ResponsesItemState,
 ): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>, void> {
   for (const d of dispatched) {
     for (const { slot, outputIndex } of d.slots) {
@@ -855,7 +855,7 @@ async function* runMultiTurnLoop(args: {
   demoteForcedServerToolChoiceAfterFirstTurn: boolean;
   turn1Iter: AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>, TurnSummary>;
   dispatchers: ReadonlyMap<string, ServerToolDispatcher>;
-  attemptState: ResponsesAttemptState;
+  attemptState: ResponsesItemState;
   canonicalInput: ResponsesInputItem[];
   active: readonly ActiveServerTool[];
   metadata: LatestUpstreamMetadata;
@@ -1030,7 +1030,7 @@ export const withResponsesServerToolShim = (
       demoteForcedServerToolChoiceAfterFirstTurn,
       turn1Iter,
       dispatchers,
-      attemptState: gatewayCtx.responsesAttemptState,
+      attemptState: gatewayCtx.responsesItemState,
       canonicalInput,
       active,
       metadata,

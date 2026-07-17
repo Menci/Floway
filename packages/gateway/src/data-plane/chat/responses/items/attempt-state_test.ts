@@ -1,9 +1,9 @@
 import { expect, test } from 'vitest';
 
-import { ResponsesAttemptState } from './attempt-state.ts';
+import { ResponsesItemState } from './attempt-state.ts';
 
 test('attempt-private payload and output identity are request scoped', () => {
-  const state = new ResponsesAttemptState();
+  const state = new ResponsesItemState();
   state.begin(new Map([['item', { first: true }]]), { upstreamId: 'upstream-a', restoresItemIds: true });
 
   expect(state.getPrivatePayload('item')).toEqual({ first: true });

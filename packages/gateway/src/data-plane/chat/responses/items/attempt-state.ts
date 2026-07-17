@@ -1,4 +1,4 @@
-export class ResponsesAttemptState {
+export class ResponsesItemState {
   readonly #privatePayloads = new Map<string, unknown>();
   readonly #gatewayItemIds = new Set<string>();
   #outputSource: { readonly upstreamId: string; readonly restoresItemIds: boolean } | undefined;

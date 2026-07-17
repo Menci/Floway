@@ -3,7 +3,7 @@ import type { RequestBody } from './request-body.ts';
 import { type DumpAccumulator, openDumpAccumulator } from '../../../dump/accumulator.ts';
 import { apiKeyFromContext, type AuthedContext, effectiveUpstreamIdsFromContext } from '../../../middleware/auth.ts';
 import { getRuntimeLocation } from '../../../runtime/runtime-info.ts';
-import { ResponsesAttemptState } from '../responses/attempt-state.ts';
+import { ResponsesItemState } from '../responses/items/attempt-state.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { PerformanceTelemetryContext } from '@floway-dev/provider';
@@ -58,7 +58,7 @@ export interface GatewayCtx {
 // no stored-items concept and stay on plain `GatewayCtx`.
 export interface ChatGatewayCtx extends GatewayCtx {
   readonly affinity: AffinityRequestContext;
-  readonly responsesAttemptState: ResponsesAttemptState;
+  readonly responsesItemState: ResponsesItemState;
   readonly store?: StatefulResponsesStore;
 }
 
@@ -136,7 +136,7 @@ export const createChatGatewayCtxFromHono = (
   return {
     ...base,
     affinity: new AffinityRequestContext(apiKeyFromContext(c).serverSecret),
-    responsesAttemptState: new ResponsesAttemptState(),
+    responsesItemState: new ResponsesItemState(),
     ...(storeFactory !== undefined ? { store: storeFactory(base.apiKeyId) } : {}),
   };
 };

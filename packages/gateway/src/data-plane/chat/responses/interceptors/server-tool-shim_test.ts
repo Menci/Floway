@@ -650,7 +650,7 @@ test('synthesized web_search_call ids retain request-private replay state', asyn
 
   const doneEvents = outputItemDoneEvents(frames);
   const wsCallDoneIds = doneEvents.filter(e => e.item.type === 'web_search_call').map(e => e.item.id!);
-  const attemptState = ctx.responsesAttemptState;
+  const attemptState = ctx.responsesItemState;
   assert(wsCallDoneIds.length > 0, 'expected a synthesized web_search_call');
   for (const id of wsCallDoneIds) {
     assert(id.startsWith('ws_gw_'));

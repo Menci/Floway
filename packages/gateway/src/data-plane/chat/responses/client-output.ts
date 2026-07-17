@@ -21,7 +21,7 @@ export const wrapNativeResponsesClientOutput = (
   });
   return wrapResponsesClientOutput(withAffinity, {
     store: chatCtx.store,
-    attemptState: chatCtx.responsesAttemptState,
+    attemptState: chatCtx.responsesItemState,
     responseId: createResponsesResponseId(),
   });
 };
