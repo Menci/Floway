@@ -1,6 +1,5 @@
 import { expect, test } from 'vitest';
 
-import { ResponsesItemState } from './attempt-state.ts';
 import { isResponsesItemId } from './format.ts';
 import { wrapResponsesClientOutput } from './output.ts';
 import { createResponsesHttpStore, LayeredStatefulResponsesStore, RepoStatefulResponsesBacking } from './store.ts';
@@ -74,7 +73,6 @@ test('client output rewrites ids and persists the exact complete item before ter
   const events: ResponsesStreamEvent[] = [];
   for await (const frame of wrapResponsesClientOutput(frames(result), {
     store,
-    attemptState: new ResponsesItemState(),
     responseId: 'resp_public',
   })) {
     if (frame.type === 'event') events.push(frame.event);
@@ -113,7 +111,6 @@ test('client output uses one item id across lifecycle snapshots without committi
   const events: ResponsesStreamEvent[] = [];
   for await (const frame of wrapResponsesClientOutput(input(), {
     store,
-    attemptState: new ResponsesItemState(),
     responseId: 'resp_public',
   })) {
     if (frame.type === 'event') events.push(frame.event);
@@ -140,7 +137,6 @@ test('client output persists a completed item before forwarding an error event',
 
   for await (const frame of wrapResponsesClientOutput(input(), {
     store,
-    attemptState: new ResponsesItemState(),
     responseId: 'resp_public',
   })) {
     if (frame.type === 'event' && frame.event.type === 'response.output_item.done') clientId = frame.event.item.id;
@@ -162,7 +158,6 @@ test('client output does not persist a partial item without output_item.done', a
 
   for await (const frame of wrapResponsesClientOutput(input(), {
     store,
-    attemptState: new ResponsesItemState(),
     responseId: 'resp_public',
   })) {
     if (frame.type === 'event' && frame.event.type === 'response.output_item.added') clientId = frame.event.item.id;
@@ -185,7 +180,6 @@ test('client output persists completed items before rethrowing an iterator error
   const collect = async () => {
     for await (const frame of wrapResponsesClientOutput(input(), {
       store,
-      attemptState: new ResponsesItemState(),
       responseId: 'resp_public',
     })) {
       if (frame.type === 'event' && frame.event.type === 'response.output_item.done') clientId = frame.event.item.id;
@@ -209,7 +203,6 @@ test('client output persists completed items when the source ends without a term
 
   for await (const frame of wrapResponsesClientOutput(input(), {
     store,
-    attemptState: new ResponsesItemState(),
     responseId: 'resp_public',
   })) {
     if (frame.type === 'event' && frame.event.type === 'response.output_item.done') clientId = frame.event.item.id;
@@ -229,7 +222,6 @@ test('client output persists a completed item when its consumer cancels', async 
   };
   const iterator = wrapResponsesClientOutput(input(), {
     store,
-    attemptState: new ResponsesItemState(),
     responseId: 'resp_public',
   })[Symbol.asyncIterator]();
 
@@ -277,7 +269,6 @@ test('client output batches hundreds of finalized items at the successful termin
   };
   const iterator = wrapResponsesClientOutput(input(), {
     store,
-    attemptState: new ResponsesItemState(),
     responseId: 'resp_public',
   })[Symbol.asyncIterator]();
 
@@ -318,7 +309,6 @@ test('client output mints and persists one lifecycle id for an id-less item', as
   const events: ResponsesStreamEvent[] = [];
   for await (const frame of wrapResponsesClientOutput(frames(result), {
     store,
-    attemptState: new ResponsesItemState(),
     responseId: 'resp_public',
   })) if (frame.type === 'event') events.push(frame.event);
 
@@ -361,7 +351,6 @@ test('client output binds a later delta item_id to an id-less lifecycle', async 
   const events: ResponsesStreamEvent[] = [];
   for await (const frame of wrapResponsesClientOutput(input(), {
     store,
-    attemptState: new ResponsesItemState(),
     responseId: 'resp_public',
   })) if (frame.type === 'event') events.push(frame.event);
 
@@ -397,7 +386,6 @@ test('client output persists the terminal item snapshot after an earlier done ev
   const collect = async () => {
     for await (const _frame of wrapResponsesClientOutput(input(), {
       store,
-      attemptState: new ResponsesItemState(),
       responseId: 'resp_public',
     })) void _frame;
   };
@@ -424,7 +412,6 @@ test('client output persists the latest repeated output_item.done snapshot', asy
   const collect = async () => {
     for await (const frame of wrapResponsesClientOutput(input(), {
       store,
-      attemptState: new ResponsesItemState(),
       responseId: 'resp_public',
     })) {
       if (frame.type === 'event' && frame.event.type === 'response.output_item.done') {
@@ -461,7 +448,6 @@ test('snapshot output IDs follow output_index rather than done arrival order', a
   let terminal: ResponsesResult | undefined;
   for await (const frame of wrapResponsesClientOutput(input(), {
     store,
-    attemptState: new ResponsesItemState(),
     responseId: 'resp_public',
   })) if (frame.type === 'event' && frame.event.type === 'response.completed') terminal = frame.event.response;
   if (terminal === undefined) throw new Error('Expected terminal response');
@@ -491,7 +477,6 @@ test('finalized item validation accepts the compaction_summary alias', async () 
   const events: ResponsesStreamEvent[] = [];
   for await (const frame of wrapResponsesClientOutput(input(), {
     store,
-    attemptState: new ResponsesItemState(),
     responseId: 'resp_public',
   })) if (frame.type === 'event') events.push(frame.event);
 

@@ -1,4 +1,3 @@
-import type { ResponsesItemState } from './attempt-state.ts';
 import { canonicalResponsesItemType, createResponsesItemId, hashResponsesItemContent, responsesItemId } from './format.ts';
 import type { StatefulResponsesStore } from './store.ts';
 import type { StoredResponsesItem } from '../../../../repo/types.ts';
@@ -38,11 +37,10 @@ export const wrapResponsesClientOutput = async function* (
   frames: AsyncIterable<ProtocolFrame<ResponsesStreamEvent>>,
   args: {
     readonly store: StatefulResponsesStore;
-    readonly attemptState: ResponsesItemState;
     readonly responseId: string;
   },
 ): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
-  const { store, attemptState, responseId } = args;
+  const { store, responseId } = args;
   const upstreamToClient = new Map<string, string>();
   const outputIndexToClient = new Map<number, string>();
 
@@ -69,11 +67,11 @@ export const wrapResponsesClientOutput = async function* (
   const stageFinalizedItem = async (originalItem: ResponsesInputItem, newId: string, outputIndex: number): Promise<void> => {
     if (!store.writesState) return;
     const wireId = responsesItemId(originalItem);
-    const source = wireId === null ? null : attemptState.outputItemSource(wireId);
+    const source = wireId === null ? null : store.outputItemSource(wireId);
     // Interceptors register per-item server-only payloads under the wire id.
     // Attaching it lets a later turn restore the real success/failure state
     // even when the client stripped fields from the echoed wire item.
-    const privatePayload = wireId === null ? undefined : attemptState.getPrivatePayload(wireId);
+    const privatePayload = wireId === null ? undefined : store.getPrivatePayload(wireId);
     const clientItem = { ...originalItem, id: newId } as ResponsesInputItem;
     const persistedPayload = privatePayload !== undefined ? { item: clientItem, private: privatePayload } : { item: clientItem };
     const now = Date.now();

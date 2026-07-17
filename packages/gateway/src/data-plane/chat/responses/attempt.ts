@@ -81,9 +81,9 @@ export const responsesAttempt = {
     const targetApi = responsesTarget.pick(candidate.model.endpoints);
     const payload = { ...structuredClone(args.payload), model: candidate.model.id };
     if (args.sourceState === undefined) {
-      ctx.responsesItemState.begin(new Map());
+      ctx.store?.beginAttempt(new Map());
     } else {
-      ctx.responsesItemState.begin(args.sourceState.privatePayloads, {
+      ctx.store?.beginAttempt(args.sourceState.privatePayloads, {
         upstreamId: candidate.provider.upstream,
         restoresItemIds: targetApi === 'responses',
       });

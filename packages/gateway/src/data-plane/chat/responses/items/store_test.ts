@@ -201,4 +201,23 @@ describe('StatefulResponsesStore', () => {
     if (snapshot === null) throw new Error('Expected durable snapshot');
     expect(await repo.responsesItems.lookupMany('key-a', snapshot.itemIds)).toHaveLength(snapshot.itemIds.length);
   });
+
+  test('per-attempt private payloads and output identity reset on each beginAttempt', () => {
+    const store = createResponsesHttpStore('key-a', true);
+    store.beginAttempt(new Map([['item', { first: true }]]), { upstreamId: 'upstream-a', restoresItemIds: true });
+
+    expect(store.getPrivatePayload('item')).toEqual({ first: true });
+    expect(store.outputItemSource('rs_upstream')).toEqual({ upstreamId: 'upstream-a', upstreamItemId: 'rs_upstream' });
+
+    store.addSyntheticItem('ws_gw_synthetic', { value: 2 });
+    expect(store.getPrivatePayload('ws_gw_synthetic')).toEqual({ value: 2 });
+    // A gateway-minted synthetic item is never attributed to the upstream, and
+    // neither is a temporary cross-upstream id.
+    expect(store.outputItemSource('ws_gw_synthetic')).toBeNull();
+    expect(store.outputItemSource('rs_tmp_0000000000000000000000')).toBeNull();
+
+    store.beginAttempt(new Map(), { upstreamId: 'upstream-b', restoresItemIds: false });
+    expect(store.getPrivatePayload('item')).toBeUndefined();
+    expect(store.outputItemSource('rs_upstream')).toBeNull();
+  });
 });
