@@ -515,8 +515,6 @@ function Invoke-SetupClaudeVerify {
   } catch {
     Stop-Setup "could not reach the authenticated model directory at $modelUri"
   }
-  Write-SetupSuccess "reached the authenticated model directory (no inference issued)."
-
   $doctorHelp = Invoke-SetupProcess -Exe $Exe -Arguments @('doctor', '--help') -TimeoutSeconds $timeoutSeconds -TimeoutMessage 'claude doctor capability check timed out.'
   if ($doctorHelp.ExitCode -eq 0) {
     $doctor = Invoke-SetupProcess -Exe $Exe -Arguments @('doctor') -TimeoutSeconds $timeoutSeconds -TimeoutMessage 'claude doctor timed out.'
@@ -853,7 +851,6 @@ function Invoke-SetupCodexVerify {
   if ($SetupCodexModel -and ($modelSlugs -notcontains $SetupCodexModel)) {
     Stop-Setup "the selected Codex model $SetupCodexModel is not in the gateway catalog."
   }
-  Write-SetupSuccess "reached the authenticated Codex model directory (no inference issued)."
 }
 
 # Configure Codex as one transactional unit. The config and provider token are

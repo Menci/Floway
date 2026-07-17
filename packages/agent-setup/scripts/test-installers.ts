@@ -2513,6 +2513,7 @@ test('claude', 'Bash and PowerShell emit an identical happy-path stdout line seq
   t.excludes(normalizeLines(bash.stdout), '\n\n', 'setup-owned sections do not insert blank separator lines');
   t.equal(normalizeLines(bash.stdout).match(/^==> /gm)?.length, 2, 'only the setup title and current-agent phase receive arrow notices');
   t.includes(normalizeLines(bash.stdout), '✨ Claude Code configured.', 'the successful result is explicit');
+  t.excludes(normalizeLines(bash.stdout), 'reached the authenticated model directory', 'successful internal catalog verification stays silent');
   t.excludes(normalizeLines(bash.stdout), 'Summary', 'a single-agent script has no redundant summary');
 });
 

@@ -565,8 +565,6 @@ claude_verify() {
     out_error "could not reach the authenticated model directory at ${SETUP_ENDPOINT%/}/v1/models"
     return 1
   fi
-  out_success 'reached the authenticated model directory (no inference issued).'
-
   _cv_doctor_help="$SETUP_TMPDIR/claude-doctor-help.out"
   if _run_with_timeout "$_cv_timeout" "$CLAUDE_BIN" doctor --help </dev/null > "$_cv_doctor_help" 2>&1; then
     if _run_with_timeout "$_cv_timeout" "$CLAUDE_BIN" doctor </dev/null > "$SETUP_TMPDIR/claude-doctor.out" 2>&1; then
@@ -1000,7 +998,6 @@ codex_verify() {
     out_error "could not reach the authenticated Codex model directory at ${SETUP_ENDPOINT%/}/azure-api.codex/models"
     return 1
   fi
-  out_success 'reached the authenticated Codex model directory (no inference issued).'
 }
 
 # Configure Codex as one transactional unit. jq must resolve before any
