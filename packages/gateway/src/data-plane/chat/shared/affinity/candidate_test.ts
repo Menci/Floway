@@ -26,17 +26,18 @@ const evidence = (value: ReturnType<typeof candidate>, mode: AffinityEvidence['m
 });
 
 describe('client-carried affinity candidate routing', () => {
-  test('orders preference by exact optional alias rules', () => {
+  test('treats empty alias rules as the direct no-overlay variant', () => {
     const direct = candidate('up-a', 'model-a');
     const alias = candidate('up-a', 'model-a', {});
+    const overridden = candidate('up-a', 'model-a', { reasoning: { effort: 'low' } });
 
-    expect(routeCandidatesByAffinity([alias, direct], [evidence(direct)])).toEqual({
+    expect(routeCandidatesByAffinity([alias, direct, overridden], [evidence(direct)])).toEqual({
       kind: 'success',
-      candidates: [direct, alias],
+      candidates: [alias, direct, overridden],
     });
-    expect(routeCandidatesByAffinity([direct, alias], [evidence(alias)])).toEqual({
+    expect(routeCandidatesByAffinity([direct, alias, overridden], [evidence(overridden)])).toEqual({
       kind: 'success',
-      candidates: [alias, direct],
+      candidates: [overridden, direct, alias],
     });
   });
 
@@ -87,7 +88,7 @@ describe('client-carried affinity candidate routing', () => {
 
   test('exact preference still orders rule variants inside a shared force target', () => {
     const direct = candidate('up-a', 'model');
-    const alias = candidate('up-a', 'model', {});
+    const alias = candidate('up-a', 'model', { reasoning: { effort: 'low' } });
 
     expect(routeCandidatesByAffinity(
       [direct, alias],

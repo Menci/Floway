@@ -295,7 +295,11 @@ const affinityTargetForCandidate = (candidate: ModelCandidate): AffinityTarget =
 const candidateMatchesExactTarget = (candidate: ModelCandidate, affinity: AffinityTarget): boolean =>
   candidate.provider.upstream === affinity.upstreamId
   && candidate.model.id === affinity.modelId
-  && isEqual(candidate.rules, affinity.rules);
+  // Alias targets always carry a rules object, while direct candidates omit
+  // it. Both shapes describe the same no-overlay variant when the object is
+  // empty, which lets a pre-alias session follow its real binding after a
+  // same-name alias starts shadowing that model.
+  && isEqual(candidate.rules ?? {}, affinity.rules ?? {});
 
 const candidateMatchesForcedTarget = (candidate: ModelCandidate, affinity: AffinityTarget): boolean =>
   candidate.provider.upstream === affinity.upstreamId && candidate.model.id === affinity.modelId;
