@@ -42,8 +42,12 @@ function Write-SetupErrLine {
 function Write-SetupNotice {
   param([string]$Text)
   if ($script:SetupNoColor) { Write-Host "==> $Text"; return }
+  if ($script:SetupOutAnsi) {
+    Write-Host "$($script:SetupEsc)[34m==>$($script:SetupEsc)[0m $($script:SetupEsc)[1m$Text$($script:SetupEsc)[0m"
+    return
+  }
   Write-Host '==>' -ForegroundColor Blue -NoNewline
-  Write-Host " $Text"
+  Write-Host " $Text" -ForegroundColor White
 }
 
 # Console.Error is used directly so diagnostics remain on stderr while only the
@@ -71,6 +75,10 @@ function Write-SetupTitle { Write-SetupNotice 'Floway Agent Setup' }
 function Write-SetupMetadata {
   param([string]$Label, [string]$Value)
   if ($script:SetupNoColor) { Write-Host "${Label}: $Value"; return }
+  if ($script:SetupOutAnsi) {
+    Write-Host "$($script:SetupEsc)[1m${Label}:$($script:SetupEsc)[0m $Value"
+    return
+  }
   Write-Host "${Label}:" -ForegroundColor White -NoNewline
   Write-Host " $Value"
 }
@@ -913,6 +921,8 @@ function Main {
   $script:SetupForceColor = [bool]$env:AGENT_SETUP_TEST_FORCE_COLOR
   $script:SetupErrColor = (-not [Console]::IsErrorRedirected) -and (-not $script:SetupNoColor)
   $script:SetupEsc = [char]27
+  $supportsVt = try { [bool]$Host.UI.SupportsVirtualTerminal } catch { $false }
+  $script:SetupOutAnsi = $supportsVt -and (-not [Console]::IsOutputRedirected) -and (-not $script:SetupNoColor)
 
   Write-SetupTitle
   if ([string]::IsNullOrWhiteSpace($SetupEndpoint)) {
