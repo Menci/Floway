@@ -189,7 +189,7 @@ claude_write_version() {
 # Install, then configure Claude Code as one transactional settings write. A
 # freshly installed CLI is never uninstalled when configuration fails.
 configure_agent() {
-  out_phase 'Installing Claude Code'
+  out_agent_notice 'Installing' 'Claude Code'
   if ! claude_ensure_installed; then
     out_error 'Claude Code CLI is unavailable and could not be installed.'
     return 1
@@ -198,7 +198,7 @@ configure_agent() {
     return 1
   fi
 
-  out_phase 'Configuring Claude Code'
+  out_agent_notice 'Configuring' 'Claude Code'
   if ! ensure_jq; then
     out_error 'jq is required to configure Claude Code but is unavailable and could not be provisioned for this platform. Install jq and re-run.'
     return 1
@@ -207,8 +207,8 @@ configure_agent() {
     return 1
   fi
   out_info "Written to \`$CLAUDE_SETTINGS_PATH\`."
-  out_success 'Claude Code configured.'
+  out_agent_notice 'Completed Agent Setup' 'Claude Code'
 }
 
 
-main "$@"
+main 'Claude Code' "$@"

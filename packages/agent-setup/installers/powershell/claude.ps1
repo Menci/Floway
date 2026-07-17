@@ -159,7 +159,7 @@ function Write-SetupClaudeVersion {
 # Install, then configure Claude Code as one transactional settings write. A
 # freshly installed CLI is never uninstalled when configuration fails.
 function Set-SetupAgent {
-  Write-SetupPhase 'Installing Claude Code'
+  Write-SetupAgentNotice 'Installing' 'Claude Code'
   # Ref: https://docs.claude.com/en/docs/claude-code/troubleshoot-install
   $candidates = @(
     (Join-Path $HOME '.local/bin/claude'),
@@ -177,11 +177,11 @@ function Set-SetupAgent {
   }
   Write-SetupClaudeVersion -Exe $exe
 
-  Write-SetupPhase 'Configuring Claude Code'
+  Write-SetupAgentNotice 'Configuring' 'Claude Code'
   Write-SetupClaudeSettings
   Write-SetupInfo ('Written to `' + $script:ClaudeSettingsPath + '`.')
-  Write-SetupSuccess "Claude Code configured."
+  Write-SetupAgentNotice 'Completed Agent Setup' 'Claude Code'
 }
 
 
-exit (Main)
+exit (Main 'Claude Code')

@@ -1,6 +1,7 @@
 # --- run --------------------------------------------------------------------
 
 function Main {
+  param([string]$AgentName)
   $ErrorActionPreference = 'Stop'
   if (-not (Test-Path Variable:SetupEndpoint)) { $SetupEndpoint = $null }
   # Keep native command failures from auto-throwing on PowerShell 7.3+ so the
@@ -18,7 +19,7 @@ function Main {
   $supportsVt = try { [bool]$Host.UI.SupportsVirtualTerminal } catch { $false }
   $script:SetupOutAnsi = $supportsVt -and (-not [Console]::IsOutputRedirected) -and (-not $script:SetupNoColor)
 
-  Write-SetupTitle
+  Write-SetupAgentNotice 'Agent Setup' $AgentName
   if ([string]::IsNullOrWhiteSpace($SetupEndpoint)) {
     Write-SetupFatal "`$SetupEndpoint must be set to this gateway origin (e.g. https://gateway.example)."
     return 1

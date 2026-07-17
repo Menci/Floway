@@ -343,7 +343,7 @@ codex_write_version() {
 # Install, then configure Codex as one transactional config/token write. A
 # freshly installed CLI is never uninstalled when configuration fails.
 configure_agent() {
-  out_phase 'Installing Codex'
+  out_agent_notice 'Installing' 'Codex'
   if ! codex_ensure_installed; then
     out_error 'Codex CLI is unavailable and could not be installed.'
     return 1
@@ -352,7 +352,7 @@ configure_agent() {
     return 1
   fi
 
-  out_phase 'Configuring Codex'
+  out_agent_notice 'Configuring' 'Codex'
   if ! ensure_jq; then
     out_error 'jq is required to configure Codex but is unavailable and could not be provisioned for this platform. Install jq and re-run.'
     return 1
@@ -379,8 +379,8 @@ configure_agent() {
   fi
   out_info "Written to \`$CODEX_WRITTEN_CONFIG_PATH\`."
   out_info "Written to \`$CODEX_TOKEN_PATH\`."
-  out_success 'Codex configured.'
+  out_agent_notice 'Completed Agent Setup' 'Codex'
 }
 
 
-main "$@"
+main 'Codex' "$@"

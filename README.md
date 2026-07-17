@@ -164,12 +164,12 @@ Open the deployed URL (or `http://localhost:8788` for Node), log in with
    `sudo` and never upgrades an existing installation.
 
    Native child-process output stays attached to the terminal so progress,
-   colors, and carriage-return updates render in real time. Each script has
-   three sections: the Floway header, agent installation (including the CLI
-   version), and agent configuration. Setup-owned output uses Homebrew-style
-   notices for those sections, colored warning and error labels, plain metadata
-   and normal status text, and an `✨` prefix for successful outcomes. It exits
-   with the selected agent's result and prints no redundant summary.
+   colors, and carriage-return updates render in real time. Each script names
+   its agent in four Homebrew-style notices: `Agent Setup`, `Installing`,
+   `Configuring`, and `Completed Agent Setup`, with the agent name after a colon.
+   Metadata and normal status text stay plain, while warning and error labels
+   are colored. The script exits with the selected agent's result and prints no
+   redundant summary.
 
    Each managed file is backed up before Floway's settings are merged into
    Claude Code's `~/.claude/settings.json` and Codex's

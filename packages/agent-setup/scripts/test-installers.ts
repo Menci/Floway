@@ -1539,11 +1539,12 @@ test('codex', 'existing CLI configures via the app-server and stages the provide
   const run = await runShellInstaller({ workspace: ws, configuration: codexConfig(), baseUrl: modelServer.url });
   t.equal(run.code, 0, `codex setup should succeed:\n${run.combined}`);
   t.ok(!existsSync(installerMarker(ws)), 'the installer hook must not run when codex is present');
-  t.includes(run.stdout, '==> Installing Codex\nCodex is already installed.\nCodex version:', 'installation reports the existing CLI and its version');
-  t.includes(run.stdout, '==> Configuring Codex\n', 'configuration has its own section');
+  t.includes(run.stdout, '==> Agent Setup: Codex\nEndpoint:', 'the header names Codex');
+  t.includes(run.stdout, '==> Installing: Codex\nCodex is already installed.\nCodex version:', 'installation reports the existing CLI and its version');
+  t.includes(run.stdout, '==> Configuring: Codex\n', 'configuration has its own section');
   t.includes(run.stdout, `Written to \`${codexConfigPath(ws)}\`.`, 'the app-server config path is reported');
   t.includes(run.stdout, `Written to \`${codexTokenPath(ws)}\`.`, 'the provider-token path is reported');
-  t.includes(run.stdout, '✨ Codex configured.', 'the final outcome is explicit');
+  t.includes(run.stdout, '==> Completed Agent Setup: Codex', 'the final outcome is explicit');
   assertCodexBaseEdits(t, ws, modelServer.url);
   assertStagedToken(t, ws);
 });
@@ -2197,15 +2198,15 @@ test('claude', 'Bash and PowerShell emit an identical happy-path stdout line seq
   t.equal(ps.code, 0, `PowerShell happy path should succeed:\n${ps.combined}`);
 
   t.equal(normalizeWorkspace(ps.stdout, psWs), normalizeWorkspace(bash.stdout, bashWs), 'the two installers must print the same stdout structure');
-  t.includes(normalizeLines(bash.stdout), '==> Floway Agent Setup\nEndpoint:', 'the header identifies the setup and endpoint');
+  t.includes(normalizeLines(bash.stdout), '==> Agent Setup: Claude Code\nEndpoint:', 'the header identifies the agent and endpoint');
   t.includes(normalizeLines(bash.stdout), '\nAPI Key: Primary key\n', 'the header identifies the selected API key');
-  t.includes(normalizeLines(bash.stdout), '\n==> Installing Claude Code\n', 'the installation section is explicit');
+  t.includes(normalizeLines(bash.stdout), '\n==> Installing: Claude Code\n', 'the installation section is explicit');
   t.includes(normalizeLines(bash.stdout), '\nClaude Code is already installed.\n', 'an existing CLI is reported');
-  t.includes(normalizeLines(bash.stdout), '\n==> Configuring Claude Code\n', 'the configuration section is explicit');
+  t.includes(normalizeLines(bash.stdout), '\n==> Configuring: Claude Code\n', 'the configuration section is explicit');
   t.includes(normalizeLines(bash.stdout), `Written to \`${settingsPathFor(bashWs)}\`.`, 'the settings path is reported');
   t.excludes(normalizeLines(bash.stdout), '\n\n', 'setup-owned sections do not insert blank separator lines');
-  t.equal(normalizeLines(bash.stdout).match(/^==> /gm)?.length, 3, 'the output has exactly the header, installation, and configuration sections');
-  t.includes(normalizeLines(bash.stdout), '✨ Claude Code configured.', 'the successful result is explicit');
+  t.equal(normalizeLines(bash.stdout).match(/^==> /gm)?.length, 4, 'the output has exactly the header, installation, configuration, and completion notices');
+  t.includes(normalizeLines(bash.stdout), '==> Completed Agent Setup: Claude Code', 'the successful result is explicit');
   t.excludes(normalizeLines(bash.stdout), 'Summary', 'a single-agent script has no redundant summary');
 });
 
@@ -2228,19 +2229,19 @@ test('claude', 'a fully successful run keeps stderr empty and emits no escape co
   t.ok(!hasAnsi(ps.combined), 'captured PowerShell output carries no escape sequences');
 });
 
-test('claude', 'Bash styles section notices while leaving metadata plain', async t => {
+test('claude', 'Bash styles agent notices while leaving metadata plain', async t => {
   const ws = makeWorkspace();
   placeFakeClaude(ws.binDir);
   const forced = await runShellInstaller({ workspace: ws, baseUrl: modelServer.url, configuration: claudeConfig(), forceColor: true });
   t.equal(forced.code, 0, `forced-color run should succeed:\n${forced.combined}`);
-  t.includes(forced.stdout, '[34m==>[0m [1mFloway Agent Setup[0m', 'the setup title uses the notice style');
+  t.includes(forced.stdout, '[34m==>[0m [1mAgent Setup: Claude Code[0m', 'the setup title uses the notice style');
   t.includes(forced.stdout, 'Endpoint: ', 'the Endpoint metadata remains visible');
   t.includes(forced.stdout, 'API Key: Primary key', 'the API Key metadata remains visible');
   t.excludes(forced.stdout, '[1mEndpoint:', 'the Endpoint label is not styled');
   t.excludes(forced.stdout, '[1mAPI Key:', 'the API Key label is not styled');
-  t.includes(forced.stdout, '[34m==>[0m [1mInstalling Claude Code[0m', 'the installation section uses the notice style');
-  t.includes(forced.stdout, '[34m==>[0m [1mConfiguring Claude Code[0m', 'the configuration section uses the notice style');
-  t.includes(forced.stdout, '✨ Claude Code configured.', 'the successful result uses the shared emoji marker');
+  t.includes(forced.stdout, '[34m==>[0m [1mInstalling: Claude Code[0m', 'the installation section uses the notice style');
+  t.includes(forced.stdout, '[34m==>[0m [1mConfiguring: Claude Code[0m', 'the configuration section uses the notice style');
+  t.includes(forced.stdout, '[34m==>[0m [1mCompleted Agent Setup: Claude Code[0m', 'the successful result uses the notice style');
   t.excludes(forced.stdout, '[92m', 'success does not use green ANSI styling');
   t.ok(!hasAnsi(forced.stderr), 'a successful run leaves stderr escape-free even under forced color');
 

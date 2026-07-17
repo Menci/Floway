@@ -15,7 +15,7 @@
 #
 # Color is emitted only for an interactive terminal with NO_COLOR unset, probed
 # per stream so a redirected capture on either stdout or stderr stays free of
-# escape sequences. Informational, progress, and success lines go to stdout;
+# escape sequences. Agent notices and informational lines go to stdout;
 # warnings, errors, and rollback notices go to stderr.
 _stream_color() {
   [ -z "${NO_COLOR:-}" ] || return 1
@@ -62,11 +62,9 @@ _emit_line() {
   fi
 }
 
-out_title() { _emit_notice 'Floway Agent Setup'; }
+out_agent_notice() { _emit_notice "$1: $2"; }
 out_metadata() { _emit_line 1 '' "$1: $2"; }
-out_phase() { _emit_notice "$1"; }
 out_info() { _emit_line 1 '' "$1"; }
-out_success() { _emit_line 1 '' "✨ $1"; }
 out_warn() { _emit_diagnostic "$_C_YELLOW" 'Warning' "$1"; }
 out_error() { _emit_diagnostic "$_C_RED" 'Error' "$1"; }
 out_fatal() { _emit_diagnostic "$_C_RED" 'Error' "$1"; }

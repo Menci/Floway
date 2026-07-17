@@ -258,7 +258,7 @@ function Write-SetupCodexVersion {
 # Install, then configure Codex as one transactional config/token write. A
 # freshly installed CLI is never uninstalled when configuration fails.
 function Set-SetupAgent {
-  Write-SetupPhase 'Installing Codex'
+  Write-SetupAgentNotice 'Installing' 'Codex'
   # Ref: https://github.com/openai/codex/blob/main/scripts/install/install.sh
   $candidates = @(
     (Join-Path $HOME '.local/bin/codex'),
@@ -275,7 +275,7 @@ function Set-SetupAgent {
   }
   Write-SetupCodexVersion -Exe $exe
 
-  Write-SetupPhase 'Configuring Codex'
+  Write-SetupAgentNotice 'Configuring' 'Codex'
   $script:CodexHomeDir = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME '.codex' }
   $script:CodexConfigPath = Join-Path $script:CodexHomeDir 'config.toml'
   $script:CodexTokenPath = Join-Path $script:CodexHomeDir 'floway-token'
@@ -299,8 +299,8 @@ function Set-SetupAgent {
   }
   Write-SetupInfo ('Written to `' + $writtenConfigPath + '`.')
   Write-SetupInfo ('Written to `' + $script:CodexTokenPath + '`.')
-  Write-SetupSuccess "Codex configured."
+  Write-SetupAgentNotice 'Completed Agent Setup' 'Codex'
 }
 
 
-exit (Main)
+exit (Main 'Codex')

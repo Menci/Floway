@@ -11,7 +11,7 @@ main() {
   export -n SETUP_API_KEY SETUP_API_KEY_NAME 2>/dev/null || true
 
   _init_output
-  out_title
+  out_agent_notice 'Agent Setup' "$1"
 
   if [ -z "${SETUP_ENDPOINT:-}" ]; then
     out_fatal 'SETUP_ENDPOINT must be set to this gateway origin (e.g. https://gateway.example).'
