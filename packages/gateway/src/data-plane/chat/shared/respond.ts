@@ -115,6 +115,8 @@ export const mergeForwardedUpstreamHeaders = (base: HeadersInit | undefined, ups
 
 type EventsResult<TEvent> = Extract<ExecuteResult<ProtocolFrame<TEvent>>, { type: 'events' }>;
 
+export type ChatProtocolTag = 'chat-completions' | 'gemini' | 'messages' | 'responses';
+
 // Shared streaming scaffold for every chat protocol's SSE response. Forwards
 // upstream headers, drives `writeSSEFrames` under Hono's `streamSSE`, and
 // settles telemetry in `finally` — so the settle contract (metadata timing,
@@ -131,7 +133,7 @@ export const respondSseStream = <TEvent>(
   opts: {
     sseFrames: AsyncIterable<SseFrame>;
     keepAliveFrame: SseWritableFrame;
-    protocolTag: string;
+    protocolTag: ChatProtocolTag;
   },
 ): Response => {
   forwardUpstreamHeaders(c, eventsResult.headers);
