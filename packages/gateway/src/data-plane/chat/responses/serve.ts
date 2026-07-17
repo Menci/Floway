@@ -1,8 +1,7 @@
-import { wrapResponsesAffinityEgress } from './affinity/egress.ts';
 import { responsesAttempt } from './attempt.ts';
+import { wrapNativeResponsesClientOutput } from './client-output.ts';
 import type { ResponsesAttemptResult } from './interceptors/types.ts';
-import { createResponsesResponseId } from './items/format.ts';
-import { syntheticEventsFromResult, wrapResponsesClientOutput } from './items/output.ts';
+import { syntheticEventsFromResult } from './items/output.ts';
 import { prepareResponsesServePlan } from './serve-prep.ts';
 import { tokenUsageFromResponsesResult } from './usage.ts';
 import { iterateCandidates } from '../../shared/iterate-candidates.ts';
@@ -54,8 +53,6 @@ export const responsesServe = {
 
   compact: async (args: ResponsesServeArgs): Promise<ResponsesAttemptResult> => {
     const { payload, ctx, headers } = args;
-    const store = ctx.store;
-    if (store === undefined) throw new Error('Native Responses compact requires a state store');
     // Compact accepts `previous_response_id` (the official endpoint documents
     // it). When present serve-prep expands it the same way generate does so
     // the candidate rewrite can restore the stored history before dispatch.
@@ -90,15 +87,7 @@ export const responsesServe = {
     );
     if (result.type !== 'result') return result;
 
-    const withAffinity = wrapResponsesAffinityEgress(syntheticEventsFromResult(result.result), {
-      codec: ctx.affinity.codec,
-      affinity: ctx.affinity.selectedTarget(),
-    });
-    const stored = wrapResponsesClientOutput(withAffinity, {
-      store,
-      attemptState: ctx.responsesAttemptState,
-      responseId: createResponsesResponseId(),
-    });
+    const stored = wrapNativeResponsesClientOutput(syntheticEventsFromResult(result.result), ctx);
     const clientResult = await collectResponsesProtocolEventsToResult(stored);
     return {
       ...result,

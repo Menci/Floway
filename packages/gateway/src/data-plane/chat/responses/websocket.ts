@@ -1,9 +1,7 @@
 import type { Context } from 'hono';
 
-import { wrapResponsesAffinityEgress } from './affinity/egress.ts';
 import { ResponsesAffinityInputError } from './affinity/ingress.ts';
-import { createResponsesResponseId } from './items/format.ts';
-import { wrapResponsesClientOutput } from './items/output.ts';
+import { wrapNativeResponsesClientOutput } from './client-output.ts';
 import { createResponsesWsSession } from './items/store.ts';
 import { PreviousResponseNotFoundError } from './serve-prep.ts';
 import { responsesServe } from './serve.ts';
@@ -357,19 +355,9 @@ const respondResponsesWebSocket = async (input: {
   const state = new SourceStreamState();
   let completion: StreamCompletion = 'error';
   try {
-    const store = ctx.store;
-    if (store === undefined) throw new Error('Responses WebSocket turn requires a state store');
     let terminalEvent: ResponsesStreamEvent | undefined;
     const observed = observeResponsesWebSocketFrames(result.events, state, ctx);
-    const withAffinity = wrapResponsesAffinityEgress(observed, {
-      codec: ctx.affinity.codec,
-      affinity: ctx.affinity.selectedTarget(),
-    });
-    const output = wrapResponsesClientOutput(withAffinity, {
-      store,
-      attemptState: ctx.responsesAttemptState,
-      responseId: createResponsesResponseId(),
-    });
+    const output = wrapNativeResponsesClientOutput(observed, ctx);
     const iterator = output[Symbol.asyncIterator]();
     let pendingNext = pendingWsFrameResult(iterator.next());
     let completed = false;
