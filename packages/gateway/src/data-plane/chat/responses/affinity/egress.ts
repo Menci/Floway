@@ -1,13 +1,8 @@
+import { carrierDomain } from './carrier-domain.ts';
 import type { AffinityEgressOptions } from '../../shared/affinity/index.ts';
 import { createTemporaryResponsesItemId } from '../items/format.ts';
 import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ResponsesOutputItem, ResponsesOutputReasoning, ResponsesResult, ResponsesStreamEvent } from '@floway-dev/protocols/responses';
-
-const canonicalItemType = (itemType: string): string =>
-  itemType === 'compaction_summary' ? 'compaction' : itemType;
-
-const carrierDomain = (itemType: string, slot: string): string =>
-  `responses.${canonicalItemType(itemType)}.${slot}`;
 
 const opaqueSlots = (item: ResponsesOutputItem): Array<{ key: string; value: string }> => {
   const slots: Array<{ key: string; value: string }> = [];
@@ -105,7 +100,6 @@ const addSequenceOffset = <T extends ResponsesStreamEvent>(event: T, offset: num
 
 interface SyntheticPrefix {
   readonly originalOutputIndex: number;
-  readonly outputIndex: number;
   readonly item: ResponsesOutputReasoning;
 }
 
@@ -181,13 +175,13 @@ const wrapResponsesFirstCarrier = async function* (
         carrierDomain('reasoning', 'encrypted_content'),
       ),
     };
-    prefix = { originalOutputIndex, outputIndex: originalOutputIndex, item };
+    prefix = { originalOutputIndex, item };
 
     const addedSequence = sequenceNumber === undefined ? undefined : sequenceNumber + sequenceOffset;
     sequenceOffset += 1;
     yield eventFrame({
       type: 'response.output_item.added',
-      output_index: prefix.outputIndex,
+      output_index: prefix.originalOutputIndex,
       item: added,
       ...(addedSequence !== undefined ? { sequence_number: addedSequence } : {}),
     });
@@ -196,7 +190,7 @@ const wrapResponsesFirstCarrier = async function* (
     sequenceOffset += 1;
     yield eventFrame({
       type: 'response.output_item.done',
-      output_index: prefix.outputIndex,
+      output_index: prefix.originalOutputIndex,
       item,
       ...(doneSequence !== undefined ? { sequence_number: doneSequence } : {}),
     });

@@ -343,14 +343,13 @@ export const routeCandidatesByAffinity = <T extends ModelCandidate>(
 };
 
 type CandidateBlob =
-  | { readonly present: false; readonly compatible: boolean }
-  | { readonly present: true; readonly compatible: false; readonly value: string }
-  | { readonly present: true; readonly compatible: true; readonly value: string };
+  | { readonly present: false }
+  | { readonly present: true; readonly value: string };
 
 const blobForCompatibility = (decoded: DecodedAffinityBlob, compatible: boolean): CandidateBlob => {
-  if (decoded.kind === 'foreign') return { present: true, compatible: false, value: decoded.value };
-  if (!compatible || decoded.value === undefined) return { present: false, compatible };
-  return { present: true, compatible: true, value: decoded.value };
+  if (decoded.kind === 'foreign') return { present: true, value: decoded.value };
+  if (!compatible || decoded.value === undefined) return { present: false };
+  return { present: true, value: decoded.value };
 };
 
 export const blobForExactCandidate = (decoded: DecodedAffinityBlob, candidate: ModelCandidate): CandidateBlob =>
