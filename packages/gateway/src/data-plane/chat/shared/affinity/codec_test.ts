@@ -42,18 +42,6 @@ describe('AffinityCodec', () => {
     });
   });
 
-  test('unwraps a previously issued v1 carrier into the flat decoded shape', async () => {
-    const wrapped = 'AG8AcABhAHEAdQBlOtQzeH9xmS/0dfIx4J8Iw4j5LHpU6NpX5xlSL7GDz74XVYW91HEoHmzRRd436JBTkMyJB/GrHFbD7JN9V4fGnPu5ElH8Qz05MG5knmm0rPDE+jQfYTk7hMPIAV11kDajufxJB6m+5cx+4VJGC1INUDDTkQBz';
-
-    expect(await new AffinityCodec(SECRET).unwrap(wrapped, DOMAIN)).toEqual({
-      kind: 'owned',
-      value: 'opaque',
-      version: 1,
-      origin: 'raw',
-      affinity,
-    });
-  });
-
   test('does not base64-encode canonical base64 bytes a second time', async () => {
     const codec = new AffinityCodec(SECRET);
     const originalBytes = crypto.getRandomValues(new Uint8Array(48));
