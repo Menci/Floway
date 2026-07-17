@@ -16,6 +16,7 @@ const buildApiKey = (overrides: Partial<ApiKey> = {}): ApiKey => ({
   userId: 1,
   name: 'test',
   key: 'sk-test',
+  serverSecret: '00'.repeat(32),
   createdAt: '2026-01-01T00:00:00.000Z',
   upstreamIds: null,
   deletedAt: null,

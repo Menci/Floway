@@ -1,7 +1,9 @@
+import { AffinityRequestContext } from './affinity/index.ts';
 import type { RequestBody } from './request-body.ts';
 import { type DumpAccumulator, openDumpAccumulator } from '../../../dump/accumulator.ts';
 import { apiKeyFromContext, type AuthedContext, effectiveUpstreamIdsFromContext } from '../../../middleware/auth.ts';
 import { getRuntimeLocation } from '../../../runtime/runtime-info.ts';
+import { ResponsesAttemptState } from '../responses/attempt-state.ts';
 import type { StatefulResponsesStore } from '../responses/items/store.ts';
 import type { BackgroundScheduler } from '@floway-dev/platform';
 import type { PerformanceTelemetryContext } from '@floway-dev/provider';
@@ -48,13 +50,16 @@ export interface GatewayCtx {
   readonly responseHeaders: Headers;
 }
 
-// Chat-protocol ctx — `GatewayCtx` plus the request-scoped stored-items
-// store. Every chat HTTP/WS entry constructs this via
+// Chat-protocol ctx adds the affinity membrane and the Responses invocation
+// state used by native Responses requests or an inner translated Responses
+// call. Every chat HTTP/WS entry constructs this via
 // `createChatGatewayCtxFromHono` and threads it through serve → narrow →
 // attempt. Passthrough endpoints (embeddings / images / completions) have
 // no stored-items concept and stay on plain `GatewayCtx`.
 export interface ChatGatewayCtx extends GatewayCtx {
-  readonly store: StatefulResponsesStore;
+  readonly affinity: AffinityRequestContext;
+  readonly responsesAttemptState: ResponsesAttemptState;
+  readonly store?: StatefulResponsesStore;
 }
 
 export interface CreateGatewayCtxOptions {
@@ -118,18 +123,20 @@ export const finalizeGatewayResponse = (ctx: GatewayCtx, response: Response): Re
   return ctx.dump?.finalize(response) ?? response;
 };
 
-// Chat-protocol counterpart of `createGatewayCtxFromHono`. Calls the base
-// factory, then attaches the stored-items store the caller chose for this
-// protocol. The factory receives `ctx.apiKeyId` so every entry threads the
-// same authoritative id into its store — messages / gemini / chat-completions
-// pass `createNonResponsesSourceStore`; responses HTTP passes
-// `apiKeyId => createResponsesHttpStore(apiKeyId, payload.store)`; responses
-// WS passes `apiKeyId => session.createStore(apiKeyId, payload.store)`.
+// Chat-protocol counterpart of `createGatewayCtxFromHono`. The factory
+// receives the authoritative API-key id. Non-Responses sources leave the store
+// absent even when translation enters a Responses attempt. Native Responses
+// HTTP and WebSocket entries supply their transport-specific store factories.
 export const createChatGatewayCtxFromHono = (
   c: AuthedContext,
   opts: CreateGatewayCtxOptions,
-  storeFactory: (apiKeyId: string) => StatefulResponsesStore,
+  storeFactory?: (apiKeyId: string) => StatefulResponsesStore,
 ): ChatGatewayCtx => {
   const base = createGatewayCtxFromHono(c, opts);
-  return { ...base, store: storeFactory(base.apiKeyId) };
+  return {
+    ...base,
+    affinity: new AffinityRequestContext(apiKeyFromContext(c).serverSecret),
+    responsesAttemptState: new ResponsesAttemptState(),
+    ...(storeFactory !== undefined ? { store: storeFactory(base.apiKeyId) } : {}),
+  };
 };

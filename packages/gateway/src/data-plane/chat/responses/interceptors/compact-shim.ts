@@ -322,15 +322,7 @@ const simulateCompaction = async (ctx: ResponsesInvocation, gatewayCtx: ChatGate
 
   const collected = await collectResponsesProtocolEventsToResult(upstreamResult.events);
   const summaryText = extractTextFromResult(collected);
-  // The minted compaction id is gateway-internal — the upstream never issued
-  // it. Register it as synthetic so `wrapResponsesOutputForStorage` stores
-  // the row with `upstreamId: null`, which keeps `classifyStoredResponsesAffinity`
-  // from treating a future echo of this compaction as a forcing reference that
-  // pins routing to whichever upstream happened to run the summarization turn.
-  // (For non-responses targets the targetApi check already suppresses
-  // ownership; this also covers the responses-target + flag-on engagement.)
   const cmpId = `cmp_${crypto.randomUUID()}`;
-  gatewayCtx.store.addSyntheticItem(cmpId);
   const synthesized = buildCompactionEnvelope(cmpId, summaryText, collected);
 
   return {
@@ -339,10 +331,6 @@ const simulateCompaction = async (ctx: ResponsesInvocation, gatewayCtx: ChatGate
   };
 };
 
-// True when the payload carries a `compaction_trigger` input item — Codex
-// CLI's RemoteCompactionV2 path that semantically requests compaction
-// through `action: 'generate'`. Exported so callers outside the shim
-// (attempt.ts's snapshot-mode derivation) can ask the same question.
 export const containsCompactionTrigger = (input: readonly ResponsesInputItem[]): boolean =>
   input.some(item => item.type === 'compaction_trigger');
 

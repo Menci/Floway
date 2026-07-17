@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { test, vi } from 'vitest';
 
 import { initDumpBroker, initDumpStore } from '../../dump/registry.ts';
 import { installDumpStubs } from '../../dump/test-fixtures.ts';
@@ -11,6 +11,16 @@ const ownerPatch = (id: string, body: unknown, rawKey: string) =>
     headers: { 'x-api-key': rawKey, 'content-type': 'application/json' },
     body: JSON.stringify(body),
   });
+
+test('GET /api/keys never exposes the server-side server secret', async () => {
+  const { apiKey } = await setupAppTest();
+  const response = await requestApp('/api/keys', { headers: { 'x-api-key': apiKey.key } });
+  assertEquals(response.status, 200);
+  const body = (await response.json()) as Array<Record<string, unknown>>;
+  assertEquals(body.length, 1);
+  assertEquals(Object.hasOwn(body[0]!, 'serverSecret'), false);
+  assertEquals(Object.hasOwn(body[0]!, 'server_secret'), false);
+});
 
 test('PATCH /api/keys/:id accepts a custom upstream whitelist + order', async () => {
   const { repo, apiKey } = await setupAppTest();
@@ -133,12 +143,15 @@ test('POST /api/keys creates a key under the actor with optional upstream_ids', 
     body: JSON.stringify({ name: 'side-key', upstream_ids: ['up_x'] }),
   });
   assertEquals(response.status, 201);
-  const body = (await response.json()) as { id: string; key: string; upstream_ids: string[] | null };
+  const body = (await response.json()) as { id: string; key: string; upstream_ids: string[] | null } & Record<string, unknown>;
   assertEquals(/^sk-[A-Za-z0-9]{20}T3BlbkFJ[A-Za-z0-9]{20}$/.test(body.key), true);
   assertEquals(body.upstream_ids, ['up_x']);
+  assertEquals(Object.hasOwn(body, 'serverSecret'), false);
+  assertEquals(Object.hasOwn(body, 'server_secret'), false);
   const stored = await repo.apiKeys.getById(body.id);
   assertExists(stored);
   assertEquals(stored.userId, apiKey.userId);
+  assertEquals(/^[0-9a-f]{64}$/.test(stored.serverSecret), true);
 });
 
 test('POST /api/keys mints a generated key when key_source is generate', async () => {
@@ -180,6 +193,43 @@ test('POST /api/keys stores a custom key verbatim and rejects duplicates', async
   assertEquals(duplicate.status, 409);
 });
 
+test.each([
+  'UNIQUE constraint failed: api_keys.server_secret',
+  'CHECK constraint failed: length(server_secret) = 64',
+])('POST /api/keys exposes non-key database constraints: %s', async message => {
+  const { repo, apiKey } = await setupAppTest();
+  const save = vi.spyOn(repo.apiKeys, 'save').mockRejectedValue(new Error(message));
+  try {
+    const response = await requestApp('/api/keys', {
+      method: 'POST',
+      headers: { 'x-api-key': apiKey.key, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'constraint-test', key_source: 'custom', custom_key: 'custom-value' }),
+    });
+    assertEquals(response.status, 500);
+    if (!(await response.text()).includes(message)) throw new Error(`expected response to expose ${message}`);
+  } finally {
+    save.mockRestore();
+  }
+});
+
+test('POST /api/keys does not retry a generated key after a server-secret constraint', async () => {
+  const { repo, apiKey } = await setupAppTest();
+  const message = 'UNIQUE constraint failed: api_keys.server_secret';
+  const save = vi.spyOn(repo.apiKeys, 'save').mockRejectedValue(new Error(message));
+  try {
+    const response = await requestApp('/api/keys', {
+      method: 'POST',
+      headers: { 'x-api-key': apiKey.key, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'constraint-test', key_source: 'generate' }),
+    });
+    assertEquals(response.status, 500);
+    assertEquals(save.mock.calls.length, 1);
+    if (!(await response.text()).includes(message)) throw new Error(`expected response to expose ${message}`);
+  } finally {
+    save.mockRestore();
+  }
+});
+
 test('POST /api/keys rejects malformed custom key requests', async () => {
   const { apiKey } = await setupAppTest();
   const missing = await requestApp('/api/keys', {
@@ -205,15 +255,18 @@ test('POST /api/keys rejects malformed custom key requests', async () => {
 });
 
 test('POST /api/keys/:id/rotate mints a generated key by default', async () => {
-  const { apiKey } = await setupAppTest();
+  const { apiKey, repo } = await setupAppTest();
   const response = await requestApp(`/api/keys/${apiKey.id}/rotate`, {
     method: 'POST',
     headers: { 'x-api-key': apiKey.key, 'content-type': 'application/json' },
     body: JSON.stringify({}),
   });
   assertEquals(response.status, 200);
-  const body = (await response.json()) as { key: string };
+  const body = (await response.json()) as { key: string } & Record<string, unknown>;
   assertEquals(/^sk-[A-Za-z0-9]{20}T3BlbkFJ[A-Za-z0-9]{20}$/.test(body.key), true);
+  assertEquals(Object.hasOwn(body, 'serverSecret'), false);
+  assertEquals(Object.hasOwn(body, 'server_secret'), false);
+  assertEquals((await repo.apiKeys.getById(apiKey.id))?.serverSecret, apiKey.serverSecret);
 });
 
 test('POST /api/keys/:id/rotate accepts a caller-provided key when key_source is custom', async () => {

@@ -46,7 +46,7 @@ const itemTypePrefixes = {
   // `compaction_summary` is the Codex-side wire alias for `compaction` (the
   // protocol declares them as one variant via `#[serde(alias = ...)]`); both
   // mint the same `cmp_` prefix so a row written under either spelling
-  // round-trips through `isStoredResponsesItemId`.
+  // round-trips through `isResponsesItemId`.
   compaction_summary: 'cmp',
   image_generation_call: 'ig',
   code_interpreter_call: 'ci',
@@ -63,65 +63,76 @@ const itemTypePrefixes = {
 } as const satisfies Record<StorableResponsesItemType, string>;
 
 const knownPrefixes = new Set<string>(Object.values(itemTypePrefixes));
-const storedIdPattern = /^(.+)_([A-Za-z0-9_-]{6})_([A-Za-z0-9_-]{22})$/;
+const responsesIdPattern = /^(.+)_([A-Za-z0-9_-]{6})_([A-Za-z0-9_-]{22})$/;
 
-// Stored ids are `<prefix>_<crc32(body)>_<body>` where `body` is 16 random
+// Client item ids are `<prefix>_<crc32(body)>_<body>` where `body` is 16 random
 // bytes encoded as base64url (22 chars). The body is content-free on purpose:
 // uniqueness comes from `crypto.getRandomValues`, and the crc32 prefix lets
-// `isStoredResponsesItemId` reject typos and accidental upstream collisions
+// `isResponsesItemId` reject typos and accidental upstream collisions
 // without re-hashing the original item.
-export const createStoredResponsesItemId = (itemType: string): string => {
+export const createResponsesItemId = (itemType: string): string => {
   const body = randomBody();
   return `${prefixForItemType(itemType)}_${crc32Checksum(body)}_${body}`;
 };
 
-export const isStoredResponsesItemId = (value: string): boolean =>
-  isValidStoredId(value, prefix => knownPrefixes.has(prefix));
+export const isResponsesItemId = (value: string): boolean =>
+  isValidResponsesId(value, prefix => knownPrefixes.has(prefix));
 
-// Codex and other stateless Responses clients echo reasoning and compaction
-// items back with their `encrypted_content` blob but no gateway id (the id is
-// stripped client-side). The blob is signed against the producing upstream
-// account, so we key such items by its hash to recover the owning upstream for
-// affinity routing.
 export const responsesItemId = (item: { id?: unknown }): string | null => {
   const id = item.id;
   return typeof id === 'string' && id.length > 0 ? id : null;
 };
 
-export const responsesItemEncryptedContent = (item: ResponsesInputItem): string | null => {
-  const value = (item as { encrypted_content?: unknown }).encrypted_content;
-  return typeof value === 'string' && value.length > 0 ? value : null;
-};
-
-export const hashResponsesItemEncryptedContent = async (encryptedContent: string): Promise<string> =>
-  await sha256Hex(encryptedContent);
+export const canonicalResponsesItemType = (itemType: string): string =>
+  itemType === 'compaction_summary' ? 'compaction' : itemType;
 
 export const hashResponsesItemContent = async (item: ResponsesInputItem): Promise<string> =>
   await sha256Hex(JSON.stringify(sortJson(item)));
+
+export const hashResponsesItemBinding = async (item: ResponsesInputItem | ResponsesOutputItem): Promise<string> => {
+  const content = { ...item } as Record<string, unknown>;
+  content.type = canonicalResponsesItemType(item.type);
+  delete content.id;
+  if (item.type === 'message' || item.type === 'function_call') delete content.status;
+  if (item.type === 'message' && Array.isArray(content.content)) {
+    content.content = content.content.map(block => {
+      if (
+        !block
+        || typeof block !== 'object'
+        || !['input_text', 'output_text'].includes(String((block as { type?: unknown }).type))
+      ) return block;
+      const normalized = { ...(block as Record<string, unknown>) };
+      if (normalized.type === 'input_text') normalized.type = 'output_text';
+      if (Array.isArray(normalized.annotations) && normalized.annotations.length === 0) delete normalized.annotations;
+      if (Array.isArray(normalized.logprobs) && normalized.logprobs.length === 0) delete normalized.logprobs;
+      return normalized;
+    });
+  }
+  return await sha256Hex(JSON.stringify(sortJson(content)));
+};
 
 export const createTemporaryResponsesItemId = (itemType: string): string => `${prefixForItemType(itemType)}_tmp_${randomBody()}`;
 
 // Gateway-owned response envelope id. A response from this gateway is not
 // a 1:1 wrapper for an upstream response — the server-tool runtime can
 // drive multiple upstream calls behind a single client-visible response —
-// so we always mint our own id and never echo the upstream's. The wrap
-// layer is the only place this is generated; everything downstream of
-// wrap (the snapshot store key, the SSE/WS frames the client sees) carries
-// this id.
+// so we always mint our own id and never echo the upstream's. Each source
+// response boundary mints one id and passes it to the client-output wrapper;
+// the snapshot key and every downstream SSE/WS envelope then share it.
 const responseEnvelopePrefix = 'resp';
-export const createStoredResponseId = (): string => {
+export const createResponsesResponseId = (): string => {
   const body = randomBody();
   return `${responseEnvelopePrefix}_${crc32Checksum(body)}_${body}`;
 };
 
-export const isStoredResponseId = (value: string): boolean =>
-  isValidStoredId(value, prefix => prefix === responseEnvelopePrefix);
+export const isResponsesResponseId = (value: string): boolean =>
+  isValidResponsesId(value, prefix => prefix === responseEnvelopePrefix);
 
 // Validates that `value` matches `<prefix>_<crc6>_<body22>`, the prefix
 // predicate accepts the prefix, and the crc32 of `body` matches the
 // checksum.
-const isValidStoredId = (value: string, isPrefixValid: (prefix: string) => boolean): boolean => {
-  const match = storedIdPattern.exec(value);
+const isValidResponsesId = (value: string, isPrefixValid: (prefix: string) => boolean): boolean => {
+  const match = responsesIdPattern.exec(value);
   if (match === null) return false;
   const [, prefix, checksum, body] = match;
   return isPrefixValid(prefix) && crc32Checksum(body) === checksum;
@@ -160,7 +171,7 @@ const sortJson = (value: unknown): unknown => {
   return Object.fromEntries(
     Object.entries(value as Record<string, unknown>)
       .filter(([, entry]) => entry !== undefined)
-      .toSorted(([a], [b]) => a.localeCompare(b))
+      .toSorted(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
       .map(([key, entry]) => [key, sortJson(entry)]),
   );
 };

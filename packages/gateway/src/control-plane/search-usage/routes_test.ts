@@ -9,6 +9,7 @@ const seedSearchUsage = async (repo: import('../../repo/memory.ts').InMemoryRepo
     userId: 1,
     name: 'Other key',
     key: 'raw_other_key',
+    serverSecret: '00'.repeat(32),
     createdAt: '2026-03-15T00:00:00.000Z',
     upstreamIds: null,
     deletedAt: null,

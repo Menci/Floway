@@ -1,13 +1,14 @@
 import type { ExecutionContext } from 'hono';
 import { test, vi } from 'vitest';
 
-import { hashResponsesItemContent, isStoredResponseId } from './items/format.ts';
+import { hashResponsesItemBinding, hashResponsesItemContent, isResponsesItemId, isResponsesResponseId } from './items/format.ts';
 import { responsesServe } from './serve.ts';
 import { app } from '../../../app.ts';
 import { initDumpBroker, initDumpStore } from '../../../dump/registry.ts';
 import { installDumpStubs } from '../../../dump/test-fixtures.ts';
 import { copilotModels, flushAsyncWork, setupAppTest, sseResponsesResponse } from '../../../test-helpers.ts';
 import { FakeTime } from '../../../test-time.ts';
+import { AffinityCodec } from '../shared/affinity/index.ts';
 import { DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS } from '../shared/stream/sse.ts';
 import { assert, assertEquals, assertExists, assertStringIncludes, jsonResponse, withMockedFetch } from '@floway-dev/test-utils';
 
@@ -253,7 +254,7 @@ test('Responses WebSocket forwards stream events, echoes event_id, and sends res
       assertExists(completed);
       const flowayResponseId = (completed.response as { id?: unknown } | undefined)?.id;
       assertEquals(typeof flowayResponseId, 'string');
-      assert(isStoredResponseId(flowayResponseId as string), 'expected Floway-minted resp_ id, not the upstream blob');
+      assert(isResponsesResponseId(flowayResponseId as string), 'expected Floway-minted resp_ id, not the upstream blob');
       assertEquals(messages.at(-1), {
         type: 'response.done',
         event_id: 'evt_1',
@@ -508,6 +509,7 @@ test('Responses WebSocket keepalive during an in-flight request does not drop th
           }
 
           assert(hasMessageType(messages, 'ping'), 'expected a ping while the upstream response stream is idle');
+          const completed = waitForMessages(client, received => received.some(message => message.type === 'response.done'));
 
           const response = {
             id: 'resp_ws_keepalive',
@@ -524,9 +526,7 @@ test('Responses WebSocket keepalive during an in-flight request does not drop th
           upstreamController.enqueue(encoder.encode('data: [DONE]\n\n'));
           upstreamController.close();
 
-          for (let i = 0; i < 20 && !hasMessageType(messages, 'response.done'); i++) {
-            await waitForMicrotasks();
-          }
+          await completed;
 
           const types = messages.map(message => message.type);
           assert(types.indexOf('ping') < types.indexOf('response.created'), 'expected the delayed upstream frame after the ping');
@@ -626,6 +626,49 @@ test('Responses WebSocket returns invalid_request_error for malformed client mes
       },
     }]);
   });
+});
+
+test('Responses WebSocket renders an invalid bound affinity carrier as a 400 input error', async () => {
+  const { apiKey } = await setupAppTest();
+  const original = { type: 'program_output' as const, id: 'first', call_id: 'call_1', result: 'first', status: 'completed' as const };
+  const carrier = await new AffinityCodec(apiKey.serverSecret).wrap(undefined, {
+    upstreamId: 'copilot',
+    modelId: 'gpt-direct-responses',
+    syntheticItem: true,
+    boundItem: {
+      type: original.type,
+      upstreamItemId: 'first_upstream',
+      contentHash: await hashResponsesItemBinding(original),
+    },
+  }, 'responses.reasoning.encrypted_content');
+
+  await withSuccessfulResponsesUpstream(async () => await withWorkerWebSocketRuntime(async () => {
+    const client = await connectResponsesWebSocket(apiKey.key);
+    const received = waitForMessages(client, messages => messages.some(message => message.type === 'error'));
+    client.send(JSON.stringify({
+      type: 'response.create',
+      event_id: 'evt_affinity',
+      response: {
+        model: 'gpt-direct-responses',
+        input: [
+          { type: 'reasoning', id: 'rs_prefix', summary: [], encrypted_content: carrier },
+          { type: 'program_output', id: 'second', call_id: 'call_2', result: 'second', status: 'completed' },
+        ],
+      },
+    }));
+
+    assertEquals(await received, [{
+      type: 'error',
+      event_id: 'evt_affinity',
+      status_code: 400,
+      error: {
+        type: 'invalid_request_error',
+        code: 'invalid_request_error',
+        message: 'Affinity carrier does not match the Responses input item at index 1.',
+        param: 'input[1]',
+      },
+    }]);
+  }));
 });
 
 test('Responses WebSocket forwards HTTP failures with status_code, error.code, and event_id', async () => {
@@ -759,9 +802,11 @@ test('Responses WebSocket store:false keeps session snapshots without durable re
       const firstMessages = await firstDone;
       const firstResponseId = responseDoneId(firstMessages);
 
+      assert(isResponsesResponseId(firstResponseId), 'expected a Floway response id');
       assertEquals(await repo.responsesSnapshots.lookup(apiKey.id, firstResponseId), null);
       const firstOutput = firstMessages.find(message => message.type === 'response.output_item.done') as { item?: { id?: string } } | undefined;
       assertExists(firstOutput?.item?.id);
+      assert(isResponsesItemId(firstOutput.item.id), 'expected a Floway output item id');
       assertEquals(await repo.responsesItems.lookupMany(apiKey.id, [firstOutput.item.id]), []);
       assertEquals(
         await repo.responsesItems.lookupManyByContentHash(apiKey.id, [await hashResponsesItemContent({ type: 'message', role: 'user', content: 'first question' })]),
@@ -960,6 +1005,12 @@ test('Responses WebSocket session-level store: second message resolves prior ite
         ['message', 'assistant', [{ type: 'output_text', text: 'turn 1' }]],
         ['message', 'user', 'turn two input'],
       ]);
+
+      const restored = await repo.responsesSnapshots.lookup(apiKey.id, firstResponseId);
+      assertExists(restored);
+      assertEquals((await repo.responsesItems.lookupMany(apiKey.id, restored.itemIds)).length, restored.itemIds.length);
+      await repo.responsesSnapshots.deleteAll();
+      await repo.responsesItems.deleteAll();
 
       // A fresh WS session for the same api key has its own empty cache; with
       // the repo wiped, the snapshot is unreachable.

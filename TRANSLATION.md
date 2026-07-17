@@ -758,7 +758,9 @@ historical custom tool call items unchanged.
   order when later visible output arrives before earlier reasoning/tool output
   is complete.
 - Chat -> Messages stream translation keeps opaque-only reasoning in source
-  order and flushes pending final usage before `message_stop`.
+  order and flushes pending final usage before `message_stop`. Chat
+  `reasoning_opaque` and Messages `signature_delta` values are replacement
+  snapshots, not string fragments to concatenate.
 - Tool/function argument streams guard against infinite whitespace in generated
   arguments and emit an error rather than continuing a degenerate stream.
 
@@ -773,6 +775,9 @@ historical custom tool call items unchanged.
 - Messages <-> Chat may still carry Anthropic opaque thinking through Chat
   `reasoning_opaque`, because that is a Messages/Chat compatibility surface and
   not a Responses encrypted-reasoning bridge.
+- Floway affinity and native Responses persistence remain outside pure
+  translators; their source-boundary behavior is documented in
+  [AFFINITY.md](./AFFINITY.md).
 
 ## Standard OpenAI Field Policy
 

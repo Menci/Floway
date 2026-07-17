@@ -1,4 +1,5 @@
-import { translatorInputErrorResult } from './errors.ts';
+import { ResponsesAffinityInputError } from './affinity/ingress.ts';
+import { responsesInputErrorResult } from './errors.ts';
 import { createResponsesHttpStore } from './items/store.ts';
 import { respondResponses } from './respond.ts';
 import { PreviousResponseNotFoundError } from './serve-prep.ts';
@@ -46,7 +47,7 @@ const respondWithInternalError = async (c: AuthedContext, error: unknown, reques
   if (verbatim !== null) return verbatim;
   const effectiveCtx = ctx ?? createGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
   const result = internalErrorResult(502, toInternalDebugError(error), effectiveCtx.attempt.telemetry);
-  const { response } = await respondResponses(c, result, false, effectiveCtx);
+  const response = await respondResponses(c, result, false, effectiveCtx);
   return finalizeGatewayResponse(effectiveCtx, response);
 };
 
@@ -59,9 +60,9 @@ const respondToThrow = async (c: AuthedContext, error: unknown, requestBody: Req
     ctx?.dump?.error('gateway');
     return ctx ? finalizeGatewayResponse(ctx, response) : response;
   }
-  if (error instanceof TranslatorInputError) {
+  if (error instanceof TranslatorInputError || error instanceof ResponsesAffinityInputError) {
     const effectiveCtx = ctx ?? createGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
-    const { response } = await respondResponses(c, translatorInputErrorResult(error, effectiveCtx.attempt.telemetry), false, effectiveCtx);
+    const response = await respondResponses(c, responsesInputErrorResult(error, effectiveCtx.attempt.telemetry), false, effectiveCtx);
     return finalizeGatewayResponse(effectiveCtx, response);
   }
   return await respondWithInternalError(c, error, requestBody, ctx);
@@ -79,7 +80,7 @@ export const responsesHttp = {
       const wantsStream = payload.stream === true;
       ctx = createChatGatewayCtxFromHono(c, { wantsStream, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) }, apiKeyId => createResponsesHttpStore(apiKeyId, payload.store ?? undefined));
       const result = await responsesServe.generate({ payload, ctx, headers: inboundHeadersForUpstream(c) });
-      const { response } = await respondResponses(c, result, wantsStream, ctx);
+      const response = await respondResponses(c, result, wantsStream, ctx);
       return finalizeGatewayResponse(ctx, response);
     } catch (error) {
       return await respondToThrow(c, error, requestBody, ctx);
@@ -116,7 +117,7 @@ export const responsesHttp = {
         const compactResponse = Response.json(result.result);
         return finalizeGatewayResponse(ctx, compactResponse);
       }
-      const { response } = await respondResponses(c, result, false, ctx);
+      const response = await respondResponses(c, result, false, ctx);
       return finalizeGatewayResponse(ctx, response);
     } catch (error) {
       return await respondToThrow(c, error, requestBody, ctx);

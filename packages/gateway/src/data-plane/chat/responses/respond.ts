@@ -1,6 +1,7 @@
 import type { Context } from 'hono';
 import { streamSSE } from 'hono/streaming';
 
+import { wrapNativeResponsesClientOutput } from './client-output.ts';
 import { tokenUsageFromResponsesResult } from './usage.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
@@ -16,35 +17,35 @@ import { apiErrorToResponse } from '@floway-dev/provider';
 // Renders an upstream Responses result into the client HTTP/SSE response. An
 // error-typed result is a pre-stream failure and always answers as HTTP; an
 // events result drains to one JSON body (non-streaming) or is proxied frame by
-// frame (streaming). `success` reports whether a non-streaming body was
-// produced, so the orchestrator knows whether to flush stored items.
+// frame (streaming).
 export const respondResponses = async (
   c: Context,
   result: ExecuteResult<ProtocolFrame<ResponsesStreamEvent>> | PlainResult,
   wantsStream: boolean,
   ctx: GatewayCtx,
-): Promise<{ success: boolean; response: Response }> => {
+): Promise<Response> => {
   if (result.type === 'api-error') {
     recordFailedRequest(ctx, result.performance);
     ctx.dump?.error(result.source, result.upstream);
-    return { success: false, response: apiErrorToResponse(result) };
+    return apiErrorToResponse(result);
   }
 
   if (result.type === 'internal-error') {
     recordFailedRequest(ctx, result.performance);
     ctx.dump?.failed(result.error.message);
-    return { success: false, response: internalResponsesErrorResponse(result.status, result.error) };
+    return internalResponsesErrorResponse(result.status, result.error);
   }
 
   if (result.type === 'plain') {
     if (result.status >= 400) {
       ctx.dump?.error(result.upstream !== undefined ? 'upstream' : 'gateway', result.upstream);
     }
-    return { success: true, response: plainResultToResponse(result) };
+    return plainResultToResponse(result);
   }
 
   const state = new SourceStreamState();
-  const frames = observeResponsesFrames(result.events, state, wantsStream, ctx);
+  const observed = observeResponsesFrames(result.events, state, wantsStream, ctx);
+  const frames = wrapNativeResponsesClientOutput(observed, ctx);
 
   if (!wantsStream) {
     try {
@@ -53,11 +54,11 @@ export const respondResponses = async (
       const usage = tokenUsageFromResponsesResult(response);
       ctx.dump?.success(metadata.modelIdentity, usage);
       settle(ctx, metadata.performance, metadata.modelIdentity, usage, state.failed || response.status === 'failed');
-      return { success: true, response: Response.json(response, { headers: mergeForwardedUpstreamHeaders(undefined, result.headers) }) };
+      return Response.json(response, { headers: mergeForwardedUpstreamHeaders(undefined, result.headers) });
     } catch (error) {
       recordFailedRequest(ctx, result.performance);
       ctx.dump?.failed(error);
-      return { success: false, response: internalResponsesErrorResponse(502, toInternalDebugError(error)) };
+      return internalResponsesErrorResponse(502, toInternalDebugError(error));
     }
   }
 
@@ -81,7 +82,7 @@ export const respondResponses = async (
     }
   });
 
-  return { success: true, response };
+  return response;
 };
 
 // --- error rendering ---

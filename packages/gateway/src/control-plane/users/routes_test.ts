@@ -39,6 +39,7 @@ test('POST /api/users creates the user and provisions a Default key', async () =
   const stored = await repo.apiKeys.listByUserId(body.user.id);
   assertEquals(stored.length, 1);
   assertEquals(stored[0].name, 'Default');
+  assertEquals(/^[0-9a-f]{64}$/.test(stored[0].serverSecret), true);
 });
 
 test('POST /api/users rejects duplicate username + unknown upstream id', async () => {

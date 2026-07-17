@@ -9,6 +9,7 @@ import { assertEquals } from '@floway-dev/test-utils';
 const stubKey = (overrides: Partial<ApiKey> & Pick<ApiKey, 'id' | 'userId'>): ApiKey => ({
   name: `key ${overrides.id}`,
   key: `raw_${overrides.id}`,
+  serverSecret: '00'.repeat(32),
   createdAt: '2026-04-30T00:00:00.000Z',
   upstreamIds: null,
   deletedAt: null,

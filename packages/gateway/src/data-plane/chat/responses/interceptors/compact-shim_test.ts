@@ -230,25 +230,6 @@ test('compact + flag on: synthesized encrypted_content decodes to a user message
   assertEquals(decoded[0].content[0].text, `${SUMMARY_PREFIX}\nTHE SUMMARY`);
 });
 
-test('compact + flag on: synthesized compaction id is registered as synthetic so storage drops upstream affinity', async () => {
-  // The minted `cmp_<uuid>` is gateway-internal — no upstream issued it.
-  // wrapResponsesOutputForStorage keys upstreamOwned on
-  // `targetApi === 'responses' && !store.isSyntheticItem(upstreamId)`; without
-  // the synthetic registration, a flag-on engagement against a responses
-  // target would store the row with the originating upstreamId set, and
-  // classifyStoredResponsesAffinity would lock routing to that upstream
-  // on any later turn that echoes the compaction.
-  const inv = makeInvocation(
-    { input: [{ type: 'message', role: 'user', content: 'history' }] },
-    { action: 'compact' },
-  );
-  const result = await withResponsesCompactShim(inv, stubCtx, fakeUpstreamRun('summary'));
-  if (result.type !== 'events') throw new Error('expected events branch');
-  const collected = await collectResponsesProtocolEventsToResult(result.events);
-  const compactionItem = collected.output[0] as { type: string; id: string };
-  assertEquals(stubCtx.store.isSyntheticItem(compactionItem.id), true);
-});
-
 test('compact + flag on: upstream `output_text` SDK alias is dropped from the synthesized envelope', async () => {
   const inv = makeInvocation(
     { input: [{ type: 'message', role: 'user', content: 'history' }] },

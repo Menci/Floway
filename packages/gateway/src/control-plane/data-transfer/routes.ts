@@ -3,10 +3,10 @@
 // Ephemeral stored Responses state is omitted from exports and cleared on
 // replace imports; clients can regenerate it through normal Responses use.
 //
-// The export contains every credential the gateway holds — provider API keys,
-// GitHub tokens, Codex refresh tokens, and proxy URIs that embed passwords /
-// UUIDs / PSKs. The endpoint is admin-only via x-api-key; operators are
-// responsible for handling the dumped file with the same care as a DB backup.
+// The export contains all persisted authentication material, including raw API
+// keys and server secrets, user password hashes, provider tokens, and
+// credential-bearing proxy URIs. The endpoint is admin-only; handle the file
+// with the same care as a DB backup.
 
 import type { Context } from 'hono';
 
@@ -24,6 +24,7 @@ import type { ApiKey, PerformanceBucketRow, PerformanceMetric, PerformanceTeleme
 import { backgroundSchedulerFromContext } from '../../runtime/background.ts';
 import { getRuntimeLocation } from '../../runtime/runtime-info.ts';
 import { PASSWORD_HASH_SCHEME } from '../../shared/passwords.ts';
+import { parseServerSecret } from '../../shared/server-secret.ts';
 import { isWebSearchProviderName } from '../../shared/web-search-providers.ts';
 import { parseUpstreamIdsValue } from '../api-keys/upstream-ids.ts';
 import { USERNAME_PATTERN, type exportQuery, type importBody, DUMP_RETENTION_MAX_SECONDS } from '../schemas.ts';
@@ -49,7 +50,7 @@ interface SerializedProxy {
 }
 
 interface ExportPayload {
-  version: 10;
+  version: 11;
   exportedAt: string;
   data: {
     users: User[];
@@ -64,7 +65,7 @@ interface ExportPayload {
   };
 }
 
-const EXPORT_VERSION = 10;
+const EXPORT_VERSION = 11;
 const SEARCH_USAGE_HOUR_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}$/;
 const PERFORMANCE_METRICS = new Set<PerformanceMetric>(['ttft_ms', 'tpot_us']);
 const UPSTREAM_PROVIDERS = new Set<UpstreamProviderKind>(ALL_PROVIDER_KINDS);
@@ -284,6 +285,7 @@ const parseApiKeyRecords = (value: unknown): { type: 'ok'; records: ApiKey[] } |
         userId: record.userId,
         name: nonEmptyString(record.name, 'name'),
         key: nonEmptyString(record.key, 'key'),
+        serverSecret: parseServerSecret(record.serverSecret),
         createdAt: nonEmptyString(record.createdAt, 'createdAt'),
         ...(record.lastUsedAt !== undefined ? { lastUsedAt: nonEmptyString(record.lastUsedAt, 'lastUsedAt') } : {}),
         upstreamIds: upstreamIdsParsed.value,
@@ -350,6 +352,7 @@ const parseUserRecords = (value: unknown): { type: 'ok'; records: User[] } | { t
 const validateApiKeyIdentities = (records: readonly ApiKey[], existing: readonly ApiKey[], mode: 'merge' | 'replace'): string | null => {
   const ids = new Map<string, number>();
   const rawKeys = new Map<string, string>();
+  const serverSecrets = new Map<string, string>();
 
   for (let i = 0; i < records.length; i++) {
     const record = records[i];
@@ -360,14 +363,23 @@ const validateApiKeyIdentities = (records: readonly ApiKey[], existing: readonly
     const existingRawKeyId = rawKeys.get(record.key);
     if (existingRawKeyId !== undefined) return `duplicate apiKeys raw key used by ${existingRawKeyId} and ${record.id}`;
     rawKeys.set(record.key, record.id);
+
+    const existingServerSecretId = serverSecrets.get(record.serverSecret);
+    if (existingServerSecretId !== undefined) return `duplicate apiKeys server secret used by ${existingServerSecretId} and ${record.id}`;
+    serverSecrets.set(record.serverSecret, record.id);
   }
 
   if (mode === 'merge') {
     const existingRawKeys = new Map(existing.map(record => [record.key, record.id]));
+    const existingServerSecrets = new Map(existing.map(record => [record.serverSecret, record.id]));
     for (const record of records) {
       const existingId = existingRawKeys.get(record.key);
       if (existingId !== undefined && existingId !== record.id) {
         return `apiKeys raw key for ${record.id} conflicts with existing api key ${existingId}`;
+      }
+      const existingServerSecretId = existingServerSecrets.get(record.serverSecret);
+      if (existingServerSecretId !== undefined && existingServerSecretId !== record.id) {
+        return `apiKeys server secret for ${record.id} conflicts with existing api key ${existingServerSecretId}`;
       }
     }
   }

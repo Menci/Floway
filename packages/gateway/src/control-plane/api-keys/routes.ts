@@ -4,6 +4,7 @@ import { type CtxWithJson } from '../../middleware/zod-validator.ts';
 import { getRepo } from '../../repo/index.ts';
 import type { ApiKey } from '../../repo/types.ts';
 import { CUSTOM_API_KEY_MAX_LENGTH, generateApiKeyToken, type KeySource } from '../../shared/api-key-tokens.ts';
+import { generateServerSecret } from '../../shared/server-secret.ts';
 import type { createKeyBody, rotateKeyBody, updateKeyBody } from '../schemas.ts';
 import { ownedKeyOr404 } from '../shared/owned-key.ts';
 
@@ -34,6 +35,9 @@ const normalizeCustomKey = (value: unknown): string | Response => {
 const duplicateKeyResponse = () =>
   Response.json({ error: 'An API key with that raw key already exists.' }, { status: 409 });
 
+const isRawKeyUniqueConstraint = (error: unknown): boolean =>
+  /UNIQUE constraint failed: api_keys\.key(?:\b|$)/i.test(error instanceof Error ? error.message : String(error));
+
 const findAnyByRawKey = async (rawKey: string): Promise<ApiKey | null> =>
   (await getRepo().apiKeys.listIncludingDeleted()).find(key => key.key === rawKey) ?? null;
 
@@ -45,8 +49,7 @@ const saveGeneratedKey = async (template: Omit<ApiKey, 'key'>): Promise<ApiKey |
       await getRepo().apiKeys.save(key);
       return key;
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message.toLowerCase().includes('unique') || message.toLowerCase().includes('constraint')) continue;
+      if (isRawKeyUniqueConstraint(error)) continue;
       throw error;
     }
   }
@@ -61,8 +64,7 @@ const saveCustomKey = async (template: Omit<ApiKey, 'key'>, rawKey: string): Pro
     await getRepo().apiKeys.save(key);
     return key;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (message.toLowerCase().includes('unique') || message.toLowerCase().includes('constraint')) return duplicateKeyResponse();
+    if (isRawKeyUniqueConstraint(error)) return duplicateKeyResponse();
     throw error;
   }
 };
@@ -121,6 +123,7 @@ export const createKey = async (c: CtxWithJson<typeof createKeyBody>) => {
     id: crypto.randomUUID(),
     userId,
     name: body.name,
+    serverSecret: generateServerSecret(),
     createdAt: new Date().toISOString(),
     upstreamIds: body.upstream_ids ?? null,
     deletedAt: null,
