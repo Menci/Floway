@@ -1,0 +1,341 @@
+# Floway Agent Setup common installer fragment (PowerShell). TypeScript prepends
+# the language-native assignment prefix and appends one agent fragment.
+#
+# Each served script targets exactly one agent and rolls back that agent's
+# configuration as one transaction on failure.
+
+# --- output layer -----------------------------------------------------------
+#
+# Setup-owned output follows Homebrew's compact visual language: blue `==>`
+# notices introduce major phases, while warnings and errors color only their
+# labels. Phase details remain subordinate instead of competing for attention.
+# Native package managers inherit the terminal directly, preserving their ANSI
+# colors, carriage-return progress, buffering, and cursor behavior.
+#
+# stdout color rides the host: `Write-Host -ForegroundColor` colors an
+# interactive console yet writes no escape sequences when redirected/captured,
+# so it is the correct stdout mechanism on both Windows PowerShell 5.1 and
+# PowerShell 7. stderr goes through [Console]::Error, colored with ANSI only for
+# an interactive error stream with NO_COLOR unset — a redirected capture stays
+# escape-free. UTF-8 output keeps the status glyphs portable to 5.1.
+function Write-SetupHostLine {
+  param([string]$Text, [System.ConsoleColor]$Color, [switch]$Plain)
+  if ($Plain -or $script:SetupNoColor) { Write-Host $Text } else { Write-Host $Text -ForegroundColor $Color }
+}
+
+# Console.ForegroundColor works in Windows PowerShell 5.1 without requiring VT
+# mode and still writes the text to stderr. The forced-color branch is test-only:
+# redirected streams cannot expose host color, so it emits ANSI for assertions.
+function Write-SetupErrLine {
+  param([string]$Text, [System.ConsoleColor]$Color, [string]$TestAnsiCode)
+  if ($script:SetupErrColor) {
+    $previous = [Console]::ForegroundColor
+    try { [Console]::ForegroundColor = $Color; [Console]::Error.WriteLine($Text) }
+    finally { [Console]::ForegroundColor = $previous }
+  } elseif ($script:SetupForceColor -and (-not $script:SetupNoColor)) {
+    [Console]::Error.WriteLine("$($script:SetupEsc)[${TestAnsiCode}m$Text$($script:SetupEsc)[0m")
+  } else {
+    [Console]::Error.WriteLine($Text)
+  }
+}
+
+function Write-SetupNotice {
+  param([string]$Text)
+  if ($script:SetupNoColor) { Write-Host "==> $Text"; return }
+  if ($script:SetupOutAnsi) {
+    Write-Host "$($script:SetupEsc)[34m==>$($script:SetupEsc)[0m $($script:SetupEsc)[1m$Text$($script:SetupEsc)[0m"
+    return
+  }
+  Write-Host '==>' -ForegroundColor Blue -NoNewline
+  Write-Host " $Text" -ForegroundColor White
+}
+
+# Console.Error is used directly so diagnostics remain on stderr while only the
+# Homebrew-style label receives color.
+function Write-SetupDiagnostic {
+  param([string]$Label, [string]$Text, [System.ConsoleColor]$Color, [string]$TestAnsiCode)
+  if ($script:SetupErrColor) {
+    $previous = [Console]::ForegroundColor
+    try {
+      [Console]::ForegroundColor = $Color
+      [Console]::Error.Write("${Label}:")
+      [Console]::ForegroundColor = $previous
+      [Console]::Error.WriteLine(" $Text")
+    } finally {
+      [Console]::ForegroundColor = $previous
+    }
+  } elseif ($script:SetupForceColor -and (-not $script:SetupNoColor)) {
+    [Console]::Error.WriteLine("$($script:SetupEsc)[${TestAnsiCode}m${Label}:$($script:SetupEsc)[0m $Text")
+  } else {
+    [Console]::Error.WriteLine("${Label}: $Text")
+  }
+}
+
+function Write-SetupTitle { Write-SetupNotice 'Floway Agent Setup' }
+function Write-SetupMetadata { param([string]$Label, [string]$Value) Write-Host "${Label}: $Value" }
+function Write-SetupPhase { param([string]$Name) Write-SetupNotice $Name }
+function Write-SetupInfo { param([string]$Text) Write-SetupHostLine $Text -Plain }
+function Write-SetupSuccess { param([string]$Text) Write-SetupHostLine "✨ $Text" -Plain }
+function Write-SetupWarn { param([string]$Text) Write-SetupDiagnostic 'Warning' $Text Yellow '93' }
+function Write-SetupError { param([string]$Text) Write-SetupDiagnostic 'Error' $Text Red '91' }
+function Write-SetupFatal { param([string]$Text) Write-SetupDiagnostic 'Error' $Text Red '91' }
+
+# Report a primary error to stderr and unwind. The agent boundary recognizes the
+# 'setup-handled' marker as already reported, so no line is ever duplicated.
+function Stop-Setup { param([string]$Message) Write-SetupError $Message; throw 'setup-handled' }
+
+# --- common helpers ---------------------------------------------------------
+
+function Set-SetupProp {
+  param($Target, [string]$Name, $Value)
+  if ($Target.PSObject.Properties.Name -contains $Name) { $Target.$Name = $Value }
+  else { $Target | Add-Member -NotePropertyName $Name -NotePropertyValue $Value }
+}
+
+function Remove-SetupProp {
+  param($Target, [string]$Name)
+  if ($Target.PSObject.Properties.Name -contains $Name) { $Target.PSObject.Properties.Remove($Name) }
+}
+
+# A null optional value means "remove this managed key"; any other value is set.
+function Set-SetupOptionalProp {
+  param($Target, [string]$Name, $Value)
+  if ($null -eq $Value) { Remove-SetupProp $Target $Name } else { Set-SetupProp $Target $Name $Value }
+}
+
+# Redact every occurrence of the API key from text before it is surfaced.
+function Protect-SetupSecret {
+  param([string]$Text)
+  return ($Text -replace [regex]::Escape($SetupApiKey), '***')
+}
+
+# Restrict a file to the current user: chmod 0600 on Unix, an inheritance-free
+# owner-only ACL on Windows.
+function Protect-SetupFile {
+  param([string]$Path)
+  if (($PSVersionTable.PSVersion.Major -ge 6) -and (-not $IsWindows)) {
+    & chmod 600 $Path
+    if ($LASTEXITCODE -ne 0) { Stop-Setup "could not restrict $Path to owner-only access." }
+    return
+  }
+  $acl = New-Object System.Security.AccessControl.FileSecurity
+  $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+  $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($identity, 'FullControl', 'Allow')
+  $acl.SetAccessRuleProtection($true, $false)
+  $acl.AddAccessRule($rule)
+  Set-Acl -Path $Path -AclObject $acl
+}
+
+# Terminate a process and its descendants. PowerShell 7's runtime exposes the
+# tree-aware Kill(bool) overload; Windows PowerShell 5.1 uses taskkill /T.
+function Stop-SetupProcessTree {
+  param([System.Diagnostics.Process]$Process)
+  $runningOnWindows = ($PSVersionTable.PSVersion.Major -lt 6) -or $IsWindows
+  if ($runningOnWindows) {
+    & taskkill.exe /PID $Process.Id /T /F *> $null
+    if ($LASTEXITCODE -ne 0 -and (-not $Process.HasExited)) {
+      Stop-Setup "taskkill could not terminate process tree $($Process.Id)."
+    }
+    return
+  }
+  try {
+    # .NET used by PowerShell 7 supports tree-aware termination on Unix.
+    $Process.Kill($true)
+  } catch {
+    if (-not $Process.HasExited) { Stop-Setup "could not terminate process tree $($Process.Id)." }
+  }
+}
+
+function Get-SetupPlatform {
+  if (($PSVersionTable.PSVersion.Major -lt 6) -or $IsWindows) { return 'windows' }
+  if ($IsMacOS) { return 'macos' }
+  return 'linux'
+}
+
+# Run a fixed package-manager command with inherited stdout/stderr. The child
+# remains attached to the real terminal, so progress updates and ANSI control
+# sequences render in real time without a lossy line-prefix filter.
+function Invoke-SetupLiveProcess {
+  param([string]$Exe, [string[]]$Arguments, [int]$TimeoutSeconds)
+  $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+  $startInfo.FileName = $Exe
+  $startInfo.Arguments = ($Arguments | ForEach-Object { '"' + $_.Replace('"', '\"') + '"' }) -join ' '
+  $startInfo.UseShellExecute = $false
+  $startInfo.CreateNoWindow = $false
+  $process = New-Object System.Diagnostics.Process
+  $process.StartInfo = $startInfo
+  if (-not $process.Start()) { Stop-Setup "failed to start $Exe." }
+  if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
+    Stop-SetupProcessTree $process
+    $process.WaitForExit()
+    Stop-Setup "$Exe timed out after $TimeoutSeconds seconds."
+  }
+  if ($process.ExitCode -ne 0) { Stop-Setup "$Exe exited with status $($process.ExitCode)." }
+}
+
+function Install-SetupHomebrewCask {
+  param([string]$Cask)
+  $brew = Get-Command brew -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+  if (-not $brew) { Stop-Setup 'Homebrew is required to install agent CLIs on macOS.' }
+  $timeoutSeconds = if ($env:AGENT_SETUP_TEST_TIMEOUT_SECONDS) { [int]$env:AGENT_SETUP_TEST_TIMEOUT_SECONDS } else { 600 }
+  Invoke-SetupLiveProcess -Exe $brew.Source -Arguments @('install', '--cask', $Cask) -TimeoutSeconds $timeoutSeconds
+}
+
+# npm on Windows is commonly a .cmd launcher, which ProcessStartInfo cannot
+# execute directly with UseShellExecute disabled. A fresh copy of the current
+# PowerShell host resolves that launcher while preserving inherited terminal
+# output and the same process-tree timeout.
+function Install-SetupNpmPackage {
+  param([string]$Package)
+  $npm = Get-Command npm -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+  if (-not $npm) { Stop-Setup 'npm was selected for installation but is no longer available.' }
+  $hostCommand = Get-Command pwsh -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+  $hostExe = if ($hostCommand) { $hostCommand.Source } else { [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName }
+  $npmLiteral = "'" + $npm.Source.Replace("'", "''") + "'"
+  $packageLiteral = "'" + $Package.Replace("'", "''") + "'"
+  $command = "& $npmLiteral install --global $packageLiteral; exit `$LASTEXITCODE"
+  $timeoutSeconds = if ($env:AGENT_SETUP_TEST_TIMEOUT_SECONDS) { [int]$env:AGENT_SETUP_TEST_TIMEOUT_SECONDS } else { 600 }
+  Invoke-SetupLiveProcess -Exe $hostExe -Arguments @('-NoProfile', '-NonInteractive', '-Command', $command) -TimeoutSeconds $timeoutSeconds
+}
+
+# Execute a downloaded installer in a fresh interpreter. The script travels
+# through stdin, while the API key exists only as a variable in this parent
+# process and its identically named environment variables were removed. The
+# official installer therefore cannot read the credential.
+function Invoke-SetupInterpreterBody {
+  param([string]$Body, [int]$TimeoutSeconds, [string]$Exe, [string]$Arguments)
+  $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+  $startInfo.FileName = $Exe
+  $startInfo.Arguments = $Arguments
+  $startInfo.UseShellExecute = $false
+  $startInfo.CreateNoWindow = $false
+  $startInfo.RedirectStandardInput = $true
+  $process = New-Object System.Diagnostics.Process
+  $process.StartInfo = $startInfo
+  if (-not $process.Start()) { Stop-Setup "failed to start the installer interpreter." }
+  $process.StandardInput.Write($Body)
+  $process.StandardInput.WriteLine()
+  $process.StandardInput.Close()
+  if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
+    Stop-SetupProcessTree $process
+    $process.WaitForExit()
+    Stop-Setup "the installer timed out after $TimeoutSeconds seconds."
+  }
+  if ($process.ExitCode -ne 0) { Stop-Setup "the installer exited with status $($process.ExitCode)." }
+}
+
+function Invoke-SetupPowerShellBody {
+  param([string]$Body, [int]$TimeoutSeconds, [switch]$BypassExecutionPolicy)
+  $pwsh = Get-Command pwsh -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+  $exe = if ($pwsh) { $pwsh.Source } else { [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName }
+  $executionPolicy = if ($BypassExecutionPolicy) { '-ExecutionPolicy Bypass ' } else { '' }
+  Invoke-SetupInterpreterBody -Body $Body -TimeoutSeconds $TimeoutSeconds -Exe $exe -Arguments "-NoProfile -NonInteractive ${executionPolicy}-Command -"
+}
+
+function Invoke-SetupShellBody {
+  param([string]$Body, [int]$TimeoutSeconds)
+  $bash = Get-Command bash -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+  if (-not $bash) { Stop-Setup 'bash is required to run the official installer on macOS and Linux.' }
+  Invoke-SetupInterpreterBody -Body $Body -TimeoutSeconds $TimeoutSeconds -Exe $bash.Source -Arguments '-s'
+}
+
+# Download an installer, refuse anything that is not a script (region blocks and
+# captive portals serve HTML in place of the installer), then run it.
+function Invoke-SetupRemoteInstaller {
+  param([string]$Uri, [switch]$BypassExecutionPolicy, [switch]$Shell)
+  $response = Invoke-WebRequest -Uri $Uri -UseBasicParsing -TimeoutSec 60
+  $body = [string]$response.Content
+  $contentType = [string]$response.Headers['Content-Type']
+  $looksLikeHtml = $contentType -match '(?i)^text/html(?:;|$)' -or $body -match '(?is)^\s*(?:<!doctype\s+html|<html(?:\s|>))'
+  if ([string]::IsNullOrWhiteSpace($body) -or $looksLikeHtml) {
+    Stop-Setup "the installer download was HTML or empty, not an executable script (a login or region-block page?)."
+  }
+  $timeoutSeconds = if ($env:AGENT_SETUP_TEST_TIMEOUT_SECONDS) { [int]$env:AGENT_SETUP_TEST_TIMEOUT_SECONDS } else { 120 }
+  if ($Shell) { Invoke-SetupShellBody -Body $body -TimeoutSeconds $timeoutSeconds }
+  else { Invoke-SetupPowerShellBody -Body $body -TimeoutSeconds $timeoutSeconds -BypassExecutionPolicy:$BypassExecutionPolicy }
+}
+
+function Get-SetupCliExe {
+  param([string]$Name, [string]$Label, [string[]]$Candidates)
+  $found = New-Object System.Collections.Generic.List[string]
+  $command = Get-Command $Name -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+  if ($command) { $found.Add($command.Source) }
+  foreach ($candidate in $Candidates) {
+    if ((Test-Path -LiteralPath $candidate) -and (-not $found.Contains($candidate))) { $found.Add($candidate) }
+  }
+  if ($found.Count -eq 0) { return $null }
+  if ($found.Count -gt 1) { Write-SetupWarn "multiple $Label installations detected; using $($found[0])" }
+  return $found[0]
+}
+
+# Rollback retains a backup when restoration fails so manual recovery remains
+# possible, warning with the preserved path and the action to take — matching
+# the Bash installer. The AGENT_SETUP_TEST_FAIL_RESTORE hook, read from the
+# ambient environment and never emitted by the gateway, forces the restore
+# rename to fail so the harness can assert that guidance.
+function Restore-SetupManagedFile {
+  param([bool]$Existed, [string]$Backup, [string]$Path, [string]$OriginalLabel, [string]$CreatedLabel)
+  if ($Existed) {
+    if ($Backup -and (Test-Path -LiteralPath $Backup)) {
+      try {
+        if ($env:AGENT_SETUP_TEST_FAIL_RESTORE) { throw 'test-injected restore failure' }
+        # Secret-bearing backups were already owner-only before any mutation.
+        # Moving one back preserves that protection without a second operation
+        # that could fail after the backup path has been consumed.
+        Move-Item -LiteralPath $Backup -Destination $Path -Force
+      } catch {
+        Write-SetupWarn "could not restore $Path from its backup; your original $OriginalLabel is preserved at $Backup — restore it by hand."
+      }
+    }
+  } elseif (Test-Path -LiteralPath $Path) {
+    try {
+      Remove-Item -LiteralPath $Path -Force
+    } catch {
+      Write-SetupWarn "could not remove the $CreatedLabel this run created at $Path — remove it by hand."
+    }
+  }
+}
+
+# --- run --------------------------------------------------------------------
+
+function Main {
+  $ErrorActionPreference = 'Stop'
+  if (-not (Test-Path Variable:SetupEndpoint)) { $SetupEndpoint = $null }
+  # Keep native command failures from auto-throwing on PowerShell 7.3+ so the
+  # explicit exit-code checks remain authoritative across versions.
+  $PSNativeCommandUseErrorActionPreference = $false
+
+  Remove-Item Env:SETUP_API_KEY -ErrorAction SilentlyContinue
+  Remove-Item Env:SetupApiKey -ErrorAction SilentlyContinue
+
+  try { [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false) } catch { }
+  $script:SetupNoColor = [bool]$env:NO_COLOR
+  $script:SetupForceColor = [bool]$env:AGENT_SETUP_TEST_FORCE_COLOR
+  $script:SetupErrColor = (-not [Console]::IsErrorRedirected) -and (-not $script:SetupNoColor)
+  $script:SetupEsc = [char]27
+  $supportsVt = try { [bool]$Host.UI.SupportsVirtualTerminal } catch { $false }
+  $script:SetupOutAnsi = $supportsVt -and (-not [Console]::IsOutputRedirected) -and (-not $script:SetupNoColor)
+
+  Write-SetupTitle
+  if ([string]::IsNullOrWhiteSpace($SetupEndpoint)) {
+    Write-SetupFatal "`$SetupEndpoint must be set to this gateway origin (e.g. https://gateway.example)."
+    return 1
+  }
+  if ($SetupEndpoint -notmatch '^https?://.+') {
+    Write-SetupFatal "`$SetupEndpoint must be an http(s) origin, got $SetupEndpoint"
+    return 1
+  }
+  Write-SetupMetadata 'Endpoint' $SetupEndpoint
+  Write-SetupMetadata 'API Key' $SetupApiKeyName
+
+  # Each primary error is already reported at its detection site. The boundary
+  # surfaces any unexpected exception after redaction and returns a nonzero
+  # status without adding a redundant single-agent summary.
+  try {
+    Set-SetupAgent
+  } catch {
+    if ($_.Exception.Message -ne 'setup-handled') { Write-SetupError (Protect-SetupSecret ([string]$_.Exception.Message)) }
+    return 1
+  }
+  return 0
+}

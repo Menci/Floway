@@ -24,7 +24,7 @@ import {
 } from './configuration.ts';
 import { renderPowerShellPrefix, renderShellPrefix } from './render.ts';
 import { type AgentSetupRecord, type AgentSetupRepository, AgentSetupTokenCollisionError } from './repository.ts';
-import { SETUP_PS1_BODY, SETUP_SH_BODY } from './script-assets.generated.ts';
+import { SETUP_SCRIPT_BODIES } from './script-assets.ts';
 import { generateAgentSetupToken } from './token.ts';
 import { agentSetupHeartbeatBody, agentSetupUpdateBody } from './wire.ts';
 
@@ -124,9 +124,8 @@ export const createAgentSetupPublicRoutes = (deps: AgentSetupPublicDeps) => {
       if (c.req.method === 'HEAD') return c.body(null, 200, SCRIPT_RESPONSE_HEADERS);
 
       const input = { agent, apiKey: resolved.apiKey, apiKeyName: resolved.apiKeyName, configuration: resolved.configuration };
-      const body = language === 'sh'
-        ? renderShellPrefix(input) + SETUP_SH_BODY
-        : renderPowerShellPrefix(input) + SETUP_PS1_BODY;
+      const prefix = language === 'sh' ? renderShellPrefix(input) : renderPowerShellPrefix(input);
+      const body = prefix + SETUP_SCRIPT_BODIES[agent][language];
       return c.body(body, 200, SCRIPT_RESPONSE_HEADERS);
     } catch {
       // A thrown error can carry the served API key or the token, so seal it:

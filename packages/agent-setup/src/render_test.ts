@@ -113,7 +113,6 @@ describe('renderShellPrefix', () => {
     });
     expect(prefix).toBe([
       'set +x',
-      "SETUP_AGENT='claude'",
       "SETUP_API_KEY='sk-raw-key'",
       "SETUP_API_KEY_NAME='Primary key'",
       "SETUP_CLAUDE_MODEL='claude-opus-4-6[1m]'",
@@ -122,8 +121,6 @@ describe('renderShellPrefix', () => {
       "SETUP_CLAUDE_DEFAULT_HAIKU_MODEL=''",
       "SETUP_CLAUDE_EFFORT_LEVEL='high'",
       "SETUP_CLAUDE_MODEL_DISCOVERY='1'",
-      "SETUP_CODEX_MODEL='gpt-5.6-terra'",
-      "SETUP_CODEX_REASONING_EFFORT='xhigh'",
       '',
     ].join('\n'));
   });
@@ -149,7 +146,7 @@ describe('renderShellPrefix', () => {
     expect(prefix).toContain("SETUP_API_KEY_NAME='CI  [2J'");
   });
 
-  test('renders empty values for disabled agents and null overrides', () => {
+  test('renders empty values for disabled target-agent overrides', () => {
     const prefix = renderShellPrefix({
       agent: 'claude',
       apiKey: 'sk-raw-key',
@@ -165,7 +162,7 @@ describe('renderShellPrefix', () => {
     });
     expect(prefix).toContain("SETUP_CLAUDE_MODEL_DISCOVERY=''");
     expect(prefix).toContain("SETUP_CLAUDE_EFFORT_LEVEL=''");
-    expect(prefix).toContain("SETUP_CODEX_REASONING_EFFORT=''");
+    expect(prefix).not.toContain('SETUP_CODEX_');
   });
 
   test('propagates a NUL-rejecting failure from the API key', () => {
@@ -188,15 +185,8 @@ describe('renderPowerShellPrefix', () => {
     });
     expect(prefix).toBe([
       'Set-PSDebug -Off',
-      "$SetupAgent = 'codex'",
       "$SetupApiKey = 'sk-raw-key'",
       "$SetupApiKeyName = 'Primary key'",
-      "$SetupClaudeModel = 'claude-opus-4-6[1m]'",
-      "$SetupClaudeDefaultOpusModel = 'claude-opus-4-5'",
-      "$SetupClaudeDefaultSonnetModel = 'claude-sonnet-4-5'",
-      '$SetupClaudeDefaultHaikuModel = $null',
-      "$SetupClaudeEffortLevel = 'high'",
-      '$SetupClaudeModelDiscovery = $true',
       "$SetupCodexModel = 'gpt-5.6-terra'",
       "$SetupCodexReasoningEffort = 'xhigh'",
       '',
@@ -223,7 +213,7 @@ describe('renderPowerShellPrefix', () => {
     expect(() => renderPowerShellPrefix({ agent: 'claude', apiKey: 'sk-\0-key', apiKeyName: 'Primary key', configuration: fullConfiguration })).toThrow();
   });
 
-  test('renders $false and $null for disabled agents and null overrides', () => {
+  test('renders $false and $null for disabled target-agent overrides', () => {
     const prefix = renderPowerShellPrefix({
       agent: 'claude',
       apiKey: 'sk-raw-key',
@@ -239,7 +229,7 @@ describe('renderPowerShellPrefix', () => {
     });
     expect(prefix).toContain('$SetupClaudeModelDiscovery = $false');
     expect(prefix).toContain('$SetupClaudeModel = $null');
-    expect(prefix).toContain('$SetupCodexReasoningEffort = $null');
+    expect(prefix).not.toContain('$SetupCodex');
   });
 });
 

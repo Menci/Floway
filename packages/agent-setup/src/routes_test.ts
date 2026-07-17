@@ -14,7 +14,15 @@ import {
   createAgentSetupControlRoutes,
   createAgentSetupPublicRoutes,
 } from './routes.ts';
-import { SETUP_PS1_BODY, SETUP_SH_BODY } from './script-assets.generated.ts';
+import {
+  SETUP_BASH_CLAUDE,
+  SETUP_BASH_CODEX,
+  SETUP_BASH_COMMON,
+  SETUP_POWERSHELL_CLAUDE,
+  SETUP_POWERSHELL_CODEX,
+  SETUP_POWERSHELL_COMMON,
+} from './script-assets.generated.ts';
+import { SETUP_SCRIPT_BODIES } from './script-assets.ts';
 import { assertEquals } from '@floway-dev/test-utils';
 
 const RAW_KEY = 'raw-key';
@@ -355,7 +363,7 @@ test('POST retries a token collision without masking unrelated failures', async 
 
 // --- public serve ---
 
-test('GET serves the shell prefix + fixed body with hardened no-store headers', async () => {
+test('GET serves the shell prefix + common and target-agent fragments with hardened no-store headers', async () => {
   const h = harness();
   const lease = await create(h);
   const response = await h.request(lease.scripts.claude.sh, { method: 'GET' });
@@ -367,21 +375,31 @@ test('GET serves the shell prefix + fixed body with hardened no-store headers', 
   assertEquals(response.headers.get('referrer-policy'), 'no-referrer');
   assertEquals(response.headers.get('x-content-type-options'), 'nosniff');
   const text = await response.text();
-  const prefix = text.slice(0, text.indexOf(SETUP_SH_BODY));
+  const body = SETUP_SCRIPT_BODIES.claude.sh;
+  const prefix = text.slice(0, text.indexOf(body));
   expect(prefix).toContain("SETUP_API_KEY='raw-key'");
-  expect(prefix).toContain("SETUP_AGENT='claude'");
+  expect(prefix).toContain('SETUP_CLAUDE_');
+  expect(prefix).not.toContain('SETUP_CODEX_');
   expect(prefix).not.toContain('SETUP_ENDPOINT');
-  expect(text).toContain(SETUP_SH_BODY);
+  expect(text).toContain(body);
+  expect(body).toContain(SETUP_BASH_COMMON);
+  expect(body).toContain(SETUP_BASH_CLAUDE);
+  expect(body).not.toContain(SETUP_BASH_CODEX);
 });
 
-test('GET serves the PowerShell prefix + fixed body', async () => {
+test('GET serves the PowerShell prefix + common and target-agent fragments', async () => {
   const h = harness();
   const lease = await create(h);
   const text = await (await h.request(lease.scripts.codex.ps1, { method: 'GET' })).text();
-  const prefix = text.slice(0, text.indexOf(SETUP_PS1_BODY));
+  const body = SETUP_SCRIPT_BODIES.codex.ps1;
+  const prefix = text.slice(0, text.indexOf(body));
   expect(prefix).toContain("$SetupApiKey = 'raw-key'");
-  expect(prefix).toContain("$SetupAgent = 'codex'");
-  expect(text).toContain(SETUP_PS1_BODY);
+  expect(prefix).toContain('$SetupCodex');
+  expect(prefix).not.toContain('$SetupClaude');
+  expect(text).toContain(body);
+  expect(body).toContain(SETUP_POWERSHELL_COMMON);
+  expect(body).toContain(SETUP_POWERSHELL_CODEX);
+  expect(body).not.toContain(SETUP_POWERSHELL_CLAUDE);
 });
 
 test('HEAD validates but returns an empty body', async () => {
@@ -477,10 +495,17 @@ test('a public serve failure is sealed to an opaque 500 that leaks neither token
   expect(joined).not.toContain('forced failure');
 });
 
-test('generated bodies match the checked-in canonical installers byte for byte', async () => {
+test('generated fragments match the checked-in canonical installers byte for byte', async () => {
   const { readFile } = await import('node:fs/promises');
-  const sh = await readFile(new URL('../installers/setup.sh', import.meta.url), 'utf8');
-  const ps1 = await readFile(new URL('../installers/setup.ps1', import.meta.url), 'utf8');
-  assertEquals(SETUP_SH_BODY, sh);
-  assertEquals(SETUP_PS1_BODY, ps1);
+  const fixtures = [
+    [SETUP_BASH_COMMON, '../installers/bash/common.sh'],
+    [SETUP_BASH_CLAUDE, '../installers/bash/claude.sh'],
+    [SETUP_BASH_CODEX, '../installers/bash/codex.sh'],
+    [SETUP_POWERSHELL_COMMON, '../installers/powershell/common.ps1'],
+    [SETUP_POWERSHELL_CLAUDE, '../installers/powershell/claude.ps1'],
+    [SETUP_POWERSHELL_CODEX, '../installers/powershell/codex.ps1'],
+  ] as const;
+  for (const [generated, file] of fixtures) {
+    assertEquals(generated, await readFile(new URL(file, import.meta.url), 'utf8'));
+  }
 });

@@ -31,8 +31,16 @@ const powerShellLiteral = (value: string): string => `'${value.replace(/'/g, "''
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const INSTALLERS_DIR = join(HERE, '..', 'installers');
-const SH_BODY = readFileSync(join(INSTALLERS_DIR, 'setup.sh'), 'utf8');
-const PS1_BODY = readFileSync(join(INSTALLERS_DIR, 'setup.ps1'), 'utf8');
+const BASH_COMMON = readFileSync(join(INSTALLERS_DIR, 'bash/common.sh'), 'utf8');
+const BASH_CLAUDE = readFileSync(join(INSTALLERS_DIR, 'bash/claude.sh'), 'utf8');
+const BASH_CODEX = readFileSync(join(INSTALLERS_DIR, 'bash/codex.sh'), 'utf8');
+const POWERSHELL_COMMON = readFileSync(join(INSTALLERS_DIR, 'powershell/common.ps1'), 'utf8');
+const POWERSHELL_CLAUDE = readFileSync(join(INSTALLERS_DIR, 'powershell/claude.ps1'), 'utf8');
+const POWERSHELL_CODEX = readFileSync(join(INSTALLERS_DIR, 'powershell/codex.ps1'), 'utf8');
+const shellBody = (agent: 'claude' | 'codex'): string => BASH_COMMON + (agent === 'claude' ? BASH_CLAUDE : BASH_CODEX);
+const powerShellBody = (agent: 'claude' | 'codex'): string => POWERSHELL_COMMON + (agent === 'claude' ? POWERSHELL_CLAUDE : POWERSHELL_CODEX);
+const ALL_BASH_FRAGMENTS = BASH_COMMON + BASH_CLAUDE + BASH_CODEX;
+const ALL_POWERSHELL_FRAGMENTS = POWERSHELL_COMMON + POWERSHELL_CLAUDE + POWERSHELL_CODEX;
 
 // A fixed, highly greppable fake credential. Every test asserts this string
 // never reaches the installer's stdout/stderr, so a real leak is unmistakable.
@@ -578,7 +586,8 @@ const powerShellBaseUrlPrelude = (options: RunOptions): string =>
 // can be served by this process's event loop without deadlocking.
 const runShellInstaller = (options: RunOptions): Promise<RunResult> => {
   const { workspace, configuration } = options;
-  const script = renderShellPrefix({ agent: targetAgent(configuration, options.agent), apiKey: SENTINEL_KEY, apiKeyName: 'Primary key', configuration }) + SH_BODY;
+  const agent = targetAgent(configuration, options.agent);
+  const script = renderShellPrefix({ agent, apiKey: SENTINEL_KEY, apiKeyName: 'Primary key', configuration }) + shellBody(agent);
   const scriptPath = join(workspace.root, 'setup.sh');
   writeFileSync(scriptPath, script);
 
@@ -647,7 +656,8 @@ const runShellInstaller = (options: RunOptions): Promise<RunResult> => {
 
 const runShellInstallerWithAmbientKey = (options: RunOptions): Promise<RunResult> => {
   const { workspace, configuration } = options;
-  const script = renderShellPrefix({ agent: targetAgent(configuration, options.agent), apiKey: SENTINEL_KEY, apiKeyName: 'Primary key', configuration }) + SH_BODY;
+  const agent = targetAgent(configuration, options.agent);
+  const script = renderShellPrefix({ agent, apiKey: SENTINEL_KEY, apiKeyName: 'Primary key', configuration }) + shellBody(agent);
   const scriptPath = join(workspace.root, 'setup-ambient-key.sh');
   writeFileSync(scriptPath, script);
   const pathParts = [workspace.binDir, SHIM_BIN];
@@ -726,10 +736,11 @@ const networkReachable = (): boolean => {
 // this too must be async to keep the event loop free.
 const runPowerShellInstaller = (options: RunOptions): Promise<RunResult> => {
   const { workspace, configuration } = options;
+  const agent = targetAgent(configuration, options.agent);
   const culturePrelude = options.powerShellTimeSeparator === undefined
     ? ''
     : `$culture = [Globalization.CultureInfo]::GetCultureInfo('en-US').Clone()\n$culture.DateTimeFormat.TimeSeparator = '${options.powerShellTimeSeparator.replace(/'/g, "''")}'\n[Threading.Thread]::CurrentThread.CurrentCulture = $culture\n`;
-  const script = powerShellBaseUrlPrelude(options) + renderPowerShellPrefix({ agent: targetAgent(configuration, options.agent), apiKey: SENTINEL_KEY, apiKeyName: 'Primary key', configuration }) + culturePrelude + PS1_BODY;
+  const script = powerShellBaseUrlPrelude(options) + renderPowerShellPrefix({ agent, apiKey: SENTINEL_KEY, apiKeyName: 'Primary key', configuration }) + culturePrelude + powerShellBody(agent);
   const scriptPath = join(workspace.root, 'setup.ps1');
   writeFileSync(scriptPath, script);
 
@@ -922,7 +933,7 @@ test('claude', 'present null env fails closed without mutating the file', async 
 test('claude', 'an interrupt during the Claude install stops the selected script and cleans up', async t => {
   for (const [signal, expectedCode] of [['SIGINT', 130], ['SIGTERM', 143]] as const) {
     const ws = makeWorkspace();
-    // No fake claude on PATH, so configure_claude runs the (sleeping) installer;
+    // No fake claude on PATH, so the agent fragment runs the sleeping installer;
     // the signal lands while it is mid-install.
     const run = await runShellInstaller({
       workspace: ws, baseUrl: modelServer.url, configuration: bothConfig(), agent: 'claude',
@@ -1026,14 +1037,15 @@ test('claude', 'jq is bootstrapped from the pinned release when absent from PATH
 
 test('claude', 'PowerShell installer body parses without syntax errors', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
-  t.ok(PS1_BODY.trimEnd().endsWith('exit (Main)'), 'the downloaded script starts execution only from its final line');
-  t.ok(PS1_BODY.indexOf('function Main {') > PS1_BODY.indexOf('function Set-SetupCodex {'), 'Main is defined after every setup function');
+  const body = powerShellBody('claude');
+  t.ok(body.trimEnd().endsWith('exit (Main)'), 'the downloaded script starts execution only from its final line');
+  t.ok(body.lastIndexOf('exit (Main)') > body.indexOf('function Set-SetupAgent {'), 'the entry call follows every agent function');
   const script = renderPowerShellPrefix({
     agent: 'claude',
     apiKey: SENTINEL_KEY,
     apiKeyName: 'Primary key',
     configuration: claudeConfig({ model: 'claude-opus-x', effortLevel: 'high', modelDiscovery: true }),
-  }) + PS1_BODY;
+  }) + body;
   const scriptPath = join(HARNESS_ROOT, 'parse-check.ps1');
   writeFileSync(scriptPath, script);
   const check = `$errs=$null; [System.Management.Automation.Language.Parser]::ParseFile('${scriptPath.replace(/'/g, "''")}',[ref]$null,[ref]$errs); if($errs -and $errs.Count -gt 0){ $errs | ForEach-Object { [Console]::Error.WriteLine($_.Message) }; exit 1 } else { exit 0 }`;
@@ -1160,18 +1172,19 @@ test('claude', 'PowerShell: present null env fails closed without mutation', asy
 });
 
 test('claude', 'PowerShell stages secret data only after protection and hardens Windows replacement targets', async t => {
-  const createIndex = PS1_BODY.indexOf('[System.IO.File]::Create($stage).Dispose()');
-  const protectStageIndex = PS1_BODY.indexOf('Protect-SetupFile $stage', createIndex);
-  const writeIndex = PS1_BODY.indexOf('[System.IO.File]::WriteAllText($stage, $json', protectStageIndex);
-  const protectTargetIndex = PS1_BODY.indexOf('Protect-SetupFile $script:ClaudeSettingsPath', writeIndex);
-  const replaceIndex = PS1_BODY.indexOf('[System.IO.File]::Replace($stage, $script:ClaudeSettingsPath, $null)', protectTargetIndex);
+  const body = powerShellBody('claude');
+  const createIndex = body.indexOf('[System.IO.File]::Create($stage).Dispose()');
+  const protectStageIndex = body.indexOf('Protect-SetupFile $stage', createIndex);
+  const writeIndex = body.indexOf('[System.IO.File]::WriteAllText($stage, $json', protectStageIndex);
+  const protectTargetIndex = body.indexOf('Protect-SetupFile $script:ClaudeSettingsPath', writeIndex);
+  const replaceIndex = body.indexOf('[System.IO.File]::Replace($stage, $script:ClaudeSettingsPath, $null)', protectTargetIndex);
   t.ok(createIndex >= 0 && createIndex < protectStageIndex, 'stage must be created before protection');
   t.ok(protectStageIndex < writeIndex, 'stage must be protected before secret JSON is written');
   t.ok(protectTargetIndex < replaceIndex, 'existing Windows target must be hardened before File.Replace');
-  t.includes(PS1_BODY, '$runningOnWindows = ($PSVersionTable.PSVersion.Major -lt 6) -or $IsWindows', 'Windows PowerShell 5.1 must select the Windows branch without $IsWindows');
-  t.includes(PS1_BODY, "[long]([DateTimeOffset]::UtcNow - [DateTimeOffset]'1970-01-01T00:00:00Z').TotalMilliseconds", 'backup timestamp must support the .NET Framework used by PowerShell 5.1');
-  t.excludes(PS1_BODY, 'ToUnixTimeMilliseconds()', 'PowerShell 5.1-incompatible timestamp API must not be used');
-  t.includes(PS1_BODY, 'Move-Item -LiteralPath $stage -Destination $script:ClaudeSettingsPath', 'new target must use a same-directory move');
+  t.includes(body, '$runningOnWindows = ($PSVersionTable.PSVersion.Major -lt 6) -or $IsWindows', 'Windows PowerShell 5.1 must select the Windows branch without $IsWindows');
+  t.includes(body, "[long]([DateTimeOffset]::UtcNow - [DateTimeOffset]'1970-01-01T00:00:00Z').TotalMilliseconds", 'backup timestamp must support the .NET Framework used by PowerShell 5.1');
+  t.excludes(body, 'ToUnixTimeMilliseconds()', 'PowerShell 5.1-incompatible timestamp API must not be used');
+  t.includes(body, 'Move-Item -LiteralPath $stage -Destination $script:ClaudeSettingsPath', 'new target must use a same-directory move');
 });
 
 test('claude', 'PowerShell: missing CLI triggers the installer', async t => {
@@ -1320,29 +1333,32 @@ test('claude', 'PowerShell keeps the API key out of output and performs no gatew
 // --- Bash 3.2 syntax check --------------------------------------------------
 
 test('claude', 'platform installers prefer Homebrew then npm on macOS and npm then direct scripts elsewhere', t => {
-  t.includes(SH_BODY, 'brew install --cask', 'the Bash installer uses Homebrew on macOS');
-  t.includes(SH_BODY, "npm install --global \"$_inp_package\"", 'the Bash installer can install global npm packages');
-  t.includes(SH_BODY, "'@anthropic-ai/claude-code'", 'the Bash installer names the official Claude Code npm package');
-  t.includes(SH_BODY, "'@openai/codex'", 'the Bash installer names the official Codex npm package');
-  t.includes(SH_BODY, 'https://downloads.claude.ai/claude-code-releases/bootstrap.sh', 'Claude Linux uses the direct release bootstrap');
-  t.includes(SH_BODY, 'https://raw.githubusercontent.com/openai/codex/refs/heads/main/scripts/install/install.sh', 'Codex Linux uses the GitHub source installer');
-  const shClaude = SH_BODY.slice(SH_BODY.indexOf('claude_ensure_installed()'), SH_BODY.indexOf('claude_write_settings()'));
+  t.includes(ALL_BASH_FRAGMENTS, 'brew install --cask', 'the Bash installer uses Homebrew on macOS');
+  t.includes(ALL_BASH_FRAGMENTS, "npm install --global \"$_inp_package\"", 'the Bash installer can install global npm packages');
+  t.includes(BASH_CLAUDE, "'@anthropic-ai/claude-code'", 'the Claude fragment names its official npm package');
+  t.excludes(BASH_CLAUDE, '@openai/codex', 'the Claude fragment excludes Codex');
+  t.includes(BASH_CODEX, "'@openai/codex'", 'the Codex fragment names its official npm package');
+  t.excludes(BASH_CODEX, '@anthropic-ai/claude-code', 'the Codex fragment excludes Claude Code');
+  t.includes(BASH_CLAUDE, 'https://downloads.claude.ai/claude-code-releases/bootstrap.sh', 'Claude Linux uses the direct release bootstrap');
+  t.includes(BASH_CODEX, 'https://raw.githubusercontent.com/openai/codex/refs/heads/main/scripts/install/install.sh', 'Codex Linux uses the GitHub source installer');
+  const shClaude = BASH_CLAUDE.slice(BASH_CLAUDE.indexOf('claude_ensure_installed()'), BASH_CLAUDE.indexOf('claude_write_settings()'));
   t.ok(shClaude.indexOf('command -v brew') < shClaude.indexOf('command -v npm'), 'Claude on macOS checks Homebrew before npm');
   t.ok(shClaude.indexOf('command -v npm') < shClaude.indexOf('bootstrap.sh'), 'Claude checks npm before the direct script');
-  const shCodex = SH_BODY.slice(SH_BODY.indexOf('codex_ensure_installed()'), SH_BODY.indexOf('codex_backup_files()'));
+  const shCodex = BASH_CODEX.slice(BASH_CODEX.indexOf('codex_ensure_installed()'), BASH_CODEX.indexOf('codex_backup_files()'));
   t.ok(shCodex.indexOf('command -v brew') < shCodex.indexOf('command -v npm'), 'Codex on macOS checks Homebrew before npm');
   t.ok(shCodex.indexOf('command -v npm') < shCodex.indexOf('install.sh'), 'Codex checks npm before the direct script');
-  t.includes(PS1_BODY, "Install-SetupNpmPackage -Package '@anthropic-ai/claude-code'", 'PowerShell can install Claude Code with npm');
-  t.includes(PS1_BODY, "Install-SetupNpmPackage -Package '@openai/codex'", 'PowerShell can install Codex with npm');
-  t.includes(PS1_BODY, 'https://downloads.claude.ai/claude-code-releases/bootstrap.ps1', 'Claude Windows uses the direct release bootstrap');
-  t.includes(PS1_BODY, 'https://raw.githubusercontent.com/openai/codex/refs/heads/main/scripts/install/install.ps1', 'Codex Windows uses the GitHub source installer');
-  t.includes(PS1_BODY, 'Get-Command pwsh', 'downloaded PowerShell scripts prefer pwsh when it is installed');
+  t.includes(POWERSHELL_CLAUDE, "Install-SetupNpmPackage -Package '@anthropic-ai/claude-code'", 'PowerShell can install Claude Code with npm');
+  t.includes(POWERSHELL_CODEX, "Install-SetupNpmPackage -Package '@openai/codex'", 'PowerShell can install Codex with npm');
+  t.includes(POWERSHELL_CLAUDE, 'https://downloads.claude.ai/claude-code-releases/bootstrap.ps1', 'Claude Windows uses the direct release bootstrap');
+  t.includes(POWERSHELL_CODEX, 'https://raw.githubusercontent.com/openai/codex/refs/heads/main/scripts/install/install.ps1', 'Codex Windows uses the GitHub source installer');
+  t.includes(ALL_POWERSHELL_FRAGMENTS, 'Get-Command pwsh', 'downloaded PowerShell scripts prefer pwsh when it is installed');
 });
 
 test('claude', 'Bash installer body parses under the macOS Bash 3.2 baseline', async t => {
-  t.ok(SH_BODY.trimEnd().endsWith('main "$@"'), 'the downloaded script starts execution only from its final line');
-  t.ok(SH_BODY.indexOf('main() {') > SH_BODY.indexOf('configure_codex() {'), 'main is defined after every setup function');
-  const script = renderShellPrefix({ agent: 'claude', apiKey: SENTINEL_KEY, apiKeyName: 'Primary key', configuration: claudeConfig({ model: 'm', effortLevel: 'high', modelDiscovery: true }) }) + SH_BODY;
+  const body = shellBody('claude');
+  t.ok(body.trimEnd().endsWith('main "$@"'), 'the downloaded script starts execution only from its final line');
+  t.ok(body.lastIndexOf('main "$@"') > body.indexOf('configure_agent() {'), 'the entry call follows every agent function');
+  const script = renderShellPrefix({ agent: 'claude', apiKey: SENTINEL_KEY, apiKeyName: 'Primary key', configuration: claudeConfig({ model: 'm', effortLevel: 'high', modelDiscovery: true }) }) + body;
   const scriptPath = join(HARNESS_ROOT, 'syntax-check.sh');
   writeFileSync(scriptPath, script);
   const result = spawnSync('/bin/bash', ['-n', scriptPath], { encoding: 'utf8' });
@@ -1352,7 +1368,8 @@ test('claude', 'Bash installer body parses under the macOS Bash 3.2 baseline', a
 test('claude', 'a download that ends before the final main call performs no setup work', t => {
   const ws = makeWorkspace();
   const configuration = claudeConfig();
-  const bodyWithoutEntry = SH_BODY.slice(0, SH_BODY.lastIndexOf('main "$@"'));
+  const body = shellBody('claude');
+  const bodyWithoutEntry = body.slice(0, body.lastIndexOf('main "$@"'));
   const script = renderShellPrefix({ agent: 'claude', apiKey: SENTINEL_KEY, apiKeyName: 'Primary key', configuration }) + bodyWithoutEntry;
   const scriptPath = join(ws.root, 'truncated-setup.sh');
   writeFileSync(scriptPath, script);
@@ -1935,9 +1952,9 @@ test('codex', 'PowerShell: okOverridden counts as success and reports non-secret
 
 
 test('codex', 'PowerShell: Windows provider-token replacement and rollback preserve owner-only ACL ordering', async t => {
-  const tokenFnStart = PS1_BODY.indexOf('function Write-SetupCodexToken');
-  const tokenFnEnd = PS1_BODY.indexOf('function Write-SetupCodexVersion', tokenFnStart);
-  const tokenBody = PS1_BODY.slice(tokenFnStart, tokenFnEnd);
+  const tokenFnStart = POWERSHELL_CODEX.indexOf('function Write-SetupCodexToken');
+  const tokenFnEnd = POWERSHELL_CODEX.indexOf('function Write-SetupCodexVersion', tokenFnStart);
+  const tokenBody = POWERSHELL_CODEX.slice(tokenFnStart, tokenFnEnd);
   const createStage = tokenBody.indexOf('[System.IO.File]::Create($stage).Dispose()');
   const protectStage = tokenBody.indexOf('Protect-SetupFile $stage', createStage);
   const writeSecret = tokenBody.indexOf('[System.IO.File]::WriteAllText($stage, $SetupApiKey', protectStage);
@@ -1954,17 +1971,17 @@ test('codex', 'PowerShell: Windows provider-token replacement and rollback prese
   t.ok(protectStage < writeSecret, 'Codex provider-token stage is protected before the secret is written');
   t.ok(protectTarget < replaceTarget, 'existing Windows provider-token target is hardened before File.Replace');
 
-  const restoreHelperStart = PS1_BODY.indexOf('function Restore-SetupManagedFile');
-  const restoreHelperEnd = PS1_BODY.indexOf('# --- Claude Code', restoreHelperStart);
-  const restoreHelperBody = PS1_BODY.slice(restoreHelperStart, restoreHelperEnd);
+  const restoreHelperStart = POWERSHELL_COMMON.indexOf('function Restore-SetupManagedFile');
+  const restoreHelperEnd = POWERSHELL_COMMON.indexOf('# --- run', restoreHelperStart);
+  const restoreHelperBody = POWERSHELL_COMMON.slice(restoreHelperStart, restoreHelperEnd);
   const restoreMove = restoreHelperBody.indexOf('Move-Item -LiteralPath $Backup -Destination $Path -Force');
   t.ok(restoreHelperStart >= 0, 'Restore-SetupManagedFile marker exists');
-  t.ok(restoreHelperEnd >= 0, 'Claude section marker exists after restore helper');
+  t.ok(restoreHelperEnd >= 0, 'common run marker exists after restore helper');
   t.ok(restoreMove >= 0, 'managed rollback move marker exists');
   t.excludes(restoreHelperBody, 'Protect-SetupFile $Path', 'rollback keeps the already-protected backup inode instead of adding a fallible post-move step');
 
-  const restoreStart = PS1_BODY.indexOf('function Restore-SetupCodexFiles');
-  const restoreEnd = PS1_BODY.indexOf('function Invoke-SetupCodexAppServerBatchWrite', restoreStart);
+  const restoreStart = POWERSHELL_CODEX.indexOf('function Restore-SetupCodexFiles');
+  const restoreEnd = POWERSHELL_CODEX.indexOf('function Invoke-SetupCodexAppServerBatchWrite', restoreStart);
   t.ok(restoreStart >= 0, 'Restore-SetupCodexFiles marker exists');
   t.ok(restoreEnd >= 0, 'app-server function marker exists after restore function');
 });

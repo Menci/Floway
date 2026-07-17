@@ -149,8 +149,10 @@ Open the deployed URL (or `http://localhost:8788` for Node), log in with
    and each script installs and configures only its named agent. The command
    picker defaults to Windows on Windows clients and to macOS/Linux elsewhere.
 
-   Both downloaded script bodies define their setup functions before the final
-   `main`/`Main` invocation. A truncated download cannot begin installation or
+   Bash and PowerShell sources are each split into a common fragment plus one
+   fragment per agent. TypeScript composes only the selected agent into the
+   served script. The final `main`/`Main` invocation lives at the end of that
+   agent fragment, so a truncated download cannot begin installation or
    configuration.
 
    The command's setup URL stays stable while the panel is open. The visible
