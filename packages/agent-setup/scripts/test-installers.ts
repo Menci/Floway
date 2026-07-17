@@ -171,6 +171,7 @@ chmod 755 "$target/claude"
 const FAKE_CODEX = `#!${process.execPath}
 'use strict';
 const fs = require('fs');
+const path = require('path');
 const NL = String.fromCharCode(10);
 const REC = process.env.FAKE_CODEX_RECORD || '';
 const rec = (o) => { if (REC) fs.appendFileSync(REC, JSON.stringify(o) + NL); };
@@ -197,7 +198,7 @@ if (cmd === '--version') {
   const batchDelay = Number(process.env.FAKE_CODEX_BATCH_DELAY || 0);
   if (process.env.FAKE_CODEX_LARGE_STDERR) process.stderr.write('E'.repeat(300000) + NL);
   const send = (o) => process.stdout.write(JSON.stringify(o) + NL);
-  const home = process.env.CODEX_HOME || '';
+  const home = process.env.CODEX_HOME || path.join(process.env.HOME || '', '.codex');
   let buf = '';
   process.stdin.setEncoding('utf8');
   process.stdin.on('data', (chunk) => {
