@@ -138,17 +138,18 @@ const setAuthStyle = (style: CustomAuthStyle) => {
           @click="emit('fetch-models')"
         >Fetch</Button>
       </div>
+      <!-- Live `last fetched / last error` snapshot injected by the parent —
+           rendered immediately under the button row so the outcome reads as
+           the button's result row (transient fetch error / disabled warning
+           below sit as a footnote, not between button and result). -->
+      <div v-if="$slots['cache-status']" class="mt-1.5">
+        <slot name="cache-status" />
+      </div>
       <p v-if="fetchError" class="mt-1.5 text-[11px] text-accent-rose">{{ fetchError }}</p>
       <p v-else-if="!draft.modelsFetch.enabled" class="mt-1.5 text-[11px] text-accent-amber">
         Fetch disabled — auto models are hidden and dropped on save. Only manual rows persist.
       </p>
     </div>
-
-    <!-- Slot for the live `last fetched / last error` snapshot, injected by the
-         parent between Fetch and Path Overrides so the outcome sits directly
-         under the button that produced it (Path Overrides is layout tail, not
-         a fetch input). Empty when this upstream has no cache (create mode). -->
-    <slot name="cache-status" />
 
     <div>
       <p class="mb-2 text-xs font-medium text-gray-500">Path Overrides</p>
