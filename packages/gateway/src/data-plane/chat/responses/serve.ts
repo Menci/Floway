@@ -34,8 +34,13 @@ export const responsesServe = {
       ctx,
       'chat',
       async candidate => {
+        const payloadForCandidate = plan.affinity.payloadForCandidate(candidate);
         const result = await responsesAttempt.generate({
-          sourcePreparation: { affinity: plan.affinity, privatePayloads: plan.privatePayloads },
+          payload: payloadForCandidate,
+          sourceState: {
+            privatePayloads: plan.privatePayloads,
+            itemIdMap: plan.affinity.itemIdMapForCandidate(candidate),
+          },
           ctx,
           candidate,
           headers,
@@ -67,8 +72,13 @@ export const responsesServe = {
       ctx,
       'chat',
       async candidate => {
+        const payloadForCandidate = plan.affinity.payloadForCandidate(candidate);
         const result = await responsesAttempt.invoke({
-          sourcePreparation: { affinity: plan.affinity, privatePayloads: plan.privatePayloads },
+          payload: payloadForCandidate,
+          sourceState: {
+            privatePayloads: plan.privatePayloads,
+            itemIdMap: plan.affinity.itemIdMapForCandidate(candidate),
+          },
           action: 'compact',
           ctx,
           candidate,

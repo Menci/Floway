@@ -67,9 +67,9 @@ export type ResponsesServePlan =
     readonly candidates: readonly ModelCandidate[];
   };
 
-// Runs the shared serve-side prep both `responsesServe.generate` and
+// Runs the native source preparation both `responsesServe.generate` and
 // `responsesServe.compact` need before dispatching to `responsesAttempt`:
-// expand any `previous_response_id`, enumerate candidates, classify item
+// expand any `previous_response_id`, load and hydrate stored items, prepare
 // affinity, stage the user input, and return the narrowed candidate list.
 // Returns a rendered failure result when no candidate is viable so the
 // caller can surface it directly without re-deriving the model-error

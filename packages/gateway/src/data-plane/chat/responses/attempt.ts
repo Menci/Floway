@@ -1,16 +1,12 @@
-import { prepareResponsesAffinity, type PreparedResponsesAffinity } from './affinity/ingress.ts';
-import { renderResponsesFailure } from './errors.ts';
 import { responsesInterceptors } from './interceptors/index.ts';
 import type { ResponsesAttemptResult, ResponsesInvocation } from './interceptors/types.ts';
 import { normalizeAssistantInputText } from './items/normalize-assistant-content.ts';
 import { syntheticEventsFromResult } from './items/output.ts';
-import { hydrateResponsesPayload, type HydratedResponsesPayload } from './items/rewrite.ts';
 import { tokenUsageFromResponsesResult } from './usage.ts';
 import { applyRulesToUpstreamResponses } from '../../model-aliases/apply-rules.ts';
 import { providerStreamResultToExecuteResult, buildUpstreamCallOptions, telemetryModelIdentity, chatTargetPicker, upstreamPerformanceContext } from '../../shared/telemetry/attempt-helpers.ts';
 import { chatCompletionsAttempt } from '../chat-completions/attempt.ts';
 import { messagesAttempt } from '../messages/attempt.ts';
-import { tryCatchChatServeFailure } from '../shared/errors.ts';
 import { createExternalImageLoader } from '../shared/external-image-loader.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import { traverseTranslation } from '../shared/translate-traverse.ts';
@@ -29,22 +25,21 @@ export const responsesTarget = chatTargetPicker(['responses', 'messages', 'chat-
 
 interface ResponsesAttemptBaseArgs {
   readonly action: ResponsesAction;
+  readonly payload: CanonicalResponsesPayload;
   readonly ctx: ChatGatewayCtx;
   readonly candidate: ModelCandidate;
   readonly headers: Headers;
 }
 
-interface ResponsesSourcePreparation {
-  readonly affinity: PreparedResponsesAffinity;
+interface ResponsesSourceState {
   readonly privatePayloads: ReadonlyMap<string, unknown>;
+  readonly itemIdMap: ReadonlyMap<string, string>;
 }
 
-type ResponsesAttemptInput =
-  | { readonly payload: CanonicalResponsesPayload; readonly sourcePreparation?: never }
-  | { readonly payload?: never; readonly sourcePreparation: ResponsesSourcePreparation };
-
-export type ResponsesAttemptInvokeArgs = ResponsesAttemptBaseArgs & ResponsesAttemptInput;
-type ResponsesAttemptGenerateArgs = Omit<ResponsesAttemptBaseArgs, 'action'> & ResponsesAttemptInput;
+export type ResponsesAttemptInvokeArgs = ResponsesAttemptBaseArgs & {
+  readonly sourceState?: ResponsesSourceState;
+};
+type ResponsesAttemptGenerateArgs = Omit<ResponsesAttemptInvokeArgs, 'action'>;
 
 // Single entry point for both `action: 'generate'` and `action: 'compact'`.
 // Envelope-drain branches on the caller's intent (`action` passed by value),
@@ -74,49 +69,29 @@ type ResponsesAttemptGenerateArgs = Omit<ResponsesAttemptBaseArgs, 'action'> & R
 // presence.
 //
 // Responses state and client affinity both belong to the native source edge,
-// outside this candidate attempt. Keeping this function free of public-id
-// minting and persistence prevents translated inner Responses calls from
-// accidentally owning another protocol's client-visible state.
+// outside this candidate attempt. Native serve passes the already-restored
+// candidate payload plus any private source state; translated inner Responses
+// calls pass only their translated payload. Keeping this function free of
+// affinity decoding, state hydration, public-id minting, and persistence
+// prevents an inner Responses target from owning another source protocol's
+// client-visible state.
 export const responsesAttempt = {
   invoke: async (args: ResponsesAttemptInvokeArgs): Promise<ResponsesAttemptResult> => {
     const { action, ctx, candidate, headers: sourceHeaders } = args;
     const headers = new Headers(sourceHeaders);
     const targetApi = responsesTarget.pick(candidate.model.endpoints);
-    // Rewrite + privatePayload seed + assistant-content normalization all run
-    // BEFORE the interceptor chain so source interceptors — most importantly
-    // the web-search server-tool shim — see fully inline-expanded input items
-    // with their original wire ids, and `responsesAttemptState.getPrivatePayload(id)` is
-    // ready to hand back the persisted IR. The shim's `transformItems` runs
-    // inside the chain body, before `run()`, so deferring rewrite/seed to
-    // the inner closure would leave the shim looking at the pre-rewrite
-    // wire shape against an empty privatePayload map.
-    let affinity: PreparedResponsesAffinity;
-    let privatePayloads: ReadonlyMap<string, unknown>;
-    if (args.sourcePreparation !== undefined) {
-      affinity = args.sourcePreparation.affinity;
-      privatePayloads = args.sourcePreparation.privatePayloads;
+    const payload = { ...structuredClone(args.payload), model: candidate.model.id };
+    if (args.sourceState === undefined) {
+      ctx.responsesAttemptState.begin(new Map(), new Map());
     } else {
-      const payload = { ...structuredClone(args.payload), model: candidate.model.id };
-      let hydrated: HydratedResponsesPayload;
-      try {
-        hydrated = hydrateResponsesPayload(payload, ctx.store);
-      } catch (error) {
-        const failure = tryCatchChatServeFailure(error);
-        if (failure?.kind !== 'item-not-found') throw error;
-        return renderResponsesFailure(failure);
-      }
-      affinity = await prepareResponsesAffinity(hydrated.payload, ctx.affinity.codec);
-      privatePayloads = hydrated.privatePayloads;
+      ctx.responsesAttemptState.begin(args.sourceState.privatePayloads, args.sourceState.itemIdMap);
     }
     // Copilot compaction and Azure-native compaction both emit assistant
     // messages whose content blocks have `type: 'input_text'`, then refuse
     // the same items echoed back as input on the next turn. Normalising
-    // here, after the rewrite has expanded any `item_reference` items
-    // from the snapshot store, catches both the direct-echo and
-    // store-replay paths in one place.
-    const candidatePayload = { ...affinity.payloadForCandidate(candidate), model: candidate.model.id };
-    ctx.responsesAttemptState.begin(privatePayloads, affinity.itemIdMapForCandidate(candidate));
-    const normalized: CanonicalResponsesPayload = { ...candidatePayload, input: normalizeAssistantInputText(candidatePayload.input) };
+    // here, after native serve has expanded stored `item_reference` items,
+    // catches both the direct-echo and store-replay paths in one place.
+    const normalized: CanonicalResponsesPayload = { ...payload, input: normalizeAssistantInputText(payload.input) };
 
     const invocation: ResponsesInvocation = {
       payload: normalized,
