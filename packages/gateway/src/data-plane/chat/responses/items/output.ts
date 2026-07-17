@@ -1,7 +1,7 @@
+import type { ResponsesItemState } from './attempt-state.ts';
 import { canonicalResponsesItemType, createResponsesItemId, hashResponsesItemContent, responsesItemId } from './format.ts';
 import type { StatefulResponsesStore } from './store.ts';
 import type { StoredResponsesItem } from '../../../../repo/types.ts';
-import type { ResponsesItemState } from './attempt-state.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { responsesResultToEvents, type ResponsesInputItem, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 

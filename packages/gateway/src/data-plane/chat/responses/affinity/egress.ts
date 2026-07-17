@@ -262,7 +262,7 @@ const wrapResponsesFirstCarrier = async function* (
       if (firstItem === undefined) {
         const item = event.response.output[0];
         firstItem = item === undefined ? undefined : { outputIndex: 0, canCarry: canCarryAffinity(item) };
-        if (firstItem === undefined || !firstItem.canCarry) yield* insertPrefix(0, event.sequence_number);
+        if (!firstItem?.canCarry) yield* insertPrefix(0, event.sequence_number);
       }
       const response = await rewriteResponse(event.response, true);
       yield eventFrame(addSequenceOffset({ ...event, response }, sequenceOffset));
