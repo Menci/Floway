@@ -41,8 +41,12 @@ const POWERSHELL_COMMON = ['output.ps1', 'helpers.ps1', 'main.ps1']
   .join('');
 const POWERSHELL_CLAUDE = readFileSync(join(INSTALLERS_DIR, 'powershell/claude.ps1'), 'utf8');
 const POWERSHELL_CODEX = readFileSync(join(INSTALLERS_DIR, 'powershell/codex.ps1'), 'utf8');
-const shellBody = (agent: 'claude' | 'codex'): string => BASH_COMMON + (agent === 'claude' ? BASH_CLAUDE : BASH_CODEX);
-const powerShellBody = (agent: 'claude' | 'codex'): string => POWERSHELL_COMMON + (agent === 'claude' ? POWERSHELL_CLAUDE : POWERSHELL_CODEX);
+type SetupAgent = 'claude' | 'codex';
+const AGENT_NAMES: Record<SetupAgent, string> = { claude: 'Claude Code', codex: 'Codex' };
+const shellEntry = (agent: SetupAgent): string => `main '${AGENT_NAMES[agent]}' "$@"`;
+const powerShellEntry = (agent: SetupAgent): string => `exit (Main '${AGENT_NAMES[agent]}')`;
+const shellBody = (agent: SetupAgent): string => BASH_COMMON + (agent === 'claude' ? BASH_CLAUDE : BASH_CODEX);
+const powerShellBody = (agent: SetupAgent): string => POWERSHELL_COMMON + (agent === 'claude' ? POWERSHELL_CLAUDE : POWERSHELL_CODEX);
 const ALL_BASH_FRAGMENTS = BASH_COMMON + BASH_CLAUDE + BASH_CODEX;
 const ALL_POWERSHELL_FRAGMENTS = POWERSHELL_COMMON + POWERSHELL_CLAUDE + POWERSHELL_CODEX;
 
@@ -76,9 +80,9 @@ const makeAssert = (): Assert => ({
 });
 
 type TestFn = (t: Assert) => void | Promise<void>;
-interface Case { agent: 'claude' | 'codex'; name: string; fn: TestFn; }
+interface Case { agent: SetupAgent; name: string; fn: TestFn; }
 const cases: Case[] = [];
-const test = (agent: 'claude' | 'codex', name: string, fn: TestFn): void => { cases.push({ agent, name, fn }); };
+const test = (agent: SetupAgent, name: string, fn: TestFn): void => { cases.push({ agent, name, fn }); };
 
 // --- shared fixtures --------------------------------------------------------
 
@@ -1042,8 +1046,9 @@ test('claude', 'jq is bootstrapped from the pinned release when absent from PATH
 test('claude', 'PowerShell installer body parses without syntax errors', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const body = powerShellBody('claude');
-  t.ok(body.trimEnd().endsWith('exit (Main)'), 'the downloaded script starts execution only from its final line');
-  t.ok(body.lastIndexOf('exit (Main)') > body.indexOf('function Set-SetupAgent {'), 'the entry call follows every agent function');
+  const entry = powerShellEntry('claude');
+  t.ok(body.trimEnd().endsWith(entry), 'the downloaded script starts execution only from its final line');
+  t.ok(body.lastIndexOf(entry) > body.indexOf('function Set-SetupAgent {'), 'the entry call follows every agent function');
   const script = renderPowerShellPrefix({
     agent: 'claude',
     apiKey: SENTINEL_KEY,
@@ -1360,8 +1365,9 @@ test('claude', 'platform installers prefer Homebrew then npm on macOS and npm th
 
 test('claude', 'Bash installer body parses under the macOS Bash 3.2 baseline', async t => {
   const body = shellBody('claude');
-  t.ok(body.trimEnd().endsWith('main "$@"'), 'the downloaded script starts execution only from its final line');
-  t.ok(body.lastIndexOf('main "$@"') > body.indexOf('configure_agent() {'), 'the entry call follows every agent function');
+  const entry = shellEntry('claude');
+  t.ok(body.trimEnd().endsWith(entry), 'the downloaded script starts execution only from its final line');
+  t.ok(body.lastIndexOf(entry) > body.indexOf('configure_agent() {'), 'the entry call follows every agent function');
   const script = renderShellPrefix({ agent: 'claude', apiKey: SENTINEL_KEY, apiKeyName: 'Primary key', configuration: claudeConfig({ model: 'm', effortLevel: 'high', modelDiscovery: true }) }) + body;
   const scriptPath = join(HARNESS_ROOT, 'syntax-check.sh');
   writeFileSync(scriptPath, script);
@@ -1373,7 +1379,7 @@ test('claude', 'a download that ends before the final main call performs no setu
   const ws = makeWorkspace();
   const configuration = claudeConfig();
   const body = shellBody('claude');
-  const bodyWithoutEntry = body.slice(0, body.lastIndexOf('main "$@"'));
+  const bodyWithoutEntry = body.slice(0, body.lastIndexOf(shellEntry('claude')));
   const script = renderShellPrefix({ agent: 'claude', apiKey: SENTINEL_KEY, apiKeyName: 'Primary key', configuration }) + bodyWithoutEntry;
   const scriptPath = join(ws.root, 'truncated-setup.sh');
   writeFileSync(scriptPath, script);
