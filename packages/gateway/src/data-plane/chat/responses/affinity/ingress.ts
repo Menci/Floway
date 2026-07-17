@@ -181,7 +181,7 @@ export const prepareResponsesAffinity = async (
       }
       const nested = new Map(decisions.flatMap(decision =>
         decision.location.contentIndex === undefined ? [] : [[decision.location.contentIndex, decision] as const]));
-      const removedSyntheticNested = [...nested.values()].some(decision =>
+      const removedOriginlessNestedCarrier = [...nested.values()].some(decision =>
         decision.location.decoded.kind === 'owned'
         && decision.location.decoded.value === undefined
         && !decision.selected.present);
@@ -205,7 +205,10 @@ export const prepareResponsesAffinity = async (
         );
       }
       if (removeItem) return [];
-      if (replacement.type === 'agent_message' && replacement.content.length === 0 && !removedSyntheticNested) return [];
+      // An origin-less carrier can be the only added content on an otherwise
+      // empty upstream agent_message. Removing that carrier must restore the
+      // empty message rather than remove the upstream item itself.
+      if (replacement.type === 'agent_message' && replacement.content.length === 0 && !removedOriginlessNestedCarrier) return [];
       return [replacement];
     });
     const prepared = { payload: { ...candidatePayload, input: rewritten }, itemIdMap };

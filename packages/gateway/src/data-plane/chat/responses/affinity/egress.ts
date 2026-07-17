@@ -132,10 +132,11 @@ const wrapResponsesCarrierLifecycle = async function* (
   options: AffinityEgressOptions,
 ): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
   // Natural opaque fields are wrapped independently above. This outer state
-  // machine gives output index zero a carrier: augment a carrier-capable item
-  // at close, or open a reasoning prefix immediately and complete it with the
-  // canonical bound item at that item's close. Visible content is never held
-  // back while the binding waits for its final ID and content hash.
+  // machine gives the first observed output item a carrier and adds a bound
+  // prefix before each carrier-less program_output: augment a carrier-capable
+  // item at close, or open a reasoning prefix immediately and complete it
+  // with the canonical bound item at that item's close. Visible content is
+  // never held back while the binding waits for its final ID and content hash.
   const syntheticItemCarriers = new Map<string, Promise<string>>();
   let firstItem: { readonly outputIndex: number; readonly canCarry: boolean } | undefined;
   const insertedItems = new Map<number, InsertedCarrier>();
