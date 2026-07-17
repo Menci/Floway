@@ -58,7 +58,7 @@ describe('AgentConfigSnippets', () => {
     expect(wrapper.find('pre[data-language="powershell"]').text()).toContain("'floway-''key'");
   });
 
-  it('uses provider-scoped Codex auth and enables the client-owned tools', () => {
+  it('uses provider-scoped Codex auth and enables the client-owned tools without their startup warning', () => {
     const wrapper = mount(AgentConfigSnippets, { props: { agent: 'codex', apiKey: key('key-1', 'Primary', 'floway-key'), models } });
     const config = wrapper.find('pre[data-language="toml"]').text();
 
@@ -68,5 +68,6 @@ describe('AgentConfigSnippets', () => {
     expect(config).toContain('supports_websockets = true');
     expect(config).toContain('"x-openai-actor-authorization" = "1"');
     expect(config).toContain('standalone_web_search = true');
+    expect(config).toContain('suppress_unstable_features_warning = true');
   });
 });

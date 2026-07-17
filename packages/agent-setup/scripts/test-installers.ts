@@ -1492,6 +1492,7 @@ const assertCodexBaseEdits = (t: Assert, ws: Workspace, baseUrl: string): void =
   const edits = codexEditMap(ws);
   const codexBase = `${baseUrl.replace(/\/$/, '')}/azure-api.codex`;
   t.equal(edits.get('model_provider'), 'floway', 'model_provider set to floway');
+  t.equal(edits.get('suppress_unstable_features_warning'), true, 'under-development feature warning suppressed');
   t.equal(edits.get('model_providers.floway.name'), 'Floway', 'provider name is Floway');
   t.equal(edits.get('model_providers.floway.base_url'), codexBase, 'provider base_url targets the Codex data-plane path');
   const auth = edits.get('model_providers.floway.auth') as { command?: unknown; args?: unknown };
@@ -1504,7 +1505,7 @@ const assertCodexBaseEdits = (t: Assert, ws: Workspace, baseUrl: string): void =
   t.equal(edits.get('features.standalone_web_search'), true, 'client-owned web search enabled');
   t.ok(edits.has('model'), 'the model leaf is always part of the batch');
   t.ok(edits.has('model_reasoning_effort'), 'the effort leaf is always part of the batch');
-  t.equal(edits.size, 11, 'the batch contains only the provider, feature, model, and effort leaves managed by Floway');
+  t.equal(edits.size, 12, 'the batch contains only the provider, feature-warning, feature, model, and effort leaves managed by Floway');
 };
 
 const assertStagedToken = (t: Assert, ws: Workspace, codexHome?: string): void => {
@@ -2162,6 +2163,7 @@ test('codex', 'end-to-end against the real pinned Codex 0.144.5 app-server write
   t.includes(configText, 'supports_websockets = true', 'real config.toml carries websocket support');
   t.includes(configText, 'x-openai-actor-authorization', 'real config.toml carries the actor-authorization marker');
   t.includes(configText, 'standalone_web_search = true', 'real config.toml enables client-owned web search');
+  t.includes(configText, 'suppress_unstable_features_warning = true', 'real config.toml suppresses the paired under-development warning');
   t.includes(configText, `base_url = "${codexBase}"`, 'real config.toml carries the provider base_url');
   t.includes(configText, 'model = "gpt-5-codex"', 'real config.toml carries the selected model');
   assertStagedToken(t, ws, codexHome);

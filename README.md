@@ -178,7 +178,9 @@ Open the deployed URL (or `http://localhost:8788` for Node), log in with
    remains available. Installation checks the local CLI version before
    configuration begins; setup performs no gateway request. Claude Code reports
    its settings path after the write succeeds; Codex reports the config and
-   provider-token paths after both writes succeed.
+   provider-token paths after both writes succeed. Both automatic and manual
+   Codex configuration enable standalone web search and suppress its paired
+   under-development warning.
 
    **Config snippets** keeps the manual setup path available for the same
    table-selected key and left-column agent choice. Claude Code is presented as

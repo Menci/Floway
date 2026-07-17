@@ -188,8 +188,13 @@ function Write-SetupCodexConfig {
   # enables Codex's client-owned search and image extensions for this provider.
   # https://github.com/openai/codex/blob/1bbdb32789e1f79932df44941236ea3658f6e965/codex-rs/models-manager/src/manager.rs#L413-L415
   # https://github.com/openai/codex/blob/1bbdb32789e1f79932df44941236ea3658f6e965/codex-rs/model-provider-info/src/lib.rs#L396-L408
+  # standalone_web_search is under development, so its explicit opt-in is
+  # paired with the top-level warning suppression instead of warning every run.
+  # https://github.com/openai/codex/blob/24e9b849fad8f506971dfa0313dbdea8abd90112/codex-rs/features/src/lib.rs#L901-L905
+  # https://github.com/openai/codex/blob/24e9b849fad8f506971dfa0313dbdea8abd90112/codex-rs/features/src/lib.rs#L1393-L1439
   $edits = @(
     @{ keyPath = 'model_provider'; mergeStrategy = 'replace'; value = 'floway' },
+    @{ keyPath = 'suppress_unstable_features_warning'; mergeStrategy = 'replace'; value = $true },
     @{ keyPath = 'model_providers.floway.name'; mergeStrategy = 'replace'; value = 'Floway' },
     @{ keyPath = 'model_providers.floway.base_url'; mergeStrategy = 'replace'; value = $codexBase },
     @{ keyPath = 'model_providers.floway.auth'; mergeStrategy = 'replace'; value = $auth },
