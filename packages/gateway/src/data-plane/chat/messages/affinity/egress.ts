@@ -44,6 +44,43 @@ export const wrapMessagesAffinityEgress = async function* (
     ];
   };
 
+  const wrappedSignatureEvent = async (
+    index: number,
+    block: OpenBlock,
+  ): Promise<MessagesStreamEvent | null> => {
+    if (block.signatureEvent === undefined && (!block.first || block.type !== 'thinking')) return null;
+    if (block.signatureEvent === undefined) {
+      return {
+        type: 'content_block_delta',
+        index: index + indexOffset,
+        delta: {
+          type: 'signature_delta',
+          signature: await options.codec.wrap(undefined, options.affinity, 'messages.thinking.signature'),
+        },
+      };
+    }
+    const { index: _index, delta, ...eventExtras } = block.signatureEvent;
+    const { signature, ...deltaExtras } = delta;
+    return {
+      ...eventExtras,
+      type: 'content_block_delta',
+      index: index + indexOffset,
+      delta: {
+        ...deltaExtras,
+        type: 'signature_delta',
+        signature: await options.codec.wrap(signature, options.affinity, 'messages.thinking.signature'),
+      },
+    };
+  };
+
+  const flushOpenSignatures = async function* (): AsyncGenerator<ProtocolFrame<MessagesStreamEvent>> {
+    for (const [index, block] of openBlocks) {
+      const signature = await wrappedSignatureEvent(index, block);
+      if (signature !== null) yield eventFrame(signature);
+    }
+    openBlocks.clear();
+  };
+
   for await (const frame of frames) {
     if (frame.type !== 'event') {
       yield frame;
@@ -52,7 +89,6 @@ export const wrapMessagesAffinityEgress = async function* (
 
     const event = frame.event;
     if (event.type === 'content_block_start') {
-      if (openBlocks.has(event.index)) throw new Error(`Messages content block ${event.index} started twice`);
       const first = !firstBlockSeen;
       firstBlockSeen = true;
       openBlocks.set(event.index, { type: event.content_block.type, first });
@@ -81,37 +117,28 @@ export const wrapMessagesAffinityEgress = async function* (
 
     if (isSignatureDeltaEvent(event)) {
       const block = openBlocks.get(event.index);
-      if (block?.type !== 'thinking') throw new Error(`Messages signature_delta targeted non-thinking block ${event.index}`);
-      block.signatureEvent = event;
+      if (block?.type === 'thinking') {
+        block.signatureEvent = event;
+      } else {
+        yield eventFrame({
+          ...event,
+          index: event.index + indexOffset,
+          delta: {
+            ...event.delta,
+            signature: await options.codec.wrap(event.delta.signature, options.affinity, 'messages.thinking.signature'),
+          },
+        });
+      }
       continue;
     }
 
     if (event.type === 'content_block_stop') {
       const block = openBlocks.get(event.index);
-      if (block === undefined) throw new Error(`Messages content block ${event.index} stopped before it started`);
-      if (block.signatureEvent !== undefined || (block.first && block.type === 'thinking')) {
-        let signature: string;
-        if (block.signatureEvent !== undefined) {
-          signature = await options.codec.wrap(block.signatureEvent.delta.signature, options.affinity, 'messages.thinking.signature');
-        } else signature = await options.codec.wrap(undefined, options.affinity, 'messages.thinking.signature');
-        if (block.signatureEvent === undefined) {
-          yield eventFrame({
-            type: 'content_block_delta',
-            index: event.index + indexOffset,
-            delta: { type: 'signature_delta', signature },
-          });
-        } else {
-          const { index: _index, delta, ...eventExtras } = block.signatureEvent;
-          const { signature: _signature, ...deltaExtras } = delta;
-          yield eventFrame({
-            ...eventExtras,
-            type: 'content_block_delta',
-            index: event.index + indexOffset,
-            delta: { ...deltaExtras, type: 'signature_delta', signature },
-          });
-        }
+      if (block !== undefined) {
+        const signature = await wrappedSignatureEvent(event.index, block);
+        if (signature !== null) yield eventFrame(signature);
+        openBlocks.delete(event.index);
       }
-      openBlocks.delete(event.index);
       yield eventFrame({ ...event, index: event.index + indexOffset });
       continue;
     }
@@ -122,14 +149,14 @@ export const wrapMessagesAffinityEgress = async function* (
     }
 
     if (event.type === 'message_delta' && event.delta.stop_reason != null) {
-      if (openBlocks.size > 0) throw new Error('Messages terminal message_delta arrived with an open content block');
+      yield* flushOpenSignatures();
       if (!firstBlockSeen) for (const synthetic of await syntheticEvents()) yield eventFrame(synthetic);
       yield frame;
       continue;
     }
 
     if (event.type === 'message_stop') {
-      if (openBlocks.size > 0) throw new Error('Messages message_stop arrived with an open content block');
+      yield* flushOpenSignatures();
       if (!firstBlockSeen) for (const synthetic of await syntheticEvents()) yield eventFrame(synthetic);
       yield frame;
       return;

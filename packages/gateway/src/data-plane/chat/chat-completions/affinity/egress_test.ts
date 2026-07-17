@@ -121,17 +121,14 @@ describe('Chat Completions affinity egress', () => {
     ]);
   });
 
-  test('rejects a successful stream that ends without an assistant choice', async () => {
-    const collect = async () => {
-      const output: ProtocolFrame<ChatCompletionsStreamEvent>[] = [];
-      for await (const frame of wrapChatCompletionsAffinityEgress(
-        frames([doneFrame()]),
-        { codec: immediateCodec, affinity },
-      )) output.push(frame);
-      return output;
-    };
+  test('does not turn a successful empty upstream stream into an affinity error', async () => {
+    const output: ProtocolFrame<ChatCompletionsStreamEvent>[] = [];
+    for await (const frame of wrapChatCompletionsAffinityEgress(
+      frames([doneFrame()]),
+      { codec: immediateCodec, affinity },
+    )) output.push(frame);
 
-    await expect(collect()).rejects.toThrow('Chat Completions stream ended without an assistant choice');
+    expect(output).toEqual([doneFrame()]);
   });
 
   test('emits choice extras once on the visible projection before carrier encryption', async () => {
