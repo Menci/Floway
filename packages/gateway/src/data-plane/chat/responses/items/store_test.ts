@@ -17,6 +17,31 @@ describe('StatefulResponsesStore', () => {
     expect(await repo.responsesSnapshots.lookup('key-a', 'resp_none')).toBeNull();
   });
 
+  test('HTTP store=false still reads durably-stored items and snapshots', async () => {
+    const repo = new InMemoryRepo();
+    initRepo(repo);
+    const writer = createResponsesHttpStore('key-a', true);
+    const output = {
+      id: 'msg_public',
+      apiKeyId: 'key-a',
+      upstreamId: 'upstream-a',
+      upstreamItemId: 'msg_upstream',
+      itemType: 'message',
+      payload: { item: { type: 'message', id: 'msg_public', role: 'assistant', content: [] } },
+      contentHash: 'output-hash',
+      createdAt: 1_000,
+    };
+    writer.stageOutputItem(output, 0);
+    await writer.commitSnapshot('resp_saved', 'append');
+
+    // A store=false turn writes nothing but must still resolve a
+    // previous_response_id and echoed item ids against durable state.
+    const reader = createResponsesHttpStore('key-a', false);
+    expect(reader.writesState).toBe(false);
+    expect((await reader.loadSnapshot('resp_saved'))?.itemIds).toEqual([output.id]);
+    expect(reader.getItemById(output.id)).toMatchObject({ id: 'msg_public', upstreamItemId: 'msg_upstream' });
+  });
+
   test('HTTP default stores complete input and output snapshots', async () => {
     const repo = new InMemoryRepo();
     initRepo(repo);

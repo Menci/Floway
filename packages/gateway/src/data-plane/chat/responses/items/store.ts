@@ -22,7 +22,6 @@ interface LayeredStatefulResponsesStoreOptions {
   readonly apiKeyId: string;
   readonly reads: readonly StatefulResponsesBacking[];
   readonly writes: readonly StatefulResponsesBacking[];
-  readonly stageInputs: boolean;
 }
 
 type ResponsesSnapshotMode = 'append' | 'replace';
@@ -122,7 +121,7 @@ export class LayeredStatefulResponsesStore implements StatefulResponsesStore {
   }
 
   async stageInputItems(items: readonly ResponsesInputItem[]): Promise<void> {
-    if (!this.options.stageInputs) return;
+    if (!this.writesState) return;
     for (const item of items) await this.stageInputItem(item);
   }
 
@@ -352,7 +351,6 @@ export const createResponsesHttpStore = (apiKeyId: string, store: boolean | unde
     apiKeyId,
     reads: [backing],
     writes,
-    stageInputs: store !== false,
   });
 };
 
@@ -368,7 +366,6 @@ export const createResponsesWsSession = (): {
         apiKeyId,
         reads: [local, durable],
         writes,
-        stageInputs: true,
       });
     },
   };

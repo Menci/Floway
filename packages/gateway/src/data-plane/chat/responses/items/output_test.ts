@@ -275,7 +275,6 @@ test('client output batches hundreds of finalized items at the successful termin
     apiKeyId: 'key-a',
     reads: [backing],
     writes: [backing],
-    stageInputs: true,
   });
   const items = Array.from({ length: 240 }, (_, index) => ({
     type: 'reasoning' as const,

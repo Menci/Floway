@@ -426,7 +426,6 @@ const memoryStore = async (snapshots: readonly StoredResponsesSnapshot[], items:
     apiKeyId: API_KEY_ID,
     reads: [backing],
     writes: [backing],
-    stageInputs: true,
   });
 };
 
