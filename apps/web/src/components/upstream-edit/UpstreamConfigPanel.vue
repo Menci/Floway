@@ -161,7 +161,11 @@ onBeforeUnmount(() => floorObserver?.disconnect());
           :fetch-error="fetchError"
           :fetch-status="fetchStatus"
           @fetch-models="$emit('fetch-models')"
-        />
+        >
+          <template v-if="modelsCache" #cache-status>
+            <ModelsCacheStatus :models-cache="modelsCache" />
+          </template>
+        </CustomConfigPanel>
       </section>
 
       <section v-else-if="draft.kind === 'azure'" class="shrink-0">
@@ -181,7 +185,11 @@ onBeforeUnmount(() => floorObserver?.disconnect());
           :fetch-error="fetchError"
           :fetch-status="fetchStatus"
           @fetch-models="$emit('fetch-models')"
-        />
+        >
+          <template v-if="modelsCache" #cache-status>
+            <ModelsCacheStatus :models-cache="modelsCache" />
+          </template>
+        </OllamaConfigPanel>
       </section>
 
       <section v-else-if="draft.kind === 'copilot'" class="shrink-0">
@@ -213,12 +221,13 @@ onBeforeUnmount(() => floorObserver?.disconnect());
         />
       </section>
 
-      <!-- Models Cache sits directly under the per-provider config panel so the
-           "last fetched / last error" snapshot reads as the result of the
-           Fetch button embedded in that panel (Custom / Ollama). Other saved
-           providers show the same cache snapshot right under their connection
-           fields. Null in create mode and for Azure (no fetch step). -->
-      <section v-if="modelsCache" class="shrink-0">
+      <!-- Cache snapshot for OAuth-driven providers (Copilot / Codex / Claude
+           Code) — they have no in-panel Fetch button, so the snapshot sits at
+           the top level right under the provider panel. Custom / Ollama inject
+           theirs into the provider panel's `#cache-status` slot instead, so the
+           snapshot sits directly under the Fetch button. Null in create mode
+           and for Azure (no fetch step). -->
+      <section v-if="modelsCache && draft.kind !== 'custom' && draft.kind !== 'ollama'" class="shrink-0">
         <p class="mb-2 text-[10px] font-semibold uppercase tracking-wider text-gray-500">Models Cache</p>
         <ModelsCacheStatus :models-cache="modelsCache" />
       </section>

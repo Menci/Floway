@@ -144,6 +144,12 @@ const setAuthStyle = (style: CustomAuthStyle) => {
       </p>
     </div>
 
+    <!-- Slot for the live `last fetched / last error` snapshot, injected by the
+         parent between Fetch and Path Overrides so the outcome sits directly
+         under the button that produced it (Path Overrides is layout tail, not
+         a fetch input). Empty when this upstream has no cache (create mode). -->
+    <slot name="cache-status" />
+
     <div>
       <p class="mb-2 text-xs font-medium text-gray-500">Path Overrides</p>
       <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
