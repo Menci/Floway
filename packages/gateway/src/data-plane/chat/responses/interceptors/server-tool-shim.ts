@@ -828,7 +828,7 @@ const synthesizeTerminalEnvelope = (
 async function* materializeServerToolItems(
   dispatched: ReadonlyArray<{ slots: DispatchedServerToolSlot[] }>,
   merge: MergeState,
-  attemptState: ResponsesItemState,
+  itemState: ResponsesItemState,
 ): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>, void> {
   for (const d of dispatched) {
     for (const { slot, outputIndex } of d.slots) {
@@ -841,7 +841,7 @@ async function* materializeServerToolItems(
       // Register private dispatcher state under the emitted item id so output
       // persistence captures it and replay-side `transformItems` can restore
       // it on the next loop turn.
-      attemptState.setPrivatePayload(slot.id, step.value.privatePayload);
+      itemState.setPrivatePayload(slot.id, step.value.privatePayload);
       yield* serverToolEndFrames(merge, outputIndex, slot, step.value);
     }
   }
@@ -855,13 +855,13 @@ async function* runMultiTurnLoop(args: {
   demoteForcedServerToolChoiceAfterFirstTurn: boolean;
   turn1Iter: AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>, TurnSummary>;
   dispatchers: ReadonlyMap<string, ServerToolDispatcher>;
-  attemptState: ResponsesItemState;
+  itemState: ResponsesItemState;
   canonicalInput: ResponsesInputItem[];
   active: readonly ActiveServerTool[];
   metadata: LatestUpstreamMetadata;
   resolveFinalMetadata: (m: EventResultMetadata) => void;
 }): AsyncGenerator<ProtocolFrame<ResponsesStreamEvent>> {
-  const { ctx, run, merge, loopState, demoteForcedServerToolChoiceAfterFirstTurn, turn1Iter, dispatchers, attemptState, active, metadata, resolveFinalMetadata } = args;
+  const { ctx, run, merge, loopState, demoteForcedServerToolChoiceAfterFirstTurn, turn1Iter, dispatchers, itemState, active, metadata, resolveFinalMetadata } = args;
   const baseInput = args.canonicalInput;
   let midStreamError: unknown = undefined;
   try {
@@ -872,12 +872,12 @@ async function* runMultiTurnLoop(args: {
       const executedShim = turn.dispatched.length > 0;
 
       if (turn.terminalStatus.kind === 'failed') {
-        if (executedShim) yield* materializeServerToolItems(turn.dispatched, merge, attemptState);
+        if (executedShim) yield* materializeServerToolItems(turn.dispatched, merge, itemState);
         yield synthesizeTerminalEnvelope(merge, { kind: 'failed', error: turn.terminalStatus.response.error }, active);
         return;
       }
       if (turn.terminalStatus.kind === 'incomplete') {
-        if (executedShim) yield* materializeServerToolItems(turn.dispatched, merge, attemptState);
+        if (executedShim) yield* materializeServerToolItems(turn.dispatched, merge, itemState);
         yield synthesizeTerminalEnvelope(merge, { kind: 'incomplete', incompleteDetails: turn.terminalStatus.response.incomplete_details }, active);
         return;
       }
@@ -893,7 +893,7 @@ async function* runMultiTurnLoop(args: {
         return;
       }
 
-      yield* materializeServerToolItems(turn.dispatched, merge, attemptState);
+      yield* materializeServerToolItems(turn.dispatched, merge, itemState);
       if (turn.sawClientToolCall) {
         yield synthesizeTerminalEnvelope(merge, { kind: 'completed' }, active);
         return;
@@ -1030,7 +1030,7 @@ export const withResponsesServerToolShim = (
       demoteForcedServerToolChoiceAfterFirstTurn,
       turn1Iter,
       dispatchers,
-      attemptState: gatewayCtx.responsesItemState,
+      itemState: gatewayCtx.responsesItemState,
       canonicalInput,
       active,
       metadata,
