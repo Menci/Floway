@@ -174,8 +174,9 @@ Open the deployed URL (or `http://localhost:8788` for Node), log in with
    `$CODEX_HOME/config.toml`. The Codex provider token is stored separately
    under the active `CODEX_HOME`, so an official account login in `auth.json`
    remains available. Installation checks the local CLI version before
-   configuration begins; setup performs no gateway request. Codex reports the
-   config and provider-token paths after both writes succeed.
+   configuration begins; setup performs no gateway request. Claude Code reports
+   its settings path after the write succeeds; Codex reports the config and
+   provider-token paths after both writes succeed.
 
    **Config snippets** keeps the manual setup path available for the same
    table-selected key and left-column agent choice. Claude Code is presented as

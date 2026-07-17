@@ -506,6 +506,7 @@ function Set-SetupClaude {
 
   Write-SetupPhase 'Configuring Claude Code'
   Write-SetupClaudeSettings
+  Write-SetupInfo ('Written to `' + $script:ClaudeSettingsPath + '`.')
   Write-SetupSuccess "Claude Code configured."
 }
 

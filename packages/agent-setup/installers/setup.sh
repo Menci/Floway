@@ -516,6 +516,7 @@ configure_claude() {
   if ! claude_write_settings; then
     return 1
   fi
+  out_info "Written to \`$CLAUDE_SETTINGS_PATH\`."
   out_success 'Claude Code configured.'
 }
 

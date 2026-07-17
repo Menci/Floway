@@ -2179,6 +2179,7 @@ test('claude', 'Bash and PowerShell emit an identical happy-path stdout line seq
   t.includes(normalizeLines(bash.stdout), '\n==> Installing Claude Code\n', 'the installation section is explicit');
   t.includes(normalizeLines(bash.stdout), '\nClaude Code is already installed.\n', 'an existing CLI is reported');
   t.includes(normalizeLines(bash.stdout), '\n==> Configuring Claude Code\n', 'the configuration section is explicit');
+  t.includes(normalizeLines(bash.stdout), `Written to \`${settingsPathFor(bashWs)}\`.`, 'the settings path is reported');
   t.excludes(normalizeLines(bash.stdout), '\n\n', 'setup-owned sections do not insert blank separator lines');
   t.equal(normalizeLines(bash.stdout).match(/^==> /gm)?.length, 3, 'the output has exactly the header, installation, and configuration sections');
   t.includes(normalizeLines(bash.stdout), '✨ Claude Code configured.', 'the successful result is explicit');
