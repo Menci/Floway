@@ -213,13 +213,18 @@ onBeforeUnmount(() => floorObserver?.disconnect());
         />
       </section>
 
-      <section class="shrink-0">
-        <ModelPrefixEditor v-model="modelPrefix" @update:invalid="v => $emit('update:model-prefix-invalid', v)" />
-      </section>
-
+      <!-- Models Cache sits directly under the per-provider config panel so the
+           "last fetched / last error" snapshot reads as the result of the
+           Fetch button embedded in that panel (Custom / Ollama). Other saved
+           providers show the same cache snapshot right under their connection
+           fields. Null in create mode and for Azure (no fetch step). -->
       <section v-if="modelsCache" class="shrink-0">
         <p class="mb-2 text-[10px] font-semibold uppercase tracking-wider text-gray-500">Models Cache</p>
         <ModelsCacheStatus :models-cache="modelsCache" />
+      </section>
+
+      <section class="shrink-0">
+        <ModelPrefixEditor v-model="modelPrefix" @update:invalid="v => $emit('update:model-prefix-invalid', v)" />
       </section>
 
       <section class="shrink-0">
