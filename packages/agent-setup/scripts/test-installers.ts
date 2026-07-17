@@ -1519,6 +1519,8 @@ test('codex', 'existing CLI configures via the app-server and stages the provide
   t.ok(!existsSync(installerMarker(ws)), 'the installer hook must not run when codex is present');
   t.includes(run.stdout, '==> Installing Codex\nCodex is already installed.\nCodex version:', 'installation reports the existing CLI and its version');
   t.includes(run.stdout, '==> Configuring Codex\n', 'configuration has its own section');
+  t.includes(run.stdout, `Written to \`${codexConfigPath(ws)}\`.`, 'the app-server config path is reported');
+  t.includes(run.stdout, `Written to \`${codexTokenPath(ws)}\`.`, 'the provider-token path is reported');
   t.includes(run.stdout, '✨ Codex configured.', 'the final outcome is explicit');
   assertCodexBaseEdits(t, ws, modelServer.url);
   assertStagedToken(t, ws);
@@ -1886,6 +1888,8 @@ test('codex', 'PowerShell: existing CLI configures via the app-server and stages
   const run = await runPowerShellInstaller({ workspace: ws, configuration: codexConfig({ model: 'gpt-5-codex', reasoningEffort: 'high' }), baseUrl: modelServer.url });
   t.equal(run.code, 0, `codex setup should succeed:\n${run.combined}`);
   t.ok(!existsSync(installerMarker(ws)), 'installer must not run when codex is present');
+  t.includes(run.stdout, `Written to \`${codexConfigPath(ws)}\`.`, 'the app-server config path is reported');
+  t.includes(run.stdout, `Written to \`${codexTokenPath(ws)}\`.`, 'the provider-token path is reported');
   assertCodexBaseEdits(t, ws, modelServer.url);
   const edits = codexEditMap(ws);
   t.equal(edits.get('model'), 'gpt-5-codex', 'model written verbatim');

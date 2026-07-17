@@ -723,6 +723,11 @@ function Write-SetupCodexConfig {
   } elseif ($status -ne 'ok') {
     Stop-Setup "the Codex app-server did not confirm the configuration (status: $status)."
   }
+  $filePath = [string]$result.filePath
+  if ([string]::IsNullOrWhiteSpace($filePath)) {
+    Stop-Setup "the Codex app-server did not report the written config path."
+  }
+  return $filePath
 }
 
 # Store the selected API key as a provider-scoped command-auth token. The private
@@ -795,12 +800,14 @@ function Set-SetupCodex {
     throw
   }
   try {
-    Write-SetupCodexConfig -Exe $exe
+    $writtenConfigPath = Write-SetupCodexConfig -Exe $exe
   } catch {
     Write-SetupWarn "Codex configuration failed; rolling back configuration and token."
     Restore-SetupCodexFiles
     throw
   }
+  Write-SetupInfo ('Written to `' + $writtenConfigPath + '`.')
+  Write-SetupInfo ('Written to `' + $script:CodexTokenPath + '`.')
   Write-SetupSuccess "Codex configured."
 }
 

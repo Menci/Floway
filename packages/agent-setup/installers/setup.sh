@@ -806,6 +806,11 @@ codex_write_config() {
       return 1
       ;;
   esac
+  CODEX_WRITTEN_CONFIG_PATH=$(printf '%s' "$_cwc_result" | "$JQ" -r '.result.filePath // empty' 2>/dev/null)
+  if [ -z "$CODEX_WRITTEN_CONFIG_PATH" ]; then
+    out_error 'the Codex app-server did not report the written config path.'
+    return 1
+  fi
 }
 
 # Store the selected API key as a provider-scoped command-auth token. The private
@@ -891,6 +896,8 @@ configure_codex() {
     codex_rollback
     return 1
   fi
+  out_info "Written to \`$CODEX_WRITTEN_CONFIG_PATH\`."
+  out_info "Written to \`$CODEX_TOKEN_PATH\`."
   out_success 'Codex configured.'
 }
 
