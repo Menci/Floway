@@ -45,7 +45,12 @@ export class SourceStreamState {
   }
 }
 
-export const eventResultMetadata = async <TEvent>(result: Extract<ExecuteResult<ProtocolFrame<TEvent>>, { type: 'events' }>): Promise<EventResultMetadata> =>
+// Narrows `ExecuteResult` to its `events` variant, so downstream call sites
+// pull `.headers`, `.finalMetadata`, and event-branch fields without
+// discriminating on `result.type` again at every use.
+type EventsResult<TEvent> = Extract<ExecuteResult<ProtocolFrame<TEvent>>, { type: 'events' }>;
+
+export const eventResultMetadata = async <TEvent>(result: EventsResult<TEvent>): Promise<EventResultMetadata> =>
   await (result.finalMetadata ?? {
     modelIdentity: result.modelIdentity,
     ...(result.performance ? { performance: result.performance } : {}),
@@ -112,8 +117,6 @@ export const mergeForwardedUpstreamHeaders = (base: HeadersInit | undefined, ups
   }
   return merged;
 };
-
-type EventsResult<TEvent> = Extract<ExecuteResult<ProtocolFrame<TEvent>>, { type: 'events' }>;
 
 // The four chat protocols Floway serves — each has its own subdirectory
 // under packages/gateway/src/data-plane/chat/ and its own respond.ts. Not
