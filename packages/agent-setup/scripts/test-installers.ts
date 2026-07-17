@@ -2579,7 +2579,7 @@ test('claude', 'PowerShell rollback restore failure preserves the backup and pri
     fakeClaudeDoctorExit: 1, failRestore: true,
   });
   t.ok(run.code !== 0, 'the agent still fails');
-  t.includes(run.stderr, '  could not restore', 'a rollback-failure warning is printed to stderr');
+  t.includes(run.stderr, 'Warning: could not restore', 'a rollback-failure warning is printed to stderr');
   t.includes(run.stderr, settingsPathFor(ws), 'the warning names the settings path');
   t.includes(run.stderr, 'restore it by hand', 'the warning names the manual action');
   const backups = backupFiles(configDir);
@@ -2601,7 +2601,7 @@ test('codex', 'PowerShell rollback restore failure preserves the Codex provider-
       workspace: ws, baseUrl: modelServer.url, configuration: codexConfig(), failRestore: true,
     });
     t.ok(run.code !== 0, 'an unauthorized model directory must fail verification');
-    t.includes(run.stderr, '  could not restore', 'a rollback-failure warning is printed to stderr');
+    t.includes(run.stderr, 'Warning: could not restore', 'a rollback-failure warning is printed to stderr');
     t.includes(run.stderr, 'provider token', 'the warning names the preserved provider token');
     t.includes(run.stderr, 'restore it by hand', 'the warning names the manual action');
     const backups = codexBackupFiles(home, 'floway-token');
