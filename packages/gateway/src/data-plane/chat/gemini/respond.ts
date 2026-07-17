@@ -1,13 +1,11 @@
 import type { Context } from 'hono';
-import { streamSSE } from 'hono/streaming';
 
 import { geminiStatusForHttpStatus } from './errors.ts';
 import { tokenUsageFromGeminiUsageMetadata } from './usage.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
-import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse } from '../shared/respond.ts';
-import { type StreamCompletion, writeSSEFrames } from '../shared/stream/sse.ts';
+import { SourceStreamState, eventResultMetadata, mergeForwardedUpstreamHeaders, plainResultToResponse, respondSseStream } from '../shared/respond.ts';
 import { type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import { geminiProtocolFrameToSSEFrame, GEMINI_MISSING_TERMINAL_MESSAGE, isGeminiErrorEvent, isGeminiTerminalEvent, collectGeminiProtocolEventsToResult } from '@floway-dev/protocols/gemini';
 import type { GeminiErrorResponse, GeminiResult, GeminiStreamEvent } from '@floway-dev/protocols/gemini';
@@ -62,24 +60,10 @@ export const respondGemini = async (
     }
   }
 
-  forwardUpstreamHeaders(c, result.headers);
-  const response = streamSSE(c, async stream => {
-    let completion: StreamCompletion = 'error';
-    try {
-      completion = await writeSSEFrames(stream, geminiSseFrames(frames, state), {
-        keepAlive: { frame: sseCommentFrame('keepalive') },
-        ...(ctx.downstreamAbortController !== undefined ? { downstreamAbortController: ctx.downstreamAbortController } : {}),
-      });
-    } finally {
-      const metadata = await eventResultMetadata(result);
-      const failed = state.failedAfter(completion);
-      if (failed) {
-        ctx.dump?.failed(`gemini stream failed (completion=${completion}, source-failed=${state.failed})`);
-      } else {
-        ctx.dump?.success(metadata.modelIdentity, state.usage);
-      }
-      settle(ctx, metadata.performance, metadata.modelIdentity, state.usage, failed);
-    }
+  const response = respondSseStream(c, result, state, ctx, {
+    sseFrames: geminiSseFrames(frames, state),
+    keepAliveFrame: sseCommentFrame('keepalive'),
+    protocolTag: 'gemini',
   });
 
   return { success: true, response };

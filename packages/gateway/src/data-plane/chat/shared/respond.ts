@@ -1,9 +1,12 @@
 import type { Context } from 'hono';
+import { streamSSE } from 'hono/streaming';
 
-import type { StreamCompletion } from './stream/sse.ts';
+import type { GatewayCtx } from './gateway-ctx.ts';
+import { type StreamCompletion, writeSSEFrames } from './stream/sse.ts';
 import type { TokenUsage } from '../../../repo/types.ts';
+import { settle } from '../../shared/telemetry/settle.ts';
 import { hasTokenUsage } from '../../shared/telemetry/usage.ts';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
+import type { ProtocolFrame, SseFrame, SseWritableFrame } from '@floway-dev/protocols/common';
 import { plainResult } from '@floway-dev/provider';
 import type { EventResultMetadata, ExecuteResult, PlainResult } from '@floway-dev/provider';
 
@@ -108,4 +111,46 @@ export const mergeForwardedUpstreamHeaders = (base: HeadersInit | undefined, ups
     }
   }
   return merged;
+};
+
+type EventsResult<TEvent> = Extract<ExecuteResult<ProtocolFrame<TEvent>>, { type: 'events' }>;
+
+// Shared streaming scaffold for every chat protocol's SSE response. Forwards
+// upstream headers, drives `writeSSEFrames` under Hono's `streamSSE`, and
+// settles telemetry in `finally` — so the settle contract (metadata timing,
+// `state.failedAfter(completion)` classification, `ctx.dump` ordering) lives
+// in one place rather than being copy-pasted into each per-protocol respond.
+// Callers supply the protocol-shaped SSE frames, the per-protocol keep-alive
+// frame (Anthropic Messages expects a `ping` event; the rest use SSE
+// comments), and a tag used in the failure log line.
+export const respondSseStream = <TEvent>(
+  c: Context,
+  eventsResult: EventsResult<TEvent>,
+  state: SourceStreamState,
+  ctx: GatewayCtx,
+  opts: {
+    sseFrames: AsyncIterable<SseFrame>;
+    keepAliveFrame: SseWritableFrame;
+    protocolTag: string;
+  },
+): Response => {
+  forwardUpstreamHeaders(c, eventsResult.headers);
+  return streamSSE(c, async stream => {
+    let completion: StreamCompletion = 'error';
+    try {
+      completion = await writeSSEFrames(stream, opts.sseFrames, {
+        keepAlive: { frame: opts.keepAliveFrame },
+        ...(ctx.downstreamAbortController !== undefined ? { downstreamAbortController: ctx.downstreamAbortController } : {}),
+      });
+    } finally {
+      const metadata = await eventResultMetadata(eventsResult);
+      const failed = state.failedAfter(completion);
+      if (failed) {
+        ctx.dump?.failed(`${opts.protocolTag} stream failed (completion=${completion}, source-failed=${state.failed})`);
+      } else {
+        ctx.dump?.success(metadata.modelIdentity, state.usage);
+      }
+      settle(ctx, metadata.performance, metadata.modelIdentity, state.usage, failed);
+    }
+  });
 };

@@ -1,12 +1,10 @@
 import type { Context } from 'hono';
-import { streamSSE } from 'hono/streaming';
 
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
 import { tokenUsage } from '../../shared/telemetry/usage.ts';
 import type { GatewayCtx } from '../shared/gateway-ctx.ts';
-import { SourceStreamState, eventResultMetadata, forwardUpstreamHeaders, mergeForwardedUpstreamHeaders, plainResultToResponse } from '../shared/respond.ts';
-import { type StreamCompletion, writeSSEFrames } from '../shared/stream/sse.ts';
+import { SourceStreamState, eventResultMetadata, mergeForwardedUpstreamHeaders, plainResultToResponse, respondSseStream } from '../shared/respond.ts';
 import { billableServiceTier, type ProtocolFrame, sseFrame } from '@floway-dev/protocols/common';
 import { messagesProtocolFrameToSSEFrame, MESSAGES_MISSING_TERMINAL_MESSAGE, collectMessagesProtocolEventsToResult, mergeMessagesUsageSnapshot, messagesUsageSnapshot, splitMessagesCacheCreationTokens } from '@floway-dev/protocols/messages';
 import type { MessagesMessageDeltaEvent, MessagesStreamEvent, MessagesUsage } from '@floway-dev/protocols/messages';
@@ -64,24 +62,10 @@ export const respondMessages = async (
     }
   }
 
-  forwardUpstreamHeaders(c, result.headers);
-  const response = streamSSE(c, async stream => {
-    let completion: StreamCompletion = 'error';
-    try {
-      completion = await writeSSEFrames(stream, messagesSseFrames(frames, state), {
-        keepAlive: { frame: sseFrame(JSON.stringify({ type: 'ping' }), 'ping') },
-        ...(ctx.downstreamAbortController !== undefined ? { downstreamAbortController: ctx.downstreamAbortController } : {}),
-      });
-    } finally {
-      const metadata = await eventResultMetadata(result);
-      const failed = state.failedAfter(completion);
-      if (failed) {
-        ctx.dump?.failed(`messages stream failed (completion=${completion}, source-failed=${state.failed})`);
-      } else {
-        ctx.dump?.success(metadata.modelIdentity, state.usage);
-      }
-      settle(ctx, metadata.performance, metadata.modelIdentity, state.usage, failed);
-    }
+  const response = respondSseStream(c, result, state, ctx, {
+    sseFrames: messagesSseFrames(frames, state),
+    keepAliveFrame: sseFrame(JSON.stringify({ type: 'ping' }), 'ping'),
+    protocolTag: 'messages',
   });
 
   return { success: true, response };
