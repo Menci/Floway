@@ -43,14 +43,8 @@ export const geminiServe = {
     if (decision.kind === 'failure') return renderGeminiFailure(decision.failure, 'generate');
     if (decision.candidates.length === 0) return renderGeminiFailure(noViableCandidateFailure(sawModel, model, failedUpstreams), 'generate');
 
-    // Try each narrowed candidate in order. A successful attempt (SSE
-    // stream opened) is the final answer; an api-error or internal-error
-    // from one candidate falls through to the next so the gateway absorbs
-    // transient 5xx/429/network failures. When the list is exhausted, the
-    // most recent failure is forwarded verbatim so the client still sees
-    // real upstream telemetry rather than a synthetic envelope. The
-    // Gemini carries its model in the URL, so affinity preparation owns the
-    // candidate payload while dispatch reads the canonical candidate model.
+    // Gemini carries the requested model in its URL, so affinity preparation
+    // owns each candidate payload while dispatch uses the candidate's canonical model.
     return await iterateCandidates(
       decision.candidates,
       'geminiServe.generate',

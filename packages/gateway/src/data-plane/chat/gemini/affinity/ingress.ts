@@ -7,7 +7,7 @@ interface GeminiBlobLocation {
   readonly decoded: DecodedAffinityBlob;
 }
 
-const visiblePart = (part: GeminiPart): boolean => {
+const hasPartContent = (part: GeminiPart): boolean => {
   const { text, thought: _thought, thoughtSignature: _signature, ...data } = part;
   return (typeof text === 'string' && text.length > 0) || Object.keys(data).length > 0;
 };
@@ -47,7 +47,7 @@ export const prepareGeminiAffinity = async (
           } else {
             const replacement = { ...part };
             delete replacement.thoughtSignature;
-            replacements.set(location.partIndex, visiblePart(replacement) ? replacement : null);
+            replacements.set(location.partIndex, hasPartContent(replacement) ? replacement : null);
           }
         }
         content.parts = content.parts.flatMap((part, partIndex) => {
