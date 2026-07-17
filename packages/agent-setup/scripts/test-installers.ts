@@ -31,10 +31,14 @@ const powerShellLiteral = (value: string): string => `'${value.replace(/'/g, "''
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const INSTALLERS_DIR = join(HERE, '..', 'installers');
-const BASH_COMMON = readFileSync(join(INSTALLERS_DIR, 'bash/common.sh'), 'utf8');
+const BASH_COMMON = ['output.sh', 'helpers.sh', 'main.sh']
+  .map(file => readFileSync(join(INSTALLERS_DIR, 'bash/common', file), 'utf8'))
+  .join('');
 const BASH_CLAUDE = readFileSync(join(INSTALLERS_DIR, 'bash/claude.sh'), 'utf8');
 const BASH_CODEX = readFileSync(join(INSTALLERS_DIR, 'bash/codex.sh'), 'utf8');
-const POWERSHELL_COMMON = readFileSync(join(INSTALLERS_DIR, 'powershell/common.ps1'), 'utf8');
+const POWERSHELL_COMMON = ['output.ps1', 'helpers.ps1', 'main.ps1']
+  .map(file => readFileSync(join(INSTALLERS_DIR, 'powershell/common', file), 'utf8'))
+  .join('');
 const POWERSHELL_CLAUDE = readFileSync(join(INSTALLERS_DIR, 'powershell/claude.ps1'), 'utf8');
 const POWERSHELL_CODEX = readFileSync(join(INSTALLERS_DIR, 'powershell/codex.ps1'), 'utf8');
 const shellBody = (agent: 'claude' | 'codex'): string => BASH_COMMON + (agent === 'claude' ? BASH_CLAUDE : BASH_CODEX);

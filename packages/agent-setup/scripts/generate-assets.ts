@@ -14,10 +14,14 @@ const PACKAGE_ROOT = resolve(HERE, '..');
 const GENERATED_PATH = resolve(PACKAGE_ROOT, 'src/script-assets.generated.ts');
 
 const fragments = [
-  ['SETUP_BASH_COMMON', 'installers/bash/common.sh'],
+  ['SETUP_BASH_COMMON_OUTPUT', 'installers/bash/common/output.sh'],
+  ['SETUP_BASH_COMMON_HELPERS', 'installers/bash/common/helpers.sh'],
+  ['SETUP_BASH_COMMON_MAIN', 'installers/bash/common/main.sh'],
   ['SETUP_BASH_CLAUDE', 'installers/bash/claude.sh'],
   ['SETUP_BASH_CODEX', 'installers/bash/codex.sh'],
-  ['SETUP_POWERSHELL_COMMON', 'installers/powershell/common.ps1'],
+  ['SETUP_POWERSHELL_COMMON_OUTPUT', 'installers/powershell/common/output.ps1'],
+  ['SETUP_POWERSHELL_COMMON_HELPERS', 'installers/powershell/common/helpers.ps1'],
+  ['SETUP_POWERSHELL_COMMON_MAIN', 'installers/powershell/common/main.ps1'],
   ['SETUP_POWERSHELL_CLAUDE', 'installers/powershell/claude.ps1'],
   ['SETUP_POWERSHELL_CODEX', 'installers/powershell/codex.ps1'],
 ] as const;

@@ -149,11 +149,11 @@ Open the deployed URL (or `http://localhost:8788` for Node), log in with
    and each script installs and configures only its named agent. The command
    picker defaults to Windows on Windows clients and to macOS/Linux elsewhere.
 
-   Bash and PowerShell sources are each split into a common fragment plus one
-   fragment per agent. TypeScript composes only the selected agent into the
-   served script. The final `main`/`Main` invocation lives at the end of that
-   agent fragment, so a truncated download cannot begin installation or
-   configuration.
+   Bash and PowerShell sources each have a `common/` directory containing
+   ordered output, helper, and main fragments, plus one file per agent.
+   TypeScript composes those common fragments with only the selected agent.
+   The final `main`/`Main` invocation lives at the end of that agent file, so a
+   truncated download cannot begin installation or configuration.
 
    The command's setup URL stays stable while the panel is open. The visible
    panel renews its five-minute lease once a minute, and the URL expires about
