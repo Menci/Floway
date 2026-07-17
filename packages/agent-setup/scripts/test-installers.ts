@@ -44,7 +44,7 @@ const POWERSHELL_CODEX = readFileSync(join(INSTALLERS_DIR, 'powershell/codex.ps1
 type SetupAgent = 'claude' | 'codex';
 const AGENT_NAMES: Record<SetupAgent, string> = { claude: 'Claude Code', codex: 'Codex' };
 const shellEntry = (agent: SetupAgent): string => `main '${AGENT_NAMES[agent]}' "$@"`;
-const powerShellEntry = (agent: SetupAgent): string => `exit (Main '${AGENT_NAMES[agent]}')`;
+const powerShellEntry = (agent: SetupAgent): string => `$global:LASTEXITCODE = Main '${AGENT_NAMES[agent]}'`;
 const shellBody = (agent: SetupAgent): string => BASH_COMMON + (agent === 'claude' ? BASH_CLAUDE : BASH_CODEX);
 const powerShellBody = (agent: SetupAgent): string => POWERSHELL_COMMON + (agent === 'claude' ? POWERSHELL_CLAUDE : POWERSHELL_CODEX);
 const ALL_BASH_FRAGMENTS = BASH_COMMON + BASH_CLAUDE + BASH_CODEX;
@@ -535,6 +535,9 @@ interface RunOptions {
   codexInstallerUrl?: string;
   ambientCodexNonInteractive?: string;
   powerShellTimeSeparator?: string;
+  // Forces the existing-file branch through File.Replace on non-Windows hosts,
+  // exercising PowerShell's real-null interop without a production test hook.
+  forcePowerShellWindowsReplacement?: boolean;
   // Output-contract knobs. `forceColor` sets AGENT_SETUP_TEST_FORCE_COLOR so
   // the palette is emitted even though the harness captures (never a TTY);
   // `noColor` sets NO_COLOR; `failRestore` sets AGENT_SETUP_TEST_FAIL_RESTORE
@@ -733,6 +736,7 @@ const codexBackupFiles = (dir: string, base: 'config.toml' | 'floway-token'): st
   existsSync(dir) ? readdirSync(dir).filter(name => name.startsWith(`${base}.floway-backup.`)) : [];
 const readCodexToken = (workspace: Workspace, codexHome?: string): string =>
   readFileSync(codexTokenPath(workspace, codexHome), 'utf8');
+const powerShellCallerSurvivalPath = (workspace: Workspace): string => join(workspace.root, 'powershell-caller-survived');
 
 const networkReachable = (): boolean => {
   const probe = spawnSync('/usr/bin/curl', ['-fsSL', '-o', '/dev/null', '--max-time', '8', 'https://github.com/jqlang/jq/releases/download/jq-1.8.2/sha256sum.txt'], { encoding: 'utf8' });
@@ -748,9 +752,23 @@ const runPowerShellInstaller = (options: RunOptions): Promise<RunResult> => {
   const culturePrelude = options.powerShellTimeSeparator === undefined
     ? ''
     : `$culture = [Globalization.CultureInfo]::GetCultureInfo('en-US').Clone()\n$culture.DateTimeFormat.TimeSeparator = '${options.powerShellTimeSeparator.replace(/'/g, "''")}'\n[Threading.Thread]::CurrentThread.CurrentCulture = $culture\n`;
-  const script = powerShellBaseUrlPrelude(options) + renderPowerShellPrefix({ agent, apiKey: SENTINEL_KEY, apiKeyName: 'Primary key', configuration }) + culturePrelude + powerShellBody(agent);
+  const canonicalBody = powerShellBody(agent);
+  const body = options.forcePowerShellWindowsReplacement
+    ? canonicalBody
+        .replace('if ($script:ClaudeSettingsExisted -and $runningOnWindows)', 'if ($script:ClaudeSettingsExisted)')
+        .replace('if ($script:CodexTokenExisted -and $runningOnWindows)', 'if ($script:CodexTokenExisted)')
+    : canonicalBody;
+  const script = powerShellBaseUrlPrelude(options) + renderPowerShellPrefix({ agent, apiKey: SENTINEL_KEY, apiKeyName: 'Primary key', configuration }) + culturePrelude + body;
   const scriptPath = join(workspace.root, 'setup.ps1');
+  const invocationPath = join(workspace.root, 'invoke-setup.ps1');
   writeFileSync(scriptPath, script);
+  writeFileSync(invocationPath, [
+    `$body = Get-Content -Raw -LiteralPath ${powerShellLiteral(scriptPath)}`,
+    '$body | Invoke-Expression',
+    '$code = $global:LASTEXITCODE',
+    `[System.IO.File]::WriteAllText(${powerShellLiteral(powerShellCallerSurvivalPath(workspace))}, 'alive')`,
+    'exit $code',
+  ].join('\n'));
 
   if (options.fakeChmodFailure) {
     writeFileSync(join(workspace.binDir, 'chmod'), '#!/bin/bash\nexit 73\n', { mode: 0o755 });
@@ -777,7 +795,7 @@ const runPowerShellInstaller = (options: RunOptions): Promise<RunResult> => {
   if (options.failRestore) env.AGENT_SETUP_TEST_FAIL_RESTORE = '1';
 
   return new Promise<RunResult>((resolve) => {
-    const child = spawn(hostPwsh!, ['-NoProfile', '-File', scriptPath], { env });
+    const child = spawn(hostPwsh!, ['-NoProfile', '-File', invocationPath], { env });
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', chunk => { stdout += chunk; });
@@ -1074,6 +1092,7 @@ test('claude', 'PowerShell: existing CLI configures and preserves unrelated keys
     configuration: claudeConfig({ model: 'claude-opus-x[1m]', defaultOpusModel: 'opus-x', defaultSonnetModel: 'sonnet-x', effortLevel: 'high', modelDiscovery: true }),
   });
   t.equal(run.code, 0, `should succeed:\n${run.combined}`);
+  t.ok(existsSync(powerShellCallerSurvivalPath(ws)), 'the IEX caller survives a successful setup');
   t.ok(!existsSync(installerMarker(ws)), 'installer must not run when claude is present');
   const settings = readSettings(settingsPathFor(ws)) as { theme: string; effortLevel: string; env: Record<string, string> };
   t.equal(settings.theme, 'dark', 'unrelated top-level key preserved');
@@ -1152,6 +1171,24 @@ test('claude', 'PowerShell: a pre-existing settings file is backed up', async t 
   t.equal(readFileSync(join(configDir, backups[0]!), 'utf8'), original, 'backup captures the original bytes');
 });
 
+test('claude', 'PowerShell: existing settings use File.Replace with a real null backup path', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  placeFakeClaude(ws.binDir);
+  const configDir = join(ws.home, '.claude');
+  mkdirSync(configDir, { recursive: true });
+  writeFileSync(settingsPathFor(ws), JSON.stringify({ theme: 'light' }));
+  const run = await runPowerShellInstaller({
+    workspace: ws,
+    configuration: claudeConfig(),
+    baseUrl: modelServer.url,
+    forcePowerShellWindowsReplacement: true,
+  });
+  t.equal(run.code, 0, `File.Replace should succeed:\n${run.combined}`);
+  const settings = readSettings(settingsPathFor(ws)) as { env: Record<string, string> };
+  t.equal(settings.env.ANTHROPIC_AUTH_TOKEN, SENTINEL_KEY, 'the replacement carries the selected key');
+});
+
 test('claude', 'PowerShell: invalid existing JSON fails without mutating the file', async t => {
   if (!hostPwsh) skip('no PowerShell interpreter on this host');
   const ws = makeWorkspace();
@@ -1162,6 +1199,7 @@ test('claude', 'PowerShell: invalid existing JSON fails without mutating the fil
   writeFileSync(settingsPathFor(ws), broken);
   const run = await runPowerShellInstaller({ workspace: ws, configuration: claudeConfig(), baseUrl: modelServer.url });
   t.ok(run.code !== 0, 'invalid existing settings must fail the run');
+  t.ok(existsSync(powerShellCallerSurvivalPath(ws)), 'the IEX caller survives a failed setup');
   t.equal(readFileSync(settingsPathFor(ws), 'utf8'), broken, 'the invalid file is left untouched');
   t.equal(backupFiles(configDir).length, 0, 'no backup is created when validation fails before mutation');
 });
@@ -1186,7 +1224,7 @@ test('claude', 'PowerShell stages secret data only after protection and hardens 
   const protectStageIndex = body.indexOf('Protect-SetupFile $stage', createIndex);
   const writeIndex = body.indexOf('[System.IO.File]::WriteAllText($stage, $json', protectStageIndex);
   const protectTargetIndex = body.indexOf('Protect-SetupFile $script:ClaudeSettingsPath', writeIndex);
-  const replaceIndex = body.indexOf('[System.IO.File]::Replace($stage, $script:ClaudeSettingsPath, $null)', protectTargetIndex);
+  const replaceIndex = body.indexOf('[System.IO.File]::Replace($stage, $script:ClaudeSettingsPath, [System.Management.Automation.Language.NullString]::Value)', protectTargetIndex);
   t.ok(createIndex >= 0 && createIndex < protectStageIndex, 'stage must be created before protection');
   t.ok(protectStageIndex < writeIndex, 'stage must be protected before secret JSON is written');
   t.ok(protectTargetIndex < replaceIndex, 'existing Windows target must be hardened before File.Replace');
@@ -1194,6 +1232,17 @@ test('claude', 'PowerShell stages secret data only after protection and hardens 
   t.includes(body, "[long]([DateTimeOffset]::UtcNow - [DateTimeOffset]'1970-01-01T00:00:00Z').TotalMilliseconds", 'backup timestamp must support the .NET Framework used by PowerShell 5.1');
   t.excludes(body, 'ToUnixTimeMilliseconds()', 'PowerShell 5.1-incompatible timestamp API must not be used');
   t.includes(body, 'Move-Item -LiteralPath $stage -Destination $script:ClaudeSettingsPath', 'new target must use a same-directory move');
+});
+
+test('claude', 'PowerShell Windows file protection writes only an owner DACL', t => {
+  const helperStart = POWERSHELL_COMMON.indexOf('function Protect-SetupFile');
+  const helperEnd = POWERSHELL_COMMON.indexOf('function Stop-SetupProcessTree', helperStart);
+  const helper = POWERSHELL_COMMON.slice(helperStart, helperEnd);
+  t.includes(helper, 'New-Object System.Security.AccessControl.FileSecurity', 'a fresh descriptor carries no prior access rules');
+  t.includes(helper, "FileSystemAccessRule($identity, 'FullControl', 'Allow')", 'the current user receives the sole allow rule');
+  t.includes(helper, '[System.IO.File]::SetAccessControl($Path, $acl)', 'Windows PowerShell 5.1 writes the descriptor directly');
+  t.includes(helper, '[System.IO.FileSystemAclExtensions]::SetAccessControl', 'PowerShell 7 writes the descriptor through the .NET extension');
+  t.excludes(helper, '\n  Set-Acl ', 'the filesystem provider cannot request an SACL write');
 });
 
 test('claude', 'PowerShell: missing CLI triggers the installer', async t => {
@@ -1971,7 +2020,7 @@ test('codex', 'PowerShell: Windows provider-token replacement and rollback prese
   const protectStage = tokenBody.indexOf('Protect-SetupFile $stage', createStage);
   const writeSecret = tokenBody.indexOf('[System.IO.File]::WriteAllText($stage, $SetupApiKey', protectStage);
   const protectTarget = tokenBody.indexOf('Protect-SetupFile $script:CodexTokenPath', writeSecret);
-  const replaceTarget = tokenBody.indexOf('[System.IO.File]::Replace($stage, $script:CodexTokenPath, $null)', protectTarget);
+  const replaceTarget = tokenBody.indexOf('[System.IO.File]::Replace($stage, $script:CodexTokenPath, [System.Management.Automation.Language.NullString]::Value)', protectTarget);
   t.ok(tokenFnStart >= 0, 'Write-SetupCodexToken marker exists');
   t.ok(tokenFnEnd >= 0, 'Write-SetupCodexVersion marker exists after token function');
   t.ok(createStage >= 0, 'Codex provider-token stage creation marker exists');
@@ -1996,6 +2045,23 @@ test('codex', 'PowerShell: Windows provider-token replacement and rollback prese
   const restoreEnd = POWERSHELL_CODEX.indexOf('function Invoke-SetupCodexAppServerBatchWrite', restoreStart);
   t.ok(restoreStart >= 0, 'Restore-SetupCodexFiles marker exists');
   t.ok(restoreEnd >= 0, 'app-server function marker exists after restore function');
+});
+
+test('codex', 'PowerShell: existing provider token uses File.Replace with a real null backup path', async t => {
+  if (!hostPwsh) skip('no PowerShell interpreter on this host');
+  const ws = makeWorkspace();
+  placeFakeCodex(ws.binDir);
+  const home = codexHomeFor(ws);
+  mkdirSync(home, { recursive: true });
+  writeFileSync(codexTokenPath(ws), 'old-provider-token');
+  const run = await runPowerShellInstaller({
+    workspace: ws,
+    configuration: codexConfig(),
+    baseUrl: modelServer.url,
+    forcePowerShellWindowsReplacement: true,
+  });
+  t.equal(run.code, 0, `File.Replace should succeed:\n${run.combined}`);
+  assertStagedToken(t, ws);
 });
 
 test('codex', 'PowerShell: a batchWrite error fails codex and rolls back the provider token', async t => {

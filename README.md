@@ -168,8 +168,9 @@ Open the deployed URL (or `http://localhost:8788` for Node), log in with
    its agent in four Homebrew-style notices: `Agent Setup`, `Installing`,
    `Configuring`, and `Completed Agent Setup`, with the agent name after a colon.
    Metadata and normal status text stay plain, while warning and error labels
-   are colored. The script exits with the selected agent's result and prints no
-   redundant summary.
+   are colored. Bash exits with the selected agent's result; PowerShell stores
+   it in `$LASTEXITCODE` without terminating the caller's `irm | iex` runspace.
+   Neither script prints a redundant summary.
 
    Each managed file is backed up before Floway's settings are merged into
    Claude Code's `~/.claude/settings.json` and Codex's

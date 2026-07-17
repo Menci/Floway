@@ -242,7 +242,10 @@ function Write-SetupCodexToken {
     if ($script:CodexTokenExisted -and $runningOnWindows) {
       # File.Replace preserves the destination ACL, so tighten it first.
       Protect-SetupFile $script:CodexTokenPath
-      [System.IO.File]::Replace($stage, $script:CodexTokenPath, $null)
+      # PowerShell binds ordinary $null to String.Empty for a .NET string
+      # parameter; NullString passes an actual null backup path.
+      # https://learn.microsoft.com/en-us/dotnet/api/system.management.automation.language.nullstring
+      [System.IO.File]::Replace($stage, $script:CodexTokenPath, [System.Management.Automation.Language.NullString]::Value)
     } else {
       Move-Item -LiteralPath $stage -Destination $script:CodexTokenPath -Force
     }
@@ -308,4 +311,4 @@ function Set-SetupAgent {
 }
 
 
-exit (Main 'Codex')
+$global:LASTEXITCODE = Main 'Codex'

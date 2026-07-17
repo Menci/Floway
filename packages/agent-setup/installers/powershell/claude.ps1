@@ -135,7 +135,10 @@ function Write-SetupClaudeSettings {
       # File.Replace preserves the destination ACL, so tighten it first rather
       # than letting a permissive historical DACL survive the atomic replace.
       Protect-SetupFile $script:ClaudeSettingsPath
-      [System.IO.File]::Replace($stage, $script:ClaudeSettingsPath, $null)
+      # PowerShell binds ordinary $null to String.Empty for a .NET string
+      # parameter; NullString passes an actual null backup path.
+      # https://learn.microsoft.com/en-us/dotnet/api/system.management.automation.language.nullstring
+      [System.IO.File]::Replace($stage, $script:ClaudeSettingsPath, [System.Management.Automation.Language.NullString]::Value)
     } else {
       # Move-Item is an atomic same-filesystem rename on Unix and creates a new
       # target on Windows. Windows replacing an existing target uses File.Replace.
@@ -184,4 +187,4 @@ function Set-SetupAgent {
 }
 
 
-exit (Main 'Claude Code')
+$global:LASTEXITCODE = Main 'Claude Code'
