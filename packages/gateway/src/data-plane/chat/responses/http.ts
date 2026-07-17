@@ -1,4 +1,3 @@
-import { ResponsesAffinityInputError } from './affinity/ingress.ts';
 import { responsesInputErrorResult } from './errors.ts';
 import { createResponsesHttpStore } from './items/store.ts';
 import { respondResponses } from './respond.ts';
@@ -60,7 +59,7 @@ const respondToThrow = async (c: AuthedContext, error: unknown, requestBody: Req
     ctx?.dump?.error('gateway');
     return ctx ? finalizeGatewayResponse(ctx, response) : response;
   }
-  if (error instanceof TranslatorInputError || error instanceof ResponsesAffinityInputError) {
+  if (error instanceof TranslatorInputError) {
     const effectiveCtx = ctx ?? createGatewayCtxFromHono(c, { wantsStream: false, requestBody: takeRequestBody(requestBody), backgroundScheduler: backgroundSchedulerFromContext(c) });
     const response = await respondResponses(c, responsesInputErrorResult(error, effectiveCtx.attempt.telemetry), false, effectiveCtx);
     return finalizeGatewayResponse(effectiveCtx, response);

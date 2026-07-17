@@ -38,7 +38,6 @@ export const responsesServe = {
           payload: payloadForCandidate,
           sourceState: {
             privatePayloads: plan.privatePayloads,
-            itemIdMap: plan.affinity.itemIdMapForCandidate(candidate),
           },
           ctx,
           candidate,
@@ -74,7 +73,6 @@ export const responsesServe = {
           payload: payloadForCandidate,
           sourceState: {
             privatePayloads: plan.privatePayloads,
-            itemIdMap: plan.affinity.itemIdMapForCandidate(candidate),
           },
           action: 'compact',
           ctx,

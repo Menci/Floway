@@ -1,10 +1,10 @@
 export class ResponsesAttemptState {
   readonly #privatePayloads = new Map<string, unknown>();
 
-  begin(privatePayloads: ReadonlyMap<string, unknown>, itemIdMap: ReadonlyMap<string, string>): void {
+  begin(privatePayloads: ReadonlyMap<string, unknown>): void {
     this.#privatePayloads.clear();
     for (const [id, payload] of privatePayloads) {
-      this.#privatePayloads.set(itemIdMap.get(id) ?? id, structuredClone(payload));
+      this.#privatePayloads.set(id, structuredClone(payload));
     }
   }
 
