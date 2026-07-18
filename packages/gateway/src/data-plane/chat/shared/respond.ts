@@ -122,10 +122,10 @@ export const mergeForwardedUpstreamHeaders = (base: HeadersInit | undefined, ups
 // under packages/gateway/src/data-plane/chat/ and its own respond.ts. Not
 // interchangeable with `ChatTargetApi` from @floway-dev/provider, which
 // enumerates the OpenAI-family upstream target APIs and deliberately
-// excludes `gemini` (Google is a distinct upstream family). This tag is a
+// excludes `gemini` (Google is a distinct upstream family). This union is a
 // gateway-internal telemetry label; `respondSseStream` interpolates it into
 // the failure log line.
-export type ChatProtocolTag = 'chat-completions' | 'gemini' | 'messages' | 'responses';
+export type ChatProtocolName = 'chat-completions' | 'gemini' | 'messages' | 'responses';
 
 // Shared streaming scaffold for every chat protocol's SSE response. Forwards
 // upstream headers, drives `writeSSEFrames` under Hono's `streamSSE`, and
@@ -143,7 +143,7 @@ export const respondSseStream = <TEvent>(
   opts: {
     sseFrames: AsyncIterable<SseFrame>;
     keepAliveFrame: SseWritableFrame;
-    protocolTag: ChatProtocolTag;
+    protocolTag: ChatProtocolName;
   },
 ): Response => {
   forwardUpstreamHeaders(c, eventsResult.headers);
