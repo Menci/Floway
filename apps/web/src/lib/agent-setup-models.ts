@@ -5,7 +5,7 @@
 
 import type { PublicModel, PublicModelLimits } from '../api/types.ts';
 
-export type ClaudePicker = 'default' | 'fable' | 'opus' | 'sonnet' | 'haiku';
+export type ClaudePicker = 'default' | 'opus' | 'sonnet' | 'haiku';
 type ClaudeTier = 'fable' | 'opus' | 'sonnet' | 'haiku' | 'other';
 export type AgentModelRanking =
   | { family: 'claude'; picker: ClaudePicker }
@@ -24,17 +24,12 @@ export interface ModelOption {
 }
 
 const CLAUDE_DEFAULT_ORDER: readonly ClaudeTier[] = ['fable', 'opus', 'sonnet', 'haiku', 'other'];
-export const isClaudeCodeModel = (id: string): boolean =>
-  id.toLowerCase().split('/').some(part => part.startsWith('claude-'));
 const claudeTier = (id: string): ClaudeTier => {
   const segment = id.toLowerCase().split('/').find(part => part.startsWith('claude-'));
   if (!segment) return 'other';
   const tier = (['fable', 'opus', 'sonnet', 'haiku'] as const).find(candidate => segment.includes(`-${candidate}`));
   return tier ?? 'other';
 };
-
-export const isCodexConfigModel = (id: string): boolean =>
-  id.toLowerCase().split('/').at(-1)!.startsWith('gpt-5');
 
 const claudeOrder = (picker: ClaudePicker): readonly ClaudeTier[] => picker === 'default'
   ? CLAUDE_DEFAULT_ORDER
