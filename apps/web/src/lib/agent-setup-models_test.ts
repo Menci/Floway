@@ -209,6 +209,16 @@ describe('buildModelOptions', () => {
     expect(options[1]!.value).toBe('claude-sonnet-4-5[1m]');
   });
 
+  it('deduplicates option values when raw and pre-suffixed Claude ids converge', () => {
+    const options = buildModelOptions([
+      buildRealModel({ id: 'claude-sonnet-4-5', limits: { max_context_window_tokens: 1_000_000 } }),
+      buildRealModel({ id: 'claude-sonnet-4-5[1m]', limits: { max_context_window_tokens: 1_000_000 } }),
+    ], null, { family: 'claude', picker: 'sonnet' });
+    expect(options.slice(1)).toEqual([
+      { value: 'claude-sonnet-4-5[1m]', modelId: 'claude-sonnet-4-5', unavailable: false },
+    ]);
+  });
+
   it('preserves a restored value missing from the catalog as an unavailable-current option', () => {
     const options = buildModelOptions(
       [buildRealModel({ id: 'claude-sonnet-4-5' })],
