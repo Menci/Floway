@@ -63,15 +63,23 @@ test('runScheduledMaintenance keeps subsequent sweeps running when one top-level
   assertEquals(stubs.purgedExpired.some(c => c.keyId === keyA.id), true);
 });
 
-test('runScheduledMaintenance deletes expired Agent Setup leases across users', async () => {
+test('runScheduledMaintenance prunes expired Agent Setup siblings but retains restorable preferences', async () => {
   const { repo } = await setupAppTest();
   const now = Date.now();
   await repo.agentSetup.insertForUser({
     userId: 7,
-    token: 'expired-lease',
+    token: 'expired-old',
     apiKeyId: 'key-a',
-    configurationJson: '{}',
+    configurationJson: '{"version":"old"}',
     now: now - 10_000,
+    expiresAt: now - 1_000,
+  });
+  await repo.agentSetup.insertForUser({
+    userId: 7,
+    token: 'expired-latest',
+    apiKeyId: 'key-a',
+    configurationJson: '{"version":"latest"}',
+    now: now - 5_000,
     expiresAt: now - 1,
   });
   await repo.agentSetup.insertForUser({
@@ -87,7 +95,8 @@ test('runScheduledMaintenance deletes expired Agent Setup leases across users', 
 
   await runScheduledMaintenance();
 
-  assertEquals(await repo.agentSetup.findByToken('expired-lease'), null);
+  assertEquals(await repo.agentSetup.findByToken('expired-old'), null);
+  assertEquals((await repo.agentSetup.latestByUserId(7))?.token, 'expired-latest');
   assertEquals((await repo.agentSetup.findByToken('live-lease'))?.token, 'live-lease');
 });
 
