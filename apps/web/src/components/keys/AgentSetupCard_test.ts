@@ -130,7 +130,7 @@ describe('AgentSetupCard', () => {
     expect(activeArg).toBe(true);
   });
 
-  it('defaults to Agent Setup and switches to the Config snippets experience', async () => {
+  it('switches only the output while preserving the same configuration controls', async () => {
     const w = mountCard();
     const modeTabs = w.findAll('[role="tablist"][aria-label="Agent configuration mode"] [role="tab"]');
     expect(modeTabs.map(tab => [tab.text(), tab.attributes('aria-selected')])).toEqual([
@@ -139,12 +139,31 @@ describe('AgentSetupCard', () => {
     ]);
     expect(w.text()).toContain('The configuration below will use the Primary API key.');
     expect(w.get('p span.font-medium').classes()).toContain('text-gray-300');
+    const fields = w.get('[data-testid="claude-fields"]').element;
 
     await modeTabs[1]!.trigger('click');
+    expect(w.get('[data-testid="claude-fields"]').element).toBe(fields);
     expect(w.text()).toContain('Edit ~/.claude/settings.json and merge this JSON object');
     await selectAgent(w, 'Codex');
+    expect(w.find('[data-testid="claude-fields"]').exists()).toBe(false);
+    expect(w.find('[data-testid="codex-fields"]').exists()).toBe(true);
     expect(w.text()).toContain('Merge into ~/.codex/config.toml');
     expect(w.text()).not.toContain('Edit ~/.claude/settings.json');
+  });
+
+  it('drives a manual Codex snippet from the shared model and effort controls', async () => {
+    const w = mountCard();
+    const modeTabs = w.findAll('[role="tablist"][aria-label="Agent configuration mode"] [role="tab"]');
+    await modeTabs[1]!.trigger('click');
+    await selectAgent(w, 'Codex');
+
+    selectIn(w, 'codex-model').vm.$emit('update:modelValue', 'gpt-5');
+    w.get('[data-testid="codex-effort"]').findComponent(Combobox).vm.$emit('update:modelValue', 'xhigh');
+    await nextTick();
+
+    const config = w.get('code.language-toml').text();
+    expect(config).toContain('model = "gpt-5"');
+    expect(config).toContain('model_reasoning_effort = "xhigh"');
   });
 
   it('associates visible labels with representative Select and Combobox controls', async () => {

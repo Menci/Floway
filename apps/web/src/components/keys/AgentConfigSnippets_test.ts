@@ -2,8 +2,8 @@ import { mount } from '@vue/test-utils';
 import { describe, expect, it, vi } from 'vitest';
 import { defineComponent } from 'vue';
 
-import { buildRealModel } from '../../api/test-fixtures.ts';
 import type { ApiKey } from '../../api/types.ts';
+import type { AgentSetupConfiguration } from '../../composables/useAgentSetup.ts';
 
 vi.mock('@floway-dev/ui', () => ({
   Code: defineComponent({
@@ -27,27 +27,41 @@ const key = (id: string, name: string, raw: string): ApiKey => ({
   dump_retention_seconds: null,
 });
 
-const models = [
-  buildRealModel({ id: 'claude-sonnet-4-5', endpoints: { messages: {} }, limits: { max_context_window_tokens: 1_000_000 } }),
-  buildRealModel({ id: 'claude-haiku-4-5', endpoints: { messages: {} } }),
-  buildRealModel({ id: 'gpt-5.5', endpoints: { responses: {} } }),
-];
+const configuration = (): AgentSetupConfiguration => ({
+  apiKeyId: 'key-1',
+  claudeCode: {
+    enabled: true,
+    model: 'claude-sonnet-4-5[1m]',
+    defaultOpusModel: 'claude-opus-4-8',
+    defaultSonnetModel: 'claude-sonnet-4-5[1m]',
+    defaultHaikuModel: 'claude-haiku-4-5',
+    effortLevel: 'high',
+    modelDiscovery: true,
+  },
+  codex: { enabled: true, model: 'gpt-5.6-sol', reasoningEffort: 'xhigh' },
+});
 
 describe('AgentConfigSnippets', () => {
-  it('renders Claude configuration as settings JSON rather than shell exports', () => {
-    const wrapper = mount(AgentConfigSnippets, { props: { agent: 'claude', apiKey: key('key-1', 'Primary', 'floway-key'), models } });
+  it('renders the shared Claude configuration as a settings JSON edit without duplicate controls', () => {
+    const wrapper = mount(AgentConfigSnippets, {
+      props: { agent: 'claude', apiKey: key('key-1', 'Primary', 'floway-key'), configuration: configuration() },
+    });
     const json = wrapper.find('pre[data-language="json"]').text();
 
     expect(wrapper.text()).toContain('Edit ~/.claude/settings.json and merge this JSON object');
     expect(wrapper.text()).toContain('Do not export these values as shell environment variables');
+    expect(wrapper.find('select').exists()).toBe(false);
     expect(json).toContain('"ANTHROPIC_AUTH_TOKEN": "floway-key"');
-    expect(json).toContain('"ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-4-5[1m]"');
+    expect(json).toContain('"ANTHROPIC_MODEL": "claude-sonnet-4-5[1m]"');
+    expect(json).toContain('"ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-haiku-4-5"');
+    expect(json).toContain('"CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY": "1"');
+    expect(json).toContain('"effortLevel": "high"');
     expect(json).not.toContain('export ');
   });
 
   it('switches every credential snippet when the selected API key changes', async () => {
     const wrapper = mount(AgentConfigSnippets, {
-      props: { agent: 'codex', apiKey: key('key-1', 'Primary', 'first-key'), models },
+      props: { agent: 'codex', apiKey: key('key-1', 'Primary', 'first-key'), configuration: configuration() },
     });
     await wrapper.setProps({ apiKey: key('key-2', 'CI', "floway-'key") });
 
@@ -58,11 +72,15 @@ describe('AgentConfigSnippets', () => {
     expect(wrapper.find('pre[data-language="powershell"]').text()).toContain("'floway-''key'");
   });
 
-  it('uses provider-scoped Codex auth and enables the client-owned tools without their startup warning', () => {
-    const wrapper = mount(AgentConfigSnippets, { props: { agent: 'codex', apiKey: key('key-1', 'Primary', 'floway-key'), models } });
+  it('uses the shared Codex choices with provider-scoped auth and client-owned tools', () => {
+    const wrapper = mount(AgentConfigSnippets, {
+      props: { agent: 'codex', apiKey: key('key-1', 'Primary', 'floway-key'), configuration: configuration() },
+    });
     const config = wrapper.find('pre[data-language="toml"]').text();
 
-    expect(config).toContain('model = "gpt-5.5"');
+    expect(wrapper.find('select').exists()).toBe(false);
+    expect(config).toContain('model = "gpt-5.6-sol"');
+    expect(config).toContain('model_reasoning_effort = "xhigh"');
     expect(config).toContain('/azure-api.codex');
     expect(config).toContain('floway-token');
     expect(config).toContain('supports_websockets = true');
