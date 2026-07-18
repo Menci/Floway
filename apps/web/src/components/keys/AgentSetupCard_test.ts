@@ -24,8 +24,6 @@ interface SetupStub {
   syncing: Ref<boolean>;
   terminated: Ref<boolean>;
   canCopy: Ref<boolean>;
-  save: () => void;
-  heartbeat: () => void;
   retryCreate: () => void;
   dispose: () => void;
 }
@@ -59,8 +57,6 @@ const makeSetup = (over: Partial<{ config: AgentSetupConfiguration; initialized:
   syncing: ref(over.syncing ?? false),
   terminated: ref(over.terminated ?? false),
   canCopy: ref(over.canCopy ?? true),
-  save: vi.fn(),
-  heartbeat: vi.fn(),
   retryCreate: vi.fn(),
   dispose: vi.fn(),
 });

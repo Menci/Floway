@@ -88,6 +88,16 @@ const run = <T>(fn: () => T): T => {
   return scope.run(fn)!;
 };
 
+const setVisibility = (state: 'visible' | 'hidden') => {
+  Object.defineProperty(document, 'visibilityState', { value: state, configurable: true });
+  document.dispatchEvent(new Event('visibilitychange'));
+};
+const resumeHeartbeat = async () => {
+  setVisibility('hidden');
+  setVisibility('visible');
+  await vi.advanceTimersByTimeAsync(0);
+};
+
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(0);
@@ -255,7 +265,6 @@ describe('useAgentSetup — debounced serialized saves', () => {
     const { records, setup } = await startInitialized();
 
     setup.draft.value!.claudeCode.model = 'claude-sonnet-4-5[1m]';
-    setup.save();
     expect(setup.syncing.value).toBe(true);
     expect(setup.canCopy.value).toBe(false);
 
@@ -274,10 +283,8 @@ describe('useAgentSetup — debounced serialized saves', () => {
   it('coalesces rapid edits within the debounce window into a single PUT', async () => {
     const { records, setup } = await startInitialized();
     setup.draft.value!.codex.reasoningEffort = 'low';
-    setup.save();
     await vi.advanceTimersByTimeAsync(200);
     setup.draft.value!.codex.reasoningEffort = 'high';
-    setup.save();
     await vi.advanceTimersByTimeAsync(400);
 
     expect(records.put.length).toBe(1);
@@ -288,13 +295,11 @@ describe('useAgentSetup — debounced serialized saves', () => {
     const { records, setup } = await startInitialized();
 
     setup.draft.value!.codex.model = 'gpt-5-codex';
-    setup.save();
     await vi.advanceTimersByTimeAsync(400);
     expect(records.put.length).toBe(1);
 
     // Edit again while PUT #1 is still in flight.
     setup.draft.value!.codex.reasoningEffort = 'high';
-    setup.save();
     await vi.advanceTimersByTimeAsync(400);
     // Still only one PUT — the pump serializes, PUT #1 has not resolved.
     expect(records.put.length).toBe(1);
@@ -339,7 +344,6 @@ describe('useAgentSetup — debounced serialized saves', () => {
 
     // No edit happened after PUT #1 captured the form generation. save() must
     // recognize that the current dirty generation is already in flight.
-    setup.save();
     records.put[0]!.deferred.resolve(okBody(lease({ configurationRevision: 2 })));
     await vi.advanceTimersByTimeAsync(0);
     await vi.advanceTimersByTimeAsync(400);
@@ -349,12 +353,10 @@ describe('useAgentSetup — debounced serialized saves', () => {
   it('a stale save response updates lease metadata without clearing a newer draft', async () => {
     const { records, setup } = await startInitialized();
     setup.draft.value!.codex.model = 'gpt-5-codex';
-    setup.save();
     await vi.advanceTimersByTimeAsync(400);
 
     // A newer edit lands while PUT #1 is in flight.
     setup.draft.value!.codex.reasoningEffort = 'high';
-    setup.save();
 
     records.put[0]!.deferred.resolve(okBody(lease({ token: 'tok-2', configurationRevision: 2 })));
     await vi.advanceTimersByTimeAsync(0);
@@ -371,7 +373,6 @@ describe('useAgentSetup — revision conflict', () => {
   it('confirms the generation when the conflict already holds our attempted configuration', async () => {
     const { records, setup } = await startInitialized();
     setup.draft.value!.codex.model = 'gpt-5-codex';
-    setup.save();
     await vi.advanceTimersByTimeAsync(400);
 
     // A lost ack: the server committed exactly this edit, then rejected our PUT
@@ -394,7 +395,6 @@ describe('useAgentSetup — revision conflict', () => {
   it('retains the local draft and resubmits when the conflict carries a config we did not just attempt', async () => {
     const { records, setup } = await startInitialized();
     setup.draft.value!.codex.model = 'gpt-5-codex';
-    setup.save();
     await vi.advanceTimersByTimeAsync(400);
     expect(records.put.length).toBe(1);
 
@@ -429,12 +429,10 @@ describe('useAgentSetup — revision conflict', () => {
   it('resubmits the latest draft when a newer local edit exists', async () => {
     const { records, setup } = await startInitialized();
     setup.draft.value!.codex.model = 'gpt-5-codex';
-    setup.save();
     await vi.advanceTimersByTimeAsync(400);
 
     // Newer edit while PUT #1 is in flight.
     setup.draft.value!.codex.reasoningEffort = 'medium';
-    setup.save();
 
     records.put[0]!.deferred.resolve(conflictBody(lease({
       status: 'revision-conflict', configuration: defaultConfig(), configurationRevision: 5,
@@ -507,14 +505,12 @@ describe('useAgentSetup — heartbeat', () => {
   it('does not overlap a heartbeat with an in-flight save', async () => {
     const { records, setup } = await startInitialized();
     setup.draft.value!.codex.model = 'gpt-5-codex';
-    setup.save();
     await vi.advanceTimersByTimeAsync(400);
     expect(records.put.length).toBe(1);
 
     // Request a heartbeat while the PUT is still in flight (inside the request
     // timeout). The pump must hold it behind the save.
-    setup.heartbeat();
-    await vi.advanceTimersByTimeAsync(0);
+    await resumeHeartbeat();
     expect(records.heartbeat.length).toBe(0);
 
     records.put[0]!.deferred.resolve(okBody(lease({ configurationRevision: 2 })));
@@ -557,8 +553,7 @@ describe('useAgentSetup — heartbeat', () => {
     // Complete the retry so the serialized pump can service heartbeat.
     records.put[1]!.deferred.resolve(okBody(lease({ configurationRevision: 2 })));
     await vi.advanceTimersByTimeAsync(0);
-    setup.heartbeat();
-    await vi.advanceTimersByTimeAsync(0);
+    await resumeHeartbeat();
     records.heartbeat[0]!.deferred.resolve(errorBody(503));
     await vi.advanceTimersByTimeAsync(15_000);
     expect(records.heartbeat.length).toBe(2);
@@ -572,8 +567,7 @@ describe('useAgentSetup — heartbeat', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(setup.state.error.value).toBe('bad configuration');
 
-    setup.heartbeat();
-    await vi.advanceTimersByTimeAsync(0);
+    await resumeHeartbeat();
     records.heartbeat[0]!.deferred.resolve(okBody(lease()));
     await vi.advanceTimersByTimeAsync(0);
     expect(setup.state.error.value).toBe('bad configuration');
@@ -597,8 +591,7 @@ describe('useAgentSetup — heartbeat', () => {
 
     // A manual heartbeat may still be attempted, but its permanent 403 must not
     // schedule the 15s retry (the regular 60s lease cadence remains independent).
-    setup.heartbeat();
-    await vi.advanceTimersByTimeAsync(0);
+    await resumeHeartbeat();
     records.heartbeat[0]!.deferred.resolve(errorBody(403, { error: 'forbidden' }));
     await vi.advanceTimersByTimeAsync(60_000);
     expect(records.heartbeat.length).toBe(1);
@@ -611,7 +604,6 @@ describe('useAgentSetup — terminal + lifecycle', () => {
   it('marks the instance terminated and stops scheduling on a missing response', async () => {
     const { records, setup } = await startInitialized();
     setup.draft.value!.codex.model = 'gpt-5-codex';
-    setup.save();
     await vi.advanceTimersByTimeAsync(400);
 
     records.put[0]!.deferred.resolve(conflictBody({ status: 'missing' }));
@@ -651,8 +643,7 @@ describe('useAgentSetup — terminal + lifecycle', () => {
     if (kind === 'heartbeat') {
       call.deferred.resolve(okBody(lease()));
       await vi.advanceTimersByTimeAsync(0);
-      setup.heartbeat();
-      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(60_000);
       call = records.heartbeat[0]!;
     }
 
@@ -693,11 +684,6 @@ describe('useAgentSetup — terminal + lifecycle', () => {
 });
 
 describe('useAgentSetup — visibility', () => {
-  const setVisibility = (state: 'visible' | 'hidden') => {
-    Object.defineProperty(document, 'visibilityState', { value: state, configurable: true });
-    document.dispatchEvent(new Event('visibilitychange'));
-  };
-
   afterEach(() => setVisibility('visible'));
 
   it('pauses heartbeat scheduling while hidden and reconciles immediately on resume', async () => {

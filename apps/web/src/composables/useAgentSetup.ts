@@ -52,10 +52,6 @@ export interface UseAgentSetup {
   syncing: Ref<boolean>;
   terminated: Ref<boolean>;
   canCopy: Ref<boolean>;
-  // Deep draft mutations auto-save. `save` remains an ergonomic explicit flush
-  // hook for forms that already call it after applying a batch of changes.
-  save: () => void;
-  heartbeat: () => void;
   retryCreate: () => void;
   dispose: () => void;
 }
@@ -121,7 +117,6 @@ export const useAgentSetup = (
   let expiryTimer: ReturnType<typeof setTimeout> | null = null;
   let activeRequest: ActiveRequest | null = null;
   let savePending = false;
-  let activeSaveGeneration: number | null = null;
   let heartbeatDue = false;
   let pumpRunning = false;
   let disposed = false;
@@ -274,11 +269,8 @@ export const useAgentSetup = (
     const configuration = snapshot(draft.value);
     const currentToken = token.value;
     const expectedRevision = configurationRevision.value;
-    activeSaveGeneration = generation;
-
     const result = await callApi<LeaseOkResponse>(() => requestWithTimeout(signal =>
       api.api.setup.$put({ json: { token: currentToken, configuration, expectedRevision } }, { init: { signal } })));
-    activeSaveGeneration = null;
     if (disposed) return;
 
     if (result.error) {
@@ -344,24 +336,6 @@ export const useAgentSetup = (
       savePending = true;
       kickPump();
     }, SAVE_DEBOUNCE_MS);
-  };
-
-  const save = () => {
-    if (disposed || terminated.value || !initialized.value) return;
-    if (formGeneration.value === confirmedGeneration.value) return;
-    // The deep watcher already queued this generation. Calling save() while its
-    // PUT is active is an idempotent flush, not a request for a second PUT.
-    if (formGeneration.value === activeSaveGeneration) return;
-    scheduleDebouncedSave();
-  };
-
-  const heartbeat = () => {
-    if (disposed || terminated.value || !initialized.value || !toValue(active)) return;
-    // An explicit reconciliation replaces the scheduled cadence tick. Keeping
-    // both would make a permanent 4xx appear to retry when the old timer fires.
-    heartbeatTimer = clearTimer(heartbeatTimer);
-    heartbeatDue = true;
-    kickPump();
   };
 
   const create = async () => {
@@ -474,8 +448,6 @@ export const useAgentSetup = (
     syncing,
     terminated,
     canCopy,
-    save,
-    heartbeat,
     retryCreate,
     dispose,
   };
