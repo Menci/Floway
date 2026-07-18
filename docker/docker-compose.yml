@@ -2,11 +2,11 @@ name: floway
 
 # `web`'s nginx proxies to `http://server:8788`, so the two containers must
 # share a network whose embedded DNS resolves `server` to the gateway. The
-# Compose spec's implicit `default` network handles this on Docker Compose,
-# but some Compose-compatible runtimes (CasaOS-style app stores, other
-# third-party engines) don't auto-provision it and the web container then
-# fails with `host not found in upstream "server"`. Declaring the network
-# explicitly makes the topology unambiguous across every implementation.
+# Compose spec's implicit `default` network handles this on Docker Compose
+# itself, but some third-party Compose parsers don't reliably auto-provision
+# it and the web container then fails with `host not found in upstream
+# "server"`. Declaring the network explicitly makes the topology unambiguous
+# across every implementation.
 services:
   server:
     build:
