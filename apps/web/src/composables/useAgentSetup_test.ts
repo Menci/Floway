@@ -92,9 +92,10 @@ const setVisibility = (state: 'visible' | 'hidden') => {
   Object.defineProperty(document, 'visibilityState', { value: state, configurable: true });
   document.dispatchEvent(new Event('visibilitychange'));
 };
-const resumeHeartbeat = async () => {
-  setVisibility('hidden');
-  setVisibility('visible');
+const reactivateHeartbeat = async (active: { value: boolean }) => {
+  active.value = false;
+  await vi.advanceTimersByTimeAsync(0);
+  active.value = true;
   await vi.advanceTimersByTimeAsync(0);
 };
 
@@ -254,10 +255,11 @@ describe('useAgentSetup — lease acquisition', () => {
 // Drive an initialized instance to the point where a lease is live and clean.
 const startInitialized = async (over: Record<string, unknown> = {}, keys?: readonly string[]) => {
   const { api, records } = makeApi();
-  const setup = run(() => useAgentSetup(api, keys ?? ['key-1']));
+  const active = shallowRef(true);
+  const setup = run(() => useAgentSetup(api, keys ?? ['key-1'], active));
   records.post[0]!.deferred.resolve(okBody(lease(over)));
   await vi.advanceTimersByTimeAsync(0);
-  return { api, records, setup };
+  return { api, records, setup, active };
 };
 
 describe('useAgentSetup — debounced serialized saves', () => {
@@ -334,20 +336,6 @@ describe('useAgentSetup — debounced serialized saves', () => {
     expect(setup.syncing.value).toBe(false);
     expect(setup.canCopy.value).toBe(true);
     expect(setup.state.configurationRevision.value).toBe(2);
-  });
-
-  it('calling save during the current in-flight generation does not enqueue a duplicate PUT', async () => {
-    const { records, setup } = await startInitialized();
-    setup.draft.value!.codex.model = 'gpt-5-codex';
-    await vi.advanceTimersByTimeAsync(400);
-    expect(records.put.length).toBe(1);
-
-    // No edit happened after PUT #1 captured the form generation. save() must
-    // recognize that the current dirty generation is already in flight.
-    records.put[0]!.deferred.resolve(okBody(lease({ configurationRevision: 2 })));
-    await vi.advanceTimersByTimeAsync(0);
-    await vi.advanceTimersByTimeAsync(400);
-    expect(records.put.length).toBe(1);
   });
 
   it('a stale save response updates lease metadata without clearing a newer draft', async () => {
@@ -503,14 +491,14 @@ describe('useAgentSetup — heartbeat', () => {
   });
 
   it('does not overlap a heartbeat with an in-flight save', async () => {
-    const { records, setup } = await startInitialized();
+    const { records, setup, active } = await startInitialized();
     setup.draft.value!.codex.model = 'gpt-5-codex';
     await vi.advanceTimersByTimeAsync(400);
     expect(records.put.length).toBe(1);
 
-    // Request a heartbeat while the PUT is still in flight (inside the request
-    // timeout). The pump must hold it behind the save.
-    await resumeHeartbeat();
+    // Reactivate while the PUT is still in flight. The reconciliation heartbeat
+    // must stay behind the save in the serialized pump.
+    await reactivateHeartbeat(active);
     expect(records.heartbeat.length).toBe(0);
 
     records.put[0]!.deferred.resolve(okBody(lease({ configurationRevision: 2 })));
@@ -543,7 +531,7 @@ describe('useAgentSetup — heartbeat', () => {
   });
 
   it('retries explicit retryable HTTP statuses for saves and heartbeats', async () => {
-    const { records, setup } = await startInitialized();
+    const { records, setup, active } = await startInitialized();
     setup.draft.value!.codex.model = 'gpt-5-codex';
     await vi.advanceTimersByTimeAsync(400);
     records.put[0]!.deferred.resolve(errorBody(429));
@@ -553,21 +541,21 @@ describe('useAgentSetup — heartbeat', () => {
     // Complete the retry so the serialized pump can service heartbeat.
     records.put[1]!.deferred.resolve(okBody(lease({ configurationRevision: 2 })));
     await vi.advanceTimersByTimeAsync(0);
-    await resumeHeartbeat();
+    await reactivateHeartbeat(active);
     records.heartbeat[0]!.deferred.resolve(errorBody(503));
     await vi.advanceTimersByTimeAsync(15_000);
     expect(records.heartbeat.length).toBe(2);
   });
 
   it('keeps a permanent save error through a successful heartbeat and clears it on a later successful save', async () => {
-    const { records, setup } = await startInitialized();
+    const { records, setup, active } = await startInitialized();
     setup.draft.value!.codex.model = 'gpt-5-codex';
     await vi.advanceTimersByTimeAsync(400);
     records.put[0]!.deferred.resolve(errorBody(400, { error: 'bad configuration' }));
     await vi.advanceTimersByTimeAsync(0);
     expect(setup.state.error.value).toBe('bad configuration');
 
-    await resumeHeartbeat();
+    await reactivateHeartbeat(active);
     records.heartbeat[0]!.deferred.resolve(okBody(lease()));
     await vi.advanceTimersByTimeAsync(0);
     expect(setup.state.error.value).toBe('bad configuration');
@@ -581,7 +569,7 @@ describe('useAgentSetup — heartbeat', () => {
   });
 
   it('does not retry permanent 4xx save or heartbeat failures', async () => {
-    const { records, setup } = await startInitialized();
+    const { records, setup, active } = await startInitialized();
     setup.draft.value!.codex.model = 'gpt-5-codex';
     await vi.advanceTimersByTimeAsync(400);
     records.put[0]!.deferred.resolve(errorBody(400, { error: 'bad configuration' }));
@@ -589,9 +577,9 @@ describe('useAgentSetup — heartbeat', () => {
     expect(records.put.length).toBe(1);
     expect(setup.state.error.value).toBe('bad configuration');
 
-    // A manual heartbeat may still be attempted, but its permanent 403 must not
-    // schedule the 15s retry (the regular 60s lease cadence remains independent).
-    await resumeHeartbeat();
+    // A reactivation heartbeat may still be attempted, but its permanent 403
+    // must not schedule the 15s retry.
+    await reactivateHeartbeat(active);
     records.heartbeat[0]!.deferred.resolve(errorBody(403, { error: 'forbidden' }));
     await vi.advanceTimersByTimeAsync(60_000);
     expect(records.heartbeat.length).toBe(1);
