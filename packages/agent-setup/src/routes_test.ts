@@ -91,6 +91,13 @@ class FakeAgentSetupRepository implements AgentSetupRepository {
     return Promise.resolve({ status: 'ok', record: { ...updated } });
   }
 
+  deleteExpired(expiresAt: number): Promise<void> {
+    for (const [token, row] of this.rows) {
+      if (row.expiresAt <= expiresAt) this.rows.delete(token);
+    }
+    return Promise.resolve();
+  }
+
   renewLease(input: { userId: number; token: string; expiresAt: number }): Promise<AgentSetupMutation> {
     const row = this.rows.get(input.token);
     if (!row || row.userId !== input.userId) return Promise.resolve({ status: 'missing' });

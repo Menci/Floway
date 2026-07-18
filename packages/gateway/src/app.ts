@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 
-import { agentSetupPublicRoutes } from './control-plane/agent-setup.ts';
+import { AGENT_SETUP_ROUTE_PATH, agentSetupPublicRoutes } from './control-plane/agent-setup.ts';
 import { controlPlaneRoutes } from './control-plane/routes.ts';
 import { mountDataPlane } from './data-plane/routes.ts';
 import { type AuthVars, authMiddleware } from './middleware/auth.ts';
@@ -19,7 +19,7 @@ export const app = new Hono<{ Variables: AuthVars }>()
   // here, structurally ahead of the logger / CORS / auth middleware below, so no
   // per-path bypass is needed in any of those layers and a lease token never
   // reaches a log line. The package seals every failure on these routes itself.
-  .route('/api/setup', agentSetupPublicRoutes)
+  .route(AGENT_SETUP_ROUTE_PATH, agentSetupPublicRoutes)
   // One completion line per request for everything that reaches the middleware
   // chain (the public script routes above already returned and are not logged).
   .use('*', async (c, next) => {

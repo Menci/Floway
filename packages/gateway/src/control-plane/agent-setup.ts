@@ -15,10 +15,13 @@ import {
   createAgentSetupPublicRoutes,
 } from '@floway-dev/agent-setup';
 
+export const AGENT_SETUP_ROUTE_PATH = '/api/setup';
+
 const repository: AgentSetupRepository = {
   findByToken: token => getRepo().agentSetup.findByToken(token),
   latestByUserId: userId => getRepo().agentSetup.latestByUserId(userId),
   insertForUser: input => getRepo().agentSetup.insertForUser(input),
+  deleteExpired: expiresAt => getRepo().agentSetup.deleteExpired(expiresAt),
   updateConfiguration: input => getRepo().agentSetup.updateConfiguration(input),
   renewLease: input => getRepo().agentSetup.renewLease(input),
 };
@@ -40,6 +43,7 @@ export const agentSetupPublicRoutes = createAgentSetupPublicRoutes({
 // owned key ids in priority order.
 export const agentSetupControlRoutes = createAgentSetupControlRoutes<{ Variables: AuthVars }>({
   repository,
+  publicScriptBasePath: AGENT_SETUP_ROUTE_PATH,
   getUserId: c => userFromContext(c).id,
   listSelectableApiKeyIds: async userId => (await getRepo().apiKeys.listByUserId(userId)).map(key => key.id),
 });

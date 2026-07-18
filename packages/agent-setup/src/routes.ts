@@ -57,19 +57,19 @@ const withFreshToken = async (insert: (token: string) => Promise<AgentSetupRecor
   }
 };
 
-const leaseProjection = (record: AgentSetupRecord) => ({
+const leaseProjection = (record: AgentSetupRecord, publicScriptBasePath: string) => ({
   token: record.token,
   configuration: agentSetupConfigurationSchema.parse(JSON.parse(record.configurationJson)),
   configurationRevision: record.configurationRevision,
   expiresAt: record.expiresAt,
   scripts: {
     claude: {
-      sh: `/api/setup/${record.token}/claude.sh`,
-      ps1: `/api/setup/${record.token}/claude.ps1`,
+      sh: `${publicScriptBasePath}/${record.token}/claude.sh`,
+      ps1: `${publicScriptBasePath}/${record.token}/claude.ps1`,
     },
     codex: {
-      sh: `/api/setup/${record.token}/codex.sh`,
-      ps1: `/api/setup/${record.token}/codex.ps1`,
+      sh: `${publicScriptBasePath}/${record.token}/codex.sh`,
+      ps1: `${publicScriptBasePath}/${record.token}/codex.ps1`,
     },
   },
 });
@@ -114,6 +114,12 @@ const resolveServeableLease = async (
 type ScriptLanguage = 'sh' | 'ps1';
 type ScriptAgent = 'claude' | 'codex';
 
+const publicErrorDiagnostics = (error: unknown, token: string): string => {
+  if (!(error instanceof Error)) return `Thrown value type: ${typeof error}`;
+  const frames = error.stack?.split('\n').slice(1).join('\n') ?? '(stack unavailable)';
+  return `${error.name}\n${frames.replaceAll(token, '[setup-token]')}`;
+};
+
 export const createAgentSetupPublicRoutes = (deps: AgentSetupPublicDeps) => {
   const serveSetupScript = (agent: ScriptAgent, language: ScriptLanguage) => async (c: Context) => {
     const token = c.req.param('token')!;
@@ -127,10 +133,10 @@ export const createAgentSetupPublicRoutes = (deps: AgentSetupPublicDeps) => {
       const prefix = language === 'sh' ? renderShellPrefix(input) : renderPowerShellPrefix(input);
       const body = prefix + SETUP_SCRIPT_BODIES[agent][language];
       return c.body(body, 200, SCRIPT_RESPONSE_HEADERS);
-    } catch {
-      // A thrown error can carry the served API key or the token, so seal it:
-      // no status oracle beyond a generic 500, and the raw error never logged.
-      console.error('Agent Setup: failed to serve a public setup script');
+    } catch (error) {
+      // Keep the unauthenticated response opaque. Operator diagnostics retain the
+      // stack frames but omit the error message, which may contain a token or key.
+      console.error('Agent Setup: failed to serve a public setup script', publicErrorDiagnostics(error, token));
       return c.json({ error: { type: 'internal_error' } }, 500);
     }
   };
@@ -153,6 +159,8 @@ export const createAgentSetupPublicRoutes = (deps: AgentSetupPublicDeps) => {
 
 export interface AgentSetupControlDeps<E extends Env> {
   repository: AgentSetupRepository;
+  // Host-owned mount path for the public scripts, without a trailing slash.
+  publicScriptBasePath: string;
   // Read the authenticated user id from the request context.
   getUserId: (c: Context<E>) => number;
   // The user's selectable API key ids (active, owned) in priority order.
@@ -193,7 +201,7 @@ export const createAgentSetupControlRoutes = <E extends Env>(deps: AgentSetupCon
         now,
         expiresAt: now + SETUP_LEASE_TTL_MS,
       }));
-      return c.json({ status: 'ok' as const, ...leaseProjection(record) });
+      return c.json({ status: 'ok' as const, ...leaseProjection(record, deps.publicScriptBasePath) });
     })
     .put('/', zValidator('json', agentSetupUpdateBody), async c => {
       const userId = readUserId(c);
@@ -216,8 +224,8 @@ export const createAgentSetupControlRoutes = <E extends Env>(deps: AgentSetupCon
       });
       // 'ok' echoes the fresh lease; 'revision-conflict' rides the current lease
       // along under a 409 so the caller can rebase; 'missing' is terminal.
-      if (result.status === 'ok') return c.json({ status: 'ok' as const, ...leaseProjection(result.record) });
-      if (result.status === 'revision-conflict') return c.json({ status: 'revision-conflict' as const, ...leaseProjection(result.record) }, 409);
+      if (result.status === 'ok') return c.json({ status: 'ok' as const, ...leaseProjection(result.record, deps.publicScriptBasePath) });
+      if (result.status === 'revision-conflict') return c.json({ status: 'revision-conflict' as const, ...leaseProjection(result.record, deps.publicScriptBasePath) }, 409);
       return c.json({ status: 'missing' as const }, 409);
     })
     .post('/heartbeat', zValidator('json', agentSetupHeartbeatBody), async c => {
@@ -228,7 +236,7 @@ export const createAgentSetupControlRoutes = <E extends Env>(deps: AgentSetupCon
         token,
         expiresAt: Date.now() + SETUP_LEASE_TTL_MS,
       });
-      if (result.status === 'ok') return c.json({ status: 'ok' as const, ...leaseProjection(result.record) });
+      if (result.status === 'ok') return c.json({ status: 'ok' as const, ...leaseProjection(result.record, deps.publicScriptBasePath) });
       // Renewal never conflicts on a revision; a non-existent token is terminal.
       return c.json({ status: 'missing' as const }, 409);
     });

@@ -37,8 +37,9 @@ function Install-SetupCodex {
           Write-SetupInfo 'Codex CLI not found; installing with npm'
           Install-SetupNpmPackage -Package '@openai/codex'
         } else {
-          # This source is published byte-for-byte as the GitHub release installer.
-          # Ref: https://github.com/openai/codex/blob/d3fc1950a920f98e7fa9f11056667cdf911c38df/scripts/install/install.sh
+          # Track upstream's maintained installer so release-metadata fixes arrive
+          # without waiting for a Floway update. Reviewed source:
+          # https://github.com/openai/codex/blob/d3fc1950a920f98e7fa9f11056667cdf911c38df/scripts/install/install.sh
           Write-SetupInfo 'Codex CLI not found; installing from GitHub'
           Invoke-SetupRemoteInstaller -Uri 'https://raw.githubusercontent.com/openai/codex/refs/heads/main/scripts/install/install.sh' -Shell
         }
@@ -48,8 +49,9 @@ function Install-SetupCodex {
           Write-SetupInfo 'Codex CLI not found; installing with npm'
           Install-SetupNpmPackage -Package '@openai/codex'
         } else {
-          # This source is published byte-for-byte as the GitHub release installer.
-          # Ref: https://github.com/openai/codex/blob/d3fc1950a920f98e7fa9f11056667cdf911c38df/scripts/install/install.ps1
+          # Track upstream's maintained installer so release-metadata fixes arrive
+          # without waiting for a Floway update. Reviewed source:
+          # https://github.com/openai/codex/blob/d3fc1950a920f98e7fa9f11056667cdf911c38df/scripts/install/install.ps1
           Write-SetupInfo 'Codex CLI not found; installing from GitHub'
           Invoke-SetupRemoteInstaller -Uri 'https://raw.githubusercontent.com/openai/codex/refs/heads/main/scripts/install/install.ps1'
         }
@@ -59,8 +61,9 @@ function Install-SetupCodex {
           Write-SetupInfo 'Codex CLI not found; installing with npm'
           Install-SetupNpmPackage -Package '@openai/codex'
         } else {
-          # This source is published byte-for-byte as the GitHub release installer.
-          # Ref: https://github.com/openai/codex/blob/d3fc1950a920f98e7fa9f11056667cdf911c38df/scripts/install/install.sh
+          # Track upstream's maintained installer so release-metadata fixes arrive
+          # without waiting for a Floway update. Reviewed source:
+          # https://github.com/openai/codex/blob/d3fc1950a920f98e7fa9f11056667cdf911c38df/scripts/install/install.sh
           Write-SetupInfo 'Codex CLI not found; installing from GitHub'
           Invoke-SetupRemoteInstaller -Uri 'https://raw.githubusercontent.com/openai/codex/refs/heads/main/scripts/install/install.sh' -Shell
         }

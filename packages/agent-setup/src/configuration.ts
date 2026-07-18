@@ -20,6 +20,7 @@ const opaqueOptionalString = z.string()
 // Claude Code's reasoning effort is a closed Floway-side enum the installer maps
 // to the top-level `effortLevel` setting, unlike Codex's open, upstream-owned
 // effort string.
+// Ref: https://docs.claude.com/en/docs/claude-code/settings
 const claudeEffortLevelSchema = z.enum(['low', 'medium', 'high', 'xhigh']).nullable();
 
 export const agentSetupConfigurationSchema = z.object({

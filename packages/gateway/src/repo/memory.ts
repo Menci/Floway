@@ -970,6 +970,13 @@ class MemoryAgentSetupRepo implements AgentSetupRepository {
     return Promise.resolve({ status: 'ok', record: { ...record } });
   }
 
+  deleteExpired(expiresAt: number): Promise<void> {
+    for (const [token, record] of this.byToken) {
+      if (record.expiresAt <= expiresAt) this.byToken.delete(token);
+    }
+    return Promise.resolve();
+  }
+
   renewLease(input: {
     userId: number;
     token: string;

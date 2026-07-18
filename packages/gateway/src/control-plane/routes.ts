@@ -1,6 +1,6 @@
 import { Hono, type Next } from 'hono';
 
-import { agentSetupControlRoutes } from './agent-setup.ts';
+import { AGENT_SETUP_ROUTE_PATH, agentSetupControlRoutes } from './agent-setup.ts';
 import { createKey, deleteKey, listKeys, rotateKey, updateKey } from './api-keys/routes.ts';
 import { authLogin, authLogout, authMe } from './auth/routes.ts';
 import { exportData, importData } from './data-transfer/routes.ts';
@@ -59,7 +59,7 @@ export const controlPlaneRoutes = new Hono<{ Variables: AuthVars }>()
   // Per-user Agent Setup lease control routes (POST / PUT / heartbeat). Not
   // admin-gated. The public GET/HEAD setup-script routes are mounted separately
   // in app.ts, ahead of this middleware chain.
-  .route('/api/setup', agentSetupControlRoutes)
+  .route(AGENT_SETUP_ROUTE_PATH, agentSetupControlRoutes)
   // Self-service password change is session-only (the current-password check
   // pairs with a logged-in dashboard session); admins reset other users'
   // passwords through PATCH /api/users/:id below, which is admin-gated.

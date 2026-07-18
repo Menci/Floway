@@ -1980,6 +1980,10 @@ class SqlAgentSetupRepo implements AgentSetupRepository {
     return { status: 'revision-conflict', record: current };
   }
 
+  async deleteExpired(expiresAt: number): Promise<void> {
+    await this.db.prepare('DELETE FROM agent_setup WHERE expires_at <= ?').bind(expiresAt).run();
+  }
+
   async renewLease(input: {
     userId: number;
     token: string;
