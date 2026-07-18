@@ -26,7 +26,7 @@ import { callApi, useApi } from '../../api/client.ts';
 import ChartCanvas from '../../components/charts/ChartCanvas.vue';
 import ChartSeriesControls from '../../components/charts/ChartSeriesControls.vue';
 import { chartColor, chartColorByName, chartFont, chartXAxisTick, dashboardBuckets, type DashboardRange } from '../../components/charts/dashboard-chart.ts';
-import { applySeriesSelection, chartEventsWithDoubleClick, chartSeriesIds, createSeriesIsolation, handleLegendClick } from '../../components/charts/series-selection.ts';
+import { applySeriesSelection, chartSeriesIds, createSeriesIsolation, handleLegendClick } from '../../components/charts/series-selection.ts';
 import { useUpstreamsStore } from '../../composables/useUpstreams.ts';
 import { useAuthStore } from '../../stores/auth.ts';
 import type { PerformanceDisplayRecord } from '@floway-dev/gateway/control-plane/performance/aggregate';
@@ -335,7 +335,6 @@ const chartConfig = computed<ChartConfiguration<'line'>>(() => {
     type: 'line',
     data: { labels, datasets },
     options: {
-      events: chartEventsWithDoubleClick,
       responsive: true,
       maintainAspectRatio: false,
       animation: false,

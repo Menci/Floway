@@ -5,11 +5,6 @@ export type SeriesSelectionAction = 'all' | 'invert' | 'none';
 export const chartSeriesIds = (config: ChartConfiguration<'line'>): string[] =>
   config.data.datasets.map(dataset => (dataset as unknown as { seriesId: string }).seriesId);
 
-// Chart.js filters events reaching plugins through the `events` list. `dblclick`
-// isn't in the default set, so we opt in here — otherwise `legend.onClick` never
-// sees the second click of a double-click isolation gesture.
-export const chartEventsWithDoubleClick: (keyof HTMLElementEventMap)[] = ['mousemove', 'mouseout', 'click', 'touchstart', 'touchmove', 'dblclick'];
-
 export const applySeriesSelection = (hidden: Set<string>, ids: readonly string[], action: SeriesSelectionAction) => {
   if (action === 'all') {
     hidden.clear();
@@ -52,6 +47,6 @@ export const handleLegendClick = (
   id: string,
 ) => {
   const native = event.native;
-  if (native instanceof MouseEvent && (native.shiftKey || native.detail >= 2)) isolation.isolateOrSelectAll(hidden, ids, id);
+  if (native instanceof MouseEvent && native.shiftKey) isolation.isolateOrSelectAll(hidden, ids, id);
   else isolation.toggle(hidden, id);
 };

@@ -10,7 +10,7 @@ import type { BillingDimension } from '../../api/types.ts';
 import ChartCanvas from '../../components/charts/ChartCanvas.vue';
 import ChartSeriesControls from '../../components/charts/ChartSeriesControls.vue';
 import { bucketKeyForUtcHour, chartColor, chartFont, chartXAxisTick, dashboardBuckets, dashboardRangeQuery, type DashboardRange } from '../../components/charts/dashboard-chart.ts';
-import { applySeriesSelection, chartEventsWithDoubleClick, chartSeriesIds, createSeriesIsolation, handleLegendClick } from '../../components/charts/series-selection.ts';
+import { applySeriesSelection, chartSeriesIds, createSeriesIsolation, handleLegendClick } from '../../components/charts/series-selection.ts';
 import UsageSummaryMetric from '../../components/usage/UsageSummaryMetric.vue';
 import { useModelsStore } from '../../composables/useModels.ts';
 import { useAuthStore } from '../../stores/auth.ts';
@@ -465,7 +465,6 @@ const buildStackedConfig = (groupKey: 'keyId' | 'model'): ChartConfiguration<'li
       }),
     },
     options: {
-      events: chartEventsWithDoubleClick,
       responsive: true,
       maintainAspectRatio: false,
       animation: false,
@@ -585,7 +584,6 @@ const searchByKeyConfig = computed<ChartConfiguration<'line'>>(() => {
       }),
     },
     options: {
-      events: chartEventsWithDoubleClick,
       responsive: true,
       maintainAspectRatio: false,
       animation: false,
