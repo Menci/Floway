@@ -366,8 +366,10 @@ export const useAgentSetup = (
 
   const create = async () => {
     const attempt = ++createAttempt;
+    const ids = toValue(selectableKeyIds);
+    if (ids === null || ids.length === 0) throw new Error('Agent setup requires a selected API key');
     const result = await callApi<LeaseOkResponse>(() => requestWithTimeout(signal =>
-      api.api.setup.$post(undefined, { init: { signal } })));
+      api.api.setup.$post({ json: { apiKeyId: ids[0]! } }, { init: { signal } })));
     // A retry (or dispose) that replaced this attempt owns the state now; drop
     // this stale attempt's outcome so an aborted create cannot resurrect an error.
     if (disposed || attempt !== createAttempt || !toValue(active)) return;

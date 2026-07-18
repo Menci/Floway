@@ -19,14 +19,13 @@ import { type Context, type Env, Hono } from 'hono';
 import {
   type AgentSetupConfiguration,
   agentSetupConfigurationSchema,
-  AgentSetupNoSelectableKeyError,
   defaultAgentSetupConfiguration,
 } from './configuration.ts';
 import { renderPowerShellPrefix, renderShellPrefix } from './render.ts';
 import { type AgentSetupRecord, type AgentSetupRepository, AgentSetupTokenCollisionError } from './repository.ts';
 import { SETUP_SCRIPT_BODIES } from './script-assets.ts';
 import { AGENT_SETUP_TOKEN_PREFIX_PATTERN, generateAgentSetupToken } from './token.ts';
-import { agentSetupHeartbeatBody, agentSetupUpdateBody } from './wire.ts';
+import { agentSetupCreateBody, agentSetupHeartbeatBody, agentSetupUpdateBody } from './wire.ts';
 
 const SETUP_LEASE_TTL_MS = 5 * 60 * 1000;
 
@@ -181,23 +180,20 @@ export const createAgentSetupControlRoutes = <E extends Env>(deps: AgentSetupCon
   const readUserId = (c: Context): number => deps.getUserId(c as Context<E>);
 
   return new Hono<E>()
-    .post('/', async c => {
+    .post('/', zValidator('json', agentSetupCreateBody), async c => {
       const userId = readUserId(c);
+      const { apiKeyId } = c.req.valid('json');
       const selectableKeyIds = await deps.listSelectableApiKeyIds(userId);
+      if (selectableKeyIds.length === 0) return c.json({ status: 'no-selectable-key' as const }, 409);
+      if (!selectableKeyIds.includes(apiKeyId)) {
+        return c.json({ error: 'The selected API key is not available on your account.' }, 400);
+      }
+
       const latest = await deps.repository.latestByUserId(userId);
       const restored = latest !== null ? restorableConfiguration(latest, selectableKeyIds) : null;
-
-      let configuration: AgentSetupConfiguration;
-      if (restored !== null) {
-        configuration = restored;
-      } else {
-        try {
-          configuration = defaultAgentSetupConfiguration(selectableKeyIds);
-        } catch (error) {
-          if (error instanceof AgentSetupNoSelectableKeyError) return c.json({ status: 'no-selectable-key' as const }, 409);
-          throw error;
-        }
-      }
+      const configuration: AgentSetupConfiguration = restored === null
+        ? defaultAgentSetupConfiguration([apiKeyId])
+        : { ...restored, apiKeyId };
 
       const now = Date.now();
       const record = await withFreshToken(token => deps.repository.insertForUser({

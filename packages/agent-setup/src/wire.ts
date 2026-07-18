@@ -6,9 +6,13 @@ import { z } from 'zod';
 
 import { agentSetupConfigurationSchema } from './configuration.ts';
 
-// `expectedRevision` drives the optimistic-concurrency check on PUT. Acquisition
-// (POST) carries no body — a lease stores no origin, which reaches the scripts
-// only through the dashboard's one-line command.
+// Acquisition names the selected API key but carries no origin; the dashboard's
+// one-line command injects that at execution time. `expectedRevision` drives the
+// optimistic-concurrency check on PUT.
+export const agentSetupCreateBody = z.object({
+  apiKeyId: z.string().min(1),
+});
+
 export const agentSetupUpdateBody = z.object({
   token: z.string().min(1),
   configuration: agentSetupConfigurationSchema,
