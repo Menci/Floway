@@ -32,7 +32,6 @@ const { initialized, noSelectableKey, error: setupError, scripts } = setup.state
 const createLocalDraft = (): AgentSetupConfiguration => ({
   apiKeyId: '',
   claudeCode: {
-    enabled: true,
     model: null,
     defaultOpusModel: null,
     defaultSonnetModel: null,
@@ -40,7 +39,7 @@ const createLocalDraft = (): AgentSetupConfiguration => ({
     effortLevel: null,
     modelDiscovery: true,
   },
-  codex: { enabled: true, model: null, reasoningEffort: null },
+  codex: { model: null, reasoningEffort: null },
 });
 const cloneConfiguration = (configuration: AgentSetupConfiguration): AgentSetupConfiguration => ({
   apiKeyId: configuration.apiKeyId,

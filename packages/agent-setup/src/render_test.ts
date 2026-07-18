@@ -12,7 +12,6 @@ import { agentSetupHeartbeatBody, agentSetupUpdateBody } from './wire.ts';
 const fullConfiguration: AgentSetupConfiguration = {
   apiKeyId: 'key-a',
   claudeCode: {
-    enabled: true,
     model: 'claude-opus-4-6[1m]',
     defaultOpusModel: 'claude-opus-4-5',
     defaultSonnetModel: 'claude-sonnet-4-5',
@@ -21,7 +20,6 @@ const fullConfiguration: AgentSetupConfiguration = {
     modelDiscovery: true,
   },
   codex: {
-    enabled: true,
     model: 'gpt-5.6-terra',
     reasoningEffort: 'xhigh',
   },
@@ -36,10 +34,10 @@ describe('agentSetupConfigurationSchema', () => {
     expect(agentSetupConfigurationSchema.safeParse({
       apiKeyId: 'key-a',
       claudeCode: {
-        enabled: true, model: null, defaultOpusModel: null, defaultSonnetModel: null,
+        model: null, defaultOpusModel: null, defaultSonnetModel: null,
         defaultHaikuModel: null, effortLevel: null, modelDiscovery: false,
       },
-      codex: { enabled: true, model: null, reasoningEffort: 'vendor-tier' },
+      codex: { model: null, reasoningEffort: 'vendor-tier' },
     }).success).toBe(true);
   });
 
@@ -86,10 +84,10 @@ describe('defaultAgentSetupConfiguration', () => {
     expect(defaultAgentSetupConfiguration(['key-a', 'key-b'])).toEqual({
       apiKeyId: 'key-a',
       claudeCode: {
-        enabled: true, model: null, defaultOpusModel: null, defaultSonnetModel: null,
+        model: null, defaultOpusModel: null, defaultSonnetModel: null,
         defaultHaikuModel: null, effortLevel: null, modelDiscovery: true,
       },
-      codex: { enabled: true, model: null, reasoningEffort: null },
+      codex: { model: null, reasoningEffort: null },
     });
   });
 
@@ -154,10 +152,10 @@ describe('renderShellPrefix', () => {
       configuration: {
         apiKeyId: 'key-a',
         claudeCode: {
-          enabled: false, model: null, defaultOpusModel: null, defaultSonnetModel: null,
+          model: null, defaultOpusModel: null, defaultSonnetModel: null,
           defaultHaikuModel: null, effortLevel: null, modelDiscovery: false,
         },
-        codex: { enabled: false, model: null, reasoningEffort: null },
+        codex: { model: null, reasoningEffort: null },
       },
     });
     expect(prefix).toContain("SETUP_CLAUDE_MODEL_DISCOVERY=''");
@@ -221,10 +219,10 @@ describe('renderPowerShellPrefix', () => {
       configuration: {
         apiKeyId: 'key-a',
         claudeCode: {
-          enabled: false, model: null, defaultOpusModel: null, defaultSonnetModel: null,
+          model: null, defaultOpusModel: null, defaultSonnetModel: null,
           defaultHaikuModel: null, effortLevel: null, modelDiscovery: false,
         },
-        codex: { enabled: false, model: null, reasoningEffort: null },
+        codex: { model: null, reasoningEffort: null },
       },
     });
     expect(prefix).toContain('$SetupClaudeModelDiscovery = $false');

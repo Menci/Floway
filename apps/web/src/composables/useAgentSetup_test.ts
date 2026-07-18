@@ -57,9 +57,9 @@ const makeApi = () => {
 const defaultConfig = () => ({
   apiKeyId: 'key-1',
   claudeCode: {
-    enabled: true, model: null, defaultOpusModel: null, defaultSonnetModel: null, defaultHaikuModel: null, effortLevel: null, modelDiscovery: true,
+    model: null, defaultOpusModel: null, defaultSonnetModel: null, defaultHaikuModel: null, effortLevel: null, modelDiscovery: true,
   },
-  codex: { enabled: true, model: null, reasoningEffort: null },
+  codex: { model: null, reasoningEffort: null },
 });
 
 const lease = (over: Record<string, unknown> = {}) => ({
@@ -139,7 +139,7 @@ describe('useAgentSetup — lease acquisition', () => {
 
   it('restores a persisted draft the server hands back on reopen', async () => {
     const { api, records } = makeApi();
-    const restored = { ...defaultConfig(), codex: { enabled: false, model: 'gpt-5-codex', reasoningEffort: 'high' } };
+    const restored = { ...defaultConfig(), codex: { model: 'gpt-5-codex', reasoningEffort: 'high' } };
     const setup = run(() => useAgentSetup(api));
     records.post[0]!.deferred.resolve(okBody(lease({ configuration: restored, configurationRevision: 4 })));
     await vi.advanceTimersByTimeAsync(0);

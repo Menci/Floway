@@ -26,7 +26,6 @@ const claudeEffortLevelSchema = z.enum(['low', 'medium', 'high', 'xhigh']).nulla
 export const agentSetupConfigurationSchema = z.object({
   apiKeyId: z.string().min(1),
   claudeCode: z.object({
-    enabled: z.boolean(),
     model: opaqueOptionalString,
     defaultOpusModel: opaqueOptionalString,
     defaultSonnetModel: opaqueOptionalString,
@@ -35,7 +34,6 @@ export const agentSetupConfigurationSchema = z.object({
     modelDiscovery: z.boolean(),
   }).strict(),
   codex: z.object({
-    enabled: z.boolean(),
     model: opaqueOptionalString,
     reasoningEffort: opaqueOptionalString,
   }).strict(),
@@ -66,7 +64,6 @@ export const defaultAgentSetupConfiguration = (
   return {
     apiKeyId: first,
     claudeCode: {
-      enabled: true,
       model: null,
       defaultOpusModel: null,
       defaultSonnetModel: null,
@@ -75,7 +72,6 @@ export const defaultAgentSetupConfiguration = (
       modelDiscovery: true,
     },
     codex: {
-      enabled: true,
       model: null,
       reasoningEffort: null,
     },

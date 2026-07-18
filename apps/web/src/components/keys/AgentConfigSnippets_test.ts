@@ -30,7 +30,6 @@ const key = (id: string, name: string, raw: string): ApiKey => ({
 const configuration = (): AgentSetupConfiguration => ({
   apiKeyId: 'key-1',
   claudeCode: {
-    enabled: true,
     model: 'claude-sonnet-4-5[1m]',
     defaultOpusModel: 'claude-opus-4-8',
     defaultSonnetModel: 'claude-sonnet-4-5[1m]',
@@ -38,7 +37,7 @@ const configuration = (): AgentSetupConfiguration => ({
     effortLevel: 'high',
     modelDiscovery: true,
   },
-  codex: { enabled: true, model: 'gpt-5.6-sol', reasoningEffort: 'xhigh' },
+  codex: { model: 'gpt-5.6-sol', reasoningEffort: 'xhigh' },
 });
 
 describe('AgentConfigSnippets', () => {

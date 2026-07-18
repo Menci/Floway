@@ -167,8 +167,8 @@ interface LeaseResponse {
   token: string;
   configuration: {
     apiKeyId: string;
-    claudeCode: { enabled: boolean; modelDiscovery: boolean; model: string | null; effortLevel: string | null };
-    codex: { enabled: boolean; model: string | null; reasoningEffort: string | null };
+    claudeCode: { modelDiscovery: boolean; model: string | null; effortLevel: string | null };
+    codex: { model: string | null; reasoningEffort: string | null };
   };
   configurationRevision: number;
   expiresAt: number;
@@ -182,8 +182,8 @@ interface LeaseResponse {
 // (leaseProjection and restore both parse the stored JSON through the schema).
 const FULL_CONFIG_JSON = (apiKeyId: string): string => JSON.stringify({
   apiKeyId,
-  claudeCode: { enabled: true, model: null, defaultOpusModel: null, defaultSonnetModel: null, defaultHaikuModel: null, effortLevel: null, modelDiscovery: true },
-  codex: { enabled: true, model: null, reasoningEffort: null },
+  claudeCode: { model: null, defaultOpusModel: null, defaultSonnetModel: null, defaultHaikuModel: null, effortLevel: null, modelDiscovery: true },
+  codex: { model: null, reasoningEffort: null },
 });
 
 const putJson = (body: object): RequestInit => ({
@@ -212,8 +212,6 @@ test('POST first use selects the first key and enables both agents at revision 1
 
   assertEquals(body.status, 'ok');
   assertEquals(body.configuration.apiKeyId, 'key_primary');
-  assertEquals(body.configuration.claudeCode.enabled, true);
-  assertEquals(body.configuration.codex.enabled, true);
   assertEquals(body.configuration.claudeCode.modelDiscovery, true);
   assertEquals(body.configuration.claudeCode.model, null);
   assertEquals(body.configurationRevision, 1);
@@ -243,11 +241,11 @@ test('POST returns no-selectable-key when the account has no key', async () => {
 test('POST restores the latest saved configuration whose key is still selectable', async () => {
   const h = harness();
   const first = await create(h);
-  const edited = { ...first.configuration, codex: { ...first.configuration.codex, enabled: false } };
+  const edited = { ...first.configuration, codex: { ...first.configuration.codex, reasoningEffort: 'high' } };
   await h.request('/api/setup', putJson({ token: first.token, configuration: edited, expectedRevision: first.configurationRevision }));
 
   const reopened = await create(h);
-  assertEquals(reopened.configuration.codex.enabled, false);
+  assertEquals(reopened.configuration.codex.reasoningEffort, 'high');
   // A reopen inserts a brand-new independent lease; it never reuses a token.
   expect(reopened.token).not.toBe(first.token);
   assertEquals(reopened.configurationRevision, 1);
@@ -257,7 +255,7 @@ test('POST falls back to a first-use default when the latest config points at an
   const h = harness();
   const first = await create(h);
   // Persist a configuration whose key later becomes unselectable.
-  const edited = { ...first.configuration, apiKeyId: 'key_primary', codex: { ...first.configuration.codex, enabled: false } };
+  const edited = { ...first.configuration, apiKeyId: 'key_primary', codex: { ...first.configuration.codex, reasoningEffort: 'high' } };
   await h.request('/api/setup', putJson({ token: first.token, configuration: edited, expectedRevision: first.configurationRevision }));
 
   // Now only a different key is selectable; the saved config cannot be restored.
@@ -266,7 +264,7 @@ test('POST falls back to a first-use default when the latest config points at an
   await h2.repo.insertForUser({ userId: USER_ID, token: 'x'.repeat(43), apiKeyId: 'key_primary', configurationJson: JSON.stringify(edited), now: Date.now(), expiresAt: Date.now() + 300_000 });
   const reopened = await create(h2);
   assertEquals(reopened.configuration.apiKeyId, 'key_other');
-  assertEquals(reopened.configuration.codex.enabled, true);
+  assertEquals(reopened.configuration.codex.reasoningEffort, null);
 });
 
 test('two POSTs coexist as independent leases: neither supersedes the other', async () => {
@@ -295,12 +293,12 @@ test('inserting a new lease sweeps only the same user\'s already-expired rows', 
 test('PUT updates configuration, bumps the revision, and never rotates the token', async () => {
   const h = harness();
   const lease = await create(h);
-  const edited = { ...lease.configuration, claudeCode: { ...lease.configuration.claudeCode, enabled: false } };
+  const edited = { ...lease.configuration, claudeCode: { ...lease.configuration.claudeCode, effortLevel: 'high' as const } };
   const response = await h.request('/api/setup', putJson({ token: lease.token, configuration: edited, expectedRevision: lease.configurationRevision }));
   assertEquals(response.status, 200);
   const body = (await response.json()) as LeaseResponse;
   assertEquals(body.status, 'ok');
-  assertEquals(body.configuration.claudeCode.enabled, false);
+  assertEquals(body.configuration.claudeCode.effortLevel, 'high');
   assertEquals(body.configurationRevision, lease.configurationRevision + 1);
   assertEquals(body.token, lease.token);
 });
@@ -493,11 +491,11 @@ test('GET re-reads the current configuration each request', async () => {
 test('unknown, expired, deleted-user, and deleted-key tokens all return an identical generic 404', async () => {
   const h = harness();
   const now = Date.now();
-  const config = '{"apiKeyId":"key_primary","claudeCode":{"enabled":true,"model":null,"defaultOpusModel":null,"defaultSonnetModel":null,"defaultHaikuModel":null,"effortLevel":null,"modelDiscovery":true},"codex":{"enabled":true,"model":null,"reasoningEffort":null}}';
+  const config = '{"apiKeyId":"key_primary","claudeCode":{"model":null,"defaultOpusModel":null,"defaultSonnetModel":null,"defaultHaikuModel":null,"effortLevel":null,"modelDiscovery":true},"codex":{"model":null,"reasoningEffort":null}}';
 
   await h.repo.insertForUser({ userId: USER_ID, token: 'b'.repeat(43), apiKeyId: 'key_primary', configurationJson: config, now, expiresAt: now - 1 });
   await h.repo.insertForUser({ userId: 99, token: 'c'.repeat(43), apiKeyId: 'key_primary', configurationJson: config, now, expiresAt: now + 300_000 });
-  await h.repo.insertForUser({ userId: USER_ID, token: 'd'.repeat(43), apiKeyId: 'key_gone', configurationJson: '{"apiKeyId":"key_gone","claudeCode":{"enabled":true,"model":null,"defaultOpusModel":null,"defaultSonnetModel":null,"defaultHaikuModel":null,"effortLevel":null,"modelDiscovery":true},"codex":{"enabled":true,"model":null,"reasoningEffort":null}}', now, expiresAt: now + 300_000 });
+  await h.repo.insertForUser({ userId: USER_ID, token: 'd'.repeat(43), apiKeyId: 'key_gone', configurationJson: '{"apiKeyId":"key_gone","claudeCode":{"model":null,"defaultOpusModel":null,"defaultSonnetModel":null,"defaultHaikuModel":null,"effortLevel":null,"modelDiscovery":true},"codex":{"model":null,"reasoningEffort":null}}', now, expiresAt: now + 300_000 });
 
   const bodies = new Set<string>();
   for (const token of ['a'.repeat(43), 'b'.repeat(43), 'c'.repeat(43), 'd'.repeat(43)]) {

@@ -37,9 +37,9 @@ let activeArg: boolean | null;
 const defaultConfig = (): AgentSetupConfiguration => ({
   apiKeyId: 'key-1',
   claudeCode: {
-    enabled: true, model: null, defaultOpusModel: null, defaultSonnetModel: null, defaultHaikuModel: null, effortLevel: null, modelDiscovery: true,
+    model: null, defaultOpusModel: null, defaultSonnetModel: null, defaultHaikuModel: null, effortLevel: null, modelDiscovery: true,
   },
-  codex: { enabled: true, model: null, reasoningEffort: null },
+  codex: { model: null, reasoningEffort: null },
 });
 
 const makeSetup = (over: Partial<{ config: AgentSetupConfiguration; initialized: boolean; scripts: { claude: { sh: string; ps1: string }; codex: { sh: string; ps1: string } } | null; noSelectableKey: boolean; syncing: boolean; terminated: boolean; canCopy: boolean; error: string | null; expiresAt: number | null }> = {}): SetupStub => ({
@@ -224,7 +224,7 @@ describe('AgentSetupCard', () => {
   });
 
   it('keeps a persisted model that left the catalog selectable instead of dropping it', async () => {
-    setupStub = makeSetup({ config: { ...defaultConfig(), codex: { enabled: true, model: 'gpt-5-retired', reasoningEffort: null } } });
+    setupStub = makeSetup({ config: { ...defaultConfig(), codex: { model: 'gpt-5-retired', reasoningEffort: null } } });
     const w = mountCard();
     await selectAgent(w, 'Codex');
     const codex = selectIn(w, 'codex-model').props().options;
@@ -239,7 +239,7 @@ describe('AgentSetupCard', () => {
   });
 
   it('offers a free-form Codex effort combobox seeded with upstream-advertised suggestions', async () => {
-    setupStub = makeSetup({ config: { ...defaultConfig(), codex: { enabled: true, model: 'gpt-5', reasoningEffort: null } } });
+    setupStub = makeSetup({ config: { ...defaultConfig(), codex: { model: 'gpt-5', reasoningEffort: null } } });
     const w = mountCard({
       models: [model('gpt-5', { chat: { reasoning: { effort: { supported: ['low', 'high'], default: 'high' } } } })],
     });

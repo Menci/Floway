@@ -472,39 +472,44 @@ esac
 `, { mode: 0o755 });
 };
 
-const claudeConfig = (overrides: Partial<AgentSetupConfiguration['claudeCode']> = {}): AgentSetupConfiguration => ({
+type InstallerTestConfiguration = AgentSetupConfiguration & { readonly testAgent: 'claude' | 'codex' };
+
+const claudeConfig = (overrides: Partial<AgentSetupConfiguration['claudeCode']> = {}): InstallerTestConfiguration => ({
+  testAgent: 'claude',
   apiKeyId: 'key-a',
   claudeCode: {
-    enabled: true, model: null, defaultOpusModel: null, defaultSonnetModel: null,
+    model: null, defaultOpusModel: null, defaultSonnetModel: null,
     defaultHaikuModel: null, effortLevel: null, modelDiscovery: false, ...overrides,
   },
-  codex: { enabled: false, model: null, reasoningEffort: null },
+  codex: { model: null, reasoningEffort: null },
 });
 
-const codexConfig = (overrides: Partial<AgentSetupConfiguration['codex']> = {}): AgentSetupConfiguration => ({
+const codexConfig = (overrides: Partial<AgentSetupConfiguration['codex']> = {}): InstallerTestConfiguration => ({
+  testAgent: 'codex',
   apiKeyId: 'key-a',
   claudeCode: {
-    enabled: false, model: null, defaultOpusModel: null, defaultSonnetModel: null,
+    model: null, defaultOpusModel: null, defaultSonnetModel: null,
     defaultHaikuModel: null, effortLevel: null, modelDiscovery: false,
   },
-  codex: { enabled: true, model: null, reasoningEffort: null, ...overrides },
+  codex: { model: null, reasoningEffort: null, ...overrides },
 });
 
 const bothConfig = (
   claude: Partial<AgentSetupConfiguration['claudeCode']> = {},
   codex: Partial<AgentSetupConfiguration['codex']> = {},
-): AgentSetupConfiguration => ({
+): InstallerTestConfiguration => ({
+  testAgent: 'claude',
   apiKeyId: 'key-a',
   claudeCode: {
-    enabled: true, model: null, defaultOpusModel: null, defaultSonnetModel: null,
+    model: null, defaultOpusModel: null, defaultSonnetModel: null,
     defaultHaikuModel: null, effortLevel: null, modelDiscovery: false, ...claude,
   },
-  codex: { enabled: true, model: null, reasoningEffort: null, ...codex },
+  codex: { model: null, reasoningEffort: null, ...codex },
 });
 
 interface RunOptions {
   workspace: Workspace;
-  configuration: AgentSetupConfiguration;
+  configuration: InstallerTestConfiguration;
   agent?: 'claude' | 'codex';
   baseUrl: string;
   // The wrapping one-line command injects the gateway origin into the executing
@@ -556,8 +561,8 @@ interface RunOptions {
   failRestore?: boolean;
 }
 
-const targetAgent = (configuration: AgentSetupConfiguration, agent?: 'claude' | 'codex'): 'claude' | 'codex' =>
-  agent ?? (configuration.claudeCode.enabled && !configuration.codex.enabled ? 'claude' : 'codex');
+const targetAgent = (configuration: InstallerTestConfiguration, agent?: 'claude' | 'codex'): 'claude' | 'codex' =>
+  agent ?? configuration.testAgent;
 interface RunResult { code: number; stdout: string; stderr: string; combined: string; }
 
 // Environment shared by the shell run helpers: Codex fake-binary knobs, the
