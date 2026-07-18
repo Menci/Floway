@@ -50,10 +50,8 @@ _emit_diagnostic() {
   fi
 }
 
-# Emit one line to a stream, wrapping it in an ANSI color only when that stream
-# opted into color and a non-empty color was given (default-color detail lines
-# stay uncolored rather than carrying a bare reset). $1 stream
-# (1|2), $2 color, $3 text.
+# Default-color detail lines stay uncolored rather than carrying a bare reset.
+# $1 stream (1|2), $2 color, $3 text.
 _emit_line() {
   if [ "$1" -eq 1 ]; then
     if [ "$_OUT_COLOR" -eq 1 ] && [ -n "$2" ]; then printf '%s%s%s\n' "$2" "$3" "$_C_RESET"; else printf '%s\n' "$3"; fi

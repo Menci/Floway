@@ -51,11 +51,8 @@ export class AgentSetupNoSelectableKeyError extends Error {
   }
 }
 
-// First-use configuration: select the first selectable key, enable both agents
-// and Claude model discovery, and leave every model/effort override unset. The
-// caller decides which key ids are selectable (active, owned) and passes them
-// in priority order; the persisted row carries no model, so creating a lease
-// never needs the model catalog.
+// First-use configuration enables Claude model discovery and leaves every
+// model and effort override unset, so creating a lease needs no model catalog.
 export const defaultAgentSetupConfiguration = (
   selectableKeyIds: readonly string[],
 ): AgentSetupConfiguration => {

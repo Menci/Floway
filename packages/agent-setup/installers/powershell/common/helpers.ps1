@@ -1,5 +1,3 @@
-# --- common helpers ---------------------------------------------------------
-
 function Set-SetupProp {
   param($Target, [string]$Name, $Value)
   if ($Target.PSObject.Properties.Name -contains $Name) { $Target.$Name = $Value }
@@ -62,7 +60,6 @@ function Stop-SetupProcessTree {
     return
   }
   try {
-    # .NET used by PowerShell 7 supports tree-aware termination on Unix.
     $Process.Kill($true)
   } catch {
     if (-not $Process.HasExited) { Stop-Setup "could not terminate process tree $($Process.Id)." }
@@ -228,10 +225,8 @@ function Remove-SetupOlderBackups {
     Remove-Item -Force -ErrorAction Stop
 }
 
-# Run a child process with its stdout and stderr redirected into in-process
-# pipes, bounded by a deadline. On timeout the whole process tree is terminated
-# and the call throws; otherwise the exit code and combined stdout+stderr are
-# returned. Arguments are fixed internal tokens, never external input.
+# Run a child process with captured output under a deadline, terminating its
+# whole process tree and throwing on timeout.
 function Invoke-SetupProcess {
   param([string]$Exe, [string[]]$Arguments, [int]$TimeoutSeconds, [string]$TimeoutMessage)
   $startInfo = New-Object System.Diagnostics.ProcessStartInfo

@@ -22,8 +22,6 @@ CLAUDE_MERGE_PROGRAM='
   | (if $effort == "" then del(.effortLevel) else .effortLevel = $effort end)
 '
 
-# --- Claude Code ------------------------------------------------------------
-
 # Refs:
 # https://code.claude.com/docs/en/setup
 # https://github.com/anthropics/claude-code/blob/c39cb0f14bfe8bb519bae5bfc55add6867c5e2ab/README.md#L13-L44
@@ -96,9 +94,7 @@ claude_rollback_settings() {
     "file" "Claude settings"
 }
 
-# Surgically merge the managed keys into the Claude settings file: validate the
-# existing document, back it up, construct and validate the replacement in the
-# same directory, then atomically rename it into place at mode 0600.
+# Same-directory staging keeps the mode-0600 replacement rename atomic.
 claude_write_settings() {
   _cw_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
   CLAUDE_SETTINGS_PATH="$_cw_dir/settings.json"

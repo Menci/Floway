@@ -17,8 +17,7 @@ CREATE TABLE agent_setup (
   updated_at INTEGER NOT NULL
 );
 
--- Deterministic "latest row per user" selection for restore-on-reopen:
--- ORDER BY updated_at DESC, created_at DESC, token DESC.
+-- Deterministic latest-row selection for restore-on-reopen.
 CREATE INDEX idx_agent_setup_user_latest
   ON agent_setup (user_id, updated_at DESC, created_at DESC, token DESC);
 

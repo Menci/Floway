@@ -1,5 +1,3 @@
-# --- common helpers ---------------------------------------------------------
-
 # Run a command under a wall-clock limit. macOS ships no `timeout`, so the
 # Bash-3.2 fallback enables job control for one launch, placing the command and
 # all ordinary descendants in a dedicated process group. The watchdog signals
@@ -43,8 +41,7 @@ _run_with_timeout() {
   wait "$_rwt_pid"
   _rwt_status=$?
   if [ -e "$_rwt_marker" ]; then
-    # The timeout path waits through TERM→KILL escalation; the process-group id
-    # remains valid even after its original leader exits.
+    # Let TERM→KILL escalation finish before reporting the timeout.
     wait "$_rwt_watchdog" 2>/dev/null || true
     rm -f "$_rwt_marker"
     return 124

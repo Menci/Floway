@@ -1,7 +1,5 @@
 # Claude Code Agent Setup fragment.
 
-# --- Claude Code ------------------------------------------------------------
-
 # Install the official Claude Code package. The
 # AGENT_SETUP_TEST_INSTALL_CLAUDE_SCRIPT hook — read from the ambient
 # environment, never emitted by the gateway — substitutes a fake installer

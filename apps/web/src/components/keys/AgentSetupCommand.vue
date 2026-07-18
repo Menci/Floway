@@ -1,8 +1,6 @@
 <script setup lang="ts">
-// One copyable setup command (shell or PowerShell). The copy affordance is a
-// persistent, first-class button rather than the Code block's hover-only one so
-// it can stay visible while disabled — the card gates it during a draft sync, an
-// expired lease, or a terminated (swept) link.
+// The first-class copy button remains visible while its parent disables it,
+// unlike the Code block's hover-only copy affordance.
 import { onScopeDispose, shallowRef } from 'vue';
 
 import { Button, Code } from '@floway-dev/ui';

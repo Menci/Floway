@@ -31,9 +31,8 @@ function Main {
   Write-SetupMetadata 'Endpoint' $SetupEndpoint
   Write-SetupMetadata 'API Key' $SetupApiKeyName
 
-  # Each primary error is already reported at its detection site. The boundary
-  # surfaces any unexpected exception after redaction and returns a nonzero
-  # status without adding a redundant single-agent summary.
+  # Detection sites rethrow reported failures as the `setup-handled` sentinel;
+  # only unexpected exceptions are reported again here after redaction.
   try {
     Set-SetupAgent
   } catch {

@@ -38,9 +38,7 @@ export const agentSetupPublicRoutes = createAgentSetupPublicRoutes({
   },
 });
 
-// Authenticated POST / PUT / heartbeat routes — mounted inside the control
-// plane behind auth. `listSelectableApiKeyIds` returns the caller's active,
-// owned key ids in priority order.
+// Authenticated routes mounted inside the control plane behind auth.
 export const agentSetupControlRoutes = createAgentSetupControlRoutes<{ Variables: AuthVars }>({
   repository,
   publicScriptBasePath: AGENT_SETUP_ROUTE_PATH,

@@ -1,10 +1,11 @@
 # Codex Agent Setup fragment.
 
-# --- Codex ------------------------------------------------------------------
-
 # Install the official Codex package. CODEX_NON_INTERACTIVE keeps the direct
-# installer from prompting. Package sources:
+# installer from prompting. We track upstream's maintained scripts so release-
+# metadata fixes arrive without waiting for a Floway update. Reviewed sources:
 # https://github.com/openai/codex/blob/d3fc1950a920f98e7fa9f11056667cdf911c38df/README.md#L18-L37
+# https://github.com/openai/codex/blob/d3fc1950a920f98e7fa9f11056667cdf911c38df/scripts/install/install.sh
+# https://github.com/openai/codex/blob/d3fc1950a920f98e7fa9f11056667cdf911c38df/scripts/install/install.ps1
 # The AGENT_SETUP_TEST_INSTALL_CODEX_SCRIPT hook —
 # read from the ambient environment, never emitted by the gateway — substitutes
 # a fake installer under test.
@@ -37,9 +38,6 @@ function Install-SetupCodex {
           Write-SetupInfo 'Codex CLI not found; installing with npm'
           Install-SetupNpmPackage -Package '@openai/codex'
         } else {
-          # Track upstream's maintained installer so release-metadata fixes arrive
-          # without waiting for a Floway update. Reviewed source:
-          # https://github.com/openai/codex/blob/d3fc1950a920f98e7fa9f11056667cdf911c38df/scripts/install/install.sh
           Write-SetupInfo 'Codex CLI not found; installing from GitHub'
           Invoke-SetupRemoteInstaller -Uri 'https://raw.githubusercontent.com/openai/codex/refs/heads/main/scripts/install/install.sh' -Shell
         }
@@ -49,9 +47,6 @@ function Install-SetupCodex {
           Write-SetupInfo 'Codex CLI not found; installing with npm'
           Install-SetupNpmPackage -Package '@openai/codex'
         } else {
-          # Track upstream's maintained installer so release-metadata fixes arrive
-          # without waiting for a Floway update. Reviewed source:
-          # https://github.com/openai/codex/blob/d3fc1950a920f98e7fa9f11056667cdf911c38df/scripts/install/install.ps1
           Write-SetupInfo 'Codex CLI not found; installing from GitHub'
           Invoke-SetupRemoteInstaller -Uri 'https://raw.githubusercontent.com/openai/codex/refs/heads/main/scripts/install/install.ps1'
         }
@@ -61,9 +56,6 @@ function Install-SetupCodex {
           Write-SetupInfo 'Codex CLI not found; installing with npm'
           Install-SetupNpmPackage -Package '@openai/codex'
         } else {
-          # Track upstream's maintained installer so release-metadata fixes arrive
-          # without waiting for a Floway update. Reviewed source:
-          # https://github.com/openai/codex/blob/d3fc1950a920f98e7fa9f11056667cdf911c38df/scripts/install/install.sh
           Write-SetupInfo 'Codex CLI not found; installing from GitHub'
           Invoke-SetupRemoteInstaller -Uri 'https://raw.githubusercontent.com/openai/codex/refs/heads/main/scripts/install/install.sh' -Shell
         }
@@ -279,7 +271,8 @@ function Write-SetupCodexVersion {
 # freshly installed CLI is never uninstalled when configuration fails.
 function Set-SetupAgent {
   Write-SetupAgentNotice 'Installing' 'Codex'
-  # Ref: https://github.com/openai/codex/blob/main/scripts/install/install.sh
+  # Upstream installs into these user-local candidates by default:
+  # https://github.com/openai/codex/blob/d3fc1950a920f98e7fa9f11056667cdf911c38df/scripts/install/install.sh
   $candidates = @(
     (Join-Path $HOME '.local/bin/codex'),
     (Join-Path $HOME '.local/bin/codex.exe')

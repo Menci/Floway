@@ -1929,9 +1929,7 @@ class SqlAgentSetupRepo implements AgentSetupRepository {
     now: number;
     expiresAt: number;
   }): Promise<AgentSetupRecord> {
-    // A brand-new lease at revision 1; the AFTER INSERT trigger sweeps only this
-    // user's already-expired rows. A token PK collision is surfaced as the typed
-    // error so the route can retry with a fresh token.
+    // A token PK collision is surfaced as a typed error so acquisition can retry.
     try {
       const row = await this.db
         .prepare(

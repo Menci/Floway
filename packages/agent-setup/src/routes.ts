@@ -48,7 +48,6 @@ const SCRIPT_RESPONSE_HEADERS = {
   'content-type': 'text/plain; charset=utf-8',
 } as const;
 
-// Retry an insert only when the token collides; every other error propagates.
 const withFreshToken = async (insert: (token: string) => Promise<AgentSetupRecord>): Promise<AgentSetupRecord> => {
   for (let attempt = 1; ; attempt++) {
     try {
@@ -167,7 +166,6 @@ export interface AgentSetupControlDeps<E extends Env> {
   repository: AgentSetupRepository;
   // Host-owned mount path for the public scripts, without a trailing slash.
   publicScriptBasePath: string;
-  // Read the authenticated user id from the request context.
   getUserId: (c: Context<E>) => number;
   // The user's selectable API key ids (active, owned) in priority order.
   listSelectableApiKeyIds: (userId: number) => Promise<readonly string[]>;

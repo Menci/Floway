@@ -23,22 +23,6 @@ function Write-SetupHostLine {
   if ($Plain -or $script:SetupNoColor) { Write-Host $Text } else { Write-Host $Text -ForegroundColor $Color }
 }
 
-# Console.ForegroundColor works in Windows PowerShell 5.1 without requiring VT
-# mode and still writes the text to stderr. The forced-color branch is test-only:
-# redirected streams cannot expose host color, so it emits ANSI for assertions.
-function Write-SetupErrLine {
-  param([string]$Text, [System.ConsoleColor]$Color, [string]$TestAnsiCode)
-  if ($script:SetupErrColor) {
-    $previous = [Console]::ForegroundColor
-    try { [Console]::ForegroundColor = $Color; [Console]::Error.WriteLine($Text) }
-    finally { [Console]::ForegroundColor = $previous }
-  } elseif ($script:SetupForceColor -and (-not $script:SetupNoColor)) {
-    [Console]::Error.WriteLine("$($script:SetupEsc)[${TestAnsiCode}m$Text$($script:SetupEsc)[0m")
-  } else {
-    [Console]::Error.WriteLine($Text)
-  }
-}
-
 function Write-SetupNotice {
   param([string]$Text)
   if ($script:SetupNoColor) { Write-Host "==> $Text"; return }

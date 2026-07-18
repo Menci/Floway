@@ -56,9 +56,7 @@ const codexModelParts = (id: string): CodexModelParts | null => {
   return { version: match[1]!, variantRank: CODEX_VARIANT_RANK[variant] ?? 6 };
 };
 
-// Every addressable chat model stays visible. The ranking only moves the model
-// families each agent understands best to the front, preserving catalog order
-// whenever the explicit priority rules do not distinguish two entries.
+// Catalog order breaks ties left equal by the explicit priority rules.
 export const rankAgentSetupModels = (
   models: readonly PublicModel[],
   ranking: AgentModelRanking,
@@ -117,10 +115,6 @@ export const claudeModelOverride = (
     : modelId;
 };
 
-// Build the option list for a model select: the nullable "no override" option,
-// the ranked catalog, and — only when the restored value is neither the sentinel
-// nor already listed — an unavailable-current option so a persisted id that left
-// the catalog stays selectable instead of resetting.
 export const buildModelOptions = (
   models: readonly PublicModel[],
   currentValue: string | null,

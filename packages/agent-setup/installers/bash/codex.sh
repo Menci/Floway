@@ -1,8 +1,7 @@
 # Codex Agent Setup fragment.
 
-# --- Codex ------------------------------------------------------------------
-
-# Refs:
+# Track upstream's maintained installer so release-metadata fixes arrive without
+# waiting for a Floway update. Reviewed sources:
 # https://github.com/openai/codex/blob/d3fc1950a920f98e7fa9f11056667cdf911c38df/README.md#L18-L37
 # https://github.com/openai/codex/blob/d3fc1950a920f98e7fa9f11056667cdf911c38df/scripts/install/install.sh
 codex_ensure_installed() {
@@ -36,9 +35,6 @@ codex_ensure_installed() {
           out_info 'Codex CLI not found; installing with npm'
           _install_npm_package '@openai/codex' || return 1
         else
-          # Track upstream's maintained installer so release-metadata fixes arrive
-          # without waiting for a Floway update. Reviewed source:
-          # https://github.com/openai/codex/blob/d3fc1950a920f98e7fa9f11056667cdf911c38df/scripts/install/install.sh
           out_info 'Codex CLI not found; installing from GitHub'
           CODEX_NON_INTERACTIVE=true _download_and_run_installer 'https://raw.githubusercontent.com/openai/codex/refs/heads/main/scripts/install/install.sh' || return 1
         fi
@@ -48,9 +44,6 @@ codex_ensure_installed() {
           out_info 'Codex CLI not found; installing with npm'
           _install_npm_package '@openai/codex' || return 1
         else
-          # Track upstream's maintained installer so release-metadata fixes arrive
-          # without waiting for a Floway update. Reviewed source:
-          # https://github.com/openai/codex/blob/d3fc1950a920f98e7fa9f11056667cdf911c38df/scripts/install/install.sh
           out_info 'Codex CLI not found; installing from GitHub'
           CODEX_NON_INTERACTIVE=true _download_and_run_installer 'https://raw.githubusercontent.com/openai/codex/refs/heads/main/scripts/install/install.sh' || return 1
         fi

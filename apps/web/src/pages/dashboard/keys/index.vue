@@ -69,10 +69,6 @@ const selectCreatedKey = async (key: ApiKey) => {
   if (await loadAll()) selectedKeyId.value = key.id;
 };
 
-const reloadEditedKey = async (_key: ApiKey) => {
-  await loadAll();
-};
-
 const rotateOpen = computed({
   get: () => rotateTarget.value !== null,
   set: () => { rotateTarget.value = null; },
@@ -193,7 +189,7 @@ const selectedKey = computed(() => keys.value.find(key => key.id === selectedKey
       mode="edit"
       :api-key="editTarget"
       :upstreams="upstreamOptions"
-      @saved="reloadEditedKey"
+      @saved="loadAll"
     />
 
     <Dialog v-model:open="rotateOpen" title="Rotate API Key" size="md" :auto-focus-on-open="false">

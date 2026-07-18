@@ -234,15 +234,8 @@ export const useAgentSetup = (
     kickPump();
   };
 
-  // Reconcile a revision conflict. Each page owns its own token and is the only
-  // writer of that token's configuration, so a conflict on our token can only be
-  // a lost ack: an earlier PUT of ours committed but its response never arrived,
-  // so the server's revision moved on under one of our own past configurations.
-  // The freshest local intent must therefore win. We always adopt the server's
-  // lease metadata/revision, then confirm the generation only when the server
-  // already holds exactly what this request attempted and the user has not
-  // edited since; otherwise we keep the current draft and resubmit it against
-  // the freshly-adopted revision.
+  // Each page is the only writer of its token, so a revision conflict can only
+  // be a lost acknowledgement of one of our own writes. Freshest local intent wins.
   const reconcileRevisionConflict = (raw: unknown, attemptedConfiguration: AgentSetupConfiguration, savedGeneration: number) => {
     const lease = asLease(raw);
     if (lease === null) {
