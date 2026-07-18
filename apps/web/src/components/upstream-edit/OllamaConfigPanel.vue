@@ -66,6 +66,13 @@ const emit = defineEmits<{ 'fetch-models': [] }>();
           >Fetch</Button>
         </div>
       </div>
+      <!-- Live `last fetched / last error` snapshot injected by the parent —
+           rendered immediately under the button row so the outcome reads as
+           the button's result row (any transient fetch error below sits as a
+           footnote, not between button and result). -->
+      <div v-if="$slots['cache-status']" class="mt-1.5">
+        <slot name="cache-status" />
+      </div>
       <p v-if="fetchError" class="mt-1.5 text-[11px] text-accent-rose">{{ fetchError }}</p>
     </div>
   </div>
