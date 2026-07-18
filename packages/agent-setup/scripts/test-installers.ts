@@ -188,6 +188,7 @@ const FAKE_CODEX = `#!${process.execPath}
 'use strict';
 const fs = require('fs');
 const path = require('path');
+const { spawn: spawnChild } = require('child_process');
 const NL = String.fromCharCode(10);
 const REC = process.env.FAKE_CODEX_RECORD || '';
 const rec = (o) => { if (REC) fs.appendFileSync(REC, JSON.stringify(o) + NL); };
@@ -239,12 +240,10 @@ if (cmd === '--version') {
       if (mode === 'no-initialize-response') return;
       const response = { id: msg.id, result: { userAgent: 'fake-codex/9.9.9', codexHome: home, platformFamily: 'unix', platformOs: 'linux' } };
       if (mode === 'close-request-after-initialize') {
-        process.stdin.destroy();
-        process.stdin.once('close', () => {
-          send(response);
-          setTimeout(() => process.exit(0), 5000);
-        });
-        return;
+        const payload = JSON.stringify(response) + NL;
+        const childCode = 'setTimeout(() => process.stdout.write(' + JSON.stringify(payload) + '), 100)';
+        spawnChild(process.execPath, ['-e', childCode], { stdio: ['ignore', 'inherit', 'inherit'] });
+        process.exit(0);
       }
       send(response);
       send({ jsonrpc: '2.0', method: 'remoteControl/status/changed', params: { status: 'disabled' } });
