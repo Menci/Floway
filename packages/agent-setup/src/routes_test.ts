@@ -108,6 +108,7 @@ interface Harness {
 // keys maps a userId to its selectable key ids (priority order); secrets maps a
 // key id to its raw value, gating public serve on ownership + existence.
 const harness = (options: {
+  routePath?: string;
   keys?: readonly string[];
   secrets?: Record<string, string>;
   users?: readonly number[];
@@ -115,6 +116,7 @@ const harness = (options: {
   controlOverrides?: Partial<AgentSetupControlDeps<Record<never, never>>>;
 } = {}): Harness => {
   const repo = new FakeAgentSetupRepository();
+  const routePath = options.routePath ?? '/api/setup';
   const keys = options.keys ?? ['key_primary'];
   const secrets = options.secrets ?? { key_primary: RAW_KEY };
   const users = new Set(options.users ?? [USER_ID]);
@@ -127,16 +129,17 @@ const harness = (options: {
     ),
     ...options.publicOverrides,
   };
-  const controlDeps: AgentSetupControlDeps<Record<never, never>> = {
+  const controlDeps = {
     repository: repo,
+    publicScriptBasePath: routePath,
     getUserId: () => USER_ID,
     listSelectableApiKeyIds: () => Promise.resolve(keys),
     ...options.controlOverrides,
-  };
+  } satisfies AgentSetupControlDeps<Record<never, never>> & { publicScriptBasePath: string };
 
   const app = new Hono()
-    .route('/api/setup', createAgentSetupPublicRoutes(publicDeps))
-    .route('/api/setup', createAgentSetupControlRoutes(controlDeps));
+    .route(routePath, createAgentSetupPublicRoutes(publicDeps))
+    .route(routePath, createAgentSetupControlRoutes(controlDeps));
 
   return { repo, request: (path, init) => app.request(path, init ?? {}) as Promise<Response> };
 };
@@ -201,6 +204,15 @@ test('POST first use selects the first key and enables both agents at revision 1
   assertEquals(body.scripts.claude.ps1, `/api/setup/${body.token}/claude.ps1`);
   assertEquals(body.scripts.codex.sh, `/api/setup/${body.token}/codex.sh`);
   assertEquals(body.scripts.codex.ps1, `/api/setup/${body.token}/codex.ps1`);
+});
+
+test('POST projects scripts from the host-supplied public route path', async () => {
+  const h = harness({ routePath: '/custom/agent-setup' });
+  const response = await h.request('/custom/agent-setup', { method: 'POST' });
+  assertEquals(response.status, 200);
+  const body = (await response.json()) as LeaseResponse;
+  assertEquals(body.scripts.claude.sh, `/custom/agent-setup/${body.token}/claude.sh`);
+  assertEquals(body.scripts.codex.ps1, `/custom/agent-setup/${body.token}/codex.ps1`);
 });
 
 test('POST returns no-selectable-key when the account has no key', async () => {
@@ -497,7 +509,9 @@ test('a public serve failure is sealed to an opaque 500 that leaks neither token
     errorSpy.mockRestore();
   }
   const joined = logged.join('\n');
+  expect(joined).toContain('routes_test');
   expect(joined).not.toContain(injectedSecret);
+  expect(joined).not.toContain(lease.token);
   expect(joined).not.toContain('forced failure');
 });
 

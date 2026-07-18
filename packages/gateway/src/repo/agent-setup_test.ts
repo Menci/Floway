@@ -182,6 +182,21 @@ describe.each(backends)('AgentSetupRepository (%s)', (_label, makeRepo) => {
     expect((await repo.agentSetup.findByToken('token-a'))?.expiresAt).toBe(1_300);
   });
 
+  test('deleteExpired removes every expired lease across users and keeps live rows', async () => {
+    const repo = await makeRepo();
+    await insert(repo, { token: 'expired-a', userId: 7, expiresAt: 1_000 });
+    await insert(repo, { token: 'expired-b', userId: 8, expiresAt: 1_499 });
+    await insert(repo, { token: 'live', userId: 9, expiresAt: 1_501 });
+
+    const deleteExpired = Reflect.get(repo.agentSetup, 'deleteExpired');
+    expect(deleteExpired).toBeTypeOf('function');
+    await Reflect.apply(deleteExpired, repo.agentSetup, [1_500]);
+
+    expect(await repo.agentSetup.findByToken('expired-a')).toBeNull();
+    expect(await repo.agentSetup.findByToken('expired-b')).toBeNull();
+    expect((await repo.agentSetup.findByToken('live'))?.token).toBe('live');
+  });
+
   test('an expired lease preserves its configuration until it is renewed', async () => {
     const repo = await makeRepo();
     await insert(repo);
