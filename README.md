@@ -174,11 +174,12 @@ Open the deployed URL (or `http://localhost:8788` for Node), log in with
    it in `$LASTEXITCODE` without terminating the caller's `irm | iex` runspace.
    Neither script prints a redundant summary.
 
-   Each managed file is backed up before Floway's settings are merged into
-   Claude Code's `~/.claude/settings.json` and Codex's
-   `$CODEX_HOME/config.toml`. The Codex provider token is stored separately
-   under the active `CODEX_HOME`, so an official account login in `auth.json`
-   remains available. Installation checks the local CLI version before
+   Each managed file is backed up before Floway's settings are merged. Successful
+   re-runs retain only the latest `settings.json` / `config.toml` backup; the
+   provider-token rollback copy is deleted once the transaction commits, while
+   a failed restore preserves it for manual recovery. The Codex provider token
+   is stored separately under the active `CODEX_HOME`, so an official account
+   login in `auth.json` remains available. Installation checks the local CLI version before
    configuration begins; setup performs no gateway request. Claude Code reports
    its settings path after the write succeeds; Codex reports the config and
    provider-token paths after both writes succeed. Both automatic and manual

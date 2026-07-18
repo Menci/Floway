@@ -111,6 +111,15 @@ function Restore-SetupCodexFiles {
   Restore-SetupManagedFile -Existed $script:CodexTokenExisted -Backup $script:CodexTokenBackup -Path $script:CodexTokenPath -OriginalLabel 'provider token' -CreatedLabel 'Codex provider token'
 }
 
+function Complete-SetupCodexFiles {
+  Remove-SetupOlderBackups -Path $script:CodexConfigPath -Keep $script:CodexConfigBackup
+  Remove-SetupOlderBackups -Path $script:CodexTokenPath -Keep $script:CodexTokenBackup
+  if ($script:CodexTokenBackup -and (Test-Path -LiteralPath $script:CodexTokenBackup)) {
+    Remove-Item -LiteralPath $script:CodexTokenBackup -Force -ErrorAction Stop
+  }
+  $script:CodexTokenBackup = $null
+}
+
 # Drive `codex app-server` over redirected stdin/stdout/stderr: initialize ->
 # initialized -> config/batchWrite. stderr is drained asynchronously so a chatty
 # server cannot fill the pipe buffer and deadlock. Each response read is bounded
@@ -305,6 +314,13 @@ function Set-SetupAgent {
     $writtenConfigPath = Write-SetupCodexConfig -Exe $exe
   } catch {
     Write-SetupWarn "Codex configuration failed; rolling back configuration and token."
+    Restore-SetupCodexFiles
+    throw
+  }
+  try {
+    Complete-SetupCodexFiles
+  } catch {
+    Write-SetupWarn "Codex backup cleanup failed; rolling back configuration and token."
     Restore-SetupCodexFiles
     throw
   }

@@ -115,6 +115,16 @@ codex_rollback() {
   return "$_cxr_rc"
 }
 
+codex_commit_files() {
+  _prune_managed_backups "$CODEX_CONFIG_PATH" "${CODEX_CONFIG_BACKUP:-}" || return 1
+  _prune_managed_backups "$CODEX_TOKEN_PATH" "${CODEX_TOKEN_BACKUP:-}" || return 1
+  if [ -n "${CODEX_TOKEN_BACKUP:-}" ] && ! rm -f "$CODEX_TOKEN_BACKUP"; then
+    out_error "could not remove provider-token backup $CODEX_TOKEN_BACKUP"
+    return 1
+  fi
+  CODEX_TOKEN_BACKUP=""
+}
+
 # Terminate the app-server process group, giving a child whose stdin was just
 # closed a brief moment to exit on its own before escalating TERM then KILL. The
 # child is launched under job control so the whole descendant tree shares one
@@ -381,6 +391,11 @@ configure_agent() {
   fi
   if ! codex_write_config; then
     out_warn 'Codex configuration failed; rolling back configuration and token.'
+    codex_rollback
+    return 1
+  fi
+  if ! codex_commit_files; then
+    out_warn 'Codex backup cleanup failed; rolling back configuration and token.'
     codex_rollback
     return 1
   fi

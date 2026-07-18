@@ -105,6 +105,9 @@ function Write-SetupClaudeSettings {
   if ($document.PSObject.Properties.Name -notcontains 'env') {
     $document | Add-Member -NotePropertyName env -NotePropertyValue ([PSCustomObject]@{})
   }
+  # Refs: https://docs.claude.com/en/docs/claude-code/env-vars
+  #       https://docs.claude.com/en/docs/claude-code/model-config#environment-variables
+  #       https://docs.claude.com/en/docs/claude-code/settings
   Set-SetupProp $document.env 'ANTHROPIC_BASE_URL' $SetupEndpoint
   Set-SetupProp $document.env 'ANTHROPIC_AUTH_TOKEN' $SetupApiKey
   Set-SetupOptionalProp $document.env 'ANTHROPIC_MODEL' $SetupClaudeModel
@@ -125,7 +128,7 @@ function Write-SetupClaudeSettings {
     # parsers accept the file.
     [System.IO.File]::WriteAllText($stage, $json, (New-Object System.Text.UTF8Encoding($false)))
     $check = Get-Content -Raw -LiteralPath $stage | ConvertFrom-Json
-    if (($check.env.ANTHROPIC_BASE_URL -ne $SetupEndpoint) -or ($check.env.ANTHROPIC_AUTH_TOKEN -ne $SetupApiKey)) {
+    if (($check.env.ANTHROPIC_BASE_URL -cne $SetupEndpoint) -or ($check.env.ANTHROPIC_AUTH_TOKEN -cne $SetupApiKey)) {
       Stop-Setup "staged Claude settings failed validation."
     }
     # Windows PowerShell 5.1 only runs on Windows and has no $IsWindows
@@ -144,6 +147,7 @@ function Write-SetupClaudeSettings {
       # target on Windows. Windows replacing an existing target uses File.Replace.
       Move-Item -LiteralPath $stage -Destination $script:ClaudeSettingsPath -Force
     }
+    Remove-SetupOlderBackups -Path $script:ClaudeSettingsPath -Keep $script:ClaudeSettingsBackup
   } catch {
     if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Force }
     Restore-SetupClaudeSettings

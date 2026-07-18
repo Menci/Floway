@@ -4,6 +4,9 @@
 # keys the setup owns are touched; every unrelated key and env var is preserved.
 # An empty optional value means "remove that managed key". The API key is read
 # from the environment (`env.SETUP_API_KEY`) so it stays out of argv.
+# Refs: https://docs.claude.com/en/docs/claude-code/env-vars
+#       https://docs.claude.com/en/docs/claude-code/model-config#environment-variables
+#       https://docs.claude.com/en/docs/claude-code/settings
 CLAUDE_MERGE_PROGRAM='
   if type != "object" then error("root is not a JSON object")
   elif (has("env") and ((.env | type) != "object")) then error("env is not a JSON object")
@@ -164,6 +167,10 @@ claude_write_settings() {
   if ! mv "$_cw_stage" "$CLAUDE_SETTINGS_PATH"; then
     out_error "could not replace $CLAUDE_SETTINGS_PATH"
     rm -f "$_cw_stage"
+    claude_rollback_settings
+    return 1
+  fi
+  if ! _prune_managed_backups "$CLAUDE_SETTINGS_PATH" "$CLAUDE_SETTINGS_BACKUP"; then
     claude_rollback_settings
     return 1
   fi

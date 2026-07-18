@@ -210,6 +210,19 @@ _restore_managed_file() {
   return 0
 }
 
+_prune_managed_backups() {
+  _pmb_path=$1
+  _pmb_keep=$2
+  for _pmb_backup in "$_pmb_path".floway-backup.*; do
+    [ -e "$_pmb_backup" ] || continue
+    [ "$_pmb_backup" = "$_pmb_keep" ] && continue
+    if ! rm -f "$_pmb_backup"; then
+      out_error "could not remove obsolete backup $_pmb_backup"
+      return 1
+    fi
+  done
+}
+
 _install_brew_cask() {
   _ibc_cask=$1
   if ! command -v brew >/dev/null 2>&1; then

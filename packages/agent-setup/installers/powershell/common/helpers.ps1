@@ -219,6 +219,15 @@ function Restore-SetupManagedFile {
   }
 }
 
+function Remove-SetupOlderBackups {
+  param([string]$Path, [string]$Keep)
+  $directory = Split-Path -Parent $Path
+  $prefix = [System.IO.Path]::GetFileName($Path) + '.floway-backup.'
+  Get-ChildItem -LiteralPath $directory -File -ErrorAction Stop |
+    Where-Object { $_.Name.StartsWith($prefix, [System.StringComparison]::Ordinal) -and $_.FullName -ne $Keep } |
+    Remove-Item -Force -ErrorAction Stop
+}
+
 # Run a child process with its stdout and stderr redirected into in-process
 # pipes, bounded by a deadline. On timeout the whole process tree is terminated
 # and the call throws; otherwise the exit code and combined stdout+stderr are
